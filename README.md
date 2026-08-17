@@ -7,7 +7,7 @@ camera ortografica isometrica e harness di misura.
 ```bash
 npm install
 npm run dev          # poi apri http://localhost:5173/?debug=1
-npm test             # 43 test unitari e di integrazione
+npm test             # 80 test unitari e di integrazione
 npm run bench        # costo del mesher per chunk
 npm run typecheck
 npm run build
@@ -35,6 +35,7 @@ aggiungendo chunk alla mappa sparsa.
 | [src/engine/VoxelMaterial.ts](src/engine/VoxelMaterial.ts) | Unico `ShaderMaterial`, palette come `uniform vec3[32]` |
 | [src/engine/IsoCameraController.ts](src/engine/IsoCameraController.ts) | Ortografica isometrica: scatti di 90°, zoom, pan vincolato |
 | [src/ui/DebugOverlay.ts](src/ui/DebugOverlay.ts) | Overlay delle misure, attivo con `?debug=1` |
+| [src/world/terrain/](src/world/terrain/) | Generatore di isole procedurali (vedi sotto) |
 | [src/sim/](src/sim/) | Riservata alla simulazione, vuota in questo prompt |
 
 ## Contratti che il resto del progetto può dare per assodati
@@ -58,9 +59,11 @@ aggiungendo chunk alla mappa sparsa.
 | `seed` | `1337` | Seed della generazione |
 | `size` | `512` | Lato del mondo in voxel |
 | `height` | `64` | Altezza del mondo in voxel |
+| `terrain` | — | `<seed>` sostituisce la scena urbana con un'isola 256×256 |
 
 Tasti: `Q`/`E` ruota di 90°, rotella zoom, drag destro o `WASD` pan, `F` inquadra
-tutto, `G` aggiunge 64 chunk a runtime, `R` rebuild totale, `C` azzera i picchi.
+tutto, `G` aggiunge 64 chunk a runtime, `R` rebuild totale, `C` azzera i picchi,
+`B` colora le colonne per bioma (solo in scena terreno).
 
 ## Misure
 
@@ -143,8 +146,81 @@ Con `?debug=1` sono esposti anche `__voxelStats()`, `__voxelReset()`,
 `__voxelExpand()` e `__voxelRebuildAll()` sull'oggetto globale, per misurare
 dalla console o da uno strumento headless.
 
+## Terreno procedurale
+
+`src/world/terrain/` genera un'isola deterministica da un seed, la scrive nel
+`VoxelWorld` con la sola API pubblica (`setBlock`, `ensureChunk`) e produce in
+parallelo una mappa 2D per colonna che dice dove si può costruire.
+
+```ts
+const { map, buildableColumns } = generateIsland(world, 1337, {
+  minX: 0, minY: 0, sizeX: 256, sizeY: 256,
+});
+map.columnAt(120, 96); // { height, biome, slope, buildable }
+```
+
+| Percorso | Ruolo |
+| --- | --- |
+| [config.ts](src/world/terrain/config.ts) | **Ogni** soglia, frequenza e ampiezza. Niente numeri altrove |
+| [heightField.ts](src/world/terrain/heightField.ts) | 4 ottave di simplex × maschera radiale deformata |
+| [biomes.ts](src/world/terrain/biomes.ts) | Classificazione da altezza e pendenza, edificabilità, stratigrafia |
+| [IslandGenerator.ts](src/world/terrain/IslandGenerator.ts) | `generateIsland`, `expandIsland`, scrittura dei voxel |
+| [TerrainMap.ts](src/world/terrain/TerrainMap.ts) | Mappa sparsa per colonna, chunkata 32×32 come il mondo |
+| [terrain.worker.ts](src/world/terrain/terrain.worker.ts) | Generazione fuori dal main thread, un blocco per volta |
+| [TerrainStreamer.ts](src/world/terrain/TerrainStreamer.ts) | Riceve i blocchi e li applica a budget di frame |
+
+### Contratti
+
+- **Il generatore non conosce il rendering.** Nessun import di Three.js: nel
+  bundle di produzione `terrain.worker` pesa 4,1 kB, palette e simplex inclusi.
+- **`data` resta della simulazione.** La `TerrainMap` vive del tutto a parte e
+  non tocca il secondo layer del `Chunk`.
+- **La palette non è cambiata.** Restano 32 slot esatti, fissati dall'uniform
+  `vec3[32]`: il terreno riusa gli indici esistenti, mappati in `BIOME_STRATA`.
+- **Il contenuto di un blocco è funzione di `(seed, shape, ccx, ccy)`**, di
+  nient'altro. Da qui il determinismo, l'indipendenza dall'ordine e la
+  continuità al confine: non c'è cucitura da fare perché non c'è stato da cucire.
+- **`expandIsland` eredita la maschera dalla mappa**, quindi il rettangolo nuovo
+  continua la stessa costa invece di aprire una seconda isola. Senza mappa e
+  senza `shape` esplicita si comporta come `generateIsland`.
+
+### Calibrazione
+
+Il criterio "due colonne adiacenti non differiscono di più di 1 in altezza" è un
+vincolo di Lipschitz sul campo continuo, non una proprietà delle cuciture: se il
+campo lo rispetta ovunque lo rispetta anche al confine. Le frequenze in
+`config.ts` sono scelte perché il dislivello massimo misurato resti **sotto 0,8**
+su otto seed — margine voluto, così ritoccare il rilievo non fa cadere il
+criterio. `heightField.test.ts` è la rete di sicurezza.
+
+Due tetti duri stanno nello stesso file: `warpAmount` sopra ~0,26 attaccherebbe
+terra al bordo della region, e alzare `baseFrequency` o `maxHeight` consuma il
+margine di Lipschitz.
+
+### Misure
+
+Isola 256×256, `?debug=1&terrain=1337`, stessa macchina e stesso renderer
+software delle misure sopra.
+
+| Metrica | Valore | Criterio |
+| --- | --- | --- |
+| generazione nel worker | **20–41 ms** | < 800 ms ✅ |
+| main thread, picco durante lo streaming | **2,8 ms** | < 4 ms ✅ |
+| main thread, a regime | 0,30 ms | — |
+| scrittura voxel, totale su main | 21–41 ms | — |
+| ricolore per bioma, picco su main | 2,3 ms | < 4 ms ✅ |
+| draw call | 64 | — |
+| voxel pieni | 675k–695k | — |
+| colonne edificabili | 8,0k–12,9k su 65,5k | — |
+
+Il meshing parte prima che l'isola sia completa: campionando un frame alla volta
+durante lo startup si vedono 32 chunk già meshati con 18 blocchi ancora in coda.
+
+Con `?debug=1&terrain=<seed>` sono esposti anche `__terrainStats()`,
+`__terrainBiomeView()` e `__terrainExpand()` sull'oggetto globale.
+
 ## Fuori scope in questo prompt
 
-Terreno procedurale, simulazione, edifici come entità, policy, catalizzatori, UI
-di gioco, post-processing, audio, salvataggio, input di piazzamento, supporto
-mobile.
+Simulazione, edifici come entità, policy, catalizzatori, UI di gioco,
+post-processing, audio, salvataggio, input di piazzamento, input del giocatore
+per l'espansione del terreno, fiumi, grotte, vegetazione, supporto mobile.

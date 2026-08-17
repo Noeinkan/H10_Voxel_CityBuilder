@@ -4,8 +4,12 @@ import { IsoCameraController } from './engine/IsoCameraController';
 import { onPaletteChanged, paletteHex } from './engine/palette';
 import { createVoxelMaterial } from './engine/VoxelMaterial';
 import { DebugOverlay, type OverlayFrame } from './ui/DebugOverlay';
+import { TerrainOverlay, type TerrainOverlayFrame } from './ui/TerrainOverlay';
 import { CHUNK } from './world/chunkCoords';
 import { createScene, type SceneGenerator, type SceneKind } from './world/scenes/cityScene';
+import { BiomeView } from './world/terrain/BiomeView';
+import { expandIsland } from './world/terrain/IslandGenerator';
+import { TerrainStreamer } from './world/terrain/TerrainStreamer';
 import { VoxelWorld } from './world/VoxelWorld';
 
 /**
@@ -24,12 +28,19 @@ const GENERATION_BUDGET_MS = 1.5;
 
 const VOXEL_SIZE = 1;
 
+/** Lato dell'isola della scena di debug del terreno, in voxel. */
+const TERRAIN_SIZE = 256;
+
 const params = new URLSearchParams(window.location.search);
 const debugEnabled = params.get('debug') === '1';
 const sceneKind = parseSceneKind(params.get('scene'));
 const seed = parseInt(params.get('seed') ?? '1337', 10) || 1337;
 const worldSize = clampInt(params.get('size'), 512, 32, 4096);
 const worldHeight = clampInt(params.get('height'), 64, 32, 256);
+
+/** `?terrain=<seed>` sostituisce la scena urbana con l'isola procedurale. */
+const terrainParam = params.get('terrain');
+const terrainSeed = terrainParam === null ? seed : parseInt(terrainParam, 10) || seed;
 
 const container = document.getElementById('app');
 if (container === null) throw new Error('manca il contenitore #app');
@@ -53,15 +64,31 @@ const camera = new IsoCameraController(world, window.innerWidth, window.innerHei
 });
 camera.attach(renderer.domElement);
 
-let generator: SceneGenerator = createScene(world, {
-  kind: sceneKind,
-  seed,
-  originX: 0,
-  originY: 0,
-  sizeX: worldSize,
-  sizeY: worldSize,
-  sizeZ: worldHeight,
-});
+// La scena di terreno arriva da un worker, quindi non e' pronta a costruttore:
+// il primo blocco entra al primo `step` che trova qualcosa in coda.
+const terrain: TerrainStreamer | null =
+  terrainParam === null
+    ? null
+    : new TerrainStreamer(world, terrainSeed, {
+        minX: 0,
+        minY: 0,
+        sizeX: TERRAIN_SIZE,
+        sizeY: TERRAIN_SIZE,
+      });
+
+let generator: SceneGenerator =
+  terrain ??
+  createScene(world, {
+    kind: sceneKind,
+    seed,
+    originX: 0,
+    originY: 0,
+    sizeX: worldSize,
+    sizeY: worldSize,
+    sizeZ: worldHeight,
+  });
+
+const biomeView = terrain === null ? null : new BiomeView(world, terrain.map);
 
 // Prima passata subito, cosi' il primo frame ha gia' qualcosa da disegnare.
 generator.step(8);
@@ -69,9 +96,18 @@ generator.step(8);
 // L'inquadratura si basa sulla dimensione richiesta, non sull'AABB corrente: a
 // questo punto la scena e' generata solo in parte. Meta' lato perche' inquadrare
 // tutta la citta' metterebbe nel frustum tutti i suoi chunk.
-camera.frameRegion(worldSize / 2, worldSize / 2, worldSize / 2, worldSize / 2, worldHeight);
+if (terrain === null) {
+  camera.frameRegion(worldSize / 2, worldSize / 2, worldSize / 2, worldSize / 2, worldHeight);
+} else {
+  // L'isola invece si guarda intera: 256 di lato stanno in poche centinaia di chunk.
+  camera.frameRegion(TERRAIN_SIZE / 2, TERRAIN_SIZE / 2, TERRAIN_SIZE, TERRAIN_SIZE, 48);
+}
 
 const overlay = debugEnabled ? new DebugOverlay(container) : null;
+const terrainOverlay =
+  debugEnabled && terrain !== null ? new TerrainOverlay(container, toggleBiomeView) : null;
+let terrainApplyMs = 0;
+
 if (debugEnabled) {
   window.addEventListener('keydown', onDebugKey);
 
@@ -107,6 +143,36 @@ if (debugEnabled) {
   };
   debugGlobals['__voxelExpand'] = (): void => expandWorld();
   debugGlobals['__voxelRebuildAll'] = (): void => world.markAllDirty();
+
+  if (terrain !== null) {
+    debugGlobals['__terrainStats'] = (): Record<string, unknown> => ({
+      seed: terrainSeed,
+      size: TERRAIN_SIZE,
+      workerMs: terrain.generationMs,
+      applyMs: terrainApplyMs,
+      blocksApplied: terrain.blocksApplied,
+      blocksTotal: terrain.blocksTotal,
+      columns: terrain.map.columnCount,
+      buildableColumns: terrain.buildableColumns,
+      biomeHistogram: Array.from(terrain.map.biomeHistogram()),
+      biomeView: biomeView?.enabled ?? false,
+      done: terrain.done,
+    });
+    debugGlobals['__terrainBiomeView'] = (): void => toggleBiomeView();
+
+    // L'espansione qui e' solo una funzione chiamabile: nessun input di gioco la
+    // attiva. Aggiunge la striscia a nord riusando seed e maschera dell'isola,
+    // quindi la costa continua invece di ricominciare.
+    debugGlobals['__terrainExpand'] = (): Record<string, unknown> => {
+      const result = expandIsland(
+        world,
+        terrainSeed,
+        { minX: 0, minY: TERRAIN_SIZE, sizeX: TERRAIN_SIZE, sizeY: CHUNK * 2 },
+        { map: terrain.map },
+      );
+      return { blocks: result.blocks, voxels: result.voxelsWritten, ms: result.generationMs };
+    };
+  }
 }
 
 const frameDurations = new Float64Array(120);
@@ -136,7 +202,13 @@ function onFrame(time: number): void {
   camera.update(dt);
 
   if (!generator.done) {
+    const generationStart = performance.now();
     generator.step(GENERATION_BUDGET_MS);
+    terrainApplyMs += performance.now() - generationStart;
+  } else if (biomeView !== null && biomeView.busy) {
+    // Il ricolore per bioma usa lo stesso budget della generazione, e solo
+    // quando la generazione ha finito: non competono mai per lo stesso frame.
+    biomeView.step(GENERATION_BUDGET_MS);
   }
 
   const elapsed = performance.now() - workStart;
@@ -158,6 +230,30 @@ function onFrame(time: number): void {
   if (overlay !== null && overlay.needsPaint(time)) {
     overlay.update(buildOverlayFrame(mainMs, renderMs, frameMs), time);
   }
+  if (terrainOverlay !== null && terrain !== null && terrainOverlay.needsPaint(time)) {
+    terrainOverlay.update(buildTerrainFrame(terrain), time);
+  }
+}
+
+function buildTerrainFrame(streamer: TerrainStreamer): TerrainOverlayFrame {
+  return {
+    fps: frameTiming().fps,
+    generationMs: streamer.generationMs,
+    applyMs: terrainApplyMs,
+    blocksApplied: streamer.blocksApplied,
+    blocksTotal: streamer.blocksTotal,
+    columns: streamer.map.columnCount,
+    buildableColumns: streamer.buildableColumns,
+    histogram: Array.from(streamer.map.biomeHistogram()),
+    biomeView: biomeView?.enabled ?? false,
+    seed: terrainSeed,
+    regionSize: TERRAIN_SIZE,
+  };
+}
+
+function toggleBiomeView(): void {
+  if (biomeView === null) return;
+  biomeView.toggle();
 }
 
 function buildOverlayFrame(mainMs: number, renderMs: number, frameMs: number): OverlayFrame {
@@ -188,8 +284,8 @@ function buildOverlayFrame(mainMs: number, renderMs: number, frameMs: number): O
     mesherMaxMs: mesher.maxMs,
     mesherPoolSize: mesher.poolSize,
     generationProgress: generator.done ? 1 : generator.progress,
-    scene: sceneKind,
-    seed,
+    scene: terrain === null ? sceneKind : 'terrain',
+    seed: terrain === null ? seed : terrainSeed,
     zoom: camera.zoom,
     yawDegrees: camera.yawDegrees,
   };
@@ -212,6 +308,10 @@ function frameTiming(): { fps: number; fpsLow: number } {
 }
 
 function onDebugKey(event: KeyboardEvent): void {
+  if (event.code === 'KeyB') {
+    toggleBiomeView();
+    return;
+  }
   if (event.code === 'KeyG') {
     expandWorld();
     return;
@@ -236,6 +336,10 @@ function onDebugKey(event: KeyboardEvent): void {
  * loro geometrie restano quelle di prima.
  */
 function expandWorld(): void {
+  // La scena di terreno ha la sua espansione, che passa da `expandIsland` e non
+  // dalla griglia urbana: qui `G` non deve fare nulla.
+  if (terrain !== null) return;
+
   const b = world.bounds;
   if (b.empty) return;
 
