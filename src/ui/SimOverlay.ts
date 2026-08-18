@@ -1,0 +1,315 @@
+import { CLASS_NAMES, type BuildingClass } from '../sim/classes';
+import type { BuildSite } from '../sim/nextBuildSites';
+import { POLICIES, type PolicyId } from '../sim/policies';
+import type { SimState } from '../sim/SimState';
+
+/**
+ * Pannello della scena di simulazione, attivo con `?debug=1&sim=1`.
+ *
+ * Mostra tre cose: gli stock delle risorse con il loro delta per tick, la
+ * heatmap del campo di desiderabilita' per la classe selezionata, e i prossimi
+ * dieci siti candidati.
+ *
+ * **La heatmap sta qui e non nel mondo voxel.** Il renderer legge solo `blocks`,
+ * e la simulazione non ha il permesso di scriverci: colorare le colonne per
+ * desiderabilita' significherebbe rimeshare mezza isola a ogni ricalcolo. Il
+ * campo finisce quindi in `VoxelWorld.data` — dove e' interrogabile da console e
+ * da uno strumento headless — e si guarda su questa canvas 2D, che costa una
+ * `putImageData` e non tocca una sola geometria.
+ *
+ * La canvas si ridisegna solo quando il campo puo' essere cambiato, non a ogni
+ * refresh: senza il controllo, guardare la heatmap costerebbe una scansione
+ * dell'intera region cinque volte al secondo per niente.
+ */
+
+export interface SimOverlayRegion {
+  readonly minX: number;
+  readonly minY: number;
+  readonly sizeX: number;
+  readonly sizeY: number;
+}
+
+export interface SimOverlayFrame {
+  readonly state: SimState;
+  readonly sites: readonly BuildSite[];
+  readonly region: SimOverlayRegion;
+  /** true se il tick automatico e' attivo. */
+  readonly auto: boolean;
+  /** Tick al secondo del passo automatico. */
+  readonly tickRate: number;
+  /** Millisecondi dell'ultimo tick eseguito. */
+  readonly tickMs: number;
+  /** Celle scritte dall'ultima passata su `VoxelWorld.data`. */
+  readonly dataCells: number;
+}
+
+export interface SimOverlayHandlers {
+  readonly onTick: () => void;
+  readonly onToggleAuto: () => void;
+  readonly onSelectClass: (cls: BuildingClass) => void;
+  readonly onTogglePolicy: (id: PolicyId) => void;
+}
+
+const REFRESH_MS = 200;
+
+/** Lato della canvas visibile, in pixel CSS. */
+const HEATMAP_PX = 224;
+
+export class SimOverlay {
+  private readonly root: HTMLDivElement;
+  private readonly body: HTMLPreElement;
+  private readonly canvas: HTMLCanvasElement;
+  private readonly context: CanvasRenderingContext2D | null;
+  private readonly classButtons: HTMLButtonElement[] = [];
+  private readonly policyButtons = new Map<PolicyId, HTMLButtonElement>();
+  private readonly autoButton: HTMLButtonElement;
+  private readonly sitesBody: HTMLPreElement;
+
+  /** Canvas fuori schermo a un pixel per cella, poi scalata senza interpolazione. */
+  private readonly cells: HTMLCanvasElement;
+  private readonly cellsContext: CanvasRenderingContext2D | null;
+  private image: ImageData | null = null;
+
+  private lastPaint = 0;
+  private lastFieldKey = '';
+
+  constructor(parent: HTMLElement, handlers: SimOverlayHandlers) {
+    this.root = document.createElement('div');
+    this.root.style.cssText = [
+      'position:fixed',
+      'top:8px',
+      'right:8px',
+      'z-index:10',
+      'padding:8px 10px',
+      'background:rgba(8,11,14,0.82)',
+      'color:#d8dce0',
+      'font:11px/1.45 ui-monospace,SFMono-Regular,Consolas,monospace',
+      'border:1px solid rgba(216,220,224,0.16)',
+      'border-radius:4px',
+      'pointer-events:none',
+      'white-space:pre',
+      'min-width:250px',
+    ].join(';');
+
+    this.body = document.createElement('pre');
+    this.body.style.cssText = 'margin:0;font:inherit;color:inherit';
+    this.root.appendChild(this.body);
+
+    this.canvas = document.createElement('canvas');
+    this.canvas.width = HEATMAP_PX;
+    this.canvas.height = HEATMAP_PX;
+    this.canvas.style.cssText = [
+      'display:block',
+      'margin:8px 0 6px',
+      'width:100%',
+      'height:auto',
+      'image-rendering:pixelated',
+      'border:1px solid rgba(216,220,224,0.16)',
+      'background:#05070a',
+    ].join(';');
+    this.sitesBody = document.createElement('pre');
+    this.sitesBody.style.cssText = 'margin:6px 0 0;font:inherit;color:inherit';
+
+    this.context = this.canvas.getContext('2d');
+    if (this.context !== null) this.context.imageSmoothingEnabled = false;
+    this.root.appendChild(this.canvas);
+    this.root.appendChild(this.sitesBody);
+
+    this.cells = document.createElement('canvas');
+    this.cellsContext = this.cells.getContext('2d', { willReadFrequently: true });
+
+    this.root.appendChild(row(CLASS_NAMES.map((name, i) => {
+      const button = actionButton(name, () => handlers.onSelectClass(i as BuildingClass));
+      this.classButtons.push(button);
+      return button;
+    })));
+
+    this.autoButton = actionButton('auto (P)', handlers.onToggleAuto);
+    this.root.appendChild(row([actionButton('tick (T)', handlers.onTick), this.autoButton]));
+
+    const policyRows: HTMLButtonElement[] = [];
+    for (const policy of POLICIES) {
+      const button = actionButton(policy.label, () => handlers.onTogglePolicy(policy.id));
+      this.policyButtons.set(policy.id, button);
+      policyRows.push(button);
+    }
+    for (let i = 0; i < policyRows.length; i += 2) {
+      this.root.appendChild(row(policyRows.slice(i, i + 2)));
+    }
+
+    parent.appendChild(this.root);
+  }
+
+  needsPaint(now: number): boolean {
+    return now - this.lastPaint >= REFRESH_MS;
+  }
+
+  update(frame: SimOverlayFrame, now: number): void {
+    this.lastPaint = now;
+    const { state } = frame;
+
+    this.body.textContent = [
+      `simulazione  tick ${state.tickCount}${frame.auto ? `  auto ${frame.tickRate}/s` : '  in pausa'}`,
+      `costo        ${frame.tickMs.toFixed(4).padStart(8)} ms per tick`,
+      '',
+      'risorse                stock       delta',
+      stockLine('abitanti', state.population.stock, state.population.delta),
+      stockLine('cibo', state.food.stock, state.food.delta),
+      stockLine('materiali', state.materials.stock, state.materials.delta),
+      stockLine('fondi', state.funds.stock, state.funds.delta),
+      `  soddisfazione ${(state.satisfaction * 100).toFixed(1).padStart(10)} %`,
+      '',
+      `edifici      ${state.buildingCounts.map((count, i) => `${CLASS_NAMES[i].slice(0, 4)} ${count}`).join('  ')}`,
+      `catalizzatori${state.catalysts.length.toString().padStart(6)}`,
+      `campo        ${state.field.chunkCount.toString().padStart(6)} chunk  ${format(state.field.totalRecomputedCells)} celle ricalcolate`,
+      `data         ${format(frame.dataCells).padStart(6)} celle scritte  (classe ${CLASS_NAMES[state.selectedClass]})`,
+      '',
+      `desiderabilita — ${CLASS_NAMES[state.selectedClass]}`,
+    ].join('\n');
+
+    this.paintHeatmap(frame);
+
+    const sites = frame.sites.length === 0
+      ? ['  nessun sito sopra soglia']
+      : frame.sites.map(
+          (site, i) =>
+            `  ${(i + 1).toString().padStart(2)}. ${`${site.x},${site.y}`.padEnd(9)} ${CLASS_NAMES[site.class].padEnd(12)}${site.score.toString().padStart(4)}`,
+        );
+
+    this.sitesBody.textContent = [`prossimi ${frame.sites.length} siti`, ...sites].join('\n');
+
+    for (let i = 0; i < this.classButtons.length; i++) {
+      setActive(this.classButtons[i], i === state.selectedClass);
+    }
+    setActive(this.autoButton, frame.auto);
+    for (const [id, button] of this.policyButtons) {
+      setActive(button, state.policies.includes(id));
+    }
+  }
+
+  dispose(): void {
+    this.root.remove();
+  }
+
+  /**
+   * Ridisegna la heatmap solo se qualcosa che la determina e' cambiato.
+   *
+   * La chiave e' l'insieme degli ingressi del campo: classe mostrata,
+   * catalizzatori, edifici, policy. Il tick non ne fa parte, ed e' corretto che
+   * non ne faccia parte — il tick non tocca il campo.
+   */
+  private paintHeatmap(frame: SimOverlayFrame): void {
+    const { state, region } = frame;
+    const key = [
+      state.selectedClass,
+      state.catalysts.length,
+      state.buildings.length,
+      state.field.totalRecomputedCells,
+      state.policies.join('+'),
+    ].join('|');
+    if (key === this.lastFieldKey) return;
+    this.lastFieldKey = key;
+
+    const context = this.context;
+    const cellsContext = this.cellsContext;
+    if (context === null || cellsContext === null) return;
+
+    if (this.cells.width !== region.sizeX || this.cells.height !== region.sizeY) {
+      this.cells.width = region.sizeX;
+      this.cells.height = region.sizeY;
+      this.image = null;
+    }
+    if (this.image === null) this.image = cellsContext.createImageData(region.sizeX, region.sizeY);
+
+    const pixels = this.image.data;
+    const cls = state.selectedClass;
+
+    for (let cy = 0; cy < region.sizeY; cy++) {
+      const worldY = region.minY + cy;
+      for (let cx = 0; cx < region.sizeX; cx++) {
+        const value = state.field.valueAt(region.minX + cx, worldY, cls);
+        // La riga 0 dell'immagine e' il nord: il mondo e' y crescente verso
+        // nord, la canvas y crescente verso il basso.
+        const p = ((region.sizeY - 1 - cy) * region.sizeX + cx) * 4;
+        const [r, g, b] = heat(value);
+        pixels[p] = r;
+        pixels[p + 1] = g;
+        pixels[p + 2] = b;
+        pixels[p + 3] = 255;
+      }
+    }
+
+    cellsContext.putImageData(this.image, 0, 0);
+
+    context.clearRect(0, 0, HEATMAP_PX, HEATMAP_PX);
+    context.imageSmoothingEnabled = false;
+    context.drawImage(this.cells, 0, 0, HEATMAP_PX, HEATMAP_PX);
+
+    // I candidati si segnano dopo la scalatura, altrimenti a un pixel per cella
+    // sarebbero invisibili.
+    const scale = HEATMAP_PX / region.sizeX;
+    context.strokeStyle = '#ffffff';
+    context.lineWidth = 1;
+    for (const site of frame.sites) {
+      const px = (site.x - region.minX) * scale;
+      const py = (region.sizeY - 1 - (site.y - region.minY)) * scale;
+      context.strokeRect(Math.round(px) - 2.5, Math.round(py) - 2.5, 5, 5);
+    }
+  }
+}
+
+/** Rampa scura -> teal -> giallo. Zero resta il fondo, non il primo colore caldo. */
+function heat(value: number): [number, number, number] {
+  if (value === 0) return [10, 14, 20];
+  const t = value / 255;
+  if (t < 0.5) {
+    const k = t / 0.5;
+    return [Math.round(16 + 12 * k), Math.round(26 + 122 * k), Math.round(58 + 84 * k)];
+  }
+  const k = (t - 0.5) / 0.5;
+  return [Math.round(28 + 222 * k), Math.round(148 + 82 * k), Math.round(142 - 22 * k)];
+}
+
+function stockLine(label: string, stock: number, delta: number): string {
+  const sign = delta > 0 ? '+' : '';
+  return `  ${label.padEnd(13)}${format(stock).padStart(9)}  ${(sign + delta.toFixed(2)).padStart(9)}`;
+}
+
+function row(children: readonly HTMLElement[]): HTMLDivElement {
+  const div = document.createElement('div');
+  div.style.cssText = 'display:flex;gap:4px;margin-top:4px';
+  for (const child of children) div.appendChild(child);
+  return div;
+}
+
+function actionButton(label: string, onClick: () => void): HTMLButtonElement {
+  const button = document.createElement('button');
+  button.textContent = label;
+  button.style.cssText = [
+    'flex:1',
+    'padding:3px 4px',
+    'font:inherit',
+    'color:#d8dce0',
+    'background:rgba(216,220,224,0.08)',
+    'border:1px solid rgba(216,220,224,0.28)',
+    'border-radius:3px',
+    'cursor:pointer',
+    'pointer-events:auto',
+    'white-space:nowrap',
+    'overflow:hidden',
+    'text-overflow:ellipsis',
+  ].join(';');
+  button.addEventListener('click', onClick);
+  return button;
+}
+
+function setActive(button: HTMLButtonElement, active: boolean): void {
+  button.style.background = active ? 'rgba(120,200,180,0.22)' : 'rgba(216,220,224,0.08)';
+  button.style.borderColor = active ? 'rgba(120,200,180,0.6)' : 'rgba(216,220,224,0.28)';
+}
+
+function format(value: number): string {
+  if (value < 1000) return value.toFixed(value === Math.round(value) ? 0 : 1);
+  if (value < 1_000_000) return `${(value / 1000).toFixed(1)}k`;
+  return `${(value / 1_000_000).toFixed(2)}M`;
+}

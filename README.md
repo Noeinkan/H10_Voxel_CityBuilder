@@ -7,7 +7,7 @@ camera ortografica isometrica e harness di misura.
 ```bash
 npm install
 npm run dev          # poi apri http://localhost:5173/?debug=1
-npm test             # 80 test unitari e di integrazione
+npm test             # 146 test unitari e di integrazione
 npm run bench        # costo del mesher per chunk
 npm run typecheck
 npm run build
@@ -36,7 +36,7 @@ aggiungendo chunk alla mappa sparsa.
 | [src/engine/IsoCameraController.ts](src/engine/IsoCameraController.ts) | Ortografica isometrica: scatti di 90°, zoom, pan vincolato |
 | [src/ui/DebugOverlay.ts](src/ui/DebugOverlay.ts) | Overlay delle misure, attivo con `?debug=1` |
 | [src/world/terrain/](src/world/terrain/) | Generatore di isole procedurali (vedi sotto) |
-| [src/sim/](src/sim/) | Riservata alla simulazione, vuota in questo prompt |
+| [src/sim/](src/sim/) | Simulazione a tick: risorse, campo di desiderabilità, decisioni (vedi sotto) |
 
 ## Contratti che il resto del progetto può dare per assodati
 
@@ -60,10 +60,12 @@ aggiungendo chunk alla mappa sparsa.
 | `size` | `512` | Lato del mondo in voxel |
 | `height` | `64` | Altezza del mondo in voxel |
 | `terrain` | — | `<seed>` sostituisce la scena urbana con un'isola 256×256 |
+| `sim` | — | `1` accende la scena di simulazione (implica l'isola) |
 
 Tasti: `Q`/`E` ruota di 90°, rotella zoom, drag destro o `WASD` pan, `F` inquadra
 tutto, `G` aggiunge 64 chunk a runtime, `R` rebuild totale, `C` azzera i picchi,
-`B` colora le colonne per bioma (solo in scena terreno).
+`B` colora le colonne per bioma (solo in scena terreno). In scena simulazione:
+`T` un tick, `P` avvia o ferma il passo automatico, `M` cicla la classe mostrata.
 
 ## Misure
 
@@ -219,8 +221,53 @@ durante lo startup si vedono 32 chunk già meshati con 18 blocchi ancora in coda
 Con `?debug=1&terrain=<seed>` sono esposti anche `__terrainStats()`,
 `__terrainBiomeView()` e `__terrainExpand()` sull'oggetto globale.
 
+## Simulazione
+
+`src/sim/` tiene risorse e popolazione, calcola un campo di desiderabilità per
+cella e per classe di edificio, e dice dove crescerebbe il prossimo edificio.
+**Non costruisce niente**: espone lo stato e le decisioni. Dettagli, contratti e
+misure in [src/sim/README.md](src/sim/README.md).
+
+```ts
+let state = createSimState();
+state = addCatalyst(state, { x: 96, y: 96, class: BUILDING_CLASS.residential, strength: 220, radius: 24 });
+state = tick(state, terrainMap);        // puro: nuovo stato, input intatto
+nextBuildSites(state, terrainMap, 10);  // [{ x, y, class, score }, …]
+```
+
+### Contratti
+
+- **Non importa Three.js e non importa niente da `src/engine/`.** Gira in Node:
+  i test non hanno bisogno di un DOM, di una GPU o di un browser.
+- **`tick` è puro** — nessuna mutazione dell'input, nessun `Date.now()`, nessun
+  `Math.random()` — **e non tocca il campo di desiderabilità.** Il costo di un
+  tick non dipende quindi dall'estensione della mappa.
+- **Il campo si ricalcola solo dove cambia.** Un catalizzatore tocca il quadrato
+  di Chebyshev del suo raggio (raggio 20 → 1681 celle), un edificio nuovo il
+  quadrato del raggio breve. Non esiste una passata sull'intera mappa.
+- **`blocks` non viene mai toccato.** L'unica scrittura verso il mondo va in
+  `VoxelWorld.data`, che per contratto non marca sporco niente.
+- **`balance.ts` è l'unico file con dei numeri.** Le policy sono moltiplicatori
+  sui pesi e vivono nello stato, non nel file di bilanciamento.
+
+### Misure
+
+`npm run bench`, isola 256×256 con 50 catalizzatori e 400 edifici, Node 22.
+
+| Operazione | Media | Criterio |
+| --- | --- | --- |
+| **tick** | **0,0004 ms** | < 3 ms ✅ |
+| modifica di un catalizzatore di raggio 20 (1681 celle) | 0,09 ms | — |
+| `setPolicyActive` su un peso di desiderabilità | 3,6 ms | azione del giocatore |
+| `nextBuildSites`, primi 10 su tutto il campo | 2,5 ms | azione del giocatore |
+
+Con `?debug=1&sim=1` la scena genera l'isola, piazza i catalizzatori da script e
+consegna alla simulazione un nucleo di 24 edifici; l'overlay mostra stock e delta
+per tick, la heatmap del campo per classe e i prossimi dieci candidati.
+
 ## Fuori scope in questo prompt
 
-Simulazione, edifici come entità, policy, catalizzatori, UI di gioco,
-post-processing, audio, salvataggio, input di piazzamento, input del giocatore
-per l'espansione del terreno, fiumi, grotte, vegetazione, supporto mobile.
+Costruzione effettiva degli edifici e loro geometria voxel, strade, pathfinding,
+UI di gioco, input del giocatore, salvataggio su disco, audio, economia con
+prezzi o commercio, cittadini simulati individualmente, post-processing, fiumi,
+grotte, vegetazione, supporto mobile.

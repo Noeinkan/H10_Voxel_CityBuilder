@@ -3,7 +3,15 @@ import { ChunkRenderer } from './engine/ChunkRenderer';
 import { IsoCameraController } from './engine/IsoCameraController';
 import { onPaletteChanged, paletteHex } from './engine/palette';
 import { createVoxelMaterial } from './engine/VoxelMaterial';
+import { CLASS_COUNT, CLASS_NAMES, type BuildingClass } from './sim/classes';
+import { writeDesirabilityData } from './sim/debugData';
+import { nextBuildSites, type BuildSite } from './sim/nextBuildSites';
+import { isPolicyId, type PolicyId } from './sim/policies';
+import { createScenarioState } from './sim/scenario';
+import { setPolicyActive, setSelectedClass, type SimState } from './sim/SimState';
+import { tick } from './sim/tick';
 import { DebugOverlay, type OverlayFrame } from './ui/DebugOverlay';
+import { SimOverlay, type SimOverlayFrame } from './ui/SimOverlay';
 import { TerrainOverlay, type TerrainOverlayFrame } from './ui/TerrainOverlay';
 import { CHUNK } from './world/chunkCoords';
 import { createScene, type SceneGenerator, type SceneKind } from './world/scenes/cityScene';
@@ -42,6 +50,18 @@ const worldHeight = clampInt(params.get('height'), 64, 32, 256);
 const terrainParam = params.get('terrain');
 const terrainSeed = terrainParam === null ? seed : parseInt(terrainParam, 10) || seed;
 
+/**
+ * `?debug=1&sim=1` accende la scena di simulazione, che ha bisogno di un'isola:
+ * il terreno si attiva da solo anche senza `?terrain=`.
+ */
+const simEnabled = debugEnabled && params.get('sim') === '1';
+
+/** Tick al secondo del passo automatico della scena di simulazione. */
+const SIM_TICK_RATE = 10;
+
+/** Candidati mostrati dall'overlay. */
+const SIM_SITE_COUNT = 10;
+
 const container = document.getElementById('app');
 if (container === null) throw new Error('manca il contenitore #app');
 
@@ -66,15 +86,12 @@ camera.attach(renderer.domElement);
 
 // La scena di terreno arriva da un worker, quindi non e' pronta a costruttore:
 // il primo blocco entra al primo `step` che trova qualcosa in coda.
+const terrainRegion = { minX: 0, minY: 0, sizeX: TERRAIN_SIZE, sizeY: TERRAIN_SIZE };
+
 const terrain: TerrainStreamer | null =
-  terrainParam === null
+  terrainParam === null && !simEnabled
     ? null
-    : new TerrainStreamer(world, terrainSeed, {
-        minX: 0,
-        minY: 0,
-        sizeX: TERRAIN_SIZE,
-        sizeY: TERRAIN_SIZE,
-      });
+    : new TerrainStreamer(world, terrainSeed, terrainRegion);
 
 let generator: SceneGenerator =
   terrain ??
@@ -105,8 +122,37 @@ if (terrain === null) {
 
 const overlay = debugEnabled ? new DebugOverlay(container) : null;
 const terrainOverlay =
-  debugEnabled && terrain !== null ? new TerrainOverlay(container, toggleBiomeView) : null;
+  debugEnabled && terrain !== null && !simEnabled
+    ? new TerrainOverlay(container, toggleBiomeView)
+    : null;
 let terrainApplyMs = 0;
+
+/**
+ * Stato della scena di simulazione.
+ *
+ * Nasce null: i catalizzatori si piazzano su colonne edificabili, e l'isola
+ * arriva dal worker un blocco alla volta. La simulazione parte quando il terreno
+ * e' completo, non prima.
+ */
+let sim: SimState | null = null;
+
+/** Il passo automatico parte acceso: una scena ferma non mostra un bilancio. */
+let simAuto = true;
+let simTickMs = 0;
+let simTickAccumulator = 0;
+let simSites: readonly BuildSite[] = [];
+let simDataCells = 0;
+
+const simOverlay = simEnabled
+  ? new SimOverlay(container, {
+      onTick: () => stepSim(1),
+      onToggleAuto: () => {
+        simAuto = !simAuto;
+      },
+      onSelectClass: selectSimClass,
+      onTogglePolicy: toggleSimPolicy,
+    })
+  : null;
 
 if (debugEnabled) {
   window.addEventListener('keydown', onDebugKey);
@@ -160,6 +206,44 @@ if (debugEnabled) {
     });
     debugGlobals['__terrainBiomeView'] = (): void => toggleBiomeView();
 
+    if (simEnabled) {
+      // Stessa fonte dell'overlay, per misurare la simulazione da console o da
+      // uno strumento headless senza passare dai pulsanti.
+      debugGlobals['__simStats'] = (): Record<string, unknown> => {
+        if (sim === null) return { ready: false };
+        return {
+          ready: true,
+          tick: sim.tickCount,
+          auto: simAuto,
+          tickMs: simTickMs,
+          population: sim.population,
+          food: sim.food,
+          materials: sim.materials,
+          funds: sim.funds,
+          satisfaction: sim.satisfaction,
+          buildingCounts: sim.buildingCounts,
+          catalysts: sim.catalysts.length,
+          policies: sim.policies,
+          selectedClass: CLASS_NAMES[sim.selectedClass],
+          fieldChunks: sim.field.chunkCount,
+          recomputedCells: sim.field.totalRecomputedCells,
+          dataCells: simDataCells,
+        };
+      };
+      debugGlobals['__simTick'] = (count = 1): number => {
+        stepSim(Math.max(1, Math.floor(count)));
+        return sim?.tickCount ?? 0;
+      };
+      debugGlobals['__simSites'] = (count = SIM_SITE_COUNT): readonly BuildSite[] =>
+        sim === null || terrain === null ? [] : nextBuildSites(sim, terrain.map, count);
+      debugGlobals['__simClass'] = (cls: number): void => {
+        if (cls >= 0 && cls < CLASS_COUNT) selectSimClass(cls as BuildingClass);
+      };
+      debugGlobals['__simPolicy'] = (id: string): void => {
+        if (isPolicyId(id)) toggleSimPolicy(id);
+      };
+    }
+
     // L'espansione qui e' solo una funzione chiamabile: nessun input di gioco la
     // attiva. Aggiunge la striscia a nord riusando seed e maschera dell'isola,
     // quindi la costa continua invece di ricominciare.
@@ -211,6 +295,8 @@ function onFrame(time: number): void {
     biomeView.step(GENERATION_BUDGET_MS);
   }
 
+  updateSim(dt);
+
   const elapsed = performance.now() - workStart;
   chunkRenderer.update(camera.camera, Math.max(0.5, FRAME_BUDGET_MS - elapsed));
   chunkRenderer.cull(camera.camera);
@@ -233,6 +319,94 @@ function onFrame(time: number): void {
   if (terrainOverlay !== null && terrain !== null && terrainOverlay.needsPaint(time)) {
     terrainOverlay.update(buildTerrainFrame(terrain), time);
   }
+  if (simOverlay !== null && sim !== null && simOverlay.needsPaint(time)) {
+    simOverlay.update(buildSimFrame(sim), time);
+  }
+}
+
+// --- Scena di simulazione ---------------------------------------------------
+
+/**
+ * Fa avanzare la simulazione.
+ *
+ * Il passo automatico e' a cadenza fissa (`SIM_TICK_RATE` tick al secondo) e non
+ * legata al frame rate: la simulazione e' deterministica, e legarla al `dt`
+ * significherebbe farne dipendere l'esito dalla macchina che la guarda. Se il
+ * frame e' stato lungo si recuperano piu' tick, non un tick piu' grande.
+ */
+function updateSim(dt: number): void {
+  if (!simEnabled || terrain === null) return;
+
+  if (sim === null) {
+    // L'isola arriva a blocchi: i catalizzatori aspettano che sia completa.
+    if (!generator.done) return;
+    sim = createScenarioState(terrain.map, terrainRegion);
+    refreshSimDerived();
+    console.info(`[sim] ${sim.catalysts.length} catalizzatori piazzati da script`);
+    return;
+  }
+
+  if (!simAuto) return;
+
+  simTickAccumulator += dt;
+  const step = 1 / SIM_TICK_RATE;
+  // Tetto ai recuperi: tornando da una scheda in background non si devono
+  // ingoiare mille tick in un frame solo.
+  let budget = SIM_TICK_RATE;
+  while (simTickAccumulator >= step && budget > 0) {
+    simTickAccumulator -= step;
+    budget--;
+    stepSim(1);
+  }
+}
+
+function stepSim(count: number): void {
+  if (sim === null || terrain === null) return;
+
+  const start = performance.now();
+  let next = sim;
+  for (let i = 0; i < count; i++) next = tick(next, terrain.map);
+  simTickMs = (performance.now() - start) / count;
+  sim = next;
+}
+
+function selectSimClass(cls: BuildingClass): void {
+  if (sim === null) return;
+  sim = setSelectedClass(sim, cls);
+  refreshSimDerived();
+}
+
+function toggleSimPolicy(id: PolicyId): void {
+  if (sim === null) return;
+  sim = setPolicyActive(sim, id, !sim.policies.includes(id));
+  refreshSimDerived();
+}
+
+/**
+ * Ricalcola cio' che dipende dal campo: la lista dei candidati e la copia in
+ * `VoxelWorld.data`.
+ *
+ * Non sta nel ciclo di frame perche' non ha motivo di starci. Il campo cambia
+ * solo per un'azione del giocatore — una policy, un catalizzatore, un edificio —
+ * mai per un tick, quindi rifare questi due passi a ogni frame sarebbe lavoro
+ * garantito inutile.
+ */
+function refreshSimDerived(): void {
+  if (sim === null || terrain === null) return;
+  simSites = nextBuildSites(sim, terrain.map, SIM_SITE_COUNT);
+  simDataCells = writeDesirabilityData(world, sim, terrain.map);
+}
+
+function buildSimFrame(state: SimState): SimOverlayFrame {
+  return {
+    state,
+    sites: simSites,
+    region: terrainRegion,
+    auto: simAuto,
+    tickRate: SIM_TICK_RATE,
+    tickMs: simTickMs,
+    dataCells: simDataCells,
+  };
 }
 
 function buildTerrainFrame(streamer: TerrainStreamer): TerrainOverlayFrame {
@@ -308,6 +482,20 @@ function frameTiming(): { fps: number; fpsLow: number } {
 }
 
 function onDebugKey(event: KeyboardEvent): void {
+  if (simEnabled) {
+    if (event.code === 'KeyT') {
+      stepSim(1);
+      return;
+    }
+    if (event.code === 'KeyP') {
+      simAuto = !simAuto;
+      return;
+    }
+    if (event.code === 'KeyM' && sim !== null) {
+      selectSimClass(((sim.selectedClass + 1) % CLASS_COUNT) as BuildingClass);
+      return;
+    }
+  }
   if (event.code === 'KeyB') {
     toggleBiomeView();
     return;
