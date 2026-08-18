@@ -25,7 +25,17 @@ function blockOf(ccx: number, ccy: number, fill: (i: number) => [number, number,
     if (height > maxHeight) maxHeight = height;
   }
 
-  return { ccx, ccy, heights, biomes, slopes, buildable, maxHeight, buildableCount };
+  return {
+    ccx,
+    ccy,
+    heights,
+    biomes,
+    slopes,
+    buildable,
+    decor: new Int16Array(0),
+    maxHeight,
+    buildableCount,
+  };
 }
 
 describe('TerrainMap — struttura sparsa', () => {

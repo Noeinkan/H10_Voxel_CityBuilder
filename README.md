@@ -1,13 +1,13 @@
 # H10 Voxel City Builder — motore
 
-Motore di rendering voxel a chunk per una città isometrica. Nessuna logica di
-gioco: storage sparso, greedy meshing in worker, un solo materiale a palette,
-camera ortografica isometrica e harness di misura.
+Motore di rendering voxel a chunk per una città isometrica: storage sparso,
+greedy meshing in worker, un solo materiale a palette, camera ortografica
+isometrica, simulazione e crescita automatica degli edifici.
 
 ```bash
 npm install
-npm run dev          # poi apri http://localhost:5173/?debug=1
-npm test             # 146 test unitari e di integrazione
+npm run dev          # poi apri http://localhost:8010/?debug=1
+npm test             # 181 test unitari e di integrazione
 npm run bench        # costo del mesher per chunk
 npm run typecheck
 npm run build
@@ -30,11 +30,13 @@ aggiungendo chunk alla mappa sparsa.
 | [src/world/Chunk.ts](src/world/Chunk.ts) | `blocks` e `data`, due `Uint8Array(32768)` allocati una volta sola |
 | [src/world/scenes/cityScene.ts](src/world/scenes/cityScene.ts) | Scene deterministiche a passi con budget |
 | [src/engine/mesher/greedyMesher.ts](src/engine/mesher/greedyMesher.ts) | Greedy meshing puro, zero import da Three |
-| [src/engine/mesher/buildPaddedVolume.ts](src/engine/mesher/buildPaddedVolume.ts) | Chunk + sei piani di bordo → volume 34³ |
+| [src/engine/mesher/buildPaddedVolume.ts](src/engine/mesher/buildPaddedVolume.ts) | Chunk + tutti i 26 vicini immediati → volume 34³ |
 | [src/engine/ChunkRenderer.ts](src/engine/ChunkRenderer.ts) | Una geometria per chunk, coda a priorità, culling, upload a budget |
-| [src/engine/VoxelMaterial.ts](src/engine/VoxelMaterial.ts) | Unico `ShaderMaterial`, palette come `uniform vec3[32]` |
+| [src/engine/VoxelMaterial.ts](src/engine/VoxelMaterial.ts) | Unico `ShaderMaterial`, palette, luce per faccia, AO per vertice e nebbia |
+| [src/engine/themes/](src/engine/themes/) | I temi grafici: 32 colori più l'atmosfera, applicati senza rimeshare |
 | [src/engine/IsoCameraController.ts](src/engine/IsoCameraController.ts) | Ortografica isometrica: scatti di 90°, zoom, pan vincolato |
 | [src/ui/DebugOverlay.ts](src/ui/DebugOverlay.ts) | Overlay delle misure, attivo con `?debug=1` |
+| [src/ui/GrowthOverlay.ts](src/ui/GrowthOverlay.ts) | Overlay dedicato a `?debug=1&grow=1` |
 | [src/world/terrain/](src/world/terrain/) | Generatore di isole procedurali (vedi sotto) |
 | [src/sim/](src/sim/) | Simulazione a tick: risorse, campo di desiderabilità, decisioni (vedi sotto) |
 
@@ -46,9 +48,11 @@ aggiungendo chunk alla mappa sparsa.
 - **Aggiungere chunk non rialloca quelli esistenti**: gli `Uint8Array` nascono
   nel costruttore di `Chunk` e non vengono mai sostituiti.
 - **Il colore vive solo nell'uniform.** I vertici portano l'indice di palette
-  (`aPalette`) e la direzione della faccia (`aFace`), mai un RGB.
+  (`aPalette`) e la direzione della faccia (`aFace`), mai un RGB. `aAO` e'
+  geometria (0..3), non un colore: cambia la luce degli angoli senza invalidare
+  i temi.
 - **Il mesher non conosce Three.js.** Nel bundle di produzione il worker pesa
-  2,7 kB proprio perché non se lo trascina dietro.
+  3,49 kB proprio perché non se lo trascina dietro.
 
 ## Parametri URL
 
@@ -61,6 +65,8 @@ aggiungendo chunk alla mappa sparsa.
 | `height` | `64` | Altezza del mondo in voxel |
 | `terrain` | — | `<seed>` sostituisce la scena urbana con un'isola 256×256 |
 | `sim` | — | `1` accende la scena di simulazione (implica l'isola) |
+| `theme` | `natural` | `natural`, `pastel`, `neon`, `industrial`, `scifi`, `enchanted` |
+| `grow` | — | `1` abilita la crescita automatica; `debug=1` aggiunge l'overlay |
 
 Tasti: `Q`/`E` ruota di 90°, rotella zoom, drag destro o `WASD` pan, `F` inquadra
 tutto, `G` aggiunge 64 chunk a runtime, `R` rebuild totale, `C` azzera i picchi,
@@ -101,20 +107,33 @@ una GPU vera darà numeri migliori, non peggiori), scena `city` a 1600×900.
 | main thread, picco | 4,0 ms | al limite |
 | totale | 2,1 s per 512 chunk | — |
 
-**Bench del mesher** (`npm run bench`, media per chunk):
+**Bench del mesher dopo AO** (`npm run bench`, media per chunk):
 
 | Caso | Media |
 | --- | --- |
-| vuoto | 2,04 ms |
-| edifici (scena di accettazione) | **2,19 ms** |
-| chunk pieno | 2,32 ms |
-| rumore al 20 percento | 9,58 ms |
-| scacchiera (caso peggiore assoluto) | 15,58 ms |
+| vuoto | 1,75 ms |
+| edifici (scena di accettazione) | **1,76 ms** |
+| chunk pieno | 1,68 ms |
+| rumore al 20 percento | 5,64 ms |
+| scacchiera (caso peggiore assoluto) | 18,06 ms |
+
+Questi valori sono una misura reale della macchina corrente, non una stima. Il
+costo dell'AO dipende dalla forma: aggiunge campioni alle facce emesse e spezza
+il merge dove gli angoli differiscono; confronti fra run diverse restano
+indicativi per la variabilita' del runner e del benchmark.
 
 **Palette a caldo**: cambiando un colore in
 [src/engine/palette.json](src/engine/palette.json) l'HMR riscrive l'uniform e la
 scena cambia colore con **zero job di meshing** e le stesse 504 geometrie. Anche
 un reload completo funziona, perché i colori non sono mai dentro le mesh.
+
+**Temi**: la stessa proprietà regge un intero cambio di look. Un tema in
+[src/engine/themes/](src/engine/themes/) è 32 colori più l'atmosfera — fondo,
+nebbia, luce per orientamento di faccia, tone mapping — e applicarlo riscrive
+solo uniform e stato del renderer. Con `?debug=1` i tasti `1`..`9` lo cambiano a
+caldo: quad e byte di geometria nell'overlay non si muovono di un'unità.
+`?theme=<id>` vale anche senza `debug`. Disponibili: `natural`, `pastel`,
+`neon`, `industrial`, `scifi`, `enchanted`.
 
 ### Due cose da sapere sui numeri
 
@@ -136,17 +155,18 @@ una draw call per chunk.
 
 ```bash
 npm run dev
-# apri http://localhost:5173/?debug=1 e leggi l'overlay:
+# apri http://localhost:8010/?debug=1 e leggi l'overlay:
 #  - attendi che "coda" arrivi a 0 + 0, poi premi C per azzerare i picchi
 #  - "draw call" e "main ... max" sono i due numeri dei criteri
 #  - premi G e guarda fps e main durante l'aggiunta dei 64 chunk
 #  - premi R per il rebuild totale e leggi "mesher max"
 #  - cambia un colore in src/engine/palette.json e salva
+#  - premi 1..9 per cambiare tema: "quad" e "geometrie" non devono muoversi
 ```
 
 Con `?debug=1` sono esposti anche `__voxelStats()`, `__voxelReset()`,
-`__voxelExpand()` e `__voxelRebuildAll()` sull'oggetto globale, per misurare
-dalla console o da uno strumento headless.
+`__voxelExpand()`, `__voxelRebuildAll()` e `__voxelTheme(id?)` sull'oggetto
+globale, per misurare dalla console o da uno strumento headless.
 
 ## Terreno procedurale
 
@@ -170,6 +190,13 @@ map.columnAt(120, 96); // { height, biome, slope, buildable }
 | [TerrainMap.ts](src/world/terrain/TerrainMap.ts) | Mappa sparsa per colonna, chunkata 32×32 come il mondo |
 | [terrain.worker.ts](src/world/terrain/terrain.worker.ts) | Generazione fuori dal main thread, un blocco per volta |
 | [TerrainStreamer.ts](src/world/terrain/TerrainStreamer.ts) | Riceve i blocchi e li applica a budget di frame |
+| [decor.ts](src/world/terrain/decor.ts) | Alberi voxel deterministici, candidati per cella e scrittura ritagliata al blocco |
+
+Gli alberi usano una griglia di celle 6×6 con un jitter interno 2×2. Ogni blocco
+valuta anche l'anello di due colonne attorno al proprio rettangolo e scrive solo
+i voxel che gli appartengono: una chioma che attraversa un confine non dipende
+mai dall'ordine con cui arrivano i blocchi. Non crescono su oceano, spiaggia o
+roccia; `plain`, `forest` e `hill` hanno densità diverse in `config.ts`.
 
 ### Contratti
 
@@ -225,8 +252,9 @@ Con `?debug=1&terrain=<seed>` sono esposti anche `__terrainStats()`,
 
 `src/sim/` tiene risorse e popolazione, calcola un campo di desiderabilità per
 cella e per classe di edificio, e dice dove crescerebbe il prossimo edificio.
-**Non costruisce niente**: espone lo stato e le decisioni. Dettagli, contratti e
-misure in [src/sim/README.md](src/sim/README.md).
+Il `Builder`, esterno alla simulazione, trasforma quelle decisioni in edifici
+voxel a fasce e registra il risultato nello stato. Dettagli, contratti e misure
+in [src/sim/README.md](src/sim/README.md).
 
 ```ts
 let state = createSimState();
@@ -262,12 +290,12 @@ nextBuildSites(state, terrainMap, 10);  // [{ x, y, class, score }, …]
 | `nextBuildSites`, primi 10 su tutto il campo | 2,5 ms | azione del giocatore |
 
 Con `?debug=1&sim=1` la scena genera l'isola, piazza i catalizzatori da script e
-consegna alla simulazione un nucleo di 24 edifici; l'overlay mostra stock e delta
-per tick, la heatmap del campo per classe e i prossimi dieci candidati.
+materializza un nucleo di 24 edifici voxel; l'overlay mostra stock e delta per
+tick, stato del builder, heatmap del campo per classe e i prossimi dieci candidati.
 
 ## Fuori scope in questo prompt
 
-Costruzione effettiva degli edifici e loro geometria voxel, strade, pathfinding,
-UI di gioco, input del giocatore, salvataggio su disco, audio, economia con
+Strade, pathfinding, UI di gioco, input del giocatore, salvataggio su disco,
+audio, economia con
 prezzi o commercio, cittadini simulati individualmente, post-processing, fiumi,
 grotte, vegetazione, supporto mobile.

@@ -1,7 +1,7 @@
 import type { SceneGenerator } from '../scenes/cityScene';
 import type { VoxelWorld } from '../VoxelWorld';
-import { COLUMNS_PER_CHUNK, type ColumnBlock } from './columnBlock';
-import { ensureBlockChunks, writeBlockColumns } from './IslandGenerator';
+import { COLUMNS_PER_CHUNK, DECOR_RECORD_SIZE, type ColumnBlock } from './columnBlock';
+import { ensureBlockChunks, writeBlockColumns, writeBlockDecor } from './IslandGenerator';
 import { chunkSpanOf, shapeFromRegion, type IslandShape, type Region } from './region';
 import type { BlockRequest, TerrainJob, TerrainMessage } from './terrainMessages';
 import { TerrainMap } from './TerrainMap';
@@ -21,6 +21,8 @@ import { TerrainMap } from './TerrainMap';
 
 /** Colonne scritte fra due controlli del budget. Una colonna e' al piu' 40 voxel. */
 const COLUMN_BATCH = 64;
+/** Alberi scritti fra due controlli del budget del frame. */
+const DECOR_BATCH = 24;
 
 export class TerrainStreamer implements SceneGenerator {
   readonly map: TerrainMap;
@@ -34,6 +36,8 @@ export class TerrainStreamer implements SceneGenerator {
 
   /** Colonna corrente dentro il blocco in testa alla coda. */
   private cursor = 0;
+  /** Record decorativo corrente, dopo che tutte le colonne sono state scritte. */
+  private decorCursor = 0;
   private ensured = false;
 
   private receivedBlocks = 0;
@@ -128,8 +132,20 @@ export class TerrainStreamer implements SceneGenerator {
       // Blocco a meta': si riprende dallo stesso cursore al frame dopo.
       if (this.cursor < COLUMNS_PER_CHUNK) return false;
 
+      const decorCount = block.decor.length / DECOR_RECORD_SIZE;
+      while (this.decorCursor < decorCount) {
+        this.written += writeBlockDecor(this.world, block, this.decorCursor, DECOR_BATCH);
+        this.decorCursor += DECOR_BATCH;
+        if (performance.now() - start >= budgetMs) break;
+      }
+
+      // Le decorazioni sono una fase separata: gli alberi arrivano sempre dopo
+      // il terreno e possono fermarsi qui senza dipendere dall'ordine dei blocchi.
+      if (this.decorCursor < decorCount) return false;
+
       this.pending.shift();
       this.cursor = 0;
+      this.decorCursor = 0;
       this.ensured = false;
       this.appliedBlocks++;
 

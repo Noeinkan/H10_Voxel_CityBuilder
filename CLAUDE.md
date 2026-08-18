@@ -14,14 +14,15 @@ Three.js + Vite. Tre strati indipendenti che non si conoscono fra loro:
 - `src/sim/` — simulazione a tick (risorse, desiderabilità, decisioni)
 
 `src/main.ts` è l'unico punto che li mette insieme, e serve da harness di misura.
-Non c'è ancora un gioco: niente costruzione effettiva di edifici, strade,
-pathfinding, UI di gioco, salvataggio, audio (vedi "Fuori scope" nel README).
+Non c'è ancora un gioco: il builder piazza edifici automatici dalle decisioni
+della simulazione, ma non esistono strade, pathfinding, UI di gioco, salvataggio
+o audio (vedi "Fuori scope" nel README).
 
 ## Comandi
 
 ```bash
-npm run dev          # http://localhost:5173/?debug=1
-npm test             # vitest run — 146 test, ambiente node, nessun DOM
+npm run dev          # http://localhost:8010/?debug=1
+npm test             # vitest run — 181 test, ambiente node, nessun DOM
 npm run test:watch
 npm run bench        # vitest bench --run, *.bench.ts
 npm run typecheck    # tsc --noEmit
@@ -59,12 +60,15 @@ Sono contratti su cui il resto del progetto è costruito, e i test li verificano
 3. **Aggiungere chunk non rialloca quelli esistenti.** Gli `Uint8Array` nascono
    nel costruttore di `Chunk` e non vengono mai sostituiti.
 4. **Il colore vive solo nell'uniform.** I vertici portano indice di palette
-   (`aPalette`) e direzione di faccia (`aFace`), mai un RGB. Cambiare
-   `palette.json` non deve mai provocare un rebuild di mesh.
+   (`aPalette`) e direzione di faccia (`aFace`), mai un RGB. `aAO` e' un
+   attributo geometrico scalare (0..3), non un colore. Cambiare
+   `palette.json` — o cambiare tema — non deve mai provocare un rebuild di mesh.
+   È quello che rende i temi in [src/engine/themes/](src/engine/themes/)
+   gratuiti: un tema è solo un insieme di uniform.
 5. **32 slot di palette esatti**, fissati dall'uniform `vec3[32]`. Chi aggiunge
    materiali riusa gli indici in [paletteSlots.ts](src/engine/paletteSlots.ts).
 6. **Il mesher non conosce Three.js** e nemmeno il generatore di terreno: i
-   worker in bundle pesano 2,7 kB e 4,1 kB proprio per questo.
+   worker in bundle pesano 3,49 kB e 5,41 kB proprio per questo.
 7. **`src/sim/` non importa Three.js e non importa da `src/engine/`.**
 8. **`tick` è puro**: nessuna mutazione dell'input, nessun `Date.now()`, nessun
    `Math.random()`, e non tocca il campo di desiderabilità.
@@ -72,7 +76,8 @@ Sono contratti su cui il resto del progetto è costruito, e i test li verificano
    di Chebyshev toccato. Mai una passata sull'intera mappa.
 10. **Il contenuto di un blocco di terreno è funzione di `(seed, shape, ccx, ccy)`**
     e di nient'altro: da qui determinismo, indipendenza dall'ordine e continuità
-    al confine.
+    al confine. Le decorazioni valutano un anello di due colonne e scrivono solo
+    la porzione interna: una chioma oltre confine non crea dipendenze d'ordine.
 
 ## Dove stanno i numeri
 
@@ -85,6 +90,7 @@ posto sbagliato.
 | Terreno | [src/world/terrain/config.ts](src/world/terrain/config.ts) |
 | Simulazione | [src/sim/balance.ts](src/sim/balance.ts) |
 | Palette | [src/engine/palette.json](src/engine/palette.json) + [paletteSlots.ts](src/engine/paletteSlots.ts) |
+| Temi | [src/engine/themes/](src/engine/themes/) — un file per tema, colori piu' atmosfera |
 
 Due tetti duri in `config.ts`: `warpAmount` sopra ~0,26 attacca terra al bordo
 della region; alzare `baseFrequency` o `maxHeight` consuma il margine di
@@ -122,14 +128,15 @@ grande, con un tetto per il rientro da una scheda in background.
 ## Harness di debug
 
 `?debug=1` accende overlay e hotkey. Parametri: `scene` (`city`|`noise`|`slab`),
-`seed`, `size`, `height`, `terrain=<seed>`, `sim=1`.
+`seed`, `size`, `height`, `terrain=<seed>`, `sim=1`. `theme=<id>` vale anche
+senza `debug`: è un look, non una misura.
 
 Tasti: `Q`/`E` ruota, rotella zoom, drag destro o `WASD` pan, `F` inquadra tutto,
 `G` +64 chunk, `R` rebuild totale, `C` azzera i picchi, `B` colore per bioma,
-`T`/`P`/`M` in scena simulazione.
+`1`..`9` sceglie il tema, `T`/`P`/`M` in scena simulazione.
 
 Sul globale (solo con `?debug=1`): `__voxelStats()`, `__voxelReset()`,
-`__voxelExpand()`, `__voxelRebuildAll()`; con terreno `__terrainStats()`,
+`__voxelExpand()`, `__voxelRebuildAll()`, `__voxelTheme(id?)`; con terreno `__terrainStats()`,
 `__terrainBiomeView()`, `__terrainExpand()`; con `sim=1` `__simStats()`,
 `__simTick(n)`, `__simSites(n)`, `__simClass(i)`, `__simPolicy(id)`.
 

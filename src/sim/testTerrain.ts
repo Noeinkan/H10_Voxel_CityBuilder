@@ -67,5 +67,15 @@ function blockOf(
     }
   }
 
-  return { ccx, ccy, heights, biomes, slopes, buildable, maxHeight: height, buildableCount };
+  return {
+    ccx,
+    ccy,
+    heights,
+    biomes,
+    slopes,
+    buildable,
+    decor: new Int16Array(0),
+    maxHeight: height,
+    buildableCount,
+  };
 }

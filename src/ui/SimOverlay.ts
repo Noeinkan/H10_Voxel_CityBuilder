@@ -2,6 +2,7 @@ import { CLASS_NAMES, type BuildingClass } from '../sim/classes';
 import type { BuildSite } from '../sim/nextBuildSites';
 import { POLICIES, type PolicyId } from '../sim/policies';
 import type { SimState } from '../sim/SimState';
+import { REJECT_REASONS, type BuilderStats } from '../world/buildings/Builder';
 
 /**
  * Pannello della scena di simulazione, attivo con `?debug=1&sim=1`.
@@ -41,6 +42,8 @@ export interface SimOverlayFrame {
   readonly tickMs: number;
   /** Celle scritte dall'ultima passata su `VoxelWorld.data`. */
   readonly dataCells: number;
+  /** Stato della costruzione voxel, nullo mentre lo scenario si sta preparando. */
+  readonly builder: BuilderStats | null;
 }
 
 export interface SimOverlayHandlers {
@@ -160,6 +163,7 @@ export class SimOverlay {
       `  soddisfazione ${(state.satisfaction * 100).toFixed(1).padStart(10)} %`,
       '',
       `edifici      ${state.buildingCounts.map((count, i) => `${CLASS_NAMES[i].slice(0, 4)} ${count}`).join('  ')}`,
+      ...builderLines(frame.builder),
       `catalizzatori${state.catalysts.length.toString().padStart(6)}`,
       `campo        ${state.field.chunkCount.toString().padStart(6)} chunk  ${format(state.field.totalRecomputedCells)} celle ricalcolate`,
       `data         ${format(frame.dataCells).padStart(6)} celle scritte  (classe ${CLASS_NAMES[state.selectedClass]})`,
@@ -273,6 +277,17 @@ function heat(value: number): [number, number, number] {
 function stockLine(label: string, stock: number, delta: number): string {
   const sign = delta > 0 ? '+' : '';
   return `  ${label.padEnd(13)}${format(stock).padStart(9)}  ${(sign + delta.toFixed(2)).padStart(9)}`;
+}
+
+function builderLines(stats: BuilderStats | null): readonly string[] {
+  if (stats === null) return [];
+  const rejected = stats.rejected
+    .map((count, index) => (count === 0 ? '' : `${REJECT_REASONS[index]} ${count}`))
+    .filter((line) => line !== '');
+  return [
+    `builder      ${stats.placed.toString().padStart(6)} piazzati  ${stats.growing.toString().padStart(3)} in crescita  ${stats.upgraded.toString().padStart(3)} upgrade`,
+    `scarti       ${stats.blacklisted.toString().padStart(6)} bloccati${rejected.length === 0 ? '' : `  ${rejected.join('  ')}`}`,
+  ];
 }
 
 function row(children: readonly HTMLElement[]): HTMLDivElement {

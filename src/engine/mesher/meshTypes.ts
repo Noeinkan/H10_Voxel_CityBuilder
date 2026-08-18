@@ -9,7 +9,7 @@
 export interface MeshJob {
   readonly jobId: number;
   readonly key: string;
-  /** Volume paddato 34^3: chunk piu' i sei piani di bordo dei vicini. Trasferito. */
+  /** Volume paddato 34^3: chunk piu' tutti i 26 vicini immediati. Trasferito. */
   readonly padded: Uint8Array;
 }
 
@@ -21,6 +21,8 @@ export interface MeshArrays {
   readonly faces: Uint8Array;
   /** 1 componente per vertice: indice di palette 1..31. */
   readonly palettes: Uint8Array;
+  /** 1 componente per vertice: occlusione ambientale 0..3 (3 = libero). */
+  readonly ao: Uint8Array;
   /** 6 indici per quad. */
   readonly indices: Uint32Array;
   readonly quadCount: number;

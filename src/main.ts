@@ -1,8 +1,18 @@
-import { Scene, SRGBColorSpace, WebGLRenderer } from 'three';
+import {
+  ACESFilmicToneMapping,
+  Color,
+  NoToneMapping,
+  Scene,
+  SRGBColorSpace,
+  WebGLRenderer,
+} from 'three';
 import { ChunkRenderer } from './engine/ChunkRenderer';
 import { IsoCameraController } from './engine/IsoCameraController';
-import { onPaletteChanged, paletteHex } from './engine/palette';
+import { onPaletteChanged } from './engine/palette';
+import { DEFAULT_THEME_ID, resolveTheme, THEMES, type Theme } from './engine/themes';
 import { createVoxelMaterial } from './engine/VoxelMaterial';
+import { GrowthScene } from './game/growthScene';
+import { FixedStepLoop } from './game/loop';
 import { CLASS_COUNT, CLASS_NAMES, type BuildingClass } from './sim/classes';
 import { writeDesirabilityData } from './sim/debugData';
 import { nextBuildSites, type BuildSite } from './sim/nextBuildSites';
@@ -11,6 +21,7 @@ import { createScenarioState } from './sim/scenario';
 import { setPolicyActive, setSelectedClass, type SimState } from './sim/SimState';
 import { tick } from './sim/tick';
 import { DebugOverlay, type OverlayFrame } from './ui/DebugOverlay';
+import { GrowthOverlay } from './ui/GrowthOverlay';
 import { SimOverlay, type SimOverlayFrame } from './ui/SimOverlay';
 import { TerrainOverlay, type TerrainOverlayFrame } from './ui/TerrainOverlay';
 import { CHUNK } from './world/chunkCoords';
@@ -55,6 +66,8 @@ const terrainSeed = terrainParam === null ? seed : parseInt(terrainParam, 10) ||
  * il terreno si attiva da solo anche senza `?terrain=`.
  */
 const simEnabled = debugEnabled && params.get('sim') === '1';
+/** Crescita automatica separata dalla scena di sola simulazione. */
+const growEnabled = params.get('grow') === '1';
 
 /** Tick al secondo del passo automatico della scena di simulazione. */
 const SIM_TICK_RATE = 10;
@@ -69,14 +82,19 @@ const renderer = new WebGLRenderer({ antialias: true, powerPreference: 'high-per
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.outputColorSpace = SRGBColorSpace;
-renderer.setClearColor(0x0d1014, 1);
 container.appendChild(renderer.domElement);
 
 const scene = new Scene();
 const world = new VoxelWorld();
-const paletteHandle = createVoxelMaterial(paletteHex, VOXEL_SIZE);
+
+/** `?theme=<id>` sceglie il look; la crescita usa il look urbano del riferimento. */
+let theme: Theme = resolveTheme(params.get('theme') ?? (growEnabled ? 'pastel' : null));
+
+const paletteHandle = createVoxelMaterial(theme.colors, VOXEL_SIZE);
 const chunkRenderer = new ChunkRenderer(world, paletteHandle.material, VOXEL_SIZE);
 scene.add(chunkRenderer.group);
+
+applyTheme(theme);
 
 const camera = new IsoCameraController(world, window.innerWidth, window.innerHeight, {
   voxelSize: VOXEL_SIZE,
@@ -89,7 +107,7 @@ camera.attach(renderer.domElement);
 const terrainRegion = { minX: 0, minY: 0, sizeX: TERRAIN_SIZE, sizeY: TERRAIN_SIZE };
 
 const terrain: TerrainStreamer | null =
-  terrainParam === null && !simEnabled
+  terrainParam === null && !simEnabled && !growEnabled
     ? null
     : new TerrainStreamer(world, terrainSeed, terrainRegion);
 
@@ -115,6 +133,10 @@ generator.step(8);
 // tutta la citta' metterebbe nel frustum tutti i suoi chunk.
 if (terrain === null) {
   camera.frameRegion(worldSize / 2, worldSize / 2, worldSize / 2, worldSize / 2, worldHeight);
+} else if (growEnabled) {
+  // La crescita deve leggersi come skyline, non come texture sull'intera isola:
+  // si inquadra il nucleo centrale lasciando alle torri spazio verticale.
+  camera.frameRegion(TERRAIN_SIZE / 2, TERRAIN_SIZE / 2, 112, 112, 96);
 } else {
   // L'isola invece si guarda intera: 256 di lato stanno in poche centinaia di chunk.
   camera.frameRegion(TERRAIN_SIZE / 2, TERRAIN_SIZE / 2, TERRAIN_SIZE, TERRAIN_SIZE, 48);
@@ -122,7 +144,7 @@ if (terrain === null) {
 
 const overlay = debugEnabled ? new DebugOverlay(container) : null;
 const terrainOverlay =
-  debugEnabled && terrain !== null && !simEnabled
+  debugEnabled && terrain !== null && !simEnabled && !growEnabled
     ? new TerrainOverlay(container, toggleBiomeView)
     : null;
 let terrainApplyMs = 0;
@@ -139,9 +161,12 @@ let sim: SimState | null = null;
 /** Il passo automatico parte acceso: una scena ferma non mostra un bilancio. */
 let simAuto = true;
 let simTickMs = 0;
-let simTickAccumulator = 0;
 let simSites: readonly BuildSite[] = [];
 let simDataCells = 0;
+let growthScene: GrowthScene | null = null;
+
+/** Il loop possiede il debito di tick: non esiste un secondo accumulatore nel bootstrap. */
+const simLoop = new FixedStepLoop(SIM_TICK_RATE, SIM_TICK_RATE);
 
 const simOverlay = simEnabled
   ? new SimOverlay(container, {
@@ -153,6 +178,7 @@ const simOverlay = simEnabled
       onTogglePolicy: toggleSimPolicy,
     })
   : null;
+const growthOverlay = debugEnabled && growEnabled ? new GrowthOverlay(container) : null;
 
 if (debugEnabled) {
   window.addEventListener('keydown', onDebugKey);
@@ -179,6 +205,7 @@ if (debugEnabled) {
       mesherAvgMs: mesher.avgMs,
       mesherMaxMs: mesher.maxMs,
       generationDone: generator.done,
+      theme: theme.id,
     };
   };
   debugGlobals['__voxelReset'] = (): void => {
@@ -189,6 +216,14 @@ if (debugEnabled) {
   };
   debugGlobals['__voxelExpand'] = (): void => expandWorld();
   debugGlobals['__voxelRebuildAll'] = (): void => world.markAllDirty();
+  debugGlobals['__voxelTheme'] = (id?: string): Record<string, unknown> => {
+    if (id !== undefined) {
+      const found = THEMES.findIndex((candidate) => candidate.id === id);
+      if (found < 0) console.warn(`[tema] id sconosciuto: ${id}`);
+      else cycleTheme(found);
+    }
+    return { id: theme.id, name: theme.name, available: THEMES.map((t) => t.id) };
+  };
 
   if (terrain !== null) {
     debugGlobals['__terrainStats'] = (): Record<string, unknown> => ({
@@ -244,6 +279,11 @@ if (debugEnabled) {
       };
     }
 
+    if (growEnabled) {
+      debugGlobals['__growStats'] = (): Record<string, unknown> =>
+        growthScene === null ? { ready: false } : { ...growthScene.stats };
+    }
+
     // L'espansione qui e' solo una funzione chiamabile: nessun input di gioco la
     // attiva. Aggiunge la striscia a nord riusando seed e maschera dell'isola,
     // quindi la costa continua invece di ricominciare.
@@ -273,9 +313,52 @@ window.addEventListener('resize', () => {
 });
 
 onPaletteChanged((hexColors) => {
+  // `palette.json` e' la tinta del solo tema di default: se ne e' attivo un
+  // altro, l'hot reload non deve scavalcarlo.
+  if (theme.id !== DEFAULT_THEME_ID) return;
   paletteHandle.setPalette(hexColors);
   console.info('[palette] colori aggiornati a caldo, nessun rebuild di mesh');
 });
+
+/**
+ * Applica un tema: colori, atmosfera, fondo e tone mapping.
+ *
+ * Non tocca una sola geometria — i vertici portano l'indice di palette, non il
+ * colore. Il conteggio di quad e i byte di geometria nell'overlay devono
+ * restare fermi mentre si cambia tema: e' la verifica che l'invariante regge.
+ */
+function applyTheme(next: Theme): void {
+  theme = next;
+
+  paletteHandle.setPalette(next.colors);
+  paletteHandle.setAtmosphere(next.atmosphere);
+
+  const background = new Color().setStyle(next.atmosphere.background, SRGBColorSpace);
+  renderer.setClearColor(background, 1);
+  scene.background = background;
+
+  const toneMapping =
+    next.atmosphere.toneMapping === 'aces' ? ACESFilmicToneMapping : NoToneMapping;
+  if (renderer.toneMapping !== toneMapping) {
+    renderer.toneMapping = toneMapping;
+    // Il tone mapping e' un define, non un uniform: cambiarlo ricompila il
+    // programma. E' l'unica cosa che un cambio di tema ricostruisce, e non
+    // tocca comunque una sola geometria.
+    paletteHandle.material.needsUpdate = true;
+  }
+  renderer.toneMappingExposure = next.atmosphere.exposure;
+
+  // Il fondo della pagina era duplicato a mano nel CSS: qui c'e' una sola fonte,
+  // cosi' il primo frame non lampeggia con il colore di un altro tema.
+  document.body.style.background = next.atmosphere.background;
+}
+
+function cycleTheme(index: number): void {
+  const next = THEMES[index];
+  if (next === undefined || next.id === theme.id) return;
+  applyTheme(next);
+  console.info(`[tema] ${next.name} (${next.id}), nessun rebuild di mesh`);
+}
 
 function onFrame(time: number): void {
   const dt = Math.min(0.1, (time - previousTime) / 1000);
@@ -296,6 +379,7 @@ function onFrame(time: number): void {
   }
 
   updateSim(dt);
+  updateGrowth(dt);
 
   const elapsed = performance.now() - workStart;
   chunkRenderer.update(camera.camera, Math.max(0.5, FRAME_BUDGET_MS - elapsed));
@@ -321,6 +405,9 @@ function onFrame(time: number): void {
   }
   if (simOverlay !== null && sim !== null && simOverlay.needsPaint(time)) {
     simOverlay.update(buildSimFrame(sim), time);
+  }
+  if (growthOverlay !== null && growthOverlay.needsPaint(time)) {
+    growthOverlay.update(growthScene?.stats ?? null, time);
   }
 }
 
@@ -348,16 +435,7 @@ function updateSim(dt: number): void {
 
   if (!simAuto) return;
 
-  simTickAccumulator += dt;
-  const step = 1 / SIM_TICK_RATE;
-  // Tetto ai recuperi: tornando da una scheda in background non si devono
-  // ingoiare mille tick in un frame solo.
-  let budget = SIM_TICK_RATE;
-  while (simTickAccumulator >= step && budget > 0) {
-    simTickAccumulator -= step;
-    budget--;
-    stepSim(1);
-  }
+  simLoop.advance(dt, () => stepSim(1));
 }
 
 function stepSim(count: number): void {
@@ -365,7 +443,9 @@ function stepSim(count: number): void {
 
   const start = performance.now();
   let next = sim;
-  for (let i = 0; i < count; i++) next = tick(next, terrain.map);
+  for (let i = 0; i < count; i++) {
+    next = tick(next, terrain.map);
+  }
   simTickMs = (performance.now() - start) / count;
   sim = next;
 }
@@ -406,7 +486,20 @@ function buildSimFrame(state: SimState): SimOverlayFrame {
     tickRate: SIM_TICK_RATE,
     tickMs: simTickMs,
     dataCells: simDataCells,
+    builder: null,
   };
+}
+
+/** Avanza esclusivamente la scena `grow=1`, dopo che l'isola e' completa. */
+function updateGrowth(dt: number): void {
+  if (!growEnabled || terrain === null) return;
+  if (growthScene === null) {
+    if (!generator.done) return;
+    growthScene = new GrowthScene(world, terrain.map, terrainRegion, terrainSeed);
+    console.info('[crescita] scena automatica pronta');
+    return;
+  }
+  growthScene.advance(dt);
 }
 
 function buildTerrainFrame(streamer: TerrainStreamer): TerrainOverlayFrame {
@@ -460,6 +553,7 @@ function buildOverlayFrame(mainMs: number, renderMs: number, frameMs: number): O
     generationProgress: generator.done ? 1 : generator.progress,
     scene: terrain === null ? sceneKind : 'terrain',
     seed: terrain === null ? seed : terrainSeed,
+    theme: theme.name,
     zoom: camera.zoom,
     yawDegrees: camera.yawDegrees,
   };
@@ -493,6 +587,15 @@ function onDebugKey(event: KeyboardEvent): void {
     }
     if (event.code === 'KeyM' && sim !== null) {
       selectSimClass(((sim.selectedClass + 1) % CLASS_COUNT) as BuildingClass);
+      return;
+    }
+  }
+  // Tasti 1..9: selezione diretta del tema. Le cifre erano libere e scalano con
+  // la tabella, a differenza di un tasto che cicla.
+  if (event.code.startsWith('Digit')) {
+    const index = parseInt(event.code.slice(5), 10) - 1;
+    if (index >= 0) {
+      cycleTheme(index);
       return;
     }
   }

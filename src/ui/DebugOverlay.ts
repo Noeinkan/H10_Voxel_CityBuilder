@@ -32,6 +32,7 @@ export interface OverlayFrame {
   readonly generationProgress: number;
   readonly scene: string;
   readonly seed: number;
+  readonly theme: string;
   readonly zoom: number;
   readonly yawDegrees: number;
 }
@@ -104,12 +105,14 @@ export class DebugOverlay {
       `voxel      ${format(frame.solidVoxels).padStart(6)}`,
       '',
       `scena      ${frame.scene}  seed ${frame.seed}`,
+      `tema       ${frame.theme}`,
       `camera     zoom ${frame.zoom.toFixed(2)}  yaw ${Math.round(frame.yawDegrees)}°`,
       generating ? `genera     ${(frame.generationProgress * 100).toFixed(0)} %` : '',
       '',
       'Q/E ruota  rotella zoom  drag destro pan',
       'WASD pan   F inquadra    G +64 chunk',
       'R rebuild  C azzera i picchi',
+      '1..9 tema',
     ]
       .filter((line) => line !== '')
       .join('\n');

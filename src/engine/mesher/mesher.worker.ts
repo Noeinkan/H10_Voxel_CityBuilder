@@ -25,6 +25,7 @@ ctx.onmessage = (event: MessageEvent<MeshJob>): void => {
     positions: mesh.positions,
     faces: mesh.faces,
     palettes: mesh.palettes,
+    ao: mesh.ao,
     indices: mesh.indices,
     quadCount: mesh.quadCount,
     min: mesh.min,
@@ -38,7 +39,7 @@ ctx.onmessage = (event: MessageEvent<MeshJob>): void => {
   // trasferirli li renderebbe inutilizzabili per i job successivi.
   const transfer: Transferable[] = [job.padded.buffer];
   if (mesh.quadCount > 0) {
-    transfer.push(mesh.positions.buffer, mesh.faces.buffer, mesh.palettes.buffer, mesh.indices.buffer);
+    transfer.push(mesh.positions.buffer, mesh.faces.buffer, mesh.palettes.buffer, mesh.ao.buffer, mesh.indices.buffer);
   }
 
   ctx.postMessage(result, transfer);

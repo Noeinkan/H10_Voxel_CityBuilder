@@ -59,6 +59,18 @@ describe('buildPaddedVolume', () => {
     expect(padded[paddedIdx(6, 7, PADDED - 1)]).toBe(16);
   });
 
+  it('porta anche gli spigoli e gli angoli dai vicini diagonali', () => {
+    const world = new VoxelWorld();
+    world.ensureChunk(0, 0, 0);
+    world.setBlock(-1, -1, 7, 21); // spigolo -X/-Y
+    world.setBlock(CHUNK, CHUNK, -1, 22); // angolo +X/+Y/-Z
+
+    const padded = paddedFor(world, 0, 0, 0);
+
+    expect(padded[paddedIdx(0, 0, 8)]).toBe(21);
+    expect(padded[paddedIdx(PADDED - 1, PADDED - 1, 0)]).toBe(22);
+  });
+
   it('due chunk pieni adiacenti non disegnano la faccia in comune', () => {
     const world = new VoxelWorld();
     fillChunk(world, 0, 0, 0, 4);

@@ -169,23 +169,34 @@ export interface BiomeStrata {
  */
 export const BIOME_STRATA: readonly BiomeStrata[] = [
   // ocean — sabbia bagnata sul fondale
-  { surface: PALETTE_SLOTS.stoneWarm, subsoil: PALETTE_SLOTS.stone, deep: PALETTE_SLOTS.stoneDeep },
-  // beach — sabbia asciutta
-  { surface: PALETTE_SLOTS.metalBrass, subsoil: PALETTE_SLOTS.stoneWarm, deep: PALETTE_SLOTS.stoneDeep },
+  { surface: PALETTE_SLOTS.stoneWarm, subsoil: PALETTE_SLOTS.stoneDark, deep: PALETTE_SLOTS.stoneDeep },
+  // beach — sabbia asciutta, la piu' chiara del gruppo `stone`
+  { surface: PALETTE_SLOTS.stone, subsoil: PALETTE_SLOTS.stoneWarm, deep: PALETTE_SLOTS.stoneDeep },
   // plain — erba su terra
   { surface: PALETTE_SLOTS.grass, subsoil: PALETTE_SLOTS.wood, deep: PALETTE_SLOTS.stoneDeep },
   // forest — erba scura su terra
   { surface: PALETTE_SLOTS.grassDark, subsoil: PALETTE_SLOTS.wood, deep: PALETTE_SLOTS.stoneDeep },
   // hill — erba chiara su sabbia compatta
   { surface: PALETTE_SLOTS.grassLight, subsoil: PALETTE_SLOTS.stoneWarm, deep: PALETTE_SLOTS.stoneDeep },
-  // rock — grigio su grigio
-  { surface: PALETTE_SLOTS.concreteLight, subsoil: PALETTE_SLOTS.concrete, deep: PALETTE_SLOTS.asphaltDark },
+  // rock — il gruppo `concrete` fa sia il cemento della citta' sia la roccia nuda
+  { surface: PALETTE_SLOTS.concreteLight, subsoil: PALETTE_SLOTS.concrete, deep: PALETTE_SLOTS.stoneDeep },
 ];
 
 /** Acqua: chiara in superficie, scura in profondita'. */
 export const WATER_IDS = {
   surface: PALETTE_SLOTS.water,
   deep: PALETTE_SLOTS.waterDeep,
+} as const;
+
+/** Parametri delle decorazioni voxel. Le probabilita' sono per cella 6x6. */
+export const TREE_DECOR = {
+  /** Raggio massimo della chioma; definisce anche l'anello valutato dai blocchi. */
+  ring: 2,
+  cellSize: 6,
+  /** Una cella puo' scegliere solo una delle quattro posizioni interne 2x2. */
+  jitterSize: 2,
+  /** Densita' per bioma: niente alberi su oceano, spiaggia e roccia. */
+  density: [0, 0, 0.18, 0.62, 0.34, 0] as const,
 } as const;
 
 /**

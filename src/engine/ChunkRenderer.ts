@@ -252,12 +252,14 @@ export class ChunkRenderer {
     geometry.setAttribute('position', new Uint16BufferAttribute(result.positions, 3));
     geometry.setAttribute('aFace', new Uint8BufferAttribute(result.faces, 1));
     geometry.setAttribute('aPalette', new Uint8BufferAttribute(result.palettes, 1));
+    geometry.setAttribute('aAO', new Uint8BufferAttribute(result.ao, 1));
     geometry.setIndex(new Uint32BufferAttribute(result.indices, 1));
 
     const bytes =
       result.positions.byteLength +
       result.faces.byteLength +
       result.palettes.byteLength +
+      result.ao.byteLength +
       result.indices.byteLength;
 
     const scale = this.voxelSize;

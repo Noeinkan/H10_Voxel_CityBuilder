@@ -148,6 +148,51 @@ describe('greedyMesh', () => {
     expect(mesh.max).toEqual([CHUNK, CHUNK, 1]);
   });
 
+  it('assegna AO massima a un piano isolato', () => {
+    const padded = emptyPadded();
+    fillBox(padded, 0, 0, 0, CHUNK, CHUNK, 1, 9);
+
+    const mesh = greedyMesh(padded);
+
+    expect([...mesh.ao]).toHaveLength(mesh.quadCount * 4);
+    expect([...mesh.ao].every((value) => value === 3)).toBe(true);
+  });
+
+  it('scurisce i corner interni di uno spigolo concavo', () => {
+    const padded = emptyPadded();
+    // La faccia +Z del voxel centrale resta esposta, ma ha due muri ortogonali
+    // nella cella vuota subito sopra: il suo corner -X/-Y e' completamente chiuso.
+    setLocal(padded, 1, 1, 1, 4);
+    setLocal(padded, 0, 1, 2, 4);
+    setLocal(padded, 1, 0, 2, 4);
+
+    const mesh = greedyMesh(padded);
+    const topAo: number[] = [];
+    for (let i = 0; i < mesh.faces.length; i++) {
+      const z = mesh.positions[i * 3 + 2];
+      if (mesh.faces[i] === 4 && z === 2) topAo.push(mesh.ao[i]);
+    }
+
+    expect(topAo).toHaveLength(4);
+    expect(topAo).toContain(0);
+    expect(topAo).toContain(3);
+  });
+
+  it('non fonde facce adiacenti quando la loro AO e’ diversa', () => {
+    const padded = emptyPadded();
+    setLocal(padded, 1, 1, 0, 4);
+    setLocal(padded, 2, 1, 0, 4);
+    // Muro accanto alla prima cella: cambia il suo AO, non quello della seconda.
+    setLocal(padded, 0, 1, 1, 4);
+
+    const mesh = greedyMesh(padded);
+    let topQuads = 0;
+    for (let i = 0; i < mesh.faces.length; i += 4) {
+      if (mesh.faces[i] === 4 && mesh.positions[i * 3 + 2] === 1) topQuads++;
+    }
+    expect(topQuads).toBe(2);
+  });
+
   it('rifiuta un volume di dimensione sbagliata', () => {
     expect(() => greedyMesh(new Uint8Array(1000))).toThrow(/39304/);
   });

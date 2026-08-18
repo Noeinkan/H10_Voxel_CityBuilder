@@ -12,6 +12,9 @@ import { CHUNK, CHUNK_MASK, CHUNK_SHIFT } from '../chunkCoords';
 /** Colonne in un blocco: 32 x 32. */
 export const COLUMNS_PER_CHUNK = CHUNK * CHUNK;
 
+/** Campi per record decor: lx, ly, specie, altezza tronco, quota suolo. */
+export const DECOR_RECORD_SIZE = 5;
+
 /** Indice lineare di una colonna nel blocco. `lx` varia piu' rapidamente. */
 export function columnIndex(lx: number, ly: number): number {
   return lx + CHUNK * ly;
@@ -44,6 +47,9 @@ export interface ColumnBlock {
   /** 1 se edificabile, 0 altrimenti. */
   readonly buildable: Uint8Array;
 
+  /** Alberi che possono intersecare il blocco, anche con origine appena fuori. */
+  readonly decor: Int16Array;
+
   /** Massimo di `heights` nel blocco: dice quanti chunk in z servono davvero. */
   readonly maxHeight: number;
 
@@ -51,7 +57,7 @@ export interface ColumnBlock {
   readonly buildableCount: number;
 }
 
-/** I quattro buffer del blocco, da passare come lista di transfer a `postMessage`. */
+/** I cinque buffer del blocco, da passare come lista di transfer a `postMessage`. */
 export function blockTransferables(block: ColumnBlock): Transferable[] {
-  return [block.heights.buffer, block.biomes.buffer, block.slopes.buffer, block.buildable.buffer];
+  return [block.heights.buffer, block.biomes.buffer, block.slopes.buffer, block.buildable.buffer, block.decor.buffer];
 }

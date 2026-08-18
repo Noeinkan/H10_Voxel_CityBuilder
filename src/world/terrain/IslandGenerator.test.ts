@@ -323,7 +323,7 @@ describe('generateIsland — scrittura nel mondo', () => {
     }
   });
 
-  it('ogni colonna e’ piena fino alla sua altezza e vuota sopra il pelo dell’acqua', () => {
+  it('ogni colonna e’ piena fino alla sua altezza e le decorazioni restano sopra', () => {
     const world = new VoxelWorld();
     const { map } = generateIsland(world, SEED, ISLAND);
 
@@ -332,7 +332,9 @@ describe('generateIsland — scrittura nel mondo', () => {
         const height = map.heightAt(x, y);
         const top = Math.max(height, TERRAIN.seaLevel);
         for (let z = 0; z < top; z++) expect(world.getBlock(x, y, z)).not.toBe(0);
-        expect(world.getBlock(x, y, top)).toBe(0);
+        // Gli alberi possono occupare l'aria sopra la colonna, ma non devono
+        // mai scavare o sostituire la stratigrafia che li sostiene.
+        if (height >= TERRAIN.seaLevel) expect(world.getBlock(x, y, height - 1)).not.toBe(0);
       }
     }
   });

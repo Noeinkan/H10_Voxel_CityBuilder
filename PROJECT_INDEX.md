@@ -4,7 +4,7 @@ Mappa file per file di `src/`. Il *perché* delle scelte sta nei README
 ([README.md](README.md), [src/sim/README.md](src/sim/README.md)); le regole
 operative in [CLAUDE.md](CLAUDE.md). Qui c'è solo *dove sta cosa*.
 
-9 328 righe di TypeScript, 15 file di test (146 test), 2 file di bench.
+Oltre 10 mila righe di TypeScript, 21 file di test (181 test), 2 file di bench.
 
 ## Direzione delle dipendenze
 
@@ -27,11 +27,21 @@ worker. `src/sim/` gira in Node senza DOM né GPU.
 
 | File | Ruolo |
 | --- | --- |
+| [AGENTS.md](AGENTS.md) | Regole operative globali e rimando alle regole locali |
 | [index.html](index.html) | Pagina unica, `#app`, monta `src/main.ts` |
 | [package.json](package.json) | Script npm; dipendenze: `three`, `simplex-noise` |
 | [tsconfig.json](tsconfig.json) | `strict` + flag extra; `noUncheckedIndexedAccess` off di proposito |
 | [vite.config.ts](vite.config.ts) | Vite + Vitest insieme; worker in formato ES, test in ambiente `node` |
 | [src/main.ts](src/main.ts) | Bootstrap, ciclo di frame a budget, harness di misura, hook globali di debug (574 righe) |
+
+## Documentazione operativa
+
+| File | Ruolo |
+| --- | --- |
+| [docs/PROJECT_MAP.md](docs/PROJECT_MAP.md) | Mappa sintetica di dipendenze, punti di ingresso e flussi |
+| [src/engine/AGENTS.md](src/engine/AGENTS.md) | Contratti locali di renderer, mesher, palette e temi |
+| [src/world/AGENTS.md](src/world/AGENTS.md) | Contratti locali di storage, terreno ed edifici |
+| [src/sim/AGENTS.md](src/sim/AGENTS.md) | Contratti locali di simulazione, stato e campo |
 
 ## `src/world/` — storage e mondo
 
@@ -54,15 +64,16 @@ API pubblica, e produce in parallelo una mappa 2D per colonna.
 
 | File | Ruolo | Esporta |
 | --- | --- | --- |
-| [config.ts](src/world/terrain/config.ts) | **Ogni** soglia, frequenza, ampiezza e stratigrafia. Niente numeri altrove | `TERRAIN`, `BIOME`, `BIOME_NAMES`, `BIOME_STRATA`, `BUILDABLE_BIOMES`, `WATER_IDS` |
+| [config.ts](src/world/terrain/config.ts) | **Ogni** soglia, frequenza, ampiezza, stratigrafia e densita' degli alberi | `TERRAIN`, `BIOME`, `BIOME_NAMES`, `BIOME_STRATA`, `BUILDABLE_BIOMES`, `WATER_IDS`, `TREE_DECOR` |
 | [heightField.ts](src/world/terrain/heightField.ts) | 4 ottave di simplex × maschera radiale deformata | `HeightField` |
 | [biomes.ts](src/world/terrain/biomes.ts) | Bioma da altezza e pendenza, edificabilità, colore per profondità | `classifyBiome`, `isBuildable`, `paletteForDepth` |
 | [region.ts](src/world/terrain/region.ts) | Region, `IslandShape`, allineamento ai chunk di colonna | `Region`, `IslandShape`, `shapeFromRegion`, `alignRegion`, `chunkSpanOf` |
-| [columnBlock.ts](src/world/terrain/columnBlock.ts) | Blocco 32×32 di colonne, in forma trasferibile fra worker e main | `ColumnBlock`, `columnIndex`, `blockTransferables` |
-| [IslandGenerator.ts](src/world/terrain/IslandGenerator.ts) | `generateIsland`, `expandIsland`, scrittura dei voxel | `generateIsland`, `expandIsland`, `generateColumnBlock`, `writeBlockColumns` |
+| [columnBlock.ts](src/world/terrain/columnBlock.ts) | Blocco 32×32 di colonne piu' record di decorazioni, trasferibile fra worker e main | `ColumnBlock`, `columnIndex`, `blockTransferables` |
+| [decor.ts](src/world/terrain/decor.ts) | Alberi deterministici per cella e scrittura ritagliata al blocco | `treeAt`, `writeTree`, `TreeSpec` |
+| [IslandGenerator.ts](src/world/terrain/IslandGenerator.ts) | `generateIsland`, `expandIsland`, colonne e decorazioni | `generateIsland`, `expandIsland`, `generateColumnBlock`, `writeBlockColumns`, `writeBlockDecor` |
 | [TerrainMap.ts](src/world/terrain/TerrainMap.ts) | Mappa sparsa per colonna, chunkata 32×32 come il mondo | `TerrainMap`, `TerrainColumn`, `TerrainColumnChunk` |
 | [terrainMessages.ts](src/world/terrain/terrainMessages.ts) | Protocollo main ↔ worker | `TerrainJob`, `BlockMessage`, `DoneMessage` |
-| [terrain.worker.ts](src/world/terrain/terrain.worker.ts) | Generazione fuori dal main thread, un blocco per volta (4,1 kB in bundle) | — |
+| [terrain.worker.ts](src/world/terrain/terrain.worker.ts) | Generazione fuori dal main thread, un blocco per volta (5,41 kB in bundle) | — |
 | [TerrainStreamer.ts](src/world/terrain/TerrainStreamer.ts) | Riceve i blocchi e li applica a budget di frame; è un `SceneGenerator` | `TerrainStreamer` |
 | [BiomeView.ts](src/world/terrain/BiomeView.ts) | Ricolore delle colonne per bioma, a passi con budget (tasto `B`) | `BiomeView` |
 
@@ -79,25 +90,41 @@ map.columnAt(120, 96); // { height, biome, slope, buildable }
 | --- | --- | --- |
 | [ChunkRenderer.ts](src/engine/ChunkRenderer.ts) | Una geometria per chunk, coda a priorità, frustum culling, upload a budget | `ChunkRenderer`, `ChunkRendererStats` |
 | [MesherPool.ts](src/engine/MesherPool.ts) | Pool di worker, job in volo, statistiche del mesher | `MesherPool`, `MesherStats`, `ChunkMeshResult` |
-| [VoxelMaterial.ts](src/engine/VoxelMaterial.ts) | Unico `ShaderMaterial`, palette come `uniform vec3[32]` | `createVoxelMaterial`, `VoxelMaterialHandle` |
+| [VoxelMaterial.ts](src/engine/VoxelMaterial.ts) | Unico `ShaderMaterial`, palette, luce per faccia, `aAO` e nebbia | `createVoxelMaterial`, `VoxelMaterialHandle` |
 | [IsoCameraController.ts](src/engine/IsoCameraController.ts) | Ortografica isometrica: scatti di 90°, zoom, pan vincolato all'AABB | `IsoCameraController`, `IsoCameraOptions` |
 | [palette.ts](src/engine/palette.ts) | Caricamento della palette, validazione, HMR a caldo | `paletteHex`, `toPaletteArray`, `isValidHexColor`, `onPaletteChanged` |
 | [paletteSlots.ts](src/engine/paletteSlots.ts) | I 32 slot nominati | `PALETTE_SLOTS`, `PALETTE_SIZE` |
 | [palette.json](src/engine/palette.json) | I 32 colori. Modificarlo a caldo non rimesha niente | — |
+
+### `src/engine/themes/` — look intercambiabili
+
+Un tema è 32 colori più i parametri di atmosfera. Applicarlo riscrive solo
+uniform e stato del renderer: nessuna geometria viene toccata.
+
+| File | Ruolo | Esporta |
+| --- | --- | --- |
+| [theme.ts](src/engine/themes/theme.ts) | Il contratto, senza import | `Theme`, `Atmosphere` |
+| [index.ts](src/engine/themes/index.ts) | Tabella dei temi e risoluzione dell'id | `THEMES`, `DEFAULT_THEME_ID`, `themeById`, `resolveTheme` |
+| [natural.ts](src/engine/themes/natural.ts) | Diorama diurno; prende i colori da `palette.json` | `natural` |
+| [pastel.ts](src/engine/themes/pastel.ts) | Metropoli pastello in controluce | `pastel` |
+| [neon.ts](src/engine/themes/neon.ts) | Notturno al neon, unico senza tone mapping | `neon` |
+| [industrial.ts](src/engine/themes/industrial.ts) | Ocra, ruggine e smog | `industrial` |
+| [scifi.ts](src/engine/themes/scifi.ts) | Bianchi freddi, teal e magenta | `scifi` |
+| [enchanted.ts](src/engine/themes/enchanted.ts) | Bosco incantato, lilla e turchese | `enchanted` |
 
 ### `src/engine/mesher/` — puro, senza Three.js
 
 | File | Ruolo | Esporta |
 | --- | --- | --- |
 | [greedyMesher.ts](src/engine/mesher/greedyMesher.ts) | Greedy meshing, scratch riusato fra job | `greedyMesh`, `createScratch`, `MeshScratch`, `MAX_QUADS_PER_CHUNK` |
-| [buildPaddedVolume.ts](src/engine/mesher/buildPaddedVolume.ts) | Chunk + sei piani di bordo → volume 34³ | `buildPaddedVolume` |
+| [buildPaddedVolume.ts](src/engine/mesher/buildPaddedVolume.ts) | Chunk + tutti i 26 vicini immediati → volume 34³ | `buildPaddedVolume` |
 | [meshTypes.ts](src/engine/mesher/meshTypes.ts) | Job e risultato, array trasferibili | `MeshJob`, `MeshArrays`, `MeshResult` |
-| [mesher.worker.ts](src/engine/mesher/mesher.worker.ts) | Il worker (2,7 kB in bundle) | — |
+| [mesher.worker.ts](src/engine/mesher/mesher.worker.ts) | Il worker (3,49 kB in bundle) | — |
 
 ## `src/sim/` — simulazione a tick
 
 Risorse e popolazione, campo di desiderabilità per cella e per classe, candidati
-di crescita. **Non costruisce niente.** Dettagli in
+di crescita. Il `Builder`, esterno al modulo, consuma quei candidati. Dettagli in
 [src/sim/README.md](src/sim/README.md).
 
 | File | Ruolo | Esporta |
@@ -122,6 +149,26 @@ state = tick(state, terrainMap);        // puro: nuovo stato, input intatto
 nextBuildSites(state, terrainMap, 10);  // [{ x, y, class, score }, …]
 ```
 
+## `src/world/buildings/` — crescita voxel
+
+Ponte tra candidati della simulazione e mondo renderizzato: convalida il terreno,
+gestisce le impronte, costruisce a fasce entro un budget e promuove gli edifici.
+
+| File | Ruolo | Esporta |
+| --- | --- | --- |
+| [Builder.ts](src/world/buildings/Builder.ts) | Consuma i candidati, scrive voxel e coordina le crescite | `Builder`, `BuilderStats`, `REJECT_REASONS` |
+| [BuildingRegistry.ts](src/world/buildings/BuildingRegistry.ts) | Indice spaziale e record degli edifici | `BuildingRegistry`, `BuildingRecord` |
+| [generate.ts](src/world/buildings/generate.ts) | Generatore deterministico di stamp voxel | `generateBuilding`, `startLevel` |
+| [stamp.ts](src/world/buildings/stamp.ts) | Tipo e costanti dello stamp | `VoxelStamp`, `STAMP_EMPTY` |
+| [config.ts](src/world/buildings/config.ts) | Cadenze, tetti e profili visivi | `BUILDER`, `CLASS_PROFILE` |
+
+## `src/game/` — ciclo di gioco
+
+| File | Ruolo | Esporta |
+| --- | --- | --- |
+| [loop.ts](src/game/loop.ts) | Passo fisso della simulazione con tetto di recupero | `FixedStepLoop` |
+| [growthScene.ts](src/game/growthScene.ts) | Cablaggio esclusivo di `grow=1`: tick, Builder e animazione | `GrowthScene`, `GrowthStats` |
+
 ## `src/ui/` — overlay di debug
 
 Canvas e DOM puri, nessuna dipendenza da Three.js. Esistono solo con `?debug=1`.
@@ -129,6 +176,7 @@ Canvas e DOM puri, nessuna dipendenza da Three.js. Esistono solo con `?debug=1`.
 | File | Ruolo |
 | --- | --- |
 | [DebugOverlay.ts](src/ui/DebugOverlay.ts) | fps, draw call, triangoli, code, tempi di mesher e main thread |
+| [GrowthOverlay.ts](src/ui/GrowthOverlay.ts) | Conteggi, livelli, coda e scarti della crescita automatica |
 | [TerrainOverlay.ts](src/ui/TerrainOverlay.ts) | Progresso della generazione, istogramma dei biomi, colonne edificabili |
 | [SimOverlay.ts](src/ui/SimOverlay.ts) | Stock e delta per tick, heatmap 2D del campo, primi dieci candidati, pulsanti delle policy |
 
@@ -142,8 +190,14 @@ Canvas e DOM puri, nessuna dipendenza da Three.js. Esistono solo con `?debug=1`.
 | [world/terrain/IslandGenerator.test.ts](src/world/terrain/IslandGenerator.test.ts) | Determinismo per blocco, continuità al confine, `expandIsland` |
 | [world/terrain/TerrainMap.test.ts](src/world/terrain/TerrainMap.test.ts) | Mappa per colonna, istogramma, chunking |
 | [engine/mesher/greedyMesher.test.ts](src/engine/mesher/greedyMesher.test.ts) | Fusione dei quad, orientamento delle facce, casi limite |
-| [engine/mesher/buildPaddedVolume.test.ts](src/engine/mesher/buildPaddedVolume.test.ts) | I sei piani di bordo |
+| [engine/mesher/buildPaddedVolume.test.ts](src/engine/mesher/buildPaddedVolume.test.ts) | Piani, spigoli e angoli del padding |
 | [engine/palette.test.ts](src/engine/palette.test.ts) | 32 slot, validazione dei colori |
+| [engine/themes/themes.test.ts](src/engine/themes/themes.test.ts) | Ogni tema riempie i 32 slot, atmosfera in range |
+| [world/terrain/decor.test.ts](src/world/terrain/decor.test.ts) | Alberi deterministici, biomi esclusi e chiome non sovrapposte |
+| [game/loop.test.ts](src/game/loop.test.ts) | Cadenza fissa e limite del recupero |
+| [world/buildings/Builder.test.ts](src/world/buildings/Builder.test.ts) | Candidato → occupazione della simulazione → voxel |
+| [world/buildings/BuildingRegistry.test.ts](src/world/buildings/BuildingRegistry.test.ts) | Indice spaziale e sostituzione di record |
+| [world/buildings/generate.test.ts](src/world/buildings/generate.test.ts) | Determinismo e limiti degli stamp |
 | [sim/contracts.test.ts](src/sim/contracts.test.ts) | Purezza di `tick`, nessuna scrittura in `blocks`, serializzazione |
 | [sim/SimState.test.ts](src/sim/SimState.test.ts) | Operazioni del giocatore, possesso del campo |
 | [sim/tick.test.ts](src/sim/tick.test.ts) | Bilancio, nessuno stock negativo, pareggio 1:1 |

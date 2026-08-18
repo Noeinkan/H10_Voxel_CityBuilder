@@ -70,6 +70,11 @@ export interface ScenarioRegion {
   readonly sizeY: number;
 }
 
+export interface ScenarioCatalystOptions {
+  /** Lato del reticolo; resta un parametro della fixture, non del bilanciamento. */
+  readonly lattice?: number;
+}
+
 /**
  * Catalizzatori sulle colonne edificabili del reticolo.
  *
@@ -81,9 +86,10 @@ export interface ScenarioRegion {
 export function scenarioCatalysts(
   terrainMap: TerrainMap,
   region: ScenarioRegion,
+  options: ScenarioCatalystOptions = {},
 ): readonly Catalyst[] {
   const out: Catalyst[] = [];
-  const steps = SCENARIO.lattice;
+  const steps = Math.max(1, Math.floor(options.lattice ?? SCENARIO.lattice));
   let slot = 0;
 
   for (let gy = 0; gy < steps; gy++) {

@@ -6,9 +6,11 @@ import {
   columnLocalX,
   columnLocalY,
   COLUMNS_PER_CHUNK,
+  DECOR_RECORD_SIZE,
   type ColumnBlock,
 } from './columnBlock';
-import { TERRAIN, WATER_IDS } from './config';
+import { treeAt, treeOrigin, treeTop, writeTree } from './decor';
+import { TERRAIN, TREE_DECOR, WATER_IDS } from './config';
 import { HeightField } from './heightField';
 import { chunkSpanOf, shapeFromRegion, type IslandShape, type Region } from './region';
 import { TerrainMap } from './TerrainMap';
@@ -60,14 +62,15 @@ export interface IslandResult {
   readonly generationMs: number;
 }
 
-/** Lato del reticolo paddato: le colonne del blocco piu' un anello per la pendenza. */
-const PADDED = CHUNK + 2;
+/** L'anello decor richiede una cella in piu' per calcolare la sua pendenza. */
+const HEIGHT_BORDER = TREE_DECOR.ring + 1;
+/** Lato del reticolo: blocco piu' anello decorativo e anello per la pendenza. */
+const PADDED = CHUNK + HEIGHT_BORDER * 2;
 
 /**
  * Reticolo di altezze continue riusato fra un blocco e l'altro.
  *
- * L'anello di bordo evita di ricampionare il campo cinque volte per colonna: si
- * passa da 5120 valutazioni per blocco a 1156. Vive a livello di modulo perche'
+ * L'anello di bordo evita di ricampionare il campo cinque volte per colonna. Vive a livello di modulo perche'
  * ogni realm (main thread o worker) ha il suo ed e' a thread singolo.
  */
 const paddedHeights = new Float32Array(PADDED * PADDED);
@@ -107,6 +110,7 @@ export function generateIsland(
       map.adopt(block);
       ensureBlockChunks(world, block);
       voxels += writeBlockColumns(world, block, 0, COLUMNS_PER_CHUNK);
+      voxels += writeBlockDecor(world, block, 0, block.decor.length / DECOR_RECORD_SIZE);
       blocks++;
     }
   }
@@ -161,10 +165,10 @@ export function generateColumnBlock(field: HeightField, ccx: number, ccy: number
   const baseY = ccy * CHUNK;
 
   for (let py = 0; py < PADDED; py++) {
-    const worldY = baseY + py - 1;
+      const worldY = baseY + py - HEIGHT_BORDER;
     const row = py * PADDED;
     for (let px = 0; px < PADDED; px++) {
-      paddedHeights[row + px] = field.heightAt(baseX + px - 1, worldY);
+      paddedHeights[row + px] = field.heightAt(baseX + px - HEIGHT_BORDER, worldY);
     }
   }
 
@@ -178,7 +182,7 @@ export function generateColumnBlock(field: HeightField, ccx: number, ccy: number
 
   for (let ly = 0; ly < CHUNK; ly++) {
     for (let lx = 0; lx < CHUNK; lx++) {
-      const p = (ly + 1) * PADDED + (lx + 1);
+      const p = (ly + HEIGHT_BORDER) * PADDED + (lx + HEIGHT_BORDER);
       const continuous = paddedHeights[p];
 
       // Pendenza sul campo continuo, non sulle altezze intere: quantizzare prima
@@ -207,7 +211,51 @@ export function generateColumnBlock(field: HeightField, ccx: number, ccy: number
     }
   }
 
-  return { ccx, ccy, heights, biomes, slopes, buildable, maxHeight, buildableCount };
+  const decor: number[] = [];
+  const minX = baseX - TREE_DECOR.ring;
+  const minY = baseY - TREE_DECOR.ring;
+  const maxX = baseX + CHUNK - 1 + TREE_DECOR.ring;
+  const maxY = baseY + CHUNK - 1 + TREE_DECOR.ring;
+  const minCellX = Math.floor((minX - 3) / TREE_DECOR.cellSize);
+  const maxCellX = Math.floor((maxX - 2) / TREE_DECOR.cellSize);
+  const minCellY = Math.floor((minY - 3) / TREE_DECOR.cellSize);
+  const maxCellY = Math.floor((maxY - 2) / TREE_DECOR.cellSize);
+
+  for (let cellY = minCellY; cellY <= maxCellY; cellY++) {
+    for (let cellX = minCellX; cellX <= maxCellX; cellX++) {
+      const [x, y] = treeOrigin(field.seed, cellX, cellY);
+      if (x < minX || x > maxX || y < minY || y > maxY) continue;
+      const px = x - baseX + HEIGHT_BORDER;
+      const py = y - baseY + HEIGHT_BORDER;
+      const p = py * PADDED + px;
+      const continuous = paddedHeights[p];
+      const slope = Math.max(
+        Math.abs(paddedHeights[p + 1] - continuous),
+        Math.abs(paddedHeights[p - 1] - continuous),
+        Math.abs(paddedHeights[p + PADDED] - continuous),
+        Math.abs(paddedHeights[p - PADDED] - continuous),
+      );
+      const height = clampHeight(Math.floor(continuous));
+      const biome = classifyBiome(height, slope);
+      const tree = treeAt(field.seed, cellX, cellY, height, biome, slope);
+      if (tree === null) continue;
+
+      decor.push(x - baseX, y - baseY, tree.species, tree.trunkHeight, height);
+      maxHeight = Math.max(maxHeight, treeTop(tree, height));
+    }
+  }
+
+  return {
+    ccx,
+    ccy,
+    heights,
+    biomes,
+    slopes,
+    buildable,
+    decor: new Int16Array(decor),
+    maxHeight,
+    buildableCount,
+  };
 }
 
 /**
@@ -260,6 +308,35 @@ export function writeBlockColumns(
     }
   }
 
+  return written;
+}
+
+/** Scrive gli alberi `[from, from + count)` del blocco, sempre dentro il suo rettangolo. */
+export function writeBlockDecor(world: VoxelWorld, block: ColumnBlock, from: number, count: number): number {
+  const total = block.decor.length / DECOR_RECORD_SIZE;
+  const end = Math.min(total, from + count);
+  const baseX = block.ccx * CHUNK;
+  const baseY = block.ccy * CHUNK;
+  let written = 0;
+
+  for (let index = from; index < end; index++) {
+    const offset = index * DECOR_RECORD_SIZE;
+    const x = baseX + block.decor[offset];
+    const y = baseY + block.decor[offset + 1];
+    const species = block.decor[offset + 2];
+    const trunkHeight = block.decor[offset + 3];
+    const groundZ = block.decor[offset + 4];
+    const canopyRadius = species === 0 ? 1 : TREE_DECOR.ring;
+    written += writeTree(
+      world,
+      { x, y, species, trunkHeight, canopyRadius },
+      groundZ,
+      baseX,
+      baseY,
+      baseX + CHUNK,
+      baseY + CHUNK,
+    );
+  }
   return written;
 }
 
