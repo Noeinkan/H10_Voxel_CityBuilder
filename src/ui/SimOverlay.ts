@@ -59,7 +59,8 @@ const REFRESH_MS = 200;
 const HEATMAP_PX = 224;
 
 export class SimOverlay {
-  private readonly root: HTMLDivElement;
+  private readonly root: HTMLDetailsElement;
+  private readonly summary: HTMLElement;
   private readonly body: HTMLPreElement;
   private readonly canvas: HTMLCanvasElement;
   private readonly context: CanvasRenderingContext2D | null;
@@ -77,25 +78,39 @@ export class SimOverlay {
   private lastFieldKey = '';
 
   constructor(parent: HTMLElement, handlers: SimOverlayHandlers) {
-    this.root = document.createElement('div');
+    this.root = document.createElement('details');
     this.root.style.cssText = [
       'position:fixed',
-      'top:8px',
-      'right:8px',
-      'z-index:10',
+      'right:12px',
+      'bottom:var(--game-hud-bottom, 12px)',
+      'z-index:16',
       'padding:8px 10px',
-      'background:rgba(8,11,14,0.82)',
-      'color:#d8dce0',
-      'font:11px/1.45 ui-monospace,SFMono-Regular,Consolas,monospace',
-      'border:1px solid rgba(216,220,224,0.16)',
-      'border-radius:4px',
-      'pointer-events:none',
+      'max-width:calc(100vw - 24px)',
+      'max-height:min(72vh,680px)',
+      'box-sizing:border-box',
+      'overflow:auto',
+      'background:rgba(10,18,24,.9)',
+      'color:#dbe8e5',
+      'font:10px/1.45 ui-monospace,SFMono-Regular,Consolas,monospace',
+      'border:1px solid rgba(185,217,210,.22)',
+      'border-radius:8px',
+      'box-shadow:0 8px 28px rgba(0,0,0,.24)',
+      'backdrop-filter:blur(8px)',
       'white-space:pre',
       'min-width:250px',
     ].join(';');
 
+    this.summary = document.createElement('summary');
+    this.summary.textContent = '▸ SIMULAZIONE · preparazione…';
+    this.summary.style.cssText = [
+      'margin:-8px -10px', 'padding:6px 9px', 'cursor:pointer', 'user-select:none', 'list-style:none',
+      'font:700 10px/1.4 system-ui,sans-serif', 'letter-spacing:.04em',
+      'color:#b9d9d2', 'white-space:nowrap',
+    ].join(';');
+    this.root.appendChild(this.summary);
+
     this.body = document.createElement('pre');
-    this.body.style.cssText = 'margin:0;font:inherit;color:inherit';
+    this.body.style.cssText = 'margin:16px 0 0;font:inherit;color:inherit';
     this.root.appendChild(this.body);
 
     this.canvas = document.createElement('canvas');
@@ -150,6 +165,11 @@ export class SimOverlay {
   update(frame: SimOverlayFrame, now: number): void {
     this.lastPaint = now;
     const { state } = frame;
+    this.summary.textContent = [
+      `${this.root.open ? '▾' : '▸'} SIMULAZIONE`,
+      `tick ${state.tickCount}`,
+      frame.auto ? `${frame.tickRate}/s` : 'pausa',
+    ].join('  ·  ');
 
     this.body.textContent = [
       `simulazione  tick ${state.tickCount}${frame.auto ? `  auto ${frame.tickRate}/s` : '  in pausa'}`,

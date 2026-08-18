@@ -18,4 +18,14 @@ describe('pickSurfaceCell', () => {
     expect(pickSurfaceCell({ origin: [80, 80, 40], direction: [0, 0, -1] }, map)).toBeNull();
     expect(pickSurfaceCell({ origin: [8, 8, 40], direction: [0, 0, 1] }, map)).toBeNull();
   });
+
+  it('entra dall’alto quando la proiezione sul piano zero cade fuori mappa', () => {
+    const map = testTerrain({ chunksX: 1, chunksY: 1, height: 12 });
+    expect(pickSurfaceCell({ origin: [17, 8, 40], direction: [0.5, 0, -1] }, map)).toEqual({
+      x: 31,
+      y: 8,
+      z: 12,
+      buildable: true,
+    });
+  });
 });

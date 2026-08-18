@@ -30,6 +30,7 @@ worker. `src/sim/` gira in Node senza DOM né GPU.
 | [AGENTS.md](AGENTS.md) | Regole operative globali e rimando alle regole locali |
 | [index.html](index.html) | Pagina unica, `#app`, monta `src/main.ts` |
 | [package.json](package.json) | Script npm; dipendenze: `three`, `simplex-noise` |
+| [ROADMAP.md](ROADMAP.md) | Direzione del prodotto, milestone e gate dei prossimi incrementi |
 | [tsconfig.json](tsconfig.json) | `strict` + flag extra; `noUncheckedIndexedAccess` off di proposito |
 | [vite.config.ts](vite.config.ts) | Vite + Vitest insieme; worker in formato ES, test in ambiente `node` |
 | [src/main.ts](src/main.ts) | Bootstrap, ciclo di frame a budget, input di gioco e hook globali di debug |
@@ -169,15 +170,18 @@ gestisce le impronte, costruisce a fasce entro un budget e promuove gli edifici.
 | --- | --- | --- |
 | [loop.ts](src/game/loop.ts) | Passo fisso della simulazione con tetto di recupero | `FixedStepLoop` |
 | [growthScene.ts](src/game/growthScene.ts) | Cablaggio esclusivo di `grow=1`: tick, Builder e animazione | `GrowthScene`, `GrowthStats` |
+| [launchMode.ts](src/game/launchMode.ts) | Risoluzione pura della modalita' iniziale e degli harness URL | `resolveLaunchMode`, `LaunchMode` |
 | [actions.ts](src/game/actions.ts) | Azioni economiche atomiche: catalizzatori, policy ed espansione | `placeCatalyst`, `togglePolicy`, `buyExpansion` |
 | [surfacePick.ts](src/game/surfacePick.ts) | Selezione pura della colonna sulla heightmap da un raggio 3D | `pickSurfaceCell` |
 
 ## `src/ui/` — overlay di debug
 
-Canvas e DOM puri, nessuna dipendenza da Three.js. Esistono solo con `?debug=1`.
+Canvas e DOM puri, nessuna dipendenza da Three.js. Gli overlay tecnici esistono
+solo con `?debug=1`; il promemoria dei comandi resta sempre visibile.
 
 | File | Ruolo |
 | --- | --- |
+| [ControlsHint.ts](src/ui/ControlsHint.ts) | Promemoria sempre visibile dei comandi di navigazione |
 | [DebugOverlay.ts](src/ui/DebugOverlay.ts) | fps, draw call, triangoli, code, tempi di mesher e main thread |
 | [GrowthOverlay.ts](src/ui/GrowthOverlay.ts) | Conteggi, livelli, coda e scarti della crescita automatica |
 | [TerrainOverlay.ts](src/ui/TerrainOverlay.ts) | Progresso della generazione, istogramma dei biomi, colonne edificabili |
@@ -199,6 +203,8 @@ Canvas e DOM puri, nessuna dipendenza da Three.js. Esistono solo con `?debug=1`.
 | [engine/themes/themes.test.ts](src/engine/themes/themes.test.ts) | Ogni tema riempie i 32 slot, atmosfera in range |
 | [world/terrain/decor.test.ts](src/world/terrain/decor.test.ts) | Alberi deterministici, biomi esclusi e chiome non sovrapposte |
 | [game/loop.test.ts](src/game/loop.test.ts) | Cadenza fissa e limite del recupero |
+| [game/launchMode.test.ts](src/game/launchMode.test.ts) | Esperienza completa alla radice e isolamento degli harness URL |
+| [ui/ControlsHint.test.ts](src/ui/ControlsHint.test.ts) | Completezza delle indicazioni dei comandi camera |
 | [world/buildings/Builder.test.ts](src/world/buildings/Builder.test.ts) | Candidato → occupazione della simulazione → voxel |
 | [world/buildings/BuildingRegistry.test.ts](src/world/buildings/BuildingRegistry.test.ts) | Indice spaziale e sostituzione di record |
 | [world/buildings/generate.test.ts](src/world/buildings/generate.test.ts) | Determinismo e limiti degli stamp |
@@ -214,10 +220,12 @@ Canvas e DOM puri, nessuna dipendenza da Three.js. Esistono solo con `?debug=1`.
 
 ## Parametri URL
 
+La radice `/` avvia isola, crescita, toolbar e overlay tecnici.
+
 | Parametro | Default | Effetto |
 | --- | --- | --- |
-| `debug` | — | `1` accende overlay e hotkey |
-| `scene` | `city` | `city`, `noise` (caso peggiore), `slab` |
+| `debug` | `1` alla radice | `0` nasconde overlay e hotkey; `1` li abilita negli harness |
+| `scene` | — | Isola una scena `city`, `noise` (caso peggiore) o `slab` |
 | `seed` | `1337` | Seed della generazione |
 | `size` | `512` | Lato del mondo in voxel (32…4096) |
 | `height` | `64` | Altezza del mondo in voxel (32…256) |

@@ -6,7 +6,7 @@ isometrica, simulazione e crescita automatica degli edifici.
 
 ```bash
 npm install
-npm run dev          # poi apri http://localhost:8010/?debug=1
+npm start            # poi apri http://localhost:8010/
 npm test             # 181 test unitari e di integrazione
 npm run bench        # costo del mesher per chunk
 npm run typecheck
@@ -35,6 +35,7 @@ aggiungendo chunk alla mappa sparsa.
 | [src/engine/VoxelMaterial.ts](src/engine/VoxelMaterial.ts) | Unico `ShaderMaterial`, palette, luce per faccia, AO per vertice e nebbia |
 | [src/engine/themes/](src/engine/themes/) | I temi grafici: 32 colori più l'atmosfera, applicati senza rimeshare |
 | [src/engine/IsoCameraController.ts](src/engine/IsoCameraController.ts) | Ortografica isometrica: scatti di 90°, zoom, pan vincolato |
+| [src/ui/ControlsHint.ts](src/ui/ControlsHint.ts) | Promemoria sempre visibile di tastiera e mouse |
 | [src/ui/DebugOverlay.ts](src/ui/DebugOverlay.ts) | Overlay delle misure, attivo con `?debug=1` |
 | [src/ui/GrowthOverlay.ts](src/ui/GrowthOverlay.ts) | Overlay dedicato a `?debug=1&grow=1` |
 | [src/world/terrain/](src/world/terrain/) | Generatore di isole procedurali (vedi sotto) |
@@ -56,24 +57,27 @@ aggiungendo chunk alla mappa sparsa.
 
 ## Parametri URL
 
+La radice `/` avvia l'esperienza completa: isola, crescita, toolbar e overlay
+tecnici. I parametri seguenti permettono di isolare le scene di verifica.
+
 | Parametro | Default | Effetto |
 | --- | --- | --- |
-| `debug` | — | `1` accende overlay e hotkey |
-| `scene` | `city` | `city`, `noise` (caso peggiore), `slab` |
+| `debug` | `1` alla radice | `0` nasconde overlay e hotkey; `1` li abilita negli harness |
+| `scene` | — | Isola una scena `city`, `noise` (caso peggiore) o `slab` |
 | `seed` | `1337` | Seed della generazione |
 | `size` | `512` | Lato del mondo in voxel |
 | `height` | `64` | Altezza del mondo in voxel |
 | `terrain` | — | `<seed>` sostituisce la scena urbana con un'isola 256×256 |
 | `sim` | — | `1` accende la scena di simulazione (implica l'isola) |
 | `theme` | `natural` | `natural`, `pastel`, `neon`, `industrial`, `scifi`, `enchanted` |
-| `grow` | — | `1` avvia l'MVP giocabile; `debug=1` aggiunge l'overlay tecnico |
+| `grow` | `1` alla radice | `1` avvia esplicitamente l'MVP giocabile |
 
 Tasti: `Q`/`E` ruota di 90°, rotella zoom, drag destro o `WASD` pan, `F` inquadra
 tutto, `G` aggiunge 64 chunk a runtime, `R` rebuild totale, `C` azzera i picchi,
 `B` colora le colonne per bioma (solo in scena terreno). In scena simulazione:
 `T` un tick, `P` avvia o ferma il passo automatico, `M` cicla la classe mostrata.
 
-Con `?grow=1` la toolbar permette di piazzare catalizzatori con un click sul
+Alla radice, oppure con `?grow=1`, la toolbar permette di piazzare catalizzatori con un click sul
 terreno, acquistare settori costieri, attivare policy e controllare pausa e
 velocita'. Le azioni consumano fondi e spiegano quando terreno, popolazione o
 distanza minima non ne permettono l'esecuzione.
@@ -159,8 +163,8 @@ una draw call per chunk.
 ## Come rifare la verifica
 
 ```bash
-npm run dev
-# apri http://localhost:8010/?debug=1 e leggi l'overlay:
+npm start
+# apri http://localhost:8010/ e leggi l'overlay:
 #  - attendi che "coda" arrivi a 0 + 0, poi premi C per azzerare i picchi
 #  - "draw call" e "main ... max" sono i due numeri dei criteri
 #  - premi G e guarda fps e main durante l'aggiunta dei 64 chunk

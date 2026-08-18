@@ -74,7 +74,7 @@ export const BUILDER = {
   maxDirtyChunksPerBuilding: 4,
 
   /** Cubi scritti per frame per struttura: la crescita e' voxel-per-voxel. */
-  voxelsPerFrame: 32,
+  voxelsPerFrame: 16,
 
   /**
    * Edifici che possono crescere contemporaneamente.

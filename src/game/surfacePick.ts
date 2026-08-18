@@ -1,4 +1,5 @@
 import type { TerrainMap } from '../world/terrain/TerrainMap';
+import { TERRAIN } from '../world/terrain/config';
 
 export interface Ray3 {
   readonly origin: readonly [number, number, number];
@@ -16,22 +17,21 @@ export interface SurfaceCell {
 export function pickSurfaceCell(ray: Ray3, map: TerrainMap): SurfaceCell | null {
   const [ox, oy, oz] = ray.origin;
   const [dx, dy, dz] = ray.direction;
-  if (Math.abs(dz) < 1e-8) return null;
+  if (dz >= -1e-8) return null;
 
-  let z = 0;
-  let x = 0;
-  let y = 0;
-  for (let i = 0; i < 4; i++) {
+  // Si entra nella heightmap dall'alto. Proiettare prima su z=0 e correggere
+  // dopo fallisce vicino ai bordi: quel punto puo' essere fuori dalla mappa
+  // anche quando il raggio attraversa chiaramente una collina piu' in alto.
+  const top = Math.min(oz, TERRAIN.maxHeight + 1);
+  for (let z = top; z >= TERRAIN.oceanFloor; z -= 0.25) {
     const t = (z - oz) / dz;
-    if (t < 0) return null;
-    x = Math.floor(ox + dx * t);
-    y = Math.floor(oy + dy * t);
+    if (t < 0) continue;
+    const x = Math.floor(ox + dx * t);
+    const y = Math.floor(oy + dy * t);
     const column = map.columnAt(x, y);
-    if (column === null) return null;
-    if (column.height === z) return { x, y, z, buildable: column.buildable };
-    z = column.height;
+    if (column !== null && z <= column.height) {
+      return { x, y, z: column.height, buildable: column.buildable };
+    }
   }
-
-  const column = map.columnAt(x, y);
-  return column === null ? null : { x, y, z: column.height, buildable: column.buildable };
+  return null;
 }

@@ -92,6 +92,10 @@ export class GrowthScene {
     return this.state;
   }
 
+  get statusMessage(): string {
+    return this.message;
+  }
+
   get registry(): ReadonlyBuildingRegistry {
     return this.builder.registry;
   }

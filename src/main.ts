@@ -17,6 +17,7 @@ import { onPaletteChanged } from './engine/palette';
 import { DEFAULT_THEME_ID, resolveTheme, THEMES, type Theme } from './engine/themes';
 import { createVoxelMaterial } from './engine/VoxelMaterial';
 import { GrowthScene } from './game/growthScene';
+import { resolveLaunchMode } from './game/launchMode';
 import { pickSurfaceCell, type SurfaceCell } from './game/surfacePick';
 import { FixedStepLoop } from './game/loop';
 import { CLASS_COUNT, CLASS_NAMES, type BuildingClass } from './sim/classes';
@@ -27,6 +28,7 @@ import { createScenarioState } from './sim/scenario';
 import { setPolicyActive, setSelectedClass, type SimState } from './sim/SimState';
 import { tick } from './sim/tick';
 import { DebugOverlay, type OverlayFrame } from './ui/DebugOverlay';
+import { ControlsHint } from './ui/ControlsHint';
 import { GrowthOverlay } from './ui/GrowthOverlay';
 import { GameToolbar, type GameTool } from './ui/GameToolbar';
 import { SimOverlay, type SimOverlayFrame } from './ui/SimOverlay';
@@ -58,7 +60,7 @@ const VOXEL_SIZE = 1;
 const TERRAIN_SIZE = 256;
 
 const params = new URLSearchParams(window.location.search);
-const debugEnabled = params.get('debug') === '1';
+const { debugEnabled, growEnabled, simEnabled } = resolveLaunchMode(params);
 const sceneKind = parseSceneKind(params.get('scene'));
 const seed = parseInt(params.get('seed') ?? '1337', 10) || 1337;
 const worldSize = clampInt(params.get('size'), 512, 32, 4096);
@@ -67,14 +69,6 @@ const worldHeight = clampInt(params.get('height'), 64, 32, 256);
 /** `?terrain=<seed>` sostituisce la scena urbana con l'isola procedurale. */
 const terrainParam = params.get('terrain');
 const terrainSeed = terrainParam === null ? seed : parseInt(terrainParam, 10) || seed;
-
-/**
- * `?debug=1&sim=1` accende la scena di simulazione, che ha bisogno di un'isola:
- * il terreno si attiva da solo anche senza `?terrain=`.
- */
-const simEnabled = debugEnabled && params.get('sim') === '1';
-/** Crescita automatica separata dalla scena di sola simulazione. */
-const growEnabled = params.get('grow') === '1';
 
 /** Tick al secondo del passo automatico della scena di simulazione. */
 const SIM_TICK_RATE = 10;
@@ -90,6 +84,7 @@ renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.outputColorSpace = SRGBColorSpace;
 container.appendChild(renderer.domElement);
+new ControlsHint(container, debugEnabled);
 
 const scene = new Scene();
 const world = new VoxelWorld();
@@ -541,6 +536,9 @@ function updateGrowth(dt: number): void {
   // La TerrainMap arriva prima dei voxel: durante un'espansione la crescita
   // riparte solo quando il settore e' stato applicato per intero.
   if (!generator.done) return;
+  if (growthScene.statusMessage === 'Generazione del nuovo settore costiero…') {
+    growthScene.setMessage('Settore costiero pronto.');
+  }
   growthScene.advance(dt);
 }
 
@@ -566,11 +564,15 @@ function onGamePointerDown(event: PointerEvent): void {
   event.stopImmediatePropagation();
   if (growthScene === null || terrain === null) return;
   const cell = surfaceCellAt(event);
-  if (cell === null) return;
+  if (cell === null) {
+    gameToolbar?.showPickingFailure();
+    return;
+  }
 
   if (selectedTool.kind === 'catalyst') {
     const result = growthScene.placeCatalyst(cell.x, cell.y, selectedTool.class);
     if (!result.success) gameToolbar?.showFailure(result.reason);
+    else gameToolbar?.clearFeedback();
     return;
   }
 
@@ -619,6 +621,9 @@ function beginCoastalExpansion(cell: SurfaceCell): void {
       };
   generator = new TerrainStreamer(world, terrainSeed, region, terrain.shape, terrain.map);
   growthScene.setMessage('Generazione del nuovo settore costiero…');
+  selectedTool = { kind: 'none' };
+  gameToolbar?.setTool(selectedTool);
+  preview.visible = false;
 }
 
 function buildTerrainFrame(streamer: TerrainStreamer): TerrainOverlayFrame {
