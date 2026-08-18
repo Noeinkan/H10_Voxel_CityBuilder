@@ -32,7 +32,7 @@ worker. `src/sim/` gira in Node senza DOM né GPU.
 | [package.json](package.json) | Script npm; dipendenze: `three`, `simplex-noise` |
 | [tsconfig.json](tsconfig.json) | `strict` + flag extra; `noUncheckedIndexedAccess` off di proposito |
 | [vite.config.ts](vite.config.ts) | Vite + Vitest insieme; worker in formato ES, test in ambiente `node` |
-| [src/main.ts](src/main.ts) | Bootstrap, ciclo di frame a budget, harness di misura, hook globali di debug (574 righe) |
+| [src/main.ts](src/main.ts) | Bootstrap, ciclo di frame a budget, input di gioco e hook globali di debug |
 
 ## Documentazione operativa
 
@@ -92,6 +92,7 @@ map.columnAt(120, 96); // { height, biome, slope, buildable }
 | [MesherPool.ts](src/engine/MesherPool.ts) | Pool di worker, job in volo, statistiche del mesher | `MesherPool`, `MesherStats`, `ChunkMeshResult` |
 | [VoxelMaterial.ts](src/engine/VoxelMaterial.ts) | Unico `ShaderMaterial`, palette, luce per faccia, `aAO` e nebbia | `createVoxelMaterial`, `VoxelMaterialHandle` |
 | [IsoCameraController.ts](src/engine/IsoCameraController.ts) | Ortografica isometrica: scatti di 90°, zoom, pan vincolato all'AABB | `IsoCameraController`, `IsoCameraOptions` |
+| [IsoCameraController.test.ts](src/engine/IsoCameraController.test.ts) | Contratto dei pulsanti pointer accettati per il pan | — |
 | [palette.ts](src/engine/palette.ts) | Caricamento della palette, validazione, HMR a caldo | `paletteHex`, `toPaletteArray`, `isValidHexColor`, `onPaletteChanged` |
 | [paletteSlots.ts](src/engine/paletteSlots.ts) | I 32 slot nominati | `PALETTE_SLOTS`, `PALETTE_SIZE` |
 | [palette.json](src/engine/palette.json) | I 32 colori. Modificarlo a caldo non rimesha niente | — |
@@ -159,7 +160,7 @@ gestisce le impronte, costruisce a fasce entro un budget e promuove gli edifici.
 | [Builder.ts](src/world/buildings/Builder.ts) | Consuma i candidati, scrive voxel e coordina le crescite | `Builder`, `BuilderStats`, `REJECT_REASONS` |
 | [BuildingRegistry.ts](src/world/buildings/BuildingRegistry.ts) | Indice spaziale e record degli edifici | `BuildingRegistry`, `BuildingRecord` |
 | [generate.ts](src/world/buildings/generate.ts) | Generatore deterministico di stamp voxel | `generateBuilding`, `startLevel` |
-| [stamp.ts](src/world/buildings/stamp.ts) | Tipo e costanti dello stamp | `VoxelStamp`, `STAMP_EMPTY` |
+| [stamp.ts](src/world/buildings/stamp.ts) | Volume voxel, ancora 3D e conversione in coordinate mondo | `VoxelStamp`, `VoxelAnchor`, `anchoredVoxel`, `STAMP_EMPTY` |
 | [config.ts](src/world/buildings/config.ts) | Cadenze, tetti e profili visivi | `BUILDER`, `CLASS_PROFILE` |
 
 ## `src/game/` — ciclo di gioco
@@ -168,6 +169,8 @@ gestisce le impronte, costruisce a fasce entro un budget e promuove gli edifici.
 | --- | --- | --- |
 | [loop.ts](src/game/loop.ts) | Passo fisso della simulazione con tetto di recupero | `FixedStepLoop` |
 | [growthScene.ts](src/game/growthScene.ts) | Cablaggio esclusivo di `grow=1`: tick, Builder e animazione | `GrowthScene`, `GrowthStats` |
+| [actions.ts](src/game/actions.ts) | Azioni economiche atomiche: catalizzatori, policy ed espansione | `placeCatalyst`, `togglePolicy`, `buyExpansion` |
+| [surfacePick.ts](src/game/surfacePick.ts) | Selezione pura della colonna sulla heightmap da un raggio 3D | `pickSurfaceCell` |
 
 ## `src/ui/` — overlay di debug
 
@@ -179,6 +182,7 @@ Canvas e DOM puri, nessuna dipendenza da Three.js. Esistono solo con `?debug=1`.
 | [GrowthOverlay.ts](src/ui/GrowthOverlay.ts) | Conteggi, livelli, coda e scarti della crescita automatica |
 | [TerrainOverlay.ts](src/ui/TerrainOverlay.ts) | Progresso della generazione, istogramma dei biomi, colonne edificabili |
 | [SimOverlay.ts](src/ui/SimOverlay.ts) | Stock e delta per tick, heatmap 2D del campo, primi dieci candidati, pulsanti delle policy |
+| [GameToolbar.ts](src/ui/GameToolbar.ts) | Toolbar MVP: strumenti, policy, risorse, pausa e velocita' |
 
 ## Test e bench
 

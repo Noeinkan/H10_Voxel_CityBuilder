@@ -1,9 +1,14 @@
 import {
   ACESFilmicToneMapping,
+  BoxGeometry,
   Color,
+  Mesh,
+  MeshBasicMaterial,
   NoToneMapping,
+  Raycaster,
   Scene,
   SRGBColorSpace,
+  Vector2,
   WebGLRenderer,
 } from 'three';
 import { ChunkRenderer } from './engine/ChunkRenderer';
@@ -12,6 +17,7 @@ import { onPaletteChanged } from './engine/palette';
 import { DEFAULT_THEME_ID, resolveTheme, THEMES, type Theme } from './engine/themes';
 import { createVoxelMaterial } from './engine/VoxelMaterial';
 import { GrowthScene } from './game/growthScene';
+import { pickSurfaceCell, type SurfaceCell } from './game/surfacePick';
 import { FixedStepLoop } from './game/loop';
 import { CLASS_COUNT, CLASS_NAMES, type BuildingClass } from './sim/classes';
 import { writeDesirabilityData } from './sim/debugData';
@@ -22,6 +28,7 @@ import { setPolicyActive, setSelectedClass, type SimState } from './sim/SimState
 import { tick } from './sim/tick';
 import { DebugOverlay, type OverlayFrame } from './ui/DebugOverlay';
 import { GrowthOverlay } from './ui/GrowthOverlay';
+import { GameToolbar, type GameTool } from './ui/GameToolbar';
 import { SimOverlay, type SimOverlayFrame } from './ui/SimOverlay';
 import { TerrainOverlay, type TerrainOverlayFrame } from './ui/TerrainOverlay';
 import { CHUNK } from './world/chunkCoords';
@@ -136,7 +143,7 @@ if (terrain === null) {
 } else if (growEnabled) {
   // La crescita deve leggersi come skyline, non come texture sull'intera isola:
   // si inquadra il nucleo centrale lasciando alle torri spazio verticale.
-  camera.frameRegion(TERRAIN_SIZE / 2, TERRAIN_SIZE / 2, 112, 112, 96);
+  camera.frameRegion(TERRAIN_SIZE / 2, TERRAIN_SIZE / 2, 210, 210, 128);
 } else {
   // L'isola invece si guarda intera: 256 di lato stanno in poche centinaia di chunk.
   camera.frameRegion(TERRAIN_SIZE / 2, TERRAIN_SIZE / 2, TERRAIN_SIZE, TERRAIN_SIZE, 48);
@@ -179,6 +186,35 @@ const simOverlay = simEnabled
     })
   : null;
 const growthOverlay = debugEnabled && growEnabled ? new GrowthOverlay(container) : null;
+let selectedTool: GameTool = { kind: 'none' };
+let gameToolbar: GameToolbar | null = null;
+if (growEnabled) {
+  gameToolbar = new GameToolbar(container, {
+      onTool: (tool) => {
+        selectedTool = tool;
+        preview.visible = false;
+      },
+      onPolicy: (id) => {
+        const result = growthScene?.togglePolicy(id);
+        if (result !== undefined && !result.success) gameToolbar?.showFailure(result.reason);
+      },
+      onPause: (paused) => growthScene?.setPaused(paused),
+      onSpeed: (speed) => growthScene?.setSpeed(speed),
+    });
+}
+
+const picker = new Raycaster();
+const pointer = new Vector2();
+const previewMaterial = new MeshBasicMaterial({ color: 0x65e08a, transparent: true, opacity: 0.48 });
+const preview = new Mesh(new BoxGeometry(1.04, 1.04, 1.04), previewMaterial);
+preview.visible = false;
+preview.renderOrder = 10;
+scene.add(preview);
+
+if (growEnabled) {
+  renderer.domElement.addEventListener('pointermove', onGamePointerMove, { capture: true });
+  renderer.domElement.addEventListener('pointerdown', onGamePointerDown, { capture: true });
+}
 
 if (debugEnabled) {
   window.addEventListener('keydown', onDebugKey);
@@ -409,6 +445,9 @@ function onFrame(time: number): void {
   if (growthOverlay !== null && growthOverlay.needsPaint(time)) {
     growthOverlay.update(growthScene?.stats ?? null, time);
   }
+  if (gameToolbar !== null && growthScene !== null && gameToolbar.needsPaint(time)) {
+    gameToolbar.update(growthScene.stats, time);
+  }
 }
 
 // --- Scena di simulazione ---------------------------------------------------
@@ -499,7 +538,87 @@ function updateGrowth(dt: number): void {
     console.info('[crescita] scena automatica pronta');
     return;
   }
+  // La TerrainMap arriva prima dei voxel: durante un'espansione la crescita
+  // riparte solo quando il settore e' stato applicato per intero.
+  if (!generator.done) return;
   growthScene.advance(dt);
+}
+
+function onGamePointerMove(event: PointerEvent): void {
+  if (selectedTool.kind === 'none' || growthScene === null || terrain === null) {
+    preview.visible = false;
+    return;
+  }
+  const cell = surfaceCellAt(event);
+  if (cell === null) {
+    preview.visible = false;
+    return;
+  }
+  preview.visible = true;
+  preview.position.set(cell.x + 0.5, cell.y + 0.5, cell.z + 0.5);
+  const valid = selectedTool.kind === 'expansion' || cell.buildable;
+  previewMaterial.color.setHex(valid ? 0x65e08a : 0xef6b65);
+}
+
+function onGamePointerDown(event: PointerEvent): void {
+  if (event.button !== 0 || selectedTool.kind === 'none') return;
+  event.preventDefault();
+  event.stopImmediatePropagation();
+  if (growthScene === null || terrain === null) return;
+  const cell = surfaceCellAt(event);
+  if (cell === null) return;
+
+  if (selectedTool.kind === 'catalyst') {
+    const result = growthScene.placeCatalyst(cell.x, cell.y, selectedTool.class);
+    if (!result.success) gameToolbar?.showFailure(result.reason);
+    return;
+  }
+
+  const paid = growthScene.buyExpansion();
+  if (!paid.success) {
+    gameToolbar?.showFailure(paid.reason);
+    return;
+  }
+  beginCoastalExpansion(cell);
+}
+
+function surfaceCellAt(event: PointerEvent): SurfaceCell | null {
+  if (terrain === null) return null;
+  const rect = renderer.domElement.getBoundingClientRect();
+  pointer.set(
+    ((event.clientX - rect.left) / rect.width) * 2 - 1,
+    -((event.clientY - rect.top) / rect.height) * 2 + 1,
+  );
+  picker.setFromCamera(pointer, camera.camera);
+  const origin = picker.ray.origin;
+  const direction = picker.ray.direction;
+  return pickSurfaceCell(
+    { origin: [origin.x, origin.y, origin.z], direction: [direction.x, direction.y, direction.z] },
+    terrain.map,
+  );
+}
+
+function beginCoastalExpansion(cell: SurfaceCell): void {
+  if (terrain === null || growthScene === null) return;
+  const size = 64;
+  const dx = cell.x - TERRAIN_SIZE / 2;
+  const dy = cell.y - TERRAIN_SIZE / 2;
+  const horizontal = Math.abs(dx) > Math.abs(dy);
+  const region = horizontal
+    ? {
+        minX: dx < 0 ? -size : TERRAIN_SIZE,
+        minY: Math.max(0, Math.min(TERRAIN_SIZE - size, Math.floor(cell.y / size) * size)),
+        sizeX: size,
+        sizeY: size,
+      }
+    : {
+        minX: Math.max(0, Math.min(TERRAIN_SIZE - size, Math.floor(cell.x / size) * size)),
+        minY: dy < 0 ? -size : TERRAIN_SIZE,
+        sizeX: size,
+        sizeY: size,
+      };
+  generator = new TerrainStreamer(world, terrainSeed, region, terrain.shape, terrain.map);
+  growthScene.setMessage('Generazione del nuovo settore costiero…');
 }
 
 function buildTerrainFrame(streamer: TerrainStreamer): TerrainOverlayFrame {

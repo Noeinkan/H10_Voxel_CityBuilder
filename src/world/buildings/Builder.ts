@@ -8,7 +8,7 @@ import type { VoxelWorld } from '../VoxelWorld';
 import { BuildingRegistry, type BuildingRecord, type ReadonlyBuildingRegistry } from './BuildingRegistry';
 import { BUILDER } from './config';
 import { generateBuilding, startLevel } from './generate';
-import { STAMP_EMPTY, type VoxelStamp } from './stamp';
+import { anchoredVoxel, STAMP_EMPTY, type VoxelAnchor, type VoxelStamp } from './stamp';
 
 /**
  * Il ponte fra la simulazione e il mondo voxel.
@@ -56,13 +56,13 @@ export interface BuilderStats {
   readonly blacklisted: number;
 }
 
-/** Un edificio che sta comparendo, una fascia alla volta. */
+/** Un volume che cresce dal proprio voxel di ancoraggio. */
 interface Growing {
   readonly record: BuildingRecord;
   readonly stamp: VoxelStamp;
   /** Impronta del livello precedente, da cancellare prima di scrivere. */
   readonly erase: VoxelStamp | null;
-  band: number;
+  voxelCursor: number;
   cleared: boolean;
 }
 
@@ -138,9 +138,9 @@ export class Builder {
   }
 
   /**
-   * Scrive le fasce degli edifici in crescita. Una chiamata per frame.
+   * Scrive singoli cubi degli edifici in crescita. Una chiamata per frame.
    *
-   * Il costo per frame e' `maxGrowing * bandsPerFrame` fasce, indipendente da
+   * Il costo per frame e' `maxGrowing * voxelsPerFrame` voxel, indipendente da
    * quanto e' grande la citta': e' il motivo per cui le comparse non fanno
    * cadere il frame rate quando gli edifici sono duemila invece di dieci.
    */
@@ -156,15 +156,13 @@ export class Builder {
         entry.cleared = true;
       }
 
-      const bands = entry.stamp.bandStarts;
-      let written = 0;
-      while (written < BUILDER.bandsPerFrame && entry.band < bands.length - 1) {
-        this.writeStamp(entry.record, entry.stamp, bands[entry.band], bands[entry.band + 1], false);
-        entry.band++;
-        written++;
-      }
-
-      if (entry.band >= bands.length - 1) this.growing.splice(i, 1);
+      entry.voxelCursor = this.writeVoxelBatch(
+        entry.record,
+        entry.stamp,
+        entry.voxelCursor,
+        BUILDER.voxelsPerFrame,
+      );
+      if (entry.voxelCursor >= entry.stamp.voxels.length) this.growing.splice(i, 1);
     }
   }
 
@@ -235,7 +233,7 @@ export class Builder {
       seed,
     });
 
-    if (animate) this.growing.push({ record, stamp, erase: null, band: 0, cleared: true });
+    if (animate) this.growing.push({ record, stamp, erase: null, voxelCursor: 0, cleared: true });
     else this.writeStamp(record, stamp, 0, stamp.sizeZ, false);
     this.placedCount++;
     return record;
@@ -363,7 +361,7 @@ export class Builder {
       if (ground !== null) this.pour(record.x, record.y, stamp.sizeX, record.baseZ);
     }
 
-    this.growing.push({ record: replaced, stamp, erase: old, band: 0, cleared: false });
+    this.growing.push({ record: replaced, stamp, erase: old, voxelCursor: 0, cleared: false });
     this.upgradedCount++;
   }
 
@@ -396,20 +394,44 @@ export class Builder {
     toZ: number,
     clear: boolean,
   ): void {
+    const anchor: VoxelAnchor = { x: record.x, y: record.y, z: record.baseZ };
     for (let sz = fromZ; sz < toZ; sz++) {
       for (let sy = 0; sy < stamp.sizeY; sy++) {
         for (let sx = 0; sx < stamp.sizeX; sx++) {
           const id = stamp.voxels[sx + stamp.sizeX * (sy + stamp.sizeY * sz)];
           if (id === STAMP_EMPTY) continue;
-          this.world.setBlock(
-            record.x + sx - stamp.anchorX,
-            record.y + sy - stamp.anchorY,
-            record.baseZ + sz,
-            clear ? STAMP_EMPTY : id,
-          );
+          const voxel = anchoredVoxel(anchor, stamp, sx, sy, sz);
+          this.world.setBlock(voxel.x, voxel.y, voxel.z, clear ? STAMP_EMPTY : id);
         }
       }
     }
+  }
+
+  /** Scrive un numero limitato di cubi solidi, dal basso verso l'alto. */
+  private writeVoxelBatch(
+    record: BuildingRecord,
+    stamp: VoxelStamp,
+    from: number,
+    budget: number,
+  ): number {
+    const anchor: VoxelAnchor = { x: record.x, y: record.y, z: record.baseZ };
+    const plane = stamp.sizeX * stamp.sizeY;
+    let cursor = from;
+    let written = 0;
+    while (cursor < stamp.voxels.length && written < budget) {
+      const id = stamp.voxels[cursor];
+      if (id !== STAMP_EMPTY) {
+        const sz = Math.floor(cursor / plane);
+        const within = cursor - sz * plane;
+        const sy = Math.floor(within / stamp.sizeX);
+        const sx = within - sy * stamp.sizeX;
+        const voxel = anchoredVoxel(anchor, stamp, sx, sy, sz);
+        this.world.setBlock(voxel.x, voxel.y, voxel.z, id);
+        written++;
+      }
+      cursor++;
+    }
+    return cursor;
   }
 
   // --- Budget di chunk -------------------------------------------------------

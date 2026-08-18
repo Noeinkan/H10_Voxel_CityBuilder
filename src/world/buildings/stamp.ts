@@ -7,23 +7,31 @@
  * decide dove, e questo file non ha modo di scoprirlo. E' cio' che permette al
  * generatore di girare in un test senza mondo e senza terreno.
  *
- * **L'ancora e' un voxel, non una cella.** `anchorX` e `anchorY` dicono quale
- * voxel dello stamp si appoggia sulla coordinata d'ancoraggio; `z = 0` e' la
- * base. Un edificio che cresce sopra un altro riceve la stessa impronta con una
- * base diversa, senza che il generatore ne sappia nulla.
+ * **L'ancora e' un voxel 3D, non una cella.** `anchorX/Y/Z` identificano il
+ * cubo dello stamp che coincide con l'ancora nel mondo. Non esiste quindi un
+ * piano privilegiato nel formato: uno stamp puo' partire dal terreno, da un
+ * tetto o da una faccia laterale senza cambiare rappresentazione.
  */
 
 /** Indice di palette che significa "qui non c'e' niente". Coincide con `PALETTE_SLOTS.empty`. */
 export const STAMP_EMPTY = 0;
+
+/** Un cubo del mondo usato come origine di un volume, a qualunque quota. */
+export interface VoxelAnchor {
+  readonly x: number;
+  readonly y: number;
+  readonly z: number;
+}
 
 export interface VoxelStamp {
   readonly sizeX: number;
   readonly sizeY: number;
   readonly sizeZ: number;
 
-  /** Offset dell'ancora dentro lo stamp, sul piano di terra. */
+  /** Offset dell'ancora voxel dentro lo stamp. */
   readonly anchorX: number;
   readonly anchorY: number;
+  readonly anchorZ: number;
 
   /** Indici di palette, `sizeX * sizeY * sizeZ` valori. 0 = vuoto. */
   readonly voxels: Uint8Array;
@@ -46,6 +54,21 @@ export interface VoxelStamp {
  */
 export function stampIndex(stamp: VoxelStamp, sx: number, sy: number, sz: number): number {
   return sx + stamp.sizeX * (sy + stamp.sizeY * sz);
+}
+
+/** Converte un voxel locale dello stamp nella posizione ancorata nel mondo. */
+export function anchoredVoxel(
+  anchor: VoxelAnchor,
+  stamp: VoxelStamp,
+  sx: number,
+  sy: number,
+  sz: number,
+): VoxelAnchor {
+  return {
+    x: anchor.x + sx - stamp.anchorX,
+    y: anchor.y + sy - stamp.anchorY,
+    z: anchor.z + sz - stamp.anchorZ,
+  };
 }
 
 /** Numero di fasce dello stamp. */

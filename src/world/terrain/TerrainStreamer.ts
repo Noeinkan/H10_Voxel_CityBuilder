@@ -48,11 +48,17 @@ export class TerrainStreamer implements SceneGenerator {
   private workerMs = 0;
   private disposed = false;
 
-  constructor(world: VoxelWorld, seed: number, region: Region, shape?: IslandShape) {
+  constructor(
+    world: VoxelWorld,
+    seed: number,
+    region: Region,
+    shape?: IslandShape,
+    existingMap?: TerrainMap,
+  ) {
     this.world = world;
     this.seed = seed;
     this.shape = shape ?? shapeFromRegion(region);
-    this.map = new TerrainMap();
+    this.map = existingMap ?? new TerrainMap();
     this.map.rememberShape(this.shape);
 
     const span = chunkSpanOf(region);

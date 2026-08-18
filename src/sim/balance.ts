@@ -57,6 +57,32 @@ export const BALANCE = {
     civicPride: 1.3,
   },
 
+  // --- Azioni del giocatore -----------------------------------------------
+
+  gameplay: {
+    catalyst: {
+      cost: [120, 150, 200] as readonly number[],
+      strength: [210, 205, 195] as readonly number[],
+      radius: [22, 20, 18] as readonly number[],
+      /** Distanza di Chebyshev minima fra catalizzatori della stessa classe. */
+      minDistance: 10,
+    },
+    policy: {
+      denseHousing: { cost: 180, population: 24 },
+      industrialSubsidy: { cost: 220, population: 36 },
+      austerity: { cost: 100, population: 0 },
+      greenBelt: { cost: 140, population: 12 },
+      zoningRelief: { cost: 160, population: 24 },
+      civicPride: { cost: 260, population: 72 },
+    },
+    expansion: {
+      cost: 500,
+      population: 48,
+      /** Lato di un settore costiero, allineato a due chunk. */
+      size: 64,
+    },
+  },
+
   // --- Popolazione ---------------------------------------------------------
 
   population: {

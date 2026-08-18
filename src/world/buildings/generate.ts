@@ -64,7 +64,8 @@ export function generateBuilding(
   // e' cio' che permette al Builder di cancellare un edificio senza averne
   // conservato i voxel.
   const cap = Math.min(caps.maxFootprint, footprintCap);
-  const footprint = clamp(1 + Math.floor(random() * MAX_FOOTPRINT), 1, cap);
+  const minFootprint = Math.min(caps.minFootprint, cap);
+  const footprint = clamp(1 + Math.floor(random() * MAX_FOOTPRINT), minFootprint, cap);
   const bands = pickInt(random, caps.minBands, caps.maxBands);
 
   // L'accento a scala di edificio si decide qui, prima di disegnare: e' un
@@ -261,6 +262,7 @@ function paint(
     // colonna da cui il footprint si estende, non il suo centro.
     anchorX: 0,
     anchorY: 0,
+    anchorZ: 0,
     voxels,
     bandStarts,
   };

@@ -109,7 +109,7 @@ export class DebugOverlay {
       `camera     zoom ${frame.zoom.toFixed(2)}  yaw ${Math.round(frame.yawDegrees)}°`,
       generating ? `genera     ${(frame.generationProgress * 100).toFixed(0)} %` : '',
       '',
-      'Q/E ruota  rotella zoom  drag destro pan',
+      'Q/E ruota  rotella zoom  drag pan',
       'WASD pan   F inquadra    G +64 chunk',
       'R rebuild  C azzera i picchi',
       '1..9 tema',

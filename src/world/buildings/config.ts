@@ -43,7 +43,7 @@ export const BUILDER = {
   upgradesPerPass: 64,
 
   /** Livello massimo raggiungibile. Oltre, un edificio smette di crescere. */
-  maxLevel: 4,
+  maxLevel: 6,
 
   /**
    * Desiderabilita' che la colonna deve superare per promuovere un edificio al
@@ -53,7 +53,7 @@ export const BUILDER = {
    * Salgono piu' in fretta di quanto scenda la desiderabilita': e' cio' che fa
    * convergere l'altezza invece di farla salire finche' c'e' un catalizzatore.
    */
-  upgradeThreshold: [0, 55, 90, 135, 180] as readonly number[],
+  upgradeThreshold: [0, 50, 78, 108, 138, 168, 198] as readonly number[],
 
   /**
    * Dislivello massimo, in voxel, che una fondazione puo' colmare.
@@ -68,14 +68,13 @@ export const BUILDER = {
    * Chunk che un singolo edificio puo' marcare sporchi, fondazione inclusa.
    *
    * E' un tetto duro verificato prima di scrivere, non una speranza: un edificio
-   * che sfora viene scartato. Quattro e' il caso peggiore accettabile — due
-   * colonne di chunk attraversate in altezza, oppure una colonna piu' i vicini
-   * che il bordo costringe a rimeshare.
+   * che sfora viene scartato. Otto copre una torre alta a cavallo di una
+   * cucitura senza lasciare che un singolo upgrade sporchi una regione intera.
    */
   maxDirtyChunksPerBuilding: 4,
 
-  /** Fasce scritte per frame, per ogni edificio in costruzione. */
-  bandsPerFrame: 1,
+  /** Cubi scritti per frame per struttura: la crescita e' voxel-per-voxel. */
+  voxelsPerFrame: 32,
 
   /**
    * Edifici che possono crescere contemporaneamente.
@@ -107,6 +106,8 @@ export const BUILDER = {
 export const MAX_FOOTPRINT = 3;
 
 export interface LevelCaps {
+  /** Lato minimo naturale; durante un upgrade bloccato puo' restare piu' stretto. */
+  readonly minFootprint: number;
   /** Lato massimo dell'impronta, in voxel. */
   readonly maxFootprint: number;
   readonly minBands: number;
@@ -114,11 +115,13 @@ export interface LevelCaps {
 }
 
 export const LEVEL_CAPS: readonly LevelCaps[] = [
-  { maxFootprint: 1, minBands: 1, maxBands: 2 },
-  { maxFootprint: 2, minBands: 2, maxBands: 3 },
-  { maxFootprint: 2, minBands: 3, maxBands: 4 },
-  { maxFootprint: 3, minBands: 4, maxBands: 5 },
-  { maxFootprint: 3, minBands: 5, maxBands: 7 },
+  { minFootprint: 1, maxFootprint: 2, minBands: 1, maxBands: 2 },
+  { minFootprint: 1, maxFootprint: 3, minBands: 2, maxBands: 3 },
+  { minFootprint: 2, maxFootprint: 3, minBands: 3, maxBands: 5 },
+  { minFootprint: 2, maxFootprint: 3, minBands: 5, maxBands: 7 },
+  { minFootprint: 3, maxFootprint: 3, minBands: 7, maxBands: 9 },
+  { minFootprint: 3, maxFootprint: 3, minBands: 9, maxBands: 11 },
+  { minFootprint: 3, maxFootprint: 3, minBands: 11, maxBands: 14 },
 ];
 
 /**
@@ -129,7 +132,7 @@ export const LEVEL_CAPS: readonly LevelCaps[] = [
  * distribuzione uniforme darebbe un altopiano, che a colpo d'occhio non si legge
  * come una citta'.
  */
-export const START_LEVEL_CDF: readonly number[] = [0.72, 0.92, 0.985, 1, 1];
+export const START_LEVEL_CDF: readonly number[] = [0.78, 0.94, 0.985, 0.997, 1, 1, 1];
 
 /** Proporzioni e colori di una classe. */
 export interface ClassProfile {
@@ -182,7 +185,7 @@ export const CLASS_PROFILE: readonly ClassProfile[] = [
   },
   // civic — slanciata e chiara: sono i picchi che reggono lo skyline.
   {
-    bandHeight: [3, 5],
+    bandHeight: [4, 7],
     shrinkBias: 0.6,
     body: PALETTE_SLOTS.concreteWhite,
     bodyAlt: PALETTE_SLOTS.concreteLight,

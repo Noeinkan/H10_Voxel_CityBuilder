@@ -66,6 +66,8 @@ export class IsoCameraController {
   private panY = 0;
   private panning = false;
   private pointerId: number | null = null;
+  private pointerX = 0;
+  private pointerY = 0;
 
   constructor(world: VoxelWorld, viewportWidth: number, viewportHeight: number, options: IsoCameraOptions = {}) {
     this.world = world;
@@ -87,6 +89,7 @@ export class IsoCameraController {
 
   /** Collega gli input alla canvas. */
   attach(element: HTMLElement): void {
+    element.style.touchAction = 'none';
     element.addEventListener('pointerdown', this.onPointerDown);
     element.addEventListener('pointermove', this.onPointerMove);
     element.addEventListener('pointerup', this.onPointerUp);
@@ -293,10 +296,11 @@ export class IsoCameraController {
   }
 
   private readonly onPointerDown = (event: PointerEvent): void => {
-    // Tasto destro o centrale: pan. Il sinistro resta libero per il gameplay.
-    if (event.button !== 1 && event.button !== 2) return;
+    if (!isPanButton(event.button)) return;
     this.panning = true;
     this.pointerId = event.pointerId;
+    this.pointerX = event.clientX;
+    this.pointerY = event.clientY;
     (event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
     event.preventDefault();
   };
@@ -305,8 +309,13 @@ export class IsoCameraController {
     if (!this.panning || event.pointerId !== this.pointerId) return;
     // Da pixel a unita' di mondo: l'altezza del frustum copre l'altezza in pixel.
     const scale = this.viewHeight / this.camera.zoom / this.viewportHeight;
-    this.panScreen(-event.movementX * scale, event.movementY * scale);
+    const dx = event.clientX - this.pointerX;
+    const dy = event.clientY - this.pointerY;
+    this.pointerX = event.clientX;
+    this.pointerY = event.clientY;
+    this.panScreen(-dx * scale, dy * scale);
     this.applyTransform();
+    event.preventDefault();
   };
 
   private readonly onPointerUp = (event: PointerEvent): void => {
@@ -347,4 +356,9 @@ function easeInOut(t: number): number {
 
 function preventDefault(event: Event): void {
   event.preventDefault();
+}
+
+/** Il pan e' disponibile con drag primario, centrale o secondario. */
+export function isPanButton(button: number): boolean {
+  return button === 0 || button === 1 || button === 2;
 }

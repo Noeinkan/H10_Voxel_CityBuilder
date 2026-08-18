@@ -66,12 +66,17 @@ aggiungendo chunk alla mappa sparsa.
 | `terrain` | — | `<seed>` sostituisce la scena urbana con un'isola 256×256 |
 | `sim` | — | `1` accende la scena di simulazione (implica l'isola) |
 | `theme` | `natural` | `natural`, `pastel`, `neon`, `industrial`, `scifi`, `enchanted` |
-| `grow` | — | `1` abilita la crescita automatica; `debug=1` aggiunge l'overlay |
+| `grow` | — | `1` avvia l'MVP giocabile; `debug=1` aggiunge l'overlay tecnico |
 
 Tasti: `Q`/`E` ruota di 90°, rotella zoom, drag destro o `WASD` pan, `F` inquadra
 tutto, `G` aggiunge 64 chunk a runtime, `R` rebuild totale, `C` azzera i picchi,
 `B` colora le colonne per bioma (solo in scena terreno). In scena simulazione:
 `T` un tick, `P` avvia o ferma il passo automatico, `M` cicla la classe mostrata.
+
+Con `?grow=1` la toolbar permette di piazzare catalizzatori con un click sul
+terreno, acquistare settori costieri, attivare policy e controllare pausa e
+velocita'. Le azioni consumano fondi e spiegano quando terreno, popolazione o
+distanza minima non ne permettono l'esecuzione.
 
 ## Misure
 

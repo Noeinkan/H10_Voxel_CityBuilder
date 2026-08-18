@@ -3,7 +3,7 @@ import { ALL_CLASSES, type BuildingClass } from '../../sim';
 import { PALETTE_SLOTS } from '../../engine/paletteSlots';
 import { BUILDER, LEVEL_CAPS, MAX_FOOTPRINT } from './config';
 import { generateBuilding, startLevel } from './generate';
-import { STAMP_EMPTY, bandCount, solidCount, type VoxelStamp } from './stamp';
+import { anchoredVoxel, STAMP_EMPTY, bandCount, solidCount, type VoxelStamp } from './stamp';
 
 /** Tutte le combinazioni di classe e livello, con una manciata di seed. */
 function* everyStamp(seeds = 24): Generator<{ stamp: VoxelStamp; cls: BuildingClass; level: number }> {
@@ -17,6 +17,12 @@ function* everyStamp(seeds = 24): Generator<{ stamp: VoxelStamp; cls: BuildingCl
 }
 
 describe('generateBuilding', () => {
+  it('trasforma l\'ancora locale in una coordinata voxel 3D', () => {
+    const stamp = generateBuilding(ALL_CLASSES[0], 0, 13);
+    const world = anchoredVoxel({ x: 40, y: -7, z: 23 }, stamp, stamp.anchorX, stamp.anchorY, stamp.anchorZ);
+    expect(world).toEqual({ x: 40, y: -7, z: 23 });
+  });
+
   it('e\' deterministico sugli stessi argomenti', () => {
     for (const cls of ALL_CLASSES) {
       for (let level = 0; level <= BUILDER.maxLevel; level++) {
@@ -27,6 +33,7 @@ describe('generateBuilding', () => {
         expect(b.sizeZ).toBe(a.sizeZ);
         expect(b.anchorX).toBe(a.anchorX);
         expect(b.anchorY).toBe(a.anchorY);
+        expect(b.anchorZ).toBe(a.anchorZ);
         expect(Array.from(b.voxels)).toEqual(Array.from(a.voxels));
         expect(b.bandStarts).toEqual(a.bandStarts);
       }
@@ -54,7 +61,7 @@ describe('generateBuilding', () => {
     for (const { stamp, level } of everyStamp()) {
       const caps = LEVEL_CAPS[level];
       expect(stamp.sizeX).toBe(stamp.sizeY);
-      expect(stamp.sizeX).toBeGreaterThanOrEqual(1);
+      expect(stamp.sizeX).toBeGreaterThanOrEqual(caps.minFootprint);
       expect(stamp.sizeX).toBeLessThanOrEqual(Math.min(caps.maxFootprint, MAX_FOOTPRINT));
 
       // Le fasce del corpo piu' il coronamento.
@@ -139,6 +146,14 @@ describe('generateBuilding', () => {
       checked++;
     }
     expect(checked).toBeGreaterThan(0);
+  });
+
+  it('produce uno skyline di torri ai livelli alti', () => {
+    let tallest = 0;
+    for (let seed = 0; seed < 64; seed++) {
+      tallest = Math.max(tallest, generateBuilding(ALL_CLASSES[2], BUILDER.maxLevel, seed).sizeZ);
+    }
+    expect(tallest).toBeGreaterThanOrEqual(60);
   });
 
   it('porta una faccia d\x27accento con un indice diverso dal corpo', () => {
