@@ -92,6 +92,7 @@ map.columnAt(120, 96); // { height, biome, slope, buildable }
 | [ChunkRenderer.ts](src/engine/ChunkRenderer.ts) | Una geometria per chunk, coda a priorità, frustum culling, upload a budget | `ChunkRenderer`, `ChunkRendererStats` |
 | [MesherPool.ts](src/engine/MesherPool.ts) | Pool di worker, job in volo, statistiche del mesher | `MesherPool`, `MesherStats`, `ChunkMeshResult` |
 | [VoxelMaterial.ts](src/engine/VoxelMaterial.ts) | Unico `ShaderMaterial`, palette, luce per faccia, `aAO` e nebbia | `createVoxelMaterial`, `VoxelMaterialHandle` |
+| [InfluenceOverlay.ts](src/engine/InfluenceOverlay.ts) | Cerchi dei catalizzatori e perimetri dei settori, senza modificare le mesh voxel | `InfluenceOverlay` |
 | [IsoCameraController.ts](src/engine/IsoCameraController.ts) | Ortografica isometrica: scatti di 90°, zoom, pan vincolato all'AABB | `IsoCameraController`, `IsoCameraOptions` |
 | [IsoCameraController.test.ts](src/engine/IsoCameraController.test.ts) | Contratto dei pulsanti pointer accettati per il pan | — |
 | [palette.ts](src/engine/palette.ts) | Caricamento della palette, validazione, HMR a caldo | `paletteHex`, `toPaletteArray`, `isValidHexColor`, `onPaletteChanged` |
@@ -173,20 +174,27 @@ gestisce le impronte, costruisce a fasce entro un budget e promuove gli edifici.
 | [launchMode.ts](src/game/launchMode.ts) | Risoluzione pura della modalita' iniziale e degli harness URL | `resolveLaunchMode`, `LaunchMode` |
 | [actions.ts](src/game/actions.ts) | Azioni economiche atomiche: catalizzatori, policy ed espansione | `placeCatalyst`, `togglePolicy`, `buyExpansion` |
 | [surfacePick.ts](src/game/surfacePick.ts) | Selezione pura della colonna sulla heightmap da un raggio 3D | `pickSurfaceCell` |
+| [onboarding.ts](src/game/onboarding.ts) | Tutorial derivato dai catalizzatori, senza flag nascosti | `onboardingOf`, `onboardingAllows` |
+| [cityCondition.ts](src/game/cityCondition.ts) | Obiettivo di autosufficienza e crisi con indicazioni di recupero | `cityCondition`, `isSelfSufficient` |
+| [sectors.ts](src/game/sectors.ts) | Identità, region e maschera composta dei settori costieri | `coastalSectorAt`, `shapeWithSector` |
 
-## `src/ui/` — overlay di debug
+## `src/ui/` — HUD e overlay di debug
 
-Canvas e DOM puri, nessuna dipendenza da Three.js. Gli overlay tecnici esistono
-solo con `?debug=1`; il promemoria dei comandi resta sempre visibile.
+Canvas e DOM puri, nessuna dipendenza da Three.js. Il Cozy HUD è l'interfaccia
+giocabile; gli overlay tecnici si alternano con `F3` o partono aperti con
+`?debug=1`.
 
 | File | Ruolo |
 | --- | --- |
-| [ControlsHint.ts](src/ui/ControlsHint.ts) | Promemoria sempre visibile dei comandi di navigazione |
+| [hud.css](src/ui/hud.css) | Token, componenti, stati accessibili e layout responsivo Cozy City |
+| [hudIcons.ts](src/ui/hudIcons.ts) | Icone SVG interne, senza dipendenze o richieste di rete |
+| [GameHud.ts](src/ui/GameHud.ts) | Risorse, dock, drawer policy, tempo, tooltip e feedback contestuale |
+| [GameHudModel.ts](src/ui/GameHudModel.ts) | View model puro di risorse, requisiti e disponibilità delle azioni |
+| [ControlsHint.ts](src/ui/ControlsHint.ts) | Onboarding contestuale persistente e pannello di aiuto |
 | [DebugOverlay.ts](src/ui/DebugOverlay.ts) | fps, draw call, triangoli, code, tempi di mesher e main thread |
 | [GrowthOverlay.ts](src/ui/GrowthOverlay.ts) | Conteggi, livelli, coda e scarti della crescita automatica |
 | [TerrainOverlay.ts](src/ui/TerrainOverlay.ts) | Progresso della generazione, istogramma dei biomi, colonne edificabili |
 | [SimOverlay.ts](src/ui/SimOverlay.ts) | Stock e delta per tick, heatmap 2D del campo, primi dieci candidati, pulsanti delle policy |
-| [GameToolbar.ts](src/ui/GameToolbar.ts) | Toolbar MVP: strumenti, policy, risorse, pausa e velocita' |
 
 ## Test e bench
 
@@ -204,7 +212,11 @@ solo con `?debug=1`; il promemoria dei comandi resta sempre visibile.
 | [world/terrain/decor.test.ts](src/world/terrain/decor.test.ts) | Alberi deterministici, biomi esclusi e chiome non sovrapposte |
 | [game/loop.test.ts](src/game/loop.test.ts) | Cadenza fissa e limite del recupero |
 | [game/launchMode.test.ts](src/game/launchMode.test.ts) | Esperienza completa alla radice e isolamento degli harness URL |
+| [game/onboarding.test.ts](src/game/onboarding.test.ts) | Sequenza e sblocco dei tre passi iniziali |
+| [game/cityCondition.test.ts](src/game/cityCondition.test.ts) | Priorità delle crisi e stabilità richiesta per il successo |
+| [game/sectors.test.ts](src/game/sectors.test.ts) | Identità uniche, terra utile e continuità delle espansioni |
 | [ui/ControlsHint.test.ts](src/ui/ControlsHint.test.ts) | Completezza delle indicazioni dei comandi camera |
+| [ui/GameHudModel.test.ts](src/ui/GameHudModel.test.ts) | Risorse, requisiti, blocchi economici e policy attive del HUD |
 | [world/buildings/Builder.test.ts](src/world/buildings/Builder.test.ts) | Candidato → occupazione della simulazione → voxel |
 | [world/buildings/BuildingRegistry.test.ts](src/world/buildings/BuildingRegistry.test.ts) | Indice spaziale e sostituzione di record |
 | [world/buildings/generate.test.ts](src/world/buildings/generate.test.ts) | Determinismo e limiti degli stamp |
@@ -220,11 +232,11 @@ solo con `?debug=1`; il promemoria dei comandi resta sempre visibile.
 
 ## Parametri URL
 
-La radice `/` avvia isola, crescita, toolbar e overlay tecnici.
+La radice `/` avvia isola, crescita e Cozy HUD; gli overlay tecnici sono nascosti.
 
 | Parametro | Default | Effetto |
 | --- | --- | --- |
-| `debug` | `1` alla radice | `0` nasconde overlay e hotkey; `1` li abilita negli harness |
+| `debug` | — | `1` apre overlay e hotkey tecniche; `F3` li alterna a runtime |
 | `scene` | — | Isola una scena `city`, `noise` (caso peggiore) o `slab` |
 | `seed` | `1337` | Seed della generazione |
 | `size` | `512` | Lato del mondo in voxel (32…4096) |

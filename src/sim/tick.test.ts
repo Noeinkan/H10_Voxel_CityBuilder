@@ -163,6 +163,24 @@ describe('tick — invarianti sugli stock', () => {
 });
 
 describe('tick — bilancio', () => {
+  it('una scelta iniziale imperfetta lascia tempo e popolazione per recuperare', () => {
+    const terrainMap = testTerrain({ chunksX: 2, chunksY: 2 });
+    let state = createSimState();
+    for (let i = 0; i < 3; i++) {
+      state = addBuilding(state, { x: 5 + i * 4, y: 5, class: BUILDING_CLASS.residential });
+    }
+    state = {
+      ...state,
+      population: { stock: 60, delta: 0 },
+      food: { stock: 0, delta: 0 },
+    };
+
+    const afterTwentySeconds = tickMany(state, terrainMap, 200);
+
+    expect(afterTwentySeconds.population.stock).toBeGreaterThan(35);
+    expect(afterTwentySeconds.population.delta).toBeLessThan(0);
+  });
+
   it('la popolazione converge alla capacita’ residenziale e non la supera', () => {
     const terrainMap = testTerrain({ chunksX: 8, chunksY: 8 });
     const state = tickMany(standardCity(), terrainMap, 2000);

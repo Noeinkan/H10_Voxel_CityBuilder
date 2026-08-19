@@ -19,6 +19,9 @@ export interface Atmosphere {
    * con `fogColor`. Sono due parametri distinti apposta.
    */
   readonly background: string;
+  /** Estremi del gradiente verticale; se assenti coincidono con `background`. */
+  readonly skyTop?: string;
+  readonly skyHorizon?: string;
   /** Tinta verso cui sfuma la distanza, miscelata in spazio lineare. */
   readonly fogColor: string;
   /** Densita' della nebbia esponenziale. 0 la spegne del tutto. */
@@ -33,6 +36,22 @@ export interface Atmosphere {
   readonly faceLight: readonly number[];
   /** Quanto scuriscono gli angoli concavi. Consumata dall'AO per-vertice. */
   readonly aoStrength: number;
+  /** Tinte moltiplicative per facce illuminate e in ombra. */
+  readonly lightTint?: string;
+  readonly shadowTint?: string;
+  /** Schiarimento verticale leggero, calcolato in coordinate mondo. */
+  readonly heightTint?: string;
+  readonly heightStart?: number;
+  readonly heightEnd?: number;
+  readonly heightStrength?: number;
+  /** Risposta economica del vetro, senza trasparenza o materiale separato. */
+  readonly glassTint?: string;
+  readonly glassLift?: number;
+  /** Riflesso cromatico opaco applicato solo alla faccia superiore dell'acqua. */
+  readonly waterHighlight?: string;
+  readonly waterStrength?: number;
+  readonly waterScale?: number;
+  readonly waterSpeed?: number;
   readonly toneMapping: 'none' | 'aces';
   readonly exposure: number;
 }

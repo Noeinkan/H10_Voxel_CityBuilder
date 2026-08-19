@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { ALL_CLASSES, type BuildingClass } from '../../sim';
 import { PALETTE_SLOTS } from '../../engine/paletteSlots';
-import { BUILDER, LEVEL_CAPS, MAX_FOOTPRINT } from './config';
+import { BUILDER, CLASS_PROFILE, LEVEL_CAPS, MAX_FOOTPRINT } from './config';
 import { generateBuilding, startLevel } from './generate';
 import { anchoredVoxel, STAMP_EMPTY, bandCount, solidCount, type VoxelStamp } from './stamp';
 
@@ -64,9 +64,9 @@ describe('generateBuilding', () => {
       expect(stamp.sizeX).toBeGreaterThanOrEqual(caps.minFootprint);
       expect(stamp.sizeX).toBeLessThanOrEqual(Math.min(caps.maxFootprint, MAX_FOOTPRINT));
 
-      // Le fasce del corpo piu' il coronamento.
-      expect(bandCount(stamp)).toBeGreaterThanOrEqual(caps.minBands + 1);
-      expect(bandCount(stamp)).toBeLessThanOrEqual(caps.maxBands + 1);
+      // Fasce del corpo, coronamento e unico dettaglio sul tetto.
+      expect(bandCount(stamp)).toBeGreaterThanOrEqual(caps.minBands + 2);
+      expect(bandCount(stamp)).toBeLessThanOrEqual(caps.maxBands + 2);
     }
   });
 
@@ -89,6 +89,18 @@ describe('generateBuilding', () => {
     for (const cls of ALL_CLASSES) {
       for (let seed = 0; seed < 32; seed++) {
         expect(generateBuilding(cls, BUILDER.maxLevel, seed, 1).sizeX).toBe(1);
+      }
+    }
+  });
+
+  it('un upgrade puo allargarsi ma non restringe mai l\'impronta esistente', () => {
+    for (const cls of ALL_CLASSES) {
+      for (let level = 1; level <= BUILDER.maxLevel; level++) {
+        for (let seed = 0; seed < 32; seed++) {
+          const previous = generateBuilding(cls, level - 1, seed);
+          const upgraded = generateBuilding(cls, level, seed, MAX_FOOTPRINT, previous.sizeX);
+          expect(upgraded.sizeX).toBeGreaterThanOrEqual(previous.sizeX);
+        }
       }
     }
   });
@@ -131,29 +143,31 @@ describe('generateBuilding', () => {
     }
   });
 
-  it('ha un coronamento in cima, diverso dal corpo sotto', () => {
-    // Il coronamento e' l'ultima fascia: la quota piu' alta ne porta il colore, e
-    // quel colore non compare nel corpo.
+  it('ha un unico dettaglio di tetto coerente con la classe', () => {
     let checked = 0;
-    for (const { stamp } of everyStamp(12)) {
+    for (const { stamp, cls } of everyStamp(12)) {
       const top = stamp.sizeZ - 1;
-      const crownIds = new Set<number>();
+      const topIds: number[] = [];
       for (let i = 0; i < stamp.sizeX * stamp.sizeY; i++) {
         const id = stamp.voxels[i + stamp.sizeX * stamp.sizeY * top];
-        if (id !== STAMP_EMPTY) crownIds.add(id);
+        if (id !== STAMP_EMPTY) topIds.push(id);
       }
-      expect(crownIds.size).toBeGreaterThan(0);
+      expect(topIds).toEqual([CLASS_PROFILE[cls].roofProp]);
       checked++;
     }
     expect(checked).toBeGreaterThan(0);
   });
 
-  it('produce uno skyline di torri ai livelli alti', () => {
+  it('produce uno skyline alto ma non filiforme ai livelli alti', () => {
     let tallest = 0;
     for (let seed = 0; seed < 64; seed++) {
-      tallest = Math.max(tallest, generateBuilding(ALL_CLASSES[2], BUILDER.maxLevel, seed).sizeZ);
+      const stamp = generateBuilding(ALL_CLASSES[2], BUILDER.maxLevel, seed);
+      tallest = Math.max(tallest, stamp.sizeZ);
+      expect(stamp.sizeX).toBe(4);
+      expect(stamp.sizeZ / stamp.sizeX).toBeLessThanOrEqual(10);
     }
-    expect(tallest).toBeGreaterThanOrEqual(60);
+    expect(tallest).toBeGreaterThanOrEqual(30);
+    expect(tallest).toBeLessThanOrEqual(40);
   });
 
   it('porta una faccia d\x27accento con un indice diverso dal corpo', () => {
@@ -166,8 +180,9 @@ describe('generateBuilding', () => {
       wide++;
 
       const ids = new Set<number>();
-      for (let i = 0; i < stamp.sizeX * stamp.sizeY; i++) {
-        const id = stamp.voxels[i];
+      const plane = stamp.sizeX * stamp.sizeY;
+      for (let i = 0; i < plane; i++) {
+        const id = stamp.voxels[i + plane];
         if (id !== STAMP_EMPTY) ids.add(id);
       }
       expect(ids.size).toBeGreaterThanOrEqual(2);

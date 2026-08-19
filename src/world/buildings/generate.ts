@@ -53,6 +53,7 @@ export function generateBuilding(
   level: number,
   seed: number,
   footprintCap = MAX_FOOTPRINT,
+  footprintFloor = 1,
 ): VoxelStamp {
   const caps = LEVEL_CAPS[clamp(level, 0, LEVEL_CAPS.length - 1)];
   const profile = CLASS_PROFILE[cls];
@@ -64,15 +65,23 @@ export function generateBuilding(
   // e' cio' che permette al Builder di cancellare un edificio senza averne
   // conservato i voxel.
   const cap = Math.min(caps.maxFootprint, footprintCap);
-  const minFootprint = Math.min(caps.minFootprint, cap);
-  const footprint = clamp(1 + Math.floor(random() * MAX_FOOTPRINT), minFootprint, cap);
+  const minFootprint = Math.min(Math.max(caps.minFootprint, footprintFloor), cap);
+  const naturalFootprint = clamp(
+    2 + Math.floor(random() * (MAX_FOOTPRINT - 1)) + profile.footprintBias,
+    2,
+    MAX_FOOTPRINT,
+  );
+  const footprint = clamp(naturalFootprint, minFootprint, cap);
   const bands = pickInt(random, caps.minBands, caps.maxBands);
 
   // L'accento a scala di edificio si decide qui, prima di disegnare: e' un
   // colore di corpo alternativo, non una passata di ritocco alla fine.
   const accented = random() < BUILDER.accentBuildingChance;
   const body = accented ? profile.accent : profile.body;
-  const bodyAlt = accented ? profile.body : profile.bodyAlt;
+  // La cornice mantiene il proprio tono anche quando l'accento sale a scala di
+  // edificio: usare qui `body` renderebbe la faccia d'accento invisibile sulle
+  // fasce alte due voxel, dove cornice e faccia finirebbero nello stesso slot.
+  const bodyAlt = profile.bodyAlt;
 
   // La faccia d'accento resta sempre diversa dal corpo: su un edificio gia'
   // accentato prende il colore normale, che e' comunque un contrasto.
@@ -96,7 +105,29 @@ export function generateBuilding(
   rects.push(crownRect);
   heights.push(pickInt(random, 1, 2));
 
-  return paint(rects, heights, footprint, body, bodyAlt, accentId, accentFace, profile.crown);
+  // Un solo dettaglio verticale chiude la silhouette senza introdurre rumore
+  // per-voxel: camino, sfiato o antenna dipendono esclusivamente dalla classe.
+  const propRect: BandRect = {
+    x0: crownRect.x0 + Math.floor(random() * crownRect.w),
+    y0: crownRect.y0 + Math.floor(random() * crownRect.h),
+    w: 1,
+    h: 1,
+  };
+  rects.push(propRect);
+  heights.push(profile.roofPropHeight);
+
+  return paint(
+    rects,
+    heights,
+    footprint,
+    body,
+    bodyAlt,
+    accentId,
+    accentFace,
+    profile.crown,
+    profile.plinth,
+    profile.roofProp,
+  );
 }
 
 /**
@@ -221,6 +252,8 @@ function paint(
   accentId: number,
   accentFace: number,
   crown: number,
+  plinth: number,
+  roofProp: number,
 ): VoxelStamp {
   let sizeZ = 0;
   for (const height of heights) sizeZ += height;
@@ -232,19 +265,35 @@ function paint(
   for (let b = 0; b < rects.length; b++) {
     bandStarts.push(z);
     const rect = rects[b];
-    const isCrown = b === rects.length - 1;
+    const isCrown = b === rects.length - 2;
+    const isRoofProp = b === rects.length - 1;
     const top = z + heights[b] - 1;
 
     for (let sz = z; sz <= top; sz++) {
       // La cornice e' il voxel di sommita' della fascia: costa nulla e produce
       // le righe orizzontali che danno la scala all'edificio. Su una fascia alta
       // un voxel la cornice e' la fascia, ed e' corretto che lo sia.
-      const layer = isCrown ? crown : sz === top ? bodyAlt : body;
+      const layer = isRoofProp
+        ? roofProp
+        : isCrown
+          ? crown
+          : sz === 0
+            ? plinth
+            : sz === top
+              ? bodyAlt
+              : body;
 
       for (let sy = rect.y0; sy < rect.y0 + rect.h; sy++) {
         for (let sx = rect.x0; sx < rect.x0 + rect.w; sx++) {
-          voxels[sx + footprint * (sy + footprint * sz)] = onAccentFace(rect, sx, sy, accentFace)
-            ? accentId
+          const accent = !isCrown && !isRoofProp && sz !== 0 &&
+            onAccentFace(rect, sx, sy, accentFace);
+          // Quando l'intero edificio usa il colore d'accento, `accentId`
+          // coincide con la cornice normale. Sulla sommita' della fascia si
+          // inverte quindi il contrasto, altrimenti proprio quel piano perde
+          // la faccia che rende leggibile il volume.
+          const accentLayer = accentId === layer ? body : accentId;
+          voxels[sx + footprint * (sy + footprint * sz)] = accent
+            ? accentLayer
             : layer;
         }
       }

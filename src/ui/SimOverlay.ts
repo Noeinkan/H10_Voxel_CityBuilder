@@ -79,54 +79,23 @@ export class SimOverlay {
 
   constructor(parent: HTMLElement, handlers: SimOverlayHandlers) {
     this.root = document.createElement('details');
-    this.root.style.cssText = [
-      'position:fixed',
-      'right:12px',
-      'bottom:var(--game-hud-bottom, 12px)',
-      'z-index:16',
-      'padding:8px 10px',
-      'max-width:calc(100vw - 24px)',
-      'max-height:min(72vh,680px)',
-      'box-sizing:border-box',
-      'overflow:auto',
-      'background:rgba(10,18,24,.9)',
-      'color:#dbe8e5',
-      'font:10px/1.45 ui-monospace,SFMono-Regular,Consolas,monospace',
-      'border:1px solid rgba(185,217,210,.22)',
-      'border-radius:8px',
-      'box-shadow:0 8px 28px rgba(0,0,0,.24)',
-      'backdrop-filter:blur(8px)',
-      'white-space:pre',
-      'min-width:250px',
-    ].join(';');
+    this.root.className = 'debug-panel debug-panel--right';
 
     this.summary = document.createElement('summary');
+    this.summary.className = 'debug-summary';
     this.summary.textContent = '▸ SIMULAZIONE · preparazione…';
-    this.summary.style.cssText = [
-      'margin:-8px -10px', 'padding:6px 9px', 'cursor:pointer', 'user-select:none', 'list-style:none',
-      'font:700 10px/1.4 system-ui,sans-serif', 'letter-spacing:.04em',
-      'color:#b9d9d2', 'white-space:nowrap',
-    ].join(';');
     this.root.appendChild(this.summary);
 
     this.body = document.createElement('pre');
-    this.body.style.cssText = 'margin:16px 0 0;font:inherit;color:inherit';
+    this.body.className = 'debug-body';
     this.root.appendChild(this.body);
 
     this.canvas = document.createElement('canvas');
     this.canvas.width = HEATMAP_PX;
     this.canvas.height = HEATMAP_PX;
-    this.canvas.style.cssText = [
-      'display:block',
-      'margin:8px 0 6px',
-      'width:100%',
-      'height:auto',
-      'image-rendering:pixelated',
-      'border:1px solid rgba(216,220,224,0.16)',
-      'background:#05070a',
-    ].join(';');
+    this.canvas.className = 'debug-canvas';
     this.sitesBody = document.createElement('pre');
-    this.sitesBody.style.cssText = 'margin:6px 0 0;font:inherit;color:inherit';
+    this.sitesBody.className = 'debug-sites';
 
     this.context = this.canvas.getContext('2d');
     if (this.context !== null) this.context.imageSmoothingEnabled = false;
@@ -159,7 +128,16 @@ export class SimOverlay {
   }
 
   needsPaint(now: number): boolean {
-    return now - this.lastPaint >= REFRESH_MS;
+    return !this.root.hidden && now - this.lastPaint >= REFRESH_MS;
+  }
+
+  setVisible(visible: boolean): void {
+    this.root.hidden = !visible;
+  }
+
+  toggle(): boolean {
+    this.setVisible(this.root.hidden);
+    return !this.root.hidden;
   }
 
   update(frame: SimOverlayFrame, now: number): void {
@@ -312,7 +290,7 @@ function builderLines(stats: BuilderStats | null): readonly string[] {
 
 function row(children: readonly HTMLElement[]): HTMLDivElement {
   const div = document.createElement('div');
-  div.style.cssText = 'display:flex;gap:4px;margin-top:4px';
+  div.className = 'debug-actions';
   for (const child of children) div.appendChild(child);
   return div;
 }
@@ -320,20 +298,7 @@ function row(children: readonly HTMLElement[]): HTMLDivElement {
 function actionButton(label: string, onClick: () => void): HTMLButtonElement {
   const button = document.createElement('button');
   button.textContent = label;
-  button.style.cssText = [
-    'flex:1',
-    'padding:3px 4px',
-    'font:inherit',
-    'color:#d8dce0',
-    'background:rgba(216,220,224,0.08)',
-    'border:1px solid rgba(216,220,224,0.28)',
-    'border-radius:3px',
-    'cursor:pointer',
-    'pointer-events:auto',
-    'white-space:nowrap',
-    'overflow:hidden',
-    'text-overflow:ellipsis',
-  ].join(';');
+  button.className = 'debug-button';
   button.addEventListener('click', onClick);
   return button;
 }

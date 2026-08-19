@@ -12,14 +12,21 @@ import {
   WebGLRenderer,
 } from 'three';
 import { ChunkRenderer } from './engine/ChunkRenderer';
+import { InfluenceOverlay } from './engine/InfluenceOverlay';
+import { FrameTiming } from './engine/FrameTiming';
 import { IsoCameraController } from './engine/IsoCameraController';
 import { onPaletteChanged } from './engine/palette';
-import { DEFAULT_THEME_ID, resolveTheme, THEMES, type Theme } from './engine/themes';
+import { RenderQualityController, parseQualityMode } from './engine/RenderQuality';
+import { createSkyBackground } from './engine/SkyBackground';
+import { resolveTheme, THEMES, type Theme } from './engine/themes';
 import { createVoxelMaterial } from './engine/VoxelMaterial';
 import { GrowthScene } from './game/growthScene';
 import { resolveLaunchMode } from './game/launchMode';
 import { pickSurfaceCell, type SurfaceCell } from './game/surfacePick';
 import { FixedStepLoop } from './game/loop';
+import { coastalSectorAt, shapeWithSector, type CoastalSector } from './game/sectors';
+import type { ActionFailure } from './game/actions';
+import { BALANCE } from './sim/balance';
 import { CLASS_COUNT, CLASS_NAMES, type BuildingClass } from './sim/classes';
 import { writeDesirabilityData } from './sim/debugData';
 import { nextBuildSites, type BuildSite } from './sim/nextBuildSites';
@@ -27,10 +34,10 @@ import { isPolicyId, type PolicyId } from './sim/policies';
 import { createScenarioState } from './sim/scenario';
 import { setPolicyActive, setSelectedClass, type SimState } from './sim/SimState';
 import { tick } from './sim/tick';
+import './ui/hud.css';
 import { DebugOverlay, type OverlayFrame } from './ui/DebugOverlay';
-import { ControlsHint } from './ui/ControlsHint';
+import { GameHud, type GameTool } from './ui/GameHud';
 import { GrowthOverlay } from './ui/GrowthOverlay';
-import { GameToolbar, type GameTool } from './ui/GameToolbar';
 import { SimOverlay, type SimOverlayFrame } from './ui/SimOverlay';
 import { TerrainOverlay, type TerrainOverlayFrame } from './ui/TerrainOverlay';
 import { CHUNK } from './world/chunkCoords';
@@ -38,6 +45,7 @@ import { createScene, type SceneGenerator, type SceneKind } from './world/scenes
 import { BiomeView } from './world/terrain/BiomeView';
 import { expandIsland } from './world/terrain/IslandGenerator';
 import { TerrainStreamer } from './world/terrain/TerrainStreamer';
+import type { IslandShape } from './world/terrain/region';
 import { VoxelWorld } from './world/VoxelWorld';
 
 /**
@@ -61,10 +69,12 @@ const TERRAIN_SIZE = 256;
 
 const params = new URLSearchParams(window.location.search);
 const { debugEnabled, growEnabled, simEnabled } = resolveLaunchMode(params);
+let debugVisible = debugEnabled;
 const sceneKind = parseSceneKind(params.get('scene'));
 const seed = parseInt(params.get('seed') ?? '1337', 10) || 1337;
 const worldSize = clampInt(params.get('size'), 512, 32, 4096);
 const worldHeight = clampInt(params.get('height'), 64, 32, 256);
+const qualityMode = parseQualityMode(params.get('quality'));
 
 /** `?terrain=<seed>` sostituisce la scena urbana con l'isola procedurale. */
 const terrainParam = params.get('terrain');
@@ -80,21 +90,22 @@ const container = document.getElementById('app');
 if (container === null) throw new Error('manca il contenitore #app');
 
 const renderer = new WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
-renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+const renderQuality = new RenderQualityController(qualityMode, window.devicePixelRatio);
+renderer.setPixelRatio(renderQuality.pixelRatio);
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.outputColorSpace = SRGBColorSpace;
 container.appendChild(renderer.domElement);
-new ControlsHint(container, debugEnabled);
 
 const scene = new Scene();
 const world = new VoxelWorld();
 
-/** `?theme=<id>` sceglie il look; la crescita usa il look urbano del riferimento. */
-let theme: Theme = resolveTheme(params.get('theme') ?? (growEnabled ? 'pastel' : null));
+/** `?theme=<id>` sceglie il look; in assenza vale il diorama caldo. */
+let theme: Theme = resolveTheme(params.get('theme'));
 
 const paletteHandle = createVoxelMaterial(theme.colors, VOXEL_SIZE);
 const chunkRenderer = new ChunkRenderer(world, paletteHandle.material, VOXEL_SIZE);
 scene.add(chunkRenderer.group);
+const skyBackground = createSkyBackground(theme.atmosphere);
 
 applyTheme(theme);
 
@@ -124,6 +135,8 @@ let generator: SceneGenerator =
     sizeY: worldSize,
     sizeZ: worldHeight,
   });
+let islandShape: IslandShape | null = terrain?.shape ?? null;
+let expansionInFlight: CoastalSector | null = null;
 
 const biomeView = terrain === null ? null : new BiomeView(world, terrain.map);
 
@@ -144,11 +157,13 @@ if (terrain === null) {
   camera.frameRegion(TERRAIN_SIZE / 2, TERRAIN_SIZE / 2, TERRAIN_SIZE, TERRAIN_SIZE, 48);
 }
 
-const overlay = debugEnabled ? new DebugOverlay(container) : null;
+const overlay = new DebugOverlay(container);
 const terrainOverlay =
-  debugEnabled && terrain !== null && !simEnabled && !growEnabled
+  terrain !== null && !simEnabled && !growEnabled
     ? new TerrainOverlay(container, toggleBiomeView)
     : null;
+overlay.setVisible(debugVisible);
+terrainOverlay?.setVisible(debugVisible);
 let terrainApplyMs = 0;
 
 /**
@@ -180,21 +195,30 @@ const simOverlay = simEnabled
       onTogglePolicy: toggleSimPolicy,
     })
   : null;
-const growthOverlay = debugEnabled && growEnabled ? new GrowthOverlay(container) : null;
+const growthOverlay = growEnabled ? new GrowthOverlay(container) : null;
+simOverlay?.setVisible(debugVisible);
+growthOverlay?.setVisible(debugVisible);
 let selectedTool: GameTool = { kind: 'none' };
-let gameToolbar: GameToolbar | null = null;
+let gameHud: GameHud | null = null;
 if (growEnabled) {
-  gameToolbar = new GameToolbar(container, {
+  gameHud = new GameHud(container, {
       onTool: (tool) => {
         selectedTool = tool;
         preview.visible = false;
+        influenceOverlay?.hideCursor();
       },
       onPolicy: (id) => {
         const result = growthScene?.togglePolicy(id);
-        if (result !== undefined && !result.success) gameToolbar?.showFailure(result.reason);
+        if (result !== undefined && !result.success) gameHud?.showFailure(result.reason);
       },
       onPause: (paused) => growthScene?.setPaused(paused),
       onSpeed: (speed) => growthScene?.setSpeed(speed),
+      onCancelTool: () => {
+        selectedTool = { kind: 'none' };
+        preview.visible = false;
+        influenceOverlay?.hideCursor();
+        gameHud?.updateCursor(0, 0, null);
+      },
     });
 }
 
@@ -206,23 +230,34 @@ preview.visible = false;
 preview.renderOrder = 10;
 scene.add(preview);
 
+const influenceOverlay = terrain !== null && growEnabled ? new InfluenceOverlay(terrain.map) : null;
+if (influenceOverlay !== null) scene.add(influenceOverlay.group);
+
 if (growEnabled) {
   renderer.domElement.addEventListener('pointermove', onGamePointerMove, { capture: true });
   renderer.domElement.addEventListener('pointerdown', onGamePointerDown, { capture: true });
+  renderer.domElement.addEventListener('pointerleave', () => {
+    preview.visible = false;
+    influenceOverlay?.hideCursor();
+    gameHud?.updateCursor(0, 0, null);
+  });
 }
 
-if (debugEnabled) {
-  window.addEventListener('keydown', onDebugKey);
+window.addEventListener('keydown', onUiKey);
 
+if (debugEnabled) {
   // Hook per misure da console o da strumenti headless: stessa fonte dell'overlay.
   const debugGlobals = globalThis as Record<string, unknown>;
   debugGlobals['__voxelStats'] = (): Record<string, unknown> => {
-    const timing = frameTiming();
+    const timing = frameTiming.snapshot();
     const stats = chunkRenderer.stats;
     const mesher = chunkRenderer.mesherPool.stats;
     return {
       fps: timing.fps,
       fpsLow: timing.fpsLow,
+      frameP95Ms: timing.p95Ms,
+      frameP99Ms: timing.p99Ms,
+      jankRatio: timing.jankRatio,
       mainMsMax,
       drawCalls: renderer.info.render.calls,
       triangles: renderer.info.render.triangles,
@@ -237,12 +272,13 @@ if (debugEnabled) {
       mesherMaxMs: mesher.maxMs,
       generationDone: generator.done,
       theme: theme.id,
+      quality: renderQuality.mode,
+      pixelRatio: renderer.getPixelRatio(),
     };
   };
   debugGlobals['__voxelReset'] = (): void => {
     mainMsMax = 0;
-    frameSamples = 0;
-    frameCursor = 0;
+    frameTiming.reset();
     chunkRenderer.mesherPool.resetStats();
   };
   debugGlobals['__voxelExpand'] = (): void => expandWorld();
@@ -330,9 +366,7 @@ if (debugEnabled) {
   }
 }
 
-const frameDurations = new Float64Array(120);
-let frameCursor = 0;
-let frameSamples = 0;
+const frameTiming = new FrameTiming(600);
 let mainMsMax = 0;
 let previousTime = performance.now();
 
@@ -344,9 +378,8 @@ window.addEventListener('resize', () => {
 });
 
 onPaletteChanged((hexColors) => {
-  // `palette.json` e' la tinta del solo tema di default: se ne e' attivo un
-  // altro, l'hot reload non deve scavalcarlo.
-  if (theme.id !== DEFAULT_THEME_ID) return;
+  // `palette.json` appartiene al tema natural: gli altri hanno una palette propria.
+  if (theme.id !== 'natural') return;
   paletteHandle.setPalette(hexColors);
   console.info('[palette] colori aggiornati a caldo, nessun rebuild di mesh');
 });
@@ -363,10 +396,11 @@ function applyTheme(next: Theme): void {
 
   paletteHandle.setPalette(next.colors);
   paletteHandle.setAtmosphere(next.atmosphere);
+  skyBackground.setAtmosphere(next.atmosphere);
 
   const background = new Color().setStyle(next.atmosphere.background, SRGBColorSpace);
   renderer.setClearColor(background, 1);
-  scene.background = background;
+  scene.background = skyBackground.texture;
 
   const toneMapping =
     next.atmosphere.toneMapping === 'aces' ? ACESFilmicToneMapping : NoToneMapping;
@@ -392,6 +426,7 @@ function cycleTheme(index: number): void {
 }
 
 function onFrame(time: number): void {
+  frameTiming.sample(time, document.visibilityState === 'visible');
   const dt = Math.min(0.1, (time - previousTime) / 1000);
   previousTime = time;
 
@@ -420,13 +455,16 @@ function onFrame(time: number): void {
   if (mainMs > mainMsMax) mainMsMax = mainMs;
 
   const renderStart = performance.now();
+  paletteHandle.setTime(time / 1000);
   renderer.render(scene, camera.camera);
   const renderMs = performance.now() - renderStart;
 
   const frameMs = performance.now() - workStart;
-  frameDurations[frameCursor] = frameMs;
-  frameCursor = (frameCursor + 1) % frameDurations.length;
-  if (frameSamples < frameDurations.length) frameSamples++;
+  const quality = renderQuality.observe(frameTiming.snapshot(), time);
+  if (quality.changed && quality.reason !== 'initial') {
+    renderer.setPixelRatio(quality.pixelRatio);
+    renderer.setSize(window.innerWidth, window.innerHeight);
+  }
 
   if (overlay !== null && overlay.needsPaint(time)) {
     overlay.update(buildOverlayFrame(mainMs, renderMs, frameMs), time);
@@ -440,8 +478,8 @@ function onFrame(time: number): void {
   if (growthOverlay !== null && growthOverlay.needsPaint(time)) {
     growthOverlay.update(growthScene?.stats ?? null, time);
   }
-  if (gameToolbar !== null && growthScene !== null && gameToolbar.needsPaint(time)) {
-    gameToolbar.update(growthScene.stats, time);
+  if (gameHud !== null && growthScene !== null && gameHud.needsPaint(time)) {
+    gameHud.update(growthScene.stats, time);
   }
 }
 
@@ -530,14 +568,16 @@ function updateGrowth(dt: number): void {
   if (growthScene === null) {
     if (!generator.done) return;
     growthScene = new GrowthScene(world, terrain.map, terrainRegion, terrainSeed);
+    influenceOverlay?.refreshCatalysts(growthScene.simState.catalysts);
     console.info('[crescita] scena automatica pronta');
     return;
   }
   // La TerrainMap arriva prima dei voxel: durante un'espansione la crescita
   // riparte solo quando il settore e' stato applicato per intero.
   if (!generator.done) return;
-  if (growthScene.statusMessage === 'Generazione del nuovo settore costiero…') {
-    growthScene.setMessage('Settore costiero pronto.');
+  if (expansionInFlight !== null) {
+    growthScene.markSectorReady();
+    expansionInFlight = null;
   }
   growthScene.advance(dt);
 }
@@ -545,16 +585,51 @@ function updateGrowth(dt: number): void {
 function onGamePointerMove(event: PointerEvent): void {
   if (selectedTool.kind === 'none' || growthScene === null || terrain === null) {
     preview.visible = false;
+    influenceOverlay?.hideCursor();
+    gameHud?.updateCursor(0, 0, null);
     return;
   }
   const cell = surfaceCellAt(event);
   if (cell === null) {
     preview.visible = false;
+    influenceOverlay?.hideCursor();
+    gameHud?.updateCursor(event.clientX, event.clientY, {
+      title: 'Nessuna superficie',
+      details: 'Sposta il cursore sull’isola.',
+      valid: false,
+      reason: 'Nessuna colonna selezionabile.',
+    });
     return;
   }
   preview.visible = true;
   preview.position.set(cell.x + 0.5, cell.y + 0.5, cell.z + 0.5);
-  const valid = selectedTool.kind === 'expansion' || cell.buildable;
+  let valid = false;
+  if (selectedTool.kind === 'catalyst') {
+    const failure = growthScene.catalystFailure(cell.x, cell.y, selectedTool.class);
+    const radius = BALANCE.gameplay.catalyst.radius[selectedTool.class];
+    const cost = BALANCE.gameplay.catalyst.cost[selectedTool.class];
+    valid = failure === null;
+    influenceOverlay?.showCursor(cell.x, cell.y, radius, valid);
+    gameHud?.updateCursor(event.clientX, event.clientY, {
+      title: `Catalizzatore ${classLabel(selectedTool.class)}`,
+      details: `${cost} fondi · raggio ${radius} · classe ${classLabel(selectedTool.class)}`,
+      valid,
+      reason: failure === null ? 'Posizione valida.' : actionFailureLabel(failure),
+    });
+  } else {
+    const sector = coastalSectorAt(cell.x, cell.y, terrainRegion, BALANCE.gameplay.expansion.size);
+    const failure = generator.done
+      ? growthScene.expansionFailure(sector.id)
+      : 'terrain-loading';
+    valid = failure === null;
+    influenceOverlay?.hideCursor();
+    gameHud?.updateCursor(event.clientX, event.clientY, {
+      title: `Settore ${sector.id}`,
+      details: `${BALANCE.gameplay.expansion.cost} fondi · ${sector.region.sizeX}×${sector.region.sizeY} voxel`,
+      valid,
+      reason: failure === null ? 'Nuovo suolo edificabile collegato alla costa.' : actionFailureLabel(failure),
+    });
+  }
   previewMaterial.color.setHex(valid ? 0x65e08a : 0xef6b65);
 }
 
@@ -565,23 +640,36 @@ function onGamePointerDown(event: PointerEvent): void {
   if (growthScene === null || terrain === null) return;
   const cell = surfaceCellAt(event);
   if (cell === null) {
-    gameToolbar?.showPickingFailure();
+    gameHud?.showPickingFailure();
     return;
   }
 
   if (selectedTool.kind === 'catalyst') {
     const result = growthScene.placeCatalyst(cell.x, cell.y, selectedTool.class);
-    if (!result.success) gameToolbar?.showFailure(result.reason);
-    else gameToolbar?.clearFeedback();
+    if (!result.success) gameHud?.showFailure(result.reason);
+    else {
+      gameHud?.clearFeedback();
+      influenceOverlay?.refreshCatalysts(growthScene.simState.catalysts);
+      selectedTool = { kind: 'none' };
+      gameHud?.setTool(selectedTool);
+      preview.visible = false;
+      influenceOverlay?.hideCursor();
+      gameHud?.updateCursor(0, 0, null);
+    }
     return;
   }
 
-  const paid = growthScene.buyExpansion();
-  if (!paid.success) {
-    gameToolbar?.showFailure(paid.reason);
+  if (!generator.done) {
+    gameHud?.showFailure('terrain-loading');
     return;
   }
-  beginCoastalExpansion(cell);
+  const sector = coastalSectorAt(cell.x, cell.y, terrainRegion, BALANCE.gameplay.expansion.size);
+  const paid = growthScene.buyExpansion(sector.id);
+  if (!paid.success) {
+    gameHud?.showFailure(paid.reason);
+    return;
+  }
+  beginCoastalExpansion(sector);
 }
 
 function surfaceCellAt(event: PointerEvent): SurfaceCell | null {
@@ -600,35 +688,47 @@ function surfaceCellAt(event: PointerEvent): SurfaceCell | null {
   );
 }
 
-function beginCoastalExpansion(cell: SurfaceCell): void {
-  if (terrain === null || growthScene === null) return;
-  const size = 64;
-  const dx = cell.x - TERRAIN_SIZE / 2;
-  const dy = cell.y - TERRAIN_SIZE / 2;
-  const horizontal = Math.abs(dx) > Math.abs(dy);
-  const region = horizontal
-    ? {
-        minX: dx < 0 ? -size : TERRAIN_SIZE,
-        minY: Math.max(0, Math.min(TERRAIN_SIZE - size, Math.floor(cell.y / size) * size)),
-        sizeX: size,
-        sizeY: size,
-      }
-    : {
-        minX: Math.max(0, Math.min(TERRAIN_SIZE - size, Math.floor(cell.x / size) * size)),
-        minY: dy < 0 ? -size : TERRAIN_SIZE,
-        sizeX: size,
-        sizeY: size,
-      };
-  generator = new TerrainStreamer(world, terrainSeed, region, terrain.shape, terrain.map);
+function beginCoastalExpansion(sector: CoastalSector): void {
+  if (terrain === null || growthScene === null || islandShape === null) return;
+  islandShape = shapeWithSector(islandShape, sector);
+  generator = new TerrainStreamer(
+    world,
+    terrainSeed,
+    sector.generationRegion,
+    islandShape,
+    terrain.map,
+  );
+  expansionInFlight = sector;
+  influenceOverlay?.addSector(sector.region);
   growthScene.setMessage('Generazione del nuovo settore costiero…');
   selectedTool = { kind: 'none' };
-  gameToolbar?.setTool(selectedTool);
+  gameHud?.setTool(selectedTool);
   preview.visible = false;
+  influenceOverlay?.hideCursor();
+  gameHud?.updateCursor(0, 0, null);
+}
+
+function classLabel(cls: BuildingClass): string {
+  return ['residenziale', 'produttiva', 'civica'][cls] ?? 'urbana';
+}
+
+function actionFailureLabel(reason: ActionFailure): string {
+  const labels: Readonly<Record<ActionFailure, string>> = {
+    'terrain-loading': 'Il terreno è ancora in generazione.',
+    'not-buildable': 'Terreno non edificabile.',
+    'too-close': 'Troppo vicino a un catalizzatore della stessa classe.',
+    'insufficient-funds': 'Fondi insufficienti.',
+    'population-required': `Servono ${BALANCE.gameplay.expansion.population} abitanti.`,
+    'already-active': 'Azione già attiva.',
+    'already-unlocked': 'Settore già sbloccato.',
+    'onboarding-order': 'Completa prima il passo corrente del tutorial.',
+  };
+  return labels[reason];
 }
 
 function buildTerrainFrame(streamer: TerrainStreamer): TerrainOverlayFrame {
   return {
-    fps: frameTiming().fps,
+    fps: frameTiming.snapshot().fps,
     generationMs: streamer.generationMs,
     applyMs: terrainApplyMs,
     blocksApplied: streamer.blocksApplied,
@@ -650,11 +750,14 @@ function toggleBiomeView(): void {
 function buildOverlayFrame(mainMs: number, renderMs: number, frameMs: number): OverlayFrame {
   const stats = chunkRenderer.stats;
   const mesher = chunkRenderer.mesherPool.stats;
-  const timing = frameTiming();
+  const timing = frameTiming.snapshot();
 
   return {
     fps: timing.fps,
     fpsLow: timing.fpsLow,
+    frameP95Ms: timing.p95Ms,
+    frameP99Ms: timing.p99Ms,
+    jankRatio: timing.jankRatio,
     frameMs,
     mainMs,
     mainMsMax,
@@ -678,24 +781,10 @@ function buildOverlayFrame(mainMs: number, renderMs: number, frameMs: number): O
     scene: terrain === null ? sceneKind : 'terrain',
     seed: terrain === null ? seed : terrainSeed,
     theme: theme.name,
+    quality: renderQuality.mode,
+    pixelRatio: renderer.getPixelRatio(),
     zoom: camera.zoom,
     yawDegrees: camera.yawDegrees,
-  };
-}
-
-/** fps medio e 1% low sulla finestra di campioni. */
-function frameTiming(): { fps: number; fpsLow: number } {
-  if (frameSamples === 0) return { fps: 0, fpsLow: 0 };
-
-  const samples = Array.from(frameDurations.subarray(0, frameSamples));
-  let sum = 0;
-  for (const value of samples) sum += value;
-  samples.sort((a, b) => a - b);
-  const worst = samples[Math.max(0, Math.floor(samples.length * 0.99) - 1)];
-
-  return {
-    fps: 1000 / (sum / samples.length),
-    fpsLow: worst > 0 ? 1000 / worst : 0,
   };
 }
 
@@ -739,10 +828,30 @@ function onDebugKey(event: KeyboardEvent): void {
   if (event.code === 'KeyC') {
     // Azzera i picchi: serve per misurare il regime, non lo startup.
     mainMsMax = 0;
-    frameSamples = 0;
-    frameCursor = 0;
+    frameTiming.reset();
     chunkRenderer.mesherPool.resetStats();
   }
+}
+
+function onUiKey(event: KeyboardEvent): void {
+  if (event.code === 'F3') {
+    event.preventDefault();
+    setDebugVisible(!debugVisible);
+    return;
+  }
+  if (event.code === 'Escape' && gameHud?.handleEscape()) {
+    event.preventDefault();
+    return;
+  }
+  if (debugVisible) onDebugKey(event);
+}
+
+function setDebugVisible(visible: boolean): void {
+  debugVisible = visible;
+  overlay.setVisible(visible);
+  terrainOverlay?.setVisible(visible);
+  simOverlay?.setVisible(visible);
+  growthOverlay?.setVisible(visible);
 }
 
 /**

@@ -4,6 +4,11 @@ Motore di rendering voxel a chunk per una città isometrica: storage sparso,
 greedy meshing in worker, un solo materiale a palette, camera ortografica
 isometrica, simulazione e crescita automatica degli edifici.
 
+La sessione giocabile guida i primi tre catalizzatori nell’ordine economico,
+mostra costi, raggi e invalidità direttamente sul cursore, segnala crisi e
+autosufficienza e permette di acquistare settori costieri unici con nuovo suolo
+edificabile generato a budget.
+
 ```bash
 npm install
 npm start            # poi apri http://localhost:8010/
@@ -35,8 +40,10 @@ aggiungendo chunk alla mappa sparsa.
 | [src/engine/VoxelMaterial.ts](src/engine/VoxelMaterial.ts) | Unico `ShaderMaterial`, palette, luce per faccia, AO per vertice e nebbia |
 | [src/engine/themes/](src/engine/themes/) | I temi grafici: 32 colori più l'atmosfera, applicati senza rimeshare |
 | [src/engine/IsoCameraController.ts](src/engine/IsoCameraController.ts) | Ortografica isometrica: scatti di 90°, zoom, pan vincolato |
-| [src/ui/ControlsHint.ts](src/ui/ControlsHint.ts) | Promemoria sempre visibile di tastiera e mouse |
-| [src/ui/DebugOverlay.ts](src/ui/DebugOverlay.ts) | Overlay delle misure, attivo con `?debug=1` |
+| [src/engine/InfluenceOverlay.ts](src/engine/InfluenceOverlay.ts) | Raggi dei catalizzatori e perimetri dei settori sbloccati |
+| [src/ui/GameHud.ts](src/ui/GameHud.ts) | HUD Cozy City: risorse, costruzione, policy, tempo e feedback |
+| [src/ui/ControlsHint.ts](src/ui/ControlsHint.ts) | Aiuto contestuale del primo avvio, riapribile con `?` |
+| [src/ui/DebugOverlay.ts](src/ui/DebugOverlay.ts) | Overlay delle misure, attivo con `F3` o `?debug=1` |
 | [src/ui/GrowthOverlay.ts](src/ui/GrowthOverlay.ts) | Overlay dedicato a `?debug=1&grow=1` |
 | [src/world/terrain/](src/world/terrain/) | Generatore di isole procedurali (vedi sotto) |
 | [src/sim/](src/sim/) | Simulazione a tick: risorse, campo di desiderabilità, decisioni (vedi sotto) |
@@ -57,12 +64,13 @@ aggiungendo chunk alla mappa sparsa.
 
 ## Parametri URL
 
-La radice `/` avvia l'esperienza completa: isola, crescita, toolbar e overlay
-tecnici. I parametri seguenti permettono di isolare le scene di verifica.
+La radice `/` avvia l'esperienza completa: isola, crescita e HUD giocabile. Gli
+strumenti tecnici partono nascosti e si aprono con `F3`; i parametri seguenti
+permettono di isolare le scene di verifica.
 
 | Parametro | Default | Effetto |
 | --- | --- | --- |
-| `debug` | `1` alla radice | `0` nasconde overlay e hotkey; `1` li abilita negli harness |
+| `debug` | — | `1` apre subito overlay e hotkey tecniche; `F3` li alterna a runtime |
 | `scene` | — | Isola una scena `city`, `noise` (caso peggiore) o `slab` |
 | `seed` | `1337` | Seed della generazione |
 | `size` | `512` | Lato del mondo in voxel |
@@ -73,14 +81,15 @@ tecnici. I parametri seguenti permettono di isolare le scene di verifica.
 | `grow` | `1` alla radice | `1` avvia esplicitamente l'MVP giocabile |
 
 Tasti: `Q`/`E` ruota di 90°, rotella zoom, drag destro o `WASD` pan, `F` inquadra
-tutto, `G` aggiunge 64 chunk a runtime, `R` rebuild totale, `C` azzera i picchi,
+tutto, `Esc` annulla lo strumento e `F3` alterna il pannello tecnico. Con il
+debug visibile, `G` aggiunge 64 chunk, `R` fa il rebuild, `C` azzera i picchi,
 `B` colora le colonne per bioma (solo in scena terreno). In scena simulazione:
 `T` un tick, `P` avvia o ferma il passo automatico, `M` cicla la classe mostrata.
 
-Alla radice, oppure con `?grow=1`, la toolbar permette di piazzare catalizzatori con un click sul
-terreno, acquistare settori costieri, attivare policy e controllare pausa e
-velocita'. Le azioni consumano fondi e spiegano quando terreno, popolazione o
-distanza minima non ne permettono l'esecuzione.
+Alla radice, oppure con `?grow=1`, il Cozy HUD mostra risorse e variazioni in alto,
+azioni di costruzione in basso e policy in un drawer laterale. Le azioni non
+disponibili anticipano requisiti di fondi o popolazione; selezione, errori e
+istruzioni di piazzamento compaiono come feedback contestuale sopra il dock.
 
 ## Misure
 

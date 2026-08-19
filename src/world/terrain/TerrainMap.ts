@@ -62,7 +62,7 @@ export class TerrainMap {
    *
    * Non e' un dato di colonna: e' cio' che permette a `expandIsland` di
    * continuare la stessa isola invece di iniziarne una nuova sul rettangolo
-   * nuovo. Viene fissata una volta sola e poi non cambia piu'.
+   * nuovo. La base non cambia; le espansioni possono aggiungere lobi costieri.
    */
   private islandShape: IslandShape | null = null;
 
@@ -70,9 +70,9 @@ export class TerrainMap {
     return this.islandShape;
   }
 
-  /** Fissa la maschera se non e' ancora stata fissata. */
+  /** Ricorda la maschera piu' recente, comprese eventuali espansioni. */
   rememberShape(shape: IslandShape): void {
-    if (this.islandShape === null) this.islandShape = shape;
+    this.islandShape = shape;
   }
 
   get chunks(): ReadonlyMap<string, TerrainColumnChunk> {

@@ -61,8 +61,32 @@ describe('temi', () => {
       expect(a.fogDensity).toBeLessThanOrEqual(0.0005);
       expect(a.aoStrength).toBeGreaterThanOrEqual(0);
       expect(a.aoStrength).toBeLessThanOrEqual(1);
+      for (const color of [
+        a.skyTop,
+        a.skyHorizon,
+        a.lightTint,
+        a.shadowTint,
+        a.heightTint,
+        a.glassTint,
+        a.waterHighlight,
+      ]) {
+        if (color !== undefined) expect(isValidHexColor(color), theme.id).toBe(true);
+      }
+      expect(a.heightStrength ?? 0).toBeGreaterThanOrEqual(0);
+      expect(a.heightStrength ?? 0).toBeLessThanOrEqual(1);
+      expect(a.glassLift ?? 0).toBeGreaterThanOrEqual(0);
+      expect(a.glassLift ?? 0).toBeLessThanOrEqual(1);
+      expect(a.waterStrength ?? 0).toBeGreaterThanOrEqual(0);
+      expect(a.waterStrength ?? 0).toBeLessThanOrEqual(1);
       expect(a.exposure).toBeGreaterThan(0);
       expect(a.exposure).toBeLessThanOrEqual(2);
     }
+  });
+
+  it('usa il diorama caldo come default senza rimuovere i temi storici', () => {
+    expect(DEFAULT_THEME_ID).toBe('diorama');
+    expect(THEMES.map((theme) => theme.id)).toEqual(
+      expect.arrayContaining(['natural', 'pastel', 'neon', 'industrial', 'scifi', 'enchanted', 'diorama']),
+    );
   });
 });

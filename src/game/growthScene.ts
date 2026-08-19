@@ -13,10 +13,15 @@ import type { VoxelWorld } from '../world/VoxelWorld';
 import { FixedStepLoop } from './loop';
 import {
   buyExpansion,
+  catalystFailure,
+  expansionFailure,
   placeCatalyst,
   togglePolicy,
+  type ActionFailure,
   type ActionResult,
 } from './actions';
+import { cityCondition, isSelfSufficient, type CityCondition } from './cityCondition';
+import { onboardingAllows, onboardingOf, type OnboardingState } from './onboarding';
 
 const TICK_RATE = 10;
 export interface GrowthStats {
@@ -31,6 +36,9 @@ export interface GrowthStats {
   readonly paused: boolean;
   readonly speed: number;
   readonly message: string;
+  readonly onboarding: OnboardingState;
+  readonly condition: CityCondition;
+  readonly unlockedSectors: readonly string[];
 }
 
 /** Cablaggio esclusivo di `?grow=1`: la scena sim normale non costruisce voxel. */
@@ -41,6 +49,8 @@ export class GrowthScene {
   private lastTickMs = 0;
   private paused = false;
   private speed = 1;
+  private healthyTicks = 0;
+  private readonly unlocked = new Set<string>();
   private message = 'Scegli un catalizzatore e piazzalo sull’isola.';
 
   constructor(
@@ -58,13 +68,24 @@ export class GrowthScene {
       const start = performance.now();
       this.state = tick(this.state, this.map);
       this.state = this.builder.onTick(this.state);
+      this.healthyTicks = isSelfSufficient(this.state) ? this.healthyTicks + 1 : 0;
       this.lastTickMs = performance.now() - start;
     });
     this.builder.step();
   }
 
   placeCatalyst(x: number, y: number, cls: BuildingClass): ActionResult {
-    return this.apply(placeCatalyst(this.state, this.map, x, y, cls), 'Catalizzatore piazzato.');
+    if (!onboardingAllows(this.state, cls)) {
+      return { success: false, reason: 'onboarding-order' };
+    }
+    const result = placeCatalyst(this.state, this.map, x, y, cls);
+    if (result.success) this.builder.decorateCatalyst(x, y, cls);
+    return this.apply(result, 'Catalizzatore piazzato.');
+  }
+
+  catalystFailure(x: number, y: number, cls: BuildingClass): ActionFailure | null {
+    if (!onboardingAllows(this.state, cls)) return 'onboarding-order';
+    return catalystFailure(this.state, this.map, x, y, cls);
   }
 
   togglePolicy(id: PolicyId): ActionResult {
@@ -72,8 +93,18 @@ export class GrowthScene {
     return this.apply(togglePolicy(this.state, id), active ? 'Policy attivata.' : 'Policy disattivata.');
   }
 
-  buyExpansion(): ActionResult {
-    return this.apply(buyExpansion(this.state), 'Settore costiero acquistato.');
+  buyExpansion(sectorId: string): ActionResult {
+    const result = buyExpansion(this.state, this.unlocked.has(sectorId));
+    if (result.success) this.unlocked.add(sectorId);
+    return this.apply(result, 'Settore costiero acquistato.');
+  }
+
+  expansionFailure(sectorId: string): ActionFailure | null {
+    return expansionFailure(this.state, this.unlocked.has(sectorId));
+  }
+
+  markSectorReady(): void {
+    this.message = 'Settore costiero pronto: il nuovo suolo può ospitare la crescita.';
   }
 
   setPaused(paused: boolean): void {
@@ -113,6 +144,9 @@ export class GrowthScene {
       paused: this.paused,
       speed: this.speed,
       message: this.message,
+      onboarding: onboardingOf(this.state),
+      condition: cityCondition(this.state, this.healthyTicks),
+      unlockedSectors: [...this.unlocked],
     };
   }
 

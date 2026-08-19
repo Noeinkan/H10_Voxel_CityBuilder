@@ -112,15 +112,20 @@ describe('TerrainMap — struttura sparsa', () => {
     });
   });
 
-  it('ricorda la prima maschera e poi non la cambia piu’', () => {
+  it('accetta nuove espansioni senza sostituire la maschera base', () => {
     const map = new TerrainMap();
     expect(map.shape).toBeNull();
 
     const first = { centreX: 0, centreY: 0, radiusX: 10, radiusY: 10 };
+    const expanded = {
+      ...first,
+      extensions: [{ id: 'nord:0', minX: -4, minY: 10, sizeX: 8, sizeY: 8 }],
+    };
     map.rememberShape(first);
     map.rememberShape({ centreX: 99, centreY: 99, radiusX: 1, radiusY: 1 });
+    map.rememberShape(expanded);
 
-    expect(map.shape).toBe(first);
+    expect(map.shape).toBe(expanded);
   });
 });
 

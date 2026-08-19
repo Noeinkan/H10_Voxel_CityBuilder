@@ -71,7 +71,7 @@ export const BUILDER = {
    * che sfora viene scartato. Otto copre una torre alta a cavallo di una
    * cucitura senza lasciare che un singolo upgrade sporchi una regione intera.
    */
-  maxDirtyChunksPerBuilding: 4,
+  maxDirtyChunksPerBuilding: 8,
 
   /** Cubi scritti per frame per struttura: la crescita e' voxel-per-voxel. */
   voxelsPerFrame: 16,
@@ -84,6 +84,18 @@ export const BUILDER = {
    * stesso frame e' esattamente il picco che fa cadere il fps sotto la soglia.
    */
   maxGrowing: 12,
+
+  /** Celle di piazzole e sentieri applicate per frame. */
+  surfaceCellsPerFrame: 24,
+
+  /** Quota sopra il terreno bonificata da tronchi e chiome. */
+  decorClearanceHeight: 7,
+
+  /** Lunghezza massima di un collegamento decorativo fra due piazzole. */
+  pathLinkDistance: 12,
+
+  /** Raggio Manhattan della piazzola che identifica un catalizzatore. */
+  catalystPlazaRadius: 2,
 
   /**
    * Probabilita' che un edificio prenda il colore d'accento come corpo.
@@ -103,7 +115,7 @@ export const BUILDER = {
  * altissima su una base 1x1 si legge come un palo, non come un edificio.
  */
 /** Lato massimo assoluto di un'impronta, su qualunque livello. */
-export const MAX_FOOTPRINT = 3;
+export const MAX_FOOTPRINT = 4;
 
 export interface LevelCaps {
   /** Lato minimo naturale; durante un upgrade bloccato puo' restare piu' stretto. */
@@ -115,13 +127,13 @@ export interface LevelCaps {
 }
 
 export const LEVEL_CAPS: readonly LevelCaps[] = [
-  { minFootprint: 1, maxFootprint: 2, minBands: 1, maxBands: 2 },
-  { minFootprint: 1, maxFootprint: 3, minBands: 2, maxBands: 3 },
-  { minFootprint: 2, maxFootprint: 3, minBands: 3, maxBands: 5 },
-  { minFootprint: 2, maxFootprint: 3, minBands: 5, maxBands: 7 },
-  { minFootprint: 3, maxFootprint: 3, minBands: 7, maxBands: 9 },
-  { minFootprint: 3, maxFootprint: 3, minBands: 9, maxBands: 11 },
-  { minFootprint: 3, maxFootprint: 3, minBands: 11, maxBands: 14 },
+  { minFootprint: 2, maxFootprint: 3, minBands: 1, maxBands: 2 },
+  { minFootprint: 2, maxFootprint: 3, minBands: 2, maxBands: 3 },
+  { minFootprint: 2, maxFootprint: 4, minBands: 3, maxBands: 4 },
+  { minFootprint: 3, maxFootprint: 4, minBands: 4, maxBands: 5 },
+  { minFootprint: 3, maxFootprint: 4, minBands: 5, maxBands: 6 },
+  { minFootprint: 3, maxFootprint: 4, minBands: 6, maxBands: 7 },
+  { minFootprint: 4, maxFootprint: 4, minBands: 7, maxBands: 8 },
 ];
 
 /**
@@ -147,6 +159,9 @@ export interface ClassProfile {
    */
   readonly shrinkBias: number;
 
+  /** Preferenza di impronta applicata al tiro comune, prima del clamp di livello. */
+  readonly footprintBias: number;
+
   /** Corpo. */
   readonly body: number;
   /** Cornice: il voxel di sommita' di ogni fascia. */
@@ -155,6 +170,12 @@ export interface ClassProfile {
   readonly accent: number;
   /** Coronamento. */
   readonly crown: number;
+  /** Zoccolo a contatto col terreno. */
+  readonly plinth: number;
+  /** Unico dettaglio verticale sul tetto. */
+  readonly roofProp: number;
+  /** Altezza del dettaglio sul tetto. */
+  readonly roofPropHeight: number;
 }
 
 /**
@@ -167,29 +188,41 @@ export interface ClassProfile {
 export const CLASS_PROFILE: readonly ClassProfile[] = [
   // residential — bassa, larga, calda. E' la massa di fondo della citta'.
   {
-    bandHeight: [2, 4],
-    shrinkBias: 0.35,
+    bandHeight: [2, 3],
+    shrinkBias: 0.25,
+    footprintBias: 1,
     body: PALETTE_SLOTS.concretePale,
     bodyAlt: PALETTE_SLOTS.concrete,
     accent: PALETTE_SLOTS.metalRust,
     crown: PALETTE_SLOTS.roofPale,
+    plinth: PALETTE_SLOTS.stoneWarm,
+    roofProp: PALETTE_SLOTS.brickDark,
+    roofPropHeight: 1,
   },
   // production — tozza, materica, senza slancio.
   {
     bandHeight: [2, 3],
-    shrinkBias: 0.2,
+    shrinkBias: 0.15,
+    footprintBias: 1,
     body: PALETTE_SLOTS.stoneWarm,
     bodyAlt: PALETTE_SLOTS.stone,
     accent: PALETTE_SLOTS.brick,
     crown: PALETTE_SLOTS.metalDark,
+    plinth: PALETTE_SLOTS.stoneDark,
+    roofProp: PALETTE_SLOTS.metalRust,
+    roofPropHeight: 2,
   },
   // civic — slanciata e chiara: sono i picchi che reggono lo skyline.
   {
-    bandHeight: [4, 7],
-    shrinkBias: 0.6,
+    bandHeight: [3, 4],
+    shrinkBias: 0.5,
+    footprintBias: 0,
     body: PALETTE_SLOTS.concreteWhite,
     bodyAlt: PALETTE_SLOTS.concreteLight,
     accent: PALETTE_SLOTS.glassDeep,
     crown: PALETTE_SLOTS.roofWhite,
+    plinth: PALETTE_SLOTS.concrete,
+    roofProp: PALETTE_SLOTS.metalBrass,
+    roofPropHeight: 3,
   },
 ];

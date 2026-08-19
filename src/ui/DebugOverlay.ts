@@ -8,6 +8,10 @@
 export interface OverlayFrame {
   readonly fps: number;
   readonly fpsLow: number;
+  /** Percentili degli intervalli reali fra callback rAF. */
+  readonly frameP95Ms: number;
+  readonly frameP99Ms: number;
+  readonly jankRatio: number;
   readonly frameMs: number;
   /** Lavoro sul main thread escluso il render: e' il numero da tenere sotto 4 ms. */
   readonly mainMs: number;
@@ -33,6 +37,8 @@ export interface OverlayFrame {
   readonly scene: string;
   readonly seed: number;
   readonly theme: string;
+  readonly quality: string;
+  readonly pixelRatio: number;
   readonly zoom: number;
   readonly yawDegrees: number;
 }
@@ -48,38 +54,15 @@ export class DebugOverlay {
 
   constructor(parent: HTMLElement) {
     this.root = document.createElement('details');
-    this.root.style.cssText = [
-      'position:fixed',
-      'left:12px',
-      'bottom:var(--game-hud-bottom, 12px)',
-      'z-index:16',
-      'max-width:calc(100vw - 24px)',
-      'max-height:min(62vh,540px)',
-      'box-sizing:border-box',
-      'overflow:auto',
-      'background:rgba(10,18,24,.88)',
-      'color:#dbe8e5',
-      'font:10px/1.45 ui-monospace,SFMono-Regular,Consolas,monospace',
-      'border:1px solid rgba(185,217,210,.22)',
-      'border-radius:8px',
-      'box-shadow:0 8px 28px rgba(0,0,0,.24)',
-      'backdrop-filter:blur(8px)',
-    ].join(';');
+    this.root.className = 'debug-panel debug-panel--left';
 
     this.summary = document.createElement('summary');
+    this.summary.className = 'debug-summary';
     this.summary.textContent = '▸ RENDER · preparazione…';
-    this.summary.style.cssText = [
-      'padding:6px 9px', 'cursor:pointer', 'user-select:none', 'list-style:none',
-      'font:700 10px/1.4 system-ui,sans-serif', 'letter-spacing:.04em',
-      'color:#b9d9d2', 'white-space:nowrap',
-    ].join(';');
     this.root.appendChild(this.summary);
 
     this.body = document.createElement('pre');
-    this.body.style.cssText = [
-      'margin:0', 'padding:8px 10px 10px', 'border-top:1px solid rgba(185,217,210,.14)',
-      'font:inherit', 'color:inherit', 'white-space:pre', 'min-width:280px',
-    ].join(';');
+    this.body.className = 'debug-body';
     this.root.appendChild(this.body);
     parent.appendChild(this.root);
   }
@@ -89,7 +72,16 @@ export class DebugOverlay {
    * statistiche: leggerle a ogni frame costerebbe piu' dell'overlay stesso.
    */
   needsPaint(now: number): boolean {
-    return now - this.lastPaint >= REFRESH_MS;
+    return !this.root.hidden && now - this.lastPaint >= REFRESH_MS;
+  }
+
+  setVisible(visible: boolean): void {
+    this.root.hidden = !visible;
+  }
+
+  toggle(): boolean {
+    this.setVisible(this.root.hidden);
+    return !this.root.hidden;
   }
 
   update(frame: OverlayFrame, now: number): void {
@@ -106,8 +98,10 @@ export class DebugOverlay {
     ].join('  ·  ');
 
     this.body.textContent = [
-      `fps        ${frame.fps.toFixed(1).padStart(6)}   low ${frame.fpsLow.toFixed(1)}`,
-      `frame      ${frame.frameMs.toFixed(2).padStart(6)} ms`,
+      `fps rAF    ${frame.fps.toFixed(1).padStart(6)}   1% low ${frame.fpsLow.toFixed(1)}`,
+      `intervallo p95 ${frame.frameP95Ms.toFixed(2).padStart(6)} ms   p99 ${frame.frameP99Ms.toFixed(2)}`,
+      `jank >20ms ${(frame.jankRatio * 100).toFixed(1).padStart(6)} %`,
+      `callback   ${frame.frameMs.toFixed(2).padStart(6)} ms`,
       `main       ${frame.mainMs.toFixed(2).padStart(6)} ms   max ${frame.mainMsMax.toFixed(2)} ms`,
       `render     ${frame.renderMs.toFixed(2).padStart(6)} ms`,
       '',
@@ -128,6 +122,7 @@ export class DebugOverlay {
       '',
       `scena      ${frame.scene}  seed ${frame.seed}`,
       `tema       ${frame.theme}`,
+      `qualita    ${frame.quality}  DPR ${frame.pixelRatio.toFixed(2)}`,
       `camera     zoom ${frame.zoom.toFixed(2)}  yaw ${Math.round(frame.yawDegrees)}°`,
       generating ? `genera     ${(frame.generationProgress * 100).toFixed(0)} %` : '',
       '',

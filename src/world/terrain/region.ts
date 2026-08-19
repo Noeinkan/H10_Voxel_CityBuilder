@@ -28,6 +28,12 @@ export interface IslandShape {
   readonly centreY: number;
   readonly radiusX: number;
   readonly radiusY: number;
+  /** Lobi costieri aggiunti dal giocatore; non alterano mai la maschera base. */
+  readonly extensions?: readonly CoastalExtension[];
+}
+
+export interface CoastalExtension extends Region {
+  readonly id: string;
 }
 
 /** La maschera implicita in una region: ellisse inscritta nel rettangolo. */
@@ -37,6 +43,19 @@ export function shapeFromRegion(region: Region): IslandShape {
     centreY: region.minY + region.sizeY / 2,
     radiusX: region.sizeX / 2,
     radiusY: region.sizeY / 2,
+  };
+}
+
+/** Aggiunge alla maschera un lobo ellittico deterministico e identificato. */
+export function withCoastalExtension(
+  shape: IslandShape,
+  region: Region,
+  id: string,
+): IslandShape {
+  if (shape.extensions?.some((extension) => extension.id === id) === true) return shape;
+  return {
+    ...shape,
+    extensions: [...(shape.extensions ?? []), { ...region, id }],
   };
 }
 

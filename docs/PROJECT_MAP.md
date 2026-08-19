@@ -40,6 +40,9 @@ scene/terrain -> VoxelWorld.setBlock -> dirty chunks -> ChunkRenderer
 
 FixedStepLoop -> tick -> nextBuildSites -> Builder
               -> BuildingRegistry + setBlock -> addBuilding -> campo incrementale
+
+puntatore -> convalida azione -> HUD + InfluenceOverlay
+          -> GrowthScene -> settore unico -> TerrainStreamer a budget
 ```
 
 Il debug della desiderabilita' usa `setData`, che non attiva il meshing.
@@ -54,4 +57,3 @@ Il debug della desiderabilita' usa `setData`, che non attiva il meshing.
 
 Coordina funzionalita' trasversali da `src/main.ts`, senza introdurre dipendenze
 circolari fra engine, mondo e simulazione.
-

@@ -5,6 +5,19 @@ import { VoxelWorld } from '../world/VoxelWorld';
 import { GrowthScene } from './growthScene';
 
 describe('GrowthScene', () => {
+  it('impone l’ordine del tutorial e registra una sola volta i settori', () => {
+    const world = new VoxelWorld();
+    const map = testTerrain({ chunksX: 2, chunksY: 2, height: 12 });
+    const scene = new GrowthScene(world, map, { minX: 0, minY: 0, sizeX: 64, sizeY: 64 }, 1337);
+
+    expect(scene.placeCatalyst(32, 16, BUILDING_CLASS.production)).toEqual({
+      success: false,
+      reason: 'onboarding-order',
+    });
+    expect(scene.placeCatalyst(16, 16, BUILDING_CLASS.residential).success).toBe(true);
+    expect(scene.stats.onboarding.step).toBe('production');
+  });
+
   it('chiude il ciclo tick, costruzione e registrazione voxel', () => {
     const world = new VoxelWorld();
     const map = testTerrain({ chunksX: 2, chunksY: 2, height: 12 });

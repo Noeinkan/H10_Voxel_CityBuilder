@@ -1,12 +1,20 @@
-import { addBuilding, nextBuildSites, type Building, type BuildingClass, type SimState } from '../../sim';
+import {
+  BUILDING_CLASS,
+  addBuilding,
+  nextBuildSites,
+  type Building,
+  type BuildingClass,
+  type SimState,
+} from '../../sim';
 import { CHUNK, keyOf, toChunk, toLocal } from '../chunkCoords';
 import { hashCoords } from '../rng';
+import { PALETTE_SLOTS } from '../../engine/paletteSlots';
 import { paletteForDepth } from '../terrain/biomes';
 import { TERRAIN } from '../terrain/config';
 import type { TerrainMap } from '../terrain/TerrainMap';
 import type { VoxelWorld } from '../VoxelWorld';
 import { BuildingRegistry, type BuildingRecord, type ReadonlyBuildingRegistry } from './BuildingRegistry';
-import { BUILDER } from './config';
+import { BUILDER, CLASS_PROFILE, MAX_FOOTPRINT } from './config';
 import { generateBuilding, startLevel } from './generate';
 import { anchoredVoxel, STAMP_EMPTY, type VoxelAnchor, type VoxelStamp } from './stamp';
 
@@ -54,21 +62,41 @@ export interface BuilderStats {
   readonly rejected: readonly number[];
   /** Siti bocciati in modo definitivo, che non verranno piu' riproposti. */
   readonly blacklisted: number;
+  /** Celle di piazzole e sentieri ancora da applicare. */
+  readonly surfaceQueued: number;
 }
 
 /** Un volume che cresce dal proprio voxel di ancoraggio. */
 interface Growing {
   readonly record: BuildingRecord;
   readonly stamp: VoxelStamp;
-  /** Impronta del livello precedente, da cancellare prima di scrivere. */
+  /** Impronta precedente: i soli voxel non coperti dalla nuova vengono rimossi. */
   readonly erase: VoxelStamp | null;
   voxelCursor: number;
-  cleared: boolean;
+  eraseCursor: number;
+}
+
+interface SurfacePaint {
+  readonly x: number;
+  readonly y: number;
+  readonly palette: number;
+  readonly priority: number;
+}
+
+interface SurfaceAnchor {
+  readonly x: number;
+  readonly y: number;
 }
 
 export class Builder {
   private readonly registryImpl = new BuildingRegistry();
   private readonly growing: Growing[] = [];
+  private readonly surfaceQueue: string[] = [];
+  private readonly surfacePending = new Map<string, SurfacePaint>();
+  private readonly surfacePriority = new Map<string, number>();
+  private readonly surfaceAnchors: SurfaceAnchor[] = [];
+  private readonly surfaceAnchorKeys = new Set<string>();
+  private surfaceHead = 0;
 
   /**
    * Siti bocciati in modo definitivo.
@@ -98,6 +126,28 @@ export class Builder {
     return this.registryImpl;
   }
 
+  /**
+   * Rende leggibile un catalizzatore senza aggiungerlo alla geometria degli
+   * edifici: una piccola piazza usa soltanto il voxel di superficie e resta
+   * quindi un dettaglio visivo, non una nuova regola della simulazione.
+   */
+  decorateCatalyst(x: number, y: number, cls: BuildingClass): void {
+    const radius = BUILDER.catalystPlazaRadius;
+    for (let dy = -radius; dy <= radius; dy++) {
+      for (let dx = -radius; dx <= radius; dx++) {
+        if (Math.abs(dx) + Math.abs(dy) > radius) continue;
+        const centre = dx === 0 && dy === 0;
+        this.enqueueSurface({
+          x: x + dx,
+          y: y + dy,
+          palette: centre ? CLASS_PROFILE[cls].accent : PALETTE_SLOTS.asphalt,
+          priority: centre ? 2 : 1,
+        });
+      }
+    }
+    this.addSurfaceAnchor({ x, y });
+  }
+
   get stats(): BuilderStats {
     return {
       placed: this.placedCount,
@@ -105,6 +155,7 @@ export class Builder {
       growing: this.growing.length,
       rejected: this.rejectedCounts,
       blacklisted: this.blacklist.size,
+      surfaceQueued: this.surfacePending.size,
     };
   }
 
@@ -147,23 +198,34 @@ export class Builder {
   step(): void {
     for (let i = this.growing.length - 1; i >= 0; i--) {
       const entry = this.growing[i];
+      let budget = BUILDER.voxelsPerFrame;
 
-      // La demolizione del livello precedente non e' animata: un edificio che
-      // svanisce fascia per fascia mentre quello nuovo non c'e' ancora si legge
-      // come un errore, non come un upgrade.
-      if (!entry.cleared) {
-        if (entry.erase !== null) this.writeStamp(entry.record, entry.erase, 0, entry.erase.sizeZ, true);
-        entry.cleared = true;
+      if (entry.voxelCursor < entry.stamp.voxels.length) {
+        const write = this.writeVoxelBatch(entry.record, entry.stamp, entry.voxelCursor, budget);
+        entry.voxelCursor = write.cursor;
+        budget -= write.written;
       }
 
-      entry.voxelCursor = this.writeVoxelBatch(
-        entry.record,
-        entry.stamp,
-        entry.voxelCursor,
-        BUILDER.voxelsPerFrame,
-      );
-      if (entry.voxelCursor >= entry.stamp.voxels.length) this.growing.splice(i, 1);
+      // Prima compare la nuova sagoma, poi spariscono soltanto le parti che non
+      // le appartengono piu'. Cosi' un upgrade non cancella centinaia di voxel
+      // in un singolo frame e l'edificio non lampeggia nel vuoto.
+      if (entry.voxelCursor >= entry.stamp.voxels.length && entry.erase !== null && budget > 0) {
+        const clear = this.clearObsoleteVoxelBatch(
+          entry.record,
+          entry.erase,
+          entry.stamp,
+          entry.eraseCursor,
+          budget,
+        );
+        entry.eraseCursor = clear.cursor;
+      }
+
+      const writeDone = entry.voxelCursor >= entry.stamp.voxels.length;
+      const clearDone = entry.erase === null || entry.eraseCursor >= entry.erase.voxels.length;
+      if (writeDone && clearDone) this.growing.splice(i, 1);
     }
+
+    this.stepSurface();
   }
 
   // --- Costruzione -----------------------------------------------------------
@@ -220,6 +282,7 @@ export class Builder {
       return this.reject(key, 'chunkBudget');
     }
 
+    this.clearSiteDecor(x, y, footprint);
     this.pour(x, y, footprint, ground.padZ);
 
     const record = this.registryImpl.add({
@@ -233,8 +296,9 @@ export class Builder {
       seed,
     });
 
-    if (animate) this.growing.push({ record, stamp, erase: null, voxelCursor: 0, cleared: true });
+    if (animate) this.growing.push({ record, stamp, erase: null, voxelCursor: 0, eraseCursor: 0 });
     else this.writeStamp(record, stamp, 0, stamp.sizeZ, false);
+    this.enqueueBuildingSurface(record);
     this.placedCount++;
     return record;
   }
@@ -310,6 +374,7 @@ export class Builder {
 
       const record = records[this.upgradeCursor % records.length];
       this.upgradeCursor++;
+      if (this.growing.some((entry) => entry.record.id === record.id)) continue;
       if (record.level >= BUILDER.maxLevel) continue;
 
       const nextLevel = record.level + 1;
@@ -332,14 +397,30 @@ export class Builder {
   private upgrade(record: BuildingRecord, nextLevel: number): void {
     const old = generateBuilding(record.class, record.level, record.seed, record.footprint);
 
-    let stamp = generateBuilding(record.class, nextLevel, record.seed);
+    let stamp = generateBuilding(
+      record.class,
+      nextLevel,
+      record.seed,
+      MAX_FOOTPRINT,
+      record.footprint,
+    );
     if (stamp.sizeX > record.footprint && !this.fitsWider(record, stamp)) {
-      stamp = generateBuilding(record.class, nextLevel, record.seed, record.footprint);
+      stamp = generateBuilding(
+        record.class,
+        nextLevel,
+        record.seed,
+        record.footprint,
+        record.footprint,
+      );
     }
 
     if (this.dirtyChunkCount(record.x, record.y, stamp.sizeX, record.baseZ, record.baseZ + stamp.sizeZ) >
         BUILDER.maxDirtyChunksPerBuilding) {
       return;
+    }
+
+    if (stamp.sizeX > record.footprint) {
+      this.clearExpandedSiteDecor(record, stamp.sizeX);
     }
 
     const replaced = this.registryImpl.replace(record.id, {
@@ -361,7 +442,8 @@ export class Builder {
       if (ground !== null) this.pour(record.x, record.y, stamp.sizeX, record.baseZ);
     }
 
-    this.growing.push({ record: replaced, stamp, erase: old, voxelCursor: 0, cleared: false });
+    this.enqueueBuildingSurface(replaced);
+    this.growing.push({ record: replaced, stamp, erase: old, voxelCursor: 0, eraseCursor: 0 });
     this.upgradedCount++;
   }
 
@@ -413,7 +495,7 @@ export class Builder {
     stamp: VoxelStamp,
     from: number,
     budget: number,
-  ): number {
+  ): { cursor: number; written: number } {
     const anchor: VoxelAnchor = { x: record.x, y: record.y, z: record.baseZ };
     const plane = stamp.sizeX * stamp.sizeY;
     let cursor = from;
@@ -431,7 +513,205 @@ export class Builder {
       }
       cursor++;
     }
-    return cursor;
+    return { cursor, written };
+  }
+
+  /** Rimuove a budget soltanto i voxel vecchi che la nuova sagoma non copre. */
+  private clearObsoleteVoxelBatch(
+    record: BuildingRecord,
+    previous: VoxelStamp,
+    next: VoxelStamp,
+    from: number,
+    budget: number,
+  ): { cursor: number; written: number } {
+    const anchor: VoxelAnchor = { x: record.x, y: record.y, z: record.baseZ };
+    const previousPlane = previous.sizeX * previous.sizeY;
+    let cursor = from;
+    let written = 0;
+
+    while (cursor < previous.voxels.length && written < budget) {
+      if (previous.voxels[cursor] !== STAMP_EMPTY) {
+        const sz = Math.floor(cursor / previousPlane);
+        const within = cursor - sz * previousPlane;
+        const sy = Math.floor(within / previous.sizeX);
+        const sx = within - sy * previous.sizeX;
+        const covered = sx < next.sizeX && sy < next.sizeY && sz < next.sizeZ &&
+          next.voxels[sx + next.sizeX * (sy + next.sizeY * sz)] !== STAMP_EMPTY;
+        if (!covered) {
+          const voxel = anchoredVoxel(anchor, previous, sx, sy, sz);
+          this.world.setBlock(voxel.x, voxel.y, voxel.z, STAMP_EMPTY);
+          written++;
+        }
+      }
+      cursor++;
+    }
+
+    return { cursor, written };
+  }
+
+  // --- Superficie urbana ----------------------------------------------------
+
+  /** Bonifica tronchi e chiome nel lotto e nel suo bordo, senza toccare il suolo. */
+  private clearSiteDecor(x: number, y: number, footprint: number): void {
+    for (let py = y - 1; py <= y + footprint; py++) {
+      for (let px = x - 1; px <= x + footprint; px++) {
+        if (this.registryImpl.at(px, py).length > 0) continue;
+        this.clearDecorColumn(px, py);
+      }
+    }
+  }
+
+  /** Bonifica soltanto l'anello aggiunto da un upgrade, preservando il volume vecchio. */
+  private clearExpandedSiteDecor(record: BuildingRecord, footprint: number): void {
+    for (let py = record.y - 1; py <= record.y + footprint; py++) {
+      for (let px = record.x - 1; px <= record.x + footprint; px++) {
+        const insideOld = px >= record.x && px < record.x + record.footprint &&
+          py >= record.y && py < record.y + record.footprint;
+        if (insideOld) continue;
+        const occupied = this.registryImpl.at(px, py).some((other) => other.id !== record.id);
+        if (occupied) continue;
+        this.clearDecorColumn(px, py);
+      }
+    }
+  }
+
+  private clearDecorColumn(x: number, y: number): void {
+    const column = this.terrainMap.columnAt(x, y);
+    if (column === null) return;
+    const top = column.height + BUILDER.decorClearanceHeight;
+    for (let z = column.height; z < top; z++) {
+      if (this.world.getBlock(x, y, z) !== STAMP_EMPTY) {
+        this.world.setBlock(x, y, z, STAMP_EMPTY);
+      }
+    }
+  }
+
+  private enqueueBuildingSurface(record: BuildingRecord): void {
+    const palette = record.class === BUILDING_CLASS.production
+      ? PALETTE_SLOTS.asphaltDark
+      : PALETTE_SLOTS.asphalt;
+    for (let px = record.x - 1; px <= record.x + record.footprint; px++) {
+      this.enqueueSurface({ x: px, y: record.y - 1, palette, priority: 1 });
+      this.enqueueSurface({ x: px, y: record.y + record.footprint, palette, priority: 1 });
+    }
+    for (let py = record.y; py < record.y + record.footprint; py++) {
+      this.enqueueSurface({ x: record.x - 1, y: py, palette, priority: 1 });
+      this.enqueueSurface({ x: record.x + record.footprint, y: py, palette, priority: 1 });
+    }
+
+    const centre = {
+      x: record.x + Math.floor((record.footprint - 1) * 0.5),
+      y: record.y + Math.floor((record.footprint - 1) * 0.5),
+    };
+    const nearest = this.nearestSurfaceAnchor(centre);
+    const door = nearest === null ? { x: record.x - 1, y: centre.y } : this.doorToward(record, nearest);
+    if (nearest !== null && Math.abs(door.x - nearest.x) + Math.abs(door.y - nearest.y) <= BUILDER.pathLinkDistance) {
+      const path = this.pathCells(door, nearest, record.seed);
+      if (path.every((cell) => this.canPaintSurface(cell.x, cell.y))) {
+        for (const cell of path) this.enqueueSurface({ ...cell, palette, priority: 1 });
+      }
+    }
+    this.addSurfaceAnchor(door);
+  }
+
+  private doorToward(record: BuildingRecord, target: SurfaceAnchor): SurfaceAnchor {
+    const centreX = record.x + Math.floor((record.footprint - 1) * 0.5);
+    const centreY = record.y + Math.floor((record.footprint - 1) * 0.5);
+    const dx = target.x - centreX;
+    const dy = target.y - centreY;
+    if (Math.abs(dx) >= Math.abs(dy)) {
+      return { x: dx < 0 ? record.x - 1 : record.x + record.footprint, y: centreY };
+    }
+    return { x: centreX, y: dy < 0 ? record.y - 1 : record.y + record.footprint };
+  }
+
+  private nearestSurfaceAnchor(from: SurfaceAnchor): SurfaceAnchor | null {
+    let best: SurfaceAnchor | null = null;
+    let bestDistance = Number.POSITIVE_INFINITY;
+    for (const candidate of this.surfaceAnchors) {
+      const distance = Math.abs(candidate.x - from.x) + Math.abs(candidate.y - from.y);
+      if (distance < bestDistance) {
+        best = candidate;
+        bestDistance = distance;
+      }
+    }
+    return best;
+  }
+
+  private addSurfaceAnchor(anchor: SurfaceAnchor): void {
+    const key = `${anchor.x},${anchor.y}`;
+    if (this.surfaceAnchorKeys.has(key)) return;
+    this.surfaceAnchorKeys.add(key);
+    this.surfaceAnchors.push(anchor);
+  }
+
+  private pathCells(from: SurfaceAnchor, to: SurfaceAnchor, seed: number): SurfaceAnchor[] {
+    const cells: SurfaceAnchor[] = [];
+    let x = from.x;
+    let y = from.y;
+    const horizontalFirst = (hashCoords(seed, from.x, from.y) & 1) === 0;
+    const walkX = (): void => {
+      while (x !== to.x) {
+        cells.push({ x, y });
+        x += Math.sign(to.x - x);
+      }
+    };
+    const walkY = (): void => {
+      while (y !== to.y) {
+        cells.push({ x, y });
+        y += Math.sign(to.y - y);
+      }
+    };
+    if (horizontalFirst) {
+      walkX();
+      walkY();
+    } else {
+      walkY();
+      walkX();
+    }
+    cells.push({ x: to.x, y: to.y });
+    return cells;
+  }
+
+  private canPaintSurface(x: number, y: number): boolean {
+    const column = this.terrainMap.columnAt(x, y);
+    return column !== null && column.buildable && this.registryImpl.at(x, y).length === 0;
+  }
+
+  private enqueueSurface(paint: SurfacePaint): void {
+    if (!this.canPaintSurface(paint.x, paint.y)) return;
+    const key = `${paint.x},${paint.y}`;
+    if (paint.priority < (this.surfacePriority.get(key) ?? 0)) return;
+    const current = this.surfacePending.get(key);
+    if (current !== undefined) {
+      if (paint.priority > current.priority) this.surfacePending.set(key, paint);
+      return;
+    }
+    this.surfacePending.set(key, paint);
+    this.surfaceQueue.push(key);
+  }
+
+  private stepSurface(): void {
+    let painted = 0;
+    while (this.surfaceHead < this.surfaceQueue.length && painted < BUILDER.surfaceCellsPerFrame) {
+      const key = this.surfaceQueue[this.surfaceHead++];
+      const paint = this.surfacePending.get(key);
+      if (paint === undefined) continue;
+      this.surfacePending.delete(key);
+      if (!this.canPaintSurface(paint.x, paint.y)) continue;
+
+      const column = this.terrainMap.columnAt(paint.x, paint.y);
+      if (column === null) continue;
+      this.clearDecorColumn(paint.x, paint.y);
+      this.world.setBlock(paint.x, paint.y, column.height - 1, paint.palette);
+      this.surfacePriority.set(key, paint.priority);
+      painted++;
+    }
+
+    if (this.surfaceHead >= this.surfaceQueue.length) {
+      this.surfaceQueue.length = 0;
+      this.surfaceHead = 0;
+    }
   }
 
   // --- Budget di chunk -------------------------------------------------------

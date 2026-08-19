@@ -18,9 +18,9 @@ export const BALANCE = {
 
   start: {
     population: 0,
-    food: 400,
-    materials: 200,
-    funds: 1000,
+    food: 600,
+    materials: 300,
+    funds: 1200,
     /** Modificatore di soddisfazione, sempre in [0, 1]. */
     satisfaction: 0.5,
     /** Seme del PRNG dello stato. Zero e' un valore valido: mulberry32 lo accetta. */
@@ -40,7 +40,7 @@ export const BALANCE = {
     /** Materiali prodotti per tick da un edificio produttivo a pieno organico. */
     productionYield: 2.5,
     /** Fondi consumati per tick da un edificio civico. */
-    civicUpkeep: 6,
+    civicUpkeep: 2,
     /** Peso della somma dei catalizzatori nel campo, per classe. */
     desirabilityResidential: 1,
     desirabilityProduction: 1,
@@ -81,6 +81,18 @@ export const BALANCE = {
       /** Lato di un settore costiero, allineato a due chunk. */
       size: 64,
     },
+    success: {
+      population: 120,
+      buildingsPerClass: 3,
+      satisfaction: 0.4,
+      /** Venti secondi a 10 tick/s di bilancio non negativo. */
+      stableTicks: 200,
+    },
+    crisis: {
+      foodReserve: 24,
+      fundsReserve: 40,
+      satisfaction: 0.2,
+    },
   },
 
   // --- Popolazione ---------------------------------------------------------
@@ -107,7 +119,8 @@ export const BALANCE = {
      */
     satisfactionInfluence: 0.5,
     /** Frazione di popolazione persa per tick quando il cibo non basta. */
-    starvationRate: 0.05,
+    /** Il cibo mancante rallenta e poi riduce la città, lasciando tempo per reagire. */
+    starvationRate: 0.002,
     /**
      * Quanto la saturazione del suolo edificabile frena la crescita. Con
      * `edifici / colonne edificabili` a 1 il fattore va a zero: l'isola piena

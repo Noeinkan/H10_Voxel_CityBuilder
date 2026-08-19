@@ -55,6 +55,13 @@ export const TERRAIN = {
    */
   maxReliefSlope: 0.3,
 
+  /**
+   * I lobi da 64 voxel hanno raggio minore dell'isola base: questa frazione
+   * compensa la scala senza dare loro il rilievo pieno, mantenendo il raccordo
+   * sotto un voxel di dislivello e abbastanza alto da produrre pianura.
+   */
+  coastalExtensionRelief: 1.8,
+
   // --- Campo di rumore ----------------------------------------------------
 
   /**

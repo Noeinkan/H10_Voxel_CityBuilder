@@ -16,36 +16,31 @@ export class GrowthOverlay {
 
   constructor(parent: HTMLElement) {
     this.root = document.createElement('details');
-    this.root.style.cssText = [
-      'position:fixed', 'right:12px', 'bottom:var(--game-hud-bottom, 12px)', 'z-index:16',
-      'max-width:calc(100vw - 24px)', 'max-height:min(62vh,540px)', 'box-sizing:border-box', 'overflow:auto',
-      'background:rgba(10,18,24,.88)', 'color:#dbe8e5',
-      'font:10px/1.45 ui-monospace,SFMono-Regular,Consolas,monospace',
-      'border:1px solid rgba(185,217,210,.22)', 'border-radius:8px',
-      'box-shadow:0 8px 28px rgba(0,0,0,.24)', 'backdrop-filter:blur(8px)',
-    ].join(';');
+    this.root.className = 'debug-panel debug-panel--right';
 
     this.summary = document.createElement('summary');
+    this.summary.className = 'debug-summary';
     this.summary.textContent = '▸ CRESCITA · preparazione terreno…';
-    this.summary.style.cssText = [
-      'padding:6px 9px', 'cursor:pointer', 'user-select:none', 'list-style:none',
-      'font:700 10px/1.4 system-ui,sans-serif', 'letter-spacing:.04em',
-      'color:#b9d9d2', 'white-space:nowrap',
-    ].join(';');
     this.root.appendChild(this.summary);
 
     this.body = document.createElement('pre');
-    this.body.style.cssText = [
-      'margin:0', 'padding:8px 10px 10px', 'border-top:1px solid rgba(185,217,210,.14)',
-      'font:inherit', 'color:inherit', 'white-space:pre', 'min-width:250px',
-    ].join(';');
+    this.body.className = 'debug-body';
     this.body.textContent = 'preparazione terreno…';
     this.root.appendChild(this.body);
     parent.appendChild(this.root);
   }
 
   needsPaint(now: number): boolean {
-    return now - this.lastPaint >= REFRESH_MS;
+    return !this.root.hidden && now - this.lastPaint >= REFRESH_MS;
+  }
+
+  setVisible(visible: boolean): void {
+    this.root.hidden = !visible;
+  }
+
+  toggle(): boolean {
+    this.setVisible(this.root.hidden);
+    return !this.root.hidden;
   }
 
   update(stats: GrowthStats | null, now: number): void {

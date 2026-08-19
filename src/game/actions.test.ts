@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { BUILDING_CLASS, createSimState } from '../sim';
 import { testTerrain } from '../sim/testTerrain';
-import { buyExpansion, placeCatalyst, togglePolicy } from './actions';
+import { buyExpansion, catalystFailure, placeCatalyst, togglePolicy } from './actions';
 
 describe('azioni di gioco', () => {
   it('piazza un catalizzatore pagando una sola volta', () => {
@@ -25,6 +25,7 @@ describe('azioni di gioco', () => {
     const close = placeCatalyst(first.state, map, 10, 10, BUILDING_CLASS.residential);
     expect(close).toEqual({ success: false, reason: 'too-close' });
     expect(first.state.catalysts).toHaveLength(1);
+    expect(catalystFailure(first.state, map, 10, 10, BUILDING_CLASS.residential)).toBe('too-close');
   });
 
   it('applica costi e prerequisiti delle policy senza mutare un rifiuto', () => {
@@ -42,5 +43,16 @@ describe('azioni di gioco', () => {
       success: false,
       reason: 'population-required',
     });
+  });
+
+  it('impedisce di pagare due volte lo stesso settore', () => {
+    const base = createSimState();
+    const state = {
+      ...base,
+      population: { stock: 100, delta: 0 },
+      funds: { stock: 2_000, delta: 0 },
+    };
+    expect(buyExpansion(state, true)).toEqual({ success: false, reason: 'already-unlocked' });
+    expect(state.funds.stock).toBe(2_000);
   });
 });

@@ -13,7 +13,7 @@ export function resolveLaunchMode(params: URLSearchParams): LaunchMode {
   const defaultExperience = !hasExplicitScene;
   const debugEnabled = params.has('debug')
     ? params.get('debug') === '1'
-    : defaultExperience;
+    : false;
 
   return {
     debugEnabled,

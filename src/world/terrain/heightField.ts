@@ -88,8 +88,44 @@ export class HeightField {
    * il centro resta il centro.
    */
   maskAt(x: number, y: number): number {
-    const dx = (x - this.shape.centreX) / this.shape.radiusX;
-    const dy = (y - this.shape.centreY) / this.shape.radiusY;
+    let mask = this.ellipseMaskAt(
+      x,
+      y,
+      this.shape.centreX,
+      this.shape.centreY,
+      this.shape.radiusX,
+      this.shape.radiusY,
+    );
+    for (const extension of this.shape.extensions ?? []) {
+      const extensionRadius = Math.min(extension.sizeX, extension.sizeY) / 2;
+      const baseRadius = Math.min(this.shape.radiusX, this.shape.radiusY);
+      const reliefScale = Math.min(
+        1,
+        (extensionRadius / baseRadius) * TERRAIN.coastalExtensionRelief,
+      );
+      const extensionMask = reliefScale * this.ellipseMaskAt(
+        x,
+        y,
+        extension.minX + extension.sizeX / 2,
+        extension.minY + extension.sizeY / 2,
+        extension.sizeX / 2,
+        extension.sizeY / 2,
+      );
+      if (extensionMask > mask) mask = extensionMask;
+    }
+    return mask;
+  }
+
+  private ellipseMaskAt(
+    x: number,
+    y: number,
+    centreX: number,
+    centreY: number,
+    radiusX: number,
+    radiusY: number,
+  ): number {
+    const dx = (x - centreX) / radiusX;
+    const dy = (y - centreY) / radiusY;
     const r = Math.sqrt(dx * dx + dy * dy);
     if (r <= 0) return 1;
 

@@ -2,9 +2,9 @@ import { describe, expect, it } from 'vitest';
 import { resolveLaunchMode } from './launchMode';
 
 describe('resolveLaunchMode', () => {
-  it('carica alla radice isola, crescita e strumenti tecnici', () => {
+  it('carica alla radice l’esperienza giocabile senza strumenti tecnici', () => {
     expect(resolveLaunchMode(new URLSearchParams())).toEqual({
-      debugEnabled: true,
+      debugEnabled: false,
       growEnabled: true,
       simEnabled: false,
     });
@@ -13,6 +13,14 @@ describe('resolveLaunchMode', () => {
   it('permette di nascondere gli strumenti senza disattivare il gioco', () => {
     expect(resolveLaunchMode(new URLSearchParams('debug=0'))).toEqual({
       debugEnabled: false,
+      growEnabled: true,
+      simEnabled: false,
+    });
+  });
+
+  it('apre gli strumenti tecnici solo quando richiesti esplicitamente', () => {
+    expect(resolveLaunchMode(new URLSearchParams('debug=1'))).toEqual({
+      debugEnabled: true,
       growEnabled: true,
       simEnabled: false,
     });
