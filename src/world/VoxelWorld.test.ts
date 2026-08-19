@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { CHUNK, idx } from './chunkCoords';
 import { VoxelWorld } from './VoxelWorld';
+import { SURFACE_KIND } from './visualBlock';
 
 describe('VoxelWorld — storage', () => {
   it('setData non modifica blocks e non marca il chunk sporco', () => {
@@ -50,6 +51,19 @@ describe('VoxelWorld — storage', () => {
     world.setBlock(5, 5, 5, 7);
 
     expect(world.dirtyCount).toBe(0);
+  });
+
+  it('una nuova superficie invalida la mesh senza cambiare palette o solidCount', () => {
+    const world = new VoxelWorld();
+    world.setBlock(5, 5, 5, 7, SURFACE_KIND.habitat);
+    world.flush();
+
+    world.setBlock(5, 5, 5, 7, SURFACE_KIND.luminous);
+
+    expect(world.getBlock(5, 5, 5)).toBe(7);
+    expect(world.getSurfaceKind(5, 5, 5)).toBe(SURFACE_KIND.luminous);
+    expect(world.solidVoxelCount).toBe(1);
+    expect(world.flush()).toEqual(['0,0,0']);
   });
 
   it('una cella di bordo marca sporchi solo i vicini esistenti', () => {

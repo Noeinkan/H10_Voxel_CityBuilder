@@ -1,4 +1,5 @@
-import { CLASS_COUNT, type BuildingClass } from '../../sim';
+import { CLASS_COUNT, type BuildingClass, type DistrictId } from '../../sim';
+import type { BuildingForm } from './config';
 import { toChunk } from '../chunkCoords';
 
 /**
@@ -39,6 +40,9 @@ export interface BuildingRecord {
   readonly class: BuildingClass;
   readonly level: number;
   readonly seed: number;
+  /** Profilo locale congelato per poter rigenerare esattamente lo stamp. */
+  readonly form?: BuildingForm;
+  readonly district?: DistrictId;
 }
 
 /**

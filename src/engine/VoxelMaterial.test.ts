@@ -15,7 +15,12 @@ describe('createVoxelMaterial', () => {
 
     expect(handle.material).toBe(material);
     expect(material.uniforms['uPalette'].value).toBe(palette);
+    expect(material.vertexShader).toContain('attribute float aSurface');
+    expect(material.fragmentShader).toContain('uEmissiveStrength');
     expect(material.uniforms['uWaterStrength'].value).toBeGreaterThan(0);
     expect(material.uniforms['uTime'].value).toBe(12.5);
+
+    handle.setAtmosphere(resolveTheme('scifi').atmosphere);
+    expect(material.uniforms['uEmissiveStrength'].value).toBeCloseTo(0.95);
   });
 });

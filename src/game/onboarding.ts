@@ -1,10 +1,17 @@
-import { BUILDING_CLASS, type BuildingClass, type SimState } from '../sim';
+import {
+  BUILDING_CLASS,
+  defaultCatalystOfClass,
+  type BuildingClass,
+  type CatalystId,
+  type SimState,
+} from '../sim';
 
 export type OnboardingStep = 'residential' | 'production' | 'civic' | 'complete';
 
 export interface OnboardingState {
   readonly step: OnboardingStep;
   readonly expectedClass: BuildingClass | null;
+  readonly expectedCatalyst: CatalystId | null;
   readonly title: string;
   readonly message: string;
   readonly progress: number;
@@ -19,8 +26,9 @@ export function onboardingOf(state: SimState): OnboardingState {
     return {
       step: 'residential',
       expectedClass: BUILDING_CLASS.residential,
-      title: '1 · Dai una casa alla città',
-      message: 'Piazza un catalizzatore residenziale: crea alloggi e permette ai primi abitanti di arrivare.',
+      expectedCatalyst: 'market',
+      title: '1 · Give your city a home',
+      message: 'Place the Market to attract homes, businesses, and your first residents.',
       progress: 0,
     };
   }
@@ -28,8 +36,9 @@ export function onboardingOf(state: SimState): OnboardingState {
     return {
       step: 'production',
       expectedClass: BUILDING_CLASS.production,
-      title: '2 · Rendi sostenibile la crescita',
-      message: 'Ora piazza un catalizzatore produttivo: senza lavoro e cibo le nuove case restano fragili.',
+      expectedCatalyst: 'factory',
+      title: '2 · Make growth sustainable',
+      message: 'Now place the Factory. New homes need jobs and food to thrive.',
       progress: 1,
     };
   }
@@ -37,23 +46,27 @@ export function onboardingOf(state: SimState): OnboardingState {
     return {
       step: 'civic',
       expectedClass: BUILDING_CLASS.civic,
-      title: '3 · Completa il quartiere',
-      message: 'Aggiungi un catalizzatore civico: i servizi sostengono la felicità quando la popolazione sale.',
+      expectedCatalyst: 'park',
+      title: '3 · Complete the neighborhood',
+      message: 'Add the Park. Public services support happiness as the population grows.',
       progress: 2,
     };
   }
   return {
     step: 'complete',
     expectedClass: null,
-    title: 'Fondazione completata',
-    message: 'Le tre funzioni urbane sono attive. Osserva i bilanci e scegli dove rinforzare la città.',
+    expectedCatalyst: null,
+    title: 'Foundation complete',
+    message: 'All three city functions are active. Overlap influence fields to shape distinct districts.',
     progress: 3,
   };
 }
 
-export function onboardingAllows(state: SimState, cls: BuildingClass): boolean {
-  const expected = onboardingOf(state).expectedClass;
-  return expected === null || expected === cls;
+export function onboardingAllows(state: SimState, target: BuildingClass | CatalystId): boolean {
+  const onboarding = onboardingOf(state);
+  if (onboarding.expectedCatalyst === null) return true;
+  const id = typeof target === 'number' ? defaultCatalystOfClass(target) : target;
+  return id === onboarding.expectedCatalyst;
 }
 
 function hasCatalyst(state: SimState, cls: BuildingClass): boolean {

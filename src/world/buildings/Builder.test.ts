@@ -3,6 +3,7 @@ import { BUILDING_CLASS, addBuilding, addCatalyst, createSimState } from '../../
 import { PALETTE_SLOTS } from '../../engine/paletteSlots';
 import { testTerrain } from '../../sim/testTerrain';
 import { VoxelWorld } from '../VoxelWorld';
+import { SURFACE_KIND } from '../visualBlock';
 import { Builder } from './Builder';
 import { CLASS_PROFILE } from './config';
 
@@ -44,6 +45,7 @@ describe('Builder', () => {
     expect(builder.registry.count).toBe(1);
     expect(builder.stats.growing).toBe(0);
     expect(world.solidVoxelCount).toBeGreaterThan(0);
+    expect(world.getSurfaceKind(12, 12, 12)).not.toBe(SURFACE_KIND.plain);
   });
 
   it('dipinge una piazzola di catalizzatore a budget senza cambiare la quota', () => {

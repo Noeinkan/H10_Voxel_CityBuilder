@@ -27,6 +27,7 @@ import { FixedStepLoop } from './game/loop';
 import { coastalSectorAt, shapeWithSector, type CoastalSector } from './game/sectors';
 import type { ActionFailure } from './game/actions';
 import { BALANCE } from './sim/balance';
+import { catalystById, defaultCatalystOfClass } from './sim/catalysts';
 import { CLASS_COUNT, CLASS_NAMES, type BuildingClass } from './sim/classes';
 import { writeDesirabilityData } from './sim/debugData';
 import { nextBuildSites, type BuildSite } from './sim/nextBuildSites';
@@ -87,7 +88,7 @@ const SIM_TICK_RATE = 10;
 const SIM_SITE_COUNT = 10;
 
 const container = document.getElementById('app');
-if (container === null) throw new Error('manca il contenitore #app');
+if (container === null) throw new Error('missing #app container');
 
 const renderer = new WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
 const renderQuality = new RenderQualityController(qualityMode, window.devicePixelRatio);
@@ -202,24 +203,44 @@ let selectedTool: GameTool = { kind: 'none' };
 let gameHud: GameHud | null = null;
 if (growEnabled) {
   gameHud = new GameHud(container, {
-      onTool: (tool) => {
-        selectedTool = tool;
-        preview.visible = false;
-        influenceOverlay?.hideCursor();
-      },
+    onTool: (tool) => {
+      selectedTool = tool;
+      preview.visible = false;
+      influenceOverlay?.hideCursor();
+    },
       onPolicy: (id) => {
         const result = growthScene?.togglePolicy(id);
         if (result !== undefined && !result.success) gameHud?.showFailure(result.reason);
       },
-      onPause: (paused) => growthScene?.setPaused(paused),
-      onSpeed: (speed) => growthScene?.setSpeed(speed),
-      onCancelTool: () => {
-        selectedTool = { kind: 'none' };
-        preview.visible = false;
-        influenceOverlay?.hideCursor();
-        gameHud?.updateCursor(0, 0, null);
+      onTrade: (mode) => {
+        const result = growthScene?.setTradeMode(mode);
+        if (result !== undefined && !result.success) gameHud?.showFailure(result.reason);
       },
-    });
+      onDecision: (optionId) => {
+        const result = growthScene?.chooseDecision(optionId);
+        if (result !== undefined && !result.success) gameHud?.showFailure(result.reason);
+      },
+    onPause: (paused) => growthScene?.setPaused(paused),
+    onSpeed: (speed) => growthScene?.setSpeed(speed),
+    onTheme: (id) => {
+      const index = THEMES.findIndex((candidate) => candidate.id === id);
+      if (index >= 0) cycleTheme(index);
+    },
+    onCancelTool: () => {
+      selectedTool = { kind: 'none' };
+      preview.visible = false;
+      influenceOverlay?.hideCursor();
+      gameHud?.updateCursor(0, 0, null);
+    },
+  }, THEMES.map((candidate) => ({
+    id: candidate.id,
+    name: candidate.name,
+    swatches: [
+      candidate.atmosphere.background,
+      candidate.colors[5] ?? candidate.atmosphere.fogColor,
+      candidate.colors[12] ?? candidate.atmosphere.fogColor,
+    ],
+  })), theme.id);
 }
 
 const picker = new Raycaster();
@@ -286,7 +307,7 @@ if (debugEnabled) {
   debugGlobals['__voxelTheme'] = (id?: string): Record<string, unknown> => {
     if (id !== undefined) {
       const found = THEMES.findIndex((candidate) => candidate.id === id);
-      if (found < 0) console.warn(`[tema] id sconosciuto: ${id}`);
+      if (found < 0) console.warn(`[theme] unknown id: ${id}`);
       else cycleTheme(found);
     }
     return { id: theme.id, name: theme.name, available: THEMES.map((t) => t.id) };
@@ -381,7 +402,7 @@ onPaletteChanged((hexColors) => {
   // `palette.json` appartiene al tema natural: gli altri hanno una palette propria.
   if (theme.id !== 'natural') return;
   paletteHandle.setPalette(hexColors);
-  console.info('[palette] colori aggiornati a caldo, nessun rebuild di mesh');
+  console.info('[palette] colors updated live, no mesh rebuild');
 });
 
 /**
@@ -422,7 +443,8 @@ function cycleTheme(index: number): void {
   const next = THEMES[index];
   if (next === undefined || next.id === theme.id) return;
   applyTheme(next);
-  console.info(`[tema] ${next.name} (${next.id}), nessun rebuild di mesh`);
+  gameHud?.setTheme(next.id);
+  console.info(`[theme] ${next.name} (${next.id}), no mesh rebuild`);
 }
 
 function onFrame(time: number): void {
@@ -501,7 +523,7 @@ function updateSim(dt: number): void {
     if (!generator.done) return;
     sim = createScenarioState(terrain.map, terrainRegion);
     refreshSimDerived();
-    console.info(`[sim] ${sim.catalysts.length} catalizzatori piazzati da script`);
+    console.info(`[sim] ${sim.catalysts.length} catalysts placed by script`);
     return;
   }
 
@@ -569,7 +591,7 @@ function updateGrowth(dt: number): void {
     if (!generator.done) return;
     growthScene = new GrowthScene(world, terrain.map, terrainRegion, terrainSeed);
     influenceOverlay?.refreshCatalysts(growthScene.simState.catalysts);
-    console.info('[crescita] scena automatica pronta');
+    console.info('[growth] automatic scene ready');
     return;
   }
   // La TerrainMap arriva prima dei voxel: durante un'espansione la crescita
@@ -594,10 +616,10 @@ function onGamePointerMove(event: PointerEvent): void {
     preview.visible = false;
     influenceOverlay?.hideCursor();
     gameHud?.updateCursor(event.clientX, event.clientY, {
-      title: 'Nessuna superficie',
-      details: 'Sposta il cursore sull’isola.',
+      title: 'No surface',
+      details: 'Move the cursor over the island.',
       valid: false,
-      reason: 'Nessuna colonna selezionabile.',
+      reason: 'No selectable column.',
     });
     return;
   }
@@ -605,16 +627,17 @@ function onGamePointerMove(event: PointerEvent): void {
   preview.position.set(cell.x + 0.5, cell.y + 0.5, cell.z + 0.5);
   let valid = false;
   if (selectedTool.kind === 'catalyst') {
-    const failure = growthScene.catalystFailure(cell.x, cell.y, selectedTool.class);
-    const radius = BALANCE.gameplay.catalyst.radius[selectedTool.class];
-    const cost = BALANCE.gameplay.catalyst.cost[selectedTool.class];
+    const catalyst = catalystById(selectedTool.id ?? defaultCatalystOfClass(selectedTool.class));
+    const failure = growthScene.catalystFailure(cell.x, cell.y, catalyst.id);
+    const radius = catalyst.radius;
+    const cost = catalyst.cost;
     valid = failure === null;
     influenceOverlay?.showCursor(cell.x, cell.y, radius, valid);
     gameHud?.updateCursor(event.clientX, event.clientY, {
-      title: `Catalizzatore ${classLabel(selectedTool.class)}`,
-      details: `${cost} fondi · raggio ${radius} · classe ${classLabel(selectedTool.class)}`,
+      title: catalyst.label,
+      details: `${cost} funds · radius ${radius} · class ${classLabel(catalyst.class)}`,
       valid,
-      reason: failure === null ? 'Posizione valida.' : actionFailureLabel(failure),
+      reason: failure === null ? 'Valid position.' : actionFailureLabel(failure),
     });
   } else {
     const sector = coastalSectorAt(cell.x, cell.y, terrainRegion, BALANCE.gameplay.expansion.size);
@@ -624,10 +647,10 @@ function onGamePointerMove(event: PointerEvent): void {
     valid = failure === null;
     influenceOverlay?.hideCursor();
     gameHud?.updateCursor(event.clientX, event.clientY, {
-      title: `Settore ${sector.id}`,
-      details: `${BALANCE.gameplay.expansion.cost} fondi · ${sector.region.sizeX}×${sector.region.sizeY} voxel`,
+      title: `Sector ${sector.id}`,
+      details: `${BALANCE.gameplay.expansion.cost} funds · ${sector.region.sizeX}×${sector.region.sizeY} voxels`,
       valid,
-      reason: failure === null ? 'Nuovo suolo edificabile collegato alla costa.' : actionFailureLabel(failure),
+      reason: failure === null ? 'New buildable land connected to the coast.' : actionFailureLabel(failure),
     });
   }
   previewMaterial.color.setHex(valid ? 0x65e08a : 0xef6b65);
@@ -645,7 +668,11 @@ function onGamePointerDown(event: PointerEvent): void {
   }
 
   if (selectedTool.kind === 'catalyst') {
-    const result = growthScene.placeCatalyst(cell.x, cell.y, selectedTool.class);
+    const result = growthScene.placeCatalyst(
+      cell.x,
+      cell.y,
+      selectedTool.id ?? defaultCatalystOfClass(selectedTool.class),
+    );
     if (!result.success) gameHud?.showFailure(result.reason);
     else {
       gameHud?.clearFeedback();
@@ -700,7 +727,7 @@ function beginCoastalExpansion(sector: CoastalSector): void {
   );
   expansionInFlight = sector;
   influenceOverlay?.addSector(sector.region);
-  growthScene.setMessage('Generazione del nuovo settore costiero…');
+  growthScene.setMessage('Generating the new coastal sector…');
   selectedTool = { kind: 'none' };
   gameHud?.setTool(selectedTool);
   preview.visible = false;
@@ -709,19 +736,21 @@ function beginCoastalExpansion(sector: CoastalSector): void {
 }
 
 function classLabel(cls: BuildingClass): string {
-  return ['residenziale', 'produttiva', 'civica'][cls] ?? 'urbana';
+  return ['residential', 'production', 'civic'][cls] ?? 'urban';
 }
 
 function actionFailureLabel(reason: ActionFailure): string {
   const labels: Readonly<Record<ActionFailure, string>> = {
-    'terrain-loading': 'Il terreno è ancora in generazione.',
-    'not-buildable': 'Terreno non edificabile.',
-    'too-close': 'Troppo vicino a un catalizzatore della stessa classe.',
-    'insufficient-funds': 'Fondi insufficienti.',
-    'population-required': `Servono ${BALANCE.gameplay.expansion.population} abitanti.`,
-    'already-active': 'Azione già attiva.',
-    'already-unlocked': 'Settore già sbloccato.',
-    'onboarding-order': 'Completa prima il passo corrente del tutorial.',
+    'terrain-loading': 'The terrain is still being generated.',
+    'not-buildable': 'This terrain is not buildable.',
+    'too-close': 'Too close to a catalyst of the same class.',
+    'insufficient-funds': 'Not enough funds.',
+    'population-required': `Requires ${BALANCE.gameplay.expansion.population} residents.`,
+    'already-active': 'This action is already active.',
+    'already-unlocked': 'This sector is already unlocked.',
+    'onboarding-order': 'Complete the current tutorial step first.',
+    'policy-incompatible': 'This policy conflicts with one that is already active.',
+    'decision-option-invalid': 'This decision option is no longer available.',
   };
   return labels[reason];
 }
@@ -894,7 +923,7 @@ function expandWorld(): void {
     sizeZ: layers * CHUNK,
   });
 
-  console.info(`[harness] aggiunti ${added} chunk, ora ${world.chunkCount} allocati`);
+  console.info(`[harness] added ${added} chunks, ${world.chunkCount} now allocated`);
 }
 
 function parseSceneKind(value: string | null): SceneKind {

@@ -1,3 +1,5 @@
+import type { SurfaceKind } from '../visualBlock';
+
 /**
  * Impronta voxel di un edificio: un array 3D compatto di indici di palette con
  * dimensioni proprie.
@@ -35,6 +37,9 @@ export interface VoxelStamp {
 
   /** Indici di palette, `sizeX * sizeY * sizeZ` valori. 0 = vuoto. */
   readonly voxels: Uint8Array;
+
+  /** Grammatica visuale parallela a `voxels`; non cambia occupazione o collisioni. */
+  readonly surfaces: Uint8Array;
 
   /**
    * Quota di inizio di ogni fascia, piu' un ultimo elemento pari a `sizeZ`.
@@ -74,6 +79,11 @@ export function anchoredVoxel(
 /** Numero di fasce dello stamp. */
 export function bandCount(stamp: VoxelStamp): number {
   return stamp.bandStarts.length - 1;
+}
+
+/** Tipo visuale tipizzato di una cella dello stamp. */
+export function stampSurface(stamp: VoxelStamp, index: number): SurfaceKind {
+  return stamp.surfaces[index] as SurfaceKind;
 }
 
 /** Voxel pieni dello stamp. Serve alle misure e ai test, non al percorso caldo. */

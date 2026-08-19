@@ -6,12 +6,12 @@ export interface ControlHint {
 }
 
 export const CONTROL_HINTS: readonly ControlHint[] = [
-  { keys: ['WASD', '↑←↓→'], action: 'Sposta la visuale' },
-  { keys: ['Q', 'E'], action: 'Ruota la città' },
-  { keys: ['Rotella'], action: 'Avvicina e allontana' },
-  { keys: ['Drag'], action: 'Trascina la visuale' },
-  { keys: ['F'], action: 'Reinquadra tutto' },
-  { keys: ['Esc'], action: 'Annulla lo strumento' },
+  { keys: ['WASD', '↑←↓→'], action: 'Move the camera' },
+  { keys: ['Q', 'E'], action: 'Rotate the city' },
+  { keys: ['Wheel'], action: 'Zoom in and out' },
+  { keys: ['Drag'], action: 'Pan the camera' },
+  { keys: ['F'], action: 'Frame the whole city' },
+  { keys: ['Esc'], action: 'Cancel the current tool' },
 ];
 
 export const HELP_STORAGE_KEY = 'h10-cozy-help-seen-v1';
@@ -30,23 +30,23 @@ export class ControlsHint {
     this.storage = storage;
     this.root = document.createElement('aside');
     this.root.className = 'help-card hud-surface';
-    this.root.setAttribute('aria-label', 'Aiuto comandi');
+    this.root.setAttribute('aria-label', 'Controls help');
 
     const header = document.createElement('header');
     header.className = 'drawer-header';
     const copy = document.createElement('div');
     const title = document.createElement('h2');
     title.className = 'drawer-title';
-    title.textContent = 'Benvenuto, sindaco!';
+    title.textContent = 'Welcome, Mayor!';
     const subtitle = document.createElement('p');
     subtitle.className = 'drawer-subtitle';
-    subtitle.textContent = 'Muoviti sull’isola e scegli cosa far crescere.';
+    subtitle.textContent = 'Explore the island and choose how your city will grow.';
     copy.append(title, subtitle);
 
     const close = document.createElement('button');
     close.type = 'button';
     close.className = 'hud-button hud-button--icon hud-button--small';
-    close.setAttribute('aria-label', 'Chiudi aiuto');
+    close.setAttribute('aria-label', 'Close help');
     close.appendChild(createHudIcon('close'));
     close.addEventListener('click', () => this.hide(true));
     header.append(copy, close);

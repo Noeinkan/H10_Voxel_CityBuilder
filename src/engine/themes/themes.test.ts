@@ -76,6 +76,8 @@ describe('temi', () => {
       expect(a.heightStrength ?? 0).toBeLessThanOrEqual(1);
       expect(a.glassLift ?? 0).toBeGreaterThanOrEqual(0);
       expect(a.glassLift ?? 0).toBeLessThanOrEqual(1);
+      expect(a.emissiveStrength ?? 0).toBeGreaterThanOrEqual(0);
+      expect(a.emissiveStrength ?? 0).toBeLessThanOrEqual(2);
       expect(a.waterStrength ?? 0).toBeGreaterThanOrEqual(0);
       expect(a.waterStrength ?? 0).toBeLessThanOrEqual(1);
       expect(a.exposure).toBeGreaterThan(0);
@@ -83,8 +85,8 @@ describe('temi', () => {
     }
   });
 
-  it('usa il diorama caldo come default senza rimuovere i temi storici', () => {
-    expect(DEFAULT_THEME_ID).toBe('diorama');
+  it('usa la colonia sci-fi come default senza rimuovere i temi storici', () => {
+    expect(DEFAULT_THEME_ID).toBe('scifi');
     expect(THEMES.map((theme) => theme.id)).toEqual(
       expect.arrayContaining(['natural', 'pastel', 'neon', 'industrial', 'scifi', 'enchanted', 'diorama']),
     );

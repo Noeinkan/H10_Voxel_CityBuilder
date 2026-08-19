@@ -105,7 +105,47 @@ export const BUILDER = {
    * distanza si legge come rumore.
    */
   accentBuildingChance: 0.18,
+
+  /** Quanto il profilo locale anticipa il livello con cui nasce un edificio. */
+  localLevel: {
+    density: 1.4,
+    wealth: 0.9,
+    accessibility: 0.7,
+    satisfaction: 0.5,
+  },
+
+  /** Riduzione della soglia di upgrade prodotta dalle qualita locali. */
+  localUpgrade: {
+    density: 18,
+    wealth: 14,
+    accessibility: 10,
+    satisfaction: 8,
+    maxDiscount: 38,
+  },
+
+  /** Le stesse qualita cambiano anche la grammatica, non solo l'altezza. */
+  localForm: {
+    densityBandBias: 2,
+    accessibilityFootprintBias: -1,
+    satisfactionTerraceBias: 0.22,
+    wealthTerraceBias: 0.12,
+    wealthAccentChance: 0.24,
+  },
 } as const;
+
+export interface BuildingForm {
+  readonly density: number;
+  readonly wealth: number;
+  readonly accessibility: number;
+  readonly satisfaction: number;
+}
+
+export const DEFAULT_BUILDING_FORM: BuildingForm = {
+  density: 0,
+  wealth: 0,
+  accessibility: 0,
+  satisfaction: 0,
+};
 
 /**
  * Tetti per livello.
@@ -186,39 +226,39 @@ export interface ClassProfile {
  * consumarne uno nuovo.
  */
 export const CLASS_PROFILE: readonly ClassProfile[] = [
-  // residential — bassa, larga, calda. E' la massa di fondo della citta'.
+  // habitat — moduli terrazzati e scafi chiari, massa di fondo della colonia.
   {
     bandHeight: [2, 3],
-    shrinkBias: 0.25,
+    shrinkBias: 0.38,
     footprintBias: 1,
     body: PALETTE_SLOTS.concretePale,
-    bodyAlt: PALETTE_SLOTS.concrete,
-    accent: PALETTE_SLOTS.metalRust,
+    bodyAlt: PALETTE_SLOTS.glassDeep,
+    accent: PALETTE_SLOTS.glass,
     crown: PALETTE_SLOTS.roofPale,
-    plinth: PALETTE_SLOTS.stoneWarm,
-    roofProp: PALETTE_SLOTS.brickDark,
-    roofPropHeight: 1,
-  },
-  // production — tozza, materica, senza slancio.
-  {
-    bandHeight: [2, 3],
-    shrinkBias: 0.15,
-    footprintBias: 1,
-    body: PALETTE_SLOTS.stoneWarm,
-    bodyAlt: PALETTE_SLOTS.stone,
-    accent: PALETTE_SLOTS.brick,
-    crown: PALETTE_SLOTS.metalDark,
-    plinth: PALETTE_SLOTS.stoneDark,
-    roofProp: PALETTE_SLOTS.metalRust,
+    plinth: PALETTE_SLOTS.metalDark,
+    roofProp: PALETTE_SLOTS.metalBrass,
     roofPropHeight: 2,
   },
-  // civic — slanciata e chiara: sono i picchi che reggono lo skyline.
+  // produzione — megastrutture compatte, corazze e apparati di dissipazione.
+  {
+    bandHeight: [2, 3],
+    shrinkBias: 0.18,
+    footprintBias: 1,
+    body: PALETTE_SLOTS.stoneDeep,
+    bodyAlt: PALETTE_SLOTS.metalDark,
+    accent: PALETTE_SLOTS.metalRust,
+    crown: PALETTE_SLOTS.metalDark,
+    plinth: PALETTE_SLOTS.asphaltDark,
+    roofProp: PALETTE_SLOTS.metalBrass,
+    roofPropHeight: 3,
+  },
+  // civico — guglie vetrate ed esoscheletri chiari, i landmark dello skyline.
   {
     bandHeight: [3, 4],
-    shrinkBias: 0.5,
+    shrinkBias: 0.62,
     footprintBias: 0,
     body: PALETTE_SLOTS.concreteWhite,
-    bodyAlt: PALETTE_SLOTS.concreteLight,
+    bodyAlt: PALETTE_SLOTS.glassPale,
     accent: PALETTE_SLOTS.glassDeep,
     crown: PALETTE_SLOTS.roofWhite,
     plinth: PALETTE_SLOTS.concrete,

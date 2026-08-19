@@ -6,7 +6,7 @@ import type { Theme } from './theme';
  */
 export const industrial: Theme = {
   id: 'industrial',
-  name: 'Industriale',
+  name: 'Industrial',
   colors: [
     '#000000', // empty
     // asfalto consumato
@@ -35,6 +35,7 @@ export const industrial: Theme = {
     fogDensity: 0.00028,
     faceLight: [0.9, 0.68, 0.8, 0.6, 1.0, 0.5],
     aoStrength: 0.6,
+    emissiveStrength: 0.48,
     toneMapping: 'aces',
     exposure: 1,
   },

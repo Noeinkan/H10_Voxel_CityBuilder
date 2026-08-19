@@ -6,7 +6,7 @@ import type { Theme } from './theme';
  */
 export const enchanted: Theme = {
   id: 'enchanted',
-  name: 'Incantato',
+  name: 'Enchanted',
   colors: [
     '#000000', // empty
     // sentieri

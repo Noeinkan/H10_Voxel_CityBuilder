@@ -21,6 +21,8 @@ export interface MeshArrays {
   readonly faces: Uint8Array;
   /** 1 componente per vertice: indice di palette 1..31. */
   readonly palettes: Uint8Array;
+  /** 1 componente per vertice: grammatica visuale 0..7. */
+  readonly surfaces: Uint8Array;
   /** 1 componente per vertice: occlusione ambientale 0..3 (3 = libero). */
   readonly ao: Uint8Array;
   /** 6 indici per quad. */

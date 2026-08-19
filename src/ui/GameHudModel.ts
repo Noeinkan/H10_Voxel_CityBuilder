@@ -1,9 +1,20 @@
-import { BALANCE, POLICIES, type BuildingClass, type PolicyId } from '../sim';
+import {
+  BALANCE,
+  CATALYSTS,
+  POLICIES,
+  TRADE_MODES,
+  policyConflict,
+  type BuildingClass,
+  type CatalystId,
+  type CityDecision,
+  type PolicyId,
+  type TradeMode,
+} from '../sim';
 import type { GrowthStats } from '../game/growthScene';
 import type { CityCondition } from '../game/cityCondition';
 
 export type GameTool =
-  | { readonly kind: 'catalyst'; readonly class: BuildingClass }
+  | { readonly kind: 'catalyst'; readonly class: BuildingClass; readonly id?: CatalystId }
   | { readonly kind: 'expansion' }
   | { readonly kind: 'none' };
 
@@ -22,6 +33,9 @@ export interface HudAction {
   readonly available: boolean;
   readonly reason: string;
   readonly radius?: number;
+  readonly class?: BuildingClass;
+  readonly catalystId?: CatalystId;
+  readonly description?: string;
 }
 
 export interface HudPolicy extends HudAction {
@@ -29,6 +43,15 @@ export interface HudPolicy extends HudAction {
   readonly population: number;
   readonly active: boolean;
   readonly description: string;
+  readonly upkeep: number;
+}
+
+export interface HudTradeMode {
+  readonly id: TradeMode;
+  readonly label: string;
+  readonly description: string;
+  readonly active: boolean;
+  readonly available: boolean;
 }
 
 export interface GameHudModel {
@@ -37,6 +60,9 @@ export interface GameHudModel {
   readonly catalysts: readonly HudAction[];
   readonly expansion: HudAction;
   readonly policies: readonly HudPolicy[];
+  readonly tradeModes: readonly HudTradeMode[];
+  readonly tradeConnected: boolean;
+  readonly decision: CityDecision | null;
   readonly paused: boolean;
   readonly speed: number;
   readonly message: string;
@@ -44,55 +70,66 @@ export interface GameHudModel {
   readonly unlockedSectors: number;
 }
 
-export type EscapeTarget = 'policies' | 'help' | 'tool' | 'none';
+export type EscapeTarget = 'themes' | 'policies' | 'help' | 'tool' | 'none';
+
+/** Mantiene stabili i bottoni durante il gesto pointerdown/click. */
+export function decisionNeedsRepaint(
+  paintedDecisionId: string | null,
+  decision: CityDecision | null,
+): boolean {
+  return paintedDecisionId !== (decision?.id ?? null);
+}
 
 const POLICY_DESCRIPTION: Readonly<Record<PolicyId, string>> = {
-  denseHousing: 'Aumenta la capacità degli edifici residenziali.',
-  industrialSubsidy: 'Aumenta la produzione di materiali.',
-  austerity: 'Riduce i costi dei servizi civici.',
-  greenBelt: 'Rende più desiderabili le aree residenziali.',
-  zoningRelief: 'Favorisce la crescita delle aree produttive.',
-  civicPride: 'Favorisce la crescita degli edifici civici.',
+  denseHousing: 'Increases residential building capacity.',
+  industrialSubsidy: 'Increases material production.',
+  austerity: 'Reduces the cost of civic services.',
+  greenBelt: 'Makes residential areas more desirable.',
+  zoningRelief: 'Encourages growth in production areas.',
+  civicPride: 'Encourages civic building growth.',
 };
-
-const CATALYST_LABEL = ['Residenziale', 'Produttivo', 'Civico'] as const;
 
 export function buildGameHudModel(stats: GrowthStats | null): GameHudModel {
   const funds = stats?.state.funds.stock ?? 0;
   const population = stats?.state.population.stock ?? 0;
   const ready = stats !== null;
-  const expectedClass = stats?.onboarding.expectedClass ?? null;
+  const expectedCatalyst = stats?.onboarding.expectedCatalyst ?? null;
   const resources: readonly HudResource[] = stats === null
     ? emptyResources()
     : [
-        resource('funds', 'Fondi', stats.state.funds.stock, stats.state.funds.delta),
-        resource('population', 'Abitanti', stats.state.population.stock, stats.state.population.delta),
-        resource('food', 'Cibo', stats.state.food.stock, stats.state.food.delta),
-        resource('materials', 'Materiali', stats.state.materials.stock, stats.state.materials.delta),
+        resource('funds', 'Funds', stats.state.funds.stock, stats.state.funds.delta),
+        resource('population', 'Residents', stats.state.population.stock, stats.state.population.delta),
+        resource('food', 'Food', stats.state.food.stock, stats.state.food.delta),
+        resource('materials', 'Materials', stats.state.materials.stock, stats.state.materials.delta),
         {
           id: 'satisfaction',
-          label: 'Felicità',
+          label: 'Happiness',
           value: `${Math.round(stats.state.satisfaction * 100)}%`,
           delta: '',
           tone: 'neutral',
         },
       ];
 
-  const catalysts = CATALYST_LABEL.map((label, cls) => {
-    const cost = BALANCE.gameplay.catalyst.cost[cls];
-    const orderOk = expectedClass === null || expectedClass === cls;
+  const catalysts = CATALYSTS.map((catalyst) => {
+    const cost = catalyst.cost;
+    const orderOk = expectedCatalyst === null || expectedCatalyst === catalyst.id;
     const fundsOk = funds >= cost;
     return {
-      id: `catalyst-${cls}`,
-      label,
+      id: `catalyst-${catalyst.id}`,
+      label: catalyst.label,
       cost,
-      radius: BALANCE.gameplay.catalyst.radius[cls],
+      radius: catalyst.radius,
+      class: catalyst.class,
+      catalystId: catalyst.id,
+      description: catalyst.description,
       available: ready && orderOk && fundsOk,
       reason: !ready
-        ? 'La città si sta preparando.'
+        ? 'The city is getting ready.'
         : !orderOk
-          ? `Completa prima: ${stats?.onboarding.title ?? 'il tutorial iniziale'}.`
-          : availabilityReason(true, fundsOk, 'Fondi insufficienti.'),
+          ? `Complete this first: ${stats?.onboarding.title ?? 'the initial tutorial'}.`
+          : fundsOk
+            ? `${catalyst.description} Select and place it on the island.`
+            : 'Not enough funds.',
     };
   });
 
@@ -101,16 +138,16 @@ export function buildGameHudModel(stats: GrowthStats | null): GameHudModel {
   const expansionFundsOk = funds >= expansionRequirement.cost;
   const expansion: HudAction = {
     id: 'expansion',
-    label: 'Espandi',
+    label: 'Expand',
     cost: expansionRequirement.cost,
     available: ready && expansionPopulationOk && expansionFundsOk,
     reason: !ready
-      ? 'La città si sta preparando.'
+      ? 'The city is getting ready.'
       : !expansionPopulationOk
-        ? `Richiede ${expansionRequirement.population} abitanti.`
+        ? `Requires ${expansionRequirement.population} residents.`
         : !expansionFundsOk
-          ? 'Fondi insufficienti.'
-          : `Acquista un nuovo settore costiero (${stats?.unlockedSectors.length ?? 0} già sbloccati).`,
+          ? 'Not enough funds.'
+          : `Purchase a coastal sector (${stats?.unlockedSectors.length ?? 0} already unlocked).`,
   };
 
   const activePolicies = stats?.state.policies ?? [];
@@ -119,25 +156,36 @@ export function buildGameHudModel(stats: GrowthStats | null): GameHudModel {
     const active = activePolicies.includes(policy.id);
     const populationOk = population >= requirement.population;
     const fundsOk = funds >= requirement.cost;
+    const conflict = policyConflict(activePolicies, policy.id);
     return {
       id: policy.id,
       label: capitalize(policy.label),
       cost: requirement.cost,
       population: requirement.population,
       active,
-      available: ready && (active || (populationOk && fundsOk)),
+      upkeep: requirement.upkeep,
+      available: ready && (active || (populationOk && fundsOk && conflict === null)),
       reason: active
-        ? 'Attiva: seleziona per disattivarla.'
+        ? 'Active: select to deactivate it.'
         : !ready
-          ? 'La città si sta preparando.'
+          ? 'The city is getting ready.'
+          : conflict !== null
+            ? `Incompatible with ${POLICIES.find((entry) => entry.id === conflict)?.label ?? conflict}.`
           : !populationOk
-            ? `Richiede ${requirement.population} abitanti.`
+            ? `Requires ${requirement.population} residents.`
             : !fundsOk
-              ? 'Fondi insufficienti.'
-              : POLICY_DESCRIPTION[policy.id],
-      description: POLICY_DESCRIPTION[policy.id],
+              ? 'Not enough funds.'
+              : `${POLICY_DESCRIPTION[policy.id]} ${policy.spatialEffect}`,
+      description: `${POLICY_DESCRIPTION[policy.id]} ${policy.spatialEffect}`,
     };
   });
+
+  const tradeConnected = stats?.state.catalysts.some((catalyst) => catalyst.kind === 'port') ?? false;
+  const tradeModes: readonly HudTradeMode[] = TRADE_MODES.map((mode) => ({
+    ...mode,
+    active: stats?.state.tradeMode === mode.id,
+    available: ready && tradeConnected,
+  }));
 
   return {
     ready,
@@ -145,10 +193,13 @@ export function buildGameHudModel(stats: GrowthStats | null): GameHudModel {
     catalysts,
     expansion,
     policies,
+    tradeModes,
+    tradeConnected,
+    decision: stats?.state.pendingDecision ?? null,
     paused: stats?.paused ?? false,
     speed: stats?.speed ?? 1,
     message: stats === null
-      ? 'Preparazione della città…'
+      ? 'Preparing the city…'
       : `${stats.condition.title} · ${stats.condition.message}`,
     condition: stats?.condition ?? null,
     unlockedSectors: stats?.unlockedSectors.length ?? 0,
@@ -156,10 +207,12 @@ export function buildGameHudModel(stats: GrowthStats | null): GameHudModel {
 }
 
 export function resolveEscapeTarget(
+  themesOpen: boolean,
   policiesOpen: boolean,
   helpOpen: boolean,
   tool: GameTool,
 ): EscapeTarget {
+  if (themesOpen) return 'themes';
   if (policiesOpen) return 'policies';
   if (helpOpen) return 'help';
   return tool.kind === 'none' ? 'none' : 'tool';
@@ -167,11 +220,15 @@ export function resolveEscapeTarget(
 
 export function selectionMessage(tool: GameTool, catalysts: readonly HudAction[]): string | null {
   if (tool.kind === 'catalyst') {
-    const action = catalysts[tool.class];
-    return `${action?.label ?? 'Catalizzatore'} selezionato · clicca sull’isola · Esc per annullare`;
+    if (tool.id === undefined) {
+      const legacyLabel = ['Residential', 'Production', 'Civic'][tool.class] ?? 'Catalyst';
+      return `${legacyLabel} selected · click the island to place it · Esc to cancel`;
+    }
+    const action = catalysts.find((candidate) => candidate.catalystId === tool.id);
+    return `${action?.label ?? 'Catalyst'} selected · click the island to place it · Esc to cancel`;
   }
   if (tool.kind === 'expansion') {
-    return 'Espansione selezionata · scegli un lato della costa · Esc per annullare';
+    return 'Expansion selected · choose a coastline edge · Esc to cancel';
   }
   return null;
 }
@@ -194,17 +251,12 @@ function resource(
 
 function emptyResources(): readonly HudResource[] {
   return [
-    { id: 'funds', label: 'Fondi', value: '—', delta: '', tone: 'neutral' },
-    { id: 'population', label: 'Abitanti', value: '—', delta: '', tone: 'neutral' },
-    { id: 'food', label: 'Cibo', value: '—', delta: '', tone: 'neutral' },
-    { id: 'materials', label: 'Materiali', value: '—', delta: '', tone: 'neutral' },
-    { id: 'satisfaction', label: 'Felicità', value: '—', delta: '', tone: 'neutral' },
+    { id: 'funds', label: 'Funds', value: '—', delta: '', tone: 'neutral' },
+    { id: 'population', label: 'Residents', value: '—', delta: '', tone: 'neutral' },
+    { id: 'food', label: 'Food', value: '—', delta: '', tone: 'neutral' },
+    { id: 'materials', label: 'Materials', value: '—', delta: '', tone: 'neutral' },
+    { id: 'satisfaction', label: 'Happiness', value: '—', delta: '', tone: 'neutral' },
   ];
-}
-
-function availabilityReason(ready: boolean, available: boolean, blocked: string): string {
-  if (!ready) return 'La città si sta preparando.';
-  return available ? 'Seleziona e piazza sull’isola.' : blocked;
 }
 
 function capitalize(value: string): string {
@@ -212,5 +264,5 @@ function capitalize(value: string): string {
 }
 
 function formatInteger(value: number): string {
-  return Math.floor(value).toString().replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+  return Math.floor(value).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',');
 }

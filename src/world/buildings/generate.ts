@@ -3,12 +3,15 @@ import { hashCoords, mulberry32 } from '../rng';
 import {
   BUILDER,
   CLASS_PROFILE,
+  DEFAULT_BUILDING_FORM,
   LEVEL_CAPS,
   MAX_FOOTPRINT,
   START_LEVEL_CDF,
   type ClassProfile,
+  type BuildingForm,
 } from './config';
 import type { VoxelStamp } from './stamp';
+import { SURFACE_KIND, type SurfaceKind } from '../visualBlock';
 
 /**
  * Generatore procedurale di edifici.
@@ -54,9 +57,23 @@ export function generateBuilding(
   seed: number,
   footprintCap = MAX_FOOTPRINT,
   footprintFloor = 1,
+  form: BuildingForm = DEFAULT_BUILDING_FORM,
 ): VoxelStamp {
   const caps = LEVEL_CAPS[clamp(level, 0, LEVEL_CAPS.length - 1)];
-  const profile = CLASS_PROFILE[cls];
+  const baseProfile = CLASS_PROFILE[cls];
+  const profile: ClassProfile = {
+    ...baseProfile,
+    footprintBias: baseProfile.footprintBias + Math.round(
+      form.accessibility * BUILDER.localForm.accessibilityFootprintBias,
+    ),
+    shrinkBias: clamp(
+      baseProfile.shrinkBias +
+        form.satisfaction * BUILDER.localForm.satisfactionTerraceBias +
+        form.wealth * BUILDER.localForm.wealthTerraceBias,
+      0,
+      1,
+    ),
+  };
   const random = mulberry32(hashCoords(seed, cls, level));
 
   // Il tiro pesca sempre da `MAX_FOOTPRINT` e solo dopo si taglia al tetto.
@@ -72,11 +89,17 @@ export function generateBuilding(
     MAX_FOOTPRINT,
   );
   const footprint = clamp(naturalFootprint, minFootprint, cap);
-  const bands = pickInt(random, caps.minBands, caps.maxBands);
+  const naturalBands = pickInt(random, caps.minBands, caps.maxBands);
+  const bands = clamp(
+    naturalBands + Math.floor(form.density * BUILDER.localForm.densityBandBias),
+    caps.minBands,
+    caps.maxBands,
+  );
 
   // L'accento a scala di edificio si decide qui, prima di disegnare: e' un
   // colore di corpo alternativo, non una passata di ritocco alla fine.
-  const accented = random() < BUILDER.accentBuildingChance;
+  const accented = random() < BUILDER.accentBuildingChance +
+    form.wealth * BUILDER.localForm.wealthAccentChance;
   const body = accented ? profile.accent : profile.body;
   // La cornice mantiene il proprio tono anche quando l'accento sale a scala di
   // edificio: usare qui `body` renderebbe la faccia d'accento invisibile sulle
@@ -127,6 +150,7 @@ export function generateBuilding(
     profile.crown,
     profile.plinth,
     profile.roofProp,
+    classSurface(cls),
   );
 }
 
@@ -254,11 +278,13 @@ function paint(
   crown: number,
   plinth: number,
   roofProp: number,
+  buildingSurface: SurfaceKind,
 ): VoxelStamp {
   let sizeZ = 0;
   for (const height of heights) sizeZ += height;
 
   const voxels = new Uint8Array(footprint * footprint * sizeZ);
+  const surfaces = new Uint8Array(voxels.length);
   const bandStarts: number[] = [];
 
   let z = 0;
@@ -292,9 +318,19 @@ function paint(
           // inverte quindi il contrasto, altrimenti proprio quel piano perde
           // la faccia che rende leggibile il volume.
           const accentLayer = accentId === layer ? body : accentId;
-          voxels[sx + footprint * (sy + footprint * sz)] = accent
+          const index = sx + footprint * (sy + footprint * sz);
+          voxels[index] = accent
             ? accentLayer
             : layer;
+          surfaces[index] = isRoofProp
+            ? SURFACE_KIND.utility
+            : isCrown
+              ? SURFACE_KIND.roofTech
+              : sz <= 1 && onPortal(rect, sx, sy, accentFace)
+                ? SURFACE_KIND.portal
+                : accent
+                  ? SURFACE_KIND.luminous
+                  : buildingSurface;
         }
       }
     }
@@ -313,8 +349,24 @@ function paint(
     anchorY: 0,
     anchorZ: 0,
     voxels,
+    surfaces,
     bandStarts,
   };
+}
+
+/** Un solo modulo d'ingresso, centrato sul lato principale e mai su un angolo. */
+function onPortal(rect: BandRect, sx: number, sy: number, face: number): boolean {
+  if (face <= 1) {
+    if (rect.h < 3 || sy !== rect.y0 + Math.floor(rect.h / 2)) return false;
+    return face === 0 ? sx === rect.x0 + rect.w - 1 : sx === rect.x0;
+  }
+  if (rect.w < 3 || sx !== rect.x0 + Math.floor(rect.w / 2)) return false;
+  return face === 2 ? sy === rect.y0 + rect.h - 1 : sy === rect.y0;
+}
+
+function classSurface(cls: BuildingClass): SurfaceKind {
+  return [SURFACE_KIND.habitat, SURFACE_KIND.industrial, SURFACE_KIND.civic][cls] ??
+    SURFACE_KIND.habitat;
 }
 
 /** true se il voxel sta sullo strato esterno del lato d'accento della sua fascia. */

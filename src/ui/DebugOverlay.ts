@@ -58,7 +58,7 @@ export class DebugOverlay {
 
     this.summary = document.createElement('summary');
     this.summary.className = 'debug-summary';
-    this.summary.textContent = '▸ RENDER · preparazione…';
+    this.summary.textContent = '▸ RENDER · preparing…';
     this.root.appendChild(this.summary);
 
     this.body = document.createElement('pre');
@@ -99,35 +99,35 @@ export class DebugOverlay {
 
     this.body.textContent = [
       `fps rAF    ${frame.fps.toFixed(1).padStart(6)}   1% low ${frame.fpsLow.toFixed(1)}`,
-      `intervallo p95 ${frame.frameP95Ms.toFixed(2).padStart(6)} ms   p99 ${frame.frameP99Ms.toFixed(2)}`,
+      `interval p95 ${frame.frameP95Ms.toFixed(2).padStart(6)} ms   p99 ${frame.frameP99Ms.toFixed(2)}`,
       `jank >20ms ${(frame.jankRatio * 100).toFixed(1).padStart(6)} %`,
       `callback   ${frame.frameMs.toFixed(2).padStart(6)} ms`,
       `main       ${frame.mainMs.toFixed(2).padStart(6)} ms   max ${frame.mainMsMax.toFixed(2)} ms`,
       `render     ${frame.renderMs.toFixed(2).padStart(6)} ms`,
       '',
       `draw call  ${frame.drawCalls.toString().padStart(6)}`,
-      `triangoli  ${format(frame.triangles).padStart(6)}`,
+      `triangles  ${format(frame.triangles).padStart(6)}`,
       `quad       ${format(frame.quads).padStart(6)}`,
-      `geometrie  ${mb(frame.geometryBytes).padStart(6)} MB`,
+      `geometry   ${mb(frame.geometryBytes).padStart(6)} MB`,
       '',
-      `chunk      ${frame.chunksAllocated.toString().padStart(6)} allocati`,
-      `           ${frame.chunksNonEmpty.toString().padStart(6)} non vuoti`,
-      `           ${frame.chunksWithMesh.toString().padStart(6)} con mesh`,
-      `           ${frame.chunksVisible.toString().padStart(6)} visibili`,
-      `coda       ${frame.queued.toString().padStart(6)} + ${frame.inFlight} in volo`,
+      `chunk      ${frame.chunksAllocated.toString().padStart(6)} allocated`,
+      `           ${frame.chunksNonEmpty.toString().padStart(6)} non-empty`,
+      `           ${frame.chunksWithMesh.toString().padStart(6)} with mesh`,
+      `           ${frame.chunksVisible.toString().padStart(6)} visible`,
+      `queue      ${frame.queued.toString().padStart(6)} + ${frame.inFlight} in flight`,
       '',
       `mesher     ${frame.mesherLastMs.toFixed(2).padStart(6)} ms   avg ${frame.mesherAvgMs.toFixed(2)}  max ${frame.mesherMaxMs.toFixed(2)}`,
       `worker     ${frame.mesherPoolSize.toString().padStart(6)}`,
       `voxel      ${format(frame.solidVoxels).padStart(6)}`,
       '',
-      `scena      ${frame.scene}  seed ${frame.seed}`,
-      `tema       ${frame.theme}`,
-      `qualita    ${frame.quality}  DPR ${frame.pixelRatio.toFixed(2)}`,
+      `scene      ${frame.scene}  seed ${frame.seed}`,
+      `theme      ${frame.theme}`,
+      `quality    ${frame.quality}  DPR ${frame.pixelRatio.toFixed(2)}`,
       `camera     zoom ${frame.zoom.toFixed(2)}  yaw ${Math.round(frame.yawDegrees)}°`,
-      generating ? `genera     ${(frame.generationProgress * 100).toFixed(0)} %` : '',
+      generating ? `generate   ${(frame.generationProgress * 100).toFixed(0)} %` : '',
       '',
-      'G +64 chunk   R rebuild   C azzera picchi',
-      '1..9 tema',
+      'G +64 chunks   R rebuild   C reset peaks',
+      '1..9 theme',
     ]
       .filter((line) => line !== '')
       .join('\n');

@@ -4,12 +4,12 @@ import { CONTROL_HINTS } from './ControlsHint';
 describe('CONTROL_HINTS', () => {
   it('documenta tutti i comandi della camera', () => {
     expect(CONTROL_HINTS).toEqual([
-      { keys: ['WASD', '↑←↓→'], action: 'Sposta la visuale' },
-      { keys: ['Q', 'E'], action: 'Ruota la città' },
-      { keys: ['Rotella'], action: 'Avvicina e allontana' },
-      { keys: ['Drag'], action: 'Trascina la visuale' },
-      { keys: ['F'], action: 'Reinquadra tutto' },
-      { keys: ['Esc'], action: 'Annulla lo strumento' },
+      { keys: ['WASD', '↑←↓→'], action: 'Move the camera' },
+      { keys: ['Q', 'E'], action: 'Rotate the city' },
+      { keys: ['Wheel'], action: 'Zoom in and out' },
+      { keys: ['Drag'], action: 'Pan the camera' },
+      { keys: ['F'], action: 'Frame the whole city' },
+      { keys: ['Esc'], action: 'Cancel the current tool' },
     ]);
   });
 });

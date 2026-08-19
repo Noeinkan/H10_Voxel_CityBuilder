@@ -1,11 +1,18 @@
 import {
   addCatalyst,
   BALANCE,
+  catalystById,
+  defaultCatalystOfClass,
+  policyConflict,
   policyById,
+  resolveDecision,
   setPolicyActive,
+  setTradeMode,
   type BuildingClass,
+  type CatalystId,
   type PolicyId,
   type SimState,
+  type TradeMode,
 } from '../sim';
 import type { TerrainMap } from '../world/terrain/TerrainMap';
 
@@ -17,7 +24,9 @@ export type ActionFailure =
   | 'population-required'
   | 'already-active'
   | 'already-unlocked'
-  | 'onboarding-order';
+  | 'onboarding-order'
+  | 'policy-incompatible'
+  | 'decision-option-invalid';
 
 export type ActionResult =
   | { readonly success: true; readonly state: SimState }
@@ -28,21 +37,22 @@ export function placeCatalyst(
   map: TerrainMap,
   x: number,
   y: number,
-  cls: BuildingClass,
+  target: BuildingClass | CatalystId,
 ): ActionResult {
-  const failure = catalystFailure(state, map, x, y, cls);
+  const definition = catalystDefinition(target);
+  const failure = catalystFailure(state, map, x, y, target);
   if (failure !== null) return { success: false, reason: failure };
 
-  const cost = BALANCE.gameplay.catalyst.cost[cls];
-  const paid = spendFunds(state, cost);
+  const paid = spendFunds(state, definition.cost);
   return {
     success: true,
     state: addCatalyst(paid, {
       x,
       y,
-      class: cls,
-      strength: BALANCE.gameplay.catalyst.strength[cls],
-      radius: BALANCE.gameplay.catalyst.radius[cls],
+      class: definition.class,
+      kind: definition.id,
+      strength: definition.strength,
+      radius: definition.radius,
     }),
   };
 }
@@ -53,22 +63,23 @@ export function catalystFailure(
   map: TerrainMap,
   x: number,
   y: number,
-  cls: BuildingClass,
+  target: BuildingClass | CatalystId,
 ): ActionFailure | null {
+  const definition = catalystDefinition(target);
   const column = map.columnAt(x, y);
   if (column === null) return 'terrain-loading';
   if (!column.buildable) return 'not-buildable';
 
   const minDistance = BALANCE.gameplay.catalyst.minDistance;
   for (const catalyst of state.catalysts) {
-    if (catalyst.class !== cls) continue;
+    const kind = catalyst.kind ?? defaultCatalystOfClass(catalyst.class);
+    if (kind !== definition.id) continue;
     if (Math.max(Math.abs(catalyst.x - x), Math.abs(catalyst.y - y)) < minDistance) {
       return 'too-close';
     }
   }
 
-  const cost = BALANCE.gameplay.catalyst.cost[cls];
-  if (state.funds.stock < cost) return 'insufficient-funds';
+  if (state.funds.stock < definition.cost) return 'insufficient-funds';
   return null;
 }
 
@@ -78,6 +89,9 @@ export function togglePolicy(state: SimState, id: PolicyId): ActionResult {
   }
 
   const requirement = BALANCE.gameplay.policy[id];
+  if (policyConflict(state.policies, id) !== null) {
+    return { success: false, reason: 'policy-incompatible' };
+  }
   if (state.population.stock < requirement.population) {
     return { success: false, reason: 'population-required' };
   }
@@ -88,6 +102,17 @@ export function togglePolicy(state: SimState, id: PolicyId): ActionResult {
   // Convalida anche il catalogo prima di trasferire la proprieta' del campo.
   policyById(id);
   return { success: true, state: setPolicyActive(spendFunds(state, requirement.cost), id, true) };
+}
+
+export function chooseDecision(state: SimState, optionId: string): ActionResult {
+  const next = resolveDecision(state, optionId);
+  return next === null
+    ? { success: false, reason: 'decision-option-invalid' }
+    : { success: true, state: next };
+}
+
+export function changeTradeMode(state: SimState, mode: TradeMode): ActionResult {
+  return { success: true, state: setTradeMode(state, mode) };
 }
 
 export function buyExpansion(state: SimState, alreadyUnlocked = false): ActionResult {
@@ -110,4 +135,8 @@ export function expansionFailure(state: SimState, alreadyUnlocked = false): Acti
 
 function spendFunds(state: SimState, cost: number): SimState {
   return { ...state, funds: { stock: state.funds.stock - cost, delta: state.funds.delta } };
+}
+
+function catalystDefinition(target: BuildingClass | CatalystId) {
+  return catalystById(typeof target === 'number' ? defaultCatalystOfClass(target) : target);
 }

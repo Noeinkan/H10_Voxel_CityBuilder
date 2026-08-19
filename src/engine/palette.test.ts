@@ -35,7 +35,7 @@ describe('palette', () => {
   it('rifiuta un colore malformato', () => {
     const broken = [...paletteHex];
     broken[7] = 'rosso';
-    expect(() => toPaletteArray(broken)).toThrow(/indice 7/);
+    expect(() => toPaletteArray(broken)).toThrow(/index 7/);
   });
 
   it('gli slot puntano a indici distinti e dentro la palette', () => {

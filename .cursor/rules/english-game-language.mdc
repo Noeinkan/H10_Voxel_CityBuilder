@@ -1,0 +1,13 @@
+---
+description: Keep every player-visible and developer-visible game surface in English
+alwaysApply: true
+---
+
+# English Game Language
+
+- The user may communicate in Italian, but the game itself must remain entirely in English.
+- Write every runtime-visible string in English: HUD labels, menus, buttons, tooltips, onboarding, objectives, notifications, errors, accessibility labels, cursor hints, policy and catalyst catalogs, decision text, trade modes, theme names, debug overlays, console messages, and HTML metadata.
+- Treat strings stored in simulation or game-domain catalogs as UI text when they can flow into the interface.
+- When adding or changing gameplay features, audit the complete runtime path for Italian text instead of checking only `src/ui/`.
+- Keep code comments and repository documentation in Italian when required by the project conventions; they are not game UI.
+- Add or update tests so player-visible copy is asserted in English.

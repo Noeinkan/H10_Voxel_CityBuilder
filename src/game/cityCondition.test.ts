@@ -13,7 +13,7 @@ describe('condizioni della città', () => {
     };
     const condition = cityCondition(state, 0);
     expect(condition.kind).toBe('crisis');
-    expect(condition.message).toContain('può riprendersi');
+    expect(condition.message).toContain('can recover');
   });
 
   it('richiede stabilità prima di dichiarare il successo', () => {

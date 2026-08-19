@@ -6,7 +6,7 @@ import type { Theme } from './theme';
  */
 export const diorama: Theme = {
   id: 'diorama',
-  name: 'Diorama caldo',
+  name: 'Warm Diorama',
   colors: [
     '#000000',
     '#59626a', '#68727a', '#424a50',

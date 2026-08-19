@@ -4,6 +4,7 @@ import { PALETTE_SLOTS } from '../../engine/paletteSlots';
 import { BUILDER, CLASS_PROFILE, LEVEL_CAPS, MAX_FOOTPRINT } from './config';
 import { generateBuilding, startLevel } from './generate';
 import { anchoredVoxel, STAMP_EMPTY, bandCount, solidCount, type VoxelStamp } from './stamp';
+import { SURFACE_KIND } from '../visualBlock';
 
 /** Tutte le combinazioni di classe e livello, con una manciata di seed. */
 function* everyStamp(seeds = 24): Generator<{ stamp: VoxelStamp; cls: BuildingClass; level: number }> {
@@ -35,6 +36,7 @@ describe('generateBuilding', () => {
         expect(b.anchorY).toBe(a.anchorY);
         expect(b.anchorZ).toBe(a.anchorZ);
         expect(Array.from(b.voxels)).toEqual(Array.from(a.voxels));
+        expect(Array.from(b.surfaces)).toEqual(Array.from(a.surfaces));
         expect(b.bandStarts).toEqual(a.bandStarts);
       }
     }
@@ -128,6 +130,7 @@ describe('generateBuilding', () => {
   it('nessun voxel esce dal riquadro e nessuno stamp e\' vuoto', () => {
     for (const { stamp } of everyStamp()) {
       expect(stamp.voxels.length).toBe(stamp.sizeX * stamp.sizeY * stamp.sizeZ);
+      expect(stamp.surfaces.length).toBe(stamp.voxels.length);
       expect(solidCount(stamp)).toBeGreaterThan(0);
       expect(stamp.bandStarts[0]).toBe(0);
       expect(stamp.bandStarts[stamp.bandStarts.length - 1]).toBe(stamp.sizeZ);
@@ -140,6 +143,25 @@ describe('generateBuilding', () => {
         expect(id).toBeGreaterThanOrEqual(0);
         expect(id).toBeLessThan(Object.keys(PALETTE_SLOTS).length);
       }
+    }
+  });
+
+  it('assegna una grammatica sci-fi a ogni voxel edilizio', () => {
+    const expected = [SURFACE_KIND.habitat, SURFACE_KIND.industrial, SURFACE_KIND.civic];
+    for (const { stamp, cls } of everyStamp(8)) {
+      const used = new Set<number>();
+      for (let i = 0; i < stamp.voxels.length; i++) {
+        if (stamp.voxels[i] === STAMP_EMPTY) {
+          expect(stamp.surfaces[i]).toBe(SURFACE_KIND.plain);
+        } else {
+          used.add(stamp.surfaces[i]);
+          expect(stamp.surfaces[i]).toBeGreaterThan(SURFACE_KIND.plain);
+          expect(stamp.surfaces[i]).toBeLessThanOrEqual(SURFACE_KIND.utility);
+        }
+      }
+      expect(used.has(expected[cls])).toBe(true);
+      expect(used.has(SURFACE_KIND.roofTech)).toBe(true);
+      expect(used.has(SURFACE_KIND.utility)).toBe(true);
     }
   });
 

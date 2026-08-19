@@ -1,5 +1,11 @@
 import { BALANCE } from './balance';
 import { ALL_CLASSES, BUILDING_CLASS, CLASS_COUNT, isBuildingClass, type BuildingClass } from './classes';
+import { isCatalystId } from './catalysts';
+import {
+  decisionOption,
+  type CityDecision,
+  type DecisionOutcome,
+} from './decisions';
 import {
   DesirabilityField,
   type Building,
@@ -13,6 +19,7 @@ import {
   withPolicy,
   type PolicyId,
 } from './policies';
+import { EMPTY_TRADE, isTradeMode, type TradeMode, type TradeReport } from './trade';
 
 /**
  * Stato della simulazione.
@@ -71,6 +78,15 @@ export interface SimStateData {
   /** Policy attive, sempre in ordine di catalogo. */
   readonly policies: readonly PolicyId[];
 
+  /** Strategia del collegamento esterno; senza porto resta inattiva. */
+  readonly tradeMode: TradeMode;
+  readonly trade: TradeReport;
+
+  /** Decisione sospesa e registro compatto degli esiti scelti. */
+  readonly pendingDecision: CityDecision | null;
+  readonly decisionHistory: readonly DecisionOutcome[];
+  readonly nextDecisionTick: number;
+
   /** Classe di cui la scena di debug disegna la heatmap e scrive `VoxelWorld.data`. */
   readonly selectedClass: BuildingClass;
 }
@@ -84,6 +100,7 @@ export interface SimStateOptions {
   readonly catalysts?: readonly Catalyst[];
   readonly policies?: readonly PolicyId[];
   readonly selectedClass?: BuildingClass;
+  readonly tradeMode?: TradeMode;
 }
 
 const ZERO_DELTA = 0;
@@ -109,6 +126,11 @@ export function createSimState(options: SimStateOptions = {}): SimState {
     buildingCounts: new Array<number>(CLASS_COUNT).fill(0),
     catalysts: catalysts.map(normaliseCatalyst),
     policies: canonicalPolicies(policies),
+    tradeMode: options.tradeMode ?? 'balanced',
+    trade: EMPTY_TRADE,
+    pendingDecision: null,
+    decisionHistory: [],
+    nextDecisionTick: BALANCE.decisions.firstTick,
     selectedClass: options.selectedClass ?? BUILDING_CLASS.residential,
   };
 
@@ -216,6 +238,36 @@ export function setSelectedClass(state: SimState, cls: BuildingClass): SimState 
   return { ...state, selectedClass: cls };
 }
 
+/** Cambia la priorita commerciale; non effettua scambi fuori dal tick. */
+export function setTradeMode(state: SimState, mode: TradeMode): SimState {
+  if (state.tradeMode === mode) return state;
+  return { ...state, tradeMode: mode };
+}
+
+/** Applica una delle alternative della decisione corrente. */
+export function resolveDecision(state: SimState, optionId: string): SimState | null {
+  if (state.pendingDecision === null) return null;
+  const option = decisionOption(state.pendingDecision, optionId);
+  if (option === null) return null;
+  const effect = option.effect;
+  const history = [...state.decisionHistory, {
+    tick: state.tickCount,
+    decisionId: state.pendingDecision.id,
+    optionId,
+    summary: option.description,
+  }].slice(-BALANCE.decisions.historyLimit);
+  return {
+    ...state,
+    food: shifted(state.food, effect.food ?? 0),
+    materials: shifted(state.materials, effect.materials ?? 0),
+    funds: shifted(state.funds, effect.funds ?? 0),
+    satisfaction: clamp01(state.satisfaction + (effect.satisfaction ?? 0)),
+    pendingDecision: null,
+    decisionHistory: history,
+    nextDecisionTick: state.tickCount + BALANCE.decisions.intervalTicks,
+  };
+}
+
 // --- Serializzazione -------------------------------------------------------
 
 /**
@@ -237,9 +289,25 @@ export function toSimStateData(state: SimState): SimStateData {
  * aveva prima di serializzare.
  */
 export function reviveSimState(data: SimStateData): SimState {
+  const compatible = data as SimStateData & Partial<Pick<
+    SimStateData,
+    'tradeMode' | 'trade' | 'pendingDecision' | 'decisionHistory' | 'nextDecisionTick'
+  >>;
+  const normalised: SimStateData = {
+    ...data,
+    catalysts: data.catalysts.map(normaliseCatalyst),
+    policies: canonicalPolicies(data.policies),
+    tradeMode: compatible.tradeMode !== undefined && isTradeMode(compatible.tradeMode)
+      ? compatible.tradeMode
+      : 'balanced',
+    trade: compatible.trade ?? EMPTY_TRADE,
+    pendingDecision: compatible.pendingDecision ?? null,
+    decisionHistory: compatible.decisionHistory ?? [],
+    nextDecisionTick: compatible.nextDecisionTick ?? BALANCE.decisions.firstTick,
+  };
   const field = new DesirabilityField();
-  field.rebuild(data.catalysts, data.buildings, resolveWeights(data.policies));
-  return { ...data, field };
+  field.rebuild(normalised.catalysts, normalised.buildings, resolveWeights(normalised.policies));
+  return { ...normalised, field };
 }
 
 /** Ricostruisce il campo dallo stato corrente. Serve dopo un caricamento o in un test. */
@@ -261,10 +329,12 @@ export function rebuildField(state: SimState): void {
  */
 function normaliseCatalyst(catalyst: Catalyst): Catalyst {
   const strength = clampInt(catalyst.strength, 0, BALANCE.limits.maxDesirability);
+  const cls = isBuildingClass(catalyst.class) ? catalyst.class : BUILDING_CLASS.residential;
   return {
     x: Math.round(catalyst.x),
     y: Math.round(catalyst.y),
-    class: isBuildingClass(catalyst.class) ? catalyst.class : BUILDING_CLASS.residential,
+    class: cls,
+    ...(catalyst.kind !== undefined && isCatalystId(catalyst.kind) ? { kind: catalyst.kind } : {}),
     strength,
     radius: Math.max(0, Math.round(catalyst.radius)),
   };
@@ -273,6 +343,14 @@ function normaliseCatalyst(catalyst: Catalyst): Catalyst {
 function clampInt(value: number, min: number, max: number): number {
   if (!Number.isFinite(value)) return min;
   return Math.min(max, Math.max(min, Math.round(value)));
+}
+
+function shifted(value: Resource, delta: number): Resource {
+  return { ...value, stock: Math.min(BALANCE.limits.maxStock, Math.max(0, value.stock + delta)) };
+}
+
+function clamp01(value: number): number {
+  return Math.min(1, Math.max(0, value));
 }
 
 function canonicalPolicies(policies: readonly string[]): readonly PolicyId[] {

@@ -1,9 +1,12 @@
 import type { TerrainMap } from '../world/terrain/TerrainMap';
 import { BALANCE } from './balance';
 import { BUILDING_CLASS } from './classes';
+import { defaultCatalystOfClass } from './catalysts';
+import { decisionAt } from './decisions';
 import { resolveWeights, type Weights } from './policies';
 import { nextState, unitOf } from './rng';
 import type { Resource, SimState } from './SimState';
+import { resolveExternalTrade } from './trade';
 
 /**
  * Un tick di simulazione.
@@ -65,18 +68,37 @@ export function tick(state: SimState, terrainMap: TerrainMap): SimState {
 
   // --- Fondi ---------------------------------------------------------------
 
-  const upkeep = civic * weights.civicUpkeep;
+  const civicUpkeep = civic * weights.civicUpkeep;
+  const policyUpkeep = state.policies.reduce(
+    (sum, id) => sum + BALANCE.gameplay.policy[id].upkeep,
+    0,
+  );
+  const upkeep = civicUpkeep + policyUpkeep;
   const income = population * BALANCE.funds.taxPerResident;
   const fundsAvailable = state.funds.stock + income;
   const upkeepPaid = Math.min(upkeep, fundsAvailable);
   const fundsStock = finiteStock(fundsAvailable - upkeepPaid);
-  const funded = upkeep > 0 ? upkeepPaid / upkeep : 1;
+  const funded = civicUpkeep > 0 ? Math.min(civicUpkeep, upkeepPaid) / civicUpkeep : 1;
 
   // --- Materiali -----------------------------------------------------------
 
   const maintenance = state.buildings.length * BALANCE.materials.upkeepPerBuilding;
   const materialsAvailable = state.materials.stock + materialsProduced;
   const materialsStock = finiteStock(materialsAvailable - Math.min(maintenance, materialsAvailable));
+
+  // --- Commercio esterno ---------------------------------------------------
+
+  const trade = resolveExternalTrade({
+    connected: state.catalysts.some(
+      (catalyst) => (catalyst.kind ?? defaultCatalystOfClass(catalyst.class)) === 'port',
+    ),
+    mode: state.tradeMode,
+    population,
+    buildings: state.buildings.length,
+    food: foodStock,
+    materials: materialsStock,
+    funds: fundsStock,
+  });
 
   // --- Soddisfazione -------------------------------------------------------
 
@@ -98,16 +120,25 @@ export function tick(state: SimState, terrainMap: TerrainMap): SimState {
     }),
   );
 
-  return {
+  const next: SimState = {
     ...state,
     tickCount: state.tickCount + 1,
     rngState,
     population: moved(state.population, populationStock),
-    food: moved(state.food, foodStock),
-    materials: moved(state.materials, materialsStock),
-    funds: moved(state.funds, fundsStock),
+    food: moved(state.food, finiteStock(trade.foodStock)),
+    materials: moved(state.materials, finiteStock(trade.materialsStock)),
+    funds: moved(state.funds, finiteStock(trade.fundsStock)),
     satisfaction,
+    trade: {
+      connected: trade.connected,
+      food: trade.food,
+      materials: trade.materials,
+      funds: trade.funds,
+    },
   };
+  if (next.pendingDecision !== null) return next;
+  const pendingDecision = decisionAt(next, next.nextDecisionTick);
+  return pendingDecision === null ? next : { ...next, pendingDecision };
 }
 
 /** Esegue `count` tick di fila. Comodo nei test e nel passo automatico della scena. */

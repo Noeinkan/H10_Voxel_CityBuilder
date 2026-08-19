@@ -1,9 +1,10 @@
 import type { ActionFailure } from '../game/actions';
 import type { GrowthStats } from '../game/growthScene';
-import type { BuildingClass, PolicyId } from '../sim';
+import type { PolicyId, TradeMode } from '../sim';
 import { ControlsHint } from './ControlsHint';
 import {
   buildGameHudModel,
+  decisionNeedsRepaint,
   resolveEscapeTarget,
   selectionMessage,
   type GameHudModel,
@@ -11,6 +12,7 @@ import {
   type HudAction,
   type HudPolicy,
   type HudResource,
+  type HudTradeMode,
 } from './GameHudModel';
 import { createHudIcon, type HudIcon } from './hudIcons';
 
@@ -19,9 +21,18 @@ export type { GameTool } from './GameHudModel';
 export interface GameHudHandlers {
   readonly onTool: (tool: GameTool) => void;
   readonly onPolicy: (id: PolicyId) => void;
+  readonly onTrade: (mode: TradeMode) => void;
+  readonly onDecision: (optionId: string) => void;
   readonly onPause: (paused: boolean) => void;
   readonly onSpeed: (speed: number) => void;
+  readonly onTheme: (id: string) => void;
   readonly onCancelTool: () => void;
+}
+
+export interface ThemeChoice {
+  readonly id: string;
+  readonly name: string;
+  readonly swatches: readonly string[];
 }
 
 export interface CursorInfo {
@@ -32,20 +43,21 @@ export interface CursorInfo {
 }
 
 const FAILURE_LABEL: Readonly<Record<ActionFailure, string>> = {
-  'terrain-loading': 'Il terreno non è ancora pronto.',
-  'not-buildable': 'Qui non puoi costruire: prova su una zona pianeggiante.',
-  'too-close': 'Troppo vicino a un catalizzatore dello stesso tipo.',
-  'insufficient-funds': 'Non hai ancora abbastanza fondi.',
-  'population-required': 'La città deve crescere ancora prima di questa azione.',
-  'already-active': 'Questa policy è già attiva.',
-  'already-unlocked': 'Questo settore è già sbloccato: scegline un altro.',
-  'onboarding-order': 'Segui l’ordine del tutorial: residenziale, produttivo, civico.',
+  'terrain-loading': 'The terrain is not ready yet.',
+  'not-buildable': 'You cannot build here. Try a flat area.',
+  'too-close': 'Too close to another catalyst of the same type.',
+  'insufficient-funds': 'You do not have enough funds yet.',
+  'population-required': 'The city must grow before you can do this.',
+  'already-active': 'This policy is already active.',
+  'already-unlocked': 'This sector is already unlocked. Choose another one.',
+  'onboarding-order': 'Follow the tutorial order: residential, production, civic.',
+  'policy-incompatible': 'This policy conflicts with one that is already active.',
+  'decision-option-invalid': 'This decision option is no longer available.',
 };
 
 const RESOURCE_ICON: Readonly<Record<HudResource['id'], HudIcon>> = {
   funds: 'funds', population: 'population', food: 'food', materials: 'materials', satisfaction: 'satisfaction',
 };
-const CATALYST_ICON: readonly HudIcon[] = ['residential', 'production', 'civic'];
 
 interface ResourceElements {
   readonly value: HTMLElement;
@@ -58,26 +70,37 @@ export class GameHud {
   private readonly dock: HTMLElement;
   private readonly toast: HTMLElement;
   private readonly policyDrawer: HTMLElement;
+  private readonly themePicker: HTMLElement;
   private readonly cursor: HTMLElement;
   private readonly help: ControlsHint;
   private readonly handlers: GameHudHandlers;
   private readonly resources = new Map<HudResource['id'], ResourceElements>();
   private readonly catalystButtons: HTMLButtonElement[] = [];
   private readonly policyButtons = new Map<PolicyId, HTMLButtonElement>();
+  private readonly tradeButtons = new Map<TradeMode, HTMLButtonElement>();
+  private readonly decisionCard: HTMLElement;
   private readonly expansionButton: HTMLButtonElement;
   private readonly policyToggle: HTMLButtonElement;
+  private readonly themeToggle: HTMLButtonElement;
   private readonly pauseButton: HTMLButtonElement;
   private readonly speedButtons = new Map<number, HTMLButtonElement>();
+  private readonly themeButtons = new Map<string, HTMLButtonElement>();
   private selected: GameTool = { kind: 'none' };
   private model: GameHudModel = buildGameHudModel(null);
   private feedback: { readonly message: string; readonly tone: 'error' | 'neutral' } | null = null;
+  private paintedDecisionId: string | null = null;
   private lastPaint = 0;
 
-  constructor(parent: HTMLElement, handlers: GameHudHandlers) {
+  constructor(
+    parent: HTMLElement,
+    handlers: GameHudHandlers,
+    themes: readonly ThemeChoice[],
+    activeThemeId: string,
+  ) {
     this.handlers = handlers;
     this.root = document.createElement('section');
     this.root.className = 'game-hud';
-    this.root.setAttribute('aria-label', 'Comandi della città');
+    this.root.setAttribute('aria-label', 'City controls');
 
     const resourceBar = document.createElement('header');
     resourceBar.className = 'resource-bar hud-surface';
@@ -85,11 +108,11 @@ export class GameHud {
 
     const time = document.createElement('div');
     time.className = 'time-controls';
-    this.pauseButton = iconButton('pause', 'Metti in pausa', () => handlers.onPause(!this.model.paused));
+    this.pauseButton = iconButton('pause', 'Pause simulation', () => handlers.onPause(!this.model.paused));
     this.pauseButton.classList.add('hud-button--small');
     time.appendChild(this.pauseButton);
     for (const speed of [1, 2, 4]) {
-      const button = textButton(`${speed}×`, `Velocità ${speed}×`, () => handlers.onSpeed(speed));
+      const button = textButton(`${speed}×`, `Simulation speed ${speed}×`, () => handlers.onSpeed(speed));
       button.classList.add('hud-button--small');
       this.speedButtons.set(speed, button);
       time.appendChild(button);
@@ -110,11 +133,15 @@ export class GameHud {
 
     this.dock = document.createElement('nav');
     this.dock.className = 'build-dock hud-surface';
-    this.dock.setAttribute('aria-label', 'Azioni di costruzione');
-    this.model.catalysts.forEach((action, index) => {
-      const button = actionButton(action, CATALYST_ICON[index] ?? 'residential', () => {
+    this.dock.setAttribute('aria-label', 'Building actions');
+    this.model.catalysts.forEach((action) => {
+      const button = actionButton(action, (action.catalystId ?? 'market') as HudIcon, () => {
         this.feedback = null;
-        this.selected = { kind: 'catalyst', class: index as BuildingClass };
+        this.selected = {
+          kind: 'catalyst',
+          class: action.class ?? 0,
+          id: action.catalystId,
+        };
         handlers.onTool(this.selected);
         this.paintSelection();
         this.paintToast();
@@ -132,16 +159,27 @@ export class GameHud {
     });
     this.expansionButton.classList.add('hud-button--accent');
     this.dock.append(this.expansionButton, divider());
-    this.policyToggle = labeledButton('policies', 'Policy', 'Apri le policy cittadine', () => this.togglePolicies());
+    this.policyToggle = labeledButton('policies', 'Policies', 'Open city policies', () => this.togglePolicies());
     this.policyToggle.setAttribute('aria-expanded', 'false');
     this.dock.appendChild(this.policyToggle);
-    this.dock.appendChild(iconButton('help', 'Apri l’aiuto', () => this.toggleHelp()));
+    this.themeToggle = iconButton('theme', 'Change visual theme', () => this.toggleThemes());
+    this.themeToggle.setAttribute('aria-expanded', 'false');
+    this.dock.appendChild(this.themeToggle);
+    this.dock.appendChild(iconButton('help', 'Open help', () => this.toggleHelp()));
     this.root.appendChild(this.dock);
 
     this.policyDrawer = this.createPolicyDrawer();
     this.root.appendChild(this.policyDrawer);
+    this.decisionCard = document.createElement('aside');
+    this.decisionCard.className = 'decision-card hud-surface';
+    this.decisionCard.hidden = true;
+    this.decisionCard.setAttribute('aria-live', 'polite');
+    this.root.appendChild(this.decisionCard);
+    this.themePicker = this.createThemePicker(themes);
+    this.root.appendChild(this.themePicker);
     parent.appendChild(this.root);
     this.help = new ControlsHint(this.root);
+    this.setTheme(activeThemeId);
 
     const publishDockHeight = (): void => {
       document.documentElement.style.setProperty('--game-hud-bottom', `${this.dock.offsetHeight + 28}px`);
@@ -168,12 +206,24 @@ export class GameHud {
     this.paintToast();
   }
 
+  setTheme(id: string): void {
+    if (!this.themeButtons.has(id)) return;
+    for (const [themeId, button] of this.themeButtons) {
+      button.setAttribute('aria-pressed', themeId === id ? 'true' : 'false');
+    }
+    const active = this.themeButtons.get(id);
+    const name = active?.dataset.themeName ?? id;
+    const label = `Change visual theme, current: ${name}`;
+    this.themeToggle.setAttribute('aria-label', label);
+    this.themeToggle.dataset.tooltip = label;
+  }
+
   showFailure(reason: ActionFailure): void {
     this.showFeedback(FAILURE_LABEL[reason], 'error');
   }
 
   showPickingFailure(): void {
-    this.showFeedback('Nessuna superficie selezionabile in questo punto.', 'error');
+    this.showFeedback('There is no selectable surface here.', 'error');
   }
 
   showFeedback(message: string, tone: 'error' | 'neutral' = 'neutral'): void {
@@ -210,16 +260,38 @@ export class GameHud {
     const opening = this.policyDrawer.hidden;
     this.policyDrawer.hidden = !opening;
     this.policyToggle.setAttribute('aria-expanded', opening ? 'true' : 'false');
-    if (opening) this.help.hide();
+    if (opening) {
+      this.closeThemes();
+      this.help.hide();
+    }
+  }
+
+  toggleThemes(): void {
+    const opening = this.themePicker.hidden;
+    this.themePicker.hidden = !opening;
+    this.themeToggle.setAttribute('aria-expanded', opening ? 'true' : 'false');
+    if (opening) {
+      this.closePolicies();
+      this.help.hide();
+    }
   }
 
   toggleHelp(): void {
     this.closePolicies();
+    this.closeThemes();
     this.help.toggle();
   }
 
   handleEscape(): boolean {
-    switch (resolveEscapeTarget(!this.policyDrawer.hidden, this.help.isOpen, this.selected)) {
+    switch (resolveEscapeTarget(
+      !this.themePicker.hidden,
+      !this.policyDrawer.hidden,
+      this.help.isOpen,
+      this.selected,
+    )) {
+      case 'themes':
+        this.closeThemes();
+        return true;
       case 'policies':
         this.closePolicies();
         return true;
@@ -260,18 +332,18 @@ export class GameHud {
     const drawer = document.createElement('aside');
     drawer.className = 'policy-drawer hud-surface';
     drawer.hidden = true;
-    drawer.setAttribute('aria-label', 'Policy cittadine');
+    drawer.setAttribute('aria-label', 'City policies');
     const header = document.createElement('header');
     header.className = 'drawer-header';
     const copy = document.createElement('div');
     const title = document.createElement('h2');
     title.className = 'drawer-title';
-    title.textContent = 'Policy cittadine';
+    title.textContent = 'City policies';
     const subtitle = document.createElement('p');
     subtitle.className = 'drawer-subtitle';
-    subtitle.textContent = 'Investi per orientare la crescita della città.';
+    subtitle.textContent = 'Invest to shape how your city grows.';
     copy.append(title, subtitle);
-    const close = iconButton('close', 'Chiudi le policy', () => this.closePolicies());
+    const close = iconButton('close', 'Close policies', () => this.closePolicies());
     close.classList.add('hud-button--small');
     header.append(copy, close);
     drawer.appendChild(header);
@@ -283,7 +355,62 @@ export class GameHud {
       list.appendChild(button);
     }
     drawer.appendChild(list);
+
+    const tradeTitle = document.createElement('h3');
+    tradeTitle.className = 'drawer-section-title';
+    tradeTitle.textContent = 'External trade';
+    drawer.appendChild(tradeTitle);
+    const tradeList = document.createElement('div');
+    tradeList.className = 'trade-list';
+    for (const mode of this.model.tradeModes) {
+      const button = this.createTradeButton(mode);
+      this.tradeButtons.set(mode.id, button);
+      tradeList.appendChild(button);
+    }
+    drawer.appendChild(tradeList);
     return drawer;
+  }
+
+  private createThemePicker(themes: readonly ThemeChoice[]): HTMLElement {
+    const picker = document.createElement('aside');
+    picker.className = 'theme-picker hud-surface';
+    picker.hidden = true;
+    picker.setAttribute('aria-label', 'Visual themes');
+
+    const title = document.createElement('h2');
+    title.className = 'drawer-title';
+    title.textContent = 'Visual theme';
+    picker.appendChild(title);
+
+    const grid = document.createElement('div');
+    grid.className = 'theme-grid';
+    for (const theme of themes) {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'theme-option';
+      button.dataset.themeName = theme.name;
+      button.setAttribute('aria-label', `Use ${theme.name} theme`);
+      button.addEventListener('click', () => {
+        this.handlers.onTheme(theme.id);
+        this.closeThemes();
+      });
+
+      const preview = document.createElement('span');
+      preview.className = 'theme-swatches';
+      preview.setAttribute('aria-hidden', 'true');
+      for (const color of theme.swatches) {
+        const swatch = document.createElement('span');
+        swatch.style.background = color;
+        preview.appendChild(swatch);
+      }
+      const label = document.createElement('span');
+      label.textContent = theme.name;
+      button.append(preview, label);
+      this.themeButtons.set(theme.id, button);
+      grid.appendChild(button);
+    }
+    picker.appendChild(grid);
+    return picker;
   }
 
   private createPolicyButton(policy: HudPolicy): HTMLButtonElement {
@@ -308,9 +435,27 @@ export class GameHud {
     return button;
   }
 
+  private createTradeButton(mode: HudTradeMode): HTMLButtonElement {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'trade-card';
+    button.addEventListener('click', () => this.handlers.onTrade(mode.id));
+    const name = document.createElement('strong');
+    name.textContent = mode.label;
+    const description = document.createElement('span');
+    description.textContent = mode.description;
+    button.append(name, description);
+    return button;
+  }
+
   private closePolicies(): void {
     this.policyDrawer.hidden = true;
     this.policyToggle.setAttribute('aria-expanded', 'false');
+  }
+
+  private closeThemes(): void {
+    this.themePicker.hidden = true;
+    this.themeToggle.setAttribute('aria-expanded', 'false');
   }
 
   private paint(model: GameHudModel): void {
@@ -324,9 +469,11 @@ export class GameHud {
     model.catalysts.forEach((action, index) => paintAction(this.catalystButtons[index], action));
     paintAction(this.expansionButton, model.expansion);
     for (const policy of model.policies) this.paintPolicy(policy);
+    for (const mode of model.tradeModes) this.paintTradeMode(mode, model.tradeConnected);
+    this.paintDecision(model);
 
     this.pauseButton.replaceChildren(createHudIcon(model.paused ? 'play' : 'pause'));
-    const pauseLabel = model.paused ? 'Riprendi la simulazione' : 'Metti in pausa';
+    const pauseLabel = model.paused ? 'Resume simulation' : 'Pause simulation';
     this.pauseButton.setAttribute('aria-label', pauseLabel);
     this.pauseButton.dataset.tooltip = pauseLabel;
     this.pauseButton.dataset.active = model.paused ? 'true' : 'false';
@@ -347,16 +494,63 @@ export class GameHud {
     button.title = policy.reason;
     const state = button.querySelector<HTMLElement>('.policy-state');
     const requirement = button.querySelector<HTMLElement>('.policy-requirement');
-    if (state !== null) state.textContent = policy.active ? 'ATTIVA' : '';
+    if (state !== null) state.textContent = policy.active ? 'ACTIVE' : '';
     if (requirement !== null) {
-      const population = policy.population > 0 ? ` · ${policy.population} abitanti` : '';
-      requirement.textContent = policy.active ? 'Seleziona per disattivare' : `${policy.cost} fondi${population}`;
+      const population = policy.population > 0 ? ` · ${policy.population} residents` : '';
+      requirement.textContent = policy.active
+        ? `Select to deactivate · ${policy.upkeep.toFixed(1)} funds/tick`
+        : `${policy.cost} funds${population} · ${policy.upkeep.toFixed(1)} funds/tick`;
     }
+  }
+
+  private paintTradeMode(mode: HudTradeMode, connected: boolean): void {
+    const button = this.tradeButtons.get(mode.id);
+    if (button === undefined) return;
+    button.disabled = !mode.available;
+    button.setAttribute('aria-pressed', mode.active ? 'true' : 'false');
+    button.title = connected ? mode.description : 'Build a Port to unlock external trade.';
+  }
+
+  private paintDecision(model: GameHudModel): void {
+    const decision = model.decision;
+    this.decisionCard.hidden = decision === null;
+    if (decision === null) {
+      if (decisionNeedsRepaint(this.paintedDecisionId, decision)) this.decisionCard.replaceChildren();
+      this.paintedDecisionId = null;
+      return;
+    }
+    // Il repaint periodico non deve sostituire il bottone tra pointerdown e click.
+    if (!decisionNeedsRepaint(this.paintedDecisionId, decision)) return;
+    const title = document.createElement('h2');
+    title.textContent = decision.title;
+    const message = document.createElement('p');
+    message.textContent = decision.message;
+    const options = document.createElement('div');
+    options.className = 'decision-options';
+    for (const option of decision.options) {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'decision-option';
+      const label = document.createElement('strong');
+      label.textContent = option.label;
+      const description = document.createElement('span');
+      description.textContent = option.description;
+      button.append(label, description);
+      button.addEventListener('click', () => this.handlers.onDecision(option.id), { once: true });
+      options.appendChild(button);
+    }
+    this.decisionCard.replaceChildren(title, message, options);
+    this.paintedDecisionId = decision.id;
   }
 
   private paintSelection(): void {
     this.catalystButtons.forEach((button, index) => {
-      const active = this.selected.kind === 'catalyst' && this.selected.class === index;
+      const action = this.model.catalysts[index];
+      const active = this.selected.kind === 'catalyst' && action !== undefined && (
+        this.selected.id !== undefined
+          ? this.selected.id === action.catalystId
+          : this.selected.class === action.class
+      );
       button.setAttribute('aria-pressed', active ? 'true' : 'false');
     });
     this.expansionButton.setAttribute('aria-pressed', this.selected.kind === 'expansion' ? 'true' : 'false');
@@ -384,7 +578,7 @@ function actionButton(action: HudAction, icon: HudIcon, onClick: () => void): HT
   const copy = button.querySelector('.button-copy');
   const cost = document.createElement('span');
   cost.className = 'button-cost';
-  cost.textContent = `${action.cost} fondi`;
+  cost.textContent = `${action.cost} funds`;
   copy?.appendChild(cost);
   button.setAttribute('aria-pressed', 'false');
   return button;

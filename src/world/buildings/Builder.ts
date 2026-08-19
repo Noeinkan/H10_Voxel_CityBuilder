@@ -2,8 +2,10 @@ import {
   BUILDING_CLASS,
   addBuilding,
   nextBuildSites,
+  urbanProfileAt,
   type Building,
   type BuildingClass,
+  type LocalUrbanProfile,
   type SimState,
 } from '../../sim';
 import { CHUNK, keyOf, toChunk, toLocal } from '../chunkCoords';
@@ -14,9 +16,15 @@ import { TERRAIN } from '../terrain/config';
 import type { TerrainMap } from '../terrain/TerrainMap';
 import type { VoxelWorld } from '../VoxelWorld';
 import { BuildingRegistry, type BuildingRecord, type ReadonlyBuildingRegistry } from './BuildingRegistry';
-import { BUILDER, CLASS_PROFILE, MAX_FOOTPRINT } from './config';
+import {
+  BUILDER,
+  CLASS_PROFILE,
+  DEFAULT_BUILDING_FORM,
+  MAX_FOOTPRINT,
+  type BuildingForm,
+} from './config';
 import { generateBuilding, startLevel } from './generate';
-import { anchoredVoxel, STAMP_EMPTY, type VoxelAnchor, type VoxelStamp } from './stamp';
+import { anchoredVoxel, stampSurface, STAMP_EMPTY, type VoxelAnchor, type VoxelStamp } from './stamp';
 
 /**
  * Il ponte fra la simulazione e il mondo voxel.
@@ -248,7 +256,7 @@ export class Builder {
       if (accepted >= wanted) break;
       if (this.growing.length >= BUILDER.maxGrowing) break;
 
-      const record = this.place(site.x, site.y, site.class);
+      const record = this.place(site.x, site.y, site.class, true, next);
       if (record === null) continue;
 
       next = addBuilding(next, { x: record.x, y: record.y, class: record.class });
@@ -259,13 +267,23 @@ export class Builder {
   }
 
   /** Valida il sito, getta la fondazione, accoda la comparsa. null se il sito non va. */
-  private place(x: number, y: number, cls: BuildingClass, animate = true): BuildingRecord | null {
+  private place(
+    x: number,
+    y: number,
+    cls: BuildingClass,
+    animate = true,
+    state: SimState | null = null,
+  ): BuildingRecord | null {
     const key = `${x},${y}`;
     if (this.blacklist.has(key)) return null;
 
     const seed = hashCoords(this.worldSeed, x, y);
-    const level = startLevel(seed);
-    const stamp = generateBuilding(cls, level, seed);
+    const profile = state === null
+      ? null
+      : urbanProfileAt(state.catalysts, state.policies, x, y);
+    const form = formOf(profile);
+    const level = Math.min(BUILDER.maxLevel, startLevel(seed) + localLevelBonus(form));
+    const stamp = generateBuilding(cls, level, seed, MAX_FOOTPRINT, 1, form);
     const footprint = stamp.sizeX;
 
     const ground = this.surveyGround(x, y, footprint);
@@ -294,6 +312,8 @@ export class Builder {
       class: cls,
       level,
       seed,
+      form,
+      district: profile?.district ?? 'outskirts',
     });
 
     if (animate) this.growing.push({ record, stamp, erase: null, voxelCursor: 0, eraseCursor: 0 });
@@ -378,11 +398,13 @@ export class Builder {
       if (record.level >= BUILDER.maxLevel) continue;
 
       const nextLevel = record.level + 1;
-      if (state.field.valueAt(record.x, record.y, record.class) <= BUILDER.upgradeThreshold[nextLevel]) {
+      const profile = urbanProfileAt(state.catalysts, state.policies, record.x, record.y);
+      const threshold = BUILDER.upgradeThreshold[nextLevel] - localUpgradeDiscount(formOf(profile));
+      if (state.field.valueAt(record.x, record.y, record.class) <= threshold) {
         continue;
       }
 
-      this.upgrade(record, nextLevel);
+      this.upgrade(record, nextLevel, profile);
     }
   }
 
@@ -394,8 +416,17 @@ export class Builder {
    * l'anello aggiuntivo e' libero; altrimenti il livello nuovo viene rigenerato
    * con l'impronta vecchia come tetto, e cresce solo in altezza.
    */
-  private upgrade(record: BuildingRecord, nextLevel: number): void {
-    const old = generateBuilding(record.class, record.level, record.seed, record.footprint);
+  private upgrade(record: BuildingRecord, nextLevel: number, profile: LocalUrbanProfile): void {
+    const oldForm = record.form ?? DEFAULT_BUILDING_FORM;
+    const nextForm = formOf(profile);
+    const old = generateBuilding(
+      record.class,
+      record.level,
+      record.seed,
+      record.footprint,
+      record.footprint,
+      oldForm,
+    );
 
     let stamp = generateBuilding(
       record.class,
@@ -403,6 +434,7 @@ export class Builder {
       record.seed,
       MAX_FOOTPRINT,
       record.footprint,
+      nextForm,
     );
     if (stamp.sizeX > record.footprint && !this.fitsWider(record, stamp)) {
       stamp = generateBuilding(
@@ -411,6 +443,7 @@ export class Builder {
         record.seed,
         record.footprint,
         record.footprint,
+        nextForm,
       );
     }
 
@@ -432,6 +465,8 @@ export class Builder {
       class: record.class,
       level: nextLevel,
       seed: record.seed,
+      form: nextForm,
+      district: profile.district,
     });
     if (replaced === null) return;
 
@@ -480,10 +515,17 @@ export class Builder {
     for (let sz = fromZ; sz < toZ; sz++) {
       for (let sy = 0; sy < stamp.sizeY; sy++) {
         for (let sx = 0; sx < stamp.sizeX; sx++) {
-          const id = stamp.voxels[sx + stamp.sizeX * (sy + stamp.sizeY * sz)];
+          const index = sx + stamp.sizeX * (sy + stamp.sizeY * sz);
+          const id = stamp.voxels[index];
           if (id === STAMP_EMPTY) continue;
           const voxel = anchoredVoxel(anchor, stamp, sx, sy, sz);
-          this.world.setBlock(voxel.x, voxel.y, voxel.z, clear ? STAMP_EMPTY : id);
+          this.world.setBlock(
+            voxel.x,
+            voxel.y,
+            voxel.z,
+            clear ? STAMP_EMPTY : id,
+            clear ? undefined : stampSurface(stamp, index),
+          );
         }
       }
     }
@@ -508,7 +550,7 @@ export class Builder {
         const sy = Math.floor(within / stamp.sizeX);
         const sx = within - sy * stamp.sizeX;
         const voxel = anchoredVoxel(anchor, stamp, sx, sy, sz);
-        this.world.setBlock(voxel.x, voxel.y, voxel.z, id);
+        this.world.setBlock(voxel.x, voxel.y, voxel.z, id, stampSurface(stamp, cursor));
         written++;
       }
       cursor++;
@@ -789,4 +831,37 @@ function edgeChunks(min: number, max: number): readonly number[] {
     else if (toLocal(v) === CHUNK - 1) out.push(toChunk(v) + 1);
   }
   return out;
+}
+
+function formOf(profile: LocalUrbanProfile | null): BuildingForm {
+  if (profile === null) return DEFAULT_BUILDING_FORM;
+  return {
+    density: profile.density,
+    wealth: profile.wealth,
+    accessibility: profile.accessibility,
+    satisfaction: profile.satisfaction,
+  };
+}
+
+function localLevelBonus(form: BuildingForm): number {
+  const weight = BUILDER.localLevel;
+  return Math.floor(
+    form.density * weight.density +
+    form.wealth * weight.wealth +
+    form.accessibility * weight.accessibility +
+    form.satisfaction * weight.satisfaction,
+  );
+}
+
+function localUpgradeDiscount(form: BuildingForm): number {
+  const weight = BUILDER.localUpgrade;
+  return Math.min(
+    weight.maxDiscount,
+    Math.floor(
+      form.density * weight.density +
+      form.wealth * weight.wealth +
+      form.accessibility * weight.accessibility +
+      form.satisfaction * weight.satisfaction,
+    ),
+  );
 }

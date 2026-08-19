@@ -2,8 +2,10 @@ import {
   createSimState,
   tick,
   type BuildingClass,
+  type CatalystId,
   type PolicyId,
   type SimState,
+  type TradeMode,
 } from '../sim';
 import type { ScenarioRegion } from '../sim/scenario';
 import { Builder, type BuilderStats } from '../world/buildings/Builder';
@@ -14,6 +16,8 @@ import { FixedStepLoop } from './loop';
 import {
   buyExpansion,
   catalystFailure,
+  changeTradeMode,
+  chooseDecision,
   expansionFailure,
   placeCatalyst,
   togglePolicy,
@@ -51,7 +55,7 @@ export class GrowthScene {
   private speed = 1;
   private healthyTicks = 0;
   private readonly unlocked = new Set<string>();
-  private message = 'Scegli un catalizzatore e piazzalo sull’isola.';
+  private message = 'Choose a catalyst and place it on the island.';
 
   constructor(
     world: VoxelWorld,
@@ -74,29 +78,40 @@ export class GrowthScene {
     this.builder.step();
   }
 
-  placeCatalyst(x: number, y: number, cls: BuildingClass): ActionResult {
-    if (!onboardingAllows(this.state, cls)) {
+  placeCatalyst(x: number, y: number, target: BuildingClass | CatalystId): ActionResult {
+    if (!onboardingAllows(this.state, target)) {
       return { success: false, reason: 'onboarding-order' };
     }
-    const result = placeCatalyst(this.state, this.map, x, y, cls);
-    if (result.success) this.builder.decorateCatalyst(x, y, cls);
-    return this.apply(result, 'Catalizzatore piazzato.');
+    const result = placeCatalyst(this.state, this.map, x, y, target);
+    if (result.success) {
+      const placed = result.state.catalysts[result.state.catalysts.length - 1];
+      if (placed !== undefined) this.builder.decorateCatalyst(x, y, placed.class);
+    }
+    return this.apply(result, 'Catalyst placed.');
   }
 
-  catalystFailure(x: number, y: number, cls: BuildingClass): ActionFailure | null {
-    if (!onboardingAllows(this.state, cls)) return 'onboarding-order';
-    return catalystFailure(this.state, this.map, x, y, cls);
+  catalystFailure(x: number, y: number, target: BuildingClass | CatalystId): ActionFailure | null {
+    if (!onboardingAllows(this.state, target)) return 'onboarding-order';
+    return catalystFailure(this.state, this.map, x, y, target);
   }
 
   togglePolicy(id: PolicyId): ActionResult {
     const active = !this.state.policies.includes(id);
-    return this.apply(togglePolicy(this.state, id), active ? 'Policy attivata.' : 'Policy disattivata.');
+    return this.apply(togglePolicy(this.state, id), active ? 'Policy activated.' : 'Policy deactivated.');
+  }
+
+  chooseDecision(optionId: string): ActionResult {
+    return this.apply(chooseDecision(this.state, optionId), 'Decision applied to the city.');
+  }
+
+  setTradeMode(mode: TradeMode): ActionResult {
+    return this.apply(changeTradeMode(this.state, mode), 'Trade strategy updated.');
   }
 
   buyExpansion(sectorId: string): ActionResult {
     const result = buyExpansion(this.state, this.unlocked.has(sectorId));
     if (result.success) this.unlocked.add(sectorId);
-    return this.apply(result, 'Settore costiero acquistato.');
+    return this.apply(result, 'Coastal sector purchased.');
   }
 
   expansionFailure(sectorId: string): ActionFailure | null {
@@ -104,7 +119,7 @@ export class GrowthScene {
   }
 
   markSectorReady(): void {
-    this.message = 'Settore costiero pronto: il nuovo suolo può ospitare la crescita.';
+    this.message = 'Coastal sector ready. The new land can support city growth.';
   }
 
   setPaused(paused: boolean): void {

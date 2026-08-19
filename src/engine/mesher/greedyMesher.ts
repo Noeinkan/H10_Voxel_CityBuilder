@@ -1,4 +1,5 @@
 import { CHUNK, PADDED, PADDED_VOL } from '../../world/chunkCoords';
+import { blockPalette, blockSurface } from '../../world/visualBlock';
 import type { MeshArrays } from './meshTypes';
 
 /**
@@ -21,10 +22,11 @@ export interface MeshScratch {
   positions: Uint16Array;
   faces: Uint8Array;
   palettes: Uint8Array;
+  surfaces: Uint8Array;
   ao: Uint8Array;
   indices: Uint32Array;
   /** Maschera di una slice: 0 = nessuna faccia, >0 = faccia positiva, <0 = negativa. */
-  readonly mask: Int16Array;
+  readonly mask: Int32Array;
   capacityQuads: number;
 }
 
@@ -38,9 +40,10 @@ export function createScratch(initialQuads = 4096): MeshScratch {
     positions: new Uint16Array(initialQuads * 12),
     faces: new Uint8Array(initialQuads * 4),
     palettes: new Uint8Array(initialQuads * 4),
+    surfaces: new Uint8Array(initialQuads * 4),
     ao: new Uint8Array(initialQuads * 4),
     indices: new Uint32Array(initialQuads * 6),
-    mask: new Int16Array(CHUNK * CHUNK),
+    mask: new Int32Array(CHUNK * CHUNK),
     capacityQuads: initialQuads,
   };
 }
@@ -55,6 +58,8 @@ function growScratch(scratch: MeshScratch, neededQuads: number): void {
   faces.set(scratch.faces);
   const palettes = new Uint8Array(cap * 4);
   palettes.set(scratch.palettes);
+  const surfaces = new Uint8Array(cap * 4);
+  surfaces.set(scratch.surfaces);
   const ao = new Uint8Array(cap * 4);
   ao.set(scratch.ao);
   const indices = new Uint32Array(cap * 6);
@@ -63,6 +68,7 @@ function growScratch(scratch: MeshScratch, neededQuads: number): void {
   scratch.positions = positions;
   scratch.faces = faces;
   scratch.palettes = palettes;
+  scratch.surfaces = surfaces;
   scratch.ao = ao;
   scratch.indices = indices;
   scratch.capacityQuads = cap;
@@ -79,7 +85,7 @@ const boundsMax = new Int32Array(3);
  */
 export function greedyMesh(padded: Uint8Array, scratch?: MeshScratch): MeshArrays {
   if (padded.length !== PADDED_VOL) {
-    throw new Error(`greedyMesh: atteso un volume di ${PADDED_VOL} celle, ricevute ${padded.length}`);
+    throw new Error(`greedyMesh: expected a volume of ${PADDED_VOL} cells, received ${padded.length}`);
   }
   const s = scratch ?? createScratch();
   const mask = s.mask;
@@ -146,6 +152,7 @@ export function greedyMesh(padded: Uint8Array, scratch?: MeshScratch): MeshArray
           const positive = m > 0;
           const packed = positive ? m : -m;
           const paletteId = packed & PALETTE_MASK;
+          const surfaceId = (packed >>> SURFACE_SHIFT) & SURFACE_MASK;
           const faceId = d * 2 + (positive ? 0 : 1);
 
           // Winding: ordine crescente in (u, v) per la faccia positiva, invertito
@@ -199,6 +206,10 @@ export function greedyMesh(padded: Uint8Array, scratch?: MeshScratch): MeshArray
           s.palettes[vbase + 1] = paletteId;
           s.palettes[vbase + 2] = paletteId;
           s.palettes[vbase + 3] = paletteId;
+          s.surfaces[vbase] = surfaceId;
+          s.surfaces[vbase + 1] = surfaceId;
+          s.surfaces[vbase + 2] = surfaceId;
+          s.surfaces[vbase + 3] = surfaceId;
 
           // Il packing e' in ordine geometrico (u,v): 00, 10, 11, 01. La
           // faccia negativa inverte il winding, dunque inverte anche quei
@@ -261,6 +272,7 @@ export function greedyMesh(padded: Uint8Array, scratch?: MeshScratch): MeshArray
       positions: EMPTY_U16,
       faces: EMPTY_U8,
       palettes: EMPTY_U8,
+      surfaces: EMPTY_U8,
       ao: EMPTY_U8,
       indices: EMPTY_U32,
       quadCount: 0,
@@ -274,6 +286,7 @@ export function greedyMesh(padded: Uint8Array, scratch?: MeshScratch): MeshArray
     positions: s.positions.slice(0, vertexCount * 3),
     faces: s.faces.slice(0, vertexCount),
     palettes: s.palettes.slice(0, vertexCount),
+    surfaces: s.surfaces.slice(0, vertexCount),
     ao: s.ao.slice(0, vertexCount),
     indices: s.indices.slice(0, quadCount * 6),
     quadCount,
@@ -292,6 +305,8 @@ const AO_00_SHIFT = 5;
 const AO_10_SHIFT = 7;
 const AO_11_SHIFT = 9;
 const AO_01_SHIFT = 11;
+const SURFACE_SHIFT = 13;
+const SURFACE_MASK = 0b111;
 
 /** AO classica a quattro livelli per un corner su una faccia visibile. */
 function cornerAO(pn: number, du: number, dv: number, su: number, sv: number, padded: Uint8Array): number {
@@ -303,10 +318,15 @@ function cornerAO(pn: number, du: number, dv: number, su: number, sv: number, pa
 }
 
 /** Palette e quattro corner AO in una chiave Int16 confrontabile dal greedy merge. */
-function packFace(palette: number, pn: number, su: number, sv: number, padded: Uint8Array): number {
+function packFace(block: number, pn: number, su: number, sv: number, padded: Uint8Array): number {
   const ao00 = cornerAO(pn, -1, -1, su, sv, padded);
   const ao10 = cornerAO(pn, 1, -1, su, sv, padded);
   const ao11 = cornerAO(pn, 1, 1, su, sv, padded);
   const ao01 = cornerAO(pn, -1, 1, su, sv, padded);
-  return palette | (ao00 << AO_00_SHIFT) | (ao10 << AO_10_SHIFT) | (ao11 << AO_11_SHIFT) | (ao01 << AO_01_SHIFT);
+  return blockPalette(block) |
+    (ao00 << AO_00_SHIFT) |
+    (ao10 << AO_10_SHIFT) |
+    (ao11 << AO_11_SHIFT) |
+    (ao01 << AO_01_SHIFT) |
+    (blockSurface(block) << SURFACE_SHIFT);
 }

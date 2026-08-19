@@ -1,5 +1,12 @@
 import { Chunk } from './Chunk';
 import { CHUNK, idx, keyOf, toChunk, toLocal } from './chunkCoords';
+import {
+  blockPalette,
+  blockSurface,
+  packVisualBlock,
+  SURFACE_KIND,
+  type SurfaceKind,
+} from './visualBlock';
 
 /** AABB del mondo in coordinate di chunk, con i corrispettivi limiti in voxel. */
 export interface WorldBounds {
@@ -136,7 +143,7 @@ export class VoxelWorld {
    * bordo, i vicini gia' esistenti sul lato corrispondente. Scrivere lo stesso
    * valore non marca nulla.
    */
-  setBlock(x: number, y: number, z: number, id: number): void {
+  setBlock(x: number, y: number, z: number, id: number, surface: SurfaceKind = SURFACE_KIND.plain): void {
     const cx = toChunk(x);
     const cy = toChunk(y);
     const cz = toChunk(z);
@@ -152,14 +159,15 @@ export class VoxelWorld {
     const ly = toLocal(y);
     const lz = toLocal(z);
     const i = idx(lx, ly, lz);
+    const next = packVisualBlock(id, surface);
     const prev = chunk.blocks[i];
-    if (prev === id) return;
+    if (prev === next) return;
 
-    chunk.blocks[i] = id;
+    chunk.blocks[i] = next;
     if (prev === 0) {
       chunk.solidCount++;
       this.solidTotal++;
-    } else if (id === 0) {
+    } else if (next === 0) {
       chunk.solidCount--;
       this.solidTotal--;
     }
@@ -179,7 +187,14 @@ export class VoxelWorld {
   getBlock(x: number, y: number, z: number): number {
     const chunk = this.getChunk(toChunk(x), toChunk(y), toChunk(z));
     if (chunk === null) return 0;
-    return chunk.blocks[idx(toLocal(x), toLocal(y), toLocal(z))];
+    return blockPalette(chunk.blocks[idx(toLocal(x), toLocal(y), toLocal(z))]);
+  }
+
+  /** Legge la grammatica visuale senza esporre il byte compattato del chunk. */
+  getSurfaceKind(x: number, y: number, z: number): SurfaceKind {
+    const chunk = this.getChunk(toChunk(x), toChunk(y), toChunk(z));
+    if (chunk === null) return SURFACE_KIND.plain;
+    return blockSurface(chunk.blocks[idx(toLocal(x), toLocal(y), toLocal(z))]);
   }
 
   /**

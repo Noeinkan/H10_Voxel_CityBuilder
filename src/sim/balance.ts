@@ -66,14 +66,24 @@ export const BALANCE = {
       radius: [22, 20, 18] as readonly number[],
       /** Distanza di Chebyshev minima fra catalizzatori della stessa classe. */
       minDistance: 10,
+      /** Varianti di fase 2. I primi tre preservano il ciclo guidato dell'MVP. */
+      roles: {
+        market: { cost: 120, strength: 210, radius: 22 },
+        factory: { cost: 150, strength: 205, radius: 20 },
+        park: { cost: 200, strength: 195, radius: 18 },
+        port: { cost: 320, strength: 190, radius: 24 },
+        transport: { cost: 240, strength: 185, radius: 26 },
+        university: { cost: 360, strength: 200, radius: 21 },
+        monument: { cost: 440, strength: 215, radius: 20 },
+      },
     },
     policy: {
-      denseHousing: { cost: 180, population: 24 },
-      industrialSubsidy: { cost: 220, population: 36 },
-      austerity: { cost: 100, population: 0 },
-      greenBelt: { cost: 140, population: 12 },
-      zoningRelief: { cost: 160, population: 24 },
-      civicPride: { cost: 260, population: 72 },
+      denseHousing: { cost: 180, population: 24, upkeep: 1.8 },
+      industrialSubsidy: { cost: 220, population: 36, upkeep: 2.4 },
+      austerity: { cost: 100, population: 0, upkeep: 0.6 },
+      greenBelt: { cost: 140, population: 12, upkeep: 1.2 },
+      zoningRelief: { cost: 160, population: 24, upkeep: 1.4 },
+      civicPride: { cost: 260, population: 72, upkeep: 2.8 },
     },
     expansion: {
       cost: 500,
@@ -93,6 +103,62 @@ export const BALANCE = {
       fundsReserve: 40,
       satisfaction: 0.2,
     },
+  },
+
+  // --- Distretti, commercio e decisioni ----------------------------------
+
+  districts: {
+    /** Scala comune che porta i contributi locali nel dominio 0..1. */
+    metricScale: 180,
+    /** Contributo minimo di un secondo ruolo per far emergere un distretto. */
+    overlapThreshold: 0.22,
+    catalystEffects: {
+      market: { density: 55, wealth: 105, accessibility: 45, satisfaction: 25, industry: 0 },
+      factory: { density: 25, wealth: 35, accessibility: 25, satisfaction: -55, industry: 145 },
+      park: { density: -25, wealth: 35, accessibility: 10, satisfaction: 145, industry: -20 },
+      port: { density: 30, wealth: 60, accessibility: 135, satisfaction: -20, industry: 85 },
+      transport: { density: 95, wealth: 25, accessibility: 155, satisfaction: 5, industry: 20 },
+      university: { density: 40, wealth: 105, accessibility: 55, satisfaction: 75, industry: 5 },
+      monument: { density: 65, wealth: 70, accessibility: 35, satisfaction: 125, industry: -10 },
+    },
+    spatialPolicy: {
+      denseHousing: { density: 45 },
+      industrialSubsidy: { industry: 45, wealth: 20 },
+      austerity: { satisfaction: -35 },
+      greenBelt: { density: -25, satisfaction: 50 },
+      zoningRelief: { density: 35, satisfaction: -20 },
+      civicPride: { wealth: 20, satisfaction: 45 },
+    },
+  },
+
+  trade: {
+    foodReservePerResident: 1.5,
+    materialReservePerBuilding: 2,
+    importFoodPerTick: 8,
+    importFoodPrice: 0.45,
+    exportMaterialsPerTick: 5,
+    exportMaterialPrice: 1.1,
+    focusedMultiplier: 1.75,
+    modeMultiplier: {
+      balanced: { food: 1, materials: 1 },
+      foodImports: { food: 1.75, materials: 0.5 },
+      materialExports: { food: 0.5, materials: 1.75 },
+    },
+  },
+
+  decisions: {
+    /** Prima scelta non prima di 45 secondi di simulazione. */
+    firstTick: 450,
+    /** Novanta secondi di respiro dopo una scelta risolta. */
+    intervalTicks: 900,
+    minimumBuildings: 6,
+    foodGrant: 120,
+    materialGrant: 80,
+    fundsGrant: 160,
+    decisionCost: 90,
+    satisfactionStep: 0.08,
+    populationScale: 24,
+    historyLimit: 12,
   },
 
   // --- Popolazione ---------------------------------------------------------

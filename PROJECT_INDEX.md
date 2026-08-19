@@ -50,11 +50,12 @@ worker. `src/sim/` gira in Node senza DOM né GPU.
 | --- | --- | --- |
 | [VoxelWorld.ts](src/world/VoxelWorld.ts) | Storage sparso a chunk, dirty set, AABB, cache dell'ultimo chunk | `VoxelWorld`, `WorldBounds` |
 | [Chunk.ts](src/world/Chunk.ts) | Due `Uint8Array(32768)` — `blocks` (rendering) e `data` (simulazione) — allocati una volta sola | `Chunk` |
+| [visualBlock.ts](src/world/visualBlock.ts) | Packing visuale in un byte: palette 0..31 e superficie 0..7 | `SURFACE_KIND`, `packVisualBlock`, `blockPalette`, `blockSurface` |
 | [chunkCoords.ts](src/world/chunkCoords.ts) | Costanti e conversioni di coordinate, indici delle facce | `CHUNK`, `PADDED`, `idx`, `paddedIdx`, `toChunk`, `toLocal`, `keyOf`, `FACE_*` |
 | [rng.ts](src/world/rng.ts) | PRNG deterministico per la generazione | `mulberry32`, `hashCoords` |
 | [scenes/cityScene.ts](src/world/scenes/cityScene.ts) | Scene deterministiche a passi con budget: `city`, `noise`, `slab` | `createScene`, `SceneGenerator`, `SceneKind`, `TILE`, `STREET`, `LOT` |
 
-API pubblica del mondo: `setBlock`/`getBlock` (rendering, marca sporco),
+API pubblica del mondo: `setBlock`/`getBlock` e `getSurfaceKind` (rendering, marca sporco),
 `setData`/`getData` (simulazione, non marca niente), `ensureChunk`, `flush`,
 `markAllDirty`.
 
@@ -135,10 +136,14 @@ di crescita. Il `Builder`, esterno al modulo, consuma quei candidati. Dettagli i
 | [index.ts](src/sim/index.ts) | Barrel: superficie pubblica per chi sta fuori dalla cartella | tutto il resto |
 | [balance.ts](src/sim/balance.ts) | **Ogni** coefficiente, soglia e moltiplicatore, in un solo oggetto | `BALANCE` |
 | [classes.ts](src/sim/classes.ts) | Le tre classi di edificio come indici densi | `BUILDING_CLASS`, `CLASS_NAMES`, `CLASS_COUNT`, `ALL_CLASSES` |
+| [catalysts.ts](src/sim/catalysts.ts) | Catalogo dei sette ruoli e relativi effetti locali | `CATALYSTS`, `catalystById`, `CatalystId` |
 | [SimState.ts](src/sim/SimState.ts) | Stato, operazioni del giocatore, serializzazione JSON senza perdita | `createSimState`, `addCatalyst`, `addBuilding`, `setPolicyActive`, `setSelectedClass`, `toSimStateData`, `reviveSimState`, `rebuildField` |
 | [tick.ts](src/sim/tick.ts) | Il bilancio di un tick, funzione pura | `tick`, `tickMany`, `weightsOf` |
 | [DesirabilityField.ts](src/sim/DesirabilityField.ts) | Campo per classe, `Uint8Array` chunkato 32×32, ricalcolo incrementale | `DesirabilityField`, `rectAround`, `rectArea`, `Catalyst`, `Building`, `CellRect` |
 | [policies.ts](src/sim/policies.ts) | Catalogo delle policy e risoluzione dei pesi | `POLICIES`, `resolveWeights`, `withPolicy`, `policyById`, `isPolicyId`, `Weights`, `PolicyId` |
+| [districts.ts](src/sim/districts.ts) | Profili locali e distretti da campi sovrapposti | `urbanProfileAt`, `DistrictId`, `LocalUrbanProfile` |
+| [decisions.ts](src/sim/decisions.ts) | Scelte periodiche deterministiche | `decisionAt`, `decisionOption`, `CityDecision` |
+| [trade.ts](src/sim/trade.ts) | Import/export aggregato sbloccato dal porto | `resolveExternalTrade`, `TRADE_MODES`, `TradeMode` |
 | [nextBuildSites.ts](src/sim/nextBuildSites.ts) | I candidati, ordinati e filtrati | `nextBuildSites`, `BuildSite` |
 | [rng.ts](src/sim/rng.ts) | `mulberry32` in forma pura, stato dentro `SimState` | `nextState`, `unitOf` |
 | [scenario.ts](src/sim/scenario.ts) | Fixture della scena di debug: catalizzatori e nucleo di 24 edifici | `createScenarioState`, `scenarioCatalysts` |
@@ -172,7 +177,7 @@ gestisce le impronte, costruisce a fasce entro un budget e promuove gli edifici.
 | [loop.ts](src/game/loop.ts) | Passo fisso della simulazione con tetto di recupero | `FixedStepLoop` |
 | [growthScene.ts](src/game/growthScene.ts) | Cablaggio esclusivo di `grow=1`: tick, Builder e animazione | `GrowthScene`, `GrowthStats` |
 | [launchMode.ts](src/game/launchMode.ts) | Risoluzione pura della modalita' iniziale e degli harness URL | `resolveLaunchMode`, `LaunchMode` |
-| [actions.ts](src/game/actions.ts) | Azioni economiche atomiche: catalizzatori, policy ed espansione | `placeCatalyst`, `togglePolicy`, `buyExpansion` |
+| [actions.ts](src/game/actions.ts) | Azioni economiche atomiche: catalizzatori, policy, decisioni, commercio ed espansione | `placeCatalyst`, `togglePolicy`, `chooseDecision`, `changeTradeMode`, `buyExpansion` |
 | [surfacePick.ts](src/game/surfacePick.ts) | Selezione pura della colonna sulla heightmap da un raggio 3D | `pickSurfaceCell` |
 | [onboarding.ts](src/game/onboarding.ts) | Tutorial derivato dai catalizzatori, senza flag nascosti | `onboardingOf`, `onboardingAllows` |
 | [cityCondition.ts](src/game/cityCondition.ts) | Obiettivo di autosufficienza e crisi con indicazioni di recupero | `cityCondition`, `isSelfSufficient` |
@@ -188,7 +193,7 @@ giocabile; gli overlay tecnici si alternano con `F3` o partono aperti con
 | --- | --- |
 | [hud.css](src/ui/hud.css) | Token, componenti, stati accessibili e layout responsivo Cozy City |
 | [hudIcons.ts](src/ui/hudIcons.ts) | Icone SVG interne, senza dipendenze o richieste di rete |
-| [GameHud.ts](src/ui/GameHud.ts) | Risorse, dock, drawer policy, tempo, tooltip e feedback contestuale |
+| [GameHud.ts](src/ui/GameHud.ts) | Risorse, sette catalizzatori, policy, commercio, decisioni, temi e feedback contestuale |
 | [GameHudModel.ts](src/ui/GameHudModel.ts) | View model puro di risorse, requisiti e disponibilità delle azioni |
 | [ControlsHint.ts](src/ui/ControlsHint.ts) | Onboarding contestuale persistente e pannello di aiuto |
 | [DebugOverlay.ts](src/ui/DebugOverlay.ts) | fps, draw call, triangoli, code, tempi di mesher e main thread |
@@ -220,11 +225,16 @@ giocabile; gli overlay tecnici si alternano con `F3` o partono aperti con
 | [world/buildings/Builder.test.ts](src/world/buildings/Builder.test.ts) | Candidato → occupazione della simulazione → voxel |
 | [world/buildings/BuildingRegistry.test.ts](src/world/buildings/BuildingRegistry.test.ts) | Indice spaziale e sostituzione di record |
 | [world/buildings/generate.test.ts](src/world/buildings/generate.test.ts) | Determinismo e limiti degli stamp |
+| [world/buildings/urbanForm.test.ts](src/world/buildings/urbanForm.test.ts) | Variazione deterministica della forma dal profilo locale |
 | [sim/contracts.test.ts](src/sim/contracts.test.ts) | Purezza di `tick`, nessuna scrittura in `blocks`, serializzazione |
 | [sim/SimState.test.ts](src/sim/SimState.test.ts) | Operazioni del giocatore, possesso del campo |
 | [sim/tick.test.ts](src/sim/tick.test.ts) | Bilancio, nessuno stock negativo, pareggio 1:1 |
 | [sim/DesirabilityField.test.ts](src/sim/DesirabilityField.test.ts) | Incrementale ≡ ricostruzione completa, cella per cella |
 | [sim/policies.test.ts](src/sim/policies.test.ts) | Pesi identici bit a bit dopo on/off, indipendenza dall'ordine |
+| [sim/policyCosts.test.ts](src/sim/policyCosts.test.ts) | Costi continuativi delle policy |
+| [sim/districts.test.ts](src/sim/districts.test.ts) | Ruoli distinti, sovrapposizioni ed effetti spaziali |
+| [sim/decisions.test.ts](src/sim/decisions.test.ts) | Cadenza, persistenza e risoluzione delle decisioni |
+| [sim/trade.test.ts](src/sim/trade.test.ts) | Prerequisito del porto e priorità commerciali |
 | [sim/nextBuildSites.test.ts](src/sim/nextBuildSites.test.ts) | Ordinamento, filtri di edificabilità |
 | [sim/simPerf.test.ts](src/sim/simPerf.test.ts) | Tick sotto 3 ms, zero celle ricalcolate, costo indipendente dalla mappa |
 | [engine/mesher/greedyMesher.bench.ts](src/engine/mesher/greedyMesher.bench.ts) | Costo per chunk: vuoto, edifici, pieno, rumore, scacchiera |

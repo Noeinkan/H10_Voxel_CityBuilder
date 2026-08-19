@@ -34,24 +34,24 @@ export function cityCondition(state: SimState, stableTicks: number): CityConditi
     return {
       kind: 'crisis',
       tone: 'warning',
-      title: 'Crisi alimentare',
-      message: 'Il cibo sta finendo: aggiungi produzione vicino a un’area abitata. La popolazione cala lentamente e può riprendersi.',
+      title: 'Food shortage',
+      message: 'Food is running low. Add production near a residential area. Population declines slowly and can recover.',
     };
   }
   if (state.funds.stock <= BALANCE.gameplay.crisis.fundsReserve && state.funds.delta < 0) {
     return {
       kind: 'crisis',
       tone: 'warning',
-      title: 'Bilancio in rosso',
-      message: 'I servizi costano più delle entrate: lascia crescere le case o usa Austerità. Nessun edificio viene perso.',
+      title: 'Budget deficit',
+      message: 'Services cost more than your income. Let housing grow or use Austerity. No buildings will be lost.',
     };
   }
   if (state.satisfaction <= BALANCE.gameplay.crisis.satisfaction) {
     return {
       kind: 'crisis',
       tone: 'warning',
-      title: 'Felicità critica',
-      message: 'La città è affollata: rinforza i servizi civici o aumenta la capacità residenziale.',
+      title: 'Critical happiness',
+      message: 'The city is overcrowded. Strengthen civic services or increase residential capacity.',
     };
   }
 
@@ -59,8 +59,8 @@ export function cityCondition(state: SimState, stableTicks: number): CityConditi
     return {
       kind: 'success',
       tone: 'success',
-      title: 'Città autosufficiente',
-      message: 'Popolazione, risorse e servizi sono stabili. Puoi espanderti o cercare uno skyline più ambizioso.',
+      title: 'Self-sufficient city',
+      message: 'Population, resources, and services are stable. Expand or aim for a more ambitious skyline.',
     };
   }
 
@@ -72,9 +72,9 @@ export function cityCondition(state: SimState, stableTicks: number): CityConditi
   return {
     kind: 'development',
     tone: 'objective',
-    title: 'Obiettivo · città autosufficiente',
+    title: 'Goal · self-sufficient city',
     message: missing > 0
-      ? `Porta ogni classe ad almeno ${BALANCE.gameplay.success.buildingsPerClass} edifici e la popolazione a ${BALANCE.gameplay.success.population}.`
-      : `Mantieni per ${Math.ceil((BALANCE.gameplay.success.stableTicks - stableTicks) / 10)} secondi cibo, materiali e fondi in pareggio.`,
+      ? `Build at least ${BALANCE.gameplay.success.buildingsPerClass} buildings of each class and reach ${BALANCE.gameplay.success.population} residents.`
+      : `Keep food, materials, and funds balanced for ${Math.ceil((BALANCE.gameplay.success.stableTicks - stableTicks) / 10)} seconds.`,
   };
 }

@@ -10,7 +10,7 @@ import type { Theme } from './theme';
  */
 export const natural: Theme = {
   id: 'natural',
-  name: 'Diorama naturale',
+  name: 'Natural Diorama',
   colors: paletteHex,
   atmosphere: {
     background: '#bfe4f5',

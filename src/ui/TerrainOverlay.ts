@@ -40,7 +40,7 @@ export class TerrainOverlay {
 
     this.summary = document.createElement('summary');
     this.summary.className = 'debug-summary';
-    this.summary.textContent = '▸ TERRENO · preparazione…';
+    this.summary.textContent = '▸ TERRAIN · preparing…';
     this.root.appendChild(this.summary);
 
     this.body = document.createElement('pre');
@@ -49,7 +49,7 @@ export class TerrainOverlay {
 
     this.button = document.createElement('button');
     this.button.className = 'debug-button';
-    this.button.textContent = 'colora per bioma (B)';
+    this.button.textContent = 'color by biome (B)';
     this.button.addEventListener('click', onToggleBiomes);
     this.root.appendChild(this.button);
 
@@ -83,27 +83,27 @@ export class TerrainOverlay {
     const streaming = frame.blocksApplied < frame.blocksTotal;
     const progress = frame.blocksTotal === 0 ? 0 : (frame.blocksApplied / frame.blocksTotal) * 100;
     this.summary.textContent = [
-      `${this.root.open ? '▾' : '▸'} TERRENO`,
+      `${this.root.open ? '▾' : '▸'} TERRAIN`,
       `${progress.toFixed(0)}%`,
-      `${format(frame.buildableColumns)} edificabili`,
+      `${format(frame.buildableColumns)} buildable`,
     ].join('  ·  ');
 
     this.body.innerHTML = [
-      `terreno    seed ${frame.seed}  ${frame.regionSize}x${frame.regionSize}`,
+      `terrain    seed ${frame.seed}  ${frame.regionSize}x${frame.regionSize}`,
       `fps        ${frame.fps.toFixed(1).padStart(6)}`,
       '',
-      `worker     ${frame.generationMs.toFixed(1).padStart(6)} ms${frame.generationMs === 0 ? '  (in corso)' : ''}`,
-      `scrittura  ${frame.applyMs.toFixed(1).padStart(6)} ms  su main`,
-      `blocchi    ${frame.blocksApplied.toString().padStart(6)} / ${frame.blocksTotal}`,
+      `worker     ${frame.generationMs.toFixed(1).padStart(6)} ms${frame.generationMs === 0 ? '  (running)' : ''}`,
+      `apply      ${frame.applyMs.toFixed(1).padStart(6)} ms  on main`,
+      `blocks     ${frame.blocksApplied.toString().padStart(6)} / ${frame.blocksTotal}`,
       '',
-      `colonne    ${format(frame.columns).padStart(6)}`,
-      `edificabili${format(frame.buildableColumns).padStart(6)}  ${((frame.buildableColumns / total) * 100).toFixed(1)} %`,
+      `columns    ${format(frame.columns).padStart(6)}`,
+      `buildable  ${format(frame.buildableColumns).padStart(6)}  ${((frame.buildableColumns / total) * 100).toFixed(1)} %`,
       '',
-      'biomi',
+      'biomes',
       ...bands,
       '',
-      `vista      ${frame.biomeView ? 'per bioma' : 'naturale'}`,
-      streaming ? 'streaming in corso…' : '',
+      `view       ${frame.biomeView ? 'by biome' : 'natural'}`,
+      streaming ? 'streaming in progress…' : '',
     ]
       .filter((line) => line !== '')
       .join('\n');

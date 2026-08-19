@@ -6,7 +6,7 @@ import type { Theme } from './theme';
  */
 export const pastel: Theme = {
   id: 'pastel',
-  name: 'Pastello soleggiato',
+  name: 'Sunny Pastel',
   colors: [
     '#000000', // empty
     // asfalto: azzurro polveroso, non nero

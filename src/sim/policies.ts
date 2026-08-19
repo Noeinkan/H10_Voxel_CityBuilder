@@ -31,6 +31,9 @@ export interface Policy {
   readonly label: string;
   readonly weight: WeightId;
   readonly multiplier: number;
+  readonly upkeep: number;
+  readonly incompatibleWith: readonly PolicyId[];
+  readonly spatialEffect: string;
 }
 
 /**
@@ -43,39 +46,57 @@ export interface Policy {
 export const POLICIES: readonly Policy[] = [
   {
     id: 'denseHousing',
-    label: 'edilizia densa',
+    label: 'dense housing',
     weight: 'residentialCapacity',
     multiplier: BALANCE.policyMultipliers.denseHousing,
+    upkeep: BALANCE.gameplay.policy.denseHousing.upkeep,
+    incompatibleWith: ['greenBelt'],
+    spatialEffect: 'Increases density and height within residential influence fields.',
   },
   {
     id: 'industrialSubsidy',
-    label: 'sussidio industriale',
+    label: 'industrial subsidy',
     weight: 'productionYield',
     multiplier: BALANCE.policyMultipliers.industrialSubsidy,
+    upkeep: BALANCE.gameplay.policy.industrialSubsidy.upkeep,
+    incompatibleWith: ['greenBelt'],
+    spatialEffect: 'Strengthens districts around factories and the port.',
   },
   {
     id: 'austerity',
-    label: 'austerita',
+    label: 'austerity',
     weight: 'civicUpkeep',
     multiplier: BALANCE.policyMultipliers.austerity,
+    upkeep: BALANCE.gameplay.policy.austerity.upkeep,
+    incompatibleWith: ['civicPride'],
+    spatialEffect: 'Reduces local quality around civic services.',
   },
   {
     id: 'greenBelt',
-    label: 'cintura verde',
+    label: 'green belt',
     weight: 'desirabilityResidential',
     multiplier: BALANCE.policyMultipliers.greenBelt,
+    upkeep: BALANCE.gameplay.policy.greenBelt.upkeep,
+    incompatibleWith: ['denseHousing', 'industrialSubsidy'],
+    spatialEffect: 'Improves livability and limits density near parks.',
   },
   {
     id: 'zoningRelief',
-    label: 'zoning permissivo',
+    label: 'zoning relief',
     weight: 'desirabilityProduction',
     multiplier: BALANCE.policyMultipliers.zoningRelief,
+    upkeep: BALANCE.gameplay.policy.zoningRelief.upkeep,
+    incompatibleWith: [],
+    spatialEffect: 'Increases production density at a cost to livability.',
   },
   {
     id: 'civicPride',
-    label: 'orgoglio civico',
+    label: 'civic pride',
     weight: 'desirabilityCivic',
     multiplier: BALANCE.policyMultipliers.civicPride,
+    upkeep: BALANCE.gameplay.policy.civicPride.upkeep,
+    incompatibleWith: ['austerity'],
+    spatialEffect: 'Makes civic centers wealthier and happier.',
   },
 ];
 
@@ -101,8 +122,19 @@ export function isPolicyId(value: string): value is PolicyId {
 export function policyById(id: PolicyId): Policy {
   const found = POLICIES.find((policy) => policy.id === id);
   // Il tipo lo garantisce; il throw copre solo un catalogo modificato a meta'.
-  if (found === undefined) throw new Error(`policy sconosciuta: ${id}`);
+  if (found === undefined) throw new Error(`unknown policy: ${id}`);
   return found;
+}
+
+/** Prima policy attiva incompatibile con `id`, o null. */
+export function policyConflict(active: readonly PolicyId[], id: PolicyId): PolicyId | null {
+  const policy = policyById(id);
+  for (const candidate of active) {
+    if (policy.incompatibleWith.includes(candidate) || policyById(candidate).incompatibleWith.includes(id)) {
+      return candidate;
+    }
+  }
+  return null;
 }
 
 /**

@@ -78,8 +78,21 @@
 .cursor-card .cursor-reason { color: var(--hud-positive); font-weight: 800; }
 .cursor-card[data-valid="false"] .cursor-reason { color: var(--hud-danger); }
 
-.policy-drawer, .help-card { position: absolute; right: 14px; bottom: var(--game-hud-bottom); width: min(360px, calc(100vw - 28px)); max-height: min(620px, calc(100vh - var(--game-hud-bottom) - 28px)); overflow: auto; box-sizing: border-box; border-radius: var(--hud-radius); padding: 14px; pointer-events: auto; transition: opacity 150ms ease, transform 150ms ease; }
-.policy-drawer[hidden], .help-card[hidden] { display: block; opacity: 0; visibility: hidden; transform: translateY(10px); pointer-events: none; }
+.drawer-section-title { margin: 16px 0 8px; font-size: 12px; text-transform: uppercase; letter-spacing: .08em; color: var(--hud-muted); }
+.trade-list { display: grid; gap: 7px; }
+.trade-card, .decision-option { display: grid; gap: 3px; width: 100%; padding: 9px 11px; text-align: left; color: inherit; background: rgba(255,255,255,.52); border: 1px solid rgba(62,76,69,.14); border-radius: 10px; cursor: pointer; }
+.trade-card > span, .decision-option > span { color: var(--hud-muted); font-size: 10px; line-height: 1.35; }
+.trade-card[aria-pressed="true"] { border-color: var(--hud-positive); background: rgba(101,224,138,.12); }
+.trade-card:disabled { opacity: .5; cursor: not-allowed; }
+.decision-card { position: fixed; z-index: 80; left: 50%; top: 22%; width: min(430px, calc(100vw - 32px)); transform: translateX(-50%); padding: 18px; pointer-events: auto; }
+.decision-card[hidden] { display: none; }
+.decision-card h2 { margin: 0 0 5px; font-size: 18px; }
+.decision-card p { margin: 0 0 14px; color: var(--hud-muted); }
+.decision-options { display: grid; gap: 8px; }
+.decision-option:hover { border-color: var(--hud-positive); transform: translateY(-1px); }
+
+.policy-drawer, .theme-picker, .help-card { position: absolute; right: 14px; bottom: var(--game-hud-bottom); width: min(360px, calc(100vw - 28px)); max-height: min(620px, calc(100vh - var(--game-hud-bottom) - 28px)); overflow: auto; box-sizing: border-box; border-radius: var(--hud-radius); padding: 14px; pointer-events: auto; transition: opacity 150ms ease, transform 150ms ease; }
+.policy-drawer[hidden], .theme-picker[hidden], .help-card[hidden] { display: block; opacity: 0; visibility: hidden; transform: translateY(10px); pointer-events: none; }
 .drawer-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
 .drawer-title { margin: 0; font-size: 16px; }
 .drawer-subtitle { margin: 2px 0 0; color: var(--hud-muted); font-size: 11px; }
@@ -93,6 +106,16 @@
 .policy-state { color: var(--hud-sage-dark); font-size: 9px; font-weight: 900; letter-spacing: .08em; }
 .policy-description { grid-column: 1 / 3; color: var(--hud-muted); font-size: 10px; line-height: 1.35; }
 .policy-requirement { grid-column: 1 / 3; color: #80662d; font-size: 9px; font-weight: 700; }
+
+.theme-picker { width: min(330px, calc(100vw - 28px)); }
+.theme-picker .drawer-title { margin-bottom: 10px; }
+.theme-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+.theme-option { display: flex; align-items: center; gap: 8px; min-width: 0; padding: 7px 8px; border: 1px solid rgba(63,87,77,.16); border-radius: 10px; color: var(--hud-ink); background: rgba(255,255,255,.58); font: 700 10px/1.2 var(--hud-font); text-align: left; cursor: pointer; }
+.theme-option:hover { border-color: rgba(63,110,97,.45); background: rgba(255,255,255,.9); }
+.theme-option:focus-visible { outline: 3px solid rgba(233,154,114,.48); outline-offset: 1px; }
+.theme-option[aria-pressed="true"] { color: #fffaf0; background: var(--hud-sage-dark); border-color: var(--hud-sage-dark); }
+.theme-swatches { display: flex; width: 42px; height: 22px; flex: 0 0 auto; overflow: hidden; border: 1px solid rgba(38,56,51,.18); border-radius: 7px; box-shadow: inset 0 0 0 1px rgba(255,255,255,.18); }
+.theme-swatches > span { flex: 1; }
 
 .help-card { left: 50%; right: auto; width: min(470px, calc(100vw - 28px)); transform: translateX(-50%); }
 .help-card[hidden] { transform: translate(-50%, 10px); }
@@ -132,5 +155,5 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .hud-button, .policy-drawer, .help-card { transition: none; }
+  .hud-button, .policy-drawer, .theme-picker, .help-card { transition: none; }
 }

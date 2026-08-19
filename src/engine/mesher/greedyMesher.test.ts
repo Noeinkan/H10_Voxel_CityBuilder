@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { CHUNK, PADDED_VOL, paddedIdx } from '../../world/chunkCoords';
+import { packVisualBlock, SURFACE_KIND } from '../../world/visualBlock';
 import { greedyMesh } from './greedyMesher';
 
 /** Volume paddato vuoto. Le coordinate locali 0..31 stanno a px = lx + 1. */
@@ -42,6 +43,7 @@ describe('greedyMesh', () => {
     expect(mesh.positions.length).toBe(0);
     expect(mesh.faces.length).toBe(0);
     expect(mesh.palettes.length).toBe(0);
+    expect(mesh.surfaces.length).toBe(0);
     expect(mesh.indices.length).toBe(0);
   });
 
@@ -86,6 +88,18 @@ describe('greedyMesh', () => {
     // spezzano in due quad ciascuna: 2 tappi + 8 = 10 quad.
     expect(mesh.quadCount).toBe(10);
     expect(new Set(mesh.palettes)).toEqual(new Set([3, 4]));
+  });
+
+  it('propaga la grammatica visuale e non fonde superfici differenti', () => {
+    const padded = emptyPadded();
+    setLocal(padded, 10, 10, 10, packVisualBlock(12, SURFACE_KIND.habitat));
+    setLocal(padded, 11, 10, 10, packVisualBlock(12, SURFACE_KIND.luminous));
+
+    const mesh = greedyMesh(padded);
+
+    expect(mesh.quadCount).toBe(10);
+    expect(new Set(mesh.palettes)).toEqual(new Set([12]));
+    expect(new Set(mesh.surfaces)).toEqual(new Set([SURFACE_KIND.habitat, SURFACE_KIND.luminous]));
   });
 
   it('un singolo voxel produce 6 quad con una direzione di faccia per lato', () => {

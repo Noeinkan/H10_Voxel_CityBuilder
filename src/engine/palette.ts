@@ -21,7 +21,7 @@ const HEX = /^#[0-9a-fA-F]{6}$/;
 export function toPaletteArray(hexColors: readonly string[]): Float32Array {
   if (hexColors.length !== PALETTE_SIZE) {
     throw new Error(
-      `palette.json deve contenere esattamente ${PALETTE_SIZE} colori, trovati ${hexColors.length}`,
+      `palette.json must contain exactly ${PALETTE_SIZE} colors, found ${hexColors.length}`,
     );
   }
 
@@ -30,7 +30,7 @@ export function toPaletteArray(hexColors: readonly string[]): Float32Array {
   for (let i = 0; i < PALETTE_SIZE; i++) {
     const hex = hexColors[i];
     if (!HEX.test(hex)) {
-      throw new Error(`palette.json: colore non valido all'indice ${i}: ${JSON.stringify(hex)}`);
+      throw new Error(`palette.json: invalid color at index ${i}: ${JSON.stringify(hex)}`);
     }
     color.setStyle(hex, SRGBColorSpace);
     out[i * 3] = color.r;

@@ -47,6 +47,8 @@ export interface Atmosphere {
   /** Risposta economica del vetro, senza trasparenza o materiale separato. */
   readonly glassTint?: string;
   readonly glassLift?: number;
+  /** Intensita' delle superfici energetiche degli edifici sci-fi. */
+  readonly emissiveStrength?: number;
   /** Riflesso cromatico opaco applicato solo alla faccia superiore dell'acqua. */
   readonly waterHighlight?: string;
   readonly waterStrength?: number;

@@ -20,12 +20,12 @@ export class GrowthOverlay {
 
     this.summary = document.createElement('summary');
     this.summary.className = 'debug-summary';
-    this.summary.textContent = '▸ CRESCITA · preparazione terreno…';
+    this.summary.textContent = '▸ GROWTH · preparing terrain…';
     this.root.appendChild(this.summary);
 
     this.body = document.createElement('pre');
     this.body.className = 'debug-body';
-    this.body.textContent = 'preparazione terreno…';
+    this.body.textContent = 'preparing terrain…';
     this.root.appendChild(this.body);
     parent.appendChild(this.root);
   }
@@ -51,19 +51,19 @@ export class GrowthOverlay {
     }
     this.previousCount = stats.buildings;
     this.previousTime = now;
-    this.summary.textContent = `${this.root.open ? '▾' : '▸'} CRESCITA  ·  ${stats.buildings} edifici  ·  ${this.rate.toFixed(1)}/s`;
+    this.summary.textContent = `${this.root.open ? '▾' : '▸'} GROWTH  ·  ${stats.buildings} buildings  ·  ${this.rate.toFixed(1)}/s`;
 
     const rejected = REJECT_REASONS.map(
       (reason, index) => `${reason} ${stats.builder.rejected[index] ?? 0}`,
     ).join('  ');
     this.body.textContent = [
-      `crescita     tick ${stats.tick}  ${stats.tickMs.toFixed(3)} ms`,
-      `edifici      ${stats.buildings}  ${this.rate.toFixed(1)}/s`,
-      `classi       ${stats.countsByClass.map((n, i) => `${CLASS_NAMES[i].slice(0, 4)} ${n}`).join('  ')}`,
-      `coda         ${stats.builder.growing}  upgrade ${stats.builder.upgraded}`,
-      `livelli      ${stats.levels.map((n, i) => `L${i} ${n ?? 0}`).join('  ')}`,
+      `growth       tick ${stats.tick}  ${stats.tickMs.toFixed(3)} ms`,
+      `buildings    ${stats.buildings}  ${this.rate.toFixed(1)}/s`,
+      `classes      ${stats.countsByClass.map((n, i) => `${CLASS_NAMES[i].slice(0, 4)} ${n}`).join('  ')}`,
+      `queue        ${stats.builder.growing}  upgrades ${stats.builder.upgraded}`,
+      `levels       ${stats.levels.map((n, i) => `L${i} ${n ?? 0}`).join('  ')}`,
       `blacklist    ${stats.builder.blacklisted}`,
-      `scarti       ${rejected}`,
+      `rejected     ${rejected}`,
     ].join('\n');
   }
 }

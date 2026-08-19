@@ -1,5 +1,6 @@
 import { CHUNK, CHUNK_SHIFT, toChunk, toLocal } from '../world/chunkCoords';
 import { BALANCE } from './balance';
+import type { CatalystId } from './catalysts';
 import { ALL_CLASSES, CLASS_COUNT, type BuildingClass } from './classes';
 import { DESIRABILITY_WEIGHT_OF_CLASS, type Weights } from './policies';
 
@@ -47,6 +48,8 @@ export interface Catalyst {
   readonly x: number;
   readonly y: number;
   readonly class: BuildingClass;
+  /** Ruolo di fase 2; assente nei salvataggi MVP e normalizzato dalla classe. */
+  readonly kind?: CatalystId;
   /** Intensita' al centro, 0..255. */
   readonly strength: number;
   /** Raggio di Chebyshev in celle. A distanza pari al raggio il contributo e' esattamente 0. */

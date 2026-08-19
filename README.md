@@ -33,11 +33,12 @@ aggiungendo chunk alla mappa sparsa.
 | --- | --- |
 | [src/world/VoxelWorld.ts](src/world/VoxelWorld.ts) | API pubblica: `setBlock`, `getBlock`, `setData`, `getData`, `ensureChunk`, `flush` |
 | [src/world/Chunk.ts](src/world/Chunk.ts) | `blocks` e `data`, due `Uint8Array(32768)` allocati una volta sola |
+| [src/world/visualBlock.ts](src/world/visualBlock.ts) | Packing del byte visuale: 5 bit di palette e 3 bit di grammatica sci-fi |
 | [src/world/scenes/cityScene.ts](src/world/scenes/cityScene.ts) | Scene deterministiche a passi con budget |
 | [src/engine/mesher/greedyMesher.ts](src/engine/mesher/greedyMesher.ts) | Greedy meshing puro, zero import da Three |
 | [src/engine/mesher/buildPaddedVolume.ts](src/engine/mesher/buildPaddedVolume.ts) | Chunk + tutti i 26 vicini immediati → volume 34³ |
 | [src/engine/ChunkRenderer.ts](src/engine/ChunkRenderer.ts) | Una geometria per chunk, coda a priorità, culling, upload a budget |
-| [src/engine/VoxelMaterial.ts](src/engine/VoxelMaterial.ts) | Unico `ShaderMaterial`, palette, luce per faccia, AO per vertice e nebbia |
+| [src/engine/VoxelMaterial.ts](src/engine/VoxelMaterial.ts) | Unico `ShaderMaterial`, pannelli sci-fi world-space, emissione, AO e nebbia |
 | [src/engine/themes/](src/engine/themes/) | I temi grafici: 32 colori più l'atmosfera, applicati senza rimeshare |
 | [src/engine/IsoCameraController.ts](src/engine/IsoCameraController.ts) | Ortografica isometrica: scatti di 90°, zoom, pan vincolato |
 | [src/engine/InfluenceOverlay.ts](src/engine/InfluenceOverlay.ts) | Raggi dei catalizzatori e perimetri dei settori sbloccati |
@@ -56,7 +57,7 @@ aggiungendo chunk alla mappa sparsa.
 - **Aggiungere chunk non rialloca quelli esistenti**: gli `Uint8Array` nascono
   nel costruttore di `Chunk` e non vengono mai sostituiti.
 - **Il colore vive solo nell'uniform.** I vertici portano l'indice di palette
-  (`aPalette`) e la direzione della faccia (`aFace`), mai un RGB. `aAO` e'
+  (`aPalette`), la grammatica (`aSurface`) e la direzione (`aFace`), mai un RGB. `aAO` e'
   geometria (0..3), non un colore: cambia la luce degli angoli senza invalidare
   i temi.
 - **Il mesher non conosce Three.js.** Nel bundle di produzione il worker pesa
@@ -77,7 +78,7 @@ permettono di isolare le scene di verifica.
 | `height` | `64` | Altezza del mondo in voxel |
 | `terrain` | — | `<seed>` sostituisce la scena urbana con un'isola 256×256 |
 | `sim` | — | `1` accende la scena di simulazione (implica l'isola) |
-| `theme` | `natural` | `natural`, `pastel`, `neon`, `industrial`, `scifi`, `enchanted` |
+| `theme` | `scifi` | `natural`, `pastel`, `neon`, `industrial`, `scifi`, `enchanted`, `diorama` |
 | `grow` | `1` alla radice | `1` avvia esplicitamente l'MVP giocabile |
 
 Tasti: `Q`/`E` ruota di 90°, rotella zoom, drag destro o `WASD` pan, `F` inquadra
@@ -90,6 +91,14 @@ Alla radice, oppure con `?grow=1`, il Cozy HUD mostra risorse e variazioni in al
 azioni di costruzione in basso e policy in un drawer laterale. Le azioni non
 disponibili anticipano requisiti di fondi o popolazione; selezione, errori e
 istruzioni di piazzamento compaiono come feedback contestuale sopra il dock.
+Il pulsante con la tavolozza apre un selettore compatto per cambiare tema a caldo
+senza passare dall'overlay di debug.
+
+Gli edifici condividono una grammatica futuristica indipendente dal tema:
+habitat modulari, megastrutture produttive e landmark civici assegnano ai voxel
+tipi di superficie deterministici. Il mesher li propaga come `aSurface`; lo
+shader proietta pannelli, vetri, portali e circuiti sulle coordinate della faccia,
+quindi il disegno continua attraverso voxel e quad greedy senza nuove draw call.
 
 ## Misure
 
@@ -274,6 +283,10 @@ Il `Builder`, esterno alla simulazione, trasforma quelle decisioni in edifici
 voxel a fasce e registra il risultato nello stato. Dettagli, contratti e misure
 in [src/sim/README.md](src/sim/README.md).
 
+La fase 2 aggiunge sette ruoli di catalizzatore, distretti emergenti dai campi
+sovrapposti, policy con costi ricorrenti e incompatibilità, forme edilizie
+guidate dal profilo locale, decisioni periodiche e commercio esterno via porto.
+
 ```ts
 let state = createSimState();
 state = addCatalyst(state, { x: 96, y: 96, class: BUILDING_CLASS.residential, strength: 220, radius: 24 });
@@ -313,7 +326,6 @@ tick, stato del builder, heatmap del campo per classe e i prossimi dieci candida
 
 ## Fuori scope in questo prompt
 
-Strade, pathfinding, UI di gioco, input del giocatore, salvataggio su disco,
-audio, economia con
-prezzi o commercio, cittadini simulati individualmente, post-processing, fiumi,
+Strade, pathfinding, salvataggio su disco, audio, cittadini simulati
+individualmente, post-processing, fiumi,
 grotte, vegetazione, supporto mobile.

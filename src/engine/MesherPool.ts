@@ -81,7 +81,7 @@ export class MesherPool {
   submit(key: string, padded: Uint8Array): number {
     const worker = this.idle.pop();
     if (worker === undefined) {
-      throw new Error('MesherPool.submit: nessun worker libero, controllare idleCount');
+      throw new Error('MesherPool.submit: no worker available, check idleCount');
     }
 
     const jobId = this.nextJobId++;

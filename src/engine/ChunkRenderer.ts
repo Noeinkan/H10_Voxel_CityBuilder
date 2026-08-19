@@ -252,6 +252,7 @@ export class ChunkRenderer {
     geometry.setAttribute('position', new Uint16BufferAttribute(result.positions, 3));
     geometry.setAttribute('aFace', new Uint8BufferAttribute(result.faces, 1));
     geometry.setAttribute('aPalette', new Uint8BufferAttribute(result.palettes, 1));
+    geometry.setAttribute('aSurface', new Uint8BufferAttribute(result.surfaces, 1));
     geometry.setAttribute('aAO', new Uint8BufferAttribute(result.ao, 1));
     geometry.setIndex(new Uint32BufferAttribute(result.indices, 1));
 
@@ -259,6 +260,7 @@ export class ChunkRenderer {
       result.positions.byteLength +
       result.faces.byteLength +
       result.palettes.byteLength +
+      result.surfaces.byteLength +
       result.ao.byteLength +
       result.indices.byteLength;
 

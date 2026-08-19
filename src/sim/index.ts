@@ -16,6 +16,15 @@ export {
   type BuildingClass,
 } from './classes';
 export {
+  CATALYSTS,
+  catalystById,
+  defaultCatalystOfClass,
+  isCatalystId,
+  type CatalystDefinition,
+  type CatalystEffects,
+  type CatalystId,
+} from './catalysts';
+export {
   DesirabilityField,
   rectAround,
   rectArea,
@@ -38,6 +47,28 @@ export {
   type WeightId,
   type Weights,
 } from './policies';
+export { policyConflict } from './policies';
+export {
+  urbanProfileAt,
+  type DistrictId,
+  type LocalUrbanProfile,
+} from './districts';
+export {
+  decisionAt,
+  decisionOption,
+  type CityDecision,
+  type DecisionEffect,
+  type DecisionOption,
+  type DecisionOutcome,
+} from './decisions';
+export {
+  EMPTY_TRADE,
+  TRADE_MODES,
+  isTradeMode,
+  resolveExternalTrade,
+  type TradeMode,
+  type TradeReport,
+} from './trade';
 export { nextState, unitOf } from './rng';
 export {
   addBuilding,
@@ -45,11 +76,13 @@ export {
   clearPolicies,
   createSimState,
   rebuildField,
+  resolveDecision,
   removeCatalyst,
   reviveSimState,
   setCatalystStrength,
   setPolicyActive,
   setSelectedClass,
+  setTradeMode,
   toSimStateData,
   type Resource,
   type SimState,

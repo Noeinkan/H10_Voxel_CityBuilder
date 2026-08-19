@@ -44,6 +44,9 @@ di recupero.
 
 Obiettivo: città diverse a partire dalla stessa isola.
 
+**Stato implementazione:** completata. Il gate resta da validare con un playtest
+comparativo delle strategie porto-industria, mercato-trasporto e parco-università.
+
 - Introdurre catalizzatori con ruolo distinto: porto, mercato, fabbrica,
   trasporto, parco, università e monumento.
 - Dare a ogni policy un vantaggio, un costo continuativo e una conseguenza
@@ -62,22 +65,34 @@ riconoscibilmente diversi.
 
 ## Fase 3 — Forma urbana procedurale
 
-Obiettivo: avvicinare la resa alla città verticale e stratificata dei riferimenti.
+Obiettivo: trasformare la crescita urbana in un processo realmente verticale e
+tridimensionale, nel quale edifici, spazi pubblici e mobilità colonizzano quote
+diverse e formano una città stratificata, connessa e leggibile.
 
-- Generare strade e percorsi principali come scheletro procedurale influenzato da
-  terreno, costa e catalizzatori.
-- Raggruppare gli edifici in isolati, terrazze e cluster verticali mantenendo un
-  voxel come unità volumetrica, non come dettaglio architettonico.
-- Aggiungere ponti, moli, muri di contenimento, piazze e collegamenti fra quote.
-- Ampliare le grammatiche degli edifici con basamenti, arretramenti, torri,
-  coronamenti e accenti luminosi specifici per classe e livello.
-- Preservare una corona naturale e creare una transizione leggibile fra costa,
-  periferia, centro e skyline.
-- Migliorare atmosfera e profondità con nebbia, acqua e luce stilizzata restando
-  nel materiale condiviso e senza texture o PBR.
+- Generare uno scheletro di crescita tridimensionale influenzato da terreno,
+  costa e catalizzatori: strade al suolo, percorsi in quota, rampe, scalinate e
+  nodi capaci di indirizzare densità e sviluppo verticale.
+- Fare evolvere gli edifici da volumi isolati a isolati terrazzati e cluster
+  verticali, capaci di crescere per sovrapposizione, arretramento e aggregazione;
+  il voxel resta l'unità volumetrica, non il dettaglio architettonico.
+- Connettere edifici e livelli urbani con ponti, passerelle sospese, terrazze
+  condivise, mezzanini, piattaforme e collegamenti fra quote, così che la rete
+  urbana continui anche sopra il piano stradale.
+- Integrare dislivelli e costa nella forma della città con muri di contenimento,
+  piazze sopraelevate, moli, approdi e percorsi incassati o sospesi, evitando che
+  il terreno sia soltanto una base piatta da edificare.
+- Ampliare le grammatiche degli edifici con basamenti abitati, corpi sovrapposti,
+  arretramenti, torri, coronamenti, giardini pensili e accenti luminosi specifici
+  per classe e livello.
+- Costruire una gerarchia verticale riconoscibile: costa e periferia più basse e
+  porose, distretti intermedi terrazzati, centro denso e skyline emergente,
+  preservando una corona naturale e transizioni leggibili fra le fasce.
+- Migliorare atmosfera, profondità e separazione delle quote con nebbia, acqua e
+  luce stilizzata, restando nel materiale condiviso e senza texture o PBR.
 
-**Gate:** la silhouette racconta la struttura economica della città anche con UI
-nascosta e resta leggibile alle normali distanze di gioco.
+**Gate:** con la UI nascosta, la città comunica crescita verticale, connessioni
+fra livelli e struttura economica attraverso volumi e silhouette; ponti,
+terrazze e percorsi in quota restano leggibili alle normali distanze di gioco.
 
 ## Fase 4 — Persistenza e prodotto browser
 
@@ -121,4 +136,3 @@ se rompe i budget esistenti.
 Alpha 0.2 è completa quando una partita ha apertura, sviluppo ed espansione
 leggibili, due strategie sostenibili e un salvataggio ripristinabile, senza
 regressioni rispetto ai contratti e ai budget dell’MVP.
-

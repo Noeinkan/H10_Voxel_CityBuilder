@@ -9,7 +9,7 @@ import type { Theme } from './theme';
  */
 export const neon: Theme = {
   id: 'neon',
-  name: 'Neon notturno',
+  name: 'Night Neon',
   colors: [
     '#000000', // empty
     // asfalto bagnato
@@ -38,6 +38,9 @@ export const neon: Theme = {
     fogDensity: 0.0003,
     faceLight: [0.88, 0.6, 0.74, 0.52, 1.0, 0.4],
     aoStrength: 0.7,
+    glassTint: '#62f7ff',
+    glassLift: 0.24,
+    emissiveStrength: 1.15,
     toneMapping: 'none',
     exposure: 1,
   },

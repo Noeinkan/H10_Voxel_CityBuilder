@@ -38,6 +38,26 @@ describe('azioni di gioco', () => {
     expect(togglePolicy(state, 'austerity').success).toBe(true);
   });
 
+  it('permette ruoli diversi della stessa classe e blocca policy incompatibili', () => {
+    const map = testTerrain({ chunksX: 1, chunksY: 1, height: 12 });
+    const port = placeCatalyst(createSimState(), map, 8, 8, 'port');
+    if (!port.success) throw new Error('porto fixture non valido');
+    expect(placeCatalyst(port.state, map, 10, 10, 'factory').success).toBe(true);
+
+    const base = createSimState();
+    const funded = {
+      ...base,
+      population: { stock: 100, delta: 0 },
+      funds: { stock: 2_000, delta: 0 },
+    };
+    const dense = togglePolicy(funded, 'denseHousing');
+    if (!dense.success) throw new Error('policy fixture non valida');
+    expect(togglePolicy(dense.state, 'greenBelt')).toEqual({
+      success: false,
+      reason: 'policy-incompatible',
+    });
+  });
+
   it('blocca l’espansione prima della soglia di popolazione', () => {
     expect(buyExpansion(createSimState())).toEqual({
       success: false,

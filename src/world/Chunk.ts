@@ -3,7 +3,8 @@ import { CHUNK_VOL, keyOf } from './chunkCoords';
 /**
  * Un chunk 32x32x32 con due layer paralleli.
  *
- * `blocks` e' l'unico layer letto dal renderer: 0 = vuoto, altrimenti indice di palette.
+ * `blocks` e' l'unico layer letto dal renderer: 0 = vuoto, altrimenti cinque
+ * bit di palette e tre bit di grammatica visuale.
  * `data` e' un byte libero per la simulazione e non viene mai letto da src/engine.
  *
  * Gli array sono allocati una sola volta nel costruttore e mai riallocati: la
@@ -15,7 +16,7 @@ export class Chunk {
   readonly cz: number;
   readonly key: string;
 
-  /** Layer di rendering: indice di palette per cella, 0 = vuoto. */
+  /** Layer di rendering compattato; usare le funzioni di `visualBlock.ts`. */
   readonly blocks: Uint8Array;
 
   /** Layer di simulazione: byte libero, ignorato dal renderer. */

@@ -19,10 +19,14 @@ nextBuildSites(state, terrainMap, 10);           // [{ x, y, class, score }, …
 | --- | --- |
 | [balance.ts](balance.ts) | **Ogni** coefficiente, soglia e moltiplicatore. Un solo oggetto esportato |
 | [classes.ts](classes.ts) | Le tre classi di edificio come indici densi |
+| [catalysts.ts](catalysts.ts) | I sette ruoli dei catalizzatori e i loro effetti locali |
 | [SimState.ts](SimState.ts) | Stato, operazioni del giocatore, serializzazione |
 | [tick.ts](tick.ts) | Il bilancio di un tick, funzione pura |
 | [DesirabilityField.ts](DesirabilityField.ts) | Campo per classe, `Uint8Array` chunkato 32×32, ricalcolo incrementale |
 | [policies.ts](policies.ts) | Catalogo delle policy e risoluzione dei pesi |
+| [districts.ts](districts.ts) | Profilo locale e distretti emergenti dalla sovrapposizione dei campi |
+| [decisions.ts](decisions.ts) | Decisioni periodiche e alternative deterministiche |
+| [trade.ts](trade.ts) | Commercio esterno O(1) sbloccato dal porto |
 | [nextBuildSites.ts](nextBuildSites.ts) | I candidati, ordinati e filtrati |
 | [rng.ts](rng.ts) | `mulberry32` in forma pura, stato dentro `SimState` |
 | [scenario.ts](scenario.ts) | Fixture della scena di debug: catalizzatori e nucleo iniziali |
@@ -88,6 +92,27 @@ cambia il risultato.
 
 Attivare o disattivare una policy è un'operazione sullo stato (`setPolicyActive`),
 mai una modifica di `balance.ts`.
+
+Ogni policy richiede inoltre fondi a ogni tick e dichiara le incompatibilità con
+le altre. Il suo effetto spaziale entra nel profilo locale: per esempio la
+cintura verde aumenta la vivibilità e limita la densità vicino ai parchi,
+mentre lo zoning permissivo densifica i campi produttivi.
+
+## Distretti, decisioni e commercio
+
+`urbanProfileAt` combina i campi dei sette ruoli in densità, ricchezza,
+accessibilità, soddisfazione e intensità produttiva. Un distretto compare solo
+quando almeno due ruoli superano la soglia locale: non esiste una griglia di
+zoning salvata o modificata cella per cella. Il `Builder` usa questo profilo per
+livello iniziale, soglia di promozione, impronta, terrazze e accenti degli stamp.
+
+Ogni 120 tick, dopo la prima finestra di 80 tick, lo stato apre una decisione
+con tre alternative. La decisione resta sospesa finché il giocatore sceglie e
+gli effetti sono dati serializzabili derivati dallo stato, senza casualità globale.
+
+Il porto abilita un singolo scambio aggregato O(1) per tick. Le strategie
+bilanciata, priorità al cibo e priorità alle esportazioni muovono cibo,
+materiali e fondi mantenendo riserve diverse.
 
 ## Proprietà del campo e proprietà dello stato
 

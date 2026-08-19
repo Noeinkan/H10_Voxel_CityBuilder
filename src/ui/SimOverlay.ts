@@ -83,7 +83,7 @@ export class SimOverlay {
 
     this.summary = document.createElement('summary');
     this.summary.className = 'debug-summary';
-    this.summary.textContent = '▸ SIMULAZIONE · preparazione…';
+    this.summary.textContent = '▸ SIMULATION · preparing…';
     this.root.appendChild(this.summary);
 
     this.body = document.createElement('pre');
@@ -144,41 +144,41 @@ export class SimOverlay {
     this.lastPaint = now;
     const { state } = frame;
     this.summary.textContent = [
-      `${this.root.open ? '▾' : '▸'} SIMULAZIONE`,
+      `${this.root.open ? '▾' : '▸'} SIMULATION`,
       `tick ${state.tickCount}`,
-      frame.auto ? `${frame.tickRate}/s` : 'pausa',
+      frame.auto ? `${frame.tickRate}/s` : 'paused',
     ].join('  ·  ');
 
     this.body.textContent = [
-      `simulazione  tick ${state.tickCount}${frame.auto ? `  auto ${frame.tickRate}/s` : '  in pausa'}`,
-      `costo        ${frame.tickMs.toFixed(4).padStart(8)} ms per tick`,
+      `simulation   tick ${state.tickCount}${frame.auto ? `  auto ${frame.tickRate}/s` : '  paused'}`,
+      `cost         ${frame.tickMs.toFixed(4).padStart(8)} ms per tick`,
       '',
-      'risorse                stock       delta',
-      stockLine('abitanti', state.population.stock, state.population.delta),
-      stockLine('cibo', state.food.stock, state.food.delta),
-      stockLine('materiali', state.materials.stock, state.materials.delta),
-      stockLine('fondi', state.funds.stock, state.funds.delta),
-      `  soddisfazione ${(state.satisfaction * 100).toFixed(1).padStart(10)} %`,
+      'resources              stock       delta',
+      stockLine('residents', state.population.stock, state.population.delta),
+      stockLine('food', state.food.stock, state.food.delta),
+      stockLine('materials', state.materials.stock, state.materials.delta),
+      stockLine('funds', state.funds.stock, state.funds.delta),
+      `  happiness    ${(state.satisfaction * 100).toFixed(1).padStart(10)} %`,
       '',
-      `edifici      ${state.buildingCounts.map((count, i) => `${CLASS_NAMES[i].slice(0, 4)} ${count}`).join('  ')}`,
+      `buildings    ${state.buildingCounts.map((count, i) => `${CLASS_NAMES[i].slice(0, 4)} ${count}`).join('  ')}`,
       ...builderLines(frame.builder),
-      `catalizzatori${state.catalysts.length.toString().padStart(6)}`,
-      `campo        ${state.field.chunkCount.toString().padStart(6)} chunk  ${format(state.field.totalRecomputedCells)} celle ricalcolate`,
-      `data         ${format(frame.dataCells).padStart(6)} celle scritte  (classe ${CLASS_NAMES[state.selectedClass]})`,
+      `catalysts    ${state.catalysts.length.toString().padStart(6)}`,
+      `field        ${state.field.chunkCount.toString().padStart(6)} chunks  ${format(state.field.totalRecomputedCells)} cells recomputed`,
+      `data         ${format(frame.dataCells).padStart(6)} cells written  (class ${CLASS_NAMES[state.selectedClass]})`,
       '',
-      `desiderabilita — ${CLASS_NAMES[state.selectedClass]}`,
+      `desirability — ${CLASS_NAMES[state.selectedClass]}`,
     ].join('\n');
 
     this.paintHeatmap(frame);
 
     const sites = frame.sites.length === 0
-      ? ['  nessun sito sopra soglia']
+      ? ['  no sites above threshold']
       : frame.sites.map(
           (site, i) =>
             `  ${(i + 1).toString().padStart(2)}. ${`${site.x},${site.y}`.padEnd(9)} ${CLASS_NAMES[site.class].padEnd(12)}${site.score.toString().padStart(4)}`,
         );
 
-    this.sitesBody.textContent = [`prossimi ${frame.sites.length} siti`, ...sites].join('\n');
+    this.sitesBody.textContent = [`next ${frame.sites.length} sites`, ...sites].join('\n');
 
     for (let i = 0; i < this.classButtons.length; i++) {
       setActive(this.classButtons[i], i === state.selectedClass);
@@ -283,8 +283,8 @@ function builderLines(stats: BuilderStats | null): readonly string[] {
     .map((count, index) => (count === 0 ? '' : `${REJECT_REASONS[index]} ${count}`))
     .filter((line) => line !== '');
   return [
-    `builder      ${stats.placed.toString().padStart(6)} piazzati  ${stats.growing.toString().padStart(3)} in crescita  ${stats.upgraded.toString().padStart(3)} upgrade`,
-    `scarti       ${stats.blacklisted.toString().padStart(6)} bloccati${rejected.length === 0 ? '' : `  ${rejected.join('  ')}`}`,
+    `builder      ${stats.placed.toString().padStart(6)} placed  ${stats.growing.toString().padStart(3)} growing  ${stats.upgraded.toString().padStart(3)} upgraded`,
+    `rejected     ${stats.blacklisted.toString().padStart(6)} blocked${rejected.length === 0 ? '' : `  ${rejected.join('  ')}`}`,
   ];
 }
 
