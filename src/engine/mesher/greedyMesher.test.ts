@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { CHUNK, PADDED_VOL, paddedIdx } from '../../world/chunkCoords';
 import { packVisualBlock, SURFACE_KIND } from '../../world/visualBlock';
 import { greedyMesh } from './greedyMesher';
+import { MESH_UNITS_PER_VOXEL } from './meshTypes';
 
 /** Volume paddato vuoto. Le coordinate locali 0..31 stanno a px = lx + 1. */
 function emptyPadded(): Uint8Array {
@@ -40,6 +41,8 @@ describe('greedyMesh', () => {
     const mesh = greedyMesh(emptyPadded());
 
     expect(mesh.quadCount).toBe(0);
+    expect(mesh.detailQuadCount).toBe(0);
+    expect(mesh.positions).toBeInstanceOf(Int16Array);
     expect(mesh.positions.length).toBe(0);
     expect(mesh.faces.length).toBe(0);
     expect(mesh.palettes.length).toBe(0);
@@ -97,9 +100,13 @@ describe('greedyMesh', () => {
 
     const mesh = greedyMesh(padded);
 
-    expect(mesh.quadCount).toBe(10);
-    expect(new Set(mesh.palettes)).toEqual(new Set([12]));
-    expect(new Set(mesh.surfaces)).toEqual(new Set([SURFACE_KIND.habitat, SURFACE_KIND.luminous]));
+    expect(mesh.quadCount - mesh.detailQuadCount).toBe(10);
+    expect([...new Set(mesh.palettes)]).toContain(12);
+    expect(new Set(mesh.surfaces)).toEqual(new Set([
+      SURFACE_KIND.habitat,
+      SURFACE_KIND.luminous,
+      SURFACE_KIND.utility,
+    ]));
   });
 
   it('un singolo voxel produce 6 quad con una direzione di faccia per lato', () => {
@@ -184,7 +191,7 @@ describe('greedyMesh', () => {
     const topAo: number[] = [];
     for (let i = 0; i < mesh.faces.length; i++) {
       const z = mesh.positions[i * 3 + 2];
-      if (mesh.faces[i] === 4 && z === 2) topAo.push(mesh.ao[i]);
+      if (mesh.faces[i] === 4 && z === 2 * MESH_UNITS_PER_VOXEL) topAo.push(mesh.ao[i]);
     }
 
     expect(topAo).toHaveLength(4);
@@ -202,7 +209,7 @@ describe('greedyMesh', () => {
     const mesh = greedyMesh(padded);
     let topQuads = 0;
     for (let i = 0; i < mesh.faces.length; i += 4) {
-      if (mesh.faces[i] === 4 && mesh.positions[i * 3 + 2] === 1) topQuads++;
+      if (mesh.faces[i] === 4 && mesh.positions[i * 3 + 2] === MESH_UNITS_PER_VOXEL) topQuads++;
     }
     expect(topQuads).toBe(2);
   });

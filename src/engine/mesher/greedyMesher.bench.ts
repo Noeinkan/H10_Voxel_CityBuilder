@@ -1,5 +1,6 @@
 import { bench, describe } from 'vitest';
 import { CHUNK, PADDED_VOL, paddedIdx } from '../../world/chunkCoords';
+import { packVisualBlock, SURFACE_KIND } from '../../world/visualBlock';
 import { createScratch, greedyMesh } from './greedyMesher';
 
 /**
@@ -29,6 +30,35 @@ const buildingChunk = volume((set) => {
       const id = z < 2 ? 10 : z % 6 === 0 ? 7 : 4;
       for (let y = oy; y < oy + 12; y++) {
         for (let x = ox; x < ox + 12; x++) set(x, y, z, id);
+      }
+    }
+  }
+  for (let y = 0; y < CHUNK; y++) {
+    for (let x = 0; x < CHUNK; x++) set(x, y, 0, 1);
+  }
+});
+
+/**
+ * La stessa scena con la grammatica sci-fi addosso: e' l'unica che accende la
+ * microgeometria, quindi l'unica che ne misura il costo. Senza `packVisualBlock`
+ * ogni voxel e' `plain` e i dettagli non vengono nemmeno tentati.
+ */
+const scifiChunk = volume((set) => {
+  for (const [ox, oy] of [
+    [2, 2],
+    [18, 16],
+  ]) {
+    for (let z = 0; z < CHUNK; z++) {
+      const surface = z < 2
+        ? SURFACE_KIND.portal
+        : z === CHUNK - 1
+          ? SURFACE_KIND.roofTech
+          : z % 6 === 0
+            ? SURFACE_KIND.luminous
+            : ox === 2 ? SURFACE_KIND.habitat : SURFACE_KIND.civic;
+      const palette = z < 2 ? 10 : z % 6 === 0 ? 7 : 4;
+      for (let y = oy; y < oy + 12; y++) {
+        for (let x = ox; x < ox + 12; x++) set(x, y, z, packVisualBlock(palette, surface));
       }
     }
   }
@@ -80,6 +110,10 @@ describe('greedyMesh — un chunk', () => {
 
   bench('edifici (scena di accettazione)', () => {
     greedyMesh(buildingChunk, scratch);
+  });
+
+  bench('edifici sci-fi (con microgeometria)', () => {
+    greedyMesh(scifiChunk, scratch);
   });
 
   bench('pieno', () => {

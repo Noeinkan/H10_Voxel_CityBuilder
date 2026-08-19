@@ -16,6 +16,9 @@ describe('createVoxelMaterial', () => {
     expect(handle.material).toBe(material);
     expect(material.uniforms['uPalette'].value).toBe(palette);
     expect(material.vertexShader).toContain('attribute float aSurface');
+    expect(material.vertexShader).toContain('uVoxelSize / 16.0');
+    expect(material.fragmentShader).not.toContain('float warning');
+    expect(material.fragmentShader).toContain('uniform vec3 uPalette[32]');
     expect(material.fragmentShader).toContain('uEmissiveStrength');
     expect(material.uniforms['uWaterStrength'].value).toBeGreaterThan(0);
     expect(material.uniforms['uTime'].value).toBe(12.5);

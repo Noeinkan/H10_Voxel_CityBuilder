@@ -28,6 +28,7 @@ ctx.onmessage = (event: MessageEvent<MeshJob>): void => {
     surfaces: mesh.surfaces,
     ao: mesh.ao,
     indices: mesh.indices,
+    detailQuadCount: mesh.detailQuadCount,
     quadCount: mesh.quadCount,
     min: mesh.min,
     max: mesh.max,

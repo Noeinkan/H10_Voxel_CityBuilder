@@ -1,9 +1,15 @@
 import { CHUNK, PADDED, PADDED_VOL } from '../../world/chunkCoords';
-import { blockPalette, blockSurface } from '../../world/visualBlock';
-import type { MeshArrays } from './meshTypes';
+import { blockPalette, blockSurface, SURFACE_KIND } from '../../world/visualBlock';
+import {
+  appendMicroGeometry,
+  MAX_DETAIL_QUADS_PER_CHUNK,
+  type FixedBox,
+  type MicroGeometryWriter,
+} from './microGeometry';
+import { MESH_UNITS_PER_VOXEL, type MeshArrays } from './meshTypes';
 
 /**
- * Greedy meshing per faccia su un volume paddato 34^3.
+ * Greedy meshing e microgeometria per faccia su un volume paddato 34^3.
  *
  * Nessun import da Three.js: la funzione e' pura e restituisce array grezzi.
  *
@@ -19,7 +25,7 @@ import type { MeshArrays } from './meshTypes';
 
 /** Buffer riusabili tra invocazioni successive, per non allocare a ogni rebuild. */
 export interface MeshScratch {
-  positions: Uint16Array;
+  positions: Int16Array;
   faces: Uint8Array;
   palettes: Uint8Array;
   surfaces: Uint8Array;
@@ -30,14 +36,17 @@ export interface MeshScratch {
   capacityQuads: number;
 }
 
-/** Numero massimo di quad producibili da un chunk 32^3 (pattern a scacchiera). */
-export const MAX_QUADS_PER_CHUNK = 6 * (CHUNK * CHUNK * CHUNK) * 0.5;
+/** Massimo teorico del solo greedy pass: pattern a scacchiera in un chunk. */
+export const MAX_BASE_QUADS_PER_CHUNK = 6 * (CHUNK * CHUNK * CHUNK) * 0.5;
+
+/** Massimo teorico complessivo, inclusa la microgeometria. */
+export const MAX_QUADS_PER_CHUNK = MAX_BASE_QUADS_PER_CHUNK + MAX_DETAIL_QUADS_PER_CHUNK;
 
 const STRIDE: readonly [number, number, number] = [1, PADDED, PADDED * PADDED];
 
 export function createScratch(initialQuads = 4096): MeshScratch {
   return {
-    positions: new Uint16Array(initialQuads * 12),
+    positions: new Int16Array(initialQuads * 12),
     faces: new Uint8Array(initialQuads * 4),
     palettes: new Uint8Array(initialQuads * 4),
     surfaces: new Uint8Array(initialQuads * 4),
@@ -52,7 +61,7 @@ function growScratch(scratch: MeshScratch, neededQuads: number): void {
   let cap = scratch.capacityQuads;
   while (cap < neededQuads) cap *= 2;
 
-  const positions = new Uint16Array(cap * 12);
+  const positions = new Int16Array(cap * 12);
   positions.set(scratch.positions);
   const faces = new Uint8Array(cap * 4);
   faces.set(scratch.faces);
@@ -91,7 +100,7 @@ export function greedyMesh(padded: Uint8Array, scratch?: MeshScratch): MeshArray
   const mask = s.mask;
 
   let quadCount = 0;
-  boundsMin[0] = boundsMin[1] = boundsMin[2] = CHUNK;
+  boundsMin[0] = boundsMin[1] = boundsMin[2] = CHUNK * MESH_UNITS_PER_VOXEL;
   boundsMax[0] = boundsMax[1] = boundsMax[2] = 0;
 
   for (let d = 0; d < 3; d++) {
@@ -182,21 +191,21 @@ export function greedyMesh(padded: Uint8Array, scratch?: MeshScratch): MeshArray
           const vbase = quadCount * 4;
           const pos = s.positions;
           let o = vbase * 3;
-          pos[o + axisU] = u0;
-          pos[o + axisV] = v0;
-          pos[o + d] = plane;
+          pos[o + axisU] = u0 * MESH_UNITS_PER_VOXEL;
+          pos[o + axisV] = v0 * MESH_UNITS_PER_VOXEL;
+          pos[o + d] = plane * MESH_UNITS_PER_VOXEL;
           o += 3;
-          pos[o + axisU] = u1;
-          pos[o + axisV] = v1;
-          pos[o + d] = plane;
+          pos[o + axisU] = u1 * MESH_UNITS_PER_VOXEL;
+          pos[o + axisV] = v1 * MESH_UNITS_PER_VOXEL;
+          pos[o + d] = plane * MESH_UNITS_PER_VOXEL;
           o += 3;
-          pos[o + axisU] = u2;
-          pos[o + axisV] = v2;
-          pos[o + d] = plane;
+          pos[o + axisU] = u2 * MESH_UNITS_PER_VOXEL;
+          pos[o + axisV] = v2 * MESH_UNITS_PER_VOXEL;
+          pos[o + d] = plane * MESH_UNITS_PER_VOXEL;
           o += 3;
-          pos[o + axisU] = u3;
-          pos[o + axisV] = v3;
-          pos[o + d] = plane;
+          pos[o + axisU] = u3 * MESH_UNITS_PER_VOXEL;
+          pos[o + axisV] = v3 * MESH_UNITS_PER_VOXEL;
+          pos[o + d] = plane * MESH_UNITS_PER_VOXEL;
 
           s.faces[vbase] = faceId;
           s.faces[vbase + 1] = faceId;
@@ -246,12 +255,12 @@ export function greedyMesh(padded: Uint8Array, scratch?: MeshScratch): MeshArray
             s.indices[iOff + 5] = vbase + 3;
           }
 
-          if (i < boundsMin[axisU]) boundsMin[axisU] = i;
-          if (i + w > boundsMax[axisU]) boundsMax[axisU] = i + w;
-          if (j < boundsMin[axisV]) boundsMin[axisV] = j;
-          if (j + h > boundsMax[axisV]) boundsMax[axisV] = j + h;
-          if (plane < boundsMin[d]) boundsMin[d] = plane;
-          if (plane > boundsMax[d]) boundsMax[d] = plane;
+          if (i * MESH_UNITS_PER_VOXEL < boundsMin[axisU]) boundsMin[axisU] = i * MESH_UNITS_PER_VOXEL;
+          if ((i + w) * MESH_UNITS_PER_VOXEL > boundsMax[axisU]) boundsMax[axisU] = (i + w) * MESH_UNITS_PER_VOXEL;
+          if (j * MESH_UNITS_PER_VOXEL < boundsMin[axisV]) boundsMin[axisV] = j * MESH_UNITS_PER_VOXEL;
+          if ((j + h) * MESH_UNITS_PER_VOXEL > boundsMax[axisV]) boundsMax[axisV] = (j + h) * MESH_UNITS_PER_VOXEL;
+          if (plane * MESH_UNITS_PER_VOXEL < boundsMin[d]) boundsMin[d] = plane * MESH_UNITS_PER_VOXEL;
+          if (plane * MESH_UNITS_PER_VOXEL > boundsMax[d]) boundsMax[d] = plane * MESH_UNITS_PER_VOXEL;
 
           quadCount++;
 
@@ -267,14 +276,34 @@ export function greedyMesh(padded: Uint8Array, scratch?: MeshScratch): MeshArray
     }
   }
 
+  const baseQuadCount = quadCount;
+  const writer: MicroGeometryWriter = {
+    get remainingQuads(): number {
+      return MAX_DETAIL_QUADS_PER_CHUNK - (quadCount - baseQuadCount);
+    },
+    emitBox(box: FixedBox, palette: number, hiddenFaces: number): boolean {
+      const faceCount = 6 - countBits(hiddenFaces & 0b11_1111);
+      if (faceCount > this.remainingQuads) return false;
+      if (quadCount + faceCount > s.capacityQuads) growScratch(s, quadCount + faceCount);
+      quadCount += writeDetailBox(s, quadCount, box, palette, hiddenFaces);
+      for (let axis = 0; axis < 3; axis++) {
+        if (box.min[axis] < boundsMin[axis]) boundsMin[axis] = box.min[axis];
+        if (box.max[axis] > boundsMax[axis]) boundsMax[axis] = box.max[axis];
+      }
+      return true;
+    },
+  };
+  const detailQuadCount = appendMicroGeometry(padded, writer);
+
   if (quadCount === 0) {
     return {
-      positions: EMPTY_U16,
+      positions: EMPTY_I16,
       faces: EMPTY_U8,
       palettes: EMPTY_U8,
       surfaces: EMPTY_U8,
       ao: EMPTY_U8,
       indices: EMPTY_U32,
+      detailQuadCount: 0,
       quadCount: 0,
       min: [0, 0, 0],
       max: [0, 0, 0],
@@ -289,13 +318,22 @@ export function greedyMesh(padded: Uint8Array, scratch?: MeshScratch): MeshArray
     surfaces: s.surfaces.slice(0, vertexCount),
     ao: s.ao.slice(0, vertexCount),
     indices: s.indices.slice(0, quadCount * 6),
+    detailQuadCount,
     quadCount,
-    min: [boundsMin[0], boundsMin[1], boundsMin[2]],
-    max: [boundsMax[0], boundsMax[1], boundsMax[2]],
+    min: [
+      boundsMin[0] / MESH_UNITS_PER_VOXEL,
+      boundsMin[1] / MESH_UNITS_PER_VOXEL,
+      boundsMin[2] / MESH_UNITS_PER_VOXEL,
+    ],
+    max: [
+      boundsMax[0] / MESH_UNITS_PER_VOXEL,
+      boundsMax[1] / MESH_UNITS_PER_VOXEL,
+      boundsMax[2] / MESH_UNITS_PER_VOXEL,
+    ],
   };
 }
 
-const EMPTY_U16 = new Uint16Array(0);
+const EMPTY_I16 = new Int16Array(0);
 const EMPTY_U8 = new Uint8Array(0);
 const EMPTY_U32 = new Uint32Array(0);
 
@@ -329,4 +367,63 @@ function packFace(block: number, pn: number, su: number, sv: number, padded: Uin
     (ao11 << AO_11_SHIFT) |
     (ao01 << AO_01_SHIFT) |
     (blockSurface(block) << SURFACE_SHIFT);
+}
+
+function countBits(value: number): number {
+  let bits = value;
+  let count = 0;
+  while (bits !== 0) {
+    bits &= bits - 1;
+    count++;
+  }
+  return count;
+}
+
+/** Scrive i lati visibili di un prisma ortogonale negli stessi buffer del greedy pass. */
+function writeDetailBox(
+  scratch: MeshScratch,
+  startQuad: number,
+  box: FixedBox,
+  palette: number,
+  hiddenFaces: number,
+): number {
+  let written = 0;
+  for (let face = 0; face < 6; face++) {
+    if ((hiddenFaces & (1 << face)) !== 0) continue;
+    const d = Math.floor(face / 2);
+    const positive = (face & 1) === 0;
+    const axisU = (d + 1) % 3;
+    const axisV = (d + 2) % 3;
+    const normal = positive ? box.max[d] : box.min[d];
+    const uMin = box.min[axisU];
+    const uMax = box.max[axisU];
+    const vMin = box.min[axisV];
+    const vMax = box.max[axisV];
+    const corners = positive
+      ? [[uMin, vMin], [uMax, vMin], [uMax, vMax], [uMin, vMax]]
+      : [[uMin, vMin], [uMin, vMax], [uMax, vMax], [uMax, vMin]];
+    const quad = startQuad + written;
+    const vertexBase = quad * 4;
+
+    for (let corner = 0; corner < 4; corner++) {
+      const positionOffset = (vertexBase + corner) * 3;
+      scratch.positions[positionOffset + d] = normal;
+      scratch.positions[positionOffset + axisU] = corners[corner][0];
+      scratch.positions[positionOffset + axisV] = corners[corner][1];
+      scratch.faces[vertexBase + corner] = face;
+      scratch.palettes[vertexBase + corner] = palette;
+      scratch.surfaces[vertexBase + corner] = SURFACE_KIND.utility;
+      scratch.ao[vertexBase + corner] = 3;
+    }
+
+    const indexOffset = quad * 6;
+    scratch.indices[indexOffset] = vertexBase;
+    scratch.indices[indexOffset + 1] = vertexBase + 1;
+    scratch.indices[indexOffset + 2] = vertexBase + 2;
+    scratch.indices[indexOffset + 3] = vertexBase;
+    scratch.indices[indexOffset + 4] = vertexBase + 2;
+    scratch.indices[indexOffset + 5] = vertexBase + 3;
+    written++;
+  }
+  return written;
 }

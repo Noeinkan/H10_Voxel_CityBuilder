@@ -68,7 +68,7 @@ Sono contratti su cui il resto del progetto è costruito, e i test li verificano
 5. **32 slot di palette esatti**, fissati dall'uniform `vec3[32]`. Chi aggiunge
    materiali riusa gli indici in [paletteSlots.ts](src/engine/paletteSlots.ts).
 6. **Il mesher non conosce Three.js** e nemmeno il generatore di terreno: i
-   worker in bundle pesano 3,49 kB e 5,41 kB proprio per questo.
+   worker in bundle pesano 8,64 kB e 5,77 kB proprio per questo.
 7. **`src/sim/` non importa Three.js e non importa da `src/engine/`.**
 8. **`tick` è puro**: nessuna mutazione dell'input, nessun `Date.now()`, nessun
    `Math.random()`, e non tocca il campo di desiderabilità.

@@ -75,7 +75,7 @@ API pubblica, e produce in parallelo una mappa 2D per colonna.
 | [IslandGenerator.ts](src/world/terrain/IslandGenerator.ts) | `generateIsland`, `expandIsland`, colonne e decorazioni | `generateIsland`, `expandIsland`, `generateColumnBlock`, `writeBlockColumns`, `writeBlockDecor` |
 | [TerrainMap.ts](src/world/terrain/TerrainMap.ts) | Mappa sparsa per colonna, chunkata 32×32 come il mondo | `TerrainMap`, `TerrainColumn`, `TerrainColumnChunk` |
 | [terrainMessages.ts](src/world/terrain/terrainMessages.ts) | Protocollo main ↔ worker | `TerrainJob`, `BlockMessage`, `DoneMessage` |
-| [terrain.worker.ts](src/world/terrain/terrain.worker.ts) | Generazione fuori dal main thread, un blocco per volta (5,41 kB in bundle) | — |
+| [terrain.worker.ts](src/world/terrain/terrain.worker.ts) | Generazione fuori dal main thread, un blocco per volta (5,77 kB in bundle) | — |
 | [TerrainStreamer.ts](src/world/terrain/TerrainStreamer.ts) | Riceve i blocchi e li applica a budget di frame; è un `SceneGenerator` | `TerrainStreamer` |
 | [BiomeView.ts](src/world/terrain/BiomeView.ts) | Ricolore delle colonne per bioma, a passi con budget (tasto `B`) | `BiomeView` |
 
@@ -120,10 +120,11 @@ uniform e stato del renderer: nessuna geometria viene toccata.
 
 | File | Ruolo | Esporta |
 | --- | --- | --- |
-| [greedyMesher.ts](src/engine/mesher/greedyMesher.ts) | Greedy meshing, scratch riusato fra job | `greedyMesh`, `createScratch`, `MeshScratch`, `MAX_QUADS_PER_CHUNK` |
+| [greedyMesher.ts](src/engine/mesher/greedyMesher.ts) | Greedy meshing, scratch riusato fra job | `greedyMesh`, `createScratch`, `MeshScratch`, `MAX_QUADS_PER_CHUNK`, `MAX_BASE_QUADS_PER_CHUNK` |
+| [microGeometry.ts](src/engine/mesher/microGeometry.ts) | Prismi sci-fi a 1/16 di voxel accodati al greedy pass | `appendMicroGeometry`, `MicroGeometryWriter`, `FixedBox`, `MAX_DETAIL_QUADS_PER_CHUNK` |
 | [buildPaddedVolume.ts](src/engine/mesher/buildPaddedVolume.ts) | Chunk + tutti i 26 vicini immediati → volume 34³ | `buildPaddedVolume` |
-| [meshTypes.ts](src/engine/mesher/meshTypes.ts) | Job e risultato, array trasferibili | `MeshJob`, `MeshArrays`, `MeshResult` |
-| [mesher.worker.ts](src/engine/mesher/mesher.worker.ts) | Il worker (3,49 kB in bundle) | — |
+| [meshTypes.ts](src/engine/mesher/meshTypes.ts) | Job e risultato, array trasferibili | `MeshJob`, `MeshArrays`, `MeshResult`, `MESH_UNITS_PER_VOXEL` |
+| [mesher.worker.ts](src/engine/mesher/mesher.worker.ts) | Il worker (8,64 kB in bundle) | — |
 
 ## `src/sim/` — simulazione a tick
 
@@ -212,6 +213,7 @@ giocabile; gli overlay tecnici si alternano con `F3` o partono aperti con
 | [world/terrain/TerrainMap.test.ts](src/world/terrain/TerrainMap.test.ts) | Mappa per colonna, istogramma, chunking |
 | [engine/mesher/greedyMesher.test.ts](src/engine/mesher/greedyMesher.test.ts) | Fusione dei quad, orientamento delle facce, casi limite |
 | [engine/mesher/buildPaddedVolume.test.ts](src/engine/mesher/buildPaddedVolume.test.ts) | Piani, spigoli e angoli del padding |
+| [engine/mesher/microGeometry.test.ts](src/engine/mesher/microGeometry.test.ts) | Unità fisse, facce nascoste, testate condivise, priorità e limite |
 | [engine/palette.test.ts](src/engine/palette.test.ts) | 32 slot, validazione dei colori |
 | [engine/themes/themes.test.ts](src/engine/themes/themes.test.ts) | Ogni tema riempie i 32 slot, atmosfera in range |
 | [world/terrain/decor.test.ts](src/world/terrain/decor.test.ts) | Alberi deterministici, biomi esclusi e chiome non sovrapposte |
@@ -237,7 +239,7 @@ giocabile; gli overlay tecnici si alternano con `F3` o partono aperti con
 | [sim/trade.test.ts](src/sim/trade.test.ts) | Prerequisito del porto e priorità commerciali |
 | [sim/nextBuildSites.test.ts](src/sim/nextBuildSites.test.ts) | Ordinamento, filtri di edificabilità |
 | [sim/simPerf.test.ts](src/sim/simPerf.test.ts) | Tick sotto 3 ms, zero celle ricalcolate, costo indipendente dalla mappa |
-| [engine/mesher/greedyMesher.bench.ts](src/engine/mesher/greedyMesher.bench.ts) | Costo per chunk: vuoto, edifici, pieno, rumore, scacchiera |
+| [engine/mesher/greedyMesher.bench.ts](src/engine/mesher/greedyMesher.bench.ts) | Costo per chunk: vuoto, edifici, edifici sci-fi, pieno, rumore, scacchiera |
 | [sim/sim.bench.ts](src/sim/sim.bench.ts) | `tick`, catalizzatore, policy, `nextBuildSites` |
 
 ## Parametri URL

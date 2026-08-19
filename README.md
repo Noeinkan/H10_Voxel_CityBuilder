@@ -61,7 +61,7 @@ aggiungendo chunk alla mappa sparsa.
   geometria (0..3), non un colore: cambia la luce degli angoli senza invalidare
   i temi.
 - **Il mesher non conosce Three.js.** Nel bundle di produzione il worker pesa
-  3,49 kB proprio perché non se lo trascina dietro.
+  8,64 kB proprio perché non se lo trascina dietro.
 
 ## Parametri URL
 
@@ -323,6 +323,40 @@ nextBuildSites(state, terrainMap, 10);  // [{ x, y, class, score }, …]
 Con `?debug=1&sim=1` la scena genera l'isola, piazza i catalizzatori da script e
 materializza un nucleo di 24 edifici voxel; l'overlay mostra stock e delta per
 tick, stato del builder, heatmap del campo per classe e i prossimi dieci candidati.
+
+## Microgeometria sci-fi
+
+Il mesher usa coordinate intere firmate in unita' di `1/16` di voxel. I dettagli
+architettonici — portali, parapetti, cornici luminose, mensole, nervature e lame
+— vengono accodati alla geometria greedy dello stesso chunk: nessuna draw call in
+piu', nessuna geometria separata, continuita' letta dal volume paddato. In
+`?debug=1` la riga `detail` dell'overlay separa questi quad dal totale.
+
+Un dettaglio non e' mai un prisma per voxel, ma un prisma per **corsa** di voxel
+contigui che chiedono lo stesso dettaglio: le facce interne alla corsa non
+sarebbero comunque visibili, quindi fondere non cambia un pixel e vale circa un
+fattore tre sui chunk edificati.
+
+**Quanto costa in geometria.** Il vocabolario e' denso, e il conto e' esatto e
+deterministico — non e' una misura di tempo:
+
+| Scena | Riempimento | Quad base | Quad di dettaglio | Totale |
+| --- | --- | --- | --- | --- |
+| isolato fitto, 42 edifici in un chunk | 10,4% | 3 021 | 13 890 | +460% |
+| isolato rado, edifici distanziati | 3,0% | 861 | 3 985 | +463% |
+
+Il rapporto non dipende dalla densita': e' una proprieta' delle regole, non della
+scena. Il tetto di `MAX_DETAIL_QUADS_PER_CHUNK` sta a 16 384 apposta per restare
+**sopra** il caso denso e non troncare mai per davvero: troncare significa
+fermarsi per priorita', cioe' far sparire industrial e civic a meta' chunk. Il
+tetto serve solo a limitare la patologia — voxel isolati a scacchiera, dove
+nessuna corsa fonde.
+
+**Quanto costa in tempo.** Il meshing di un chunk edificato rallenta in modo
+misurabile: circa **+45%** su un chunk rado e **+140%** su quello fitto, in un
+A/B sulla stessa macchina e nella stessa run. Le tabelle di misura qui sopra sono
+verificate a mano e **non** tengono ancora conto della microgeometria: vanno
+rifatte sulla scena vera prima di considerarle valide.
 
 ## Fuori scope in questo prompt
 

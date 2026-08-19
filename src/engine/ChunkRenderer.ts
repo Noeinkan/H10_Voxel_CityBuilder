@@ -8,7 +8,7 @@ import {
   Mesh,
   ShaderMaterial,
   Sphere,
-  Uint16BufferAttribute,
+  Int16BufferAttribute,
   Uint32BufferAttribute,
   Uint8BufferAttribute,
   Vector3,
@@ -25,6 +25,7 @@ interface ChunkMeshEntry {
   /** AABB in coordinate di mondo, per il frustum culling. */
   readonly box: Box3;
   bytes: number;
+  detailQuads: number;
   appliedJobId: number;
 }
 
@@ -46,6 +47,7 @@ export interface ChunkRendererStats {
   readonly inFlight: number;
   readonly geometryBytes: number;
   readonly quads: number;
+  readonly detailQuads: number;
 }
 
 /** Numero massimo di geometrie caricate per frame, oltre al budget di tempo. */
@@ -83,6 +85,7 @@ export class ChunkRenderer {
 
   private geometryBytes = 0;
   private quadTotal = 0;
+  private detailQuadTotal = 0;
   private visibleCount = 0;
 
   constructor(world: VoxelWorld, material: ShaderMaterial, voxelSize: number, pool = new MesherPool()) {
@@ -111,6 +114,7 @@ export class ChunkRenderer {
       inFlight: this.pool.inFlight,
       geometryBytes: this.geometryBytes,
       quads: this.quadTotal,
+      detailQuads: this.detailQuadTotal,
     };
   }
 
@@ -167,6 +171,7 @@ export class ChunkRenderer {
     this.pendingSet.clear();
     this.geometryBytes = 0;
     this.quadTotal = 0;
+    this.detailQuadTotal = 0;
     this.pool.dispose();
   }
 
@@ -249,7 +254,7 @@ export class ChunkRenderer {
     if (chunk === undefined) return;
 
     const geometry = new BufferGeometry();
-    geometry.setAttribute('position', new Uint16BufferAttribute(result.positions, 3));
+    geometry.setAttribute('position', new Int16BufferAttribute(result.positions, 3));
     geometry.setAttribute('aFace', new Uint8BufferAttribute(result.faces, 1));
     geometry.setAttribute('aPalette', new Uint8BufferAttribute(result.palettes, 1));
     geometry.setAttribute('aSurface', new Uint8BufferAttribute(result.surfaces, 1));
@@ -296,10 +301,12 @@ export class ChunkRenderer {
         geometry,
         box,
         bytes,
+        detailQuads: result.detailQuadCount,
         appliedJobId: result.jobId,
       });
       this.geometryBytes += bytes;
       this.quadTotal += result.quadCount;
+      this.detailQuadTotal += result.detailQuadCount;
       return;
     }
 
@@ -310,7 +317,9 @@ export class ChunkRenderer {
     existing.box.set(localMin.add(existing.mesh.position), localMax.add(existing.mesh.position));
     this.geometryBytes += bytes - existing.bytes;
     this.quadTotal += result.quadCount - previousQuads;
+    this.detailQuadTotal += result.detailQuadCount - existing.detailQuads;
     existing.bytes = bytes;
+    existing.detailQuads = result.detailQuadCount;
     existing.appliedJobId = result.jobId;
   }
 
@@ -324,5 +333,6 @@ export class ChunkRenderer {
     this.entries.delete(key);
     this.geometryBytes -= entry.bytes;
     this.quadTotal -= quads;
+    this.detailQuadTotal -= entry.detailQuads;
   }
 }

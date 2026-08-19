@@ -801,6 +801,7 @@ function buildOverlayFrame(mainMs: number, renderMs: number, frameMs: number): O
     queued: stats.queued,
     inFlight: stats.inFlight,
     quads: stats.quads,
+    detailQuads: stats.detailQuads,
     solidVoxels: world.solidVoxelCount,
     mesherLastMs: mesher.lastMs,
     mesherAvgMs: mesher.avgMs,

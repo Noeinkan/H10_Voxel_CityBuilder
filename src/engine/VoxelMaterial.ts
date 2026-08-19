@@ -1,6 +1,7 @@
 import { Color, FrontSide, ShaderMaterial, SRGBColorSpace } from 'three';
 import { PALETTE_SIZE, toPaletteArray } from './palette';
 import { PALETTE_SLOTS } from './paletteSlots';
+import { MESH_UNITS_PER_VOXEL } from './mesher/meshTypes';
 import type { Atmosphere } from './themes/theme';
 import { SURFACE_KIND } from '../world/visualBlock';
 
@@ -11,9 +12,10 @@ import { SURFACE_KIND } from '../world/visualBlock';
  * portano l'indice (`aPalette`) e la direzione della faccia (`aFace`), mai un
  * colore RGB. Nessun materiale PBR, nessuna texture, nessuna luce dinamica.
  *
- * Il lookup nell'array di uniform sta nel vertex shader, dove GLSL ES 1.0
- * garantisce l'indicizzazione dinamica. I quattro vertici di un quad condividono
- * indice e faccia, quindi il varying resta costante: shading piatto esatto.
+ * Il lookup dinamico principale sta nel vertex shader. Il fragment shader usa
+ * inoltre slot costanti della stessa palette per i dettagli di superficie. I
+ * quattro vertici di un quad condividono indice e faccia, quindi il varying
+ * resta costante: shading piatto esatto.
  *
  * Cambiare tema riscrive solo uniform: nessuna geometria viene toccata, nessun
  * programma viene ricompilato.
@@ -58,7 +60,7 @@ varying vec2 vWorldXY;
 varying vec3 vWorldPosition;
 
 void main() {
-  // position arriva come Uint16 in coordinate locali di chunk (0..32).
+  // position arriva come Int16 in sedicesimi di voxel, incluse le sporgenze.
   int paletteIndex = int(aPalette + 0.5);
   int faceIndex = int(aFace + 0.5);
   float faceLight = uFaceLight[faceIndex];
@@ -69,7 +71,7 @@ void main() {
   if (isGlass) color = mix(color, uGlassTint, uGlassLift);
   vAO = mix(1.0 - uAoStrength, 1.0, aAO / 3.0);
 
-  vec4 worldPosition = modelMatrix * vec4(position * uVoxelSize, 1.0);
+  vec4 worldPosition = modelMatrix * vec4(position * (uVoxelSize / ${MESH_UNITS_PER_VOXEL}.0), 1.0);
   float heightMix = smoothstep(uHeightStart, max(uHeightStart + 0.001, uHeightEnd), worldPosition.z);
   vColor = mix(color, color * uHeightTint, heightMix * uHeightStrength);
   vPaletteIndex = aPalette;
@@ -85,6 +87,7 @@ void main() {
 `;
 
 const fragmentShader = /* glsl */ `
+uniform vec3 uPalette[${PALETTE_SIZE}];
 uniform vec3 uFogColor;
 uniform float uFogDensity;
 uniform float uTime;
@@ -177,9 +180,9 @@ void main() {
       detailed = mix(detailed, uPalette[${PALETTE_SLOTS.metalDark}] * 0.75, circuit * 0.34);
       emission += uPalette[${PALETTE_SLOTS.metalBrass}] * circuit * step(0.58, variation) * 0.18;
     } else {
-      float warning = step(0.52, fract((uv.x + uv.y) * 4.0));
-      detailed = mix(detailed, uPalette[${PALETTE_SLOTS.metalDark}] * 0.76, warning * 0.3);
-      emission += uPalette[${PALETTE_SLOTS.metalBrass}] * panelEdge * 0.12;
+      // utility e' metallo strutturale uniforme: la forma arriva dalla mesh,
+      // non da un warning pattern dipinto sulla superficie.
+      detailed = mix(detailed, uPalette[${PALETTE_SLOTS.metalDark}] * 0.78, 0.28);
     }
   }
 

@@ -13,10 +13,13 @@ export interface MeshJob {
   readonly padded: Uint8Array;
 }
 
-/** Geometria grezza prodotta dal mesher, in coordinate locali di chunk (0..32). */
+/** Unita' intere usate dalla mesh per rappresentare un voxel senza float. */
+export const MESH_UNITS_PER_VOXEL = 16;
+
+/** Geometria grezza prodotta dal mesher, in coordinate locali di chunk. */
 export interface MeshArrays {
-  /** 3 componenti per vertice, valori 0..32. */
-  readonly positions: Uint16Array;
+  /** 3 componenti per vertice, in unita' di 1/16 di voxel; ammette sporgenze dal chunk. */
+  readonly positions: Int16Array;
   /** 1 componente per vertice: direzione di faccia 0..5 (FACE_* di chunkCoords). */
   readonly faces: Uint8Array;
   /** 1 componente per vertice: indice di palette 1..31. */
@@ -27,6 +30,8 @@ export interface MeshArrays {
   readonly ao: Uint8Array;
   /** 6 indici per quad. */
   readonly indices: Uint32Array;
+  /** Quad aggiunti dopo il greedy pass; `quadCount` resta il totale renderizzato. */
+  readonly detailQuadCount: number;
   readonly quadCount: number;
   /** AABB effettiva della geometria in coordinate locali, per il culling. */
   readonly min: readonly [number, number, number];
@@ -37,7 +42,7 @@ export interface MeshArrays {
 export interface MeshResult extends MeshArrays {
   readonly jobId: number;
   readonly key: string;
-  /** Tempo speso dal solo greedy meshing, in millisecondi. */
+  /** Tempo speso dal meshing completo, microgeometria inclusa, in millisecondi. */
   readonly meshMs: number;
   /** Il buffer di input, restituito al chiamante per essere riusato. */
   readonly padded: Uint8Array;

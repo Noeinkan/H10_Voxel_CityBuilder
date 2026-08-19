@@ -28,6 +28,7 @@ export interface OverlayFrame {
   readonly queued: number;
   readonly inFlight: number;
   readonly quads: number;
+  readonly detailQuads: number;
   readonly solidVoxels: number;
   readonly mesherLastMs: number;
   readonly mesherAvgMs: number;
@@ -108,6 +109,7 @@ export class DebugOverlay {
       `draw call  ${frame.drawCalls.toString().padStart(6)}`,
       `triangles  ${format(frame.triangles).padStart(6)}`,
       `quad       ${format(frame.quads).padStart(6)}`,
+      `detail     ${format(frame.detailQuads).padStart(6)}`,
       `geometry   ${mb(frame.geometryBytes).padStart(6)} MB`,
       '',
       `chunk      ${frame.chunksAllocated.toString().padStart(6)} allocated`,
