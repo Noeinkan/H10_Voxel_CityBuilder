@@ -74,16 +74,28 @@ export const BALANCE = {
   gameplay: {
     catalyst: {
       /** Distanza di Chebyshev minima fra catalizzatori dello stesso ruolo. */
-      minDistance: 10,
-      /** Costo, intensita' al centro e raggio di ciascun ruolo. */
+      minDistance: 20,
+      /**
+       * Costo, intensita' al centro e raggio di ciascun ruolo.
+       *
+       * **I raggi sono raddoppiati per conversione di unita', non per
+       * bilanciamento.** Il voxel di contenuto vale meta' di quanto valeva:
+       * un raggio di 22 copriva un certo numero di isolati, e per continuare a
+       * coprirne altrettanti deve valere 44 voxel. Lasciarli fermi avrebbe
+       * dimezzato la portata di ogni catalizzatore senza che nessuno lo avesse
+       * deciso.
+       *
+       * `cost` e `strength` **non** si toccano: il primo e' denaro, il secondo
+       * un'ampiezza di campo. Nessuno dei due e' una distanza.
+       */
       roles: {
-        market: { cost: 120, strength: 210, radius: 22 },
-        factory: { cost: 150, strength: 205, radius: 20 },
-        park: { cost: 200, strength: 195, radius: 18 },
-        port: { cost: 320, strength: 190, radius: 24 },
-        transport: { cost: 240, strength: 185, radius: 26 },
-        university: { cost: 360, strength: 200, radius: 21 },
-        monument: { cost: 440, strength: 215, radius: 20 },
+        market: { cost: 120, strength: 210, radius: 44 },
+        factory: { cost: 150, strength: 205, radius: 40 },
+        park: { cost: 200, strength: 195, radius: 36 },
+        port: { cost: 320, strength: 190, radius: 48 },
+        transport: { cost: 240, strength: 185, radius: 52 },
+        university: { cost: 360, strength: 200, radius: 42 },
+        monument: { cost: 440, strength: 215, radius: 40 },
       },
 
       /**
@@ -119,8 +131,14 @@ export const BALANCE = {
     expansion: {
       cost: 500,
       population: 48,
-      /** Lato di un settore costiero, allineato a due chunk. */
-      size: 64,
+      /**
+       * Lato di un settore costiero, allineato a quattro chunk.
+       *
+       * Segue il lato dell'isola: e' una frazione della costa, non una misura
+       * assoluta, e a isola raddoppiata un settore da 64 avrebbe comprato un
+       * ottavo di quello che comprava prima.
+       */
+      size: 128,
     },
     success: {
       population: 120,
@@ -365,11 +383,15 @@ export const BALANCE = {
 
   desirability: {
     /**
-     * Raggio breve, in celle, entro cui gli edifici gia' presenti generano
+     * Raggio breve, in colonne, entro cui gli edifici gia' presenti generano
      * congestione. Sta anche sul percorso incrementale: aggiungere un edificio
      * ricalcola esattamente il quadrato di Chebyshev di questo raggio.
+     *
+     * Raddoppiato con la scala del voxel, per la stessa ragione dei raggi dei
+     * catalizzatori: e' una distanza. `congestionPerBuilding` invece e' punti di
+     * desiderabilita' e resta dov'era.
      */
-    congestionRadius: 3,
+    congestionRadius: 6,
     /** Punti di desiderabilita' sottratti per ogni edificio nel raggio breve. */
     congestionPerBuilding: 6,
     /**

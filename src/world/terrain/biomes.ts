@@ -37,12 +37,18 @@ export function isBuildable(biome: number, slope: number): boolean {
 }
 
 /**
- * Indice di palette per una cella della colonna, data la profondita' sotto la
- * superficie (0 = voxel di superficie).
+ * Indice di palette per un voxel della colonna, data la profondita' sotto la
+ * superficie (0 = voxel piu' alto).
+ *
+ * La superficie e' spessa una cella, non un voxel. Dall'alto la differenza non
+ * si vede; di taglio, su un gradino di terreno, e' cio' che tiene il prato alto
+ * quanto il cubo che lo porta invece di lasciargli sotto una riga di terra da
+ * un voxel — lo stesso dettaglio a scala sbagliata che il terreno a celle
+ * esiste per togliere.
  */
 export function paletteForDepth(biome: number, depth: number): number {
   const strata = BIOME_STRATA[biome];
-  if (depth === 0) return strata.surface;
-  if (depth <= TERRAIN.subsoilDepth) return strata.subsoil;
+  if (depth < TERRAIN.cellSize) return strata.surface;
+  if (depth < TERRAIN.cellSize + TERRAIN.subsoilDepth) return strata.subsoil;
   return strata.deep;
 }

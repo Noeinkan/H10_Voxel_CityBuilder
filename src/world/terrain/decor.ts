@@ -29,6 +29,16 @@ export interface TreeSpec {
   readonly canopyRadius: number;
 }
 
+/**
+ * Scostamento dell'origine dentro la cella, in voxel.
+ *
+ * Parte da `ring` perche' e' la chioma a decidere il margine: sotto quel valore
+ * l'albero sporgerebbe dalla propria cella e finirebbe addosso al vicino.
+ */
+function treeJitter(random: () => number): number {
+  return TREE_DECOR.ring + Math.floor(random() * TREE_DECOR.jitterSize);
+}
+
 /** Origine jitterata, indipendente da bioma e quota: serve al generatore per campionarle. */
 export function treeOrigin(seed: number, cellX: number, cellY: number): readonly [number, number] {
   const random = mulberry32(hashCoords(seed, cellX, cellY));
@@ -36,8 +46,8 @@ export function treeOrigin(seed: number, cellX: number, cellY: number): readonly
   // funzione leggono lo stesso flusso senza introdurre uno stato condiviso.
   random();
   return [
-    cellX * TREE_DECOR.cellSize + 2 + Math.floor(random() * TREE_DECOR.jitterSize),
-    cellY * TREE_DECOR.cellSize + 2 + Math.floor(random() * TREE_DECOR.jitterSize),
+    cellX * TREE_DECOR.cellSize + treeJitter(random),
+    cellY * TREE_DECOR.cellSize + treeJitter(random),
   ];
 }
 
@@ -59,8 +69,8 @@ export function treeAt(
   const random = mulberry32(hashCoords(seed, cellX, cellY));
   if (random() >= TREE_DECOR.density[biome]) return null;
 
-  const x = cellX * TREE_DECOR.cellSize + 2 + Math.floor(random() * TREE_DECOR.jitterSize);
-  const y = cellY * TREE_DECOR.cellSize + 2 + Math.floor(random() * TREE_DECOR.jitterSize);
+  const x = cellX * TREE_DECOR.cellSize + treeJitter(random);
+  const y = cellY * TREE_DECOR.cellSize + treeJitter(random);
   const species = Math.floor(random() * TREE_SHAPES.length);
   const shape = TREE_SHAPES[species];
   const trunkHeight = shape.trunk[0] + Math.floor(random() * shape.trunk[1]);
@@ -112,6 +122,10 @@ export function writeTree(
     written++;
   };
 
+  // Tronco di un voxel. Ingrossarlo con la scala sembrava dovuto e invece no:
+  // due voxel su una chioma larga nove leggono come un pilastro, e comunque il
+  // tronco si vede solo sotto la chioma, dove la parte che conta e' l'ombra che
+  // proietta, non la sua sezione.
   for (let z = groundZ; z < groundZ + tree.trunkHeight; z++) {
     put(tree.x, tree.y, z, PALETTE_SLOTS.wood);
   }
@@ -120,19 +134,70 @@ export function writeTree(
   // sono interni e non si vedono, e costa meno che ritagliarli.
   const shape = TREE_SHAPES[tree.species];
   const baseZ = canopyBaseZ(shape, groundZ, tree.trunkHeight);
+
+  // Un PRNG per albero, derivato dalla posizione e non conservato nel record
+  // decor: due blocchi che si dividono lo stesso albero a cavallo di una
+  // cucitura ne ricavano la stessa sequenza, quindi ne disegnano meta' coerenti.
+  // Le estrazioni non dipendono dal rettangolo di ritaglio — `put` scarta dopo
+  // aver tirato — che e' cio' che rende vera quella coerenza.
+  const random = mulberry32(hashCoords(tree.x, tree.y, tree.species));
+
   for (let level = 0; level < shape.canopy.length; level++) {
     const { radius, cut, tone } = shape.canopy[level];
     const leaf = shape.tones[tone];
     const z = baseZ + level;
-    for (let y = tree.y - radius; y <= tree.y + radius; y++) {
-      for (let x = tree.x - radius; x <= tree.x + radius; x++) {
-        // Smussa gli angoli senza forme dedicate ne' randomness extra.
-        if (Math.abs(x - tree.x) + Math.abs(y - tree.y) > cut) continue;
+
+    // Il livello puo' pendere solo di quanto avanza fra il suo raggio e quello
+    // della specie: l'ingombro dichiarato resta vero, e due chiome vicine non
+    // arrivano a toccarsi nemmeno quando pendono l'una verso l'altra.
+    const lean = Math.min(TREE_DECOR.maxLean, tree.canopyRadius - radius);
+    const cx = tree.x + pickLean(random, lean);
+    const cy = tree.y + pickLean(random, lean);
+
+    // `cut` smussa gli angoli senza forme dedicate: a `cut === radius` esce un
+    // rombo, a `2 * radius` il quadrato pieno, in mezzo tutte le vie di mezzo.
+    const inShape = (px: number, py: number): boolean => {
+      const dx = Math.abs(px - cx);
+      const dy = Math.abs(py - cy);
+      return dx <= radius && dy <= radius && dx + dy <= cut;
+    };
+
+    for (let y = cy - radius; y <= cy + radius; y++) {
+      for (let x = cx - radius; x <= cx + radius; x++) {
+        if (!inShape(x, y)) continue;
+
+        // La pelle esterna del livello — i voxel che hanno almeno un vicino
+        // fuori forma — viene mangiata a caso. E' cio' che toglie alla chioma
+        // l'aria di solido geometrico: senza, a raggio quattro un ottagono
+        // esatto si legge come un cristallo e non come un albero. Rosicchiare
+        // il bordo e non l'interno tiene la chioma piena e la silhouette rotta,
+        // che e' esattamente il verso giusto.
+        //
+        // L'asse della chioma non si mangia mai: su un livello piccolo — la
+        // punta di una conifera e' un voxel solo — l'erosione lo decapiterebbe,
+        // e `treeTop` smetterebbe di essere la quota che l'albero raggiunge
+        // davvero. Ogni livello scrive quindi almeno il proprio centro.
+        const onSkin = (x !== cx || y !== cy) &&
+          (!inShape(x + 1, y) || !inShape(x - 1, y) ||
+            !inShape(x, y + 1) || !inShape(x, y - 1));
+        if (onSkin) {
+          if (random() < TREE_DECOR.edgeErosion) continue;
+          // Quel che resta del bordo prende il tono piu' chiaro: chiude la
+          // chioma come volume invece che come profilo tagliato di netto.
+          put(x, y, z, shape.tones[Math.min(tone + 1, shape.tones.length - 1)]);
+          continue;
+        }
         put(x, y, z, leaf);
       }
     }
   }
   return written;
+}
+
+/** Scostamento intero in `[-lean, lean]`. A `lean` zero non consuma varieta'. */
+function pickLean(random: () => number, lean: number): number {
+  if (lean <= 0) return 0;
+  return Math.floor(random() * (2 * lean + 1)) - lean;
 }
 
 /** I biomi che devono restare senza alberi, esposti per test e documentazione. */

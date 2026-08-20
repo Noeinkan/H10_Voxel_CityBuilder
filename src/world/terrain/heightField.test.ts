@@ -3,7 +3,9 @@ import { TERRAIN } from './config';
 import { HeightField } from './heightField';
 import { shapeFromRegion } from './region';
 
-const ISLAND = { minX: 0, minY: 0, sizeX: 256, sizeY: 256 };
+// La calibrazione verticale di `TERRAIN` e' tarata su un'isola di lato 512:
+// e' quella la dimensione su cui i criteri qui sotto devono valere.
+const ISLAND = { minX: 0, minY: 0, sizeX: 512, sizeY: 512 };
 const SHAPE = shapeFromRegion(ISLAND);
 
 /** Otto seed sparsi: la calibrazione deve reggere per un seed qualunque. */
@@ -37,8 +39,8 @@ describe('HeightField — determinismo', () => {
     const a = new HeightField(1337, SHAPE);
     const b = new HeightField(1338, SHAPE);
     let differences = 0;
-    for (let i = 0; i < 256; i++) {
-      if (a.heightAt(i, 128) !== b.heightAt(i, 128)) differences++;
+    for (let i = 0; i < 512; i++) {
+      if (a.heightAt(i, 256) !== b.heightAt(i, 256)) differences++;
     }
     expect(differences).toBeGreaterThan(200);
   });
@@ -52,7 +54,7 @@ describe('HeightField — regolarita’', () => {
    * Questo test e' quindi la rete di sicurezza della calibrazione in `config.ts`.
    */
   it('il dislivello fra colonne adiacenti resta sotto 1 voxel, per ogni seed', () => {
-    const size = 256;
+    const size = 512;
     const side = size + 2;
     let worst = 0;
 
@@ -86,7 +88,7 @@ describe('HeightField — regolarita’', () => {
    * che il tetto morda davvero.
    */
   it('il dislivello resta sotto 1 anche su region molto piu’ piccole', () => {
-    for (const size of [64, 96, 128]) {
+    for (const size of [128, 192, 256]) {
       const shape = shapeFromRegion({ minX: 0, minY: 0, sizeX: size, sizeY: size });
       const field = new HeightField(1337, shape);
       const side = size + 2;
@@ -112,7 +114,7 @@ describe('HeightField — regolarita’', () => {
 
   it('un’isola piccola e’ piu’ bassa, non piu’ ripida', () => {
     const big = new HeightField(1337, shapeFromRegion(ISLAND));
-    const small = new HeightField(1337, shapeFromRegion({ minX: 0, minY: 0, sizeX: 64, sizeY: 64 }));
+    const small = new HeightField(1337, shapeFromRegion({ minX: 0, minY: 0, sizeX: 128, sizeY: 128 }));
 
     const peakOf = (field: HeightField, size: number): number => {
       let peak = 0;
@@ -122,15 +124,15 @@ describe('HeightField — regolarita’', () => {
       return peak;
     };
 
-    // Raggio 32 contro 128: il tetto di pendenza taglia il rilievo a un quarto.
-    expect(peakOf(small, 64)).toBeLessThan(peakOf(big, 256) / 2);
-    expect(peakOf(small, 64)).toBeGreaterThan(TERRAIN.seaLevel);
+    // Raggio 64 contro 256: il tetto di pendenza taglia il rilievo a un quarto.
+    expect(peakOf(small, 128)).toBeLessThan(peakOf(big, 512) / 2);
+    expect(peakOf(small, 128)).toBeGreaterThan(TERRAIN.seaLevel);
   });
 
   it('resta nei limiti di quota dichiarati', () => {
     const field = new HeightField(1337, SHAPE);
-    for (let y = -32; y < 288; y += 3) {
-      for (let x = -32; x < 288; x += 3) {
+    for (let y = -64; y < 576; y += 5) {
+      for (let x = -64; x < 576; x += 5) {
         const h = field.heightAt(x, y);
         expect(h).toBeGreaterThanOrEqual(TERRAIN.oceanFloor);
         expect(h).toBeLessThanOrEqual(TERRAIN.maxHeight);
@@ -141,11 +143,11 @@ describe('HeightField — regolarita’', () => {
   it('la maschera radiale porta il bordo della region sotto il livello del mare', () => {
     for (const seed of SEEDS) {
       const field = new HeightField(seed, SHAPE);
-      for (let x = 0; x < 256; x += 1) {
+      for (let x = 0; x < 512; x += 1) {
         expect(field.heightAt(x, 0)).toBeLessThan(TERRAIN.seaLevel);
-        expect(field.heightAt(x, 255)).toBeLessThan(TERRAIN.seaLevel);
+        expect(field.heightAt(x, 511)).toBeLessThan(TERRAIN.seaLevel);
         expect(field.heightAt(0, x)).toBeLessThan(TERRAIN.seaLevel);
-        expect(field.heightAt(255, x)).toBeLessThan(TERRAIN.seaLevel);
+        expect(field.heightAt(511, x)).toBeLessThan(TERRAIN.seaLevel);
       }
     }
   });

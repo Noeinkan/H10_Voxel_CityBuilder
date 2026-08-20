@@ -42,6 +42,7 @@ aggiungendo chunk alla mappa sparsa.
 | [src/engine/themes/](src/engine/themes/) | I temi grafici: 32 colori più l'atmosfera, applicati senza rimeshare |
 | [src/engine/IsoCameraController.ts](src/engine/IsoCameraController.ts) | Ortografica isometrica: scatti di 90°, zoom, pan vincolato |
 | [src/engine/InfluenceOverlay.ts](src/engine/InfluenceOverlay.ts) | Raggi dei catalizzatori e perimetri dei settori sbloccati |
+| [src/engine/PlacementCursor.ts](src/engine/PlacementCursor.ts) | Segnaposto del piazzamento: leggibile a distanza e mai coperto dal rilievo |
 | [src/ui/GameHud.ts](src/ui/GameHud.ts) | HUD Cozy City: risorse, costruzione, policy, tempo e feedback |
 | [src/ui/ControlsHint.ts](src/ui/ControlsHint.ts) | Aiuto contestuale del primo avvio, riapribile con `?` |
 | [src/ui/DebugOverlay.ts](src/ui/DebugOverlay.ts) | Overlay delle misure, attivo con `F3` o `?debug=1` |
@@ -76,7 +77,7 @@ permettono di isolare le scene di verifica.
 | `seed` | `1337` | Seed della generazione |
 | `size` | `512` | Lato del mondo in voxel |
 | `height` | `64` | Altezza del mondo in voxel |
-| `terrain` | — | `<seed>` sostituisce la scena urbana con un'isola 256×256 |
+| `terrain` | — | `<seed>` sostituisce la scena urbana con un'isola 512×512 |
 | `sim` | — | `1` accende la scena di simulazione (implica l'isola) |
 | `theme` | `natural` | `natural`, `pastel`, `neon`, `industrial`, `scifi`, `enchanted`, `diorama` |
 | `grow` | `1` alla radice | `1` avvia esplicitamente l'MVP giocabile |
@@ -106,6 +107,14 @@ shader proietta pannelli, vetri, portali e circuiti sulle coordinate della facci
 quindi il disegno continua attraverso voxel e quad greedy senza nuove draw call.
 
 ## Misure
+
+> ⚠️ **Da rimisurare.** Il passaggio al terreno a celle (`TERRAIN.cellSize`) e
+> alla scala di contenuto raddoppiata ha cambiato il percorso caldo: l'isola è
+> passata da 256 a 512 di lato, un edificio è fatto di circa otto volte i voxel
+> di prima e ce ne stanno circa un quarto per unità d'area, e le celle piatte si
+> fondono nel greedy mesher molto meglio delle colonne a quota libera. La somma
+> di questi effetti non è deducibile: i numeri qui sotto sono quelli *prima* del
+> cambio e vanno rifatti a mano su questa macchina prima di essere citati.
 
 Verificate su questa macchina (Windows 11, Edge headless su renderer software —
 una GPU vera darà numeri migliori, non peggiori), scena `city` a 1600×900.
@@ -255,20 +264,44 @@ cella comunque cada il jitter.
   continua la stessa costa invece di aprire una seconda isola. Senza mappa e
   senza `shape` esplicita si comporta come `generateIsland`.
 
+### Grana: il terreno è fatto di cubi più grossi
+
+Il terreno campiona e quantizza su una cella di `TERRAIN.cellSize` voxel per
+lato — in pianta **e** in quota — mentre edifici e alberi restano a dettaglio di
+un voxel. È l'unica cosa che dà la scala all'isola: con tutto sullo stesso passo
+una chioma d'albero era larga quanto un edificio intero, e non si capiva se una
+casa fosse una casa o un cespuglio.
+
+Dentro una cella quota, bioma, pendenza ed edificabilità sono uguali per
+costruzione. `ColumnBlock` resta però indicizzato **per colonna**: i valori si
+replicano invece di accorciare gli array, così nessun consumatore a valle
+— edificabilità, `TerrainMap`, opere di terra, picking, overlay — sa che la
+grana è cambiata.
+
 ### Calibrazione
 
-Il criterio "due colonne adiacenti non differiscono di più di 1 in altezza" è un
+Il criterio "due celle adiacenti non differiscono di più di una cella" è un
 vincolo di Lipschitz sul campo continuo, non una proprietà delle cuciture: se il
 campo lo rispetta ovunque lo rispetta anche al confine. Le frequenze in
 `config.ts` sono scelte perché il dislivello massimo misurato resti **sotto 0,8**
 su otto seed — margine voluto, così ritoccare il rilievo non fa cadere il
 criterio. `heightField.test.ts` è la rete di sicurezza.
 
+**La verticale è tarata sull'orizzontale.** Il gradiente del campo vale rilievo
+diviso raggio: un'isola larga il doppio con lo stesso rilievo è la stessa
+montagna spalmata su due volte lo spazio — una frittella senza fianchi. La
+taratura attuale vale per un'isola di lato **512**; cambiarlo significa muovere
+insieme le quote assolute e le frequenze del rumore, non solo `TERRAIN_SIZE`.
+
 Due tetti duri stanno nello stesso file: `warpAmount` sopra ~0,26 attaccherebbe
 terra al bordo della region, e alzare `baseFrequency` o `maxHeight` consuma il
 margine di Lipschitz.
 
 ### Misure
+
+> ⚠️ **Da rimisurare**, per le stesse ragioni della tabella principale: questi
+> numeri sono di un'isola 256×256 a grana fine, che non è più la scena che il
+> progetto genera.
 
 Isola 256×256, `?debug=1&terrain=1337`, stessa macchina e stesso renderer
 software delle misure sopra.

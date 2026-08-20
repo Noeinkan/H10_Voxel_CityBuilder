@@ -1,9 +1,6 @@
 import {
   ACESFilmicToneMapping,
-  BoxGeometry,
   Color,
-  Mesh,
-  MeshBasicMaterial,
   NoToneMapping,
   Raycaster,
   Scene,
@@ -14,6 +11,7 @@ import {
 } from 'three';
 import { ChunkRenderer } from './engine/ChunkRenderer';
 import { InfluenceOverlay } from './engine/InfluenceOverlay';
+import { PlacementCursor } from './engine/PlacementCursor';
 import { FrameTiming } from './engine/FrameTiming';
 import { IsoCameraController } from './engine/IsoCameraController';
 import { faceLuminance, sunDirection } from './engine/lighting';
@@ -78,8 +76,17 @@ const GENERATION_BUDGET_MS = 1.5;
 
 const VOXEL_SIZE = 1;
 
-/** Lato dell'isola della scena di debug del terreno, in voxel. */
-const TERRAIN_SIZE = 256;
+/**
+ * Lato dell'isola della scena di debug del terreno, in voxel.
+ *
+ * Raddoppiato insieme alla scala del contenuto. Un edificio ora e' largo il
+ * doppio, quindi a parita' di lato ce ne stavano un quarto e l'isola si leggeva
+ * come uno scoglio: 512 riporta la citta' alla capacita' che aveva, con il
+ * dettaglio nuovo. Il terreno costa quattro volte in colonne, ma le celle piatte
+ * si fondono nel greedy mesher molto meglio delle colonne a quota libera di
+ * prima — la spesa vera va misurata, non dedotta.
+ */
+const TERRAIN_SIZE = 512;
 
 const params = new URLSearchParams(window.location.search);
 const { debugEnabled, growEnabled, simEnabled } = resolveLaunchMode(params);
@@ -149,7 +156,7 @@ const viewDirection = new Vector3();
 
 const camera = new IsoCameraController(world, window.innerWidth, window.innerHeight, {
   voxelSize: VOXEL_SIZE,
-  targetHeight: 6,
+  targetHeight: 12,
 });
 camera.attach(renderer.domElement);
 
@@ -220,10 +227,10 @@ if (terrain === null) {
 } else if (growEnabled) {
   // La crescita deve leggersi come skyline, non come texture sull'intera isola:
   // si inquadra il nucleo centrale lasciando alle torri spazio verticale.
-  camera.frameRegion(TERRAIN_SIZE / 2, TERRAIN_SIZE / 2, 210, 210, 128);
+  camera.frameRegion(TERRAIN_SIZE / 2, TERRAIN_SIZE / 2, 420, 420, 240);
 } else {
-  // L'isola invece si guarda intera: 256 di lato stanno in poche centinaia di chunk.
-  camera.frameRegion(TERRAIN_SIZE / 2, TERRAIN_SIZE / 2, TERRAIN_SIZE, TERRAIN_SIZE, 48);
+  // L'isola invece si guarda intera: 512 di lato stanno in poche centinaia di chunk.
+  camera.frameRegion(TERRAIN_SIZE / 2, TERRAIN_SIZE / 2, TERRAIN_SIZE, TERRAIN_SIZE, 160);
 }
 
 const overlay = new DebugOverlay(container);
@@ -273,7 +280,7 @@ if (growEnabled) {
   gameHud = new GameHud(container, {
     onTool: (tool) => {
       selectedTool = tool;
-      preview.visible = false;
+      preview.hide();
       influenceOverlay?.hideCursor();
     },
       onPolicy: (id) => {
@@ -296,7 +303,7 @@ if (growEnabled) {
     },
     onCancelTool: () => {
       selectedTool = { kind: 'none' };
-      preview.visible = false;
+      preview.hide();
       influenceOverlay?.hideCursor();
       gameHud?.updateCursor(0, 0, null);
     },
@@ -313,11 +320,8 @@ if (growEnabled) {
 
 const picker = new Raycaster();
 const pointer = new Vector2();
-const previewMaterial = new MeshBasicMaterial({ color: 0x65e08a, transparent: true, opacity: 0.48 });
-const preview = new Mesh(new BoxGeometry(1.04, 1.04, 1.04), previewMaterial);
-preview.visible = false;
-preview.renderOrder = 10;
-scene.add(preview);
+const preview = new PlacementCursor();
+scene.add(preview.group);
 
 const influenceOverlay = terrain !== null && growEnabled ? new InfluenceOverlay(terrain.map) : null;
 if (influenceOverlay !== null) scene.add(influenceOverlay.group);
@@ -326,7 +330,7 @@ if (growEnabled) {
   renderer.domElement.addEventListener('pointermove', onGamePointerMove, { capture: true });
   renderer.domElement.addEventListener('pointerdown', onGamePointerDown, { capture: true });
   renderer.domElement.addEventListener('pointerleave', () => {
-    preview.visible = false;
+    preview.hide();
     influenceOverlay?.hideCursor();
     gameHud?.updateCursor(0, 0, null);
   });
@@ -595,6 +599,7 @@ function onFrame(time: number): void {
   renderer.info.reset();
 
   camera.update(dt);
+  preview.update(dt);
 
   if (!generator.done) {
     const generationStart = performance.now();
@@ -787,14 +792,14 @@ function updateGrowth(dt: number): void {
 
 function onGamePointerMove(event: PointerEvent): void {
   if (selectedTool.kind === 'none' || growthScene === null || terrain === null) {
-    preview.visible = false;
+    preview.hide();
     influenceOverlay?.hideCursor();
     gameHud?.updateCursor(0, 0, null);
     return;
   }
   const cell = surfaceCellAt(event);
   if (cell === null) {
-    preview.visible = false;
+    preview.hide();
     influenceOverlay?.hideCursor();
     gameHud?.updateCursor(event.clientX, event.clientY, {
       title: 'No surface',
@@ -804,8 +809,6 @@ function onGamePointerMove(event: PointerEvent): void {
     });
     return;
   }
-  preview.visible = true;
-  preview.position.set(cell.x + 0.5, cell.y + 0.5, cell.z + 0.5);
   let valid = false;
   if (selectedTool.kind === 'catalyst') {
     const catalyst = catalystById(selectedTool.id ?? defaultCatalystOfClass(selectedTool.class));
@@ -838,7 +841,7 @@ function onGamePointerMove(event: PointerEvent): void {
       reason: failure === null ? 'New buildable land connected to the coast.' : actionFailureLabel(failure),
     });
   }
-  previewMaterial.color.setHex(valid ? 0x65e08a : 0xef6b65);
+  preview.show(cell.x, cell.y, cell.z, valid);
 }
 
 function onGamePointerDown(event: PointerEvent): void {
@@ -864,7 +867,7 @@ function onGamePointerDown(event: PointerEvent): void {
       influenceOverlay?.refreshCatalysts(growthScene.simState.catalysts);
       selectedTool = { kind: 'none' };
       gameHud?.setTool(selectedTool);
-      preview.visible = false;
+      preview.hide();
       influenceOverlay?.hideCursor();
       gameHud?.updateCursor(0, 0, null);
     }
@@ -915,7 +918,7 @@ function beginCoastalExpansion(sector: CoastalSector): void {
   growthScene.setMessage('Generating the new coastal sector…');
   selectedTool = { kind: 'none' };
   gameHud?.setTool(selectedTool);
-  preview.visible = false;
+  preview.hide();
   influenceOverlay?.hideCursor();
   gameHud?.updateCursor(0, 0, null);
 }

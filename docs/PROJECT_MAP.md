@@ -41,7 +41,7 @@ scene/terrain -> VoxelWorld.setBlock -> dirty chunks -> ChunkRenderer
 FixedStepLoop -> tick -> nextBuildSites -> Builder
               -> BuildingRegistry + setBlock -> addBuilding -> campo incrementale
 
-puntatore -> convalida azione -> HUD + InfluenceOverlay
+puntatore -> convalida azione -> HUD + PlacementCursor + InfluenceOverlay
           -> GrowthScene -> settore unico -> TerrainStreamer a budget
 ```
 

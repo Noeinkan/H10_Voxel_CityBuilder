@@ -9,7 +9,11 @@ import { shapeFromRegion } from './region';
 import type { TerrainMap } from './TerrainMap';
 
 const SEED = 1337;
-const ISLAND: Region = { minX: 0, minY: 0, sizeX: 256, sizeY: 256 };
+// Lato 512: e' la dimensione su cui e' tarata la calibrazione verticale di
+// `TERRAIN`. Sotto, il tetto di `maxReliefSlope` abbassa il rilievo e le
+// soglie assolute — `rockMinHeight` in testa — smettono di essere
+// raggiungibili, cioe' il test misurerebbe l'isola sbagliata.
+const ISLAND: Region = { minX: 0, minY: 0, sizeX: 512, sizeY: 512 };
 
 /** I byte grezzi di una vista tipizzata, per i confronti "identici byte per byte". */
 function bytesOf(view: ArrayBufferView): Uint8Array {
@@ -123,8 +127,8 @@ describe('generateIsland — determinismo', () => {
   });
 
   it('generare A poi B equivale a generare B poi A', () => {
-    const a: Region = { minX: 0, minY: 0, sizeX: 128, sizeY: 128 };
-    const b: Region = { minX: 128, minY: 0, sizeX: 128, sizeY: 128 };
+    const a: Region = { minX: 0, minY: 0, sizeX: 256, sizeY: 256 };
+    const b: Region = { minX: 256, minY: 0, sizeX: 256, sizeY: 256 };
 
     const worldAB = new VoxelWorld();
     const ab = generateIsland(worldAB, SEED, a);
@@ -151,8 +155,10 @@ describe('generateIsland — determinismo', () => {
   });
 
   it('generare per blocchi sparsi da’ le stesse colonne di una region intera', () => {
-    // Un quarto d'isola: 16 colonne di chunk bastano a mostrare che l'ordine non
-    // conta, e sono quattro volte piu' economiche di sessantaquattro.
+    // Un angolo d'isola: 16 colonne di chunk bastano a mostrare che l'ordine non
+    // conta. L'indipendenza dall'ordine e' una proprieta' della funzione, non
+    // della taglia, quindi qui non serve l'isola intera — e a 512 costerebbe
+    // sedici volte tanto per dire la stessa cosa.
     const quarter: Region = { minX: 0, minY: 0, sizeX: 128, sizeY: 128 };
     const wholeWorld = new VoxelWorld();
     const shape = shapeFromRegion(ISLAND);
@@ -188,29 +194,32 @@ describe('generateIsland — continuita’ al confine', () => {
     const shape = shapeFromRegion(ISLAND);
     const world = new VoxelWorld();
 
-    const left = generateIsland(world, SEED, { minX: 0, minY: 0, sizeX: 128, sizeY: 256 }, { shape });
+    const left = generateIsland(world, SEED, { minX: 0, minY: 0, sizeX: 256, sizeY: 512 }, { shape });
     const right = generateIsland(
       world,
       SEED,
-      { minX: 128, minY: 0, sizeX: 128, sizeY: 256 },
+      { minX: 256, minY: 0, sizeX: 256, sizeY: 512 },
       { map: left.map, shape },
     );
     const map = right.map;
 
     let worst = 0;
-    for (let y = 0; y < 256; y++) {
-      const delta = Math.abs(map.heightAt(128, y) - map.heightAt(127, y));
+    for (let y = 0; y < 512; y++) {
+      const delta = Math.abs(map.heightAt(256, y) - map.heightAt(255, y));
       if (delta > worst) worst = delta;
     }
-    expect(worst).toBeLessThanOrEqual(1);
+    // L'invariante e' in celle, non in colonne: due celle contigue non
+    // differiscono di piu' di una cella, cioe' `cellSize` voxel. Dentro una
+    // cella il dislivello e' zero per costruzione.
+    expect(worst).toBeLessThanOrEqual(TERRAIN.cellSize);
   });
 
   it('la cucitura non e’ un caso particolare: vale per tutte le colonne dell’isola', () => {
     const { map } = generateIsland(new VoxelWorld(), SEED, ISLAND);
 
     let worst = 0;
-    for (let y = 1; y < 255; y++) {
-      for (let x = 1; x < 255; x++) {
+    for (let y = 1; y < 511; y++) {
+      for (let x = 1; x < 511; x++) {
         const h = map.heightAt(x, y);
         const delta = Math.max(
           Math.abs(map.heightAt(x + 1, y) - h),
@@ -219,16 +228,46 @@ describe('generateIsland — continuita’ al confine', () => {
         if (delta > worst) worst = delta;
       }
     }
-    expect(worst).toBeLessThanOrEqual(1);
+    expect(worst).toBeLessThanOrEqual(TERRAIN.cellSize);
+  });
+
+  it('ogni quota e’ un multiplo della cella: il terreno non sta mai a mezzo cubo', () => {
+    const { map } = generateIsland(new VoxelWorld(), SEED, ISLAND);
+
+    for (let y = 0; y < 512; y += 3) {
+      for (let x = 0; x < 512; x += 3) {
+        expect(map.heightAt(x, y) % TERRAIN.cellSize).toBe(0);
+      }
+    }
+  });
+
+  it('una cella e’ piatta: le sue colonne condividono quota, bioma e pendenza', () => {
+    const { map } = generateIsland(new VoxelWorld(), SEED, ISLAND);
+
+    for (let y = 0; y < 512; y += TERRAIN.cellSize * 5) {
+      for (let x = 0; x < 512; x += TERRAIN.cellSize * 5) {
+        const x0 = x - (x % TERRAIN.cellSize);
+        const y0 = y - (y % TERRAIN.cellSize);
+        const reference = map.columnAt(x0, y0);
+        expect(reference).not.toBeNull();
+
+        for (let dy = 0; dy < TERRAIN.cellSize; dy++) {
+          for (let dx = 0; dx < TERRAIN.cellSize; dx++) {
+            expect(map.columnAt(x0 + dx, y0 + dy)).toEqual(reference);
+          }
+        }
+      }
+    }
   });
 
   it('anche due isole affiancate senza maschera condivisa si toccano al livello del fondale', () => {
     const world = new VoxelWorld();
     const a = generateIsland(world, SEED, ISLAND);
-    const b = generateIsland(world, SEED, { minX: 256, minY: 0, sizeX: 256, sizeY: 256 }, { map: a.map });
+    const b = generateIsland(world, SEED, { minX: 512, minY: 0, sizeX: 512, sizeY: 512 }, { map: a.map });
 
-    for (let y = 0; y < 256; y++) {
-      expect(Math.abs(b.map.heightAt(256, y) - b.map.heightAt(255, y))).toBeLessThanOrEqual(1);
+    for (let y = 0; y < 512; y++) {
+      expect(Math.abs(b.map.heightAt(512, y) - b.map.heightAt(511, y)))
+        .toBeLessThanOrEqual(TERRAIN.cellSize);
     }
   });
 });
@@ -240,20 +279,21 @@ describe('expandIsland', () => {
     const before = mapSignature(base.map);
     const chunksBefore = base.map.chunkCount;
 
-    const strip: Region = { minX: 0, minY: 256, sizeX: 256, sizeY: CHUNK * 2 };
+    const strip: Region = { minX: 0, minY: 512, sizeX: 512, sizeY: CHUNK * 2 };
     const grown = expandIsland(world, SEED, strip, { map: base.map });
 
-    // Solo la striscia nuova: 8 colonne di chunk x 2 file.
-    expect(grown.blocks).toBe(16);
-    expect(grown.map.chunkCount).toBe(chunksBefore + 16);
+    // Solo la striscia nuova: 16 colonne di chunk x 2 file.
+    expect(grown.blocks).toBe(32);
+    expect(grown.map.chunkCount).toBe(chunksBefore + 32);
 
     // Le colonne di prima sono rimaste esattamente quelle di prima.
     const after = mapSignature(grown.map);
     for (const key of Object.keys(before)) expectSameLayers(after[key], before[key], key);
 
     // E la maschera ereditata rende continuo anche il confine nuovo.
-    for (let x = 0; x < 256; x++) {
-      expect(Math.abs(grown.map.heightAt(x, 256) - grown.map.heightAt(x, 255))).toBeLessThanOrEqual(1);
+    for (let x = 0; x < 512; x++) {
+      expect(Math.abs(grown.map.heightAt(x, 512) - grown.map.heightAt(x, 511)))
+        .toBeLessThanOrEqual(TERRAIN.cellSize);
     }
   });
 
@@ -271,12 +311,12 @@ describe('generateIsland — colonne e biomi', () => {
   it('nessuna colonna edificabile sta sotto il livello del mare', () => {
     // Un'isola intera piu' due piu' piccole su altri seed: la proprieta' e'
     // dell'intera fascia edificabile, non del seed di riferimento. Le due
-    // piccole restano a 128 perche' generare tre isole da 256 e' quasi tutto
+    // piccole restano a 256 perche' generare tre isole da 512 e' quasi tutto
     // tempo di scrittura voxel, che qui non si sta misurando.
     const regions: [number, Region][] = [
       [SEED, ISLAND],
-      [7, { minX: 0, minY: 0, sizeX: 128, sizeY: 128 }],
-      [99991, { minX: 0, minY: 0, sizeX: 128, sizeY: 128 }],
+      [7, { minX: 0, minY: 0, sizeX: 256, sizeY: 256 }],
+      [99991, { minX: 0, minY: 0, sizeX: 256, sizeY: 256 }],
     ];
 
     for (const [seed, region] of regions) {
@@ -322,14 +362,26 @@ describe('generateIsland — colonne e biomi', () => {
     const { map } = generateIsland(new VoxelWorld(), SEED, ISLAND);
     const field = new HeightField(SEED, shapeFromRegion(ISLAND));
 
+    // La pendenza pubblicata e' quella della cella: la media delle pendenze
+    // continue delle sue colonne. Resta la stessa grandezza di prima — voxel di
+    // dislivello per voxel — ed e' per questo che le soglie di `TERRAIN` non
+    // hanno dovuto muoversi con la scala.
+    const columnSlope = (x: number, y: number): number => Math.max(
+      Math.abs(Math.fround(field.heightAt(x + 1, y)) - Math.fround(field.heightAt(x, y))),
+      Math.abs(Math.fround(field.heightAt(x - 1, y)) - Math.fround(field.heightAt(x, y))),
+      Math.abs(Math.fround(field.heightAt(x, y + 1)) - Math.fround(field.heightAt(x, y))),
+      Math.abs(Math.fround(field.heightAt(x, y - 1)) - Math.fround(field.heightAt(x, y))),
+    );
+
     for (let y = 64; y < 192; y += 7) {
       for (let x = 64; x < 192; x += 7) {
-        const expected = Math.max(
-          Math.abs(Math.fround(field.heightAt(x + 1, y)) - Math.fround(field.heightAt(x, y))),
-          Math.abs(Math.fround(field.heightAt(x - 1, y)) - Math.fround(field.heightAt(x, y))),
-          Math.abs(Math.fround(field.heightAt(x, y + 1)) - Math.fround(field.heightAt(x, y))),
-          Math.abs(Math.fround(field.heightAt(x, y - 1)) - Math.fround(field.heightAt(x, y))),
-        );
+        const x0 = x - (x % TERRAIN.cellSize);
+        const y0 = y - (y % TERRAIN.cellSize);
+        let sum = 0;
+        for (let dy = 0; dy < TERRAIN.cellSize; dy++) {
+          for (let dx = 0; dx < TERRAIN.cellSize; dx++) sum += columnSlope(x0 + dx, y0 + dy);
+        }
+        const expected = sum / (TERRAIN.cellSize * TERRAIN.cellSize);
         expect(map.slopeAt(x, y)).toBeCloseTo(expected, 5);
       }
     }
@@ -342,12 +394,12 @@ describe('generateIsland — scrittura nel mondo', () => {
     const { map } = generateIsland(world, SEED, ISLAND);
     const waterIds = [WATER_IDS.surface, WATER_IDS.deep];
 
-    for (let i = 0; i < 256; i++) {
+    for (let i = 0; i < 512; i++) {
       for (const [x, y] of [
         [i, 0],
-        [i, 255],
+        [i, 511],
         [0, i],
-        [255, i],
+        [511, i],
       ]) {
         expect(map.heightAt(x, y)).toBeLessThan(TERRAIN.seaLevel);
         expect(map.biomeAt(x, y)).toBe(BIOME.ocean);
@@ -360,8 +412,8 @@ describe('generateIsland — scrittura nel mondo', () => {
     const world = new VoxelWorld();
     const { map } = generateIsland(world, SEED, ISLAND);
 
-    for (let y = 0; y < 256; y += 11) {
-      for (let x = 0; x < 256; x += 11) {
+    for (let y = 0; y < 512; y += 11) {
+      for (let x = 0; x < 512; x += 11) {
         const height = map.heightAt(x, y);
         const top = Math.max(height, TERRAIN.seaLevel);
         for (let z = 0; z < top; z++) expect(world.getBlock(x, y, z)).not.toBe(0);
@@ -377,13 +429,15 @@ describe('generateIsland — scrittura nel mondo', () => {
     const { map } = generateIsland(world, SEED, ISLAND);
 
     let checked = 0;
-    for (let y = 0; y < 256 && checked < 50; y += 3) {
-      for (let x = 0; x < 256 && checked < 50; x += 3) {
+    for (let y = 0; y < 512 && checked < 50; y += 3) {
+      for (let x = 0; x < 512 && checked < 50; x += 3) {
         const height = map.heightAt(x, y);
-        if (height < TERRAIN.seaLevel + TERRAIN.subsoilDepth + 2) continue;
+        if (height < TERRAIN.seaLevel + TERRAIN.cellSize + TERRAIN.subsoilDepth + 1) continue;
+        // Ogni strato e' spesso un numero intero di celle: la superficie occupa
+        // i primi `cellSize` voxel, il sottosuolo i `subsoilDepth` successivi.
         const surface = world.getBlock(x, y, height - 1);
-        const subsoil = world.getBlock(x, y, height - 2);
-        const deep = world.getBlock(x, y, height - TERRAIN.subsoilDepth - 2);
+        const subsoil = world.getBlock(x, y, height - 1 - TERRAIN.cellSize);
+        const deep = world.getBlock(x, y, height - 1 - TERRAIN.cellSize - TERRAIN.subsoilDepth);
         expect(surface).not.toBe(subsoil);
         expect(subsoil).not.toBe(deep);
         checked++;
@@ -412,20 +466,20 @@ describe('generateIsland — scrittura nel mondo', () => {
 });
 
 describe('generateColumnBlock — costo', () => {
-  it('un’isola 256x256 sta sotto gli 800 ms di sola generazione', () => {
+  it('un’isola 512x512 sta sotto i 2400 ms di sola generazione', () => {
     const field = new HeightField(SEED, shapeFromRegion(ISLAND));
 
     const started = performance.now();
     let columns = 0;
-    for (let ccy = 0; ccy < 8; ccy++) {
-      for (let ccx = 0; ccx < 8; ccx++) {
+    for (let ccy = 0; ccy < 16; ccy++) {
+      for (let ccx = 0; ccx < 16; ccx++) {
         columns += generateColumnBlock(field, ccx, ccy).heights.length;
       }
     }
     const elapsed = performance.now() - started;
 
-    expect(columns).toBe(256 * 256);
-    expect(columns).toBe(64 * COLUMNS_PER_CHUNK);
-    expect(elapsed).toBeLessThan(800);
+    expect(columns).toBe(512 * 512);
+    expect(columns).toBe(256 * COLUMNS_PER_CHUNK);
+    expect(elapsed).toBeLessThan(2400);
   });
 });

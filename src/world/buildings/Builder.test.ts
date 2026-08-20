@@ -104,16 +104,20 @@ describe('Builder — allineamento alla rete stradale', () => {
     records: readonly BuildingRecord[];
   } {
     const world = new VoxelWorld();
-    const terrain = testTerrain({ chunksX: 4, chunksY: 4, height: 12 });
+    // Otto colonne di chunk e non quattro: con il passo della maglia a 22 e un
+    // asse principale ogni quattro, il primo arteriale dopo l'origine cade a
+    // ottantotto colonne. Su 128 la citta' non ci arrivava, e il test avrebbe
+    // letto "nessun asse principale" dove il vero problema era la fixture.
+    const terrain = testTerrain({ chunksX: 8, chunksY: 8, height: 24 });
     const builder = new Builder(world, terrain, seed);
 
     let state = createSimState();
     state = addCatalyst(state, {
-      x: 64,
-      y: 64,
+      x: 128,
+      y: 128,
       class: BUILDING_CLASS.residential,
       strength: 255,
-      radius: 48,
+      radius: 96,
     });
 
     for (let i = 0; i < rounds; i++) {
@@ -176,9 +180,9 @@ describe('Builder — allineamento alla rete stradale', () => {
 
     let minor = 0;
     let arterial = 0;
-    for (let y = 0; y < 128; y++) {
-      for (let x = 0; x < 128; x++) {
-        const block = world.getBlock(x, y, 11);
+    for (let y = 0; y < 256; y++) {
+      for (let x = 0; x < 256; x++) {
+        const block = world.getBlock(x, y, 23);
         if (block === STREETS.minorPalette) minor++;
         else if (block === STREETS.arterialPalette) arterial++;
       }
@@ -212,7 +216,7 @@ describe('Builder — opere di terra', () => {
     return testTerrain({
       chunksX: 4,
       chunksY: 4,
-      heightAt: (x) => 12 + Math.floor(x / 12),
+      heightAt: (x) => 24 + Math.floor(x / 6),
       // Le strisce ripide non sono `buildable`: prima della 4.2 la citta' le
       // saltava del tutto, e sono meta' del fianco.
       slopeAt: (x) => (Math.floor(x / 8) % 2 === 0 ? 0.2 : 0.4),
@@ -224,7 +228,7 @@ describe('Builder — opere di terra', () => {
     return testTerrain({
       chunksX: 4,
       chunksY: 4,
-      heightAt: (x) => Math.max(2, Math.min(18, 2 + Math.floor(x / 2))),
+      heightAt: (x) => Math.max(4, Math.min(36, 4 + Math.floor(x / 2))),
       slopeAt: () => 0.15,
     });
   }
@@ -243,7 +247,7 @@ describe('Builder — opere di terra', () => {
       y: 64,
       class: BUILDING_CLASS.residential,
       strength: 255,
-      radius: 40,
+      radius: 80,
     });
 
     for (let i = 0; i < rounds; i++) {
@@ -270,7 +274,12 @@ describe('Builder — opere di terra', () => {
     builder: Builder;
   } {
     const world = new VoxelWorld();
-    const { map } = generateIsland(world, 4242, { minX: 0, minY: 0, sizeX: 128, sizeY: 128 });
+    // Lato 256 e non 128: la calibrazione verticale di `TERRAIN` e' tarata su
+    // 512, e sotto i 256 il tetto di `maxReliefSlope` schiaccia l'isola tutta
+    // sotto `beachMaxHeight` — niente terra edificabile, niente fianchi, niente
+    // da terrazzare. A 256 le pendenze sono gia' quelle vere; manca solo la
+    // fascia rocciosa, che qui non serve.
+    const { map } = generateIsland(world, 4242, { minX: 0, minY: 0, sizeX: 256, sizeY: 256 });
 
     const anchor = seaward(map);
     const builder = new Builder(world, map, 4242);
@@ -280,7 +289,7 @@ describe('Builder — opere di terra', () => {
       y: anchor.y,
       class: BUILDING_CLASS.residential,
       strength: 255,
-      radius: 40,
+      radius: 80,
     });
 
     for (let i = 0; i < 60; i++) {
@@ -323,9 +332,11 @@ describe('Builder — opere di terra', () => {
     const { world } = grow(terrain, 64, 40);
 
     let wall = 0;
-    for (let y = 0; y < 128; y++) {
-      for (let x = 0; x < 128; x++) {
-        for (let z = 0; z < 24; z++) {
+    for (let y = 0; y < 256; y++) {
+      for (let x = 0; x < 256; x++) {
+        // Fino a 64: il fianco della fixture sta fra 24 e 45, e il muro con
+        // lui. A 24 la scansione si fermava sotto il terreno.
+        for (let z = 0; z < 64; z++) {
           if (world.getBlock(x, y, z) === 0) continue;
           if (world.getSurfaceKind(x, y, z) === SURFACE_KIND.utility) wall++;
         }
@@ -343,8 +354,8 @@ describe('Builder — opere di terra', () => {
     const { world, map, builder } = growIsland();
     expect(builder.registry.count).toBeGreaterThan(20);
 
-    for (let y = 0; y < 128; y++) {
-      for (let x = 0; x < 128; x++) {
+    for (let y = 0; y < 256; y++) {
+      for (let x = 0; x < 256; x++) {
         const height = map.heightAt(x, y);
         for (let z = 0; z < height; z++) {
           if (world.getBlock(x, y, z) === 0) {
@@ -387,8 +398,8 @@ describe('Builder — opere di terra', () => {
     const { world, map } = growIsland();
 
     let overWater = 0;
-    for (let y = 0; y < 128; y++) {
-      for (let x = 0; x < 128; x++) {
+    for (let y = 0; y < 256; y++) {
+      for (let x = 0; x < 256; x++) {
         if (map.heightAt(x, y) >= TERRAIN.seaLevel) continue;
         // Pieno alla quota del molo dove il terreno lasciava acqua: e' banchina.
         if (world.getBlock(x, y, GRADING.quayLevel - 1) !== 0) overWater++;

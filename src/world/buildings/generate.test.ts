@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { ALL_CLASSES, type BuildingClass } from '../../sim';
 import { PALETTE_SLOTS } from '../../engine/paletteSlots';
-import { BUILDER, CLASS_PROFILE, LEVEL_CAPS, MAX_FOOTPRINT } from './config';
+import { BUILDER, CLASS_PROFILE, GRAMMAR, LEVEL_CAPS, MAX_FOOTPRINT } from './config';
 import { generateBuilding, startLevel } from './generate';
 import { anchoredVoxel, STAMP_EMPTY, bandCount, solidCount, type VoxelStamp } from './stamp';
 import { SURFACE_KIND } from '../visualBlock';
@@ -187,7 +187,10 @@ describe('generateBuilding', () => {
         const id = stamp.voxels[i + stamp.sizeX * stamp.sizeY * top];
         if (id !== STAMP_EMPTY) topIds.push(id);
       }
-      expect(topIds).toEqual([CLASS_PROFILE[cls].roofProp]);
+      // "Unico" e' il dettaglio, non il voxel: il prisma sul tetto e' largo
+      // `roofPropSide` per lato, e tutti i suoi voxel sono dello stesso indice.
+      expect(new Set(topIds)).toEqual(new Set([CLASS_PROFILE[cls].roofProp]));
+      expect(topIds.length).toBeLessThanOrEqual(GRAMMAR.roofPropSide ** 2);
       checked++;
     }
     expect(checked).toBeGreaterThan(0);
@@ -198,17 +201,22 @@ describe('generateBuilding', () => {
     for (let seed = 0; seed < 64; seed++) {
       const stamp = generateBuilding({ class: ALL_CLASSES[3], level: BUILDER.maxLevel, seed });
       tallest = Math.max(tallest, stamp.sizeZ);
-      expect(stamp.sizeX).toBe(4);
+      expect(stamp.sizeX).toBe(MAX_FOOTPRINT);
       expect(stamp.sizeZ / stamp.sizeX).toBeLessThanOrEqual(10);
     }
-    expect(tallest).toBeGreaterThanOrEqual(30);
-    expect(tallest).toBeLessThanOrEqual(40);
+    // Otto fasce da sei-otto voxel piu' coronamento e dettaglio: un civico di
+    // livello massimo sta fra i sessanta e gli ottanta voxel. E' alto quanto
+    // prima in proporzione — sono i voxel a essere la meta'.
+    expect(tallest).toBeGreaterThanOrEqual(60);
+    expect(tallest).toBeLessThanOrEqual(80);
   });
 
   it('porta una faccia d\x27accento con un indice diverso dal corpo', () => {
     // La fascia di base riempie sempre il riquadro, quindi su un'impronta larga
-    // almeno due la sua prima quota contiene sia il corpo sia la faccia: se la
-    // faccia d'accento non ci fosse, quella quota sarebbe di un colore solo.
+    // almeno due la prima quota sopra lo zoccolo contiene sia il corpo sia la
+    // faccia: se la faccia d'accento non ci fosse, quella quota sarebbe di un
+    // colore solo. Si guarda sopra lo zoccolo e non alla base perche' lo
+    // zoccolo e' monocromo per definizione, ed e' alto `plinthHeight`.
     let wide = 0;
     for (const { stamp } of everyStamp(24)) {
       if (stamp.sizeX < 2) continue;
@@ -217,7 +225,7 @@ describe('generateBuilding', () => {
       const ids = new Set<number>();
       const plane = stamp.sizeX * stamp.sizeY;
       for (let i = 0; i < plane; i++) {
-        const id = stamp.voxels[i + plane];
+        const id = stamp.voxels[i + plane * GRAMMAR.plinthHeight];
         if (id !== STAMP_EMPTY) ids.add(id);
       }
       expect(ids.size).toBeGreaterThanOrEqual(2);

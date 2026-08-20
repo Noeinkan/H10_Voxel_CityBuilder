@@ -92,8 +92,12 @@ export function lineWidth(k: number): number {
 export function lineStart(seed: number, axis: number, k: number): number {
   // Con `jitter` a zero la formula degenera da sola in `nominal`: lo span vale
   // uno, il resto e' sempre zero. Non serve un ramo per spegnere lo scostamento.
-  const span = STREETS.jitter * 2 + 1;
-  return k * STREETS.pitch + (hashCoords(seed ^ AXIS_SALT[axis], k, 0) % span) - STREETS.jitter;
+  // Lo scostamento e' un multiplo di `align`, non un voxel qualunque: `pitch` e
+  // le larghezze di carreggiata lo sono gia', quindi cosi' ogni asse — e con lui
+  // ogni bordo di isolato — cade sul confine di un cubo di terreno.
+  const steps = Math.floor(STREETS.jitter / STREETS.align) * 2 + 1;
+  const offset = (hashCoords(seed ^ AXIS_SALT[axis], k, 0) % steps) * STREETS.align;
+  return k * STREETS.pitch + offset - Math.floor(STREETS.jitter / STREETS.align) * STREETS.align;
 }
 
 /** Ultima colonna della carreggiata dell'asse `k`. */

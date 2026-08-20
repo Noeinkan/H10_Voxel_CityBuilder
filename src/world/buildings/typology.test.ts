@@ -9,7 +9,7 @@ import {
   type Catalyst,
   type LocalUrbanProfile,
 } from '../../sim';
-import { BUILDER, TYPOLOGIES } from './config';
+import { BUILDER, GRAMMAR, TYPOLOGIES } from './config';
 import { generateBuilding } from './generate';
 import { selectTypology, typologiesForUses, typologyProfile } from './typology';
 import { solidCount, STAMP_EMPTY, type VoxelStamp } from './stamp';
@@ -237,7 +237,9 @@ describe('forme delle tipologie', () => {
       const roof = countSolidsOnLayer(flat, flat.sizeZ - 1);
       expect(roof).toBeGreaterThan(1);
       widest = Math.max(widest, roof);
-      expect(countSolidsOnLayer(spired, spired.sizeZ - 1)).toBe(1);
+      // Il dettaglio e' un prisma di lato `roofPropSide`, non un ago da un voxel.
+      expect(countSolidsOnLayer(spired, spired.sizeZ - 1))
+        .toBeLessThanOrEqual(GRAMMAR.roofPropSide ** 2);
     }
     // E almeno una volta e' una copertura vera, non una lama residua.
     expect(widest).toBeGreaterThanOrEqual(4);

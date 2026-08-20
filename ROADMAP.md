@@ -545,7 +545,8 @@ restano invece competenza della 4.7.
   uniform, con l'ora esposta nell'harness per poter iterare sul look.
 - [ ] Dare all'harness una scena `diorama`: un edificio solo, girevole e
   inquadrato da vicino, per giudicare il dettaglio senza aspettare che la città
-  cresca.
+  cresca. Stessa ossatura del campionario della 4.10 — una scena a budget che
+  compone soggetti scelti — quindi la seconda costa poco se la prima esiste già.
 
 **Vincolo:** il tetto di quad della microgeometria non si alza per fare posto ai
 prop. Un prop entra togliendo densità altrove o fondendo meglio le corse, e la
@@ -612,6 +613,53 @@ anche qui la regola di 4.5, una campata orfana è un bug e non uno stile.
 si muove fra i livelli; determinismo e budget reggono con due livelli sovrapposti
 come con uno, e il suolo originale resta ricostruibile dal seed.
 
+### Fase 4.10 — Campionario dei voxel
+
+Obiettivo: poter guardare tutto il vocabolario visuale in una sola inquadratura
+— ogni slot di palette per ogni linguaggio di superficie, la stratigrafia di ogni
+bioma, e il confronto di scala fra cella di terreno, albero ed edificio.
+
+Nessuna dipendenza, e conviene farla **per prima** fra le sottofasi rimaste: è
+lo strumento con cui si giudicano 4.7 e 4.8, e serve già adesso alla scala a
+celle del terreno. Vive in `src/world/scenes/`, quindi non tocca né la crescita
+né la simulazione.
+
+**Perché serve.** Oggi le uniche scene sono `city`, `noise` e `slab`, nate per
+misurare il mesher: l'unico modo di vedere uno slot di palette o un linguaggio di
+superficie è trovarlo per caso dentro un edificio generato, e l'unico modo di
+giudicare la scala relativa di una chioma è aspettare che l'isola ne produca una
+accanto a un edificio. Una scelta di look si fa affiancando le cose, e non c'è un
+posto dove affiancarle.
+
+- [ ] Aggiungere una `SceneKind` `swatch` su `?scene=swatch`, generata a passi con
+  budget come le altre.
+- [ ] Disporre la griglia 32 × 8 — uno slot di palette per colonna, un
+  `SURFACE_KIND` per riga — con corse abbastanza lunghe e alte perché la
+  microgeometria emetta davvero: un `habitat` senza qualche voxel di facciata non
+  mostra niente.
+- [ ] Affiancare una colonna tagliata per bioma con la stratigrafia vera, così che
+  l'invariante «ogni strato è alto un numero intero di celle» si veda di taglio
+  invece di doverla dedurre dalle soglie.
+- [ ] Mettere nella stessa inquadratura la fascia di scala: le forme d'albero
+  accanto a un edificio di riferimento e a un pezzo di terreno.
+- [ ] Dare un nome a ciò che si guarda: riga e colonna sotto il cursore
+  nell'overlay, perché in-world non ci sono etichette e la sola convenzione
+  d'ordine si dimentica.
+- [ ] Coprirla con un test in ambiente `node` che verifichi la presenza di tutte
+  le combinazioni: è il modo per accorgersi che uno slot nuovo non è mai stato
+  aggiunto al campionario.
+
+**Vincolo:** è una scena come le altre, non un percorso di rendering dedicato.
+Nessuna geometria speciale, nessun materiale, nessuno slot di palette e nessun
+tipo di superficie in più: il campionario mostra quello che esiste, e se una
+combinazione si vede male il difetto sta altrove.
+
+**Gate:** da `?scene=swatch` si leggono in una sola inquadratura tutte le
+combinazioni palette × superficie, gli strati di ogni bioma e il rapporto di
+scala fra cella, albero ed edificio; passare da un tema all'altro rilegge il
+campionario senza rigenerare la scena, e un tema con uno slot morto si riconosce
+a colpo d'occhio.
+
 **Gate della fase 4:** con la UI nascosta, la città comunica crescita verticale,
 connessioni fra livelli e struttura economica attraverso volumi e silhouette;
 ponti, terrazze e percorsi in quota restano leggibili alle normali distanze di
@@ -646,6 +694,127 @@ se rompe i budget esistenti.
   preservando palette a uniform e una geometria per chunk finché restano adeguati.
 - [ ] Verificare periodicamente GPU integrata, memoria, tempo di startup e dimensione bundle.
 
+## Fase 7 — Linguaggio visivo dell'interfaccia
+
+Obiettivo: portare l'HUD dal livello di wireframe funzionante a quello di
+interfaccia di gioco. La struttura attuale è giusta — barra risorse in alto,
+dock degli strumenti in basso, drawer a destra, tutto guidato da un modello puro
+in `GameHudModel.ts` — ma la *pelle* è generica: rettangoli arrotondati color
+crema, un'unica ombra, icone a tratto sottile tutte dello stesso peso e dello
+stesso colore. Il risultato è che l'HUD sembra appoggiato sopra il gioco invece
+di appartenergli.
+
+Le tre rotture visibili a schermo, in ordine di gravità:
+
+1. **La barra risorse legge come cinque copie della stessa pastiglia.** Denaro,
+   residenti, cibo, materiali e soddisfazione hanno la stessa icona a tratto
+   `1.8` nello stesso `--hud-sage-dark`: il colpo d'occhio, che è l'unica cosa
+   che si guarda mentre si costruisce, non distingue le risorse. E `±0` ripetuto
+   cinque volte è rumore, non informazione.
+2. **Otto strumenti su nove sono grigi.** `locked` e `disabled` hanno oggi lo
+   stesso aspetto, quindi la toolbar comunica "rotto" dove dovrebbe comunicare
+   "non ancora": la progressione, che è il motivo per cui i bottoni bloccati
+   restano visibili (vedi il commento su `locked` in `GameHudModel.ts`), va persa
+   proprio nel momento in cui dovrebbe motivare.
+3. **Non c'è materiale.** Un solo livello di elevazione, nessuna cornice, nessun
+   bordo interno luminoso, nessuna variazione col tema: i sette temi in
+   `src/engine/themes/` cambiano cielo, luce, nebbia e bloom, e l'HUD resta crema
+   in tutti e sette. Questa è la singola incoerenza più grande fra UI e mondo.
+
+Il riferimento non è "più decorazione": è il principio che i costruttori di città
+leggibili applicano tutti — l'UI condivide il linguaggio di forma del mondo
+(silhouette pulite, materiale coerente, icone che si riconoscono dalla sagoma),
+e i numeri cedono il posto alle visualizzazioni dove possibile. Le fonti che
+hanno guidato questa fase sono in fondo alla sezione.
+
+**Vincoli che restano validi:** niente nuove dipendenze runtime — cornici e icone
+sono SVG inline e `border-image`, non un UI kit; `GameHudModel.ts` resta puro e
+testabile in `node`; il repaint dell'HUD resta fuori dal percorso caldo del
+frame; `prefers-reduced-motion` continua a spegnere tutto il movimento.
+
+### Fase 7.1 — Materiale dei pannelli e temi
+
+- [ ] Sostituire `--hud-shadow` con una scala di elevazione a tre livelli (dock,
+  drawer, modale) e aggiungere a `.hud-surface` bordo interno chiaro, gradiente
+  verticale e ombra di contatto: un pannello deve leggersi come un oggetto
+  appoggiato, non come un rettangolo trasparente.
+- [ ] Introdurre una cornice 9-slice via `border-image` con sorgente SVG in
+  `data:` URI, così i pannelli scalano senza deformare gli angoli e senza asset
+  binari nel bundle.
+- [ ] Far derivare i token di `hud.css` dal tema attivo: `applyTheme` scrive
+  `--hud-*` su `document.documentElement` a partire dalla palette del tema, e
+  l'HUD cambia con il mondo invece di restare crema sotto un cielo al neon.
+
+**Gate:** cambiando tema, HUD e scena restano riconoscibilmente lo stesso gioco;
+nessun pannello perde contrasto AA sui sette temi.
+
+### Fase 7.2 — Iconografia
+
+- [ ] Ridisegnare `hudIcons.ts` su due pesi (filled per le risorse, stroke per le
+  azioni) con sagoma leggibile a 18px, non pittogrammi generici a tratto unico.
+- [ ] Dare a ogni risorsa un'identità cromatica stabile — denaro oro, cibo verde,
+  materiali argilla, residenti blu, soddisfazione corallo — riusata ovunque quella
+  risorsa compaia: barra, costi dei bottoni, toast, cursor card.
+- [ ] Per i catalizzatori usare miniature isometriche voxel al posto dei
+  pittogrammi lineari: è il gancio più diretto fra toolbar e mondo, e riusa la
+  palette già in `palette.json`.
+
+**Gate:** a etichette nascoste, un giocatore riconosce le cinque risorse e i
+sette catalizzatori dalla sola icona.
+
+### Fase 7.3 — Indicatori
+
+- [ ] Sostituire il `delta` testuale con un indicatore di tendenza: freccia
+  direzionale, magnitudine e sparkline breve sulla finestra dei tick recenti.
+  Niente `±0` a schermo quando non succede niente.
+- [ ] Dove esiste un tetto (scorte di cibo contro consumo, banchi occupati),
+  mostrarlo come anello o barra di riempimento invece che come numero nudo.
+- [ ] Numeri tabulari e conteggio animato sulle variazioni; stato di crisi con
+  pulsazione e colore, non solo con testo rosso.
+- [ ] Su hover, popover con la scomposizione entrate/uscite della risorsa: la
+  domanda "perché sto perdendo denaro" oggi non ha risposta nell'HUD.
+
+**Gate:** dallo sguardo alla barra si capisce in che direzione sta andando la
+città senza aprire nessun pannello.
+
+### Fase 7.4 — Strumenti
+
+- [ ] Separare `locked` da `disabled`: il bottone bloccato mostra il requisito
+  mancante come riempimento progressivo (denaro accumulato sul costo, popolazione
+  sulla soglia) invece di sbiadire. Bloccato deve leggersi come "manca poco".
+- [ ] Tile icona-sopra-etichetta di dimensione uniforme, badge del tasto numerico
+  1..9, badge di costo con l'icona della risorsa di 7.2.
+- [ ] Stato selezionato forte (non solo inversione di colore): cornice, sollevamento
+  e anteprima del raggio in-world coerente col colore dello strumento.
+- [ ] I separatori di gruppo diventano guide etichettate continue, così crescita,
+  connessioni e identità si leggono come tre corsie e non come otto bottoni.
+
+**Gate:** un giocatore nuovo, guardando solo il dock, sa cosa può costruire ora,
+cosa gli manca per il resto e quale strumento ha in mano.
+
+### Fase 7.5 — Movimento e feedback
+
+- [ ] Micro-interazioni di pressione, spesa (il costo vola dal bottone alla barra)
+  e sblocco; stack di toast invece di uno solo che si sovrascrive.
+- [ ] Feedback di piazzamento in-world — anello di selezione e impronta sul
+  terreno — invece della sola cursor card.
+- [ ] Tutto sotto `prefers-reduced-motion` e sotto il budget: le animazioni sono
+  CSS/`transform`, mai lavoro per frame in JS.
+
+**Gate:** ogni azione ha una conseguenza visibile entro 150 ms e nessuna
+animazione compare nel profilo del frame.
+
+### Riferimenti
+
+- [Game UI Database — Anno 1800](https://www.gameuidatabase.com/gameData.php?id=1118) e
+  [Cities: Skylines](https://www.gameuidatabase.com/gameData.php?id=526): cataloghi di schermate reali per barra risorse e build menu.
+- [Interface In Game — Cities: Skylines](https://interfaceingame.com/games/cities-skylines/): la stessa UI vista in movimento.
+- [80.lv — How Dorfromantik Expands Its Cozy World Through Minimalist Design](https://80.lv/articles/how-dorfromantik-expands-its-cozy-world-through-minimalist-design): silhouette leggibili e coesione visiva, il registro più vicino al nostro.
+- [Unity — How Timberborn's complex runtime UI was built](https://unity.com/case-study/timberborn): come si tiene insieme un HUD di city builder che cresce.
+- [Isometric City Builder Art: Modular Buildings, Layout & Lighting](https://sunstrikestudios.com/en/blog/isometric-city-builder-art/): l'UI condivide il linguaggio di forma del mondo.
+- [9-Slice Scaling Explained](https://generalistprogrammer.com/tutorials/nine-slice-scaling-explained) e [MDN `border-image`](https://developer.mozilla.org/en-US/docs/Web/CSS/border-image): la tecnica di 7.1.
+- [The Art of Designing Intuitive User Interfaces in Cozy Games](https://sdlccorp.com/post/the-art-of-designing-intuitive-user-interfaces-in-cozy-games/): iconografia al posto del testo.
+
 ## Prossimo milestone consigliato — Alpha 0.2
 
 1. [x] Tutorial iniziale e feedback del raggio dei catalizzatori.
@@ -656,7 +825,11 @@ se rompe i budget esistenti.
 6. [x] Primo sistema di strade procedurali usato come scheletro della crescita (fase 4.1).
 7. [ ] Salvataggio locale minimo del ciclo completo.
 8. [ ] Playtest di 30 minuti con budget e criteri automatici registrati.
+9. [ ] Passata visiva su indicatori e strumenti: fasi 7.1, 7.3 e 7.4 (il resto
+   della fase 7 puo' seguire, ma barra risorse e dock vanno sistemati prima del playtest,
+   altrimenti si misura la confusione della UI invece del bilanciamento).
 
 Alpha 0.2 è completa quando una partita ha apertura, sviluppo ed espansione
-leggibili, due strategie sostenibili e un salvataggio ripristinabile, senza
-regressioni rispetto ai contratti e ai budget dell’MVP.
+leggibili, due strategie sostenibili e un salvataggio ripristinabile, con una
+barra risorse e un dock che si leggono a colpo d’occhio, senza regressioni
+rispetto ai contratti e ai budget dell’MVP.

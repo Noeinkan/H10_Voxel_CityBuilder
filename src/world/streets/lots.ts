@@ -1,3 +1,4 @@
+import { STREETS } from './config';
 import { FACING, type BlockRect, type Facing } from './streetGrid';
 
 /**
@@ -110,11 +111,18 @@ function slideAlongEdge(request: LotRequest, facing: Facing, footprint: number):
   const max = (slidesAlongY ? rect.y1 : rect.x1) - footprint + 1;
   if (max < min) return null;
 
-  const preferred = clamp(slidesAlongY ? request.y : request.x, min, max);
+  // Lo scorrimento va a passo di cubo di terreno e parte da un multiplo di
+  // `align`, non da una colonna qualunque: i bordi dell'isolato ci sono gia'
+  // allineati, e un lotto a meta' cubo si porterebbe dietro un riempimento
+  // sotto un'impronta che il terreno regge gia' piatta. Il preferito si
+  // arrotonda verso il basso, cosi' resta dentro `[min, max]` per costruzione.
+  const align = STREETS.align;
+  const preferred = alignDown(clamp(slidesAlongY ? request.y : request.x, min, max), min, align);
+  const reach = Math.floor((max - min) / align);
 
-  for (let step = 0; step <= max - min; step++) {
+  for (let step = 0; step <= reach; step++) {
     for (const sign of step === 0 ? CENTRE : BOTH) {
-      const along = preferred + sign * step;
+      const along = preferred + sign * step * align;
       if (along < min || along > max) continue;
 
       const x = slidesAlongY ? fixed : along;
@@ -130,6 +138,11 @@ function slideAlongEdge(request: LotRequest, facing: Facing, footprint: number):
 const CENTRE: readonly number[] = [0];
 /** In avanti prima che indietro, per fissare l'ordine a parita' di distanza. */
 const BOTH: readonly number[] = [1, -1];
+
+/** Arrotonda `value` al multiplo di `step` non superiore, contato da `origin`. */
+function alignDown(value: number, origin: number, step: number): number {
+  return origin + Math.floor((value - origin) / step) * step;
+}
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));

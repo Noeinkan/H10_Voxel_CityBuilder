@@ -12,21 +12,48 @@ e costruzione degli edifici. Questo modulo non dipende dal renderer.
 
 ## Terreno
 
+- **Il terreno quantizza, il contenuto no.** `TERRAIN.cellSize` e' il lato del
+  cubo di terreno, in voxel: il generatore campiona e arrotonda su quella cella
+  — in pianta *e* in quota — mentre edifici e alberi restano a dettaglio di un
+  voxel. E' quella differenza a dare la scala all'isola, e senza di essa una
+  chioma d'albero e' larga quanto un edificio intero. `cellSize` deve dividere
+  `CHUNK`.
+- Le quote assolute di `terrain/config.ts` sono multiple di `cellSize`, gli
+  strati della colonna sono spessi un numero intero di celle, e i lotti si
+  allineano allo stesso passo (`STREETS.align`). Una soglia dispari cade a meta'
+  di un cubo, ed e' esattamente il gradino da un voxel che la cella esiste per
+  togliere.
+- **La verticale e' tarata sull'orizzontale.** Il gradiente del campo vale
+  rilievo diviso raggio: raddoppiando il lato dell'isola vanno raddoppiate anche
+  le quote assolute e dimezzate le frequenze del rumore, altrimenti esce una
+  frittella senza fianchi. La taratura attuale e' per un'isola di lato **512**,
+  ed e' quella la dimensione su cui i test la verificano.
 - Soglie, frequenze e stratigrafie stanno in `terrain/config.ts`.
 - Un blocco dipende solo da `(seed, shape, ccx, ccy)`: preserva determinismo,
   indipendenza dall'ordine e continuita' ai confini. Le decorazioni valutano un
-  anello di due colonne e scrivono solo la porzione interna, cosi' una chioma
-  oltre confine non crea dipendenze d'ordine.
+  anello di `TREE_DECOR.ring` colonne e scrivono solo la porzione interna, cosi'
+  una chioma oltre confine non crea dipendenze d'ordine. La varieta' della
+  chioma esce da un PRNG derivato dalla posizione dell'albero, non conservato:
+  due blocchi che si dividono lo stesso albero ne ricavano la stessa sequenza.
 - Generatore e worker non importano Three.js o `src/engine/`.
 - Due tetti duri in `terrain/config.ts`: `warpAmount` sopra ~0,26 attacca terra
   al bordo della region; alzare `baseFrequency` o `maxHeight` consuma il margine
-  di Lipschitz (dislivello fra colonne adiacenti <= 1, misurato sotto 0,8 su
-  otto seed). `heightField.test.ts` e' la rete di sicurezza.
+  di Lipschitz. **L'invariante e' in celle**: due celle adiacenti non
+  differiscono di piu' di una cella, cioe' `cellSize` voxel, e dentro una cella
+  il dislivello e' zero per costruzione. `heightField.test.ts` misura il margine
+  sul campo continuo, `IslandGenerator.test.ts` lo verifica sulle quote
+  quantizzate.
 
 ## Strade ed edifici
 
 - Passi, scostamenti e larghezze della carreggiata stanno in `streets/config.ts`;
-  cadenze, tetti e profili visivi in `buildings/config.ts`.
+  cadenze, tetti e profili visivi in `buildings/config.ts`; gli spessori della
+  grammatica — zoccolo, portale, coronamento, dettaglio sul tetto — in
+  `buildings/config.ts::GRAMMAR`.
+- Assi e lotti si allineano a `STREETS.align`, che e' il cubo di terreno: un
+  edificio a meta' cubo si troverebbe sotto l'impronta due quote diverse dove il
+  terreno e' piatto, e le opere gli metterebbero sotto un riempimento che nessun
+  dislivello vero giustifica.
 - La rete stradale e' una funzione pura di `(seed, x, y)`: niente stato, niente
   da salvare, niente da aggiornare quando arriva un catalizzatore.
 - Il `Builder` valida terreno e occupazione e costruisce a fasce nel budget;

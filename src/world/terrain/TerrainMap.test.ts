@@ -162,10 +162,15 @@ describe('paletteForDepth — stratigrafia', () => {
   it('superficie, sottosuolo e fondo secondo la profondita’', () => {
     const strata = BIOME_STRATA[BIOME.plain];
 
+    // La superficie e' spessa una cella, non un voxel: di taglio, su un gradino
+    // di terreno, deve essere alta quanto il cubo che la porta.
     expect(paletteForDepth(BIOME.plain, 0)).toBe(strata.surface);
-    expect(paletteForDepth(BIOME.plain, 1)).toBe(strata.subsoil);
-    expect(paletteForDepth(BIOME.plain, TERRAIN.subsoilDepth)).toBe(strata.subsoil);
-    expect(paletteForDepth(BIOME.plain, TERRAIN.subsoilDepth + 1)).toBe(strata.deep);
+    expect(paletteForDepth(BIOME.plain, TERRAIN.cellSize - 1)).toBe(strata.surface);
+    expect(paletteForDepth(BIOME.plain, TERRAIN.cellSize)).toBe(strata.subsoil);
+    expect(paletteForDepth(BIOME.plain, TERRAIN.cellSize + TERRAIN.subsoilDepth - 1))
+      .toBe(strata.subsoil);
+    expect(paletteForDepth(BIOME.plain, TERRAIN.cellSize + TERRAIN.subsoilDepth))
+      .toBe(strata.deep);
   });
 
   it('ogni bioma ha tre indici distinti e nessuno e’ il vuoto', () => {

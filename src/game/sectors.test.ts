@@ -5,18 +5,23 @@ import { HeightField } from '../world/terrain/heightField';
 import { shapeFromRegion } from '../world/terrain/region';
 import { coastalSectorAt, shapeWithSector } from './sectors';
 
-const BASE = { minX: 0, minY: 0, sizeX: 256, sizeY: 256 };
+// Isola e settore alla scala vera: 512 di lato, 128 di settore come
+// `BALANCE.gameplay.expansion.size`. Su una base piu' piccola il tetto di
+// `maxReliefSlope` abbassa il lobo sotto `beachMaxHeight` e il settore non
+// aggiunge piu' terra emersa — il test misurerebbe una costa che non c'e'.
+const BASE = { minX: 0, minY: 0, sizeX: 512, sizeY: 512 };
+const SECTOR = 128;
 
 describe('settori costieri', () => {
   it('assegna identificatori stabili ai quattro lati e ai segmenti', () => {
-    expect(coastalSectorAt(20, 250, BASE, 64).id).toBe('north-0');
-    expect(coastalSectorAt(250, 90, BASE, 64).id).toBe('east-1');
-    expect(coastalSectorAt(180, 2, BASE, 64).id).toBe('south-2');
-    expect(coastalSectorAt(1, 220, BASE, 64).id).toBe('west-3');
+    expect(coastalSectorAt(40, 500, BASE, SECTOR).id).toBe('north-0');
+    expect(coastalSectorAt(500, 180, BASE, SECTOR).id).toBe('east-1');
+    expect(coastalSectorAt(360, 4, BASE, SECTOR).id).toBe('south-2');
+    expect(coastalSectorAt(2, 440, BASE, SECTOR).id).toBe('west-3');
   });
 
   it('aggiunge terra utile fuori dal bordo con raccordo continuo', () => {
-    const sector = coastalSectorAt(32, 250, BASE, 64);
+    const sector = coastalSectorAt(64, 500, BASE, SECTOR);
     const shape = shapeWithSector(shapeFromRegion(BASE), sector);
     const field = new HeightField(1337, shape);
     let land = 0;
@@ -47,7 +52,7 @@ describe('settori costieri', () => {
   });
 
   it('non duplica la stessa estensione nella maschera', () => {
-    const sector = coastalSectorAt(32, 250, BASE, 64);
+    const sector = coastalSectorAt(64, 500, BASE, SECTOR);
     const once = shapeWithSector(shapeFromRegion(BASE), sector);
     expect(shapeWithSector(once, sector)).toBe(once);
   });

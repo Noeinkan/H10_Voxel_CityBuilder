@@ -28,20 +28,23 @@ export const GRADING = {
    *
    * E' il tetto strutturale, e ha sostituito `BUILDER.maxTerrainStep`: quel
    * numero valeva "quanto dislivello sopporto prima di rinunciare", questo vale
-   * "quanto muro sono disposto a costruire". Sei copre il caso peggiore vero,
-   * che e' la banchina — dal fondale a `maxQuayDepth` fino al piano di
-   * `quayLevel` — e non il terrapieno, che su questo terreno non arriva a tre.
+   * "quanto muro sono disposto a costruire". Ventiquattro copre il caso peggiore
+   * vero, che e' la banchina — dal fondale a `maxQuayDepth` fino al piano di
+   * `quayLevel` — e non il terrapieno, che su questo terreno non arriva a dodici.
    */
-  maxWorksStep: 6,
+  maxWorksStep: 24,
 
   /**
    * Dislivello sotto il quale il riempimento resta terra e non diventa muro.
    *
-   * Un voxel solo di scarto non e' un muro di contenimento: e' il plinto, che
+   * Un cubo solo di scarto non e' un muro di contenimento: e' il plinto, che
    * gli edifici hanno gia' nel loro profilo. Rivestirlo di pietra darebbe a
    * ogni casa su terreno appena mosso uno zoccolo che non si e' guadagnata.
+   *
+   * Sono due cubi e non un numero a se': il gradino piu' piccolo che il terreno
+   * sappia produrre e' esattamente un cubo, quindi la soglia sta subito sopra.
    */
-  terraceMinStep: 2,
+  terraceMinStep: TERRAIN.cellSize * 2,
 
   /**
    * Pendenza oltre la quale nemmeno un terrapieno prende la colonna.
@@ -60,31 +63,34 @@ export const GRADING = {
   /**
    * Quota del piano di una banchina.
    *
-   * Coincide con la colonna di spiaggia piu' alta possibile: la banchina
-   * incontra la spiaggia dove questa finisce, invece di tagliarla a mezza
-   * altezza o di sporgerle sopra. Sopra il pelo dell'acqua restano due voxel,
-   * che e' quanto basta perche' il molo si legga come tale e non come una secca.
+   * Coincide con la cella di spiaggia piu' alta possibile: la banchina incontra
+   * la spiaggia dove questa finisce, invece di tagliarla a mezza altezza o di
+   * sporgerle sopra. Lo scarto e' un cubo intero e non un voxel perche'
+   * `beachMaxHeight` e' una soglia esclusa e le quote sono quantizzate: la cella
+   * di spiaggia piu' alta sta un cubo sotto. Sopra il pelo dell'acqua restano
+   * due voxel, quanto basta perche' il molo si legga come tale e non come una
+   * secca.
    */
-  quayLevel: TERRAIN.beachMaxHeight - 1,
+  quayLevel: TERRAIN.beachMaxHeight - TERRAIN.cellSize,
 
   /**
    * Fondale massimo, sotto il livello del mare, su cui una banchina puo'
    * poggiare.
    *
    * E' cio' che decide quanto la citta' puo' spingersi sull'acqua. Con il
-   * fondale che scende di un voxel per colonna, tre voxel di pescaggio valgono
-   * circa tre colonne oltre la battigia: un molo, non un'isola artificiale.
+   * fondale che scende di un cubo per cella, dodici voxel di pescaggio valgono
+   * circa sei celle oltre la battigia: un molo, non un'isola artificiale.
    */
-  maxQuayDepth: 3,
+  maxQuayDepth: 12,
 
   /**
    * Dislivello che giustifica una piazza sopraelevata invece di una dipinta.
    *
    * Sotto, la piazza segue il terreno come ha sempre fatto: livellare un
-   * dislivello di un voxel produrrebbe un gradino che nessuno legge come
+   * dislivello di un cubo solo produrrebbe un gradino che nessuno legge come
    * progetto.
    */
-  plazaMinStep: 2,
+  plazaMinStep: TERRAIN.cellSize * 2,
 
   /** Corpo del muro di contenimento di un terrapieno. */
   terraceWall: PALETTE_SLOTS.stoneDark,

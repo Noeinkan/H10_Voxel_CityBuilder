@@ -48,8 +48,9 @@ export const BUILDER = {
    *
    * La simulazione ripropone le stesse colonne finche' il campo resta saturo:
    * senza questa ricerca la citta' si ferma appena il primo isolato si riempie.
-   * Due basta a scavalcare un isolato pieno e uno inutilizzabile di fila, e
-   * tiene lo scarto dalla colonna proposta sotto una trentina di colonne.
+   * Due basta a scavalcare un isolato pieno e uno inutilizzabile di fila. Conta
+   * isolati e non colonne, quindi non segue la scala del voxel: e' il passo
+   * della maglia stradale a dire quanto valga in colonne.
    */
   blockSearchRadius: 2,
 
@@ -70,13 +71,24 @@ export const BUILDER = {
    * Chunk che un singolo edificio puo' marcare sporchi, fondazione inclusa.
    *
    * E' un tetto duro verificato prima di scrivere, non una speranza: un edificio
-   * che sfora viene scartato. Otto copre una torre alta a cavallo di una
-   * cucitura senza lasciare che un singolo upgrade sporchi una regione intera.
+   * che sfora viene scartato — in silenzio, perche' non e' un errore. Ventiquattro
+   * copre una torre alta a cavallo di una cucitura senza lasciare che un singolo
+   * upgrade sporchi una regione intera.
+   *
+   * Otto bastavano a un'impronta di quattro. Con otto voxel di lato una torre di
+   * livello massimo attraversa il triplo dei chunk, e lasciando il tetto dov'era
+   * sparirebbero esattamente gli edifici alti — senza che niente lo dica.
    */
-  maxDirtyChunksPerBuilding: 8,
+  maxDirtyChunksPerBuilding: 24,
 
-  /** Cubi scritti per frame per struttura: la crescita e' voxel-per-voxel. */
-  voxelsPerFrame: 16,
+  /**
+   * Cubi scritti per frame per struttura: la crescita e' voxel-per-voxel.
+   *
+   * Un edificio e' fatto di circa otto volte i voxel di prima a parita' di
+   * volume costruito. Il budget sale con lui, altrimenti non cambia quanto costa
+   * un edificio ma solo quanto ci mette a comparire.
+   */
+  voxelsPerFrame: 96,
 
   /**
    * Edifici che possono crescere contemporaneamente.
@@ -94,13 +106,19 @@ export const BUILDER = {
    * essere un molo alto sei, e il budget deve restare quello che e': un tetto
    * sul lavoro per frame, non sul numero di colonne toccate.
    */
-  surfaceVoxelsPerFrame: 48,
+  surfaceVoxelsPerFrame: 192,
 
-  /** Quota sopra il terreno bonificata da tronchi e chiome. */
-  decorClearanceHeight: 7,
+  /**
+   * Quota sopra il terreno bonificata da tronchi e chiome.
+   *
+   * Deve stare sopra `treeTop` della specie piu' alta — la conifera arriva a
+   * diciotto voxel dal suolo — altrimenti un lotto liberato conserva la punta
+   * della chioma che stava sopra, sospesa a mezz'aria sopra il tetto nuovo.
+   */
+  decorClearanceHeight: 20,
 
   /** Raggio Manhattan della piazzola che identifica un catalizzatore. */
-  catalystPlazaRadius: 2,
+  catalystPlazaRadius: 4,
 
   /**
    * Probabilita' che un edificio prenda il colore d'accento come corpo.
@@ -115,10 +133,10 @@ export const BUILDER = {
    * Raggio di Chebyshev entro cui una colonna non edificabile fa "costa".
    *
    * Serve alla sola selezione della tipologia: e' cio' che distingue un mercato
-   * sul porto da un mercato qualunque. Sette colonne perche' l'impronta massima
-   * e' quattro e il mercato deve vedere l'acqua, non sfiorarla.
+   * sul porto da un mercato qualunque. Quattordici colonne perche' l'impronta
+   * massima e' otto e il mercato deve vedere l'acqua, non sfiorarla.
    */
-  coastalRadius: 7,
+  coastalRadius: 14,
 
   /** Quanto il profilo locale anticipa il livello con cui nasce un edificio. */
   localLevel: {
@@ -137,10 +155,15 @@ export const BUILDER = {
     maxDiscount: 38,
   },
 
-  /** Le stesse qualita cambiano anche la grammatica, non solo l'altezza. */
+  /**
+   * Le stesse qualita cambiano anche la grammatica, non solo l'altezza.
+   *
+   * `densityBandBias` conta fasce e non voxel, quindi non segue la scala;
+   * `accessibilityFootprintBias` e' un lato in voxel e la segue.
+   */
   localForm: {
     densityBandBias: 2,
-    accessibilityFootprintBias: -1,
+    accessibilityFootprintBias: -2,
     satisfactionTerraceBias: 0.22,
     wealthTerraceBias: 0.12,
     wealthAccentChance: 0.24,
@@ -168,8 +191,60 @@ export const DEFAULT_BUILDING_FORM: BuildingForm = {
  * desiderabilita'. Footprint e fasce salgono insieme perche' una torre stretta e
  * altissima su una base 1x1 si legge come un palo, non come un edificio.
  */
-/** Lato massimo assoluto di un'impronta, su qualunque livello. */
-export const MAX_FOOTPRINT = 4;
+/**
+ * Lato massimo assoluto di un'impronta, su qualunque livello.
+ *
+ * E' in voxel, e il voxel di un edificio e' quello fine: un edificio e' fatto
+ * di mattoni piu' piccoli del cubo di terreno su cui poggia (`TERRAIN.cellSize`).
+ * Otto voxel di lato sono quattro cubi di terreno — la stessa area di prima,
+ * con il doppio del dettaglio per lato in facciata.
+ */
+export const MAX_FOOTPRINT = 8;
+
+/**
+ * Lato minimo assoluto: sotto, un edificio e' un palo e non una casa.
+ *
+ * Quattro voxel sono due cubi di terreno, cioe' lo stesso ingombro minimo di
+ * prima. Serve dichiarato perche' il tiro dell'impronta parte da qui, e con
+ * `MAX_FOOTPRINT` raddoppiato un minimo di due darebbe casupole che alla scala
+ * nuova leggono come garage.
+ */
+export const MIN_FOOTPRINT = 4;
+
+/**
+ * Spessori della grammatica, in voxel.
+ *
+ * Sono le sole quote che non dipendono ne' dalla classe ne' dal livello: lo
+ * zoccolo a terra, il portale al piano terra, il coronamento in cima e il lato
+ * del dettaglio sul tetto. Stanno qui e non in `generate.ts` per la stessa
+ * ragione di tutto il resto — un numero che decide una proporzione visibile si
+ * cambia in un file solo.
+ *
+ * Sono tutti multipli di due perche' il voxel di un edificio e' la meta' del
+ * cubo di terreno: alla scala vecchia uno zoccolo da un voxel era alto quanto
+ * un gradino di terreno, e i due si confondevano.
+ */
+export const GRAMMAR = {
+  /** Zoccolo a contatto col terreno: i voxel piu' bassi dell'intero edificio. */
+  plinthHeight: 2,
+
+  /** Quota entro cui una faccia sul fronte d'accento diventa portale. */
+  portalHeight: 4,
+
+  /** Altezza del coronamento, `[minimo, massimo]` inclusi. */
+  crownHeight: [2, 4] as readonly [number, number],
+
+  /** Altezza del coronamento quando la tipologia lo vuole piatto. */
+  flatCrownHeight: 2,
+
+  /**
+   * Lato del dettaglio verticale sul tetto.
+   *
+   * A un voxel su un tetto largo otto sparirebbe alla distanza di gioco, che e'
+   * il contrario di cio' per cui esiste: chiudere la silhouette.
+   */
+  roofPropSide: 2,
+} as const;
 
 export interface LevelCaps {
   /** Lato minimo naturale; durante un upgrade bloccato puo' restare piu' stretto. */
@@ -180,14 +255,20 @@ export interface LevelCaps {
   readonly maxBands: number;
 }
 
+/**
+ * Le impronte sono raddoppiate rispetto alla scala vecchia, le fasce **no**: un
+ * livello 6 resta un edificio di otto piani, non di sedici. A raddoppiare e'
+ * `bandHeight`, cioe' l'altezza del singolo piano — l'edificio resta alto
+ * quanto prima e guadagna i voxel in mezzo, che e' esattamente il punto.
+ */
 export const LEVEL_CAPS: readonly LevelCaps[] = [
-  { minFootprint: 2, maxFootprint: 3, minBands: 1, maxBands: 2 },
-  { minFootprint: 2, maxFootprint: 3, minBands: 2, maxBands: 3 },
-  { minFootprint: 2, maxFootprint: 4, minBands: 3, maxBands: 4 },
-  { minFootprint: 3, maxFootprint: 4, minBands: 4, maxBands: 5 },
-  { minFootprint: 3, maxFootprint: 4, minBands: 5, maxBands: 6 },
-  { minFootprint: 3, maxFootprint: 4, minBands: 6, maxBands: 7 },
-  { minFootprint: 4, maxFootprint: 4, minBands: 7, maxBands: 8 },
+  { minFootprint: 4, maxFootprint: 6, minBands: 1, maxBands: 2 },
+  { minFootprint: 4, maxFootprint: 6, minBands: 2, maxBands: 3 },
+  { minFootprint: 4, maxFootprint: 8, minBands: 3, maxBands: 4 },
+  { minFootprint: 6, maxFootprint: 8, minBands: 4, maxBands: 5 },
+  { minFootprint: 6, maxFootprint: 8, minBands: 5, maxBands: 6 },
+  { minFootprint: 6, maxFootprint: 8, minBands: 6, maxBands: 7 },
+  { minFootprint: 8, maxFootprint: 8, minBands: 7, maxBands: 8 },
 ];
 
 /**
@@ -202,7 +283,14 @@ export const START_LEVEL_CDF: readonly number[] = [0.78, 0.94, 0.985, 0.997, 1, 
 
 /** Proporzioni e colori di una classe. */
 export interface ClassProfile {
-  /** Altezza di una fascia, estremi inclusi. */
+  /**
+   * Altezza di una fascia, estremi inclusi.
+   *
+   * Una fascia e' un piano. A quattro-sei voxel invece di due-tre, la cornice
+   * sulla sua sommita' ha sotto di se' una parete vera: e' cosi' che nascono le
+   * righe di piano che danno la scala all'edificio, che a due voxel erano la
+   * meta' della fascia e non si leggevano come marcapiano.
+   */
   readonly bandHeight: readonly [number, number];
 
   /**
@@ -247,46 +335,46 @@ export interface ClassProfile {
 export const CLASS_PROFILE: readonly ClassProfile[] = [
   // residenziale — moduli terrazzati e scafi chiari, massa di fondo della citta'.
   {
-    bandHeight: [2, 3],
+    bandHeight: [4, 6],
     shrinkBias: 0.38,
-    footprintBias: 1,
+    footprintBias: 2,
     body: PALETTE_SLOTS.concretePale,
     bodyAlt: PALETTE_SLOTS.glassDeep,
     accent: PALETTE_SLOTS.glass,
     crown: PALETTE_SLOTS.roofPale,
     plinth: PALETTE_SLOTS.metalDark,
     roofProp: PALETTE_SLOTS.metalBrass,
-    roofPropHeight: 2,
+    roofPropHeight: 4,
   },
   // commerciale — fronti caldi e bassi, insegne d'ottone, tetti larghi.
   {
-    bandHeight: [2, 3],
+    bandHeight: [4, 6],
     shrinkBias: 0.24,
-    footprintBias: 1,
+    footprintBias: 2,
     body: PALETTE_SLOTS.brick,
     bodyAlt: PALETTE_SLOTS.brickLight,
     accent: PALETTE_SLOTS.metalBrass,
     crown: PALETTE_SLOTS.roofPale,
     plinth: PALETTE_SLOTS.stoneWarm,
     roofProp: PALETTE_SLOTS.metalGold,
-    roofPropHeight: 2,
+    roofPropHeight: 4,
   },
   // industriale — megastrutture compatte, corazze e apparati di dissipazione.
   {
-    bandHeight: [2, 3],
+    bandHeight: [4, 6],
     shrinkBias: 0.18,
-    footprintBias: 1,
+    footprintBias: 2,
     body: PALETTE_SLOTS.stoneDeep,
     bodyAlt: PALETTE_SLOTS.metalDark,
     accent: PALETTE_SLOTS.metalRust,
     crown: PALETTE_SLOTS.metalDark,
     plinth: PALETTE_SLOTS.asphaltDark,
     roofProp: PALETTE_SLOTS.metalBrass,
-    roofPropHeight: 3,
+    roofPropHeight: 6,
   },
   // civico — guglie vetrate ed esoscheletri chiari, i landmark dello skyline.
   {
-    bandHeight: [3, 4],
+    bandHeight: [6, 8],
     shrinkBias: 0.62,
     footprintBias: 0,
     body: PALETTE_SLOTS.concreteWhite,
@@ -295,7 +383,7 @@ export const CLASS_PROFILE: readonly ClassProfile[] = [
     crown: PALETTE_SLOTS.roofWhite,
     plinth: PALETTE_SLOTS.concrete,
     roofProp: PALETTE_SLOTS.metalBrass,
-    roofPropHeight: 3,
+    roofPropHeight: 6,
   },
 ];
 
@@ -376,7 +464,7 @@ export const DEFAULT_TYPOLOGY_SHAPE: TypologyShape = {
   podiumBands: 0,
   courtyard: false,
   flatCrown: false,
-  minFootprint: 2,
+  minFootprint: 4,
   maxFootprint: MAX_FOOTPRINT,
 };
 
@@ -399,9 +487,9 @@ export const TYPOLOGIES: readonly TypologyDefinition[] = [
     // qualifica — densita' alta e livello alto — vince lui, che ha priorita'
     // maggiore; qui sotto resta la casa-bottega.
     priority: 3,
-    shape: { ...DEFAULT_TYPOLOGY_SHAPE, podiumBands: 1, flatCrown: true, maxFootprint: 3 },
+    shape: { ...DEFAULT_TYPOLOGY_SHAPE, podiumBands: 1, flatCrown: true, maxFootprint: 6 },
     profile: {
-      bandHeight: [2, 2],
+      bandHeight: [4, 4],
       shrinkBias: 0.12,
       body: PALETTE_SLOTS.brickLight,
       bodyAlt: PALETTE_SLOTS.wood,
@@ -418,9 +506,9 @@ export const TYPOLOGIES: readonly TypologyDefinition[] = [
     minDensity: 0.4,
     minLevel: 2,
     priority: 5,
-    shape: { ...DEFAULT_TYPOLOGY_SHAPE, podiumBands: 2, minFootprint: 3 },
+    shape: { ...DEFAULT_TYPOLOGY_SHAPE, podiumBands: 2, minFootprint: 6 },
     profile: {
-      bandHeight: [2, 3],
+      bandHeight: [4, 6],
       shrinkBias: 0.58,
       body: PALETTE_SLOTS.concretePale,
       bodyAlt: PALETTE_SLOTS.glassDeep,
@@ -434,9 +522,9 @@ export const TYPOLOGIES: readonly TypologyDefinition[] = [
     minDensity: 0.3,
     minLevel: 2,
     priority: 2,
-    shape: { ...DEFAULT_TYPOLOGY_SHAPE, courtyard: true, flatCrown: true, minFootprint: 4 },
+    shape: { ...DEFAULT_TYPOLOGY_SHAPE, courtyard: true, flatCrown: true, minFootprint: 8 },
     profile: {
-      bandHeight: [2, 3],
+      bandHeight: [4, 6],
       shrinkBias: 0.08,
       body: PALETTE_SLOTS.concrete,
       bodyAlt: PALETTE_SLOTS.concreteLight,
@@ -450,8 +538,8 @@ export const TYPOLOGIES: readonly TypologyDefinition[] = [
     minDensity: 0.55,
     minLevel: 4,
     priority: 4,
-    shape: { ...DEFAULT_TYPOLOGY_SHAPE, maxFootprint: 3 },
-    profile: { bandHeight: [3, 4], shrinkBias: 0.72 },
+    shape: { ...DEFAULT_TYPOLOGY_SHAPE, maxFootprint: 6 },
+    profile: { bandHeight: [6, 8], shrinkBias: 0.72 },
   },
   { id: 'terracedHousing', label: 'Terraced housing', use: 0, priority: 0, shape: DEFAULT_TYPOLOGY_SHAPE, profile: {} },
 
@@ -463,11 +551,11 @@ export const TYPOLOGIES: readonly TypologyDefinition[] = [
     roles: ['port'],
     coastal: true,
     priority: 6,
-    shape: { ...DEFAULT_TYPOLOGY_SHAPE, podiumBands: 1, flatCrown: true, minFootprint: 3 },
+    shape: { ...DEFAULT_TYPOLOGY_SHAPE, podiumBands: 1, flatCrown: true, minFootprint: 6 },
     profile: {
-      bandHeight: [2, 2],
+      bandHeight: [4, 4],
       shrinkBias: 0.08,
-      footprintBias: 2,
+      footprintBias: 4,
       body: PALETTE_SLOTS.wood,
       bodyAlt: PALETTE_SLOTS.brickLight,
       accent: PALETTE_SLOTS.metalBrass,
@@ -482,9 +570,9 @@ export const TYPOLOGIES: readonly TypologyDefinition[] = [
     specialization: 'office',
     minLevel: 3,
     priority: 5,
-    shape: { ...DEFAULT_TYPOLOGY_SHAPE, podiumBands: 1, minFootprint: 3 },
+    shape: { ...DEFAULT_TYPOLOGY_SHAPE, podiumBands: 1, minFootprint: 6 },
     profile: {
-      bandHeight: [3, 4],
+      bandHeight: [6, 8],
       shrinkBias: 0.78,
       body: PALETTE_SLOTS.glassDeep,
       bodyAlt: PALETTE_SLOTS.glassDark,
@@ -501,9 +589,9 @@ export const TYPOLOGIES: readonly TypologyDefinition[] = [
     specialization: 'tourism',
     minLevel: 2,
     priority: 5,
-    shape: { ...DEFAULT_TYPOLOGY_SHAPE, podiumBands: 1, minFootprint: 3 },
+    shape: { ...DEFAULT_TYPOLOGY_SHAPE, podiumBands: 1, minFootprint: 6 },
     profile: {
-      bandHeight: [2, 3],
+      bandHeight: [4, 6],
       shrinkBias: 0.28,
       body: PALETTE_SLOTS.concreteWhite,
       bodyAlt: PALETTE_SLOTS.roofPale,
@@ -518,9 +606,9 @@ export const TYPOLOGIES: readonly TypologyDefinition[] = [
     use: 1,
     specialization: 'entertainment',
     priority: 5,
-    shape: { ...DEFAULT_TYPOLOGY_SHAPE, flatCrown: true, minFootprint: 3 },
+    shape: { ...DEFAULT_TYPOLOGY_SHAPE, flatCrown: true, minFootprint: 6 },
     profile: {
-      bandHeight: [3, 4],
+      bandHeight: [6, 8],
       shrinkBias: 0.18,
       body: PALETTE_SLOTS.brickDark,
       bodyAlt: PALETTE_SLOTS.brick,
@@ -529,7 +617,7 @@ export const TYPOLOGIES: readonly TypologyDefinition[] = [
       plinth: PALETTE_SLOTS.stoneDark,
     },
   },
-  { id: 'retailRow', label: 'Retail row', use: 1, priority: 0, shape: { ...DEFAULT_TYPOLOGY_SHAPE, flatCrown: true, maxFootprint: 3 }, profile: { bandHeight: [2, 2] } },
+  { id: 'retailRow', label: 'Retail row', use: 1, priority: 0, shape: { ...DEFAULT_TYPOLOGY_SHAPE, flatCrown: true, maxFootprint: 6 }, profile: { bandHeight: [4, 4] } },
 
   // --- industriale ---------------------------------------------------------
   {
@@ -538,11 +626,11 @@ export const TYPOLOGIES: readonly TypologyDefinition[] = [
     use: 2,
     specialization: 'logistics',
     priority: 5,
-    shape: { ...DEFAULT_TYPOLOGY_SHAPE, flatCrown: true, minFootprint: 4 },
+    shape: { ...DEFAULT_TYPOLOGY_SHAPE, flatCrown: true, minFootprint: 8 },
     profile: {
-      bandHeight: [2, 2],
+      bandHeight: [4, 4],
       shrinkBias: 0,
-      footprintBias: 2,
+      footprintBias: 4,
       body: PALETTE_SLOTS.asphalt,
       bodyAlt: PALETTE_SLOTS.metalDark,
       accent: PALETTE_SLOTS.metalBrass,
@@ -556,8 +644,8 @@ export const TYPOLOGIES: readonly TypologyDefinition[] = [
     use: 2,
     minLevel: 2,
     priority: 2,
-    shape: { ...DEFAULT_TYPOLOGY_SHAPE, flatCrown: true, minFootprint: 3 },
-    profile: { bandHeight: [2, 2], shrinkBias: 0.05, footprintBias: 2 },
+    shape: { ...DEFAULT_TYPOLOGY_SHAPE, flatCrown: true, minFootprint: 6 },
+    profile: { bandHeight: [4, 4], shrinkBias: 0.05, footprintBias: 4 },
   },
   { id: 'industrialYard', label: 'Industrial yard', use: 2, priority: 0, shape: DEFAULT_TYPOLOGY_SHAPE, profile: {} },
 
@@ -569,9 +657,9 @@ export const TYPOLOGIES: readonly TypologyDefinition[] = [
     specialization: 'research',
     minLevel: 2,
     priority: 5,
-    shape: { ...DEFAULT_TYPOLOGY_SHAPE, courtyard: true, flatCrown: true, minFootprint: 4 },
+    shape: { ...DEFAULT_TYPOLOGY_SHAPE, courtyard: true, flatCrown: true, minFootprint: 8 },
     profile: {
-      bandHeight: [3, 3],
+      bandHeight: [6, 6],
       shrinkBias: 0.12,
       body: PALETTE_SLOTS.concreteWhite,
       bodyAlt: PALETTE_SLOTS.glassPale,
@@ -587,9 +675,9 @@ export const TYPOLOGIES: readonly TypologyDefinition[] = [
     roles: ['monument', 'park'],
     maxDensity: 0.6,
     priority: 4,
-    shape: { ...DEFAULT_TYPOLOGY_SHAPE, minFootprint: 3 },
+    shape: { ...DEFAULT_TYPOLOGY_SHAPE, minFootprint: 6 },
     profile: {
-      bandHeight: [3, 4],
+      bandHeight: [6, 8],
       shrinkBias: 0.34,
       body: PALETTE_SLOTS.stoneWarm,
       bodyAlt: PALETTE_SLOTS.concreteWhite,

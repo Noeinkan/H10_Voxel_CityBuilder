@@ -23,7 +23,7 @@ const ZOOM_STEP = 1.12;
 const PAN_MARGIN = 24;
 
 /** Frazione dell'inquadratura percorsa in un secondo di pan da tastiera. */
-const PAN_SPEED = 0.6;
+const PAN_SPEED = 1.1;
 
 /**
  * Un movimento sul piano di terra lungo l'azimut si proiettta a schermo per

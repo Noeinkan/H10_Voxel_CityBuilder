@@ -62,8 +62,18 @@ export interface IslandResult {
   readonly generationMs: number;
 }
 
-/** L'anello decor richiede una cella in piu' per calcolare la sua pendenza. */
+/** L'anello decor richiede una colonna in piu' per calcolare la sua pendenza. */
 const HEIGHT_BORDER = TREE_DECOR.ring + 1;
+
+/**
+ * Estremi dello scostamento di un'origine d'albero dentro la sua cella decor.
+ *
+ * Servono a invertire il calcolo: da quali celle puo' arrivare un albero che
+ * cade nel rettangolo di questo blocco. Devono seguire `treeJitter` in
+ * `decor.ts` — sono lo stesso intervallo letto dal lato opposto.
+ */
+const JITTER_MIN = TREE_DECOR.ring;
+const JITTER_MAX = TREE_DECOR.ring + TREE_DECOR.jitterSize - 1;
 /** Lato del reticolo: blocco piu' anello decorativo e anello per la pendenza. */
 const PADDED = CHUNK + HEIGHT_BORDER * 2;
 
@@ -180,34 +190,33 @@ export function generateColumnBlock(field: HeightField, ccx: number, ccy: number
   let maxHeight = 0;
   let buildableCount = 0;
 
-  for (let ly = 0; ly < CHUNK; ly++) {
-    for (let lx = 0; lx < CHUNK; lx++) {
-      const p = (ly + HEIGHT_BORDER) * PADDED + (lx + HEIGHT_BORDER);
-      const continuous = paddedHeights[p];
+  // Una passata per cella, non per colonna: quota, bioma, pendenza ed
+  // edificabilita' si decidono una volta sola e poi si replicano sulle colonne
+  // della cella. Replicare invece di accorciare gli array e' deliberato — cosi'
+  // `ColumnBlock` resta indicizzato per colonna e nessun consumatore a valle
+  // (edificabilita', `TerrainMap`, opere di terra, picking, overlay) sa che la
+  // grana e' cambiata.
+  const cells = CHUNK / TERRAIN.cellSize;
+  for (let cy = 0; cy < cells; cy++) {
+    for (let cx = 0; cx < cells; cx++) {
+      const lx0 = cx * TERRAIN.cellSize;
+      const ly0 = cy * TERRAIN.cellSize;
+      const cell = sampleCell(lx0 + HEIGHT_BORDER, ly0 + HEIGHT_BORDER);
+      const build = isBuildable(cell.biome, cell.slope);
 
-      // Pendenza sul campo continuo, non sulle altezze intere: quantizzare prima
-      // schiaccerebbe tutto su 0 e 1 e i biomi non avrebbero piu' nulla da cui
-      // distinguersi. L'anello paddato ricampiona le stesse coordinate mondo dei
-      // blocchi vicini, quindi il valore non dipende da quale blocco lo calcola.
-      const slope = Math.max(
-        Math.abs(paddedHeights[p + 1] - continuous),
-        Math.abs(paddedHeights[p - 1] - continuous),
-        Math.abs(paddedHeights[p + PADDED] - continuous),
-        Math.abs(paddedHeights[p - PADDED] - continuous),
-      );
-
-      const height = clampHeight(Math.floor(continuous));
-      const biome = classifyBiome(height, slope);
-
-      const i = columnIndex(lx, ly);
-      heights[i] = height;
-      biomes[i] = biome;
-      slopes[i] = slope;
-      if (isBuildable(biome, slope)) {
-        buildable[i] = 1;
-        buildableCount++;
+      for (let dy = 0; dy < TERRAIN.cellSize; dy++) {
+        for (let dx = 0; dx < TERRAIN.cellSize; dx++) {
+          const i = columnIndex(lx0 + dx, ly0 + dy);
+          heights[i] = cell.height;
+          biomes[i] = cell.biome;
+          slopes[i] = cell.slope;
+          if (build) {
+            buildable[i] = 1;
+            buildableCount++;
+          }
+        }
       }
-      if (height > maxHeight) maxHeight = height;
+      if (cell.height > maxHeight) maxHeight = cell.height;
     }
   }
 
@@ -216,32 +225,29 @@ export function generateColumnBlock(field: HeightField, ccx: number, ccy: number
   const minY = baseY - TREE_DECOR.ring;
   const maxX = baseX + CHUNK - 1 + TREE_DECOR.ring;
   const maxY = baseY + CHUNK - 1 + TREE_DECOR.ring;
-  const minCellX = Math.floor((minX - 3) / TREE_DECOR.cellSize);
-  const maxCellX = Math.floor((maxX - 2) / TREE_DECOR.cellSize);
-  const minCellY = Math.floor((minY - 3) / TREE_DECOR.cellSize);
-  const maxCellY = Math.floor((maxY - 2) / TREE_DECOR.cellSize);
+  const minCellX = Math.floor((minX - JITTER_MAX) / TREE_DECOR.cellSize);
+  const maxCellX = Math.floor((maxX - JITTER_MIN) / TREE_DECOR.cellSize);
+  const minCellY = Math.floor((minY - JITTER_MAX) / TREE_DECOR.cellSize);
+  const maxCellY = Math.floor((maxY - JITTER_MIN) / TREE_DECOR.cellSize);
 
   for (let cellY = minCellY; cellY <= maxCellY; cellY++) {
     for (let cellX = minCellX; cellX <= maxCellX; cellX++) {
       const [x, y] = treeOrigin(field.seed, cellX, cellY);
       if (x < minX || x > maxX || y < minY || y > maxY) continue;
-      const px = x - baseX + HEIGHT_BORDER;
-      const py = y - baseY + HEIGHT_BORDER;
-      const p = py * PADDED + px;
-      const continuous = paddedHeights[p];
-      const slope = Math.max(
-        Math.abs(paddedHeights[p + 1] - continuous),
-        Math.abs(paddedHeights[p - 1] - continuous),
-        Math.abs(paddedHeights[p + PADDED] - continuous),
-        Math.abs(paddedHeights[p - PADDED] - continuous),
+
+      // L'albero poggia sulla cella di terreno che lo ospita, non sul campo
+      // continuo sotto il tronco: se ricampionasse per conto suo si troverebbe
+      // mezzo voxel sopra o sotto il cubo su cui sta, e le radici resterebbero
+      // in aria. L'origine e' allineata alla cella, quindi il cubo e' uno solo.
+      const cell = sampleCell(
+        floorToCell(x) - baseX + HEIGHT_BORDER,
+        floorToCell(y) - baseY + HEIGHT_BORDER,
       );
-      const height = clampHeight(Math.floor(continuous));
-      const biome = classifyBiome(height, slope);
-      const tree = treeAt(field.seed, cellX, cellY, height, biome, slope);
+      const tree = treeAt(field.seed, cellX, cellY, cell.height, cell.biome, cell.slope);
       if (tree === null) continue;
 
-      decor.push(x - baseX, y - baseY, tree.species, tree.trunkHeight, height);
-      maxHeight = Math.max(maxHeight, treeTop(tree, height));
+      decor.push(x - baseX, y - baseY, tree.species, tree.trunkHeight, cell.height);
+      maxHeight = Math.max(maxHeight, treeTop(tree, cell.height));
     }
   }
 
@@ -343,4 +349,63 @@ function clampHeight(value: number): number {
   if (value < 0) return 0;
   if (value > TERRAIN.maxHeight) return TERRAIN.maxHeight;
   return value;
+}
+
+/** Coordinata di partenza della cella di terreno che contiene `v`. */
+function floorToCell(v: number): number {
+  return Math.floor(v / TERRAIN.cellSize) * TERRAIN.cellSize;
+}
+
+/** Quota, bioma e pendenza di una cella di terreno. */
+interface CellSample {
+  readonly height: number;
+  readonly biome: number;
+  readonly slope: number;
+}
+
+/**
+ * Riassume una cella di terreno a partire dal suo angolo nel reticolo paddato.
+ *
+ * **Media e non campione d'angolo.** Prendere il valore di una sola colonna
+ * ancorerebbe la cella a uno spigolo, e la quantizzazione trasformerebbe quel
+ * mezzo voxel di scarto in un gradino intero: la media dei campioni della cella
+ * centra il valore e toglie l'aliasing dal profilo della costa.
+ *
+ * **Pendenza media e non massima.** E' la stessa grandezza di prima — voxel di
+ * dislivello per voxel — quindi tutte le soglie di `TERRAIN` valgono immutate.
+ * Il massimo sui quattro angoli sarebbe stato un'altra grandezza: avrebbe
+ * dichiarato ripida ogni cella che ne sfiora una, e mangiato l'edificabile.
+ *
+ * **Quantizzazione col pavimento.** Una cella non puo' stare a mezza quota: la
+ * quota scende al multiplo di `cellSize` sotto di se', cosi' il cubo appoggia
+ * sul terreno invece di sporgerne.
+ */
+function sampleCell(px: number, py: number): CellSample {
+  let heightSum = 0;
+  let slopeSum = 0;
+
+  for (let dy = 0; dy < TERRAIN.cellSize; dy++) {
+    for (let dx = 0; dx < TERRAIN.cellSize; dx++) {
+      const p = (py + dy) * PADDED + (px + dx);
+      const continuous = paddedHeights[p];
+      heightSum += continuous;
+
+      // Pendenza sul campo continuo, non sulle altezze quantizzate: quantizzare
+      // prima schiaccerebbe tutto su 0 e 1 e i biomi non avrebbero piu' nulla da
+      // cui distinguersi. L'anello paddato ricampiona le stesse coordinate mondo
+      // dei blocchi vicini, quindi il valore non dipende da quale blocco lo
+      // calcola.
+      slopeSum += Math.max(
+        Math.abs(paddedHeights[p + 1] - continuous),
+        Math.abs(paddedHeights[p - 1] - continuous),
+        Math.abs(paddedHeights[p + PADDED] - continuous),
+        Math.abs(paddedHeights[p - PADDED] - continuous),
+      );
+    }
+  }
+
+  const columns = TERRAIN.cellSize * TERRAIN.cellSize;
+  const height = clampHeight(floorToCell(heightSum / columns));
+  const slope = slopeSum / columns;
+  return { height, biome: classifyBiome(height, slope), slope };
 }

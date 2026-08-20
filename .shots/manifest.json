@@ -1,0 +1,19 @@
+{
+  "capturedAt": "2026-08-20T21:10:46.299Z",
+  "viewport": {
+    "width": 1440,
+    "height": 900
+  },
+  "scale": 2,
+  "shots": [
+    {
+      "name": "00-probe",
+      "file": ".shots/00-probe.png",
+      "url": "http://localhost:8020/",
+      "shows": "probe",
+      "alt": "",
+      "bytes": 1157315,
+      "pageErrors": []
+    }
+  ]
+}

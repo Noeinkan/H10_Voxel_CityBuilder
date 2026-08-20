@@ -29,16 +29,48 @@ export const BIOME_NAMES: readonly string[] = ['ocean', 'beach', 'plain', 'fores
 export const BIOME_COUNT = BIOME_NAMES.length;
 
 export const TERRAIN = {
+  // --- Grana del terreno --------------------------------------------------
+
+  /**
+   * Voxel per lato del cubo di terreno, sui tre assi.
+   *
+   * E' la sola cosa che separa la scala del terreno da quella di cio' che ci
+   * sta sopra. Il terreno campiona e quantizza su questa cella — in pianta e in
+   * quota — mentre edifici e alberi restano a dettaglio di un voxel: un cubo di
+   * prato si legge percio' grosso il doppio di un voxel di facciata, ed e'
+   * quella differenza a dare la scala all'isola. Con tutto sullo stesso passo
+   * una chioma d'albero era larga quanto un edificio intero.
+   *
+   * Deve dividere `CHUNK`. Le celle sono allineate al mondo e ogni blocco parte
+   * da un `baseX` multiplo di 32: solo se questo vale l'allineamento locale al
+   * chunk coincide con quello globale, e una cella non cade a cavallo di una
+   * cucitura con due quote diverse.
+   */
+  cellSize: 2,
+
   // --- Quote assolute (voxel sull'asse z) ---------------------------------
+  //
+  // Sono voxel, non celle, ma quasi tutte vogliono essere multiple di
+  // `cellSize`: una soglia dispari cade a meta' di un cubo, e il gradino da un
+  // voxel che ne esce e' esattamente il dettaglio che il terreno a celle deve
+  // togliere di mezzo.
+  //
+  // **Sono tarate su un'isola di lato 512.** La verticale non e' libera dalla
+  // orizzontale: il gradiente del campo vale rilievo diviso raggio, quindi
+  // un'isola larga il doppio con lo stesso rilievo e' la stessa montagna
+  // spalmata su due volte lo spazio — una frittella senza fianchi, senza
+  // `sloped` e senza niente da terrazzare. Raddoppiando il lato dell'isola sono
+  // raddoppiate anche queste, e con loro le frequenze del rumore: le pendenze
+  // restano quelle calibrate, e la calibrazione vale ancora.
 
   /** Superficie dell'acqua: l'ultimo voxel d'acqua sta a `z = seaLevel - 1`. */
-  seaLevel: 8,
+  seaLevel: 16,
 
   /** Tetto duro dell'altezza di colonna. Nessuna colonna supera questa quota. */
-  maxHeight: 40,
+  maxHeight: 80,
 
   /** Altezza a cui la maschera radiale schiaccia il bordo della region. */
-  oceanFloor: 2,
+  oceanFloor: 4,
 
   /**
    * Rilievo massimo per voxel di raggio dell'isola.
@@ -49,14 +81,15 @@ export const TERRAIN = {
    * varrebbe solo per il lato 256 su cui e' stata fatta, e su una region piu'
    * piccola cadrebbero sia il criterio di continuita' sia l'edificabilita'.
    *
-   * A raggio 128 il tetto vale 38,4 e non morde: il rilievo resta
-   * `maxHeight - oceanFloor`. Sotto, l'isola si abbassa in proporzione — che e'
-   * anche il comportamento giusto, un isolotto non ha una vetta da 40 voxel.
+   * A raggio 256 il tetto vale 76,8 e morde appena: il rilievo resta
+   * `maxHeight - oceanFloor`, cioe' 76. Sotto, l'isola si abbassa in proporzione
+   * — che e' anche il comportamento giusto, un isolotto non ha una vetta da 80
+   * voxel.
    */
   maxReliefSlope: 0.3,
 
   /**
-   * I lobi da 64 voxel hanno raggio minore dell'isola base: questa frazione
+   * I lobi da 128 voxel hanno raggio minore dell'isola base: questa frazione
    * compensa la scala senza dare loro il rilievo pieno, mantenendo il raccordo
    * sotto un voxel di dislivello e abbastanza alto da produrre pianura.
    */
@@ -77,7 +110,7 @@ export const TERRAIN = {
    * il margine effettivo.
    */
   octaves: 4,
-  baseFrequency: 1 / 192,
+  baseFrequency: 1 / 384,
   lacunarity: 2,
   persistence: 0.5,
 
@@ -106,7 +139,7 @@ export const TERRAIN = {
    * acqua. Sotto quel valore l'isola resta circondata d'acqua per costruzione.
    */
   warpAmount: 0.16,
-  warpFrequency: 1 / 320,
+  warpFrequency: 1 / 640,
   warpSalt: 0x00c0_a571,
 
   // --- Soglie di bioma ----------------------------------------------------
@@ -116,21 +149,26 @@ export const TERRAIN = {
   // voxel per voxel (dislivello massimo verso i quattro vicini ortogonali).
 
   /** Sopra il mare ma entro questa quota si resta costa. */
-  beachMaxHeight: 11,
+  beachMaxHeight: 24,
 
   /**
-   * Roccia, collina e foresta si dividono il rilievo in fasce da cinque voxel
-   * sopra la pianura. Il tetto e' `rockMinHeight`: la calibrazione del rumore
-   * garantisce che ogni seed arrivi almeno li', altrimenti esisterebbero isole
-   * senza vetta (`heightField.test.ts` lo verifica).
+   * Roccia, collina e foresta si dividono il rilievo in fasce da otto voxel
+   * — quattro celle — sopra la pianura. Il tetto e' `rockMinHeight`: la calibrazione
+   * del rumore garantisce che ogni seed arrivi almeno li', altrimenti
+   * esisterebbero isole senza vetta (`heightField.test.ts` lo verifica).
+   *
+   * Le soglie sono multiple di `cellSize` perche' le quote quantizzate lo sono:
+   * una soglia dispari verrebbe attraversata sempre e solo dalla stessa meta'
+   * dei valori possibili, e la fascia uscirebbe larga il doppio o la meta' di
+   * quanto dichiara.
    */
-  rockMinHeight: 25,
+  rockMinHeight: 48,
   rockMinSlope: 0.52,
 
-  hillMinHeight: 20,
+  hillMinHeight: 40,
   hillMinSlope: 0.42,
 
-  forestMinHeight: 15,
+  forestMinHeight: 32,
   forestMinSlope: 0.36,
 
   /**
@@ -141,12 +179,18 @@ export const TERRAIN = {
   buildableMaxSlope: 0.34,
 
   // --- Stratigrafia della colonna -----------------------------------------
+  //
+  // Ogni strato e' spesso un numero intero di celle, e `paletteForDepth` lo
+  // conta a partire da `cellSize`. La ragione si vede solo di taglio: su una
+  // parete la superficie deve essere alta quanto il cubo che la porta, altrimenti
+  // sotto il prato spunta una riga di terra da un voxel e il gradino torna a
+  // leggersi alla scala sbagliata.
 
   /** Voxel di sottosuolo sotto la superficie prima di passare al fondo. */
-  subsoilDepth: 3,
+  subsoilDepth: 8,
 
   /** Voxel d'acqua chiara sopra l'acqua profonda. */
-  waterSurfaceDepth: 2,
+  waterSurfaceDepth: 4,
 } as const;
 
 /** Biomi su cui si puo' costruire, prima di applicare la soglia di pendenza. */
@@ -195,7 +239,14 @@ export const WATER_IDS = {
   deep: PALETTE_SLOTS.waterDeep,
 } as const;
 
-/** Parametri delle decorazioni voxel. Le probabilita' sono per cella 6x6. */
+/**
+ * Parametri delle decorazioni voxel. Le probabilita' sono per cella 12x12.
+ *
+ * Un albero e' *contenuto*, non terreno: sta sul reticolo fine da un voxel come
+ * gli edifici, e non su quello da `TERRAIN.cellSize`. La sua cella qui sotto e'
+ * quindi una cosa diversa dal cubo di terreno — e' il passo con cui si
+ * spaziano gli alberi, non la grana con cui sono fatti.
+ */
 export const TREE_DECOR = {
   /**
    * Raggio massimo della chioma; definisce anche l'anello valutato dai blocchi.
@@ -205,12 +256,45 @@ export const TREE_DECOR = {
    * compenetrano mai. Nessun profilo di `TREE_SHAPES` puo' superarlo — se un
    * giorno servisse una chioma piu' larga va allargata prima la cella.
    */
-  ring: 2,
-  cellSize: 6,
-  /** Una cella puo' scegliere solo una delle quattro posizioni interne 2x2. */
-  jitterSize: 2,
-  /** Densita' per bioma: niente alberi su oceano, spiaggia e roccia. */
+  ring: 4,
+  cellSize: 12,
+  /**
+   * Posizioni interne per asse, a passo di un voxel.
+   *
+   * Quattro per asse fanno sedici disposizioni per cella contro le quattro di
+   * prima. Non e' varieta' per sport: con chiome larghe il doppio, una griglia
+   * di alberi tutti sul medesimo scarto si legge come carta da parati. Quattro
+   * e non cinque perche' e' quanto lascia l'invariante qui sopra.
+   */
+  jitterSize: 4,
+  /**
+   * Densita' per bioma: niente alberi su oceano, spiaggia e roccia.
+   *
+   * Non cambia con la scala: la cella ha quattro volte l'area di prima e ospita
+   * un albero quattro volte piu' largo in pianta, quindi la frazione di suolo
+   * coperta da chioma resta quella calibrata.
+   */
   density: [0, 0, 0.18, 0.62, 0.34, 0] as const,
+
+  /**
+   * Frazione dei voxel sull'ultimo anello di un livello di chioma che cade.
+   *
+   * E' cio' che toglie la geometria alla chioma. Il taglio di Manhattan da solo
+   * produce rombi e ottagoni esatti, e a raggio quattro un ottagono esatto si
+   * legge come un solido, non come un albero: mangiando a caso il bordo la
+   * silhouette torna irregolare senza aggiungere ne' forme dedicate ne' voxel.
+   */
+  edgeErosion: 0.45,
+
+  /**
+   * Scostamento laterale massimo di un livello di chioma rispetto al tronco.
+   *
+   * Un livello si sposta solo di quanto avanza fra il suo raggio e quello della
+   * specie, quindi l'ingombro dichiarato resta vero e due chiome vicine non si
+   * toccano lo stesso. E' quel che basta perche' una chioma penda da un lato
+   * invece di essere un solido di rotazione perfetto.
+   */
+  maxLean: 1,
 } as const;
 
 /**
@@ -256,42 +340,61 @@ export interface TreeShape {
  */
 export const TREE_SHAPES: readonly TreeShape[] = [
   // Conifera: guglia a piani sfalsati, il classico abete a gradoni. I livelli
-  // larghi alternati agli stretti sono cio' che da' la silhouette dentellata.
+  // larghi alternati agli stretti sono cio' che da' la silhouette dentellata —
+  // e con quattro raggi disponibili invece di due i gradoni sono davvero
+  // gradoni, non tre scalini contati.
   {
-    trunk: [5, 2],
-    sink: 3,
+    trunk: [9, 4],
+    sink: 6,
     tones: [PALETTE_SLOTS.grassDark, PALETTE_SLOTS.grass, PALETTE_SLOTS.grassLight],
     canopy: [
-      { radius: 2, cut: 2, tone: 0 },
-      { radius: 1, cut: 2, tone: 0 },
-      { radius: 2, cut: 2, tone: 0 },
-      { radius: 1, cut: 2, tone: 1 },
-      { radius: 1, cut: 1, tone: 1 },
+      { radius: 4, cut: 4, tone: 0 },
+      { radius: 4, cut: 5, tone: 0 },
+      { radius: 3, cut: 4, tone: 0 },
+      { radius: 4, cut: 4, tone: 0 },
+      { radius: 3, cut: 3, tone: 0 },
+      { radius: 3, cut: 4, tone: 1 },
+      { radius: 2, cut: 4, tone: 1 },
+      { radius: 3, cut: 3, tone: 1 },
+      { radius: 2, cut: 3, tone: 1 },
+      { radius: 2, cut: 2, tone: 2 },
+      { radius: 1, cut: 2, tone: 2 },
       { radius: 0, cut: 0, tone: 2 },
     ],
   },
-  // Latifoglia: chioma tonda e piena, la piu' voluminosa delle tre.
+  // Latifoglia: chioma tonda e piena, la piu' voluminosa delle tre. Il ventre
+  // sta a `cut: 7` su raggio 4, cioe' quasi il quadrato pieno: e' la sola via
+  // per una sfera, perche' il rombo a quella scala legge come un ottaedro.
   {
-    trunk: [4, 3],
-    sink: 2,
+    trunk: [8, 5],
+    sink: 4,
     tones: [PALETTE_SLOTS.grassDark, PALETTE_SLOTS.grass, PALETTE_SLOTS.grassLight],
     canopy: [
-      { radius: 2, cut: 2, tone: 0 },
-      { radius: 2, cut: 3, tone: 1 },
-      { radius: 2, cut: 3, tone: 1 },
-      { radius: 2, cut: 2, tone: 2 },
+      { radius: 3, cut: 4, tone: 0 },
+      { radius: 4, cut: 5, tone: 0 },
+      { radius: 4, cut: 6, tone: 1 },
+      { radius: 4, cut: 7, tone: 1 },
+      { radius: 4, cut: 7, tone: 1 },
+      { radius: 4, cut: 6, tone: 1 },
+      { radius: 4, cut: 5, tone: 2 },
+      { radius: 3, cut: 4, tone: 2 },
+      { radius: 2, cut: 3, tone: 2 },
       { radius: 1, cut: 2, tone: 2 },
     ],
   },
   // Autunnale: stessa scala della latifoglia ma piu' schiacciata, e in caldo.
   {
-    trunk: [4, 2],
-    sink: 2,
+    trunk: [8, 4],
+    sink: 4,
     tones: [PALETTE_SLOTS.metalRust, PALETTE_SLOTS.brickLight, PALETTE_SLOTS.metalBrass],
     canopy: [
-      { radius: 2, cut: 3, tone: 0 },
-      { radius: 2, cut: 3, tone: 1 },
-      { radius: 2, cut: 2, tone: 1 },
+      { radius: 3, cut: 5, tone: 0 },
+      { radius: 4, cut: 6, tone: 0 },
+      { radius: 4, cut: 7, tone: 1 },
+      { radius: 4, cut: 7, tone: 1 },
+      { radius: 4, cut: 6, tone: 1 },
+      { radius: 3, cut: 5, tone: 2 },
+      { radius: 2, cut: 3, tone: 2 },
       { radius: 1, cut: 2, tone: 2 },
     ],
   },

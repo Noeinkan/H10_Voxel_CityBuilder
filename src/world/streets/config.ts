@@ -1,4 +1,5 @@
 import { PALETTE_SLOTS } from '../../engine/paletteSlots';
+import { TERRAIN } from '../terrain/config';
 
 /**
  * Unica fonte di verita' dei numeri della rete stradale.
@@ -22,30 +23,50 @@ export const STREETS = {
   /**
    * Distanza nominale fra due assi consecutivi.
    *
-   * E' il numero che decide la scala della citta'. Undici colonne con
-   * l'impronta massima a quattro lasciano un isolato che ospita tre edifici per
-   * lato piu' un cuore libero: sotto le nove il cuore sparisce e la citta'
-   * diventa una scacchiera di edifici attaccati, sopra le quindici gli isolati
+   * E' il numero che decide la scala della citta'. Ventidue colonne con
+   * l'impronta massima a otto lasciano un isolato che ospita tre edifici per
+   * lato piu' un cuore libero: sotto le diciotto il cuore sparisce e la citta'
+   * diventa una scacchiera di edifici attaccati, sopra le trenta gli isolati
    * leggono come campi recintati invece che come isolati.
    */
-  pitch: 11,
+  pitch: 22,
 
   /**
    * Scostamento massimo di un asse dalla sua posizione nominale.
    *
    * E' l'unica cosa che separa questa maglia da un reticolo perfetto, e va
    * tenuta sotto meta' del passo: a `pitch / 2` due assi consecutivi possono
-   * toccarsi e l'isolato fra loro sparisce. A due, il lato di un isolato varia
-   * fra 5 e 14 colonne — abbastanza da non leggersi come una griglia, mai
+   * toccarsi e l'isolato fra loro sparisce. A quattro, il lato di un isolato
+   * varia fra 14 e 30 colonne — abbastanza da non leggersi come una griglia, mai
    * abbastanza da non ospitare l'impronta massima.
    */
-  jitter: 2,
+  jitter: 4,
 
   /** Un asse ogni quanti e' principale. */
   arterialEvery: 4,
 
-  /** Larghezza della carreggiata di un asse secondario. */
-  minorWidth: 1,
+  /**
+   * Passo con cui assi e lotti si allineano.
+   *
+   * E' il cubo di terreno. Il terreno sta a quote multiple di `cellSize` e
+   * cambia quota solo al confine fra due cubi: un lotto che parte a meta' di un
+   * cubo si trova sotto l'impronta due quote diverse dove il terreno e' piatto,
+   * e le opere gli mettono sotto un riempimento che nessun dislivello vero
+   * giustifica. Allineando, un edificio poggia su cubi interi.
+   *
+   * Vale sia per lo scostamento degli assi sia per lo scorrimento del lotto
+   * lungo il fronte: allinearne uno solo non basterebbe.
+   */
+  align: TERRAIN.cellSize,
+
+  /**
+   * Larghezza della carreggiata di un asse secondario.
+   *
+   * Due voxel, cioe' un cubo di terreno: una carreggiata da un voxel sarebbe
+   * meta' del cubo su cui e' dipinta, e leggerebbe come una crepa invece che
+   * come una strada.
+   */
+  minorWidth: 2,
 
   /**
    * Larghezza della carreggiata di un asse principale.
@@ -53,7 +74,7 @@ export const STREETS = {
    * La gerarchia si legge dalla larghezza prima che dal colore: a distanza di
    * gioco due colori di asfalto sono lo stesso grigio, due larghezze no.
    */
-  arterialWidth: 2,
+  arterialWidth: 4,
 
   /** Colore della carreggiata secondaria. */
   minorPalette: PALETTE_SLOTS.asphalt,

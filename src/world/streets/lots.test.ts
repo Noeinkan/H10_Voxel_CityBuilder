@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { placeLot, type Lot } from './lots';
+import { STREETS } from './config';
 import { FACING, type BlockRect } from './streetGrid';
 
 /**
@@ -126,6 +127,23 @@ describe('placeLot — determinismo', () => {
       const a = placeLot({ rect: RECT, x: 14, y: 23, footprint: 4, accepts: FREE });
       const b = placeLot({ rect: RECT, x: 14, y: 23, footprint: 4, accepts: FREE });
       expect(a).toEqual(b);
+    }
+  });
+});
+
+describe('placeLot — allineamento al cubo di terreno', () => {
+  it('ogni lotto parte su un multiplo di `align`', () => {
+    // Il terreno cambia quota solo al confine fra due cubi. Un lotto che parte
+    // a meta' cubo si trova sotto l'impronta due quote diverse dove il terreno
+    // e' in realta' piatto, e le opere ci mettono sotto un riempimento che
+    // nessun dislivello vero giustifica.
+    for (let y = RECT.y0; y <= RECT.y1; y++) {
+      for (let x = RECT.x0; x <= RECT.x1; x++) {
+        const lot = placeLot({ rect: RECT, x, y, footprint: 4, accepts: FREE });
+        if (lot === null) continue;
+        expect((lot.x - RECT.x0) % STREETS.align).toBe(0);
+        expect((lot.y - RECT.y0) % STREETS.align).toBe(0);
+      }
     }
   });
 });

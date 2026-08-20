@@ -5,8 +5,10 @@ import {
   CLASS_PROFILE,
   DEFAULT_BUILDING_FORM,
   DEFAULT_TYPOLOGY_SHAPE,
+  GRAMMAR,
   LEVEL_CAPS,
   MAX_FOOTPRINT,
+  MIN_FOOTPRINT,
   START_LEVEL_CDF,
   type ClassProfile,
   type BuildingForm,
@@ -122,8 +124,8 @@ export function generateBuilding(request: BuildingRequest): VoxelStamp {
     cap,
   );
   const naturalFootprint = clamp(
-    2 + Math.floor(random() * (MAX_FOOTPRINT - 1)) + profile.footprintBias,
-    2,
+    MIN_FOOTPRINT + Math.floor(random() * (MAX_FOOTPRINT - MIN_FOOTPRINT + 1)) + profile.footprintBias,
+    MIN_FOOTPRINT,
     MAX_FOOTPRINT,
   );
   const footprint = clamp(naturalFootprint, minFootprint, cap);
@@ -141,7 +143,7 @@ export function generateBuilding(request: BuildingRequest): VoxelStamp {
   const body = accented ? profile.accent : profile.body;
   // La cornice mantiene il proprio tono anche quando l'accento sale a scala di
   // edificio: usare qui `body` renderebbe la faccia d'accento invisibile sulle
-  // fasce alte due voxel, dove cornice e faccia finirebbero nello stesso slot.
+  // fasce piu' basse, dove cornice e faccia finirebbero nello stesso slot.
   const bodyAlt = profile.bodyAlt;
 
   // La faccia d'accento resta sempre diversa dal corpo: su un edificio gia'
@@ -178,25 +180,26 @@ export function generateBuilding(request: BuildingRequest): VoxelStamp {
   // invece di lasciarla tagliata di netto, che a distanza legge come un edificio
   // in costruzione.
   //
-  // Un coronamento piatto non rientra affatto: su un'impronta di tre `shrink`
-  // lascerebbe un cappello 1x1, cioe' proprio la guglia che una tipologia a
-  // tetto piano non deve avere. Un capannone finisce con una copertura larga
+  // Un coronamento piatto non rientra affatto: su un'impronta stretta `shrink`
+  // lascerebbe un cappello minuscolo, cioe' proprio la guglia che una tipologia
+  // a tetto piano non deve avere. Un capannone finisce con una copertura larga
   // quanto lui.
   const crownRect = shape.flatCrown ? rect : shrink(rect);
   rects.push(crownRect);
-  const crownHeight = pickInt(random, 1, 2);
-  heights.push(shape.flatCrown ? 1 : crownHeight);
+  const crownHeight = pickInt(random, GRAMMAR.crownHeight[0], GRAMMAR.crownHeight[1]);
+  heights.push(shape.flatCrown ? GRAMMAR.flatCrownHeight : crownHeight);
 
   // Un solo dettaglio verticale chiude la silhouette senza introdurre rumore
   // per-voxel: camino, sfiato o antenna dipendono dal profilo. Il tiro si
   // consuma comunque, anche quando il coronamento e' piatto e il dettaglio non
   // viene disegnato: cosi' la tipologia sceglie la forma e non la sequenza, e
   // due tipologie sullo stesso seme restano confrontabili.
+  const propSide = Math.min(GRAMMAR.roofPropSide, crownRect.w, crownRect.h);
   const propRect: BandRect = {
-    x0: crownRect.x0 + Math.floor(random() * crownRect.w),
-    y0: crownRect.y0 + Math.floor(random() * crownRect.h),
-    w: 1,
-    h: 1,
+    x0: crownRect.x0 + Math.floor(random() * (crownRect.w - propSide + 1)),
+    y0: crownRect.y0 + Math.floor(random() * (crownRect.h - propSide + 1)),
+    w: propSide,
+    h: propSide,
   };
   rects.push(propRect);
   heights.push(shape.flatCrown ? 0 : profile.roofPropHeight);
@@ -381,7 +384,7 @@ function paint(request: PaintRequest): VoxelStamp {
     // il podio: un isolato a corte ha un cortile, non un pozzo che lo attraversa
     // dal tetto alle fondamenta.
     const hollow = request.courtyard && !isCrown && !isRoofProp && !isPodium &&
-      rect.w >= 3 && rect.h >= 3;
+      rect.w >= 6 && rect.h >= 6;
 
     const bandBody = isPodium && request.podiumBody !== null ? request.podiumBody : request.body;
     const bandAlt = isPodium && request.podiumAlt !== null ? request.podiumAlt : request.bodyAlt;
@@ -395,7 +398,7 @@ function paint(request: PaintRequest): VoxelStamp {
         ? request.roofProp
         : isCrown
           ? request.crown
-          : sz === 0
+          : sz < GRAMMAR.plinthHeight
             ? request.plinth
             : sz === top
               ? bandAlt
@@ -409,7 +412,7 @@ function paint(request: PaintRequest): VoxelStamp {
             continue;
           }
 
-          const accent = !isCrown && !isRoofProp && sz !== 0 &&
+          const accent = !isCrown && !isRoofProp && sz >= GRAMMAR.plinthHeight &&
             onAccentFace(rect, sx, sy, request.accentFace);
           // Quando l'intero edificio usa il colore d'accento, `accentId`
           // coincide con la cornice normale. Sulla sommita' della fascia si
@@ -424,7 +427,7 @@ function paint(request: PaintRequest): VoxelStamp {
             ? SURFACE_KIND.utility
             : isCrown
               ? SURFACE_KIND.roofTech
-              : sz <= 1 && onPortal(rect, sx, sy, request.accentFace)
+              : sz < GRAMMAR.portalHeight && onPortal(rect, sx, sy, request.accentFace)
                 ? SURFACE_KIND.portal
                 : accent
                   ? SURFACE_KIND.luminous

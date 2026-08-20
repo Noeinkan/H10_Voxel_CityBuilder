@@ -1,32 +1,57 @@
 import {
   BufferGeometry,
+  DoubleSide,
   Float32BufferAttribute,
   Group,
   LineBasicMaterial,
   LineLoop,
+  Mesh,
+  MeshBasicMaterial,
 } from 'three';
 import type { Catalyst } from '../sim';
 import type { Region } from '../world/terrain/region';
 import type { TerrainMap } from '../world/terrain/TerrainMap';
 import { TERRAIN } from '../world/terrain/config';
 
-const SEGMENTS = 64;
+const SEGMENTS = 96;
+/** Larghezza in voxel della fascia sotto il cerchio del cursore. */
+const CURSOR_BAND = 1.6;
 
 /** Un colore per uso urbano, in ordine di `BUILDING_CLASS`. */
 const CLASS_COLORS: readonly number[] = [0x5f8f7f, 0xd8886a, 0xd9b45f, 0xe99a72];
+
+/** Gli stessi due stati del segnaposto: verde valido, rosso rifiutato. */
+const CURSOR_VALID = 0x2ff08d;
+const CURSOR_INVALID = 0xff5a4a;
 
 /** Cerchi di influenza e perimetri dei settori, separati dalle mesh voxel. */
 export class InfluenceOverlay {
   readonly group = new Group();
   private readonly existing = new Group();
   private readonly sectors = new Group();
-  private readonly cursorMaterial = lineMaterial(0x65e08a, 0.95);
+  // Il raggio del cursore e' una fascia piena piu' il suo bordo: una linea da
+  // un pixel si perde sul terreno chiaro, e la larghezza non e' regolabile.
+  private readonly cursorMaterial = lineMaterial(CURSOR_VALID, 1);
+  private readonly bandMaterial = new MeshBasicMaterial({
+    color: CURSOR_VALID,
+    transparent: true,
+    opacity: 0.3,
+    depthTest: false,
+    depthWrite: false,
+    side: DoubleSide,
+  });
   private readonly cursor = new LineLoop(new BufferGeometry(), this.cursorMaterial);
+  private readonly band = new Mesh(new BufferGeometry(), this.bandMaterial);
 
   constructor(private readonly map: TerrainMap) {
-    this.group.add(this.existing, this.sectors, this.cursor);
+    this.group.add(this.existing, this.sectors, this.band, this.cursor);
     this.cursor.visible = false;
-    this.cursor.renderOrder = 20;
+    this.band.visible = false;
+    this.band.renderOrder = 20;
+    this.cursor.renderOrder = 21;
+    // Fuori dalla profondita' come il segnaposto: il raggio resta leggibile
+    // anche quando passa dietro a una collina.
+    this.cursorMaterial.depthTest = false;
   }
 
   refreshCatalysts(catalysts: readonly Catalyst[]): void {
@@ -44,12 +69,18 @@ export class InfluenceOverlay {
   showCursor(x: number, y: number, radius: number, valid: boolean): void {
     this.cursor.geometry.dispose();
     this.cursor.geometry = circleGeometry(this.map, x, y, radius);
-    this.cursorMaterial.color.setHex(valid ? 0x65e08a : 0xef6b65);
+    this.band.geometry.dispose();
+    this.band.geometry = bandGeometry(this.map, x, y, radius, CURSOR_BAND);
+    const color = valid ? CURSOR_VALID : CURSOR_INVALID;
+    this.cursorMaterial.color.setHex(color);
+    this.bandMaterial.color.setHex(color);
     this.cursor.visible = true;
+    this.band.visible = true;
   }
 
   hideCursor(): void {
     this.cursor.visible = false;
+    this.band.visible = false;
   }
 
   addSector(region: Region): void {
@@ -68,6 +99,33 @@ function circleGeometry(map: TerrainMap, cx: number, cy: number, radius: number)
     writePoint(positions, i, x, y, surfaceZ(map, x, y));
   }
   return geometry(positions);
+}
+
+/** La fascia segue la heightmap come il cerchio: due anelli e una striscia. */
+function bandGeometry(
+  map: TerrainMap,
+  cx: number,
+  cy: number,
+  radius: number,
+  width: number,
+): BufferGeometry {
+  const inner = Math.max(0, radius - width / 2);
+  const outer = radius + width / 2;
+  const positions = new Float32Array(SEGMENTS * 6);
+  const indices: number[] = [];
+  for (let i = 0; i < SEGMENTS; i++) {
+    const angle = (i / SEGMENTS) * Math.PI * 2;
+    const cos = Math.cos(angle);
+    const sin = Math.sin(angle);
+    const z = surfaceZ(map, cx + cos * radius, cy + sin * radius);
+    writePoint(positions, i * 2, cx + cos * inner, cy + sin * inner, z);
+    writePoint(positions, i * 2 + 1, cx + cos * outer, cy + sin * outer, z);
+    const next = ((i + 1) % SEGMENTS) * 2;
+    indices.push(i * 2, i * 2 + 1, next + 1, i * 2, next + 1, next);
+  }
+  const result = geometry(positions);
+  result.setIndex(indices);
+  return result;
 }
 
 function rectGeometry(map: TerrainMap, region: Region): BufferGeometry {

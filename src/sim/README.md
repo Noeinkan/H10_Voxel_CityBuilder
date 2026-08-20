@@ -219,6 +219,14 @@ Con `?debug=1&sim=1` sono esposti `__simStats()`, `__simTick(n)`, `__simSites(n)
 
 ## Misure
 
+> ⚠️ **Da rimisurare.** Con la scala del voxel dimezzata i raggi dei
+> catalizzatori sono raddoppiati per conversione di unità (`radius: 22 → 44` e
+> simili) e `congestionRadius` con loro: un raggio doppio è **quattro volte** le
+> celle toccate, e le due righe di modifica del campo qui sotto sono
+> proporzionali a quel numero. Anche l'isola è passata da 256 a 512 di lato. I
+> valori sono quelli di prima del cambio: vanno rifatti con `npm run bench` su
+> questa macchina prima di essere citati.
+
 `npm run bench`, isola 256×256 con 50 catalizzatori e 400 edifici, Node 22.
 
 | Operazione | Prima di fase 3 | Dopo fase 3 | Criterio |
