@@ -49,8 +49,15 @@
 .resource-delta[data-tone="neutral"] { color: var(--hud-muted); }
 .time-controls { display: flex; align-items: center; gap: 3px; padding-left: 5px; border-left: 1px solid rgba(63, 87, 77, .13); pointer-events: auto; }
 
-.build-dock { position: absolute; left: 50%; bottom: 14px; transform: translateX(-50%); display: flex; align-items: center; gap: 6px; max-width: calc(100vw - 28px); padding: 7px; border-radius: 18px; }
+.build-dock { position: absolute; left: 50%; bottom: 14px; transform: translateX(-50%); display: flex; align-items: flex-end; gap: 6px; max-width: calc(100vw - 28px); padding: 7px; border-radius: 18px; }
 .dock-divider { width: 1px; align-self: stretch; margin: 3px 1px; background: rgba(63, 87, 77, .16); }
+
+/* La toolbar e' divisa per funzione: crescita, connessioni, identita'. */
+.dock-group { display: grid; gap: 3px; }
+.dock-group-title { padding-left: 3px; color: var(--hud-muted); font-size: 8px; font-weight: 900; letter-spacing: .1em; text-transform: uppercase; }
+.dock-group-row { display: flex; align-items: center; gap: 4px; }
+/* Bloccato ma visibile: il bottone resta al suo posto e resta leggibile. */
+.hud-button[data-locked="true"]:disabled { opacity: .68; border-style: dashed; }
 .hud-button { position: relative; display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 38px; padding: 7px 10px; border: 1px solid rgba(63, 87, 77, .2); border-radius: 11px; background: rgba(255,255,255,.7); color: var(--hud-ink); font: 700 11px/1.15 var(--hud-font); cursor: pointer; pointer-events: auto; transition: transform 120ms ease, background 120ms ease, border-color 120ms ease, box-shadow 120ms ease; }
 .hud-button:hover:not(:disabled) { transform: translateY(-2px); border-color: rgba(63, 110, 97, .48); box-shadow: 0 6px 14px rgba(63, 87, 77, .14); }
 .hud-button:focus-visible { outline: 3px solid rgba(233, 154, 114, .48); outline-offset: 2px; }
@@ -75,10 +82,17 @@
 .cursor-card[hidden] { display: none; }
 .cursor-card strong { font-size: 11px; }
 .cursor-card > span { color: var(--hud-muted); }
+.cursor-card .cursor-line { color: var(--hud-ink); }
+.cursor-card .cursor-line em { color: var(--hud-muted); font-style: normal; font-weight: 800; }
 .cursor-card .cursor-reason { color: var(--hud-positive); font-weight: 800; }
 .cursor-card[data-valid="false"] .cursor-reason { color: var(--hud-danger); }
 
 .drawer-section-title { margin: 16px 0 8px; font-size: 12px; text-transform: uppercase; letter-spacing: .08em; color: var(--hud-muted); }
+.commerce-panel { display: grid; gap: 3px; }
+.commerce-row { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; color: var(--hud-muted); font-size: 11px; }
+.commerce-row strong { color: var(--hud-ink); font-size: 12px; }
+.commerce-note { margin: 5px 0 0; color: var(--hud-muted); font-size: 10px; line-height: 1.35; }
+
 .trade-list { display: grid; gap: 7px; }
 .trade-card, .decision-option { display: grid; gap: 3px; width: 100%; padding: 9px 11px; text-align: left; color: inherit; background: rgba(255,255,255,.52); border: 1px solid rgba(62,76,69,.14); border-radius: 10px; cursor: pointer; }
 .trade-card > span, .decision-option > span { color: var(--hud-muted); font-size: 10px; line-height: 1.35; }
@@ -147,6 +161,7 @@
 }
 
 @media (max-width: 680px) {
+  .dock-group-title { display: none; }
   .hud-button .button-copy { display: none; }
   .hud-button { width: 40px; padding: 7px; }
   .resource-bar { top: 8px; width: calc(100vw - 16px); }

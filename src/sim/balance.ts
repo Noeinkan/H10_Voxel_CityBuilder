@@ -29,21 +29,32 @@ export const BALANCE = {
 
   // --- Pesi base della simulazione ----------------------------------------
   //
-  // Sono i valori su cui le policy applicano i loro moltiplicatori. I tre pesi
-  // di desiderabilita' valgono 1 di proposito: senza policy attive il campo
-  // deve valere esattamente `strength` al centro di un catalizzatore, e quello
-  // e' un invariante verificato dai test.
+  // Sono i valori su cui le policy applicano i loro moltiplicatori. I quattro
+  // pesi di desiderabilita' valgono 1 di proposito: senza policy attive il campo
+  // deve valere esattamente `strength` al centro di un catalizzatore, per gli
+  // usi che quel ruolo porta a pieno (influenza 1). E' un invariante verificato
+  // dai test.
 
   weights: {
     /** Abitanti ospitati da un edificio residenziale. */
     residentialCapacity: 24,
-    /** Materiali prodotti per tick da un edificio produttivo a pieno organico. */
+    /**
+     * Clienti serviti per tick da un edificio commerciale a pieno organico.
+     *
+     * Vale quanto `residentialCapacity` di proposito: un edificio commerciale
+     * serve esattamente un edificio residenziale pieno, cosi' come un edificio
+     * industriale ne sfama esattamente uno. Sono le due relazioni 1:1 che
+     * rendono leggibile un bilancio a colpo d'occhio.
+     */
+    commercialCapacity: 24,
+    /** Materiali prodotti per tick da un edificio industriale a pieno organico. */
     productionYield: 2.5,
     /** Fondi consumati per tick da un edificio civico. */
     civicUpkeep: 2,
-    /** Peso della somma dei catalizzatori nel campo, per classe. */
+    /** Peso della somma dei catalizzatori nel campo, per uso urbano. */
     desirabilityResidential: 1,
-    desirabilityProduction: 1,
+    desirabilityCommercial: 1,
+    desirabilityIndustrial: 1,
     desirabilityCivic: 1,
   },
 
@@ -55,18 +66,16 @@ export const BALANCE = {
     greenBelt: 1.2,
     zoningRelief: 1.15,
     civicPride: 1.3,
+    marketCharter: 1.28,
   },
 
   // --- Azioni del giocatore -----------------------------------------------
 
   gameplay: {
     catalyst: {
-      cost: [120, 150, 200] as readonly number[],
-      strength: [210, 205, 195] as readonly number[],
-      radius: [22, 20, 18] as readonly number[],
-      /** Distanza di Chebyshev minima fra catalizzatori della stessa classe. */
+      /** Distanza di Chebyshev minima fra catalizzatori dello stesso ruolo. */
       minDistance: 10,
-      /** Varianti di fase 2. I primi tre preservano il ciclo guidato dell'MVP. */
+      /** Costo, intensita' al centro e raggio di ciascun ruolo. */
       roles: {
         market: { cost: 120, strength: 210, radius: 22 },
         factory: { cost: 150, strength: 205, radius: 20 },
@@ -76,6 +85,27 @@ export const BALANCE = {
         university: { cost: 360, strength: 200, radius: 21 },
         monument: { cost: 440, strength: 215, radius: 20 },
       },
+
+      /**
+       * Quanto ciascun ruolo favorisce — o penalizza — ognuno dei quattro usi.
+       *
+       * E' la tabella che ha sostituito "un catalizzatore, una classe": un
+       * mercato tira su negozi *e* case, una fabbrica tira su capannoni e caccia
+       * via le abitazioni. I valori sono moltiplicatori di `strength`, quindi
+       * stanno in `[-1, 1]`; un `1` esatto e' cio' che tiene in piedi
+       * l'invariante "al centro il campo vale esattamente `strength`" per gli
+       * usi che il ruolo porta a pieno. Uno zero non costa nulla: il campo
+       * salta del tutto gli usi che un ruolo non tocca.
+       */
+      influence: {
+        market: { residential: 1, commercial: 1, industrial: 0, civic: 0.15 },
+        factory: { residential: -0.2, commercial: 0.2, industrial: 1, civic: 0 },
+        park: { residential: 0.7, commercial: 0.2, industrial: -0.35, civic: 1 },
+        port: { residential: 0, commercial: 0.7, industrial: 1, civic: 0 },
+        transport: { residential: 1, commercial: 0.8, industrial: 0.45, civic: 0.2 },
+        university: { residential: 0.5, commercial: 0.45, industrial: 0, civic: 1 },
+        monument: { residential: 0.55, commercial: 0.75, industrial: -0.2, civic: 1 },
+      },
     },
     policy: {
       denseHousing: { cost: 180, population: 24, upkeep: 1.8 },
@@ -84,6 +114,7 @@ export const BALANCE = {
       greenBelt: { cost: 140, population: 12, upkeep: 1.2 },
       zoningRelief: { cost: 160, population: 24, upkeep: 1.4 },
       civicPride: { cost: 260, population: 72, upkeep: 2.8 },
+      marketCharter: { cost: 200, population: 48, upkeep: 1.6 },
     },
     expansion: {
       cost: 500,
@@ -128,7 +159,86 @@ export const BALANCE = {
       greenBelt: { density: -25, satisfaction: 50 },
       zoningRelief: { density: 35, satisfaction: -20 },
       civicPride: { wealth: 20, satisfaction: 45 },
+      marketCharter: { wealth: 40, accessibility: 20, satisfaction: 15 },
     },
+
+    /**
+     * Soglie sul profilo locale che qualificano una specializzazione.
+     *
+     * Non sono usi urbani: sono aggettivi che si posano su un uso gia' deciso,
+     * e servono alla tipologia edilizia. Il catalogo dei ruoli richiesti sta in
+     * `districts.ts`, qui stanno solo i numeri.
+     */
+    specialization: {
+      office: { wealth: 0.4, accessibility: 0.38, density: 0.4 },
+      tourism: { wealth: 0.38, satisfaction: 0.56 },
+      research: { wealth: 0.32, satisfaction: 0.44 },
+      logistics: { accessibility: 0.42, industry: 0.38 },
+      entertainment: { density: 0.38, satisfaction: 0.52 },
+    },
+  },
+
+  /**
+   * Commercio interno: il ciclo economico che si distingue da quello industriale.
+   *
+   * L'industria consuma lavoratori e produce materiali e cibo; il commercio
+   * consuma lavoratori **e materiali** e produce fondi e soddisfazione. Sono
+   * due catene diverse sullo stesso bacino di manodopera, ed e' la competizione
+   * per quel bacino a rendere le due strategie leggibili l'una contro l'altra.
+   */
+  commerce: {
+    /** Domanda di servizi generata da un abitante per tick. */
+    demandPerResident: 1,
+    /** Lavoratori richiesti da un edificio commerciale per andare a pieno regime. */
+    workersPerCommercial: 5,
+    /**
+     * Materiali consumati per cliente servito.
+     *
+     * A 24 clienti un edificio commerciale pieno brucia 0,72 materiali per
+     * tick, contro i 2,5 che produce un edificio industriale pieno: tre isolati
+     * e mezzo di negozi vivono su una fabbrica sola. E' il numero che lega le
+     * due catene invece di lasciarle indipendenti.
+     */
+    goodsPerCustomer: 0.03,
+    /**
+     * Fondi incassati per cliente servito.
+     *
+     * A 24 clienti fa 1,92 per tick, appena sotto i 2 che costa un edificio
+     * civico: un isolato commerciale pieno paga quasi esattamente un servizio
+     * pubblico.
+     */
+    revenuePerCustomer: 0.08,
+    /** Contributo alla soddisfazione bersaglio con la domanda interamente servita. */
+    satisfactionPerService: 0.18,
+  },
+
+  /**
+   * Edifici a uso misto.
+   *
+   * Un edificio misto non e' una zona nuova: e' un edificio con un uso primario
+   * e un secondo uso che ne porta una frazione di capacita' economica. Nasce
+   * dove due campi compatibili superano insieme le loro soglie, quindi dalla
+   * sovrapposizione, non da una scelta del giocatore cella per cella.
+   */
+  mixedUse: {
+    /** Quota di capacita' economica che l'uso secondario porta nell'edificio. */
+    secondaryShare: 0.5,
+    /**
+     * Frazione della soglia di sito che il secondo uso deve superare.
+     *
+     * Sotto 1 perche' il secondo uso e' ospite: chiedergli la stessa soglia del
+     * primo renderebbe l'uso misto un evento raro proprio dove serve, cioe' nel
+     * bordo sfumato fra due campi.
+     */
+    thresholdShare: 0.85,
+    /**
+     * Usi che possono convivere in un edificio, per indice di uso primario.
+     *
+     * Indici come in `BUILDING_CLASS`: 0 residenziale, 1 commerciale, 2
+     * industriale, 3 civico. Il commerciale e' il connettore — sta con tutti,
+     * ed e' l'unico che compare in ogni riga.
+     */
+    partners: [[1], [0, 3], [1], [1]] as readonly (readonly number[])[],
   },
 
   trade: {
@@ -263,10 +373,10 @@ export const BALANCE = {
     /** Punti di desiderabilita' sottratti per ogni edificio nel raggio breve. */
     congestionPerBuilding: 6,
     /**
-     * Soglia sotto cui una cella non e' candidata, per classe, indicizzata come
-     * `BUILDING_CLASS`. La desiderabilita' deve superarla, non pareggiarla.
+     * Soglia sotto cui una cella non e' candidata, per uso urbano, indicizzata
+     * come `BUILDING_CLASS`. La desiderabilita' deve superarla, non pareggiarla.
      */
-    siteThreshold: [40, 30, 25] as readonly number[],
+    siteThreshold: [40, 34, 30, 25] as readonly number[],
   },
 
   // --- Limiti duri ---------------------------------------------------------

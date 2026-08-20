@@ -10,6 +10,7 @@ export { BALANCE } from './balance';
 export {
   ALL_CLASSES,
   BUILDING_CLASS,
+  CLASS_LABELS,
   CLASS_NAMES,
   CLASS_COUNT,
   isBuildingClass,
@@ -17,13 +18,23 @@ export {
 } from './classes';
 export {
   CATALYSTS,
+  CATALYST_GROUPS,
   catalystById,
+  catalystInfluence,
+  catalystRoleOf,
   defaultCatalystOfClass,
   isCatalystId,
   type CatalystDefinition,
   type CatalystEffects,
+  type CatalystGroup,
   type CatalystId,
 } from './catalysts';
+export {
+  EMPTY_COMMERCE,
+  resolveCommerce,
+  type CommerceInputs,
+  type CommerceReport,
+} from './commerce';
 export {
   DesirabilityField,
   rectAround,
@@ -33,7 +44,7 @@ export {
   type Catalyst,
   type CellRect,
 } from './DesirabilityField';
-export { nextBuildSites, type BuildSite } from './nextBuildSites';
+export { nextBuildSites, type BuildSite, type BuildSiteQuery } from './nextBuildSites';
 export {
   POLICIES,
   policyById,
@@ -49,9 +60,12 @@ export {
 } from './policies';
 export { policyConflict } from './policies';
 export {
+  dominantUse,
+  specializationOf,
   urbanProfileAt,
   type DistrictId,
   type LocalUrbanProfile,
+  type Specialization,
 } from './districts';
 export {
   decisionAt,

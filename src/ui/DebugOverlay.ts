@@ -18,6 +18,12 @@ export interface OverlayFrame {
   readonly mainMsMax: number;
   /** Costo della sola chiamata di render, sempre sul main thread. */
   readonly renderMs: number;
+  /** Millisecondi della sola pass d'ombra, gia' compresi in renderMs. */
+  readonly shadowMs: number;
+  /** Lato della shadow map; 0 quando la pass e' spenta. */
+  readonly shadowSize: number;
+  /** Profilo di effetti in vigore, per esteso. */
+  readonly effects: string;
   readonly drawCalls: number;
   readonly triangles: number;
   readonly geometryBytes: number;
@@ -105,6 +111,8 @@ export class DebugOverlay {
       `callback   ${frame.frameMs.toFixed(2).padStart(6)} ms`,
       `main       ${frame.mainMs.toFixed(2).padStart(6)} ms   max ${frame.mainMsMax.toFixed(2)} ms`,
       `render     ${frame.renderMs.toFixed(2).padStart(6)} ms`,
+      `shadow     ${frame.shadowMs.toFixed(2).padStart(6)} ms   ${frame.shadowSize === 0 ? 'off' : frame.shadowSize + 'px'}`,
+      `effects    ${frame.effects}`,
       '',
       `draw call  ${frame.drawCalls.toString().padStart(6)}`,
       `triangles  ${format(frame.triangles).padStart(6)}`,

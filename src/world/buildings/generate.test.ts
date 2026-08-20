@@ -11,7 +11,7 @@ function* everyStamp(seeds = 24): Generator<{ stamp: VoxelStamp; cls: BuildingCl
   for (const cls of ALL_CLASSES) {
     for (let level = 0; level <= BUILDER.maxLevel; level++) {
       for (let seed = 0; seed < seeds; seed++) {
-        yield { stamp: generateBuilding(cls, level, seed * 7919 + 13), cls, level };
+        yield { stamp: generateBuilding({ class: cls, level, seed: seed * 7919 + 13 }), cls, level };
       }
     }
   }
@@ -19,7 +19,7 @@ function* everyStamp(seeds = 24): Generator<{ stamp: VoxelStamp; cls: BuildingCl
 
 describe('generateBuilding', () => {
   it('trasforma l\'ancora locale in una coordinata voxel 3D', () => {
-    const stamp = generateBuilding(ALL_CLASSES[0], 0, 13);
+    const stamp = generateBuilding({ class: ALL_CLASSES[0], level: 0, seed: 13 });
     const world = anchoredVoxel({ x: 40, y: -7, z: 23 }, stamp, stamp.anchorX, stamp.anchorY, stamp.anchorZ);
     expect(world).toEqual({ x: 40, y: -7, z: 23 });
   });
@@ -27,8 +27,8 @@ describe('generateBuilding', () => {
   it('e\' deterministico sugli stessi argomenti', () => {
     for (const cls of ALL_CLASSES) {
       for (let level = 0; level <= BUILDER.maxLevel; level++) {
-        const a = generateBuilding(cls, level, 12345);
-        const b = generateBuilding(cls, level, 12345);
+        const a = generateBuilding({ class: cls, level, seed: 12345 });
+        const b = generateBuilding({ class: cls, level, seed: 12345 });
         expect(b.sizeX).toBe(a.sizeX);
         expect(b.sizeY).toBe(a.sizeY);
         expect(b.sizeZ).toBe(a.sizeZ);
@@ -48,8 +48,8 @@ describe('generateBuilding', () => {
     let different = 0;
     const total = 64;
     for (let seed = 0; seed < total; seed++) {
-      const a = generateBuilding(ALL_CLASSES[0], 3, seed);
-      const b = generateBuilding(ALL_CLASSES[0], 3, seed + 1);
+      const a = generateBuilding({ class: ALL_CLASSES[0], level: 3, seed });
+      const b = generateBuilding({ class: ALL_CLASSES[0], level: 3, seed: seed + 1 });
       const same =
         a.sizeX === b.sizeX &&
         a.sizeZ === b.sizeZ &&
@@ -78,8 +78,8 @@ describe('generateBuilding', () => {
     for (const cls of ALL_CLASSES) {
       for (let level = 0; level <= BUILDER.maxLevel; level++) {
         for (let seed = 0; seed < 32; seed++) {
-          const natural = generateBuilding(cls, level, seed);
-          const capped = generateBuilding(cls, level, seed, natural.sizeX);
+          const natural = generateBuilding({ class: cls, level, seed });
+          const capped = generateBuilding({ class: cls, level, seed, footprintCap: natural.sizeX });
           expect(Array.from(capped.voxels)).toEqual(Array.from(natural.voxels));
           expect(capped.sizeZ).toBe(natural.sizeZ);
         }
@@ -90,7 +90,7 @@ describe('generateBuilding', () => {
   it('un tetto piu\' stretto restringe davvero l\'impronta', () => {
     for (const cls of ALL_CLASSES) {
       for (let seed = 0; seed < 32; seed++) {
-        expect(generateBuilding(cls, BUILDER.maxLevel, seed, 1).sizeX).toBe(1);
+        expect(generateBuilding({ class: cls, level: BUILDER.maxLevel, seed, footprintCap: 1 }).sizeX).toBe(1);
       }
     }
   });
@@ -99,8 +99,14 @@ describe('generateBuilding', () => {
     for (const cls of ALL_CLASSES) {
       for (let level = 1; level <= BUILDER.maxLevel; level++) {
         for (let seed = 0; seed < 32; seed++) {
-          const previous = generateBuilding(cls, level - 1, seed);
-          const upgraded = generateBuilding(cls, level, seed, MAX_FOOTPRINT, previous.sizeX);
+          const previous = generateBuilding({ class: cls, level: level - 1, seed });
+          const upgraded = generateBuilding({
+            class: cls,
+            level,
+            seed,
+            footprintCap: MAX_FOOTPRINT,
+            footprintFloor: previous.sizeX,
+          });
           expect(upgraded.sizeX).toBeGreaterThanOrEqual(previous.sizeX);
         }
       }
@@ -147,7 +153,14 @@ describe('generateBuilding', () => {
   });
 
   it('assegna una grammatica sci-fi a ogni voxel edilizio', () => {
-    const expected = [SURFACE_KIND.habitat, SURFACE_KIND.industrial, SURFACE_KIND.civic];
+    // Quattro usi su tre grammatiche: i tre bit alti di `visualBlock` sono
+    // tutti impegnati, quindi il commerciale riusa quella del residenziale.
+    const expected = [
+      SURFACE_KIND.habitat,
+      SURFACE_KIND.habitat,
+      SURFACE_KIND.industrial,
+      SURFACE_KIND.civic,
+    ];
     for (const { stamp, cls } of everyStamp(8)) {
       const used = new Set<number>();
       for (let i = 0; i < stamp.voxels.length; i++) {
@@ -183,7 +196,7 @@ describe('generateBuilding', () => {
   it('produce uno skyline alto ma non filiforme ai livelli alti', () => {
     let tallest = 0;
     for (let seed = 0; seed < 64; seed++) {
-      const stamp = generateBuilding(ALL_CLASSES[2], BUILDER.maxLevel, seed);
+      const stamp = generateBuilding({ class: ALL_CLASSES[3], level: BUILDER.maxLevel, seed });
       tallest = Math.max(tallest, stamp.sizeZ);
       expect(stamp.sizeX).toBe(4);
       expect(stamp.sizeZ / stamp.sizeX).toBeLessThanOrEqual(10);

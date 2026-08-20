@@ -40,6 +40,16 @@ export interface CursorInfo {
   readonly details: string;
   readonly valid: boolean;
   readonly reason: string;
+  /**
+   * Usi favoriti, penalizzati e tipologie probabili.
+   *
+   * Sono la risposta alla domanda che si fa chi tiene il dito sul mouse — "cosa
+   * comparira' qui" — e stanno sul cursore invece che in un pannello perche' e'
+   * li' che la domanda si pone: dopo il click e' troppo tardi.
+   */
+  readonly favours?: readonly string[];
+  readonly penalises?: readonly string[];
+  readonly typologies?: readonly string[];
 }
 
 const FAILURE_LABEL: Readonly<Record<ActionFailure, string>> = {
@@ -76,6 +86,7 @@ export class GameHud {
   private readonly handlers: GameHudHandlers;
   private readonly resources = new Map<HudResource['id'], ResourceElements>();
   private readonly catalystButtons: HTMLButtonElement[] = [];
+  private commercePanel!: HTMLElement;
   private readonly policyButtons = new Map<PolicyId, HTMLButtonElement>();
   private readonly tradeButtons = new Map<TradeMode, HTMLButtonElement>();
   private readonly decisionCard: HTMLElement;
@@ -134,21 +145,42 @@ export class GameHud {
     this.dock = document.createElement('nav');
     this.dock.className = 'build-dock hud-surface';
     this.dock.setAttribute('aria-label', 'Building actions');
-    this.model.catalysts.forEach((action) => {
-      const button = actionButton(action, (action.catalystId ?? 'market') as HudIcon, () => {
-        this.feedback = null;
-        this.selected = {
-          kind: 'catalyst',
-          class: action.class ?? 0,
-          id: action.catalystId,
-        };
-        handlers.onTool(this.selected);
-        this.paintSelection();
-        this.paintToast();
-      });
-      this.catalystButtons.push(button);
-      this.dock.appendChild(button);
-    });
+    // La toolbar e' organizzata per funzione, non per costo o per ordine di
+    // sblocco: prima cosa fa crescere la citta', poi cosa la collega, infine
+    // cosa le da' un carattere. E' l'unica classificazione che il giocatore puo'
+    // usare prima di conoscere i sette nomi.
+    //
+    // `catalystButtons` resta parallelo a `model.catalysts`, non ai gruppi: il
+    // ridisegno scorre la lista piatta, e tenere due ordini diversi sarebbe una
+    // corrispondenza da mantenere a mano a ogni ripittura.
+    for (const group of this.model.catalystGroups) {
+      const section = document.createElement('div');
+      section.className = 'dock-group';
+      const heading = document.createElement('span');
+      heading.className = 'dock-group-title';
+      heading.textContent = group.label;
+      section.appendChild(heading);
+
+      const row = document.createElement('div');
+      row.className = 'dock-group-row';
+      for (const action of group.actions) {
+        const button = actionButton(action, (action.catalystId ?? 'market') as HudIcon, () => {
+          this.feedback = null;
+          this.selected = {
+            kind: 'catalyst',
+            class: action.class ?? 0,
+            id: action.catalystId,
+          };
+          handlers.onTool(this.selected);
+          this.paintSelection();
+          this.paintToast();
+        });
+        this.catalystButtons[this.model.catalysts.indexOf(action)] = button;
+        row.appendChild(button);
+      }
+      section.appendChild(row);
+      this.dock.appendChild(section);
+    }
 
     this.expansionButton = actionButton(this.model.expansion, 'expansion', () => {
       this.feedback = null;
@@ -253,7 +285,18 @@ export class GameHud {
     const reason = document.createElement('span');
     reason.className = 'cursor-reason';
     reason.textContent = info.reason;
-    this.cursor.append(title, details, reason);
+    this.cursor.append(title, details);
+
+    if (info.favours !== undefined && info.favours.length > 0) {
+      this.cursor.appendChild(cursorLine('Favours', info.favours.join(', ')));
+    }
+    if (info.penalises !== undefined && info.penalises.length > 0) {
+      this.cursor.appendChild(cursorLine('Penalises', info.penalises.join(', ')));
+    }
+    if (info.typologies !== undefined && info.typologies.length > 0) {
+      this.cursor.appendChild(cursorLine('May build', info.typologies.join(', ')));
+    }
+    this.cursor.appendChild(reason);
   }
 
   togglePolicies(): void {
@@ -310,6 +353,47 @@ export class GameHud {
     }
   }
 
+  /**
+   * Il ciclo commerciale in quattro numeri e una frase.
+   *
+   * "Servita" e "pieni" sono due cose diverse e vanno mostrate insieme: la
+   * prima dice se la citta' trova cio' che cerca, la seconda se i negozi che ha
+   * costruito servono a qualcosa. Con un solo numero, "troppi negozi" e "pochi
+   * negozi" si leggerebbero uguale.
+   */
+  private paintCommerce(commerce: GameHudModel['commerce']): void {
+    if (commerce === null) {
+      this.commercePanel.replaceChildren();
+      return;
+    }
+
+    const rows: readonly (readonly [string, string])[] = [
+      ['Demand served', `${commerce.service}%`],
+      ['Shops in use', `${commerce.occupancy}%`],
+      ['Revenue', `${commerce.revenue.toFixed(2)} / tick`],
+      ['Goods sold', `${commerce.goods.toFixed(2)} / tick`],
+      ['Mixed-use blocks', `${commerce.mixedBuildings}`],
+    ];
+
+    this.commercePanel.replaceChildren(
+      ...rows.map(([label, value]) => {
+        const row = document.createElement('div');
+        row.className = 'commerce-row';
+        const name = document.createElement('span');
+        name.textContent = label;
+        const amount = document.createElement('strong');
+        amount.textContent = value;
+        row.append(name, amount);
+        return row;
+      }),
+    );
+
+    const note = document.createElement('p');
+    note.className = 'commerce-note';
+    note.textContent = commerce.message;
+    this.commercePanel.appendChild(note);
+  }
+
   private createResource(resource: HudResource): HTMLElement {
     const item = document.createElement('div');
     item.className = 'resource-item';
@@ -355,6 +439,18 @@ export class GameHud {
       list.appendChild(button);
     }
     drawer.appendChild(list);
+
+    // Il commercio interno sta accanto a quello esterno perche' sono la stessa
+    // domanda vista da due lati: cosa la citta' vende a se stessa e cosa vende
+    // fuori. Separarli in due pannelli renderebbe invisibile che competono per
+    // gli stessi materiali.
+    const commerceTitle = document.createElement('h3');
+    commerceTitle.className = 'drawer-section-title';
+    commerceTitle.textContent = 'Commerce';
+    drawer.appendChild(commerceTitle);
+    this.commercePanel = document.createElement('div');
+    this.commercePanel.className = 'commerce-panel';
+    drawer.appendChild(this.commercePanel);
 
     const tradeTitle = document.createElement('h3');
     tradeTitle.className = 'drawer-section-title';
@@ -469,6 +565,7 @@ export class GameHud {
     model.catalysts.forEach((action, index) => paintAction(this.catalystButtons[index], action));
     paintAction(this.expansionButton, model.expansion);
     for (const policy of model.policies) this.paintPolicy(policy);
+    this.paintCommerce(model.commerce);
     for (const mode of model.tradeModes) this.paintTradeMode(mode, model.tradeConnected);
     this.paintDecision(model);
 
@@ -627,8 +724,37 @@ function textButton(label: string, tooltip: string, onClick: () => void): HTMLBu
 function paintAction(button: HTMLButtonElement | undefined, action: HudAction): void {
   if (button === undefined) return;
   button.disabled = !action.available;
-  button.dataset.tooltip = action.reason;
-  button.title = action.reason;
+  // Bloccato ma visibile: il bottone resta al suo posto e cambia solo stato,
+  // cosi' la toolbar non si riordina sotto il dito mentre i fondi salgono.
+  button.dataset.locked = action.locked === true ? 'true' : 'false';
+  button.dataset.tooltip = actionTooltip(action);
+  button.title = actionTooltip(action);
+}
+
+/** Motivo dell'azione, piu' cio' che quel ruolo favorisce e puo' far nascere. */
+function actionTooltip(action: HudAction): string {
+  const lines = [action.reason];
+  if (action.radius !== undefined) lines.push(`Radius ${action.radius}`);
+  if (action.favours !== undefined && action.favours.length > 0) {
+    lines.push(`Favours: ${action.favours.join(', ')}`);
+  }
+  if (action.penalises !== undefined && action.penalises.length > 0) {
+    lines.push(`Penalises: ${action.penalises.join(', ')}`);
+  }
+  if (action.typologies !== undefined && action.typologies.length > 0) {
+    lines.push(`May build: ${action.typologies.join(', ')}`);
+  }
+  return lines.join(' · ');
+}
+
+/** Una riga etichettata della scheda al cursore. */
+function cursorLine(label: string, value: string): HTMLElement {
+  const line = document.createElement('span');
+  line.className = 'cursor-line';
+  const name = document.createElement('em');
+  name.textContent = `${label}: `;
+  line.append(name, document.createTextNode(value));
+  return line;
 }
 
 function divider(): HTMLElement {

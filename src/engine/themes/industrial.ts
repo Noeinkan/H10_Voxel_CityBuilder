@@ -2,7 +2,10 @@ import type { Theme } from './theme';
 
 /**
  * Distretto industriale: cielo di smog, ocra e ruggine, verdi ingrigiti.
- * La nebbia e' densa apposta, e' meta' del carattere del tema.
+ *
+ * La nebbia e' densa apposta, e' meta' del carattere del tema. Il sole e' basso
+ * e filtrato: intensita' ridotta e cielo molto presente, come sotto una foschia
+ * che diffonde tutto.
  */
 export const industrial: Theme = {
   id: 'industrial',
@@ -31,10 +34,30 @@ export const industrial: Theme = {
   ],
   atmosphere: {
     background: '#b6ab96',
-    fogColor: '#c2b7a2',
-    fogDensity: 0.00028,
-    faceLight: [0.9, 0.68, 0.8, 0.6, 1.0, 0.5],
+    sun: { azimuth: 28, elevation: 44, color: '#ffe1a8', intensity: 0.6, wrap: 0.46 },
+    skyLight: { color: '#bdb49f', intensity: 0.58 },
+    bounceLight: { color: '#7a6a4e', intensity: 0.34 },
     aoStrength: 0.6,
+    colorJitter: 0.24,
+    fog: {
+      color: '#c2b7a2',
+      density: 0.00028,
+      skyBlend: 0.5,
+      heightBase: 8,
+      heightFalloff: 0.018,
+      sunTint: 0.42,
+    },
+    sky: {
+      top: '#9a917c',
+      horizon: '#d8caae',
+      sunGlow: 0.7,
+      cloudAmount: 0.68,
+      cloudSpeed: 0.005,
+      cloudTint: '#cfc4ac',
+    },
+    shadow: { strength: 0.5, softness: 2.6 },
+    bloom: { threshold: 1.35, strength: 0.28, radius: 0.55 },
+    tilt: { strength: 0.32, focus: 0.5, width: 0.44 },
     emissiveStrength: 0.48,
     toneMapping: 'aces',
     exposure: 1,

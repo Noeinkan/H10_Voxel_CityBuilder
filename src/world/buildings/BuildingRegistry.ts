@@ -1,4 +1,4 @@
-import { CLASS_COUNT, type BuildingClass, type DistrictId } from '../../sim';
+import { CLASS_COUNT, type BuildingClass, type DistrictId, type Specialization } from '../../sim';
 import type { BuildingForm } from './config';
 import { toChunk } from '../chunkCoords';
 
@@ -37,12 +37,33 @@ export interface BuildingRecord {
   /** Voxel occupati in altezza a partire da `baseZ`. */
   readonly height: number;
 
+  /** Uso urbano primario. */
   readonly class: BuildingClass;
+
+  /**
+   * Secondo uso ospitato, se l'edificio e' misto.
+   *
+   * Sta nel registry e non solo nella simulazione perche' serve a ridisegnarlo:
+   * il podio prende il colore e la grammatica del secondo uso, e senza questo
+   * campo un upgrade lo perderebbe.
+   */
+  readonly mixed?: BuildingClass;
+
   readonly level: number;
   readonly seed: number;
   /** Profilo locale congelato per poter rigenerare esattamente lo stamp. */
   readonly form?: BuildingForm;
+  /**
+   * Tipologia con cui l'edificio e' stato scritto.
+   *
+   * E' l'altra meta' di cio' che serve a rigenerarne l'impronta: seed e livello
+   * danno la sequenza, la tipologia da' la forma su cui quella sequenza si
+   * applica. Cancellare un edificio rigenerandolo con la tipologia che il luogo
+   * esprime *adesso* lascerebbe voxel orfani.
+   */
+  readonly typology?: string;
   readonly district?: DistrictId;
+  readonly specialization?: Specialization | null;
 }
 
 /**
@@ -61,7 +82,11 @@ export interface ReadonlyBuildingRegistry {
   topOf(x: number, y: number): number;
   readonly count: number;
   readonly countsByClass: readonly number[];
+  /** Edifici che *ospitano* un uso come secondo, con la stessa indicizzazione. */
+  readonly mixedByClass: readonly number[];
   readonly levelHistogram: readonly number[];
+  /** Edifici per tipologia, in ordine di prima comparsa. Serve all'overlay. */
+  readonly typologyHistogram: ReadonlyMap<string, number>;
 }
 
 const EMPTY: readonly BuildingRecord[] = [];
@@ -86,7 +111,9 @@ export class BuildingRegistry implements ReadonlyBuildingRegistry {
   private readonly buckets = new Map<string, number[]>();
 
   private readonly classCounts = new Array<number>(CLASS_COUNT).fill(0);
+  private readonly mixedCounts = new Array<number>(CLASS_COUNT).fill(0);
   private readonly levelCounts: number[] = [];
+  private readonly typologyCounts = new Map<string, number>();
 
   private nextId = 1;
 
@@ -98,8 +125,16 @@ export class BuildingRegistry implements ReadonlyBuildingRegistry {
     return this.classCounts;
   }
 
+  get mixedByClass(): readonly number[] {
+    return this.mixedCounts;
+  }
+
   get levelHistogram(): readonly number[] {
     return this.levelCounts;
+  }
+
+  get typologyHistogram(): ReadonlyMap<string, number> {
+    return this.typologyCounts;
   }
 
   /** Tutti i record, in ordine di inserimento. La passata di upgrade li scorre. */
@@ -194,8 +229,7 @@ export class BuildingRegistry implements ReadonlyBuildingRegistry {
     }
     push(this.buckets, `${toChunk(stored.x)},${toChunk(stored.y)}`, stored.id);
 
-    this.classCounts[stored.class]++;
-    this.levelCounts[stored.level] = (this.levelCounts[stored.level] ?? 0) + 1;
+    this.tally(stored, 1);
     return stored;
   }
 
@@ -219,9 +253,26 @@ export class BuildingRegistry implements ReadonlyBuildingRegistry {
     }
     push(this.buckets, `${toChunk(stored.x)},${toChunk(stored.y)}`, id);
 
-    this.classCounts[stored.class]++;
-    this.levelCounts[stored.level] = (this.levelCounts[stored.level] ?? 0) + 1;
+    this.tally(stored, 1);
     return stored;
+  }
+
+  /**
+   * Somma `delta` a tutti i contatori derivati di un record.
+   *
+   * Un punto solo per tre istogrammi: `add`, `replace` e `remove` li toccavano
+   * tutti, e ogni contatore aggiunto altrove sarebbe stato un'occasione per
+   * dimenticarne uno dei tre.
+   */
+  private tally(record: BuildingRecord, delta: number): void {
+    this.classCounts[record.class] += delta;
+    if (record.mixed !== undefined) this.mixedCounts[record.mixed] += delta;
+    this.levelCounts[record.level] = (this.levelCounts[record.level] ?? 0) + delta;
+    if (record.typology !== undefined) {
+      const next = (this.typologyCounts.get(record.typology) ?? 0) + delta;
+      if (next <= 0) this.typologyCounts.delete(record.typology);
+      else this.typologyCounts.set(record.typology, next);
+    }
   }
 
   /** Toglie un record da tutti e due gli indici. */
@@ -236,8 +287,7 @@ export class BuildingRegistry implements ReadonlyBuildingRegistry {
     }
     drop(this.buckets, `${toChunk(record.x)},${toChunk(record.y)}`, id);
 
-    this.classCounts[record.class]--;
-    this.levelCounts[record.level]--;
+    this.tally(record, -1);
     this.records.delete(id);
     return true;
   }

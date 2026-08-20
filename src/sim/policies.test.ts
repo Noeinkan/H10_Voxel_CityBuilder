@@ -114,20 +114,20 @@ describe('policies — effetto sul campo', () => {
     state = addCatalyst(state, {
       x: 100,
       y: 100,
-      class: BUILDING_CLASS.production,
+      class: BUILDING_CLASS.industrial,
       strength: 160,
       radius: 20,
     });
 
     const before = state.field.valueAt(100, 100, cls);
-    const beforeOther = state.field.valueAt(100, 100, BUILDING_CLASS.production);
+    const beforeOther = state.field.valueAt(100, 100, BUILDING_CLASS.industrial);
 
     state = setPolicyActive(state, 'greenBelt', true);
 
     expect(state.field.valueAt(100, 100, cls)).toBe(
       Math.round(before * BALANCE.policyMultipliers.greenBelt),
     );
-    expect(state.field.valueAt(100, 100, BUILDING_CLASS.production)).toBe(beforeOther);
+    expect(state.field.valueAt(100, 100, BUILDING_CLASS.industrial)).toBe(beforeOther);
   });
 
   it('accendere e spegnere una policy riporta il campo esattamente a com’era', () => {

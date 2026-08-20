@@ -34,6 +34,10 @@ export interface GrowthStats {
   readonly tickMs: number;
   readonly buildings: number;
   readonly countsByClass: readonly number[];
+  /** Edifici che ospitano un uso come secondo, per indice di uso. */
+  readonly mixedByClass: readonly number[];
+  /** Edifici per tipologia, dalla piu' comune alla piu' rara. */
+  readonly typologies: readonly (readonly [string, number])[];
   readonly levels: readonly number[];
   readonly builder: BuilderStats;
   readonly state: SimState;
@@ -153,6 +157,9 @@ export class GrowthScene {
       tickMs: this.lastTickMs,
       buildings: this.builder.registry.count,
       countsByClass: [...this.builder.registry.countsByClass],
+      mixedByClass: [...this.builder.registry.mixedByClass],
+      typologies: [...this.builder.registry.typologyHistogram]
+        .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])),
       levels: [...this.builder.registry.levelHistogram],
       builder: this.builder.stats,
       state: this.state,

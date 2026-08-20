@@ -5,7 +5,9 @@ import type { Theme } from './theme';
  * vetri e sui metalli.
  *
  * Unico tema senza tone mapping: ACES lava proprio i ciano e i magenta che qui
- * fanno tutto il lavoro.
+ * fanno tutto il lavoro. Il "sole" e' una luna: intensita' bassa e tenuta alta
+ * nel cielo, cosi' i tetti restano leggibili e la scena la illuminano di fatto
+ * gli emissivi, che il bloom raccoglie.
  */
 export const neon: Theme = {
   id: 'neon',
@@ -34,13 +36,35 @@ export const neon: Theme = {
   ],
   atmosphere: {
     background: '#0b1020',
-    fogColor: '#131c33',
-    fogDensity: 0.0003,
-    faceLight: [0.88, 0.6, 0.74, 0.52, 1.0, 0.4],
+    sun: { azimuth: 42, elevation: 62, color: '#9fc4ff', intensity: 0.3, wrap: 0.28 },
+    skyLight: { color: '#243a63', intensity: 0.44 },
+    // Rimbalzo magenta: e' l'asfalto bagnato che rimanda le insegne verso l'alto.
+    bounceLight: { color: '#5c1f47', intensity: 0.3 },
     aoStrength: 0.7,
+    colorJitter: 0.22,
+    fog: {
+      color: '#131c33',
+      density: 0.0003,
+      skyBlend: 0.4,
+      heightBase: 6,
+      heightFalloff: 0.02,
+      sunTint: 0.12,
+    },
+    sky: {
+      top: '#05070f',
+      horizon: '#1d2b4d',
+      sunGlow: 0.22,
+      cloudAmount: 0.3,
+      cloudSpeed: 0.006,
+      cloudTint: '#2a3a5c',
+    },
+    shadow: { strength: 0.55, softness: 1.8 },
+    bloom: { threshold: 0.9, strength: 1.1, radius: 0.75 },
+    tilt: { strength: 0.3, focus: 0.5, width: 0.45 },
     glassTint: '#62f7ff',
     glassLift: 0.24,
     emissiveStrength: 1.15,
+    water: { highlight: '#38d7ff', strength: 0.12, scale: 0.35, speed: 0.35 },
     toneMapping: 'none',
     exposure: 1,
   },

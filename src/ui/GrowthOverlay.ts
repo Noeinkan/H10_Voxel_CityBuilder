@@ -59,7 +59,15 @@ export class GrowthOverlay {
     this.body.textContent = [
       `growth       tick ${stats.tick}  ${stats.tickMs.toFixed(3)} ms`,
       `buildings    ${stats.buildings}  ${this.rate.toFixed(1)}/s`,
-      `classes      ${stats.countsByClass.map((n, i) => `${CLASS_NAMES[i].slice(0, 4)} ${n}`).join('  ')}`,
+      `uses         ${stats.countsByClass.map((n, i) => `${CLASS_NAMES[i].slice(0, 4)} ${n}`).join('  ')}`,
+      `mixed        ${stats.mixedByClass.map((n, i) => `${CLASS_NAMES[i].slice(0, 4)} ${n}`).join('  ')}`,
+      `typologies   ${stats.typologies.length === 0
+        ? 'none yet'
+        : stats.typologies.map(([id, n]) => `${id} ${n}`).join('  ')}`,
+      `commerce     served ${stats.state.commerce.served.toFixed(1)} / ${stats.state.commerce.demand.toFixed(1)}` +
+        `  service ${(stats.state.commerce.service * 100).toFixed(0)}%` +
+        `  occupancy ${(stats.state.commerce.occupancy * 100).toFixed(0)}%`,
+      `             revenue ${stats.state.commerce.revenue.toFixed(2)}/t  goods ${stats.state.commerce.goods.toFixed(2)}/t`,
       `queue        ${stats.builder.growing}  upgrades ${stats.builder.upgraded}`,
       `levels       ${stats.levels.map((n, i) => `L${i} ${n ?? 0}`).join('  ')}`,
       `blacklist    ${stats.builder.blacklisted}`,

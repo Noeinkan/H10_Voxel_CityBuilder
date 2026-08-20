@@ -9,15 +9,23 @@ import {
   Scene,
   SRGBColorSpace,
   Vector2,
+  Vector3,
   WebGLRenderer,
 } from 'three';
 import { ChunkRenderer } from './engine/ChunkRenderer';
 import { InfluenceOverlay } from './engine/InfluenceOverlay';
 import { FrameTiming } from './engine/FrameTiming';
 import { IsoCameraController } from './engine/IsoCameraController';
+import { faceLuminance, sunDirection } from './engine/lighting';
 import { onPaletteChanged } from './engine/palette';
-import { RenderQualityController, parseQualityMode } from './engine/RenderQuality';
+import {
+  RenderQualityController,
+  parseQualityMode,
+  type QualityProfile,
+} from './engine/RenderQuality';
 import { createSkyBackground } from './engine/SkyBackground';
+import { createPostProcessing } from './engine/PostProcessing';
+import { createSunShadow } from './engine/SunShadow';
 import { resolveTheme, THEMES, type Theme } from './engine/themes';
 import { createVoxelMaterial } from './engine/VoxelMaterial';
 import { GrowthScene } from './game/growthScene';
@@ -28,7 +36,8 @@ import { coastalSectorAt, shapeWithSector, type CoastalSector } from './game/sec
 import type { ActionFailure } from './game/actions';
 import { BALANCE } from './sim/balance';
 import { catalystById, defaultCatalystOfClass } from './sim/catalysts';
-import { CLASS_COUNT, CLASS_NAMES, type BuildingClass } from './sim/classes';
+import { CLASS_COUNT, CLASS_LABELS, CLASS_NAMES, type BuildingClass } from './sim/classes';
+import { typologiesForUses } from './world/buildings/typology';
 import { writeDesirabilityData } from './sim/debugData';
 import { nextBuildSites, type BuildSite } from './sim/nextBuildSites';
 import { isPolicyId, type PolicyId } from './sim/policies';
@@ -60,6 +69,9 @@ import { VoxelWorld } from './world/VoxelWorld';
 /** Millisecondi di lavoro non-render concessi per frame, sotto il limite di 4 ms. */
 const FRAME_BUDGET_MS = 3;
 
+/** Lato della shadow map. Il gating di qualita' puo' abbassarlo a runtime. */
+const SHADOW_SIZE = 2048;
+
 /** Quota del budget riservata alla generazione della scena. */
 const GENERATION_BUDGET_MS = 1.5;
 
@@ -76,6 +88,12 @@ const seed = parseInt(params.get('seed') ?? '1337', 10) || 1337;
 const worldSize = clampInt(params.get('size'), 512, 32, 4096);
 const worldHeight = clampInt(params.get('height'), 64, 32, 256);
 const qualityMode = parseQualityMode(params.get('quality'));
+
+/**
+ * Le ombre si possono togliere da URL con `shadows=0`; in Fase 5 anche il gating
+ * automatico di qualita' scrivera' qui.
+ */
+const shadowsAllowedByUrl = params.get('shadows') !== '0';
 
 /** `?terrain=<seed>` sostituisce la scena urbana con l'isola procedurale. */
 const terrainParam = params.get('terrain');
@@ -107,14 +125,63 @@ const paletteHandle = createVoxelMaterial(theme.colors, VOXEL_SIZE);
 const chunkRenderer = new ChunkRenderer(world, paletteHandle.material, VOXEL_SIZE);
 scene.add(chunkRenderer.group);
 const skyBackground = createSkyBackground(theme.atmosphere);
+scene.add(skyBackground.mesh);
+const sunShadow = createSunShadow(VOXEL_SIZE, SHADOW_SIZE);
 
-applyTheme(theme);
+/** Direzione del sole nel mondo, e la stessa portata in spazio vista. */
+const sunWorld = new Vector3();
+const sunView = new Vector3();
+
+
+// uResolution lavora su gl_FragCoord, che e' in pixel del drawing buffer:
+// va letta da li' e non da innerWidth, altrimenti con pixelRatio != 1 il
+// gradiente di nebbia si stacca da quello del cielo.
+const drawingBuffer = new Vector2();
+function syncResolution(): void {
+  renderer.getDrawingBufferSize(drawingBuffer);
+  paletteHandle.setResolution(drawingBuffer.x, drawingBuffer.y);
+}
+syncResolution();
+
+/** Direzione di sguardo, riusata ogni frame per lo scattering della nebbia. */
+const viewDirection = new Vector3();
 
 const camera = new IsoCameraController(world, window.innerWidth, window.innerHeight, {
   voxelSize: VOXEL_SIZE,
   targetHeight: 6,
 });
 camera.attach(renderer.domElement);
+
+// Il composer ha bisogno di scena e camera, quindi nasce qui; e `applyTheme`
+// ne imposta bloom e tilt, percio' la prima applicazione del tema viene dopo.
+const post = createPostProcessing(renderer, scene, camera.camera);
+// Con il composer ogni pass interna azzererebbe 'renderer.info', e l'overlay
+// finirebbe per misurare solo l'ultimo quad fullscreen. Azzerandolo a mano una
+// volta per frame il conteggio torna a essere il totale vero: scena, ombra e post.
+renderer.info.autoReset = false;
+post.setSize(window.innerWidth, window.innerHeight, renderQuality.pixelRatio);
+
+/**
+ * Profilo di effetti in vigore. Lo decide `RenderQuality`, che lo fa scendere
+ * insieme al pixel ratio quando il frame non tiene: spegnere bloom e ombre
+ * restituisce piu' millisecondi che togliere un quarto di risoluzione, e si
+ * nota molto meno.
+ */
+let qualityProfile = renderQuality.profile;
+
+function applyQualityProfile(profile: QualityProfile): void {
+  qualityProfile = profile;
+  if (profile.shadowSize > 0) sunShadow.setSize(profile.shadowSize);
+  post.setQuality({
+    bloom: profile.bloom,
+    tilt: profile.tilt,
+    bloomScale: profile.bloomScale,
+  });
+}
+
+applyQualityProfile(renderQuality.profile);
+
+applyTheme(theme);
 
 // La scena di terreno arriva da un worker, quindi non e' pronta a costruttore:
 // il primo blocco entra al primo `step` che trova qualcosa in coda.
@@ -237,8 +304,8 @@ if (growEnabled) {
     name: candidate.name,
     swatches: [
       candidate.atmosphere.background,
-      candidate.colors[5] ?? candidate.atmosphere.fogColor,
-      candidate.colors[12] ?? candidate.atmosphere.fogColor,
+      candidate.colors[5] ?? candidate.atmosphere.fog.color,
+      candidate.colors[12] ?? candidate.atmosphere.fog.color,
     ],
   })), theme.id);
 }
@@ -280,6 +347,7 @@ if (debugEnabled) {
       frameP99Ms: timing.p99Ms,
       jankRatio: timing.jankRatio,
       mainMsMax,
+      ...effectStats(),
       drawCalls: renderer.info.render.calls,
       triangles: renderer.info.render.triangles,
       geometryBytes: stats.geometryBytes,
@@ -311,6 +379,25 @@ if (debugEnabled) {
       else cycleTheme(found);
     }
     return { id: theme.id, name: theme.name, available: THEMES.map((t) => t.id) };
+  };
+  // Sposta il sole senza ricaricare: serve ad autorare i temi guardando il
+  // risultato invece che immaginandolo. Non persiste, il tema resta la fonte.
+  debugGlobals['__voxelSun'] = (azimuth?: number, elevation?: number): Record<string, unknown> => {
+    const sun = theme.atmosphere.sun;
+    const next = {
+      ...sun,
+      azimuth: azimuth ?? sun.azimuth,
+      elevation: elevation ?? sun.elevation,
+    };
+    paletteHandle.setAtmosphere({ ...theme.atmosphere, sun: next });
+    return {
+      azimuth: next.azimuth,
+      elevation: next.elevation,
+      faceLuminance: faceLuminance({ ...theme.atmosphere, sun: next }),
+      // Dove il cielo disegna il sole: xy in NDC, `facing` false se sta dietro
+      // la camera e quindi resta solo l'alone.
+      screen: { x: sunView.x * 1.35, y: sunView.y * 1.35, facing: sunView.z < 0 },
+    };
   };
 
   if (terrain !== null) {
@@ -345,6 +432,8 @@ if (debugEnabled) {
           funds: sim.funds,
           satisfaction: sim.satisfaction,
           buildingCounts: sim.buildingCounts,
+          mixedCounts: sim.mixedCounts,
+          commerce: sim.commerce,
           catalysts: sim.catalysts.length,
           policies: sim.policies,
           selectedClass: CLASS_NAMES[sim.selectedClass],
@@ -396,6 +485,9 @@ renderer.setAnimationLoop(onFrame);
 window.addEventListener('resize', () => {
   renderer.setSize(window.innerWidth, window.innerHeight);
   camera.setViewport(window.innerWidth, window.innerHeight);
+  post.setSize(window.innerWidth, window.innerHeight, renderQuality.pixelRatio);
+  syncResolution();
+  skyBackground.setAspect(window.innerWidth / Math.max(1, window.innerHeight));
 });
 
 onPaletteChanged((hexColors) => {
@@ -417,11 +509,13 @@ function applyTheme(next: Theme): void {
 
   paletteHandle.setPalette(next.colors);
   paletteHandle.setAtmosphere(next.atmosphere);
+  post.setAtmosphere(next.atmosphere);
   skyBackground.setAtmosphere(next.atmosphere);
+  skyBackground.setAspect(window.innerWidth / Math.max(1, window.innerHeight));
+  sunWorld.fromArray(sunDirection(next.atmosphere.sun.azimuth, next.atmosphere.sun.elevation));
 
   const background = new Color().setStyle(next.atmosphere.background, SRGBColorSpace);
   renderer.setClearColor(background, 1);
-  scene.background = skyBackground.texture;
 
   const toneMapping =
     next.atmosphere.toneMapping === 'aces' ? ACESFilmicToneMapping : NoToneMapping;
@@ -447,12 +541,55 @@ function cycleTheme(index: number): void {
   console.info(`[theme] ${next.name} (${next.id}), no mesh rebuild`);
 }
 
+/**
+ * Pass d'ombra: profondita' dei chunk vista dal sole.
+ *
+ * Sta dentro `renderStart` e non nel lavoro non-render, perche' e' spesa sulla
+ * GPU e non sul main thread: il budget di 3 ms non la riguarda, la si legge in
+ * `renderMs`. Un tema senza `shadow` la salta del tutto.
+ */
+function drawShadowPass(): void {
+  const settings = theme.atmosphere.shadow;
+  if (settings === undefined || !shadowsAllowedByUrl || qualityProfile.shadowSize === 0) {
+    sunShadow.setEnabled(false);
+    paletteHandle.setShadow({
+      texture: null,
+      matrix: sunShadow.matrix,
+      strength: 0,
+      texelSize: 1,
+      normalBias: 0,
+      softness: 0,
+    });
+    return;
+  }
+
+  sunShadow.setEnabled(true);
+  const start = performance.now();
+  sunShadow.fit(chunkRenderer.visibleBounds, sunWorld);
+  sunShadow.begin(renderer);
+  const drawn = chunkRenderer.renderShadow(renderer, sunShadow.camera, sunShadow.depthMaterial);
+  sunShadow.end(renderer, performance.now() - start, drawn);
+
+  paletteHandle.setShadow({
+    texture: sunShadow.texture,
+    matrix: sunShadow.matrix,
+    strength: settings.strength,
+    texelSize: 1 / sunShadow.stats.size,
+    // Un texel e mezzo lungo la normale: sotto compare l'acne, sopra l'ombra
+    // si stacca dalla base di cio' che la proietta.
+    normalBias: sunShadow.worldTexelSize * 1.5,
+    // Il profilo puo' portare la morbidezza a 0, e il campionamento degrada
+    // a un solo tap invece di nove.
+    softness: settings.softness * qualityProfile.shadowSoftness,
+  });
+}
 function onFrame(time: number): void {
   frameTiming.sample(time, document.visibilityState === 'visible');
   const dt = Math.min(0.1, (time - previousTime) / 1000);
   previousTime = time;
 
   const workStart = performance.now();
+  renderer.info.reset();
 
   camera.update(dt);
 
@@ -477,8 +614,17 @@ function onFrame(time: number): void {
   if (mainMs > mainMsMax) mainMsMax = mainMs;
 
   const renderStart = performance.now();
+  drawShadowPass();
   paletteHandle.setTime(time / 1000);
-  renderer.render(scene, camera.camera);
+  camera.camera.getWorldDirection(viewDirection);
+  paletteHandle.setViewDirection(viewDirection.x, viewDirection.y, viewDirection.z);
+  // Il sole in spazio vista da' la sua posizione a schermo. Con una camera
+  // ortografica un punto all'infinito non si proietta, quindi si usa la
+  // direzione: la componente xy dice dove sta, la z se e' davanti o dietro.
+  sunView.copy(sunWorld).transformDirection(camera.camera.matrixWorldInverse);
+  skyBackground.setSunScreen(sunView.x * 1.35, sunView.y * 1.35, sunView.z < 0);
+  skyBackground.setTime(time / 1000);
+  post.render();
   const renderMs = performance.now() - renderStart;
 
   const frameMs = performance.now() - workStart;
@@ -486,6 +632,9 @@ function onFrame(time: number): void {
   if (quality.changed && quality.reason !== 'initial') {
     renderer.setPixelRatio(quality.pixelRatio);
     renderer.setSize(window.innerWidth, window.innerHeight);
+    post.setSize(window.innerWidth, window.innerHeight, quality.pixelRatio);
+    applyQualityProfile(quality.profile);
+    syncResolution();
   }
 
   if (overlay !== null && overlay.needsPaint(time)) {
@@ -635,7 +784,10 @@ function onGamePointerMove(event: PointerEvent): void {
     influenceOverlay?.showCursor(cell.x, cell.y, radius, valid);
     gameHud?.updateCursor(event.clientX, event.clientY, {
       title: catalyst.label,
-      details: `${cost} funds · radius ${radius} · class ${classLabel(catalyst.class)}`,
+      details: `${cost} funds · radius ${radius} · mainly ${classLabel(catalyst.class)}`,
+      favours: catalyst.favours.map(classLabel),
+      penalises: catalyst.penalises.map(classLabel),
+      typologies: typologiesForUses(catalyst.favours),
       valid,
       reason: failure === null ? 'Valid position.' : actionFailureLabel(failure),
     });
@@ -736,7 +888,7 @@ function beginCoastalExpansion(sector: CoastalSector): void {
 }
 
 function classLabel(cls: BuildingClass): string {
-  return ['residential', 'production', 'civic'][cls] ?? 'urban';
+  return CLASS_LABELS[cls] ?? 'urban';
 }
 
 function actionFailureLabel(reason: ActionFailure): string {
@@ -776,6 +928,25 @@ function toggleBiomeView(): void {
   biomeView.toggle();
 }
 
+/**
+ * Metriche della pass d'ombra e del post-processing.
+ *
+ * Esiste per essere chiamata da entrambe le superfici di misura, overlay e
+ * hook di console: una metrica si aggiunge qui una volta sola.
+ */
+function effectStats(): { shadowMs: number; shadowSize: number; effects: string } {
+  const shadow = sunShadow.stats;
+  const parts: string[] = [];
+  if (shadow.enabled) parts.push('shadow');
+  if (qualityProfile.bloom) parts.push('bloom');
+  if (qualityProfile.tilt) parts.push('tilt');
+  return {
+    shadowMs: shadow.lastPassMs,
+    shadowSize: shadow.enabled ? shadow.size : 0,
+    effects: parts.length === 0 ? 'none' : parts.join('+'),
+  };
+}
+
 function buildOverlayFrame(mainMs: number, renderMs: number, frameMs: number): OverlayFrame {
   const stats = chunkRenderer.stats;
   const mesher = chunkRenderer.mesherPool.stats;
@@ -791,6 +962,7 @@ function buildOverlayFrame(mainMs: number, renderMs: number, frameMs: number): O
     mainMs,
     mainMsMax,
     renderMs,
+    ...effectStats(),
     drawCalls: renderer.info.render.calls,
     triangles: renderer.info.render.triangles,
     geometryBytes: stats.geometryBytes,

@@ -3,11 +3,36 @@ import type { FrameTimingSnapshot } from './FrameTiming';
 export type QualityMode = 'auto' | 'high' | 'balanced' | 'performance';
 export type QualityReason = 'initial' | 'fixed' | 'stable-up' | 'slow-down' | 'unchanged';
 
+/**
+ * Cosa puo' permettersi il frame, oltre al numero di pixel.
+ *
+ * Non e' uno stato in piu' da far evolvere: si deriva da quanto il controller ha
+ * gia' dovuto abbassare il pixel ratio. Una sola macchina a stati, una sola
+ * isteresi, e gli effetti seguono la stessa decisione invece di litigarci.
+ */
+export interface QualityProfile {
+  /** Lato della shadow map; 0 spegne la pass del tutto. */
+  readonly shadowSize: number;
+  /** Moltiplicatore del raggio PCF; 0 degrada a un solo tap. */
+  readonly shadowSoftness: number;
+  readonly bloom: boolean;
+  readonly tilt: boolean;
+  /** Frazione di risoluzione a cui gira il bloom. */
+  readonly bloomScale: number;
+}
+
+const PROFILES: readonly QualityProfile[] = [
+  { shadowSize: 2048, shadowSoftness: 1, bloom: true, tilt: true, bloomScale: 1 },
+  { shadowSize: 1024, shadowSoftness: 0, bloom: true, tilt: true, bloomScale: 0.5 },
+  { shadowSize: 0, shadowSoftness: 0, bloom: false, tilt: false, bloomScale: 0.5 },
+];
+
 export interface QualityDecision {
   readonly mode: QualityMode;
   readonly pixelRatio: number;
   readonly changed: boolean;
   readonly reason: QualityReason;
+  readonly profile: QualityProfile;
 }
 
 const EVALUATION_MS = 2_000;
@@ -28,9 +53,13 @@ export class RenderQualityController {
   private stableSince: number | null = null;
   private slowWindows = 0;
 
+  /** Pixel ratio con cui il modo e' partito: il livello 0 degli effetti. */
+  private readonly baseline: number;
+
   constructor(readonly mode: QualityMode, devicePixelRatio: number) {
     this.maximum = clamp(Math.floor(devicePixelRatio / STEP) * STEP, 1, 2);
     this.current = ratioForMode(mode, this.maximum);
+    this.baseline = this.current;
   }
 
   get pixelRatio(): number {
@@ -38,12 +67,12 @@ export class RenderQualityController {
   }
 
   initial(): QualityDecision {
-    return { mode: this.mode, pixelRatio: this.current, changed: true, reason: 'initial' };
+    return this.decide(true, 'initial');
   }
 
   observe(stats: FrameTimingSnapshot, now: number): QualityDecision {
     if (this.mode !== 'auto') {
-      return { mode: this.mode, pixelRatio: this.current, changed: false, reason: 'fixed' };
+      return this.decide(false, 'fixed');
     }
     if (stats.sampleCount < MIN_SAMPLES || now - this.lastEvaluation < EVALUATION_MS) {
       return this.unchanged();
@@ -59,7 +88,7 @@ export class RenderQualityController {
         this.current = Math.max(1, step(this.current - STEP));
         this.slowWindows = 0;
         this.cooldownUntil = now + DOWN_COOLDOWN_MS;
-        return { mode: this.mode, pixelRatio: this.current, changed: true, reason: 'slow-down' };
+        return this.decide(true, 'slow-down');
       }
       return this.unchanged();
     }
@@ -74,13 +103,48 @@ export class RenderQualityController {
       this.current = Math.min(this.maximum, step(this.current + STEP));
       this.stableSince = now;
       this.cooldownUntil = now + DOWN_COOLDOWN_MS;
-      return { mode: this.mode, pixelRatio: this.current, changed: true, reason: 'stable-up' };
+      return this.decide(true, 'stable-up');
     }
     return this.unchanged();
   }
 
+  /** Profilo di effetti che corrisponde allo stato attuale. */
+  get profile(): QualityProfile {
+    return PROFILES[this.level];
+  }
+
+  /**
+   * Quanti gradini siamo scesi rispetto al punto di partenza del modo.
+   *
+   * I modi fissi hanno un livello fisso; in 'auto' il livello segue le stesse
+   * discese che il controller decide per la risoluzione, senza una seconda
+   * isteresi che potrebbe sfasarsi rispetto alla prima.
+   *
+   * Il confronto e' con `baseline` e non con `maximum`: 'auto' parte di proposito
+   * a 1.5 anche dove il massimo e' 2, e misurando dal massimo uno schermo ad alta
+   * densita' sarebbe nato gia' due gradini sotto, cioe' senza ombre ne' bloom
+   * proprio sulle macchine che possono permetterseli.
+   */
+  private get level(): number {
+    if (this.mode === 'high') return 0;
+    if (this.mode === 'balanced') return 1;
+    if (this.mode === 'performance') return 2;
+    const steps = Math.round((this.baseline - this.current) / STEP);
+    return Math.min(PROFILES.length - 1, Math.max(0, steps));
+  }
+
+  private decide(changed: boolean, reason: QualityReason): QualityDecision {
+    return {
+      mode: this.mode,
+      pixelRatio: this.current,
+      changed,
+      reason,
+      profile: this.profile,
+    };
+  }
+
   private unchanged(): QualityDecision {
-    return { mode: this.mode, pixelRatio: this.current, changed: false, reason: 'unchanged' };
+    return this.decide(false, 'unchanged');
   }
 }
 

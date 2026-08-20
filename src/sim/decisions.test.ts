@@ -52,6 +52,9 @@ function establishedCity() {
     ...state,
     population: { stock: 48, delta: 0 },
     food: { stock: 1_000_000, delta: 0 },
-    buildingCounts: [4, 2, 1],
+    // Residenziale, commerciale, industriale, civico: la decisione sullo spazio
+    // pubblico chiede almeno un civico, quella sull'investimento un industriale.
+    buildingCounts: [4, 1, 2, 1],
+    mixedCounts: [0, 0, 0, 0],
   };
 }

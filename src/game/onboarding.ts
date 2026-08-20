@@ -1,12 +1,12 @@
 import {
-  BUILDING_CLASS,
-  defaultCatalystOfClass,
+  catalystById,
+  catalystRoleOf,
   type BuildingClass,
   type CatalystId,
   type SimState,
 } from '../sim';
 
-export type OnboardingStep = 'residential' | 'production' | 'civic' | 'complete';
+export type OnboardingStep = 'market' | 'factory' | 'park' | 'complete';
 
 export interface OnboardingState {
   readonly step: OnboardingStep;
@@ -20,44 +20,35 @@ export interface OnboardingState {
 /**
  * Tutorial derivato dallo stato: non ha flag nascosti e sopravvivera' quindi a
  * un futuro salvataggio senza dati aggiuntivi.
+ *
+ * I passi guardano il **ruolo** piazzato, non l'uso urbano che ne nasce. Da
+ * quando un catalizzatore influenza piu' usi, "ha gia' un catalizzatore
+ * residenziale" non e' piu' una domanda con una risposta sola: mercato,
+ * trasporto e parco alimentano tutti il residenziale in misura diversa. Il
+ * ruolo invece e' esattamente cio' che il giocatore ha cliccato.
  */
 export function onboardingOf(state: SimState): OnboardingState {
-  if (!hasCatalyst(state, BUILDING_CLASS.residential)) {
-    return {
-      step: 'residential',
-      expectedClass: BUILDING_CLASS.residential,
-      expectedCatalyst: 'market',
-      title: '1 · Give your city a home',
-      message: 'Place the Market to attract homes, businesses, and your first residents.',
-      progress: 0,
-    };
+  if (!hasRole(state, 'market')) {
+    return step('market', '1 · Give your city a home',
+      'Place the Market: it draws in homes and shops together, and with them your first residents.',
+      0);
   }
-  if (!hasCatalyst(state, BUILDING_CLASS.production)) {
-    return {
-      step: 'production',
-      expectedClass: BUILDING_CLASS.production,
-      expectedCatalyst: 'factory',
-      title: '2 · Make growth sustainable',
-      message: 'Now place the Factory. New homes need jobs and food to thrive.',
-      progress: 1,
-    };
+  if (!hasRole(state, 'factory')) {
+    return step('factory', '2 · Make growth sustainable',
+      'Now place the Factory. Homes need jobs, food, and goods for the shops to sell.',
+      1);
   }
-  if (!hasCatalyst(state, BUILDING_CLASS.civic)) {
-    return {
-      step: 'civic',
-      expectedClass: BUILDING_CLASS.civic,
-      expectedCatalyst: 'park',
-      title: '3 · Complete the neighborhood',
-      message: 'Add the Park. Public services support happiness as the population grows.',
-      progress: 2,
-    };
+  if (!hasRole(state, 'park')) {
+    return step('park', '3 · Complete the neighborhood',
+      'Add the Park. Public services support happiness as the population grows.',
+      2);
   }
   return {
     step: 'complete',
     expectedClass: null,
     expectedCatalyst: null,
     title: 'Foundation complete',
-    message: 'All three city functions are active. Overlap influence fields to shape distinct districts.',
+    message: 'Housing, commerce, industry and civic uses are all in play. Overlap influence fields to shape districts — and mixed-use blocks.',
     progress: 3,
   };
 }
@@ -65,10 +56,36 @@ export function onboardingOf(state: SimState): OnboardingState {
 export function onboardingAllows(state: SimState, target: BuildingClass | CatalystId): boolean {
   const onboarding = onboardingOf(state);
   if (onboarding.expectedCatalyst === null) return true;
-  const id = typeof target === 'number' ? defaultCatalystOfClass(target) : target;
+  const id = typeof target === 'number' ? defaultRoleOf(target) : target;
   return id === onboarding.expectedCatalyst;
 }
 
-function hasCatalyst(state: SimState, cls: BuildingClass): boolean {
-  return state.catalysts.some((catalyst) => catalyst.class === cls);
+function step(
+  id: Exclude<OnboardingStep, 'complete'>,
+  title: string,
+  message: string,
+  progress: number,
+): OnboardingState {
+  return {
+    step: id,
+    expectedClass: catalystById(id).class,
+    expectedCatalyst: id,
+    title,
+    message,
+    progress,
+  };
+}
+
+function hasRole(state: SimState, id: CatalystId): boolean {
+  return state.catalysts.some((catalyst) => catalystRoleOf(catalyst) === id);
+}
+
+/** Compatibilita' con chi seleziona ancora un uso invece di un ruolo. */
+function defaultRoleOf(cls: BuildingClass): CatalystId {
+  // Non passa da `defaultCatalystOfClass`: qui serve il ruolo che il tutorial
+  // riconosce, e i tre passi sono esattamente mercato, fabbrica e parco.
+  const found = (['market', 'factory', 'park'] as const).find(
+    (id) => catalystById(id).class === cls,
+  );
+  return found ?? 'market';
 }

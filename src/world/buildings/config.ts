@@ -1,3 +1,4 @@
+import type { BuildingClass, CatalystId, DistrictId, Specialization } from '../../sim';
 import { PALETTE_SLOTS } from '../../engine/paletteSlots';
 
 /**
@@ -105,6 +106,15 @@ export const BUILDER = {
    * distanza si legge come rumore.
    */
   accentBuildingChance: 0.18,
+
+  /**
+   * Raggio di Chebyshev entro cui una colonna non edificabile fa "costa".
+   *
+   * Serve alla sola selezione della tipologia: e' cio' che distingue un mercato
+   * sul porto da un mercato qualunque. Sette colonne perche' l'impronta massima
+   * e' quattro e il mercato deve vedere l'acqua, non sfiorarla.
+   */
+  coastalRadius: 7,
 
   /** Quanto il profilo locale anticipa il livello con cui nasce un edificio. */
   localLevel: {
@@ -219,14 +229,19 @@ export interface ClassProfile {
 }
 
 /**
- * Le tre classi, indicizzate come `BUILDING_CLASS`.
+ * I quattro usi urbani, indicizzati come `BUILDING_CLASS`.
+ *
+ * E' il colore e la proporzione *di base* di un uso: la tipologia (sotto) ne
+ * sovrascrive quel che le serve. Un uso senza tipologia riconosciuta resta
+ * comunque leggibile, ed e' cio' che tiene in piedi la citta' anche nelle
+ * colonne che non esprimono niente di particolare.
  *
  * I colori escono tutti dai 32 slot esistenti: l'uniform `vec3[32]` e' un
  * invariante del progetto, e un edificio non e' una buona ragione per
  * consumarne uno nuovo.
  */
 export const CLASS_PROFILE: readonly ClassProfile[] = [
-  // habitat — moduli terrazzati e scafi chiari, massa di fondo della colonia.
+  // residenziale — moduli terrazzati e scafi chiari, massa di fondo della citta'.
   {
     bandHeight: [2, 3],
     shrinkBias: 0.38,
@@ -239,7 +254,20 @@ export const CLASS_PROFILE: readonly ClassProfile[] = [
     roofProp: PALETTE_SLOTS.metalBrass,
     roofPropHeight: 2,
   },
-  // produzione — megastrutture compatte, corazze e apparati di dissipazione.
+  // commerciale — fronti caldi e bassi, insegne d'ottone, tetti larghi.
+  {
+    bandHeight: [2, 3],
+    shrinkBias: 0.24,
+    footprintBias: 1,
+    body: PALETTE_SLOTS.brick,
+    bodyAlt: PALETTE_SLOTS.brickLight,
+    accent: PALETTE_SLOTS.metalBrass,
+    crown: PALETTE_SLOTS.roofPale,
+    plinth: PALETTE_SLOTS.stoneWarm,
+    roofProp: PALETTE_SLOTS.metalGold,
+    roofPropHeight: 2,
+  },
+  // industriale — megastrutture compatte, corazze e apparati di dissipazione.
   {
     bandHeight: [2, 3],
     shrinkBias: 0.18,
@@ -266,3 +294,316 @@ export const CLASS_PROFILE: readonly ClassProfile[] = [
     roofPropHeight: 3,
   },
 ];
+
+// --- Catalogo delle tipologie ---------------------------------------------
+
+/**
+ * Come si legge una tipologia.
+ *
+ * Una tipologia e' *forma piu' condizioni*: sotto quali condizioni locali
+ * quell'uso prende quella forma. Non e' un modello disegnato a mano — la
+ * grammatica di `generate.ts` resta la stessa — ma un insieme di parametri che
+ * la piegano, piu' tre interruttori strutturali (podio, corte, coronamento
+ * piatto) che da soli producono silhouette non confondibili.
+ *
+ * Aggiungere una tipologia significa aggiungere una riga qui. Non c'e' codice
+ * da scrivere da nessun'altra parte: la selezione in `typology.ts` e' generica,
+ * e i suoi criteri sono i campi di questa struttura.
+ */
+export interface TypologyShape {
+  /**
+   * Fasce di base che riempiono l'impronta senza rientrare.
+   *
+   * Il podio e' cio' che distingue un podio commerciale con abitazioni sopra da
+   * una torre qualunque: due fasce piene, poi un arretramento netto. Su un
+   * edificio misto il podio prende anche il colore del secondo uso, e la
+   * divisione delle funzioni si legge dal basamento.
+   */
+  readonly podiumBands: number;
+  /** Svuota il cuore delle fasce larghe: e' l'isolato a corte. */
+  readonly courtyard: boolean;
+  /** Coronamento basso e nessun dettaglio verticale sul tetto. */
+  readonly flatCrown: boolean;
+  /** Lato minimo dell'impronta imposto dalla tipologia. */
+  readonly minFootprint: number;
+  /** Lato massimo dell'impronta imposto dalla tipologia. */
+  readonly maxFootprint: number;
+}
+
+export interface TypologyRequirement {
+  /** Uso primario a cui la tipologia si applica. */
+  readonly use: BuildingClass;
+  /** Se presente, la tipologia vale solo su edifici misti con questo secondo uso. */
+  readonly mixed?: BuildingClass;
+  readonly specialization?: Specialization;
+  /** Basta uno dei ruoli elencati fra i catalizzatori che coprono la colonna. */
+  readonly roles?: readonly CatalystId[];
+  readonly districts?: readonly DistrictId[];
+  /** La colonna deve affacciare sul mare entro il raggio di ricerca del Builder. */
+  readonly coastal?: boolean;
+  readonly minLevel?: number;
+  readonly minDensity?: number;
+  readonly maxDensity?: number;
+  readonly minWealth?: number;
+  readonly minAccessibility?: number;
+  readonly minSatisfaction?: number;
+  readonly minIndustry?: number;
+}
+
+export interface TypologyDefinition extends TypologyRequirement {
+  readonly id: string;
+  readonly label: string;
+  /**
+   * Specificita' della tipologia.
+   *
+   * Fra tutte le tipologie che accettano una colonna vince quella con la
+   * priorita' piu' alta, e a parita' vince la prima del catalogo. Non e' un
+   * peso probabilistico: una scelta casuale renderebbe illeggibile la relazione
+   * fra luogo e forma, che e' esattamente cio' che questa fase deve mostrare.
+   */
+  readonly priority: number;
+  readonly shape: TypologyShape;
+  /** Cio' che la tipologia sovrascrive del profilo dell'uso. */
+  readonly profile: Partial<ClassProfile>;
+}
+
+/** Forma senza vincoli: la grammatica di `generate.ts` lasciata libera. */
+export const DEFAULT_TYPOLOGY_SHAPE: TypologyShape = {
+  podiumBands: 0,
+  courtyard: false,
+  flatCrown: false,
+  minFootprint: 2,
+  maxFootprint: MAX_FOOTPRINT,
+};
+
+/**
+ * Il catalogo, in ordine di lettura per uso.
+ *
+ * Ogni uso chiude con una riga a priorita' zero e senza condizioni: e' la forma
+ * che quell'uso prende quando il luogo non dice niente di piu' preciso, e
+ * garantisce che la selezione trovi sempre una risposta.
+ */
+export const TYPOLOGIES: readonly TypologyDefinition[] = [
+  // --- residenziale --------------------------------------------------------
+  {
+    id: 'shophouse',
+    label: 'Shophouse',
+    use: 0,
+    mixed: 1,
+    // Nessuna condizione sul luogo: e' *la* forma dell'uso misto, quella che
+    // vale ovunque un secondo uso attecchisca. Dove il podio commerciale
+    // qualifica — densita' alta e livello alto — vince lui, che ha priorita'
+    // maggiore; qui sotto resta la casa-bottega.
+    priority: 3,
+    shape: { ...DEFAULT_TYPOLOGY_SHAPE, podiumBands: 1, flatCrown: true, maxFootprint: 3 },
+    profile: {
+      bandHeight: [2, 2],
+      shrinkBias: 0.12,
+      body: PALETTE_SLOTS.brickLight,
+      bodyAlt: PALETTE_SLOTS.wood,
+      accent: PALETTE_SLOTS.metalBrass,
+      crown: PALETTE_SLOTS.roofPale,
+      plinth: PALETTE_SLOTS.stoneWarm,
+    },
+  },
+  {
+    id: 'commercialPodium',
+    label: 'Podium block',
+    use: 0,
+    mixed: 1,
+    minDensity: 0.4,
+    minLevel: 2,
+    priority: 5,
+    shape: { ...DEFAULT_TYPOLOGY_SHAPE, podiumBands: 2, minFootprint: 3 },
+    profile: {
+      bandHeight: [2, 3],
+      shrinkBias: 0.58,
+      body: PALETTE_SLOTS.concretePale,
+      bodyAlt: PALETTE_SLOTS.glassDeep,
+      accent: PALETTE_SLOTS.glass,
+    },
+  },
+  {
+    id: 'courtyardBlock',
+    label: 'Courtyard block',
+    use: 0,
+    minDensity: 0.3,
+    minLevel: 2,
+    priority: 2,
+    shape: { ...DEFAULT_TYPOLOGY_SHAPE, courtyard: true, flatCrown: true, minFootprint: 4 },
+    profile: {
+      bandHeight: [2, 3],
+      shrinkBias: 0.08,
+      body: PALETTE_SLOTS.concrete,
+      bodyAlt: PALETTE_SLOTS.concreteLight,
+      accent: PALETTE_SLOTS.brickLight,
+    },
+  },
+  {
+    id: 'towerBlock',
+    label: 'Tower block',
+    use: 0,
+    minDensity: 0.55,
+    minLevel: 4,
+    priority: 4,
+    shape: { ...DEFAULT_TYPOLOGY_SHAPE, maxFootprint: 3 },
+    profile: { bandHeight: [3, 4], shrinkBias: 0.72 },
+  },
+  { id: 'terracedHousing', label: 'Terraced housing', use: 0, priority: 0, shape: DEFAULT_TYPOLOGY_SHAPE, profile: {} },
+
+  // --- commerciale ---------------------------------------------------------
+  {
+    id: 'harborMarket',
+    label: 'Harbor market',
+    use: 1,
+    roles: ['port'],
+    coastal: true,
+    priority: 6,
+    shape: { ...DEFAULT_TYPOLOGY_SHAPE, podiumBands: 1, flatCrown: true, minFootprint: 3 },
+    profile: {
+      bandHeight: [2, 2],
+      shrinkBias: 0.08,
+      footprintBias: 2,
+      body: PALETTE_SLOTS.wood,
+      bodyAlt: PALETTE_SLOTS.brickLight,
+      accent: PALETTE_SLOTS.metalBrass,
+      crown: PALETTE_SLOTS.roofPale,
+      plinth: PALETTE_SLOTS.stoneDark,
+    },
+  },
+  {
+    id: 'officeTower',
+    label: 'Office tower',
+    use: 1,
+    specialization: 'office',
+    minLevel: 3,
+    priority: 5,
+    shape: { ...DEFAULT_TYPOLOGY_SHAPE, podiumBands: 1, minFootprint: 3 },
+    profile: {
+      bandHeight: [3, 4],
+      shrinkBias: 0.78,
+      body: PALETTE_SLOTS.glassDeep,
+      bodyAlt: PALETTE_SLOTS.glassDark,
+      accent: PALETTE_SLOTS.glassPale,
+      crown: PALETTE_SLOTS.metalDark,
+      plinth: PALETTE_SLOTS.stoneDark,
+      roofPropHeight: 4,
+    },
+  },
+  {
+    id: 'hotel',
+    label: 'Hotel',
+    use: 1,
+    specialization: 'tourism',
+    minLevel: 2,
+    priority: 5,
+    shape: { ...DEFAULT_TYPOLOGY_SHAPE, podiumBands: 1, minFootprint: 3 },
+    profile: {
+      bandHeight: [2, 3],
+      shrinkBias: 0.28,
+      body: PALETTE_SLOTS.concreteWhite,
+      bodyAlt: PALETTE_SLOTS.roofPale,
+      accent: PALETTE_SLOTS.metalGold,
+      crown: PALETTE_SLOTS.roofWhite,
+      plinth: PALETTE_SLOTS.stoneWarm,
+    },
+  },
+  {
+    id: 'entertainmentHall',
+    label: 'Entertainment hall',
+    use: 1,
+    specialization: 'entertainment',
+    priority: 5,
+    shape: { ...DEFAULT_TYPOLOGY_SHAPE, flatCrown: true, minFootprint: 3 },
+    profile: {
+      bandHeight: [3, 4],
+      shrinkBias: 0.18,
+      body: PALETTE_SLOTS.brickDark,
+      bodyAlt: PALETTE_SLOTS.brick,
+      accent: PALETTE_SLOTS.metalGold,
+      crown: PALETTE_SLOTS.metalBrass,
+      plinth: PALETTE_SLOTS.stoneDark,
+    },
+  },
+  { id: 'retailRow', label: 'Retail row', use: 1, priority: 0, shape: { ...DEFAULT_TYPOLOGY_SHAPE, flatCrown: true, maxFootprint: 3 }, profile: { bandHeight: [2, 2] } },
+
+  // --- industriale ---------------------------------------------------------
+  {
+    id: 'logisticsDepot',
+    label: 'Logistics depot',
+    use: 2,
+    specialization: 'logistics',
+    priority: 5,
+    shape: { ...DEFAULT_TYPOLOGY_SHAPE, flatCrown: true, minFootprint: 4 },
+    profile: {
+      bandHeight: [2, 2],
+      shrinkBias: 0,
+      footprintBias: 2,
+      body: PALETTE_SLOTS.asphalt,
+      bodyAlt: PALETTE_SLOTS.metalDark,
+      accent: PALETTE_SLOTS.metalBrass,
+      crown: PALETTE_SLOTS.metalDark,
+      plinth: PALETTE_SLOTS.asphaltShadow,
+    },
+  },
+  {
+    id: 'productionLoft',
+    label: 'Production loft',
+    use: 2,
+    minLevel: 2,
+    priority: 2,
+    shape: { ...DEFAULT_TYPOLOGY_SHAPE, flatCrown: true, minFootprint: 3 },
+    profile: { bandHeight: [2, 2], shrinkBias: 0.05, footprintBias: 2 },
+  },
+  { id: 'industrialYard', label: 'Industrial yard', use: 2, priority: 0, shape: DEFAULT_TYPOLOGY_SHAPE, profile: {} },
+
+  // --- civico --------------------------------------------------------------
+  {
+    id: 'universityLab',
+    label: 'University lab',
+    use: 3,
+    specialization: 'research',
+    minLevel: 2,
+    priority: 5,
+    shape: { ...DEFAULT_TYPOLOGY_SHAPE, courtyard: true, flatCrown: true, minFootprint: 4 },
+    profile: {
+      bandHeight: [3, 3],
+      shrinkBias: 0.12,
+      body: PALETTE_SLOTS.concreteWhite,
+      bodyAlt: PALETTE_SLOTS.glassPale,
+      accent: PALETTE_SLOTS.glassDeep,
+      crown: PALETTE_SLOTS.roofWhite,
+      plinth: PALETTE_SLOTS.stone,
+    },
+  },
+  {
+    id: 'culturalPavilion',
+    label: 'Cultural pavilion',
+    use: 3,
+    roles: ['monument', 'park'],
+    maxDensity: 0.6,
+    priority: 4,
+    shape: { ...DEFAULT_TYPOLOGY_SHAPE, minFootprint: 3 },
+    profile: {
+      bandHeight: [3, 4],
+      shrinkBias: 0.34,
+      body: PALETTE_SLOTS.stoneWarm,
+      bodyAlt: PALETTE_SLOTS.concreteWhite,
+      accent: PALETTE_SLOTS.metalGold,
+      crown: PALETTE_SLOTS.roofWhite,
+      plinth: PALETTE_SLOTS.stone,
+      roofProp: PALETTE_SLOTS.metalGold,
+    },
+  },
+  { id: 'civicSpire', label: 'Civic spire', use: 3, priority: 0, shape: DEFAULT_TYPOLOGY_SHAPE, profile: {} },
+];
+
+export type TypologyId = (typeof TYPOLOGIES)[number]['id'];
+
+const TYPOLOGY_BY_ID = new Map<string, TypologyDefinition>(
+  TYPOLOGIES.map((entry) => [entry.id, entry]),
+);
+
+export function typologyById(id: string): TypologyDefinition | null {
+  return TYPOLOGY_BY_ID.get(id) ?? null;
+}

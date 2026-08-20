@@ -2,7 +2,13 @@ import type { Theme } from './theme';
 
 /**
  * Look principale: un modellino urbano caldo, leggibile e con ombre fredde.
- * Tutti gli effetti restano nel materiale condiviso e non cambiano le mesh.
+ *
+ * E' il tema che spinge piu' a fondo il modello: sole caldo e netto contro
+ * cielo azzurro forte, cioe' la coppia che produce da sola le ombre azzurre.
+ * Prima la stessa cosa si otteneva a mano con `lightTint`/`shadowTint`; ora e'
+ * una conseguenza, non una correzione applicata sopra.
+ *
+ * Tilt-shift alto: e' il segnale percettivo che dice "modellino".
  */
 export const diorama: Theme = {
   id: 'diorama',
@@ -22,24 +28,33 @@ export const diorama: Theme = {
   ],
   atmosphere: {
     background: '#b9dced',
-    skyTop: '#78b7dd',
-    skyHorizon: '#f4dec1',
-    fogColor: '#eadcc7',
-    fogDensity: 0.00016,
-    faceLight: [0.98, 0.64, 0.82, 0.55, 1.0, 0.42],
+    sun: { azimuth: 34, elevation: 42, color: '#ffdca6', intensity: 1.0, wrap: 0.24 },
+    skyLight: { color: '#8fc0e8', intensity: 0.52 },
+    bounceLight: { color: '#8a7a5e', intensity: 0.24 },
     aoStrength: 0.6,
-    lightTint: '#ffe2b0',
-    shadowTint: '#a8c8dc',
-    heightTint: '#fff1d6',
-    heightStart: 8,
-    heightEnd: 48,
-    heightStrength: 0.12,
+    colorJitter: 0.2,
+    fog: {
+      color: '#eadcc7',
+      density: 0.00016,
+      skyBlend: 0.5,
+      heightBase: 12,
+      heightFalloff: 0.03,
+      sunTint: 0.45,
+    },
+    sky: {
+      top: '#4f9ed4',
+      horizon: '#f7e3c4',
+      sunGlow: 0.6,
+      cloudAmount: 0.5,
+      cloudSpeed: 0.01,
+      cloudTint: '#fffaf0',
+    },
+    shadow: { strength: 1.0, softness: 1.0 },
+    bloom: { threshold: 1.3, strength: 0.32, radius: 0.55 },
+    tilt: { strength: 0.55, focus: 0.5, width: 0.34 },
     glassTint: '#bdeaf2',
     glassLift: 0.18,
-    waterHighlight: '#c7f3ea',
-    waterStrength: 0.18,
-    waterScale: 0.12,
-    waterSpeed: 0.55,
+    water: { highlight: '#c7f3ea', strength: 0.18, scale: 0.12, speed: 0.55 },
     toneMapping: 'aces',
     exposure: 1,
   },

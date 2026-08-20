@@ -1,5 +1,5 @@
 import { BALANCE } from './balance';
-import { BUILDING_CLASS, type BuildingClass } from './classes';
+import type { BuildingClass } from './classes';
 
 /**
  * Policy: moltiplicatori nominati sui pesi della simulazione.
@@ -83,11 +83,11 @@ export const POLICIES: readonly Policy[] = [
   {
     id: 'zoningRelief',
     label: 'zoning relief',
-    weight: 'desirabilityProduction',
+    weight: 'desirabilityIndustrial',
     multiplier: BALANCE.policyMultipliers.zoningRelief,
     upkeep: BALANCE.gameplay.policy.zoningRelief.upkeep,
     incompatibleWith: [],
-    spatialEffect: 'Increases production density at a cost to livability.',
+    spatialEffect: 'Increases industrial density at a cost to livability.',
   },
   {
     id: 'civicPride',
@@ -98,21 +98,29 @@ export const POLICIES: readonly Policy[] = [
     incompatibleWith: ['austerity'],
     spatialEffect: 'Makes civic centers wealthier and happier.',
   },
+  {
+    id: 'marketCharter',
+    label: 'market charter',
+    weight: 'desirabilityCommercial',
+    multiplier: BALANCE.policyMultipliers.marketCharter,
+    upkeep: BALANCE.gameplay.policy.marketCharter.upkeep,
+    incompatibleWith: ['austerity'],
+    spatialEffect: 'Widens the commercial fields and makes mixed-use blocks more likely.',
+  },
 ];
 
-/** Peso di desiderabilita' corrispondente a ciascuna classe, per indice. */
+/** Peso di desiderabilita' corrispondente a ciascun uso urbano, per indice. */
 export const DESIRABILITY_WEIGHT_OF_CLASS: readonly WeightId[] = [
   'desirabilityResidential',
-  'desirabilityProduction',
+  'desirabilityCommercial',
+  'desirabilityIndustrial',
   'desirabilityCivic',
 ];
 
-/** Classe toccata da un peso, o -1 se il peso non riguarda il campo. */
+/** Uso toccato da un peso, o -1 se il peso non riguarda il campo. */
 export function classOfWeight(weight: WeightId): BuildingClass | -1 {
-  if (weight === 'desirabilityResidential') return BUILDING_CLASS.residential;
-  if (weight === 'desirabilityProduction') return BUILDING_CLASS.production;
-  if (weight === 'desirabilityCivic') return BUILDING_CLASS.civic;
-  return -1;
+  const found = DESIRABILITY_WEIGHT_OF_CLASS.indexOf(weight);
+  return found === -1 ? -1 : (found as BuildingClass);
 }
 
 export function isPolicyId(value: string): value is PolicyId {

@@ -73,9 +73,9 @@ describe('DesirabilityField — profilo di un catalizzatore', () => {
   });
 
   it('scrive solo nella classe del catalizzatore', () => {
-    const state = addCatalyst(createSimState(), catalyst({ class: BUILDING_CLASS.production }));
+    const state = addCatalyst(createSimState(), catalyst({ class: BUILDING_CLASS.industrial }));
 
-    expect(state.field.valueAt(100, 100, BUILDING_CLASS.production)).toBe(200);
+    expect(state.field.valueAt(100, 100, BUILDING_CLASS.industrial)).toBe(200);
     expect(state.field.valueAt(100, 100, BUILDING_CLASS.residential)).toBe(0);
     expect(state.field.valueAt(100, 100, BUILDING_CLASS.civic)).toBe(0);
   });
@@ -149,11 +149,11 @@ describe('DesirabilityField — il percorso incrementale e la ricostruzione coin
     state = addCatalyst(state, catalyst({ x: 60, y: 60, strength: 200, radius: 18 }));
     state = addCatalyst(
       state,
-      catalyst({ x: 80, y: 66, class: BUILDING_CLASS.production, strength: 150, radius: 22 }),
+      catalyst({ x: 80, y: 66, class: BUILDING_CLASS.industrial, strength: 150, radius: 22 }),
     );
     state = addCatalyst(state, catalyst({ x: 70, y: 90, strength: 120, radius: 15 }));
     state = addBuilding(state, { x: 62, y: 61, class: BUILDING_CLASS.residential });
-    state = addBuilding(state, { x: 65, y: 63, class: BUILDING_CLASS.production });
+    state = addBuilding(state, { x: 65, y: 63, class: BUILDING_CLASS.industrial });
     state = setCatalystStrength(state, 0, 240);
     state = removeCatalyst(state, 2);
 

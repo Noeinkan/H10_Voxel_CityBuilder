@@ -24,6 +24,8 @@ import {
   type BuildingForm,
 } from './config';
 import { generateBuilding, startLevel } from './generate';
+import { selectTypology, typologyProfile } from './typology';
+import { typologyById, type TypologyDefinition } from './config';
 import { anchoredVoxel, stampSurface, STAMP_EMPTY, type VoxelAnchor, type VoxelStamp } from './stamp';
 
 /**
@@ -37,9 +39,15 @@ import { anchoredVoxel, stampSurface, STAMP_EMPTY, type VoxelAnchor, type VoxelS
  *
  * **La simulazione resta pura e non sa che esistiamo.** Il Builder legge le sue
  * decisioni (`nextBuildSites`) e il suo campo (`field.valueAt`), e le restituisce
- * una sola informazione: che su una certa colonna ora c'e' un edificio di una
- * certa classe. Non le passa il registry, non le passa il mondo, non le passa un
+ * una sola informazione: che su una certa colonna ora c'e' un edificio di certi
+ * usi. Non le passa il registry, non le passa il mondo, non le passa un
  * riferimento a se stesso.
+ *
+ * **La tipologia si decide qui, non nella simulazione.** `src/sim/` sa che una
+ * colonna vuole ospitare commercio; che quel commercio diventi un mercato sul
+ * porto o una torre di uffici dipende da terreno, costa e catalizzatori vicini,
+ * cioe' da cose che vivono da questa parte del confine. La simulazione non ha
+ * un campo per la forma degli edifici e non deve averne uno.
  *
  * **Perche' un edificio nuovo costa una `addBuilding` sola.** Un'impronta 3x3
  * occupa nove colonne, ma la simulazione ne sente una: `buildingCounts` alimenta
@@ -180,7 +188,16 @@ export class Builder {
    * (e il nucleo della demo) torna visibile prima del primo tick.
    */
   materialize(buildings: readonly Building[]): void {
-    for (const building of buildings) this.place(building.x, building.y, building.class, false);
+    for (const building of buildings) {
+      this.place({
+        x: building.x,
+        y: building.y,
+        class: building.class,
+        mixed: building.mixed,
+        animate: false,
+        state: null,
+      });
+    }
   }
 
   /**
@@ -256,10 +273,19 @@ export class Builder {
       if (accepted >= wanted) break;
       if (this.growing.length >= BUILDER.maxGrowing) break;
 
-      const record = this.place(site.x, site.y, site.class, true, next);
+      const record = this.place({
+        x: site.x,
+        y: site.y,
+        class: site.class,
+        mixed: site.mixed === -1 ? undefined : site.mixed,
+        animate: true,
+        state: next,
+      });
       if (record === null) continue;
 
-      next = addBuilding(next, { x: record.x, y: record.y, class: record.class });
+      next = addBuilding(next, record.mixed === undefined
+        ? { x: record.x, y: record.y, class: record.class }
+        : { x: record.x, y: record.y, class: record.class, mixed: record.mixed });
       accepted++;
     }
 
@@ -267,13 +293,8 @@ export class Builder {
   }
 
   /** Valida il sito, getta la fondazione, accoda la comparsa. null se il sito non va. */
-  private place(
-    x: number,
-    y: number,
-    cls: BuildingClass,
-    animate = true,
-    state: SimState | null = null,
-  ): BuildingRecord | null {
+  private place(request: PlaceRequest): BuildingRecord | null {
+    const { x, y, class: cls, mixed, state } = request;
     const key = `${x},${y}`;
     if (this.blacklist.has(key)) return null;
 
@@ -283,7 +304,24 @@ export class Builder {
       : urbanProfileAt(state.catalysts, state.policies, x, y);
     const form = formOf(profile);
     const level = Math.min(BUILDER.maxLevel, startLevel(seed) + localLevelBonus(form));
-    const stamp = generateBuilding(cls, level, seed, MAX_FOOTPRINT, 1, form);
+    const typology = selectTypology({
+      use: cls,
+      mixed,
+      level,
+      profile,
+      coastal: this.isCoastal(x, y),
+    });
+    const stamp = generateBuilding({
+      class: cls,
+      level,
+      seed,
+      footprintCap: MAX_FOOTPRINT,
+      footprintFloor: 1,
+      form,
+      profile: typologyProfile(typology),
+      shape: typology.shape,
+      mixed,
+    });
     const footprint = stamp.sizeX;
 
     const ground = this.surveyGround(x, y, footprint);
@@ -310,13 +348,16 @@ export class Builder {
       footprint,
       height: stamp.sizeZ,
       class: cls,
+      mixed,
       level,
       seed,
       form,
+      typology: typology.id,
       district: profile?.district ?? 'outskirts',
+      specialization: profile?.specialization ?? null,
     });
 
-    if (animate) this.growing.push({ record, stamp, erase: null, voxelCursor: 0, eraseCursor: 0 });
+    if (request.animate) this.growing.push({ record, stamp, erase: null, voxelCursor: 0, eraseCursor: 0 });
     else this.writeStamp(record, stamp, 0, stamp.sizeZ, false);
     this.enqueueBuildingSurface(record);
     this.placedCount++;
@@ -417,34 +458,61 @@ export class Builder {
    * con l'impronta vecchia come tetto, e cresce solo in altezza.
    */
   private upgrade(record: BuildingRecord, nextLevel: number, profile: LocalUrbanProfile): void {
+    const oldTypology = this.typologyOf(record);
+    // Salendo di livello la colonna puo' meritare una tipologia diversa: una
+    // casa-bottega che diventa podio commerciale e' proprio il racconto che
+    // questa fase deve rendere visibile.
+    const nextTypology = selectTypology({
+      use: record.class,
+      mixed: record.mixed,
+      level: nextLevel,
+      profile,
+      coastal: this.isCoastal(record.x, record.y),
+    });
+
     const oldForm = record.form ?? DEFAULT_BUILDING_FORM;
     const nextForm = formOf(profile);
-    const old = generateBuilding(
-      record.class,
-      record.level,
-      record.seed,
-      record.footprint,
-      record.footprint,
-      oldForm,
-    );
 
-    let stamp = generateBuilding(
-      record.class,
-      nextLevel,
-      record.seed,
-      MAX_FOOTPRINT,
-      record.footprint,
-      nextForm,
-    );
+    // Lo stamp da cancellare si rigenera con la tipologia **registrata**, non
+    // con quella che il luogo esprime adesso: se un catalizzatore nuovo ha
+    // cambiato la tipologia di questa colonna, la sagoma da togliere resta
+    // quella che era stata scritta. Rigenerarla con la tipologia nuova
+    // lascerebbe voxel orfani a terra.
+    const old = generateBuilding({
+      class: record.class,
+      level: record.level,
+      seed: record.seed,
+      footprintCap: record.footprint,
+      footprintFloor: record.footprint,
+      form: oldForm,
+      profile: typologyProfile(oldTypology),
+      shape: oldTypology.shape,
+      mixed: record.mixed,
+    });
+
+    let stamp = generateBuilding({
+      class: record.class,
+      level: nextLevel,
+      seed: record.seed,
+      footprintCap: MAX_FOOTPRINT,
+      footprintFloor: record.footprint,
+      form: nextForm,
+      profile: typologyProfile(nextTypology),
+      shape: nextTypology.shape,
+      mixed: record.mixed,
+    });
     if (stamp.sizeX > record.footprint && !this.fitsWider(record, stamp)) {
-      stamp = generateBuilding(
-        record.class,
-        nextLevel,
-        record.seed,
-        record.footprint,
-        record.footprint,
-        nextForm,
-      );
+      stamp = generateBuilding({
+        class: record.class,
+        level: nextLevel,
+        seed: record.seed,
+        footprintCap: record.footprint,
+        footprintFloor: record.footprint,
+        form: nextForm,
+        profile: typologyProfile(nextTypology),
+        shape: nextTypology.shape,
+        mixed: record.mixed,
+      });
     }
 
     if (this.dirtyChunkCount(record.x, record.y, stamp.sizeX, record.baseZ, record.baseZ + stamp.sizeZ) >
@@ -463,10 +531,13 @@ export class Builder {
       footprint: stamp.sizeX,
       height: stamp.sizeZ,
       class: record.class,
+      mixed: record.mixed,
       level: nextLevel,
       seed: record.seed,
       form: nextForm,
+      typology: nextTypology.id,
       district: profile.district,
+      specialization: profile.specialization,
     });
     if (replaced === null) return;
 
@@ -617,6 +688,37 @@ export class Builder {
     }
   }
 
+  /**
+   * true se la colonna vede il mare entro `BUILDER.coastalRadius`.
+   *
+   * Guarda solo i quattro assi e non l'intero quadrato: un mercato sul porto ha
+   * bisogno di sapere se c'e' acqua *davanti*, e ottanta letture di colonna per
+   * ogni sito valutato sarebbero un costo per edificio, non per frame.
+   */
+  private isCoastal(x: number, y: number): boolean {
+    const radius = BUILDER.coastalRadius;
+    for (let d = 1; d <= radius; d++) {
+      for (const [dx, dy] of AXES) {
+        const column = this.terrainMap.columnAt(x + dx * d, y + dy * d);
+        if (column === null) continue;
+        if (column.height <= TERRAIN.seaLevel) return true;
+      }
+    }
+    return false;
+  }
+
+  /** Tipologia registrata di un edificio, o quella di ripiego del suo uso. */
+  private typologyOf(record: BuildingRecord): TypologyDefinition {
+    const stored = record.typology === undefined ? null : typologyById(record.typology);
+    return stored ?? selectTypology({
+      use: record.class,
+      mixed: record.mixed,
+      level: record.level,
+      profile: null,
+      coastal: false,
+    });
+  }
+
   private clearDecorColumn(x: number, y: number): void {
     const column = this.terrainMap.columnAt(x, y);
     if (column === null) return;
@@ -629,7 +731,7 @@ export class Builder {
   }
 
   private enqueueBuildingSurface(record: BuildingRecord): void {
-    const palette = record.class === BUILDING_CLASS.production
+    const palette = record.class === BUILDING_CLASS.industrial
       ? PALETTE_SLOTS.asphaltDark
       : PALETTE_SLOTS.asphalt;
     for (let px = record.x - 1; px <= record.x + record.footprint; px++) {
@@ -832,6 +934,20 @@ function edgeChunks(min: number, max: number): readonly number[] {
   }
   return out;
 }
+
+/** Cosa serve al Builder per valutare un sito. */
+interface PlaceRequest {
+  readonly x: number;
+  readonly y: number;
+  readonly class: BuildingClass;
+  readonly mixed?: BuildingClass;
+  readonly animate: boolean;
+  /** Senza stato non c'e' profilo locale: le tipologie condizionate restano fuori. */
+  readonly state: SimState | null;
+}
+
+/** I quattro assi cardinali, per la ricerca della costa. */
+const AXES: readonly (readonly [number, number])[] = [[1, 0], [-1, 0], [0, 1], [0, -1]];
 
 function formOf(profile: LocalUrbanProfile | null): BuildingForm {
   if (profile === null) return DEFAULT_BUILDING_FORM;

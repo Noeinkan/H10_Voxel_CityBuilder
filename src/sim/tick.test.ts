@@ -20,7 +20,7 @@ function standardCity(): SimState {
     state = addBuilding(state, { x: 40 + i * 3, y: 40, class: BUILDING_CLASS.residential });
   }
   for (let i = 0; i < 5; i++) {
-    state = addBuilding(state, { x: 40 + i * 3, y: 48, class: BUILDING_CLASS.production });
+    state = addBuilding(state, { x: 40 + i * 3, y: 48, class: BUILDING_CLASS.industrial });
   }
   for (let i = 0; i < 3; i++) {
     state = addBuilding(state, { x: 40 + i * 3, y: 56, class: BUILDING_CLASS.civic });

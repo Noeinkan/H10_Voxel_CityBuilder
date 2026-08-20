@@ -1,7 +1,8 @@
 import type { TerrainMap } from '../world/terrain/TerrainMap';
 import { BALANCE } from './balance';
-import { BUILDING_CLASS } from './classes';
-import { defaultCatalystOfClass } from './catalysts';
+import { BUILDING_CLASS, type BuildingClass } from './classes';
+import { catalystRoleOf } from './catalysts';
+import { resolveCommerce } from './commerce';
 import { decisionAt } from './decisions';
 import { resolveWeights, type Weights } from './policies';
 import { nextState, unitOf } from './rng';
@@ -23,11 +24,21 @@ import { resolveExternalTrade } from './trade';
  * cella. E' il motivo per cui il costo del tick non dipende dall'estensione
  * della mappa.
  *
- * **Bilancio.** In ordine: lavoro e produzione, cibo, fondi e manutenzione,
- * soddisfazione, popolazione. L'ordine conta perche' ogni passo consuma cio' che
- * il precedente ha appena prodotto: la produzione di questo tick e' gia'
- * mangiabile in questo tick, e la fame che ne segue pesa sulla popolazione dello
- * stesso tick.
+ * **Bilancio.** In ordine: lavoro, industria, cibo, materiali e commercio,
+ * fondi e manutenzione, commercio esterno, soddisfazione, popolazione. L'ordine
+ * conta perche' ogni passo consuma cio' che il precedente ha appena prodotto: la
+ * produzione di questo tick e' gia' mangiabile e gia' vendibile in questo tick,
+ * e la fame che ne segue pesa sulla popolazione dello stesso tick.
+ *
+ * **Due catene, un bacino.** Industria e commercio competono per la stessa
+ * forza lavoro e si passano gli stessi materiali. E' quella competizione — non
+ * due bilanci separati — a rendere leggibile la differenza fra una citta' di
+ * fabbriche e una di mercati.
+ *
+ * **Uso misto.** Un edificio misto conta una volta sotto il suo uso primario e
+ * una frazione (`mixedUse.secondaryShare`) sotto il secondo. Il bilancio non sa
+ * altro di lui: non e' una zona nuova, e' una capacita' in piu' nella stessa
+ * colonna.
  *
  * **Perche' nessuno stock puo' andare sotto zero.** Ogni consumo e' un
  * `min(domanda, disponibile)`, mai una sottrazione secca: cio' che manca diventa
@@ -42,21 +53,27 @@ import { resolveExternalTrade } from './trade';
 export function tick(state: SimState, terrainMap: TerrainMap): SimState {
   const weights = resolveWeights(state.policies);
 
-  const residential = state.buildingCounts[BUILDING_CLASS.residential];
-  const production = state.buildingCounts[BUILDING_CLASS.production];
-  const civic = state.buildingCounts[BUILDING_CLASS.civic];
+  const residential = effectiveCount(state, BUILDING_CLASS.residential);
+  const commercial = effectiveCount(state, BUILDING_CLASS.commercial);
+  const industrial = effectiveCount(state, BUILDING_CLASS.industrial);
+  const civic = effectiveCount(state, BUILDING_CLASS.civic);
 
   const population = state.population.stock;
   const capacity = residential * weights.residentialCapacity;
 
-  // --- Lavoro e produzione -------------------------------------------------
+  // --- Lavoro --------------------------------------------------------------
+  //
+  // Un solo bacino per due catene: la quota di organico e' condivisa, quindi
+  // aprire negozi mentre le fabbriche sono a corto di braccia rallenta anche
+  // quelle. E' la tensione che rende una scelta il rapporto fra le due.
 
-  const workersNeeded = production * BALANCE.work.workersPerProduction;
+  const workersNeeded = industrial * BALANCE.work.workersPerProduction +
+    commercial * BALANCE.commerce.workersPerCommercial;
   const workersAvailable = population * BALANCE.work.workforceShare;
   const staffing = workersNeeded > 0 ? Math.min(1, workersAvailable / workersNeeded) : 0;
 
-  const foodProduced = production * BALANCE.food.perProduction * staffing;
-  const materialsProduced = production * weights.productionYield * staffing;
+  const foodProduced = industrial * BALANCE.food.perProduction * staffing;
+  const materialsProduced = industrial * weights.productionYield * staffing;
 
   // --- Cibo ----------------------------------------------------------------
 
@@ -66,6 +83,25 @@ export function tick(state: SimState, terrainMap: TerrainMap): SimState {
   const foodStock = finiteStock(foodAvailable - foodConsumed);
   const fed = foodDemand > 0 ? foodConsumed / foodDemand : 1;
 
+  // --- Materiali e commercio interno --------------------------------------
+  //
+  // I materiali si contano prima dei fondi perche' il commercio li trasforma in
+  // incasso: girare l'ordine rimanderebbe al tick dopo il ricavo di merce gia'
+  // venduta in questo.
+
+  const maintenance = state.buildings.length * BALANCE.materials.upkeepPerBuilding;
+  const materialsAvailable = state.materials.stock + materialsProduced;
+  const materialsAfterUpkeep = materialsAvailable - Math.min(maintenance, materialsAvailable);
+
+  const commerce = resolveCommerce({
+    commercial,
+    population,
+    staffing,
+    materials: materialsAfterUpkeep,
+    capacityPerBuilding: weights.commercialCapacity,
+  });
+  const materialsStock = finiteStock(materialsAfterUpkeep - commerce.goods);
+
   // --- Fondi ---------------------------------------------------------------
 
   const civicUpkeep = civic * weights.civicUpkeep;
@@ -74,24 +110,16 @@ export function tick(state: SimState, terrainMap: TerrainMap): SimState {
     0,
   );
   const upkeep = civicUpkeep + policyUpkeep;
-  const income = population * BALANCE.funds.taxPerResident;
+  const income = population * BALANCE.funds.taxPerResident + commerce.revenue;
   const fundsAvailable = state.funds.stock + income;
   const upkeepPaid = Math.min(upkeep, fundsAvailable);
   const fundsStock = finiteStock(fundsAvailable - upkeepPaid);
   const funded = civicUpkeep > 0 ? Math.min(civicUpkeep, upkeepPaid) / civicUpkeep : 1;
 
-  // --- Materiali -----------------------------------------------------------
-
-  const maintenance = state.buildings.length * BALANCE.materials.upkeepPerBuilding;
-  const materialsAvailable = state.materials.stock + materialsProduced;
-  const materialsStock = finiteStock(materialsAvailable - Math.min(maintenance, materialsAvailable));
-
   // --- Commercio esterno ---------------------------------------------------
 
   const trade = resolveExternalTrade({
-    connected: state.catalysts.some(
-      (catalyst) => (catalyst.kind ?? defaultCatalystOfClass(catalyst.class)) === 'port',
-    ),
+    connected: state.catalysts.some((catalyst) => catalystRoleOf(catalyst) === 'port'),
     mode: state.tradeMode,
     population,
     buildings: state.buildings.length,
@@ -102,7 +130,14 @@ export function tick(state: SimState, terrainMap: TerrainMap): SimState {
 
   // --- Soddisfazione -------------------------------------------------------
 
-  const satisfaction = nextSatisfaction(state.satisfaction, population, capacity, civic, funded);
+  const satisfaction = nextSatisfaction(
+    state.satisfaction,
+    population,
+    capacity,
+    civic,
+    funded,
+    commerce.service,
+  );
 
   // --- Popolazione ---------------------------------------------------------
 
@@ -129,6 +164,7 @@ export function tick(state: SimState, terrainMap: TerrainMap): SimState {
     materials: moved(state.materials, finiteStock(trade.materialsStock)),
     funds: moved(state.funds, finiteStock(trade.fundsStock)),
     satisfaction,
+    commerce,
     trade: {
       connected: trade.connected,
       food: trade.food,
@@ -154,6 +190,18 @@ export function tickMany(state: SimState, terrainMap: TerrainMap, count: number)
  */
 export function weightsOf(state: SimState): Weights {
   return resolveWeights(state.policies);
+}
+
+/**
+ * Edifici efficaci di un uso: i suoi, piu' la quota di quelli che lo ospitano.
+ *
+ * E' l'unico punto in cui `buildingCounts` e `mixedCounts` si incontrano. Un
+ * edificio misto vale uno sul suo uso primario e `secondaryShare` sul secondo:
+ * ospita davvero due funzioni, ma in un volume solo, e la capacita' lo dice.
+ */
+function effectiveCount(state: SimState, cls: BuildingClass): number {
+  const mixed = state.mixedCounts[cls] ?? 0;
+  return state.buildingCounts[cls] + mixed * BALANCE.mixedUse.secondaryShare;
 }
 
 interface PopulationInputs {
@@ -207,6 +255,7 @@ function nextSatisfaction(
   capacity: number,
   civic: number,
   funded: number,
+  service: number,
 ): number {
   const occupancy =
     capacity > 0
@@ -216,7 +265,13 @@ function nextSatisfaction(
         : 0;
 
   const crowding = Math.max(0, occupancy - 1) * BALANCE.satisfaction.crowdingPenalty;
-  const target = clamp01(BALANCE.satisfaction.base + funded * civic * BALANCE.satisfaction.perCivic - crowding);
+  // I negozi sono la seconda leva sulla soddisfazione, accanto ai servizi
+  // civici: una citta' servita e' contenta anche senza un municipio ogni due
+  // isolati, ed e' cio' che tiene in piedi una strategia mercantile.
+  const retail = service * BALANCE.commerce.satisfactionPerService;
+  const target = clamp01(
+    BALANCE.satisfaction.base + funded * civic * BALANCE.satisfaction.perCivic + retail - crowding,
+  );
 
   return clamp01(current + (target - current) * BALANCE.satisfaction.inertia);
 }

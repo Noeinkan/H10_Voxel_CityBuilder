@@ -19,7 +19,7 @@ describe('commercio esterno', () => {
       x: 8,
       y: 8,
       kind: 'port',
-      class: BUILDING_CLASS.production,
+      class: BUILDING_CLASS.industrial,
       strength: 190,
       radius: 24,
     });

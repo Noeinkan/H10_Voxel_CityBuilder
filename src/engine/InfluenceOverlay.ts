@@ -11,7 +11,9 @@ import type { TerrainMap } from '../world/terrain/TerrainMap';
 import { TERRAIN } from '../world/terrain/config';
 
 const SEGMENTS = 64;
-const CLASS_COLORS = [0x5f8f7f, 0xd9b45f, 0xe99a72] as const;
+
+/** Un colore per uso urbano, in ordine di `BUILDING_CLASS`. */
+const CLASS_COLORS: readonly number[] = [0x5f8f7f, 0xd8886a, 0xd9b45f, 0xe99a72];
 
 /** Cerchi di influenza e perimetri dei settori, separati dalle mesh voxel. */
 export class InfluenceOverlay {

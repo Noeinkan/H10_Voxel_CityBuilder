@@ -5,6 +5,7 @@ import {
   Frustum,
   Group,
   Matrix4,
+  Material,
   Mesh,
   ShaderMaterial,
   Sphere,
@@ -12,6 +13,7 @@ import {
   Uint32BufferAttribute,
   Uint8BufferAttribute,
   Vector3,
+  type WebGLRenderer,
 } from 'three';
 import { CHUNK } from '../world/chunkCoords';
 import type { VoxelWorld } from '../world/VoxelWorld';
@@ -27,6 +29,8 @@ interface ChunkMeshEntry {
   bytes: number;
   detailQuads: number;
   appliedJobId: number;
+  /** Visibilita' da ripristinare dopo la pass d'ombra. */
+  shadowVisible: boolean;
 }
 
 /** Voce della coda di rebuild: le coordinate sono tenute in chiaro per non riparsare la chiave. */
@@ -77,6 +81,9 @@ export class ChunkRenderer {
   private readonly pendingSet = new Set<string>();
 
   private readonly frustum = new Frustum();
+  private readonly shadowFrustum = new Frustum();
+  /** AABB dei soli chunk visibili: e' il volume che la shadow map deve coprire. */
+  private readonly visibleBox = new Box3();
   private readonly viewProjection = new Matrix4();
   private readonly cameraPosition = new Vector3();
   private readonly lastScorePosition = new Vector3(Infinity, Infinity, Infinity);
@@ -153,12 +160,58 @@ export class ChunkRenderer {
     this.frustum.setFromProjectionMatrix(this.viewProjection);
 
     let visible = 0;
+    this.visibleBox.makeEmpty();
     for (const entry of this.entries.values()) {
       const inside = this.frustum.intersectsBox(entry.box);
       entry.mesh.visible = inside;
-      if (inside) visible++;
+      if (inside) {
+        visible++;
+        this.visibleBox.union(entry.box);
+      }
     }
     this.visibleCount = visible;
+  }
+
+  /** Volume dei chunk visibili, aggiornato dall'ultima `cull`. */
+  get visibleBounds(): Box3 {
+    return this.visibleBox;
+  }
+
+  /**
+   * Disegna i chunk nella shadow map con un materiale di sola profondita'.
+   *
+   * La visibilita' qui e' diversa da quella della vista: un chunk fuori dallo
+   * schermo puo' comunque proiettare ombra dentro, quindi si ricalcola sul
+   * frustum del sole. Lo stato precedente viene ripristinato, cosi' il chiamante
+   * non deve rifare `cull` prima del render principale.
+   *
+   * Restituisce il numero di mesh disegnate.
+   */
+  renderShadow(renderer: WebGLRenderer, camera: Camera, depthMaterial: Material): number {
+    camera.updateMatrixWorld();
+    this.viewProjection.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
+    this.shadowFrustum.setFromProjectionMatrix(this.viewProjection);
+
+    const restored: ChunkMeshEntry[] = [];
+    let drawn = 0;
+    for (const entry of this.entries.values()) {
+      restored.push(entry);
+      const inside = this.shadowFrustum.intersectsBox(entry.box);
+      entry.shadowVisible = entry.mesh.visible;
+      entry.mesh.visible = inside;
+      if (inside) {
+        entry.mesh.material = depthMaterial;
+        drawn++;
+      }
+    }
+
+    renderer.render(this.group, camera);
+
+    for (const entry of restored) {
+      entry.mesh.material = this.material;
+      entry.mesh.visible = entry.shadowVisible;
+    }
+    return drawn;
   }
 
   dispose(): void {
@@ -303,6 +356,7 @@ export class ChunkRenderer {
         bytes,
         detailQuads: result.detailQuadCount,
         appliedJobId: result.jobId,
+        shadowVisible: true,
       });
       this.geometryBytes += bytes;
       this.quadTotal += result.quadCount;

@@ -92,7 +92,11 @@ map.columnAt(120, 96); // { height, biome, slope, buildable }
 | --- | --- | --- |
 | [ChunkRenderer.ts](src/engine/ChunkRenderer.ts) | Una geometria per chunk, coda a priorità, frustum culling, upload a budget | `ChunkRenderer`, `ChunkRendererStats` |
 | [MesherPool.ts](src/engine/MesherPool.ts) | Pool di worker, job in volo, statistiche del mesher | `MesherPool`, `MesherStats`, `ChunkMeshResult` |
-| [VoxelMaterial.ts](src/engine/VoxelMaterial.ts) | Unico `ShaderMaterial`, palette, luce per faccia, `aAO` e nebbia | `createVoxelMaterial`, `VoxelMaterialHandle` |
+| [VoxelMaterial.ts](src/engine/VoxelMaterial.ts) | Unico `ShaderMaterial`: palette, sole e ambiente nel fragment, jitter per voxel, prospettiva aerea | `createVoxelMaterial`, `VoxelMaterialHandle` |
+| [lighting.ts](src/engine/lighting.ts) | Modello di luce in TS puro: direzione del sole, diffusa avvolgente, luminanza per faccia | `sunDirection`, `faceLight`, `faceLuminance`, `wrapDiffuse`, `FACE_NORMALS` |
+| [lighting.test.ts](src/engine/lighting.test.ts) | Tiene allineate la copia TS e quella GLSL del modello | — |
+| [SunShadow.ts](src/engine/SunShadow.ts) | Shadow map ortografica del sole: fitting sull'AABB visibile, aggancio ai texel, materiale di sola profondita' | `createSunShadow`, `SunShadowHandle` |
+| [PostProcessing.ts](src/engine/PostProcessing.ts) | Composer sempre attivo: bloom, tilt-shift, tone mapping in `OutputPass` | `createPostProcessing`, `PostProcessingHandle` |
 | [InfluenceOverlay.ts](src/engine/InfluenceOverlay.ts) | Cerchi dei catalizzatori e perimetri dei settori, senza modificare le mesh voxel | `InfluenceOverlay` |
 | [IsoCameraController.ts](src/engine/IsoCameraController.ts) | Ortografica isometrica: scatti di 90°, zoom, pan vincolato all'AABB | `IsoCameraController`, `IsoCameraOptions` |
 | [IsoCameraController.test.ts](src/engine/IsoCameraController.test.ts) | Contratto dei pulsanti pointer accettati per il pan | — |
@@ -115,6 +119,7 @@ uniform e stato del renderer: nessuna geometria viene toccata.
 | [industrial.ts](src/engine/themes/industrial.ts) | Ocra, ruggine e smog | `industrial` |
 | [scifi.ts](src/engine/themes/scifi.ts) | Bianchi freddi, teal e magenta | `scifi` |
 | [enchanted.ts](src/engine/themes/enchanted.ts) | Bosco incantato, lilla e turchese | `enchanted` |
+| [diorama.ts](src/engine/themes/diorama.ts) | Modellino caldo con ombre fredde; usa tutti i campi opzionali | `diorama` |
 
 ### `src/engine/mesher/` — puro, senza Three.js
 
@@ -136,16 +141,17 @@ di crescita. Il `Builder`, esterno al modulo, consuma quei candidati. Dettagli i
 | --- | --- | --- |
 | [index.ts](src/sim/index.ts) | Barrel: superficie pubblica per chi sta fuori dalla cartella | tutto il resto |
 | [balance.ts](src/sim/balance.ts) | **Ogni** coefficiente, soglia e moltiplicatore, in un solo oggetto | `BALANCE` |
-| [classes.ts](src/sim/classes.ts) | Le tre classi di edificio come indici densi | `BUILDING_CLASS`, `CLASS_NAMES`, `CLASS_COUNT`, `ALL_CLASSES` |
-| [catalysts.ts](src/sim/catalysts.ts) | Catalogo dei sette ruoli e relativi effetti locali | `CATALYSTS`, `catalystById`, `CatalystId` |
+| [classes.ts](src/sim/classes.ts) | I quattro usi urbani come indici densi | `BUILDING_CLASS`, `CLASS_NAMES`, `CLASS_LABELS`, `CLASS_COUNT`, `ALL_CLASSES` |
+| [catalysts.ts](src/sim/catalysts.ts) | Catalogo dei sette ruoli: vettore di influenza, funzione di toolbar, effetti locali | `CATALYSTS`, `CATALYST_GROUPS`, `catalystById`, `catalystInfluence`, `catalystRoleOf`, `CatalystId` |
 | [SimState.ts](src/sim/SimState.ts) | Stato, operazioni del giocatore, serializzazione JSON senza perdita | `createSimState`, `addCatalyst`, `addBuilding`, `setPolicyActive`, `setSelectedClass`, `toSimStateData`, `reviveSimState`, `rebuildField` |
 | [tick.ts](src/sim/tick.ts) | Il bilancio di un tick, funzione pura | `tick`, `tickMany`, `weightsOf` |
-| [DesirabilityField.ts](src/sim/DesirabilityField.ts) | Campo per classe, `Uint8Array` chunkato 32×32, ricalcolo incrementale | `DesirabilityField`, `rectAround`, `rectArea`, `Catalyst`, `Building`, `CellRect` |
+| [DesirabilityField.ts](src/sim/DesirabilityField.ts) | Campo per uso urbano, `Uint8Array` chunkato 32×32, ricalcolo incrementale | `DesirabilityField`, `rectAround`, `rectArea`, `Catalyst`, `Building`, `CellRect` |
 | [policies.ts](src/sim/policies.ts) | Catalogo delle policy e risoluzione dei pesi | `POLICIES`, `resolveWeights`, `withPolicy`, `policyById`, `isPolicyId`, `Weights`, `PolicyId` |
-| [districts.ts](src/sim/districts.ts) | Profili locali e distretti da campi sovrapposti | `urbanProfileAt`, `DistrictId`, `LocalUrbanProfile` |
+| [districts.ts](src/sim/districts.ts) | Profili locali, distretti e specializzazioni da campi sovrapposti | `urbanProfileAt`, `specializationOf`, `dominantUse`, `DistrictId`, `LocalUrbanProfile`, `Specialization` |
+| [commerce.ts](src/sim/commerce.ts) | Il ciclo commerciale interno: domanda, organico, merce, ricavi | `resolveCommerce`, `EMPTY_COMMERCE`, `CommerceReport` |
 | [decisions.ts](src/sim/decisions.ts) | Scelte periodiche deterministiche | `decisionAt`, `decisionOption`, `CityDecision` |
 | [trade.ts](src/sim/trade.ts) | Import/export aggregato sbloccato dal porto | `resolveExternalTrade`, `TRADE_MODES`, `TradeMode` |
-| [nextBuildSites.ts](src/sim/nextBuildSites.ts) | I candidati, ordinati e filtrati | `nextBuildSites`, `BuildSite` |
+| [nextBuildSites.ts](src/sim/nextBuildSites.ts) | I candidati, ordinati, filtrati e con l'eventuale secondo uso | `nextBuildSites`, `BuildSite` |
 | [rng.ts](src/sim/rng.ts) | `mulberry32` in forma pura, stato dentro `SimState` | `nextState`, `unitOf` |
 | [scenario.ts](src/sim/scenario.ts) | Fixture della scena di debug: catalizzatori e nucleo di 24 edifici | `createScenarioState`, `scenarioCatalysts` |
 | [debugData.ts](src/sim/debugData.ts) | L'unica scrittura verso il `VoxelWorld`, e va in `data` | `writeDesirabilityData` |
@@ -153,9 +159,9 @@ di crescita. Il `Builder`, esterno al modulo, consuma quei candidati. Dettagli i
 
 ```ts
 let state = createSimState();
-state = addCatalyst(state, { x: 96, y: 96, class: BUILDING_CLASS.residential, strength: 220, radius: 24 });
+state = addCatalyst(state, { x: 96, y: 96, kind: 'market', class: BUILDING_CLASS.residential, strength: 220, radius: 24 });
 state = tick(state, terrainMap);        // puro: nuovo stato, input intatto
-nextBuildSites(state, terrainMap, 10);  // [{ x, y, class, score }, …]
+nextBuildSites(state, terrainMap, 10);  // [{ x, y, class, mixed, score }, …]
 ```
 
 ## `src/world/buildings/` — crescita voxel
@@ -167,9 +173,10 @@ gestisce le impronte, costruisce a fasce entro un budget e promuove gli edifici.
 | --- | --- | --- |
 | [Builder.ts](src/world/buildings/Builder.ts) | Consuma i candidati, scrive voxel e coordina le crescite | `Builder`, `BuilderStats`, `REJECT_REASONS` |
 | [BuildingRegistry.ts](src/world/buildings/BuildingRegistry.ts) | Indice spaziale e record degli edifici | `BuildingRegistry`, `BuildingRecord` |
-| [generate.ts](src/world/buildings/generate.ts) | Generatore deterministico di stamp voxel | `generateBuilding`, `startLevel` |
+| [generate.ts](src/world/buildings/generate.ts) | Generatore deterministico di stamp voxel, piegato da profilo e forma | `generateBuilding`, `startLevel`, `BuildingRequest` |
+| [typology.ts](src/world/buildings/typology.ts) | Sceglie la tipologia dal luogo; nessun numero, solo la regola | `selectTypology`, `typologyProfile`, `typologiesForUses` |
 | [stamp.ts](src/world/buildings/stamp.ts) | Volume voxel, ancora 3D e conversione in coordinate mondo | `VoxelStamp`, `VoxelAnchor`, `anchoredVoxel`, `STAMP_EMPTY` |
-| [config.ts](src/world/buildings/config.ts) | Cadenze, tetti e profili visivi | `BUILDER`, `CLASS_PROFILE` |
+| [config.ts](src/world/buildings/config.ts) | Cadenze, tetti, profili visivi e **catalogo delle tipologie** | `BUILDER`, `CLASS_PROFILE`, `TYPOLOGIES`, `typologyById` |
 
 ## `src/game/` — ciclo di gioco
 

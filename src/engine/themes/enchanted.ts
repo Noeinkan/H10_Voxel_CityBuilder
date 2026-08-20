@@ -2,7 +2,10 @@ import type { Theme } from './theme';
 
 /**
  * Bosco incantato: cielo lilla, verdi-turchese, terra viola, oro caldo.
- * Nebbia leggera ma molto colorata: e' quella che tiene insieme il tema.
+ *
+ * Nebbia leggera ma molto colorata: e' quella che tiene insieme il tema. Il
+ * cielo illumina piu' del sole (`skyLight` sopra `sun.intensity`), che e' il
+ * modo di ottenere una luce diffusa da sottobosco senza spegnere il volume.
  */
 export const enchanted: Theme = {
   id: 'enchanted',
@@ -31,10 +34,32 @@ export const enchanted: Theme = {
   ],
   atmosphere: {
     background: '#d9c7ee',
-    fogColor: '#e4d5f5',
-    fogDensity: 0.00022,
-    faceLight: [0.94, 0.7, 0.84, 0.62, 1.0, 0.5],
+    sun: { azimuth: 52, elevation: 54, color: '#ffe9c4', intensity: 0.66, wrap: 0.5 },
+    skyLight: { color: '#c4b0e8', intensity: 0.68 },
+    bounceLight: { color: '#7a5c86', intensity: 0.36 },
     aoStrength: 0.48,
+    colorJitter: 0.2,
+    fog: {
+      color: '#e4d5f5',
+      density: 0.00022,
+      skyBlend: 0.65,
+      heightBase: 10,
+      heightFalloff: 0.026,
+      sunTint: 0.36,
+    },
+    sky: {
+      top: '#8f6fc9',
+      horizon: '#f2e2fa',
+      sunGlow: 0.68,
+      cloudAmount: 0.42,
+      cloudSpeed: 0.009,
+      cloudTint: '#fdf2ff',
+    },
+    shadow: { strength: 0.6, softness: 2.4 },
+    bloom: { threshold: 1.1, strength: 0.55, radius: 0.7 },
+    tilt: { strength: 0.42, focus: 0.52, width: 0.4 },
+    emissiveStrength: 0.7,
+    water: { highlight: '#bff2ff', strength: 0.16, scale: 0.22, speed: 0.45 },
     toneMapping: 'aces',
     exposure: 1.12,
   },

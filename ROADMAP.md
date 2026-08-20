@@ -14,8 +14,10 @@ senza compromettere i 60 fps nel browser.
 
 - Isola procedurale deterministica, streaming in worker e mappa di edificabilità.
 - Motore voxel a chunk con greedy meshing, shader condiviso e temi a palette.
-- Crescita automatica di edifici residenziali, produttivi e civici fino al livello 6.
-- Risorse, popolazione, soddisfazione, policy e campo di desiderabilità.
+- Crescita automatica di edifici residenziali, commerciali, industriali, civici e
+  a uso misto fino al livello 6, con tipologie scelte dal luogo.
+- Risorse, popolazione, soddisfazione, commercio interno, policy e campo di
+  desiderabilità per uso.
 - Piazzamento dei catalizzatori tramite click, anteprima e messaggi di validazione.
 - Acquisto di settori costieri, pausa e velocità della simulazione.
 - Overlay diagnostico e suite di test per motore, terreno, simulazione e crescita.
@@ -72,32 +74,48 @@ Obiettivo: ampliare la varietà economica e architettonica senza introdurre
 zoning manuale; il giocatore continua a orientare una crescita automatica
 attraverso catalizzatori con effetti locali leggibili.
 
-- [ ] Separare uso urbano, catalizzatore e forma architettonica: gli usi fondamentali
+**Stato implementazione:** completata. Il gate resta da validare con un playtest
+che confronti una città mercantile e una industriale a occhio, senza overlay.
+
+- [x] Separare uso urbano, catalizzatore e forma architettonica: gli usi fondamentali
   diventano residenziale, commerciale, industriale e civico, mentre uffici,
   turismo, ricerca, logistica e intrattenimento restano specializzazioni.
-- [ ] Rendere il commerciale una componente autonoma della simulazione, con domanda,
+- [x] Rendere il commerciale una componente autonoma della simulazione, con domanda,
   desiderabilità, occupazione, ricavi, capacità e conteggi distinti; rinominare
   la classe produttiva in industriale dove descrive l'uso del suolo.
-- [ ] Sostituire l'unica classe associata a ciascun catalizzatore con un vettore di
+- [x] Sostituire l'unica classe associata a ciascun catalizzatore con un vettore di
   influenze: mercato, fabbrica, parco, porto, trasporto, università e monumento
   possono favorire più usi e modificare ricchezza, accessibilità, densità,
   soddisfazione e impatto industriale.
-- [ ] Generare edifici a uso misto quando influenze compatibili superano le soglie
+- [x] Generare edifici a uso misto quando influenze compatibili superano le soglie
   locali, iniziando da residenziale più commerciale; ogni edificio conserva
   capacità economiche separate per i propri usi senza diventare una nuova zona.
-- [ ] Scegliere la tipologia edilizia da uso, distretto, densità, ricchezza, terreno e
+- [x] Scegliere la tipologia edilizia da uso, distretto, densità, ricchezza, terreno e
   catalizzatori vicini tramite un catalogo data-driven: case-bottega, isolati a
   corte, podi commerciali con abitazioni, loft produttivi, mercati sul porto,
   laboratori universitari, hotel, padiglioni culturali e altre forme speciali.
-- [ ] Organizzare la toolbar per funzione — crescita, connessioni e identità — e
+- [x] Organizzare la toolbar per funzione — crescita, connessioni e identità — e
   mantenere visibili anche i catalizzatori bloccati; anteprima e tooltip mostrano
   raggio, usi favoriti o penalizzati e tipologie probabili prima del piazzamento.
-- [ ] Conservare determinismo, campi densi e costo limitato per colonna; misurare
+- [x] Conservare determinismo, campi densi e costo limitato per colonna; misurare
   memoria e tempo di selezione dei siti dopo l'estensione degli usi.
 
 **Gate:** mercato e industria producono cicli economici distinguibili, gli
 edifici misti emergono da sovrapposizioni comprensibili e almeno sei tipologie
 sono riconoscibili per forma e funzione senza selezionare manualmente una zona.
+
+**Come è stato risolto.** L'uso urbano è un indice denso in `src/sim/classes.ts`
+e i quattro usi sono in ordine di contratto; un catalizzatore non ha più una
+classe ma un vettore di influenza in `balance.ts`, che può anche essere negativo
+— una fabbrica sottrae dal residenziale, e il clamp a zero del campo bastava già
+a reggerlo. Il commercio interno vive in `src/sim/commerce.ts` e compete con
+l'industria per la stessa forza lavoro e gli stessi materiali: è quella
+competizione, non due bilanci separati, a rendere distinguibili i due cicli. La
+tipologia è un catalogo di quindici righe in `world/buildings/config.ts` con la
+sola regola di scelta in `typology.ts`, e piega la grammatica esistente con tre
+interruttori — podio, corte, coronamento piatto — invece di introdurre modelli
+disegnati a mano. La selezione dei siti è rimasta al suo costo perché il secondo
+uso si cerca solo sui siti che entrano davvero in lista.
 
 ## Fase 4 — Forma urbana procedurale
 
@@ -165,7 +183,7 @@ se rompe i budget esistenti.
 2. [x] Bilanciamento recuperabile di popolazione, cibo e produzione.
 3. [x] Settori costieri unici che aggiungono terreno realmente edificabile.
 4. [x] Costi continuativi e conseguenze visibili per le sei policy esistenti.
-5. [ ] Commerciale autonomo e primo edificio residenziale-commerciale a uso misto.
+5. [x] Commerciale autonomo e primo edificio residenziale-commerciale a uso misto.
 6. [ ] Primo sistema di strade procedurali usato come scheletro della crescita.
 7. [ ] Salvataggio locale minimo del ciclo completo.
 8. [ ] Playtest di 30 minuti con budget e criteri automatici registrati.

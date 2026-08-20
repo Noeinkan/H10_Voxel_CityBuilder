@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { addBuilding, addCatalyst, BUILDING_CLASS, createSimState, type SimState } from '../sim';
+import {
+  addBuilding,
+  addCatalyst,
+  ALL_CLASSES,
+  BUILDING_CLASS,
+  createSimState,
+  type SimState,
+} from '../sim';
 import { BALANCE } from '../sim/balance';
 import { cityCondition, isSelfSufficient } from './cityCondition';
 
@@ -28,7 +35,8 @@ function completeCity(): SimState {
   let state = createSimState();
   for (const [index, cls] of [
     BUILDING_CLASS.residential,
-    BUILDING_CLASS.production,
+    BUILDING_CLASS.industrial,
+    BUILDING_CLASS.commercial,
     BUILDING_CLASS.civic,
   ].entries()) {
     state = addCatalyst(state, { x: index * 20, y: 0, class: cls, strength: 200, radius: 12 });
@@ -38,7 +46,7 @@ function completeCity(): SimState {
 
 function selfSufficientCity(): SimState {
   let state = completeCity();
-  for (const cls of [BUILDING_CLASS.residential, BUILDING_CLASS.production, BUILDING_CLASS.civic]) {
+  for (const cls of ALL_CLASSES) {
     for (let i = 0; i < BALANCE.gameplay.success.buildingsPerClass; i++) {
       state = addBuilding(state, { x: cls * 30 + i, y: 20, class: cls });
     }

@@ -1,14 +1,16 @@
-import type { BuildingClass } from '../../sim';
+import { BUILDING_CLASS, type BuildingClass } from '../../sim';
 import { hashCoords, mulberry32 } from '../rng';
 import {
   BUILDER,
   CLASS_PROFILE,
   DEFAULT_BUILDING_FORM,
+  DEFAULT_TYPOLOGY_SHAPE,
   LEVEL_CAPS,
   MAX_FOOTPRINT,
   START_LEVEL_CDF,
   type ClassProfile,
   type BuildingForm,
+  type TypologyShape,
 } from './config';
 import type { VoxelStamp } from './stamp';
 import { SURFACE_KIND, type SurfaceKind } from '../visualBlock';
@@ -25,9 +27,14 @@ import { SURFACE_KIND, type SurfaceKind } from '../visualBlock';
  *
  * **Scheletro, non forme fisse.** Non esiste un catalogo di modelli. Esiste una
  * regola: una fascia si calcola dalla fascia sotto di se', con una trasformazione
- * scelta dal PRNG e pesata dalla classe. Le rientranze, le terrazze e le mensole
+ * scelta dal PRNG e pesata dal profilo. Le rientranze, le terrazze e le mensole
  * sono cio' che resta quando si applica quella regola cinque volte di fila, non
  * qualcosa che qualcuno ha disegnato.
+ *
+ * **La tipologia piega la regola, non la sostituisce.** Il generatore non sa
+ * che le tipologie esistono: riceve un profilo di disegno gia' fuso e tre
+ * interruttori strutturali — podio, corte, coronamento piatto — e li applica.
+ * Chi sceglie *quale* tipologia e' `typology.ts`, e sta a monte.
  *
  * **Determinismo.** Tutto il caso esce da un solo PRNG con stato iniziale
  * `hash(class, level, seed)`. Due chiamate con gli stessi argomenti consumano la
@@ -51,16 +58,35 @@ interface BandRect {
  * riquadri, e la fondazione livella esattamente le colonne che l'edificio
  * occupa, senza spianare terreno che poi resta scoperto.
  */
-export function generateBuilding(
-  cls: BuildingClass,
-  level: number,
-  seed: number,
-  footprintCap = MAX_FOOTPRINT,
-  footprintFloor = 1,
-  form: BuildingForm = DEFAULT_BUILDING_FORM,
-): VoxelStamp {
+export interface BuildingRequest {
+  /** Uso urbano primario: decide il profilo di base e la grammatica di superficie. */
+  readonly class: BuildingClass;
+  readonly level: number;
+  readonly seed: number;
+  readonly footprintCap?: number;
+  readonly footprintFloor?: number;
+  readonly form?: BuildingForm;
+  /**
+   * Profilo di disegno gia' fuso con quello della tipologia. Senza, quello
+   * dell'uso: un edificio resta disegnabile anche fuori dal catalogo.
+   */
+  readonly profile?: ClassProfile;
+  readonly shape?: TypologyShape;
+  /**
+   * Secondo uso ospitato. Colora il podio e gli da' la propria grammatica di
+   * superficie: e' cosi' che un edificio misto si legge come misto da fuori,
+   * senza bisogno di una zona, di un'etichetta o di un colore in piu'.
+   */
+  readonly mixed?: BuildingClass;
+}
+
+export function generateBuilding(request: BuildingRequest): VoxelStamp {
+  const cls = request.class;
+  const level = request.level;
+  const form = request.form ?? DEFAULT_BUILDING_FORM;
+  const shape = request.shape ?? DEFAULT_TYPOLOGY_SHAPE;
   const caps = LEVEL_CAPS[clamp(level, 0, LEVEL_CAPS.length - 1)];
-  const baseProfile = CLASS_PROFILE[cls];
+  const baseProfile = request.profile ?? CLASS_PROFILE[cls];
   const profile: ClassProfile = {
     ...baseProfile,
     footprintBias: baseProfile.footprintBias + Math.round(
@@ -74,15 +100,18 @@ export function generateBuilding(
       1,
     ),
   };
-  const random = mulberry32(hashCoords(seed, cls, level));
+  const random = mulberry32(hashCoords(request.seed, cls, level));
 
   // Il tiro pesca sempre da `MAX_FOOTPRINT` e solo dopo si taglia al tetto.
   // Cosi' la sequenza del PRNG non dipende dal tetto, e rigenerare un edificio
   // passando la sua stessa impronta restituisce esattamente lo stamp di prima:
   // e' cio' che permette al Builder di cancellare un edificio senza averne
   // conservato i voxel.
-  const cap = Math.min(caps.maxFootprint, footprintCap);
-  const minFootprint = Math.min(Math.max(caps.minFootprint, footprintFloor), cap);
+  const cap = Math.min(caps.maxFootprint, request.footprintCap ?? MAX_FOOTPRINT, shape.maxFootprint);
+  const minFootprint = Math.min(
+    Math.max(caps.minFootprint, request.footprintFloor ?? 1, shape.minFootprint),
+    cap,
+  );
   const naturalFootprint = clamp(
     2 + Math.floor(random() * (MAX_FOOTPRINT - 1)) + profile.footprintBias,
     2,
@@ -114,22 +143,41 @@ export function generateBuilding(
   const rects: BandRect[] = [];
   const heights: number[] = [];
 
-  let rect: BandRect = { x0: 0, y0: 0, w: footprint, h: footprint };
+  // Il podio non attraversa la grammatica: e' un blocco pieno che non rientra e
+  // non si sposta, e la prima fascia sopra parte arretrata di netto. E' quel
+  // gradino a rendere un podio commerciale con abitazioni riconoscibile da
+  // lontano, dove una rientranza graduale si leggerebbe come una torre qualunque.
+  const full: BandRect = { x0: 0, y0: 0, w: footprint, h: footprint };
+  const podium = Math.min(shape.podiumBands, bands - 1);
+  let rect: BandRect = full;
   for (let i = 0; i < bands; i++) {
-    if (i > 0) rect = nextRect(random, rect, footprint, profile);
+    if (i < podium) rect = full;
+    else if (i === podium && podium > 0) rect = shrink(full);
+    else if (i > 0) rect = nextRect(random, rect, footprint, profile);
     rects.push(rect);
-    heights.push(pickInt(random, profile.bandHeight[0], profile.bandHeight[1]));
+    heights.push(i < podium
+      ? profile.bandHeight[0]
+      : pickInt(random, profile.bandHeight[0], profile.bandHeight[1]));
   }
 
   // Coronamento: una fascia bassa e piu' stretta del corpo. Chiude la silhouette
   // invece di lasciarla tagliata di netto, che a distanza legge come un edificio
   // in costruzione.
-  const crownRect = shrink(rect);
+  //
+  // Un coronamento piatto non rientra affatto: su un'impronta di tre `shrink`
+  // lascerebbe un cappello 1x1, cioe' proprio la guglia che una tipologia a
+  // tetto piano non deve avere. Un capannone finisce con una copertura larga
+  // quanto lui.
+  const crownRect = shape.flatCrown ? rect : shrink(rect);
   rects.push(crownRect);
-  heights.push(pickInt(random, 1, 2));
+  const crownHeight = pickInt(random, 1, 2);
+  heights.push(shape.flatCrown ? 1 : crownHeight);
 
   // Un solo dettaglio verticale chiude la silhouette senza introdurre rumore
-  // per-voxel: camino, sfiato o antenna dipendono esclusivamente dalla classe.
+  // per-voxel: camino, sfiato o antenna dipendono dal profilo. Il tiro si
+  // consuma comunque, anche quando il coronamento e' piatto e il dettaglio non
+  // viene disegnato: cosi' la tipologia sceglie la forma e non la sequenza, e
+  // due tipologie sullo stesso seme restano confrontabili.
   const propRect: BandRect = {
     x0: crownRect.x0 + Math.floor(random() * crownRect.w),
     y0: crownRect.y0 + Math.floor(random() * crownRect.h),
@@ -137,9 +185,13 @@ export function generateBuilding(
     h: 1,
   };
   rects.push(propRect);
-  heights.push(profile.roofPropHeight);
+  heights.push(shape.flatCrown ? 0 : profile.roofPropHeight);
 
-  return paint(
+  const podiumProfile = request.mixed !== undefined && podium > 0
+    ? CLASS_PROFILE[request.mixed]
+    : null;
+
+  return paint({
     rects,
     heights,
     footprint,
@@ -147,11 +199,16 @@ export function generateBuilding(
     bodyAlt,
     accentId,
     accentFace,
-    profile.crown,
-    profile.plinth,
-    profile.roofProp,
-    classSurface(cls),
-  );
+    crown: profile.crown,
+    plinth: profile.plinth,
+    roofProp: profile.roofProp,
+    surface: classSurface(cls),
+    courtyard: shape.courtyard,
+    podium,
+    podiumBody: podiumProfile?.body ?? null,
+    podiumAlt: podiumProfile?.bodyAlt ?? null,
+    podiumSurface: request.mixed !== undefined ? classSurface(request.mixed) : classSurface(cls),
+  });
 }
 
 /**
@@ -264,22 +321,32 @@ function grow(random: () => number, rect: BandRect): BandRect {
  * Riempie i voxel dalle fasce.
  *
  * Tre colori in tre passaggi sullo stesso voxel, nell'ordine in cui si
- * sovrascrivono: corpo, cornice di sommita', faccia d'accento. L'ultima fascia
- * e' il coronamento e prende il suo colore per intero, cornice compresa.
+ * sovrascrivono: corpo, cornice di sommita', faccia d'accento. La penultima
+ * fascia e' il coronamento e prende il suo colore per intero, cornice compresa;
+ * l'ultima e' il dettaglio sul tetto, e su un coronamento piatto e' alta zero.
  */
-function paint(
-  rects: readonly BandRect[],
-  heights: readonly number[],
-  footprint: number,
-  body: number,
-  bodyAlt: number,
-  accentId: number,
-  accentFace: number,
-  crown: number,
-  plinth: number,
-  roofProp: number,
-  buildingSurface: SurfaceKind,
-): VoxelStamp {
+interface PaintRequest {
+  readonly rects: readonly BandRect[];
+  readonly heights: readonly number[];
+  readonly footprint: number;
+  readonly body: number;
+  readonly bodyAlt: number;
+  readonly accentId: number;
+  readonly accentFace: number;
+  readonly crown: number;
+  readonly plinth: number;
+  readonly roofProp: number;
+  readonly surface: SurfaceKind;
+  readonly courtyard: boolean;
+  /** Fasce di base che appartengono al podio, gia' limitate a `bands - 1`. */
+  readonly podium: number;
+  readonly podiumBody: number | null;
+  readonly podiumAlt: number | null;
+  readonly podiumSurface: SurfaceKind;
+}
+
+function paint(request: PaintRequest): VoxelStamp {
+  const { rects, heights, footprint } = request;
   let sizeZ = 0;
   for (const height of heights) sizeZ += height;
 
@@ -293,31 +360,48 @@ function paint(
     const rect = rects[b];
     const isCrown = b === rects.length - 2;
     const isRoofProp = b === rects.length - 1;
+    const isPodium = b < request.podium;
     const top = z + heights[b] - 1;
+
+    // La corte svuota il cuore delle fasce larghe. Non tocca il coronamento ne'
+    // il podio: un isolato a corte ha un cortile, non un pozzo che lo attraversa
+    // dal tetto alle fondamenta.
+    const hollow = request.courtyard && !isCrown && !isRoofProp && !isPodium &&
+      rect.w >= 3 && rect.h >= 3;
+
+    const bandBody = isPodium && request.podiumBody !== null ? request.podiumBody : request.body;
+    const bandAlt = isPodium && request.podiumAlt !== null ? request.podiumAlt : request.bodyAlt;
+    const bandSurface = isPodium ? request.podiumSurface : request.surface;
 
     for (let sz = z; sz <= top; sz++) {
       // La cornice e' il voxel di sommita' della fascia: costa nulla e produce
       // le righe orizzontali che danno la scala all'edificio. Su una fascia alta
       // un voxel la cornice e' la fascia, ed e' corretto che lo sia.
       const layer = isRoofProp
-        ? roofProp
+        ? request.roofProp
         : isCrown
-          ? crown
+          ? request.crown
           : sz === 0
-            ? plinth
+            ? request.plinth
             : sz === top
-              ? bodyAlt
-              : body;
+              ? bandAlt
+              : bandBody;
 
       for (let sy = rect.y0; sy < rect.y0 + rect.h; sy++) {
         for (let sx = rect.x0; sx < rect.x0 + rect.w; sx++) {
+          if (hollow &&
+            sx > rect.x0 && sx < rect.x0 + rect.w - 1 &&
+            sy > rect.y0 && sy < rect.y0 + rect.h - 1) {
+            continue;
+          }
+
           const accent = !isCrown && !isRoofProp && sz !== 0 &&
-            onAccentFace(rect, sx, sy, accentFace);
+            onAccentFace(rect, sx, sy, request.accentFace);
           // Quando l'intero edificio usa il colore d'accento, `accentId`
           // coincide con la cornice normale. Sulla sommita' della fascia si
           // inverte quindi il contrasto, altrimenti proprio quel piano perde
           // la faccia che rende leggibile il volume.
-          const accentLayer = accentId === layer ? body : accentId;
+          const accentLayer = request.accentId === layer ? bandBody : request.accentId;
           const index = sx + footprint * (sy + footprint * sz);
           voxels[index] = accent
             ? accentLayer
@@ -326,11 +410,11 @@ function paint(
             ? SURFACE_KIND.utility
             : isCrown
               ? SURFACE_KIND.roofTech
-              : sz <= 1 && onPortal(rect, sx, sy, accentFace)
+              : sz <= 1 && onPortal(rect, sx, sy, request.accentFace)
                 ? SURFACE_KIND.portal
                 : accent
                   ? SURFACE_KIND.luminous
-                  : buildingSurface;
+                  : bandSurface;
         }
       }
     }
@@ -364,9 +448,21 @@ function onPortal(rect: BandRect, sx: number, sy: number, face: number): boolean
   return face === 2 ? sy === rect.y0 + rect.h - 1 : sy === rect.y0;
 }
 
+/**
+ * Grammatica di superficie di un uso.
+ *
+ * Gli usi sono quattro ma i tipi di superficie disponibili per gli edifici sono
+ * tre: i tre bit alti di `visualBlock` sono tutti impegnati, e prendersene un
+ * quarto significherebbe togliere un bit alla palette — cioe' rompere
+ * l'invariante dei 32 slot per una lama di facciata. Il commerciale riusa
+ * quindi la grammatica del residenziale, che gli calza: mensole orizzontali che
+ * a piano terra leggono come tende e pensiline. A distinguerlo restano il
+ * colore caldo, i portali al piano terra e le insegne luminose sugli accenti.
+ */
 function classSurface(cls: BuildingClass): SurfaceKind {
-  return [SURFACE_KIND.habitat, SURFACE_KIND.industrial, SURFACE_KIND.civic][cls] ??
-    SURFACE_KIND.habitat;
+  if (cls === BUILDING_CLASS.industrial) return SURFACE_KIND.industrial;
+  if (cls === BUILDING_CLASS.civic) return SURFACE_KIND.civic;
+  return SURFACE_KIND.habitat;
 }
 
 /** true se il voxel sta sullo strato esterno del lato d'accento della sua fascia. */

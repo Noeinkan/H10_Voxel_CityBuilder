@@ -11,7 +11,7 @@ edificabile generato a budget.
 
 ```bash
 npm install
-npm start            # poi apri http://localhost:8010/
+npm start            # poi apri http://localhost:8020/
 npm test             # 181 test unitari e di integrazione
 npm run bench        # costo del mesher per chunk
 npm run typecheck
@@ -78,24 +78,28 @@ permettono di isolare le scene di verifica.
 | `height` | `64` | Altezza del mondo in voxel |
 | `terrain` | — | `<seed>` sostituisce la scena urbana con un'isola 256×256 |
 | `sim` | — | `1` accende la scena di simulazione (implica l'isola) |
-| `theme` | `scifi` | `natural`, `pastel`, `neon`, `industrial`, `scifi`, `enchanted`, `diorama` |
+| `theme` | `natural` | `natural`, `pastel`, `neon`, `industrial`, `scifi`, `enchanted`, `diorama` |
 | `grow` | `1` alla radice | `1` avvia esplicitamente l'MVP giocabile |
 
 Tasti: `Q`/`E` ruota di 90°, rotella zoom, drag destro o `WASD` pan, `F` inquadra
 tutto, `Esc` annulla lo strumento e `F3` alterna il pannello tecnico. Con il
 debug visibile, `G` aggiunge 64 chunk, `R` fa il rebuild, `C` azzera i picchi,
 `B` colora le colonne per bioma (solo in scena terreno). In scena simulazione:
-`T` un tick, `P` avvia o ferma il passo automatico, `M` cicla la classe mostrata.
+`T` un tick, `P` avvia o ferma il passo automatico, `M` cicla l'uso mostrato.
 
 Alla radice, oppure con `?grow=1`, il Cozy HUD mostra risorse e variazioni in alto,
-azioni di costruzione in basso e policy in un drawer laterale. Le azioni non
-disponibili anticipano requisiti di fondi o popolazione; selezione, errori e
-istruzioni di piazzamento compaiono come feedback contestuale sopra il dock.
+azioni di costruzione in basso e policy in un drawer laterale. Il dock è diviso
+per funzione — crescita, connessioni, identità — e i catalizzatori ancora fuori
+portata restano visibili invece di sparire: sapere che il porto esiste e quanto
+costa è ciò che fa pianificare. Tooltip e scheda al cursore dicono raggio, usi
+favoriti, usi penalizzati e tipologie che quel ruolo può far comparire, prima del
+click. Selezione, errori e istruzioni di piazzamento compaiono come feedback
+contestuale sopra il dock.
 Il pulsante con la tavolozza apre un selettore compatto per cambiare tema a caldo
 senza passare dall'overlay di debug.
 
 Gli edifici condividono una grammatica futuristica indipendente dal tema:
-habitat modulari, megastrutture produttive e landmark civici assegnano ai voxel
+habitat modulari, megastrutture industriali e landmark civici assegnano ai voxel
 tipi di superficie deterministici. Il mesher li propaga come `aSurface`; lo
 shader proietta pannelli, vetri, portali e circuiti sulle coordinate della faccia,
 quindi il disegno continua attraverso voxel e quad greedy senza nuove draw call.
@@ -182,7 +186,7 @@ una draw call per chunk.
 
 ```bash
 npm start
-# apri http://localhost:8010/ e leggi l'overlay:
+# apri http://localhost:8020/ e leggi l'overlay:
 #  - attendi che "coda" arrivi a 0 + 0, poi premi C per azzerare i picchi
 #  - "draw call" e "main ... max" sono i due numeri dei criteri
 #  - premi G e guarda fps e main durante l'aggiunta dei 64 chunk
@@ -278,20 +282,30 @@ Con `?debug=1&terrain=<seed>` sono esposti anche `__terrainStats()`,
 ## Simulazione
 
 `src/sim/` tiene risorse e popolazione, calcola un campo di desiderabilità per
-cella e per classe di edificio, e dice dove crescerebbe il prossimo edificio.
-Il `Builder`, esterno alla simulazione, trasforma quelle decisioni in edifici
-voxel a fasce e registra il risultato nello stato. Dettagli, contratti e misure
-in [src/sim/README.md](src/sim/README.md).
+cella e per **uso urbano**, e dice dove crescerebbe il prossimo edificio e con
+quali usi. Il `Builder`, esterno alla simulazione, trasforma quelle decisioni in
+edifici voxel a fasce e registra il risultato nello stato. Dettagli, contratti e
+misure in [src/sim/README.md](src/sim/README.md).
 
 La fase 2 aggiunge sette ruoli di catalizzatore, distretti emergenti dai campi
 sovrapposti, policy con costi ricorrenti e incompatibilità, forme edilizie
 guidate dal profilo locale, decisioni periodiche e commercio esterno via porto.
 
+La fase 3 separa tre cose che prima erano una sola: l'**uso urbano** (cosa si fa
+in quella colonna: residenziale, commerciale, industriale, civico), il
+**catalizzatore** (cosa il giocatore ha piazzato, che ora influenza più usi
+insieme e può anche penalizzarne uno) e la **tipologia** (che forma prende
+l'edificio che ne nasce). Da qui il commercio interno come seconda catena
+economica, gli edifici a uso misto e un catalogo di tipologie scelte dal luogo.
+
 ```ts
 let state = createSimState();
-state = addCatalyst(state, { x: 96, y: 96, class: BUILDING_CLASS.residential, strength: 220, radius: 24 });
+state = addCatalyst(state, {
+  x: 96, y: 96, kind: 'market',
+  class: BUILDING_CLASS.residential, strength: 220, radius: 24,
+});
 state = tick(state, terrainMap);        // puro: nuovo stato, input intatto
-nextBuildSites(state, terrainMap, 10);  // [{ x, y, class, score }, …]
+nextBuildSites(state, terrainMap, 10);  // [{ x, y, class, mixed, score }, …]
 ```
 
 ### Contratti
@@ -315,14 +329,22 @@ nextBuildSites(state, terrainMap, 10);  // [{ x, y, class, score }, …]
 
 | Operazione | Media | Criterio |
 | --- | --- | --- |
-| **tick** | **0,0004 ms** | < 3 ms ✅ |
-| modifica di un catalizzatore di raggio 20 (1681 celle) | 0,09 ms | — |
-| `setPolicyActive` su un peso di desiderabilità | 3,6 ms | azione del giocatore |
-| `nextBuildSites`, primi 10 su tutto il campo | 2,5 ms | azione del giocatore |
+| **tick** | **0,0010 ms** | < 3 ms ✅ |
+| modifica di un catalizzatore di raggio 20 (1681 celle) | 0,22 ms | — |
+| `setPolicyActive` su un peso di desiderabilità | 6,4 ms | azione del giocatore |
+| `nextBuildSites`, primi 10 su tutto il campo | 4,0 ms | azione del giocatore |
+
+Tutte e quattro le righe sono state rimisurate dopo l'estensione a quattro usi, e
+sono salite di circa due volte e mezza rispetto alla prima stesura — `tick`
+compreso, che con quattro usi legge un contatore in più e poco altro: nel mezzo è
+cambiata anche la macchina. Il confronto che regge è quello relativo al tick, e
+lì entrambe le operazioni di campo sono *scese*. La nota in
+[src/sim/README.md](src/sim/README.md#misure) riporta i numeri per intero.
 
 Con `?debug=1&sim=1` la scena genera l'isola, piazza i catalizzatori da script e
-materializza un nucleo di 24 edifici voxel; l'overlay mostra stock e delta per
-tick, stato del builder, heatmap del campo per classe e i prossimi dieci candidati.
+materializza un nucleo di 30 edifici voxel; l'overlay mostra stock e delta per
+tick, il ciclo del commercio interno, i conteggi per uso primario e secondario,
+lo stato del builder, la heatmap del campo per uso e i prossimi dieci candidati.
 
 ## Microgeometria sci-fi
 
@@ -361,5 +383,4 @@ rifatte sulla scena vera prima di considerarle valide.
 ## Fuori scope in questo prompt
 
 Strade, pathfinding, salvataggio su disco, audio, cittadini simulati
-individualmente, post-processing, fiumi,
-grotte, vegetazione, supporto mobile.
+individualmente, fiumi, grotte, vegetazione, supporto mobile.

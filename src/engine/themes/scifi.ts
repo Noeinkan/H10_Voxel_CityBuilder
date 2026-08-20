@@ -3,6 +3,9 @@ import type { Theme } from './theme';
 /**
  * Colonia sci-fi: bianchi freddi, teal e magenta, terreno minerale violaceo.
  * Il fondo e' scuro ma non nero, cosi' i bianchi restano bianchi.
+ *
+ * Sole netto (`wrap` basso) e ombre piene: e' il tema su cui si legge meglio la
+ * microgeometria degli edifici.
  */
 export const scifi: Theme = {
   id: 'scifi',
@@ -31,10 +34,31 @@ export const scifi: Theme = {
   ],
   atmosphere: {
     background: '#151d2b',
-    fogColor: '#1e2a3d',
-    fogDensity: 0.00025,
-    faceLight: [0.92, 0.64, 0.78, 0.56, 1.0, 0.44],
+    sun: { azimuth: 40, elevation: 46, color: '#eaf4ff', intensity: 0.92, wrap: 0.26 },
+    skyLight: { color: '#4c6a91', intensity: 0.46 },
+    // Rimbalzo violaceo: sotto c'e' regolite, non erba.
+    bounceLight: { color: '#4a3f5e', intensity: 0.28 },
     aoStrength: 0.62,
+    colorJitter: 0.16,
+    fog: {
+      color: '#1e2a3d',
+      density: 0.00025,
+      skyBlend: 0.45,
+      heightBase: 8,
+      heightFalloff: 0.024,
+      sunTint: 0.2,
+    },
+    sky: {
+      top: '#0d1524',
+      horizon: '#3a5570',
+      sunGlow: 0.4,
+      cloudAmount: 0.35,
+      cloudSpeed: 0.007,
+      cloudTint: '#4a6280',
+    },
+    shadow: { strength: 0.92, softness: 1.2 },
+    bloom: { threshold: 1.0, strength: 0.7, radius: 0.65 },
+    tilt: { strength: 0.34, focus: 0.5, width: 0.44 },
     glassTint: '#83fff4',
     glassLift: 0.2,
     emissiveStrength: 0.95,

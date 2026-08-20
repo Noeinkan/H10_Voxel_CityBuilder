@@ -29,7 +29,7 @@ function seededState(): SimState {
   state = addCatalyst(state, {
     x: 130,
     y: 90,
-    class: BUILDING_CLASS.production,
+    class: BUILDING_CLASS.industrial,
     strength: 200,
     radius: 18,
   });
@@ -79,7 +79,7 @@ describe('nextBuildSites — validita’ dei candidati', () => {
 
   it('rispetta la soglia della classe, che e’ da superare e non da pareggiare', () => {
     const terrainMap = testTerrain({ chunksX: 8, chunksY: 8 });
-    const cls = BUILDING_CLASS.production;
+    const cls = BUILDING_CLASS.industrial;
     const threshold = BALANCE.desirability.siteThreshold[cls];
 
     // Un catalizzatore la cui intensita' e' esattamente la soglia: solo il
@@ -160,9 +160,14 @@ describe('nextBuildSites — validita’ dei candidati', () => {
       radius: 12,
     });
 
-    const before = nextBuildSites(state, terrainMap, 500).length;
+    // Si conta il solo uso che la policy tocca. Sulla lista senza filtro la
+    // differenza sparirebbe: un mercato favorisce anche il commercio, la cui
+    // soglia e' piu' bassa, e quelle celle erano gia' candidate — con un altro
+    // uso primario, ma candidate.
+    const cls = BUILDING_CLASS.residential;
+    const before = nextBuildSites(state, terrainMap, 500, { class: cls }).length;
     state = setPolicyActive(state, 'greenBelt', true);
-    const after = nextBuildSites(state, terrainMap, 500).length;
+    const after = nextBuildSites(state, terrainMap, 500, { class: cls }).length;
 
     expect(after).toBeGreaterThan(before);
   });
@@ -207,20 +212,27 @@ describe('nextBuildSites — filtro di classe', () => {
     }
   });
 
-  it('il filtro non inventa candidati dove la classe non passa la soglia', () => {
+  it('il filtro segue il vettore di influenza del ruolo, uso per uso', () => {
     const terrainMap = testTerrain({ chunksX: 8, chunksY: 8 });
-    // Un solo catalizzatore civico: le altre due classi non hanno nulla.
+    // Un parco: porta il civico a pieno, tira su anche le case e i negozi di
+    // quartiere, e caccia via l'industria. Il filtro deve raccontare
+    // esattamente quel vettore, non "la classe del catalizzatore".
     const state = addCatalyst(createSimState(), {
       x: 70,
       y: 70,
+      kind: 'park',
       class: BUILDING_CLASS.civic,
       strength: 200,
       radius: 20,
     });
 
     expect(nextBuildSites(state, terrainMap, 10, { class: BUILDING_CLASS.civic }).length).toBe(10);
-    expect(nextBuildSites(state, terrainMap, 10, { class: BUILDING_CLASS.residential })).toEqual([]);
-    expect(nextBuildSites(state, terrainMap, 10, { class: BUILDING_CLASS.production })).toEqual([]);
+    expect(nextBuildSites(state, terrainMap, 10, { class: BUILDING_CLASS.residential }).length)
+      .toBeGreaterThan(0);
+    // Influenza negativa: il campo resta a zero, quindi nessun candidato. E'
+    // l'altra meta' del vettore, quella che rende un parco una scelta e non
+    // solo un bonus.
+    expect(nextBuildSites(state, terrainMap, 10, { class: BUILDING_CLASS.industrial })).toEqual([]);
   });
 
   it('senza filtro la lista e’ quella di prima: il parametro e’ opzionale', () => {
@@ -239,9 +251,10 @@ describe('nextBuildSites — filtro di classe', () => {
 
     const state = createScenarioState(map, region);
 
-    // Dieci residenziali, dieci produttivi, quattro civici: il rapporto 1:1 fra
-    // le prime due e' cio' che tiene in pareggio il bilancio alimentare.
-    expect(state.buildingCounts).toEqual([10, 10, 4]);
+    // Dieci residenziali, sei commerciali, dieci industriali, quattro civici:
+    // il rapporto 1:1 fra residenziale e industriale e' cio' che tiene in
+    // pareggio il bilancio alimentare.
+    expect(state.buildingCounts).toEqual([10, 6, 10, 4]);
     for (const building of state.buildings) {
       expect(map.isBuildable(building.x, building.y)).toBe(true);
     }

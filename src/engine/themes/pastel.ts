@@ -3,6 +3,9 @@ import type { Theme } from './theme';
 /**
  * Metropoli pastello in controluce: cielo caldo e pallido, volumi color crema e
  * blu-grigio, accenti arancio a spezzare. Il tema piu' vicino alla scena `city`.
+ *
+ * Il carattere sta nel contrasto basso: `wrap` alto e rimbalzo generoso, cosi'
+ * nessuna faccia sprofonda. E' l'opposto di `diorama`.
  */
 export const pastel: Theme = {
   id: 'pastel',
@@ -31,10 +34,30 @@ export const pastel: Theme = {
   ],
   atmosphere: {
     background: '#dfe9e6',
-    fogColor: '#e8efeb',
-    fogDensity: 0.0002,
-    faceLight: [0.98, 0.72, 0.86, 0.64, 1.0, 0.52],
+    sun: { azimuth: 30, elevation: 52, color: '#fff6e4', intensity: 0.72, wrap: 0.52 },
+    skyLight: { color: '#cfdfe6', intensity: 0.62 },
+    bounceLight: { color: '#c9bda6', intensity: 0.4 },
     aoStrength: 0.42,
+    colorJitter: 0.14,
+    fog: {
+      color: '#e8efeb',
+      density: 0.0002,
+      skyBlend: 0.6,
+      heightBase: 12,
+      heightFalloff: 0.022,
+      sunTint: 0.34,
+    },
+    sky: {
+      top: '#9dc3d8',
+      horizon: '#fbf1e2',
+      sunGlow: 0.62,
+      cloudAmount: 0.5,
+      cloudSpeed: 0.008,
+      cloudTint: '#fffaf2',
+    },
+    shadow: { strength: 0.62, softness: 2.2 },
+    bloom: { threshold: 1.3, strength: 0.34, radius: 0.6 },
+    tilt: { strength: 0.4, focus: 0.52, width: 0.4 },
     toneMapping: 'aces',
     exposure: 1.15,
   },

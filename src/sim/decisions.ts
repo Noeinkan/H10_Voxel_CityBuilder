@@ -71,7 +71,7 @@ export function decisionAt(state: DecisionStateView, nextDecisionTick: number): 
   const publicSpaceAvailable = population >= BALANCE.decisions.populationScale
     && (state.buildingCounts[BUILDING_CLASS.civic] ?? 0) > 0;
   const investmentAvailable = buildings >= BALANCE.decisions.minimumBuildings
-    && (state.buildingCounts[BUILDING_CLASS.production] ?? 0) > 0;
+    && (state.buildingCounts[BUILDING_CLASS.industrial] ?? 0) > 0;
   if (!publicSpaceAvailable && !investmentAvailable) return null;
 
   const lastDecisionId = state.decisionHistory.at(-1)?.decisionId ?? '';

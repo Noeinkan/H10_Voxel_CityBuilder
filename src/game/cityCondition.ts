@@ -1,4 +1,4 @@
-import { BALANCE, BUILDING_CLASS, type SimState } from '../sim';
+import { ALL_CLASSES, BALANCE, type SimState } from '../sim';
 import { onboardingOf } from './onboarding';
 
 export type CityConditionTone = 'objective' | 'warning' | 'success';
@@ -13,7 +13,9 @@ export interface CityCondition {
 export function isSelfSufficient(state: SimState): boolean {
   const target = BALANCE.gameplay.success;
   return state.population.stock >= target.population &&
-    state.buildingCounts.every((count) => count >= target.buildingsPerClass) &&
+    ALL_CLASSES.every(
+      (cls) => state.buildingCounts[cls] + state.mixedCounts[cls] >= target.buildingsPerClass,
+    ) &&
     state.food.delta >= 0 && state.materials.delta >= 0 && state.funds.delta >= 0 &&
     state.satisfaction >= target.satisfaction;
 }
@@ -43,7 +45,7 @@ export function cityCondition(state: SimState, stableTicks: number): CityConditi
       kind: 'crisis',
       tone: 'warning',
       title: 'Budget deficit',
-      message: 'Services cost more than your income. Let housing grow or use Austerity. No buildings will be lost.',
+      message: 'Services cost more than your income. Let housing and shops grow, or use Austerity. No buildings will be lost.',
     };
   }
   if (state.satisfaction <= BALANCE.gameplay.crisis.satisfaction) {
@@ -51,7 +53,7 @@ export function cityCondition(state: SimState, stableTicks: number): CityConditi
       kind: 'crisis',
       tone: 'warning',
       title: 'Critical happiness',
-      message: 'The city is overcrowded. Strengthen civic services or increase residential capacity.',
+      message: 'The city is overcrowded or underserved. Add civic services, open shops, or increase residential capacity.',
     };
   }
 
@@ -64,11 +66,12 @@ export function cityCondition(state: SimState, stableTicks: number): CityConditi
     };
   }
 
-  const missing = [
-    state.buildingCounts[BUILDING_CLASS.residential],
-    state.buildingCounts[BUILDING_CLASS.production],
-    state.buildingCounts[BUILDING_CLASS.civic],
-  ].filter((count) => count < BALANCE.gameplay.success.buildingsPerClass).length;
+  // Un edificio misto conta anche per il suo secondo uso: chiedere quattro
+  // quartieri separati quando la citta' ne ha tre e un isolato che ne fa due
+  // sarebbe chiedere di disfare proprio cio' che la fase premia.
+  const missing = ALL_CLASSES
+    .map((cls) => state.buildingCounts[cls] + state.mixedCounts[cls])
+    .filter((count) => count < BALANCE.gameplay.success.buildingsPerClass).length;
   return {
     kind: 'development',
     tone: 'objective',

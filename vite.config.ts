@@ -6,7 +6,7 @@ export default defineConfig({
   // se è occupata, così l'URL negli script e nella documentazione resta valido
   // (Vite altrimenti scivola in silenzio sulla porta libera successiva).
   server: {
-    port: 8010,
+    port: 8020,
     strictPort: true,
   },
   preview: {

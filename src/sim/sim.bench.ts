@@ -1,5 +1,6 @@
 import { bench, describe } from 'vitest';
-import { BUILDING_CLASS, type BuildingClass } from './classes';
+import { CATALYSTS as ROLES } from './catalysts';
+import { BUILDING_CLASS, CLASS_COUNT, type BuildingClass } from './classes';
 import { nextBuildSites } from './nextBuildSites';
 import {
   addBuilding,
@@ -31,10 +32,14 @@ function cityOf256(): SimState {
   let state = createSimState();
 
   for (let i = 0; i < CATALYSTS; i++) {
+    // A giro sui sette ruoli: ognuno porta il proprio vettore di influenza, e
+    // la misura include quindi il costo di scrivere piu' usi per cella.
+    const role = ROLES[i % ROLES.length];
     state = addCatalyst(state, {
       x: (i * 37) % 250,
       y: (i * 61) % 250,
-      class: (i % 3) as BuildingClass,
+      kind: role.id,
+      class: role.class,
       strength: 120 + ((i * 13) % 130),
       radius: 12 + (i % 9),
     });
@@ -43,7 +48,7 @@ function cityOf256(): SimState {
     state = addBuilding(state, {
       x: (i * 7) % 250,
       y: (i * 11) % 250,
-      class: (i % 3) as BuildingClass,
+      class: (i % CLASS_COUNT) as BuildingClass,
     });
   }
 

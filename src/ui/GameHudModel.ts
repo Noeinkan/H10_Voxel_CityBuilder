@@ -1,15 +1,19 @@
 import {
   BALANCE,
   CATALYSTS,
+  CATALYST_GROUPS,
+  CLASS_LABELS,
   POLICIES,
   TRADE_MODES,
   policyConflict,
   type BuildingClass,
+  type CatalystGroup,
   type CatalystId,
   type CityDecision,
   type PolicyId,
   type TradeMode,
 } from '../sim';
+import { typologiesForUses } from '../world/buildings/typology';
 import type { GrowthStats } from '../game/growthScene';
 import type { CityCondition } from '../game/cityCondition';
 
@@ -36,6 +40,20 @@ export interface HudAction {
   readonly class?: BuildingClass;
   readonly catalystId?: CatalystId;
   readonly description?: string;
+  readonly group?: CatalystGroup;
+  /** Usi favoriti e penalizzati, gia' in etichette leggibili. */
+  readonly favours?: readonly string[];
+  readonly penalises?: readonly string[];
+  /** Tipologie che quel ruolo puo' far comparire, per nome di catalogo. */
+  readonly typologies?: readonly string[];
+  /**
+   * true se l'azione e' bloccata ma resta visibile.
+   *
+   * Un catalizzatore che non si puo' ancora permettere non sparisce dalla
+   * toolbar: sapere che il porto esiste e costa 320 e' l'informazione che fa
+   * pianificare, e nasconderlo trasformerebbe la progressione in una sorpresa.
+   */
+  readonly locked?: boolean;
 }
 
 export interface HudPolicy extends HudAction {
@@ -54,10 +72,20 @@ export interface HudTradeMode {
   readonly available: boolean;
 }
 
+/** Una sezione della toolbar: crescita, connessioni o identita'. */
+export interface HudCatalystGroup {
+  readonly id: CatalystGroup;
+  readonly label: string;
+  readonly actions: readonly HudAction[];
+}
+
 export interface GameHudModel {
   readonly ready: boolean;
   readonly resources: readonly HudResource[];
   readonly catalysts: readonly HudAction[];
+  /** Gli stessi catalizzatori, raggruppati per funzione e in ordine di toolbar. */
+  readonly catalystGroups: readonly HudCatalystGroup[];
+  readonly commerce: HudCommerce | null;
   readonly expansion: HudAction;
   readonly policies: readonly HudPolicy[];
   readonly tradeModes: readonly HudTradeMode[];
@@ -80,13 +108,28 @@ export function decisionNeedsRepaint(
   return paintedDecisionId !== (decision?.id ?? null);
 }
 
+/** Riepilogo del ciclo commerciale, la seconda catena economica della citta'. */
+export interface HudCommerce {
+  readonly demand: number;
+  readonly served: number;
+  /** Quota di domanda servita, 0..100. */
+  readonly service: number;
+  /** Quota di banchi occupati, 0..100. */
+  readonly occupancy: number;
+  readonly revenue: number;
+  readonly goods: number;
+  readonly mixedBuildings: number;
+  readonly message: string;
+}
+
 const POLICY_DESCRIPTION: Readonly<Record<PolicyId, string>> = {
   denseHousing: 'Increases residential building capacity.',
   industrialSubsidy: 'Increases material production.',
   austerity: 'Reduces the cost of civic services.',
   greenBelt: 'Makes residential areas more desirable.',
-  zoningRelief: 'Encourages growth in production areas.',
+  zoningRelief: 'Encourages growth in industrial areas.',
   civicPride: 'Encourages civic building growth.',
+  marketCharter: 'Increases retail reach and revenue.',
 };
 
 export function buildGameHudModel(stats: GrowthStats | null): GameHudModel {
@@ -110,10 +153,13 @@ export function buildGameHudModel(stats: GrowthStats | null): GameHudModel {
         },
       ];
 
-  const catalysts = CATALYSTS.map((catalyst) => {
+  const catalysts: readonly HudAction[] = CATALYSTS.map((catalyst) => {
     const cost = catalyst.cost;
     const orderOk = expectedCatalyst === null || expectedCatalyst === catalyst.id;
     const fundsOk = funds >= cost;
+    const available = ready && orderOk && fundsOk;
+    const favours = catalyst.favours.map((cls) => CLASS_LABELS[cls]);
+    const penalises = catalyst.penalises.map((cls) => CLASS_LABELS[cls]);
     return {
       id: `catalyst-${catalyst.id}`,
       label: catalyst.label,
@@ -121,8 +167,15 @@ export function buildGameHudModel(stats: GrowthStats | null): GameHudModel {
       radius: catalyst.radius,
       class: catalyst.class,
       catalystId: catalyst.id,
+      group: catalyst.group,
       description: catalyst.description,
-      available: ready && orderOk && fundsOk,
+      favours,
+      penalises,
+      typologies: typologiesForUses(catalyst.favours),
+      available,
+      // Bloccato non vuol dire nascosto: il bottone resta nella toolbar e dice
+      // perche' non si puo' ancora usare.
+      locked: ready && !available,
       reason: !ready
         ? 'The city is getting ready.'
         : !orderOk
@@ -132,6 +185,11 @@ export function buildGameHudModel(stats: GrowthStats | null): GameHudModel {
             : 'Not enough funds.',
     };
   });
+
+  const catalystGroups: readonly HudCatalystGroup[] = CATALYST_GROUPS.map((group) => ({
+    ...group,
+    actions: catalysts.filter((action) => action.group === group.id),
+  }));
 
   const expansionRequirement = BALANCE.gameplay.expansion;
   const expansionPopulationOk = population >= expansionRequirement.population;
@@ -191,6 +249,8 @@ export function buildGameHudModel(stats: GrowthStats | null): GameHudModel {
     ready,
     resources,
     catalysts,
+    catalystGroups,
+    commerce: commerceOf(stats),
     expansion,
     policies,
     tradeModes,
@@ -221,7 +281,7 @@ export function resolveEscapeTarget(
 export function selectionMessage(tool: GameTool, catalysts: readonly HudAction[]): string | null {
   if (tool.kind === 'catalyst') {
     if (tool.id === undefined) {
-      const legacyLabel = ['Residential', 'Production', 'Civic'][tool.class] ?? 'Catalyst';
+      const legacyLabel = CLASS_LABELS[tool.class] ?? 'Catalyst';
       return `${legacyLabel} selected · click the island to place it · Esc to cancel`;
     }
     const action = catalysts.find((candidate) => candidate.catalystId === tool.id);
@@ -231,6 +291,42 @@ export function selectionMessage(tool: GameTool, catalysts: readonly HudAction[]
     return 'Expansion selected · choose a coastline edge · Esc to cancel';
   }
   return null;
+}
+
+/**
+ * Riassunto del ciclo commerciale.
+ *
+ * Il messaggio nomina la strozzatura, non lo stato: "manca personale" e "manca
+ * merce" chiedono due azioni diverse, e senza dirlo il giocatore vede solo dei
+ * negozi vuoti.
+ */
+function commerceOf(stats: GrowthStats | null): HudCommerce | null {
+  if (stats === null) return null;
+  const report = stats.state.commerce;
+  const mixedBuildings = stats.state.mixedCounts.reduce((sum, value) => sum + value, 0);
+
+  const message = report.capacity === 0
+    ? 'No shops yet: place a Market to let commerce grow.'
+    : report.demand === 0
+      ? 'No residents to serve yet.'
+      : report.served < report.capacity * 0.95 && report.goods === 0
+        ? 'Shops have no goods to sell: industry is not producing enough materials.'
+        : report.service < 0.7
+          ? 'Demand outruns the shops: more commercial ground would raise happiness.'
+          : report.occupancy < 0.5
+            ? 'Shops are half empty: there are more of them than the city needs.'
+            : 'Commerce is balanced with demand.';
+
+  return {
+    demand: report.demand,
+    served: report.served,
+    service: Math.round(report.service * 100),
+    occupancy: Math.round(report.occupancy * 100),
+    revenue: report.revenue,
+    goods: report.goods,
+    mixedBuildings,
+    message,
+  };
 }
 
 function resource(

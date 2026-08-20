@@ -17,18 +17,33 @@ import type { SimState } from './SimState';
 export interface BuildSite {
   readonly x: number;
   readonly y: number;
+  /** Uso urbano primario della cella. */
   readonly class: BuildingClass;
-  /** Desiderabilita' della cella per quella classe, 0..255. */
+  /**
+   * Secondo uso ospitato nello stesso edificio, o -1 se l'edificio e' a uso
+   * singolo. Non e' una seconda cella e non e' una zona: e' lo stesso volume
+   * che porta due capacita' economiche.
+   */
+  readonly mixed: BuildingClass | -1;
+  /** Desiderabilita' della cella per l'uso primario, 0..255. */
   readonly score: number;
 }
 
 export interface BuildSiteQuery {
   /**
-   * Se presente, si valuta solo questa classe: la risposta dice dove mettere il
+   * Se presente, si valuta solo questo uso: la risposta dice dove mettere il
    * prossimo edificio *di quel tipo*, non dove mettere il prossimo edificio.
-   * Senza, ogni cella corre con la sua classe migliore.
+   * Senza, ogni cella corre con il suo uso migliore.
    */
   readonly class?: BuildingClass;
+
+  /**
+   * Se true, nessun sito riceve un secondo uso.
+   *
+   * Serve a chi vuole un edificio a uso singolo e basta — la fixture della
+   * scena di debug — senza dover ignorare il campo a valle.
+   */
+  readonly singleUse?: boolean;
 }
 
 /**
@@ -40,9 +55,15 @@ export interface BuildSiteQuery {
  * 2. nessun edificio la occupa;
  * 3. la sua desiderabilita' **supera** la soglia della classe.
  *
- * Ogni cella compare al massimo una volta, con la classe che ci prende il
- * punteggio piu' alto: tre righe per la stessa cella direbbero tre volte la
- * stessa cosa e riempirebbero i primi dieci posti con un solo isolato.
+ * Ogni cella compare al massimo una volta, con l'uso che ci prende il punteggio
+ * piu' alto: quattro righe per la stessa cella direbbero quattro volte la stessa
+ * cosa e riempirebbero i primi dieci posti con un solo isolato.
+ *
+ * **Uso misto.** Deciso l'uso primario, si guarda se uno dei suoi usi
+ * compatibili (`BALANCE.mixedUse.partners`) supera a sua volta una soglia
+ * ridotta. Se si', il sito nasce misto. E' il bordo sfumato fra due campi a
+ * produrlo — dove un mercato e un parco si sovrappongono nasce la casa-bottega,
+ * non dove qualcuno ha disegnato una zona.
  *
  * **Dove si guarda.** Solo dentro le colonne di chunk che il campo ha allocato,
  * e il campo alloca solo dove un catalizzatore o un edificio l'ha toccato. Una
@@ -78,8 +99,17 @@ export function nextBuildSites(
     only === undefined || only === cls ? thresholds[cls] : unreachable;
 
   const minResidential = minOf(BUILDING_CLASS.residential);
-  const minProduction = minOf(BUILDING_CLASS.production);
+  const minCommercial = minOf(BUILDING_CLASS.commercial);
+  const minIndustrial = minOf(BUILDING_CLASS.industrial);
   const minCivic = minOf(BUILDING_CLASS.civic);
+
+  // La soglia del secondo uso e' piu' bassa di quella del primo: e' un ospite,
+  // non un coinquilino alla pari.
+  const share = BALANCE.mixedUse.thresholdShare;
+  const mixedThreshold = query.singleUse === true
+    ? thresholds.map(() => unreachable)
+    : thresholds.map((value) => value * share);
+  const partners = BALANCE.mixedUse.partners;
 
   const best: BuildSite[] = [];
 
@@ -92,9 +122,11 @@ export function nextBuildSites(
     // Campo e `TerrainMap` hanno la stessa chunkatura e la stessa disposizione
     // per colonna, quindi un solo indice serve a entrambi.
     const buildable = terrainChunk.buildable;
-    const residential = chunk.values[BUILDING_CLASS.residential];
-    const production = chunk.values[BUILDING_CLASS.production];
-    const civic = chunk.values[BUILDING_CLASS.civic];
+    const values = chunk.values;
+    const residential = values[BUILDING_CLASS.residential];
+    const commercial = values[BUILDING_CLASS.commercial];
+    const industrial = values[BUILDING_CLASS.industrial];
+    const civic = values[BUILDING_CLASS.civic];
     const occupancy = chunk.occupancy;
 
     const originX = DesirabilityField.originOf(chunk.ccx);
@@ -108,9 +140,13 @@ export function nextBuildSites(
         let bestClass: BuildingClass = BUILDING_CLASS.residential;
         let bestScore = 0;
         if (residential[i] > minResidential) bestScore = residential[i];
-        if (production[i] > minProduction && production[i] > bestScore) {
-          bestScore = production[i];
-          bestClass = BUILDING_CLASS.production;
+        if (commercial[i] > minCommercial && commercial[i] > bestScore) {
+          bestScore = commercial[i];
+          bestClass = BUILDING_CLASS.commercial;
+        }
+        if (industrial[i] > minIndustrial && industrial[i] > bestScore) {
+          bestScore = industrial[i];
+          bestClass = BUILDING_CLASS.industrial;
         }
         if (civic[i] > minCivic && civic[i] > bestScore) {
           bestScore = civic[i];
@@ -121,12 +157,58 @@ export function nextBuildSites(
         if (occupancy[i] !== 0) continue;
         if (buildable[columnIndex(lx, ly)] !== 1) continue;
 
-        insertSite(best, { x: originX + lx, y: originY + ly, class: bestClass, score: bestScore }, n);
+        const x = originX + lx;
+        const y = originY + ly;
+
+        // Il secondo uso non entra nell'ordinamento, quindi si cerca **dopo**
+        // aver stabilito che il sito entra in lista. Su una mappa fitta le
+        // celle sopra soglia sono decine di migliaia e i posti sono una
+        // ventina: cercare il secondo uso prima significherebbe farlo per
+        // migliaia di siti che verranno scartati alla riga dopo.
+        if (!outranks(best, bestScore, x, y, bestClass, n)) continue;
+
+        // Ciclo per indice e non `for...of`: un iteratore allocato per cella
+        // sarebbe l'unica allocazione dell'intera funzione.
+        const compatible = partners[bestClass];
+        let mixed: BuildingClass | -1 = -1;
+        let mixedScore = 0;
+        for (let k = 0; k < compatible.length; k++) {
+          const candidate = compatible[k];
+          const value = values[candidate][i];
+          if (value <= mixedThreshold[candidate] || value <= mixedScore) continue;
+          mixedScore = value;
+          mixed = candidate as BuildingClass;
+        }
+
+        insertSite(best, { x, y, class: bestClass, mixed, score: bestScore }, n);
       }
     }
   }
 
   return best;
+}
+
+/**
+ * true se un sito con questi valori entrerebbe nella lista.
+ *
+ * Ripete l'ordine di `compareSites` sui campi sciolti invece di costruire un
+ * `BuildSite` da confrontare: e' la stessa relazione, ma senza l'oggetto
+ * temporaneo che altrimenti nascerebbe per ogni cella sopra soglia.
+ */
+function outranks(
+  list: readonly BuildSite[],
+  score: number,
+  x: number,
+  y: number,
+  cls: BuildingClass,
+  limit: number,
+): boolean {
+  if (list.length < limit) return true;
+  const worst = list[list.length - 1];
+  if (score !== worst.score) return score > worst.score;
+  if (x !== worst.x) return x < worst.x;
+  if (y !== worst.y) return y < worst.y;
+  return cls < worst.class;
 }
 
 /** Inserimento ordinato in una lista lunga al massimo `limit`. */
@@ -139,7 +221,7 @@ function insertSite(list: BuildSite[], site: BuildSite, limit: number): void {
   if (list.length > limit) list.pop();
 }
 
-/** Punteggio decrescente, poi `x`, `y` e classe crescenti. Ordine totale. */
+/** Punteggio decrescente, poi `x`, `y` e uso crescenti. Ordine totale. */
 function compareSites(a: BuildSite, b: BuildSite): number {
   if (a.score !== b.score) return b.score - a.score;
   if (a.x !== b.x) return a.x - b.x;

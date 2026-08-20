@@ -1,19 +1,25 @@
 import { CHUNK, CHUNK_SHIFT, toChunk, toLocal } from '../world/chunkCoords';
 import { BALANCE } from './balance';
-import type { CatalystId } from './catalysts';
+import { catalystInfluence, catalystRoleOf, type CatalystId } from './catalysts';
 import { ALL_CLASSES, CLASS_COUNT, type BuildingClass } from './classes';
 import { DESIRABILITY_WEIGHT_OF_CLASS, type Weights } from './policies';
 
 /**
- * Campo di desiderabilita' per cella e per classe, chunkato 32x32 come il mondo.
+ * Campo di desiderabilita' per cella e per uso urbano, chunkato 32x32 come il mondo.
  *
- * Per ogni cella e ogni classe:
+ * Per ogni cella e ogni uso:
  *
- *     D = clamp(somma dei catalizzatori della classe x pesoPolicy - congestione, 0, 255)
+ *     D = clamp(somma dei catalizzatori x influenza x pesoPolicy - congestione, 0, 255)
  *
- * dove il contributo di un catalizzatore e' `strength * max(0, 1 - dist / radius)`
- * in distanza di Chebyshev, e la congestione e' il numero di edifici entro il
- * raggio breve moltiplicato per `congestionPerBuilding`.
+ * dove il contributo di un catalizzatore e'
+ * `strength * influenza[uso] * max(0, 1 - dist / radius)` in distanza di
+ * Chebyshev, e la congestione e' il numero di edifici entro il raggio breve
+ * moltiplicato per `congestionPerBuilding`.
+ *
+ * **Un catalizzatore parla a piu' usi.** L'influenza e' un vettore, non una
+ * classe: un mercato somma su residenziale e commerciale, una fabbrica somma
+ * sull'industriale e *sottrae* dal residenziale. Il segno negativo non ha
+ * bisogno di un meccanismo suo — il clamp a zero era gia' li'.
  *
  * **Il campo non accumula: ricalcola.** Ogni cella viene ricostruita dalla lista
  * dei catalizzatori e dal conteggio di affollamento, mai per somme e sottrazioni
@@ -23,10 +29,11 @@ import { DESIRABILITY_WEIGHT_OF_CLASS, type Weights } from './policies';
  * ricostruzione completa indistinguibili, proprieta' verificata dai test.
  *
  * **Cosa si ricalcola.** Un catalizzatore aggiunto, rimosso o modificato tocca
- * il quadrato di Chebyshev del suo raggio, per la sua sola classe. Un edificio
- * nuovo tocca il quadrato del raggio breve, per tutte le classi. Nient'altro
- * cambia, quindi nient'altro viene visitato: non esiste una passata sull'intera
- * mappa, ne' per tick ne' per operazione.
+ * il quadrato di Chebyshev del suo raggio, per i soli usi che influenza davvero
+ * — gli zeri della tabella non costano una passata. Un edificio nuovo tocca il
+ * quadrato del raggio breve, per tutti gli usi. Nient'altro cambia, quindi
+ * nient'altro viene visitato: non esiste una passata sull'intera mappa, ne' per
+ * tick ne' per operazione.
  *
  * **Il campo tiene anche l'occupazione.** Sapere se una cella e' libera e sapere
  * quanto e' affollata sono la stessa domanda spaziale, con la stessa chunkatura
@@ -47,8 +54,9 @@ const FREE = 0;
 export interface Catalyst {
   readonly x: number;
   readonly y: number;
+  /** Uso urbano primario; senza `kind` e' anche l'unico che il catalizzatore porta a pieno. */
   readonly class: BuildingClass;
-  /** Ruolo di fase 2; assente nei salvataggi MVP e normalizzato dalla classe. */
+  /** Ruolo, da cui si legge il vettore di influenza. Assente nei salvataggi MVP. */
   readonly kind?: CatalystId;
   /** Intensita' al centro, 0..255. */
   readonly strength: number;
@@ -56,11 +64,20 @@ export interface Catalyst {
   readonly radius: number;
 }
 
-/** Un edificio come lo vede il campo: una cella occupata da una classe. */
+/**
+ * Un edificio come lo vede il campo: una cella occupata da un uso primario, con
+ * un eventuale secondo uso ospitato nello stesso volume.
+ *
+ * Il secondo uso non occupa una seconda cella e non crea una seconda zona:
+ * cambia solo cosa quell'edificio produce nel bilancio. Per il campo — che
+ * ragiona per occupazione e congestione — un edificio misto e' un edificio.
+ */
 export interface Building {
   readonly x: number;
   readonly y: number;
   readonly class: BuildingClass;
+  /** Uso secondario ospitato, se l'edificio e' misto. */
+  readonly mixed?: BuildingClass;
 }
 
 /**
@@ -74,7 +91,7 @@ export interface Building {
 export interface FieldChunkView {
   readonly ccx: number;
   readonly ccy: number;
-  /** Un array per classe, 1024 valori ciascuno, indicizzati da `cellIndexOf`. */
+  /** Un array per uso urbano, 1024 valori ciascuno, indicizzati da `cellIndexOf`. */
   readonly values: readonly Uint8Array[];
   /** 0 se la cella e' libera. */
   readonly occupancy: Uint8Array;
@@ -88,10 +105,26 @@ export interface CellRect {
   readonly maxY: number;
 }
 
+/**
+ * Catalizzatori che contano per un uso, in array paralleli.
+ *
+ * Array paralleli e non un array di oggetti: il ciclo interno gira una volta per
+ * cella per catalizzatore, ed e' l'unico punto del progetto dove la differenza
+ * fra leggere quattro campi contigui e inseguire quattro puntatori si vede in
+ * profilo.
+ */
+interface CatalystGroup {
+  readonly cls: BuildingClass;
+  readonly xs: number[];
+  readonly ys: number[];
+  readonly radii: number[];
+  readonly amps: number[];
+}
+
 class FieldChunk {
   readonly key: string;
 
-  /** Un `Uint8Array` per classe, 1024 celle ciascuno. */
+  /** Un `Uint8Array` per uso urbano, 1024 celle ciascuno. */
   readonly values: readonly Uint8Array[];
 
   /** 0 se libera, `class + 1` se occupata. */
@@ -142,6 +175,23 @@ export class DesirabilityField {
     return this.occupied;
   }
 
+  /**
+   * Byte occupati dai buffer del campo.
+   *
+   * Si somma da `byteLength` invece di moltiplicare costanti a mano: aggiungere
+   * un uso urbano allarga l'occupazione, e una formula scritta a parte sarebbe
+   * il primo posto a restare indietro. Serve alla misura di memoria, che e' un
+   * criterio di accettazione e non una curiosita'.
+   */
+  get byteLength(): number {
+    let total = 0;
+    for (const chunk of this.map.values()) {
+      for (const values of chunk.values) total += values.byteLength;
+      total += chunk.occupancy.byteLength + chunk.crowd.byteLength;
+    }
+    return total;
+  }
+
   /** Celle toccate dall'ultimo ricalcolo. E' il numero su cui si misura l'incrementalita'. */
   get lastRecomputedCells(): number {
     return this.lastCells;
@@ -163,7 +213,7 @@ export class DesirabilityField {
 
   // --- Lettura -------------------------------------------------------------
 
-  /** Desiderabilita' della cella per la classe. 0 fuori dai chunk allocati, senza allocare. */
+  /** Desiderabilita' della cella per l'uso. 0 fuori dai chunk allocati, senza allocare. */
   valueAt(x: number, y: number, cls: BuildingClass): number {
     const chunk = this.getChunk(toChunk(x), toChunk(y));
     if (chunk === null) return 0;
@@ -177,7 +227,7 @@ export class DesirabilityField {
     return chunk.occupancy[cellIndexOf(toLocal(x), toLocal(y))] === FREE;
   }
 
-  /** Classe che occupa la cella, o -1 se libera. */
+  /** Uso primario che occupa la cella, o -1 se libera. */
   occupantAt(x: number, y: number): BuildingClass | -1 {
     const chunk = this.getChunk(toChunk(x), toChunk(y));
     if (chunk === null) return -1;
@@ -226,7 +276,7 @@ export class DesirabilityField {
    */
   applyCatalystChange(catalyst: Catalyst, catalysts: readonly Catalyst[], weights: Weights): void {
     const rect = rectAround(catalyst.x, catalyst.y, catalyst.radius);
-    this.recomputeRect(rect, catalysts, weights, [catalyst.class]);
+    this.recomputeRect(rect, catalysts, weights, influencedClasses(catalyst));
   }
 
   /**
@@ -256,9 +306,12 @@ export class DesirabilityField {
     }
 
     for (const catalyst of catalysts) {
-      this.recomputeRect(rectAround(catalyst.x, catalyst.y, catalyst.radius), catalysts, weights, [
-        catalyst.class,
-      ]);
+      this.recomputeRect(
+        rectAround(catalyst.x, catalyst.y, catalyst.radius),
+        catalysts,
+        weights,
+        influencedClasses(catalyst),
+      );
     }
     for (const building of buildings) {
       this.recomputeRect(
@@ -284,10 +337,14 @@ export class DesirabilityField {
     }
 
     for (const catalyst of catalysts) {
-      if (!classes.includes(catalyst.class)) continue;
-      this.recomputeRect(rectAround(catalyst.x, catalyst.y, catalyst.radius), catalysts, weights, [
-        catalyst.class,
-      ]);
+      const touched = influencedClasses(catalyst).filter((cls) => classes.includes(cls));
+      if (touched.length === 0) continue;
+      this.recomputeRect(
+        rectAround(catalyst.x, catalyst.y, catalyst.radius),
+        catalysts,
+        weights,
+        touched,
+      );
     }
     const radius = BALANCE.desirability.congestionRadius;
     for (const building of buildings) {
@@ -298,7 +355,7 @@ export class DesirabilityField {
   // --- Nucleo del ricalcolo ------------------------------------------------
 
   /**
-   * Ricalcola da zero le celle del rettangolo per le classi indicate.
+   * Ricalcola da zero le celle del rettangolo per gli usi indicati.
    *
    * Il rettangolo e' esatto, non allineato ai chunk: allargarlo ai bordi di
    * chunk trasformerebbe un raggio 20 (1681 celle) in un ricalcolo su 4096.
@@ -309,26 +366,38 @@ export class DesirabilityField {
     weights: Weights,
     classes: readonly BuildingClass[],
   ): void {
-    // Prefiltro: dei catalizzatori sopravvivono solo quelli il cui quadrato
-    // interseca il rettangolo. Nel ciclo sulle celle resta una lista corta
-    // invece dell'intera citta'.
-    const relevant: Catalyst[] = [];
-    for (const catalyst of catalysts) {
-      if (!classes.includes(catalyst.class)) continue;
-      if (catalyst.radius <= 0 || catalyst.strength <= 0) continue;
-      if (catalyst.x + catalyst.radius < rect.minX) continue;
-      if (catalyst.x - catalyst.radius > rect.maxX) continue;
-      if (catalyst.y + catalyst.radius < rect.minY) continue;
-      if (catalyst.y - catalyst.radius > rect.maxY) continue;
-      relevant.push(catalyst);
+    // Prefiltro, un gruppo per uso da ricalcolare. Sopravvive un catalizzatore
+    // solo se il suo quadrato interseca il rettangolo *e* se quell'uso lo
+    // sente davvero: un ruolo neutro su un uso non deve costare un giro di
+    // ciclo per cella, e con quattro usi gli zeri della tabella sono la meta'.
+    //
+    // L'ampiezza e' precalcolata: `strength x influenza x pesoPolicy` e'
+    // costante su tutto il rettangolo, quindi nel ciclo per cella resta una
+    // moltiplicazione sola invece di tre.
+    const groups: CatalystGroup[] = [];
+    for (const cls of classes) {
+      const group: CatalystGroup = { cls, xs: [], ys: [], radii: [], amps: [] };
+      const weight = weights[DESIRABILITY_WEIGHT_OF_CLASS[cls]];
+
+      for (const catalyst of catalysts) {
+        if (catalyst.radius <= 0 || catalyst.strength <= 0) continue;
+        const influence = catalystInfluence(catalystRoleOf(catalyst))[cls];
+        if (influence === 0) continue;
+        if (catalyst.x + catalyst.radius < rect.minX) continue;
+        if (catalyst.x - catalyst.radius > rect.maxX) continue;
+        if (catalyst.y + catalyst.radius < rect.minY) continue;
+        if (catalyst.y - catalyst.radius > rect.maxY) continue;
+        group.xs.push(catalyst.x);
+        group.ys.push(catalyst.y);
+        group.radii.push(catalyst.radius);
+        group.amps.push(catalyst.strength * influence * weight);
+      }
+
+      groups.push(group);
     }
 
     const perBuilding = BALANCE.desirability.congestionPerBuilding;
     const maxValue = BALANCE.limits.maxDesirability;
-
-    // Il peso di policy e' costante su tutto il rettangolo: risolverlo per cella
-    // significherebbe due indirezioni per cella per classe.
-    const classWeights = classes.map((cls) => weights[DESIRABILITY_WEIGHT_OF_CLASS[cls]]);
 
     let visited = 0;
 
@@ -340,28 +409,27 @@ export class DesirabilityField {
         const i = cellIndexOf(toLocal(x), toLocal(y));
         const congestion = existing === null ? 0 : existing.crowd[i] * perBuilding;
 
-        for (let c = 0; c < classes.length; c++) {
-          const cls = classes[c];
+        for (let g = 0; g < groups.length; g++) {
+          const group = groups[g];
 
           let sum = 0;
-          for (let k = 0; k < relevant.length; k++) {
-            const catalyst = relevant[k];
-            if (catalyst.class !== cls) continue;
-            const dx = x - catalyst.x;
-            const dy = y - catalyst.y;
+          for (let k = 0; k < group.amps.length; k++) {
+            const dx = x - group.xs[k];
+            const dy = y - group.ys[k];
             const dist = Math.max(dx < 0 ? -dx : dx, dy < 0 ? -dy : dy);
-            if (dist >= catalyst.radius) continue;
-            sum += catalyst.strength * (1 - dist / catalyst.radius);
+            const radius = group.radii[k];
+            if (dist >= radius) continue;
+            sum += group.amps[k] * (1 - dist / radius);
           }
 
-          const raw = Math.round(sum * classWeights[c] - congestion);
+          const raw = Math.round(sum - congestion);
           const value = raw < 0 ? 0 : raw > maxValue ? maxValue : raw;
 
           // Scrivere zero in una colonna mai toccata la allocherebbe per nulla:
           // la lettura fuori dai chunk allocati vale gia' zero.
           if (value === 0 && existing === null) continue;
           const chunk = existing ?? this.ensureChunk(toChunk(x), toChunk(y));
-          chunk.values[cls][i] = value;
+          chunk.values[group.cls][i] = value;
         }
       }
     }
@@ -408,6 +476,18 @@ export class DesirabilityField {
   static originOf(cc: number): number {
     return cc << CHUNK_SHIFT;
   }
+}
+
+/**
+ * Usi che un catalizzatore tocca davvero.
+ *
+ * Un ruolo neutro su un uso non ne cambia nemmeno una cella, quindi non merita
+ * un rettangolo di ricalcolo: e' il filtro che tiene il costo di un piazzamento
+ * dov'era prima che gli usi diventassero quattro.
+ */
+function influencedClasses(catalyst: Catalyst): readonly BuildingClass[] {
+  const influence = catalystInfluence(catalystRoleOf(catalyst));
+  return ALL_CLASSES.filter((cls) => influence[cls] !== 0);
 }
 
 /** Quadrato di Chebyshev centrato sulla cella, estremi inclusi. */

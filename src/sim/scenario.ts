@@ -1,4 +1,5 @@
 import type { TerrainMap } from '../world/terrain/TerrainMap';
+import { catalystById, type CatalystId } from './catalysts';
 import { BUILDING_CLASS, type BuildingClass } from './classes';
 import type { Catalyst } from './DesirabilityField';
 import { nextBuildSites } from './nextBuildSites';
@@ -38,29 +39,35 @@ const SCENARIO = {
    * per sbaglio — e' la scena che le consegna una citta' iniziale, come farebbe
    * un salvataggio.
    *
-   * Il rapporto conta: `BALANCE` e' tarato perche' un edificio produttivo
-   * sfami esattamente un edificio residenziale, quindi una citta' 1:1 sta in
-   * pareggio alimentare. Lasciando scegliere alla sola desiderabilita' si
-   * ottengono invece sedici edifici civici e nessuna fattoria, e la scena mostra
-   * una citta' che muore di fame — corretto come simulazione, inutile come demo.
+   * Il rapporto conta: `BALANCE` e' tarato perche' un edificio industriale
+   * sfami esattamente un edificio residenziale e un edificio commerciale ne
+   * serva uno, quindi una citta' in rapporto 1:1 sta in pareggio. Lasciando
+   * scegliere alla sola desiderabilita' si ottengono invece sedici edifici
+   * civici e nessuna fattoria, e la scena mostra una citta' che muore di fame —
+   * corretto come simulazione, inutile come demo.
    */
   seedBuildings: [
     { class: BUILDING_CLASS.residential, count: 10 },
-    { class: BUILDING_CLASS.production, count: 10 },
+    { class: BUILDING_CLASS.commercial, count: 6 },
+    { class: BUILDING_CLASS.industrial, count: 10 },
     { class: BUILDING_CLASS.civic, count: 4 },
   ] as readonly { class: BuildingClass; count: number }[],
 
-  /** Classe, intensita' e raggio per posizione del reticolo, in ordine di scansione. */
+  /**
+   * Ruolo, intensita' e raggio per posizione del reticolo, in ordine di
+   * scansione. Ruoli e non usi: la fixture piazza catalizzatori, e ogni ruolo
+   * porta con se' il proprio vettore di influenza.
+   */
   slots: [
-    { class: BUILDING_CLASS.civic, strength: 220, radius: 26 },
-    { class: BUILDING_CLASS.residential, strength: 200, radius: 22 },
-    { class: BUILDING_CLASS.production, strength: 180, radius: 18 },
-    { class: BUILDING_CLASS.residential, strength: 190, radius: 20 },
-    { class: BUILDING_CLASS.production, strength: 170, radius: 16 },
-    { class: BUILDING_CLASS.residential, strength: 210, radius: 24 },
-    { class: BUILDING_CLASS.civic, strength: 160, radius: 20 },
-    { class: BUILDING_CLASS.residential, strength: 180, radius: 18 },
-  ] as readonly { class: BuildingClass; strength: number; radius: number }[],
+    { kind: 'park', strength: 220, radius: 26 },
+    { kind: 'market', strength: 200, radius: 22 },
+    { kind: 'factory', strength: 180, radius: 18 },
+    { kind: 'transport', strength: 190, radius: 20 },
+    { kind: 'port', strength: 170, radius: 16 },
+    { kind: 'market', strength: 210, radius: 24 },
+    { kind: 'university', strength: 160, radius: 20 },
+    { kind: 'monument', strength: 180, radius: 18 },
+  ] as readonly { kind: CatalystId; strength: number; radius: number }[],
 } as const;
 
 export interface ScenarioRegion {
@@ -107,7 +114,8 @@ export function scenarioCatalysts(
       out.push({
         x: snapped.x,
         y: snapped.y,
-        class: spec.class,
+        class: catalystById(spec.kind).class,
+        kind: spec.kind,
         strength: spec.strength,
         radius: spec.radius,
       });
@@ -148,7 +156,9 @@ export function createScenarioState(terrainMap: TerrainMap, region: ScenarioRegi
         remaining[i] = 0;
         continue;
       }
-      state = addBuilding(state, { x: best.x, y: best.y, class: spec.class });
+      state = addBuilding(state, best.mixed === -1
+        ? { x: best.x, y: best.y, class: spec.class }
+        : { x: best.x, y: best.y, class: spec.class, mixed: best.mixed });
       remaining[i]--;
       placed = true;
     }

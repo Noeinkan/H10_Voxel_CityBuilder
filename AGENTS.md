@@ -28,7 +28,7 @@ rispettivi `AGENTS.md` e si aggiungono a queste.
 
 ```bash
 npm install
-npm run dev          # http://localhost:8010/?debug=1
+npm run dev          # http://localhost:8020/?debug=1
 npm run build        # typecheck + build Vite in dist/
 npm run preview      # http://localhost:8011/
 npm test

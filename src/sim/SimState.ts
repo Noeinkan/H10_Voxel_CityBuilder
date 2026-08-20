@@ -19,6 +19,7 @@ import {
   withPolicy,
   type PolicyId,
 } from './policies';
+import { EMPTY_COMMERCE, type CommerceReport } from './commerce';
 import { EMPTY_TRADE, isTradeMode, type TradeMode, type TradeReport } from './trade';
 
 /**
@@ -70,8 +71,19 @@ export interface SimStateData {
 
   readonly buildings: readonly Building[];
 
-  /** Conteggio edifici per classe, indicizzato come `BUILDING_CLASS`. */
+  /** Edifici per **uso primario**, indicizzato come `BUILDING_CLASS`. */
   readonly buildingCounts: readonly number[];
+
+  /**
+   * Edifici per **uso secondario**, con la stessa indicizzazione.
+   *
+   * Un edificio misto compare una volta in `buildingCounts` sotto il suo uso
+   * primario e una volta qui sotto il secondo: la somma delle due tabelle non e'
+   * il numero di edifici, ed e' giusto cosi'. Il bilancio legge la capacita'
+   * efficace come `buildingCounts[uso] + secondaryShare * mixedCounts[uso]`,
+   * che e' l'unico posto in cui i due conteggi si incontrano.
+   */
+  readonly mixedCounts: readonly number[];
 
   readonly catalysts: readonly Catalyst[];
 
@@ -81,6 +93,9 @@ export interface SimStateData {
   /** Strategia del collegamento esterno; senza porto resta inattiva. */
   readonly tradeMode: TradeMode;
   readonly trade: TradeReport;
+
+  /** Ultimo giro del commercio interno. Derivato dal tick, non un accumulo. */
+  readonly commerce: CommerceReport;
 
   /** Decisione sospesa e registro compatto degli esiti scelti. */
   readonly pendingDecision: CityDecision | null;
@@ -124,10 +139,12 @@ export function createSimState(options: SimStateOptions = {}): SimState {
     satisfaction: BALANCE.start.satisfaction,
     buildings: [],
     buildingCounts: new Array<number>(CLASS_COUNT).fill(0),
+    mixedCounts: new Array<number>(CLASS_COUNT).fill(0),
     catalysts: catalysts.map(normaliseCatalyst),
     policies: canonicalPolicies(policies),
     tradeMode: options.tradeMode ?? 'balanced',
     trade: EMPTY_TRADE,
+    commerce: EMPTY_COMMERCE,
     pendingDecision: null,
     decisionHistory: [],
     nextDecisionTick: BALANCE.decisions.firstTick,
@@ -194,13 +211,30 @@ export function addBuilding(state: SimState, building: Building): SimState {
   const placed = state.field.addBuilding(building, state.catalysts, resolveWeights(state.policies));
   if (!placed) return state;
 
+  // Un uso secondario uguale al primario non e' un edificio misto, e' un errore
+  // di chi chiama: viene lasciato cadere invece di contare due volte lo stesso
+  // uso nella capacita' efficace.
+  const mixed = building.mixed !== undefined &&
+    isBuildingClass(building.mixed) &&
+    building.mixed !== building.class
+      ? building.mixed
+      : undefined;
+
   const buildingCounts = state.buildingCounts.slice();
   buildingCounts[building.class]++;
 
+  const mixedCounts = state.mixedCounts.slice();
+  if (mixed !== undefined) mixedCounts[mixed]++;
+
+  const record: Building = mixed === undefined
+    ? { x: building.x, y: building.y, class: building.class }
+    : { x: building.x, y: building.y, class: building.class, mixed };
+
   return {
     ...state,
-    buildings: [...state.buildings, { x: building.x, y: building.y, class: building.class }],
+    buildings: [...state.buildings, record],
     buildingCounts,
+    mixedCounts,
   };
 }
 
@@ -291,11 +325,14 @@ export function toSimStateData(state: SimState): SimStateData {
 export function reviveSimState(data: SimStateData): SimState {
   const compatible = data as SimStateData & Partial<Pick<
     SimStateData,
-    'tradeMode' | 'trade' | 'pendingDecision' | 'decisionHistory' | 'nextDecisionTick'
+    'tradeMode' | 'trade' | 'commerce' | 'mixedCounts'
+    | 'pendingDecision' | 'decisionHistory' | 'nextDecisionTick'
   >>;
   const normalised: SimStateData = {
     ...data,
     catalysts: data.catalysts.map(normaliseCatalyst),
+    mixedCounts: compatible.mixedCounts ?? countMixed(data.buildings),
+    commerce: compatible.commerce ?? EMPTY_COMMERCE,
     policies: canonicalPolicies(data.policies),
     tradeMode: compatible.tradeMode !== undefined && isTradeMode(compatible.tradeMode)
       ? compatible.tradeMode
@@ -338,6 +375,17 @@ function normaliseCatalyst(catalyst: Catalyst): Catalyst {
     strength,
     radius: Math.max(0, Math.round(catalyst.radius)),
   };
+}
+
+/** Ricostruisce i conteggi di uso secondario dalla lista degli edifici. */
+function countMixed(buildings: readonly Building[]): readonly number[] {
+  const counts = new Array<number>(CLASS_COUNT).fill(0);
+  for (const building of buildings) {
+    if (building.mixed === undefined || !isBuildingClass(building.mixed)) continue;
+    if (building.mixed === building.class) continue;
+    counts[building.mixed]++;
+  }
+  return counts;
 }
 
 function clampInt(value: number, min: number, max: number): number {

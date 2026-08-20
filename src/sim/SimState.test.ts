@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { CHUNK } from '../world/chunkCoords';
 import { VoxelWorld } from '../world/VoxelWorld';
-import { BUILDING_CLASS } from './classes';
+import { BUILDING_CLASS, type BuildingClass } from './classes';
 import { writeDesirabilityData } from './debugData';
 import { DesirabilityField } from './DesirabilityField';
 import {
@@ -29,19 +29,19 @@ function populated(): SimState {
   state = addCatalyst(state, {
     x: 55,
     y: 40,
-    class: BUILDING_CLASS.production,
+    class: BUILDING_CLASS.industrial,
     strength: 170,
     radius: 14,
   });
   state = addBuilding(state, { x: 41, y: 44, class: BUILDING_CLASS.residential });
-  state = addBuilding(state, { x: 44, y: 46, class: BUILDING_CLASS.production });
+  state = addBuilding(state, { x: 44, y: 46, class: BUILDING_CLASS.industrial });
   state = setPolicyActive(state, 'greenBelt', true);
-  state = setSelectedClass(state, BUILDING_CLASS.production);
+  state = setSelectedClass(state, BUILDING_CLASS.industrial);
   return tickMany(state, testTerrain({ chunksX: 4, chunksY: 4 }), 37);
 }
 
 /** Tutte le celle non nulle di una classe, per confrontare due campi. */
-function snapshot(field: DesirabilityField, cls: 0 | 1 | 2): Map<string, number> {
+function snapshot(field: DesirabilityField, cls: BuildingClass): Map<string, number> {
   const out = new Map<string, number>();
   for (const chunk of field.chunks.values()) {
     const originX = DesirabilityField.originOf(chunk.ccx);
@@ -111,14 +111,46 @@ describe('SimState — serializzazione', () => {
 });
 
 describe('SimState — operazioni', () => {
-  it('addBuilding tiene i conteggi per classe allineati alla lista', () => {
+  it('addBuilding tiene i conteggi per uso allineati alla lista', () => {
     let state = createSimState();
     state = addBuilding(state, { x: 1, y: 1, class: BUILDING_CLASS.residential });
     state = addBuilding(state, { x: 2, y: 1, class: BUILDING_CLASS.residential });
     state = addBuilding(state, { x: 3, y: 1, class: BUILDING_CLASS.civic });
 
-    expect(state.buildingCounts).toEqual([2, 0, 1]);
+    expect(state.buildingCounts).toEqual([2, 0, 0, 1]);
+    expect(state.mixedCounts).toEqual([0, 0, 0, 0]);
     expect(state.buildings).toHaveLength(3);
+  });
+
+  it('un edificio misto conta una volta come primario e una come secondario', () => {
+    let state = createSimState();
+    state = addBuilding(state, {
+      x: 1,
+      y: 1,
+      class: BUILDING_CLASS.residential,
+      mixed: BUILDING_CLASS.commercial,
+    });
+
+    // Un volume solo: la somma dei due conteggi non e' il numero di edifici, e
+    // il bilancio li rimette insieme una volta sola, nella capacita' efficace.
+    expect(state.buildings).toHaveLength(1);
+    expect(state.buildingCounts).toEqual([1, 0, 0, 0]);
+    expect(state.mixedCounts).toEqual([0, 1, 0, 0]);
+    expect(state.field.occupantAt(1, 1)).toBe(BUILDING_CLASS.residential);
+  });
+
+  it('scarta un uso secondario uguale al primario invece di contarlo due volte', () => {
+    let state = createSimState();
+    state = addBuilding(state, {
+      x: 4,
+      y: 4,
+      class: BUILDING_CLASS.commercial,
+      mixed: BUILDING_CLASS.commercial,
+    });
+
+    expect(state.buildingCounts).toEqual([0, 1, 0, 0]);
+    expect(state.mixedCounts).toEqual([0, 0, 0, 0]);
+    expect(state.buildings[0].mixed).toBeUndefined();
   });
 
   it('createSimState scarta le policy sconosciute e mette in ordine quelle valide', () => {
@@ -160,10 +192,10 @@ describe('debugData — la simulazione scrive solo in data', () => {
     writeDesirabilityData(world, residential, terrainMap);
     const asResidential = world.getData(40, 44, 11);
 
-    const production = setSelectedClass(residential, BUILDING_CLASS.production);
+    const production = setSelectedClass(residential, BUILDING_CLASS.industrial);
     writeDesirabilityData(world, production, terrainMap);
 
-    expect(world.getData(40, 44, 11)).toBe(production.field.valueAt(40, 44, BUILDING_CLASS.production));
+    expect(world.getData(40, 44, 11)).toBe(production.field.valueAt(40, 44, BUILDING_CLASS.industrial));
     expect(world.getData(40, 44, 11)).not.toBe(asResidential);
   });
 });

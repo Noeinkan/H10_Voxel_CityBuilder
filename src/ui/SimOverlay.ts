@@ -161,10 +161,15 @@ export class SimOverlay {
       `  happiness    ${(state.satisfaction * 100).toFixed(1).padStart(10)} %`,
       '',
       `buildings    ${state.buildingCounts.map((count, i) => `${CLASS_NAMES[i].slice(0, 4)} ${count}`).join('  ')}`,
+      `mixed        ${state.mixedCounts.map((count, i) => `${CLASS_NAMES[i].slice(0, 4)} ${count}`).join('  ')}`,
+      `commerce     ${state.commerce.served.toFixed(1)} / ${state.commerce.demand.toFixed(1)} served` +
+        `  ${(state.commerce.service * 100).toFixed(0)}% service` +
+        `  ${(state.commerce.occupancy * 100).toFixed(0)}% full`,
+      `             ${state.commerce.revenue.toFixed(2)} funds/t  ${state.commerce.goods.toFixed(2)} goods/t`,
       ...builderLines(frame.builder),
       `catalysts    ${state.catalysts.length.toString().padStart(6)}`,
       `field        ${state.field.chunkCount.toString().padStart(6)} chunks  ${format(state.field.totalRecomputedCells)} cells recomputed`,
-      `data         ${format(frame.dataCells).padStart(6)} cells written  (class ${CLASS_NAMES[state.selectedClass]})`,
+      `data         ${format(frame.dataCells).padStart(6)} cells written  (use ${CLASS_NAMES[state.selectedClass]})`,
       '',
       `desirability — ${CLASS_NAMES[state.selectedClass]}`,
     ].join('\n');

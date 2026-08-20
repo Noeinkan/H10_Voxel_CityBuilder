@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { GrowthStats } from '../game/growthScene';
 import { cityCondition } from '../game/cityCondition';
 import { onboardingOf } from '../game/onboarding';
-import { BUILDING_CLASS } from '../sim/classes';
+import { catalystById } from '../sim/catalysts';
 import { createSimState } from '../sim/SimState';
 import type { PolicyId } from '../sim/policies';
 import {
@@ -75,7 +75,7 @@ describe('buildGameHudModel', () => {
 
   it('produce un’istruzione contestuale solo per uno strumento selezionato', () => {
     const model = buildGameHudModel(stats(2_000, 100));
-    expect(selectionMessage({ kind: 'catalyst', class: 0 }, model.catalysts)).toContain('Residential selected');
+    expect(selectionMessage({ kind: 'catalyst', class: 0 }, model.catalysts)).toContain('Housing selected');
     expect(selectionMessage({ kind: 'expansion' }, model.catalysts)).toContain('choose a coastline edge');
     expect(selectionMessage({ kind: 'none' }, model.catalysts)).toBeNull();
   });
@@ -117,10 +117,12 @@ function stats(
   pendingDecision: GrowthStats['state']['pendingDecision'] = null,
 ): GrowthStats {
   const catalysts = onboardingComplete
-    ? [BUILDING_CLASS.residential, BUILDING_CLASS.production, BUILDING_CLASS.civic].map((cls, index) => ({
+    // I tre ruoli del tutorial: e' il ruolo, non l'uso, a chiudere i passi.
+    ? (['market', 'factory', 'park'] as const).map((kind, index) => ({
         x: index * 16,
         y: 0,
-        class: cls,
+        kind,
+        class: catalystById(kind).class,
         strength: 1,
         radius: 1,
       }))
@@ -137,7 +139,9 @@ function stats(
     tick: 0,
     tickMs: 0,
     buildings: 0,
-    countsByClass: [0, 0, 0],
+    countsByClass: [0, 0, 0, 0],
+    mixedByClass: [0, 0, 0, 0],
+    typologies: [],
     levels: [],
     builder: {
       placed: 0,

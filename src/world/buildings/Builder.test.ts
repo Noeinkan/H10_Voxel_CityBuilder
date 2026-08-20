@@ -63,7 +63,7 @@ describe('Builder', () => {
 
     // Il sentiero di un edificio successivo puo' arrivare al centro, ma non
     // deve cancellare il segno cromatico del catalizzatore gia' dipinto.
-    builder.materialize([{ x: 30, y: 24, class: BUILDING_CLASS.production }]);
+    builder.materialize([{ x: 30, y: 24, class: BUILDING_CLASS.industrial }]);
     while (builder.stats.surfaceQueued > 0) builder.step();
     expect(world.getBlock(24, 24, 11)).toBe(CLASS_PROFILE[BUILDING_CLASS.residential].accent);
   });
