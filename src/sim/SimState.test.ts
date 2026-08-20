@@ -12,6 +12,7 @@ import {
   setPolicyActive,
   setSelectedClass,
   toSimStateData,
+  type SimStateData,
   type SimState,
 } from './SimState';
 import { testTerrain } from './testTerrain';
@@ -77,6 +78,19 @@ describe('SimState — serializzazione', () => {
     expect(revived.field.occupiedCells).toBe(state.field.occupiedCells);
     expect(revived.field.isFree(41, 44)).toBe(false);
     expect(snapshot(state.field, BUILDING_CLASS.residential).size).toBeGreaterThan(0);
+  });
+
+  it('i mandati sopravvivono al giro in JSON in forma canonica', () => {
+    const state = { ...populated(), charters: ['leasedSquare', 'rationing'] as const };
+    const revived = reviveSimState(JSON.parse(JSON.stringify(toSimStateData(state))));
+
+    expect(revived.charters).toEqual(['rationing', 'leasedSquare']);
+  });
+
+  it('rianima un salvataggio scritto prima dei mandati', () => {
+    const { charters: _charters, ...older } = toSimStateData(populated());
+
+    expect(reviveSimState(older as SimStateData).charters).toEqual([]);
   });
 
   it('lo stato serializzato non contiene array tipizzati ne’ oggetti opachi', () => {

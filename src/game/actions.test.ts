@@ -7,9 +7,29 @@ import {
   buyExpansion,
   catalystFailure,
   catalystSiteCost,
+  grantSite,
   placeCatalyst,
   togglePolicy,
 } from './actions';
+
+/** Prima colonna asciutta di una fixture con il mare a ovest. */
+const SHORE_X = 20;
+
+/**
+ * Isola con una costa vera, non un piano a quota arbitraria.
+ *
+ * Serve da quando il ruolo decide il luogo: `testTerrain({ height })` dichiara
+ * il bioma `plain` ma lascia la quota sotto il livello del mare, quindi un porto
+ * ci passerebbe ovunque — la fixture direbbe di si' per un motivo che sull'isola
+ * vera non esiste.
+ */
+function coast() {
+  return testTerrain({
+    chunksX: 2,
+    chunksY: 2,
+    heightAt: (x) => (x < SHORE_X ? TERRAIN.seaLevel - 6 : TERRAIN.beachMaxHeight + 6),
+  });
+}
 
 describe('azioni di gioco', () => {
   it('piazza un catalizzatore pagando una sola volta', () => {
@@ -47,10 +67,10 @@ describe('azioni di gioco', () => {
   });
 
   it('permette ruoli diversi della stessa classe e blocca policy incompatibili', () => {
-    const map = testTerrain({ chunksX: 1, chunksY: 1, height: 12 });
-    const port = placeCatalyst(createSimState(), map, 8, 8, 'port');
+    const map = coast();
+    const port = placeCatalyst(createSimState(), map, SHORE_X, 32, 'port');
     if (!port.success) throw new Error('porto fixture non valido');
-    expect(placeCatalyst(port.state, map, 10, 10, 'factory').success).toBe(true);
+    expect(placeCatalyst(port.state, map, SHORE_X + 2, 34, 'factory').success).toBe(true);
 
     const base = createSimState();
     const funded = {
@@ -64,6 +84,49 @@ describe('azioni di gioco', () => {
       success: false,
       reason: 'policy-incompatible',
     });
+  });
+
+  it('il porto vuole il fronte mare, e lo dice prima del click', () => {
+    const map = coast();
+    const state = { ...createSimState(), funds: { stock: 2_000, delta: 0 } };
+    const inland = SHORE_X + 20;
+
+    expect(catalystFailure(state, map, inland, 32, 'port')).toBe('needs-coast');
+    expect(placeCatalyst(state, map, inland, 32, 'port')).toEqual({
+      success: false,
+      reason: 'needs-coast',
+    });
+    expect(catalystFailure(state, map, SHORE_X, 32, 'port')).toBeNull();
+    // Il vincolo vale per il ruolo e non per il terreno: sulla stessa colonna
+    // rifiutata al porto, un mercato entra senza discutere.
+    expect(catalystFailure(state, map, inland, 32, 'market')).toBeNull();
+  });
+
+  it('l’aeroporto vuole una superficie, che la battigia non e’', () => {
+    const map = coast();
+    const state = { ...createSimState(), funds: { stock: 2_000, delta: 0 } };
+
+    expect(catalystFailure(state, map, SHORE_X, 32, 'airport')).toBe('needs-open-ground');
+    expect(catalystFailure(state, map, SHORE_X + 20, 32, 'airport')).toBeNull();
+  });
+
+  it('il vincolo di sito precede la distanza e i fondi', () => {
+    const map = coast();
+    const inland = SHORE_X + 20;
+    const first = placeCatalyst(
+      { ...createSimState(), funds: { stock: 2_000, delta: 0 } },
+      map,
+      SHORE_X,
+      32,
+      'port',
+    );
+    if (!first.success) throw new Error('porto fixture non valido');
+
+    // Senza fondi e a due passi da un altro porto: il motivo che si legge resta
+    // il luogo, perche' spostarsi di venti celle non risolverebbe niente.
+    const broke = { ...first.state, funds: { stock: 0, delta: 0 } };
+    expect(catalystFailure(broke, map, inland, 32, 'port')).toBe('needs-coast');
+    expect(catalystFailure(broke, map, SHORE_X + 2, 32, 'port')).toBe('too-close');
   });
 
   it('blocca l’espansione prima della soglia di popolazione', () => {
@@ -138,5 +201,36 @@ describe('prezzo del terreno', () => {
     };
     expect(catalystFailure(povero, map, 8, 8, BUILDING_CLASS.residential))
       .toBe('insufficient-funds');
+  });
+});
+
+describe('sito dell opera concessa da una decisione', () => {
+  const sites = [{ x: 8, y: 8 }, { x: 40, y: 40 }];
+
+  it('prende il primo candidato che il terreno regge', () => {
+    const map = testTerrain({ chunksX: 2, chunksY: 2, height: 12 });
+    expect(grantSite(createSimState(), map, 'market', sites)).toEqual({ x: 8, y: 8 });
+  });
+
+  // L'opera non si paga: la citta' senza un soldo se la vede comparire lo
+  // stesso, altrimenti l'alternativa che la concede sarebbe una promessa vuota
+  // proprio quando la decisione e' stata presa per mancanza di fondi.
+  it('non chiede fondi, perche il prezzo l ha gia pagato la decisione', () => {
+    const map = testTerrain({ chunksX: 2, chunksY: 2, height: 12 });
+    const broke = { ...createSimState(), funds: { stock: 0, delta: 0 } };
+    expect(grantSite(broke, map, 'market', sites)).toEqual({ x: 8, y: 8 });
+  });
+
+  it('salta il candidato troppo vicino a un mercato che esiste gia', () => {
+    const map = testTerrain({ chunksX: 2, chunksY: 2, height: 12 });
+    const placed = placeCatalyst(createSimState(), map, 8, 8, 'market');
+    if (!placed.success) throw new Error('piazzamento atteso');
+
+    expect(grantSite(placed.state, map, 'market', sites)).toEqual({ x: 40, y: 40 });
+  });
+
+  it('senza nessun candidato valido rinuncia invece di inventarsi un posto', () => {
+    const map = testTerrain({ chunksX: 2, chunksY: 2, height: 12 });
+    expect(grantSite(createSimState(), map, 'market', [])).toBeNull();
   });
 });

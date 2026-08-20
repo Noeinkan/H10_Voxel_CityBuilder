@@ -7,7 +7,9 @@ import {
   type BuildingClass,
   type CatalystId,
   type Catalyst,
+  type CharterId,
   type LocalUrbanProfile,
+  type PolicyId,
 } from '../../sim';
 import { BUILDER, GRAMMAR, TYPOLOGIES } from './config';
 import { generateBuilding } from './generate';
@@ -26,8 +28,12 @@ function source(kind: CatalystId, x = 0, y = 0): Catalyst {
   };
 }
 
-function profileOf(kinds: readonly CatalystId[], policies: [] = []): LocalUrbanProfile {
-  return urbanProfileAt(kinds.map((kind) => source(kind)), policies, 0, 0);
+function profileOf(
+  kinds: readonly CatalystId[],
+  policies: readonly PolicyId[] = [],
+  charters: readonly CharterId[] = [],
+): LocalUrbanProfile {
+  return urbanProfileAt({ catalysts: kinds.map((kind) => source(kind)), policies, charters }, 0, 0);
 }
 
 function build(use: BuildingClass, level: number, seed: number, typologyId: string, mixed?: BuildingClass): VoxelStamp {
@@ -280,6 +286,65 @@ describe('forme delle tipologie', () => {
       expect(Array.from(b.voxels)).toEqual(Array.from(a.voxels));
       expect(Array.from(b.surfaces)).toEqual(Array.from(a.surfaces));
     }
+  });
+});
+
+describe('tipologie concesse da un mandato', () => {
+  // Un mercato e un trasporto: c'e' abbastanza commerciale e residenziale
+  // perche' i portanti dei mandati si sentano su questa colonna.
+  const kinds: readonly CatalystId[] = ['market', 'transport'];
+
+  function chosen(use: BuildingClass, charters: readonly CharterId[]): string {
+    return selectTypology({
+      use,
+      level: 4,
+      profile: profileOf(kinds, [], charters),
+      coastal: false,
+    }).id;
+  }
+
+  it('non compaiono senza il mandato che le concede', () => {
+    const gated = TYPOLOGIES.filter((entry) => entry.charter !== undefined);
+    expect(gated.length).toBeGreaterThan(0);
+
+    const withoutCharters = new Set(
+      ALL_CLASSES.map((use) => chosen(use, [])),
+    );
+    for (const entry of gated) expect(withoutCharters.has(entry.id)).toBe(false);
+  });
+
+  it('il mandato cambia la tipologia scelta a parita di tutto il resto', () => {
+    const plain = chosen(BUILDING_CLASS.residential, []);
+
+    expect(chosen(BUILDING_CLASS.residential, ['communityGardens'])).toBe('gardenHousing');
+    expect(chosen(BUILDING_CLASS.residential, ['rationing'])).toBe('rationedBlock');
+    expect(chosen(BUILDING_CLASS.residential, ['communityGardens'])).not.toBe(plain);
+  });
+
+  it('due scelte opposte danno volumi diversi, non solo colori diversi', () => {
+    const gardens = build(BUILDING_CLASS.residential, 4, 7, 'gardenHousing');
+    const rationed = build(BUILDING_CLASS.residential, 4, 7, 'rationedBlock');
+
+    expect(gardens.sizeX).toBeGreaterThan(rationed.sizeX);
+    expect(rationed.sizeZ).toBeGreaterThan(gardens.sizeZ);
+  });
+
+  it('un mandato commerciale non tocca la forma degli altri usi', () => {
+    const industrial = chosen(BUILDING_CLASS.industrial, []);
+    expect(chosen(BUILDING_CLASS.industrial, ['localShops'])).toBe(industrial);
+    expect(chosen(BUILDING_CLASS.commercial, ['localShops'])).toBe('marketArcade');
+  });
+
+  // Il mandato viaggia sul profilo, quindi fuori dalla simulazione — dove il
+  // profilo non c'e' — le righe concesse restano fuori dalla selezione.
+  it('senza profilo locale nessuna tipologia concessa e selezionabile', () => {
+    const fallback = selectTypology({
+      use: BUILDING_CLASS.residential,
+      level: 4,
+      profile: null,
+      coastal: false,
+    });
+    expect(fallback.charter).toBeUndefined();
   });
 });
 

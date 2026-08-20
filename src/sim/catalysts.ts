@@ -1,7 +1,7 @@
 import { BALANCE } from './balance';
 import { ALL_CLASSES, BUILDING_CLASS, CLASS_COUNT, CLASS_NAMES, type BuildingClass } from './classes';
 
-/** I sette modi in cui il giocatore puo' orientare la crescita. */
+/** Gli otto modi in cui il giocatore puo' orientare la crescita. */
 export type CatalystId = keyof typeof BALANCE.gameplay.catalyst.roles;
 
 /**
@@ -13,6 +13,20 @@ export type CatalystId = keyof typeof BALANCE.gameplay.catalyst.roles;
  * mondo e fra i suoi poli, identita' le da' un carattere che resta.
  */
 export type CatalystGroup = 'growth' | 'connections' | 'identity';
+
+/**
+ * Che luogo chiede un ruolo.
+ *
+ * E' un'etichetta e non una regola: qui non c'e' niente che sappia dove sia la
+ * costa, e non deve esserci. La traduce `src/world/sites/`, che ha il terreno
+ * sotto mano; la simulazione si limita a dichiarare cosa il ruolo pretende, come
+ * gia' dichiara quali usi favorisce senza sapere che forma prendano gli edifici.
+ *
+ * `'open'` e' il vincolo opposto a `'coastal'`, non la sua assenza: chiede una
+ * superficie ampia e gia' quasi piana, che e' cio' che l'entroterra ha di raro.
+ * L'assenza di vincolo e' `'any'`.
+ */
+export type CatalystSite = 'any' | 'coastal' | 'open';
 
 export interface CatalystEffects {
   readonly density: number;
@@ -26,6 +40,8 @@ export interface CatalystDefinition {
   readonly id: CatalystId;
   readonly label: string;
   readonly group: CatalystGroup;
+  /** Luogo che il ruolo pretende. Chi lo valuta e' `src/world/sites/`. */
+  readonly site: CatalystSite;
   /** Uso urbano che il ruolo porta a pieno per primo, in ordine di `BUILDING_CLASS`. */
   readonly class: BuildingClass;
   readonly cost: number;
@@ -45,15 +61,21 @@ export interface CatalystDefinition {
  * Catalogo in ordine di toolbar: prima la crescita, poi le connessioni, infine
  * l'identita'. Mercato, fabbrica e parco restano i tre passi iniziali del
  * tutorial e per questo aprono la lista.
+ *
+ * I due collegamenti si distinguono per luogo prima ancora che per effetto:
+ * il porto pretende il fronte mare che ha sempre promesso a parole, l'aeroporto
+ * un pianoro che sulla costa non c'e'. E' il vincolo di sito a impedire che
+ * siano due prezzi per lo stesso sblocco.
  */
 export const CATALYSTS: readonly CatalystDefinition[] = [
-  catalyst('market', 'Market', 'growth', 'Draws in shops and homes together: the seed of a mixed-use block.'),
-  catalyst('factory', 'Factory', 'growth', 'Boosts industry and jobs, and pushes housing away from its fumes.'),
-  catalyst('park', 'Park', 'growth', 'Creates greener, happier, less industrial neighborhoods.'),
-  catalyst('port', 'Port', 'connections', 'Unlocks external trade and concentrates industry and trade on the coast.'),
-  catalyst('transport', 'Transit', 'connections', 'Connects hubs and lifts housing, shops and logistics alike.'),
-  catalyst('university', 'University', 'identity', 'Builds a civic district around research and knowledge.'),
-  catalyst('monument', 'Monument', 'identity', 'A landmark that attracts visitors, shops and civic pride.'),
+  catalyst('market', 'Market', 'growth', 'any', 'Draws in shops and homes together: the seed of a mixed-use block.'),
+  catalyst('factory', 'Factory', 'growth', 'any', 'Boosts industry and jobs, and pushes housing away from its fumes.'),
+  catalyst('park', 'Park', 'growth', 'any', 'Creates greener, happier, less industrial neighborhoods.'),
+  catalyst('port', 'Port', 'connections', 'coastal', 'Unlocks external trade and concentrates industry and trade on the coast.'),
+  catalyst('airport', 'Airport', 'connections', 'open', 'Links the island without touching the coast: lifts shops and civic life, and drives housing away.'),
+  catalyst('transport', 'Transit', 'connections', 'any', 'Connects hubs and lifts housing, shops and logistics alike.'),
+  catalyst('university', 'University', 'identity', 'any', 'Builds a civic district around research and knowledge.'),
+  catalyst('monument', 'Monument', 'identity', 'any', 'A landmark that attracts visitors, shops and civic pride.'),
 ];
 
 /** Gruppi in ordine di toolbar, con l'etichetta della sezione. */
@@ -109,6 +131,7 @@ function catalyst(
   id: CatalystId,
   label: string,
   group: CatalystGroup,
+  site: CatalystSite,
   description: string,
 ): CatalystDefinition {
   const values = BALANCE.gameplay.catalyst.roles[id];
@@ -123,6 +146,7 @@ function catalyst(
     id,
     label,
     group,
+    site,
     // Il primo uso portato a pieno, non il piu' forte in assoluto: a parita' di
     // influenza vince l'indice minore, cosi' il ruolo ha sempre un uso primario
     // stabile e indipendente dall'ordine di lettura della tabella.

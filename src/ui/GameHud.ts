@@ -4,6 +4,7 @@ import type { PolicyId, TradeMode } from '../sim';
 import { ControlsHint } from './ControlsHint';
 import {
   buildGameHudModel,
+  decisionMark,
   decisionNeedsRepaint,
   resolveEscapeTarget,
   selectionMessage,
@@ -55,6 +56,8 @@ export interface CursorInfo {
 const FAILURE_LABEL: Readonly<Record<ActionFailure, string>> = {
   'terrain-loading': 'The terrain is not ready yet.',
   'not-buildable': 'No earthwork holds here: only cliffs and deep water refuse.',
+  'needs-coast': 'A Port only works on the waterfront. Move it closer to the sea.',
+  'needs-open-ground': 'An Airport needs a wide, level clearing to lay a runway on.',
   'too-close': 'Too close to another catalyst of the same type.',
   'insufficient-funds': 'You do not have enough funds yet.',
   'population-required': 'The city must grow before you can do this.',
@@ -605,7 +608,9 @@ export class GameHud {
     if (button === undefined) return;
     button.disabled = !mode.available;
     button.setAttribute('aria-pressed', mode.active ? 'true' : 'false');
-    button.title = connected ? mode.description : 'Build a Port to unlock external trade.';
+    button.title = connected
+      ? mode.description
+      : 'Build a Port or an Airport to unlock external trade.';
   }
 
   private paintDecision(model: GameHudModel): void {
@@ -633,6 +638,16 @@ export class GameHud {
       const description = document.createElement('span');
       description.textContent = option.description;
       button.append(label, description);
+      // Il segno che l'alternativa lascia sulla forma della citta'. Senza
+      // questa riga il giocatore legge tre travasi di risorse e non sa che sta
+      // scegliendo anche come cresceranno i suoi isolati.
+      const mark = decisionMark(option);
+      if (mark !== null) {
+        const consequence = document.createElement('span');
+        consequence.className = 'decision-mark';
+        consequence.textContent = mark;
+        button.appendChild(consequence);
+      }
       button.addEventListener('click', () => this.handlers.onDecision(option.id), { once: true });
       options.appendChild(button);
     }
@@ -734,6 +749,10 @@ function paintAction(button: HTMLButtonElement | undefined, action: HudAction): 
 /** Motivo dell'azione, piu' cio' che quel ruolo favorisce e puo' far nascere. */
 function actionTooltip(action: HudAction): string {
   const lines = [action.reason];
+  // Subito dopo il motivo e prima di tutto il resto: un vincolo di sito cambia
+  // *dove* si clicca, e leggerlo in fondo all'elenco vorrebbe dire leggerlo
+  // dopo aver gia' scelto il punto.
+  if (action.site !== undefined) lines.push(action.site);
   if (action.radius !== undefined) lines.push(`Radius ${action.radius}`);
   if (action.favours !== undefined && action.favours.length > 0) {
     lines.push(`Favours: ${action.favours.join(', ')}`);

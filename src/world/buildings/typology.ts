@@ -77,6 +77,13 @@ function accepts(candidate: TypologyDefinition, query: TypologyQuery): boolean {
   if (candidate.roles !== undefined && !candidate.roles.some((role) => profile.roles.includes(role))) {
     return false;
   }
+  // Il mandato si legge dal profilo, non dallo stato: una tipologia concessa da
+  // una decisione compare dove quella decisione si sente, non su tutta l'isola.
+  if (candidate.charter !== undefined && !candidate.charter.some(
+    (id) => profile.charters.includes(id),
+  )) {
+    return false;
+  }
   if (candidate.districts !== undefined && !candidate.districts.includes(profile.district)) {
     return false;
   }
@@ -97,6 +104,7 @@ function accepts(candidate: TypologyDefinition, query: TypologyQuery): boolean {
 function demandsPlace(candidate: TypologyDefinition): boolean {
   return candidate.specialization !== undefined ||
     candidate.roles !== undefined ||
+    candidate.charter !== undefined ||
     candidate.districts !== undefined ||
     candidate.minDensity !== undefined ||
     candidate.maxDensity !== undefined ||

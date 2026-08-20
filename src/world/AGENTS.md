@@ -70,6 +70,15 @@ e costruzione degli edifici. Questo modulo non dipende dal renderer.
   era per bioma, e produceva l'unico no che dallo schermo non si spiegava — una
   mesa piatta respinta per la sola quota. Il bit `buildable` della `TerrainMap`
   resta, ma lo legge solo la scelta dei siti automatici in `sim/`.
+- **Il terreno dice cosa regge, `sites/` dice cosa ci sta.** Sono due domande, e
+  tenerle separate e' il motivo per cui il porto puo' pretendere la costa senza
+  che la battigia torni vietata a tutti: `groundKindOf` risponde con un prezzo,
+  `siteRefusal` con un si'/no che nessuna opera compra. Il vincolo e'
+  un'etichetta sulla definizione del catalizzatore — `'coastal'`, `'open'`,
+  `'any'` — e `src/sim/` non sa cosa significhi: la geografia la legge qui.
+  I numeri stanno in `sites/config.ts`, e non vanno confusi con
+  `BUILDER.coastalRadius`, che decide l'aspetto di una tipologia e non
+  l'ammissibilita' di un piazzamento.
 - Il candidato della simulazione designa **un luogo, non un indirizzo**: se il
   suo isolato e' pieno, `findLot` cerca in quelli attorno. Senza, su un campo
   saturo la crescita si ferma appena si riempie il primo isolato, perche' la

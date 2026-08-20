@@ -2,6 +2,12 @@ import { BALANCE } from './balance';
 import { ALL_CLASSES, BUILDING_CLASS, CLASS_COUNT, isBuildingClass, type BuildingClass } from './classes';
 import { isCatalystId } from './catalysts';
 import {
+  canonicalCharters,
+  withCharter,
+  withoutFamily,
+  type CharterId,
+} from './charters';
+import {
   decisionOption,
   type CityDecision,
   type DecisionOutcome,
@@ -90,6 +96,17 @@ export interface SimStateData {
   /** Policy attive, sempre in ordine di catalogo. */
   readonly policies: readonly PolicyId[];
 
+  /**
+   * Mandati lasciati dalle decisioni: al massimo uno per famiglia, in ordine di
+   * catalogo.
+   *
+   * Non sono policy e non entrano in `resolveWeights`: agiscono sul profilo
+   * locale, quindi su forma e tipologia di cio' che cresce, non sul bilancio di
+   * un tick. E' per questo che risolvere una decisione non ricostruisce il
+   * campo di desiderabilita', mentre attivare una policy lo fa.
+   */
+  readonly charters: readonly CharterId[];
+
   /** Strategia del collegamento esterno; senza porto resta inattiva. */
   readonly tradeMode: TradeMode;
   readonly trade: TradeReport;
@@ -114,6 +131,7 @@ export interface SimStateOptions {
   readonly rngState?: number;
   readonly catalysts?: readonly Catalyst[];
   readonly policies?: readonly PolicyId[];
+  readonly charters?: readonly CharterId[];
   readonly selectedClass?: BuildingClass;
   readonly tradeMode?: TradeMode;
 }
@@ -142,6 +160,7 @@ export function createSimState(options: SimStateOptions = {}): SimState {
     mixedCounts: new Array<number>(CLASS_COUNT).fill(0),
     catalysts: catalysts.map(normaliseCatalyst),
     policies: canonicalPolicies(policies),
+    charters: canonicalCharters(options.charters ?? []),
     tradeMode: options.tradeMode ?? 'balanced',
     trade: EMPTY_TRADE,
     commerce: EMPTY_COMMERCE,
@@ -278,24 +297,39 @@ export function setTradeMode(state: SimState, mode: TradeMode): SimState {
   return { ...state, tradeMode: mode };
 }
 
-/** Applica una delle alternative della decisione corrente. */
+/**
+ * Applica una delle alternative della decisione corrente.
+ *
+ * Oltre alle risorse sposta lo slot della famiglia: un'alternativa con un
+ * mandato lo mette al posto di quello che c'era, una con `charter: null` svuota
+ * lo slot, una senza il campo lo lascia com'e'. Il campo di desiderabilita' non
+ * si tocca — i mandati non sono pesi.
+ */
 export function resolveDecision(state: SimState, optionId: string): SimState | null {
   if (state.pendingDecision === null) return null;
   const option = decisionOption(state.pendingDecision, optionId);
   if (option === null) return null;
   const effect = option.effect;
+  const family = state.pendingDecision.family;
   const history = [...state.decisionHistory, {
     tick: state.tickCount,
     decisionId: state.pendingDecision.id,
+    family,
     optionId,
     summary: option.description,
   }].slice(-BALANCE.decisions.historyLimit);
+  const charters = option.charter === undefined
+    ? state.charters
+    : option.charter === null
+      ? withoutFamily(state.charters, family)
+      : withCharter(state.charters, option.charter);
   return {
     ...state,
     food: shifted(state.food, effect.food ?? 0),
     materials: shifted(state.materials, effect.materials ?? 0),
     funds: shifted(state.funds, effect.funds ?? 0),
     satisfaction: clamp01(state.satisfaction + (effect.satisfaction ?? 0)),
+    charters,
     pendingDecision: null,
     decisionHistory: history,
     nextDecisionTick: state.tickCount + BALANCE.decisions.intervalTicks,
@@ -325,7 +359,7 @@ export function toSimStateData(state: SimState): SimStateData {
 export function reviveSimState(data: SimStateData): SimState {
   const compatible = data as SimStateData & Partial<Pick<
     SimStateData,
-    'tradeMode' | 'trade' | 'commerce' | 'mixedCounts'
+    'tradeMode' | 'trade' | 'commerce' | 'mixedCounts' | 'charters'
     | 'pendingDecision' | 'decisionHistory' | 'nextDecisionTick'
   >>;
   const normalised: SimStateData = {
@@ -334,10 +368,14 @@ export function reviveSimState(data: SimStateData): SimState {
     mixedCounts: compatible.mixedCounts ?? countMixed(data.buildings),
     commerce: compatible.commerce ?? EMPTY_COMMERCE,
     policies: canonicalPolicies(data.policies),
+    charters: canonicalCharters(compatible.charters ?? []),
     tradeMode: compatible.tradeMode !== undefined && isTradeMode(compatible.tradeMode)
       ? compatible.tradeMode
       : 'balanced',
-    trade: compatible.trade ?? EMPTY_TRADE,
+    // `links` non esisteva finche' il commercio era acceso da un booleano: lo
+    // spread su `EMPTY_TRADE` lo aggiunge vuoto invece di lasciarlo `undefined`,
+    // e al primo tick viene ricalcolato comunque dai catalizzatori.
+    trade: compatible.trade === undefined ? EMPTY_TRADE : { ...EMPTY_TRADE, ...compatible.trade },
     pendingDecision: compatible.pendingDecision ?? null,
     decisionHistory: compatible.decisionHistory ?? [],
     nextDecisionTick: compatible.nextDecisionTick ?? BALANCE.decisions.firstTick,
@@ -412,4 +450,4 @@ function canonicalPolicies(policies: readonly string[]): readonly PolicyId[] {
 
 /** Le tre classi in ordine, riesportate per chi lavora sullo stato. */
 export { ALL_CLASSES, BUILDING_CLASS };
-export type { BuildingClass, PolicyId };
+export type { BuildingClass, CharterId, PolicyId };

@@ -98,6 +98,7 @@ il posto sbagliato.
 | Terreno | `src/world/terrain/config.ts` |
 | Strade | `src/world/streets/config.ts` |
 | Opere di terra | `src/world/grading/config.ts` |
+| Vincoli di sito | `src/world/sites/config.ts` |
 | Simulazione | `src/sim/balance.ts` |
 | Costruzione e tipologie | `src/world/buildings/config.ts` |
 | Palette | `src/engine/palette.json` + `paletteSlots.ts` |

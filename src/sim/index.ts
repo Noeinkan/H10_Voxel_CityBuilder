@@ -28,7 +28,20 @@ export {
   type CatalystEffects,
   type CatalystGroup,
   type CatalystId,
+  type CatalystSite,
 } from './catalysts';
+export {
+  CHARTERS,
+  canonicalCharters,
+  charterById,
+  charterOfFamily,
+  isCharterId,
+  withCharter,
+  withoutFamily,
+  type Charter,
+  type CharterFamily,
+  type CharterId,
+} from './charters';
 export {
   EMPTY_COMMERCE,
   resolveCommerce,
@@ -66,20 +79,25 @@ export {
   type DistrictId,
   type LocalUrbanProfile,
   type Specialization,
+  type UrbanSources,
 } from './districts';
 export {
   decisionAt,
   decisionOption,
   type CityDecision,
   type DecisionEffect,
+  type DecisionGrant,
   type DecisionOption,
   type DecisionOutcome,
 } from './decisions';
 export {
   EMPTY_TRADE,
   TRADE_MODES,
+  isTradeLink,
   isTradeMode,
   resolveExternalTrade,
+  tradeLinksOf,
+  type TradeLink,
   type TradeMode,
   type TradeReport,
 } from './trade';

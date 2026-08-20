@@ -1,13 +1,12 @@
 import type { TerrainMap } from '../world/terrain/TerrainMap';
 import { BALANCE } from './balance';
 import { BUILDING_CLASS, type BuildingClass } from './classes';
-import { catalystRoleOf } from './catalysts';
 import { resolveCommerce } from './commerce';
 import { decisionAt } from './decisions';
 import { resolveWeights, type Weights } from './policies';
 import { nextState, unitOf } from './rng';
 import type { Resource, SimState } from './SimState';
-import { resolveExternalTrade } from './trade';
+import { resolveExternalTrade, tradeLinksOf } from './trade';
 
 /**
  * Un tick di simulazione.
@@ -119,7 +118,7 @@ export function tick(state: SimState, terrainMap: TerrainMap): SimState {
   // --- Commercio esterno ---------------------------------------------------
 
   const trade = resolveExternalTrade({
-    connected: state.catalysts.some((catalyst) => catalystRoleOf(catalyst) === 'port'),
+    links: tradeLinksOf(state.catalysts),
     mode: state.tradeMode,
     population,
     buildings: state.buildings.length,
@@ -167,6 +166,7 @@ export function tick(state: SimState, terrainMap: TerrainMap): SimState {
     commerce,
     trade: {
       connected: trade.connected,
+      links: trade.links,
       food: trade.food,
       materials: trade.materials,
       funds: trade.funds,

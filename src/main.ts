@@ -951,6 +951,8 @@ function actionFailureLabel(reason: ActionFailure): string {
   const labels: Readonly<Record<ActionFailure, string>> = {
     'terrain-loading': 'The terrain is still being generated.',
     'not-buildable': 'No earthwork holds here: cliff or deep water.',
+    'needs-coast': 'This link has to reach the sea.',
+    'needs-open-ground': 'Needs a wide, level clearing.',
     'too-close': 'Too close to a catalyst of the same class.',
     'insufficient-funds': 'Not enough funds.',
     'population-required': `Requires ${BALANCE.gameplay.expansion.population} residents.`,

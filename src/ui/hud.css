@@ -104,6 +104,7 @@
 .decision-card p { margin: 0 0 14px; color: var(--hud-muted); }
 .decision-options { display: grid; gap: 8px; }
 .decision-option:hover { border-color: var(--hud-positive); transform: translateY(-1px); }
+.decision-option > .decision-mark { color: var(--hud-positive); font-size: 10px; font-weight: 600; }
 
 .policy-drawer, .theme-picker, .help-card { position: absolute; right: 14px; bottom: var(--game-hud-bottom); width: min(360px, calc(100vw - 28px)); max-height: min(620px, calc(100vh - var(--game-hud-bottom) - 28px)); overflow: auto; box-sizing: border-box; border-radius: var(--hud-radius); padding: 14px; pointer-events: auto; transition: opacity 150ms ease, transform 150ms ease; }
 .policy-drawer[hidden], .theme-picker[hidden], .help-card[hidden] { display: block; opacity: 0; visibility: hidden; transform: translateY(10px); pointer-events: none; }

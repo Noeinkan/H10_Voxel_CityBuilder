@@ -93,6 +93,11 @@ export const BALANCE = {
         factory: { cost: 150, strength: 205, radius: 40 },
         park: { cost: 200, strength: 195, radius: 36 },
         port: { cost: 320, strength: 190, radius: 48 },
+        // Costa piu' del porto perche' non chiede la costa: il fronte mare e'
+        // un anello e finisce, mentre una superficie ampia si trova ovunque a
+        // patto di cercarla. La differenza di prezzo e' il vincolo di sito
+        // riportato in denaro.
+        airport: { cost: 420, strength: 185, radius: 50 },
         transport: { cost: 240, strength: 185, radius: 52 },
         university: { cost: 360, strength: 200, radius: 42 },
         monument: { cost: 440, strength: 215, radius: 40 },
@@ -114,6 +119,7 @@ export const BALANCE = {
         factory: { residential: -0.2, commercial: 0.2, industrial: 1, civic: 0 },
         park: { residential: 0.7, commercial: 0.2, industrial: -0.35, civic: 1 },
         port: { residential: 0, commercial: 0.7, industrial: 1, civic: 0 },
+        airport: { residential: -0.35, commercial: 1, industrial: 0.5, civic: 0.6 },
         transport: { residential: 1, commercial: 0.8, industrial: 0.45, civic: 0.2 },
         university: { residential: 0.5, commercial: 0.45, industrial: 0, civic: 1 },
         monument: { residential: 0.55, commercial: 0.75, industrial: -0.2, civic: 1 },
@@ -166,6 +172,7 @@ export const BALANCE = {
       factory: { density: 25, wealth: 35, accessibility: 25, satisfaction: -55, industry: 145 },
       park: { density: -25, wealth: 35, accessibility: 10, satisfaction: 145, industry: -20 },
       port: { density: 30, wealth: 60, accessibility: 135, satisfaction: -20, industry: 85 },
+      airport: { density: 35, wealth: 70, accessibility: 150, satisfaction: -35, industry: 45 },
       transport: { density: 95, wealth: 25, accessibility: 155, satisfaction: 5, industry: 20 },
       university: { density: 40, wealth: 105, accessibility: 55, satisfaction: 75, industry: 5 },
       monument: { density: 65, wealth: 70, accessibility: 35, satisfaction: 125, industry: -10 },
@@ -178,6 +185,26 @@ export const BALANCE = {
       zoningRelief: { density: 35, satisfaction: -20 },
       civicPride: { wealth: 20, satisfaction: 45 },
       marketCharter: { wealth: 40, accessibility: 20, satisfaction: 15 },
+    },
+
+    /**
+     * Conseguenza spaziale di un mandato, con la stessa forma di `spatialPolicy`.
+     *
+     * I valori sono piu' alti di quelli delle policy per due ragioni: al massimo
+     * tre mandati sono attivi insieme — uno per famiglia — e devono scavallare
+     * le soglie di `specialization` qui sotto, altrimenti il segno lasciato da
+     * una decisione resterebbe sotto la risoluzione di `Math.floor` in
+     * `generate.ts` e non si vedrebbe.
+     */
+    spatialCharter: {
+      importedSupply: { wealth: 40, accessibility: 35, industry: -15 },
+      rationing: { density: 55, satisfaction: -45 },
+      communityGardens: { density: -45, wealth: 15, satisfaction: 60 },
+      festivalGrounds: { density: 30, satisfaction: 55 },
+      leasedSquare: { wealth: 50, accessibility: 30, satisfaction: -15 },
+      localShops: { density: 35, wealth: 45, satisfaction: 20 },
+      soldReserves: { wealth: 20, satisfaction: -35, industry: 55 },
+      foodFair: { accessibility: 20, satisfaction: 55 },
     },
 
     /**
@@ -266,6 +293,23 @@ export const BALANCE = {
     importFoodPrice: 0.45,
     exportMaterialsPerTick: 5,
     exportMaterialPrice: 1.1,
+    /**
+     * Cosa porta ciascun collegamento con l'esterno.
+     *
+     * Le chiavi sono ruoli di catalizzatore, e sono l'elenco completo di chi
+     * commercia: un ruolo che non compare qui non apre nessun canale. I valori
+     * moltiplicano la capacita' di listino e si sommano fra collegamenti, cosi'
+     * il secondo aggiunge invece di sovrapporsi.
+     *
+     * I due profili sono opposti di proposito. Il porto muove volume: carica
+     * tutto quello che il listino prevede, al suo prezzo. L'aeroporto muove
+     * valore: importa cibo in fretta perche' non aspetta una stiva piena, non
+     * spedisce materiali sfusi, e su quel poco spunta un prezzo migliore.
+     */
+    link: {
+      port: { food: 1, materials: 1, price: 1 },
+      airport: { food: 1.6, materials: 0.25, price: 1.2 },
+    },
     focusedMultiplier: 1.75,
     modeMultiplier: {
       balanced: { food: 1, materials: 1 },
@@ -287,6 +331,21 @@ export const BALANCE = {
     satisfactionStep: 0.08,
     populationScale: 24,
     historyLimit: 12,
+
+    /**
+     * L'opera concessa da un'alternativa: un catalizzatore ridotto.
+     *
+     * Non e' un ruolo nuovo. Un `Catalyst` porta forza e raggio propri,
+     * indipendenti dalla riga di catalogo, quindi un giardino di quartiere e'
+     * un `park` che pesa meno di quello che il giocatore paga — altrimenti una
+     * decisione regalerebbe cio' che la toolbar fa pagare.
+     */
+    grant: {
+      strength: 120,
+      radius: 14,
+      /** Candidati da scandire prima di rinunciare all'opera. */
+      searchDepth: 24,
+    },
   },
 
   // --- Popolazione ---------------------------------------------------------

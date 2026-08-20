@@ -83,6 +83,7 @@ describe('buildGameHudModel', () => {
   it('espone la decisione sospesa finche non viene risolta', () => {
     const pendingDecision = {
       id: 'public-space-80',
+      family: 'publicSpace',
       title: 'A contested square',
       message: 'Residents and businesses propose different uses.',
       options: [{ id: 'leave-open', label: 'Keep it open', description: 'No cost.', effect: {} }],
@@ -97,6 +98,7 @@ describe('buildGameHudModel', () => {
   it('non ricrea i bottoni della stessa decisione durante i repaint periodici', () => {
     const decision = {
       id: 'public-space-80',
+      family: 'publicSpace',
       title: 'A contested square',
       message: 'Residents and businesses propose different uses.',
       options: [],

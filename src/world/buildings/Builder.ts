@@ -12,7 +12,6 @@ import { SURFACE_KIND } from '../visualBlock';
 import { hashCoords } from '../rng';
 import { PALETTE_SLOTS } from '../../engine/paletteSlots';
 import { paletteForDepth } from '../terrain/biomes';
-import { TERRAIN } from '../terrain/config';
 import type { TerrainMap } from '../terrain/TerrainMap';
 import type { VoxelWorld } from '../VoxelWorld';
 import { BuildingRegistry, type BuildingRecord, type ReadonlyBuildingRegistry } from './BuildingRegistry';
@@ -41,6 +40,7 @@ import { StreetNetwork, type PavementCell } from '../streets/StreetNetwork';
 import { placeLot, type Lot } from '../streets/lots';
 import { FACING, STREET_ROLE, type BlockId } from '../streets/streetGrid';
 import { STREETS } from '../streets/config';
+import { seesWater } from '../sites/siteRules';
 
 /**
  * Il ponte fra la simulazione e il mondo voxel.
@@ -427,9 +427,7 @@ export class Builder {
     // accosta al fronte piu' avanti: e' il lotto a essere stabile, non
     // l'angolo dell'edificio, e il record se lo porta dietro comunque.
     const seed = hashCoords(this.worldSeed, x, y);
-    const profile = state === null
-      ? null
-      : urbanProfileAt(state.catalysts, state.policies, x, y);
+    const profile = state === null ? null : urbanProfileAt(state, x, y);
     const form = formOf(profile);
     const level = Math.min(BUILDER.maxLevel, startLevel(seed) + localLevelBonus(form));
     const typology = selectTypology({
@@ -676,7 +674,7 @@ export class Builder {
       if (record.level >= BUILDER.maxLevel) continue;
 
       const nextLevel = record.level + 1;
-      const profile = urbanProfileAt(state.catalysts, state.policies, record.x, record.y);
+      const profile = urbanProfileAt(state, record.x, record.y);
       const threshold = BUILDER.upgradeThreshold[nextLevel] - localUpgradeDiscount(formOf(profile));
       if (state.field.valueAt(record.x, record.y, record.class) <= threshold) {
         continue;
@@ -960,20 +958,14 @@ export class Builder {
   /**
    * true se la colonna vede il mare entro `BUILDER.coastalRadius`.
    *
-   * Guarda solo i quattro assi e non l'intero quadrato: un mercato sul porto ha
-   * bisogno di sapere se c'e' acqua *davanti*, e ottanta letture di colonna per
-   * ogni sito valutato sarebbero un costo per edificio, non per frame.
+   * La ricerca sta in `sites/siteRules.ts` perche' e' la stessa che decide se
+   * un porto puo' essere piazzato qui. A cambiare e' solo il raggio, e non e' un
+   * dettaglio: qui la domanda e' d'aspetto — un mercato sul porto deve *vedere*
+   * l'acqua, anche da lontano — mentre il vincolo di piazzamento pretende il
+   * fronte mare.
    */
   private isCoastal(x: number, y: number): boolean {
-    const radius = BUILDER.coastalRadius;
-    for (let d = 1; d <= radius; d++) {
-      for (const [dx, dy] of AXES) {
-        const column = this.terrainMap.columnAt(x + dx * d, y + dy * d);
-        if (column === null) continue;
-        if (column.height <= TERRAIN.seaLevel) return true;
-      }
-    }
-    return false;
+    return seesWater(this.terrainMap, x, y, BUILDER.coastalRadius);
   }
 
   /** Tipologia registrata di un edificio, o quella di ripiego del suo uso. */
@@ -1269,9 +1261,6 @@ interface PlaceRequest {
    */
   readonly snapToStreet: boolean;
 }
-
-/** I quattro assi cardinali, per la ricerca della costa. */
-const AXES: readonly (readonly [number, number])[] = [[1, 0], [-1, 0], [0, 1], [0, -1]];
 
 function formOf(profile: LocalUrbanProfile | null): BuildingForm {
   if (profile === null) return DEFAULT_BUILDING_FORM;

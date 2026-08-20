@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { BUILDING_CLASS, addBuilding, addCatalyst, createSimState, tick } from '../../sim';
+import {
+  BUILDING_CLASS,
+  addBuilding,
+  addCatalyst,
+  createSimState,
+  tick,
+  type CharterId,
+} from '../../sim';
 import { StreetNetwork } from '../streets/StreetNetwork';
 import { STREETS } from '../streets/config';
 import { FACING } from '../streets/streetGrid';
@@ -201,6 +208,68 @@ describe('Builder — allineamento alla rete stradale', () => {
     expect(a).toEqual(b);
     expect(a.length).toBeGreaterThan(5);
   });
+});
+
+/**
+ * L'anello che chiude la catena decisione → mandato → voxel.
+ *
+ * I test di `typology.ts` verificano la *regola* di selezione; qui si verifica
+ * che il `Builder` porti davvero i mandati dello stato fino allo stamp, cioe'
+ * che due citta' identiche in tutto tranne la decisione presa crescano diverse.
+ */
+describe('Builder — i mandati arrivano fino ai voxel', () => {
+  function city(charters: readonly CharterId[], rounds = 30) {
+    const world = new VoxelWorld();
+    const terrain = testTerrain({ chunksX: 8, chunksY: 8, height: 24 });
+    const builder = new Builder(world, terrain, 1337);
+
+    let state = createSimState({ charters });
+    state = addCatalyst(state, {
+      x: 128,
+      y: 128,
+      class: BUILDING_CLASS.residential,
+      strength: 255,
+      radius: 96,
+    });
+
+    for (let i = 0; i < rounds; i++) {
+      state = tick(state, terrain);
+      state = builder.onTick(state);
+      while (builder.stats.growing > 0) builder.step();
+    }
+    return builder.registry;
+  }
+
+  it('senza mandato nessuna tipologia concessa compare nella citta', () => {
+    const built = new Set([...city([]).typologyHistogram].map(([id]) => id));
+
+    expect(built.size).toBeGreaterThan(0);
+    expect(built.has('gardenHousing')).toBe(false);
+    expect(built.has('rationedBlock')).toBe(false);
+  });
+
+  it('con il mandato la citta cresce la tipologia che quel mandato concede', () => {
+    const gardens = new Map(city(['communityGardens']).typologyHistogram);
+    const rationed = new Map(city(['rationing']).typologyHistogram);
+
+    expect(gardens.get('gardenHousing')).toBeGreaterThan(0);
+    expect(gardens.has('rationedBlock')).toBe(false);
+    expect(rationed.get('rationedBlock')).toBeGreaterThan(0);
+    expect(rationed.has('gardenHousing')).toBe(false);
+  });
+
+  it('due decisioni opposte danno due citta con volumi diversi', () => {
+    const gardens = [...city(['communityGardens']).all];
+    const rationed = [...city(['rationing']).all];
+
+    // Stesso seme, stesso terreno, stessi lotti: cambia quanto occupano.
+    expect(gardens.length).toBe(rationed.length);
+    expect(footprintArea(gardens)).toBeGreaterThan(footprintArea(rationed));
+  });
+
+  function footprintArea(records: readonly BuildingRecord[]): number {
+    return records.reduce((sum, record) => sum + record.footprint * record.footprint, 0);
+  }
 });
 
 /**

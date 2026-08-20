@@ -15,11 +15,14 @@ import {
   type TradeMode,
 } from '../sim';
 import { buildWeightOf, GROUND, groundKindOf, type GroundKind } from '../world/grading/grade';
+import { siteRefusal } from '../world/sites/siteRules';
 import type { TerrainMap } from '../world/terrain/TerrainMap';
 
 export type ActionFailure =
   | 'terrain-loading'
   | 'not-buildable'
+  | 'needs-coast'
+  | 'needs-open-ground'
   | 'too-close'
   | 'insufficient-funds'
   | 'population-required'
@@ -102,6 +105,12 @@ export function catalystSiteCost(
  * via della sola quota. Adesso decide `groundKindOf`, la stessa funzione con
  * cui il Builder sceglie i lotti, cosi' il giocatore e la citta' automatica
  * rifiutano le stesse colonne invece di due insiemi diversi.
+ *
+ * Sopra quel giudizio, uguale per tutti, sta il vincolo del **ruolo**: da quando
+ * il terreno si paga invece di essere vietato, "ci si puo' costruire" ha smesso
+ * di implicare "ha senso costruirci questo". I due controlli restano distinti
+ * anche nell'ordine — prima cosa regge il terreno, poi cosa ci sta — perche'
+ * sono due rifiuti diversi e il giocatore deve leggere quello giusto.
  */
 export function catalystFailure(
   state: SimState,
@@ -114,6 +123,13 @@ export function catalystFailure(
   const site = catalystSiteCost(map, x, y, target);
   if (site === null) return 'terrain-loading';
   if (site.ground === GROUND.refused) return 'not-buildable';
+
+  // Il vincolo di sito precede quello di distanza: e' una proprieta' del luogo,
+  // mentre la distanza e' una proprieta' della citta' gia' costruita, e sentirsi
+  // dire "troppo vicino a un altro porto" dove un porto non starebbe comunque
+  // manderebbe a cercare spazio invece che acqua.
+  const refusal = siteRefusal(map, x, y, definition.site);
+  if (refusal !== null) return refusal;
 
   const minDistance = BALANCE.gameplay.catalyst.minDistance;
   for (const catalyst of state.catalysts) {
@@ -147,6 +163,28 @@ export function togglePolicy(state: SimState, id: PolicyId): ActionResult {
   // Convalida anche il catalogo prima di trasferire la proprieta' del campo.
   policyById(id);
   return { success: true, state: setPolicyActive(spendFunds(state, requirement.cost), id, true) };
+}
+
+/**
+ * Primo sito accettabile per l'opera concessa da una decisione, o null.
+ *
+ * L'opera non si paga — il prezzo l'ha gia' pagato l'alternativa scelta — ma
+ * tutto il resto della convalida resta: il terreno deve reggere e la distanza
+ * minima dal proprio ruolo va rispettata, altrimenti una decisione poserebbe un
+ * mercato dentro un mercato. E' per questo che l'unico rifiuto ammesso e'
+ * quello sui fondi.
+ */
+export function grantSite(
+  state: SimState,
+  map: TerrainMap,
+  kind: CatalystId,
+  sites: readonly { readonly x: number; readonly y: number }[],
+): { readonly x: number; readonly y: number } | null {
+  for (const site of sites) {
+    const failure = catalystFailure(state, map, site.x, site.y, kind);
+    if (failure === null || failure === 'insufficient-funds') return site;
+  }
+  return null;
 }
 
 export function chooseDecision(state: SimState, optionId: string): ActionResult {

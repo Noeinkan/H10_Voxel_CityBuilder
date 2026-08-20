@@ -73,6 +73,11 @@ riconoscibilmente diversi.
 Obiettivo: far dipendere il luogo ammesso per un catalizzatore dal ruolo che ha,
 e aggiungere la connessione aerea come alternativa non costiera al porto.
 
+**Stato implementazione:** completata. Il gate resta da validare a occhio su
+un'isola vera: i test coprono le regole e i motivi di rifiuto, non la
+leggibilità del cursore mentre lo si muove. Le due sezioni che seguono
+descrivono la situazione *prima* del lavoro; cosa è cambiato sta in fondo.
+
 **Perché la fase 2 si riapre.** Il porto è stato chiuso come «primo collegamento
 dell'isola al mondo», ma non ha mai avuto una regola sull'acqua:
 `catalystFailure` in `src/game/actions.ts` convalida tutti i ruoli con la stessa
@@ -103,20 +108,20 @@ costa. La tabella `BUILDABLE_BIOMES` non è stata toccata: la crescita automatic
 sceglie ancora i suoi siti con il bit, quindi il peso non ha spostato l'equilibrio
 della città che cresce da sola.
 
-- [ ] Dare a `CatalystDefinition` un vincolo di sito esplicito e valutarlo in
+- [x] Dare a `CatalystDefinition` un vincolo di sito esplicito e valutarlo in
   `catalystFailure`, al posto dell'unico bit di edificabilità valido per tutti.
-- [ ] Ammettere la battigia ai ruoli costieri riusando le opere della 4.2, senza
+- [x] Ammettere la battigia ai ruoli costieri riusando le opere della 4.2, senza
   rendere `beach` edificabile per la crescita automatica: è il vincolo del ruolo
   a cambiare, non la tabella dei biomi.
-- [ ] Introdurre il vincolo opposto — superficie ampia e piana — valutando la
+- [x] Introdurre il vincolo opposto — superficie ampia e piana — valutando la
   pendenza su un intorno dell'impronta e non sulla singola colonna.
-- [ ] Aggiungere l'aeroporto come secondo ruolo di `connections`, con un effetto
+- [x] Aggiungere l'aeroporto come secondo ruolo di `connections`, con un effetto
   distinto da quello del porto: collegamento che non chiede la costa, influenza
   su commerciale e civico, penalità sul residenziale più pesante di quella della
   fabbrica.
-- [ ] Distinguere il commercio esterno per collegamento, invece dell'attuale
+- [x] Distinguere il commercio esterno per collegamento, invece dell'attuale
   `connected` binario che qualunque porto accende da qualunque punto.
-- [ ] Portare i nuovi motivi di rifiuto sul cursore con lo stesso trattamento
+- [x] Portare i nuovi motivi di rifiuto sul cursore con lo stesso trattamento
   degli altri, così che il vincolo si legga prima del click e non dopo.
 
 **Vincolo:** la simulazione non impara la geografia. Il vincolo di sito vive fra
@@ -129,6 +134,118 @@ rimisurate e non aggiornate a occhio.
 accettato dove ce l'ha, con il motivo visibile prima del click; porto e
 aeroporto restano due scelte con conseguenze diverse e non due prezzi per lo
 stesso sblocco.
+
+**Come è stato risolto.** Il vincolo si è diviso in due metà che non si toccano:
+la definizione del catalizzatore porta un'**etichetta** — `'coastal'`, `'open'`,
+`'any'` — e non sa cosa significhi, mentre a tradurla sul terreno è il nuovo
+dominio `src/world/sites/`. È la stessa mossa della 4.1, dove il candidato ha
+smesso di essere un indirizzo ed è diventato un isolato: `src/sim/` dichiara
+cosa un ruolo pretende e continua a non sapere dove sia la costa (invariante 7).
+Il campo su `CatalystDefinition` è una stringa e non un numero, quindi non tocca
+il contratto «i coefficienti stanno solo in `balance.ts`».
+
+`sites/` è un dominio a sé e non un'appendice di `grading/`, perché le due
+rispondono a domande diverse: quella lì è «cosa serve costruire perché regga», e
+la sua risposta è un prezzo; questa è «questo ruolo ci sta», e la sua risposta è
+un no che nessuna opera compra. Tenerle separate è ciò che permette al porto di
+pretendere la costa **senza** che la battigia torni vietata agli altri sette
+ruoli — che è esattamente l'errore che la 4.2 aveva appena finito di correggere.
+`BUILDABLE_BIOMES` non è stata toccata: la crescita automatica sceglie ancora i
+suoi siti con il bit, e l'equilibrio della città che cresce da sola non si è
+mosso.
+
+**Una ricerca sola, due raggi.** `Builder.isCoastal` esisteva già, privata, e
+faceva la stessa marcia sui quattro assi che serviva al porto: è stata estratta
+in `seesWater` e ora ha due chiamanti con due numeri diversi. Non sono lo stesso
+numero travestito — `BUILDER.coastalRadius: 14` decide se un mercato *sembra* un
+mercato sul porto, ed è generoso per costruzione; `SITE.coastalRadius: 6` decide
+se un piazzamento è ammesso, e chiede il fronte mare. Il vincolo opposto riusa
+`planGrade` sul quadrato di lato `SITE.openSpan`, con un tetto proprio di quattro
+voxel: `GRADING.maxWorksStep` è tarato sulla banchina che scende sul fondale e
+qui direbbe di sì a un terreno che nessuno chiamerebbe piano.
+
+**Il commercio ha smesso di essere un interruttore.** `connected` diceva solo
+«esiste un porto da qualche parte», quindi il secondo collegamento non avrebbe
+aggiunto niente e l'aeroporto sarebbe stato un porto più caro. Ora ogni
+collegamento porta la propria capacità e le capacità si sommano: il porto muove
+volume, l'aeroporto muove valore — importa cibo in fretta perché non aspetta una
+stiva piena, non spedisce materiali sfusi, e su quel poco spunta un prezzo
+migliore. Resta uno scambio aggregato O(1) per tick. Nel passaggio è emerso un
+difetto vero: l'HUD ricalcolava il flag con `catalyst.kind === 'port'` e ignorava
+i catalizzatori senza `kind` — i salvataggi dell'MVP e le fixture di scena — così
+che diceva «nessun porto» mentre il commercio girava. Ora tick e HUD chiedono
+alla stessa `tradeLinksOf`.
+
+**Costo e misure.** `catalystFailure` gira a ogni `pointermove`, e con
+l'aeroporto in mano passa da una a `openSpan²` letture di colonna: sono letture
+di `Int16Array` già in memoria, fuori dal ciclo di frame della simulazione, e
+solo mentre quello strumento è selezionato. `tradeLinksOf` è lineare nel numero
+di catalizzatori, che sono unità. Un ruolo nuovo tocca `balance.ts`: **le tabelle
+di misura in `README.md` e `src/sim/README.md` vanno rimisurate a mano**, e non
+sono state aggiornate qui.
+
+**Resta aperto.** Il vincolo di sito riguarda solo ciò che il giocatore piazza:
+la crescita automatica non ha ruoli e quindi non ha luoghi ammessi. L'aeroporto
+non ha un `DistrictId` proprio — entra nei ruoli logistici e si distingue per
+influenza, effetti e commercio, non per un quartiere che porta il suo nome.
+
+### Fase 2.2 — Le decisioni lasciano un segno
+
+Obiettivo: rendere visibile nella struttura della città quale alternativa il
+giocatore ha scelto.
+
+**Stato implementazione:** completata. Il gate resta da validare con due partite
+a confronto sullo stesso seed.
+
+**Perché la fase 2 si riapre di nuovo.** Alle policy la fase 2 aveva chiesto «una
+conseguenza spaziale osservabile»; alle decisioni no, e infatti non ce l'avevano.
+`resolveDecision` spostava cibo, materiali, fondi e soddisfazione e finiva lì:
+scegliere «Community gardens» invece di «Ration supplies» era indistinguibile a
+schermo, contro il principio guida di questa roadmap.
+
+- [x] Dare a ogni alternativa un **mandato**: un vettore spaziale della stessa
+  forma di `spatialPolicy`, che entra in `urbanProfileAt` e piega forma e
+  tipologia della crescita successiva.
+- [x] Rendere i mandati permanenti ma **esclusivi per famiglia** — un solo slot
+  per approvvigionamento, spazio pubblico e investimento — invece di farli
+  scadere a tick.
+- [x] Concedere a tre alternative un'**opera** costruita subito: un catalizzatore
+  a forza e raggio ridotti, posato sul miglior sito che la città offre.
+- [x] Aggiungere quattro tipologie che **solo** un mandato concede, così due
+  partite divergono nel volume e non solo nei numeri dell'HUD.
+- [x] Dire nel modale quale segno lascia ogni alternativa, come già fanno le
+  policy.
+
+**Perché lo slot e non la scadenza.** `urbanProfileAt` è una funzione spaziale e
+il `Builder` la chiama a ogni piazzamento e a ogni promozione. Un mandato che
+scade le farebbe leggere `tickCount`, e lo stesso stato produrrebbe edifici
+diversi a seconda di quando lo si guarda — il contrario del contratto di
+determinismo. Con lo slot il tetto è strutturale: tre vettori attivi al massimo,
+e la città porta l'ultima scelta di ogni famiglia invece della somma di tutte. Il
+modello è il *Book of Laws* di Frostpunk, dove i rami sono permanenti e
+mutuamente esclusivi.
+
+**Perché la tipologia e non solo il vettore.** Le fasce sono
+`naturalBands + Math.floor(form.density * 2)` e poi vengono clampate ai limiti
+del livello: un vettore che sposta la densità di 0,3 vale mezza fascia, che
+`Math.floor` mangia. Una riga di catalogo concessa da un mandato cambia invece
+podio, corte, coronamento, impronta minima e tutti i colori del profilo, e si
+vede a colpo d'occhio.
+
+**Costo e misure.** `urbanProfileAt` guadagna un ciclo su al massimo tre mandati,
+sullo stesso percorso dei catalizzatori che già scorre. `tick` non è toccato: i
+mandati non entrano in `resolveWeights` e risolvere una decisione non ricostruisce
+il campo di desiderabilità. **Le tabelle di misura in `README.md` e
+`src/sim/README.md` vanno rimisurate a mano** e non sono state aggiornate qui.
+
+**Resta aperto.** Il mandato agisce solo su ciò che nasce o viene promosso dopo:
+il tessuto già costruito non viene ridisegnato, quindi su una città matura la
+differenza si accumula invece di comparire subito. L'opera concessa sceglie il
+sito da sé — il giocatore non la posa — e se nessun candidato passa la convalida
+la decisione resta valida senza opera.
+
+**Gate:** due partite sullo stesso seed che divergono solo nelle decisioni
+producono skyline riconoscibilmente diversi.
 
 ## Fase 3 — Usi urbani e tipologie ibride
 
@@ -398,9 +515,9 @@ quindi non esistono ancora approdi in acqua profonda né strutture su palafitta:
 sono volume pieno dal fondale in su, che è la sola forma compatibile con "si
 riempie, non si scava". Il piazzamento manuale dei catalizzatori non è più indietro: `catalystFailure`
 è passato dal bit `buildable` a `groundKindOf`, quindi giocatore e crescita
-automatica rifiutano le stesse colonne. Quello che manca alla 2.1 è il vincolo
-*di ruolo* — il porto sulla costa, l'aeroporto sul piano — che è una regola in
-più, non più una regola diversa.
+automatica rifiutano le stesse colonne. Il vincolo *di ruolo* — il porto sulla
+costa, l'aeroporto sul piano — è arrivato con la 2.1, ed è stato una regola in
+più e non una regola diversa.
 
 ### Fase 4.3 — Grammatica verticale degli edifici
 

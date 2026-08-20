@@ -5,17 +5,36 @@ import {
   CLASS_LABELS,
   POLICIES,
   TRADE_MODES,
+  catalystById,
+  charterById,
   policyConflict,
+  tradeLinksOf,
   type BuildingClass,
   type CatalystGroup,
   type CatalystId,
+  type CatalystSite,
   type CityDecision,
+  type DecisionOption,
   type PolicyId,
   type TradeMode,
 } from '../sim';
 import { typologiesForUses } from '../world/buildings/typology';
+import { SITE } from '../world/sites/config';
 import type { GrowthStats } from '../game/growthScene';
 import type { CityCondition } from '../game/cityCondition';
+
+/**
+ * Il vincolo di sito detto al giocatore, non al codice.
+ *
+ * `undefined` per `'any'` e non una frase: "nessun vincolo" e' rumore in un
+ * tooltip: le righe che compaiono devono essere tutte informative, o si smette
+ * di leggerle.
+ */
+const SITE_LABEL: Readonly<Record<CatalystSite, string | undefined>> = {
+  any: undefined,
+  coastal: 'Waterfront only',
+  open: `Needs a ${SITE.openSpan}×${SITE.openSpan} clearing`,
+};
 
 export type GameTool =
   | { readonly kind: 'catalyst'; readonly class: BuildingClass; readonly id?: CatalystId }
@@ -37,6 +56,14 @@ export interface HudAction {
   readonly available: boolean;
   readonly reason: string;
   readonly radius?: number;
+  /**
+   * Vincolo di sito del ruolo, gia' in un'etichetta leggibile.
+   *
+   * Sta nel tooltip e non solo sul cursore perche' e' l'unica informazione che
+   * cambia *dove* si clicca: scoprire che il porto vuole la costa dopo aver
+   * scelto il punto significa scoprirlo dal rifiuto.
+   */
+  readonly site?: string;
   readonly class?: BuildingClass;
   readonly catalystId?: CatalystId;
   readonly description?: string;
@@ -108,6 +135,21 @@ export function decisionNeedsRepaint(
   return paintedDecisionId !== (decision?.id ?? null);
 }
 
+/**
+ * Il segno che un'alternativa lascia sulla citta', in una riga.
+ *
+ * Null quando l'alternativa non ne lascia nessuno: e' un caso vero — non ogni
+ * scelta deve cambiare la forma di un quartiere — e va distinto da una riga
+ * vuota, che sembrerebbe un difetto di disegno.
+ */
+export function decisionMark(option: DecisionOption): string | null {
+  const parts: string[] = [];
+  if (option.grant !== undefined) parts.push(`Builds a ${catalystById(option.grant.kind).label}.`);
+  if (option.charter === null) parts.push('Lifts the standing mandate for this decision.');
+  else if (option.charter !== undefined) parts.push(charterById(option.charter).spatialEffect);
+  return parts.length === 0 ? null : parts.join(' ');
+}
+
 /** Riepilogo del ciclo commerciale, la seconda catena economica della citta'. */
 export interface HudCommerce {
   readonly demand: number;
@@ -165,6 +207,7 @@ export function buildGameHudModel(stats: GrowthStats | null): GameHudModel {
       label: catalyst.label,
       cost,
       radius: catalyst.radius,
+      site: SITE_LABEL[catalyst.site],
       class: catalyst.class,
       catalystId: catalyst.id,
       group: catalyst.group,
@@ -238,7 +281,11 @@ export function buildGameHudModel(stats: GrowthStats | null): GameHudModel {
     };
   });
 
-  const tradeConnected = stats?.state.catalysts.some((catalyst) => catalyst.kind === 'port') ?? false;
+  // Stessa funzione che usa il tick, e non piu' un `.some` scritto qui: quello
+  // cercava `kind === 'port'` e ignorava i catalizzatori senza `kind`, cioe' i
+  // salvataggi dell'MVP e le fixture di scena, che per il tick sono collegamenti
+  // validi. L'HUD diceva "nessun porto" mentre il commercio girava.
+  const tradeConnected = tradeLinksOf(stats?.state.catalysts ?? []).length > 0;
   const tradeModes: readonly HudTradeMode[] = TRADE_MODES.map((mode) => ({
     ...mode,
     active: stats?.state.tradeMode === mode.id,

@@ -95,12 +95,24 @@ describe('vettore di influenza dei catalizzatori', () => {
     }
   });
 
-  it('divide i sette ruoli in tre funzioni di toolbar', () => {
+  it('divide gli otto ruoli in tre funzioni di toolbar', () => {
     const grouped = CATALYST_GROUPS.flatMap((group) =>
       CATALYSTS.filter((entry) => entry.group === group.id),
     );
     expect(grouped).toHaveLength(CATALYSTS.length);
     expect(CATALYST_GROUPS.map((group) => group.id)).toEqual(['growth', 'connections', 'identity']);
+  });
+
+  it('i due collegamenti chiedono luoghi che si escludono', () => {
+    // E' l'unica cosa che impedisce a porto e aeroporto di essere due prezzi
+    // per lo stesso sblocco: prima ancora dell'effetto, non stanno nello stesso
+    // posto. Gli altri ruoli restano senza vincolo, come sono sempre stati.
+    expect(catalystById('port').site).toBe('coastal');
+    expect(catalystById('airport').site).toBe('open');
+    for (const definition of CATALYSTS) {
+      if (definition.id === 'port' || definition.id === 'airport') continue;
+      expect({ id: definition.id, site: definition.site }).toEqual({ id: definition.id, site: 'any' });
+    }
   });
 
   it('ricalcolo incrementale e ricostruzione completa restano indistinguibili', () => {

@@ -1,11 +1,13 @@
 # CLAUDE.md
 
 Motore di rendering voxel a chunk per una città isometrica, in TypeScript +
-Three.js + Vite. Tre strati indipendenti che non si conoscono fra loro:
+Three.js + Vite. Strati indipendenti che non si conoscono fra loro:
 
-- `src/world/` — storage voxel sparso, terreno, strade ed edifici
-- `src/engine/` — meshing, materiale, camera, renderer
+- `src/world/` — storage voxel sparso, terreno, strade, opere di terra, edifici
+- `src/engine/` — meshing, materiale, cielo, luce, camera, qualità adattiva
 - `src/sim/` — simulazione a tick (risorse, desiderabilità, decisioni)
+- `src/game/` — regole di gioco: passo fisso, azioni, crescita. Non conosce l'engine
+- `src/ui/` — HUD e overlay in DOM e canvas puri
 
 `src/main.ts` è l'unico punto che li mette insieme, e serve da harness di misura.
 
@@ -23,6 +25,7 @@ Il resto si carica quando serve, e questo è deliberato:
 | Ti serve overlay, hotkey o un parametro URL | skill `/debug-harness` |
 | Cerchi *dove sta* un file o un export | [PROJECT_INDEX.md](PROJECT_INDEX.md) |
 | Cerchi *perché* una scelta è stata fatta | [README.md](README.md), [src/sim/README.md](src/sim/README.md) |
+| Cerchi *cosa* è cambiato e quando | [CHANGELOG.md](CHANGELOG.md) |
 | Cerchi dove va il progetto | [ROADMAP.md](ROADMAP.md) |
 
 Nessuno di questi è caricato all'avvio. Aprili quando il compito lo richiede,
@@ -38,11 +41,18 @@ non "per contesto".
   aggiornare i numeri a occhio.
 - **I test girano in ambiente `node`**: niente jsdom, niente GPU. Il codice
   testabile non deve importare Three.js né toccare il DOM.
+- **Il terreno si riempie, non si scava.** Un'opera di `src/world/grading/`
+  aggiunge volume e non ne toglie mai: prima di piegare una quota, guarda se il
+  piano di opera la risolve già.
+- **La rete stradale è una funzione pura del seed**, non uno stato. Non c'è
+  niente da salvare né da invalidare quando arriva un catalizzatore: se ti serve
+  un ruolo o un isolato, chiedilo, non tenerlo da parte.
 - **Non c'è ancora un gioco completo**: il builder piazza edifici automatici
   dalle decisioni della simulazione, ma pathfinding, salvataggio e audio non
-  esistono (vedi "Fuori scope" nel README). Non assumere che ci siano.
+  esistono. Non assumere che ci siano.
 - Aggiungendo un file, aggiorna la tabella in `PROJECT_INDEX.md` e, se è una
-  superficie pubblica, quella nel README di sezione.
+  superficie pubblica, quella nel README di sezione. Un incremento che chiude un
+  commit va anche in `CHANGELOG.md`.
 
 ## Compattazione
 

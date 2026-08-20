@@ -1,6 +1,7 @@
 import { BALANCE } from './balance';
 import { catalystById, catalystRoleOf, type CatalystId } from './catalysts';
 import { ALL_CLASSES, BUILDING_CLASS, CLASS_COUNT, type BuildingClass } from './classes';
+import { charterById, type CharterId } from './charters';
 import type { Catalyst } from './DesirabilityField';
 import type { PolicyId } from './policies';
 
@@ -35,6 +36,16 @@ export interface LocalUrbanProfile {
   readonly industry: number;
   /** Ruoli sovrapposti sopra soglia, dal contributo maggiore al minore. */
   readonly roles: readonly CatalystId[];
+  /**
+   * Mandati che si sentono **qui**, cioe' quelli il cui portante supera la
+   * stessa soglia dei ruoli.
+   *
+   * Nello stato i mandati sono una lista globale; nel profilo diventano un
+   * fatto locale, e la tipologia legge questo campo e non lo stato. Un mandato
+   * sui commerci non deve cambiare la forma di un quartiere che di commercio
+   * non ne ha.
+   */
+  readonly charters: readonly CharterId[];
   /** Quanto ciascun uso urbano e' favorito qui, in 0..1 e per indice di uso. */
   readonly uses: readonly number[];
   /** Specializzazione emergente, o null se il luogo non ne esprime nessuna. */
@@ -42,15 +53,29 @@ export interface LocalUrbanProfile {
 }
 
 /**
+ * Cio' da cui un profilo locale dipende: catalizzatori, policy e mandati.
+ *
+ * E' un sottoinsieme strutturale di `SimState`, quindi chi ha lo stato lo passa
+ * intero senza elencarne i campi, e chi scrive un test costruisce l'oggetto
+ * minimo. Non e' un import di `SimState`: `districts.ts` non deve dipendere
+ * dallo stato per calcolare una proprieta' di una colonna.
+ */
+export interface UrbanSources {
+  readonly catalysts: readonly Catalyst[];
+  readonly policies: readonly PolicyId[];
+  readonly charters: readonly CharterId[];
+}
+
+/**
  * Profilo locale derivato, mai serializzato. I distretti emergono quando due o
  * piu' campi di ruolo si sovrappongono; nessuna cella riceve zoning manuale.
  */
 export function urbanProfileAt(
-  catalysts: readonly Catalyst[],
-  policies: readonly PolicyId[],
+  sources: UrbanSources,
   x: number,
   y: number,
 ): LocalUrbanProfile {
+  const { catalysts, policies, charters } = sources;
   const byRole = new Map<CatalystId, number>();
   const uses = new Array<number>(CLASS_COUNT).fill(0);
   let density = 0;
@@ -88,6 +113,23 @@ export function urbanProfileAt(
     industry += ('industry' in effect ? effect.industry : 0) * carrier;
   }
 
+  // I mandati arrivano dopo le policy e sulla stessa scala: sono lo stesso
+  // genere di fatto, con la differenza che ne esiste al massimo uno per
+  // famiglia e che a concederli e' stata una decisione, non un interruttore.
+  const felt: CharterId[] = [];
+  for (const id of charters) {
+    const charter = charterById(id);
+    const carrier = uses[charter.carrier];
+    if (carrier >= BALANCE.districts.overlapThreshold) felt.push(id);
+
+    const effect = BALANCE.districts.spatialCharter[id];
+    density += ('density' in effect ? effect.density : 0) * carrier;
+    wealth += ('wealth' in effect ? effect.wealth : 0) * carrier;
+    accessibility += ('accessibility' in effect ? effect.accessibility : 0) * carrier;
+    satisfaction += ('satisfaction' in effect ? effect.satisfaction : 0) * carrier;
+    industry += ('industry' in effect ? effect.industry : 0) * carrier;
+  }
+
   const roles = [...byRole.entries()]
     .filter(([, influence]) => influence >= BALANCE.districts.overlapThreshold)
     .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
@@ -101,6 +143,7 @@ export function urbanProfileAt(
     satisfaction: clamp01(0.5 + satisfaction / scale),
     industry: clamp01(industry / scale),
     roles,
+    charters: felt,
     uses: uses.map((value) => clamp01(value)),
   };
   return { ...profile, specialization: specializationOf(profile) };
@@ -118,7 +161,7 @@ const SPECIALIZATION_ROLES: Readonly<Record<Specialization, readonly CatalystId[
   office: ['market', 'transport'],
   tourism: ['monument', 'park', 'port'],
   research: ['university'],
-  logistics: ['port', 'transport'],
+  logistics: ['port', 'transport', 'airport'],
   entertainment: ['monument', 'market', 'park'],
 };
 

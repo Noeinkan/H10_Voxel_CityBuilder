@@ -35,6 +35,7 @@ nextBuildSites(state, terrainMap, 10);           // [{ x, y, class, mixed, score
 | [districts.ts](districts.ts) | Profilo locale, distretti e specializzazioni emergenti dalla sovrapposizione |
 | [commerce.ts](commerce.ts) | Il ciclo commerciale interno: domanda, organico, merce, ricavi |
 | [decisions.ts](decisions.ts) | Decisioni periodiche e alternative deterministiche |
+| [charters.ts](charters.ts) | Mandati lasciati dalle decisioni: uno slot per famiglia, permanenti |
 | [trade.ts](trade.ts) | Commercio esterno O(1) sbloccato dal porto |
 | [nextBuildSites.ts](nextBuildSites.ts) | I candidati, ordinati, filtrati e con l'eventuale secondo uso |
 | [rng.ts](rng.ts) | `mulberry32` in forma pura, stato dentro `SimState` |
@@ -134,6 +135,32 @@ uffici da un hotel a parità di uso commerciale.
 Ogni 120 tick, dopo la prima finestra di 80 tick, lo stato apre una decisione
 con tre alternative. La decisione resta sospesa finché il giocatore sceglie e
 gli effetti sono dati serializzabili derivati dallo stato, senza casualità globale.
+
+### Il segno che una decisione lascia
+
+Le risorse sono metà della conseguenza. L'altra metà è il **mandato**
+(`charters.ts`): un vettore spaziale con la stessa forma di quello delle policy,
+che entra in `urbanProfileAt` e quindi cambia forma e tipologia di ciò che
+cresce dopo. Alcune alternative concedono in più un'**opera** — un catalizzatore
+a forza e raggio ridotti, posato subito sul terreno dal `Builder`.
+
+I mandati sono **permanenti ma esclusivi per famiglia**. Le tre famiglie di
+decisione — approvvigionamento, spazio pubblico, investimento — tengono uno slot
+ciascuna, e una nuova scelta della stessa famiglia sostituisce la precedente
+invece di sommarcisi; l'alternativa «tenere la piazza libera» svuota lo slot.
+
+Il tetto è quindi strutturale, tre vettori attivi al massimo, e non serve una
+scadenza a tick. È la scelta importante: `urbanProfileAt` è una funzione
+**spaziale**, e farle leggere `tickCount` significherebbe che lo stesso stato
+produce edifici diversi a seconda di quando lo si guarda. La città porta addosso
+l'ultima scelta di ogni famiglia, non la somma di tutte.
+
+Un mandato viaggia sul suo **portante** — l'uso urbano che lo trasporta — quindi
+si sente dove quell'uso c'è e non altrove: un mandato industriale non tocca un
+quartiere che di industria non ne ha. `LocalUrbanProfile.charters` elenca quelli
+percepiti sulla colonna, ed è ciò che le tipologie leggono: quattro righe di
+`world/buildings/config.ts` sono concesse da un mandato e senza quello non
+compaiono affatto.
 
 Il porto abilita un singolo scambio aggregato O(1) per tick. Le strategie
 bilanciata, priorità al cibo e priorità alle esportazioni muovono cibo,

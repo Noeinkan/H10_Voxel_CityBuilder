@@ -1,8 +1,14 @@
 import {
+  addCatalyst,
+  BALANCE,
+  catalystById,
   createSimState,
+  decisionOption,
+  nextBuildSites,
   tick,
   type BuildingClass,
   type CatalystId,
+  type DecisionGrant,
   type PolicyId,
   type SimState,
   type TradeMode,
@@ -20,6 +26,7 @@ import {
   changeTradeMode,
   chooseDecision,
   expansionFailure,
+  grantSite,
   placeCatalyst,
   togglePolicy,
   type ActionFailure,
@@ -111,8 +118,52 @@ export class GrowthScene {
     return this.apply(togglePolicy(this.state, id), active ? 'Policy activated.' : 'Policy deactivated.');
   }
 
+  /**
+   * Applica un'alternativa e, se ne concede una, ne costruisce l'opera.
+   *
+   * L'opera si legge **prima** di risolvere: `resolveDecision` azzera
+   * `pendingDecision`, e dopo non ci sarebbe piu' niente da cui ricavarla.
+   */
   chooseDecision(optionId: string): ActionResult {
-    return this.apply(chooseDecision(this.state, optionId), 'Decision applied to the city.');
+    const pending = this.state.pendingDecision;
+    const grant = pending === null ? undefined : decisionOption(pending, optionId)?.grant;
+
+    const result = this.apply(chooseDecision(this.state, optionId), 'Decision applied to the city.');
+    if (result.success && grant !== undefined) this.buildGrant(grant);
+    return result;
+  }
+
+  /**
+   * Posa l'opera sul miglior sito che la citta' offre.
+   *
+   * Prima si cercano i candidati dell'uso che il ruolo porta, cosi' un mercato
+   * nasce fra i negozi; se quell'uso non ha ancora niente si ripiega sui
+   * candidati migliori in assoluto, che e' comunque il cuore della citta'.
+   * Senza nessun candidato l'opera non si fa: la decisione resta valida e il
+   * messaggio lo dice, invece di lasciare il giocatore a chiedersi cosa sia
+   * successo.
+   */
+  private buildGrant(grant: DecisionGrant): void {
+    const definition = catalystById(grant.kind);
+    const depth = BALANCE.decisions.grant.searchDepth;
+    const preferred = nextBuildSites(this.state, this.map, depth, { class: definition.class });
+    const site = grantSite(this.state, this.map, grant.kind, preferred)
+      ?? grantSite(this.state, this.map, grant.kind, nextBuildSites(this.state, this.map, depth));
+    if (site === null) {
+      this.message = `The city had no room for the new ${definition.label.toLowerCase()}.`;
+      return;
+    }
+
+    this.state = addCatalyst(this.state, {
+      x: site.x,
+      y: site.y,
+      class: definition.class,
+      kind: grant.kind,
+      strength: BALANCE.decisions.grant.strength,
+      radius: BALANCE.decisions.grant.radius,
+    });
+    this.builder.decorateCatalyst(site.x, site.y, definition.class);
+    this.message = `${definition.label} built where the decision landed.`;
   }
 
   setTradeMode(mode: TradeMode): ActionResult {

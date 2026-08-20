@@ -1,4 +1,4 @@
-import type { BuildingClass, CatalystId, DistrictId, Specialization } from '../../sim';
+import type { BuildingClass, CatalystId, CharterId, DistrictId, Specialization } from '../../sim';
 import { PALETTE_SLOTS } from '../../engine/paletteSlots';
 
 /**
@@ -430,6 +430,16 @@ export interface TypologyRequirement {
   readonly specialization?: Specialization;
   /** Basta uno dei ruoli elencati fra i catalizzatori che coprono la colonna. */
   readonly roles?: readonly CatalystId[];
+  /**
+   * Mandati che concedono la tipologia: ne basta uno fra quelli che si sentono
+   * sulla colonna.
+   *
+   * E' la forma piu' leggibile che una decisione puo' prendere. Un vettore
+   * numerico sposta una soglia e a volte non scavalla niente; una riga concessa
+   * da un mandato produce edifici che senza quella scelta non possono
+   * comparire, e la differenza fra due partite si vede a colpo d'occhio.
+   */
+  readonly charter?: readonly CharterId[];
   readonly districts?: readonly DistrictId[];
   /** La colonna deve affacciare sul mare entro il raggio di ricerca del Builder. */
   readonly coastal?: boolean;
@@ -541,6 +551,47 @@ export const TYPOLOGIES: readonly TypologyDefinition[] = [
     shape: { ...DEFAULT_TYPOLOGY_SHAPE, maxFootprint: 6 },
     profile: { bandHeight: [6, 8], shrinkBias: 0.72 },
   },
+  // Le due righe concesse dai mandati stanno in fondo all'uso e a priorita' 6:
+  // una decisione del giocatore e' l'affermazione piu' forte sulla forma di un
+  // quartiere, e vince su cio' che le soglie locali avrebbero scelto da sole.
+  {
+    id: 'gardenHousing',
+    label: 'Garden housing',
+    use: 0,
+    charter: ['communityGardens'],
+    priority: 6,
+    shape: { ...DEFAULT_TYPOLOGY_SHAPE, courtyard: true, flatCrown: true, minFootprint: 7 },
+    profile: {
+      bandHeight: [4, 4],
+      shrinkBias: 0.05,
+      footprintBias: 2,
+      body: PALETTE_SLOTS.brickLight,
+      bodyAlt: PALETTE_SLOTS.wood,
+      accent: PALETTE_SLOTS.grassLight,
+      crown: PALETTE_SLOTS.grass,
+      plinth: PALETTE_SLOTS.stoneWarm,
+      roofPropHeight: 0,
+    },
+  },
+  {
+    id: 'rationedBlock',
+    label: 'Rationed block',
+    use: 0,
+    charter: ['rationing'],
+    priority: 6,
+    shape: { ...DEFAULT_TYPOLOGY_SHAPE, flatCrown: true, maxFootprint: 5 },
+    profile: {
+      bandHeight: [6, 8],
+      shrinkBias: 0.9,
+      footprintBias: -2,
+      body: PALETTE_SLOTS.concrete,
+      bodyAlt: PALETTE_SLOTS.concrete,
+      accent: PALETTE_SLOTS.concreteLight,
+      crown: PALETTE_SLOTS.asphaltDark,
+      plinth: PALETTE_SLOTS.stoneDark,
+      roofPropHeight: 0,
+    },
+  },
   { id: 'terracedHousing', label: 'Terraced housing', use: 0, priority: 0, shape: DEFAULT_TYPOLOGY_SHAPE, profile: {} },
 
   // --- commerciale ---------------------------------------------------------
@@ -617,6 +668,24 @@ export const TYPOLOGIES: readonly TypologyDefinition[] = [
       plinth: PALETTE_SLOTS.stoneDark,
     },
   },
+  {
+    id: 'marketArcade',
+    label: 'Market arcade',
+    use: 1,
+    charter: ['leasedSquare', 'localShops'],
+    priority: 6,
+    shape: { ...DEFAULT_TYPOLOGY_SHAPE, podiumBands: 2, minFootprint: 7 },
+    profile: {
+      bandHeight: [4, 5],
+      shrinkBias: 0.3,
+      footprintBias: 2,
+      body: PALETTE_SLOTS.stoneWarm,
+      bodyAlt: PALETTE_SLOTS.brick,
+      accent: PALETTE_SLOTS.metalBrass,
+      crown: PALETTE_SLOTS.roofPale,
+      plinth: PALETTE_SLOTS.stone,
+    },
+  },
   { id: 'retailRow', label: 'Retail row', use: 1, priority: 0, shape: { ...DEFAULT_TYPOLOGY_SHAPE, flatCrown: true, maxFootprint: 6 }, profile: { bandHeight: [4, 4] } },
 
   // --- industriale ---------------------------------------------------------
@@ -646,6 +715,25 @@ export const TYPOLOGIES: readonly TypologyDefinition[] = [
     priority: 2,
     shape: { ...DEFAULT_TYPOLOGY_SHAPE, flatCrown: true, minFootprint: 6 },
     profile: { bandHeight: [4, 4], shrinkBias: 0.05, footprintBias: 4 },
+  },
+  {
+    id: 'strippedYard',
+    label: 'Stripped yard',
+    use: 2,
+    charter: ['soldReserves'],
+    priority: 6,
+    shape: { ...DEFAULT_TYPOLOGY_SHAPE, flatCrown: true, minFootprint: 7 },
+    profile: {
+      bandHeight: [5, 6],
+      shrinkBias: 0,
+      footprintBias: 2,
+      body: PALETTE_SLOTS.metalRust,
+      bodyAlt: PALETTE_SLOTS.metalDark,
+      accent: PALETTE_SLOTS.concrete,
+      crown: PALETTE_SLOTS.asphaltDark,
+      plinth: PALETTE_SLOTS.asphaltShadow,
+      roofPropHeight: 0,
+    },
   },
   { id: 'industrialYard', label: 'Industrial yard', use: 2, priority: 0, shape: DEFAULT_TYPOLOGY_SHAPE, profile: {} },
 
