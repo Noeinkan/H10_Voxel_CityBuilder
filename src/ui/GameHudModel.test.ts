@@ -147,7 +147,7 @@ function stats(
       placed: 0,
       upgraded: 0,
       growing: 0,
-      rejected: [0, 0, 0, 0, 0],
+      rejected: [0, 0, 0, 0],
       blacklisted: 0,
       surfaceQueued: 0,
     },

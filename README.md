@@ -81,11 +81,12 @@ permettono di isolare le scene di verifica.
 | `theme` | `natural` | `natural`, `pastel`, `neon`, `industrial`, `scifi`, `enchanted`, `diorama` |
 | `grow` | `1` alla radice | `1` avvia esplicitamente l'MVP giocabile |
 
-Tasti: `Q`/`E` ruota di 90°, rotella zoom, drag destro o `WASD` pan, `F` inquadra
-tutto, `Esc` annulla lo strumento e `F3` alterna il pannello tecnico. Con il
-debug visibile, `G` aggiunge 64 chunk, `R` fa il rebuild, `C` azzera i picchi,
-`B` colora le colonne per bioma (solo in scena terreno). In scena simulazione:
-`T` un tick, `P` avvia o ferma il passo automatico, `M` cicla l'uso mostrato.
+Tasti: `Q`/`E` ruota di 90° attorno al punto di terra sotto al mouse, rotella
+zoom, drag destro o `WASD` pan, `F` inquadra tutto, `Esc` annulla lo strumento e
+`F3` alterna il pannello tecnico. Con il debug visibile, `G` aggiunge 64 chunk,
+`R` fa il rebuild, `C` azzera i picchi, `B` colora le colonne per bioma (solo in
+scena terreno). In scena simulazione: `T` un tick, `P` avvia o ferma il passo
+automatico, `M` cicla l'uso mostrato.
 
 Alla radice, oppure con `?grow=1`, il Cozy HUD mostra risorse e variazioni in alto,
 azioni di costruzione in basso e policy in un drawer laterale. Il dock è diviso
@@ -228,6 +229,16 @@ valuta anche l'anello di due colonne attorno al proprio rettangolo e scrive solo
 i voxel che gli appartengono: una chioma che attraversa un confine non dipende
 mai dall'ordine con cui arrivano i blocchi. Non crescono su oceano, spiaggia o
 roccia; `plain`, `forest` e `hill` hanno densità diverse in `config.ts`.
+
+La forma è una tabella, `TREE_SHAPES` in `config.ts`: una specie è un tronco più
+una pila di dischi, ognuno con raggio, smusso degli angoli e tinta. Sono fra 56 e
+83 voxel per albero — la conifera a gradoni alterna dischi larghi e stretti, la
+latifoglia chiude una chioma tonda, l'autunnale la stessa in tinte calde — e la
+chioma si schiarisce salendo, che è gratis perché il colore vive nell'uniform.
+Aggiungere una specie è aggiungere una riga: il raggio d'ingombro si deduce dal
+profilo, quindi l'anello valutato dai blocchi resta coerente da solo. Il tetto è
+`2 · ring + jitterSize ≤ cellSize`, cioè la chioma più larga sta dentro la sua
+cella comunque cada il jitter.
 
 ### Contratti
 

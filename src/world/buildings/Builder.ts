@@ -8,6 +8,7 @@ import {
   type SimState,
 } from '../../sim';
 import { CHUNK, keyOf, toChunk, toLocal } from '../chunkCoords';
+import { SURFACE_KIND } from '../visualBlock';
 import { hashCoords } from '../rng';
 import { PALETTE_SLOTS } from '../../engine/paletteSlots';
 import { paletteForDepth } from '../terrain/biomes';
@@ -26,8 +27,18 @@ import { generateBuilding, startLevel } from './generate';
 import { selectTypology, typologyProfile } from './typology';
 import { typologyById, type TypologyDefinition } from './config';
 import { anchoredVoxel, stampSurface, STAMP_EMPTY, type VoxelAnchor, type VoxelStamp } from './stamp';
-import { StreetNetwork } from '../streets/StreetNetwork';
-import { placeLot } from '../streets/lots';
+import { GRADING } from '../grading/config';
+import {
+  GROUND,
+  WORKS,
+  groundKindOf,
+  planGrade,
+  rampField,
+  type GradePlan,
+  type GroundKind,
+} from '../grading/grade';
+import { StreetNetwork, type PavementCell } from '../streets/StreetNetwork';
+import { placeLot, type Lot } from '../streets/lots';
 import { FACING, STREET_ROLE, type BlockId } from '../streets/streetGrid';
 import { STREETS } from '../streets/config';
 
@@ -60,12 +71,19 @@ import { STREETS } from '../streets/config';
  * cosa sia un'impronta.
  */
 
-/** Perche' un candidato della simulazione non e' diventato un edificio. */
+/**
+ * Perche' un candidato della simulazione non e' diventato un edificio.
+ *
+ * Dalla 4.2 sono quattro e non piu' cinque: `notBuildable` e `belowSea`
+ * dicevano entrambi "il terreno non e' gia' piano e asciutto", che ha smesso di
+ * essere un motivo — un terrapieno o una banchina lo rendono tale. Restano i
+ * rifiuti veri: la colonna che nessuna opera regge, quella gia' occupata, il
+ * dislivello oltre il tetto strutturale e il budget di chunk.
+ */
 export const REJECT_REASONS = [
-  'notBuildable',
-  'belowSea',
+  'unworkable',
   'occupied',
-  'tooSteep',
+  'worksTooTall',
   'chunkBudget',
 ] as const;
 
@@ -95,11 +113,27 @@ interface Growing {
   eraseCursor: number;
 }
 
+/**
+ * Una colonna di superficie urbana da applicare.
+ *
+ * Dalla 4.2 porta anche una **quota di progetto**. Finche' la superficie era
+ * solo colore, il piano era per forza quello del terreno e il salto restava
+ * terreno nudo; con `deck` la stessa coda costruisce il salto, e le tre cose
+ * che nella 4.2 devono salire — la rampa che porta alla banchina, il molo, la
+ * piazza sopraelevata — sono la stessa operazione con tre quote diverse invece
+ * di tre sottosistemi.
+ */
 interface SurfacePaint {
   readonly x: number;
   readonly y: number;
   readonly palette: number;
   readonly priority: number;
+  /** Quota del piano finito. Se manca, si dipinge il terreno dov'e'. */
+  readonly deck?: number;
+  /** Palette del muro che regge il piano, quando `deck` supera il terreno. */
+  readonly wall?: number;
+  /** Coronamento del muro: l'ultimo voxel sotto il piano calpestabile. */
+  readonly coping?: number;
 }
 
 export class Builder {
@@ -167,6 +201,8 @@ export class Builder {
    */
   decorateCatalyst(x: number, y: number, cls: BuildingClass): void {
     const radius = BUILDER.catalystPlazaRadius;
+    const deck = this.plazaDeck(x, y, radius);
+
     for (let dy = -radius; dy <= radius; dy++) {
       for (let dx = -radius; dx <= radius; dx++) {
         if (Math.abs(dx) + Math.abs(dy) > radius) continue;
@@ -176,12 +212,43 @@ export class Builder {
           y: y + dy,
           palette: centre ? CLASS_PROFILE[cls].accent : PALETTE_SLOTS.asphalt,
           priority: centre ? 2 : 1,
+          deck,
+          wall: GRADING.terraceWall,
+          coping: GRADING.terraceCoping,
         });
       }
     }
     // La piazza da sola sarebbe una macchia in mezzo al verde: accodare
     // l'isolato che la contiene le porta contro una carreggiata vera.
     this.enqueueBlockStreets(this.streets.blockAt(x, y));
+  }
+
+  /**
+   * Quota di una piazza, o `undefined` se il terreno non chiede di livellarla.
+   *
+   * Una piazza e' un piano: seguire il terreno voxel per voxel la fa leggere
+   * come un pezzo di prato colorato di grigio. Ma livellare un dislivello di un
+   * voxel produce un gradino che nessuno legge come progetto, quindi sotto
+   * `plazaMinStep` la piazza resta dipinta dov'e' — che e' anche il motivo per
+   * cui su terreno piano questa fase non cambia niente.
+   *
+   * Le colonne che nessuna opera regge non entrano nel massimo: una piazza sul
+   * ciglio non deve alzarsi fino alla roccia che le sta accanto.
+   */
+  private plazaDeck(x: number, y: number, radius: number): number | undefined {
+    let lowest = Number.MAX_SAFE_INTEGER;
+    let highest = 0;
+    for (let dy = -radius; dy <= radius; dy++) {
+      for (let dx = -radius; dx <= radius; dx++) {
+        if (Math.abs(dx) + Math.abs(dy) > radius) continue;
+        if (this.groundKindAt(x + dx, y + dy) === GROUND.refused) continue;
+        const height = this.terrainMap.heightAt(x + dx, y + dy);
+        if (height < lowest) lowest = height;
+        if (height > highest) highest = height;
+      }
+    }
+    if (highest === 0 || highest - lowest < GRADING.plazaMinStep) return undefined;
+    return highest;
   }
 
   get stats(): BuilderStats {
@@ -340,21 +407,8 @@ export class Builder {
     let footprintCap = MAX_FOOTPRINT;
 
     if (request.snapToStreet) {
-      const block = this.streets.blockAt(request.x, request.y);
-      const blockKey = this.streets.keyOf(block);
-      if (this.fullBlocks.has(blockKey)) return null;
-
-      const lot = placeLot({
-        rect: this.streets.blockRect(block),
-        x: request.x,
-        y: request.y,
-        footprint: MAX_FOOTPRINT,
-        accepts: (lx, ly, side) => this.lotIsFree(lx, ly, side),
-      });
-      if (lot === null) {
-        this.fullBlocks.add(blockKey);
-        return null;
-      }
+      const lot = this.findLot(request.x, request.y);
+      if (lot === null) return null;
 
       x = lot.x;
       y = lot.y;
@@ -412,22 +466,22 @@ export class Builder {
       else if (facing === FACING.north) y += slack;
     }
 
-    const ground = this.surveyGround(x, y, footprint);
-    if (ground === null) return this.reject(key, 'notBuildable');
-    if (ground.minZ < TERRAIN.seaLevel) return this.reject(key, 'belowSea');
-    if (ground.padZ - ground.minZ > BUILDER.maxTerrainStep) return this.reject(key, 'tooSteep');
+    // Il piano si progetta sull'impronta vera, non sul lotto prenotato: e'
+    // quello che l'opera dovra' reggere.
+    const plan = this.surveyGrade(x, y, footprint);
+    if (plan === null) return this.reject(key, this.gradeRefusal(x, y, footprint));
 
-    const baseZ = ground.padZ;
+    const baseZ = plan.padZ;
     if (this.registryImpl.overlaps(x, y, footprint, baseZ, stamp.sizeZ)) {
       return this.reject(key, 'occupied');
     }
-    if (this.dirtyChunkCount(x, y, footprint, ground.minZ, baseZ + stamp.sizeZ) >
+    if (this.dirtyChunkCount(x, y, footprint, plan.footZ, baseZ + stamp.sizeZ) >
         BUILDER.maxDirtyChunksPerBuilding) {
       return this.reject(key, 'chunkBudget');
     }
 
     this.clearSiteDecor(x, y, footprint);
-    this.pour(x, y, footprint, ground.padZ);
+    this.buildWorks(x, y, footprint, plan);
 
     const record = this.registryImpl.add({
       x,
@@ -454,47 +508,141 @@ export class Builder {
   }
 
   /**
-   * Quote del terreno sotto l'impronta.
+   * Lotto libero piu' vicino alla colonna proposta, anche fuori dal suo isolato.
    *
-   * `padZ` e' il **massimo** delle colonne, non il minimo, ed e' una scelta
-   * deliberata: livellare verso il basso significherebbe cancellare voxel di
-   * terreno, cioe' scavare buchi permanenti nell'isola per fare spazio a un
-   * edificio che nessuno ha chiesto. Riempire non toglie niente a nessuno, e il
-   * dislivello che riempie e' comunque limitato da `maxTerrainStep`.
+   * **Perche' non basta il proprio isolato.** I candidati della simulazione
+   * arrivano ordinati per punteggio, e su un campo saturo — dove interi
+   * quartieri toccano il massimo — a decidere e' il criterio di parita', cioe'
+   * `x` e poi `y`. Il risultato e' che la simulazione ripropone all'infinito lo
+   * stesso pugno di colonne nell'angolo minimo dell'area satura. Finche' quel
+   * primo isolato aveva posto la citta' cresceva; appena si riempiva, ogni
+   * infornata successiva ricadeva su un isolato gia' dichiarato pieno e la
+   * crescita si fermava del tutto — quattordici edifici su un'isola intera.
    *
-   * null se anche una sola colonna non e' edificabile o non e' generata.
+   * La colonna proposta designa quindi **un luogo, non un isolato**: se il suo
+   * e' pieno si cerca in quelli attorno, dal piu' vicino al piu' lontano. Lo
+   * scarto resta limitato dal raggio in isolati, cioe' da poche decine di
+   * colonne: abbastanza per non fermarsi, troppo poco perche' un edificio nasca
+   * dove la desiderabilita' non lo voleva.
    */
-  private surveyGround(x: number, y: number, footprint: number): { minZ: number; padZ: number } | null {
-    let minZ = Number.MAX_SAFE_INTEGER;
-    let padZ = 0;
+  private findLot(x: number, y: number): Lot | null {
+    const origin = this.streets.blockAt(x, y);
 
-    for (let dy = 0; dy < footprint; dy++) {
-      for (let dx = 0; dx < footprint; dx++) {
-        const column = this.terrainMap.columnAt(x + dx, y + dy);
-        if (column === null || !column.buildable) return null;
-        if (column.height < minZ) minZ = column.height;
-        if (column.height > padZ) padZ = column.height;
+    for (let radius = 0; radius <= BUILDER.blockSearchRadius; radius++) {
+      for (let dy = -radius; dy <= radius; dy++) {
+        for (let dx = -radius; dx <= radius; dx++) {
+          // Solo il bordo dell'anello: l'interno l'hanno gia' visto i raggi
+          // precedenti, e ripassarlo costerebbe una `placeLot` per niente.
+          if (radius > 0 && Math.abs(dx) !== radius && Math.abs(dy) !== radius) continue;
+
+          const block = { kx: origin.kx + dx, ky: origin.ky + dy };
+          const key = this.streets.keyOf(block);
+          if (this.fullBlocks.has(key)) continue;
+
+          const lot = placeLot({
+            rect: this.streets.blockRect(block),
+            x,
+            y,
+            footprint: MAX_FOOTPRINT,
+            accepts: (lx, ly, side) => this.lotIsFree(lx, ly, side),
+          });
+          if (lot !== null) return lot;
+          this.fullBlocks.add(key);
+        }
       }
     }
 
-    return { minZ, padZ };
+    return null;
   }
 
   /**
-   * Getta la fondazione: porta ogni colonna dell'impronta alla quota del
-   * pianoro, con la stratigrafia del bioma su cui poggia.
+   * Come si presenta una colonna a chi deve costruirci sopra.
    *
-   * Il colore esce da `paletteForDepth`, la stessa funzione che usa
-   * `IslandGenerator`: una fondazione con un colore proprio si vedrebbe come una
-   * toppa, e sarebbe una toppa.
+   * Tre letture senza allocazione invece di `columnAt`, che costruirebbe un
+   * oggetto: questa funzione sta nel percorso caldo di `placeLot`, dove le
+   * colonne si contano a migliaia per infornata.
    */
-  private pour(x: number, y: number, footprint: number, padZ: number): void {
+  private groundKindAt(x: number, y: number): GroundKind {
+    if (!this.terrainMap.has(x, y)) return GROUND.refused;
+    return groundKindOf(
+      this.terrainMap.biomeAt(x, y),
+      this.terrainMap.slopeAt(x, y),
+      this.terrainMap.heightAt(x, y),
+    );
+  }
+
+  /**
+   * L'opera che regge l'impronta, o null se non ce n'e' una.
+   *
+   * Ha sostituito `surveyGround`, che rispondeva soltanto "il terreno e' gia'
+   * piano?" e in caso contrario perdeva il sito per sempre. La domanda ora e'
+   * cosa costruire perche' lo diventi, e le tre risposte — niente, un
+   * terrapieno, una banchina — vivono in `grading/`.
+   */
+  private surveyGrade(x: number, y: number, footprint: number): GradePlan | null {
+    const columns: { kind: GroundKind; height: number }[] = [];
     for (let dy = 0; dy < footprint; dy++) {
       for (let dx = 0; dx < footprint; dx++) {
-        const column = this.terrainMap.columnAt(x + dx, y + dy);
-        if (column === null) continue;
-        for (let z = column.height; z < padZ; z++) {
-          this.world.setBlock(x + dx, y + dy, z, paletteForDepth(column.biome, padZ - 1 - z));
+        const kind = this.groundKindAt(x + dx, y + dy);
+        if (kind === GROUND.refused) return null;
+        columns.push({ kind, height: this.terrainMap.heightAt(x + dx, y + dy) });
+      }
+    }
+    return planGrade(columns);
+  }
+
+  /**
+   * Perche' l'impronta non ha un piano. Gira solo sul ramo di rifiuto.
+   *
+   * Ripete la scansione invece di farsi restituire il motivo da `planGrade`:
+   * quella funzione risponde a una domanda sola, e allargarla a un risultato
+   * con causa la costringerebbe ad allocare un oggetto anche nelle migliaia di
+   * chiamate che vanno a buon fine.
+   */
+  private gradeRefusal(x: number, y: number, footprint: number): RejectReason {
+    for (let dy = 0; dy < footprint; dy++) {
+      for (let dx = 0; dx < footprint; dx++) {
+        if (this.groundKindAt(x + dx, y + dy) === GROUND.refused) return 'unworkable';
+      }
+    }
+    return 'worksTooTall';
+  }
+
+  /**
+   * Costruisce l'opera sotto l'impronta: terra dentro, muro sul perimetro.
+   *
+   * **Il perimetro e' l'unica parte che si vede**, ed e' l'unica che diventa
+   * muratura. Le colonne interne restano stratigrafia di bioma, con lo stesso
+   * `paletteForDepth` che usa `IslandGenerator`: sotto un edificio non le
+   * guarda nessuno, e rivestirle costerebbe voxel per niente.
+   *
+   * Il corso di coronamento e' cio' che distingue un muro di contenimento da un
+   * blocco di roccia: una riga chiara in cima al salto, che a distanza di gioco
+   * e' il solo segno che dichiari il dislivello costruito invece che scavato.
+   */
+  private buildWorks(x: number, y: number, footprint: number, plan: GradePlan): void {
+    const quay = plan.works === WORKS.quay;
+    const wall = quay ? GRADING.quayWall : GRADING.terraceWall;
+    const coping = quay ? GRADING.quayCoping : GRADING.terraceCoping;
+
+    for (let dy = 0; dy < footprint; dy++) {
+      for (let dx = 0; dx < footprint; dx++) {
+        const cx = x + dx;
+        const cy = y + dy;
+        const height = this.terrainMap.heightAt(cx, cy);
+        if (height >= plan.padZ) continue;
+
+        const edge = dx === 0 || dy === 0 || dx === footprint - 1 || dy === footprint - 1;
+        if (plan.works !== WORKS.none && edge) {
+          for (let z = height; z < plan.padZ; z++) {
+            this.world.setBlock(cx, cy, z, z === plan.padZ - 1 ? coping : wall, SURFACE_KIND.utility);
+          }
+          continue;
+        }
+
+        const biome = this.terrainMap.biomeAt(cx, cy);
+        for (let z = height; z < plan.padZ; z++) {
+          this.world.setBlock(cx, cy, z, paletteForDepth(biome, plan.padZ - 1 - z));
         }
       }
     }
@@ -643,8 +791,13 @@ export class Builder {
     // La fondazione dell'anello aggiuntivo va gettata prima di salire: senza,
     // l'impronta allargata poggerebbe nel vuoto sulle colonne nuove.
     if (stamp.sizeX > record.footprint) {
-      const ground = this.surveyGround(record.x, record.y, stamp.sizeX);
-      if (ground !== null) this.pour(record.x, record.y, stamp.sizeX, record.baseZ);
+      const widened = this.surveyGrade(record.x, record.y, stamp.sizeX);
+      // La quota resta quella dell'edificio, non quella che l'opera nuova
+      // proporrebbe: l'anello aggiunto deve raggiungere il piano gia' costruito,
+      // e rialzare il piano sotto una torre che c'e' gia' la lascerebbe sepolta.
+      if (widened !== null) {
+        this.buildWorks(record.x, record.y, stamp.sizeX, { ...widened, padZ: record.baseZ });
+      }
     }
 
     this.enqueueBlockStreets(this.streets.blockAt(replaced.x, replaced.y));
@@ -671,9 +824,9 @@ export class Builder {
 
   /** true se l'impronta allargata non tocca nessun altro edificio. */
   private fitsWider(record: BuildingRecord, stamp: VoxelStamp): boolean {
-    const ground = this.surveyGround(record.x, record.y, stamp.sizeX);
-    if (ground === null) return false;
-    if (ground.padZ > record.baseZ) return false;
+    const widened = this.surveyGrade(record.x, record.y, stamp.sizeX);
+    if (widened === null) return false;
+    if (widened.padZ > record.baseZ) return false;
 
     for (let dy = 0; dy < stamp.sizeX; dy++) {
       for (let dx = 0; dx < stamp.sizeX; dx++) {
@@ -862,18 +1015,78 @@ export class Builder {
     if (this.paintedBlocks.has(key)) return;
     this.paintedBlocks.add(key);
 
-    for (const cell of this.streets.pavementRing(block)) {
+    const ring = this.streets.pavementRing(block);
+    const grade = this.rampAround(ring);
+
+    for (const cell of ring) {
       const arterial = cell.role === STREET_ROLE.arterial;
+      const shore = this.groundKindAt(cell.x, cell.y) === GROUND.shore;
+      const deck = grade.levelAt(cell.x, cell.y);
+      const raised = deck > this.terrainMap.heightAt(cell.x, cell.y);
       this.enqueueSurface({
         x: cell.x,
         y: cell.y,
-        palette: arterial ? STREETS.arterialPalette : STREETS.minorPalette,
+        // Sulla banchina la carreggiata smette di essere asfalto: un molo
+        // asfaltato leggerebbe come una strada finita nell'acqua, che e'
+        // esattamente l'impressione che questa fase deve togliere.
+        palette: shore
+          ? GRADING.quayDeck
+          : arterial ? STREETS.arterialPalette : STREETS.minorPalette,
         // L'asse principale vince l'incrocio: e' la sua continuita' a rendere
         // leggibile la gerarchia, e una corsia di svolta dipinta col colore
         // secondario la spezzerebbe proprio dove si vede di piu'.
         priority: arterial ? 2 : 1,
+        deck,
+        wall: raised ? (shore ? GRADING.quayWall : GRADING.terraceWall) : undefined,
+        coping: shore ? GRADING.quayCoping : GRADING.terraceCoping,
       });
     }
+  }
+
+  /**
+   * Quota di progetto della carreggiata attorno a un isolato.
+   *
+   * La battigia ancora la strada alla quota della banchina; tutto il resto
+   * parte dal terreno. `rampField` alza poi il campo alla pendenza uno, ed e'
+   * quella relazione a produrre la rampa: la carreggiata che scende al molo ci
+   * arriva con un voxel per colonna invece di finirci sopra a picco.
+   *
+   * Il rettangolo e' quello dell'anello, interno dell'isolato compreso: le
+   * colonne interne non si dipingono ma servono a propagare la distanza, e
+   * lasciarle fuori spezzerebbe la rampa proprio negli angoli.
+   */
+  private rampAround(ring: readonly PavementCell[]): {
+    levelAt: (x: number, y: number) => number;
+  } {
+    let x0 = Number.MAX_SAFE_INTEGER;
+    let y0 = Number.MAX_SAFE_INTEGER;
+    let x1 = Number.MIN_SAFE_INTEGER;
+    let y1 = Number.MIN_SAFE_INTEGER;
+    for (const cell of ring) {
+      if (cell.x < x0) x0 = cell.x;
+      if (cell.y < y0) y0 = cell.y;
+      if (cell.x > x1) x1 = cell.x;
+      if (cell.y > y1) y1 = cell.y;
+    }
+
+    const width = x1 - x0 + 1;
+    const height = y1 - y0 + 1;
+    const level = new Int32Array(width * height);
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < width; x++) {
+        const wx = x0 + x;
+        const wy = y0 + y;
+        const ground = this.terrainMap.heightAt(wx, wy);
+        level[y * width + x] = this.groundKindAt(wx, wy) === GROUND.shore
+          ? Math.max(ground, GRADING.quayLevel)
+          : ground;
+      }
+    }
+    rampField(level, width, height);
+
+    return {
+      levelAt: (x: number, y: number): number => level[(y - y0) * width + (x - x0)],
+    };
   }
 
   /**
@@ -894,8 +1107,10 @@ export class Builder {
         // `at` un array di record per ogni colonna, e qui le colonne si
         // contano a migliaia per infornata.
         if (this.registryImpl.isOccupied(cx, cy)) return false;
-        if (!this.terrainMap.isBuildable(cx, cy)) return false;
-        if (this.terrainMap.heightAt(cx, cy) < TERRAIN.seaLevel) return false;
+        // Dalla 4.2 la battigia e il fianco in pendenza sono lotti come gli
+        // altri: costano un'opera, non un rifiuto. Restano fuori solo la roccia
+        // e l'acqua troppo profonda per una banchina.
+        if (this.groundKindAt(cx, cy) === GROUND.refused) return false;
         if (this.blacklist.has(`${cx},${cy}`)) return false;
       }
     }
@@ -903,8 +1118,7 @@ export class Builder {
   }
 
   private canPaintSurface(x: number, y: number): boolean {
-    const column = this.terrainMap.columnAt(x, y);
-    return column !== null && column.buildable && this.registryImpl.at(x, y).length === 0;
+    return this.groundKindAt(x, y) !== GROUND.refused && !this.registryImpl.isOccupied(x, y);
   }
 
   private enqueueSurface(paint: SurfacePaint): void {
@@ -920,21 +1134,40 @@ export class Builder {
     this.surfaceQueue.push(key);
   }
 
+  /**
+   * Applica la superficie a budget.
+   *
+   * Il budget conta **voxel scritti, non celle**: una cella su un molo puo'
+   * costarne sei, e contarla come una lascerebbe passare nello stesso frame sei
+   * volte il lavoro previsto proprio dove il terreno e' piu' mosso — cioe' dove
+   * il frame e' gia' piu' caro. Una cella iniziata si finisce comunque, per non
+   * lasciare mezzo muro in piedi fra un frame e l'altro.
+   */
   private stepSurface(): void {
-    let painted = 0;
-    while (this.surfaceHead < this.surfaceQueue.length && painted < BUILDER.surfaceCellsPerFrame) {
+    let written = 0;
+    while (this.surfaceHead < this.surfaceQueue.length && written < BUILDER.surfaceVoxelsPerFrame) {
       const key = this.surfaceQueue[this.surfaceHead++];
       const paint = this.surfacePending.get(key);
       if (paint === undefined) continue;
       this.surfacePending.delete(key);
       if (!this.canPaintSurface(paint.x, paint.y)) continue;
 
-      const column = this.terrainMap.columnAt(paint.x, paint.y);
-      if (column === null) continue;
+      const ground = this.terrainMap.heightAt(paint.x, paint.y);
+      const deck = Math.max(paint.deck ?? ground, ground);
       this.clearDecorColumn(paint.x, paint.y);
-      this.world.setBlock(paint.x, paint.y, column.height - 1, paint.palette);
+
+      if (paint.wall !== undefined) {
+        for (let z = ground; z < deck - 1; z++) {
+          this.world.setBlock(paint.x, paint.y, z, z === deck - 2 && paint.coping !== undefined
+            ? paint.coping
+            : paint.wall, SURFACE_KIND.utility);
+          written++;
+        }
+      }
+
+      this.world.setBlock(paint.x, paint.y, deck - 1, paint.palette);
       this.surfacePriority.set(key, paint.priority);
-      painted++;
+      written++;
     }
 
     if (this.surfaceHead >= this.surfaceQueue.length) {

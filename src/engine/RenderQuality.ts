@@ -21,9 +21,19 @@ export interface QualityProfile {
   readonly bloomScale: number;
 }
 
+/**
+ * Il gradino di mezzo dimezza la shadow map ma tiene i nove tap.
+ *
+ * Il raggio PCF e' espresso in texel, quindi a 1024 sfuoca la stessa frazione
+ * di mondo: si perde risoluzione, non morbidezza. Degradare a un tap solo era
+ * il salto piu' visibile dell'intera scala — il bordo dell'ombra torna a essere
+ * la scaletta della mappa — a fronte del risparmio minore, perche' meta' lato
+ * ha gia' diviso per quattro il costo della pass, e il gradino dopo le ombre le
+ * spegne comunque del tutto.
+ */
 const PROFILES: readonly QualityProfile[] = [
   { shadowSize: 2048, shadowSoftness: 1, bloom: true, tilt: true, bloomScale: 1 },
-  { shadowSize: 1024, shadowSoftness: 0, bloom: true, tilt: true, bloomScale: 0.5 },
+  { shadowSize: 1024, shadowSoftness: 1, bloom: true, tilt: true, bloomScale: 0.5 },
   { shadowSize: 0, shadowSoftness: 0, bloom: false, tilt: false, bloomScale: 0.5 },
 ];
 

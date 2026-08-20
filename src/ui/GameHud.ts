@@ -54,7 +54,7 @@ export interface CursorInfo {
 
 const FAILURE_LABEL: Readonly<Record<ActionFailure, string>> = {
   'terrain-loading': 'The terrain is not ready yet.',
-  'not-buildable': 'You cannot build here. Try a flat area.',
+  'not-buildable': 'No earthwork holds here: only cliffs and deep water refuse.',
   'too-close': 'Too close to another catalyst of the same type.',
   'insufficient-funds': 'You do not have enough funds yet.',
   'population-required': 'The city must grow before you can do this.',

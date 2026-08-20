@@ -50,7 +50,7 @@ describe('RenderQualityController', () => {
     });
     expect(new RenderQualityController('balanced', 2).profile).toMatchObject({
       shadowSize: 1024,
-      shadowSoftness: 0,
+      shadowSoftness: 1,
       bloom: true,
     });
     // `performance` e' l'unico che spegne del tutto le pass aggiuntive.
@@ -71,7 +71,9 @@ describe('RenderQualityController', () => {
     quality.observe(slow, 2_000);
     quality.observe(slow, 4_000);
     expect(quality.pixelRatio).toBe(1.25);
-    expect(quality.profile).toMatchObject({ shadowSize: 1024, shadowSoftness: 0 });
+    // Meta' mappa, ma il filtro resta: scendere di un gradino non deve far
+    // ricomparire la scaletta sul bordo delle ombre.
+    expect(quality.profile).toMatchObject({ shadowSize: 1024, shadowSoftness: 1 });
 
     quality.observe(slow, 10_000);
     quality.observe(slow, 12_000);

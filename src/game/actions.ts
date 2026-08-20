@@ -14,6 +14,7 @@ import {
   type SimState,
   type TradeMode,
 } from '../sim';
+import { buildWeightOf, GROUND, groundKindOf, type GroundKind } from '../world/grading/grade';
 import type { TerrainMap } from '../world/terrain/TerrainMap';
 
 export type ActionFailure =
@@ -43,7 +44,11 @@ export function placeCatalyst(
   const failure = catalystFailure(state, map, x, y, target);
   if (failure !== null) return { success: false, reason: failure };
 
-  const paid = spendFunds(state, definition.cost);
+  // Il prezzo e' quello che il cursore mostrava: si ricalcola dalla stessa
+  // colonna invece di fidarsi del listino, altrimenti la mesa si pagherebbe
+  // come il prato appena il click arriva.
+  const site = catalystSiteCost(map, x, y, target);
+  const paid = spendFunds(state, site === null ? definition.cost : site.cost);
   return {
     success: true,
     state: addCatalyst(paid, {
@@ -57,7 +62,47 @@ export function placeCatalyst(
   };
 }
 
-/** Stessa convalida usata dal click, esposta per il feedback sul cursore. */
+/** Cosa chiede il terreno sotto una colonna, e quanto costa costruirci. */
+export interface SiteCost {
+  readonly ground: GroundKind;
+  /** Moltiplicatore applicato al listino. `Infinity` dove non si costruisce. */
+  readonly weight: number;
+  /** Prezzo effettivo, gia' pesato e arrotondato. */
+  readonly cost: number;
+}
+
+/**
+ * Prezzo di un catalizzatore su una colonna, o null se non e' ancora generata.
+ *
+ * Su terreno rifiutato il prezzo torna al listino: e' un numero che nessuno
+ * paghera' mai — `catalystFailure` blocca prima — e serve solo perche' il
+ * cursore mostri un cartellino invece di `Infinity` mentre spiega il rifiuto.
+ */
+export function catalystSiteCost(
+  map: TerrainMap,
+  x: number,
+  y: number,
+  target: BuildingClass | CatalystId,
+): SiteCost | null {
+  const definition = catalystDefinition(target);
+  const column = map.columnAt(x, y);
+  if (column === null) return null;
+
+  const ground = groundKindOf(column.biome, column.slope, column.height);
+  const weight = buildWeightOf(ground);
+  const cost = Number.isFinite(weight) ? Math.round(definition.cost * weight) : definition.cost;
+  return { ground, weight, cost };
+}
+
+/**
+ * Stessa convalida usata dal click, esposta per il feedback sul cursore.
+ *
+ * Il bit `buildable` della `TerrainMap` non decide piu' niente qui: diceva
+ * "piano e asciutto per costruzione", e su una mesa piana rispondeva no per
+ * via della sola quota. Adesso decide `groundKindOf`, la stessa funzione con
+ * cui il Builder sceglie i lotti, cosi' il giocatore e la citta' automatica
+ * rifiutano le stesse colonne invece di due insiemi diversi.
+ */
 export function catalystFailure(
   state: SimState,
   map: TerrainMap,
@@ -66,9 +111,9 @@ export function catalystFailure(
   target: BuildingClass | CatalystId,
 ): ActionFailure | null {
   const definition = catalystDefinition(target);
-  const column = map.columnAt(x, y);
-  if (column === null) return 'terrain-loading';
-  if (!column.buildable) return 'not-buildable';
+  const site = catalystSiteCost(map, x, y, target);
+  if (site === null) return 'terrain-loading';
+  if (site.ground === GROUND.refused) return 'not-buildable';
 
   const minDistance = BALANCE.gameplay.catalyst.minDistance;
   for (const catalyst of state.catalysts) {
@@ -79,7 +124,7 @@ export function catalystFailure(
     }
   }
 
-  if (state.funds.stock < definition.cost) return 'insufficient-funds';
+  if (state.funds.stock < site.cost) return 'insufficient-funds';
   return null;
 }
 

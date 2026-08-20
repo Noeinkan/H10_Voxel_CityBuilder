@@ -9,7 +9,7 @@ import {
   DECOR_RECORD_SIZE,
   type ColumnBlock,
 } from './columnBlock';
-import { treeAt, treeOrigin, treeTop, writeTree } from './decor';
+import { treeAt, treeOrigin, treeSpec, treeTop, writeTree } from './decor';
 import { TERRAIN, TREE_DECOR, WATER_IDS } from './config';
 import { HeightField } from './heightField';
 import { chunkSpanOf, shapeFromRegion, type IslandShape, type Region } from './region';
@@ -326,10 +326,9 @@ export function writeBlockDecor(world: VoxelWorld, block: ColumnBlock, from: num
     const species = block.decor[offset + 2];
     const trunkHeight = block.decor[offset + 3];
     const groundZ = block.decor[offset + 4];
-    const canopyRadius = species === 0 ? 1 : TREE_DECOR.ring;
     written += writeTree(
       world,
-      { x, y, species, trunkHeight, canopyRadius },
+      treeSpec(x, y, species, trunkHeight),
       groundZ,
       baseX,
       baseY,

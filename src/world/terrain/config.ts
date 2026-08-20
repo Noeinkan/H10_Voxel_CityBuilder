@@ -197,7 +197,14 @@ export const WATER_IDS = {
 
 /** Parametri delle decorazioni voxel. Le probabilita' sono per cella 6x6. */
 export const TREE_DECOR = {
-  /** Raggio massimo della chioma; definisce anche l'anello valutato dai blocchi. */
+  /**
+   * Raggio massimo della chioma; definisce anche l'anello valutato dai blocchi.
+   *
+   * Vale `2 * ring + jitterSize <= cellSize`: cosi' la chioma piu' larga resta
+   * dentro la sua cella comunque cada il jitter, e due alberi vicini non si
+   * compenetrano mai. Nessun profilo di `TREE_SHAPES` puo' superarlo — se un
+   * giorno servisse una chioma piu' larga va allargata prima la cella.
+   */
   ring: 2,
   cellSize: 6,
   /** Una cella puo' scegliere solo una delle quattro posizioni interne 2x2. */
@@ -205,6 +212,90 @@ export const TREE_DECOR = {
   /** Densita' per bioma: niente alberi su oceano, spiaggia e roccia. */
   density: [0, 0, 0.18, 0.62, 0.34, 0] as const,
 } as const;
+
+/**
+ * Un livello di chioma: un disco orizzontale di foglie.
+ *
+ * `radius` e' il mezzo lato del quadrato, `cut` la distanza di Manhattan
+ * massima ammessa al suo interno — e' quel numero, e non una forma dedicata, a
+ * smussare gli angoli: `cut = radius` da' un rombo, `cut = 2 * radius` il
+ * quadrato pieno, e i valori in mezzo tutte le vie di mezzo. `tone` indicizza
+ * le tinte della specie.
+ */
+export interface TreeCanopyLevel {
+  readonly radius: number;
+  readonly cut: number;
+  readonly tone: number;
+}
+
+/** Profilo completo di una specie: tronco piu' chioma impilata dal basso. */
+export interface TreeShape {
+  /** Altezza del tronco come `[minimo, alternative]`: una estrazione del PRNG. */
+  readonly trunk: readonly [number, number];
+  /**
+   * Di quanti livelli la chioma scende ad avvolgere il tronco.
+   *
+   * Deve restare minore di `trunk[0]`, altrimenti la chioma comincerebbe sotto
+   * la quota del suolo e scaverebbe la colonna che la sostiene.
+   */
+  readonly sink: number;
+  /** Tinte della chioma, dalla piu' scura alla piu' chiara. */
+  readonly tones: readonly number[];
+  /** Livelli dal basso verso l'alto; la lunghezza e' l'altezza della chioma. */
+  readonly canopy: readonly TreeCanopyLevel[];
+}
+
+/**
+ * Catalogo delle specie, nell'ordine di `TREE_SPECIES` in `decor.ts`.
+ *
+ * La chioma si schiarisce salendo: e' quanto basta a farla leggere come volume
+ * invece che come blocco unico, e non costa niente perche' il colore vive
+ * nell'uniform di palette. Il raggio della specie non e' dichiarato — si ricava
+ * dal massimo dei suoi livelli, cosi' una riga sbagliata non puo' mentire al
+ * generatore su quanto largo sia l'anello da valutare.
+ */
+export const TREE_SHAPES: readonly TreeShape[] = [
+  // Conifera: guglia a piani sfalsati, il classico abete a gradoni. I livelli
+  // larghi alternati agli stretti sono cio' che da' la silhouette dentellata.
+  {
+    trunk: [5, 2],
+    sink: 3,
+    tones: [PALETTE_SLOTS.grassDark, PALETTE_SLOTS.grass, PALETTE_SLOTS.grassLight],
+    canopy: [
+      { radius: 2, cut: 2, tone: 0 },
+      { radius: 1, cut: 2, tone: 0 },
+      { radius: 2, cut: 2, tone: 0 },
+      { radius: 1, cut: 2, tone: 1 },
+      { radius: 1, cut: 1, tone: 1 },
+      { radius: 0, cut: 0, tone: 2 },
+    ],
+  },
+  // Latifoglia: chioma tonda e piena, la piu' voluminosa delle tre.
+  {
+    trunk: [4, 3],
+    sink: 2,
+    tones: [PALETTE_SLOTS.grassDark, PALETTE_SLOTS.grass, PALETTE_SLOTS.grassLight],
+    canopy: [
+      { radius: 2, cut: 2, tone: 0 },
+      { radius: 2, cut: 3, tone: 1 },
+      { radius: 2, cut: 3, tone: 1 },
+      { radius: 2, cut: 2, tone: 2 },
+      { radius: 1, cut: 2, tone: 2 },
+    ],
+  },
+  // Autunnale: stessa scala della latifoglia ma piu' schiacciata, e in caldo.
+  {
+    trunk: [4, 2],
+    sink: 2,
+    tones: [PALETTE_SLOTS.metalRust, PALETTE_SLOTS.brickLight, PALETTE_SLOTS.metalBrass],
+    canopy: [
+      { radius: 2, cut: 3, tone: 0 },
+      { radius: 2, cut: 3, tone: 1 },
+      { radius: 2, cut: 2, tone: 1 },
+      { radius: 1, cut: 2, tone: 2 },
+    ],
+  },
+];
 
 /**
  * Tinte piatte del toggle "colora per bioma" della scena di debug. Servono solo

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { VoxelWorld } from '../VoxelWorld';
-import { BIOME } from './config';
-import { treeAt, TREELESS_BIOMES } from './decor';
+import { BIOME, TREE_DECOR, TREE_SHAPES } from './config';
+import { treeAt, treeSpec, treeTop, TREELESS_BIOMES, writeTree } from './decor';
 import { generateIsland, type Region } from './IslandGenerator';
 import { shapeFromRegion } from './region';
 
@@ -64,5 +64,57 @@ describe('decorazioni degli alberi', () => {
     generateIsland(worldBA, SEED, left, { map: second.map, shape });
 
     expect(signature(worldBA)).toEqual(signature(worldAB));
+  });
+});
+
+describe('profili delle specie', () => {
+  it('nessuna chioma esce dalla cella che le e’ assegnata', () => {
+    for (const shape of TREE_SHAPES) {
+      for (const level of shape.canopy) {
+        expect(level.radius).toBeLessThanOrEqual(TREE_DECOR.ring);
+        // Un `cut` oltre il diametro non smusserebbe piu' niente: sarebbe una
+        // riga che dice una cosa e ne fa un'altra.
+        expect(level.cut).toBeLessThanOrEqual(2 * level.radius);
+      }
+    }
+    expect(2 * TREE_DECOR.ring + TREE_DECOR.jitterSize).toBeLessThanOrEqual(TREE_DECOR.cellSize);
+  });
+
+  it('il tronco resta scoperto sotto la chioma', () => {
+    for (const shape of TREE_SHAPES) {
+      expect(shape.sink).toBeLessThan(shape.trunk[0]);
+      expect(shape.trunk[1]).toBeGreaterThanOrEqual(1);
+      for (const level of shape.canopy) expect(shape.tones[level.tone]).toBeGreaterThan(0);
+    }
+  });
+
+  it('treeTop e’ esattamente il voxel piu’ alto che l’albero scrive', () => {
+    const groundZ = 16;
+    for (let species = 0; species < TREE_SHAPES.length; species++) {
+      const shape = TREE_SHAPES[species];
+      for (let extraTrunk = 0; extraTrunk < shape.trunk[1]; extraTrunk++) {
+        const world = new VoxelWorld();
+        const tree = treeSpec(8, 8, species, shape.trunk[0] + extraTrunk);
+        const written = writeTree(world, tree, groundZ, 0, 0, 32, 32);
+
+        let highest = -1;
+        let lowest = Number.POSITIVE_INFINITY;
+        for (let z = 0; z < 64; z++) {
+          for (let y = 0; y < 32; y++) {
+            for (let x = 0; x < 32; x++) {
+              if (world.getBlock(x, y, z) === 0) continue;
+              if (z > highest) highest = z;
+              if (z < lowest) lowest = z;
+            }
+          }
+        }
+
+        // Sotto sta la colonna di terreno: un voxel piu' in basso vorrebbe dire
+        // che l'albero si sta scavando il piedistallo.
+        expect(lowest).toBe(groundZ);
+        expect(highest).toBe(treeTop(tree, groundZ) - 1);
+        expect(written).toBeGreaterThan(shape.trunk[0]);
+      }
+    }
   });
 });

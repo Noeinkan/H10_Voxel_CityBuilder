@@ -68,6 +68,68 @@ comparativo delle strategie porto-industria, mercato-trasporto e parco-universit
 **Gate:** almeno tre strategie valide producono skyline, bilanci e rischi
 riconoscibilmente diversi.
 
+### Fase 2.1 — Vincoli di sito dei catalizzatori
+
+Obiettivo: far dipendere il luogo ammesso per un catalizzatore dal ruolo che ha,
+e aggiungere la connessione aerea come alternativa non costiera al porto.
+
+**Perché la fase 2 si riapre.** Il porto è stato chiuso come «primo collegamento
+dell'isola al mondo», ma non ha mai avuto una regola sull'acqua:
+`catalystFailure` in `src/game/actions.ts` convalida tutti i ruoli con la stessa
+riga, `if (!column.buildable)`, e `BUILDABLE_BIOMES` in
+`world/terrain/config.ts` esclude `beach`. Le due regole si sommano nel
+risultato opposto a quello previsto — il porto si piazza in cima a una collina e
+viene rifiutato sulla battigia, che è l'unica fascia dove avrebbe senso. Il
+tooltip intanto promette *«concentrates industry and trade on the coast»*, cioè
+annuncia un vincolo che il codice non ha, e a `tick.ts` basta che un porto
+esista in un punto qualsiasi della mappa perché il commercio esterno si sblocchi.
+
+Non è un difetto isolato: è la stessa asimmetria che la 4.2 ha già risolto per i
+lotti. Lì «il terreno non è già piano e asciutto» ha smesso di essere un motivo
+di rifiuto, perché la banchina costruisce il piano che manca; i catalizzatori
+sono rimasti indietro sul singolo bit `column.buildable`, e continuano a
+rifiutare proprio le colonne che il mondo saprebbe già preparare.
+
+**Metà è già arrivata, e da un'altra strada.** Il bit se n'è andato prima del
+vincolo di ruolo, perché produceva un rifiuto che nessuno riusciva a leggere:
+una mesa piana e larga respinta mentre il prato accanto accettava, per la sola
+quota. `catalystFailure` ora chiede a `groundKindOf` e paga il terreno con
+`BUILD_WEIGHT` — prato 1, terrapieno 1,4, banchina 1,8, roccia 2,2 — e rifiuta
+solo ciò che nessuna opera raddrizza: pareti oltre `maxTerraceSlope` e acqua
+oltre `maxQuayDepth`. La battigia è quindi ammessa **a tutti** i ruoli, non ai
+soli ruoli costieri: è il prezzo, non il permesso, a distinguerla. Il vincolo di
+ruolo resta da fare, e ora è l'unica cosa che manca perché il porto stia sulla
+costa. La tabella `BUILDABLE_BIOMES` non è stata toccata: la crescita automatica
+sceglie ancora i suoi siti con il bit, quindi il peso non ha spostato l'equilibrio
+della città che cresce da sola.
+
+- [ ] Dare a `CatalystDefinition` un vincolo di sito esplicito e valutarlo in
+  `catalystFailure`, al posto dell'unico bit di edificabilità valido per tutti.
+- [ ] Ammettere la battigia ai ruoli costieri riusando le opere della 4.2, senza
+  rendere `beach` edificabile per la crescita automatica: è il vincolo del ruolo
+  a cambiare, non la tabella dei biomi.
+- [ ] Introdurre il vincolo opposto — superficie ampia e piana — valutando la
+  pendenza su un intorno dell'impronta e non sulla singola colonna.
+- [ ] Aggiungere l'aeroporto come secondo ruolo di `connections`, con un effetto
+  distinto da quello del porto: collegamento che non chiede la costa, influenza
+  su commerciale e civico, penalità sul residenziale più pesante di quella della
+  fabbrica.
+- [ ] Distinguere il commercio esterno per collegamento, invece dell'attuale
+  `connected` binario che qualunque porto accende da qualunque punto.
+- [ ] Portare i nuovi motivi di rifiuto sul cursore con lo stesso trattamento
+  degli altri, così che il vincolo si legga prima del click e non dopo.
+
+**Vincolo:** la simulazione non impara la geografia. Il vincolo di sito vive fra
+`src/game/` e `src/world/`, come già il lotto e l'isolato; `src/sim/` continua a
+ragionare per cella e a non sapere dove sia la costa (invariante 7). Un ruolo
+nuovo tocca `balance.ts`, quindi le tabelle di misura verificate a mano vanno
+rimisurate e non aggiornate a occhio.
+
+**Gate:** ogni catalizzatore è rifiutato dove il suo ruolo non ha senso e
+accettato dove ce l'ha, con il motivo visibile prima del click; porto e
+aeroporto restano due scelte con conseguenze diverse e non due prezzi per lo
+stesso sblocco.
+
 ## Fase 3 — Usi urbani e tipologie ibride
 
 Obiettivo: ampliare la varietà economica e architettonica senza introdurre
@@ -229,14 +291,18 @@ Obiettivo: far reagire la città al terreno invece di appiattirlo.
 Dipende da 4.1: è la rete a incontrare per prima le pendenze, e una strada che
 attraversa un dislivello o si ferma o lo risolve.
 
-- [ ] Risolvere le pendenze della rete con rampe, scalinate e tratti incassati,
+**Stato implementazione:** completata. Il gate resta da validare a occhio su
+un'isola vera: i test coprono le opere, il vincolo di riempimento e la
+continuità delle rampe, non la leggibilità.
+
+- [x] Risolvere le pendenze della rete con rampe, scalinate e tratti incassati,
   al posto dell'attuale scarto secco per `tooSteep`.
-- [ ] Introdurre muri di contenimento e terrapieni dove la quota cambia, così che
+- [x] Introdurre muri di contenimento e terrapieni dove la quota cambia, così che
   il salto sia costruito e non un gradino di terreno nudo.
-- [ ] Portare piazze e piattaforme sopraelevate dove il dislivello le giustifica.
-- [ ] Trattare la costa come fronte edificato: moli, approdi e banchine al posto
+- [x] Portare piazze e piattaforme sopraelevate dove il dislivello le giustifica.
+- [x] Trattare la costa come fronte edificato: moli, approdi e banchine al posto
   dell'attuale bordo d'acqua.
-- [ ] Rivedere `maxTerrainStep` e la blacklist dei siti: con le rampe una
+- [x] Rivedere `maxTerrainStep` e la blacklist dei siti: con le rampe una
   pendenza smette di essere un rifiuto definitivo.
 
 **Vincolo:** la fondazione continua a riempire, mai a scavare. Un muro di
@@ -245,6 +311,96 @@ contenimento aggiunge volume, non toglie isola.
 **Gate:** su un'isola con rilievo marcato pendenze e linea di costa risultano
 progettate; nessun sito viene più perso per una pendenza che una rampa
 risolverebbe.
+
+**La premessa della fase era in parte sbagliata, e vale la pena scriverlo.**
+Misurando l'isola prima di toccarla — seed 1337, 256×256 — il dislivello fra due
+colonne adiacenti risulta **sempre 0 o 1, mai di più**: è il vincolo di Lipschitz
+che la taratura del rumore garantisce, e significa che *sull'isola non esistono
+strapiombi*. Di conseguenza `tooSteep` non è mai scattato una volta — il
+dislivello massimo sotto un'impronta 4×4 edificabile è 2, contro i 3 che quel
+tetto ammetteva — e non c'erano tratti da incassare né gradini da scalinare.
+Rampe e scalinate progettate contro quel nemico sarebbero state codice morto.
+
+Il rifiuto che costava davvero era un altro, e molto più grande: delle 20 721
+colonne di terra emersa **solo 10 489 erano `buildable`**, cioè la metà esatta.
+Le altre erano 5 388 colonne di battigia rifiutate dal bioma — l'intero anello
+costiero — e 2 994 rifiutate per una pendenza fra 0,34 e 0,52, che è un fianco
+dolce, non una parete. La fase è stata reindirizzata su quelle.
+
+**Come è stato risolto.** La domanda è cambiata da "questa colonna è già piana?"
+a "**cosa serve costruire perché lo diventi?**". La risposta vive in
+`src/world/grading/`, è pura, e ha tre valori: niente, un terrapieno con il suo
+muro di contenimento, una banchina che porta il piano sopra la battigia. La
+quota finita è sempre il **massimo** delle colonne toccate, mai la media: è la
+forma che prende il vincolo "si riempie, non si scava", e un test la verifica su
+tutta la mappa dopo una crescita vera, colonna per colonna.
+
+Le quattro cose che dovevano salire — la fondazione di un lotto, la carreggiata
+che lo raggiunge, il molo, la piazza di un catalizzatore — sono diventate **la
+stessa operazione con quote diverse** invece di quattro sottosistemi: la coda di
+superficie, che prima portava solo un colore, ora porta anche una quota di
+progetto e il muro che la regge. La rampa è la relazione 1-Lipschitz di
+`rampField`: due passate lineari che alzano il campo di quote finché nessuna
+colonna di carreggiata dista più di un voxel dalla vicina.
+
+`maxTerrainStep` non è stato rivisto ma **rimosso**: diceva "quanto dislivello
+sopporto prima di rinunciare", e la domanda ora è "quanto muro sono disposto a
+costruire". Al suo posto `GRADING.maxWorksStep`, tarato sul caso peggiore vero,
+che è la banchina che scende sul fondale e non il terrapieno. I motivi di
+rifiuto scendono da cinque a quattro: `notBuildable` e `belowSea` dicevano
+entrambi "il terreno non è già piano e asciutto", che ha smesso di essere un
+motivo.
+
+**Un difetto della 4.1 che solo l'isola vera ha rivelato.** Con la crescita
+misurata su terreno reale invece che sulla fixture piana, la città si fermava a
+**quattordici edifici** e non cresceva più. La causa: `nextBuildSites` ordina i
+candidati per punteggio e, su un campo saturo — dove interi quartieri toccano il
+massimo — a decidere resta il criterio di parità, cioè `x` e poi `y`. La
+simulazione riproponeva quindi all'infinito lo stesso pugno di colonne
+nell'angolo minimo dell'area satura; appena il loro isolato si riempiva, ogni
+infornata successiva ricadeva su un isolato già dichiarato pieno. La colonna
+proposta designa ora **un luogo, non un isolato**: se il suo è pieno, `findLot`
+cerca in quelli attorno fino a `blockSearchRadius`. Stessa isola, stessi tick:
+da 14 a 276 edifici.
+
+**Costo.** Misurato con un A/B vero: un worktree sul commit precedente
+(`62798d5`, strade senza opere) e l'albero di lavoro, stesso script e stessa
+macchina, esecuzioni alternate per annullare la deriva. 256×256 colonne tutte
+edificabili, quattro catalizzatori a raggio 60, 300 tick.
+
+| | mediana per tick | p95 | edifici |
+| --- | --- | --- | --- |
+| prima della 4.2 | 2,31 / 2,50 / 2,71 ms | 4,92 / 5,22 / 5,47 ms | **152** |
+| con la 4.2 | 2,51 / 2,69 / 2,94 ms | 3,74 / 4,92 / 5,98 ms | **450** |
+
+Gli intervalli si sovrappongono: **il costo per tick è indistinguibile dal
+rumore**, mentre gli edifici sono tre volte tanti — e quel conteggio è
+deterministico, non una misura. Non perché le opere siano gratis, ma perché la
+correzione di `findLot` ha tolto il tappo che fermava la crescita, e il lavoro
+in più si distribuisce su un risultato tre volte più grande.
+
+La mediana sta dentro i 3 ms di `FRAME_BUDGET_MS`; il p95 no, e i tick cari
+restano quelli in cui `nextBuildSites` scandisce l'intero campo allocato — è
+preesistente, è il vero sforamento del budget, e appartiene alla fase 6. Il
+massimo su singolo frame non è riportato di proposito: su questa macchina, con
+un'altra sessione che compilava in parallelo, oscillava fra 8 e 32 ms su
+entrambi i lati dell'A/B e non misurava il codice.
+
+Il budget di superficie conta ora **voxel e non celle**, perché una cella di
+molo può costarne sei e contarla per una lascerebbe passare sei volte il lavoro
+previsto proprio dove il terreno è più mosso.
+
+**Resta aperto.** Gli assi principali continuano a essere periodici e non
+tracciati fra i poli: le rampe hanno reso la rete capace di *salire*, non di
+*deviare*, e legare un asse a un polo richiede ancora un tracciato con stato.
+Il molo si spinge fino a `maxQuayDepth` sotto il livello del mare e non oltre,
+quindi non esistono ancora approdi in acqua profonda né strutture su palafitta:
+sono volume pieno dal fondale in su, che è la sola forma compatibile con "si
+riempie, non si scava". Il piazzamento manuale dei catalizzatori non è più indietro: `catalystFailure`
+è passato dal bit `buildable` a `groundKindOf`, quindi giocatore e crescita
+automatica rifiutano le stesse colonne. Quello che manca alla 2.1 è il vincolo
+*di ruolo* — il porto sulla costa, l'aeroporto sul piano — che è una regola in
+più, non più una regola diversa.
 
 ### Fase 4.3 — Grammatica verticale degli edifici
 
@@ -351,10 +507,115 @@ resta un insieme di uniform, e cambiare tema non deve ricompilare un programma.
 **Gate:** a UI nascosta le quote si distinguono anche dove i volumi si
 sovrappongono, e le draw call non crescono.
 
+### Fase 4.8 — Dettaglio d'artista e vita notturna
+
+Obiettivo: portare il singolo edificio alla densità della voxel art curata —
+sporgenze, insegne, verde, finestre accese — restando dentro il materiale
+condiviso e il tetto di quad della microgeometria.
+
+Dipende da 4.3 per gli agganci: un dettaglio si appende a una rientranza, a un
+coronamento o a un fronte, e finché la grammatica non li produce non c'è dove
+metterlo. La parte di luce è indipendente, vive in `src/engine/` e può procedere
+in parallelo.
+
+**Perché non è già coperta da 4.3 e 4.7.** La microgeometria in
+`src/engine/mesher/microGeometry.ts` e i sette linguaggi di superficie oltre a
+`plain` in `VoxelMaterial.ts` fanno già la *facciata*: pannelli, portali, fasce
+luminose, sfiati, circuiti di tetto. Quello che manca è l'**oggetto** — la tenda,
+il condizionatore, l'insegna a bandiera, la pianta sul balcone — e la luce che
+*esce* dall'edificio: oggi `emission` illumina il proprio pixel e alimenta il
+bloom, non schiarisce il muro di fronte. Nebbia, acqua e prospettiva aerea
+restano invece competenza della 4.7.
+
+- [ ] Costruire una libreria di prop sub-voxel — tende, insegne, condizionatori,
+  antenne, cavi, cassoni, fioriere — emessi dalla stessa `emitRuns` degli altri
+  dettagli, scelti per uso, livello e faccia.
+- [ ] Appenderli alle giunzioni che la grammatica già produce — fronte strada,
+  arretramenti, coronamenti, angoli d'isolato — invece che a posizioni sparse
+  sulla facciata: è l'aggancio a rendere l'oggetto credibile, non la sua forma.
+- [ ] Portare il verde sull'edificio: fioriere, rampicanti e chiome che riusano
+  gli slot `grass*` esistenti e la stessa priorità di troncamento.
+- [ ] Far uscire la luce: un contributo notturno che schiarisce le superfici
+  vicine a una faccia emissiva, ricavato da quello che il mesher già produce,
+  senza luci dinamiche, senza una pass in più e senza ricompilare materiali.
+- [ ] Legare l'accensione allo stato della simulazione: finestre accese in
+  proporzione all'occupazione, insegne dove il commercio è attivo, buio dove
+  l'edificio è vuoto — la città di notte come lettura dell'economia.
+- [ ] Aggiungere un ciclo giorno/notte come traiettoria del sole più scambio di
+  uniform, con l'ora esposta nell'harness per poter iterare sul look.
+- [ ] Dare all'harness una scena `diorama`: un edificio solo, girevole e
+  inquadrato da vicino, per giudicare il dettaglio senza aspettare che la città
+  cresca.
+
+**Vincolo:** il tetto di quad della microgeometria non si alza per fare posto ai
+prop. Un prop entra togliendo densità altrove o fondendo meglio le corse, e la
+priorità di troncamento resta quella che c'è — a cadere sono le ultime voci,
+mai una classe a caso. Nessun tipo di superficie e nessuno slot di palette in
+più (invarianti 4 e 5): un'insegna è un prisma con una palette esistente e il
+linguaggio `luminous`, non un materiale nuovo.
+
+**Gate:** un edificio inquadrato da vicino regge lo sguardo senza mostrare
+facciate piatte ripetute; di notte la città si legge per luci accese e non per
+sola silhouette; il costo per chunk edificato resta dentro il tetto misurato
+oggi e le draw call non crescono.
+
+### Fase 4.9 — Quote abitate e città sospesa
+
+Obiettivo: smettere di costruire *sul* terreno e cominciare a costruire *sopra
+la città* — piattaforme abitate, edifici che poggiano su altri edifici, mobilità
+in quota e vuoto sotto, nella direzione di Cloudpunk.
+
+È il punto d'arrivo della fase, non un'aggiunta a margine: dipende da 4.4 per gli
+isolati terrazzati e da 4.5 per le campate, e va per ultima perché è **l'unica
+sotto-fase che tocca l'assunzione di colonna**. Il look al neon che
+accompagna queste immagini è 4.7 e 4.8; qui c'è solo la struttura che regge.
+
+**Cosa c'è già e cosa manca davvero.** Il mondo è pronto più di quanto sembri:
+`BuildingRegistry.overlaps` considera *non* sovrapposti due volumi sulla stessa
+colonna con intervalli di quota disgiunti — è esattamente la condizione che
+permette a un edificio di poggiare sul tetto di un altro — e `topOf` esiste già
+come punto d'ancoraggio per chi costruisce sopra qualcosa. A fermare tutto è il
+piano sopra: `TerrainMap` tiene **una** altezza e **un** bit `buildable` per
+colonna, e `nextBuildSites` scarta la colonna che il registry dice occupata.
+Finché "edificabile" è un bit per `(x, y)`, un secondo livello non può essere
+scelto, per quanto il mondo saprebbe costruirlo.
+
+**La via già battuta.** In 4.1 il candidato ha smesso di essere un indirizzo ed è
+diventato un isolato, con `placeLot` a risolvere il lotto: `src/sim/` non ha
+dovuto sapere che le strade esistono. Qui serve la stessa mossa in verticale — la
+simulazione designa una colonna, il mondo sceglie **la quota** — e la
+simulazione continua a non avere una coordinata verticale (invariante 7). È
+l'alternativa da preferire a un indice `z` nel campo di desiderabilità, che
+moltiplicherebbe per il numero di livelli tutta la memoria densa.
+
+- [ ] Introdurre la piattaforma come suolo artificiale: una struttura con appoggi
+  propri che porta una superficie edificabile a quota, trattata dal registry come
+  volume e non come edificio.
+- [ ] Esporre più di una quota edificabile per colonna senza duplicare la
+  `TerrainMap`: il livello si risolve dove si risolve il lotto, non nel campo.
+- [ ] Far crescere edifici sulle piattaforme e sui tetti condivisi dei cluster,
+  riusando `topOf` e l'intervallo di quota che il registry già confronta.
+- [ ] Aggiungere mobilità in quota come struttura di scena — monorotaia,
+  sopraelevata, ascensori d'isolato — appoggiata alla rete di 4.5 e ai suoi
+  appoggi reali.
+- [ ] Dare un fondo al vuoto: nuvole, foschia e livelli inferiori intravisti, così
+  che una quota alta si legga come alta anche quando il suolo non si vede più.
+- [ ] Far dipendere il costo per colonna dai livelli *presenti* e non da un tetto
+  teorico: una colonna a un livello solo deve costare quanto costa oggi.
+
+**Vincolo:** l'isola resta il suolo di partenza e non viene sostituita — la
+megacittà le cresce sopra, e una partita che non arriva mai in quota deve restare
+identica a quella di oggi. Nessuna struttura sospesa senza appoggi reali: vale
+anche qui la regola di 4.5, una campata orfana è un bug e non uno stile.
+
+**Gate:** esiste almeno una zona della città in cui si abita sopra la città e ci
+si muove fra i livelli; determinismo e budget reggono con due livelli sovrapposti
+come con uno, e il suolo originale resta ricostruibile dal seed.
+
 **Gate della fase 4:** con la UI nascosta, la città comunica crescita verticale,
 connessioni fra livelli e struttura economica attraverso volumi e silhouette;
 ponti, terrazze e percorsi in quota restano leggibili alle normali distanze di
-gioco.
+gioco, e il singolo edificio regge anche l'inquadratura ravvicinata.
 
 ## Fase 5 — Persistenza e prodotto browser
 

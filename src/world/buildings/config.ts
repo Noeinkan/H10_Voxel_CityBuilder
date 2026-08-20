@@ -43,6 +43,16 @@ export const BUILDER = {
    */
   upgradesPerPass: 64,
 
+  /**
+   * Isolati di raggio entro cui cercare un lotto quando il proprio e' pieno.
+   *
+   * La simulazione ripropone le stesse colonne finche' il campo resta saturo:
+   * senza questa ricerca la citta' si ferma appena il primo isolato si riempie.
+   * Due basta a scavalcare un isolato pieno e uno inutilizzabile di fila, e
+   * tiene lo scarto dalla colonna proposta sotto una trentina di colonne.
+   */
+  blockSearchRadius: 2,
+
   /** Livello massimo raggiungibile. Oltre, un edificio smette di crescere. */
   maxLevel: 6,
 
@@ -55,15 +65,6 @@ export const BUILDER = {
    * convergere l'altezza invece di farla salire finche' c'e' un catalizzatore.
    */
   upgradeThreshold: [0, 50, 78, 108, 138, 168, 198] as readonly number[],
-
-  /**
-   * Dislivello massimo, in voxel, che una fondazione puo' colmare.
-   *
-   * Sopra questa soglia il sito viene scartato **per sempre**: la pendenza di
-   * una colonna non cambia mai — nessuno scava e nessuno riporta terra — quindi
-   * ritentarla darebbe lo stesso esito a ogni infornata, per sempre.
-   */
-  maxTerrainStep: 3,
 
   /**
    * Chunk che un singolo edificio puo' marcare sporchi, fondazione inclusa.
@@ -86,8 +87,14 @@ export const BUILDER = {
    */
   maxGrowing: 12,
 
-  /** Celle di piazzole e sentieri applicate per frame. */
-  surfaceCellsPerFrame: 24,
+  /**
+   * Voxel di superficie urbana scritti per frame.
+   *
+   * Contava celle finche' una cella valeva un voxel. Dalla 4.2 una cella puo'
+   * essere un molo alto sei, e il budget deve restare quello che e': un tetto
+   * sul lavoro per frame, non sul numero di colonne toccate.
+   */
+  surfaceVoxelsPerFrame: 48,
 
   /** Quota sopra il terreno bonificata da tronchi e chiome. */
   decorClearanceHeight: 7,

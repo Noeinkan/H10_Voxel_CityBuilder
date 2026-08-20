@@ -5,6 +5,10 @@ greedy meshing in worker, rendering Three.js, simulazione a tick e crescita
 automatica degli edifici. `src/main.ts` compone i moduli e funge da harness di
 debug e misura.
 
+Questo file e' la fonte unica di comandi, convenzioni e contratti. Le regole di
+`src/engine/`, `src/world/` e `src/sim/` stanno nei rispettivi `AGENTS.md` e si
+caricano quando lavori in quella cartella: non ripeterle qui.
+
 ## Stack
 
 - TypeScript 5.9 strict, moduli ES, target ES2022
@@ -13,21 +17,19 @@ debug e misura.
 
 ## Mappa rapida
 
-- `src/world/`: storage voxel, scene, terreno ed edifici
+- `src/world/`: storage voxel, scene, terreno, strade ed edifici
 - `src/engine/`: meshing, worker, palette, temi, camera e renderer
 - `src/sim/`: stato e simulazione pura per colonna `(x, y)`
-- `src/game/`: ciclo a passo fisso; `src/ui/`: overlay di debug
+- `src/game/`: ciclo a passo fisso; `src/ui/`: HUD e overlay di debug
 - `src/main.ts`: unico composition root e ciclo di frame
 - `docs/PROJECT_MAP.md`: dipendenze e punti di ingresso
 - `PROJECT_INDEX.md`: indice dettagliato file per file
-
-Le regole specifiche di `src/engine/`, `src/world/` e `src/sim/` sono nei
-rispettivi `AGENTS.md` e si aggiungono a queste.
 
 ## Comandi
 
 ```bash
 npm install
+npm start            # = npm run dev, ma prima libera la porta 8020
 npm run dev          # http://localhost:8020/?debug=1
 npm run build        # typecheck + build Vite in dist/
 npm run preview      # http://localhost:8011/
@@ -36,6 +38,10 @@ npm run test:watch
 npm run bench
 npm run typecheck
 ```
+
+`prestart`/`predev` passano da `scripts/free-port.mjs`, che termina l'istanza
+node rimasta sulla 8020: `strictPort` fa fallire l'avvio invece di scivolare su
+un'altra porta. Se la porta la tiene un programma estraneo, lascia fallire vite.
 
 Non esiste uno script `lint` o un formatter configurato: non inventarne uno.
 
@@ -49,6 +55,9 @@ Non esiste uno script `lint` o un formatter configurato: non inventarne uno.
   azioni distruttive o cambiamenti che richiedono nuova autorizzazione.
 - Mantieni lo stile vicino: due spazi, apici singoli, punto e virgola e trailing
   comma dove gia' usata. Usa `import type` per i soli tipi.
+- Oltre a `strict`: `noImplicitOverride`, `noFallthroughCasesInSwitch`,
+  `noImplicitReturns`, `noUnusedLocals`, `noUnusedParameters`,
+  `verbatimModuleSyntax`.
 - Test co-locati come `*.test.ts`; benchmark come `*.bench.ts`.
 - Dentro `src/sim/` usa import diretti; da fuori usa `src/sim/index.ts`.
 - Mondo Z-up: `x` est, `y` nord, `z` altezza; coordinate negative valide.
@@ -60,26 +69,61 @@ Non esiste uno script `lint` o un formatter configurato: non inventarne uno.
 2. Solo `setBlock` invalida geometria; `setData` non marca chunk sporchi.
 3. Non sostituire gli `Uint8Array` di un chunk dopo la costruzione.
 4. Colori solo nelle uniform: le mesh hanno `aPalette` e `aFace`, mai RGB.
+   `aAO` e' un attributo geometrico scalare (0..3), non un colore. Cambiare
+   palette o tema non deve mai provocare un rebuild di mesh.
 5. La palette ha esattamente 32 slot; riusa gli indici di `paletteSlots.ts`.
+   Per la stessa ragione i tipi di superficie sono **otto e basta**: i tre bit
+   alti di `visualBlock` sono tutti impegnati, e prenderne un quarto
+   toglierebbe un bit alla palette.
 6. Mesher e generatore di terreno non importano Three.js.
-7. `src/sim/` non importa da `src/engine/` e non usa DOM o Three.js.
+7. `src/sim/` non importa da `src/engine/` e non usa DOM o Three.js; non sa
+   niente di come sono fatti gli edifici — la tipologia vive in
+   `src/world/buildings/`.
 8. `tick` resta puro, deterministico e non ricalcola la desiderabilita'.
 9. Il campo ricalcola, non accumula, e solo nel rettangolo toccato.
-10. Il terreno dipende solo da `(seed, shape, ccx, ccy)`.
+10. Gli usi urbani sono **quattro e il loro ordine e' contratto**: residenziale,
+    commerciale, industriale, civico. Ogni tupla indicizzata per uso — soglie di
+    sito, pesi, `CLASS_PROFILE`, colori degli overlay — segue quest'ordine, e
+    cambiarlo significa cambiarle tutte insieme.
+11. Il terreno dipende solo da `(seed, shape, ccx, ccy)`.
 
-Le costanti vivono nel file del dominio: terreno in `terrain/config.ts`, edifici
-in `buildings/config.ts`, simulazione in `sim/balance.ts`, palette nell'engine.
-Non aggiornare a occhio le misure documentate nei README.
+## Dove stanno i numeri
+
+Ogni costante di bilanciamento vive in un solo file per dominio. Se stai per
+scrivere una soglia, una frequenza o un moltiplicatore altrove, quasi sempre e'
+il posto sbagliato.
+
+| Dominio | File unico |
+| --- | --- |
+| Terreno | `src/world/terrain/config.ts` |
+| Strade | `src/world/streets/config.ts` |
+| Opere di terra | `src/world/grading/config.ts` |
+| Simulazione | `src/sim/balance.ts` |
+| Costruzione e tipologie | `src/world/buildings/config.ts` |
+| Palette | `src/engine/palette.json` + `paletteSlots.ts` |
+| Temi | `src/engine/themes/` — un file per tema, colori piu' atmosfera |
+| Modello di luce | `src/engine/lighting.ts` — sole, ambiente, luminanza per faccia |
+
+Non aggiornare a occhio le misure documentate nei README: sono verificate a mano
+su questa macchina.
 
 ## Budget e pattern da evitare
 
 - Lavoro non-render sotto 3 ms per frame (accettazione: 4 ms); generazione 1,5
-  ms. Spezza generazione, upload e ricolore su piu' frame.
+  ms. Spezza generazione, upload e ricolore su piu' frame. Ombra e
+  post-processing sono spesa GPU e restano fuori dal budget.
 - Simulazione a 10 tick/s a passo fisso con recupero limitato: non usare `dt`.
 - Evita `Date.now()` e `Math.random()` nei percorsi deterministici.
-- Non riattivare `noUncheckedIndexedAccess` senza discuterne.
+- Non riattivare `noUncheckedIndexedAccess` senza discuterne (vedi il commento
+  in `tsconfig.json`).
 - Non modificare `dist/` o `node_modules/`.
 - Se aggiungi file, aggiorna `PROJECT_INDEX.md` e il README di modulo pertinente.
+
+## Harness di debug
+
+Parametri URL, hotkey e hook globali stanno nella skill `debug-harness`
+(`/debug-harness`). Se aggiungi una metrica, falla passare **sia** dall'overlay
+sia dall'hook globale: leggono la stessa fonte.
 
 ## Definizione di completamento
 

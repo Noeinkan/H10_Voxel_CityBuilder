@@ -7,9 +7,14 @@ import type { BuildingRecord } from './BuildingRegistry';
 import { PALETTE_SLOTS } from '../../engine/paletteSlots';
 import { testTerrain } from '../../sim/testTerrain';
 import { VoxelWorld } from '../VoxelWorld';
+import { generateIsland } from '../terrain/IslandGenerator';
 import { SURFACE_KIND } from '../visualBlock';
 import { Builder } from './Builder';
-import { CLASS_PROFILE } from './config';
+import { BUILDER, CLASS_PROFILE } from './config';
+import { GRADING } from '../grading/config';
+import { GROUND, groundKindOf, type GroundKind } from '../grading/grade';
+import { TERRAIN } from '../terrain/config';
+import type { TerrainMap } from '../terrain/TerrainMap';
 
 describe('Builder', () => {
   it('trasforma un candidato della simulazione in voxel e occupazione', () => {
@@ -193,3 +198,280 @@ describe('Builder — allineamento alla rete stradale', () => {
     expect(a.length).toBeGreaterThan(5);
   });
 });
+
+/**
+ * Le opere di terra non si vedono su un terreno piatto: la fixture piana dei
+ * test precedenti le lascerebbe tutte spente. Qui il rilievo e' scritto dal
+ * test — un fianco a gradoni, una linea di costa — e bioma ed edificabilita' li
+ * ricava `testTerrain` dalle stesse funzioni del generatore, cosi' le colonne
+ * sono classificate come lo sarebbero sull'isola vera.
+ */
+describe('Builder — opere di terra', () => {
+  /** Fianco a gradoni: strisce ripide e strisce dolci alternate. */
+  function hillside(): TerrainMap {
+    return testTerrain({
+      chunksX: 4,
+      chunksY: 4,
+      heightAt: (x) => 12 + Math.floor(x / 12),
+      // Le strisce ripide non sono `buildable`: prima della 4.2 la citta' le
+      // saltava del tutto, e sono meta' del fianco.
+      slopeAt: (x) => (Math.floor(x / 8) % 2 === 0 ? 0.2 : 0.4),
+    });
+  }
+
+  /** Costa: fondale, battigia e pianura in sequenza lungo x. */
+  function coast(): TerrainMap {
+    return testTerrain({
+      chunksX: 4,
+      chunksY: 4,
+      heightAt: (x) => Math.max(2, Math.min(18, 2 + Math.floor(x / 2))),
+      slopeAt: () => 0.15,
+    });
+  }
+
+  function grow(terrain: TerrainMap, anchor: number, rounds: number): {
+    world: VoxelWorld;
+    builder: Builder;
+    records: readonly BuildingRecord[];
+  } {
+    const world = new VoxelWorld();
+    const builder = new Builder(world, terrain, 1337);
+
+    let state = createSimState();
+    state = addCatalyst(state, {
+      x: anchor,
+      y: 64,
+      class: BUILDING_CLASS.residential,
+      strength: 255,
+      radius: 40,
+    });
+
+    for (let i = 0; i < rounds; i++) {
+      state = tick(state, terrain);
+      state = builder.onTick(state);
+      while (builder.stats.growing > 0) builder.step();
+    }
+    while (builder.stats.surfaceQueued > 0) builder.step();
+
+    return { world, builder, records: [...builder.registry.all] };
+  }
+
+  /**
+   * Un'isola vera con sopra una citta' cresciuta dalla costa.
+   *
+   * Il catalizzatore va sulla colonna edificabile piu' vicina al mare: e' li'
+   * che battigia, bassofondo e fianco stanno tutti dentro il raggio in cui la
+   * citta' arriva davvero, e quindi l'unico posto da cui le quattro opere si
+   * osservano tutte nello stesso mondo.
+   */
+  function growIsland(): {
+    world: VoxelWorld;
+    map: TerrainMap;
+    builder: Builder;
+  } {
+    const world = new VoxelWorld();
+    const { map } = generateIsland(world, 4242, { minX: 0, minY: 0, sizeX: 128, sizeY: 128 });
+
+    const anchor = seaward(map);
+    const builder = new Builder(world, map, 4242);
+    let state = createSimState();
+    state = addCatalyst(state, {
+      x: anchor.x,
+      y: anchor.y,
+      class: BUILDING_CLASS.residential,
+      strength: 255,
+      radius: 40,
+    });
+
+    for (let i = 0; i < 60; i++) {
+      state = tick(state, map);
+      state = builder.onTick(state);
+      while (builder.stats.growing > 0) builder.step();
+    }
+    while (builder.stats.surfaceQueued > 0) builder.step();
+
+    return { world, map, builder };
+  }
+
+  /** I tipi di terreno sotto l'impronta di un edificio. */
+  function lotGround(terrain: TerrainMap, record: BuildingRecord): GroundKind[] {
+    const kinds: GroundKind[] = [];
+    for (let dy = 0; dy < record.footprint; dy++) {
+      for (let dx = 0; dx < record.footprint; dx++) {
+        kinds.push(groundKindOf(
+          terrain.biomeAt(record.x + dx, record.y + dy),
+          terrain.slopeAt(record.x + dx, record.y + dy),
+          terrain.heightAt(record.x + dx, record.y + dy),
+        ));
+      }
+    }
+    return kinds;
+  }
+
+  it('costruisce sul fianco in pendenza invece di saltarlo', () => {
+    const terrain = hillside();
+    const { records } = grow(terrain, 64, 40);
+
+    const sloped = records.filter((r) => lotGround(terrain, r).includes(GROUND.sloped));
+    // Prima della 4.2 queste colonne non erano `buildable` e nessun edificio
+    // poteva nascerci: il fianco restava un buco nella citta'.
+    expect(sloped.length).toBeGreaterThan(0);
+  });
+
+  it('il salto e costruito: il muro porta la grammatica delle infrastrutture', () => {
+    const terrain = hillside();
+    const { world } = grow(terrain, 64, 40);
+
+    let wall = 0;
+    for (let y = 0; y < 128; y++) {
+      for (let x = 0; x < 128; x++) {
+        for (let z = 0; z < 24; z++) {
+          if (world.getBlock(x, y, z) === 0) continue;
+          if (world.getSurfaceKind(x, y, z) === SURFACE_KIND.utility) wall++;
+        }
+      }
+    }
+    // Solo le opere scrivono `utility`: il terreno e gli edifici no.
+    expect(wall).toBeGreaterThan(0);
+  });
+
+  it('si riempie e non si scava: nessuna colonna perde il terreno che aveva', () => {
+    // E' il vincolo centrale della fase, e uno dei test che ha bisogno di
+    // un'isola vera: `testTerrain` riempie la `TerrainMap` ma non scrive un
+    // voxel, quindi su quella fixture "il terreno e' sparito" e "il terreno non
+    // c'e' mai stato" sarebbero indistinguibili.
+    const { world, map, builder } = growIsland();
+    expect(builder.registry.count).toBeGreaterThan(20);
+
+    for (let y = 0; y < 128; y++) {
+      for (let x = 0; x < 128; x++) {
+        const height = map.heightAt(x, y);
+        for (let z = 0; z < height; z++) {
+          if (world.getBlock(x, y, z) === 0) {
+            expect({ x, y, z, height }).toBe('colonna piena fino alla quota naturale');
+          }
+        }
+      }
+    }
+  });
+
+  it('sull isola vera la citta raggiunge la costa e il fianco', () => {
+    const { map, builder } = growIsland();
+
+    let shore = 0;
+    let sloped = 0;
+    for (const record of builder.registry.all) {
+      const kinds = lotGround(map, record);
+      if (kinds.includes(GROUND.shore)) shore++;
+      if (kinds.includes(GROUND.sloped)) sloped++;
+    }
+    // Sull'isola vera meta' della terra emersa non era `buildable`: battigia e
+    // pendenza insieme. Se questi due tornano a zero, la 4.2 e' stata annullata.
+    expect(shore).toBeGreaterThan(0);
+    expect(sloped).toBeGreaterThan(0);
+  });
+
+  it('la costa diventa fronte costruito invece di un bordo', () => {
+    const terrain = coast();
+    const { records } = grow(terrain, 26, 40);
+
+    const onShore = records.filter((r) => lotGround(terrain, r).includes(GROUND.shore));
+    expect(onShore.length).toBeGreaterThan(0);
+  });
+
+  it('la banchina si spinge oltre la battigia, sopra l acqua', () => {
+    // Sull'isola vera e non sulla fixture: il molo nasce dove la citta'
+    // incontra il bassofondo, e una costa scritta a mano o lo mette sotto il
+    // primo isolato o lo lascia fuori portata — in entrambi i casi il test
+    // direbbe piu' di come e' fatta la fixture che di come e' fatta la citta'.
+    const { world, map } = growIsland();
+
+    let overWater = 0;
+    for (let y = 0; y < 128; y++) {
+      for (let x = 0; x < 128; x++) {
+        if (map.heightAt(x, y) >= TERRAIN.seaLevel) continue;
+        // Pieno alla quota del molo dove il terreno lasciava acqua: e' banchina.
+        if (world.getBlock(x, y, GRADING.quayLevel - 1) !== 0) overWater++;
+      }
+    }
+    expect(overWater).toBeGreaterThan(0);
+  });
+
+  it('la piazza si livella quando il dislivello lo giustifica', () => {
+    const world = new VoxelWorld();
+    const terrain = testTerrain({
+      chunksX: 1,
+      chunksY: 1,
+      heightAt: (x) => (x < 16 ? 12 : 12 + GRADING.plazaMinStep),
+      slopeAt: () => 0.1,
+    });
+    const builder = new Builder(world, terrain, 1337);
+
+    builder.decorateCatalyst(16, 16, BUILDING_CLASS.residential);
+    while (builder.stats.surfaceQueued > 0) builder.step();
+
+    const radius = BUILDER.catalystPlazaRadius;
+    const levels = new Set<number>();
+    for (let dy = -radius; dy <= radius; dy++) {
+      for (let dx = -radius; dx <= radius; dx++) {
+        if (Math.abs(dx) + Math.abs(dy) > radius) continue;
+        levels.add(topSolid(world, 16 + dx, 16 + dy));
+      }
+    }
+    // Un piano solo: la piazza e' una piattaforma, non un prato colorato.
+    expect([...levels]).toEqual([12 + GRADING.plazaMinStep - 1]);
+  });
+
+  it('la rampa non lascia gradini fra due colonne di carreggiata', () => {
+    const terrain = coast();
+    const streets = new StreetNetwork(1337);
+    const { world, builder } = grow(terrain, 26, 40);
+
+    for (let y = 1; y < 127; y++) {
+      for (let x = 1; x < 127; x++) {
+        if (!streets.isPavement(x, y) || builder.registry.isOccupied(x, y)) continue;
+        const here = topSolid(world, x, y);
+        if (here < 0) continue;
+        for (const [nx, ny] of [[x + 1, y], [x, y + 1]]) {
+          if (!streets.isPavement(nx, ny) || builder.registry.isOccupied(nx, ny)) continue;
+          const there = topSolid(world, nx, ny);
+          if (there < 0) continue;
+          // Un voxel per colonna e' la pendenza massima che una strada
+          // percorre: oltre, la carreggiata e' un salto e non una rampa.
+          expect(Math.abs(here - there)).toBeLessThanOrEqual(1);
+        }
+      }
+    }
+  });
+
+  it('a parita di seed il rilievo produce la stessa citta', () => {
+    const a = grow(coast(), 26, 30).records.map((r) => `${r.x},${r.y},${r.baseZ},${r.footprint}`);
+    const b = grow(coast(), 26, 30).records.map((r) => `${r.x},${r.y},${r.baseZ},${r.footprint}`);
+    expect(a).toEqual(b);
+    expect(a.length).toBeGreaterThan(5);
+  });
+});
+
+/** Colonna edificabile piu' vicina al mare: e' li' che le opere si vedono. */
+function seaward(map: TerrainMap): { x: number; y: number } {
+  let best = { x: 64, y: 64, distance: Number.MAX_SAFE_INTEGER };
+  for (let y = 16; y < 112; y++) {
+    for (let x = 16; x < 112; x++) {
+      if (!map.isBuildable(x, y)) continue;
+      for (let r = 1; r < best.distance && r < 16; r++) {
+        for (const [dx, dy] of [[r, 0], [-r, 0], [0, r], [0, -r]]) {
+          if (map.heightAt(x + dx, y + dy) < TERRAIN.seaLevel) best = { x, y, distance: r };
+        }
+      }
+    }
+  }
+  return best;
+}
+
+/** Quota del voxel pieno piu' alto di una colonna, -1 se e' vuota. */
+function topSolid(world: VoxelWorld, x: number, y: number): number {
+  for (let z = 40; z >= 0; z--) {
+    if (world.getBlock(x, y, z) !== 0) return z;
+  }
+  return -1;
+}

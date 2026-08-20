@@ -33,7 +33,7 @@ import { resolveLaunchMode } from './game/launchMode';
 import { pickSurfaceCell, type SurfaceCell } from './game/surfacePick';
 import { FixedStepLoop } from './game/loop';
 import { coastalSectorAt, shapeWithSector, type CoastalSector } from './game/sectors';
-import type { ActionFailure } from './game/actions';
+import type { ActionFailure, SiteCost } from './game/actions';
 import { BALANCE } from './sim/balance';
 import { catalystById, defaultCatalystOfClass } from './sim/catalysts';
 import { CLASS_COUNT, CLASS_LABELS, CLASS_NAMES, type BuildingClass } from './sim/classes';
@@ -51,6 +51,7 @@ import { GrowthOverlay } from './ui/GrowthOverlay';
 import { SimOverlay, type SimOverlayFrame } from './ui/SimOverlay';
 import { TerrainOverlay, type TerrainOverlayFrame } from './ui/TerrainOverlay';
 import { CHUNK } from './world/chunkCoords';
+import { GROUND, type GroundKind } from './world/grading/grade';
 import { createScene, type SceneGenerator, type SceneKind } from './world/scenes/cityScene';
 import { BiomeView } from './world/terrain/BiomeView';
 import { expandIsland } from './world/terrain/IslandGenerator';
@@ -478,6 +479,8 @@ if (debugEnabled) {
 
 const frameTiming = new FrameTiming(600);
 let mainMsMax = 0;
+/** Vero finche' la scena si sta ancora popolando: vedi `observeQuality`. */
+let generating = true;
 let previousTime = performance.now();
 
 renderer.setAnimationLoop(onFrame);
@@ -628,14 +631,7 @@ function onFrame(time: number): void {
   const renderMs = performance.now() - renderStart;
 
   const frameMs = performance.now() - workStart;
-  const quality = renderQuality.observe(frameTiming.snapshot(), time);
-  if (quality.changed && quality.reason !== 'initial') {
-    renderer.setPixelRatio(quality.pixelRatio);
-    renderer.setSize(window.innerWidth, window.innerHeight);
-    post.setSize(window.innerWidth, window.innerHeight, quality.pixelRatio);
-    applyQualityProfile(quality.profile);
-    syncResolution();
-  }
+  observeQuality(time);
 
   if (overlay !== null && overlay.needsPaint(time)) {
     overlay.update(buildOverlayFrame(mainMs, renderMs, frameMs), time);
@@ -652,6 +648,42 @@ function onFrame(time: number): void {
   if (gameHud !== null && growthScene !== null && gameHud.needsPaint(time)) {
     gameHud.update(growthScene.stats, time);
   }
+}
+
+/**
+ * Gating di qualita', ma solo a regime.
+ *
+ * Il popolamento della scena non e' il regime: dura pochi secondi e salta dei
+ * frame per costruzione, mentre risalire di un gradino costa dieci secondi
+ * stabili. Misurato li', il controller scendeva quasi sempre entro i primi
+ * quattro secondi e non risaliva piu' — e il primo gradino che si perde e' anche
+ * il piu' visibile, perche' dimezza la shadow map. Quindi si misura solo a
+ * generazione ferma, ripartendo da una finestra pulita.
+ *
+ * Per la stessa ragione la finestra riparte a ogni cambio applicato: la
+ * decisione successiva deve misurare il profilo appena messo in opera, non
+ * quello di prima. Senza, un cambio ne innescava un altro sugli stessi campioni.
+ */
+function observeQuality(time: number): void {
+  if (!generator.done) {
+    generating = true;
+    return;
+  }
+  if (generating) {
+    generating = false;
+    frameTiming.reset();
+    return;
+  }
+
+  const quality = renderQuality.observe(frameTiming.snapshot(), time);
+  if (!quality.changed || quality.reason === 'initial') return;
+
+  renderer.setPixelRatio(quality.pixelRatio);
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  post.setSize(window.innerWidth, window.innerHeight, quality.pixelRatio);
+  applyQualityProfile(quality.profile);
+  syncResolution();
+  frameTiming.reset();
 }
 
 // --- Scena di simulazione ---------------------------------------------------
@@ -779,12 +811,13 @@ function onGamePointerMove(event: PointerEvent): void {
     const catalyst = catalystById(selectedTool.id ?? defaultCatalystOfClass(selectedTool.class));
     const failure = growthScene.catalystFailure(cell.x, cell.y, catalyst.id);
     const radius = catalyst.radius;
-    const cost = catalyst.cost;
+    const site = growthScene.catalystSiteCost(cell.x, cell.y, catalyst.id);
+    const cost = site === null ? catalyst.cost : site.cost;
     valid = failure === null;
     influenceOverlay?.showCursor(cell.x, cell.y, radius, valid);
     gameHud?.updateCursor(event.clientX, event.clientY, {
       title: catalyst.label,
-      details: `${cost} funds · radius ${radius} · mainly ${classLabel(catalyst.class)}`,
+      details: `${cost} funds${groundNote(site)} · radius ${radius} · mainly ${classLabel(catalyst.class)}`,
       favours: catalyst.favours.map(classLabel),
       penalises: catalyst.penalises.map(classLabel),
       typologies: typologiesForUses(catalyst.favours),
@@ -891,10 +924,30 @@ function classLabel(cls: BuildingClass): string {
   return CLASS_LABELS[cls] ?? 'urban';
 }
 
+const GROUND_LABELS: Readonly<Record<GroundKind, string>> = {
+  [GROUND.flat]: 'flat ground',
+  [GROUND.sloped]: 'terraced slope',
+  [GROUND.shore]: 'quay',
+  [GROUND.rock]: 'rock',
+  [GROUND.refused]: 'unworkable',
+};
+
+/**
+ * Il perche' del sovrapprezzo, accanto al prezzo.
+ *
+ * Su terreno di listino non compare nulla: un `×1` accanto a ogni cartellino
+ * insegnerebbe a ignorare la riga proprio dove invece cambia.
+ */
+function groundNote(site: SiteCost | null): string {
+  if (site === null || site.ground === GROUND.flat) return '';
+  if (site.ground === GROUND.refused) return ` · ${GROUND_LABELS[site.ground]}`;
+  return ` · ${GROUND_LABELS[site.ground]} ×${site.weight}`;
+}
+
 function actionFailureLabel(reason: ActionFailure): string {
   const labels: Readonly<Record<ActionFailure, string>> = {
     'terrain-loading': 'The terrain is still being generated.',
-    'not-buildable': 'This terrain is not buildable.',
+    'not-buildable': 'No earthwork holds here: cliff or deep water.',
     'too-close': 'Too close to a catalyst of the same class.',
     'insufficient-funds': 'Not enough funds.',
     'population-required': `Requires ${BALANCE.gameplay.expansion.population} residents.`,

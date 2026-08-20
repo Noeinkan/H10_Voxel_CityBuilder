@@ -4,7 +4,7 @@ Mappa file per file di `src/`. Il *perché* delle scelte sta nei README
 ([README.md](README.md), [src/sim/README.md](src/sim/README.md)); le regole
 operative in [CLAUDE.md](CLAUDE.md). Qui c'è solo *dove sta cosa*.
 
-Oltre 23 mila righe di TypeScript, 49 file di test (359 test), 2 file di bench.
+Oltre 23 mila righe di TypeScript, 50 file di test (389 test), 2 file di bench.
 
 ## Direzione delle dipendenze
 
@@ -38,12 +38,18 @@ worker. `src/sim/` gira in Node senza DOM né GPU.
 
 ## Documentazione operativa
 
-| File | Ruolo |
-| --- | --- |
-| [docs/PROJECT_MAP.md](docs/PROJECT_MAP.md) | Mappa sintetica di dipendenze, punti di ingresso e flussi |
-| [src/engine/AGENTS.md](src/engine/AGENTS.md) | Contratti locali di renderer, mesher, palette e temi |
-| [src/world/AGENTS.md](src/world/AGENTS.md) | Contratti locali di storage, terreno ed edifici |
-| [src/sim/AGENTS.md](src/sim/AGENTS.md) | Contratti locali di simulazione, stato e campo |
+Caricati sempre: [AGENTS.md](AGENTS.md) e [CLAUDE.md](CLAUDE.md). Tutto il
+resto si apre a domanda — è ciò che tiene basso il contesto di partenza.
+
+| File | Ruolo | Caricato |
+| --- | --- | --- |
+| [AGENTS.md](AGENTS.md) | **Fonte unica** di comandi, convenzioni, contratti, budget e definizione di "finito" | sempre |
+| [CLAUDE.md](CLAUDE.md) | Puntatore: dove stanno le regole e cosa si sbaglia facilmente | sempre |
+| [src/engine/AGENTS.md](src/engine/AGENTS.md) | Renderer, mesher, palette, temi, modello di luce e pass | lavorando in `src/engine/` |
+| [src/world/AGENTS.md](src/world/AGENTS.md) | Storage, terreno, strade, edifici e catalogo delle tipologie | lavorando in `src/world/` |
+| [src/sim/AGENTS.md](src/sim/AGENTS.md) | Simulazione, stato, campo e relazioni di bilanciamento | lavorando in `src/sim/` |
+| [.claude/skills/debug-harness/SKILL.md](.claude/skills/debug-harness/SKILL.md) | Parametri URL, hotkey e hook globali | `/debug-harness` |
+| [docs/PROJECT_MAP.md](docs/PROJECT_MAP.md) | Mappa sintetica di dipendenze, punti di ingresso e flussi | a domanda |
 
 ## `src/world/` — storage e mondo
 
@@ -67,12 +73,12 @@ API pubblica, e produce in parallelo una mappa 2D per colonna.
 
 | File | Ruolo | Esporta |
 | --- | --- | --- |
-| [config.ts](src/world/terrain/config.ts) | **Ogni** soglia, frequenza, ampiezza, stratigrafia e densita' degli alberi | `TERRAIN`, `BIOME`, `BIOME_NAMES`, `BIOME_STRATA`, `BUILDABLE_BIOMES`, `WATER_IDS`, `TREE_DECOR` |
+| [config.ts](src/world/terrain/config.ts) | **Ogni** soglia, frequenza, ampiezza, stratigrafia, densita' e forma degli alberi | `TERRAIN`, `BIOME`, `BIOME_NAMES`, `BIOME_STRATA`, `BUILDABLE_BIOMES`, `WATER_IDS`, `TREE_DECOR`, `TREE_SHAPES` |
 | [heightField.ts](src/world/terrain/heightField.ts) | 4 ottave di simplex × maschera radiale deformata | `HeightField` |
 | [biomes.ts](src/world/terrain/biomes.ts) | Bioma da altezza e pendenza, edificabilità, colore per profondità | `classifyBiome`, `isBuildable`, `paletteForDepth` |
 | [region.ts](src/world/terrain/region.ts) | Region, `IslandShape`, allineamento ai chunk di colonna | `Region`, `IslandShape`, `shapeFromRegion`, `alignRegion`, `chunkSpanOf` |
 | [columnBlock.ts](src/world/terrain/columnBlock.ts) | Blocco 32×32 di colonne piu' record di decorazioni, trasferibile fra worker e main | `ColumnBlock`, `columnIndex`, `blockTransferables` |
-| [decor.ts](src/world/terrain/decor.ts) | Alberi deterministici per cella e scrittura ritagliata al blocco | `treeAt`, `writeTree`, `TreeSpec` |
+| [decor.ts](src/world/terrain/decor.ts) | Alberi deterministici per cella e scrittura ritagliata al blocco | `treeAt`, `treeSpec`, `treeTop`, `writeTree`, `TreeSpec` |
 | [IslandGenerator.ts](src/world/terrain/IslandGenerator.ts) | `generateIsland`, `expandIsland`, colonne e decorazioni | `generateIsland`, `expandIsland`, `generateColumnBlock`, `writeBlockColumns`, `writeBlockDecor` |
 | [TerrainMap.ts](src/world/terrain/TerrainMap.ts) | Mappa sparsa per colonna, chunkata 32×32 come il mondo | `TerrainMap`, `TerrainColumn`, `TerrainColumnChunk` |
 | [terrainMessages.ts](src/world/terrain/terrainMessages.ts) | Protocollo main ↔ worker | `TerrainJob`, `BlockMessage`, `DoneMessage` |
@@ -186,6 +192,28 @@ const block = streets.blockAt(96, 96);
 placeLot({ rect: streets.blockRect(block), x: 96, y: 96, footprint: 4, accepts });
 ```
 
+## `src/world/grading/` — opere di terra
+
+Cosa serve **costruire** perche' un pezzo di terreno regga un piano: un
+terrapieno con il suo muro di contenimento, una banchina che porta il piano
+sopra la battigia, oppure niente. E' la risposta alla domanda che la 4.2
+sostituisce a "questa colonna e' gia' piana?", e vale meta' della terra emersa,
+che prima veniva scartata. Puro: entrano quote e classificazioni, esce un piano
+di opera. **Si riempie, non si scava** — un'opera aggiunge volume e non ne toglie
+mai.
+
+| File | Ruolo | Esporta |
+| --- | --- | --- |
+| [config.ts](src/world/grading/config.ts) | **Ogni** quota, dislivello, colore e peso di costo delle opere | `GRADING`, `BUILD_WEIGHT` |
+| [grade.ts](src/world/grading/grade.ts) | Classifica la colonna, la pesa, progetta il piano, rampa un campo di quote | `GROUND`, `WORKS`, `groundKindOf`, `buildWeightOf`, `footprintWeightOf`, `planGrade`, `rampField`, `GradePlan`, `GroundColumn`, `GroundKind`, `Works` |
+
+```ts
+groundKindOf(biome, slope, height);        // flat | sloped | shore | rock | refused
+buildWeightOf(kind);                       // moltiplicatore di costo, Infinity se rifiutata
+planGrade(columns);                        // { works, padZ, footZ, fill } | null
+rampField(level, width, height);           // alza il campo a pendenza uno, in posto
+```
+
 ## `src/world/buildings/` — crescita voxel
 
 Ponte tra candidati della simulazione e mondo renderizzato: convalida il terreno,
@@ -207,7 +235,7 @@ gestisce le impronte, costruisce a fasce entro un budget e promuove gli edifici.
 | [loop.ts](src/game/loop.ts) | Passo fisso della simulazione con tetto di recupero | `FixedStepLoop` |
 | [growthScene.ts](src/game/growthScene.ts) | Cablaggio esclusivo di `grow=1`: tick, Builder e animazione | `GrowthScene`, `GrowthStats` |
 | [launchMode.ts](src/game/launchMode.ts) | Risoluzione pura della modalita' iniziale e degli harness URL | `resolveLaunchMode`, `LaunchMode` |
-| [actions.ts](src/game/actions.ts) | Azioni economiche atomiche: catalizzatori, policy, decisioni, commercio ed espansione | `placeCatalyst`, `togglePolicy`, `chooseDecision`, `changeTradeMode`, `buyExpansion` |
+| [actions.ts](src/game/actions.ts) | Azioni economiche atomiche: catalizzatori, policy, decisioni, commercio ed espansione | `placeCatalyst`, `catalystFailure`, `catalystSiteCost`, `togglePolicy`, `chooseDecision`, `changeTradeMode`, `buyExpansion`, `SiteCost` |
 | [surfacePick.ts](src/game/surfacePick.ts) | Selezione pura della colonna sulla heightmap da un raggio 3D | `pickSurfaceCell` |
 | [onboarding.ts](src/game/onboarding.ts) | Tutorial derivato dai catalizzatori, senza flag nascosti | `onboardingOf`, `onboardingAllows` |
 | [cityCondition.ts](src/game/cityCondition.ts) | Obiettivo di autosufficienza e crisi con indicazioni di recupero | `cityCondition`, `isSelfSufficient` |
@@ -245,7 +273,7 @@ giocabile; gli overlay tecnici si alternano con `F3` o partono aperti con
 | [engine/mesher/microGeometry.test.ts](src/engine/mesher/microGeometry.test.ts) | Unità fisse, facce nascoste, testate condivise, priorità e limite |
 | [engine/palette.test.ts](src/engine/palette.test.ts) | 32 slot, validazione dei colori |
 | [engine/themes/themes.test.ts](src/engine/themes/themes.test.ts) | Ogni tema riempie i 32 slot, atmosfera in range |
-| [world/terrain/decor.test.ts](src/world/terrain/decor.test.ts) | Alberi deterministici, biomi esclusi e chiome non sovrapposte |
+| [world/terrain/decor.test.ts](src/world/terrain/decor.test.ts) | Alberi deterministici, biomi esclusi, chiome non sovrapposte e profili delle specie |
 | [game/loop.test.ts](src/game/loop.test.ts) | Cadenza fissa e limite del recupero |
 | [game/launchMode.test.ts](src/game/launchMode.test.ts) | Esperienza completa alla radice e isolamento degli harness URL |
 | [game/onboarding.test.ts](src/game/onboarding.test.ts) | Sequenza e sblocco dei tre passi iniziali |
@@ -255,7 +283,8 @@ giocabile; gli overlay tecnici si alternano con `F3` o partono aperti con
 | [ui/GameHudModel.test.ts](src/ui/GameHudModel.test.ts) | Risorse, requisiti, blocchi economici e policy attive del HUD |
 | [world/streets/streetGrid.test.ts](src/world/streets/streetGrid.test.ts) | Partizione strada/isolato, gerarchia degli assi, fronte e cuore, determinismo |
 | [world/streets/lots.test.ts](src/world/streets/lots.test.ts) | Il lotto tocca sempre un fronte, non esce dall'isolato, l'isolato si riempie |
-| [world/buildings/Builder.test.ts](src/world/buildings/Builder.test.ts) | Candidato → occupazione della simulazione → voxel; allineamento alla rete stradale |
+| [world/grading/grade.test.ts](src/world/grading/grade.test.ts) | Classificazione del terreno, quota del piano finito, tetto strutturale, rampa a pendenza uno |
+| [world/buildings/Builder.test.ts](src/world/buildings/Builder.test.ts) | Candidato → occupazione della simulazione → voxel; allineamento alla rete stradale; opere di terra su isola vera |
 | [world/buildings/BuildingRegistry.test.ts](src/world/buildings/BuildingRegistry.test.ts) | Indice spaziale e sostituzione di record |
 | [world/buildings/generate.test.ts](src/world/buildings/generate.test.ts) | Determinismo e limiti degli stamp |
 | [world/buildings/urbanForm.test.ts](src/world/buildings/urbanForm.test.ts) | Variazione deterministica della forma dal profilo locale |

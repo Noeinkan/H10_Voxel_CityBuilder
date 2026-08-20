@@ -61,6 +61,19 @@ export class IsoCameraController {
   private boundsVersion = -1;
   private radius = 1;
 
+  /**
+   * Pivot di rotazione sul piano di terra: il punto sotto al cursore al momento
+   * dello scatto, con l'offset che il target aveva rispetto a lui.
+   */
+  private readonly pivot = new Vector3();
+  private readonly pivotOffset = new Vector3();
+  private pivotActive = false;
+
+  private element: HTMLElement | null = null;
+  private hoverX = 0;
+  private hoverY = 0;
+  private hovering = false;
+
   private readonly keys = new Set<string>();
   private panX = 0;
   private panY = 0;
@@ -89,11 +102,13 @@ export class IsoCameraController {
 
   /** Collega gli input alla canvas. */
   attach(element: HTMLElement): void {
+    this.element = element;
     element.style.touchAction = 'none';
     element.addEventListener('pointerdown', this.onPointerDown);
     element.addEventListener('pointermove', this.onPointerMove);
     element.addEventListener('pointerup', this.onPointerUp);
     element.addEventListener('pointercancel', this.onPointerUp);
+    element.addEventListener('pointerleave', this.onPointerLeave);
     element.addEventListener('wheel', this.onWheel, { passive: false });
     element.addEventListener('contextmenu', preventDefault);
     window.addEventListener('keydown', this.onKeyDown);
@@ -105,10 +120,13 @@ export class IsoCameraController {
     element.removeEventListener('pointermove', this.onPointerMove);
     element.removeEventListener('pointerup', this.onPointerUp);
     element.removeEventListener('pointercancel', this.onPointerUp);
+    element.removeEventListener('pointerleave', this.onPointerLeave);
     element.removeEventListener('wheel', this.onWheel);
     element.removeEventListener('contextmenu', preventDefault);
     window.removeEventListener('keydown', this.onKeyDown);
     window.removeEventListener('keyup', this.onKeyUp);
+    this.hovering = false;
+    this.element = null;
   }
 
   setViewport(width: number, height: number): void {
@@ -166,6 +184,10 @@ export class IsoCameraController {
     if (this.yawTween < 1) {
       this.yawTween = Math.min(1, this.yawTween + dt / SNAP_DURATION);
       this.yaw = MathUtils.lerp(this.yawFrom, this.yawTo, easeInOut(this.yawTween));
+      if (this.pivotActive) {
+        this.orbitAroundPivot();
+        if (this.yawTween >= 1) this.pivotActive = false;
+      }
       changed = true;
     }
 
@@ -179,7 +201,13 @@ export class IsoCameraController {
     if (changed) this.applyTransform();
   }
 
-  /** Ruota di un quarto di giro: +1 orario, -1 antiorario. */
+  /**
+   * Ruota di un quarto di giro: +1 orario, -1 antiorario.
+   *
+   * Se il cursore e' sulla canvas, il perno e' il punto di terra che sta sotto
+   * di lui invece del centro dell'inquadratura: si gira attorno a quello che si
+   * sta guardando, non attorno a dove capita che sia il target.
+   */
   rotate(direction: number): void {
     this.yawStep = (this.yawStep + (direction > 0 ? 1 : -1)) & 3;
     this.yawFrom = this.yaw;
@@ -188,6 +216,9 @@ export class IsoCameraController {
     while (this.yawTo - this.yawFrom > Math.PI) this.yawTo -= Math.PI * 2;
     while (this.yawTo - this.yawFrom < -Math.PI) this.yawTo += Math.PI * 2;
     this.yawTween = 0;
+
+    this.pivotActive = this.groundUnderPointer(this.pivot);
+    if (this.pivotActive) this.pivotOffset.subVectors(this.target, this.pivot);
   }
 
   zoomBy(steps: number): void {
@@ -230,8 +261,64 @@ export class IsoCameraController {
   private panScreen(dxScreen: number, dyScreen: number): void {
     const cos = Math.cos(this.yaw);
     const sin = Math.sin(this.yaw);
-    this.target.x += dxScreen * -sin + dyScreen * -cos * AZIMUTH_TO_SCREEN;
-    this.target.y += dxScreen * cos + dyScreen * -sin * AZIMUTH_TO_SCREEN;
+    const dx = dxScreen * -sin + dyScreen * -cos * AZIMUTH_TO_SCREEN;
+    const dy = dxScreen * cos + dyScreen * -sin * AZIMUTH_TO_SCREEN;
+    this.target.x += dx;
+    this.target.y += dy;
+    // Panare durante il tween trascina anche il perno: la rotazione continua
+    // attorno allo stesso punto di citta', spostato insieme all'inquadratura.
+    if (this.pivotActive) {
+      this.pivot.x += dx;
+      this.pivot.y += dy;
+    }
+    this.clampTarget();
+  }
+
+  /**
+   * Punto del piano di terra sotto al cursore, in coordinate di mondo.
+   *
+   * Inverte la stessa proiezione di `panScreen`: dal pixel si passa alle unita'
+   * di mondo a schermo, poi alla base (destra schermo, azimut) del piano. E' la
+   * quota `targetHeight` che conta, non l'altezza vera del terreno: la camera
+   * pana gia' su quel piano, e restare coerenti evita che rotazione e
+   * trascinamento litighino su dove sia "sotto al mouse".
+   */
+  private groundUnderPointer(out: Vector3): boolean {
+    const element = this.element;
+    if (!element || !this.hovering) return false;
+    const rect = element.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) return false;
+
+    const scale = this.viewHeight / this.camera.zoom / this.viewportHeight;
+    const dxScreen = (this.hoverX - (rect.left + rect.width * 0.5)) * scale;
+    const dyScreen = (rect.top + rect.height * 0.5 - this.hoverY) * scale;
+
+    const cos = Math.cos(this.yaw);
+    const sin = Math.sin(this.yaw);
+    out.set(
+      this.target.x + dxScreen * -sin + dyScreen * -cos * AZIMUTH_TO_SCREEN,
+      this.target.y + dxScreen * cos + dyScreen * -sin * AZIMUTH_TO_SCREEN,
+      this.targetHeight,
+    );
+    return true;
+  }
+
+  /**
+   * Rimette il target dove il perno resta fermo a schermo.
+   *
+   * In ortografica basta far girare l'offset target-perno dello stesso angolo
+   * del tween: le sue componenti nella base che ruota con la camera non
+   * cambiano, quindi il punto sotto al mouse si proietta sempre nello stesso
+   * pixel. Si ricalcola dall'offset iniziale a ogni frame invece di accumulare,
+   * cosi' un eventuale clamp ai bordi non lascia deriva.
+   */
+  private orbitAroundPivot(): void {
+    const delta = this.yaw - this.yawFrom;
+    const cos = Math.cos(delta);
+    const sin = Math.sin(delta);
+    const dx = this.pivotOffset.x;
+    const dy = this.pivotOffset.y;
+    this.target.set(this.pivot.x + dx * cos - dy * sin, this.pivot.y + dx * sin + dy * cos, this.targetHeight);
     this.clampTarget();
   }
 
@@ -296,6 +383,7 @@ export class IsoCameraController {
   }
 
   private readonly onPointerDown = (event: PointerEvent): void => {
+    this.trackHover(event);
     if (!isPanButton(event.button)) return;
     this.panning = true;
     this.pointerId = event.pointerId;
@@ -306,6 +394,7 @@ export class IsoCameraController {
   };
 
   private readonly onPointerMove = (event: PointerEvent): void => {
+    this.trackHover(event);
     if (!this.panning || event.pointerId !== this.pointerId) return;
     // Da pixel a unita' di mondo: l'altezza del frustum copre l'altezza in pixel.
     const scale = this.viewHeight / this.camera.zoom / this.viewportHeight;
@@ -323,6 +412,18 @@ export class IsoCameraController {
     this.panning = false;
     this.pointerId = null;
   };
+
+  private readonly onPointerLeave = (): void => {
+    // Fuori dalla canvas non c'e' un punto sotto al mouse: la rotazione torna a
+    // girare sul centro dell'inquadratura.
+    this.hovering = false;
+  };
+
+  private trackHover(event: PointerEvent): void {
+    this.hoverX = event.clientX;
+    this.hoverY = event.clientY;
+    this.hovering = true;
+  }
 
   private readonly onWheel = (event: WheelEvent): void => {
     event.preventDefault();

@@ -16,6 +16,7 @@ import { FixedStepLoop } from './loop';
 import {
   buyExpansion,
   catalystFailure,
+  catalystSiteCost,
   changeTradeMode,
   chooseDecision,
   expansionFailure,
@@ -23,6 +24,7 @@ import {
   togglePolicy,
   type ActionFailure,
   type ActionResult,
+  type SiteCost,
 } from './actions';
 import { cityCondition, isSelfSufficient, type CityCondition } from './cityCondition';
 import { onboardingAllows, onboardingOf, type OnboardingState } from './onboarding';
@@ -97,6 +99,11 @@ export class GrowthScene {
   catalystFailure(x: number, y: number, target: BuildingClass | CatalystId): ActionFailure | null {
     if (!onboardingAllows(this.state, target)) return 'onboarding-order';
     return catalystFailure(this.state, this.map, x, y, target);
+  }
+
+  /** Prezzo pesato dal terreno, per il cartellino sul cursore. */
+  catalystSiteCost(x: number, y: number, target: BuildingClass | CatalystId): SiteCost | null {
+    return catalystSiteCost(this.map, x, y, target);
   }
 
   togglePolicy(id: PolicyId): ActionResult {

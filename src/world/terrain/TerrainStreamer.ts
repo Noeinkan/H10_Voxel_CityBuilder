@@ -21,8 +21,14 @@ import { TerrainMap } from './TerrainMap';
 
 /** Colonne scritte fra due controlli del budget. Una colonna e' al piu' 40 voxel. */
 const COLUMN_BATCH = 64;
-/** Alberi scritti fra due controlli del budget del frame. */
-const DECOR_BATCH = 24;
+/**
+ * Alberi scritti fra due controlli del budget del frame.
+ *
+ * E' basso perche' un albero e' un centinaio di voxel, non una decina: il lotto
+ * va tenuto sullo stesso ordine di grandezza di quello delle colonne, o il
+ * controllo del budget arriva troppo tardi.
+ */
+const DECOR_BATCH = 8;
 
 export class TerrainStreamer implements SceneGenerator {
   readonly map: TerrainMap;
