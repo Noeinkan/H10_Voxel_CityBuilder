@@ -78,6 +78,15 @@ export interface BuildingRequest {
    * senza bisogno di una zona, di un'etichetta o di un colore in piu'.
    */
   readonly mixed?: BuildingClass;
+  /**
+   * Faccia che guarda la strada, negli indici di `accentFace`.
+   *
+   * Senza, la faccia d'accento e il portale a piano terra escono dal PRNG e
+   * finiscono una volta su quattro contro il cuore dell'isolato — cioe' con
+   * l'ingresso murato verso il giardino interno. Con la rete stradale
+   * l'orientamento smette di essere un tiro e diventa un dato del luogo.
+   */
+  readonly facing?: number;
 }
 
 export function generateBuilding(request: BuildingRequest): VoxelStamp {
@@ -137,7 +146,12 @@ export function generateBuilding(request: BuildingRequest): VoxelStamp {
 
   // La faccia d'accento resta sempre diversa dal corpo: su un edificio gia'
   // accentato prende il colore normale, che e' comunque un contrasto.
-  const accentFace = pickInt(random, 0, 3);
+  // Il tiro si consuma comunque, anche quando l'orientamento arriva da fuori:
+  // e' la stessa regola del dettaglio sul tetto sotto un coronamento piatto.
+  // Cosi' due edifici sullo stesso seme restano confrontabili, e dare una
+  // strada a un lotto non ne cambia la sagoma — solo il verso.
+  const rolledFace = pickInt(random, 0, 3);
+  const accentFace = request.facing ?? rolledFace;
   const accentId = accented ? profile.body : profile.accent;
 
   const rects: BandRect[] = [];

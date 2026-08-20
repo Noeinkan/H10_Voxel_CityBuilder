@@ -1,5 +1,4 @@
 import {
-  BUILDING_CLASS,
   addBuilding,
   nextBuildSites,
   urbanProfileAt,
@@ -27,6 +26,10 @@ import { generateBuilding, startLevel } from './generate';
 import { selectTypology, typologyProfile } from './typology';
 import { typologyById, type TypologyDefinition } from './config';
 import { anchoredVoxel, stampSurface, STAMP_EMPTY, type VoxelAnchor, type VoxelStamp } from './stamp';
+import { StreetNetwork } from '../streets/StreetNetwork';
+import { placeLot } from '../streets/lots';
+import { FACING, STREET_ROLE, type BlockId } from '../streets/streetGrid';
+import { STREETS } from '../streets/config';
 
 /**
  * Il ponte fra la simulazione e il mondo voxel.
@@ -99,20 +102,26 @@ interface SurfacePaint {
   readonly priority: number;
 }
 
-interface SurfaceAnchor {
-  readonly x: number;
-  readonly y: number;
-}
-
 export class Builder {
   private readonly registryImpl = new BuildingRegistry();
   private readonly growing: Growing[] = [];
   private readonly surfaceQueue: string[] = [];
   private readonly surfacePending = new Map<string, SurfacePaint>();
   private readonly surfacePriority = new Map<string, number>();
-  private readonly surfaceAnchors: SurfaceAnchor[] = [];
-  private readonly surfaceAnchorKeys = new Set<string>();
   private surfaceHead = 0;
+
+  /** Isolati la cui carreggiata e' gia' stata accodata: si dipinge una volta sola. */
+  private readonly paintedBlocks = new Set<string>();
+
+  /**
+   * Isolati senza piu' un lotto libero sul fronte strada.
+   *
+   * Vale la stessa ragione della blacklist dei siti: un isolato pieno resta
+   * pieno finche' nessuno demolisce, e ricercargli un lotto a ogni infornata
+   * significherebbe riscorrere il suo perimetro per sempre. Un candidato che
+   * cade qui dentro viene scartato prima ancora di generare uno stamp.
+   */
+  private readonly fullBlocks = new Set<string>();
 
   /**
    * Siti bocciati in modo definitivo.
@@ -131,11 +140,20 @@ export class Builder {
   private upgradedCount = 0;
   private upgradeCursor = 0;
 
+  /**
+   * La rete stradale nasce dal solo seed del mondo: non ha stato, non va
+   * salvata e non va passata da fuori. E' la stessa rete per chiunque
+   * costruisca su questa isola.
+   */
+  private readonly streets: StreetNetwork;
+
   constructor(
     private readonly world: VoxelWorld,
     private readonly terrainMap: TerrainMap,
     private readonly worldSeed: number,
-  ) {}
+  ) {
+    this.streets = new StreetNetwork(worldSeed);
+  }
 
   /** Sola lettura: nemmeno chi tiene il Builder puo' scrivere nel registry. */
   get registry(): ReadonlyBuildingRegistry {
@@ -161,7 +179,9 @@ export class Builder {
         });
       }
     }
-    this.addSurfaceAnchor({ x, y });
+    // La piazza da sola sarebbe una macchia in mezzo al verde: accodare
+    // l'isolato che la contiene le porta contro una carreggiata vera.
+    this.enqueueBlockStreets(this.streets.blockAt(x, y));
   }
 
   get stats(): BuilderStats {
@@ -178,6 +198,9 @@ export class Builder {
   /** Svuota i siti bocciati. Serve solo se qualcosa rende di nuovo libero il terreno. */
   forget(): void {
     this.blacklist.clear();
+    // Un isolato dichiarato pieno lo era rispetto al terreno di allora:
+    // un'espansione puo' avergli aggiunto colonne edificabili sul fronte.
+    this.fullBlocks.clear();
   }
 
   /**
@@ -196,6 +219,10 @@ export class Builder {
         mixed: building.mixed,
         animate: false,
         state: null,
+        // Le coordinate arrivano da una partita gia' giocata: spostarle sul
+        // fronte strada sposterebbe edifici che la simulazione conta gia' dove
+        // sono, e il salvataggio non tornerebbe piu' uguale a se stesso.
+        snapToStreet: false,
       });
     }
   }
@@ -280,6 +307,7 @@ export class Builder {
         mixed: site.mixed === -1 ? undefined : site.mixed,
         animate: true,
         state: next,
+        snapToStreet: true,
       });
       if (record === null) continue;
 
@@ -292,12 +320,58 @@ export class Builder {
     return next;
   }
 
-  /** Valida il sito, getta la fondazione, accoda la comparsa. null se il sito non va. */
+  /**
+   * Valida il sito, getta la fondazione, accoda la comparsa. null se il sito
+   * non va.
+   *
+   * **La colonna proposta e' un'indicazione, non un indirizzo.** Con
+   * `snapToStreet` il candidato della simulazione designa l'isolato, e
+   * l'edificio nasce sul lotto libero del suo perimetro piu' vicino a quella
+   * colonna. E' il passaggio che allinea la citta' alle strade senza chiedere
+   * niente a `src/sim/`, che continua a ragionare per cella e a non sapere che
+   * le strade esistono.
+   */
   private place(request: PlaceRequest): BuildingRecord | null {
-    const { x, y, class: cls, mixed, state } = request;
+    const { class: cls, mixed, state } = request;
+
+    let x = request.x;
+    let y = request.y;
+    let facing: number | undefined;
+    let footprintCap = MAX_FOOTPRINT;
+
+    if (request.snapToStreet) {
+      const block = this.streets.blockAt(request.x, request.y);
+      const blockKey = this.streets.keyOf(block);
+      if (this.fullBlocks.has(blockKey)) return null;
+
+      const lot = placeLot({
+        rect: this.streets.blockRect(block),
+        x: request.x,
+        y: request.y,
+        footprint: MAX_FOOTPRINT,
+        accepts: (lx, ly, side) => this.lotIsFree(lx, ly, side),
+      });
+      if (lot === null) {
+        this.fullBlocks.add(blockKey);
+        return null;
+      }
+
+      x = lot.x;
+      y = lot.y;
+      facing = lot.facing;
+      footprintCap = lot.footprint;
+    } else {
+      // Senza lotto l'orientamento si legge comunque dalla rete, quando
+      // l'ancora tocca gia' una carreggiata: al portale serve solo quello.
+      facing = this.streets.facingOf(request.x, request.y, 1) ?? undefined;
+    }
+
     const key = `${x},${y}`;
     if (this.blacklist.has(key)) return null;
 
+    // Il seme resta quello dell'origine del lotto anche se l'impronta si
+    // accosta al fronte piu' avanti: e' il lotto a essere stabile, non
+    // l'angolo dell'edificio, e il record se lo porta dietro comunque.
     const seed = hashCoords(this.worldSeed, x, y);
     const profile = state === null
       ? null
@@ -315,14 +389,28 @@ export class Builder {
       class: cls,
       level,
       seed,
-      footprintCap: MAX_FOOTPRINT,
+      footprintCap,
       footprintFloor: 1,
       form,
       profile: typologyProfile(typology),
       shape: typology.shape,
       mixed,
+      facing,
     });
     const footprint = stamp.sizeX;
+
+    // L'impronta puo' uscire piu' stretta del lotto verificato. La si accosta
+    // al fronte invece di lasciarla al centro: un edificio che non tocca la
+    // carreggiata legge come arretrato a caso, e il quadrato ridotto sta
+    // comunque dentro quello gia' dichiarato libero.
+    // Solo chi ha davvero prenotato un lotto largo `footprintCap` puo'
+    // scorrere dentro di esso: chi costruisce a coordinate date — una partita
+    // salvata — deve restare esattamente dove la simulazione lo conta.
+    if (request.snapToStreet && facing !== undefined && footprint < footprintCap) {
+      const slack = footprintCap - footprint;
+      if (facing === FACING.east) x += slack;
+      else if (facing === FACING.north) y += slack;
+    }
 
     const ground = this.surveyGround(x, y, footprint);
     if (ground === null) return this.reject(key, 'notBuildable');
@@ -355,11 +443,12 @@ export class Builder {
       typology: typology.id,
       district: profile?.district ?? 'outskirts',
       specialization: profile?.specialization ?? null,
+      facing,
     });
 
     if (request.animate) this.growing.push({ record, stamp, erase: null, voxelCursor: 0, eraseCursor: 0 });
     else this.writeStamp(record, stamp, 0, stamp.sizeZ, false);
-    this.enqueueBuildingSurface(record);
+    this.enqueueBlockStreets(this.streets.blockAt(x, y));
     this.placedCount++;
     return record;
   }
@@ -488,18 +577,26 @@ export class Builder {
       profile: typologyProfile(oldTypology),
       shape: oldTypology.shape,
       mixed: record.mixed,
+      facing: record.facing,
     });
 
+    // L'allargamento non puo' sfondare l'isolato: la fascia di base riempie
+    // sempre l'impronta, e un voxel in piu' verso est finirebbe in mezzo alla
+    // carreggiata. Un edificio gia' accostato al fronte ha stanza zero e cresce
+    // solo in altezza — che e' anche il motivo per cui i lotti d'angolo
+    // diventano le torri dell'isolato invece di allargarsi sulla strada.
+    const room = this.blockRoom(record);
     let stamp = generateBuilding({
       class: record.class,
       level: nextLevel,
       seed: record.seed,
-      footprintCap: MAX_FOOTPRINT,
+      footprintCap: Math.min(MAX_FOOTPRINT, room),
       footprintFloor: record.footprint,
       form: nextForm,
       profile: typologyProfile(nextTypology),
       shape: nextTypology.shape,
       mixed: record.mixed,
+      facing: record.facing,
     });
     if (stamp.sizeX > record.footprint && !this.fitsWider(record, stamp)) {
       stamp = generateBuilding({
@@ -512,6 +609,7 @@ export class Builder {
         profile: typologyProfile(nextTypology),
         shape: nextTypology.shape,
         mixed: record.mixed,
+        facing: record.facing,
       });
     }
 
@@ -538,6 +636,7 @@ export class Builder {
       typology: nextTypology.id,
       district: profile.district,
       specialization: profile.specialization,
+      facing: record.facing,
     });
     if (replaced === null) return;
 
@@ -548,9 +647,26 @@ export class Builder {
       if (ground !== null) this.pour(record.x, record.y, stamp.sizeX, record.baseZ);
     }
 
-    this.enqueueBuildingSurface(replaced);
+    this.enqueueBlockStreets(this.streets.blockAt(replaced.x, replaced.y));
     this.growing.push({ record: replaced, stamp, erase: old, voxelCursor: 0, eraseCursor: 0 });
     this.upgradedCount++;
+  }
+
+  /**
+   * Lato massimo che l'impronta puo' raggiungere restando dentro l'isolato.
+   *
+   * Non scende mai sotto l'impronta attuale: un edificio materializzato da una
+   * partita salvata puo' avere l'ancora su una colonna che la rete di oggi
+   * considera carreggiata, e in quel caso il riquadro dell'isolato non lo
+   * contiene. Rimpicciolirlo per questo sarebbe una demolizione mascherata da
+   * upgrade.
+   */
+  private blockRoom(record: BuildingRecord): number {
+    const rect = this.streets.blockRect(this.streets.blockAt(record.x, record.y));
+    return Math.max(
+      record.footprint,
+      Math.min(rect.x1 - record.x + 1, rect.y1 - record.y + 1),
+    );
   }
 
   /** true se l'impronta allargata non tocca nessun altro edificio. */
@@ -730,91 +846,60 @@ export class Builder {
     }
   }
 
-  private enqueueBuildingSurface(record: BuildingRecord): void {
-    const palette = record.class === BUILDING_CLASS.industrial
-      ? PALETTE_SLOTS.asphaltDark
-      : PALETTE_SLOTS.asphalt;
-    for (let px = record.x - 1; px <= record.x + record.footprint; px++) {
-      this.enqueueSurface({ x: px, y: record.y - 1, palette, priority: 1 });
-      this.enqueueSurface({ x: px, y: record.y + record.footprint, palette, priority: 1 });
-    }
-    for (let py = record.y; py < record.y + record.footprint; py++) {
-      this.enqueueSurface({ x: record.x - 1, y: py, palette, priority: 1 });
-      this.enqueueSurface({ x: record.x + record.footprint, y: py, palette, priority: 1 });
-    }
+  /**
+   * Accoda la carreggiata che circonda un isolato, una volta sola.
+   *
+   * La strada compare **per isolato** e non per edificio: appena il primo
+   * edificio lo giustifica, l'anello di carreggiata entra in coda tutto
+   * insieme, e la citta' mostra una strada chiusa invece dei monconi che il
+   * vecchio collegamento fra ancore allungava di due celle per infornata. Le
+   * colonne non edificabili — mare, roccia, pendenza — le scarta
+   * `canPaintSurface`, ed e' cosi' che la maglia si ritaglia da sola sulla
+   * forma dell'isola senza che la rete sappia dove finisce la terra.
+   */
+  private enqueueBlockStreets(block: BlockId): void {
+    const key = this.streets.keyOf(block);
+    if (this.paintedBlocks.has(key)) return;
+    this.paintedBlocks.add(key);
 
-    const centre = {
-      x: record.x + Math.floor((record.footprint - 1) * 0.5),
-      y: record.y + Math.floor((record.footprint - 1) * 0.5),
-    };
-    const nearest = this.nearestSurfaceAnchor(centre);
-    const door = nearest === null ? { x: record.x - 1, y: centre.y } : this.doorToward(record, nearest);
-    if (nearest !== null && Math.abs(door.x - nearest.x) + Math.abs(door.y - nearest.y) <= BUILDER.pathLinkDistance) {
-      const path = this.pathCells(door, nearest, record.seed);
-      if (path.every((cell) => this.canPaintSurface(cell.x, cell.y))) {
-        for (const cell of path) this.enqueueSurface({ ...cell, palette, priority: 1 });
-      }
+    for (const cell of this.streets.pavementRing(block)) {
+      const arterial = cell.role === STREET_ROLE.arterial;
+      this.enqueueSurface({
+        x: cell.x,
+        y: cell.y,
+        palette: arterial ? STREETS.arterialPalette : STREETS.minorPalette,
+        // L'asse principale vince l'incrocio: e' la sua continuita' a rendere
+        // leggibile la gerarchia, e una corsia di svolta dipinta col colore
+        // secondario la spezzerebbe proprio dove si vede di piu'.
+        priority: arterial ? 2 : 1,
+      });
     }
-    this.addSurfaceAnchor(door);
   }
 
-  private doorToward(record: BuildingRecord, target: SurfaceAnchor): SurfaceAnchor {
-    const centreX = record.x + Math.floor((record.footprint - 1) * 0.5);
-    const centreY = record.y + Math.floor((record.footprint - 1) * 0.5);
-    const dx = target.x - centreX;
-    const dy = target.y - centreY;
-    if (Math.abs(dx) >= Math.abs(dy)) {
-      return { x: dx < 0 ? record.x - 1 : record.x + record.footprint, y: centreY };
-    }
-    return { x: centreX, y: dy < 0 ? record.y - 1 : record.y + record.footprint };
-  }
-
-  private nearestSurfaceAnchor(from: SurfaceAnchor): SurfaceAnchor | null {
-    let best: SurfaceAnchor | null = null;
-    let bestDistance = Number.POSITIVE_INFINITY;
-    for (const candidate of this.surfaceAnchors) {
-      const distance = Math.abs(candidate.x - from.x) + Math.abs(candidate.y - from.y);
-      if (distance < bestDistance) {
-        best = candidate;
-        bestDistance = distance;
+  /**
+   * true se il quadrato e' libero, edificabile e non gia' bocciato.
+   *
+   * E' il predicato con cui `placeLot` scorre un fronte, quindi viene chiamato
+   * molte volte per candidato: fa solo letture per colonna — `TerrainMap` e
+   * registry — e non genera niente. La pendenza **non** si controlla qui: la
+   * verifica `surveyGround` a valle, e un lotto bocciato per pendenza finisce
+   * nella blacklist, che questa funzione consulta al giro dopo.
+   */
+  private lotIsFree(x: number, y: number, footprint: number): boolean {
+    for (let dy = 0; dy < footprint; dy++) {
+      for (let dx = 0; dx < footprint; dx++) {
+        const cx = x + dx;
+        const cy = y + dy;
+        // Letture senza allocazione: `columnAt` costruirebbe un oggetto e
+        // `at` un array di record per ogni colonna, e qui le colonne si
+        // contano a migliaia per infornata.
+        if (this.registryImpl.isOccupied(cx, cy)) return false;
+        if (!this.terrainMap.isBuildable(cx, cy)) return false;
+        if (this.terrainMap.heightAt(cx, cy) < TERRAIN.seaLevel) return false;
+        if (this.blacklist.has(`${cx},${cy}`)) return false;
       }
     }
-    return best;
-  }
-
-  private addSurfaceAnchor(anchor: SurfaceAnchor): void {
-    const key = `${anchor.x},${anchor.y}`;
-    if (this.surfaceAnchorKeys.has(key)) return;
-    this.surfaceAnchorKeys.add(key);
-    this.surfaceAnchors.push(anchor);
-  }
-
-  private pathCells(from: SurfaceAnchor, to: SurfaceAnchor, seed: number): SurfaceAnchor[] {
-    const cells: SurfaceAnchor[] = [];
-    let x = from.x;
-    let y = from.y;
-    const horizontalFirst = (hashCoords(seed, from.x, from.y) & 1) === 0;
-    const walkX = (): void => {
-      while (x !== to.x) {
-        cells.push({ x, y });
-        x += Math.sign(to.x - x);
-      }
-    };
-    const walkY = (): void => {
-      while (y !== to.y) {
-        cells.push({ x, y });
-        y += Math.sign(to.y - y);
-      }
-    };
-    if (horizontalFirst) {
-      walkX();
-      walkY();
-    } else {
-      walkY();
-      walkX();
-    }
-    cells.push({ x: to.x, y: to.y });
-    return cells;
+    return true;
   }
 
   private canPaintSurface(x: number, y: number): boolean {
@@ -944,6 +1029,12 @@ interface PlaceRequest {
   readonly animate: boolean;
   /** Senza stato non c'e' profilo locale: le tipologie condizionate restano fuori. */
   readonly state: SimState | null;
+  /**
+   * Se true la colonna proposta designa l'isolato e l'edificio nasce sul suo
+   * fronte strada. Chi ha gia' delle coordinate vere — una partita salvata —
+   * lo lascia a false e costruisce esattamente li'.
+   */
+  readonly snapToStreet: boolean;
 }
 
 /** I quattro assi cardinali, per la ricerca della costa. */

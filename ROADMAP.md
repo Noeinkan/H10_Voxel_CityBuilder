@@ -123,30 +123,238 @@ Obiettivo: trasformare la crescita urbana in un processo realmente verticale e
 tridimensionale, nel quale edifici, spazi pubblici e mobilità colonizzano quote
 diverse e formano una città stratificata, connessa e leggibile.
 
-- [ ] Generare uno scheletro di crescita tridimensionale influenzato da terreno,
-  costa e catalizzatori: strade al suolo, percorsi in quota, rampe, scalinate e
-  nodi capaci di indirizzare densità e sviluppo verticale.
-- [ ] Fare evolvere gli edifici da volumi isolati a isolati terrazzati e cluster
-  verticali, capaci di crescere per sovrapposizione, arretramento e aggregazione;
-  il voxel resta l'unità volumetrica, non il dettaglio architettonico.
-- [ ] Connettere edifici e livelli urbani con ponti, passerelle sospese, terrazze
-  condivise, mezzanini, piattaforme e collegamenti fra quote, così che la rete
-  urbana continui anche sopra il piano stradale.
-- [ ] Integrare dislivelli e costa nella forma della città con muri di contenimento,
-  piazze sopraelevate, moli, approdi e percorsi incassati o sospesi, evitando che
-  il terreno sia soltanto una base piatta da edificare.
-- [ ] Ampliare le grammatiche degli edifici con basamenti abitati, corpi sovrapposti,
-  arretramenti, torri, coronamenti, giardini pensili e accenti luminosi specifici
-  per classe e livello.
-- [ ] Costruire una gerarchia verticale riconoscibile: costa e periferia più basse e
-  porose, distretti intermedi terrazzati, centro denso e skyline emergente,
-  preservando una corona naturale e transizioni leggibili fra le fasce.
-- [ ] Migliorare atmosfera, profondità e separazione delle quote con nebbia, acqua e
-  luce stilizzata, restando nel materiale condiviso e senza texture o PBR.
+**Perché è divisa in sotto-fasi.** È l'unica fase che tocca i tre strati
+insieme — terreno, mondo voxel e regole di crescita — e in un ordine obbligato:
+senza uno scheletro al suolo non esistono isolati da terrazzare, e senza isolati
+non c'è niente da collegare in quota. Le sotto-fasi sono quindi tappe con un gate
+proprio, non un elenco di desideri: ognuna deve lasciare la città giocabile e
+dentro i budget anche se le successive non arrivano mai.
 
-**Gate:** con la UI nascosta, la città comunica crescita verticale, connessioni
-fra livelli e struttura economica attraverso volumi e silhouette; ponti,
-terrazze e percorsi in quota restano leggibili alle normali distanze di gioco.
+**Vincoli trasversali.** Valgono per tutte le sotto-fasi, e non si negoziano in
+cambio di una forma più bella:
+
+- **Gli otto tipi di superficie sono esauriti.** Ponti, terrazze e giardini
+  pensili riusano i `SURFACE_KIND` esistenti; prendersi un nono tipo significa
+  togliere un bit alla palette (invariante 5).
+- **Il colore resta nell'uniform.** Nessun elemento nuovo — impalcati, parapetti,
+  muri di contenimento — può portare RGB nei vertici (invariante 4).
+- **Il mesher non si tocca.** Ponti e passerelle sono voxel come tutto il resto:
+  se una forma chiede una modifica al mesher, è la forma a essere sbagliata
+  (invariante 6).
+- **Il tetto di chunk sporchi è per struttura, non per fase.** Una passerella
+  lunga attraversa più chunk di una torre: va spezzata in segmenti che rispettano
+  `maxDirtyChunksPerBuilding`, non esentata.
+- **Determinismo.** Strade, rampe e collegamenti sono funzione di seed, terreno e
+  stato della simulazione. Nessun `Math.random()`, nessuna dipendenza dall'ordine
+  di visita.
+- **Costo per frame, non per città.** Ogni struttura nuova entra a passi nei
+  budget esistenti, come già fanno la crescita degli edifici e la superficie
+  urbana.
+
+### Fase 4.1 — Scheletro stradale al suolo
+
+Obiettivo: una rete di strade deterministica che esista *prima* degli edifici e
+ne orienti la crescita.
+
+**Stato implementazione:** completata. Il gate resta da validare a occhio su
+un'isola vera: i test coprono allineamento, determinismo e carreggiata sgombra,
+non la leggibilità.
+
+- [x] Generare la rete da terreno, costa e catalizzatori: assi principali fra i
+  poli, maglia secondaria negli intervalli, densità che segue il campo di
+  desiderabilità.
+- [x] Esporre la rete come dato consultabile per colonna — è strada, è fronte, è
+  interno isolato — senza scriverla nel layer `data` della simulazione.
+- [x] Far dipendere selezione del sito e orientamento dell'impronta dal fronte
+  strada, non dalla sola desiderabilità.
+- [x] Sostituire i sentieri ad hoc del Builder con il tracciato della rete,
+  mantenendo comparsa a budget e costo per frame.
+- [x] Chiudere gli isolati: uno spazio interno riconoscibile è ciò che le
+  sotto-fasi successive terrazzano e collegano.
+
+**Gate:** gli edifici si allineano a strade leggibili senza sovrapposizioni né
+lotti irraggiungibili; la rete è identica a parità di seed e non aggiunge lavoro
+non budgetato al ciclo di frame.
+
+**Come è stato risolto.** La rete vive in `src/world/streets/` ed è una
+**funzione pura di `(seed, x, y)`**: non ha stato, non si salva, non si aggiorna
+quando arriva un catalizzatore, e interrogarla non costa memoria. È una griglia
+a passo variabile — lo scostamento di ogni asse è un hash del suo indice, non
+una passeggiata cumulativa, così l'asse millesimo si calcola senza conoscere i
+primi novecentonovantanove. Un tracciato vero (L-system, minimi percorsi fra
+poli) sarebbe dipeso dall'ordine di crescita e avrebbe richiesto proprio le
+strutture che la fase 5 dovrà poi serializzare.
+
+Il candidato della simulazione **designa un isolato, non un indirizzo**:
+`placeLot` lo risolve nel lotto libero più vicino sul perimetro di
+quell'isolato. Era la scelta obbligata — due terzi dei candidati cadono nel
+cuore degli isolati, e scartarli avrebbe fermato la crescita invece di
+allinearla. `src/sim/` non è stato toccato: continua a ragionare per cella e non
+sa che le strade esistono, coerentemente con l'invariante 7. L'orientamento
+riusa `accentFace`, quindi accento e portale guardano la carreggiata **senza un
+attributo di vertice in più**; il tiro del PRNG si consuma comunque, così dare
+una strada a un lotto ne cambia il verso e non la sagoma.
+
+Due cose che il lavoro ha fatto emergere, entrambe corrette e coperte da test:
+l'`upgrade` allargava l'impronta senza conoscere l'isolato e spingeva gli
+edifici dentro la carreggiata — ora il lato è limitato dalla stanza residua, e
+un lotto già accostato al fronte cresce solo in altezza, che è anche il motivo
+per cui gli angoli diventano le torri dell'isolato. E lo scorrimento che accosta
+l'impronta al fronte non deve valere per `materialize`, o una partita salvata
+tornerebbe con gli edifici spostati.
+
+**Costo.** `onTick` nel caso peggiore sintetico (256×256 colonne tutte
+edificabili, quattro catalizzatori a raggio 60) misura **8,8 ms**, contro gli
+**8,5 ms** della stessa misura prima di questa fase — a parità di costo la
+città cresce a più del doppio della velocità. Di quegli 8,8 ms, **5,7 sono
+`nextBuildSites`**, che scandisce l'intero campo allocato ed era già così: è
+il vero sforamento del budget, è preesistente, e va affrontato nella fase 6, non
+qui. La ricerca del lotto costa ~3,1 ms e ci è arrivata togliendo due
+allocazioni per colonna dal percorso caldo (`columnAt` costruiva un oggetto,
+`registry.at` un array); da lì il nuovo `isOccupied`. Le carreggiate passano
+dalla coda di superficie esistente, quindi non aggiungono lavoro non budgetato
+al frame. I due worker in bundle restano 5,77 kB e 8,64 kB: la rete non li tocca.
+
+**Resta aperto.** Gli assi principali sono periodici, non tracciati fra i poli:
+la gerarchia esce dalla griglia e i catalizzatori la influenzano solo di riflesso
+— le strade compaiono dove la città cresce, e la città cresce dove il campo è
+alto. Legare l'asse principale al polo richiede un tracciato con stato, e ha
+senso affrontarlo insieme alle rampe della 4.2, quando la rete dovrà comunque
+smettere di essere puramente periodica per aggirare i dislivelli.
+
+### Fase 4.2 — Dislivelli e costa come forma urbana
+
+Obiettivo: far reagire la città al terreno invece di appiattirlo.
+
+Dipende da 4.1: è la rete a incontrare per prima le pendenze, e una strada che
+attraversa un dislivello o si ferma o lo risolve.
+
+- [ ] Risolvere le pendenze della rete con rampe, scalinate e tratti incassati,
+  al posto dell'attuale scarto secco per `tooSteep`.
+- [ ] Introdurre muri di contenimento e terrapieni dove la quota cambia, così che
+  il salto sia costruito e non un gradino di terreno nudo.
+- [ ] Portare piazze e piattaforme sopraelevate dove il dislivello le giustifica.
+- [ ] Trattare la costa come fronte edificato: moli, approdi e banchine al posto
+  dell'attuale bordo d'acqua.
+- [ ] Rivedere `maxTerrainStep` e la blacklist dei siti: con le rampe una
+  pendenza smette di essere un rifiuto definitivo.
+
+**Vincolo:** la fondazione continua a riempire, mai a scavare. Un muro di
+contenimento aggiunge volume, non toglie isola.
+
+**Gate:** su un'isola con rilievo marcato pendenze e linea di costa risultano
+progettate; nessun sito viene più perso per una pendenza che una rampa
+risolverebbe.
+
+### Fase 4.3 — Grammatica verticale degli edifici
+
+Obiettivo: ampliare il vocabolario di `generate.ts` senza introdurre modelli
+disegnati a mano.
+
+Indipendente da 4.1 e 4.2: è lavoro sullo stamp, verificabile in Node senza
+mondo e senza terreno. Può procedere in parallelo.
+
+- [ ] Aggiungere basamenti abitati, corpi sovrapposti e arretramenti come
+  trasformazioni della regola di fascia, non come casi speciali.
+- [ ] Distinguere torri e coronamenti per uso e livello, oltre agli attuali tre
+  interruttori di tipologia.
+- [ ] Introdurre giardini pensili e terrazze praticabili sulle rientranze che la
+  grammatica già produce.
+- [ ] Dare accenti luminosi specifici per classe e livello, dentro gli slot di
+  palette e i tipi di superficie esistenti.
+- [ ] Estendere il catalogo delle tipologie con le forme che i nuovi interruttori
+  rendono possibili, restando righe di tabella: la regola di scelta non si tocca.
+
+**Gate:** a parità di seed le silhouette restano deterministiche e distinguibili
+per uso; nessuno slot di palette e nessun tipo di superficie in più.
+
+### Fase 4.4 — Isolati terrazzati e cluster verticali
+
+Obiettivo: far crescere gli edifici per aggregazione, non solo per livello.
+
+Dipende da 4.1 — l'isolato è definito dalle strade — e da 4.3, che fornisce la
+grammatica per esprimerlo.
+
+- [ ] Permettere a edifici adiacenti dello stesso isolato di crescere insieme,
+  condividendo basamento e quota.
+- [ ] Superare il tetto di impronta 4×4 dove l'aggregazione lo giustifica,
+  rivedendo di conseguenza collisione, budget di chunk e cancellazione.
+- [ ] Far salire i cluster per sovrapposizione e arretramento, mantenendo il
+  vincolo di appoggio che oggi tiene in piedi le mensole.
+- [ ] Conservare la rigenerabilità: un cluster deve poter essere ricostruito dal
+  proprio record per essere cancellato, come oggi un edificio singolo.
+
+**Vincolo:** un cluster resta un insieme di record, non un nuovo tipo di zona. La
+simulazione continua a contare gli edifici come li conta oggi.
+
+**Gate:** i distretti densi si leggono come isolati continui e terrazzati invece
+che come volumi isolati vicini; il costo della crescita resta indipendente dal
+numero totale di edifici.
+
+### Fase 4.5 — Rete urbana in quota
+
+Obiettivo: continuare la rete sopra il piano stradale.
+
+Dipende da 4.1 per la topologia e da 4.4 per avere qualcosa da collegare in quota.
+
+- [ ] Introdurre una struttura che non è un edificio: una campata fra due
+  appoggi, senza colonna propria e senza occupazione del suolo.
+- [ ] Collegare tetti, terrazze condivise e piattaforme con ponti e passerelle
+  sospese, scegliendo gli appoggi dalla rete e dal registry.
+- [ ] Aggiungere mezzanini e collegamenti fra quote dentro l'isolato, dove il
+  cluster li rende percorribili.
+- [ ] Spezzare le campate lunghe in segmenti che rispettino il tetto di chunk
+  sporchi, e farle comparire a budget come le altre strutture.
+
+**Gate:** ponti e percorsi in quota sono leggibili alle normali distanze di
+gioco, poggiano sempre su appoggi reali, e nessuna campata resta orfana quando
+l'edificio che la sosteneva cambia livello.
+
+### Fase 4.6 — Gerarchia verticale della città
+
+Obiettivo: una silhouette d'insieme leggibile, non edifici alti sparsi.
+
+Dipende da 4.3 e 4.4: è la calibrazione globale, e ha senso solo quando le forme
+locali esistono.
+
+- [ ] Derivare una stratificazione — costa e periferia basse e porose, fasce
+  intermedie terrazzate, centro denso — da distanza dai poli e dal mare.
+- [ ] Far emergere lo skyline come eccezione governata, non come somma di upgrade
+  indipendenti.
+- [ ] Preservare una corona naturale attorno all'edificato e transizioni leggibili
+  fra le fasce.
+- [ ] Verificare che la gerarchia resti visibile su isole di forma diversa, non
+  solo sul seed di riferimento.
+
+**Gate:** da inquadratura d'insieme si riconoscono almeno tre fasce di altezza e
+il centro, senza overlay.
+
+### Fase 4.7 — Atmosfera e separazione delle quote
+
+Obiettivo: rendere leggibile la profondità verticale con la luce, non con la
+geometria.
+
+Nessuna dipendenza: vive interamente in `src/engine/` e può essere fatta in
+qualsiasi momento.
+
+- [ ] Usare nebbia e prospettiva aerea per separare le quote, non solo le
+  distanze.
+- [ ] Dare all'acqua una risposta che distingua bassofondo, canale e mare aperto.
+- [ ] Rivedere il contributo dell'ambiente sotto ponti, portici e piani coperti,
+  dove oggi manca l'occlusione che li racconterebbe.
+- [ ] Aggiornare i temi esistenti alla nuova gerarchia, restando nel materiale
+  condiviso.
+
+**Vincolo:** nessuna texture, nessun PBR, nessun materiale aggiuntivo. Un tema
+resta un insieme di uniform, e cambiare tema non deve ricompilare un programma.
+
+**Gate:** a UI nascosta le quote si distinguono anche dove i volumi si
+sovrappongono, e le draw call non crescono.
+
+**Gate della fase 4:** con la UI nascosta, la città comunica crescita verticale,
+connessioni fra livelli e struttura economica attraverso volumi e silhouette;
+ponti, terrazze e percorsi in quota restano leggibili alle normali distanze di
+gioco.
 
 ## Fase 5 — Persistenza e prodotto browser
 
@@ -184,7 +392,7 @@ se rompe i budget esistenti.
 3. [x] Settori costieri unici che aggiungono terreno realmente edificabile.
 4. [x] Costi continuativi e conseguenze visibili per le sei policy esistenti.
 5. [x] Commerciale autonomo e primo edificio residenziale-commerciale a uso misto.
-6. [ ] Primo sistema di strade procedurali usato come scheletro della crescita.
+6. [x] Primo sistema di strade procedurali usato come scheletro della crescita (fase 4.1).
 7. [ ] Salvataggio locale minimo del ciclo completo.
 8. [ ] Playtest di 30 minuti con budget e criteri automatici registrati.
 

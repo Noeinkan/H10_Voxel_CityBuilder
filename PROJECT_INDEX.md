@@ -4,7 +4,7 @@ Mappa file per file di `src/`. Il *perché* delle scelte sta nei README
 ([README.md](README.md), [src/sim/README.md](src/sim/README.md)); le regole
 operative in [CLAUDE.md](CLAUDE.md). Qui c'è solo *dove sta cosa*.
 
-Oltre 10 mila righe di TypeScript, 21 file di test (181 test), 2 file di bench.
+Oltre 23 mila righe di TypeScript, 49 file di test (359 test), 2 file di bench.
 
 ## Direzione delle dipendenze
 
@@ -165,6 +165,27 @@ state = tick(state, terrainMap);        // puro: nuovo stato, input intatto
 nextBuildSites(state, terrainMap, 10);  // [{ x, y, class, mixed, score }, …]
 ```
 
+## `src/world/streets/` — scheletro della crescita
+
+La rete stradale che esiste **prima** degli edifici e ne orienta la crescita. E'
+una funzione pura di `(seed, x, y)`: niente stato, niente da salvare, niente da
+aggiornare quando arriva un catalizzatore. Il ritaglio sulla forma dell'isola
+avviene a valle, dove il terreno gia' si legge.
+
+| File | Ruolo | Esporta |
+| --- | --- | --- |
+| [config.ts](src/world/streets/config.ts) | **Ogni** passo, scostamento, larghezza e colore della carreggiata | `STREETS` |
+| [streetGrid.ts](src/world/streets/streetGrid.ts) | Griglia deformata: assi, isolati, ruolo di una colonna, versi di affaccio | `STREET_ROLE`, `FACING`, `streetRoleAt`, `isPavement`, `blockAt`, `blockRect`, `blockKey`, `lineStart`, `lineEnd`, `lineWidth`, `isArterial`, `BlockId`, `BlockRect`, `Facing`, `StreetRole` |
+| [lots.ts](src/world/streets/lots.ts) | Da colonna proposta a lotto sul fronte strada; puro, la disponibilita' entra come predicato | `placeLot`, `Lot`, `LotRequest` |
+| [StreetNetwork.ts](src/world/streets/StreetNetwork.ts) | Facciata sul seed: ruoli, isolati, anello di carreggiata da dipingere | `StreetNetwork`, `PavementCell` |
+
+```ts
+const streets = new StreetNetwork(1337);
+streets.roleAt(96, 96);                    // arterial | minor | frontage | interior
+const block = streets.blockAt(96, 96);
+placeLot({ rect: streets.blockRect(block), x: 96, y: 96, footprint: 4, accepts });
+```
+
 ## `src/world/buildings/` — crescita voxel
 
 Ponte tra candidati della simulazione e mondo renderizzato: convalida il terreno,
@@ -232,7 +253,9 @@ giocabile; gli overlay tecnici si alternano con `F3` o partono aperti con
 | [game/sectors.test.ts](src/game/sectors.test.ts) | Identità uniche, terra utile e continuità delle espansioni |
 | [ui/ControlsHint.test.ts](src/ui/ControlsHint.test.ts) | Completezza delle indicazioni dei comandi camera |
 | [ui/GameHudModel.test.ts](src/ui/GameHudModel.test.ts) | Risorse, requisiti, blocchi economici e policy attive del HUD |
-| [world/buildings/Builder.test.ts](src/world/buildings/Builder.test.ts) | Candidato → occupazione della simulazione → voxel |
+| [world/streets/streetGrid.test.ts](src/world/streets/streetGrid.test.ts) | Partizione strada/isolato, gerarchia degli assi, fronte e cuore, determinismo |
+| [world/streets/lots.test.ts](src/world/streets/lots.test.ts) | Il lotto tocca sempre un fronte, non esce dall'isolato, l'isolato si riempie |
+| [world/buildings/Builder.test.ts](src/world/buildings/Builder.test.ts) | Candidato → occupazione della simulazione → voxel; allineamento alla rete stradale |
 | [world/buildings/BuildingRegistry.test.ts](src/world/buildings/BuildingRegistry.test.ts) | Indice spaziale e sostituzione di record |
 | [world/buildings/generate.test.ts](src/world/buildings/generate.test.ts) | Determinismo e limiti degli stamp |
 | [world/buildings/urbanForm.test.ts](src/world/buildings/urbanForm.test.ts) | Variazione deterministica della forma dal profilo locale |

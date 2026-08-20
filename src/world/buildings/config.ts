@@ -92,9 +92,6 @@ export const BUILDER = {
   /** Quota sopra il terreno bonificata da tronchi e chiome. */
   decorClearanceHeight: 7,
 
-  /** Lunghezza massima di un collegamento decorativo fra due piazzole. */
-  pathLinkDistance: 12,
-
   /** Raggio Manhattan della piazzola che identifica un catalizzatore. */
   catalystPlazaRadius: 2,
 

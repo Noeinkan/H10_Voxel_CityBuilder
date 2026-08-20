@@ -64,6 +64,15 @@ export interface BuildingRecord {
   readonly typology?: string;
   readonly district?: DistrictId;
   readonly specialization?: Specialization | null;
+  /**
+   * Faccia rivolta alla strada, negli indici di `accentFace`.
+   *
+   * Sta nel record per la stessa ragione di `typology`: e' meta' di cio' che
+   * serve a rigenerare l'impronta. Un upgrade che ricalcolasse l'orientamento
+   * dalla rete di adesso cancellerebbe la sagoma vecchia con una nuova che
+   * porta l'accento su un'altra faccia, e lascerebbe voxel orfani.
+   */
+  readonly facing?: number;
 }
 
 /**
@@ -74,7 +83,25 @@ export interface BuildingRecord {
  * proprio i metodi per scrivere.
  */
 export interface ReadonlyBuildingRegistry {
+  /**
+   * Tutti i record, in ordine di inserimento.
+   *
+   * E' una lettura come le altre — l'iteratore non espone niente con cui
+   * scrivere — e serve a chi deve passare in rassegna la citta' intera: la
+   * passata di upgrade, gli overlay, i test di forma urbana. L'alternativa
+   * sarebbe scandire le colonne con `at`, che risponderebbe la stessa cosa
+   * costando quanto la mappa invece che quanto la citta'.
+   */
+  readonly all: IterableIterator<BuildingRecord>;
   get(id: number): BuildingRecord | null;
+  /**
+   * true se un qualunque edificio copre la colonna.
+   *
+   * E' `at(x, y).length > 0` senza il costo di `at`, che materializza un array
+   * di record per rispondere. La differenza non conta su una colonna, conta
+   * quando la ricerca di un lotto ne interroga qualche migliaio per infornata.
+   */
+  isOccupied(x: number, y: number): boolean;
   at(x: number, y: number): readonly BuildingRecord[];
   withinRadius(x: number, y: number, radius: number): readonly BuildingRecord[];
   overlaps(x: number, y: number, footprint: number, baseZ: number, height: number): boolean;
@@ -150,6 +177,11 @@ export class BuildingRegistry implements ReadonlyBuildingRegistry {
     const ids = this.columns.get(`${x},${y}`);
     if (ids === undefined) return EMPTY;
     return ids.map((id) => this.records.get(id)).filter(isRecord);
+  }
+
+  isOccupied(x: number, y: number): boolean {
+    const ids = this.columns.get(`${x},${y}`);
+    return ids !== undefined && ids.length > 0;
   }
 
   /**
