@@ -21,13 +21,22 @@ o audio (vedi "Fuori scope" nel README).
 ## Comandi
 
 ```bash
+npm start            # = npm run dev, ma prima libera la porta 8020
 npm run dev          # http://localhost:8020/?debug=1
-npm test             # vitest run — 181 test, ambiente node, nessun DOM
+npm test             # vitest run — 337 test, ambiente node, nessun DOM
 npm run test:watch
 npm run bench        # vitest bench --run, *.bench.ts
 npm run typecheck    # tsc --noEmit
 npm run build        # typecheck + vite build
 ```
+
+`npm start` e `npm run dev` sono lo stesso `vite`, ma passano prima da
+`prestart`/`predev` → [scripts/free-port.mjs](scripts/free-port.mjs), che termina
+l'istanza rimasta sulla porta. Serve perché `strictPort` fa fallire l'avvio invece
+di scivolare su un'altra porta, e chi occupa la 8020 è quasi sempre un vite
+dimenticato in un altro terminale. Lo script uccide solo processi node in ascolto
+su quella porta: se la tiene un programma estraneo lascia fallire vite, che è il
+male minore.
 
 I test girano in ambiente `node` (`vite.config.ts`): non c'è jsdom, non c'è GPU.
 Il codice testabile non deve quindi importare Three.js né toccare il DOM.

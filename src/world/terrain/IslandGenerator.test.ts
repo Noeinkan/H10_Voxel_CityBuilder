@@ -16,6 +16,39 @@ function bytesOf(view: ArrayBufferView): Uint8Array {
   return new Uint8Array(view.buffer.slice(view.byteOffset, view.byteOffset + view.byteLength));
 }
 
+/**
+ * Uguaglianza byte per byte fuori dal deep-equal di vitest.
+ *
+ * `toEqual` su un Uint8Array percorre ogni elemento con la macchina del
+ * confronto profondo, e su un'isola 256x256 sono qualche centinaio di migliaia
+ * di byte: costava piu' della generazione che sta verificando, al punto da
+ * portare il file oltre il timeout quando la macchina e' occupata. Il ciclo
+ * secco decide, e `toEqual` interviene solo sull'array che differisce davvero —
+ * l'unico caso in cui il suo diff serve a qualcosa.
+ */
+function expectSameSignature(actual: Record<string, Uint8Array[]>, expected: Record<string, Uint8Array[]>): void {
+  expect(Object.keys(actual).sort()).toEqual(Object.keys(expected).sort());
+  for (const key of Object.keys(expected)) expectSameLayers(actual[key], expected[key], key);
+}
+
+function expectSameLayers(actual: Uint8Array[], expected: Uint8Array[], key: string): void {
+  expect(actual?.length).toBe(expected.length);
+  for (let layer = 0; layer < expected.length; layer++) {
+    if (sameBytes(actual[layer], expected[layer])) continue;
+    // Il contesto nel valore atteso: il messaggio dice quale chunk e quale
+    // layer, che con sedici byte di diff non si capirebbe.
+    expect({ key, layer, bytes: actual[layer] }).toEqual({ key, layer, bytes: expected[layer] });
+  }
+}
+
+function sameBytes(actual: Uint8Array, expected: Uint8Array): boolean {
+  if (actual === undefined || actual.length !== expected.length) return false;
+  for (let i = 0; i < expected.length; i++) {
+    if (actual[i] !== expected[i]) return false;
+  }
+  return true;
+}
+
 /** Firma della mappa: i quattro array di ogni colonna di chunk, in ordine di chiave. */
 function mapSignature(map: TerrainMap): Record<string, Uint8Array[]> {
   const out: Record<string, Uint8Array[]> = {};
@@ -83,7 +116,7 @@ describe('generateIsland — determinismo', () => {
     const first = generateIsland(worldA, SEED, ISLAND);
     const second = generateIsland(worldB, SEED, ISLAND);
 
-    expect(mapSignature(second.map)).toEqual(mapSignature(first.map));
+    expectSameSignature(mapSignature(second.map), mapSignature(first.map));
     expect(worldSignature(worldB)).toEqual(worldSignature(worldA));
     expect(second.buildableColumns).toBe(first.buildableColumns);
     expect(second.voxelsWritten).toBe(first.voxelsWritten);
@@ -112,7 +145,7 @@ describe('generateIsland — determinismo', () => {
     const ba2 = generateIsland(worldBA2, SEED, b, { shape });
     generateIsland(worldBA2, SEED, a, { map: ba2.map, shape });
 
-    expect(mapSignature(ba2.map)).toEqual(mapSignature(ab2.map));
+    expectSameSignature(mapSignature(ba2.map), mapSignature(ab2.map));
     expect(worldSignature(worldBA2)).toEqual(worldSignature(worldAB2));
     expect(ba.map.chunkCount).toBe(ab.map.chunkCount);
   });
@@ -141,7 +174,7 @@ describe('generateIsland — determinismo', () => {
 
     expect(map).toBeDefined();
     if (map === undefined) return;
-    expect(mapSignature(map)).toEqual(mapSignature(whole.map));
+    expectSameSignature(mapSignature(map), mapSignature(whole.map));
     expect(worldSignature(piecemeal)).toEqual(worldSignature(wholeWorld));
   });
 });
@@ -216,7 +249,7 @@ describe('expandIsland', () => {
 
     // Le colonne di prima sono rimaste esattamente quelle di prima.
     const after = mapSignature(grown.map);
-    for (const key of Object.keys(before)) expect(after[key]).toEqual(before[key]);
+    for (const key of Object.keys(before)) expectSameLayers(after[key], before[key], key);
 
     // E la maschera ereditata rende continuo anche il confine nuovo.
     for (let x = 0; x < 256; x++) {

@@ -22,6 +22,11 @@ export default defineConfig({
   test: {
     environment: 'node',
     include: ['src/**/*.test.ts'],
+    // I test di determinismo del mesher e del terreno generano mondi interi:
+    // da soli costano ~3 s e ~9 s, e con i file in parallelo sforavano il
+    // default di 5 s. Erano timeout da contesa di CPU, non fallimenti, e
+    // scendevano e salivano a seconda di cos'altro girava sulla macchina.
+    testTimeout: 30_000,
     benchmark: {
       include: ['src/**/*.bench.ts'],
     },

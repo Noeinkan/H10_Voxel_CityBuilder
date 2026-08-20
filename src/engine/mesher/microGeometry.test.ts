@@ -19,6 +19,22 @@ function detailPositions(mesh: ReturnType<typeof greedyMesh>): Int16Array {
   return mesh.positions.slice(baseVertices * 3);
 }
 
+/**
+ * Uguaglianza elemento per elemento fuori dal deep-equal di vitest.
+ *
+ * Il chunk saturo produce centinaia di migliaia di vertici, e `toEqual` li
+ * percorre con la macchina del confronto profondo: costava piu' dei due
+ * meshing che sta confrontando. Il ciclo secco decide, e `toEqual` interviene
+ * solo quando c'e' una differenza da mostrare.
+ */
+function expectSameArray(actual: ArrayLike<number>, expected: ArrayLike<number>, what: string): void {
+  expect(actual.length).toBe(expected.length);
+  for (let i = 0; i < expected.length; i++) {
+    if (actual[i] === expected[i]) continue;
+    expect({ what, index: i, value: actual[i] }).toEqual({ what, index: i, value: expected[i] });
+  }
+}
+
 describe('microgeometria 1/16', () => {
   it('conserva il greedy pass in un Int16 esatto e ammette coordinate negative', () => {
     const padded = volume();
@@ -123,8 +139,8 @@ describe('microgeometria 1/16', () => {
     expect(first.detailQuadCount).toBeLessThanOrEqual(MAX_DETAIL_QUADS_PER_CHUNK);
     expect(first.detailQuadCount).toBeGreaterThan(MAX_DETAIL_QUADS_PER_CHUNK - 64);
     expect(first.palettes[detailVertex]).toBe(PALETTE_SLOTS.metalBrass);
-    expect(first.positions).toEqual(second.positions);
-    expect(first.indices).toEqual(second.indices);
+    expectSameArray(first.positions, second.positions, 'positions');
+    expectSameArray(first.indices, second.indices, 'indices');
     expect(first.detailQuadCount).toBe(second.detailQuadCount);
   });
 });

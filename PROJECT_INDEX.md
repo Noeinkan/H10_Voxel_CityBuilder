@@ -31,6 +31,7 @@ worker. `src/sim/` gira in Node senza DOM né GPU.
 | [index.html](index.html) | Pagina unica, `#app`, monta `src/main.ts` |
 | [package.json](package.json) | Script npm; dipendenze: `three`, `simplex-noise` |
 | [ROADMAP.md](ROADMAP.md) | Direzione del prodotto, milestone e gate dei prossimi incrementi |
+| [scripts/free-port.mjs](scripts/free-port.mjs) | Hook `prestart`/`predev`: libera la porta del dev server terminando le istanze node rimaste |
 | [tsconfig.json](tsconfig.json) | `strict` + flag extra; `noUncheckedIndexedAccess` off di proposito |
 | [vite.config.ts](vite.config.ts) | Vite + Vitest insieme; worker in formato ES, test in ambiente `node` |
 | [src/main.ts](src/main.ts) | Bootstrap, ciclo di frame a budget, input di gioco e hook globali di debug |

@@ -4,7 +4,9 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
+    "prestart": "node scripts/free-port.mjs",
     "start": "vite",
+    "predev": "node scripts/free-port.mjs",
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
