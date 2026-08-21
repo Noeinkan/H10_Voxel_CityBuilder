@@ -11,7 +11,16 @@ import {
   type LocalUrbanProfile,
   type PolicyId,
 } from '../../sim';
-import { BUILDER, GRAMMAR, TYPOLOGIES } from './config';
+import {
+  BAND_OP,
+  BUILDER,
+  CLASS_PROFILE,
+  CROWN_KIND,
+  DEFAULT_TYPOLOGY_SHAPE,
+  GRAMMAR,
+  TYPOLOGIES,
+  type CrownKind,
+} from './config';
 import { generateBuilding } from './generate';
 import { selectTypology, typologiesForUses, typologyProfile } from './typology';
 import { solidCount, STAMP_EMPTY, type VoxelStamp } from './stamp';
@@ -235,7 +244,7 @@ describe('forme delle tipologie', () => {
     let widest = 0;
     for (let seed = 0; seed < 16; seed++) {
       const flat = build(BUILDING_CLASS.industrial, 3, seed, 'productionLoft');
-      const spired = build(BUILDING_CLASS.industrial, 3, seed, 'industrialYard');
+      const spired = build(BUILDING_CLASS.civic, 3, seed, 'civicSpire');
 
       // L'ultima quota di un tetto piatto e' la copertura dell'ultima fascia,
       // non un palo: e' il segno di un capannone. Con la guglia, invece, in
@@ -249,6 +258,67 @@ describe('forme delle tipologie', () => {
     }
     // E almeno una volta e' una copertura vera, non una lama residua.
     expect(widest).toBeGreaterThanOrEqual(4);
+  });
+
+  it('le cinque cime sono cinque forme diverse, non due', () => {
+    // Il corpo si tiene fermo con un repertorio di solo `keep`: se le fasce
+    // rientrassero, a distinguere le cime sarebbe anche la larghezza su cui
+    // poggiano, e il test non direbbe piu' niente sul coronamento.
+    const roofs = new Map<CrownKind, string>();
+    for (const kind of Object.values(CROWN_KIND)) {
+      const stamp = generateBuilding({
+        class: BUILDING_CLASS.civic,
+        level: 5,
+        seed: 4242,
+        shape: { ...DEFAULT_TYPOLOGY_SHAPE, crownKind: kind, minFootprint: 8 },
+        profile: {
+          ...CLASS_PROFILE[BUILDING_CLASS.civic],
+          shrinkOps: [BAND_OP.keep],
+          growOps: [BAND_OP.keep],
+        },
+      });
+      const top = countSolidsOnLayer(stamp, stamp.sizeZ - 1);
+      roofs.set(kind, `${stamp.sizeZ}:${top}`);
+    }
+    expect(new Set(roofs.values()).size).toBe(Object.keys(CROWN_KIND).length);
+
+    // Le due che portano il dettaglio verticale restano le due che devono:
+    // sopra una guglia e sopra una lanterna c'e' un prisma, non un tetto.
+    for (const kind of [CROWN_KIND.taper, CROWN_KIND.lantern]) {
+      expect(Number(roofs.get(kind)?.split(':')[1])).toBeLessThanOrEqual(GRAMMAR.roofPropSide ** 2);
+    }
+    for (const kind of [CROWN_KIND.flat, CROWN_KIND.stepped, CROWN_KIND.ridge]) {
+      expect(Number(roofs.get(kind)?.split(':')[1])).toBeGreaterThan(GRAMMAR.roofPropSide ** 2);
+    }
+  });
+
+  it('la copertura lunga resta larga quanto il corpo su un asse solo', () => {
+    // E' cio' che distingue un `ridge` da un `taper`: rientrare su entrambi gli
+    // assi darebbe un cappello, e un mercato visto di fianco perderebbe la falda.
+    const stamp = generateBuilding({
+      class: BUILDING_CLASS.commercial,
+      level: 4,
+      seed: 77,
+      shape: { ...DEFAULT_TYPOLOGY_SHAPE, crownKind: CROWN_KIND.ridge, minFootprint: 8 },
+      profile: {
+        ...CLASS_PROFILE[BUILDING_CLASS.commercial],
+        shrinkOps: [BAND_OP.keep],
+        growOps: [BAND_OP.keep],
+      },
+    });
+    const plane = stamp.sizeX * stamp.sizeY;
+    let spanX = 0;
+    let spanY = 0;
+    for (let sy = 0; sy < stamp.sizeY; sy++) {
+      for (let sx = 0; sx < stamp.sizeX; sx++) {
+        if (stamp.voxels[sx + stamp.sizeX * sy + plane * (stamp.sizeZ - 1)] === STAMP_EMPTY) continue;
+        spanX = Math.max(spanX, sx + 1);
+        spanY = Math.max(spanY, sy + 1);
+      }
+    }
+    // Un asse tocca il bordo dell'impronta, l'altro no.
+    expect(Math.max(spanX, spanY)).toBe(stamp.sizeX);
+    expect(Math.min(spanX, spanY)).toBeLessThan(stamp.sizeX);
   });
 
   it('il podio di un edificio misto porta i colori del secondo uso', () => {

@@ -11,6 +11,42 @@ coincide con il messaggio di commit.
 
 ---
 
+## 2026-08-21 — Grammatica verticale degli edifici (Fase 4.3)
+
+- Le trasformazioni della regola di fascia diventano una tabella, `BAND_OP`, e il
+  repertorio — quali voci provare, in che ordine — vive in `ClassProfile`, quindi
+  una riga di catalogo può ridefinirlo senza plumbing. Sparisce l'ultimo caso
+  speciale del ciclo delle fasce: il basamento è `keep` ripetuto. Due operazioni
+  nuove, `setback` (arretramento da due voxel) e `stack` (corpo sovrapposto, che
+  si esaurisce da sé quando il risultato scenderebbe sotto `MIN_FOOTPRINT`).
+- Il coronamento passa da booleano a `CROWN_KIND` con cinque cime — `taper`,
+  `flat`, `stepped`, `ridge`, `lantern`. `paint` riconosce il coronamento da
+  `crownStart` e non più dalla posizione in coda, che ammetteva una sola fascia.
+  La distinzione per uso sta nei quattro ripieghi del catalogo, quella per
+  livello nel `minLevel` delle righe nuove.
+- **Terrazze praticabili e giardini pensili** sulle rientranze che la grammatica
+  già produceva: l'anello scoperto passa a `SURFACE_KIND.roofTech` e riceve il
+  parapetto da `emitRoofTech` senza che il mesher venga toccato; con
+  `roofGarden` il cuore dell'anello prende gli slot `grass*`. Nessuno slot di
+  palette e nessun tipo di superficie in più.
+- Gli accenti luminosi si accendono per livello (`GRAMMAR.luminousFromLevel`,
+  `luminousFullLevel`): niente insegne su una casa appena costruita, una riga per
+  piano a metà scala, la lama intera in alto. In `VoxelMaterial.ts` il bagliore
+  del ramo `luminous` tinge con lo slot del voxel invece di essere sempre
+  `glassPale`, così un'insegna d'ottone non brilla come una spina civica.
+- Quattro righe nuove di catalogo — `skyTerraces`, `terraceArcade`,
+  `stackedWorks`, `civicLantern` — che usano i tre criteri dichiarati e mai
+  usati: `minWealth`, `minSatisfaction`, `minIndustry`. `typology.ts` non è stato
+  toccato.
+- Corretto un difetto preesistente che la fase ha reso visibile: una catena di
+  rientranze portava la cima a un voxel e la torre finiva a punta di spillo.
+  `GRAMMAR.minBandSide` è un pavimento nel filtro delle candidate; il coronamento
+  può assottigliarsi oltre, il corpo no.
+- Misura A/B su un chunk di sedici edifici veri: i quad di dettaglio **calano da
+  6 810 a 5 015** (−26%), quindi il margine sotto `MAX_DETAIL_QUADS_PER_CHUNK`
+  cresce. Le tabelle di misura in `README.md` e `src/sim/README.md` restano da
+  rimisurare a mano.
+
 ## 2026-08-20 — `996bc3e` — Calibrazione del terreno, cursore di piazzamento
 
 - **Nuovo**: `src/engine/PlacementCursor.ts` (+ test). Il segnaposto sotto il

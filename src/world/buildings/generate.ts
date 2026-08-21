@@ -1,8 +1,10 @@
 import { BUILDING_CLASS, type BuildingClass } from '../../sim';
 import { hashCoords, mulberry32 } from '../rng';
 import {
+  BAND_OP,
   BUILDER,
   CLASS_PROFILE,
+  CROWN_KIND,
   DEFAULT_BUILDING_FORM,
   DEFAULT_TYPOLOGY_SHAPE,
   GRAMMAR,
@@ -10,6 +12,8 @@ import {
   MAX_FOOTPRINT,
   MIN_FOOTPRINT,
   START_LEVEL_CDF,
+  type BandOp,
+  type CrownKind,
   type ClassProfile,
   type BuildingForm,
   type TypologyShape,
@@ -33,10 +37,17 @@ import { SURFACE_KIND, type SurfaceKind } from '../visualBlock';
  * sono cio' che resta quando si applica quella regola cinque volte di fila, non
  * qualcosa che qualcuno ha disegnato.
  *
+ * **Le trasformazioni stanno in tabella, non nel codice.** Il repertorio e'
+ * `BAND_OP`, e quali voci un edificio prova — e in che ordine — arriva dal
+ * profilo. E' cio' che ha tolto di mezzo l'ultimo caso speciale: il basamento
+ * non e' piu' un ramo del ciclo ma `keep` ripetuto, e il corpo sovrapposto di
+ * una torre civica e' `stack` in testa al repertorio, non un secondo generatore.
+ *
  * **La tipologia piega la regola, non la sostituisce.** Il generatore non sa
- * che le tipologie esistono: riceve un profilo di disegno gia' fuso e tre
- * interruttori strutturali — podio, corte, coronamento piatto — e li applica.
- * Chi sceglie *quale* tipologia e' `typology.ts`, e sta a monte.
+ * che le tipologie esistono: riceve un profilo di disegno gia' fuso — repertorio
+ * compreso — e quattro interruttori strutturali: podio, corte, forma del
+ * coronamento e giardino pensile. Chi sceglie *quale* tipologia e' `typology.ts`,
+ * e sta a monte.
  *
  * **Determinismo.** Tutto il caso esce da un solo PRNG con stato iniziale
  * `hash(class, level, seed)`. Due chiamate con gli stessi argomenti consumano la
@@ -159,41 +170,41 @@ export function generateBuilding(request: BuildingRequest): VoxelStamp {
   const rects: BandRect[] = [];
   const heights: number[] = [];
 
-  // Il podio non attraversa la grammatica: e' un blocco pieno che non rientra e
-  // non si sposta, e la prima fascia sopra parte arretrata di netto. E' quel
+  // Il basamento non e' piu' un ramo del ciclo: e' `keep` ripetuto, cioe' una
+  // delle trasformazioni della tabella applicata piu' volte di fila. Sopra
+  // l'ultima fascia piena arriva un arretramento netto — `shrink` — ed e' quel
   // gradino a rendere un podio commerciale con abitazioni riconoscibile da
   // lontano, dove una rientranza graduale si leggerebbe come una torre qualunque.
   const full: BandRect = { x0: 0, y0: 0, w: footprint, h: footprint };
   const podium = Math.min(shape.podiumBands, bands - 1);
   let rect: BandRect = full;
   for (let i = 0; i < bands; i++) {
-    if (i < podium) rect = full;
-    else if (i === podium && podium > 0) rect = shrink(full);
-    else if (i > 0) rect = nextRect(random, rect, footprint, profile);
+    if (i > 0) rect = nextRect(random, rect, footprint, profile, forcedOp(i, podium));
     rects.push(rect);
-    heights.push(i < podium
-      ? profile.bandHeight[0]
-      : pickInt(random, profile.bandHeight[0], profile.bandHeight[1]));
+    // Le fasce del basamento pescano l'altezza come tutte le altre. Prima erano
+    // bloccate al minimo, e un basamento "abitato" senza piani di altezza propria
+    // resta un blocco: sono l'altezza e il marcapiano a farne un piano.
+    heights.push(pickInt(random, profile.bandHeight[0], profile.bandHeight[1]));
   }
 
-  // Coronamento: una fascia bassa e piu' stretta del corpo. Chiude la silhouette
-  // invece di lasciarla tagliata di netto, che a distanza legge come un edificio
-  // in costruzione.
-  //
-  // Un coronamento piatto non rientra affatto: su un'impronta stretta `shrink`
-  // lascerebbe un cappello minuscolo, cioe' proprio la guglia che una tipologia
-  // a tetto piano non deve avere. Un capannone finisce con una copertura larga
-  // quanto lui.
-  const crownRect = shape.flatCrown ? rect : shrink(rect);
-  rects.push(crownRect);
+  // Coronamento: chiude la silhouette invece di lasciarla tagliata di netto, che
+  // a distanza legge come un edificio in costruzione. Quante fasce servano e
+  // quanto siano alte lo dice `crownRects`, che e' l'unica cosa a cambiare fra
+  // un capannone, un gradone e la lanterna di un civico.
+  const crownStart = rects.length;
   const crownHeight = pickInt(random, GRAMMAR.crownHeight[0], GRAMMAR.crownHeight[1]);
-  heights.push(shape.flatCrown ? GRAMMAR.flatCrownHeight : crownHeight);
+  const crown = crownBands(shape.crownKind, rect, crownHeight);
+  for (const band of crown.bands) {
+    rects.push(band.rect);
+    heights.push(band.height);
+  }
+  const crownRect = crown.bands[crown.bands.length - 1].rect;
 
   // Un solo dettaglio verticale chiude la silhouette senza introdurre rumore
-  // per-voxel: camino, sfiato o antenna dipendono dal profilo. Il tiro si
-  // consuma comunque, anche quando il coronamento e' piatto e il dettaglio non
-  // viene disegnato: cosi' la tipologia sceglie la forma e non la sequenza, e
-  // due tipologie sullo stesso seme restano confrontabili.
+  // per-voxel: camino, sfiato o antenna dipendono dal profilo. I tiri si
+  // consumano comunque, anche sui coronamenti che il dettaglio non lo portano:
+  // cosi' la tipologia sceglie la forma e non la sequenza, e due tipologie sullo
+  // stesso seme restano confrontabili.
   const propSide = Math.min(GRAMMAR.roofPropSide, crownRect.w, crownRect.h);
   const propRect: BandRect = {
     x0: crownRect.x0 + Math.floor(random() * (crownRect.w - propSide + 1)),
@@ -202,16 +213,16 @@ export function generateBuilding(request: BuildingRequest): VoxelStamp {
     h: propSide,
   };
   rects.push(propRect);
-  heights.push(shape.flatCrown ? 0 : profile.roofPropHeight);
+  heights.push(crown.roofProp ? profile.roofPropHeight : 0);
 
   const podiumProfile = request.mixed !== undefined && podium > 0
     ? CLASS_PROFILE[request.mixed]
     : null;
-
   return paint({
     rects,
     heights,
     footprint,
+    level,
     body,
     bodyAlt,
     accentId,
@@ -219,8 +230,11 @@ export function generateBuilding(request: BuildingRequest): VoxelStamp {
     crown: profile.crown,
     plinth: profile.plinth,
     roofProp: profile.roofProp,
+    terrace: profile.terrace,
+    garden: shape.roofGarden ? profile.garden : null,
     surface: classSurface(cls),
     courtyard: shape.courtyard,
+    crownStart,
     podium,
     podiumBody: podiumProfile?.body ?? null,
     podiumAlt: podiumProfile?.bodyAlt ?? null,
@@ -229,25 +243,46 @@ export function generateBuilding(request: BuildingRequest): VoxelStamp {
 }
 
 /**
+ * Trasformazione imposta dalla posizione della fascia, o `null` se la sceglie il
+ * repertorio.
+ *
+ * E' tutto cio' che resta dei tre rami che il ciclo delle fasce aveva prima. Il
+ * basamento e' `keep` ripetuto e l'arretramento sopra di esso e' `shrink`: due
+ * voci della stessa tabella da cui il repertorio pesca, non due eccezioni.
+ */
+function forcedOp(index: number, podium: number): BandOp | null {
+  if (index < podium) return BAND_OP.keep;
+  if (index === podium && podium > 0) return BAND_OP.shrink;
+  return null;
+}
+
+/**
  * Trasforma la fascia precedente in quella sopra.
  *
- * Le trasformazioni candidate vengono provate in ordine casuale e si prende la
- * prima che regge: il seed sceglie *quale* forma, non *se* la forma sta in
- * piedi. La fascia di base resta il riquadro pieno, quindi nessuna fascia puo'
- * uscire dall'impronta e la collisione fra edifici resta bidimensionale.
+ * Le trasformazioni candidate vengono provate nell'ordine del repertorio e si
+ * prende la prima che regge: il seed sceglie *quale* forma, non *se* la forma
+ * sta in piedi. La fascia di base resta il riquadro pieno, quindi nessuna fascia
+ * puo' uscire dall'impronta e la collisione fra edifici resta bidimensionale.
+ *
+ * **Le candidate si costruiscono tutte, sempre.** Chi consuma tiri li consuma
+ * anche quando la sua candidata verra' scartata: la sequenza del PRNG dipende
+ * dal repertorio, mai dall'esito di un vincolo. Senza, un'impronta stretta
+ * cambierebbe la sagoma di tutte le fasce sopra di se'.
  */
 function nextRect(
   random: () => number,
   prev: BandRect,
   footprint: number,
   profile: ClassProfile,
+  forced: BandOp | null,
 ): BandRect {
-  const candidates = random() < profile.shrinkBias
-    ? [shrink(prev), shrinkOneSide(random, prev), jog(random, prev)]
-    : [jog(random, prev), grow(random, prev), shrinkOneSide(random, prev)];
+  const ops = forced !== null
+    ? [forced]
+    : random() < profile.shrinkBias ? profile.shrinkOps : profile.growOps;
+  const candidates = ops.map((op) => applyOp(random, op, prev));
 
   for (const candidate of candidates) {
-    if (candidate.w <= 0 || candidate.h <= 0) continue;
+    if (candidate.w < GRAMMAR.minBandSide || candidate.h < GRAMMAR.minBandSide) continue;
     if (candidate.x0 < 0 || candidate.y0 < 0) continue;
     if (candidate.x0 + candidate.w > footprint || candidate.y0 + candidate.h > footprint) continue;
     if (!supported(candidate, prev)) continue;
@@ -255,8 +290,76 @@ function nextRect(
   }
 
   // Nessuna trasformazione regge: la fascia ripete quella sotto. Succede sulle
-  // impronte 1x1, dove non c'e' spazio per muoversi.
+  // impronte strette, dove non c'e' spazio per muoversi.
   return prev;
+}
+
+/** Applica una voce del repertorio. Chi non consuma tiri, non ne consuma. */
+function applyOp(random: () => number, op: BandOp, prev: BandRect): BandRect {
+  switch (op) {
+    case BAND_OP.keep:
+      return prev;
+    case BAND_OP.shrink:
+      return shrink(prev);
+    case BAND_OP.shrinkOneSide:
+      return shrinkOneSide(random, prev);
+    case BAND_OP.jog:
+      return jog(random, prev);
+    case BAND_OP.grow:
+      return grow(random, prev);
+    case BAND_OP.setback:
+      return setback(random, prev);
+    default:
+      return stack(prev);
+  }
+}
+
+/**
+ * Fasce del coronamento e presenza del dettaglio verticale.
+ *
+ * Il coronamento era un booleano e produceva due sole cime per tutta la citta'.
+ * Qui e' una tabella, e ogni voce risponde alla stessa domanda con una geometria
+ * diversa: quante fasce, quanto strette, quanto alte. Il tiro dell'altezza
+ * arriva gia' fatto da fuori, cosi' resta consumato anche dalle voci che non lo
+ * usano.
+ */
+function crownBands(
+  kind: CrownKind,
+  top: BandRect,
+  height: number,
+): { bands: readonly { rect: BandRect; height: number }[]; roofProp: boolean } {
+  switch (kind) {
+    case CROWN_KIND.flat:
+      // Non rientra affatto: su un'impronta stretta `shrink` lascerebbe un
+      // cappello minuscolo, cioe' proprio la guglia che una tipologia a tetto
+      // piano non deve avere. Un capannone finisce largo quanto lui.
+      return { bands: [{ rect: top, height: GRAMMAR.flatCrownHeight }], roofProp: false };
+    case CROWN_KIND.stepped:
+      // Due gradini, il secondo piu' basso: la cima si legge come una scala e
+      // non come una punta, ed e' la sola forma che continua verso l'alto il
+      // racconto degli arretramenti sotto.
+      return {
+        bands: [
+          { rect: shrink(top), height: GRAMMAR.flatCrownHeight },
+          { rect: shrink(shrink(top)), height: GRAMMAR.flatCrownHeight },
+        ],
+        roofProp: false,
+      };
+    case CROWN_KIND.ridge:
+      // Rientra su un asse solo, e sul lato lungo resta larga quanto il corpo:
+      // e' la copertura di un mercato o di un deposito vista di fianco.
+      return { bands: [{ rect: shrinkAxis(top), height: GRAMMAR.flatCrownHeight }], roofProp: false };
+    case CROWN_KIND.lantern:
+      // L'unica cima che sale invece di chiudere. Rientra di due per lato e si
+      // porta dietro il supplemento: senza, resterebbe un cappello basso e
+      // stretto, cioe' il contrario di una torretta.
+      return {
+        bands: [{ rect: shrink(shrink(top)), height: height + GRAMMAR.lanternRise }],
+        roofProp: true,
+      };
+    default:
+      return { bands: [{ rect: shrink(top), height }], roofProp: true };
+  }
 }
 
 /**
@@ -335,17 +438,83 @@ function grow(random: () => number, rect: BandRect): BandRect {
 }
 
 /**
+ * Arretramento di due voxel su un lato: la rientranza in cui ci si sta.
+ *
+ * Un voxel di scarto lascia un anello largo uno, che a distanza di gioco e' un
+ * gradino e non una terrazza — e infatti `terraceMinSide` lo scarta. Due voxel
+ * sono un cubo di terreno intero: e' la piu' piccola rientranza che la
+ * pavimentazione, il parapetto e un giardino riescono a raccontare.
+ */
+function setback(random: () => number, rect: BandRect): BandRect {
+  switch (pickInt(random, 0, 3)) {
+    case 0:
+      return { ...rect, x0: rect.x0 + 2, w: rect.w - 2 };
+    case 1:
+      return { ...rect, w: rect.w - 2 };
+    case 2:
+      return { ...rect, y0: rect.y0 + 2, h: rect.h - 2 };
+    default:
+      return { ...rect, h: rect.h - 2 };
+  }
+}
+
+/**
+ * Corpo sovrapposto: rientra di due per lato e si ricentra.
+ *
+ * Non consuma tiri, come `shrink`, ed e' voluto: `stack` deve dare *sempre* la
+ * stessa cosa — una torre che riparte, non una torre che si sposta. Il ricentro
+ * garantisce l'appoggio su tutta l'area, quindi `supported` passa per
+ * costruzione e la mensola non c'entra: qui non sporge niente.
+ */
+function stack(rect: BandRect): BandRect {
+  const w = rect.w - 4;
+  const h = rect.h - 4;
+  // Il corpo che riparte deve restare un corpo: sotto `MIN_FOOTPRINT` non e' un
+  // volume nuovo ma il resto del precedente, e su una torre alta `stack` a ogni
+  // fascia porterebbe la cima a un voxel in quattro passi. Chiedere che il
+  // risultato sia ancora un edificio limita l'operazione a una o due volte per
+  // silhouette senza contare nulla: e' la geometria a esaurirla.
+  if (w < MIN_FOOTPRINT || h < MIN_FOOTPRINT) return { ...rect, w: 0, h: 0 };
+  return { x0: rect.x0 + 2, y0: rect.y0 + 2, w, h };
+}
+
+/**
+ * Rientranza di un voxel per lato sul solo asse corto.
+ *
+ * Serve al coronamento `ridge` e a nient'altro: rientrare su entrambi gli assi
+ * darebbe un cappello, rientrare sull'asse lungo darebbe una lama. A parita' di
+ * lato sceglie x, cosi' resta una funzione della sola forma e non del seme.
+ */
+function shrinkAxis(rect: BandRect): BandRect {
+  if (rect.w <= rect.h) {
+    const w = Math.max(1, rect.w - 2);
+    return { ...rect, x0: rect.x0 + ((rect.w - w) >> 1), w };
+  }
+  const h = Math.max(1, rect.h - 2);
+  return { ...rect, y0: rect.y0 + ((rect.h - h) >> 1), h };
+}
+
+/**
  * Riempie i voxel dalle fasce.
  *
  * Tre colori in tre passaggi sullo stesso voxel, nell'ordine in cui si
- * sovrascrivono: corpo, cornice di sommita', faccia d'accento. La penultima
- * fascia e' il coronamento e prende il suo colore per intero, cornice compresa;
- * l'ultima e' il dettaglio sul tetto, e su un coronamento piatto e' alta zero.
+ * sovrascrivono: corpo, cornice di sommita', faccia d'accento. Le fasce da
+ * `crownStart` in poi sono il coronamento e prendono il suo colore per intero,
+ * cornice compresa; l'ultima e' il dettaglio sul tetto, e sui coronamenti che
+ * non lo portano e' alta zero.
+ *
+ * **La terrazza non e' una fascia in piu'.** E' la sommita' di una fascia dove
+ * quella sopra non arriva — un anello che la grammatica produce da sempre e che
+ * finora restava verniciato come una parete. Chiedere `roofTech` per quell'anello
+ * gli fa arrivare il parapetto da `emitRoofTech`, che gia' emette dove un tetto
+ * confina con l'aria: la terrazza si arreda senza toccare il mesher.
  */
 interface PaintRequest {
   readonly rects: readonly BandRect[];
   readonly heights: readonly number[];
   readonly footprint: number;
+  /** Livello dell'edificio: decide quanta faccia d'accento si accende. */
+  readonly level: number;
   readonly body: number;
   readonly bodyAlt: number;
   readonly accentId: number;
@@ -353,8 +522,14 @@ interface PaintRequest {
   readonly crown: number;
   readonly plinth: number;
   readonly roofProp: number;
+  /** Pavimentazione dell'anello scoperto di una rientranza. */
+  readonly terrace: number;
+  /** Verde del cuore della terrazza, o `null` se la tipologia non lo chiede. */
+  readonly garden: number | null;
   readonly surface: SurfaceKind;
   readonly courtyard: boolean;
+  /** Prima fascia del coronamento: da qui all'ultima esclusa. */
+  readonly crownStart: number;
   /** Fasce di base che appartengono al podio, gia' limitate a `bands - 1`. */
   readonly podium: number;
   readonly podiumBody: number | null;
@@ -371,12 +546,19 @@ function paint(request: PaintRequest): VoxelStamp {
   const surfaces = new Uint8Array(voxels.length);
   const bandStarts: number[] = [];
 
+  // Sotto la prima soglia la faccia d'accento resta la grammatica dell'uso: una
+  // casa appena costruita non deve sembrare un'insegna. Fra le due si accende il
+  // solo voxel di sommita' — una riga per piano, che a distanza legge come
+  // marcapiano illuminato invece che come colonna al neon.
+  const lit = request.level >= GRAMMAR.luminousFromLevel;
+  const litFull = request.level >= GRAMMAR.luminousFullLevel;
+
   let z = 0;
   for (let b = 0; b < rects.length; b++) {
     bandStarts.push(z);
     const rect = rects[b];
-    const isCrown = b === rects.length - 2;
     const isRoofProp = b === rects.length - 1;
+    const isCrown = !isRoofProp && b >= request.crownStart;
     const isPodium = b < request.podium;
     const top = z + heights[b] - 1;
 
@@ -389,6 +571,17 @@ function paint(request: PaintRequest): VoxelStamp {
     const bandBody = isPodium && request.podiumBody !== null ? request.podiumBody : request.body;
     const bandAlt = isPodium && request.podiumAlt !== null ? request.podiumAlt : request.bodyAlt;
     const bandSurface = isPodium ? request.podiumSurface : request.surface;
+
+    // La fascia sopra dice quale parte di questa sommita' resta scoperta.
+    //
+    // Vale sul solo corpo. Il coronamento e' gia' il tetto — porta il proprio
+    // colore e la propria superficie da sempre — e sopra di esso c'e' soltanto
+    // il dettaglio verticale, che copre due voxel: trattare quella sommita'
+    // come una rientranza pavimenterebbe l'intera copertura di ogni edificio a
+    // tetto piatto, che non e' una terrazza ma il tetto di prima ridipinto.
+    const above = isCrown || isRoofProp ? null : rects[b + 1];
+    const terraced = above !== null && rect.w >= GRAMMAR.terraceMinSide &&
+      rect.h >= GRAMMAR.terraceMinSide;
 
     for (let sz = z; sz <= top; sz++) {
       // La cornice e' il voxel di sommita' della fascia: costa nulla e produce
@@ -412,7 +605,18 @@ function paint(request: PaintRequest): VoxelStamp {
             continue;
           }
 
-          const accent = !isCrown && !isRoofProp && sz >= GRAMMAR.plinthHeight &&
+          // Scoperto: sommita' della fascia che la fascia sopra non copre. E'
+          // O(1) per voxel — il rettangolo di sopra e' gia' in mano al ciclo —
+          // e non alloca niente.
+          const open = terraced && sz === top && above !== null &&
+            !inside(above, sx, sy);
+          // Il bordo resta pavimentato anche quando il cuore e' verde: ci si
+          // affaccia, e il parapetto lo dice. Un giardino fino al filo del vuoto
+          // sarebbe un prato sospeso, non una terrazza piantata.
+          const planted = open && request.garden !== null && inset(rect, sx, sy);
+
+          const accent = !isCrown && !isRoofProp && !open && sz >= GRAMMAR.plinthHeight &&
+            lit && (litFull || sz === top) &&
             onAccentFace(rect, sx, sy, request.accentFace);
           // Quando l'intero edificio usa il colore d'accento, `accentId`
           // coincide con la cornice normale. Sulla sommita' della fascia si
@@ -420,18 +624,26 @@ function paint(request: PaintRequest): VoxelStamp {
           // la faccia che rende leggibile il volume.
           const accentLayer = request.accentId === layer ? bandBody : request.accentId;
           const index = sx + footprint * (sy + footprint * sz);
-          voxels[index] = accent
-            ? accentLayer
-            : layer;
+          voxels[index] = planted
+            ? (request.garden as number)
+            : open
+              ? request.terrace
+              : accent
+                ? accentLayer
+                : layer;
           surfaces[index] = isRoofProp
             ? SURFACE_KIND.utility
-            : isCrown
-              ? SURFACE_KIND.roofTech
-              : sz < GRAMMAR.portalHeight && onPortal(rect, sx, sy, request.accentFace)
-                ? SURFACE_KIND.portal
-                : accent
-                  ? SURFACE_KIND.luminous
-                  : bandSurface;
+            : planted
+              // Il verde non chiede microgeometria: un parapetto in mezzo alle
+              // aiuole sarebbe una ringhiera dentro il prato.
+              ? SURFACE_KIND.plain
+              : open || isCrown
+                ? SURFACE_KIND.roofTech
+                : sz < GRAMMAR.portalHeight && onPortal(rect, sx, sy, request.accentFace)
+                  ? SURFACE_KIND.portal
+                  : accent
+                    ? SURFACE_KIND.luminous
+                    : bandSurface;
         }
       }
     }
@@ -453,6 +665,17 @@ function paint(request: PaintRequest): VoxelStamp {
     surfaces,
     bandStarts,
   };
+}
+
+/** true se la colonna cade dentro il rettangolo della fascia. */
+function inside(rect: BandRect, sx: number, sy: number): boolean {
+  return sx >= rect.x0 && sx < rect.x0 + rect.w && sy >= rect.y0 && sy < rect.y0 + rect.h;
+}
+
+/** true se la colonna non tocca il perimetro della fascia: il cuore piantabile. */
+function inset(rect: BandRect, sx: number, sy: number): boolean {
+  return sx > rect.x0 && sx < rect.x0 + rect.w - 1 &&
+    sy > rect.y0 && sy < rect.y0 + rect.h - 1;
 }
 
 /** Un solo modulo d'ingresso, centrato sul lato principale e mai su un angolo. */

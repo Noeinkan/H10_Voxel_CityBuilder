@@ -329,6 +329,15 @@ cambio di una forma più bella:
 - **Costo per frame, non per città.** Ogni struttura nuova entra a passi nei
   budget esistenti, come già fanno la crescita degli edifici e la superficie
   urbana.
+- **Il tetto verticale è un sistema, non un numero.** `BUILDER.maxLevel` è il
+  più visibile dei tre limiti che fermano la città a mezz'aria, ed è l'unico che
+  da solo non sposta niente: sotto ci sono una soglia di upgrade che ha finito
+  lo spazio nel campo e un tetto di chunk sporchi tarato sulla torre di oggi.
+  Alzare il primo senza gli altri due fa sparire in silenzio proprio gli edifici
+  alti. La diagnosi completa sta in 4.6.
+- **Ciò che si costruisce si deve poter guardare.** Ogni sotto-fase che
+  sovrappone volumi produce struttura che dall'esterno non si vede: la vista che
+  la apre è 4.11, e viene prima di quello che deve verificare.
 
 ### Fase 4.1 — Scheletro stradale al suolo
 
@@ -527,19 +536,99 @@ disegnati a mano.
 Indipendente da 4.1 e 4.2: è lavoro sullo stamp, verificabile in Node senza
 mondo e senza terreno. Può procedere in parallelo.
 
-- [ ] Aggiungere basamenti abitati, corpi sovrapposti e arretramenti come
+**Stato implementazione:** completata. Il gate resta da validare a occhio su
+un'isola vera: i test coprono determinismo, cime distinguibili, terrazze e
+soglie luminose, non la leggibilità a distanza di gioco.
+
+- [x] Aggiungere basamenti abitati, corpi sovrapposti e arretramenti come
   trasformazioni della regola di fascia, non come casi speciali.
-- [ ] Distinguere torri e coronamenti per uso e livello, oltre agli attuali tre
+- [x] Distinguere torri e coronamenti per uso e livello, oltre agli attuali tre
   interruttori di tipologia.
-- [ ] Introdurre giardini pensili e terrazze praticabili sulle rientranze che la
+- [x] Introdurre giardini pensili e terrazze praticabili sulle rientranze che la
   grammatica già produce.
-- [ ] Dare accenti luminosi specifici per classe e livello, dentro gli slot di
+- [x] Dare accenti luminosi specifici per classe e livello, dentro gli slot di
   palette e i tipi di superficie esistenti.
-- [ ] Estendere il catalogo delle tipologie con le forme che i nuovi interruttori
+- [x] Estendere il catalogo delle tipologie con le forme che i nuovi interruttori
   rendono possibili, restando righe di tabella: la regola di scelta non si tocca.
 
 **Gate:** a parità di seed le silhouette restano deterministiche e distinguibili
 per uso; nessuno slot di palette e nessun tipo di superficie in più.
+
+**Come è stato risolto.** Le trasformazioni sono diventate una **tabella**,
+`BAND_OP`, e quali voci un edificio prova — e in che ordine — arriva dal profilo,
+non dal codice. È la mossa che ha tolto di mezzo l'ultimo caso speciale rimasto
+nella grammatica: il basamento non è più un ramo del ciclo delle fasce ma `keep`
+ripetuto, e l'arretramento netto sopra di esso è `shrink`, cioè due voci della
+stessa tabella da cui pesca tutto il resto. Il repertorio vive in `ClassProfile`
+e non in `TypologyShape`, e non è un dettaglio: `typologyProfile` fonde già
+profilo dell'uso e profilo della tipologia, quindi una riga di catalogo può
+ridefinire il repertorio **senza una riga di plumbing in più**.
+
+Le due operazioni nuove sono `setback` — due voxel su un lato, cioè un cubo di
+terreno, la più piccola rientranza in cui ci si sta — e `stack`, che rientra di
+due per lato e ricentra. Il corpo sovrapposto non ha un contatore che lo limiti a
+una volta: `stack` si rifiuta di produrre un risultato sotto `MIN_FOOTPRINT`,
+quindi su una torre da otto scatta una volta sola e poi la geometria lo esaurisce
+da sé. Nessuna delle due può sfuggire a `supported`, perché entrambe restano
+dentro il rettangolo precedente.
+
+**Il coronamento era un booleano e dava due sole cime a tutta la città.** Ora è
+`CROWN_KIND` con cinque voci — `taper`, `flat`, `stepped`, `ridge`, `lantern` —
+e `paint` ha smesso di riconoscere il coronamento per posizione: `crownStart` ha
+sostituito `rects.length - 2`, che assumeva esattamente una fascia e impediva un
+cappello a gradoni. La distinzione **per uso** non è un ramo nel generatore: sono
+i quattro ripieghi del catalogo, uno per uso, a portarsi la propria cima. Quella
+**per livello** è `minLevel` sulle righe nuove, criterio che `accepts` già
+valutava — e che funziona anche senza profilo locale, perché `demandsPlace` non
+lo elenca.
+
+**La terrazza non è una fascia in più.** È la sommità di una fascia dove quella
+sopra non arriva: un anello che la grammatica produce da sempre e che finora
+restava verniciato come una parete. Chiedere `roofTech` per quell'anello gli fa
+arrivare il parapetto da `emitRoofTech`, che già emette dove un tetto confina con
+l'aria — la terrazza si arreda **senza toccare il mesher** e senza un tipo di
+superficie nuovo. Vale sul solo corpo: il coronamento è già tetto, e trattarne la
+sommità come una rientranza avrebbe pavimentato la copertura di ogni edificio a
+tetto piatto, che non è una terrazza ma il tetto di prima ridipinto.
+
+**Due difetti che solo i test hanno rivelato.** Il primo era preesistente e la
+4.3 lo ha reso visibile: una catena di rientranze portava la cima a **un voxel**,
+e sopra un voxel tutti i coronamenti si assomigliano. Ora `GRAMMAR.minBandSide`
+è un pavimento nello stesso filtro che già scartava le candidate fuori riquadro —
+il coronamento può assottigliarsi oltre, perché è il suo mestiere, il corpo no.
+Il secondo era il commento che spiega il bagliore nello shader: `VoxelMaterial`
+compone il fragment shader in un template literal, e un backtick dentro un
+commento GLSL rompe il bundle e non il rendering.
+
+**Costo, misurato.** A/B vero sullo stesso script — sedici edifici veri di
+livello 4, quattro usi, impacchettati in un chunk — con l'albero di lavoro e con
+lo stesso albero senza le modifiche di questa fase:
+
+| | quad base | quad di dettaglio | totale |
+| --- | --- | --- | --- |
+| prima della 4.3 | 2 156 | **6 810** | 8 966 |
+| con la 4.3 | 1 805 | **5 015** | 6 820 |
+
+I quad di dettaglio **calano del 26%**, contro il rischio opposto che la fase
+portava: il margine sotto `MAX_DETAIL_QUADS_PER_CHUNK` cresce invece di
+consumarsi. Non è fortuna in due parti. La soglia luminosa toglie l'accento agli
+edifici bassi, che sono la maggioranza, e ogni faccia spenta è una corsa di
+`emitLuminous` in meno; e la terrazza è quasi neutra per costruzione, perché le
+celle che passano a `roofTech` sono le stesse che prima ricevevano una mensola da
+`emitHabitat` — una corsa al posto di una corsa. `generateBuilding` resta fuori
+dal ciclo di frame: gira al piazzamento e all'upgrade. **Le tabelle di misura in
+`README.md` e `src/sim/README.md` vanno rimisurate a mano**, e non sono state
+aggiornate qui.
+
+**Resta aperto.** Tutte le silhouette sono cambiate, ed è previsto: aggiungere
+una voce al repertorio cambia il passo del PRNG per ogni edificio. Non c'è
+persistenza da invalidare — la fase 5 non è iniziata — e il `Builder` rigenera lo
+stamp da cancellare dal *record*, quindi entro una sessione la coerenza regge. La
+grammatica resta **per edificio singolo**: un arretramento non sa che l'edificio
+accanto ne ha uno alla stessa quota, e allineare le terrazze dentro un isolato è
+esattamente il lavoro della 4.4. Gli accenti luminosi non sanno ancora niente
+dell'occupazione: si accendono per livello e non per quanta gente ci abita, che è
+la 4.8.
 
 ### Fase 4.4 — Isolati terrazzati e cluster verticali
 
@@ -585,22 +674,85 @@ l'edificio che la sosteneva cambia livello.
 
 ### Fase 4.6 — Gerarchia verticale della città
 
-Obiettivo: una silhouette d'insieme leggibile, non edifici alti sparsi.
+Obiettivo: una silhouette d'insieme leggibile, non edifici alti sparsi — e la
+regola che decide **fin dove una colonna può salire**, che oggi non esiste.
 
-Dipende da 4.3 e 4.4: è la calibrazione globale, e ha senso solo quando le forme
-locali esistono.
+Dipende da 4.3 e 4.4 per le forme locali: la calibrazione globale ha senso solo
+quando c'è qualcosa da calibrare. È però anche il punto in cui si rompono i tre
+tetti che fermano la città a mezz'aria, ed è la ragione per cui questa
+sotto-fase pesa più di quanto il suo elenco lasciasse credere.
+
+**I tre tetti, in ordine di quanto ingannano.**
+
+1. **`BUILDER.maxLevel: 6`**, con `LEVEL_CAPS` fermo a otto fasce: una torre
+   arriva a una sessantina di voxel. È l'unico che si vede e l'unico che si alza
+   cambiando un numero — ed è per questo che è una trappola.
+2. **`upgradeThreshold` finisce a 198 su un campo che satura a 255.**
+   `DesirabilityField` è un `Uint8Array` clampato in `0..255`; con
+   `localUpgrade.maxDiscount` a 38 lo spazio residuo vale sì e no un livello.
+   Non è una taratura stretta: è la fine dell'alfabeto. Oltre quel punto la
+   desiderabilità non *distingue* più due colonne del centro, e alzare
+   `maxLevel` non darebbe uno skyline ma l'altopiano che il commento di
+   `START_LEVEL_CDF` dichiara di voler evitare — tutto il nucleo saturo che sale
+   insieme, che a colpo d'occhio non si legge come una città.
+3. **`maxDirtyChunksPerBuilding: 24`** è tarato sulla torre di livello 6, e il
+   suo stesso commento racconta cosa è già successo una volta quando l'impronta
+   è raddoppiata: sono spariti esattamente gli edifici alti, «senza che niente
+   lo dicesse», perché sforare non è un errore e viene scartato in silenzio. Un
+   edificio tre volte più alto attraversa tre volte i piani di chunk.
+
+Sotto ce ne sono altri tre che non fermano la crescita ma la fanno leggere male,
+e vanno rimisurati insieme: il terreno ha `TERRAIN.maxHeight: 80` con
+`seaLevel: 16`, quindi il rilievo è tarato per stare sotto la città e non
+accanto; `SunShadow.fit` adatta il frustum al raggio dell'AABB **visibile**,
+perciò salire allarga il volume illuminato e abbassa la densità di texel
+dell'ombra a parità di `SHADOW_SIZE`; la nebbia di quota ha `heightBase` fra 6 e
+12 e `heightFalloff` intorno a 0,02, cioè è tarata su una città alta trenta
+voxel e a quota cento ha già finito di decadere.
+
+**La regola.** L'altezza smette di essere una funzione della sola desiderabilità
+e diventa una **quota ammessa per colonna**, derivata da distanza dai poli, dal
+mare e dal bordo dell'edificato. La desiderabilità continua a decidere *se* un
+edificio promuove; la gerarchia decide *fin dove*. Sono due domande diverse, e
+per questo due dati diversi — è la stessa separazione che la 4.2 ha fatto fra
+«cosa regge il terreno» e la 2.1 fra «dove ha senso questo ruolo», ed è ciò che
+permette di alzare il tetto senza spostare un coefficiente di `balance.ts`.
 
 - [ ] Derivare una stratificazione — costa e periferia basse e porose, fasce
   intermedie terrazzate, centro denso — da distanza dai poli e dal mare.
+- [ ] Esporre quella stratificazione come **quota ammessa per colonna**, e farla
+  entrare in `Builder.upgrade` accanto alla soglia di desiderabilità, non al
+  posto suo.
+- [ ] Alzare `maxLevel` e `LEVEL_CAPS` insieme al tetto di chunk sporchi, con un
+  test che verifichi che nessun edificio di livello massimo venga scartato in
+  silenzio: è il difetto che si ripresenta a ogni cambio di scala.
 - [ ] Far emergere lo skyline come eccezione governata, non come somma di upgrade
   indipendenti.
 - [ ] Preservare una corona naturale attorno all'edificato e transizioni leggibili
   fra le fasce.
+- [ ] Rimisurare ombra, nebbia di quota e inquadratura iniziale sulla città più
+  alta: la camera parte con `targetHeight` a 12 voxel e `frameRegion` riceve uno
+  `spanZ`, quindi l'inquadratura d'apertura non è indipendente dall'altezza.
 - [ ] Verificare che la gerarchia resti visibile su isole di forma diversa, non
   solo sul seed di riferimento.
 
+**Vincolo:** la simulazione non impara la verticale (invariante 7). La quota
+ammessa è un dato del mondo — sta dove stanno strade, opere e vincoli di sito —
+e `src/sim/` continua a non avere una coordinata z. Un indice `z` nel campo di
+desiderabilità moltiplicherebbe per il numero di livelli tutta la memoria densa:
+è l'alternativa da non prendere, e la 4.9 lo dice già per il suo motivo.
+
 **Gate:** da inquadratura d'insieme si riconoscono almeno tre fasce di altezza e
-il centro, senza overlay.
+il centro, senza overlay; alzare il livello massimo non fa sparire nessun
+edificio e non produce un altopiano.
+
+**Riferimento.** La progressione dei city builder classici lega l'altezza a uno
+stato globale della città — densità alta che pretende popolazione regionale,
+valore del suolo e trasporto, e la regola «non si costruisce in alto finché si
+può costruire in larghezza» — ed è documentata per
+[SimCity 4](https://simcity.fandom.com/wiki/Density). Qui la scarsità di suolo
+non diventa una meccanica: è la controprova che il tetto verticale va derivato
+da uno stato d'insieme, e non dalla singola cella.
 
 ### Fase 4.7 — Atmosfera e separazione delle quote
 
@@ -688,6 +840,17 @@ isolati terrazzati e da 4.5 per le campate, e va per ultima perché è **l'unica
 sotto-fase che tocca l'assunzione di colonna**. Il look al neon che
 accompagna queste immagini è 4.7 e 4.8; qui c'è solo la struttura che regge.
 
+**Com'è fatta davvero una città a livelli.** Nivalis, in Cloudpunk, non ha
+edifici sospesi: ha **cinque piani di città**, e le piattaforme che sembrano
+galleggiare poggiano sopra altri edifici. La parte bassa è deliberatamente
+strutturale — volumi grossi di cemento, poche finestre — perché è la fondazione
+di quello che sta sopra, e le guglie stanno solo negli ultimi livelli. È il
+vincolo qui sotto detto dal lato del look, ed è anche un'istruzione per la 4.6:
+il basso non va riempito di torri ma di podi, e la gerarchia deve saper dire
+«qui bassa e massiccia» con la stessa precisione con cui dice «qui alta».
+Una megacittà fatta di torri alte ovunque non legge come alta — legge come
+piatta, solo più in su.
+
 **Cosa c'è già e cosa manca davvero.** Il mondo è pronto più di quanto sembri:
 `BuildingRegistry.overlaps` considera *non* sovrapposti due volumi sulla stessa
 colonna con intervalli di quota disgiunti — è esattamente la condizione che
@@ -713,6 +876,10 @@ moltiplicherebbe per il numero di livelli tutta la memoria densa.
   `TerrainMap`: il livello si risolve dove si risolve il lotto, non nel campo.
 - [ ] Far crescere edifici sulle piattaforme e sui tetti condivisi dei cluster,
   riusando `topOf` e l'intervallo di quota che il registry già confronta.
+- [ ] Prendere la quota ammessa della 4.6 come tetto **anche** in quota: una
+  piattaforma non è il modo di aggirare la gerarchia, è il modo in cui la
+  gerarchia sale. Senza questo vincolo il secondo livello diventa la scorciatoia
+  che rende inutile il primo.
 - [ ] Aggiungere mobilità in quota come struttura di scena — monorotaia,
   sopraelevata, ascensori d'isolato — appoggiata alla rete di 4.5 e ai suoi
   appoggi reali.
@@ -736,10 +903,11 @@ Obiettivo: poter guardare tutto il vocabolario visuale in una sola inquadratura
 — ogni slot di palette per ogni linguaggio di superficie, la stratigrafia di ogni
 bioma, e il confronto di scala fra cella di terreno, albero ed edificio.
 
-Nessuna dipendenza, e conviene farla **per prima** fra le sottofasi rimaste: è
-lo strumento con cui si giudicano 4.7 e 4.8, e serve già adesso alla scala a
-celle del terreno. Vive in `src/world/scenes/`, quindi non tocca né la crescita
-né la simulazione.
+Nessuna dipendenza, e insieme alla 4.11 conviene farla **per prima** fra le
+sottofasi rimaste: sono i due strumenti con cui si giudicano tutte le altre —
+questo guarda il vocabolario, quella guarda la città costruita. Serve inoltre
+già adesso alla scala a celle del terreno. Vive in `src/world/scenes/`, quindi
+non tocca né la crescita né la simulazione.
 
 **Perché serve.** Oggi le uniche scene sono `city`, `noise` e `slab`, nate per
 misurare il mesher: l'unico modo di vedere uno slot di palette o un linguaggio di
@@ -776,6 +944,108 @@ combinazioni palette × superficie, gli strati di ogni bioma e il rapporto di
 scala fra cella, albero ed edificio; passare da un tema all'altro rilegge il
 campionario senza rigenerare la scena, e un tema con uno slot morto si riconosce
 a colpo d'occhio.
+
+### Fase 4.11 — Vedere dentro la città
+
+Obiettivo: poter guardare **come un pezzo di città è fatto dentro** — quote,
+incastri, cosa poggia su cosa — invece di poterne guardare solo la buccia.
+
+Nessuna dipendenza. Vive in `src/engine/` e nell'harness, non tocca né la
+crescita né la simulazione, e va **prima** delle sotto-fasi che sovrappongono
+volumi: 4.4, 4.5 e 4.9 costruiscono esattamente ciò che oggi non si potrebbe
+verificare a occhio.
+
+**Perché adesso.** La città è già abbastanza densa da essere opaca. Da
+inquadratura di gioco un isolato interno è un volume dietro altri volumi, e
+l'unico modo di controllare che due edifici si incastrino come previsto è
+aspettare che ne cresca uno in periferia, dove non c'è niente davanti. Gli
+strumenti che esistono guardano altro — `BiomeView` ricolora le colonne,
+`InfluenceOverlay` disegna cerchi sopra la scena, `SimOverlay` mostra il campo in
+2D — e nessuno risponde alla domanda «cosa c'è dietro questa facciata».
+
+**Il difetto strutturale, che decide l'ordine dei lavori.** Il greedy meshing
+emette solo le facce a contatto con l'aria: **dentro un edificio non c'è
+geometria**, e il materiale unico è `FrontSide` con `transparent: false`. Ne
+segue che un piano di taglio, da solo, non apre un edificio — lo attraversa.
+Dove le facce vicine spariscono si vede il *retro* di quelle lontane, che è
+back-face e viene scartato: cioè si vede il cielo. È il problema che i thread di
+three.js chiamano *closing up clipped planes*, e va risolto o aggirato, mai
+ignorato.
+
+Da lì le due famiglie, e il loro ordine:
+
+- **Velare**, che non toglie niente. Un retino ordinato su `gl_FragCoord` con
+  `discard` rende poroso l'occlusore senza aprirlo: si legge la sagoma davanti
+  *e* il tessuto dietro. Costa due uniform sul materiale che c'è già, non chiede
+  ordinamento perché non è alpha blending, e `transparent` resta `false`.
+- **Tagliare**, che va tappato. La faccia di sezione si dipinge dalle back-face
+  della stessa geometria — gli stamp sono volumi pieni, quindi il guscio è
+  chiuso e le back-face ci sono — leggendo `gl_FrontFacing` nel fragment. Chiede
+  però `DoubleSide`, che in three.js entra nella chiave di programma e non è
+  solo stato del renderer: entrare in sezione compila una variante, **una
+  volta**. Accettabile per uno strumento su hotkey, e l'invariante che conta —
+  cambiare tema non ricompila niente — resta intatto.
+
+Il velo viene per primo perché copre tre modi su quattro e non ha capping da
+risolvere. Un effetto collaterale gradito: dove la tipologia ha una corte, la
+sezione mostra un vuoto vero e non un pieno tagliato.
+
+- [ ] Aggiungere al materiale unico un **velo a retino** governato da uniform:
+  un predicato di quota, uno di rettangolo, la forza del retino, e `discard` sul
+  pattern ordinato. Nessuna geometria nuova, nessun materiale nuovo, nessuno
+  slot di palette e nessun tipo di superficie in più (invarianti 4 e 5).
+- [ ] **Raggi X**: velare ciò che sta fra la camera e la colonna sotto il
+  cursore. In ortografica «davanti» è una disuguaglianza sulla proiezione lungo
+  l'asse di vista, non un raycast: si risolve nel fragment senza lavoro sulla
+  CPU e senza toccare il ciclo di frame.
+- [ ] **Fetta a quota**: uno slider e un parametro URL nascondono o velano tutto
+  sopra una z, per guardare la città al piano *n* come si fa in Going Medieval e
+  in Timberborn. È il modo che risponde a «cosa c'è al livello 3».
+- [ ] **Sezione verticale**: un piano che taglia lungo un asse della **griglia
+  stradale** e non lungo un asse arbitrario, così il taglio cade su una
+  carreggiata e mostra il fronte degli isolati invece di affettare i volumi a
+  caso. È l'unico modo che ha bisogno del capping da `gl_FrontFacing`.
+- [ ] **Isolamento dell'isolato**: velare tutto ciò che sta fuori dal rettangolo
+  di `streets.blockRect` sotto il cursore. Stesso velo, predicato diverso —
+  nessun taglio, nessun capping, e l'isolato resta nel suo contesto invece di
+  finire su fondo neutro, che è il punto: la domanda è come si connette, non
+  com'è fatto da solo.
+- [ ] Tenere la **decisione** fuori dal materiale: quale modo è attivo, a che
+  quota, su quale isolato è una funzione pura e va testata in ambiente `node`,
+  come già `lighting.ts`. Nel materiale entrano solo i numeri che ne escono.
+- [ ] Dire cosa si sta guardando — modo attivo, quota della fetta, id
+  dell'isolato — nell'overlay: in-world non ci sono etichette, ed è la stessa
+  richiesta che fa il campionario della 4.10.
+- [ ] Estendere `VoxelMaterial.test.ts` ai nuovi uniform: è il test che si
+  accorge di un uniform dichiarato nel GLSL e mai scritto, o del contrario.
+
+**Vincolo:** è uno strumento dell'harness, non una modalità di gioco. Sta
+accanto a `F3` e al tasto `B` con il suo parametro URL; se un giorno diventerà
+un'azione del giocatore, a darle icona, stato e comportamento sui sette temi
+sarà la fase 7. Il mesher non si tocca (invariante 6): una vista che chiedesse
+di rimeshare per essere disegnata sarebbe la vista sbagliata.
+
+**Gate:** su una città matura si legge come un isolato si incastra su più quote —
+velato, a fette e in sezione — senza console, senza rigenerare la scena, e senza
+che il frame esca dal budget mentre una vista è attiva.
+
+**Riferimenti.**
+
+- [Going Medieval — view between layers/floors](https://steamcommunity.com/app/1029780/discussions/0/4361250086034818336/)
+  e la [guida al costruito verticale di Timberborn](https://timberborn.org/articles/vertical-building-stacking-guide):
+  la fetta a quota vista dal lato di chi la usa, difetti compresi.
+- [Isometric visibility problem](https://www.gamedev.net/forums/topic/664146-isometric-visibility-problem/)
+  e [Reducing occlusions in oblique views](https://image-ppubs.uspto.gov/dirsearch-public/print/downloadPdf/8253736):
+  la tassonomia completa — velare, ritagliare, mostrare silhouette, spostare la
+  camera — e il motivo per cui velare è l'opzione che perde meno informazione.
+- [Clipping planes on ShaderMaterial](https://discourse.threejs.org/t/clipping-planes-on-shadermaterial/10155)
+  e [Closing up clipped planes using shaders](https://discourse.threejs.org/t/closing-up-clipped-planes-using-shaders/18030):
+  perché un `ShaderMaterial` non eredita il clipping gratis, e come si tappa il
+  taglio.
+- [Camera Tool in Cities: Skylines II](https://steamcommunity.com/app/949230/discussions/0/3937895474112407245/):
+  la strada opposta — entrare fisicamente negli edifici invece di renderli
+  porosi. Non è la nostra, perché la camera qui è ortografica e vincolata, ma
+  spiega cosa i giocatori cercano quando la città diventa opaca.
 
 **Gate della fase 4:** con la UI nascosta, la città comunica crescita verticale,
 connessioni fra livelli e struttura economica attraverso volumi e silhouette;
@@ -945,6 +1215,10 @@ animazione compare nel profilo del frame.
 9. [ ] Passata visiva su indicatori e strumenti: fasi 7.1, 7.3 e 7.4 (il resto
    della fase 7 puo' seguire, ma barra risorse e dock vanno sistemati prima del playtest,
    altrimenti si misura la confusione della UI invece del bilanciamento).
+10. [ ] Viste di ispezione dell'harness: fase 4.11, e con lei il campionario
+   della 4.10. Non sono contenuto della milestone e non entrano nel gate: sono
+   gli strumenti senza i quali tutto il resto della fase 4 si giudica a occhio
+   nudo su una città che ormai è opaca.
 
 Alpha 0.2 è completa quando una partita ha apertura, sviluppo ed espansione
 leggibili, due strategie sostenibili e un salvataggio ripristinabile, con una

@@ -1,5 +1,4 @@
 {
-  "capturedAt": "2026-08-20T21:10:46.299Z",
   "viewport": {
     "width": 1440,
     "height": 900
@@ -7,13 +6,76 @@
   "scale": 2,
   "shots": [
     {
-      "name": "00-probe",
-      "file": ".shots/00-probe.png",
+      "name": "01-city-overview",
+      "file": ".shots/01-city-overview.png",
       "url": "http://localhost:8020/",
-      "shows": "probe",
-      "alt": "",
-      "bytes": 1157315,
-      "pageErrors": []
+      "shows": "la citta cresciuta sull isola procedurale: strade, isolati e tipologie decise dalla simulazione, barra risorse in alto e dock di costruzione in basso",
+      "alt": "Isometric view of a voxel city on a terraced green island, dense blocks and streets at the centre, trees along the coast",
+      "bytes": 5183679,
+      "capturedAt": "2026-08-20T22:24:01.006Z"
+    },
+    {
+      "name": "02-placement-cursor",
+      "file": ".shots/02-placement-cursor.png",
+      "url": "http://localhost:8020/",
+      "shows": "lo strumento di piazzamento attivo: segnaposto 3D sul terreno e cartellino con costo pesato dal sito, raggio di influenza, usi favoriti e tipologie che possono nascerne",
+      "alt": "Placement marker on a voxel city with a card listing cost, influence radius and the building typologies the site can grow",
+      "bytes": 5058470,
+      "capturedAt": "2026-08-20T21:38:18.184Z"
+    },
+    {
+      "name": "03-event-decision",
+      "file": ".shots/03-event-decision.png",
+      "url": "http://localhost:8020/",
+      "shows": "una carta evento della simulazione: la citta ha esaurito le scorte e chiede una scelta, con le tre risposte e il loro costo",
+      "alt": "A decision card asking how to respond to a food shortage, with three options, over the voxel city",
+      "bytes": 4654627,
+      "capturedAt": "2026-08-20T22:27:19.368Z"
+    },
+    {
+      "name": "04-policies-and-trade",
+      "file": ".shots/04-policies-and-trade.png",
+      "url": "http://localhost:8020/",
+      "shows": "il cassetto delle politiche: leve attivabili, pannello del commercio con la produzione per settore e le strategie di scambio",
+      "alt": "Side drawer with city policies, commerce figures and trade strategies open over the city",
+      "bytes": 4524639,
+      "capturedAt": "2026-08-20T22:30:47.581Z"
+    },
+    {
+      "name": "05-theme-neon",
+      "file": ".shots/05-theme-neon.png",
+      "url": "http://localhost:8020/?theme=neon",
+      "shows": "lo stesso motore con un tema diverso: 32 colori e parametri di atmosfera scambiati a caldo, nessuna geometria rigenerata, con il selettore dei temi aperto",
+      "alt": "The same voxel city rendered in a neon night palette, next to the theme picker listing the available looks",
+      "bytes": 3994980,
+      "capturedAt": "2026-08-20T22:34:30.405Z"
+    },
+    {
+      "name": "06-debug-overlay",
+      "file": ".shots/06-debug-overlay.png",
+      "url": "http://localhost:8020/?debug=1&grow=1",
+      "shows": "l harness di misura: frame budget, draw call, triangoli, stato del mesher e del pool di worker accanto alle statistiche di crescita",
+      "alt": "The voxel city with technical overlays showing frame timings, draw calls, chunk counts and growth statistics",
+      "bytes": 4949086,
+      "capturedAt": "2026-08-21T07:49:32.973Z"
+    },
+    {
+      "name": "07-biome-map",
+      "file": ".shots/07-biome-map.png",
+      "url": "http://localhost:8020/?debug=1&terrain=1337",
+      "shows": "l isola ricolorata per bioma (tasto B) con l overlay del terreno: istogramma dei biomi, colonne edificabili e tempo di generazione nel worker",
+      "alt": "Voxel island recoloured into flat biome bands, beside a panel listing the biome histogram and generation timings",
+      "bytes": 4500846,
+      "capturedAt": "2026-08-21T07:39:20.597Z"
+    },
+    {
+      "name": "08-simulation-lab",
+      "file": ".shots/08-simulation-lab.png",
+      "url": "http://localhost:8020/?debug=1&sim=1",
+      "shows": "la scena di simulazione isolata: desiderabilita, candidati di costruzione classificati e leve di politica, senza il gioco attorno",
+      "alt": "Simulation panel with desirability figures, ranked candidate build sites and policy toggles above the island",
+      "bytes": 4165264,
+      "capturedAt": "2026-08-21T07:51:07.478Z"
     }
   ]
 }

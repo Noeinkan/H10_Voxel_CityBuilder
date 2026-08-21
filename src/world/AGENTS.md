@@ -83,6 +83,22 @@ e costruzione degli edifici. Questo modulo non dipende dal renderer.
   suo isolato e' pieno, `findLot` cerca in quelli attorno. Senza, su un campo
   saturo la crescita si ferma appena si riempie il primo isolato, perche' la
   simulazione ripropone all'infinito le stesse colonne.
+- La **grammatica delle fasce e' una tabella**, `BAND_OP`, e il repertorio — quali
+  trasformazioni provare e in che ordine — sta in `ClassProfile`, non nel codice
+  di `generate.ts`. E' li' e non in `TypologyShape` perche' `typologyProfile`
+  fonde gia' profilo dell'uso e profilo della tipologia: una riga di catalogo
+  ridefinisce il repertorio senza plumbing. Il basamento non e' un caso speciale
+  ma `keep` ripetuto, e il corpo sovrapposto e' `stack`, che si esaurisce da se'
+  quando il risultato scenderebbe sotto `MIN_FOOTPRINT` — nessun contatore.
+- La **cima e' una riga di catalogo**, non un ramo: `CROWN_KIND` ha cinque voci e
+  i quattro ripieghi per uso ne portano una ciascuno, cosi' "coronamenti per uso"
+  resta tabellare. Per livello lo fa `minLevel`, che vale anche senza profilo
+  locale perche' `demandsPlace` non lo elenca.
+- La **terrazza non e' una fascia in piu'**: e' la sommita' di una fascia dove
+  quella sopra non arriva, e chiede `roofTech` per avere il parapetto che
+  `emitRoofTech` gia' emette — il mesher non si tocca. Vale sul solo corpo: il
+  coronamento e' gia' tetto, e pavimentarlo ridipingerebbe la copertura di ogni
+  edificio a tetto piatto invece di aggiungere un luogo dove si sta.
 - Il **catalogo delle tipologie** e' una tabella in `buildings/config.ts`:
   condizioni sul luogo piu' forma. Aggiungere una tipologia e' aggiungere una
   riga — la regola di scelta in `typology.ts` e' generica e non va toccata, e la

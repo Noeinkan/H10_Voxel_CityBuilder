@@ -238,13 +238,114 @@ export const GRAMMAR = {
   flatCrownHeight: 2,
 
   /**
+   * Altezza della lanterna, sommata a quella tirata per il coronamento.
+   *
+   * E' la sola forma di coronamento che *sale* invece di chiudere: senza il
+   * supplemento rientrerebbe di quattro voxel per lato e resterebbe bassa, cioe'
+   * un cappello minuscolo invece di una torretta.
+   */
+  lanternRise: 4,
+
+  /**
    * Lato del dettaglio verticale sul tetto.
    *
    * A un voxel su un tetto largo otto sparirebbe alla distanza di gioco, che e'
    * il contrario di cio' per cui esiste: chiudere la silhouette.
    */
   roofPropSide: 2,
+
+  /**
+   * Lato sotto cui una fascia non scende.
+   *
+   * Senza, una catena di rientranze porta la cima a un voxel e la torre finisce
+   * a punta di spillo: succedeva gia' con `shrink` ripetuto, e con `stack` in
+   * repertorio succederebbe in meta' delle fasce. A due voxel — un cubo di
+   * terreno — la fascia e' ancora un volume, e sopra ci sta un coronamento che
+   * si distingue da un altro.
+   */
+  minBandSide: 2,
+
+  /**
+   * Lato minimo perche' una rientranza diventi terrazza invece di restare uno
+   * scalino.
+   *
+   * Sotto, l'anello scoperto e' largo un voxel e non ci si sta: verniciarlo di
+   * pavimentazione mentirebbe, e — dato che la terrazza chiede a `emitRoofTech`
+   * un parapetto — pagherebbe geometria di dettaglio per un bordo che nessuno
+   * legge come praticabile.
+   */
+  terraceMinSide: 3,
+
+  /**
+   * Livello da cui la faccia d'accento comincia a essere luminosa.
+   *
+   * Sotto, resta la grammatica di superficie dell'uso: una casa appena costruita
+   * non deve sembrare un'insegna, e sono la maggioranza degli edifici — quindi
+   * e' anche la voce che tiene basso il conto delle corse di `emitLuminous`.
+   */
+  luminousFromLevel: 2,
+
+  /**
+   * Livello da cui la lama luminosa sale su tutta la fascia.
+   *
+   * Fra le due soglie si accende il solo voxel di sommita': una riga per piano,
+   * che a distanza legge come marcapiano illuminato e non come colonna al neon.
+   */
+  luminousFullLevel: 4,
 } as const;
+
+/**
+ * Le trasformazioni della regola di fascia, per nome.
+ *
+ * Sono la grammatica: una fascia si ricava da quella sotto applicando una di
+ * queste, e non esiste altro modo di salire. Il podio, che prima era un ramo nel
+ * ciclo, e' `keep` ripetuto; l'arretramento netto sopra di esso e' `shrink`.
+ * Tenerle in tabella e non nel codice e' cio' che permette a un uso — e a una
+ * tipologia, che sovrascrive il profilo — di avere un repertorio proprio senza
+ * che `generate.ts` sappia chi sta chiedendo cosa.
+ */
+export const BAND_OP = {
+  /** Ripete la fascia sotto: corpo continuo, e le fasce del basamento. */
+  keep: 0,
+  /** Rientranza centrata di un voxel per lato. */
+  shrink: 1,
+  /** Rientranza di un voxel su un lato solo: le terrazze asimmetriche. */
+  shrinkOneSide: 2,
+  /** Scarto laterale di un voxel a parita' di dimensione. */
+  jog: 3,
+  /** Allargamento di un voxel su un lato, dentro il riquadro. */
+  grow: 4,
+  /** Arretramento di due voxel su un lato: una terrazza in cui ci si sta. */
+  setback: 5,
+  /** Rientra due per lato e ricentra: e' il corpo sovrapposto, non un gradino. */
+  stack: 6,
+} as const;
+
+export type BandOp = typeof BAND_OP[keyof typeof BAND_OP];
+
+/**
+ * Come una tipologia chiude la silhouette.
+ *
+ * Il coronamento era un booleano — piatto o no — e produceva due sole cime per
+ * tutta la citta'. Qui ogni voce e' una geometria diversa applicata all'ultima
+ * fascia del corpo, e la scelta arriva dal catalogo: sono i ripieghi per uso a
+ * dare a ciascun uso la propria cima, e le righe con `minLevel` a distinguerla
+ * per livello.
+ */
+export const CROWN_KIND = {
+  /** Rientra di uno per lato e porta il dettaglio verticale. L'attuale default. */
+  taper: 0,
+  /** Non rientra affatto, basso e senza dettaglio: la copertura di un capannone. */
+  flat: 1,
+  /** Due gradini che rientrano: un cappello a gradoni, senza dettaglio. */
+  stepped: 2,
+  /** Rientra su un asse solo: la copertura lunga di un mercato o di un deposito. */
+  ridge: 3,
+  /** Rientra di due per lato e sale: la lanterna dei civici alti, con dettaglio. */
+  lantern: 4,
+} as const;
+
+export type CrownKind = typeof CROWN_KIND[keyof typeof CROWN_KIND];
 
 export interface LevelCaps {
   /** Lato minimo naturale; durante un upgrade bloccato puo' restare piu' stretto. */
@@ -301,6 +402,21 @@ export interface ClassProfile {
    */
   readonly shrinkBias: number;
 
+  /**
+   * Trasformazioni provate quando il tiro cade sotto `shrinkBias`, in ordine.
+   *
+   * Si prende la prima che regge i vincoli, quindi l'ordine e' una preferenza e
+   * non un'alternativa: mettere `setback` in testa significa "questo uso arretra
+   * profondo quando puo', e ripiega su una rientranza normale quando non ci sta".
+   * E' qui, e non in `TypologyShape`, perche' `typologyProfile` fonde gia' il
+   * profilo dell'uso con quello della tipologia: una riga di catalogo puo'
+   * sovrascrivere il repertorio senza una riga di plumbing in piu'.
+   */
+  readonly shrinkOps: readonly BandOp[];
+
+  /** Trasformazioni provate quando il tiro cade sopra `shrinkBias`, in ordine. */
+  readonly growOps: readonly BandOp[];
+
   /** Preferenza di impronta applicata al tiro comune, prima del clamp di livello. */
   readonly footprintBias: number;
 
@@ -318,6 +434,16 @@ export interface ClassProfile {
   readonly roofProp: number;
   /** Altezza del dettaglio sul tetto. */
   readonly roofPropHeight: number;
+  /**
+   * Pavimentazione dell'anello scoperto lasciato da una rientranza.
+   *
+   * Una terrazza non e' una fascia in piu': e' la sommita' della fascia sotto
+   * dove quella sopra non arriva, che la grammatica produce da sempre e che
+   * finora restava verniciata come una parete qualunque.
+   */
+  readonly terrace: number;
+  /** Verde del giardino pensile, quando la tipologia lo chiede. */
+  readonly garden: number;
 }
 
 /**
@@ -337,6 +463,11 @@ export const CLASS_PROFILE: readonly ClassProfile[] = [
   {
     bandHeight: [4, 6],
     shrinkBias: 0.38,
+    // Arretra profondo quando lo spazio c'e': e' l'uso che deve produrre le
+    // terrazze abitabili, ed e' anche quello che ne ha piu' bisogno per non
+    // leggersi come una fila di scatole.
+    shrinkOps: [BAND_OP.setback, BAND_OP.shrink, BAND_OP.shrinkOneSide, BAND_OP.jog],
+    growOps: [BAND_OP.jog, BAND_OP.grow, BAND_OP.shrinkOneSide],
     footprintBias: 2,
     body: PALETTE_SLOTS.concretePale,
     bodyAlt: PALETTE_SLOTS.glassDeep,
@@ -345,11 +476,15 @@ export const CLASS_PROFILE: readonly ClassProfile[] = [
     plinth: PALETTE_SLOTS.metalDark,
     roofProp: PALETTE_SLOTS.metalBrass,
     roofPropHeight: 4,
+    terrace: PALETTE_SLOTS.stone,
+    garden: PALETTE_SLOTS.grass,
   },
   // commerciale — fronti caldi e bassi, insegne d'ottone, tetti larghi.
   {
     bandHeight: [4, 6],
     shrinkBias: 0.24,
+    shrinkOps: [BAND_OP.shrink, BAND_OP.shrinkOneSide, BAND_OP.jog],
+    growOps: [BAND_OP.jog, BAND_OP.grow, BAND_OP.keep],
     footprintBias: 2,
     body: PALETTE_SLOTS.brick,
     bodyAlt: PALETTE_SLOTS.brickLight,
@@ -358,11 +493,17 @@ export const CLASS_PROFILE: readonly ClassProfile[] = [
     plinth: PALETTE_SLOTS.stoneWarm,
     roofProp: PALETTE_SLOTS.metalGold,
     roofPropHeight: 4,
+    terrace: PALETTE_SLOTS.stoneWarm,
+    garden: PALETTE_SLOTS.grassLight,
   },
   // industriale — megastrutture compatte, corazze e apparati di dissipazione.
   {
     bandHeight: [4, 6],
     shrinkBias: 0.18,
+    // `keep` in testa al ramo che sale: un capannone e' un corpo continuo, e
+    // prima l'unico modo di ottenerlo era che tutte le candidate fallissero.
+    shrinkOps: [BAND_OP.shrinkOneSide, BAND_OP.jog],
+    growOps: [BAND_OP.keep, BAND_OP.jog, BAND_OP.grow],
     footprintBias: 2,
     body: PALETTE_SLOTS.stoneDeep,
     bodyAlt: PALETTE_SLOTS.metalDark,
@@ -371,19 +512,30 @@ export const CLASS_PROFILE: readonly ClassProfile[] = [
     plinth: PALETTE_SLOTS.asphaltDark,
     roofProp: PALETTE_SLOTS.metalBrass,
     roofPropHeight: 6,
+    terrace: PALETTE_SLOTS.asphalt,
+    garden: PALETTE_SLOTS.grassDark,
   },
   // civico — guglie vetrate ed esoscheletri chiari, i landmark dello skyline.
   {
     bandHeight: [6, 8],
     shrinkBias: 0.62,
+    // `stack` in testa: il civico e' l'uso che deve produrre corpi sovrapposti,
+    // cioe' una torre che riparte piu' stretta invece di assottigliarsi.
+    shrinkOps: [BAND_OP.stack, BAND_OP.shrink, BAND_OP.shrinkOneSide],
+    growOps: [BAND_OP.jog, BAND_OP.shrink, BAND_OP.grow],
     footprintBias: 0,
     body: PALETTE_SLOTS.concreteWhite,
     bodyAlt: PALETTE_SLOTS.glassPale,
-    accent: PALETTE_SLOTS.glassDeep,
+    // Era `glassDeep`, l'unico accento troppo scuro per emettere: da quando il
+    // bagliore prende il colore dello slot, un blu profondo spegneva proprio la
+    // classe che sullo skyline deve leggersi da piu' lontano.
+    accent: PALETTE_SLOTS.glassPale,
     crown: PALETTE_SLOTS.roofWhite,
     plinth: PALETTE_SLOTS.concrete,
     roofProp: PALETTE_SLOTS.metalBrass,
     roofPropHeight: 6,
+    terrace: PALETTE_SLOTS.concreteLight,
+    garden: PALETTE_SLOTS.grassPale,
   },
 ];
 
@@ -414,8 +566,16 @@ export interface TypologyShape {
   readonly podiumBands: number;
   /** Svuota il cuore delle fasce larghe: e' l'isolato a corte. */
   readonly courtyard: boolean;
-  /** Coronamento basso e nessun dettaglio verticale sul tetto. */
-  readonly flatCrown: boolean;
+  /** Come si chiude la silhouette. Vedi `CROWN_KIND`. */
+  readonly crownKind: CrownKind;
+  /**
+   * Pianta le rientranze scoperte invece di lasciarle pavimentate.
+   *
+   * Il bordo resta comunque terrazza — ci si affaccia, e il parapetto lo dice —
+   * ma il cuore dell'anello diventa verde. Non e' una fascia in piu' ne' un
+   * volume: e' lo stesso voxel di sommita', con un altro slot.
+   */
+  readonly roofGarden: boolean;
   /** Lato minimo dell'impronta imposto dalla tipologia. */
   readonly minFootprint: number;
   /** Lato massimo dell'impronta imposto dalla tipologia. */
@@ -473,7 +633,8 @@ export interface TypologyDefinition extends TypologyRequirement {
 export const DEFAULT_TYPOLOGY_SHAPE: TypologyShape = {
   podiumBands: 0,
   courtyard: false,
-  flatCrown: false,
+  crownKind: CROWN_KIND.taper,
+  roofGarden: false,
   minFootprint: 4,
   maxFootprint: MAX_FOOTPRINT,
 };
@@ -497,7 +658,7 @@ export const TYPOLOGIES: readonly TypologyDefinition[] = [
     // qualifica — densita' alta e livello alto — vince lui, che ha priorita'
     // maggiore; qui sotto resta la casa-bottega.
     priority: 3,
-    shape: { ...DEFAULT_TYPOLOGY_SHAPE, podiumBands: 1, flatCrown: true, maxFootprint: 6 },
+    shape: { ...DEFAULT_TYPOLOGY_SHAPE, podiumBands: 1, crownKind: CROWN_KIND.flat, maxFootprint: 6 },
     profile: {
       bandHeight: [4, 4],
       shrinkBias: 0.12,
@@ -532,7 +693,7 @@ export const TYPOLOGIES: readonly TypologyDefinition[] = [
     minDensity: 0.3,
     minLevel: 2,
     priority: 2,
-    shape: { ...DEFAULT_TYPOLOGY_SHAPE, courtyard: true, flatCrown: true, minFootprint: 8 },
+    shape: { ...DEFAULT_TYPOLOGY_SHAPE, courtyard: true, crownKind: CROWN_KIND.flat, minFootprint: 8 },
     profile: {
       bandHeight: [4, 6],
       shrinkBias: 0.08,
@@ -551,6 +712,40 @@ export const TYPOLOGIES: readonly TypologyDefinition[] = [
     shape: { ...DEFAULT_TYPOLOGY_SHAPE, maxFootprint: 6 },
     profile: { bandHeight: [6, 8], shrinkBias: 0.72 },
   },
+  {
+    id: 'skyTerraces',
+    label: 'Sky terraces',
+    use: 0,
+    // `minWealth` non era usato da nessuna riga: la ricchezza entrava nella forma
+    // solo come spinta continua su `shrinkBias`, che mezza fascia se la mangia.
+    // Qui e' una soglia, e sopra di essa il quartiere cambia tipologia.
+    minWealth: 0.6,
+    minLevel: 5,
+    // Sopra `towerBlock`, che a questo livello qualifica quasi sempre: dove c'e'
+    // anche la ricchezza, la torre liscia diventa un gradone abitato.
+    priority: 5,
+    shape: {
+      ...DEFAULT_TYPOLOGY_SHAPE,
+      crownKind: CROWN_KIND.stepped,
+      roofGarden: true,
+      minFootprint: 7,
+    },
+    profile: {
+      bandHeight: [4, 6],
+      shrinkBias: 0.85,
+      // Solo arretramenti profondi: e' l'unica riga che rinuncia del tutto alla
+      // rientranza da un voxel, e infatti e' quella che deve produrre terrazze
+      // su cui il giardino ci sta davvero.
+      shrinkOps: [BAND_OP.setback, BAND_OP.stack, BAND_OP.shrink],
+      growOps: [BAND_OP.setback, BAND_OP.jog, BAND_OP.shrinkOneSide],
+      body: PALETTE_SLOTS.concreteWhite,
+      bodyAlt: PALETTE_SLOTS.concretePale,
+      accent: PALETTE_SLOTS.glass,
+      crown: PALETTE_SLOTS.roofWhite,
+      plinth: PALETTE_SLOTS.stone,
+      garden: PALETTE_SLOTS.grassLight,
+    },
+  },
   // Le due righe concesse dai mandati stanno in fondo all'uso e a priorita' 6:
   // una decisione del giocatore e' l'affermazione piu' forte sulla forma di un
   // quartiere, e vince su cio' che le soglie locali avrebbero scelto da sole.
@@ -560,7 +755,15 @@ export const TYPOLOGIES: readonly TypologyDefinition[] = [
     use: 0,
     charter: ['communityGardens'],
     priority: 6,
-    shape: { ...DEFAULT_TYPOLOGY_SHAPE, courtyard: true, flatCrown: true, minFootprint: 7 },
+    shape: {
+      ...DEFAULT_TYPOLOGY_SHAPE,
+      courtyard: true,
+      crownKind: CROWN_KIND.flat,
+      // Il mandato si chiama "orti di quartiere": era l'unica riga a portare il
+      // verde nei soli slot di colore, e ora lo porta anche dove si sta.
+      roofGarden: true,
+      minFootprint: 7,
+    },
     profile: {
       bandHeight: [4, 4],
       shrinkBias: 0.05,
@@ -571,6 +774,8 @@ export const TYPOLOGIES: readonly TypologyDefinition[] = [
       crown: PALETTE_SLOTS.grass,
       plinth: PALETTE_SLOTS.stoneWarm,
       roofPropHeight: 0,
+      terrace: PALETTE_SLOTS.wood,
+      garden: PALETTE_SLOTS.grassLight,
     },
   },
   {
@@ -579,7 +784,7 @@ export const TYPOLOGIES: readonly TypologyDefinition[] = [
     use: 0,
     charter: ['rationing'],
     priority: 6,
-    shape: { ...DEFAULT_TYPOLOGY_SHAPE, flatCrown: true, maxFootprint: 5 },
+    shape: { ...DEFAULT_TYPOLOGY_SHAPE, crownKind: CROWN_KIND.flat, maxFootprint: 5 },
     profile: {
       bandHeight: [6, 8],
       shrinkBias: 0.9,
@@ -602,7 +807,7 @@ export const TYPOLOGIES: readonly TypologyDefinition[] = [
     roles: ['port'],
     coastal: true,
     priority: 6,
-    shape: { ...DEFAULT_TYPOLOGY_SHAPE, podiumBands: 1, flatCrown: true, minFootprint: 6 },
+    shape: { ...DEFAULT_TYPOLOGY_SHAPE, podiumBands: 1, crownKind: CROWN_KIND.flat, minFootprint: 6 },
     profile: {
       bandHeight: [4, 4],
       shrinkBias: 0.08,
@@ -657,7 +862,7 @@ export const TYPOLOGIES: readonly TypologyDefinition[] = [
     use: 1,
     specialization: 'entertainment',
     priority: 5,
-    shape: { ...DEFAULT_TYPOLOGY_SHAPE, flatCrown: true, minFootprint: 6 },
+    shape: { ...DEFAULT_TYPOLOGY_SHAPE, crownKind: CROWN_KIND.flat, minFootprint: 6 },
     profile: {
       bandHeight: [6, 8],
       shrinkBias: 0.18,
@@ -686,7 +891,40 @@ export const TYPOLOGIES: readonly TypologyDefinition[] = [
       plinth: PALETTE_SLOTS.stone,
     },
   },
-  { id: 'retailRow', label: 'Retail row', use: 1, priority: 0, shape: { ...DEFAULT_TYPOLOGY_SHAPE, flatCrown: true, maxFootprint: 6 }, profile: { bandHeight: [4, 4] } },
+  {
+    id: 'terraceArcade',
+    label: 'Terrace arcade',
+    use: 1,
+    // `minSatisfaction` era l'altro criterio dichiarato e mai usato. Un fronte
+    // commerciale con la gente che ci sta sopra ha senso dove la gente sta bene,
+    // e non dove il commercio e' solo fitto.
+    minSatisfaction: 0.5,
+    minLevel: 3,
+    // Sotto le tre righe di specializzazione, che restano piu' specifiche di
+    // "qui si sta bene": un albergo resta un albergo anche in un quartiere felice.
+    priority: 4,
+    shape: {
+      ...DEFAULT_TYPOLOGY_SHAPE,
+      podiumBands: 2,
+      crownKind: CROWN_KIND.stepped,
+      roofGarden: true,
+      minFootprint: 7,
+    },
+    profile: {
+      bandHeight: [4, 5],
+      shrinkBias: 0.7,
+      footprintBias: 2,
+      shrinkOps: [BAND_OP.setback, BAND_OP.shrinkOneSide, BAND_OP.shrink],
+      growOps: [BAND_OP.keep, BAND_OP.jog, BAND_OP.grow],
+      body: PALETTE_SLOTS.stone,
+      bodyAlt: PALETTE_SLOTS.stoneWarm,
+      accent: PALETTE_SLOTS.metalGold,
+      crown: PALETTE_SLOTS.roofPale,
+      plinth: PALETTE_SLOTS.stoneDark,
+      terrace: PALETTE_SLOTS.wood,
+    },
+  },
+  { id: 'retailRow', label: 'Retail row', use: 1, priority: 0, shape: { ...DEFAULT_TYPOLOGY_SHAPE, crownKind: CROWN_KIND.flat, maxFootprint: 6 }, profile: { bandHeight: [4, 4] } },
 
   // --- industriale ---------------------------------------------------------
   {
@@ -695,7 +933,7 @@ export const TYPOLOGIES: readonly TypologyDefinition[] = [
     use: 2,
     specialization: 'logistics',
     priority: 5,
-    shape: { ...DEFAULT_TYPOLOGY_SHAPE, flatCrown: true, minFootprint: 8 },
+    shape: { ...DEFAULT_TYPOLOGY_SHAPE, crownKind: CROWN_KIND.flat, minFootprint: 8 },
     profile: {
       bandHeight: [4, 4],
       shrinkBias: 0,
@@ -713,7 +951,7 @@ export const TYPOLOGIES: readonly TypologyDefinition[] = [
     use: 2,
     minLevel: 2,
     priority: 2,
-    shape: { ...DEFAULT_TYPOLOGY_SHAPE, flatCrown: true, minFootprint: 6 },
+    shape: { ...DEFAULT_TYPOLOGY_SHAPE, crownKind: CROWN_KIND.flat, minFootprint: 6 },
     profile: { bandHeight: [4, 4], shrinkBias: 0.05, footprintBias: 4 },
   },
   {
@@ -722,7 +960,7 @@ export const TYPOLOGIES: readonly TypologyDefinition[] = [
     use: 2,
     charter: ['soldReserves'],
     priority: 6,
-    shape: { ...DEFAULT_TYPOLOGY_SHAPE, flatCrown: true, minFootprint: 7 },
+    shape: { ...DEFAULT_TYPOLOGY_SHAPE, crownKind: CROWN_KIND.flat, minFootprint: 7 },
     profile: {
       bandHeight: [5, 6],
       shrinkBias: 0,
@@ -735,7 +973,44 @@ export const TYPOLOGIES: readonly TypologyDefinition[] = [
       roofPropHeight: 0,
     },
   },
-  { id: 'industrialYard', label: 'Industrial yard', use: 2, priority: 0, shape: DEFAULT_TYPOLOGY_SHAPE, profile: {} },
+  {
+    id: 'stackedWorks',
+    label: 'Stacked works',
+    use: 2,
+    // `minIndustry` chiudeva la terna dei criteri dichiarati e mai usati. Dove
+    // l'impatto industriale e' alto la fabbrica smette di allargarsi — non c'e'
+    // piu' isolato — e comincia a impilarsi.
+    minIndustry: 0.5,
+    minLevel: 3,
+    // Sopra `productionLoft` (2), sotto `logisticsDepot` (5): un polo logistico
+    // resta un capannone anche in mezzo alle ciminiere.
+    priority: 3,
+    shape: { ...DEFAULT_TYPOLOGY_SHAPE, crownKind: CROWN_KIND.ridge, minFootprint: 7 },
+    profile: {
+      bandHeight: [4, 5],
+      shrinkBias: 0.5,
+      footprintBias: 4,
+      shrinkOps: [BAND_OP.stack, BAND_OP.shrinkOneSide],
+      growOps: [BAND_OP.keep, BAND_OP.keep, BAND_OP.jog],
+      body: PALETTE_SLOTS.stoneDeep,
+      bodyAlt: PALETTE_SLOTS.metalRust,
+      accent: PALETTE_SLOTS.metalBrass,
+      crown: PALETTE_SLOTS.metalDark,
+      plinth: PALETTE_SLOTS.asphaltShadow,
+      roofPropHeight: 6,
+    },
+  },
+  {
+    id: 'industrialYard',
+    label: 'Industrial yard',
+    use: 2,
+    priority: 0,
+    // Il ripiego di ogni uso porta la cima che distingue quell'uso da lontano:
+    // e' la sola forma in cui "coronamenti per uso" resta una riga di tabella e
+    // non un ramo dentro la grammatica. Qui una copertura lunga, da capannone.
+    shape: { ...DEFAULT_TYPOLOGY_SHAPE, crownKind: CROWN_KIND.ridge },
+    profile: {},
+  },
 
   // --- civico --------------------------------------------------------------
   {
@@ -745,7 +1020,7 @@ export const TYPOLOGIES: readonly TypologyDefinition[] = [
     specialization: 'research',
     minLevel: 2,
     priority: 5,
-    shape: { ...DEFAULT_TYPOLOGY_SHAPE, courtyard: true, flatCrown: true, minFootprint: 8 },
+    shape: { ...DEFAULT_TYPOLOGY_SHAPE, courtyard: true, crownKind: CROWN_KIND.flat, minFootprint: 8 },
     profile: {
       bandHeight: [6, 6],
       shrinkBias: 0.12,
@@ -773,6 +1048,28 @@ export const TYPOLOGIES: readonly TypologyDefinition[] = [
       crown: PALETTE_SLOTS.roofWhite,
       plinth: PALETTE_SLOTS.stone,
       roofProp: PALETTE_SLOTS.metalGold,
+    },
+  },
+  {
+    id: 'civicLantern',
+    label: 'Civic lantern',
+    use: 3,
+    // L'unica condizione e' il livello, e non e' una condizione *sul luogo*:
+    // `demandsPlace` non lo elenca, quindi la riga vale anche dove il profilo
+    // non c'e' — un catalizzatore piazzato a mano, una fixture di scena. E' cosi'
+    // che "coronamenti per livello" resta una riga e non un ramo.
+    minLevel: 4,
+    // Sopra il solo ripiego: `culturalPavilion` (4) e `universityLab` (5) restano
+    // piu' specifici, perche' dicono qualcosa del luogo e non dell'edificio.
+    priority: 1,
+    shape: { ...DEFAULT_TYPOLOGY_SHAPE, crownKind: CROWN_KIND.lantern, minFootprint: 6 },
+    profile: {
+      bandHeight: [6, 8],
+      shrinkBias: 0.68,
+      shrinkOps: [BAND_OP.stack, BAND_OP.shrink, BAND_OP.setback],
+      growOps: [BAND_OP.shrink, BAND_OP.jog, BAND_OP.grow],
+      roofProp: PALETTE_SLOTS.metalGold,
+      roofPropHeight: 6,
     },
   },
   { id: 'civicSpire', label: 'Civic spire', use: 3, priority: 0, shape: DEFAULT_TYPOLOGY_SHAPE, profile: {} },

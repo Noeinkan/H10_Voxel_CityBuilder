@@ -119,6 +119,30 @@ async function grow(page, ms, { answer = true } = {}) {
   }
 }
 
+/**
+ * I pannelli di debug sono `<details>` e nascono chiusi: la riga di riepilogo
+ * da sola non mostra nulla di cio' che l'harness misura davvero.
+ */
+async function openDebugPanels(page) {
+  await page.evaluate(() => {
+    for (const panel of document.querySelectorAll('details.debug-panel')) panel.open = true;
+  });
+  await page.waitForTimeout(1500);
+}
+
+/** Il pool di mesher lavora in coda: senza aspettarlo si fotografa un mondo a meta'. */
+async function mesherIdle(page, timeout = 120000) {
+  await page.waitForFunction(
+    () => {
+      const stats = globalThis.__voxelStats?.();
+      return stats !== undefined && stats.queued === 0 && stats.inFlight === 0;
+    },
+    null,
+    { timeout },
+  );
+  await page.waitForTimeout(1500);
+}
+
 /** Isola generata, catalizzatori piazzati, crescita avviata. */
 async function seedCity(page, { growMs = 45000, extras = true, answer = true } = {}) {
   await terrainReady(page);
@@ -244,6 +268,7 @@ export default {
       alt: 'The voxel city with technical overlays showing frame timings, draw calls, chunk counts and growth statistics',
       async prepare(page) {
         await seedCity(page, { growMs: 45000 });
+        await openDebugPanels(page);
       },
     },
     {
@@ -260,7 +285,15 @@ export default {
         });
         await frameIsland(page, 7);
         await page.keyboard.press('KeyB');
-        await page.waitForTimeout(6000);
+        // `B` sporca tutti i chunk: la ricolorazione si vede solo quando il pool
+        // di mesher ha finito di ripassarli, e sono 256 blocchi.
+        await page.waitForFunction(
+          () => globalThis.__terrainStats?.().biomeView === true,
+          null,
+          { timeout: 30000 },
+        );
+        await mesherIdle(page);
+        await openDebugPanels(page);
         await page.mouse.move(1418, 460);
       },
     },
@@ -278,6 +311,7 @@ export default {
         await frameIsland(page, 7);
         await page.evaluate(() => globalThis.__simTick?.(400));
         await page.waitForTimeout(4000);
+        await openDebugPanels(page);
         await page.mouse.move(1418, 460);
       },
     },

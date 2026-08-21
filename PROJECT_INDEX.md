@@ -256,10 +256,10 @@ gestisce le impronte, costruisce a fasce entro un budget e promuove gli edifici.
 | --- | --- | --- |
 | [Builder.ts](src/world/buildings/Builder.ts) | Consuma i candidati, scrive voxel e coordina le crescite | `Builder`, `BuilderStats`, `REJECT_REASONS` |
 | [BuildingRegistry.ts](src/world/buildings/BuildingRegistry.ts) | Indice spaziale e record degli edifici | `BuildingRegistry`, `BuildingRecord` |
-| [generate.ts](src/world/buildings/generate.ts) | Generatore deterministico di stamp voxel, piegato da profilo e forma | `generateBuilding`, `startLevel`, `BuildingRequest` |
+| [generate.ts](src/world/buildings/generate.ts) | Generatore deterministico di stamp voxel: fasce da una tabella di trasformazioni, cinque cime, terrazze e giardini sulle rientranze | `generateBuilding`, `startLevel`, `BuildingRequest` |
 | [typology.ts](src/world/buildings/typology.ts) | Sceglie la tipologia dal luogo; nessun numero, solo la regola | `selectTypology`, `typologyProfile`, `typologyShape`, `typologiesForUses`, `TypologyQuery` |
 | [stamp.ts](src/world/buildings/stamp.ts) | Volume voxel, ancora 3D e conversione in coordinate mondo | `VoxelStamp`, `VoxelAnchor`, `anchoredVoxel`, `STAMP_EMPTY` |
-| [config.ts](src/world/buildings/config.ts) | Cadenze, impronte, grammatica verticale, profili visivi e **catalogo delle tipologie** | `BUILDER`, `GRAMMAR`, `LEVEL_CAPS`, `MIN_FOOTPRINT`, `MAX_FOOTPRINT`, `START_LEVEL_CDF`, `CLASS_PROFILE`, `TYPOLOGIES`, `DEFAULT_BUILDING_FORM`, `typologyById` |
+| [config.ts](src/world/buildings/config.ts) | Cadenze, impronte, grammatica verticale, repertorio delle trasformazioni di fascia, cime, profili visivi e **catalogo delle tipologie** | `BUILDER`, `GRAMMAR`, `BAND_OP`, `CROWN_KIND`, `LEVEL_CAPS`, `MIN_FOOTPRINT`, `MAX_FOOTPRINT`, `START_LEVEL_CDF`, `CLASS_PROFILE`, `TYPOLOGIES`, `DEFAULT_BUILDING_FORM`, `DEFAULT_TYPOLOGY_SHAPE`, `typologyById` |
 
 ## `src/game/` — ciclo di gioco
 
@@ -324,7 +324,7 @@ giocabile; gli overlay tecnici si alternano con `F3` o partono aperti con
 | [world/sites/siteRules.test.ts](src/world/sites/siteRules.test.ts) | Ricerca dell'acqua sui quattro assi, intorno piano sotto il tetto proprio, motivi di rifiuto per ruolo |
 | [world/buildings/Builder.test.ts](src/world/buildings/Builder.test.ts) | Candidato → occupazione della simulazione → voxel; allineamento alla rete stradale; opere di terra su isola vera; due mandati opposti danno due città diverse |
 | [world/buildings/BuildingRegistry.test.ts](src/world/buildings/BuildingRegistry.test.ts) | Indice spaziale e sostituzione di record |
-| [world/buildings/generate.test.ts](src/world/buildings/generate.test.ts) | Determinismo e limiti degli stamp |
+| [world/buildings/generate.test.ts](src/world/buildings/generate.test.ts) | Determinismo e limiti degli stamp; terrazze, giardini, soglie luminose e silhouette per uso |
 | [world/buildings/typology.test.ts](src/world/buildings/typology.test.ts) | Copertura del catalogo, scelta deterministica dal luogo, forme distinguibili fra tipologie, righe concesse da un mandato |
 | [world/buildings/urbanForm.test.ts](src/world/buildings/urbanForm.test.ts) | Variazione deterministica della forma dal profilo locale |
 | [sim/contracts.test.ts](src/sim/contracts.test.ts) | Purezza di `tick`, nessuna scrittura in `blocks`, serializzazione |

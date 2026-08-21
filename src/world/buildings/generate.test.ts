@@ -1,7 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import { ALL_CLASSES, type BuildingClass } from '../../sim';
 import { PALETTE_SLOTS } from '../../engine/paletteSlots';
-import { BUILDER, CLASS_PROFILE, GRAMMAR, LEVEL_CAPS, MAX_FOOTPRINT } from './config';
+import {
+  BAND_OP,
+  BUILDER,
+  CLASS_PROFILE,
+  CROWN_KIND,
+  DEFAULT_TYPOLOGY_SHAPE,
+  GRAMMAR,
+  LEVEL_CAPS,
+  MAX_FOOTPRINT,
+} from './config';
 import { generateBuilding, startLevel } from './generate';
 import { anchoredVoxel, STAMP_EMPTY, bandCount, solidCount, type VoxelStamp } from './stamp';
 import { SURFACE_KIND } from '../visualBlock';
@@ -218,8 +227,8 @@ describe('generateBuilding', () => {
     // colore solo. Si guarda sopra lo zoccolo e non alla base perche' lo
     // zoccolo e' monocromo per definizione, ed e' alto `plinthHeight`.
     let wide = 0;
-    for (const { stamp } of everyStamp(24)) {
-      if (stamp.sizeX < 2) continue;
+    for (const { stamp, level } of everyStamp(24)) {
+      if (stamp.sizeX < 2 || level < GRAMMAR.luminousFullLevel) continue;
       wide++;
 
       const ids = new Set<number>();
@@ -231,6 +240,107 @@ describe('generateBuilding', () => {
       expect(ids.size).toBeGreaterThanOrEqual(2);
     }
     expect(wide).toBeGreaterThan(0);
+  });
+
+  it('accende la faccia d\x27accento per livello, non su ogni edificio', () => {
+    // Una casa appena costruita non deve sembrare un'insegna: sotto la prima
+    // soglia la faccia d'accento tiene la grammatica del proprio uso, e nessun
+    // voxel chiede la superficie luminosa.
+    for (const { stamp, level } of everyStamp(12)) {
+      if (level < GRAMMAR.luminousFromLevel) {
+        expect(countSurface(stamp, SURFACE_KIND.luminous)).toBe(0);
+      }
+    }
+
+    // Sopra si accende, e sopra la seconda soglia molto di piu': la lama passa
+    // da una riga per fascia alla fascia intera.
+    let partial = 0;
+    let full = 0;
+    for (let seed = 0; seed < 32; seed++) {
+      partial += countSurface(
+        generateBuilding({ class: ALL_CLASSES[0], level: GRAMMAR.luminousFromLevel, seed }),
+        SURFACE_KIND.luminous,
+      );
+      full += countSurface(
+        generateBuilding({ class: ALL_CLASSES[0], level: GRAMMAR.luminousFullLevel, seed }),
+        SURFACE_KIND.luminous,
+      );
+    }
+    expect(partial).toBeGreaterThan(0);
+    expect(full).toBeGreaterThan(partial * 2);
+  });
+
+  it('trasforma in terrazza la rientranza che la grammatica lascia scoperta', () => {
+    // Un corpo che non rientra mai non ha niente di scoperto, quindi nessun
+    // voxel di terrazza. Con l'arretramento in repertorio, invece, ne compare.
+    const profile = CLASS_PROFILE[ALL_CLASSES[0]];
+    const shared = {
+      class: ALL_CLASSES[0],
+      level: 5,
+      seed: 909,
+      shape: { ...DEFAULT_TYPOLOGY_SHAPE, crownKind: CROWN_KIND.flat },
+    } as const;
+    const solid = generateBuilding({
+      ...shared,
+      profile: { ...profile, shrinkOps: [BAND_OP.keep], growOps: [BAND_OP.keep] },
+    });
+    const stepped = generateBuilding({
+      ...shared,
+      profile: { ...profile, shrinkBias: 1, shrinkOps: [BAND_OP.setback], growOps: [BAND_OP.setback] },
+    });
+
+    expect(countPalette(solid, profile.terrace)).toBe(0);
+    expect(countPalette(stepped, profile.terrace)).toBeGreaterThan(0);
+  });
+
+  it('pianta la terrazza solo dove la tipologia chiede un giardino', () => {
+    const profile = CLASS_PROFILE[ALL_CLASSES[0]];
+    const shape = { ...DEFAULT_TYPOLOGY_SHAPE, crownKind: CROWN_KIND.flat };
+    const request = {
+      class: ALL_CLASSES[0],
+      level: 5,
+      seed: 31,
+      profile: { ...profile, shrinkBias: 1, shrinkOps: [BAND_OP.setback], growOps: [BAND_OP.setback] },
+    } as const;
+    const paved = generateBuilding({ ...request, shape });
+    const planted = generateBuilding({ ...request, shape: { ...shape, roofGarden: true } });
+
+    // Stesso volume: il giardino non e' una fascia in piu', e' un altro slot
+    // sugli stessi voxel di sommita'.
+    expect(planted.sizeX).toBe(paved.sizeX);
+    expect(planted.sizeZ).toBe(paved.sizeZ);
+    expect(solidCount(planted)).toBe(solidCount(paved));
+
+    expect(countPalette(paved, profile.garden)).toBe(0);
+    expect(countPalette(planted, profile.garden)).toBeGreaterThan(0);
+    // Il bordo resta pavimentato: ci si affaccia, e il parapetto lo dice.
+    expect(countPalette(planted, profile.terrace)).toBeGreaterThan(0);
+  });
+
+  it('non lascia scendere una fascia del corpo sotto il lato minimo', () => {
+    // Senza il pavimento, una catena di rientranze porta la cima a un voxel e la
+    // torre finisce a punta di spillo — e sopra un voxel tutti i coronamenti si
+    // assomigliano. Il coronamento puo' assottigliarsi oltre: e' il suo mestiere.
+    for (const { stamp } of everyStamp(8)) {
+      const bands = stamp.bandStarts.length - 1;
+      for (let b = 0; b < bands - 2; b++) {
+        const span = bandSpan(stamp, stamp.bandStarts[b]);
+        if (span === null) continue;
+        expect(span.w).toBeGreaterThanOrEqual(GRAMMAR.minBandSide);
+        expect(span.h).toBeGreaterThanOrEqual(GRAMMAR.minBandSide);
+      }
+    }
+  });
+
+  it('da\x27 a ogni uso una silhouette propria a parita di livello e seme', () => {
+    // E' il gate della fase: i repertori sono per uso, quindi quattro usi sullo
+    // stesso seme non possono uscire con lo stesso volume.
+    const shapes = new Set<string>();
+    for (const cls of ALL_CLASSES) {
+      const stamp = generateBuilding({ class: cls, level: 5, seed: 2024 });
+      shapes.add(`${stamp.sizeX}x${stamp.sizeZ}:${solidCount(stamp)}`);
+    }
+    expect(shapes.size).toBe(ALL_CLASSES.length);
   });
 });
 
@@ -251,3 +361,37 @@ describe('startLevel', () => {
     expect(base / total).toBeLessThan(0.85);
   });
 });
+
+function countSurface(stamp: VoxelStamp, surface: number): number {
+  let count = 0;
+  for (let i = 0; i < stamp.surfaces.length; i++) {
+    if (stamp.voxels[i] !== STAMP_EMPTY && stamp.surfaces[i] === surface) count++;
+  }
+  return count;
+}
+
+function countPalette(stamp: VoxelStamp, id: number): number {
+  let count = 0;
+  for (let i = 0; i < stamp.voxels.length; i++) if (stamp.voxels[i] === id) count++;
+  return count;
+}
+
+/** Riquadro occupato dalla quota indicata, o null se e' vuota. */
+function bandSpan(stamp: VoxelStamp, z: number): { w: number; h: number } | null {
+  const plane = stamp.sizeX * stamp.sizeY;
+  let minX = stamp.sizeX;
+  let maxX = -1;
+  let minY = stamp.sizeY;
+  let maxY = -1;
+  for (let sy = 0; sy < stamp.sizeY; sy++) {
+    for (let sx = 0; sx < stamp.sizeX; sx++) {
+      if (stamp.voxels[sx + stamp.sizeX * sy + plane * z] === STAMP_EMPTY) continue;
+      minX = Math.min(minX, sx);
+      maxX = Math.max(maxX, sx);
+      minY = Math.min(minY, sy);
+      maxY = Math.max(maxY, sy);
+    }
+  }
+  if (maxX < 0) return null;
+  return { w: maxX - minX + 1, h: maxY - minY + 1 };
+}

@@ -224,7 +224,13 @@ void main() {
         : 1.0 - smoothstep(0.055, 0.12, abs(cellUv.x - 0.5));
       float pulse = 0.82 + 0.18 * sin(uTime * 0.85 + variation * 6.28318);
       detailed = mix(detailed, uPalette[${PALETTE_SLOTS.glassDeep}], 0.42 + band * 0.26);
-      emission += uPalette[${PALETTE_SLOTS.glassPale}] * band * pulse * 0.72;
+      // Il bagliore tinge con lo slot del voxel invece di essere sempre pallido:
+      // e' cio' che rende un'insegna commerciale d'ottone diversa da una spina
+      // civica in vetro, che prima emettevano la stessa luce. Il residuo di
+      // pallido non e' timidezza: uno slot scuro spegnerebbe la fascia, e
+      // l'accento sparirebbe proprio dove serve, cioe' di notte e da lontano.
+      vec3 glow = mix(uPalette[${PALETTE_SLOTS.glassPale}], uPalette[paletteIndex], 0.7);
+      emission += glow * band * pulse * 0.72;
     } else if (surfaceIndex == ${SURFACE_KIND.portal}) {
       float portal = lateral ? boxMask(cellUv, vec2(0.12, 0.05), vec2(0.88, 0.95)) : 0.0;
       float core = lateral ? boxMask(cellUv, vec2(0.23, 0.08), vec2(0.77, 0.88)) : 0.0;
