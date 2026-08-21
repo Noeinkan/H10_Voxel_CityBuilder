@@ -43,8 +43,8 @@ export const industrial: Theme = {
       color: '#c2b7a2',
       density: 0.00028,
       skyBlend: 0.5,
-      heightBase: 8,
-      heightFalloff: 0.018,
+      heightBase: 20,
+      heightFalloff: 0.007,
       sunTint: 0.42,
     },
     sky: {

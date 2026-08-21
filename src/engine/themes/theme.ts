@@ -20,9 +20,27 @@ export interface Fog {
   readonly density: number;
   /** Quanto la nebbia tende al colore del cielo invece che alla propria tinta. */
   readonly skyBlend: number;
-  /** Quota sotto la quale la nebbia e' piena: le valli si impastano prima delle cime. */
+  /**
+   * Quota sotto la quale la nebbia e' piena: le valli si impastano prima delle
+   * cime.
+   *
+   * Va tenuta intorno al pianoro dell'isola (`TERRAIN.seaLevel` piu' qualche
+   * cubo). Piu' in basso il decadimento comincia sotto il suolo, e una collina
+   * si ritrova gia' scontata alla sua base.
+   */
   readonly heightBase: number;
-  /** Decadimento della densita' per unita' di quota sopra `heightBase`. */
+
+  /**
+   * Decadimento della densita' per unita' di quota sopra `heightBase`.
+   *
+   * **E' l'inverso di un'altezza, quindi segue la scala della citta'.** Valeva
+   * ~0,025 quando i tetti stavano a trenta voxel: il gradiente si esauriva in
+   * un centinaio di quote, che allora era tutta la citta'. Con la 4.6 le torri
+   * arrivano a centocinquanta e quello stesso numero spende tutta la
+   * prospettiva aerea nel primo quinto dell'edificato — sopra, ogni piano ha
+   * esattamente lo stesso colore, che e' il contrario di cio' per cui la nebbia
+   * di quota esiste. Alzando il tetto verticale va abbassata in proporzione.
+   */
   readonly heightFalloff: number;
   /** Riscaldamento della foschia guardando verso il sole (scattering in avanti). */
   readonly sunTint: number;

@@ -15,9 +15,13 @@ import {
 import { generateBuilding, startLevel } from './generate';
 import { anchoredVoxel, STAMP_EMPTY, bandCount, solidCount, type VoxelStamp } from './stamp';
 import { SURFACE_KIND } from '../visualBlock';
+import { START_LEVEL_CDF } from './config';
+import { TERRAIN } from '../terrain/config';
+
+type StampCase = { stamp: VoxelStamp; cls: BuildingClass; level: number };
 
 /** Tutte le combinazioni di classe e livello, con una manciata di seed. */
-function* everyStamp(seeds = 24): Generator<{ stamp: VoxelStamp; cls: BuildingClass; level: number }> {
+function* everyStamp(seeds = 24): Generator<StampCase> {
   for (const cls of ALL_CLASSES) {
     for (let level = 0; level <= BUILDER.maxLevel; level++) {
       for (let seed = 0; seed < seeds; seed++) {
@@ -194,12 +198,14 @@ describe('generateBuilding', () => {
   });
 
   it('usa solo indici di palette validi', () => {
-    for (const { stamp } of everyStamp(8)) {
-      for (const id of stamp.voxels) {
-        expect(id).toBeGreaterThanOrEqual(0);
-        expect(id).toBeLessThan(Object.keys(PALETTE_SLOTS).length);
-      }
-    }
+    // Un `expect` per voxel qui sono milioni di chiamate, ed e' l'assertion a
+    // costare, non la generazione: si cerca il primo indice fuori scala e lo si
+    // asserisce una volta sola, portando con se' il contesto per il messaggio.
+    const slots = Object.keys(PALETTE_SLOTS).length;
+    expect(firstStampWhere(everyStamp(8), ({ stamp }) => {
+      for (const id of stamp.voxels) if (id < 0 || id >= slots) return `indice ${id} fuori dai ${slots} slot`;
+      return null;
+    })).toBeNull();
   });
 
   it('assegna una grammatica sci-fi a ogni voxel edilizio', () => {
@@ -211,21 +217,24 @@ describe('generateBuilding', () => {
       SURFACE_KIND.industrial,
       SURFACE_KIND.civic,
     ];
-    for (const { stamp, cls } of everyStamp(8)) {
+    expect(firstStampWhere(everyStamp(8), ({ stamp, cls }) => {
       const used = new Set<number>();
       for (let i = 0; i < stamp.voxels.length; i++) {
+        const surface = stamp.surfaces[i];
         if (stamp.voxels[i] === STAMP_EMPTY) {
-          expect(stamp.surfaces[i]).toBe(SURFACE_KIND.plain);
+          if (surface !== SURFACE_KIND.plain) return `voxel vuoto con superficie ${surface}`;
         } else {
-          used.add(stamp.surfaces[i]);
-          expect(stamp.surfaces[i]).toBeGreaterThan(SURFACE_KIND.plain);
-          expect(stamp.surfaces[i]).toBeLessThanOrEqual(SURFACE_KIND.utility);
+          used.add(surface);
+          if (surface <= SURFACE_KIND.plain || surface > SURFACE_KIND.utility) {
+            return `superficie ${surface} fuori dalla grammatica`;
+          }
         }
       }
-      expect(used.has(expected[cls])).toBe(true);
-      expect(used.has(SURFACE_KIND.roofTech)).toBe(true);
-      expect(used.has(SURFACE_KIND.utility)).toBe(true);
-    }
+      if (!used.has(expected[cls])) return `manca la grammatica dell'uso ${cls}`;
+      if (!used.has(SURFACE_KIND.roofTech)) return 'manca la grammatica di tetto';
+      if (!used.has(SURFACE_KIND.utility)) return 'manca la grammatica di servizio';
+      return null;
+    })).toBeNull();
   });
 
   it('ha un unico dettaglio di tetto coerente con la classe', () => {
@@ -246,19 +255,46 @@ describe('generateBuilding', () => {
     expect(checked).toBeGreaterThan(0);
   });
 
-  it('produce uno skyline alto ma non filiforme ai livelli alti', () => {
+  it('produce uno skyline piu alto del rilievo, e una punta a matita', () => {
     let tallest = 0;
     for (let seed = 0; seed < 64; seed++) {
       const stamp = generateBuilding({ class: ALL_CLASSES[3], level: BUILDER.maxLevel, seed });
       tallest = Math.max(tallest, stamp.sizeZ);
       expect(stamp.sizeX).toBe(MAX_FOOTPRINT);
-      expect(stamp.sizeZ / stamp.sizeX).toBeLessThanOrEqual(10);
+      // **La 4.6 ha cambiato questo numero, e va detto invece che allentato.**
+      // Stava a dieci perche' il livello massimo era sei; con dodici la punta
+      // arriva a diciannove a uno, cioe' una torre-matita. Non e' una
+      // regressione tollerata: e' l'unica forma disponibile finche'
+      // `MAX_FOOTPRINT` resta otto, e otto non puo' salire senza allargare
+      // `STREETS.pitch` — l'isolato piu' stretto e' largo quattordici colonne.
+      // Il tetto qui resta perche' *un* tetto serve: oltre venti a uno non e'
+      // piu' una guglia, e' un filo.
+      expect(stamp.sizeZ / stamp.sizeX).toBeLessThanOrEqual(20);
     }
-    // Otto fasce da sei-otto voxel piu' coronamento e dettaglio: un civico di
-    // livello massimo sta fra i sessanta e gli ottanta voxel. E' alto quanto
-    // prima in proporzione — sono i voxel a essere la meta'.
-    expect(tallest).toBeGreaterThanOrEqual(60);
-    expect(tallest).toBeLessThanOrEqual(80);
+    // Sedici-diciannove fasce da sei-otto voxel piu' coronamento e dettaglio: un
+    // civico di livello massimo arriva a centocinquanta voxel. **E' il punto
+    // della fase**, non un effetto collaterale: la torre di punta supera il
+    // rilievo che la ospita, e da inquadratura d'insieme la citta' smette di
+    // stare sotto la collina.
+    expect(tallest).toBeGreaterThan(TERRAIN.maxHeight);
+    expect(tallest).toBeGreaterThanOrEqual(140);
+    expect(tallest).toBeLessThanOrEqual(165);
+  });
+
+  it('le tabelle indicizzate per livello coprono tutti i livelli', () => {
+    // La rete che mancava, e che a ogni cambio di scala e' servita: con
+    // `maxLevel` alzato e `START_LEVEL_CDF` fermo a sette voci, `startLevel`
+    // leggeva `undefined`, il confronto era falso a ogni giro e **ogni** edificio
+    // nasceva al livello massimo. Un difetto che non lancia niente e si vede solo
+    // guardando la citta'.
+    expect(LEVEL_CAPS).toHaveLength(BUILDER.maxLevel + 1);
+    expect(START_LEVEL_CDF).toHaveLength(BUILDER.maxLevel + 1);
+    // La cumulata resta una cumulata: non decresce e chiude a uno, altrimenti la
+    // coda lunga diventa una coda che non finisce.
+    for (let i = 1; i < START_LEVEL_CDF.length; i++) {
+      expect(START_LEVEL_CDF[i]).toBeGreaterThanOrEqual(START_LEVEL_CDF[i - 1]);
+    }
+    expect(START_LEVEL_CDF[START_LEVEL_CDF.length - 1]).toBe(1);
   });
 
   it('porta una faccia d\x27accento con un indice diverso dal corpo', () => {
@@ -386,12 +422,18 @@ describe('generateBuilding', () => {
 });
 
 describe('startLevel', () => {
-  it('resta dentro i livelli previsti', () => {
+  it('resta dentro i livelli previsti, e non nasce nessuno gia in cima', () => {
+    let atTop = 0;
     for (let seed = 0; seed < 500; seed++) {
       const level = startLevel(seed);
       expect(level).toBeGreaterThanOrEqual(0);
       expect(level).toBeLessThanOrEqual(BUILDER.maxLevel);
+      if (level === BUILDER.maxLevel) atTop++;
     }
+    // La forma esatta del difetto da cui questa fase si e' dovuta guardare: con
+    // la cumulata piu' corta di `maxLevel` il ciclo cadeva in fondo e restituiva
+    // il livello massimo a tutti. Il grattacielo non e' un punto di partenza.
+    expect(atTop).toBe(0);
   });
 
   it('ha una coda lunga: il livello base resta il caso comune', () => {
@@ -402,6 +444,23 @@ describe('startLevel', () => {
     expect(base / total).toBeLessThan(0.85);
   });
 });
+
+/**
+ * Primo motivo di violazione fra gli stamp, con il caso che l'ha prodotto, o
+ * `null` se sono tutti a posto. Esiste perche' su questi cicli l'assertion costa
+ * piu' della generazione: un `expect` per voxel sono milioni di chiamate, e la
+ * differenza fra dieci secondi e un decimo sta tutta li'.
+ */
+function firstStampWhere(
+  cases: Generator<StampCase>,
+  reason: (item: StampCase) => string | null,
+): string | null {
+  for (const item of cases) {
+    const why = reason(item);
+    if (why !== null) return `classe ${item.cls} livello ${item.level}: ${why}`;
+  }
+  return null;
+}
 
 function countSurface(stamp: VoxelStamp, surface: number): number {
   let count = 0;

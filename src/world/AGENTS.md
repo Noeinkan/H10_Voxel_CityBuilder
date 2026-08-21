@@ -185,6 +185,28 @@ e costruzione degli edifici. Questo modulo non dipende dal renderer.
   comunque tutti i loro chunk nello stesso frame. Da qui `LANDMARK.maxDirtyChunks`
   non esiste piu' — i moli e le piste rispettano il tetto di ogni altra struttura
   invece di averne uno proprio.
+- **La desiderabilita' dice *se*, la gerarchia dice *fin dove*.** Sono due
+  domande e quindi due dati: `src/sim/` decide se una colonna merita di crescere,
+  `skyline/` fin dove puo' salire — da distanza dai poli, dal mare e dal bordo
+  dell'edificato. La ragione e' misurabile: il campo e' un `Uint8Array` che satura
+  a 255 e l'ultima soglia di upgrade sta a 198, quindi sopra quel punto non
+  *distingue* piu' due colonne del centro. Alzare `BUILDER.maxLevel` senza la
+  gerarchia non da' uno skyline ma un altopiano piu' alto. `upgradeThreshold`
+  resta percio' corto e si legge con `upgradeThresholdOf`, mai per indice.
+- **Il tetto verticale e' un sistema, non un numero.** `maxLevel` va alzato
+  insieme a `LEVEL_CAPS`, a `START_LEVEL_CDF` (una voce per livello: piu' corta,
+  `startLevel` legge `undefined` e fa nascere *tutti* al livello massimo), a
+  `maxDirtyChunksPerBuilding` — che si calcola, `2 x 2 x` piani di chunk, e non si
+  stima — e a `GRAMMAR.minBandSide`, senza il quale la torre si assottiglia a un
+  palo entro il primo terzo. Un test verifica che le tabelle indicizzate per
+  livello siano lunghe `maxLevel + 1`: e' il difetto che si ripresenta a ogni
+  cambio di scala, e non lancia niente.
+- **Lo skyline e' un'eccezione governata.** Il livello massimo esce solo dalla
+  somma di fascia, cono verso il polo ed elezione dell'isolato, e i tre coincidono
+  di rado: i picchi sono pochi per costruzione. La proporzione della punta —
+  diciannove a uno — e' dichiarata e non tollerata: `MAX_FOOTPRINT` non puo'
+  salire senza allargare `STREETS.pitch`, perche' l'isolato piu' stretto e' largo
+  quattordici colonne.
 - Il **catalogo delle tipologie** e' una tabella in `buildings/config.ts`:
   condizioni sul luogo piu' forma. Aggiungere una tipologia e' aggiungere una
   riga — la regola di scelta in `typology.ts` e' generica e non va toccata, e la

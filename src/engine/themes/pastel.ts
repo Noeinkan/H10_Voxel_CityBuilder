@@ -43,8 +43,8 @@ export const pastel: Theme = {
       color: '#e8efeb',
       density: 0.0002,
       skyBlend: 0.6,
-      heightBase: 12,
-      heightFalloff: 0.022,
+      heightBase: 24,
+      heightFalloff: 0.008,
       sunTint: 0.34,
     },
     sky: {

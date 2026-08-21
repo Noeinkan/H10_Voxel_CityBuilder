@@ -28,6 +28,9 @@ import { Builder, REJECT_REASONS } from './Builder';
 import { BUILDER, CLASS_PROFILE, CLUSTER, MAX_FOOTPRINT } from './config';
 import { GRADING } from '../grading/config';
 import { GROUND, groundKindOf, isDryLand, type GroundKind } from '../grading/grade';
+import { SKYLINE } from '../skyline/config';
+import { TIER } from '../skyline/tiers';
+import { waterDistance } from '../sites/siteRules';
 import { TERRAIN } from '../terrain/config';
 import type { TerrainMap } from '../terrain/TerrainMap';
 
@@ -128,7 +131,9 @@ describe('Builder', () => {
  * **rete** — un percorso continuo fra due isolati diversi che non passa da terra.
  */
 describe('Builder — la rete in quota', () => {
-  function city(rounds = 220): { world: VoxelWorld; builder: Builder; streets: StreetNetwork } {
+  type City = { world: VoxelWorld; builder: Builder; streets: StreetNetwork };
+
+  function buildCity(rounds = 220): City {
     const world = new VoxelWorld();
     const terrain = testTerrain({ chunksX: 8, chunksY: 8, height: 24 });
     const builder = new Builder(world, terrain, 1337);
@@ -150,6 +155,25 @@ describe('Builder — la rete in quota', () => {
     while (builder.stats.surfaceQueued > 0) builder.step();
 
     return { world, builder, streets: new StreetNetwork(1337) };
+  }
+
+  /**
+   * La citta' a un dato numero di round, costruita una volta sola.
+   *
+   * Far maturare la citta' e' di gran lunga la voce piu' cara del file — 220
+   * round di `tick` piu' costruzione — e i test qui sotto la leggono soltanto:
+   * nessuno chiama `step` o tocca il registry. Chi deve invece **provare** che due
+   * generazioni coincidono usa `buildCity` direttamente, altrimenti si
+   * confronterebbe con se stessa e passerebbe comunque.
+   */
+  const cities = new Map<number, City>();
+
+  function city(rounds = 220): City {
+    const cached = cities.get(rounds);
+    if (cached !== undefined) return cached;
+    const fresh = buildCity(rounds);
+    cities.set(rounds, fresh);
+    return fresh;
   }
 
   it('una citta matura si da delle campate', () => {
@@ -277,9 +301,11 @@ describe('Builder — la rete in quota', () => {
   });
 
   it('a parita di seed la rete in quota e identica', () => {
-    const first = city(120).builder.registry.spans
+    // Due costruzioni vere, non la stessa dalla cache: e' l'unico test del blocco
+    // per cui riusare la citta' significherebbe confrontarla con se stessa.
+    const first = buildCity(120).builder.registry.spans
       .map((s) => `${s.x},${s.y},${s.baseZ},${s.span},${s.supports}`);
-    const second = city(120).builder.registry.spans
+    const second = buildCity(120).builder.registry.spans
       .map((s) => `${s.x},${s.y},${s.baseZ},${s.span},${s.supports}`);
 
     expect(first).toEqual(second);
@@ -526,13 +552,22 @@ describe('Builder — i mandati arrivano fino ai voxel', () => {
     const gardens = [...city(['communityGardens']).all];
     const rationed = [...city(['rationing']).all];
 
-    // Stesso seme, stesso terreno, stessi lotti: cambia quanto occupano.
-    expect(gardens.length).toBe(rationed.length);
-    expect(footprintArea(gardens)).toBeGreaterThan(footprintArea(rationed));
+    // **Quanto occupa il singolo edificio, non quanti ce ne sono.** Il confronto
+    // era sul totale e pretendeva che le due citta' avessero lo stesso numero di
+    // edifici; da quando la gerarchia verticale legge anche quanto e' costruito
+    // attorno (`SKYLINE.edgeRadius`), un mandato che cambia le impronte cambia
+    // anche di poco come si riempiono i lotti, e le due citta' possono
+    // differire di un edificio. La media dice la stessa cosa senza dipendere da
+    // quel pareggio: gli orti di quartiere si allargano, il razionamento
+    // stringe.
+    expect(gardens.length).toBeGreaterThan(0);
+    expect(rationed.length).toBeGreaterThan(0);
+    expect(meanFootprintArea(gardens)).toBeGreaterThan(meanFootprintArea(rationed));
   });
 
-  function footprintArea(records: readonly BuildingRecord[]): number {
-    return records.reduce((sum, record) => sum + record.footprint * record.footprint, 0);
+  function meanFootprintArea(records: readonly BuildingRecord[]): number {
+    const total = records.reduce((sum, r) => sum + r.footprint * footprintDepth(r), 0);
+    return total / records.length;
   }
 });
 
@@ -1205,6 +1240,123 @@ describe('Builder — isolati terrazzati', () => {
     const b = signature(denseCity(30).records);
     expect(a).toEqual(b);
     expect(a.length).toBeGreaterThan(5);
+  });
+});
+
+/**
+ * La gerarchia verticale, letta sulla citta' che ne esce.
+ *
+ * I test di `skyline/tiers.test.ts` verificano la *regola*; qui si verifica che
+ * il `Builder` la porti fino ai record — cioe' che lo skyline sia una figura
+ * della citta' e non solo una funzione che restituisce numeri giusti.
+ */
+describe('Builder — gerarchia verticale', () => {
+  /** Una citta' cresciuta su un'isola vera, con un polo al centro. */
+  function island(seed: number, rounds = 90): {
+    map: TerrainMap;
+    builder: Builder;
+    records: readonly BuildingRecord[];
+  } {
+    const world = new VoxelWorld();
+    const { map } = generateIsland(world, seed, { minX: 0, minY: 0, sizeX: 256, sizeY: 256 });
+    const builder = new Builder(world, map, seed);
+
+    let state = createSimState();
+    state = addCatalyst(state, {
+      x: 128,
+      y: 128,
+      class: BUILDING_CLASS.residential,
+      strength: 255,
+      radius: 96,
+    });
+
+    for (let i = 0; i < rounds; i++) {
+      state = tick(state, map);
+      state = builder.onTick(state);
+      while (builder.stats.growing > 0) builder.step();
+    }
+    while (builder.stats.surfaceQueued > 0) builder.step();
+
+    return { map, builder, records: buildingsOf(builder) };
+  }
+
+  /** Quanti edifici per livello, senza le voci vuote. */
+  function levelsOf(records: readonly BuildingRecord[]): Map<number, number> {
+    const out = new Map<number, number>();
+    for (const record of records) out.set(record.level, (out.get(record.level) ?? 0) + 1);
+    return out;
+  }
+
+  it('il gate: la citta ha almeno tre fasce di altezza e non e un altopiano', () => {
+    const { records } = island(4242);
+    const levels = levelsOf(records);
+
+    expect(records.length).toBeGreaterThan(40);
+    // Tre fasce popolate: e' la meta' leggibile del gate, quella che si vede
+    // da inquadratura d'insieme senza aprire un overlay.
+    expect(levels.size).toBeGreaterThanOrEqual(3);
+    // E l'altra meta': nessun livello raccoglie la citta' intera. Un nucleo
+    // saturo che sale tutto insieme e' esattamente l'altopiano che il commento di
+    // `START_LEVEL_CDF` dichiara di voler evitare, e alzare `maxLevel` senza la
+    // gerarchia lo avrebbe prodotto piu' alto invece che piu' vario.
+    const biggest = Math.max(...levels.values());
+    expect(biggest / records.length).toBeLessThan(0.85);
+  });
+
+  it('la corona attorno all edificato resta bassa, e la costa con lei', () => {
+    const { map, records } = island(4242);
+    const cap = SKYLINE.levelCap[TIER.fringe];
+
+    let coastal = 0;
+    for (const record of records) {
+      const distance = waterDistance(map, record.x, record.y, SKYLINE.coastNear);
+      if (distance === null) continue;
+      coastal++;
+      // La costa non porta torri: la linea di costa e' la sola figura che
+      // l'isola offre a inquadratura d'insieme, e una torre sul filo la cancella.
+      expect(record.level, `edificio a ${record.x},${record.y} a ${distance} dall'acqua`)
+        .toBeLessThanOrEqual(cap);
+    }
+    // Se nessun edificio arrivasse alla costa il test passerebbe vacuamente.
+    expect(coastal).toBeGreaterThan(0);
+  });
+
+  it('nessun edificio alto sparisce in silenzio per budget di chunk', () => {
+    // **Il difetto che si ripresenta a ogni cambio di scala.** Sforare il tetto
+    // di chunk sporchi non e' un errore e viene scartato senza che niente lo
+    // dica, e a sparire sono proprio gli edifici che la fase esiste per fare.
+    // Con `maxLevel` a dodici una torre attraversa il doppio dei piani di chunk
+    // di prima: se `maxDirtyChunksPerBuilding` fosse rimasto a ventiquattro,
+    // questo conteggio salirebbe e lo skyline si fermerebbe da solo.
+    //
+    // **Ci vogliono parecchi round**, e non e' una lentezza da limare: la scala
+    // di `upgradeThreshold` e' ripida apposta, e sopra il livello sei a far
+    // salire un edificio non e' piu' la desiderabilita' ma la gerarchia. Su meno
+    // round la citta' non arriva in alto e il test passerebbe vacuamente.
+    const { builder, records } = island(4242, 450);
+    const chunkBudget = REJECT_REASONS.indexOf('chunkBudget');
+
+    expect(builder.stats.rejected[chunkBudget]).toBe(0);
+    // E che ci sia davvero qualcosa di alto da far sparire: oltre la fine della
+    // scala di desiderabilita', cioe' dove decide solo la gerarchia.
+    const tallest = Math.max(...records.map((record) => record.level));
+    expect(tallest).toBeGreaterThan(BUILDER.upgradeThreshold.length - 1);
+  });
+
+  it('la gerarchia si vede su isole di forma diversa, non solo sul seed di prova', () => {
+    // Il settimo punto della sotto-fase: una figura che esce solo su un seed e'
+    // una coincidenza, non una regola.
+    for (const seed of [4242, 1337, 90210]) {
+      const levels = levelsOf(island(seed, 70).records);
+      expect(levels.size, `seed ${seed}`).toBeGreaterThanOrEqual(3);
+    }
+  });
+
+  it('a parita di seed la citta alta e identica', () => {
+    const signature = (records: readonly BuildingRecord[]): string[] =>
+      records.map((r) => `${r.x},${r.y},${r.level},${r.footprint}`);
+
+    expect(signature(island(4242, 40).records)).toEqual(signature(island(4242, 40).records));
   });
 });
 

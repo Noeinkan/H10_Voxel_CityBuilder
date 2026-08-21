@@ -43,8 +43,8 @@ export const enchanted: Theme = {
       color: '#e4d5f5',
       density: 0.00022,
       skyBlend: 0.65,
-      heightBase: 10,
-      heightFalloff: 0.026,
+      heightBase: 24,
+      heightFalloff: 0.009,
       sunTint: 0.36,
     },
     sky: {

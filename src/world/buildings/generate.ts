@@ -754,11 +754,18 @@ function clamp(value: number, min: number, max: number): number {
  * separato da quello della forma: se condividessero la sequenza, cambiare il
  * livello iniziale cambierebbe anche la sagoma, e un upgrade non si
  * riconoscerebbe piu' come lo stesso edificio.
+ *
+ * **Il ciclo si ferma sulla lunghezza della distribuzione, non su `maxLevel`.**
+ * Erano lo stesso numero per caso, e alzare `maxLevel` senza allungare l'elenco
+ * faceva leggere `undefined`: `roll < undefined` e' falso a ogni giro, quindi il
+ * ciclo cadeva in fondo e restituiva il livello massimo a *ogni* edificio. E' il
+ * difetto che si ripresenta a ogni cambio di scala, e qui e' chiuso da entrambi i
+ * lati — l'elenco e' lungo quanto serve, e il ciclo non lo supera comunque.
  */
 export function startLevel(seed: number): number {
   const roll = mulberry32(hashCoords(seed, 0x1e7e1, 0))();
-  for (let level = 0; level < BUILDER.maxLevel; level++) {
-    if (roll < START_LEVEL_CDF[level]) return level;
+  for (let level = 0; level < START_LEVEL_CDF.length; level++) {
+    if (roll < START_LEVEL_CDF[level]) return Math.min(level, BUILDER.maxLevel);
   }
   return BUILDER.maxLevel;
 }

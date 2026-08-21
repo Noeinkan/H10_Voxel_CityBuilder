@@ -44,8 +44,8 @@ export const scifi: Theme = {
       color: '#1e2a3d',
       density: 0.00025,
       skyBlend: 0.45,
-      heightBase: 8,
-      heightFalloff: 0.024,
+      heightBase: 20,
+      heightFalloff: 0.009,
       sunTint: 0.2,
     },
     sky: {

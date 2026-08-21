@@ -46,8 +46,8 @@ export const neon: Theme = {
       color: '#131c33',
       density: 0.0003,
       skyBlend: 0.4,
-      heightBase: 6,
-      heightFalloff: 0.02,
+      heightBase: 18,
+      heightFalloff: 0.007,
       sunTint: 0.12,
     },
     sky: {

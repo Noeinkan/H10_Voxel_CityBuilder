@@ -199,6 +199,17 @@ export interface ReadonlyBuildingRegistry {
   isOccupied(x: number, y: number): boolean;
   at(x: number, y: number): readonly BuildingRecord[];
   withinRadius(x: number, y: number, radius: number): readonly BuildingRecord[];
+  /**
+   * Quanti record cadono entro `radius`, senza materializzarli.
+   *
+   * E' `withinRadius(...).length` senza l'array, e la differenza non e' di stile:
+   * la gerarchia verticale chiede «quanto e' costruito qui attorno» una volta per
+   * record esaminato in una passata di upgrade, cioe' decine di volte per
+   * passata, e in un centro denso ogni domanda tocca qualche centinaio di record.
+   * Costruire quell'array per leggerne solo la lunghezza era, misurato, la meta'
+   * del costo della passata.
+   */
+  countWithinRadius(x: number, y: number, radius: number): number;
   overlaps(
     x: number,
     y: number,
@@ -375,6 +386,29 @@ export class BuildingRegistry implements ReadonlyBuildingRegistry {
   /** Record il cui angolo minimo cade entro `radius` in distanza di Chebyshev. */
   withinRadius(x: number, y: number, radius: number): readonly BuildingRecord[] {
     const out: BuildingRecord[] = [];
+    this.scanRadius(x, y, radius, (record) => { out.push(record); });
+    return out;
+  }
+
+  countWithinRadius(x: number, y: number, radius: number): number {
+    let count = 0;
+    this.scanRadius(x, y, radius, () => { count++; });
+    return count;
+  }
+
+  /**
+   * Scorre i record entro `radius`, senza raccoglierli.
+   *
+   * Un punto solo per le due domande — «quali» e «quanti» — perche' la
+   * chunkatura dei bucket e il filtro di Chebyshev sono la parte che deve restare
+   * identica fra loro: due copie divergerebbero al primo raggio che cambia.
+   */
+  private scanRadius(
+    x: number,
+    y: number,
+    radius: number,
+    visit: (record: BuildingRecord) => void,
+  ): void {
     const minCc = toChunk(x - radius);
     const maxCc = toChunk(x + radius);
     const minCcy = toChunk(y - radius);
@@ -388,12 +422,10 @@ export class BuildingRegistry implements ReadonlyBuildingRegistry {
           const record = this.records.get(id);
           if (record === undefined) continue;
           if (Math.abs(record.x - x) > radius || Math.abs(record.y - y) > radius) continue;
-          out.push(record);
+          visit(record);
         }
       }
     }
-
-    return out;
   }
 
   /**

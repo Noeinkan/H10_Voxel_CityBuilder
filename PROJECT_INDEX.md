@@ -252,6 +252,30 @@ openGround(map, x, y, SITE.openSpan, SITE.openMaxStep); // l'intorno regge un pi
 siteRefusal(map, x, y, 'coastal');                     // 'needs-coast' | 'needs-open-ground' | null
 ```
 
+## `src/world/skyline/` — la gerarchia verticale
+
+Fin dove una colonna puo' salire, che e' una domanda diversa da «questa colonna
+vuole crescere?». La desiderabilita' continua a decidere **se** un edificio
+promuove; qui si decide **fin dove**, perche' il campo e' un `Uint8Array` che
+satura a 255 e sopra l'ultima soglia non distingue piu' due colonne del centro.
+Senza questa separazione, alzare il livello massimo darebbe un altopiano piu'
+alto invece di uno skyline.
+
+Puro e senza stato come la rete stradale: distanza dai poli, dal mare e dal bordo
+dell'edificato entrano come numeri, esce un tetto. `src/sim/` continua a non
+avere una coordinata verticale (invariante 7).
+
+| File | Ruolo | Esporta |
+| --- | --- | --- |
+| [config.ts](src/world/skyline/config.ts) | **Ogni** tetto di fascia, bonus, raggio e cadenza dei picchi | `SKYLINE` |
+| [tiers.ts](src/world/skyline/tiers.ts) | Le tre fasce, il cono verso il polo e l'elezione dell'isolato con il picco | `TIER`, `tierAt`, `allowedLevelAt`, `poleReach`, `isPeakBlock`, `SkylineTier`, `SkylineQuery`, `Pole` |
+
+```ts
+tierAt(query);          // fringe | middle | core
+allowedLevelAt(query);  // livelli ammessi; il clamp a BUILDER.maxLevel lo fa il Builder
+isPeakBlock(seed, kx, ky);
+```
+
 ## `src/world/landmarks/` — le strutture dei catalizzatori
 
 La forma che ogni ruolo prende a terra. Prima di questo dominio un catalizzatore
@@ -380,7 +404,8 @@ giocabile; gli overlay tecnici si alternano con `F3` o partono aperti con
 | [world/streets/lots.test.ts](src/world/streets/lots.test.ts) | Il lotto tocca sempre un fronte, non esce dall'isolato, l'isolato si riempie |
 | [world/grading/grade.test.ts](src/world/grading/grade.test.ts) | Classificazione del terreno, quota del piano finito, tetto strutturale, rampa a pendenza uno |
 | [world/sites/siteRules.test.ts](src/world/sites/siteRules.test.ts) | Ricerca dell'acqua sui quattro assi, intorno piano sotto il tetto proprio, motivi di rifiuto per ruolo |
-| [world/buildings/Builder.test.ts](src/world/buildings/Builder.test.ts) | Candidato → occupazione della simulazione → voxel; allineamento alla rete stradale; opere di terra su isola vera; la banchina non si stacca dalla terra; landmark dei catalizzatori e avanzamento di stadio; isolati terrazzati — quota e basamento condivisi, nessun solco fra i membri, gradoni sul fianco; la rete in quota — appoggi reali, nessun suolo preso, un percorso continuo fra due isolati, nessuna campata orfana; i landmark lineari che compaiono a ritagli; due mandati opposti danno due città diverse |
+| [world/skyline/tiers.test.ts](src/world/skyline/tiers.test.ts) | Le tre fasce e il loro ordine, la costa che vince su tutto, la corona sul bordo dell'edificato, il cono monotono verso il polo, i picchi rari e deterministici, e il massimo teorico che coincide con `BUILDER.maxLevel` |
+| [world/buildings/Builder.test.ts](src/world/buildings/Builder.test.ts) | Candidato → occupazione della simulazione → voxel; allineamento alla rete stradale; opere di terra su isola vera; la banchina non si stacca dalla terra; landmark dei catalizzatori e avanzamento di stadio; isolati terrazzati — quota e basamento condivisi, nessun solco fra i membri, gradoni sul fianco; la rete in quota — appoggi reali, nessun suolo preso, un percorso continuo fra due isolati, nessuna campata orfana; i landmark lineari che compaiono a ritagli; due mandati opposti danno due città diverse; la gerarchia verticale — tre fasce e nessun altopiano, la corona bassa sulla costa, nessun edificio alto scartato in silenzio, la figura che tiene su isole di seed diverso |
 | [world/landmarks/generate.test.ts](src/world/landmarks/generate.test.ts) | Ingombro dichiarato, determinismo, stadi cumulativi, invarianza per rotazione, firma verticale e sagome distinte fra gli otto ruoli |
 | [world/buildings/BuildingRegistry.test.ts](src/world/buildings/BuildingRegistry.test.ts) | Indice spaziale e sostituzione di record |
 | [world/spans/spanPlan.test.ts](src/world/spans/spanPlan.test.ts) | Asse, vuoto e fronte comune; l'atterraggio sull'arretramento; i motivi di rifiuto uno per uno; il taglio in segmenti; il mezzanino dentro la fila |

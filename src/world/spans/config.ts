@@ -280,13 +280,19 @@ export const SPANS = {
     {
       overStreet: true,
       // **Due cubi di terreno di aria sotto le travi.** E' poco, ed e' misurato
-      // e non scelto: la citta' di oggi e' alta una sessantina di voxel e le sue
-      // fasce rientrano in fretta, quindi l'unica fascia larga abbastanza da
-      // reggere un impalcato da quattro sta fra il quarto e l'ottavo voxel sopra
-      // il suolo. Con un franco piu' generoso il pavimento saliva sopra quella
-      // fascia e **nessuna coppia** passava piu': non un ponte piu' alto, zero
-      // ponti. A liberare la quota sara' la 4.6, che alza i tre tetti che tengono
-      // la citta' a mezz'aria; qui si costruisce con l'altezza che c'e'.
+      // e non scelto: l'unica fascia larga abbastanza da reggere un impalcato da
+      // quattro sta fra il quarto e l'ottavo voxel sopra il suolo, e con un franco
+      // piu' generoso il pavimento sale sopra quella fascia e passano molte meno
+      // coppie.
+      //
+      // **La 4.6 doveva liberarlo e non ci e' riuscita, ed e' misurato.** Alzare
+      // il tetto verticale ha reso alte le torri del *centro*, ma la stessa fase
+      // ha anche abbassato la periferia — e' il mestiere di `skyline/`, la corona
+      // bassa attorno all'edificato — quindi le coppie di appoggi alti sono
+      // diventate piu' rare, non piu' comuni. Sulla citta' di prova a 220 tick:
+      // franco 4 da **undici campate**, franco 6 e franco 8 ne danno **quattro**.
+      // Il debito passa alla 4.9: un impalcato con appoggi propri non deve
+      // aspettare che due torri diventino alte nello stesso punto.
       clearance: 4,
       minRise: 6,
       // **Il livello e' un prefiltro, non il vincolo.** A dire se un edificio e'
@@ -319,9 +325,9 @@ export const SPANS = {
     // piazza — sopra il cuore dell'isolato, retta dal suo perimetro
     {
       overStreet: false,
-      // Le stesse quote del ponte, e per la stessa ragione misurata: la citta'
-      // di oggi e' alta una sessantina di voxel e le sue fasce rientrano in
-      // fretta. Chiedere di piu' non alza la piazza, la cancella.
+      // Le stesse quote del ponte, e per la stessa ragione misurata: chiedere di
+      // piu' non alza la piazza, la cancella. Restano ferme anche dopo la 4.6,
+      // insieme a quelle del ponte e per lo stesso motivo.
       clearance: 4,
       minRise: 6,
       minLevel: 1,

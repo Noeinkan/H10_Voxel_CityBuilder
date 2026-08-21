@@ -114,6 +114,37 @@ function forEachColumn(
   }
 }
 
+/**
+ * L'isola di riferimento, generata una volta sola per tutto il file.
+ *
+ * Quasi tutti i test qui sotto leggono la stessa isola 512x512 senza toccarla, e
+ * rigenerarla per ognuno costava una dozzina di generazioni intere — di gran
+ * lunga la voce piu' cara del file. Il terreno dipende solo da
+ * `(seed, shape, ccx, ccy)`, quindi condividerla non cambia cosa si verifica: che
+ * due generazioni con lo stesso seed coincidano byte per byte e' proprio cio' che
+ * prova il primo test. Chi scrive nel mondo, espande la mappa o affianca una
+ * seconda isola continua a generarsi la propria.
+ */
+let sharedIsland: { world: VoxelWorld; map: TerrainMap } | undefined;
+
+function referenceIsland(): { world: VoxelWorld; map: TerrainMap } {
+  if (sharedIsland === undefined) {
+    const world = new VoxelWorld();
+    sharedIsland = { world, map: generateIsland(world, SEED, ISLAND).map };
+  }
+  return sharedIsland;
+}
+
+/**
+ * Prima violazione incontrata, o `null` se non ce n'e'. Come `expectSameLayers`,
+ * esiste perche' su questi cicli l'assertion costa piu' di cio' che verifica: un
+ * `expect` per colonna su un'isola 512x512 sono centinaia di migliaia di
+ * chiamate, e il ciclo secco con una sola assertion in coda dice la stessa cosa.
+ */
+function scanColumns(scan: () => string | null): void {
+  expect(scan()).toBeNull();
+}
+
 describe('generateIsland — determinismo', () => {
   it('due chiamate con lo stesso seed danno mappa e mondo identici byte per byte', () => {
     const worldA = new VoxelWorld();
@@ -216,7 +247,7 @@ describe('generateIsland — continuita’ al confine', () => {
   });
 
   it('la cucitura non e’ un caso particolare: vale per tutte le colonne dell’isola', () => {
-    const { map } = generateIsland(new VoxelWorld(), SEED, ISLAND);
+    const { map } = referenceIsland();
 
     let worst = 0;
     for (let y = 1; y < 511; y++) {
@@ -233,17 +264,21 @@ describe('generateIsland — continuita’ al confine', () => {
   });
 
   it('ogni quota e’ un multiplo della cella: il terreno non sta mai a mezzo cubo', () => {
-    const { map } = generateIsland(new VoxelWorld(), SEED, ISLAND);
+    const { map } = referenceIsland();
 
-    for (let y = 0; y < 512; y += 3) {
-      for (let x = 0; x < 512; x += 3) {
-        expect(map.heightAt(x, y) % TERRAIN.cellSize).toBe(0);
+    scanColumns(() => {
+      for (let y = 0; y < 512; y += 3) {
+        for (let x = 0; x < 512; x += 3) {
+          const height = map.heightAt(x, y);
+          if (height % TERRAIN.cellSize !== 0) return `(${x}, ${y}) a quota ${height}`;
+        }
       }
-    }
+      return null;
+    });
   });
 
   it('una cella e’ piatta: le sue colonne condividono quota, bioma e pendenza', () => {
-    const { map } = generateIsland(new VoxelWorld(), SEED, ISLAND);
+    const { map } = referenceIsland();
 
     for (let y = 0; y < 512; y += TERRAIN.cellSize * 5) {
       for (let x = 0; x < 512; x += TERRAIN.cellSize * 5) {
@@ -252,9 +287,19 @@ describe('generateIsland — continuita’ al confine', () => {
         const reference = map.columnAt(x0, y0);
         expect(reference).not.toBeNull();
 
+        // Il deep-equal si paga solo sulla colonna che differisce davvero: e'
+        // l'unico caso in cui il suo diff dice qualcosa.
         for (let dy = 0; dy < TERRAIN.cellSize; dy++) {
           for (let dx = 0; dx < TERRAIN.cellSize; dx++) {
-            expect(map.columnAt(x0 + dx, y0 + dy)).toEqual(reference);
+            const here = map.columnAt(x0 + dx, y0 + dy);
+            if (
+              here?.height !== reference?.height
+              || here?.biome !== reference?.biome
+              || here?.slope !== reference?.slope
+              || here?.buildable !== reference?.buildable
+            ) {
+              expect(here).toEqual(reference);
+            }
           }
         }
       }
@@ -266,10 +311,13 @@ describe('generateIsland — continuita’ al confine', () => {
     const a = generateIsland(world, SEED, ISLAND);
     const b = generateIsland(world, SEED, { minX: 512, minY: 0, sizeX: 512, sizeY: 512 }, { map: a.map });
 
-    for (let y = 0; y < 512; y++) {
-      expect(Math.abs(b.map.heightAt(512, y) - b.map.heightAt(511, y)))
-        .toBeLessThanOrEqual(TERRAIN.cellSize);
-    }
+    scanColumns(() => {
+      for (let y = 0; y < 512; y++) {
+        const delta = Math.abs(b.map.heightAt(512, y) - b.map.heightAt(511, y));
+        if (delta > TERRAIN.cellSize) return `dislivello ${delta} alla riga ${y}`;
+      }
+      return null;
+    });
   });
 });
 
@@ -292,10 +340,13 @@ describe('expandIsland', () => {
     for (const key of Object.keys(before)) expectSameLayers(after[key], before[key], key);
 
     // E la maschera ereditata rende continuo anche il confine nuovo.
-    for (let x = 0; x < 512; x++) {
-      expect(Math.abs(grown.map.heightAt(x, 512) - grown.map.heightAt(x, 511)))
-        .toBeLessThanOrEqual(TERRAIN.cellSize);
-    }
+    scanColumns(() => {
+      for (let x = 0; x < 512; x++) {
+        const delta = Math.abs(grown.map.heightAt(x, 512) - grown.map.heightAt(x, 511));
+        if (delta > TERRAIN.cellSize) return `dislivello ${delta} alla colonna ${x}`;
+      }
+      return null;
+    });
   });
 
   it('una seconda chiamata sulla stessa region non scrive nulla', () => {
@@ -320,22 +371,29 @@ describe('generateIsland — colonne e biomi', () => {
       [99991, { minX: 0, minY: 0, sizeX: 256, sizeY: 256 }],
     ];
 
+    const buildableBiomes: number[] = [BIOME.plain, BIOME.forest, BIOME.hill];
     for (const [seed, region] of regions) {
-      const { map } = generateIsland(new VoxelWorld(), seed, region);
+      const map = region === ISLAND
+        ? referenceIsland().map
+        : generateIsland(new VoxelWorld(), seed, region).map;
       let buildable = 0;
-      forEachColumn(map, (_x, _y, height, biome, slope, isBuildable) => {
-        if (!isBuildable) return;
-        buildable++;
-        expect(height).toBeGreaterThanOrEqual(TERRAIN.seaLevel);
-        expect(slope).toBeLessThan(TERRAIN.buildableMaxSlope);
-        expect([BIOME.plain, BIOME.forest, BIOME.hill]).toContain(biome);
+      scanColumns(() => {
+        let bad: string | null = null;
+        forEachColumn(map, (x, y, height, biome, slope, isBuildable) => {
+          if (!isBuildable || bad !== null) return;
+          buildable++;
+          if (height < TERRAIN.seaLevel) bad = `(${x}, ${y}) edificabile sotto il mare`;
+          else if (slope >= TERRAIN.buildableMaxSlope) bad = `(${x}, ${y}) pendenza ${slope}`;
+          else if (!buildableBiomes.includes(biome)) bad = `(${x}, ${y}) bioma ${biome}`;
+        });
+        return bad;
       });
       expect(buildable).toBeGreaterThan(500);
     }
   });
 
   it('tutti e sei i biomi compaiono, con la spiaggia sulla costa e la roccia in quota', () => {
-    const { map } = generateIsland(new VoxelWorld(), SEED, ISLAND);
+    const { map } = referenceIsland();
     const histogram = map.biomeHistogram();
 
     for (let biome = 0; biome < histogram.length; biome++) {
@@ -360,7 +418,7 @@ describe('generateIsland — colonne e biomi', () => {
   });
 
   it('la pendenza e’ coerente con le altezze delle colonne vicine', () => {
-    const { map } = generateIsland(new VoxelWorld(), SEED, ISLAND);
+    const { map } = referenceIsland();
     const field = new HeightField(SEED, shapeFromRegion(ISLAND));
 
     // La pendenza pubblicata e' quella della cella: la media delle pendenze
@@ -391,43 +449,52 @@ describe('generateIsland — colonne e biomi', () => {
 
 describe('generateIsland — scrittura nel mondo', () => {
   it('l’isola e’ circondata d’acqua su tutti i lati', () => {
-    const world = new VoxelWorld();
-    const { map } = generateIsland(world, SEED, ISLAND);
-    const waterIds = [WATER_IDS.surface, WATER_IDS.deep];
+    const { world, map } = referenceIsland();
+    const waterIds: number[] = [WATER_IDS.surface, WATER_IDS.deep];
 
-    for (let i = 0; i < 512; i++) {
-      for (const [x, y] of [
-        [i, 0],
-        [i, 511],
-        [0, i],
-        [511, i],
-      ]) {
-        expect(map.heightAt(x, y)).toBeLessThan(TERRAIN.seaLevel);
-        expect(map.biomeAt(x, y)).toBe(BIOME.ocean);
-        expect(waterIds).toContain(world.getBlock(x, y, TERRAIN.seaLevel - 1));
+    scanColumns(() => {
+      for (let i = 0; i < 512; i++) {
+        for (const [x, y] of [
+          [i, 0],
+          [i, 511],
+          [0, i],
+          [511, i],
+        ]) {
+          if (map.heightAt(x, y) >= TERRAIN.seaLevel) return `(${x}, ${y}) emerge`;
+          if (map.biomeAt(x, y) !== BIOME.ocean) return `(${x}, ${y}) non e' oceano`;
+          if (!waterIds.includes(world.getBlock(x, y, TERRAIN.seaLevel - 1))) {
+            return `(${x}, ${y}) non ha acqua sotto il pelo`;
+          }
+        }
       }
-    }
+      return null;
+    });
   });
 
   it('ogni colonna e’ piena fino alla sua altezza e le decorazioni restano sopra', () => {
-    const world = new VoxelWorld();
-    const { map } = generateIsland(world, SEED, ISLAND);
+    const { world, map } = referenceIsland();
 
-    for (let y = 0; y < 512; y += 11) {
-      for (let x = 0; x < 512; x += 11) {
-        const height = map.heightAt(x, y);
-        const top = Math.max(height, TERRAIN.seaLevel);
-        for (let z = 0; z < top; z++) expect(world.getBlock(x, y, z)).not.toBe(0);
-        // Gli alberi possono occupare l'aria sopra la colonna, ma non devono
-        // mai scavare o sostituire la stratigrafia che li sostiene.
-        if (height >= TERRAIN.seaLevel) expect(world.getBlock(x, y, height - 1)).not.toBe(0);
+    scanColumns(() => {
+      for (let y = 0; y < 512; y += 11) {
+        for (let x = 0; x < 512; x += 11) {
+          const height = map.heightAt(x, y);
+          const top = Math.max(height, TERRAIN.seaLevel);
+          for (let z = 0; z < top; z++) {
+            if (world.getBlock(x, y, z) === 0) return `(${x}, ${y}) vuota a quota ${z}`;
+          }
+          // Gli alberi possono occupare l'aria sopra la colonna, ma non devono
+          // mai scavare o sostituire la stratigrafia che li sostiene.
+          if (height >= TERRAIN.seaLevel && world.getBlock(x, y, height - 1) === 0) {
+            return `(${x}, ${y}) scavata sotto la superficie`;
+          }
+        }
       }
-    }
+      return null;
+    });
   });
 
   it('la superficie di terra usa la tinta del bioma e il sottosuolo un’altra', () => {
-    const world = new VoxelWorld();
-    const { map } = generateIsland(world, SEED, ISLAND);
+    const { world, map } = referenceIsland();
 
     let checked = 0;
     for (let y = 0; y < 512 && checked < 50; y += 3) {
@@ -452,29 +519,31 @@ describe('generateIsland — scrittura nel mondo', () => {
     // tre corse invece di trenta voxel: e' un'ottimizzazione di scrittura, non
     // una regola nuova. Questo test e' cio' che tiene le due letture della stessa
     // stratigrafia — a tratti e per voxel — dalla stessa parte.
-    const world = new VoxelWorld();
-    const { map } = generateIsland(world, SEED, ISLAND);
+    const { world, map } = referenceIsland();
 
-    for (let y = 0; y < 512; y += 13) {
-      for (let x = 0; x < 512; x += 13) {
-        const height = map.heightAt(x, y);
-        const biome = map.biomeAt(x, y);
-        for (let z = 0; z < height; z++) {
-          expect(world.getBlock(x, y, z)).toBe(paletteForDepth(biome, height - 1 - z));
-        }
-        for (let z = height; z < TERRAIN.seaLevel; z++) {
-          const expected = z >= TERRAIN.seaLevel - TERRAIN.waterSurfaceDepth
-            ? WATER_IDS.surface
-            : WATER_IDS.deep;
-          expect(world.getBlock(x, y, z)).toBe(expected);
+    scanColumns(() => {
+      for (let y = 0; y < 512; y += 13) {
+        for (let x = 0; x < 512; x += 13) {
+          const height = map.heightAt(x, y);
+          const biome = map.biomeAt(x, y);
+          for (let z = 0; z < height; z++) {
+            const expected = paletteForDepth(biome, height - 1 - z);
+            if (world.getBlock(x, y, z) !== expected) return `(${x}, ${y}, ${z}) fuori stratigrafia`;
+          }
+          for (let z = height; z < TERRAIN.seaLevel; z++) {
+            const expected = z >= TERRAIN.seaLevel - TERRAIN.waterSurfaceDepth
+              ? WATER_IDS.surface
+              : WATER_IDS.deep;
+            if (world.getBlock(x, y, z) !== expected) return `(${x}, ${y}, ${z}) acqua sbagliata`;
+          }
         }
       }
-    }
+      return null;
+    });
   });
 
   it('non scrive mai nel layer data', () => {
-    const world = new VoxelWorld();
-    generateIsland(world, SEED, ISLAND);
+    const { world } = referenceIsland();
 
     for (const chunk of world.chunks.values()) {
       expect(chunk.data.some((value) => value !== 0)).toBe(false);
@@ -482,8 +551,7 @@ describe('generateIsland — scrittura nel mondo', () => {
   });
 
   it('non alloca chunk verticali che resterebbero vuoti', () => {
-    const world = new VoxelWorld();
-    generateIsland(world, SEED, ISLAND);
+    const { world } = referenceIsland();
 
     for (const chunk of world.chunks.values()) {
       expect(chunk.isEmpty).toBe(false);

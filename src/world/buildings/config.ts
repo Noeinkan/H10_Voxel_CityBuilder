@@ -55,8 +55,19 @@ export const BUILDER = {
    */
   blockSearchRadius: 2,
 
-  /** Livello massimo raggiungibile. Oltre, un edificio smette di crescere. */
-  maxLevel: 6,
+  /**
+   * Livello massimo raggiungibile. Oltre, un edificio smette di crescere.
+   *
+   * **E' il piu' visibile dei tre tetti che tenevano la citta' a mezz'aria, ed
+   * era l'unico che da solo non spostava niente.** A sei livelli una torre
+   * arrivava a una sessantina di voxel contro gli ottanta del rilievo: gli
+   * edifici salivano, la citta' no. Alzarlo qui funziona solo perche' sono
+   * saliti insieme a lui `LEVEL_CAPS`, `START_LEVEL_CDF`,
+   * `maxDirtyChunksPerBuilding` e `GRAMMAR.minBandSide`, e perche' esiste
+   * `src/world/skyline/`: senza una quota ammessa per colonna, dodici livelli su
+   * un campo saturo darebbero un altopiano piu' alto e non uno skyline.
+   */
+  maxLevel: 12,
 
   /**
    * Desiderabilita' che la colonna deve superare per promuovere un edificio al
@@ -65,6 +76,15 @@ export const BUILDER = {
    *
    * Salgono piu' in fretta di quanto scenda la desiderabilita': e' cio' che fa
    * convergere l'altezza invece di farla salire finche' c'e' un catalizzatore.
+   *
+   * **La scala si ferma prima di `maxLevel`, e non e' una dimenticanza.**
+   * `DesirabilityField` e' un `Uint8Array` clampato in `0..255` e
+   * `localUpgrade.maxDiscount` vale 38: 198 e' la fine dell'alfabeto, non una
+   * taratura stretta. Oltre quel punto il campo non *distingue* piu' due colonne
+   * del centro, e allungare l'elenco con numeri fra 198 e 255 darebbe soglie che
+   * nessuna colonna supera oppure che le supera tutte insieme. Da li' in su a
+   * decidere e' la gerarchia — `skyline/allowedLevelAt` — e questa scala si legge
+   * con `upgradeThresholdOf`, che ripete l'ultima voce.
    */
   upgradeThreshold: [0, 50, 78, 108, 138, 168, 198] as readonly number[],
 
@@ -79,8 +99,18 @@ export const BUILDER = {
    * Otto bastavano a un'impronta di quattro. Con otto voxel di lato una torre di
    * livello massimo attraversa il triplo dei chunk, e lasciando il tetto dov'era
    * sparirebbero esattamente gli edifici alti — senza che niente lo dica.
+   *
+   * **Quaranta e' aritmetica, non margine.** Con `maxLevel: 12` una torre supera
+   * i centoquaranta voxel. `edgeChunks` aggiunge una colonna di chunk **solo
+   * quando l'impronta non ne attraversa gia' due**, quindi le colonne effettive
+   * restano due per asse comunque cada l'impronta; in quota una torre copre
+   * cinque piani di chunk piu' i due di bordo. Il caso peggiore vale percio'
+   * `2 x 2 x 7 = 28`, e quaranta lascia spazio alla fondazione a cavallo di una
+   * cucitura. Non si taglia in quota per rientrare: `sliceStamps` dichiara
+   * apposta di tagliare solo in pianta, perche' una cucitura orizzontale a meta'
+   * di una torre si vede.
    */
-  maxDirtyChunksPerBuilding: 24,
+  maxDirtyChunksPerBuilding: 40,
 
   /**
    * Lato oltre il quale uno stamp compare a ritagli invece che in un colpo solo.
@@ -328,11 +358,16 @@ export const GRAMMAR = {
    *
    * Senza, una catena di rientranze porta la cima a un voxel e la torre finisce
    * a punta di spillo: succedeva gia' con `shrink` ripetuto, e con `stack` in
-   * repertorio succederebbe in meta' delle fasce. A due voxel — un cubo di
-   * terreno — la fascia e' ancora un volume, e sopra ci sta un coronamento che
-   * si distingue da un altro.
+   * repertorio succederebbe in meta' delle fasce.
+   *
+   * **Due bastavano su otto fasce, non su ventisei.** Con `maxLevel: 12` una
+   * torre ha tre volte le fasce di prima, e una catena di `shrink` la portava al
+   * minimo entro il primo terzo: sopra restava uno stelo da un cubo di terreno
+   * per due terzi dell'altezza, cioe' un palo. A quattro voxel — due cubi — lo
+   * stelo resta un volume per tutta la salita. Il coronamento puo' assottigliarsi
+   * oltre, perche' e' il suo mestiere; il corpo no.
    */
-  minBandSide: 2,
+  minBandSide: 4,
 
   /**
    * Lato minimo perche' una rientranza diventi terrazza invece di restare uno
@@ -430,6 +465,26 @@ export interface LevelCaps {
  * livello 6 resta un edificio di otto piani, non di sedici. A raddoppiare e'
  * `bandHeight`, cioe' l'altezza del singolo piano — l'edificio resta alto
  * quanto prima e guadagna i voxel in mezzo, che e' esattamente il punto.
+ *
+ * **Le prime sette voci non si toccano**, e non per prudenza: sono la citta' che
+ * gia' esiste, e cambiarle avrebbe rifatto la sagoma di ogni edificio basso —
+ * cioe' della maggioranza — per una fase che parla dei pochi alti. Le sei nuove
+ * raddoppiano le fasce, e un civico di livello massimo passa da una sessantina
+ * di voxel a centocinquanta: la torre di punta **supera** il rilievo dell'isola
+ * (`TERRAIN.maxHeight: 80`) invece di stargli sotto, che e' la differenza fra una
+ * citta' sopra la collina e una citta' accanto.
+ *
+ * **L'impronta non cresce con loro, e questo rende la punta una matita.** A otto
+ * voxel di lato e centocinquanta di altezza il rapporto e' circa venti a uno.
+ * Non e' una svista ed e' l'unica forma disponibile: `MAX_FOOTPRINT` non puo'
+ * salire senza `STREETS.pitch`, perche' un isolato stretto misura quattordici
+ * colonne e un'impronta piu' larga non ci starebbe — cambiare la scala della
+ * maglia stradale e' un'altra fase. Regge perche' i picchi sono **rari per
+ * costruzione**: `skyline/` concede il livello massimo solo dove centro,
+ * prossimita' al polo e isolato eletto coincidono, quindi sono guglie e non un
+ * bosco di pali. A dare massa alle torri, qui e ora, e' l'aggregazione della
+ * 4.4: una fila di livelli alti legge come un volume unico anche se ogni record
+ * resta stretto.
  */
 export const LEVEL_CAPS: readonly LevelCaps[] = [
   { minFootprint: 4, maxFootprint: 6, minBands: 1, maxBands: 2 },
@@ -439,6 +494,12 @@ export const LEVEL_CAPS: readonly LevelCaps[] = [
   { minFootprint: 6, maxFootprint: 8, minBands: 5, maxBands: 6 },
   { minFootprint: 6, maxFootprint: 8, minBands: 6, maxBands: 7 },
   { minFootprint: 8, maxFootprint: 8, minBands: 7, maxBands: 8 },
+  { minFootprint: 8, maxFootprint: 8, minBands: 8, maxBands: 9 },
+  { minFootprint: 8, maxFootprint: 8, minBands: 9, maxBands: 10 },
+  { minFootprint: 8, maxFootprint: 8, minBands: 10, maxBands: 11 },
+  { minFootprint: 8, maxFootprint: 8, minBands: 11, maxBands: 12 },
+  { minFootprint: 8, maxFootprint: 8, minBands: 13, maxBands: 15 },
+  { minFootprint: 8, maxFootprint: 8, minBands: 16, maxBands: 19 },
 ];
 
 /**
@@ -448,8 +509,30 @@ export const LEVEL_CAPS: readonly LevelCaps[] = [
  * su. Uno skyline e' fatto di molti volumi bassi e pochi picchi; una
  * distribuzione uniforme darebbe un altopiano, che a colpo d'occhio non si legge
  * come una citta'.
+ *
+ * **Ha una voce per livello, ed e' un requisito e non un'abitudine.**
+ * `startLevel` scorre questo elenco: finche' era lungo `maxLevel + 1` per caso,
+ * alzare `maxLevel` da solo avrebbe fatto leggere `undefined` — e `roll <
+ * undefined` e' falso, quindi **ogni** edificio sarebbe nato al livello massimo.
+ * Un test verifica ora la lunghezza insieme a quella di `LEVEL_CAPS`, invece di
+ * lasciarla alla buona volonta' del prossimo cambio di scala.
  */
-export const START_LEVEL_CDF: readonly number[] = [0.78, 0.94, 0.985, 0.997, 1, 1, 1];
+export const START_LEVEL_CDF: readonly number[] =
+  [0.78, 0.94, 0.985, 0.997, 1, 1, 1, 1, 1, 1, 1, 1, 1];
+
+/**
+ * Soglia di desiderabilita' per promuovere al livello indicato.
+ *
+ * Ripete l'ultima voce oltre la fine della scala, e non e' un ripiego: da li' in
+ * su la desiderabilita' ha finito l'alfabeto e chi decide e' la gerarchia
+ * verticale. Leggere `upgradeThreshold[level]` direttamente darebbe `undefined`,
+ * e un confronto con `undefined` e' sempre falso — cioe' nessuna promozione, in
+ * silenzio.
+ */
+export function upgradeThresholdOf(level: number): number {
+  const scale = BUILDER.upgradeThreshold;
+  return scale[Math.min(Math.max(level, 0), scale.length - 1)];
+}
 
 /** Proporzioni e colori di una classe. */
 export interface ClassProfile {

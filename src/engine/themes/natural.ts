@@ -27,8 +27,8 @@ export const natural: Theme = {
       color: '#cfe9f7',
       density: 0.00018,
       skyBlend: 0.55,
-      heightBase: 10,
-      heightFalloff: 0.028,
+      heightBase: 24,
+      heightFalloff: 0.010,
       sunTint: 0.3,
     },
     sky: {

@@ -69,7 +69,10 @@ export class GrowthOverlay {
         `  occupancy ${(stats.state.commerce.occupancy * 100).toFixed(0)}%`,
       `             revenue ${stats.state.commerce.revenue.toFixed(2)}/t  goods ${stats.state.commerce.goods.toFixed(2)}/t`,
       `queue        ${stats.builder.growing}  upgrades ${stats.builder.upgraded}`,
-      `levels       ${stats.levels.map((n, i) => `L${i} ${n ?? 0}`).join('  ')}`,
+      // I soli livelli abitati, e non tutti e tredici. La riga esiste per far
+      // leggere il gate della 4.6 — «almeno tre fasce di altezza, e non un
+      // altopiano» — e con dieci `L… 0` in mezzo quella figura non si vede piu'.
+      `levels       ${levelsOf(stats.levels)}`,
       // `reach` e' il gate della 4.5 senza aprire una console: a uno la rete in
       // quota e' un ornamento — ponti che non portano da nessuna parte — e da
       // due in su e' un secondo piano stradale.
@@ -78,4 +81,13 @@ export class GrowthOverlay {
       `rejected     ${rejected}`,
     ].join('\n');
   }
+}
+
+/** L'istogramma dei livelli, saltando quelli vuoti. */
+function levelsOf(levels: readonly number[]): string {
+  const seen = levels
+    .map((count, level) => ({ level, count: count ?? 0 }))
+    .filter((entry) => entry.count > 0);
+  if (seen.length === 0) return 'none yet';
+  return seen.map((entry) => `L${entry.level} ${entry.count}`).join('  ');
 }

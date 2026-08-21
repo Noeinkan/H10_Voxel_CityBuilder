@@ -217,7 +217,12 @@ const viewDirection = new Vector3();
 
 const camera = new IsoCameraController(world, window.innerWidth, window.innerHeight, {
   voxelSize: VOXEL_SIZE,
-  targetHeight: 12,
+  // Il piano su cui la camera pana, ruota e si centra. Dodici voxel stavano
+  // **sotto** il livello del mare (`TERRAIN.seaLevel: 16`): era la quota giusta
+  // per una scena di prova piana, non per un'isola che parte a ventiquattro e
+  // adesso porta torri centocinquanta piu' su. A ventiquattro il perno sta sul
+  // pianoro dell'isola, cioe' sul suolo che si sta guardando davvero.
+  targetHeight: 24,
 });
 camera.attach(renderer.domElement);
 
@@ -288,7 +293,13 @@ if (terrain === null) {
 } else if (growEnabled) {
   // La crescita deve leggersi come skyline, non come texture sull'intera isola:
   // si inquadra il nucleo centrale lasciando alle torri spazio verticale.
-  camera.frameRegion(TERRAIN_SIZE / 2, TERRAIN_SIZE / 2, 420, 420, 240);
+  //
+  // `spanZ` non e' decorativo: entra in `projectedHeight`, quindi l'inquadratura
+  // d'apertura **non** e' indipendente dall'altezza della citta'. Duecentoquaranta
+  // erano tarati su torri da sessanta voxel; con la 4.6 un civico di livello
+  // massimo ne fa centocinquanta sopra un terreno che parte a ventiquattro, e a
+  // spanZ invariato la punta sarebbe nata fuori campo.
+  camera.frameRegion(TERRAIN_SIZE / 2, TERRAIN_SIZE / 2, 420, 420, 320);
 } else {
   // L'isola invece si guarda intera: 512 di lato stanno in poche centinaia di chunk.
   camera.frameRegion(TERRAIN_SIZE / 2, TERRAIN_SIZE / 2, TERRAIN_SIZE, TERRAIN_SIZE, 160);

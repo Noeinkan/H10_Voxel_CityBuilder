@@ -11,6 +11,61 @@ coincide con il messaggio di commit.
 
 ---
 
+## 2026-08-21 — Gerarchia verticale della città (Fase 4.6)
+
+- **Nuovo dominio** `src/world/skyline/`: `config.ts`, `tiers.ts` e il loro test.
+  Risponde a una domanda che prima non esisteva — **fin dove una colonna può
+  salire** — a partire da distanza dai poli, dal mare e dal bordo dell'edificato.
+  Puro come `sites/` e `grading/`: quello che serve del luogo entra come numero,
+  quindi il dominio si verifica in `node` senza mondo e senza terreno.
+- **La desiderabilità dice *se*, la gerarchia dice *fin dove*.** Le due
+  condizioni stanno affiancate in `Builder.upgradePass`, non una al posto
+  dell'altra. Il campo è un `Uint8Array` che satura a 255 e l'ultima soglia sta a
+  198: oltre quel punto non *distingue* più due colonne del centro, e alzare il
+  tetto senza la gerarchia avrebbe dato un altopiano più alto invece di uno
+  skyline. `upgradeThreshold` resta perciò lungo sette voci e si legge con
+  `upgradeThresholdOf`, che ripete l'ultima.
+- Tre fasce — costa e periferia, intermedia, centro — più un **cono** verso il
+  polo e un **livello in più a un isolato ogni sette**, eletto da un hash del suo
+  indice. Il livello massimo esce solo dalla somma dei tre, quindi i picchi sono
+  rari per costruzione e non per fortuna; un test verifica che quella somma
+  coincida esattamente con `BUILDER.maxLevel`.
+- **I tre tetti, rotti insieme.** `maxLevel` da 6 a **12**, `LEVEL_CAPS` da 7 a
+  13 voci (fino a diciannove fasce), `maxDirtyChunksPerBuilding` da 24 a **40** —
+  aritmetica sul caso peggiore, `2 × 2 × 7`, non margine — e `GRAMMAR.minBandSide`
+  da 2 a **4**, senza il quale una catena di rientranze riduceva a un palo i due
+  terzi superiori della torre. Un civico di livello massimo passa da ~70 a **152
+  voxel**, cioè sopra `TERRAIN.maxHeight`.
+- **Un difetto latente, corretto prima che mordesse**: `startLevel` scorreva
+  `START_LEVEL_CDF` fino a `maxLevel` invece che fino alla lunghezza dell'elenco.
+  Erano lo stesso numero per caso; alzando `maxLevel` il confronto diventava
+  `roll < undefined`, falso a ogni giro, e **ogni edificio sarebbe nato al livello
+  massimo**. Ora l'elenco ha una voce per livello e un test verifica la lunghezza
+  di entrambe le tabelle indicizzate per livello.
+- Il contratto di proporzione **è cambiato e non allentato**: la punta passa da
+  dieci a uno a diciannove a uno. A otto voxel di lato non c'è altra forma
+  possibile, e `MAX_FOOTPRINT` non può salire senza allargare `STREETS.pitch` —
+  l'isolato più stretto è largo quattordici colonne. Il test lo dice invece di
+  tacerlo.
+- Ritarati sulla città alta: `targetHeight` della camera da 12 a 24 (stava
+  **sotto** il livello del mare), lo `spanZ` dell'inquadratura d'apertura da 240 a
+  320, e la nebbia di quota di **tutti e sette i temi** — `heightFalloff` è
+  l'inverso di un'altezza, e a 0,025 spendeva tutta la prospettiva aerea nel primo
+  quinto dell'edificato.
+- `BuildingRegistry.countWithinRadius` accanto a `withinRadius`, con la scansione
+  condivisa: costruire l'array per leggerne la lunghezza era, misurato, **metà del
+  costo della passata di upgrade**. Con quello e con `waterDistance` senza
+  allocazioni la gerarchia è tornata gratis.
+- Misura, su isola vera 256×256, un polo a raggio 96, 500 tick e 334 edifici: i
+  tick di upgrade hanno mediana **9,4 ms**, la stessa che si misura con la
+  gerarchia spenta (9,5 ms) e con il tetto riportato a sei (10,7 ms) — **il costo
+  è della passata, non di questa fase**, e supera i 3 ms di budget come già fa
+  `nextBuildSites`. Le tabelle di misura in `README.md` e `src/sim/README.md`
+  restano da rimisurare a mano.
+- **Il franco delle campate resta a due cubi.** La 4.5 lo aveva rimandato qui;
+  misurato, alzarlo costa i due terzi delle campate (11 → 4), perché la stessa
+  fase che alza il centro **abbassa la periferia**. Il debito passa alla 4.9.
+
 ## 2026-08-21 — Rete urbana in quota (Fase 4.5)
 
 - **Nuovo dominio** `src/world/spans/`: `config.ts`, `spanPlan.ts`,

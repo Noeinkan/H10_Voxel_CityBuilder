@@ -31,6 +31,7 @@ import {
   CLUSTER,
   DEFAULT_BUILDING_FORM,
   MAX_FOOTPRINT,
+  upgradeThresholdOf,
   type BuildingForm,
 } from './config';
 import { planCluster, type ClusterTerms } from './cluster';
@@ -60,8 +61,10 @@ import { StreetNetwork, type PavementCell } from '../streets/StreetNetwork';
 import { placeLot, type Lot } from '../streets/lots';
 import { FACING, STREET_ROLE, type BlockId, type Facing } from '../streets/streetGrid';
 import { STREETS } from '../streets/config';
-import { seesWater, waterFacing } from '../sites/siteRules';
+import { seesWater, waterDistance, waterFacing } from '../sites/siteRules';
 import { SITE } from '../sites/config';
+import { SKYLINE } from '../skyline/config';
+import { allowedLevelAt } from '../skyline/tiers';
 import { SPANS, SPAN_KIND, type SpanKind } from '../spans/config';
 import { generateSpan } from '../spans/generate';
 import { planPlaza } from '../spans/plazaPlan';
@@ -756,7 +759,13 @@ export class Builder {
     const seed = hashCoords(this.worldSeed, x, y);
     const profile = state === null ? null : urbanProfileAt(state, x, y);
     const form = formOf(profile);
-    const level = Math.min(BUILDER.maxLevel, startLevel(seed) + localLevelBonus(form));
+    // La gerarchia vale anche alla nascita, non solo agli upgrade: in periferia
+    // `builtNeighbours` e' basso per definizione, ed e' cosi' che attorno
+    // all'edificato resta una corona bassa invece di torri sparse nel prato.
+    const level = Math.min(
+      this.allowedLevel(x, y, state),
+      startLevel(seed) + localLevelBonus(form),
+    );
     const typology = selectTypology({
       use: cls,
       mixed,
@@ -1161,6 +1170,38 @@ export class Builder {
     }
   }
 
+  // --- Gerarchia verticale ---------------------------------------------------
+
+  /**
+   * Fin dove questa colonna puo' salire.
+   *
+   * La regola sta in `skyline/` ed e' pura: qui c'e' solo la raccolta di cio' che
+   * quella regola non puo' misurarsi da sola — l'acqua, che la sa la
+   * `TerrainMap`; gli edifici attorno, che li sa il registry; l'isolato, che lo
+   * sa la rete stradale. E' la stessa divisione di `joinCluster`, dove `cluster.ts`
+   * decide e il Builder raccoglie.
+   *
+   * **Senza stato non c'e' gerarchia.** `materialize` ricostruisce una partita
+   * gia' giocata: applicarle il tetto di oggi rimpicciolirebbe edifici che la
+   * simulazione conta come sono, ed e' la stessa ragione per cui neanche lo
+   * scorrimento sul fronte strada vale per lei.
+   */
+  private allowedLevel(x: number, y: number, state: SimState | null): number {
+    if (state === null) return BUILDER.maxLevel;
+
+    const block = this.streets.blockAt(x, y);
+    return Math.min(BUILDER.maxLevel, allowedLevelAt({
+      x,
+      y,
+      poles: state.catalysts,
+      waterDistance: waterDistance(this.terrainMap, x, y, SKYLINE.coastNear),
+      builtNeighbours: this.registryImpl.countWithinRadius(x, y, SKYLINE.edgeRadius),
+      seed: this.worldSeed,
+      blockKx: block.kx,
+      blockKy: block.ky,
+    }));
+  }
+
   // --- Upgrade ---------------------------------------------------------------
 
   /**
@@ -1195,8 +1236,16 @@ export class Builder {
       if (record.level >= BUILDER.maxLevel) continue;
 
       const nextLevel = record.level + 1;
+      // **Le due domande, in quest'ordine.** La gerarchia dice *fin dove* la
+      // colonna puo' salire e non costa un profilo locale; la desiderabilita'
+      // dice *se* questo edificio se l'e' meritato. Chiedere prima quella che
+      // risponde di no piu' spesso, e senza leggere il campo, e' anche cio' che
+      // tiene la passata al costo di prima su una citta' che ora ha il doppio
+      // dei livelli da scalare.
+      if (nextLevel > this.allowedLevel(record.x, record.y, state)) continue;
+
       const profile = urbanProfileAt(state, record.x, record.y);
-      const threshold = BUILDER.upgradeThreshold[nextLevel] - localUpgradeDiscount(formOf(profile));
+      const threshold = upgradeThresholdOf(nextLevel) - localUpgradeDiscount(formOf(profile));
       if (state.field.valueAt(record.x, record.y, record.class) <= threshold) {
         continue;
       }

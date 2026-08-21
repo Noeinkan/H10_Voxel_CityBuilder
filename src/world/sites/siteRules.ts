@@ -36,24 +36,45 @@ const AXES: readonly (readonly [number, number])[] = [[1, 0], [-1, 0], [0, 1], [
 const AXIS_FACING: readonly Facing[] = [FACING.east, FACING.west, FACING.north, FACING.south];
 
 /**
- * true se la colonna vede il mare entro `radius`.
+ * Colonne fino all'acqua piu' vicina sui quattro assi, o null entro `radius`.
  *
  * Guarda solo i quattro assi e non l'intero quadrato: chi cerca l'acqua ha
  * bisogno di sapere se ce n'e' *davanti*, e il quadrato costerebbe il quadrato
- * del raggio per ogni colonna valutata.
+ * del raggio per ogni colonna valutata. Cerca a distanza crescente, quindi il
+ * numero che esce e' la distanza vera e non quella del primo asse dell'elenco.
  *
  * Una colonna non ancora generata non e' acqua: al bordo dello streaming si
  * salta, invece di promettere una costa che potrebbe non esserci.
+ *
+ * E' la marcia che `seesWater` e `waterFacing` facevano gia' ciascuno per conto
+ * proprio, con la sola differenza di cosa ne restituivano. Ora ha tre chiamanti
+ * con tre domande: se c'e' il mare, da che parte, e quanto lontano — quest'ultima
+ * per la gerarchia verticale, che tiene bassa la citta' sul fronte costiero.
  */
-export function seesWater(map: TerrainMap, x: number, y: number, radius: number): boolean {
+export function waterDistance(
+  map: TerrainMap,
+  x: number,
+  y: number,
+  radius: number,
+): number | null {
   for (let d = 1; d <= radius; d++) {
     for (const [dx, dy] of AXES) {
-      const column = map.columnAt(x + dx * d, y + dy * d);
-      if (column === null) continue;
-      if (column.height <= TERRAIN.seaLevel) return true;
+      const cx = x + dx * d;
+      const cy = y + dy * d;
+      // Due letture senza allocazione invece di `columnAt`, che costruirebbe un
+      // oggetto per colonna. Non e' microtaratura: la gerarchia verticale chiama
+      // questa funzione una volta per record esaminato in una passata di
+      // upgrade, e `catalystFailure` una volta per `pointermove`.
+      if (!map.has(cx, cy)) continue;
+      if (map.heightAt(cx, cy) <= TERRAIN.seaLevel) return d;
     }
   }
-  return false;
+  return null;
+}
+
+/** true se la colonna vede il mare entro `radius`. */
+export function seesWater(map: TerrainMap, x: number, y: number, radius: number): boolean {
+  return waterDistance(map, x, y, radius) !== null;
 }
 
 /**

@@ -37,8 +37,8 @@ export const diorama: Theme = {
       color: '#eadcc7',
       density: 0.00016,
       skyBlend: 0.5,
-      heightBase: 12,
-      heightFalloff: 0.03,
+      heightBase: 24,
+      heightFalloff: 0.011,
       sunTint: 0.45,
     },
     sky: {
