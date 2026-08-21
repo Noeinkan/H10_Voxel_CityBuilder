@@ -99,6 +99,7 @@ il posto sbagliato.
 | Strade | `src/world/streets/config.ts` |
 | Opere di terra | `src/world/grading/config.ts` |
 | Vincoli di sito | `src/world/sites/config.ts` |
+| Campate e rete in quota | `src/world/spans/config.ts` |
 | Simulazione | `src/sim/balance.ts` |
 | Costruzione e tipologie | `src/world/buildings/config.ts` |
 | Palette | `src/engine/palette.json` + `paletteSlots.ts` |

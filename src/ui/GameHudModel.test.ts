@@ -66,12 +66,27 @@ describe('buildGameHudModel', () => {
   });
 
   it('assegna a Escape la superficie aperta con priorità corretta', () => {
-    expect(resolveEscapeTarget(true, true, true, true, { kind: 'expansion' })).toBe('views');
-    expect(resolveEscapeTarget(false, true, true, true, { kind: 'expansion' })).toBe('themes');
-    expect(resolveEscapeTarget(false, false, true, true, { kind: 'expansion' })).toBe('policies');
-    expect(resolveEscapeTarget(false, false, false, true, { kind: 'expansion' })).toBe('help');
-    expect(resolveEscapeTarget(false, false, false, false, { kind: 'expansion' })).toBe('tool');
-    expect(resolveEscapeTarget(false, false, false, false, { kind: 'none' })).toBe('none');
+    const view = true;
+    expect(resolveEscapeTarget(true, true, true, true, { kind: 'expansion' }, view)).toBe('views');
+    expect(resolveEscapeTarget(false, true, true, true, { kind: 'expansion' }, view)).toBe('themes');
+    expect(resolveEscapeTarget(false, false, true, true, { kind: 'expansion' }, view)).toBe('policies');
+    expect(resolveEscapeTarget(false, false, false, true, { kind: 'expansion' }, view)).toBe('help');
+    expect(resolveEscapeTarget(false, false, false, false, { kind: 'expansion' }, view)).toBe('tool');
+    expect(resolveEscapeTarget(false, false, false, false, { kind: 'none' }, view)).toBe('view');
+    expect(resolveEscapeTarget(false, false, false, false, { kind: 'none' }, false)).toBe('none');
+  });
+
+  it('Escape esce dalla vista, ma per ultimo', () => {
+    // La vista non era fra le cose che Escape chiude, e uscirne voleva dire
+    // premere `V` fino a completare il giro o riaprire il picker: due strade che
+    // nessuna superficie nominava. Resta l'ultima della lista perche' con uno
+    // strumento in mano il toast promette gia' "Esc to cancel".
+    expect(resolveEscapeTarget(false, false, false, false, { kind: 'catalyst', class: 0 }, true))
+      .toBe('tool');
+    expect(resolveEscapeTarget(false, false, false, false, { kind: 'none' }, true)).toBe('view');
+    // Un pannello aperto sopra la citta' velata si chiude prima: il primo colpo
+    // toglie quello che copre, il secondo quello che nasconde.
+    expect(resolveEscapeTarget(true, false, false, false, { kind: 'none' }, true)).toBe('views');
   });
 
   it('produce un’istruzione contestuale solo per uno strumento selezionato', () => {
@@ -154,6 +169,8 @@ function stats(
       blacklisted: 0,
       surfaceQueued: 0,
       clustered: 0,
+      spans: 0,
+      spanReach: 0,
     },
     state,
     paused: false,

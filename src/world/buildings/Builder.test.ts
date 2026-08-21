@@ -10,7 +10,11 @@ import {
 } from '../../sim';
 import { CHUNK } from '../chunkCoords';
 import { LANDMARKS } from '../landmarks/config';
-import { landmarkSpan } from '../landmarks/generate';
+import { generateLandmark, landmarkSpan } from '../landmarks/generate';
+import { footprintDepth } from './BuildingRegistry';
+import { solidCount } from './stamp';
+import { SPANS, SPAN_KIND } from '../spans/config';
+import { SpanNetwork } from '../spans/network';
 import { StreetNetwork } from '../streets/StreetNetwork';
 import { STREETS } from '../streets/config';
 import { FACING } from '../streets/streetGrid';
@@ -26,6 +30,20 @@ import { GRADING } from '../grading/config';
 import { GROUND, groundKindOf, isDryLand, type GroundKind } from '../grading/grade';
 import { TERRAIN } from '../terrain/config';
 import type { TerrainMap } from '../terrain/TerrainMap';
+
+/**
+ * I soli edifici veri.
+ *
+ * Il registry ospita anche landmark e campate, che edifici non sono: non hanno
+ * un uso urbano, la simulazione non li ha mai contati, e una campata non e'
+ * nemmeno appoggiata al suolo. Le asserzioni sulla crescita — impronta, fronte
+ * strada, fila, opere sotto il piano — parlano di edifici, e vanno lette su
+ * quelli.
+ */
+function buildingsOf(builder: Builder): readonly BuildingRecord[] {
+  return [...builder.registry.all]
+    .filter((record) => record.landmark === undefined && record.span === undefined);
+}
 
 describe('Builder', () => {
   it('trasforma un candidato della simulazione in voxel e occupazione', () => {
@@ -103,6 +121,248 @@ describe('Builder', () => {
 });
 
 /**
+ * Il gate della 4.5, verificato invece che dichiarato.
+ *
+ * Sono le tre affermazioni che la fase fa e che a occhio non si controllano: le
+ * campate poggiano su appoggi **veri**, non prendono **suolo**, e formano una
+ * **rete** — un percorso continuo fra due isolati diversi che non passa da terra.
+ */
+describe('Builder — la rete in quota', () => {
+  function city(rounds = 220): { world: VoxelWorld; builder: Builder; streets: StreetNetwork } {
+    const world = new VoxelWorld();
+    const terrain = testTerrain({ chunksX: 8, chunksY: 8, height: 24 });
+    const builder = new Builder(world, terrain, 1337);
+
+    let state = createSimState();
+    state = addCatalyst(state, {
+      x: 128,
+      y: 128,
+      class: BUILDING_CLASS.residential,
+      strength: 255,
+      radius: 96,
+    });
+
+    for (let i = 0; i < rounds; i++) {
+      state = tick(state, terrain);
+      state = builder.onTick(state);
+      while (builder.stats.growing > 0) builder.step();
+    }
+    while (builder.stats.surfaceQueued > 0) builder.step();
+
+    return { world, builder, streets: new StreetNetwork(1337) };
+  }
+
+  it('una citta matura si da delle campate', () => {
+    const { builder } = city();
+    // Se questo torna a zero la fase e' inerte: tutto il resto passerebbe
+    // vacuamente, perche' non ci sarebbe niente da verificare.
+    expect(builder.stats.spans).toBeGreaterThan(0);
+  });
+
+  it('un cortile d isolato diventa una piazza in quota', () => {
+    // La piazza arriva piu' tardi dei ponti: ha bisogno che il perimetro di un
+    // isolato sia costruito su almeno due lati e abbastanza alto. Su una citta'
+    // ancora in crescita il cuore e' aperto e non ha muri a cui appoggiarsi.
+    const { builder } = city(420);
+    const plazas = builder.registry.spans.filter((s) => s.span === SPAN_KIND.plaza);
+
+    expect(plazas.length).toBeGreaterThan(0);
+    for (const plaza of plazas) {
+      // Tre o piu' appoggi: e' cio' che la distingue da un ponte largo, ed e'
+      // anche cio' che ne fa un nodo — le campate ci arrivano da lati diversi.
+      expect((plaza.supports ?? []).length)
+        .toBeGreaterThanOrEqual(SPANS.plaza.minSupports);
+      expect(plaza.footprint).toBeGreaterThanOrEqual(SPANS.plaza.minSide);
+      expect(footprintDepth(plaza)).toBeGreaterThanOrEqual(SPANS.plaza.minSide);
+    }
+  });
+
+  /**
+   * true se, su questo asse, entrambi i capi della corsa sono pieni per tutta
+   * la larghezza dell'impalcato.
+   *
+   * L'asse non si indovina dalle misure: una campata larga quanto e' lunga e'
+   * quadrata, e un ponte corto lo e' spesso. Si provano tutti e due.
+   */
+  function anchoredOn(world: VoxelWorld, span: BuildingRecord, axis: 0 | 1): boolean {
+    const depth = footprintDepth(span);
+    // La carreggiata sta in cima alla sezione: sotto ci sono le travi.
+    const deckZ = span.baseZ + span.height - 1;
+    const runFrom = axis === 0 ? span.x : span.y;
+    const runTo = runFrom + (axis === 0 ? span.footprint : depth) - 1;
+    const cross = axis === 0 ? span.y : span.x;
+    const width = axis === 0 ? depth : span.footprint;
+
+    return [runFrom - 1, runTo + 1].every((v) => {
+      for (let w = cross; w < cross + width; w++) {
+        const solid = axis === 0
+          ? world.getBlock(v, w, deckZ)
+          : world.getBlock(w, v, deckZ);
+        if (solid === 0) return false;
+      }
+      return true;
+    });
+  }
+
+  it('il gate: ogni campata poggia su appoggi reali', () => {
+    const { world, builder } = city();
+    const spans = builder.registry.spans;
+    expect(spans.length).toBeGreaterThan(0);
+
+    for (const span of spans) {
+      // Piena per **tutta** la larghezza, ai due capi: una campata appoggiata a
+      // meta' sporgerebbe nel vuoto da un lato, e a distanza di gioco si vede.
+      expect(
+        anchoredOn(world, span, 0) || anchoredOn(world, span, 1),
+        `campata ${span.id} a ${span.x},${span.y} base=${span.baseZ}`,
+      ).toBe(true);
+    }
+  });
+
+  it('una campata non prende suolo: sotto restano lotti e carreggiata', () => {
+    const { builder } = city();
+    const spans = builder.registry.spans;
+    expect(spans.length).toBeGreaterThan(0);
+
+    for (const span of spans) {
+      for (let dy = 0; dy < footprintDepth(span); dy++) {
+        for (let dx = 0; dx < span.footprint; dx++) {
+          const x = span.x + dx;
+          const y = span.y + dy;
+          // Una campata atterra dove i corpi si affacciano, quindi sporge sopra
+          // le fasce basse dei propri appoggi: su quelle colonne il suolo e'
+          // preso, ma da loro. L'invariante e' che a prenderlo non sia **mai**
+          // la campata — una colonna coperta solo da campate resta libera, ed e'
+          // cosi' che sotto un ponte si dipinge ancora la carreggiata e si
+          // costruisce ancora un lotto.
+          const onlySpans = builder.registry.at(x, y)
+            .every((record) => record.span !== undefined);
+          if (!onlySpans) continue;
+          expect(
+            builder.registry.isOccupied(x, y),
+            `campata ${span.id} occupa ${x},${y}`,
+          ).toBe(false);
+        }
+      }
+    }
+  });
+
+  it('il gate: esiste un percorso continuo fra due isolati diversi', () => {
+    const { builder } = city();
+    // A uno la rete e' un ornamento — dei ponti che non portano da nessuna
+    // parte. Da due in su e' un secondo piano stradale, ed e' la differenza che
+    // il riferimento al Minneapolis Skyway mette al centro.
+    expect(builder.stats.spanReach).toBeGreaterThanOrEqual(2);
+  });
+
+  it('nessuna campata chiude un ciclo: la rete e un albero', () => {
+    const { builder } = city();
+    const spans = builder.registry.spans;
+
+    // Ogni campata ha unito due componenti separate quando e' nata, quindi
+    // rimetterle una per volta non deve mai trovarne due gia' connesse.
+    const network = new SpanNetwork();
+    for (const span of spans) {
+      expect(network.add({ supports: span.supports }), `campata ${span.id}`).toBe(true);
+    }
+  });
+
+  it('nessun edificio regge piu campate di quante ne ammetta il tetto', () => {
+    const { builder } = city();
+    const network = SpanNetwork.of(builder.registry.spans);
+
+    for (const record of builder.registry.all) {
+      expect(network.degreeOf(record.id)).toBeLessThanOrEqual(SPANS.maxPerSupport);
+    }
+  });
+
+  it('a parita di seed la rete in quota e identica', () => {
+    const first = city(120).builder.registry.spans
+      .map((s) => `${s.x},${s.y},${s.baseZ},${s.span},${s.supports}`);
+    const second = city(120).builder.registry.spans
+      .map((s) => `${s.x},${s.y},${s.baseZ},${s.span},${s.supports}`);
+
+    expect(first).toEqual(second);
+  });
+
+  it('nessuna campata resta orfana quando l appoggio cambia livello', () => {
+    const { builder } = city();
+    const spans = builder.registry.spans;
+    expect(spans.length).toBeGreaterThan(0);
+
+    // Ogni campata viva deve avere appoggi vivi, e ogni appoggio deve essere
+    // ancora l'edificio su cui era nata: un upgrade rigenera la sagoma, quindi
+    // una campata sopravvissuta a un upgrade sarebbe attaccata a un volume che
+    // non esiste piu'.
+    for (const span of spans) {
+      for (const id of span.supports ?? []) {
+        expect(builder.registry.get(id), `appoggio ${id} di ${span.id}`).not.toBeNull();
+      }
+    }
+  });
+});
+
+/**
+ * Il debito che la 4.12 aveva lasciato aperto, e che la 4.5 chiude.
+ *
+ * I landmark lineari — il molo, la pista, il viadotto — attraversano piu' piani
+ * di chunk di una torre alta, e la 4.12 se l'era cavata alzando il tetto di
+ * chunk sporchi apposta per loro. Da qui in avanti si spezzano in ritagli come
+ * le campate, e il tetto torna a essere quello di ogni altra struttura: questi
+ * test verificano che nessuna ricetta venga scartata **in silenzio**, che e' il
+ * modo esatto in cui quel difetto si presenta.
+ */
+describe('Builder — i landmark si spezzano invece di farsi esentare', () => {
+  function flat(): { world: VoxelWorld; builder: Builder } {
+    const world = new VoxelWorld();
+    const terrain = testTerrain({ chunksX: 4, chunksY: 4, height: 24 });
+    return { world, builder: new Builder(world, terrain, 1337) };
+  }
+
+  // Che *ogni* ricetta ci stia, su ogni verso e a sedici offset diversi, lo
+  // verifica gia' «nessuna ricetta sfora il tetto di chunk sporchi» piu' sotto:
+  // quel test passava con il tetto alzato a quarantotto e passa ancora adesso
+  // che non c'e' piu' — ed e' la prova che i ritagli hanno reso l'eccezione
+  // inutile invece di nasconderla. Qui restano i due fatti che i ritagli
+  // aggiungono e che nessun altro test coprirebbe.
+
+  it('una ricetta lunga entra in coda a piu ritagli', () => {
+    const { builder } = flat();
+    // La pista e' ventisei colonne: oltre il lato di un ritaglio, quindi
+    // dev'essere spezzata. Se un giorno `segmentSide` salisse sopra l'ingombro
+    // piu' lungo del catalogo, questo test lo direbbe invece di lasciare che la
+    // segmentazione diventi codice morto.
+    builder.placeLandmark(40, 40, 'airport');
+    expect(builder.stats.growing).toBeGreaterThan(1);
+  });
+
+  it('i ritagli scrivono tutti i voxel della ricetta, non solo il primo', () => {
+    const { world, builder } = flat();
+    builder.placeLandmark(40, 40, 'airport');
+    while (builder.stats.growing > 0) builder.step();
+
+    const record = [...builder.registry.all].find((r) => r.landmark === 'airport');
+    expect(record).toBeDefined();
+    if (record === undefined) return;
+
+    let written = 0;
+    for (let z = record.baseZ; z < record.baseZ + record.height; z++) {
+      for (let y = record.y; y < record.y + footprintDepth(record); y++) {
+        for (let x = record.x; x < record.x + record.footprint; x++) {
+          if (world.getBlock(x, y, z) !== 0) written++;
+        }
+      }
+    }
+
+    const stamp = generateLandmark({ kind: 'airport', stage: 0, facing: record.facing as 0 });
+    expect(stamp).not.toBeNull();
+    // Il conto dei voxel pieni deve tornare esatto: un ritaglio dimenticato
+    // lascerebbe un buco che nessun errore segnala.
+    expect(written).toBe(solidCount(stamp!));
+  });
+});
+
+/**
  * Il gate della fase 4.1, verificato invece che dichiarato: un edificio nato da
  * un candidato della simulazione deve trovarsi sul fronte strada, con la faccia
  * d'accento e il portale rivolti alla carreggiata, e senza mai occupare la
@@ -138,7 +398,7 @@ describe('Builder — allineamento alla rete stradale', () => {
     }
     while (builder.stats.surfaceQueued > 0) builder.step();
 
-    return { world, builder, records: [...builder.registry.all] };
+    return { world, builder, records: buildingsOf(builder) };
   }
 
   /** true se la carreggiata sta davvero sul lato verso cui l'edificio affaccia. */
@@ -330,7 +590,7 @@ describe('Builder — opere di terra', () => {
     }
     while (builder.stats.surfaceQueued > 0) builder.step();
 
-    return { world, builder, records: [...builder.registry.all] };
+    return { world, builder, records: buildingsOf(builder) };
   }
 
   /**
@@ -556,13 +816,22 @@ describe('Builder — opere di terra', () => {
     const streets = new StreetNetwork(1337);
     const { world, builder } = grow(terrain, 26, 40);
 
+    // Una colonna sorvolata da una campata va saltata: `topSolid` troverebbe
+    // l'impalcato invece della carreggiata, e il salto che misurerebbe sarebbe
+    // il franco del ponte. Non basta `isOccupied`, ed e' voluto — una campata
+    // non prende suolo, quindi sotto di lei la strada c'e' ancora davvero.
+    const flownOver = (x: number, y: number): boolean =>
+      builder.registry.at(x, y).some((record) => record.span !== undefined);
+
     for (let y = 1; y < 127; y++) {
       for (let x = 1; x < 127; x++) {
         if (!streets.isPavement(x, y) || builder.registry.isOccupied(x, y)) continue;
+        if (flownOver(x, y)) continue;
         const here = topSolid(world, x, y);
         if (here < 0) continue;
         for (const [nx, ny] of [[x + 1, y], [x, y + 1]]) {
           if (!streets.isPavement(nx, ny) || builder.registry.isOccupied(nx, ny)) continue;
+          if (flownOver(nx, ny)) continue;
           const there = topSolid(world, nx, ny);
           if (there < 0) continue;
           // Un voxel per colonna e' la pendenza massima che una strada
@@ -775,7 +1044,7 @@ describe('Builder — isolati terrazzati', () => {
     }
     while (builder.stats.surfaceQueued > 0) builder.step();
 
-    return { world, builder, records: [...builder.registry.all] };
+    return { world, builder, records: buildingsOf(builder) };
   }
 
   /**

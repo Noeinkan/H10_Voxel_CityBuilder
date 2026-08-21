@@ -11,6 +11,113 @@ coincide con il messaggio di commit.
 
 ---
 
+## 2026-08-21 — Rete urbana in quota (Fase 4.5)
+
+- **Nuovo dominio** `src/world/spans/`: `config.ts`, `spanPlan.ts`,
+  `plazaPlan.ts`, `generate.ts`, `network.ts` e i loro test. La prima struttura
+  del progetto che **non poggia a terra**. Puro come `grading/` e `sites/`: ciò
+  che serve del luogo entra come predicato, quindi il gate della fase si verifica
+  in ambiente `node` senza mondo.
+- Una campata è **un record con un flag**, sulla strada della 4.12: `span` dice
+  quale generatore la disegna, `supports` con chi. L'unica cosa nuova è che **non
+  prende suolo** — il registry sdoppia l'indice per colonna, `columns` per
+  `overlaps` e `groundColumns` per `isOccupied`, e sotto un ponte restano la
+  carreggiata e il lotto. Al suolo vince l'edificio: una campata attraversata da
+  una costruzione nuova cade.
+- **Atterra dove il corpo c'è, non al filo dell'impronta.** Gli edifici sono
+  piramidali e la parete al bordo esiste solo nella fascia zero: cercare
+  l'appoggio lì dava zero campate su 6 911 coppie. Ora la ricerca rientra verso
+  il centro, e la campata sporge sopra le fasce basse dei propri appoggi — da cui
+  l'`except` di `overlaps`.
+- **La rete è un albero**: vince la campata che unisce due componenti separate, e
+  i cicli non si costruiscono. Il gate — un percorso continuo fra due isolati che
+  non passa dal suolo — diventa una conseguenza della regola, e `network.ts` tiene
+  insieme la decisione e la sua verifica.
+- Sezione in tre righe — travi, carreggiata, parapetto — con la mensola piena
+  alle testate: ciò che regge si vede. Il parapetto arriva da `emitRoofTech` come
+  per le terrazze della 4.3, quindi **il mesher non è stato toccato** e non c'è
+  nessuno slot di palette né tipo di superficie in più.
+- **Piazze in quota** sul cuore che la 4.1 aveva chiuso apposta, rette da tre o
+  più edifici su lati diversi, con il verde al centro sugli slot `grass*`.
+- **Chiuso il debito della 4.12**: `Growing` porta un'ancora invece di un record,
+  `sliceStamps` ritaglia gli stamp grandi e la coda `pending` ne fa comparire uno
+  per volta per struttura. `LANDMARK.maxDirtyChunks` sparisce — moli e piste
+  rispettano il tetto di ogni altra struttura.
+- Misura: i tick con `spanPass` (uno su venti) hanno mediana **3,9 ms** e p95
+  6,8 ms; gli altri restano a 0,001 ms di mediana. Il tick di passata **supera i
+  3 ms** di budget e va detto. Le tabelle di misura in `README.md` e
+  `src/sim/README.md` restano da rimisurare a mano.
+
+## 2026-08-21 — Una vista si può chiudere (Fase 4.13)
+
+Le guide dicevano *dove* è puntata la lente. Restava aperto il resto: entrati in
+una vista, il picker si chiude e il toast si spegne dopo due secondi, e da lì in
+poi non c'era **nessuna superficie** che dicesse cosa si stava guardando, quali
+tasti valessero lì dentro e — soprattutto — come tornare indietro. Uscire si
+poteva già: `V` fino a completare il giro delle cinque viste, oppure riaprire il
+picker e scegliere Normal. Nessuna delle due era scritta da qualche parte, e la
+prima chiede di attraversare tre viste che non si volevano vedere.
+
+- **Nuova targa in alto a sinistra** (`ViewBarModel` in `ViewMenuModel.ts`, dipinta
+  da `GameHud`). Resta a schermo finché una vista è accesa e risponde alle tre
+  domande che sopravvivono al gesto che l'ha aperta: nome della vista, gesto che
+  la punta, tasti che valgono **in questa vista**. Due bottoni: *Change view*
+  riapre il picker, *Exit view* riporta la città intera.
+- **I tasti sono contestuali.** `[` e `]` compaiono solo in Levels, `Q`/`E` solo
+  in Cutaway: elencarli sempre riporterebbe il difetto della card d'aiuto, che
+  pubblicizzava `[` come scorciatoia globale dove non muoveva niente. X-ray e
+  Block focus non ne hanno, e il vuoto è un fatto — si guidano col cursore.
+- **`Escape` esce dalla vista**, per ultimo. Era una decisione esplicita che non
+  lo facesse — «una vista non è un pannello aperto sopra il gioco» — e regge solo
+  finché esiste un'altra uscita ovvia, che non esisteva. Resta dopo lo strumento
+  perché con un catalizzatore in mano il toast promette già "Esc to cancel", e
+  dopo i pannelli: il primo colpo toglie ciò che copre, il secondo ciò che
+  nasconde.
+- La card d'aiuto e la riga di `Esc` dicono la stessa cosa; il pannello di debug
+  delle viste scende sotto la targa, che occupava lo stesso angolo.
+
+## 2026-08-21 — Le viste dicono dove sono puntate (Fase 4.11 / 4.13)
+
+Il motore della 4.11 c'era per intero e apriva davvero la città; quello che non
+c'era è **la spiegazione a schermo di cosa stesse facendo**. Tre viste su quattro
+si agganciano alla colonna sotto il cursore e nessuna lo diceva: si sceglieva una
+vista, compariva un riquadro retinato con il bordo netto da qualche parte, e non
+c'era modo di collegare le due cose. Nessuna uniform nuova, nessun modo nuovo,
+nessuna ricompilazione in più.
+
+- **Nuovo**: `src/engine/InspectGuides.ts`. Le linee che dicono dove è puntata la
+  lente — contorno del riquadro, carreggiata su cui cade la sezione, mirino con
+  asta sulla colonna a fuoco. Vive accanto a `InfluenceOverlay` e ne segue le
+  regole: fuori dalla profondità, buffer di dimensione fissa riscritti in posto,
+  nessuna geometria voxel. Il rettangolo che disegna **è** quello delle uniform
+  già composte e non un secondo calcolo, quindi contorno e retino non possono
+  divergere.
+- **Il bordo del riquadro sfuma** (`INSPECT.feather`). Il predicato era un
+  gradino: il retino cominciava su una riga di voxel allineata agli assi, e a
+  schermo quel bordo leggeva come un artefatto invece che come una lente. La
+  rampa è una moltiplicazione sulla densità che c'era già — niente colore nei
+  vertici, niente mesher — ed è inerte dove il rettangolo è aperto, quindi la
+  fetta e la sezione restano il taglio netto di prima.
+- **`modeHasLevel` separa due domande che erano una sola.** `modeCuts` diceva sia
+  «taglia?» sia «ha una quota?», e le due divergono su Cutaway: la sezione taglia
+  ma non guarda `sliceZ`, quindi la barra dei livelli compariva anche lì e si
+  trascinava a vuoto. `modeCuts` resta la regola che chiude un taglio quando si
+  prende uno strumento.
+- **`[` e `]` valgono solo dentro Levels.** Fuori non muovevano niente di
+  visibile e intanto **armavano** la quota, così che una fetta aperta dopo
+  partisse da un numero assoluto invece che dal suolo davanti — talvolta dentro
+  la collina. Adesso da un'altra vista aprono Levels e basta: il primo colpo
+  mostra il piano, il secondo lo muove. Per lo stesso motivo il ri-armo scatta
+  uscendo da Levels e non solo tornando alla città intera.
+- **Ogni vista dice come si punta**, non solo cosa mostra: `ViewOption.gesture`,
+  reso nel picker, nel toast di `V` e nella card di aiuto. Ci finisce anche il
+  fatto che la finestra dei raggi X è larga `xraySpan` colonne di *mondo* — a
+  inquadratura larga sembra non fare niente, e non è un numero da alzare.
+- **La card di aiuto nomina le quattro viste** e il pulsante *Views*, invece
+  della sola riga «V · Look inside the city». Le righe sono derivate da
+  `ViewMenuModel`, non riscritte: due elenchi paralleli divergono al primo
+  cambio.
+
 ## 2026-08-21 — Isolati terrazzati e cluster verticali (Fase 4.4)
 
 - **Un cluster è due numeri su un record, non un'entità.** Gli edifici adiacenti

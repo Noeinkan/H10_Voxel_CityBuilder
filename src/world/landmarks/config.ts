@@ -42,21 +42,12 @@ export const LANDMARK = {
    */
   stagesPerPass: 1,
 
-  /**
-   * Chunk che un landmark puo' marcare sporchi, fondazione inclusa.
-   *
-   * E' la stessa regola degli edifici con il tetto piu' alto, e la ragione non
-   * e' che un landmark sia piu' importante: e' che si piazza a **unita' per
-   * partita** invece che tre ogni due tick, e i suoi voxel compaiono attraverso
-   * lo stesso budget per frame di tutto il resto. Il tetto degli edifici e'
-   * tarato su una cadenza che qui non esiste.
-   *
-   * Non e' una manopola da girare per far entrare una ricetta: e' la rete che
-   * dice che una ricetta e' cresciuta troppo. Un test verifica che tutte ci
-   * stiano, su ogni verso e su piu' quote di base; quando una non ci stara'
-   * piu', andra' spezzata in segmenti — non esentata.
-   */
-  maxDirtyChunks: 48,
+  // Qui stava `maxDirtyChunks: 48`, il tetto di chunk sporchi alzato apposta per
+  // i landmark. Non c'e' piu', ed e' la 4.5 ad averlo tolto: il suo stesso
+  // commento diceva che una ricetta troppo grossa «andra' spezzata in segmenti —
+  // non esentata», e adesso lo e'. `sliceStamps` la fa comparire a ritagli, e il
+  // tetto torna a essere quello di ogni altra struttura,
+  // `BUILDER.maxDirtyChunksPerBuilding`, senza eccezioni da mantenere.
 
   /**
    * Colore del grembiule fuori dal riquadro della struttura.

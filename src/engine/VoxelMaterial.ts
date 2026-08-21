@@ -13,7 +13,7 @@ import {
 import { PALETTE_SIZE, toPaletteArray } from './palette';
 import { PALETTE_SLOTS } from './paletteSlots';
 import { MESH_UNITS_PER_VOXEL } from './mesher/meshTypes';
-import { isActive, isCut, type InspectUniforms } from './inspect';
+import { INSPECT, isActive, isCut, type InspectUniforms } from './inspect';
 import { FACE_NORMALS, sunDirection } from './lighting';
 import type { Atmosphere } from './themes/theme';
 import { SURFACE_KIND } from '../world/visualBlock';
@@ -99,20 +99,28 @@ float bayer4(vec2 p) {
   return (4.0 * bayer2(mod(floor(cell * 0.5), 2.0)) + bayer2(mod(cell, 2.0))) / 16.0;
 }
 
-bool inspectHidden(vec3 p) {
-  bool beyond = dot(uInspectPlane.xyz, p) > uInspectPlane.w;
-  bool inside =
-    p.x >= uInspectRect.x && p.y >= uInspectRect.y &&
-    p.x <= uInspectRect.z && p.y <= uInspectRect.w;
-  // I due predicati si intersecano, e il rettangolo porta la sua polarita': i
-  // raggi X nascondono dentro la finestra, l'isolamento fuori dall'isolato.
-  return beyond && (uInspectInside > 0.0 ? inside : !inside);
+float inspectDensity(vec3 p) {
+  // Primo predicato: oltre il semipiano. Fuori di li' non si nasconde niente,
+  // e non c'e' motivo di misurare la distanza dal bordo.
+  if (dot(uInspectPlane.xyz, p) <= uInspectPlane.w) return 0.0;
+  // Secondo predicato, con la sua rampa: edge e' la distanza dal bordo del
+  // rettangolo con il segno della polarita', positiva dove si nasconde. I raggi
+  // X nascondono dentro la finestra, l'isolamento fuori dall'isolato, e la
+  // sfumatura vale per entrambi senza doverli distinguere.
+  vec2 d = min(p.xy - uInspectRect.xy, uInspectRect.zw - p.xy);
+  float edge = min(d.x, d.y) * (uInspectInside > 0.0 ? 1.0 : -1.0);
+  // Con il rettangolo aperto del taglio la distanza e' l'infinito pratico: la
+  // rampa satura a 1 e la fetta resta il taglio netto di prima.
+  return uInspectVeil * smoothstep(0.0, ${INSPECT.feather.toFixed(1)}, edge);
 }
 `;
 
 /** Prima riga di main: scartare costa meno di tutto cio' che verrebbe dopo. */
 const inspectDiscard = /* glsl */ `
-  if (uInspectVeil > 0.0 && inspectHidden(vWorldPosition) && bayer4(gl_FragCoord.xy) < uInspectVeil) discard;
+  if (uInspectVeil > 0.0) {
+    float density = inspectDensity(vWorldPosition);
+    if (density > 0.0 && bayer4(gl_FragCoord.xy) < density) discard;
+  }
 `;
 
 /**

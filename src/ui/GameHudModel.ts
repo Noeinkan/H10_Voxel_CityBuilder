@@ -125,7 +125,7 @@ export interface GameHudModel {
   readonly unlockedSectors: number;
 }
 
-export type EscapeTarget = 'views' | 'themes' | 'policies' | 'help' | 'tool' | 'none';
+export type EscapeTarget = 'views' | 'themes' | 'policies' | 'help' | 'tool' | 'view' | 'none';
 
 /** Mantiene stabili i bottoni durante il gesto pointerdown/click. */
 export function decisionNeedsRepaint(
@@ -317,10 +317,20 @@ export function buildGameHudModel(stats: GrowthStats | null): GameHudModel {
  * Cosa chiude Escape, in ordine di priorita'.
  *
  * I parametri sono nello stesso ordine in cui vengono provati: la firma si legge
- * come la regola. Escape non spegne mai una vista attiva — quella non e' un
- * pannello aperto sopra il gioco ma il modo in cui si sta guardando la citta',
- * e sparire a un tasto di annullamento sarebbe una sorpresa. Si chiude il
- * picker, e la vista resta.
+ * come la regola. Si sfoglia dall'alto: prima i pannelli aperti sopra il gioco,
+ * poi lo strumento in mano, e per **ultima** la vista.
+ *
+ * Che la vista fosse esclusa era una decisione, ed era sbagliata. Il
+ * ragionamento — non e' un pannello, e' il modo in cui si guarda la citta' —
+ * regge finche' esiste un altro modo ovvio di tornare indietro, e non esisteva:
+ * restavano `V` premuto fino a completare il giro delle cinque viste, oppure
+ * riaprire il picker e scegliere Normal. Chi si trovava la citta' retinata non
+ * aveva una via d'uscita ma un labirinto, e un tasto di annullamento che si
+ * rifiuta di annullare l'unica cosa evidentemente in corso non protegge niente.
+ *
+ * Ultima e non prima: con uno strumento in mano il toast promette gia' "Esc to
+ * cancel", e mangiare quel colpo per spegnere una vista tradirebbe la promessa
+ * scritta a schermo. Prima si posa lo strumento, poi si esce.
  */
 export function resolveEscapeTarget(
   viewsOpen: boolean,
@@ -328,12 +338,14 @@ export function resolveEscapeTarget(
   policiesOpen: boolean,
   helpOpen: boolean,
   tool: GameTool,
+  viewActive: boolean,
 ): EscapeTarget {
   if (viewsOpen) return 'views';
   if (themesOpen) return 'themes';
   if (policiesOpen) return 'policies';
   if (helpOpen) return 'help';
-  return tool.kind === 'none' ? 'none' : 'tool';
+  if (tool.kind !== 'none') return 'tool';
+  return viewActive ? 'view' : 'none';
 }
 
 export function selectionMessage(tool: GameTool, catalysts: readonly HudAction[]): string | null {

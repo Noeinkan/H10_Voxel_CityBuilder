@@ -22,6 +22,11 @@
  * manopola per le due famiglie — velare e tagliare — e non due percorsi separati.
  * Velare non toglie niente e non ha capping da risolvere; tagliare lo chiede, e
  * il tappo arriva dalle back-face della stessa geometria.
+ *
+ * Da qui esce anche **cosa disegnare per spiegare la vista** (`inspectGuide`).
+ * Sono gli stessi numeri delle uniform, riletti: il contorno che si vede a
+ * schermo e' per costruzione il rettangolo che il fragment sta usando, e non
+ * puo' andare fuori sincrono con lui.
  */
 
 /** I quattro modi, piu' lo spento. */
@@ -74,6 +79,21 @@ export const INSPECT = {
 
   /** Densita' che vale taglio: il retino scarta ogni pixel. */
   cut: 1,
+
+  /**
+   * Sfumatura del bordo del rettangolo, in voxel.
+   *
+   * Senza, il predicato e' un gradino: il retino comincia e finisce su una riga
+   * di voxel allineata agli assi, e a schermo quel bordo netto legge come un
+   * artefatto di rendering invece che come una lente — e' il primo motivo per
+   * cui i raggi X sembravano «un quadrato trasparente». La rampa non cambia il
+   * colore di niente (invariante 4) e non tocca il mesher (invariante 6): e' la
+   * stessa densita' di prima, moltiplicata per la distanza dal bordo.
+   *
+   * Inerte dove il rettangolo e' aperto — la fetta e la sezione — perche' li'
+   * la distanza dal bordo e' l'infinito pratico di `OPEN_RECT`.
+   */
+  feather: 4,
 
   /**
    * Mezzo lato della finestra dei raggi X, in colonne.
@@ -304,7 +324,69 @@ export function modeCuts(mode: InspectMode): boolean {
   return mode === INSPECT_MODE.slice || mode === INSPECT_MODE.section;
 }
 
+/**
+ * true se il modo ha davvero una **quota da muovere**.
+ *
+ * Non e' `modeCuts`, e confonderle era un difetto visibile: la sezione taglia
+ * ma non guarda `sliceZ`, quindi la barra dei livelli compariva anche li' e si
+ * trascinava a vuoto. Le due domande — «taglia?» per la regola degli strumenti,
+ * «ha una quota?» per la barra e per i tasti — coincidono su `slice` e divergono
+ * su `section`, ed e' l'unico posto in cui la differenza si nota.
+ */
+export function modeHasLevel(mode: InspectMode): boolean {
+  return mode === INSPECT_MODE.slice;
+}
+
 /** true se una vista e' attiva: serve a decidere quando comporre la variante. */
 export function isActive(uniforms: InspectUniforms): boolean {
   return uniforms.veil > 0;
+}
+
+/** Oltre questa distanza il rettangolo e' «aperto» e non un bordo vero. */
+const RECT_LIMIT = 1e8;
+
+/**
+ * true se il rettangolo delimita davvero qualcosa.
+ *
+ * `OPEN_RECT` e' il modo di dire «nessun secondo predicato», e un contorno
+ * disegnato a mille chilometri non e' una guida: la fetta e la sezione non hanno
+ * un riquadro da mostrare, e questo e' il posto dove si distingue.
+ */
+export function isBoundedRect(uniforms: InspectUniforms): boolean {
+  return uniforms.rect[0] > -RECT_LIMIT && uniforms.rect[2] < RECT_LIMIT;
+}
+
+/**
+ * Cosa disegnare **sopra** la scena perche' la vista si spieghi da sola.
+ *
+ * Il difetto che questa funzione chiude: tre viste su quattro si agganciano alla
+ * colonna sotto il cursore, e a schermo non c'era niente che lo dicesse. Il velo
+ * compariva senza causa visibile, e chi guardava non aveva modo di sapere ne'
+ * dove fosse puntata la lente ne' quanto fosse larga.
+ *
+ * Non decide una geometria: dice **quali fatti** vanno mostrati, e chi li disegna
+ * — `InspectGuides`, che e' l'unico pezzo che conosce Three — li traduce in linee
+ * sul terreno. Il rettangolo arriva dalle uniform gia' composte e non ricalcolato
+ * dallo stato: cosi' il contorno e il retino non possono divergere.
+ */
+export interface InspectGuide {
+  /** Riquadro da contornare in coordinate di mondo, o null se non ce n'e' uno. */
+  readonly rect: readonly [number, number, number, number] | null;
+  /** Carreggiata su cui cade il taglio verticale. */
+  readonly line: InspectSection | null;
+  /** Colonna su cui la vista e' agganciata. */
+  readonly focus: InspectFocus | null;
+}
+
+const NO_GUIDE: InspectGuide = { rect: null, line: null, focus: null };
+
+export function inspectGuide(state: InspectState, uniforms: InspectUniforms): InspectGuide {
+  if (!isActive(uniforms)) return NO_GUIDE;
+  return {
+    rect: isBoundedRect(uniforms) ? uniforms.rect : null,
+    line: state.mode === INSPECT_MODE.section ? state.section : null,
+    // La fetta non si aggancia a niente — taglia il mondo intero — e un
+    // marcatore sotto il cursore direbbe una cosa falsa.
+    focus: state.mode === INSPECT_MODE.slice ? null : state.focus,
+  };
 }

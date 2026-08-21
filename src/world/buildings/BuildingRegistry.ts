@@ -6,6 +6,7 @@ import {
   type Specialization,
 } from '../../sim';
 import type { BuildingForm } from './config';
+import type { SpanKind } from '../spans/config';
 import { toChunk } from '../chunkCoords';
 
 /**
@@ -128,6 +129,32 @@ export interface BuildingRecord {
    * parte da un'altra quota, e bucherebbe lo zoccolo sotto il vicino.
    */
   readonly baseBand?: number;
+
+  /**
+   * Tipo di campata, se questo record e' una campata e non un edificio.
+   *
+   * **E' l'altra meta' del mestiere di `landmark`**, e la stessa mossa: un flag
+   * dice quale generatore disegna lo stamp, e tutto il resto — occupazione,
+   * collisione, budget di chunk, comparsa a budget — resta la macchina che c'e'
+   * gia'. A distinguere una campata da un landmark c'e' un fatto solo, ed e'
+   * quello che la fase 4.5 esiste per introdurre: **una campata non prende
+   * suolo**. Non entra in `groundColumns`, quindi sotto un ponte la carreggiata
+   * si dipinge ancora e i lotti si costruiscono ancora.
+   *
+   * `baseZ` smette qui di venire dal terreno: e' la prima cosa che poggia su
+   * altre cose, ed e' l'assunzione che la 4.9 dovra' rompere comunque.
+   */
+  readonly span?: SpanKind;
+
+  /**
+   * Gli id degli edifici su cui la campata poggia.
+   *
+   * Sono il suo posto nella rete e insieme il suo guinzaglio: quando uno di
+   * questi cambia livello o sagoma la campata cade, perche' la sagoma su cui si
+   * appoggiava non esiste piu'. Un appoggio che fosse solo un numero lascerebbe
+   * campate a mezz'aria, che e' esattamente cio' che il vincolo della fase vieta.
+   */
+  readonly supports?: readonly number[];
 }
 
 /** Profondita' dell'impronta lungo y: quella dichiarata, o il lato quadrato. */
@@ -158,11 +185,16 @@ export interface ReadonlyBuildingRegistry {
   readonly all: IterableIterator<BuildingRecord>;
   get(id: number): BuildingRecord | null;
   /**
-   * true se un qualunque edificio copre la colonna.
+   * true se un qualunque edificio **prende il suolo** di questa colonna.
    *
    * E' `at(x, y).length > 0` senza il costo di `at`, che materializza un array
    * di record per rispondere. La differenza non conta su una colonna, conta
    * quando la ricerca di un lotto ne interroga qualche migliaio per infornata.
+   *
+   * **Le campate non contano.** La domanda qui e' «questo suolo e' preso», e un
+   * ponte scavalca il suolo senza prenderlo: sotto ci passa ancora la
+   * carreggiata e ci nasce ancora un lotto. Chi vuole sapere se un *volume* e'
+   * libero chiede a `overlaps`, che confronta anche le quote.
    */
   isOccupied(x: number, y: number): boolean;
   at(x: number, y: number): readonly BuildingRecord[];
@@ -174,12 +206,26 @@ export interface ReadonlyBuildingRegistry {
     baseZ: number,
     height: number,
     footprintY?: number,
+    except?: readonly number[],
   ): boolean;
   /** Quota della prima cella libera sopra cio' che gia' occupa la colonna. */
   topOf(x: number, y: number): number;
   readonly count: number;
   /** Landmark dei catalizzatori: contati a parte, mai fra gli edifici. */
   readonly landmarkCount: number;
+  /**
+   * Le campate esistenti, in ordine di inserimento.
+   *
+   * Sono unita', non migliaia, e si tengono in un indice proprio invece di
+   * filtrare `all`: la rete in quota si ricostruisce a ogni passata, e farlo
+   * scandendo la citta' intera sarebbe l'unica cosa nel ciclo il cui costo
+   * cresce con il numero di edifici.
+   */
+  readonly spans: readonly BuildingRecord[];
+  /** Quante campate esistono, senza materializzarle. */
+  readonly spanCount: number;
+  /** Le campate che poggiano su questo edificio. */
+  spansOf(supportId: number): readonly BuildingRecord[];
   readonly countsByClass: readonly number[];
   /** Edifici che *ospitano* un uso come secondo, con la stessa indicizzazione. */
   readonly mixedByClass: readonly number[];
@@ -201,6 +247,29 @@ export class BuildingRegistry implements ReadonlyBuildingRegistry {
   private readonly columns = new Map<string, number[]>();
 
   /**
+   * Le sole colonne di cui qualcuno **prende il suolo**.
+   *
+   * E' `columns` meno le campate, e vive separato invece di essere un filtro
+   * perche' `isOccupied` sta nel percorso caldo di `placeLot`, dove le colonne
+   * si contano a migliaia per infornata: filtrare vorrebbe dire risolvere gli id
+   * in record proprio li'. Cosi' la domanda «questo suolo e' preso» costa
+   * esattamente quello che costava prima, e un ponte non toglie un lotto a
+   * nessuno.
+   */
+  private readonly groundColumns = new Map<string, number[]>();
+
+  /** Le campate, per poterle scorrere senza scandire la citta'. */
+  private readonly spanIds = new Set<number>();
+
+  /**
+   * Campate per edificio che le regge.
+   *
+   * E' il guinzaglio del vincolo della fase: quando un appoggio cambia livello o
+   * sagoma, da qui si ritrova in O(1) cosa deve cadere con lui.
+   */
+  private readonly spansBySupport = new Map<number, number[]>();
+
+  /**
    * Id per colonna di chunk, con la stessa chunkatura del resto del progetto.
    *
    * Serve solo a `withinRadius`: senza, una query per raggio scandirebbe tutti i
@@ -217,13 +286,38 @@ export class BuildingRegistry implements ReadonlyBuildingRegistry {
   private landmarks = 0;
   private nextId = 1;
 
-  /** Edifici veri: i landmark occupano il registry ma non sono edifici. */
+  /**
+   * Edifici veri: landmark e campate occupano il registry ma non sono edifici.
+   *
+   * La simulazione non li ha mai registrati con `addBuilding`, e contarli qui
+   * farebbe divergere gli istogrammi dell'HUD dai conteggi su cui il bilancio
+   * ragiona.
+   */
   get count(): number {
-    return this.records.size - this.landmarks;
+    return this.records.size - this.landmarks - this.spanIds.size;
   }
 
   get landmarkCount(): number {
     return this.landmarks;
+  }
+
+  get spans(): readonly BuildingRecord[] {
+    const out: BuildingRecord[] = [];
+    for (const id of this.spanIds) {
+      const record = this.records.get(id);
+      if (record !== undefined) out.push(record);
+    }
+    return out;
+  }
+
+  get spanCount(): number {
+    return this.spanIds.size;
+  }
+
+  spansOf(supportId: number): readonly BuildingRecord[] {
+    const ids = this.spansBySupport.get(supportId);
+    if (ids === undefined) return EMPTY;
+    return ids.map((id) => this.records.get(id)).filter(isRecord);
   }
 
   get countsByClass(): readonly number[] {
@@ -258,7 +352,7 @@ export class BuildingRegistry implements ReadonlyBuildingRegistry {
   }
 
   isOccupied(x: number, y: number): boolean {
-    const ids = this.columns.get(`${x},${y}`);
+    const ids = this.groundColumns.get(`${x},${y}`);
     return ids !== undefined && ids.length > 0;
   }
 
@@ -308,6 +402,12 @@ export class BuildingRegistry implements ReadonlyBuildingRegistry {
    * Due volumi sulla stessa colonna ma con intervalli di quota disgiunti non si
    * sovrappongono: e' la condizione che permette a un edificio di poggiare
    * esattamente sul tetto di un altro.
+   *
+   * **`except` e' per chi si appoggia a qualcosa.** Una campata atterra dove i
+   * corpi si affacciano davvero, e le fasce alte sono rientrate: l'impalcato
+   * passa quindi sopra le fasce basse dei propri appoggi, dentro il loro riquadro
+   * ma nel loro vuoto. Toccare cio' a cui si e' attaccati non e' una collisione —
+   * e' come ci si attacca. Tutto il resto resta vietato.
    */
   overlaps(
     x: number,
@@ -316,6 +416,7 @@ export class BuildingRegistry implements ReadonlyBuildingRegistry {
     baseZ: number,
     height: number,
     footprintY: number = footprint,
+    except: readonly number[] = EMPTY_IDS,
   ): boolean {
     const top = baseZ + height;
     for (let dy = 0; dy < footprintY; dy++) {
@@ -323,6 +424,7 @@ export class BuildingRegistry implements ReadonlyBuildingRegistry {
         const ids = this.columns.get(`${x + dx},${y + dy}`);
         if (ids === undefined) continue;
         for (const id of ids) {
+          if (except.includes(id)) continue;
           const record = this.records.get(id);
           if (record === undefined) continue;
           if (record.baseZ < top && baseZ < record.baseZ + record.height) return true;
@@ -338,15 +440,7 @@ export class BuildingRegistry implements ReadonlyBuildingRegistry {
   add(record: Omit<BuildingRecord, 'id'>): BuildingRecord {
     const stored: BuildingRecord = { ...record, id: this.nextId++ };
     this.records.set(stored.id, stored);
-
-    const depth = footprintDepth(stored);
-    for (let dy = 0; dy < depth; dy++) {
-      for (let dx = 0; dx < stored.footprint; dx++) {
-        push(this.columns, `${stored.x + dx},${stored.y + dy}`, stored.id);
-      }
-    }
-    push(this.buckets, `${toChunk(stored.x)},${toChunk(stored.y)}`, stored.id);
-
+    this.index(stored);
     this.tally(stored, 1);
     return stored;
   }
@@ -363,17 +457,57 @@ export class BuildingRegistry implements ReadonlyBuildingRegistry {
     this.remove(id);
     const stored: BuildingRecord = { ...next, id };
     this.records.set(id, stored);
-
-    const depth = footprintDepth(stored);
-    for (let dy = 0; dy < depth; dy++) {
-      for (let dx = 0; dx < stored.footprint; dx++) {
-        push(this.columns, `${stored.x + dx},${stored.y + dy}`, id);
-      }
-    }
-    push(this.buckets, `${toChunk(stored.x)},${toChunk(stored.y)}`, id);
-
+    this.index(stored);
     this.tally(stored, 1);
     return stored;
+  }
+
+  /**
+   * Mette un record in tutti gli indici che lo riguardano.
+   *
+   * `columns` li prende tutti, perche' e' quello che regge `overlaps`: niente
+   * puo' essere costruito **attraverso** una campata. `groundColumns` prende
+   * solo chi il suolo lo occupa davvero, ed e' la differenza che permette a un
+   * ponte di scavalcare una carreggiata senza togliere a nessuno ne' la strada
+   * ne' il lotto.
+   */
+  private index(record: BuildingRecord): void {
+    const depth = footprintDepth(record);
+    const takesGround = record.span === undefined;
+
+    for (let dy = 0; dy < depth; dy++) {
+      for (let dx = 0; dx < record.footprint; dx++) {
+        const key = `${record.x + dx},${record.y + dy}`;
+        push(this.columns, key, record.id);
+        if (takesGround) push(this.groundColumns, key, record.id);
+      }
+    }
+    push(this.buckets, `${toChunk(record.x)},${toChunk(record.y)}`, record.id);
+
+    if (takesGround) return;
+    this.spanIds.add(record.id);
+    for (const support of record.supports ?? EMPTY_IDS) {
+      push(this.spansBySupport, support, record.id);
+    }
+  }
+
+  /** L'inverso esatto di `index`. */
+  private unindex(record: BuildingRecord): void {
+    const depth = footprintDepth(record);
+    for (let dy = 0; dy < depth; dy++) {
+      for (let dx = 0; dx < record.footprint; dx++) {
+        const key = `${record.x + dx},${record.y + dy}`;
+        drop(this.columns, key, record.id);
+        drop(this.groundColumns, key, record.id);
+      }
+    }
+    drop(this.buckets, `${toChunk(record.x)},${toChunk(record.y)}`, record.id);
+
+    if (record.span === undefined) return;
+    this.spanIds.delete(record.id);
+    for (const support of record.supports ?? EMPTY_IDS) {
+      drop(this.spansBySupport, support, record.id);
+    }
   }
 
   /**
@@ -391,6 +525,9 @@ export class BuildingRegistry implements ReadonlyBuildingRegistry {
       this.landmarks += delta;
       return;
     }
+    // Vale identico per una campata, che non e' nemmeno appoggiata al suolo:
+    // il suo conto lo tiene `spanIds`, ed e' `index` a riempirlo.
+    if (record.span !== undefined) return;
 
     this.classCounts[record.class] += delta;
     if (record.mixed !== undefined) this.mixedCounts[record.mixed] += delta;
@@ -402,32 +539,28 @@ export class BuildingRegistry implements ReadonlyBuildingRegistry {
     }
   }
 
-  /** Toglie un record da tutti e due gli indici. */
+  /** Toglie un record da tutti gli indici. */
   remove(id: number): boolean {
     const record = this.records.get(id);
     if (record === undefined) return false;
 
-    const depth = footprintDepth(record);
-    for (let dy = 0; dy < depth; dy++) {
-      for (let dx = 0; dx < record.footprint; dx++) {
-        drop(this.columns, `${record.x + dx},${record.y + dy}`, id);
-      }
-    }
-    drop(this.buckets, `${toChunk(record.x)},${toChunk(record.y)}`, id);
-
+    this.unindex(record);
     this.tally(record, -1);
     this.records.delete(id);
     return true;
   }
 }
 
-function push(index: Map<string, number[]>, key: string, id: number): void {
+/** Nessun appoggio: un edificio non e' una campata e non ne ha. */
+const EMPTY_IDS: readonly number[] = [];
+
+function push<K>(index: Map<K, number[]>, key: K, id: number): void {
   const existing = index.get(key);
   if (existing === undefined) index.set(key, [id]);
   else existing.push(id);
 }
 
-function drop(index: Map<string, number[]>, key: string, id: number): void {
+function drop<K>(index: Map<K, number[]>, key: K, id: number): void {
   const existing = index.get(key);
   if (existing === undefined) return;
   const at = existing.indexOf(id);

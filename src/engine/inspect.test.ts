@@ -5,9 +5,12 @@ import {
   INSPECT_MODES,
   clampSliceZ,
   cycleInspectMode,
+  inspectGuide,
   inspectUniforms,
+  isBoundedRect,
   isCut,
   modeCuts,
+  modeHasLevel,
   parseInspectMode,
   sectionAxis,
   type InspectMode,
@@ -209,8 +212,8 @@ describe('modi e quota', () => {
   it('il predicato sul modo dice sempre la stessa cosa di quello sulle uniform', () => {
     // Due strade allo stesso fatto: `modeCuts` decide prima, con il modo in
     // mano, `isCut` dopo, sul payload composto. Divergerebbero in silenzio — la
-    // barra dei livelli comparirebbe dove non c'e' quota da muovere — e questo
-    // e' l'unico posto che se ne accorge.
+    // regola che chiude un taglio quando si prende uno strumento smetterebbe di
+    // valere — e questo e' l'unico posto che se ne accorge.
     for (const mode of INSPECT_MODES) {
       const u = inspectUniforms(stateOf({
         mode,
@@ -220,5 +223,118 @@ describe('modi e quota', () => {
       }));
       expect(modeCuts(mode)).toBe(isCut(u));
     }
+  });
+
+  it('solo la fetta ha una quota, e non e’ la stessa domanda di «taglia»', () => {
+    expect(modeHasLevel(INSPECT_MODE.slice)).toBe(true);
+    // Il punto della distinzione: la sezione taglia ma non guarda `sliceZ`, e
+    // finche' le due domande erano una sola la barra dei livelli compariva in
+    // Cutaway e si trascinava senza muovere niente.
+    expect(modeCuts(INSPECT_MODE.section)).toBe(true);
+    expect(modeHasLevel(INSPECT_MODE.section)).toBe(false);
+    for (const mode of [INSPECT_MODE.off, INSPECT_MODE.xray, INSPECT_MODE.block]) {
+      expect(modeHasLevel(mode)).toBe(false);
+    }
+  });
+
+  it('la quota non entra nelle uniform di nessun modo che non sia la fetta', () => {
+    // La prova che `modeHasLevel` dice il vero: cambiando `sliceZ` da sotto,
+    // solo la fetta produce un payload diverso.
+    for (const mode of INSPECT_MODES) {
+      const patch = {
+        mode,
+        focus: { x: 10, y: 10, z: 10 },
+        block: { x0: 0, y0: 0, x1: 8, y1: 8 },
+        section: { axis: 1, at: 64 },
+      } as const;
+      const low = inspectUniforms(stateOf({ ...patch, sliceZ: 12 }));
+      const high = inspectUniforms(stateOf({ ...patch, sliceZ: 96 }));
+      expect(low.plane.join() !== high.plane.join()).toBe(modeHasLevel(mode));
+    }
+  });
+});
+
+describe('inspectGuide', () => {
+  function guideOf(patch: Partial<InspectState>) {
+    const state = stateOf(patch);
+    return inspectGuide(state, inspectUniforms(state));
+  }
+
+  it('a vista spenta non c’e’ niente da disegnare', () => {
+    expect(guideOf({})).toEqual({ rect: null, line: null, focus: null });
+  });
+
+  it('i raggi X mostrano la finestra e la colonna su cui e’ centrata', () => {
+    const focus = { x: 100, y: 60, z: 40 };
+    const guide = guideOf({ mode: INSPECT_MODE.xray, focus });
+
+    expect(guide.focus).toEqual(focus);
+    expect(guide.line).toBeNull();
+    // Il contorno **e'** il rettangolo delle uniform, non un secondo calcolo:
+    // e' l'unico modo di garantire che linea e retino non divergano.
+    expect(guide.rect).toEqual([
+      focus.x - INSPECT.xraySpan,
+      focus.y - INSPECT.xraySpan,
+      focus.x + INSPECT.xraySpan,
+      focus.y + INSPECT.xraySpan,
+    ]);
+  });
+
+  it('l’isolato mostra il proprio riquadro, estremi inclusi come nel retino', () => {
+    const guide = guideOf({
+      mode: INSPECT_MODE.block,
+      focus: { x: 12, y: 22, z: 40 },
+      block: { x0: 10, y0: 20, x1: 30, y1: 40 },
+    });
+
+    expect(guide.rect).toEqual([10, 20, 31, 41]);
+    expect(guide.focus).not.toBeNull();
+  });
+
+  it('la sezione mostra la carreggiata, e non un riquadro che non esiste', () => {
+    const guide = guideOf({
+      mode: INSPECT_MODE.section,
+      focus: { x: 12, y: 22, z: 40 },
+      section: { axis: 1, at: 64 },
+    });
+
+    expect(guide.line).toEqual({ axis: 1, at: 64 });
+    // `OPEN_RECT` non e' un bordo: disegnarlo metterebbe un contorno a mille
+    // chilometri dalla citta'.
+    expect(guide.rect).toBeNull();
+  });
+
+  it('la fetta non si aggancia a niente e non marca nessuna colonna', () => {
+    const guide = guideOf({ mode: INSPECT_MODE.slice, focus: { x: 12, y: 22, z: 40 } });
+
+    expect(guide).toEqual({ rect: null, line: null, focus: null });
+  });
+
+  it('senza colonna a fuoco non compare nessuna guida', () => {
+    for (const mode of [INSPECT_MODE.xray, INSPECT_MODE.block]) {
+      expect(guideOf({ mode, focus: null })).toEqual({ rect: null, line: null, focus: null });
+    }
+  });
+});
+
+describe('isBoundedRect', () => {
+  it('distingue una finestra vera dal rettangolo aperto del taglio', () => {
+    const windowed = inspectUniforms(stateOf({
+      mode: INSPECT_MODE.xray,
+      focus: { x: 10, y: 10, z: 10 },
+    }));
+    const open = inspectUniforms(stateOf({ mode: INSPECT_MODE.slice }));
+
+    expect(isBoundedRect(windowed)).toBe(true);
+    expect(isBoundedRect(open)).toBe(false);
+  });
+});
+
+describe('sfumatura del bordo', () => {
+  it('la rampa e’ larga meno della finestra che deve ammorbidire', () => {
+    // Una sfumatura piu' larga della meta' della finestra non lascerebbe nessun
+    // punto a piena densita': i raggi X non aprirebbero piu' niente.
+    expect(INSPECT.feather).toBeGreaterThan(0);
+    expect(INSPECT.feather).toBeLessThan(INSPECT.xraySpan);
   });
 });

@@ -11,6 +11,7 @@ import {
 } from 'three';
 import { ChunkRenderer } from './engine/ChunkRenderer';
 import { InfluenceOverlay } from './engine/InfluenceOverlay';
+import { InspectGuides } from './engine/InspectGuides';
 import { PlacementCursor } from './engine/PlacementCursor';
 import { FrameTiming } from './engine/FrameTiming';
 import {
@@ -20,8 +21,10 @@ import {
   INSPECT_NAMES,
   clampSliceZ,
   cycleInspectMode,
+  inspectGuide,
   inspectUniforms,
   isCut,
+  modeHasLevel,
   parseInspectMode,
   sectionAxis,
   type InspectMode,
@@ -399,6 +402,15 @@ scene.add(preview.group);
 
 const influenceOverlay = terrain !== null && growEnabled ? new InfluenceOverlay(terrain.map) : null;
 if (influenceOverlay !== null) scene.add(influenceOverlay.group);
+
+/**
+ * Le linee che dicono dove e' puntata la vista.
+ *
+ * Non dipendono da `growEnabled`: le viste sono dell'harness prima ancora che
+ * del gioco, e in `?scene=noise` restano l'unico modo di leggere un taglio.
+ */
+const inspectGuides = terrain !== null ? new InspectGuides(terrain.map, terrainRegion) : null;
+if (inspectGuides !== null) scene.add(inspectGuides.group);
 
 /**
  * La rete stradale vista dall'harness.
@@ -1047,8 +1059,12 @@ function applyInspect(): void {
     if (inspectMode === INSPECT_MODE.block) inspectBlockRect = streets.blockRect(block);
   }
 
-  inspectPayload = inspectUniforms(inspectStateOf());
+  const state = inspectStateOf();
+  inspectPayload = inspectUniforms(state);
   paletteHandle.setInspect(inspectPayload);
+  // Le guide leggono le uniform gia' composte, non lo stato: il contorno che si
+  // vede e' per costruzione il rettangolo che il fragment sta usando.
+  inspectGuides?.update(inspectGuide(state, inspectPayload));
 }
 
 function setInspectMode(mode: InspectMode): void {
@@ -1058,11 +1074,14 @@ function setInspectMode(mode: InspectMode): void {
   // ritroverebbe puntati sull'isolato di dieci minuti prima, senza capire
   // perche' la finestra si e' aperta la'.
   inspectFocus = null;
-  // Tornando alla citta' intera la quota si ri-arma, e una fetta riaperta
-  // riparte dal suolo che si sta guardando invece che da una quota scelta
-  // mezz'ora fa, che nel frattempo puo' essere finita sottoterra. Solo `?slice=`
-  // resta fisso: li' la quota e' stata chiesta esplicitamente.
-  if (mode === INSPECT_MODE.off) sliceZChosen = sliceZFromUrl;
+  // Uscendo da Levels la quota si ri-arma, e una fetta riaperta riparte dal
+  // suolo che si sta guardando invece che da una quota scelta mezz'ora fa, che
+  // nel frattempo puo' essere finita sottoterra. Vale per ogni uscita e non solo
+  // per il ritorno alla citta' intera: passando da Levels a un'altra vista dal
+  // picker si saltava il ri-armo, ed era l'unico modo di ritrovarsi una fetta
+  // dentro la collina. Solo `?slice=` resta fisso: li' la quota e' stata
+  // chiesta esplicitamente.
+  if (!modeHasLevel(mode)) sliceZChosen = sliceZFromUrl;
   console.info(`[inspect] ${INSPECT_NAMES[mode]}`);
 }
 
@@ -1075,8 +1094,22 @@ function setInspectMode(mode: InspectMode): void {
  */
 function cycleInspectView(): void {
   setInspectMode(cycleInspectMode(inspectMode));
+  announceInspectView();
+}
+
+/**
+ * Il toast che dice cosa e' appena successo.
+ *
+ * Porta anche il **gesto**, non solo la descrizione: la vista si e' accesa da
+ * tastiera, quindi il picker non e' aperto, e senza la riga che dice «punta un
+ * edificio» il giocatore vede comparire un riquadro retinato e non ha modo di
+ * collegarlo al proprio cursore. Era il percorso cieco della 4.13, ed era cieco
+ * per meta'.
+ */
+function announceInspectView(): void {
   const model = buildViewMenuModel(inspectMode, inspectSliceZ, inspectMaxZ());
-  gameHud?.showTransientFeedback(`${model.activeLabel} · ${model.activeDescription}`);
+  const gesture = model.activeGesture === '' ? '' : ` · ${model.activeGesture}`;
+  gameHud?.showTransientFeedback(`${model.activeLabel} · ${model.activeDescription}${gesture}`);
 }
 
 function setInspectSliceZ(z: number): void {
@@ -1425,6 +1458,16 @@ function onUiKey(event: KeyboardEvent): void {
   // stanno sotto `è` e `+`, dove nessuno le cerca.
   if (event.code === 'BracketLeft' || event.code === 'PageDown'
     || event.code === 'BracketRight' || event.code === 'PageUp') {
+    // La quota esiste solo in Levels. Fuori di li' il tasto non muoveva niente
+    // di visibile — e intanto **armava** la quota, cosi' che la fetta aperta
+    // dopo partisse da un numero assoluto invece che dal suolo davanti. Adesso
+    // apre la vista e basta: il primo colpo mostra il piano, il secondo lo
+    // muove, e si parte sempre da dove si sta guardando.
+    if (!modeHasLevel(inspectMode)) {
+      setInspectMode(INSPECT_MODE.slice);
+      announceInspectView();
+      return;
+    }
     const up = event.code === 'BracketRight' || event.code === 'PageUp';
     const step = event.shiftKey ? INSPECT.sliceCoarse : INSPECT.sliceStep;
     setInspectSliceZ(inspectSliceZ + (up ? step : -step));

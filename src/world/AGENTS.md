@@ -152,6 +152,39 @@ e costruzione degli edifici. Questo modulo non dipende dal renderer.
   spuntato accanto, e la sagoma precedente non ha mai niente da cancellare.
   Aggiungere un ruolo e' aggiungere una riga; un ruolo senza riga ottiene la
   piazzola di ripiego e resta giocabile.
+- **Una campata non prende suolo.** E' l'invariante di `spans/`, e l'unica cosa
+  che il modello dei landmark non sapeva gia' dire. Il registry tiene percio' due
+  indici per colonna: `columns` con tutti i record — lo legge `overlaps`, quindi
+  niente si costruisce **attraverso** una campata — e `groundColumns` con i soli
+  record che poggiano davvero, che e' quello che legge `isOccupied`. Sotto un
+  ponte la carreggiata si dipinge ancora e il lotto si costruisce ancora; se un
+  edificio cresce attraverso la campata, a cedere e' la campata. Al suolo vince
+  chi sul suolo ci sta.
+- Una **campata e' un record con un flag**, come un landmark: `span` dice quale
+  generatore disegna lo stamp e `supports` con chi. Da li' eredita collisione,
+  budget di chunk e comparsa a budget senza una passata in piu', e resta fuori
+  dagli istogrammi. L'unica assunzione che rompe e' che `baseZ` venga dal
+  terreno — ed e' quella che la 4.9 dovra' rompere comunque.
+- Una campata **atterra dove il corpo c'e', non al filo dell'impronta.** Gli
+  edifici sono piramidali: la fascia zero riempie il riquadro e da li' in su ogni
+  fascia rientra, quindi al bordo dell'impronta la parete esiste solo nei primi
+  voxel — sotto qualunque franco. `highestLanding` cerca la parete **rientrando**,
+  e la campata che ne esce e' piu' lunga del vuoto e sporge sopra le fasce basse
+  dei propri appoggi. Per questo `overlaps` accetta un `except`: toccare cio' a
+  cui si e' attaccati non e' una collisione. Il volume dev'essere comunque tutto
+  aria, o cancellare la campata bucherebbe l'edificio.
+- La **rete in quota e' un albero**, e non per eleganza: fra due campate possibili
+  vince quella che unisce due componenti separate, e chi chiuderebbe un ciclo non
+  si costruisce. E' cio' che rende il gate — un percorso continuo fra due isolati
+  — una conseguenza della regola invece di una speranza. `spans/network.ts` tiene
+  sia la decisione sia la verifica, apposta: due definizioni di "connesso"
+  divergerebbero al primo refactor.
+- **Le strutture grandi si spezzano, non si esentano.** `sliceStamps` ritaglia
+  uno stamp piu' largo di `BUILDER.segmentSide`, e la coda `pending` ne fa
+  comparire **uno per volta per struttura**: accodarli tutti insieme sporcherebbe
+  comunque tutti i loro chunk nello stesso frame. Da qui `LANDMARK.maxDirtyChunks`
+  non esiste piu' — i moli e le piste rispettano il tetto di ogni altra struttura
+  invece di averne uno proprio.
 - Il **catalogo delle tipologie** e' una tabella in `buildings/config.ts`:
   condizioni sul luogo piu' forma. Aggiungere una tipologia e' aggiungere una
   riga — la regola di scelta in `typology.ts` e' generica e non va toccata, e la

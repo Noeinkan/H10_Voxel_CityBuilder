@@ -1,5 +1,6 @@
 import {
   BALANCE,
+  BUILDING_CLASS,
   addBuilding,
   catalystById,
   catalystRoleOf,
@@ -36,7 +37,14 @@ import { planCluster, type ClusterTerms } from './cluster';
 import { generateBuilding, startLevel } from './generate';
 import { selectTypology, typologyProfile } from './typology';
 import { typologyById, type TypologyDefinition } from './config';
-import { anchoredVoxel, stampSurface, STAMP_EMPTY, type VoxelAnchor, type VoxelStamp } from './stamp';
+import {
+  anchoredVoxel,
+  sliceStamps,
+  stampSurface,
+  STAMP_EMPTY,
+  type VoxelAnchor,
+  type VoxelStamp,
+} from './stamp';
 import { GRADING } from '../grading/config';
 import {
   GROUND,
@@ -54,6 +62,18 @@ import { FACING, STREET_ROLE, type BlockId, type Facing } from '../streets/stree
 import { STREETS } from '../streets/config';
 import { seesWater, waterFacing } from '../sites/siteRules';
 import { SITE } from '../sites/config';
+import { SPANS, SPAN_KIND, type SpanKind } from '../spans/config';
+import { generateSpan } from '../spans/generate';
+import { planPlaza } from '../spans/plazaPlan';
+import { SpanNetwork, widestReach } from '../spans/network';
+import {
+  SPAN_HEIGHT,
+  planSpan,
+  spanBaseZ,
+  type SpanPlan,
+  type SpanProbe,
+  type SpanSupport,
+} from '../spans/spanPlan';
 import { LANDMARK, landmarkOf, maxStageOf } from '../landmarks/config';
 import {
   generateLandmark,
@@ -129,17 +149,51 @@ export interface BuilderStats {
    * i distretti densi sono tornati a essere volumi vicini.
    */
   readonly clustered: number;
+  /**
+   * Campate esistenti, e isolati distinti che la loro componente piu' larga
+   * raggiunge.
+   *
+   * Il secondo e' il gate della 4.5 reso leggibile senza aprire una console: a
+   * uno la rete e' un ornamento — dei ponti che non portano da nessuna parte —
+   * e da due in su e' un secondo piano stradale.
+   */
+  readonly spans: number;
+  readonly spanReach: number;
 }
 
-/** Un volume che cresce dal proprio voxel di ancoraggio. */
+/**
+ * Un volume da scrivere, con la propria ancora.
+ *
+ * **Porta un'ancora e non un record**, e non e' un dettaglio: e' cio' che
+ * permette a piu' stamp di appartenere allo stesso record e di comparire uno
+ * dopo l'altro. Finche' l'ancora era `record.x, record.y, record.baseZ` una
+ * struttura era per forza un blocco solo, e un molo lungo ventisei colonne
+ * doveva o sforare il tetto di chunk sporchi o farselo alzare — che e'
+ * esattamente cio' che la 4.12 aveva fatto e lasciato aperto qui.
+ *
+ * `ownerId` resta perche' le guardie chiedono «questo record sta gia'
+ * comparendo?», non «questo volume».
+ */
 interface Growing {
-  readonly record: BuildingRecord;
+  readonly ownerId: number;
+  readonly anchor: VoxelAnchor;
   readonly stamp: VoxelStamp;
   /** Impronta precedente: i soli voxel non coperti dalla nuova vengono rimossi. */
   readonly erase: VoxelStamp | null;
   voxelCursor: number;
   eraseCursor: number;
 }
+
+/**
+ * Un volume in attesa di un posto nella coda di comparsa.
+ *
+ * **Un segmento per volta, per struttura.** Accodare tutti i segmenti di un molo
+ * insieme non ridurrebbe niente: i chunk si sporcano man mano che le scritture
+ * atterrano, e sei segmenti in volo li sporcano tutti e sei nello stesso frame.
+ * E' l'ammissione a scaglioni a tenere il picco a quello di una struttura sola,
+ * ed e' il motivo per cui questa coda esiste invece di un `push` diretto.
+ */
+type Pending = Omit<Growing, 'voxelCursor' | 'eraseCursor'>;
 
 /**
  * Una colonna di superficie urbana da applicare.
@@ -167,6 +221,7 @@ interface SurfacePaint {
 export class Builder {
   private readonly registryImpl = new BuildingRegistry();
   private readonly growing: Growing[] = [];
+  private readonly pending: Pending[] = [];
   private readonly surfaceQueue: string[] = [];
   private readonly surfacePending = new Map<string, SurfacePaint>();
   private readonly surfacePriority = new Map<string, number>();
@@ -222,6 +277,32 @@ export class Builder {
    */
   private readonly clusterSizes = new Map<number, number>();
   private clusteredCount = 0;
+
+  /** Isolati che una piazza ce l'hanno gia': si costruisce una volta sola. */
+  private readonly plazaBlocks = new Set<string>();
+
+  private spanCursor = 0;
+  private spanReachValue = 0;
+  private spanReachStale = true;
+
+  /**
+   * Come si presenta il luogo alla regola delle campate.
+   *
+   * Si costruisce una volta sola e non a ogni candidata: `spanFrom` la passa a
+   * `planSpan` per ogni coppia che esamina, e allocare due chiusure per coppia
+   * sarebbe spazzatura per niente. Non tiene stato — sono tre letture — quindi
+   * riusarla e' sicuro.
+   */
+  private readonly spanProbe: SpanProbe = {
+    ground: (x, y) => ({
+      height: this.terrainMap.heightAt(x, y),
+      pavement: this.streets.isPavement(x, y),
+      // «Il suolo e' preso»: le campate non ci entrano, ed e' l'invariante che
+      // permette a un ponte di scavalcare una carreggiata senza toglierla.
+      free: !this.registryImpl.isOccupied(x, y),
+    }),
+    solid: (x, y, z) => this.world.getBlock(x, y, z) !== STAMP_EMPTY,
+  };
 
   /**
    * La rete stradale nasce dal solo seed del mondo: non ha stato, non va
@@ -313,9 +394,7 @@ export class Builder {
     if (this.registryImpl.overlaps(origin.x, origin.y, span.sizeX, plan.padZ, span.sizeZ, span.sizeY)) {
       return null;
     }
-    if (this.dirtyChunkCount(
-      origin.x, origin.y, span.sizeX, plan.footZ, plan.padZ + span.sizeZ, span.sizeY,
-    ) > LANDMARK.maxDirtyChunks) {
+    if (!this.fitsChunkBudget(origin.x, origin.y, span.sizeX, span.sizeY, plan, stamp)) {
       return null;
     }
 
@@ -336,7 +415,7 @@ export class Builder {
       landmark: kind,
     });
 
-    this.growing.push({ record, stamp, erase: null, voxelCursor: 0, eraseCursor: 0 });
+    this.enqueueSegments(record, stamp);
     return record;
   }
 
@@ -423,11 +502,13 @@ export class Builder {
     return {
       placed: this.placedCount,
       upgraded: this.upgradedCount,
-      growing: this.growing.length,
+      growing: this.growing.length + this.pending.length,
       rejected: this.rejectedCounts,
       blacklisted: this.blacklist.size,
       surfaceQueued: this.surfacePending.size,
       clustered: this.clusteredCount,
+      spans: this.registryImpl.spanCount,
+      spanReach: this.spanReach(),
     };
   }
 
@@ -476,6 +557,10 @@ export class Builder {
       this.upgradePass(next);
       next = this.landmarkPass(next);
     }
+    // La rete in quota non legge la simulazione: una campata dipende da dove
+    // stanno i tetti, non da quanto una colonna e' desiderabile. E' anche il
+    // motivo per cui questa passata non prende ne' restituisce lo stato.
+    if (state.tickCount % SPANS.ticksPerPass === 0) this.spanPass();
     return next;
   }
 
@@ -492,7 +577,7 @@ export class Builder {
       let budget = BUILDER.voxelsPerFrame;
 
       if (entry.voxelCursor < entry.stamp.voxels.length) {
-        const write = this.writeVoxelBatch(entry.record, entry.stamp, entry.voxelCursor, budget);
+        const write = this.writeVoxelBatch(entry.anchor, entry.stamp, entry.voxelCursor, budget);
         entry.voxelCursor = write.cursor;
         budget -= write.written;
       }
@@ -502,7 +587,7 @@ export class Builder {
       // in un singolo frame e l'edificio non lampeggia nel vuoto.
       if (entry.voxelCursor >= entry.stamp.voxels.length && entry.erase !== null && budget > 0) {
         const clear = this.clearObsoleteVoxelBatch(
-          entry.record,
+          entry.anchor,
           entry.erase,
           entry.stamp,
           entry.eraseCursor,
@@ -516,7 +601,77 @@ export class Builder {
       if (writeDone && clearDone) this.growing.splice(i, 1);
     }
 
+    this.admitPending();
     this.stepSurface();
+  }
+
+  /**
+   * Fa entrare in coda i segmenti in attesa, **uno per struttura**.
+   *
+   * Il tetto di chunk sporchi vale per il singolo volume scritto, quindi due
+   * segmenti dello stesso molo in volo insieme lo raddoppierebbero: e' l'ordine
+   * a farne un budget, non il conteggio.
+   */
+  private admitPending(): void {
+    for (let i = 0; i < this.pending.length && this.growing.length < BUILDER.maxGrowing;) {
+      const next = this.pending[i];
+      if (this.growing.some((entry) => entry.ownerId === next.ownerId)) {
+        i++;
+        continue;
+      }
+      this.pending.splice(i, 1);
+      this.growing.push({ ...next, voxelCursor: 0, eraseCursor: 0 });
+    }
+  }
+
+  /**
+   * Accoda un volume. Compare quando la coda gli fa posto.
+   *
+   * E' l'unica strada per far comparire voxel a budget: passandoci anche i
+   * segmenti, «una struttura per volta» resta vero senza che nessun chiamante
+   * debba ricordarselo.
+   */
+  private enqueue(
+    ownerId: number,
+    anchor: VoxelAnchor,
+    stamp: VoxelStamp,
+    erase: VoxelStamp | null = null,
+  ): void {
+    this.pending.push({ ownerId, anchor, stamp, erase });
+  }
+
+  /**
+   * Accoda uno stamp spezzandolo se e' piu' largo di un segmento.
+   *
+   * E' la strada dei volumi grossi — i landmark lineari, e da qui in avanti
+   * chiunque altro ne abbia bisogno. Uno stamp che ci sta gia' non viene copiato:
+   * `sliceStamps` restituisce l'originale, e il caso comune non paga niente.
+   */
+  private enqueueSegments(record: BuildingRecord, stamp: VoxelStamp): void {
+    const anchor = this.anchorOf(record);
+    for (const slice of sliceStamps(stamp, BUILDER.segmentSide)) {
+      this.enqueue(record.id, {
+        x: anchor.x + slice.offsetX,
+        y: anchor.y + slice.offsetY,
+        z: anchor.z,
+      }, slice.stamp);
+    }
+  }
+
+  /** Volumi in coda o in attesa: e' il numero su cui le passate si fermano. */
+  private get queued(): number {
+    return this.growing.length + this.pending.length;
+  }
+
+  /** true se il record sta gia' comparendo, o ha segmenti che aspettano. */
+  private isGrowing(id: number): boolean {
+    return this.growing.some((entry) => entry.ownerId === id) ||
+      this.pending.some((entry) => entry.ownerId === id);
+  }
+
+  /** Ancora di un record: l'angolo minimo dell'impronta alla sua quota di base. */
+  private anchorOf(record: BuildingRecord): VoxelAnchor {
+    return { x: record.x, y: record.y, z: record.baseZ };
   }
 
   // --- Costruzione -----------------------------------------------------------
@@ -537,7 +692,7 @@ export class Builder {
 
     for (const site of sites) {
       if (accepted >= wanted) break;
-      if (this.growing.length >= BUILDER.maxGrowing) break;
+      if (this.queued >= BUILDER.maxGrowing) break;
 
       const record = this.place({
         x: site.x,
@@ -674,6 +829,10 @@ export class Builder {
       : draft;
 
     const baseZ = terms.deck;
+    // Al suolo vince l'edificio: una campata che passa di qui cade invece di
+    // impedirlo. Senza, `overlaps` direbbe `occupied` e un ponte toglierebbe un
+    // lotto — il contrario esatto di «una campata non prende suolo».
+    this.dropSpansIntersecting(x, y, footprint, footprint, baseZ, baseZ + stamp.sizeZ);
     if (this.registryImpl.overlaps(x, y, footprint, baseZ, stamp.sizeZ)) {
       return this.reject(key, 'occupied');
     }
@@ -714,8 +873,8 @@ export class Builder {
       baseBand: terms.base > 0 ? terms.base : undefined,
     });
 
-    if (request.animate) this.growing.push({ record, stamp, erase: null, voxelCursor: 0, eraseCursor: 0 });
-    else this.writeStamp(record, stamp, 0, stamp.sizeZ, false);
+    if (request.animate) this.enqueue(record.id, this.anchorOf(record), stamp);
+    else this.writeStamp(this.anchorOf(record), stamp, 0, stamp.sizeZ, false);
     this.enqueueBlockStreets(this.streets.blockAt(x, y));
     this.placedCount++;
     return record;
@@ -1022,14 +1181,17 @@ export class Builder {
 
     const budget = Math.min(BUILDER.upgradesPerPass, records.length);
     for (let i = 0; i < budget; i++) {
-      if (this.growing.length >= BUILDER.maxGrowing) break;
+      if (this.queued >= BUILDER.maxGrowing) break;
 
       const record = records[this.upgradeCursor % records.length];
       this.upgradeCursor++;
-      if (this.growing.some((entry) => entry.record.id === record.id)) continue;
+      if (this.isGrowing(record.id)) continue;
       // Un landmark cresce di stadio, non di livello, e su un altro segnale:
       // `landmarkPass` se ne occupa con la propria soglia e il proprio generatore.
       if (record.landmark !== undefined) continue;
+      // Una campata non ha un livello: e' l'edificio che la regge a cambiare, e
+      // quando cambia lei cade con lui.
+      if (record.span !== undefined) continue;
       if (record.level >= BUILDER.maxLevel) continue;
 
       const nextLevel = record.level + 1;
@@ -1130,6 +1292,18 @@ export class Builder {
       return;
     }
 
+    // La sagoma su cui le sue campate poggiavano sta per cambiare: cadono con
+    // lei, e la passata successiva le ripropone alla quota nuova. E' il vincolo
+    // della 4.5 — «segue o sparisce, mai resta a mezz'aria» — e va fatto **prima**
+    // di `replace`, perche' dopo il record vecchio non c'e' piu'.
+    this.dropSpansOf(record.id);
+    // E quelle di altri che il volume nuovo attraverserebbe: un edificio che
+    // cresce in altezza vince su un ponte che gli passa davanti.
+    this.dropSpansIntersecting(
+      record.x, record.y, stamp.sizeX, stamp.sizeX,
+      record.baseZ, record.baseZ + stamp.sizeZ,
+    );
+
     if (stamp.sizeX > record.footprint) {
       this.clearExpandedSiteDecor(record, stamp.sizeX);
     }
@@ -1170,7 +1344,7 @@ export class Builder {
     }
 
     this.enqueueBlockStreets(this.streets.blockAt(replaced.x, replaced.y));
-    this.growing.push({ record: replaced, stamp, erase: old, voxelCursor: 0, eraseCursor: 0 });
+    this.enqueue(replaced.id, this.anchorOf(replaced), stamp, old);
     this.upgradedCount++;
   }
 
@@ -1210,6 +1384,353 @@ export class Builder {
     return true;
   }
 
+  // --- Rete in quota ---------------------------------------------------------
+
+  /**
+   * Costruisce le campate che allargano la rete in quota.
+   *
+   * **Vince chi unisce due componenti separate.** Il settimo punto della fase non
+   * chiede dei ponti ma una *rete*, e il riferimento del Minneapolis Skyway dice
+   * perche': un secondo livello diventa il piano principale quando e' continuo, e
+   * resta un ornamento finche' non lo e'. Costruire per merito locale — i due
+   * tetti piu' compatibili — darebbe ponti sparsi che non portano da nessuna
+   * parte; chiedere che ogni campata **fonda due componenti** fa crescere un
+   * albero che si allarga di isolato in isolato, e il gate diventa una
+   * conseguenza della regola invece di una speranza.
+   *
+   * Una campata che chiuderebbe un ciclo non si costruisce: fra due posti gia'
+   * raggiungibili l'uno dall'altro un secondo percorso aggiunge ingombro e non
+   * aggiunge raggiungibilita'.
+   *
+   * La passata ha un cursore come `upgradePass`, quindi il costo non cresce con
+   * la citta'. Il grafo si **ricostruisce** a ogni passata: un union-find non sa
+   * disfare un'unione, e qui le campate spariscono davvero.
+   */
+  private spanPass(): void {
+    const records = [...this.registryImpl.all];
+    if (records.length === 0) return;
+
+    const network = SpanNetwork.of(this.registryImpl.spans);
+    const budget = Math.min(SPANS.examinedPerPass, records.length);
+    let built = 0;
+
+    // **Nessuna guardia sulla coda, e non e' una dimenticanza.** Le altre
+    // passate si fermano su `maxGrowing` perche' il loro tetto e' quello; questa
+    // ne ha uno proprio e molto piu' stretto — `perPass` campate ogni
+    // `ticksPerPass` tick. Guardare la coda qui significava non costruire mai
+    // niente: `upgradePass` gira sullo stesso tick e la riempie fino al tetto,
+    // quindi `spanPass` la trovava piena e usciva al primo giro, sempre. La coda
+    // `pending` esiste proprio per separare quanto lavoro si crea da quanto ne
+    // vola insieme.
+    // Gli isolati gia' tentati in questa passata. Senza, il cursore scorre
+    // record che stanno **nello stesso isolato** e i pochi tentativi ammessi si
+    // consumano tutti li', rifacendo la stessa scansione per lo stesso esito.
+    const tried = new Set<string>();
+    const busy = this.busyIds();
+
+    for (let i = 0; i < budget && built < SPANS.perPass; i++) {
+      const record = records[this.spanCursor % records.length];
+      this.spanCursor++;
+
+      // La piazza si prova per prima: e' un nodo, e un nodo vale piu' di un
+      // ponte perche' da li' la rete puo' ripartire in piu' direzioni.
+      let plan: SpanPlan | null = null;
+      if (tried.size < SPANS.plaza.attemptsPerPass) {
+        const key = this.streets.keyOf(this.streets.blockAt(record.x, record.y));
+        if (!tried.has(key)) {
+          const attempt = this.plazaOn(record, network, busy);
+          if (attempt !== undefined) {
+            tried.add(key);
+            plan = attempt;
+          }
+        }
+      }
+      if (plan === null) plan = this.spanFrom(record, network, busy);
+      if (plan === null) continue;
+      if (!this.buildSpan(plan)) continue;
+
+      if (plan.kind === SPAN_KIND.plaza) {
+        this.plazaBlocks.add(this.streets.keyOf(this.streets.blockAt(plan.x, plan.y)));
+      }
+      network.add({ supports: plan.supports });
+      built++;
+    }
+
+    if (built > 0) this.spanReachStale = true;
+  }
+
+  /**
+   * La piazza che l'isolato di questo edificio puo' reggere.
+   *
+   * `undefined` se l'isolato non e' nemmeno da provare — ne ha gia' una, o non
+   * ha abbastanza edifici — e `null` se il tentativo c'e' stato e non regge:
+   * e' la differenza che tiene il conto dei tentativi onesto, perche' la
+   * scansione del cuore e' la cosa piu' cara del dominio.
+   *
+   * **Il cuore dell'isolato lo ha chiuso la 4.1 apposta**: gli edifici nascono
+   * sul fronte strada e lasciano libero il centro. E' quel vuoto — «uno spazio
+   * interno riconoscibile e' cio' che le sotto-fasi successive terrazzano e
+   * collegano» — che una piazza copre senza togliere un lotto a nessuno.
+   */
+  private plazaOn(
+    record: BuildingRecord,
+    network: SpanNetwork,
+    busy: ReadonlySet<number>,
+  ): SpanPlan | null | undefined {
+    const block = this.streets.blockAt(record.x, record.y);
+    if (this.plazaBlocks.has(this.streets.keyOf(block))) return undefined;
+
+    const rect = this.streets.blockRect(block);
+    const midX = (rect.x0 + rect.x1) >> 1;
+    const midY = (rect.y0 + rect.y1) >> 1;
+    const radius = Math.max(rect.x1 - rect.x0, rect.y1 - rect.y0);
+
+    const supports: SpanSupport[] = [];
+    for (const other of this.registryImpl.withinRadius(midX, midY, radius)) {
+      if (!this.canSupportSpan(other, network, busy)) continue;
+      supports.push(this.supportOf(other));
+    }
+    if (supports.length < SPANS.plaza.minSupports) return undefined;
+
+    const result = planPlaza({ rect, supports, ...this.spanProbe });
+    return result.ok ? result.plan : null;
+  }
+
+  /**
+   * La campata che questo edificio puo' dare, o null.
+   *
+   * I partner si scorrono in ordine di id e solo verso l'alto: la coppia si
+   * valuta una volta sola, e quale delle due la propone non dipende da chi il
+   * registry ha indicizzato prima. Il ponte si prova prima del mezzanino perche'
+   * e' la forma che porta piu' lontano; se il luogo non lo regge, il mezzanino
+   * e' cio' che resta dentro l'isolato.
+   */
+  private spanFrom(
+    record: BuildingRecord,
+    network: SpanNetwork,
+    busy: ReadonlySet<number>,
+  ): SpanPlan | null {
+    if (!this.canSupportSpan(record, network, busy)) return null;
+
+    const a = this.supportOf(record);
+    const reach = SPANS.maxGap + MAX_FOOTPRINT;
+    const partners = [...this.registryImpl.withinRadius(record.x, record.y, reach)]
+      .filter((other) => other.id > record.id && this.canSupportSpan(other, network, busy))
+      .sort((first, second) => first.id - second.id);
+
+    for (const other of partners) {
+      // Chiudere un ciclo non aggiunge raggiungibilita': si scarta prima di
+      // pagare la scansione del vuoto, che e' la parte cara.
+      if (network.connected(record.id, other.id)) continue;
+
+      const b = this.supportOf(other);
+      for (const kind of SPAN_ORDER) {
+        const result = planSpan({ a, b, kind, ...this.spanProbe });
+        if (result.ok) return result.plan;
+      }
+    }
+
+    return null;
+  }
+
+  /**
+   * true se un record puo' reggere un'altra campata.
+   *
+   * `busy` sono i record che stanno comparendo, raccolti **una volta per
+   * passata**: la domanda si fa per ogni partner di ogni record esaminato —
+   * qualche migliaio di volte — e rispondervi scandendo le due code ogni volta
+   * era la voce piu' cara del giro.
+   */
+  private canSupportSpan(
+    record: BuildingRecord,
+    network: SpanNetwork,
+    busy: ReadonlySet<number>,
+  ): boolean {
+    // Una campata non regge una campata, e un landmark cresce di stadio: la sua
+    // sagoma cambia sotto i piedi di chi ci si appoggiasse.
+    if (record.span !== undefined || record.landmark !== undefined) return false;
+    if (busy.has(record.id)) return false;
+    return network.degreeOf(record.id) < SPANS.maxPerSupport;
+  }
+
+  /** I record che stanno comparendo, in coda o in attesa. */
+  private busyIds(): ReadonlySet<number> {
+    const busy = new Set<number>();
+    for (const entry of this.growing) busy.add(entry.ownerId);
+    for (const entry of this.pending) busy.add(entry.ownerId);
+    return busy;
+  }
+
+  /** Un record ridotto a cio' che la regola pura ha bisogno di sapere. */
+  private supportOf(record: BuildingRecord): SpanSupport {
+    return {
+      id: record.id,
+      x: record.x,
+      y: record.y,
+      sizeX: record.footprint,
+      sizeY: footprintDepth(record),
+      baseZ: record.baseZ,
+      height: record.height,
+      level: record.level,
+      baseBand: record.baseBand ?? 0,
+      cluster: record.cluster,
+    };
+  }
+
+  /**
+   * Scrive una campata, o dice di no.
+   *
+   * Il tetto di chunk sporchi si misura sul **segmento**, che e' l'unita' di
+   * scrittura: e' tutto il senso di averli spezzati.
+   */
+  private buildSpan(plan: SpanPlan): boolean {
+    const baseZ = spanBaseZ(plan.deckZ);
+    // Gli appoggi sono esclusi: l'impalcato atterra dove i corpi si affacciano
+    // davvero, quindi sporge sopra le loro fasce basse. Toccare cio' a cui si e'
+    // attaccati non e' una collisione — `boxIsClear` ha gia' verificato che li'
+    // dentro non ci sia niente di solido.
+    if (this.registryImpl.overlaps(
+      plan.x, plan.y, plan.sizeX, baseZ, SPAN_HEIGHT, plan.sizeY, plan.supports,
+    )) {
+      return false;
+    }
+
+    for (const segment of plan.segments) {
+      const count = this.dirtyChunkCount(
+        segment.x, segment.y, segment.sizeX, baseZ, baseZ + SPAN_HEIGHT, segment.sizeY,
+      );
+      if (count > SPANS.maxDirtyChunks) return false;
+    }
+
+    const record = this.registryImpl.add({
+      x: plan.x,
+      y: plan.y,
+      baseZ,
+      footprint: plan.sizeX,
+      footprintY: plan.sizeY,
+      height: SPAN_HEIGHT,
+      // Una campata non ha un uso urbano: `tally` la salta come salta i landmark,
+      // e questo campo non entra in nessun istogramma. Civico e' il meno
+      // arbitrario dei quattro — un passaggio pubblico e' spazio pubblico — ma
+      // resta inerte per costruzione.
+      class: BUILDING_CLASS.civic,
+      level: 0,
+      seed: hashCoords(this.worldSeed, plan.x, plan.y),
+      span: plan.kind,
+      supports: plan.supports,
+    });
+
+    for (const segment of plan.segments) {
+      this.enqueue(
+        record.id,
+        { x: segment.x, y: segment.y, z: baseZ },
+        generateSpan(plan, segment),
+      );
+    }
+    return true;
+  }
+
+  /**
+   * Toglie le campate che poggiano su un edificio che sta per cambiare.
+   *
+   * **E' il vincolo della fase, detto in codice**: se l'edificio che la sostiene
+   * cambia livello o sagoma, la campata segue o sparisce, mai resta a mezz'aria.
+   * Qui sparisce; a farla *seguire* e' la passata successiva, che la ripropone
+   * alla quota nuova se il luogo la regge ancora. E' anche il comportamento
+   * giusto: la rete in quota insegue la citta' invece di fossilizzarla.
+   */
+  private dropSpansOf(supportId: number): void {
+    for (const span of this.registryImpl.spansOf(supportId)) this.dropSpan(span);
+  }
+
+  /**
+   * Toglie le campate che attraversano un volume che sta per essere costruito.
+   *
+   * Al suolo vince l'edificio: senza questo, `overlaps` rifiuterebbe il
+   * piazzamento con `occupied` e un ponte impedirebbe una casa — che e'
+   * esattamente il contrario dell'invariante «una campata non prende suolo».
+   */
+  private dropSpansIntersecting(
+    x: number,
+    y: number,
+    sizeX: number,
+    sizeY: number,
+    minZ: number,
+    maxZ: number,
+  ): void {
+    const doomed = new Map<number, BuildingRecord>();
+    for (let dy = 0; dy < sizeY; dy++) {
+      for (let dx = 0; dx < sizeX; dx++) {
+        for (const other of this.registryImpl.at(x + dx, y + dy)) {
+          if (other.span === undefined) continue;
+          if (other.baseZ >= maxZ || minZ >= other.baseZ + other.height) continue;
+          doomed.set(other.id, other);
+        }
+      }
+    }
+    for (const span of doomed.values()) this.dropSpan(span);
+  }
+
+  /** Cancella i voxel di una campata e la toglie dal registry. */
+  private dropSpan(record: BuildingRecord): void {
+    // Subito e non a budget: il volume di una campata e' minuscolo — poche
+    // centinaia di celle — e toglierlo a rate lascerebbe una finestra in cui il
+    // registry la dice sparita mentre i suoi voxel sono ancora li'. In quella
+    // finestra un edificio potrebbe nascerci dentro, e la cancellazione in coda
+    // gli mangerebbe i voxel.
+    this.clearVolume(
+      record.x,
+      record.y,
+      record.footprint,
+      footprintDepth(record),
+      record.baseZ,
+      record.baseZ + record.height,
+    );
+    this.registryImpl.remove(record.id);
+    this.spanReachStale = true;
+  }
+
+  /** Svuota un volume, saltando le celle gia' vuote per non sporcare chunk a vuoto. */
+  private clearVolume(
+    x: number,
+    y: number,
+    sizeX: number,
+    sizeY: number,
+    minZ: number,
+    maxZ: number,
+  ): void {
+    for (let z = minZ; z < maxZ; z++) {
+      for (let cy = y; cy < y + sizeY; cy++) {
+        for (let cx = x; cx < x + sizeX; cx++) {
+          if (this.world.getBlock(cx, cy, z) !== STAMP_EMPTY) {
+            this.world.setBlock(cx, cy, z, STAMP_EMPTY);
+          }
+        }
+      }
+    }
+  }
+
+  /**
+   * Quanti isolati distinti tocca la componente piu' larga della rete in quota.
+   *
+   * **Si ricalcola a domanda, non a ogni cambio.** Una passata di upgrade toglie
+   * le campate di ogni edificio che promuove, e ricostruire il grafo a ogni
+   * caduta significava rifarlo una dozzina di volte dentro lo stesso tick per un
+   * numero che nessuno stava guardando. Il flag lo rimanda a chi lo legge, che e'
+   * l'overlay, una volta per cambio.
+   */
+  private spanReach(): number {
+    if (this.spanReachStale) {
+      this.spanReachValue = widestReach(this.registryImpl.spans, (supportId) => {
+        const support = this.registryImpl.get(supportId);
+        if (support === null) return null;
+        return this.streets.keyOf(this.streets.blockAt(support.x, support.y));
+      });
+      this.spanReachStale = false;
+    }
+    return this.spanReachValue;
+  }
+
   // --- Landmark --------------------------------------------------------------
 
   /**
@@ -1239,11 +1760,11 @@ export class Builder {
 
     for (const record of this.registryImpl.all) {
       if (advanced >= LANDMARK.stagesPerPass) break;
-      if (this.growing.length >= BUILDER.maxGrowing) break;
+      if (this.queued >= BUILDER.maxGrowing) break;
 
       const kind = record.landmark;
       if (kind === undefined) continue;
-      if (this.growing.some((entry) => entry.record.id === record.id)) continue;
+      if (this.isGrowing(record.id)) continue;
 
       const recipe = landmarkOf(kind);
       if (recipe === null || record.level >= maxStageOf(recipe)) continue;
@@ -1306,7 +1827,7 @@ export class Builder {
     const replaced = this.registryImpl.replace(record.id, { ...record, level: stage });
     if (replaced === null) return state;
 
-    this.growing.push({ record: replaced, stamp, erase: null, voxelCursor: 0, eraseCursor: 0 });
+    this.enqueueSegments(replaced, stamp);
 
     // Il ritorno alla simulazione e' un numero: il catalizzatore diventa un po'
     // piu' forte, e `src/sim/` non sa perche'. La base si rilegge dal catalogo
@@ -1324,13 +1845,12 @@ export class Builder {
 
   /** Scrive le quote `[fromZ, toZ)` di uno stamp. `clear` scrive vuoto invece del colore. */
   private writeStamp(
-    record: BuildingRecord,
+    anchor: VoxelAnchor,
     stamp: VoxelStamp,
     fromZ: number,
     toZ: number,
     clear: boolean,
   ): void {
-    const anchor: VoxelAnchor = { x: record.x, y: record.y, z: record.baseZ };
     for (let sz = fromZ; sz < toZ; sz++) {
       for (let sy = 0; sy < stamp.sizeY; sy++) {
         for (let sx = 0; sx < stamp.sizeX; sx++) {
@@ -1352,12 +1872,11 @@ export class Builder {
 
   /** Scrive un numero limitato di cubi solidi, dal basso verso l'alto. */
   private writeVoxelBatch(
-    record: BuildingRecord,
+    anchor: VoxelAnchor,
     stamp: VoxelStamp,
     from: number,
     budget: number,
   ): { cursor: number; written: number } {
-    const anchor: VoxelAnchor = { x: record.x, y: record.y, z: record.baseZ };
     const plane = stamp.sizeX * stamp.sizeY;
     let cursor = from;
     let written = 0;
@@ -1379,13 +1898,12 @@ export class Builder {
 
   /** Rimuove a budget soltanto i voxel vecchi che la nuova sagoma non copre. */
   private clearObsoleteVoxelBatch(
-    record: BuildingRecord,
+    anchor: VoxelAnchor,
     previous: VoxelStamp,
     next: VoxelStamp,
     from: number,
     budget: number,
   ): { cursor: number; written: number } {
-    const anchor: VoxelAnchor = { x: record.x, y: record.y, z: record.baseZ };
     const previousPlane = previous.sizeX * previous.sizeY;
     let cursor = from;
     let written = 0;
@@ -1742,6 +2260,41 @@ export class Builder {
     return keys.size;
   }
 
+  /**
+   * true se una struttura sta nel tetto di chunk sporchi, fondazione compresa.
+   *
+   * **Si misura il singolo colpo di scrittura, non il volume totale.** Da quando
+   * i ritagli esistono, una struttura lunga non compare piu' tutta insieme: il
+   * tetto vale per la fondazione, che si getta in un colpo, e per ogni ritaglio,
+   * che compare per conto suo. Misurare l'ingombro intero direbbe di no proprio
+   * alle strutture per cui i ritagli sono stati fatti — ed e' il motivo per cui
+   * la 4.12 aveva dovuto alzare il tetto invece di rispettarlo.
+   */
+  private fitsChunkBudget(
+    x: number,
+    y: number,
+    sizeX: number,
+    sizeY: number,
+    plan: GradePlan,
+    stamp: VoxelStamp,
+  ): boolean {
+    const cap = BUILDER.maxDirtyChunksPerBuilding;
+    if (this.dirtyChunkCount(x, y, sizeX, plan.footZ, plan.padZ, sizeY) > cap) return false;
+
+    for (const slice of sliceStamps(stamp, BUILDER.segmentSide)) {
+      const count = this.dirtyChunkCount(
+        x + slice.offsetX,
+        y + slice.offsetY,
+        slice.stamp.sizeX,
+        plan.padZ,
+        plan.padZ + slice.stamp.sizeZ,
+        slice.stamp.sizeY,
+      );
+      if (count > cap) return false;
+    }
+    return true;
+  }
+
   private reject(key: string, reason: RejectReason): null {
     this.blacklist.add(key);
     this.rejectedCounts[REJECT_REASONS.indexOf(reason)]++;
@@ -1754,6 +2307,16 @@ const QUAY_AXES: readonly (readonly [number, number])[] = [[1, 0], [-1, 0], [0, 
 
 /** Nessun vicino: chi costruisce a coordinate date non ha un fronte da guardare. */
 const EMPTY_TERMS: readonly ClusterTerms[] = [];
+
+/**
+ * In che ordine si prova a collegare due edifici.
+ *
+ * Il ponte per primo perche' e' la forma che porta piu' lontano — scavalca la
+ * carreggiata e collega due isolati — e il mezzanino e' cio' che resta quando il
+ * luogo non regge un ponte, cioe' dentro l'isolato. La piazza non e' qui: non
+ * nasce da una coppia ma da un cortile, e ha una passata propria.
+ */
+const SPAN_ORDER: readonly SpanKind[] = [SPAN_KIND.bridge, SPAN_KIND.mezzanine];
 
 /**
  * Coordinate di chunk dei vicini che una scrittura su `[min, max]` marcherebbe.

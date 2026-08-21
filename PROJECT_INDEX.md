@@ -4,7 +4,7 @@ Mappa file per file di `src/`. Il *perché* delle scelte sta nei README
 ([README.md](README.md), [src/sim/README.md](src/sim/README.md)); le regole
 operative in [CLAUDE.md](CLAUDE.md). Qui c'è solo *dove sta cosa*.
 
-Oltre 26 mila righe di TypeScript, 51 file di test (404 test), 2 file di bench.
+Quasi 33 mila righe di TypeScript, 61 file di test (621 test), 2 file di bench.
 
 ## Direzione delle dipendenze
 
@@ -107,7 +107,7 @@ map.columnAt(120, 96); // { height, biome, slope, buildable }
 | [VoxelMaterial.test.ts](src/engine/VoxelMaterial.test.ts) | Ogni uniform dichiarato nel GLSL esiste davvero, su entrambe le varianti; cambiare tema non ricompila il programma; il retino entra solo alla prima vista attivata | — |
 | [lighting.ts](src/engine/lighting.ts) | Modello di luce in TS puro: direzione del sole, diffusa avvolgente, luminanza per faccia | `sunDirection`, `faceLight`, `faceLuminance`, `wrapDiffuse`, `FACE_NORMALS` |
 | [lighting.test.ts](src/engine/lighting.test.ts) | Tiene allineate la copia TS e quella GLSL del modello | — |
-| [inspect.ts](src/engine/inspect.ts) | Viste di ispezione in TS puro: dal modo attivo ai due predicati e alla densita' del retino. **Ogni** numero del dominio | `INSPECT`, `INSPECT_MODE`, `INSPECT_MODES`, `INSPECT_NAMES`, `inspectUniforms`, `sectionAxis`, `cycleInspectMode`, `parseInspectMode`, `clampSliceZ`, `isCut`, `modeCuts`, `isActive`, `InspectMode`, `InspectState`, `InspectUniforms` |
+| [inspect.ts](src/engine/inspect.ts) | Viste di ispezione in TS puro: dal modo attivo ai due predicati e alla densita' del retino. **Ogni** numero del dominio | `INSPECT`, `INSPECT_MODE`, `INSPECT_MODES`, `INSPECT_NAMES`, `inspectUniforms`, `sectionAxis`, `cycleInspectMode`, `parseInspectMode`, `clampSliceZ`, `isCut`, `modeCuts`, `modeHasLevel`, `isActive`, `isBoundedRect`, `inspectGuide`, `InspectMode`, `InspectState`, `InspectUniforms`, `InspectGuide` |
 | [inspect.test.ts](src/engine/inspect.test.ts) | Tiene allineate la copia TS e quella GLSL del predicato | — |
 | [SunShadow.ts](src/engine/SunShadow.ts) | Shadow map ortografica del sole: fitting sull'AABB visibile, aggancio ai texel, materiale di sola profondita' | `createSunShadow`, `SunShadowHandle` |
 | [PostProcessing.ts](src/engine/PostProcessing.ts) | Composer sempre attivo: bloom, tilt-shift, tone mapping in `OutputPass` | `createPostProcessing`, `PostProcessingHandle` |
@@ -118,6 +118,7 @@ map.columnAt(120, 96); // { height, biome, slope, buildable }
 | [RenderQuality.ts](src/engine/RenderQuality.ts) | Pixel ratio adattivo con isteresi e profilo di effetti derivato: ombre, bloom, tilt-shift scendono insieme | `RenderQualityController`, `parseQualityMode`, `QualityMode`, `QualityProfile`, `QualityDecision`, `QualityReason` |
 | [RenderQuality.test.ts](src/engine/RenderQuality.test.ts) | Scende dopo due finestre lente, risale dopo dieci secondi stabili, i modi fissi hanno profilo fisso | — |
 | [InfluenceOverlay.ts](src/engine/InfluenceOverlay.ts) | Cerchi dei catalizzatori e perimetri dei settori, senza modificare le mesh voxel | `InfluenceOverlay` |
+| [InspectGuides.ts](src/engine/InspectGuides.ts) | Le linee che dicono dove e' puntata una vista: riquadro, carreggiata della sezione, colonna a fuoco | `InspectGuides` |
 | [PlacementCursor.ts](src/engine/PlacementCursor.ts) | Segnaposto sotto il puntatore: base, mirino, onda e fascio, sempre sopra la scena | `PlacementCursor` |
 | [PlacementCursor.test.ts](src/engine/PlacementCursor.test.ts) | Posizione sulla colonna, stato valido/rifiutato, esclusione dalla profondita' | — |
 | [IsoCameraController.ts](src/engine/IsoCameraController.ts) | Ortografica isometrica: scatti di 90°, zoom, pan vincolato all'AABB | `IsoCameraController`, `IsoCameraOptions` |
@@ -276,6 +277,29 @@ stageForBuildings(recipe, nearby);          // quanto la citta' intorno ha merit
 generateLandmark({ kind, stage, facing });  // VoxelStamp | null
 ```
 
+## `src/world/spans/` — la rete in quota
+
+La prima struttura del progetto che **non poggia a terra**: una campata fra due
+appoggi che non sono suoi. Da qui l'invariante del dominio — **una campata non
+prende suolo** — che e' anche l'unica cosa che il modello dei landmark non sapeva
+gia' dire: sotto un ponte la carreggiata si dipinge ancora e i lotti si
+costruiscono ancora, e se un edificio cresce attraverso la campata a cedere e' la
+campata. Puro: entrano due appoggi e due predicati sul luogo, esce un piano.
+
+| File | Ruolo | Esporta |
+| --- | --- | --- |
+| [config.ts](src/world/spans/config.ts) | **Ogni** lunghezza, quota, franco, cadenza e indice di palette delle campate | `SPANS`, `SPAN_KIND`, `SpanKind`, `SpanRule` |
+| [spanPlan.ts](src/world/spans/spanPlan.ts) | Ponte e mezzanino: asse, vuoto, quota d'atterraggio, segmenti | `planSpan`, `spanBaseZ`, `tileSegments`, `SPAN_HEIGHT`, `SPAN_REFUSALS`, `SpanPlan`, `SpanQuery`, `SpanSupport`, `SpanProbe`, `GapColumn`, `SpanSegment`, `SpanResult`, `SpanRefusal` |
+| [plazaPlan.ts](src/world/spans/plazaPlan.ts) | La piazza sul cuore di un isolato, retta da tre o piu' edifici | `planPlaza`, `PlazaQuery`, `CourtyardRect` |
+| [generate.ts](src/world/spans/generate.ts) | Lo stamp di un segmento: travi, carreggiata, verde | `generateSpan` |
+| [network.ts](src/world/spans/network.ts) | Union-find sugli appoggi e la proprieta' di continuita' del gate | `SpanNetwork`, `widestReach`, `SpanLink` |
+
+```ts
+planSpan({ a, b, kind: SPAN_KIND.bridge, ground, solid }); // { ok, plan } | { ok: false, refusal }
+planPlaza({ rect, supports, ground, solid });              // stessa forma
+widestReach(registry.spans, blockOf);                      // isolati raggiunti: >= 2 passa il gate
+```
+
 ## `src/world/buildings/` — crescita voxel
 
 Ponte tra candidati della simulazione e mondo renderizzato: convalida il terreno,
@@ -322,7 +346,7 @@ giocabile; gli overlay tecnici si alternano con `F3` o partono aperti con
 | [TerrainOverlay.ts](src/ui/TerrainOverlay.ts) | Progresso della generazione, istogramma dei biomi, colonne edificabili |
 | [SimOverlay.ts](src/ui/SimOverlay.ts) | Stock e delta per tick, heatmap 2D del campo, primi dieci candidati, pulsanti delle policy |
 | [InspectOverlay.ts](src/ui/InspectOverlay.ts) | Referto tecnico delle viste: modi, slider della quota, colonna a fuoco e id dell'isolato |
-| [ViewMenuModel.ts](src/ui/ViewMenuModel.ts) | Il menu delle viste dal lato del giocatore, puro: etichette, barra dei livelli, regola dello strumento |
+| [ViewMenuModel.ts](src/ui/ViewMenuModel.ts) | Il menu delle viste dal lato del giocatore, puro: etichette, gesti, targa della vista attiva con i suoi tasti, barra dei livelli, regola dello strumento |
 
 ## Test e bench
 
@@ -348,17 +372,21 @@ giocabile; gli overlay tecnici si alternano con `F3` o partono aperti con
 | [game/onboarding.test.ts](src/game/onboarding.test.ts) | Sequenza e sblocco dei tre passi iniziali |
 | [game/cityCondition.test.ts](src/game/cityCondition.test.ts) | Priorità delle crisi e stabilità richiesta per il successo |
 | [game/sectors.test.ts](src/game/sectors.test.ts) | Identità uniche, terra utile e continuità delle espansioni |
-| [ui/ControlsHint.test.ts](src/ui/ControlsHint.test.ts) | Completezza delle indicazioni dei comandi camera |
+| [ui/ControlsHint.test.ts](src/ui/ControlsHint.test.ts) | Completezza dei comandi camera e delle viste nella card di aiuto |
 | [ui/GameHudModel.test.ts](src/ui/GameHudModel.test.ts) | Risorse, requisiti, blocchi economici e policy attive del HUD |
 | [world/streets/streetGrid.test.ts](src/world/streets/streetGrid.test.ts) | Partizione strada/isolato, gerarchia degli assi, fronte e cuore, carreggiata piu' vicina, determinismo |
 | [engine/inspect.test.ts](src/engine/inspect.test.ts) | Predicati delle quattro viste, finestra dei raggi X, lato della sezione, quota della fetta, accordo fra `modeCuts` e `isCut` |
-| [ui/ViewMenuModel.test.ts](src/ui/ViewMenuModel.test.ts) | Ordine e etichette delle viste, barra dei livelli solo dove si taglia, strumento che chiude un taglio |
+| [ui/ViewMenuModel.test.ts](src/ui/ViewMenuModel.test.ts) | Ordine, etichette e gesti delle viste, targa che dice sempre come si esce, barra dei livelli solo dove c'e' una quota, strumento che chiude un taglio |
 | [world/streets/lots.test.ts](src/world/streets/lots.test.ts) | Il lotto tocca sempre un fronte, non esce dall'isolato, l'isolato si riempie |
 | [world/grading/grade.test.ts](src/world/grading/grade.test.ts) | Classificazione del terreno, quota del piano finito, tetto strutturale, rampa a pendenza uno |
 | [world/sites/siteRules.test.ts](src/world/sites/siteRules.test.ts) | Ricerca dell'acqua sui quattro assi, intorno piano sotto il tetto proprio, motivi di rifiuto per ruolo |
-| [world/buildings/Builder.test.ts](src/world/buildings/Builder.test.ts) | Candidato → occupazione della simulazione → voxel; allineamento alla rete stradale; opere di terra su isola vera; la banchina non si stacca dalla terra; landmark dei catalizzatori e avanzamento di stadio; isolati terrazzati — quota e basamento condivisi, nessun solco fra i membri, gradoni sul fianco; due mandati opposti danno due città diverse |
+| [world/buildings/Builder.test.ts](src/world/buildings/Builder.test.ts) | Candidato → occupazione della simulazione → voxel; allineamento alla rete stradale; opere di terra su isola vera; la banchina non si stacca dalla terra; landmark dei catalizzatori e avanzamento di stadio; isolati terrazzati — quota e basamento condivisi, nessun solco fra i membri, gradoni sul fianco; la rete in quota — appoggi reali, nessun suolo preso, un percorso continuo fra due isolati, nessuna campata orfana; i landmark lineari che compaiono a ritagli; due mandati opposti danno due città diverse |
 | [world/landmarks/generate.test.ts](src/world/landmarks/generate.test.ts) | Ingombro dichiarato, determinismo, stadi cumulativi, invarianza per rotazione, firma verticale e sagome distinte fra gli otto ruoli |
 | [world/buildings/BuildingRegistry.test.ts](src/world/buildings/BuildingRegistry.test.ts) | Indice spaziale e sostituzione di record |
+| [world/spans/spanPlan.test.ts](src/world/spans/spanPlan.test.ts) | Asse, vuoto e fronte comune; l'atterraggio sull'arretramento; i motivi di rifiuto uno per uno; il taglio in segmenti; il mezzanino dentro la fila |
+| [world/spans/plazaPlan.test.ts](src/world/spans/plazaPlan.test.ts) | Il cuore dell'isolato cresciuto dal centro, gli appoggi su lati diversi, i rifiuti di forma |
+| [world/spans/generate.test.ts](src/world/spans/generate.test.ts) | La sezione: travi sotto i filari di bordo, mensole alle testate, verde nel cuore, segmenti che si accordano |
+| [world/spans/network.test.ts](src/world/spans/network.test.ts) | Union-find, grado per appoggio, la piazza come nodo, e la proprieta' di continuita' del gate |
 | [world/buildings/cluster.test.ts](src/world/buildings/cluster.test.ts) | Chi entra in fila e chi apre il gradino: mai scavare, tetto del riempimento, soglia di densità, termini adottati invariati |
 | [world/buildings/generate.test.ts](src/world/buildings/generate.test.ts) | Determinismo e limiti degli stamp; terrazze, giardini, soglie luminose, silhouette per uso e corso di base che sposta la quota senza toccare la sagoma |
 | [world/buildings/typology.test.ts](src/world/buildings/typology.test.ts) | Copertura del catalogo, scelta deterministica dal luogo, forme distinguibili fra tipologie, righe concesse da un mandato |

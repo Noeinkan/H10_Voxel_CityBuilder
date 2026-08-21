@@ -83,6 +83,21 @@ export const BUILDER = {
   maxDirtyChunksPerBuilding: 24,
 
   /**
+   * Lato oltre il quale uno stamp compare a ritagli invece che in un colpo solo.
+   *
+   * **Le strutture grandi si spezzano, non si esentano.** Un molo lungo ventisei
+   * colonne attraversa piu' piani di chunk di una torre alta: scriverlo intero li
+   * marca tutti nello stesso frame, ed e' il motivo per cui la 4.12 aveva dovuto
+   * alzare il tetto per i landmark invece di rispettarlo. A sedici — mezzo chunk
+   * — un ritaglio tocca al massimo due colonne di chunk per asse, e il picco
+   * torna quello di un edificio qualunque.
+   *
+   * Non e' una manopola da girare per far entrare una ricetta: se un ritaglio
+   * non ci sta, e' questo numero a doversi abbassare.
+   */
+  segmentSide: 16,
+
+  /**
    * Cubi scritti per frame per struttura: la crescita e' voxel-per-voxel.
    *
    * Un edificio e' fatto di circa otto volte i voxel di prima a parita' di

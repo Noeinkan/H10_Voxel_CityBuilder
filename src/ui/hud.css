@@ -140,6 +140,33 @@
 .view-option strong { font-size: 12px; font-weight: 800; }
 .view-option[aria-pressed="true"] { color: #fffaf0; background: var(--hud-sage-dark); border-color: var(--hud-sage-dark); }
 .view-option[aria-pressed="true"] > span { color: rgba(255,250,240,.78); }
+/* Il gesto e' istruzione, non descrizione: peso diverso e accento caldo, lo
+   stesso delle guide che compaiono nel mondo quando la vista si accende. */
+.view-option .view-gesture { color: #a5643f; font-weight: 700; }
+.view-option[aria-pressed="true"] .view-gesture { color: #ffcda8; }
+
+/* Angolo in alto a sinistra: le risorse sono centrate e non ci arrivano, i
+   pannelli stanno in basso a destra e la quota a meta' del bordo sinistro. E'
+   l'unico posto dove una targa di stato non copre niente e non va cercata. */
+.view-bar { position: absolute; left: 14px; top: 14px; display: grid; gap: 3px; width: 214px; padding: 11px 12px 10px; border-radius: var(--hud-radius); pointer-events: auto; transition: opacity 150ms ease, transform 150ms ease; }
+.view-bar[hidden] { display: grid; opacity: 0; visibility: hidden; transform: translateX(-10px); pointer-events: none; }
+.view-bar-eyebrow { color: var(--hud-muted); font-size: 8px; font-weight: 900; letter-spacing: .1em; text-transform: uppercase; }
+.view-bar-label { font-size: 15px; font-weight: 800; }
+/* Stesso accento caldo del gesto nel picker e delle guide nel mondo: le tre
+   superfici che dicono "punta qui" si riconoscono dal colore. */
+.view-bar-gesture { margin: 3px 0 0; color: #a5643f; font: 700 10px/1.35 var(--hud-font); }
+.view-bar-keys { display: grid; gap: 3px; margin-top: 8px; padding-top: 8px; border-top: 1px solid rgba(63,87,77,.16); }
+.view-bar-key { display: flex; align-items: center; gap: 6px; color: var(--hud-muted); font-size: 10px; line-height: 1.35; }
+.view-bar-caps { display: flex; flex: 0 0 46px; gap: 3px; }
+.view-bar kbd { min-width: 16px; padding: 2px 4px; border: 1px solid rgba(63,87,77,.24); border-bottom-width: 2px; border-radius: 5px; color: var(--hud-ink); background: #fff; font: 700 9px/1.35 var(--hud-mono); text-align: center; }
+.view-bar-actions { display: flex; gap: 5px; margin-top: 9px; }
+.view-bar-button { flex: 1; padding: 6px 7px; border: 1px solid rgba(63,87,77,.2); border-radius: 9px; color: var(--hud-ink); background: rgba(255,255,255,.7); font: 800 10px/1.2 var(--hud-font); cursor: pointer; }
+.view-bar-button:hover { border-color: rgba(63,110,97,.48); background: rgba(255,255,255,.95); }
+.view-bar-button:focus-visible { outline: 3px solid rgba(233,154,114,.48); outline-offset: 1px; }
+/* L'uscita e' l'azione che il giocatore cerca per prima quando non capisce cosa
+   sta guardando: e' piena, non un secondo bottone di pari peso. */
+.view-bar-exit { color: #fffaf0; background: var(--hud-sage-dark); border-color: var(--hud-sage-dark); }
+.view-bar-exit:hover { background: #35604f; border-color: #35604f; }
 
 /* Bordo sinistro e non sopra il dock: si trascina la quota mentre si guarda la
    citta', ed e' l'unico lato che nessun altro pannello di gioco occupa. */
@@ -159,6 +186,13 @@
 .help-grid { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 7px 16px; }
 .help-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; color: var(--hud-muted); font-size: 11px; }
 .help-keys { display: flex; align-items: center; gap: 3px; }
+/* Le viste sotto i comandi, separate da una riga: sono un secondo argomento e
+   non un'ottava scorciatoia, e mescolarle alla griglia le faceva sparire. */
+.help-views { margin-top: 13px; padding-top: 11px; border-top: 1px solid rgba(63,87,77,.16); }
+.help-section-title { margin: 0; font-size: 11px; font-weight: 900; letter-spacing: .07em; text-transform: uppercase; color: var(--hud-sage-dark); }
+.help-section-lead { margin: 3px 0 8px; color: var(--hud-muted); font-size: 11px; }
+.help-view-row { display: grid; grid-template-columns: 78px 1fr; gap: 4px 10px; margin-top: 5px; color: var(--hud-muted); font-size: 10px; line-height: 1.35; }
+.help-view-row strong { color: var(--hud-ink); font-size: 11px; font-weight: 800; }
 .help-card kbd, .level-rail kbd { min-width: 18px; padding: 2px 5px; border: 1px solid rgba(63,87,77,.24); border-bottom-width: 2px; border-radius: 5px; color: var(--hud-ink); background: #fff; font: 700 9px/1.35 var(--hud-mono); text-align: center; }
 
 .debug-panel { position: fixed; bottom: var(--game-hud-bottom); z-index: 16; max-width: calc(100vw - 28px); max-height: min(65vh, 620px); overflow: auto; box-sizing: border-box; color: #dcebe6; background: rgba(24,38,42,.94); border: 1px solid rgba(185,217,210,.24); border-radius: 11px; box-shadow: 0 10px 30px rgba(0,0,0,.25); backdrop-filter: blur(10px); font: 10px/1.45 var(--hud-mono); }
@@ -166,8 +200,10 @@
 .debug-panel--left { left: 14px; }
 .debug-panel--right { right: 14px; }
 /* In alto a sinistra: basso-sinistra e destra sono gia' presi, e la barra
-   risorse e' centrata e non arriva fin qui. */
-.debug-panel--inspect { left: 14px; top: 14px; bottom: auto; }
+   risorse e' centrata e non arriva fin qui. Sotto la targa della vista, che
+   occupa lo stesso angolo e serve al giocatore: questo pannello serve a chi
+   sviluppa, e cede il posto. */
+.debug-panel--inspect { left: 14px; top: 220px; bottom: auto; }
 .debug-range { display: block; width: calc(100% - 20px); margin: 0 10px 8px; accent-color: #78c8b4; }
 .debug-summary { padding: 7px 10px; color: #b9d9d2; cursor: pointer; user-select: none; list-style: none; font: 800 10px/1.4 var(--hud-font); letter-spacing: .04em; white-space: nowrap; }
 .debug-body { margin: 0; padding: 9px 11px 11px; border-top: 1px solid rgba(185,217,210,.14); color: inherit; font: inherit; white-space: pre; min-width: 260px; }

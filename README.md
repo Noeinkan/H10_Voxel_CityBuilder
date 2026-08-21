@@ -43,13 +43,14 @@ aggiungendo chunk alla mappa sparsa.
 | [src/engine/themes/](src/engine/themes/) | I temi grafici: 32 colori più l'atmosfera, applicati senza rimeshare |
 | [src/engine/IsoCameraController.ts](src/engine/IsoCameraController.ts) | Ortografica isometrica: scatti di 90°, zoom, pan vincolato |
 | [src/engine/InfluenceOverlay.ts](src/engine/InfluenceOverlay.ts) | Raggi dei catalizzatori e perimetri dei settori sbloccati |
+| [src/engine/InspectGuides.ts](src/engine/InspectGuides.ts) | Le linee che dicono dove è puntata una vista: riquadro, sezione, colonna a fuoco |
 | [src/engine/PlacementCursor.ts](src/engine/PlacementCursor.ts) | Segnaposto del piazzamento: leggibile a distanza e mai coperto dal rilievo |
 | [src/ui/GameHud.ts](src/ui/GameHud.ts) | HUD Cozy City: risorse, costruzione, policy, tempo e feedback |
 | [src/ui/ControlsHint.ts](src/ui/ControlsHint.ts) | Aiuto contestuale del primo avvio, riapribile con `?` |
 | [src/ui/DebugOverlay.ts](src/ui/DebugOverlay.ts) | Overlay delle misure, attivo con `F3` o `?debug=1` |
 | [src/ui/GrowthOverlay.ts](src/ui/GrowthOverlay.ts) | Overlay dedicato a `?debug=1&grow=1` |
 | [src/ui/InspectOverlay.ts](src/ui/InspectOverlay.ts) | Referto tecnico delle viste: colonna a fuoco, isolato, densità del retino |
-| [src/ui/ViewMenuModel.ts](src/ui/ViewMenuModel.ts) | Il menu delle viste come lo vede il giocatore: etichette, barra dei livelli, regola dello strumento |
+| [src/ui/ViewMenuModel.ts](src/ui/ViewMenuModel.ts) | Il menu delle viste come lo vede il giocatore: etichette, targa della vista attiva, barra dei livelli, regola dello strumento |
 | [src/world/terrain/](src/world/terrain/) | Generatore di isole procedurali (vedi sotto) |
 | [src/sim/](src/sim/) | Simulazione a tick: risorse, campo di desiderabilità, decisioni (vedi sotto) |
 

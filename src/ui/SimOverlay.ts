@@ -291,6 +291,7 @@ function builderLines(stats: BuilderStats | null): readonly string[] {
     `builder      ${stats.placed.toString().padStart(6)} placed  ${stats.growing.toString().padStart(3)} growing  ${stats.upgraded.toString().padStart(3)} upgraded`,
     `rejected     ${stats.blacklisted.toString().padStart(6)} blocked${rejected.length === 0 ? '' : `  ${rejected.join('  ')}`}`,
     `clustered    ${stats.clustered.toString().padStart(6)} in row`,
+    `spans        ${stats.spans.toString().padStart(6)} aloft   ${stats.spanReach} blocks reached`,
   ];
 }
 

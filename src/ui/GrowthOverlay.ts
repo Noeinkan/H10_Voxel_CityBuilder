@@ -70,6 +70,10 @@ export class GrowthOverlay {
       `             revenue ${stats.state.commerce.revenue.toFixed(2)}/t  goods ${stats.state.commerce.goods.toFixed(2)}/t`,
       `queue        ${stats.builder.growing}  upgrades ${stats.builder.upgraded}`,
       `levels       ${stats.levels.map((n, i) => `L${i} ${n ?? 0}`).join('  ')}`,
+      // `reach` e' il gate della 4.5 senza aprire una console: a uno la rete in
+      // quota e' un ornamento — ponti che non portano da nessuna parte — e da
+      // due in su e' un secondo piano stradale.
+      `spans        ${stats.builder.spans}  reach ${stats.builder.spanReach} blocks`,
       `blacklist    ${stats.builder.blacklisted}`,
       `rejected     ${rejected}`,
     ].join('\n');

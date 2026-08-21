@@ -1,4 +1,6 @@
 import { createHudIcon } from './hudIcons';
+import { INSPECT, INSPECT_MODE } from '../engine/inspect';
+import { buildViewMenuModel } from './ViewMenuModel';
 
 export interface ControlHint {
   readonly keys: readonly string[];
@@ -11,10 +13,48 @@ export const CONTROL_HINTS: readonly ControlHint[] = [
   { keys: ['Wheel'], action: 'Zoom in and out' },
   { keys: ['Drag'], action: 'Pan the camera' },
   { keys: ['F'], action: 'Frame the whole city' },
-  { keys: ['V'], action: 'Look inside the city' },
-  { keys: ['[', ']'], action: 'Move the level up and down' },
-  { keys: ['Esc'], action: 'Cancel the current tool' },
+  { keys: ['V'], action: 'Cycle the views below' },
+  // Una riga sola per i due usi, nell'ordine in cui Escape li prova: prima posa
+  // lo strumento, poi esce dalla vista. Due righe separate direbbero che sono
+  // due tasti, e chi legge non saprebbe quale dei due effetti aspettarsi.
+  { keys: ['Esc'], action: 'Cancel the tool, then leave the view' },
 ];
+
+/** Una vista nella card: come si chiama e come si punta. */
+export interface ViewHint {
+  readonly label: string;
+  readonly gesture: string;
+}
+
+/**
+ * Le viste, con il loro gesto, dentro l'aiuto.
+ *
+ * Qui e' dove il giocatore scopre che esistono, e finora la card ne diceva una
+ * riga sola — «V · Look inside the city» — che non nomina nessuna delle quattro
+ * e non spiega come puntarle. Chi premeva `V` vedeva comparire un riquadro
+ * retinato e non aveva nessun posto dove andare a capire cosa fosse.
+ *
+ * Derivate da `ViewMenuModel` e non riscritte a mano: la card e il picker devono
+ * chiamare le viste con lo stesso nome, e due elenchi paralleli divergono al
+ * primo cambio. Normal esce da sola — non si punta, e non ha un gesto.
+ */
+export const VIEW_HINTS: readonly ViewHint[] = buildViewMenuModel(
+  INSPECT_MODE.off,
+  INSPECT.defaultSliceZ,
+  INSPECT.maxSliceZ,
+).options
+  .filter((option) => option.gesture !== '')
+  .map((option) => ({ label: option.label, gesture: option.gesture }));
+
+/**
+ * La riga che dice da dove si aprono — e da dove si esce.
+ *
+ * L'uscita sta qui e non in fondo perche' e' la prima cosa che serve sapere:
+ * si prova una vista volentieri se si sa gia' come tornare indietro, e chi non
+ * lo sa la subisce.
+ */
+export const VIEW_HINTS_LEAD =
+  'Open the Views button in the dock, or press V to cycle. Esc brings the whole city back.';
 
 export const HELP_STORAGE_KEY = 'h10-cozy-help-seen-v1';
 
@@ -73,6 +113,7 @@ export class ControlsHint {
       grid.appendChild(row);
     }
     this.root.appendChild(grid);
+    this.root.appendChild(viewSection());
     parent.appendChild(this.root);
     this.root.hidden = hasSeenHelp(storage);
   }
@@ -94,6 +135,32 @@ export class ControlsHint {
     if (this.isOpen) this.hide(true);
     else this.show();
   }
+}
+
+/** Il blocco delle viste, sotto i comandi della camera. */
+function viewSection(): HTMLElement {
+  const section = document.createElement('section');
+  section.className = 'help-views';
+
+  const title = document.createElement('h3');
+  title.className = 'help-section-title';
+  title.textContent = 'Look inside the city';
+  const lead = document.createElement('p');
+  lead.className = 'help-section-lead';
+  lead.textContent = VIEW_HINTS_LEAD;
+  section.append(title, lead);
+
+  for (const hint of VIEW_HINTS) {
+    const row = document.createElement('div');
+    row.className = 'help-view-row';
+    const label = document.createElement('strong');
+    label.textContent = hint.label;
+    const gesture = document.createElement('span');
+    gesture.textContent = hint.gesture;
+    row.append(label, gesture);
+    section.appendChild(row);
+  }
+  return section;
 }
 
 function browserStorage(): HelpStorage | null {

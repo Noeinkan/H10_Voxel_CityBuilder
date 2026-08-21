@@ -6,21 +6,52 @@ Una città-isola automatica, enorme ma leggibile come una miniatura voxel. Il
 giocatore non disegna ogni edificio: modifica le condizioni della crescita con
 catalizzatori, policy ed espansioni territoriali, poi osserva la città adattarsi.
 
-Il principio guida è **poche decisioni con conseguenze visibili**. Ogni nuova
-meccanica deve cambiare chiaramente forma della città, economia o uso del suolo
-senza compromettere i 60 fps nel browser.
+**L'isola è il punto di partenza, non il formato finale della città.** La
+crescita non si esaurisce sul piano: le torri salgono, e in alto si
+**richiudono** — mezzanini, ponti, impalcati abitati, parchi in quota,
+piattaforme che diventano suolo, arcologie che da sole valgono un quartiere.
+Quando il suolo finisce, una città di oggi si allarga; questa deve poter salire e
+riconnettersi sopra se stessa. È la differenza fra una skyline — torri alte
+vicine, ognuna per sé — e una megastruttura, e non è una rifinitura da fare in
+fondo: è la forma che il gioco deve raggiungere.
 
-### Stato attuale — MVP
+Due principi guida, e il secondo non è meno vincolante del primo:
+
+1. **Poche decisioni con conseguenze visibili.** Ogni nuova meccanica deve
+   cambiare chiaramente forma della città, economia o uso del suolo senza
+   compromettere i 60 fps nel browser.
+2. **La terza dimensione è una dimensione di crescita, non un attributo degli
+   edifici.** Un edificio più alto è un numero più grande; una città
+   tridimensionale è un'altra cosa — sopra il primo livello ce n'è un secondo,
+   percorribile, abitato e connesso al primo. Finché «dove si costruisce» resta
+   una domanda su `(x, y)`, la città può diventare solo più fitta e più alta, mai
+   stratificata.
+
+### Stato attuale
 
 - Isola procedurale deterministica, streaming in worker e mappa di edificabilità.
 - Motore voxel a chunk con greedy meshing, shader condiviso e temi a palette.
+- Rete stradale come funzione pura del seed, opere di terra che costruiscono il
+  piano dove il terreno non ce l'ha, isolati terrazzati in cui edifici accostati
+  condividono quota e basamento.
 - Crescita automatica di edifici residenziali, commerciali, industriali, civici e
-  a uso misto fino al livello 6, con tipologie scelte dal luogo.
-- Risorse, popolazione, soddisfazione, commercio interno, policy e campo di
+  a uso misto fino al livello 6, con tipologie scelte dal luogo e una grammatica
+  verticale a fasce, arretramenti, terrazze e cinque coronamenti.
+- Otto ruoli di catalizzatore con una struttura voxel propria, che avanza per
+  stadi insieme al quartiere che ha generato.
+- Risorse, popolazione, soddisfazione, commercio interno ed esterno per
+  collegamento, policy, decisioni con mandato permanente e campo di
   desiderabilità per uso.
-- Piazzamento dei catalizzatori tramite click, anteprima e messaggi di validazione.
+- Piazzamento dei catalizzatori tramite click, anteprima, vincoli di sito per
+  ruolo e messaggi di validazione.
 - Acquisto di settori costieri, pausa e velocità della simulazione.
+- Cinque viste di ispezione in mano al giocatore per guardare dentro la città.
 - Overlay diagnostico e suite di test per motore, terreno, simulazione e crescita.
+
+**E il limite che conta.** Gli edifici salgono, la città no. Tutto ciò che
+decide *dove* costruire ragiona su `(x, y)`: una colonna occupata è occupata per
+sempre, a qualunque quota, e non esiste ancora niente che stia **sopra**
+qualcos'altro. La diagnosi, riga per riga, apre la fase 4.
 
 ## Fase 1 — Rendere solido il ciclo di gioco
 
@@ -301,6 +332,56 @@ uso si cerca solo sui siti che entrano davvero in lista.
 Obiettivo: trasformare la crescita urbana in un processo realmente verticale e
 tridimensionale, nel quale edifici, spazi pubblici e mobilità colonizzano quote
 diverse e formano una città stratificata, connessa e leggibile.
+
+**Dove siamo, e perché la città è ancora piatta.** Sette sotto-fasi su
+quattordici sono chiuse, la città cresce fitta e le torri svettano — e nessuna
+delle quattro che la alzano davvero da terra è mai iniziata. Quello che è stato
+fatto è tutto sul piano o dentro il singolo volume: 4.1 le strade, 4.2 il terreno, 4.3 la
+grammatica di un edificio, 4.4 le file di edifici accostati, 4.12 i landmark a
+terra, 4.11 e 4.13 gli strumenti per guardarci dentro. La verticale è rimasta
+un *attributo* — `level`, `bands`, `height` — e non è mai diventata un luogo
+dove costruire.
+
+Non è un'impressione: è scritto in quattro punti del codice, e sono pochi.
+
+1. **Il candidato è un bit per colonna.** `nextBuildSites` accetta una cella se
+   è `buildable`, se supera la soglia e se `occupancy[i] === 0`. Una colonna
+   costruita smette per sempre di essere proponibile, quale che sia la quota
+   libera sopra.
+2. **Il lotto è una colonna libera.** In `Builder`, `isOccupied(cx, cy)` rifiuta
+   il lotto senza mai guardare `z`, e `baseZ` viene da `terms.deck`, cioè dal
+   piano che `planCluster` e `planGrade` ricavano dal **terreno**. Non esiste un
+   percorso che parta da una quota diversa dal suolo.
+3. **Il mondo espone una quota sola.** `TerrainMap` tiene una altezza e un bit
+   `buildable` per colonna. Finché «edificabile» è un bit per `(x, y)`, un
+   secondo livello non è rappresentabile, non solo non scelto.
+4. **Il tetto è basso e triplo.** `BUILDER.maxLevel: 6` con `LEVEL_CAPS` fermo a
+   otto fasce, `upgradeThreshold` che finisce a 198 su un campo che satura a 255,
+   e `maxDirtyChunksPerBuilding: 24` tarato sulla torre di oggi. La diagnosi
+   completa è in 4.6.
+
+**Cosa invece non manca.** `BuildingRegistry.overlaps` considera *non*
+sovrapposti due volumi sulla stessa colonna con intervalli di quota disgiunti, e
+`topOf` restituisce già la prima cella libera sopra una colonna. Il registro sa
+impilare: a non saperlo è chi sceglie dove costruire. È la ragione per cui la
+città in quota non è una riscrittura ma quattro decisioni, ed è argomentato per
+esteso in 4.9.
+
+**L'ordine di lavoro, da qui in avanti.** Le sotto-fasi non hanno più tutte lo
+stesso peso: quattro formano la spina dorsale della verticale e vanno in
+quest'ordine, perché ognuna è il presupposto della successiva.
+
+| | Cosa aggiunge | Senza di lei |
+| --- | --- | --- |
+| **4.5** | la campata: una struttura che non poggia a terra | non c'è niente che colleghi due quote |
+| **4.6** | la quota ammessa per colonna, e i tre tetti rotti | le torri restano a sessanta voxel e lo skyline è un altopiano |
+| **4.9** | il suolo artificiale: si costruisce *sopra* la città | il secondo livello non esiste, esistono solo ponti |
+| **4.14** | l'arcologia: un'opera sola che è un quartiere | la città è stratificata ma non ha megastrutture |
+
+Le altre restano dove sono e possono procedere in parallelo: 4.7 e 4.8 sono
+look, 4.10 è uno strumento. Nessuna delle due famiglie blocca l'altra, ma se
+c'è da scegliere si sceglie la spina dorsale — è la sola che cambia *cosa* è la
+città, invece di come si vede.
 
 **Perché è divisa in sotto-fasi.** È l'unica fase che tocca i tre strati
 insieme — terreno, mondo voxel e regole di crescita — e in un ordine obbligato:
@@ -737,22 +818,149 @@ il piano di un molo.
 
 ### Fase 4.5 — Rete urbana in quota
 
-Obiettivo: continuare la rete sopra il piano stradale.
+Obiettivo: continuare la rete sopra il piano stradale, fino a che il livello alto
+sia percorribile quanto quello basso.
 
-Dipende da 4.1 per la topologia e da 4.4 per avere qualcosa da collegare in quota.
+Dipende da 4.1 per la topologia e da 4.4 per avere qualcosa da collegare in
+quota. **È la prima della spina dorsale**, e non per anzianità: la campata è la
+prima struttura del progetto che non poggia a terra, e finché non esiste, «quota»
+resta un numero dentro uno stamp invece che un posto dove si arriva.
 
-- [ ] Introdurre una struttura che non è un edificio: una campata fra due <!-- size: L -->
+**Cos'è una campata, detto dal lato del codice.** Un edificio è un
+`BuildingRecord` ancorato al terreno; un ponte no — ha due appoggi che non sono
+suoi, non occupa il suolo che scavalca, e la sua ragione di esistere è
+un'altra struttura. Le due strade sono farne un record con un flag, come la 4.12
+ha fatto con i landmark, oppure un dominio a sé. Va tentata prima quella del
+record: eredita occupazione, budget di chunk e comparsa a budget senza aggiungere
+una passata, e l'unico ramo nuovo è quale generatore disegna lo stamp. Cambia
+però un'assunzione che i landmark non toccavano — `baseZ` smette di venire dal
+terreno — ed è esattamente l'assunzione che la 4.9 dovrà rompere comunque.
+
+**Il vuoto sotto è il contenuto, non lo sfondo.** Un ponte fra due torri legge
+come ponte solo se sotto si vede il salto: è la stessa lezione della finestra di
+cielo dell'arcologia (4.14). Da qui due conseguenze di forma — la campata deve
+essere **abbastanza larga da essere abitata** e non un filo teso, e la struttura
+che la regge (piloni, travature, tiranti, impalcature) va **mostrata** invece che
+nascosta. Un impalcato che sembra galleggiare toglie proprio l'informazione per
+cui esiste.
+
+**Stato implementazione:** completata. Il gate è verificato dai test — appoggi
+reali, suolo libero, continuità fra isolati, nessuna orfana — tranne la
+leggibilità alle normali distanze di gioco, che resta da guardare a occhio con le
+viste della 4.11.
+
+- [x] Introdurre una struttura che non è un edificio: una campata fra due <!-- size: L -->
   appoggi, senza colonna propria e senza occupazione del suolo.
-- [ ] Collegare tetti, terrazze condivise e piattaforme con ponti e passerelle <!-- size: L -->
+- [x] Collegare tetti, terrazze condivise e piattaforme con ponti e passerelle <!-- size: L -->
   sospese, scegliendo gli appoggi dalla rete e dal registry.
-- [ ] Aggiungere mezzanini e collegamenti fra quote dentro l'isolato, dove il <!-- size: M -->
+- [x] Aggiungere mezzanini e collegamenti fra quote dentro l'isolato, dove il <!-- size: M -->
   cluster li rende percorribili.
-- [ ] Spezzare le campate lunghe in segmenti che rispettino il tetto di chunk <!-- size: M -->
-  sporchi, e farle comparire a budget come le altre strutture.
+- [x] Dare alla campata una sezione abitata — carreggiata, parapetti, spessore <!-- size: M -->
+  strutturale — e rendere visibile ciò che la sostiene: è l'impalcatura a
+  raccontare l'altezza, e senza di essa una passerella legge come un nastro
+  incollato al cielo.
+- [x] Portare in quota lo **spazio pubblico**, non solo il passaggio: parchi, <!-- size: L -->
+  piazze e giardini sull'impalcato, riusando gli slot `grass*` e i tipi di
+  superficie esistenti. Un livello alto fatto di soli corridoi è un'infrastruttura;
+  con una piazza diventa un pezzo di città.
+- [x] Far sì che la rete in quota sia una **rete**: fra due isolati collegati <!-- size: L -->
+  deve esistere un percorso continuo, verificabile come proprietà e non giudicato
+  a occhio. È la differenza fra ponti sparsi e un secondo piano stradale.
+- [x] Spezzare le campate lunghe in segmenti che rispettino il tetto di chunk <!-- size: M -->
+  sporchi, e farle comparire a budget come le altre strutture. Vale anche per le
+  forme lineari dei landmark, che la 4.12 ha lasciato aperte qui.
+
+**Vincolo:** nessuna campata senza appoggi reali, e nessun appoggio che sia solo
+un numero — se l'edificio che la sostiene cambia livello o sagoma, la campata
+segue o sparisce, mai resta a mezz'aria. Il mesher non si tocca (invariante 6):
+un ponte è fatto degli stessi voxel di una torre, e se una forma chiede una
+passata propria è la forma a essere sbagliata.
 
 **Gate:** ponti e percorsi in quota sono leggibili alle normali distanze di
-gioco, poggiano sempre su appoggi reali, e nessuna campata resta orfana quando
-l'edificio che la sosteneva cambia livello.
+gioco, poggiano sempre su appoggi reali, esiste almeno un percorso continuo fra
+due isolati diversi che non passa dal suolo, e nessuna campata resta orfana
+quando l'edificio che la sosteneva cambia livello.
+
+**Come è stato risolto.** Una campata è **un record con un flag**, come il
+roadmap chiedeva di tentare per prima cosa: `span` dice quale generatore disegna
+lo stamp, `supports` con chi. Da lì eredita collisione, budget di chunk, comparsa
+a budget ed esclusione dagli istogrammi senza una passata in più. L'unica cosa
+davvero nuova è l'invariante del dominio — **una campata non prende suolo** — e
+si è pagata sdoppiando l'indice per colonna del registry: `columns` con tutti i
+record, che regge `overlaps`, e `groundColumns` con i soli record che poggiano
+davvero, che è quello che legge `isOccupied`. Nessun chiamante è cambiato, e
+`isOccupied` è rimasta O(1) senza allocazione. Sotto un ponte la carreggiata si
+dipinge ancora, il lotto si costruisce ancora, e se un edificio cresce attraverso
+la campata a cedere è la campata.
+
+**Il difetto che ha riscritto la regola: gli edifici sono piramidali.** La prima
+versione cercava l'appoggio al filo dell'impronta e non ne trovava **mai** — zero
+campate su 6 911 coppie. Il profilo di una torre lo dice: 6×6 fino a quattro
+voxel sopra la base, 4×4 per i quattro successivi, e da lì in su una guglia. Al
+bordo dell'impronta la parete esiste solo dentro la fascia zero, cioè sotto
+qualunque franco che una strada possa chiedere. `highestLanding` cerca quindi la
+parete **rientrando** verso il centro, e la campata che ne esce è più lunga del
+vuoto e sporge sopra le fasce basse dei propri appoggi — che è esattamente come
+atterra una passerella vera, sull'arretramento e non sul basamento. Da qui
+l'`except` su `overlaps`: toccare ciò a cui si è attaccati non è una collisione.
+Il volume dev'essere comunque tutto aria, o cancellare la campata bucherebbe
+l'edificio.
+
+**La rete è un albero, e il gate è una conseguenza.** Fra due campate possibili
+vince quella che **unisce due componenti separate**; chi chiuderebbe un ciclo non
+si costruisce, perché fra due posti già raggiungibili un secondo percorso aggiunge
+ingombro e non raggiungibilità. `spans/network.ts` tiene sia la decisione sia la
+verifica: se «connesso» fosse definito in due posti, divergerebbero al primo
+refactor e il test smetterebbe di misurare la regola. Il grafo si **ricostruisce**
+a ogni passata invece di aggiornarsi — un union-find non sa disfare un'unione, e
+qui le campate spariscono davvero.
+
+**La piazza è un nodo, non un ponte largo.** Vive sul cuore che la 4.1 aveva
+chiuso apposta, ed è retta da tre o più edifici su lati diversi: è quello a farne
+uno snodo, perché le campate ci arrivano da direzioni diverse. Anche lei ha dovuto
+imparare ad allargarsi fino ai muri veri — il cuore è il vuoto *al suolo*, e in
+quota gli edifici che lo delimitano si sono già arretrati.
+
+**Il debito della 4.12, chiuso.** `LANDMARK.maxDirtyChunks: 48` era un tetto
+alzato apposta per i moli e le piste, e il suo stesso commento diceva che una
+ricetta troppo grossa «andrà spezzata in segmenti — non esentata». Ora `Growing`
+porta un'**ancora** invece di un record, `sliceStamps` ritaglia ciò che supera
+`BUILDER.segmentSide`, e la coda `pending` ne fa comparire uno per volta per
+struttura: accodarli tutti insieme non avrebbe ridotto niente, perché i chunk si
+sporcano man mano che le scritture atterrano. Il tetto dei landmark non esiste
+più: rispettano quello di ogni altra struttura. Il test che verifica tutte le
+ricette su ogni verso e sedici offset — scritto dalla 4.12 — passava con
+quarantotto e passa ancora senza, che è la prova che l'eccezione era diventata
+inutile invece di essere nascosta.
+
+**Costo e misure.** Su 256×256 colonne, un catalizzatore a raggio 96 e 420 tick,
+con 395 edifici e 15 campate: i tick su cui gira `spanPass` (uno su venti) hanno
+mediana **3,9 ms**, p95 6,8 ms; tutti gli altri restano a mediana 0,001 ms e p95
+2,9 ms. Le piazze valgono circa mezzo millisecondo di quei 3,9; il resto è
+l'enumerazione delle coppie. Va detto per intero: **quel tick supera i 3 ms di
+`FRAME_BUDGET_MS`**, e sta nell'ordine del massimo che quel ciclo già tocca —
+16,8 ms, che è `nextBuildSites` mentre scandisce il campo allocato, preesistente e
+di competenza della fase 6. Niente entra nel ciclo di frame: `step` e
+`stepSurface` non sono toccati, e il worker del mesher resta 8,64 kB in bundle.
+**Le tabelle di misura in `README.md` e `src/sim/README.md` vanno rimisurate a
+mano**, e non sono state aggiornate qui.
+
+**Resta aperto.** La rete sta **bassa**, e non per scelta: il franco è due cubi di
+terreno sotto le travi perché l'unica fascia larga abbastanza da reggere un
+impalcato sta fra il quarto e l'ottavo voxel sopra il suolo. Con un franco più
+generoso il pavimento saliva sopra quella fascia e non passava più nessuna coppia
+— non ponti più alti, zero ponti. A liberare la quota è la 4.6, che alza i tre
+tetti che tengono la città a mezz'aria; questa fase ha costruito con l'altezza che
+c'era, e le sue tarature andranno rilette quando quella cambia. Le piazze sono
+poche — una o due per città matura — per la stessa ragione: chiedono un cuore
+d'isolato fra sei e sedici colonne con il perimetro costruito su almeno due lati.
+I mezzanini esistono nella regola e non compaiono ancora sull'isola di prova:
+pretendono due membri della **stessa** fila affacciati su un cortile senza
+carreggiata, e la 4.4 accosta i membri di una fila invece di lasciarli affacciati.
+Una campata che perde l'appoggio **sparisce e viene riproposta** dalla passata
+dopo: è il «segue» del vincolo, ma passa da una cancellazione visibile e non da
+uno spostamento. E i cicli non si costruiscono mai, quindi la rete resta un
+albero: nessun anello, e da un capo all'altro c'è un percorso solo.
 
 ### Fase 4.6 — Gerarchia verticale della città
 
@@ -760,9 +968,10 @@ Obiettivo: una silhouette d'insieme leggibile, non edifici alti sparsi — e la
 regola che decide **fin dove una colonna può salire**, che oggi non esiste.
 
 Dipende da 4.3 e 4.4 per le forme locali: la calibrazione globale ha senso solo
-quando c'è qualcosa da calibrare. È però anche il punto in cui si rompono i tre
-tetti che fermano la città a mezz'aria, ed è la ragione per cui questa
-sotto-fase pesa più di quanto il suo elenco lasciasse credere.
+quando c'è qualcosa da calibrare. **È la seconda della spina dorsale**, ed è
+anche il punto in cui si rompono i tre tetti che fermano la città a mezz'aria:
+la ragione per cui questa sotto-fase pesa più di quanto il suo elenco lasciasse
+credere.
 
 **I tre tetti, in ordine di quanto ingannano.**
 
@@ -917,10 +1126,11 @@ Obiettivo: smettere di costruire *sul* terreno e cominciare a costruire *sopra
 la città* — piattaforme abitate, edifici che poggiano su altri edifici, mobilità
 in quota e vuoto sotto, nella direzione di Cloudpunk.
 
-È il punto d'arrivo della fase, non un'aggiunta a margine: dipende da 4.4 per gli
-isolati terrazzati e da 4.5 per le campate, e va per ultima perché è **l'unica
-sotto-fase che tocca l'assunzione di colonna**. Il look al neon che
-accompagna queste immagini è 4.7 e 4.8; qui c'è solo la struttura che regge.
+È la terza della spina dorsale e la più grossa: dipende da 4.4 per gli isolati
+terrazzati, da 4.5 per le campate e da 4.6 per il tetto, e viene dopo di loro
+perché è **l'unica sotto-fase che tocca l'assunzione di colonna**. Dopo di lei
+resta solo la 4.14, che non aggiunge un meccanismo ma un'opera. Il look al neon
+che accompagna queste immagini è 4.7 e 4.8; qui c'è solo la struttura che regge.
 
 **Com'è fatta davvero una città a livelli.** Nivalis, in Cloudpunk, non ha
 edifici sospesi: ha **cinque piani di città**, e le piattaforme che sembrano
@@ -956,6 +1166,10 @@ moltiplicherebbe per il numero di livelli tutta la memoria densa.
   volume e non come edificio.
 - [ ] Esporre più di una quota edificabile per colonna senza duplicare la <!-- size: L -->
   `TerrainMap`: il livello si risolve dove si risolve il lotto, non nel campo.
+- [ ] Restituire alla crescita le colonne già costruite: oggi `occupancy` è un <!-- size: L -->
+  bit per cella e chiude la colonna per sempre. Deve tornare candidabile quando
+  sopra c'è spazio ammesso, **senza** che `src/sim/` guadagni una coordinata z —
+  è il mondo a dire quante quote restano, come già dice dov'è la costa.
 - [ ] Far crescere edifici sulle piattaforme e sui tetti condivisi dei cluster, <!-- size: L -->
   riusando `topOf` e l'intervallo di quota che il registry già confronta.
 - [ ] Prendere la quota ammessa della 4.6 come tetto **anche** in quota: una <!-- size: M -->
@@ -985,11 +1199,11 @@ Obiettivo: poter guardare tutto il vocabolario visuale in una sola inquadratura
 — ogni slot di palette per ogni linguaggio di superficie, la stratigrafia di ogni
 bioma, e il confronto di scala fra cella di terreno, albero ed edificio.
 
-Nessuna dipendenza, e insieme alla 4.11 conviene farla **per prima** fra le
-sottofasi rimaste: sono i due strumenti con cui si giudicano tutte le altre —
-questo guarda il vocabolario, quella guarda la città costruita. Serve inoltre
-già adesso alla scala a celle del terreno. Vive in `src/world/scenes/`, quindi
-non tocca né la crescita né la simulazione.
+Nessuna dipendenza. Non è nella spina dorsale ma la accompagna: è l'altro
+strumento della coppia aperta dalla 4.11 — questo guarda il vocabolario, quella
+guarda la città costruita — e le sotto-fasi verticali ne portano di forme nuove
+da giudicare. Serve inoltre già adesso alla scala a celle del terreno. Vive in
+`src/world/scenes/`, quindi non tocca né la crescita né la simulazione.
 
 **Perché serve.** Oggi le uniche scene sono `city`, `noise` e `slab`, nate per
 misurare il mesher: l'unico modo di vedere uno slot di palette o un linguaggio di
@@ -1364,6 +1578,55 @@ grande: un raggio X che scala con lo zoom dissolverebbe mezza città appena ci s
 allontana, che è il difetto che la 4.11 aveva già trovato e chiuso. Va detto
 nella riga della vista, non allargato.
 
+**Cosa ha trovato il giocatore, il giorno dopo.** Che una vista che non dice dove
+è puntata non è una vista, è un difetto di rendering. Il comando c'era, il motore
+funzionava, e da fuori si vedeva «una specie di trasparenza ad area quadrata che
+non si capisce cosa sia» — parole di chi ci giocava. Le tre cause, tutte fuori
+dal motore:
+
+- **Il fuoco era invisibile.** Tre viste su quattro si agganciano alla colonna
+  sotto il cursore e nulla a schermo lo diceva: gli unici numeri che lo
+  raccontavano stavano in `InspectOverlay`, dietro `F3`. Ci vogliono delle
+  **guide** — `src/engine/InspectGuides.ts`, contorno del riquadro, carreggiata
+  della sezione, mirino sulla colonna — disegnate dalle uniform già composte, così
+  che la linea non possa divergere dal retino.
+- **Il bordo era un gradino.** Il predicato del rettangolo cominciava su una riga
+  di voxel allineata agli assi, e quel confine netto legge come un artefatto.
+  `INSPECT.feather` lo sfuma moltiplicando la densità che c'era già: nessun
+  colore nei vertici, nessun mesher, e inerte dove il rettangolo è aperto.
+- **Le righe dicevano il risultato e mai il gesto.** «See through whatever stands
+  in front of what you are looking at» non dice *muovi il mouse sopra*. Da qui
+  `ViewOption.gesture`, che entra nel picker, nel toast di `V` e nella card di
+  aiuto — dove la 4.13 aveva lasciato la sola riga «V · Look inside the city»,
+  che non nomina nessuna delle quattro viste. Ci finisce anche la larghezza della
+  finestra dei raggi X, che la riga sopra prometteva di dire e non diceva.
+
+E due difetti veri, non solo di leggibilità: la **barra dei livelli compariva in
+Cutaway**, dove `sliceZ` non entra nelle uniform, quindi si trascinava a vuoto —
+`modeCuts` rispondeva a due domande diverse, e ora `modeHasLevel` risponde alla
+seconda; e **`[`/`]` funzionavano in ogni modo**, senza effetto visibile ma
+*armando* la quota, così che una fetta aperta dopo ripartisse da un numero
+assoluto invece che dal suolo davanti. Fuori da Levels adesso aprono Levels, e il
+ri-armo scatta uscendo da Levels e non solo tornando alla città intera.
+
+**Cosa ha trovato il giocatore, il giorno dopo ancora.** Che le guide dicevano
+*dove* è puntata la lente, e niente altro: «non c'è una maniera ovvia per uscire
+da questa view e ritornare al gioco normale». Aveva ragione, e il difetto non era
+il rendering ma la durata delle superfici. Il picker si chiude appena si sceglie,
+il toast dura due secondi, la card di aiuto va aperta: **tutto ciò che spiega una
+vista muore prima della vista stessa**, e resta una città retinata senza nome,
+senza tasti e senza uscita.
+
+Da qui la **targa** (`ViewBarModel`), l'unica superficie che sopravvive al gesto
+che l'ha aperta: nome, gesto, i tasti che valgono *lì dentro* e due bottoni —
+cambiare vista, uscirne. E `Escape` che finalmente esce, dopo i pannelli e dopo
+lo strumento. Che non lo facesse era scritto e argomentato in
+`resolveEscapeTarget` — una vista non è un pannello aperto sopra il gioco — ma
+l'argomento vale solo finché esiste un'altra via d'uscita ovvia: c'erano `V`
+premuto cinque volte e il picker, e nessuna delle due era scritta da nessuna
+parte. Un tasto di annullamento che si rifiuta di annullare l'unica cosa
+evidentemente in corso non protegge niente.
+
 **Resta aperto.** Le ombre nel taglio si spengono ancora tutte, e ora che è una
 vista di gioco l'appiattimento si nota di più: la risposta giusta resta il
 predicato nel materiale di profondità di `SunShadow`, cioè un secondo shader da
@@ -1371,10 +1634,96 @@ tenere allineato a mano. Nessuna icona ridisegnata e nessuno stato sui sette
 temi: quella è la fase 7, e l'icona aggiunta qui è una sagoma coerente, non un
 progetto grafico.
 
+E soprattutto: **il velo continua a non distinguere terreno da edificio.** I
+raggi X aprono anche il suolo davanti alla colonna, e siccome il mesher non
+emette facce interne, dentro la finestra si legge un guscio vuoto sopra un buco
+nel terreno. Le guide dicono adesso *dove* si sta guardando, il che rende la
+vista usabile, ma non tolgono il buco. Tenere il suolo più pieno degli edifici
+vuole un'informazione che il mesher non porta — e chiedergliela sarebbe la vista
+sbagliata (invariante 6): la strada praticabile è un secondo predicato di quota,
+e va decisa prima di scriverla.
+
+### Fase 4.14 — Arcologie e megastrutture
+
+Obiettivo: l'opera sola che vale un quartiere — usi diversi su quote diverse
+dentro un'unica struttura, che cresce per stadi e diventa l'ancora verticale
+dello skyline.
+
+Dipende da 4.5 per le campate, da 4.6 per il tetto verticale e da 4.9 per il
+suolo artificiale. È l'ultima della spina dorsale perché non aggiunge un
+meccanismo: usa i tre che quelle costruiscono. Un'arcologia in una città che non
+sa ancora impilare sarebbe soltanto un edificio molto alto, cioè esattamente la
+cosa che questa fase esiste per non fare.
+
+**Perché non è «un edificio più grande».** Un edificio qui è un
+`BuildingRecord`: un uso, un livello, un'impronta rettangolare, uno stamp
+rigenerabile. L'arcologia rompe tre di queste quattro cose. Porta più usi
+insieme e distribuiti in verticale — podio produttivo, mezzanino commerciale,
+corpi abitati, corona civica — non ha un livello ma degli **stadi**, e la sua
+pianta non è un rettangolo ma steli e impalcati con dei vuoti in mezzo. La
+macchina che le somiglia non è quella degli edifici: è quella dei **landmark**
+della 4.12 — ricetta di parti invece di grammatica di fasce, ingombro riservato
+per intero al piazzamento, avanzamento su ciò che la città ha davvero costruito
+intorno. È la strada da prendere, e non un secondo Builder.
+
+**Il vuoto dentro l'ingombro è il tratto distintivo.** Il volume che legge come
+megastruttura non è il più alto: è quello che **scavalca il vuoto**. Due steli e
+un impalcato abitato che li unisce a mezz'altezza ritagliano una finestra di
+cielo dentro il costruito, e quella finestra è ciò che dice la scala — senza, una
+torre grossa è solo grossa. Vale come vincolo di ricetta e non come nota di
+gusto: un'arcologia che riempie il proprio ingombro ha sbagliato ricetta.
+
+- [ ] Dare all'arcologia una ricetta di parti come i landmark — steli, impalcati <!-- size: XL -->
+  abitati, corone, vuoti passanti — con l'ingombro riservato e gli stadi
+  cumulativi che la 4.12 ha già.
+- [ ] Ammettere più usi dentro la stessa struttura, per fascia di quota, senza <!-- size: L -->
+  che diventi una zona: la simulazione continua a contare capacità e occupazione
+  come le conta oggi (invariante 7, e lo stesso vincolo che regge i cluster
+  della 4.4).
+- [ ] Farla nascere da una condizione della città — densità, quota ammessa già <!-- size: L -->
+  satura, un mandato della 2.2 — e non da un nono bottone in toolbar: il
+  giocatore modifica le condizioni della crescita, non posa la megastruttura.
+- [ ] Innestarla nella rete in quota della 4.5: un'arcologia che non si <!-- size: M -->
+  raggiunge dagli impalcati è un monumento, non un pezzo di città.
+- [ ] Farne il vertice della gerarchia della 4.6 — l'eccezione governata, una o <!-- size: M -->
+  due per isola — invece di una riga di catalogo che la tipologia può pescare
+  ovunque.
+- [ ] Tenerla dentro i budget: attraversa decine di chunk, quindi cresce a <!-- size: L -->
+  segmenti come le campate e uno stadio per volta, mai in un frame solo.
+
+**Vincolo:** valgono i vincoli trasversali della fase, e in particolare i tre che
+qui si è più tentati di negoziare — nessun tipo di superficie in più (invariante
+5), nessun colore nei vertici (invariante 4), mesher intoccato (invariante 6).
+Un'arcologia è fatta degli stessi otto linguaggi di superficie e degli stessi 32
+slot di palette di una casa: a distinguerla è la massa, non un materiale che
+nessun altro ha.
+
+**Gate:** sull'isola esiste almeno una struttura che contiene usi diversi su
+quote diverse, la si raggiunge dalla rete in quota senza toccare terra, e da
+inquadratura d'insieme la città si legge come stratificata — un livello sopra
+l'altro con il vuoto in mezzo — invece che come un tappeto di torri.
+
+**Riferimenti.**
+
+- [Arcology](https://en.wikipedia.org/wiki/Arcology): il termine e il programma
+  di Soleri, un'unica struttura che assorbe le funzioni di una città. È il nome
+  di ciò che questa sotto-fase costruisce.
+- [Kowloon Walled City](https://en.wikipedia.org/wiki/Kowloon_Walled_City): la
+  megastruttura non progettata, cresciuta per aggregazione finché non è diventata
+  un solo edificio abitato. È il modello di come ci si arriva *crescendo*, che è
+  il nostro caso e non quello dell'opera disegnata a tavolino.
+- [Minneapolis Skyway System](https://en.wikipedia.org/wiki/Minneapolis_Skyway_System):
+  la prova che un secondo livello percorribile diventa il piano principale quando
+  è continuo, e resta un ornamento finché non lo è.
+- Cloudpunk, già citato in 4.9 per lo stesso motivo: cinque piani di città, e la
+  parte bassa deliberatamente strutturale perché è la fondazione di quella sopra.
+
 **Gate della fase 4:** con la UI nascosta, la città comunica crescita verticale,
 connessioni fra livelli e struttura economica attraverso volumi e silhouette;
 ponti, terrazze e percorsi in quota restano leggibili alle normali distanze di
-gioco, e il singolo edificio regge anche l'inquadratura ravvicinata.
+gioco, il singolo edificio regge anche l'inquadratura ravvicinata, e almeno una
+parte della città sta **sopra** un'altra parte — dalla stessa inquadratura si
+contano due livelli abitati e il vuoto che li separa.
 
 ## Fase 5 — Persistenza e prodotto browser
 
@@ -1551,3 +1900,33 @@ Alpha 0.2 è completa quando una partita ha apertura, sviluppo ed espansione
 leggibili, due strategie sostenibili e un salvataggio ripristinabile, con una
 barra risorse e un dock che si leggono a colpo d’occhio, senza regressioni
 rispetto ai contratti e ai budget dell’MVP.
+
+## Milestone successivo — Alpha 0.3, la città si richiude in alto
+
+È la milestone che porta a schermo la seconda metà della visione, e coincide con
+la spina dorsale della fase 4: fino a qui la città si è espansa su `(x, y)`, da
+qui comincia a espandersi su se stessa.
+
+- [ ] Rete urbana in quota: campate, mezzanini, impalcati abitati e spazio <!-- size: XL -->
+  pubblico sopra il piano stradale (fase 4.5).
+- [ ] Gerarchia verticale, e i tre tetti che oggi fermano la città a mezz'aria <!-- size: XL -->
+  (fase 4.6).
+- [ ] Suolo artificiale: piattaforme, edifici sopra edifici, mobilità fra i <!-- size: XL -->
+  livelli (fase 4.9).
+- [ ] Almeno un'arcologia sull'isola (fase 4.14). <!-- size: XL -->
+- [ ] Campionario dei voxel (fase 4.10), se non è già arrivato prima: è lo <!-- size: M -->
+  strumento con cui si giudicano le forme nuove, e qui ne arrivano molte.
+
+**Sull'ordine rispetto ad Alpha 0.2.** Le due milestone non competono per gli
+stessi file — la spina dorsale vive in `src/world/`, salvataggio e passata visiva
+in `src/game/` e `src/ui/` — quindi l'ordine fra loro è una scelta e non un
+vincolo tecnico. Una cosa però lo è: la fase 5 serializza il **registro degli
+edifici**, e la 4.9 gli aggiunge piattaforme e quote. Salvare prima significa
+versionare il formato due volte; salvare dopo significa giocare più a lungo senza
+salvataggio. Va deciso, non lasciato all'inerzia.
+
+Alpha 0.3 è completa quando dalla stessa inquadratura si contano due livelli
+abitati sovrapposti e si segue un percorso continuo in quota fra due isolati
+diversi; quando una partita che non arriva mai in quota resta identica a quella
+di oggi; e quando determinismo e budget reggono con due livelli sovrapposti come
+con uno.

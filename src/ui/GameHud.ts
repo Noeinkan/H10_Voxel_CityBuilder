@@ -16,7 +16,7 @@ import {
   type HudTradeMode,
 } from './GameHudModel';
 import { createHudIcon, type HudIcon } from './hudIcons';
-import { buildViewMenuModel, type ViewMenuModel } from './ViewMenuModel';
+import { buildViewMenuModel, type ViewKeyHint, type ViewMenuModel } from './ViewMenuModel';
 import { INSPECT, INSPECT_MODE, type InspectMode } from '../engine/inspect';
 
 export type { GameTool } from './GameHudModel';
@@ -89,6 +89,14 @@ export class GameHud {
   private readonly policyDrawer: HTMLElement;
   private readonly themePicker: HTMLElement;
   private readonly viewPicker: HTMLElement;
+  private readonly viewBar: HTMLElement;
+  private viewBarLabel!: HTMLElement;
+  private viewBarGesture!: HTMLElement;
+  private viewBarKeys!: HTMLElement;
+  /** Vista accesa: e' l'ultima cosa che Escape spegne, e la targa lo dichiara. */
+  private viewActive = false;
+  /** Il modo gia' disegnato nella targa: i tasti cambiano solo con lui. */
+  private paintedViewMode: InspectMode | null = null;
   private readonly levelRail: HTMLElement;
   private levelSlider!: HTMLInputElement;
   private levelValue!: HTMLElement;
@@ -239,6 +247,8 @@ export class GameHud {
     this.root.appendChild(this.themePicker);
     this.viewPicker = this.createViewPicker();
     this.root.appendChild(this.viewPicker);
+    this.viewBar = this.createViewBar();
+    this.root.appendChild(this.viewBar);
     this.levelRail = this.createLevelRail();
     this.root.appendChild(this.levelRail);
     parent.appendChild(this.root);
@@ -292,22 +302,35 @@ export class GameHud {
   /**
    * La vista attiva, dal modello puro alle superfici che la mostrano.
    *
-   * Tre in una chiamata sola — bottone del dock, picker e barra dei livelli —
-   * perche' dicono tutte la stessa cosa e vederle divergere sarebbe il difetto
-   * peggiore: un picker che dice Cutaway mentre la citta' e' intera.
+   * Quattro in una chiamata sola — bottone del dock, picker, targa e barra dei
+   * livelli — perche' dicono tutte la stessa cosa e vederle divergere sarebbe il
+   * difetto peggiore: un picker che dice Cutaway mentre la citta' e' intera.
    */
   setView(model: ViewMenuModel): void {
     for (const option of model.options) {
       this.viewButtons.get(option.mode)?.setAttribute('aria-pressed', option.active ? 'true' : 'false');
     }
 
-    const active = model.mode !== INSPECT_MODE.off;
+    const active = model.bar.visible;
     this.viewToggle.dataset.active = active ? 'true' : 'false';
     const label = active
       ? `Looking inside: ${model.activeLabel} · V to change`
       : 'Look inside the city · V';
     this.viewToggle.setAttribute('aria-label', label);
     this.viewToggle.dataset.tooltip = label;
+
+    this.viewActive = active;
+    this.viewBar.hidden = !active;
+    // Solo al cambio di modo: questa funzione gira a ogni ripittura dell'HUD, e
+    // ricreare i `kbd` sei volte al secondo li strapperebbe da sotto il puntatore
+    // — e' lo stesso motivo per cui la scheda decisione non si ridisegna sempre.
+    if (!active) this.paintedViewMode = null;
+    else if (this.paintedViewMode !== model.mode) {
+      this.paintedViewMode = model.mode;
+      this.viewBarLabel.textContent = model.bar.label;
+      this.viewBarGesture.textContent = model.bar.gesture;
+      this.viewBarKeys.replaceChildren(...model.bar.keys.map(viewKeyRow));
+    }
 
     this.levelRail.hidden = !model.levelVisible;
     const max = String(model.levelMax);
@@ -435,9 +458,12 @@ export class GameHud {
       !this.policyDrawer.hidden,
       this.help.isOpen,
       this.selected,
+      this.viewActive,
     )) {
-      // Chiude il picker, non la vista: quella non e' un pannello aperto sopra
-      // il gioco ma il modo in cui si sta guardando la citta'.
+      // Chiude il picker e non la vista: sono due cose distinte, e il colpo dopo
+      // e' quello che spegne la vista. Chi ha il pannello aperto sopra la citta'
+      // velata deve premere due volte, ed e' l'ordine giusto — il primo Escape
+      // toglie quello che copre, il secondo quello che nasconde.
       case 'views':
         this.closeViews();
         return true;
@@ -456,6 +482,9 @@ export class GameHud {
         this.handlers.onCancelTool();
         this.paintSelection();
         this.paintToast();
+        return true;
+      case 'view':
+        this.handlers.onView(INSPECT_MODE.off);
         return true;
       case 'none':
         return false;
@@ -686,12 +715,66 @@ export class GameHud {
       const description = document.createElement('span');
       description.textContent = option.description;
       button.append(label, description);
+      // Il gesto sta sotto la descrizione e in un peso diverso: si legge dopo
+      // aver scelto, non mentre si sceglie, ed e' la riga che collega la vista
+      // al cursore. Normal non si punta e non ne ha una.
+      if (option.gesture !== '') {
+        const gesture = document.createElement('span');
+        gesture.className = 'view-gesture';
+        gesture.textContent = option.gesture;
+        button.appendChild(gesture);
+      }
       button.addEventListener('click', () => this.handlers.onView(option.mode));
       this.viewButtons.set(option.mode, button);
       list.appendChild(button);
     }
     picker.appendChild(list);
     return picker;
+  }
+
+  /**
+   * La targa della vista attiva, in alto a sinistra.
+   *
+   * Risponde alle tre domande che restavano senza risposta appena il picker si
+   * chiudeva: **cosa sto guardando**, **cosa devo fare**, **come torno indietro**.
+   * Le prime due erano scritte solo dentro il picker e in un toast che si spegne
+   * da solo; la terza non era scritta da nessuna parte.
+   *
+   * In alto a sinistra perche' e' l'unico angolo che nessuna superficie di gioco
+   * occupa — le risorse sono centrate, i pannelli stanno in basso a destra, la
+   * quota sul bordo sinistro a meta' altezza — e perche' una targa di stato non
+   * deve inseguire il cursore: si guarda una volta e poi si torna alla citta'.
+   *
+   * Ha due bottoni e non uno: uscire e cambiare sono due intenzioni diverse, e
+   * chi ha aperto la vista sbagliata non deve passare da Normal per rimediare.
+   */
+  private createViewBar(): HTMLElement {
+    const bar = document.createElement('aside');
+    bar.className = 'view-bar hud-surface';
+    bar.hidden = true;
+    bar.setAttribute('aria-label', 'Active view');
+    bar.setAttribute('aria-live', 'polite');
+
+    const eyebrow = document.createElement('span');
+    eyebrow.className = 'view-bar-eyebrow';
+    eyebrow.textContent = 'Looking inside';
+    this.viewBarLabel = document.createElement('strong');
+    this.viewBarLabel.className = 'view-bar-label';
+    this.viewBarGesture = document.createElement('p');
+    this.viewBarGesture.className = 'view-bar-gesture';
+    this.viewBarKeys = document.createElement('div');
+    this.viewBarKeys.className = 'view-bar-keys';
+
+    const actions = document.createElement('div');
+    actions.className = 'view-bar-actions';
+    actions.append(
+      barButton('Change view', 'Choose another view', () => this.toggleViews()),
+      barButton('Exit view', 'Back to the whole city', () => this.handlers.onView(INSPECT_MODE.off)),
+    );
+    actions.lastElementChild?.classList.add('view-bar-exit');
+
+    bar.append(eyebrow, this.viewBarLabel, this.viewBarGesture, this.viewBarKeys, actions);
+    return bar;
   }
 
   /**
@@ -974,6 +1057,37 @@ function cursorLine(label: string, value: string): HTMLElement {
   name.textContent = `${label}: `;
   line.append(name, document.createTextNode(value));
   return line;
+}
+
+/** Una riga di tasti della targa: i capitasti a sinistra, cosa fanno a destra. */
+function viewKeyRow(hint: ViewKeyHint): HTMLElement {
+  const row = document.createElement('div');
+  row.className = 'view-bar-key';
+  const caps = document.createElement('span');
+  caps.className = 'view-bar-caps';
+  for (const label of hint.keys) {
+    const key = document.createElement('kbd');
+    key.textContent = label;
+    caps.appendChild(key);
+  }
+  const action = document.createElement('span');
+  action.textContent = hint.action;
+  row.append(caps, action);
+  return row;
+}
+
+/** Bottone di testo della targa: niente icona, perche' e' la parola che conta. */
+function barButton(label: string, tooltip: string, onClick: () => void): HTMLButtonElement {
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = 'view-bar-button';
+  button.textContent = label;
+  // `title` e non `data-tooltip`: la bolla del dock e' legata a `.hud-button`, e
+  // qui la parola sul bottone dice gia' quasi tutto.
+  button.title = tooltip;
+  button.setAttribute('aria-label', tooltip);
+  button.addEventListener('click', onClick);
+  return button;
 }
 
 function divider(): HTMLElement {
