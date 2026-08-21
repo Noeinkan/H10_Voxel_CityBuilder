@@ -66,8 +66,9 @@ resto si apre a domanda — è ciò che tiene basso il contesto di partenza.
 | [scenes/cityScene.ts](src/world/scenes/cityScene.ts) | Scene deterministiche a passi con budget: `city`, `noise`, `slab` | `createScene`, `SceneGenerator`, `SceneKind`, `TILE`, `STREET`, `LOT` |
 
 API pubblica del mondo: `setBlock`/`getBlock` e `getSurfaceKind` (rendering, marca sporco),
-`setData`/`getData` (simulazione, non marca niente), `ensureChunk`, `flush`,
-`markAllDirty`.
+`fillColumn` (lo stesso su un tratto verticale, a costo di corsa invece che di
+cella), `setData`/`getData` (simulazione, non marca niente), `ensureChunk`,
+`flush`, `markAllDirty`.
 
 ## `src/world/terrain/` — isola procedurale
 
@@ -103,9 +104,11 @@ map.columnAt(120, 96); // { height, biome, slope, buildable }
 | [ChunkRenderer.ts](src/engine/ChunkRenderer.ts) | Una geometria per chunk, coda a priorità, frustum culling, upload a budget | `ChunkRenderer`, `ChunkRendererStats` |
 | [MesherPool.ts](src/engine/MesherPool.ts) | Pool di worker, job in volo, statistiche del mesher | `MesherPool`, `MesherStats`, `ChunkMeshResult` |
 | [VoxelMaterial.ts](src/engine/VoxelMaterial.ts) | Unico `ShaderMaterial`: palette, sole e ambiente nel fragment, jitter per voxel, prospettiva aerea | `createVoxelMaterial`, `VoxelMaterialHandle` |
-| [VoxelMaterial.test.ts](src/engine/VoxelMaterial.test.ts) | Ogni uniform dichiarato nel GLSL esiste davvero; cambiare tema non ricompila il programma | — |
+| [VoxelMaterial.test.ts](src/engine/VoxelMaterial.test.ts) | Ogni uniform dichiarato nel GLSL esiste davvero, su entrambe le varianti; cambiare tema non ricompila il programma; il retino entra solo alla prima vista attivata | — |
 | [lighting.ts](src/engine/lighting.ts) | Modello di luce in TS puro: direzione del sole, diffusa avvolgente, luminanza per faccia | `sunDirection`, `faceLight`, `faceLuminance`, `wrapDiffuse`, `FACE_NORMALS` |
 | [lighting.test.ts](src/engine/lighting.test.ts) | Tiene allineate la copia TS e quella GLSL del modello | — |
+| [inspect.ts](src/engine/inspect.ts) | Viste di ispezione in TS puro: dal modo attivo ai due predicati e alla densita' del retino. **Ogni** numero del dominio | `INSPECT`, `INSPECT_MODE`, `INSPECT_MODES`, `INSPECT_NAMES`, `inspectUniforms`, `sectionAxis`, `cycleInspectMode`, `parseInspectMode`, `clampSliceZ`, `isCut`, `modeCuts`, `isActive`, `InspectMode`, `InspectState`, `InspectUniforms` |
+| [inspect.test.ts](src/engine/inspect.test.ts) | Tiene allineate la copia TS e quella GLSL del predicato | — |
 | [SunShadow.ts](src/engine/SunShadow.ts) | Shadow map ortografica del sole: fitting sull'AABB visibile, aggancio ai texel, materiale di sola profondita' | `createSunShadow`, `SunShadowHandle` |
 | [PostProcessing.ts](src/engine/PostProcessing.ts) | Composer sempre attivo: bloom, tilt-shift, tone mapping in `OutputPass` | `createPostProcessing`, `PostProcessingHandle` |
 | [SkyBackground.ts](src/engine/SkyBackground.ts) | Fondo procedurale: quad in NDC senza profondita', gradiente per altezza di schermo, disco solare e nuvole a bande | `createSkyBackground`, `SkyBackgroundHandle` |
@@ -218,7 +221,7 @@ mai.
 | File | Ruolo | Esporta |
 | --- | --- | --- |
 | [config.ts](src/world/grading/config.ts) | **Ogni** quota, dislivello, colore e peso di costo delle opere | `GRADING`, `BUILD_WEIGHT` |
-| [grade.ts](src/world/grading/grade.ts) | Classifica la colonna, la pesa, progetta il piano, rampa un campo di quote | `GROUND`, `WORKS`, `groundKindOf`, `buildWeightOf`, `footprintWeightOf`, `planGrade`, `rampField`, `GradePlan`, `GroundColumn`, `GroundKind`, `Works` |
+| [grade.ts](src/world/grading/grade.ts) | Classifica la colonna, la pesa, progetta il piano, rampa un campo di quote | `GROUND`, `WORKS`, `groundKindOf`, `isDryLand`, `buildWeightOf`, `footprintWeightOf`, `planGrade`, `rampField`, `GradePlan`, `GroundColumn`, `GroundKind`, `Works` |
 
 ```ts
 groundKindOf(biome, slope, height);        // flat | sloped | shore | rock | refused
@@ -239,12 +242,38 @@ lavoro di questo dominio.
 | File | Ruolo | Esporta |
 | --- | --- | --- |
 | [config.ts](src/world/sites/config.ts) | **Ogni** distanza, lato e dislivello dei vincoli di sito | `SITE` |
-| [siteRules.ts](src/world/sites/siteRules.ts) | Cerca l'acqua sui quattro assi, misura un intorno piano, traduce l'etichetta in un motivo di rifiuto | `seesWater`, `openGround`, `siteRefusal`, `SiteRefusal` |
+| [siteRules.ts](src/world/sites/siteRules.ts) | Cerca l'acqua sui quattro assi, ne dice il verso, misura un intorno piano, traduce l'etichetta in un motivo di rifiuto | `seesWater`, `waterFacing`, `openGround`, `siteRefusal`, `SiteRefusal` |
 
 ```ts
 seesWater(map, x, y, SITE.coastalRadius);              // il mare e' entro il raggio?
+waterFacing(map, x, y, SITE.coastalRadius);            // da che parte? orienta il molo
 openGround(map, x, y, SITE.openSpan, SITE.openMaxStep); // l'intorno regge un piano unico?
 siteRefusal(map, x, y, 'coastal');                     // 'needs-coast' | 'needs-open-ground' | null
+```
+
+## `src/world/landmarks/` — le strutture dei catalizzatori
+
+La forma che ogni ruolo prende a terra. Prima di questo dominio un catalizzatore
+era un rombo di asfalto di raggio quattro con un voxel colorato al centro,
+identico per tutti e otto: il porto in particolare non esisteva, e quello che si
+vedeva sull'acqua era la carreggiata dell'isolato costiero.
+
+Un landmark **non e' un tipo nuovo di cosa**: e' un `BuildingRecord` con
+`landmark` valorizzato, quindi eredita dal Builder occupazione, collisione,
+budget di chunk, comparsa a budget e avanzamento. A cambiare e' solo quale
+generatore disegna lo stamp.
+
+| File | Ruolo | Esporta |
+| --- | --- | --- |
+| [config.ts](src/world/landmarks/config.ts) | **Ogni** ingombro, quota, soglia di stadio e indice di palette, piu' le otto ricette | `LANDMARK`, `LANDMARKS`, `landmarkOf`, `maxStageOf`, `LandmarkRecipe` |
+| [parts.ts](src/world/landmarks/parts.ts) | Le sette primitive con cui una ricetta si compone, e la rotazione sul verso | `PART`, `Part`, `PartKind`, `partBounds`, `orientPart`, `orientedSpan`, `createCanvas`, `drawPart`, `LandmarkCanvas` |
+| [generate.ts](src/world/landmarks/generate.ts) | Compone le parti in uno stamp; ingombro, origine e stadio di una ricetta | `generateLandmark`, `landmarkSpan`, `landmarkOrigin`, `stageForBuildings`, `LandmarkRequest` |
+
+```ts
+landmarkSpan('port', FACING.east);          // { sizeX, sizeY, sizeZ } | null
+landmarkOrigin('port', facing, x, y);       // angolo minimo dell'ingombro | null
+stageForBuildings(recipe, nearby);          // quanto la citta' intorno ha meritato
+generateLandmark({ kind, stage, facing });  // VoxelStamp | null
 ```
 
 ## `src/world/buildings/` — crescita voxel
@@ -254,12 +283,13 @@ gestisce le impronte, costruisce a fasce entro un budget e promuove gli edifici.
 
 | File | Ruolo | Esporta |
 | --- | --- | --- |
-| [Builder.ts](src/world/buildings/Builder.ts) | Consuma i candidati, scrive voxel e coordina le crescite | `Builder`, `BuilderStats`, `REJECT_REASONS` |
-| [BuildingRegistry.ts](src/world/buildings/BuildingRegistry.ts) | Indice spaziale e record degli edifici | `BuildingRegistry`, `BuildingRecord` |
+| [Builder.ts](src/world/buildings/Builder.ts) | Consuma i candidati, scrive voxel, coordina le crescite e piazza i landmark dei catalizzatori | `Builder`, `BuilderStats`, `REJECT_REASONS` |
+| [BuildingRegistry.ts](src/world/buildings/BuildingRegistry.ts) | Indice spaziale e record degli edifici; impronte rettangolari e landmark contati a parte | `BuildingRegistry`, `BuildingRecord`, `footprintDepth` |
 | [generate.ts](src/world/buildings/generate.ts) | Generatore deterministico di stamp voxel: fasce da una tabella di trasformazioni, cinque cime, terrazze e giardini sulle rientranze | `generateBuilding`, `startLevel`, `BuildingRequest` |
+| [cluster.ts](src/world/buildings/cluster.ts) | A cosa si aggrega un lotto: quota e corso di base condivisi con i vicini di fronte. Puro, e il rifiuto è il gradino | `planCluster`, `joinsCluster`, `ClusterTerms`, `ClusterRequest` |
 | [typology.ts](src/world/buildings/typology.ts) | Sceglie la tipologia dal luogo; nessun numero, solo la regola | `selectTypology`, `typologyProfile`, `typologyShape`, `typologiesForUses`, `TypologyQuery` |
 | [stamp.ts](src/world/buildings/stamp.ts) | Volume voxel, ancora 3D e conversione in coordinate mondo | `VoxelStamp`, `VoxelAnchor`, `anchoredVoxel`, `STAMP_EMPTY` |
-| [config.ts](src/world/buildings/config.ts) | Cadenze, impronte, grammatica verticale, repertorio delle trasformazioni di fascia, cime, profili visivi e **catalogo delle tipologie** | `BUILDER`, `GRAMMAR`, `BAND_OP`, `CROWN_KIND`, `LEVEL_CAPS`, `MIN_FOOTPRINT`, `MAX_FOOTPRINT`, `START_LEVEL_CDF`, `CLASS_PROFILE`, `TYPOLOGIES`, `DEFAULT_BUILDING_FORM`, `DEFAULT_TYPOLOGY_SHAPE`, `typologyById` |
+| [config.ts](src/world/buildings/config.ts) | Cadenze, impronte, grammatica verticale, repertorio delle trasformazioni di fascia, cime, aggregazione, profili visivi e **catalogo delle tipologie** | `BUILDER`, `CLUSTER`, `GRAMMAR`, `BAND_OP`, `CROWN_KIND`, `LEVEL_CAPS`, `MIN_FOOTPRINT`, `MAX_FOOTPRINT`, `START_LEVEL_CDF`, `CLASS_PROFILE`, `TYPOLOGIES`, `DEFAULT_BUILDING_FORM`, `DEFAULT_TYPOLOGY_SHAPE`, `typologyById` |
 
 ## `src/game/` — ciclo di gioco
 
@@ -291,6 +321,8 @@ giocabile; gli overlay tecnici si alternano con `F3` o partono aperti con
 | [GrowthOverlay.ts](src/ui/GrowthOverlay.ts) | Conteggi, livelli, coda e scarti della crescita automatica |
 | [TerrainOverlay.ts](src/ui/TerrainOverlay.ts) | Progresso della generazione, istogramma dei biomi, colonne edificabili |
 | [SimOverlay.ts](src/ui/SimOverlay.ts) | Stock e delta per tick, heatmap 2D del campo, primi dieci candidati, pulsanti delle policy |
+| [InspectOverlay.ts](src/ui/InspectOverlay.ts) | Referto tecnico delle viste: modi, slider della quota, colonna a fuoco e id dell'isolato |
+| [ViewMenuModel.ts](src/ui/ViewMenuModel.ts) | Il menu delle viste dal lato del giocatore, puro: etichette, barra dei livelli, regola dello strumento |
 
 ## Test e bench
 
@@ -318,13 +350,17 @@ giocabile; gli overlay tecnici si alternano con `F3` o partono aperti con
 | [game/sectors.test.ts](src/game/sectors.test.ts) | Identità uniche, terra utile e continuità delle espansioni |
 | [ui/ControlsHint.test.ts](src/ui/ControlsHint.test.ts) | Completezza delle indicazioni dei comandi camera |
 | [ui/GameHudModel.test.ts](src/ui/GameHudModel.test.ts) | Risorse, requisiti, blocchi economici e policy attive del HUD |
-| [world/streets/streetGrid.test.ts](src/world/streets/streetGrid.test.ts) | Partizione strada/isolato, gerarchia degli assi, fronte e cuore, determinismo |
+| [world/streets/streetGrid.test.ts](src/world/streets/streetGrid.test.ts) | Partizione strada/isolato, gerarchia degli assi, fronte e cuore, carreggiata piu' vicina, determinismo |
+| [engine/inspect.test.ts](src/engine/inspect.test.ts) | Predicati delle quattro viste, finestra dei raggi X, lato della sezione, quota della fetta, accordo fra `modeCuts` e `isCut` |
+| [ui/ViewMenuModel.test.ts](src/ui/ViewMenuModel.test.ts) | Ordine e etichette delle viste, barra dei livelli solo dove si taglia, strumento che chiude un taglio |
 | [world/streets/lots.test.ts](src/world/streets/lots.test.ts) | Il lotto tocca sempre un fronte, non esce dall'isolato, l'isolato si riempie |
 | [world/grading/grade.test.ts](src/world/grading/grade.test.ts) | Classificazione del terreno, quota del piano finito, tetto strutturale, rampa a pendenza uno |
 | [world/sites/siteRules.test.ts](src/world/sites/siteRules.test.ts) | Ricerca dell'acqua sui quattro assi, intorno piano sotto il tetto proprio, motivi di rifiuto per ruolo |
-| [world/buildings/Builder.test.ts](src/world/buildings/Builder.test.ts) | Candidato → occupazione della simulazione → voxel; allineamento alla rete stradale; opere di terra su isola vera; due mandati opposti danno due città diverse |
+| [world/buildings/Builder.test.ts](src/world/buildings/Builder.test.ts) | Candidato → occupazione della simulazione → voxel; allineamento alla rete stradale; opere di terra su isola vera; la banchina non si stacca dalla terra; landmark dei catalizzatori e avanzamento di stadio; isolati terrazzati — quota e basamento condivisi, nessun solco fra i membri, gradoni sul fianco; due mandati opposti danno due città diverse |
+| [world/landmarks/generate.test.ts](src/world/landmarks/generate.test.ts) | Ingombro dichiarato, determinismo, stadi cumulativi, invarianza per rotazione, firma verticale e sagome distinte fra gli otto ruoli |
 | [world/buildings/BuildingRegistry.test.ts](src/world/buildings/BuildingRegistry.test.ts) | Indice spaziale e sostituzione di record |
-| [world/buildings/generate.test.ts](src/world/buildings/generate.test.ts) | Determinismo e limiti degli stamp; terrazze, giardini, soglie luminose e silhouette per uso |
+| [world/buildings/cluster.test.ts](src/world/buildings/cluster.test.ts) | Chi entra in fila e chi apre il gradino: mai scavare, tetto del riempimento, soglia di densità, termini adottati invariati |
+| [world/buildings/generate.test.ts](src/world/buildings/generate.test.ts) | Determinismo e limiti degli stamp; terrazze, giardini, soglie luminose, silhouette per uso e corso di base che sposta la quota senza toccare la sagoma |
 | [world/buildings/typology.test.ts](src/world/buildings/typology.test.ts) | Copertura del catalogo, scelta deterministica dal luogo, forme distinguibili fra tipologie, righe concesse da un mandato |
 | [world/buildings/urbanForm.test.ts](src/world/buildings/urbanForm.test.ts) | Variazione deterministica della forma dal profilo locale |
 | [sim/contracts.test.ts](src/sim/contracts.test.ts) | Purezza di `tick`, nessuna scrittura in `blocks`, serializzazione |
@@ -362,3 +398,5 @@ La radice `/` avvia isola, crescita e Cozy HUD; gli overlay tecnici sono nascost
 | `quality` | `auto` | `high`, `balanced` o `performance` fissano pixel ratio ed effetti; `auto` adatta con isteresi |
 | `shadows` | — | `0` spegne la pass del sole, qualunque sia la qualita' |
 | `theme` | `natural` | `<id>` sceglie il tema; vale **anche senza** `debug` |
+| `inspect` | — | `xray`, `slice`, `section` o `block` aprono una vista di ispezione; vale **anche senza** `debug` |
+| `slice` | — | `<z>` fissa la quota della fetta; senza, segue il suolo che si sta guardando |

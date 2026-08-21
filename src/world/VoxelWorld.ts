@@ -1,5 +1,5 @@
 import { Chunk } from './Chunk';
-import { CHUNK, idx, keyOf, toChunk, toLocal } from './chunkCoords';
+import { CHUNK, CHUNK_AREA, idx, keyOf, toChunk, toLocal } from './chunkCoords';
 import {
   blockPalette,
   blockSurface,
@@ -181,6 +181,91 @@ export class VoxelWorld {
     else if (ly === CHUNK - 1) this.markNeighbourDirty(cx, cy + 1, cz);
     if (lz === 0) this.markNeighbourDirty(cx, cy, cz - 1);
     else if (lz === CHUNK - 1) this.markNeighbourDirty(cx, cy, cz + 1);
+  }
+
+  /**
+   * Riempie il tratto verticale `[z0, z1)` della colonna `(x, y)` con lo stesso
+   * valore, ed e' equivalente ad altrettante `setBlock` consecutive.
+   *
+   * Esiste per una ragione di costo, non di comodita'. Il terreno scrive cinque
+   * milioni di voxel come tratti di colonna, e passando da `setBlock` pagava per
+   * ognuno la conversione di coordinate, il confronto sulla cache del chunk, il
+   * pack del byte e sei controlli di bordo con la relativa chiave di stringa.
+   * Qui tutto questo si paga una volta per tratto: dentro il chunk resta un
+   * indice che avanza di un piano alla volta.
+   *
+   * La marcatura dei vicini e' volutamente piu' larga di quella di `setBlock`:
+   * un tratto che tocca il primo o l'ultimo piano del chunk marca il chunk
+   * adiacente anche se a cambiare e' stato un voxel a meta'. Sporcare di piu' fa
+   * rifare una mesh, sporcare di meno lascerebbe una faccia sbagliata.
+   *
+   * @returns le celle coperte dal tratto, comprese quelle che erano gia' del
+   *   valore richiesto.
+   */
+  fillColumn(
+    x: number,
+    y: number,
+    z0: number,
+    z1: number,
+    id: number,
+    surface: SurfaceKind = SURFACE_KIND.plain,
+  ): number {
+    if (z1 <= z0) return 0;
+
+    const value = packVisualBlock(id, surface);
+    const cx = toChunk(x);
+    const cy = toChunk(y);
+    const lx = toLocal(x);
+    const ly = toLocal(y);
+    const column = lx + CHUNK * ly;
+
+    let z = z0;
+    while (z < z1) {
+      const cz = toChunk(z);
+      const end = Math.min(z1, (cz + 1) * CHUNK);
+
+      let chunk = this.getChunk(cx, cy, cz);
+      if (chunk === null) {
+        // Svuotare celle di un chunk inesistente non deve allocarlo.
+        if (value === 0) {
+          z = end;
+          continue;
+        }
+        chunk = this.ensureChunk(cx, cy, cz);
+      }
+
+      const blocks = chunk.blocks;
+      const from = toLocal(z);
+      const to = toLocal(end - 1);
+      let i = column + CHUNK_AREA * from;
+      let changed = false;
+
+      for (; z < end; z++, i += CHUNK_AREA) {
+        const prev = blocks[i];
+        if (prev === value) continue;
+        blocks[i] = value;
+        changed = true;
+        if (prev === 0) {
+          chunk.solidCount++;
+          this.solidTotal++;
+        } else if (value === 0) {
+          chunk.solidCount--;
+          this.solidTotal--;
+        }
+      }
+
+      if (!changed) continue;
+      this.markDirty(chunk);
+
+      if (lx === 0) this.markNeighbourDirty(cx - 1, cy, cz);
+      else if (lx === CHUNK - 1) this.markNeighbourDirty(cx + 1, cy, cz);
+      if (ly === 0) this.markNeighbourDirty(cx, cy - 1, cz);
+      else if (ly === CHUNK - 1) this.markNeighbourDirty(cx, cy + 1, cz);
+      if (from === 0) this.markNeighbourDirty(cx, cy, cz - 1);
+      if (to === CHUNK - 1) this.markNeighbourDirty(cx, cy, cz + 1);
+    }
+
+    return z1 - z0;
   }
 
   /** Legge il layer di rendering. Restituisce 0 fuori dai chunk allocati, senza allocare. */

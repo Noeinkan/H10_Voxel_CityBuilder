@@ -48,7 +48,25 @@ export function isBuildable(biome: number, slope: number): boolean {
  */
 export function paletteForDepth(biome: number, depth: number): number {
   const strata = BIOME_STRATA[biome];
-  if (depth < TERRAIN.cellSize) return strata.surface;
-  if (depth < TERRAIN.cellSize + TERRAIN.subsoilDepth) return strata.subsoil;
+  if (depth < STRATA_DEPTH.surface) return strata.surface;
+  if (depth < STRATA_DEPTH.subsoil) return strata.subsoil;
   return strata.deep;
 }
+
+/**
+ * Le due profondita' a cui `paletteForDepth` cambia strato, contate dall'alto.
+ *
+ * Sono la stessa regola letta a tratti invece che voxel per voxel: chi riempie
+ * una colonna intera taglia qui e scrive tre corse, invece di richiedere lo
+ * strato trenta volte. `biomes.test.ts` tiene le due letture allineate.
+ */
+export const STRATA_DEPTH = {
+  surface: TERRAIN.cellSize,
+  subsoil: TERRAIN.cellSize + TERRAIN.subsoilDepth,
+} as const;
+
+/**
+ * Quota sotto la quale l'acqua e' quella profonda. Sopra, fino a `seaLevel`,
+ * e' quella chiara di superficie.
+ */
+export const WATER_SURFACE_Z = TERRAIN.seaLevel - TERRAIN.waterSurfaceDepth;

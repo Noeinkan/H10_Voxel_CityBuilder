@@ -104,6 +104,7 @@ il posto sbagliato.
 | Palette | `src/engine/palette.json` + `paletteSlots.ts` |
 | Temi | `src/engine/themes/` — un file per tema, colori piu' atmosfera |
 | Modello di luce | `src/engine/lighting.ts` — sole, ambiente, luminanza per faccia |
+| Viste di ispezione | `src/engine/inspect.ts` — densita' del retino, finestra, quota |
 
 Non aggiornare a occhio le misure documentate nei README: sono verificate a mano
 su questa macchina.
@@ -113,6 +114,13 @@ su questa macchina.
 - Lavoro non-render sotto 3 ms per frame (accettazione: 4 ms); generazione 1,5
   ms. Spezza generazione, upload e ricolore su piu' frame. Ombra e
   post-processing sono spesa GPU e restano fuori dal budget.
+- **Unica eccezione: la prima scena.** Finche' non esiste, quel budget protegge
+  un frame che non ha niente da proteggere, e misurare a 1,5 ms qualche decimo di
+  secondo di lavoro costa centinaia di frame di attesa. `main.ts` usa allora
+  `LOADING_FRAME_BUDGET_MS` / `LOADING_GENERATION_BUDGET_MS`, sempre sotto il
+  frame a 60 Hz perche' la scena deve comparire scorrendo. La finestra si chiude
+  su `generator.done` e non si riapre: le espansioni avvengono dentro una citta'
+  viva e tornano ai 3 ms.
 - Simulazione a 10 tick/s a passo fisso con recupero limitato: non usare `dt`.
 - Evita `Date.now()` e `Math.random()` nei percorsi deterministici.
 - Non riattivare `noUncheckedIndexedAccess` senza discuterne (vedi il commento

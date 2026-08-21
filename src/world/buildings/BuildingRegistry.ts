@@ -1,4 +1,10 @@
-import { CLASS_COUNT, type BuildingClass, type DistrictId, type Specialization } from '../../sim';
+import {
+  CLASS_COUNT,
+  type BuildingClass,
+  type CatalystId,
+  type DistrictId,
+  type Specialization,
+} from '../../sim';
 import type { BuildingForm } from './config';
 import { toChunk } from '../chunkCoords';
 
@@ -31,8 +37,20 @@ export interface BuildingRecord {
   /** Voxel d'ancoraggio in altezza: la prima quota occupata. */
   readonly baseZ: number;
 
-  /** Lato dell'impronta, 1..3. */
+  /** Lato dell'impronta lungo x. Per un edificio e' anche l'unico lato. */
   readonly footprint: number;
+
+  /**
+   * Lato dell'impronta lungo y, quando non coincide con `footprint`.
+   *
+   * Gli edifici sono quadrati per contratto — la fascia di base riempie il
+   * riquadro, e la collisione resta un confronto fra due quadrati. I landmark
+   * no: un molo, una pista e un viadotto sono lineari per natura, e
+   * schiacciarli in un quadrato li farebbe leggere come monconi. Resta
+   * opzionale perche' un record quadrato non deve portarsi dietro un campo che
+   * ripete `footprint`.
+   */
+  readonly footprintY?: number;
 
   /** Voxel occupati in altezza a partire da `baseZ`. */
   readonly height: number;
@@ -73,6 +91,51 @@ export interface BuildingRecord {
    * porta l'accento su un'altra faccia, e lascerebbe voxel orfani.
    */
   readonly facing?: number;
+
+  /**
+   * Ruolo del catalizzatore, se questo record e' il suo landmark.
+   *
+   * **E' l'unica cosa che distingue un landmark da un edificio.** Tutto il
+   * resto — occupazione, collisione, budget di chunk, comparsa a budget,
+   * avanzamento — e' la stessa macchina, e `level` e' lo stadio. Cambia solo
+   * quale generatore disegna lo stamp, ed e' cio' che ha permesso di aggiungere
+   * otto strutture senza una seconda passata e senza un secondo indice.
+   *
+   * Un record con questo campo resta fuori dagli istogrammi: la simulazione non
+   * lo ha mai contato come edificio, e vederlo comparire in `countsByClass`
+   * significherebbe che l'HUD conta otto edifici che nessuno ha costruito.
+   */
+  readonly landmark?: CatalystId;
+
+  /**
+   * Fila di edifici contigui a cui questo appartiene, se ne ha una.
+   *
+   * **Un cluster e' due numeri su un record, non un'entita'.** Questo dice solo
+   * *con chi*; l'altro e' `baseBand`. La quota condivisa non ha bisogno di un
+   * campo suo, perche' e' gia' `baseZ`. Non esiste nessuna struttura che
+   * sopravviva ai membri, ed e' il motivo per cui collisione, budget di chunk e
+   * cancellazione restano esattamente quelli di un edificio solo.
+   */
+  readonly cluster?: number;
+
+  /**
+   * Altezza in voxel del corso di base condiviso con la fila. Zero o assente
+   * dove la fila non ne ha uno.
+   *
+   * Sta nel record per la stessa ragione di `typology` e `facing`: e' meta' di
+   * cio' che serve a rigenerare l'impronta. Un upgrade che ricalcolasse il
+   * basamento dalla fila di adesso cancellerebbe la sagoma vecchia con una che
+   * parte da un'altra quota, e bucherebbe lo zoccolo sotto il vicino.
+   */
+  readonly baseBand?: number;
+}
+
+/** Profondita' dell'impronta lungo y: quella dichiarata, o il lato quadrato. */
+export function footprintDepth(record: {
+  readonly footprint: number;
+  readonly footprintY?: number;
+}): number {
+  return record.footprintY ?? record.footprint;
 }
 
 /**
@@ -104,10 +167,19 @@ export interface ReadonlyBuildingRegistry {
   isOccupied(x: number, y: number): boolean;
   at(x: number, y: number): readonly BuildingRecord[];
   withinRadius(x: number, y: number, radius: number): readonly BuildingRecord[];
-  overlaps(x: number, y: number, footprint: number, baseZ: number, height: number): boolean;
+  overlaps(
+    x: number,
+    y: number,
+    footprint: number,
+    baseZ: number,
+    height: number,
+    footprintY?: number,
+  ): boolean;
   /** Quota della prima cella libera sopra cio' che gia' occupa la colonna. */
   topOf(x: number, y: number): number;
   readonly count: number;
+  /** Landmark dei catalizzatori: contati a parte, mai fra gli edifici. */
+  readonly landmarkCount: number;
   readonly countsByClass: readonly number[];
   /** Edifici che *ospitano* un uso come secondo, con la stessa indicizzazione. */
   readonly mixedByClass: readonly number[];
@@ -142,10 +214,16 @@ export class BuildingRegistry implements ReadonlyBuildingRegistry {
   private readonly levelCounts: number[] = [];
   private readonly typologyCounts = new Map<string, number>();
 
+  private landmarks = 0;
   private nextId = 1;
 
+  /** Edifici veri: i landmark occupano il registry ma non sono edifici. */
   get count(): number {
-    return this.records.size;
+    return this.records.size - this.landmarks;
+  }
+
+  get landmarkCount(): number {
+    return this.landmarks;
   }
 
   get countsByClass(): readonly number[] {
@@ -231,9 +309,16 @@ export class BuildingRegistry implements ReadonlyBuildingRegistry {
    * sovrappongono: e' la condizione che permette a un edificio di poggiare
    * esattamente sul tetto di un altro.
    */
-  overlaps(x: number, y: number, footprint: number, baseZ: number, height: number): boolean {
+  overlaps(
+    x: number,
+    y: number,
+    footprint: number,
+    baseZ: number,
+    height: number,
+    footprintY: number = footprint,
+  ): boolean {
     const top = baseZ + height;
-    for (let dy = 0; dy < footprint; dy++) {
+    for (let dy = 0; dy < footprintY; dy++) {
       for (let dx = 0; dx < footprint; dx++) {
         const ids = this.columns.get(`${x + dx},${y + dy}`);
         if (ids === undefined) continue;
@@ -254,7 +339,8 @@ export class BuildingRegistry implements ReadonlyBuildingRegistry {
     const stored: BuildingRecord = { ...record, id: this.nextId++ };
     this.records.set(stored.id, stored);
 
-    for (let dy = 0; dy < stored.footprint; dy++) {
+    const depth = footprintDepth(stored);
+    for (let dy = 0; dy < depth; dy++) {
       for (let dx = 0; dx < stored.footprint; dx++) {
         push(this.columns, `${stored.x + dx},${stored.y + dy}`, stored.id);
       }
@@ -278,7 +364,8 @@ export class BuildingRegistry implements ReadonlyBuildingRegistry {
     const stored: BuildingRecord = { ...next, id };
     this.records.set(id, stored);
 
-    for (let dy = 0; dy < stored.footprint; dy++) {
+    const depth = footprintDepth(stored);
+    for (let dy = 0; dy < depth; dy++) {
       for (let dx = 0; dx < stored.footprint; dx++) {
         push(this.columns, `${stored.x + dx},${stored.y + dy}`, id);
       }
@@ -297,6 +384,14 @@ export class BuildingRegistry implements ReadonlyBuildingRegistry {
    * dimenticarne uno dei tre.
    */
   private tally(record: BuildingRecord, delta: number): void {
+    // Un landmark occupa spazio ma non e' un edificio: la simulazione non lo ha
+    // mai registrato con `addBuilding`, e contarlo qui farebbe divergere gli
+    // istogrammi dell'HUD dai conteggi su cui il bilancio ragiona.
+    if (record.landmark !== undefined) {
+      this.landmarks += delta;
+      return;
+    }
+
     this.classCounts[record.class] += delta;
     if (record.mixed !== undefined) this.mixedCounts[record.mixed] += delta;
     this.levelCounts[record.level] = (this.levelCounts[record.level] ?? 0) + delta;
@@ -312,7 +407,8 @@ export class BuildingRegistry implements ReadonlyBuildingRegistry {
     const record = this.records.get(id);
     if (record === undefined) return false;
 
-    for (let dy = 0; dy < record.footprint; dy++) {
+    const depth = footprintDepth(record);
+    for (let dy = 0; dy < depth; dy++) {
       for (let dx = 0; dx < record.footprint; dx++) {
         drop(this.columns, `${record.x + dx},${record.y + dy}`, id);
       }

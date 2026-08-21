@@ -1,5 +1,6 @@
 import type { BuildingClass, CatalystId, CharterId, DistrictId, Specialization } from '../../sim';
 import { PALETTE_SLOTS } from '../../engine/paletteSlots';
+import { TERRAIN } from '../terrain/config';
 
 /**
  * Unica fonte di verita' dei numeri della costruzione.
@@ -168,6 +169,59 @@ export const BUILDER = {
     wealthTerraceBias: 0.12,
     wealthAccentChance: 0.24,
   },
+} as const;
+
+/**
+ * Numeri dell'aggregazione: quando due edifici adiacenti diventano una fila.
+ *
+ * Stanno qui e non in `grading/config.ts` perche' rispondono a una domanda
+ * diversa. Quella li' dice *cosa serve* perche' una colonna regga un piano, e la
+ * sua risposta vale per una banchina come per un terrapieno; questa dice *quanto*
+ * un edificio e' disposto a farsi alzare per stare in fila con il vicino, che e'
+ * una scelta di forma urbana e non una scelta strutturale.
+ */
+export const CLUSTER = {
+  /**
+   * Riempimento massimo che un lotto paga per entrare in una fila gia' aperta.
+   *
+   * E' il numero che produce i gradoni. `GRADING.maxWorksStep` non andrebbe bene
+   * al suo posto: quello e' tarato sulla banchina che scende sul fondale, e con
+   * ventiquattro voxel entrerebbero nella stessa fila due lotti separati da mezzo
+   * fianco — un muro, non un isolato. Otto voxel sono quattro cubi di terreno:
+   * abbastanza da assorbire il dislivello dentro un isolato, troppo poco perche'
+   * la fila risalga un versante senza mai spezzarsi.
+   */
+  maxJoinFill: 8,
+
+  /**
+   * Altezza del corso di base condiviso da una fila, in voxel.
+   *
+   * E' la sola cosa che il cluster impone alla grammatica, e la impone alla sola
+   * fascia zero: sopra, ogni membro resta se stesso. Sei voxel sono tre cubi di
+   * terreno — uno zoccolo su cui l'arretramento che `forcedOp` gia' produce si
+   * legge come cornice continua, invece che come il gradino di una casa sola.
+   */
+  baseHeight: 6,
+
+  /**
+   * Densita' locale sotto cui la fila condivide la quota ma non il basamento.
+   *
+   * Una casa sparsa in periferia non si e' guadagnata uno zoccolo: darglielo
+   * significherebbe portare il linguaggio del centro dove non c'e' un centro. La
+   * quota invece si condivide sempre, perche' due edifici accostati a quote
+   * diverse leggono come un errore a qualunque densita'.
+   */
+  minDensity: 0.35,
+
+  /**
+   * Colonne di cui un'impronta puo' scorrere lungo il fronte per accostarsi.
+   *
+   * Un cubo di terreno: `placeLot` scorre a passo di `STREETS.align` e le
+   * impronte possono uscire dispari, quindi fra due edifici di una fila puo'
+   * restare un solco da un voxel. Chiuderlo vale piu' del passo perso — un solco
+   * da un voxel a distanza di gioco e' una crepa, non una separazione.
+   */
+  maxSnap: TERRAIN.cellSize,
 } as const;
 
 export interface BuildingForm {

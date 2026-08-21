@@ -1,6 +1,6 @@
 # Roadmap — H10 Voxel City Builder
 
-## Visione
+### Visione
 
 Una città-isola automatica, enorme ma leggibile come una miniatura voxel. Il
 giocatore non disegna ogni edificio: modifica le condizioni della crescita con
@@ -10,7 +10,7 @@ Il principio guida è **poche decisioni con conseguenze visibili**. Ogni nuova
 meccanica deve cambiare chiaramente forma della città, economia o uso del suolo
 senza compromettere i 60 fps nel browser.
 
-## Stato attuale — MVP
+### Stato attuale — MVP
 
 - Isola procedurale deterministica, streaming in worker e mappa di edificabilità.
 - Motore voxel a chunk con greedy meshing, shader condiviso e temi a palette.
@@ -30,16 +30,16 @@ azioni morte.
 **Stato implementazione:** completata. Il gate resta da validare con un playtest
 di un nuovo giocatore senza console o istruzioni esterne.
 
-- [x] Creare un onboarding giocabile: primo catalizzatore residenziale, poi
+- [x] Creare un onboarding giocabile: primo catalizzatore residenziale, poi <!-- size: L -->
   produttivo, infine civico; spiegare perché l’ordine conta.
-- [x] Ribilanciare l’avvio affinché una scelta imperfetta rallenti la città senza
+- [x] Ribilanciare l’avvio affinché una scelta imperfetta rallenti la città senza <!-- size: M -->
   portarla rapidamente a popolazione zero o a uno stato irrecuperabile.
-- [x] Mostrare sul cursore costo, raggio, classe e motivo di invalidità prima del click.
-- [x] Rendere evidente la zona d’influenza di catalizzatori esistenti e selezionati.
-- [x] Impedire acquisti duplicati dello stesso settore e indicare i settori già sbloccati.
-- [x] Trasformare l’espansione in nuovo suolo strategicamente utile, non in sola
+- [x] Mostrare sul cursore costo, raggio, classe e motivo di invalidità prima del click. <!-- size: M -->
+- [x] Rendere evidente la zona d’influenza di catalizzatori esistenti e selezionati. <!-- size: M -->
+- [x] Impedire acquisti duplicati dello stesso settore e indicare i settori già sbloccati. <!-- size: S -->
+- [x] Trasformare l’espansione in nuovo suolo strategicamente utile, non in sola <!-- size: L -->
   superficie oceanica; mantenere continuità e streaming a budget.
-- [x] Aggiungere condizioni semplici di successo e crisi per dare una direzione alla partita.
+- [x] Aggiungere condizioni semplici di successo e crisi per dare una direzione alla partita. <!-- size: M -->
 
 **Gate:** un nuovo giocatore riesce a creare una città autosufficiente senza
 console o istruzioni esterne; tutte le azioni hanno feedback immediato e una via
@@ -52,17 +52,17 @@ Obiettivo: città diverse a partire dalla stessa isola.
 **Stato implementazione:** completata. Il gate resta da validare con un playtest
 comparativo delle strategie porto-industria, mercato-trasporto e parco-università.
 
-- [x] Introdurre catalizzatori con ruolo distinto: porto, mercato, fabbrica,
+- [x] Introdurre catalizzatori con ruolo distinto: porto, mercato, fabbrica, <!-- size: L -->
   trasporto, parco, università e monumento.
-- [x] Dare a ogni policy un vantaggio, un costo continuativo e una conseguenza
+- [x] Dare a ogni policy un vantaggio, un costo continuativo e una conseguenza <!-- size: L -->
   spaziale osservabile; aggiungere incompatibilità fra alcune policy.
-- [x] Creare distretti emergenti da sovrapposizione dei campi, senza zoning manuale
+- [x] Creare distretti emergenti da sovrapposizione dei campi, senza zoning manuale <!-- size: L -->
   cella per cella.
-- [x] Collegare livelli e forma degli edifici a densità, ricchezza, accessibilità e
+- [x] Collegare livelli e forma degli edifici a densità, ricchezza, accessibilità e <!-- size: M -->
   soddisfazione locale.
-- [x] Aggiungere decisioni periodiche brevi con due o tre alternative e risultati
+- [x] Aggiungere decisioni periodiche brevi con due o tre alternative e risultati <!-- size: M -->
   deterministici derivati dallo stato della città.
-- [x] Introdurre commercio esterno minimale per cibo, materiali e fondi, con il porto
+- [x] Introdurre commercio esterno minimale per cibo, materiali e fondi, con il porto <!-- size: M -->
   come primo collegamento dell’isola al mondo.
 
 **Gate:** almeno tre strategie valide producono skyline, bilanci e rischi
@@ -108,20 +108,20 @@ costa. La tabella `BUILDABLE_BIOMES` non è stata toccata: la crescita automatic
 sceglie ancora i suoi siti con il bit, quindi il peso non ha spostato l'equilibrio
 della città che cresce da sola.
 
-- [x] Dare a `CatalystDefinition` un vincolo di sito esplicito e valutarlo in
+- [x] Dare a `CatalystDefinition` un vincolo di sito esplicito e valutarlo in <!-- size: M -->
   `catalystFailure`, al posto dell'unico bit di edificabilità valido per tutti.
-- [x] Ammettere la battigia ai ruoli costieri riusando le opere della 4.2, senza
+- [x] Ammettere la battigia ai ruoli costieri riusando le opere della 4.2, senza <!-- size: M -->
   rendere `beach` edificabile per la crescita automatica: è il vincolo del ruolo
   a cambiare, non la tabella dei biomi.
-- [x] Introdurre il vincolo opposto — superficie ampia e piana — valutando la
+- [x] Introdurre il vincolo opposto — superficie ampia e piana — valutando la <!-- size: M -->
   pendenza su un intorno dell'impronta e non sulla singola colonna.
-- [x] Aggiungere l'aeroporto come secondo ruolo di `connections`, con un effetto
+- [x] Aggiungere l'aeroporto come secondo ruolo di `connections`, con un effetto <!-- size: L -->
   distinto da quello del porto: collegamento che non chiede la costa, influenza
   su commerciale e civico, penalità sul residenziale più pesante di quella della
   fabbrica.
-- [x] Distinguere il commercio esterno per collegamento, invece dell'attuale
+- [x] Distinguere il commercio esterno per collegamento, invece dell'attuale <!-- size: M -->
   `connected` binario che qualunque porto accende da qualunque punto.
-- [x] Portare i nuovi motivi di rifiuto sul cursore con lo stesso trattamento
+- [x] Portare i nuovi motivi di rifiuto sul cursore con lo stesso trattamento <!-- size: S -->
   degli altri, così che il vincolo si legga prima del click e non dopo.
 
 **Vincolo:** la simulazione non impara la geografia. Il vincolo di sito vive fra
@@ -203,17 +203,17 @@ conseguenza spaziale osservabile»; alle decisioni no, e infatti non ce l'avevan
 scegliere «Community gardens» invece di «Ration supplies» era indistinguibile a
 schermo, contro il principio guida di questa roadmap.
 
-- [x] Dare a ogni alternativa un **mandato**: un vettore spaziale della stessa
+- [x] Dare a ogni alternativa un **mandato**: un vettore spaziale della stessa <!-- size: L -->
   forma di `spatialPolicy`, che entra in `urbanProfileAt` e piega forma e
   tipologia della crescita successiva.
-- [x] Rendere i mandati permanenti ma **esclusivi per famiglia** — un solo slot
+- [x] Rendere i mandati permanenti ma **esclusivi per famiglia** — un solo slot <!-- size: M -->
   per approvvigionamento, spazio pubblico e investimento — invece di farli
   scadere a tick.
-- [x] Concedere a tre alternative un'**opera** costruita subito: un catalizzatore
+- [x] Concedere a tre alternative un'**opera** costruita subito: un catalizzatore <!-- size: M -->
   a forza e raggio ridotti, posato sul miglior sito che la città offre.
-- [x] Aggiungere quattro tipologie che **solo** un mandato concede, così due
+- [x] Aggiungere quattro tipologie che **solo** un mandato concede, così due <!-- size: M -->
   partite divergono nel volume e non solo nei numeri dell'HUD.
-- [x] Dire nel modale quale segno lascia ogni alternativa, come già fanno le
+- [x] Dire nel modale quale segno lascia ogni alternativa, come già fanno le <!-- size: S -->
   policy.
 
 **Perché lo slot e non la scadenza.** `urbanProfileAt` è una funzione spaziale e
@@ -256,27 +256,27 @@ attraverso catalizzatori con effetti locali leggibili.
 **Stato implementazione:** completata. Il gate resta da validare con un playtest
 che confronti una città mercantile e una industriale a occhio, senza overlay.
 
-- [x] Separare uso urbano, catalizzatore e forma architettonica: gli usi fondamentali
+- [x] Separare uso urbano, catalizzatore e forma architettonica: gli usi fondamentali <!-- size: L -->
   diventano residenziale, commerciale, industriale e civico, mentre uffici,
   turismo, ricerca, logistica e intrattenimento restano specializzazioni.
-- [x] Rendere il commerciale una componente autonoma della simulazione, con domanda,
+- [x] Rendere il commerciale una componente autonoma della simulazione, con domanda, <!-- size: XL -->
   desiderabilità, occupazione, ricavi, capacità e conteggi distinti; rinominare
   la classe produttiva in industriale dove descrive l'uso del suolo.
-- [x] Sostituire l'unica classe associata a ciascun catalizzatore con un vettore di
+- [x] Sostituire l'unica classe associata a ciascun catalizzatore con un vettore di <!-- size: L -->
   influenze: mercato, fabbrica, parco, porto, trasporto, università e monumento
   possono favorire più usi e modificare ricchezza, accessibilità, densità,
   soddisfazione e impatto industriale.
-- [x] Generare edifici a uso misto quando influenze compatibili superano le soglie
+- [x] Generare edifici a uso misto quando influenze compatibili superano le soglie <!-- size: L -->
   locali, iniziando da residenziale più commerciale; ogni edificio conserva
   capacità economiche separate per i propri usi senza diventare una nuova zona.
-- [x] Scegliere la tipologia edilizia da uso, distretto, densità, ricchezza, terreno e
+- [x] Scegliere la tipologia edilizia da uso, distretto, densità, ricchezza, terreno e <!-- size: XL -->
   catalizzatori vicini tramite un catalogo data-driven: case-bottega, isolati a
   corte, podi commerciali con abitazioni, loft produttivi, mercati sul porto,
   laboratori universitari, hotel, padiglioni culturali e altre forme speciali.
-- [x] Organizzare la toolbar per funzione — crescita, connessioni e identità — e
+- [x] Organizzare la toolbar per funzione — crescita, connessioni e identità — e <!-- size: M -->
   mantenere visibili anche i catalizzatori bloccati; anteprima e tooltip mostrano
   raggio, usi favoriti o penalizzati e tipologie probabili prima del piazzamento.
-- [x] Conservare determinismo, campi densi e costo limitato per colonna; misurare
+- [x] Conservare determinismo, campi densi e costo limitato per colonna; misurare <!-- size: M -->
   memoria e tempo di selezione dei siti dopo l'estensione degli usi.
 
 **Gate:** mercato e industria producono cicli economici distinguibili, gli
@@ -348,16 +348,16 @@ ne orienti la crescita.
 un'isola vera: i test coprono allineamento, determinismo e carreggiata sgombra,
 non la leggibilità.
 
-- [x] Generare la rete da terreno, costa e catalizzatori: assi principali fra i
+- [x] Generare la rete da terreno, costa e catalizzatori: assi principali fra i <!-- size: XL -->
   poli, maglia secondaria negli intervalli, densità che segue il campo di
   desiderabilità.
-- [x] Esporre la rete come dato consultabile per colonna — è strada, è fronte, è
+- [x] Esporre la rete come dato consultabile per colonna — è strada, è fronte, è <!-- size: M -->
   interno isolato — senza scriverla nel layer `data` della simulazione.
-- [x] Far dipendere selezione del sito e orientamento dell'impronta dal fronte
+- [x] Far dipendere selezione del sito e orientamento dell'impronta dal fronte <!-- size: L -->
   strada, non dalla sola desiderabilità.
-- [x] Sostituire i sentieri ad hoc del Builder con il tracciato della rete,
+- [x] Sostituire i sentieri ad hoc del Builder con il tracciato della rete, <!-- size: M -->
   mantenendo comparsa a budget e costo per frame.
-- [x] Chiudere gli isolati: uno spazio interno riconoscibile è ciò che le
+- [x] Chiudere gli isolati: uno spazio interno riconoscibile è ciò che le <!-- size: M -->
   sotto-fasi successive terrazzano e collegano.
 
 **Gate:** gli edifici si allineano a strade leggibili senza sovrapposizioni né
@@ -421,14 +421,14 @@ attraversa un dislivello o si ferma o lo risolve.
 un'isola vera: i test coprono le opere, il vincolo di riempimento e la
 continuità delle rampe, non la leggibilità.
 
-- [x] Risolvere le pendenze della rete con rampe, scalinate e tratti incassati,
+- [x] Risolvere le pendenze della rete con rampe, scalinate e tratti incassati, <!-- size: L -->
   al posto dell'attuale scarto secco per `tooSteep`.
-- [x] Introdurre muri di contenimento e terrapieni dove la quota cambia, così che
+- [x] Introdurre muri di contenimento e terrapieni dove la quota cambia, così che <!-- size: L -->
   il salto sia costruito e non un gradino di terreno nudo.
-- [x] Portare piazze e piattaforme sopraelevate dove il dislivello le giustifica.
-- [x] Trattare la costa come fronte edificato: moli, approdi e banchine al posto
+- [x] Portare piazze e piattaforme sopraelevate dove il dislivello le giustifica. <!-- size: M -->
+- [x] Trattare la costa come fronte edificato: moli, approdi e banchine al posto <!-- size: L -->
   dell'attuale bordo d'acqua.
-- [x] Rivedere `maxTerrainStep` e la blacklist dei siti: con le rampe una
+- [x] Rivedere `maxTerrainStep` e la blacklist dei siti: con le rampe una <!-- size: M -->
   pendenza smette di essere un rifiuto definitivo.
 
 **Vincolo:** la fondazione continua a riempire, mai a scavare. Un muro di
@@ -540,15 +540,15 @@ mondo e senza terreno. Può procedere in parallelo.
 un'isola vera: i test coprono determinismo, cime distinguibili, terrazze e
 soglie luminose, non la leggibilità a distanza di gioco.
 
-- [x] Aggiungere basamenti abitati, corpi sovrapposti e arretramenti come
+- [x] Aggiungere basamenti abitati, corpi sovrapposti e arretramenti come <!-- size: L -->
   trasformazioni della regola di fascia, non come casi speciali.
-- [x] Distinguere torri e coronamenti per uso e livello, oltre agli attuali tre
+- [x] Distinguere torri e coronamenti per uso e livello, oltre agli attuali tre <!-- size: M -->
   interruttori di tipologia.
-- [x] Introdurre giardini pensili e terrazze praticabili sulle rientranze che la
+- [x] Introdurre giardini pensili e terrazze praticabili sulle rientranze che la <!-- size: M -->
   grammatica già produce.
-- [x] Dare accenti luminosi specifici per classe e livello, dentro gli slot di
+- [x] Dare accenti luminosi specifici per classe e livello, dentro gli slot di <!-- size: M -->
   palette e i tipi di superficie esistenti.
-- [x] Estendere il catalogo delle tipologie con le forme che i nuovi interruttori
+- [x] Estendere il catalogo delle tipologie con le forme che i nuovi interruttori <!-- size: M -->
   rendono possibili, restando righe di tabella: la regola di scelta non si tocca.
 
 **Gate:** a parità di seed le silhouette restano deterministiche e distinguibili
@@ -624,9 +624,10 @@ aggiornate qui.
 una voce al repertorio cambia il passo del PRNG per ogni edificio. Non c'è
 persistenza da invalidare — la fase 5 non è iniziata — e il `Builder` rigenera lo
 stamp da cancellare dal *record*, quindi entro una sessione la coerenza regge. La
-grammatica resta **per edificio singolo**: un arretramento non sa che l'edificio
-accanto ne ha uno alla stessa quota, e allineare le terrazze dentro un isolato è
-esattamente il lavoro della 4.4. Gli accenti luminosi non sanno ancora niente
+grammatica non è più **per edificio singolo**: la 4.4 le ha dato un corso di base
+condiviso, e sopra di esso l'arretramento cade alla stessa quota su tutta una
+fila — ma resta un corso *di base*, e due arretramenti più in alto continuano a
+non sapere l'uno dell'altro. Gli accenti luminosi non sanno ancora niente
 dell'occupazione: si accendono per livello e non per quanta gente ci abita, che è
 la 4.8.
 
@@ -637,13 +638,18 @@ Obiettivo: far crescere gli edifici per aggregazione, non solo per livello.
 Dipende da 4.1 — l'isolato è definito dalle strade — e da 4.3, che fornisce la
 grammatica per esprimerlo.
 
-- [ ] Permettere a edifici adiacenti dello stesso isolato di crescere insieme,
+**Stato implementazione:** completata. Il gate resta da validare a occhio su
+un'isola vera: i test coprono quota e basamento condivisi, la contiguità delle
+impronte, i gradoni sul fianco e la rigenerabilità, non la leggibilità di un
+distretto denso a distanza di gioco.
+
+- [x] Permettere a edifici adiacenti dello stesso isolato di crescere insieme, <!-- size: XL -->
   condividendo basamento e quota.
-- [ ] Superare il tetto di impronta 4×4 dove l'aggregazione lo giustifica,
+- [x] Superare il tetto di impronta 4×4 dove l'aggregazione lo giustifica, <!-- size: L -->
   rivedendo di conseguenza collisione, budget di chunk e cancellazione.
-- [ ] Far salire i cluster per sovrapposizione e arretramento, mantenendo il
+- [x] Far salire i cluster per sovrapposizione e arretramento, mantenendo il <!-- size: L -->
   vincolo di appoggio che oggi tiene in piedi le mensole.
-- [ ] Conservare la rigenerabilità: un cluster deve poter essere ricostruito dal
+- [x] Conservare la rigenerabilità: un cluster deve poter essere ricostruito dal <!-- size: M -->
   proprio record per essere cancellato, come oggi un edificio singolo.
 
 **Vincolo:** un cluster resta un insieme di record, non un nuovo tipo di zona. La
@@ -653,19 +659,95 @@ simulazione continua a contare gli edifici come li conta oggi.
 che come volumi isolati vicini; il costo della crescita resta indipendente dal
 numero totale di edifici.
 
+**Come è stato risolto.** Un cluster è **due numeri su un record**, e non
+un'entità: `baseZ` era già la quota del piano, quindi ai record servivano solo
+`cluster` — con chi — e `baseBand`, l'altezza del corso di base condiviso. Da lì
+segue tutto il resto senza una riga di plumbing: collisione, budget di chunk e
+cancellazione restano quelli di un edificio solo, perché il basamento condiviso
+sta **dentro** lo stamp di ciascun membro invece che in una struttura che gli
+sopravvive. È la stessa mossa della 2.1 e della 4.2 — la regola vive in un
+dominio puro, `buildings/cluster.ts`, dove entrano un `GradePlan` e i termini dei
+vicini ed esce una terna; `src/sim/` continua a contare un edificio per record e
+a non sapere che gli isolati esistono (invariante 7).
+
+**Il rifiuto è il gradino, non un fallimento.** Un lotto entra in una fila solo
+se non deve *scendere* per allinearsi — vale anche qui «si riempie, non si
+scava» — e se il riempimento resta dentro `CLUSTER.maxJoinFill`. Chi non entra
+apre una fila propria alla propria quota, ed è così che su un fianco l'isolato
+terrazzato esce dalla regola invece di essere disegnato da qualcuno.
+`GRADING.maxWorksStep` non poteva fare quel lavoro: è tarato sulla banchina che
+scende sul fondale, e con ventiquattro voxel avrebbe messo nella stessa fila due
+lotti separati da mezzo versante — un muro, non un isolato.
+
+**A superare il tetto d'impronta è la massa, non il record.** «4×4» erano quattro
+cubi di terreno, cioè l'attuale `MAX_FOOTPRINT` di otto voxel; a scavalcarlo è la
+fila contigua, mentre ogni record resta sotto. Alzare il tetto del singolo record
+era l'alternativa da non prendere: è lo stesso cambio di scala che il commento di
+`maxDirtyChunksPerBuilding` racconta essere già andato storto una volta, facendo
+sparire in silenzio proprio gli edifici alti. Quello che si è dovuto rivedere è
+altro — la contiguità è diventata deliberata (l'impronta si accosta al vicino
+lungo il fronte, come già si accostava alla carreggiata), e il riempimento che un
+membro paga per allinearsi ha un tetto proprio, che è ciò che tiene la fila
+dentro il budget di chunk.
+
+**Il corso di base è un campo, non un ramo.** `generateBuilding` guadagna
+`baseBandHeight`, che sostituisce l'altezza della **sola** fascia zero — dopo il
+tiro, che si consuma comunque. La sequenza del PRNG resta quella, quindi entrare
+in una fila cambia la quota di un edificio e non la sua sagoma: è la stessa
+regola del verso d'accento della 4.1. Sopra lo zoccolo condiviso l'arretramento
+che `forcedOp` già produceva cade alla stessa altezza su tutta la fila, e da lì
+viene la cornice terrazzata continua — senza una voce nuova nella grammatica,
+senza toccare `supported` e senza toccare il mesher (invariante 6).
+
+**Il basamento si guadagna, la quota no.** La fila condivide sempre il piano —
+due edifici accostati a quote diverse leggono come un errore a qualunque densità
+— mentre il corso di base compare solo sopra `CLUSTER.minDensity`. La soglia è
+misurata e non stimata: un catalizzatore solo, anche a forza massima, porta la
+densità locale a **0,30** e non oltre, mentre tre campi sovrapposti la portano a
+**0,37** di mediana. A 0,35 lo zoccolo è quindi il linguaggio di un centro vero e
+non di una casa sparsa, e resta coerente con le soglie che il catalogo delle
+tipologie già usa (`courtyardBlock` 0,3, `commercialPodium` 0,4).
+
+**Costo, misurato.** Su 256×256 colonne, quattro catalizzatori a raggio 60 e 300
+tick: `onTick` ha mediana **0,022–0,025 ms** e p95 **3,0–3,5 ms**, con 372
+edifici di cui **344 in fila**. La mediana è bassa perché la maggior parte dei
+tick non costruisce — `ticksPerBuild` è 2 e `ticksPerUpgrade` 10 — e sono i tick
+di infornata a stare nel p95. La sola spesa che la fase aggiunge al piazzamento è
+la seconda generazione dello stamp dove la fila ha un basamento: `generateBuilding`
+costa **27 µs** per chiamata e il campo in più non la cambia (27,1 contro 27,7 µs
+su ventimila chiamate), quindi al massimo ~0,08 ms su un tick di infornata da
+tre siti. Nulla entra nel ciclo di frame: `step` e `stepSurface` non sono
+toccati. **Non è un A/B contro il commit precedente**, e di proposito: gli stessi
+file portano in parallelo il lavoro sui landmark, e un A/B avrebbe attribuito
+alla 4.4 anche quello. **Le tabelle di misura in `README.md` e
+`src/sim/README.md` vanno rimisurate a mano**, e non sono state aggiornate qui.
+
+**Resta aperto.** Il basamento condivide **geometria e quota, non colore**: ogni
+membro porta la propria palette, e una fila di usi diversi legge come un isolato
+di unità diverse su un unico zoccolo — che è una scelta, ma è una scelta. Un
+membro non sporge mai sul tetto del vicino: la fascia resta dentro l'impronta del
+proprio record, e costruire *sopra* un altro edificio è 4.5 per le campate e 4.9
+per il resto. L'aggregazione agisce solo su ciò che nasce dopo, quindi su una
+città già matura la differenza si accumula invece di comparire. Due membri
+accostati murano ciascuno il proprio lato della fondazione condivisa: sono facce
+che il greedy meshing non emette, quindi non si vedono e non costano quad, ma
+sono voxel scritti due volte. E i landmark restano fuori dalle file — hanno un
+altro generatore e crescono di stadio, e adottarne la quota darebbe a un isolato
+il piano di un molo.
+
 ### Fase 4.5 — Rete urbana in quota
 
 Obiettivo: continuare la rete sopra il piano stradale.
 
 Dipende da 4.1 per la topologia e da 4.4 per avere qualcosa da collegare in quota.
 
-- [ ] Introdurre una struttura che non è un edificio: una campata fra due
+- [ ] Introdurre una struttura che non è un edificio: una campata fra due <!-- size: L -->
   appoggi, senza colonna propria e senza occupazione del suolo.
-- [ ] Collegare tetti, terrazze condivise e piattaforme con ponti e passerelle
+- [ ] Collegare tetti, terrazze condivise e piattaforme con ponti e passerelle <!-- size: L -->
   sospese, scegliendo gli appoggi dalla rete e dal registry.
-- [ ] Aggiungere mezzanini e collegamenti fra quote dentro l'isolato, dove il
+- [ ] Aggiungere mezzanini e collegamenti fra quote dentro l'isolato, dove il <!-- size: M -->
   cluster li rende percorribili.
-- [ ] Spezzare le campate lunghe in segmenti che rispettino il tetto di chunk
+- [ ] Spezzare le campate lunghe in segmenti che rispettino il tetto di chunk <!-- size: M -->
   sporchi, e farle comparire a budget come le altre strutture.
 
 **Gate:** ponti e percorsi in quota sono leggibili alle normali distanze di
@@ -718,22 +800,22 @@ per questo due dati diversi — è la stessa separazione che la 4.2 ha fatto fra
 «cosa regge il terreno» e la 2.1 fra «dove ha senso questo ruolo», ed è ciò che
 permette di alzare il tetto senza spostare un coefficiente di `balance.ts`.
 
-- [ ] Derivare una stratificazione — costa e periferia basse e porose, fasce
+- [ ] Derivare una stratificazione — costa e periferia basse e porose, fasce <!-- size: L -->
   intermedie terrazzate, centro denso — da distanza dai poli e dal mare.
-- [ ] Esporre quella stratificazione come **quota ammessa per colonna**, e farla
+- [ ] Esporre quella stratificazione come **quota ammessa per colonna**, e farla <!-- size: L -->
   entrare in `Builder.upgrade` accanto alla soglia di desiderabilità, non al
   posto suo.
-- [ ] Alzare `maxLevel` e `LEVEL_CAPS` insieme al tetto di chunk sporchi, con un
+- [ ] Alzare `maxLevel` e `LEVEL_CAPS` insieme al tetto di chunk sporchi, con un <!-- size: M -->
   test che verifichi che nessun edificio di livello massimo venga scartato in
   silenzio: è il difetto che si ripresenta a ogni cambio di scala.
-- [ ] Far emergere lo skyline come eccezione governata, non come somma di upgrade
+- [ ] Far emergere lo skyline come eccezione governata, non come somma di upgrade <!-- size: M -->
   indipendenti.
-- [ ] Preservare una corona naturale attorno all'edificato e transizioni leggibili
+- [ ] Preservare una corona naturale attorno all'edificato e transizioni leggibili <!-- size: M -->
   fra le fasce.
-- [ ] Rimisurare ombra, nebbia di quota e inquadratura iniziale sulla città più
+- [ ] Rimisurare ombra, nebbia di quota e inquadratura iniziale sulla città più <!-- size: M -->
   alta: la camera parte con `targetHeight` a 12 voxel e `frameRegion` riceve uno
   `spanZ`, quindi l'inquadratura d'apertura non è indipendente dall'altezza.
-- [ ] Verificare che la gerarchia resti visibile su isole di forma diversa, non
+- [ ] Verificare che la gerarchia resti visibile su isole di forma diversa, non <!-- size: S -->
   solo sul seed di riferimento.
 
 **Vincolo:** la simulazione non impara la verticale (invariante 7). La quota
@@ -762,12 +844,12 @@ geometria.
 Nessuna dipendenza: vive interamente in `src/engine/` e può essere fatta in
 qualsiasi momento.
 
-- [ ] Usare nebbia e prospettiva aerea per separare le quote, non solo le
+- [ ] Usare nebbia e prospettiva aerea per separare le quote, non solo le <!-- size: M -->
   distanze.
-- [ ] Dare all'acqua una risposta che distingua bassofondo, canale e mare aperto.
-- [ ] Rivedere il contributo dell'ambiente sotto ponti, portici e piani coperti,
+- [ ] Dare all'acqua una risposta che distingua bassofondo, canale e mare aperto. <!-- size: M -->
+- [ ] Rivedere il contributo dell'ambiente sotto ponti, portici e piani coperti, <!-- size: M -->
   dove oggi manca l'occlusione che li racconterebbe.
-- [ ] Aggiornare i temi esistenti alla nuova gerarchia, restando nel materiale
+- [ ] Aggiornare i temi esistenti alla nuova gerarchia, restando nel materiale <!-- size: M -->
   condiviso.
 
 **Vincolo:** nessuna texture, nessun PBR, nessun materiale aggiuntivo. Un tema
@@ -796,23 +878,23 @@ il condizionatore, l'insegna a bandiera, la pianta sul balcone — e la luce che
 bloom, non schiarisce il muro di fronte. Nebbia, acqua e prospettiva aerea
 restano invece competenza della 4.7.
 
-- [ ] Costruire una libreria di prop sub-voxel — tende, insegne, condizionatori,
+- [ ] Costruire una libreria di prop sub-voxel — tende, insegne, condizionatori, <!-- size: XL -->
   antenne, cavi, cassoni, fioriere — emessi dalla stessa `emitRuns` degli altri
   dettagli, scelti per uso, livello e faccia.
-- [ ] Appenderli alle giunzioni che la grammatica già produce — fronte strada,
+- [ ] Appenderli alle giunzioni che la grammatica già produce — fronte strada, <!-- size: L -->
   arretramenti, coronamenti, angoli d'isolato — invece che a posizioni sparse
   sulla facciata: è l'aggancio a rendere l'oggetto credibile, non la sua forma.
-- [ ] Portare il verde sull'edificio: fioriere, rampicanti e chiome che riusano
+- [ ] Portare il verde sull'edificio: fioriere, rampicanti e chiome che riusano <!-- size: M -->
   gli slot `grass*` esistenti e la stessa priorità di troncamento.
-- [ ] Far uscire la luce: un contributo notturno che schiarisce le superfici
+- [ ] Far uscire la luce: un contributo notturno che schiarisce le superfici <!-- size: L -->
   vicine a una faccia emissiva, ricavato da quello che il mesher già produce,
   senza luci dinamiche, senza una pass in più e senza ricompilare materiali.
-- [ ] Legare l'accensione allo stato della simulazione: finestre accese in
+- [ ] Legare l'accensione allo stato della simulazione: finestre accese in <!-- size: M -->
   proporzione all'occupazione, insegne dove il commercio è attivo, buio dove
   l'edificio è vuoto — la città di notte come lettura dell'economia.
-- [ ] Aggiungere un ciclo giorno/notte come traiettoria del sole più scambio di
+- [ ] Aggiungere un ciclo giorno/notte come traiettoria del sole più scambio di <!-- size: M -->
   uniform, con l'ora esposta nell'harness per poter iterare sul look.
-- [ ] Dare all'harness una scena `diorama`: un edificio solo, girevole e
+- [ ] Dare all'harness una scena `diorama`: un edificio solo, girevole e <!-- size: M -->
   inquadrato da vicino, per giudicare il dettaglio senza aspettare che la città
   cresca. Stessa ossatura del campionario della 4.10 — una scena a budget che
   compone soggetti scelti — quindi la seconda costa poco se la prima esiste già.
@@ -869,23 +951,23 @@ simulazione continua a non avere una coordinata verticale (invariante 7). È
 l'alternativa da preferire a un indice `z` nel campo di desiderabilità, che
 moltiplicherebbe per il numero di livelli tutta la memoria densa.
 
-- [ ] Introdurre la piattaforma come suolo artificiale: una struttura con appoggi
+- [ ] Introdurre la piattaforma come suolo artificiale: una struttura con appoggi <!-- size: XL -->
   propri che porta una superficie edificabile a quota, trattata dal registry come
   volume e non come edificio.
-- [ ] Esporre più di una quota edificabile per colonna senza duplicare la
+- [ ] Esporre più di una quota edificabile per colonna senza duplicare la <!-- size: L -->
   `TerrainMap`: il livello si risolve dove si risolve il lotto, non nel campo.
-- [ ] Far crescere edifici sulle piattaforme e sui tetti condivisi dei cluster,
+- [ ] Far crescere edifici sulle piattaforme e sui tetti condivisi dei cluster, <!-- size: L -->
   riusando `topOf` e l'intervallo di quota che il registry già confronta.
-- [ ] Prendere la quota ammessa della 4.6 come tetto **anche** in quota: una
+- [ ] Prendere la quota ammessa della 4.6 come tetto **anche** in quota: una <!-- size: M -->
   piattaforma non è il modo di aggirare la gerarchia, è il modo in cui la
   gerarchia sale. Senza questo vincolo il secondo livello diventa la scorciatoia
   che rende inutile il primo.
-- [ ] Aggiungere mobilità in quota come struttura di scena — monorotaia,
+- [ ] Aggiungere mobilità in quota come struttura di scena — monorotaia, <!-- size: L -->
   sopraelevata, ascensori d'isolato — appoggiata alla rete di 4.5 e ai suoi
   appoggi reali.
-- [ ] Dare un fondo al vuoto: nuvole, foschia e livelli inferiori intravisti, così
+- [ ] Dare un fondo al vuoto: nuvole, foschia e livelli inferiori intravisti, così <!-- size: M -->
   che una quota alta si legga come alta anche quando il suolo non si vede più.
-- [ ] Far dipendere il costo per colonna dai livelli *presenti* e non da un tetto
+- [ ] Far dipendere il costo per colonna dai livelli *presenti* e non da un tetto <!-- size: M -->
   teorico: una colonna a un livello solo deve costare quanto costa oggi.
 
 **Vincolo:** l'isola resta il suolo di partenza e non viene sostituita — la
@@ -916,21 +998,21 @@ giudicare la scala relativa di una chioma è aspettare che l'isola ne produca un
 accanto a un edificio. Una scelta di look si fa affiancando le cose, e non c'è un
 posto dove affiancarle.
 
-- [ ] Aggiungere una `SceneKind` `swatch` su `?scene=swatch`, generata a passi con
+- [ ] Aggiungere una `SceneKind` `swatch` su `?scene=swatch`, generata a passi con <!-- size: M -->
   budget come le altre.
-- [ ] Disporre la griglia 32 × 8 — uno slot di palette per colonna, un
+- [ ] Disporre la griglia 32 × 8 — uno slot di palette per colonna, un <!-- size: M -->
   `SURFACE_KIND` per riga — con corse abbastanza lunghe e alte perché la
   microgeometria emetta davvero: un `habitat` senza qualche voxel di facciata non
   mostra niente.
-- [ ] Affiancare una colonna tagliata per bioma con la stratigrafia vera, così che
+- [ ] Affiancare una colonna tagliata per bioma con la stratigrafia vera, così che <!-- size: M -->
   l'invariante «ogni strato è alto un numero intero di celle» si veda di taglio
   invece di doverla dedurre dalle soglie.
-- [ ] Mettere nella stessa inquadratura la fascia di scala: le forme d'albero
+- [ ] Mettere nella stessa inquadratura la fascia di scala: le forme d'albero <!-- size: S -->
   accanto a un edificio di riferimento e a un pezzo di terreno.
-- [ ] Dare un nome a ciò che si guarda: riga e colonna sotto il cursore
+- [ ] Dare un nome a ciò che si guarda: riga e colonna sotto il cursore <!-- size: S -->
   nell'overlay, perché in-world non ci sono etichette e la sola convenzione
   d'ordine si dimentica.
-- [ ] Coprirla con un test in ambiente `node` che verifichi la presenza di tutte
+- [ ] Coprirla con un test in ambiente `node` che verifichi la presenza di tutte <!-- size: S -->
   le combinazioni: è il modo per accorgersi che uno slot nuovo non è mai stato
   aggiunto al campionario.
 
@@ -954,6 +1036,10 @@ Nessuna dipendenza. Vive in `src/engine/` e nell'harness, non tocca né la
 crescita né la simulazione, e va **prima** delle sotto-fasi che sovrappongono
 volumi: 4.4, 4.5 e 4.9 costruiscono esattamente ciò che oggi non si potrebbe
 verificare a occhio.
+
+**Stato implementazione:** completata. Il gate è stato verificato a schermo su
+una città di ~490 edifici, seed 1337: le quattro viste sono in fondo alla
+sezione, insieme a cosa il lavoro ha fatto emergere.
 
 **Perché adesso.** La città è già abbastanza densa da essere opaca. Da
 inquadratura di gioco un isolato interno è un volume dietro altri volumi, e
@@ -990,33 +1076,33 @@ Il velo viene per primo perché copre tre modi su quattro e non ha capping da
 risolvere. Un effetto collaterale gradito: dove la tipologia ha una corte, la
 sezione mostra un vuoto vero e non un pieno tagliato.
 
-- [ ] Aggiungere al materiale unico un **velo a retino** governato da uniform:
+- [x] Aggiungere al materiale unico un **velo a retino** governato da uniform: <!-- size: L -->
   un predicato di quota, uno di rettangolo, la forza del retino, e `discard` sul
   pattern ordinato. Nessuna geometria nuova, nessun materiale nuovo, nessuno
   slot di palette e nessun tipo di superficie in più (invarianti 4 e 5).
-- [ ] **Raggi X**: velare ciò che sta fra la camera e la colonna sotto il
+- [x] **Raggi X**: velare ciò che sta fra la camera e la colonna sotto il <!-- size: M -->
   cursore. In ortografica «davanti» è una disuguaglianza sulla proiezione lungo
   l'asse di vista, non un raycast: si risolve nel fragment senza lavoro sulla
   CPU e senza toccare il ciclo di frame.
-- [ ] **Fetta a quota**: uno slider e un parametro URL nascondono o velano tutto
+- [x] **Fetta a quota**: uno slider e un parametro URL nascondono o velano tutto <!-- size: M -->
   sopra una z, per guardare la città al piano *n* come si fa in Going Medieval e
   in Timberborn. È il modo che risponde a «cosa c'è al livello 3».
-- [ ] **Sezione verticale**: un piano che taglia lungo un asse della **griglia
+- [x] **Sezione verticale**: un piano che taglia lungo un asse della **griglia <!-- size: L -->
   stradale** e non lungo un asse arbitrario, così il taglio cade su una
   carreggiata e mostra il fronte degli isolati invece di affettare i volumi a
   caso. È l'unico modo che ha bisogno del capping da `gl_FrontFacing`.
-- [ ] **Isolamento dell'isolato**: velare tutto ciò che sta fuori dal rettangolo
+- [x] **Isolamento dell'isolato**: velare tutto ciò che sta fuori dal rettangolo <!-- size: M -->
   di `streets.blockRect` sotto il cursore. Stesso velo, predicato diverso —
   nessun taglio, nessun capping, e l'isolato resta nel suo contesto invece di
   finire su fondo neutro, che è il punto: la domanda è come si connette, non
   com'è fatto da solo.
-- [ ] Tenere la **decisione** fuori dal materiale: quale modo è attivo, a che
+- [x] Tenere la **decisione** fuori dal materiale: quale modo è attivo, a che <!-- size: M -->
   quota, su quale isolato è una funzione pura e va testata in ambiente `node`,
   come già `lighting.ts`. Nel materiale entrano solo i numeri che ne escono.
-- [ ] Dire cosa si sta guardando — modo attivo, quota della fetta, id
+- [x] Dire cosa si sta guardando — modo attivo, quota della fetta, id <!-- size: S -->
   dell'isolato — nell'overlay: in-world non ci sono etichette, ed è la stessa
   richiesta che fa il campionario della 4.10.
-- [ ] Estendere `VoxelMaterial.test.ts` ai nuovi uniform: è il test che si
+- [x] Estendere `VoxelMaterial.test.ts` ai nuovi uniform: è il test che si <!-- size: S -->
   accorge di un uniform dichiarato nel GLSL e mai scritto, o del contrario.
 
 **Vincolo:** è uno strumento dell'harness, non una modalità di gioco. Sta
@@ -1025,9 +1111,81 @@ un'azione del giocatore, a darle icona, stato e comportamento sui sette temi
 sarà la fase 7. Il mesher non si tocca (invariante 6): una vista che chiedesse
 di rimeshare per essere disegnata sarebbe la vista sbagliata.
 
+> **Questo vincolo è caduto con la fase 4.13**, e vale la pena dire perché si
+> era sbagliato: guardare dentro la propria città non è una verifica tecnica, è
+> il modo in cui una città densa si gode. Il giorno dopo averle viste
+> funzionare, le viste erano già una funzione di gioco chiusa dietro `?debug=1`.
+> Il resto della sezione resta com'era scritto: è il registro di cosa è successo
+> allora, non una descrizione dello stato attuale.
+
 **Gate:** su una città matura si legge come un isolato si incastra su più quote —
 velato, a fette e in sezione — senza console, senza rigenerare la scena, e senza
 che il frame esca dal budget mentre una vista è attiva.
+
+**Come è stato risolto.** Nel materiale non è entrato il concetto di «modo».
+Sono entrati **due predicati geometrici e una sola azione**: un semipiano, un
+rettangolo con la propria polarità, e la densità di un retino ordinato su
+`gl_FragCoord` con `discard`. I quattro modi sono quattro riempimenti diversi di
+quelle uniform, e vivono in `src/engine/inspect.ts` — puro, senza Three e senza
+DOM, verificato in `node` come `lighting.ts`. È la stessa separazione della 2.1
+fra etichetta e terreno: la vista dichiara cosa vuole nascondere, il materiale
+sa solo nasconderlo.
+
+**Velare e tagliare sono la stessa manopola.** A densità 1 il retino scarta ogni
+pixel, cioè taglia; sotto, lascia passare il tessuto dietro. Non servono due
+percorsi, e `transparent` resta `false` perché il retino non è alpha blending —
+niente ordinamento, niente da ripensare quando arriveranno le campate della 4.5.
+Solo il taglio chiede il tappo, e il tappo è `DoubleSide` più `gl_FrontFacing`
+sulla stessa geometria: la sezione verticale, misurata a schermo, non lascia
+vedere il cielo attraverso un volume tagliato. Quello che si vede dentro è un
+**guscio vuoto**, e non è un difetto: il mesher non emette facce interne, e i
+riferimenti citati qui sotto hanno esattamente lo stesso aspetto.
+
+**Il `discard` non lo paga chi non lo usa.** Un `discard` raggiungibile nel
+sorgente può costare l'early-Z su tutta la scena, e queste sono viste
+dell'harness. Il blocco entra nel fragment **alla prima attivazione**: una
+ricompilazione per sessione, mai spontanea, e da lì in poi spegnere una vista
+significa riscrivere il payload neutro. L'invariante che conta — cambiare tema
+non ricompila niente — è sorvegliato dal test che già c'era, esteso a entrambe
+le varianti del sorgente.
+
+**Due cose le ha trovate solo lo schermo.** La prima: il semipiano dei raggi X,
+da solo, non apre una finestra — **dissolve mezza città**, perché in ortografica
+tutto ciò che sta davanti alla colonna è metà dell'inquadratura. Il rettangolo,
+che serviva all'isolato, è diventato il secondo predicato di tutti: i due si
+intersecano, e la polarità decide se a nascondersi è il dentro (la finestra dei
+raggi X) o il fuori (l'isolato). La seconda: la fetta a una quota assoluta
+partiva **dentro la collina** — il nucleo della città sta a una quarantina di
+voxel sul mare — e il primo colpo d'occhio era l'interno della terra. Finché la
+quota non viene scelta, la fetta segue il suolo che si sta guardando; al primo
+tasto o al primo trascinamento diventa assoluta.
+
+**Le ombre.** La shadow map non sa del taglio, quindi il piano appena scoperto
+resterebbe all'ombra dei piani che si sono nascosti — ed è proprio la lettura che
+la fetta esiste per dare. Finché un taglio è attivo le ombre proiettate si
+spengono; sole e ambiente restano, quindi le facce continuano a distinguersi e il
+risultato legge come un disegno tecnico invece che come una scena piatta.
+
+**Costo e misure.** La colonna a fuoco si risolve **una volta per frame** e non a
+ogni `pointermove`: il costo non dipende da quanto si muove il mouse, e la vista
+segue anche la rotazione della camera. Su una città di ~490 edifici, `mainMs`
+resta sotto il millisecondo con ogni modo attivo, dentro `FRAME_BUDGET_MS`.
+Geometria, chunk con mesh e voxel solidi sono **identici bit a bit** con ogni
+vista accesa e dopo un cambio di tema: il mesher non è stato toccato (invariante
+6) e il suo worker resta 8,64 kB. Le draw call in un modo che taglia scendono da
+398 a 116, ma non è merito del taglio: è la pass d'ombra che non gira. Nessuna
+tabella di misura di `README.md` o `src/sim/README.md` è stata aggiornata, perché
+questa fase non entra né nel mesher né nella simulazione.
+
+**Resta aperto.** Il volume nascosto **continua a proiettare ombra**: nel taglio
+si spengono tutte, che è la risposta a costo zero; far sì che solo il volume
+nascosto smetta di proiettare vuole lo stesso predicato nel materiale di
+profondità di `SunShadow`, cioè un secondo shader da tenere allineato a mano. Il
+velo non distingue terreno da edificio — il mesher non porta quell'informazione,
+e chiedergliela sarebbe la vista sbagliata — quindi i raggi X aprono anche il
+suolo davanti alla colonna. E le viste restano dell'harness: niente icona, niente
+stato sui sette temi, niente comportamento da giocatore. Se un giorno
+l'ispezione diventerà un'azione del gioco, sarà la fase 7 a darle una pelle.
 
 **Riferimenti.**
 
@@ -1047,6 +1205,172 @@ che il frame esca dal budget mentre una vista è attiva.
   porosi. Non è la nostra, perché la camera qui è ortografica e vincolata, ma
   spiega cosa i giocatori cercano quando la città diventa opaca.
 
+### Fase 4.12 — I catalizzatori diventano strutture
+
+Obiettivo: dare a ognuno degli otto ruoli una struttura voxel propria, che
+**cresce per stadi insieme al quartiere che ha generato**.
+
+Nessuna dipendenza forte. Vive in `src/world/` e riusa la macchina di crescita
+degli edifici invece di aggiungerne una.
+
+**Stato implementazione:** completata. Il gate resta da validare a occhio su
+un'isola vera: i test coprono ingombri, determinismo, stadi cumulativi,
+invarianza per rotazione e budget di chunk, non la leggibilità a distanza di
+gioco.
+
+**Perché la fase si è aperta.** Un giocatore ha guardato il porto e ha detto che
+faceva schifo, e aveva ragione due volte. Primo: **il porto non esisteva**.
+Quello che si vedeva sull'acqua era la carreggiata dell'isolato costiero —
+`groundKindOf` chiama `shore` ogni colonna d'acqua entro `maxQuayDepth`, quindi
+`rampAround` portava l'intero anello di strada a `quayLevel` e ne costruiva il
+muro fino al fondale. Secondo: tutti e otto i ruoli condividevano lo stesso rombo
+di asfalto di raggio quattro, e si distinguevano per il colore di **un voxel** al
+centro. La fase 3 aveva chiuso «catalizzatori con ruolo distinto» sul piano della
+simulazione e mai su quello della forma.
+
+- [x] Fermare la banchina al bordo costruito della terra (`GRADING.quayReach`): <!-- size: S -->
+  `maxQuayDepth` dice fin dove il fondale regge, non fin dove ha senso arrivare.
+- [x] Dare a ogni ruolo una ricetta di parti, come tabella e non come generatore, <!-- size: XL -->
+  con una firma verticale che la distingua in isometrica.
+- [x] Far crescere la struttura per stadi su ciò che la città ha **costruito** <!-- size: L -->
+  intorno, non sulla desiderabilità.
+- [x] Restituire alla simulazione un effetto lieve, da una porta che esiste già. <!-- size: S -->
+- [x] Ammettere impronte rettangolari, per le forme lineari per natura. <!-- size: M -->
+
+**Vincolo:** un landmark non è un tipo nuovo di cosa. È un `BuildingRecord` con
+un campo in più, e tutto ciò che lo governa — occupazione, collisione, budget di
+chunk, comparsa a budget, avanzamento — è la macchina degli edifici. Se una forma
+chiede una passata propria, è la forma a essere sbagliata.
+
+**Gate:** i sette ruoli si riconoscono dalla sagoma senza overlay e senza
+tooltip; il porto legge come porto e non come piattaforma; la crescita resta
+dentro i budget con più landmark in comparsa insieme.
+
+**Come è stato risolto.** L'idea portante è che **la macchina esisteva già**.
+`upgradePass` percorre i record a cursore, verifica un tetto, rigenera vecchia e
+nuova sagoma, sostituisce il record e accoda la comparsa a budget; `upgrade`
+limita l'allargamento con `blockRoom`, `fitsWider`, `dirtyChunkCount` e
+`surveyGrade`. Un landmark è quindi un record con `landmark: CatalystId`, e
+l'unico ramo nuovo in tutto il Builder è quale generatore disegna lo stamp.
+Nessuna passata in più, nessun secondo indice, nessuno stato nuovo.
+
+**Cosa fa avanzare uno stadio, e perché non la desiderabilità.** Un catalizzatore
+siede al centro della propria influenza: il campo lì è quasi sempre saturo,
+quindi un landmark che leggesse `field.valueAt` salterebbe tutti gli stadi al
+primo tick. Lo stadio conta invece i record entro il raggio del catalizzatore —
+ciò che la città ha davvero costruito. È il modello dei
+[monumenti di Anno 1800](https://anno1800.fandom.com/wiki/Monuments), una
+costruzione a fasi che corona una città *già edificata*
+([devblog](https://www.anno-union.com/devblog-welcome-to-the-world-fair/)), detto
+con il solo dato che il Builder possiede. Non serve stato: è una funzione pura
+del contenuto del registry, ed è monotona perché nessuno demolisce.
+
+**Gli stadi sono cumulativi dentro un ingombro che non cambia mai**, riservato
+per intero al piazzamento. Due garanzie invece di due controlli: un landmark non
+può restare bloccato a metà perché nel frattempo è cresciuto un edificio accanto,
+e la sagoma dello stadio precedente non ha mai niente da cancellare.
+
+**Due difetti trovati dai test.** I pilastri di `colonnade` contavano il passo da
+un capo solo, quindi su un lato non multiplo del passo la ricetta smetteva di
+essere invariante per rotazione — e si vedeva come un conto di voxel diverso a
+seconda del verso, dove due parti si sovrappongono. E le prime ricette erano
+larghe sedici voxel, quasi un isolato: seppellivano la sovrapposizione fra due
+catalizzatori, cioè esattamente il punto dove nascono gli usi misti. A dirlo è
+stato un test di fase 3 già in suite, che è il modo migliore in cui poteva
+saltare fuori.
+
+**Costo e misure.** `generateLandmark` gira al piazzamento e a ogni avanzamento
+di stadio, cioè unità di volte per partita, e `landmarkPass` scorre i soli record
+con `landmark` una volta ogni `ticksPerUpgrade`. `stageBonus` entra in
+`balance.ts`: **le tabelle di misura in `README.md` e `src/sim/README.md` vanno
+rimisurate a mano**, e non sono state aggiornate qui.
+
+**Resta aperto.** Le forme lineari sono limitate da `LANDMARK.maxDirtyChunks` e
+non ancora spezzate in segmenti: una pista davvero lunga — o un viadotto che
+attraversi mezzo isolato — chiede la segmentazione della 4.5, e va fatta lì.
+Il landmark non partecipa ancora alla città in quota: il suo impalcato è un
+volume del registry come gli altri, quindi la 4.9 potrebbe già costruirci sopra,
+ma nessuno gliel'ha ancora chiesto. E la ricetta non varia con il seme: la forma
+è una funzione di `(ruolo, stadio, verso)`, scelta perché il giocatore deve
+riconoscere il ruolo dalla sagoma e non imparare otto sagome moltiplicate per i
+semi — se un giorno si vorrà varietà, andrà aggiunta senza toccare quel patto.
+
+### Fase 4.13 — Le viste diventano un gesto di gioco
+
+Obiettivo: mettere le quattro viste della 4.11 **in mano al giocatore**, invece
+di lasciarle dietro `?debug=1`.
+
+Dipende dalla 4.11, di cui non riscrive niente. Vive in `src/ui/` e in
+`src/main.ts`.
+
+**Stato implementazione:** completata. Verificata a schermo alla radice, senza
+`?debug=1`, su una città di ~2.000 residenti.
+
+**Perché il vincolo della 4.11 era sbagliato.** Lo diceva la 4.11 stessa: «se un
+giorno diventerà un'azione del giocatore, sarà la fase 7 a darle una pelle». Quel
+giorno è stato il giorno dopo. Guardare dentro la propria città non è una
+verifica tecnica — è **il modo in cui una città densa si gode**, ed è la risposta
+alla stessa domanda che aveva aperto la 4.11, posta però da chi ci gioca invece
+che da chi la costruisce. Il motore non aveva bisogno di niente: mancavano il
+comando e tre regole.
+
+Le tre regole, che sono il contenuto vero della fase:
+
+- **Il fuoco si aggancia.** Seguendo il cursore un frame alla volta, bastava
+  portare il mouse sul dock — o vedersi aprire una carta evento — per far saltare
+  la vista a metà città. È il difetto che rendeva le viste inusabili da
+  giocatore, e non si vedeva finché le si guidava da console.
+- **Prendere uno strumento chiude un taglio.** Sotto Levels o Cutaway il terreno
+  vero è nascosto: si piazzerebbe alla cieca. Le viste a velo sopravvivono,
+  perché lì il suolo si legge ancora sotto il retino.
+- **La quota si ri-arma** tornando alla città intera, o una fetta riaperta
+  ripartirebbe da una quota scelta mezz'ora prima, nel frattempo finita
+  sottoterra.
+
+- [x] Un comando nel dock — pulsante *Views* fra Policies e il tema — con un
+  picker che elenca le cinque viste e, per ognuna, **cosa si va a vedere**: chi
+  lo apre sta cercando una risposta sulla propria città, non una descrizione del
+  retino.
+- [x] Tasti fuori dal gate del debug: `V` cicla, `[`/`]` e `PageDown`/`PageUp`
+  muovono la quota (`Shift` per un piano). Il toast di `V` si spegne da solo,
+  perché è l'unico percorso cieco — chi sceglie dal picker ha il pannello aperto
+  davanti.
+- [x] Barra dei livelli sul bordo sinistro, visibile **solo** dove c'è una quota
+  da muovere. Fuori dal picker: cercare il piano è un gesto continuo, e un
+  pannello aperto coprirebbe ciò che si sta leggendo.
+- [x] Etichette di gioco separate dai nomi tecnici. `off`/`xray`/`slice`/
+  `section`/`block` restano identificatori — parametro URL e referto tecnico —
+  e vivono nel motore; *Normal*, *X-ray*, *Levels*, *Cutaway*, *Block focus*
+  vivono in `src/ui/ViewMenuModel.ts`, puro e testato in `node`.
+- [x] Le viste finiscono nella card di aiuto, che è dove il giocatore scopre che
+  esistono.
+
+**Vincolo:** il motore della 4.11 non si tocca — nessuna uniform nuova, nessun
+modo nuovo, nessuna ricompilazione in più. La variante col `discard` continua a
+entrare alla prima attivazione: chi non apre mai una vista non la paga, e resta
+la scelta giusta anche ora che è una funzione di gioco. La vista è una **lente
+sul rendering, non uno stato della città**: `src/sim/` e `src/game/` non sanno
+che esiste, non si salva, e al ricaricamento si riparte da Normal.
+
+**Gate:** un giocatore che non ha mai aperto la console scende di un piano nella
+propria città, taglia su una strada e isola un quartiere senza uscire dal gioco,
+e senza che una vista attiva gli faccia perdere il punto che stava guardando.
+
+**Cosa ha trovato lo schermo.** Che i raggi X hanno una finestra di
+`INSPECT.xraySpan` colonne di **mondo**: a tutta inquadratura sono una trentina
+di pixel, e la vista sembra non fare niente. Da vicino — dove serve — apre
+esattamente ciò che sta davanti. Non è un difetto da correggere con un numero più
+grande: un raggio X che scala con lo zoom dissolverebbe mezza città appena ci si
+allontana, che è il difetto che la 4.11 aveva già trovato e chiuso. Va detto
+nella riga della vista, non allargato.
+
+**Resta aperto.** Le ombre nel taglio si spengono ancora tutte, e ora che è una
+vista di gioco l'appiattimento si nota di più: la risposta giusta resta il
+predicato nel materiale di profondità di `SunShadow`, cioè un secondo shader da
+tenere allineato a mano. Nessuna icona ridisegnata e nessuno stato sui sette
+temi: quella è la fase 7, e l'icona aggiunta qui è una sagoma coerente, non un
+progetto grafico.
+
 **Gate della fase 4:** con la UI nascosta, la città comunica crescita verticale,
 connessioni fra livelli e struttura economica attraverso volumi e silhouette;
 ponti, terrazze e percorsi in quota restano leggibili alle normali distanze di
@@ -1056,13 +1380,13 @@ gioco, e il singolo edificio regge anche l'inquadratura ravvicinata.
 
 Obiettivo: trasformare la demo in un gioco riprendibile e distribuibile.
 
-- [ ] Salvare seed, simulazione, catalizzatori, policy, settori e registro edifici in
+- [ ] Salvare seed, simulazione, catalizzatori, policy, settori e registro edifici in <!-- size: XL -->
   un formato versionato; ricostruire terreno e campo invece di serializzare buffer derivati.
-- [ ] Aggiungere autosave locale, slot manuali, esportazione e importazione JSON.
-- [ ] Separare UI di gioco e diagnostica; rendere accessibili controlli, colori e testi.
-- [ ] Adattare layout e input a schermi più piccoli, mantenendo desktop come target principale.
-- [ ] Aggiungere menu iniziale, scelta del seed, difficoltà e riepilogo della partita.
-- [ ] Preparare deploy statico, telemetria opt-in degli errori e gestione delle versioni dei salvataggi.
+- [ ] Aggiungere autosave locale, slot manuali, esportazione e importazione JSON. <!-- size: L -->
+- [ ] Separare UI di gioco e diagnostica; rendere accessibili controlli, colori e testi. <!-- size: L -->
+- [ ] Adattare layout e input a schermi più piccoli, mantenendo desktop come target principale. <!-- size: M -->
+- [ ] Aggiungere menu iniziale, scelta del seed, difficoltà e riepilogo della partita. <!-- size: M -->
+- [ ] Preparare deploy statico, telemetria opt-in degli errori e gestione delle versioni dei salvataggi. <!-- size: M -->
 
 **Gate:** ricaricare o aggiornare il browser non perde la partita e una build
 statica può essere pubblicata senza strumenti di sviluppo.
@@ -1072,14 +1396,14 @@ statica può essere pubblicata senza strumenti di sviluppo.
 Questa fase accompagna tutte le precedenti; nessuna funzionalità supera il gate
 se rompe i budget esistenti.
 
-- [ ] Mantenere 60 fps desktop, lavoro non-render sotto 4 ms per frame e crescita a
+- [ ] Mantenere 60 fps desktop, lavoro non-render sotto 4 ms per frame e crescita a <!-- size: L -->
   costo limitato indipendente dal numero totale di edifici.
-- [ ] Aggiungere scenari automatici di soak per città grandi, espansioni consecutive
+- [ ] Aggiungere scenari automatici di soak per città grandi, espansioni consecutive <!-- size: M -->
   e cambi frequenti di policy.
-- [ ] Misurare separatamente generazione, applicazione voxel, meshing, upload e UI.
-- [ ] Introdurre livelli di dettaglio o batching aggiuntivo solo dopo misure reali,
+- [ ] Misurare separatamente generazione, applicazione voxel, meshing, upload e UI. <!-- size: M -->
+- [ ] Introdurre livelli di dettaglio o batching aggiuntivo solo dopo misure reali, <!-- size: L -->
   preservando palette a uniform e una geometria per chunk finché restano adeguati.
-- [ ] Verificare periodicamente GPU integrata, memoria, tempo di startup e dimensione bundle.
+- [ ] Verificare periodicamente GPU integrata, memoria, tempo di startup e dimensione bundle. <!-- size: S -->
 
 ## Fase 7 — Linguaggio visivo dell'interfaccia
 
@@ -1121,14 +1445,14 @@ frame; `prefers-reduced-motion` continua a spegnere tutto il movimento.
 
 ### Fase 7.1 — Materiale dei pannelli e temi
 
-- [ ] Sostituire `--hud-shadow` con una scala di elevazione a tre livelli (dock,
+- [ ] Sostituire `--hud-shadow` con una scala di elevazione a tre livelli (dock, <!-- size: M -->
   drawer, modale) e aggiungere a `.hud-surface` bordo interno chiaro, gradiente
   verticale e ombra di contatto: un pannello deve leggersi come un oggetto
   appoggiato, non come un rettangolo trasparente.
-- [ ] Introdurre una cornice 9-slice via `border-image` con sorgente SVG in
+- [ ] Introdurre una cornice 9-slice via `border-image` con sorgente SVG in <!-- size: M -->
   `data:` URI, così i pannelli scalano senza deformare gli angoli e senza asset
   binari nel bundle.
-- [ ] Far derivare i token di `hud.css` dal tema attivo: `applyTheme` scrive
+- [ ] Far derivare i token di `hud.css` dal tema attivo: `applyTheme` scrive <!-- size: L -->
   `--hud-*` su `document.documentElement` a partire dalla palette del tema, e
   l'HUD cambia con il mondo invece di restare crema sotto un cielo al neon.
 
@@ -1137,12 +1461,12 @@ nessun pannello perde contrasto AA sui sette temi.
 
 ### Fase 7.2 — Iconografia
 
-- [ ] Ridisegnare `hudIcons.ts` su due pesi (filled per le risorse, stroke per le
+- [ ] Ridisegnare `hudIcons.ts` su due pesi (filled per le risorse, stroke per le <!-- size: L -->
   azioni) con sagoma leggibile a 18px, non pittogrammi generici a tratto unico.
-- [ ] Dare a ogni risorsa un'identità cromatica stabile — denaro oro, cibo verde,
+- [ ] Dare a ogni risorsa un'identità cromatica stabile — denaro oro, cibo verde, <!-- size: M -->
   materiali argilla, residenti blu, soddisfazione corallo — riusata ovunque quella
   risorsa compaia: barra, costi dei bottoni, toast, cursor card.
-- [ ] Per i catalizzatori usare miniature isometriche voxel al posto dei
+- [ ] Per i catalizzatori usare miniature isometriche voxel al posto dei <!-- size: L -->
   pittogrammi lineari: è il gancio più diretto fra toolbar e mondo, e riusa la
   palette già in `palette.json`.
 
@@ -1151,14 +1475,14 @@ sette catalizzatori dalla sola icona.
 
 ### Fase 7.3 — Indicatori
 
-- [ ] Sostituire il `delta` testuale con un indicatore di tendenza: freccia
+- [ ] Sostituire il `delta` testuale con un indicatore di tendenza: freccia <!-- size: M -->
   direzionale, magnitudine e sparkline breve sulla finestra dei tick recenti.
   Niente `±0` a schermo quando non succede niente.
-- [ ] Dove esiste un tetto (scorte di cibo contro consumo, banchi occupati),
+- [ ] Dove esiste un tetto (scorte di cibo contro consumo, banchi occupati), <!-- size: M -->
   mostrarlo come anello o barra di riempimento invece che come numero nudo.
-- [ ] Numeri tabulari e conteggio animato sulle variazioni; stato di crisi con
+- [ ] Numeri tabulari e conteggio animato sulle variazioni; stato di crisi con <!-- size: S -->
   pulsazione e colore, non solo con testo rosso.
-- [ ] Su hover, popover con la scomposizione entrate/uscite della risorsa: la
+- [ ] Su hover, popover con la scomposizione entrate/uscite della risorsa: la <!-- size: M -->
   domanda "perché sto perdendo denaro" oggi non ha risposta nell'HUD.
 
 **Gate:** dallo sguardo alla barra si capisce in che direzione sta andando la
@@ -1166,14 +1490,14 @@ città senza aprire nessun pannello.
 
 ### Fase 7.4 — Strumenti
 
-- [ ] Separare `locked` da `disabled`: il bottone bloccato mostra il requisito
+- [ ] Separare `locked` da `disabled`: il bottone bloccato mostra il requisito <!-- size: M -->
   mancante come riempimento progressivo (denaro accumulato sul costo, popolazione
   sulla soglia) invece di sbiadire. Bloccato deve leggersi come "manca poco".
-- [ ] Tile icona-sopra-etichetta di dimensione uniforme, badge del tasto numerico
+- [ ] Tile icona-sopra-etichetta di dimensione uniforme, badge del tasto numerico <!-- size: M -->
   1..9, badge di costo con l'icona della risorsa di 7.2.
-- [ ] Stato selezionato forte (non solo inversione di colore): cornice, sollevamento
+- [ ] Stato selezionato forte (non solo inversione di colore): cornice, sollevamento <!-- size: M -->
   e anteprima del raggio in-world coerente col colore dello strumento.
-- [ ] I separatori di gruppo diventano guide etichettate continue, così crescita,
+- [ ] I separatori di gruppo diventano guide etichettate continue, così crescita, <!-- size: S -->
   connessioni e identità si leggono come tre corsie e non come otto bottoni.
 
 **Gate:** un giocatore nuovo, guardando solo il dock, sa cosa può costruire ora,
@@ -1181,11 +1505,11 @@ cosa gli manca per il resto e quale strumento ha in mano.
 
 ### Fase 7.5 — Movimento e feedback
 
-- [ ] Micro-interazioni di pressione, spesa (il costo vola dal bottone alla barra)
+- [ ] Micro-interazioni di pressione, spesa (il costo vola dal bottone alla barra) <!-- size: M -->
   e sblocco; stack di toast invece di uno solo che si sovrascrive.
-- [ ] Feedback di piazzamento in-world — anello di selezione e impronta sul
+- [ ] Feedback di piazzamento in-world — anello di selezione e impronta sul <!-- size: M -->
   terreno — invece della sola cursor card.
-- [ ] Tutto sotto `prefers-reduced-motion` e sotto il budget: le animazioni sono
+- [ ] Tutto sotto `prefers-reduced-motion` e sotto il budget: le animazioni sono <!-- size: S -->
   CSS/`transform`, mai lavoro per frame in JS.
 
 **Gate:** ogni azione ha una conseguenza visibile entro 150 ms e nessuna
@@ -1204,21 +1528,24 @@ animazione compare nel profilo del frame.
 
 ## Prossimo milestone consigliato — Alpha 0.2
 
-1. [x] Tutorial iniziale e feedback del raggio dei catalizzatori.
-2. [x] Bilanciamento recuperabile di popolazione, cibo e produzione.
-3. [x] Settori costieri unici che aggiungono terreno realmente edificabile.
-4. [x] Costi continuativi e conseguenze visibili per le sei policy esistenti.
-5. [x] Commerciale autonomo e primo edificio residenziale-commerciale a uso misto.
-6. [x] Primo sistema di strade procedurali usato come scheletro della crescita (fase 4.1).
-7. [ ] Salvataggio locale minimo del ciclo completo.
-8. [ ] Playtest di 30 minuti con budget e criteri automatici registrati.
-9. [ ] Passata visiva su indicatori e strumenti: fasi 7.1, 7.3 e 7.4 (il resto
-   della fase 7 puo' seguire, ma barra risorse e dock vanno sistemati prima del playtest,
-   altrimenti si misura la confusione della UI invece del bilanciamento).
-10. [ ] Viste di ispezione dell'harness: fase 4.11, e con lei il campionario
-   della 4.10. Non sono contenuto della milestone e non entrano nel gate: sono
-   gli strumenti senza i quali tutto il resto della fase 4 si giudica a occhio
-   nudo su una città che ormai è opaca.
+- [x] Tutorial iniziale e feedback del raggio dei catalizzatori. <!-- size: M -->
+- [x] Bilanciamento recuperabile di popolazione, cibo e produzione. <!-- size: M -->
+- [x] Settori costieri unici che aggiungono terreno realmente edificabile. <!-- size: M -->
+- [x] Costi continuativi e conseguenze visibili per le sei policy esistenti. <!-- size: M -->
+- [x] Commerciale autonomo e primo edificio residenziale-commerciale a uso misto. <!-- size: L -->
+- [x] Primo sistema di strade procedurali usato come scheletro della crescita (fase 4.1). <!-- size: XL -->
+- [ ] Salvataggio locale minimo del ciclo completo. <!-- size: L -->
+- [ ] Playtest di 30 minuti con budget e criteri automatici registrati. <!-- size: M -->
+- [ ] Passata visiva su indicatori e strumenti: fasi 7.1, 7.3 e 7.4 (il resto <!-- size: L -->
+  della fase 7 puo' seguire, ma barra risorse e dock vanno sistemati prima del playtest,
+  altrimenti si misura la confusione della UI invece del bilanciamento).
+- [x] Guardare dentro la città: **fasi 4.11 e 4.13 fatte**. Le quattro viste <!-- size: M -->
+  sono passate da strumento dell'harness a comando di gioco — dock, tasti senza
+  debug, barra dei livelli — ed è la risposta alla domanda che una città densa
+  pone a chi ci gioca, non solo a chi la costruisce.
+- [ ] Campionario dei voxel (fase 4.10): l'altro strumento della coppia, che <!-- size: M -->
+  guarda il vocabolario invece della città costruita. Non è contenuto della
+  milestone e non entra nel gate.
 
 Alpha 0.2 è completa quando una partita ha apertura, sviluppo ed espansione
 leggibili, due strategie sostenibili e un salvataggio ripristinabile, con una

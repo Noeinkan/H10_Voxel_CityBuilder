@@ -8,6 +8,13 @@ e costruzione degli edifici. Questo modulo non dipende dal renderer.
 - Mondo Z-up; chunk `32x32x32`; coordinate negative valide.
 - `blocks` e `data` sono buffer distinti, allocati una volta per chunk.
 - `setBlock` sporca il chunk e i vicini di bordo; `setData` mai la geometria.
+- `fillColumn` e' `setBlock` su un tratto verticale, e va usata quando il tratto
+  si conosce in anticipo: dentro il chunk resta un indice che avanza, e
+  conversioni, pack del byte e marcature si pagano una volta invece che per
+  voxel. Il terreno ci scrive cinque milioni di celle come cinque corse per
+  colonna. Marca i vicini in verticale in modo piu' largo di `setBlock` — per
+  tratto e non per cella — perche' sporcare di piu' costa una mesh e sporcare di
+  meno lascia una faccia sbagliata.
 - Aggiungere chunk non rialloca o sostituisce buffer esistenti.
 
 ## Terreno
@@ -99,6 +106,52 @@ e costruzione degli edifici. Questo modulo non dipende dal renderer.
   `emitRoofTech` gia' emette — il mesher non si tocca. Vale sul solo corpo: il
   coronamento e' gia' tetto, e pavimentarlo ridipingerebbe la copertura di ogni
   edificio a tetto piatto invece di aggiungere un luogo dove si sta.
+- **Un cluster e' due numeri su un record, non un'entita'.** Gli edifici
+  adiacenti dello stesso fronte condividono la quota — che e' gia' `baseZ` — e
+  l'altezza del corso di base, che e' `baseBand`; da li' `cluster` dice solo con
+  chi. Non c'e' una struttura che sopravviva ai membri, quindi la collisione, il
+  budget di chunk e la cancellazione restano per record e la simulazione continua
+  a contare un edificio per record (invariante 7). Il basamento condiviso sta
+  **dentro** lo stamp di ciascun membro: e' quello che tiene in piedi la
+  rigenerabilita', perche' l'upgrade deve poter ricostruire la sagoma vecchia dal
+  solo record per cancellarla.
+- **Il rifiuto di una fila e' il gradino, non un fallimento.** `cluster.ts` e'
+  puro come `grading/` e `sites/`: entrano un `GradePlan` e i termini dei vicini,
+  esce una terna. Un lotto entra solo se non deve *scendere* per allinearsi —
+  vale anche qui "si riempie, non si scava" — e se il riempimento resta dentro
+  `CLUSTER.maxJoinFill`. Chi non entra apre una fila propria alla propria quota,
+  ed e' cosi' che su un fianco l'isolato terrazzato esce dalla regola invece di
+  essere disegnato. `GRADING.maxWorksStep` non andrebbe bene al posto di
+  `maxJoinFill`: e' tarato sulla banchina che scende sul fondale, e metterebbe
+  nella stessa fila due lotti separati da mezzo versante.
+- **Una banchina e' il bordo costruito della terra, non un'isola artificiale.**
+  `GRADING.maxQuayDepth` dice fin dove il fondale regge un muro, e su un
+  bassofondo dolce dice di si' per una quindicina di colonne al largo: il
+  vincolo di *forma* e' `GRADING.quayReach`, che il Builder applica sia alla
+  carreggiata di un isolato costiero sia ai lotti. Senza, l'anello di strada di
+  un isolato sul mare si costruiva tutto, e a schermo era una piattaforma
+  rettangolare in mezzo all'acqua. A spingersi piu' al largo e' solo un molo,
+  che ha una ricetta e quindi un limite proprio.
+- Un **landmark e' un edificio con un altro generatore.** Vive in
+  `landmarks/`, entra nel registry come `BuildingRecord` con `landmark`
+  valorizzato, e da li' eredita occupazione, collisione, budget di chunk,
+  comparsa a budget e avanzamento: l'unico ramo nuovo nel Builder e' quale
+  generatore disegna lo stamp. `level` e' lo stadio, e i record con `landmark`
+  restano fuori dagli istogrammi — la simulazione non li ha mai contati come
+  edifici.
+- Lo **stadio di un landmark e' cio' che la citta' gli ha costruito intorno**:
+  il numero di record entro il raggio del catalizzatore, non la desiderabilita'.
+  Un catalizzatore siede al centro della propria influenza, quindi il campo li'
+  e' quasi sempre saturo e un landmark che lo leggesse salterebbe tutti gli
+  stadi al primo tick. Non c'e' stato da tenere: lo stadio e' una funzione pura
+  del contenuto del registry.
+- Le **ricette dei landmark sono dati**, non codice: `landmarks/parts.ts` ha
+  sette primitive e `landmarks/config.ts` le compone. Gli stadi sono
+  **cumulativi dentro un ingombro che non cambia mai** — riservato per intero al
+  piazzamento — quindi uno stadio non puo' restare bloccato da un edificio
+  spuntato accanto, e la sagoma precedente non ha mai niente da cancellare.
+  Aggiungere un ruolo e' aggiungere una riga; un ruolo senza riga ottiene la
+  piazzola di ripiego e resta giocabile.
 - Il **catalogo delle tipologie** e' una tabella in `buildings/config.ts`:
   condizioni sul luogo piu' forma. Aggiungere una tipologia e' aggiungere una
   riga — la regola di scelta in `typology.ts` e' generica e non va toccata, e la

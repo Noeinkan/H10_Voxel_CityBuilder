@@ -75,6 +75,24 @@ export const BALANCE = {
     catalyst: {
       /** Distanza di Chebyshev minima fra catalizzatori dello stesso ruolo. */
       minDistance: 20,
+
+      /**
+       * Quanto ogni stadio del landmark aggiunge all'intensita' del suo
+       * catalizzatore.
+       *
+       * **E' volutamente poco.** Il campo satura a 255 e le intensita' di
+       * partenza stanno fra 185 e 215: uno stadio massimo aggiunge una
+       * ventina di punti, cioe' un margine, non una seconda leva. Un porto
+       * cresciuto vale un po' piu' di un porto appena piazzato — che e' la
+       * ricompensa per aver sviluppato il quartiere attorno — ma la scelta
+       * *quale* catalizzatore piazzare resta piu' importante di quanto a lungo
+       * lo si e' lasciato crescere.
+       *
+       * Chi lo applica sta in `src/world/`, e passa da `setCatalystStrength`
+       * come qualunque altra variazione: la simulazione non sa che i landmark
+       * esistono, e questo numero e' l'unica cosa che il loro dominio le chiede.
+       */
+      stageBonus: 8,
       /**
        * Costo, intensita' al centro e raggio di ciascun ruolo.
        *

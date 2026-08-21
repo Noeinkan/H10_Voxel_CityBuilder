@@ -117,6 +117,69 @@ describe('VoxelWorld — storage', () => {
     }
   });
 
+  it("fillColumn scrive esattamente cio' che scriverebbero altrettante setBlock", () => {
+    const runs: readonly [number, number, number, number][] = [
+      [7, 3, 0, 40], //   attraversa due chunk verso l'alto
+      [-1, -1, -5, 35], // negativo su tutti gli assi
+      [0, 31, 60, 61], //  una cella sola, su due bordi
+    ];
+
+    for (const [x, y, z0, z1] of runs) {
+      const bulk = new VoxelWorld();
+      const oneByOne = new VoxelWorld();
+
+      bulk.fillColumn(x, y, z0, z1, 9, SURFACE_KIND.civic);
+      for (let z = z0; z < z1; z++) oneByOne.setBlock(x, y, z, 9, SURFACE_KIND.civic);
+
+      expect([...bulk.chunks.keys()].sort()).toEqual([...oneByOne.chunks.keys()].sort());
+      expect(bulk.solidVoxelCount).toBe(oneByOne.solidVoxelCount);
+      for (const [key, chunk] of bulk.chunks) {
+        const expected = oneByOne.chunks.get(key);
+        expect(expected).toBeDefined();
+        expect(chunk.solidCount).toBe(expected?.solidCount);
+        expect([...chunk.blocks]).toEqual([...(expected?.blocks ?? [])]);
+      }
+    }
+  });
+
+  it('fillColumn marca i chunk attraversati e i vicini sui lati toccati', () => {
+    const world = new VoxelWorld();
+    for (let cz = -1; cz <= 2; cz++) {
+      world.ensureChunk(0, 0, cz);
+      world.ensureChunk(-1, 0, cz);
+      world.ensureChunk(0, -1, cz);
+    }
+    world.flush();
+
+    // Colonna sull'angolo minimo, da z = 0 fino dentro il secondo chunk.
+    world.fillColumn(0, 0, 0, 40, 3);
+
+    expect([...world.flush()].sort()).toEqual(
+      ['-1,0,0', '-1,0,1', '0,-1,0', '0,-1,1', '0,0,-1', '0,0,0', '0,0,1'].sort(),
+    );
+  });
+
+  it("fillColumn non marca nulla se la colonna ha gia' quel valore", () => {
+    const world = new VoxelWorld();
+    world.fillColumn(4, 4, 0, 20, 6);
+    world.flush();
+
+    world.fillColumn(4, 4, 0, 20, 6);
+
+    expect(world.dirtyCount).toBe(0);
+  });
+
+  it('fillColumn ignora i tratti vuoti e non alloca svuotando il nulla', () => {
+    const world = new VoxelWorld();
+
+    expect(world.fillColumn(4, 4, 10, 10, 6)).toBe(0);
+    expect(world.fillColumn(4, 4, 12, 8, 6)).toBe(0);
+    world.fillColumn(500, 500, 0, 64, 0);
+
+    expect(world.chunkCount).toBe(0);
+    expect(world.dirtyCount).toBe(0);
+  });
+
   it('getBlock e getData fuori dai chunk allocati restituiscono 0 senza allocare', () => {
     const world = new VoxelWorld();
 

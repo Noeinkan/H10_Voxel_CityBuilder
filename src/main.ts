@@ -13,6 +13,21 @@ import { ChunkRenderer } from './engine/ChunkRenderer';
 import { InfluenceOverlay } from './engine/InfluenceOverlay';
 import { PlacementCursor } from './engine/PlacementCursor';
 import { FrameTiming } from './engine/FrameTiming';
+import {
+  INSPECT,
+  INSPECT_MODE,
+  INSPECT_MODES,
+  INSPECT_NAMES,
+  clampSliceZ,
+  cycleInspectMode,
+  inspectUniforms,
+  isCut,
+  parseInspectMode,
+  sectionAxis,
+  type InspectMode,
+  type InspectState,
+  type InspectUniforms,
+} from './engine/inspect';
 import { IsoCameraController } from './engine/IsoCameraController';
 import { faceLuminance, sunDirection } from './engine/lighting';
 import { onPaletteChanged } from './engine/palette';
@@ -46,11 +61,15 @@ import './ui/hud.css';
 import { DebugOverlay, type OverlayFrame } from './ui/DebugOverlay';
 import { GameHud, type GameTool } from './ui/GameHud';
 import { GrowthOverlay } from './ui/GrowthOverlay';
+import { InspectOverlay, type InspectOverlayFrame } from './ui/InspectOverlay';
 import { SimOverlay, type SimOverlayFrame } from './ui/SimOverlay';
 import { TerrainOverlay, type TerrainOverlayFrame } from './ui/TerrainOverlay';
+import { buildViewMenuModel, viewAfterToolPicked, viewLabel } from './ui/ViewMenuModel';
 import { CHUNK } from './world/chunkCoords';
 import { GROUND, type GroundKind } from './world/grading/grade';
 import { createScene, type SceneGenerator, type SceneKind } from './world/scenes/cityScene';
+import { StreetNetwork } from './world/streets/StreetNetwork';
+import type { BlockRect } from './world/streets/streetGrid';
 import { BiomeView } from './world/terrain/BiomeView';
 import { expandIsland } from './world/terrain/IslandGenerator';
 import { TerrainStreamer } from './world/terrain/TerrainStreamer';
@@ -73,6 +92,26 @@ const SHADOW_SIZE = 2048;
 
 /** Quota del budget riservata alla generazione della scena. */
 const GENERATION_BUDGET_MS = 1.5;
+
+/**
+ * Gli stessi due budget finche' la prima isola non e' a terra.
+ *
+ * I 3 ms proteggono il frame **di gioco**: sono quelli che tengono fluida una
+ * citta' dentro cui si sta giocando. Prima che l'isola esista non c'e' niente da
+ * tenere fluido — nessun edificio, nessun comando, un HUD che dice "Preparing
+ * the city" — e a 1,5 ms per frame il popolamento iniziale ci metteva centinaia
+ * di frame per un lavoro che dura qualche decimo di secondo: mezzo minuto di
+ * cielo vuoto per tre decimi di lavoro vero.
+ *
+ * Restano sotto il frame a 60 Hz di proposito. L'isola deve *comparire*
+ * scorrendo, non apparire di colpo dopo uno schermo bloccato, e ogni frame in
+ * meno e' anche una rimeshatura in meno: un chunk scritto a meta' viene
+ * ricostruito a ogni frame che lo lascia incompleto. Finita la generazione si
+ * torna ai budget di gioco, e da li' in avanti — espansioni comprese — valgono
+ * quelli.
+ */
+const LOADING_FRAME_BUDGET_MS = 12;
+const LOADING_GENERATION_BUDGET_MS = 9;
 
 const VOXEL_SIZE = 1;
 
@@ -106,6 +145,25 @@ const shadowsAllowedByUrl = params.get('shadows') !== '0';
 /** `?terrain=<seed>` sostituisce la scena urbana con l'isola procedurale. */
 const terrainParam = params.get('terrain');
 const terrainSeed = terrainParam === null ? seed : parseInt(terrainParam, 10) || seed;
+
+/**
+ * Vista di ispezione iniziale.
+ *
+ * `?inspect=` vale **anche senza** `?debug=1`, come `?theme=`: e' il modo in cui
+ * uno strumento di cattura inquadra una sezione senza portarsi dietro gli
+ * overlay. Hotkey e pannello restano invece dietro il debug, perche' sono
+ * comandi e non un'inquadratura.
+ */
+let inspectMode: InspectMode = parseInspectMode(params.get('inspect'));
+let inspectSliceZ = clampSliceZ(
+  params.get('slice') === null ? INSPECT.defaultSliceZ : Number(params.get('slice')),
+);
+
+/** `?slice=` e' una quota chiesta esplicitamente, e resta fissa fra un'apertura e l'altra. */
+const sliceZFromUrl = params.get('slice') !== null;
+
+/** Vero da quando la quota e' stata scelta: solo allora smette di seguire il suolo. */
+let sliceZChosen = sliceZFromUrl;
 
 /** Tick al secondo del passo automatico della scena di simulazione. */
 const SIM_TICK_RATE = 10;
@@ -272,13 +330,27 @@ const simOverlay = simEnabled
     })
   : null;
 const growthOverlay = growEnabled ? new GrowthOverlay(container) : null;
+const inspectOverlay = new InspectOverlay(container, {
+  onMode: setInspectMode,
+  onSliceZ: setInspectSliceZ,
+});
 simOverlay?.setVisible(debugVisible);
 growthOverlay?.setVisible(debugVisible);
+inspectOverlay.setVisible(debugVisible);
 let selectedTool: GameTool = { kind: 'none' };
 let gameHud: GameHud | null = null;
 if (growEnabled) {
   gameHud = new GameHud(container, {
     onTool: (tool) => {
+      // Con la citta' tagliata il terreno vero sotto il cursore e' nascosto: si
+      // piazzerebbe alla cieca, in un punto che non si vede. Le viste a velo
+      // sopravvivono, perche' li' il suolo si legge ancora sotto il retino.
+      const kept = viewAfterToolPicked(inspectMode);
+      if (kept !== inspectMode) {
+        const closed = viewLabel(inspectMode);
+        setInspectMode(kept);
+        gameHud?.setSelectionNote(`${closed} closed so you can see the ground`);
+      }
       selectedTool = tool;
       preview.hide();
       influenceOverlay?.hideCursor();
@@ -301,6 +373,8 @@ if (growEnabled) {
       const index = THEMES.findIndex((candidate) => candidate.id === id);
       if (index >= 0) cycleTheme(index);
     },
+    onView: setInspectMode,
+    onLevel: setInspectSliceZ,
     onCancelTool: () => {
       selectedTool = { kind: 'none' };
       preview.hide();
@@ -325,6 +399,45 @@ scene.add(preview.group);
 
 const influenceOverlay = terrain !== null && growEnabled ? new InfluenceOverlay(terrain.map) : null;
 if (influenceOverlay !== null) scene.add(influenceOverlay.group);
+
+/**
+ * La rete stradale vista dall'harness.
+ *
+ * E' una funzione pura del seed — niente stato, niente da salvare — quindi
+ * costruirne una qui non duplica quella del `Builder`: entrambe rispondono le
+ * stesse cose perche' partono dallo stesso numero. Serve alla sezione, che deve
+ * cadere su una carreggiata, e all'isolamento dell'isolato.
+ */
+const streets = terrain === null ? null : new StreetNetwork(terrainSeed);
+
+/**
+ * Ultima posizione nota del puntatore, in pixel di pagina.
+ *
+ * Si memorizza il pixel e non la colonna: risolvere la colonna costa una marcia
+ * sulla heightmap, e farla a ogni `pointermove` significherebbe pagarla decine
+ * di volte per frame. La colonna si risolve una volta per frame in
+ * `applyInspect`, e **solo** se il modo attivo la chiede — cosi' la vista segue
+ * anche la rotazione della camera, senza che il mouse si muova.
+ */
+let pointerClientX = 0;
+let pointerClientY = 0;
+let pointerInside = false;
+
+let inspectFocus: SurfaceCell | null = null;
+let inspectBlockKey: string | null = null;
+let inspectBlockRect: BlockRect | null = null;
+let inspectPayload: InspectUniforms = inspectUniforms(inspectStateOf());
+
+if (terrain !== null) {
+  renderer.domElement.addEventListener('pointermove', (event: PointerEvent) => {
+    pointerClientX = event.clientX;
+    pointerClientY = event.clientY;
+    pointerInside = true;
+  });
+  renderer.domElement.addEventListener('pointerleave', () => {
+    pointerInside = false;
+  });
+}
 
 if (growEnabled) {
   renderer.domElement.addEventListener('pointermove', onGamePointerMove, { capture: true });
@@ -402,6 +515,18 @@ if (debugEnabled) {
       // Dove il cielo disegna il sole: xy in NDC, `facing` false se sta dietro
       // la camera e quindi resta solo l'alone.
       screen: { x: sunView.x * 1.35, y: sunView.y * 1.35, facing: sunView.z < 0 },
+    };
+  };
+  // Stessa fonte del pannello: due letture separate divergerebbero al primo
+  // refactor, ed e' la regola dell'harness.
+  debugGlobals['__voxelInspect'] = (mode?: string, z?: number): Record<string, unknown> => {
+    if (mode !== undefined) setInspectMode(parseInspectMode(mode));
+    if (z !== undefined) setInspectSliceZ(z);
+    const frame = buildInspectFrame();
+    return {
+      ...frame,
+      mode: INSPECT_NAMES[frame.mode],
+      available: INSPECT_MODES.map((candidate) => INSPECT_NAMES[candidate]),
     };
   };
 
@@ -485,6 +610,12 @@ const frameTiming = new FrameTiming(600);
 let mainMsMax = 0;
 /** Vero finche' la scena si sta ancora popolando: vedi `observeQuality`. */
 let generating = true;
+/**
+ * Vero finche' la **prima** scena non e' completa: e' la finestra in cui valgono
+ * i budget di caricamento. Le espansioni che arrivano dopo non la riaprono —
+ * quelle succedono dentro una citta' viva, che va tenuta a 3 ms.
+ */
+let firstScenePending = true;
 let previousTime = performance.now();
 
 renderer.setAnimationLoop(onFrame);
@@ -557,7 +688,16 @@ function cycleTheme(index: number): void {
  */
 function drawShadowPass(): void {
   const settings = theme.atmosphere.shadow;
-  if (settings === undefined || !shadowsAllowedByUrl || qualityProfile.shadowSize === 0) {
+  // Un taglio ha appena tolto di mezzo dei volumi, ma la shadow map non lo sa:
+  // il piano appena scoperto resterebbe all'ombra dei piani che si sono
+  // nascosti, ed e' proprio la lettura che la fetta esiste per dare. Sole e
+  // ambiente restano, quindi le facce continuano a distinguersi.
+  if (
+    settings === undefined ||
+    !shadowsAllowedByUrl ||
+    qualityProfile.shadowSize === 0 ||
+    isCut(inspectPayload)
+  ) {
     sunShadow.setEnabled(false);
     paletteHandle.setShadow({
       texture: null,
@@ -601,9 +741,14 @@ function onFrame(time: number): void {
   camera.update(dt);
   preview.update(dt);
 
+  // Finche' la prima scena non c'e', il frame non deve proteggere niente:
+  // conviene spendere di piu' per frame e finire in una manciata di frame.
+  const loading = firstScenePending;
+  const frameBudget = loading ? LOADING_FRAME_BUDGET_MS : FRAME_BUDGET_MS;
+
   if (!generator.done) {
     const generationStart = performance.now();
-    generator.step(GENERATION_BUDGET_MS);
+    generator.step(loading ? LOADING_GENERATION_BUDGET_MS : GENERATION_BUDGET_MS);
     terrainApplyMs += performance.now() - generationStart;
   } else if (biomeView !== null && biomeView.busy) {
     // Il ricolore per bioma usa lo stesso budget della generazione, e solo
@@ -614,9 +759,19 @@ function onFrame(time: number): void {
   updateSim(dt);
   updateGrowth(dt);
 
+  // La direzione di sguardo serve alla vista prima che alla nebbia: in
+  // ortografica e' un vettore solo, e ce lo dividiamo.
+  camera.camera.getWorldDirection(viewDirection);
+  applyInspect();
+
   const elapsed = performance.now() - workStart;
-  chunkRenderer.update(camera.camera, Math.max(0.5, FRAME_BUDGET_MS - elapsed));
+  chunkRenderer.update(camera.camera, Math.max(0.5, frameBudget - elapsed));
   chunkRenderer.cull(camera.camera);
+
+  // La finestra di caricamento si chiude su `generator.done`, non su
+  // `chunkRenderer.isIdle`: e' la generazione a tenere fermo il gioco, e le
+  // ultime mesh possono benissimo salire con i budget di regime.
+  if (loading && generator.done) firstScenePending = false;
 
   const mainMs = performance.now() - workStart;
   if (mainMs > mainMsMax) mainMsMax = mainMs;
@@ -624,7 +779,6 @@ function onFrame(time: number): void {
   const renderStart = performance.now();
   drawShadowPass();
   paletteHandle.setTime(time / 1000);
-  camera.camera.getWorldDirection(viewDirection);
   paletteHandle.setViewDirection(viewDirection.x, viewDirection.y, viewDirection.z);
   // Il sole in spazio vista da' la sua posizione a schermo. Con una camera
   // ortografica un punto all'infinito non si proietta, quindi si usa la
@@ -650,8 +804,17 @@ function onFrame(time: number): void {
   if (growthOverlay !== null && growthOverlay.needsPaint(time)) {
     growthOverlay.update(growthScene?.stats ?? null, time);
   }
+  if (inspectOverlay.needsPaint(time)) {
+    // La citta' cresce in altezza, e con lei la quota utile della fetta.
+    if (!world.bounds.empty) inspectOverlay.setSliceRange(world.bounds.maxZ);
+    inspectOverlay.update(buildInspectFrame(), time);
+  }
   if (gameHud !== null && growthScene !== null && gameHud.needsPaint(time)) {
     gameHud.update(growthScene.stats, time);
+    // Nello stesso ritmo del resto dell'HUD, cioe' 150 ms: la vista e' gia'
+    // scritta nelle uniform per il frame corrente, e il pannello non deve
+    // ridisegnarsi sessanta volte al secondo per dirlo.
+    gameHud.setView(buildViewMenuModel(inspectMode, inspectSliceZ, inspectMaxZ()));
   }
 }
 
@@ -790,6 +953,148 @@ function updateGrowth(dt: number): void {
   growthScene.advance(dt);
 }
 
+// --- Viste di ispezione -----------------------------------------------------
+
+/** I modi che hanno bisogno di sapere dove sta il cursore. */
+function inspectNeedsCursor(mode: InspectMode): boolean {
+  return mode === INSPECT_MODE.xray || mode === INSPECT_MODE.section || mode === INSPECT_MODE.block;
+}
+
+/**
+ * Lo stato della vista, messo insieme dai pezzi che vivono nel bootstrap.
+ *
+ * Qui non si decide niente: la traduzione in numeri per il materiale sta in
+ * `inspectUniforms`, che e' pura e testata in node. Questa funzione fa solo da
+ * raccordo fra il mondo — cursore, camera, rete stradale — e quel modulo.
+ */
+function inspectStateOf(): InspectState {
+  const axis = sectionAxis([viewDirection.x, viewDirection.y, viewDirection.z]);
+  return {
+    mode: inspectMode,
+    sliceZ: inspectSliceZ,
+    // Il centro della colonna, non il suo spigolo: il piano deve passare per
+    // quello che si sta guardando, non mezzo voxel piu' in la'.
+    focus: inspectFocus === null
+      ? null
+      : { x: inspectFocus.x + 0.5, y: inspectFocus.y + 0.5, z: inspectFocus.z },
+    view: [viewDirection.x, viewDirection.y, viewDirection.z],
+    block: inspectBlockRect,
+    section: inspectFocus === null || streets === null
+      ? null
+      : { axis, at: streets.nearestLine(axis, axis === 0 ? inspectFocus.x : inspectFocus.y) },
+  };
+}
+
+/**
+ * La colonna su cui la vista si concentra.
+ *
+ * Tre risposte in ordine, e l'ordine e' tutto il comportamento:
+ *
+ * 1. **sotto il cursore**, finche' il cursore e' sulla canvas;
+ * 2. **l'ultima vista**, appena il puntatore esce. E' l'aggancio: senza, portare
+ *    il mouse sul dock per cambiare vista — o vedersi aprire una carta evento —
+ *    farebbe saltare l'inquadratura a meta' citta', e il giocatore perderebbe
+ *    proprio l'isolato che stava guardando;
+ * 3. il **centro dell'inquadratura**, solo se non c'e' ancora niente di
+ *    agganciato. Serve a una vista aperta da URL, che deve mostrare qualcosa
+ *    prima che il mouse entri nella canvas — cioe' mai, in uno strumento di
+ *    cattura.
+ */
+function inspectFocusColumn(): SurfaceCell | null {
+  if (pointerInside) {
+    const picked = surfaceCellAt(pointerClientX, pointerClientY);
+    if (picked !== null) return picked;
+  }
+  if (inspectFocus !== null) return inspectFocus;
+  if (terrain === null) return null;
+  const x = Math.floor(camera.targetPosition.x);
+  const y = Math.floor(camera.targetPosition.y);
+  const column = terrain.map.columnAt(x, y);
+  return column === null ? null : { x, y, z: column.height, buildable: column.buildable };
+}
+
+/** Estremo alto della barra dei livelli: la citta' cresce, e con lei la quota utile. */
+function inspectMaxZ(): number {
+  return world.bounds.empty ? INSPECT.defaultSliceZ : world.bounds.maxZ;
+}
+
+/**
+ * Aggiorna la vista una volta per frame.
+ *
+ * La colonna a fuoco si risolve qui e non a ogni `pointermove`: il costo diventa
+ * uno per frame invece di uno per evento, e la vista segue anche la rotazione
+ * della camera. Chi non ha una vista attiva non paga niente oltre alla scrittura
+ * di quattro uniform.
+ */
+function applyInspect(): void {
+  inspectFocus = inspectNeedsCursor(inspectMode) ? inspectFocusColumn() : null;
+
+  // Finche' la quota non e' stata scelta, la fetta segue il suolo che si sta
+  // guardando. Una quota assoluta di default cadrebbe dentro la collina — la
+  // citta' sta a quaranta voxel sul mare — e il primo colpo d'occhio sarebbe
+  // l'interno della terra invece del piano di un edificio. Al primo tasto o al
+  // primo trascinamento diventa assoluta e smette di seguire.
+  if (inspectMode === INSPECT_MODE.slice && !sliceZChosen) {
+    const ground = inspectFocusColumn();
+    if (ground !== null) inspectSliceZ = clampSliceZ(ground.z + INSPECT.sliceCoarse);
+  }
+  inspectBlockKey = null;
+  inspectBlockRect = null;
+
+  if (inspectFocus !== null && streets !== null) {
+    const block = streets.blockAt(inspectFocus.x, inspectFocus.y);
+    inspectBlockKey = streets.keyOf(block);
+    if (inspectMode === INSPECT_MODE.block) inspectBlockRect = streets.blockRect(block);
+  }
+
+  inspectPayload = inspectUniforms(inspectStateOf());
+  paletteHandle.setInspect(inspectPayload);
+}
+
+function setInspectMode(mode: InspectMode): void {
+  if (mode === inspectMode) return;
+  inspectMode = mode;
+  // L'aggancio non sopravvive al cambio di vista: rientrando in un modo ci si
+  // ritroverebbe puntati sull'isolato di dieci minuti prima, senza capire
+  // perche' la finestra si e' aperta la'.
+  inspectFocus = null;
+  // Tornando alla citta' intera la quota si ri-arma, e una fetta riaperta
+  // riparte dal suolo che si sta guardando invece che da una quota scelta
+  // mezz'ora fa, che nel frattempo puo' essere finita sottoterra. Solo `?slice=`
+  // resta fisso: li' la quota e' stata chiesta esplicitamente.
+  if (mode === INSPECT_MODE.off) sliceZChosen = sliceZFromUrl;
+  console.info(`[inspect] ${INSPECT_NAMES[mode]}`);
+}
+
+/**
+ * Il giro delle viste da tastiera.
+ *
+ * Il toast e' qui e non in `setInspectMode` perche' e' l'unico percorso cieco:
+ * chi sceglie dal picker ha il pannello aperto davanti che gli dice cosa ha
+ * scelto, chi preme `V` no.
+ */
+function cycleInspectView(): void {
+  setInspectMode(cycleInspectMode(inspectMode));
+  const model = buildViewMenuModel(inspectMode, inspectSliceZ, inspectMaxZ());
+  gameHud?.showTransientFeedback(`${model.activeLabel} · ${model.activeDescription}`);
+}
+
+function setInspectSliceZ(z: number): void {
+  inspectSliceZ = clampSliceZ(z);
+  sliceZChosen = true;
+}
+
+function buildInspectFrame(): InspectOverlayFrame {
+  return {
+    mode: inspectMode,
+    sliceZ: inspectSliceZ,
+    focus: inspectFocus,
+    block: inspectBlockKey,
+    veil: inspectPayload.veil,
+    shadowsOff: isCut(inspectPayload),
+  };
+}
+
 function onGamePointerMove(event: PointerEvent): void {
   if (selectedTool.kind === 'none' || growthScene === null || terrain === null) {
     preview.hide();
@@ -797,7 +1102,7 @@ function onGamePointerMove(event: PointerEvent): void {
     gameHud?.updateCursor(0, 0, null);
     return;
   }
-  const cell = surfaceCellAt(event);
+  const cell = surfaceCellAt(event.clientX, event.clientY);
   if (cell === null) {
     preview.hide();
     influenceOverlay?.hideCursor();
@@ -849,7 +1154,7 @@ function onGamePointerDown(event: PointerEvent): void {
   event.preventDefault();
   event.stopImmediatePropagation();
   if (growthScene === null || terrain === null) return;
-  const cell = surfaceCellAt(event);
+  const cell = surfaceCellAt(event.clientX, event.clientY);
   if (cell === null) {
     gameHud?.showPickingFailure();
     return;
@@ -887,12 +1192,12 @@ function onGamePointerDown(event: PointerEvent): void {
   beginCoastalExpansion(sector);
 }
 
-function surfaceCellAt(event: PointerEvent): SurfaceCell | null {
+function surfaceCellAt(clientX: number, clientY: number): SurfaceCell | null {
   if (terrain === null) return null;
   const rect = renderer.domElement.getBoundingClientRect();
   pointer.set(
-    ((event.clientX - rect.left) / rect.width) * 2 - 1,
-    -((event.clientY - rect.top) / rect.height) * 2 + 1,
+    ((clientX - rect.left) / rect.width) * 2 - 1,
+    -((clientY - rect.top) / rect.height) * 2 + 1,
   );
   picker.setFromCamera(pointer, camera.camera);
   const origin = picker.ray.origin;
@@ -1103,6 +1408,28 @@ function onUiKey(event: KeyboardEvent): void {
     event.preventDefault();
     return;
   }
+  // La barra dei livelli e' un `<input type=range>`: con il fuoco sopra, il
+  // browser muove gia' lui il cursore su PageUp e sulle frecce. Senza questa
+  // guardia la quota si sposterebbe due volte per tasto.
+  if (event.target instanceof HTMLInputElement) return;
+  // Le viste non sono tecniche: stanno **prima** del gate del debug, come `F3` e
+  // `Escape`. Guardare dentro la propria citta' e' parte del gioco, e chiuderlo
+  // dietro `?debug=1` era il vincolo sbagliato della 4.11.
+  if (event.code === 'KeyV') {
+    cycleInspectView();
+    return;
+  }
+  // La quota: un voxel per volta, un piano intero con Shift. La barra serve a
+  // cercarla, questi tasti a rifinirla. `PageUp`/`PageDown` sono l'alias che
+  // tutti provano per primo — e su tastiera italiana le parentesi quadre
+  // stanno sotto `è` e `+`, dove nessuno le cerca.
+  if (event.code === 'BracketLeft' || event.code === 'PageDown'
+    || event.code === 'BracketRight' || event.code === 'PageUp') {
+    const up = event.code === 'BracketRight' || event.code === 'PageUp';
+    const step = event.shiftKey ? INSPECT.sliceCoarse : INSPECT.sliceStep;
+    setInspectSliceZ(inspectSliceZ + (up ? step : -step));
+    return;
+  }
   if (debugVisible) onDebugKey(event);
 }
 
@@ -1112,6 +1439,7 @@ function setDebugVisible(visible: boolean): void {
   terrainOverlay?.setVisible(visible);
   simOverlay?.setVisible(visible);
   growthOverlay?.setVisible(visible);
+  inspectOverlay.setVisible(visible);
 }
 
 /**

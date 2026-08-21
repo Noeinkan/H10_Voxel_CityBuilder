@@ -14,6 +14,9 @@ export const CHUNK_SHIFT = 5;
 /** Maschera equivalente a `% CHUNK` per interi. */
 export const CHUNK_MASK = CHUNK - 1;
 
+/** Celle di un piano orizzontale del chunk, cioe' il passo fra due `lz` in `idx`. */
+export const CHUNK_AREA = CHUNK * CHUNK;
+
 /** Numero di celle in un chunk: 32^3. */
 export const CHUNK_VOL = CHUNK * CHUNK * CHUNK;
 

@@ -1,4 +1,5 @@
 import type { CatalystSite } from '../../sim';
+import { FACING, type Facing } from '../streets/streetGrid';
 import { GROUND, groundKindOf, planGrade, type GroundColumn } from '../grading/grade';
 import { TERRAIN } from '../terrain/config';
 import type { TerrainMap } from '../terrain/TerrainMap';
@@ -22,8 +23,17 @@ import { SITE } from './config';
 /** Perche' un ruolo non sta in questa colonna. */
 export type SiteRefusal = 'needs-coast' | 'needs-open-ground';
 
-/** I quattro assi cardinali, per la ricerca dell'acqua. */
+/**
+ * I quattro assi cardinali, per la ricerca dell'acqua.
+ *
+ * L'ordine **non** e' libero: coincide con quello di `FACING`, cosi' che
+ * l'indice di un asse sia gia' il verso che gli corrisponde. `AXIS_FACING` lo
+ * dichiara invece di lasciarlo dedurre, perche' e' il genere di corrispondenza
+ * che sopravvive finche' nessuno riordina un array.
+ */
 const AXES: readonly (readonly [number, number])[] = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+
+const AXIS_FACING: readonly Facing[] = [FACING.east, FACING.west, FACING.north, FACING.south];
 
 /**
  * true se la colonna vede il mare entro `radius`.
@@ -44,6 +54,26 @@ export function seesWater(map: TerrainMap, x: number, y: number, radius: number)
     }
   }
   return false;
+}
+
+/**
+ * Il verso in cui l'acqua e' piu' vicina, o null se non ce n'e' entro `radius`.
+ *
+ * E' `seesWater` che invece di rispondere si'/no dice **da che parte**, e serve
+ * a orientare cio' che il mare lo deve guardare: un molo che esce dalla parte
+ * sbagliata e' un molo dentro la collina. Cerca a distanza crescente e non asse
+ * per asse, cosi' vince l'acqua piu' vicina e non il primo asse dell'elenco.
+ */
+export function waterFacing(map: TerrainMap, x: number, y: number, radius: number): Facing | null {
+  for (let d = 1; d <= radius; d++) {
+    for (let axis = 0; axis < AXES.length; axis++) {
+      const [dx, dy] = AXES[axis];
+      const column = map.columnAt(x + dx * d, y + dy * d);
+      if (column === null) continue;
+      if (column.height <= TERRAIN.seaLevel) return AXIS_FACING[axis];
+    }
+  }
+  return null;
 }
 
 /**

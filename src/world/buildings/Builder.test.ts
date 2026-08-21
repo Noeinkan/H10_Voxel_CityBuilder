@@ -3,10 +3,14 @@ import {
   BUILDING_CLASS,
   addBuilding,
   addCatalyst,
+  catalystById,
   createSimState,
   tick,
   type CharterId,
 } from '../../sim';
+import { CHUNK } from '../chunkCoords';
+import { LANDMARKS } from '../landmarks/config';
+import { landmarkSpan } from '../landmarks/generate';
 import { StreetNetwork } from '../streets/StreetNetwork';
 import { STREETS } from '../streets/config';
 import { FACING } from '../streets/streetGrid';
@@ -16,10 +20,10 @@ import { testTerrain } from '../../sim/testTerrain';
 import { VoxelWorld } from '../VoxelWorld';
 import { generateIsland } from '../terrain/IslandGenerator';
 import { SURFACE_KIND } from '../visualBlock';
-import { Builder } from './Builder';
-import { BUILDER, CLASS_PROFILE } from './config';
+import { Builder, REJECT_REASONS } from './Builder';
+import { BUILDER, CLASS_PROFILE, CLUSTER, MAX_FOOTPRINT } from './config';
 import { GRADING } from '../grading/config';
-import { GROUND, groundKindOf, type GroundKind } from '../grading/grade';
+import { GROUND, groundKindOf, isDryLand, type GroundKind } from '../grading/grade';
 import { TERRAIN } from '../terrain/config';
 import type { TerrainMap } from '../terrain/TerrainMap';
 
@@ -64,24 +68,24 @@ describe('Builder', () => {
     expect(world.getSurfaceKind(12, 12, 12)).not.toBe(SURFACE_KIND.plain);
   });
 
-  it('dipinge una piazzola di catalizzatore a budget senza cambiare la quota', () => {
+  it('circonda il landmark di suolo pubblico a budget, senza cambiare la quota', () => {
     const world = new VoxelWorld();
-    const terrain = testTerrain({ chunksX: 2, chunksY: 2, height: 12 });
+    const terrain = testTerrain({ chunksX: 3, chunksY: 3, height: 12 });
     const builder = new Builder(world, terrain, 1337);
 
-    builder.decorateCatalyst(24, 24, BUILDING_CLASS.residential);
+    builder.placeLandmark(40, 40, 'market');
     expect(builder.stats.surfaceQueued).toBeGreaterThan(0);
-    while (builder.stats.surfaceQueued > 0) builder.step();
+    while (builder.stats.growing > 0 || builder.stats.surfaceQueued > 0) builder.step();
 
-    expect(world.getBlock(24, 24, 11)).toBe(CLASS_PROFILE[BUILDING_CLASS.residential].accent);
-    expect(world.getBlock(25, 24, 11)).toBe(PALETTE_SLOTS.asphalt);
-    expect(terrain.columnAt(24, 24)?.height).toBe(12);
+    const record = [...builder.registry.all].find((r) => r.landmark !== undefined)!;
+    const depth = record.footprintY ?? record.footprint;
 
-    // Il sentiero di un edificio successivo puo' arrivare al centro, ma non
-    // deve cancellare il segno cromatico del catalizzatore gia' dipinto.
-    builder.materialize([{ x: 30, y: 24, class: BUILDING_CLASS.industrial }]);
-    while (builder.stats.surfaceQueued > 0) builder.step();
-    expect(world.getBlock(24, 24, 11)).toBe(CLASS_PROFILE[BUILDING_CLASS.residential].accent);
+    // Il grembiule sta **attorno** all'ingombro, non sotto: dentro il riquadro
+    // c'e' la struttura, e appena fuori il suolo pubblico che la incornicia.
+    expect(world.getBlock(record.x - 1, record.y + 1, 11)).toBe(PALETTE_SLOTS.asphalt);
+    expect(world.getBlock(record.x + record.footprint, record.y + depth - 1, 11))
+      .toBe(PALETTE_SLOTS.asphalt);
+    expect(terrain.columnAt(40, 40)?.height).toBe(12);
   });
 
   it('bonifica la vegetazione che interseca un nuovo lotto', () => {
@@ -477,18 +481,63 @@ describe('Builder — opere di terra', () => {
     expect(overWater).toBeGreaterThan(0);
   });
 
-  it('la piazza si livella quando il dislivello lo giustifica', () => {
+  it('la banchina non si stacca dalla terra: niente piattaforme al largo', () => {
+    // Il difetto che questo test blocca: `maxQuayDepth` ammette il fondale per
+    // una quindicina di colonne, e l'anello di carreggiata di un isolato
+    // costiero se le prendeva tutte. A schermo era un rettangolo grigio cavo in
+    // mezzo al mare — la strada dell'isolato, costruita sull'acqua.
+    const { world, map } = growIsland();
+
+    let worst = 0;
+    for (let y = 0; y < 256; y++) {
+      for (let x = 0; x < 256; x++) {
+        if (isDryLand(map.biomeAt(x, y))) continue;
+        if (world.getBlock(x, y, GRADING.quayLevel - 1) === 0) continue;
+        worst = Math.max(worst, landDistance(map, x, y));
+      }
+    }
+
+    expect(worst).toBeGreaterThan(0);
+    expect(worst).toBeLessThanOrEqual(GRADING.quayReach);
+  });
+
+  /** Distanza di Chebyshev dalla terra emersa piu' vicina, cercata a anelli. */
+  function landDistance(map: TerrainMap, x: number, y: number): number {
+    for (let d = 1; d <= GRADING.quayReach + 1; d++) {
+      for (let dy = -d; dy <= d; dy++) {
+        for (let dx = -d; dx <= d; dx++) {
+          if (Math.abs(dx) !== d && Math.abs(dy) !== d) continue;
+          const cx = x + dx;
+          const cy = y + dy;
+          if (!map.has(cx, cy)) continue;
+          if (isDryLand(map.biomeAt(cx, cy))) return d;
+        }
+      }
+    }
+    return GRADING.quayReach + 1;
+  }
+
+  it('dove la struttura non ci sta resta la piazzola, e si livella', () => {
     const world = new VoxelWorld();
     const terrain = testTerrain({
       chunksX: 1,
       chunksY: 1,
-      heightAt: (x) => (x < 16 ? 12 : 12 + GRADING.plazaMinStep),
-      slopeAt: () => 0.1,
+      // Sopra `beachMaxHeight`: sotto, `classifyBiome` chiama battigia qualunque
+      // colonna e la pendenza non arriva nemmeno a essere guardata.
+      heightAt: (x) => (x < 16 ? 30 : 30 + GRADING.plazaMinStep),
+      // Una parete dentro l'ingombro del landmark ma fuori dalla piazzola: la
+      // struttura viene rifiutata e resta il ripiego. E' anche la prova che il
+      // rifiuto e' silenzioso e non lascia il catalizzatore senza segno.
+      slopeAt: (x) => (x === 21 ? 0.6 : 0.1),
     });
     const builder = new Builder(world, terrain, 1337);
 
-    builder.decorateCatalyst(16, 16, BUILDING_CLASS.residential);
+    builder.placeLandmark(16, 16, 'market');
     while (builder.stats.surfaceQueued > 0) builder.step();
+
+    expect(builder.registry.landmarkCount).toBe(0);
+    expect(world.getBlock(16, 16, 30 + GRADING.plazaMinStep - 1))
+      .toBe(CLASS_PROFILE[BUILDING_CLASS.residential].accent);
 
     const radius = BUILDER.catalystPlazaRadius;
     const levels = new Set<number>();
@@ -499,7 +548,7 @@ describe('Builder — opere di terra', () => {
       }
     }
     // Un piano solo: la piazza e' una piattaforma, non un prato colorato.
-    expect([...levels]).toEqual([12 + GRADING.plazaMinStep - 1]);
+    expect([...levels]).toEqual([30 + GRADING.plazaMinStep - 1]);
   });
 
   it('la rampa non lascia gradini fra due colonne di carreggiata', () => {
@@ -533,6 +582,363 @@ describe('Builder — opere di terra', () => {
 });
 
 /** Colonna edificabile piu' vicina al mare: e' li' che le opere si vedono. */
+describe('Builder — landmark dei catalizzatori', () => {
+  /** Un porto piazzato sulla colonna edificabile piu' vicina al mare. */
+  function harbour(): {
+    world: VoxelWorld;
+    map: TerrainMap;
+    builder: Builder;
+    site: { x: number; y: number };
+  } {
+    const world = new VoxelWorld();
+    const { map } = generateIsland(world, 4242, { minX: 0, minY: 0, sizeX: 256, sizeY: 256 });
+    const builder = new Builder(world, map, 4242);
+    const site = seaward(map);
+
+    builder.placeLandmark(site.x, site.y, 'port');
+    while (builder.stats.growing > 0 || builder.stats.surfaceQueued > 0) builder.step();
+
+    return { world, map, builder, site };
+  }
+
+  /** Il record del landmark, se il luogo lo ha retto. */
+  function landmarkRecord(builder: Builder): BuildingRecord | null {
+    for (const record of builder.registry.all) {
+      if (record.landmark !== undefined) return record;
+    }
+    return null;
+  }
+
+  it('un porto sulla costa diventa una struttura, non un rombo di asfalto', () => {
+    const { builder, site } = harbour();
+
+    const record = landmarkRecord(builder);
+    expect(record).not.toBeNull();
+    expect(record!.landmark).toBe('port');
+    // La colonna cliccata cade dentro l'ingombro, che e' l'invariante su cui
+    // `catalystIn` ritrova il catalizzatore a ogni avanzamento.
+    expect(site.x).toBeGreaterThanOrEqual(record!.x);
+    expect(site.x).toBeLessThan(record!.x + record!.footprint);
+    expect(site.y).toBeGreaterThanOrEqual(record!.y);
+    expect(site.y).toBeLessThan(record!.y + (record!.footprintY ?? record!.footprint));
+  });
+
+  it('il landmark occupa il registry ma non conta come edificio', () => {
+    const { builder } = harbour();
+
+    expect(builder.registry.landmarkCount).toBe(1);
+    expect(builder.registry.count).toBe(0);
+    for (const count of builder.registry.countsByClass) expect(count).toBe(0);
+    expect(builder.registry.typologyHistogram.size).toBe(0);
+  });
+
+  it('la struttura sale sopra la banchina: e volume, non colore', () => {
+    const { world, builder } = harbour();
+    const record = landmarkRecord(builder)!;
+
+    let top = record.baseZ;
+    for (let dy = 0; dy < (record.footprintY ?? record.footprint); dy++) {
+      for (let dx = 0; dx < record.footprint; dx++) {
+        top = Math.max(top, topSolid(world, record.x + dx, record.y + dy));
+      }
+    }
+    // Il magazzino dello stadio zero e' alto undici voxel sopra la banchina: se
+    // questo scende al piano, la struttura e' tornata una decalcomania.
+    expect(top - record.baseZ).toBeGreaterThan(8);
+  });
+
+  it('lo stadio avanza su quello che la citta costruisce, e rinforza il catalizzatore', () => {
+    const { map, builder, site } = harbour();
+    const definition = catalystById('port');
+
+    let state = createSimState();
+    state = addCatalyst(state, {
+      x: site.x,
+      y: site.y,
+      class: definition.class,
+      kind: 'port',
+      strength: definition.strength,
+      radius: definition.radius,
+    });
+    // Un porto da solo non fa crescere niente: la sua influenza sul
+    // residenziale e' zero, e senza case non c'e' popolazione. Il mercato e' la
+    // citta' che nel gioco vero il porto trova gia' li' — ed e' anche la
+    // ragione per cui lo stadio conta gli edifici invece della desiderabilita'.
+    state = addCatalyst(state, {
+      x: site.x,
+      y: site.y,
+      class: BUILDING_CLASS.residential,
+      kind: 'market',
+      strength: 255,
+      radius: 60,
+    });
+
+    const before = landmarkRecord(builder)!.level;
+    expect(before).toBe(0);
+
+    for (let i = 0; i < 120; i++) {
+      state = tick(state, map);
+      state = builder.onTick(state);
+      while (builder.stats.growing > 0) builder.step();
+    }
+
+    expect(builder.registry.count).toBeGreaterThan(0);
+    expect(landmarkRecord(builder)!.level).toBeGreaterThan(before);
+    // Il ritorno alla simulazione e' lieve ma reale, e passa da una funzione che
+    // esisteva gia': `src/sim/` non sa cosa sia un landmark.
+    expect(state.catalysts[0].strength).toBeGreaterThan(definition.strength);
+    expect(state.catalysts[0].strength).toBeLessThanOrEqual(255);
+  });
+
+  it('nessuna ricetta sfora il tetto di chunk sporchi, su nessun verso', () => {
+    // Il difetto che questo test blocca si e' gia' presentato una volta, quando
+    // l'impronta degli edifici e' raddoppiata: sforare non e' un errore e viene
+    // scartato in silenzio, quindi a sparire sarebbero esattamente le strutture
+    // piu' grosse — senza che niente lo dica.
+    const world = new VoxelWorld();
+    const terrain = testTerrain({ chunksX: 8, chunksY: 8, height: 12 });
+
+    for (const recipe of Object.values(LANDMARKS)) {
+      if (recipe === undefined) continue;
+      for (const facing of [FACING.east, FACING.west, FACING.north, FACING.south]) {
+        for (let offset = 0; offset < CHUNK; offset += 2) {
+          const builder = new Builder(new VoxelWorld(), terrain, 1337);
+          const x = 64 + offset;
+          const y = 64 + offset;
+          const span = landmarkSpan(recipe.kind, facing)!;
+          expect(
+            span.sizeX * span.sizeY * span.sizeZ,
+            `${recipe.kind} ${facing} ${offset}`,
+          ).toBeGreaterThan(0);
+          // Il conto vero lo fa il Builder, e l'unico modo di osservarlo e'
+          // vedere se la struttura viene su: uno sforamento e' un rifiuto muto.
+          builder.placeLandmark(x, y, recipe.kind);
+          expect(
+            [...builder.registry.all].some((record) => record.landmark !== undefined),
+            `${recipe.kind} verso ${facing} offset ${offset}`,
+          ).toBe(true);
+        }
+      }
+    }
+    expect(world.solidVoxelCount).toBe(0);
+  });
+});
+
+/**
+ * Il gate della fase 4.4, verificato invece che dichiarato: gli edifici
+ * adiacenti di un fronte devono leggersi come un isolato continuo — stessa
+ * quota, stesso corso di base, nessun solco in mezzo — mentre ogni record resta
+ * un edificio come prima, con la sua impronta sotto il tetto e la sua
+ * cancellazione indipendente.
+ */
+describe('Builder — isolati terrazzati', () => {
+  /** Fianco a gradoni, senza costa: le file si spezzano solo per dislivello. */
+  function hillside(): TerrainMap {
+    return testTerrain({
+      chunksX: 4,
+      chunksY: 4,
+      heightAt: (x) => 24 + Math.floor(x / 6),
+      slopeAt: (x) => (Math.floor(x / 8) % 2 === 0 ? 0.2 : 0.4),
+    });
+  }
+
+  function grow(
+    terrain: TerrainMap,
+    seed: number,
+    rounds: number,
+    catalysts: readonly (readonly [number, number])[],
+    radius: number,
+  ): {
+    world: VoxelWorld;
+    builder: Builder;
+    records: readonly BuildingRecord[];
+  } {
+    const world = new VoxelWorld();
+    const builder = new Builder(world, terrain, seed);
+
+    let state = createSimState();
+    for (const [x, y] of catalysts) {
+      state = addCatalyst(state, {
+        x,
+        y,
+        kind: 'market',
+        class: BUILDING_CLASS.commercial,
+        strength: 255,
+        radius,
+      });
+    }
+
+    for (let i = 0; i < rounds; i++) {
+      state = tick(state, terrain);
+      state = builder.onTick(state);
+      while (builder.stats.growing > 0) builder.step();
+    }
+    while (builder.stats.surfaceQueued > 0) builder.step();
+
+    return { world, builder, records: [...builder.registry.all] };
+  }
+
+  /**
+   * Un centro denso, cioe' tre catalizzatori sovrapposti.
+   *
+   * Non e' un dettaglio della fixture: un catalizzatore solo, anche a forza
+   * massima, porta la densita' locale a 0,30 e non oltre — sotto
+   * `CLUSTER.minDensity`, quindi senza corso di base. E' voluto: la fila
+   * condivide la quota ovunque, e lo zoccolo se lo guadagna solo dove piu' campi
+   * si sovrappongono. Misurato, non stimato: con tre mercati la densita' mediana
+   * dell'area sale a 0,37.
+   */
+  function denseCity(rounds = 60) {
+    return grow(
+      testTerrain({ chunksX: 8, chunksY: 8, height: 24 }),
+      1337,
+      rounds,
+      [[112, 112], [144, 112], [128, 144]],
+      40,
+    );
+  }
+
+  /** Le file con almeno due membri, ognuna ordinata lungo il proprio fronte. */
+  function rows(records: readonly BuildingRecord[]): BuildingRecord[][] {
+    const byId = new Map<number, BuildingRecord[]>();
+    for (const record of records) {
+      if (record.cluster === undefined) continue;
+      const members = byId.get(record.cluster);
+      if (members === undefined) byId.set(record.cluster, [record]);
+      else members.push(record);
+    }
+
+    const out: BuildingRecord[][] = [];
+    for (const members of byId.values()) {
+      if (members.length < 2) continue;
+      members.sort((a, b) => alongOf(a) - alongOf(b));
+      out.push(members);
+    }
+    return out;
+  }
+
+  /** Coordinata lungo il fronte: y per est e ovest, x per nord e sud. */
+  function alongOf(record: BuildingRecord): number {
+    return record.facing === FACING.east || record.facing === FACING.west
+      ? record.y
+      : record.x;
+  }
+
+  it('gli edifici di una fila condividono quota e corso di base', () => {
+    const built = rows(denseCity().records);
+
+    expect(built.length).toBeGreaterThan(0);
+    for (const members of built) {
+      const first = members[0];
+      for (const member of members) {
+        expect(member.baseZ).toBe(first.baseZ);
+        expect(member.baseBand).toBe(first.baseBand);
+        // Il fronte e' lo stesso per tutti: due file che si incontrano su un
+        // angolo devono restare due file, non fondersi in una.
+        expect(member.facing).toBe(first.facing);
+      }
+    }
+  });
+
+  it('fra due membri di una fila non resta un solco', () => {
+    const built = rows(denseCity().records);
+
+    expect(built.length).toBeGreaterThan(0);
+    for (const members of built) {
+      for (let i = 1; i < members.length; i++) {
+        const previous = members[i - 1];
+        // Si toccano esattamente: e' l'accostamento lungo il fronte a chiudere
+        // lo scarto fra lotto prenotato e impronta vera.
+        expect(alongOf(members[i])).toBe(alongOf(previous) + previous.footprint);
+      }
+    }
+  });
+
+  it('a superare il tetto d impronta e la massa, non il record', () => {
+    const { records } = denseCity();
+    const built = rows(records);
+
+    for (const record of records) {
+      expect(record.footprint).toBeLessThanOrEqual(MAX_FOOTPRINT);
+    }
+
+    const widest = Math.max(...built.map((members) => {
+      const last = members[members.length - 1];
+      return alongOf(last) + last.footprint - alongOf(members[0]);
+    }));
+    expect(widest).toBeGreaterThan(MAX_FOOTPRINT);
+  });
+
+  it('il corso di base condiviso resta pieno dopo gli upgrade', () => {
+    // E' il test della cancellazione: l'`upgrade` rigenera la sagoma da togliere
+    // dal solo record, e se non le passasse `baseBand` l'erase scriverebbe vuoto
+    // su una fascia zero alta in modo diverso — cioe' bucherebbe lo zoccolo
+    // proprio sotto il vicino, dove la fila deve leggersi continua.
+    const { world, records } = denseCity();
+    const clustered = records.filter((record) => record.baseBand !== undefined);
+
+    expect(clustered.length).toBeGreaterThan(0);
+    for (const record of clustered) {
+      for (let z = record.baseZ; z < record.baseZ + (record.baseBand ?? 0); z++) {
+        for (let dy = 0; dy < record.footprint; dy++) {
+          for (let dx = 0; dx < record.footprint; dx++) {
+            if (world.getBlock(record.x + dx, record.y + dy, z) === 0) {
+              expect({ x: record.x + dx, y: record.y + dy, z })
+                .toBe('corso di base pieno su tutta l impronta');
+            }
+          }
+        }
+      }
+    }
+  });
+
+  it('su un fianco la fila si spezza a gradoni invece di scavare', () => {
+    const terrain = hillside();
+    const { records } = grow(terrain, 1337, 40, [[64, 64]], 80);
+
+    const ids = new Set(records.map((record) => record.cluster));
+    // Piu' di una fila: il dislivello le spezza, ed e' il gradino che rende
+    // terrazzato l'isolato invece di fermarne la crescita.
+    expect(ids.size).toBeGreaterThan(1);
+
+    for (const record of records) {
+      let highest = 0;
+      for (let dy = 0; dy < record.footprint; dy++) {
+        for (let dx = 0; dx < record.footprint; dx++) {
+          const height = terrain.heightAt(record.x + dx, record.y + dy);
+          // Si riempie e non si scava: nessuna colonna sta sopra il piano.
+          expect(height).toBeLessThanOrEqual(record.baseZ);
+          if (height > highest) highest = height;
+        }
+      }
+      // E il riempimento che l'aggregazione aggiunge resta dentro il suo tetto:
+      // e' il numero che tiene il membro dentro il budget di chunk.
+      expect(record.baseZ - highest).toBeLessThanOrEqual(CLUSTER.maxJoinFill);
+    }
+  });
+
+  it('nessun membro sparisce in silenzio per budget di chunk', () => {
+    // E' il difetto che il commento di `maxDirtyChunksPerBuilding` racconta gia'
+    // successo una volta: sforare non e' un errore e viene scartato senza che
+    // niente lo dica, e a sparire sono proprio gli edifici che la fase aggiunge.
+    const { builder } = grow(hillside(), 1337, 40, [[64, 64]], 80);
+    const chunkBudget = REJECT_REASONS.indexOf('chunkBudget');
+
+    expect(builder.stats.rejected[chunkBudget]).toBe(0);
+    expect(builder.stats.clustered).toBeGreaterThan(0);
+  });
+
+  it('a parita di seed le file sono identiche', () => {
+    const signature = (records: readonly BuildingRecord[]): string[] =>
+      records.map((r) => `${r.x},${r.y},${r.footprint},${r.baseZ},${r.cluster},${r.baseBand}`);
+
+    const a = signature(denseCity(30).records);
+    const b = signature(denseCity(30).records);
+    expect(a).toEqual(b);
+    expect(a.length).toBeGreaterThan(5);
+  });
+});
+
 function seaward(map: TerrainMap): { x: number; y: number } {
   let best = { x: 64, y: 64, distance: Number.MAX_SAFE_INTEGER };
   for (let y = 16; y < 112; y++) {

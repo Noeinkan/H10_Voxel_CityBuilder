@@ -1,27 +1,38 @@
 import {
+  BALANCE,
   addBuilding,
+  catalystById,
+  catalystRoleOf,
   nextBuildSites,
+  setCatalystStrength,
   urbanProfileAt,
   type Building,
   type BuildingClass,
+  type CatalystId,
   type LocalUrbanProfile,
   type SimState,
 } from '../../sim';
 import { CHUNK, keyOf, toChunk, toLocal } from '../chunkCoords';
 import { SURFACE_KIND } from '../visualBlock';
 import { hashCoords } from '../rng';
-import { PALETTE_SLOTS } from '../../engine/paletteSlots';
 import { paletteForDepth } from '../terrain/biomes';
 import type { TerrainMap } from '../terrain/TerrainMap';
 import type { VoxelWorld } from '../VoxelWorld';
-import { BuildingRegistry, type BuildingRecord, type ReadonlyBuildingRegistry } from './BuildingRegistry';
+import {
+  BuildingRegistry,
+  footprintDepth,
+  type BuildingRecord,
+  type ReadonlyBuildingRegistry,
+} from './BuildingRegistry';
 import {
   BUILDER,
   CLASS_PROFILE,
+  CLUSTER,
   DEFAULT_BUILDING_FORM,
   MAX_FOOTPRINT,
   type BuildingForm,
 } from './config';
+import { planCluster, type ClusterTerms } from './cluster';
 import { generateBuilding, startLevel } from './generate';
 import { selectTypology, typologyProfile } from './typology';
 import { typologyById, type TypologyDefinition } from './config';
@@ -31,6 +42,7 @@ import {
   GROUND,
   WORKS,
   groundKindOf,
+  isDryLand,
   planGrade,
   rampField,
   type GradePlan,
@@ -38,9 +50,17 @@ import {
 } from '../grading/grade';
 import { StreetNetwork, type PavementCell } from '../streets/StreetNetwork';
 import { placeLot, type Lot } from '../streets/lots';
-import { FACING, STREET_ROLE, type BlockId } from '../streets/streetGrid';
+import { FACING, STREET_ROLE, type BlockId, type Facing } from '../streets/streetGrid';
 import { STREETS } from '../streets/config';
-import { seesWater } from '../sites/siteRules';
+import { seesWater, waterFacing } from '../sites/siteRules';
+import { SITE } from '../sites/config';
+import { LANDMARK, landmarkOf, maxStageOf } from '../landmarks/config';
+import {
+  generateLandmark,
+  landmarkOrigin,
+  landmarkSpan,
+  stageForBuildings,
+} from '../landmarks/generate';
 
 /**
  * Il ponte fra la simulazione e il mondo voxel.
@@ -101,6 +121,14 @@ export interface BuilderStats {
   readonly blacklisted: number;
   /** Celle di piazzole e sentieri ancora da applicare. */
   readonly surfaceQueued: number;
+  /**
+   * Edifici che stanno in fila con almeno un vicino.
+   *
+   * E' il numero con cui si verifica il gate della 4.4 senza guardare a occhio:
+   * se resta a zero mentre la citta' cresce, l'aggregazione non sta avvenendo e
+   * i distretti densi sono tornati a essere volumi vicini.
+   */
+  readonly clustered: number;
 }
 
 /** Un volume che cresce dal proprio voxel di ancoraggio. */
@@ -175,6 +203,27 @@ export class Builder {
   private upgradeCursor = 0;
 
   /**
+   * Prossima identita' di fila da assegnare.
+   *
+   * Un contatore e non un hash della posizione: l'identita' di una fila non e' un
+   * luogo — la fila cresce, si accosta e si spezza — ed e' l'unica cosa del
+   * cluster che non serve a rigenerare niente. Chi entra adotta quella del
+   * vicino, quindi questo sale solo quando una fila nuova si apre davvero.
+   */
+  private nextClusterId = 1;
+
+  /**
+   * Membri per fila, e quanti stanno in una fila di almeno due.
+   *
+   * Serve alla sola statistica, e si tiene incrementale invece di ricavarlo dai
+   * record a domanda: contare le file scandendo la citta' sarebbe l'unica cosa
+   * nel ciclo il cui costo cresce con il numero di edifici, cioe' esattamente
+   * quello che il gate della 4.4 chiede di non fare.
+   */
+  private readonly clusterSizes = new Map<number, number>();
+  private clusteredCount = 0;
+
+  /**
    * La rete stradale nasce dal solo seed del mondo: non ha stato, non va
    * salvata e non va passata da fuori. E' la stessa rete per chiunque
    * costruisca su questa isola.
@@ -195,11 +244,133 @@ export class Builder {
   }
 
   /**
-   * Rende leggibile un catalizzatore senza aggiungerlo alla geometria degli
-   * edifici: una piccola piazza usa soltanto il voxel di superficie e resta
-   * quindi un dettaglio visivo, non una nuova regola della simulazione.
+   * Costruisce il landmark di un catalizzatore, con il suo grembiule attorno.
+   *
+   * **Ha sostituito `decorateCatalyst`, che dipingeva un rombo di asfalto.**
+   * Quel rombo era identico per tutti e otto i ruoli — cambiava il colore di un
+   * voxel — e il porto in particolare non aveva nessuna struttura: quello che si
+   * vedeva sull'acqua era la carreggiata dell'isolato costiero.
+   *
+   * **Il landmark e' un edificio con un altro generatore.** Entra nel registry
+   * come un record qualunque, quindi eredita senza una riga in piu' la
+   * collisione, il budget di chunk, la comparsa a budget e l'avanzamento di
+   * livello. A distinguerlo c'e' `record.landmark`, che dice quale generatore
+   * disegna lo stamp e tiene il record fuori dagli istogrammi degli edifici.
+   *
+   * **L'ingombro e' quello finale, riservato subito.** Uno stadio non allarga
+   * mai l'impronta: la riempie. Cosi' un landmark non puo' restare bloccato a
+   * meta' perche' nel frattempo e' cresciuto un edificio accanto, e la sagoma
+   * dello stadio precedente non ha mai niente da cancellare.
+   *
+   * Un ruolo senza ricetta ottiene il solo grembiule, che e' esattamente cio'
+   * che tutti e otto avevano prima.
    */
-  decorateCatalyst(x: number, y: number, cls: BuildingClass): void {
+  placeLandmark(x: number, y: number, kind: CatalystId): void {
+    const definition = catalystById(kind);
+    const built = this.buildLandmarkStructure(x, y, kind);
+    if (built === null) this.paintPlaza(x, y, definition.class);
+    else this.paintApron(built, landmarkOf(kind)!.apron);
+    // Il grembiule da solo sarebbe una macchia in mezzo al verde: accodare
+    // l'isolato che lo contiene lo porta contro una carreggiata vera.
+    this.enqueueBlockStreets(this.streets.blockAt(x, y));
+  }
+
+  /**
+   * Il verso in cui la struttura guarda.
+   *
+   * Un ruolo costiero guarda l'acqua — un molo che esce dalla parte sbagliata e'
+   * un molo dentro la collina — e tutti gli altri la strada, come gia' fa
+   * l'impronta di un edificio. Senza ne' l'una ne' l'altra resta il seme, che e'
+   * arbitrario ma stabile: due partite sullo stesso seed mettono il monumento
+   * nello stesso verso.
+   */
+  private landmarkFacing(x: number, y: number, kind: CatalystId): Facing {
+    if (catalystById(kind).site === 'coastal') {
+      const water = waterFacing(this.terrainMap, x, y, SITE.coastalRadius);
+      if (water !== null) return water;
+    }
+    return this.streets.facingOf(x, y, 1)
+      ?? ((hashCoords(this.worldSeed, x, y) & 3) as Facing);
+  }
+
+  /** Costruisce la struttura e ne restituisce il record, o null se il luogo non la regge. */
+  private buildLandmarkStructure(x: number, y: number, kind: CatalystId): BuildingRecord | null {
+    const facing = this.landmarkFacing(x, y, kind);
+    const span = landmarkSpan(kind, facing);
+    const origin = landmarkOrigin(kind, facing, x, y);
+    if (span === null || origin === null) return null;
+
+    const stamp = generateLandmark({ kind, stage: 0, facing });
+    if (stamp === null) return null;
+
+    // `surveyGrade` e non il vincolo `nearLand` che ferma la carreggiata: un
+    // molo **deve** poter uscire sull'acqua. Il limite qui e' la ricetta — un
+    // ingombro dichiarato e finito — invece di una regola sul terreno, ed e' la
+    // differenza fra una struttura progettata e una piattaforma che si allarga
+    // finche' il fondale regge.
+    const plan = this.surveyGrade(origin.x, origin.y, span.sizeX, span.sizeY);
+    if (plan === null) return null;
+    if (this.registryImpl.overlaps(origin.x, origin.y, span.sizeX, plan.padZ, span.sizeZ, span.sizeY)) {
+      return null;
+    }
+    if (this.dirtyChunkCount(
+      origin.x, origin.y, span.sizeX, plan.footZ, plan.padZ + span.sizeZ, span.sizeY,
+    ) > LANDMARK.maxDirtyChunks) {
+      return null;
+    }
+
+    this.clearSiteDecor(origin.x, origin.y, span.sizeX, span.sizeY);
+    this.buildWorks(origin.x, origin.y, span.sizeX, plan, span.sizeY);
+
+    const record = this.registryImpl.add({
+      x: origin.x,
+      y: origin.y,
+      baseZ: plan.padZ,
+      footprint: span.sizeX,
+      footprintY: span.sizeY,
+      height: span.sizeZ,
+      class: catalystById(kind).class,
+      level: 0,
+      seed: hashCoords(this.worldSeed, x, y),
+      facing,
+      landmark: kind,
+    });
+
+    this.growing.push({ record, stamp, erase: null, voxelCursor: 0, eraseCursor: 0 });
+    return record;
+  }
+
+  /**
+   * La cornice di suolo pubblico attorno a una struttura.
+   *
+   * E' un **anello attorno all'ingombro**, non un rombo attorno al click: con la
+   * struttura al centro un rombo di raggio quattro finirebbe tutto sotto il
+   * pavimento, e `canPaintSurface` lo scarterebbe colonna per colonna lasciando
+   * il landmark posato sull'erba.
+   *
+   * Segue il terreno invece di livellarsi. La struttura ha gia' la propria
+   * fondazione; portare anche la cornice alla quota del piano costruirebbe un
+   * muro di contenimento largo quanto tutto l'anello, cioe' un podio che nessun
+   * dislivello ha chiesto.
+   */
+  private paintApron(record: BuildingRecord, margin: number): void {
+    const depth = footprintDepth(record);
+    for (let py = record.y - margin; py < record.y + depth + margin; py++) {
+      for (let px = record.x - margin; px < record.x + record.footprint + margin; px++) {
+        this.enqueueSurface({ x: px, y: py, palette: LANDMARK.apronPalette, priority: 1 });
+      }
+    }
+  }
+
+  /**
+   * La piazzola di un ruolo senza ricetta: il rombo di prima, con il suo voxel
+   * d'accento al centro.
+   *
+   * Sopravvive perche' e' il ripiego, non perche' sia rimasto indietro: un ruolo
+   * aggiunto a `CATALYSTS` prima che qualcuno gli disegni una forma resta
+   * giocabile e visibile.
+   */
+  private paintPlaza(x: number, y: number, cls: BuildingClass): void {
     const radius = BUILDER.catalystPlazaRadius;
     const deck = this.plazaDeck(x, y, radius);
 
@@ -210,7 +381,7 @@ export class Builder {
         this.enqueueSurface({
           x: x + dx,
           y: y + dy,
-          palette: centre ? CLASS_PROFILE[cls].accent : PALETTE_SLOTS.asphalt,
+          palette: centre ? CLASS_PROFILE[cls].accent : LANDMARK.apronPalette,
           priority: centre ? 2 : 1,
           deck,
           wall: GRADING.terraceWall,
@@ -218,9 +389,6 @@ export class Builder {
         });
       }
     }
-    // La piazza da sola sarebbe una macchia in mezzo al verde: accodare
-    // l'isolato che la contiene le porta contro una carreggiata vera.
-    this.enqueueBlockStreets(this.streets.blockAt(x, y));
   }
 
   /**
@@ -259,6 +427,7 @@ export class Builder {
       rejected: this.rejectedCounts,
       blacklisted: this.blacklist.size,
       surfaceQueued: this.surfacePending.size,
+      clustered: this.clusteredCount,
     };
   }
 
@@ -303,7 +472,10 @@ export class Builder {
   onTick(state: SimState): SimState {
     let next = state;
     if (state.tickCount % BUILDER.ticksPerBuild === 0) next = this.buildPass(next);
-    if (state.tickCount % BUILDER.ticksPerUpgrade === 0) this.upgradePass(next);
+    if (state.tickCount % BUILDER.ticksPerUpgrade === 0) {
+      this.upgradePass(next);
+      next = this.landmarkPass(next);
+    }
     return next;
   }
 
@@ -403,7 +575,7 @@ export class Builder {
 
     let x = request.x;
     let y = request.y;
-    let facing: number | undefined;
+    let facing: Facing | undefined;
     let footprintCap = MAX_FOOTPRINT;
 
     if (request.snapToStreet) {
@@ -437,7 +609,7 @@ export class Builder {
       profile,
       coastal: this.isCoastal(x, y),
     });
-    const stamp = generateBuilding({
+    const draft = generateBuilding({
       class: cls,
       level,
       seed,
@@ -449,7 +621,7 @@ export class Builder {
       mixed,
       facing,
     });
-    const footprint = stamp.sizeX;
+    const footprint = draft.sizeX;
 
     // L'impronta puo' uscire piu' stretta del lotto verificato. La si accosta
     // al fronte invece di lasciarla al centro: un edificio che non tocca la
@@ -462,6 +634,13 @@ export class Builder {
       const slack = footprintCap - footprint;
       if (facing === FACING.east) x += slack;
       else if (facing === FACING.north) y += slack;
+
+      // ...e lungo il fronte si accosta al vicino, con la stessa logica e per la
+      // stessa ragione: fra due edifici di una fila un solco da un voxel non
+      // legge come separazione, legge come crepa.
+      const along = this.snapAlongFrontage(x, y, footprint, facing, slack);
+      if (facing === FACING.east || facing === FACING.west) y += along;
+      else x += along;
     }
 
     // Il piano si progetta sull'impronta vera, non sul lotto prenotato: e'
@@ -469,7 +648,32 @@ export class Builder {
     const plan = this.surveyGrade(x, y, footprint);
     if (plan === null) return this.reject(key, this.gradeRefusal(x, y, footprint));
 
-    const baseZ = plan.padZ;
+    // A cosa si aggrega questo lotto. La quota che ne esce sostituisce quella
+    // del piano proprio: e' l'unico punto in cui un edificio smette di rispondere
+    // solo al terreno sotto di se' e comincia a rispondere anche al vicino.
+    const terms = this.joinCluster(x, y, footprint, facing, plan, form.density);
+
+    // Con un corso di base condiviso lo stamp si rigenera: cambia l'altezza
+    // della fascia zero e nient'altro — stessa sequenza di PRNG, stessa sagoma.
+    // Gira solo dove la fila un basamento ce l'ha davvero, e sta comunque fuori
+    // dal ciclo di frame.
+    const stamp = terms.base > 0
+      ? generateBuilding({
+        class: cls,
+        level,
+        seed,
+        footprintCap,
+        footprintFloor: 1,
+        form,
+        profile: typologyProfile(typology),
+        shape: typology.shape,
+        mixed,
+        facing,
+        baseBandHeight: terms.base,
+      })
+      : draft;
+
+    const baseZ = terms.deck;
     if (this.registryImpl.overlaps(x, y, footprint, baseZ, stamp.sizeZ)) {
       return this.reject(key, 'occupied');
     }
@@ -479,7 +683,15 @@ export class Builder {
     }
 
     this.clearSiteDecor(x, y, footprint);
-    this.buildWorks(x, y, footprint, plan);
+    // Il salto che la fila aggiunge sotto il membro e' costruito, non versato:
+    // senza questo il dislivello verso il deck verrebbe riempito di stratigrafia
+    // di bioma e leggerebbe come terreno nudo invece che come muro. E' lo stesso
+    // ritocco che l'upgrade fa gia' sull'anello allargato.
+    this.buildWorks(x, y, footprint, {
+      ...plan,
+      padZ: baseZ,
+      works: baseZ > plan.padZ && plan.works === WORKS.none ? WORKS.terrace : plan.works,
+    });
 
     const record = this.registryImpl.add({
       x,
@@ -496,6 +708,10 @@ export class Builder {
       district: profile?.district ?? 'outskirts',
       specialization: profile?.specialization ?? null,
       facing,
+      cluster: terms.id,
+      // Zero non si scrive: una fila senza corso di base non deve portarsi
+      // dietro un campo che dice "non ne ho uno".
+      baseBand: terms.base > 0 ? terms.base : undefined,
     });
 
     if (request.animate) this.growing.push({ record, stamp, erase: null, voxelCursor: 0, eraseCursor: 0 });
@@ -503,6 +719,146 @@ export class Builder {
     this.enqueueBlockStreets(this.streets.blockAt(x, y));
     this.placedCount++;
     return record;
+  }
+
+  // --- Aggregazione ----------------------------------------------------------
+
+  /**
+   * Di quanto l'impronta scorre lungo il fronte per accostarsi a un vicino.
+   *
+   * E' la mossa gemella dello scorrimento verso la carreggiata, e nasce dallo
+   * stesso scarto: il lotto e' prenotato largo `footprintCap`, l'impronta puo'
+   * uscire piu' stretta, e quello che avanza oggi resta prato in mezzo a una
+   * fila. Si guarda in giu' fino a `CLUSTER.maxSnap` e in su fino allo scarto
+   * disponibile, e vince il vicino piu' vicino; a parita' il basso, per fissare
+   * l'ordine.
+   *
+   * **Il compromesso, dichiarato.** Accostarsi puo' portare l'impronta fuori dal
+   * passo di `STREETS.align`, che esiste per non far cadere un edificio a meta'
+   * di un cubo di terreno. Dove la citta' e' densa il terreno e' quasi sempre
+   * piatto e non costa niente — `planGrade` non chiede opere quando le colonne
+   * stanno alla stessa quota; dove e' mosso costa un cubo di riempimento in piu',
+   * ed e' meno di quanto costi un solco da un voxel in mezzo a due case in fila.
+   */
+  private snapAlongFrontage(
+    x: number,
+    y: number,
+    footprint: number,
+    facing: Facing,
+    slack: number,
+  ): number {
+    const alongY = facing === FACING.east || facing === FACING.west;
+    const occupied = (offset: number): boolean =>
+      this.frontageOccupied(x, y, footprint, alongY, offset);
+
+    // Scendere esce dal lotto prenotato, quindi il riquadro dell'isolato torna a
+    // essere il limite: senza, accostarsi a un vicino porterebbe l'impronta in
+    // mezzo alla carreggiata, che e' esattamente cio' che la 4.1 ha tolto.
+    // Salire e' gia' dentro lo scarto del lotto, e non ha bisogno di un tetto.
+    const rect = this.streets.blockRect(this.streets.blockAt(x, y));
+    const room = alongY ? y - rect.y0 : x - rect.x0;
+    const down = Math.min(CLUSTER.maxSnap, Math.max(0, room));
+
+    for (let step = 0; step <= Math.max(down, slack); step++) {
+      // Il lato basso per primo: e' l'ordine totale che rende la scelta
+      // indipendente da quale vicino il registry ha registrato prima.
+      if (step <= down && occupied(-step - 1)) return -step;
+      if (step <= slack && occupied(footprint + step)) return step;
+    }
+    return 0;
+  }
+
+  /**
+   * true se un edificio copre la colonna a `offset` lungo il fronte.
+   *
+   * Guarda l'intera sezione dell'impronta e non la sola colonna d'angolo: due
+   * edifici in fila condividono il fronte ma non per forza tutta la profondita',
+   * e cercare il vicino su una colonna sola lo mancherebbe proprio dove le due
+   * impronte sono di misura diversa.
+   */
+  private frontageOccupied(
+    x: number,
+    y: number,
+    footprint: number,
+    alongY: boolean,
+    offset: number,
+  ): boolean {
+    for (let d = 0; d < footprint; d++) {
+      const cx = alongY ? x + d : x + offset;
+      const cy = alongY ? y + offset : y + d;
+      if (this.registryImpl.isOccupied(cx, cy)) return true;
+    }
+    return false;
+  }
+
+  /**
+   * Termini della fila a cui questo lotto appartiene, e conteggio dei membri.
+   *
+   * La regola sta in `cluster.ts` ed e' pura: qui c'e' solo la raccolta dei
+   * vicini, che e' l'unica parte che ha bisogno del registry. I due lati del
+   * fronte si guardano sempre nello stesso ordine — prima il basso — perche'
+   * senza un ordine totale la fila scelta dipenderebbe da quale record il
+   * registry ha indicizzato prima.
+   */
+  private joinCluster(
+    x: number,
+    y: number,
+    footprint: number,
+    facing: Facing | undefined,
+    plan: GradePlan,
+    density: number,
+  ): ClusterTerms {
+    const neighbours = facing === undefined
+      ? EMPTY_TERMS
+      : this.frontageTerms(x, y, footprint, facing);
+
+    const terms = planCluster({
+      own: plan,
+      density,
+      neighbours,
+      nextId: this.nextClusterId,
+    });
+    if (terms.id === this.nextClusterId) this.nextClusterId++;
+
+    const size = (this.clusterSizes.get(terms.id) ?? 0) + 1;
+    this.clusterSizes.set(terms.id, size);
+    // Il secondo membro porta in conto anche il primo: prima di lui la fila era
+    // un edificio solo, e un edificio solo non e' una fila.
+    if (size === 2) this.clusteredCount += 2;
+    else if (size > 2) this.clusteredCount++;
+
+    return terms;
+  }
+
+  /** I termini dei vicini di fronte, dal lato basso a quello alto. */
+  private frontageTerms(
+    x: number,
+    y: number,
+    footprint: number,
+    facing: Facing,
+  ): readonly ClusterTerms[] {
+    const alongY = facing === FACING.east || facing === FACING.west;
+    const out: ClusterTerms[] = [];
+
+    for (const offset of [-1, footprint]) {
+      for (let d = 0; d < footprint; d++) {
+        const cx = alongY ? x + d : x + offset;
+        const cy = alongY ? y + offset : y + d;
+        for (const other of this.registryImpl.at(cx, cy)) {
+          // Un landmark non entra in fila: ha un altro generatore, cresce di
+          // stadio e non di livello, e adottarne la quota darebbe a un isolato
+          // il piano di un molo. Un vicino orientato altrove nemmeno — due file
+          // che si incontrano su un angolo restano due file.
+          if (other.landmark !== undefined) continue;
+          if (other.facing !== facing) continue;
+          if (other.cluster === undefined) continue;
+          if (out.some((terms) => terms.id === other.cluster)) continue;
+          out.push({ id: other.cluster, deck: other.baseZ, base: other.baseBand ?? 0 });
+        }
+      }
+    }
+
+    return out;
   }
 
   /**
@@ -577,10 +933,10 @@ export class Builder {
    * cosa costruire perche' lo diventi, e le tre risposte — niente, un
    * terrapieno, una banchina — vivono in `grading/`.
    */
-  private surveyGrade(x: number, y: number, footprint: number): GradePlan | null {
+  private surveyGrade(x: number, y: number, w: number, h: number = w): GradePlan | null {
     const columns: { kind: GroundKind; height: number }[] = [];
-    for (let dy = 0; dy < footprint; dy++) {
-      for (let dx = 0; dx < footprint; dx++) {
+    for (let dy = 0; dy < h; dy++) {
+      for (let dx = 0; dx < w; dx++) {
         const kind = this.groundKindAt(x + dx, y + dy);
         if (kind === GROUND.refused) return null;
         columns.push({ kind, height: this.terrainMap.heightAt(x + dx, y + dy) });
@@ -597,9 +953,9 @@ export class Builder {
    * con causa la costringerebbe ad allocare un oggetto anche nelle migliaia di
    * chiamate che vanno a buon fine.
    */
-  private gradeRefusal(x: number, y: number, footprint: number): RejectReason {
-    for (let dy = 0; dy < footprint; dy++) {
-      for (let dx = 0; dx < footprint; dx++) {
+  private gradeRefusal(x: number, y: number, w: number, h: number = w): RejectReason {
+    for (let dy = 0; dy < h; dy++) {
+      for (let dx = 0; dx < w; dx++) {
         if (this.groundKindAt(x + dx, y + dy) === GROUND.refused) return 'unworkable';
       }
     }
@@ -618,19 +974,19 @@ export class Builder {
    * blocco di roccia: una riga chiara in cima al salto, che a distanza di gioco
    * e' il solo segno che dichiari il dislivello costruito invece che scavato.
    */
-  private buildWorks(x: number, y: number, footprint: number, plan: GradePlan): void {
+  private buildWorks(x: number, y: number, w: number, plan: GradePlan, h: number = w): void {
     const quay = plan.works === WORKS.quay;
     const wall = quay ? GRADING.quayWall : GRADING.terraceWall;
     const coping = quay ? GRADING.quayCoping : GRADING.terraceCoping;
 
-    for (let dy = 0; dy < footprint; dy++) {
-      for (let dx = 0; dx < footprint; dx++) {
+    for (let dy = 0; dy < h; dy++) {
+      for (let dx = 0; dx < w; dx++) {
         const cx = x + dx;
         const cy = y + dy;
         const height = this.terrainMap.heightAt(cx, cy);
         if (height >= plan.padZ) continue;
 
-        const edge = dx === 0 || dy === 0 || dx === footprint - 1 || dy === footprint - 1;
+        const edge = dx === 0 || dy === 0 || dx === w - 1 || dy === h - 1;
         if (plan.works !== WORKS.none && edge) {
           for (let z = height; z < plan.padZ; z++) {
             this.world.setBlock(cx, cy, z, z === plan.padZ - 1 ? coping : wall, SURFACE_KIND.utility);
@@ -671,6 +1027,9 @@ export class Builder {
       const record = records[this.upgradeCursor % records.length];
       this.upgradeCursor++;
       if (this.growing.some((entry) => entry.record.id === record.id)) continue;
+      // Un landmark cresce di stadio, non di livello, e su un altro segnale:
+      // `landmarkPass` se ne occupa con la propria soglia e il proprio generatore.
+      if (record.landmark !== undefined) continue;
       if (record.level >= BUILDER.maxLevel) continue;
 
       const nextLevel = record.level + 1;
@@ -713,6 +1072,10 @@ export class Builder {
     // cambiato la tipologia di questa colonna, la sagoma da togliere resta
     // quella che era stata scritta. Rigenerarla con la tipologia nuova
     // lascerebbe voxel orfani a terra.
+    // Il corso di base condiviso viaggia con il record e non si ricalcola dalla
+    // fila di adesso: e' l'altra meta' della rigenerabilita'. Va passato a
+    // **tutte** le generazioni di questa funzione — se la sagoma da cancellare
+    // partisse da un'altra quota, l'erase bucherebbe lo zoccolo sotto il vicino.
     const old = generateBuilding({
       class: record.class,
       level: record.level,
@@ -724,6 +1087,7 @@ export class Builder {
       shape: oldTypology.shape,
       mixed: record.mixed,
       facing: record.facing,
+      baseBandHeight: record.baseBand,
     });
 
     // L'allargamento non puo' sfondare l'isolato: la fascia di base riempie
@@ -743,6 +1107,7 @@ export class Builder {
       shape: nextTypology.shape,
       mixed: record.mixed,
       facing: record.facing,
+      baseBandHeight: record.baseBand,
     });
     if (stamp.sizeX > record.footprint && !this.fitsWider(record, stamp)) {
       stamp = generateBuilding({
@@ -756,6 +1121,7 @@ export class Builder {
         shape: nextTypology.shape,
         mixed: record.mixed,
         facing: record.facing,
+        baseBandHeight: record.baseBand,
       });
     }
 
@@ -783,6 +1149,11 @@ export class Builder {
       district: profile.district,
       specialization: profile.specialization,
       facing: record.facing,
+      // La fila non si rinegozia a ogni livello: un membro che promuove resta lo
+      // stesso membro, con la stessa quota e lo stesso zoccolo. Ricalcolarli qui
+      // spezzerebbe la continuita' della fila proprio mentre cresce.
+      cluster: record.cluster,
+      baseBand: record.baseBand,
     });
     if (replaced === null) return;
 
@@ -837,6 +1208,116 @@ export class Builder {
       }
     }
     return true;
+  }
+
+  // --- Landmark --------------------------------------------------------------
+
+  /**
+   * Porta avanti di uno stadio il landmark che il suo quartiere ha meritato.
+   *
+   * **Cosa fa avanzare uno stadio.** Il numero di edifici costruiti entro il
+   * raggio del catalizzatore, non la desiderabilita'. Il campo, sotto un
+   * catalizzatore, e' quasi sempre saturo — il catalizzatore *e'* la sorgente di
+   * quel valore — e un landmark che leggesse quello salterebbe tutti gli stadi
+   * al primo tick. Contare i record misura invece cio' che la citta' ha
+   * davvero costruito li' attorno: e' il modello dei monumenti di Anno 1800,
+   * una costruzione a fasi che corona una citta' gia' edificata, detto con il
+   * solo dato che il Builder possiede.
+   *
+   * Non serve nessuno stato: lo stadio e' una funzione pura del contenuto del
+   * registry, e cresce da solo perche' nessuno demolisce. Quando la demolizione
+   * arrivera', bastera' non lasciarlo scendere sotto `record.level`.
+   *
+   * **Il ritorno alla simulazione e' un numero, non un meccanismo.** Un landmark
+   * cresciuto rende il proprio catalizzatore un po' piu' forte, e lo fa da
+   * `setCatalystStrength`, che esisteva gia': `src/sim/` continua a non sapere
+   * cosa sia un landmark (invariante 7).
+   */
+  private landmarkPass(state: SimState): SimState {
+    let next = state;
+    let advanced = 0;
+
+    for (const record of this.registryImpl.all) {
+      if (advanced >= LANDMARK.stagesPerPass) break;
+      if (this.growing.length >= BUILDER.maxGrowing) break;
+
+      const kind = record.landmark;
+      if (kind === undefined) continue;
+      if (this.growing.some((entry) => entry.record.id === record.id)) continue;
+
+      const recipe = landmarkOf(kind);
+      if (recipe === null || record.level >= maxStageOf(recipe)) continue;
+
+      // Il catalizzatore si ritrova dal riquadro e non da `record.x`, che e'
+      // l'angolo minimo dell'ingombro: la colonna cliccata sta dentro il
+      // riquadro ma quasi mai nel suo spigolo, perche' e' la ricetta a dire
+      // dove cade — la banchina sotto il dito, il molo davanti.
+      const index = this.catalystIn(next, record, kind);
+      if (index === -1) continue;
+
+      const catalyst = next.catalysts[index];
+      const definition = catalystById(kind);
+      const nearby = this.registryImpl.withinRadius(
+        catalyst.x, catalyst.y, definition.radius,
+      ).length;
+      if (stageForBuildings(recipe, nearby) <= record.level) continue;
+
+      next = this.advanceLandmark(next, record, kind, index);
+      advanced++;
+    }
+
+    return next;
+  }
+
+  /**
+   * Indice del catalizzatore che questo landmark rappresenta, o -1.
+   *
+   * Chiede **il ruolo e il riquadro insieme**: un ingombro largo venti colonne
+   * ne contiene facilmente due, e il solo riquadro rinforzerebbe il mercato
+   * accanto invece del porto che quella struttura e'.
+   */
+  private catalystIn(state: SimState, record: BuildingRecord, kind: CatalystId): number {
+    const depth = footprintDepth(record);
+    return state.catalysts.findIndex((catalyst) =>
+      catalystRoleOf(catalyst) === kind &&
+      catalyst.x >= record.x && catalyst.x < record.x + record.footprint &&
+      catalyst.y >= record.y && catalyst.y < record.y + depth);
+  }
+
+  /**
+   * Scrive lo stadio successivo di un landmark.
+   *
+   * Non c'e' niente da cancellare, e non e' una scorciatoia: gli stadi sono
+   * cumulativi dentro un riquadro che non cambia mai, quindi lo stadio nuovo
+   * copre sempre il vecchio. E' anche il motivo per cui non serve rivalidare il
+   * terreno o l'occupazione — l'ingombro e' lo stesso riservato al piazzamento.
+   */
+  private advanceLandmark(
+    state: SimState,
+    record: BuildingRecord,
+    kind: CatalystId,
+    catalystIndex: number,
+  ): SimState {
+    const stage = record.level + 1;
+    const facing = (record.facing ?? FACING.east) as Facing;
+    const stamp = generateLandmark({ kind, stage, facing });
+    if (stamp === null) return state;
+
+    const replaced = this.registryImpl.replace(record.id, { ...record, level: stage });
+    if (replaced === null) return state;
+
+    this.growing.push({ record: replaced, stamp, erase: null, voxelCursor: 0, eraseCursor: 0 });
+
+    // Il ritorno alla simulazione e' un numero: il catalizzatore diventa un po'
+    // piu' forte, e `src/sim/` non sa perche'. La base si rilegge dal catalogo
+    // invece di sommarsi a quella corrente, cosi' due avanzamenti non si
+    // accumulano oltre quello che lo stadio dichiara.
+    const base = catalystById(kind).strength;
+    return setCatalystStrength(
+      state,
+      catalystIndex,
+      base + stage * BALANCE.gameplay.catalyst.stageBonus,
+    );
   }
 
   // --- Scrittura -------------------------------------------------------------
@@ -932,9 +1413,9 @@ export class Builder {
   // --- Superficie urbana ----------------------------------------------------
 
   /** Bonifica tronchi e chiome nel lotto e nel suo bordo, senza toccare il suolo. */
-  private clearSiteDecor(x: number, y: number, footprint: number): void {
-    for (let py = y - 1; py <= y + footprint; py++) {
-      for (let px = x - 1; px <= x + footprint; px++) {
+  private clearSiteDecor(x: number, y: number, w: number, h: number = w): void {
+    for (let py = y - 1; py <= y + h; py++) {
+      for (let px = x - 1; px <= x + w; px++) {
         if (this.registryImpl.at(px, py).length > 0) continue;
         this.clearDecorColumn(px, py);
       }
@@ -1011,6 +1492,10 @@ export class Builder {
     const grade = this.rampAround(ring);
 
     for (const cell of ring) {
+      // Una banchina e' il bordo costruito della terra: oltre `quayReach` la
+      // carreggiata smette invece di proseguire sul fondale.
+      if (!this.nearLand(cell.x, cell.y)) continue;
+
       const arterial = cell.role === STREET_ROLE.arterial;
       const shore = this.groundKindAt(cell.x, cell.y) === GROUND.shore;
       const deck = grade.levelAt(cell.x, cell.y);
@@ -1082,6 +1567,35 @@ export class Builder {
   }
 
   /**
+   * true se la colonna e' terra emersa o ha terra a portata di banchina.
+   *
+   * **E' il vincolo di forma che mancava alla 4.2.** `maxQuayDepth` risponde a
+   * una domanda strutturale — fin dove il fondale regge un muro — e su un
+   * bassofondo dolce dice di si' per una quindicina di colonne al largo. Nessuno
+   * aveva mai deciso che la citta' dovesse arrivarci: l'anello di carreggiata di
+   * un isolato costiero se le prendeva tutte, e quello che si vedeva era una
+   * piattaforma rettangolare in mezzo al mare.
+   *
+   * Guarda i quattro assi e non il quadrato, per la stessa ragione di
+   * `seesWater` in `sites/`: e' la domanda opposta con lo stesso costo, e una
+   * colonna raggiungibile solo in diagonale e' comunque una colonna a cui
+   * conviene non allungare la banchina.
+   */
+  private nearLand(x: number, y: number): boolean {
+    if (isDryLand(this.terrainMap.biomeAt(x, y))) return true;
+
+    for (let d = 1; d <= GRADING.quayReach; d++) {
+      for (const [dx, dy] of QUAY_AXES) {
+        const cx = x + dx * d;
+        const cy = y + dy * d;
+        if (!this.terrainMap.has(cx, cy)) continue;
+        if (isDryLand(this.terrainMap.biomeAt(cx, cy))) return true;
+      }
+    }
+    return false;
+  }
+
+  /**
    * true se il quadrato e' libero, edificabile e non gia' bocciato.
    *
    * E' il predicato con cui `placeLot` scorre un fronte, quindi viene chiamato
@@ -1103,6 +1617,10 @@ export class Builder {
         // altri: costano un'opera, non un rifiuto. Restano fuori solo la roccia
         // e l'acqua troppo profonda per una banchina.
         if (this.groundKindAt(cx, cy) === GROUND.refused) return false;
+        // E l'acqua che una banchina reggerebbe ma che nessuno vorrebbe
+        // edificata: un lotto al largo poggia su un pad isolato in mezzo al
+        // mare, che e' lo stesso difetto dell'anello di carreggiata.
+        if (!this.nearLand(cx, cy)) return false;
         if (this.blacklist.has(`${cx},${cy}`)) return false;
       }
     }
@@ -1186,13 +1704,14 @@ export class Builder {
     footprint: number,
     minZ: number,
     maxZ: number,
+    footprintY: number = footprint,
   ): number {
     const keys = new Set<string>();
 
     const cx0 = toChunk(x);
     const cx1 = toChunk(x + footprint - 1);
     const cy0 = toChunk(y);
-    const cy1 = toChunk(y + footprint - 1);
+    const cy1 = toChunk(y + footprintY - 1);
     const cz0 = toChunk(minZ);
     const cz1 = toChunk(maxZ - 1);
 
@@ -1209,7 +1728,7 @@ export class Builder {
         for (let cy = cy0; cy <= cy1; cy++) keys.add(keyOf(cx, cy, cz));
       }
     }
-    for (const cy of edgeChunks(y, y + footprint - 1)) {
+    for (const cy of edgeChunks(y, y + footprintY - 1)) {
       for (let cz = cz0; cz <= cz1; cz++) {
         for (let cx = cx0; cx <= cx1; cx++) keys.add(keyOf(cx, cy, cz));
       }
@@ -1229,6 +1748,12 @@ export class Builder {
     return null;
   }
 }
+
+/** I quattro assi cardinali, per la ricerca della terra da una colonna d'acqua. */
+const QUAY_AXES: readonly (readonly [number, number])[] = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+
+/** Nessun vicino: chi costruisce a coordinate date non ha un fronte da guardare. */
+const EMPTY_TERMS: readonly ClusterTerms[] = [];
 
 /**
  * Coordinate di chunk dei vicini che una scrittura su `[min, max]` marcherebbe.

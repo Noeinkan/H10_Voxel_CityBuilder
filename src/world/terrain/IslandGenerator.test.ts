@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { CHUNK } from '../chunkCoords';
 import { VoxelWorld } from '../VoxelWorld';
+import { paletteForDepth } from './biomes';
 import { columnIndex, COLUMNS_PER_CHUNK } from './columnBlock';
 import { BIOME, TERRAIN, WATER_IDS } from './config';
 import { HeightField } from './heightField';
@@ -444,6 +445,31 @@ describe('generateIsland — scrittura nel mondo', () => {
       }
     }
     expect(checked).toBe(50);
+  });
+
+  it('la colonna scritta a corse coincide voxel per voxel con paletteForDepth', () => {
+    // Il generatore taglia la colonna ai due confini di `STRATA_DEPTH` e scrive
+    // tre corse invece di trenta voxel: e' un'ottimizzazione di scrittura, non
+    // una regola nuova. Questo test e' cio' che tiene le due letture della stessa
+    // stratigrafia — a tratti e per voxel — dalla stessa parte.
+    const world = new VoxelWorld();
+    const { map } = generateIsland(world, SEED, ISLAND);
+
+    for (let y = 0; y < 512; y += 13) {
+      for (let x = 0; x < 512; x += 13) {
+        const height = map.heightAt(x, y);
+        const biome = map.biomeAt(x, y);
+        for (let z = 0; z < height; z++) {
+          expect(world.getBlock(x, y, z)).toBe(paletteForDepth(biome, height - 1 - z));
+        }
+        for (let z = height; z < TERRAIN.seaLevel; z++) {
+          const expected = z >= TERRAIN.seaLevel - TERRAIN.waterSurfaceDepth
+            ? WATER_IDS.surface
+            : WATER_IDS.deep;
+          expect(world.getBlock(x, y, z)).toBe(expected);
+        }
+      }
+    }
   });
 
   it('non scrive mai nel layer data', () => {

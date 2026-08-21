@@ -5,6 +5,7 @@ import {
   BAND_OP,
   BUILDER,
   CLASS_PROFILE,
+  CLUSTER,
   CROWN_KIND,
   DEFAULT_TYPOLOGY_SHAPE,
   GRAMMAR,
@@ -117,6 +118,46 @@ describe('generateBuilding', () => {
             footprintFloor: previous.sizeX,
           });
           expect(upgraded.sizeX).toBeGreaterThanOrEqual(previous.sizeX);
+        }
+      }
+    }
+  });
+
+  it('il corso di base condiviso sposta la quota e non la sagoma', () => {
+    // E' il contratto su cui poggia tutta la 4.4: entrare in una fila cambia
+    // l'altezza della fascia zero e nient'altro. Se toccasse anche la sequenza
+    // del PRNG, due edifici sullo stesso seme smetterebbero di essere
+    // confrontabili e un upgrade non riconoscerebbe piu' la sagoma da cancellare.
+    for (const cls of ALL_CLASSES) {
+      for (let level = 0; level <= BUILDER.maxLevel; level++) {
+        for (let seed = 0; seed < 16; seed++) {
+          const natural = generateBuilding({ class: cls, level, seed });
+          const clustered = generateBuilding({
+            class: cls,
+            level,
+            seed,
+            baseBandHeight: CLUSTER.baseHeight,
+          });
+
+          expect(clustered.sizeX).toBe(natural.sizeX);
+          expect(bandCount(clustered)).toBe(bandCount(natural));
+          expect(clustered.bandStarts[1]).toBe(CLUSTER.baseHeight);
+
+          // Ogni fascia sopra la zero conserva la propria altezza...
+          for (let b = 1; b < bandCount(natural); b++) {
+            expect(clustered.bandStarts[b + 1] - clustered.bandStarts[b])
+              .toBe(natural.bandStarts[b + 1] - natural.bandStarts[b]);
+          }
+
+          // ...e i propri voxel, traslati della differenza di zoccolo.
+          const shift = clustered.bandStarts[1] - natural.bandStarts[1];
+          const plane = natural.sizeX * natural.sizeY;
+          for (let sz = natural.bandStarts[1]; sz < natural.sizeZ; sz++) {
+            expect(Array.from(clustered.voxels.slice(
+              (sz + shift) * plane,
+              (sz + shift + 1) * plane,
+            ))).toEqual(Array.from(natural.voxels.slice(sz * plane, (sz + 1) * plane)));
+          }
         }
       }
     }

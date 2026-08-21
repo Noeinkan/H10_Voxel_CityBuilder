@@ -2,6 +2,7 @@ import {
   addCatalyst,
   BALANCE,
   catalystById,
+  catalystRoleOf,
   createSimState,
   decisionOption,
   nextBuildSites,
@@ -98,7 +99,10 @@ export class GrowthScene {
     const result = placeCatalyst(this.state, this.map, x, y, target);
     if (result.success) {
       const placed = result.state.catalysts[result.state.catalysts.length - 1];
-      if (placed !== undefined) this.builder.decorateCatalyst(x, y, placed.class);
+      // Il ruolo e non la classe: e' il ruolo a decidere quale struttura
+      // compare, e passare `placed.class` — come si faceva finche' il segno era
+      // un voxel colorato — perdeva proprio l'informazione che serve.
+      if (placed !== undefined) this.builder.placeLandmark(x, y, catalystRoleOf(placed));
     }
     return this.apply(result, 'Catalyst placed.');
   }
@@ -162,7 +166,7 @@ export class GrowthScene {
       strength: BALANCE.decisions.grant.strength,
       radius: BALANCE.decisions.grant.radius,
     });
-    this.builder.decorateCatalyst(site.x, site.y, definition.class);
+    this.builder.placeLandmark(site.x, site.y, grant.kind);
     this.message = `${definition.label} built where the decision landed.`;
   }
 

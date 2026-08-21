@@ -16,6 +16,8 @@ import {
   type HudTradeMode,
 } from './GameHudModel';
 import { createHudIcon, type HudIcon } from './hudIcons';
+import { buildViewMenuModel, type ViewMenuModel } from './ViewMenuModel';
+import { INSPECT, INSPECT_MODE, type InspectMode } from '../engine/inspect';
 
 export type { GameTool } from './GameHudModel';
 
@@ -27,6 +29,8 @@ export interface GameHudHandlers {
   readonly onPause: (paused: boolean) => void;
   readonly onSpeed: (speed: number) => void;
   readonly onTheme: (id: string) => void;
+  readonly onView: (mode: InspectMode) => void;
+  readonly onLevel: (z: number) => void;
   readonly onCancelTool: () => void;
 }
 
@@ -84,6 +88,10 @@ export class GameHud {
   private readonly toast: HTMLElement;
   private readonly policyDrawer: HTMLElement;
   private readonly themePicker: HTMLElement;
+  private readonly viewPicker: HTMLElement;
+  private readonly levelRail: HTMLElement;
+  private levelSlider!: HTMLInputElement;
+  private levelValue!: HTMLElement;
   private readonly cursor: HTMLElement;
   private readonly help: ControlsHint;
   private readonly handlers: GameHudHandlers;
@@ -96,12 +104,21 @@ export class GameHud {
   private readonly expansionButton: HTMLButtonElement;
   private readonly policyToggle: HTMLButtonElement;
   private readonly themeToggle: HTMLButtonElement;
+  private readonly viewToggle: HTMLButtonElement;
   private readonly pauseButton: HTMLButtonElement;
   private readonly speedButtons = new Map<number, HTMLButtonElement>();
   private readonly themeButtons = new Map<string, HTMLButtonElement>();
+  private readonly viewButtons = new Map<InspectMode, HTMLButtonElement>();
   private selected: GameTool = { kind: 'none' };
   private model: GameHudModel = buildGameHudModel(null);
   private feedback: { readonly message: string; readonly tone: 'error' | 'neutral' } | null = null;
+  /**
+   * Nota che **accompagna** l'istruzione dello strumento invece di sostituirla.
+   *
+   * Un `showFeedback` normale coprirebbe "click the island to place it", che e'
+   * proprio cio' che il giocatore deve leggere dopo aver scelto uno strumento.
+   */
+  private selectionNote: string | null = null;
   private paintedDecisionId: string | null = null;
   private lastPaint = 0;
 
@@ -169,6 +186,7 @@ export class GameHud {
       for (const action of group.actions) {
         const button = actionButton(action, (action.catalystId ?? 'market') as HudIcon, () => {
           this.feedback = null;
+          this.selectionNote = null;
           this.selected = {
             kind: 'catalyst',
             class: action.class ?? 0,
@@ -187,6 +205,7 @@ export class GameHud {
 
     this.expansionButton = actionButton(this.model.expansion, 'expansion', () => {
       this.feedback = null;
+      this.selectionNote = null;
       this.selected = { kind: 'expansion' };
       handlers.onTool(this.selected);
       this.paintSelection();
@@ -197,6 +216,12 @@ export class GameHud {
     this.policyToggle = labeledButton('policies', 'Policies', 'Open city policies', () => this.togglePolicies());
     this.policyToggle.setAttribute('aria-expanded', 'false');
     this.dock.appendChild(this.policyToggle);
+    // Le viste stanno fra le politiche e il tema perche' e' li' che passa il
+    // confine: da qui in poi i bottoni non cambiano la citta', cambiano come la
+    // si guarda.
+    this.viewToggle = labeledButton('view', 'Views', 'Look inside the city · V', () => this.toggleViews());
+    this.viewToggle.setAttribute('aria-expanded', 'false');
+    this.dock.appendChild(this.viewToggle);
     this.themeToggle = iconButton('theme', 'Change visual theme', () => this.toggleThemes());
     this.themeToggle.setAttribute('aria-expanded', 'false');
     this.dock.appendChild(this.themeToggle);
@@ -212,9 +237,14 @@ export class GameHud {
     this.root.appendChild(this.decisionCard);
     this.themePicker = this.createThemePicker(themes);
     this.root.appendChild(this.themePicker);
+    this.viewPicker = this.createViewPicker();
+    this.root.appendChild(this.viewPicker);
+    this.levelRail = this.createLevelRail();
+    this.root.appendChild(this.levelRail);
     parent.appendChild(this.root);
     this.help = new ControlsHint(this.root);
     this.setTheme(activeThemeId);
+    this.setView(buildViewMenuModel(INSPECT_MODE.off, INSPECT.defaultSliceZ, INSPECT.maxSliceZ));
 
     const publishDockHeight = (): void => {
       document.documentElement.style.setProperty('--game-hud-bottom', `${this.dock.offsetHeight + 28}px`);
@@ -236,8 +266,14 @@ export class GameHud {
 
   setTool(tool: GameTool): void {
     this.feedback = null;
+    this.selectionNote = null;
     this.selected = tool;
     this.paintSelection();
+    this.paintToast();
+  }
+
+  setSelectionNote(note: string | null): void {
+    this.selectionNote = note;
     this.paintToast();
   }
 
@@ -253,6 +289,36 @@ export class GameHud {
     this.themeToggle.dataset.tooltip = label;
   }
 
+  /**
+   * La vista attiva, dal modello puro alle superfici che la mostrano.
+   *
+   * Tre in una chiamata sola — bottone del dock, picker e barra dei livelli —
+   * perche' dicono tutte la stessa cosa e vederle divergere sarebbe il difetto
+   * peggiore: un picker che dice Cutaway mentre la citta' e' intera.
+   */
+  setView(model: ViewMenuModel): void {
+    for (const option of model.options) {
+      this.viewButtons.get(option.mode)?.setAttribute('aria-pressed', option.active ? 'true' : 'false');
+    }
+
+    const active = model.mode !== INSPECT_MODE.off;
+    this.viewToggle.dataset.active = active ? 'true' : 'false';
+    const label = active
+      ? `Looking inside: ${model.activeLabel} · V to change`
+      : 'Look inside the city · V';
+    this.viewToggle.setAttribute('aria-label', label);
+    this.viewToggle.dataset.tooltip = label;
+
+    this.levelRail.hidden = !model.levelVisible;
+    const max = String(model.levelMax);
+    if (this.levelSlider.max !== max) this.levelSlider.max = max;
+    const level = String(model.level);
+    // Solo se e' cambiato: riscrivere `value` mentre si trascina interrompe il
+    // gesto, e questa funzione gira anche a ogni ripittura dell'HUD.
+    if (this.levelSlider.value !== level) this.levelSlider.value = level;
+    this.levelValue.textContent = level;
+  }
+
   showFailure(reason: ActionFailure): void {
     this.showFeedback(FAILURE_LABEL[reason], 'error');
   }
@@ -266,8 +332,28 @@ export class GameHud {
     this.paintToast();
   }
 
+  /**
+   * Messaggio che si spegne da solo.
+   *
+   * Gli altri restano finche' il giocatore non fa qualcosa, perche' sono errori
+   * e una spiegazione che sparisce non serve a niente. Questo invece accompagna
+   * un gesto riuscito — un tasto che ha cambiato il modo di guardare — e
+   * lasciarlo a schermo coprirebbe per sempre lo stato della citta'.
+   *
+   * Si spegne solo se e' ancora il proprio: un errore arrivato nel frattempo ha
+   * la precedenza e non va cancellato da un timer che non lo riguarda.
+   */
+  showTransientFeedback(message: string, ms = 2600): void {
+    this.showFeedback(message);
+    const shown = this.feedback;
+    window.setTimeout(() => {
+      if (this.feedback === shown) this.clearFeedback();
+    }, ms);
+  }
+
   clearFeedback(): void {
     this.feedback = null;
+    this.selectionNote = null;
     this.paintToast();
   }
 
@@ -308,6 +394,7 @@ export class GameHud {
     this.policyToggle.setAttribute('aria-expanded', opening ? 'true' : 'false');
     if (opening) {
       this.closeThemes();
+      this.closeViews();
       this.help.hide();
     }
   }
@@ -318,6 +405,18 @@ export class GameHud {
     this.themeToggle.setAttribute('aria-expanded', opening ? 'true' : 'false');
     if (opening) {
       this.closePolicies();
+      this.closeViews();
+      this.help.hide();
+    }
+  }
+
+  toggleViews(): void {
+    const opening = this.viewPicker.hidden;
+    this.viewPicker.hidden = !opening;
+    this.viewToggle.setAttribute('aria-expanded', opening ? 'true' : 'false');
+    if (opening) {
+      this.closePolicies();
+      this.closeThemes();
       this.help.hide();
     }
   }
@@ -325,16 +424,23 @@ export class GameHud {
   toggleHelp(): void {
     this.closePolicies();
     this.closeThemes();
+    this.closeViews();
     this.help.toggle();
   }
 
   handleEscape(): boolean {
     switch (resolveEscapeTarget(
+      !this.viewPicker.hidden,
       !this.themePicker.hidden,
       !this.policyDrawer.hidden,
       this.help.isOpen,
       this.selected,
     )) {
+      // Chiude il picker, non la vista: quella non e' un pannello aperto sopra
+      // il gioco ma il modo in cui si sta guardando la citta'.
+      case 'views':
+        this.closeViews();
+        return true;
       case 'themes':
         this.closeThemes();
         return true;
@@ -547,9 +653,101 @@ export class GameHud {
     return button;
   }
 
+  /**
+   * Le cinque viste, ognuna con la riga che dice cosa si va a vedere.
+   *
+   * Le etichette e le descrizioni arrivano da `ViewMenuModel`, che e' puro e
+   * testato: qui si disegna e basta.
+   */
+  private createViewPicker(): HTMLElement {
+    const picker = document.createElement('aside');
+    picker.className = 'view-picker hud-surface';
+    picker.hidden = true;
+    picker.setAttribute('aria-label', 'City views');
+
+    const title = document.createElement('h2');
+    title.className = 'drawer-title';
+    title.textContent = 'Look inside';
+    const subtitle = document.createElement('p');
+    subtitle.className = 'drawer-subtitle';
+    subtitle.textContent = 'Your city is dense enough to hide things. Open it up.';
+    picker.append(title, subtitle);
+
+    const list = document.createElement('div');
+    list.className = 'view-list';
+    const initial = buildViewMenuModel(INSPECT_MODE.off, INSPECT.defaultSliceZ, INSPECT.maxSliceZ);
+    for (const option of initial.options) {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'view-option';
+      button.setAttribute('aria-pressed', 'false');
+      const label = document.createElement('strong');
+      label.textContent = option.label;
+      const description = document.createElement('span');
+      description.textContent = option.description;
+      button.append(label, description);
+      button.addEventListener('click', () => this.handlers.onView(option.mode));
+      this.viewButtons.set(option.mode, button);
+      list.appendChild(button);
+    }
+    picker.appendChild(list);
+    return picker;
+  }
+
+  /**
+   * La barra dei livelli, sul bordo sinistro.
+   *
+   * Sta fuori dal picker e non dentro perche' cercare la quota giusta e' un
+   * gesto continuo: si scende di un piano alla volta **guardando la citta'**, e
+   * un pannello aperto coprirebbe proprio quello che si sta cercando di leggere.
+   * Compare solo con una vista che taglia, cioe' solo dove c'e' una quota.
+   */
+  private createLevelRail(): HTMLElement {
+    const rail = document.createElement('aside');
+    rail.className = 'level-rail hud-surface';
+    rail.hidden = true;
+    rail.setAttribute('aria-label', 'City level');
+
+    const title = document.createElement('span');
+    title.className = 'level-rail-title';
+    title.textContent = 'Level';
+
+    this.levelValue = document.createElement('span');
+    this.levelValue.className = 'level-rail-value';
+
+    this.levelSlider = document.createElement('input');
+    this.levelSlider.type = 'range';
+    this.levelSlider.min = String(INSPECT.minSliceZ);
+    this.levelSlider.max = String(INSPECT.maxSliceZ);
+    this.levelSlider.step = String(INSPECT.sliceStep);
+    this.levelSlider.value = String(INSPECT.defaultSliceZ);
+    this.levelSlider.setAttribute('aria-label', 'City level');
+    this.levelSlider.addEventListener('input', () => {
+      const value = Number(this.levelSlider.value);
+      this.levelValue.textContent = String(value);
+      this.handlers.onLevel(value);
+    });
+
+    const keys = document.createElement('span');
+    keys.className = 'level-rail-keys';
+    for (const label of ['[', ']']) {
+      const key = document.createElement('kbd');
+      key.textContent = label;
+      keys.appendChild(key);
+    }
+
+    rail.append(title, this.levelValue, this.levelSlider, keys);
+    return rail;
+  }
+
   private closePolicies(): void {
     this.policyDrawer.hidden = true;
     this.policyToggle.setAttribute('aria-expanded', 'false');
+  }
+
+  private closeViews(): void {
+    this.viewPicker.hidden = true;
+    this.viewToggle.setAttribute('aria-expanded', 'false');
   }
 
   private closeThemes(): void {
@@ -676,7 +874,9 @@ export class GameHud {
     }
     const instruction = selectionMessage(this.selected, this.model.catalysts);
     if (instruction !== null) {
-      this.toast.textContent = instruction;
+      this.toast.textContent = this.selectionNote === null
+        ? instruction
+        : `${this.selectionNote} · ${instruction}`;
       this.toast.dataset.tone = 'selection';
       return;
     }

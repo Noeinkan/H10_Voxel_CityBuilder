@@ -125,7 +125,7 @@ export interface GameHudModel {
   readonly unlockedSectors: number;
 }
 
-export type EscapeTarget = 'themes' | 'policies' | 'help' | 'tool' | 'none';
+export type EscapeTarget = 'views' | 'themes' | 'policies' | 'help' | 'tool' | 'none';
 
 /** Mantiene stabili i bottoni durante il gesto pointerdown/click. */
 export function decisionNeedsRepaint(
@@ -313,12 +313,23 @@ export function buildGameHudModel(stats: GrowthStats | null): GameHudModel {
   };
 }
 
+/**
+ * Cosa chiude Escape, in ordine di priorita'.
+ *
+ * I parametri sono nello stesso ordine in cui vengono provati: la firma si legge
+ * come la regola. Escape non spegne mai una vista attiva — quella non e' un
+ * pannello aperto sopra il gioco ma il modo in cui si sta guardando la citta',
+ * e sparire a un tasto di annullamento sarebbe una sorpresa. Si chiude il
+ * picker, e la vista resta.
+ */
 export function resolveEscapeTarget(
+  viewsOpen: boolean,
   themesOpen: boolean,
   policiesOpen: boolean,
   helpOpen: boolean,
   tool: GameTool,
 ): EscapeTarget {
+  if (viewsOpen) return 'views';
   if (themesOpen) return 'themes';
   if (policiesOpen) return 'policies';
   if (helpOpen) return 'help';

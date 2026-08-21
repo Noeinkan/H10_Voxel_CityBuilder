@@ -84,6 +84,22 @@ export const GRADING = {
   maxQuayDepth: 12,
 
   /**
+   * Quanto una banchina puo' spingersi oltre la terra, in voxel.
+   *
+   * `maxQuayDepth` dice *fin dove il fondale regge*, e su un bassofondo dolce
+   * quella risposta arriva a una quindicina di colonne: l'anello di carreggiata
+   * di un isolato costiero le prendeva tutte, e il risultato era una
+   * piattaforma rettangolare in mezzo al mare che nessuno aveva progettato.
+   * Questo e' il vincolo mancante, ed e' di forma e non di struttura: una
+   * banchina e' il bordo costruito della terra, non un'isola artificiale.
+   *
+   * Due celle di terreno. Oltre, l'acqua resta acqua: spingersi al largo torna
+   * a essere competenza di un molo, che ha una forma sua ed e' limitato dalla
+   * ricetta che lo disegna.
+   */
+  quayReach: TERRAIN.cellSize * 2,
+
+  /**
    * Dislivello che giustifica una piazza sopraelevata invece di una dipinta.
    *
    * Sotto, la piazza segue il terreno come ha sempre fatto: livellare un

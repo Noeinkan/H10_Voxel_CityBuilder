@@ -6,6 +6,7 @@ import {
   isPavement,
   lineEnd,
   lineStart,
+  nearestLine,
   streetRoleAt,
   type BlockId,
   type BlockRect,
@@ -48,6 +49,11 @@ export class StreetNetwork {
 
   blockAt(x: number, y: number): BlockId {
     return blockAt(this.seed, x, y);
+  }
+
+  /** Centro della carreggiata piu' vicina su un asse: 0 per x, 1 per y. */
+  nearestLine(axis: number, v: number): number {
+    return nearestLine(this.seed, axis, v);
   }
 
   blockRect(block: BlockId): BlockRect {

@@ -22,6 +22,8 @@ radice `/` avvia isola, crescita e Cozy HUD con gli overlay tecnici nascosti.
 | `grow` | — | `1` accende la crescita automatica degli edifici |
 | `quality` | — | `performance` toglie le pass aggiuntive e dimezza le draw call |
 | `theme` | — | `<id>` sceglie il tema; vale **anche senza** `debug`, è un look, non una misura |
+| `inspect` | — | `xray`, `slice`, `section`, `block`: apre una vista di ispezione. Vale **anche senza** `debug` — è così che uno strumento di cattura inquadra una sezione senza overlay |
+| `slice` | — | `<z>` fissa la quota della fetta; senza, segue il suolo che si sta guardando |
 
 ## Tasti
 
@@ -31,12 +33,42 @@ o `WASD` pan, `F` inquadra tutto, `G` +64 chunk, `R` rebuild totale, `C` azzera
 i picchi, `B` colore per bioma, `1`..`9` sceglie il tema, `T`/`P`/`M` in scena
 simulazione. `__simClass(i)` e il tasto `M` ciclano su quattro usi, non tre.
 
+**Fuori dal gate del debug**, perché sono comandi di gioco e non misure: `V`
+cicla le viste, `[`/`]` e `PageDown`/`PageUp` muovono la quota della fetta
+(`Shift` per un piano intero). Rispondono anche alla radice, senza `?debug=1`.
+
+## Viste di ispezione
+
+Quattro modi, un solo meccanismo: due predicati geometrici e un retino ordinato
+con `discard`, governati da tre uniform del materiale unico. La decisione — quale
+modo, a che quota, su quale isolato — vive in `src/engine/inspect.ts`, è pura e
+si verifica in `node`; nel materiale entrano solo i numeri che ne escono.
+
+**Sono una funzione di gioco, non dell'harness** (fase 4.12): il pulsante *Views*
+sta nel dock, le etichette che il giocatore legge vivono in
+`src/ui/ViewMenuModel.ts`, e `InspectOverlay` resta come **referto tecnico** —
+colonna a fuoco, id dell'isolato, densità del retino, nota sulle ombre. Le due
+superfici chiamano le stesse `setInspectMode` / `setInspectSliceZ`: è la regola
+di questa cartella, due letture separate divergono al primo refactor.
+
+Velare e tagliare sono la stessa manopola: a densità 1 il retino scarta ogni
+pixel. Tre cose da sapere prima di stupirsi:
+
+- un taglio mostra un **guscio vuoto**, perché il mesher non emette facce
+  interne. Il tappo dalle back-face garantisce che non si veda mai il cielo
+  attraverso un volume tagliato, non che il volume sia pieno;
+- finché un taglio è attivo le **ombre proiettate si spengono**, o il piano
+  appena scoperto resterebbe all'ombra di quelli che si sono nascosti;
+- il `discard` entra nel sorgente del fragment **solo alla prima attivazione**:
+  una ricompilazione per sessione, e chi non usa le viste non la paga.
+
 ## Hook globali
 
 Solo con `?debug=1`:
 
 - sempre: `__voxelStats()`, `__voxelReset()`, `__voxelExpand()`,
-  `__voxelRebuildAll()`, `__voxelTheme(id?)`, `__voxelSun(azimuth?, elevation?)`
+  `__voxelRebuildAll()`, `__voxelTheme(id?)`, `__voxelSun(azimuth?, elevation?)`,
+  `__voxelInspect(mode?, z?)`
 - con terreno: `__terrainStats()`, `__terrainBiomeView()`, `__terrainExpand()`
 - con `sim=1`: `__simStats()`, `__simTick(n)`, `__simSites(n)`, `__simClass(i)`,
   `__simPolicy(id)`

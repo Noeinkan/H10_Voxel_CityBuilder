@@ -11,6 +11,8 @@ export const CONTROL_HINTS: readonly ControlHint[] = [
   { keys: ['Wheel'], action: 'Zoom in and out' },
   { keys: ['Drag'], action: 'Pan the camera' },
   { keys: ['F'], action: 'Frame the whole city' },
+  { keys: ['V'], action: 'Look inside the city' },
+  { keys: ['[', ']'], action: 'Move the level up and down' },
   { keys: ['Esc'], action: 'Cancel the current tool' },
 ];
 

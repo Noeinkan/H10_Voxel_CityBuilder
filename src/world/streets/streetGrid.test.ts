@@ -9,6 +9,7 @@ import {
   lineEnd,
   lineStart,
   lineWidth,
+  nearestLine,
   streetRoleAt,
 } from './streetGrid';
 
@@ -130,6 +131,36 @@ describe('streetGrid — fronte strada', () => {
     // avrebbe dove costruire.
     expect(frontage).toBeGreaterThan(0);
     expect(interior).toBeGreaterThan(0);
+  });
+});
+
+describe('streetGrid — carreggiata piu’ vicina', () => {
+  it('la riga restituita e’ carreggiata, ed e’ la piu’ vicina', () => {
+    // `isPavement` non serve qui: prende due coordinate e risponde per **la
+    // colonna**, quindi con l'altra fissa risponderebbe di si' ovunque appena
+    // quella cade su un asse. La proprieta' si verifica sull'asse solo.
+    for (let axis = 0; axis <= 1; axis++) {
+      for (let v = -40; v <= 80; v++) {
+        const centre = nearestLine(SEED, axis, v);
+
+        // Il centro cade dentro la carreggiata di un asse vero, non fra due.
+        const base = Math.floor(centre / STREETS.pitch);
+        let covered = false;
+        for (let k = base - 2; k <= base + 2; k++) {
+          const start = lineStart(SEED, axis, k);
+          if (centre >= start && centre < start + lineWidth(k)) covered = true;
+        }
+        expect(covered, `asse ${axis}, v ${v}: ${centre} non cade su una carreggiata`).toBe(true);
+
+        // E nessun altro asse ha il centro piu' vicino: la finestra a tre
+        // candidati e' larga abbastanza, con lo scostamento sotto meta' passo.
+        const near = Math.floor(v / STREETS.pitch);
+        for (let k = near - 3; k <= near + 3; k++) {
+          const other = lineStart(SEED, axis, k) + lineWidth(k) * 0.5;
+          expect(Math.abs(centre - v)).toBeLessThanOrEqual(Math.abs(other - v));
+        }
+      }
+    }
   });
 });
 

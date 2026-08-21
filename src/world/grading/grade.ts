@@ -70,6 +70,24 @@ export function groundKindOf(biome: number, slope: number, height: number): Grou
 }
 
 /**
+ * true se la colonna e' terra emersa.
+ *
+ * Non e' `groundKindOf(...) !== GROUND.shore`: la battigia e' `shore` ed e'
+ * terra, mentre il bassofondo e' `shore` e non lo e'. La distinzione serve a
+ * chi misura **quanto una banchina si allontana dalla costa**, e li' i due casi
+ * stanno da parti opposte pur condividendo la classificazione.
+ *
+ * Decide il bioma e non la quota. Sono la stessa cosa sull'isola vera — dove
+ * `classifyBiome` chiama oceano tutto cio' che sta sotto `seaLevel` — ma non su
+ * una fixture di terreno piano, che dichiara un bioma di terra a una quota
+ * qualsiasi. Chiedere la quota assoluta li' direbbe che l'intera mappa e'
+ * sott'acqua.
+ */
+export function isDryLand(biome: number): boolean {
+  return biome !== BIOME.ocean;
+}
+
+/**
  * Peso di costo di una colonna, e `Infinity` dove non si costruisce affatto.
  *
  * L'ordine dell'array e' quello di `GROUND`, e sta qui — accanto alla

@@ -1,16 +1,19 @@
 import {
   Color,
+  DoubleSide,
   FrontSide,
   Matrix4,
   ShaderMaterial,
   SRGBColorSpace,
   Vector2,
   Vector3,
+  Vector4,
   type DepthTexture,
 } from 'three';
 import { PALETTE_SIZE, toPaletteArray } from './palette';
 import { PALETTE_SLOTS } from './paletteSlots';
 import { MESH_UNITS_PER_VOXEL } from './mesher/meshTypes';
+import { isActive, isCut, type InspectUniforms } from './inspect';
 import { FACE_NORMALS, sunDirection } from './lighting';
 import type { Atmosphere } from './themes/theme';
 import { SURFACE_KIND } from '../world/visualBlock';
@@ -32,6 +35,10 @@ import { SURFACE_KIND } from '../world/visualBlock';
  * mesher ne' di ricostruire una sola geometria.
  *
  * Cambiare tema riscrive solo uniform.
+ *
+ * L'unica cosa che compone un sorgente diverso sono le **viste di ispezione**
+ * dell'harness, e lo fanno una volta sola per sessione, alla prima attivazione:
+ * il `discard` del retino non deve esistere nel programma di chi non le accende.
  */
 
 const vertexShader = /* glsl */ `
@@ -68,7 +75,64 @@ void main() {
 }
 `;
 
-const fragmentShader = /* glsl */ `
+/**
+ * Retino ordinato e i due predicati delle viste di ispezione.
+ *
+ * Entrano nel sorgente **solo** alla prima attivazione (vedi
+ * `buildFragmentShader`): un `discard` raggiungibile costa l'early-Z su tutta la
+ * scena, e queste viste sono uno strumento dell'harness che non deve pesare su
+ * chi non le accende. Gli uniform invece sono sempre dichiarati, cosi' il
+ * contratto «dichiarato ⇔ scritto» vale su entrambe le varianti.
+ *
+ * Il retino e' in forma chiusa e senza operatori bit: la matrice 4x4 e' due
+ * matrici 2x2 annidate, e vale 0..15/16. A densita' 0 non scarta niente, a 1
+ * scarta ogni pixel — cioe' **taglia**, con la stessa manopola con cui vela.
+ * Non e' alpha blending: nessun ordinamento, `transparent` resta false.
+ */
+const inspectHelpers = /* glsl */ `
+float bayer2(vec2 p) {
+  return mod(2.0 * p.x + 3.0 * p.y, 4.0);
+}
+
+float bayer4(vec2 p) {
+  vec2 cell = mod(floor(p), 4.0);
+  return (4.0 * bayer2(mod(floor(cell * 0.5), 2.0)) + bayer2(mod(cell, 2.0))) / 16.0;
+}
+
+bool inspectHidden(vec3 p) {
+  bool beyond = dot(uInspectPlane.xyz, p) > uInspectPlane.w;
+  bool inside =
+    p.x >= uInspectRect.x && p.y >= uInspectRect.y &&
+    p.x <= uInspectRect.z && p.y <= uInspectRect.w;
+  // I due predicati si intersecano, e il rettangolo porta la sua polarita': i
+  // raggi X nascondono dentro la finestra, l'isolamento fuori dall'isolato.
+  return beyond && (uInspectInside > 0.0 ? inside : !inside);
+}
+`;
+
+/** Prima riga di main: scartare costa meno di tutto cio' che verrebbe dopo. */
+const inspectDiscard = /* glsl */ `
+  if (uInspectVeil > 0.0 && inspectHidden(vWorldPosition) && bayer4(gl_FragCoord.xy) < uInspectVeil) discard;
+`;
+
+/**
+ * Il tappo del taglio.
+ *
+ * Dove il taglio ha tolto le facce vicine si vedrebbe il retro di quelle
+ * lontane, che e' back-face: con `DoubleSide` arriva fin qui invece di essere
+ * scartata. La normale si inverte perche' guarda dentro il volume, e il
+ * linguaggio di superficie si spegne — una faccia di sezione e' materiale
+ * grezzo, non una facciata con le sue finestre.
+ */
+const inspectCap = /* glsl */ `
+  if (!gl_FrontFacing) {
+    n = -n;
+    surfaceIndex = ${SURFACE_KIND.plain};
+  }
+`;
+
+function buildFragmentShader(inspect: boolean): string {
+  return /* glsl */ `
 uniform vec3 uPalette[${PALETTE_SIZE}];
 uniform vec3 uFaceNormal[6];
 uniform float uVoxelSize;
@@ -106,6 +170,13 @@ uniform float uWaterStrength;
 uniform float uWaterScale;
 uniform float uWaterSpeed;
 uniform float uEmissiveStrength;
+
+// Viste di ispezione: due predicati geometrici e una sola densita'. Il materiale
+// non sa quale modo sia attivo: quella decisione vive in inspect.ts.
+uniform vec4 uInspectPlane;
+uniform vec4 uInspectRect;
+uniform float uInspectVeil;
+uniform float uInspectInside;
 
 varying float vAO;
 varying float vFogDepth;
@@ -169,13 +240,14 @@ vec2 faceUv(int faceIndex, vec3 position) {
   if (faceIndex < 4) return position.xz;
   return position.xy;
 }
-
+${inspect ? inspectHelpers : ''}
 void main() {
+${inspect ? inspectDiscard : ''}
   int paletteIndex = int(vPaletteIndex + 0.5);
   int faceIndex = int(vFaceIndex + 0.5);
   int surfaceIndex = int(vSurfaceIndex + 0.5);
   vec3 n = uFaceNormal[faceIndex];
-
+${inspect ? inspectCap : ''}
   vec3 albedo = uPalette[paletteIndex];
   bool isGlass = paletteIndex >= ${PALETTE_SLOTS.glass} && paletteIndex <= ${PALETTE_SLOTS.glassDark};
   if (isGlass) albedo = mix(albedo, uGlassTint, uGlassLift);
@@ -289,6 +361,7 @@ void main() {
   // Ecco perche' un cambio di tema non ricompila piu' nessun materiale di scena.
 }
 `;
+}
 
 export interface VoxelMaterialHandle {
   readonly material: ShaderMaterial;
@@ -327,6 +400,16 @@ export interface VoxelMaterialHandle {
     normalBias: number;
     softness: number;
   }): void;
+  /**
+   * Vista di ispezione: i tre numeri che escono da `inspectUniforms`.
+   *
+   * La prima attivazione compone la variante del fragment che contiene il
+   * `discard`, e da li' in poi non si torna indietro: spegnere una vista
+   * significa riscrivere il payload neutro, non ricompilare. Un taglio porta
+   * `side` a `DoubleSide`, che e' stato del renderer letto a ogni draw e non
+   * un define — quindi nemmeno quello ricompila.
+   */
+  setInspect(uniforms: InspectUniforms): void;
 }
 
 export function createVoxelMaterial(hexColors: readonly string[], voxelSize: number): VoxelMaterialHandle {
@@ -345,10 +428,14 @@ export function createVoxelMaterial(hexColors: readonly string[], voxelSize: num
   const viewDirection = new Vector3(0, 0, -1);
   const resolution = new Vector2(1, 1);
   const shadowMatrix = new Matrix4();
+  const inspectPlane = new Vector4(0, 0, 0, 1);
+  const inspectRect = new Vector4(-1e9, -1e9, 1e9, 1e9);
+  /** Vero da quando la variante con il `discard` e' stata composta. */
+  let inspectCompiled = false;
 
   const material = new ShaderMaterial({
     vertexShader,
-    fragmentShader,
+    fragmentShader: buildFragmentShader(false),
     uniforms: {
       uPalette: { value: paletteArray },
       uFaceNormal: { value: faceNormals },
@@ -389,6 +476,11 @@ export function createVoxelMaterial(hexColors: readonly string[], voxelSize: num
       uWaterScale: { value: 0.1 },
       uWaterSpeed: { value: 0 },
       uEmissiveStrength: { value: 0.35 },
+
+      uInspectPlane: { value: inspectPlane },
+      uInspectRect: { value: inspectRect },
+      uInspectVeil: { value: 0 },
+      uInspectInside: { value: 1 },
     },
     side: FrontSide,
     transparent: false,
@@ -453,6 +545,22 @@ export function createVoxelMaterial(hexColors: readonly string[], voxelSize: num
       material.uniforms['uShadowTexel'].value = options.texelSize;
       material.uniforms['uShadowNormalBias'].value = options.normalBias;
       material.uniforms['uShadowSoftness'].value = options.softness;
+    },
+    setInspect(uniforms: InspectUniforms): void {
+      if (!inspectCompiled && isActive(uniforms)) {
+        inspectCompiled = true;
+        material.fragmentShader = buildFragmentShader(true);
+        material.needsUpdate = true;
+      }
+
+      inspectPlane.set(uniforms.plane[0], uniforms.plane[1], uniforms.plane[2], uniforms.plane[3]);
+      inspectRect.set(uniforms.rect[0], uniforms.rect[1], uniforms.rect[2], uniforms.rect[3]);
+      material.uniforms['uInspectVeil'].value = uniforms.veil;
+      material.uniforms['uInspectInside'].value = uniforms.inside;
+
+      // Un taglio ha bisogno delle back-face per tapparsi; una vista che vela
+      // no, e tenerle accese costerebbe overdraw per niente.
+      material.side = isCut(uniforms) ? DoubleSide : FrontSide;
     },
   };
 }

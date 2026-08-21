@@ -94,8 +94,8 @@
 .commerce-note { margin: 5px 0 0; color: var(--hud-muted); font-size: 10px; line-height: 1.35; }
 
 .trade-list { display: grid; gap: 7px; }
-.trade-card, .decision-option { display: grid; gap: 3px; width: 100%; padding: 9px 11px; text-align: left; color: inherit; background: rgba(255,255,255,.52); border: 1px solid rgba(62,76,69,.14); border-radius: 10px; cursor: pointer; }
-.trade-card > span, .decision-option > span { color: var(--hud-muted); font-size: 10px; line-height: 1.35; }
+.trade-card, .decision-option, .view-option { display: grid; gap: 3px; width: 100%; padding: 9px 11px; text-align: left; color: inherit; background: rgba(255,255,255,.52); border: 1px solid rgba(62,76,69,.14); border-radius: 10px; cursor: pointer; }
+.trade-card > span, .decision-option > span, .view-option > span { color: var(--hud-muted); font-size: 10px; line-height: 1.35; }
 .trade-card[aria-pressed="true"] { border-color: var(--hud-positive); background: rgba(101,224,138,.12); }
 .trade-card:disabled { opacity: .5; cursor: not-allowed; }
 .decision-card { position: fixed; z-index: 80; left: 50%; top: 22%; width: min(430px, calc(100vw - 32px)); transform: translateX(-50%); padding: 18px; pointer-events: auto; }
@@ -106,8 +106,8 @@
 .decision-option:hover { border-color: var(--hud-positive); transform: translateY(-1px); }
 .decision-option > .decision-mark { color: var(--hud-positive); font-size: 10px; font-weight: 600; }
 
-.policy-drawer, .theme-picker, .help-card { position: absolute; right: 14px; bottom: var(--game-hud-bottom); width: min(360px, calc(100vw - 28px)); max-height: min(620px, calc(100vh - var(--game-hud-bottom) - 28px)); overflow: auto; box-sizing: border-box; border-radius: var(--hud-radius); padding: 14px; pointer-events: auto; transition: opacity 150ms ease, transform 150ms ease; }
-.policy-drawer[hidden], .theme-picker[hidden], .help-card[hidden] { display: block; opacity: 0; visibility: hidden; transform: translateY(10px); pointer-events: none; }
+.policy-drawer, .theme-picker, .view-picker, .help-card { position: absolute; right: 14px; bottom: var(--game-hud-bottom); width: min(360px, calc(100vw - 28px)); max-height: min(620px, calc(100vh - var(--game-hud-bottom) - 28px)); overflow: auto; box-sizing: border-box; border-radius: var(--hud-radius); padding: 14px; pointer-events: auto; transition: opacity 150ms ease, transform 150ms ease; }
+.policy-drawer[hidden], .theme-picker[hidden], .view-picker[hidden], .help-card[hidden] { display: block; opacity: 0; visibility: hidden; transform: translateY(10px); pointer-events: none; }
 .drawer-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
 .drawer-title { margin: 0; font-size: 16px; }
 .drawer-subtitle { margin: 2px 0 0; color: var(--hud-muted); font-size: 11px; }
@@ -132,17 +132,43 @@
 .theme-swatches { display: flex; width: 42px; height: 22px; flex: 0 0 auto; overflow: hidden; border: 1px solid rgba(38,56,51,.18); border-radius: 7px; box-shadow: inset 0 0 0 1px rgba(255,255,255,.18); }
 .theme-swatches > span { flex: 1; }
 
+.view-picker { width: min(330px, calc(100vw - 28px)); }
+.view-list { display: grid; gap: 6px; margin-top: 11px; }
+.view-option { font-family: var(--hud-font); }
+.view-option:hover { border-color: rgba(63,110,97,.45); background: rgba(255,255,255,.9); }
+.view-option:focus-visible { outline: 3px solid rgba(233,154,114,.48); outline-offset: 1px; }
+.view-option strong { font-size: 12px; font-weight: 800; }
+.view-option[aria-pressed="true"] { color: #fffaf0; background: var(--hud-sage-dark); border-color: var(--hud-sage-dark); }
+.view-option[aria-pressed="true"] > span { color: rgba(255,250,240,.78); }
+
+/* Bordo sinistro e non sopra il dock: si trascina la quota mentre si guarda la
+   citta', ed e' l'unico lato che nessun altro pannello di gioco occupa. */
+.level-rail { position: absolute; left: 14px; top: 50%; display: grid; justify-items: center; gap: 7px; padding: 12px 10px; border-radius: var(--hud-radius); transform: translateY(-50%); pointer-events: auto; transition: opacity 150ms ease, transform 150ms ease; }
+.level-rail[hidden] { display: grid; opacity: 0; visibility: hidden; transform: translate(-10px, -50%); pointer-events: none; }
+.level-rail-title { color: var(--hud-muted); font-size: 8px; font-weight: 900; letter-spacing: .1em; text-transform: uppercase; }
+.level-rail-value { font-size: 15px; font-weight: 800; font-variant-numeric: tabular-nums; }
+/* `writing-mode` e' il modo standard di ruotare un range: `slider-vertical` e'
+   stato rimosso dai motori, e una rotazione via transform lascerebbe l'area di
+   click dove non si vede piu' il cursore. */
+.level-rail input[type="range"] { writing-mode: vertical-lr; direction: rtl; width: 22px; height: min(300px, 34vh); margin: 0; accent-color: var(--hud-sage-dark); cursor: pointer; }
+.level-rail input[type="range"]:focus-visible { outline: 3px solid rgba(233,154,114,.48); outline-offset: 3px; }
+.level-rail-keys { display: flex; gap: 3px; }
+
 .help-card { left: 50%; right: auto; width: min(470px, calc(100vw - 28px)); transform: translateX(-50%); }
 .help-card[hidden] { transform: translate(-50%, 10px); }
 .help-grid { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 7px 16px; }
 .help-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; color: var(--hud-muted); font-size: 11px; }
 .help-keys { display: flex; align-items: center; gap: 3px; }
-.help-card kbd { min-width: 18px; padding: 2px 5px; border: 1px solid rgba(63,87,77,.24); border-bottom-width: 2px; border-radius: 5px; color: var(--hud-ink); background: #fff; font: 700 9px/1.35 var(--hud-mono); text-align: center; }
+.help-card kbd, .level-rail kbd { min-width: 18px; padding: 2px 5px; border: 1px solid rgba(63,87,77,.24); border-bottom-width: 2px; border-radius: 5px; color: var(--hud-ink); background: #fff; font: 700 9px/1.35 var(--hud-mono); text-align: center; }
 
 .debug-panel { position: fixed; bottom: var(--game-hud-bottom); z-index: 16; max-width: calc(100vw - 28px); max-height: min(65vh, 620px); overflow: auto; box-sizing: border-box; color: #dcebe6; background: rgba(24,38,42,.94); border: 1px solid rgba(185,217,210,.24); border-radius: 11px; box-shadow: 0 10px 30px rgba(0,0,0,.25); backdrop-filter: blur(10px); font: 10px/1.45 var(--hud-mono); }
 .debug-panel[hidden] { display: none; }
 .debug-panel--left { left: 14px; }
 .debug-panel--right { right: 14px; }
+/* In alto a sinistra: basso-sinistra e destra sono gia' presi, e la barra
+   risorse e' centrata e non arriva fin qui. */
+.debug-panel--inspect { left: 14px; top: 14px; bottom: auto; }
+.debug-range { display: block; width: calc(100% - 20px); margin: 0 10px 8px; accent-color: #78c8b4; }
 .debug-summary { padding: 7px 10px; color: #b9d9d2; cursor: pointer; user-select: none; list-style: none; font: 800 10px/1.4 var(--hud-font); letter-spacing: .04em; white-space: nowrap; }
 .debug-body { margin: 0; padding: 9px 11px 11px; border-top: 1px solid rgba(185,217,210,.14); color: inherit; font: inherit; white-space: pre; min-width: 260px; }
 .debug-button { width: calc(100% - 20px); margin: 0 10px 10px; padding: 5px 7px; color: #dcebe6; background: rgba(216,220,224,.08); border: 1px solid rgba(216,220,224,.26); border-radius: 6px; cursor: pointer; font: inherit; }

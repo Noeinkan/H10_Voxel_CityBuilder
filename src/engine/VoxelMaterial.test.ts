@@ -1,4 +1,6 @@
+import { DoubleSide, FrontSide, Vector4 } from 'three';
 import { describe, expect, it } from 'vitest';
+import { INSPECT, INSPECT_MODE, inspectUniforms, type InspectState } from './inspect';
 import { sunDirection } from './lighting';
 import { resolveTheme } from './themes';
 import { createVoxelMaterial } from './VoxelMaterial';
@@ -8,6 +10,18 @@ function declaredUniforms(source: string): string[] {
   const names: string[] = [];
   for (const match of source.matchAll(/^\s*uniform\s+\w+\s+(\w+)/gm)) names.push(match[1]);
   return names;
+}
+
+function inspectState(patch: Partial<InspectState>): InspectState {
+  return {
+    mode: INSPECT_MODE.off,
+    sliceZ: INSPECT.defaultSliceZ,
+    focus: null,
+    view: [0, 0, -1],
+    block: null,
+    section: null,
+    ...patch,
+  };
 }
 
 describe('createVoxelMaterial', () => {
@@ -41,19 +55,27 @@ describe('createVoxelMaterial', () => {
     // vedrebbe solo a schermo. Questo confronto e' l'unica rete che abbiamo.
     const handle = createVoxelMaterial(resolveTheme('scifi').colors, 1);
     const { material } = handle;
-    const declared = new Set([
-      ...declaredUniforms(material.vertexShader),
-      ...declaredUniforms(material.fragmentShader),
-    ]);
 
-    for (const name of declared) {
-      expect(material.uniforms[name], `${name} dichiarato nel GLSL ma assente`).toBeDefined();
-    }
-    // E il contrario: un uniform impostato da `setAtmosphere` ma non piu' letto
-    // dal sorgente e' codice morto che continuerebbe a sembrare vivo.
-    for (const name of Object.keys(material.uniforms)) {
-      expect(declared.has(name), `${name} impostato ma non dichiarato nel GLSL`).toBe(true);
-    }
+    const check = (): void => {
+      const declared = new Set([
+        ...declaredUniforms(material.vertexShader),
+        ...declaredUniforms(material.fragmentShader),
+      ]);
+      for (const name of declared) {
+        expect(material.uniforms[name], `${name} dichiarato nel GLSL ma assente`).toBeDefined();
+      }
+      // E il contrario: un uniform impostato da `setAtmosphere` ma non piu' letto
+      // dal sorgente e' codice morto che continuerebbe a sembrare vivo.
+      for (const name of Object.keys(material.uniforms)) {
+        expect(declared.has(name), `${name} impostato ma non dichiarato nel GLSL`).toBe(true);
+      }
+    };
+
+    // Il contratto vale su **entrambe** le varianti: quella di partenza, senza
+    // il `discard` delle viste, e quella che la prima attivazione compone.
+    check();
+    handle.setInspect(inspectUniforms(inspectState({ mode: INSPECT_MODE.slice, sliceZ: 24 })));
+    check();
   });
 
   it('il sole diventa un versore e l’intensita’ entra nel colore', () => {
@@ -95,6 +117,55 @@ describe('createVoxelMaterial', () => {
       resolveTheme('neon').atmosphere.colorJitter,
       10,
     );
+  });
+
+  it('il retino entra nel sorgente solo alla prima vista attivata', () => {
+    const handle = createVoxelMaterial(resolveTheme('natural').colors, 1);
+    const { material } = handle;
+
+    // Chi non accende una vista non porta un `discard` nel programma: e' li'
+    // che si perde l'early-Z, e sarebbe un costo per tutti a beneficio di nessuno.
+    expect(material.fragmentShader).not.toContain('discard');
+    expect(material.side).toBe(FrontSide);
+
+    handle.setInspect(inspectUniforms(inspectState({ mode: INSPECT_MODE.off })));
+    expect(material.fragmentShader).not.toContain('discard');
+
+    handle.setInspect(inspectUniforms(inspectState({
+      mode: INSPECT_MODE.xray,
+      focus: { x: 8, y: 8, z: 4 },
+      view: [0, 0, -1],
+    })));
+    expect(material.fragmentShader).toContain('discard');
+    expect(material.fragmentShader).toContain('gl_FrontFacing');
+    // Un velo non ha bisogno delle back-face: il taglio si', ma questo non taglia.
+    expect(material.side).toBe(FrontSide);
+    expect(material.uniforms['uInspectVeil'].value).toBeCloseTo(INSPECT.veil, 10);
+
+    // Spegnere non ricompila: si torna al payload neutro, la variante resta.
+    const source = material.fragmentShader;
+    handle.setInspect(inspectUniforms(inspectState({ mode: INSPECT_MODE.off })));
+    expect(material.fragmentShader).toBe(source);
+    expect(material.uniforms['uInspectVeil'].value).toBe(0);
+  });
+
+  it('solo il taglio accende le back-face, e le rispegne uscendo', () => {
+    const handle = createVoxelMaterial(resolveTheme('natural').colors, 1);
+    const { material } = handle;
+
+    handle.setInspect(inspectUniforms(inspectState({ mode: INSPECT_MODE.slice, sliceZ: 30 })));
+    expect(material.side).toBe(DoubleSide);
+    const plane = material.uniforms['uInspectPlane'].value as Vector4;
+    expect([plane.x, plane.y, plane.z, plane.w]).toEqual([0, 0, 1, 30]);
+    expect(material.uniforms['uInspectVeil'].value).toBe(1);
+
+    handle.setInspect(inspectUniforms(inspectState({
+      mode: INSPECT_MODE.block,
+      block: { x0: 10, y0: 20, x1: 30, y1: 40 },
+    })));
+    expect(material.side).toBe(FrontSide);
+    const rect = material.uniforms['uInspectRect'].value as Vector4;
+    expect([rect.x, rect.y, rect.z, rect.w]).toEqual([10, 20, 31, 41]);
   });
 
   it('espone le sei normali di faccia e accetta vista e risoluzione', () => {

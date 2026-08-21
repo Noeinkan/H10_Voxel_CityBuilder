@@ -1,6 +1,6 @@
 import { CHUNK, CHUNK_SHIFT } from '../chunkCoords';
 import type { VoxelWorld } from '../VoxelWorld';
-import { classifyBiome, isBuildable, paletteForDepth } from './biomes';
+import { classifyBiome, isBuildable, STRATA_DEPTH, WATER_SURFACE_Z } from './biomes';
 import {
   columnIndex,
   columnLocalX,
@@ -10,7 +10,7 @@ import {
   type ColumnBlock,
 } from './columnBlock';
 import { treeAt, treeOrigin, treeSpec, treeTop, writeTree } from './decor';
-import { TERRAIN, TREE_DECOR, WATER_IDS } from './config';
+import { BIOME_STRATA, TERRAIN, TREE_DECOR, WATER_IDS } from './config';
 import { HeightField } from './heightField';
 import { chunkSpanOf, shapeFromRegion, type IslandShape, type Region } from './region';
 import { TerrainMap } from './TerrainMap';
@@ -292,25 +292,30 @@ export function writeBlockColumns(
   const end = Math.min(COLUMNS_PER_CHUNK, from + count);
   const baseX = block.ccx * CHUNK;
   const baseY = block.ccy * CHUNK;
-  const deepWater = TERRAIN.seaLevel - TERRAIN.waterSurfaceDepth;
   let written = 0;
 
   for (let i = from; i < end; i++) {
     const x = baseX + columnLocalX(i);
     const y = baseY + columnLocalY(i);
     const top = block.heights[i];
-    const biome = block.biomes[i];
+    const strata = BIOME_STRATA[block.biomes[i]];
 
-    for (let z = 0; z < top; z++) {
-      world.setBlock(x, y, z, paletteForDepth(biome, top - 1 - z));
-      written++;
-    }
+    // Una colonna e' tre corse di terreno piu' due d'acqua, non trenta voxel
+    // indipendenti: gli strati sono contigui per costruzione, quindi tagliarli
+    // ai due confini di `STRATA_DEPTH` scrive lo stesso mondo di
+    // `paletteForDepth` cella per cella, al prezzo di cinque scritture.
+    const surfaceZ = Math.max(0, top - STRATA_DEPTH.surface);
+    const subsoilZ = Math.max(0, top - STRATA_DEPTH.subsoil);
+    written += world.fillColumn(x, y, 0, subsoilZ, strata.deep);
+    written += world.fillColumn(x, y, subsoilZ, surfaceZ, strata.subsoil);
+    written += world.fillColumn(x, y, surfaceZ, top, strata.surface);
 
     // L'acqua chiude ogni colonna che finisce sotto il livello del mare: e' cio'
     // che circonda l'isola invece di lasciare una fossa vuota.
-    for (let z = top; z < TERRAIN.seaLevel; z++) {
-      world.setBlock(x, y, z, z >= deepWater ? WATER_IDS.surface : WATER_IDS.deep);
-      written++;
+    if (top < TERRAIN.seaLevel) {
+      const deepTop = Math.max(top, WATER_SURFACE_Z);
+      written += world.fillColumn(x, y, top, deepTop, WATER_IDS.deep);
+      written += world.fillColumn(x, y, deepTop, TERRAIN.seaLevel, WATER_IDS.surface);
     }
   }
 

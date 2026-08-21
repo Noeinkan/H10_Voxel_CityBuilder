@@ -2,7 +2,7 @@ export type HudIcon =
   | 'funds' | 'population' | 'food' | 'materials' | 'satisfaction'
   | 'residential' | 'production' | 'civic' | 'expansion' | 'policies'
   | 'market' | 'factory' | 'park' | 'port' | 'airport' | 'transport' | 'university' | 'monument'
-  | 'pause' | 'play' | 'theme' | 'help' | 'close';
+  | 'pause' | 'play' | 'theme' | 'view' | 'help' | 'close';
 
 const PATHS: Readonly<Record<HudIcon, string>> = {
   funds: '<circle cx="12" cy="12" r="8"/><path d="M9 10.2c0-1.1 1.2-2 3-2s3 .9 3 2-1.2 1.8-3 1.8-3 .9-3 2 1.2 2 3 2 3-.9 3-2M12 6v12"/>',
@@ -26,6 +26,10 @@ const PATHS: Readonly<Record<HudIcon, string>> = {
   pause: '<path d="M8 5v14M16 5v14"/>',
   play: '<path d="m8 5 11 7-11 7V5Z"/>',
   theme: '<path d="M12 3a9 9 0 1 0 0 18h1.5a2 2 0 0 0 0-4H12a2 2 0 1 1 0-4h3a6 6 0 0 0 6-6c0-2.2-4-4-9-4Z"/><path d="M7.5 9h.01M10 6.5h.01M14 6.5h.01M17 9h.01"/>',
+  // Tre piani sovrapposti visti di taglio: e' la sagoma che le viste hanno in
+  // comune — guardare la citta' un livello alla volta. La 7.2 ridisegnera' tutte
+  // le icone su due pesi, questa serve a essere riconoscibile intanto.
+  view: '<path d="m12 3 9 5-9 5-9-5 9-5Z"/><path d="m4 12.5 8 4.5 8-4.5M4 17l8 4.5 8-4.5"/>',
   help: '<circle cx="12" cy="12" r="9"/><path d="M9.5 9a2.7 2.7 0 1 1 4.2 2.3c-1 .6-1.7 1.1-1.7 2.2M12 17h.01"/>',
   close: '<path d="M6 6l12 12M18 6 6 18"/>',
 };

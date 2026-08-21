@@ -11,6 +11,221 @@ coincide con il messaggio di commit.
 
 ---
 
+## 2026-08-21 — Isolati terrazzati e cluster verticali (Fase 4.4)
+
+- **Un cluster è due numeri su un record, non un'entità.** Gli edifici adiacenti
+  dello stesso fronte condividono la quota — che era già `baseZ` — e l'altezza
+  del corso di base, che è `baseBand`; `cluster` dice solo con chi. Non esiste
+  nessuna struttura che sopravviva ai membri, quindi collisione, budget di chunk
+  e cancellazione restano quelli di un edificio solo, e `src/sim/` continua a
+  contare un edificio per record senza sapere che gli isolati esistono.
+- **Nuovo**: `src/world/buildings/cluster.ts` (+ test). Puro come `grading/` e
+  `sites/`: entrano un `GradePlan` e i termini dei vicini, esce una terna. Un
+  lotto entra in fila solo se non deve *scendere* per allinearsi — «si riempie,
+  non si scava» vale anche qui — e se il riempimento resta dentro
+  `CLUSTER.maxJoinFill`. Chi non entra apre una fila propria: il rifiuto è il
+  gradino, ed è così che su un fianco l'isolato terrazzato esce dalla regola
+  invece di essere disegnato.
+- **Il corso di base è un campo, non un ramo.** `generateBuilding` guadagna
+  `baseBandHeight`, che sostituisce l'altezza della sola fascia zero **dopo** il
+  tiro: la sequenza del PRNG resta quella, quindi entrare in una fila cambia la
+  quota di un edificio e non la sua sagoma. Sopra lo zoccolo condiviso
+  l'arretramento che `forcedOp` già produceva cade alla stessa altezza su tutta
+  la fila — cornice terrazzata continua senza una voce nuova nella grammatica,
+  senza toccare `supported` e senza toccare il mesher.
+- **La contiguità diventa deliberata.** L'impronta si accosta al vicino lungo il
+  fronte con la stessa logica con cui già si accostava alla carreggiata, entro il
+  riquadro dell'isolato: fra due case in fila un solco da un voxel legge come
+  crepa, non come separazione. A superare il tetto d'impronta è quindi la massa,
+  mentre ogni record resta sotto `MAX_FOOTPRINT`.
+- **Il basamento si guadagna, la quota no.** La fila condivide sempre il piano;
+  il corso di base compare solo sopra `CLUSTER.minDensity`. La soglia è misurata:
+  un catalizzatore solo porta la densità locale a 0,30 e non oltre, tre campi
+  sovrapposti a 0,37 di mediana — a 0,35 lo zoccolo è il linguaggio di un centro
+  vero e non di una casa sparsa.
+- `BuilderStats.clustered` conta gli edifici che stanno in fila, e l'overlay
+  tecnico lo mostra accanto a `rejected`: è il numero con cui si verifica il gate
+  senza guardare a occhio.
+- Misura su 256×256, quattro catalizzatori a raggio 60, 300 tick: `onTick` ha
+  mediana **0,022–0,025 ms** e p95 **3,0–3,5 ms**, con 372 edifici di cui **344
+  in fila**. La sola spesa aggiunta è la seconda generazione dello stamp dove la
+  fila ha un basamento — 27 µs per chiamata, ~0,08 ms su un tick di infornata — e
+  niente entra nel ciclo di frame. Le tabelle di misura in `README.md` e
+  `src/sim/README.md` restano da rimisurare a mano.
+
+## 2026-08-21 — Le viste diventano un gesto di gioco (Fase 4.13)
+
+- **Il vincolo rovesciato.** La 4.11 aveva costruito il motore delle quattro
+  viste e l'aveva chiuso dietro `?debug=1`, scrivendo nella roadmap che era «uno
+  strumento dell'harness, non una modalità di gioco». Era la scelta sbagliata:
+  guardare dentro la propria città non è una verifica tecnica, è il modo in cui
+  una città densa si gode. Il motore non è stato riscritto — nessuna uniform
+  nuova, nessun modo nuovo, nessuna ricompilazione in più.
+- **Il comando.** Pulsante *Views* nel dock, fra Policies e il tema: da lì in poi
+  i bottoni non cambiano la città, cambiano come la si guarda. Il picker elenca
+  le cinque viste con la riga che dice **cosa si va a vedere**; `V` le cicla
+  senza `?debug=1` e lo annuncia con un toast che si spegne da solo, perché è
+  l'unico percorso cieco. `[`/`]` e `PageDown`/`PageUp` muovono la quota, con
+  `Shift` per un piano intero.
+- **La barra dei livelli**, sul bordo sinistro, compare solo dove c'è una quota da
+  muovere. Sta fuori dal picker e non dentro: cercare il piano giusto è un gesto
+  continuo, e un pannello aperto coprirebbe quello che si sta cercando di
+  leggere.
+- **Il fuoco si aggancia.** Era il difetto che rendeva le viste inusabili da
+  giocatore: seguendo il cursore un frame alla volta, bastava portare il mouse
+  sul dock — o vedersi aprire una carta evento — per far saltare la vista a metà
+  città. Ora le viste seguono il cursore finché è sulla canvas e **tengono
+  l'ultima colonna** quando esce. Il ripiego sul centro dell'inquadratura resta,
+  ma solo quando non c'è ancora niente di agganciato: serve a `?inspect=` da URL.
+  Cambiare vista libera l'aggancio, o rientrando ci si ritroverebbe puntati
+  sull'isolato di dieci minuti prima.
+- **Prendere uno strumento chiude un taglio.** Con Levels o Cutaway attivi il
+  terreno vero sotto il cursore è nascosto e si piazzerebbe alla cieca. Le viste
+  a velo sopravvivono, perché lì il suolo si legge ancora sotto il retino. Il
+  motivo si legge **accanto** all'istruzione dello strumento e non al suo posto:
+  un toast normale avrebbe coperto "click the island to place it", che è proprio
+  ciò che serve dopo aver scelto un catalizzatore.
+- **La quota si ri-arma** tornando alla città intera: una fetta riaperta riparte
+  dal suolo che si sta guardando invece che da una quota scelta mezz'ora prima,
+  che nel frattempo può essere finita sottoterra. Solo `?slice=` resta fisso.
+- Nomi tecnici e etichette restano due cose distinte: `off`/`xray`/`slice`/
+  `section`/`block` sono identificatori — parametro URL e referto tecnico — e
+  *Normal*, *X-ray*, *Levels*, *Cutaway*, *Block focus* sono ciò che si legge in
+  un dock. Le etichette vivono in `src/ui/ViewMenuModel.ts`, puro e testato in
+  `node` come `GameHudModel.ts`.
+- `modeCuts(mode)` in `inspect.ts` affianca `isCut(uniforms)`: stessa domanda un
+  passo prima, per chi deve decidere senza uno stato completo. Un test le tiene
+  d'accordo su tutti e cinque i modi — divergerebbero in silenzio, e la barra dei
+  livelli comparirebbe dove non c'è quota da muovere.
+- `InspectOverlay` resta intero come **referto tecnico** (colonna a fuoco, id
+  dell'isolato, densità del retino, nota sulle ombre). Le due superfici chiamano
+  le stesse `setInspectMode` / `setInspectSliceZ`.
+- Verificato a schermo alla radice, senza `?debug=1`, su una città di ~2.000
+  residenti: le cinque viste rispondono a `V` e dal picker, `Esc` chiude il
+  picker **senza** spegnere la vista, la barra si trascina e risponde ai tasti,
+  l'aggancio tiene la colonna `315,233` quando il puntatore esce e riprende a
+  seguire quando rientra. Worker del mesher fermo a 8,64 kB.
+
+## 2026-08-21 — L'isola compare in un secondo
+
+- **Il difetto da cui è partita.** Avviando il gioco si restava mezzo minuto
+  davanti a un cielo vuoto con "Preparing the city…" e una lingua di terreno. Il
+  lavoro vero, misurato, era di **tre decimi di secondo**: il resto era attesa.
+  Due cause distinte, entrambe corrette.
+- **Il mondo si scrive a corse, non a celle.** Un'isola 512×512 sono 5,4 milioni
+  di voxel, e ognuno passava da `setBlock` pagandosi conversione di coordinate,
+  confronto sulla cache del chunk, pack del byte e sei controlli di bordo con la
+  relativa chiave di stringa — per una colonna di terreno, che è per definizione
+  un tratto contiguo dello stesso colore. Nuova `VoxelWorld.fillColumn`: dentro
+  il chunk resta un indice che avanza di un piano alla volta, e tutto il resto si
+  paga una volta per corsa. Una colonna è **cinque scritture** invece di trenta:
+  tre strati di terreno più due d'acqua. Misurato sulla stessa isola nello stesso
+  processo, **947 ms → 354 ms**.
+- Il taglio degli strati esce da `STRATA_DEPTH`, derivato dagli stessi numeri di
+  `TERRAIN` che legge `paletteForDepth`: è la stessa regola letta a tratti invece
+  che per voxel, e un test la confronta voxel per voxel sull'isola vera.
+- **Il budget di 1,5 ms protegge un frame di gioco, e durante il caricamento non
+  c'è gioco da proteggere.** Misurato a quel ritmo, un lavoro da tre decimi di
+  secondo costa centinaia di frame — e ogni frame in più è anche una
+  rimeshatura in più, perché un chunk scritto a metà viene ricostruito a ogni
+  frame che lo lascia incompleto. `main.ts` usa `LOADING_FRAME_BUDGET_MS` (12) e
+  `LOADING_GENERATION_BUDGET_MS` (9) finché la prima scena non è a terra: sotto
+  il frame a 60 Hz, così l'isola compare scorrendo invece di apparire dopo uno
+  schermo bloccato. La finestra si chiude su `generator.done` e non si riapre —
+  le espansioni avvengono dentro una città viva e tornano ai 3 ms.
+- Misurato in Chromium sulla stessa macchina, dal `load` a `generationDone`:
+  **13,7 s → 5,9 s** con rendering software. Su GPU vera il frame costa una
+  frazione di quello, e il caricamento è dominato da `workerMs`.
+- Tocca `world/VoxelWorld.ts`, `world/chunkCoords.ts` (`CHUNK_AREA`),
+  `world/terrain/biomes.ts`, `world/terrain/IslandGenerator.ts` e `main.ts`.
+
+## 2026-08-21 — I catalizzatori diventano strutture (Fase 4.12)
+
+- **Il difetto da cui è partita.** Il porto non esisteva: quello che si vedeva
+  sull'acqua era la **carreggiata dell'isolato costiero**. `groundKindOf`
+  classifica `shore` ogni colonna d'acqua entro `maxQuayDepth`, quindi
+  `rampAround` portava l'intero anello di strada a `quayLevel` e ne costruiva il
+  muro fino al fondale — una piattaforma rettangolare cava in mezzo al mare, che
+  nessuno aveva progettato. Tutti e otto i ruoli, intanto, condividevano lo
+  stesso rombo di asfalto di raggio quattro e si distinguevano per il colore di
+  un voxel.
+- **Nuovo**: `GRADING.quayReach` e `isDryLand` in `world/grading/`. Una banchina
+  è il bordo costruito della terra: `maxQuayDepth` dice fin dove il fondale
+  *regge*, questo dice fin dove ha *senso*. Il Builder lo applica sia all'anello
+  di carreggiata sia ai lotti, così non nascono più né strade né edifici su un
+  pad isolato al largo. Un test lo verifica sull'isola vera, colonna per colonna.
+- **Nuovo dominio**: `src/world/landmarks/` — `parts.ts` (sette primitive:
+  `slab`, `shell`, `mast`, `boom`, `colonnade`, `steps`, `deck`), `config.ts`
+  (ogni numero e le otto ricette) e `generate.ts` (composizione, rotazione,
+  stadio). Le parti sono **dati**, quindi un test ne misura l'ingombro senza
+  disegnarle e una ricetta si ruota trasformando numeri.
+- **Un landmark è un edificio con un altro generatore.** Entra nel registry come
+  `BuildingRecord` con `landmark` valorizzato, e da lì eredita occupazione,
+  collisione, budget di chunk, comparsa a budget e avanzamento: l'unico ramo
+  nuovo nel Builder è quale generatore disegna lo stamp. Nessuna passata in più,
+  nessun secondo indice, nessuno stato nuovo.
+- **Lo stadio è ciò che la città ha costruito intorno**, non la desiderabilità:
+  il numero di record entro il raggio del catalizzatore. Un catalizzatore siede
+  al centro della propria influenza e il campo lì è quasi sempre saturo — un
+  landmark che lo leggesse salterebbe tutti gli stadi al primo tick. È il modello
+  dei monumenti di Anno 1800, una costruzione a fasi che corona una città *già
+  edificata*, detto con il solo dato che il Builder possiede.
+- Gli stadi sono **cumulativi dentro un ingombro riservato per intero al
+  piazzamento**. Ne seguono due garanzie: un landmark non può restare bloccato a
+  metà da un edificio spuntato accanto, e la sagoma dello stadio precedente non
+  ha mai niente da cancellare — un test lo verifica come invariante.
+- **Ritorno alla simulazione, lieve**: ogni stadio aggiunge
+  `BALANCE.gameplay.catalyst.stageBonus` (8) all'intensità del catalizzatore, via
+  `setCatalystStrength`, che esisteva già. Su un campo che satura a 255 e basi
+  fra 185 e 215 è un margine, non una seconda leva. `src/sim/` continua a non
+  sapere che i landmark esistono (invariante 7).
+- `BuildingRecord` guadagna `footprintY` opzionale: molo, pista e viadotto sono
+  lineari per natura, e schiacciarli in un quadrato li farebbe leggere come
+  monconi. Gli edifici restano quadrati per contratto.
+- **Due difetti trovati dai test, entrambi reali.** I pilastri di `colonnade`
+  contavano il passo da un capo solo, quindi una ricetta non era invariante per
+  rotazione dove due parti si sovrappongono. E le prime ricette erano larghe
+  sedici voxel — quasi un isolato: seppellivano la sovrapposizione fra due
+  catalizzatori, cioè esattamente il punto dove nascono gli usi misti, e a dirlo
+  è stato un test di fase 3 già esistente. Ora dodici, una volta e mezza
+  l'impronta massima di un edificio.
+- 507 test verdi, `npm run build` pulito, i due worker invariati. **Le tabelle di
+  misura in `README.md` e `src/sim/README.md` vanno rimisurate a mano**:
+  `stageBonus` entra in `balance.ts`.
+
+## 2026-08-21 — Vedere dentro la città (Fase 4.11)
+
+- **Nuovo**: `src/engine/inspect.ts` (+ test) e `src/ui/InspectOverlay.ts`.
+  Quattro viste di ispezione dell'harness — `xray`, `slice`, `section`, `block` —
+  su `V`, sul parametro `?inspect=` e sul pannello. La decisione (quale modo, a
+  che quota, su quale isolato) è una funzione pura verificata in `node`, come
+  `lighting.ts`; nel materiale entrano solo i numeri che ne escono.
+- Il materiale unico guadagna **due predicati geometrici e una densità**:
+  `uInspectPlane`, `uInspectRect`, `uInspectInside`, `uInspectVeil`. Nascosto =
+  oltre il semipiano **e** dal lato giusto del rettangolo; l'azione è un retino
+  ordinato 4×4 su `gl_FragCoord` con `discard`. Velare e tagliare sono la stessa
+  manopola: a densità 1 il retino scarta ogni pixel. `transparent` resta `false`,
+  nessun ordinamento, nessuna geometria e nessuno slot di palette in più.
+- Il `discard` entra nel sorgente **solo alla prima vista attivata**: una
+  ricompilazione per sessione, e chi non usa le viste non paga l'early-Z perso.
+  Un taglio porta `side` a `DoubleSide` e si tappa dalle back-face con
+  `gl_FrontFacing`, che è anche l'unica ragione per cui non si vede il cielo
+  attraverso un volume tagliato — l'interno resta un guscio vuoto, perché il
+  mesher non emette facce interne.
+- Finché un taglio è attivo le **ombre proiettate si spengono**: la shadow map non
+  sa del taglio, e il piano appena scoperto resterebbe all'ombra di quelli che si
+  sono nascosti. Sole e ambiente restano, quindi le facce continuano a leggersi.
+- **Nuovo**: `nearestLine` in `world/streets/streetGrid.ts` e su `StreetNetwork`.
+  È ciò che fa cadere la sezione su una carreggiata invece che su un piano
+  arbitrario, e mostra il fronte degli isolati invece di affettare i volumi.
+- La colonna a fuoco si risolve **una volta per frame** e non a ogni
+  `pointermove`; senza puntatore ripiega sul centro dell'inquadratura, così una
+  vista aperta da URL vale qualcosa anche prima che il mouse entri nella canvas.
+- Misurato su una città di ~490 edifici: geometria, chunk con mesh e voxel solidi
+  **identici** con ogni vista attiva e dopo un cambio di tema; il worker del
+  mesher resta 8,64 kB. Le tabelle di misura in `README.md` e `src/sim/README.md`
+  non sono toccate: questa fase non entra né nel mesher né nella simulazione.
+
 ## 2026-08-21 — Grammatica verticale degli edifici (Fase 4.3)
 
 - Le trasformazioni della regola di fascia diventano una tabella, `BAND_OP`, e il

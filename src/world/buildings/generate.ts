@@ -92,6 +92,17 @@ export interface BuildingRequest {
    */
   readonly mixed?: BuildingClass;
   /**
+   * Altezza in voxel del corso di base condiviso con gli edifici in fila.
+   *
+   * E' l'unica cosa che l'aggregazione impone alla grammatica, e la impone alla
+   * **sola fascia zero**: sopra, ogni membro resta se stesso. La fascia zero e'
+   * gia' il riquadro pieno, quindi non serve forzarne la forma — basta la quota,
+   * ed e' quella a far cadere l'arretramento di `forcedOp` alla stessa altezza su
+   * tutta la fila. Assente quando l'edificio non e' in fila; il valore, quando
+   * c'e', e' positivo.
+   */
+  readonly baseBandHeight?: number;
+  /**
    * Faccia che guarda la strada, negli indici di `accentFace`.
    *
    * Senza, la faccia d'accento e il portale a piano terra escono dal PRNG e
@@ -184,7 +195,14 @@ export function generateBuilding(request: BuildingRequest): VoxelStamp {
     // Le fasce del basamento pescano l'altezza come tutte le altre. Prima erano
     // bloccate al minimo, e un basamento "abitato" senza piani di altezza propria
     // resta un blocco: sono l'altezza e il marcapiano a farne un piano.
-    heights.push(pickInt(random, profile.bandHeight[0], profile.bandHeight[1]));
+    const rolled = pickInt(random, profile.bandHeight[0], profile.bandHeight[1]);
+    // Il corso di base di una fila **sostituisce** il tiro della fascia zero, ma
+    // non lo salta: la sequenza del PRNG resta quella di prima, quindi entrare in
+    // un cluster cambia la quota dell'edificio e non la sua sagoma. E' la stessa
+    // regola del verso d'accento, che si consuma anche quando arriva dalla rete.
+    heights.push(i === 0 && request.baseBandHeight !== undefined
+      ? request.baseBandHeight
+      : rolled);
   }
 
   // Coronamento: chiude la silhouette invece di lasciarla tagliata di netto, che

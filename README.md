@@ -39,6 +39,7 @@ aggiungendo chunk alla mappa sparsa.
 | [src/engine/mesher/buildPaddedVolume.ts](src/engine/mesher/buildPaddedVolume.ts) | Chunk + tutti i 26 vicini immediati → volume 34³ |
 | [src/engine/ChunkRenderer.ts](src/engine/ChunkRenderer.ts) | Una geometria per chunk, coda a priorità, culling, upload a budget |
 | [src/engine/VoxelMaterial.ts](src/engine/VoxelMaterial.ts) | Unico `ShaderMaterial`, pannelli sci-fi world-space, emissione, AO e nebbia |
+| [src/engine/inspect.ts](src/engine/inspect.ts) | Viste di ispezione in TS puro: velo a retino, fetta a quota, sezione, isolato |
 | [src/engine/themes/](src/engine/themes/) | I temi grafici: 32 colori più l'atmosfera, applicati senza rimeshare |
 | [src/engine/IsoCameraController.ts](src/engine/IsoCameraController.ts) | Ortografica isometrica: scatti di 90°, zoom, pan vincolato |
 | [src/engine/InfluenceOverlay.ts](src/engine/InfluenceOverlay.ts) | Raggi dei catalizzatori e perimetri dei settori sbloccati |
@@ -47,6 +48,8 @@ aggiungendo chunk alla mappa sparsa.
 | [src/ui/ControlsHint.ts](src/ui/ControlsHint.ts) | Aiuto contestuale del primo avvio, riapribile con `?` |
 | [src/ui/DebugOverlay.ts](src/ui/DebugOverlay.ts) | Overlay delle misure, attivo con `F3` o `?debug=1` |
 | [src/ui/GrowthOverlay.ts](src/ui/GrowthOverlay.ts) | Overlay dedicato a `?debug=1&grow=1` |
+| [src/ui/InspectOverlay.ts](src/ui/InspectOverlay.ts) | Referto tecnico delle viste: colonna a fuoco, isolato, densità del retino |
+| [src/ui/ViewMenuModel.ts](src/ui/ViewMenuModel.ts) | Il menu delle viste come lo vede il giocatore: etichette, barra dei livelli, regola dello strumento |
 | [src/world/terrain/](src/world/terrain/) | Generatore di isole procedurali (vedi sotto) |
 | [src/sim/](src/sim/) | Simulazione a tick: risorse, campo di desiderabilità, decisioni (vedi sotto) |
 
@@ -81,13 +84,48 @@ permettono di isolare le scene di verifica.
 | `sim` | — | `1` accende la scena di simulazione (implica l'isola) |
 | `theme` | `natural` | `natural`, `pastel`, `neon`, `industrial`, `scifi`, `enchanted`, `diorama` |
 | `grow` | `1` alla radice | `1` avvia esplicitamente l'MVP giocabile |
+| `inspect` | — | `xray`, `slice`, `section`, `block`: apre una vista, anche senza `debug` |
+| `slice` | — | Quota della fetta; senza, segue il suolo che si sta guardando |
 
 Tasti: `Q`/`E` ruota di 90° attorno al punto di terra sotto al mouse, rotella
-zoom, drag destro o `WASD` pan, `F` inquadra tutto, `Esc` annulla lo strumento e
-`F3` alterna il pannello tecnico. Con il debug visibile, `G` aggiunge 64 chunk,
-`R` fa il rebuild, `C` azzera i picchi, `B` colora le colonne per bioma (solo in
-scena terreno). In scena simulazione: `T` un tick, `P` avvia o ferma il passo
-automatico, `M` cicla l'uso mostrato.
+zoom, drag destro o `WASD` pan, `F` inquadra tutto, `V` cicla le viste,
+`[`/`]` (o `PageDown`/`PageUp`) muovono la quota della fetta — `Shift` per un
+piano intero — `Esc` annulla lo strumento e `F3` alterna il pannello tecnico.
+Con il debug visibile, `G` aggiunge 64 chunk, `R` fa il rebuild, `C` azzera i
+picchi, `B` colora le colonne per bioma (solo in scena terreno). In scena
+simulazione: `T` un tick, `P` avvia o ferma il passo automatico, `M` cicla l'uso
+mostrato.
+
+## Guardare dentro la città
+
+Una città matura è opaca: da inquadratura di gioco un isolato interno è un volume
+dietro altri volumi. Quattro viste la aprono, e sono **comandi di gioco**, non
+strumenti dell'harness: stanno nel dock sotto il pulsante *Views*, rispondono a
+`V` senza `?debug=1`, e la barra dei livelli compare sul bordo sinistro quando la
+vista taglia. Sono tutte lo stesso meccanismo — due predicati geometrici e un
+retino ordinato su `gl_FragCoord` con `discard`, governati da tre uniform del
+materiale unico. Nessuna geometria nuova, nessun rimesh, nessuno slot di palette
+in più.
+
+| Vista | `?inspect=` | Cosa apre |
+| --- | --- | --- |
+| **X-ray** | `xray` | Vela ciò che sta fra la camera e la colonna a fuoco, dentro una finestra di `INSPECT.xraySpan` colonne attorno a lei: si legge la sagoma davanti *e* il tessuto dietro. Essendo una finestra di **mondo**, si legge da vicino |
+| **Levels** | `slice` | Taglia sopra una quota — la città al piano *n*, come in Going Medieval e Timberborn |
+| **Cutaway** | `section` | Taglia lungo un asse della griglia stradale, dal lato della camera: il piano cade su una carreggiata e mostra il fronte degli isolati |
+| **Block focus** | `block` | Vela tutto fuori dall'isolato sotto il cursore, che resta così nel suo contesto invece di finire su fondo neutro |
+
+Il fuoco **si aggancia**: le viste seguono la colonna sotto il cursore finché il
+cursore è sulla canvas, e quando esce — per raggiungere il dock, o perché si è
+aperta una carta evento — tengono l'ultima invece di saltare. Prendere in mano
+uno strumento chiude una vista che taglia, perché sotto un taglio si
+piazzerebbe alla cieca; le viste a velo sopravvivono, dato che lì il suolo si
+legge ancora.
+
+Velare e tagliare sono la stessa manopola: a densità 1 il retino scarta ogni
+pixel. Un taglio ha bisogno delle back-face per tapparsi — `DoubleSide` e
+`gl_FrontFacing` — e mostra un guscio vuoto, perché il mesher non emette facce
+interne. Finché un taglio è attivo le ombre proiettate si spengono: il piano
+appena scoperto resterebbe altrimenti all'ombra dei piani che si sono nascosti.
 
 Alla radice, oppure con `?grow=1`, il Cozy HUD mostra risorse e variazioni in alto,
 azioni di costruzione in basso e policy in un drawer laterale. Il dock è diviso
@@ -206,8 +244,9 @@ npm start
 ```
 
 Con `?debug=1` sono esposti anche `__voxelStats()`, `__voxelReset()`,
-`__voxelExpand()`, `__voxelRebuildAll()` e `__voxelTheme(id?)` sull'oggetto
-globale, per misurare dalla console o da uno strumento headless.
+`__voxelExpand()`, `__voxelRebuildAll()`, `__voxelTheme(id?)` e
+`__voxelInspect(mode?, z?)` sull'oggetto globale, per misurare dalla console o da
+uno strumento headless.
 
 ## Terreno procedurale
 
@@ -301,7 +340,10 @@ margine di Lipschitz.
 
 > ⚠️ **Da rimisurare**, per le stesse ragioni della tabella principale: questi
 > numeri sono di un'isola 256×256 a grana fine, che non è più la scena che il
-> progetto genera.
+> progetto genera. La riga del picco durante lo streaming ha anche cambiato
+> criterio: finché la prima scena non è a terra il budget è
+> `LOADING_FRAME_BUDGET_MS` e non i 4 ms di regime — vedi
+> [AGENTS.md](AGENTS.md), *Budget e pattern da evitare*.
 
 Isola 256×256, `?debug=1&terrain=1337`, stessa macchina e stesso renderer
 software delle misure sopra.

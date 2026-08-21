@@ -131,6 +131,30 @@ export function isPavement(seed: number, x: number, y: number): boolean {
 }
 
 /**
+ * Centro della carreggiata piu' vicina a `v` su un asse.
+ *
+ * Serve a chi deve **posare qualcosa sulla rete** senza partire da una colonna
+ * che ci sta gia' sopra — la sezione verticale dell'harness taglia qui, cosi' il
+ * piano cade su una strada e mostra il fronte degli isolati invece di affettare
+ * i volumi a caso. Stessa finestra a tre candidati di `lineAt`: con lo
+ * scostamento sotto meta' passo, la piu' vicina non puo' stare piu' in la'.
+ */
+export function nearestLine(seed: number, axis: number, v: number): number {
+  const base = Math.floor(v / STREETS.pitch);
+  let best = v;
+  let bestDistance = Infinity;
+  for (let k = base - 1; k <= base + 1; k++) {
+    const centre = lineStart(seed, axis, k) + lineWidth(k) * 0.5;
+    const distance = Math.abs(centre - v);
+    if (distance < bestDistance) {
+      bestDistance = distance;
+      best = centre;
+    }
+  }
+  return best;
+}
+
+/**
  * Ruolo di una colonna.
  *
  * Un incrocio fra un asse principale e uno secondario e' principale: la

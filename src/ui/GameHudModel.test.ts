@@ -66,11 +66,12 @@ describe('buildGameHudModel', () => {
   });
 
   it('assegna a Escape la superficie aperta con priorità corretta', () => {
-    expect(resolveEscapeTarget(true, true, true, { kind: 'expansion' })).toBe('themes');
-    expect(resolveEscapeTarget(false, true, true, { kind: 'expansion' })).toBe('policies');
-    expect(resolveEscapeTarget(false, false, true, { kind: 'expansion' })).toBe('help');
-    expect(resolveEscapeTarget(false, false, false, { kind: 'expansion' })).toBe('tool');
-    expect(resolveEscapeTarget(false, false, false, { kind: 'none' })).toBe('none');
+    expect(resolveEscapeTarget(true, true, true, true, { kind: 'expansion' })).toBe('views');
+    expect(resolveEscapeTarget(false, true, true, true, { kind: 'expansion' })).toBe('themes');
+    expect(resolveEscapeTarget(false, false, true, true, { kind: 'expansion' })).toBe('policies');
+    expect(resolveEscapeTarget(false, false, false, true, { kind: 'expansion' })).toBe('help');
+    expect(resolveEscapeTarget(false, false, false, false, { kind: 'expansion' })).toBe('tool');
+    expect(resolveEscapeTarget(false, false, false, false, { kind: 'none' })).toBe('none');
   });
 
   it('produce un’istruzione contestuale solo per uno strumento selezionato', () => {
@@ -152,6 +153,7 @@ function stats(
       rejected: [0, 0, 0, 0],
       blacklisted: 0,
       surfaceQueued: 0,
+      clustered: 0,
     },
     state,
     paused: false,
