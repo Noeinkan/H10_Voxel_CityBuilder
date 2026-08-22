@@ -13,7 +13,11 @@ radice `/` avvia isola, crescita e Cozy HUD con gli overlay tecnici nascosti.
 | Parametro | Default | Effetto |
 | --- | --- | --- |
 | `debug` | — | `1` apre overlay e hotkey tecniche |
-| `scene` | — | Isola una scena `city`, `noise` (caso peggiore) o `slab` |
+| `scene` | — | Isola una scena `city`, `noise` (caso peggiore), `slab` o `diorama` |
+| `class` | `commercial` | Uso del soggetto del diorama: `residential`, `commercial`, `industrial`, `civic` |
+| `level` | `6` | Livello del soggetto del diorama, 0…`BUILDER.maxLevel` |
+| `typology` | — | `<id>` forza la tipologia del soggetto (`officeTower`, `civicLantern`, …) |
+| `mixed` | — | Secondo uso ospitato dal soggetto, per giudicare il podio misto |
 | `seed` | `1337` | Seed della generazione |
 | `size` | `512` | Lato del mondo in voxel (32…4096) |
 | `height` | `64` | Altezza del mondo in voxel (32…256) |
@@ -22,15 +26,59 @@ radice `/` avvia isola, crescita e Cozy HUD con gli overlay tecnici nascosti.
 | `grow` | — | `1` accende la crescita automatica degli edifici |
 | `quality` | — | `performance` toglie le pass aggiuntive e dimezza le draw call |
 | `theme` | — | `<id>` sceglie il tema; vale **anche senza** `debug`, è un look, non una misura |
+| `hour` | — | `<0..24>` fissa l'ora e **ferma** il ciclo giorno/notte; vale anche senza `debug` |
 | `inspect` | — | `xray`, `slice`, `section`, `block`: apre una vista di ispezione. Vale **anche senza** `debug` — è così che uno strumento di cattura inquadra una sezione senza overlay |
 | `slice` | — | `<z>` fissa la quota della fetta; senza, segue il suolo che si sta guardando |
+
+## Ciclo giorno/notte
+
+L'ora avanza da sola: un giorno di gioco dura **dodici minuti reali**, e parte
+dalle 13, l'ora con cui i temi sono stati disegnati. `H` la sposta di un'ora
+avanti, `Shift+H` indietro; `?hour=21.5` la fissa e ferma il ciclo.
+
+Il tema resta la firma e l'ora la modula: `neon` a mezzogiorno resta `neon`.
+Quello che l'ora cambia sono luce, cielo, nebbia, ombra ed emissivi — mai
+palette, materia o tone mapping, quindi **non ricompila niente e non tocca una
+geometria**. Il modello è puro e vive in `src/engine/daylight.ts`.
+
+Due cose da sapere:
+
+- a sole radente **una parete illuminata supera il tetto**, che è il caso da cui
+  `SunLight.elevation` mette in guardia. Non è un difetto: è un'ora del giorno.
+  Quello che il ciclo garantisce è che il tetto non sia mai la faccia più scura;
+- `__voxelSun(azimuth, elevation)` continua a esistere ed è un'altra cosa: scrive
+  una posizione e basta, per autorare un tema. L'orologio la sovrascrive al
+  prossimo scatto.
+
+## La scena `diorama`
+
+`?scene=diorama` compone **un edificio solo** su un basamento con la strada dal
+lato del fronte, inquadrato da vicino e con il perno di rotazione a metà della
+sua altezza: `Q`/`E` lo girano senza farlo uscire di campo. Serve a giudicare il
+dettaglio senza aspettare che la città cresca.
+
+Due cose da sapere prima di stupirsi:
+
+- `?scene=diorama` e `?theme=diorama` sono **cose diverse**: il primo è il
+  soggetto, il secondo è il look (modellino caldo con ombre fredde). Si possono
+  usare insieme;
+- senza città intorno non c'è profilo locale, quindi `selectTypology` può solo
+  ripiegare sulla riga senza condizioni dell'uso — `retailRow` per il
+  commerciale, `terracedHousing` per il residenziale. Le forme che un distretto
+  concede si vedono **solo** passando `?typology=<id>`.
+
+```
+/?scene=diorama&debug=1                      # commerciale livello 6
+/?scene=diorama&typology=officeTower&level=9
+/?scene=diorama&class=civic&typology=civicLantern
+```
 
 ## Tasti
 
 `Q`/`E` ruotano attorno al punto di terra sotto al mouse (sul centro
 dell'inquadratura se il cursore è fuori dalla canvas), rotella zoom, drag destro
 o `WASD` pan, `F` inquadra tutto, `G` +64 chunk, `R` rebuild totale, `C` azzera
-i picchi, `B` colore per bioma, `1`..`9` sceglie il tema, `T`/`P`/`M` in scena
+i picchi, `B` colore per bioma, `H`/`Shift+H` sposta l'ora, `1`..`9` sceglie il tema, `T`/`P`/`M` in scena
 simulazione. `__simClass(i)` e il tasto `M` ciclano su quattro usi, non tre.
 
 **Fuori dal gate del debug**, perché sono comandi di gioco e non misure: `V`
@@ -67,7 +115,7 @@ pixel. Tre cose da sapere prima di stupirsi:
 Solo con `?debug=1`:
 
 - sempre: `__voxelStats()`, `__voxelReset()`, `__voxelExpand()`,
-  `__voxelRebuildAll()`, `__voxelTheme(id?)`, `__voxelSun(azimuth?, elevation?)`,
+  `__voxelRebuildAll()`, `__voxelTheme(id?)`, `__voxelSun(azimuth?, elevation?)`, `__voxelHour(h?)`,
   `__voxelInspect(mode?, z?)`
 - con terreno: `__terrainStats()`, `__terrainBiomeView()`, `__terrainExpand()`
 - con `sim=1`: `__simStats()`, `__simTick(n)`, `__simSites(n)`, `__simClass(i)`,

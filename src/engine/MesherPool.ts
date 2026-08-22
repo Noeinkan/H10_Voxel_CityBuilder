@@ -88,14 +88,19 @@ export class MesherPool {
    * piu' usarli. Restituisce il jobId, che cresce in modo monotono e permette di
    * scartare i risultati superati.
    */
-  submit(key: string, padded: Uint8Array, ceiling: Uint8Array): number {
+  submit(
+    key: string,
+    padded: Uint8Array,
+    ceiling: Uint8Array,
+    origin: readonly [number, number, number],
+  ): number {
     const worker = this.idle.pop();
     if (worker === undefined) {
       throw new Error('MesherPool.submit: no worker available, check idleCount');
     }
 
     const jobId = this.nextJobId++;
-    const job: MeshJob = { jobId, key, padded, ceiling };
+    const job: MeshJob = { jobId, key, padded, ceiling, origin };
     this.inFlightCount++;
     worker.postMessage(job, [padded.buffer, ceiling.buffer]);
     return jobId;

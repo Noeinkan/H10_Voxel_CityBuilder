@@ -32,6 +32,7 @@ import {
   type InspectUniforms,
 } from './engine/inspect';
 import { IsoCameraController } from './engine/IsoCameraController';
+import { dayPhase, nightFactor, normaliseHour, withHour } from './engine/daylight';
 import { faceLuminance, sunDirection } from './engine/lighting';
 import { onPaletteChanged } from './engine/palette';
 import {
@@ -51,8 +52,16 @@ import { FixedStepLoop } from './game/loop';
 import { coastalSectorAt, shapeWithSector, type CoastalSector } from './game/sectors';
 import type { ActionFailure, SiteCost } from './game/actions';
 import { BALANCE } from './sim/balance';
+import { cityVitality } from './sim/vitality';
 import { catalystById, defaultCatalystOfClass } from './sim/catalysts';
-import { CLASS_COUNT, CLASS_LABELS, CLASS_NAMES, type BuildingClass } from './sim/classes';
+import {
+  BUILDING_CLASS,
+  CLASS_COUNT,
+  CLASS_LABELS,
+  CLASS_NAMES,
+  type BuildingClass,
+} from './sim/classes';
+import { BUILDER } from './world/buildings/config';
 import { typologiesForUses } from './world/buildings/typology';
 import { writeDesirabilityData } from './sim/debugData';
 import { nextBuildSites, type BuildSite } from './sim/nextBuildSites';
@@ -71,6 +80,12 @@ import { buildViewMenuModel, viewAfterToolPicked, viewLabel } from './ui/ViewMen
 import { CHUNK } from './world/chunkCoords';
 import { GROUND, type GroundKind } from './world/grading/grade';
 import { createScene, type SceneGenerator, type SceneKind } from './world/scenes/cityScene';
+import {
+  createDioramaScene,
+  DIORAMA_DEFAULT_LEVEL,
+  parseBuildingUse,
+  type DioramaScene,
+} from './world/scenes/dioramaScene';
 import { StreetNetwork } from './world/streets/StreetNetwork';
 import type { BlockRect } from './world/streets/streetGrid';
 import { BiomeView } from './world/terrain/BiomeView';
@@ -187,8 +202,71 @@ container.appendChild(renderer.domElement);
 const scene = new Scene();
 const world = new VoxelWorld();
 
+/**
+ * Soggetto del diorama, composto **prima** della camera.
+ *
+ * Comporlo qui non e' un vezzo di ordine: `targetHeight` e' letto una volta sola
+ * dal costruttore della camera, e il perno di un edificio inquadrato da vicino
+ * sta a meta' della sua altezza, non sul pianoro dell'isola. Costruirlo costa
+ * uno stamp e nessun voxel: la scrittura resta dentro `step`, a budget.
+ */
+const diorama: DioramaScene | null = sceneKind === 'diorama' && terrainParam === null &&
+  !simEnabled && !growEnabled
+  ? createDioramaScene(world, {
+      seed,
+      originX: 0,
+      originY: 0,
+      use: parseBuildingUse(params.get('class')) ?? BUILDING_CLASS.commercial,
+      level: clampInt(params.get('level'), DIORAMA_DEFAULT_LEVEL, 0, BUILDER.maxLevel),
+      typologyId: params.get('typology') ?? undefined,
+      mixed: parseBuildingUse(params.get('mixed')) ?? undefined,
+    })
+  : null;
+
 /** `?theme=<id>` sceglie il look; in assenza vale il diorama caldo. */
 let theme: Theme = resolveTheme(params.get('theme'));
+
+/**
+ * Secondi reali di un giorno di gioco.
+ *
+ * Dodici minuti: abbastanza lenti perche' un'ora di gioco duri mezzo minuto e
+ * la luce non strobi, abbastanza veloci perche' chi guarda la citta' per una
+ * partita veda sia il mezzogiorno sia la notte senza chiederlo.
+ */
+const DAY_SECONDS = 720;
+
+/**
+ * Passo minimo, in ore, fra due riscritture dell'atmosfera.
+ *
+ * Un centesimo d'ora e' mezzo minuto di gioco: sotto, il sole si sposta di
+ * meno di un decimo di grado e non c'e' immagine da guadagnare.
+ */
+const HOUR_STEP = 0.01;
+
+/**
+ * `?hour=<0..24>` fissa l'ora e **ferma** il ciclo: vale anche senza `debug`,
+ * come `?theme=` e `?inspect=`, perche' e' un'inquadratura e non una misura.
+ */
+const hourPinned = params.get('hour') !== null;
+let hour = hourPinned
+  ? normaliseHour(Number(params.get('hour')))
+  // Senza, si parte a meta' pomeriggio: e' l'ora in cui il sole sta ancora
+  // sopra la soglia in cui il tetto e' la faccia piu' chiara, quindi la prima
+  // immagine e' quella con cui i temi sono stati disegnati.
+  : 13;
+
+/** Ora con cui l'atmosfera in vigore e' stata scritta. */
+let appliedHour = hour;
+
+/** Stesso ritmo dell'HUD: l'occupazione cambia un tick alla volta, non un frame. */
+const VITALITY_REFRESH_MS = 150;
+let vitalityAt = 0;
+
+/** Forza dell'ombra dell'ora corrente: di notte scende a zero. */
+let shadowStrength = theme.atmosphere.shadow?.strength ?? 0;
+
+/** Riusata a ogni scrittura del fondo: `applyAtmosphere` gira spesso. */
+const backgroundColor = new Color();
 
 const paletteHandle = createVoxelMaterial(theme.colors, VOXEL_SIZE);
 const chunkRenderer = new ChunkRenderer(world, paletteHandle.material, VOXEL_SIZE);
@@ -222,7 +300,13 @@ const camera = new IsoCameraController(world, window.innerWidth, window.innerHei
   // per una scena di prova piana, non per un'isola che parte a ventiquattro e
   // adesso porta torri centocinquanta piu' su. A ventiquattro il perno sta sul
   // pianoro dell'isola, cioe' sul suolo che si sta guardando davvero.
-  targetHeight: 24,
+  //
+  // Il diorama e' l'eccezione: li' si guarda un edificio, non un suolo, e il
+  // perno va a meta' della sua altezza — altrimenti `Q`/`E` lo fanno ruotare
+  // attorno ai propri piedi e la cima esce di campo a ogni scatto.
+  targetHeight: diorama === null
+    ? 24
+    : diorama.subject.z + diorama.subject.sizeZ / 2,
 });
 camera.attach(renderer.domElement);
 
@@ -268,6 +352,7 @@ const terrain: TerrainStreamer | null =
 
 let generator: SceneGenerator =
   terrain ??
+  diorama ??
   createScene(world, {
     kind: sceneKind,
     seed,
@@ -288,7 +373,20 @@ generator.step(8);
 // L'inquadratura si basa sulla dimensione richiesta, non sull'AABB corrente: a
 // questo punto la scena e' generata solo in parte. Meta' lato perche' inquadrare
 // tutta la citta' metterebbe nel frustum tutti i suoi chunk.
-if (terrain === null) {
+if (diorama !== null) {
+  // Un soggetto solo: si inquadra il suo ingombro con un margine, non il mondo.
+  // Il margine sta a destra e a sinistra dell'edificio ed e' li' che si vedono
+  // il fronte strada e il prato, cioe' il contesto che rende leggibili tende,
+  // insegne e portali.
+  //
+  // Il margine e' stretto di proposito: `frameRegion` prende comunque il
+  // massimo fra l'altezza proiettata e la larghezza, quindi su un soggetto alto
+  // e sottile e' l'altezza a decidere e ogni margine in piu' si paga due volte —
+  // una torre di livello nove finiva a occupare un ottavo del campo.
+  const s = diorama.subject;
+  const span = Math.max(s.sizeX, s.sizeY) * 1.25;
+  camera.frameRegion(s.x + s.sizeX / 2, s.y + s.sizeY / 2, span, span, s.sizeZ);
+} else if (terrain === null) {
   camera.frameRegion(worldSize / 2, worldSize / 2, worldSize / 2, worldSize / 2, worldHeight);
 } else if (growEnabled) {
   // La crescita deve leggersi come skyline, non come texture sull'intera isola:
@@ -540,6 +638,23 @@ if (debugEnabled) {
       screen: { x: sunView.x * 1.35, y: sunView.y * 1.35, facing: sunView.z < 0 },
     };
   };
+  // L'orologio. Convive con `__voxelSun`, che resta l'override manuale per
+  // autorare un tema: quello scrive una posizione e basta, questo la ricava
+  // dall'ora e continua a ricavarla finche' il ciclo cammina.
+  debugGlobals['__voxelHour'] = (next?: number): Record<string, unknown> => {
+    if (next !== undefined) setHour(next);
+    const atmosphere = withHour(theme.atmosphere, hour);
+    return {
+      hour,
+      pinned: hourPinned,
+      day: dayPhase(hour, theme.atmosphere.sun.elevation),
+      azimuth: atmosphere.sun.azimuth,
+      elevation: atmosphere.sun.elevation,
+      sunIntensity: atmosphere.sun.intensity,
+      emissiveStrength: atmosphere.emissiveStrength,
+      dayLengthSeconds: DAY_SECONDS,
+    };
+  };
   // Stessa fonte del pannello: due letture separate divergerebbero al primo
   // refactor, ed e' la regola dell'harness.
   debugGlobals['__voxelInspect'] = (mode?: string, z?: number): Record<string, unknown> => {
@@ -669,14 +784,7 @@ function applyTheme(next: Theme): void {
   theme = next;
 
   paletteHandle.setPalette(next.colors);
-  paletteHandle.setAtmosphere(next.atmosphere);
-  post.setAtmosphere(next.atmosphere);
-  skyBackground.setAtmosphere(next.atmosphere);
-  skyBackground.setAspect(window.innerWidth / Math.max(1, window.innerHeight));
-  sunWorld.fromArray(sunDirection(next.atmosphere.sun.azimuth, next.atmosphere.sun.elevation));
-
-  const background = new Color().setStyle(next.atmosphere.background, SRGBColorSpace);
-  renderer.setClearColor(background, 1);
+  applyAtmosphere();
 
   const toneMapping =
     next.atmosphere.toneMapping === 'aces' ? ACESFilmicToneMapping : NoToneMapping;
@@ -688,10 +796,76 @@ function applyTheme(next: Theme): void {
     paletteHandle.material.needsUpdate = true;
   }
   renderer.toneMappingExposure = next.atmosphere.exposure;
+}
+
+/**
+ * Riscrive la sola atmosfera dell'ora corrente: uniform e stato del renderer.
+ *
+ * Sta separata da `applyTheme` perche' e' l'unica delle due che l'ora chiama, e
+ * la chiama molte volte per partita: il tone mapping e la palette non c'entrano
+ * niente con il momento della giornata, e ricompilare un programma o riscrivere
+ * trentadue colori a ogni scatto d'orologio sarebbe lavoro per niente.
+ */
+function applyAtmosphere(): void {
+  const atmosphere = withHour(theme.atmosphere, hour);
+  appliedHour = hour;
+
+  paletteHandle.setAtmosphere(atmosphere);
+  post.setAtmosphere(atmosphere);
+  skyBackground.setAtmosphere(atmosphere);
+  skyBackground.setAspect(window.innerWidth / Math.max(1, window.innerHeight));
+  sunWorld.fromArray(sunDirection(atmosphere.sun.azimuth, atmosphere.sun.elevation));
+  shadowStrength = atmosphere.shadow?.strength ?? 0;
+  // La luce che esce dalle facciate vale solo di notte, e la notte e' la stessa
+  // quantita' da cui discende tutto il resto dell'ora.
+  paletteHandle.setNight(nightFactor(hour, theme.atmosphere.sun.elevation));
+
+  backgroundColor.setStyle(atmosphere.background, SRGBColorSpace);
+  renderer.setClearColor(backgroundColor, 1);
 
   // Il fondo della pagina era duplicato a mano nel CSS: qui c'e' una sola fonte,
   // cosi' il primo frame non lampeggia con il colore di un altro tema.
-  document.body.style.background = next.atmosphere.background;
+  document.body.style.background = atmosphere.background;
+}
+
+/**
+ * Avanza l'orologio e riscrive l'atmosfera solo quando l'ora e' cambiata
+ * abbastanza da vedersi.
+ *
+ * Il passo minimo non e' un'ottimizzazione micro: `applyAtmosphere` scrive
+ * decine di uniform e ricompone stringhe di colore, e farlo a sessanta hertz per
+ * uno spostamento di un centesimo di grado del sole e' spesa senza immagine.
+ */
+function updateDaylight(dt: number): void {
+  if (hourPinned) return;
+  // L'ora avanza **sempre**; a essere condizionata e' la scrittura. Fermare
+  // anche l'orologio significherebbe non avanzare mai, perche' il passo di un
+  // frame e' sempre sotto la soglia.
+  hour = normaliseHour(hour + (dt * 24) / DAY_SECONDS);
+  const drift = Math.abs(hour - appliedHour);
+  if (Math.min(drift, 24 - drift) >= HOUR_STEP) applyAtmosphere();
+}
+
+/**
+ * Porta nelle uniform quanto la citta' e' viva: finestre accese e insegne.
+ *
+ * Alla cadenza dell'HUD e non per frame — l'occupazione cambia di un tick alla
+ * volta, dieci volte al secondo, e le uniform non hanno niente da guadagnare a
+ * essere riscritte sessanta. **Nessun voxel viene toccato**: riscrivere le
+ * finestre accese significherebbe marcare sporchi i chunk della citta' a ogni
+ * tick, cioe' rimeshare tutto per accendere una luce.
+ */
+function updateVitality(time: number): void {
+  if (growthScene === null || time - vitalityAt < VITALITY_REFRESH_MS) return;
+  vitalityAt = time;
+  const vitality = cityVitality(growthScene.stats.state);
+  paletteHandle.setVitality(vitality.homes, vitality.commerce);
+}
+
+/** Porta l'orologio a un'ora scelta a mano, e la applica subito. */
+function setHour(next: number): void {
+  hour = normaliseHour(next);
+  applyAtmosphere();
 }
 
 function cycleTheme(index: number): void {
@@ -711,12 +885,17 @@ function cycleTheme(index: number): void {
  */
 function drawShadowPass(): void {
   const settings = theme.atmosphere.shadow;
+  // Di notte la forza scende a zero e la pass si salta del tutto: un sole sotto
+  // l'orizzonte non proietta niente, e disegnarla comunque sarebbe una mappa di
+  // profondita' buttata via a ogni frame.
+  const strength = shadowStrength;
   // Un taglio ha appena tolto di mezzo dei volumi, ma la shadow map non lo sa:
   // il piano appena scoperto resterebbe all'ombra dei piani che si sono
   // nascosti, ed e' proprio la lettura che la fetta esiste per dare. Sole e
   // ambiente restano, quindi le facce continuano a distinguersi.
   if (
     settings === undefined ||
+    strength <= 0 ||
     !shadowsAllowedByUrl ||
     qualityProfile.shadowSize === 0 ||
     isCut(inspectPayload)
@@ -743,7 +922,7 @@ function drawShadowPass(): void {
   paletteHandle.setShadow({
     texture: sunShadow.texture,
     matrix: sunShadow.matrix,
-    strength: settings.strength,
+    strength,
     texelSize: 1 / sunShadow.stats.size,
     // Un texel e mezzo lungo la normale: sotto compare l'acne, sopra l'ombra
     // si stacca dalla base di cio' che la proietta.
@@ -781,6 +960,7 @@ function onFrame(time: number): void {
 
   updateSim(dt);
   updateGrowth(dt);
+  updateDaylight(dt);
 
   // La direzione di sguardo serve alla vista prima che alla nebbia: in
   // ortografica e' un vettore solo, e ce lo dividiamo.
@@ -827,6 +1007,7 @@ function onFrame(time: number): void {
   if (growthOverlay !== null && growthOverlay.needsPaint(time)) {
     growthOverlay.update(growthScene?.stats ?? null, time);
   }
+  updateVitality(time);
   if (inspectOverlay.needsPaint(time)) {
     // La citta' cresce in altezza, e con lei la quota utile della fetta.
     if (!world.bounds.empty) inspectOverlay.setSliceRange(world.bounds.maxZ);
@@ -1390,6 +1571,8 @@ function buildOverlayFrame(mainMs: number, renderMs: number, frameMs: number): O
     scene: terrain === null ? sceneKind : 'terrain',
     seed: terrain === null ? seed : terrainSeed,
     theme: theme.name,
+    hour,
+    hourPinned,
     quality: renderQuality.mode,
     pixelRatio: renderer.getPixelRatio(),
     zoom: camera.zoom,
@@ -1420,6 +1603,13 @@ function onDebugKey(event: KeyboardEvent): void {
       cycleTheme(index);
       return;
     }
+  }
+  if (event.code === 'KeyH') {
+    // Un'ora avanti, indietro con Shift. Scorrere l'orologio a mano e' l'unico
+    // modo di giudicare un look notturno senza aspettare dodici minuti.
+    setHour(hour + (event.shiftKey ? -1 : 1));
+    console.info(`[daylight] ${hour.toFixed(2)}h`);
+    return;
   }
   if (event.code === 'KeyB') {
     toggleBiomeView();
@@ -1540,7 +1730,7 @@ function expandWorld(): void {
 }
 
 function parseSceneKind(value: string | null): SceneKind {
-  if (value === 'noise' || value === 'slab' || value === 'city') return value;
+  if (value === 'noise' || value === 'slab' || value === 'city' || value === 'diorama') return value;
   return 'city';
 }
 

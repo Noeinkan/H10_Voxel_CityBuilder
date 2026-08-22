@@ -291,7 +291,7 @@ export class ChunkRenderer {
       buildPaddedVolume(this.world, chunk, padded);
       const ceiling = this.pool.acquireCeiling();
       buildCeilingSlab(this.world, chunk, ceiling);
-      this.pool.submit(key, padded, ceiling);
+      this.pool.submit(key, padded, ceiling, [chunk.cx * CHUNK, chunk.cy * CHUNK, chunk.cz * CHUNK]);
     }
   }
 

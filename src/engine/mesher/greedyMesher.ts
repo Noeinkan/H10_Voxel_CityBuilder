@@ -1,8 +1,15 @@
 import { CEILING_VOL, CHUNK, PADDED, PADDED_VOL, SKY_PROBE } from '../../world/chunkCoords';
-import { blockPalette, blockSurface, SURFACE_KIND } from '../../world/visualBlock';
+import {
+  BLOCK_SURFACE_SHIFT,
+  blockPalette,
+  blockSurface,
+  SURFACE_KIND,
+  type SurfaceKind,
+} from '../../world/visualBlock';
 import {
   appendMicroGeometry,
   MAX_DETAIL_QUADS_PER_CHUNK,
+  type ChunkOrigin,
   type FixedBox,
   type MicroGeometryWriter,
 } from './microGeometry';
@@ -40,6 +47,11 @@ export interface MeshScratch {
   readonly skyGap: Uint8Array;
   /** Corse di vuoto in lavorazione, una per colonna del volume paddato. */
   readonly skyRuns: Uint8Array;
+  /**
+   * Per ogni cella del volume paddato, quanta luce le arriva da una superficie
+   * emissiva vicina, 0..`GLOW_SOURCE`. Riempita da `sweepGlow`.
+   */
+  readonly glow: Uint8Array;
   capacityQuads: number;
 }
 
@@ -62,6 +74,7 @@ export function createScratch(initialQuads = 4096): MeshScratch {
     mask: new Int32Array(CHUNK * CHUNK),
     skyGap: new Uint8Array(PADDED_VOL),
     skyRuns: new Uint8Array(PADDED * PADDED),
+    glow: new Uint8Array(PADDED_VOL),
     capacityQuads: initialQuads,
   };
 }
@@ -102,11 +115,14 @@ const boundsMax = new Int32Array(3);
  * @param scratch buffer riusabili; se omesso vengono allocati al volo
  * @param ceiling fetta 34x34x`SKY_PROBE` sopra il volume; omessa vale cielo
  *   libero, che e' cio' che serve a chi mesha un volume isolato
+ * @param origin angolo minimo del chunk in voxel di mondo; serve solo a seminare
+ *   la scelta dei prop, e omesso vale l'origine
  */
 export function greedyMesh(
   padded: Uint8Array,
   scratch?: MeshScratch,
   ceiling?: Uint8Array,
+  origin?: ChunkOrigin,
 ): MeshArrays {
   if (padded.length !== PADDED_VOL) {
     throw new Error(`greedyMesh: expected a volume of ${PADDED_VOL} cells, received ${padded.length}`);
@@ -117,7 +133,9 @@ export function greedyMesh(
   const s = scratch ?? createScratch();
   const mask = s.mask;
   const skyGap = s.skyGap;
+  const glow = s.glow;
   sweepSkyGap(padded, ceiling, skyGap, s.skyRuns);
+  sweepGlow(padded, glow);
 
   let quadCount = 0;
   boundsMin[0] = boundsMin[1] = boundsMin[2] = CHUNK * MESH_UNITS_PER_VOXEL;
@@ -146,9 +164,9 @@ export function greedyMesh(
           const a = padded[p];
           const b = padded[p + sd];
           if (a !== 0) {
-            mask[n] = b === 0 && canEmitPositive ? packFace(a, p + sd, su, sv, padded, skyGap) : 0;
+            mask[n] = b === 0 && canEmitPositive ? packFace(a, p + sd, su, sv, padded, skyGap, glow) : 0;
           } else {
-            mask[n] = b !== 0 && canEmitNegative ? -packFace(b, p, su, sv, padded, skyGap) : 0;
+            mask[n] = b !== 0 && canEmitNegative ? -packFace(b, p, su, sv, padded, skyGap, glow) : 0;
           }
         }
       }
@@ -244,10 +262,11 @@ export function greedyMesh(
           // faccia negativa inverte il winding, dunque inverte anche quei
           // corner senza introdurre casi speciali nel calcolo dell'AO.
           //
-          // Il cielo e' della faccia intera e non del corner — e' un solo
-          // sondaggio verticale dalla cella vuota adiacente — quindi entra
-          // uguale nei quattro byte, nei bit alti.
-          const sky = ((packed >>> SKY_SHIFT) & SKY_MASK) << SHADE_SKY_SHIFT;
+          // Cielo e bagliore sono della faccia intera e non del corner — sono
+          // due sondaggi dalla stessa cella vuota adiacente — quindi entrano
+          // uguali nei quattro byte, nei bit alti.
+          const sky = (((packed >>> SKY_SHIFT) & SKY_MASK) << SHADE_SKY_SHIFT) |
+            (((packed >>> GLOW_SHIFT) & GLOW_MASK) << SHADE_GLOW_SHIFT);
           const ao0 = (packed >>> AO_00_SHIFT) & AO_MASK;
           const ao1 = (packed >>> AO_10_SHIFT) & AO_MASK;
           const ao2 = (packed >>> AO_11_SHIFT) & AO_MASK;
@@ -308,11 +327,20 @@ export function greedyMesh(
     get remainingQuads(): number {
       return MAX_DETAIL_QUADS_PER_CHUNK - (quadCount - baseQuadCount);
     },
-    emitBox(box: FixedBox, palette: number, hiddenFaces: number): boolean {
+    emitBox(box: FixedBox, palette: number, hiddenFaces: number, surface: SurfaceKind): boolean {
       const faceCount = 6 - countBits(hiddenFaces & 0b11_1111);
       if (faceCount > this.remainingQuads) return false;
       if (quadCount + faceCount > s.capacityQuads) growScratch(s, quadCount + faceCount);
-      quadCount += writeDetailBox(s, quadCount, box, palette, hiddenFaces, skyLevelAtBox(box, skyGap));
+      quadCount += writeDetailBox(
+        s,
+        quadCount,
+        box,
+        palette,
+        hiddenFaces,
+        levelAtBox(box, skyGap, SKY_LEVEL_STEP),
+        levelAtBox(box, glow, GLOW_LEVEL_STEP),
+        surface,
+      );
       for (let axis = 0; axis < 3; axis++) {
         if (box.min[axis] < boundsMin[axis]) boundsMin[axis] = box.min[axis];
         if (box.max[axis] > boundsMax[axis]) boundsMax[axis] = box.max[axis];
@@ -320,7 +348,7 @@ export function greedyMesh(
       return true;
     },
   };
-  const detailQuadCount = appendMicroGeometry(padded, writer);
+  const detailQuadCount = appendMicroGeometry(padded, writer, origin);
 
   if (quadCount === 0) {
     return {
@@ -374,11 +402,46 @@ const SURFACE_SHIFT = 13;
 const SURFACE_MASK = 0b111;
 const SKY_SHIFT = 16;
 const SKY_MASK = 0b11;
+const GLOW_SHIFT = 18;
+const GLOW_MASK = 0b11;
 
-/** Bit del byte per vertice: AO in basso, visibilita' del cielo sopra. */
+/**
+ * Bit del byte per vertice: AO in basso, cielo sopra, bagliore vicino in cima.
+ *
+ * Tre campi geometrici in sei bit, e nessun attributo di vertice in piu': e' la
+ * stessa mossa con cui la 4.7 ha fatto entrare il cielo accanto all'AO. Restano
+ * liberi i due bit alti.
+ */
 export const SHADE_AO_MASK = 0b11;
 export const SHADE_SKY_SHIFT = 2;
 export const SHADE_SKY_MASK = 0b11;
+export const SHADE_GLOW_SHIFT = 4;
+export const SHADE_GLOW_MASK = 0b11;
+
+/**
+ * Luce di una superficie emissiva alla sorgente, in unita' di decadimento.
+ *
+ * **Sei, e la prima volta erano dodici.** Con un alone di dodici voxel ogni
+ * faccia di un edificio cadeva dentro il raggio di qualcosa di acceso — le
+ * fasce luminose corrono su tutta la faccia d'accento — e a schermo l'edificio
+ * intero diventava ambra invece di avere una parete schiarita accanto
+ * all'insegna. Sei voxel sono due piani: la scala a cui una luce accesa si
+ * legge davvero su una facciata.
+ */
+const GLOW_SOURCE = 6;
+
+/** Quanto vale un livello dei quattro che entrano nel byte per vertice. */
+const GLOW_LEVEL_STEP = 2;
+
+/**
+ * Intervallo di byte che porta una superficie emissiva.
+ *
+ * `luminous` e `portal` sono i valori 4 e 5 dei tre bit alti, quindi i byte da
+ * 4*32 a 6*32 esclusi. Confrontare il byte intero evita di estrarre la
+ * superficie per ognuna delle 39 304 celle del volume paddato.
+ */
+const EMISSIVE_LOW = SURFACE_KIND.luminous << BLOCK_SURFACE_SHIFT;
+const EMISSIVE_HIGH = (SURFACE_KIND.roofTech) << BLOCK_SURFACE_SHIFT;
 /** Corner del tutto libero: e' il valore che l'AO assume dove non occlude. */
 const SHADE_AO_FREE = 3;
 
@@ -414,19 +477,107 @@ function packFace(
   sv: number,
   padded: Uint8Array,
   skyGap: Uint8Array,
+  glow: Uint8Array,
 ): number {
   const ao00 = cornerAO(pn, -1, -1, su, sv, padded);
   const ao10 = cornerAO(pn, 1, -1, su, sv, padded);
   const ao11 = cornerAO(pn, 1, 1, su, sv, padded);
   const ao01 = cornerAO(pn, -1, 1, su, sv, padded);
   const sky = Math.min(3, Math.floor(skyGap[pn] / SKY_LEVEL_STEP));
+  // Il bagliore si legge dalla cella **vuota** adiacente alla faccia, la stessa
+  // da cui guardano l'AO e il cielo: e' l'aria davanti al muro a essere
+  // illuminata, non il muro dentro.
+  const glowLevel = Math.min(3, Math.floor(glow[pn] / GLOW_LEVEL_STEP));
   return blockPalette(block) |
     (ao00 << AO_00_SHIFT) |
     (ao10 << AO_10_SHIFT) |
     (ao11 << AO_11_SHIFT) |
     (ao01 << AO_01_SHIFT) |
     (blockSurface(block) << SURFACE_SHIFT) |
-    (sky << SKY_SHIFT);
+    (sky << SKY_SHIFT) |
+    (glowLevel << GLOW_SHIFT);
+}
+
+/**
+ * Luce che **esce** da una superficie emissiva, cotta nel mesher.
+ *
+ * Fino alla 4.7 `emission` illuminava il proprio pixel e alimentava il bloom, e
+ * non schiariva il muro di fronte: per quello servirebbe una luce vera, cioe'
+ * una pass in piu' o un elenco di sorgenti nel fragment. Il dato pero' e' gia'
+ * qui — chi emette e' un voxel con superficie `luminous` o `portal` — e quello
+ * che manca e' solo portarlo fino al frammento.
+ *
+ * **Il valore si propaga per massimo con decadimento, separabile sui tre assi.**
+ * Sei scansioni lineari sul volume paddato, nessuna allocazione: e' la stessa
+ * forma di `sweepSkyGap`, e come quella costa a prescindere dal contenuto. Il
+ * decadimento di uno per voxel su `GLOW_SOURCE` da' un alone di dodici voxel
+ * che il campo per faccia quantizza a quattro livelli.
+ *
+ * La distanza che ne esce e' quella di Manhattan e non quella euclidea: un alone
+ * a rombo invece che a cerchio. A quattro livelli di quantizzazione la
+ * differenza non si vede, e costa sei passate invece di un raggio vero.
+ *
+ * **Chi non ha emettitori non paga le sei passate**, e sono la maggioranza dei
+ * chunk: terreno, mare e periferia non hanno una sola superficie accesa.
+ */
+function sweepGlow(padded: Uint8Array, glow: Uint8Array): boolean {
+  let sources = 0;
+  for (let i = 0; i < PADDED_VOL; i++) {
+    const block = padded[i];
+    // L'acqua non puo' essere un emettitore: `WATER_CLASS` occupa gli stessi
+    // bit ma i suoi tre valori sono plain, habitat e industrial, mai questi due.
+    // Il confronto e' sul byte intero invece che sulla superficie estratta: i
+    // cinque bit bassi sono la palette, quindi «superficie luminous o portal»
+    // e' «il byte cade in uno di due intervalli di trentadue», e questa e' la
+    // sola scansione che tocca ogni cella del volume paddato.
+    const emissive = block >= EMISSIVE_LOW && block < EMISSIVE_HIGH;
+    glow[i] = emissive ? GLOW_SOURCE : 0;
+    if (emissive) sources++;
+  }
+  if (sources === 0) return false;
+
+  sweepGlowAxis(glow, 1);
+  sweepGlowAxis(glow, PADDED);
+  sweepGlowAxis(glow, PADDED * PADDED);
+  return true;
+}
+
+/**
+ * Massimo con decadimento avanti e indietro lungo un asse.
+ *
+ * Le linee sono sempre `PADDED` celle e sempre `PADDED^2` in numero, qualunque
+ * sia l'asse: cambia solo da dove partono, e ricavarlo dallo stride evita tre
+ * cicli annidati diversi per i tre assi.
+ */
+function sweepGlowAxis(glow: Uint8Array, stride: number): void {
+  const span = PADDED;
+  const lines = PADDED_VOL / span;
+  const last = (span - 1) * stride;
+  for (let line = 0; line < lines; line++) {
+    const base = stride === 1
+      ? line * PADDED
+      : stride === PADDED
+        ? (line % PADDED) + Math.floor(line / PADDED) * PADDED * PADDED
+        : line;
+
+    // L'indice avanza di `stride`, non si ricalcola: e' la scansione piu'
+    // percorsa del mesher — sei volte l'intero volume paddato — e una
+    // moltiplicazione per cella si sente.
+    let run = 0;
+    for (let p = base; p <= base + last; p += stride) {
+      const value = glow[p];
+      if (value > run) run = value;
+      glow[p] = run;
+      if (run > 0) run--;
+    }
+    run = 0;
+    for (let p = base + last; p >= base; p -= stride) {
+      const value = glow[p];
+      if (value > run) run = value;
+      glow[p] = run;
+      if (run > 0) run--;
+    }
+  }
 }
 
 /**
@@ -488,18 +639,19 @@ function countBits(value: number): number {
 }
 
 /**
- * Livello di cielo della cella che contiene il centro di un prisma di dettaglio.
+ * Livello di un campo per cella, letto dove sta il centro di un prisma.
  *
  * I dettagli non hanno AO propria — sono troppo piccoli perche' un corner dica
- * qualcosa — ma il cielo sopra di loro e' quello della colonna in cui stanno, e
- * senza ereditarlo un condizionatore sotto un impalcato resterebbe illuminato
- * mentre la parete a cui e' appeso si spegne.
+ * qualcosa — ma il cielo sopra di loro e il bagliore attorno sono quelli della
+ * cella in cui stanno. Senza ereditarli un condizionatore sotto un impalcato
+ * resterebbe illuminato mentre la parete a cui e' appeso si spegne, e
+ * un'insegna non schiarirebbe la propria mensola.
  */
-function skyLevelAtBox(box: FixedBox, skyGap: Uint8Array): number {
+function levelAtBox(box: FixedBox, field: Uint8Array, step: number): number {
   const px = clampPadded(Math.floor((box.min[0] + box.max[0]) / (2 * MESH_UNITS_PER_VOXEL)) + 1);
   const py = clampPadded(Math.floor((box.min[1] + box.max[1]) / (2 * MESH_UNITS_PER_VOXEL)) + 1);
   const pz = clampPadded(Math.floor((box.min[2] + box.max[2]) / (2 * MESH_UNITS_PER_VOXEL)) + 1);
-  return Math.min(3, Math.floor(skyGap[px + PADDED * (py + PADDED * pz)] / SKY_LEVEL_STEP));
+  return Math.min(3, Math.floor(field[px + PADDED * (py + PADDED * pz)] / step));
 }
 
 function clampPadded(value: number): number {
@@ -514,6 +666,8 @@ function writeDetailBox(
   palette: number,
   hiddenFaces: number,
   sky: number,
+  glow: number,
+  surface: SurfaceKind,
 ): number {
   let written = 0;
   for (let face = 0; face < 6; face++) {
@@ -540,8 +694,10 @@ function writeDetailBox(
       scratch.positions[positionOffset + axisV] = corners[corner][1];
       scratch.faces[vertexBase + corner] = face;
       scratch.palettes[vertexBase + corner] = palette;
-      scratch.surfaces[vertexBase + corner] = SURFACE_KIND.utility;
-      scratch.shade[vertexBase + corner] = SHADE_AO_FREE | (sky << SHADE_SKY_SHIFT);
+      scratch.surfaces[vertexBase + corner] = surface;
+      scratch.shade[vertexBase + corner] = SHADE_AO_FREE |
+        (sky << SHADE_SKY_SHIFT) |
+        (glow << SHADE_GLOW_SHIFT);
     }
 
     const indexOffset = quad * 6;

@@ -19,6 +19,16 @@ function detailPositions(mesh: ReturnType<typeof greedyMesh>): Int16Array {
   return mesh.positions.slice(baseVertices * 3);
 }
 
+function detailPalettes(mesh: ReturnType<typeof greedyMesh>): number[] {
+  const baseVertices = (mesh.quadCount - mesh.detailQuadCount) * 4;
+  return [...mesh.palettes.slice(baseVertices)];
+}
+
+function detailSurfaces(mesh: ReturnType<typeof greedyMesh>): number[] {
+  const baseVertices = (mesh.quadCount - mesh.detailQuadCount) * 4;
+  return [...mesh.surfaces.slice(baseVertices)];
+}
+
 /**
  * Uguaglianza elemento per elemento fuori dal deep-equal di vitest.
  *
@@ -33,6 +43,46 @@ function expectSameArray(actual: ArrayLike<number>, expected: ArrayLike<number>,
     if (actual[i] === expected[i]) continue;
     expect({ what, index: i, value: actual[i] }).toEqual({ what, index: i, value: expected[i] });
   }
+}
+
+/**
+ * Un chunk fitto di edifici **veri**, non di patologie.
+ *
+ * E' il caso su cui si misura il margine sotto `MAX_DETAIL_QUADS_PER_CHUNK`:
+ * quattro corpi con la grammatica che il generatore produce davvero — portale a
+ * terra, fasce luminose ogni sei, tetto tecnico in cima, facciata d'uso in
+ * mezzo. La scacchiera di voxel isolati misura il tetto; questo misura quanto ne
+ * resta libero per il dettaglio che si aggiunge.
+ */
+function densityChunk(): Uint8Array {
+  const padded = volume();
+  for (const [ox, oy] of [[1, 1], [17, 1], [1, 17], [17, 17]]) {
+    for (let z = 0; z < CHUNK; z++) {
+      const body = z === CHUNK - 1
+        ? SURFACE_KIND.roofTech
+        : z % 6 === 0
+          ? SURFACE_KIND.luminous
+          : ox === 1 ? SURFACE_KIND.habitat : SURFACE_KIND.civic;
+      const palette = z % 6 === 0 ? PALETTE_SLOTS.glassPale : PALETTE_SLOTS.concrete;
+      for (let y = oy; y < oy + 14; y++) {
+        for (let x = ox; x < ox + 14; x++) {
+          // Il portale e' **un modulo solo** per lato, come lo scrive `onPortal`
+          // in `buildings/generate.ts`: farne una fascia intera moltiplicherebbe
+          // per dieci i dettagli agganciati al fronte, e la misura direbbe una
+          // bugia proprio sulla voce che si sta aggiungendo.
+          const doorway = z < 4 && (
+            (x === ox + 7 && (y === oy || y === oy + 13)) ||
+            (y === oy + 7 && (x === ox || x === ox + 13))
+          );
+          setLocal(padded, x, y, z, packVisualBlock(
+            doorway ? PALETTE_SLOTS.stone : palette,
+            doorway ? SURFACE_KIND.portal : body,
+          ));
+        }
+      }
+    }
+  }
+  return padded;
 }
 
 describe('microgeometria 1/16', () => {
@@ -142,5 +192,91 @@ describe('microgeometria 1/16', () => {
     expectSameArray(first.positions, second.positions, 'positions');
     expectSameArray(first.indices, second.indices, 'indices');
     expect(first.detailQuadCount).toBe(second.detailQuadCount);
+  });
+
+  it('la tenda si aggancia all ingresso, non alla parete', () => {
+    // Due pareti identiche: sotto una c'e' un portale, sotto l'altra no. E'
+    // l'aggancio a fare il prop, quindi solo la prima deve arredarsi.
+    const withDoor = volume();
+    const withoutDoor = volume();
+    for (let z = 0; z < 8; z++) {
+      const door = z < 4;
+      setLocal(withDoor, 8, 8, z, packVisualBlock(
+        PALETTE_SLOTS.concrete,
+        door ? SURFACE_KIND.portal : SURFACE_KIND.habitat,
+      ));
+      setLocal(withoutDoor, 8, 8, z, packVisualBlock(PALETTE_SLOTS.concrete, SURFACE_KIND.habitat));
+    }
+
+    const armed = greedyMesh(withDoor);
+    const bare = greedyMesh(withoutDoor);
+    expect(detailPalettes(armed)).toContain(PALETTE_SLOTS.roofPale);
+    expect(detailPalettes(bare)).not.toContain(PALETTE_SLOTS.roofPale);
+  });
+
+  it('un insegna esce luminosa e un condizionatore no: e la stessa emitBox', () => {
+    const padded = volume();
+    // Una fila lunga di fronti con ingresso: fra tanti tiri, qualche insegna esce.
+    for (let y = 2; y < CHUNK - 2; y++) {
+      for (let z = 0; z < 8; z++) {
+        setLocal(padded, 8, y, z, packVisualBlock(
+          PALETTE_SLOTS.concrete,
+          z < 4 ? SURFACE_KIND.portal : SURFACE_KIND.habitat,
+        ));
+      }
+    }
+
+    const mesh = greedyMesh(padded);
+    const surfaces = detailSurfaces(mesh);
+    expect(surfaces).toContain(SURFACE_KIND.luminous);
+    // Il resto del dettaglio resta metallo strutturale: la superficie e' una
+    // scelta per prisma, non un interruttore globale.
+    expect(surfaces).toContain(SURFACE_KIND.utility);
+  });
+
+  it('un rampicante e una corsa sola, non una macchia per voxel', () => {
+    // Il tiro dei rampicanti non guarda la quota: e' quello che tiene continua
+    // la colonna. Con un tiro per cella la corsa si spezzerebbe a ogni voxel e
+    // una parete costerebbe un prisma per cubo invece di uno per colonna.
+    const padded = volume();
+    for (let y = 2; y < CHUNK - 2; y++) {
+      for (let z = 0; z < 12; z++) {
+        setLocal(padded, 8, y, z, packVisualBlock(PALETTE_SLOTS.concrete, SURFACE_KIND.habitat));
+      }
+    }
+
+    const mesh = greedyMesh(padded);
+    const green = detailPalettes(mesh).filter((id) => id === PALETTE_SLOTS.grassDark).length / 4;
+    expect(green).toBeGreaterThan(0);
+    // Cinque facce per colonna: se la corsa si spezzasse, sarebbero cinque per
+    // ogni cubo della colonna, cioe' dodici volte tanto.
+    expect(green % 5).toBe(0);
+    expect(green).toBeLessThan(5 * 12);
+  });
+
+  it('la scelta del prop segue le coordinate di mondo, non quelle di chunk', () => {
+    // Stesso volume, due origini: se il seme fosse locale i due chunk
+    // arrederebbero le stesse celle, e su una facciata lunga la ripetizione ogni
+    // trentadue voxel si vedrebbe.
+    const padded = volume();
+    for (let y = 1; y < CHUNK - 1; y++) {
+      for (let z = 1; z < CHUNK - 1; z++) {
+        setLocal(padded, 8, y, z, packVisualBlock(PALETTE_SLOTS.concrete, SURFACE_KIND.habitat));
+      }
+    }
+
+    const here = greedyMesh(padded, undefined, undefined, [0, 0, 0]);
+    const faraway = greedyMesh(padded, undefined, undefined, [0, CHUNK, 0]);
+    expect(here.detailQuadCount).toBeGreaterThan(0);
+    expect(detailPositions(faraway)).not.toEqual(detailPositions(here));
+
+    // E l'origine omessa e' l'origine, non un valore qualunque.
+    expect(detailPositions(greedyMesh(padded))).toEqual(detailPositions(here));
+  });
+
+  it('su un chunk fitto di edifici veri il tetto non tronca, e si vede quanto margine resta', () => {
+    const mesh = greedyMesh(densityChunk());
+    console.info(`[misura] dettaglio su chunk fitto: ${mesh.detailQuadCount} quad`);
+    expect(mesh.detailQuadCount).toBeLessThan(MAX_DETAIL_QUADS_PER_CHUNK);
   });
 });

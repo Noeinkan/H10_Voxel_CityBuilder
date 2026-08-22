@@ -1,7 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import { CEILING_VOL, ceilingIdx, CHUNK, PADDED_VOL, paddedIdx, SKY_PROBE } from '../../world/chunkCoords';
 import { packVisualBlock, SURFACE_KIND } from '../../world/visualBlock';
-import { greedyMesh, SHADE_AO_MASK, SHADE_SKY_MASK, SHADE_SKY_SHIFT } from './greedyMesher';
+import {
+  greedyMesh,
+  SHADE_AO_MASK,
+  SHADE_GLOW_MASK,
+  SHADE_GLOW_SHIFT,
+  SHADE_SKY_MASK,
+  SHADE_SKY_SHIFT,
+} from './greedyMesher';
 import { MESH_UNITS_PER_VOXEL } from './meshTypes';
 
 /** Volume paddato vuoto. Le coordinate locali 0..31 stanno a px = lx + 1. */
@@ -21,6 +28,26 @@ function aoOf(shade: number): number {
 
 function skyOf(shade: number): number {
   return (shade >>> SHADE_SKY_SHIFT) & SHADE_SKY_MASK;
+}
+
+function glowOf(shade: number): number {
+  return (shade >>> SHADE_GLOW_SHIFT) & SHADE_GLOW_MASK;
+}
+
+/** Bagliore dei vertici della faccia `face` che sta sul piano `plane` dell'asse. */
+function glowOnFace(
+  mesh: { faces: Uint8Array; positions: Int16Array; shade: Uint8Array },
+  face: number,
+  axis: number,
+  plane: number,
+): number[] {
+  const found: number[] = [];
+  for (let i = 0; i < mesh.faces.length; i++) {
+    if (mesh.faces[i] !== face) continue;
+    if (mesh.positions[i * 3 + axis] !== plane * MESH_UNITS_PER_VOXEL) continue;
+    found.push(glowOf(mesh.shade[i]));
+  }
+  return found;
 }
 
 /** Visibilita' del cielo dei vertici della faccia +Z posta alla quota `lz + 1`. */
@@ -306,6 +333,48 @@ describe('greedyMesh', () => {
       if (mesh.faces[i] === 4 && mesh.positions[i * 3 + 2] === MESH_UNITS_PER_VOXEL) topQuads++;
     }
     expect(topQuads).toBe(2);
+  });
+
+  it('una faccia emissiva schiarisce il muro di fronte, e l alone si spegne con la distanza', () => {
+    // Due muri paralleli: uno acceso, l'altro no. La faccia dell'altro rivolta
+    // verso l'insegna deve ricevere bagliore; quella che le volta le spalle no.
+    const padded = emptyPadded();
+    fillBox(padded, 10, 10, 10, 11, 12, 12, packVisualBlock(14, SURFACE_KIND.luminous));
+    fillBox(padded, 13, 10, 10, 14, 12, 12, packVisualBlock(4, SURFACE_KIND.habitat));
+
+    const mesh = greedyMesh(padded);
+    // Faccia -X del muro spento: guarda l'insegna, che sta tre voxel piu' in la'.
+    const facing = glowOnFace(mesh, 1, 0, 13);
+    // Faccia +X dello stesso muro: dall'altra parte, piu' lontana.
+    const away = glowOnFace(mesh, 0, 0, 14);
+
+    expect(facing.length).toBeGreaterThan(0);
+    expect(Math.max(...facing)).toBeGreaterThan(0);
+    expect(Math.max(...facing)).toBeGreaterThan(Math.max(...away));
+  });
+
+  it('un muro lontano da qualunque insegna non riceve bagliore', () => {
+    const padded = emptyPadded();
+    fillBox(padded, 2, 2, 2, 3, 4, 4, packVisualBlock(14, SURFACE_KIND.luminous));
+    fillBox(padded, 28, 28, 2, 29, 30, 4, packVisualBlock(4, SURFACE_KIND.habitat));
+
+    const mesh = greedyMesh(padded);
+    expect(glowOnFace(mesh, 1, 0, 28).every((glow) => glow === 0)).toBe(true);
+  });
+
+  it('il bagliore non ruba i bit del cielo', () => {
+    // La regressione che il `mod` nel vertex shader evita, verificata dal lato
+    // del mesher: un suolo scoperto accanto a un'insegna vede ancora il cielo
+    // per intero, e porta anche il bagliore.
+    const padded = emptyPadded();
+    fillBox(padded, 0, 0, 0, CHUNK, CHUNK, 1, 9);
+    fillBox(padded, 10, 10, 1, 11, 11, 3, packVisualBlock(14, SURFACE_KIND.luminous));
+
+    const mesh = greedyMesh(padded, undefined, emptyCeiling());
+    const top = skyOnTopFaceAt(mesh, 0);
+    expect(top.length).toBeGreaterThan(0);
+    expect(top.every((sky) => sky === 3)).toBe(true);
+    expect(glowOnFace(mesh, 4, 2, 1).some((glow) => glow > 0)).toBe(true);
   });
 
   it('rifiuta un volume di dimensione sbagliata', () => {

@@ -54,6 +54,7 @@ uniform float uAoStrength;
 varying float vAO;
 varying float vOcclusion;
 varying float vSkyVisibility;
+varying float vGlow;
 varying float vFogDepth;
 varying float vPaletteIndex;
 varying float vFaceIndex;
@@ -64,14 +65,17 @@ varying vec3 vWorldPosition;
 void main() {
   // position arriva come Int16 in sedicesimi di voxel, incluse le sporgenze.
   //
-  // aShade porta due campi geometrici in un byte: l'AO per corner nei due bit
-  // bassi, la visibilita' del cielo della faccia nei due alti. Senza operatori
-  // bit, che in GLSL ES 1.00 non ci sono: mod e floor su interi piccoli sono
-  // esatti in float.
+  // aShade porta tre campi geometrici in un byte: l'AO per corner nei due bit
+  // bassi, la visibilita' del cielo nei due successivi, il bagliore di una
+  // faccia emissiva vicina nei due dopo ancora. Senza operatori bit, che in
+  // GLSL ES 1.00 non ci sono: mod e floor su interi piccoli sono esatti in
+  // float. Il mod sul cielo non e' ornamentale: senza, leggerebbe anche i bit
+  // del bagliore e una parete illuminata si crederebbe scoperta.
   float occlusion = mod(aShade, 4.0) / 3.0;
   vAO = mix(1.0 - uAoStrength, 1.0, occlusion);
   vOcclusion = 1.0 - occlusion;
-  vSkyVisibility = floor(aShade / 4.0) / 3.0;
+  vSkyVisibility = mod(floor(aShade / 4.0), 4.0) / 3.0;
+  vGlow = floor(aShade / 16.0) / 3.0;
 
   vec4 worldPosition = modelMatrix * vec4(position * (uVoxelSize / ${MESH_UNITS_PER_VOXEL}.0), 1.0);
   vPaletteIndex = aPalette;
@@ -194,6 +198,10 @@ uniform float uWaterSpeed;
 uniform float uWaterCalm;
 uniform float uWaterGlitter;
 uniform float uEmissiveStrength;
+uniform vec3 uSpillColor;
+uniform float uNight;
+uniform float uLitHomes;
+uniform float uLitSigns;
 
 // Viste di ispezione: due predicati geometrici e una sola densita'. Il materiale
 // non sa quale modo sia attivo: quella decisione vive in inspect.ts.
@@ -205,6 +213,7 @@ uniform float uInspectInside;
 varying float vAO;
 varying float vOcclusion;
 varying float vSkyVisibility;
+varying float vGlow;
 varying float vFogDepth;
 varying float vPaletteIndex;
 varying float vFaceIndex;
@@ -306,7 +315,11 @@ ${inspect ? inspectCap : ''}
 
     if (surfaceIndex == ${SURFACE_KIND.habitat}) {
       float pane = lateral ? boxMask(cellUv, vec2(0.16, 0.22), vec2(0.84, 0.78)) : 0.0;
-      float light = step(0.72, variation) * pane;
+      // Quante finestre sono accese lo dice l'occupazione, non l'ora: la citta'
+      // di notte diventa una lettura dell'economia. La variazione e' gia'
+      // deterministica per cella, quindi a cambiare e' **quante** si accendono,
+      // mai quali: le luci non sfarfallano mentre la popolazione cresce.
+      float light = step(1.0 - uLitHomes, variation) * pane;
       detailed = mix(detailed, uPalette[${PALETTE_SLOTS.glassDeep}] * 0.72, pane * 0.68);
       detailed *= 1.0 - panelEdge * 0.16;
       emission += uPalette[${PALETTE_SLOTS.glassPale}] * light * 0.38;
@@ -334,7 +347,11 @@ ${inspect ? inspectCap : ''}
       // pallido non e' timidezza: uno slot scuro spegnerebbe la fascia, e
       // l'accento sparirebbe proprio dove serve, cioe' di notte e da lontano.
       vec3 glow = mix(uPalette[${PALETTE_SLOTS.glassPale}], uPalette[paletteIndex], 0.7);
-      emission += glow * band * pulse * 0.72;
+      // Un'insegna segue il commercio: dove i negozi sono pieni e' accesa, dove
+      // sono fermi resta un'insegna spenta e non un buco nero. Il minimo non e'
+      // timidezza — un accento che sparisce del tutto cancella la faccia che
+      // rende leggibile il volume, e resterebbe una silhouette.
+      emission += glow * band * pulse * 0.72 * mix(0.3, 1.0, uLitSigns);
     } else if (surfaceIndex == ${SURFACE_KIND.portal}) {
       float portal = lateral ? boxMask(cellUv, vec2(0.12, 0.05), vec2(0.88, 0.95)) : 0.0;
       float core = lateral ? boxMask(cellUv, vec2(0.23, 0.08), vec2(0.77, 0.88)) : 0.0;
@@ -370,6 +387,15 @@ ${inspect ? inspectCap : ''}
   vec3 ambient = mix(uBounceColor, uSkyColor * skyReach, n.z * 0.5 + 0.5);
   float wrapped = clamp((dot(n, uSunDirection) + uSunWrap) / (1.0 + uSunWrap), 0.0, 1.0);
   vec3 light = ambient + uSunColor * wrapped * shadow;
+
+  // La luce che **esce** dagli edifici. Non e' una luce dinamica: vGlow e' un
+  // dato geometrico cotto nel mesher — quanto vicina sta una superficie
+  // emissiva — esattamente come la visibilita' del cielo. Nessuna pass in piu',
+  // nessun elenco di sorgenti nel fragment, nessuna ricompilazione.
+  //
+  // Vale solo di notte, e non per timidezza: di giorno il sole la coprirebbe
+  // comunque, e pagarla vorrebbe dire slavare le facciate a mezzogiorno.
+  light += uSpillColor * vGlow * vGlow * uNight;
 
   vec3 shaded = detailed * light * vAO + emission * uEmissiveStrength;
 
@@ -477,6 +503,22 @@ export interface VoxelMaterialHandle {
   /** Aggiorna la sola fase di acqua ed emissivi; non invalida geometrie. */
   setTime(seconds: number): void;
   /**
+   * Quanto e' notte, 0..1. Governa la sola luce che esce dalle facciate accese:
+   * di giorno il sole la coprirebbe comunque, e pagarla vorrebbe dire slavare
+   * le facciate a mezzogiorno.
+   */
+  setNight(night: number): void;
+  /**
+   * Quante finestre sono accese e quanto sono accese le insegne, 0..1.
+   *
+   * Sono due numeri e non una struttura perche' e' tutto cio' che il fragment
+   * puo' distinguere: la grammatica `habitat` copre residenziale e commerciale
+   * insieme, e non esiste un canale che dica a quale **edificio** appartenga un
+   * voxel. La lettura e' quindi per citta' e per uso, mai per singolo edificio —
+   * un quartiere vuoto in mezzo a una citta' piena non si spegne da solo.
+   */
+  setVitality(homes: number, commerce: number): void;
+  /**
    * Direzione di vista, per lo scattering della nebbia verso il sole.
    *
    * E' un uniform e non una derivata per-pixel perche' la camera e' ortografica:
@@ -511,6 +553,22 @@ export interface VoxelMaterialHandle {
   setInspect(uniforms: InspectUniforms): void;
 }
 
+/**
+ * Tinta e forza della luce urbana, quando il tema non le dichiara.
+ *
+ * Un ambra caldo: e' il colore che una finestra accesa e un'insegna hanno in
+ * comune, e sulle facciate fredde di notte e' anche quello che le stacca dal
+ * cielo. La forza e' bassa apposta — questa e' luce di rimbalzo, non un faro.
+ */
+const DEFAULT_SPILL = '#ffb469';
+
+/**
+ * Misurata a schermo, non scelta a tavolino: a 0,55 lo spill valeva tre volte
+ * l'ambiente notturno e la facciata diventava una lampada. A 0,22 sta appena
+ * sopra l'ambiente, che e' quello che si chiede a una luce di rimbalzo.
+ */
+const DEFAULT_SPILL_INTENSITY = 0.22;
+
 export function createVoxelMaterial(hexColors: readonly string[], voxelSize: number): VoxelMaterialHandle {
   const paletteArray = toPaletteArray(hexColors);
   const faceNormals = FACE_NORMALS.map(([x, y, z]) => new Vector3(x, y, z));
@@ -525,6 +583,7 @@ export function createVoxelMaterial(hexColors: readonly string[], voxelSize: num
   const glassTint = new Color(1, 1, 1);
   const waterHighlight = new Color(1, 1, 1);
   const waterShallowTint = new Color(1, 1, 1);
+  const spillColor = new Color(1, 1, 1);
   const viewDirection = new Vector3(0, 0, -1);
   const resolution = new Vector2(1, 1);
   const shadowMatrix = new Matrix4();
@@ -581,6 +640,13 @@ export function createVoxelMaterial(hexColors: readonly string[], voxelSize: num
       uWaterCalm: { value: 0 },
       uWaterGlitter: { value: 0 },
       uEmissiveStrength: { value: 0.35 },
+      uSpillColor: { value: spillColor },
+      uNight: { value: 0 },
+      // I default valgono per chi non ha una simulazione dietro — il diorama,
+      // le scene di misura — e sono il comportamento che il materiale aveva
+      // prima che l'economia potesse accendere le luci.
+      uLitHomes: { value: 0.28 },
+      uLitSigns: { value: 1 },
 
       uInspectPlane: { value: inspectPlane },
       uInspectRect: { value: inspectRect },
@@ -644,6 +710,22 @@ export function createVoxelMaterial(hexColors: readonly string[], voxelSize: num
       material.uniforms['uWaterCalm'].value = atmosphere.water?.calm ?? 0.5;
       material.uniforms['uWaterGlitter'].value = atmosphere.water?.glitter ?? 0;
       material.uniforms['uEmissiveStrength'].value = atmosphere.emissiveStrength ?? 0.35;
+
+      // La tinta con cui una facciata accesa schiarisce quello che ha attorno.
+      // E' del tema e **non** dell'emettitore: il frammento che riceve la luce
+      // non sa chi gliela manda, e dirglielo costerebbe bit che non ci sono.
+      // Un'insegna rossa e una cyan schiariscono quindi il muro con lo stesso
+      // colore, ed e' un limite dichiarato, non una svista.
+      spillColor
+        .setStyle(atmosphere.nightSpill?.color ?? DEFAULT_SPILL, SRGBColorSpace)
+        .multiplyScalar(atmosphere.nightSpill?.intensity ?? DEFAULT_SPILL_INTENSITY);
+    },
+    setNight(night: number): void {
+      material.uniforms['uNight'].value = night;
+    },
+    setVitality(homes: number, commerce: number): void {
+      material.uniforms['uLitHomes'].value = homes;
+      material.uniforms['uLitSigns'].value = commerce;
     },
     setTime(seconds: number): void {
       material.uniforms['uTime'].value = seconds;

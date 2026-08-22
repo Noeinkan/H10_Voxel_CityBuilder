@@ -63,7 +63,8 @@ resto si apre a domanda — è ciò che tiene basso il contesto di partenza.
 | [visualBlock.ts](src/world/visualBlock.ts) | Packing visuale in un byte: palette 0..31 e superficie 0..7, che su un voxel d'acqua porta la classe dello specchio | `SURFACE_KIND`, `WATER_CLASS`, `packVisualBlock`, `blockPalette`, `blockSurface` |
 | [chunkCoords.ts](src/world/chunkCoords.ts) | Costanti e conversioni di coordinate, indici delle facce, portata del sondaggio del cielo | `CHUNK`, `PADDED`, `SKY_PROBE`, `CEILING_VOL`, `idx`, `paddedIdx`, `ceilingIdx`, `toChunk`, `toLocal`, `keyOf`, `FACE_*` |
 | [rng.ts](src/world/rng.ts) | PRNG deterministico per la generazione | `mulberry32`, `hashCoords` |
-| [scenes/cityScene.ts](src/world/scenes/cityScene.ts) | Scene deterministiche a passi con budget: `city`, `noise`, `slab` | `createScene`, `SceneGenerator`, `SceneKind`, `TILE`, `STREET`, `LOT` |
+| [scenes/cityScene.ts](src/world/scenes/cityScene.ts) | Scene deterministiche a passi con budget: `city`, `noise`, `slab`, e il rimando a `diorama` | `createScene`, `SceneGenerator`, `SceneKind`, `SceneOptions`, `TILE`, `STREET`, `LOT` |
+| [scenes/dioramaScene.ts](src/world/scenes/dioramaScene.ts) | Un edificio solo su un basamento con il fronte strada, per giudicare il dettaglio da vicino | `createDioramaScene`, `parseBuildingUse`, `DIORAMA_DEFAULT_LEVEL`, `DioramaScene`, `DioramaOptions`, `DioramaSubject`, `DioramaSubjectOptions` |
 
 API pubblica del mondo: `setBlock`/`getBlock` e `getSurfaceKind` (rendering, marca sporco),
 `fillColumn` (lo stesso su un tratto verticale, a costo di corsa invece che di
@@ -108,6 +109,8 @@ map.columnAt(120, 96); // { height, biome, slope, buildable }
 | [VoxelMaterial.test.ts](src/engine/VoxelMaterial.test.ts) | Ogni uniform dichiarato nel GLSL esiste davvero, su entrambe le varianti; cambiare tema non ricompila il programma; il retino entra solo alla prima vista attivata | — |
 | [lighting.ts](src/engine/lighting.ts) | Modello di luce in TS puro: direzione del sole, diffusa avvolgente, luminanza per faccia | `sunDirection`, `faceLight`, `faceLuminance`, `wrapDiffuse`, `FACE_NORMALS` |
 | [lighting.test.ts](src/engine/lighting.test.ts) | Tiene allineate la copia TS e quella GLSL del modello | — |
+| [daylight.ts](src/engine/daylight.ts) | Ciclo giorno/notte in TS puro: traiettoria del sole dall'ora, fase del giorno dall'altezza, atmosfera derivata | `DAYLIGHT`, `dayPhase`, `nightFactor`, `sunElevation`, `sunAzimuth`, `withHour`, `mixHex`, `normaliseHour` |
+| [daylight.test.ts](src/engine/daylight.test.ts) | Mezzogiorno identico al tema, sole che sorge a est, crepuscolo continuo, tetto mai la faccia piu' scura, temi che restano distinti di notte | — |
 | [atmosphere.ts](src/engine/atmosphere.ts) | Prospettiva aerea in TS puro: densita' esponenziale in quota, integrata in forma chiusa lungo il raggio, piu' il velo di quota | `fogShape`, `fogOpticalDepth`, `fogAmount`, `fogAltitudeLift`, `fogVeil`, `FogModel`, `FOG_FLAT_EPSILON`, `FOG_LIFT_SHARPNESS` |
 | [atmosphere.test.ts](src/engine/atmosphere.test.ts) | A pari distanza il frammento alto riceve meno velo; continuita' del ramo limite; composizione per trasmittanza | — |
 | [inspect.ts](src/engine/inspect.ts) | Viste di ispezione in TS puro: dal modo attivo ai due predicati e alla densita' del retino. **Ogni** numero del dominio | `INSPECT`, `INSPECT_MODE`, `INSPECT_MODES`, `INSPECT_NAMES`, `inspectUniforms`, `sectionAxis`, `cycleInspectMode`, `parseInspectMode`, `clampSliceZ`, `isCut`, `modeCuts`, `modeHasLevel`, `isActive`, `isBoundedRect`, `inspectGuide`, `InspectMode`, `InspectState`, `InspectUniforms`, `InspectGuide` |
@@ -152,7 +155,7 @@ uniform e stato del renderer: nessuna geometria viene toccata.
 | File | Ruolo | Esporta |
 | --- | --- | --- |
 | [greedyMesher.ts](src/engine/mesher/greedyMesher.ts) | Greedy meshing, AO e visibilita' del cielo per faccia, scratch riusato fra job | `greedyMesh`, `createScratch`, `MeshScratch`, `MAX_QUADS_PER_CHUNK`, `MAX_BASE_QUADS_PER_CHUNK`, `SHADE_AO_MASK`, `SHADE_SKY_SHIFT`, `SHADE_SKY_MASK` |
-| [microGeometry.ts](src/engine/mesher/microGeometry.ts) | Prismi sci-fi a 1/16 di voxel accodati al greedy pass | `appendMicroGeometry`, `MicroGeometryWriter`, `FixedBox`, `MAX_DETAIL_QUADS_PER_CHUNK` |
+| [microGeometry.ts](src/engine/mesher/microGeometry.ts) | Prismi sci-fi a 1/16 di voxel accodati al greedy pass, piu' i prop appesi alle giunzioni | `appendMicroGeometry`, `MicroGeometryWriter`, `ChunkOrigin`, `FixedBox`, `MAX_DETAIL_QUADS_PER_CHUNK` |
 | [buildPaddedVolume.ts](src/engine/mesher/buildPaddedVolume.ts) | Chunk + tutti i 26 vicini immediati → volume 34³; e la fetta di soffitto 34×34×`SKY_PROBE` che il cielo deve poter guardare | `buildPaddedVolume`, `buildCeilingSlab` |
 | [meshTypes.ts](src/engine/mesher/meshTypes.ts) | Job e risultato, array trasferibili | `MeshJob`, `MeshArrays`, `MeshResult`, `MESH_UNITS_PER_VOXEL` |
 | [mesher.worker.ts](src/engine/mesher/mesher.worker.ts) | Il worker (8,64 kB in bundle) | — |
@@ -182,6 +185,7 @@ di crescita. Il `Builder`, esterno al modulo, consuma quei candidati. Dettagli i
 | [rng.ts](src/sim/rng.ts) | `mulberry32` in forma pura, stato dentro `SimState` | `nextState`, `unitOf` |
 | [scenario.ts](src/sim/scenario.ts) | Fixture della scena di debug: catalizzatori e nucleo di 24 edifici | `createScenarioState`, `scenarioCatalysts` |
 | [debugData.ts](src/sim/debugData.ts) | L'unica scrittura verso il `VoxelWorld`, e va in `data` | `writeDesirabilityData` |
+| [vitality.ts](src/sim/vitality.ts) | Quanto la citta' e' viva in due frazioni: case occupate e negozi pieni. Lettura pura, la consumano le luci | `cityVitality`, `DEFAULT_VITALITY`, `CityVitality` |
 | [testTerrain.ts](src/sim/testTerrain.ts) | Fixture di terreno per i test. **Non** è codice di produzione | `testTerrain` |
 
 ```ts
@@ -382,13 +386,14 @@ giocabile; gli overlay tecnici si alternano con `F3` o partono aperti con
 | [world/VoxelWorld.test.ts](src/world/VoxelWorld.test.ts) | Sparsità, dirty set ai bordi, AABB, contratto `data` ≠ `blocks` |
 | [world/visualBlock.test.ts](src/world/visualBlock.test.ts) | Palette e superficie nello stesso byte, il vuoto ignora la superficie |
 | [world/scenes/cityScene.test.ts](src/world/scenes/cityScene.test.ts) | Determinismo, riempimento al 20%, ripresa a passi, nessuna scrittura fuori region |
+| [world/scenes/dioramaScene.test.ts](src/world/scenes/dioramaScene.test.ts) | Determinismo del soggetto, ingombro dichiarato, carreggiata sul fronte, superfici che arrivano al mondo, tipologia forzata |
 | [world/terrain/heightField.test.ts](src/world/terrain/heightField.test.ts) | Margine di Lipschitz su otto seed — la rete di sicurezza della calibrazione |
 | [world/terrain/IslandGenerator.test.ts](src/world/terrain/IslandGenerator.test.ts) | Determinismo per blocco, continuità al confine, `expandIsland` |
 | [world/terrain/TerrainMap.test.ts](src/world/terrain/TerrainMap.test.ts) | Mappa per colonna, istogramma, chunking |
 | [world/terrain/waterClass.test.ts](src/world/terrain/waterClass.test.ts) | La profondita' decide per prima, un braccio chiuso su un asse e' canale, una baia con una sponda sola resta mare |
 | [engine/mesher/greedyMesher.test.ts](src/engine/mesher/greedyMesher.test.ts) | Fusione dei quad, orientamento delle facce, casi limite |
 | [engine/mesher/buildPaddedVolume.test.ts](src/engine/mesher/buildPaddedVolume.test.ts) | Piani, spigoli e angoli del padding |
-| [engine/mesher/microGeometry.test.ts](src/engine/mesher/microGeometry.test.ts) | Unità fisse, facce nascoste, testate condivise, priorità e limite |
+| [engine/mesher/microGeometry.test.ts](src/engine/mesher/microGeometry.test.ts) | Unità fisse, facce nascoste, testate condivise, priorità e limite; i prop: aggancio all'ingresso, superficie per prisma, seme in coordinate di mondo, margine sotto il tetto |
 | [engine/palette.test.ts](src/engine/palette.test.ts) | 32 slot, validazione dei colori |
 | [engine/themes/themes.test.ts](src/engine/themes/themes.test.ts) | Ogni tema riempie i 32 slot, atmosfera in range |
 | [world/terrain/decor.test.ts](src/world/terrain/decor.test.ts) | Alberi deterministici, biomi esclusi, chiome non sovrapposte e profili delle specie |
@@ -434,6 +439,7 @@ giocabile; gli overlay tecnici si alternano con `F3` o partono aperti con
 | [sim/charters.test.ts](src/sim/charters.test.ts) | Uno slot per famiglia, sostituzione, revoca, ordine canonico |
 | [sim/trade.test.ts](src/sim/trade.test.ts) | Prerequisito del porto e priorità commerciali |
 | [sim/nextBuildSites.test.ts](src/sim/nextBuildSites.test.ts) | Ordinamento, filtri di edificabilità |
+| [sim/vitality.test.ts](src/sim/vitality.test.ts) | Occupazione da popolazione su capacita', citta' sovracostruita piu' spenta, commercio fermo a zero, lettura pura |
 | [sim/simPerf.test.ts](src/sim/simPerf.test.ts) | Tick sotto 3 ms, zero celle ricalcolate, costo indipendente dalla mappa |
 | [engine/mesher/greedyMesher.bench.ts](src/engine/mesher/greedyMesher.bench.ts) | Costo per chunk: vuoto, edifici, edifici sci-fi, pieno, rumore, scacchiera |
 | [sim/sim.bench.ts](src/sim/sim.bench.ts) | `tick`, catalizzatore, policy, `nextBuildSites` |
@@ -445,7 +451,8 @@ La radice `/` avvia isola, crescita e Cozy HUD; gli overlay tecnici sono nascost
 | Parametro | Default | Effetto |
 | --- | --- | --- |
 | `debug` | — | `1` apre overlay e hotkey tecniche; `F3` li alterna a runtime |
-| `scene` | — | Isola una scena `city`, `noise` (caso peggiore) o `slab` |
+| `scene` | — | Isola una scena `city`, `noise` (caso peggiore), `slab` o `diorama` |
+| `class`, `level`, `typology`, `mixed` | `commercial`, `6` | Soggetto della scena `diorama` |
 | `seed` | `1337` | Seed della generazione |
 | `size` | `512` | Lato del mondo in voxel (32…4096) |
 | `height` | `64` | Altezza del mondo in voxel (32…256) |
@@ -455,5 +462,6 @@ La radice `/` avvia isola, crescita e Cozy HUD; gli overlay tecnici sono nascost
 | `quality` | `auto` | `high`, `balanced` o `performance` fissano pixel ratio ed effetti; `auto` adatta con isteresi |
 | `shadows` | — | `0` spegne la pass del sole, qualunque sia la qualita' |
 | `theme` | `natural` | `<id>` sceglie il tema; vale **anche senza** `debug` |
+| `hour` | — | `<0..24>` fissa l'ora e ferma il ciclo giorno/notte; vale **anche senza** `debug` |
 | `inspect` | — | `xray`, `slice`, `section` o `block` aprono una vista di ispezione; vale **anche senza** `debug` |
 | `slice` | — | `<z>` fissa la quota della fetta; senza, segue il suolo che si sta guardando |

@@ -44,6 +44,10 @@ export interface OverlayFrame {
   readonly scene: string;
   readonly seed: number;
   readonly theme: string;
+  /** Ora di gioco, 0..24. Stessa fonte di `__voxelHour`. */
+  readonly hour: number;
+  /** true quando `?hour=` ha fissato l'orologio e il ciclo non cammina. */
+  readonly hourPinned: boolean;
   readonly quality: string;
   readonly pixelRatio: number;
   readonly zoom: number;
@@ -132,6 +136,7 @@ export class DebugOverlay {
       '',
       `scene      ${frame.scene}  seed ${frame.seed}`,
       `theme      ${frame.theme}`,
+      `hour       ${formatHour(frame.hour)}${frame.hourPinned ? '  pinned' : ''}   H ±1h`,
       `quality    ${frame.quality}  DPR ${frame.pixelRatio.toFixed(2)}`,
       `camera     zoom ${frame.zoom.toFixed(2)}  yaw ${Math.round(frame.yawDegrees)}°`,
       generating ? `generate   ${(frame.generationProgress * 100).toFixed(0)} %` : '',
@@ -146,6 +151,13 @@ export class DebugOverlay {
   dispose(): void {
     this.root.remove();
   }
+}
+
+/** Ora di gioco come orologio: e' cosi' che si legge, non come 13,74. */
+function formatHour(hour: number): string {
+  const whole = Math.floor(hour);
+  const minutes = Math.floor((hour - whole) * 60);
+  return `${whole.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
 }
 
 function format(value: number): string {

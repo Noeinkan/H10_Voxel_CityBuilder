@@ -804,7 +804,7 @@ tipologie già usa (`courtyardBlock` 0,3, `commercialPodium` 0,4).
 **Costo, misurato.** Su 256×256 colonne, quattro catalizzatori a raggio 60 e 300
 tick: `onTick` ha mediana **0,022–0,025 ms** e p95 **3,0–3,5 ms**, con 372
 edifici di cui **344 in fila**. La mediana è bassa perché la maggior parte dei
-tick non costruisce — `ticksPerBuild` è 2 e `ticksPerUpgrade` 10 — e sono i tick
+tick non costruisce — `ticksPerBuild` era 2 alla misura e `ticksPerUpgrade` 10 — e sono i tick
 di infornata a stare nel p95. La sola spesa che la fase aggiunge al piazzamento è
 la seconda generazione dello stamp dove la fila ha un basamento: `generateBuilding`
 costa **27 µs** per chiamata e il campo in più non la cambia (27,1 contro 27,7 µs
@@ -1243,23 +1243,23 @@ il condizionatore, l'insegna a bandiera, la pianta sul balcone — e la luce che
 bloom, non schiarisce il muro di fronte. Nebbia, acqua e prospettiva aerea
 restano invece competenza della 4.7.
 
-- [ ] Costruire una libreria di prop sub-voxel — tende, insegne, condizionatori, <!-- size: XL -->
+- [x] Costruire una libreria di prop sub-voxel — tende, insegne, condizionatori, <!-- size: XL -->
   antenne, cavi, cassoni, fioriere — emessi dalla stessa `emitRuns` degli altri
   dettagli, scelti per uso, livello e faccia.
-- [ ] Appenderli alle giunzioni che la grammatica già produce — fronte strada, <!-- size: L -->
+- [x] Appenderli alle giunzioni che la grammatica già produce — fronte strada, <!-- size: L -->
   arretramenti, coronamenti, angoli d'isolato — invece che a posizioni sparse
   sulla facciata: è l'aggancio a rendere l'oggetto credibile, non la sua forma.
-- [ ] Portare il verde sull'edificio: fioriere, rampicanti e chiome che riusano <!-- size: M -->
+- [x] Portare il verde sull'edificio: fioriere, rampicanti e chiome che riusano <!-- size: M -->
   gli slot `grass*` esistenti e la stessa priorità di troncamento.
-- [ ] Far uscire la luce: un contributo notturno che schiarisce le superfici <!-- size: L -->
+- [x] Far uscire la luce: un contributo notturno che schiarisce le superfici <!-- size: L -->
   vicine a una faccia emissiva, ricavato da quello che il mesher già produce,
   senza luci dinamiche, senza una pass in più e senza ricompilare materiali.
-- [ ] Legare l'accensione allo stato della simulazione: finestre accese in <!-- size: M -->
+- [x] Legare l'accensione allo stato della simulazione: finestre accese in <!-- size: M -->
   proporzione all'occupazione, insegne dove il commercio è attivo, buio dove
   l'edificio è vuoto — la città di notte come lettura dell'economia.
-- [ ] Aggiungere un ciclo giorno/notte come traiettoria del sole più scambio di <!-- size: M -->
+- [x] Aggiungere un ciclo giorno/notte come traiettoria del sole più scambio di <!-- size: M -->
   uniform, con l'ora esposta nell'harness per poter iterare sul look.
-- [ ] Dare all'harness una scena `diorama`: un edificio solo, girevole e <!-- size: M -->
+- [x] Dare all'harness una scena `diorama`: un edificio solo, girevole e <!-- size: M -->
   inquadrato da vicino, per giudicare il dettaglio senza aspettare che la città
   cresca. Stessa ossatura del campionario della 4.10 — una scena a budget che
   compone soggetti scelti — quindi la seconda costa poco se la prima esiste già.
@@ -1275,6 +1275,47 @@ linguaggio `luminous`, non un materiale nuovo.
 facciate piatte ripetute; di notte la città si legge per luci accese e non per
 sola silhouette; il costo per chunk edificato resta dentro il tetto misurato
 oggi e le draw call non crescono.
+
+**Il costo per chunk ha deciso l'architettura, non l'ha solo verificata.** I
+prop scritti nel modo ovvio — un emettitore per giunzione, ognuno con la sua
+passata sulle celle di quel tipo di superficie — costavano **+2,2 ms per
+chunk**, misurati A/B nello stesso processo. Sono scesi a **+0,3 ms** con due
+cambi che non si vedono a schermo: le celle di facciata si indicizzano una volta
+sola **per faccia esposta** — quelle interne di un edificio pieno sono i due
+terzi e nessun prop potrà mai usarle — e quella scansione legge i quattro vicini
+con gli indici invece che con la tabella degli offset. La stessa lezione è
+tornata sul bagliore notturno: scritto in modo diretto costava +1,35 ms, e la
+sola differenza è una moltiplicazione per cella tolta dal ciclo. In questo
+mesher il costo non sta quasi mai nella geometria che si produce, ma in quante
+volte si tocca una cella che non produrrà niente.
+
+**Il tetto di quad ha tenuto**, e senza alzarlo: sulla fixture `densityChunk`
+si passa da 3 320 quad di sola struttura a 4 355 con prop e verde, un trenta per
+cento. La voce che pesava era l'unica che pesca su tutta la parete invece che su
+una giunzione, e sta a 0,012 e non a 0,09 — dove da sola valeva più di tutto il
+dettaglio strutturale del chunk. Il verde è quasi gratis perché non aggiunge
+prismi: fioriera e cassone sono la stessa forma con due slot di palette, e un
+rampicante è una corsa sola per colonna.
+
+**Due limiti dichiarati, che passano alla fase dopo.** La tinta della luce che
+esce è del **tema** e non dell'emettitore — un'insegna rossa e una cyan
+schiariscono il muro con lo stesso ambra — perché portare la tinta costerebbe
+bit che non ci sono. E l'accensione è una lettura **per città e per uso**, mai
+per singolo edificio: il fragment non sa a quale edificio appartenga un voxel,
+quindi un quartiere vuoto in mezzo a una città piena non si spegne da solo. È lo
+stesso muro contro cui batte la 4.9 dal lato opposto — quando l'edificio avrà
+un'identità che il rendering può leggere, entrambi cadranno insieme.
+
+**Il ciclo giorno/notte rompe di proposito un invariante dei temi.** A sole
+radente una parete illuminata supera il tetto, che è il caso da cui
+`SunLight.elevation` mette in guardia: sotto i quaranta gradi circa il diorama
+smette di leggersi «dall'alto». Non si corregge — l'alternativa misurata sarebbe
+raddoppiare l'ambiente di cielo, che slava la scena invece di salvarla. Quello
+che il ciclo garantisce, a ogni ora, è che il tetto non sia mai la faccia più
+scura.
+
+**Le tabelle di misura in `README.md` e `src/sim/README.md` vanno rimisurate a
+mano**, e non sono state aggiornate qui.
 
 ### Fase 4.9 — Quote abitate e città sospesa
 

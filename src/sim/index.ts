@@ -121,6 +121,7 @@ export {
   type SimStateData,
   type SimStateOptions,
 } from './SimState';
-export { tick, tickMany, weightsOf } from './tick';
+export { effectiveCount, tick, tickMany, weightsOf } from './tick';
+export { cityVitality, DEFAULT_VITALITY, type CityVitality } from './vitality';
 export { createScenarioState, scenarioCatalysts, type ScenarioRegion } from './scenario';
 export { writeDesirabilityData } from './debugData';

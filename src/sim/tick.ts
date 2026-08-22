@@ -199,7 +199,7 @@ export function weightsOf(state: SimState): Weights {
  * edificio misto vale uno sul suo uso primario e `secondaryShare` sul secondo:
  * ospita davvero due funzioni, ma in un volume solo, e la capacita' lo dice.
  */
-function effectiveCount(state: SimState, cls: BuildingClass): number {
+export function effectiveCount(state: SimState, cls: BuildingClass): number {
   const mixed = state.mixedCounts[cls] ?? 0;
   return state.buildingCounts[cls] + mixed * BALANCE.mixedUse.secondaryShare;
 }

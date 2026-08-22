@@ -7,9 +7,11 @@ import {
   FACE_PX,
   FACE_PY,
   FACE_PZ,
+  PADDED,
   paddedIdx,
 } from '../../world/chunkCoords';
-import { blockSurface, SURFACE_KIND, type SurfaceKind } from '../../world/visualBlock';
+import { hashCoords } from '../../world/rng';
+import { blockPalette, blockSurface, SURFACE_KIND, type SurfaceKind } from '../../world/visualBlock';
 import { PALETTE_SLOTS } from '../paletteSlots';
 import { MESH_UNITS_PER_VOXEL } from './meshTypes';
 
@@ -30,6 +32,14 @@ import { MESH_UNITS_PER_VOXEL } from './meshTypes';
  *
  * Il padding porta il resto: una corsa che prosegue oltre il confine perde la
  * testata da quel lato e la ritrova, identica, nella corsa del chunk accanto.
+ *
+ * **Due famiglie, non una.** Sopra ci sono i dettagli di *struttura* — montanti,
+ * architravi, parapetti, cornici — che stanno dove la facciata cambia e la cui
+ * posizione e' interamente geometrica. Sotto ci sono i *prop*: la tenda,
+ * l'insegna, il condizionatore, l'antenna. Anche loro nascono da una giunzione
+ * che il volume racconta, ma quale cella la porti lo decide un hash delle
+ * coordinate di **mondo**. Vengono per ultimi apposta: sotto pressione di
+ * budget a cadere sono loro, e una citta' senza tende resta leggibile.
  */
 
 /**
@@ -39,6 +49,15 @@ import { MESH_UNITS_PER_VOXEL } from './meshTypes';
  * quad di dettaglio, quindi il tetto sta sopra il caso denso e non tronca mai
  * per davvero. Serve solo a tenere limitata la patologia — voxel isolati a
  * scacchiera, dove nessuna corsa fonde e ogni cella chiede otto prismi.
+ *
+ * **I prop hanno alzato quel numero, e il tetto non si e' alzato con loro.** La
+ * fixture `densityChunk` di `microGeometry.test.ts` misura la differenza:
+ * 3 320 quad di sola struttura, 4 355 con prop e verde — un trenta per cento.
+ * La voce che pesa e' l'unica che pesca su tutta la parete invece che su una
+ * giunzione, ed e' per questo che la sua frequenza sta a 0,012 e non a 0,09,
+ * dove da sola valeva piu' di tutto il dettaglio strutturale del chunk. Il
+ * verde, invece, e' quasi gratis: fioriera e cassone sono lo stesso prisma con
+ * due slot diversi, e un rampicante e' una corsa sola per colonna.
  *
  * Troncare non e' gratis: la sequenza si ferma per priorita', quindi a essere
  * tagliate sono sempre le ultime voci (industrial, civic) e sempre a meta' di un
@@ -51,11 +70,31 @@ export interface FixedBox {
   readonly max: readonly [number, number, number];
 }
 
-/** Writer implementato dal mesher per tenere dettagli e greedy pass nella stessa mesh. */
+/**
+ * Writer implementato dal mesher per tenere dettagli e greedy pass nella stessa
+ * mesh.
+ *
+ * `surface` non e' un tipo nuovo: e' uno dei sette linguaggi che il fragment
+ * gia' conosce. Serve perche' un'insegna deve poter uscire `luminous` e
+ * prendersi la fascia accesa senza un materiale proprio, mentre un
+ * condizionatore resta `utility`, cioe' metallo strutturale.
+ */
 export interface MicroGeometryWriter {
   readonly remainingQuads: number;
-  emitBox(box: FixedBox, palette: number, hiddenFaces: number): boolean;
+  emitBox(box: FixedBox, palette: number, hiddenFaces: number, surface: SurfaceKind): boolean;
 }
+
+/**
+ * Angolo minimo del chunk in voxel di mondo.
+ *
+ * E' l'unica nozione di mondo che entra in questo modulo, e serve a una cosa
+ * sola: seminare la scelta di un prop. Con coordinate locali le due meta' di una
+ * corsa a cavallo di un confine sceglierebbero prop diversi, e la cucitura si
+ * vedrebbe. Non entra in nessun predicato geometrico.
+ */
+export type ChunkOrigin = readonly [number, number, number];
+
+const ORIGIN_ZERO: ChunkOrigin = [0, 0, 0];
 
 const U = MESH_UNITS_PER_VOXEL;
 const LATERAL_FACES = [FACE_PX, FACE_NX, FACE_PY, FACE_NY] as const;
@@ -69,21 +108,55 @@ function encodeCell(x: number, y: number, z: number): number {
   return x | (y << 5) | (z << 10);
 }
 
-function collectSurfaceCells(padded: Uint8Array): number[][] {
-  const cells = Array.from({ length: 8 }, () => [] as number[]);
+/**
+ * Le celle da visitare: per superficie, e per faccia esposta.
+ *
+ * La seconda lista e' l'unica cosa che rende sostenibili i prop. Un emettitore
+ * costa una passata sulla lista che riceve, e la lista per superficie e'
+ * **volumetrica**: un edificio pieno ci mette dentro anche i voxel interni, che
+ * sono i due terzi e non potranno mai portare niente. Filtrarli una volta sola,
+ * nella scansione che c'e' gia', li toglie da tutte le passate che seguono.
+ *
+ * L'indice e' la posizione dentro `LATERAL_FACES`, non l'indice di faccia.
+ */
+interface SurfaceCells {
+  readonly bySurface: number[][];
+  readonly facadeByFace: number[][];
+}
+
+function collectSurfaceCells(padded: Uint8Array): SurfaceCells {
+  const bySurface = Array.from({ length: 8 }, () => [] as number[]);
+  const facadeByFace = Array.from({ length: LATERAL_FACES.length }, () => [] as number[]);
   for (let z = 0; z < CHUNK; z++) {
     for (let y = 0; y < CHUNK; y++) {
       for (let x = 0; x < CHUNK; x++) {
         const block = blockAt(padded, x, y, z);
         if (block === 0) continue;
         const surface = blockSurface(block);
-        if (surface !== SURFACE_KIND.plain && surface !== SURFACE_KIND.utility) {
-          cells[surface].push(encodeCell(x, y, z));
+        if (surface === SURFACE_KIND.plain || surface === SURFACE_KIND.utility) continue;
+        const cell = encodeCell(x, y, z);
+        bySurface[surface].push(cell);
+        // L'acqua porta `WATER_CLASS` in questi stessi bit, e bassofondo e
+        // canale coincidono con `habitat` e `industrial`: senza escluderla, il
+        // mare esposto al bordo del mondo finirebbe nella lista di facciata.
+        if ((surface !== SURFACE_KIND.habitat && surface !== SURFACE_KIND.industrial &&
+          surface !== SURFACE_KIND.civic) || isWater(block)) {
+          continue;
         }
+        // I quattro vicini in piano si leggono con gli indici, non con la
+        // tabella degli offset: e' l'unico punto del modulo che paga una lettura
+        // per **ogni** cella di edificio, interne comprese, e li' la doppia
+        // indirezione di `FACE_NEIGHBOUR_OFFSETS` si sente. L'ordine e' quello
+        // di `LATERAL_FACES`.
+        const p = paddedIdx(x + 1, y + 1, z + 1);
+        if (padded[p + 1] === 0) facadeByFace[0].push(cell);
+        if (padded[p - 1] === 0) facadeByFace[1].push(cell);
+        if (padded[p + PADDED] === 0) facadeByFace[2].push(cell);
+        if (padded[p - PADDED] === 0) facadeByFace[3].push(cell);
       }
     }
   }
-  return cells;
+  return { bySurface, facadeByFace };
 }
 
 function blockAt(padded: Uint8Array, x: number, y: number, z: number): number {
@@ -174,6 +247,8 @@ interface RunSpec {
   readonly palette: number;
   /** Faccia aderente al voxel che regge il dettaglio: non viene mai emessa. */
   readonly hiddenFace: number;
+  /** Linguaggio di superficie del prisma. Senza, e' metallo strutturale. */
+  readonly surface?: SurfaceKind;
   has(x: number, y: number, z: number): boolean;
   box(x: number, y: number, z: number, length: number, openStart: boolean, openEnd: boolean): FixedBox;
 }
@@ -214,6 +289,39 @@ function emitRuns(writer: MicroGeometryWriter, cells: readonly number[], spec: R
       spec.box(x, y, z, length, openStart, openEnd),
       spec.palette,
       faceBit(spec.hiddenFace) | sharedCapMask(axis, openStart, openEnd),
+      spec.surface ?? SURFACE_KIND.utility,
+    )) {
+      return false;
+    }
+  }
+  return true;
+}
+
+/**
+ * Un prisma per cella che soddisfa `spec`, senza cercare la corsa.
+ *
+ * **Non e' una scorciatoia di `emitRuns`, e' il caso in cui la corsa non
+ * esiste.** Un condizionatore o un'antenna stanno dentro la loro cella e non
+ * proseguono: chiedere a `emitRuns` di scoprirlo costa tre valutazioni in piu'
+ * del predicato per cella — quella all'indietro, quella in avanti e quella che
+ * chiude — per riscoprire ogni volta una corsa di lunghezza uno. Su un prop
+ * sparso il predicato e' il costo dominante, quindi valeva tre volte tanto.
+ *
+ * Niente testate condivise da mascherare: il prisma non tocca il confine, e la
+ * cella appartiene a un chunk solo.
+ */
+function emitPoints(writer: MicroGeometryWriter, cells: readonly number[], spec: RunSpec): boolean {
+  for (const cell of cells) {
+    const x = cell & 31;
+    const y = (cell >>> 5) & 31;
+    const z = (cell >>> 10) & 31;
+    if (!spec.has(x, y, z)) continue;
+
+    if (!writer.emitBox(
+      spec.box(x, y, z, 1, false, false),
+      spec.palette,
+      faceBit(spec.hiddenFace),
+      spec.surface ?? SURFACE_KIND.utility,
     )) {
       return false;
     }
@@ -401,17 +509,441 @@ function emitFacadeClass(
   return true;
 }
 
+// --- Prop: gli oggetti appesi all'edificio ---------------------------------
+//
+// Quello che separa questi dettagli da quelli sopra e' l'**aggancio**. Un
+// montante, un architrave o un parapetto stanno dove la facciata cambia, e la
+// loro posizione e' interamente decisa dalla geometria; un condizionatore o
+// un'insegna stanno dove qualcuno li avrebbe messi, e la geometria da sola non
+// lo dice. Qui l'aggancio e' un predicato — c'e' un ingresso sotto questa
+// faccia? questa sommita' e' un arretramento o un coronamento? — e il seme
+// sceglie soltanto *quale* cella lo porta, mai *se* l'aggancio esiste.
+//
+// **Vengono per ultimi, ed e' deliberato.** Sotto pressione di budget a cadere
+// sono loro: una citta' senza tende resta leggibile, una senza parapetti no.
+
+/** Quanto in basso si cerca l'ingresso per dire che una faccia guarda la strada. */
+const FRONTAGE_REACH = 5;
+
+/** Sopra questa quota di cella un prop da marciapiede non ha piu' senso. */
+const FRONTAGE_TOP = 7;
+
+/** Fin dove sale un rampicante: piu' su sarebbe un giardino verticale. */
+const VINE_TOP = 11;
+
+/**
+ * Numero pseudocasuale in [0, 1) da coordinate di **mondo** e un sale.
+ *
+ * Non e' un PRNG con stato: due chunk adiacenti devono poter chiedere la stessa
+ * cella e ottenere la stessa risposta, e un generatore a sequenza dipenderebbe
+ * dall'ordine di visita. Il sale separa le domande — «qui c'e' un'insegna?» e
+ * «qui c'e' un condizionatore?» non devono essere la stessa moneta.
+ */
+function propRoll(origin: ChunkOrigin, x: number, y: number, z: number, salt: number): number {
+  const h = hashCoords(hashCoords(salt, origin[0] + x, origin[1] + y), origin[2] + z, salt);
+  return h / 4294967296;
+}
+
+/** true se questa faccia ha un ingresso sotto di se': e' cosi' che si legge il fronte strada. */
+function frontage(padded: Uint8Array, x: number, y: number, z: number, face: number): boolean {
+  for (let d = 0; d <= FRONTAGE_REACH; d++) {
+    if (z - d < -1) break;
+    if (hasSurfaceFace(padded, x, y, z - d, SURFACE_KIND.portal, face)) return true;
+  }
+  return false;
+}
+
+/**
+ * Facciata d'uso esposta su questa faccia, o `SURFACE_KIND.plain` se non c'e'.
+ *
+ * Restituisce la superficie invece di un booleano perche' e' cosi' che l'uso
+ * sceglie il prop: una tenda e' da negozio, un condizionatore non sta sul fronte
+ * di un civico. Il valore neutro e' `plain`, che nessuna facciata usa, cosi' il
+ * confronto resta un intero e non un `null` da controllare a parte.
+ */
+function facadeAt(padded: Uint8Array, x: number, y: number, z: number, face: number): number {
+  const block = blockAt(padded, x, y, z);
+  if (block === 0 || !isExposed(padded, x, y, z, face)) return SURFACE_KIND.plain;
+  const surface = blockSurface(block);
+  if (surface === SURFACE_KIND.habitat || surface === SURFACE_KIND.industrial ||
+    surface === SURFACE_KIND.civic) {
+    // Su un voxel d'acqua quei tre bit sono `WATER_CLASS`, non un linguaggio di
+    // facciata: bassofondo e canale coincidono con `habitat` e `industrial`, e
+    // senza questo controllo il mare esposto al bordo del mondo si metterebbe i
+    // condizionatori. E' lo stesso riconoscimento che il fragment fa dalla
+    // palette prima di leggere la superficie.
+    return isWater(block) ? SURFACE_KIND.plain : surface;
+  }
+  return SURFACE_KIND.plain;
+}
+
+/** Riconosce l'acqua dalla palette, come il fragment. */
+function isWater(block: number): boolean {
+  const palette = blockPalette(block);
+  return palette === PALETTE_SLOTS.water || palette === PALETTE_SLOTS.waterDeep;
+}
+
+/** Le tende stanno sui fronti abitati e commerciali, non su un capannone. */
+function wantsAwning(surface: number): boolean {
+  return surface === SURFACE_KIND.habitat;
+}
+
+/** Un'insegna a bandiera sta dove si entra: commercio e civico, non industria. */
+function wantsSign(surface: number): boolean {
+  return surface === SURFACE_KIND.habitat || surface === SURFACE_KIND.civic;
+}
+
+/** Il condizionatore sta dove c'e' qualcosa da raffreddare, e non sul civico. */
+function wantsWallUnit(surface: number): boolean {
+  return surface === SURFACE_KIND.habitat || surface === SURFACE_KIND.industrial;
+}
+
+/** Sommita' di tetto tecnico scoperta: e' l'aggancio di antenne, cassoni e fioriere. */
+function openRoof(padded: Uint8Array, x: number, y: number, z: number): boolean {
+  const block = blockAt(padded, x, y, z);
+  return block !== 0 && blockSurface(block) === SURFACE_KIND.roofTech &&
+    isExposed(padded, x, y, z, FACE_PZ);
+}
+
+/**
+ * Sommita' scoperta con tetto scoperto **tutt'attorno**.
+ *
+ * Antenne e chiome stanno in mezzo a un tetto, non sul suo filo: sul filo c'e'
+ * gia' il parapetto di `emitRoofTech`, e una cornice larga un voxel non e' una
+ * copertura su cui posare qualcosa. Toglie anche il caso in cui un prop
+ * comparirebbe su una sporgenza che da lontano e' una linea.
+ */
+function interiorRoof(padded: Uint8Array, x: number, y: number, z: number): boolean {
+  for (const face of LATERAL_FACES) {
+    const offset = FACE_NEIGHBOUR_OFFSETS[face];
+    if (!openRoof(padded, x + offset[0], y + offset[1], z)) return false;
+  }
+  return true;
+}
+
+/** true se sopra un vicino laterale c'e' ancora volume: la sommita' e' un arretramento. */
+function underSetback(padded: Uint8Array, x: number, y: number, z: number): boolean {
+  for (const face of LATERAL_FACES) {
+    const offset = FACE_NEIGHBOUR_OFFSETS[face];
+    if (blockAt(padded, x + offset[0], y + offset[1], z + 1) !== 0) return true;
+  }
+  return false;
+}
+
+/**
+ * Tende e pensiline sul fronte strada.
+ *
+ * Corrono in orizzontale come le mensole di `emitHabitat`, ma solo dove sotto
+ * c'e' un ingresso: e' la differenza fra una tenda da negozio e un marcapiano.
+ */
+function emitAwnings(
+  padded: Uint8Array,
+  writer: MicroGeometryWriter,
+  cells: readonly number[][],
+): boolean {
+  for (let i = 0; i < LATERAL_FACES.length; i++) {
+    const face = LATERAL_FACES[i];
+    const normal = FACE_NEIGHBOUR_OFFSETS[face];
+    if (!emitRuns(writer, cells[i], {
+      runAxis: facadeHorizontalAxis(face),
+      palette: PALETTE_SLOTS.roofPale,
+      hiddenFace: oppositeFace(face),
+      // L'ordine dei predicati e' una scelta di costo, non di stile: `frontage`
+      // e' l'unico che scandisce una colonna, e sta in fondo perche' ci arrivi
+      // una cella su cento invece di tutte.
+      has: (x, y, z) => z <= FRONTAGE_TOP &&
+        wantsAwning(facadeAt(padded, x, y, z, face)) &&
+        // Le serve aria davanti: sporge 5/16, e sotto un volume non ci sta.
+        blockAt(padded, x + normal[0], y + normal[1], z) === 0 &&
+        frontage(padded, x, y, z, face),
+      box: (x, y, z, length) => facadeBox(x, y, z, face, 0, length * U, U - 4, U - 1, 5),
+    })) {
+      return false;
+    }
+  }
+  return true;
+}
+
+/**
+ * Insegne a bandiera: lame ortogonali alla facciata, sopra l'ingresso.
+ *
+ * Escono `luminous`, quindi di notte si accendono da sole passando dal ramo che
+ * il fragment ha gia': un'insegna non e' un materiale nuovo, e' un prisma con
+ * una palette esistente e il linguaggio giusto.
+ */
+function emitSigns(
+  padded: Uint8Array,
+  writer: MicroGeometryWriter,
+  cells: readonly number[][],
+  origin: ChunkOrigin,
+): boolean {
+  for (let i = 0; i < LATERAL_FACES.length; i++) {
+    const face = LATERAL_FACES[i];
+    const normal = FACE_NEIGHBOUR_OFFSETS[face];
+    if (!emitPoints(writer, cells[i], {
+      runAxis: facadeHorizontalAxis(face),
+      palette: PALETTE_SLOTS.metalBrass,
+      hiddenFace: oppositeFace(face),
+      surface: SURFACE_KIND.luminous,
+      has: (x, y, z) => z <= FRONTAGE_TOP && z >= 2 &&
+        wantsSign(facadeAt(padded, x, y, z, face)) &&
+        blockAt(padded, x + normal[0], y + normal[1], z) === 0 &&
+        propRoll(origin, x, y, z, 0x51_6e) < 0.16 &&
+        frontage(padded, x, y, z, face),
+      // Sporge 8/16 e resta larga 2/16: e' una bandiera, non un pannello.
+      box: (x, y, z) => facadeBox(x, y, z, face, 6, 8, 3, 12, 8),
+    })) {
+      return false;
+    }
+  }
+  return true;
+}
+
+/** Condizionatori e cassoni tecnici: solo sulle facce che **non** guardano la strada. */
+function emitWallUnits(
+  padded: Uint8Array,
+  writer: MicroGeometryWriter,
+  cells: readonly number[][],
+  origin: ChunkOrigin,
+): boolean {
+  for (let i = 0; i < LATERAL_FACES.length; i++) {
+    const face = LATERAL_FACES[i];
+    const normal = FACE_NEIGHBOUR_OFFSETS[face];
+    if (!emitPoints(writer, cells[i], {
+      runAxis: facadeHorizontalAxis(face),
+      palette: PALETTE_SLOTS.metalDark,
+      hiddenFace: oppositeFace(face),
+      // Uno su cento, e non e' timidezza: e' la sola voce che pesca su **tutta**
+      // la parete invece che su una giunzione, quindi la sua frequenza
+      // moltiplica per l'area. A 0,09 valeva da sola piu' di tutto il dettaglio
+      // strutturale del chunk; a 0,012 una facciata di quattordici per ventisei
+      // ne porta ancora cinque.
+      has: (x, y, z) => wantsWallUnit(facadeAt(padded, x, y, z, face)) &&
+        blockAt(padded, x + normal[0], y + normal[1], z) === 0 &&
+        propRoll(origin, x, y, z, 0x1a_c0) < 0.012 &&
+        !frontage(padded, x, y, z, face),
+      box: (x, y, z) => facadeBox(x, y, z, face, 4, 12, 4, 12, 3),
+    })) {
+      return false;
+    }
+  }
+  return true;
+}
+
+/**
+ * Antenne e sfiati sul coronamento.
+ *
+ * Salgono oltre il voxel che le regge: l'AABB del chunk si allarga per
+ * contenerle, che e' lo stesso caso gia' coperto dal parapetto in quota 32.
+ */
+function emitRoofMasts(
+  padded: Uint8Array,
+  writer: MicroGeometryWriter,
+  cells: readonly number[],
+  origin: ChunkOrigin,
+): boolean {
+  return emitPoints(writer, cells, {
+    runAxis: 0,
+    palette: PALETTE_SLOTS.metalDark,
+    hiddenFace: FACE_NZ,
+    has: (x, y, z) => openRoof(padded, x, y, z) &&
+      propRoll(origin, x, y, z, 0x4d_a5) < 0.04 &&
+      interiorRoof(padded, x, y, z),
+    box: (x, y, z) => ({
+      min: [x * U + 7, y * U + 7, (z + 1) * U],
+      max: [x * U + 9, y * U + 9, (z + 1) * U + 22],
+    }),
+  });
+}
+
+/**
+ * Cassoni e fioriere sul bordo di un arretramento.
+ *
+ * L'aggancio e' la terrazza che la grammatica produce da sempre: la sommita'
+ * scoperta di una fascia con ancora volume di fianco. Corrono lungo il bordo,
+ * quindi una terrazza intera costa un prisma per lato e non uno per cella.
+ *
+ * **Il verde non costa un prisma in piu'.** Cassone tecnico e fioriera hanno la
+ * stessa forma e cambiano solo slot di palette: e' la seconda meta' del tiro a
+ * decidere quale delle due, quindi la terrazza si pianta senza emettere niente
+ * che prima non emettesse.
+ */
+function emitTerraceBoxes(
+  padded: Uint8Array,
+  writer: MicroGeometryWriter,
+  cells: readonly number[],
+  origin: ChunkOrigin,
+): boolean {
+  for (const runAxis of [0, 1] as const) {
+    const salt = runAxis === 0 ? 0x70_11 : 0x70_22;
+    for (const planted of [false, true]) {
+      if (!emitRuns(writer, cells, {
+        runAxis,
+        palette: planted ? PALETTE_SLOTS.grassDark : PALETTE_SLOTS.stoneWarm,
+        hiddenFace: FACE_NZ,
+        has: (x, y, z) => {
+          if (!openRoof(padded, x, y, z)) return false;
+          const roll = propRoll(origin, x, y, z, salt);
+          if (roll >= 0.3) return false;
+          // Due su tre sono verdi: una terrazza e' un giardino con qualche
+          // cassone, non un vano tecnico con qualche pianta.
+          if ((roll < 0.1) === planted) return false;
+          return underSetback(padded, x, y, z);
+        },
+        box: (x, y, z, length) => {
+          const min: [number, number, number] = [x * U + 3, y * U + 3, (z + 1) * U];
+          const max: [number, number, number] = [x * U + 13, y * U + 13, (z + 1) * U + 6];
+          max[runAxis] = (runAxis === 0 ? x : y) * U + (length - 1) * U + 13;
+          return { min, max };
+        },
+      })) {
+        return false;
+      }
+    }
+  }
+  return true;
+}
+
+/**
+ * Rampicanti: una corsa verticale sottile sulle facciate a nord e a est.
+ *
+ * **Il tiro non guarda la quota**, ed e' quello che li rende rampicanti invece
+ * che macchie: con un tiro per cella la corsa si spezzerebbe a ogni voxel, e
+ * `emitRuns` emetterebbe un prisma per cella invece di uno per colonna. Cosi'
+ * una parete di dieci voxel costa cinque quad in tutto.
+ *
+ * Si fermano in basso perche' e' li' che un rampicante arriva: piu' su sarebbe
+ * un giardino verticale, che e' un'altra cosa e la citta' non la costruisce.
+ */
+function emitVines(
+  padded: Uint8Array,
+  writer: MicroGeometryWriter,
+  cells: readonly number[][],
+  origin: ChunkOrigin,
+): boolean {
+  // Nord ed est: le prime e le terze voci di `LATERAL_FACES` sono +X e +Y.
+  for (const i of [0, 2] as const) {
+    const face = LATERAL_FACES[i];
+    for (const side of SIDES) {
+      const start = side < 0 ? 2 : U - 5;
+      if (!emitRuns(writer, cells[i], {
+        runAxis: 2,
+        palette: PALETTE_SLOTS.grassDark,
+        hiddenFace: oppositeFace(face),
+        has: (x, y, z) => z <= VINE_TOP &&
+          facadeAt(padded, x, y, z, face) !== SURFACE_KIND.plain &&
+          propRoll(origin, x, y, 0, side < 0 ? 0x7e_11 : 0x7e_22) < 0.12,
+        box: (x, y, z, length) => facadeBox(x, y, z, face, start, start + 3, 0, length * U, 2),
+      })) {
+        return false;
+      }
+    }
+  }
+  return true;
+}
+
+/**
+ * Chiome sui tetti scoperti: il giardino pensile visto da fuori.
+ *
+ * Sta sui coronamenti piatti e non sugli arretramenti, dove il bordo lo occupano
+ * gia' fioriere e cassoni. E' l'unico prop piu' largo della cella che lo regge:
+ * una chioma stretta quanto un voxel non legge come chioma.
+ */
+function emitRoofCrowns(
+  padded: Uint8Array,
+  writer: MicroGeometryWriter,
+  cells: readonly number[],
+  origin: ChunkOrigin,
+): boolean {
+  return emitPoints(writer, cells, {
+    runAxis: 0,
+    palette: PALETTE_SLOTS.grassLight,
+    hiddenFace: FACE_NZ,
+    has: (x, y, z) => openRoof(padded, x, y, z) &&
+      propRoll(origin, x, y, z, 0x6c_ea) < 0.05 &&
+      interiorRoof(padded, x, y, z),
+    box: (x, y, z) => ({
+      min: [x * U + 1, y * U + 1, (z + 1) * U],
+      max: [x * U + 15, y * U + 15, (z + 1) * U + 7],
+    }),
+  });
+}
+
+/**
+ * Pilastrino d'angolo a piano terra.
+ *
+ * L'angolo d'isolato e' la cella che espone **due** facce ortogonali della
+ * stessa facciata: e' l'unico punto in cui due fronti si incontrano, e a terra
+ * e' dove sta il cantonale.
+ */
+function emitCornerPosts(
+  padded: Uint8Array,
+  writer: MicroGeometryWriter,
+  cells: readonly number[][],
+): boolean {
+  // Le prime due voci di `LATERAL_FACES` sono +X e -X: il pilastrino si appoggia
+  // a una di quelle e guarda l'angolo con la faccia in y.
+  for (let i = 0; i < 2; i++) {
+    const face = LATERAL_FACES[i];
+    for (const lateral of [FACE_PY, FACE_NY] as const) {
+      const side = lateral === FACE_PY ? 1 : -1;
+      const start = side > 0 ? U - 3 : 0;
+      if (!emitRuns(writer, cells[i], {
+        runAxis: 2,
+        palette: PALETTE_SLOTS.stoneDark,
+        hiddenFace: oppositeFace(face),
+        has: (x, y, z) => {
+          if (z > FRONTAGE_TOP) return false;
+          const own = facadeAt(padded, x, y, z, face);
+          // Le due facce devono essere **la stessa** facciata: due usi che si
+          // toccano sono due edifici, e li' non c'e' un cantonale ma un giunto.
+          return own !== SURFACE_KIND.plain && facadeAt(padded, x, y, z, lateral) === own;
+        },
+        box: (x, y, z, length) => facadeBox(x, y, z, face, start, start + 3, 0, length * U, 3),
+      })) {
+        return false;
+      }
+    }
+  }
+  return true;
+}
+
+/**
+ * I prop di facciata, su celle gia' filtrate per faccia esposta.
+ *
+ * L'uso non moltiplica le passate: entra nel predicato (`wantsAwning` e
+ * compagni). Cosi' ogni cella di facciata viene letta cinque volte in tutto —
+ * una per emettitore — invece di venti, e le celle interne di un edificio pieno
+ * non vengono lette affatto.
+ */
+function emitFacadeProps(
+  padded: Uint8Array,
+  writer: MicroGeometryWriter,
+  facade: readonly number[][],
+  origin: ChunkOrigin,
+): boolean {
+  if (!emitAwnings(padded, writer, facade)) return false;
+  if (!emitSigns(padded, writer, facade, origin)) return false;
+  if (!emitWallUnits(padded, writer, facade, origin)) return false;
+  if (!emitCornerPosts(padded, writer, facade)) return false;
+  return emitVines(padded, writer, facade, origin);
+}
+
 /**
  * Accoda i dettagli in priorita' stabile. Restituisce i quad effettivamente
  * emessi; il writer interrompe l'intera sequenza prima di superare il limite.
  */
-export function appendMicroGeometry(padded: Uint8Array, writer: MicroGeometryWriter): number {
+export function appendMicroGeometry(
+  padded: Uint8Array,
+  writer: MicroGeometryWriter,
+  origin: ChunkOrigin = ORIGIN_ZERO,
+): number {
   const initial = writer.remainingQuads;
-  const cells = collectSurfaceCells(padded);
-  if (!emitPortals(padded, writer, cells[SURFACE_KIND.portal])) return initial - writer.remainingQuads;
-  if (!emitRoofTech(padded, writer, cells[SURFACE_KIND.roofTech])) return initial - writer.remainingQuads;
-  if (!emitLuminous(padded, writer, cells[SURFACE_KIND.luminous])) return initial - writer.remainingQuads;
-  if (!emitHabitat(padded, writer, cells[SURFACE_KIND.habitat])) return initial - writer.remainingQuads;
+  const { bySurface, facadeByFace } = collectSurfaceCells(padded);
+  if (!emitPortals(padded, writer, bySurface[SURFACE_KIND.portal])) return initial - writer.remainingQuads;
+  if (!emitRoofTech(padded, writer, bySurface[SURFACE_KIND.roofTech])) return initial - writer.remainingQuads;
+  if (!emitLuminous(padded, writer, bySurface[SURFACE_KIND.luminous])) return initial - writer.remainingQuads;
+  if (!emitHabitat(padded, writer, bySurface[SURFACE_KIND.habitat])) return initial - writer.remainingQuads;
   if (!emitFacadeClass(
     padded,
     writer,
@@ -419,18 +951,28 @@ export function appendMicroGeometry(padded: Uint8Array, writer: MicroGeometryWri
     2,
     2,
     PALETTE_SLOTS.metalRust,
-    cells[SURFACE_KIND.industrial],
+    bySurface[SURFACE_KIND.industrial],
   )) {
     return initial - writer.remainingQuads;
   }
-  emitFacadeClass(
+  if (!emitFacadeClass(
     padded,
     writer,
     SURFACE_KIND.civic,
     1,
     3,
     PALETTE_SLOTS.concreteWhite,
-    cells[SURFACE_KIND.civic],
-  );
+    bySurface[SURFACE_KIND.civic],
+  )) {
+    return initial - writer.remainingQuads;
+  }
+
+  // Da qui in giu' sono oggetti, non struttura: se il tetto arriva, cadono loro.
+  if (!emitFacadeProps(padded, writer, facadeByFace, origin)) return initial - writer.remainingQuads;
+  const roofs = bySurface[SURFACE_KIND.roofTech];
+  if (!emitRoofMasts(padded, writer, roofs, origin)) return initial - writer.remainingQuads;
+  if (!emitRoofCrowns(padded, writer, roofs, origin)) return initial - writer.remainingQuads;
+  emitTerraceBoxes(padded, writer, roofs, origin);
   return initial - writer.remainingQuads;
 }
+

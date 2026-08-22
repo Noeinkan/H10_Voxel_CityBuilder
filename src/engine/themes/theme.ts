@@ -153,6 +153,17 @@ export interface Atmosphere {
   readonly glassLift?: number;
   /** Intensita' delle superfici energetiche. Sopra 1 il bloom le raccoglie. */
   readonly emissiveStrength?: number;
+  /**
+   * La luce che **esce** dalle facciate accese e schiarisce quello che hanno
+   * attorno, di notte.
+   *
+   * Non e' una luce dinamica: quanto una superficie sia vicina a una faccia
+   * emissiva e' un dato geometrico cotto nel mesher, come la visibilita' del
+   * cielo. Qui c'e' solo con che colore quel dato si traduce in luce — ed e'
+   * del tema e non dell'emettitore, perche' il frammento che la riceve non sa
+   * chi gliela manda.
+   */
+  readonly nightSpill?: AmbientLight;
   readonly water?: Water;
 
   readonly toneMapping: 'none' | 'aces';

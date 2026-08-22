@@ -16,7 +16,7 @@ ctx.onmessage = (event: MessageEvent<MeshJob>): void => {
   const job = event.data;
 
   const t0 = performance.now();
-  const mesh = greedyMesh(job.padded, scratch, job.ceiling);
+  const mesh = greedyMesh(job.padded, scratch, job.ceiling, job.origin);
   const meshMs = performance.now() - t0;
 
   const result: MeshResult = {

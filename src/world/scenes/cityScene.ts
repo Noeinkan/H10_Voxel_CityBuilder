@@ -1,6 +1,12 @@
 import { PALETTE_SLOTS } from '../../engine/paletteSlots';
+import { BUILDING_CLASS } from '../../sim';
 import { hashCoords, mulberry32 } from '../rng';
 import type { VoxelWorld } from '../VoxelWorld';
+import {
+  createDioramaScene,
+  DIORAMA_DEFAULT_LEVEL,
+  type DioramaSubjectOptions,
+} from './dioramaScene';
 
 /**
  * Scene di test deterministiche per l'harness di performance.
@@ -15,7 +21,7 @@ import type { VoxelWorld } from '../VoxelWorld';
  * popolamento iniziale non blocca il main thread oltre la soglia.
  */
 
-export type SceneKind = 'city' | 'noise' | 'slab';
+export type SceneKind = 'city' | 'noise' | 'slab' | 'diorama';
 
 export interface SceneRegion {
   readonly originX: number;
@@ -30,6 +36,8 @@ export interface SceneOptions extends SceneRegion {
   readonly seed: number;
   /** Frazione di riempimento usata solo da 'noise'. */
   readonly noiseFill?: number;
+  /** Soggetto della scena 'diorama'; senza, vale il default del suo modulo. */
+  readonly subject?: DioramaSubjectOptions;
 }
 
 export interface SceneGenerator {
@@ -65,6 +73,18 @@ export function createScene(world: VoxelWorld, options: SceneOptions): SceneGene
       return new NoiseGenerator(world, options);
     case 'slab':
       return new SlabGenerator(world, options);
+    case 'diorama':
+      // Il soggetto si compone al centro della region richiesta: chi inquadra
+      // legge poi l'ingombro vero da `subject`, che solo il generatore conosce.
+      return createDioramaScene(world, {
+        seed: options.seed,
+        originX: options.originX + Math.floor(options.sizeX / 2),
+        originY: options.originY + Math.floor(options.sizeY / 2),
+        use: options.subject?.use ?? BUILDING_CLASS.commercial,
+        level: options.subject?.level ?? DIORAMA_DEFAULT_LEVEL,
+        typologyId: options.subject?.typologyId,
+        mixed: options.subject?.mixed,
+      });
   }
 }
 

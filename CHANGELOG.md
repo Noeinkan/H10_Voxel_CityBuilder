@@ -11,6 +11,204 @@ coincide con il messaggio di commit.
 
 ---
 
+## 2026-08-22 — La città di notte come lettura dell'economia (Fase 4.8)
+
+- **Nuovo `src/sim/vitality.ts`**: due frazioni fra zero e uno — case occupate
+  (popolazione su capacità) e negozi pieni (l'occupazione del ciclo
+  commerciale). È una lettura pura degli stessi conteggi e degli stessi pesi che
+  usa il bilancio: chiamarla non cambia niente e costa quattro moltiplicazioni.
+  `src/sim/` continua a non sapere che esiste un renderer (contratto 7).
+- **Nessun voxel viene riscritto.** Riscrivere le finestre accese vorrebbe dire
+  marcare sporchi i chunk della città a ogni tick, cioè rimeshare tutto per
+  accendere una luce: la lettura entra come **uniform**, alla cadenza dell'HUD.
+- La soglia delle finestre si muove, la variazione per cella no: a cambiare è
+  **quante** si accendono, mai quali. Le luci non sfarfallano mentre la
+  popolazione cresce.
+- Le insegne seguono il commercio, con un minimo al 30%: un accento che sparisce
+  del tutto cancella la faccia che rende leggibile il volume, e resterebbe una
+  silhouette — cioè il contrario del gate della fase.
+- Limite dichiarato: la lettura è per città e per uso, mai per singolo edificio.
+  Il fragment non sa a quale edificio appartenga un voxel, e dirglielo
+  costerebbe un formato in più; un quartiere vuoto in mezzo a una città piena
+  non si spegne da solo. Il salto è materiale da 4.9 in avanti.
+- `effectiveCount` diventa pubblico invece di essere copiato: resta l'unico
+  punto in cui `buildingCounts` e `mixedCounts` si incontrano.
+- File: `src/sim/vitality.ts`, `src/sim/vitality.test.ts`, `src/sim/index.ts`,
+  `src/sim/tick.ts`, `src/engine/VoxelMaterial.ts`, `src/main.ts`,
+  `PROJECT_INDEX.md`, `ROADMAP.md`.
+
+---
+
+## 2026-08-22 — La luce che esce (Fase 4.8)
+
+- **Un quarto termine nella luce, e non è una luce dinamica.** Quanto una faccia
+  sia vicina a una superficie `luminous` o `portal` è un dato geometrico: lo
+  cuoce `sweepGlow` nel mesher con sei scansioni lineari sul volume paddato,
+  massimo con decadimento separabile sui tre assi. Nessuna pass in più, nessun
+  elenco di sorgenti nel fragment, nessuna ricompilazione.
+- **I bit c'erano già.** `aShade` ne usava quattro degli otto: il bagliore
+  prende i bit 4-5 e nessun attributo di vertice si aggiunge — la stessa mossa
+  con cui la 4.7 fece entrare il cielo accanto all'AO. Il campo entra anche
+  nella chiave di merge, o il greedy fonderebbe facce che il fragment tratta in
+  modo diverso.
+- Il `mod` nel vertex shader non è ornamentale: senza, la lettura del cielo
+  prenderebbe anche i bit del bagliore e una parete illuminata si crederebbe
+  scoperta. C'è un test dal lato del mesher che lo tiene fermo.
+- **Corretto guardando lo schermo, due volte.** Con l'alone a dodici voxel ogni
+  faccia cadeva nel raggio di qualcosa di acceso e l'edificio diventava ambra
+  invece di avere una parete schiarita: sei voxel, cioè due piani. E con lo
+  spill a 0,55 la facciata era una lampada: 0,22 lo mette appena sopra
+  l'ambiente notturno, che è ciò che si chiede a una luce di rimbalzo.
+- **Prezzo misurato**, A/B nello stesso processo sul chunk sci-fi del bench:
+  +0,3 ms per chunk (dentro il rumore della macchina) dopo aver tolto la
+  moltiplicazione per cella dalle scansioni e il confronto sulla superficie
+  estratta dalla scansione di semina. Scritto in modo ovvio costava +1,35 ms.
+  I quad totali crescono del 4% per la frammentazione del merge attorno agli
+  emettitori — sotto il 10% oltre il quale il piano prevedeva di scendere a un
+  bit solo.
+- Limite dichiarato: la tinta è del tema e non dell'emettitore. Un'insegna rossa
+  e una cyan schiariscono il muro con lo stesso ambra; portare la tinta
+  costerebbe bit che non ci sono.
+- Chiuso di sponda un difetto della 4.3 che i prop avrebbero amplificato: su un
+  voxel d'acqua i tre bit di superficie sono `WATER_CLASS`, e bassofondo e
+  canale coincidono con `habitat` e `industrial` — il mare esposto al bordo del
+  mondo si sarebbe messo i condizionatori.
+- File: `src/engine/mesher/greedyMesher.ts`,
+  `src/engine/mesher/greedyMesher.test.ts`, `src/engine/mesher/microGeometry.ts`,
+  `src/engine/VoxelMaterial.ts`, `src/engine/themes/theme.ts`, `src/main.ts`,
+  `src/engine/AGENTS.md`, `ROADMAP.md`.
+
+---
+
+## 2026-08-22 — Ciclo giorno/notte (Fase 4.8)
+
+- **Nuovo `src/engine/daylight.ts`**, terzo modello puro accanto a `lighting.ts`
+  e `atmosphere.ts`: entra un'ora, esce un'atmosfera. Un giorno di gioco dura
+  dodici minuti reali; `?hour=` la fissa, `H`/`Shift+H` la scorre,
+  `__voxelHour()` la legge, l'overlay la mostra come orologio.
+- **L'atmosfera di un tema è quella di mezzogiorno.** Azimut ed elevazione sono
+  il picco, i colori sono il look a sole alto: l'ora li piega, non li
+  sostituisce. `nightReach` sta sotto 1 apposta — a uno, tutti i temi avrebbero
+  la stessa notte e la firma costruita in 4.7 sparirebbe proprio nelle ore in
+  cui la 4.8 vuole che la città si legga.
+- **La notte non è una soglia sull'ora, è l'altezza del sole.** Il crepuscolo
+  esiste per costruzione — dura quanto il sole impiega ad attraversare quei
+  gradi — e non ci sono due tabelle che possano divergere.
+- **A sole radente una parete illuminata supera il tetto**, che è il caso da cui
+  `SunLight.elevation` mette in guardia. Non si corregge: l'alternativa sarebbe
+  raddoppiare l'ambiente di cielo, che slava la scena invece di salvarla. Quello
+  che il ciclo garantisce, verificato a ogni ora, è che il tetto non diventi mai
+  la faccia **più scura**.
+- Di notte la pass d'ombra si salta del tutto: un sole sotto l'orizzonte non
+  proietta niente, e disegnarla sarebbe una mappa di profondità buttata via a
+  ogni frame.
+- **Visto a schermo, corretto a schermo**: le nuvole restavano bianche a
+  mezzanotte ed erano la cosa più luminosa dell'inquadratura. `cloudTint` e
+  `sunGlow` scendono con il cielo.
+- `applyTheme` si è divisa: `applyAtmosphere` riscrive i soli uniform dell'ora,
+  e non tocca palette né tone mapping — quelli non c'entrano niente con il
+  momento della giornata, e ricompilare un programma a ogni scatto d'orologio
+  sarebbe lavoro per niente.
+- File: `src/engine/daylight.ts`, `src/engine/daylight.test.ts`, `src/main.ts`,
+  `src/ui/DebugOverlay.ts`, `src/engine/AGENTS.md`, `PROJECT_INDEX.md`,
+  `.claude/skills/debug-harness/SKILL.md`, `ROADMAP.md`.
+
+---
+
+## 2026-08-22 — Il verde sull'edificio (Fase 4.8)
+
+- **Fioriere, rampicanti e chiome**, tutti sugli slot `grass*` che la palette ha
+  già: nessuno slot nuovo, nessun tipo di superficie nuovo.
+- **Il verde sulle terrazze non costa un prisma in più.** Cassone tecnico e
+  fioriera hanno la stessa forma e cambiano solo indice di palette: è la seconda
+  metà dello stesso tiro a scegliere quale, e due su tre sono verdi — una
+  terrazza è un giardino con qualche cassone, non il contrario.
+- **Il tiro di un rampicante non guarda la quota**, ed è quello che lo rende un
+  rampicante invece di una macchia: con un tiro per cella la corsa si
+  spezzerebbe a ogni voxel e una parete costerebbe un prisma per cubo. Salgono
+  solo sulle facce a nord e a est e si fermano a undici voxel — più su sarebbe
+  un giardino verticale, che la città non costruisce.
+- Antenne e chiome ora chiedono **tetto scoperto tutt'attorno**: sul filo c'è
+  già il parapetto, e una cornice larga un voxel non è una copertura su cui
+  posare qualcosa. È anche ciò che tiene i prop fuori dai cornicioni sottili.
+- Misura sulla fixture `densityChunk`: 3 320 quad di sola struttura → 4 355 con
+  prop e verde (+31%), sotto il tetto di 16 384 che **non** si è alzato.
+- File: `src/engine/mesher/microGeometry.ts`,
+  `src/engine/mesher/microGeometry.test.ts`, `ROADMAP.md`.
+
+---
+
+## 2026-08-22 — Prop appesi alle giunzioni (Fase 4.8)
+
+- **Sei oggetti che la facciata non aveva**: tende sul fronte strada, insegne a
+  bandiera, condizionatori sulle pareti cieche, antenne sui coronamenti, cassoni
+  sul bordo degli arretramenti, pilastrini agli angoli d'isolato. Stessa
+  `emitRuns`, stesso scratch, **stessa draw call**: nessuna geometria separata.
+- **L'aggancio è un predicato, il seme sceglie solo quale cella.** Il fronte
+  strada è «c'è un ingresso sotto questa faccia» — cioè il `portal` che
+  `onPortal` scrive già sul lato verso la carreggiata; l'arretramento è una
+  sommità `roofTech` scoperta con ancora volume di fianco; l'angolo è la cella
+  che espone due facce ortogonali della *stessa* facciata. Nessuna posizione
+  sparsa a caso sulla parete.
+- **`emitBox` porta la superficie**, che non è un tipo nuovo ma uno dei sette:
+  un'insegna esce `luminous` e si accende passando dal ramo che il fragment ha
+  già, un condizionatore resta `utility`. Invarianti 4 e 5 intatte.
+- **`MeshJob` porta l'origine del chunk**, unica coordinata di mondo che entra
+  nel mesher: serve solo a seminare la scelta. Con coordinate locali due chunk
+  adiacenti arrederebbero le stesse celle e la ripetizione ogni trentadue voxel
+  si vedrebbe.
+- `emitPoints` accanto a `emitRuns`: un condizionatore sta dentro la sua cella e
+  non prosegue, quindi far scoprire a `emitRuns` una corsa di lunghezza uno
+  costava tre valutazioni in più del predicato per cella.
+- **Il tetto di quad non si è alzato.** Sulla fixture `densityChunk`: 3 320 quad
+  di sola struttura, 4 000 con i prop (+20%). La voce che pesava era l'unica che
+  pesca su tutta la parete invece che su una giunzione — a 0,09 valeva da sola
+  più di tutto il dettaglio strutturale del chunk, e sta a 0,012.
+- **Il costo per chunk è stato l'architettura, non solo la verifica.** Misurato
+  A/B nello stesso processo sul chunk sci-fi del bench, i prop scritti in modo
+  ovvio costavano **+2,2 ms**. Sono scesi a **+0,3 ms** con due cambi: le celle
+  di facciata si indicizzano per faccia esposta una volta sola — le interne di
+  un edificio pieno sono i due terzi e nessun prop potrà mai usarle — e quella
+  scansione legge i quattro vicini con gli indici invece che con la tabella
+  degli offset. Il chunk sci-fi passa da ~5,3 a ~6,2 ms, sotto gli 8 ms di
+  accettazione.
+- Le tabelle di misura in `README.md` **vanno rimisurate a mano**.
+- File: `src/engine/mesher/microGeometry.ts`,
+  `src/engine/mesher/greedyMesher.ts`, `src/engine/mesher/meshTypes.ts`,
+  `src/engine/mesher/mesher.worker.ts`, `src/engine/MesherPool.ts`,
+  `src/engine/ChunkRenderer.ts`, `src/engine/mesher/microGeometry.test.ts`,
+  `PROJECT_INDEX.md`, `ROADMAP.md`.
+
+---
+
+## 2026-08-22 — La scena `diorama` (Fase 4.8)
+
+- **Un edificio solo, per giudicare il dettaglio senza aspettare la città.**
+  Nuovo `src/world/scenes/dioramaScene.ts`: un `SceneGenerator` come gli altri
+  tre, che compone un soggetto scelto — uso, livello, tipologia, secondo uso —
+  su un basamento minimo. `?scene=diorama&class=&level=&typology=&mixed=`.
+- **Non ridisegna niente**: usa la stessa `selectTypology` e la stessa
+  `generateBuilding` del Builder. Se il diorama e la città mostrassero due
+  edifici diversi, il diorama non servirebbe a giudicare la città. Quello che
+  non c'è è il contorno — lotto, opere di terra, aggregazione.
+- **Il fronte strada è parte del soggetto.** Il basamento porta prato,
+  marciapiede e carreggiata dal lato `FACING.east`, che è il verso con cui lo
+  stamp viene generato: tende, insegne e portali si agganciano a quel lato, e in
+  mezzo al prato non si giudicherebbero.
+- Il perno della camera va a metà dell'altezza dell'edificio invece che sul
+  pianoro dell'isola: `targetHeight` è letto una volta sola dal costruttore,
+  quindi il soggetto si compone **prima** della camera. Senza, `Q`/`E` facevano
+  ruotare l'edificio attorno ai propri piedi e la cima usciva di campo.
+- Limite dichiarato: senza città intorno non c'è profilo locale, quindi
+  `selectTypology` può solo ripiegare sulla riga senza condizioni dell'uso. Le
+  forme che un distretto concede si vedono solo con `?typology=<id>`.
+- File: `src/world/scenes/dioramaScene.ts`,
+  `src/world/scenes/dioramaScene.test.ts`, `src/world/scenes/cityScene.ts`,
+  `src/main.ts`, `PROJECT_INDEX.md`, `.claude/skills/debug-harness/SKILL.md`,
+  `ROADMAP.md`.
+
+---
+
 ## 2026-08-22 — Atmosfera e separazione delle quote (Fase 4.7)
 
 - **La nebbia integra la quota lungo il raggio invece di valutarla sul

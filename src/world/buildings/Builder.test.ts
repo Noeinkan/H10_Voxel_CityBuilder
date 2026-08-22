@@ -48,6 +48,20 @@ function buildingsOf(builder: Builder): readonly BuildingRecord[] {
     .filter((record) => record.landmark === undefined && record.span === undefined);
 }
 
+/**
+ * Tick necessari perche' il Builder faccia `builds` infornate.
+ *
+ * Le citta' di prova di questo file si misurano in **infornate**, non in tick:
+ * quanto una fixture matura dipende da quante volte il Builder costruisce, e
+ * `BUILDER.ticksPerBuild` decide quanti tick ci vogliono per una di quelle
+ * volte. Scrivere i tick a mano legava ogni fixture del file a una
+ * calibrazione del ritmo — rallentarlo rimpiccioliva in silenzio ogni citta',
+ * e i test fallivano per la ragione sbagliata.
+ */
+function ticksFor(builds: number): number {
+  return builds * BUILDER.ticksPerBuild;
+}
+
 describe('Builder', () => {
   it('trasforma un candidato della simulazione in voxel e occupazione', () => {
     const world = new VoxelWorld();
@@ -133,7 +147,7 @@ describe('Builder', () => {
 describe('Builder — la rete in quota', () => {
   type City = { world: VoxelWorld; builder: Builder; streets: StreetNetwork };
 
-  function buildCity(rounds = 220): City {
+  function buildCity(builds = 110): City {
     const world = new VoxelWorld();
     const terrain = testTerrain({ chunksX: 8, chunksY: 8, height: 24 });
     const builder = new Builder(world, terrain, 1337);
@@ -147,7 +161,7 @@ describe('Builder — la rete in quota', () => {
       radius: 96,
     });
 
-    for (let i = 0; i < rounds; i++) {
+    for (let i = 0; i < ticksFor(builds); i++) {
       state = tick(state, terrain);
       state = builder.onTick(state);
       while (builder.stats.growing > 0) builder.step();
@@ -160,19 +174,19 @@ describe('Builder — la rete in quota', () => {
   /**
    * La citta' a un dato numero di round, costruita una volta sola.
    *
-   * Far maturare la citta' e' di gran lunga la voce piu' cara del file — 220
-   * round di `tick` piu' costruzione — e i test qui sotto la leggono soltanto:
+   * Far maturare la citta' e' di gran lunga la voce piu' cara del file — 110
+   * infornate di `tick` piu' costruzione — e i test qui sotto la leggono soltanto:
    * nessuno chiama `step` o tocca il registry. Chi deve invece **provare** che due
    * generazioni coincidono usa `buildCity` direttamente, altrimenti si
    * confronterebbe con se stessa e passerebbe comunque.
    */
   const cities = new Map<number, City>();
 
-  function city(rounds = 220): City {
-    const cached = cities.get(rounds);
+  function city(builds = 110): City {
+    const cached = cities.get(builds);
     if (cached !== undefined) return cached;
-    const fresh = buildCity(rounds);
-    cities.set(rounds, fresh);
+    const fresh = buildCity(builds);
+    cities.set(builds, fresh);
     return fresh;
   }
 
@@ -187,7 +201,7 @@ describe('Builder — la rete in quota', () => {
     // La piazza arriva piu' tardi dei ponti: ha bisogno che il perimetro di un
     // isolato sia costruito su almeno due lati e abbastanza alto. Su una citta'
     // ancora in crescita il cuore e' aperto e non ha muri a cui appoggiarsi.
-    const { builder } = city(420);
+    const { builder } = city(210);
     const plazas = builder.registry.spans.filter((s) => s.span === SPAN_KIND.plaza);
 
     expect(plazas.length).toBeGreaterThan(0);
@@ -303,9 +317,9 @@ describe('Builder — la rete in quota', () => {
   it('a parita di seed la rete in quota e identica', () => {
     // Due costruzioni vere, non la stessa dalla cache: e' l'unico test del blocco
     // per cui riusare la citta' significherebbe confrontarla con se stessa.
-    const first = buildCity(120).builder.registry.spans
+    const first = buildCity(60).builder.registry.spans
       .map((s) => `${s.x},${s.y},${s.baseZ},${s.span},${s.supports}`);
-    const second = buildCity(120).builder.registry.spans
+    const second = buildCity(60).builder.registry.spans
       .map((s) => `${s.x},${s.y},${s.baseZ},${s.span},${s.supports}`);
 
     expect(first).toEqual(second);
@@ -395,7 +409,7 @@ describe('Builder — i landmark si spezzano invece di farsi esentare', () => {
  * carreggiata stessa.
  */
 describe('Builder — allineamento alla rete stradale', () => {
-  function grow(seed: number, rounds: number): {
+  function grow(seed: number, builds: number): {
     world: VoxelWorld;
     builder: Builder;
     records: readonly BuildingRecord[];
@@ -417,7 +431,7 @@ describe('Builder — allineamento alla rete stradale', () => {
       radius: 96,
     });
 
-    for (let i = 0; i < rounds; i++) {
+    for (let i = 0; i < ticksFor(builds); i++) {
       state = tick(state, terrain);
       state = builder.onTick(state);
       while (builder.stats.growing > 0) builder.step();
@@ -450,7 +464,7 @@ describe('Builder — allineamento alla rete stradale', () => {
 
   it('ogni edificio nasce con un fronte sulla carreggiata', () => {
     const streets = new StreetNetwork(1337);
-    const { records } = grow(1337, 40);
+    const { records } = grow(1337, 20);
 
     expect(records.length).toBeGreaterThan(5);
     for (const record of records) {
@@ -461,7 +475,7 @@ describe('Builder — allineamento alla rete stradale', () => {
 
   it('nessun edificio occupa la carreggiata', () => {
     const streets = new StreetNetwork(1337);
-    const { records } = grow(1337, 40);
+    const { records } = grow(1337, 20);
 
     for (const record of records) {
       for (let dy = 0; dy < record.footprint; dy++) {
@@ -473,7 +487,7 @@ describe('Builder — allineamento alla rete stradale', () => {
   });
 
   it('la carreggiata viene dipinta sul suolo attorno agli isolati costruiti', () => {
-    const { world } = grow(1337, 40);
+    const { world } = grow(1337, 20);
 
     let minor = 0;
     let arterial = 0;
@@ -493,8 +507,8 @@ describe('Builder — allineamento alla rete stradale', () => {
   });
 
   it('a parita di seed la citta e identica', () => {
-    const a = grow(1337, 30).records.map((r) => `${r.x},${r.y},${r.footprint},${r.facing}`);
-    const b = grow(1337, 30).records.map((r) => `${r.x},${r.y},${r.footprint},${r.facing}`);
+    const a = grow(1337, 15).records.map((r) => `${r.x},${r.y},${r.footprint},${r.facing}`);
+    const b = grow(1337, 15).records.map((r) => `${r.x},${r.y},${r.footprint},${r.facing}`);
     expect(a).toEqual(b);
     expect(a.length).toBeGreaterThan(5);
   });
@@ -508,7 +522,7 @@ describe('Builder — allineamento alla rete stradale', () => {
  * che due citta' identiche in tutto tranne la decisione presa crescano diverse.
  */
 describe('Builder — i mandati arrivano fino ai voxel', () => {
-  function city(charters: readonly CharterId[], rounds = 30) {
+  function city(charters: readonly CharterId[], builds = 15) {
     const world = new VoxelWorld();
     const terrain = testTerrain({ chunksX: 8, chunksY: 8, height: 24 });
     const builder = new Builder(world, terrain, 1337);
@@ -522,7 +536,7 @@ describe('Builder — i mandati arrivano fino ai voxel', () => {
       radius: 96,
     });
 
-    for (let i = 0; i < rounds; i++) {
+    for (let i = 0; i < ticksFor(builds); i++) {
       state = tick(state, terrain);
       state = builder.onTick(state);
       while (builder.stats.growing > 0) builder.step();
@@ -601,7 +615,7 @@ describe('Builder — opere di terra', () => {
     });
   }
 
-  function grow(terrain: TerrainMap, anchor: number, rounds: number): {
+  function grow(terrain: TerrainMap, anchor: number, builds: number): {
     world: VoxelWorld;
     builder: Builder;
     records: readonly BuildingRecord[];
@@ -618,7 +632,7 @@ describe('Builder — opere di terra', () => {
       radius: 80,
     });
 
-    for (let i = 0; i < rounds; i++) {
+    for (let i = 0; i < ticksFor(builds); i++) {
       state = tick(state, terrain);
       state = builder.onTick(state);
       while (builder.stats.growing > 0) builder.step();
@@ -660,7 +674,7 @@ describe('Builder — opere di terra', () => {
       radius: 80,
     });
 
-    for (let i = 0; i < 60; i++) {
+    for (let i = 0; i < ticksFor(30); i++) {
       state = tick(state, map);
       state = builder.onTick(state);
       while (builder.stats.growing > 0) builder.step();
@@ -687,7 +701,7 @@ describe('Builder — opere di terra', () => {
 
   it('costruisce sul fianco in pendenza invece di saltarlo', () => {
     const terrain = hillside();
-    const { records } = grow(terrain, 64, 40);
+    const { records } = grow(terrain, 64, 20);
 
     const sloped = records.filter((r) => lotGround(terrain, r).includes(GROUND.sloped));
     // Prima della 4.2 queste colonne non erano `buildable` e nessun edificio
@@ -697,7 +711,7 @@ describe('Builder — opere di terra', () => {
 
   it('il salto e costruito: il muro porta la grammatica delle infrastrutture', () => {
     const terrain = hillside();
-    const { world } = grow(terrain, 64, 40);
+    const { world } = grow(terrain, 64, 20);
 
     let wall = 0;
     for (let y = 0; y < 256; y++) {
@@ -752,7 +766,7 @@ describe('Builder — opere di terra', () => {
 
   it('la costa diventa fronte costruito invece di un bordo', () => {
     const terrain = coast();
-    const { records } = grow(terrain, 26, 40);
+    const { records } = grow(terrain, 26, 20);
 
     const onShore = records.filter((r) => lotGround(terrain, r).includes(GROUND.shore));
     expect(onShore.length).toBeGreaterThan(0);
@@ -849,7 +863,7 @@ describe('Builder — opere di terra', () => {
   it('la rampa non lascia gradini fra due colonne di carreggiata', () => {
     const terrain = coast();
     const streets = new StreetNetwork(1337);
-    const { world, builder } = grow(terrain, 26, 40);
+    const { world, builder } = grow(terrain, 26, 20);
 
     // Una colonna sorvolata da una campata va saltata: `topSolid` troverebbe
     // l'impalcato invece della carreggiata, e il salto che misurerebbe sarebbe
@@ -878,8 +892,8 @@ describe('Builder — opere di terra', () => {
   });
 
   it('a parita di seed il rilievo produce la stessa citta', () => {
-    const a = grow(coast(), 26, 30).records.map((r) => `${r.x},${r.y},${r.baseZ},${r.footprint}`);
-    const b = grow(coast(), 26, 30).records.map((r) => `${r.x},${r.y},${r.baseZ},${r.footprint}`);
+    const a = grow(coast(), 26, 15).records.map((r) => `${r.x},${r.y},${r.baseZ},${r.footprint}`);
+    const b = grow(coast(), 26, 15).records.map((r) => `${r.x},${r.y},${r.baseZ},${r.footprint}`);
     expect(a).toEqual(b);
     expect(a.length).toBeGreaterThan(5);
   });
@@ -980,7 +994,7 @@ describe('Builder — landmark dei catalizzatori', () => {
     const before = landmarkRecord(builder)!.level;
     expect(before).toBe(0);
 
-    for (let i = 0; i < 120; i++) {
+    for (let i = 0; i < ticksFor(60); i++) {
       state = tick(state, map);
       state = builder.onTick(state);
       while (builder.stats.growing > 0) builder.step();
@@ -1049,7 +1063,7 @@ describe('Builder — isolati terrazzati', () => {
   function grow(
     terrain: TerrainMap,
     seed: number,
-    rounds: number,
+    builds: number,
     catalysts: readonly (readonly [number, number])[],
     radius: number,
   ): {
@@ -1072,7 +1086,7 @@ describe('Builder — isolati terrazzati', () => {
       });
     }
 
-    for (let i = 0; i < rounds; i++) {
+    for (let i = 0; i < ticksFor(builds); i++) {
       state = tick(state, terrain);
       state = builder.onTick(state);
       while (builder.stats.growing > 0) builder.step();
@@ -1092,11 +1106,11 @@ describe('Builder — isolati terrazzati', () => {
    * si sovrappongono. Misurato, non stimato: con tre mercati la densita' mediana
    * dell'area sale a 0,37.
    */
-  function denseCity(rounds = 60) {
+  function denseCity(builds = 30) {
     return grow(
       testTerrain({ chunksX: 8, chunksY: 8, height: 24 }),
       1337,
-      rounds,
+      builds,
       [[112, 112], [144, 112], [128, 144]],
       40,
     );
@@ -1198,7 +1212,7 @@ describe('Builder — isolati terrazzati', () => {
 
   it('su un fianco la fila si spezza a gradoni invece di scavare', () => {
     const terrain = hillside();
-    const { records } = grow(terrain, 1337, 40, [[64, 64]], 80);
+    const { records } = grow(terrain, 1337, 20, [[64, 64]], 80);
 
     const ids = new Set(records.map((record) => record.cluster));
     // Piu' di una fila: il dislivello le spezza, ed e' il gradino che rende
@@ -1252,7 +1266,7 @@ describe('Builder — isolati terrazzati', () => {
  */
 describe('Builder — gerarchia verticale', () => {
   /** Una citta' cresciuta su un'isola vera, con un polo al centro. */
-  function island(seed: number, rounds = 90): {
+  function island(seed: number, builds = 45): {
     map: TerrainMap;
     builder: Builder;
     records: readonly BuildingRecord[];
@@ -1270,7 +1284,7 @@ describe('Builder — gerarchia verticale', () => {
       radius: 96,
     });
 
-    for (let i = 0; i < rounds; i++) {
+    for (let i = 0; i < ticksFor(builds); i++) {
       state = tick(state, map);
       state = builder.onTick(state);
       while (builder.stats.growing > 0) builder.step();

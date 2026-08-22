@@ -16,10 +16,29 @@ import { TERRAIN } from '../terrain/config';
 
 /** Ritmo con cui il Builder consuma le decisioni della simulazione. */
 export const BUILDER = {
-  /** Tick fra un'infornata di costruzioni e la successiva. */
-  ticksPerBuild: 2,
+  /**
+   * Tick fra un'infornata di costruzioni e la successiva.
+   *
+   * **E' l'unico freno alla crescita della citta'.** La simulazione non fa
+   * pagare un edificio: `nextBuildSites` restituisce tutte le colonne sopra
+   * soglia, e a raggio pieno un catalizzatore ne apre centinaia in una volta.
+   * Quanto in fretta quel quartiere si riempie lo decide solo questa cadenza.
+   *
+   * A 2 tick l'infornata era ogni cinque di secondo: quindici edifici al
+   * secondo, cioe' l'isolato completo prima che si riuscisse a guardarlo
+   * nascere. A 6 il ritmo scende a cinque al secondo — la citta' cresce ancora
+   * di continuo, ma il tempo di posa di un edificio resta visibile e il
+   * giocatore ha spazio per decidere dove mettere il catalizzatore successivo.
+   */
+  ticksPerBuild: 6,
 
-  /** Edifici accettati al massimo per infornata. */
+  /**
+   * Edifici accettati al massimo per infornata.
+   *
+   * Il ritmo si regola su `ticksPerBuild`, non qui: allargare l'infornata
+   * farebbe comparire piu' edifici *nello stesso istante*, che e' proprio la
+   * lettura a scatti che il sovra-prelievo qui sotto esiste per evitare.
+   */
   sitesPerBuild: 3,
 
   /**

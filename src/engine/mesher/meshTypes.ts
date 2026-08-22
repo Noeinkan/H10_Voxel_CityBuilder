@@ -13,6 +13,14 @@ export interface MeshJob {
   readonly padded: Uint8Array;
   /** Fetta 34x34x`SKY_PROBE` sopra il volume paddato, per il cielo. Trasferita. */
   readonly ceiling: Uint8Array;
+  /**
+   * Angolo minimo del chunk in voxel di mondo.
+   *
+   * E' l'unica coordinata di mondo che entra nel mesher, e serve a una cosa
+   * sola: seminare la scelta dei prop. Con coordinate locali due chunk adiacenti
+   * sceglierebbero prop diversi per la stessa corsa, e la cucitura si vedrebbe.
+   */
+  readonly origin: readonly [number, number, number];
 }
 
 /** Unita' intere usate dalla mesh per rappresentare un voxel senza float. */
@@ -26,7 +34,10 @@ export interface MeshArrays {
   readonly faces: Uint8Array;
   /** 1 componente per vertice: indice di palette 1..31. */
   readonly palettes: Uint8Array;
-  /** 1 componente per vertice: grammatica visuale 0..7. */
+  /**
+   * 1 componente per vertice: grammatica visuale 0..7. Vale anche per i prismi
+   * di dettaglio, che non sono piu' tutti `utility`: un'insegna esce `luminous`.
+   */
   readonly surfaces: Uint8Array;
   /**
    * 1 componente per vertice, due campi geometrici impacchettati in un byte:
