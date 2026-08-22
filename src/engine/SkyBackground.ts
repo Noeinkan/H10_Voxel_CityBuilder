@@ -74,7 +74,10 @@ float fbm(vec2 p) {
 }
 
 void main() {
-  // Il gradiente segue l'altezza di schermo, come la nebbia del materiale.
+  // Il gradiente segue l'altezza di schermo, con la stessa curva con cui la
+  // nebbia di VoxelMaterial tinge verso il cielo: sono due implementazioni
+  // della stessa mappatura, e divergendo cucirebbero una riga proprio
+  // all'orizzonte, dove il fondo e la geometria lontana si toccano.
   float screenY = vNdc.y * 0.5 + 0.5;
   vec3 color = mix(uSkyHorizon, uSkyTop, smoothstep(0.0, 1.0, screenY));
 

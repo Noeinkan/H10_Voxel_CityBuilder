@@ -66,6 +66,27 @@ export const TERRAIN = {
   /** Superficie dell'acqua: l'ultimo voxel d'acqua sta a `z = seaLevel - 1`. */
   seaLevel: 16,
 
+  /**
+   * Profondita' entro cui l'acqua si guarda come bassofondo.
+   *
+   * Tre e non `GRADING.maxQuayDepth`, che vale dodici: quella e' la soglia di
+   * cio' che una banchina riesce a colmare, e come limite di look prenderebbe
+   * quasi tutto il perimetro dell'isola. Qui serve la fascia in cui si legge
+   * ancora la sabbia sotto.
+   */
+  shallowDepth: 3,
+
+  /**
+   * Oltre questa profondita' un braccio stretto si guarda come mare aperto.
+   *
+   * Un canale e' acqua ferma perche' e' poca e chiusa; un braccio profondo fra
+   * due pareti e' un fiordo, e l'onda lunga gli si addice piu' dello specchio.
+   */
+  canalMaxDepth: 8,
+
+  /** Quanto lontano si cerca la sponda opposta prima di rinunciare al canale. */
+  canalReach: 7,
+
   /** Tetto duro dell'altezza di colonna. Nessuna colonna supera questa quota. */
   maxHeight: 80,
 

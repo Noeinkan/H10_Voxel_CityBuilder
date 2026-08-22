@@ -38,13 +38,16 @@ export const industrial: Theme = {
     skyLight: { color: '#bdb49f', intensity: 0.58 },
     bounceLight: { color: '#7a6a4e', intensity: 0.34 },
     aoStrength: 0.6,
+    skyOcclusion: 0.62,
     colorJitter: 0.24,
     fog: {
       color: '#c2b7a2',
-      density: 0.00028,
+      density: 0.00046,
       skyBlend: 0.5,
       heightBase: 20,
-      heightFalloff: 0.007,
+      heightFalloff: 0.0042,
+      // La foschia bassa e' cio' che racconta il tema, quindi il velo e' alto.
+      altitudeLift: 0.2,
       sunTint: 0.42,
     },
     sky: {

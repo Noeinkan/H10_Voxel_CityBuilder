@@ -41,13 +41,18 @@ export const neon: Theme = {
     // Rimbalzo magenta: e' l'asfalto bagnato che rimanda le insegne verso l'alto.
     bounceLight: { color: '#5c1f47', intensity: 0.3 },
     aoStrength: 0.7,
+    // Il buio sotto gli impalcati e' il tema: e' li' che la citta' a livelli si
+    // legge come tale invece che come un unico volume.
+    skyOcclusion: 0.7,
     colorJitter: 0.22,
     fog: {
       color: '#131c33',
-      density: 0.0003,
+      density: 0.00048,
       skyBlend: 0.4,
       heightBase: 18,
-      heightFalloff: 0.007,
+      heightFalloff: 0.004,
+      // Lo smog al suolo e' il tema: e' il velo piu' forte dei sette.
+      altitudeLift: 0.16,
       sunTint: 0.12,
     },
     sky: {
@@ -64,7 +69,18 @@ export const neon: Theme = {
     glassTint: '#62f7ff',
     glassLift: 0.24,
     emissiveStrength: 1.15,
-    water: { highlight: '#38d7ff', strength: 0.12, scale: 0.35, speed: 0.35 },
+    water: {
+      highlight: '#38d7ff',
+      strength: 0.12,
+      scale: 0.35,
+      speed: 0.35,
+      // Non sabbia: di notte il bassofondo e' la citta' che si vede sotto.
+      shallowTint: '#1f6f8f',
+      // I canali sono specchi, ed e' meta' del look.
+      calm: 0.75,
+      // Il sole e' una luna: poco da riflettere.
+      glitter: 0.25,
+    },
     toneMapping: 'none',
     exposure: 1,
   },

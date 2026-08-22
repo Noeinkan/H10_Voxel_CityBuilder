@@ -1,3 +1,4 @@
+import type { FogModel } from '../atmosphere';
 import type { AmbientLight, SunLight } from '../lighting';
 
 /**
@@ -12,36 +13,18 @@ import type { AmbientLight, SunLight } from '../lighting';
  * dei temi, il materiale, il cielo e la pass d'ombra.
  */
 
-/** Prospettiva aerea: la distanza si impasta e vira al colore dell'aria. */
-export interface Fog {
+/**
+ * Prospettiva aerea: la distanza si impasta e vira al colore dell'aria.
+ *
+ * I quattro numeri che descrivono il velo — densita', quota di riferimento,
+ * altezza di scala e velo di quota — vivono in `FogModel`, accanto alla formula
+ * che li integra. Qui restano i tre che riguardano il **colore**.
+ */
+export interface Fog extends FogModel {
   /** Tinta di base, miscelata in spazio lineare prima del tone mapping. */
   readonly color: string;
-  /** Densita' dell'esponenziale. 0 la spegne del tutto. */
-  readonly density: number;
   /** Quanto la nebbia tende al colore del cielo invece che alla propria tinta. */
   readonly skyBlend: number;
-  /**
-   * Quota sotto la quale la nebbia e' piena: le valli si impastano prima delle
-   * cime.
-   *
-   * Va tenuta intorno al pianoro dell'isola (`TERRAIN.seaLevel` piu' qualche
-   * cubo). Piu' in basso il decadimento comincia sotto il suolo, e una collina
-   * si ritrova gia' scontata alla sua base.
-   */
-  readonly heightBase: number;
-
-  /**
-   * Decadimento della densita' per unita' di quota sopra `heightBase`.
-   *
-   * **E' l'inverso di un'altezza, quindi segue la scala della citta'.** Valeva
-   * ~0,025 quando i tetti stavano a trenta voxel: il gradiente si esauriva in
-   * un centinaio di quote, che allora era tutta la citta'. Con la 4.6 le torri
-   * arrivano a centocinquanta e quello stesso numero spende tutta la
-   * prospettiva aerea nel primo quinto dell'edificato — sopra, ogni piano ha
-   * esattamente lo stesso colore, che e' il contrario di cio' per cui la nebbia
-   * di quota esiste. Alzando il tetto verticale va abbassata in proporzione.
-   */
-  readonly heightFalloff: number;
   /** Riscaldamento della foschia guardando verso il sole (scattering in avanti). */
   readonly sunTint: number;
 }
@@ -81,12 +64,35 @@ export interface TiltShift {
   readonly width: number;
 }
 
-/** Riflesso opaco animato sulla sola faccia superiore dell'acqua. */
+/**
+ * Riflesso opaco animato sulla sola faccia superiore dell'acqua.
+ *
+ * Non e' una risposta sola: il generatore classifica ogni specchio in
+ * bassofondo, canale o mare aperto (`WATER_CLASS`), e questi parametri sono la
+ * base comune che le tre declinano. `strength` a 0 le spegne tutte insieme.
+ */
 export interface Water {
   readonly highlight: string;
   readonly strength: number;
   readonly scale: number;
   readonly speed: number;
+  /**
+   * Tinta verso cui vira il bassofondo: e' il fondale che si intravede, quindi
+   * va presa dalla sabbia della costa e non dal mare. Assente, il bassofondo
+   * resta mare aperto con un'onda piu' corta.
+   */
+  readonly shallowTint?: string;
+  /**
+   * Quanto un canale tende al colore dell'orizzonte invece che al proprio: a 1
+   * e' uno specchio, a 0 e' acqua opaca. E' il sostituto economico di un
+   * riflesso vero, che costerebbe una pass.
+   */
+  readonly calm?: number;
+  /**
+   * Ampiezza del riflesso del sole sul mare aperto. E' la firma della scala
+   * grande: il canale non ce l'ha, il bassofondo lo porta smorzato.
+   */
+  readonly glitter?: number;
 }
 
 export interface Atmosphere {
@@ -113,6 +119,19 @@ export interface Atmosphere {
 
   /** Quanto scuriscono gli angoli concavi. Consumata dall'AO per-vertice. */
   readonly aoStrength: number;
+  /**
+   * Quanto si spegne l'ambiente di cielo dove il cielo non arriva: sotto un
+   * ponte, sotto un impalcato, dentro un passaggio coperto.
+   *
+   * A 0 il motore torna a illuminare le superfici coperte come suolo aperto,
+   * che e' cio' che faceva prima della 4.7. E' un dato **geometrico**, cotto nel
+   * mesher e indipendente dall'ora e dal livello di qualita': non va confuso con
+   * `shadow.strength`, che spegne la sola diretta e dipende dall'azimut.
+   *
+   * Sopra 0,8 il rimbalzo resta l'unica luce e le coperture diventano macchie
+   * piatte: e' il tetto pratico, non un limite di formato.
+   */
+  readonly skyOcclusion: number;
   /**
    * Ampiezza della variazione cromatica per voxel, da un hash della cella mondo.
    * E' l'antidoto alla piattezza: senza, ogni voxel di uno slot ha esattamente

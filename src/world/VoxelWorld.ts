@@ -1,5 +1,5 @@
 import { Chunk } from './Chunk';
-import { CHUNK, CHUNK_AREA, idx, keyOf, toChunk, toLocal } from './chunkCoords';
+import { CHUNK, CHUNK_AREA, idx, keyOf, SKY_PROBE, toChunk, toLocal } from './chunkCoords';
 import {
   blockPalette,
   blockSurface,
@@ -179,8 +179,11 @@ export class VoxelWorld {
     else if (lx === CHUNK - 1) this.markNeighbourDirty(cx + 1, cy, cz);
     if (ly === 0) this.markNeighbourDirty(cx, cy - 1, cz);
     else if (ly === CHUNK - 1) this.markNeighbourDirty(cx, cy + 1, cz);
-    if (lz === 0) this.markNeighbourDirty(cx, cy, cz - 1);
-    else if (lz === CHUNK - 1) this.markNeighbourDirty(cx, cy, cz + 1);
+    // Verso il basso la dipendenza e' piu' lunga di una cella: il mesher guarda
+    // `SKY_PROBE` piani sopra il proprio tetto per sapere cosa lo copre, quindi
+    // una campata scritta qui cambia la luce della carreggiata la' sotto.
+    if (lz < SKY_PROBE) this.markNeighbourDirty(cx, cy, cz - 1);
+    if (lz === CHUNK - 1) this.markNeighbourDirty(cx, cy, cz + 1);
   }
 
   /**
@@ -261,7 +264,7 @@ export class VoxelWorld {
       else if (lx === CHUNK - 1) this.markNeighbourDirty(cx + 1, cy, cz);
       if (ly === 0) this.markNeighbourDirty(cx, cy - 1, cz);
       else if (ly === CHUNK - 1) this.markNeighbourDirty(cx, cy + 1, cz);
-      if (from === 0) this.markNeighbourDirty(cx, cy, cz - 1);
+      if (from < SKY_PROBE) this.markNeighbourDirty(cx, cy, cz - 1);
       if (to === CHUNK - 1) this.markNeighbourDirty(cx, cy, cz + 1);
     }
 

@@ -16,7 +16,7 @@ ctx.onmessage = (event: MessageEvent<MeshJob>): void => {
   const job = event.data;
 
   const t0 = performance.now();
-  const mesh = greedyMesh(job.padded, scratch);
+  const mesh = greedyMesh(job.padded, scratch, job.ceiling);
   const meshMs = performance.now() - t0;
 
   const result: MeshResult = {
@@ -26,7 +26,7 @@ ctx.onmessage = (event: MessageEvent<MeshJob>): void => {
     faces: mesh.faces,
     palettes: mesh.palettes,
     surfaces: mesh.surfaces,
-    ao: mesh.ao,
+    shade: mesh.shade,
     indices: mesh.indices,
     detailQuadCount: mesh.detailQuadCount,
     quadCount: mesh.quadCount,
@@ -34,19 +34,20 @@ ctx.onmessage = (event: MessageEvent<MeshJob>): void => {
     max: mesh.max,
     meshMs,
     padded: job.padded,
+    ceiling: job.ceiling,
   };
 
-  // Il buffer di input torna sempre indietro. Gli array della geometria si
+  // I buffer di input tornano sempre indietro. Gli array della geometria si
   // trasferiscono solo se non vuoti: quelli vuoti sono singleton di modulo e
   // trasferirli li renderebbe inutilizzabili per i job successivi.
-  const transfer: Transferable[] = [job.padded.buffer];
+  const transfer: Transferable[] = [job.padded.buffer, job.ceiling.buffer];
   if (mesh.quadCount > 0) {
     transfer.push(
       mesh.positions.buffer,
       mesh.faces.buffer,
       mesh.palettes.buffer,
       mesh.surfaces.buffer,
-      mesh.ao.buffer,
+      mesh.shade.buffer,
       mesh.indices.buffer,
     );
   }

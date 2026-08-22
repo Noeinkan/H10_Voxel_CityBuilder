@@ -1,8 +1,8 @@
-import { PADDED_VOL } from '../world/chunkCoords';
+import { CEILING_VOL, PADDED_VOL } from '../world/chunkCoords';
 import type { MeshJob, MeshResult } from './mesher/meshTypes';
 
-/** Risultato consegnato al chiamante: senza il buffer di input, gia' riciclato dal pool. */
-export type ChunkMeshResult = Omit<MeshResult, 'padded'>;
+/** Risultato consegnato al chiamante: senza i buffer di input, gia' riciclati dal pool. */
+export type ChunkMeshResult = Omit<MeshResult, 'padded' | 'ceiling'>;
 
 export interface MesherStats {
   readonly poolSize: number;
@@ -28,6 +28,8 @@ export class MesherPool {
   private readonly results: ChunkMeshResult[] = [];
   /** Volumi paddati riusabili: evitano 39 KB di allocazione per rebuild. */
   private readonly paddedPool: Uint8Array[] = [];
+  /** Fette di soffitto riusabili, per la stessa ragione: 18 KB per rebuild. */
+  private readonly ceilingPool: Uint8Array[] = [];
 
   private nextJobId = 1;
   private inFlightCount = 0;
@@ -73,21 +75,29 @@ export class MesherPool {
     return recycled;
   }
 
+  /** Fetta di soffitto azzerata, presa dal pool quando disponibile. */
+  acquireCeiling(): Uint8Array {
+    const recycled = this.ceilingPool.pop();
+    if (recycled === undefined) return new Uint8Array(CEILING_VOL);
+    recycled.fill(0);
+    return recycled;
+  }
+
   /**
-   * Manda un chunk a meshare. Il buffer viene trasferito: il chiamante non deve
-   * piu' usarlo. Restituisce il jobId, che cresce in modo monotono e permette di
+   * Manda un chunk a meshare. I buffer vengono trasferiti: il chiamante non deve
+   * piu' usarli. Restituisce il jobId, che cresce in modo monotono e permette di
    * scartare i risultati superati.
    */
-  submit(key: string, padded: Uint8Array): number {
+  submit(key: string, padded: Uint8Array, ceiling: Uint8Array): number {
     const worker = this.idle.pop();
     if (worker === undefined) {
       throw new Error('MesherPool.submit: no worker available, check idleCount');
     }
 
     const jobId = this.nextJobId++;
-    const job: MeshJob = { jobId, key, padded };
+    const job: MeshJob = { jobId, key, padded, ceiling };
     this.inFlightCount++;
-    worker.postMessage(job, [padded.buffer]);
+    worker.postMessage(job, [padded.buffer, ceiling.buffer]);
     return jobId;
   }
 
@@ -123,6 +133,7 @@ export class MesherPool {
     this.idle.length = 0;
     this.results.length = 0;
     this.paddedPool.length = 0;
+    this.ceilingPool.length = 0;
   }
 
   private onResult(worker: Worker, result: MeshResult): void {
@@ -130,8 +141,9 @@ export class MesherPool {
     this.completedCount++;
     this.idle.push(worker);
 
-    // Il buffer di input torna subito nel pool: il consumatore non lo vede mai.
+    // I buffer di input tornano subito nel pool: il consumatore non li vede mai.
     if (result.padded.length === PADDED_VOL) this.paddedPool.push(result.padded);
+    if (result.ceiling.length === CEILING_VOL) this.ceilingPool.push(result.ceiling);
 
     this.lastMs = result.meshMs;
     if (result.meshMs > this.maxMs) this.maxMs = result.meshMs;

@@ -14,6 +14,8 @@ import { BIOME_STRATA, TERRAIN, TREE_DECOR, WATER_IDS } from './config';
 import { HeightField } from './heightField';
 import { chunkSpanOf, shapeFromRegion, type IslandShape, type Region } from './region';
 import { TerrainMap } from './TerrainMap';
+import { classifyWater } from './waterClass';
+import type { SurfaceKind } from '../visualBlock';
 
 /**
  * Generatore di isole procedurali.
@@ -186,6 +188,7 @@ export function generateColumnBlock(field: HeightField, ccx: number, ccy: number
   const biomes = new Uint8Array(COLUMNS_PER_CHUNK);
   const slopes = new Float32Array(COLUMNS_PER_CHUNK);
   const buildable = new Uint8Array(COLUMNS_PER_CHUNK);
+  const water = new Uint8Array(COLUMNS_PER_CHUNK);
 
   let maxHeight = 0;
   let buildableCount = 0;
@@ -204,12 +207,26 @@ export function generateColumnBlock(field: HeightField, ccx: number, ccy: number
       const cell = sampleCell(lx0 + HEIGHT_BORDER, ly0 + HEIGHT_BORDER);
       const build = isBuildable(cell.biome, cell.slope);
 
+      // La classe d'acqua si decide per cella come tutto il resto, e solo dove
+      // la colonna e' sommersa: sonda il campo di quota, che e' funzione pura
+      // del seed, quindi puo' guardare oltre il blocco senza cuciture al bordo.
+      const waterClass =
+        cell.height < TERRAIN.seaLevel
+          ? classifyWater(
+              baseX + lx0,
+              baseY + ly0,
+              TERRAIN.seaLevel - cell.height,
+              (wx, wy) => field.heightAt(wx, wy),
+            )
+          : 0;
+
       for (let dy = 0; dy < TERRAIN.cellSize; dy++) {
         for (let dx = 0; dx < TERRAIN.cellSize; dx++) {
           const i = columnIndex(lx0 + dx, ly0 + dy);
           heights[i] = cell.height;
           biomes[i] = cell.biome;
           slopes[i] = cell.slope;
+          water[i] = waterClass;
           if (build) {
             buildable[i] = 1;
             buildableCount++;
@@ -258,6 +275,7 @@ export function generateColumnBlock(field: HeightField, ccx: number, ccy: number
     biomes,
     slopes,
     buildable,
+    water,
     decor: new Int16Array(decor),
     maxHeight,
     buildableCount,
@@ -312,10 +330,15 @@ export function writeBlockColumns(
 
     // L'acqua chiude ogni colonna che finisce sotto il livello del mare: e' cio'
     // che circonda l'isola invece di lasciare una fossa vuota.
+    //
+    // La classe viaggia nei bit di superficie del tratto di superficie — l'unico
+    // che il mesher arrivi mai a emettere. Sotto non serve: quelle facce non
+    // esistono, perche' fra due voxel entrambi pieni non nasce un quad.
     if (top < TERRAIN.seaLevel) {
       const deepTop = Math.max(top, WATER_SURFACE_Z);
+      const waterClass = block.water[i] as SurfaceKind;
       written += world.fillColumn(x, y, top, deepTop, WATER_IDS.deep);
-      written += world.fillColumn(x, y, deepTop, TERRAIN.seaLevel, WATER_IDS.surface);
+      written += world.fillColumn(x, y, deepTop, TERRAIN.seaLevel, WATER_IDS.surface, waterClass);
     }
   }
 

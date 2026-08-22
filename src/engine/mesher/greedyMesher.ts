@@ -1,4 +1,4 @@
-import { CHUNK, PADDED, PADDED_VOL } from '../../world/chunkCoords';
+import { CEILING_VOL, CHUNK, PADDED, PADDED_VOL, SKY_PROBE } from '../../world/chunkCoords';
 import { blockPalette, blockSurface, SURFACE_KIND } from '../../world/visualBlock';
 import {
   appendMicroGeometry,
@@ -29,10 +29,17 @@ export interface MeshScratch {
   faces: Uint8Array;
   palettes: Uint8Array;
   surfaces: Uint8Array;
-  ao: Uint8Array;
+  shade: Uint8Array;
   indices: Uint32Array;
   /** Maschera di una slice: 0 = nessuna faccia, >0 = faccia positiva, <0 = negativa. */
   readonly mask: Int32Array;
+  /**
+   * Per ogni cella del volume paddato, quanti voxel vuoti la separano dal primo
+   * solido sopra di lei, saturati a `SKY_PROBE`. Riempita da `sweepSkyGap`.
+   */
+  readonly skyGap: Uint8Array;
+  /** Corse di vuoto in lavorazione, una per colonna del volume paddato. */
+  readonly skyRuns: Uint8Array;
   capacityQuads: number;
 }
 
@@ -50,9 +57,11 @@ export function createScratch(initialQuads = 4096): MeshScratch {
     faces: new Uint8Array(initialQuads * 4),
     palettes: new Uint8Array(initialQuads * 4),
     surfaces: new Uint8Array(initialQuads * 4),
-    ao: new Uint8Array(initialQuads * 4),
+    shade: new Uint8Array(initialQuads * 4),
     indices: new Uint32Array(initialQuads * 6),
     mask: new Int32Array(CHUNK * CHUNK),
+    skyGap: new Uint8Array(PADDED_VOL),
+    skyRuns: new Uint8Array(PADDED * PADDED),
     capacityQuads: initialQuads,
   };
 }
@@ -69,8 +78,8 @@ function growScratch(scratch: MeshScratch, neededQuads: number): void {
   palettes.set(scratch.palettes);
   const surfaces = new Uint8Array(cap * 4);
   surfaces.set(scratch.surfaces);
-  const ao = new Uint8Array(cap * 4);
-  ao.set(scratch.ao);
+  const shade = new Uint8Array(cap * 4);
+  shade.set(scratch.shade);
   const indices = new Uint32Array(cap * 6);
   indices.set(scratch.indices);
 
@@ -78,7 +87,7 @@ function growScratch(scratch: MeshScratch, neededQuads: number): void {
   scratch.faces = faces;
   scratch.palettes = palettes;
   scratch.surfaces = surfaces;
-  scratch.ao = ao;
+  scratch.shade = shade;
   scratch.indices = indices;
   scratch.capacityQuads = cap;
 }
@@ -91,13 +100,24 @@ const boundsMax = new Int32Array(3);
  *
  * @param padded volume 34^3, indice `px + 34 * (py + 34 * pz)`
  * @param scratch buffer riusabili; se omesso vengono allocati al volo
+ * @param ceiling fetta 34x34x`SKY_PROBE` sopra il volume; omessa vale cielo
+ *   libero, che e' cio' che serve a chi mesha un volume isolato
  */
-export function greedyMesh(padded: Uint8Array, scratch?: MeshScratch): MeshArrays {
+export function greedyMesh(
+  padded: Uint8Array,
+  scratch?: MeshScratch,
+  ceiling?: Uint8Array,
+): MeshArrays {
   if (padded.length !== PADDED_VOL) {
     throw new Error(`greedyMesh: expected a volume of ${PADDED_VOL} cells, received ${padded.length}`);
   }
+  if (ceiling !== undefined && ceiling.length !== CEILING_VOL) {
+    throw new Error(`greedyMesh: expected a ceiling of ${CEILING_VOL} cells, received ${ceiling.length}`);
+  }
   const s = scratch ?? createScratch();
   const mask = s.mask;
+  const skyGap = s.skyGap;
+  sweepSkyGap(padded, ceiling, skyGap, s.skyRuns);
 
   let quadCount = 0;
   boundsMin[0] = boundsMin[1] = boundsMin[2] = CHUNK * MESH_UNITS_PER_VOXEL;
@@ -126,9 +146,9 @@ export function greedyMesh(padded: Uint8Array, scratch?: MeshScratch): MeshArray
           const a = padded[p];
           const b = padded[p + sd];
           if (a !== 0) {
-            mask[n] = b === 0 && canEmitPositive ? packFace(a, p + sd, su, sv, padded) : 0;
+            mask[n] = b === 0 && canEmitPositive ? packFace(a, p + sd, su, sv, padded, skyGap) : 0;
           } else {
-            mask[n] = b !== 0 && canEmitNegative ? -packFace(b, p, su, sv, padded) : 0;
+            mask[n] = b !== 0 && canEmitNegative ? -packFace(b, p, su, sv, padded, skyGap) : 0;
           }
         }
       }
@@ -223,23 +243,30 @@ export function greedyMesh(padded: Uint8Array, scratch?: MeshScratch): MeshArray
           // Il packing e' in ordine geometrico (u,v): 00, 10, 11, 01. La
           // faccia negativa inverte il winding, dunque inverte anche quei
           // corner senza introdurre casi speciali nel calcolo dell'AO.
+          //
+          // Il cielo e' della faccia intera e non del corner — e' un solo
+          // sondaggio verticale dalla cella vuota adiacente — quindi entra
+          // uguale nei quattro byte, nei bit alti.
+          const sky = ((packed >>> SKY_SHIFT) & SKY_MASK) << SHADE_SKY_SHIFT;
           const ao0 = (packed >>> AO_00_SHIFT) & AO_MASK;
           const ao1 = (packed >>> AO_10_SHIFT) & AO_MASK;
           const ao2 = (packed >>> AO_11_SHIFT) & AO_MASK;
           const ao3 = (packed >>> AO_01_SHIFT) & AO_MASK;
-          s.ao[vbase] = ao0;
+          s.shade[vbase] = ao0 | sky;
           if (positive) {
-            s.ao[vbase + 1] = ao1;
-            s.ao[vbase + 2] = ao2;
-            s.ao[vbase + 3] = ao3;
+            s.shade[vbase + 1] = ao1 | sky;
+            s.shade[vbase + 2] = ao2 | sky;
+            s.shade[vbase + 3] = ao3 | sky;
           } else {
-            s.ao[vbase + 1] = ao3;
-            s.ao[vbase + 2] = ao2;
-            s.ao[vbase + 3] = ao1;
+            s.shade[vbase + 1] = ao3 | sky;
+            s.shade[vbase + 2] = ao2 | sky;
+            s.shade[vbase + 3] = ao1 | sky;
           }
 
           const iOff = quadCount * 6;
-          if (s.ao[vbase] + s.ao[vbase + 2] > s.ao[vbase + 1] + s.ao[vbase + 3]) {
+          // La diagonale si sceglie sulla sola AO: il cielo e' costante sul quad
+          // e sommarlo qui non cambierebbe il confronto, ma lo renderebbe opaco.
+          if (ao0 + ao2 > ao1 + ao3) {
             s.indices[iOff] = vbase + 1;
             s.indices[iOff + 1] = vbase + 2;
             s.indices[iOff + 2] = vbase + 3;
@@ -285,7 +312,7 @@ export function greedyMesh(padded: Uint8Array, scratch?: MeshScratch): MeshArray
       const faceCount = 6 - countBits(hiddenFaces & 0b11_1111);
       if (faceCount > this.remainingQuads) return false;
       if (quadCount + faceCount > s.capacityQuads) growScratch(s, quadCount + faceCount);
-      quadCount += writeDetailBox(s, quadCount, box, palette, hiddenFaces);
+      quadCount += writeDetailBox(s, quadCount, box, palette, hiddenFaces, skyLevelAtBox(box, skyGap));
       for (let axis = 0; axis < 3; axis++) {
         if (box.min[axis] < boundsMin[axis]) boundsMin[axis] = box.min[axis];
         if (box.max[axis] > boundsMax[axis]) boundsMax[axis] = box.max[axis];
@@ -301,7 +328,7 @@ export function greedyMesh(padded: Uint8Array, scratch?: MeshScratch): MeshArray
       faces: EMPTY_U8,
       palettes: EMPTY_U8,
       surfaces: EMPTY_U8,
-      ao: EMPTY_U8,
+      shade: EMPTY_U8,
       indices: EMPTY_U32,
       detailQuadCount: 0,
       quadCount: 0,
@@ -316,7 +343,7 @@ export function greedyMesh(padded: Uint8Array, scratch?: MeshScratch): MeshArray
     faces: s.faces.slice(0, vertexCount),
     palettes: s.palettes.slice(0, vertexCount),
     surfaces: s.surfaces.slice(0, vertexCount),
-    ao: s.ao.slice(0, vertexCount),
+    shade: s.shade.slice(0, vertexCount),
     indices: s.indices.slice(0, quadCount * 6),
     detailQuadCount,
     quadCount,
@@ -345,6 +372,22 @@ const AO_11_SHIFT = 9;
 const AO_01_SHIFT = 11;
 const SURFACE_SHIFT = 13;
 const SURFACE_MASK = 0b111;
+const SKY_SHIFT = 16;
+const SKY_MASK = 0b11;
+
+/** Bit del byte per vertice: AO in basso, visibilita' del cielo sopra. */
+export const SHADE_AO_MASK = 0b11;
+export const SHADE_SKY_SHIFT = 2;
+export const SHADE_SKY_MASK = 0b11;
+/** Corner del tutto libero: e' il valore che l'AO assume dove non occlude. */
+const SHADE_AO_FREE = 3;
+
+/**
+ * Livelli di visibilita' del cielo. Ognuno vale un quarto di `SKY_PROBE`, quindi
+ * il livello 3 comincia a tre quarti del sondaggio: piu' in alto di cosi' una
+ * copertura non racconta piu' niente e la cella si considera scoperta.
+ */
+const SKY_LEVEL_STEP = SKY_PROBE / 4;
 
 /** AO classica a quattro livelli per un corner su una faccia visibile. */
 function cornerAO(pn: number, du: number, dv: number, su: number, sv: number, padded: Uint8Array): number {
@@ -355,18 +398,83 @@ function cornerAO(pn: number, du: number, dv: number, su: number, sv: number, pa
   return 3 - side1 - side2 - corner;
 }
 
-/** Palette e quattro corner AO in una chiave Int16 confrontabile dal greedy merge. */
-function packFace(block: number, pn: number, su: number, sv: number, padded: Uint8Array): number {
+/**
+ * Palette, superficie, quattro corner AO e visibilita' del cielo in una chiave
+ * confrontabile dal greedy merge.
+ *
+ * Tutto cio' che distingue due facce deve stare qui dentro, altrimenti il merge
+ * ne fonderebbe due diverse: e' per questo che il cielo occupa due bit propri e
+ * non viene ricavato dopo. `pn` e' la cella **vuota** adiacente alla faccia, la
+ * stessa da cui l'AO guarda i vicini e da cui il cielo guarda in su.
+ */
+function packFace(
+  block: number,
+  pn: number,
+  su: number,
+  sv: number,
+  padded: Uint8Array,
+  skyGap: Uint8Array,
+): number {
   const ao00 = cornerAO(pn, -1, -1, su, sv, padded);
   const ao10 = cornerAO(pn, 1, -1, su, sv, padded);
   const ao11 = cornerAO(pn, 1, 1, su, sv, padded);
   const ao01 = cornerAO(pn, -1, 1, su, sv, padded);
+  const sky = Math.min(3, Math.floor(skyGap[pn] / SKY_LEVEL_STEP));
   return blockPalette(block) |
     (ao00 << AO_00_SHIFT) |
     (ao10 << AO_10_SHIFT) |
     (ao11 << AO_11_SHIFT) |
     (ao01 << AO_01_SHIFT) |
-    (blockSurface(block) << SURFACE_SHIFT);
+    (blockSurface(block) << SURFACE_SHIFT) |
+    (sky << SKY_SHIFT);
+}
+
+/**
+ * Per ogni cella, quanti voxel vuoti la separano dal primo solido sopra di lei.
+ *
+ * Una sola passata dall'alto verso il basso per colonna: la corsa di vuoto che
+ * comincia sopra una cella e' quella che comincia sopra la cella superiore, piu'
+ * uno — a meno che la cella superiore non sia piena, e allora riparte da zero.
+ * La fetta di soffitto entra come prolungamento della colonna, cosi' una campata
+ * che sta nel chunk sopra scurisce comunque la carreggiata che copre.
+ *
+ * Sopra la fetta si assume cielo libero: un chunk non ancora generato non deve
+ * comparire come una copertura, o la citta' si scurirebbe mentre si carica.
+ */
+function sweepSkyGap(
+  padded: Uint8Array,
+  ceiling: Uint8Array | undefined,
+  skyGap: Uint8Array,
+  runs: Uint8Array,
+): void {
+  const plane = PADDED * PADDED;
+
+  // Un piano alla volta e non una colonna alla volta, con le corse di tutte le
+  // colonne tenute a lato: cosi' i tre array si leggono e si scrivono in ordine
+  // sequenziale. Colonna per colonna il passo sarebbe di 1156 byte e ogni cella
+  // costerebbe una linea di cache — la stessa passata misurava il triplo.
+  runs.fill(SKY_PROBE);
+
+  if (ceiling !== undefined) {
+    for (let k = SKY_PROBE - 1; k >= 0; k--) {
+      const base = plane * k;
+      for (let c = 0; c < plane; c++) {
+        const run = runs[c];
+        runs[c] = ceiling[base + c] !== 0 ? 0 : run < SKY_PROBE ? run + 1 : SKY_PROBE;
+      }
+    }
+  }
+
+  for (let pz = PADDED - 1; pz >= 0; pz--) {
+    const base = plane * pz;
+    for (let c = 0; c < plane; c++) {
+      // Entrando nell'iterazione `runs[c]` e' la corsa che comincia a `pz + 1`,
+      // cioe' esattamente cio' che questa cella vede sopra di se'.
+      const run = runs[c];
+      skyGap[base + c] = run;
+      runs[c] = padded[base + c] !== 0 ? 0 : run < SKY_PROBE ? run + 1 : SKY_PROBE;
+    }
+  }
 }
 
 function countBits(value: number): number {
@@ -379,6 +487,25 @@ function countBits(value: number): number {
   return count;
 }
 
+/**
+ * Livello di cielo della cella che contiene il centro di un prisma di dettaglio.
+ *
+ * I dettagli non hanno AO propria — sono troppo piccoli perche' un corner dica
+ * qualcosa — ma il cielo sopra di loro e' quello della colonna in cui stanno, e
+ * senza ereditarlo un condizionatore sotto un impalcato resterebbe illuminato
+ * mentre la parete a cui e' appeso si spegne.
+ */
+function skyLevelAtBox(box: FixedBox, skyGap: Uint8Array): number {
+  const px = clampPadded(Math.floor((box.min[0] + box.max[0]) / (2 * MESH_UNITS_PER_VOXEL)) + 1);
+  const py = clampPadded(Math.floor((box.min[1] + box.max[1]) / (2 * MESH_UNITS_PER_VOXEL)) + 1);
+  const pz = clampPadded(Math.floor((box.min[2] + box.max[2]) / (2 * MESH_UNITS_PER_VOXEL)) + 1);
+  return Math.min(3, Math.floor(skyGap[px + PADDED * (py + PADDED * pz)] / SKY_LEVEL_STEP));
+}
+
+function clampPadded(value: number): number {
+  return value < 0 ? 0 : value > PADDED - 1 ? PADDED - 1 : value;
+}
+
 /** Scrive i lati visibili di un prisma ortogonale negli stessi buffer del greedy pass. */
 function writeDetailBox(
   scratch: MeshScratch,
@@ -386,6 +513,7 @@ function writeDetailBox(
   box: FixedBox,
   palette: number,
   hiddenFaces: number,
+  sky: number,
 ): number {
   let written = 0;
   for (let face = 0; face < 6; face++) {
@@ -413,7 +541,7 @@ function writeDetailBox(
       scratch.faces[vertexBase + corner] = face;
       scratch.palettes[vertexBase + corner] = palette;
       scratch.surfaces[vertexBase + corner] = SURFACE_KIND.utility;
-      scratch.ao[vertexBase + corner] = 3;
+      scratch.shade[vertexBase + corner] = SHADE_AO_FREE | (sky << SHADE_SKY_SHIFT);
     }
 
     const indexOffset = quad * 6;

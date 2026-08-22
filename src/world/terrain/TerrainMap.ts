@@ -20,7 +20,7 @@ export interface TerrainColumn {
   readonly buildable: boolean;
 }
 
-/** Una colonna di chunk: quattro array paralleli lunghi 1024. */
+/** Una colonna di chunk: cinque array paralleli lunghi 1024. */
 export class TerrainColumnChunk {
   readonly ccx: number;
   readonly ccy: number;
@@ -30,6 +30,8 @@ export class TerrainColumnChunk {
   readonly biomes: Uint8Array;
   readonly slopes: Float32Array;
   readonly buildable: Uint8Array;
+  /** Classe d'acqua (`WATER_CLASS`), significativa solo dove si e' sommersi. */
+  readonly water: Uint8Array;
 
   readonly maxHeight: number;
   readonly buildableCount: number;
@@ -42,6 +44,7 @@ export class TerrainColumnChunk {
     this.biomes = block.biomes;
     this.slopes = block.slopes;
     this.buildable = block.buildable;
+    this.water = block.water;
     this.maxHeight = block.maxHeight;
     this.buildableCount = block.buildableCount;
   }

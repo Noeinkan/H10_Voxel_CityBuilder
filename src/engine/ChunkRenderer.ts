@@ -17,7 +17,7 @@ import {
 } from 'three';
 import { CHUNK } from '../world/chunkCoords';
 import type { VoxelWorld } from '../world/VoxelWorld';
-import { buildPaddedVolume } from './mesher/buildPaddedVolume';
+import { buildCeilingSlab, buildPaddedVolume } from './mesher/buildPaddedVolume';
 import type { ChunkMeshResult } from './MesherPool';
 import { MesherPool } from './MesherPool';
 
@@ -289,7 +289,9 @@ export class ChunkRenderer {
 
       const padded = this.pool.acquirePadded();
       buildPaddedVolume(this.world, chunk, padded);
-      this.pool.submit(key, padded);
+      const ceiling = this.pool.acquireCeiling();
+      buildCeilingSlab(this.world, chunk, ceiling);
+      this.pool.submit(key, padded, ceiling);
     }
   }
 
@@ -311,7 +313,7 @@ export class ChunkRenderer {
     geometry.setAttribute('aFace', new Uint8BufferAttribute(result.faces, 1));
     geometry.setAttribute('aPalette', new Uint8BufferAttribute(result.palettes, 1));
     geometry.setAttribute('aSurface', new Uint8BufferAttribute(result.surfaces, 1));
-    geometry.setAttribute('aAO', new Uint8BufferAttribute(result.ao, 1));
+    geometry.setAttribute('aShade', new Uint8BufferAttribute(result.shade, 1));
     geometry.setIndex(new Uint32BufferAttribute(result.indices, 1));
 
     const bytes =
@@ -319,7 +321,7 @@ export class ChunkRenderer {
       result.faces.byteLength +
       result.palettes.byteLength +
       result.surfaces.byteLength +
-      result.ao.byteLength +
+      result.shade.byteLength +
       result.indices.byteLength;
 
     const scale = this.voxelSize;

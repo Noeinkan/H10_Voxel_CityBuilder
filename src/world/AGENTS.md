@@ -8,6 +8,10 @@ e costruzione degli edifici. Questo modulo non dipende dal renderer.
 - Mondo Z-up; chunk `32x32x32`; coordinate negative valide.
 - `blocks` e `data` sono buffer distinti, allocati una volta per chunk.
 - `setBlock` sporca il chunk e i vicini di bordo; `setData` mai la geometria.
+- **Verso il basso la dipendenza e' lunga `SKY_PROBE`, non una cella.** Il mesher
+  guarda quei voxel sopra il proprio tetto per sapere cosa lo copre, quindi una
+  scrittura nei primi `SKY_PROBE` piani di un chunk sporca anche quello sotto.
+  Senza, una campata comparsa dopo il suolo non lo scurirebbe mai.
 - `fillColumn` e' `setBlock` su un tratto verticale, e va usata quando il tratto
   si conosce in anticipo: dentro il chunk resta un indice che avanza, e
   conversioni, pack del byte e marcature si pagano una volta invece che per
@@ -36,6 +40,15 @@ e costruzione degli edifici. Questo modulo non dipende dal renderer.
   frittella senza fianchi. La taratura attuale e' per un'isola di lato **512**,
   ed e' quella la dimensione su cui i test la verificano.
 - Soglie, frequenze e stratigrafie stanno in `terrain/config.ts`.
+- **L'acqua si classifica qui perche' solo qui esiste la profondita'.** Il mesher
+  emette del mare la sola faccia superiore, a quota costante e con un unico slot:
+  al frammento non arriva nessun segnale, e una pozza e' identica al mare aperto.
+  `waterClass.ts` decide bassofondo, canale o mare aperto da `seaLevel - top` e
+  dalle sponde, e la classe viaggia nei **tre bit di superficie** del voxel
+  d'acqua — un sovraccarico dichiarato di quel campo, non un nono tipo (vedi il
+  contratto 5 e `WATER_CLASS` in `visualBlock.ts`). Il sondaggio delle sponde
+  interroga il campo di quota, che e' funzione pura del seed: e' cio' che evita
+  di classificare la stessa insenatura in due modi ai due lati di un confine.
 - Un blocco dipende solo da `(seed, shape, ccx, ccy)`: preserva determinismo,
   indipendenza dall'ordine e continuita' ai confini. Le decorazioni valutano un
   anello di `TREE_DECOR.ring` colonne e scrivono solo la porzione interna, cosi'

@@ -1,7 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import { CHUNK, PADDED, PADDED_VOL, paddedIdx } from '../../world/chunkCoords';
+import {
+  CEILING_VOL,
+  ceilingIdx,
+  CHUNK,
+  PADDED,
+  PADDED_VOL,
+  paddedIdx,
+} from '../../world/chunkCoords';
 import { VoxelWorld } from '../../world/VoxelWorld';
-import { buildPaddedVolume } from './buildPaddedVolume';
+import { buildCeilingSlab, buildPaddedVolume } from './buildPaddedVolume';
 import { greedyMesh } from './greedyMesher';
 
 /** Riempie di solido il chunk indicato, in coordinate di mondo. */
@@ -21,6 +28,14 @@ function paddedFor(world: VoxelWorld, cx: number, cy: number, cz: number): Uint8
   const padded = new Uint8Array(PADDED_VOL);
   buildPaddedVolume(world, chunk, padded);
   return padded;
+}
+
+function ceilingFor(world: VoxelWorld, cx: number, cy: number, cz: number): Uint8Array {
+  const chunk = world.getChunk(cx, cy, cz);
+  if (chunk === null) throw new Error('chunk assente');
+  const ceiling = new Uint8Array(CEILING_VOL);
+  buildCeilingSlab(world, chunk, ceiling);
+  return ceiling;
 }
 
 describe('buildPaddedVolume', () => {
@@ -126,5 +141,41 @@ describe('buildPaddedVolume', () => {
         expect(padded[paddedIdx(0, ly + 1, lz + 1)]).toBe(0);
       }
     }
+  });
+});
+
+describe('buildCeilingSlab', () => {
+  it('il piano k = 0 e’ il secondo del chunk sopra, non il primo', () => {
+    // Il primo lo porta gia' il volume paddato a pz = 33: se la fetta ripartisse
+    // da li' la colonna avrebbe un piano doppio e il conto dei vuoti sarebbe
+    // sfalsato di uno proprio dove serve, cioe' al confine fra due chunk.
+    const world = new VoxelWorld();
+    world.ensureChunk(0, 0, 0);
+    world.setBlock(3, 4, CHUNK, 7); // lz = 0 del chunk sopra
+    world.setBlock(3, 4, CHUNK + 1, 8); // lz = 1, primo piano della fetta
+
+    const ceiling = ceilingFor(world, 0, 0, 0);
+
+    expect(ceiling[ceilingIdx(4, 5, 0)]).toBe(8);
+    expect(paddedFor(world, 0, 0, 0)[paddedIdx(4, 5, PADDED - 1)]).toBe(7);
+  });
+
+  it('porta anche le colonne di bordo dai vicini in diagonale', () => {
+    const world = new VoxelWorld();
+    world.ensureChunk(0, 0, 0);
+    world.setBlock(-1, -1, CHUNK + 3, 12); // chunk sopra a nord-ovest
+
+    const ceiling = ceilingFor(world, 0, 0, 0);
+
+    expect(ceiling[ceilingIdx(0, 0, 2)]).toBe(12);
+  });
+
+  it('un cielo senza chunk resta vuoto, cioe’ libero', () => {
+    const world = new VoxelWorld();
+    fillChunk(world, 0, 0, 0, 4);
+
+    const ceiling = ceilingFor(world, 0, 0, 0);
+
+    expect(ceiling.every((value) => value === 0)).toBe(true);
   });
 });

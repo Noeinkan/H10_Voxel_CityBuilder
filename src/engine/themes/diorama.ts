@@ -32,13 +32,16 @@ export const diorama: Theme = {
     skyLight: { color: '#8fc0e8', intensity: 0.52 },
     bounceLight: { color: '#8a7a5e', intensity: 0.24 },
     aoStrength: 0.6,
+    skyOcclusion: 0.55,
     colorJitter: 0.2,
     fog: {
       color: '#eadcc7',
-      density: 0.00016,
+      density: 0.00026,
       skyBlend: 0.5,
       heightBase: 24,
-      heightFalloff: 0.011,
+      heightFalloff: 0.0055,
+      // Un plastico su un tavolo non ha foschia al suolo: il velo resta un accenno.
+      altitudeLift: 0.06,
       sunTint: 0.45,
     },
     sky: {
@@ -54,7 +57,16 @@ export const diorama: Theme = {
     tilt: { strength: 0.55, focus: 0.5, width: 0.34 },
     glassTint: '#bdeaf2',
     glassLift: 0.18,
-    water: { highlight: '#c7f3ea', strength: 0.18, scale: 0.12, speed: 0.55 },
+    water: {
+      highlight: '#c7f3ea',
+      strength: 0.18,
+      scale: 0.12,
+      speed: 0.55,
+      shallowTint: '#f0dfae',
+      calm: 0.5,
+      // Un plastico non ha mare aperto vero: il riflesso resta un accenno.
+      glitter: 0.35,
+    },
     toneMapping: 'aces',
     exposure: 1,
   },

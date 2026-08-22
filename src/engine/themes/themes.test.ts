@@ -100,6 +100,15 @@ describe('temi', () => {
         expect(value, theme.id).toBeLessThanOrEqual(1);
       }
       expect(fog.heightFalloff, theme.id).toBeGreaterThanOrEqual(0);
+      // `1 / heightFalloff` e' l'altezza di scala del profilo, e deve stare
+      // nell'ordine dell'altezza dell'edificato: sopra 0,02 il gradiente si
+      // esaurisce nei primi cinquanta cubi e le torri della 4.6 hanno tutte lo
+      // stesso colore, che e' esattamente cio' che la 4.7 e' venuta a togliere.
+      expect(fog.heightFalloff, theme.id).toBeLessThanOrEqual(0.02);
+      // Il velo di quota non e' nebbia: sopra un quarto smette di separare le
+      // quote e comincia solo a slavare la citta' bassa.
+      expect(fog.altitudeLift, theme.id).toBeGreaterThanOrEqual(0);
+      expect(fog.altitudeLift, theme.id).toBeLessThanOrEqual(0.25);
 
       expect(isValidHexColor(sky.top), theme.id).toBe(true);
       expect(isValidHexColor(sky.horizon), theme.id).toBe(true);
@@ -133,6 +142,18 @@ describe('temi', () => {
       expect(a.emissiveStrength ?? 0, theme.id).toBeLessThanOrEqual(2);
       expect(a.water?.strength ?? 0, theme.id).toBeGreaterThanOrEqual(0);
       expect(a.water?.strength ?? 0, theme.id).toBeLessThanOrEqual(1);
+      if (a.water?.shallowTint !== undefined) {
+        expect(isValidHexColor(a.water.shallowTint), theme.id).toBe(true);
+      }
+      for (const value of [a.water?.calm ?? 0, a.water?.glitter ?? 0]) {
+        expect(value, theme.id).toBeGreaterThanOrEqual(0);
+        expect(value, theme.id).toBeLessThanOrEqual(1);
+      }
+
+      // L'occlusione di cielo e' geometrica e non dipende dall'ora: sopra 0,8 il
+      // rimbalzo resta l'unica luce e ogni copertura diventa una macchia piatta.
+      expect(a.skyOcclusion, theme.id).toBeGreaterThanOrEqual(0);
+      expect(a.skyOcclusion, theme.id).toBeLessThanOrEqual(0.8);
 
       expect(a.exposure, theme.id).toBeGreaterThan(0);
       expect(a.exposure, theme.id).toBeLessThanOrEqual(2);

@@ -47,6 +47,13 @@ export interface ColumnBlock {
   /** 1 se edificabile, 0 altrimenti. */
   readonly buildable: Uint8Array;
 
+  /**
+   * Classe d'acqua per colonna (`WATER_CLASS`), significativa solo dove la
+   * colonna e' sommersa. Si decide qui perche' e' qui che la profondita' e le
+   * sponde sono ancora note: al frammento arriverebbe solo una lastra piatta.
+   */
+  readonly water: Uint8Array;
+
   /** Alberi che possono intersecare il blocco, anche con origine appena fuori. */
   readonly decor: Int16Array;
 
@@ -57,7 +64,14 @@ export interface ColumnBlock {
   readonly buildableCount: number;
 }
 
-/** I cinque buffer del blocco, da passare come lista di transfer a `postMessage`. */
+/** I sei buffer del blocco, da passare come lista di transfer a `postMessage`. */
 export function blockTransferables(block: ColumnBlock): Transferable[] {
-  return [block.heights.buffer, block.biomes.buffer, block.slopes.buffer, block.buildable.buffer, block.decor.buffer];
+  return [
+    block.heights.buffer,
+    block.biomes.buffer,
+    block.slopes.buffer,
+    block.buildable.buffer,
+    block.water.buffer,
+    block.decor.buffer,
+  ];
 }

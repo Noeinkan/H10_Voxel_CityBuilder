@@ -38,13 +38,15 @@ export const pastel: Theme = {
     skyLight: { color: '#cfdfe6', intensity: 0.62 },
     bounceLight: { color: '#c9bda6', intensity: 0.4 },
     aoStrength: 0.42,
+    skyOcclusion: 0.38,
     colorJitter: 0.14,
     fog: {
       color: '#e8efeb',
-      density: 0.0002,
+      density: 0.00034,
       skyBlend: 0.6,
       heightBase: 24,
-      heightFalloff: 0.008,
+      heightFalloff: 0.0045,
+      altitudeLift: 0.12,
       sunTint: 0.34,
     },
     sky: {

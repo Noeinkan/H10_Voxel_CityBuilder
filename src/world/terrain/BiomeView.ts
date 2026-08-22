@@ -4,6 +4,7 @@ import { paletteForDepth } from './biomes';
 import { columnLocalX, columnLocalY, COLUMNS_PER_CHUNK } from './columnBlock';
 import { BIOME_DEBUG_IDS, TERRAIN, WATER_IDS } from './config';
 import type { TerrainColumnChunk, TerrainMap } from './TerrainMap';
+import { SURFACE_KIND, type SurfaceKind } from '../visualBlock';
 
 /**
  * Toggle di debug: ricolora il voxel visibile in cima a ogni colonna con la
@@ -78,7 +79,12 @@ export class BiomeView {
               ? WATER_IDS.surface
               : paletteForDepth(biome, 0);
 
-          this.world.setBlock(baseX + columnLocalX(i), baseY + columnLocalY(i), z, id);
+          // Ripristinando l'acqua va rimessa anche la sua classe, o il pelo
+          // tornerebbe mare aperto ovunque: per un voxel d'acqua i bit di
+          // superficie sono `WATER_CLASS`, non un linguaggio di facciata.
+          const surface = !this.on && submerged ? (chunk.water[i] as SurfaceKind) : SURFACE_KIND.plain;
+
+          this.world.setBlock(baseX + columnLocalX(i), baseY + columnLocalY(i), z, id, surface);
         }
         this.cursor = end;
         if (performance.now() - start >= budgetMs) break;

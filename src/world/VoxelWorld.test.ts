@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { CHUNK, idx } from './chunkCoords';
+import { CHUNK, idx, SKY_PROBE } from './chunkCoords';
 import { VoxelWorld } from './VoxelWorld';
 import { SURFACE_KIND } from './visualBlock';
 
@@ -85,17 +85,21 @@ describe('VoxelWorld — storage', () => {
     world.ensureChunk(0, 1, 0);
     world.flush();
 
-    world.setBlock(15, 15, 15, 4);
+    // Sopra `SKY_PROBE`: piu' in basso la cella non sarebbe interna, perche' il
+    // chunk sotto dipende da cosa lo copre.
+    world.setBlock(15, 15, SKY_PROBE + 4, 4);
 
     expect(world.flush()).toEqual(['0,0,0']);
   });
 
   it('marca il vicino corretto su ciascuno dei sei lati', () => {
+    // Le quote dei casi laterali stanno sopra `SKY_PROBE` di proposito: sotto,
+    // marcherebbero anche il chunk inferiore e il caso non sarebbe piu' isolato.
     const cases: readonly [number, number, number, string][] = [
-      [0, 10, 10, '-1,0,0'],
-      [CHUNK - 1, 10, 10, '1,0,0'],
-      [10, 0, 10, '0,-1,0'],
-      [10, CHUNK - 1, 10, '0,1,0'],
+      [0, 10, SKY_PROBE + 4, '-1,0,0'],
+      [CHUNK - 1, 10, SKY_PROBE + 4, '1,0,0'],
+      [10, 0, SKY_PROBE + 4, '0,-1,0'],
+      [10, CHUNK - 1, SKY_PROBE + 4, '0,1,0'],
       [10, 10, 0, '0,0,-1'],
       [10, 10, CHUNK - 1, '0,0,1'],
     ];
@@ -115,6 +119,33 @@ describe('VoxelWorld — storage', () => {
 
       expect([...world.flush()].sort()).toEqual(['0,0,0', expectedNeighbour].sort());
     }
+  });
+
+  it('scrivere in basso in un chunk sporca anche quello sotto, fino a SKY_PROBE', () => {
+    // La dipendenza verso il basso e' lunga quanto il sondaggio del cielo, non
+    // una cella: una campata scritta qui cambia la luce della carreggiata che
+    // copre, e senza questa marcatura resterebbe illuminata come suolo aperto
+    // finche' qualcos'altro non facesse rifare quella mesh.
+    for (const lz of [0, 1, SKY_PROBE - 1]) {
+      const world = new VoxelWorld();
+      world.ensureChunk(0, 0, 0);
+      world.ensureChunk(0, 0, -1);
+      world.flush();
+
+      world.setBlock(10, 10, lz, 1);
+
+      expect([...world.flush()].sort(), `lz ${lz}`).toEqual(['0,0,-1', '0,0,0']);
+    }
+
+    // Appena oltre la portata, il chunk sotto non ha piu' motivo di rifarsi.
+    const world = new VoxelWorld();
+    world.ensureChunk(0, 0, 0);
+    world.ensureChunk(0, 0, -1);
+    world.flush();
+
+    world.setBlock(10, 10, SKY_PROBE, 1);
+
+    expect(world.flush()).toEqual(['0,0,0']);
   });
 
   it("fillColumn scrive esattamente cio' che scriverebbero altrettante setBlock", () => {

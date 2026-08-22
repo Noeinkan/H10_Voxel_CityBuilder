@@ -69,12 +69,17 @@ Non esiste uno script `lint` o un formatter configurato: non inventarne uno.
 2. Solo `setBlock` invalida geometria; `setData` non marca chunk sporchi.
 3. Non sostituire gli `Uint8Array` di un chunk dopo la costruzione.
 4. Colori solo nelle uniform: le mesh hanno `aPalette` e `aFace`, mai RGB.
-   `aAO` e' un attributo geometrico scalare (0..3), non un colore. Cambiare
-   palette o tema non deve mai provocare un rebuild di mesh.
+   `aShade` e' un byte geometrico — AO per corner nei due bit bassi (0..3),
+   visibilita' del cielo della faccia nei due alti (0..3) — non un colore.
+   Cambiare palette o tema non deve mai provocare un rebuild di mesh.
 5. La palette ha esattamente 32 slot; riusa gli indici di `paletteSlots.ts`.
    Per la stessa ragione i tipi di superficie sono **otto e basta**: i tre bit
    alti di `visualBlock` sono tutti impegnati, e prenderne un quarto
-   toglierebbe un bit alla palette.
+   toglierebbe un bit alla palette. L'unica eccezione e' un sovraccarico
+   dichiarato e non un nono tipo: su un voxel d'**acqua** quei tre bit portano
+   `WATER_CLASS` invece di un linguaggio di facciata, perche' nessuno dei sette
+   si applica a una lastra d'acqua e il frammento riconosce l'acqua dalla
+   palette prima di leggerli.
 6. Mesher e generatore di terreno non importano Three.js.
 7. `src/sim/` non importa da `src/engine/` e non usa DOM o Three.js; non sa
    niente di come sono fatti gli edifici — la tipologia vive in

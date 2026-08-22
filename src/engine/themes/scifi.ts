@@ -39,13 +39,15 @@ export const scifi: Theme = {
     // Rimbalzo violaceo: sotto c'e' regolite, non erba.
     bounceLight: { color: '#4a3f5e', intensity: 0.28 },
     aoStrength: 0.62,
+    skyOcclusion: 0.6,
     colorJitter: 0.16,
     fog: {
       color: '#1e2a3d',
-      density: 0.00025,
+      density: 0.00042,
       skyBlend: 0.45,
       heightBase: 20,
-      heightFalloff: 0.009,
+      heightFalloff: 0.0048,
+      altitudeLift: 0.14,
       sunTint: 0.2,
     },
     sky: {

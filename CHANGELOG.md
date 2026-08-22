@@ -11,6 +11,84 @@ coincide con il messaggio di commit.
 
 ---
 
+## 2026-08-22 — Atmosfera e separazione delle quote (Fase 4.7)
+
+- **La nebbia integra la quota lungo il raggio invece di valutarla sul
+  frammento.** Nuovo `src/engine/atmosphere.ts`, modello puro in TS con il suo
+  test in `node` accanto a `lighting.ts`: la densità ha profilo esponenziale in
+  altezza e ciò che tinge un frammento è l'integrale lungo il segmento camera →
+  frammento, in forma chiusa perché la camera è ortografica. È la differenza che
+  fa esistere la fase: a **pari profondità di vista**, due volumi sovrapposti a
+  schermo ma a quote diverse ora ricevono veli diversi, perché il raggio che
+  arriva in cima a una torre ha attraversato aria rarefatta e quello che arriva
+  in strada no. Prima la nebbia separava le distanze e basta.
+- Il profilo **non è troncato** sotto `heightBase`: sarebbe l'integrale a tratti
+  con il suo punto di attraversamento, e con le altezze di scala in uso venti
+  cubi sotto la base valgono `exp(0,1)` — un dieci per cento in più sul fondo
+  delle valli, che è la direzione giusta.
+- `fog.altitudeLift`, nuovo e dichiaratamente non fisico: un velo di quota che
+  **non dipende dalla distanza**, e quindi sopravvive allo zoom ravvicinato dove
+  l'integrale è quasi zero. Decade quattro volte più in fretta della nebbia,
+  altrimenti velerebbe anche i tetti e non separerebbe niente.
+- La curva del gradiente di schermo della nebbia era `screenY` lineare e quella
+  del cielo `smoothstep`: due implementazioni della stessa mappatura, divergenti
+  proprio all'orizzonte dove i due si toccano. Ora è una sola.
+- **Visibilità del cielo cotta nel mesher.** Una fetta di soffitto 34×34×16
+  (`buildCeilingSlab`) viaggia col job accanto al volume paddato, e una passata
+  per piani dà, per ogni cella, la distanza al primo solido sopra. Due bit per
+  faccia entrano nella chiave di merge — così coperto e scoperto non si fondono —
+  e nei due bit alti del byte per vertice, che da `aAO` diventa `aShade`: nessun
+  buffer nuovo, nessuna pass in più, nessuna draw call in più.
+  Nel fragment si occlude la sola metà **cielo** dell'ambiente (`skyOcclusion`
+  per tema); il rimbalzo resta pieno, ed è ciò che impedisce a un sotto-ponte di
+  diventare un buco nero. Vale a ogni ora e a ogni livello di qualità, al
+  contrario dell'ombra del sole, che dipende dall'azimut e a
+  `?quality=performance` non viene nemmeno calcolata.
+- **Costo misurato, non stimato**: la passata è a costo fisso e non dipende dal
+  contenuto. Sulla scena di accettazione il chunk passa da **2,09 a 2,44 ms**,
+  sul vuoto da 1,84 a 2,14, su microgeometria da 4,70 a 4,83; rumore e
+  scacchiera restano dentro il rumore di misura. La prima versione sondava
+  colonna per colonna, con passo di 1156 byte: rifatta per piani, gli array si
+  leggono in ordine.
+- **La dipendenza fra chunk verso il basso è ora lunga `SKY_PROBE`, non una
+  cella.** Una scrittura nei primi sedici piani di un chunk sporca anche quello
+  sotto: senza, una campata comparsa dopo il suolo non l'avrebbe mai scurito.
+- **L'acqua ha tre risposte invece di una.** Il mesher emette del mare la sola
+  faccia superiore, a quota costante e con un unico slot di palette — `waterDeep`
+  non è mai visibile — quindi al frammento non arrivava alcun segnale di
+  profondità e una pozza aveva lo stesso colore di sedici voxel di mare aperto.
+  Nuovo `terrain/waterClass.ts`: la classe si decide dove la profondità esiste
+  ancora, cioè alla scrittura, dove vale `seaLevel - top` ed è gratis. Bassofondo
+  per profondità, canale se c'è terra a portata su **entrambi** i versi di uno
+  stesso asse — una baia con una sponda sola resta mare — mare aperto altrimenti.
+  Il sondaggio interroga il campo di quota, che è funzione pura del seed: nessuna
+  cucitura al confine fra due chunk.
+- La classe viaggia nei **tre bit di superficie** del voxel d'acqua. È un
+  sovraccarico dichiarato di un campo esistente e non un nono tipo di superficie:
+  i bit sono tutti impegnati (invarianti 4 e 5), nessuno dei sette linguaggi si
+  applica a una lastra d'acqua, e il fragment riconosce l'acqua dalla palette
+  prima di leggerli — per lei cortocircuita del tutto lo switch delle facciate.
+- Le tre risposte: bassofondo con increspatura fitta e la base che vira alla
+  tinta del fondale; canale quasi fermo, che tende all'orizzonte; mare aperto con
+  onda lunga a due ottave e **riflesso del sole** — un `reflect` e una `pow`,
+  perché la normale è +Z e la vista è una direzione sola. La **schiuma di riva**
+  non costa un dato nuovo: sulla faccia superiore l'AO per vertice scende
+  esattamente dove una colonna vicina è solida al livello del mare, cioè sul filo
+  dell'acqua, e basta leggerla al contrario.
+- **I sette temi sono stati ritarati, non scalati.** `fog.heightFalloff` cambia
+  significato — ora è l'inverso di un'altezza di scala integrata — e passa da
+  0,007-0,011 a 0,004-0,0055, cioè da un gradiente che si esauriva nei primi
+  trenta voxel a uno nell'ordine dell'altezza dell'edificato della 4.6; le
+  densità salgono in proporzione, perché con l'integrale un raggio che scende da
+  sopra raccoglie meno foschia di prima a parità di parametri. Nuovi per tema:
+  `skyOcclusion`, `fog.altitudeLift`, e `water.shallowTint`/`calm`/`glitter` sui
+  quattro temi che l'acqua ce l'hanno già.
+- **Non ricompila niente e non aggiunge draw call**: tutto è uniform, e il test
+  che confronta i sorgenti stringa per stringa attraverso un cambio di tema resta
+  verde senza modifiche.
+- Le tabelle di misura in `README.md` e `src/sim/README.md` **non** sono state
+  toccate: sono verificate a mano su questa macchina.
+
 ## 2026-08-21 — Gerarchia verticale della città (Fase 4.6)
 
 - **Nuovo dominio** `src/world/skyline/`: `config.ts`, `tiers.ts` e il loro test.

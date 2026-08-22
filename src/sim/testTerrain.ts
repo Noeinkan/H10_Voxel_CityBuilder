@@ -100,6 +100,7 @@ function blockOf(ccx: number, ccy: number, options: TestTerrainOptions): ColumnB
     biomes,
     slopes,
     buildable,
+    water: new Uint8Array(COLUMNS_PER_CHUNK),
     decor: new Int16Array(0),
     maxHeight,
     buildableCount,

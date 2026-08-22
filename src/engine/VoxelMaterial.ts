@@ -15,8 +15,9 @@ import { PALETTE_SLOTS } from './paletteSlots';
 import { MESH_UNITS_PER_VOXEL } from './mesher/meshTypes';
 import { INSPECT, isActive, isCut, type InspectUniforms } from './inspect';
 import { FACE_NORMALS, sunDirection } from './lighting';
+import { FOG_FLAT_EPSILON, FOG_LIFT_SHARPNESS } from './atmosphere';
 import type { Atmosphere } from './themes/theme';
-import { SURFACE_KIND } from '../world/visualBlock';
+import { SURFACE_KIND, WATER_CLASS } from '../world/visualBlock';
 
 /**
  * Unico ShaderMaterial condiviso da tutti i chunk.
@@ -45,12 +46,14 @@ const vertexShader = /* glsl */ `
 attribute float aFace;
 attribute float aPalette;
 attribute float aSurface;
-attribute float aAO;
+attribute float aShade;
 
 uniform float uVoxelSize;
 uniform float uAoStrength;
 
 varying float vAO;
+varying float vOcclusion;
+varying float vSkyVisibility;
 varying float vFogDepth;
 varying float vPaletteIndex;
 varying float vFaceIndex;
@@ -60,7 +63,15 @@ varying vec3 vWorldPosition;
 
 void main() {
   // position arriva come Int16 in sedicesimi di voxel, incluse le sporgenze.
-  vAO = mix(1.0 - uAoStrength, 1.0, aAO / 3.0);
+  //
+  // aShade porta due campi geometrici in un byte: l'AO per corner nei due bit
+  // bassi, la visibilita' del cielo della faccia nei due alti. Senza operatori
+  // bit, che in GLSL ES 1.00 non ci sono: mod e floor su interi piccoli sono
+  // esatti in float.
+  float occlusion = mod(aShade, 4.0) / 3.0;
+  vAO = mix(1.0 - uAoStrength, 1.0, occlusion);
+  vOcclusion = 1.0 - occlusion;
+  vSkyVisibility = floor(aShade / 4.0) / 3.0;
 
   vec4 worldPosition = modelMatrix * vec4(position * (uVoxelSize / ${MESH_UNITS_PER_VOXEL}.0), 1.0);
   vPaletteIndex = aPalette;
@@ -150,6 +161,7 @@ uniform vec3 uSunColor;
 uniform float uSunWrap;
 uniform vec3 uSkyColor;
 uniform vec3 uBounceColor;
+uniform float uSkyOcclusion;
 uniform float uColorJitter;
 
 uniform vec3 uFogColor;
@@ -157,6 +169,7 @@ uniform float uFogDensity;
 uniform float uFogSkyBlend;
 uniform float uFogHeightBase;
 uniform float uFogHeightFalloff;
+uniform float uFogAltitudeLift;
 uniform float uFogSunTint;
 uniform vec3 uSkyTopColor;
 uniform vec3 uSkyHorizonColor;
@@ -174,9 +187,12 @@ uniform vec3 uGlassTint;
 uniform float uGlassLift;
 uniform float uTime;
 uniform vec3 uWaterHighlight;
+uniform vec3 uWaterShallowTint;
 uniform float uWaterStrength;
 uniform float uWaterScale;
 uniform float uWaterSpeed;
+uniform float uWaterCalm;
+uniform float uWaterGlitter;
 uniform float uEmissiveStrength;
 
 // Viste di ispezione: due predicati geometrici e una sola densita'. Il materiale
@@ -187,6 +203,8 @@ uniform float uInspectVeil;
 uniform float uInspectInside;
 
 varying float vAO;
+varying float vOcclusion;
+varying float vSkyVisibility;
 varying float vFogDepth;
 varying float vPaletteIndex;
 varying float vFaceIndex;
@@ -272,7 +290,13 @@ ${inspect ? inspectCap : ''}
   vec3 detailed = albedo;
   vec3 emission = vec3(0.0);
 
-  if (surfaceIndex != ${SURFACE_KIND.plain}) {
+  // Per un voxel d'acqua i tre bit di superficie non sono un linguaggio di
+  // facciata ma la classe dello specchio (WATER_CLASS): l'acqua cortocircuita
+  // lo switch qui sotto invece di attraversarne il ramo neutro. Il perche' del
+  // sovraccarico sta su WATER_CLASS, in world/visualBlock.ts.
+  bool isWater = paletteIndex == ${PALETTE_SLOTS.water} || paletteIndex == ${PALETTE_SLOTS.waterDeep};
+
+  if (!isWater && surfaceIndex != ${SURFACE_KIND.plain}) {
     vec2 uv = faceUv(faceIndex, vWorldPosition);
     vec2 cellUv = fract(uv + vec2(0.0001));
     vec2 edgeDistance = min(cellUv, 1.0 - cellUv);
@@ -334,37 +358,104 @@ ${inspect ? inspectCap : ''}
   float shadow = sampleShadow(vWorldPosition, n);
 
   // Ambiente emisferico piu' sole avvolgente. L'ambiente non e' moltiplicato per
-  // l'ombra: e' cio' che lascia azzurre le facce in ombra invece che nere.
-  vec3 ambient = mix(uBounceColor, uSkyColor, n.z * 0.5 + 0.5);
+  // l'ombra proiettata: e' cio' che lascia azzurre le facce in ombra invece che
+  // nere.
+  //
+  // A essere occlusa e' la sola meta' **cielo**, e con un dato geometrico e non
+  // con il sole: sotto un impalcato o un ponte il cielo non arriva a qualunque
+  // ora, mentre l'ombra del sole dipende dall'azimut e al livello di qualita'
+  // piu' basso non viene nemmeno calcolata. Il rimbalzo resta pieno, ed e' cio'
+  // che impedisce al sotto-ponte di diventare un buco nero.
+  float skyReach = mix(1.0 - uSkyOcclusion, 1.0, vSkyVisibility);
+  vec3 ambient = mix(uBounceColor, uSkyColor * skyReach, n.z * 0.5 + 0.5);
   float wrapped = clamp((dot(n, uSunDirection) + uSunWrap) / (1.0 + uSunWrap), 0.0, 1.0);
   vec3 light = ambient + uSunColor * wrapped * shadow;
 
   vec3 shaded = detailed * light * vAO + emission * uEmissiveStrength;
 
-  bool isWater = paletteIndex == ${PALETTE_SLOTS.water} || paletteIndex == ${PALETTE_SLOTS.waterDeep};
+  // Tre risposte d'acqua, dalla classe che il generatore ha scritto nei bit di
+  // superficie. Il mesher emette del mare la sola faccia superiore, quindi senza
+  // quella classe qui arriverebbero una quota costante e un solo indice di
+  // palette: una pozza e sedici voxel di mare aperto sarebbero lo stesso colore.
   if (isWater && faceIndex == 4 && uWaterStrength > 0.0) {
     float phase = uTime * uWaterSpeed;
-    float waveA = sin((vWorldXY.x + vWorldXY.y) * uWaterScale + phase);
-    float waveB = sin((vWorldXY.x - vWorldXY.y) * uWaterScale * 0.73 - phase * 0.61);
-    float shimmer = 0.5 + 0.25 * (waveA + waveB);
-    shaded = mix(shaded, uWaterHighlight, clamp(shimmer * uWaterStrength, 0.0, 1.0));
+
+    // Bassofondo: increspatura fitta e bassa, e la base schiarisce verso la
+    // tinta del fondale — e' la classe dove si legge la sabbia sotto.
+    // Canale: ampiezza quasi nulla, perche' l'acqua chiusa e' uno specchio.
+    // Mare aperto: onda lunga, con la seconda ottava a fare la cresta.
+    bool shallow = surfaceIndex == ${WATER_CLASS.shallow};
+    bool canal = surfaceIndex == ${WATER_CLASS.canal};
+    float scale = uWaterScale * (shallow ? 2.6 : canal ? 0.7 : 1.0);
+    float amplitude = canal ? 0.28 : shallow ? 0.85 : 1.0;
+
+    float waveA = sin((vWorldXY.x + vWorldXY.y) * scale + phase);
+    float waveB = sin((vWorldXY.x - vWorldXY.y) * scale * 0.73 - phase * 0.61);
+    float shimmer = 0.5 + 0.25 * (waveA + waveB) * amplitude;
+    if (!shallow && !canal) {
+      // Solo il mare aperto porta la seconda ottava: e' cio' che gli da' la
+      // scala grande, e in un canale sarebbe rumore.
+      shimmer += 0.12 * sin((vWorldXY.x * 0.37 - vWorldXY.y) * scale * 2.9 + phase * 1.7);
+    }
+
+    vec3 tint = shallow ? mix(uWaterHighlight, uWaterShallowTint, 0.65)
+      : canal ? mix(uWaterHighlight, uSkyHorizonColor, uWaterCalm)
+      : uWaterHighlight;
+    shaded = mix(shaded, tint, clamp(shimmer * uWaterStrength, 0.0, 1.0));
+
+    // Riflesso del sole. La normale e' +Z e la vista e' una sola direzione:
+    // riflettere costa un dot e una pow, e non c'e' niente da campionare. E' la
+    // firma del mare aperto — il canale la spegne, il bassofondo la smorza.
+    vec3 mirrored = reflect(uViewDirection, vec3(0.0, 0.0, 1.0));
+    float glint = pow(max(0.0, dot(mirrored, uSunDirection)), 24.0);
+    float glintAmount = canal ? 0.0 : shallow ? 0.35 : 1.0;
+    shaded += uSunColor * glint * uWaterGlitter * glintAmount * (0.6 + 0.4 * shimmer);
+
+    // Schiuma di riva, gratis: sulla faccia superiore l'AO per vertice scende
+    // esattamente dove una colonna vicina e' solida al livello del mare, cioe'
+    // sul filo dell'acqua. Non serve un dato nuovo, basta leggerlo al contrario.
+    float shore = vOcclusion;
+    shaded = mix(shaded, uWaterHighlight, shore * uWaterStrength * 0.8);
   }
 
   // Prospettiva aerea. La nebbia si miscela in spazio lineare, prima del tone
   // mapping: dopo, il colore di sfumatura non corrisponderebbe piu' a quello
-  // dichiarato dal tema. La densita' decade con la quota, cosi' le valli si
-  // impastano mentre le cime restano nitide, e la tinta tende al cielo alla
-  // stessa altezza di schermo del frammento, cosi' la distanza vi si scioglie.
-  float heightFalloff = exp(-max(0.0, vWorldPosition.z - uFogHeightBase) * uFogHeightFalloff);
-  float fogAmount = 1.0 - exp(-uFogDensity * vFogDepth * heightFalloff);
+  // dichiarato dal tema. La tinta tende al cielo alla stessa altezza di schermo
+  // del frammento, cosi' la distanza vi si scioglie.
+  //
+  // La densita' ha un profilo esponenziale in quota e viene **integrata lungo il
+  // raggio**, non valutata sul frammento: e' cio' che separa le quote invece
+  // delle sole distanze, perche' il raggio che arriva in cima a una torre ha
+  // attraversato aria rarefatta e quello che arriva in strada no. L'integrale e'
+  // in forma chiusa perche' la camera e' ortografica. La copia leggibile di
+  // queste righe, con il perche' e i suoi test, sta in atmosphere.ts.
+  float fogEntry = uFogHeightFalloff * (vWorldPosition.z - uViewDirection.z * vFogDepth - uFogHeightBase);
+  float fogExit = uFogHeightFalloff * (vWorldPosition.z - uFogHeightBase);
+  float fogSpan = fogExit - fogEntry;
+  // Raggio quasi orizzontale: il rapporto degenera in 0/0 e vale il suo limite.
+  float fogShape = abs(fogSpan) < ${FOG_FLAT_EPSILON.toFixed(6)}
+    ? exp(-fogEntry)
+    : (exp(-fogEntry) - exp(-fogExit)) / fogSpan;
+  float fogAmount = 1.0 - exp(-uFogDensity * vFogDepth * fogShape);
 
-  float screenY = clamp(gl_FragCoord.y / max(1.0, uResolution.y), 0.0, 1.0);
+  // Velo di quota: la parte dichiaratamente non fisica. Non dipende dalla
+  // distanza, quindi sopravvive allo zoom ravvicinato dove l'integrale e' quasi
+  // zero; decade piu' in fretta della nebbia, altrimenti velerebbe anche i tetti.
+  float fogLift = uFogAltitudeLift *
+    exp(-${FOG_LIFT_SHARPNESS.toFixed(1)} * uFogHeightFalloff * max(0.0, vWorldPosition.z - uFogHeightBase));
+  // Trasmittanza e non somma: due veli in fila non superano l'opacita' piena.
+  float fogVeil = 1.0 - (1.0 - clamp(fogAmount, 0.0, 1.0)) * (1.0 - clamp(fogLift, 0.0, 1.0));
+
+  // Stessa curva del gradiente di SkyBackground: erano due implementazioni della
+  // stessa mappatura, e divergendo cucivano una riga proprio all'orizzonte, dove
+  // il cielo e la nebbia si toccano.
+  float screenY = smoothstep(0.0, 1.0, clamp(gl_FragCoord.y / max(1.0, uResolution.y), 0.0, 1.0));
   vec3 skyTint = mix(uSkyHorizonColor, uSkyTopColor, screenY);
   vec3 fogTint = mix(uFogColor, skyTint, uFogSkyBlend);
   float towardSun = max(0.0, dot(uViewDirection, uSunDirection));
   fogTint = mix(fogTint, uSunColor, pow(towardSun, 4.0) * uFogSunTint);
 
-  gl_FragColor = vec4(mix(shaded, fogTint, clamp(fogAmount, 0.0, 1.0)), 1.0);
+  gl_FragColor = vec4(mix(shaded, fogTint, fogVeil), 1.0);
   // Nessun tone mapping qui: si scrive HDR lineare e ci pensa OutputPass.
   // Ecco perche' un cambio di tema non ricompila piu' nessun materiale di scena.
 }
@@ -433,6 +524,7 @@ export function createVoxelMaterial(hexColors: readonly string[], voxelSize: num
   const skyHorizonColor = new Color(1, 1, 1);
   const glassTint = new Color(1, 1, 1);
   const waterHighlight = new Color(1, 1, 1);
+  const waterShallowTint = new Color(1, 1, 1);
   const viewDirection = new Vector3(0, 0, -1);
   const resolution = new Vector2(1, 1);
   const shadowMatrix = new Matrix4();
@@ -454,6 +546,7 @@ export function createVoxelMaterial(hexColors: readonly string[], voxelSize: num
       uSunWrap: { value: 0.3 },
       uSkyColor: { value: skyColor },
       uBounceColor: { value: bounceColor },
+      uSkyOcclusion: { value: 0 },
       uColorJitter: { value: 0 },
 
       uFogColor: { value: fogColor },
@@ -461,6 +554,7 @@ export function createVoxelMaterial(hexColors: readonly string[], voxelSize: num
       uFogSkyBlend: { value: 0 },
       uFogHeightBase: { value: 0 },
       uFogHeightFalloff: { value: 0 },
+      uFogAltitudeLift: { value: 0 },
       uFogSunTint: { value: 0 },
       uSkyTopColor: { value: skyTopColor },
       uSkyHorizonColor: { value: skyHorizonColor },
@@ -480,9 +574,12 @@ export function createVoxelMaterial(hexColors: readonly string[], voxelSize: num
       uGlassLift: { value: 0 },
       uTime: { value: 0 },
       uWaterHighlight: { value: waterHighlight },
+      uWaterShallowTint: { value: waterShallowTint },
       uWaterStrength: { value: 0 },
       uWaterScale: { value: 0.1 },
       uWaterSpeed: { value: 0 },
+      uWaterCalm: { value: 0 },
+      uWaterGlitter: { value: 0 },
       uEmissiveStrength: { value: 0.35 },
 
       uInspectPlane: { value: inspectPlane },
@@ -517,6 +614,7 @@ export function createVoxelMaterial(hexColors: readonly string[], voxelSize: num
         .setStyle(atmosphere.bounceLight.color, SRGBColorSpace)
         .multiplyScalar(atmosphere.bounceLight.intensity);
       material.uniforms['uSunWrap'].value = atmosphere.sun.wrap;
+      material.uniforms['uSkyOcclusion'].value = atmosphere.skyOcclusion;
       material.uniforms['uColorJitter'].value = atmosphere.colorJitter;
 
       fogColor.setStyle(atmosphere.fog.color, SRGBColorSpace);
@@ -526,15 +624,25 @@ export function createVoxelMaterial(hexColors: readonly string[], voxelSize: num
       material.uniforms['uFogSkyBlend'].value = atmosphere.fog.skyBlend;
       material.uniforms['uFogHeightBase'].value = atmosphere.fog.heightBase;
       material.uniforms['uFogHeightFalloff'].value = atmosphere.fog.heightFalloff;
+      material.uniforms['uFogAltitudeLift'].value = atmosphere.fog.altitudeLift;
       material.uniforms['uFogSunTint'].value = atmosphere.fog.sunTint;
 
       glassTint.setStyle(atmosphere.glassTint ?? '#ffffff', SRGBColorSpace);
       waterHighlight.setStyle(atmosphere.water?.highlight ?? atmosphere.fog.color, SRGBColorSpace);
+      // Il fondale sfuma verso la riva: senza una tinta propria il bassofondo
+      // resterebbe il mare aperto con un'onda piu' corta, che non e' la stessa
+      // cosa. In mancanza si ripiega sul riflesso, e il bassofondo si spegne.
+      waterShallowTint.setStyle(
+        atmosphere.water?.shallowTint ?? atmosphere.water?.highlight ?? atmosphere.fog.color,
+        SRGBColorSpace,
+      );
       material.uniforms['uAoStrength'].value = atmosphere.aoStrength;
       material.uniforms['uGlassLift'].value = atmosphere.glassLift ?? 0;
       material.uniforms['uWaterStrength'].value = atmosphere.water?.strength ?? 0;
       material.uniforms['uWaterScale'].value = atmosphere.water?.scale ?? 0.1;
       material.uniforms['uWaterSpeed'].value = atmosphere.water?.speed ?? 0;
+      material.uniforms['uWaterCalm'].value = atmosphere.water?.calm ?? 0.5;
+      material.uniforms['uWaterGlitter'].value = atmosphere.water?.glitter ?? 0;
       material.uniforms['uEmissiveStrength'].value = atmosphere.emissiveStrength ?? 0.35;
     },
     setTime(seconds: number): void {

@@ -1,12 +1,37 @@
 import { describe, expect, it } from 'vitest';
-import { CHUNK, PADDED_VOL, paddedIdx } from '../../world/chunkCoords';
+import { CEILING_VOL, ceilingIdx, CHUNK, PADDED_VOL, paddedIdx, SKY_PROBE } from '../../world/chunkCoords';
 import { packVisualBlock, SURFACE_KIND } from '../../world/visualBlock';
-import { greedyMesh } from './greedyMesher';
+import { greedyMesh, SHADE_AO_MASK, SHADE_SKY_MASK, SHADE_SKY_SHIFT } from './greedyMesher';
 import { MESH_UNITS_PER_VOXEL } from './meshTypes';
 
 /** Volume paddato vuoto. Le coordinate locali 0..31 stanno a px = lx + 1. */
 function emptyPadded(): Uint8Array {
   return new Uint8Array(PADDED_VOL);
+}
+
+/** Fetta di soffitto vuota: cielo libero sopra tutto il chunk. */
+function emptyCeiling(): Uint8Array {
+  return new Uint8Array(CEILING_VOL);
+}
+
+/** I due campi impacchettati nel byte per vertice. */
+function aoOf(shade: number): number {
+  return shade & SHADE_AO_MASK;
+}
+
+function skyOf(shade: number): number {
+  return (shade >>> SHADE_SKY_SHIFT) & SHADE_SKY_MASK;
+}
+
+/** Visibilita' del cielo dei vertici della faccia +Z posta alla quota `lz + 1`. */
+function skyOnTopFaceAt(mesh: { faces: Uint8Array; positions: Int16Array; shade: Uint8Array }, lz: number): number[] {
+  const found: number[] = [];
+  for (let i = 0; i < mesh.faces.length; i++) {
+    if (mesh.faces[i] !== 4) continue;
+    if (mesh.positions[i * 3 + 2] !== (lz + 1) * MESH_UNITS_PER_VOXEL) continue;
+    found.push(skyOf(mesh.shade[i]));
+  }
+  return found;
 }
 
 /** Scrive una cella in coordinate locali di chunk (0..31 valide, -1 e 32 = padding). */
@@ -175,8 +200,8 @@ describe('greedyMesh', () => {
 
     const mesh = greedyMesh(padded);
 
-    expect([...mesh.ao]).toHaveLength(mesh.quadCount * 4);
-    expect([...mesh.ao].every((value) => value === 3)).toBe(true);
+    expect([...mesh.shade]).toHaveLength(mesh.quadCount * 4);
+    expect([...mesh.shade].every((value) => aoOf(value) === 3)).toBe(true);
   });
 
   it('scurisce i corner interni di uno spigolo concavo', () => {
@@ -191,12 +216,81 @@ describe('greedyMesh', () => {
     const topAo: number[] = [];
     for (let i = 0; i < mesh.faces.length; i++) {
       const z = mesh.positions[i * 3 + 2];
-      if (mesh.faces[i] === 4 && z === 2 * MESH_UNITS_PER_VOXEL) topAo.push(mesh.ao[i]);
+      if (mesh.faces[i] === 4 && z === 2 * MESH_UNITS_PER_VOXEL) topAo.push(aoOf(mesh.shade[i]));
     }
 
     expect(topAo).toHaveLength(4);
     expect(topAo).toContain(0);
     expect(topAo).toContain(3);
+  });
+
+  it('un suolo scoperto vede il cielo per intero', () => {
+    const padded = emptyPadded();
+    fillBox(padded, 0, 0, 0, CHUNK, CHUNK, 1, 9);
+
+    const mesh = greedyMesh(padded, undefined, emptyCeiling());
+
+    expect(skyOnTopFaceAt(mesh, 0).every((sky) => sky === 3)).toBe(true);
+  });
+
+  it('un impalcato spegne il cielo del suolo che copre, e solo di quello', () => {
+    const padded = emptyPadded();
+    fillBox(padded, 0, 0, 0, CHUNK, CHUNK, 1, 9);
+    // Un ponte largo otto colonne, sospeso quattro cubi sopra: e' il franco che
+    // le campate usano davvero (`SPANS.clearance`).
+    fillBox(padded, 4, 0, 5, 12, CHUNK, 6, 9);
+
+    const mesh = greedyMesh(padded, undefined, emptyCeiling());
+    const ground = skyOnTopFaceAt(mesh, 0);
+
+    // La strada e' un solo piano, ma il cielo lo taglia in fasce: coperto e
+    // scoperto non si fondono, ed e' cio' che rende visibile il confine.
+    expect(ground).toContain(3);
+    expect(Math.min(...ground)).toBeLessThan(3);
+    // Il tetto del ponte, invece, e' scoperto come il suolo attorno.
+    expect(skyOnTopFaceAt(mesh, 5).every((sky) => sky === 3)).toBe(true);
+  });
+
+  it('la copertura vale anche quando sta nel chunk sopra', () => {
+    // E' il caso che il solo volume paddato non saprebbe vedere: senza la fetta
+    // di soffitto la carreggiata sotto una campata a cavallo del confine di
+    // chunk resterebbe illuminata come suolo aperto, con una cucitura visibile.
+    const padded = emptyPadded();
+    fillBox(padded, 0, 0, CHUNK - 1, CHUNK, CHUNK, CHUNK, 9);
+
+    const open = greedyMesh(padded, undefined, emptyCeiling());
+    expect(skyOnTopFaceAt(open, CHUNK - 1).every((sky) => sky === 3)).toBe(true);
+
+    const ceiling = emptyCeiling();
+    // Piano k = 2 della fetta, cioe' tre cubi sopra il tetto del chunk.
+    for (let py = 0; py < 34; py++) {
+      for (let px = 0; px < 34; px++) ceiling[ceilingIdx(px, py, 2)] = 9;
+    }
+
+    const covered = greedyMesh(padded, undefined, ceiling);
+    expect(skyOnTopFaceAt(covered, CHUNK - 1).every((sky) => sky < 3)).toBe(true);
+  });
+
+  it('senza fetta di soffitto il cielo resta libero: un chunk isolato non si scurisce', () => {
+    // Un volume meshato da solo — nei test, nei bench — non deve comparire come
+    // coperto solo perche' non gli e' stato detto cosa ha sopra.
+    const padded = emptyPadded();
+    fillBox(padded, 0, 0, 0, CHUNK, CHUNK, 1, 9);
+
+    const mesh = greedyMesh(padded);
+
+    expect(skyOnTopFaceAt(mesh, 0).every((sky) => sky === 3)).toBe(true);
+  });
+
+  it('il sondaggio del cielo si ferma a SKY_PROBE e non oltre', () => {
+    const padded = emptyPadded();
+    fillBox(padded, 0, 0, 0, CHUNK, CHUNK, 1, 9);
+    // Una copertura appena oltre la portata del sondaggio non deve contare.
+    fillBox(padded, 0, 0, 1 + SKY_PROBE, CHUNK, CHUNK, 2 + SKY_PROBE, 9);
+
+    const mesh = greedyMesh(padded, undefined, emptyCeiling());
+
+    expect(skyOnTopFaceAt(mesh, 0).every((sky) => sky === 3)).toBe(true);
   });
 
   it('non fonde facce adiacenti quando la loro AO e’ diversa', () => {

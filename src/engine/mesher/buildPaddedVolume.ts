@@ -1,5 +1,5 @@
 import type { Chunk } from '../../world/Chunk';
-import { CHUNK, idx, paddedIdx, PADDED } from '../../world/chunkCoords';
+import { ceilingIdx, CHUNK, idx, paddedIdx, PADDED, SKY_PROBE } from '../../world/chunkCoords';
 import type { VoxelWorld } from '../../world/VoxelWorld';
 
 /**
@@ -51,6 +51,48 @@ export function buildPaddedVolume(world: VoxelWorld, chunk: Chunk, padded: Uint8
             } else {
               padded[destination] = neighbour.blocks[source];
             }
+          }
+        }
+      }
+    }
+  }
+}
+
+/**
+ * Riempie la fetta di soffitto: i `SKY_PROBE` piani immediatamente sopra il
+ * volume paddato, con la stessa impronta 34x34.
+ *
+ * Serve alla visibilita' del cielo, che deve vedere un impalcato quattro o sei
+ * cubi piu' su e non si accontenta della cella adiacente. Il piano `k = 0` sta
+ * subito sopra `pz = 33`, cioe' e' `lz = 1` del chunk sovrastante: `pz = 33` e'
+ * gia' il suo `lz = 0`, e la catena resta contigua in quota senza salti.
+ *
+ * Come per il volume paddato il buffer deve arrivare azzerato: un chunk assente
+ * significa cielo libero, ed e' esattamente cio' che gli zeri dicono.
+ */
+export function buildCeilingSlab(world: VoxelWorld, chunk: Chunk, ceiling: Uint8Array): void {
+  const { cx, cy, cz } = chunk;
+
+  for (let dy = -1; dy <= 1; dy++) {
+    for (let dx = -1; dx <= 1; dx++) {
+      const neighbour = world.getChunk(cx + dx, cy + dy, cz + 1);
+      if (neighbour === null || neighbour.isEmpty) continue;
+
+      const srcX = dx < 0 ? CHUNK - 1 : 0;
+      const srcY = dy < 0 ? CHUNK - 1 : 0;
+      const dstX = dx < 0 ? 0 : dx > 0 ? PADDED - 1 : 1;
+      const dstY = dy < 0 ? 0 : dy > 0 ? PADDED - 1 : 1;
+      const width = dx === 0 ? CHUNK : 1;
+      const height = dy === 0 ? CHUNK : 1;
+
+      for (let k = 0; k < SKY_PROBE; k++) {
+        for (let y = 0; y < height; y++) {
+          const source = idx(srcX, srcY + y, k + 1);
+          const destination = ceilingIdx(dstX, dstY + y, k);
+          if (width === CHUNK) {
+            ceiling.set(neighbour.blocks.subarray(source, source + CHUNK), destination);
+          } else {
+            ceiling[destination] = neighbour.blocks[source];
           }
         }
       }

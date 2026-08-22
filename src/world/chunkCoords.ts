@@ -26,6 +26,29 @@ export const PADDED = CHUNK + 2;
 /** Numero di celle nel volume paddato: 34^3. */
 export const PADDED_VOL = PADDED * PADDED * PADDED;
 
+/**
+ * Quanti voxel sopra il proprio tetto guarda un chunk per sapere cosa lo copre.
+ *
+ * La visibilita' del cielo non si ferma alla cella adiacente come l'AO: un
+ * impalcato passa quattro o sei cubi sopra la carreggiata (`SPANS.clearance`,
+ * `minRise`), e senza arrivare fin la' il suolo coperto resterebbe illuminato
+ * come suolo aperto. Sedici copre con margine tutti i franchi che le campate
+ * producono oggi.
+ *
+ * Sta qui e non nel mesher perche' e' un fatto di **dipendenza fra chunk**, e
+ * come tale riguarda anche chi marca sporco: una scrittura nei primi sedici
+ * piani di un chunk cambia la mesh di quello sotto. Deve restare sotto `CHUNK`.
+ */
+export const SKY_PROBE = 16;
+
+/** Celle della fetta di soffitto: la stessa impronta del volume paddato. */
+export const CEILING_VOL = PADDED * PADDED * SKY_PROBE;
+
+/** Indice lineare dentro la fetta di soffitto, con `k` fra 0 e `SKY_PROBE - 1`. */
+export function ceilingIdx(px: number, py: number, k: number): number {
+  return px + PADDED * (py + PADDED * k);
+}
+
 /** Indice lineare dentro un chunk. `lx` e' la componente che varia piu' rapidamente. */
 export function idx(lx: number, ly: number, lz: number): number {
   return lx + CHUNK * (ly + CHUNK * lz);
