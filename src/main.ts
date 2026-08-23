@@ -1,7 +1,4 @@
 import {
-  ACESFilmicToneMapping,
-  Color,
-  NoToneMapping,
   Raycaster,
   Scene,
   SRGBColorSpace,
@@ -9,6 +6,7 @@ import {
   Vector3,
   WebGLRenderer,
 } from 'three';
+import { createAtmosphereControl } from './engine/AtmosphereControl';
 import { ChunkRenderer } from './engine/ChunkRenderer';
 import { InfluenceOverlay } from './engine/InfluenceOverlay';
 import { InspectGuides } from './engine/InspectGuides';
@@ -21,31 +19,25 @@ import {
   INSPECT_NAMES,
   clampSliceZ,
   cycleInspectMode,
-  inspectGuide,
-  inspectUniforms,
   isCut,
   modeHasLevel,
   parseInspectMode,
-  sectionAxis,
-  type InspectBox,
   type InspectMode,
-  type InspectState,
-  type InspectUniforms,
 } from './engine/inspect';
-import { IsoCameraController, type IsoCameraState } from './engine/IsoCameraController';
+import { createInspectView } from './engine/InspectView';
+import { IsoCameraController } from './engine/IsoCameraController';
 import {
   DAYLIGHT,
   DAYLIGHT_MODE,
   dayPhase,
   modeHour,
   nextDaylightMode,
-  nightFactor,
   normaliseHour,
   resolveDaylightMode,
   withHour,
   type DaylightMode,
 } from './engine/daylight';
-import { faceLuminance, sunDirection } from './engine/lighting';
+import { faceLuminance } from './engine/lighting';
 import { onPaletteChanged } from './engine/palette';
 import {
   RenderQualityController,
@@ -60,7 +52,7 @@ import { createVoxelMaterial } from './engine/VoxelMaterial';
 import { GrowthScene } from './game/growthScene';
 import { resolveLaunchMode } from './game/launchMode';
 import { pickSolidCell, pickSurfaceCell, type Ray3, type SurfaceCell } from './game/surfacePick';
-import { FixedStepLoop } from './game/loop';
+import { SimScene, SIM_SITE_COUNT, SIM_TICK_RATE } from './game/simScene';
 import { coastalSectorAt, shapeWithSector, type CoastalSector } from './game/sectors';
 import type { ActionFailure, SiteCost } from './game/actions';
 import { BALANCE } from './sim/balance';
@@ -75,12 +67,8 @@ import {
 } from './sim/classes';
 import { BUILDER } from './world/buildings/config';
 import { typologiesForUses } from './world/buildings/typology';
-import { writeDesirabilityData } from './sim/debugData';
-import { nextBuildSites, type BuildSite } from './sim/nextBuildSites';
-import { isPolicyId, type PolicyId } from './sim/policies';
-import { createScenarioState } from './sim/scenario';
-import { setPolicyActive, setSelectedClass, type SimState } from './sim/SimState';
-import { tick } from './sim/tick';
+import type { BuildSite } from './sim/nextBuildSites';
+import { isPolicyId } from './sim/policies';
 import './ui/hud.css';
 import { DebugOverlay, type OverlayFrame } from './ui/DebugOverlay';
 import { GameHud, type GameTool } from './ui/GameHud';
@@ -89,7 +77,12 @@ import { GrowthOverlay } from './ui/GrowthOverlay';
 import { InspectOverlay, type InspectOverlayFrame } from './ui/InspectOverlay';
 import { SimOverlay, type SimOverlayFrame } from './ui/SimOverlay';
 import { TerrainOverlay, type TerrainOverlayFrame } from './ui/TerrainOverlay';
-import { buildViewMenuModel, viewAfterToolPicked, viewLabel } from './ui/ViewMenuModel';
+import {
+  buildViewMenuModel,
+  viewAfterToolPicked,
+  viewLabel,
+  type ViewMenuModel,
+} from './ui/ViewMenuModel';
 import { CHUNK } from './world/chunkCoords';
 import { GROUND, type GroundKind } from './world/grading/grade';
 import { createScene, type SceneGenerator, type SceneKind } from './world/scenes/cityScene';
@@ -100,7 +93,6 @@ import {
   type DioramaScene,
 } from './world/scenes/dioramaScene';
 import { StreetNetwork } from './world/streets/StreetNetwork';
-import type { BlockRect } from './world/streets/streetGrid';
 import { TERRAIN } from './world/terrain/config';
 import { BiomeView } from './world/terrain/BiomeView';
 import { expandIsland } from './world/terrain/IslandGenerator';
@@ -186,22 +178,13 @@ const terrainSeed = terrainParam === null ? seed : parseInt(terrainParam, 10) ||
  * overlay. Hotkey e pannello restano invece dietro il debug, perche' sono
  * comandi e non un'inquadratura.
  */
-let inspectMode: InspectMode = parseInspectMode(params.get('inspect'));
-let inspectSliceZ = clampSliceZ(
+const initialInspectMode: InspectMode = parseInspectMode(params.get('inspect'));
+const initialSliceZ = clampSliceZ(
   params.get('slice') === null ? INSPECT.defaultSliceZ : Number(params.get('slice')),
 );
 
 /** `?slice=` e' una quota chiesta esplicitamente, e resta fissa fra un'apertura e l'altra. */
 const sliceZFromUrl = params.get('slice') !== null;
-
-/** Vero da quando la quota e' stata scelta: solo allora smette di seguire il suolo. */
-let sliceZChosen = sliceZFromUrl;
-
-/** Tick al secondo del passo automatico della scena di simulazione. */
-const SIM_TICK_RATE = 10;
-
-/** Candidati mostrati dall'overlay. */
-const SIM_SITE_COUNT = 10;
 
 const container = document.getElementById('app');
 if (container === null) throw new Error('missing #app container');
@@ -238,15 +221,7 @@ const diorama: DioramaScene | null = sceneKind === 'diorama' && terrainParam ===
   : null;
 
 /** `?theme=<id>` sceglie il look; in assenza vale il diorama caldo. */
-let theme: Theme = resolveTheme(params.get('theme'));
-
-/**
- * Passo minimo, in ore, fra due riscritture dell'atmosfera.
- *
- * Un centesimo d'ora e' mezzo minuto di gioco: sotto, il sole si sposta di
- * meno di un decimo di grado e non c'e' immagine da guadagnare.
- */
-const HOUR_STEP = 0.01;
+const initialTheme: Theme = resolveTheme(params.get('theme'));
 
 /**
  * `?daylight=cycle|day|night` sceglie se l'orologio cammina o sta fermo.
@@ -254,7 +229,7 @@ const HOUR_STEP = 0.01;
  * E' la stessa scelta del bottone nell'HUD, e vale anche senza `debug`: la
  * notte fissa e' un modo di guardare la propria citta', non una misura.
  */
-let daylightMode: DaylightMode = resolveDaylightMode(params.get('daylight'));
+const initialMode: DaylightMode = resolveDaylightMode(params.get('daylight'));
 
 /**
  * `?hour=<0..24>` fissa l'ora e **ferma** il ciclo: vale anche senza `debug`,
@@ -265,31 +240,22 @@ let daylightMode: DaylightMode = resolveDaylightMode(params.get('daylight'));
  * lo scioglie, perche' un comando di gioco che non risponde e' peggio di un
  * parametro perso.
  */
-let hourPinned = params.get('hour') !== null;
-let hour = hourPinned
+const hourPinned = params.get('hour') !== null;
+const initialHour = hourPinned
   ? normaliseHour(Number(params.get('hour')))
   // Senza, si parte dall'ora del modo, e nel ciclo e' meta' pomeriggio: il sole
   // sta ancora sopra la soglia in cui il tetto e' la faccia piu' chiara, quindi
   // la prima immagine e' quella con cui i temi sono stati disegnati.
-  : modeHour(daylightMode) ?? DAYLIGHT.dayHour;
-
-/** Ora con cui l'atmosfera in vigore e' stata scritta. */
-let appliedHour = hour;
+  : modeHour(initialMode) ?? DAYLIGHT.dayHour;
 
 /** Stesso ritmo dell'HUD: l'occupazione cambia un tick alla volta, non un frame. */
 const VITALITY_REFRESH_MS = 150;
 let vitalityAt = 0;
 
-/** Forza dell'ombra dell'ora corrente: di notte scende a zero. */
-let shadowStrength = theme.atmosphere.shadow?.strength ?? 0;
-
-/** Riusata a ogni scrittura del fondo: `applyAtmosphere` gira spesso. */
-const backgroundColor = new Color();
-
-const paletteHandle = createVoxelMaterial(theme.colors, VOXEL_SIZE);
+const paletteHandle = createVoxelMaterial(initialTheme.colors, VOXEL_SIZE);
 const chunkRenderer = new ChunkRenderer(world, paletteHandle.material, VOXEL_SIZE);
 scene.add(chunkRenderer.group);
-const skyBackground = createSkyBackground(theme.atmosphere);
+const skyBackground = createSkyBackground(initialTheme.atmosphere);
 scene.add(skyBackground.mesh);
 const sunShadow = createSunShadow(VOXEL_SIZE, SHADOW_SIZE);
 
@@ -357,7 +323,31 @@ function applyQualityProfile(profile: QualityProfile): void {
 
 applyQualityProfile(renderQuality.profile);
 
-applyTheme(theme);
+/**
+ * Tema, ora e modo del giorno: chi li possiede e chi li scrive nel renderer.
+ *
+ * Nasce qui perche' ha bisogno del composer, e il composer ha bisogno di scena e
+ * camera. I due cablaggi verso l'HUD sono callback e non riferimenti: l'HUD
+ * nasce piu' avanti, e `engine/` non lo conosce comunque.
+ */
+const daylight = createAtmosphereControl({
+  renderer,
+  paletteHandle,
+  post,
+  skyBackground,
+  sunWorld,
+  theme: initialTheme,
+  mode: initialMode,
+  hour: initialHour,
+  pinned: hourPinned,
+  onTheme: (next) => gameHud?.setTheme(next.id),
+  onMode: (mode) => {
+    gameHud?.setDaylight(mode);
+    gameHud?.showTransientFeedback(`Daylight · ${daylightControl(mode).label}`);
+  },
+});
+
+daylight.applyTheme(initialTheme);
 
 // La scena di terreno arriva da un worker, quindi non e' pronta a costruttore:
 // il primo blocco entra al primo `step` che trova qualcosa in coda.
@@ -431,38 +421,27 @@ terrainOverlay?.setVisible(debugVisible);
 let terrainApplyMs = 0;
 
 /**
- * Stato della scena di simulazione.
+ * Le due scene che possono girare sopra l'isola.
  *
- * Nasce null: i catalizzatori si piazzano su colonne edificabili, e l'isola
- * arriva dal worker un blocco alla volta. La simulazione parte quando il terreno
- * e' completo, non prima.
+ * Nascono entrambe null, e per la stessa ragione: i catalizzatori si piazzano su
+ * colonne edificabili, e l'isola arriva dal worker un blocco alla volta. Partono
+ * quando il terreno e' completo, non prima.
  */
-let sim: SimState | null = null;
-
-/** Il passo automatico parte acceso: una scena ferma non mostra un bilancio. */
-let simAuto = true;
-let simTickMs = 0;
-let simSites: readonly BuildSite[] = [];
-let simDataCells = 0;
+let simScene: SimScene | null = null;
 let growthScene: GrowthScene | null = null;
-
-/** Il loop possiede il debito di tick: non esiste un secondo accumulatore nel bootstrap. */
-const simLoop = new FixedStepLoop(SIM_TICK_RATE, SIM_TICK_RATE);
 
 const simOverlay = simEnabled
   ? new SimOverlay(container, {
-      onTick: () => stepSim(1),
-      onToggleAuto: () => {
-        simAuto = !simAuto;
-      },
-      onSelectClass: selectSimClass,
-      onTogglePolicy: toggleSimPolicy,
+      onTick: () => simScene?.step(1),
+      onToggleAuto: () => simScene?.toggleAuto(),
+      onSelectClass: (cls) => simScene?.selectClass(cls),
+      onTogglePolicy: (id) => simScene?.togglePolicy(id),
     })
   : null;
 const growthOverlay = growEnabled ? new GrowthOverlay(container) : null;
 const inspectOverlay = new InspectOverlay(container, {
-  onMode: setInspectMode,
-  onSliceZ: setInspectSliceZ,
+  onMode: (mode) => inspect.setMode(mode),
+  onSliceZ: (z) => inspect.setSliceZ(z),
 });
 simOverlay?.setVisible(debugVisible);
 growthOverlay?.setVisible(debugVisible);
@@ -475,16 +454,16 @@ if (growEnabled) {
       // Con la citta' tagliata il terreno vero sotto il cursore e' nascosto: si
       // piazzerebbe alla cieca, in un punto che non si vede. Le viste a velo
       // sopravvivono, perche' li' il suolo si legge ancora sotto il retino.
-      const kept = viewAfterToolPicked(inspectMode);
-      if (kept !== inspectMode) {
-        const closed = viewLabel(inspectMode);
-        setInspectMode(kept);
+      const kept = viewAfterToolPicked(inspect.mode);
+      if (kept !== inspect.mode) {
+        const closed = viewLabel(inspect.mode);
+        inspect.setMode(kept);
         gameHud?.setSelectionNote(`${closed} closed so you can see the ground`);
-      } else if (inspectLockedRect !== null) {
+      } else if (inspect.locked) {
         // Stesso motivo, un gradino piu' in basso: un isolato scelto **taglia**,
         // quindi il terreno attorno non c'e' piu' e si costruirebbe alla cieca.
         // Basta mollarlo, senza spegnere anche la vista: quella vela e si legge.
-        unlockInspectBlock();
+        inspect.unlockBlock();
         gameHud?.setSelectionNote('Block released so you can see the ground');
       }
       selectedTool = tool;
@@ -505,20 +484,20 @@ if (growEnabled) {
       },
     onPause: (paused) => growthScene?.setPaused(paused),
     onSpeed: (speed) => growthScene?.setSpeed(speed),
-    onDaylight: setDaylightMode,
+    onDaylight: (mode) => daylight.setMode(mode),
     onTheme: (id) => {
       const index = THEMES.findIndex((candidate) => candidate.id === id);
-      if (index >= 0) cycleTheme(index);
+      if (index >= 0) daylight.cycleTheme(index);
     },
-    onView: setInspectMode,
-    onLevel: setInspectSliceZ,
+    onView: (mode) => inspect.setMode(mode),
+    onLevel: (z) => inspect.setSliceZ(z),
     onCancelTool: () => {
       selectedTool = { kind: 'none' };
       preview.hide();
       influenceOverlay?.hideCursor();
       gameHud?.updateCursor(0, 0, null);
     },
-    onReleaseBlock: unlockInspectBlock,
+    onReleaseBlock: () => inspect.unlockBlock(),
   }, THEMES.map((candidate) => ({
     id: candidate.id,
     name: candidate.name,
@@ -527,10 +506,10 @@ if (growEnabled) {
       candidate.colors[5] ?? candidate.atmosphere.fog.color,
       candidate.colors[12] ?? candidate.atmosphere.fog.color,
     ],
-  })), theme.id);
+  })), daylight.theme.id);
   // Il bottone nasce sul ciclo: se l'URL ha chiesto altro, va detto subito o la
   // prima cosa che il giocatore legge e' falsa.
-  gameHud.setDaylight(daylightMode);
+  gameHud.setDaylight(daylight.mode);
 }
 
 const picker = new Raycaster();
@@ -561,60 +540,37 @@ if (inspectGuides !== null) scene.add(inspectGuides.group);
 const streets = terrain === null ? null : new StreetNetwork(terrainSeed);
 
 /**
- * Ultima posizione nota del puntatore, in pixel di pagina.
+ * Le viste di ispezione: raggi X, sezione, fetta e isolato.
  *
- * Si memorizza il pixel e non la colonna: risolvere la colonna costa una marcia
- * sulla heightmap, e farla a ogni `pointermove` significherebbe pagarla decine
- * di volte per frame. La colonna si risolve una volta per frame in
- * `applyInspect`, e **solo** se il modo attivo la chiede — cosi' la vista segue
- * anche la rotazione della camera, senza che il mouse si muova.
+ * Nasce dopo la rete stradale perche' la sezione deve cadere su una carreggiata.
+ * Il registro e la mappa arrivano come funzioni e non come riferimenti: la scena
+ * di crescita non esiste ancora, e quando esistera' sara' un altro oggetto.
  */
-let pointerClientX = 0;
-let pointerClientY = 0;
-let pointerInside = false;
-
-let inspectFocus: SurfaceCell | null = null;
-let inspectBlockKey: string | null = null;
-let inspectBlockRect: BlockRect | null = null;
-
-/**
- * Il volume che i raggi X stanno guardando, quando sotto il cursore c'e' un
- * edificio.
- *
- * E' l'unico pezzo di questa vista che deve sapere che gli edifici esistono, ed
- * e' il motivo per cui sta qui e non in `inspect.ts`: quel modulo resta puro e
- * riceve una scatola, non un registro. Senza — suolo nudo, scene senza crescita
- * — la lente ripiega sulla colonna e si allarga da sola.
- */
-let inspectSubject: InspectBox | null = null;
-
-/**
- * L'isolato **scelto**, quando c'e'.
- *
- * Finche' e' null, Block focus insegue il cursore come sempre. Da qui in poi
- * smette: il riquadro e' questo e non si rilegge piu' il puntatore, che e'
- * esattamente cio' che permette di girare attorno a un isolato invece di
- * perderlo al primo movimento del mouse. L'inquadratura di partenza si tiene da
- * parte perche' uscendo va restituita: la camera l'ha mossa lo strumento, non il
- * giocatore.
- */
-let inspectLockedRect: BlockRect | null = null;
-let inspectLockedKey: string | null = null;
-let cameraBeforeStudy: IsoCameraState | null = null;
-
-let inspectPayload: InspectUniforms = inspectUniforms(inspectStateOf());
+const inspect = createInspectView({
+  world,
+  camera,
+  paletteHandle,
+  guides: inspectGuides,
+  streets,
+  map: () => terrain?.map ?? null,
+  registry: () => growthScene?.registry,
+  pointedCellAt: (clientX, clientY) => pointedCellAt(clientX, clientY),
+  toolActive: () => selectedTool.kind !== 'none',
+  mode: initialInspectMode,
+  sliceZ: initialSliceZ,
+  sliceFromUrl: sliceZFromUrl,
+  onStudy: (key) => {
+    gameHud?.showTransientFeedback(`Studying block ${key} · drag to turn around it`);
+  },
+});
 
 if (terrain !== null) {
   renderer.domElement.addEventListener('pointermove', (event: PointerEvent) => {
-    pointerClientX = event.clientX;
-    pointerClientY = event.clientY;
-    pointerInside = true;
+    inspect.onPointerMove(event.clientX, event.clientY);
   });
-  renderer.domElement.addEventListener('pointerleave', () => {
-    pointerInside = false;
-  });
-  renderer.domElement.addEventListener('pointerdown', onStudyPointerDown);
-  renderer.domElement.addEventListener('pointerup', onStudyPointerUp);
+  renderer.domElement.addEventListener('pointerleave', () => inspect.onPointerLeave());
+  renderer.domElement.addEventListener('pointerdown', (event) => inspect.onPointerDown(event));
+  renderer.domElement.addEventListener('pointerup', (event) => inspect.onPointerUp(event));
 }
 
 if (growEnabled) {
@@ -656,7 +612,7 @@ if (debugEnabled) {
       mesherAvgMs: mesher.avgMs,
       mesherMaxMs: mesher.maxMs,
       generationDone: generator.done,
-      theme: theme.id,
+      theme: daylight.theme.id,
       quality: renderQuality.mode,
       pixelRatio: renderer.getPixelRatio(),
     };
@@ -672,24 +628,26 @@ if (debugEnabled) {
     if (id !== undefined) {
       const found = THEMES.findIndex((candidate) => candidate.id === id);
       if (found < 0) console.warn(`[theme] unknown id: ${id}`);
-      else cycleTheme(found);
+      else daylight.cycleTheme(found);
     }
-    return { id: theme.id, name: theme.name, available: THEMES.map((t) => t.id) };
+    const current = daylight.theme;
+    return { id: current.id, name: current.name, available: THEMES.map((t) => t.id) };
   };
   // Sposta il sole senza ricaricare: serve ad autorare i temi guardando il
   // risultato invece che immaginandolo. Non persiste, il tema resta la fonte.
   debugGlobals['__voxelSun'] = (azimuth?: number, elevation?: number): Record<string, unknown> => {
-    const sun = theme.atmosphere.sun;
+    const atmosphere = daylight.theme.atmosphere;
+    const sun = atmosphere.sun;
     const next = {
       ...sun,
       azimuth: azimuth ?? sun.azimuth,
       elevation: elevation ?? sun.elevation,
     };
-    paletteHandle.setAtmosphere({ ...theme.atmosphere, sun: next });
+    paletteHandle.setAtmosphere({ ...atmosphere, sun: next });
     return {
       azimuth: next.azimuth,
       elevation: next.elevation,
-      faceLuminance: faceLuminance({ ...theme.atmosphere, sun: next }),
+      faceLuminance: faceLuminance({ ...atmosphere, sun: next }),
       // Dove il cielo disegna il sole: xy in NDC, `facing` false se sta dietro
       // la camera e quindi resta solo l'alone.
       screen: { x: sunView.x * 1.35, y: sunView.y * 1.35, facing: sunView.z < 0 },
@@ -702,14 +660,15 @@ if (debugEnabled) {
     // Un numero e' un'ora, una stringa e' un modo: sono la stessa manopola vista
     // da due lati, e due hook separati vorrebbero dire ricordarsi quale chiama
     // quale mentre si guarda una notte che non passa.
-    if (typeof next === 'number') setHour(next);
-    else if (typeof next === 'string') setDaylightMode(resolveDaylightMode(next));
-    const atmosphere = withHour(theme.atmosphere, hour);
+    if (typeof next === 'number') daylight.setHour(next);
+    else if (typeof next === 'string') daylight.setMode(resolveDaylightMode(next));
+    const hour = daylight.hour;
+    const atmosphere = withHour(daylight.theme.atmosphere, hour);
     return {
       hour,
-      mode: daylightMode,
-      pinned: hourPinned,
-      day: dayPhase(hour, theme.atmosphere.sun.elevation),
+      mode: daylight.mode,
+      pinned: daylight.pinned,
+      day: dayPhase(hour, daylight.theme.atmosphere.sun.elevation),
       azimuth: atmosphere.sun.azimuth,
       elevation: atmosphere.sun.elevation,
       sunIntensity: atmosphere.sun.intensity,
@@ -720,8 +679,8 @@ if (debugEnabled) {
   // Stessa fonte del pannello: due letture separate divergerebbero al primo
   // refactor, ed e' la regola dell'harness.
   debugGlobals['__voxelInspect'] = (mode?: string, z?: number): Record<string, unknown> => {
-    if (mode !== undefined) setInspectMode(parseInspectMode(mode));
-    if (z !== undefined) setInspectSliceZ(z);
+    if (mode !== undefined) inspect.setMode(parseInspectMode(mode));
+    if (z !== undefined) inspect.setSliceZ(z);
     const frame = buildInspectFrame();
     return {
       ...frame,
@@ -750,39 +709,40 @@ if (debugEnabled) {
       // Stessa fonte dell'overlay, per misurare la simulazione da console o da
       // uno strumento headless senza passare dai pulsanti.
       debugGlobals['__simStats'] = (): Record<string, unknown> => {
-        if (sim === null) return { ready: false };
+        if (simScene === null) return { ready: false };
+        const state = simScene.simState;
         return {
           ready: true,
-          tick: sim.tickCount,
-          auto: simAuto,
-          tickMs: simTickMs,
-          population: sim.population,
-          food: sim.food,
-          materials: sim.materials,
-          funds: sim.funds,
-          satisfaction: sim.satisfaction,
-          buildingCounts: sim.buildingCounts,
-          mixedCounts: sim.mixedCounts,
-          commerce: sim.commerce,
-          catalysts: sim.catalysts.length,
-          policies: sim.policies,
-          selectedClass: CLASS_NAMES[sim.selectedClass],
-          fieldChunks: sim.field.chunkCount,
-          recomputedCells: sim.field.totalRecomputedCells,
-          dataCells: simDataCells,
+          tick: state.tickCount,
+          auto: simScene.autoEnabled,
+          tickMs: simScene.tickMs,
+          population: state.population,
+          food: state.food,
+          materials: state.materials,
+          funds: state.funds,
+          satisfaction: state.satisfaction,
+          buildingCounts: state.buildingCounts,
+          mixedCounts: state.mixedCounts,
+          commerce: state.commerce,
+          catalysts: state.catalysts.length,
+          policies: state.policies,
+          selectedClass: CLASS_NAMES[state.selectedClass],
+          fieldChunks: state.field.chunkCount,
+          recomputedCells: state.field.totalRecomputedCells,
+          dataCells: simScene.dataCells,
         };
       };
       debugGlobals['__simTick'] = (count = 1): number => {
-        stepSim(Math.max(1, Math.floor(count)));
-        return sim?.tickCount ?? 0;
+        simScene?.step(Math.max(1, Math.floor(count)));
+        return simScene?.simState.tickCount ?? 0;
       };
       debugGlobals['__simSites'] = (count = SIM_SITE_COUNT): readonly BuildSite[] =>
-        sim === null || terrain === null ? [] : nextBuildSites(sim, terrain.map, count);
+        simScene?.sitesAt(count) ?? [];
       debugGlobals['__simClass'] = (cls: number): void => {
-        if (cls >= 0 && cls < CLASS_COUNT) selectSimClass(cls as BuildingClass);
+        if (cls >= 0 && cls < CLASS_COUNT) simScene?.selectClass(cls as BuildingClass);
       };
       debugGlobals['__simPolicy'] = (id: string): void => {
-        if (isPolicyId(id)) toggleSimPolicy(id);
+        if (isPolicyId(id)) simScene?.togglePolicy(id);
       };
     }
 
@@ -830,83 +790,10 @@ window.addEventListener('resize', () => {
 
 onPaletteChanged((hexColors) => {
   // `palette.json` appartiene al tema natural: gli altri hanno una palette propria.
-  if (theme.id !== 'natural') return;
+  if (daylight.theme.id !== 'natural') return;
   paletteHandle.setPalette(hexColors);
   console.info('[palette] colors updated live, no mesh rebuild');
 });
-
-/**
- * Applica un tema: colori, atmosfera, fondo e tone mapping.
- *
- * Non tocca una sola geometria — i vertici portano l'indice di palette, non il
- * colore. Il conteggio di quad e i byte di geometria nell'overlay devono
- * restare fermi mentre si cambia tema: e' la verifica che l'invariante regge.
- */
-function applyTheme(next: Theme): void {
-  theme = next;
-
-  paletteHandle.setPalette(next.colors);
-  applyAtmosphere();
-
-  const toneMapping =
-    next.atmosphere.toneMapping === 'aces' ? ACESFilmicToneMapping : NoToneMapping;
-  if (renderer.toneMapping !== toneMapping) {
-    renderer.toneMapping = toneMapping;
-    // Il tone mapping e' un define, non un uniform: cambiarlo ricompila il
-    // programma. E' l'unica cosa che un cambio di tema ricostruisce, e non
-    // tocca comunque una sola geometria.
-    paletteHandle.material.needsUpdate = true;
-  }
-  renderer.toneMappingExposure = next.atmosphere.exposure;
-}
-
-/**
- * Riscrive la sola atmosfera dell'ora corrente: uniform e stato del renderer.
- *
- * Sta separata da `applyTheme` perche' e' l'unica delle due che l'ora chiama, e
- * la chiama molte volte per partita: il tone mapping e la palette non c'entrano
- * niente con il momento della giornata, e ricompilare un programma o riscrivere
- * trentadue colori a ogni scatto d'orologio sarebbe lavoro per niente.
- */
-function applyAtmosphere(): void {
-  const atmosphere = withHour(theme.atmosphere, hour);
-  appliedHour = hour;
-
-  paletteHandle.setAtmosphere(atmosphere);
-  post.setAtmosphere(atmosphere);
-  skyBackground.setAtmosphere(atmosphere);
-  skyBackground.setAspect(window.innerWidth / Math.max(1, window.innerHeight));
-  sunWorld.fromArray(sunDirection(atmosphere.sun.azimuth, atmosphere.sun.elevation));
-  shadowStrength = atmosphere.shadow?.strength ?? 0;
-  // La luce che esce dalle facciate vale solo di notte, e la notte e' la stessa
-  // quantita' da cui discende tutto il resto dell'ora.
-  paletteHandle.setNight(nightFactor(hour, theme.atmosphere.sun.elevation));
-
-  backgroundColor.setStyle(atmosphere.background, SRGBColorSpace);
-  renderer.setClearColor(backgroundColor, 1);
-
-  // Il fondo della pagina era duplicato a mano nel CSS: qui c'e' una sola fonte,
-  // cosi' il primo frame non lampeggia con il colore di un altro tema.
-  document.body.style.background = atmosphere.background;
-}
-
-/**
- * Avanza l'orologio e riscrive l'atmosfera solo quando l'ora e' cambiata
- * abbastanza da vedersi.
- *
- * Il passo minimo non e' un'ottimizzazione micro: `applyAtmosphere` scrive
- * decine di uniform e ricompone stringhe di colore, e farlo a sessanta hertz per
- * uno spostamento di un centesimo di grado del sole e' spesa senza immagine.
- */
-function updateDaylight(dt: number): void {
-  if (hourPinned || daylightMode !== DAYLIGHT_MODE.cycle) return;
-  // L'ora avanza **sempre**; a essere condizionata e' la scrittura. Fermare
-  // anche l'orologio significherebbe non avanzare mai, perche' il passo di un
-  // frame e' sempre sotto la soglia.
-  hour = normaliseHour(hour + (dt * 24) / DAYLIGHT.daySeconds);
-  const drift = Math.abs(hour - appliedHour);
-  if (Math.min(drift, 24 - drift) >= HOUR_STEP) applyAtmosphere();
-}
 
 /**
  * Porta nelle uniform quanto la citta' e' viva: finestre accese e insegne.
@@ -924,39 +811,6 @@ function updateVitality(time: number): void {
   paletteHandle.setVitality(vitality.homes, vitality.commerce);
 }
 
-/** Porta l'orologio a un'ora scelta a mano, e la applica subito. */
-function setHour(next: number): void {
-  hour = normaliseHour(next);
-  applyAtmosphere();
-}
-
-/**
- * Ciclo, giorno fisso o notte fissa.
- *
- * Tornando al ciclo l'ora **non** si tocca: il sole riparte da dov'era, e
- * riportarlo a mezzogiorno sarebbe uno stacco che nessuno ha chiesto. Andando su
- * un modo fisso si', perche' quello e' esattamente cio' che si e' chiesto.
- */
-function setDaylightMode(mode: DaylightMode): void {
-  daylightMode = mode;
-  // Un `?hour=` in coda all'URL vincerebbe su ogni clic successivo: il primo
-  // comando di gioco lo scioglie, o il bottone resterebbe inerte senza dirlo.
-  hourPinned = false;
-  const pinned = modeHour(mode);
-  if (pinned !== null) setHour(pinned);
-  gameHud?.setDaylight(mode);
-  gameHud?.showTransientFeedback(`Daylight · ${daylightControl(mode).label}`);
-  console.info(`[daylight] ${mode}`);
-}
-
-function cycleTheme(index: number): void {
-  const next = THEMES[index];
-  if (next === undefined || next.id === theme.id) return;
-  applyTheme(next);
-  gameHud?.setTheme(next.id);
-  console.info(`[theme] ${next.name} (${next.id}), no mesh rebuild`);
-}
-
 /**
  * Pass d'ombra: profondita' dei chunk vista dal sole.
  *
@@ -965,11 +819,11 @@ function cycleTheme(index: number): void {
  * `renderMs`. Un tema senza `shadow` la salta del tutto.
  */
 function drawShadowPass(): void {
-  const settings = theme.atmosphere.shadow;
+  const settings = daylight.theme.atmosphere.shadow;
   // Di notte la forza scende a zero e la pass si salta del tutto: un sole sotto
   // l'orizzonte non proietta niente, e disegnarla comunque sarebbe una mappa di
   // profondita' buttata via a ogni frame.
-  const strength = shadowStrength;
+  const strength = daylight.shadowStrength;
   // Un taglio ha appena tolto di mezzo dei volumi, ma la shadow map non lo sa:
   // il piano appena scoperto resterebbe all'ombra dei piani che si sono
   // nascosti, ed e' proprio la lettura che la fetta esiste per dare. Sole e
@@ -979,7 +833,7 @@ function drawShadowPass(): void {
     strength <= 0 ||
     !shadowsAllowedByUrl ||
     qualityProfile.shadowSize === 0 ||
-    isCut(inspectPayload)
+    isCut(inspect.payload)
   ) {
     sunShadow.setEnabled(false);
     paletteHandle.setShadow({
@@ -1041,12 +895,12 @@ function onFrame(time: number): void {
 
   updateSim(dt);
   updateGrowth(dt);
-  updateDaylight(dt);
+  daylight.advance(dt);
 
   // La direzione di sguardo serve alla vista prima che alla nebbia: in
   // ortografica e' un vettore solo, e ce lo dividiamo.
   camera.camera.getWorldDirection(viewDirection);
-  applyInspect();
+  inspect.apply([viewDirection.x, viewDirection.y, viewDirection.z]);
 
   const elapsed = performance.now() - workStart;
   chunkRenderer.update(camera.camera, Math.max(0.5, frameBudget - elapsed));
@@ -1082,8 +936,8 @@ function onFrame(time: number): void {
   if (terrainOverlay !== null && terrain !== null && terrainOverlay.needsPaint(time)) {
     terrainOverlay.update(buildTerrainFrame(terrain), time);
   }
-  if (simOverlay !== null && sim !== null && simOverlay.needsPaint(time)) {
-    simOverlay.update(buildSimFrame(sim), time);
+  if (simOverlay !== null && simScene !== null && simOverlay.needsPaint(time)) {
+    simOverlay.update(buildSimFrame(simScene), time);
   }
   if (growthOverlay !== null && growthOverlay.needsPaint(time)) {
     growthOverlay.update(growthScene?.stats ?? null, time);
@@ -1099,7 +953,7 @@ function onFrame(time: number): void {
     // Nello stesso ritmo del resto dell'HUD, cioe' 150 ms: la vista e' gia'
     // scritta nelle uniform per il frame corrente, e il pannello non deve
     // ridisegnarsi sessanta volte al secondo per dirlo.
-    gameHud.setView(buildViewMenuModel(inspectMode, inspectSliceZ, inspectMaxZ(), inspectLockedRect !== null));
+    gameHud.setView(viewMenuModel());
   }
 }
 
@@ -1142,78 +996,37 @@ function observeQuality(time: number): void {
 // --- Scena di simulazione ---------------------------------------------------
 
 /**
- * Fa avanzare la simulazione.
+ * Fa avanzare la simulazione, e la fa nascere al primo frame in cui puo'.
  *
  * Il passo automatico e' a cadenza fissa (`SIM_TICK_RATE` tick al secondo) e non
  * legata al frame rate: la simulazione e' deterministica, e legarla al `dt`
- * significherebbe farne dipendere l'esito dalla macchina che la guarda. Se il
- * frame e' stato lungo si recuperano piu' tick, non un tick piu' grande.
+ * significherebbe farne dipendere l'esito dalla macchina che la guarda. Il debito
+ * di tick lo tiene `SimScene`, come `GrowthScene` tiene il proprio.
  */
 function updateSim(dt: number): void {
   if (!simEnabled || terrain === null) return;
 
-  if (sim === null) {
+  if (simScene === null) {
     // L'isola arriva a blocchi: i catalizzatori aspettano che sia completa.
     if (!generator.done) return;
-    sim = createScenarioState(terrain.map, terrainRegion);
-    refreshSimDerived();
-    console.info(`[sim] ${sim.catalysts.length} catalysts placed by script`);
+    simScene = new SimScene(world, terrain.map, terrainRegion);
+    console.info(`[sim] ${simScene.simState.catalysts.length} catalysts placed by script`);
     return;
   }
 
-  if (!simAuto) return;
-
-  simLoop.advance(dt, () => stepSim(1));
+  simScene.advance(dt);
 }
 
-function stepSim(count: number): void {
-  if (sim === null || terrain === null) return;
-
-  const start = performance.now();
-  let next = sim;
-  for (let i = 0; i < count; i++) {
-    next = tick(next, terrain.map);
-  }
-  simTickMs = (performance.now() - start) / count;
-  sim = next;
-}
-
-function selectSimClass(cls: BuildingClass): void {
-  if (sim === null) return;
-  sim = setSelectedClass(sim, cls);
-  refreshSimDerived();
-}
-
-function toggleSimPolicy(id: PolicyId): void {
-  if (sim === null) return;
-  sim = setPolicyActive(sim, id, !sim.policies.includes(id));
-  refreshSimDerived();
-}
-
-/**
- * Ricalcola cio' che dipende dal campo: la lista dei candidati e la copia in
- * `VoxelWorld.data`.
- *
- * Non sta nel ciclo di frame perche' non ha motivo di starci. Il campo cambia
- * solo per un'azione del giocatore — una policy, un catalizzatore, un edificio —
- * mai per un tick, quindi rifare questi due passi a ogni frame sarebbe lavoro
- * garantito inutile.
- */
-function refreshSimDerived(): void {
-  if (sim === null || terrain === null) return;
-  simSites = nextBuildSites(sim, terrain.map, SIM_SITE_COUNT);
-  simDataCells = writeDesirabilityData(world, sim, terrain.map);
-}
-
-function buildSimFrame(state: SimState): SimOverlayFrame {
+/** Traduce la scena in cio' che l'overlay disegna: e' cablaggio, e resta qui. */
+function buildSimFrame(scene: SimScene): SimOverlayFrame {
   return {
-    state,
-    sites: simSites,
+    state: scene.simState,
+    sites: scene.sites,
     region: terrainRegion,
-    auto: simAuto,
+    auto: scene.autoEnabled,
     tickRate: SIM_TICK_RATE,
-    tickMs: simTickMs,
-    dataCells: simDataCells,
+    tickMs: scene.tickMs,
+    dataCells: scene.dataCells,
     builder: null,
   };
 }
@@ -1240,319 +1053,6 @@ function updateGrowth(dt: number): void {
 
 // --- Viste di ispezione -----------------------------------------------------
 
-/** I modi che hanno bisogno di sapere dove sta il cursore. */
-function inspectNeedsCursor(mode: InspectMode): boolean {
-  return mode === INSPECT_MODE.xray || mode === INSPECT_MODE.section || mode === INSPECT_MODE.block;
-}
-
-/**
- * Lo stato della vista, messo insieme dai pezzi che vivono nel bootstrap.
- *
- * Qui non si decide niente: la traduzione in numeri per il materiale sta in
- * `inspectUniforms`, che e' pura e testata in node. Questa funzione fa solo da
- * raccordo fra il mondo — cursore, camera, rete stradale — e quel modulo.
- */
-function inspectStateOf(): InspectState {
-  const axis = sectionAxis([viewDirection.x, viewDirection.y, viewDirection.z]);
-  return {
-    mode: inspectMode,
-    sliceZ: inspectSliceZ,
-    // Il centro della colonna, non il suo spigolo: il piano deve passare per
-    // quello che si sta guardando, non mezzo voxel piu' in la'.
-    focus: inspectFocus === null
-      ? null
-      : { x: inspectFocus.x + 0.5, y: inspectFocus.y + 0.5, z: inspectFocus.z },
-    view: [viewDirection.x, viewDirection.y, viewDirection.z],
-    block: inspectBlockRect,
-    subject: inspectSubject,
-    section: inspectFocus === null || streets === null
-      ? null
-      : { axis, at: streets.nearestLine(axis, axis === 0 ? inspectFocus.x : inspectFocus.y) },
-    locked: inspectLockedRect !== null,
-  };
-}
-
-/**
- * La colonna su cui la vista si concentra.
- *
- * Tre risposte in ordine, e l'ordine e' tutto il comportamento:
- *
- * 1. **sotto il cursore**, finche' il cursore e' sulla canvas;
- * 2. **l'ultima vista**, appena il puntatore esce. E' l'aggancio: senza, portare
- *    il mouse sul dock per cambiare vista — o vedersi aprire una carta evento —
- *    farebbe saltare l'inquadratura a meta' citta', e il giocatore perderebbe
- *    proprio l'isolato che stava guardando;
- * 3. il **centro dell'inquadratura**, solo se non c'e' ancora niente di
- *    agganciato. Serve a una vista aperta da URL, che deve mostrare qualcosa
- *    prima che il mouse entri nella canvas — cioe' mai, in uno strumento di
- *    cattura.
- */
-function inspectFocusColumn(): SurfaceCell | null {
-  if (pointerInside) {
-    // `pointedCellAt` e non `surfaceCellAt`: chi guarda indica una cosa, non una
-    // terra, e sopra una torre le due risposte distano quanto la torre e' alta.
-    const picked = pointedCellAt(pointerClientX, pointerClientY);
-    if (picked !== null) return picked;
-  }
-  if (inspectFocus !== null) return inspectFocus;
-  if (terrain === null) return null;
-  const x = Math.floor(camera.targetPosition.x);
-  const y = Math.floor(camera.targetPosition.y);
-  const column = terrain.map.columnAt(x, y);
-  return column === null ? null : { x, y, z: column.height, buildable: column.buildable };
-}
-
-/**
- * Il volume da guardare, sulla colonna a fuoco.
- *
- * Il registro sa gia' tutto quello che serve — angolo, impronta, base, altezza —
- * e questo e' l'unico punto in cui i raggi X vengono a saperlo. Fra piu' record
- * sulla stessa colonna si prende il piu' alto: e' quello che il raggio ha
- * incontrato, perche' e' quello che copre gli altri.
- *
- * `null` dove un registro non c'e' — scene `city` e `diorama`, crescita spenta —
- * o dove sotto il cursore c'e' solo terra: la lente sa ripiegare sulla colonna.
- */
-function subjectAt(cell: SurfaceCell | null): InspectBox | null {
-  const registry = growthScene?.registry;
-  if (cell === null || registry === undefined) return null;
-
-  let best: InspectBox | null = null;
-  let top = -Infinity;
-  for (const record of registry.at(cell.x, cell.y)) {
-    const above = record.baseZ + record.height;
-    if (above <= top) continue;
-    top = above;
-    best = {
-      x0: record.x,
-      y0: record.y,
-      z0: record.baseZ,
-      x1: record.x + record.footprint,
-      y1: record.y + (record.footprintY ?? record.footprint),
-      z1: above,
-    };
-  }
-  return best;
-}
-
-/** Estremo alto della barra dei livelli: la citta' cresce, e con lei la quota utile. */
-function inspectMaxZ(): number {
-  return world.bounds.empty ? INSPECT.defaultSliceZ : world.bounds.maxZ;
-}
-
-/**
- * Aggiorna la vista una volta per frame.
- *
- * La colonna a fuoco si risolve qui e non a ogni `pointermove`: il costo diventa
- * uno per frame invece di uno per evento, e la vista segue anche la rotazione
- * della camera. Chi non ha una vista attiva non paga niente oltre alla scrittura
- * di quattro uniform.
- */
-function applyInspect(): void {
-  // Con un isolato scelto il cursore non ha piu' voce in capitolo: il riquadro e'
-  // quello, e rileggere il puntatore lo farebbe saltare all'isolato accanto ogni
-  // volta che si trascina per girare.
-  if (inspectLockedRect !== null) {
-    inspectBlockRect = inspectLockedRect;
-    inspectBlockKey = inspectLockedKey;
-    const locked = inspectStateOf();
-    inspectPayload = inspectUniforms(locked);
-    paletteHandle.setInspect(inspectPayload);
-    inspectGuides?.update(inspectGuide(locked, inspectPayload));
-    return;
-  }
-
-  inspectFocus = inspectNeedsCursor(inspectMode) ? inspectFocusColumn() : null;
-
-  // Finche' la quota non e' stata scelta, la fetta segue il suolo che si sta
-  // guardando. Una quota assoluta di default cadrebbe dentro la collina — la
-  // citta' sta a quaranta voxel sul mare — e il primo colpo d'occhio sarebbe
-  // l'interno della terra invece del piano di un edificio. Al primo tasto o al
-  // primo trascinamento diventa assoluta e smette di seguire.
-  if (inspectMode === INSPECT_MODE.slice && !sliceZChosen) {
-    const ground = inspectFocusColumn();
-    if (ground !== null) inspectSliceZ = clampSliceZ(ground.z + INSPECT.sliceCoarse);
-  }
-  inspectBlockKey = null;
-  inspectBlockRect = null;
-  inspectSubject = inspectMode === INSPECT_MODE.xray ? subjectAt(inspectFocus) : null;
-
-  if (inspectFocus !== null && streets !== null) {
-    const block = streets.blockAt(inspectFocus.x, inspectFocus.y);
-    inspectBlockKey = streets.keyOf(block);
-    if (inspectMode === INSPECT_MODE.block) inspectBlockRect = streets.blockRect(block);
-  }
-
-  const state = inspectStateOf();
-  inspectPayload = inspectUniforms(state);
-  paletteHandle.setInspect(inspectPayload);
-  // Le guide leggono le uniform gia' composte, non lo stato: il contorno che si
-  // vede e' per costruzione il rettangolo che il fragment sta usando.
-  inspectGuides?.update(inspectGuide(state, inspectPayload));
-}
-
-/**
- * Cima dell'isolato, in voxel.
- *
- * `BlockRect` e' solo XY — dice quali colonne appartengono all'isolato, non fin
- * dove salgono — e senza una quota l'inquadratura taglierebbe le torri a meta'.
- * Il registro degli edifici ce l'ha gia': si tengono i record il cui isolato
- * coincide, e la cima e' il loro `baseZ + height` massimo. Dove il registro non
- * c'e' — crescita spenta, scene `city` e `diorama` — resta il terreno, che e'
- * comunque la risposta giusta per un isolato senza edifici.
- */
-function blockTopZ(rect: BlockRect): number {
-  let top = 0;
-  const registry = growthScene?.registry;
-  if (registry !== undefined && streets !== null) {
-    for (const record of registry.all) {
-      if (record.x < rect.x0 || record.x > rect.x1) continue;
-      if (record.y < rect.y0 || record.y > rect.y1) continue;
-      top = Math.max(top, record.baseZ + record.height);
-    }
-  }
-  if (top > 0) return top;
-
-  const map = terrain?.map;
-  if (map === undefined) return INSPECT.defaultSliceZ;
-  for (const [x, y] of [
-    [rect.x0, rect.y0],
-    [rect.x1, rect.y0],
-    [rect.x0, rect.y1],
-    [rect.x1, rect.y1],
-  ] as const) {
-    const column = map.columnAt(x, y);
-    if (column !== null) top = Math.max(top, column.height);
-  }
-  return top;
-}
-
-/**
- * Sceglie l'isolato sotto il cursore e ci si mette attorno.
- *
- * Le due meta' del gesto sono inseparabili, ed e' il motivo per cui stanno nella
- * stessa funzione: senza il taglio la camera si avvicinerebbe a un isolato ancora
- * sepolto nella citta', senza l'inquadratura il taglio lascerebbe un modellino
- * grande dieci pixel in mezzo al vuoto.
- */
-function lockInspectBlock(cell: SurfaceCell | null): void {
-  if (streets === null || inspectMode !== INSPECT_MODE.block) return;
-  const focus = cell ?? inspectFocusColumn();
-  if (focus === null) return;
-
-  const block = streets.blockAt(focus.x, focus.y);
-  const rect = streets.blockRect(block);
-  inspectLockedRect = rect;
-  inspectLockedKey = streets.keyOf(block);
-  inspectFocus = focus;
-
-  // Solo la prima volta: passando da un isolato all'altro l'inquadratura a cui
-  // tornare resta quella della citta', non quella dello studio precedente.
-  cameraBeforeStudy ??= camera.captureState();
-  camera.setOrbitMode(true);
-
-  const centreX = (rect.x0 + rect.x1 + 1) * 0.5;
-  const centreY = (rect.y0 + rect.y1 + 1) * 0.5;
-  const top = blockTopZ(rect);
-  const base = Math.min(focus.z, top);
-  // Il perno a mezza altezza: girando attorno alla base, una torre oscillerebbe
-  // in cima allo schermo invece di restare al centro.
-  camera.setTarget(centreX, centreY, (base + top) * 0.5);
-  camera.frameRegion(
-    centreX,
-    centreY,
-    rect.x1 - rect.x0 + 1 + INSPECT.studyMargin,
-    rect.y1 - rect.y0 + 1 + INSPECT.studyMargin,
-    Math.max(1, top - base),
-  );
-
-  gameHud?.showTransientFeedback(`Studying block ${inspectLockedKey} · drag to turn around it`);
-}
-
-/**
- * Quanti pixel di trascinamento separano un clic da una pennellata di camera.
- *
- * Serve perche' il tasto sinistro fa gia' pan (`isPanButton` li accetta tutti e
- * tre) e in orbita fa girare: senza una soglia, ogni rotazione finirebbe con
- * l'agganciare o mollare un isolato. Sei pixel passano il tremolio della mano
- * senza lasciar passare un trascinamento vero.
- */
-const STUDY_CLICK_SLOP = 6;
-
-let studyPointerX = 0;
-let studyPointerY = 0;
-let studyPointerDown = false;
-
-function onStudyPointerDown(event: PointerEvent): void {
-  if (event.button !== 0) return;
-  studyPointerDown = true;
-  studyPointerX = event.clientX;
-  studyPointerY = event.clientY;
-}
-
-/**
- * Il clic che sceglie un isolato, e quello che lo molla.
- *
- * Sta su `pointerup` e non su `pointerdown` perche' fino al rilascio non si sa
- * ancora se il gesto fosse un clic o l'inizio di una rotazione.
- */
-function onStudyPointerUp(event: PointerEvent): void {
-  if (!studyPointerDown || event.button !== 0) return;
-  studyPointerDown = false;
-  if (inspectMode !== INSPECT_MODE.block) return;
-  if (selectedTool.kind !== 'none') return;
-  const moved = Math.abs(event.clientX - studyPointerX) + Math.abs(event.clientY - studyPointerY);
-  if (moved > STUDY_CLICK_SLOP) return;
-
-  // La colonna si risolve **prima** di toccare la camera: il raggio deve partire
-  // dall'inquadratura in cui il giocatore ha visto quello che ha cliccato, non da
-  // quella in cui lo si sta per portare. E si risolve su cio' che si vede, non
-  // sul terreno: cliccando una torre si sceglie il **suo** isolato.
-  const cell = pointedCellAt(event.clientX, event.clientY);
-  if (cell === null) return;
-
-  // Un clic dentro lo studio sceglie un **altro** isolato invece di mollare e
-  // basta: mollare ha gia' il suo tasto, e dover uscire per cambiare soggetto
-  // farebbe perdere l'inquadratura a ogni confronto fra due isolati. L'angolo di
-  // orbita resta dov'e', cosi' i due isolati si guardano dallo stesso lato.
-  lockInspectBlock(cell);
-}
-
-/** Molla l'isolato e restituisce l'inquadratura che c'era prima. */
-function unlockInspectBlock(): void {
-  if (inspectLockedRect === null) return;
-  inspectLockedRect = null;
-  inspectLockedKey = null;
-  camera.setOrbitMode(false);
-  if (cameraBeforeStudy !== null) {
-    camera.restoreState(cameraBeforeStudy);
-    cameraBeforeStudy = null;
-  }
-}
-
-function setInspectMode(mode: InspectMode): void {
-  if (mode === inspectMode) return;
-  // Cambiando vista l'isolato scelto non ha piu' un modo che lo sappia leggere:
-  // lasciarlo bloccato terrebbe la camera in orbita su un soggetto che nessuno
-  // sta piu' isolando.
-  unlockInspectBlock();
-  inspectMode = mode;
-  // L'aggancio non sopravvive al cambio di vista: rientrando in un modo ci si
-  // ritroverebbe puntati sull'isolato di dieci minuti prima, senza capire
-  // perche' la finestra si e' aperta la'.
-  inspectFocus = null;
-  inspectSubject = null;
-  // Uscendo da Levels la quota si ri-arma, e una fetta riaperta riparte dal
-  // suolo che si sta guardando invece che da una quota scelta mezz'ora fa, che
-  // nel frattempo puo' essere finita sottoterra. Vale per ogni uscita e non solo
-  // per il ritorno alla citta' intera: passando da Levels a un'altra vista dal
-  // picker si saltava il ri-armo, ed era l'unico modo di ritrovarsi una fetta
-  // dentro la collina. Solo `?slice=` resta fisso: li' la quota e' stata
-  // chiesta esplicitamente.
-  if (!modeHasLevel(mode)) sliceZChosen = sliceZFromUrl;
-  console.info(`[inspect] ${INSPECT_NAMES[mode]}`);
-}
-
 /**
  * Il giro delle viste da tastiera.
  *
@@ -1561,7 +1061,7 @@ function setInspectMode(mode: InspectMode): void {
  * scelto, chi preme `V` no.
  */
 function cycleInspectView(): void {
-  setInspectMode(cycleInspectMode(inspectMode));
+  inspect.setMode(cycleInspectMode(inspect.mode));
   announceInspectView();
 }
 
@@ -1575,25 +1075,25 @@ function cycleInspectView(): void {
  * per meta'.
  */
 function announceInspectView(): void {
-  const model = buildViewMenuModel(inspectMode, inspectSliceZ, inspectMaxZ(), inspectLockedRect !== null);
+  const model = viewMenuModel();
   const gesture = model.activeGesture === '' ? '' : ` · ${model.activeGesture}`;
   gameHud?.showTransientFeedback(`${model.activeLabel} · ${model.activeDescription}${gesture}`);
 }
 
-function setInspectSliceZ(z: number): void {
-  inspectSliceZ = clampSliceZ(z);
-  sliceZChosen = true;
+/** Il modello del picker delle viste: stessa fonte per il pannello e per il toast. */
+function viewMenuModel(): ViewMenuModel {
+  return buildViewMenuModel(inspect.mode, inspect.sliceZ, inspect.maxZ, inspect.locked);
 }
 
 function buildInspectFrame(): InspectOverlayFrame {
   return {
-    mode: inspectMode,
-    sliceZ: inspectSliceZ,
-    focus: inspectFocus,
-    block: inspectBlockKey,
-    locked: inspectLockedRect !== null,
-    veil: inspectPayload.veil,
-    shadowsOff: isCut(inspectPayload),
+    mode: inspect.mode,
+    sliceZ: inspect.sliceZ,
+    focus: inspect.focus,
+    block: inspect.blockKey,
+    locked: inspect.locked,
+    veil: inspect.payload.veil,
+    shadowsOff: isCut(inspect.payload),
   };
 }
 
@@ -1803,6 +1303,8 @@ function actionFailureLabel(reason: ActionFailure): string {
     'onboarding-order': 'Complete the current tutorial step first.',
     'policy-incompatible': 'This policy conflicts with one that is already active.',
     'decision-option-invalid': 'This decision option is no longer available.',
+    'block-too-tall': 'Too tall to clear: look for a lower pocket.',
+    'structure-in-the-way': 'A landmark or an elevated deck stands here.',
   };
   return labels[reason];
 }
@@ -1882,13 +1384,13 @@ function buildOverlayFrame(mainMs: number, renderMs: number, frameMs: number): O
     generationProgress: generator.done ? 1 : generator.progress,
     scene: terrain === null ? sceneKind : 'terrain',
     seed: terrain === null ? seed : terrainSeed,
-    theme: theme.name,
-    hour,
+    theme: daylight.theme.name,
+    hour: daylight.hour,
     // Fermo e' fermo, che sia il modo scelto dal giocatore o un `?hour=`: al
     // pannello serve sapere che l'orologio non cammina, non da quale delle due
     // strade e' arrivato. Il modo lo dice comunque, subito accanto.
-    hourMode: daylightMode,
-    hourPinned: hourPinned || daylightMode !== DAYLIGHT_MODE.cycle,
+    hourMode: daylight.mode,
+    hourPinned: daylight.pinned || daylight.mode !== DAYLIGHT_MODE.cycle,
     quality: renderQuality.mode,
     pixelRatio: renderer.getPixelRatio(),
     zoom: camera.zoom,
@@ -1897,17 +1399,18 @@ function buildOverlayFrame(mainMs: number, renderMs: number, frameMs: number): O
 }
 
 function onDebugKey(event: KeyboardEvent): void {
-  if (simEnabled) {
+  if (simEnabled && simScene !== null) {
     if (event.code === 'KeyT') {
-      stepSim(1);
+      simScene.step(1);
       return;
     }
     if (event.code === 'KeyP') {
-      simAuto = !simAuto;
+      simScene.toggleAuto();
       return;
     }
-    if (event.code === 'KeyM' && sim !== null) {
-      selectSimClass(((sim.selectedClass + 1) % CLASS_COUNT) as BuildingClass);
+    if (event.code === 'KeyM') {
+      const next = (simScene.simState.selectedClass + 1) % CLASS_COUNT;
+      simScene.selectClass(next as BuildingClass);
       return;
     }
   }
@@ -1916,15 +1419,15 @@ function onDebugKey(event: KeyboardEvent): void {
   if (event.code.startsWith('Digit')) {
     const index = parseInt(event.code.slice(5), 10) - 1;
     if (index >= 0) {
-      cycleTheme(index);
+      daylight.cycleTheme(index);
       return;
     }
   }
   if (event.code === 'KeyH') {
     // Un'ora avanti, indietro con Shift. Scorrere l'orologio a mano e' l'unico
     // modo di giudicare un look notturno senza aspettare dodici minuti.
-    setHour(hour + (event.shiftKey ? -1 : 1));
-    console.info(`[daylight] ${hour.toFixed(2)}h`);
+    daylight.setHour(daylight.hour + (event.shiftKey ? -1 : 1));
+    console.info(`[daylight] ${daylight.hour.toFixed(2)}h`);
     return;
   }
   if (event.code === 'KeyB') {
@@ -1973,7 +1476,7 @@ function onUiKey(event: KeyboardEvent): void {
   // `V`: scegliere se guardare la propria citta' di giorno o di notte e' gioco,
   // non misura. `H` resta la manopola fine dell'harness, di un'ora alla volta.
   if (event.code === 'KeyL') {
-    setDaylightMode(nextDaylightMode(daylightMode));
+    daylight.setMode(nextDaylightMode(daylight.mode));
     return;
   }
   // La quota: un voxel per volta, un piano intero con Shift. La barra serve a
@@ -1987,14 +1490,14 @@ function onUiKey(event: KeyboardEvent): void {
     // dopo partisse da un numero assoluto invece che dal suolo davanti. Adesso
     // apre la vista e basta: il primo colpo mostra il piano, il secondo lo
     // muove, e si parte sempre da dove si sta guardando.
-    if (!modeHasLevel(inspectMode)) {
-      setInspectMode(INSPECT_MODE.slice);
+    if (!modeHasLevel(inspect.mode)) {
+      inspect.setMode(INSPECT_MODE.slice);
       announceInspectView();
       return;
     }
     const up = event.code === 'BracketRight' || event.code === 'PageUp';
     const step = event.shiftKey ? INSPECT.sliceCoarse : INSPECT.sliceStep;
-    setInspectSliceZ(inspectSliceZ + (up ? step : -step));
+    inspect.setSliceZ(inspect.sliceZ + (up ? step : -step));
     return;
   }
   if (debugVisible) onDebugKey(event);
