@@ -253,9 +253,11 @@ export function generateBuilding(request: BuildingRequest): VoxelStamp {
     surface: classSurface(cls),
     courtyard: shape.courtyard,
     crownStart,
+    bayPeriod: profile.bayPeriod,
     podium,
     podiumBody: podiumProfile?.body ?? null,
     podiumAlt: podiumProfile?.bodyAlt ?? null,
+    podiumBay: podiumProfile?.bayPeriod ?? null,
     podiumSurface: request.mixed !== undefined ? classSurface(request.mixed) : classSurface(cls),
   });
 }
@@ -526,6 +528,16 @@ function shrinkAxis(rect: BandRect): BandRect {
  * finora restava verniciato come una parete. Chiedere `roofTech` per quell'anello
  * gli fa arrivare il parapetto da `emitRoofTech`, che gia' emette dove un tetto
  * confina con l'aria: la terrazza si arreda senza toccare il mesher.
+ *
+ * **La campata e' l'unico ritmo verticale, e sta qui perche' la sagoma non ci
+ * arriva.** Le fasce spostano un rettangolo di uno o due voxel, e con l'impronta
+ * a otto e `GRAMMAR.minBandSide` a quattro quel gioco si esaurisce entro il primo
+ * quinto di una torre alta: sopra restano ottanta voxel di corpo che possono solo
+ * scorrere. Da li' in su a dire la scala c'e' la sola parete, e prima diceva un
+ * colore con una riga per fascia. La campata la spezza in verticale **senza
+ * toccare volume ne' superfici** — e' lo stesso voxel con un altro slot, quindi
+ * la microgeometria emette esattamente i prismi di prima e la collisione, il
+ * budget di chunk e la cancellazione non se ne accorgono.
  */
 interface PaintRequest {
   readonly rects: readonly BandRect[];
@@ -548,10 +560,14 @@ interface PaintRequest {
   readonly courtyard: boolean;
   /** Prima fascia del coronamento: da qui all'ultima esclusa. */
   readonly crownStart: number;
+  /** Passo dei montanti di facciata. Sotto due, la parete resta piena. */
+  readonly bayPeriod: number;
   /** Fasce di base che appartengono al podio, gia' limitate a `bands - 1`. */
   readonly podium: number;
   readonly podiumBody: number | null;
   readonly podiumAlt: number | null;
+  /** Passo del secondo uso: il podio porta anche il ritmo di chi lo occupa. */
+  readonly podiumBay: number | null;
   readonly podiumSurface: SurfaceKind;
 }
 
@@ -589,6 +605,15 @@ function paint(request: PaintRequest): VoxelStamp {
     const bandBody = isPodium && request.podiumBody !== null ? request.podiumBody : request.body;
     const bandAlt = isPodium && request.podiumAlt !== null ? request.podiumAlt : request.bodyAlt;
     const bandSurface = isPodium ? request.podiumSurface : request.surface;
+    const bandBay = isPodium && request.podiumBay !== null ? request.podiumBay : request.bayPeriod;
+    // Corpo e cornice possono cadere nello stesso slot: succede sul civico, dove
+    // l'accento a scala di edificio porta il corpo sullo stesso vetro di
+    // `bodyAlt`. Li' l'apertura si inverte e prende il tono neutro, che e' gia'
+    // in mano al ciclo come `accentId` — su un edificio accentato quello *e'* il
+    // colore normale della classe. Senza, la classe che sale piu' in alto
+    // sarebbe anche l'unica a restare senza facciata, che e' esattamente il
+    // contrario di cio' per cui la campata esiste.
+    const bayLayer = bandAlt === bandBody ? request.accentId : bandAlt;
 
     // La fascia sopra dice quale parte di questa sommita' resta scoperta.
     //
@@ -614,6 +639,22 @@ function paint(request: PaintRequest): VoxelStamp {
             : sz === top
               ? bandAlt
               : bandBody;
+
+      // Quote finestrate della fascia: sopra il parapetto e sotto la cornice.
+      // Si decide per riga e non per voxel, come gia' `layer`, perche' la quota
+      // e' l'unica cosa che serve a escluderle.
+      //
+      // Le condizioni si ripetono invece di dedurle da `layer === bandBody`, che
+      // sarebbe piu' corto e sbagliato: dedurle dal colore lega una regola
+      // strutturale a una coincidenza di slot, e una riga di catalogo che desse
+      // a `crown` lo stesso indice di `body` finestrerebbe il tetto.
+      //
+      // Il piano terra ne resta fuori per intero: li' ci sono gia' zoccolo,
+      // portale e tende, e un'apertura in mezzo sarebbe la quarta cosa sullo
+      // stesso metro di facciata.
+      const bayRow = !isCrown && !isRoofProp && sz !== top &&
+        sz >= z + GRAMMAR.spandrelHeight &&
+        sz >= GRAMMAR.portalHeight;
 
       for (let sy = rect.y0; sy < rect.y0 + rect.h; sy++) {
         for (let sx = rect.x0; sx < rect.x0 + rect.w; sx++) {
@@ -641,6 +682,14 @@ function paint(request: PaintRequest): VoxelStamp {
           // inverte quindi il contrasto, altrimenti proprio quel piano perde
           // la faccia che rende leggibile il volume.
           const accentLayer = request.accentId === layer ? bandBody : request.accentId;
+          // L'apertura prende il tono della cornice, e non e' un ripiego: sono
+          // lo stesso materiale — vetro sul residenziale e sul civico, mattone
+          // chiaro sul commerciale — quindi la riga di piano e le finestre
+          // sotto di essa leggono come un telaio unico invece che come due
+          // decorazioni accostate. Cede sia all'accento sia alla terrazza: la
+          // lama luminosa e' gia' la faccia che racconta il volume, e bucarla
+          // le toglierebbe la continuita' che la rende visibile da lontano.
+          const bay = bayRow && !accent && !open && onBay(rect, sx, sy, bandBay);
           const index = sx + footprint * (sy + footprint * sz);
           voxels[index] = planted
             ? (request.garden as number)
@@ -648,7 +697,9 @@ function paint(request: PaintRequest): VoxelStamp {
               ? request.terrace
               : accent
                 ? accentLayer
-                : layer;
+                : bay
+                  ? bayLayer
+                  : layer;
           surfaces[index] = isRoofProp
             ? SURFACE_KIND.utility
             : planted
@@ -694,6 +745,33 @@ function inside(rect: BandRect, sx: number, sy: number): boolean {
 function inset(rect: BandRect, sx: number, sy: number): boolean {
   return sx > rect.x0 && sx < rect.x0 + rect.w - 1 &&
     sy > rect.y0 && sy < rect.y0 + rect.h - 1;
+}
+
+/**
+ * true se il voxel cade in un'apertura della campata.
+ *
+ * **Il passo si conta dall'impronta, non dalla fascia.** E' la sola decisione
+ * non ovvia di questa regola, e vale la sua riga: contandolo dalla fascia, un
+ * `jog` da un voxel farebbe scorrere di uno tutte le aperture del piano sopra, e
+ * su una torre da venti fasce la parete tornerebbe rumore invece che facciata.
+ * Ancorato all'impronta, le colonne restano le stesse per tutta la salita anche
+ * dove il corpo si sposta o rientra — che e' come stanno le finestre di un
+ * edificio vero.
+ *
+ * **Il cantonale resta sempre pieno.** E' dove due fronti si incontrano, ed e'
+ * anche dove `emitCornerPosts` appoggia il pilastrino: bucarlo metterebbe
+ * un'apertura dentro un pilastro. E' anche cio' che garantisce l'appoggio
+ * visivo agli angoli su un fronte da quattro, dove fra i due cantonali restano
+ * due sole colonne.
+ */
+function onBay(rect: BandRect, sx: number, sy: number, period: number): boolean {
+  if (period < 2) return false;
+  const facingX = sx === rect.x0 || sx === rect.x0 + rect.w - 1;
+  const facingY = sy === rect.y0 || sy === rect.y0 + rect.h - 1;
+  // Veri entrambi e' un cantonale, falsi entrambi e' il cuore della fascia:
+  // nessuno dei due e' parete, e il confronto li toglie di mezzo insieme.
+  if (facingX === facingY) return false;
+  return (facingX ? sy : sx) % period !== 0;
 }
 
 /** Un solo modulo d'ingresso, centrato sul lato principale e mai su un angolo. */

@@ -8,6 +8,7 @@ import {
   addBuilding,
   addCatalyst,
   createSimState,
+  removeBuildings,
   reviveSimState,
   setPolicyActive,
   setSelectedClass,
@@ -165,6 +166,49 @@ describe('SimState — operazioni', () => {
     expect(state.buildingCounts).toEqual([0, 1, 0, 0]);
     expect(state.mixedCounts).toEqual([0, 0, 0, 0]);
     expect(state.buildings[0].mixed).toBeUndefined();
+  });
+
+  it('removeBuildings riporta lista e conteggi a prima delle costruzioni', () => {
+    const before = createSimState();
+    const doomed = [
+      { x: 1, y: 1, class: BUILDING_CLASS.residential },
+      { x: 3, y: 1, class: BUILDING_CLASS.civic, mixed: BUILDING_CLASS.commercial },
+    ];
+
+    let state = before;
+    state = addBuilding(state, doomed[0]);
+    state = addBuilding(state, { x: 2, y: 1, class: BUILDING_CLASS.residential });
+    state = addBuilding(state, doomed[1]);
+    expect(state.buildingCounts).toEqual([2, 0, 0, 1]);
+    expect(state.mixedCounts).toEqual([0, 1, 0, 0]);
+
+    state = removeBuildings(state, doomed);
+
+    // Resta il solo edificio che nessuno ha chiesto di abbattere.
+    expect(state.buildings).toEqual([{ x: 2, y: 1, class: BUILDING_CLASS.residential }]);
+    expect(state.buildingCounts).toEqual([1, 0, 0, 0]);
+    expect(state.mixedCounts).toEqual(before.mixedCounts);
+  });
+
+  it('removeBuildings consuma una voce per edificio chiesto, non tutta la colonna', () => {
+    let state = createSimState();
+    const twin = { x: 5, y: 5, class: BUILDING_CLASS.residential };
+    state = addBuilding(state, twin);
+    state = addBuilding(state, twin);
+
+    state = removeBuildings(state, [twin]);
+
+    // Due volumi sovrapposti sono due edifici: toglierne uno non deve
+    // sgomberare anche il piano di sopra.
+    expect(state.buildings).toHaveLength(1);
+    expect(state.buildingCounts).toEqual([1, 0, 0, 0]);
+  });
+
+  it('removeBuildings lascia cadere in silenzio cio che non trova', () => {
+    const state = addBuilding(createSimState(), { x: 1, y: 1, class: BUILDING_CLASS.residential });
+    const same = removeBuildings(state, [{ x: 9, y: 9, class: BUILDING_CLASS.civic }]);
+
+    expect(same).toBe(state);
   });
 
   it('createSimState scarta le policy sconosciute e mette in ordine quelle valide', () => {

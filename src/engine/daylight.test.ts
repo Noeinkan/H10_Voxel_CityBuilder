@@ -1,15 +1,21 @@
 import { describe, expect, it } from 'vitest';
 import {
   DAYLIGHT,
+  DAYLIGHT_MODE,
+  DAYLIGHT_MODES,
   dayPhase,
   mixHex,
+  modeHour,
+  nextDaylightMode,
   nightFactor,
   normaliseHour,
+  resolveDaylightMode,
   sunAzimuth,
   sunElevation,
   withHour,
+  type DaylightMode,
 } from './daylight';
-import { faceLuminance } from './lighting';
+import { faceLuminance, hexToLinear, relativeLuminance } from './lighting';
 import { natural } from './themes/natural';
 import { neon } from './themes/neon';
 
@@ -118,11 +124,73 @@ describe('daylight', () => {
     expect(naturalNight.fog.color).not.toBe(neonNight.fog.color);
   });
 
+  it('il riflesso dell acqua e un ora e non una materia', () => {
+    // I default fanno da guardia: se `water` sparisse dall'atmosfera dell'ora,
+    // il notturno risulterebbe bianco e il diurno nero, e le righe qui sotto
+    // fallirebbero invece di passare a vuoto.
+    const noon = withHour(natural.atmosphere, NOON).water;
+    const night = withHour(natural.atmosphere, 0).water;
+    const luminance = (hex: string): number => relativeLuminance(hexToLinear(hex));
+
+    expect(noon?.highlight).toBe(natural.atmosphere.water?.highlight);
+    expect(noon?.strength).toBeCloseTo(natural.atmosphere.water?.strength ?? -1, 6);
+
+    // Il difetto che si vedeva a schermo: una tinta di mezzogiorno mescolata su
+    // un mare notturno quasi nero non disegna un'onda, disegna un quadrettato
+    // chiaro largo quanto l'inquadratura.
+    expect(luminance(night?.highlight ?? '#ffffff')).toBeLessThan(
+      luminance(noon?.highlight ?? '#000000') * 0.5,
+    );
+    expect(night?.strength ?? 1).toBeLessThan(noon?.strength ?? 0);
+
+    // Spenta pero' no: senza riflesso il mare di notte e' un buco nero, e la
+    // linea di costa se ne va insieme a lui.
+    expect(night?.strength ?? 0).toBeGreaterThan(0);
+    expect(luminance(night?.highlight ?? '#000000')).toBeGreaterThan(0);
+  });
+
   it('normalizza le ore fuori scala e mescola i colori agli estremi', () => {
     expect(normaliseHour(26)).toBe(2);
     expect(normaliseHour(-1)).toBe(23);
     expect(mixHex('#000000', '#ffffff', 0)).toBe('#000000');
     expect(mixHex('#000000', '#ffffff', 1)).toBe('#ffffff');
     expect(mixHex('#000000', '#ffffff', 0.5)).toBe('#808080');
+  });
+});
+
+describe('modi del ciclo', () => {
+  it('il ciclo lascia camminare l orologio, i due modi fissi lo fermano', () => {
+    expect(modeHour(DAYLIGHT_MODE.cycle)).toBeNull();
+    expect(modeHour(DAYLIGHT_MODE.day)).toBe(DAYLIGHT.dayHour);
+    expect(modeHour(DAYLIGHT_MODE.night)).toBe(DAYLIGHT.nightHour);
+  });
+
+  it('le due ore fisse sono giorno pieno e notte piena in ogni tema', () => {
+    // Un tema con il sole piu' alto o piu' basso non deve trasformare la notte
+    // fissa in un crepuscolo: le soglie si leggono sull'elevazione vera, e sono
+    // proprio queste due ore a doverlo dimostrare.
+    for (const theme of [natural, neon]) {
+      const peak = theme.atmosphere.sun.elevation;
+      expect(dayPhase(DAYLIGHT.dayHour, peak)).toBe(1);
+      expect(nightFactor(DAYLIGHT.nightHour, peak)).toBe(1);
+    }
+  });
+
+  it('un bottone solo gira sui tre modi e torna al ciclo', () => {
+    const walked: DaylightMode[] = [];
+    let mode: DaylightMode = DAYLIGHT_MODE.cycle;
+    for (let step = 0; step < DAYLIGHT_MODES.length; step++) {
+      mode = nextDaylightMode(mode);
+      walked.push(mode);
+    }
+    expect(walked).toEqual([DAYLIGHT_MODE.day, DAYLIGHT_MODE.night, DAYLIGHT_MODE.cycle]);
+  });
+
+  it('l URL accetta i tre nomi e niente altro', () => {
+    expect(resolveDaylightMode('night')).toBe(DAYLIGHT_MODE.night);
+    expect(resolveDaylightMode('day')).toBe(DAYLIGHT_MODE.day);
+    expect(resolveDaylightMode(null)).toBe(DAYLIGHT_MODE.cycle);
+    expect(resolveDaylightMode('Night')).toBe(DAYLIGHT_MODE.cycle);
+    expect(resolveDaylightMode('midnight')).toBe(DAYLIGHT_MODE.cycle);
   });
 });

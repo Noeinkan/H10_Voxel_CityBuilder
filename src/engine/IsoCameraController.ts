@@ -7,16 +7,55 @@ import type { VoxelWorld } from '../world/VoxelWorld';
  * Rotazione a scatti di 90 gradi (con tween breve), zoom continuo, pan sul piano
  * di terra vincolato all'AABB dei chunk esistenti. I limiti si ricalcolano quando
  * il mondo cresce, guardando `world.version`.
+ *
+ * Sopra a questo c'e' un secondo modo, l'**orbita**, che serve a guardare una
+ * cosa sola invece della citta': li' lo yaw e' continuo, l'inclinazione si muove
+ * e il trascinamento gira invece di panare. E' un modo e non un controller a
+ * parte perche' meta' delle due strade e' la stessa — proiezione, zoom, near e
+ * far — e duplicarla vorrebbe dire tenerne allineate due.
  */
 
-/** Inclinazione isometrica vera: atan(1 / sqrt(2)). */
-const PITCH = Math.atan(1 / Math.SQRT2);
+/**
+ * Inclinazione isometrica vera: atan(1 / sqrt(2)).
+ *
+ * E' l'inclinazione **di riposo**, non l'unica: fuori dall'orbita `pitch` non si
+ * muove mai da qui, ed e' quello che tiene la citta' sulla sua griglia.
+ */
+const REST_PITCH = Math.atan(1 / Math.SQRT2);
+
+/**
+ * Estremi dell'inclinazione in orbita.
+ *
+ * In basso non e' un gusto: la correzione azimut→schermo vale `1 / sin(pitch)` e
+ * verso lo zero esplode, portandosi dietro il pan e l'inversione schermo→terra.
+ * In alto `lookAt` degenera, perche' la direzione di vista diventa parallela a
+ * `up` — lo stesso scoglio che `SunShadow` aggira con un `up` di ripiego.
+ */
+const MIN_PITCH = MathUtils.degToRad(12);
+const MAX_PITCH = MathUtils.degToRad(82);
+
+/** Radianti di orbita per pixel trascinato. */
+const ORBIT_SPEED = 0.006;
 
 /** Durata del tween di rotazione, in secondi. */
 const SNAP_DURATION = 0.25;
 
 const MIN_ZOOM = 0.15;
-const MAX_ZOOM = 8;
+
+/**
+ * Quanto si puo' arrivare vicini.
+ *
+ * L'inquadratura da gioco parte da `viewHeight` ~640 voxel: a otto ne restavano
+ * ottanta in altezza, cioe' una decina di pixel per voxel su uno schermo da
+ * 1080 — abbastanza per leggere la skyline, non per leggere una parete. Da
+ * quando la facciata ha una campata (`ClassProfile.bayPeriod`, due-quattro
+ * voxel) c'e' qualcosa da guardare a quella scala, e a ventiquattro il campo
+ * scende sotto i trenta voxel: un piano con le sue aperture riempie lo schermo.
+ * Non costa niente in resa — l'ortografica non muove la camera, quindi near,
+ * far e il numero di chunk nel frustum restano quelli di prima o meno.
+ */
+const MAX_ZOOM = 24;
+
 const ZOOM_STEP = 1.12;
 
 /** Margine di pan oltre l'AABB, in voxel: lascia respiro ai bordi della citta'. */
@@ -25,16 +64,39 @@ const PAN_MARGIN = 24;
 /** Frazione dell'inquadratura percorsa in un secondo di pan da tastiera. */
 const PAN_SPEED = 1.1;
 
-/**
- * Un movimento sul piano di terra lungo l'azimut si proiettta a schermo per
- * sin(PITCH): compensarlo fa seguire il cursore durante il trascinamento.
- */
-const AZIMUTH_TO_SCREEN = 1 / Math.sin(PITCH);
+/** I tasti che panano: elencati qui perche' in orbita vanno ignorati. */
+const PAN_KEYS = new Set([
+  'KeyW',
+  'KeyA',
+  'KeyS',
+  'KeyD',
+  'ArrowUp',
+  'ArrowDown',
+  'ArrowLeft',
+  'ArrowRight',
+]);
 
 export interface IsoCameraOptions {
   readonly voxelSize?: number;
   /** Altezza di riferimento del target sul piano di terra, in voxel. */
   readonly targetHeight?: number;
+}
+
+/**
+ * L'inquadratura per intero, abbastanza da riprodurla identica.
+ *
+ * Serve a una cosa sola: entrare in orbita su un soggetto e poi **restituire** la
+ * citta' com'era. Senza, uscire da uno studio lascerebbe la camera a un angolo
+ * qualunque e a un'altezza qualunque, e il giocatore dovrebbe rimettersi a posto
+ * da solo una vista che non aveva chiesto di muovere.
+ */
+export interface IsoCameraState {
+  readonly yaw: number;
+  readonly yawStep: number;
+  readonly pitch: number;
+  readonly target: readonly [number, number, number];
+  readonly viewHeight: number;
+  readonly zoom: number;
 }
 
 export class IsoCameraController {
@@ -54,6 +116,20 @@ export class IsoCameraController {
   private yawFrom = this.yaw;
   private yawTo = this.yaw;
   private yawTween = 1;
+
+  /** Inclinazione corrente. Fuori dall'orbita non si muove da `REST_PITCH`. */
+  private pitch = REST_PITCH;
+
+  /**
+   * true mentre si studia un soggetto invece della citta'.
+   *
+   * Cambia tre cose e nessun'altra: il trascinamento gira invece di panare, il
+   * target non viene riportato a terra da `clampTarget`, e gli scatti di `Q`/`E`
+   * diventano passi continui. Tutto il resto — proiezione, zoom, near e far — e'
+   * lo stesso codice di prima, ed e' il motivo per cui non e' un secondo
+   * controller.
+   */
+  private orbiting = false;
 
   private viewHeight: number;
   private aspect = 1;
@@ -140,12 +216,17 @@ export class IsoCameraController {
    * si puo' chiamare prima che la scena sia generata.
    */
   frameRegion(centreX: number, centreY: number, spanX: number, spanY: number, spanZ: number): void {
-    this.target.set(centreX * this.voxelSize, centreY * this.voxelSize, this.targetHeight);
+    // In orbita la quota del perno l'ha gia' scelta chi ha chiamato `setTarget`:
+    // riportarla a terra qui inquadrerebbe la base di una torre invece della torre.
+    const z = this.orbiting ? this.target.z : this.targetHeight;
+    this.target.set(centreX * this.voxelSize, centreY * this.voxelSize, z);
 
-    // Estensione a schermo della proiezione isometrica: le due direzioni di terra
-    // contribuiscono in diagonale, l'altezza per cos(PITCH).
+    // Estensione a schermo della proiezione: le due direzioni di terra
+    // contribuiscono in diagonale, l'altezza per cos(pitch). Segue l'inclinazione
+    // corrente, altrimenti abbassandosi il soggetto uscirebbe dall'inquadratura.
     const projectedWidth = ((spanX + spanY) * this.voxelSize) / Math.SQRT2;
-    const projectedHeight = projectedWidth * Math.sin(PITCH) + spanZ * this.voxelSize * Math.cos(PITCH);
+    const projectedHeight =
+      projectedWidth * Math.sin(this.pitch) + spanZ * this.voxelSize * Math.cos(this.pitch);
 
     this.viewHeight = Math.max(projectedHeight, projectedWidth / this.aspect) * 1.06;
     this.camera.zoom = 1;
@@ -209,6 +290,13 @@ export class IsoCameraController {
    * sta guardando, non attorno a dove capita che sia il target.
    */
   rotate(direction: number): void {
+    // In orbita non ci sono scatti a cui agganciarsi: `Q` ed `E` restano utili
+    // come passo di rotazione da tastiera, ma girano il soggetto e basta.
+    if (this.orbiting) {
+      this.orbitBy((direction > 0 ? 1 : -1) * (Math.PI / 8), 0);
+      return;
+    }
+
     this.yawStep = (this.yawStep + (direction > 0 ? 1 : -1)) & 3;
     this.yawFrom = this.yaw;
     this.yawTo = MathUtils.degToRad(45) + (Math.PI / 2) * this.yawStep;
@@ -227,6 +315,92 @@ export class IsoCameraController {
     this.updateProjection();
   }
 
+  /**
+   * Entra o esce dal modo orbita.
+   *
+   * Uscendo l'inclinazione torna a riposo: la citta' vive sulla sua griglia
+   * isometrica, e lasciarla a un angolo qualunque perche' si e' guardato un
+   * isolato sarebbe portarsi dietro lo stato di uno strumento che si e' chiuso.
+   * Lo yaw invece lo rimette a posto chi ha catturato l'inquadratura.
+   */
+  setOrbitMode(on: boolean): void {
+    if (this.orbiting === on) return;
+    this.orbiting = on;
+    if (!on) {
+      this.pitch = REST_PITCH;
+      this.pivotActive = false;
+      this.clampTarget();
+    }
+    this.applyTransform();
+  }
+
+  get orbitMode(): boolean {
+    return this.orbiting;
+  }
+
+  /**
+   * Gira attorno al target: yaw continuo, inclinazione clampata.
+   *
+   * Il target non si muove — e' il perno — quindi non c'e' nessun offset da far
+   * ruotare come in `orbitAroundPivot`: li' il punto fermo era sotto al cursore e
+   * il target ci girava attorno, qui il punto fermo **e'** il target.
+   */
+  orbitBy(dYaw: number, dPitch: number): void {
+    // Un tween di scatto in corso combatterebbe con il trascinamento, riportando
+    // lo yaw al suo bersaglio un frame dopo l'altro.
+    this.yawTween = 1;
+    this.pivotActive = false;
+
+    this.yaw += dYaw;
+    this.pitch = MathUtils.clamp(this.pitch + dPitch, MIN_PITCH, MAX_PITCH);
+    this.applyTransform();
+  }
+
+  /**
+   * Sposta il perno, quota compresa.
+   *
+   * E' l'unico modo per alzarlo: `targetHeight` si legge una volta sola nel
+   * costruttore e `clampTarget` ci riporta la z a ogni pan. Serve per mettere il
+   * perno a mezza altezza di cio' che si studia, altrimenti girare attorno a una
+   * torre la farebbe oscillare attorno alla propria base.
+   */
+  setTarget(x: number, y: number, z: number): void {
+    this.target.set(x * this.voxelSize, y * this.voxelSize, z * this.voxelSize);
+    this.applyTransform();
+  }
+
+  /** L'inquadratura corrente, per poterla rimettere identica. */
+  captureState(): IsoCameraState {
+    return {
+      yaw: this.yaw,
+      yawStep: this.yawStep,
+      pitch: this.pitch,
+      target: [this.target.x, this.target.y, this.target.z],
+      viewHeight: this.viewHeight,
+      zoom: this.camera.zoom,
+    };
+  }
+
+  /** Rimette un'inquadratura catturata prima, senza tween. */
+  restoreState(state: IsoCameraState): void {
+    this.yaw = state.yaw;
+    this.yawStep = state.yawStep;
+    this.pitch = state.pitch;
+    this.target.set(state.target[0], state.target[1], state.target[2]);
+    this.viewHeight = state.viewHeight;
+    this.camera.zoom = state.zoom;
+
+    // Un tween in corso al momento del ripristino riporterebbe lo yaw al bersaglio
+    // che aveva prima, cancellando quello appena rimesso.
+    this.yawFrom = this.yaw;
+    this.yawTo = this.yaw;
+    this.yawTween = 1;
+    this.pivotActive = false;
+
+    this.updateProjection();
+    this.applyTransform();
+  }
+
   get zoom(): number {
     return this.camera.zoom;
   }
@@ -237,6 +411,17 @@ export class IsoCameraController {
 
   get targetPosition(): Vector3 {
     return this.target;
+  }
+
+  /**
+   * Un movimento sul piano di terra lungo l'azimut si proietta a schermo per
+   * sin(pitch): compensarlo fa seguire il cursore durante il trascinamento.
+   *
+   * Era una costante finche' l'inclinazione era una sola. Ora segue `pitch`, ed
+   * e' il motivo per cui `MIN_PITCH` non puo' avvicinarsi a zero.
+   */
+  private get azimuthToScreen(): number {
+    return 1 / Math.sin(this.pitch);
   }
 
   private readKeyboardPan(): boolean {
@@ -261,8 +446,9 @@ export class IsoCameraController {
   private panScreen(dxScreen: number, dyScreen: number): void {
     const cos = Math.cos(this.yaw);
     const sin = Math.sin(this.yaw);
-    const dx = dxScreen * -sin + dyScreen * -cos * AZIMUTH_TO_SCREEN;
-    const dy = dxScreen * cos + dyScreen * -sin * AZIMUTH_TO_SCREEN;
+    const lift = this.azimuthToScreen;
+    const dx = dxScreen * -sin + dyScreen * -cos * lift;
+    const dy = dxScreen * cos + dyScreen * -sin * lift;
     this.target.x += dx;
     this.target.y += dy;
     // Panare durante il tween trascina anche il perno: la rotazione continua
@@ -296,8 +482,8 @@ export class IsoCameraController {
     const cos = Math.cos(this.yaw);
     const sin = Math.sin(this.yaw);
     out.set(
-      this.target.x + dxScreen * -sin + dyScreen * -cos * AZIMUTH_TO_SCREEN,
-      this.target.y + dxScreen * cos + dyScreen * -sin * AZIMUTH_TO_SCREEN,
+      this.target.x + dxScreen * -sin + dyScreen * -cos * this.azimuthToScreen,
+      this.target.y + dxScreen * cos + dyScreen * -sin * this.azimuthToScreen,
       this.targetHeight,
     );
     return true;
@@ -323,6 +509,10 @@ export class IsoCameraController {
   }
 
   private clampTarget(): void {
+    // In orbita il perno e' il centro del soggetto, che sta dentro l'AABB per
+    // costruzione: qui non c'e' niente da vincolare, e la z andrebbe riportata a
+    // terra proprio mentre serve alzata.
+    if (this.orbiting) return;
     const b = this.world.bounds;
     if (b.empty) return;
     const margin = PAN_MARGIN * this.voxelSize;
@@ -371,11 +561,11 @@ export class IsoCameraController {
 
   private applyTransform(): void {
     const distance = this.radius * 3 + 100 * this.voxelSize;
-    const cosPitch = Math.cos(PITCH);
+    const cosPitch = Math.cos(this.pitch);
     this.offset.set(
       Math.cos(this.yaw) * cosPitch,
       Math.sin(this.yaw) * cosPitch,
-      Math.sin(PITCH),
+      Math.sin(this.pitch),
     );
     this.camera.position.copy(this.target).addScaledVector(this.offset, distance);
     this.camera.lookAt(this.target);
@@ -396,12 +586,22 @@ export class IsoCameraController {
   private readonly onPointerMove = (event: PointerEvent): void => {
     this.trackHover(event);
     if (!this.panning || event.pointerId !== this.pointerId) return;
-    // Da pixel a unita' di mondo: l'altezza del frustum copre l'altezza in pixel.
-    const scale = this.viewHeight / this.camera.zoom / this.viewportHeight;
     const dx = event.clientX - this.pointerX;
     const dy = event.clientY - this.pointerY;
     this.pointerX = event.clientX;
     this.pointerY = event.clientY;
+
+    if (this.orbiting) {
+      // Trascinare in orizzontale gira attorno al soggetto, in verticale lo alza
+      // e lo abbassa. Il segno del pitch e' invertito rispetto ai pixel perche'
+      // tirando **verso il basso** ci si aspetta di salire sopra la cosa.
+      this.orbitBy(-dx * ORBIT_SPEED, dy * ORBIT_SPEED);
+      event.preventDefault();
+      return;
+    }
+
+    // Da pixel a unita' di mondo: l'altezza del frustum copre l'altezza in pixel.
+    const scale = this.viewHeight / this.camera.zoom / this.viewportHeight;
     this.panScreen(-dx * scale, dy * scale);
     this.applyTransform();
     event.preventDefault();
@@ -440,9 +640,15 @@ export class IsoCameraController {
       return;
     }
     if (event.code === 'KeyF') {
-      this.frameWorld();
+      // Inquadrare il mondo intero mentre si studia un isolato vorrebbe dire
+      // uscire dallo studio per una via che non lo dichiara: chi guarda si
+      // ritroverebbe la citta' addosso senza aver chiuso niente.
+      if (!this.orbiting) this.frameWorld();
       return;
     }
+    // Il pan da tastiera muoverebbe il perno fuori dal soggetto, e in orbita non
+    // c'e' modo di accorgersene finche' non si e' persa la cosa che si guardava.
+    if (this.orbiting && PAN_KEYS.has(event.code)) return;
     this.keys.add(event.code);
   };
 

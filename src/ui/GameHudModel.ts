@@ -18,6 +18,7 @@ import {
   type PolicyId,
   type TradeMode,
 } from '../sim';
+import { DAYLIGHT, DAYLIGHT_MODE, nextDaylightMode, type DaylightMode } from '../engine/daylight';
 import { typologiesForUses } from '../world/buildings/typology';
 import { SITE } from '../world/sites/config';
 import type { GrowthStats } from '../game/growthScene';
@@ -125,7 +126,15 @@ export interface GameHudModel {
   readonly unlockedSectors: number;
 }
 
-export type EscapeTarget = 'views' | 'themes' | 'policies' | 'help' | 'tool' | 'view' | 'none';
+export type EscapeTarget =
+  | 'views'
+  | 'themes'
+  | 'policies'
+  | 'help'
+  | 'tool'
+  | 'lock'
+  | 'view'
+  | 'none';
 
 /** Mantiene stabili i bottoni durante il gesto pointerdown/click. */
 export function decisionNeedsRepaint(
@@ -339,13 +348,61 @@ export function resolveEscapeTarget(
   helpOpen: boolean,
   tool: GameTool,
   viewActive: boolean,
+  blockLocked = false,
 ): EscapeTarget {
   if (viewsOpen) return 'views';
   if (themesOpen) return 'themes';
   if (policiesOpen) return 'policies';
   if (helpOpen) return 'help';
   if (tool.kind !== 'none') return 'tool';
+  // Prima si molla il soggetto, poi si esce dalla vista. Sono due passi e non uno
+  // perche' sono due decisioni diverse: chi sta studiando un isolato e preme Esc
+  // vuole quasi sempre tornare a scegliere, non spegnere la lente e ritrovarsi la
+  // citta' intera. Un secondo colpo fa comunque il resto.
+  if (blockLocked) return 'lock';
   return viewActive ? 'view' : 'none';
+}
+
+/** Il ciclo del giorno come lo vede il giocatore: un bottone e tre stati. */
+export interface HudDaylight {
+  readonly mode: DaylightMode;
+  readonly label: string;
+  readonly tooltip: string;
+  /** Il modo che il prossimo clic mette: il bottone e' uno, i modi tre. */
+  readonly next: DaylightMode;
+  /** Orologio fermo: il bottone si accende, come fa la pausa. */
+  readonly frozen: boolean;
+}
+
+const DAYLIGHT_LABEL: Readonly<Record<DaylightMode, string>> = {
+  [DAYLIGHT_MODE.cycle]: 'Auto',
+  [DAYLIGHT_MODE.day]: 'Day',
+  [DAYLIGHT_MODE.night]: 'Night',
+};
+
+/**
+ * Cosa cambia ogni modo, in mezza riga.
+ *
+ * «Auto» da solo non dice niente a chi sta guardando un tramonto e si chiede se
+ * durera': la durata del giro e' l'unica informazione che risponde, e viene da
+ * `DAYLIGHT` perche' e' la stessa che l'orologio usa per camminare.
+ */
+const DAYLIGHT_NOTE: Readonly<Record<DaylightMode, string>> = {
+  [DAYLIGHT_MODE.cycle]: `the clock runs, a full day takes ${Math.round(DAYLIGHT.daySeconds / 60)} minutes`,
+  [DAYLIGHT_MODE.day]: 'the sun stays up',
+  [DAYLIGHT_MODE.night]: 'the city stays lit',
+};
+
+/** Etichetta, nota e prossimo stato del bottone del ciclo giorno/notte. */
+export function daylightControl(mode: DaylightMode): HudDaylight {
+  const next = nextDaylightMode(mode);
+  return {
+    mode,
+    label: DAYLIGHT_LABEL[mode],
+    tooltip: `Daylight: ${DAYLIGHT_LABEL[mode]} — ${DAYLIGHT_NOTE[mode]}. Click for ${DAYLIGHT_LABEL[next]}, or press L.`,
+    next,
+    frozen: mode !== DAYLIGHT_MODE.cycle,
+  };
 }
 
 export function selectionMessage(tool: GameTool, catalysts: readonly HudAction[]): string | null {

@@ -46,7 +46,9 @@ export interface OverlayFrame {
   readonly theme: string;
   /** Ora di gioco, 0..24. Stessa fonte di `__voxelHour`. */
   readonly hour: number;
-  /** true quando `?hour=` ha fissato l'orologio e il ciclo non cammina. */
+  /** `cycle`, `day` o `night`: cosa fa l'orologio, non che ora segna. */
+  readonly hourMode: string;
+  /** true quando l'orologio e' fermo, per `?hour=` o per il modo scelto. */
   readonly hourPinned: boolean;
   readonly quality: string;
   readonly pixelRatio: number;
@@ -136,7 +138,7 @@ export class DebugOverlay {
       '',
       `scene      ${frame.scene}  seed ${frame.seed}`,
       `theme      ${frame.theme}`,
-      `hour       ${formatHour(frame.hour)}${frame.hourPinned ? '  pinned' : ''}   H ±1h`,
+      `hour       ${formatHour(frame.hour)}  ${frame.hourMode}${frame.hourPinned ? '  pinned' : ''}   H ±1h  L mode`,
       `quality    ${frame.quality}  DPR ${frame.pixelRatio.toFixed(2)}`,
       `camera     zoom ${frame.zoom.toFixed(2)}  yaw ${Math.round(frame.yawDegrees)}°`,
       generating ? `generate   ${(frame.generationProgress * 100).toFixed(0)} %` : '',

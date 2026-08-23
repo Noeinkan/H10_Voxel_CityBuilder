@@ -26,6 +26,8 @@ export interface InspectOverlayFrame {
   readonly focus: { readonly x: number; readonly y: number; readonly z: number } | null;
   /** Chiave dell'isolato sotto il cursore. */
   readonly block: string | null;
+  /** Vero quando l'isolato e' stato scelto e la vista ha smesso di inseguire. */
+  readonly locked: boolean;
   /** Densita' del retino in vigore: 1 vuol dire taglio. */
   readonly veil: number;
   /** Vero quando il taglio ha spento le ombre proiettate. */
@@ -42,7 +44,7 @@ const REFRESH_MS = 200;
 /** Cosa risponde ogni modo: e' la riga che si legge prima di scegliere. */
 const MODE_HELP: Readonly<Record<InspectMode, string>> = {
   [INSPECT_MODE.off]: 'nessuna vista attiva',
-  [INSPECT_MODE.xray]: 'vela cio’ che sta davanti alla colonna sotto il cursore',
+  [INSPECT_MODE.xray]: 'vela cio’ che copre l’edificio sotto il cursore',
   [INSPECT_MODE.slice]: 'taglia sopra la quota: la citta’ al piano n',
   [INSPECT_MODE.section]: 'taglia su una carreggiata, dal lato della camera',
   [INSPECT_MODE.block]: 'vela tutto fuori dall’isolato sotto il cursore',
@@ -132,7 +134,7 @@ export class InspectOverlay {
       `azione     ${action}`,
       `quota      ${frame.sliceZ.toString().padStart(3)}  ([ ] · Shift ×${INSPECT.sliceCoarse})`,
       `cursore    ${focus}`,
-      `isolato    ${frame.block ?? '—'}`,
+      `isolato    ${frame.block ?? '—'}${frame.locked ? '  (scelto · orbita)' : ''}`,
       frame.shadowsOff ? 'ombre      spente finche’ il taglio e’ attivo' : '',
       '',
       'V cicla i modi',

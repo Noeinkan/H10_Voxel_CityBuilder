@@ -8,6 +8,7 @@ import {
   tick,
   type CharterId,
 } from '../../sim';
+import { AERIAL_PART, type AerialPart } from '../aerial/config';
 import { CHUNK } from '../chunkCoords';
 import { LANDMARKS } from '../landmarks/config';
 import { generateLandmark, landmarkSpan } from '../landmarks/generate';
@@ -37,15 +38,18 @@ import type { TerrainMap } from '../terrain/TerrainMap';
 /**
  * I soli edifici veri.
  *
- * Il registry ospita anche landmark e campate, che edifici non sono: non hanno
- * un uso urbano, la simulazione non li ha mai contati, e una campata non e'
- * nemmeno appoggiata al suolo. Le asserzioni sulla crescita — impronta, fronte
- * strada, fila, opere sotto il piano — parlano di edifici, e vanno lette su
- * quelli.
+ * Il registry ospita anche landmark, campate e la citta' in quota, che edifici
+ * non sono: non hanno un uso urbano, la simulazione non li ha mai contati, una
+ * campata non e' nemmeno appoggiata al suolo e una mensola non ha un'impronta
+ * che rispetti il tetto degli edifici. Le asserzioni sulla crescita — impronta,
+ * fronte strada, fila, opere sotto il piano — parlano di edifici, e vanno lette
+ * su quelli.
  */
 function buildingsOf(builder: Builder): readonly BuildingRecord[] {
-  return [...builder.registry.all]
-    .filter((record) => record.landmark === undefined && record.span === undefined);
+  return [...builder.registry.all].filter((record) =>
+    record.landmark === undefined &&
+    record.span === undefined &&
+    record.aerial === undefined);
 }
 
 /**
@@ -197,6 +201,7 @@ describe('Builder — la rete in quota', () => {
     expect(builder.stats.spans).toBeGreaterThan(0);
   });
 
+
   it('un cortile d isolato diventa una piazza in quota', () => {
     // La piazza arriva piu' tardi dei ponti: ha bisogno che il perimetro di un
     // isolato sia costruito su almeno due lati e abbastanza alto. Su una citta'
@@ -248,6 +253,11 @@ describe('Builder — la rete in quota', () => {
     expect(spans.length).toBeGreaterThan(0);
 
     for (const span of spans) {
+      // **La piazza non ha due testate, ne ha un perimetro.** Chiederle i due
+      // capi pieni per tutta la larghezza e' chiederle di essere un ponte largo,
+      // che e' proprio cio' che `minSupports` esiste per escludere: i suoi
+      // appoggi li verifica il test della piazza, con la domanda giusta.
+      if (span.span === SPAN_KIND.plaza) continue;
       // Piena per **tutta** la larghezza, ai due capi: una campata appoggiata a
       // meta' sporgerebbe nel vuoto da un lato, e a distanza di gioco si vede.
       expect(
@@ -339,6 +349,142 @@ describe('Builder — la rete in quota', () => {
         expect(builder.registry.get(id), `appoggio ${id} di ${span.id}`).not.toBeNull();
       }
     }
+  });
+});
+
+/**
+ * Il gate della 4.9, verificato invece che dichiarato.
+ *
+ * La fase dice tre cose che a occhio non si controllano: qualcosa **sporge oltre
+ * l'impronta** di un edificio, sopra ci si **costruisce**, e una gamba prende
+ * suolo mentre l'impalcato che regge non lo prende.
+ */
+describe('Builder — la citta in quota', () => {
+  type AerialCity = { world: VoxelWorld; builder: Builder };
+
+  function buildAerialCity(builds: number, seed = 1337): AerialCity {
+    const world = new VoxelWorld();
+    const terrain = testTerrain({ chunksX: 8, chunksY: 8, height: 24 });
+    const builder = new Builder(world, terrain, seed);
+
+    let state = createSimState();
+    state = addCatalyst(state, {
+      x: 128,
+      y: 128,
+      class: BUILDING_CLASS.residential,
+      strength: 255,
+      radius: 96,
+    });
+
+    for (let i = 0; i < ticksFor(builds); i++) {
+      state = tick(state, terrain);
+      state = builder.onTick(state);
+      while (builder.stats.growing > 0) builder.step();
+    }
+    while (builder.stats.surfaceQueued > 0) builder.step();
+    return { world, builder };
+  }
+
+  let shared: AerialCity | null = null;
+  function aerialCity(): AerialCity {
+    if (shared === null) shared = buildAerialCity(210);
+    return shared;
+  }
+
+  function partsOf(builder: Builder, part: AerialPart): readonly BuildingRecord[] {
+    return [...builder.registry.all].filter((record) => record.aerial === part);
+  }
+
+  it('una citta matura si da delle mensole', () => {
+    const { builder } = aerialCity();
+    // Se questo torna a zero la fase e' inerte: tutto il resto passerebbe
+    // vacuamente, perche' non ci sarebbe niente da verificare.
+    expect(builder.stats.terraces).toBeGreaterThan(0);
+    expect(partsOf(builder, AERIAL_PART.terrace).length).toBe(builder.stats.terraces);
+  });
+
+  it('una mensola sporge oltre l impronta del proprio ospite', () => {
+    // **E' il fatto nuovo della fase.** La grammatica degli edifici dichiara che
+    // nessuna fascia esce dal riquadro, e che per questo la collisione resta
+    // bidimensionale: qui qualcosa esce, ed e' legale perche' il registry
+    // confronta gli intervalli di quota colonna per colonna.
+    const { builder } = aerialCity();
+
+    for (const terrace of partsOf(builder, AERIAL_PART.terrace)) {
+      const host = builder.registry.get(terrace.supports?.[0] ?? 0);
+      expect(host, `mensola ${terrace.id} senza ospite`).not.toBeNull();
+      if (host === null) continue;
+
+      const outside =
+        terrace.x + terrace.footprint > host.x + host.footprint ||
+        terrace.x < host.x ||
+        terrace.y + footprintDepth(terrace) > host.y + footprintDepth(host) ||
+        terrace.y < host.y;
+      expect(outside, `mensola ${terrace.id} tutta dentro l'ospite ${host.id}`).toBe(true);
+
+      // E sta **in aria**: parte piu' in alto della base del proprio ospite.
+      expect(terrace.baseZ).toBeGreaterThan(host.baseZ);
+    }
+  });
+
+  it('una mensola non prende suolo, la sua gamba si', () => {
+    const { builder } = aerialCity();
+
+    for (const terrace of partsOf(builder, AERIAL_PART.terrace)) {
+      // L'invariante del dominio, colonna per colonna: la mensola c'e' — quindi
+      // niente le si costruisce attraverso — ma il suolo sotto resta di chi ci
+      // sta, perche' in `groundColumns` non entra.
+      for (let dy = 0; dy < footprintDepth(terrace); dy++) {
+        for (let dx = 0; dx < terrace.footprint; dx++) {
+          const at = builder.registry.at(terrace.x + dx, terrace.y + dy);
+          expect(at.some((record) => record.id === terrace.id)).toBe(true);
+        }
+      }
+    }
+
+    for (const pier of partsOf(builder, AERIAL_PART.pier)) {
+      // La gamba invece il suolo lo prende, ed e' per questo che nessun lotto le
+      // nasce addosso.
+      expect(builder.registry.isOccupied(pier.x, pier.y)).toBe(true);
+    }
+  });
+
+  it('sopra una quota nasce un edificio, e ci sta dentro', () => {
+    const { builder } = aerialCity();
+    // Il gate vero della fase: **si abita sopra la citta'**.
+    expect(builder.stats.stacked).toBeGreaterThan(0);
+
+    const decks = builder.registry.decks;
+    const stacked = buildingsOf(builder).filter((record) =>
+      decks.some((deck) => record.baseZ === deck.baseZ + deck.height));
+    expect(stacked.length).toBe(builder.stats.stacked);
+
+    for (const record of stacked) {
+      // In quota il lotto **e'** l'impalcato: non c'e' una maglia stradale a cui
+      // riferirsi, e l'impronta sta dentro il riquadro che la ospita.
+      const deck = decks.find((candidate) =>
+        record.baseZ === candidate.baseZ + candidate.height &&
+        record.x >= candidate.x &&
+        record.y >= candidate.y &&
+        record.x + record.footprint <= candidate.x + candidate.footprint &&
+        record.y + footprintDepth(record) <= candidate.y + footprintDepth(candidate));
+      expect(deck, `edificio ${record.id} in quota non sta dentro nessun impalcato`)
+        .toBeDefined();
+    }
+  });
+
+  it('a parita di seed la citta in quota e identica', () => {
+    const shapeOf = (builder: Builder): string =>
+      [...builder.registry.all]
+        .filter((record) => record.aerial !== undefined)
+        .map((r) => `${r.aerial}:${r.x},${r.y},${r.baseZ},${r.footprint}x${footprintDepth(r)}`)
+        .join('|');
+
+    const a = buildAerialCity(120, 4242);
+    const b = buildAerialCity(120, 4242);
+
+    expect(shapeOf(a.builder)).toBe(shapeOf(b.builder));
+    expect(a.builder.stats.terraces).toBe(b.builder.stats.terraces);
   });
 });
 
@@ -869,8 +1015,14 @@ describe('Builder — opere di terra', () => {
     // l'impalcato invece della carreggiata, e il salto che misurerebbe sarebbe
     // il franco del ponte. Non basta `isOccupied`, ed e' voluto — una campata
     // non prende suolo, quindi sotto di lei la strada c'e' ancora davvero.
+    //
+    // **Vale identico per una mensola**, e per lo stesso invariante: un aggetto
+    // sporge dal fronte strada — e' proprio cio' che la 4.9 esiste per fare — e
+    // sotto di lui la carreggiata continua. La gamba invece il suolo lo prende,
+    // e `isOccupied` la vede gia'.
     const flownOver = (x: number, y: number): boolean =>
-      builder.registry.at(x, y).some((record) => record.span !== undefined);
+      builder.registry.at(x, y).some((record) =>
+        record.span !== undefined || record.aerial !== undefined);
 
     for (let y = 1; y < 127; y++) {
       for (let x = 1; x < 127; x++) {
@@ -1396,3 +1548,7 @@ function topSolid(world: VoxelWorld, x: number, y: number): number {
   }
   return -1;
 }
+
+
+
+

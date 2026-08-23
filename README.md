@@ -103,14 +103,14 @@ Una città matura è opaca: da inquadratura di gioco un isolato interno è un vo
 dietro altri volumi. Quattro viste la aprono, e sono **comandi di gioco**, non
 strumenti dell'harness: stanno nel dock sotto il pulsante *Views*, rispondono a
 `V` senza `?debug=1`, e la barra dei livelli compare sul bordo sinistro quando la
-vista taglia. Sono tutte lo stesso meccanismo — due predicati geometrici e un
-retino ordinato su `gl_FragCoord` con `discard`, governati da tre uniform del
+vista taglia. Sono tutte lo stesso meccanismo — tre predicati geometrici e un
+retino ordinato su `gl_FragCoord` con `discard`, governati da sei uniform del
 materiale unico. Nessuna geometria nuova, nessun rimesh, nessuno slot di palette
 in più.
 
 | Vista | `?inspect=` | Cosa apre |
 | --- | --- | --- |
-| **X-ray** | `xray` | Vela ciò che sta fra la camera e la colonna a fuoco, dentro una finestra di `INSPECT.xraySpan` colonne attorno a lei: si legge la sagoma davanti *e* il tessuto dietro. Essendo una finestra di **mondo**, si legge da vicino |
+| **X-ray** | `xray` | Vela ciò che **copre l'edificio** sotto il cursore: si legge la sagoma davanti *e* la cosa dietro. La finestra è la sagoma del soggetto, non un riquadro di mondo, quindi vale a ogni zoom e da ogni angolo |
 | **Levels** | `slice` | Taglia sopra una quota — la città al piano *n*, come in Going Medieval e Timberborn |
 | **Cutaway** | `section` | Taglia lungo un asse della griglia stradale, dal lato della camera: il piano cade su una carreggiata e mostra il fronte degli isolati |
 | **Block focus** | `block` | Vela tutto fuori dall'isolato sotto il cursore, che resta così nel suo contesto invece di finire su fondo neutro |
@@ -122,11 +122,30 @@ uno strumento chiude una vista che taglia, perché sotto un taglio si
 piazzerebbe alla cieca; le viste a velo sopravvivono, dato che lì il suolo si
 legge ancora.
 
+Chi guarda e chi costruisce puntano **cose diverse**, ed è una distinzione che
+costa un difetto quando si perde. Il raggio di chi piazza si ferma sulla terra,
+perché è lì che si costruisce; quello di chi guarda si ferma su ciò che vede,
+edifici compresi. Fermando anche il secondo sulla heightmap — com'era — puntare
+un grattacielo agganciava la vista alla terra *dietro* di lui, a tante colonne
+quanto la torre è alta, e la lente si apriva su un altro isolato.
+
 Velare e tagliare sono la stessa manopola: a densità 1 il retino scarta ogni
 pixel. Un taglio ha bisogno delle back-face per tapparsi — `DoubleSide` e
 `gl_FrontFacing` — e mostra un guscio vuoto, perché il mesher non emette facce
 interne. Finché un taglio è attivo le ombre proiettate si spengono: il piano
 appena scoperto resterebbe altrimenti all'ombra dei piani che si sono nascosti.
+
+La **lente** dei raggi X è il terzo predicato, e non è una regione: è il volume
+che si sta guardando, e il fragment chiede se lo *copre*. Continuando il raggio
+di vista da sé in avanti, se incontra il volume allora gli sta davanti — e gli
+sta davanti proprio a lui, non a un semipiano che gli passa vicino. Ne escono
+tre cose gratis: la finestra è esattamente la sagoma del soggetto a ogni zoom, il
+soggetto non può velare sé stesso (dall'interno il raggio è già cominciato), e la
+corda del test a lastre va a zero sul contorno della sagoma, quindi sfuma il
+bordo senza un secondo conto. Con la lente viaggia un **pavimento**: sotto la
+base del soggetto non si vela mai, perché dietro a un muro c'è la città ma dietro
+al terreno non c'è niente, e bucarlo apriva una macchia di cielo in mezzo
+all'isolato.
 
 Alla radice, oppure con `?grow=1`, il Cozy HUD mostra risorse e variazioni in alto,
 azioni di costruzione in basso e policy in un drawer laterale. Il dock è diviso

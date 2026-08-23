@@ -409,6 +409,80 @@ describe('generateBuilding', () => {
     }
   });
 
+  it('spezza in verticale la parete, e lo fa senza toccare volume ne\x27 superfici', () => {
+    // Il contratto della campata in una riga: e' vernice. Se cambiasse anche una
+    // superficie, cambierebbe la microgeometria — e una facciata che si paga in
+    // prismi non e' piu' l'operazione gratuita che questa regola dichiara di
+    // essere. Il volume identico e' la stessa cosa vista dal Builder: collisione,
+    // budget di chunk e cancellazione non si accorgono che esiste.
+    for (const cls of ALL_CLASSES) {
+      const profile = CLASS_PROFILE[cls];
+      const shared = { class: cls, level: BUILDER.maxLevel, seed: 4711 } as const;
+      const flat = generateBuilding({ ...shared, profile: { ...profile, bayPeriod: 0 } });
+      const bayed = generateBuilding({ ...shared, profile });
+
+      expect(bayed.sizeX).toBe(flat.sizeX);
+      expect(bayed.sizeZ).toBe(flat.sizeZ);
+      expect(solidCount(bayed)).toBe(solidCount(flat));
+      expect(Array.from(bayed.surfaces)).toEqual(Array.from(flat.surfaces));
+
+      // Un solo slot per edificio, e uno che contrasta davvero: normalmente e'
+      // la cornice, e sul civico accentato — dove corpo e cornice cadono sullo
+      // stesso vetro — e' il tono neutro della classe.
+      const introduced = new Set<number>();
+      let openings = 0;
+      for (let i = 0; i < flat.voxels.length; i++) {
+        if (flat.voxels[i] === bayed.voxels[i]) continue;
+        openings++;
+        introduced.add(bayed.voxels[i]);
+      }
+      expect(introduced.size).toBe(1);
+      expect([profile.bodyAlt, profile.body, profile.accent]).toContain([...introduced][0]);
+
+      // Un'apertura ogni due voxel di altezza, su quattro fronti: sotto, non e'
+      // una facciata ma una decorazione, e a distanza di gioco la torre torna
+      // la lastra da cui questa regola la tira fuori.
+      expect(openings).toBeGreaterThan(bayed.sizeZ / 2);
+    }
+  });
+
+  it('tiene pieni i cantonali e buca solo le colonne intermedie', () => {
+    // Con tutte le fasce a `keep` l'impronta resta il quadrato pieno a ogni
+    // quota: e' la sola configurazione in cui si puo' leggere una facciata senza
+    // prima ricostruire il riquadro della fascia. Il livello sta sotto
+    // `luminousFromLevel` apposta — con l'accento acceso una delle quattro pareti
+    // sarebbe una lama luminosa e non direbbe niente sulla campata.
+    const base = CLASS_PROFILE[ALL_CLASSES[0]];
+    const profile = {
+      ...base,
+      bayPeriod: 2,
+      shrinkOps: [BAND_OP.keep],
+      growOps: [BAND_OP.keep],
+    };
+    const stamp = generateBuilding({ class: ALL_CLASSES[0], level: 1, seed: 55, profile });
+    const side = stamp.sizeX;
+    const at = (sx: number, sy: number, sz: number): number =>
+      stamp.voxels[sx + side * (sy + side * sz)];
+
+    // Dentro la sola fascia uno: sopra il parapetto, sotto la cornice, e comunque
+    // sopra il piano terra, che la campata lascia allo zoccolo e al portale.
+    const from = Math.max(stamp.bandStarts[1] + GRAMMAR.spandrelHeight, GRAMMAR.portalHeight);
+    const to = stamp.bandStarts[2] - 2;
+    expect(to).toBeGreaterThanOrEqual(from);
+
+    let openings = 0;
+    for (let sz = from; sz <= to; sz++) {
+      for (const [sx, sy] of [[0, 0], [0, side - 1], [side - 1, 0], [side - 1, side - 1]]) {
+        // Il cantonale e' dove due fronti si incontrano ed e' dove
+        // `emitCornerPosts` appoggia il pilastrino: un'apertura li' sarebbe una
+        // finestra dentro un pilastro.
+        expect(at(sx, sy, sz)).not.toBe(profile.bodyAlt);
+      }
+      for (let sx = 1; sx < side - 1; sx++) if (at(sx, 0, sz) === profile.bodyAlt) openings++;
+    }
+    expect(openings).toBeGreaterThan(0);
+  });
+
   it('da\x27 a ogni uso una silhouette propria a parita di livello e seme', () => {
     // E' il gate della fase: i repertori sono per uso, quindi quattro usi sullo
     // stesso seme non possono uscire con lo stesso volume.

@@ -1,0 +1,396 @@
+import { PALETTE_SLOTS } from '../../engine/paletteSlots';
+
+/**
+ * Unica fonte di verita' dei numeri della citta' in quota.
+ *
+ * Vale la stessa regola di `terrain/config.ts`, `streets/config.ts`,
+ * `grading/config.ts` e `spans/config.ts`: nessun altro file di
+ * `src/world/aerial/` contiene uno sporto, una luce, un franco o un indice di
+ * palette.
+ *
+ * **Perche' esiste questo dominio.** Fino alla 4.5 la citta' sapeva sospendere
+ * una struttura fra due edifici gia' alti nello stesso punto, e non sapeva fare
+ * nient'altro in aria: nessuna mensola, nessun percorso piu' lungo di una
+ * strada, nessuna quota che non fosse quella di una campata. Il commento della
+ * regola delle campate dichiara il debito — «un impalcato con appoggi propri non
+ * deve aspettare che due torri diventino alte nello stesso punto» — e questo
+ * dominio e' quell'impalcato, in tutte le forme che prende.
+ *
+ * **Un impalcato in quota non prende suolo; lo prende solo la gamba che scende a
+ * terra.** E' l'invariante del dominio, ed e' il complemento esatto di quello di
+ * `spans/` («una campata non prende suolo»). Sotto una mensola o un percorso il
+ * suolo resta di chi ci sta: la carreggiata si dipinge ancora e i lotti si
+ * costruiscono ancora, tranne nelle due colonne di una gamba, che sono suolo
+ * preso come quello di un edificio.
+ *
+ * **Nessuna quota e' imposta da fuori.** L'aggetto prende la quota dalla sommita'
+ * di una fascia del proprio ospite, il tratto di percorso da dove i due corpi si
+ * affacciano davvero, la gamba dal primo appoggio che trova scendendo. Non esiste
+ * una griglia di livelli, e per la stessa ragione qui non esiste `align`: le
+ * campate l'hanno gia' tolto — allineare al cubo di terreno sposta l'impalcato di
+ * un voxel rispetto alla parete da cui parte, e le fasce rientrano centrate. Un
+ * lotto in quota eredita la fase dall'impalcato che lo ospita, non dal terreno.
+ */
+
+/**
+ * Le parti di cui la citta' in quota e' fatta.
+ *
+ * Sono quattro valori di un campo solo sul record, ed e' lo stampo esatto di
+ * `SPAN_KIND`: un flag dice quale forma si sta guardando, e occupazione,
+ * collisione, budget di chunk e comparsa a budget restano la macchina che c'e'
+ * gia'. Rispondono a due domande e non a una:
+ *
+ * - **prende suolo?** solo la gamba;
+ * - **ci si costruisce sopra?** tutto tranne il tratto di percorso e la gamba.
+ */
+export const AERIAL_PART = {
+  /** Mensola che sporge da un fronte: ci si sta, e ci si costruisce. */
+  terrace: 0,
+  /** Tratto di percorso: ci si passa, e non ci si costruisce mai. */
+  walk: 1,
+  /** Nodo fra due tratti, anche a quote diverse: ci si sta e ci si costruisce. */
+  node: 2,
+  /** Gamba, dal proprio piede fino sotto la travatura: l'unica che prende suolo. */
+  pier: 3,
+} as const;
+
+export type AerialPart = (typeof AERIAL_PART)[keyof typeof AERIAL_PART];
+
+/** true se questa parte occupa il suolo della propria colonna. */
+export function takesGround(part: AerialPart): boolean {
+  return part === AERIAL_PART.pier;
+}
+
+/** true se sopra questa parte puo' nascere un edificio. */
+export function isBuildable(part: AerialPart): boolean {
+  return part === AERIAL_PART.terrace || part === AERIAL_PART.node;
+}
+
+export const AERIAL = {
+  /**
+   * Spessore strutturale sotto il piano calpestabile.
+   *
+   * Come per la campata, e per la stessa ragione: **cio' che regge si vede**. Un
+   * piano da un voxel appeso a una parete legge come un vassoio, non come una
+   * terrazza; con due — un cubo di terreno — di taglio l'aggetto ha un'altezza
+   * propria e da sotto si vede che c'e' una trave a tenerlo su.
+   */
+  girderDepth: 2,
+
+  /**
+   * Voxel liberi fra la trave piu' bassa e cio' che c'e' sotto.
+   *
+   * Quattro, come le campate, e per la stessa ragione **misurata**: la 4.5 ha
+   * provato sei e otto, e non ha alzato le strutture — le ha cancellate. La
+   * fascia in cui una parete e' larga abbastanza da reggere un impalcato sta
+   * bassa, e ogni voxel di franco in piu' porta il piano sopra quella fascia.
+   */
+  clearance: 4,
+
+  /**
+   * Quanto il piano deve stare sopra il terreno della colonna piu' alta sotto.
+   *
+   * Sei voxel sono tre cubi: la soglia sotto cui un aggetto non legge come un
+   * piano di citta' ma come una tettoia sopra la testa. E' anche il `minRise`
+   * del ponte, e non e' un caso — sono la stessa domanda posta due volte.
+   */
+  minRise: 6,
+
+  /**
+   * Da quanto sotto la cima comincia la ricerca della quota d'attacco.
+   *
+   * Stessa idea di `SPANS.deckDrop`: salta il coronamento, che e' alto pochi
+   * voxel e gia' ristretto, quindi una mensola attaccata li' sarebbe un cornicione
+   * sul tetto invece di un piano che continua fuori dall'edificio.
+   */
+  deckDrop: 3,
+
+  /** L'aggetto: la mensola che sporge da un fronte. */
+  terrace: {
+    /**
+     * Corsa minima di parete a cui una mensola si attacca.
+     *
+     * Quattro voxel sono due cubi di terreno, cioe' la larghezza dell'impalcato
+     * di un ponte — «due filari di parapetto e due di passaggio, che e' un
+     * passaggio vero». Sotto, l'attacco e' piu' stretto della cosa che regge.
+     */
+    minRun: 4,
+
+    /**
+     * Sporto minimo e massimo, in voxel.
+     *
+     * Il minimo e' tre, cioe' la soglia di `GRAMMAR.terraceMinSide`: sotto, la
+     * pavimentazione mentirebbe e il parapetto sarebbe un bordo che nessuno legge
+     * come praticabile. Il massimo e' otto, l'impronta massima di un edificio:
+     * una mensola piu' profonda di cosi' non e' piu' un aggetto ma un edificio
+     * appeso, e a quel punto conviene che sia un edificio.
+     *
+     * **Il massimo esiste anche per farsi le gambe.** Oltre `reach` la mensola
+     * non sta piu' in piedi da sola, e `planDeck` le pianta un appoggio: e' cosi'
+     * che un aggetto grosso si costruisce i propri piloni senza una regola a
+     * parte per lui.
+     */
+    minOverhang: 3,
+    maxOverhang: 8,
+
+    /**
+     * Di quanto la parete d'attacco puo' essere rientrata dal filo dell'impronta.
+     *
+     * Gli edifici di questo progetto sono piramidali: piu' in alto si guarda, piu'
+     * la parete e' lontana dal filo. Una mensola attaccata a una fascia molto
+     * rientrata partirebbe dal centro dell'edificio e uscirebbe da tutti e due i
+     * lati — un cappello, non un aggetto. Tre voxel tengono la mensola sul piano
+     * della facciata, che e' cio' che la fa leggere come una cosa che sporge.
+     *
+     * E' anche il motivo per cui la mensola puo' invadere il rientro: quelle
+     * poche colonne sono la terrazza che la grammatica produce gia', e l'aggetto
+     * la continua verso fuori invece di ricominciarla accanto.
+     */
+    maxRecess: 3,
+
+    /**
+     * Quote su cui si prova a posare, dalla piu' alta in giu'.
+     *
+     * Il limite esiste per il costo, non per la forma: ogni tentativo e' una
+     * scansione del volume, e la quota buona — se c'e' — sta quasi sempre nelle
+     * prime. E' la stessa idea di `SPANS.plaza.attemptsPerPass`.
+     */
+    attempts: 4,
+
+    /**
+     * Mensole proposte al massimo da una passata, e tick fra due passate.
+     *
+     * Piu' rapida della rete perche' un aggetto chiede un edificio solo: e' il
+     * dettaglio che rende abitata la quota, e serve che ce ne siano molti perche'
+     * la citta' si legga intrecciata invece che punteggiata.
+     */
+    perPass: 2,
+    ticksPerPass: 16,
+    examinedPerPass: 64,
+
+    /**
+     * Mensole che un singolo edificio puo' portare.
+     *
+     * Una per fronte sarebbe quattro, e a quel punto l'edificio sparisce dentro
+     * le proprie terrazze. Due lasciano una silhouette che si legge ancora, e
+     * bastano perche' un percorso ci arrivi da due lati.
+     */
+    maxPerHost: 3,
+  },
+
+  /** La rete: percorsi lunghi con gambe proprie, fra edifici di isolati diversi. */
+  route: {
+    /** Larghezza di un tratto: la stessa del ponte, e per la stessa misura. */
+    walkWidth: 4,
+
+    /**
+     * Larghezza fino a cui un tratto si allarga invece di piegare.
+     *
+     * Due fronti sfalsati di poco non hanno bisogno di una zeta: il tratto si
+     * prende tutte e due le corse e diventa un viale in quota. Otto voxel sono
+     * l'impronta massima di un edificio — oltre, non e' piu' un percorso ma un
+     * impalcato, e per quello c'e' la mensola.
+     */
+    maxWidth: 8,
+
+    /**
+     * Lato di un nodo.
+     *
+     * Sei voxel sono tre cubi: il minimo perche' l'incrocio di due tratti larghi
+     * quattro sia un luogo e non una piega. E' anche la soglia da cui il cuore di
+     * un impalcato diventa verde, e da cui `MIN_FOOTPRINT` ci sta dentro: sul
+     * nodo si puo' costruire, ed e' voluto — sono i pianerottoli abitati che
+     * tengono su una rete invece dei semplici gomiti.
+     */
+    nodeSide: 6,
+
+    /**
+     * Distanza minima e massima, in voxel, fra i due edifici che un percorso lega.
+     *
+     * Il minimo e' il tetto delle campate: sotto quella distanza il collegamento
+     * lo fa gia' la 4.5, meglio e senza gambe, e duplicarlo darebbe due strutture
+     * per lo stesso vuoto. Il massimo sono tre passi d'isolato: **e' il punto
+     * della fase** — la rete attraversa piu' di un isolato — ma non mezza isola,
+     * o un percorso solo costerebbe piu' chunk di un quartiere.
+     */
+    minSeparation: 14,
+    maxSeparation: 66,
+
+    /**
+     * Dislivello massimo che un nodo assorbe.
+     *
+     * I due capi di un percorso quasi mai si affacciano alla stessa quota, e
+     * costringerli a farlo cancellerebbe la rete invece di spianarla — e' la
+     * lezione misurata del franco delle campate. Il nodo e' allora un
+     * pianerottolo che tiene due quote: quattro voxel sono due cubi, cioe' un
+     * salto che si legge come un mezzo piano e non come un dirupo.
+     */
+    stepPerNode: 8,
+
+    /**
+     * Pieghe massime di un percorso: la zeta e' la piu' complicata.
+     *
+     * E' la polilinea piu' articolata che si produca senza un pathfinding, che
+     * questo progetto non ha. Oltre non e' piu' un collegamento ma un giro.
+     */
+    maxTurns: 2,
+
+    /**
+     * Pianerottoli massimi di un percorso.
+     *
+     * Servono a **salire**, e sono una cosa diversa dalle pieghe: un percorso
+     * dritto fra due mensole a quote diverse ne ha bisogno tanto quanto uno che
+     * gira. Quattro coprono, a `stepPerNode` per volta, un dislivello di
+     * trentadue voxel — abbastanza per scavalcare un edificio che sta in mezzo,
+     * che e' esattamente il motivo per cui la corsa si alza.
+     */
+    maxNodes: 4,
+
+    /**
+     * Di quanto un pianerottolo puo' scorrere lungo la corsa per trovare posto.
+     *
+     * Sedici voxel — otto cubi — in avanti o indietro dalla posizione ideale. E'
+     * il numero che fa esistere la rete: un nodo e' un blocco alto quanto il
+     * salto che assorbe, e a distanze fisse finisce quasi sempre dentro qualcosa.
+     */
+    hubSlide: 16,
+
+    /**
+     * Percorsi proposti al massimo da una passata, e tick fra due passate.
+     *
+     * Piu' lenta della passata delle mensole: un percorso e' molti record e molti
+     * chunk, e proporne uno a ogni giro riempirebbe il cielo prima che sotto ci
+     * sia una citta' da collegare.
+     */
+    perPass: 1,
+    ticksPerPass: 24,
+    examinedPerPass: 64,
+
+    /** Percorsi che un singolo edificio puo' vedere arrivare. */
+    maxPerHost: 2,
+
+    /**
+     * Di quanto la parete d'atterraggio puo' essere rientrata dal filo.
+     *
+     * Molto piu' larga di quella di una mensola, e **misurato**. Gli edifici di
+     * questo progetto sono piramidali: alle quote alte la parete sta parecchio
+     * dentro il riquadro, e con il limite della mensola — tre voxel — l'unica
+     * parete che un percorso trovava era la sommita' del basamento. A quella
+     * quota una corsa lunga venti o quaranta voxel passa dentro tutto quello che
+     * incontra, e la rete restava a zero.
+     *
+     * Un percorso, a differenza di una mensola, non ha bisogno di stare sul
+     * piano della facciata: gli basta una parete su cui atterrare. Otto e'
+     * l'impronta massima, cioe' «ovunque dentro l'edificio».
+     */
+    maxRecess: 8,
+  },
+
+  /**
+   * Livello minimo perche' un edificio possa portare qualcosa in quota.
+   *
+   * **Chi regge non cresce**, quindi ospitare e' una rinuncia: l'edificio si
+   * ferma dov'e'. Chiedere che abbia gia' raggiunto il proprio tetto sarebbe la
+   * regola piu' pulita, ed e' misurato che non funziona — la gerarchia della 4.6
+   * alza il tetto man mano che il quartiere si riempie, e gli upgrade lo
+   * inseguono a `upgradesPerPass` per volta, quindi su una citta' che cresce
+   * quasi nessun edificio e' mai «arrivato»: su duecento infornate passavano
+   * ventotto record su ottocento esaminati.
+   *
+   * Quattro su dodici e' invece una soglia che si raggiunge presto e che
+   * garantisce comunque un corpo: sotto, l'ospite e' una casupola, e una mensola
+   * attaccata a una casupola e' piu' grande di lei.
+   */
+  minHostLevel: 3,
+
+  /**
+   * Sbalzo massimo, in voxel, fra una colonna di impalcato e il suo appoggio.
+   *
+   * E' il numero che decide **da solo** dove nascono le gambe: ogni colonna
+   * dev'essere entro questo raggio da una parete d'attacco o da una gamba, e dove
+   * non lo e' `planDeck` ne pianta una. Sei voxel sono tre cubi, cioe' la meta'
+   * della luce che la 4.5 aveva gia' dichiarato come confine («oltre quel lato
+   * servirebbe un appoggio in mezzo, che una campata per definizione non ha»).
+   *
+   * Ne segue, senza nessuna regola in piu': una mensola corta non ha gambe, una
+   * profonda se le conta da sola, un tratto lungo ne pianta una ogni tanto.
+   */
+  reach: 6,
+
+  /**
+   * Lato di una gamba, in voxel.
+   *
+   * Un cubo di terreno. A un voxel la gamba e' un filo e l'impalcato torna a
+   * sembrare sospeso — che e' esattamente cio' che questo dominio esiste per
+   * togliere; a quattro diventa un muro e sotto non ci si passa piu'.
+   */
+  pierSide: 2,
+
+  /**
+   * Di quanto una gamba puo' scorrere per cercare un appoggio migliore.
+   *
+   * **Una gamba si sposta per trovare un tetto.** Prima di piantarla nel prato la
+   * si prova qualche colonna piu' in la': se li' sotto c'e' un edificio, la gamba
+   * poggia sul suo tetto e il suolo resta libero. Non e' un vezzo — e' la
+   * correzione dell'errore misurato del primo tentativo, in cui le gambe piantate
+   * nei cuori d'isolato toglievano alla piazza della 4.5 il luogo per cui esiste.
+   */
+  nudge: 4,
+
+  /**
+   * Altezza massima di una gamba, in voxel.
+   *
+   * Ha lo stesso mestiere di `GRADING.maxWorksStep`: dice quanta struttura si e'
+   * disposti a costruire prima di rinunciare. Quarantotto voxel sono ventiquattro
+   * cubi — piu' del rilievo dell'isola e meno di una torre del centro.
+   */
+  maxPierHeight: 48,
+
+  /**
+   * Lato massimo di un segmento di comparsa, in voxel.
+   *
+   * **Gli impalcati grandi si spezzano, non si esentano.** Un percorso lungo
+   * sessanta voxel marcherebbe sporchi tutti i suoi chunk nello stesso frame;
+   * spezzato in riquadri da otto compare come compare un ponte, e il picco torna
+   * quello di una struttura sola.
+   */
+  segmentSide: 8,
+
+  /**
+   * Chunk che un singolo segmento puo' marcare sporchi.
+   *
+   * Lo stesso tetto di `SPANS.maxDirtyChunks`, e non e' un caso: da quando i
+   * segmenti esistono nessuna struttura ha piu' bisogno di un'eccezione — se un
+   * segmento non ci sta, e' `segmentSide` a doversi abbassare.
+   */
+  maxDirtyChunks: 24,
+
+  /**
+   * Larghezza da cui il cuore di un impalcato diventa verde.
+   *
+   * La stessa di `SPANS.plantedMinWidth`, e per la stessa ragione: sotto, il
+   * cuore e' tutto passaggio, e piantarlo lascerebbe due filari di aiuola senza
+   * un posto da cui guardarli. Un luogo comincia a esistere quando ci si sta.
+   */
+  plantedMinWidth: 6,
+
+  /** Piano calpestabile: e' suolo, e prende il colore di un suolo costruito. */
+  deckPalette: PALETTE_SLOTS.concreteLight,
+
+  /** Travatura e gambe: e' la struttura, e porta la grammatica delle infrastrutture. */
+  girderPalette: PALETTE_SLOTS.metalDark,
+  pierPalette: PALETTE_SLOTS.concrete,
+
+  /** Verde del cuore, con gli slot che la 4.3 usa gia' sui tetti. */
+  gardenPalette: PALETTE_SLOTS.grassLight,
+} as const;
+
+/** Voxel occupati in altezza da un impalcato piano: la travatura piu' il piano. */
+export const DECK_HEIGHT = AERIAL.girderDepth + 1;
+
+
+
+
+
+
+

@@ -14,6 +14,9 @@ export const CONTROL_HINTS: readonly ControlHint[] = [
   { keys: ['Drag'], action: 'Pan the camera' },
   { keys: ['F'], action: 'Frame the whole city' },
   { keys: ['V'], action: 'Cycle the views below' },
+  // Il tasto **e'** la risposta a «non torna mai giorno»: dice che l'ora e' una
+  // cosa che si decide, e non solo qualcosa che capita mentre si guarda.
+  { keys: ['L'], action: 'Hold the day, hold the night, or let the clock run' },
   // Una riga sola per i due usi, nell'ordine in cui Escape li prova: prima posa
   // lo strumento, poi esce dalla vista. Due righe separate direbbero che sono
   // due tasti, e chi legge non saprebbe quale dei due effetti aspettarsi.

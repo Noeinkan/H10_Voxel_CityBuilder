@@ -7,6 +7,7 @@ import {
   addBuilding,
   addCatalyst,
   createSimState,
+  removeBuildings,
   removeCatalyst,
   setCatalystStrength,
 } from './SimState';
@@ -177,6 +178,53 @@ describe('DesirabilityField — il percorso incrementale e la ricostruzione coin
     state = removeCatalyst(state, 1);
     expect(snapshot(state.field, BUILDING_CLASS.residential)).toEqual(before);
   });
+
+  it('togliere degli edifici riporta il campo a com’era prima di costruirli', () => {
+    let state = addCatalyst(createSimState(), catalyst({ x: 60, y: 60, strength: 200, radius: 18 }));
+    const before = [0, 1, 2].map((cls) => snapshot(state.field, cls as 0 | 1 | 2));
+    const occupiedBefore = state.field.occupiedCells;
+    const crowdBefore = state.field.crowdAt(62, 61);
+
+    const doomed = [
+      { x: 62, y: 61, class: BUILDING_CLASS.residential },
+      { x: 63, y: 61, class: BUILDING_CLASS.commercial },
+      { x: 62, y: 62, class: BUILDING_CLASS.residential },
+    ];
+    for (const building of doomed) state = addBuilding(state, building);
+    expect(snapshot(state.field, BUILDING_CLASS.residential)).not.toEqual(before[0]);
+
+    state = removeBuildings(state, doomed);
+
+    // Non "quasi": la congestione, l'occupazione e i valori tornano quelli di
+    // prima. E' l'equivalenza fra incrementale e ricostruzione, letta
+    // all'indietro — se valesse in una direzione sola non varrebbe.
+    expect([0, 1, 2].map((cls) => snapshot(state.field, cls as 0 | 1 | 2))).toEqual(before);
+    expect(state.field.occupiedCells).toBe(occupiedBefore);
+    expect(state.field.crowdAt(62, 61)).toBe(crowdBefore);
+    expect(state.field.stackAt(62, 61)).toBe(0);
+    expect(state.field.occupantAt(62, 61)).toBe(-1);
+  });
+
+  it('togliendone uno di due sulla stessa colonna, l’occupazione passa al superstite', () => {
+    let state = createSimState();
+    const first = { x: 70, y: 70, class: BUILDING_CLASS.residential };
+    const second = { x: 70, y: 70, class: BUILDING_CLASS.commercial };
+    state = addBuilding(state, first);
+    state = addBuilding(state, second);
+
+    // `occupancy` tiene l'uso del **primo** della colonna: togliendo proprio
+    // quello, la cella resterebbe tinta di un uso che non c'e' piu'.
+    expect(state.field.occupantAt(70, 70)).toBe(BUILDING_CLASS.residential);
+
+    state = removeBuildings(state, [first]);
+
+    expect(state.field.stackAt(70, 70)).toBe(1);
+    expect(state.field.occupantAt(70, 70)).toBe(BUILDING_CLASS.commercial);
+
+    const fresh = new DesirabilityField();
+    fresh.rebuild(state.catalysts, state.buildings, NO_POLICIES);
+    expect(state.field.occupantAt(70, 70)).toBe(fresh.occupantAt(70, 70));
+  });
 });
 
 describe('DesirabilityField — congestione e occupazione', () => {
@@ -210,19 +258,26 @@ describe('DesirabilityField — congestione e occupazione', () => {
     }
   });
 
-  it('una cella occupata non e’ libera, e non si occupa due volte', () => {
+  it('una cella occupata non e’ libera, e la seconda quota si impila', () => {
     let state = addBuilding(createSimState(), { x: 10, y: 10, class: BUILDING_CLASS.residential });
 
     expect(state.field.isFree(10, 10)).toBe(false);
     expect(state.field.isFree(11, 10)).toBe(true);
     expect(state.field.occupantAt(10, 10)).toBe(BUILDING_CLASS.residential);
     expect(state.field.occupiedCells).toBe(1);
+    expect(state.field.stackAt(10, 10)).toBe(1);
 
-    const before = state;
+    // **La cella occupata non e' piu' un rifiuto**: dalla 4.9 si costruisce
+    // sopra la citta', e a dire quante quote esistano e' il mondo — qui si
+    // contano quelle spese. Rifiutare qui significherebbe mettere nel campo la
+    // coordinata verticale che l'invariante 7 gli vieta.
     state = addBuilding(state, { x: 10, y: 10, class: BUILDING_CLASS.civic });
-    expect(state).toBe(before);
-    expect(state.buildings).toHaveLength(1);
+    expect(state.buildings).toHaveLength(2);
+    expect(state.field.stackAt(10, 10)).toBe(2);
+    // La cella resta **una** cella occupata, e conserva l'uso del primo: e' la
+    // tinta della heatmap, e non deve lampeggiare a ogni piano aggiunto.
     expect(state.field.occupiedCells).toBe(1);
+    expect(state.field.occupantAt(10, 10)).toBe(BUILDING_CLASS.residential);
   });
 
   it('non alloca chunk per celle che restano a zero', () => {

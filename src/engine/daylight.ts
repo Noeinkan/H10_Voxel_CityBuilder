@@ -1,4 +1,4 @@
-import type { Atmosphere } from './themes/theme';
+import type { Atmosphere, Water } from './themes/theme';
 
 /**
  * Ciclo giorno/notte, in TypeScript puro.
@@ -26,6 +26,14 @@ import type { Atmosphere } from './themes/theme';
  * l'ambiente di cielo, che slava la scena invece di salvarla. Quello che il
  * ciclo garantisce, e che `daylight.test.ts` verifica a ogni ora, e' che il
  * tetto non diventi mai la faccia **piu' scura**: li' il volume si perderebbe.
+ *
+ * **L'acqua e' uno specchio, quindi e' un'ora e non una materia.** E' l'unica
+ * eccezione alla riga qui sopra, e si e' vista subito a schermo: il riflesso
+ * scritto nel tema e' una tinta di mezzogiorno, e mescolarla a un mare
+ * notturno quasi nero disegnava un quadrettato chiaro sulla superficie piu'
+ * larga dell'inquadratura — l'increspatura non era cambiata, era cambiato solo
+ * il fondo su cui si stampava. Di notte il riflesso vira alla luna e l'onda
+ * cala: quello che resta e' quanto il mare riflette, che e' poco.
  */
 
 /**
@@ -38,6 +46,26 @@ import type { Atmosphere } from './themes/theme';
 export const DAYLIGHT = {
   sunrise: 6,
   sunset: 19,
+  /**
+   * Le due ore su cui il giocatore puo' fermare l'orologio.
+   *
+   * Non sono mezzogiorno e mezzanotte: `dayHour` e' l'ora con cui i temi sono
+   * stati disegnati — il sole sta ancora sopra la soglia in cui il tetto e' la
+   * faccia piu' chiara — e `nightHour` e' notte piena con la citta' accesa,
+   * mentre a mezzanotte in punto non c'e' niente di piu' da vedere.
+   */
+  dayHour: 13,
+  nightHour: 22,
+  /**
+   * Secondi reali di un giorno di gioco.
+   *
+   * Dodici minuti: abbastanza lenti perche' un'ora di gioco duri mezzo minuto e
+   * la luce non strobi, abbastanza veloci perche' chi guarda la citta' per una
+   * partita veda sia il mezzogiorno sia la notte senza chiederlo. Sta qui e non
+   * in `main.ts` perche' l'HUD lo dice al giocatore, e due copie di questo
+   * numero vorrebbero dire una promessa e una durata diverse.
+   */
+  daySeconds: 720,
   /** Ampiezza dello spazzamento dell'azimut, in gradi, da alba a tramonto. */
   azimuthSweep: 180,
   /** Sotto questa elevazione e' notte piena; sopra la seconda e' giorno pieno. */
@@ -72,9 +100,69 @@ export const DAYLIGHT = {
   nightSkyHorizon: '#1b2749',
   nightBackground: '#080d20',
   nightCloud: '#2b3760',
+  /**
+   * Il riflesso dell'acqua a notte piena: la luna, non il sole.
+   *
+   * Poco piu' chiaro di `nightSkyHorizon`, perche' uno specchio d'acqua rende
+   * un filo piu' di quello che ha sopra e sotto quella soglia l'onda sparisce.
+   */
+  nightWater: '#2c3f6b',
+  /** Quanto resta dell'increspatura a notte piena: l'acqua ferma riflette e basta. */
+  nightWaterScale: 0.6,
   /** Tinta verso cui vira il sole radente, all'alba e al tramonto. */
   duskSun: '#ff9a55',
 } as const;
+
+/**
+ * Cosa fa l'orologio: cammina, oppure sta fermo su un'ora.
+ *
+ * Il ciclo e' il modo naturale, ma non e' l'unico che si vuole: chi guarda la
+ * propria citta' di notte non vuole aspettare cinque minuti perche' torni
+ * giorno, e chi la sta costruendo non vuole che il sole tramonti mentre sceglie
+ * dove mettere un porto. Sono i due modi fissi, e sono ore vere del ciclo — non
+ * un secondo look — quindi tutto quello che l'ora produce vale identico.
+ */
+export const DAYLIGHT_MODE = {
+  cycle: 'cycle',
+  day: 'day',
+  night: 'night',
+} as const;
+
+export type DaylightMode = (typeof DAYLIGHT_MODE)[keyof typeof DAYLIGHT_MODE];
+
+/** L'ordine in cui il bottone dell'HUD li fa girare. */
+export const DAYLIGHT_MODES: readonly DaylightMode[] = [
+  DAYLIGHT_MODE.cycle,
+  DAYLIGHT_MODE.day,
+  DAYLIGHT_MODE.night,
+];
+
+const MODE_HOUR: Readonly<Record<DaylightMode, number | null>> = {
+  [DAYLIGHT_MODE.cycle]: null,
+  [DAYLIGHT_MODE.day]: DAYLIGHT.dayHour,
+  [DAYLIGHT_MODE.night]: DAYLIGHT.nightHour,
+};
+
+/**
+ * L'ora su cui un modo ferma l'orologio, `null` se lo lascia camminare.
+ *
+ * `null` e non l'ora corrente: chi torna al ciclo riprende da dove il sole era
+ * rimasto, e restituire un numero qui vorrebbe dire farlo saltare.
+ */
+export function modeHour(mode: DaylightMode): number | null {
+  return MODE_HOUR[mode];
+}
+
+/** Il modo dopo questo, in cerchio: e' un bottone solo, non tre. */
+export function nextDaylightMode(mode: DaylightMode): DaylightMode {
+  const index = DAYLIGHT_MODES.indexOf(mode);
+  return DAYLIGHT_MODES[(index + 1) % DAYLIGHT_MODES.length];
+}
+
+/** Legge il modo da un parametro URL. Qualunque altra cosa e' il ciclo. */
+export function resolveDaylightMode(raw: string | null): DaylightMode {
+  return DAYLIGHT_MODES.find((mode) => mode === raw) ?? DAYLIGHT_MODE.cycle;
+}
 
 /** Ora normalizzata in [0, 24): accetta valori fuori scala e giri interi. */
 export function normaliseHour(hour: number): number {
@@ -121,9 +209,9 @@ export function nightFactor(hour: number, peak: number): number {
 /**
  * L'atmosfera del tema portata a quest'ora.
  *
- * Tocca **solo** cio' che l'ora cambia davvero: luce, cielo, nebbia, ombra ed
- * emissivi. Acqua, vetro, AO, jitter, tone mapping ed esposizione restano quelli
- * del tema — sono la sua materia, non la sua ora.
+ * Tocca **solo** cio' che l'ora cambia davvero: luce, cielo, nebbia, ombra,
+ * emissivi e il riflesso dell'acqua. Vetro, AO, jitter, tone mapping ed
+ * esposizione restano quelli del tema — sono la sua materia, non la sua ora.
  */
 export function withHour(atmosphere: Atmosphere, hour: number): Atmosphere {
   const peak = atmosphere.sun.elevation;
@@ -173,6 +261,10 @@ export function withHour(atmosphere: Atmosphere, hour: number): Atmosphere {
       // da alonare, e quello che resta e' il chiarore dell'ultima luce.
       sunGlow: atmosphere.sky.sunGlow * lerp(0.15, 1, day),
     },
+    // Il mare non ha un colore proprio: ha quello di cio' che riflette. Il
+    // riflesso del tema e' di mezzogiorno, e lasciarlo acceso su un mare
+    // notturno stampava un quadrettato chiaro largo quanto l'inquadratura.
+    water: atmosphere.water === undefined ? undefined : waterAtHour(atmosphere.water, reach, day),
     // Un sole sotto l'orizzonte non proietta ombre. Spegnerla e' anche cio' che
     // evita la shadow map che si allunga all'infinito a sole radente.
     shadow: atmosphere.shadow === undefined
@@ -184,6 +276,29 @@ export function withHour(atmosphere: Atmosphere, hour: number): Atmosphere {
       day,
     ),
   };
+}
+
+/**
+ * L'acqua del tema portata a quest'ora.
+ *
+ * Due cose e non una: la **tinta** vira alla luna, e l'**ampiezza**
+ * dell'increspatura cala. La prima da sola non bastava — un'onda al pieno della
+ * sua forza resta un disegno geometrico anche in blu scuro — e la seconda da
+ * sola avrebbe lasciato un mare grigio-verde di giorno pieno a mezzanotte.
+ *
+ * Il riflesso del sole (`glitter`) non compare qui: nello shader e' moltiplicato
+ * per il colore del sole, che l'ora ha gia' premoltiplicato per un'intensita'
+ * nulla. Spegnerlo una seconda volta sarebbe una manopola che non si vede.
+ */
+function waterAtHour(water: Water, reach: number, day: number): Water {
+  const dimmed: Water = {
+    ...water,
+    highlight: mixHex(water.highlight, DAYLIGHT.nightWater, reach),
+    strength: water.strength * lerp(DAYLIGHT.nightWaterScale, 1, day),
+  };
+  return water.shallowTint === undefined
+    ? dimmed
+    : { ...dimmed, shallowTint: mixHex(water.shallowTint, DAYLIGHT.nightWater, reach) };
 }
 
 /** Miscela due colori `#rrggbb`. In spazio sRGB: e' un colore d'autore, non un integrale. */

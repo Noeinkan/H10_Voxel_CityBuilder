@@ -27,6 +27,7 @@ radice `/` avvia isola, crescita e Cozy HUD con gli overlay tecnici nascosti.
 | `quality` | — | `performance` toglie le pass aggiuntive e dimezza le draw call |
 | `theme` | — | `<id>` sceglie il tema; vale **anche senza** `debug`, è un look, non una misura |
 | `hour` | — | `<0..24>` fissa l'ora e **ferma** il ciclo giorno/notte; vale anche senza `debug` |
+| `daylight` | `cycle` | `day` o `night` fermano l'orologio sull'ora del modo; è la stessa scelta del bottone nell'HUD e vale anche senza `debug` |
 | `inspect` | — | `xray`, `slice`, `section`, `block`: apre una vista di ispezione. Vale **anche senza** `debug` — è così che uno strumento di cattura inquadra una sezione senza overlay |
 | `slice` | — | `<z>` fissa la quota della fetta; senza, segue il suolo che si sta guardando |
 
@@ -36,12 +37,26 @@ L'ora avanza da sola: un giorno di gioco dura **dodici minuti reali**, e parte
 dalle 13, l'ora con cui i temi sono stati disegnati. `H` la sposta di un'ora
 avanti, `Shift+H` indietro; `?hour=21.5` la fissa e ferma il ciclo.
 
-Il tema resta la firma e l'ora la modula: `neon` a mezzogiorno resta `neon`.
-Quello che l'ora cambia sono luce, cielo, nebbia, ombra ed emissivi — mai
-palette, materia o tone mapping, quindi **non ricompila niente e non tocca una
-geometria**. Il modello è puro e vive in `src/engine/daylight.ts`.
+**L'orologio si può anche fermare, ed è una funzione di gioco.** Tre modi —
+`cycle`, `day`, `night` — dal bottone accanto alla velocità nell'HUD, dal tasto
+`L` (fuori dal gate del debug, come `V`) o da `?daylight=night`. I due modi fissi
+non sono un secondo look: sono le ore vere `DAYLIGHT.dayHour` e `nightHour`, e
+tutto quello che l'ora produce vale identico. Tornando al ciclo il sole riparte
+da dov'era. Il primo comando di gioco **scioglie** un `?hour=` in coda all'URL:
+un bottone che non risponde è peggio di un parametro perso.
 
-Due cose da sapere:
+Il tema resta la firma e l'ora la modula: `neon` a mezzogiorno resta `neon`.
+Quello che l'ora cambia sono luce, cielo, nebbia, ombra, emissivi e il riflesso
+dell'acqua — mai palette, materia o tone mapping, quindi **non ricompila niente
+e non tocca una geometria**. Il modello è puro e vive in
+`src/engine/daylight.ts`.
+
+Tre cose da sapere:
+
+- **l'acqua è l'unica materia che l'ora tocca**, e non è un capriccio: il mare
+  ha il colore di ciò che riflette. Con la tinta di mezzogiorno accesa su un
+  fondo notturno l'increspatura smetteva di leggersi come un'onda e diventava un
+  quadrettato chiaro largo quanto l'inquadratura;
 
 - a sole radente **una parete illuminata supera il tetto**, che è il caso da cui
   `SunLight.elevation` mette in guardia. Non è un difetto: è un'ora del giorno.
@@ -49,6 +64,10 @@ Due cose da sapere:
 - `__voxelSun(azimuth, elevation)` continua a esistere ed è un'altra cosa: scrive
   una posizione e basta, per autorare un tema. L'orologio la sovrascrive al
   prossimo scatto.
+
+`__voxelHour()` legge tutto e scrive di entrambi i lati: un numero è un'ora
+(`__voxelHour(21.5)`), una stringa è un modo (`__voxelHour('night')`). Riporta
+`hour`, `mode`, `pinned` e la fase del giorno.
 
 ## La scena `diorama`
 
@@ -80,10 +99,13 @@ dell'inquadratura se il cursore è fuori dalla canvas), rotella zoom, drag destr
 o `WASD` pan, `F` inquadra tutto, `G` +64 chunk, `R` rebuild totale, `C` azzera
 i picchi, `B` colore per bioma, `H`/`Shift+H` sposta l'ora, `1`..`9` sceglie il tema, `T`/`P`/`M` in scena
 simulazione. `__simClass(i)` e il tasto `M` ciclano su quattro usi, non tre.
+Con un isolato scelto in Block focus il drag **orbita** invece di panare, `Q`/`E`
+girano a passi continui e `F` e `WASD` restano fermi: vedi *Viste di ispezione*.
 
 **Fuori dal gate del debug**, perché sono comandi di gioco e non misure: `V`
-cicla le viste, `[`/`]` e `PageDown`/`PageUp` muovono la quota della fetta
-(`Shift` per un piano intero). Rispondono anche alla radice, senza `?debug=1`.
+cicla le viste, `L` cicla i modi del giorno (ciclo, giorno fisso, notte fissa),
+`[`/`]` e `PageDown`/`PageUp` muovono la quota della fetta (`Shift` per un piano
+intero). Rispondono anche alla radice, senza `?debug=1`.
 
 ## Viste di ispezione
 
@@ -98,6 +120,15 @@ sta nel dock, le etichette che il giocatore legge vivono in
 colonna a fuoco, id dell'isolato, densità del retino, nota sulle ombre. Le due
 superfici chiamano le stesse `setInspectMode` / `setInspectSliceZ`: è la regola
 di questa cartella, due letture separate divergono al primo refactor.
+
+**Block focus ha due tempi.** Puntando un isolato lo si vela; **cliccandolo** lo
+si *sceglie*, e allora la stessa vista taglia: fuori dal riquadro non resta
+niente, la camera inquadra l'isolato e il trascinamento **gira attorno a lui**
+invece di panare — inclinazione libera fra 12° e 82°, `Q`/`E` a passi continui,
+`F` e il pan da tastiera sospesi. `Esc` molla l'isolato e lascia accesa la vista,
+un secondo `Esc` la spegne; un clic su un altro isolato cambia soggetto tenendo
+l'angolo. Uscendo, l'inquadratura di partenza viene rimessa identica. Il referto
+tecnico e `__voxelInspect()` riportano entrambi `locked`.
 
 Velare e tagliare sono la stessa manopola: a densità 1 il retino scarta ogni
 pixel. Tre cose da sapere prima di stupirsi:

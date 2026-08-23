@@ -109,11 +109,13 @@ map.columnAt(120, 96); // { height, biome, slope, buildable }
 | [VoxelMaterial.test.ts](src/engine/VoxelMaterial.test.ts) | Ogni uniform dichiarato nel GLSL esiste davvero, su entrambe le varianti; cambiare tema non ricompila il programma; il retino entra solo alla prima vista attivata | — |
 | [lighting.ts](src/engine/lighting.ts) | Modello di luce in TS puro: direzione del sole, diffusa avvolgente, luminanza per faccia | `sunDirection`, `faceLight`, `faceLuminance`, `wrapDiffuse`, `FACE_NORMALS` |
 | [lighting.test.ts](src/engine/lighting.test.ts) | Tiene allineate la copia TS e quella GLSL del modello | — |
-| [daylight.ts](src/engine/daylight.ts) | Ciclo giorno/notte in TS puro: traiettoria del sole dall'ora, fase del giorno dall'altezza, atmosfera derivata | `DAYLIGHT`, `dayPhase`, `nightFactor`, `sunElevation`, `sunAzimuth`, `withHour`, `mixHex`, `normaliseHour` |
-| [daylight.test.ts](src/engine/daylight.test.ts) | Mezzogiorno identico al tema, sole che sorge a est, crepuscolo continuo, tetto mai la faccia piu' scura, temi che restano distinti di notte | — |
+| [daylight.ts](src/engine/daylight.ts) | Ciclo giorno/notte in TS puro: traiettoria del sole dall'ora, fase del giorno dall'altezza, atmosfera derivata (riflesso dell'acqua compreso), tre modi dell'orologio | `DAYLIGHT`, `DAYLIGHT_MODE`, `DAYLIGHT_MODES`, `DaylightMode`, `dayPhase`, `nightFactor`, `sunElevation`, `sunAzimuth`, `withHour`, `modeHour`, `nextDaylightMode`, `resolveDaylightMode`, `mixHex`, `normaliseHour` |
+| [daylight.test.ts](src/engine/daylight.test.ts) | Mezzogiorno identico al tema, sole che sorge a est, crepuscolo continuo, tetto mai la faccia piu' scura, temi che restano distinti di notte, riflesso dell'acqua che segue l'ora, giro dei tre modi | — |
 | [atmosphere.ts](src/engine/atmosphere.ts) | Prospettiva aerea in TS puro: densita' esponenziale in quota, integrata in forma chiusa lungo il raggio, piu' il velo di quota | `fogShape`, `fogOpticalDepth`, `fogAmount`, `fogAltitudeLift`, `fogVeil`, `FogModel`, `FOG_FLAT_EPSILON`, `FOG_LIFT_SHARPNESS` |
 | [atmosphere.test.ts](src/engine/atmosphere.test.ts) | A pari distanza il frammento alto riceve meno velo; continuita' del ramo limite; composizione per trasmittanza | — |
-| [inspect.ts](src/engine/inspect.ts) | Viste di ispezione in TS puro: dal modo attivo ai due predicati e alla densita' del retino. **Ogni** numero del dominio | `INSPECT`, `INSPECT_MODE`, `INSPECT_MODES`, `INSPECT_NAMES`, `inspectUniforms`, `sectionAxis`, `cycleInspectMode`, `parseInspectMode`, `clampSliceZ`, `isCut`, `modeCuts`, `modeHasLevel`, `isActive`, `isBoundedRect`, `inspectGuide`, `InspectMode`, `InspectState`, `InspectUniforms`, `InspectGuide` |
+| [nightWindows.ts](src/engine/nightWindows.ts) | Come si accende una facciata di notte, in TS puro: tetto alla quota accesa, carattere per torre, piani interi contro finestre sparse. **Ogni** numero del dominio | `NIGHT_WINDOWS`, `litShare`, `towerBias` |
+| [nightWindows.test.ts](src/engine/nightWindows.test.ts) | Citta' vuota al buio, quota che cresce e non torna indietro, nessuna torre che accende tutto, soglia del piano dentro l'intervallo utile | — |
+| [inspect.ts](src/engine/inspect.ts) | Viste di ispezione in TS puro: dal modo attivo ai tre predicati e alla densita' del retino. **Ogni** numero del dominio | `INSPECT`, `INSPECT_MODE`, `INSPECT_MODES`, `INSPECT_NAMES`, `inspectUniforms`, `lensChord`, `sectionAxis`, `cycleInspectMode`, `parseInspectMode`, `clampSliceZ`, `isCut`, `needsCap`, `isOpenPlane`, `modeCuts`, `modeHasLevel`, `isActive`, `isBoundedRect`, `inspectGuide`, `InspectMode`, `InspectState`, `InspectUniforms`, `InspectGuide`, `InspectBox` |
 | [inspect.test.ts](src/engine/inspect.test.ts) | Tiene allineate la copia TS e quella GLSL del predicato | — |
 | [SunShadow.ts](src/engine/SunShadow.ts) | Shadow map ortografica del sole: fitting sull'AABB visibile, aggancio ai texel, materiale di sola profondita' | `createSunShadow`, `SunShadowHandle` |
 | [PostProcessing.ts](src/engine/PostProcessing.ts) | Composer sempre attivo: bloom, tilt-shift, tone mapping in `OutputPass` | `createPostProcessing`, `PostProcessingHandle` |
@@ -127,8 +129,8 @@ map.columnAt(120, 96); // { height, biome, slope, buildable }
 | [InspectGuides.ts](src/engine/InspectGuides.ts) | Le linee che dicono dove e' puntata una vista: riquadro, carreggiata della sezione, colonna a fuoco | `InspectGuides` |
 | [PlacementCursor.ts](src/engine/PlacementCursor.ts) | Segnaposto sotto il puntatore: base, mirino, onda e fascio, sempre sopra la scena | `PlacementCursor` |
 | [PlacementCursor.test.ts](src/engine/PlacementCursor.test.ts) | Posizione sulla colonna, stato valido/rifiutato, esclusione dalla profondita' | — |
-| [IsoCameraController.ts](src/engine/IsoCameraController.ts) | Ortografica isometrica: scatti di 90°, zoom, pan vincolato all'AABB | `IsoCameraController`, `IsoCameraOptions` |
-| [IsoCameraController.test.ts](src/engine/IsoCameraController.test.ts) | Contratto dei pulsanti pointer accettati per il pan | — |
+| [IsoCameraController.ts](src/engine/IsoCameraController.ts) | Ortografica isometrica: scatti di 90°, zoom, pan vincolato all'AABB, piu' il modo **orbita** per studiare un soggetto (yaw continuo, inclinazione 12°-82°, cattura e ripristino dell'inquadratura) | `IsoCameraController`, `IsoCameraOptions`, `IsoCameraState` |
+| [IsoCameraController.test.ts](src/engine/IsoCameraController.test.ts) | Contratto dei pulsanti pointer accettati per il pan, perno della rotazione sotto il cursore, orbita attorno al target con inclinazione clampata e ripristino identico | — |
 | [palette.ts](src/engine/palette.ts) | Caricamento della palette, validazione, HMR a caldo | `paletteHex`, `toPaletteArray`, `isValidHexColor`, `onPaletteChanged` |
 | [paletteSlots.ts](src/engine/paletteSlots.ts) | I 32 slot nominati | `PALETTE_SLOTS`, `PALETTE_SIZE` |
 | [palette.json](src/engine/palette.json) | I 32 colori. Modificarlo a caldo non rimesha niente | — |
@@ -331,6 +333,35 @@ planPlaza({ rect, supports, ground, solid });              // stessa forma
 widestReach(registry.spans, blockOf);                      // isolati raggiunti: >= 2 passa il gate
 ```
 
+## `src/world/aerial/` — la citta' in quota
+
+La prima cosa del progetto che **sporge oltre l'impronta** di un edificio: una
+mensola appesa a una facciata, e sopra di lei si costruisce. Da qui l'invariante
+del dominio — **un impalcato in quota non prende suolo; lo prende solo la gamba
+che scende a terra** — che e' il complemento esatto di quello di `spans/`. Sotto
+una mensola la carreggiata si dipinge ancora e i lotti si costruiscono ancora,
+tranne nelle due colonne di una gamba.
+
+**Nessuna quota e' imposta da fuori**: la mensola la prende dalla sommita' di una
+fascia del proprio ospite, la gamba dal primo appoggio che trova scendendo. Non
+c'e' una griglia di livelli, e per la stessa ragione qui non esiste `align`.
+
+| File | Ruolo | Esporta |
+| --- | --- | --- |
+| [config.ts](src/world/aerial/config.ts) | **Ogni** sporto, luce, franco, cadenza e indice di palette | `AERIAL`, `AERIAL_PART`, `AerialPart`, `DECK_HEIGHT`, `takesGround`, `isBuildable` |
+| [deckPlan.ts](src/world/aerial/deckPlan.ts) | Il primitivo: dato un riquadro e una quota, dove servono le gambe | `planDeck`, `deckBaseZ`, `tileDeck`, `surveyFooting`, `rectsOverlap`, `DECK_REFUSALS`, `DeckPlan`, `DeckQuery`, `DeckRect`, `DeckRefusal`, `AerialColumn`, `AerialProbe`, `Pier` |
+| [terracePlan.ts](src/world/aerial/terracePlan.ts) | L'aggetto: da un edificio e un fronte al riquadro che sporge | `planTerrace`, `faceRuns`, `wallRect`, `overhangOf`, `faceAxis`, `faceOutward`, `AERIAL_FACE`, `AERIAL_FACES`, `TerracePlan`, `TerraceQuery`, `AerialSupport`, `FaceRun` |
+| [routePlan.ts](src/world/aerial/routePlan.ts) | La rete: un percorso dritto fra due mensole, con pianerottoli e gambe | `planRoute`, `ROUTE_REFUSALS`, `RoutePlan`, `RouteQuery`, `RouteEnd`, `RoutePiece`, `RouteRefusal` |
+| [decks.ts](src/world/aerial/decks.ts) | Le quote edificabili di una colonna, ciascuna con il proprio riquadro | `decksAt`, `BuildDeck`, `DeckSource` |
+| [generate.ts](src/world/aerial/generate.ts) | Uno stamp per tutte e tre le forme: travatura, piano, parapetto, verde | `generateDeck`, `generatePier` |
+| [testProbe.ts](src/world/aerial/testProbe.ts) | Un luogo finto per i test puri: pareti, tetti, carreggiate | `TestGround` |
+
+```ts
+planTerrace({ host, faces, ground, solid });   // { ok, plan } | { ok: false, refusal }
+planDeck({ rect, deckZ, anchors, drop, ... }); // le gambe che lo sbalzo richiede
+decksAt(registry.at(x, y), groundZ);           // suolo piu' le quote che passano di qui
+```
+
 ## `src/world/buildings/` — crescita voxel
 
 Ponte tra candidati della simulazione e mondo renderizzato: convalida il terreno,
@@ -340,11 +371,11 @@ gestisce le impronte, costruisce a fasce entro un budget e promuove gli edifici.
 | --- | --- | --- |
 | [Builder.ts](src/world/buildings/Builder.ts) | Consuma i candidati, scrive voxel, coordina le crescite e piazza i landmark dei catalizzatori | `Builder`, `BuilderStats`, `REJECT_REASONS` |
 | [BuildingRegistry.ts](src/world/buildings/BuildingRegistry.ts) | Indice spaziale e record degli edifici; impronte rettangolari e landmark contati a parte | `BuildingRegistry`, `BuildingRecord`, `footprintDepth` |
-| [generate.ts](src/world/buildings/generate.ts) | Generatore deterministico di stamp voxel: fasce da una tabella di trasformazioni, cinque cime, terrazze e giardini sulle rientranze | `generateBuilding`, `startLevel`, `BuildingRequest` |
+| [generate.ts](src/world/buildings/generate.ts) | Generatore deterministico di stamp voxel: fasce da una tabella di trasformazioni, cinque cime, terrazze e giardini sulle rientranze, campate di facciata sulle pareti | `generateBuilding`, `startLevel`, `BuildingRequest` |
 | [cluster.ts](src/world/buildings/cluster.ts) | A cosa si aggrega un lotto: quota e corso di base condivisi con i vicini di fronte. Puro, e il rifiuto è il gradino | `planCluster`, `joinsCluster`, `ClusterTerms`, `ClusterRequest` |
 | [typology.ts](src/world/buildings/typology.ts) | Sceglie la tipologia dal luogo; nessun numero, solo la regola | `selectTypology`, `typologyProfile`, `typologyShape`, `typologiesForUses`, `TypologyQuery` |
 | [stamp.ts](src/world/buildings/stamp.ts) | Volume voxel, ancora 3D e conversione in coordinate mondo | `VoxelStamp`, `VoxelAnchor`, `anchoredVoxel`, `STAMP_EMPTY` |
-| [config.ts](src/world/buildings/config.ts) | Cadenze, impronte, grammatica verticale, repertorio delle trasformazioni di fascia, cime, aggregazione, profili visivi e **catalogo delle tipologie** | `BUILDER`, `CLUSTER`, `GRAMMAR`, `BAND_OP`, `CROWN_KIND`, `LEVEL_CAPS`, `MIN_FOOTPRINT`, `MAX_FOOTPRINT`, `START_LEVEL_CDF`, `CLASS_PROFILE`, `TYPOLOGIES`, `DEFAULT_BUILDING_FORM`, `DEFAULT_TYPOLOGY_SHAPE`, `typologyById` |
+| [config.ts](src/world/buildings/config.ts) | Cadenze, impronte, grammatica verticale, repertorio delle trasformazioni di fascia, cime, campate di facciata, aggregazione, profili visivi e **catalogo delle tipologie** | `BUILDER`, `CLUSTER`, `GRAMMAR`, `BAND_OP`, `CROWN_KIND`, `LEVEL_CAPS`, `MIN_FOOTPRINT`, `MAX_FOOTPRINT`, `START_LEVEL_CDF`, `CLASS_PROFILE`, `TYPOLOGIES`, `DEFAULT_BUILDING_FORM`, `DEFAULT_TYPOLOGY_SHAPE`, `typologyById` |
 
 ## `src/game/` — ciclo di gioco
 
@@ -354,7 +385,7 @@ gestisce le impronte, costruisce a fasce entro un budget e promuove gli edifici.
 | [growthScene.ts](src/game/growthScene.ts) | Cablaggio esclusivo di `grow=1`: tick, Builder e animazione | `GrowthScene`, `GrowthStats` |
 | [launchMode.ts](src/game/launchMode.ts) | Risoluzione pura della modalita' iniziale e degli harness URL | `resolveLaunchMode`, `LaunchMode` |
 | [actions.ts](src/game/actions.ts) | Azioni economiche atomiche: catalizzatori, policy, decisioni, commercio ed espansione | `placeCatalyst`, `catalystFailure`, `catalystSiteCost`, `togglePolicy`, `chooseDecision`, `changeTradeMode`, `buyExpansion`, `expansionFailure`, `SiteCost`, `ActionResult`, `ActionFailure` |
-| [surfacePick.ts](src/game/surfacePick.ts) | Selezione pura della colonna sulla heightmap da un raggio 3D | `pickSurfaceCell` |
+| [surfacePick.ts](src/game/surfacePick.ts) | Selezione pura della colonna da un raggio 3D: sulla sola heightmap per chi costruisce, sugli edifici compresi per chi guarda | `pickSurfaceCell`, `pickSolidCell`, `Ray3`, `SurfaceCell`, `BuiltTop` |
 | [onboarding.ts](src/game/onboarding.ts) | Tutorial derivato dai catalizzatori, senza flag nascosti | `onboardingOf`, `onboardingAllows` |
 | [cityCondition.ts](src/game/cityCondition.ts) | Obiettivo di autosufficienza e crisi con indicazioni di recupero | `cityCondition`, `isSelfSufficient` |
 | [sectors.ts](src/game/sectors.ts) | Identità, region e maschera composta dei settori costieri | `coastalSectorAt`, `shapeWithSector` |
@@ -370,14 +401,14 @@ giocabile; gli overlay tecnici si alternano con `F3` o partono aperti con
 | [hud.css](src/ui/hud.css) | Token, componenti, stati accessibili e layout responsivo Cozy City |
 | [hudIcons.ts](src/ui/hudIcons.ts) | Icone SVG interne, senza dipendenze o richieste di rete |
 | [GameHud.ts](src/ui/GameHud.ts) | Risorse, sette catalizzatori, policy, commercio, decisioni, temi e feedback contestuale |
-| [GameHudModel.ts](src/ui/GameHudModel.ts) | View model puro di risorse, requisiti e disponibilità delle azioni |
+| [GameHudModel.ts](src/ui/GameHudModel.ts) | View model puro di risorse, requisiti, disponibilità delle azioni e bottone del ciclo del giorno |
 | [ControlsHint.ts](src/ui/ControlsHint.ts) | Onboarding contestuale persistente e pannello di aiuto |
 | [DebugOverlay.ts](src/ui/DebugOverlay.ts) | fps, draw call, triangoli, code, tempi di mesher e main thread |
 | [GrowthOverlay.ts](src/ui/GrowthOverlay.ts) | Conteggi, livelli, coda e scarti della crescita automatica |
 | [TerrainOverlay.ts](src/ui/TerrainOverlay.ts) | Progresso della generazione, istogramma dei biomi, colonne edificabili |
 | [SimOverlay.ts](src/ui/SimOverlay.ts) | Stock e delta per tick, heatmap 2D del campo, primi dieci candidati, pulsanti delle policy |
 | [InspectOverlay.ts](src/ui/InspectOverlay.ts) | Referto tecnico delle viste: modi, slider della quota, colonna a fuoco e id dell'isolato |
-| [ViewMenuModel.ts](src/ui/ViewMenuModel.ts) | Il menu delle viste dal lato del giocatore, puro: etichette, gesti, targa della vista attiva con i suoi tasti, barra dei livelli, regola dello strumento |
+| [ViewMenuModel.ts](src/ui/ViewMenuModel.ts) | Il menu delle viste dal lato del giocatore, puro: etichette, gesti, targa della vista attiva con i suoi tasti, gesti e tasti dell'isolato **scelto**, barra dei livelli, regola dello strumento |
 
 ## Test e bench
 
@@ -400,7 +431,7 @@ giocabile; gli overlay tecnici si alternano con `F3` o partono aperti con
 | [game/loop.test.ts](src/game/loop.test.ts) | Cadenza fissa e limite del recupero |
 | [game/growthScene.test.ts](src/game/growthScene.test.ts) | Ciclo completo tick → costruzione → voxel, ordine del tutorial, usi misti e crescita verticale |
 | [game/actions.test.ts](src/game/actions.test.ts) | Costo del sito con le opere di terra, pagamento una volta sola, requisiti e rifiuti, sito dell'opera concessa |
-| [game/surfacePick.test.ts](src/game/surfacePick.test.ts) | Colonna sotto il raggio, edificabilita' e raggi che escono dalla mappa |
+| [game/surfacePick.test.ts](src/game/surfacePick.test.ts) | Colonna sotto il raggio, edificabilita', raggi che escono dalla mappa e raggio che si ferma sulla torre invece che sulla terra dietro |
 | [game/launchMode.test.ts](src/game/launchMode.test.ts) | Esperienza completa alla radice e isolamento degli harness URL |
 | [game/onboarding.test.ts](src/game/onboarding.test.ts) | Sequenza e sblocco dei tre passi iniziali |
 | [game/cityCondition.test.ts](src/game/cityCondition.test.ts) | Priorità delle crisi e stabilità richiesta per il successo |
@@ -408,8 +439,8 @@ giocabile; gli overlay tecnici si alternano con `F3` o partono aperti con
 | [ui/ControlsHint.test.ts](src/ui/ControlsHint.test.ts) | Completezza dei comandi camera e delle viste nella card di aiuto |
 | [ui/GameHudModel.test.ts](src/ui/GameHudModel.test.ts) | Risorse, requisiti, blocchi economici e policy attive del HUD |
 | [world/streets/streetGrid.test.ts](src/world/streets/streetGrid.test.ts) | Partizione strada/isolato, gerarchia degli assi, fronte e cuore, carreggiata piu' vicina, determinismo |
-| [engine/inspect.test.ts](src/engine/inspect.test.ts) | Predicati delle quattro viste, finestra dei raggi X, lato della sezione, quota della fetta, accordo fra `modeCuts` e `isCut` |
-| [ui/ViewMenuModel.test.ts](src/ui/ViewMenuModel.test.ts) | Ordine, etichette e gesti delle viste, targa che dice sempre come si esce, barra dei livelli solo dove c'e' una quota, strumento che chiude un taglio |
+| [engine/inspect.test.ts](src/engine/inspect.test.ts) | Predicati delle quattro viste, finestra dei raggi X, lato della sezione, quota della fetta, accordo fra `modeCuts` e `isCut`, isolato scelto che taglia senza chiedere un tappo |
+| [ui/ViewMenuModel.test.ts](src/ui/ViewMenuModel.test.ts) | Ordine, etichette e gesti delle viste, targa che dice sempre come si esce, isolato scelto che cambia gesto ma non nome, barra dei livelli solo dove c'e' una quota, strumento che chiude un taglio |
 | [world/streets/lots.test.ts](src/world/streets/lots.test.ts) | Il lotto tocca sempre un fronte, non esce dall'isolato, l'isolato si riempie |
 | [world/grading/grade.test.ts](src/world/grading/grade.test.ts) | Classificazione del terreno, quota del piano finito, tetto strutturale, rampa a pendenza uno |
 | [world/sites/siteRules.test.ts](src/world/sites/siteRules.test.ts) | Ricerca dell'acqua sui quattro assi, intorno piano sotto il tetto proprio, motivi di rifiuto per ruolo |
@@ -421,8 +452,11 @@ giocabile; gli overlay tecnici si alternano con `F3` o partono aperti con
 | [world/spans/plazaPlan.test.ts](src/world/spans/plazaPlan.test.ts) | Il cuore dell'isolato cresciuto dal centro, gli appoggi su lati diversi, i rifiuti di forma |
 | [world/spans/generate.test.ts](src/world/spans/generate.test.ts) | La sezione: travi sotto i filari di bordo, mensole alle testate, verde nel cuore, segmenti che si accordano |
 | [world/spans/network.test.ts](src/world/spans/network.test.ts) | Union-find, grado per appoggio, la piazza come nodo, e la proprieta' di continuita' del gate |
+| [world/aerial/deckPlan.test.ts](src/world/aerial/deckPlan.test.ts) | Lo sbalzo e le sue gambe: mensola corta senza appoggi, profonda con i propri; nessuna colonna oltre `reach`; il piede che cerca un tetto; mai sulla carreggiata; il pianerottolo spesso |
+| [world/aerial/terracePlan.test.ts](src/world/aerial/terracePlan.test.ts) | La corsa di parete su una sommita' di fascia vera, il voxel che esce dall'impronta, lo sporto proporzionale alla larghezza, le quattro facce, determinismo |
+| [world/aerial/routePlan.test.ts](src/world/aerial/routePlan.test.ts) | Il percorso dritto piu' lungo di una campata, i pianerottoli che assorbono il dislivello, i rifiuti uno per uno, e **la piega dichiarata assente** |
 | [world/buildings/cluster.test.ts](src/world/buildings/cluster.test.ts) | Chi entra in fila e chi apre il gradino: mai scavare, tetto del riempimento, soglia di densità, termini adottati invariati |
-| [world/buildings/generate.test.ts](src/world/buildings/generate.test.ts) | Determinismo e limiti degli stamp; terrazze, giardini, soglie luminose, silhouette per uso e corso di base che sposta la quota senza toccare la sagoma |
+| [world/buildings/generate.test.ts](src/world/buildings/generate.test.ts) | Determinismo e limiti degli stamp; terrazze, giardini, soglie luminose, silhouette per uso, campate che spezzano la parete senza toccare volume né superfici, e corso di base che sposta la quota senza toccare la sagoma |
 | [world/buildings/typology.test.ts](src/world/buildings/typology.test.ts) | Copertura del catalogo, scelta deterministica dal luogo, forme distinguibili fra tipologie, righe concesse da un mandato |
 | [world/buildings/urbanForm.test.ts](src/world/buildings/urbanForm.test.ts) | Variazione deterministica della forma dal profilo locale |
 | [sim/contracts.test.ts](src/sim/contracts.test.ts) | Purezza di `tick`, nessuna scrittura in `blocks`, serializzazione |
@@ -463,5 +497,6 @@ La radice `/` avvia isola, crescita e Cozy HUD; gli overlay tecnici sono nascost
 | `shadows` | — | `0` spegne la pass del sole, qualunque sia la qualita' |
 | `theme` | `natural` | `<id>` sceglie il tema; vale **anche senza** `debug` |
 | `hour` | — | `<0..24>` fissa l'ora e ferma il ciclo giorno/notte; vale **anche senza** `debug` |
+| `daylight` | `cycle` | `day` o `night` fermano l'orologio sull'ora del modo; stessa scelta del bottone nell'HUD, vale **anche senza** `debug` |
 | `inspect` | — | `xray`, `slice`, `section` o `block` aprono una vista di ispezione; vale **anche senza** `debug` |
 | `slice` | — | `<z>` fissa la quota della fetta; senza, segue il suolo che si sta guardando |

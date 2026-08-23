@@ -165,3 +165,22 @@ export function allowedLevelAt(query: SkylineQuery): number {
 
   return cap;
 }
+
+/**
+ * Livelli che restano a chi parte `rise` voxel sopra il terreno.
+ *
+ * **Il tetto e' sulla quota finale, non sul volume costruito.** Una gerarchia
+ * che contasse i soli livelli dell'edificio direbbe che una torre da nove su una
+ * soletta a trenta voxel e' alta come la stessa torre a terra, e in periferia
+ * basterebbe un piano artificiale per avere il centro. Qui la quota di partenza
+ * si converte in livelli — `SKYLINE.deckLevelRise` voxel ciascuno — e si scala
+ * dal tetto: il secondo piano di citta' e' altezza che qualcuno ha gia' speso.
+ *
+ * Non e' clampato a zero dal basso: un risultato negativo significa che quella
+ * quota non ammette proprio niente, ed e' un'informazione che il chiamante deve
+ * poter leggere invece di confonderla con «ammette un livello zero».
+ */
+export function levelsAboveDeck(cap: number, rise: number): number {
+  if (rise <= 0) return cap;
+  return cap - Math.floor(rise / SKYLINE.deckLevelRise);
+}

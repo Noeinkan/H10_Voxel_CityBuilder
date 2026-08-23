@@ -111,6 +111,7 @@ il posto sbagliato.
 | Palette | `src/engine/palette.json` + `paletteSlots.ts` |
 | Temi | `src/engine/themes/` — un file per tema, colori piu' atmosfera |
 | Modello di luce | `src/engine/lighting.ts` — sole, ambiente, luminanza per faccia |
+| Finestre di notte | `src/engine/nightWindows.ts` — quota accesa, carattere della torre, guadagno notturno |
 | Viste di ispezione | `src/engine/inspect.ts` — densita' del retino, finestra, quota |
 
 Non aggiornare a occhio le misure documentate nei README: sono verificate a mano

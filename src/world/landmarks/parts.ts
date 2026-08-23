@@ -4,12 +4,18 @@ import type { SurfaceKind } from '../visualBlock';
 /**
  * Il vocabolario con cui si descrive un landmark.
  *
- * **Sette primitive, non otto generatori.** Un porto e un monumento non hanno
+ * **Otto primitive, non otto generatori.** Un porto e un monumento non hanno
  * niente in comune come immagine, ma sono la stessa scatola, lo stesso prisma
  * verticale e la stessa fila di pilastri composti in modo diverso. Tenere
  * piccolo il vocabolario e' cio' che rende una ricetta una riga di tabella
  * invece di una funzione: `config.ts` elenca parti, questo file sa disegnarle,
  * e nessuno dei due sa cosa sia un porto.
+ *
+ * **Lo scafo e' l'ottava, ed e' l'unica che non ha una pianta rettangolare.** E'
+ * la sola ragione per cui esiste: sette primitive su otto sono un prisma con una
+ * maschera simmetrica, e una barca disegnata come scatola legge come un
+ * container posato sull'acqua. La rastremazione ai due capi e' cio' che la
+ * dichiara barca prima di qualunque colore.
  *
  * **Una parte e' un dato, non una chiamata.** E' la differenza che permette a un
  * test di misurare l'ingombro di una ricetta senza disegnarla, e a
@@ -33,6 +39,8 @@ export const PART = {
   steps: 5,
   /** Piano spesso un voxel: tetti, grembiuli, piste. */
   deck: 6,
+  /** Scafo rastremato ai due capi: barche ormeggiate, pontoni, chiatte. */
+  hull: 7,
 } as const;
 
 export type PartKind = (typeof PART)[keyof typeof PART];
@@ -59,7 +67,7 @@ export interface Part {
   readonly surface: SurfaceKind;
   /**
    * `colonnade`: passo dei pilastri. `steps`: rientranza di ogni gradone.
-   * Ignorato dalle altre primitive.
+   * `hull`: colonne di rastremazione a ciascun capo. Ignorato dalle altre.
    */
   readonly step?: number;
   /**
@@ -172,6 +180,8 @@ export function drawPart(canvas: LandmarkCanvas, part: Part): void {
       return drawColonnade(canvas, part);
     case PART.steps:
       return drawSteps(canvas, part);
+    case PART.hull:
+      return drawHull(canvas, part);
     default:
       // `slab`, `mast`, `boom` e `deck` sono lo stesso prisma pieno: a
       // distinguerli sono le proporzioni che la ricetta gli da', non il codice
@@ -257,6 +267,48 @@ function drawSteps(canvas: LandmarkCanvas, part: Part): void {
     for (let ly = 0; ly < h; ly++) {
       for (let lx = 0; lx < w; lx++) {
         put(canvas, part.x + inset + lx, part.y + inset + ly, z, palette, part.surface);
+      }
+    }
+  }
+}
+
+/**
+ * Scafo: prisma rastremato ai due capi dell'asse lungo.
+ *
+ * **La rastremazione segue l'asse lungo, non `x`.** Le altre sette maschere sono
+ * simmetriche allo scambio degli assi, quindi `orientPart` puo' ruotarle
+ * scambiando `w` e `h` senza che il codice se ne accorga. Una prua fissata su
+ * `lx` no: ruotata di un quarto di giro finirebbe sul lato corto e la barca
+ * cambierebbe forma — e conteggio — a seconda del verso. Guardare quale dei due
+ * lati e' il maggiore e' cio' che tiene lo scafo invariante per rotazione, che
+ * e' esattamente quello che il test del catalogo misura su ogni ricetta.
+ *
+ * **Rastremata a tutti e due i capi**, e non solo a prua. Serve alla stessa
+ * invarianza — il mezzo giro specchia gli assi — ma prima ancora e' la forma
+ * giusta: un traghetto e' a doppia estremita' perche' attracca dai due lati
+ * senza girarsi, ed e' proprio la barca che questo porto ospita.
+ *
+ * La chiglia non si chiude mai: `maxInset` la tiene larga almeno un voxel, cosi'
+ * una ricetta con un `step` generoso ottiene una punta e non un buco.
+ */
+function drawHull(canvas: LandmarkCanvas, part: Part): void {
+  const alongX = part.w >= part.h;
+  const long = alongX ? part.w : part.h;
+  const short = alongX ? part.h : part.w;
+  const taper = Math.max(1, part.step ?? 1);
+  const maxInset = Math.floor((short - 1) / 2);
+  const top = part.z + part.height - 1;
+
+  for (let z = part.z; z <= top; z++) {
+    const palette = z === top && part.cap !== undefined ? part.cap : part.palette;
+    for (let ly = 0; ly < part.h; ly++) {
+      for (let lx = 0; lx < part.w; lx++) {
+        const alongPos = alongX ? lx : ly;
+        const acrossPos = alongX ? ly : lx;
+        const fromEnd = Math.min(alongPos, long - 1 - alongPos);
+        const inset = Math.min(maxInset, Math.max(0, taper - fromEnd));
+        if (acrossPos < inset || acrossPos >= short - inset) continue;
+        put(canvas, part.x + lx, part.y + ly, z, palette, part.surface);
       }
     }
   }

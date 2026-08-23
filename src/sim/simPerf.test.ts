@@ -161,17 +161,18 @@ describe('memoria del campo', () => {
   it('resta densa per colonna e limitata dai chunk toccati', () => {
     const state = cityOf256();
 
-    // Per colonna di chunk: un `Uint8Array` per uso, uno di occupazione e un
-    // `Uint16Array` di affollamento. Nessuna struttura sparsa, nessun oggetto
-    // per cella: e' un conto che deve tornare a mano.
-    const perChunk = CELLS_PER_CHUNK * (CLASS_COUNT + 1) + CELLS_PER_CHUNK * 2;
+    // Per colonna di chunk: un `Uint8Array` per uso, uno di occupazione, uno
+    // delle quote spese e un `Uint16Array` di affollamento. Nessuna struttura
+    // sparsa, nessun oggetto per cella: e' un conto che deve tornare a mano.
+    const perChunk = CELLS_PER_CHUNK * (CLASS_COUNT + 2) + CELLS_PER_CHUNK * 2;
     expect(state.field.byteLength).toBe(state.field.chunkCount * perChunk);
 
-    // Sette byte per colonna di mondo: quattro usi, l'occupazione e i due
-    // dell'affollamento. Il quarto uso e' costato un byte per colonna, non una
-    // struttura nuova — ed e' il numero che l'estensione degli usi doveva non
-    // far esplodere.
-    expect(perChunk / CELLS_PER_CHUNK).toBe(CLASS_COUNT + 3);
+    // Otto byte per colonna di mondo: quattro usi, l'occupazione, le quote e i
+    // due dell'affollamento. **La citta' in quota e' costata un byte per
+    // colonna**, non un indice `z` nel campo: quello avrebbe moltiplicato per il
+    // numero di livelli tutti e quattro gli usi, cioe' l'alternativa che la 4.9
+    // esiste per non prendere.
+    expect(perChunk / CELLS_PER_CHUNK).toBe(CLASS_COUNT + 4);
     expect(state.field.byteLength).toBeLessThan(1_000_000);
   });
 

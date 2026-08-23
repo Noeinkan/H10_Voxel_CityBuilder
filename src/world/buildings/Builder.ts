@@ -31,6 +31,7 @@ import {
   CLUSTER,
   DEFAULT_BUILDING_FORM,
   MAX_FOOTPRINT,
+  MIN_FOOTPRINT,
   upgradeThresholdOf,
   type BuildingForm,
 } from './config';
@@ -64,7 +65,7 @@ import { STREETS } from '../streets/config';
 import { seesWater, waterDistance, waterFacing } from '../sites/siteRules';
 import { SITE } from '../sites/config';
 import { SKYLINE } from '../skyline/config';
-import { allowedLevelAt } from '../skyline/tiers';
+import { allowedLevelAt, levelsAboveDeck } from '../skyline/tiers';
 import { SPANS, SPAN_KIND, type SpanKind } from '../spans/config';
 import { generateSpan } from '../spans/generate';
 import { planPlaza } from '../spans/plazaPlan';
@@ -77,6 +78,19 @@ import {
   type SpanProbe,
   type SpanSupport,
 } from '../spans/spanPlan';
+import { AERIAL, AERIAL_PART, isBuildable, type AerialPart } from '../aerial/config';
+import type { AerialColumn, AerialProbe, DeckPlan, Pier } from '../aerial/deckPlan';
+import {
+  AERIAL_FACES,
+  planTerrace,
+  type AerialFace,
+  type AerialSupport,
+  type TerracePlan,
+  type TerraceResult,
+} from '../aerial/terracePlan';
+import { planRoute, type RouteEnd, type RoutePlan } from '../aerial/routePlan';
+import { generateDeck, generatePier } from '../aerial/generate';
+import { decksAt, type BuildDeck } from '../aerial/decks';
 import { LANDMARK, landmarkOf, maxStageOf } from '../landmarks/config';
 import {
   generateLandmark,
@@ -162,6 +176,21 @@ export interface BuilderStats {
    */
   readonly spans: number;
   readonly spanReach: number;
+  /**
+   * La citta' in quota, in quattro numeri.
+   *
+   * Sono il gate della 4.9 reso leggibile senza aprire una console, come
+   * `spanReach` lo e' per la 4.5, e sono quattro perche' i modi di fallire sono
+   * quattro e diversi fra loro: `terraces` a zero vuol dire che nessun fronte
+   * regge una mensola; `routes` a zero che la citta' non si intreccia; `piers` a
+   * zero con le altre due piene che tutto sta in piedi a sbalzo, cioe' che
+   * `reach` e' troppo largo; `stacked` a zero che le quote nascono e nessuno ci
+   * costruisce sopra.
+   */
+  readonly terraces: number;
+  readonly routes: number;
+  readonly piers: number;
+  readonly stacked: number;
 }
 
 /**
@@ -288,6 +317,55 @@ export class Builder {
   private spanReachValue = 0;
   private spanReachStale = true;
 
+  private terraceCursor = 0;
+  private routeCursor = 0;
+
+  /**
+   * Quante mensole porta un edificio, e quali facce ha gia' occupate.
+   *
+   * Due mappe sparse invece di una domanda al registry: la passata le consulta
+   * per ogni record che esamina, e ricavarle dai record vorrebbe dire risolvere
+   * le mensole di ciascuno per sapere se vale la pena provarci.
+   */
+  private readonly terraceFaces = new Map<number, number>();
+
+  /** Percorsi che arrivano a un edificio, e le coppie gia' collegate. */
+  private readonly routeCount = new Map<number, number>();
+  private readonly routePairs = new Set<string>();
+
+  /**
+   * Le gambe di ciascun impalcato, e gli impalcati su cui qualcuno ha costruito.
+   *
+   * **Un impalcato vuoto cade quando il suo ospite cresce, uno abitato no.** E'
+   * il compromesso che tiene insieme le due regole della fase: «chi regge non
+   * cresce» congelava mezza citta' — misurato, la fascia alta della gerarchia
+   * scendeva da quaranta edifici a diciannove — mentre far cadere una mensola con
+   * una casa sopra sarebbe una demolizione. Vuota, invece, la passata la
+   * ripropone alla quota nuova: la citta' in quota **insegue** quella sotto,
+   * esattamente come fa la rete delle campate.
+   */
+  private readonly deckPiers = new Map<number, number[]>();
+  private readonly inhabitedDecks = new Set<number>();
+
+  private terracesBuilt = 0;
+  private routesBuilt = 0;
+  private pierCount = 0;
+
+  /**
+   * Colonne su cui esiste un piano oltre al suolo.
+   *
+   * **E' cio' che rende una colonna gia' costruita di nuovo candidabile senza
+   * pagarlo su tutte le altre.** `lotIsFree` gira per migliaia di colonne a
+   * infornata e il suo primo rifiuto e' «il suolo e' preso»: aggiungere li' una
+   * domanda al registry costerebbe su ogni colonna dell'isola. Un insieme sparso
+   * si interroga solo sul ramo che oggi esce subito, quindi una citta' tutta al
+   * suolo costa esattamente quello che costa oggi.
+   */
+  private readonly deckColumns = new Set<string>();
+
+  /** Edifici che poggiano su un impalcato in quota invece che sul terreno. */
+  private stackedCount = 0;
+
   /**
    * Come si presenta il luogo alla regola delle campate.
    *
@@ -304,6 +382,31 @@ export class Builder {
       // permette a un ponte di scavalcare una carreggiata senza toglierla.
       free: !this.registryImpl.isOccupied(x, y),
     }),
+    solid: (x, y, z) => this.world.getBlock(x, y, z) !== STAMP_EMPTY,
+  };
+
+  /**
+   * Come si presenta il luogo alle regole della citta' in quota.
+   *
+   * Riusa `solid` della sonda delle campate — e' la stessa domanda al mondo — e
+   * cambia la lettura di colonna, perche' qui non serve sapere se il suolo e'
+   * libero ma **su cosa si puo' poggiare**: il terreno o un tetto, indifferente.
+   * E' quella indifferenza a permettere a una gamba di stare sopra la citta'
+   * invece che accanto.
+   */
+  private readonly aerialProbe: AerialProbe = {
+    ground: (x, y): AerialColumn => {
+      const support = this.registryImpl.supportAt(x, y);
+      const height = this.terrainMap.heightAt(x, y);
+      return {
+        height,
+        top: Math.max(height, support.z),
+        pavement: this.streets.isPavement(x, y),
+        free: !this.registryImpl.isOccupied(x, y),
+        firm: this.groundKindAt(x, y) !== GROUND.refused,
+        carrier: support.z > height ? support.id : 0,
+      };
+    },
     solid: (x, y, z) => this.world.getBlock(x, y, z) !== STAMP_EMPTY,
   };
 
@@ -512,6 +615,10 @@ export class Builder {
       clustered: this.clusteredCount,
       spans: this.registryImpl.spanCount,
       spanReach: this.spanReach(),
+      terraces: this.terracesBuilt,
+      routes: this.routesBuilt,
+      piers: this.pierCount,
+      stacked: this.stackedCount,
     };
   }
 
@@ -564,6 +671,13 @@ export class Builder {
     // stanno i tetti, non da quanto una colonna e' desiderabile. E' anche il
     // motivo per cui questa passata non prende ne' restituisce lo stato.
     if (state.tickCount % SPANS.ticksPerPass === 0) this.spanPass();
+    // E nemmeno la citta' in quota: una mensola dipende da come e' fatta una
+    // facciata e un percorso da cosa c'e' fra due edifici, non da quanto una
+    // colonna e' desiderabile — per questo nessuna delle due prende ne'
+    // restituisce lo stato. Due passate distinte perche' sono due atti urbani
+    // distinti — il dettaglio e il collegamento — e vanno a cadenze diverse.
+    if (state.tickCount % AERIAL.terrace.ticksPerPass === 0) this.terracePass();
+    if (state.tickCount % AERIAL.route.ticksPerPass === 0) this.routePass();
     return next;
   }
 
@@ -688,7 +802,9 @@ export class Builder {
    */
   private buildPass(state: SimState): SimState {
     const wanted = BUILDER.sitesPerBuild;
-    const sites = nextBuildSites(state, this.terrainMap, wanted * BUILDER.candidateOverfetch);
+    const sites = nextBuildSites(state, this.terrainMap, wanted * BUILDER.candidateOverfetch, {
+      headroomAt: this.headroomAt,
+    });
 
     let next = state;
     let accepted = 0;
@@ -753,19 +869,42 @@ export class Builder {
     const key = `${x},${y}`;
     if (this.blacklist.has(key)) return null;
 
+    // **Su quale piano.** Il suolo finche' e' libero — ed e' il caso di ogni
+    // edificio finche' nessuno ha costruito niente in quota, quindi il percorso
+    // di sempre resta quello di sempre — altrimenti l'impalcato piu' basso che
+    // passa di qui. E' questa riga a togliere a «edificabile» il suo essere un
+    // bit per colonna, e non una struttura nel campo della simulazione.
+    const deck = this.pickDeck(x, y, footprintCap);
+    const onGround = deck.kind === 'ground';
+
+    // **In quota il lotto e' l'impalcato.** Non si passa da `findLot`, che
+    // risolve la maglia stradale: sopra non c'e' una carreggiata a cui
+    // accostarsi, c'e' un riquadro che qualcuno ha costruito, e l'edificio ci
+    // sta dentro centrato — cio' che avanza resta terrazza, ed e' esattamente la
+    // proporzione delle immagini di riferimento.
+    if (deck.rect !== undefined) {
+      const side = Math.min(deck.rect.sizeX, deck.rect.sizeY, MAX_FOOTPRINT);
+      if (side < MIN_FOOTPRINT) return null;
+      x = deck.rect.x + ((deck.rect.sizeX - side) >> 1);
+      y = deck.rect.y + ((deck.rect.sizeY - side) >> 1);
+      footprintCap = side;
+    }
+
     // Il seme resta quello dell'origine del lotto anche se l'impronta si
     // accosta al fronte piu' avanti: e' il lotto a essere stabile, non
     // l'angolo dell'edificio, e il record se lo porta dietro comunque.
     const seed = hashCoords(this.worldSeed, x, y);
     const profile = state === null ? null : urbanProfileAt(state, x, y);
     const form = formOf(profile);
+
     // La gerarchia vale anche alla nascita, non solo agli upgrade: in periferia
     // `builtNeighbours` e' basso per definizione, ed e' cosi' che attorno
     // all'edificato resta una corona bassa invece di torri sparse nel prato.
-    const level = Math.min(
-      this.allowedLevel(x, y, state),
-      startLevel(seed) + localLevelBonus(form),
-    );
+    // In quota vale con la quota gia' spesa scalata dal tetto: una mensola e' il
+    // modo in cui la gerarchia sale, non il modo di aggirarla.
+    const allowed = this.allowedLevel(x, y, state, deck.rise);
+    if (allowed < 0) return null;
+    const level = Math.min(allowed, startLevel(seed) + localLevelBonus(form));
     const typology = selectTypology({
       use: cls,
       mixed,
@@ -794,7 +933,7 @@ export class Builder {
     // Solo chi ha davvero prenotato un lotto largo `footprintCap` puo'
     // scorrere dentro di esso: chi costruisce a coordinate date — una partita
     // salvata — deve restare esattamente dove la simulazione lo conta.
-    if (request.snapToStreet && facing !== undefined && footprint < footprintCap) {
+    if (onGround && request.snapToStreet && facing !== undefined && footprint < footprintCap) {
       const slack = footprintCap - footprint;
       if (facing === FACING.east) x += slack;
       else if (facing === FACING.north) y += slack;
@@ -807,21 +946,26 @@ export class Builder {
       else x += along;
     }
 
-    // Il piano si progetta sull'impronta vera, non sul lotto prenotato: e'
-    // quello che l'opera dovra' reggere.
-    const plan = this.surveyGrade(x, y, footprint);
-    if (plan === null) return this.reject(key, this.gradeRefusal(x, y, footprint));
+    // **Il terreno si guarda solo se e' lui a reggere.** Sopra un impalcato il
+    // piano c'e' gia', ed e' costruito: non c'e' un'opera da progettare, non
+    // c'e' una fila a cui accostarsi — le file sono un fatto del fronte strada,
+    // che in quota non esiste ancora — e non c'e' decoro da bonificare.
+    const plan = onGround ? this.surveyGrade(x, y, footprint) : null;
+    if (onGround && plan === null) return this.reject(key, this.gradeRefusal(x, y, footprint));
 
     // A cosa si aggrega questo lotto. La quota che ne esce sostituisce quella
     // del piano proprio: e' l'unico punto in cui un edificio smette di rispondere
     // solo al terreno sotto di se' e comincia a rispondere anche al vicino.
-    const terms = this.joinCluster(x, y, footprint, facing, plan, form.density);
+    const terms = plan === null
+      ? null
+      : this.joinCluster(x, y, footprint, facing, plan, form.density);
+    const baseBand = terms?.base ?? 0;
 
     // Con un corso di base condiviso lo stamp si rigenera: cambia l'altezza
     // della fascia zero e nient'altro — stessa sequenza di PRNG, stessa sagoma.
     // Gira solo dove la fila un basamento ce l'ha davvero, e sta comunque fuori
     // dal ciclo di frame.
-    const stamp = terms.base > 0
+    const stamp = baseBand > 0
       ? generateBuilding({
         class: cls,
         level,
@@ -833,33 +977,38 @@ export class Builder {
         shape: typology.shape,
         mixed,
         facing,
-        baseBandHeight: terms.base,
+        baseBandHeight: baseBand,
       })
       : draft;
 
-    const baseZ = terms.deck;
+    const baseZ = terms?.deck ?? deck.z;
     // Al suolo vince l'edificio: una campata che passa di qui cade invece di
     // impedirlo. Senza, `overlaps` direbbe `occupied` e un ponte toglierebbe un
     // lotto — il contrario esatto di «una campata non prende suolo».
     this.dropSpansIntersecting(x, y, footprint, footprint, baseZ, baseZ + stamp.sizeZ);
     if (this.registryImpl.overlaps(x, y, footprint, baseZ, stamp.sizeZ)) {
-      return this.reject(key, 'occupied');
+      // In quota il rifiuto non e' definitivo: la colonna resta buona al suolo,
+      // e a quella soletta ci si potra' riprovare quando il posto si libera.
+      // Blacklistarla toglierebbe il lotto a terra per un ingombro di sopra.
+      return this.reject(key, 'occupied', plan !== null);
     }
-    if (this.dirtyChunkCount(x, y, footprint, plan.footZ, baseZ + stamp.sizeZ) >
+    if (this.dirtyChunkCount(x, y, footprint, plan?.footZ ?? baseZ, baseZ + stamp.sizeZ) >
         BUILDER.maxDirtyChunksPerBuilding) {
-      return this.reject(key, 'chunkBudget');
+      return this.reject(key, 'chunkBudget', plan !== null);
     }
 
-    this.clearSiteDecor(x, y, footprint);
-    // Il salto che la fila aggiunge sotto il membro e' costruito, non versato:
-    // senza questo il dislivello verso il deck verrebbe riempito di stratigrafia
-    // di bioma e leggerebbe come terreno nudo invece che come muro. E' lo stesso
-    // ritocco che l'upgrade fa gia' sull'anello allargato.
-    this.buildWorks(x, y, footprint, {
-      ...plan,
-      padZ: baseZ,
-      works: baseZ > plan.padZ && plan.works === WORKS.none ? WORKS.terrace : plan.works,
-    });
+    if (plan !== null) {
+      this.clearSiteDecor(x, y, footprint);
+      // Il salto che la fila aggiunge sotto il membro e' costruito, non versato:
+      // senza questo il dislivello verso il deck verrebbe riempito di stratigrafia
+      // di bioma e leggerebbe come terreno nudo invece che come muro. E' lo stesso
+      // ritocco che l'upgrade fa gia' sull'anello allargato.
+      this.buildWorks(x, y, footprint, {
+        ...plan,
+        padZ: baseZ,
+        works: baseZ > plan.padZ && plan.works === WORKS.none ? WORKS.terrace : plan.works,
+      });
+    }
 
     const record = this.registryImpl.add({
       x,
@@ -876,17 +1025,68 @@ export class Builder {
       district: profile?.district ?? 'outskirts',
       specialization: profile?.specialization ?? null,
       facing,
-      cluster: terms.id,
+      cluster: terms?.id,
       // Zero non si scrive: una fila senza corso di base non deve portarsi
       // dietro un campo che dice "non ne ho uno".
-      baseBand: terms.base > 0 ? terms.base : undefined,
+      baseBand: baseBand > 0 ? baseBand : undefined,
     });
 
     if (request.animate) this.enqueue(record.id, this.anchorOf(record), stamp);
     else this.writeStamp(this.anchorOf(record), stamp, 0, stamp.sizeZ, false);
     this.enqueueBlockStreets(this.streets.blockAt(x, y));
     this.placedCount++;
+    if (plan === null) {
+      this.stackedCount++;
+      // Da adesso quell'impalcato non cade piu': togliergli l'ospite sotto
+      // sarebbe una demolizione, e demolire non e' nel vocabolario di questo
+      // progetto.
+      this.inhabitedDecks.add(deck.id);
+    }
     return record;
+  }
+
+  // --- Quote edificabili -----------------------------------------------------
+
+  /**
+   * Su quale piano poggia un'impronta larga `side` con l'angolo qui.
+   *
+   * Il suolo per primo, e finche' e' libero non si guarda oltre: e' cio' che
+   * tiene identica la citta' di prima, dove in quota non c'e' niente e questa
+   * funzione risponde alla prima riga. Solo su una colonna gia' presa si sale, e
+   * si prende **l'impalcato piu' basso** che abbia il volume sopra di se' libero:
+   * riempire il secondo livello prima del terzo e' la stessa regola con cui la
+   * citta' riempie il suolo prima di alzarsi.
+   *
+   * **In quota l'impalcato porta il proprio riquadro**, e chi chiama ci sposta
+   * dentro il lotto. Il suolo non ne ha uno: li' il lotto l'ha gia' risolto la
+   * maglia stradale.
+   */
+  private pickDeck(x: number, y: number, side: number): BuildDeck {
+    const decks = decksAt(this.registryImpl.at(x, y), this.terrainMap.heightAt(x, y));
+
+    for (const deck of decks) {
+      if (deck.kind === 'ground') {
+        if (!this.groundTaken(x, y, side)) return deck;
+        continue;
+      }
+      // Una cella sola sopra il piano: se e' libera lo e' anche il resto, perche'
+      // qualunque volume in quota parte da li'. La collisione vera la fa
+      // `overlaps` sull'impronta e sull'altezza definitive.
+      if (!this.registryImpl.overlaps(x, y, 1, deck.z, 1)) return deck;
+    }
+    // Nessun piano libero: torna il suolo, e il rifiuto arriva da `overlaps` con
+    // il motivo giusto invece che da qui con un ramo in piu'.
+    return decks[0];
+  }
+
+  /** true se un edificio prende il suolo di una qualunque colonna dell'impronta. */
+  private groundTaken(x: number, y: number, side: number): boolean {
+    for (let dy = 0; dy < side; dy++) {
+      for (let dx = 0; dx < side; dx++) {
+        if (this.registryImpl.isOccupied(x + dx, y + dy)) return true;
+      }
+    }
+    return false;
   }
 
   // --- Aggregazione ----------------------------------------------------------
@@ -1186,11 +1386,16 @@ export class Builder {
    * simulazione conta come sono, ed e' la stessa ragione per cui neanche lo
    * scorrimento sul fronte strada vale per lei.
    */
-  private allowedLevel(x: number, y: number, state: SimState | null): number {
+  private allowedLevel(
+    x: number,
+    y: number,
+    state: SimState | null,
+    rise = 0,
+  ): number {
     if (state === null) return BUILDER.maxLevel;
 
     const block = this.streets.blockAt(x, y);
-    return Math.min(BUILDER.maxLevel, allowedLevelAt({
+    return levelsAboveDeck(Math.min(BUILDER.maxLevel, allowedLevelAt({
       x,
       y,
       poles: state.catalysts,
@@ -1199,7 +1404,7 @@ export class Builder {
       seed: this.worldSeed,
       blockKx: block.kx,
       blockKy: block.ky,
-    }));
+    })), rise);
   }
 
   // --- Upgrade ---------------------------------------------------------------
@@ -1233,6 +1438,21 @@ export class Builder {
       // Una campata non ha un livello: e' l'edificio che la regge a cambiare, e
       // quando cambia lei cade con lui.
       if (record.span !== undefined) continue;
+      // E la citta' in quota non ha un livello affatto: mensole, tratti, nodi e
+      // gambe sono struttura, e non promuovono.
+      if (record.aerial !== undefined) continue;
+      // **Chi regge qualcosa di abitato non cresce.** E' una domanda sola e sta
+      // qui in alto perche' risponde di no senza leggere niente; il *togliere* —
+      // che e' un atto — sta in fondo, quando la promozione e' decisa.
+      //
+      // Fermare l'ospite in **tutti** i casi era la lettura semplice, ed e'
+      // misurato che non funziona: la fascia alta della gerarchia scendeva da
+      // quaranta edifici a diciannove, perche' una mensola arriva presto e da
+      // quel momento la torre non sale piu'.
+      if (this.registryImpl.decksOf(record.id).some((deck) =>
+        this.inhabitedDecks.has(deck.id) || deck.aerial !== AERIAL_PART.terrace)) {
+        continue;
+      }
       if (record.level >= BUILDER.maxLevel) continue;
 
       const nextLevel = record.level + 1;
@@ -1242,7 +1462,7 @@ export class Builder {
       // risponde di no piu' spesso, e senza leggere il campo, e' anche cio' che
       // tiene la passata al costo di prima su una citta' che ora ha il doppio
       // dei livelli da scalare.
-      if (nextLevel > this.allowedLevel(record.x, record.y, state)) continue;
+      if (nextLevel > this.allowedLevel(record.x, record.y, state, this.riseOf(record))) continue;
 
       const profile = urbanProfileAt(state, record.x, record.y);
       const threshold = upgradeThresholdOf(nextLevel) - localUpgradeDiscount(formOf(profile));
@@ -1250,6 +1470,10 @@ export class Builder {
         continue;
       }
 
+      // La promozione e' decisa: **ora** le mensole vuote cadono, e la passata
+      // successiva le ripropone alla quota nuova. Farlo prima le avrebbe fatte
+      // oscillare a ogni edificio che la passata scarta per soglia.
+      this.releaseDecks(record.id);
       this.upgrade(record, nextLevel, profile);
     }
   }
@@ -1780,6 +2004,488 @@ export class Builder {
     return this.spanReachValue;
   }
 
+  // --- Citta' in quota -------------------------------------------------------
+
+  /** Di quanto un record sta sopra il terreno della propria colonna. */
+  private riseOf(record: BuildingRecord): number {
+    return Math.max(0, record.baseZ - this.terrainMap.heightAt(record.x, record.y));
+  }
+
+  /**
+   * Quante quote ammette una colonna. E' la risposta del mondo a `nextBuildSites`.
+   *
+   * **E' qui che si chiude il primo dei tre punti della diagnosi.** Il campo
+   * conta le quote spese e chiede quante ce ne siano; la risposta e' il suolo
+   * piu' gli impalcati edificabili che passano di qui, e non ha bisogno di
+   * nessuna coordinata verticale dall'altra parte del confine.
+   *
+   * Un campo e non un metodo perche' viene passata come funzione: legata una
+   * volta sola, non alloca una chiusura per infornata.
+   */
+  private readonly headroomAt = (x: number, y: number): number => {
+    // Il caso normale, e l'unico su una citta' tutta a terra: nessun impalcato
+    // sopra, una quota sola. Una lettura di Set e via.
+    if (!this.deckColumns.has(`${x},${y}`)) return 1;
+
+    let decks = 1;
+    for (const record of this.registryImpl.at(x, y)) {
+      if (record.aerial !== undefined && isBuildable(record.aerial)) decks++;
+    }
+    return decks;
+  };
+
+  /**
+   * true se questo edificio puo' portare qualcosa in quota.
+   *
+   * **Chi regge non cresce**, quindi ospitare e' una rinuncia e non un premio:
+   * `upgradePass` salta chi porta, e quell'edificio si ferma dov'e'. La soglia
+   * di livello e' il prezzo che si accetta di pagare — vedi `minHostLevel`, dove
+   * sta anche la misura che ha escluso la regola piu' ovvia.
+   */
+  private settled(record: BuildingRecord): boolean {
+    if (record.aerial !== undefined || record.span !== undefined) return false;
+    if (record.landmark !== undefined) return false;
+    return record.level >= AERIAL.minHostLevel;
+  }
+
+  /**
+   * Fa cadere le mensole vuote di un edificio che sta per promuovere.
+   *
+   * **Chi promuove si scrolla di dosso cio' che non e' abitato.** La sagoma nuova
+   * non ha piu' la parete a cui la mensola era appesa, quindi o la mensola segue
+   * o sparisce: qui sparisce, e la passata successiva la ripropone alla quota
+   * nuova. E' la stessa scelta che le campate fanno da sempre — la citta' in
+   * quota insegue quella sotto invece di fossilizzarla.
+   */
+  private releaseDecks(hostId: number): void {
+    for (const deck of [...this.registryImpl.decksOf(hostId)]) {
+      if (deck.aerial !== AERIAL_PART.terrace) continue;
+      if (this.inhabitedDecks.has(deck.id)) continue;
+      this.dropDeck(deck);
+    }
+  }
+
+  /** Cancella un impalcato e le gambe che si era contate, e li toglie dal registry. */
+  private dropDeck(record: BuildingRecord): void {
+    // **Cio' che si appoggiava alla mensola cade con lei.** Una campata puo'
+    // atterrare sul suo filo — la sonda guarda il mondo, e li' il mondo e' pieno
+    // — e toglierle il piano sotto la lascerebbe a mezz'aria, che e' esattamente
+    // il difetto che il gate della 4.5 esiste per escludere. Il riquadro si
+    // allarga di una colonna per prendere anche chi la tocca senza entrarci.
+    this.dropSpansIntersecting(
+      record.x - 1, record.y - 1,
+      record.footprint + 2, footprintDepth(record) + 2,
+      record.baseZ, record.baseZ + record.height,
+    );
+
+    for (const pierId of this.deckPiers.get(record.id) ?? []) {
+      const pier = this.registryImpl.get(pierId);
+      if (pier === null) continue;
+      // Anche una gamba puo' fare da testata a una campata: sparisce lei,
+      // sparisce chi ci si appoggiava.
+      this.dropSpansIntersecting(
+        pier.x - 1, pier.y - 1,
+        pier.footprint + 2, footprintDepth(pier) + 2,
+        pier.baseZ, pier.baseZ + pier.height,
+      );
+      this.clearVolume(
+        pier.x, pier.y, pier.footprint, footprintDepth(pier),
+        pier.baseZ, pier.baseZ + pier.height,
+      );
+      this.registryImpl.remove(pierId);
+      this.pierCount--;
+    }
+    this.deckPiers.delete(record.id);
+
+    this.clearVolume(
+      record.x, record.y, record.footprint, footprintDepth(record),
+      record.baseZ, record.baseZ + record.height,
+    );
+    for (let dy = 0; dy < footprintDepth(record); dy++) {
+      for (let dx = 0; dx < record.footprint; dx++) {
+        this.deckColumns.delete(`${record.x + dx},${record.y + dy}`);
+      }
+    }
+    // La faccia torna libera: l'ospite potra' riaverne una piu' in alto.
+    const host = record.supports?.[0];
+    if (host !== undefined) this.terraceFaces.delete(host);
+    this.registryImpl.remove(record.id);
+    if (record.aerial === AERIAL_PART.terrace) this.terracesBuilt--;
+  }
+
+  /** Un record ridotto a cio' che le regole in quota guardano di lui. */
+  private aerialSupportOf(record: BuildingRecord): AerialSupport {
+    return {
+      id: record.id,
+      x: record.x,
+      y: record.y,
+      sizeX: record.footprint,
+      sizeY: footprintDepth(record),
+      baseZ: record.baseZ,
+      height: record.height,
+    };
+  }
+
+  /**
+   * Appende mensole ai fronti degli edifici che hanno finito di crescere.
+   *
+   * **E' il dettaglio, non il collegamento**, ed e' la ragione per cui va piu'
+   * spesso della rete: una citta' che si legga intrecciata ha bisogno di molte
+   * mensole e di pochi percorsi. Un cursore come le altre passate, quindi il
+   * costo non cresce con la citta'.
+   */
+  private terracePass(): void {
+    const records = [...this.registryImpl.all];
+    if (records.length === 0) return;
+
+    const budget = Math.min(AERIAL.terrace.examinedPerPass, records.length);
+    let built = 0;
+
+    for (let i = 0; i < budget && built < AERIAL.terrace.perPass; i++) {
+      const record = records[this.terraceCursor % records.length];
+      this.terraceCursor++;
+      if (!this.settled(record)) continue;
+      if (countFaces(this.terraceFaces.get(record.id) ?? 0) >= AERIAL.terrace.maxPerHost) continue;
+
+      const result = this.planTerraceOn(record);
+      if (!result.ok) continue;
+      if (!this.buildTerrace(result.plan)) continue;
+      built++;
+    }
+  }
+
+  /**
+   * La mensola che un edificio reggerebbe, o perche' no.
+   *
+   * E' la stessa domanda per la passata automatica e per il giocatore, e passa
+   * di qui entrambe le volte: due strade diverse per lo stesso piazzamento
+   * finirebbero per accettare due insiemi di luoghi diversi, ed e' esattamente
+   * il difetto che `catalystFailure` esiste per non avere.
+   */
+  private planTerraceOn(record: BuildingRecord): TerraceResult {
+    const used = this.terraceFaces.get(record.id) ?? 0;
+    const faces: AerialFace[] = [];
+    // L'ordine parte dal fronte strada e gira: la prima mensola sta dove
+    // l'edificio si affaccia, e le successive dove resta posto. Girare a partire
+    // dal `facing` — invece di provare sempre da est — e' cio' che distribuisce
+    // le mensole sui quattro lati di una citta' invece che su uno solo.
+    for (let i = 0; i < AERIAL_FACES.length; i++) {
+      const face = AERIAL_FACES[((record.facing ?? 0) + i) % AERIAL_FACES.length];
+      if ((used & (1 << face)) === 0) faces.push(face);
+    }
+    if (faces.length === 0) return { ok: false, refusal: 'noRun' };
+
+    return planTerrace({
+      host: this.aerialSupportOf(record),
+      faces,
+      ground: this.aerialProbe.ground,
+      solid: this.aerialProbe.solid,
+    });
+  }
+
+  /**
+   * Posa una mensola sull'edificio di questa colonna. false se non ce n'e' uno,
+   * se il fronte non la regge o se non entra nel budget di chunk.
+   *
+   * E' la porta del giocatore: la convalida economica sta in `game/actions.ts`,
+   * qui c'e' solo quella del mondo.
+   */
+  placeTerrace(x: number, y: number): boolean {
+    const host = this.buildingAt(x, y);
+    if (host === null) return false;
+    const result = this.planTerraceOn(host);
+    return result.ok && this.buildTerrace(result.plan);
+  }
+
+  /** L'edificio vero che occupa il suolo di questa colonna, se ce n'e' uno. */
+  private buildingAt(x: number, y: number): BuildingRecord | null {
+    for (const record of this.registryImpl.at(x, y)) {
+      if (record.aerial !== undefined || record.span !== undefined) continue;
+      if (record.landmark !== undefined) continue;
+      return record;
+    }
+    return null;
+  }
+
+  /** Scrive una mensola: l'impalcato, e le gambe che si e' contata da sola. */
+  private buildTerrace(plan: TerracePlan): boolean {
+    // **L'ospite e' eccettuato dalla collisione.** La mensola parte dalla parete,
+    // che su una fascia rientrata cade ancora dentro l'impronta dichiarata: e'
+    // attaccata a lui, non in conflitto con lui. E' anche la prima volta che
+    // qualcosa in questo progetto sporge oltre la propria impronta.
+    const except = [plan.host];
+    this.dropDeckSpans(plan.deck);
+    if (!this.deckFits(plan.deck, except)) return false;
+
+    this.commitDeck(AERIAL_PART.terrace, plan.deck, [plan.host]);
+    this.terraceFaces.set(plan.host, (this.terraceFaces.get(plan.host) ?? 0) | (1 << plan.face));
+    this.terracesBuilt++;
+    return true;
+  }
+
+  /**
+   * Collega due edifici che hanno finito di crescere, anche di isolati diversi.
+   *
+   * **E' il fatto della fase.** Le campate della 4.5 legano coppie che si
+   * guardano da vicino; qui il compagno si cerca in un raggio di isolati, e il
+   * percorso ci arriva con gambe proprie.
+   *
+   * **Si scorrono le mensole, non gli edifici.** E' la stessa scelta di
+   * `spanPass`, che scorre `registry.spans`: sono unita', non migliaia, e sono
+   * esattamente i luoghi da cui un percorso puo' partire.
+   */
+  private routePass(): void {
+    const decks = this.registryImpl.decks;
+    if (decks.length === 0) return;
+
+    const budget = Math.min(AERIAL.route.examinedPerPass, decks.length);
+    let built = 0;
+
+    for (let i = 0; i < budget && built < AERIAL.route.perPass; i++) {
+      const record = decks[this.routeCursor % decks.length];
+      this.routeCursor++;
+      if ((this.routeCount.get(record.id) ?? 0) >= AERIAL.route.maxPerHost) continue;
+
+      const partner = this.routePartner(record);
+      if (partner === null) continue;
+
+      const result = planRoute({
+        a: routeEndOf(record, this.openSideOf(record)),
+        b: routeEndOf(partner, this.openSideOf(partner)),
+        ground: this.aerialProbe.ground,
+        solid: this.aerialProbe.solid,
+      });
+      // La coppia si segna comunque: un rifiuto non cambia finche' i due capi non
+      // cambiano, e riprovarla a ogni passata sarebbe il costo piu' alto del
+      // dominio speso per sentirsi dire di no.
+      this.routePairs.add(pairKey(record.id, partner.id));
+      if (!result.ok) continue;
+      if (!this.buildRoute(result.plan)) continue;
+      built++;
+    }
+  }
+
+  /**
+   * La mensola compagna migliore per questa, o `null`.
+   *
+   * La piu' vicina fra quelle abbastanza lontane: sotto `minSeparation` il
+   * collegamento lo fa gia' una campata, meglio e senza gambe. A parita' vince
+   * l'id piu' basso, cosi' la scelta non dipende dall'ordine con cui il registry
+   * restituisce i vicini.
+   */
+  private routePartner(record: BuildingRecord): BuildingRecord | null {
+    let best: BuildingRecord | null = null;
+    let bestDistance = Number.POSITIVE_INFINITY;
+    const open = this.openSideOf(record);
+
+    for (const other of this.registryImpl.decks) {
+      if (other.id === record.id) continue;
+      if (this.routePairs.has(pairKey(record.id, other.id))) continue;
+      if ((this.routeCount.get(other.id) ?? 0) >= AERIAL.route.maxPerHost) continue;
+      // **Si esce dalla mensola dalla parte libera.** Una mensola sporge da una
+      // facciata: dall'altro lato c'e' il proprio ospite, e un percorso che
+      // partisse di li' comincerebbe dentro un edificio. E' la meta' esatta dei
+      // compagni possibili, ed e' la meta' che non puo' funzionare.
+      if (!facesToward(open, record, other)) continue;
+      if (!facesToward(this.openSideOf(other), other, record)) continue;
+
+      // **Il vuoto fra i due riquadri, non fra i due angoli.** La regola misura
+      // da bordo a bordo, e due mensole con gli angoli a quattordici colonne ne
+      // hanno in mezzo sei: sarebbero tutte rifiutate per `badSeparation` dopo
+      // averle esaminate.
+      const distance = gapBetween(record, other);
+      if (distance < AERIAL.route.minSeparation) continue;
+      if (distance > AERIAL.route.maxSeparation) continue;
+      if (distance < bestDistance ||
+        (distance === bestDistance && best !== null && other.id < best.id)) {
+        best = other;
+        bestDistance = distance;
+      }
+    }
+    return best;
+  }
+
+  /**
+   * Da che parte un impalcato guarda il vuoto, o `null` se non ha un ospite.
+   *
+   * E' il verso che va dal centro dell'edificio che lo porta al centro suo: per
+   * una mensola e' la direzione in cui sporge, ed e' l'unica da cui un percorso
+   * puo' partire senza infilarsi dentro l'ospite. Un nodo non ha un ospite e
+   * guarda dappertutto.
+   */
+  private openSideOf(record: BuildingRecord): { axis: 0 | 1; sign: number } | null {
+    const hostId = record.supports?.[0];
+    if (hostId === undefined) return null;
+    const host = this.registryImpl.get(hostId);
+    if (host === null) return null;
+
+    const dx = (2 * record.x + record.footprint) - (2 * host.x + host.footprint);
+    const dy = (2 * record.y + footprintDepth(record)) - (2 * host.y + footprintDepth(host));
+    if (dx === 0 && dy === 0) return null;
+    return Math.abs(dx) >= Math.abs(dy)
+      ? { axis: 0, sign: Math.sign(dx) }
+      : { axis: 1, sign: Math.sign(dy) };
+  }
+
+  /**
+   * Scrive un percorso intero, o niente.
+   *
+   * **Tutta la convalida prima di qualunque scrittura.** Un percorso che si
+   * ferma a meta' lascia tratti che non portano da nessuna parte e gambe senza
+   * piano sopra, che e' peggio di non averlo: e' la stessa regola che il primo
+   * tentativo di questa fase ha imparato a sue spese con le piattaforme.
+   */
+  private buildRoute(plan: RoutePlan): boolean {
+    const except = [plan.fromId, plan.toId];
+    for (const piece of plan.pieces) this.dropDeckSpans(piece.deck);
+    for (const piece of plan.pieces) {
+      if (!this.deckFits(piece.deck, except)) return false;
+    }
+
+    for (let i = 0; i < plan.pieces.length; i++) {
+      const piece = plan.pieces[i];
+      // I due capi reggono il percorso, e il percorso li immobilizza: e' il
+      // guinzaglio, e vale per i tratti d'estremita' come per una mensola.
+      const supports: number[] = [];
+      if (i === 0) supports.push(plan.fromId);
+      if (i === plan.pieces.length - 1) supports.push(plan.toId);
+      this.commitDeck(piece.part, piece.deck, supports);
+    }
+
+    for (const id of [plan.fromId, plan.toId]) {
+      this.routeCount.set(id, (this.routeCount.get(id) ?? 0) + 1);
+    }
+    this.routesBuilt++;
+    return true;
+  }
+
+  /**
+   * **Vale qui la regola del suolo: chi ci sta sopra vince.**
+   *
+   * Una campata nel volume cade invece di impedirlo — vale per l'impalcato come
+   * per le gambe, e la gamba e' il caso che conta: la sonda guarda il mondo, e
+   * una campata registrata ma non ancora comparsa e' aria per lei. Senza questo
+   * una gamba veniva piantata **dentro** una piazza in quota gia' decisa, e la
+   * piazza restava a registro con un palo in mezzo.
+   */
+  private dropDeckSpans(deck: DeckPlan): void {
+    const { rect } = deck;
+    this.dropSpansIntersecting(
+      rect.x, rect.y, rect.sizeX, rect.sizeY, deck.baseZ, deck.baseZ + deck.height,
+    );
+    for (const pier of deck.piers) {
+      this.dropSpansIntersecting(
+        pier.x, pier.y, AERIAL.pierSide, AERIAL.pierSide,
+        pier.baseZ, pier.baseZ + pier.height,
+      );
+    }
+  }
+
+  /**
+   * true se l'impalcato e le sue gambe entrano nel budget e non urtano niente.
+   *
+   * **Il tetto di chunk sporchi si misura sul pezzo che si scrive**, che e' un
+   * segmento di impalcato o una gamba: e' tutto il senso di averli separati.
+   */
+  private deckFits(deck: DeckPlan, except: readonly number[]): boolean {
+    const { rect } = deck;
+    const top = deck.baseZ + deck.height;
+
+    for (const segment of deck.segments) {
+      const count = this.dirtyChunkCount(
+        segment.x, segment.y, segment.sizeX, deck.baseZ, top, segment.sizeY,
+      );
+      if (count > AERIAL.maxDirtyChunks) return false;
+    }
+    for (const pier of deck.piers) {
+      const count = this.dirtyChunkCount(
+        pier.x, pier.y, AERIAL.pierSide,
+        pier.baseZ, pier.baseZ + pier.height, AERIAL.pierSide,
+      );
+      if (count > AERIAL.maxDirtyChunks) return false;
+    }
+
+    if (this.registryImpl.overlaps(
+      rect.x, rect.y, rect.sizeX, deck.baseZ, deck.height, rect.sizeY, except,
+    )) {
+      return false;
+    }
+    for (const pier of deck.piers) {
+      if (this.registryImpl.overlaps(
+        pier.x, pier.y, AERIAL.pierSide, pier.baseZ, pier.height, AERIAL.pierSide, except,
+      )) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  /**
+   * Scrive un impalcato e le sue gambe: un record per l'uno, uno per ciascuna.
+   *
+   * La differenza fra i due e' l'invariante del dominio — la gamba prende suolo,
+   * l'impalcato no — e sta tutta nel campo `aerial` del record.
+   */
+  private commitDeck(part: AerialPart, deck: DeckPlan, supports: readonly number[]): void {
+    const { rect } = deck;
+    const record = this.registryImpl.add({
+      x: rect.x,
+      y: rect.y,
+      baseZ: deck.baseZ,
+      footprint: rect.sizeX,
+      footprintY: rect.sizeY,
+      height: deck.height,
+      // Come per una campata: `tally` lo salta, e questo campo non entra in
+      // nessun istogramma. Civico e' il meno arbitrario dei quattro — un piano
+      // pubblico e' spazio pubblico — ma resta inerte per costruzione.
+      class: BUILDING_CLASS.civic,
+      level: 0,
+      seed: hashCoords(this.worldSeed, rect.x, rect.y),
+      aerial: part,
+      supports: [...supports, ...deck.carriers],
+    });
+
+    for (const segment of deck.segments) {
+      this.enqueue(
+        record.id,
+        { x: segment.x, y: segment.y, z: deck.baseZ },
+        generateDeck(deck, part, segment),
+      );
+    }
+
+    const piers: number[] = [];
+    for (const pier of deck.piers) piers.push(this.commitPier(pier));
+    if (piers.length > 0) this.deckPiers.set(record.id, piers);
+
+    // Solo cio' su cui si costruisce entra fra le quote: su un tratto di
+    // percorso ci si passa, e un edificio in mezzo lo chiuderebbe.
+    if (!isBuildable(part)) return;
+    for (let dy = 0; dy < rect.sizeY; dy++) {
+      for (let dx = 0; dx < rect.sizeX; dx++) {
+        this.deckColumns.add(`${rect.x + dx},${rect.y + dy}`);
+      }
+    }
+  }
+
+  private commitPier(pier: Pier): number {
+    const record = this.registryImpl.add({
+      x: pier.x,
+      y: pier.y,
+      baseZ: pier.baseZ,
+      footprint: AERIAL.pierSide,
+      footprintY: AERIAL.pierSide,
+      height: pier.height,
+      class: BUILDING_CLASS.civic,
+      level: 0,
+      seed: hashCoords(this.worldSeed, pier.x, pier.y),
+      aerial: AERIAL_PART.pier,
+      supports: pier.carrier === 0 ? undefined : [pier.carrier],
+    });
+    this.enqueue(record.id, this.anchorOf(record), generatePier(pier));
+    this.pierCount++;
+    return record.id;
+  }
+
   // --- Landmark --------------------------------------------------------------
 
   /**
@@ -2179,7 +2885,14 @@ export class Builder {
         // Letture senza allocazione: `columnAt` costruirebbe un oggetto e
         // `at` un array di record per ogni colonna, e qui le colonne si
         // contano a migliaia per infornata.
-        if (this.registryImpl.isOccupied(cx, cy)) return false;
+        // **Il suolo preso non chiude piu' la colonna per sempre.** Se sopra
+        // corre una soletta il lotto esiste ancora, una quota piu' su: e' la
+        // seconda delle tre assunzioni di colonna che la 4.9 rompe. La domanda
+        // in piu' si paga solo su questo ramo — cioe' sulle sole colonne gia'
+        // costruite — quindi una citta' senza piattaforme costa quello di prima.
+        if (this.registryImpl.isOccupied(cx, cy) && !this.deckColumns.has(`${cx},${cy}`)) {
+          return false;
+        }
         // Dalla 4.2 la battigia e il fianco in pendenza sono lotti come gli
         // altri: costano un'opera, non un rifiuto. Restano fuori solo la roccia
         // e l'acqua troppo profonda per una banchina.
@@ -2344,8 +3057,16 @@ export class Builder {
     return true;
   }
 
-  private reject(key: string, reason: RejectReason): null {
-    this.blacklist.add(key);
+  /**
+   * Conta uno scarto, e di norma lo rende definitivo.
+   *
+   * `permanent` a false esiste per una sola situazione, ed e' la 4.9: un
+   * candidato in quota che non entra dice qualcosa sulla **soletta**, non sulla
+   * colonna. Blacklistarla toglierebbe per sempre un lotto a terra per via di un
+   * ingombro che sta trenta voxel piu' su.
+   */
+  private reject(key: string, reason: RejectReason, permanent = true): null {
+    if (permanent) this.blacklist.add(key);
     this.rejectedCounts[REJECT_REASONS.indexOf(reason)]++;
     return null;
   }
@@ -2399,6 +3120,78 @@ interface PlaceRequest {
   readonly snapToStreet: boolean;
 }
 
+/** Quante facce di un edificio portano gia' una mensola, dalla maschera. */
+function countFaces(mask: number): number {
+  let count = 0;
+  for (let bit = mask; bit !== 0; bit >>= 1) count += bit & 1;
+  return count;
+}
+
+/**
+ * La chiave di una coppia di edifici, indipendente dall'ordine.
+ *
+ * Un percorso si propone una volta sola per coppia, come una campata: senza,
+ * la passata riesaminerebbe le stesse due torri a ogni giro per sentirsi dire
+ * di no dalla stessa geometria.
+ */
+function pairKey(a: number, b: number): string {
+  return a <= b ? `${a}:${b}` : `${b}:${a}`;
+}
+
+/**
+ * true se `target` non sta dietro le spalle di `from`.
+ *
+ * Non chiede che sia *davanti*: una mensola si lascia anche di fianco, e sono i
+ * due lati che rendono possibile una rete invece di una manciata di coppie
+ * allineate. Chiede solo che non stia dall'altra parte dell'ospite, dove un
+ * percorso comincerebbe dentro un muro.
+ */
+function facesToward(
+  open: { axis: 0 | 1; sign: number } | null,
+  from: BuildingRecord,
+  target: BuildingRecord,
+): boolean {
+  if (open === null) return true;
+  const delta = open.axis === 0
+    ? (2 * target.x + target.footprint) - (2 * from.x + from.footprint)
+    : (2 * target.y + footprintDepth(target)) - (2 * from.y + footprintDepth(from));
+  // Dietro **e** oltre il proprio ingombro: un compagno appena di lato conta
+  // come di lato, ed e' raggiungibile dal fianco.
+  const behind = delta * open.sign < 0;
+  const span = open.axis === 0 ? from.footprint : footprintDepth(from);
+  return !behind || Math.abs(delta) < 2 * span;
+}
+
+/** Un record di impalcato ridotto al capo di percorso che e'. */
+function routeEndOf(
+  record: BuildingRecord,
+  open: { axis: 0 | 1; sign: number } | null,
+): RouteEnd {
+  return {
+    id: record.id,
+    open: open ?? undefined,
+    rect: {
+      x: record.x,
+      y: record.y,
+      sizeX: record.footprint,
+      sizeY: footprintDepth(record),
+    },
+    // Il piano calpestabile e' l'ultimo voxel dell'impalcato: sopra c'e' l'aria
+    // in cui il percorso parte.
+    deckZ: record.baseZ + record.height - 1,
+  };
+}
+
+/** Vuoto di Chebyshev fra due impronte: zero se si toccano o si sovrappongono. */
+function gapBetween(a: BuildingRecord, b: BuildingRecord): number {
+  const gapX = Math.max(a.x - (b.x + b.footprint), b.x - (a.x + a.footprint));
+  const gapY = Math.max(
+    a.y - (b.y + footprintDepth(b)),
+    b.y - (a.y + footprintDepth(a)),
+  );
+  return Math.max(0, gapX, gapY);
+}
+
 function formOf(profile: LocalUrbanProfile | null): BuildingForm {
   if (profile === null) return DEFAULT_BUILDING_FORM;
   return {
@@ -2431,3 +3224,6 @@ function localUpgradeDiscount(form: BuildingForm): number {
     ),
   );
 }
+
+
+

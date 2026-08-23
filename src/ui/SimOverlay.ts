@@ -292,6 +292,7 @@ function builderLines(stats: BuilderStats | null): readonly string[] {
     `rejected     ${stats.blacklisted.toString().padStart(6)} blocked${rejected.length === 0 ? '' : `  ${rejected.join('  ')}`}`,
     `clustered    ${stats.clustered.toString().padStart(6)} in row`,
     `spans        ${stats.spans.toString().padStart(6)} aloft   ${stats.spanReach} blocks reached`,
+    `aerial       ${stats.terraces.toString().padStart(6)} terraces  ${stats.routes} routes  ${stats.piers} piers  ${stats.stacked} stacked`,
   ];
 }
 

@@ -77,6 +77,12 @@ export class GrowthOverlay {
       // quota e' un ornamento — ponti che non portano da nessuna parte — e da
       // due in su e' un secondo piano stradale.
       `spans        ${stats.builder.spans}  reach ${stats.builder.spanReach} blocks`,
+      // Il gate della 4.9, con la stessa idea: `terraces` a zero vuol dire che
+      // nessun fronte regge una mensola, e `stacked` a zero che le quote nascono
+      // e nessuno ci costruisce sopra — due difetti diversi, e da qui si
+      // distinguono senza aprire una console.
+      `aerial       ${stats.builder.terraces} terraces  ${stats.builder.routes} routes  ` +
+        `${stats.builder.piers} piers  ${stats.builder.stacked} stacked`,
       `blacklist    ${stats.builder.blacklisted}`,
       `rejected     ${rejected}`,
     ].join('\n');

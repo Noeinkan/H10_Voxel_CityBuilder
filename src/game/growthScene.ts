@@ -4,6 +4,7 @@ import {
   catalystById,
   catalystRoleOf,
   createSimState,
+  defaultCatalystOfClass,
   decisionOption,
   nextBuildSites,
   tick,
@@ -15,7 +16,7 @@ import {
   type TradeMode,
 } from '../sim';
 import type { ScenarioRegion } from '../sim/scenario';
-import { Builder, type BuilderStats } from '../world/buildings/Builder';
+import { Builder, type BuilderStats, type LandmarkSite } from '../world/buildings/Builder';
 import type { ReadonlyBuildingRegistry } from '../world/buildings/BuildingRegistry';
 import type { TerrainMap } from '../world/terrain/TerrainMap';
 import type { VoxelWorld } from '../world/VoxelWorld';
@@ -70,6 +71,7 @@ export class GrowthScene {
   private healthyTicks = 0;
   private readonly unlocked = new Set<string>();
   private message = 'Choose a catalyst and place it on the island.';
+  private clearanceMemo: { readonly key: string; readonly site: LandmarkSite } | null = null;
 
   constructor(
     world: VoxelWorld,
@@ -88,14 +90,22 @@ export class GrowthScene {
       this.state = this.builder.onTick(this.state);
       this.healthyTicks = isSelfSufficient(this.state) ? this.healthyTicks + 1 : 0;
       this.lastTickMs = performance.now() - start;
+      // Le passate del Builder sono l'unico momento in cui il registry cambia:
+      // quello che il cursore sapeva del riquadro sotto di se' e' di un tick fa.
+      this.clearanceMemo = null;
     });
     this.builder.step();
   }
 
   placeCatalyst(x: number, y: number, target: BuildingClass | CatalystId): ActionResult {
-    if (!onboardingAllows(this.state, target)) {
-      return { success: false, reason: 'onboarding-order' };
-    }
+    const failure = this.catalystFailure(x, y, target);
+    if (failure !== null) return { success: false, reason: failure };
+
+    // Prima di piazzare: dopo, i condannati sono ancora nel registry — restano
+    // finche' i loro voxel non spariscono — e la stessa domanda risponderebbe di
+    // nuovo lo stesso numero, facendo il doppio del lavoro per dirlo.
+    const clears = this.clearanceAt(x, y, target).clears;
+
     const result = placeCatalyst(this.state, this.map, x, y, target);
     if (result.success) {
       const placed = result.state.catalysts[result.state.catalysts.length - 1];
@@ -103,18 +113,72 @@ export class GrowthScene {
       // compare, e passare `placed.class` — come si faceva finche' il segno era
       // un voxel colorato — perdeva proprio l'informazione che serve.
       if (placed !== undefined) this.builder.placeLandmark(x, y, catalystRoleOf(placed));
+      this.clearanceMemo = null;
     }
-    return this.apply(result, 'Catalyst placed.');
+
+    return this.apply(result, clears === 0
+      ? 'Catalyst placed.'
+      : `Catalyst placed. Clearing ${clears} ${clears === 1 ? 'building' : 'buildings'} to make room.`);
   }
 
+  /**
+   * Tutti i rifiuti del piazzamento, in un posto solo.
+   *
+   * Tre domande di tre domini diversi, in quest'ordine: il tutorial dice se il
+   * ruolo e' gia' sbloccato, `actions.ts` se terreno, sito, distanza e fondi
+   * reggono, il Builder se il riquadro si sgombera. **L'ultima e' l'ultima**
+   * perche' e' la piu' cara — risolve verso, ingombro e opera prima di
+   * interrogare il registry — e perche' un rifiuto sul terreno la rende inutile.
+   *
+   * E' anche la stessa funzione che risponde al cursore e al click, che e' il
+   * modo in cui "Valid position" resta una promessa e non un'opinione.
+   */
   catalystFailure(x: number, y: number, target: BuildingClass | CatalystId): ActionFailure | null {
     if (!onboardingAllows(this.state, target)) return 'onboarding-order';
-    return catalystFailure(this.state, this.map, x, y, target);
+
+    const failure = catalystFailure(this.state, this.map, x, y, target);
+    if (failure !== null) return failure;
+
+    return this.clearanceAt(x, y, target).refusal;
   }
 
   /** Prezzo pesato dal terreno, per il cartellino sul cursore. */
   catalystSiteCost(x: number, y: number, target: BuildingClass | CatalystId): SiteCost | null {
     return catalystSiteCost(this.map, x, y, target);
+  }
+
+  /**
+   * Quanti edifici il piazzamento porterebbe via, per il cartellino sul cursore.
+   *
+   * Zero dove il riquadro e' gia' libero, che e' anche cio' che risponde dove il
+   * ruolo non ha una ricetta: chi legge il cursore deve vedere il numero solo
+   * quando c'e' davvero qualcosa da abbattere.
+   */
+  catalystClears(x: number, y: number, target: BuildingClass | CatalystId): number {
+    return this.clearanceAt(x, y, target).clears;
+  }
+
+  /**
+   * Lo sventramento della colonna interrogata, con una voce di memoria.
+   *
+   * Il cursore fa **due** domande sulla stessa colonna a ogni movimento — «si
+   * puo' piazzare?» e «quanti ne porta via?» — e la risposta e' la stessa
+   * lettura del registry su tutto il riquadro del landmark. Una voce sola basta
+   * a non pagarla due volte: le due domande arrivano di fila, e il click cade
+   * dove il cursore ha appena chiesto.
+   *
+   * Si invalida a ogni tick e a ogni piazzamento, che sono gli unici due momenti
+   * in cui il registry cambia: `step` scrive voxel, non record.
+   */
+  private clearanceAt(x: number, y: number, target: BuildingClass | CatalystId): LandmarkSite {
+    const role = typeof target === 'number' ? defaultCatalystOfClass(target) : target;
+    const key = `${x},${y},${role}`;
+    if (this.clearanceMemo !== null && this.clearanceMemo.key === key) {
+      return this.clearanceMemo.site;
+    }
+    const site = this.builder.landmarkClearance(x, y, role);
+    this.clearanceMemo = { key, site };
+    return site;
   }
 
   togglePolicy(id: PolicyId): ActionResult {

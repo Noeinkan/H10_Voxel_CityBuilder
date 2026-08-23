@@ -109,6 +109,7 @@ export {
   createSimState,
   rebuildField,
   resolveDecision,
+  removeBuildings,
   removeCatalyst,
   reviveSimState,
   setCatalystStrength,

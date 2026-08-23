@@ -119,7 +119,7 @@ export const TERRAIN = {
   // --- Campo di rumore ----------------------------------------------------
 
   /**
-   * Quattro ottave di simplex sommate con ampiezza `persistence^i` e frequenza
+   * Tre ottave di simplex sommate con ampiezza `persistence^i` e frequenza
    * `baseFrequency * lacunarity^i`.
    *
    * Le frequenze sono deliberatamente basse. Il criterio "due colonne adiacenti
@@ -129,8 +129,17 @@ export const TERRAIN = {
    * restare sotto ~1 voxel per voxel, maschera radiale inclusa. Alzare
    * `baseFrequency` o `maxHeight` rompe quel test: `heightField.test.ts` misura
    * il margine effettivo.
+   *
+   * **Erano quattro, e la quarta era l'ottava piu' cara del campo.** In un fbm
+   * normalizzato ogni ottava pesa sul gradiente `w_i * f_i`, e con
+   * `lacunarity = 2` e `persistence = 0.5` quel prodotto e' **lo stesso per
+   * tutte**: l'ultima ottava si prendeva un quarto del budget di pendenza per
+   * il sei per cento dell'ampiezza, cioe' tre voxel di increspatura su una
+   * lunghezza d'onda di quarantotto. Quel quarto e' passato a `LANDFORM`, dove
+   * gli stessi voxel di dislivello fanno una collina o la sponda di un lago
+   * invece di grana che la quantizzazione a celle cancella comunque.
    */
-  octaves: 4,
+  octaves: 3,
   baseFrequency: 1 / 384,
   lacunarity: 2,
   persistence: 0.5,
@@ -158,10 +167,28 @@ export const TERRAIN = {
    * maschera sul bordo della region sale abbastanza da portare una colonna di
    * rumore massimo sopra `seaLevel`, cioe' terra attaccata al bordo invece di
    * acqua. Sotto quel valore l'isola resta circondata d'acqua per costruzione.
+   * I due termini si sommano, quindi il tetto vale sulla loro somma.
    */
   warpAmount: 0.16,
   warpFrequency: 1 / 640,
   warpSalt: 0x00c0_a571,
+
+  /**
+   * Seconda ottava della deformazione, quella che fa le insenature.
+   *
+   * La prima e' lentissima per scelta — una lunghezza d'onda piu' lunga
+   * dell'isola — e da sola produce un'ellisse spostata da un lato: rompe la
+   * simmetria ma non fa una costa. Questa e' quattro volte piu' rapida e vale
+   * un terzo: aggiunge alla linea di riva qualche ansa e qualche capo alla
+   * scala di un quartiere, che e' la scala a cui la costa si guarda.
+   *
+   * Costa poco proprio perche' e' bassa: il contributo al gradiente e'
+   * `ampiezza * frequenza`, e mezzo punto percentuale di ampiezza in piu' su
+   * una frequenza quadrupla resta sotto il decimo di voxel per voxel.
+   */
+  warpDetail: 0.055,
+  warpDetailFrequency: 1 / 168,
+  warpDetailSalt: 0x00c0_a572,
 
   // --- Soglie di bioma ----------------------------------------------------
   //
@@ -212,6 +239,134 @@ export const TERRAIN = {
 
   /** Voxel d'acqua chiara sopra l'acqua profonda. */
   waterSurfaceDepth: 4,
+} as const;
+
+/**
+ * Numeri della sagoma: lobi della costa, rilievi interni, conche dei laghi.
+ *
+ * Stanno qui e non in `landform.ts` per la stessa ragione di tutto il resto —
+ * la calibrazione del terreno e' un file solo. Le grandezze sono **relative**:
+ * distanze e raggi in frazioni del raggio dell'isola, quote in frazioni del
+ * rilievo, cosi' un'isola piu' piccola prende elementi piu' piccoli senza che
+ * nessuno di questi numeri debba muoversi.
+ *
+ * **Nessuna altezza e' dichiarata qui.** Gli elementi scelgono il raggio, e
+ * l'altezza gliela detta il budget di pendenza in `capForRadius`: dichiararla
+ * significherebbe poter scrivere una collina che il campo non regge, e
+ * accorgersene solo quando cade il test di Lipschitz.
+ *
+ * Gli intervalli sono `[minimo, ampiezza]` per i continui e
+ * `[minimo, alternative]` per i conteggi, come `TreeShape.trunk`.
+ */
+export const LANDFORM = {
+  // --- Lobi della costa ---------------------------------------------------
+
+  /** Quanti lobi si aggiungono all'isola base. */
+  lobeCount: [2, 2],
+
+  /** Distanza del centro del lobo dal centro dell'isola, in frazioni di raggio. */
+  lobeDistance: [0.34, 0.14],
+
+  /** Raggio del lobo, in frazioni del raggio dell'isola. */
+  lobeRadius: [0.36, 0.16],
+
+  /**
+   * Quanto lontano puo' arrivare il bordo di un lobo, `distanza + raggio`.
+   *
+   * Sotto 1 di un margine largo: la costa vera dell'isola base cade intorno a
+   * 0,68 del raggio — la' dove la maschera scende sotto la soglia di emersione
+   * — quindi un lobo che arriva a 0,86 sporge dalla costa di quasi un quinto
+   * del raggio senza avvicinarsi al bordo della region.
+   */
+  lobeReach: 0.86,
+
+  /** Pendenza massima concessa al fianco di un lobo. */
+  lobeSlope: 0.3,
+
+  /** Frazione di passo angolare di cui un lobo puo' spostarsi dal suo settore. */
+  lobeJitter: 0.55,
+
+  lobeSalt: 0x10b0_5eed,
+
+  // --- Rilievi interni ----------------------------------------------------
+
+  /** Quante cupole spostano le vette fuori dal centro. */
+  moundCount: [1, 2],
+
+  moundDistance: [0.16, 0.3],
+  moundRadius: [0.24, 0.14],
+
+  /**
+   * Pendenza massima concessa al fianco di un rilievo.
+   *
+   * E' il numero che decide se le colline si vedono: su un'isola di raggio 256
+   * e rilievo 76, una cupola larga un quarto sale di una dozzina di voxel —
+   * sei celle di terreno sopra cio' che la circonda, quanto basta perche' la
+   * fascia di bioma cambi e la vetta non sia piu' una sola.
+   */
+  moundSlope: 0.22,
+
+  moundJitter: 0.5,
+
+  moundSalt: 0x4001_dd05,
+
+  // --- Conche dei laghi ---------------------------------------------------
+
+  /** Quanti specchi d'acqua interni si tenta di aprire. */
+  basinCount: [1, 1],
+
+  /** Quanti siti si esaminano prima di rinunciare. */
+  basinCandidates: 192,
+
+  /** Fascia radiale in cui si cercano i siti, `[minimo, ampiezza]`. */
+  basinReach: [0.18, 0.52],
+
+  /**
+   * Quota della corona sopra il livello del mare, `[minimo, massimo]`.
+   *
+   * E' la fascia in cui una conca ha senso. Piu' in basso lo specchio si
+   * fonderebbe con il mare; piu' in alto la parete che serve a raggiungere il
+   * fondo diventa piu' larga della fascia bassa che la ospita, e la conca
+   * sfonda la costa da qualche parte.
+   */
+  basinRimAbove: [4, 9],
+
+  /**
+   * Quanto il fondo sta sotto il livello del mare.
+   *
+   * Due voxel, cioe' una cella: e' la profondita' che tiene tutto lo specchio
+   * dentro `shallowDepth` e quindi dentro `WATER_CLASS.shallow` — increspatura
+   * fitta e fondale che si vede sotto. Un fondo piu' basso darebbe a una pozza
+   * di quaranta voxel l'onda lunga del mare aperto.
+   */
+  basinFloorBelow: 2,
+
+  /** Pendenza massima concessa alla sponda. */
+  basinSlope: 0.3,
+
+  /**
+   * Frazione del raggio occupata dal fondo piatto.
+   *
+   * Il fondo piatto e' la superficie d'acqua: senza, lo specchio si riduce al
+   * punto centrale della conca. Costa raggio — la sponda deve scendere nello
+   * spazio che resta — ed e' per questo che non e' piu' largo.
+   */
+  basinPlateau: 0.32,
+
+  /** Raggio massimo di una conca, in frazioni del raggio dell'isola. */
+  basinMaxRadius: 0.3,
+
+  /** Distanza minima fra due conche, in multipli della somma dei raggi. */
+  basinSpacing: 1.15,
+
+  /** Sonde sulla corona e loro raggio, in multipli del raggio della conca. */
+  basinShoreProbes: 12,
+  basinShoreReach: 1.04,
+
+  /** Quanto la corona deve stare sopra il mare perche' il lago sia chiuso. */
+  basinShoreMargin: 2,
+
+  basinSalt: 0x0acc_a1a0,
 } as const;
 
 /** Biomi su cui si puo' costruire, prima di applicare la soglia di pendenza. */

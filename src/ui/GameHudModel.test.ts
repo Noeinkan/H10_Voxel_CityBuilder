@@ -5,8 +5,10 @@ import { onboardingOf } from '../game/onboarding';
 import { catalystById } from '../sim/catalysts';
 import { createSimState } from '../sim/SimState';
 import type { PolicyId } from '../sim/policies';
+import { DAYLIGHT, DAYLIGHT_MODE } from '../engine/daylight';
 import {
   buildGameHudModel,
+  daylightControl,
   decisionNeedsRepaint,
   resolveEscapeTarget,
   selectionMessage,
@@ -89,6 +91,18 @@ describe('buildGameHudModel', () => {
     expect(resolveEscapeTarget(true, false, false, false, { kind: 'none' }, true)).toBe('views');
   });
 
+  it('Escape molla l’isolato scelto prima di spegnere la vista', () => {
+    // Due colpi e non uno: chi sta studiando un isolato e preme Escape quasi
+    // sempre vuole tornare a sceglierne un altro, non ritrovarsi la citta'
+    // intera. Il secondo colpo fa comunque il resto.
+    expect(resolveEscapeTarget(false, false, false, false, { kind: 'none' }, true, true)).toBe('lock');
+    expect(resolveEscapeTarget(false, false, false, false, { kind: 'none' }, true, false)).toBe('view');
+    // Ma non prima di uno strumento in mano, che ha gia' la sua promessa a schermo.
+    expect(resolveEscapeTarget(false, false, false, false, { kind: 'expansion' }, true, true)).toBe('tool');
+    // Ne' prima di un pannello aperto, che e' cio' che copre.
+    expect(resolveEscapeTarget(true, false, false, false, { kind: 'none' }, true, true)).toBe('views');
+  });
+
   it('produce un’istruzione contestuale solo per uno strumento selezionato', () => {
     const model = buildGameHudModel(stats(2_000, 100));
     expect(selectionMessage({ kind: 'catalyst', class: 0 }, model.catalysts)).toContain('Housing selected');
@@ -124,6 +138,29 @@ describe('buildGameHudModel', () => {
     expect(decisionNeedsRepaint(decision.id, decision)).toBe(false);
     expect(decisionNeedsRepaint(decision.id, null)).toBe(true);
     expect(decisionNeedsRepaint(decision.id, { ...decision, id: 'investment-160' })).toBe(true);
+  });
+});
+
+describe('daylightControl', () => {
+  it('nomina lo stato, dice cosa fa e annuncia il prossimo clic', () => {
+    const auto = daylightControl(DAYLIGHT_MODE.cycle);
+    expect(auto.label).toBe('Auto');
+    expect(auto.frozen).toBe(false);
+    // Chi guarda un tramonto vuole sapere quanto dura, non che «e' automatico».
+    expect(auto.tooltip).toContain(`${Math.round(DAYLIGHT.daySeconds / 60)} minutes`);
+    // Un bottone che cicla deve dire dove porta, o si scopre solo premendolo.
+    expect(auto.next).toBe(DAYLIGHT_MODE.day);
+    expect(auto.tooltip).toContain('Day');
+  });
+
+  it('i due modi fissi si dichiarano fermi', () => {
+    for (const mode of [DAYLIGHT_MODE.day, DAYLIGHT_MODE.night]) {
+      const control = daylightControl(mode);
+      expect(control.frozen).toBe(true);
+      expect(control.label.length).toBeGreaterThan(0);
+      expect(control.next).not.toBe(mode);
+    }
+    expect(daylightControl(DAYLIGHT_MODE.night).next).toBe(DAYLIGHT_MODE.cycle);
   });
 });
 
@@ -171,6 +208,10 @@ function stats(
       clustered: 0,
       spans: 0,
       spanReach: 0,
+      terraces: 0,
+      routes: 0,
+      piers: 0,
+      stacked: 0,
     },
     state,
     paused: false,

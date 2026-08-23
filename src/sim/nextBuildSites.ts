@@ -44,6 +44,23 @@ export interface BuildSiteQuery {
    * scena di debug — senza dover ignorare il campo a valle.
    */
   readonly singleUse?: boolean;
+
+  /**
+   * Quante quote la colonna ammette ancora. Assente, ne vale una.
+   *
+   * **E' il modo in cui una colonna gia' costruita torna candidabile senza che
+   * `src/sim/` guadagni una coordinata verticale.** Il campo sa quante quote
+   * sono state spese — le conta `stack` — e non sa, ne' deve sapere, quante ce
+   * ne siano: dove passi una soletta e quanto sia alta e' geografia costruita, e
+   * la geografia sta nel mondo. E' la stessa mossa di `waterDistance` in
+   * `SkylineQuery`: chi il terreno ce l'ha in mano misura, la regola pura riceve
+   * un numero.
+   *
+   * Viene interrogata **solo sulle colonne gia' costruite**, che su un'isola
+   * sono una frazione: una partita che non arriva mai in quota paga esattamente
+   * quello che pagava prima.
+   */
+  readonly headroomAt?: (x: number, y: number) => number;
 }
 
 /**
@@ -110,6 +127,7 @@ export function nextBuildSites(
     ? thresholds.map(() => unreachable)
     : thresholds.map((value) => value * share);
   const partners = BALANCE.mixedUse.partners;
+  const headroom = query.headroomAt ?? GROUND_ONLY;
 
   const best: BuildSite[] = [];
 
@@ -127,7 +145,7 @@ export function nextBuildSites(
     const commercial = values[BUILDING_CLASS.commercial];
     const industrial = values[BUILDING_CLASS.industrial];
     const civic = values[BUILDING_CLASS.civic];
-    const occupancy = chunk.occupancy;
+    const stack = chunk.stack;
 
     const originX = DesirabilityField.originOf(chunk.ccx);
     const originY = DesirabilityField.originOf(chunk.ccy);
@@ -154,7 +172,11 @@ export function nextBuildSites(
         }
         if (bestScore === 0) continue;
 
-        if (occupancy[i] !== 0) continue;
+        // **Una colonna costruita non e' chiusa per sempre.** La domanda al
+        // mondo si paga solo qui dentro, cioe' sulle sole celle che qualcosa
+        // occupa gia': su una colonna vergine questo ramo non entra nemmeno, e
+        // il costo resta quello del confronto con zero che c'era prima.
+        if (stack[i] !== 0 && stack[i] >= headroom(originX + lx, originY + ly)) continue;
         if (buildable[columnIndex(lx, ly)] !== 1) continue;
 
         const x = originX + lx;
@@ -230,3 +252,12 @@ function compareSites(a: BuildSite, b: BuildSite): number {
 }
 
 const EMPTY_SITES: readonly BuildSite[] = [];
+
+/**
+ * Una quota sola: il suolo, e basta.
+ *
+ * E' il comportamento di sempre, ed e' anche quello giusto per chi interroga la
+ * simulazione senza avere un mondo sotto — i test, la fixture di scenario, la
+ * ricerca del sito di un'opera concessa. Chi le quote le sa se le porta.
+ */
+const GROUND_ONLY = (): number => 1;

@@ -13,9 +13,10 @@ import {
 import { PALETTE_SIZE, toPaletteArray } from './palette';
 import { PALETTE_SLOTS } from './paletteSlots';
 import { MESH_UNITS_PER_VOXEL } from './mesher/meshTypes';
-import { INSPECT, isActive, isCut, type InspectUniforms } from './inspect';
+import { INSPECT, isActive, needsCap, type InspectUniforms } from './inspect';
 import { FACE_NORMALS, sunDirection } from './lighting';
 import { FOG_FLAT_EPSILON, FOG_LIFT_SHARPNESS } from './atmosphere';
+import { NIGHT_WINDOWS } from './nightWindows';
 import type { Atmosphere } from './themes/theme';
 import { SURFACE_KIND, WATER_CLASS } from '../world/visualBlock';
 
@@ -126,7 +127,40 @@ float inspectDensity(vec3 p) {
   float edge = min(d.x, d.y) * (uInspectInside > 0.0 ? 1.0 : -1.0);
   // Con il rettangolo aperto del taglio la distanza e' l'infinito pratico: la
   // rampa satura a 1 e la fetta resta il taglio netto di prima.
-  return uInspectVeil * smoothstep(0.0, ${INSPECT.feather.toFixed(1)}, edge);
+  //
+  // Ma con un rettangolo **chiuso** che taglia — l'isolato scelto — la rampa
+  // farebbe danno invece di ammorbidire: nasce per sfumare il bordo di una lente,
+  // e su un taglio sbriciola le ultime file di colonne del soggetto, proprio
+  // quelle che il +1 sul rettangolo esiste per tenere. Li' il bordo dev'essere
+  // netto, ed e' lo stesso confine fra velare e tagliare che governa tutto il
+  // resto di questo file.
+  float ramp = uInspectVeil >= 1.0
+    ? (edge > 0.0 ? 1.0 : 0.0)
+    : smoothstep(0.0, ${INSPECT.feather.toFixed(1)}, edge);
+  // Terzo predicato: la lente dei raggi X. Prima il pavimento, che e' la
+  // condizione piu' a buon mercato e quella che si vedeva peggio quando mancava:
+  // il terreno davanti al soggetto lo copre come lo copre un muro, ma dietro non
+  // ha niente da mostrare, e bucarlo apriva una macchia di cielo.
+  if (uInspectLensMax.x > uInspectLensMin.x) {
+    if (p.z <= uInspectLensMin.w) return 0.0;
+    // Poi la domanda vera: continuando il raggio di vista da qui in avanti,
+    // incontro il volume che si sta guardando? Se si', gli sto davanti — e gli
+    // sto davanti *a lui*, non a un semipiano che gli passa vicino. E' il test a
+    // lastre di lensChord() in inspect.ts, riga per riga.
+    vec3 ta = (uInspectLensMin.xyz - p) / uViewDirection;
+    vec3 tb = (uInspectLensMax - p) / uViewDirection;
+    vec3 tNear = min(ta, tb);
+    vec3 tFar = max(ta, tb);
+    float enter = max(max(tNear.x, tNear.y), tNear.z);
+    float leave = min(min(tFar.x, tFar.y), tFar.z);
+    // Un enter negativo sono due casi in uno: chi sta dietro non incontra niente, e
+    // chi sta dentro ha gia' cominciato — cosi' il soggetto non si vela da solo.
+    if (enter <= 0.0 || leave < enter) return 0.0;
+    // La corda va a zero sul contorno della sagoma e cresce verso il centro: e'
+    // gia' la distanza dal bordo, e sfuma la lente senza un secondo conto.
+    ramp *= smoothstep(0.0, ${INSPECT.feather.toFixed(1)}, leave - enter);
+  }
+  return uInspectVeil * ramp;
 }
 `;
 
@@ -203,12 +237,16 @@ uniform float uNight;
 uniform float uLitHomes;
 uniform float uLitSigns;
 
-// Viste di ispezione: due predicati geometrici e una sola densita'. Il materiale
+// Viste di ispezione: tre predicati geometrici e una sola densita'. Il materiale
 // non sa quale modo sia attivo: quella decisione vive in inspect.ts.
 uniform vec4 uInspectPlane;
 uniform vec4 uInspectRect;
 uniform float uInspectVeil;
 uniform float uInspectInside;
+// Il volume che i raggi X stanno guardando, gia' allargato del respiro; la w del
+// minimo e' il pavimento, e sotto quella quota non si vela mai.
+uniform vec4 uInspectLensMin;
+uniform vec3 uInspectLensMax;
 
 varying float vAO;
 varying float vOcclusion;
@@ -314,15 +352,75 @@ ${inspect ? inspectCap : ''}
     bool lateral = faceIndex < 4;
 
     if (surfaceIndex == ${SURFACE_KIND.habitat}) {
-      float pane = lateral ? boxMask(cellUv, vec2(0.16, 0.22), vec2(0.84, 0.78)) : 0.0;
+      // Finestra piu' alta che larga: a distanza e' la proporzione, prima ancora
+      // del numero di vetri, a dire che quella e' una facciata e non un retino.
+      float pane = lateral ? boxMask(cellUv, vec2(0.24, 0.1), vec2(0.76, 0.9)) : 0.0;
+
+      // La "torre": un gruppo di colonne dell'ordine dell'impronta. Non e'
+      // l'edificio — al frammento non arriva nessun identificatore, e dargliene
+      // uno costerebbe bit che non ci sono — ma e' la scala alla quale due
+      // vicini devono differire per potersi distinguere. Il modello, i suoi
+      // numeri e il perche' stanno in nightWindows.ts.
+      vec2 tower = floor(cell.xy / ${NIGHT_WINDOWS.towerCell.toFixed(1)});
+      float towerHash = hash21(tower + 0.37);
+      // Un ufficio accende piani interi, una casa finestre sparse: a scegliere
+      // e' la torre e non l'uso, perche' la grammatica habitat li copre
+      // entrambi. E' un limite dichiarato, e in cambio da' le bande orizzontali
+      // che sono la firma di uno skyline di notte.
+      float office = step(${(1 - NIGHT_WINDOWS.officeShare).toFixed(2)}, towerHash);
       // Quante finestre sono accese lo dice l'occupazione, non l'ora: la citta'
-      // di notte diventa una lettura dell'economia. La variazione e' gia'
-      // deterministica per cella, quindi a cambiare e' **quante** si accendono,
-      // mai quali: le luci non sfarfallano mentre la popolazione cresce.
-      float light = step(1.0 - uLitHomes, variation) * pane;
-      detailed = mix(detailed, uPalette[${PALETTE_SLOTS.glassDeep}] * 0.72, pane * 0.68);
+      // di notte resta una lettura dell'economia. Ma la quota ha un **tetto** e
+      // una polarizzazione per torre: senza, una citta' piena accende ogni vetro
+      // e la facciata torna il retino uniforme da cui questo modello scappa.
+      // Il carattere si decorrela dall'uso con un fract: se no le torri accese
+      // sarebbero sempre le stesse che si accendono per piani.
+      float share = clamp(
+        pow(uLitHomes, ${NIGHT_WINDOWS.occupancyGamma.toFixed(2)}) *
+          ${NIGHT_WINDOWS.peakShare.toFixed(2)} *
+          mix(${NIGHT_WINDOWS.towerBias.low.toFixed(2)}, ${NIGHT_WINDOWS.towerBias.high.toFixed(2)},
+            fract(towerHash * 7.31)),
+        0.0, 1.0);
+
+      // Le due soglie dell'ufficio si dividono la stessa quota: quella del piano
+      // e' la quota diviso il riempimento, quella della finestra il riempimento.
+      // Cambia **come** la luce si distribuisce, non quanta ce n'e'.
+      float floorLit = step(1.0 - share / ${NIGHT_WINDOWS.floorFill.toFixed(2)},
+        hash21(tower * 1.37 + vec2(0.0, cell.z)));
+      // La variazione resta deterministica per cella, quindi a muoversi sono le
+      // soglie e mai i numeri: cambia **quante** finestre si accendono, mai
+      // quali, e le luci non sfarfallano mentre la popolazione cresce.
+      float lit = mix(
+        step(1.0 - share, variation),
+        floorLit * step(${(1 - NIGHT_WINDOWS.floorFill).toFixed(2)}, variation),
+        office);
+      // Vani scala e ascensori: la colonna accesa a ogni piano che tiene insieme
+      // una facciata altrimenti a macchie.
+      lit = max(lit, step(${(1 - NIGHT_WINDOWS.coreShare).toFixed(2)},
+        hash21(cell.xy * 0.73 + 11.7)));
+      lit *= pane;
+
+      // Ambra di casa e bianco d'ufficio. Sono slot di palette e non costanti,
+      // per la stessa ragione per cui un'insegna prende il colore del suo voxel:
+      // un tema li ritinge insieme al resto della citta'. Il tono per finestra
+      // impedisce che una torre sia tutta di un colore, che e' la seconda causa
+      // di piattezza dopo il «tutte accese».
+      float tone = hash21(floor(uv) + vec2(41.7, 8.3));
+      vec3 windowLight = mix(
+        mix(uPalette[${PALETTE_SLOTS.concreteWhite}], uPalette[${PALETTE_SLOTS.glassPale}], 0.35),
+        uPalette[${PALETTE_SLOTS.metalBrass}],
+        clamp(mix(0.86, 0.24, office) + tone - 0.5, 0.0, 1.0));
+      // Poche finestre molto accese valgono piu' di tante uguali: e' la coda
+      // lunga che fa scintillare una facciata invece di velarla.
+      float hot = fract(tone * 6.71);
+      float strength = mix(0.55, 1.25, hot) + step(0.97, hot) * 1.4;
+
+      detailed = mix(detailed, uPalette[${PALETTE_SLOTS.glassDeep}] * 0.62, pane * 0.72);
       detailed *= 1.0 - panelEdge * 0.16;
-      emission += uPalette[${PALETTE_SLOTS.glassPale}] * light * 0.38;
+      // Il vetro acceso schiarisce anche il proprio pixel: con la sola emissione
+      // una finestra accesa di giorno resterebbe un buco scuro nel vetro.
+      detailed = mix(detailed, windowLight * 0.55, lit * 0.6);
+      emission += windowLight * lit * strength *
+        mix(${NIGHT_WINDOWS.gain.day.toFixed(2)}, ${NIGHT_WINDOWS.gain.night.toFixed(2)}, uNight) * 0.34;
     } else if (surfaceIndex == ${SURFACE_KIND.industrial}) {
       float rib = 1.0 - smoothstep(0.035, 0.075, abs(cellUv.x - 0.5));
       float vent = lateral ? boxMask(cellUv, vec2(0.18, 0.3), vec2(0.82, 0.68)) : 0.0;
@@ -364,7 +462,11 @@ ${inspect ? inspectCap : ''}
       float circuit = faceIndex == 4 ? max(circuitX, circuitY) : circuitY;
       detailed *= 1.0 - panelEdge * 0.2;
       detailed = mix(detailed, uPalette[${PALETTE_SLOTS.metalDark}] * 0.75, circuit * 0.34);
-      emission += uPalette[${PALETTE_SLOTS.metalBrass}] * circuit * step(0.58, variation) * 0.18;
+      // Di notte le luci di sommita' pesano piu' del disegno del tetto: sopra il
+      // fronte illuminato sono l'unica cosa che continua a dire dove finisce una
+      // torre e comincia il cielo.
+      emission += uPalette[${PALETTE_SLOTS.metalBrass}] * circuit * step(0.58, variation) *
+        mix(0.18, 0.5, uNight);
     } else {
       // utility e' metallo strutturale uniforme: la forma arriva dalla mesh,
       // non da un warning pattern dipinto sulla superficie.
@@ -516,6 +618,9 @@ export interface VoxelMaterialHandle {
    * insieme, e non esiste un canale che dica a quale **edificio** appartenga un
    * voxel. La lettura e' quindi per citta' e per uso, mai per singolo edificio —
    * un quartiere vuoto in mezzo a una citta' piena non si spegne da solo.
+   *
+   * Il contrasto fra una torre e l'altra il frammento se lo **fabbrica** da un
+   * gruppo di colonne, e non arriva da qui: vedi `nightWindows.ts`.
    */
   setVitality(homes: number, commerce: number): void;
   /**
@@ -589,6 +694,8 @@ export function createVoxelMaterial(hexColors: readonly string[], voxelSize: num
   const shadowMatrix = new Matrix4();
   const inspectPlane = new Vector4(0, 0, 0, 1);
   const inspectRect = new Vector4(-1e9, -1e9, 1e9, 1e9);
+  const inspectLensMin = new Vector4(0, 0, 0, 0);
+  const inspectLensMax = new Vector3(0, 0, 0);
   /** Vero da quando la variante con il `discard` e' stata composta. */
   let inspectCompiled = false;
 
@@ -652,6 +759,8 @@ export function createVoxelMaterial(hexColors: readonly string[], voxelSize: num
       uInspectRect: { value: inspectRect },
       uInspectVeil: { value: 0 },
       uInspectInside: { value: 1 },
+      uInspectLensMin: { value: inspectLensMin },
+      uInspectLensMax: { value: inspectLensMax },
     },
     side: FrontSide,
     transparent: false,
@@ -753,12 +862,21 @@ export function createVoxelMaterial(hexColors: readonly string[], voxelSize: num
 
       inspectPlane.set(uniforms.plane[0], uniforms.plane[1], uniforms.plane[2], uniforms.plane[3]);
       inspectRect.set(uniforms.rect[0], uniforms.rect[1], uniforms.rect[2], uniforms.rect[3]);
+      inspectLensMin.set(
+        uniforms.lensMin[0],
+        uniforms.lensMin[1],
+        uniforms.lensMin[2],
+        uniforms.lensMin[3],
+      );
+      inspectLensMax.set(uniforms.lensMax[0], uniforms.lensMax[1], uniforms.lensMax[2]);
       material.uniforms['uInspectVeil'].value = uniforms.veil;
       material.uniforms['uInspectInside'].value = uniforms.inside;
 
-      // Un taglio ha bisogno delle back-face per tapparsi; una vista che vela
-      // no, e tenerle accese costerebbe overdraw per niente.
-      material.side = isCut(uniforms) ? DoubleSide : FrontSide;
+      // Un taglio che **apre** i volumi ha bisogno delle back-face per tapparsi;
+      // una vista che vela no, e nemmeno un taglio di solo rettangolo, che toglie
+      // per intero cio' che sta fuori senza sezionare niente. Tenerle accese li'
+      // costerebbe overdraw per niente.
+      material.side = needsCap(uniforms) ? DoubleSide : FrontSide;
     },
   };
 }

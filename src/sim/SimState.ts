@@ -258,6 +258,65 @@ export function addBuilding(state: SimState, building: Building): SimState {
 }
 
 /**
+ * Toglie degli edifici dalla simulazione. E' la porta opposta a `addBuilding`.
+ *
+ * **Non e' un bulldozer.** La simulazione non demolisce niente da sola: questa
+ * e' la dichiarazione che il costruttore, che vive fuori da `src/sim/`, fa
+ * quando ha tolto di mezzo qualcosa. Chi la chiama oggi e' il cantiere di un
+ * landmark, ma qui non c'e' e non deve esserci niente che sappia cosa sia un
+ * landmark: entrano edifici, escono conteggi.
+ *
+ * **Non serve una penalita' scritta apposta**, ed e' la ragione per cui questa
+ * funzione e' cosi' corta. Meno edifici residenziali vuol dire meno `capacity`,
+ * quindi un'occupazione sopra uno, quindi il `crowdingPenalty` che `tick` gia'
+ * applica; meno civico e meno commercio abbassano soddisfazione e servizio per
+ * la stessa strada. Il costo di uno sventramento e' il bilancio che c'era gia'.
+ *
+ * L'abbinamento e' per cella **e** uso, e consuma una voce per edificio chiesto:
+ * su una colonna con due volumi sovrapposti toglie quello indicato e non
+ * entrambi. Cio' che non trova viene lasciato cadere in silenzio, come
+ * `addBuilding` lascia cadere una cella piena.
+ */
+export function removeBuildings(state: SimState, doomed: readonly Building[]): SimState {
+  if (doomed.length === 0) return state;
+
+  const wanted = new Map<string, number>();
+  for (const building of doomed) {
+    const key = `${building.x},${building.y},${building.class}`;
+    wanted.set(key, (wanted.get(key) ?? 0) + 1);
+  }
+
+  const survivors: Building[] = [];
+  const removed: Building[] = [];
+  for (const building of state.buildings) {
+    const key = `${building.x},${building.y},${building.class}`;
+    const left = wanted.get(key) ?? 0;
+    if (left > 0) {
+      wanted.set(key, left - 1);
+      removed.push(building);
+    } else {
+      survivors.push(building);
+    }
+  }
+  if (removed.length === 0) return state;
+
+  const buildingCounts = state.buildingCounts.slice();
+  const mixedCounts = state.mixedCounts.slice();
+  for (const building of removed) {
+    buildingCounts[building.class]--;
+    // `addBuilding` normalizza `mixed` prima di conservarlo, quindi cio' che
+    // c'e' qui e' esattamente cio' che era stato contato: si decrementa senza
+    // rifare la validazione, altrimenti due regole diverse conterebbero al
+    // contrario sullo stesso edificio.
+    if (building.mixed !== undefined) mixedCounts[building.mixed]--;
+  }
+
+  state.field.removeBuildings(removed, survivors, state.catalysts, resolveWeights(state.policies));
+
+  return { ...state, buildings: survivors, buildingCounts, mixedCounts };
+}
+
+/**
  * Attiva o disattiva una policy.
  *
  * Un peso di desiderabilita' moltiplica ogni cella della sua classe, quindi

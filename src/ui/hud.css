@@ -48,6 +48,8 @@
 .resource-delta[data-tone="negative"] { color: var(--hud-danger); }
 .resource-delta[data-tone="neutral"] { color: var(--hud-muted); }
 .time-controls { display: flex; align-items: center; gap: 3px; padding-left: 5px; border-left: 1px solid rgba(63, 87, 77, .13); pointer-events: auto; }
+/* Il ciclo del giorno e' tempo ma non e' velocita': un filo di stacco lo dice. */
+.daylight-toggle { margin-left: 5px; }
 
 .build-dock { position: absolute; left: 50%; bottom: 14px; transform: translateX(-50%); display: flex; align-items: flex-end; gap: 6px; max-width: calc(100vw - 28px); padding: 7px; border-radius: 18px; }
 .dock-divider { width: 1px; align-self: stretch; margin: 3px 1px; background: rgba(63, 87, 77, .16); }

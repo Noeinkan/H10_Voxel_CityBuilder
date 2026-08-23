@@ -95,6 +95,17 @@ export interface FieldChunkView {
   readonly values: readonly Uint8Array[];
   /** 0 se la cella e' libera. */
   readonly occupancy: Uint8Array;
+  /**
+   * Quante quote della cella sono prese.
+   *
+   * **E' la differenza fra «questa cella e' occupata» e «questa cella e'
+   * piena».** Finche' la citta' stava tutta a terra le due domande coincidevano,
+   * e `occupancy` bastava per entrambe; da quando si costruisce sopra la citta'
+   * una colonna con un edificio puo' averne ancora spazio, e a dire quanto e' il
+   * mondo — non questo campo, che continua a non avere una coordinata verticale.
+   * Qui si contano le quote spese, li' si sa quante ce ne sono.
+   */
+  readonly stack: Uint8Array;
 }
 
 /** Rettangolo di celle, estremi inclusi. */
@@ -127,8 +138,17 @@ class FieldChunk {
   /** Un `Uint8Array` per uso urbano, 1024 celle ciascuno. */
   readonly values: readonly Uint8Array[];
 
-  /** 0 se libera, `class + 1` se occupata. */
+  /**
+   * 0 se libera, `class + 1` se occupata.
+   *
+   * E' l'uso del **primo** edificio della colonna e non dell'ultimo: e' quello
+   * che decide di che colore si tinge la cella negli overlay, e cambiarlo a ogni
+   * piano sovrapposto farebbe lampeggiare la heatmap senza dire niente di piu'.
+   */
   readonly occupancy: Uint8Array;
+
+  /** Quote prese, per cella. */
+  readonly stack: Uint8Array;
 
   /** Numero di edifici entro il raggio breve, per cella. */
   readonly crowd: Uint16Array;
@@ -142,6 +162,7 @@ class FieldChunk {
     for (let i = 0; i < CLASS_COUNT; i++) values.push(new Uint8Array(CELLS_PER_CHUNK));
     this.values = values;
     this.occupancy = new Uint8Array(CELLS_PER_CHUNK);
+    this.stack = new Uint8Array(CELLS_PER_CHUNK);
     this.crowd = new Uint16Array(CELLS_PER_CHUNK);
   }
 }
@@ -187,7 +208,7 @@ export class DesirabilityField {
     let total = 0;
     for (const chunk of this.map.values()) {
       for (const values of chunk.values) total += values.byteLength;
-      total += chunk.occupancy.byteLength + chunk.crowd.byteLength;
+      total += chunk.occupancy.byteLength + chunk.stack.byteLength + chunk.crowd.byteLength;
     }
     return total;
   }
@@ -227,6 +248,13 @@ export class DesirabilityField {
     return chunk.occupancy[cellIndexOf(toLocal(x), toLocal(y))] === FREE;
   }
 
+  /** Quote prese nella cella. Zero dove non c'e' niente. */
+  stackAt(x: number, y: number): number {
+    const chunk = this.getChunk(toChunk(x), toChunk(y));
+    if (chunk === null) return 0;
+    return chunk.stack[cellIndexOf(toLocal(x), toLocal(y))];
+  }
+
   /** Uso primario che occupa la cella, o -1 se libera. */
   occupantAt(x: number, y: number): BuildingClass | -1 {
     const chunk = this.getChunk(toChunk(x), toChunk(y));
@@ -247,23 +275,114 @@ export class DesirabilityField {
 
   /**
    * Registra un edificio e aggiorna cio' che il suo arrivo cambia: l'occupazione
-   * della sua cella e la congestione nel raggio breve.
+   * della sua cella, le quote spese e la congestione nel raggio breve.
    *
-   * Restituisce false se la cella era gia' occupata, senza toccare nulla.
+   * **Una cella gia' occupata non e' piu' un rifiuto.** Lo era finche' la citta'
+   * stava tutta a terra e una colonna valeva un edificio; da quando ci si
+   * costruisce sopra, quel `false` sarebbe il campo che decide quante quote
+   * esistono — cioe' proprio la coordinata verticale che questo modulo non deve
+   * avere (invariante 7). A dire fin dove si sale e' il mondo, che interroga il
+   * campo *prima* di chiamare: qui resta il tetto del formato, perche' il
+   * contatore per cella e' un byte.
+   *
+   * **La congestione somma anche i piani sovrapposti**, ed e' voluto: una citta'
+   * impilata *e'* piu' densa, e un secondo livello che non si sentisse nella
+   * congestione darebbe quartieri in quota senza nessuno dei costi della densita'.
    */
   addBuilding(building: Building, catalysts: readonly Catalyst[], weights: Weights): boolean {
     const chunk = this.ensureChunk(toChunk(building.x), toChunk(building.y));
     const i = cellIndexOf(toLocal(building.x), toLocal(building.y));
-    if (chunk.occupancy[i] !== FREE) return false;
+    if (chunk.stack[i] >= BALANCE.limits.maxStackPerColumn) return false;
 
-    chunk.occupancy[i] = building.class + 1;
-    this.occupied++;
+    if (chunk.occupancy[i] === FREE) {
+      chunk.occupancy[i] = building.class + 1;
+      this.occupied++;
+    }
+    chunk.stack[i]++;
 
     const radius = BALANCE.desirability.congestionRadius;
     const rect = rectAround(building.x, building.y, radius);
     this.bumpCrowd(rect, 1);
     this.recomputeRect(rect, catalysts, weights, ALL_CLASSES);
     return true;
+  }
+
+  /**
+   * Toglie degli edifici e riporta il campo a com'era prima che ci fossero.
+   *
+   * **"Esatto" e' il requisito, non l'ambizione.** Togliere N edifici deve dare
+   * lo stesso campo di non averli mai aggiunti, byte per byte: l'equivalenza fra
+   * percorso incrementale e `rebuild` e' la proprieta' su cui poggia tutto il
+   * modulo, e varrebbe in una direzione sola se la rimozione lasciasse residui.
+   *
+   * **`survivors` serve a una cosa sola: l'occupazione.** `occupancy` tiene l'uso
+   * del *primo* edificio della colonna, quindi togliere proprio quello lascia la
+   * cella tinta di un uso che non c'e' piu'. Chi resta lo sa solo la lista
+   * aggiornata, e una passata su di essa costa molto meno di quanto costerebbe
+   * sbagliare: questa e' un'operazione del giocatore, non del tick.
+   *
+   * Il ricalcolo si fa su **un** rettangolo che li racchiude tutti e non su uno
+   * per edificio. Chi demolisce demolisce un'impronta compatta — il riquadro di
+   * un landmark — e i quadrati di congestione di celle vicine si sovrappongono
+   * quasi del tutto: ricalcolarli uno per uno rifarebbe le stesse celle N volte.
+   */
+  removeBuildings(
+    removed: readonly Building[],
+    survivors: readonly Building[],
+    catalysts: readonly Catalyst[],
+    weights: Weights,
+  ): void {
+    if (removed.length === 0) return;
+
+    const radius = BALANCE.desirability.congestionRadius;
+    const cells: { readonly x: number; readonly y: number }[] = [];
+    const seen = new Set<string>();
+    let touched: CellRect | null = null;
+
+    for (const building of removed) {
+      const chunk = this.ensureChunk(toChunk(building.x), toChunk(building.y));
+      const i = cellIndexOf(toLocal(building.x), toLocal(building.y));
+      // Una cella a zero non e' un errore del chiamante: `addBuilding` rifiuta
+      // chi sfora il tetto di quote, e quell'edificio nel campo non e' mai
+      // entrato. Toglierlo lo stesso sfonderebbe il contatore verso il basso.
+      if (chunk.stack[i] === 0) continue;
+
+      chunk.stack[i]--;
+      const key = `${building.x},${building.y}`;
+      if (!seen.has(key)) {
+        seen.add(key);
+        cells.push({ x: building.x, y: building.y });
+      }
+
+      const around = rectAround(building.x, building.y, radius);
+      this.bumpCrowd(around, -1);
+      touched = touched === null ? around : unionRect(touched, around);
+    }
+
+    if (touched === null) return;
+
+    const first = new Map<string, BuildingClass>();
+    for (const building of survivors) {
+      const key = `${building.x},${building.y}`;
+      if (!seen.has(key) || first.has(key)) continue;
+      first.set(key, building.class);
+    }
+
+    for (const cell of cells) {
+      const chunk = this.ensureChunk(toChunk(cell.x), toChunk(cell.y));
+      const i = cellIndexOf(toLocal(cell.x), toLocal(cell.y));
+      if (chunk.stack[i] === 0) {
+        if (chunk.occupancy[i] !== FREE) {
+          chunk.occupancy[i] = FREE;
+          this.occupied--;
+        }
+        continue;
+      }
+      const survivor = first.get(`${cell.x},${cell.y}`);
+      if (survivor !== undefined) chunk.occupancy[i] = survivor + 1;
+    }
+
+    this.recomputeRect(touched, catalysts, weights, ALL_CLASSES);
   }
 
   /**
@@ -291,6 +410,7 @@ export class DesirabilityField {
     for (const chunk of this.map.values()) {
       for (const values of chunk.values) values.fill(0);
       chunk.occupancy.fill(FREE);
+      chunk.stack.fill(0);
       chunk.crowd.fill(0);
     }
     this.occupied = 0;
@@ -299,9 +419,15 @@ export class DesirabilityField {
     for (const building of buildings) {
       const chunk = this.ensureChunk(toChunk(building.x), toChunk(building.y));
       const i = cellIndexOf(toLocal(building.x), toLocal(building.y));
-      if (chunk.occupancy[i] !== FREE) continue;
-      chunk.occupancy[i] = building.class + 1;
-      this.occupied++;
+      // Le quote si **sommano**, non si saltano: saltare il duplicato darebbe una
+      // ricostruzione diversa dal percorso incrementale, e quella equivalenza e'
+      // la proprieta' su cui poggia tutto il resto del modulo.
+      if (chunk.stack[i] >= BALANCE.limits.maxStackPerColumn) continue;
+      if (chunk.occupancy[i] === FREE) {
+        chunk.occupancy[i] = building.class + 1;
+        this.occupied++;
+      }
+      chunk.stack[i]++;
       this.bumpCrowd(rectAround(building.x, building.y, radius), 1);
     }
 
@@ -493,6 +619,16 @@ function influencedClasses(catalyst: Catalyst): readonly BuildingClass[] {
 /** Quadrato di Chebyshev centrato sulla cella, estremi inclusi. */
 export function rectAround(x: number, y: number, radius: number): CellRect {
   return { minX: x - radius, minY: y - radius, maxX: x + radius, maxY: y + radius };
+}
+
+/** Il piu' piccolo rettangolo che contiene entrambi. */
+function unionRect(a: CellRect, b: CellRect): CellRect {
+  return {
+    minX: Math.min(a.minX, b.minX),
+    minY: Math.min(a.minY, b.minY),
+    maxX: Math.max(a.maxX, b.maxX),
+    maxY: Math.max(a.maxY, b.maxY),
+  };
 }
 
 /** Celle contenute in un rettangolo. Serve ai test e alle misure di incrementalita'. */

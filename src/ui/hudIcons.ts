@@ -2,7 +2,8 @@ export type HudIcon =
   | 'funds' | 'population' | 'food' | 'materials' | 'satisfaction'
   | 'residential' | 'production' | 'civic' | 'expansion' | 'policies'
   | 'market' | 'factory' | 'park' | 'port' | 'airport' | 'transport' | 'university' | 'monument'
-  | 'pause' | 'play' | 'theme' | 'view' | 'help' | 'close';
+  | 'pause' | 'play' | 'theme' | 'view' | 'help' | 'close'
+  | 'daylight' | 'sun' | 'moon';
 
 const PATHS: Readonly<Record<HudIcon, string>> = {
   funds: '<circle cx="12" cy="12" r="8"/><path d="M9 10.2c0-1.1 1.2-2 3-2s3 .9 3 2-1.2 1.8-3 1.8-3 .9-3 2 1.2 2 3 2 3-.9 3-2M12 6v12"/>',
@@ -32,6 +33,12 @@ const PATHS: Readonly<Record<HudIcon, string>> = {
   view: '<path d="m12 3 9 5-9 5-9-5 9-5Z"/><path d="m4 12.5 8 4.5 8-4.5M4 17l8 4.5 8-4.5"/>',
   help: '<circle cx="12" cy="12" r="9"/><path d="M9.5 9a2.7 2.7 0 1 1 4.2 2.3c-1 .6-1.7 1.1-1.7 2.2M12 17h.01"/>',
   close: '<path d="M6 6l12 12M18 6 6 18"/>',
+  // Le tre del ciclo si leggono in fila: un sole sopra la linea dell'orizzonte
+  // e' il giro, il sole pieno e' il giorno fermo, la falce e' la notte ferma.
+  // La differenza sta nella linea di terra, che solo la prima ha.
+  daylight: '<path d="M3 19h18M6.5 19a5.5 5.5 0 0 1 11 0M12 5v2.5M5.6 8.2l1.8 1.8M18.4 8.2l-1.8 1.8"/>',
+  sun: '<circle cx="12" cy="12" r="4.2"/><path d="M12 2.5v2.6M12 18.9v2.6M4.6 4.6l1.9 1.9M17.5 17.5l1.9 1.9M2.5 12h2.6M18.9 12h2.6M4.6 19.4l1.9-1.9M17.5 6.5l1.9-1.9"/>',
+  moon: '<path d="M20 14.4A8.6 8.6 0 0 1 9.6 4 7.6 7.6 0 1 0 20 14.4Z"/>',
 };
 
 export function createHudIcon(name: HudIcon): SVGSVGElement {

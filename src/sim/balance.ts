@@ -93,6 +93,31 @@ export const BALANCE = {
        * esistono, e questo numero e' l'unica cosa che il loro dominio le chiede.
        */
       stageBonus: 8,
+
+      /**
+       * Fin dove un landmark puo' sventrare per farsi posto.
+       *
+       * **Un landmark si pianta anche dentro l'edificato**, e il riquadro che
+       * occupa viene sgomberato di cio' che ci trova. Non di tutto pero': oltre
+       * questo livello il piazzamento rifiuta, e il giocatore deve cercare la
+       * sacca bassa dentro il quartiere denso invece di cliccare dove gli pare.
+       * E' cio' che tiene il gesto una lettura della citta' e non una gomma.
+       *
+       * **Quattro su dodici e' un terzo della scala**, cioe' il tessuto che una
+       * citta' matura ha ancora attorno alle sue torri. Il numero e' l'unica
+       * manopola di questa meccanica e va tarato a schermo: troppo basso, e nel
+       * centro non si sventra piu' niente proprio dove il gesto ha senso;
+       * troppo alto, e un monumento cancella un centro direzionale.
+       *
+       * Il costo non e' in fondi ed e' voluto: con un milione in cassa un
+       * prezzo non vincola niente. Sventrare toglie edifici alla simulazione,
+       * quindi capacita', quindi soddisfazione — il conto lo presenta `tick`
+       * con il `crowdingPenalty` che ha gia'.
+       */
+      clearing: {
+        maxLevel: 4,
+      },
+
       /**
        * Costo, intensita' al centro e raggio di ciascun ruolo.
        *
@@ -488,5 +513,15 @@ export const BALANCE = {
     maxStock: 1e9,
     /** Valore massimo rappresentabile in una cella del campo. */
     maxDesirability: 255,
+    /**
+     * Quote che una cella puo' portare, al massimo.
+     *
+     * Non e' bilanciamento ne' una scelta di forma urbana: **quante quote una
+     * colonna ammetta davvero lo dice il mondo**, che sa dove passa una soletta
+     * e quanto e' alta. Questo e' il tetto del formato — il contatore per cella
+     * e' un byte — e serve a impedire che un mondo mal configurato lo faccia
+     * traboccare, non a decidere quanto sale la citta'.
+     */
+    maxStackPerColumn: 255,
   },
 } as const;

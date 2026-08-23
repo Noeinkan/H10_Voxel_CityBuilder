@@ -18,12 +18,21 @@ import { buildWeightOf, GROUND, groundKindOf, type GroundKind } from '../world/g
 import { siteRefusal } from '../world/sites/siteRules';
 import type { TerrainMap } from '../world/terrain/TerrainMap';
 
+/**
+ * I due rifiuti dello sventramento non li produce questo file, e non e' una
+ * dimenticanza: parlano di livelli e di strutture, cioe' di cose che stanno nel
+ * registry, e `src/game/actions.ts` un registry non ce l'ha. Li produce il
+ * Builder e li compone `GrowthScene`, come gia' compone l'ordine del tutorial.
+ * Il vocabolario pero' e' uno solo, e sta qui: e' cio' che l'HUD traduce.
+ */
 export type ActionFailure =
   | 'terrain-loading'
   | 'not-buildable'
   | 'needs-coast'
   | 'needs-open-ground'
   | 'too-close'
+  | 'block-too-tall'
+  | 'structure-in-the-way'
   | 'insufficient-funds'
   | 'population-required'
   | 'already-active'

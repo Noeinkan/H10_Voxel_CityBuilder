@@ -119,6 +119,25 @@ e costruzione degli edifici. Questo modulo non dipende dal renderer.
   `emitRoofTech` gia' emette — il mesher non si tocca. Vale sul solo corpo: il
   coronamento e' gia' tetto, e pavimentarlo ridipingerebbe la copertura di ogni
   edificio a tetto piatto invece di aggiungere un luogo dove si sta.
+- La **campata di facciata e' l'unico ritmo verticale, e sta in `paint` perche' la
+  sagoma non ci arriva.** Le voci di `BAND_OP` spostano il rettangolo di uno o due
+  voxel: con `MAX_FOOTPRINT` a otto e `GRAMMAR.minBandSide` a quattro il gioco
+  totale e' due voxel per lato, e su una torre di livello massimo si esaurisce
+  entro il primo quinto — misurato, un civico da 143 voxel scende a 4x4 alla quota
+  7 e da li' in su puo' solo *scorrere*. Sopra restano ottanta voxel di parete, e
+  a raccontare la scala c'e' solo lei. `ClassProfile.bayPeriod` conta i
+  **montanti** e non le aperture, e non e' un dettaglio: un fronte da quattro —
+  la larghezza a cui ogni torre alta finisce — ha due sole colonne fra i
+  cantonali, e un passo contato sulle aperture puo' non trovarne nessuna.
+- Il **passo della campata si conta dall'impronta, non dalla fascia.** Contandolo
+  dalla fascia, un `jog` da un voxel farebbe scorrere di uno tutte le aperture del
+  piano sopra e una torre di venti fasce tornerebbe rumore. Il cantonale resta
+  sempre pieno — e' dove due fronti si incontrano ed e' dove `emitCornerPosts`
+  appoggia il pilastrino. **La campata e' vernice**: stesso volume, stesse
+  superfici, quindi la microgeometria emette esattamente i prismi di prima e
+  collisione, budget di chunk e cancellazione non se ne accorgono. Costa solo
+  greedy merge — su un chunk di quattro torri vere, 631 -> 901 quad base e
+  dettaglio invariato a 1 710.
 - **Un cluster e' due numeri su un record, non un'entita'.** Gli edifici
   adiacenti dello stesso fronte condividono la quota — che e' gia' `baseZ` — e
   l'altezza del corso di base, che e' `baseBand`; da li' `cluster` dice solo con
@@ -225,6 +244,47 @@ e costruzione degli edifici. Questo modulo non dipende dal renderer.
   riga — la regola di scelta in `typology.ts` e' generica e non va toccata, e la
   grammatica in `generate.ts` non sa che le tipologie esistono. Ogni uso chiude
   il catalogo con un ripiego senza condizioni, cosi' la scelta non puo' fallire.
+
+## La citta' in quota
+
+- **Un impalcato in quota non prende suolo; lo prende solo la gamba che scende a
+  terra.** E' l'invariante di `aerial/`, complemento esatto di quello di `spans/`.
+  Sotto una mensola la carreggiata si dipinge ancora e i lotti si costruiscono
+  ancora: e' una riga di `index()`, dove solo `AERIAL_PART.pier` entra in
+  `groundColumns`.
+- **La mensola e' la prima cosa che esce dall'impronta.** La grammatica degli
+  edifici dichiara il contrario — «nessuna fascia puo' uscire dall'impronta e la
+  collisione fra edifici resta bidimensionale» — e l'aggetto rompe proprio quella
+  riga. E' legale perche' `overlaps` confronta gia' gli intervalli di quota
+  colonna per colonna; e' per questo che chi lo scrive **eccettua l'ospite** dalla
+  collisione, invece di spostare la mensola fuori dal riquadro.
+- **Nessuna quota e' imposta da fuori, e per questo qui non esiste `align`.** La
+  mensola prende la quota dalla sommita' di una fascia dell'ospite, la gamba dal
+  primo appoggio che trova scendendo. Un lotto in quota eredita la fase
+  dall'impalcato che lo ospita, non dal cubo di terreno — la stessa ragione per
+  cui le campate `align` l'hanno gia' tolto.
+- **Dove l'ancoraggio non arriva, nasce una gamba**, e non c'e' una regola per
+  ciascuna forma: `planDeck` misura lo sbalzo di ogni colonna e pianta un appoggio
+  dove supera `AERIAL.reach`. Ne segue senza codice in piu' che una mensola corta
+  non ha gambe e una profonda se le conta da sola. Una gamba **si sposta per
+  trovare un tetto** prima di piantarsi nel prato: e' cio' che tiene i cuori
+  d'isolato liberi per la piazza della 4.5.
+- **Chi regge non cresce.** Il guinzaglio di un impalcato tira al contrario di
+  quello di una campata: `upgradePass` salta chi porta. Ospitare e' quindi una
+  rinuncia, e la soglia che la governa e' `AERIAL.minHostLevel` — dove sta anche
+  la misura per cui la regola piu' ovvia («aspetta che abbia finito di crescere»)
+  non funziona su una citta' che cresce.
+- **Il livello si risolve dove si risolve il lotto.** `TerrainMap` resta una
+  quota e un bit per colonna; `decksAt` legge dal registry, e in quota **il lotto
+  e' l'impalcato** — niente `findLot`, niente opere di terra, niente fila.
+  `src/sim/` non guadagna una coordinata verticale: conta le quote spese
+  (`stack`) e chiede al mondo quante ce ne sono (`headroomAt`).
+- **La rete e' meta' fatta, e il limite e' scritto nei test.** Un percorso dritto
+  fra due mensole allineate funziona; la piega a zeta e' stata **tolta** perche' i
+  suoi pianerottoli cadevano in punti che il corridoio dritto non misura, e su
+  settecentocinquanta coppie di una citta' cresciuta non ne reggeva nessuno. Su
+  quella stessa citta' i percorsi restano **zero**: le mensole ci sono ma non si
+  guardano mai. Chi riprende da qui parta da li', non dal planner.
 
 ## Verifica
 

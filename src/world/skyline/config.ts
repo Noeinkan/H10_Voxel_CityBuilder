@@ -87,4 +87,21 @@ export const SKYLINE = {
    * fronte edificato, non una fascia di rispetto.
    */
   coastNear: 8,
+
+  /**
+   * Voxel di quota artificiale che consumano un livello del tetto.
+   *
+   * **Una piattaforma non e' il modo di aggirare la gerarchia: e' il modo in cui
+   * la gerarchia sale.** Senza questo numero il secondo livello sarebbe la
+   * scorciatoia che rende inutile il primo — una soletta a trenta voxel con
+   * sopra una torre da nove restituirebbe in periferia l'altezza che il centro
+   * si guadagna con la desiderabilita'.
+   *
+   * Dodici voxel sono l'ordine di grandezza di una fascia di edificio: chi
+   * costruisce in quota parte gia' «piu' in alto di un piano», e il tetto glielo
+   * scala. E' anche il motivo per cui una piattaforma bassa non toglie quasi
+   * nulla e una altissima non lascia costruire niente, che e' la risposta giusta
+   * a entrambi i casi.
+   */
+  deckLevelRise: 12,
 } as const;

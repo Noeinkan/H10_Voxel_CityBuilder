@@ -1,7 +1,8 @@
-import { DoubleSide, FrontSide, Vector4 } from 'three';
+import { DoubleSide, FrontSide, Vector3, Vector4 } from 'three';
 import { describe, expect, it } from 'vitest';
 import { INSPECT, INSPECT_MODE, inspectUniforms, type InspectState } from './inspect';
 import { sunDirection } from './lighting';
+import { NIGHT_WINDOWS } from './nightWindows';
 import { resolveTheme } from './themes';
 import { createVoxelMaterial } from './VoxelMaterial';
 
@@ -19,7 +20,9 @@ function inspectState(patch: Partial<InspectState>): InspectState {
     focus: null,
     view: [0, 0, -1],
     block: null,
+    subject: null,
     section: null,
+    locked: false,
     ...patch,
   };
 }
@@ -140,7 +143,15 @@ describe('createVoxelMaterial', () => {
     expect(material.fragmentShader).toContain('gl_FrontFacing');
     // Un velo non ha bisogno delle back-face: il taglio si', ma questo non taglia.
     expect(material.side).toBe(FrontSide);
-    expect(material.uniforms['uInspectVeil'].value).toBeCloseTo(INSPECT.veil, 10);
+    expect(material.uniforms['uInspectVeil'].value).toBeCloseTo(INSPECT.xrayVeil, 10);
+    // La lente si accende con il modo, ed e' l'unico modo che la usa: senza, il
+    // predicato in piu' resterebbe nel sorgente a costo zero ma anche a effetto
+    // zero, e il difetto si vedrebbe solo a schermo.
+    const lensMax = material.uniforms['uInspectLensMax'].value as Vector3;
+    const lensMin = material.uniforms['uInspectLensMin'].value as Vector4;
+    expect(lensMax.x).toBeGreaterThan(lensMin.x);
+    // Il pavimento e' la quota del terreno sotto il cursore, non quella allargata.
+    expect(lensMin.w).toBe(4);
 
     // Spegnere non ricompila: si torna al payload neutro, la variante resta.
     const source = material.fragmentShader;
@@ -166,6 +177,23 @@ describe('createVoxelMaterial', () => {
     expect(material.side).toBe(FrontSide);
     const rect = material.uniforms['uInspectRect'].value as Vector4;
     expect([rect.x, rect.y, rect.z, rect.w]).toEqual([10, 20, 31, 41]);
+  });
+
+  it('le finestre di notte prendono i numeri da nightWindows, non da letterali', () => {
+    // Il fragment shader e' la seconda copia del modello. Se una soglia venisse
+    // riscritta a mano qui dentro, cambiarla in `nightWindows.ts` non farebbe
+    // piu' niente e il difetto si vedrebbe solo a schermo, come per ogni altra
+    // cosa che vive in GLSL.
+    const source = createVoxelMaterial(resolveTheme('natural').colors, 1).material.fragmentShader;
+
+    expect(source).toContain(`cell.xy / ${NIGHT_WINDOWS.towerCell.toFixed(1)}`);
+    expect(source).toContain(NIGHT_WINDOWS.peakShare.toFixed(2));
+    expect(source).toContain(NIGHT_WINDOWS.occupancyGamma.toFixed(2));
+    expect(source).toContain(NIGHT_WINDOWS.floorFill.toFixed(2));
+    expect(source).toContain(NIGHT_WINDOWS.towerBias.high.toFixed(2));
+    expect(source).toContain(NIGHT_WINDOWS.gain.night.toFixed(2));
+    // Quante finestre si accendono resta una lettura dell'economia, non dell'ora.
+    expect(source).toContain('pow(uLitHomes');
   });
 
   it('espone le sei normali di faccia e accetta vista e risoluzione', () => {

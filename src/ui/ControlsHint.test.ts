@@ -12,6 +12,7 @@ describe('CONTROL_HINTS', () => {
       { keys: ['Drag'], action: 'Pan the camera' },
       { keys: ['F'], action: 'Frame the whole city' },
       { keys: ['V'], action: 'Cycle the views below' },
+      { keys: ['L'], action: 'Hold the day, hold the night, or let the clock run' },
       { keys: ['Esc'], action: 'Cancel the tool, then leave the view' },
     ]);
   });

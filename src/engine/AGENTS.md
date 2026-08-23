@@ -85,6 +85,25 @@ Due limiti dichiarati, non sviste:
   edificio cadeva dentro il raggio di qualcosa di acceso, e l'edificio intero
   diventava ambra invece di avere una parete schiarita accanto all'insegna.
 
+### Le finestre accese
+
+Quali si accendono lo decide il frammento, e il modello sta in `nightWindows.ts`
+con **tutti** i suoi numeri. Tre cose che vale la pena sapere prima di toccarlo:
+
+- la quota accesa ha un **tetto**. Con la sola soglia sull'occupazione una citta'
+  piena accendeva quasi ogni vetro, e una facciata accesa al novanta per cento
+  non e' uno skyline ma un retino: il buio fra le luci e' meta' del disegno;
+- la **torre** e' un gruppo di colonne (`towerCell`), non un edificio: al
+  frammento non arriva nessun identificatore. E' un'approssimazione dichiarata, e
+  una torre larga che cade su due gruppi si accende ad ali diverse — che e' cio'
+  che fa anche una torre vera;
+- uffici e case si accendono in modo diverso — piani interi contro finestre
+  sparse — ma a scegliere e' la torre e non l'uso, perche' la grammatica
+  `habitat` copre residenziale e commerciale insieme.
+
+`uLitHomes` continua a decidere **quante** finestre, mai quali: a muoversi sono
+le soglie, e le luci non sfarfallano mentre la popolazione cresce.
+
 ## Prospettiva aerea
 
 Il secondo modello puro e' `atmosphere.ts`, con il suo `atmosphere.test.ts`. La
@@ -108,9 +127,20 @@ stessa notte.
 
 Quanto sia giorno si ricava dall'**altezza del sole**, non da una tabella di
 orari: il crepuscolo esiste per costruzione e non c'e' una seconda tabella da
-tenere allineata. L'ora tocca luce, cielo, nebbia, ombra ed emissivi; palette,
-materia, tone mapping ed esposizione restano del tema, ed e' per questo che
-scorrere l'orologio non ricompila niente.
+tenere allineata. L'ora tocca luce, cielo, nebbia, ombra, emissivi e il
+**riflesso dell'acqua**; palette, materia, tone mapping ed esposizione restano
+del tema, ed e' per questo che scorrere l'orologio non ricompila niente.
+
+L'acqua e' l'unica materia che l'ora tocca, e non e' un'eccezione arbitraria: il
+mare non ha un colore proprio, ha quello di cio' che riflette. Lasciandogli la
+tinta di mezzogiorno su un fondo notturno, l'increspatura smetteva di leggersi
+come un'onda e diventava un quadrettato chiaro largo quanto l'inquadratura.
+
+`DaylightMode` decide se l'orologio cammina: `cycle`, `day` o `night`. I due modi
+fissi non sono un secondo look ma **ore vere** del ciclo (`DAYLIGHT.dayHour` e
+`nightHour`), quindi tutto quello che l'ora produce vale identico. Il giocatore
+li sceglie dal bottone accanto alla velocita' o con `L`; l'harness ha ancora
+`?hour=` e `H`, che inchiodano un'ora qualsiasi.
 
 `applyTheme` e `applyAtmosphere` in `main.ts` sono separate proprio qui: la
 seconda gira molte volte per partita, la prima quasi mai.
@@ -128,6 +158,32 @@ il controller ha gia' dovuto abbassare il pixel ratio, cosi' c'e' una sola
 isteresi invece di due che possono sfasarsi. Con `?quality=performance` le pass
 aggiuntive spariscono e le draw call si dimezzano, perche' la geometria viene
 disegnata una volta sola.
+
+## Viste di ispezione
+
+La decisione sta in `inspect.ts`, che e' puro e si verifica in `node`: nel
+materiale entrano sei uniform e nient'altro. Il terzo predicato — la lente dei
+raggi X — e' un test raggio/volume e non una regione: `lensChord` in `inspect.ts`
+e il blocco corrispondente nel fragment sono due copie della stessa cosa, come
+`lighting.ts` e la sua meta' GLSL, e `inspect.test.ts` e' cio' che le tiene
+allineate.
+
+Tre predicati vicini che vale la pena non confondere, perche' ognuno risponde a
+una domanda diversa e ogni coppia diverge in un caso solo:
+
+- `modeCuts(mode)` — «questo **modo** taglia?». Serve alla regola che chiude una
+  vista quando si prende in mano uno strumento.
+- `isCut(uniforms)` — «si sta tagliando **adesso**?». Non e' la stessa cosa da
+  quando Block focus taglia se l'isolato e' stato scelto e vela se e' solo
+  puntato. E' la condizione che spegne le ombre proiettate.
+- `needsCap(uniforms)` — «il taglio lascia una **superficie di sezione**?». Solo
+  qui serve `DoubleSide` e il tappo dalle back-face. Un taglio di solo rettangolo
+  toglie per intero cio' che sta fuori e lascia chiusa la geometria che resta:
+  tapparlo sarebbe il doppio dei fragment per niente.
+
+Limite noto e dichiarato: il predicato vive nel materiale di **scena** e non in
+quello di **profondita'**, quindi il volume nascosto continua a proiettare ombra.
+E' il motivo per cui un taglio le spegne tutte invece di correggerle.
 
 ## Verifica
 

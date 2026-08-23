@@ -349,6 +349,17 @@ export const GRAMMAR = {
   /** Quota entro cui una faccia sul fronte d'accento diventa portale. */
   portalHeight: 4,
 
+  /**
+   * Fascia piena alla base di ogni piano, sotto le aperture della campata.
+   *
+   * E' il parapetto, ed e' cio' che separa una facciata da un reticolo: senza,
+   * l'apertura partirebbe dal solaio e fra una cornice e l'altra resterebbe una
+   * vetrata continua. Due voxel sono un cubo di terreno, come lo zoccolo, e su
+   * una fascia da quattro lasciano una sola riga di apertura — che e' la
+   * proporzione giusta per il piano piu' basso che la grammatica produce.
+   */
+  spandrelHeight: 2,
+
   /** Altezza del coronamento, `[minimo, massimo]` inclusi. */
   crownHeight: [2, 4] as readonly [number, number],
 
@@ -591,6 +602,24 @@ export interface ClassProfile {
   /** Preferenza di impronta applicata al tiro comune, prima del clamp di livello. */
   readonly footprintBias: number;
 
+  /**
+   * Passo dei montanti di facciata, in voxel. Sotto due, la parete resta piena.
+   *
+   * **E' l'unica cosa che spezza una parete in verticale, e serve perche' la
+   * grammatica delle fasce non ci arriva.** Con `MAX_FOOTPRINT` a otto e
+   * `GRAMMAR.minBandSide` a quattro il gioco totale della sagoma e' due voxel
+   * per lato: su una torre da centoquaranta si esaurisce entro il primo quinto,
+   * e sopra restano ottanta voxel di corpo che possono solo *scorrere*. Da li'
+   * in su a raccontare la scala c'e' la sola facciata, e finora la facciata era
+   * un colore con una riga ogni fascia.
+   *
+   * **Conta i montanti, non le aperture**, e la differenza si vede proprio dove
+   * conta: un fronte da quattro — la larghezza a cui ogni torre alta finisce —
+   * ha due sole colonne fra i cantonali, e un passo contato sulle aperture puo'
+   * non trovarne nessuna. Contando i montanti ce n'e' sempre almeno una.
+   */
+  readonly bayPeriod: number;
+
   /** Corpo. */
   readonly body: number;
   /** Cornice: il voxel di sommita' di ogni fascia. */
@@ -640,6 +669,9 @@ export const CLASS_PROFILE: readonly ClassProfile[] = [
     shrinkOps: [BAND_OP.setback, BAND_OP.shrink, BAND_OP.shrinkOneSide, BAND_OP.jog],
     growOps: [BAND_OP.jog, BAND_OP.grow, BAND_OP.shrinkOneSide],
     footprintBias: 2,
+    // Montanti radi e aperture larghe due: e' l'uso che deve leggersi come
+    // abitato, e due voxel di apertura sono la loggia che una terrazza promette.
+    bayPeriod: 3,
     body: PALETTE_SLOTS.concretePale,
     bodyAlt: PALETTE_SLOTS.glassDeep,
     accent: PALETTE_SLOTS.glass,
@@ -657,6 +689,9 @@ export const CLASS_PROFILE: readonly ClassProfile[] = [
     shrinkOps: [BAND_OP.shrink, BAND_OP.shrinkOneSide, BAND_OP.jog],
     growOps: [BAND_OP.jog, BAND_OP.grow, BAND_OP.keep],
     footprintBias: 2,
+    // Grana fitta: un fronte in mattoni alterna pieno e vuoto a ogni colonna, ed
+    // e' quella cadenza stretta a distinguerlo da una parete vetrata.
+    bayPeriod: 2,
     body: PALETTE_SLOTS.brick,
     bodyAlt: PALETTE_SLOTS.brickLight,
     accent: PALETTE_SLOTS.metalBrass,
@@ -676,6 +711,10 @@ export const CLASS_PROFILE: readonly ClassProfile[] = [
     shrinkOps: [BAND_OP.shrinkOneSide, BAND_OP.jog],
     growOps: [BAND_OP.keep, BAND_OP.jog, BAND_OP.grow],
     footprintBias: 2,
+    // Passo largo e due toni scuri accostati: non sono finestre ma pannelli di
+    // lamiera, che e' esattamente cio' che un capannone ha al posto delle
+    // finestre. Il ritmo spezza la parete senza promettere che dentro si abiti.
+    bayPeriod: 4,
     body: PALETTE_SLOTS.stoneDeep,
     bodyAlt: PALETTE_SLOTS.metalDark,
     accent: PALETTE_SLOTS.metalRust,
@@ -695,6 +734,11 @@ export const CLASS_PROFILE: readonly ClassProfile[] = [
     shrinkOps: [BAND_OP.stack, BAND_OP.shrink, BAND_OP.shrinkOneSide],
     growOps: [BAND_OP.jog, BAND_OP.shrink, BAND_OP.grow],
     footprintBias: 0,
+    // Curtain wall: montante ogni tre, e la cornice di fascia e' dello stesso
+    // vetro delle aperture. E' la classe che sale piu' in alto — quella su cui
+    // la sagoma finisce prima il fiato — quindi e' anche quella che ha piu'
+    // bisogno di una parete che dica dove finisce un piano.
+    bayPeriod: 3,
     body: PALETTE_SLOTS.concreteWhite,
     bodyAlt: PALETTE_SLOTS.glassPale,
     // Era `glassDeep`, l'unico accento troppo scuro per emettere: da quando il

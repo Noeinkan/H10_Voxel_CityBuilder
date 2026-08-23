@@ -27,12 +27,24 @@ import {
   modeHasLevel,
   parseInspectMode,
   sectionAxis,
+  type InspectBox,
   type InspectMode,
   type InspectState,
   type InspectUniforms,
 } from './engine/inspect';
-import { IsoCameraController } from './engine/IsoCameraController';
-import { dayPhase, nightFactor, normaliseHour, withHour } from './engine/daylight';
+import { IsoCameraController, type IsoCameraState } from './engine/IsoCameraController';
+import {
+  DAYLIGHT,
+  DAYLIGHT_MODE,
+  dayPhase,
+  modeHour,
+  nextDaylightMode,
+  nightFactor,
+  normaliseHour,
+  resolveDaylightMode,
+  withHour,
+  type DaylightMode,
+} from './engine/daylight';
 import { faceLuminance, sunDirection } from './engine/lighting';
 import { onPaletteChanged } from './engine/palette';
 import {
@@ -47,7 +59,7 @@ import { resolveTheme, THEMES, type Theme } from './engine/themes';
 import { createVoxelMaterial } from './engine/VoxelMaterial';
 import { GrowthScene } from './game/growthScene';
 import { resolveLaunchMode } from './game/launchMode';
-import { pickSurfaceCell, type SurfaceCell } from './game/surfacePick';
+import { pickSolidCell, pickSurfaceCell, type Ray3, type SurfaceCell } from './game/surfacePick';
 import { FixedStepLoop } from './game/loop';
 import { coastalSectorAt, shapeWithSector, type CoastalSector } from './game/sectors';
 import type { ActionFailure, SiteCost } from './game/actions';
@@ -72,6 +84,7 @@ import { tick } from './sim/tick';
 import './ui/hud.css';
 import { DebugOverlay, type OverlayFrame } from './ui/DebugOverlay';
 import { GameHud, type GameTool } from './ui/GameHud';
+import { daylightControl } from './ui/GameHudModel';
 import { GrowthOverlay } from './ui/GrowthOverlay';
 import { InspectOverlay, type InspectOverlayFrame } from './ui/InspectOverlay';
 import { SimOverlay, type SimOverlayFrame } from './ui/SimOverlay';
@@ -88,6 +101,7 @@ import {
 } from './world/scenes/dioramaScene';
 import { StreetNetwork } from './world/streets/StreetNetwork';
 import type { BlockRect } from './world/streets/streetGrid';
+import { TERRAIN } from './world/terrain/config';
 import { BiomeView } from './world/terrain/BiomeView';
 import { expandIsland } from './world/terrain/IslandGenerator';
 import { TerrainStreamer } from './world/terrain/TerrainStreamer';
@@ -227,15 +241,6 @@ const diorama: DioramaScene | null = sceneKind === 'diorama' && terrainParam ===
 let theme: Theme = resolveTheme(params.get('theme'));
 
 /**
- * Secondi reali di un giorno di gioco.
- *
- * Dodici minuti: abbastanza lenti perche' un'ora di gioco duri mezzo minuto e
- * la luce non strobi, abbastanza veloci perche' chi guarda la citta' per una
- * partita veda sia il mezzogiorno sia la notte senza chiederlo.
- */
-const DAY_SECONDS = 720;
-
-/**
  * Passo minimo, in ore, fra due riscritture dell'atmosfera.
  *
  * Un centesimo d'ora e' mezzo minuto di gioco: sotto, il sole si sposta di
@@ -244,16 +249,29 @@ const DAY_SECONDS = 720;
 const HOUR_STEP = 0.01;
 
 /**
+ * `?daylight=cycle|day|night` sceglie se l'orologio cammina o sta fermo.
+ *
+ * E' la stessa scelta del bottone nell'HUD, e vale anche senza `debug`: la
+ * notte fissa e' un modo di guardare la propria citta', non una misura.
+ */
+let daylightMode: DaylightMode = resolveDaylightMode(params.get('daylight'));
+
+/**
  * `?hour=<0..24>` fissa l'ora e **ferma** il ciclo: vale anche senza `debug`,
  * come `?theme=` e `?inspect=`, perche' e' un'inquadratura e non una misura.
+ *
+ * Non e' `?daylight=`: quello sceglie fra tre stati che il gioco conosce,
+ * questo inchioda un'ora qualsiasi per una cattura. Il primo clic sul bottone
+ * lo scioglie, perche' un comando di gioco che non risponde e' peggio di un
+ * parametro perso.
  */
-const hourPinned = params.get('hour') !== null;
+let hourPinned = params.get('hour') !== null;
 let hour = hourPinned
   ? normaliseHour(Number(params.get('hour')))
-  // Senza, si parte a meta' pomeriggio: e' l'ora in cui il sole sta ancora
-  // sopra la soglia in cui il tetto e' la faccia piu' chiara, quindi la prima
-  // immagine e' quella con cui i temi sono stati disegnati.
-  : 13;
+  // Senza, si parte dall'ora del modo, e nel ciclo e' meta' pomeriggio: il sole
+  // sta ancora sopra la soglia in cui il tetto e' la faccia piu' chiara, quindi
+  // la prima immagine e' quella con cui i temi sono stati disegnati.
+  : modeHour(daylightMode) ?? DAYLIGHT.dayHour;
 
 /** Ora con cui l'atmosfera in vigore e' stata scritta. */
 let appliedHour = hour;
@@ -462,6 +480,12 @@ if (growEnabled) {
         const closed = viewLabel(inspectMode);
         setInspectMode(kept);
         gameHud?.setSelectionNote(`${closed} closed so you can see the ground`);
+      } else if (inspectLockedRect !== null) {
+        // Stesso motivo, un gradino piu' in basso: un isolato scelto **taglia**,
+        // quindi il terreno attorno non c'e' piu' e si costruirebbe alla cieca.
+        // Basta mollarlo, senza spegnere anche la vista: quella vela e si legge.
+        unlockInspectBlock();
+        gameHud?.setSelectionNote('Block released so you can see the ground');
       }
       selectedTool = tool;
       preview.hide();
@@ -481,6 +505,7 @@ if (growEnabled) {
       },
     onPause: (paused) => growthScene?.setPaused(paused),
     onSpeed: (speed) => growthScene?.setSpeed(speed),
+    onDaylight: setDaylightMode,
     onTheme: (id) => {
       const index = THEMES.findIndex((candidate) => candidate.id === id);
       if (index >= 0) cycleTheme(index);
@@ -493,6 +518,7 @@ if (growEnabled) {
       influenceOverlay?.hideCursor();
       gameHud?.updateCursor(0, 0, null);
     },
+    onReleaseBlock: unlockInspectBlock,
   }, THEMES.map((candidate) => ({
     id: candidate.id,
     name: candidate.name,
@@ -502,6 +528,9 @@ if (growEnabled) {
       candidate.colors[12] ?? candidate.atmosphere.fog.color,
     ],
   })), theme.id);
+  // Il bottone nasce sul ciclo: se l'URL ha chiesto altro, va detto subito o la
+  // prima cosa che il giocatore legge e' falsa.
+  gameHud.setDaylight(daylightMode);
 }
 
 const picker = new Raycaster();
@@ -547,6 +576,32 @@ let pointerInside = false;
 let inspectFocus: SurfaceCell | null = null;
 let inspectBlockKey: string | null = null;
 let inspectBlockRect: BlockRect | null = null;
+
+/**
+ * Il volume che i raggi X stanno guardando, quando sotto il cursore c'e' un
+ * edificio.
+ *
+ * E' l'unico pezzo di questa vista che deve sapere che gli edifici esistono, ed
+ * e' il motivo per cui sta qui e non in `inspect.ts`: quel modulo resta puro e
+ * riceve una scatola, non un registro. Senza — suolo nudo, scene senza crescita
+ * — la lente ripiega sulla colonna e si allarga da sola.
+ */
+let inspectSubject: InspectBox | null = null;
+
+/**
+ * L'isolato **scelto**, quando c'e'.
+ *
+ * Finche' e' null, Block focus insegue il cursore come sempre. Da qui in poi
+ * smette: il riquadro e' questo e non si rilegge piu' il puntatore, che e'
+ * esattamente cio' che permette di girare attorno a un isolato invece di
+ * perderlo al primo movimento del mouse. L'inquadratura di partenza si tiene da
+ * parte perche' uscendo va restituita: la camera l'ha mossa lo strumento, non il
+ * giocatore.
+ */
+let inspectLockedRect: BlockRect | null = null;
+let inspectLockedKey: string | null = null;
+let cameraBeforeStudy: IsoCameraState | null = null;
+
 let inspectPayload: InspectUniforms = inspectUniforms(inspectStateOf());
 
 if (terrain !== null) {
@@ -558,6 +613,8 @@ if (terrain !== null) {
   renderer.domElement.addEventListener('pointerleave', () => {
     pointerInside = false;
   });
+  renderer.domElement.addEventListener('pointerdown', onStudyPointerDown);
+  renderer.domElement.addEventListener('pointerup', onStudyPointerUp);
 }
 
 if (growEnabled) {
@@ -641,18 +698,23 @@ if (debugEnabled) {
   // L'orologio. Convive con `__voxelSun`, che resta l'override manuale per
   // autorare un tema: quello scrive una posizione e basta, questo la ricava
   // dall'ora e continua a ricavarla finche' il ciclo cammina.
-  debugGlobals['__voxelHour'] = (next?: number): Record<string, unknown> => {
-    if (next !== undefined) setHour(next);
+  debugGlobals['__voxelHour'] = (next?: number | string): Record<string, unknown> => {
+    // Un numero e' un'ora, una stringa e' un modo: sono la stessa manopola vista
+    // da due lati, e due hook separati vorrebbero dire ricordarsi quale chiama
+    // quale mentre si guarda una notte che non passa.
+    if (typeof next === 'number') setHour(next);
+    else if (typeof next === 'string') setDaylightMode(resolveDaylightMode(next));
     const atmosphere = withHour(theme.atmosphere, hour);
     return {
       hour,
+      mode: daylightMode,
       pinned: hourPinned,
       day: dayPhase(hour, theme.atmosphere.sun.elevation),
       azimuth: atmosphere.sun.azimuth,
       elevation: atmosphere.sun.elevation,
       sunIntensity: atmosphere.sun.intensity,
       emissiveStrength: atmosphere.emissiveStrength,
-      dayLengthSeconds: DAY_SECONDS,
+      dayLengthSeconds: DAYLIGHT.daySeconds,
     };
   };
   // Stessa fonte del pannello: due letture separate divergerebbero al primo
@@ -837,11 +899,11 @@ function applyAtmosphere(): void {
  * uno spostamento di un centesimo di grado del sole e' spesa senza immagine.
  */
 function updateDaylight(dt: number): void {
-  if (hourPinned) return;
+  if (hourPinned || daylightMode !== DAYLIGHT_MODE.cycle) return;
   // L'ora avanza **sempre**; a essere condizionata e' la scrittura. Fermare
   // anche l'orologio significherebbe non avanzare mai, perche' il passo di un
   // frame e' sempre sotto la soglia.
-  hour = normaliseHour(hour + (dt * 24) / DAY_SECONDS);
+  hour = normaliseHour(hour + (dt * 24) / DAYLIGHT.daySeconds);
   const drift = Math.abs(hour - appliedHour);
   if (Math.min(drift, 24 - drift) >= HOUR_STEP) applyAtmosphere();
 }
@@ -866,6 +928,25 @@ function updateVitality(time: number): void {
 function setHour(next: number): void {
   hour = normaliseHour(next);
   applyAtmosphere();
+}
+
+/**
+ * Ciclo, giorno fisso o notte fissa.
+ *
+ * Tornando al ciclo l'ora **non** si tocca: il sole riparte da dov'era, e
+ * riportarlo a mezzogiorno sarebbe uno stacco che nessuno ha chiesto. Andando su
+ * un modo fisso si', perche' quello e' esattamente cio' che si e' chiesto.
+ */
+function setDaylightMode(mode: DaylightMode): void {
+  daylightMode = mode;
+  // Un `?hour=` in coda all'URL vincerebbe su ogni clic successivo: il primo
+  // comando di gioco lo scioglie, o il bottone resterebbe inerte senza dirlo.
+  hourPinned = false;
+  const pinned = modeHour(mode);
+  if (pinned !== null) setHour(pinned);
+  gameHud?.setDaylight(mode);
+  gameHud?.showTransientFeedback(`Daylight · ${daylightControl(mode).label}`);
+  console.info(`[daylight] ${mode}`);
 }
 
 function cycleTheme(index: number): void {
@@ -1018,7 +1099,7 @@ function onFrame(time: number): void {
     // Nello stesso ritmo del resto dell'HUD, cioe' 150 ms: la vista e' gia'
     // scritta nelle uniform per il frame corrente, e il pannello non deve
     // ridisegnarsi sessanta volte al secondo per dirlo.
-    gameHud.setView(buildViewMenuModel(inspectMode, inspectSliceZ, inspectMaxZ()));
+    gameHud.setView(buildViewMenuModel(inspectMode, inspectSliceZ, inspectMaxZ(), inspectLockedRect !== null));
   }
 }
 
@@ -1183,9 +1264,11 @@ function inspectStateOf(): InspectState {
       : { x: inspectFocus.x + 0.5, y: inspectFocus.y + 0.5, z: inspectFocus.z },
     view: [viewDirection.x, viewDirection.y, viewDirection.z],
     block: inspectBlockRect,
+    subject: inspectSubject,
     section: inspectFocus === null || streets === null
       ? null
       : { axis, at: streets.nearestLine(axis, axis === 0 ? inspectFocus.x : inspectFocus.y) },
+    locked: inspectLockedRect !== null,
   };
 }
 
@@ -1206,7 +1289,9 @@ function inspectStateOf(): InspectState {
  */
 function inspectFocusColumn(): SurfaceCell | null {
   if (pointerInside) {
-    const picked = surfaceCellAt(pointerClientX, pointerClientY);
+    // `pointedCellAt` e non `surfaceCellAt`: chi guarda indica una cosa, non una
+    // terra, e sopra una torre le due risposte distano quanto la torre e' alta.
+    const picked = pointedCellAt(pointerClientX, pointerClientY);
     if (picked !== null) return picked;
   }
   if (inspectFocus !== null) return inspectFocus;
@@ -1215,6 +1300,39 @@ function inspectFocusColumn(): SurfaceCell | null {
   const y = Math.floor(camera.targetPosition.y);
   const column = terrain.map.columnAt(x, y);
   return column === null ? null : { x, y, z: column.height, buildable: column.buildable };
+}
+
+/**
+ * Il volume da guardare, sulla colonna a fuoco.
+ *
+ * Il registro sa gia' tutto quello che serve — angolo, impronta, base, altezza —
+ * e questo e' l'unico punto in cui i raggi X vengono a saperlo. Fra piu' record
+ * sulla stessa colonna si prende il piu' alto: e' quello che il raggio ha
+ * incontrato, perche' e' quello che copre gli altri.
+ *
+ * `null` dove un registro non c'e' — scene `city` e `diorama`, crescita spenta —
+ * o dove sotto il cursore c'e' solo terra: la lente sa ripiegare sulla colonna.
+ */
+function subjectAt(cell: SurfaceCell | null): InspectBox | null {
+  const registry = growthScene?.registry;
+  if (cell === null || registry === undefined) return null;
+
+  let best: InspectBox | null = null;
+  let top = -Infinity;
+  for (const record of registry.at(cell.x, cell.y)) {
+    const above = record.baseZ + record.height;
+    if (above <= top) continue;
+    top = above;
+    best = {
+      x0: record.x,
+      y0: record.y,
+      z0: record.baseZ,
+      x1: record.x + record.footprint,
+      y1: record.y + (record.footprintY ?? record.footprint),
+      z1: above,
+    };
+  }
+  return best;
 }
 
 /** Estremo alto della barra dei livelli: la citta' cresce, e con lei la quota utile. */
@@ -1231,6 +1349,19 @@ function inspectMaxZ(): number {
  * di quattro uniform.
  */
 function applyInspect(): void {
+  // Con un isolato scelto il cursore non ha piu' voce in capitolo: il riquadro e'
+  // quello, e rileggere il puntatore lo farebbe saltare all'isolato accanto ogni
+  // volta che si trascina per girare.
+  if (inspectLockedRect !== null) {
+    inspectBlockRect = inspectLockedRect;
+    inspectBlockKey = inspectLockedKey;
+    const locked = inspectStateOf();
+    inspectPayload = inspectUniforms(locked);
+    paletteHandle.setInspect(inspectPayload);
+    inspectGuides?.update(inspectGuide(locked, inspectPayload));
+    return;
+  }
+
   inspectFocus = inspectNeedsCursor(inspectMode) ? inspectFocusColumn() : null;
 
   // Finche' la quota non e' stata scelta, la fetta segue il suolo che si sta
@@ -1244,6 +1375,7 @@ function applyInspect(): void {
   }
   inspectBlockKey = null;
   inspectBlockRect = null;
+  inspectSubject = inspectMode === INSPECT_MODE.xray ? subjectAt(inspectFocus) : null;
 
   if (inspectFocus !== null && streets !== null) {
     const block = streets.blockAt(inspectFocus.x, inspectFocus.y);
@@ -1259,13 +1391,157 @@ function applyInspect(): void {
   inspectGuides?.update(inspectGuide(state, inspectPayload));
 }
 
+/**
+ * Cima dell'isolato, in voxel.
+ *
+ * `BlockRect` e' solo XY — dice quali colonne appartengono all'isolato, non fin
+ * dove salgono — e senza una quota l'inquadratura taglierebbe le torri a meta'.
+ * Il registro degli edifici ce l'ha gia': si tengono i record il cui isolato
+ * coincide, e la cima e' il loro `baseZ + height` massimo. Dove il registro non
+ * c'e' — crescita spenta, scene `city` e `diorama` — resta il terreno, che e'
+ * comunque la risposta giusta per un isolato senza edifici.
+ */
+function blockTopZ(rect: BlockRect): number {
+  let top = 0;
+  const registry = growthScene?.registry;
+  if (registry !== undefined && streets !== null) {
+    for (const record of registry.all) {
+      if (record.x < rect.x0 || record.x > rect.x1) continue;
+      if (record.y < rect.y0 || record.y > rect.y1) continue;
+      top = Math.max(top, record.baseZ + record.height);
+    }
+  }
+  if (top > 0) return top;
+
+  const map = terrain?.map;
+  if (map === undefined) return INSPECT.defaultSliceZ;
+  for (const [x, y] of [
+    [rect.x0, rect.y0],
+    [rect.x1, rect.y0],
+    [rect.x0, rect.y1],
+    [rect.x1, rect.y1],
+  ] as const) {
+    const column = map.columnAt(x, y);
+    if (column !== null) top = Math.max(top, column.height);
+  }
+  return top;
+}
+
+/**
+ * Sceglie l'isolato sotto il cursore e ci si mette attorno.
+ *
+ * Le due meta' del gesto sono inseparabili, ed e' il motivo per cui stanno nella
+ * stessa funzione: senza il taglio la camera si avvicinerebbe a un isolato ancora
+ * sepolto nella citta', senza l'inquadratura il taglio lascerebbe un modellino
+ * grande dieci pixel in mezzo al vuoto.
+ */
+function lockInspectBlock(cell: SurfaceCell | null): void {
+  if (streets === null || inspectMode !== INSPECT_MODE.block) return;
+  const focus = cell ?? inspectFocusColumn();
+  if (focus === null) return;
+
+  const block = streets.blockAt(focus.x, focus.y);
+  const rect = streets.blockRect(block);
+  inspectLockedRect = rect;
+  inspectLockedKey = streets.keyOf(block);
+  inspectFocus = focus;
+
+  // Solo la prima volta: passando da un isolato all'altro l'inquadratura a cui
+  // tornare resta quella della citta', non quella dello studio precedente.
+  cameraBeforeStudy ??= camera.captureState();
+  camera.setOrbitMode(true);
+
+  const centreX = (rect.x0 + rect.x1 + 1) * 0.5;
+  const centreY = (rect.y0 + rect.y1 + 1) * 0.5;
+  const top = blockTopZ(rect);
+  const base = Math.min(focus.z, top);
+  // Il perno a mezza altezza: girando attorno alla base, una torre oscillerebbe
+  // in cima allo schermo invece di restare al centro.
+  camera.setTarget(centreX, centreY, (base + top) * 0.5);
+  camera.frameRegion(
+    centreX,
+    centreY,
+    rect.x1 - rect.x0 + 1 + INSPECT.studyMargin,
+    rect.y1 - rect.y0 + 1 + INSPECT.studyMargin,
+    Math.max(1, top - base),
+  );
+
+  gameHud?.showTransientFeedback(`Studying block ${inspectLockedKey} · drag to turn around it`);
+}
+
+/**
+ * Quanti pixel di trascinamento separano un clic da una pennellata di camera.
+ *
+ * Serve perche' il tasto sinistro fa gia' pan (`isPanButton` li accetta tutti e
+ * tre) e in orbita fa girare: senza una soglia, ogni rotazione finirebbe con
+ * l'agganciare o mollare un isolato. Sei pixel passano il tremolio della mano
+ * senza lasciar passare un trascinamento vero.
+ */
+const STUDY_CLICK_SLOP = 6;
+
+let studyPointerX = 0;
+let studyPointerY = 0;
+let studyPointerDown = false;
+
+function onStudyPointerDown(event: PointerEvent): void {
+  if (event.button !== 0) return;
+  studyPointerDown = true;
+  studyPointerX = event.clientX;
+  studyPointerY = event.clientY;
+}
+
+/**
+ * Il clic che sceglie un isolato, e quello che lo molla.
+ *
+ * Sta su `pointerup` e non su `pointerdown` perche' fino al rilascio non si sa
+ * ancora se il gesto fosse un clic o l'inizio di una rotazione.
+ */
+function onStudyPointerUp(event: PointerEvent): void {
+  if (!studyPointerDown || event.button !== 0) return;
+  studyPointerDown = false;
+  if (inspectMode !== INSPECT_MODE.block) return;
+  if (selectedTool.kind !== 'none') return;
+  const moved = Math.abs(event.clientX - studyPointerX) + Math.abs(event.clientY - studyPointerY);
+  if (moved > STUDY_CLICK_SLOP) return;
+
+  // La colonna si risolve **prima** di toccare la camera: il raggio deve partire
+  // dall'inquadratura in cui il giocatore ha visto quello che ha cliccato, non da
+  // quella in cui lo si sta per portare. E si risolve su cio' che si vede, non
+  // sul terreno: cliccando una torre si sceglie il **suo** isolato.
+  const cell = pointedCellAt(event.clientX, event.clientY);
+  if (cell === null) return;
+
+  // Un clic dentro lo studio sceglie un **altro** isolato invece di mollare e
+  // basta: mollare ha gia' il suo tasto, e dover uscire per cambiare soggetto
+  // farebbe perdere l'inquadratura a ogni confronto fra due isolati. L'angolo di
+  // orbita resta dov'e', cosi' i due isolati si guardano dallo stesso lato.
+  lockInspectBlock(cell);
+}
+
+/** Molla l'isolato e restituisce l'inquadratura che c'era prima. */
+function unlockInspectBlock(): void {
+  if (inspectLockedRect === null) return;
+  inspectLockedRect = null;
+  inspectLockedKey = null;
+  camera.setOrbitMode(false);
+  if (cameraBeforeStudy !== null) {
+    camera.restoreState(cameraBeforeStudy);
+    cameraBeforeStudy = null;
+  }
+}
+
 function setInspectMode(mode: InspectMode): void {
   if (mode === inspectMode) return;
+  // Cambiando vista l'isolato scelto non ha piu' un modo che lo sappia leggere:
+  // lasciarlo bloccato terrebbe la camera in orbita su un soggetto che nessuno
+  // sta piu' isolando.
+  unlockInspectBlock();
   inspectMode = mode;
   // L'aggancio non sopravvive al cambio di vista: rientrando in un modo ci si
   // ritroverebbe puntati sull'isolato di dieci minuti prima, senza capire
   // perche' la finestra si e' aperta la'.
   inspectFocus = null;
+  inspectSubject = null;
   // Uscendo da Levels la quota si ri-arma, e una fetta riaperta riparte dal
   // suolo che si sta guardando invece che da una quota scelta mezz'ora fa, che
   // nel frattempo puo' essere finita sottoterra. Vale per ogni uscita e non solo
@@ -1299,7 +1575,7 @@ function cycleInspectView(): void {
  * per meta'.
  */
 function announceInspectView(): void {
-  const model = buildViewMenuModel(inspectMode, inspectSliceZ, inspectMaxZ());
+  const model = buildViewMenuModel(inspectMode, inspectSliceZ, inspectMaxZ(), inspectLockedRect !== null);
   const gesture = model.activeGesture === '' ? '' : ` · ${model.activeGesture}`;
   gameHud?.showTransientFeedback(`${model.activeLabel} · ${model.activeDescription}${gesture}`);
 }
@@ -1315,6 +1591,7 @@ function buildInspectFrame(): InspectOverlayFrame {
     sliceZ: inspectSliceZ,
     focus: inspectFocus,
     block: inspectBlockKey,
+    locked: inspectLockedRect !== null,
     veil: inspectPayload.veil,
     shadowsOff: isCut(inspectPayload),
   };
@@ -1417,8 +1694,8 @@ function onGamePointerDown(event: PointerEvent): void {
   beginCoastalExpansion(sector);
 }
 
-function surfaceCellAt(clientX: number, clientY: number): SurfaceCell | null {
-  if (terrain === null) return null;
+/** Il raggio che parte dal pixel, in coordinate di mondo. */
+function cursorRay(clientX: number, clientY: number): Ray3 {
   const rect = renderer.domElement.getBoundingClientRect();
   pointer.set(
     ((clientX - rect.left) / rect.width) * 2 - 1,
@@ -1427,9 +1704,44 @@ function surfaceCellAt(clientX: number, clientY: number): SurfaceCell | null {
   picker.setFromCamera(pointer, camera.camera);
   const origin = picker.ray.origin;
   const direction = picker.ray.direction;
-  return pickSurfaceCell(
-    { origin: [origin.x, origin.y, origin.z], direction: [direction.x, direction.y, direction.z] },
+  return {
+    origin: [origin.x, origin.y, origin.z],
+    direction: [direction.x, direction.y, direction.z],
+  };
+}
+
+/**
+ * Su quale **terra** cade il cursore. E' la domanda di chi piazza qualcosa.
+ *
+ * Gli edifici non contano apposta: si costruisce sul suolo, e fermarsi su un
+ * tetto darebbe una colonna dove non si puo' costruire niente.
+ */
+function surfaceCellAt(clientX: number, clientY: number): SurfaceCell | null {
+  if (terrain === null) return null;
+  return pickSurfaceCell(cursorRay(clientX, clientY), terrain.map);
+}
+
+/**
+ * **Cosa** sta indicando il cursore, edifici compresi. E' la domanda di chi
+ * guarda, ed e' un'altra.
+ *
+ * Le viste usavano la prima, e non poteva funzionare: la heightmap attraversa
+ * una torre come se fosse vetro e si ferma sulla terra dietro, che a
+ * quarantacinque gradi sta a tante colonne quanto la torre e' alta. Puntare un
+ * grattacielo apriva quindi la lente su un altro isolato — ed era la meta' del
+ * motivo per cui i raggi X sembravano velare a caso.
+ */
+function pointedCellAt(clientX: number, clientY: number): SurfaceCell | null {
+  if (terrain === null) return null;
+  const registry = growthScene?.registry;
+  if (registry === undefined) return surfaceCellAt(clientX, clientY);
+  return pickSolidCell(
+    cursorRay(clientX, clientY),
     terrain.map,
+    (x, y) => registry.topOf(x, y),
+    // La citta' non ha un tetto noto come la heightmap: il suo estremo e' quello
+    // che il mondo ha davvero raggiunto, piu' un voxel per non tagliare l'ultimo.
+    world.bounds.empty ? TERRAIN.maxHeight + 1 : world.bounds.maxZ + 1,
   );
 }
 
@@ -1572,7 +1884,11 @@ function buildOverlayFrame(mainMs: number, renderMs: number, frameMs: number): O
     seed: terrain === null ? seed : terrainSeed,
     theme: theme.name,
     hour,
-    hourPinned,
+    // Fermo e' fermo, che sia il modo scelto dal giocatore o un `?hour=`: al
+    // pannello serve sapere che l'orologio non cammina, non da quale delle due
+    // strade e' arrivato. Il modo lo dice comunque, subito accanto.
+    hourMode: daylightMode,
+    hourPinned: hourPinned || daylightMode !== DAYLIGHT_MODE.cycle,
     quality: renderQuality.mode,
     pixelRatio: renderer.getPixelRatio(),
     zoom: camera.zoom,
@@ -1651,6 +1967,13 @@ function onUiKey(event: KeyboardEvent): void {
   // dietro `?debug=1` era il vincolo sbagliato della 4.11.
   if (event.code === 'KeyV') {
     cycleInspectView();
+    return;
+  }
+  // Il ciclo del giorno sta **fuori** dal gate del debug per lo stesso motivo di
+  // `V`: scegliere se guardare la propria citta' di giorno o di notte e' gioco,
+  // non misura. `H` resta la manopola fine dell'harness, di un'ora alla volta.
+  if (event.code === 'KeyL') {
+    setDaylightMode(nextDaylightMode(daylightMode));
     return;
   }
   // La quota: un voxel per volta, un piano intero con Shift. La barra serve a

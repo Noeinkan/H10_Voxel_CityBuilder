@@ -11,6 +11,241 @@ coincide con il messaggio di commit.
 
 ---
 
+## 2026-08-23 — La città esce dall'impronta
+
+- **La mensola è la prima cosa che sporge.** La grammatica degli edifici dichiara
+  il contrario — «la fascia di base resta il riquadro pieno, quindi nessuna fascia
+  può uscire dall'impronta e la collisione fra edifici resta bidimensionale» — e
+  l'aggetto rompe proprio quella riga. È legale perché `overlaps` confronta già
+  gli intervalli di quota colonna per colonna: chi la scrive **eccettua l'ospite**
+  invece di spostarla fuori dal riquadro. È l'assunzione di colonna della fase 4.9
+  rotta nel modo più letterale possibile.
+- **Un impalcato in quota non prende suolo; lo prende solo la gamba che scende a
+  terra.** È l'invariante del dominio nuovo `src/world/aerial/`, complemento
+  esatto di quello di `spans/`: sotto una mensola la carreggiata si dipinge ancora
+  e i lotti si costruiscono ancora, tranne nelle due colonne di una gamba. È una
+  riga di `index()`, dove solo `AERIAL_PART.pier` entra in `groundColumns`.
+- **Dove l'ancoraggio non arriva, nasce una gamba**, e non c'è una regola per
+  ciascuna forma: `planDeck` misura lo sbalzo di ogni colonna e pianta un appoggio
+  dove supera `AERIAL.reach`. Ne segue senza codice in più che una mensola corta
+  non ha gambe e una profonda se le conta da sola — «quanto è larga, tanto è
+  profonda» è l'unica riga che lega le due cose. Una gamba **si sposta per trovare
+  un tetto** prima di piantarsi nel prato, ed è ciò che tiene i cuori d'isolato
+  liberi per la piazza della 4.5.
+- **Nessuna quota è imposta da fuori, e per questo qui non esiste `align`.** La
+  mensola prende la quota dalla sommità di una fascia dell'ospite, la gamba dal
+  primo appoggio che trova scendendo. Un lotto in quota eredita la fase
+  dall'impalcato che lo ospita, non dal cubo di terreno: è la stessa ragione per
+  cui le campate `align` l'avevano già tolto.
+- **Sopra una quota si costruisce, e la gerarchia scende con lei.** `decksAt`
+  legge dal registry e in quota **il lotto è l'impalcato** — niente `findLot`,
+  niente opere di terra, niente fila. `levelsAboveDeck` scala il tetto della 4.6
+  con la quota già spesa: una mensola è il modo in cui la gerarchia sale, non il
+  modo di aggirarla. `TerrainMap` resta una quota e un bit per colonna.
+- **`src/sim/` non guadagna una coordinata verticale**: guadagna un numero di
+  quote. Il campo conta quelle spese (`stack`, un byte per colonna) e chiede al
+  mondo quante ce ne siano (`headroomAt`), interrogato solo dove `stack > 0` —
+  quindi una città tutta al suolo costa esattamente quello che costava.
+- **Chi regge qualcosa di abitato non cresce, e solo quello.** La lettura semplice
+  — fermare ogni ospite — è misurata e non funziona: la fascia alta della
+  gerarchia scendeva da quaranta edifici a diciannove, perché una mensola arriva
+  presto e da quel momento la torre non sale più. Una mensola **vuota** cade
+  quando l'ospite promuove e la passata dopo la ripropone alla quota nuova, come
+  fa una campata che perde l'appoggio; una con una casa sopra no, perché quella
+  sarebbe una demolizione.
+- **La rete è metà fatta, e il limite è nei test.** Un percorso dritto fra due
+  mensole allineate funziona ed è coperto; la piega a zeta è stata **tolta**
+  perché i suoi pianerottoli cadevano in punti che il corridoio dritto non misura,
+  e su settecentocinquanta coppie di una città cresciuta non ne reggeva nessuno.
+  Sulla stessa città i percorsi restano **zero**: le mensole ci sono ma non si
+  guardano mai. Chi riprende parta da lì, non dal planner.
+- Correzioni a due asserzioni preesistenti che dicevano meno di quanto
+  credevano: la rampa saltava le colonne sorvolate da una campata ma non da una
+  mensola — stesso invariante, stessa esenzione — e il gate degli appoggi chiedeva
+  a una **piazza** i due capi pieni, che è chiederle di essere un ponte largo.
+
+## 2026-08-23 — I raggi X guardano una cosa, non una zona
+
+- **La finestra diventa il soggetto.** Era un riquadro di **mondo** di 64 colonne
+  centrato sul cursore, e a schermo leggeva come «una specie di trasparenza
+  quadrata che non si capisce cosa sia»: troppo largo per essere una lente,
+  troppo stretto per contenere un occlusore vero, e uguale per una casa e per una
+  torre. Al suo posto c'è un test raggio/volume: continuando il raggio di vista
+  dal frammento in avanti, se incontra il volume che si sta guardando allora il
+  frammento lo *copre*. La finestra è così la sagoma del soggetto per
+  costruzione, a ogni zoom e da ogni angolo — non c'è più niente da avvisare
+  nella riga della vista, e infatti «la finestra è larga 64 caselle, quindi
+  avvicinati» è sparita.
+- **Il suolo smette di bucarsi.** Il terreno davanti al soggetto lo copre come lo
+  copre un muro, ma dietro a un muro c'è la città e dietro al terreno non c'è
+  niente: la vista si apriva su una macchia di cielo in mezzo all'isolato, ed era
+  il difetto che si vedeva peggio di tutti. Con la lente viaggia ora un
+  **pavimento** — la base del soggetto — sotto cui non si vela mai.
+- **Puntare una torre punta la torre.** `pickSurfaceCell` interseca la heightmap,
+  che non conosce gli edifici: il raggio attraversava un grattacielo come se
+  fosse vetro e si fermava sulla terra dietro, a tante colonne quanto la torre è
+  alta. Le viste ci si agganciavano, quindi la lente si apriva su un altro
+  isolato. `pickSolidCell` si ferma anche su ciò che è stato costruito, e chi
+  guarda usa quello; chi *piazza* continua a usare la heightmap, perché si
+  costruisce sul suolo e fermarsi su un tetto darebbe una colonna inedificabile.
+- **Il soggetto non si vela da solo, e non serve un piano per dirlo.** Dall'interno
+  del volume il raggio è già cominciato — `enter` negativo — e questo esclude in
+  un colpo sia chi sta dentro sia chi sta dietro. La corda del test a lastre va a
+  zero sul contorno della sagoma e cresce verso il centro: è già la distanza dal
+  bordo che serve alla sfumatura, senza un secondo conto.
+- **Densità separata per la lente**, `INSPECT.xrayVeil` a 0,85 contro lo 0,68 del
+  velo generico. Sono due geometrie diverse: il velo di Block focus copre tutto
+  il contesto e mangiarselo toglierebbe la risposta, mentre la lente apre un buco
+  largo quanto un edificio dentro un occlusore che resta intero tutt'attorno. A
+  0,68 il muro davanti e il soggetto dietro finivano a metà strada l'uno
+  nell'altro e non si leggeva nessuno dei due.
+- **Le guide contornano l'edificio** invece del riquadro di 64 colonne: la linea
+  dice «questo», non «fin qui arriva il retino». Sul suolo nudo non contorna
+  niente — c'è già il mirino, e una seconda linea direbbe la stessa cosa.
+- Due uniform nuove (`uInspectLensMin`, `uInspectLensMax`), nessuna
+  ricompilazione in più: la variante col `discard` continua a entrare alla prima
+  attivazione, e chi non apre mai una vista non paga niente.
+
+## 2026-08-23 — Le torri smettono di essere lastre
+
+- **La sagoma finisce il fiato nel primo quinto, ed è misurato.** Le voci di
+  `BAND_OP` spostano il rettangolo di uno o due voxel: con `MAX_FOOTPRINT` a otto
+  e `GRAMMAR.minBandSide` a quattro il gioco totale è **due voxel per lato**,
+  mentre `LEVEL_CAPS` chiede fino a diciannove fasce. Sul generatore vero: un
+  civico da 143 voxel scende a 4×4 alla quota 7 e da lì in su può solo
+  *scorrere* — 95% dell'altezza a sagoma costante, trentaquattro a uno; un
+  industriale da 106 tiene un unico prisma 7×8 dalla quota 10 alla 93. Il
+  commento di `LEVEL_CAPS` dichiarava «venti a uno»: era ottimista.
+- **La campata di facciata è il ritmo verticale che la sagoma non può dare.**
+  `ClassProfile.bayPeriod` spezza la parete in montanti e aperture, e
+  `GRAMMAR.spandrelHeight` tiene sotto di esse il parapetto che separa una
+  facciata da un reticolo. Quattro cadenze per quattro usi: montanti radi sul
+  residenziale e sul civico (curtain wall), grana fitta sul commerciale in
+  mattoni, pannelli larghi e due toni scuri accostati sull'industriale — che non
+  sono finestre ma lamiera, ed è quello che un capannone ha al posto delle
+  finestre. Una riga di catalogo può sovrascriverla come ogni altra voce del
+  profilo, senza plumbing.
+- **Conta i montanti e non le aperture**, e la differenza si vede dove conta: un
+  fronte da quattro — la larghezza a cui *ogni* torre alta finisce — ha due sole
+  colonne fra i cantonali, e un passo contato sulle aperture può non trovarne
+  nessuna. Il passo si conta poi **dall'impronta e non dalla fascia**: altrimenti
+  un `jog` da un voxel farebbe scorrere di uno tutte le aperture del piano sopra,
+  e su venti fasce la parete tornerebbe rumore invece che facciata.
+- **È vernice, non geometria**, ed è il contratto che un test tiene fermo: stesso
+  volume, stesse superfici, quindi la microgeometria emette esattamente i prismi
+  di prima e collisione, budget di chunk e cancellazione non se ne accorgono.
+  A pagare è il solo greedy merge — A/B su un chunk di quattro torri vere
+  tagliate a metà corpo: **631 → 901 quad base, dettaglio invariato a 1 710**,
+  totale +11%. Lontano da `MAX_DETAIL_QUADS_PER_CHUNK` e da
+  `MAX_BASE_QUADS_PER_CHUNK`.
+- **Un difetto che solo la misura ha rivelato: il civico di livello massimo
+  prendeva zero aperture.** Quando l'accento sale a scala di edificio il corpo
+  passa a `profile.accent`, che sul civico è lo stesso `glassPale` di `bodyAlt`:
+  corpo e cornice cadevano nello stesso slot — e con loro spariva già la riga di
+  piano, da prima di questa modifica. Ora l'apertura si inverte e prende il tono
+  neutro, che il ciclo ha già in mano come `accentId`. Da 0 a 364 aperture sulla
+  classe che sale più in alto, cioè proprio quella che ne aveva più bisogno.
+
+## 2026-08-23 — Il mare di notte, e un orologio che si può fermare
+
+- **Il riflesso dell'acqua è un'ora e non una materia.** Era l'ultima cosa della
+  scena rimasta a mezzogiorno: la tinta del tema (`#c7f3ea` sul diorama) veniva
+  mescolata sul mare anche a mezzanotte, e su un fondo quasi nero le due sinusoidi
+  dell'increspatura smettevano di leggersi come un'onda — diventavano un
+  quadrettato chiaro largo quanto l'inquadratura, con un anello di schiuma
+  luminoso tutto attorno all'isola. `withHour` ora vira il riflesso verso
+  `nightWater` e abbassa l'ampiezza dell'onda: di notte il mare mostra quello che
+  riflette, che è poco. Il riflesso del sole non serviva spegnerlo — è
+  moltiplicato per un colore che l'ora ha già premoltiplicato per intensità zero.
+- **L'orologio si può fermare, dall'HUD.** Tre modi — ciclo, giorno fisso, notte
+  fissa — dal bottone accanto a pausa e velocità, dal tasto `L` o da
+  `?daylight=night`. Non sono un secondo look: sono le ore vere `DAYLIGHT.dayHour`
+  e `nightHour`, quindi luce, cielo, nebbia, ombre ed emissivi restano esattamente
+  quelli che il ciclo produrrebbe passando di lì. Tornando al ciclo il sole
+  riparte da dov'era, invece di saltare a mezzogiorno.
+- **Il tasto sta fuori dal gate del debug**, come `V`: scegliere se guardare la
+  propria città di giorno o di notte è gioco, non misura. `H` resta la manopola
+  fine dell'harness, un'ora alla volta, e il primo comando di gioco scioglie un
+  `?hour=` in coda all'URL — un bottone che non risponde è peggio di un parametro
+  perso.
+- **`DAY_SECONDS` si trasferisce in `DAYLIGHT.daySeconds`**: il tooltip promette
+  al giocatore quanto dura un giro, e due copie del numero vorrebbero dire una
+  promessa e una durata diverse.
+
+## 2026-08-23 — La notte smette di essere un retino
+
+- **Nuovo `src/engine/nightWindows.ts`**, quarto modello puro dell'engine accanto
+  a luce, atmosfera e ciclo del giorno: il fragment shader ne interpola i numeri
+  invece di riscriverli, e `nightWindows.test.ts` più un controllo in
+  `VoxelMaterial.test.ts` impediscono alle due copie di divergere.
+- **La quota di finestre accese ha un tetto.** Con la sola soglia
+  sull'occupazione una città piena accendeva quasi ogni vetro: una facciata
+  accesa al novanta per cento non è uno skyline, è un retino, e non si leggeva
+  più dove finisse una torre e cominciasse la vicina. Il buio fra le luci è metà
+  del disegno. L'occupazione continua a governarle — la città di notte resta una
+  lettura dell'economia — ma dentro un intervallo che non satura.
+- **Ogni torre ha un carattere.** Un gruppo di colonne dell'ordine dell'impronta
+  (`towerCell`, sei voxel) porta la sua quota accesa: accanto a una torre piena
+  ne resta una quasi spenta, e il contrasto è quello che prima mancava. Non è
+  l'edificio — al frammento non arriva nessun identificatore, e dargliene uno
+  costerebbe bit che non ci sono — ma è la scala alla quale due vicini devono
+  differire. Una torre larga cade su due gruppi e si accende ad ali diverse.
+- **Due modi di accendersi.** Un ufficio accende piani interi, una casa finestre
+  sparse: sono le bande orizzontali in mezzo alle macchie. A scegliere è la
+  torre e non l'uso, perché la grammatica `habitat` copre residenziale e
+  commerciale insieme — limite dichiarato, non svista. Le due soglie si dividono
+  la stessa quota, quindi cambia *come* la luce si distribuisce, non quanta.
+- **Ambra e bianco freddo invece di un solo pallido**, presi da slot di palette e
+  non da costanti: un tema li ritinge insieme al resto della città. Il tono varia
+  per finestra, così una torre non è tutta di un colore.
+- **Vani scala accesi a ogni piano** (una colonna su venti) e una coda lunga di
+  finestre molto più accese delle altre: sono la riga verticale e lo scintillio
+  che tengono insieme una facciata altrimenti a macchie.
+- **La finestra diventa più alta che larga** e le luci di sommità dei tetti
+  (`roofTech`) salgono di notte: sopra il fronte illuminato sono l'unica cosa che
+  continua a dire dove finisce una torre e comincia il cielo.
+- Nessun voxel viene riscritto, nessun uniform nuovo, nessuna ricompilazione: la
+  differenza è tutta dentro il ramo `habitat` del fragment shader.
+
+## 2026-08-22 — Un isolato si può scegliere e girarci attorno (Fase 4.15)
+
+- **Block focus guadagna un secondo tempo.** Puntare un isolato continua a
+  velare il fuori al 68%, com'era: risponde a «come si connette». Un **clic** lo
+  *sceglie*, e da lì la stessa vista risponde all'altra domanda — «com'è fatto» —
+  portando la densità del retino da `veil` a `cut`: fuori dal riquadro non si
+  disegna più niente e l'isolato resta un modellino sul suo prisma di terreno.
+  Non è un modo nuovo: il ciclo di `V` resta a cinque viste, e la geometria che
+  decide cosa sparisce è identica nei due tempi. Cambia un numero.
+- **Il riquadro smette di inseguire il cursore.** Era il limite che rendeva la
+  vista inutilizzabile per guardare *una* cosa: bastava muovere il mouse per
+  perderla. Con un isolato scelto, `applyInspect` non rilegge più il puntatore.
+- **La camera impara a orbitare.** `PITCH` era una costante di modulo: diventa
+  `REST_PITCH`, il valore *di riposo*, più un campo `pitch` che si muove solo
+  dentro lo studio, fra 12° e 82°. Sotto, la correzione azimut→schermo
+  (`1 / sin(pitch)`) esplode; sopra, `lookAt` degenera con `up` parallelo alla
+  vista. Il trascinamento gira invece di panare, `Q`/`E` diventano passi
+  continui, e `F` e il pan da tastiera si spengono — porterebbero il perno fuori
+  dal soggetto senza che si veda.
+- **Uscendo, la città torna com'era.** `captureState`/`restoreState` rimettono
+  yaw, scatto, inclinazione, perno, altezza d'inquadratura e zoom: la camera
+  l'aveva mossa lo strumento, non il giocatore. `Esc` molla l'isolato e lascia
+  accesa la vista; un secondo `Esc` la spegne. Un clic su un altro isolato cambia
+  soggetto senza uscire, e tiene l'angolo — così due isolati si confrontano dallo
+  stesso lato.
+- **`isCut` e `needsCap` diventano due domande distinte.** `isCut` chiede se si
+  sta tagliando, `needsCap` se il taglio lascia una *superficie di sezione* da
+  tappare. Coincidono su Levels e Cutaway, che attraversano i volumi, e divergono
+  sull'isolato scelto, che toglie per intero ciò che sta fuori e lascia chiusa la
+  geometria che resta: lì `DoubleSide` sarebbe solo il doppio dei fragment. È la
+  stessa distinzione già in vigore fra `modeCuts` e `modeHasLevel`.
+- **Le ombre proiettate restano spente** mentre si studia, perché la regola su
+  `isCut` non è cambiata. Il motivo è quello documentato dalla fase 4.11: il
+  predicato dell'ispezione vive solo nel materiale di scena e non in quello di
+  profondità, quindi il volume nascosto continuerebbe a proiettare ombra sul
+  modellino. Portarlo anche nel `depthMaterial` di `SunShadow` resta aperto.
+- Il margine d'inquadratura dell'isolato (`INSPECT.studyMargin`) sta in
+  `inspect.ts` come ogni altro numero di questo dominio.
+
 ## 2026-08-22 — La città di notte come lettura dell'economia (Fase 4.8)
 
 - **Nuovo `src/sim/vitality.ts`**: due frazioni fra zero e uno — case occupate

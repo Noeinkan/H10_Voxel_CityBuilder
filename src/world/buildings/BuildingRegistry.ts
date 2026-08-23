@@ -7,6 +7,7 @@ import {
 } from '../../sim';
 import type { BuildingForm } from './config';
 import type { SpanKind } from '../spans/config';
+import { isBuildable, takesGround, type AerialPart } from '../aerial/config';
 import { toChunk } from '../chunkCoords';
 
 /**
@@ -147,12 +148,34 @@ export interface BuildingRecord {
   readonly span?: SpanKind;
 
   /**
-   * Gli id degli edifici su cui la campata poggia.
+   * Parte della citta' in quota, se questo record e' una delle sue.
+   *
+   * **E' la terza riga della stessa macchina di `landmark` e `span`**: un flag
+   * dice quale generatore disegna lo stamp, e occupazione, collisione, budget
+   * di chunk e comparsa a budget restano quelle che ci sono gia'. A distinguere
+   * le sue quattro forme c'e' l'invariante del dominio — **un impalcato in quota
+   * non prende suolo; lo prende solo la gamba che scende a terra** — che qui e'
+   * una riga di `index`: la gamba entra in `groundColumns`, mensole, tratti e
+   * nodi no.
+   *
+   * E' l'esatto complemento di `span`, che non prende suolo da nessuna parte, ed
+   * e' anche cio' che rompe l'assunzione annunciata li' sopra: sopra una mensola
+   * o un nodo, `baseZ` non viene piu' dal terreno.
+   */
+  readonly aerial?: AerialPart;
+
+  /**
+   * Gli id degli edifici su cui la campata — o l'impalcato — poggia.
    *
    * Sono il suo posto nella rete e insieme il suo guinzaglio: quando uno di
    * questi cambia livello o sagoma la campata cade, perche' la sagoma su cui si
    * appoggiava non esiste piu'. Un appoggio che fosse solo un numero lascerebbe
    * campate a mezz'aria, che e' esattamente cio' che il vincolo della fase vieta.
+   *
+   * Per un impalcato in quota il guinzaglio tira dall'altra parte: un edificio
+   * che ospita una mensola o regge una gamba **smette di promuovere**, perche'
+   * cambiare sagoma sotto un impalcato lo lascerebbe appeso. Chi regge non
+   * cresce.
    */
   readonly supports?: readonly number[];
 }
@@ -221,6 +244,16 @@ export interface ReadonlyBuildingRegistry {
   ): boolean;
   /** Quota della prima cella libera sopra cio' che gia' occupa la colonna. */
   topOf(x: number, y: number): number;
+  /**
+   * Su cosa si puo' poggiare qualcosa, in questa colonna: quota e portante.
+   *
+   * E' `topOf` **meno le campate**, piu' l'id di chi porta quella quota. Una
+   * passerella non regge una gamba — la sua sagoma dipende dai suoi appoggi, e
+   * quando quelli promuovono lei cade — quindi il piede di un impalcato la
+   * ignora e appoggia su cio' che c'e' sotto. `id` vale 0 dove non c'e' niente
+   * e la quota e' quella del terreno, che il registry non conosce.
+   */
+  supportAt(x: number, y: number): { readonly z: number; readonly id: number };
   readonly count: number;
   /** Landmark dei catalizzatori: contati a parte, mai fra gli edifici. */
   readonly landmarkCount: number;
@@ -237,6 +270,36 @@ export interface ReadonlyBuildingRegistry {
   readonly spanCount: number;
   /** Le campate che poggiano su questo edificio. */
   spansOf(supportId: number): readonly BuildingRecord[];
+  /**
+   * Gli impalcati in quota su cui si costruisce — mensole e nodi — in ordine di
+   * inserimento.
+   *
+   * Come `spans`, e per la stessa ragione: sono unita', le passate li riguardano
+   * tutti, e filtrare `all` per trovarli sarebbe l'unica cosa nel ciclo il cui
+   * costo cresce con il numero di edifici.
+   */
+  readonly decks: readonly BuildingRecord[];
+  readonly deckCount: number;
+  /** Quante parti della citta' in quota esistono: mensole, tratti, nodi e gambe. */
+  readonly aerialCount: number;
+  /**
+   * Gli impalcati appesi a questo edificio.
+   *
+   * Serve alla stessa cosa di `spansOf`, e per la stessa ragione: quando l'ospite
+   * cambia sagoma, cio' che gli e' appeso deve seguirlo o sparire — mai restare a
+   * mezz'aria.
+   */
+  decksOf(supportId: number): readonly BuildingRecord[];
+  /**
+   * true se un impalcato in quota poggia su questo record.
+   *
+   * **Chi regge non cresce.** Un edificio che ospita una mensola o porta una
+   * gamba non puo' piu' cambiare sagoma: una campata che perde l'appoggio cade e
+   * la passata successiva la ripropone, ma sopra un impalcato c'e' una citta', e
+   * farlo cadere sarebbe una demolizione. Il verso del guinzaglio si inverte, e
+   * questa e' la domanda che l'upgrade fa prima di promuovere.
+   */
+  carries(id: number): boolean;
   readonly countsByClass: readonly number[];
   /** Edifici che *ospitano* un uso come secondo, con la stessa indicizzazione. */
   readonly mixedByClass: readonly number[];
@@ -272,6 +335,21 @@ export class BuildingRegistry implements ReadonlyBuildingRegistry {
   /** Le campate, per poterle scorrere senza scandire la citta'. */
   private readonly spanIds = new Set<number>();
 
+  /** Gli impalcati edificabili, per la stessa ragione delle campate. */
+  private readonly deckIds = new Set<number>();
+
+  /**
+   * Quanti impalcati in quota poggiano su un record.
+   *
+   * Un contatore e non un elenco: la sola domanda che si fa e' «questo edificio
+   * regge qualcosa?», e tenerne la lista costerebbe un array per ogni gamba
+   * piantata su un tetto per rispondere a un booleano.
+   */
+  private readonly carried = new Map<number, number>();
+
+  /** Impalcati per edificio che li ospita, come `spansBySupport` per le campate. */
+  private readonly decksBySupport = new Map<number, number[]>();
+
   /**
    * Campate per edificio che le regge.
    *
@@ -295,6 +373,17 @@ export class BuildingRegistry implements ReadonlyBuildingRegistry {
   private readonly typologyCounts = new Map<string, number>();
 
   private landmarks = 0;
+
+  /**
+   * Record della citta' in quota: mensole, tratti, nodi e gambe insieme.
+   *
+   * Nessuna delle quattro parti e' un edificio: la simulazione non le ha mai
+   * registrate con `addBuilding`, e contarle qui farebbe divergere gli
+   * istogrammi dell'HUD dai conteggi su cui il bilancio ragiona — che e' la
+   * stessa ragione per cui non ci sono i landmark ne' le campate.
+   */
+  private aerialParts = 0;
+
   private nextId = 1;
 
   /**
@@ -305,7 +394,7 @@ export class BuildingRegistry implements ReadonlyBuildingRegistry {
    * ragiona.
    */
   get count(): number {
-    return this.records.size - this.landmarks - this.spanIds.size;
+    return this.records.size - this.landmarks - this.spanIds.size - this.aerialParts;
   }
 
   get landmarkCount(): number {
@@ -329,6 +418,33 @@ export class BuildingRegistry implements ReadonlyBuildingRegistry {
     const ids = this.spansBySupport.get(supportId);
     if (ids === undefined) return EMPTY;
     return ids.map((id) => this.records.get(id)).filter(isRecord);
+  }
+
+  get decks(): readonly BuildingRecord[] {
+    const out: BuildingRecord[] = [];
+    for (const id of this.deckIds) {
+      const record = this.records.get(id);
+      if (record !== undefined) out.push(record);
+    }
+    return out;
+  }
+
+  get deckCount(): number {
+    return this.deckIds.size;
+  }
+
+  get aerialCount(): number {
+    return this.aerialParts;
+  }
+
+  decksOf(supportId: number): readonly BuildingRecord[] {
+    const ids = this.decksBySupport.get(supportId);
+    if (ids === undefined) return EMPTY;
+    return ids.map((id) => this.records.get(id)).filter(isRecord);
+  }
+
+  carries(id: number): boolean {
+    return (this.carried.get(id) ?? 0) > 0;
   }
 
   get countsByClass(): readonly number[] {
@@ -381,6 +497,27 @@ export class BuildingRegistry implements ReadonlyBuildingRegistry {
       if (above > top) top = above;
     }
     return top;
+  }
+
+  /**
+   * Quota e portante di cio' su cui si puo' poggiare in questa colonna.
+   *
+   * Le campate restano fuori: la loro sagoma dipende dagli appoggi, e piantare
+   * un pilone su un ponte significherebbe legare una piattaforma al livello di
+   * due torri — cioe' il contrario di cio' per cui il suolo artificiale esiste.
+   */
+  supportAt(x: number, y: number): { readonly z: number; readonly id: number } {
+    let z = 0;
+    let id = 0;
+    for (const record of this.at(x, y)) {
+      if (record.span !== undefined) continue;
+      const above = record.baseZ + record.height;
+      if (above > z) {
+        z = above;
+        id = record.id;
+      }
+    }
+    return { z, id };
   }
 
   /** Record il cui angolo minimo cade entro `radius` in distanza di Chebyshev. */
@@ -505,21 +642,31 @@ export class BuildingRegistry implements ReadonlyBuildingRegistry {
    */
   private index(record: BuildingRecord): void {
     const depth = footprintDepth(record);
-    const takesGround = record.span === undefined;
+    const onGround = takesGroundOf(record);
 
     for (let dy = 0; dy < depth; dy++) {
       for (let dx = 0; dx < record.footprint; dx++) {
         const key = `${record.x + dx},${record.y + dy}`;
         push(this.columns, key, record.id);
-        if (takesGround) push(this.groundColumns, key, record.id);
+        if (onGround) push(this.groundColumns, key, record.id);
       }
     }
     push(this.buckets, `${toChunk(record.x)},${toChunk(record.y)}`, record.id);
 
-    if (takesGround) return;
-    this.spanIds.add(record.id);
-    for (const support of record.supports ?? EMPTY_IDS) {
-      push(this.spansBySupport, support, record.id);
+    if (record.span !== undefined) {
+      this.spanIds.add(record.id);
+      for (const support of record.supports ?? EMPTY_IDS) {
+        push(this.spansBySupport, support, record.id);
+      }
+    }
+    if (record.aerial !== undefined && isBuildable(record.aerial)) {
+      this.deckIds.add(record.id);
+    }
+    if (record.aerial !== undefined) {
+      for (const support of record.supports ?? EMPTY_IDS) {
+        this.carried.set(support, (this.carried.get(support) ?? 0) + 1);
+        push(this.decksBySupport, support, record.id);
+      }
     }
   }
 
@@ -535,10 +682,20 @@ export class BuildingRegistry implements ReadonlyBuildingRegistry {
     }
     drop(this.buckets, `${toChunk(record.x)},${toChunk(record.y)}`, record.id);
 
-    if (record.span === undefined) return;
-    this.spanIds.delete(record.id);
-    for (const support of record.supports ?? EMPTY_IDS) {
-      drop(this.spansBySupport, support, record.id);
+    if (record.span !== undefined) {
+      this.spanIds.delete(record.id);
+      for (const support of record.supports ?? EMPTY_IDS) {
+        drop(this.spansBySupport, support, record.id);
+      }
+    }
+    if (record.aerial !== undefined) {
+      this.deckIds.delete(record.id);
+      for (const support of record.supports ?? EMPTY_IDS) {
+        const left = (this.carried.get(support) ?? 0) - 1;
+        if (left <= 0) this.carried.delete(support);
+        else this.carried.set(support, left);
+        drop(this.decksBySupport, support, record.id);
+      }
     }
   }
 
@@ -560,6 +717,13 @@ export class BuildingRegistry implements ReadonlyBuildingRegistry {
     // Vale identico per una campata, che non e' nemmeno appoggiata al suolo:
     // il suo conto lo tiene `spanIds`, ed e' `index` a riempirlo.
     if (record.span !== undefined) return;
+    // E per la citta' in quota, in tutte e quattro le sue parti: una gamba
+    // prende suolo come un edificio ma non e' un edificio, e nessuna delle
+    // quattro e' mai passata da `addBuilding`.
+    if (record.aerial !== undefined) {
+      this.aerialParts += delta;
+      return;
+    }
 
     this.classCounts[record.class] += delta;
     if (record.mixed !== undefined) this.mixedCounts[record.mixed] += delta;
@@ -585,6 +749,20 @@ export class BuildingRegistry implements ReadonlyBuildingRegistry {
 
 /** Nessun appoggio: un edificio non e' una campata e non ne ha. */
 const EMPTY_IDS: readonly number[] = [];
+
+/**
+ * true se il record occupa il suolo delle proprie colonne.
+ *
+ * Sono i due invarianti gemelli, detti in una riga sola: **una campata non
+ * prende suolo** da nessuna parte, e **un impalcato in quota lo prende solo dove
+ * poggia** — cioe' nelle gambe, che sono record propri. Tutto il resto, edifici
+ * e landmark compresi, il suolo se lo prende tutto.
+ */
+function takesGroundOf(record: BuildingRecord): boolean {
+  if (record.span !== undefined) return false;
+  if (record.aerial !== undefined) return takesGround(record.aerial);
+  return true;
+}
 
 function push<K>(index: Map<K, number[]>, key: K, id: number): void {
   const existing = index.get(key);

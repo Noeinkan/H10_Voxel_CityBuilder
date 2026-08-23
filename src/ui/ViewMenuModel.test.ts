@@ -47,11 +47,12 @@ describe('buildViewMenuModel', () => {
       if (option.mode === INSPECT_MODE.off) expect(option.gesture).toBe('');
       else expect(option.gesture.length).toBeGreaterThan(0);
     }
-    // La larghezza della finestra dei raggi X e' un fatto che si vede a schermo
-    // — a inquadratura larga la vista sembra non fare niente — e va detto qui
-    // invece di allargare il numero.
+    // Il gesto dei raggi X non porta piu' una misura: la finestra e' la sagoma
+    // del soggetto, e una riga che avvisa di avvicinarsi descriverebbe il
+    // difetto di prima invece della vista di adesso.
     const xray = model.options.find((option) => option.mode === INSPECT_MODE.xray);
-    expect(xray?.gesture).toContain(String(INSPECT.xraySpan * 2));
+    expect(xray?.gesture).toContain('Point at a building');
+    expect(xray?.gesture).not.toMatch(/\d/);
   });
 
   it('la barra dei livelli compare solo dove c’e’ una quota da muovere', () => {
@@ -114,6 +115,46 @@ describe('la targa della vista attiva', () => {
       const exit = model.bar.keys.find((hint) => hint.keys.includes('Esc'));
       expect(exit?.action).toContain('city');
       expect(model.bar.keys.some((hint) => hint.keys.includes('V'))).toBe(true);
+    }
+  });
+});
+
+describe('l’isolato scelto', () => {
+  it('cambia il gesto senza cambiare il nome della vista', () => {
+    const pointing = buildViewMenuModel(INSPECT_MODE.block, 40, 90);
+    const studying = buildViewMenuModel(INSPECT_MODE.block, 40, 90, true);
+
+    // Il nome resta: e' la stessa vista in un momento diverso del gesto, e
+    // rinominarla farebbe credere di aver cambiato strumento.
+    expect(studying.bar.label).toBe(pointing.bar.label);
+    expect(studying.blockLocked).toBe(true);
+    expect(pointing.blockLocked).toBe(false);
+
+    // Il gesto invece cambia, perche' la mano ora fa un'altra cosa.
+    expect(pointing.bar.gesture).not.toBe(studying.bar.gesture);
+    expect(studying.bar.gesture.toLowerCase()).toContain('drag');
+    expect(studying.bar.gesture).toBe(studying.activeGesture);
+  });
+
+  it('dice che Esc molla l’isolato, non che riporta la citta’', () => {
+    const model = buildViewMenuModel(INSPECT_MODE.block, 40, 90, true);
+    const exit = model.bar.keys.find((hint) => hint.keys.includes('Esc'));
+
+    // Due righe su `Esc` che promettono cose diverse sarebbero peggio di nessuna:
+    // qui il tasto molla il soggetto, e la citta' intera arriva col colpo dopo.
+    expect(exit?.action).not.toContain('city');
+    expect(exit?.action.toLowerCase()).toContain('block');
+    expect(model.bar.keys.filter((hint) => hint.keys.includes('Esc'))).toHaveLength(1);
+  });
+
+  it('vale solo dentro Block focus', () => {
+    // Chiedere di un isolato scelto mentre si guarda una fetta e' una domanda
+    // senza senso, e accendere i suoi gesti prometterebbe tasti che non esistono.
+    for (const mode of INSPECT_MODES) {
+      if (mode === INSPECT_MODE.block) continue;
+      const model = buildViewMenuModel(mode, 40, 90, true);
+      expect(model.blockLocked).toBe(false);
+      expect(model.bar.gesture).toBe(buildViewMenuModel(mode, 40, 90).bar.gesture);
     }
   });
 });

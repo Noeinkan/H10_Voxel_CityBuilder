@@ -141,6 +141,56 @@ function craneAt(y: number): readonly Part[] {
 }
 
 /**
+ * Una darsena: lo specchio d'acqua che il piano di banchina non ha riempito.
+ *
+ * **L'acqua e' scritta dentro lo stamp**, com'e' gia' lo stagno del parco, e non
+ * e' un buco lasciato al terreno. Le opere portano *tutta* l'impronta alla quota
+ * della banchina prima che lo stamp scriva — `buildWorks` riempie il riquadro,
+ * non le sole colonne che una parte occupa — quindi qui sotto c'e' terra ferma e
+ * questo e' un voxel di pelo d'acqua. E' l'unico modo che una ricetta ha di
+ * tenersi dell'acqua dentro l'ingombro, ed e' cio' che permette a una barca di
+ * stare *in* un porto invece che accanto.
+ */
+function basin(x: number, y: number, w: number, h: number): Part {
+  return box(PART.deck, x, y, w, h, 0, 1, PALETTE_SLOTS.water, SURFACE_KIND.plain);
+}
+
+/**
+ * Un pontile: un piano di legno alla quota del pelo d'acqua.
+ *
+ * Sta a zero come la darsena, non un voxel piu' su, e la ragione e' la stessa
+ * per cui una banchina sta due voxel sopra il mare: un pontile *galleggia*, e
+ * cio' che lo distingue dal molo e' proprio non avere un salto sotto. A distanza
+ * di gioco la differenza fra i due la fa il materiale, il legno contro la
+ * pietra, e il fatto che uno sia sull'acqua e l'altro sopra.
+ */
+function pontoon(x: number, y: number, w: number, h: number): Part {
+  return box(PART.deck, x, y, w, h, 0, 1, PALETTE_SLOTS.wood, SURFACE_KIND.utility);
+}
+
+/**
+ * Una barca all'ormeggio: scafo rastremato e tuga.
+ *
+ * Lo scafo parte dalla quota del pelo d'acqua e non da sotto: una ricetta non sa
+ * scrivere sotto il proprio piano finito, e la linea di galleggiamento sul pelo
+ * e' l'approssimazione che a distanza isometrica non si distingue da un
+ * pescaggio vero. Due voxel di bordo libero — un cubo di terreno — piu' la tuga
+ * sopra: e' quanto basta perche' di taglio la barca abbia un'altezza propria e
+ * non legga come una chiazza di colore sull'acqua.
+ */
+function moored(x: number, y: number, length: number): readonly Part[] {
+  return [
+    box(PART.hull, x, y, length, 3, 0, 2, PALETTE_SLOTS.metalDark, SURFACE_KIND.industrial, {
+      step: 1,
+      cap: PALETTE_SLOTS.wood,
+    }),
+    box(PART.mast, x + length - 3, y + 1, 2, 1, 2, 2, PALETTE_SLOTS.concretePale, SURFACE_KIND.plain, {
+      cap: PALETTE_SLOTS.glassDeep,
+    }),
+  ];
+}
+
+/**
  * Un albero: tronco sottile e chioma squadrata.
  *
  * Non riusa `writeTree` di `terrain/decor.ts`, e non per distrazione: quella
@@ -189,6 +239,12 @@ export const LANDMARKS: Partial<Record<CatalystId, LandmarkRecipe>> = {
     parts: [
       [
         box(PART.deck, 0, 0, 12, 12, 0, 1, GRADING.quayDeck, SURFACE_KIND.utility),
+        // Lo specchio d'acqua c'e' dal primo stadio: e' cio' che fa leggere il
+        // fronte come un porto quando la banchina e' ancora sola. Il molo dello
+        // stadio dopo lo taglia in due darsene, e riscrivere un voxel d'acqua
+        // come pietra e' il modo in cui una ricetta cumulativa esprime «qui ora
+        // c'e' terra» senza togliere niente a nessuno.
+        basin(12, 0, 8, 12),
         box(PART.shell, 1, 2, 6, 7, 1, 8, PALETTE_SLOTS.concrete, SURFACE_KIND.industrial, {
           cap: PALETTE_SLOTS.concretePale,
         }),
@@ -196,15 +252,19 @@ export const LANDMARKS: Partial<Record<CatalystId, LandmarkRecipe>> = {
       ],
       [
         box(PART.slab, 12, 4, 8, 4, 0, 1, GRADING.quayDeck, SURFACE_KIND.utility),
+        pontoon(12, 3, 7, 1),
         ...craneAt(5),
       ],
       [
         ...craneAt(1),
+        ...moored(13, 0, 6),
         box(PART.slab, 1, 10, 6, 2, 1, 4, PALETTE_SLOTS.metalRust, SURFACE_KIND.plain),
         box(PART.slab, 8, 10, 4, 2, 1, 2, PALETTE_SLOTS.glassDeep, SURFACE_KIND.plain),
       ],
       [
         ...craneAt(9),
+        pontoon(12, 8, 7, 1),
+        ...moored(13, 9, 6),
         box(PART.shell, 8, 0, 4, 3, 1, 6, PALETTE_SLOTS.concrete, SURFACE_KIND.industrial, {
           cap: PALETTE_SLOTS.concretePale,
         }),

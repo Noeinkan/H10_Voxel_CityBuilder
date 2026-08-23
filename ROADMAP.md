@@ -1358,21 +1358,32 @@ simulazione continua a non avere una coordinata verticale (invariante 7). È
 l'alternativa da preferire a un indice `z` nel campo di desiderabilità, che
 moltiplicherebbe per il numero di livelli tutta la memoria densa.
 
-- [ ] Introdurre la piattaforma come suolo artificiale: una struttura con appoggi <!-- size: XL -->
+- [x] Introdurre la mensola come suolo artificiale: una struttura con appoggi <!-- size: XL -->
   propri che porta una superficie edificabile a quota, trattata dal registry come
   volume e non come edificio.
-- [ ] Esporre più di una quota edificabile per colonna senza duplicare la <!-- size: L -->
+- [x] Esporre più di una quota edificabile per colonna senza duplicare la <!-- size: L -->
   `TerrainMap`: il livello si risolve dove si risolve il lotto, non nel campo.
-- [ ] Restituire alla crescita le colonne già costruite: oggi `occupancy` è un <!-- size: L -->
+- [x] Restituire alla crescita le colonne già costruite: oggi `occupancy` è un <!-- size: L -->
   bit per cella e chiude la colonna per sempre. Deve tornare candidabile quando
   sopra c'è spazio ammesso, **senza** che `src/sim/` guadagni una coordinata z —
   è il mondo a dire quante quote restano, come già dice dov'è la costa.
-- [ ] Far crescere edifici sulle piattaforme e sui tetti condivisi dei cluster, <!-- size: L -->
-  riusando `topOf` e l'intervallo di quota che il registry già confronta.
-- [ ] Prendere la quota ammessa della 4.6 come tetto **anche** in quota: una <!-- size: M -->
-  piattaforma non è il modo di aggirare la gerarchia, è il modo in cui la
+- [x] Far crescere edifici sulle mensole e sui nodi, riusando `topOf` e <!-- size: L -->
+  l'intervallo di quota che il registry già confronta.
+- [x] Prendere la quota ammessa della 4.6 come tetto **anche** in quota: una <!-- size: M -->
+  mensola non è il modo di aggirare la gerarchia, è il modo in cui la
   gerarchia sale. Senza questo vincolo il secondo livello diventa la scorciatoia
   che rende inutile il primo.
+- [ ] Far esistere davvero la rete: i percorsi dritti fra mensole funzionano e <!-- size: L -->
+  sono coperti dai test, ma su una città cresciuta ne nascono **zero** — le
+  mensole ci sono e non si guardano mai. Il pezzo che manca è la scelta di *dove*
+  nasce una mensola, non il planner: se l'aggetto si posasse sul fronte strada,
+  due vicini avrebbero atterraggi complanari.
+- [ ] Riportare la piega: un percorso a zeta esisteva e i suoi pianerottoli <!-- size: M -->
+  cadevano in punti che il corridoio dritto non misura. Serve misurare il colmo
+  sui riquadri veri dei pezzi, non su quello della corsa.
+- [ ] Lo strumento del giocatore: `Builder.placeTerrace` c'è già ed è la porta <!-- size: M -->
+  del mondo; mancano il costo in `BALANCE`, l'azione in `game/actions.ts`, il
+  tool nell'HUD e le etichette di rifiuto.
 - [ ] Aggiungere mobilità in quota come struttura di scena — monorotaia, <!-- size: L -->
   sopraelevata, ascensori d'isolato — appoggiata alla rete di 4.5 e ai suoi
   appoggi reali.
@@ -1389,6 +1400,23 @@ anche qui la regola di 4.5, una campata orfana è un bug e non uno stile.
 **Gate:** esiste almeno una zona della città in cui si abita sopra la città e ci
 si muove fra i livelli; determinismo e budget reggono con due livelli sovrapposti
 come con uno, e il suolo originale resta ricostruibile dal seed.
+
+**Dove è arrivata, e dove no.** Il gate è passato per metà, ed è la metà che si
+vede: sulla città di prova nascono una quarantina di **mensole** e sopra di loro
+degli edifici, verificati da test e non a occhio. Quello che non c'è è il
+**muoversi fra i livelli**: i percorsi restano zero.
+
+La diagnosi è misurata e vale la pena scriverla, perché non è quella che sembrava.
+Il planner dei percorsi funziona — i test puri lo coprono, compreso il dislivello
+che i pianerottoli assorbono — e a mancare sono i **luoghi**: su settecentocinquanta
+coppie di mensole di una città cresciuta, nessuna si affaccia sull'altra abbastanza
+da farci passare una passerella. Prima ancora, atterrare su una **facciata** invece
+che su una mensola non funziona affatto (zero su milleseicento tentativi): gli
+edifici sono piramidali, e una facciata offre una parete piana solo in alto, dove
+è troppo stretta, o sulla sommità del basamento, dove è così bassa che una corsa
+lunga finisce dentro l'edificio accanto. Da qui la forma che il dominio ha preso —
+**le mensole sono le stazioni, i percorsi sono le linee** — e da qui il punto da
+cui riprendere: fare in modo che le stazioni si guardino.
 
 ### Fase 4.10 — Campionario dei voxel
 
@@ -1840,6 +1868,18 @@ vuole un'informazione che il mesher non porta — e chiedergliela sarebbe la vis
 sbagliata (invariante 6): la strada praticabile è un secondo predicato di quota,
 e va decisa prima di scriverla.
 
+**Chiuso, e la strada era quella.** Il predicato di quota è il **pavimento** che
+viaggia con la lente: sotto la base del soggetto non si vela mai. Nessun bit nuovo
+nel mesher, nessuna distinzione fra materiali — una quota, che è geometria e la
+sa già chi ha scelto il soggetto. Nello stesso passaggio è caduta anche la
+finestra di 64 colonne, e non allargandola: la lente è un test **raggio/volume**,
+cioè «questo frammento copre ciò che sto guardando?», e la sua finestra è la
+sagoma del soggetto per costruzione, a ogni zoom e da ogni angolo. La terza gamba
+era il puntamento — `pickSurfaceCell` non conosce gli edifici e si fermava sulla
+terra *dietro* la torre, a tante colonne quanto la torre è alta — e ora chi
+guarda usa `pickSolidCell` mentre chi piazza continua a usare la heightmap.
+Restano aperte le ombre nel taglio.
+
 ### Fase 4.14 — Arcologie e megastrutture
 
 Obiettivo: l'opera sola che vale un quartiere — usi diversi su quote diverse
@@ -1914,6 +1954,83 @@ l'altro con il vuoto in mezzo — invece che come un tappeto di torri.
   è continuo, e resta un ornamento finché non lo è.
 - Cloudpunk, già citato in 4.9 per lo stesso motivo: cinque piani di città, e la
   parte bassa deliberatamente strutturale perché è la fondazione di quella sopra.
+
+### Fase 4.15 — Un isolato si può scegliere e girarci attorno
+
+Obiettivo: rendere Block focus capace di rispondere alla domanda che non sapeva
+ancora affrontare — **com'è fatto** un isolato — senza aggiungere una sesta vista.
+
+Dipende dalla 4.11 per il motore delle viste e dalla 4.13 per le superfici che le
+spiegano. Vive in `src/engine/` (`inspect.ts`, `IsoCameraController.ts`), in
+`src/ui/` e in `src/main.ts`.
+
+**Stato implementazione:** completata.
+
+**Perché adesso.** Il gate della fase 4 chiede che «il singolo edificio regga
+anche l'inquadratura ravvicinata», e non c'era modo di produrne una: la camera
+aveva quattro angoli e un'inclinazione sola, e Block focus perdeva il soggetto al
+primo movimento del mouse. Le due mancanze erano la stessa — nessun modo di
+guardare **una** cosa — e si chiudono insieme.
+
+Le tre regole, che sono il contenuto vero della fase:
+
+- **Puntare e scegliere sono due tempi.** Il velo al 68% risponde a «come si
+  connette» e resta esattamente com'era; il clic porta la densità a `cut` e
+  risponde a «com'è fatto». Stessa geometria, stesso rettangolo, un numero
+  diverso: per questo non è un modo in più nel ciclo di `V`.
+- **Ciò che si sceglie smette di inseguire.** Con un isolato scelto
+  `applyInspect` non rilegge il puntatore. Era il difetto che rendeva la vista
+  inutilizzabile per studiare, ed è lo stesso della 4.13 portato un passo avanti:
+  lì il fuoco si agganciava, qui si ferma del tutto.
+- **La camera si restituisce.** L'inquadratura la muove lo strumento, non il
+  giocatore: uscendo torna identica — yaw, scatto, inclinazione, perno, altezza e
+  zoom.
+
+- [x] Sotto-stato bloccato di Block focus: `locked` in `InspectState`, densità
+  `veil` → `cut`, riquadro congelato. <!-- size: S -->
+- [x] Orbita nella camera isometrica: `PITCH` diventa `REST_PITCH` più un campo
+  clampato fra 12° e 82°, drag che gira invece di panare, `captureState` e
+  `restoreState`. <!-- size: M -->
+- [x] `isCut` e `needsCap` separati: solo un taglio che attraversa i volumi
+  chiede `DoubleSide` e il tappo. <!-- size: S -->
+- [x] `Esc` a due gradini — molla il soggetto, poi spegne la vista — e regola
+  dello strumento che sblocca invece di chiudere. <!-- size: S -->
+- [x] Targa che cambia gesto e tasti senza cambiare il nome della vista. <!-- size: S -->
+
+**Vincolo:** nessuna uniform nuova e nessun modo nuovo. La vista resta una lente
+sul rendering e non uno stato della città (vincolo della 4.13): `src/sim/` e
+`src/game/` continuano a non sapere che esiste, non si salva, e al ricaricamento
+si riparte da Normal — l'isolato scelto compreso.
+
+**Perché l'inclinazione si ferma a 12° e 82°.** Non è un gusto. Sotto,
+`1 / sin(pitch)` — la correzione che fa seguire il cursore al trascinamento —
+esplode, e con lei il pan e l'inversione schermo→terra. Sopra, `camera.lookAt`
+degenera perché la direzione di vista diventa parallela a `up`: è lo stesso
+scoglio che `SunShadow` aggira con un `up` di ripiego.
+
+**Resta aperto.** Le ombre proiettate **si spengono ancora** mentre si studia, ed
+è la stessa cosa lasciata aperta da 4.11 e 4.13: il predicato dell'ispezione vive
+nel materiale di scena e non in quello di profondità, quindi il volume tolto
+continuerebbe a proiettare ombra sul modellino. Qui il costo si sente più che
+altrove — un oggetto isolato senza ombra propria legge piatto — e la risposta
+resta il predicato nel `depthMaterial` di `SunShadow`, cioè un secondo shader da
+tenere allineato a mano.
+
+Inoltre: il **cielo è un quad in spazio schermo** (scelta motivata in
+`SkyBackground.ts`), quindi abbassando l'inclinazione il gradiente non segue
+l'orizzonte; e la **nebbia sopravvive allo zoom** per costruzione (`fogLift`),
+quindi un isolato guardato da molto vicino può uscire lattiginoso — si tara sul
+tema, non sullo shader. Nessuna delle due è un difetto di questa fase, ma
+entrambe si notano solo da qui in poi.
+
+**Riferimenti**
+- [Camera Tool di Cities: Skylines II](https://skylines.paradoxwikis.com/Camera_Tool):
+  già citato in 4.11 come «la strada opposta, perché la camera qui è ortografica e
+  vincolata». Resta ortografica: l'orbita è un modo circoscritto a un soggetto, e
+  la città non ci finisce mai dentro.
+- Il **modellino** come metafora: Tiny Glade e i diorami di Townscaper mostrano
+  che un oggetto staccato dal contesto si legge per silhouette e ombra propria —
+  ed è esattamente l'ombra che qui manca ancora.
 
 **Gate della fase 4:** con la UI nascosta, la città comunica crescita verticale,
 connessioni fra livelli e struttura economica attraverso volumi e silhouette;

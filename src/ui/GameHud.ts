@@ -4,6 +4,7 @@ import type { PolicyId, TradeMode } from '../sim';
 import { ControlsHint } from './ControlsHint';
 import {
   buildGameHudModel,
+  daylightControl,
   decisionMark,
   decisionNeedsRepaint,
   resolveEscapeTarget,
@@ -15,6 +16,7 @@ import {
   type HudResource,
   type HudTradeMode,
 } from './GameHudModel';
+import { DAYLIGHT_MODE, type DaylightMode } from '../engine/daylight';
 import { createHudIcon, type HudIcon } from './hudIcons';
 import { buildViewMenuModel, type ViewKeyHint, type ViewMenuModel } from './ViewMenuModel';
 import { INSPECT, INSPECT_MODE, type InspectMode } from '../engine/inspect';
@@ -28,10 +30,14 @@ export interface GameHudHandlers {
   readonly onDecision: (optionId: string) => void;
   readonly onPause: (paused: boolean) => void;
   readonly onSpeed: (speed: number) => void;
+  /** Ciclo, giorno fisso o notte fissa: sta accanto alla velocita' perche' e' tempo. */
+  readonly onDaylight: (mode: DaylightMode) => void;
   readonly onTheme: (id: string) => void;
   readonly onView: (mode: InspectMode) => void;
   readonly onLevel: (z: number) => void;
   readonly onCancelTool: () => void;
+  /** Molla l'isolato scelto in Block focus, lasciando accesa la vista. */
+  readonly onReleaseBlock: () => void;
 }
 
 export interface ThemeChoice {
@@ -63,6 +69,8 @@ const FAILURE_LABEL: Readonly<Record<ActionFailure, string>> = {
   'needs-coast': 'A Port only works on the waterfront. Move it closer to the sea.',
   'needs-open-ground': 'An Airport needs a wide, level clearing to lay a runway on.',
   'too-close': 'Too close to another catalyst of the same type.',
+  'block-too-tall': 'Too tall to clear. Look for a lower pocket in the district.',
+  'structure-in-the-way': 'A landmark or an elevated deck stands here. It will not make way.',
   'insufficient-funds': 'You do not have enough funds yet.',
   'population-required': 'The city must grow before you can do this.',
   'already-active': 'This policy is already active.',
@@ -70,6 +78,12 @@ const FAILURE_LABEL: Readonly<Record<ActionFailure, string>> = {
   'onboarding-order': 'Follow the tutorial order: residential, production, civic.',
   'policy-incompatible': 'This policy conflicts with one that is already active.',
   'decision-option-invalid': 'This decision option is no longer available.',
+};
+
+const DAYLIGHT_ICON: Readonly<Record<DaylightMode, HudIcon>> = {
+  [DAYLIGHT_MODE.cycle]: 'daylight',
+  [DAYLIGHT_MODE.day]: 'sun',
+  [DAYLIGHT_MODE.night]: 'moon',
 };
 
 const RESOURCE_ICON: Readonly<Record<HudResource['id'], HudIcon>> = {
@@ -95,8 +109,17 @@ export class GameHud {
   private viewBarKeys!: HTMLElement;
   /** Vista accesa: e' l'ultima cosa che Escape spegne, e la targa lo dichiara. */
   private viewActive = false;
-  /** Il modo gia' disegnato nella targa: i tasti cambiano solo con lui. */
+  /** Isolato scelto: Escape lo molla **prima** di spegnere la vista. */
+  private blockLocked = false;
+  /**
+   * Il modo gia' disegnato nella targa: i tasti cambiano solo con lui.
+   *
+   * Il blocco ci entra perche' cambia i tasti senza cambiare il modo: senza,
+   * scegliere un isolato lascerebbe a schermo la riga «punta l'isolato» mentre il
+   * gesto giusto e' ormai un altro.
+   */
   private paintedViewMode: InspectMode | null = null;
+  private paintedViewLocked = false;
   private readonly levelRail: HTMLElement;
   private levelSlider!: HTMLInputElement;
   private levelValue!: HTMLElement;
@@ -114,6 +137,8 @@ export class GameHud {
   private readonly themeToggle: HTMLButtonElement;
   private readonly viewToggle: HTMLButtonElement;
   private readonly pauseButton: HTMLButtonElement;
+  private readonly daylightButton: HTMLButtonElement;
+  private daylightMode: DaylightMode = DAYLIGHT_MODE.cycle;
   private readonly speedButtons = new Map<number, HTMLButtonElement>();
   private readonly themeButtons = new Map<string, HTMLButtonElement>();
   private readonly viewButtons = new Map<InspectMode, HTMLButtonElement>();
@@ -156,6 +181,14 @@ export class GameHud {
       this.speedButtons.set(speed, button);
       time.appendChild(button);
     }
+    // Il ciclo del giorno sta con la velocita' e la pausa perche' e' la stessa
+    // domanda — quanto tempo passa mentre guardo — e perche' e' li' che si
+    // guarda quando la citta' e' buia e non si sa se tornera' giorno.
+    this.daylightButton = iconButton('daylight', 'Daylight', () =>
+      this.handlers.onDaylight(daylightControl(this.daylightMode).next));
+    this.daylightButton.classList.add('hud-button--small', 'daylight-toggle');
+    time.appendChild(this.daylightButton);
+    this.setDaylight(DAYLIGHT_MODE.cycle);
     resourceBar.appendChild(time);
     this.root.appendChild(resourceBar);
 
@@ -300,6 +333,23 @@ export class GameHud {
   }
 
   /**
+   * Il modo del ciclo, dal modello puro al bottone.
+   *
+   * L'icona **e'** lo stato: sole con l'orizzonte per il giro, sole pieno per il
+   * giorno fermo, falce per la notte ferma. Un bottone che cicla e mostra sempre
+   * la stessa icona costringe a leggere il tooltip per sapere dove si e'.
+   */
+  setDaylight(mode: DaylightMode): void {
+    this.daylightMode = mode;
+    const control = daylightControl(mode);
+    this.daylightButton.replaceChildren(createHudIcon(DAYLIGHT_ICON[mode]));
+    this.daylightButton.setAttribute('aria-label', control.tooltip);
+    this.daylightButton.dataset.tooltip = control.tooltip;
+    this.daylightButton.dataset.active = control.frozen ? 'true' : 'false';
+    this.daylightButton.setAttribute('aria-pressed', control.frozen ? 'true' : 'false');
+  }
+
+  /**
    * La vista attiva, dal modello puro alle superfici che la mostrano.
    *
    * Quattro in una chiamata sola — bottone del dock, picker, targa e barra dei
@@ -320,13 +370,15 @@ export class GameHud {
     this.viewToggle.dataset.tooltip = label;
 
     this.viewActive = active;
+    this.blockLocked = model.blockLocked;
     this.viewBar.hidden = !active;
     // Solo al cambio di modo: questa funzione gira a ogni ripittura dell'HUD, e
     // ricreare i `kbd` sei volte al secondo li strapperebbe da sotto il puntatore
     // — e' lo stesso motivo per cui la scheda decisione non si ridisegna sempre.
     if (!active) this.paintedViewMode = null;
-    else if (this.paintedViewMode !== model.mode) {
+    else if (this.paintedViewMode !== model.mode || this.paintedViewLocked !== model.blockLocked) {
       this.paintedViewMode = model.mode;
+      this.paintedViewLocked = model.blockLocked;
       this.viewBarLabel.textContent = model.bar.label;
       this.viewBarGesture.textContent = model.bar.gesture;
       this.viewBarKeys.replaceChildren(...model.bar.keys.map(viewKeyRow));
@@ -459,6 +511,7 @@ export class GameHud {
       this.help.isOpen,
       this.selected,
       this.viewActive,
+      this.blockLocked,
     )) {
       // Chiude il picker e non la vista: sono due cose distinte, e il colpo dopo
       // e' quello che spegne la vista. Chi ha il pannello aperto sopra la citta'
@@ -482,6 +535,9 @@ export class GameHud {
         this.handlers.onCancelTool();
         this.paintSelection();
         this.paintToast();
+        return true;
+      case 'lock':
+        this.handlers.onReleaseBlock();
         return true;
       case 'view':
         this.handlers.onView(INSPECT_MODE.off);

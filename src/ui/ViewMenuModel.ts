@@ -82,6 +82,8 @@ export interface ViewMenuModel {
   readonly levelVisible: boolean;
   readonly level: number;
   readonly levelMax: number;
+  /** Un isolato e' stato scelto: cambia i gesti, i tasti e cosa fa `Esc`. */
+  readonly blockLocked: boolean;
 }
 
 const LABELS: Readonly<Record<InspectMode, string>> = {
@@ -114,18 +116,31 @@ const DESCRIPTIONS: Readonly<Record<InspectMode, string>> = {
  * menu legge la prima per scegliere e la seconda subito dopo aver scelto, ed e'
  * la seconda che mancava del tutto.
  *
- * La finestra dei raggi X e' larga `INSPECT.xraySpan` colonne di **mondo**: a
- * inquadratura larga sono pochi pixel e la vista sembra non fare niente. Non e'
- * un numero da alzare — un raggio X che scala con lo zoom dissolverebbe mezza
- * citta' — e' un fatto da dire qui.
+ * La riga dei raggi X portava una misura — «la finestra e' larga 64 caselle,
+ * quindi avvicinati» — ed era il modo onesto di dire un difetto invece di
+ * correggerlo: la finestra era di **mondo** e non c'entrava niente con quello
+ * che si stava guardando. Ora la lente e' la sagoma del soggetto, a qualunque
+ * zoom, e non c'e' nessun numero da avvisare: resta il gesto, che e' l'unica
+ * cosa che il giocatore deve fare.
  */
 const GESTURES: Readonly<Record<InspectMode, string>> = {
   [INSPECT_MODE.off]: '',
-  [INSPECT_MODE.xray]: `Point at a building. The window is ${INSPECT.xraySpan * 2} tiles wide, so zoom in first.`,
+  [INSPECT_MODE.xray]: 'Point at a building: whatever stands in front of it fades out of the way.',
   [INSPECT_MODE.slice]: 'Drag the Level rail on the left, or press [ and ] — hold Shift for a whole floor.',
   [INSPECT_MODE.section]: 'Point at a block: the cut falls on the nearest street. Q and E turn it.',
-  [INSPECT_MODE.block]: 'Point at the block you want to keep.',
+  [INSPECT_MODE.block]: 'Point at the block you want to keep, then click to study it on its own.',
 };
+
+/**
+ * Il gesto di Block focus **dopo** che un isolato e' stato scelto.
+ *
+ * Sta a parte e non dentro `GESTURES` perche' non e' un modo diverso: e' lo
+ * stesso, in un momento diverso del gesto. Chi ha appena cliccato non ha piu'
+ * bisogno di sapere che deve puntare — l'ha fatto — ma di sapere che ora il
+ * trascinamento gira invece di spostare la citta', che e' l'unica cosa a schermo
+ * che non si indovina.
+ */
+const BLOCK_LOCKED_GESTURE = 'Drag to turn around it, or click another block.';
 
 /**
  * I tasti che valgono solo dentro una vista.
@@ -144,6 +159,20 @@ const VIEW_KEYS: Readonly<Record<InspectMode, readonly ViewKeyHint[]>> = {
   [INSPECT_MODE.section]: [{ keys: ['Q', 'E'], action: 'Turn the cut' }],
   [INSPECT_MODE.block]: [],
 };
+
+/**
+ * I tasti che valgono mentre si studia un isolato.
+ *
+ * Prima non ce n'erano, ed era un fatto: la vista si guidava col cursore e
+ * basta. Scegliendo un isolato ne compaiono, e vanno detti — soprattutto
+ * l'uscita, perche' qui `Esc` non spegne la vista ma molla il soggetto, e senza
+ * questa riga si premerebbe due volte per sbaglio.
+ */
+const BLOCK_LOCKED_KEYS: readonly ViewKeyHint[] = [
+  { keys: ['Drag'], action: 'Turn around the block' },
+  { keys: ['Wheel'], action: 'Move closer' },
+  { keys: ['Esc'], action: 'Let the block go' },
+];
 
 /**
  * I due tasti che valgono in ogni vista, e il secondo e' quello che mancava.
@@ -173,6 +202,7 @@ export function buildViewMenuModel(
   mode: InspectMode,
   level: number,
   maxZ: number,
+  blockLocked = false,
 ): ViewMenuModel {
   const options = INSPECT_MODES.map((candidate): ViewOption => ({
     mode: candidate,
@@ -183,18 +213,31 @@ export function buildViewMenuModel(
     cuts: modeCuts(candidate),
   }));
 
+  // Il blocco vale solo dentro Block focus: chiedere di uno mentre si guarda una
+  // fetta e' una domanda senza senso, e rispondere «si'» accenderebbe gesti che
+  // nessun tasto puo' onorare.
+  const locked = blockLocked && mode === INSPECT_MODE.block;
+  const gesture = locked ? BLOCK_LOCKED_GESTURE : GESTURES[mode];
+  // Con un isolato in mano `Esc` lo molla invece di spegnere la vista: la riga
+  // «Back to the whole city» direbbe una cosa falsa, e le due finirebbero
+  // entrambe a schermo a promettere cose diverse per lo stesso tasto.
+  const keys = locked
+    ? BLOCK_LOCKED_KEYS
+    : [...VIEW_KEYS[mode], ...VIEW_KEYS_ALWAYS];
+
   return {
     options,
     mode,
     activeLabel: LABELS[mode],
     activeDescription: DESCRIPTIONS[mode],
-    activeGesture: GESTURES[mode],
+    activeGesture: gesture,
     bar: {
       visible: mode !== INSPECT_MODE.off,
       label: LABELS[mode],
-      gesture: GESTURES[mode],
-      keys: [...VIEW_KEYS[mode], ...VIEW_KEYS_ALWAYS],
+      gesture,
+      keys,
     },
+    blockLocked: locked,
     // `modeHasLevel` e non `modeCuts`: Cutaway taglia ma non guarda `sliceZ`, e
     // finche' le due domande erano la stessa la barra compariva anche li' — uno
     // slider che si trascinava senza muovere niente.
