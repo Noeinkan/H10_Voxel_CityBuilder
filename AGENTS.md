@@ -135,6 +135,15 @@ su questa macchina.
   in `tsconfig.json`).
 - Non modificare `dist/` o `node_modules/`.
 - Se aggiungi file, aggiorna `PROJECT_INDEX.md` e il README di modulo pertinente.
+- **Oltre ~600 righe un file va spezzato prima di aggiungerci altro.** Non e'
+  estetica: il semaforo fra agenti prende il lock **per path** e lo tiene fino a
+  fine turno, quindi un file grande e' un file su cui si lavora a lungo, e ogni
+  riga di troppo si paga in attesa di qualcun altro. La linea di taglio e' *lungo
+  cosa si lavora separatamente* — gli shader stanno in `engine/shaders/` perche'
+  scrivere GLSL e scrivere l'handle sono due lavori, non perche' sia piu'
+  elegante — e non lungo l'astrazione migliore sulla carta. Il numero non e'
+  arbitrario: i file che lo superano sono esattamente quelli in cima alla
+  classifica di contesa misurata su `git log --name-only`.
 
 ## Harness di debug
 
