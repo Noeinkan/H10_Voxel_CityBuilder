@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  BALANCE,
   BUILDING_CLASS,
   addBuilding,
   addCatalyst,
@@ -7,6 +8,7 @@ import {
   createSimState,
   tick,
   type CharterId,
+  type SimState,
 } from '../../sim';
 import { AERIAL_PART, type AerialPart } from '../aerial/config';
 import { CHUNK } from '../chunkCoords';
@@ -1526,12 +1528,241 @@ describe('Builder — gerarchia verticale', () => {
   });
 });
 
+/**
+ * Lo sventramento: un landmark che si pianta dentro la citta' gia' costruita.
+ *
+ * Il difetto che questi test bloccano e' **muto**, ed e' per questo che vanno
+ * scritti: prima, un catalizzatore piantato in centro si pagava, entrava nella
+ * simulazione e non produceva nessuna struttura — nessun record, quindi nessuno
+ * stadio, quindi un monumento invisibile per sempre. Non falliva niente: non
+ * compariva niente.
+ */
+describe('Builder — sventramento', () => {
+  const MAX_CLEARABLE = BALANCE.gameplay.catalyst.clearing.maxLevel;
+
+  /** Una citta' cresciuta su terreno piano, con il suo stato. */
+  function city(builds: number): {
+    world: VoxelWorld;
+    terrain: TerrainMap;
+    builder: Builder;
+    state: SimState;
+  } {
+    const world = new VoxelWorld();
+    const terrain = testTerrain({ chunksX: 8, chunksY: 8, height: 24 });
+    const builder = new Builder(world, terrain, 1337);
+
+    let state = addCatalyst(createSimState(), {
+      x: 128,
+      y: 128,
+      class: BUILDING_CLASS.residential,
+      strength: 255,
+      radius: 96,
+    });
+
+    for (let i = 0; i < ticksFor(builds); i++) {
+      state = tick(state, terrain);
+      state = builder.onTick(state);
+      while (builder.stats.growing > 0) builder.step();
+    }
+    while (builder.stats.surfaceQueued > 0) builder.step();
+
+    return { world, terrain, builder, state };
+  }
+
+  /** Porta avanti la partita finche' i cantieri non hanno finito. */
+  function settle(
+    builder: Builder,
+    terrain: TerrainMap,
+    state: SimState,
+    rounds = 400,
+  ): SimState {
+    let next = state;
+    for (let i = 0; i < rounds && builder.stats.clearing > 0; i++) {
+      next = tick(next, terrain);
+      next = builder.onTick(next);
+      while (builder.stats.growing > 0) builder.step();
+    }
+    while (builder.stats.growing > 0 || builder.stats.surfaceQueued > 0) builder.step();
+    return next;
+  }
+
+  /** Il riquadro occupato dal landmark che e' venuto su. */
+  function landmarkBox(builder: Builder): {
+    x: number;
+    y: number;
+    sizeX: number;
+    sizeY: number;
+  } {
+    const record = [...builder.registry.all].find((r) => r.landmark !== undefined)!;
+    return { x: record.x, y: record.y, sizeX: record.footprint, sizeY: footprintDepth(record) };
+  }
+
+  /**
+   * La prima colonna che apre davvero un cantiere.
+   *
+   * **Non il centro del catalizzatore**, ed e' il punto della meccanica: il
+   * centro e' fatto di torri, e le torri rifiutano. Il gesto vive nel tessuto
+   * basso attorno, ed e' quello che il giocatore cerca muovendo il cursore.
+   */
+  function clearableSpot(builder: Builder): BuildingRecord {
+    const spot = buildingsOf(builder).find((record) => {
+      const quote = builder.landmarkClearance(record.x, record.y, 'market');
+      return quote.refusal === null && quote.clears > 0;
+    });
+    expect(spot, 'la citta di prova deve avere una sacca sventrabile').toBeDefined();
+    return spot!;
+  }
+
+  it('un riquadro pieno di tessuto basso apre un cantiere invece di non fare niente', () => {
+    const { terrain, builder, state } = city(30);
+    const spot = clearableSpot(builder);
+
+    const quote = builder.landmarkClearance(spot.x, spot.y, 'market');
+    expect(quote.refusal).toBeNull();
+    expect(quote.clears).toBeGreaterThan(0);
+
+    const before = state.buildings.length;
+    builder.placeLandmark(spot.x, spot.y, 'market');
+
+    // Il cantiere e' aperto e la struttura **non** c'e' ancora: fra il click e
+    // il monumento passano le passate che servono a sgomberare.
+    expect(builder.stats.clearing).toBe(1);
+    expect(builder.registry.landmarkCount).toBe(0);
+
+    const after = settle(builder, terrain, state);
+
+    expect(builder.stats.clearing).toBe(0);
+    expect(builder.stats.cleared).toBe(quote.clears);
+    expect(builder.registry.landmarkCount).toBe(1);
+    // La simulazione ha perso esattamente gli edifici che sono caduti, non uno
+    // di piu': e' da qui che arriva il costo del gesto — meno capacita', quindi
+    // sovraffollamento, quindi soddisfazione che scende.
+    expect(before - after.buildings.length).toBe(quote.clears);
+    expect(after.buildings.length).toBeLessThan(before);
+  });
+
+  it('cadono solo i condannati, e i loro voxel spariscono davvero', () => {
+    const { world, terrain, builder, state } = city(30);
+    const spot = clearableSpot(builder);
+
+    const outside = buildingsOf(builder)
+      .filter((r) => Math.abs(r.x - spot.x) > 40 || Math.abs(r.y - spot.y) > 40)
+      .map((r) => r.id);
+    expect(outside.length).toBeGreaterThan(0);
+
+    builder.placeLandmark(spot.x, spot.y, 'market');
+    settle(builder, terrain, state);
+
+    // Chi era lontano dal riquadro e' ancora li'.
+    for (const id of outside) expect(builder.registry.get(id)).not.toBeNull();
+
+    // E dentro il riquadro non e' rimasto niente sopra la struttura: se la
+    // sagoma rigenerata divergesse da quella scritta, qui ci sarebbe un moncone.
+    const box = landmarkBox(builder);
+    const landmark = [...builder.registry.all].find((r) => r.landmark !== undefined)!;
+    const top = landmark.baseZ + landmark.height;
+    let above = 0;
+    for (let y = box.y; y < box.y + box.sizeY; y++) {
+      for (let x = box.x; x < box.x + box.sizeX; x++) {
+        for (let z = top; z < top + 30; z++) {
+          if (world.getBlock(x, y, z) !== 0) above++;
+        }
+      }
+    }
+    expect(above).toBe(0);
+  });
+
+  it('una struttura non si tocca: un landmark non ne sventra un altro', () => {
+    const { terrain, builder, state } = city(30);
+    const spot = clearableSpot(builder);
+
+    builder.placeLandmark(spot.x, spot.y, 'market');
+    settle(builder, terrain, state);
+    expect(builder.registry.landmarkCount).toBe(1);
+
+    // Sulla stessa colonna, con un ruolo diverso per non incappare nella
+    // distanza minima: cio' che trova e' il monumento di prima.
+    const quote = builder.landmarkClearance(spot.x, spot.y, 'university');
+    expect(quote.refusal).toBe('structure-in-the-way');
+    expect(quote.clears).toBe(0);
+  });
+
+  it('una torre oltre soglia ferma il riquadro, e non ne cade nemmeno un pezzo', () => {
+    const { terrain, builder, state } = city(120);
+
+    // Una colonna che rifiuta **per altezza** e non per altro: e' il caso che
+    // interessa, ed esiste perche' il centro di una citta' matura e' fatto di
+    // torri fuori portata mentre il tessuto attorno non lo e'.
+    const tall = buildingsOf(builder).find((record) =>
+      record.level > MAX_CLEARABLE &&
+      builder.landmarkClearance(record.x, record.y, 'market').refusal === 'block-too-tall');
+    expect(tall, 'la citta di prova deve avere una torre che rifiuta per altezza').toBeDefined();
+    if (tall === undefined) return;
+
+    const before = builder.registry.count;
+    builder.placeLandmark(tall.x, tall.y, 'market');
+    settle(builder, terrain, state);
+
+    // Nessun cantiere, nessun record perso: il rifiuto e' del riquadro intero,
+    // e sgomberare attorno a una torre che resta in piedi darebbe un buco.
+    expect(builder.stats.cleared).toBe(0);
+    expect(builder.registry.count).toBeGreaterThanOrEqual(before);
+    expect(builder.registry.get(tall.id)).not.toBeNull();
+  });
+
+  it('la soglia lascia sventrabile il tessuto e fuori portata le torri', () => {
+    // **Il gate della fase, misurato invece che dichiarato.** Se la soglia fosse
+    // troppo bassa, in una citta' matura non si aprirebbe un cantiere da nessuna
+    // parte e la meccanica esisterebbe solo sulla carta; se fosse troppo alta,
+    // un monumento cancellerebbe un centro direzionale.
+    const { builder } = city(120);
+    const all = buildingsOf(builder);
+
+    const viable = all.filter((record) => {
+      const quote = builder.landmarkClearance(record.x, record.y, 'market');
+      return quote.refusal === null && quote.clears > 0;
+    });
+    const towers = all.filter((record) => record.level > MAX_CLEARABLE);
+
+    expect(viable.length).toBeGreaterThan(all.length / 8);
+    expect(towers.length).toBeGreaterThan(0);
+    for (const tower of towers) {
+      expect(builder.landmarkClearance(tower.x, tower.y, 'market').refusal).not.toBeNull();
+    }
+  });
+
+  it('su terreno vergine il piazzamento resta quello di sempre', () => {
+    const world = new VoxelWorld();
+    const terrain = testTerrain({ chunksX: 4, chunksY: 4, height: 24 });
+    const builder = new Builder(world, terrain, 1337);
+
+    expect(builder.landmarkClearance(60, 60, 'market').clears).toBe(0);
+    builder.placeLandmark(60, 60, 'market');
+
+    // Nessun cantiere: la struttura c'e' subito, come prima di questa fase.
+    expect(builder.stats.clearing).toBe(0);
+    expect(builder.stats.cleared).toBe(0);
+    expect(builder.registry.landmarkCount).toBe(1);
+  });
+});
+
 function seaward(map: TerrainMap): { x: number; y: number } {
   let best = { x: 64, y: 64, distance: Number.MAX_SAFE_INTEGER };
-  for (let y = 16; y < 112; y++) {
-    for (let x = 16; x < 112; x++) {
+  // Tutta l'isola e non un quadrante: dove cada la colonna edificabile piu'
+  // vicina all'acqua e' una proprieta' della sagoma, e la sagoma cambia con il
+  // seed. Cercando in un riquadro fisso, un'isola che li' non ha costa lasciava
+  // l'ancora sul ripiego — e i test che seguono misuravano una citta' cresciuta
+  // nel posto sbagliato invece di fallire dicendolo.
+  for (let y = 16; y < 240; y++) {
+    for (let x = 16; x < 240; x++) {
       if (!map.isBuildable(x, y)) continue;
-      for (let r = 1; r < best.distance && r < 16; r++) {
+      // Trentadue e non sedici: `buildableMaxSlope` vale 0,34 e la spiaggia e'
+      // alta otto voxel, quindi la prima colonna edificabile sta **almeno** a
+      // ventiquattro colonne dall'acqua per costruzione. Con il limite vecchio
+      // la ricerca non trovava mai niente e l'ancora restava sul ripiego
+      // `64,64`: la citta' cresceva dove capitava, e questi test misuravano se
+      // la costa le passava accanto per fortuna.
+      for (let r = 1; r < best.distance && r < 32; r++) {
         for (const [dx, dy] of [[r, 0], [-r, 0], [0, r], [0, -r]]) {
           if (map.heightAt(x + dx, y + dy) < TERRAIN.seaLevel) best = { x, y, distance: r };
         }

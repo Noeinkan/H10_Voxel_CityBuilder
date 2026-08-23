@@ -1,5 +1,5 @@
 import { CHUNK_SHIFT, toChunk, toLocal } from '../chunkCoords';
-import { BIOME, BIOME_COUNT } from './config';
+import { BIOME, BIOME_COUNT, TERRAIN } from './config';
 import { columnIndex, COLUMNS_PER_CHUNK, type ColumnBlock } from './columnBlock';
 import { columnChunkKey, type IslandShape } from './region';
 
@@ -20,7 +20,7 @@ export interface TerrainColumn {
   readonly buildable: boolean;
 }
 
-/** Una colonna di chunk: cinque array paralleli lunghi 1024. */
+/** Una colonna di chunk: sei array paralleli lunghi 1024. */
 export class TerrainColumnChunk {
   readonly ccx: number;
   readonly ccy: number;
@@ -32,6 +32,8 @@ export class TerrainColumnChunk {
   readonly buildable: Uint8Array;
   /** Classe d'acqua (`WATER_CLASS`), significativa solo dove si e' sommersi. */
   readonly water: Uint8Array;
+  /** Quota dello specchio sopra la colonna: mare, oppure il lago che la contiene. */
+  readonly waterTop: Int16Array;
 
   readonly maxHeight: number;
   readonly buildableCount: number;
@@ -45,6 +47,7 @@ export class TerrainColumnChunk {
     this.slopes = block.slopes;
     this.buildable = block.buildable;
     this.water = block.water;
+    this.waterTop = block.waterTop;
     this.maxHeight = block.maxHeight;
     this.buildableCount = block.buildableCount;
   }
@@ -151,6 +154,16 @@ export class TerrainMap {
     const chunk = this.getChunk(toChunk(x), toChunk(y));
     if (chunk === null) return 0;
     return chunk.slopes[columnIndex(toLocal(x), toLocal(y))];
+  }
+
+  /**
+   * Quota dello specchio d'acqua sulla colonna: `TERRAIN.seaLevel` sul mare,
+   * quella del lago dentro una conca. `seaLevel` se la colonna non e' generata.
+   */
+  waterTopAt(x: number, y: number): number {
+    const chunk = this.getChunk(toChunk(x), toChunk(y));
+    if (chunk === null) return TERRAIN.seaLevel;
+    return chunk.waterTop[columnIndex(toLocal(x), toLocal(y))];
   }
 
   /** true se sulla colonna si puo' costruire. false se non generata. */

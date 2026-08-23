@@ -28,9 +28,9 @@ function sources(
 }
 
 describe('distretti emergenti', () => {
-  it('espone otto ruoli con effetti distinti', () => {
-    expect(CATALYSTS).toHaveLength(8);
-    expect(new Set(CATALYSTS.map((entry) => JSON.stringify(entry.effects))).size).toBe(8);
+  it('espone nove ruoli con effetti distinti', () => {
+    expect(CATALYSTS).toHaveLength(9);
+    expect(new Set(CATALYSTS.map((entry) => JSON.stringify(entry.effects))).size).toBe(9);
   });
 
   it('i due collegamenti non producono lo stesso quartiere', () => {

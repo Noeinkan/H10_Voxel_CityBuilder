@@ -13,11 +13,21 @@ import { BIOME, BIOME_STRATA, BUILDABLE_BIOMES, TERRAIN, type BiomeId } from './
  * fascia si prende una colonna o perche' e' abbastanza alta o perche' e'
  * abbastanza ripida, cosi' una parete a mezza quota diventa comunque roccia.
  *
+ * `waterZ` e' la quota dello specchio che sta **sopra questa colonna**, e non e'
+ * per forza il livello del mare: dentro una conca e' quella del lago. Il bioma
+ * `ocean` dice percio' "sott'acqua" e non "sul mare", che e' anche quello che
+ * serve a valle — niente alberi, niente edificabilita', tinta di fondale.
+ *
  * @param height altezza intera della colonna, in voxel
  * @param slope dislivello massimo verso i quattro vicini ortogonali
+ * @param waterZ quota della superficie d'acqua sulla colonna
  */
-export function classifyBiome(height: number, slope: number): BiomeId {
-  if (height < TERRAIN.seaLevel) return BIOME.ocean;
+export function classifyBiome(
+  height: number,
+  slope: number,
+  waterZ: number = TERRAIN.seaLevel,
+): BiomeId {
+  if (height < waterZ) return BIOME.ocean;
   if (height < TERRAIN.beachMaxHeight) return BIOME.beach;
   if (height >= TERRAIN.rockMinHeight || slope >= TERRAIN.rockMinSlope) return BIOME.rock;
   if (height >= TERRAIN.hillMinHeight || slope >= TERRAIN.hillMinSlope) return BIOME.hill;

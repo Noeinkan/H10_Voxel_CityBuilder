@@ -6,6 +6,7 @@ import { decisionAt } from './decisions';
 import { resolveWeights, type Weights } from './policies';
 import { nextState, unitOf } from './rng';
 import type { Resource, SimState } from './SimState';
+import { servedFerryLines } from './ferry';
 import { resolveExternalTrade, tradeLinksOf } from './trade';
 
 /**
@@ -136,6 +137,7 @@ export function tick(state: SimState, terrainMap: TerrainMap): SimState {
     civic,
     funded,
     commerce.service,
+    servedFerryLines(state.catalysts),
   );
 
   // --- Popolazione ---------------------------------------------------------
@@ -256,6 +258,7 @@ function nextSatisfaction(
   civic: number,
   funded: number,
   service: number,
+  ferryLines: number,
 ): number {
   const occupancy =
     capacity > 0
@@ -269,8 +272,15 @@ function nextSatisfaction(
   // civici: una citta' servita e' contenta anche senza un municipio ogni due
   // isolati, ed e' cio' che tiene in piedi una strategia mercantile.
   const retail = service * BALANCE.commerce.satisfactionPerService;
+  // Una linea di traghetto e' la terza leva, e l'unica che nasce da *dove* si e'
+  // costruito invece che da quanto: due imbarchi lontani valgono, due vicini no.
+  const crossings = ferryLines * BALANCE.satisfaction.perFerryLine;
   const target = clamp01(
-    BALANCE.satisfaction.base + funded * civic * BALANCE.satisfaction.perCivic + retail - crowding,
+    BALANCE.satisfaction.base +
+      funded * civic * BALANCE.satisfaction.perCivic +
+      retail +
+      crossings -
+      crowding,
   );
 
   return clamp01(current + (target - current) * BALANCE.satisfaction.inertia);

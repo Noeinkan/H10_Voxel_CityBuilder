@@ -55,6 +55,7 @@ import { pickSolidCell, pickSurfaceCell, type Ray3, type SurfaceCell } from './g
 import { SimScene, SIM_SITE_COUNT, SIM_TICK_RATE } from './game/simScene';
 import { coastalSectorAt, shapeWithSector, type CoastalSector } from './game/sectors';
 import type { ActionFailure, SiteCost } from './game/actions';
+import type { LandmarkSite } from './world/buildings/Builder';
 import { BALANCE } from './sim/balance';
 import { cityVitality } from './sim/vitality';
 import { catalystById, defaultCatalystOfClass } from './sim/catalysts';
@@ -1132,7 +1133,12 @@ function onGamePointerMove(event: PointerEvent): void {
       penalises: catalyst.penalises.map(classLabel),
       typologies: typologiesForUses(catalyst.favours),
       valid,
-      reason: failure === null ? 'Valid position.' : actionFailureLabel(failure),
+      reason: failure !== null
+        ? actionFailureLabel(failure)
+        // Il piazzamento e' valido comunque: cio' che cambia e' cosa comparira'
+        // e cosa costera' alla citta'. Dirlo qui e' il punto — dopo il click e'
+        // troppo tardi, ed e' esattamente il difetto muto che questa fase chiude.
+        : landmarkNote(growthScene.catalystSite(cell.x, cell.y, catalyst.id)),
     });
   } else {
     const sector = coastalSectorAt(cell.x, cell.y, terrainRegion, BALANCE.gameplay.expansion.size);
@@ -1289,6 +1295,25 @@ function groundNote(site: SiteCost | null): string {
   return ` · ${GROUND_LABELS[site.ground]} ×${site.weight}`;
 }
 
+/**
+ * Cosa succedera' al riquadro del landmark, detto sul cursore.
+ *
+ * Sono tutte posizioni **valide**: il catalizzatore si piazza e il suo campo
+ * funziona in ogni caso. La riga cambia solo cio' che il giocatore non potrebbe
+ * dedurre — se il monumento comparira', e quante case costa.
+ */
+function landmarkNote(site: LandmarkSite): string {
+  if (site.refusal === 'structure-in-the-way') {
+    return 'Valid position. Something built to last stands here: only the plaza will appear.';
+  }
+  if (site.refusal === 'block-too-tall') {
+    return 'Valid position, but too tall to clear: only the plaza will appear. Try a lower pocket.';
+  }
+  if (site.clears === 0) return 'Valid position.';
+  const what = site.clears === 1 ? 'building' : 'buildings';
+  return `Valid position. Clears ${site.clears} ${what} to make room.`;
+}
+
 function actionFailureLabel(reason: ActionFailure): string {
   const labels: Readonly<Record<ActionFailure, string>> = {
     'terrain-loading': 'The terrain is still being generated.',
@@ -1303,8 +1328,6 @@ function actionFailureLabel(reason: ActionFailure): string {
     'onboarding-order': 'Complete the current tutorial step first.',
     'policy-incompatible': 'This policy conflicts with one that is already active.',
     'decision-option-invalid': 'This decision option is no longer available.',
-    'block-too-tall': 'Too tall to clear: look for a lower pocket.',
-    'structure-in-the-way': 'A landmark or an elevated deck stands here.',
   };
   return labels[reason];
 }

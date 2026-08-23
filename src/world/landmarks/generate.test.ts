@@ -3,9 +3,15 @@ import { CATALYSTS, type CatalystId } from '../../sim';
 import { PALETTE_SIZE } from '../../engine/paletteSlots';
 import { FACING, type Facing } from '../streets/streetGrid';
 import { solidCount, STAMP_EMPTY, type VoxelStamp } from '../buildings/stamp';
-import { LANDMARKS, maxStageOf, type LandmarkRecipe } from './config';
-import { generateLandmark, landmarkOrigin, landmarkSpan, stageForBuildings } from './generate';
-import { partBounds } from './parts';
+import { LANDMARKS, maxStageOf, variantsOf, type LandmarkRecipe } from './config';
+import {
+  generateLandmark,
+  landmarkOrigin,
+  landmarkSpan,
+  stageForBuildings,
+  variantIndexOf,
+} from './generate';
+import { createCanvas, drawPart, orientPart, orientedSpan, partBounds } from './parts';
 
 const RECIPES = Object.values(LANDMARKS).filter(
   (recipe): recipe is LandmarkRecipe => recipe !== undefined,
@@ -22,20 +28,77 @@ function solidSet(stamp: VoxelStamp): Set<number> {
   return out;
 }
 
+/**
+ * Un seme che produce l'esemplare `wanted`, cercandolo per tentativi.
+ *
+ * `variantIndexOf` passa per un hash con un sale: invertirlo a mano
+ * significherebbe riscrivere quell'hash nel test, cioe' far passare i test
+ * anche se il sale cambiasse da una parte sola. Cercare il seme lo usa invece
+ * come scatola nera, che e' quello che e'.
+ */
+/**
+ * La sagoma del **solo tronco**, disegnata qui invece che chiesta al generatore.
+ *
+ * `generateLandmark` applica sempre un esemplare — anche con seme zero, che ne
+ * sceglie uno come qualunque altro — quindi il tronco nudo non e' una risposta
+ * che quella funzione sappia dare, e non deve esserlo: nel gioco non compare
+ * mai da solo. Il riferimento se lo costruisce il test, con le stesse primitive
+ * e senza passare dal codice che sta misurando.
+ */
+function trunkSet(recipe: LandmarkRecipe, stage: number, facing: Facing): Set<number> {
+  const [long, short] = recipe.span;
+  const { sizeX, sizeY } = orientedSpan(facing, long, short);
+  const canvas = createCanvas(sizeX, sizeY, recipe.height);
+  for (let s = 0; s <= stage; s++) {
+    for (const part of recipe.parts[s]) drawPart(canvas, orientPart(part, facing, long, short));
+  }
+
+  const out = new Set<number>();
+  for (let i = 0; i < canvas.voxels.length; i++) {
+    if (canvas.voxels[i] !== STAMP_EMPTY) out.add(i);
+  }
+  return out;
+}
+
+function seedForVariant(recipe: LandmarkRecipe, wanted: number): number {
+  for (let seed = 0; seed < 10_000; seed++) {
+    if (variantIndexOf(recipe, seed) === wanted) return seed;
+  }
+  throw new Error(`nessun seme produce l'esemplare ${wanted} di ${recipe.kind}`);
+}
+
 describe('catalogo dei landmark', () => {
   it('ogni parte sta dentro l ingombro che la ricetta dichiara', () => {
     for (const recipe of RECIPES) {
       const [long, short] = recipe.span;
-      for (const stage of recipe.parts) {
-        for (const part of stage) {
-          const bounds = partBounds(part);
-          expect(bounds.x0, `${recipe.kind} x0`).toBeGreaterThanOrEqual(0);
-          expect(bounds.y0, `${recipe.kind} y0`).toBeGreaterThanOrEqual(0);
-          expect(bounds.z0, `${recipe.kind} z0`).toBeGreaterThanOrEqual(0);
-          expect(bounds.x1, `${recipe.kind} x1`).toBeLessThan(long);
-          expect(bounds.y1, `${recipe.kind} y1`).toBeLessThan(short);
-          expect(bounds.z1, `${recipe.kind} z1`).toBeLessThan(recipe.height);
+      // Tronco ed esemplari nello stesso ciclo: un esemplare che sfora sarebbe
+      // scartato in silenzio da `drawPart`, e a schermo si vedrebbe come una
+      // parte tagliata a meta' senza che niente si lamenti.
+      const every = [recipe.parts, ...variantsOf(recipe).map((variant) => variant.parts)];
+      for (const parts of every) {
+        for (const stage of parts) {
+          for (const part of stage) {
+            const bounds = partBounds(part);
+            expect(bounds.x0, `${recipe.kind} x0`).toBeGreaterThanOrEqual(0);
+            expect(bounds.y0, `${recipe.kind} y0`).toBeGreaterThanOrEqual(0);
+            expect(bounds.z0, `${recipe.kind} z0`).toBeGreaterThanOrEqual(0);
+            expect(bounds.x1, `${recipe.kind} x1`).toBeLessThan(long);
+            expect(bounds.y1, `${recipe.kind} y1`).toBeLessThan(short);
+            expect(bounds.z1, `${recipe.kind} z1`).toBeLessThan(recipe.height);
+          }
         }
+      }
+    }
+  });
+
+  it('gli stadi di un esemplare non superano quelli del tronco', () => {
+    // `generateLandmark` scorre gli stadi del tronco e pesca `variant.parts[s]`:
+    // una voce oltre l'ultimo stadio non verrebbe mai disegnata, e sarebbe una
+    // parte scritta che non compare mai in nessuna partita.
+    for (const recipe of RECIPES) {
+      for (const variant of variantsOf(recipe)) {
+        expect(variant.parts.length, `${recipe.kind}/${variant.name}`)
+          .toBeLessThanOrEqual(recipe.parts.length);
       }
     }
   });
@@ -75,14 +138,22 @@ describe('catalogo dei landmark', () => {
   it('uno stadio copre sempre quello precedente: cancellare non ha niente da togliere', () => {
     // E' l'invariante su cui poggia l'avanzamento: `Builder.upgrade` rigenera la
     // sagoma vecchia per toglierne i voxel scoperti, e qui non ce ne sono mai.
+    //
+    // Vale per **ogni esemplare**, non per il primo: l'avanzamento rigenera la
+    // sagoma con il seme del record, e un solo esemplare non cumulativo
+    // lascerebbe voxel orfani dello stadio prima.
     for (const recipe of RECIPES) {
-      for (let stage = 1; stage <= maxStageOf(recipe); stage++) {
-        const before = solidSet(generateLandmark({ kind: recipe.kind, stage: stage - 1, facing: FACING.east })!);
-        const after = solidSet(generateLandmark({ kind: recipe.kind, stage, facing: FACING.east })!);
-        for (const index of before) {
-          expect(after.has(index), `${recipe.kind} stadio ${stage}`).toBe(true);
+      for (let v = 0; v < variantsOf(recipe).length; v++) {
+        const seed = seedForVariant(recipe, v);
+        const name = variantsOf(recipe)[v].name;
+        for (let stage = 1; stage <= maxStageOf(recipe); stage++) {
+          const before = solidSet(generateLandmark({ kind: recipe.kind, stage: stage - 1, facing: FACING.east, seed })!);
+          const after = solidSet(generateLandmark({ kind: recipe.kind, stage, facing: FACING.east, seed })!);
+          for (const index of before) {
+            expect(after.has(index), `${recipe.kind}/${name} stadio ${stage}`).toBe(true);
+          }
+          expect(after.size, `${recipe.kind}/${name} stadio ${stage}`).toBeGreaterThan(before.size);
         }
-        expect(after.size).toBeGreaterThan(before.size);
       }
     }
   });
@@ -90,6 +161,18 @@ describe('catalogo dei landmark', () => {
   it('ruotare cambia il verso e non la quantita di struttura', () => {
     for (const recipe of RECIPES) {
       const stage = maxStageOf(recipe);
+      // Su ogni esemplare: le primitive nuove — traliccio, falda, smusso — sono
+      // tutte a rischio di perdere l'invarianza se la maschera guarda `lx`
+      // invece dell'asse maggiore, ed e' esattamente qui che si vedrebbe.
+      for (let v = 0; v < variantsOf(recipe).length; v++) {
+        const seed = seedForVariant(recipe, v);
+        const name = `${recipe.kind}/${variantsOf(recipe)[v].name}`;
+        const perFacing = ALL_FACINGS.map(
+          (facing) => solidCount(generateLandmark({ kind: recipe.kind, stage, facing, seed })!),
+        );
+        for (const count of perFacing) expect(count, name).toBe(perFacing[0]);
+      }
+
       const counts = ALL_FACINGS.map(
         (facing) => solidCount(generateLandmark({ kind: recipe.kind, stage, facing })!),
       );
@@ -153,7 +236,7 @@ describe('catalogo dei landmark', () => {
     }
   });
 
-  it('tutti e otto i ruoli hanno una struttura propria', () => {
+  it('tutti i ruoli del catalogo hanno una struttura propria', () => {
     expect(RECIPES).toHaveLength(CATALYSTS.length);
     for (const definition of CATALYSTS) {
       expect(LANDMARKS[definition.id], definition.id).toBeDefined();
@@ -174,6 +257,83 @@ describe('catalogo dei landmark', () => {
       signatures.add(`${stamp.sizeX}x${stamp.sizeY}x${stamp.sizeZ}:${solidCount(stamp)}`);
     }
     expect(signatures.size).toBe(RECIPES.length);
+  });
+
+  it('ogni esemplare contiene il tronco per intero: il ruolo si legge comunque', () => {
+    // E' l'invariante che tiene in piedi la nota di `generate.ts` contro la
+    // varieta' fine a se stessa. Se un esemplare potesse *togliere* qualcosa al
+    // tronco, due porti smetterebbero di avere una sagoma in comune e il
+    // giocatore dovrebbe imparare ventisette forme invece di nove. Tenendo la
+    // varieta' additiva, la leggibilita' e' garantita per costruzione.
+    for (const recipe of RECIPES) {
+      const stage = maxStageOf(recipe);
+      const variants = variantsOf(recipe);
+      const trunk = trunkSet(recipe, stage, FACING.east);
+      for (let v = 0; v < variants.length; v++) {
+        const seed = seedForVariant(recipe, v);
+        const drawn = solidSet(generateLandmark({ kind: recipe.kind, stage, facing: FACING.east, seed })!);
+        expect(drawn.size, `${recipe.kind}/${variants[v].name}`).toBeGreaterThan(0);
+        // Il confronto vero e' contro il tronco, non contro l'esemplare zero:
+        // due esemplari possono coprirsi a vicenda solo dove il tronco gia' c'e'.
+        for (const index of trunk) {
+          if (drawn.has(index)) continue;
+          expect(
+            { kind: recipe.kind, variant: variants[v].name, index },
+            'un esemplare ha coperto un voxel del tronco con il vuoto',
+          ).toEqual({ kind: recipe.kind, variant: variants[v].name, index: -1 });
+        }
+      }
+    }
+  });
+
+  it('gli esemplari di un ruolo si distinguono, e non solo di nome', () => {
+    // Un esemplare che aggiunge zero voxel sarebbe una riga di tabella che non
+    // si vede: il conto e' la misura piu' grossolana possibile della differenza,
+    // e deve gia' bastare a separarli.
+    for (const recipe of RECIPES) {
+      const variants = variantsOf(recipe);
+      expect(variants.length, recipe.kind).toBeGreaterThan(1);
+
+      const counts = new Set<number>();
+      for (let v = 0; v < variants.length; v++) {
+        const seed = seedForVariant(recipe, v);
+        counts.add(solidCount(
+          generateLandmark({ kind: recipe.kind, stage: maxStageOf(recipe), facing: FACING.east, seed })!,
+        ));
+      }
+      expect(counts.size, recipe.kind).toBe(variants.length);
+
+      const names = new Set(variants.map((variant) => variant.name));
+      expect(names.size, recipe.kind).toBe(variants.length);
+    }
+  });
+
+  it('lo stesso seme da sempre lo stesso esemplare, e i semi li raggiungono tutti', () => {
+    for (const recipe of RECIPES) {
+      const request = { kind: recipe.kind, stage: maxStageOf(recipe), facing: FACING.north, seed: 4242 };
+      expect(generateLandmark(request)!.voxels).toEqual(generateLandmark(request)!.voxels);
+
+      // Nessun esemplare irraggiungibile: una riga che nessun seme sceglie
+      // sarebbe forma scritta e mai vista.
+      const seen = new Set<number>();
+      for (let seed = 0; seed < 600; seed++) seen.add(variantIndexOf(recipe, seed));
+      expect(seen.size, recipe.kind).toBe(variantsOf(recipe).length);
+    }
+  });
+
+  it('il verso e l esemplare sono due domande diverse', () => {
+    // Il motivo per cui `LANDMARK.variantSalt` esiste. Il seme del record e'
+    // `hashCoords(worldSeed, x, y)`, e da quello stesso intero il Builder ricava
+    // il verso di ripiego con `& 3`: senza sale, verso ed esemplare
+    // cambierebbero sempre insieme e la citta' mostrerebbe una regolarita' che
+    // nessuno ha scritto.
+    for (const recipe of RECIPES) {
+      const pairs = new Set<string>();
+      for (let seed = 0; seed < 2000; seed++) {
+        pairs.add(`${seed & 3}:${variantIndexOf(recipe, seed)}`);
+      }
+      expect(pairs.size, recipe.kind).toBe(4 * variantsOf(recipe).length);
+    }
   });
 
   it('un ruolo senza ricetta non produce uno stamp invece di produrne uno vuoto', () => {

@@ -404,17 +404,66 @@ describe('generateIsland — colonne e biomi', () => {
     // il toggle per bioma nella scena di debug.
     let beachMax = 0;
     let rockMin = Number.POSITIVE_INFINITY;
-    let oceanMax = 0;
-    forEachColumn(map, (_x, _y, height, biome) => {
-      if (biome === BIOME.ocean) oceanMax = Math.max(oceanMax, height);
+    // `ocean` vuol dire **sott'acqua**, non "sul mare": dentro una conca lo
+    // specchio sta alla quota del lago, e la colonna che ci sta sotto e' oceano
+    // a cinquanta voxel d'altezza. Il confronto che resta vero e' quello con lo
+    // specchio che quella colonna ha davvero sopra.
+    let emerged = 0;
+    forEachColumn(map, (x, y, height, biome) => {
+      if (biome === BIOME.ocean && height >= map.waterTopAt(x, y)) emerged++;
       if (biome === BIOME.beach) beachMax = Math.max(beachMax, height);
       if (biome === BIOME.rock) rockMin = Math.min(rockMin, height);
     });
 
-    expect(oceanMax).toBeLessThan(TERRAIN.seaLevel);
+    expect(emerged).toBe(0);
     expect(beachMax).toBeLessThan(TERRAIN.beachMaxHeight);
     expect(beachMax).toBeGreaterThanOrEqual(TERRAIN.seaLevel);
     expect(rockMin).toBeGreaterThanOrEqual(TERRAIN.seaLevel);
+  });
+
+  it('un lago sta in quota, e’ chiuso e la sua acqua arriva al proprio pelo', () => {
+    const { world, map } = referenceIsland();
+
+    // Colonne sommerse da uno specchio piu' alto del mare: sono i laghi.
+    const lake: { x: number; y: number; level: number }[] = [];
+    forEachColumn(map, (x, y, height) => {
+      const level = map.waterTopAt(x, y);
+      if (level > TERRAIN.seaLevel && height < level) lake.push({ x, y, level });
+    });
+    expect(lake.length).toBeGreaterThan(256);
+
+    // Uno specchio solo, alla stessa quota: un lago non e' una scala d'acqua.
+    const levels = new Set(lake.map((column) => column.level));
+    expect(levels.size).toBe(1);
+
+    scanColumns(() => {
+      for (const { x, y, level } of lake) {
+        // Il pelo e' pieno d'acqua e sopra c'e' aria: il lago non e' un buco.
+        if (world.getBlock(x, y, level - 1) !== WATER_IDS.surface) return `(${x}, ${y}) senza pelo`;
+        if (world.getBlock(x, y, level) !== 0) return `(${x}, ${y}) coperta sopra il pelo`;
+        // Profondita' dentro il bassofondo: e' cio' che lo fa leggere come pozza
+        // e non come mare aperto.
+        const depth = level - map.heightAt(x, y);
+        if (depth > TERRAIN.shallowDepth) return `(${x}, ${y}) profonda ${depth}`;
+        // E il bioma dice sott'acqua, quindi niente alberi e niente edifici.
+        if (map.biomeAt(x, y) !== BIOME.ocean) return `(${x}, ${y}) non e' sott'acqua`;
+        if (map.isBuildable(x, y)) return `(${x}, ${y}) edificabile`;
+      }
+      return null;
+    });
+
+    // Chiuso: ogni colonna confinante che non e' lago sta sopra il pelo. Senza
+    // questo l'acqua sarebbe una toppa piatta appoggiata su un pendio.
+    const inLake = new Set(lake.map(({ x, y }) => `${x},${y}`));
+    scanColumns(() => {
+      for (const { x, y, level } of lake) {
+        for (const [nx, ny] of [[x + 1, y], [x - 1, y], [x, y + 1], [x, y - 1]]) {
+          if (inLake.has(`${nx},${ny}`)) continue;
+          if (map.heightAt(nx, ny) < level) return `(${nx}, ${ny}) sotto il pelo del lago`;
+        }
+      }
+      return null;
+    });
   });
 
   it('la pendenza e’ coerente con le altezze delle colonne vicine', () => {

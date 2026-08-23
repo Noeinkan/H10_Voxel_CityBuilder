@@ -1,7 +1,8 @@
 import type { CatalystId } from '../../sim';
 import type { Facing } from '../streets/streetGrid';
 import type { VoxelStamp } from '../buildings/stamp';
-import { landmarkOf, maxStageOf, type LandmarkRecipe } from './config';
+import { hashCoords } from '../rng';
+import { LANDMARK, landmarkOf, maxStageOf, variantsOf, type LandmarkRecipe } from './config';
 import { createCanvas, drawPart, orientPart, orientedSpan } from './parts';
 
 /**
@@ -20,17 +21,48 @@ import { createCanvas, drawPart, orientPart, orientedSpan } from './parts';
  * convivono senza sapere l'una dell'altra e condividono solo il formato dello
  * stamp, che e' esattamente il punto di quel formato.
  *
- * **Nessun PRNG, e non e' una dimenticanza.** Un landmark e' un'affermazione sul
- * luogo — «qui c'e' il porto» — e la varieta' che rende viva una fila di case
- * qui toglierebbe leggibilita': il giocatore deve riconoscere il ruolo dalla
- * sagoma, non imparare otto sagome per otto ruoli moltiplicate per i semi. La
- * forma e' quindi una funzione di `(kind, stage, facing)` e basta.
+ * **Nessun PRNG, e la varieta' arriva lo stesso.** Qui non gira nessun
+ * `mulberry32`: la forma e' una funzione di `(kind, variante, stadio, verso)`, e
+ * la variante e' un indice preso dal seme del record, non un flusso di numeri
+ * consumato mentre si disegna. La differenza non e' di stile. Un PRNG che
+ * decide fascia per fascia — la grammatica degli edifici — puo' produrre
+ * sagome che nessuno ha mai visto, e per una casa e' esattamente cio' che
+ * serve; per un landmark sarebbe un porto che il giocatore non riconosce come
+ * porto. Un indice sceglie invece fra esemplari **scritti a mano e finiti**, e
+ * chi li ha scritti ha gia' garantito che tutti dicano «porto».
+ *
+ * **Il tronco non varia mai.** `recipe.parts` si disegna per ogni esemplare e
+ * `variant.parts` ci si aggiunge sopra: e' cosi' che la leggibilita' del ruolo
+ * e' garantita per costruzione invece che per disciplina di chi compila la
+ * tabella. Il seme sposta il secondo sguardo, non il primo.
  */
 
 export interface LandmarkRequest {
   readonly kind: CatalystId;
   readonly stage: number;
   readonly facing: Facing;
+
+  /**
+   * Seme del record, da cui si sceglie l'esemplare.
+   *
+   * Facoltativo, e assente vale zero — cioe' il primo esemplare. Serve a chi
+   * misura una ricetta senza avere un lotto sotto mano, come i test del
+   * catalogo: chiedere una sagoma non deve obbligare a inventarsi una
+   * posizione nel mondo.
+   */
+  readonly seed?: number;
+}
+
+/**
+ * Quale esemplare tocca a questo seme.
+ *
+ * Il sale e' obbligatorio, non ornamentale: `record.seed` e' lo stesso intero
+ * che `landmarkFacing` usa per il verso di ripiego, e senza sale un modulo
+ * leggerebbe i bit bassi di una sequenza gia' impegnata.
+ */
+export function variantIndexOf(recipe: LandmarkRecipe, seed: number): number {
+  const count = variantsOf(recipe).length;
+  return hashCoords(LANDMARK.variantSalt, seed, 0) % count;
 }
 
 /** Ingombro in pianta di un ruolo su un verso, o null se non ha una ricetta. */
@@ -102,8 +134,15 @@ export function generateLandmark(request: LandmarkRequest): VoxelStamp | null {
   const canvas = createCanvas(sizeX, sizeY, recipe.height);
 
   const stage = Math.min(Math.max(request.stage, 0), maxStageOf(recipe));
+  const variant = variantsOf(recipe)[variantIndexOf(recipe, request.seed ?? 0)];
   for (let s = 0; s <= stage; s++) {
     for (const part of recipe.parts[s]) {
+      drawPart(canvas, orientPart(part, request.facing, long, short));
+    }
+    // L'esemplare puo' dichiarare meno stadi del tronco: si distingue quasi
+    // sempre in uno o due, e obbligarlo a elencare le voci vuote renderebbe una
+    // variante di tre parti lunga quanto la ricetta che varia.
+    for (const part of variant.parts[s] ?? []) {
       drawPart(canvas, orientPart(part, request.facing, long, short));
     }
   }

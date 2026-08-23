@@ -37,6 +37,7 @@ export function classifyWater(
   y: number,
   depth: number,
   heightAt: (x: number, y: number) => number,
+  waterZ: number = TERRAIN.seaLevel,
 ): WaterClass {
   if (depth <= TERRAIN.shallowDepth) return WATER_CLASS.shallow;
   // Oltre il bassofondo un canale non e' piu' credibile: un braccio profondo e'
@@ -44,7 +45,10 @@ export function classifyWater(
   if (depth > TERRAIN.canalMaxDepth) return WATER_CLASS.open;
 
   for (let axis = 0; axis < 2; axis++) {
-    if (shoreWithin(x, y, AXES[axis * 2], heightAt) && shoreWithin(x, y, AXES[axis * 2 + 1], heightAt)) {
+    if (
+      shoreWithin(x, y, AXES[axis * 2], heightAt, waterZ)
+      && shoreWithin(x, y, AXES[axis * 2 + 1], heightAt, waterZ)
+    ) {
       return WATER_CLASS.canal;
     }
   }
@@ -56,9 +60,10 @@ function shoreWithin(
   y: number,
   [dx, dy]: readonly [number, number],
   heightAt: (x: number, y: number) => number,
+  waterZ: number,
 ): boolean {
   for (let d = 1; d <= TERRAIN.canalReach; d++) {
-    if (heightAt(x + dx * d, y + dy * d) >= TERRAIN.seaLevel) return true;
+    if (heightAt(x + dx * d, y + dy * d) >= waterZ) return true;
   }
   return false;
 }

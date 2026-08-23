@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { TERRAIN } from './config';
 import { HeightField } from './heightField';
-import { shapeFromRegion } from './region';
+import { shapeFromRegion, withCoastalExtension } from './region';
 
 // La calibrazione verticale di `TERRAIN` e' tarata su un'isola di lato 512:
 // e' quella la dimensione su cui i criteri qui sotto devono valere.
@@ -33,6 +33,28 @@ describe('HeightField — determinismo', () => {
     for (let i = 511; i >= 0; i--) backward.unshift(b.heightAt(i % 97, Math.floor(i / 97)));
 
     expect(backward).toEqual(forward);
+  });
+
+  /**
+   * Un settore costiero comprato a partita in corso allarga la maschera, e non
+   * deve poter spostare niente altrove: le colonne gia' generate non si
+   * rigenerano, quindi una collina che si muovesse lascerebbe un gradino sulla
+   * cucitura. E' il motivo per cui lobi, rilievi e conche si derivano dalla sola
+   * ellisse base e ignorano `extensions`.
+   */
+  it('aggiungere un’estensione costiera non muove il resto dell’isola', () => {
+    const base = new HeightField(1337, SHAPE);
+    const grown = new HeightField(
+      1337,
+      withCoastalExtension(SHAPE, { minX: 384, minY: 192, sizeX: 128, sizeY: 128 }, 'settore'),
+    );
+
+    for (let y = 0; y < 384; y += 3) {
+      for (let x = 0; x < 320; x += 3) {
+        expect(grown.heightAt(x, y)).toBe(base.heightAt(x, y));
+        expect(grown.waterLevelAt(x, y)).toBe(base.waterLevelAt(x, y));
+      }
+    }
   });
 
   it('seed diversi danno isole diverse', () => {
@@ -149,6 +171,34 @@ describe('HeightField — regolarita’', () => {
         expect(field.heightAt(0, x)).toBeLessThan(TERRAIN.seaLevel);
         expect(field.heightAt(511, x)).toBeLessThan(TERRAIN.seaLevel);
       }
+    }
+  });
+
+  /**
+   * L'acqua ha smesso di essere un piano solo, e questa e' la proprieta' che
+   * tiene la cosa sotto controllo: lo specchio e' il mare **dappertutto** tranne
+   * dentro una conca, dove sta piu' in alto. Una quota d'acqua sotto il livello
+   * del mare non esiste, e non deve poter comparire per un seed sfortunato.
+   */
+  it('lo specchio e’ il mare ovunque, tranne piu’ in alto dentro un lago', () => {
+    for (const seed of SEEDS) {
+      const field = new HeightField(seed, SHAPE);
+      let lake = 0;
+      for (let y = 0; y < 512; y += 2) {
+        for (let x = 0; x < 512; x += 2) {
+          const level = field.waterLevelAt(x, y);
+          expect(level).toBeGreaterThanOrEqual(TERRAIN.seaLevel);
+          if (level === TERRAIN.seaLevel) continue;
+          // Dentro un lago il fondo sta sotto il pelo, e di poco: e' quel poco a
+          // tenerlo dentro `shallowDepth`, cioe' a farlo leggere come pozza.
+          lake++;
+          expect(level % TERRAIN.cellSize).toBe(0);
+          expect(level - field.heightAt(x, y)).toBeLessThanOrEqual(TERRAIN.shallowDepth);
+        }
+      }
+      // Non ogni isola ha un lago — serve una spianata larga quanto la conca —
+      // ma il seed di riferimento del progetto ce l'ha.
+      if (seed === 1337) expect(lake).toBeGreaterThan(0);
     }
   });
 

@@ -79,8 +79,6 @@ const FAILURE_LABEL: Readonly<Record<ActionFailure, string>> = {
   'needs-coast': 'A Port only works on the waterfront. Move it closer to the sea.',
   'needs-open-ground': 'An Airport needs a wide, level clearing to lay a runway on.',
   'too-close': 'Too close to another catalyst of the same type.',
-  'block-too-tall': 'Too tall to clear. Look for a lower pocket in the district.',
-  'structure-in-the-way': 'A landmark or an elevated deck stands here. It will not make way.',
   'insufficient-funds': 'You do not have enough funds yet.',
   'population-required': 'The city must grow before you can do this.',
   'already-active': 'This policy is already active.',

@@ -61,7 +61,16 @@ export type Works = (typeof WORKS)[keyof typeof WORKS];
  */
 export function groundKindOf(biome: number, slope: number, height: number): GroundKind {
   if (biome === BIOME.ocean) {
-    return TERRAIN.seaLevel - height <= GRADING.maxQuayDepth ? GROUND.shore : GROUND.refused;
+    const depth = TERRAIN.seaLevel - height;
+    // **Sott'acqua sopra il livello del mare vuol dire lago**, da quando le
+    // conche di `landform.ts` hanno dato a uno specchio la propria quota. E un
+    // lago non e' battigia: la banchina e' un muro che scende sul fondale fino a
+    // `GRADING.quayLevel`, una quota assoluta tarata sul mare, e sotto la riva
+    // di un lago in quota quel muro finirebbe una decina di voxel dentro la
+    // collina. La citta' gli cresce intorno, che e' anche cio' che si vuole
+    // vedere.
+    if (depth < 0) return GROUND.refused;
+    return depth <= GRADING.maxQuayDepth ? GROUND.shore : GROUND.refused;
   }
   if (biome === BIOME.beach) return GROUND.shore;
   if (slope >= GRADING.maxTerraceSlope) return GROUND.refused;
@@ -77,11 +86,12 @@ export function groundKindOf(biome: number, slope: number, height: number): Grou
  * chi misura **quanto una banchina si allontana dalla costa**, e li' i due casi
  * stanno da parti opposte pur condividendo la classificazione.
  *
- * Decide il bioma e non la quota. Sono la stessa cosa sull'isola vera — dove
- * `classifyBiome` chiama oceano tutto cio' che sta sotto `seaLevel` — ma non su
- * una fixture di terreno piano, che dichiara un bioma di terra a una quota
- * qualsiasi. Chiedere la quota assoluta li' direbbe che l'intera mappa e'
- * sott'acqua.
+ * Decide il bioma e non la quota, e da quando esistono i laghi le due cose non
+ * coincidono piu' nemmeno sull'isola vera: `classifyBiome` chiama oceano cio'
+ * che sta sotto **il proprio** specchio, che dentro una conca e' quello del
+ * lago. La quota assoluta direbbe che la riva di un lago in quota e' terra
+ * asciutta sott'acqua — e su una fixture di terreno piano, che dichiara un
+ * bioma di terra a una quota qualsiasi, direbbe che l'intera mappa e' sommersa.
  */
 export function isDryLand(biome: number): boolean {
   return biome !== BIOME.ocean;

@@ -212,6 +212,8 @@ function stats(
       routes: 0,
       piers: 0,
       stacked: 0,
+      clearing: 0,
+      cleared: 0,
     },
     state,
     paused: false,

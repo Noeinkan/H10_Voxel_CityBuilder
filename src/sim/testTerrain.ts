@@ -1,7 +1,7 @@
 import { CHUNK } from '../world/chunkCoords';
 import { columnIndex, COLUMNS_PER_CHUNK, type ColumnBlock } from '../world/terrain/columnBlock';
 import { classifyBiome, isBuildable as isTerrainBuildable } from '../world/terrain/biomes';
-import { BIOME } from '../world/terrain/config';
+import { BIOME, TERRAIN } from '../world/terrain/config';
 import { TerrainMap } from '../world/terrain/TerrainMap';
 
 /**
@@ -101,6 +101,8 @@ function blockOf(ccx: number, ccy: number, options: TestTerrainOptions): ColumnB
     slopes,
     buildable,
     water: new Uint8Array(COLUMNS_PER_CHUNK),
+    // Fixture piana: nessun lago, quindi lo specchio e' il mare ovunque.
+    waterTop: new Int16Array(COLUMNS_PER_CHUNK).fill(TERRAIN.seaLevel),
     decor: new Int16Array(0),
     maxHeight,
     buildableCount,

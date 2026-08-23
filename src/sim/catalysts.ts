@@ -62,16 +62,22 @@ export interface CatalystDefinition {
  * l'identita'. Mercato, fabbrica e parco restano i tre passi iniziali del
  * tutorial e per questo aprono la lista.
  *
- * I due collegamenti si distinguono per luogo prima ancora che per effetto:
- * il porto pretende il fronte mare che ha sempre promesso a parole, l'aeroporto
- * un pianoro che sulla costa non c'e'. E' il vincolo di sito a impedire che
- * siano due prezzi per lo stesso sblocco.
+ * I collegamenti si distinguono per luogo prima ancora che per effetto: il porto
+ * pretende il fronte mare che ha sempre promesso a parole, l'aeroporto un
+ * pianoro che sulla costa non c'e'. E' il vincolo di sito a impedire che siano
+ * due prezzi per lo stesso sblocco.
+ *
+ * Il traghetto condivide la costa con il porto e non lo doppia, perche' collega
+ * dall'altro lato: il porto apre il commercio **con il mondo**, il traghetto
+ * lega **due punti dell'isola**. E' anche l'unico ruolo che da solo non chiude
+ * la propria promessa — serve il secondo capo, e la regola sta in `ferry.ts`.
  */
 export const CATALYSTS: readonly CatalystDefinition[] = [
   catalyst('market', 'Market', 'growth', 'any', 'Draws in shops and homes together: the seed of a mixed-use block.'),
   catalyst('factory', 'Factory', 'growth', 'any', 'Boosts industry and jobs, and pushes housing away from its fumes.'),
   catalyst('park', 'Park', 'growth', 'any', 'Creates greener, happier, less industrial neighborhoods.'),
   catalyst('port', 'Port', 'connections', 'coastal', 'Unlocks external trade and concentrates industry and trade on the coast.'),
+  catalyst('ferry', 'Ferry', 'connections', 'coastal', 'A pier with moored boats. Pair it with a second terminal across the water to open a line.'),
   catalyst('airport', 'Airport', 'connections', 'open', 'Links the island without touching the coast: lifts shops and civic life, and drives housing away.'),
   catalyst('transport', 'Transit', 'connections', 'any', 'Connects hubs and lifts housing, shops and logistics alike.'),
   catalyst('university', 'University', 'identity', 'any', 'Builds a civic district around research and knowledge.'),

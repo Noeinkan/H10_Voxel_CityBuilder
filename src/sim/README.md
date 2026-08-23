@@ -198,10 +198,29 @@ che il bilancio legge.
 ## Proprietà del campo e proprietà dello stato
 
 `tick` è puro, ma le operazioni del giocatore no: `addCatalyst`, `addBuilding`,
-`setPolicyActive` aggiornano il campo **in place** e restituiscono un nuovo
-oggetto stato che ne prende possesso. Lo stato precedente non va più usato — è la
-stessa regola di un buffer trasferito, ed è ciò che permette l'aggiornamento
-incrementale senza clonare il campo a ogni piazzamento.
+`removeBuildings`, `setPolicyActive` aggiornano il campo **in place** e
+restituiscono un nuovo oggetto stato che ne prende possesso. Lo stato precedente
+non va più usato — è la stessa regola di un buffer trasferito, ed è ciò che
+permette l'aggiornamento incrementale senza clonare il campo a ogni piazzamento.
+
+## Togliere edifici
+
+`removeBuildings` è l'inverso di `addBuilding`, e «inverso» è il requisito:
+toglierne N deve dare lo stesso campo di non averli mai aggiunti, byte per byte.
+L'equivalenza fra percorso incrementale e `rebuild` è la proprietà su cui poggia
+tutto il modulo, e varrebbe in una direzione sola se la rimozione lasciasse
+residui di congestione o di occupazione. Un test la verifica in entrambi i versi.
+
+La simulazione **non demolisce da sola**: questa è la porta da cui il costruttore
+dichiara che qualcosa non c'è più, come `addBuilding` è quella da cui dichiara che
+qualcosa è stato eretto. Chi la chiama oggi è il cantiere di un landmark, ma qui
+non c'è niente che sappia cosa sia un landmark (invariante 7).
+
+**Non c'è una penalità scritta apposta, ed è deliberato.** Meno edifici
+residenziali vuol dire meno `capacity`, quindi un'occupazione sopra uno, quindi il
+`crowdingPenalty` che il bilancio applica già; meno civico e meno commercio
+abbassano soddisfazione e servizio per la stessa strada. Il costo di uno
+sventramento è il bilancio che c'era.
 
 ## Bilancio di un tick
 

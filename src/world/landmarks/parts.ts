@@ -4,18 +4,27 @@ import type { SurfaceKind } from '../visualBlock';
 /**
  * Il vocabolario con cui si descrive un landmark.
  *
- * **Otto primitive, non otto generatori.** Un porto e un monumento non hanno
+ * **Dieci primitive, non dieci generatori.** Un porto e un monumento non hanno
  * niente in comune come immagine, ma sono la stessa scatola, lo stesso prisma
  * verticale e la stessa fila di pilastri composti in modo diverso. Tenere
  * piccolo il vocabolario e' cio' che rende una ricetta una riga di tabella
  * invece di una funzione: `config.ts` elenca parti, questo file sa disegnarle,
  * e nessuno dei due sa cosa sia un porto.
  *
- * **Lo scafo e' l'ottava, ed e' l'unica che non ha una pianta rettangolare.** E'
- * la sola ragione per cui esiste: sette primitive su otto sono un prisma con una
- * maschera simmetrica, e una barca disegnata come scatola legge come un
- * container posato sull'acqua. La rastremazione ai due capi e' cio' che la
- * dichiara barca prima di qualunque colore.
+ * **Tre di loro escono dal prisma, e sono le tre che si vedono.** Sette
+ * primitive su dieci sono un prisma con una maschera simmetrica, e a distanza
+ * isometrica un prisma resta un prisma qualunque colore abbia. Lo scafo
+ * rastremato dichiara «barca» prima di qualunque palette; il traliccio ha aria
+ * dentro, ed e' l'aria a dire «struttura»; la falda e' l'unica sommita' non
+ * piatta del vocabolario, e finche' non c'era, otto ruoli finivano tutti su un
+ * piano orizzontale a quote diverse.
+ *
+ * **Lo smusso e' un campo, non un'undicesima voce.** `Part.chamfer` taglia gli
+ * angoli della pianta di quasi tutte le primitive: una scatola smussata e' un
+ * tamburo, una scatola cava smussata un anello ottagonale, una piramide a
+ * gradoni smussata una cupola. Tre forme nuove per un campo invece che per tre
+ * voci, ed e' l'unico modo che questo dominio ha di uscire dall'angolo retto
+ * senza imparare a disegnare un cerchio.
  *
  * **Una parte e' un dato, non una chiamata.** E' la differenza che permette a un
  * test di misurare l'ingombro di una ricetta senza disegnarla, e a
@@ -41,6 +50,10 @@ export const PART = {
   deck: 6,
   /** Scafo rastremato ai due capi: barche ormeggiate, pontoni, chiatte. */
   hull: 7,
+  /** Traliccio: montanti agli spigoli e correnti a passo regolare, vuoto in mezzo. */
+  truss: 8,
+  /** Falda a due spioventi lungo l'asse maggiore: tetti a capanna, pensiline. */
+  pitch: 9,
 } as const;
 
 export type PartKind = (typeof PART)[keyof typeof PART];
@@ -67,9 +80,28 @@ export interface Part {
   readonly surface: SurfaceKind;
   /**
    * `colonnade`: passo dei pilastri. `steps`: rientranza di ogni gradone.
-   * `hull`: colonne di rastremazione a ciascun capo. Ignorato dalle altre.
+   * `hull`: colonne di rastremazione a ciascun capo. `truss`: passo dei
+   * correnti. `pitch`: quanto sale la falda per ogni colonna verso il colmo.
+   * Ignorato dalle altre.
    */
   readonly step?: number;
+
+  /**
+   * Angoli tagliati in pianta, in voxel di lato.
+   *
+   * Non e' una primitiva ma un **modificatore della pianta**, e per questo vale
+   * su quasi tutte: una scatola smussata e' un tamburo, una scatola cava
+   * smussata e' un anello ottagonale, una piramide a gradoni smussata e' una
+   * cupola. Tre forme nuove per un campo invece che per tre voci di vocabolario,
+   * ed e' l'unico modo che questo dominio ha di uscire dall'angolo retto senza
+   * imparare a disegnare un cerchio.
+   *
+   * Il taglio e' la diagonale di Manhattan: cade la cella la cui somma delle
+   * distanze dai due bordi piu' vicini sta sotto la soglia. Resta simmetrica
+   * allo scambio degli assi, che e' la condizione perche' `orientPart` possa
+   * ruotare la parte senza cambiarne il conto di voxel.
+   */
+  readonly chamfer?: number;
   /**
    * Colore dell'ultimo voxel in quota: cornice, coronamento, cappello di un
    * silo, architrave di un portico.
@@ -174,35 +206,65 @@ export function createCanvas(sizeX: number, sizeY: number, sizeZ: number): Landm
 export function drawPart(canvas: LandmarkCanvas, part: Part): void {
   switch (part.kind) {
     case PART.shell:
-      return drawPrism(canvas, part, (lx, ly) =>
-        lx === 0 || ly === 0 || lx === part.w - 1 || ly === part.h - 1);
+      return drawPrism(canvas, part, true);
     case PART.colonnade:
       return drawColonnade(canvas, part);
     case PART.steps:
       return drawSteps(canvas, part);
     case PART.hull:
       return drawHull(canvas, part);
+    case PART.truss:
+      return drawTruss(canvas, part);
+    case PART.pitch:
+      return drawPitch(canvas, part);
     default:
       // `slab`, `mast`, `boom` e `deck` sono lo stesso prisma pieno: a
       // distinguerli sono le proporzioni che la ricetta gli da', non il codice
       // che li disegna. Tenerli come voci separate serve a chi legge la
       // ricetta, che vede «ciminiera» e non «scatola 2x2x16».
-      return drawPrism(canvas, part, () => true);
+      return drawPrism(canvas, part, false);
   }
 }
 
-/** Prisma con una maschera in pianta: e' la forma di quasi tutte le primitive. */
-function drawPrism(
-  canvas: LandmarkCanvas,
-  part: Part,
-  mask: (lx: number, ly: number) => boolean,
-): void {
+/**
+ * true se la cella sta dentro la pianta, cioe' se lo smusso non l'ha tagliata.
+ *
+ * Accetta coordinate fuori dal riquadro e risponde `false`: e' cio' che permette
+ * a `onPlanEdge` di chiedere dei vicini senza controllare prima i bordi.
+ */
+function inPlan(lx: number, ly: number, w: number, h: number, chamfer: number): boolean {
+  if (lx < 0 || ly < 0 || lx >= w || ly >= h) return false;
+  if (chamfer <= 0) return true;
+  return Math.min(lx, w - 1 - lx) + Math.min(ly, h - 1 - ly) >= chamfer;
+}
+
+/**
+ * true se la cella e' sul bordo della pianta: le manca un vicino in piano.
+ *
+ * E' la generalizzazione del perimetro, e senza smusso ci ricade esattamente —
+ * `lx === 0 || ly === 0 || ...` e' lo stesso insieme. Serve perche' una scatola
+ * cava smussata ha il bordo *sulla diagonale*, dove il test per coordinate non
+ * guarda: chiedere ai vicini invece che agli indici e' l'unico modo di far
+ * valere lo smusso su tutte le primitive che hanno un perimetro.
+ */
+function onPlanEdge(lx: number, ly: number, w: number, h: number, chamfer: number): boolean {
+  if (!inPlan(lx, ly, w, h, chamfer)) return false;
+  return !inPlan(lx - 1, ly, w, h, chamfer) || !inPlan(lx + 1, ly, w, h, chamfer) ||
+    !inPlan(lx, ly - 1, w, h, chamfer) || !inPlan(lx, ly + 1, w, h, chamfer);
+}
+
+/** Prisma pieno o cavo, sulla pianta che lo smusso ha lasciato. */
+function drawPrism(canvas: LandmarkCanvas, part: Part, hollow: boolean): void {
+  const chamfer = part.chamfer ?? 0;
   const top = part.z + part.height - 1;
   for (let z = part.z; z <= top; z++) {
     const palette = z === top && part.cap !== undefined ? part.cap : part.palette;
     for (let ly = 0; ly < part.h; ly++) {
       for (let lx = 0; lx < part.w; lx++) {
-        if (!mask(lx, ly)) continue;
+        const keep = hollow
+          ? onPlanEdge(lx, ly, part.w, part.h, chamfer)
+          : inPlan(lx, ly, part.w, part.h, chamfer);
+        if (!keep) continue;
         put(canvas, part.x + lx, part.y + ly, z, palette, part.surface);
       }
     }
@@ -219,14 +281,14 @@ function drawPrism(
  */
 function drawColonnade(canvas: LandmarkCanvas, part: Part): void {
   const step = Math.max(2, part.step ?? 2);
+  const chamfer = part.chamfer ?? 0;
   const top = part.z + part.height - 1;
 
   for (let ly = 0; ly < part.h; ly++) {
     for (let lx = 0; lx < part.w; lx++) {
-      const edge = lx === 0 || ly === 0 || lx === part.w - 1 || ly === part.h - 1;
-      if (!edge) continue;
+      if (!onPlanEdge(lx, ly, part.w, part.h, chamfer)) continue;
       // L'architrave corre su tutto il perimetro; i pilastri solo sul passo.
-      const pillar = onPitch(lx, part.w, step) && onPitch(ly, part.h, step);
+      const pillar = onPillarPitch(lx, part.w, step) && onPillarPitch(ly, part.h, step);
       const from = pillar ? part.z : top;
       for (let z = from; z <= top; z++) {
         const palette = z === top && part.cap !== undefined ? part.cap : part.palette;
@@ -245,7 +307,7 @@ function drawColonnade(canvas: LandmarkCanvas, part: Part): void {
  * rotazione. Dove due parti si sovrappongono quell'asimmetria si vede come un
  * conto di voxel diverso a seconda del verso, ed e' cosi' che e' saltata fuori.
  */
-function onPitch(v: number, size: number, step: number): boolean {
+function onPillarPitch(v: number, size: number, step: number): boolean {
   return Math.min(v, size - 1 - v) % step === 0;
 }
 
@@ -255,6 +317,7 @@ function onPitch(v: number, size: number, step: number): boolean {
  */
 function drawSteps(canvas: LandmarkCanvas, part: Part): void {
   const step = Math.max(1, part.step ?? 1);
+  const chamfer = part.chamfer ?? 0;
   const top = part.z + part.height - 1;
 
   for (let z = part.z; z <= top; z++) {
@@ -266,7 +329,88 @@ function drawSteps(canvas: LandmarkCanvas, part: Part): void {
     const palette = z === top && part.cap !== undefined ? part.cap : part.palette;
     for (let ly = 0; ly < h; ly++) {
       for (let lx = 0; lx < w; lx++) {
+        // Lo smusso si misura sul gradone corrente, non sulla base: e' cosi' che
+        // una piramide smussata sale come una cupola invece che come un tronco
+        // di piramide con un solo taglio in fondo.
+        if (!inPlan(lx, ly, w, h, chamfer)) continue;
         put(canvas, part.x + inset + lx, part.y + inset + ly, z, palette, part.surface);
+      }
+    }
+  }
+}
+
+/**
+ * Traliccio: montanti agli spigoli e correnti orizzontali a passo `step`.
+ *
+ * E' la primitiva che mancava alle cose che *reggono* invece di chiudere. Una
+ * gamba di gru, un pilone radio, una torre di servizio disegnati come `mast`
+ * sono prismi pieni, e a distanza isometrica un prisma pieno alto venti voxel
+ * legge come un muro stretto: il traliccio ha aria dentro, e l'aria e' cio' che
+ * dice «struttura» prima di qualunque colore.
+ *
+ * I montanti sono i quattro spigoli e salgono sempre; il resto del perimetro
+ * compare solo sui correnti. Il corrente in cima c'e' comunque, altrimenti la
+ * parte finirebbe su quattro punte staccate invece che su un telaio chiuso.
+ */
+function drawTruss(canvas: LandmarkCanvas, part: Part): void {
+  const step = Math.max(2, part.step ?? 2);
+  const chamfer = part.chamfer ?? 0;
+  const top = part.z + part.height - 1;
+
+  for (let z = part.z; z <= top; z++) {
+    const course = (z - part.z) % step === 0 || z === top;
+    const palette = z === top && part.cap !== undefined ? part.cap : part.palette;
+    for (let ly = 0; ly < part.h; ly++) {
+      for (let lx = 0; lx < part.w; lx++) {
+        if (!onPlanEdge(lx, ly, part.w, part.h, chamfer)) continue;
+        // Il montante e' la cella che sta sul bordo in **tutte e due** le
+        // direzioni: e' la definizione di spigolo che sopravvive allo smusso,
+        // dove «lx === 0 e ly === 0» non descrive piu' un angolo.
+        const post = !inPlan(lx - 1, ly, part.w, part.h, chamfer) ||
+          !inPlan(lx + 1, ly, part.w, part.h, chamfer);
+        const beam = !inPlan(lx, ly - 1, part.w, part.h, chamfer) ||
+          !inPlan(lx, ly + 1, part.w, part.h, chamfer);
+        if (!(post && beam) && !course) continue;
+        put(canvas, part.x + lx, part.y + ly, z, palette, part.surface);
+      }
+    }
+  }
+}
+
+/**
+ * Falda a due spioventi: il colmo corre lungo l'asse maggiore.
+ *
+ * **Segue l'asse lungo, non `x`**, per la stessa ragione dello scafo: una falda
+ * fissata su `lx` ruotata di un quarto di giro cambierebbe forma e conteggio, e
+ * il test del catalogo misura proprio quel conteggio su ogni verso.
+ *
+ * E' l'unica primitiva che non ha una sommita' piatta, ed e' per questo che
+ * esiste: fino a qui ogni landmark finiva su un piano orizzontale, e otto tetti
+ * piatti a quote diverse restano otto tetti piatti. `cap` qui non colora
+ * l'ultima quota ma la **linea di colmo**, che e' l'unico posto in cui una falda
+ * ha davvero un coronamento.
+ */
+function drawPitch(canvas: LandmarkCanvas, part: Part): void {
+  const alongX = part.w >= part.h;
+  const short = alongX ? part.h : part.w;
+  const rise = Math.max(1, part.step ?? 1);
+  const ridge = Math.min(part.height, 1 + Math.floor((short - 1) / 2) * rise);
+
+  for (let ly = 0; ly < part.h; ly++) {
+    for (let lx = 0; lx < part.w; lx++) {
+      const across = alongX ? ly : lx;
+      const fromEaves = Math.min(across, short - 1 - across);
+      const columnTop = Math.min(part.height, 1 + fromEaves * rise);
+      for (let dz = 0; dz < columnTop; dz++) {
+        const crown = dz === columnTop - 1 && columnTop === ridge && part.cap !== undefined;
+        put(
+          canvas,
+          part.x + lx,
+          part.y + ly,
+          part.z + dz,
+          crown ? part.cap! : part.palette,
+          part.surface,
+        );
       }
     }
   }

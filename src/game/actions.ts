@@ -19,11 +19,13 @@ import { siteRefusal } from '../world/sites/siteRules';
 import type { TerrainMap } from '../world/terrain/TerrainMap';
 
 /**
- * I due rifiuti dello sventramento non li produce questo file, e non e' una
- * dimenticanza: parlano di livelli e di strutture, cioe' di cose che stanno nel
- * registry, e `src/game/actions.ts` un registry non ce l'ha. Li produce il
- * Builder e li compone `GrowthScene`, come gia' compone l'ordine del tutorial.
- * Il vocabolario pero' e' uno solo, e sta qui: e' cio' che l'HUD traduce.
+ * **Lo sventramento non e' qui, ed e' una scelta.** Che il riquadro di un
+ * landmark sia troppo alto da sgomberare non impedisce di piazzare il
+ * catalizzatore: il campo di desiderabilita' funziona lo stesso, e due
+ * catalizzatori vicini che si sovrappongono sono proprio il gesto che il gioco
+ * chiede. A non comparire e' la struttura, che ripiega sulla piazzola come ha
+ * sempre fatto per i ruoli senza ricetta. Il cursore lo dice prima del click —
+ * e' quello il difetto che questa fase chiude, non un rifiuto in piu'.
  */
 export type ActionFailure =
   | 'terrain-loading'
@@ -31,8 +33,6 @@ export type ActionFailure =
   | 'needs-coast'
   | 'needs-open-ground'
   | 'too-close'
-  | 'block-too-tall'
-  | 'structure-in-the-way'
   | 'insufficient-funds'
   | 'population-required'
   | 'already-active'

@@ -2,11 +2,12 @@ import { createNoise2D, type NoiseFunction2D } from 'simplex-noise';
 import { hashCoords, mulberry32 } from '../rng';
 import { TERRAIN } from './config';
 import {
-  carveBasins,
+  lakeLevelAt,
   moundRise,
   planBasins,
   planLobes,
   planMounds,
+  shapeBasins,
   type Basin,
   type Lobe,
   type Mound,
@@ -223,13 +224,26 @@ export class HeightField {
 
   /** Rilievo normalizzato in [0, 1], conche comprese. */
   elevationAt(x: number, y: number): number {
-    const carved = carveBasins(this.baseElevationAt(x, y), this.basins, x, y);
-    return carved > 0 ? carved : 0;
+    const shaped = shapeBasins(this.baseElevationAt(x, y), this.basins, x, y);
+    return shaped > 0 ? shaped : 0;
   }
 
   /** Altezza continua in voxel, gia' limitata a `[oceanFloor, maxHeight]`. */
   heightAt(x: number, y: number): number {
     return TERRAIN.oceanFloor + this.relief * this.elevationAt(x, y);
+  }
+
+  /**
+   * Quota della superficie d'acqua sulla colonna: il livello del mare, oppure
+   * quello del lago che la contiene.
+   *
+   * E' l'unica cosa che il generatore deve chiedere alla sagoma oltre alla
+   * quota, ed e' un valore assoluto proprio perche' chi scrive l'acqua non
+   * abbia bisogno di sapere che le conche esistono.
+   */
+  waterLevelAt(x: number, y: number): number {
+    const lake = lakeLevelAt(this.basins, x, y);
+    return lake > TERRAIN.seaLevel ? lake : TERRAIN.seaLevel;
   }
 
   /**

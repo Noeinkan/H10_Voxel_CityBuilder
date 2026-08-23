@@ -52,6 +52,27 @@ export interface VoxelStamp {
 }
 
 /**
+ * Uno stamp senza un solo voxel.
+ *
+ * Serve a **demolire con la coda invece che di colpo**: accodato come sagoma
+ * nuova con il volume da togliere come `erase`, non scrive niente e cancella
+ * tutto, a budget e senza un secondo percorso di scrittura. Il confronto
+ * «coperto dalla nuova sagoma» e' falso ovunque perche' i lati sono zero, che e'
+ * esattamente la risposta giusta quando la sagoma nuova non esiste.
+ */
+export const EMPTY_STAMP: VoxelStamp = {
+  sizeX: 0,
+  sizeY: 0,
+  sizeZ: 0,
+  anchorX: 0,
+  anchorY: 0,
+  anchorZ: 0,
+  voxels: new Uint8Array(0),
+  surfaces: new Uint8Array(0),
+  bandStarts: [0],
+};
+
+/**
  * Indice lineare dentro lo stamp. `sx` varia piu' rapidamente.
  *
  * E' deliberatamente la stessa disposizione di `idx()` in `chunkCoords.ts`: chi

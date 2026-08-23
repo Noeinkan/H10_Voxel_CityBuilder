@@ -136,6 +136,11 @@ export const BALANCE = {
         factory: { cost: 150, strength: 205, radius: 40 },
         park: { cost: 200, strength: 195, radius: 36 },
         port: { cost: 320, strength: 190, radius: 48 },
+        // Costa meno del porto perche' promette meno: il porto apre il commercio
+        // con il mondo, il traghetto collega due punti dell'isola fra loro. E'
+        // il collegamento *interno*, ed e' l'unico che serva a qualcosa su una
+        // sponda dove non c'e' ancora niente da esportare.
+        ferry: { cost: 260, strength: 180, radius: 46 },
         // Costa piu' del porto perche' non chiede la costa: il fronte mare e'
         // un anello e finisce, mentre una superficie ampia si trova ovunque a
         // patto di cercarla. La differenza di prezzo e' il vincolo di sito
@@ -162,6 +167,11 @@ export const BALANCE = {
         factory: { residential: -0.2, commercial: 0.2, industrial: 1, civic: 0 },
         park: { residential: 0.7, commercial: 0.2, industrial: -0.35, civic: 1 },
         port: { residential: 0, commercial: 0.7, industrial: 1, civic: 0 },
+        // L'opposto del porto sullo stesso fronte mare: da un imbarco passano
+        // persone, non container, quindi tira su negozi e case e lascia stare i
+        // capannoni. E' cio' che rende sensato metterne uno dove un porto
+        // rovinerebbe il quartiere.
+        ferry: { residential: 0.75, commercial: 1, industrial: 0.15, civic: 0.35 },
         airport: { residential: -0.35, commercial: 1, industrial: 0.5, civic: 0.6 },
         transport: { residential: 1, commercial: 0.8, industrial: 0.45, civic: 0.2 },
         university: { residential: 0.5, commercial: 0.45, industrial: 0, civic: 1 },
@@ -177,6 +187,37 @@ export const BALANCE = {
       civicPride: { cost: 260, population: 72, upkeep: 2.8 },
       marketCharter: { cost: 200, population: 48, upkeep: 1.6 },
     },
+    /**
+     * Quando due imbarchi fanno una linea.
+     *
+     * **La coppia si misura in distanza e basta.** Qui non c'e' niente che sappia
+     * dove sia l'acqua, e non deve esserci: la simulazione dichiara cosa un ruolo
+     * pretende e la geografia la legge `src/world/`, esattamente come per il
+     * vincolo di sito. Tutti e due gli imbarchi stanno gia' sulla costa — glielo
+     * impone `'coastal'` — quindi «lontani e sul mare» e' quanto basta perche' la
+     * linea sia una traversata e non un molo che guarda se stesso.
+     */
+    ferry: {
+      /**
+       * Distanza minima fra i due capi di una linea.
+       *
+       * Piu' del doppio di `minDistance`, che vieta solo di sovrapporre due
+       * imbarchi: a quaranta voxel — venti cubi di terreno — i due moli non si
+       * vedono piu' come una cosa sola, ed e' da li' che una barca ha un senso
+       * invece di essere una passeggiata.
+       */
+      minRange: 44,
+
+      /**
+       * Distanza massima. Oltre, la linea non e' servita.
+       *
+       * Non e' un limite di navigazione ma di gioco: due imbarchi ai due capi
+       * dell'isola collegherebbero tutto con tutto, e il traghetto smetterebbe di
+       * chiedere dove metterlo. Vale un settore d'espansione e mezzo.
+       */
+      maxRange: 192,
+    },
+
     expansion: {
       cost: 500,
       population: 48,
@@ -215,6 +256,7 @@ export const BALANCE = {
       factory: { density: 25, wealth: 35, accessibility: 25, satisfaction: -55, industry: 145 },
       park: { density: -25, wealth: 35, accessibility: 10, satisfaction: 145, industry: -20 },
       port: { density: 30, wealth: 60, accessibility: 135, satisfaction: -20, industry: 85 },
+      ferry: { density: 50, wealth: 45, accessibility: 130, satisfaction: 40, industry: 10 },
       airport: { density: 35, wealth: 70, accessibility: 150, satisfaction: -35, industry: 45 },
       transport: { density: 95, wealth: 25, accessibility: 155, satisfaction: 5, industry: 20 },
       university: { density: 40, wealth: 105, accessibility: 55, satisfaction: 75, industry: 5 },
@@ -479,6 +521,27 @@ export const BALANCE = {
     maxOccupancy: 4,
     /** Frazione della distanza dal bersaglio colmata per tick. In (0, 1]. */
     inertia: 0.08,
+
+    /**
+     * Contributo di una linea di traghetto **aperta**, cioe' servita da due
+     * imbarchi.
+     *
+     * E' l'unico effetto che una coppia porta e un molo solo no, ed e' li' che
+     * «collega» smette di essere una parola: un imbarco isolato resta un
+     * catalizzatore come gli altri — la sua influenza c'e' comunque — e cio' che
+     * gli manca e' la linea. Vale quanto un paio di edifici civici finanziati,
+     * perche' e' quello che sostituisce: sull'altra sponda ci si arriva.
+     */
+    perFerryLine: 0.05,
+
+    /**
+     * Linee oltre le quali la citta' non ringrazia piu'.
+     *
+     * Senza un tetto, il traghetto sarebbe la via piu' economica per comprare
+     * soddisfazione all'infinito — due moli, un contributo, ripetere. Tre linee
+     * sono gia' una rete su un'isola di questa scala.
+     */
+    maxFerryLines: 3,
   },
 
   // --- Campo di desiderabilita' -------------------------------------------

@@ -509,6 +509,120 @@ function emitFacadeClass(
   return true;
 }
 
+/**
+ * Collarino e ago sulla sommita' di una colonna sottile.
+ *
+ * **L'aggancio e' la colonna isolata**, cioe' la cella scoperta in alto che non
+ * ha nessun vicino in piano. E' la definizione geometrica di ciminiera, guglia,
+ * gamba di gru, torre di controllo e antenna di coronamento: tutte cose che
+ * fino a qui finivano su un quadrato piatto largo quanto il fusto, che a
+ * distanza isometrica e' esattamente cio' che fa leggere un prisma come un
+ * prisma. Il collarino sborda di 1/16 per lato e produce la riga d'ombra che
+ * stacca la punta dal fusto; l'ago sopra da' alla colonna una fine invece di un
+ * troncamento.
+ *
+ * Non ha tiro: dove sta e' interamente deciso dalla geometria, quindi e'
+ * struttura e non prop — e sta in fondo alla struttura perche' fra tutte e' la
+ * meno grave da perdere se il tetto dei quad arriva.
+ */
+function emitFinials(
+  padded: Uint8Array,
+  writer: MicroGeometryWriter,
+  cells: readonly number[],
+  surface: SurfaceKind,
+  palette: number,
+): boolean {
+  const isTip = (x: number, y: number, z: number): boolean => {
+    // L'ordine e' una scelta di costo: la scopertura in alto e' una lettura
+    // sola e cade su ogni cella di parete, che sono la quasi totalita'.
+    if (!isExposed(padded, x, y, z, FACE_PZ)) return false;
+    const block = blockAt(padded, x, y, z);
+    if (block === 0 || blockSurface(block) !== surface) return false;
+    for (const face of LATERAL_FACES) {
+      const offset = FACE_NEIGHBOUR_OFFSETS[face];
+      if (blockAt(padded, x + offset[0], y + offset[1], z) !== 0) return false;
+    }
+    return true;
+  };
+
+  if (!emitPoints(writer, cells, {
+    runAxis: 0,
+    palette,
+    hiddenFace: FACE_NZ,
+    has: isTip,
+    box: (x, y, z) => ({
+      min: [x * U - 1, y * U - 1, (z + 1) * U],
+      max: [(x + 1) * U + 1, (y + 1) * U + 1, (z + 1) * U + 2],
+    }),
+  })) {
+    return false;
+  }
+
+  return emitPoints(writer, cells, {
+    runAxis: 0,
+    palette: PALETTE_SLOTS.metalBrass,
+    hiddenFace: FACE_NZ,
+    has: isTip,
+    box: (x, y, z) => ({
+      min: [x * U + 7, y * U + 7, (z + 1) * U + 2],
+      max: [x * U + 9, y * U + 9, (z + 1) * U + 9],
+    }),
+  });
+}
+
+/**
+ * Fascia sul bordo inferiore di un aggetto.
+ *
+ * **L'aggancio e' l'intradosso scoperto che finisce nel vuoto**: una cella con
+ * aria sotto e aria di fianco e' il filo di uno sbalzo. Un braccio di gru, un
+ * nastro trasportatore, l'impalcato di un viadotto e la fascia di un edificio
+ * che cresce in fuori mostravano li' la faccia nuda del voxel, cioe' uno
+ * spessore che a distanza non si legge; la fascia lo dichiara.
+ *
+ * Corre lungo lo sbalzo — un braccio intero costa un prisma per lato, non uno
+ * per cella — ed e' per questo che si puo' permettere di stare nella struttura
+ * invece che fra i prop.
+ */
+function emitSoffits(
+  padded: Uint8Array,
+  writer: MicroGeometryWriter,
+  cells: readonly number[],
+  surface: SurfaceKind,
+  palette: number,
+): boolean {
+  for (const face of LATERAL_FACES) {
+    const offset = FACE_NEIGHBOUR_OFFSETS[face];
+    const normalAxis = face < 2 ? 0 : 1;
+    const runAxis = facadeHorizontalAxis(face);
+    const positive = face === FACE_PX || face === FACE_PY;
+
+    if (!emitRuns(writer, cells, {
+      runAxis,
+      palette,
+      // Il lato superiore della fascia e' contro l'intradosso che la regge.
+      hiddenFace: FACE_PZ,
+      has: (x, y, z) => {
+        const block = blockAt(padded, x, y, z);
+        return block !== 0 && blockSurface(block) === surface &&
+          isExposed(padded, x, y, z, FACE_NZ) &&
+          blockAt(padded, x + offset[0], y + offset[1], z) === 0;
+      },
+      box: (x, y, z, length) => {
+        const min: [number, number, number] = [x * U, y * U, z * U - 3];
+        const max: [number, number, number] = [(x + 1) * U, (y + 1) * U, z * U];
+        const base = (normalAxis === 0 ? x : y) * U;
+        min[normalAxis] = positive ? base + U - 2 : base;
+        max[normalAxis] = positive ? base + U : base + 2;
+        max[runAxis] = (runAxis === 0 ? x : y) * U + length * U;
+        return { min, max };
+      },
+    })) {
+      return false;
+    }
+  }
+  return true;
+}
+
 // --- Prop: gli oggetti appesi all'edificio ---------------------------------
 //
 // Quello che separa questi dettagli da quelli sopra e' l'**aggancio**. Un
@@ -965,6 +1079,25 @@ export function appendMicroGeometry(
     bySurface[SURFACE_KIND.civic],
   )) {
     return initial - writer.remainingQuads;
+  }
+
+  // Coda della struttura: finiali e fasce di sbalzo valgono su tutte e due le
+  // facciate d'uso costruite, quindi si pagano due liste a testa. Stanno qui e
+  // non piu' in alto perche' fra la struttura sono le prime a poter cadere: una
+  // guglia senza punta resta una guglia, una facciata senza montanti no.
+  const finials: readonly [SurfaceKind, number][] = [
+    [SURFACE_KIND.civic, PALETTE_SLOTS.concreteWhite],
+    [SURFACE_KIND.industrial, PALETTE_SLOTS.metalDark],
+  ];
+  for (const [surface, palette] of finials) {
+    if (!emitFinials(padded, writer, bySurface[surface], surface, palette)) {
+      return initial - writer.remainingQuads;
+    }
+  }
+  for (const [surface, palette] of finials) {
+    if (!emitSoffits(padded, writer, bySurface[surface], surface, palette)) {
+      return initial - writer.remainingQuads;
+    }
   }
 
   // Da qui in giu' sono oggetti, non struttura: se il tetto arriva, cadono loro.

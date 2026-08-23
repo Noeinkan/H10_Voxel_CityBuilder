@@ -101,6 +101,12 @@ export {
   type TradeMode,
   type TradeReport,
 } from './trade';
+export {
+  ferryLinesOf,
+  servedFerryLines,
+  type FerryLine,
+  type FerryTerminal,
+} from './ferry';
 export { nextState, unitOf } from './rng';
 export {
   addBuilding,

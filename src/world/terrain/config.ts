@@ -169,7 +169,7 @@ export const TERRAIN = {
    * acqua. Sotto quel valore l'isola resta circondata d'acqua per costruzione.
    * I due termini si sommano, quindi il tetto vale sulla loro somma.
    */
-  warpAmount: 0.16,
+  warpAmount: 0.18,
   warpFrequency: 1 / 640,
   warpSalt: 0x00c0_a571,
 
@@ -186,7 +186,7 @@ export const TERRAIN = {
    * `ampiezza * frequenza`, e mezzo punto percentuale di ampiezza in piu' su
    * una frequenza quadrupla resta sotto il decimo di voxel per voxel.
    */
-  warpDetail: 0.055,
+  warpDetail: 0.06,
   warpDetailFrequency: 1 / 168,
   warpDetailSalt: 0x00c0_a572,
 
@@ -265,23 +265,36 @@ export const LANDFORM = {
   lobeCount: [2, 2],
 
   /** Distanza del centro del lobo dal centro dell'isola, in frazioni di raggio. */
-  lobeDistance: [0.34, 0.14],
+  lobeDistance: [0.42, 0.16],
 
   /** Raggio del lobo, in frazioni del raggio dell'isola. */
-  lobeRadius: [0.36, 0.16],
+  lobeRadius: [0.34, 0.2],
 
   /**
-   * Quanto lontano puo' arrivare il bordo di un lobo, `distanza + raggio`.
+   * Frazione del raggio di un lobo che emerge davvero.
    *
-   * Sotto 1 di un margine largo: la costa vera dell'isola base cade intorno a
-   * 0,68 del raggio — la' dove la maschera scende sotto la soglia di emersione
-   * — quindi un lobo che arriva a 0,86 sporge dalla costa di quasi un quinto
-   * del raggio senza avvicinarsi al bordo della region.
+   * **Il raggio di un lobo non e' la sua costa**, ed e' l'errore che teneva i
+   * lobi invisibili: la caduta a coseno arriva a zero, quindi la terra finisce
+   * dove la maschera scende sotto la soglia di emersione, che e' intorno a meta'
+   * del raggio nominale. Vincolando `distanza + raggio` si tenevano i lobi cosi'
+   * dentro che la loro terra emersa non usciva mai dalla costa dell'isola base:
+   * aggiungevano rilievo all'interno e non una penisola.
+   */
+  lobeEmerged: 0.5,
+
+  /**
+   * Quanto lontano puo' arrivare la terra di un lobo, `distanza + emersa`.
+   *
+   * La costa vera dell'isola base cade intorno a 0,68 del raggio — la' dove la
+   * maschera scende sotto la soglia di emersione — quindi un lobo che arriva a
+   * 0,86 sporge dalla costa di quasi un quinto del raggio. Il bordo della
+   * region resta all'asciutto lo stesso: li' la maschera del lobo vale qualche
+   * centesimo, e nemmeno il rumore massimo la porta sopra `seaLevel`.
    */
   lobeReach: 0.86,
 
   /** Pendenza massima concessa al fianco di un lobo. */
-  lobeSlope: 0.3,
+  lobeSlope: 0.45,
 
   /** Frazione di passo angolare di cui un lobo puo' spostarsi dal suo settore. */
   lobeJitter: 0.55,
@@ -291,7 +304,7 @@ export const LANDFORM = {
   // --- Rilievi interni ----------------------------------------------------
 
   /** Quante cupole spostano le vette fuori dal centro. */
-  moundCount: [1, 2],
+  moundCount: [2, 2],
 
   moundDistance: [0.16, 0.3],
   moundRadius: [0.24, 0.14],
@@ -315,56 +328,122 @@ export const LANDFORM = {
   /** Quanti specchi d'acqua interni si tenta di aprire. */
   basinCount: [1, 1],
 
-  /** Quanti siti si esaminano prima di rinunciare. */
-  basinCandidates: 192,
-
-  /** Fascia radiale in cui si cercano i siti, `[minimo, ampiezza]`. */
-  basinReach: [0.18, 0.52],
-
   /**
-   * Quota della corona sopra il livello del mare, `[minimo, massimo]`.
+   * Quanti siti si esaminano prima di rinunciare.
    *
-   * E' la fascia in cui una conca ha senso. Piu' in basso lo specchio si
-   * fonderebbe con il mare; piu' in alto la parete che serve a raggiungere il
-   * fondo diventa piu' larga della fascia bassa che la ospita, e la conca
-   * sfonda la costa da qualche parte.
+   * Sono tanti perche' quello che si cerca e' raro: una spianata larga una
+   * cinquantina di colonne su un'isola che e' quasi tutta fianco. Costano poco —
+   * cinque campioni del campo ciascuno, e solo i pochi che passano il filtro di
+   * pianura arrivano ai conti veri — e si pagano una volta per `HeightField`,
+   * non una volta per blocco.
    */
-  basinRimAbove: [4, 9],
+  basinCandidates: 1536,
 
   /**
-   * Quanto il fondo sta sotto il livello del mare.
+   * Pendenza massima del sito e distanza su cui si misura.
+   *
+   * E' solo un filtro d'ingresso, non il criterio: a decidere davvero e'
+   * `fitRadius`, che pero' costa una cinquantina di campioni. Questo ne costa
+   * quattro e toglie di mezzo i siti che non hanno speranza.
+   */
+  basinFlatSlope: 0.2,
+  basinFlatSpan: 24,
+
+  /**
+   * Fascia radiale in cui si cercano i siti, `[minimo, ampiezza]`.
+   *
+   * **E' la meta' interna dell'isola, e la ragione e' geometrica.** Una conca
+   * chiusa esiste solo dove il terreno e' quasi piano su tutto il suo raggio, e
+   * su una cupola la pendenza radiale cresce col raggio: verso il centro tende a
+   * zero, sul fianco vale gia' piu' di quanto qualunque raccordo possa
+   * assorbire. Cercando su tutto il disco, di otto isole di prova ne prendevano
+   * un lago tre; cercando qui, sei. Il lago che ne esce sta in quota, ed e'
+   * anche il posto giusto: non toglie alla citta' la pianura costiera.
+   */
+  basinReach: [0.04, 0.34],
+
+  /**
+   * Quota del sito sopra il livello del mare, `[minimo, massimo]`.
+   *
+   * E' la fascia in cui un lago ha senso. Sotto il minimo il fondo arriverebbe
+   * al mare e quello che si apre e' una baia; sopra il massimo si e' in vetta,
+   * dove il bordo imposto taglierebbe la cima.
+   */
+  basinRimAbove: [10, 46],
+
+  /**
+   * Quanto il fondo del lago scende sotto il bordo che lo circonda.
+   *
+   * E' una quota **relativa**, ed e' cio' che libera i laghi dalla riva: un
+   * fondo definito rispetto al livello del mare puo' stare solo dove il terreno
+   * e' gia' quasi a livello del mare, cioe' in una striscia larga una decina di
+   * colonne dove nessuna conca si chiude. Sei voxel — tre celle — sono anche il
+   * dislivello che la sponda copre in una trentina di colonne restando sotto
+   * `basinSlope`, cioe' un laghetto e non un cratere.
+   */
+  basinDrop: 6,
+
+  /**
+   * Profondita' dell'acqua sopra il fondo.
    *
    * Due voxel, cioe' una cella: e' la profondita' che tiene tutto lo specchio
    * dentro `shallowDepth` e quindi dentro `WATER_CLASS.shallow` — increspatura
    * fitta e fondale che si vede sotto. Un fondo piu' basso darebbe a una pozza
-   * di quaranta voxel l'onda lunga del mare aperto.
+   * di trenta colonne l'onda lunga del mare aperto.
    */
-  basinFloorBelow: 2,
-
-  /** Pendenza massima concessa alla sponda. */
-  basinSlope: 0.3,
+  basinWaterDepth: 2,
 
   /**
-   * Frazione del raggio occupata dal fondo piatto.
+   * Pendenza massima concessa alla sponda.
+   *
+   * E' l'unico numero di `LANDFORM` piu' alto della pendenza media dell'isola,
+   * e deve esserlo: una conca si chiude solo se la sua sponda scende **piu'
+   * ripida** del fianco che la ospita, altrimenti il bordo che impone e il
+   * terreno che trova non si raccordano e il punto fisso del raggio diverge. Il
+   * conto si chiude dove la pendenza locale sta sotto
+   * `basinSlope * (1 - basinBank) / (pi/2)`, cioe' intorno a 0,2.
+   *
+   * E' anche il numero che si avvicina di piu' al tetto di Lipschitz, ed e'
+   * l'unico posto in cui succede: la sponda di un lago **e'** una scarpata, e
+   * il campo la porta perche' vale meno di una cella su due colonne.
+   */
+  basinSlope: 0.62,
+
+  /**
+   * Le tre fasce della conca, in frazioni del raggio: fondo piatto fino a
+   * `basinPlateau`, sponda fino a `basinBank`, raccordo fino a 1.
    *
    * Il fondo piatto e' la superficie d'acqua: senza, lo specchio si riduce al
-   * punto centrale della conca. Costa raggio — la sponda deve scendere nello
-   * spazio che resta — ed e' per questo che non e' piu' largo.
+   * punto centrale della conca. Le altre due si dividono quello che resta, e la
+   * divisione e' un compromesso dichiarato: sponda corta vuol dire conca stretta
+   * ma sponda ripida, raccordo corto vuol dire rifiutare i siti in pendenza.
+   * A meta' ciascuna il lago si posa dove il terreno sta sotto 0,2 di pendenza,
+   * che e' la condizione meno rara delle due.
    */
-  basinPlateau: 0.32,
+  basinPlateau: 0.25,
+  basinBank: 0.5,
+
+  /** Corone su cui si misura il salto che il raccordo deve assorbire. */
+  basinBlendRings: [0.8, 0.95],
 
   /** Raggio massimo di una conca, in frazioni del raggio dell'isola. */
-  basinMaxRadius: 0.3,
+  basinMaxRadius: 0.34,
+
+  /**
+   * Passate del punto fisso che trova il raggio della conca.
+   *
+   * Poche bastano perche' la successione e' monotona e parte da sotto; chi non
+   * ha finito all'ultima sta su un fianco, dove il salto da raccordare cresce
+   * col raggio quanto la fascia che dovrebbe assorbirlo, e va scartato invece
+   * che allargato.
+   */
+  basinFitPasses: 4,
 
   /** Distanza minima fra due conche, in multipli della somma dei raggi. */
   basinSpacing: 1.15,
 
-  /** Sonde sulla corona e loro raggio, in multipli del raggio della conca. */
+  /** Sonde per corona di controllo. */
   basinShoreProbes: 12,
-  basinShoreReach: 1.04,
-
-  /** Quanto la corona deve stare sopra il mare perche' il lago sia chiuso. */
-  basinShoreMargin: 2,
 
   basinSalt: 0x0acc_a1a0,
 } as const;

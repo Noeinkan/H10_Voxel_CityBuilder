@@ -66,13 +66,23 @@ export interface Mound {
 
 /**
  * Una conca: livella il terreno verso una quota bersaglio invece di sottrargli
- * una cupola.
+ * una cupola, e ci mette dentro uno specchio d'acqua alla propria quota.
  *
- * La differenza si vede solo sul fondo. Sottraendo, il fondo eredita le gobbe di
- * cio' che c'era prima e l'acqua ne esce a chiazze di profondita' diversa;
- * livellando, il fondo e' piatto per costruzione e lo specchio ha una
- * profondita' sola — che e' anche cio' che lo tiene dentro `shallowDepth` e
- * quindi lo fa leggere come pozza e non come mare aperto.
+ * La differenza fra livellare e sottrarre si vede solo sul fondo. Sottraendo, il
+ * fondo eredita le gobbe di cio' che c'era prima e l'acqua ne esce a chiazze di
+ * profondita' diversa; livellando, il fondo e' piatto per costruzione e lo
+ * specchio ha una profondita' sola — che e' anche cio' che lo tiene dentro
+ * `shallowDepth` e quindi lo fa leggere come pozza e non come mare aperto.
+ *
+ * **`waterZ` e' il motivo per cui i laghi esistono.** A livello del mare non
+ * possono: il fondo di uno specchio sta sotto il pelo dell'acqua, e su un'isola
+ * a cupola la sola terra abbastanza bassa da ospitarne uno e' la striscia di
+ * riva, larga una decina di colonne. Misurato su otto seed, una conca centrata
+ * li' ha sempre almeno un quarto della corona sul mare: quello che si apre non e'
+ * un lago ma una baia. Un lago **sopra** il livello del mare non ha quel
+ * problema — la terra intorno gli e' piu' alta ovunque per costruzione — e in
+ * cambio chiede l'unica cosa che il generatore non aveva: una quota d'acqua per
+ * colonna invece della costante `TERRAIN.seaLevel`.
  *
  * Non e' un'opera di terra e non contraddice il "si riempie, non si scava" di
  * `grading/`: quella regola parla di cosa la citta' *costruisce* sopra il
@@ -83,10 +93,11 @@ export interface Basin {
   readonly centreY: number;
   readonly radiusX: number;
   readonly radiusY: number;
-  /** Frazione del raggio occupata dal fondo piatto. */
-  readonly plateau: number;
-  /** Elevazione bersaglio del fondo, nelle stesse unita' di `elevationAt`. */
+  /** Elevazione del fondo e del bordo, nelle stesse unita' di `elevationAt`. */
   readonly floor: number;
+  readonly rim: number;
+  /** Quota della superficie del lago, in voxel. Multiplo di `TERRAIN.cellSize`. */
+  readonly waterZ: number;
 }
 
 /**
@@ -102,11 +113,36 @@ export function domeFalloff(ratio: number): number {
   return 0.5 * (1 + Math.cos(Math.PI * ratio));
 }
 
-/** Come `domeFalloff`, ma con un fondo piatto largo `plateau` prima della caduta. */
-export function basinFalloff(ratio: number, plateau: number): number {
-  if (ratio <= plateau) return 1;
-  if (plateau >= 1) return 1;
-  return domeFalloff((ratio - plateau) / (1 - plateau));
+/**
+ * Il profilo di una conca: la quota che il terreno deve avere a `ratio`, fra il
+ * fondo e il bordo.
+ *
+ * Fondo piatto fino a `basinPlateau`, sponda a coseno fino a `basinBank`, bordo
+ * da li' in poi. E' l'unica parte della sagoma che dichiara **due** quote invece
+ * di una, ed e' il motivo per cui un lago sta dove vuole: il bordo non e' quello
+ * che il terreno aveva, e' quello che la conca gli impone, quindi la corona e'
+ * chiusa per costruzione e non per fortuna del seed.
+ */
+export function basinProfile(ratio: number, floor: number, rim: number): number {
+  if (ratio <= LANDFORM.basinPlateau) return floor;
+  if (ratio >= LANDFORM.basinBank) return rim;
+  const u = (ratio - LANDFORM.basinPlateau) / (LANDFORM.basinBank - LANDFORM.basinPlateau);
+  return floor + (rim - floor) * (1 - domeFalloff(u));
+}
+
+/**
+ * Quanto il profilo si impone sul terreno a `ratio`: tutto fino al bordo, poi
+ * si spegne.
+ *
+ * E' la fascia di raccordo a decidere se una conca sta in piedi: fuori dal bordo
+ * il terreno torna quello che era, e il salto fra i due va assorbito in
+ * `1 - basinBank` di raggio. Un sito in pendenza ha un salto grande e chiede una
+ * fascia lunga, cioe' una conca larga; oltre una certa pendenza nessuna
+ * larghezza basta piu', ed e' li' che `fitRadius` rinuncia.
+ */
+export function basinWeight(ratio: number): number {
+  if (ratio <= LANDFORM.basinBank) return 1;
+  return domeFalloff((ratio - LANDFORM.basinBank) / (1 - LANDFORM.basinBank));
 }
 
 /** Raggio normalizzato di un punto rispetto a un'ellisse. */
@@ -171,10 +207,12 @@ export function planLobes(seed: number, shape: IslandShape, relief: number): Lob
     const jitter = LANDFORM.lobeJitter * (rnd() - 0.5);
     const angle = rotation + ((i + jitter) * TAU) / count;
     const distance = pick(rnd, LANDFORM.lobeDistance);
-    // Il lobo non puo' arrivare al bordo della region: oltre `lobeReach` la sua
-    // caduta non farebbe in tempo a chiudersi, e resterebbe terra attaccata al
-    // bordo — lo stesso tetto duro che vale per `warpAmount`.
-    const radius = Math.min(pick(rnd, LANDFORM.lobeRadius), LANDFORM.lobeReach - distance);
+    // Il vincolo e' sulla terra emersa, non sul raggio nominale: e' quella che
+    // non deve arrivare al bordo della region.
+    const radius = Math.min(
+      pick(rnd, LANDFORM.lobeRadius),
+      (LANDFORM.lobeReach - distance) / LANDFORM.lobeEmerged,
+    );
     if (radius <= 0) continue;
 
     const radiusX = radius * shape.radiusX;
@@ -258,62 +296,164 @@ export function planBasins(
   const basins: Basin[] = [];
   if (wanted <= 0 || relief <= 0) return basins;
 
-  const floorZ = TERRAIN.seaLevel - LANDFORM.basinFloorBelow;
-  const rimMin = TERRAIN.seaLevel + LANDFORM.basinRimAbove[0];
-  const rimMax = TERRAIN.seaLevel + LANDFORM.basinRimAbove[1];
-  const wall = LANDFORM.basinSlope * (1 - LANDFORM.basinPlateau);
+  const siteMin = TERRAIN.seaLevel + LANDFORM.basinRimAbove[0];
+  const siteMax = TERRAIN.seaLevel + LANDFORM.basinRimAbove[1];
   const spread = LANDFORM.basinReach[1];
+  const maxRadius = LANDFORM.basinMaxRadius * Math.min(shape.radiusX, shape.radiusY);
+  // Raggio che la sponda impone da sola, prima di qualunque raccordo: il
+  // dislivello e' fisso, quindi lo e' anche questo.
+  const bankRadius =
+    (HALF_PI * LANDFORM.basinDrop)
+    / ((LANDFORM.basinBank - LANDFORM.basinPlateau) * LANDFORM.basinSlope);
 
-  for (let i = 0; i < LANDFORM.basinCandidates && basins.length < wanted; i++) {
+  const candidates: { x: number; y: number; radius: number; rimZ: number }[] = [];
+  for (let i = 0; i < LANDFORM.basinCandidates; i++) {
     // Raggio come radice del progresso: e' cio' che distribuisce i candidati per
     // area invece che per raggio, senza addensarli al centro.
     const ratio = LANDFORM.basinReach[0] + spread * Math.sqrt((i + 0.5) / LANDFORM.basinCandidates);
     const angle = rotation + i * GOLDEN_ANGLE;
-    const centreX = shape.centreX + ratio * shape.radiusX * Math.cos(angle);
-    const centreY = shape.centreY + ratio * shape.radiusY * Math.sin(angle);
+    const x = shape.centreX + ratio * shape.radiusX * Math.cos(angle);
+    const y = shape.centreY + ratio * shape.radiusY * Math.sin(angle);
 
-    const rim = heightAt(centreX, centreY);
-    if (rim < rimMin || rim > rimMax) continue;
+    const here = heightAt(x, y);
+    if (here < siteMin || here > siteMax) continue;
 
-    const radius = (HALF_PI * (rim - floorZ)) / wall;
-    if (radius > LANDFORM.basinMaxRadius * Math.min(shape.radiusX, shape.radiusY)) continue;
-    if (overlapsBasin(basins, centreX, centreY, radius)) continue;
-    if (!shoreIsDry(heightAt, centreX, centreY, radius)) continue;
+    // Filtro di pianura, prima di qualunque conto piu' caro. Il raccordo deve
+    // assorbire la differenza fra il bordo che la conca impone e il terreno che
+    // trova, e su un fianco quella differenza cresce con il raggio quanto la
+    // fascia che dovrebbe assorbirla: oltre una certa pendenza non c'e' raggio
+    // che chiuda il conto, e cercarlo e' lavoro buttato.
+    if (localSlope(heightAt, x, y, here) > LANDFORM.basinFlatSlope) continue;
 
+    const rimZ = toCell(here);
+    if (rimZ - LANDFORM.basinDrop <= TERRAIN.seaLevel) continue;
+
+    const radius = fitRadius(heightAt, x, y, rimZ, bankRadius, maxRadius);
+    if (radius <= 0) continue;
+    candidates.push({ x, y, radius, rimZ });
+  }
+
+  // Il piu' stretto per primo: a parita' di dislivello un raccordo corto vuol
+  // dire un sito piu' piano, cioe' un lago che si posa invece di un cratere che
+  // rimodella mezzo versante. L'ordinamento e' deterministico quanto la lista da
+  // cui parte.
+  candidates.sort((a, b) => a.radius - b.radius);
+
+  for (const candidate of candidates) {
+    if (basins.length >= wanted) break;
+    if (overlapsBasin(basins, candidate.x, candidate.y, candidate.radius)) continue;
+    const floorZ = candidate.rimZ - LANDFORM.basinDrop;
     basins.push({
-      centreX,
-      centreY,
-      radiusX: radius,
-      radiusY: radius,
-      plateau: LANDFORM.basinPlateau,
+      centreX: candidate.x,
+      centreY: candidate.y,
+      radiusX: candidate.radius,
+      radiusY: candidate.radius,
       floor: (floorZ - TERRAIN.oceanFloor) / relief,
+      rim: (candidate.rimZ - TERRAIN.oceanFloor) / relief,
+      waterZ: floorZ + LANDFORM.basinWaterDepth,
     });
   }
 
   return basins;
 }
 
+/** Pendenza del terreno intorno al sito, misurata sulla scala di una conca. */
+function localSlope(
+  heightAt: (x: number, y: number) => number,
+  x: number,
+  y: number,
+  here: number,
+): number {
+  const span = LANDFORM.basinFlatSpan;
+  return Math.max(
+    Math.abs(heightAt(x + span, y) - here),
+    Math.abs(heightAt(x - span, y) - here),
+    Math.abs(heightAt(x, y + span) - here),
+    Math.abs(heightAt(x, y - span) - here),
+  ) / span;
+}
+
+/** Quota portata al cubo di terreno che la contiene: un lago non sta a mezza cella. */
+function toCell(z: number): number {
+  return Math.floor(z / TERRAIN.cellSize) * TERRAIN.cellSize;
+}
+
 /**
- * La corona della conca e' tutta all'asciutto?
+ * Quota della superficie del lago in `(x, y)`, oppure 0 fuori da ogni conca.
  *
- * Basta un varco perche' lo specchio si apra sul mare, quindi il campione piu'
- * basso decide per tutti. Le sonde stanno appena oltre il bordo: sul bordo
- * esatto la conca livella ancora, e misurerebbe se stessa.
+ * E' l'unica cosa che il generatore deve chiedere alla sagoma mentre scrive le
+ * colonne, e per questo torna una quota assoluta e non una conca: chi scrive
+ * l'acqua non ha bisogno di sapere che le conche esistono.
  */
-function shoreIsDry(
+export function lakeLevelAt(basins: readonly Basin[], x: number, y: number): number {
+  let level = 0;
+  for (const basin of basins) {
+    if (basin.waterZ <= level) continue;
+    const ratio = ellipseRatio(x, y, basin.centreX, basin.centreY, basin.radiusX, basin.radiusY);
+    // Il pelo sta dentro la **conca**, non dentro l'ellisse d'influenza: oltre
+    // `basinBank` comincia il raccordo, dove il terreno torna quello che era e
+    // puo' benissimo ripassare sotto la quota del lago senza essere il lago. A
+    // riempire anche quello si otteneva un anello d'acqua staccato dallo
+    // specchio, con una fascia asciutta in mezzo.
+    if (ratio <= LANDFORM.basinBank) level = basin.waterZ;
+  }
+  return level;
+}
+
+/**
+ * Raggio della conca, oppure 0 se il sito non ne concede uno.
+ *
+ * Due vincoli, e vince il piu' largo:
+ *
+ * 1. la **sponda** deve scendere di `basinDrop` dentro la sua fascia senza
+ *    superare `basinSlope` — un raggio minimo fisso, che non dipende dal sito;
+ * 2. il **raccordo** deve riportare il bordo imposto al terreno che c'e', e
+ *    quel salto e' tanto piu' grande quanto piu' il sito e' in pendenza.
+ *
+ * Il secondo e' un punto fisso: il salto si misura sulla corona, che dipende dal
+ * raggio. Si itera partendo dal raggio della sponda e allargando; se dopo
+ * l'ultima passata non basta ancora, il sito e' su un fianco — la' il salto
+ * cresce col raggio quanto la fascia che dovrebbe assorbirlo, e nessuna
+ * larghezza chiude il conto.
+ */
+export function fitRadius(
+  heightAt: (x: number, y: number) => number,
+  centreX: number,
+  centreY: number,
+  rimZ: number,
+  bankRadius: number,
+  maxRadius: number,
+): number {
+  const blend = (1 - LANDFORM.basinBank) * LANDFORM.basinSlope;
+  let radius = bankRadius;
+  for (let pass = 0; pass < LANDFORM.basinFitPasses; pass++) {
+    if (radius > maxRadius) return 0;
+    const needed = (HALF_PI * ringMismatch(heightAt, centreX, centreY, radius, rimZ)) / blend;
+    if (needed <= radius) return radius;
+    radius = needed;
+  }
+  return 0;
+}
+
+/** Salto massimo fra il bordo imposto e il terreno, sulla fascia di raccordo. */
+function ringMismatch(
   heightAt: (x: number, y: number) => number,
   centreX: number,
   centreY: number,
   radius: number,
-): boolean {
-  const reach = radius * LANDFORM.basinShoreReach;
-  for (let i = 0; i < LANDFORM.basinShoreProbes; i++) {
-    const angle = (i * TAU) / LANDFORM.basinShoreProbes;
-    const x = centreX + reach * Math.cos(angle);
-    const y = centreY + reach * Math.sin(angle);
-    if (heightAt(x, y) < TERRAIN.seaLevel + LANDFORM.basinShoreMargin) return false;
+  rimZ: number,
+): number {
+  let mismatch = 0;
+  for (const ratio of LANDFORM.basinBlendRings) {
+    for (let i = 0; i < LANDFORM.basinShoreProbes; i++) {
+      const angle = (i * TAU) / LANDFORM.basinShoreProbes;
+      const x = centreX + radius * ratio * Math.cos(angle);
+      const y = centreY + radius * ratio * Math.sin(angle);
+      const here = Math.abs(heightAt(x, y) - rimZ);
+      if (here > mismatch) mismatch = here;
+    }
   }
-  return true;
+  return mismatch;
 }
 
 /** Due conche non si sovrappongono: due pozze accostate leggono come una sola. */
@@ -348,15 +488,21 @@ export function moundRise(mounds: readonly Mound[], x: number, y: number): numbe
   return rise;
 }
 
-/** Livella l'elevazione verso il fondo delle conche che la contengono. */
-export function carveBasins(elevation: number, basins: readonly Basin[], x: number, y: number): number {
+/**
+ * Impone il profilo delle conche all'elevazione.
+ *
+ * Non e' ne' solo scavo ne' solo riempimento: dentro il bordo la conca sostituisce
+ * il terreno con il proprio profilo — fondo, sponda, bordo — e fuori lo lascia
+ * stare, con una fascia di raccordo in mezzo. E' quella sostituzione a rendere il
+ * lago chiuso comunque fosse il terreno di partenza.
+ */
+export function shapeBasins(elevation: number, basins: readonly Basin[], x: number, y: number): number {
   let out = elevation;
   for (const basin of basins) {
     const ratio = ellipseRatio(x, y, basin.centreX, basin.centreY, basin.radiusX, basin.radiusY);
     if (ratio >= 1) continue;
-    const excess = out - basin.floor;
-    if (excess <= 0) continue;
-    out -= basinFalloff(ratio, basin.plateau) * excess;
+    const target = basinProfile(ratio, basin.floor, basin.rim);
+    out += basinWeight(ratio) * (target - out);
   }
   return out;
 }

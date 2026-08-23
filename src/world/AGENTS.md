@@ -56,13 +56,36 @@ e costruzione degli edifici. Questo modulo non dipende dal renderer.
   chioma esce da un PRNG derivato dalla posizione dell'albero, non conservato:
   due blocchi che si dividono lo stesso albero ne ricavano la stessa sequenza.
 - Generatore e worker non importano Three.js o `src/engine/`.
-- Due tetti duri in `terrain/config.ts`: `warpAmount` sopra ~0,26 attacca terra
-  al bordo della region; alzare `baseFrequency` o `maxHeight` consuma il margine
-  di Lipschitz. **L'invariante e' in celle**: due celle adiacenti non
-  differiscono di piu' di una cella, cioe' `cellSize` voxel, e dentro una cella
-  il dislivello e' zero per costruzione. `heightField.test.ts` misura il margine
-  sul campo continuo, `IslandGenerator.test.ts` lo verifica sulle quote
-  quantizzate.
+- Due tetti duri in `terrain/config.ts`: `warpAmount` piu' `warpDetail` sopra
+  ~0,26 attacca terra al bordo della region; alzare `baseFrequency` o
+  `maxHeight` consuma il margine di Lipschitz. **L'invariante e' in celle**: due
+  celle adiacenti non differiscono di piu' di una cella, cioe' `cellSize` voxel,
+  e dentro una cella il dislivello e' zero per costruzione.
+  `heightField.test.ts` misura il margine sul campo continuo,
+  `IslandGenerator.test.ts` lo verifica sulle quote quantizzate.
+- **La sagoma e' dichiarata, il rumore fa la grana.** `terrain/landform.ts`
+  compone l'isola da elementi con un nome — lobi che allungano la costa, rilievi
+  che spostano le vette dal centro, conche che aprono un lago — perche' rumore
+  isotropo per maschera radiale da' una cupola, e le fasce di bioma le vengono
+  fuori a cerchi concentrici per costruzione. Tutto e' funzione pura di
+  `(seed, shape)` e **ignora le `extensions`**: un settore costiero comprato a
+  partita in corso non deve spostare niente altrove, o le colonne gia' generate
+  non si raccorderebbero piu' con quelle nuove.
+- **Nessun elemento della sagoma dichiara un'altezza: dichiara un raggio.**
+  L'altezza gliela detta `capForRadius` dal budget di pendenza, perche' una
+  cupola di ampiezza `a` e raggio `R` ha pendenza massima `pi/2 * a / R` e il
+  margine di Lipschitz e' l'unica cosa che tiene il terreno a celle senza
+  dirupi. E' la stessa regola che `maxReliefSlope` applica all'isola intera,
+  letta un elemento per volta. Dichiarare un'altezza vuol dire poter scrivere una
+  collina che il campo non regge e accorgersene solo quando cade il test.
+- **L'acqua non e' piu' un piano solo.** `ColumnBlock.waterTop` porta la quota
+  dello specchio per colonna: `TERRAIN.seaLevel` quasi ovunque, quella del lago
+  dentro una conca. Il bioma `ocean` dice percio' *sott'acqua* e non *sul mare*,
+  e chi confronta una quota con `TERRAIN.seaLevel` per decidere se una colonna e'
+  sommersa sta facendo la domanda sbagliata da quando i laghi esistono — la
+  risposta e' `map.waterTopAt(x, y)`. Un lago sta **sopra** il livello del mare
+  per costruzione: sotto, il fondo di una conca arriverebbe al mare e quel che si
+  apre e' una baia.
 
 ## Strade ed edifici
 
@@ -78,6 +101,25 @@ e costruzione degli edifici. Questo modulo non dipende dal renderer.
   da salvare, niente da aggiornare quando arriva un catalizzatore.
 - Il `Builder` valida terreno e occupazione e costruisce a fasce nel budget;
   la generazione degli stamp resta deterministica.
+- **Il `Builder` orchestra, i driver decidono.** Ogni sottosistema a tick ha un
+  file proprio — `spanDriver`, `aerialDriver`, `landmarkDriver`, `upgradeDriver` —
+  e riceve un `BuildContext` con le cinque cose che servono a tutti: mondo,
+  terreno, strade, registry e le due code. `Builder.ts` tiene il ciclo (`onTick`,
+  `step`), la nascita di un edificio sul lotto e le statistiche. Una passata nuova
+  è un file nuovo più due righe nel costruttore, non un metodo in più su una
+  classe che le ha già tutte.
+- **Un voxel di edificio entra nel mondo da tre posti e basta**: `growthQueue`
+  (i volumi, a budget), `surfaceQueue` (il suolo pubblico, a budget) e
+  `siteWorks.buildWorks` (la fondazione, subito). È la forma stretta
+  dell'invariante «nessuno scrive un muro all'infuori di qui»: vale per la
+  cartella, e dentro la cartella vale per tre file. Se stai per chiamare
+  `world.setBlock` da un driver, quasi sempre è il posto sbagliato.
+- Ciò che **due** passate usano non sta dentro una delle due: `hierarchy.ts` (fin
+  dove si può salire) e `urbanForm.ts` (il profilo locale tradotto in forma) le
+  usano nascita e promozione insieme, e in due copie divergerebbero al primo
+  ritocco di taratura. `chunkBudget.ts` e `siteWorks.ts` sono puri o quasi, e per
+  questo hanno test propri invece di essere verificabili solo facendo crescere una
+  città.
 - **Le opere di terra si riempiono, non si scavano.** `grading/` decide cosa
   serve costruire perche' una colonna regga un piano — terrapieno, banchina o
   niente — e la quota finita e' sempre il massimo delle colonne, mai la media:
@@ -176,14 +218,46 @@ e costruzione degli edifici. Questo modulo non dipende dal renderer.
   Un catalizzatore siede al centro della propria influenza, quindi il campo li'
   e' quasi sempre saturo e un landmark che lo leggesse salterebbe tutti gli
   stadi al primo tick. Non c'e' stato da tenere: lo stadio e' una funzione pura
-  del contenuto del registry.
+  del contenuto del registry, e **non scende** quando uno sventramento porta via
+  degli edifici.
+- Un **landmark sventra per farsi posto**, e l'unica demolizione del progetto e'
+  questa: non c'e' un bulldozer e non si demolisce fuori dal riquadro di una
+  ricetta. La regola sta in `buildings/clearance.ts` ed e' pura; il cantiere in
+  `landmarkDriver`. Tre cose da non rompere: si abbatte solo fino a
+  `BALANCE.gameplay.catalyst.clearing.maxLevel` e il rifiuto e' **del riquadro
+  intero**; la citta' in quota — un altro landmark, una mensola, un nodo, o
+  l'edificio che li porta — ferma tutto, mentre le campate cadono; un record esce
+  dal registry **solo** quando i suoi voxel non ci sono piu', o un lotto nasce
+  dentro il volume che si sta cancellando.
+- **Un riquadro che non regge la struttura non e' un rifiuto del piazzamento.**
+  Il catalizzatore si piazza e il suo campo funziona lo stesso — due
+  catalizzatori vicini che si sovrappongono sono il gesto che il gioco chiede —
+  e la struttura ripiega sulla piazzola come per i ruoli senza ricetta. A dirlo
+  prima del click e' il cursore, via `GrowthScene.catalystSite`.
 - Le **ricette dei landmark sono dati**, non codice: `landmarks/parts.ts` ha
-  sette primitive e `landmarks/config.ts` le compone. Gli stadi sono
-  **cumulativi dentro un ingombro che non cambia mai** — riservato per intero al
-  piazzamento — quindi uno stadio non puo' restare bloccato da un edificio
-  spuntato accanto, e la sagoma precedente non ha mai niente da cancellare.
-  Aggiungere un ruolo e' aggiungere una riga; un ruolo senza riga ottiene la
-  piazzola di ripiego e resta giocabile.
+  dieci primitive piu' lo smusso — un campo, `Part.chamfer`, che taglia gli
+  angoli della pianta di quasi tutte — e `landmarks/config.ts` le compone. Gli
+  stadi sono **cumulativi dentro un ingombro che non cambia mai** — riservato per
+  intero al piazzamento — quindi uno stadio non puo' restare bloccato da un
+  edificio spuntato accanto, e la sagoma precedente non ha mai niente da
+  cancellare. Aggiungere un ruolo e' aggiungere una riga; un ruolo senza riga
+  ottiene la piazzola di ripiego e resta giocabile.
+- Un ruolo ha **un tronco e piu' esemplari**, e l'esemplare non puo' togliere
+  niente al tronco. `recipe.parts` si disegna sempre e dice *il ruolo*;
+  `recipe.variants[n].parts` ci si somma sopra e dice *quale* porto. E' quello
+  che concilia la varieta' con la nota storica di `landmarks/generate.ts` contro
+  il PRNG: la leggibilita' del ruolo e' garantita per costruzione, non per
+  disciplina di chi compila la tabella, e chi scrive un esemplare non puo'
+  romperla nemmeno volendo. Ne segue la regola pratica: **una variante occupa
+  spazio libero**, non ridisegna il tronco — chiedere lo smusso su un volume che
+  il tronco ha gia' scritto pieno non toglie quei voxel.
+- L'**esemplare e' funzione del seme del record**, con `LANDMARK.variantSalt` a
+  separarlo dal verso. Senza sale sarebbero la stessa domanda: `record.seed` e'
+  `hashCoords(worldSeed, x, y)`, ed e' lo stesso intero da cui il verso di
+  ripiego esce con `& 3`. Il seme si calcola **prima** dello stamp e si conserva
+  nel record, perche' un avanzamento di stadio deve ritrovare l'esemplare gia'
+  scritto: due esemplari diversi non si coprono, e l'invariante «lo stadio nuovo
+  copre il vecchio» cadrebbe.
 - **Una campata non prende suolo.** E' l'invariante di `spans/`, e l'unica cosa
   che il modello dei landmark non sapeva gia' dire. Il registry tiene percio' due
   indici per colonna: `columns` con tutti i record — lo legge `overlaps`, quindi

@@ -3,6 +3,7 @@ import { BALANCE } from './balance';
 import { CATALYSTS, CATALYST_GROUPS, catalystById, catalystInfluence } from './catalysts';
 import { ALL_CLASSES, BUILDING_CLASS, CLASS_COUNT, CLASS_NAMES } from './classes';
 import { nextBuildSites } from './nextBuildSites';
+import { isTradeLink } from './trade';
 import {
   addBuilding,
   addCatalyst,
@@ -103,14 +104,29 @@ describe('vettore di influenza dei catalizzatori', () => {
     expect(CATALYST_GROUPS.map((group) => group.id)).toEqual(['growth', 'connections', 'identity']);
   });
 
-  it('i due collegamenti chiedono luoghi che si escludono', () => {
+  it('i collegamenti esterni chiedono luoghi che si escludono', () => {
     // E' l'unica cosa che impedisce a porto e aeroporto di essere due prezzi
     // per lo stesso sblocco: prima ancora dell'effetto, non stanno nello stesso
-    // posto. Gli altri ruoli restano senza vincolo, come sono sempre stati.
+    // posto.
     expect(catalystById('port').site).toBe('coastal');
     expect(catalystById('airport').site).toBe('open');
+  });
+
+  it('il traghetto divide la costa con il porto ma non il commercio', () => {
+    // E' l'altra coppia che rischiava di essere due prezzi per lo stesso
+    // sblocco, e a separarla non e' il luogo — la vogliono entrambi sul mare —
+    // ma cosa collegano: il porto apre il commercio con il mondo, il traghetto
+    // lega due punti dell'isola. Se il traghetto entrasse fra i collegamenti
+    // commerciali sarebbe un porto scontato, e la scelta sparirebbe.
+    expect(catalystById('ferry').site).toBe('coastal');
+    expect(isTradeLink('port')).toBe(true);
+    expect(isTradeLink('ferry')).toBe(false);
+  });
+
+  it('nessun altro ruolo ha un vincolo di luogo', () => {
+    const constrained = new Set(['port', 'airport', 'ferry']);
     for (const definition of CATALYSTS) {
-      if (definition.id === 'port' || definition.id === 'airport') continue;
+      if (constrained.has(definition.id)) continue;
       expect({ id: definition.id, site: definition.site }).toEqual({ id: definition.id, site: 'any' });
     }
   });

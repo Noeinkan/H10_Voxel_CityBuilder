@@ -121,25 +121,9 @@ export class GrowthScene {
       : `Catalyst placed. Clearing ${clears} ${clears === 1 ? 'building' : 'buildings'} to make room.`);
   }
 
-  /**
-   * Tutti i rifiuti del piazzamento, in un posto solo.
-   *
-   * Tre domande di tre domini diversi, in quest'ordine: il tutorial dice se il
-   * ruolo e' gia' sbloccato, `actions.ts` se terreno, sito, distanza e fondi
-   * reggono, il Builder se il riquadro si sgombera. **L'ultima e' l'ultima**
-   * perche' e' la piu' cara — risolve verso, ingombro e opera prima di
-   * interrogare il registry — e perche' un rifiuto sul terreno la rende inutile.
-   *
-   * E' anche la stessa funzione che risponde al cursore e al click, che e' il
-   * modo in cui "Valid position" resta una promessa e non un'opinione.
-   */
   catalystFailure(x: number, y: number, target: BuildingClass | CatalystId): ActionFailure | null {
     if (!onboardingAllows(this.state, target)) return 'onboarding-order';
-
-    const failure = catalystFailure(this.state, this.map, x, y, target);
-    if (failure !== null) return failure;
-
-    return this.clearanceAt(x, y, target).refusal;
+    return catalystFailure(this.state, this.map, x, y, target);
   }
 
   /** Prezzo pesato dal terreno, per il cartellino sul cursore. */
@@ -148,14 +132,17 @@ export class GrowthScene {
   }
 
   /**
-   * Quanti edifici il piazzamento porterebbe via, per il cartellino sul cursore.
+   * Cosa il riquadro del landmark troverebbe qui: quanti edifici porta via, o
+   * perche' la struttura non ci sta.
    *
-   * Zero dove il riquadro e' gia' libero, che e' anche cio' che risponde dove il
-   * ruolo non ha una ricetta: chi legge il cursore deve vedere il numero solo
-   * quando c'e' davvero qualcosa da abbattere.
+   * **Non e' un rifiuto**, ed e' per questo che non passa da `catalystFailure`:
+   * il catalizzatore si piazza comunque e il suo campo funziona lo stesso. Cio'
+   * che cambia e' quanto costa in citta' e se il monumento comparira' — due
+   * cose che il giocatore deve sapere **prima** del click, ed e' l'unico posto
+   * dove puo' saperle.
    */
-  catalystClears(x: number, y: number, target: BuildingClass | CatalystId): number {
-    return this.clearanceAt(x, y, target).clears;
+  catalystSite(x: number, y: number, target: BuildingClass | CatalystId): LandmarkSite {
+    return this.clearanceAt(x, y, target);
   }
 
   /**

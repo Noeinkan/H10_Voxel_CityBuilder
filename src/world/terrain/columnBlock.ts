@@ -54,17 +54,31 @@ export interface ColumnBlock {
    */
   readonly water: Uint8Array;
 
+  /**
+   * Quota della superficie d'acqua per colonna: `TERRAIN.seaLevel` quasi
+   * ovunque, quella del lago dentro una conca.
+   *
+   * E' un array e non una costante perche' l'acqua ha smesso di essere un piano
+   * solo. Chi scrive la colonna non sa cosa sia un lago: legge questa quota e ci
+   * riempie fino, esattamente come faceva con il livello del mare.
+   */
+  readonly waterTop: Int16Array;
+
   /** Alberi che possono intersecare il blocco, anche con origine appena fuori. */
   readonly decor: Int16Array;
 
-  /** Massimo di `heights` nel blocco: dice quanti chunk in z servono davvero. */
+  /**
+   * Quota piu' alta che il blocco arriva a occupare: dice quanti chunk in z
+   * servono davvero. Non e' solo il massimo di `heights` — ci entrano anche la
+   * cima degli alberi e la superficie di un lago, che stanno sopra il terreno.
+   */
   readonly maxHeight: number;
 
   /** Somma di `buildable`, gia' calcolata dove i dati sono ancora caldi. */
   readonly buildableCount: number;
 }
 
-/** I sei buffer del blocco, da passare come lista di transfer a `postMessage`. */
+/** I sette buffer del blocco, da passare come lista di transfer a `postMessage`. */
 export function blockTransferables(block: ColumnBlock): Transferable[] {
   return [
     block.heights.buffer,
@@ -72,6 +86,7 @@ export function blockTransferables(block: ColumnBlock): Transferable[] {
     block.slopes.buffer,
     block.buildable.buffer,
     block.water.buffer,
+    block.waterTop.buffer,
     block.decor.buffer,
   ];
 }

@@ -274,6 +274,71 @@ describe('microgeometria 1/16', () => {
     expect(detailPositions(greedyMesh(padded))).toEqual(detailPositions(here));
   });
 
+  it('mette il finiale sulla colonna isolata e non sulla parete', () => {
+    // Il difetto da cui nasce: ogni ciminiera, guglia e gamba di gru finiva su
+    // un quadrato piatto largo quanto il fusto, che a distanza isometrica e'
+    // cio' che fa leggere un prisma come un prisma.
+    const spire = volume();
+    for (let z = 0; z < 10; z++) {
+      setLocal(spire, 8, 8, z, packVisualBlock(PALETTE_SLOTS.concreteWhite, SURFACE_KIND.civic));
+    }
+
+    const mesh = greedyMesh(spire);
+    const zs = [...detailPositions(mesh)].filter((_, i) => i % 3 === 2);
+    // L'ago arriva a 9/16 sopra il voxel di sommita': se il finiale non fosse
+    // scattato, nessun dettaglio supererebbe il filo della colonna.
+    expect(Math.max(...zs)).toBe(10 * MESH_UNITS_PER_VOXEL + 9);
+    expect(detailPalettes(mesh)).toContain(PALETTE_SLOTS.metalBrass);
+
+    // Una parete e' fatta delle stesse celle e non ne ha nessuno: cio' che
+    // distingue una guglia e' non avere vicini in piano, non essere alta.
+    const wall = volume();
+    for (let y = 4; y < 12; y++) {
+      for (let z = 0; z < 10; z++) {
+        setLocal(wall, 8, y, z, packVisualBlock(PALETTE_SLOTS.concreteWhite, SURFACE_KIND.civic));
+      }
+    }
+    const flat = [...detailPositions(greedyMesh(wall))].filter((_, i) => i % 3 === 2);
+    expect(Math.max(...flat)).toBeLessThanOrEqual(10 * MESH_UNITS_PER_VOXEL);
+  });
+
+  it('fascia lo sbalzo lungo il suo filo, non cella per cella', () => {
+    // Un braccio a sbalzo con una sola gamba: le celle oltre la gamba hanno aria
+    // sotto, ed e' li' che il voxel mostrava la faccia nuda.
+    //
+    // Il suolo a quota zero non e' arredamento del test. Senza, la gamba stessa
+    // ha aria sotto e si fascia il piede: nel mondo li' c'e' sempre terreno, e
+    // una fixture che lo omette misura un caso che non esiste.
+    const padded = volume();
+    for (let y = 0; y < CHUNK; y++) {
+      for (let x = 0; x < CHUNK; x++) {
+        setLocal(padded, x, y, 0, packVisualBlock(PALETTE_SLOTS.stone, SURFACE_KIND.plain));
+      }
+    }
+    for (let z = 1; z < 11; z++) {
+      setLocal(padded, 4, 6, z, packVisualBlock(PALETTE_SLOTS.metalRust, SURFACE_KIND.industrial));
+    }
+    for (let x = 4; x < 16; x++) {
+      setLocal(padded, x, 6, 11, packVisualBlock(PALETTE_SLOTS.metalRust, SURFACE_KIND.industrial));
+    }
+
+    const mesh = greedyMesh(padded);
+    const zs = [...detailPositions(mesh)].filter((_, i) => i % 3 === 2);
+    // La fascia scende 3/16 sotto l'intradosso. Non e' il minimo assoluto del
+    // chunk — le nervature di facciata della gamba partono piu' in basso — ed e'
+    // per questo che si cerca il piano, non il minimo.
+    const plane = 11 * MESH_UNITS_PER_VOXEL - 3;
+    expect(zs).toContain(plane);
+
+    // Tre corse: i due fianchi e la testata, che e' il filo in punta al braccio
+    // e va fasciato quanto i lati. Dodici vertici a testa cadono su quel piano;
+    // una fascia per cella ne porterebbe dieci volte tanto, ed e' esattamente il
+    // costo che `emitRuns` evita.
+    const onPlane = zs.filter((z) => z === plane).length;
+    expect(onPlane).toBeGreaterThan(0);
+    expect(onPlane).toBeLessThanOrEqual(3 * 12);
+  });
+
   it('su un chunk fitto di edifici veri il tetto non tronca, e si vede quanto margine resta', () => {
     const mesh = greedyMesh(densityChunk());
     console.info(`[misura] dettaglio su chunk fitto: ${mesh.detailQuadCount} quad`);

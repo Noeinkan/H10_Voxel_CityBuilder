@@ -11,6 +11,258 @@ coincide con il messaggio di commit.
 
 ---
 
+## In corso — L'isola prende una forma: lobi, colline e laghi
+
+L'isola era **una cupola**, e non per caso: un rumore isotropo moltiplicato per
+una maschera radiale non può dare altro. Le fasce di bioma ne uscivano come
+cerchi concentrici — il bersaglio che il commento di `warpAmount` dichiara da
+sempre di voler evitare — con una vetta sola, sempre al centro, dentro una costa
+quasi circolare. La differenza fra due seed era dove cadevano le creste, non che
+isola fossero.
+
+- **La sagoma è dichiarata, il rumore fa la grana.** `terrain/landform.ts`
+  compone l'isola da elementi con un nome: due o tre **lobi** che allungano la
+  costa in poche direzioni, due o quattro **rilievi** che spostano le vette fuori
+  dal centro, una **conca** che apre uno specchio d'acqua interno. Puro come la
+  rete stradale, funzione di `(seed, shape)` e nient'altro.
+- **Nessun elemento dichiara un'altezza: dichiara un raggio.** L'altezza gliela
+  detta `capForRadius` dal budget di pendenza, perché una cupola di ampiezza `a`
+  e raggio `R` ha pendenza massima `π/2 · a / R` e il margine di Lipschitz è
+  l'unica cosa che tiene il terreno a celle senza dirupi. È la stessa regola che
+  `maxReliefSlope` applica all'isola intera, letta un elemento per volta — ed è
+  anche perché una penisola è bassa e larga invece che una montagna in miniatura.
+- **Il budget è stato pagato, non sforato.** Le ottave sono passate da quattro a
+  tre: in un fbm normalizzato con `lacunarity 2` e `persistence 0.5` ogni ottava
+  pesa sul gradiente lo stesso, quindi la quarta si prendeva **un quarto** del
+  margine per il sei per cento dell'ampiezza — tre voxel di increspatura su una
+  lunghezza d'onda di quarantotto, che la quantizzazione a celle cancella
+  comunque. Quel quarto adesso fa una collina. Misurato su otto seed, il
+  dislivello peggiore fra colonne adiacenti è passato da **0,654 a 0,669**: la
+  soglia del test resta 0,8, e il numero più alto è ora la sponda di un lago —
+  l'unico posto in cui il terreno si avvicina di proposito al tetto.
+- **Una seconda ottava di deformazione fa le insenature.** La prima è più lenta
+  dell'isola e da sola sposta l'ellisse da un lato; questa è quattro volte più
+  rapida e vale un terzo, e aggiunge alla riva anse e capi alla scala di un
+  quartiere. Il tetto duro di ~0,26 vale ora sulla somma dei due termini.
+- **Un lago sta in quota, e ha una quota d'acqua propria.** È la cosa che
+  l'acqua non sapeva fare: si scriveva fino a `TERRAIN.seaLevel` e basta.
+  `ColumnBlock.waterTop` porta adesso la quota dello specchio **per colonna**, e
+  `classifyBiome` chiama `ocean` ciò che sta sotto il proprio specchio invece di
+  ciò che sta sotto il mare. Chi scrive la colonna non sa cosa sia un lago: legge
+  una quota e ci riempie fino, come faceva con il livello del mare.
+- **A livello del mare un lago non esisteva.** Il fondo di uno specchio sta sotto
+  il pelo dell'acqua, e su un'isola a cupola la sola terra abbastanza bassa da
+  ospitarne uno è la striscia di riva: misurato su otto seed, una conca centrata
+  lì ha sempre almeno un quarto della corona sul mare — quello che si apre è una
+  baia. Sopra il livello del mare il problema sparisce, perché la terra intorno è
+  più alta ovunque per costruzione.
+- **La conca si costruisce il proprio bordo.** Non scava e basta: impone un
+  profilo — fondo piatto, sponda, bordo — e lo raccorda al terreno che trova. È
+  quello a rendere il lago chiuso *per costruzione* invece che per fortuna del
+  seed. Il raggio è un punto fisso: dipende dal salto da raccordare, che dipende
+  dal raggio. Dove non converge il sito è un fianco, e viene scartato — su otto
+  seed di prova, sette prendono un lago di circa 1 400 colonne, uno no. I siti
+  si cercano nella **metà interna** dell'isola, dove la pendenza radiale di una
+  cupola tende a zero: cercando su tutto il disco i seed con un lago erano tre.
+- **Un lago non è battigia.** `groundKindOf` lo rifiuta invece di trattarlo come
+  fondale: `GRADING.quayLevel` è una quota assoluta tarata sul mare, e sotto la
+  riva di un lago in quota quel muro finirebbe dentro la collina. La città gli
+  cresce intorno.
+- Profondità di due voxel per costruzione, cioè dentro `shallowDepth`: lo
+  specchio prende la risposta `WATER_CLASS.shallow` — increspatura fitta, fondale
+  che si vede sotto — e non l'onda lunga del mare aperto.
+
+File: `src/world/terrain/landform.ts` (nuovo), `landform.test.ts` (nuovo),
+`config.ts`, `heightField.ts`, `biomes.ts`, `waterClass.ts`, `columnBlock.ts`,
+`IslandGenerator.ts`, `TerrainMap.ts`, `src/world/grading/grade.ts`,
+`src/sim/testTerrain.ts`, più i test toccati. Il worker del terreno passa da
+5,77 a 12,96 kB in bundle.
+
+---
+
+## In corso — Sventramento: un landmark si pianta anche nella città costruita
+
+Piantare un catalizzatore dentro l'edificato **riusciva e non si vedeva**: i fondi
+si scalavano, il catalizzatore entrava nella simulazione, e la struttura non
+nasceva perché il volume era occupato. Nessun record, quindi nessuno stadio,
+quindi un monumento invisibile per sempre — e nessun errore da nessuna parte. Era
+anche il piazzamento più interessante del gioco, ed era l'unico impossibile: gli
+stadi si sbloccano contando gli edifici nel raggio, quindi un monumento in centro
+arriverebbe alla forma finale in poche passate. Il modello Anno 1800 che
+`landmarks/config.ts` cita da sempre non era mai stato giocabile.
+
+- **Il riquadro pieno apre un cantiere.** Gli edifici che lo occupano vengono
+  demoliti a rate e la struttura viene su al posto loro. La demolizione passa
+  dalla coda di comparsa che c'era già: uno stamp vuoto come sagoma nuova e il
+  volume da togliere come `erase` non scrive niente e cancella tutto, a budget.
+  La stessa macchina che fa salire un edificio voxel per voxel lo fa scendere, e
+  il cantiere si sgombera al ritmo a cui la città cresce.
+- **Si sventra solo il tessuto minuto.** Oltre `BALANCE.gameplay.catalyst.
+  clearing.maxLevel` il riquadro rifiuta, e il rifiuto è **del riquadro intero**:
+  sgomberare attorno a una torre che resta in piedi darebbe un buco al posto del
+  landmark. Il numero è tarato su misura e non a occhio — su una città matura di
+  412 edifici, a soglia 4 restano 139 colonne che aprono un cantiere e le torri
+  (il 17% alto della scala) sono fuori portata. Trovare la sacca bassa dentro il
+  quartiere denso **è** la giocata.
+- **Il costo non è in fondi, ed è deliberato.** Con un milione in cassa un prezzo
+  non vincola niente. Sventrare toglie edifici alla simulazione, quindi capacità,
+  quindi un'occupazione sopra uno, quindi il `crowdingPenalty` che il bilancio
+  applicava già. Non c'è una penalità nuova da nessuna parte: il costo del gesto
+  è il bilancio che c'era.
+- **`src/sim/` impara a togliere.** `removeBuildings` è l'inverso di
+  `addBuilding`, e «inverso» è il requisito: toglierne N dà lo stesso campo di non
+  averli mai aggiunti, byte per byte, congestione e occupazione comprese. Un test
+  verifica l'equivalenza con `rebuild` in entrambi i versi. La simulazione
+  continua a non sapere cosa sia un landmark (invariante 7).
+- **Un record esce dal registry solo quando i suoi voxel non ci sono più.**
+  Toglierlo prima aprirebbe una finestra in cui il suolo legge libero mentre
+  l'edificio è ancora lì: un lotto ci nascerebbe dentro e la cancellazione in coda
+  gli mangerebbe i voxel. Come effetto collaterale gratuito, la passata di upgrade
+  salta i condannati da sola, perché li vede in coda di comparsa.
+- **La città in quota non si sventra.** Un altro landmark, una mensola, un nodo di
+  percorso o un edificio che ne *porta* uno fermano il riquadro: farli cadere
+  farebbe cadere quello che ci sta sopra. Le campate invece cadono, ed è già la
+  regola «al suolo vince l'edificio».
+- **Il cursore lo dice prima del click, e non rifiuta.** Un riquadro che non regge
+  la struttura non impedisce di piazzare il catalizzatore — il campo funziona lo
+  stesso, e due catalizzatori vicini che si sovrappongono sono proprio il gesto
+  che il gioco chiede. A cambiare è cosa comparirà: «Clears 6 buildings» oppure
+  «only the plaza will appear». È quello il difetto muto che questa fase chiude.
+- I tre commenti che dicevano *«nessuno demolisce»* sono stati riscritti, e la
+  nota della blacklist ha avuto quello che aspettava: `onTick` la svuota con
+  `forget` appena un cantiere porta via qualcosa.
+- Nuovi: `clearance.ts` (la regola, pura) e `recordStamp.ts` (la sagoma registrata
+  di un edificio, che ora ha due chiamanti invece di una copia dentro l'upgrade).
+
+## In corso — Esemplari, e due dettagli che mancavano a tutti
+
+I landmark erano identici byte per byte: nove ruoli, quattro stadi, quattro
+rotazioni, e due porti sulla stessa mappa indistinguibili. Ora ogni ruolo ha tre
+esemplari, e il vocabolario con cui si disegnano è uscito dall'angolo retto.
+
+- **Un ruolo ha un tronco e tre esemplari, e l'esemplare non toglie mai niente
+  al tronco.** `recipe.parts` si disegna sempre e dice *il ruolo*;
+  `variants[n].parts` ci si somma sopra e dice *quale* porto. È quello che
+  concilia la varietà con la nota storica di `landmarks/generate.ts` contro il
+  PRNG: quella nota temeva che il giocatore dovesse imparare nove sagome
+  moltiplicate per i semi, e tenendo il tronco fuori dalla variante la
+  leggibilità del ruolo è garantita **per costruzione**, non per disciplina di
+  chi compila la tabella. Un test la misura: ogni esemplare contiene il tronco
+  per intero.
+- **L'esemplare è funzione del seme del record, con un sale proprio.**
+  `LANDMARK.variantSalt` esiste per lo stesso motivo di `SKYLINE.peakSalt`:
+  `record.seed` è `hashCoords(worldSeed, x, y)`, ed è lo stesso intero da cui il
+  verso di ripiego esce con `& 3`. Senza sale, verso ed esemplare cambierebbero
+  sempre insieme e la città mostrerebbe una regolarità che nessuno ha scritto.
+  Il seme si calcola prima dello stamp e si conserva nel record, perché un
+  avanzamento di stadio deve ritrovare l'esemplare già scritto: due esemplari
+  diversi non si coprono, e l'invariante «lo stadio nuovo copre il vecchio»
+  cadrebbe.
+- **Traliccio e falda sono la nona e la decima primitiva, lo smusso è un campo.**
+  Una gamba di gru disegnata come prisma pieno legge come un muro stretto: il
+  traliccio ha aria dentro, ed è l'aria a dire «struttura». La falda è l'unica
+  sommità non piatta del vocabolario — finché non c'era, tutti i ruoli finivano
+  su un piano orizzontale a quote diverse. `Part.chamfer` invece non è
+  un'undicesima voce ma un modificatore della pianta: scatola smussata è un
+  tamburo, scatola cava smussata un anello ottagonale, piramide a gradoni
+  smussata una cupola. Tre forme per un campo, ed è l'unico modo che questo
+  dominio ha di uscire dall'angolo retto senza imparare a disegnare un cerchio.
+  Tutte e tre restano invarianti per rotazione, che è la proprietà che il test
+  del catalogo misura su ogni esemplare.
+- **I landmark hanno finalmente porte e insegne.** Nessuna ricetta usava
+  `SURFACE_KIND.portal` né `luminous`, quindi nove strutture pubbliche
+  perdevano montanti, architrave e pensilina — già scritti in
+  `microGeometry.ts` — e restavano buie di notte. Non è codice nuovo: è una
+  riga di tabella che dichiara il linguaggio giusto sulla colonna giusta.
+- **Due voci nuove di microgeometria, e nessuna costa niente dove non serve.**
+  Il *finiale* mette collarino e ago sulla sommità di una colonna isolata:
+  ciminiere, guglie, gambe di gru e torri di controllo finivano tutte su un
+  quadrato piatto largo quanto il fusto. La *fascia di sbalzo* dichiara lo
+  spessore all'intradosso di un aggetto — bracci di gru, nastri, viadotti,
+  impalcati in quota — e corre lungo il filo, quindi un braccio intero costa un
+  prisma per lato. Sul chunk fitto di edifici veri il conto resta **4355 quad**,
+  invariato: quella fixture non ha né colonne isolate né sbalzi, ed è
+  esattamente il punto — le due voci si pagano solo dove producono qualcosa.
+- **`utility` resta fuori da `collectSurfaceCells`, e ora è scritto perché.** È
+  la superficie di tutte le carreggiate: un emettitore agganciato lì pagherebbe
+  da solo più di tutto il resto del modulo.
+
+## In corso — Moli, traghetti e ponti
+
+Tre cose che l'isola non sapeva fare: ormeggiare, collegare due sponde, e
+scavalcare l'acqua. Le prime due sono complete; della terza è pronto il dominio,
+non ancora il cablaggio.
+
+- **Il porto ha una darsena, dei pontili e delle barche ormeggiate.** L'acqua è
+  scritta *dentro* lo stamp, come lo stagno del parco: le opere di terra portano
+  tutta l'impronta alla quota della banchina prima che la ricetta scriva, quindi
+  un buco lasciato al terreno sarebbe terra ferma e non mare. È l'unico modo che
+  una ricetta ha di tenersi dell'acqua in casa — e quindi di avere una barca
+  *dentro* il porto invece che accanto.
+- **`PART.hull` è l'ottava primitiva dei landmark, e l'unica senza una pianta
+  rettangolare.** Le altre sette sono un prisma con una maschera simmetrica, e
+  una barca disegnata come scatola legge come un container. È rastremata ai due
+  capi — un traghetto è a doppia estremità davvero — e la rastremazione segue
+  l'asse lungo e non `x`: è quello a tenerla invariante per rotazione, che è la
+  proprietà che il test del catalogo misura su ogni ricetta.
+- **Il traghetto è il nono catalizzatore**, costiero come il porto ma opposto per
+  effetto: da un imbarco passano persone, quindi tira su case e negozi invece di
+  capannoni. Divide la costa con il porto senza doppiarlo perché collega
+  dall'altro lato — il porto apre il commercio *con il mondo*, il traghetto lega
+  *due punti dell'isola*, e infatti non è un `TradeLink`.
+- **Una linea è una coppia, ed è l'unico ruolo che da solo non chiude la propria
+  promessa.** `ferry.ts` accoppia gli imbarchi abbastanza lontani, uno per capo,
+  e solo una linea *aperta* contribuisce alla soddisfazione: un molo isolato resta
+  un catalizzatore come gli altri, con le sue barche ferme. La coppia si misura
+  in distanza e basta, perché in `src/sim/` non c'è niente che sappia dove finisce
+  la terra — la geografia la legge `src/world/`, come per il vincolo di sito.
+- **`src/world/crossings/` è il viadotto che il commento di `SPANS.maxGap` aveva
+  annunciato.** Oltre dodici voxel una campata «non è più una passerella ma un
+  viadotto, che ha bisogno di appoggi propri a terra»: l'invariante di questo
+  dominio è l'opposto di quello di `spans/` — **un attraversamento prende
+  suolo** — ed è la ragione per cui non sono lo stesso file.
+- **Un click, non una coppia.** È l'altra differenza di forma: `spans/` esamina
+  tutte le coppie e ne accetta poche, qui arriva una colonna sola e la regola
+  trova il compagno da sé. Il click sceglie anche il tipo — sopra una torre un
+  ponte a quota libera fra due grattacieli, sulla riva un ponte su pile — e il
+  motivo di rifiuto che esce è **quello arrivato più avanti** fra tutti i
+  tentativi, non l'ultimo, che racconterebbe solo il più disperato.
+- **Resta aperto:** il cablaggio dei ponti. Il piano e il generatore sono puri e
+  coperti da 22 test in ambiente `node`, ma niente li chiama ancora: servono un
+  driver nel `Builder` e un attrezzo nella HUD, e sono esattamente i due file che
+  la decomposizione del Builder sta riscrivendo.
+
+## 2026-08-23 — Il Builder diventa una cartella
+
+- **`Builder.ts` passa da 3227 righe a 926**, e nessun comportamento cambia. Non
+  era un file grande per caso: sei sottosistemi a tick — nascita, promozione,
+  campate, città in quota, landmark, superficie — avevano finito per condividere
+  un solo oggetto perché tutti volevano le stesse cinque cose (mondo, terreno,
+  strade, registry, coda). Il refactor dà loro quelle cinque cose in un
+  `BuildContext` e li separa in un file ciascuno.
+- **Le scritture stanno in tre file invece che sparse in sei metodi.** Un voxel di
+  edificio arriva nel mondo solo da `growthQueue.ts` (i volumi, a budget), da
+  `surfaceQueue.ts` (il suolo pubblico, a budget) o da `siteWorks.buildWorks` (la
+  fondazione, subito). L'invariante «nessuno scrive un muro all'infuori di qui»
+  vale ora per la cartella ed è **più stretta** di quando valeva per il file,
+  perché prima `world.setBlock` compariva in sei punti diversi del `Builder`.
+- **Il budget di chunk era già puro e nessuno poteva verificarlo.**
+  `dirtyChunkCount` non toccava `this` in una sola riga, ma da metodo privato
+  l'unico modo di provarlo era far crescere una città intera. Ora è
+  `chunkBudget.ts` con dieci test propri, fra cui quello che conta davvero: il
+  tetto si misura sul **ritaglio** e non sull'ingombro intero, che è la proprietà
+  per cui i ritagli esistono.
+- **Le due domande della gerarchia verticale stavano in un metodo solo, usato da
+  due passate.** `allowedLevel` e `riseOf` vivono in `hierarchy.ts` perché li
+  chiamano sia la nascita sia la promozione: averli in due copie è esattamente il
+  modo in cui una corona bassa in periferia smette di essere bassa da un lato.
+- La rete in quota dipende dalle campate e non viceversa: `aerialDriver` chiede a
+  `spanDriver` di far cadere ciò che sta nel volume di una gamba, e la freccia va
+  in un verso solo. Era già così, ma prima era un fatto dell'ordine dei metodi
+  dentro una classe, non una dipendenza dichiarata fra due tipi.
+
+---
+
 ## 2026-08-23 — La città esce dall'impronta
 
 - **La mensola è la prima cosa che sporge.** La grammatica degli edifici dichiara

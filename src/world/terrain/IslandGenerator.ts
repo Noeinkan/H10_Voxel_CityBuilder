@@ -1,6 +1,6 @@
 import { CHUNK, CHUNK_SHIFT } from '../chunkCoords';
 import type { VoxelWorld } from '../VoxelWorld';
-import { classifyBiome, isBuildable, STRATA_DEPTH, WATER_SURFACE_Z } from './biomes';
+import { classifyBiome, isBuildable, STRATA_DEPTH } from './biomes';
 import {
   columnIndex,
   columnLocalX,
@@ -189,6 +189,7 @@ export function generateColumnBlock(field: HeightField, ccx: number, ccy: number
   const slopes = new Float32Array(COLUMNS_PER_CHUNK);
   const buildable = new Uint8Array(COLUMNS_PER_CHUNK);
   const water = new Uint8Array(COLUMNS_PER_CHUNK);
+  const waterTop = new Int16Array(COLUMNS_PER_CHUNK);
 
   let maxHeight = 0;
   let buildableCount = 0;
@@ -204,19 +205,24 @@ export function generateColumnBlock(field: HeightField, ccx: number, ccy: number
     for (let cx = 0; cx < cells; cx++) {
       const lx0 = cx * TERRAIN.cellSize;
       const ly0 = cy * TERRAIN.cellSize;
-      const cell = sampleCell(lx0 + HEIGHT_BORDER, ly0 + HEIGHT_BORDER);
+      // La quota d'acqua della cella arriva prima del bioma: dentro una conca e'
+      // quella del lago, e "sommerso" si decide rispetto a quella, non rispetto
+      // al livello del mare.
+      const level = field.waterLevelAt(baseX + lx0, baseY + ly0);
+      const cell = sampleCell(lx0 + HEIGHT_BORDER, ly0 + HEIGHT_BORDER, level);
       const build = isBuildable(cell.biome, cell.slope);
 
       // La classe d'acqua si decide per cella come tutto il resto, e solo dove
       // la colonna e' sommersa: sonda il campo di quota, che e' funzione pura
       // del seed, quindi puo' guardare oltre il blocco senza cuciture al bordo.
       const waterClass =
-        cell.height < TERRAIN.seaLevel
+        cell.height < level
           ? classifyWater(
               baseX + lx0,
               baseY + ly0,
-              TERRAIN.seaLevel - cell.height,
+              level - cell.height,
               (wx, wy) => field.heightAt(wx, wy),
+              level,
             )
           : 0;
 
@@ -227,6 +233,7 @@ export function generateColumnBlock(field: HeightField, ccx: number, ccy: number
           biomes[i] = cell.biome;
           slopes[i] = cell.slope;
           water[i] = waterClass;
+          waterTop[i] = level;
           if (build) {
             buildable[i] = 1;
             buildableCount++;
@@ -234,6 +241,9 @@ export function generateColumnBlock(field: HeightField, ccx: number, ccy: number
         }
       }
       if (cell.height > maxHeight) maxHeight = cell.height;
+      // Un lago sta sopra il terreno che lo contiene: senza questo, il chunk in
+      // cui galleggia la sua superficie potrebbe non essere allocato.
+      if (level > maxHeight) maxHeight = level;
     }
   }
 
@@ -259,6 +269,7 @@ export function generateColumnBlock(field: HeightField, ccx: number, ccy: number
       const cell = sampleCell(
         floorToCell(x) - baseX + HEIGHT_BORDER,
         floorToCell(y) - baseY + HEIGHT_BORDER,
+        field.waterLevelAt(floorToCell(x), floorToCell(y)),
       );
       const tree = treeAt(field.seed, cellX, cellY, cell.height, cell.biome, cell.slope);
       if (tree === null) continue;
@@ -276,6 +287,7 @@ export function generateColumnBlock(field: HeightField, ccx: number, ccy: number
     slopes,
     buildable,
     water,
+    waterTop,
     decor: new Int16Array(decor),
     maxHeight,
     buildableCount,
@@ -328,17 +340,20 @@ export function writeBlockColumns(
     written += world.fillColumn(x, y, subsoilZ, surfaceZ, strata.subsoil);
     written += world.fillColumn(x, y, surfaceZ, top, strata.surface);
 
-    // L'acqua chiude ogni colonna che finisce sotto il livello del mare: e' cio'
-    // che circonda l'isola invece di lasciare una fossa vuota.
+    // L'acqua chiude ogni colonna che finisce sotto il proprio specchio: e' cio'
+    // che circonda l'isola invece di lasciare una fossa vuota, ed e' anche cio'
+    // che riempie un lago — la quota arriva per colonna, quindi qui non c'e'
+    // nessun caso in piu' da distinguere.
     //
     // La classe viaggia nei bit di superficie del tratto di superficie — l'unico
     // che il mesher arrivi mai a emettere. Sotto non serve: quelle facce non
     // esistono, perche' fra due voxel entrambi pieni non nasce un quad.
-    if (top < TERRAIN.seaLevel) {
-      const deepTop = Math.max(top, WATER_SURFACE_Z);
+    const level = block.waterTop[i];
+    if (top < level) {
+      const deepTop = Math.max(top, level - TERRAIN.waterSurfaceDepth);
       const waterClass = block.water[i] as SurfaceKind;
       written += world.fillColumn(x, y, top, deepTop, WATER_IDS.deep);
-      written += world.fillColumn(x, y, deepTop, TERRAIN.seaLevel, WATER_IDS.surface, waterClass);
+      written += world.fillColumn(x, y, deepTop, level, WATER_IDS.surface, waterClass);
     }
   }
 
@@ -408,7 +423,7 @@ interface CellSample {
  * quota scende al multiplo di `cellSize` sotto di se', cosi' il cubo appoggia
  * sul terreno invece di sporgerne.
  */
-function sampleCell(px: number, py: number): CellSample {
+function sampleCell(px: number, py: number, waterZ: number): CellSample {
   let heightSum = 0;
   let slopeSum = 0;
 
@@ -435,5 +450,5 @@ function sampleCell(px: number, py: number): CellSample {
   const columns = TERRAIN.cellSize * TERRAIN.cellSize;
   const height = clampHeight(floorToCell(heightSum / columns));
   const slope = slopeSum / columns;
-  return { height, biome: classifyBiome(height, slope), slope };
+  return { height, biome: classifyBiome(height, slope, waterZ), slope };
 }

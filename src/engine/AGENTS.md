@@ -34,6 +34,19 @@ leggere `src/world/`, ma il mondo non deve dipendere dall'engine.
   gia' **filtrate per faccia esposta** (`facadeByFace`). Le interne di un
   edificio pieno sono i due terzi, e nessun prop potra' mai usarle: passarle
   comunque e' costato 2 ms per chunk, misurati.
+- `collectSurfaceCells` **scarta `plain` e `utility`**, e non e' una svista da
+  correggere: `utility` e' la superficie di tutte le carreggiate, dei grembiuli
+  e degli impalcati, cioe' l'area dipinta piu' estesa del mondo. Un emettitore
+  agganciato li' pagherebbe da solo piu' di tutto il resto del modulo. Se un
+  dettaglio deve comparire su una banchina o su una pista, la strada e' dare a
+  quella parte un linguaggio costruito nella ricetta, non aprire `utility` qui.
+- Struttura e prop si distinguono per l'**aggancio, non per l'aspetto**: se la
+  posizione e' interamente decisa dalla geometria e' struttura e va sopra la
+  riga dei prop in `appendMicroGeometry`; se serve un tiro per scegliere *quale*
+  cella, e' un prop e cade per primo sotto il tetto dei quad. Un finiale sta
+  dove una colonna non ha vicini in piano e una fascia dove un intradosso
+  finisce nel vuoto: nessuno dei due tira un dado, quindi stanno in struttura —
+  in coda, perche' fra la struttura sono i meno gravi da perdere.
 - Se cambia il layout degli attributi aggiorna tipi, worker, renderer, shader e test.
 
 ## Modello di luce
