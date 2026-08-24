@@ -1,8 +1,8 @@
 export type HudIcon =
   | 'funds' | 'population' | 'food' | 'materials' | 'satisfaction'
-  | 'residential' | 'production' | 'civic' | 'expansion' | 'terrace' | 'policies'
+  | 'residential' | 'production' | 'civic' | 'expansion' | 'terrace' | 'ropeway' | 'policies'
   | 'market' | 'factory' | 'park' | 'port' | 'airport' | 'transport' | 'university' | 'monument'
-  | 'pause' | 'play' | 'theme' | 'view' | 'help' | 'close'
+  | 'pause' | 'play' | 'theme' | 'view' | 'swatch' | 'help' | 'close'
   | 'daylight' | 'sun' | 'moon';
 
 const PATHS: Readonly<Record<HudIcon, string>> = {
@@ -27,6 +27,10 @@ const PATHS: Readonly<Record<HudIcon, string>> = {
   // e' la sezione che il generatore disegna davvero, ed e' l'unica cosa che
   // distingue una mensola da un balcone qualunque — cio' che regge si vede.
   terrace: '<path d="M8 21V6h7v15M15 11h6M15 14h5M17 14v-3M20 14v-3M4 21h16"/>',
+  // Due torri, la fune che pende fra loro e una cabina appesa a meta': la
+  // pancia e' l'unica cosa che distingua una funivia da un ponte sospeso, ed e'
+  // la stessa ragione per cui esiste `ROPEWAY.sagRatio`.
+  ropeway: '<path d="M4 21V6M20 21V8M4 6c6 7 10 7 16 2M11 11v2M9 13h4v3H9z"/>',
   policies: '<path d="M4 4h16v16H4zM8 9h8M8 13h8M8 17h5"/>',
   pause: '<path d="M8 5v14M16 5v14"/>',
   play: '<path d="m8 5 11 7-11 7V5Z"/>',
@@ -35,6 +39,11 @@ const PATHS: Readonly<Record<HudIcon, string>> = {
   // comune — guardare la citta' un livello alla volta. La 7.2 ridisegnera' tutte
   // le icone su due pesi, questa serve a essere riconoscibile intanto.
   view: '<path d="m12 3 9 5-9 5-9-5 9-5Z"/><path d="m4 12.5 8 4.5 8-4.5M4 17l8 4.5 8-4.5"/>',
+  // Una matrice di caselle, che e' letteralmente cio' che si va a vedere: uno
+  // slot di palette per colonna, un linguaggio di superficie per riga. Si
+  // distingue da `view` — tre piani di taglio — perche' rispondono a due domande
+  // diverse: quella guarda dentro la citta', questa guarda di cosa e' fatta.
+  swatch: '<path d="M4 4h16v16H4z"/><path d="M4 9.3h16M4 14.7h16M9.3 4v16M14.7 4v16"/>',
   help: '<circle cx="12" cy="12" r="9"/><path d="M9.5 9a2.7 2.7 0 1 1 4.2 2.3c-1 .6-1.7 1.1-1.7 2.2M12 17h.01"/>',
   close: '<path d="M6 6l12 12M18 6 6 18"/>',
   // Le tre del ciclo si leggono in fila: un sole sopra la linea dell'orizzonte

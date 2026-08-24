@@ -4,6 +4,7 @@ import { cityCondition } from '../game/cityCondition';
 import { onboardingOf } from '../game/onboarding';
 import { catalystById } from '../sim/catalysts';
 import { createSimState } from '../sim/SimState';
+import { EMPTY_HARVEST, type FoodReport } from '../sim/farms';
 import type { PolicyId } from '../sim/policies';
 import { DAYLIGHT, DAYLIGHT_MODE } from '../engine/daylight';
 import {
@@ -46,6 +47,45 @@ describe('buildGameHudModel', () => {
     expect(model.policies.every((policy) => policy.available)).toBe(true);
   });
 
+  it('un blocco per risorse si riempie, e mostra il requisito vincolante', () => {
+    // E' la distinzione che 7.4 chiede: sbiadito dice "rotto", riempito dice
+    // "manca poco". Senza il progresso, `locked` e `disabled` si vedevano uguali
+    // e la progressione spariva proprio dove doveva motivare.
+    const half = buildGameHudModel(stats(10, 0)).catalysts[0];
+    expect(half.locked).toBe(true);
+    expect(half.progress).toBeGreaterThan(0);
+    expect(half.progress).toBeLessThan(1);
+    expect(half.requirement).toContain('funds');
+  });
+
+  it('il requisito mostrato e il piu lontano dei due, non il primo', () => {
+    // Chi ha i fondi ma non gli abitanti deve vedere gli abitanti: mostrare il
+    // primo requisito prometterebbe un bottone quasi pronto mentre manca
+    // tutt'altro.
+    const rich = buildGameHudModel(stats(100_000, 1)).expansion;
+    expect(rich.requirement).toContain('residents');
+
+    const crowded = buildGameHudModel(stats(0, 100_000)).expansion;
+    expect(crowded.requirement).toContain('funds');
+  });
+
+  it('un blocco che non si scioglie aspettando non si riempie', () => {
+    // Durante il tutorial il catalizzatore fuori ordine e' fermo per una ragione
+    // che accumulare denaro non risolve: un riempimento li' direbbe il falso.
+    const model = buildGameHudModel(stats(100_000, 0, [], false));
+    const gated = model.catalysts.find((action) => action.reason.startsWith('Complete this first'));
+    expect(gated).toBeDefined();
+    expect(gated?.progress).toBeUndefined();
+    expect(gated?.requirement).toBeUndefined();
+  });
+
+  it('cio che e disponibile non porta ne progresso ne requisito', () => {
+    const ready = buildGameHudModel(stats(100_000, 100_000));
+    expect(ready.expansion.available).toBe(true);
+    expect(ready.expansion.progress).toBeUndefined();
+    expect(ready.terrace.progress).toBeUndefined();
+  });
+
   it('la mensola resta visibile mentre e bloccata, e dice cosa manca', () => {
     // **Bloccata non vuol dire nascosta**, come per i catalizzatori: sapere che
     // la citta' potra' salire e quanto costa e' l'informazione che fa
@@ -86,7 +126,43 @@ describe('buildGameHudModel', () => {
     const model = buildGameHudModel(stats(1_250, 12));
     const funds = model.resources.find((resource) => resource.id === 'funds');
 
-    expect(funds).toMatchObject({ value: '1,250', delta: '±0', tone: 'neutral' });
+    // Il delta e' **vuoto** quando non succede niente, non `±0`: cinque `±0` in
+    // fila erano rumore che copriva l'unica informazione che conta, cioe' quale
+    // risorsa si sta muovendo.
+    expect(funds).toMatchObject({ value: '1,250', delta: '', tone: 'neutral' });
+  });
+
+  it('senza finestra dei tick la tendenza e ferma e la serie vuota', () => {
+    // `buildGameHudModel` resta puro e senza memoria: la finestra e' un
+    // parametro, e senza di essa il modello deve restare disegnabile invece di
+    // rompersi.
+    const model = buildGameHudModel(stats(1_250, 12));
+    for (const entry of model.resources) {
+      expect(entry.trend).toBe('flat');
+      expect(entry.series).toEqual([]);
+      expect(entry.magnitude).toBe(0);
+    }
+  });
+
+  it('il cibo porta un anello ancorato alla soglia della carestia', () => {
+    // L'anello e il toast di penuria leggono lo stesso numero: se divergessero,
+    // il giocatore vedrebbe un anello tranquillo sopra un avviso di fame.
+    const hungry = buildGameHudModel(stats(1_000, 40));
+    const food = hungry.resources.find((entry) => entry.id === 'food');
+
+    expect(food?.fill).toBeDefined();
+    expect(food?.fill?.value).toBeGreaterThanOrEqual(0);
+    expect(food?.fill?.value).toBeLessThanOrEqual(1);
+    expect(food?.fill?.label).toContain('shortage below');
+  });
+
+  it('denaro e materiali non hanno un tetto, e non fingono di averlo', () => {
+    // Inventare un massimo per riempire un anello direbbe che esiste un "pieno"
+    // che non c'e': si accumula denaro senza limite, e un anello che si chiude
+    // prometterebbe un traguardo.
+    const model = buildGameHudModel(stats(1_250, 12));
+    expect(model.resources.find((entry) => entry.id === 'funds')?.fill).toBeUndefined();
+    expect(model.resources.find((entry) => entry.id === 'materials')?.fill).toBeUndefined();
   });
 
   it('assegna a Escape la superficie aperta con priorità corretta', () => {
@@ -123,6 +199,21 @@ describe('buildGameHudModel', () => {
     expect(resolveEscapeTarget(false, false, false, false, { kind: 'expansion' }, true, true)).toBe('tool');
     // Ne' prima di un pannello aperto, che e' cio' che copre.
     expect(resolveEscapeTarget(true, false, false, false, { kind: 'none' }, true, true)).toBe('views');
+  });
+
+  it('Escape chiude la scheda dopo lo strumento e prima del soggetto di studio', () => {
+    // La scheda e' l'ultima cosa che il giocatore ha aperto, quindi precede cio'
+    // che stava gia' guardando; ma non lo strumento in mano, che ha gia' la
+    // propria promessa scritta nel toast.
+    const open = { kind: 'none' } as const;
+    expect(resolveEscapeTarget(false, false, false, false, open, false, false, true))
+      .toBe('selection');
+    expect(resolveEscapeTarget(false, false, false, false, open, true, true, true))
+      .toBe('selection');
+    expect(resolveEscapeTarget(false, false, false, false, { kind: 'expansion' }, true, true, true))
+      .toBe('tool');
+    // Senza scheda aperta la catena resta esattamente quella di prima.
+    expect(resolveEscapeTarget(false, false, false, false, open, true, true, false)).toBe('lock');
   });
 
   it('produce un’istruzione contestuale solo per uno strumento selezionato', () => {
@@ -186,6 +277,58 @@ describe('daylightControl', () => {
   });
 });
 
+describe('il cibo dice da dove viene', () => {
+  /** Uno stato con un raccolto vero addosso: la fixture parte a zero. */
+  const fed = (harvest: Partial<FoodReport>): GrowthStats => {
+    const base = stats(1000, 240);
+    return {
+      ...base,
+      state: {
+        ...base.state,
+        food: { stock: 500, delta: 3 },
+        harvest: { ...EMPTY_HARVEST, ...harvest },
+      },
+    };
+  };
+
+  const foodRow = (growth: GrowthStats) =>
+    buildGameHudModel(growth).resources.find((row) => row.id === 'food');
+
+  it('elenca i produttori che hanno raccolto qualcosa', () => {
+    const model = foodRow(fed({
+      grown: [12, 5, 7],
+      imported: 3,
+      eaten: 12,
+    }));
+
+    expect(model?.breakdown?.map((row) => row.label))
+      .toEqual(['Fields', 'Orchards', 'Towers', 'Imports', 'Eaten']);
+    expect(model?.breakdown?.find((row) => row.label === 'Eaten')?.direction).toBe('out');
+    expect(model?.breakdown?.find((row) => row.label === 'Fields')?.direction).toBe('in');
+  });
+
+  it('tace sui produttori che non ci sono, invece di scrivere zero', () => {
+    // Cinque righe a zero sono la stessa cosa che il `±0` che la barra ha gia'
+    // tolto: occupano lo spazio dell'unica informazione che conta.
+    const model = foodRow(fed({ grown: [9, 0, 0], eaten: 4 }));
+    expect(model?.breakdown?.map((row) => row.label)).toEqual(['Fields', 'Eaten']);
+  });
+
+  it('le voci vengono dal referto del tick, non da un secondo conto', () => {
+    // E' la regola dichiarata su `HudResource.breakdown`: duplicare il
+    // bilanciamento qui e' il modo sicuro di far divergere le righe dal numero
+    // che le sta sopra. Un raccolto inventato deve arrivare a schermo tale e
+    // quale, senza che l'HUD lo ricalcoli dai contatori.
+    const model = foodRow(fed({ grown: [42, 0, 0], eaten: 1 }));
+    expect(model?.breakdown?.find((row) => row.label === 'Fields')?.amount).toBe(42);
+  });
+
+  it('senza raccolto e senza scorte non inventa un elenco', () => {
+    const model = foodRow(fed({}));
+    expect(model?.breakdown ?? []).toEqual([]);
+  });
+});
+
 function stats(
   funds: number,
   population: number,
@@ -235,8 +378,12 @@ function stats(
       piers: 0,
       stacked: 0,
       lifts: 0,
+      ropeways: 0,
       clearing: 0,
       cleared: 0,
+      farmPlots: 0,
+      arcologies: 0,
+      arcologyRefusal: null,
     },
     state,
     paused: false,

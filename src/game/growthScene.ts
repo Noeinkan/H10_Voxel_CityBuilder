@@ -16,9 +16,25 @@ import {
   type TradeMode,
 } from '../sim';
 import type { ScenarioRegion } from '../sim/scenario';
-import { Builder, type BuilderStats, type LandmarkSite } from '../world/buildings/Builder';
-import type { ReadonlyBuildingRegistry } from '../world/buildings/BuildingRegistry';
+import {
+  Builder,
+  type AloftRefusal,
+  type BuilderStats,
+  type LandmarkSite,
+} from '../world/buildings/Builder';
+import {
+  footprintDepth,
+  type BuildingRecord,
+  type ReadonlyBuildingRegistry,
+} from '../world/buildings/BuildingRegistry';
+import { hasAloftRecipe } from '../world/landmarks/config';
+import type { Facing } from '../world/streets/streetGrid';
+import { BIOME } from '../world/terrain/config';
+import type { Region } from '../world/terrain/region';
 import type { TerrainMap } from '../world/terrain/TerrainMap';
+import { puffsAt, type SmokePuff } from '../world/traffic/plume';
+import { posesAt, type VehiclePose } from '../world/traffic/poses';
+import { planTraffic, type TrafficRoute, type TrafficStructure } from '../world/traffic/routes';
 import type { VoxelWorld } from '../world/VoxelWorld';
 import { FixedStepLoop } from './loop';
 import {
@@ -30,7 +46,9 @@ import {
   expansionFailure,
   grantSite,
   placeCatalyst,
+  placeRopeway,
   placeTerrace,
+  ropewayFailure,
   terraceFailure,
   togglePolicy,
   type ActionFailure,
@@ -38,10 +56,33 @@ import {
   type SiteCost,
 } from './actions';
 import type { TerraceRefusal } from '../world/aerial/terracePlan';
+import type { RopewayRefusal } from '../world/ropeway/ropewayPlan';
+import type { RopewayCable, RopewayRide } from '../world/buildings/ropewayDriver';
+import { planRopewayRoutes } from '../world/traffic/ropewayRoutes';
 import { cityCondition, isSelfSufficient, type CityCondition } from './cityCondition';
 import { onboardingAllows, onboardingOf, type OnboardingState } from './onboarding';
 
 const TICK_RATE = 10;
+
+/**
+ * I rifiuti del tetto, detti come gesti che il giocatore possa fare.
+ *
+ * Riusano i tre motivi della mensola invece di aggiungerne quattro: dicono gia'
+ * le stesse cose — cerca un edificio, cercane uno piu' alto, cercane uno libero
+ * — e un rifiuto nuovo si paga in una riga di testo per lingua ogni volta che si
+ * aggiunge un modo di costruire in quota.
+ */
+const ALOFT_FAILURE: Readonly<Record<AloftRefusal, ActionFailure>> = {
+  'needs-roof': 'needs-building',
+  'roof-too-small': 'needs-building',
+  'roof-too-low': 'building-too-short',
+  'roof-occupied': 'no-room-aloft',
+};
+
+/** Il ruolo dietro uno strumento, che sia gia' un ruolo o solo un uso urbano. */
+function roleOf(target: BuildingClass | CatalystId): CatalystId {
+  return typeof target === 'number' ? defaultCatalystOfClass(target) : target;
+}
 export interface GrowthStats {
   readonly ready: true;
   readonly tick: number;
@@ -76,6 +117,27 @@ export class GrowthScene {
   private message = 'Choose a catalyst and place it on the island.';
   private clearanceMemo: { readonly key: string; readonly site: LandmarkSite } | null = null;
   private terraceMemo: { readonly key: string; readonly refusal: TerraceRefusal | null } | null = null;
+  private ropewayMemo: { readonly key: string; readonly refusal: RopewayRefusal | null } | null = null;
+
+  /**
+   * L'orologio del traffico, in secondi di gioco.
+   *
+   * Avanza con la velocita' scelta e si ferma in pausa: e' l'unica cosa che rende
+   * le barche parte della simulazione invece che un'animazione che gira per conto
+   * suo mentre la citta' e' congelata.
+   */
+  private clock = 0;
+
+  private routes: readonly TrafficRoute[] = [];
+  /** Le corse di funivia da cui le cabine di `routes` sono state calcolate. */
+  private rides: readonly RopewayRide[] = [];
+  /** Firma delle strutture da cui `routes` e' stato calcolato. */
+  private routeKey = '';
+  /** Conto grossolano che dice se valga la pena ricostruire quella firma. */
+  private routeStamp = -1;
+
+  /** Settori comprati e non ancora seminati: aspettano che il terreno arrivi. */
+  private readonly pendingSectors: Region[] = [];
 
   constructor(
     world: VoxelWorld,
@@ -88,6 +150,7 @@ export class GrowthScene {
   }
 
   advance(dt: number): void {
+    if (!this.paused) this.clock += dt * this.speed;
     if (!this.paused) this.loop.advance(dt * this.speed, () => {
       const start = performance.now();
       this.state = tick(this.state, this.map);
@@ -111,7 +174,7 @@ export class GrowthScene {
     // nuovo lo stesso numero, facendo il doppio del lavoro per dirlo.
     const clears = this.clearanceAt(x, y, target).clears;
 
-    const result = placeCatalyst(this.state, this.map, x, y, target);
+    const result = placeCatalyst(this.state, this.map, x, y, target, this.usesRooftop(x, y, target));
     if (result.success) {
       const placed = result.state.catalysts[result.state.catalysts.length - 1];
       // Il ruolo e non la classe: e' il ruolo a decidere quale struttura
@@ -128,7 +191,28 @@ export class GrowthScene {
 
   catalystFailure(x: number, y: number, target: BuildingClass | CatalystId): ActionFailure | null {
     if (!onboardingAllows(this.state, target)) return 'onboarding-order';
-    return catalystFailure(this.state, this.map, x, y, target);
+
+    // Il tetto parla per primo quando c'e' un tetto: sotto la colonna c'e' un
+    // edificio, quindi «non e' terreno edificabile» sarebbe la risposta a una
+    // domanda che nessuno ha fatto.
+    const aloft = this.builder.landmarkAloftSite(x, y, roleOf(target));
+    if (aloft.refusal !== null) return ALOFT_FAILURE[aloft.refusal];
+    return catalystFailure(this.state, this.map, x, y, target, aloft.site !== null);
+  }
+
+  /**
+   * true se questo ruolo, puntato su un edificio, si posa sul tetto.
+   *
+   * Serve a chi tiene il puntatore in mano: la colonna da interrogare non e'
+   * quella del terreno dietro la torre ma quella della torre, e chi non lo sa
+   * chiederebbe il posto sbagliato. E' la stessa distinzione della mensola.
+   */
+  catalystUsesRooftop(target: BuildingClass | CatalystId): boolean {
+    return hasAloftRecipe(roleOf(target));
+  }
+
+  private usesRooftop(x: number, y: number, target: BuildingClass | CatalystId): boolean {
+    return this.builder.landmarkAloftSite(x, y, roleOf(target)).site !== null;
   }
 
   /** Prezzo pesato dal terreno, per il cartellino sul cursore. */
@@ -223,6 +307,51 @@ export class GrowthScene {
     return refusal;
   }
 
+  /**
+   * Perche' una funivia non parte da qui, o null se parte.
+   *
+   * La porta del cursore, gemella di `terraceFailure`: chiede al mondo con
+   * `ropewaySite`, che **non scrive**, e passa il rifiuto al gioco.
+   */
+  ropewayFailure(x: number, y: number): ActionFailure | null {
+    return ropewayFailure(this.state, this.ropewayRefusalAt(x, y));
+  }
+
+  /**
+   * Tira una funivia dalla colonna cliccata.
+   *
+   * **Si paga solo cio' che compare**, come per la mensola: se il budget di
+   * chunk dice di no dopo che la convalida e' passata, i fondi restano dove sono
+   * invece di addebitare due torri che non ci sono.
+   */
+  placeRopeway(x: number, y: number): ActionResult {
+    const result = placeRopeway(this.state, this.ropewayRefusalAt(x, y));
+    if (!result.success) return result;
+
+    if (!this.builder.placeRopeway(x, y)) {
+      return { success: false, reason: 'no-room-for-line' };
+    }
+    this.ropewayMemo = null;
+    return this.apply(result, 'Ropeway open: the crossing no longer needs the ground.');
+  }
+
+  /** La stessa memoria di `terraceRefusalAt`, e per la stessa ragione. */
+  private ropewayRefusalAt(x: number, y: number): RopewayRefusal | null {
+    const key = `${x},${y}`;
+    if (this.ropewayMemo !== null && this.ropewayMemo.key === key) {
+      return this.ropewayMemo.refusal;
+    }
+    const site = this.builder.ropewaySite(x, y);
+    const refusal = site.ok ? null : site.refusal;
+    this.ropewayMemo = { key, refusal };
+    return refusal;
+  }
+
+  /** Le funi da disegnare. Riferimento stabile finche' non ne nasce una. */
+  ropewayCables(): readonly RopewayCable[] {
+    return this.builder.ropewayCables;
+  }
+
   togglePolicy(id: PolicyId): ActionResult {
     const active = !this.state.policies.includes(id);
     return this.apply(togglePolicy(this.state, id), active ? 'Policy activated.' : 'Policy deactivated.');
@@ -280,9 +409,14 @@ export class GrowthScene {
     return this.apply(changeTradeMode(this.state, mode), 'Trade strategy updated.');
   }
 
-  buyExpansion(sectorId: string): ActionResult {
+  buyExpansion(sectorId: string, region: Region): ActionResult {
     const result = buyExpansion(this.state, this.unlocked.has(sectorId));
-    if (result.success) this.unlocked.add(sectorId);
+    if (result.success) {
+      this.unlocked.add(sectorId);
+      // Il nucleo non si pianta adesso: il terreno del settore non esiste
+      // ancora, e la ricerca del sito guarderebbe colonne non generate.
+      this.pendingSectors.push(region);
+    }
     return this.apply(result, 'Coastal sector purchased.');
   }
 
@@ -290,8 +424,185 @@ export class GrowthScene {
     return expansionFailure(this.state, this.unlocked.has(sectorId));
   }
 
+  /**
+   * Il settore e' arrivato: ci si pianta il nucleo che lo fa crescere.
+   *
+   * **Terra e crescita non sono la stessa cosa**, ed e' il difetto che questa
+   * chiamata chiude. La citta' nasce dove il campo di desiderabilita' esiste, e
+   * il campo esiste solo dove un catalizzatore l'ha acceso: un settore comprato
+   * restava quindi un pezzo d'isola vuoto per sempre, mentre il messaggio
+   * prometteva che ci sarebbe cresciuta la citta'. Il borgo che arriva con la
+   * terra e' quella promessa mantenuta al minimo — abbastanza da far attecchire
+   * le prime case, non abbastanza da decidere cosa diventera' il settore.
+   */
   markSectorReady(): void {
-    this.message = 'Coastal sector ready. The new land can support city growth.';
+    this.message = this.seedSectors()
+      ? 'Coastal sector ready. A market opened on the new land: the city grows from there.'
+      : 'Coastal sector ready. The new land can support city growth.';
+  }
+
+  /** Pianta il nucleo di ogni settore che ha ormai terreno sotto. */
+  private seedSectors(): boolean {
+    let seeded = false;
+    for (let i = this.pendingSectors.length - 1; i >= 0; i--) {
+      const spot = this.sectorSeedSite(this.pendingSectors[i]);
+      if (spot === null) continue;
+      this.pendingSectors.splice(i, 1);
+
+      const seed = BALANCE.gameplay.expansion.seed;
+      const kind = seed.kind as CatalystId;
+      const definition = catalystById(kind);
+      this.state = addCatalyst(this.state, {
+        x: spot.x,
+        y: spot.y,
+        class: definition.class,
+        kind,
+        strength: seed.strength,
+        radius: seed.radius,
+      });
+      this.builder.placeLandmark(spot.x, spot.y, kind);
+      seeded = true;
+    }
+    return seeded;
+  }
+
+  /**
+   * La colonna piu' centrale del settore su cui si possa costruire.
+   *
+   * Al centro e non al margine: un nucleo sul bordo spingerebbe meta' della
+   * propria influenza sull'acqua, e il settore crescerebbe da un angolo invece
+   * che da se stesso. Il passo grosso basta — si cerca un punto, non il punto.
+   */
+  private sectorSeedSite(region: Region): { readonly x: number; readonly y: number } | null {
+    const centreX = region.minX + region.sizeX / 2;
+    const centreY = region.minY + region.sizeY / 2;
+    const step = 4;
+
+    let best: { x: number; y: number } | null = null;
+    let bestScore = Number.POSITIVE_INFINITY;
+    for (let y = region.minY + step; y < region.minY + region.sizeY - step; y += step) {
+      for (let x = region.minX + step; x < region.minX + region.sizeX - step; x += step) {
+        const column = this.map.columnAt(x, y);
+        if (column === null || !column.buildable) continue;
+        if (this.builder.registry.isOccupied(x, y)) continue;
+        const score = Math.abs(x - centreX) + Math.abs(y - centreY);
+        if (score >= bestScore) continue;
+        bestScore = score;
+        best = { x, y };
+      }
+    }
+    return best;
+  }
+
+  /**
+   * Dove stanno i mezzi in questo istante.
+   *
+   * Le rotte si ricalcolano **solo quando cambiano le strutture**: cercare una
+   * rotta di mare visita qualche migliaio di celle, e rifarlo a ogni frame per
+   * spostare una barca di un decimo di voxel sarebbe l'unica cosa qui dentro a
+   * costare qualcosa.
+   */
+  trafficPoses(): readonly VehiclePose[] {
+    this.syncTraffic();
+    return posesAt(this.routes, this.clock);
+  }
+
+  /**
+   * Il fumo dei fumaioli in questo istante.
+   *
+   * Una seconda lettura delle stesse rotte, non un secondo stato: uno sbuffo e'
+   * dov'era la nave qualche secondo fa, quindi il pennacchio non ha niente da
+   * conservare fra un frame e l'altro. In pausa si ferma con tutto il resto,
+   * perche' l'orologio e' lo stesso.
+   */
+  trafficPuffs(): readonly SmokePuff[] {
+    this.syncTraffic();
+    return puffsAt(this.routes, this.clock);
+  }
+
+  private syncTraffic(): void {
+    // **Il caso comune e' un confronto fra due interi e un riferimento.** La
+    // firma vera scorre il registry, che con duemila edifici e' l'unica cosa qui
+    // dentro il cui costo cresce con la citta': i landmark e i catalizzatori sono
+    // unita' e cambiano di numero solo quando il giocatore fa qualcosa, quindi
+    // basta quel numero a sapere che non c'e' niente da rifare. Le funivie
+    // portano gia' la propria risposta: il loro array cambia identita' solo
+    // quando ne nasce una.
+    const rides = this.builder.ropewayRides;
+    const stamp = this.builder.registry.landmarkCount * 1024 + this.state.catalysts.length;
+    if (stamp === this.routeStamp && rides === this.rides) return;
+    this.routeStamp = stamp;
+
+    const structures = this.trafficStructures();
+    const key = structures
+      .map((item) => `${item.id}@${item.cx},${item.cy}:${item.facing}:${item.aloft ? 1 : 0}`)
+      .join('|');
+    if (key === this.routeKey && rides === this.rides) return;
+    this.routeKey = key;
+    this.rides = rides;
+    this.routes = [
+      ...planTraffic(structures, (x, y) => this.isOpenWater(x, y)),
+      ...planRopewayRoutes(rides),
+    ];
+  }
+
+  /**
+   * Acqua navigabile: mare **gia' generato**.
+   *
+   * Il bioma di una colonna che non esiste ancora e' `ocean`, ed e' la risposta
+   * giusta per il terreno e quella sbagliata per una barca: una rotta ci
+   * passerebbe attraverso e la barca navigherebbe sul vuoto oltre il bordo del
+   * mondo.
+   */
+  private isOpenWater(x: number, y: number): boolean {
+    const cx = Math.floor(x);
+    const cy = Math.floor(y);
+    return this.map.has(cx, cy) && this.map.biomeAt(cx, cy) === BIOME.ocean;
+  }
+
+  /** I landmark, ridotti a cio' che il traffico deve sapere di loro. */
+  private trafficStructures(): readonly TrafficStructure[] {
+    const out: TrafficStructure[] = [];
+    for (const record of this.builder.registry.all) {
+      const kind = record.landmark;
+      if (kind === undefined) continue;
+      const catalyst = this.catalystOf(record, kind);
+      if (catalyst === null) continue;
+      out.push({
+        id: record.id,
+        kind,
+        class: record.class,
+        cx: catalyst.x,
+        cy: catalyst.y,
+        x: record.x,
+        y: record.y,
+        facing: (record.facing ?? 0) as Facing,
+        z: record.baseZ,
+        aloft: record.aloft === true,
+      });
+    }
+    return out;
+  }
+
+  /**
+   * Il catalizzatore che questo landmark rappresenta, o null.
+   *
+   * Ruolo **e** riquadro insieme, come in `landmarkDriver`: un ingombro largo
+   * venti colonne ne contiene facilmente due, e il solo riquadro darebbe al
+   * porto le linee del traghetto accanto.
+   */
+  private catalystOf(
+    record: BuildingRecord,
+    kind: CatalystId,
+  ): { readonly x: number; readonly y: number } | null {
+    const depth = footprintDepth(record);
+    for (const catalyst of this.state.catalysts) {
+      if (catalystRoleOf(catalyst) !== kind) continue;
+      if (catalyst.x < record.x || catalyst.x >= record.x + record.footprint) continue;
+      if (catalyst.y < record.y || catalyst.y >= record.y + depth) continue;
+      return catalyst;
+    }
+    return null;
   }
 
   setPaused(paused: boolean): void {

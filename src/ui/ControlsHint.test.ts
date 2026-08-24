@@ -10,11 +10,24 @@ describe('CONTROL_HINTS', () => {
       { keys: ['Q', 'E'], action: 'Rotate the city' },
       { keys: ['Wheel'], action: 'Zoom in and out' },
       { keys: ['Drag'], action: 'Pan the camera' },
-      { keys: ['F'], action: 'Frame the whole city' },
+      { keys: ['Middle drag'], action: 'Orbit and tilt the view' },
+      { keys: ['F'], action: 'Frame the city and level the view' },
+      { keys: ['Click'], action: 'Inspect a building, block, column or voxel' },
+      { keys: ['1', '…', '9'], action: 'Pick the matching tool from the dock' },
+      { keys: ['Shift', '1..9'], action: 'Switch the visual theme' },
       { keys: ['V'], action: 'Cycle the views below' },
       { keys: ['L'], action: 'Hold the day, hold the night, or let the clock run' },
-      { keys: ['Esc'], action: 'Cancel the tool, then leave the view' },
+      { keys: ['Esc'], action: 'Cancel the tool, close the card, then leave the view' },
     ]);
+  });
+
+  it('il click a mani vuote e’ un comando, e va detto', () => {
+    // Nessun bottone lo suggerisce e a mani vuote non fa niente di visibile
+    // finche' non si scopre che apre una scheda: e' un gesto che si impara
+    // leggendolo, o per caso.
+    const click = CONTROL_HINTS.find((hint) => hint.keys.includes('Click'));
+    expect(click?.action).toContain('building');
+    expect(click?.action).toContain('voxel');
   });
 
   it('promette che Escape riporta la citta’ intera', () => {
@@ -22,6 +35,17 @@ describe('CONTROL_HINTS', () => {
     // rifiutava di spegnere una vista. Uscirne non era scritto da nessuna parte.
     const escape = CONTROL_HINTS.find((hint) => hint.keys.includes('Esc'));
     expect(escape?.action).toContain('view');
+  });
+
+  it('l’orbita e’ un comando di camera, non una funzione di Block focus', () => {
+    // Stava solo dentro lo studio di un isolato, e chi voleva guardare la citta'
+    // da un altro angolo doveva prima isolarne un pezzo. La riga sta fra i
+    // comandi generali perche' e' li' che la si cerca.
+    const orbit = CONTROL_HINTS.find((hint) => hint.action.includes('Orbit'));
+    expect(orbit?.keys).toEqual(['Middle drag']);
+    // E il ritorno all'assetto isometrico deve essere promesso dove sta: su `F`.
+    const frame = CONTROL_HINTS.find((hint) => hint.keys.includes('F'));
+    expect(frame?.action).toContain('level');
   });
 
   it('la quota non e’ piu’ una scorciatoia globale', () => {

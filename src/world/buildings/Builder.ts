@@ -17,11 +17,28 @@ import {
   surveyGrade,
 } from './siteWorks';
 import type { BuildContext } from './buildContext';
-import { LandmarkDriver, type LandmarkSite } from './landmarkDriver';
+import {
+  LandmarkDriver,
+  type AloftRefusal,
+  type AloftVerdict,
+  type LandmarkSite,
+} from './landmarkDriver';
+import { ARCOLOGY } from '../arcology/config';
+import type { ArcologyRefusal } from '../arcology/siting';
+import { ArcologyDriver } from './arcologyDriver';
+import { ClearanceSites } from './clearanceSite';
 import { SpanDriver } from './spanDriver';
 import { AerialDriver } from './aerialDriver';
 import { GuideDriver } from './guideDriver';
 import { UpgradeDriver } from './upgradeDriver';
+import { FarmDriver } from './farmDriver';
+import { FARMS } from '../farms/config';
+import {
+  RopewayDriver,
+  type RopewayCable,
+  type RopewayRide,
+} from './ropewayDriver';
+import type { RopewayResult } from '../ropeway/ropewayPlan';
 import { allowedLevel } from './hierarchy';
 import { formOf, localLevelBonus } from './urbanForm';
 import { hashCoords } from '../rng';
@@ -37,10 +54,15 @@ import {
   CLUSTER,
   MAX_FOOTPRINT,
   MIN_FOOTPRINT,
+  typologyById,
 } from './config';
 import { planCluster, type ClusterTerms } from './cluster';
 import { generateBuilding, startLevel } from './generate';
 import { selectTypology, typologyProfile } from './typology';
+import { styleAt, styledProfile } from './style';
+import { lotRoleOf } from './blockForm';
+import { envelopeOf } from './BuildingRegistry';
+import { groundSideOf, overhangFor } from './generate';
 import { GrowthQueue, anchorOf } from './growthQueue';
 import { SurfaceQueue } from './surfaceQueue';
 import {
@@ -105,7 +127,31 @@ export type RejectReason = (typeof REJECT_REASONS)[number];
 
 // Chi tiene il `Builder` interroga il riquadro di un landmark passando di qui:
 // il driver e' un dettaglio di questa cartella.
-export type { LandmarkSite };
+export type { AloftRefusal, AloftVerdict, LandmarkSite };
+
+/**
+ * Il record come lo vede la simulazione.
+ *
+ * **La specializzazione la dichiara la tipologia, non il luogo.** Il record porta
+ * `profile.specialization`, che dice cosa il quartiere *esprime*; qui serve cosa
+ * e' stato **costruito**, e sono due cose diverse: in un distretto che esprime
+ * `farming` un edificio sotto `minLevel` prende comunque una tipologia normale, e
+ * contarlo come torre idroponica lo farebbe produrre cibo senza esserlo.
+ * Chiedendolo al catalogo la regola resta dati: qualunque riga che dichiari una
+ * specializzazione che il bilancio conosce arriva alla simulazione da sola.
+ */
+function simBuilding(record: BuildingRecord): Building {
+  const built = record.typology === undefined
+    ? undefined
+    : typologyById(record.typology)?.specialization;
+  return {
+    x: record.x,
+    y: record.y,
+    class: record.class,
+    ...(record.mixed === undefined ? {} : { mixed: record.mixed }),
+    ...(built === undefined ? {} : { specialization: built }),
+  };
+}
 
 export interface BuilderStats {
   /** Edifici completati piu' quelli ancora in crescita. */
@@ -155,6 +201,43 @@ export interface BuilderStats {
   readonly piers: number;
   readonly stacked: number;
   readonly lifts: number;
+  /**
+   * Quante funivie il giocatore ha tirato.
+   *
+   * Non e' un gate come i cinque numeri sopra — una funivia non nasce da sola, e
+   * zero significa soltanto che nessuno ne ha voluta una — ma sta accanto a loro
+   * perche' e' l'altro modo in cui la citta' scavalca il vuoto.
+   */
+  readonly ropeways: number;
+  /**
+   * Lotti agricoli vivi adesso.
+   *
+   * E' un numero che deve **scendere** mentre la citta' cresce, e guardarlo salire
+   * per sempre e' il modo in cui questa meccanica si romperebbe in silenzio: vuol
+   * dire che nessun lotto si ritira, cioe' che la citta' non si mangia piu' la
+   * propria campagna e la fame non arriva mai.
+   */
+  readonly farmPlots: number;
+  /**
+   * Arcologie in piedi. Zero, una o due, e mai di piu'.
+   *
+   * E' il numero che dice se la condizione della 4.14 e' mai stata vera: resta a
+   * zero su ogni partita che non arriva a un centro **saturo**, ed e' voluto —
+   * la megastruttura e' la risposta a «qui non c'e' piu' niente da diventare»,
+   * non un premio di anzianita'.
+   */
+  readonly arcologies: number;
+  /**
+   * Perche' l'ultima passata non ne ha fondata una, o null se non c'era niente
+   * da rifiutare.
+   *
+   * **Senza questa riga `arcologies: 0` non significa niente**, perche' e' il
+   * valore normale per quasi tutta la partita. Con `notCapped` la citta' sta
+   * ancora crescendo e prima o poi ci arrivera'; con `notPeak` su ogni seed
+   * vorrebbe dire che la condizione e' insoddisfacibile e che il numero da
+   * rivedere e' un altro.
+   */
+  readonly arcologyRefusal: ArcologyRefusal | null;
   /**
    * Lo sventramento in due numeri: cantieri aperti adesso, edifici gia' portati
    * via in tutta la partita.
@@ -242,11 +325,15 @@ export class Builder {
   /** Cio' che i driver hanno in mano. Si costruisce una volta e non cambia mai. */
   private readonly ctx: BuildContext;
 
+  private readonly clearance: ClearanceSites;
   private readonly landmarks: LandmarkDriver;
   private readonly spans: SpanDriver;
   private readonly aerial: AerialDriver;
   private readonly guides: GuideDriver;
   private readonly upgrades: UpgradeDriver;
+  private readonly ropeways: RopewayDriver;
+  private readonly farms: FarmDriver;
+  private readonly arcologies: ArcologyDriver;
 
   constructor(
     private readonly world: VoxelWorld,
@@ -266,9 +353,12 @@ export class Builder {
       seed: worldSeed,
     };
     this.spans = new SpanDriver(this.ctx);
-    // Il landmark ha bisogno delle campate prima di se stesso: sventrando fa
-    // cadere quelle che poggiavano su cio' che abbatte.
-    this.landmarks = new LandmarkDriver(this.ctx, this.spans);
+    // Il cantiere ha bisogno delle campate prima di se stesso: sventrando fa
+    // cadere quelle che poggiavano su cio' che abbatte. Ed e' **uno solo** per
+    // Builder: due liste di cantieri potrebbero condannare lo stesso record e
+    // dirlo due volte alla simulazione.
+    this.clearance = new ClearanceSites(this.ctx, this.spans);
+    this.landmarks = new LandmarkDriver(this.ctx, this.clearance);
     this.aerial = new AerialDriver(this.ctx, this.spans);
     // La guida viene dopo la citta' in quota e le chiede due cose: come vede il
     // luogo, e quali impalcati qualcuno abita. La freccia va in un verso solo —
@@ -279,6 +369,20 @@ export class Builder {
       (deckId) => this.aerial.isInhabited(deckId),
     );
     this.upgrades = new UpgradeDriver(this.ctx, this.spans, this.aerial);
+    // La funivia non chiede niente a nessuno degli altri, e nessuno chiede
+    // niente a lei: due torri a terra e una fune che non e' materia non hanno
+    // modo di entrare in conflitto con una campata o con una mensola. E' l'unico
+    // driver senza una freccia che entra o che esce.
+    this.ropeways = new RopewayDriver(this.ctx);
+    // Nemmeno la campagna chiede niente agli altri driver, e per una ragione
+    // strutturale: un lotto agricolo non entra negli indici di collisione, quindi
+    // non puo' contendere una colonna a nessuno. Legge il registry — per sapere
+    // cosa la citta' ha gia' preso — e non ci scrive mai.
+    this.farms = new FarmDriver(this.ctx);
+    // Ultima, e con due frecce che entrano e nessuna che esce: legge la
+    // gerarchia della 4.6 per sapere se la citta' qui e' satura, e il cantiere
+    // per farsi spazio. Nessuno degli altri driver sa che le arcologie esistono.
+    this.arcologies = new ArcologyDriver(this.ctx, this.clearance, this.aerial);
   }
 
   /** Sola lettura: nemmeno chi tiene il Builder puo' scrivere nel registry. */
@@ -308,6 +412,19 @@ export class Builder {
   }
 
   /**
+   * Il tetto che questa colonna offre a un ruolo, o perche' non ne offre uno.
+   *
+   * Stessa porta di `landmarkClearance`, altra domanda: quella chiede cosa il
+   * riquadro porterebbe via a terra, questa se sopra un edificio ci sia posto.
+   * Il gioco le fa entrambe prima del click e mostra la sola che si applica —
+   * un tetto sotto la colonna esclude l'altra, ed e' il modo in cui lo stesso
+   * strumento produce due strutture senza chiedere una scelta in piu'.
+   */
+  landmarkAloftSite(x: number, y: number, kind: CatalystId): AloftVerdict {
+    return this.landmarks.aloftSiteAt(x, y, kind);
+  }
+
+  /**
    * La mensola che nascerebbe su questa colonna, o perche' no. Non scrive.
    *
    * La porta del cursore, come `landmarkClearance`: sta sul `Builder` e non sul
@@ -320,6 +437,36 @@ export class Builder {
   /** Posa una mensola sull'edificio di questa colonna. La porta del click. */
   placeTerrace(x: number, y: number): boolean {
     return this.aerial.placeTerrace(x, y);
+  }
+
+  /**
+   * La funivia che partirebbe da questa colonna, o perche' no. Non scrive.
+   *
+   * Stessa porta di `terraceSite`, altra domanda: quella chiede se una facciata
+   * regge un piano, questa se di qua si attraversa.
+   */
+  ropewaySite(x: number, y: number): RopewayResult {
+    return this.ropeways.siteAt(x, y);
+  }
+
+  /** Tira una funivia dalla colonna cliccata. La porta del click. */
+  placeRopeway(x: number, y: number): boolean {
+    return this.ropeways.place(x, y);
+  }
+
+  /**
+   * Le funi da disegnare e le corse delle cabine.
+   *
+   * Due liste e non una struttura sola perche' hanno due lettori — la vista e il
+   * traffico — e nessuno dei due deve trasformare la lista dell'altro a ogni
+   * frame: e' il riferimento stabile a dire «niente da rifare».
+   */
+  get ropewayCables(): readonly RopewayCable[] {
+    return this.ropeways.cables;
+  }
+
+  get ropewayRides(): readonly RopewayRide[] {
+    return this.ropeways.rides;
   }
 
   get stats(): BuilderStats {
@@ -337,9 +484,13 @@ export class Builder {
       routes: this.aerial.routes,
       piers: this.aerial.piers,
       lifts: this.guides.lifts,
+      ropeways: this.ropeways.count,
+      farmPlots: this.farms.count,
+      arcologies: this.arcologies.count,
+      arcologyRefusal: this.arcologies.refusal,
       stacked: this.stackedCount,
-      clearing: this.landmarks.clearing,
-      cleared: this.landmarks.cleared,
+      clearing: this.clearance.open,
+      cleared: this.clearance.cleared,
     };
   }
 
@@ -386,12 +537,12 @@ export class Builder {
     // **Prima si sgombera, poi si costruisce.** Un cantiere che chiude libera
     // colonne che l'infornata di questo tick puo' gia' usare, e il contrario
     // farebbe aspettare un tick intero a ogni edificio dietro a un landmark.
-    const clearedBefore = this.landmarks.cleared;
-    next = this.landmarks.clearancePass(next);
+    const clearedBefore = this.clearance.cleared;
+    next = this.clearance.pass(next);
     // Il commento sulla blacklist lo diceva da prima che servisse: «se un giorno
     // arrivera' la demolizione, questo insieme andra' svuotato con `forget`».
     // Un sito bocciato lo era rispetto a una colonna che adesso e' libera.
-    if (this.landmarks.cleared !== clearedBefore) this.forget();
+    if (this.clearance.cleared !== clearedBefore) this.forget();
     if (state.tickCount % BUILDER.ticksPerBuild === 0) next = this.buildPass(next);
     if (state.tickCount % BUILDER.ticksPerUpgrade === 0) {
       this.upgrades.pass(next);
@@ -412,6 +563,17 @@ export class Builder {
     // abiti gia': prima si costruisce sopra la citta', poi si guadagna il modo di
     // arrivarci.
     if (state.tickCount % AERIAL.guide.ticksPerPass === 0) this.guides.pass();
+    // La campagna per ultima, e a cadenza sua. Dopo la crescita perche' e' la
+    // crescita a mangiarsela: valutata prima, un lotto appena coperto dagli
+    // edifici di questo tick resterebbe contato come produttore fino al giro
+    // dopo, e la citta' rincorrerebbe la fame con un ritardo permanente.
+    if (state.tickCount % FARMS.ticksPerPass === 0) next = this.farms.pass(next);
+    // E l'arcologia in fondo a tutto, alla cadenza piu' rada: la sua condizione
+    // e' vera solo su una citta' che ha gia' smesso di crescere in alto, quindi
+    // ogni passata anticipata sarebbe una scansione che risponde di no. Legge lo
+    // stato — deve chiedere la quota ammessa — e lo restituisce, perche' le sue
+    // fasce sono edifici che la simulazione conta.
+    if (state.tickCount % ARCOLOGY.ticksPerPass === 0) next = this.arcologies.pass(next);
     return next;
   }
 
@@ -466,9 +628,7 @@ export class Builder {
       });
       if (record === null) continue;
 
-      next = addBuilding(next, record.mixed === undefined
-        ? { x: record.x, y: record.y, class: record.class }
-        : { x: record.x, y: record.y, class: record.class, mixed: record.mixed });
+      next = addBuilding(next, simBuilding(record));
       accepted++;
     }
 
@@ -546,6 +706,16 @@ export class Builder {
     // modo in cui la gerarchia sale, non il modo di aggirarla.
     const allowed = allowedLevel(this.ctx, x, y, state, deck.rise);
     if (allowed < 0) return null;
+    // Dove il lotto cade dentro l'isolato. In quota non c'e' un isolato a cui
+    // appartenere — il lotto **e'** l'impalcato — quindi non c'e' nemmeno un
+    // angolo, e le righe che lo chiedono restano fuori.
+    const lotRole = onGround
+      ? lotRoleOf(this.streets.blockRect(this.streets.blockAt(x, y)), x, y, footprintCap)
+      : undefined;
+    // **L'angolo cambia forma, non quota**: il ruolo del lotto entra nella scelta
+    // della tipologia e non nel livello. Un bonus di livello sull'angolo e' stato
+    // provato e tolto — spegneva i montanti della citta' in quota. La misura e il
+    // perche' stanno accanto a `BLOCK` in `config.ts`.
     const level = Math.min(allowed, startLevel(seed) + localLevelBonus(form));
     const typology = selectTypology({
       use: cls,
@@ -553,7 +723,13 @@ export class Builder {
       level,
       profile,
       coastal: isCoastal(this.terrainMap, x, y),
+      lotRole,
     });
+    // Lo stile e' del quartiere, non dell'edificio: si chiede all'isolato in cui
+    // la colonna cade, e due edifici dello stesso isolato lo ricevono uguale per
+    // costruzione. Non e' un tiro e non e' uno stato — vedi `style.ts`.
+    const style = styleAt(this.worldSeed, this.streets.blockAt(x, y));
+    const drawProfile = styledProfile(typologyProfile(typology), style);
     const draft = generateBuilding({
       class: cls,
       level,
@@ -561,12 +737,18 @@ export class Builder {
       footprintCap,
       footprintFloor: 1,
       form,
-      profile: typologyProfile(typology),
+      profile: drawProfile,
       shape: typology.shape,
       mixed,
       facing,
     });
-    const footprint = draft.sizeX;
+    // **Nucleo e inviluppo si separano qui, e da qui in poi non vanno confusi.**
+    // `footprint` e' cio' che poggia — lo leggono lotto, opera di terra, fila,
+    // decoro e carreggiata — mentre lo stamp puo' essere piu' largo di `over`
+    // sopra il marciapiede. Sono lo stesso numero su ogni edificio che non
+    // sporge, cioe' su quasi tutti.
+    const over = overhangFor(typology.shape, facing);
+    const footprint = groundSideOf(draft, over, facing);
 
     // L'impronta puo' uscire piu' stretta del lotto verificato. La si accosta
     // al fronte invece di lasciarla al centro: un edificio che non tocca la
@@ -611,7 +793,7 @@ export class Builder {
     // della fascia zero e nient'altro — stessa sequenza di PRNG, stessa sagoma.
     // Gira solo dove la fila un basamento ce l'ha davvero, e sta comunque fuori
     // dal ciclo di frame.
-    const stamp = baseBand > 0
+    const shaped = baseBand > 0
       ? generateBuilding({
         class: cls,
         level,
@@ -619,7 +801,7 @@ export class Builder {
         footprintCap,
         footprintFloor: 1,
         form,
-        profile: typologyProfile(typology),
+        profile: drawProfile,
         shape: typology.shape,
         mixed,
         facing,
@@ -628,18 +810,55 @@ export class Builder {
       : draft;
 
     const baseZ = terms?.deck ?? deck.z;
+
+    // **Lo sbalzo si negozia prima di rinunciare al posto.** Se a bloccare e' la
+    // sola striscia sopra il marciapiede — un'altra sporgenza, una campata —
+    // l'edificio ci rinuncia e sale diritto, invece di perdere un lotto buono per
+    // dell'aria. E' la stessa mossa di `fitsWider` nell'upgrade.
+    //
+    // La sagoma che ne esce e' **esattamente** quella che sarebbe uscita se la
+    // tipologia non avesse mai chiesto uno sbalzo: `over` allarga il solo filtro
+    // di `nextRect`, e le candidate si costruiscono tutte comunque, quindi lo
+    // stesso seme consuma gli stessi tiri. `footprint` in particolare e' gia'
+    // stato tirato molto prima, e non si muove.
+    let overhang = over;
+    let stamp = shaped;
+    if (overhang > 0) {
+      const wide = envelopeOf({ x, y, footprint, overhang, facing });
+      if (this.registryImpl.overlaps(wide.x, wide.y, wide.sizeX, baseZ, shaped.sizeZ, wide.sizeY) &&
+        !this.registryImpl.overlaps(x, y, footprint, baseZ, shaped.sizeZ)) {
+        overhang = 0;
+        stamp = generateBuilding({
+          class: cls,
+          level,
+          seed,
+          footprintCap,
+          footprintFloor: 1,
+          form,
+          profile: drawProfile,
+          shape: { ...typology.shape, overhang: 0 },
+          mixed,
+          facing,
+          baseBandHeight: baseBand > 0 ? baseBand : undefined,
+        });
+      }
+    }
+
+    // L'inviluppo, cioe' cio' che nessun altro puo' attraversare. Su un edificio
+    // che non sporge coincide con l'impronta, e queste righe non fanno niente.
+    const env = envelopeOf({ x, y, footprint, overhang, facing });
     // Al suolo vince l'edificio: una campata che passa di qui cade invece di
     // impedirlo. Senza, `overlaps` direbbe `occupied` e un ponte toglierebbe un
     // lotto — il contrario esatto di «una campata non prende suolo».
-    this.spans.dropIntersecting(x, y, footprint, footprint, baseZ, baseZ + stamp.sizeZ);
-    if (this.registryImpl.overlaps(x, y, footprint, baseZ, stamp.sizeZ)) {
+    this.spans.dropIntersecting(env.x, env.y, env.sizeX, env.sizeY, baseZ, baseZ + stamp.sizeZ);
+    if (this.registryImpl.overlaps(env.x, env.y, env.sizeX, baseZ, stamp.sizeZ, env.sizeY)) {
       // In quota il rifiuto non e' definitivo: la colonna resta buona al suolo,
       // e a quella soletta ci si potra' riprovare quando il posto si libera.
       // Blacklistarla toglierebbe il lotto a terra per un ingombro di sopra.
       return this.reject(key, 'occupied', plan !== null);
     }
-    if (dirtyChunkCount(x, y, footprint, plan?.footZ ?? baseZ, baseZ + stamp.sizeZ) >
-        BUILDER.maxDirtyChunksPerBuilding) {
+    if (dirtyChunkCount(env.x, env.y, env.sizeX, plan?.footZ ?? baseZ, baseZ + stamp.sizeZ,
+      env.sizeY) > BUILDER.maxDirtyChunksPerBuilding) {
       return this.reject(key, 'chunkBudget', plan !== null);
     }
 
@@ -668,6 +887,10 @@ export class Builder {
       seed,
       form,
       typology: typology.id,
+      style: style.id,
+      // Zero non si scrive, come per `baseBand`: un edificio che non sporge non
+      // deve portarsi dietro un campo che dice «non sporgo».
+      overhang: overhang > 0 ? overhang : undefined,
       district: profile?.district ?? 'outskirts',
       specialization: profile?.specialization ?? null,
       facing,

@@ -6,6 +6,7 @@ import {
   SURFACE_KIND,
   type SurfaceKind,
 } from '../../world/visualBlock';
+import { appendCoverDetail, liftGroundCover, restoreGroundCover } from './coverDetail';
 import {
   appendMicroGeometry,
   MAX_DETAIL_QUADS_PER_CHUNK,
@@ -134,6 +135,13 @@ export function greedyMesh(
   const mask = s.mask;
   const skyGap = s.skyGap;
   const glow = s.glow;
+
+  // Le coperture escono dal volume prima di qualunque cosa lo legga: cielo, AO e
+  // greedy pass devono vedere il terreno nudo, perche' al posto del cubo ci
+  // andra' la microgeometria di `coverDetail.ts`. Il volume torna intatto in
+  // fondo alla funzione.
+  const cover = liftGroundCover(padded, ceiling);
+
   sweepSkyGap(padded, ceiling, skyGap, s.skyRuns);
   sweepGlow(padded, glow);
 
@@ -348,7 +356,11 @@ export function greedyMesh(
       return true;
     },
   };
-  const detailQuadCount = appendMicroGeometry(padded, writer, origin);
+  // La copertura passa per prima: la sua cella non c'e' piu', quindi troncarla
+  // lascerebbe una chiazza calva invece di un dettaglio in meno.
+  const coverQuadCount = appendCoverDetail(padded, writer, cover, origin);
+  const detailQuadCount = coverQuadCount + appendMicroGeometry(padded, writer, origin);
+  restoreGroundCover(padded, ceiling, cover);
 
   if (quadCount === 0) {
     return {

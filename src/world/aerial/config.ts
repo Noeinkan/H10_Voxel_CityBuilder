@@ -168,6 +168,89 @@ export const AERIAL = {
     attempts: 4,
 
     /**
+     * Da che punto della facciata comincia un balcone, in frazione dell'altezza
+     * dell'ospite.
+     *
+     * **Vale solo dove la sagoma non detta la quota.** Dove una fascia rientra,
+     * l'aggetto continua la terrazza che c'e' gia' e quella quota e' un fatto
+     * dell'edificio: li' non si sceglie niente, e la scansione dal basso resta
+     * quella che rende complanari due vicini. Su **facciata piena** invece nessuna
+     * quota e' migliore di un'altra, e prendere comunque la piu' bassa voleva dire
+     * `minRise` — tre cubi sopra il marciapiede. Su meta' della citta', che sale a
+     * prisma e non arretra mai, e' li' che finivano tutte: una mensola appiccicata
+     * al piede di una torre di trenta cubi non si legge come un piano in facciata
+     * ma come una pensilina sopra la strada.
+     *
+     * Una frazione e non una quota fissa perche' cio' che conta e' **dove sta
+     * sulla facciata**, non a che altezza dal suolo: quattro decimi mettono il
+     * balcone appena sopra il basamento in una torre e a mezza altezza in un
+     * corpo basso, che e' la stessa lettura in due edifici diversi.
+     */
+    facadeRise: 0.42,
+
+    /**
+     * Le forme in pianta di una mensola: che parte della corsa occupa, quanto
+     * sporge, a quale capo si appoggia.
+     *
+     * **Prima ce n'era una sola, e non per scelta.** `overhangOf` legava lo sporto
+     * alla lunghezza della corsa — «quanto e' larga, tanto e' profonda» — e dentro
+     * i due estremi quella riga e' l'identita': con `MAX_FOOTPRINT` a otto, ogni
+     * corsa fra tre e otto usciva **quadrata**. La regola resta, ma come *misura
+     * di riferimento* invece che come risultato: qui ogni forma la piega a modo
+     * suo, e le mensole di una citta' smettono di essere lo stesso quadrato in
+     * quattro dimensioni.
+     *
+     * - `run` — frazione della corsa occupata; 1 e' tutto il fronte.
+     * - `depth` — frazione dello sporto di riferimento.
+     * - `align` — dove il riquadro si appoggia sulla corsa: 0 il capo basso, 1
+     *   quello alto, 0,5 centrato.
+     *
+     * Sono quattro perche' tre danno ancora una rotazione riconoscibile su una
+     * fila di edifici uguali, e il quarto e' il gemello speculare del terzo: e'
+     * la coppia che fa leggere due vicini come due edifici invece che come due
+     * copie.
+     */
+    forms: [
+      // Balcone: tutto il fronte, sporto minimo. E' la mensola sottile, quella
+      // che disegna una linea sulla facciata invece di aggiungerle un volume.
+      { run: 1, depth: 0.4, align: 0.5 },
+      // Loggia: quasi tutto il fronte e sporto pieno, centrata. E' la piu' vicina
+      // alla mensola di prima, e resta la piu' abitabile.
+      { run: 0.75, depth: 1, align: 0.5 },
+      // Ala: mezzo fronte, sporto quasi pieno, spinta a un capo. E' quella che
+      // rompe la simmetria della facciata.
+      { run: 0.55, depth: 0.85, align: 0 },
+      // Sperone: poco fronte e sporto pieno, all'altro capo. Piu' profondo che
+      // largo, cioe' l'unica forma che sporge davvero invece di allargarsi.
+      { run: 0.5, depth: 1, align: 1 },
+    ],
+
+    /**
+     * Fin dove la trave bassa accompagna la mensola, oltre il filo della parete.
+     *
+     * **E' la rastremazione, ed e' il motivo per cui una mensola non e' una
+     * cassa.** La travatura da due voxel su tutto il perimetro dava alla punta lo
+     * stesso spessore dell'attacco: da sotto e da lontano leggeva come una lastra
+     * di calcestruzzo alta tre voxel, cioe' un piano e mezzo di edificio appeso al
+     * muro. Due voxel di trave presso la parete e niente piu' in la' danno la
+     * sezione che una mensola ha davvero — grossa dove scarica, sottile dove
+     * finisce — e non costano un voxel in piu' a nessun budget: ne tolgono.
+     */
+    taperReach: 2,
+
+    /**
+     * Smusso massimo degli angoli esterni, in voxel.
+     *
+     * I due angoli lontani dalla parete sono i soli che si vedono per intero da
+     * fuori, ed erano due spigoli retti: tagliarli in diagonale e' la differenza
+     * fra un riquadro e una sagoma. Due voxel sono la meta' dello sporto minimo —
+     * si legge dalla camera isometrica e non mangia il piano. Su una mensola
+     * piccola si riduce da solo: `cornerCutOf` non taglia mai piu' di un terzo del
+     * lato, o di un balcone da tre resterebbe il triangolo.
+     */
+    cornerCut: 2,
+
+    /**
      * Mensole proposte al massimo da una passata, e tick fra due passate.
      *
      * Piu' rapida della rete perche' un aggetto chiede un edificio solo: e' il

@@ -15,6 +15,8 @@ import { CHUNK } from '../chunkCoords';
 import { LANDMARKS } from '../landmarks/config';
 import { generateLandmark, landmarkSpan } from '../landmarks/generate';
 import { footprintDepth } from './BuildingRegistry';
+import { recordStamp } from './recordStamp';
+import { anchorOf } from './growthQueue';
 import { solidCount } from './stamp';
 import { SPANS, SPAN_KIND } from '../spans/config';
 import { SpanNetwork } from '../spans/network';
@@ -26,14 +28,17 @@ import { PALETTE_SLOTS } from '../../engine/paletteSlots';
 import { testTerrain } from '../../sim/testTerrain';
 import { VoxelWorld } from '../VoxelWorld';
 import { generateIsland } from '../terrain/IslandGenerator';
-import { SURFACE_KIND } from '../visualBlock';
+import { SURFACE_KIND, blockPalette } from '../visualBlock';
+import { WATER_IDS } from '../terrain/config';
 import { Builder, REJECT_REASONS } from './Builder';
 import { BUILDER, CLASS_PROFILE, CLUSTER, MAX_FOOTPRINT } from './config';
 import { GRADING } from '../grading/config';
 import { GROUND, groundKindOf, isDryLand, type GroundKind } from '../grading/grade';
 import { SKYLINE } from '../skyline/config';
 import { TIER } from '../skyline/tiers';
-import { waterDistance } from '../sites/siteRules';
+import { waterDistance, waterFacing } from '../sites/siteRules';
+import { SITE } from '../sites/config';
+import { groundKindAt } from './siteWorks';
 import { TERRAIN } from '../terrain/config';
 import type { TerrainMap } from '../terrain/TerrainMap';
 
@@ -1129,6 +1134,39 @@ describe('Builder — landmark dei catalizzatori', () => {
     return { world, map, builder, site };
   }
 
+  /** true se il voxel e' acqua, di superficie o fonda. */
+  function isWater(palette: number): boolean {
+    return palette === WATER_IDS.surface || palette === WATER_IDS.deep;
+  }
+
+  /**
+   * Un porto sul **fronte mare vero**, cioe' dove il gioco lo lascerebbe posare.
+   *
+   * `seaward` cerca la colonna *edificabile* piu' vicina all'acqua, e su
+   * quest'isola quella sta a decine di colonne dalla costa: la spiaggia non e'
+   * edificabile per il generatore, pur essendo lavorabilissima per le opere.
+   * Qui la domanda e' un'altra — dove il vincolo di sito `'coastal'` direbbe di
+   * si' — e la risposta e' la battigia con il mare a portata di `SITE`.
+   */
+  function harbourOnWater(): { world: VoxelWorld; builder: Builder } {
+    const world = new VoxelWorld();
+    const { map } = generateIsland(world, 4242, { minX: 0, minY: 0, sizeX: 256, sizeY: 256 });
+
+    for (let y = 24; y < 232; y++) {
+      for (let x = 24; x < 232; x++) {
+        if (groundKindAt(map, x, y) !== GROUND.shore) continue;
+        if (!isDryLand(map.biomeAt(x, y))) continue;
+        if (waterFacing(map, x, y, SITE.coastalRadius) === null) continue;
+
+        const builder = new Builder(world, map, 4242);
+        builder.placeLandmark(x, y, 'port');
+        while (builder.stats.growing > 0 || builder.stats.surfaceQueued > 0) builder.step();
+        if (landmarkRecord(builder) !== null) return { world, builder };
+      }
+    }
+    throw new Error('nessuna battigia dell isola di prova regge un porto');
+  }
+
   /** Il record del landmark, se il luogo lo ha retto. */
   function landmarkRecord(builder: Builder): BuildingRecord | null {
     for (const record of builder.registry.all) {
@@ -1149,6 +1187,51 @@ describe('Builder — landmark dei catalizzatori', () => {
     expect(site.x).toBeLessThan(record!.x + record!.footprint);
     expect(site.y).toBeGreaterThanOrEqual(record!.y);
     expect(site.y).toBeLessThan(record!.y + (record!.footprintY ?? record!.footprint));
+  });
+
+  it('il bacino resta acqua: il porto non porta all asciutto il proprio riquadro', () => {
+    // **E' il difetto che la maschera dell'opera esiste per togliere.** Senza,
+    // `buildWorks` portava tutta l'impronta alla quota della banchina: la meta'
+    // sul mare diventava una piattaforma rettangolare, e la darsena disegnata
+    // dentro lo stamp restava una pozza piu' alta del mare che la circondava.
+    const { world, builder } = harbourOnWater();
+    const record = landmarkRecord(builder)!;
+    const depth = footprintDepth(record);
+
+    let wet = 0;
+    for (let dy = 0; dy < depth; dy++) {
+      for (let dx = 0; dx < record.footprint; dx++) {
+        const x = record.x + dx;
+        const y = record.y + dy;
+        // Alla quota del pelo del mare: o e' rimasta acqua, o qualcuno l'ha
+        // riempita di pietra.
+        const palette = blockPalette(world.getBlock(x, y, TERRAIN.seaLevel - 1));
+        if (isWater(palette)) wet++;
+      }
+    }
+
+    // Un porto ha un bacino, e un bacino e' fatto di colonne d'acqua: qui il
+    // riquadro e' venti per dodici e il braccio ne occupa una frazione.
+    expect(wet).toBeGreaterThan(20);
+  });
+
+  it('sopra il bacino non c e nessun piano: il mare arriva fino in cima', () => {
+    // Il complemento del test di sopra, e il difetto che si vedeva davvero: non
+    // basta che l'acqua sia rimasta sotto, non deve esserci niente sopra.
+    const { world, builder } = harbourOnWater();
+    const record = landmarkRecord(builder)!;
+    const depth = footprintDepth(record);
+
+    for (let dy = 0; dy < depth; dy++) {
+      for (let dx = 0; dx < record.footprint; dx++) {
+        const x = record.x + dx;
+        const y = record.y + dy;
+        if (!isWater(blockPalette(world.getBlock(x, y, TERRAIN.seaLevel - 1)))) continue;
+        for (let z = TERRAIN.seaLevel; z < record.baseZ + record.height; z++) {
+          expect({ x, y, z, block: world.getBlock(x, y, z) }).toEqual({ x, y, z, block: 0 });
+        }
+      }
+    }
   });
 
   it('il landmark occupa il registry ma non conta come edificio', () => {
@@ -1397,22 +1480,37 @@ describe('Builder — isolati terrazzati', () => {
     expect(widest).toBeGreaterThan(MAX_FOOTPRINT);
   });
 
-  it('il corso di base condiviso resta pieno dopo gli upgrade', () => {
+  it('il corso di base condiviso e quello che il record dice, dopo gli upgrade', () => {
     // E' il test della cancellazione: l'`upgrade` rigenera la sagoma da togliere
     // dal solo record, e se non le passasse `baseBand` l'erase scriverebbe vuoto
     // su una fascia zero alta in modo diverso — cioe' bucherebbe lo zoccolo
     // proprio sotto il vicino, dove la fila deve leggersi continua.
+    //
+    // **Si confronta con la sagoma rigenerata, non con «tutto pieno».** Finche'
+    // niente poteva bucare la fascia zero i due erano la stessa cosa, e «tutto
+    // pieno» era la sonda piu' corta. Da quando un portico puo' aprire il piano
+    // terra sul fronte strada non lo sono piu': la sonda direbbe di no a un vuoto
+    // che la sagoma prevede. Il contratto non e' «lo zoccolo e' pieno», e' **«il
+    // mondo dice quello che dice il record»** — che e' anche piu' stretto, perche'
+    // ora accorgersi di un voxel di troppo, non solo di uno mancante.
     const { world, records } = denseCity();
     const clustered = records.filter((record) => record.baseBand !== undefined);
 
     expect(clustered.length).toBeGreaterThan(0);
     for (const record of clustered) {
+      const stamp = recordStamp(record);
+      const anchor = anchorOf(record);
       for (let z = record.baseZ; z < record.baseZ + (record.baseBand ?? 0); z++) {
         for (let dy = 0; dy < record.footprint; dy++) {
           for (let dx = 0; dx < record.footprint; dx++) {
-            if (world.getBlock(record.x + dx, record.y + dy, z) === 0) {
-              expect({ x: record.x + dx, y: record.y + dy, z })
-                .toBe('corso di base pieno su tutta l impronta');
+            const sx = record.x + dx - anchor.x + stamp.anchorX;
+            const sy = record.y + dy - anchor.y + stamp.anchorY;
+            const sz = z - anchor.z + stamp.anchorZ;
+            const wanted = stamp.voxels[sx + stamp.sizeX * (sy + stamp.sizeY * sz)] !== 0;
+            const got = world.getBlock(record.x + dx, record.y + dy, z) !== 0;
+            if (got !== wanted) {
+              expect({ x: record.x + dx, y: record.y + dy, z, wanted, got })
+                .toBe('lo zoccolo combacia con la sagoma registrata');
             }
           }
         }

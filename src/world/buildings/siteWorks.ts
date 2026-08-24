@@ -1,5 +1,5 @@
 import { SURFACE_KIND } from '../visualBlock';
-import { paletteForDepth } from '../terrain/biomes';
+import { paletteAt } from '../terrain/biomes';
 import type { TerrainMap } from '../terrain/TerrainMap';
 import type { VoxelWorld } from '../VoxelWorld';
 import { GRADING } from '../grading/config';
@@ -55,10 +55,12 @@ export function surveyGrade(
   y: number,
   w: number,
   h: number = w,
+  mask?: WorksMask,
 ): GradePlan | null {
   const columns: { kind: GroundKind; height: number }[] = [];
   for (let dy = 0; dy < h; dy++) {
     for (let dx = 0; dx < w; dx++) {
+      if (mask !== undefined && mask[dy * w + dx] === 0) continue;
       const kind = groundKindAt(terrain, x + dx, y + dy);
       if (kind === GROUND.refused) return null;
       columns.push({ kind, height: terrain.heightAt(x + dx, y + dy) });
@@ -66,6 +68,22 @@ export function surveyGrade(
   }
   return planGrade(columns);
 }
+
+/**
+ * Quali colonne di un'impronta l'opera deve reggere: `1` si costruisce, `0` no.
+ *
+ * E' un array `w * h` in ordine di riga, cioe' la stessa disposizione con cui
+ * `stampFootprint` risponde: le due si passano l'una all'altra senza
+ * conversioni. Assente vale «tutta l'impronta», che e' il caso di ogni edificio
+ * — un volume rettangolare pieno non ha niente da escludere.
+ *
+ * **Esiste per il fronte mare.** Il riquadro di un porto e' per meta' specchio
+ * d'acqua: senza maschera l'opera lo portava tutto alla quota della banchina, e
+ * quello che si vedeva era una piattaforma rettangolare con dentro una pozza
+ * d'acqua piu' alta del mare che la circonda. Con la maschera, il molo e' terra
+ * e la darsena resta il mare che c'era.
+ */
+export type WorksMask = Uint8Array;
 
 /**
  * true se una colonna dell'impronta non e' lavorabile affatto.
@@ -138,12 +156,17 @@ export function isCoastal(terrain: TerrainMap, x: number, y: number): boolean {
  *
  * **Il perimetro e' l'unica parte che si vede**, ed e' l'unica che diventa
  * muratura. Le colonne interne restano stratigrafia di bioma, con lo stesso
- * `paletteForDepth` che usa `IslandGenerator`: sotto un edificio non le
- * guarda nessuno, e rivestirle costerebbe voxel per niente.
+ * `paletteAt` che usa `IslandGenerator`: sotto un edificio non le guarda
+ * nessuno, e rivestirle costerebbe voxel per niente.
  *
  * Il corso di coronamento e' cio' che distingue un muro di contenimento da un
  * blocco di roccia: una riga chiara in cima al salto, che a distanza di gioco
  * e' il solo segno che dichiari il dislivello costruito invece che scavato.
+ *
+ * **La maschera decide dove l'opera esiste.** Senza, e' tutta l'impronta, cioe'
+ * il comportamento di ogni edificio. Con, e' solo cio' che la struttura occupa
+ * davvero: un porto costruisce il molo e lascia la darsena al mare, invece di
+ * portare all'asciutto il proprio riquadro intero.
  */
 export function buildWorks(
   world: VoxelWorld,
@@ -153,19 +176,29 @@ export function buildWorks(
   w: number,
   plan: GradePlan,
   h: number = w,
+  mask?: WorksMask,
 ): void {
   const quay = plan.works === WORKS.quay;
   const wall = quay ? GRADING.quayWall : GRADING.terraceWall;
   const coping = quay ? GRADING.quayCoping : GRADING.terraceCoping;
+  const filled = (dx: number, dy: number): boolean =>
+    dx >= 0 && dy >= 0 && dx < w && dy < h &&
+    (mask === undefined || mask[dy * w + dx] === 1);
 
   for (let dy = 0; dy < h; dy++) {
     for (let dx = 0; dx < w; dx++) {
+      if (!filled(dx, dy)) continue;
       const cx = x + dx;
       const cy = y + dy;
       const height = terrain.heightAt(cx, cy);
       if (height >= plan.padZ) continue;
 
-      const edge = dx === 0 || dy === 0 || dx === w - 1 || dy === h - 1;
+      // Il bordo e' la colonna che ha un vicino **fuori dall'opera**, non quella
+      // sul bordo del riquadro: con una maschera le due cose smettono di
+      // coincidere, ed e' il muro attorno alla darsena — che sta in mezzo
+      // all'impronta — a doversi vedere di taglio.
+      const edge = !filled(dx - 1, dy) || !filled(dx + 1, dy) ||
+        !filled(dx, dy - 1) || !filled(dx, dy + 1);
       if (plan.works !== WORKS.none && edge) {
         for (let z = height; z < plan.padZ; z++) {
           world.setBlock(cx, cy, z, z === plan.padZ - 1 ? coping : wall, SURFACE_KIND.utility);
@@ -175,7 +208,10 @@ export function buildWorks(
 
       const biome = terrain.biomeAt(cx, cy);
       for (let z = height; z < plan.padZ; z++) {
-        world.setBlock(cx, cy, z, paletteForDepth(biome, plan.padZ - 1 - z));
+        // La quota di riferimento e' quella **finita**: il riempimento continua
+        // lo strato di roccia del piano che porta, non quello del terreno che
+        // copre, o il terrapieno si vedrebbe come una toppa di un altro grigio.
+        world.setBlock(cx, cy, z, paletteAt(biome, plan.padZ, plan.padZ - 1 - z));
       }
     }
   }

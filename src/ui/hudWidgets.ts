@@ -15,9 +15,36 @@ export function actionButton(action: HudAction, icon: HudIcon, onClick: () => vo
   const copy = button.querySelector('.button-copy');
   const cost = document.createElement('span');
   cost.className = 'button-cost';
-  cost.textContent = `${action.cost} funds`;
+  // L'icona della risorsa accanto alla cifra, non la parola: il costo si legge
+  // come si legge la barra in alto, e le due superfici parlano la stessa lingua.
+  cost.append(createHudIcon('funds'), document.createTextNode(String(action.cost)));
   copy?.appendChild(cost);
   button.setAttribute('aria-pressed', 'false');
+  return button;
+}
+
+/**
+ * Un'azione come **tile**: icona sopra, etichetta sotto, misura fissa.
+ *
+ * La fila di bottoni larghi quanto la loro parola faceva del dock un elenco; una
+ * griglia di tessere uguali si conta a colpo d'occhio, ed e' cio' che permette
+ * al tasto numerico di significare qualcosa.
+ */
+export function tileButton(
+  action: HudAction,
+  icon: HudIcon,
+  key: string | null,
+  onClick: () => void,
+): HTMLButtonElement {
+  const button = actionButton(action, icon, onClick);
+  button.classList.add('hud-tile');
+  if (key !== null) {
+    const badge = document.createElement('span');
+    badge.className = 'hud-tile-key';
+    badge.textContent = key;
+    badge.setAttribute('aria-hidden', 'true');
+    button.appendChild(badge);
+  }
   return button;
 }
 
@@ -67,6 +94,20 @@ export function paintAction(button: HTMLButtonElement | undefined, action: HudAc
   // Bloccato ma visibile: il bottone resta al suo posto e cambia solo stato,
   // cosi' la toolbar non si riordina sotto il dito mentre i fondi salgono.
   button.dataset.locked = action.locked === true ? 'true' : 'false';
+  // Il riempimento e' una custom property e non una classe: il CSS la legge in
+  // una `calc()`, quindi la barra avanza da sola a ogni ripittura senza che
+  // nessuno debba decidere delle soglie.
+  if (action.progress === undefined) {
+    button.style.removeProperty('--hud-progress');
+    delete button.dataset.requirement;
+    delete button.dataset.requirementShort;
+  } else {
+    button.style.setProperty('--hud-progress', action.progress.toFixed(3));
+    button.dataset.requirement = action.requirement ?? '';
+    // Le due cifre nude vanno sotto la tessera, dove la frase intera finiva
+    // sopra il costo; la frase resta nel tooltip.
+    button.dataset.requirementShort = action.requirementShort ?? '';
+  }
   button.dataset.tooltip = actionTooltip(action);
   button.title = actionTooltip(action);
 }
@@ -74,6 +115,9 @@ export function paintAction(button: HTMLButtonElement | undefined, action: HudAc
 /** Motivo dell'azione, piu' cio' che quel ruolo favorisce e puo' far nascere. */
 export function actionTooltip(action: HudAction): string {
   const lines = [action.reason];
+  // Quanto manca, in cifre, subito dopo il perche': il riempimento dice "poco"
+  // o "tanto" a colpo d'occhio, ma chi si ferma a leggere vuole il numero.
+  if (action.requirement !== undefined) lines.push(action.requirement);
   // Subito dopo il motivo e prima di tutto il resto: un vincolo di sito cambia
   // *dove* si clicca, e leggerlo in fondo all'elenco vorrebbe dire leggerlo
   // dopo aver gia' scelto il punto.

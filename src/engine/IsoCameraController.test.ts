@@ -1,21 +1,14 @@
-import { OrthographicCamera, Vector3 } from 'three';
+import { MathUtils, OrthographicCamera, Vector3 } from 'three';
 import { afterEach, describe, expect, it } from 'vitest';
 import { VoxelWorld } from '../world/VoxelWorld';
-import { IsoCameraController, isPanButton } from './IsoCameraController';
+import { IsoCameraController } from './IsoCameraController';
+import { scaleOrbitBounds } from './orbitPan';
 
 const WIDTH = 800;
 const HEIGHT = 600;
 
-describe('isPanButton', () => {
-  it.each([0, 1, 2])('accetta il pulsante pointer %i', (button) => {
-    expect(isPanButton(button)).toBe(true);
-  });
-
-  it('rifiuta i pulsanti laterali', () => {
-    expect(isPanButton(3)).toBe(false);
-    expect(isPanButton(4)).toBe(false);
-  });
-});
+/** Un isolato di venti colonne con sopra una torre alta duecento. */
+const BLOCK = { x0: 40, y0: 40, z0: 0, x1: 60, y1: 60, z1: 200 };
 
 /**
  * L'ambiente di test e' node: niente DOM. Serve solo la superficie che il
@@ -41,9 +34,25 @@ function fakeElement() {
   return { element: element as unknown as HTMLElement, dispatch };
 }
 
-function withFakeWindow(): void {
+/**
+ * `attach` mette i tasti su `window`, non sulla canvas: senza un `window` che li
+ * tenga, il pan da tastiera non si potrebbe provare affatto. Restituisce il
+ * dispatch per chi ha bisogno di premerne uno.
+ */
+function withFakeWindow(): (type: string, event: unknown) => void {
+  const listeners = new Map<string, ((event: unknown) => void)[]>();
   const globals = globalThis as Record<string, unknown>;
-  globals.window ??= { addEventListener() {}, removeEventListener() {} };
+  globals.window = {
+    addEventListener(type: string, handler: (event: unknown) => void) {
+      const list = listeners.get(type) ?? [];
+      list.push(handler);
+      listeners.set(type, list);
+    },
+    removeEventListener() {},
+  };
+  return (type: string, event: unknown): void => {
+    for (const handler of listeners.get(type) ?? []) handler(event);
+  };
 }
 
 /**
@@ -103,6 +112,80 @@ describe('rotazione centrata sul cursore', () => {
 
     expect(controller.targetPosition.distanceTo(before)).toBeCloseTo(0, 9);
     expect(controller.yawDegrees).toBeCloseTo(-45, 6);
+  });
+});
+
+describe('orbita sulla citta’', () => {
+  afterEach(() => {
+    delete (globalThis as Record<string, unknown>).window;
+  });
+
+  function onTheCity() {
+    const dispatchKey = withFakeWindow();
+    const controller = new IsoCameraController(new VoxelWorld(), WIDTH, HEIGHT);
+    const { element, dispatch } = fakeElement();
+    controller.attach(element);
+    const drag = (button: number, toX: number, toY: number): void => {
+      dispatch('pointerdown', { pointerId: 1, button, clientX: 400, clientY: 300, currentTarget: element, preventDefault() {} });
+      dispatch('pointermove', { pointerId: 1, clientX: toX, clientY: toY, preventDefault() {} });
+      dispatch('pointerup', { pointerId: 1 });
+    };
+    return { controller, dispatchKey, drag };
+  }
+
+  it('il tasto centrale gira e inclina senza spostare l’inquadratura', () => {
+    const { controller, drag } = onTheCity();
+    const rest = controller.captureState().pitch;
+    const target = controller.targetPosition.clone();
+
+    drag(1, 460, 260);
+
+    expect(controller.yawDegrees).not.toBeCloseTo(45, 3);
+    // Tirando verso l'alto ci si abbassa sul soggetto, come nello studio.
+    expect(controller.captureState().pitch).toBeLessThan(rest);
+    // Il perno resta il centro dell'inquadratura: girare non e' spostarsi.
+    expect(controller.targetPosition.distanceTo(target)).toBeCloseTo(0, 9);
+  });
+
+  it('il sinistro continua a panare', () => {
+    // L'orbita non ha preso il posto di niente: il tasto con cui si gira e'
+    // l'unico dei tre che non serviva gia' a qualcos'altro.
+    const { controller, drag } = onTheCity();
+    const target = controller.targetPosition.clone();
+
+    drag(0, 460, 260);
+
+    expect(controller.targetPosition.distanceTo(target)).toBeGreaterThan(1);
+    expect(controller.yawDegrees).toBeCloseTo(45, 6);
+  });
+
+  it('Q ed E riagganciano la griglia dallo scatto piu’ vicino', () => {
+    const { controller } = onTheCity();
+    controller.orbitBy(MathUtils.degToRad(100), 0.3);
+    const pitch = controller.captureState().pitch;
+
+    controller.rotate(1);
+    controller.update(1 / 60);
+    // Con un contatore di scatti al posto dello yaw vero, `E` avrebbe puntato
+    // 135 gradi: la citta' sarebbe partita **all'indietro** di dieci gradi.
+    expect(controller.yawDegrees).toBeGreaterThan(145);
+    settleRotation(controller);
+    expect(controller.yawDegrees).toBeCloseTo(225, 6);
+
+    // L'angolo scelto si tiene: raddrizzare e' un altro gesto.
+    expect(controller.captureState().pitch).toBeCloseTo(pitch, 9);
+  });
+
+  it('F rimette l’assetto isometrico', () => {
+    const { controller, dispatchKey } = onTheCity();
+    const rest = controller.captureState().pitch;
+    controller.orbitBy(MathUtils.degToRad(100), 0.3);
+
+    dispatchKey('keydown', { code: 'KeyF' });
+    settleRotation(controller);
+
+    expect(controller.captureState().pitch).toBeCloseTo(rest, 9);
+    expect(controller.yawDegrees).toBeCloseTo(135, 6);
   });
 });
 
@@ -196,6 +279,46 @@ describe('orbita attorno a un soggetto', () => {
     dispatch('pointermove', { pointerId: 1, clientX: 460, clientY: 300, preventDefault() {} });
 
     expect(controller.yawDegrees).not.toBeCloseTo(yaw, 3);
+    expect(controller.targetPosition.distanceTo(target)).toBeCloseTo(0, 9);
+  });
+
+  it('i tasti salgono lungo il soggetto e si fermano al suo bordo', () => {
+    const dispatchKey = withFakeWindow();
+    const controller = new IsoCameraController(new VoxelWorld(), WIDTH, HEIGHT);
+    const { element } = fakeElement();
+    controller.attach(element);
+    controller.setOrbitMode(true);
+    controller.setOrbitBounds(BLOCK);
+    controller.setTarget(50, 50, 100);
+
+    dispatchKey('keydown', { code: 'KeyW' });
+    for (let i = 0; i < 240; i++) controller.update(1 / 60);
+
+    // Salire lungo la torre e' il movimento che mancava: lo zoom avvicina, ma
+    // resta puntato a mezza altezza, e i piani alti non si raggiungevano.
+    expect(controller.targetPosition.z).toBeGreaterThan(100);
+    expect(controller.targetPosition.z).toBeCloseTo(scaleOrbitBounds(BLOCK, 1).z1, 6);
+  });
+
+  it('senza un soggetto in mano i tasti in orbita non muovono il perno', () => {
+    const dispatchKey = withFakeWindow();
+    const controller = new IsoCameraController(new VoxelWorld(), WIDTH, HEIGHT);
+    const { element } = fakeElement();
+    controller.attach(element);
+
+    // Studiare un isolato e poi mollarlo: la scatola del primo non deve
+    // sopravvivergli, o il pan del prossimo studio si vincolerebbe a un volume
+    // che sta da un'altra parte della citta'.
+    controller.setOrbitMode(true);
+    controller.setOrbitBounds(BLOCK);
+    controller.setOrbitMode(false);
+    controller.setOrbitMode(true);
+    controller.setTarget(50, 50, 100);
+
+    const target = controller.targetPosition.clone();
+    dispatchKey('keydown', { code: 'KeyD' });
+    for (let i = 0; i < 60; i++) controller.update(1 / 60);
+
     expect(controller.targetPosition.distanceTo(target)).toBeCloseTo(0, 9);
   });
 });

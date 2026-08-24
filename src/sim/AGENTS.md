@@ -22,11 +22,35 @@ colonna `(x, y)` e non costruisce voxel: il `Builder` e' esterno.
 
 ## Relazioni da non rompere per distrazione
 
-In `balance.ts` ci sono due pareggi 1:1. `food.perProduction / food.perResident`
-fa 24, cioe' esattamente `weights.residentialCapacity`: un edificio industriale
-sfama un residenziale pieno. E `weights.commercialCapacity` vale a sua volta 24:
-un edificio commerciale ne serve uno. Cambiare uno di questi valori senza
-guardare gli altri rompe il pareggio.
+In `balance.ts` ci sono due pareggi 1:1, e uno dei due adesso si difende da se'.
+
+`weights.commercialCapacity` vale `weights.residentialCapacity`: un edificio
+commerciale serve esattamente un residenziale pieno. Cambiare uno dei due senza
+guardare l'altro rompe il pareggio, e non c'e' niente che lo impedisca.
+
+Il cibo era la stessa cosa scritta peggio — `food.perProduction / perResident`
+faceva 24, cioe' `residentialCapacity`, e per accorgersene bisognava dividere due
+numeri lontani. Dalla 3.1 e' un **prodotto**: `FOOD_PER_HOUSE` e' derivato da
+`residentialCapacity * food.perResident`, e il listino di `farms` e' in **case
+sfamate** — un campo due, un frutteto una, una torre sei. Cambiare la capacita'
+di una casa muove percio' tutto il listino da solo, e il pareggio non si puo'
+piu' rompere per distrazione: solo di proposito, riscrivendo `farms`.
+
+**Il cibo non esce dall'industria.** `tick` lo prende da `farmCounts`, che il
+mondo riempie con `addFarm` (campi e frutteti) e con `addBuilding` quando
+l'edificio porta `specialization: 'farming'` (le torri idroponiche). Una torre
+conta in `buildingCounts[industrial]` *e* in `farmCounts[tower]`, e `tick` la
+toglie dall'industria che fa materiali: convertire costa, ed e' il punto.
+
+`farming` e' l'unica specializzazione che cambia il bilancio di un tick. Le altre
+cinque restano un fatto sulla forma dell'edificio, non sulle risorse. A dichiararla
+e' la **tipologia costruita** e non il profilo del luogo: sono due cose diverse, e
+un edificio sotto `minLevel` in un distretto che esprime `farming` non e' una torre.
+
+`state.harvest` e' il referto del raccolto, gemello di `flows` e `commerce`:
+derivato dal tick e non accumulato. Serve a chi mostra **da dove viene** il cibo,
+e va letto invece di rifare il conto — un secondo listino nell'interfaccia
+divergerebbe dal primo alla prima ritaratura.
 
 Il **vettore di influenza** di un catalizzatore sta in
 `gameplay.catalyst.influence`, non nella sua definizione: ogni ruolo ha almeno

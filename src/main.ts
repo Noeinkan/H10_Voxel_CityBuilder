@@ -11,6 +11,8 @@ import { ChunkRenderer } from './engine/ChunkRenderer';
 import { InfluenceOverlay } from './engine/InfluenceOverlay';
 import { InspectGuides } from './engine/InspectGuides';
 import { PlacementCursor } from './engine/PlacementCursor';
+import { TrafficView } from './engine/TrafficView';
+import { RopewayView } from './engine/RopewayView';
 import { FrameTiming } from './engine/FrameTiming';
 import {
   INSPECT,
@@ -47,10 +49,12 @@ import {
 import { createSkyBackground } from './engine/SkyBackground';
 import { createPostProcessing } from './engine/PostProcessing';
 import { createSunShadow } from './engine/SunShadow';
+import { SelectionOutline } from './engine/SelectionOutline';
 import { resolveTheme, THEMES, type Theme } from './engine/themes';
 import { createVoxelMaterial } from './engine/VoxelMaterial';
 import { GrowthScene } from './game/growthScene';
-import { resolveLaunchMode } from './game/launchMode';
+import { resolveLaunchMode, swatchUrl } from './game/launchMode';
+import { resolveSelection, type Selection } from './game/selection';
 import { pickSolidCell, pickSurfaceCell, type Ray3, type SurfaceCell } from './game/surfacePick';
 import { SimScene, SIM_SITE_COUNT, SIM_TICK_RATE } from './game/simScene';
 import { coastalSectorAt, shapeWithSector, type CoastalSector } from './game/sectors';
@@ -58,7 +62,7 @@ import type { ActionFailure, SiteCost } from './game/actions';
 import type { LandmarkSite } from './world/buildings/Builder';
 import { BALANCE } from './sim/balance';
 import { cityVitality } from './sim/vitality';
-import { catalystById, defaultCatalystOfClass } from './sim/catalysts';
+import { catalystById, defaultCatalystOfClass, type CatalystId } from './sim/catalysts';
 import {
   BUILDING_CLASS,
   CLASS_COUNT,
@@ -74,8 +78,11 @@ import './ui/hud.css';
 import { DebugOverlay, type OverlayFrame } from './ui/DebugOverlay';
 import { GameHud, type GameTool } from './ui/GameHud';
 import { daylightControl } from './ui/GameHudModel';
+import { hudTokens } from './ui/hudTokens';
 import { GrowthOverlay } from './ui/GrowthOverlay';
 import { InspectOverlay, type InspectOverlayFrame } from './ui/InspectOverlay';
+import { SelectionPanel } from './ui/SelectionPanel';
+import { extentOf, type SelectionActionId, type SelectionSectionId } from './ui/SelectionPanelModel';
 import { SimOverlay, type SimOverlayFrame } from './ui/SimOverlay';
 import { SwatchOverlay, type SwatchOverlayFrame } from './ui/SwatchOverlay';
 import { TerrainOverlay, type TerrainOverlayFrame } from './ui/TerrainOverlay';
@@ -95,6 +102,7 @@ import {
   type DioramaScene,
 } from './world/scenes/dioramaScene';
 import {
+  CELL_HEIGHT,
   SWATCH,
   swatchCellAt,
   swatchExtent,
@@ -302,7 +310,7 @@ const camera = new IsoCameraController(world, window.innerWidth, window.innerHei
   targetHeight: diorama !== null
     ? diorama.subject.z + diorama.subject.sizeZ / 2
     : sceneKind === 'swatch'
-      ? SWATCH.groundZ + SWATCH.cellHeight / 2
+      ? SWATCH.groundZ + CELL_HEIGHT / 2
       : 24,
 });
 camera.attach(renderer.domElement);
@@ -444,7 +452,13 @@ const terrainOverlay =
 const swatchOverlay = sceneKind === 'swatch' ? new SwatchOverlay(container) : null;
 overlay.setVisible(debugVisible);
 terrainOverlay?.setVisible(debugVisible);
-swatchOverlay?.setVisible(debugVisible);
+// Il referto del campionario **non** e' un overlay tecnico, ed e' l'unico che
+// nasce aperto senza `?debug=1`: e' la legenda dello strumento, come la targa
+// delle viste. In-world non ci sono etichette, quindi senza di lui la griglia
+// resta duecentocinquanta prismi anonimi — e da quando il dock del gioco apre
+// questa scena a chi non ha mai visto un parametro URL, tenere la legenda dietro
+// un gate di misura significava mandarlo su una pagina che non si puo' leggere.
+swatchOverlay?.setVisible(true);
 let terrainApplyMs = 0;
 
 /** Cella del campionario sotto il cursore; la leggono overlay e hook globale. */
@@ -519,6 +533,12 @@ if (growEnabled) {
       const index = THEMES.findIndex((candidate) => candidate.id === id);
       if (index >= 0) daylight.cycleTheme(index);
     },
+    // Una scheda nuova, non questa: il campionario e' una scena diversa e
+    // rigenerarla qui vorrebbe dire buttare la partita, che non ha salvataggio.
+    // Cosi' la citta' resta viva sotto, e si torna chiudendo la scheda.
+    onSwatch: () => {
+      window.open(swatchUrl(daylight.theme.id, daylight.hour), '_blank', 'noopener');
+    },
     onView: (mode) => inspect.setMode(mode),
     onLevel: (z) => inspect.setSliceZ(z),
     onCancelTool: () => {
@@ -528,6 +548,7 @@ if (growEnabled) {
       gameHud?.updateCursor(0, 0, null);
     },
     onReleaseBlock: () => inspect.unlockBlock(),
+    onClearSelection: () => clearSelection(),
   }, THEMES.map((candidate) => ({
     id: candidate.id,
     name: candidate.name,
@@ -536,6 +557,9 @@ if (growEnabled) {
       candidate.colors[5] ?? candidate.atmosphere.fog.color,
       candidate.colors[12] ?? candidate.atmosphere.fog.color,
     ],
+    // La derivazione sta qui e non nell'HUD per la stessa ragione delle
+    // pastiglie qui sopra: legge l'atmosfera, e l'HUD non conosce l'engine.
+    tokens: hudTokens(candidate),
   })), daylight.theme.id);
   // Il bottone nasce sul ciclo: se l'URL ha chiesto altro, va detto subito o la
   // prima cosa che il giocatore legge e' falsa.
@@ -551,6 +575,29 @@ const influenceOverlay = terrain !== null && growEnabled ? new InfluenceOverlay(
 if (influenceOverlay !== null) scene.add(influenceOverlay.group);
 
 /**
+ * I mezzi che si muovono: barche, navi, aerei, dirigibili.
+ *
+ * Vive accanto agli altri overlay dell'engine e per la stessa ragione — cio' che
+ * si muove non e' materia. Scrivere una barca nel `VoxelWorld` e riscriverla al
+ * frame dopo marcherebbe sporchi i chunk della costa sessanta volte al secondo,
+ * cioe' rimeshare mezza isola per farla navigare.
+ */
+const trafficView = terrain !== null && growEnabled ? new TrafficView() : null;
+if (trafficView !== null) scene.add(trafficView.group);
+/** Ultima volta che i colori dei mezzi sono stati riscritti con l'ora corrente. */
+let trafficLitAt = 0;
+
+/**
+ * Le funi delle funivie.
+ *
+ * Accanto ai mezzi e per la ragione gemella: quelli non sono materia perche' si
+ * muovono, questa perche' e' spessa un terzo di voxel. Vive anche lei fuori dal
+ * volume, e nessun chunk se ne accorge.
+ */
+const ropewayView = terrain !== null && growEnabled ? new RopewayView() : null;
+if (ropewayView !== null) scene.add(ropewayView.group);
+
+/**
  * Le linee che dicono dove e' puntata la vista.
  *
  * Non dipendono da `growEnabled`: le viste sono dell'harness prima ancora che
@@ -558,6 +605,16 @@ if (influenceOverlay !== null) scene.add(influenceOverlay.group);
  */
 const inspectGuides = terrain !== null ? new InspectGuides(terrain.map, terrainRegion) : null;
 if (inspectGuides !== null) scene.add(inspectGuides.group);
+
+/**
+ * Il contorno di cio' che il giocatore ha scelto.
+ *
+ * Separato dalle guide di ispezione perche' risponde a un'altra domanda — «cosa
+ * ho scelto» invece di «dov'e' puntata la lente» — e le due possono essere accese
+ * insieme su due cose diverse.
+ */
+const selectionOutline = terrain !== null && growEnabled ? new SelectionOutline(terrain.map) : null;
+if (selectionOutline !== null) scene.add(selectionOutline.group);
 
 /**
  * La rete stradale vista dall'harness.
@@ -611,6 +668,41 @@ if (growEnabled) {
     influenceOverlay?.hideCursor();
     gameHud?.updateCursor(0, 0, null);
   });
+}
+
+/**
+ * La scheda di cio' che il giocatore ha scelto, e il gesto che la apre.
+ *
+ * Il click si risolve su `pointerup` e non su `pointerdown`, con una soglia in
+ * pixel: `isPanButton` accetta anche il tasto sinistro e `camera.attach` e' il
+ * primo listener registrato, quindi ogni click **e' gia'** l'inizio di un pan, e
+ * fino al rilascio non si sa se il gesto fosse un clic o una rotazione. E' lo
+ * stesso motivo — e lo stesso numero — del clic che sceglie un isolato in Block
+ * focus.
+ */
+const SELECT_CLICK_SLOP = 6;
+
+const selectionPanel = growEnabled
+  ? new SelectionPanel(container, {
+    onSection: (section) => paintSelectionOutline(section),
+    onAction: (action) => runSelectionAction(action),
+    onClose: () => clearSelection(),
+  })
+  : null;
+
+/** La cella scelta, non la selezione risolta: quest'ultima invecchia a ogni tick. */
+let selectedCell: SurfaceCell | null = null;
+let selectPointerDown = false;
+let selectPointerX = 0;
+let selectPointerY = 0;
+
+if (selectionPanel !== null && terrain !== null) {
+  renderer.domElement.addEventListener('pointerdown', (event: PointerEvent) => {
+    selectPointerDown = event.button === 0;
+    selectPointerX = event.clientX;
+    selectPointerY = event.clientY;
+  });
+  renderer.domElement.addEventListener('pointerup', onSelectPointerUp);
 }
 
 if (swatchOverlay !== null) {
@@ -774,6 +866,11 @@ if (debugEnabled) {
           satisfaction: state.satisfaction,
           buildingCounts: state.buildingCounts,
           mixedCounts: state.mixedCounts,
+          // I produttori di cibo passano **sia** di qui sia dall'overlay, come
+          // ogni metrica: leggono la stessa fonte, e una delle due che manca e'
+          // il modo in cui una diagnosi diventa impossibile da riprodurre.
+          farmCounts: state.farmCounts,
+          harvest: state.harvest,
           commerce: state.commerce,
           catalysts: state.catalysts.length,
           policies: state.policies,
@@ -860,6 +957,38 @@ function updateVitality(time: number): void {
   vitalityAt = time;
   const vitality = cityVitality(growthScene.stats.state);
   paletteHandle.setVitality(vitality.homes, vitality.commerce);
+}
+
+/**
+ * Porta a schermo i mezzi in movimento.
+ *
+ * **Pose e fumo a ogni frame, i colori alla cadenza dell'HUD.** Sono due costi
+ * diversi: una posa e' una matrice per mezzo — decine in tutta la partita — e un
+ * pennacchio qualche centinaio di vertici in una mesh sola, mentre un ricolore
+ * riscrive gli attributi di cinque geometrie. Il secondo dipende dall'ora, che
+ * si muove di un centesimo alla volta, e non ha niente da guadagnare a essere
+ * riscritto sessanta volte al secondo.
+ *
+ * L'orologio e' quello della scena e non quello del frame: in pausa le barche si
+ * fermano, e a 4x attraversano quattro volte piu' in fretta.
+ */
+function updateTraffic(time: number): void {
+  if (trafficView === null) return;
+  if (growthScene === null) {
+    trafficView.hide();
+    ropewayView?.hide();
+    return;
+  }
+  trafficView.setPoses(growthScene.trafficPoses());
+  trafficView.setPuffs(growthScene.trafficPuffs());
+  // Le funi non si muovono: `setLines` confronta un riferimento e torna subito
+  // finche' nessuno ne tira una nuova.
+  ropewayView?.setLines(growthScene.ropewayCables());
+  if (time - trafficLitAt < VITALITY_REFRESH_MS) return;
+  trafficLitAt = time;
+  const atmosphere = withHour(daylight.theme.atmosphere, daylight.hour);
+  trafficView.setLighting(daylight.theme.colors, atmosphere);
+  ropewayView?.setLighting(daylight.theme.colors, atmosphere);
 }
 
 /**
@@ -997,6 +1126,7 @@ function onFrame(time: number): void {
     swatchOverlay.update(buildSwatchFrame(), time);
   }
   updateVitality(time);
+  updateTraffic(time);
   if (inspectOverlay.needsPaint(time)) {
     // La citta' cresce in altezza, e con lei la quota utile della fetta.
     if (!world.bounds.empty) inspectOverlay.setSliceRange(world.bounds.maxZ);
@@ -1009,6 +1139,10 @@ function onFrame(time: number): void {
     // ridisegnarsi sessanta volte al secondo per dirlo.
     gameHud.setView(viewMenuModel());
   }
+  // Stessa cadenza, e per lo stesso motivo: cio' che la scheda racconta —
+  // desiderabilita', quartiere, livello di un edificio promosso — cambia a dieci
+  // tick al secondo, e l'unica parte che costa e' l'aggregato dell'isolato.
+  if (selectionPanel !== null && selectionPanel.needsPaint(time)) refreshSelection(time);
 }
 
 /**
@@ -1173,12 +1307,18 @@ function onGamePointerMove(event: PointerEvent): void {
   let valid = false;
   if (selectedTool.kind === 'catalyst') {
     const catalyst = catalystById(selectedTool.id ?? defaultCatalystOfClass(selectedTool.class));
-    const failure = growthScene.catalystFailure(cell.x, cell.y, catalyst.id);
+    // Un ruolo che sa posarsi su un tetto va chiesto alla colonna dell'edificio
+    // e non a quella del terreno dietro di lui: e' la stessa distinzione della
+    // mensola, e per la stessa ragione — la heightmap attraversa una torre come
+    // se fosse vetro e si ferma sulla terra dietro.
+    const target = catalystTarget(event.clientX, event.clientY, catalyst.id, cell);
+    const failure = growthScene.catalystFailure(target.x, target.y, catalyst.id);
     const radius = catalyst.radius;
-    const site = growthScene.catalystSiteCost(cell.x, cell.y, catalyst.id);
+    const site = growthScene.catalystSiteCost(target.x, target.y, catalyst.id);
     const cost = site === null ? catalyst.cost : site.cost;
     valid = failure === null;
-    influenceOverlay?.showCursor(cell.x, cell.y, radius, valid);
+    influenceOverlay?.showCursor(target.x, target.y, radius, valid);
+    preview.show(target.x, target.y, target.hitZ, valid);
     gameHud?.updateCursor(event.clientX, event.clientY, {
       title: catalyst.label,
       details: `${cost} funds${groundNote(site)} · radius ${radius} · mainly ${classLabel(catalyst.class)}`,
@@ -1191,8 +1331,9 @@ function onGamePointerMove(event: PointerEvent): void {
         // Il piazzamento e' valido comunque: cio' che cambia e' cosa comparira'
         // e cosa costera' alla citta'. Dirlo qui e' il punto — dopo il click e'
         // troppo tardi, ed e' esattamente il difetto muto che questa fase chiude.
-        : landmarkNote(growthScene.catalystSite(cell.x, cell.y, catalyst.id)),
+        : landmarkNote(growthScene.catalystSite(target.x, target.y, catalyst.id)),
     });
+    return;
   } else if (selectedTool.kind === 'terrace') {
     // La colonna che conta e' quella dell'**edificio**, non quella del terreno
     // dietro di lui: una mensola si appende a un corpo, e chi la posa punta il
@@ -1210,7 +1351,29 @@ function onGamePointerMove(event: PointerEvent): void {
         ? 'This facade can carry a floor. The building stops growing once it does.'
         : actionFailureLabel(failure),
     });
-    preview.show(pointed.x, pointed.y, pointed.z, valid);
+    // **Il mirino va alla quota del puntatore, non a quella della colonna.** In
+    // isometrica la z e' tutta verticale sullo schermo: disegnato a `z`, sotto
+    // una torre di quaranta voxel finiva trecento pixel piu' in basso, in mezzo
+    // agli edifici davanti, e sembrava puntare un altro isolato. Era il motivo
+    // per cui una mensola si posava a tentativi.
+    preview.show(pointed.x, pointed.y, pointed.hitZ, valid);
+    return;
+  } else if (selectedTool.kind === 'ropeway') {
+    // La colonna del **terreno**, non quella dell'edificio: una funivia parte da
+    // una riva, e la riva e' suolo. E' l'opposto della mensola, ed e' la ragione
+    // per cui qui non si passa da `pointedCellAt`.
+    const failure = growthScene.ropewayFailure(cell.x, cell.y);
+    valid = failure === null;
+    influenceOverlay?.hideCursor();
+    gameHud?.updateCursor(event.clientX, event.clientY, {
+      title: 'Ropeway',
+      details: `${BALANCE.gameplay.ropeway.cost} funds · a crossing that takes no ground`,
+      valid,
+      reason: failure === null
+        ? 'Two towers and a cable: the water below stops counting.'
+        : actionFailureLabel(failure),
+    });
+    preview.show(cell.x, cell.y, cell.z, valid);
     return;
   } else {
     const sector = coastalSectorAt(cell.x, cell.y, terrainRegion, BALANCE.gameplay.expansion.size);
@@ -1241,11 +1404,9 @@ function onGamePointerDown(event: PointerEvent): void {
   }
 
   if (selectedTool.kind === 'catalyst') {
-    const result = growthScene.placeCatalyst(
-      cell.x,
-      cell.y,
-      selectedTool.id ?? defaultCatalystOfClass(selectedTool.class),
-    );
+    const role = selectedTool.id ?? defaultCatalystOfClass(selectedTool.class);
+    const target = catalystTarget(event.clientX, event.clientY, role, cell);
+    const result = growthScene.placeCatalyst(target.x, target.y, role);
     if (!result.success) gameHud?.showFailure(result.reason);
     else {
       gameHud?.clearFeedback();
@@ -1275,17 +1436,55 @@ function onGamePointerDown(event: PointerEvent): void {
     return;
   }
 
+  if (selectedTool.kind === 'ropeway') {
+    const result = growthScene.placeRopeway(cell.x, cell.y);
+    if (!result.success) {
+      gameHud?.showFailure(result.reason);
+      return;
+    }
+    gameHud?.clearFeedback();
+    // Lo strumento si posa dopo l'uso, come il catalizzatore e al contrario
+    // della mensola: una funivia costa quanto una scelta di partita, e
+    // lasciarla in mano vorrebbe dire tirarne una seconda per un click di
+    // troppo.
+    selectedTool = { kind: 'none' };
+    gameHud?.setTool(selectedTool);
+    preview.hide();
+    gameHud?.updateCursor(0, 0, null);
+    return;
+  }
+
   if (!generator.done) {
     gameHud?.showFailure('terrain-loading');
     return;
   }
   const sector = coastalSectorAt(cell.x, cell.y, terrainRegion, BALANCE.gameplay.expansion.size);
-  const paid = growthScene.buyExpansion(sector.id);
+  const paid = growthScene.buyExpansion(sector.id, sector.region);
   if (!paid.success) {
     gameHud?.showFailure(paid.reason);
     return;
   }
   beginCoastalExpansion(sector);
+}
+
+/**
+ * Su quale colonna cade un catalizzatore: il terreno, o il tetto che si sta
+ * puntando.
+ *
+ * **Un solo strumento, due strutture.** L'aeroporto e' l'unico ruolo che sa
+ * posarsi in quota, e non ha un pulsante suo: puntare un grattacielo *e'* la
+ * richiesta di uno scalo sul tetto, puntare il prato accanto quella di un campo
+ * di volo. Chiedere la colonna giusta e' l'unica cosa che serve perche' la
+ * distinzione funzioni, e la decide `src/world/` guardando cosa c'e' sotto.
+ */
+function catalystTarget(
+  clientX: number,
+  clientY: number,
+  kind: CatalystId,
+  fallback: SurfaceCell,
+): SurfaceCell {
+  if (growthScene === null || !growthScene.catalystUsesRooftop(kind)) return fallback;
+  return pointedCellAt(clientX, clientY) ?? fallback;
 }
 
 /** Il raggio che parte dal pixel, in coordinate di mondo. */
@@ -1308,10 +1507,18 @@ function cursorRay(clientX: number, clientY: number): Ray3 {
  * Quale cella del campionario sta sotto il cursore.
  *
  * Non passa da `pickSurfaceCell`, che vuole una `TerrainMap` e qui non c'e'
- * terreno: il campionario e' piatto e la sua sommita' e' nota, quindi basta
- * l'intersezione del raggio con il piano dei soggetti. Puntare la cima di un
- * prisma o il basamento accanto risponde percio' la stessa cosa, ed e' il
- * comportamento giusto — la domanda e' «quale casella», non «quale voxel».
+ * terreno: il campionario e' piatto e la quota dei soggetti e' nota, quindi
+ * basta l'intersezione del raggio con un piano. Puntare la cima di un provino o
+ * il basamento accanto risponde percio' la stessa cosa, ed e' il comportamento
+ * giusto — la domanda e' «quale casella», non «quale voxel».
+ *
+ * **Il piano sta a meta' provino, e la meta' e' quel che minimizza l'errore.**
+ * In isometrica un voxel di quota si sposta a schermo quanto un voxel su
+ * ciascun asse di terra: mettere il piano sul basamento sbaglierebbe di tutta
+ * l'altezza puntando una guglia, metterlo sulla sommita' sbaglierebbe di
+ * altrettanto puntando il vuoto fra due celle. A meta' l'errore e' meta'
+ * altezza per parte, cioe' un terzo scarso di interasse, e si resta dentro la
+ * casella indicata.
  */
 function swatchCellUnder(clientX: number, clientY: number): SwatchCell | null {
   const ray = cursorRay(clientX, clientY);
@@ -1319,7 +1526,7 @@ function swatchCellUnder(clientX: number, clientY: number): SwatchCell | null {
   const [dx, dy, dz] = ray.direction;
   if (dz >= -1e-8) return null;
 
-  const t = (SWATCH.groundZ + SWATCH.cellHeight - oz) / dz;
+  const t = (SWATCH.groundZ + CELL_HEIGHT / 2 - oz) / dz;
   if (t < 0) return null;
   return swatchCellAt(Math.floor(ox + dx * t), Math.floor(oy + dy * t));
 }
@@ -1357,6 +1564,125 @@ function pointedCellAt(clientX: number, clientY: number): SurfaceCell | null {
     // che il mondo ha davvero raggiunto, piu' un voxel per non tagliare l'ultimo.
     world.bounds.empty ? TERRAIN.maxHeight + 1 : world.bounds.maxZ + 1,
   );
+}
+
+/**
+ * Il clic che sceglie, e quello che non ha scelto niente.
+ *
+ * Le tre guardie sono quelle del clic di studio, e nessuna e' di troppo: il
+ * tasto sinistro pana, uno strumento in mano sta piazzando — e il suo
+ * `stopImmediatePropagation` non protegge questo listener, perche' sta su
+ * `pointerdown` e gli eventi qui partono in ordine di registrazione — e un
+ * trascinamento non e' un clic.
+ */
+function onSelectPointerUp(event: PointerEvent): void {
+  if (!selectPointerDown || event.button !== 0) return;
+  selectPointerDown = false;
+  if (selectedTool.kind !== 'none') return;
+  const moved = Math.abs(event.clientX - selectPointerX) + Math.abs(event.clientY - selectPointerY);
+  if (moved > SELECT_CLICK_SLOP) return;
+
+  // Su cio' che si vede, non sul terreno: cliccando una torre si sceglie la
+  // torre, e non la terra che le sta dietro a tante colonne quanto e' alta.
+  const cell = pointedCellAt(event.clientX, event.clientY);
+  if (cell === null) {
+    clearSelection();
+    return;
+  }
+  selectedCell = cell;
+  const picked = resolvePickedSelection();
+  if (picked === null) {
+    clearSelection();
+    return;
+  }
+  selectionPanel?.show(picked, performance.now(), isolatedBlockKey());
+  gameHud?.setSelectionOpen(true);
+}
+
+/**
+ * Il gesto della scheda, tradotto in vista e camera.
+ *
+ * Sta qui e non nel pannello perche' e' il punto in cui i due strati si toccano:
+ * la scheda sa cosa il giocatore ha scelto, la vista sa come si guarda, e nessuno
+ * dei due importa l'altro.
+ *
+ * L'andata e' in due mosse e l'ordine non e' libero: `lockBlock` si rifiuta se il
+ * modo non e' gia' Block focus, perche' agganciare un isolato che nessuna vista
+ * sta ritagliando muoverebbe la camera senza che a schermo cambi niente.
+ *
+ * Il ritorno spegne la vista invece di mollare e basta. Mollare lascerebbe acceso
+ * il velo che insegue il cursore — utile a chi era entrato dal picker per
+ * scegliere un isolato, ma qui il giocatore non ha mai chiesto una vista: ha
+ * chiesto *questo* isolato, e uscendone si aspetta la sua citta'. `setMode` molla
+ * comunque, e restituisce l'inquadratura di partenza.
+ */
+function runSelectionAction(action: SelectionActionId): void {
+  if (action === 'release-block') {
+    inspect.setMode(INSPECT_MODE.off);
+    return;
+  }
+  if (selectedCell === null) return;
+  inspect.setMode(INSPECT_MODE.block);
+  // La cella scelta e non la colonna sotto il cursore: si isola l'isolato che la
+  // scheda sta descrivendo, e il mouse nel frattempo puo' essere ovunque — sul
+  // bottone, per esempio, che sta sopra un'altra parte della citta'.
+  inspect.lockBlock(selectedCell);
+}
+
+/** L'isolato che la vista sta studiando, se ce n'e' uno: la scheda ne fa un interruttore. */
+function isolatedBlockKey(): string | null {
+  return inspect.locked ? inspect.blockKey : null;
+}
+
+/** La pila sotto la cella scelta, oppure `null` se non c'e' piu' niente da dire. */
+function resolvePickedSelection(): Selection | null {
+  if (selectedCell === null || terrain === null || streets === null) return null;
+  const registry = growthScene?.registry;
+  const state = growthScene?.simState;
+  if (registry === undefined || state === undefined) return null;
+  return resolveSelection({
+    cell: selectedCell,
+    world,
+    map: terrain.map,
+    registry,
+    streets,
+    state,
+    seed: terrainSeed,
+  });
+}
+
+/**
+ * Riscrive la scheda con i dati di adesso.
+ *
+ * Gira alla cadenza dell'HUD e non per frame: la citta' cambia a dieci tick al
+ * secondo, e la sola parte che costa — l'aggregato dell'isolato — non ha ragione
+ * di girare sessanta volte per dire lo stesso numero.
+ */
+function refreshSelection(now: number): void {
+  const picked = resolvePickedSelection();
+  if (picked === null) {
+    clearSelection();
+    return;
+  }
+  selectionPanel?.update(picked, now, isolatedBlockKey());
+  if (selectionPanel !== null) paintSelectionOutline(selectionPanel.section);
+}
+
+function paintSelectionOutline(section: SelectionSectionId): void {
+  const picked = resolvePickedSelection();
+  if (picked === null) {
+    selectionOutline?.hide();
+    return;
+  }
+  const extent = extentOf(picked, section);
+  selectionOutline?.show(extent);
+}
+
+function clearSelection(): void {
+  selectedCell = null;
+  selectionPanel?.close();
+  selectionOutline?.hide();
+  gameHud?.setSelectionOpen(false);
 }
 
 function beginCoastalExpansion(sector: CoastalSector): void {
@@ -1445,6 +1771,12 @@ function actionFailureLabel(reason: ActionFailure): string {
     'needs-building': 'Point at a building: a terrace hangs off a facade.',
     'building-too-short': 'This building is too low to carry a floor.',
     'no-room-aloft': 'No room for a terrace here.',
+    // I tre della funivia dicono tre gesti diversi, come quelli della mensola:
+    // andare sulla costa, cercare un braccio di mare, spostarsi lungo la stessa
+    // riva. Il terzo e' quello che capita di piu' su un lungomare costruito.
+    'needs-shore': 'Point at dry land: a ropeway starts on a shore.',
+    'needs-crossing': 'Nothing to cross from here: find water between two shores.',
+    'no-room-for-line': 'No room for the towers here. Try further along the shore.',
   };
   return labels[reason];
 }
@@ -1535,6 +1867,7 @@ function buildOverlayFrame(mainMs: number, renderMs: number, frameMs: number): O
     pixelRatio: renderer.getPixelRatio(),
     zoom: camera.zoom,
     yawDegrees: camera.yawDegrees,
+    pitchDegrees: camera.pitchDegrees,
   };
 }
 
@@ -1556,15 +1889,6 @@ function onDebugKey(event: KeyboardEvent): void {
     if (event.code === 'KeyM') {
       const next = (simScene.simState.selectedClass + 1) % CLASS_COUNT;
       simScene.selectClass(next as BuildingClass);
-      return;
-    }
-  }
-  // Tasti 1..9: selezione diretta del tema. Le cifre erano libere e scalano con
-  // la tabella, a differenza di un tasto che cicla.
-  if (event.code.startsWith('Digit')) {
-    const index = parseInt(event.code.slice(5), 10) - 1;
-    if (index >= 0) {
-      daylight.cycleTheme(index);
       return;
     }
   }
@@ -1624,6 +1948,30 @@ function onUiKey(event: KeyboardEvent): void {
     daylight.setMode(nextDaylightMode(daylight.mode));
     return;
   }
+  // Tasti 1..9: gli **strumenti** del dock; con Shift, i temi.
+  //
+  // Le cifre nude stavano sui temi, e stavano fuori dal gate del debug con una
+  // buona ragione: il tema si sceglie da un bottone del dock, che e' aperto a
+  // chiunque, e la scorciatoia per la stessa cosa non poteva restare chiusa
+  // dietro `?debug=1`. Quella ragione e' esattamente cio' che ora le sposta —
+  // il dock e' la prima superficie che un giocatore nuovo guarda per sapere
+  // cosa puo' costruire, e la fila di cifre nude appartiene a **quella**
+  // domanda. Il tema, che si cambia una volta ogni tanto, sta bene su Shift.
+  //
+  // Nel campionario resta com'era: li' non c'e' dock, e cambiare tema **e'** lo
+  // strumento — e' cosi' che si riconosce uno slot morto.
+  if (event.code.startsWith('Digit')) {
+    const index = parseInt(event.code.slice(5), 10) - 1;
+    if (index >= 0) {
+      if (event.shiftKey || sceneKind === 'swatch') {
+        daylight.cycleTheme(index);
+        return;
+      }
+      // Solo se quel posto esiste ed e' disponibile: un `7` che non seleziona
+      // niente deve poter cadere su chi viene dopo, invece di essere ingoiato.
+      if (gameHud?.selectToolByIndex(index) === true) return;
+    }
+  }
   // La quota: un voxel per volta, un piano intero con Shift. La barra serve a
   // cercarla, questi tasti a rifinirla. `PageUp`/`PageDown` sono l'alias che
   // tutti provano per primo — e su tastiera italiana le parentesi quadre
@@ -1654,7 +2002,9 @@ function setDebugVisible(visible: boolean): void {
   terrainOverlay?.setVisible(visible);
   simOverlay?.setVisible(visible);
   growthOverlay?.setVisible(visible);
-  swatchOverlay?.setVisible(visible);
+  // `swatchOverlay` non e' in questa lista: e' la legenda del campionario e non
+  // una metrica, quindi `F3` non la spegne. Per uno scatto pulito si chiude il
+  // `<details>`, che e' il gesto giusto per un pannello che nomina cose.
   inspectOverlay.setVisible(visible);
 }
 

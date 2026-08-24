@@ -72,6 +72,78 @@ describe('GrowthScene', () => {
     expect(scene.stats.levels.slice(1).some((count) => count > 0)).toBe(true);
   });
 
+  it('un settore comprato arriva con il nucleo che lo fa crescere', () => {
+    // **Terra e crescita non sono la stessa cosa.** La citta' nasce dove il
+    // campo di desiderabilita' esiste, e il campo esiste solo dove un
+    // catalizzatore l'ha acceso: senza il nucleo, un settore comprato restava un
+    // pezzo d'isola vuoto per sempre mentre il messaggio prometteva il
+    // contrario.
+    const world = new VoxelWorld();
+    const map = testTerrain({ chunksX: 6, chunksY: 6, height: 12 });
+    const scene = new GrowthScene(world, map, { minX: 0, minY: 0, sizeX: 192, sizeY: 192 }, 1337);
+    expect(scene.placeCatalyst(48, 48, 'market').success).toBe(true);
+    expect(scene.placeCatalyst(72, 48, 'factory').success).toBe(true);
+    // Si cresce finche' il settore diventa comprabile invece di contare i tick:
+    // popolazione e fondi sono bilanciamento, e un numero fisso qui renderebbe
+    // questo test un guardiano di `BALANCE` invece che della regola.
+    for (let i = 0; i < 400 && scene.expansionFailure('east-0') !== null; i++) scene.advance(1);
+    expect(scene.expansionFailure('east-0')).toBeNull();
+
+    const region = { minX: 128, minY: 128, sizeX: 64, sizeY: 64 };
+    const before = scene.simState.catalysts.length;
+    expect(scene.buyExpansion('east-0', region).success).toBe(true);
+    // Il nucleo non si pianta all'acquisto: il terreno non c'e' ancora, ed e'
+    // `markSectorReady` a dire che e' arrivato.
+    expect(scene.simState.catalysts).toHaveLength(before);
+
+    scene.markSectorReady();
+    const planted = scene.simState.catalysts;
+    expect(planted).toHaveLength(before + 1);
+
+    const seed = planted[planted.length - 1];
+    expect(seed.kind).toBe('market');
+    expect(seed.x).toBeGreaterThanOrEqual(region.minX);
+    expect(seed.x).toBeLessThan(region.minX + region.sizeX);
+    expect(seed.y).toBeGreaterThanOrEqual(region.minY);
+    expect(seed.y).toBeLessThan(region.minY + region.sizeY);
+
+    // E la terra nuova costruisce: e' la promessa del messaggio, verificata.
+    const grownBefore = scene.registry.count;
+    for (let i = 0; i < 200; i++) scene.advance(1);
+    expect(scene.registry.count).toBeGreaterThan(grownBefore);
+
+    let onNewLand = 0;
+    for (const record of scene.registry.all) {
+      if (record.x >= region.minX && record.y >= region.minY) onNewLand++;
+    }
+    expect(onNewLand).toBeGreaterThan(0);
+  });
+
+  it('l aeroporto puntato su un edificio chiede al tetto, non al terreno', () => {
+    // Lo stesso strumento produce due strutture, e a scegliere e' il luogo: la
+    // colonna di un edificio chiede uno scalo in quota, quella del prato accanto
+    // un campo di volo. Il rifiuto deve venire dalla regola del tetto — e' cio'
+    // che dice al giocatore di cercare una torre invece di un pianoro.
+    const world = new VoxelWorld();
+    const map = testTerrain({ chunksX: 3, chunksY: 3, height: 12 });
+    const scene = new GrowthScene(world, map, { minX: 0, minY: 0, sizeX: 96, sizeY: 96 }, 4242);
+    // I tre passi del tutorial per primi: l'aeroporto e' bloccato finche' non
+    // sono stati fatti, e il rifiuto che ne uscirebbe non e' quello in prova.
+    expect(scene.placeCatalyst(40, 40, 'market').success).toBe(true);
+    expect(scene.placeCatalyst(60, 40, 'factory').success).toBe(true);
+    expect(scene.placeCatalyst(40, 60, 'park').success).toBe(true);
+    for (let i = 0; i < 300; i++) scene.advance(0.1);
+
+    expect(scene.catalystUsesRooftop('airport')).toBe(true);
+    expect(scene.catalystUsesRooftop('port')).toBe(false);
+
+    const building = [...scene.registry.all].find((record) => record.landmark === undefined);
+    expect(building).toBeDefined();
+
+    const failure = scene.catalystFailure(building!.x, building!.y, 'airport');
+    expect(['needs-building', 'building-too-short', 'no-room-aloft']).toContain(failure);
+  });
+
   it('rispetta pausa e velocita del ciclo di gioco', () => {
     const world = new VoxelWorld();
     const map = testTerrain({ chunksX: 1, chunksY: 1, height: 12 });

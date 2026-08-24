@@ -1,0 +1,149 @@
+import { describe, expect, it } from 'vitest';
+
+import type { TerrainColumn, TerrainMap } from '../world/terrain/TerrainMap';
+import type { VoxelWorld } from '../world/VoxelWorld';
+import { INSPECT, INSPECT_MODE } from './inspect';
+import { createInspectView, type FocusCell, type InspectView } from './InspectView';
+import type { IsoCameraController } from './IsoCameraController';
+import type { VoxelMaterialHandle } from './VoxelMaterial';
+
+/**
+ * `InspectView` non importa Three ne' tocca il DOM — le sue dipendenze pesanti
+ * entrano tutte come `import type` — e questo file lo verifica girando in node.
+ * Gli stub portano solo cio' che la vista legge davvero: la camera un perno, il
+ * materiale un metodo che non fa niente, il terreno una quota per colonna.
+ */
+
+/** Quota del suolo al centro dell'inquadratura, dove ripiega chi non punta niente. */
+const CENTRE_HEIGHT = 12;
+
+/** Quota di una collina qualunque, distinta dalla precedente perche' si vedano. */
+const HILL_HEIGHT = 30;
+
+/** Una seconda collina, per provare che la fetta **non** ci sale dietro. */
+const FAR_HEIGHT = 60;
+
+const VIEW: readonly [number, number, number] = [0.5, 0.5, -0.7];
+
+const world = { bounds: { empty: true, maxZ: 0 } } as unknown as VoxelWorld;
+
+const camera = { targetPosition: { x: 0, y: 0, z: 0 } } as unknown as IsoCameraController;
+
+const paletteHandle = { setInspect: () => {} } as unknown as VoxelMaterialHandle;
+
+const map = {
+  columnAt: (x: number, y: number): TerrainColumn => ({
+    height: x === 0 && y === 0 ? CENTRE_HEIGHT : HILL_HEIGHT,
+    biome: 0,
+    slope: 0,
+    buildable: true,
+  }),
+} as unknown as TerrainMap;
+
+interface Harness {
+  readonly view: InspectView;
+  /** Cosa c'e' sotto il cursore; `null` e' il raggio che manca l'isola. */
+  point(cell: FocusCell | null): void;
+}
+
+function makeView(options: { sliceZ?: number; sliceFromUrl?: boolean } = {}): Harness {
+  let pointed: FocusCell | null = null;
+  const view = createInspectView({
+    world,
+    camera,
+    paletteHandle,
+    guides: null,
+    streets: null,
+    map: () => map,
+    registry: () => undefined,
+    pointedCellAt: () => pointed,
+    toolActive: () => false,
+    mode: INSPECT_MODE.slice,
+    sliceZ: options.sliceZ ?? INSPECT.defaultSliceZ,
+    sliceFromUrl: options.sliceFromUrl ?? false,
+  });
+  return {
+    view,
+    point(cell: FocusCell | null): void {
+      pointed = cell;
+    },
+  };
+}
+
+/** Il cursore sulla canvas, su una colonna nota. */
+function hover(harness: Harness, cell: FocusCell): void {
+  harness.point(cell);
+  harness.view.onPointerMove(10, 10);
+}
+
+describe('InspectView, quota della fetta', () => {
+  it('si arma sul suolo sotto il cursore', () => {
+    const harness = makeView();
+    hover(harness, { x: 4, y: 4, z: HILL_HEIGHT });
+    harness.view.apply(VIEW);
+
+    expect(harness.view.sliceZ).toBe(HILL_HEIGHT + INSPECT.sliceCoarse);
+  });
+
+  it('aperta senza il cursore sulla canvas si arma sul centro dell inquadratura', () => {
+    const harness = makeView();
+    harness.view.apply(VIEW);
+
+    expect(harness.view.sliceZ).toBe(CENTRE_HEIGHT + INSPECT.sliceCoarse);
+  });
+
+  it('non insegue il cursore dopo essersi armata', () => {
+    const harness = makeView();
+    hover(harness, { x: 4, y: 4, z: HILL_HEIGHT });
+    harness.view.apply(VIEW);
+
+    // Il difetto: la citta' si apriva e si richiudeva da sola muovendo il mouse.
+    hover(harness, { x: 40, y: 40, z: FAR_HEIGHT });
+    harness.view.apply(VIEW);
+
+    expect(harness.view.sliceZ).toBe(HILL_HEIGHT + INSPECT.sliceCoarse);
+  });
+
+  it('non salta al centro dell inquadratura quando il raggio manca l isola', () => {
+    const harness = makeView();
+    hover(harness, { x: 4, y: 4, z: HILL_HEIGHT });
+    harness.view.apply(VIEW);
+
+    // L'altra meta' dello stesso difetto: fuori dall'isola `pointedCellAt` non
+    // risponde, e la quota si inchiodava sul centro dell'inquadratura.
+    harness.point(null);
+    harness.view.apply(VIEW);
+
+    expect(harness.view.sliceZ).toBe(HILL_HEIGHT + INSPECT.sliceCoarse);
+  });
+
+  it('non riscrive una quota scelta a mano', () => {
+    const harness = makeView();
+    harness.view.setSliceZ(CENTRE_HEIGHT);
+    hover(harness, { x: 4, y: 4, z: HILL_HEIGHT });
+    harness.view.apply(VIEW);
+
+    expect(harness.view.sliceZ).toBe(CENTRE_HEIGHT);
+  });
+
+  it('con ?slice= resta alla quota chiesta', () => {
+    const harness = makeView({ sliceZ: CENTRE_HEIGHT, sliceFromUrl: true });
+    hover(harness, { x: 4, y: 4, z: HILL_HEIGHT });
+    harness.view.apply(VIEW);
+
+    expect(harness.view.sliceZ).toBe(CENTRE_HEIGHT);
+  });
+
+  it('si ri-arma uscendo da Levels e rientrando', () => {
+    const harness = makeView();
+    hover(harness, { x: 4, y: 4, z: HILL_HEIGHT });
+    harness.view.apply(VIEW);
+
+    harness.view.setMode(INSPECT_MODE.off);
+    harness.view.setMode(INSPECT_MODE.slice);
+    hover(harness, { x: 40, y: 40, z: FAR_HEIGHT });
+    harness.view.apply(VIEW);
+
+    expect(harness.view.sliceZ).toBe(FAR_HEIGHT + INSPECT.sliceCoarse);
+  });
+});

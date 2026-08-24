@@ -12,7 +12,14 @@
  *   nascosto = dot(plane.xyz, p) > plane.w
  *              &&  p sta dal lato giusto di rect
  *              &&  il raggio di vista da p incontra la lente piu' avanti
- *   azione   = retino ordinato con discard, di densita' `veil`
+ *   azione   = rigatura con discard, di densita' `veil`, e cio' che sopravvive
+ *              si scioglie nell'aria
+ *
+ * L'azione e' una sola ma non e' piu' un solo `discard`: quel che resta di un
+ * frammento velato non deve leggersi come un pezzo di muro rimasto li' per
+ * sbaglio. Il **come** sta in `xray.ts`, con il perche' di ogni numero; qui
+ * restano la decisione e i due numeri che valgono per tutti i modi, il passo
+ * della rigatura e quanto un velo scioglie.
  *
  * I predicati si intersecano, e il rettangolo porta la propria polarita':
  * `inside` positivo nasconde **dentro** il riquadro, negativo **fuori**. Chi usa
@@ -46,6 +53,8 @@
  * schermo e' per costruzione il rettangolo che il fragment sta usando, e non
  * puo' andare fuori sincrono con lui.
  */
+
+import { XRAY } from './xray';
 
 /** I quattro modi, piu' lo spento. */
 export const INSPECT_MODE = {
@@ -95,60 +104,63 @@ export const INSPECT = {
    */
   veil: 0.68,
 
-  /**
-   * Densita' dentro la lente dei raggi X, piu' alta del velo generico.
-   *
-   * Le due densita' rispondono a due geometrie diverse. Il velo di Block focus
-   * copre tutto cio' che sta fuori dall'isolato, e li' la sagoma velata **e'** il
-   * contesto: mangiarsela vorrebbe dire togliere la risposta. La lente invece
-   * apre un buco largo quanto un edificio dentro un occlusore che resta intero
-   * tutt'attorno, e il contesto lo porta gia' il bordo. A 0,68 il muro davanti e
-   * il soggetto dietro finiscono a meta' strada l'uno nell'altro e non si legge
-   * nessuno dei due; a 0,85 restano abbastanza pixel da dire «qui c'era
-   * qualcosa» senza contendere il soggetto.
-   */
-  xrayVeil: 0.85,
-
-  /** Densita' che vale taglio: il retino scarta ogni pixel. */
+  /** Densita' che vale taglio: la rigatura scarta ogni pixel. */
   cut: 1,
 
   /**
-   * Sfumatura del bordo, in voxel. Vale per il rettangolo e per la lente.
+   * Passo della rigatura, in pixel di schermo lungo la diagonale.
    *
-   * Senza, il predicato e' un gradino: il retino comincia e finisce su una riga
-   * di voxel allineata agli assi, e a schermo quel bordo netto legge come un
-   * artefatto di rendering invece che come una lente — e' il primo motivo per
-   * cui i raggi X sembravano «un quadrato trasparente». La rampa non cambia il
-   * colore di niente (invariante 4) e non tocca il mesher (invariante 6): e' la
-   * stessa densita' di prima, moltiplicata per la distanza dal bordo.
+   * Sostituisce il Bayer 4x4 che c'era prima, e non e' un cambio di gusto. A
+   * parita' di copertura un retino ordinato **sparpaglia** i pixel superstiti, e
+   * a schermo pixel sparsi leggono come sporco sopra a cio' che dovrebbero
+   * lasciar vedere; in fila leggono come una campitura di disegno tecnico, cioe'
+   * come una convenzione. C'e' anche una ragione meno estetica: con una soglia a
+   * rampa la densita' non cambia il **passo** delle righe ma il loro spessore,
+   * quindi puo' variare con la profondita' senza che il disegno cambi trama
+   * sotto gli occhi. Sei pixel di periodo sono circa quattro di distanza fra una
+   * riga e l'altra: sopra si contano le righe, sotto tornano a impastarsi.
+   */
+  hatch: 6,
+
+  /**
+   * Quanto un frammento velato si scioglie nella tinta dell'aria, per unita' di
+   * densita' del velo.
    *
-   * Inerte dove il rettangolo e' aperto — la fetta e la sezione — perche' li'
-   * la distanza dal bordo e' l'infinito pratico di `OPEN_RECT`. Sulla lente si
-   * accorcia da sola quando il soggetto e' piccolo: una rampa piu' larga della
-   * meta' della finestra non lascerebbe nessun punto a piena densita', e su una
-   * casa bassa la lente non aprirebbe piu' niente.
+   * E' la seconda meta' dell'azione, e la ragione per cui il velo aveva bisogno
+   * di qualcosa oltre al `discard`: i pixel che sopravvivevano restavano muro a
+   * piena luce, con le loro finestre e le loro insegne, e quel poco che restava
+   * contendeva il soggetto invece di accompagnarlo. La tinta non e' nuova ed e'
+   * apposta — e' quella della prospettiva aerea, la stessa a cui tende la
+   * distanza — cosi' il velo segue tema e ora senza portarsi dietro un colore
+   * proprio, e cio' che e' velato legge come lontano invece che come rotto.
+   *
+   * Non e' una quantita' fissa ma un **coefficiente**, e la differenza si e'
+   * vista a schermo. A 0,72 fissi le facciate scure dei raggi X smettevano
+   * finalmente di leggersi come macchie brune davanti al soggetto, ma lo stesso
+   * scioglimento addosso al contesto di Block focus lo riduceva a un fantasma:
+   * li' il velo lascia la citta' attorno all'isolato apposta, e sbiancarla vuol
+   * dire togliere la risposta alla domanda che si stava facendo. Moltiplicando
+   * per la densita' le due viste si separano da sole — 0,8 per 0,68 contro 0,8
+   * per 0,95 — senza un secondo numero da tenere d'accordo con il primo.
+   */
+  melt: 0.8,
+
+  /**
+   * Sfumatura del bordo del **rettangolo**, in voxel.
+   *
+   * Senza, il predicato e' un gradino: la rigatura comincia e finisce su una
+   * riga di voxel allineata agli assi, e a schermo quel bordo netto legge come
+   * un artefatto di rendering. La rampa non cambia il colore di niente
+   * (invariante 4) e non tocca il mesher (invariante 6): e' la stessa densita'
+   * di prima, moltiplicata per la distanza dal bordo.
+   *
+   * Inerte dove il rettangolo e' aperto — la fetta, la sezione e i raggi X —
+   * perche' li' la distanza dal bordo e' l'infinito pratico di `OPEN_RECT`. La
+   * lente ha la **sua** sfumatura in `XRAY.feather`: sono due bordi diversi, uno
+   * di una regione e uno di una sagoma, e tenerli separati e' cio' che permette
+   * di ammorbidire l'uno senza sbriciolare l'altro.
    */
   feather: 4,
-
-  /**
-   * Respiro attorno al soggetto dei raggi X, in voxel sul piano dello schermo.
-   *
-   * La lente e' la sagoma del soggetto piu' questo: senza, il retino finirebbe
-   * esattamente sul suo bordo e la finestra leggerebbe come un ritaglio invece
-   * che come una lente. Tre voxel bastano a staccarla e restano sotto la
-   * `feather`, che e' quello che la rende morbida.
-   */
-  xrayMargin: 3,
-
-  /**
-   * Mezzo lato della lente quando sotto il cursore non c'e' un edificio.
-   *
-   * Puntare il suolo nudo e' una domanda legittima — «cosa mi nasconde quel
-   * pezzo di terra» — ma un soggetto alto zero darebbe una lente schiacciata al
-   * suolo, che non apre niente. Dieci voxel sono l'ordine di grandezza di una
-   * casa bassa: quel tanto che basta a scoprire il posto, non l'isolato.
-   */
-  xrayBare: 10,
 
   /**
    * Respiro attorno all'isolato scelto, in colonne per lato.
@@ -188,7 +200,7 @@ export interface InspectFocus {
  * di lato 4 che parte da `x` occupa `[x, x+4)`, e scriverlo cosi' toglie di
  * mezzo il `+1` che l'isolato deve ricordarsi. Ci arriva un record del registro
  * degli edifici, oppure — se sotto il cursore c'e' solo terra — la colonna a
- * fuoco allargata di `xrayBare`.
+ * fuoco allargata di `XRAY.bare`.
  */
 export interface InspectBox {
   readonly x0: number;
@@ -336,7 +348,7 @@ export function inspectUniforms(state: InspectState): InspectUniforms {
         inside: 1,
         lensMin: [subject.x0 - margin, subject.y0 - margin, subject.z0 - margin, subject.z0],
         lensMax: [subject.x1 + margin, subject.y1 + margin, subject.z1 + margin],
-        veil: INSPECT.xrayVeil,
+        veil: XRAY.veil,
       };
     }
 
@@ -400,8 +412,8 @@ export function inspectUniforms(state: InspectState): InspectUniforms {
  * Il soggetto dei raggi X: l'edificio puntato, o la colonna se non ce n'e' uno.
  *
  * La colonna nuda diventa un volume di un voxel invece di un punto, cosi' il
- * resto del calcolo non deve sapere quale dei due casi ha in mano: e' la
- * `xrayMargin` a distinguerli, ed e' l'unica cosa che davvero cambia.
+ * resto del calcolo non deve sapere quale dei due casi ha in mano: e' il
+ * respiro a distinguerli, ed e' l'unica cosa che davvero cambia.
  */
 function xraySubject(state: InspectState): InspectBox | null {
   if (state.subject !== null) return state.subject;
@@ -411,57 +423,7 @@ function xraySubject(state: InspectState): InspectBox | null {
 }
 
 function xrayMargin(state: InspectState): number {
-  return state.subject === null ? INSPECT.xrayBare : INSPECT.xrayMargin;
-}
-
-/**
- * Quanto il raggio di vista da `p` attraversa la lente, o zero se non la incontra.
- *
- * E' il test a lastre classico, e qui fa **due** lavori con un conto solo. Il
- * primo e' il predicato: `enter > 0` vuol dire che il volume sta piu' avanti, e
- * quindi che `p` gli sta davanti. Un frammento dentro il volume ha `enter < 0` e
- * non si vela mai — e' cosi' che il soggetto non puo' velare se stesso, senza
- * bisogno di un piano ancorato da qualche parte.
- *
- * Il secondo e' il bordo morbido. La corda `leave - enter` va a zero esattamente
- * sul contorno della sagoma — vale per qualunque volume convesso — e cresce
- * andando verso il centro: e' gia' la distanza dal bordo che serve alla rampa,
- * senza doverla misurare a parte.
- *
- * Esiste in due copie, questa e quella GLSL, come il modello di luce: i test di
- * questo file sono cio' che le tiene allineate.
- */
-export function lensChord(
-  uniforms: InspectUniforms,
-  view: readonly [number, number, number],
-  x: number,
-  y: number,
-  z: number,
-): number {
-  const { lensMin, lensMax } = uniforms;
-  if (lensMax[0] <= lensMin[0]) return 0;
-  // Sotto il pavimento non si vela mai, e la lente non ha nemmeno voce.
-  if (z <= lensMin[3]) return 0;
-
-  const from: readonly [number, number, number] = [x, y, z];
-  let enter = -Infinity;
-  let leave = Infinity;
-  for (let axis = 0; axis < 3; axis++) {
-    if (Math.abs(view[axis]) < 1e-6) {
-      // Raggio parallelo alla lastra: o la attraversa per tutta la sua lunghezza
-      // o non la incontra mai, e nessun `t` puo' dirlo.
-      if (from[axis] < lensMin[axis] || from[axis] > lensMax[axis]) return 0;
-      continue;
-    }
-    const ta = (lensMin[axis] - from[axis]) / view[axis];
-    const tb = (lensMax[axis] - from[axis]) / view[axis];
-    enter = Math.max(enter, Math.min(ta, tb));
-    leave = Math.min(leave, Math.max(ta, tb));
-  }
-  // `enter <= 0` copre due casi in uno: chi sta dietro non incontra niente,
-  // e chi sta dentro ha gia' cominciato — e non deve velarsi da solo.
-  if (enter <= 0 || leave < enter) return 0;
-  return leave - enter;
+  return state.subject === null ? XRAY.bare : XRAY.margin;
 }
 
 /** Modo successivo nel ciclo di `V`. */

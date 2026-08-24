@@ -1,4 +1,5 @@
 import { BIOME, BIOME_STRATA, BUILDABLE_BIOMES, TERRAIN, type BiomeId } from './config';
+import { rockBandAt, rockSubsoil, rockSurface } from './rockTone';
 
 /**
  * Classificazione per colonna. Le uniche due grandezze in ingresso sono altezza
@@ -61,6 +62,23 @@ export function paletteForDepth(biome: number, depth: number): number {
   if (depth < STRATA_DEPTH.surface) return strata.surface;
   if (depth < STRATA_DEPTH.subsoil) return strata.subsoil;
   return strata.deep;
+}
+
+/**
+ * Lo stesso indice, per una colonna che arriva a `top`.
+ *
+ * E' `paletteForDepth` piu' l'unica cosa che il bioma non basta a decidere: lo
+ * **strato** della roccia, che viene dalla quota e non dalla classificazione.
+ * Chi la quota ce l'ha chiama questa — il terreno, l'opera che gli si appoggia
+ * sotto, il ricolore della vista per bioma — e le tre letture restano la stessa.
+ * `paletteForDepth` resta per chi una colonna non ce l'ha, come il campionario.
+ */
+export function paletteAt(biome: number, top: number, depth: number): number {
+  if (biome !== BIOME.rock || depth >= STRATA_DEPTH.subsoil) {
+    return paletteForDepth(biome, depth);
+  }
+  const band = rockBandAt(top);
+  return depth < STRATA_DEPTH.surface ? rockSurface(band) : rockSubsoil(band);
 }
 
 /**

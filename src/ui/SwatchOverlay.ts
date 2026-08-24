@@ -70,7 +70,12 @@ export class SwatchOverlay {
       `matrice    ${SWATCH_COLUMNS} colonne (slot) × ${SWATCH_ROWS} righe (superficie)`,
       ...SURFACE_KIND_NAMES.map((name, row) => `  riga ${row}    ${name}`),
       '',
-      '1..9 tema   L modo del giorno   H ±1h',
+      // Solo cio' che funziona **qui e ora**. Il campionario si apre anche dal
+      // dock del gioco, senza `?debug=1`: `H` sta dietro `F3` insieme al resto
+      // dell'harness, e prometterlo in prima riga sarebbe una riga falsa per chi
+      // arriva dal bottone. Tema e ciclo del giorno no — quelli sono lo
+      // strumento, ed e' con loro che si riconosce uno slot morto.
+      '1..9 tema   L giorno/notte   F3 strumenti tecnici (H ±1h)',
     ]
       .filter((line) => line !== '')
       .join('\n');

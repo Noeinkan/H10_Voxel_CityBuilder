@@ -113,14 +113,18 @@ export class GrowthQueue {
    * E' la strada dei volumi grossi — i landmark lineari, e da qui in avanti
    * chiunque altro ne abbia bisogno. Uno stamp che ci sta gia' non viene copiato:
    * `sliceStamps` restituisce l'originale, e il caso comune non paga niente.
+   *
+   * `zOffset` serve a chi accoda un ritaglio in quota (`trimStampZ`): la sagoma
+   * comincia piu' in alto della base del record, e senza questo scarto
+   * ricomparirebbe appoggiata a terra.
    */
-  enqueueSegments(record: BuildingRecord, stamp: VoxelStamp): void {
+  enqueueSegments(record: BuildingRecord, stamp: VoxelStamp, zOffset = 0): void {
     const anchor = anchorOf(record);
     for (const slice of sliceStamps(stamp, BUILDER.segmentSide)) {
       this.enqueue(record.id, {
         x: anchor.x + slice.offsetX,
         y: anchor.y + slice.offsetY,
-        z: anchor.z,
+        z: anchor.z + zOffset,
       }, slice.stamp);
     }
   }
@@ -257,7 +261,17 @@ export class GrowthQueue {
     return { cursor, written };
   }
 
-  /** Rimuove a budget soltanto i voxel vecchi che la nuova sagoma non copre. */
+  /**
+   * Rimuove a budget soltanto i voxel vecchi che la nuova sagoma non copre.
+   *
+   * **Il confronto passa dalle ancore, e prima non lo faceva.** Gli indici locali
+   * di due stamp descrivono la stessa colonna del mondo solo se i due stamp sono
+   * ancorati allo stesso punto: era vero per costruzione finche' ogni edificio
+   * era ancorato in `(0,0,0)`, e ha smesso di esserlo da quando uno sbalzo puo'
+   * spostare l'ancora di due colonne. Con due ancore diverse il confronto diretto
+   * cancella i voxel sbagliati — e lo fa in silenzio, lasciando buchi nella sagoma
+   * nuova e pezzi della vecchia in piedi.
+   */
   private clearObsoleteVoxelBatch(
     anchor: VoxelAnchor,
     previous: VoxelStamp,
@@ -275,8 +289,14 @@ export class GrowthQueue {
         const within = cursor - sz * previousPlane;
         const sy = Math.floor(within / previous.sizeX);
         const sx = within - sy * previous.sizeX;
-        const covered = sx < next.sizeX && sy < next.sizeY && sz < next.sizeZ &&
-          next.voxels[sx + next.sizeX * (sy + next.sizeY * sz)] !== STAMP_EMPTY;
+        // Stessa colonna del mondo, letta nei due sistemi locali: si passa per
+        // l'ancora, che e' l'unico punto che i due stamp hanno in comune.
+        const nx = sx - previous.anchorX + next.anchorX;
+        const ny = sy - previous.anchorY + next.anchorY;
+        const nz = sz - previous.anchorZ + next.anchorZ;
+        const covered = nx >= 0 && ny >= 0 && nz >= 0 &&
+          nx < next.sizeX && ny < next.sizeY && nz < next.sizeZ &&
+          next.voxels[nx + next.sizeX * (ny + next.sizeY * nz)] !== STAMP_EMPTY;
         if (!covered) {
           const voxel = anchoredVoxel(anchor, previous, sx, sy, sz);
           this.world.setBlock(voxel.x, voxel.y, voxel.z, STAMP_EMPTY);

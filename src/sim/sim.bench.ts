@@ -1,10 +1,12 @@
 import { bench, describe } from 'vitest';
 import { CATALYSTS as ROLES } from './catalysts';
 import { BUILDING_CLASS, CLASS_COUNT, type BuildingClass } from './classes';
+import { FARM_KIND } from './farms';
 import { nextBuildSites } from './nextBuildSites';
 import {
   addBuilding,
   addCatalyst,
+  addFarm,
   createSimState,
   setCatalystStrength,
   setPolicyActive,
@@ -58,10 +60,35 @@ function cityOf256(): SimState {
 const terrainMap = testTerrain({ chunksX: 8, chunksY: 8 });
 const city = cityOf256();
 
+/**
+ * La stessa citta' con la campagna che la nutre.
+ *
+ * **Serve perche' `cityOf256` non ha lotti agricoli**, quindi il tick nudo
+ * attraversa i cicli del raccolto su contatori a zero e non misura niente di
+ * cio' che la 3.1 ha aggiunto. Il numero di lotti e' quello che sfama la
+ * popolazione di una citta' da quattrocento edifici: cento residenziali pieni
+ * vogliono cinquanta campi.
+ */
+function fedCityOf256(): SimState {
+  let state = cityOf256();
+  for (let i = 0; i < 50; i++) state = addFarm(state, FARM_KIND.field);
+  for (let i = 0; i < 12; i++) state = addFarm(state, FARM_KIND.orchard);
+  return state;
+}
+
+const fedCity = fedCityOf256();
+
 describe('simulazione, mappa 256x256', () => {
   let ticking = city;
   bench('tick', () => {
     ticking = tick(ticking, terrainMap);
+  });
+
+  // Il confronto che dice quanto costa la campagna: stessa citta', stessi
+  // edifici, piu' sessantadue lotti agricoli da sommare a ogni tick.
+  let feeding = fedCity;
+  bench('tick con 62 lotti agricoli', () => {
+    feeding = tick(feeding, terrainMap);
   });
 
   // Modificare invece di aggiungere: la lista dei catalizzatori resta lunga 51 a

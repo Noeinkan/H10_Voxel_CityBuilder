@@ -4,3 +4,5 @@ dist/
 *.local
 .DS_Store
 .shots/
+# I segreti del sito vivono solo su /opt/sites/<slug>/.env sul server.
+.deploy/.env

@@ -176,7 +176,27 @@ export class AerialDriver {
    */
   blocksUpgrade(hostId: number): boolean {
     return this.ctx.registry.decksOf(hostId).some((deck) =>
-      this.inhabitedDecks.has(deck.id) || deck.aerial !== AERIAL_PART.terrace);
+      this.pinned(deck.id) || deck.aerial !== AERIAL_PART.terrace);
+  }
+
+  /**
+   * true se questo impalcato non puo' piu' cadere.
+   *
+   * Due modi di essere inchiodati, e sono lo stesso fatto visto da due parti:
+   * qualcuno ci **sta sopra** — un lotto in quota — oppure qualcuno ci si
+   * **appende**. Il secondo era scoperto, e il difetto e' esattamente quello che
+   * `buildRoute` dichiara di voler evitare: «i due capi reggono il percorso, e il
+   * percorso li immobilizza». Senza, l'ospite di una mensola-capolinea poteva
+   * promuovere, `releaseDecks` la faceva cadere, e il tratto restava con un
+   * `supports` che non risolve piu' — cioe' una passerella che finisce nel vuoto.
+   *
+   * `carries` risponde per tutti e due i modi di appendersi, e non solo per i
+   * capolinea: anche la gamba di un percorso che poggia sul piano di una mensola
+   * la mette fra chi regge. E' la stessa domanda che l'upgrade di un edificio si
+   * fa gia' prima di promuovere, posta un piano piu' in alto.
+   */
+  private pinned(deckId: number): boolean {
+    return this.inhabitedDecks.has(deckId) || this.ctx.registry.carries(deckId);
   }
 
   /**
@@ -214,7 +234,7 @@ export class AerialDriver {
   releaseDecks(hostId: number): void {
     for (const deck of [...this.ctx.registry.decksOf(hostId)]) {
       if (deck.aerial !== AERIAL_PART.terrace) continue;
-      if (this.inhabitedDecks.has(deck.id)) continue;
+      if (this.pinned(deck.id)) continue;
       this.dropDeck(deck);
     }
   }
@@ -667,7 +687,7 @@ export class AerialDriver {
  */
 function settled(record: BuildingRecord): boolean {
   if (record.aerial !== undefined || record.span !== undefined) return false;
-  if (record.landmark !== undefined) return false;
+  if (record.landmark !== undefined || record.arcology !== undefined) return false;
   return record.level >= AERIAL.minHostLevel;
 }
 

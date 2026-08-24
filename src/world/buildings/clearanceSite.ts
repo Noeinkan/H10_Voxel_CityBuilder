@@ -1,0 +1,272 @@
+import { removeBuildings, type Building, type SimState } from '../../sim';
+import {
+  footprintDepth,
+  type BuildingRecord,
+  type ReadonlyBuildingRegistry,
+} from './BuildingRegistry';
+import type { BuildContext } from './buildContext';
+import {
+  CLEARANCE_KIND,
+  planClearance,
+  type ClearanceRecord,
+  type ClearanceRefusal,
+  type ClearanceRule,
+} from './clearance';
+import { BUILDER } from './config';
+import { anchorOf } from './growthQueue';
+import { recordStamp } from './recordStamp';
+import type { SpanDriver } from './spanDriver';
+import { EMPTY_STAMP } from './stamp';
+
+/**
+ * Il cantiere: come una struttura grossa si fa spazio dentro la citta' costruita.
+ *
+ * **Viveva dentro `landmarkDriver.ts`, e non era roba dei landmark.** Un
+ * riquadro da sgomberare, dei condannati che spariscono a budget, un recinto
+ * finche' dura e una richiamata quando e' vuoto: niente di tutto questo sa cosa
+ * ci verra' costruito sopra. A dirlo e' stata l'arcologia, che ne ha bisogno per
+ * la stessa ragione e con un'altra regola — una seconda copia divergerebbe al
+ * primo caso limite, e i casi limite qui sono la parte difficile.
+ *
+ * **Uno solo per Builder.** I cantieri aperti sono quasi sempre zero e non ha
+ * senso che due domini tengano due liste: `pass` scorre l'unica, e due cantieri
+ * che avessero condannato lo stesso record si accorgono l'uno dell'altro invece
+ * di dirlo due volte alla simulazione.
+ *
+ * **La demolizione passa dalla coda di comparsa, non da una passata sua.** Un
+ * volume da togliere accodato con una sagoma vuota come "nuova" non scrive
+ * niente e cancella tutto, a budget: la stessa macchina che fa salire un
+ * edificio voxel per voxel lo fa scendere, e il cantiere si sgombera al ritmo a
+ * cui la citta' cresce senza che nessuno lo abbia dovuto tarare.
+ */
+
+/** L'ingombro in pianta che una struttura si riserva. */
+export interface ClearanceBox {
+  readonly x: number;
+  readonly y: number;
+  readonly sizeX: number;
+  readonly sizeY: number;
+}
+
+/** Cosa il piazzamento troverebbe in un riquadro, senza toccare niente. */
+export interface ClearanceVerdict {
+  /** Edifici che porterebbe via. Zero dove il riquadro e' gia' libero. */
+  readonly clears: number;
+  /** Perche' non ci si puo' piantare, o null. */
+  readonly refusal: ClearanceRefusal | null;
+}
+
+/** Riquadro gia' libero. */
+export const OPEN_SITE: ClearanceVerdict = { clears: 0, refusal: null };
+
+interface Site {
+  readonly box: ClearanceBox;
+  readonly doomed: Map<number, BuildingRecord>;
+  readonly onFinish: () => void;
+}
+
+export class ClearanceSites {
+  /** Cantieri aperti. Quasi sempre vuoto: sono gesti rari, non un fatto del tick. */
+  private readonly sites: Site[] = [];
+
+  private clearedCount = 0;
+
+  constructor(
+    private readonly ctx: BuildContext,
+    private readonly spans: SpanDriver,
+  ) {}
+
+  get open(): number {
+    return this.sites.length;
+  }
+
+  get cleared(): number {
+    return this.clearedCount;
+  }
+
+  /**
+   * Cosa il riquadro porterebbe via, o perche' rifiuta. **Non scrive.**
+   *
+   * E' la domanda del cursore, e **la stessa che fa il click**: se rispondesse
+   * con criteri diversi, "Valid position" tornerebbe a essere un'opinione.
+   */
+  survey(box: ClearanceBox, rule: ClearanceRule): ClearanceVerdict {
+    const records = recordsIn(this.ctx.registry, box);
+    if (records.length === 0) return OPEN_SITE;
+
+    const plan = planClearance(
+      records.map((record) => clearanceOf(this.ctx.registry, record)),
+      rule,
+    );
+    return { clears: plan.doomed.length, refusal: plan.refusal };
+  }
+
+  /**
+   * Apre il cantiere: condanna cio' che occupa il riquadro e ne accoda la fine.
+   *
+   * `onFinish` scatta quando l'ultimo condannato e' sparito davvero — non quando
+   * e' stato condannato — perche' fino a quel momento il suolo legge occupato e
+   * la struttura non ci starebbe.
+   *
+   * Le campate che poggiavano su un condannato cadono con lui, ed e' il vincolo
+   * che c'era gia': segue o sparisce, mai resta a mezz'aria.
+   */
+  start(box: ClearanceBox, rule: ClearanceRule, onFinish: () => void): boolean {
+    const records = recordsIn(this.ctx.registry, box);
+    const plan = planClearance(
+      records.map((record) => clearanceOf(this.ctx.registry, record)),
+      rule,
+    );
+    if (plan.refusal !== null || plan.doomed.length === 0) return false;
+
+    const byId = new Map(records.map((record) => [record.id, record]));
+    const doomed = new Map<number, BuildingRecord>();
+
+    for (const id of plan.doomed) {
+      const record = byId.get(id);
+      if (record === undefined) continue;
+      this.spans.dropSupportedBy(id);
+      this.ctx.growth.enqueue(id, anchorOf(record), EMPTY_STAMP, recordStamp(record));
+      doomed.set(id, record);
+    }
+    if (doomed.size === 0) return false;
+
+    this.sites.push({ box, doomed, onFinish });
+    this.paintFence(box);
+    return true;
+  }
+
+  /**
+   * Miete i condannati che hanno finito di sparire, e chiude i cantieri vuoti.
+   *
+   * **Un record si toglie dal registry solo quando i suoi voxel non ci sono
+   * piu'.** Toglierlo prima aprirebbe una finestra in cui il suolo legge libero
+   * mentre l'edificio e' ancora li': un lotto ci nascerebbe dentro, e la
+   * cancellazione in coda gli mangerebbe i voxel. E' la stessa ragione per cui
+   * una campata si cancella di colpo invece che a rate — li' il volume e'
+   * piccolo abbastanza da permetterselo, qui no.
+   *
+   * La spazzata finale su ciascun volume e' quasi gratis — `clearVolume` salta
+   * le celle gia' vuote, e a questo punto lo sono quasi tutte — e serve a una
+   * cosa sola: se la sagoma rigenerata divergesse anche di un voxel da quella
+   * scritta, resterebbe un moncone dentro il riquadro della struttura.
+   */
+  pass(state: SimState): SimState {
+    if (this.sites.length === 0) return state;
+
+    const { registry, growth } = this.ctx;
+    const gone: Building[] = [];
+
+    for (let i = this.sites.length - 1; i >= 0; i--) {
+      const site = this.sites[i];
+
+      for (const [id, record] of site.doomed) {
+        if (growth.isGrowing(id)) continue;
+
+        growth.clearVolume(
+          record.x,
+          record.y,
+          record.footprint,
+          footprintDepth(record),
+          record.baseZ,
+          record.baseZ + record.height,
+        );
+        site.doomed.delete(id);
+        this.clearedCount++;
+
+        // Due cantieri sovrapposti possono aver condannato lo stesso record: il
+        // primo che lo miete lo toglie davvero, e il secondo non deve dirlo alla
+        // simulazione una seconda volta, o le toglierebbe un edificio che non
+        // esiste.
+        if (registry.remove(id)) gone.push(simBuildingOf(record));
+      }
+
+      if (site.doomed.size > 0) continue;
+      this.sites.splice(i, 1);
+      site.onFinish();
+    }
+
+    return gone.length === 0 ? state : removeBuildings(state, gone);
+  }
+
+  /**
+   * Il recinto: l'anello attorno al riquadro, finche' il cantiere e' aperto.
+   *
+   * **Un cantiere deve leggersi come un cantiere**, non come un buco. Fra
+   * l'apertura e la struttura passano diverse passate — gli edifici cadono uno
+   * per volta, a budget — e senza un segno il giocatore vede solo case che
+   * spariscono senza sapere perche'. Il colore del recinto e' il piu' lontano
+   * dall'asfalto che lo sostituira': il passaggio da recinto a suolo pubblico si
+   * vede, ed e' il modo in cui il cantiere dichiara di aver finito.
+   */
+  private paintFence(box: ClearanceBox): void {
+    for (let py = box.y - 1; py <= box.y + box.sizeY; py++) {
+      for (let px = box.x - 1; px <= box.x + box.sizeX; px++) {
+        const edge = px < box.x || py < box.y ||
+          px >= box.x + box.sizeX || py >= box.y + box.sizeY;
+        if (!edge) continue;
+        this.ctx.surface.enqueue({ x: px, y: py, palette: BUILDER.fencePalette, priority: 1 });
+      }
+    }
+  }
+}
+
+/**
+ * Come la regola dello sventramento deve leggere un record.
+ *
+ * `carries` sta accanto ad `aerial`, e non e' un caso a parte: un edificio che
+ * ospita una mensola o porta una gamba **e'** citta' in quota, vista da sotto.
+ * Farlo cadere farebbe cadere quello che ci sta sopra, e sarebbe la demolizione
+ * a cascata che nessuno di questi domini vuole.
+ */
+export function clearanceOf(
+  registry: ReadonlyBuildingRegistry,
+  record: BuildingRecord,
+): ClearanceRecord {
+  const kind = record.span !== undefined
+    ? CLEARANCE_KIND.span
+    : record.landmark !== undefined || record.aerial !== undefined ||
+      record.arcology !== undefined || registry.carries(record.id)
+      ? CLEARANCE_KIND.structure
+      : CLEARANCE_KIND.building;
+  return { id: record.id, level: record.level, kind };
+}
+
+/**
+ * I record distinti che stanno dentro un riquadro, a qualunque quota.
+ *
+ * **Non guarda le quote, e non e' una svista.** `overlaps` le confronta perche'
+ * deve dire se due volumi si toccano; qui la domanda e' un'altra — «questo
+ * riquadro e' impegnato?» — e cio' che sta sopra una struttura alta venti voxel
+ * e' una mensola o una campata, cioe' i due casi che la regola tratta comunque a
+ * parte. Guardare la colonna intera e' quindi piu' severo di quanto serva
+ * esattamente dove la severita' non cambia la risposta, e costa una lettura in
+ * meno per colonna.
+ */
+export function recordsIn(
+  registry: ReadonlyBuildingRegistry,
+  box: ClearanceBox,
+): BuildingRecord[] {
+  const found = new Map<number, BuildingRecord>();
+  for (let dy = 0; dy < box.sizeY; dy++) {
+    for (let dx = 0; dx < box.sizeX; dx++) {
+      for (const record of registry.at(box.x + dx, box.y + dy)) {
+        found.set(record.id, record);
+      }
+    }
+  }
+  return [...found.values()];
+}
+
+/**
+ * Un record come la simulazione lo aveva contato.
+ *
+ * Un'impronta di otto colonne e' **un** edificio per `src/sim/`, registrato
+ * sulla sua origine: e' la stessa coppia che `buildPass` le aveva passato, ed e'
+ * l'unica con cui si puo' ritrovare cio' che va tolto.
+ */
+export function simBuildingOf(record: BuildingRecord): Building {
+  return record.mixed === undefined
+    ? { x: record.x, y: record.y, class: record.class }
+    : { x: record.x, y: record.y, class: record.class, mixed: record.mixed };
+}

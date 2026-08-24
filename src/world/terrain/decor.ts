@@ -103,6 +103,18 @@ function canopyBaseZ(shape: (typeof TREE_SHAPES)[number], groundZ: number, trunk
   return groundZ + trunkHeight - shape.sink;
 }
 
+/**
+ * Dove finiscono i voxel di un albero.
+ *
+ * Esiste perche' gli alberi si disegnano in **due** destinazioni: il mondo voxel,
+ * quando li pianta il generatore di terreno, e uno stamp, quando li pianta un
+ * frutteto — che passa dalla coda della crescita come ogni altro volume, quindi
+ * deve consegnare uno stamp e non delle scritture diirette. La chioma e' la stessa
+ * e resta scritta una volta sola: due copie divergerebbero al primo ritocco del
+ * profilo di una specie.
+ */
+export type TreeSink = (x: number, y: number, z: number, palette: number) => void;
+
 /** Scrive soltanto la porzione dell'albero che cade nel rettangolo del blocco. */
 export function writeTree(
   world: VoxelWorld,
@@ -114,12 +126,34 @@ export function writeTree(
   maxY: number,
 ): number {
   let written = 0;
-  const put = (x: number, y: number, z: number, palette: number): void => {
+  // **Un albero scrive solo dove c'e' aria.** Il terreno del blocco e' gia'
+  // scritto quando la decorazione parte, quindi una chioma nata su una cella
+  // bassa non puo' piu' mangiare la parete della cella accanto: viene ritagliata
+  // da quella, come le succede in natura. Non e' un caso raro da quando il
+  // ciglio serpeggia — la stessa cengia che rende il gradone credibile passa
+  // proprio dove gli alberi crescono.
+  drawTree(tree, groundZ, (x, y, z, palette) => {
     if (x < minX || x >= maxX || y < minY || y >= maxY) return;
+    if (world.getBlock(x, y, z) !== 0) return;
     world.setBlock(x, y, z, palette);
     written++;
-  };
+  });
+  return written;
+}
 
+/**
+ * Disegna un albero verso un `TreeSink` qualunque.
+ *
+ * E' il corpo di `writeTree` senza la destinazione: il ritaglio al rettangolo,
+ * il controllo dell'aria e il conteggio appartengono a **chi** scrive, non a
+ * come e' fatto un albero. Chi disegna dentro uno stamp ha regole di ritaglio
+ * tutte sue e non ha un mondo da interrogare.
+ *
+ * Le estrazioni del PRNG non dipendono da cosa il sink accetta — `put` scarta
+ * dopo aver tirato — ed e' quello che tiene coerenti le due meta' di un albero a
+ * cavallo di una cucitura.
+ */
+export function drawTree(tree: TreeSpec, groundZ: number, put: TreeSink): void {
   // Tronco di un voxel. Ingrossarlo con la scala sembrava dovuto e invece no:
   // due voxel su una chioma larga nove leggono come un pilastro, e comunque il
   // tronco si vede solo sotto la chioma, dove la parte che conta e' l'ombra che
@@ -189,7 +223,6 @@ export function writeTree(
       }
     }
   }
-  return written;
 }
 
 /** Scostamento intero in `[-lean, lean]`. A `lean` zero non consuma varieta'. */

@@ -1,6 +1,6 @@
 import {
+  BufferAttribute,
   BufferGeometry,
-  Float32BufferAttribute,
   Group,
   Line,
   LineBasicMaterial,
@@ -201,7 +201,14 @@ interface GuideLine {
 
 function line(points: number, closed: boolean, opacity: number): GuideLine {
   const positions = new Float32Array(points * 3);
-  const attribute = new Float32BufferAttribute(positions, 3);
+  // `BufferAttribute` e non `Float32BufferAttribute`: il secondo fa
+  // `new Float32Array(array)`, che di un array tipizzato costruisce una *copia*.
+  // Presa qui, la copia e' di soli zeri, e da quel momento `positions` e il
+  // buffer che il renderer carica sono due cose diverse: le guide restavano
+  // `visible`, con le coordinate giuste, e ogni vertice sull'origine — una linea
+  // degenere, zero pixel. `BufferAttribute` tiene l'array per riferimento, ed e'
+  // cio' che rende vero il disegno a buffer preallocato descritto in testa.
+  const attribute = new BufferAttribute(positions, 3);
   const geometry = new BufferGeometry();
   geometry.setAttribute('position', attribute);
   const material = new LineBasicMaterial({

@@ -117,7 +117,12 @@ export function createInspectView(options: InspectViewOptions): InspectView {
   let mode = options.mode;
   let sliceZ = options.sliceZ;
 
-  /** Vero da quando la quota e' stata scelta: solo allora smette di seguire il suolo. */
+  /**
+   * Vero da quando la quota ha un valore **suo**: armata sul suolo alla prima
+   * apertura, o scelta a mano dalla barra e dai tasti. Da li' in poi nessuno
+   * gliela riscrive sotto, ed e' esattamente cio' che separa «parte dal terreno»
+   * da «insegue il terreno» — vedi `apply`.
+   */
   let sliceChosen = options.sliceFromUrl;
 
   /**
@@ -330,6 +335,12 @@ export function createInspectView(options: InspectViewOptions): InspectView {
     lockedRect = rect;
     lockedKey = streets.keyOf(block);
     focus = target;
+    // Subito, e non al prossimo `apply`: `locked` diventa vero adesso, e fra qui
+    // e il frame successivo c'e' chi legge le due cose insieme — la scheda di
+    // selezione, che apre sullo stesso click. Leggerle sfasate le farebbe dire
+    // che si sta studiando l'isolato di **prima**.
+    blockRect = lockedRect;
+    blockKey = lockedKey;
 
     // Solo la prima volta: passando da un isolato all'altro l'inquadratura a cui
     // tornare resta quella della citta', non quella dello studio precedente.
@@ -343,6 +354,18 @@ export function createInspectView(options: InspectViewOptions): InspectView {
     // Il perno a mezza altezza: girando attorno alla base, una torre oscillerebbe
     // in cima allo schermo invece di restare al centro.
     camera.setTarget(centreX, centreY, (base + top) * 0.5);
+    // Mezza altezza e' dove si comincia, non l'unico posto da cui guardare: il
+    // volume dell'isolato e' cio' che permette ai tasti di pan di salire lungo la
+    // torre senza poterla perdere. `x1`/`y1` sono inclusivi nel rettangolo e qui
+    // servono come bordo esterno, come per il centro appena calcolato.
+    camera.setOrbitBounds({
+      x0: rect.x0,
+      y0: rect.y0,
+      z0: base,
+      x1: rect.x1 + 1,
+      y1: rect.y1 + 1,
+      z1: top,
+    });
     camera.frameRegion(
       centreX,
       centreY,
@@ -426,14 +449,25 @@ export function createInspectView(options: InspectViewOptions): InspectView {
 
       focus = needsCursor(mode) ? focusColumn() : null;
 
-      // Finche' la quota non e' stata scelta, la fetta segue il suolo che si sta
-      // guardando. Una quota assoluta di default cadrebbe dentro la collina — la
-      // citta' sta a quaranta voxel sul mare — e il primo colpo d'occhio sarebbe
-      // l'interno della terra invece del piano di un edificio. Al primo tasto o
-      // al primo trascinamento diventa assoluta e smette di seguire.
+      // La quota si arma **una volta sola**, sul suolo che si sta guardando: una
+      // quota assoluta di default cadrebbe dentro la collina — la citta' sta a
+      // quaranta voxel sul mare — e il primo colpo d'occhio sarebbe l'interno
+      // della terra invece del piano di un edificio.
+      //
+      // Rifarlo a ogni frame era il difetto. La fetta inseguiva il cursore, e
+      // muovendo il mouse la citta' si apriva e si richiudeva da sola senza che
+      // nessuno avesse chiesto niente; poi, appena il puntatore usciva dall'isola,
+      // `pointedCellAt` smetteva di rispondere e `focusColumn` ripiegava sul
+      // centro dell'inquadratura, che non cambia. Da fuori si vedeva una quota che
+      // saliva lungo la collina e a un certo punto restava inchiodata li', cioe'
+      // un comando rotto. Armare e basta toglie entrambe le meta' del difetto:
+      // muoverla resta un gesto, e i gesti sono la barra e i tasti.
       if (mode === INSPECT_MODE.slice && !sliceChosen) {
         const ground = focusColumn();
-        if (ground !== null) sliceZ = clampSliceZ(ground.z + INSPECT.sliceCoarse);
+        if (ground !== null) {
+          sliceZ = clampSliceZ(ground.z + INSPECT.sliceCoarse);
+          sliceChosen = true;
+        }
       }
       blockKey = null;
       blockRect = null;

@@ -10,6 +10,16 @@ export interface SurfaceCell {
   readonly x: number;
   readonly y: number;
   readonly z: number;
+  /**
+   * Quota a cui il raggio ha davvero incontrato il solido.
+   *
+   * Sul terreno nudo coincide con `z`; su un tetto o una facciata sale con loro.
+   * E' la quota **del puntatore**, ed e' un'altra cosa da quella della colonna:
+   * in isometrica la z e' tutta verticale sullo schermo, quindi un segnaposto
+   * disegnato a `z` sotto una torre di quaranta voxel esce dal mouse di mezzo
+   * schermo e sembra puntare un altro isolato.
+   */
+  readonly hitZ: number;
   readonly buildable: boolean;
 }
 
@@ -68,7 +78,7 @@ export function pickSolidCell(
     // e la quota di cio' che ci sta sopra la chiede al registro.
     const surface = builtTop === null ? column.height : Math.max(column.height, builtTop(x, y));
     if (z <= surface) {
-      return { x, y, z: column.height, buildable: column.buildable };
+      return { x, y, z: column.height, hitZ: z, buildable: column.buildable };
     }
   }
   return null;

@@ -17,15 +17,27 @@ export type DistrictId =
   | 'mixed';
 
 /**
- * Le cinque **specializzazioni**.
+ * Le sei **specializzazioni**.
  *
  * Non sono usi urbani e non entrano nel campo: sono aggettivi che si posano su
  * un uso gia' deciso, e servono a scegliere la tipologia edilizia. Un edificio
  * commerciale in un distretto ricco e accessibile diventa un ufficio; lo stesso
  * uso commerciale accanto a un monumento diventa un hotel. L'uso non e'
  * cambiato: e' cambiato cosa ci si fa dentro.
+ *
+ * **`farming` e' l'unica che cambia anche il bilancio**, ed e' una deroga
+ * dichiarata invece di una svista: un edificio industriale che la porta e' una
+ * torre idroponica, quindi produce cibo invece di materiali. Le altre cinque
+ * restano quello che sono sempre state — un fatto sulla forma, non sul tick —
+ * e chi legge `farming` in `tick.ts` la legge da `farmCounts`, non da qui.
  */
-export type Specialization = 'office' | 'tourism' | 'research' | 'logistics' | 'entertainment';
+export type Specialization =
+  | 'office'
+  | 'tourism'
+  | 'research'
+  | 'logistics'
+  | 'entertainment'
+  | 'farming';
 
 export interface LocalUrbanProfile {
   readonly district: DistrictId;
@@ -163,7 +175,23 @@ const SPECIALIZATION_ROLES: Readonly<Record<Specialization, readonly CatalystId[
   research: ['university'],
   logistics: ['port', 'transport', 'airport'],
   entertainment: ['monument', 'market', 'park'],
+  // La torre idroponica e' industria convertita, quindi nasce dove l'industria
+  // c'e' gia'. L'universita' e' l'altra meta': coltivare in verticale e' una
+  // tecnica prima che un mestiere, e un campus accanto e' cio' che la spiega
+  // senza aggiungere un albero tecnologico che questo gioco non ha.
+  farming: ['factory', 'university'],
 };
+
+/**
+ * Le specializzazioni in ordine di catalogo, per chi deve percorrerle tutte.
+ *
+ * **Derivata e non riscritta**, come `SURFACE_KIND_NAMES` e `PALETTE_SLOT_NAMES`:
+ * un elenco a mano divergerebbe dalla tabella alla prima aggiunta, ed e'
+ * esattamente cosi' che `farming` ha fatto cadere il test di copertura del
+ * catalogo delle tipologie invece di esserci semplicemente dentro.
+ */
+export const ALL_SPECIALIZATIONS: readonly Specialization[] =
+  Object.keys(SPECIALIZATION_ROLES) as Specialization[];
 
 /**
  * Specializzazione espressa da un luogo, o null.
@@ -184,6 +212,14 @@ export function specializationOf(profile: {
   const limits = BALANCE.districts.specialization;
   const near = (id: Specialization): boolean =>
     SPECIALIZATION_ROLES[id].some((role) => profile.roles.includes(role));
+
+  // Per prima perche' e' la piu' rara: chiede la densita' piu' alta del gruppo,
+  // quindi passa solo dove il suolo e' davvero finito. Messa piu' in basso,
+  // `logistics` se la porterebbe via ogni volta — le sue soglie sono un terzo
+  // piu' basse e i due ruoli si sovrappongono attorno a una fabbrica.
+  if (near('farming') &&
+    profile.density >= limits.farming.density &&
+    profile.industry >= limits.farming.industry) return 'farming';
 
   if (near('research') &&
     profile.wealth >= limits.research.wealth &&

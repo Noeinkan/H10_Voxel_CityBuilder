@@ -6,9 +6,15 @@ il prossimo edificio e con quali usi. **Non costruisce niente**: espone lo stato
 e le decisioni, e chi costruisce sta fuori da questa cartella.
 
 Gli usi urbani sono quattro — residenziale, commerciale, industriale, civico — e
-sono indici densi in quest'ordine. Uffici, turismo, ricerca, logistica e
-intrattenimento non sono usi ma **specializzazioni**: aggettivi che si posano su
-un uso già deciso e servono a chi sceglie la forma degli edifici.
+sono indici densi in quest'ordine. Uffici, turismo, ricerca, logistica,
+intrattenimento e agricoltura non sono usi ma **specializzazioni**: aggettivi che
+si posano su un uso già deciso e servono a chi sceglie la forma degli edifici.
+L'ultima è l'unica che cambia anche il bilancio, ed è una deroga dichiarata.
+
+I **produttori di cibo** sono invece contatori a parte (`farmCounts`), non un
+quinto uso: campi e frutteti non sono edifici e vivono nel mondo, la torre
+idroponica è un edificio industriale che conta due volte. Nessuno dei tre entra
+nel campo di desiderabilità — un produttore di cibo compete per la **terra**.
 
 ```ts
 import { createSimState, addCatalyst, tick, nextBuildSites, BUILDING_CLASS } from './sim';
@@ -34,6 +40,8 @@ nextBuildSites(state, terrainMap, 10);           // [{ x, y, class, mixed, score
 | [policies.ts](policies.ts) | Catalogo delle policy e risoluzione dei pesi |
 | [districts.ts](districts.ts) | Profilo locale, distretti e specializzazioni emergenti dalla sovrapposizione |
 | [commerce.ts](commerce.ts) | Il ciclo commerciale interno: domanda, organico, merce, ricavi |
+| [farms.ts](farms.ts) | I tre produttori di cibo, il listino in case sfamate e il referto del raccolto |
+| [flows.ts](flows.ts) | Da dove vengono i fondi di un tick e dove vanno: referto derivato, non un accumulo |
 | [decisions.ts](decisions.ts) | Decisioni periodiche e alternative deterministiche |
 | [charters.ts](charters.ts) | Mandati lasciati dalle decisioni: uno slot per famiglia, permanenti |
 | [trade.ts](trade.ts) | Commercio esterno O(1) sbloccato dal porto |
@@ -186,6 +194,24 @@ magazzino fornisce. `service` (quanta domanda è servita) e `occupancy` (quanto
 sono pieni i banchi) restano due numeri distinti: con uno solo, "troppi negozi" e
 "pochi negozi" si leggerebbero uguale.
 
+## Il bilancio dei fondi, voce per voce
+
+`state.flows` è un `FundsReport`: tasse, incasso dei negozi, saldo del commercio
+esterno da una parte; servizi civici, policy e torri idroponiche dall'altra, più
+`paid` — quanto degli oneri si è **davvero** potuto pagare, che a cassa vuota è
+meno della somma nominale ed è ciò che lascia i servizi scoperti.
+
+Ha la stessa natura di `commerce`, e per la stessa ragione vive accanto a lui:
+**è derivato dal tick, non accumulato**, quindi ricostruirlo non richiede storia
+e `tick` resta puro. I numeri non sono un secondo conto — sono esattamente
+quelli che il tick già calcolava per il saldo e poi buttava via, ed è questo a
+garantire che la scomposizione mostrata dall'HUD non possa divergere dal
+`funds.delta` scritto accanto (`flows.test.ts` lo verifica su quaranta tick).
+
+Esiste perché «perché sto perdendo denaro» non aveva risposta: un saldo netto
+dice di quanto, non di chi è la colpa, e con sei voci in gioco un numero solo non
+indica nessuna azione da fare.
+
 Un edificio **a uso misto** ha un uso primario e un secondo uso che ne porta
 `mixedUse.secondaryShare` di capacità economica. Nasce dove due campi
 compatibili superano insieme le loro soglie — la seconda ridotta, perché il
@@ -235,19 +261,30 @@ ogni consumo è un `min(domanda, disponibile)`, e ciò che manca diventa un rapp
 di soddisfacimento in `[0, 1]` (`fed`, `funded`) che degrada la simulazione invece
 di scavare un buco. `finiteStock` è la rete, non il meccanismo.
 
-Due numeri da conoscere. `food.perProduction / food.perResident` fa 24, cioè
-esattamente `weights.residentialCapacity`: un edificio industriale sfama un
-edificio residenziale pieno, e una città in rapporto **1:1** sta in pareggio
-alimentare. E `weights.commercialCapacity` vale a sua volta 24: un edificio
-commerciale serve esattamente un edificio residenziale pieno. Sono le due
-relazioni che rendono leggibile un bilancio a colpo d'occhio, e cambiare uno dei
-valori senza guardare gli altri le rompe.
+Due relazioni da conoscere. `weights.commercialCapacity` vale
+`weights.residentialCapacity`: un edificio commerciale serve esattamente un
+edificio residenziale pieno. E il listino agricolo è in **case sfamate** — un
+campo ne sfama due, un frutteto una, una torre idroponica sei — dove una casa
+piena mangia `FOOD_PER_HOUSE`, che è il prodotto `residentialCapacity *
+food.perResident` e non un numero scritto a mano. Sono le due relazioni che
+rendono leggibile un bilancio a colpo d'occhio; la prima si rompe cambiando un
+valore senza guardare l'altro, la seconda no, perché è derivata.
+
+**Il cibo non esce più dall'industria.** Fino alla 3.1 la fabbrica produceva cibo
+e materiali dallo stesso termine, e il cibo non aveva un posto sulla mappa. Ora ha
+tre produttori con un costo in terra — campi, frutteti, torri idroponiche — che il
+mondo dichiara con `addFarm`, e la fabbrica fa solo materiali. Una torre è un
+edificio industriale con `specialization: 'farming'`: conta come industria per il
+suolo che occupa e come produttore per ciò che raccoglie, quindi convertire una
+fabbrica in torre è un vero scambio fra materiali e cibo.
 
 ## Scena di debug
 
 `?debug=1&sim=1` — genera l'isola 256×256, piazza i catalizzatori da script e
 consegna alla simulazione un nucleo di 30 edifici (10 residenziali, 6
-commerciali, 10 industriali, 4 civici: il rapporto che sta in pareggio).
+commerciali, 10 industriali, 4 civici) più 5 campi. Il rapporto che sta in
+pareggio è quello fra case e campi — dieci case, cinque campi da due — mentre le
+fabbriche servono i materiali e non entrano più nel bilancio alimentare.
 
 L'overlay mostra stock e delta per tick, il riepilogo del commercio interno, i
 conteggi per uso primario e secondario, la heatmap del campo per l'uso

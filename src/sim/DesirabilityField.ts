@@ -2,6 +2,9 @@ import { CHUNK, CHUNK_SHIFT, toChunk, toLocal } from '../world/chunkCoords';
 import { BALANCE } from './balance';
 import { catalystInfluence, catalystRoleOf, type CatalystId } from './catalysts';
 import { ALL_CLASSES, CLASS_COUNT, type BuildingClass } from './classes';
+// Solo il tipo: `districts.ts` importa a sua volta `Catalyst` da qui, e un
+// `import type` si cancella in compilazione invece di chiudere un ciclo a runtime.
+import type { Specialization } from './districts';
 import { DESIRABILITY_WEIGHT_OF_CLASS, type Weights } from './policies';
 
 /**
@@ -78,6 +81,20 @@ export interface Building {
   readonly class: BuildingClass;
   /** Uso secondario ospitato, se l'edificio e' misto. */
   readonly mixed?: BuildingClass;
+  /**
+   * Specializzazione dichiarata dal costruttore, se ne ha una.
+   *
+   * **Non cambia il campo e non e' un uso.** Il campo la ignora del tutto: un
+   * edificio pesa per la sua classe, e questo campo viaggia solo perche' il
+   * bilancio ha bisogno di distinguere `farming` — una torre idroponica occupa
+   * suolo industriale ma produce cibo invece di materiali, ed e' l'unica
+   * specializzazione che cambia cosa esce da un tick.
+   *
+   * Il vocabolario e' di `districts.ts`, cioe' di questo modulo: non e' la
+   * tipologia edilizia che entra in `src/sim/` (contratto 7), e' la stessa
+   * parola che il profilo locale gia' calcola, restituita da chi ha costruito.
+   */
+  readonly specialization?: Specialization;
 }
 
 /**

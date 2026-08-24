@@ -1,11 +1,26 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { BALANCE } from './balance';
 import { BUILDING_CLASS } from './classes';
-import { addBuilding, addCatalyst, createSimState, toSimStateData, type SimState } from './SimState';
+import { FARM_KIND } from './farms';
+import {
+  addBuilding,
+  addCatalyst,
+  addFarm,
+  createSimState,
+  toSimStateData,
+  type SimState,
+} from './SimState';
 import { testTerrain } from './testTerrain';
 import { tick, tickMany } from './tick';
 
-/** Configurazione di partenza standard: una citta' gia' avviata, 20 edifici. */
+/**
+ * Configurazione di partenza standard: una citta' gia' avviata, 20 edifici.
+ *
+ * I sei campi non sono decorazione della fixture: dal momento in cui il cibo non
+ * esce piu' dalla fabbrica, dodici case vogliono dodici case sfamate, cioe' sei
+ * campi da due. E' il pareggio alimentare scritto in `BALANCE.farms`, ed e' il
+ * motivo per cui questa citta' regge duemila tick invece di consumarsi.
+ */
 function standardCity(): SimState {
   let state = createSimState();
   state = addCatalyst(state, {
@@ -25,6 +40,7 @@ function standardCity(): SimState {
   for (let i = 0; i < 3; i++) {
     state = addBuilding(state, { x: 40 + i * 3, y: 56, class: BUILDING_CLASS.civic });
   }
+  for (let i = 0; i < 6; i++) state = addFarm(state, FARM_KIND.field);
 
   return state;
 }
@@ -190,7 +206,7 @@ describe('tick — bilancio', () => {
     expect(state.population.stock).toBeGreaterThan(capacity * 0.5);
   });
 
-  it('senza edifici produttivi la citta’ consuma il cibo e smette di crescere', () => {
+  it('senza produttori di cibo la citta’ consuma la scorta e smette di crescere', () => {
     const terrainMap = testTerrain({ chunksX: 4, chunksY: 4 });
     let state = createSimState();
     for (let i = 0; i < 20; i++) {
@@ -202,6 +218,86 @@ describe('tick — bilancio', () => {
 
     expect(late.food.stock).toBe(0);
     expect(late.population.stock).toBeLessThan(early.population.stock);
+  });
+
+  it('l’industria non sfama piu’ nessuno: senza lotti agricoli la scorta finisce comunque', () => {
+    // E' la rottura voluta della 3.1. Prima di questa fase la stessa citta'
+    // stava in pareggio — dieci fabbriche sfamavano dieci case — e adesso la
+    // fabbrica fa solo materiali. Se un giorno questo test tornasse verde senza
+    // che nessuno abbia piantato niente, il cibo e' rientrato nel termine
+    // industriale da qualche parte.
+    const terrainMap = testTerrain({ chunksX: 4, chunksY: 4 });
+    let state = createSimState();
+    for (let i = 0; i < 10; i++) {
+      state = addBuilding(state, { x: 5 + i * 2, y: 5, class: BUILDING_CLASS.residential });
+    }
+    for (let i = 0; i < 10; i++) {
+      state = addBuilding(state, { x: 5 + i * 2, y: 12, class: BUILDING_CLASS.industrial });
+    }
+
+    const late = tickMany(state, terrainMap, 4000);
+
+    expect(late.food.stock).toBe(0);
+    expect(late.materials.stock).toBeGreaterThan(0);
+  });
+
+  it('il pareggio alimentare e’ dichiarato: un campo sfama due case piene', () => {
+    // La relazione che sostituisce `perProduction / perResident`. E' verificata
+    // sul bilancio vero e non sulla tabella, cosi' resta vera anche se un giorno
+    // cambia il modo in cui il tick arriva al raccolto.
+    const terrainMap = testTerrain({ chunksX: 4, chunksY: 4 });
+    const houses = 4;
+    let state = createSimState();
+    for (let i = 0; i < houses; i++) {
+      state = addBuilding(state, { x: 5 + i * 2, y: 5, class: BUILDING_CLASS.residential });
+    }
+    for (let i = 0; i < houses / 2; i++) state = addFarm(state, FARM_KIND.field);
+
+    // Popolazione esattamente a capacita': la domanda e' al suo massimo, e con
+    // l'organico pieno il raccolto deve pareggiarla esattamente.
+    state = {
+      ...state,
+      population: { stock: houses * BALANCE.weights.residentialCapacity, delta: 0 },
+    };
+
+    const before = state.food.stock;
+    const after = tick(state, terrainMap);
+
+    expect(after.food.stock).toBeCloseTo(before, 6);
+  });
+
+  it('una torre idroponica converte industria in cibo: piu’ raccolto, meno materiali', () => {
+    const terrainMap = testTerrain({ chunksX: 4, chunksY: 4 });
+    const base = (): SimState => {
+      let state = createSimState();
+      for (let i = 0; i < 8; i++) {
+        state = addBuilding(state, { x: 5 + i * 2, y: 5, class: BUILDING_CLASS.residential });
+      }
+      return { ...state, population: { stock: 160, delta: 0 } };
+    };
+
+    let factories = base();
+    let towers = base();
+    for (let i = 0; i < 3; i++) {
+      factories = addBuilding(factories, { x: 5 + i * 2, y: 12, class: BUILDING_CLASS.industrial });
+      towers = addBuilding(towers, {
+        x: 5 + i * 2,
+        y: 12,
+        class: BUILDING_CLASS.industrial,
+        specialization: 'farming',
+      });
+    }
+
+    // Stesso uso del suolo: la torre e' industria, e conta come tale.
+    expect(towers.buildingCounts[BUILDING_CLASS.industrial])
+      .toBe(factories.buildingCounts[BUILDING_CLASS.industrial]);
+    expect(towers.farmCounts[FARM_KIND.tower]).toBe(3);
+
+    const withFactories = tick(factories, terrainMap);
+    const withTowers = tick(towers, terrainMap);
+
+    expect(withTowers.food.stock).toBeGreaterThan(withFactories.food.stock);
+    expect(withTowers.materials.stock).toBeLessThan(withFactories.materials.stock);
   });
 
   it('l’isola satura frena la crescita: le colonne edificabili entrano nel bilancio', () => {

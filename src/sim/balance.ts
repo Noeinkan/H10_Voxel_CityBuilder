@@ -42,9 +42,10 @@ export const BALANCE = {
      * Clienti serviti per tick da un edificio commerciale a pieno organico.
      *
      * Vale quanto `residentialCapacity` di proposito: un edificio commerciale
-     * serve esattamente un edificio residenziale pieno, cosi' come un edificio
-     * industriale ne sfama esattamente uno. Sono le due relazioni 1:1 che
-     * rendono leggibile un bilancio a colpo d'occhio.
+     * serve esattamente un edificio residenziale pieno. E' la relazione 1:1 che
+     * rende leggibile un bilancio a colpo d'occhio, e ha una gemella nel cibo —
+     * dove pero' l'unita' non e' piu' la fabbrica ma il lotto agricolo, e il
+     * listino sta in `farms` misurato in case sfamate.
      */
     commercialCapacity: 24,
     /** Materiali prodotti per tick da un edificio industriale a pieno organico. */
@@ -221,6 +222,27 @@ export const BALANCE = {
     expansion: {
       cost: 500,
       population: 48,
+
+      /**
+       * Il nucleo che arriva con il settore.
+       *
+       * **Un settore comprato e' terra, e la terra da sola non cresce.** La
+       * crescita nasce dove il campo di desiderabilita' esiste, e il campo
+       * esiste solo dove un catalizzatore l'ha acceso: senza questo nucleo il
+       * giocatore pagava cinquecento fondi per un pezzo d'isola su cui non
+       * compariva mai niente, e il messaggio che prometteva «the new land can
+       * support city growth» descriveva una cosa che non succedeva.
+       *
+       * E' un mercato e non un ruolo nuovo, ed e' **piu' debole del listino**:
+       * un borgo, non un centro. Deve bastare a far attecchire le prime case e
+       * lasciare al giocatore la scelta di cosa fare del resto del settore —
+       * che e' esattamente quello per cui il settore si compra.
+       */
+      seed: {
+        kind: 'market',
+        strength: 150,
+        radius: 30,
+      },
       /**
        * Lato di un settore costiero, allineato a quattro chunk.
        *
@@ -249,6 +271,24 @@ export const BALANCE = {
     terrace: {
       cost: 180,
       population: 24,
+    },
+
+    /**
+     * La funivia: due torri e una traversata che il terreno non concede.
+     *
+     * **La cosa piu' cara che il giocatore possa piazzare a mano**, ed e' la
+     * misura del fatto che annulla un pezzo di geografia: un settore costiero
+     * (cinquecento) compra altra isola, questa fa valere quella che c'e' gia'
+     * dall'altra parte dell'acqua. A listino basso il mare smetterebbe di essere
+     * un vincolo, e con lui mezza forma dell'isola.
+     *
+     * La soglia di popolazione e' quella dell'espansione: una funivia serve una
+     * citta' che ha gia' due rive da collegare, e proporla prima insegnerebbe a
+     * scavalcare l'acqua invece di occupare la terra.
+     */
+    ropeway: {
+      cost: 620,
+      population: 48,
     },
 
     success: {
@@ -326,6 +366,15 @@ export const BALANCE = {
       research: { wealth: 0.32, satisfaction: 0.44 },
       logistics: { accessibility: 0.42, industry: 0.38 },
       entertainment: { density: 0.38, satisfaction: 0.52 },
+      /**
+       * La torre idroponica nasce **dove il suolo e' finito**, non dove il cibo
+       * scarseggia: la fame e' un fatto della citta' intera e questo profilo
+       * descrive una colonna. Le due soglie sono percio' le piu' alte del
+       * gruppo — densita' da centro e impatto industriale gia' presente — e
+       * sono cio' che la tiene fuori dalla periferia, dove un campo costa
+       * infinitamente meno e rende di piu' per fondo speso.
+       */
+      farming: { density: 0.52, industry: 0.34 },
     },
   },
 
@@ -493,18 +542,38 @@ export const BALANCE = {
   food: {
     /** Consumo per abitante per tick. */
     perResident: 0.05,
-
-    /**
-     * Cibo prodotto per tick da un edificio produttivo a pieno organico.
-     *
-     * Il valore non e' scelto a caso: `perProduction / perResident` fa 24, cioe'
-     * esattamente `weights.residentialCapacity`. Un edificio produttivo sfama
-     * quindi un edificio residenziale pieno, e una citta' in rapporto 1:1 sta in
-     * pareggio alimentare. E' la relazione che rende leggibile il bilancio —
-     * cambiare uno dei tre numeri senza guardare gli altri due la rompe.
-     */
-    perProduction: 1.2,
   },
+
+  /**
+   * I produttori di cibo, in ordine di `FARM_KIND`.
+   *
+   * **Il listino e' in edifici residenziali sfamati, non in cibo.** Un campo ne
+   * sfama due, un frutteto uno, una torre sei; il cibo per tick lo fa
+   * `FOOD_PER_HOUSE`, che e' derivato qui sotto da `residentialCapacity` e
+   * `food.perResident` invece di essere un letterale. E' la stessa relazione 1:1
+   * di prima — quando il cibo usciva dall'industria, `perProduction /
+   * perResident` faceva esattamente `residentialCapacity` — detta pero' in modo
+   * che non si possa piu' rompere per distrazione: cambiare la capacita' di una
+   * casa muove il listino da solo.
+   *
+   * **`denseHousing` non tocca il listino, e deve essere cosi'.** La policy
+   * moltiplica `residentialCapacity`, quindi la stessa casa ospita piu' gente e
+   * mangia di piu' mentre un campo raccoglie sempre uguale: densificare stringe
+   * la dispensa. E' la conseguenza giusta, ed e' l'unico posto da guardare se un
+   * giorno la si volesse togliere.
+   */
+  farms: [
+    /** Campo: la terra costa poco e rende poco per colonna, ma non chiede fondi. */
+    { houses: 2, workers: 4, upkeep: 0 },
+    /** Frutteto: meno resa del campo, ma regge il pendio e sta bene in citta'. */
+    { houses: 1, workers: 3, upkeep: 0 },
+    /**
+     * Torre idroponica: non prende suolo agricolo e ne vale sei, ma e' industria
+     * convertita — un'unita' qui e' un'unita' di materiali in meno — e si paga in
+     * fondi per tick. E' il ripiego quando l'isola e' finita, non una scorciatoia.
+     */
+    { houses: 6, workers: 12, upkeep: 3.5 },
+  ] as readonly { readonly houses: number; readonly workers: number; readonly upkeep: number }[],
 
   // --- Lavoro --------------------------------------------------------------
 
@@ -609,3 +678,20 @@ export const BALANCE = {
     maxStackPerColumn: 255,
   },
 } as const;
+
+/**
+ * Cibo che un edificio residenziale pieno mangia in un tick.
+ *
+ * **E' derivato apposta.** Era il numero nascosto dentro `food.perProduction`, e
+ * per leggerlo bisognava sapere che `perProduction / perResident` faceva
+ * `residentialCapacity`: una relazione vera, documentata in tre posti, e che
+ * nessun tipo difendeva. Ora e' un prodotto, quindi cambiare la capacita' di una
+ * casa o il consumo di un abitante muove da solo tutto il listino di `farms`, e
+ * il pareggio alimentare resta leggibile a colpo d'occhio — *un campo sfama due
+ * case, un frutteto una, una torre sei*.
+ *
+ * Vale sulla capacita' **base**: e' un'ancora di lettura, non una quantita' di
+ * runtime. Con `denseHousing` attiva una casa ne ospita di piu' e mangia di piu',
+ * ed e' esattamente il senso di quella policy.
+ */
+export const FOOD_PER_HOUSE = BALANCE.weights.residentialCapacity * BALANCE.food.perResident;

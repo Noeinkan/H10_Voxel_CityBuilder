@@ -2,7 +2,7 @@ import type { CatalystId } from '../../sim';
 import { PALETTE_SLOTS } from '../../engine/paletteSlots';
 import { GRADING } from '../grading/config';
 import { SURFACE_KIND } from '../visualBlock';
-import { PART, type Part } from './parts';
+import { PART, box, type Part } from './parts';
 
 /**
  * Unica fonte di verita' dei numeri e delle forme dei landmark.
@@ -57,17 +57,10 @@ export const LANDMARK = {
    */
   apronPalette: PALETTE_SLOTS.asphalt,
 
-  /**
-   * Colore del recinto attorno a un riquadro che si sta sgomberando.
-   *
-   * **Un cantiere deve leggersi come un cantiere**, non come un buco. Fra il
-   * click e la struttura passano diverse passate — gli edifici cadono uno per
-   * volta, a budget — e senza un segno il giocatore vede solo case che spariscono
-   * senza sapere perche'. Il ruggine e' il colore piu' lontano dall'asfalto del
-   * grembiule che lo sostituira': il passaggio da recinto a suolo pubblico si
-   * vede, ed e' il modo in cui il cantiere dichiara di essere finito.
-   */
-  fencePalette: PALETTE_SLOTS.metalRust,
+  // Qui stava `fencePalette`, il colore del recinto di cantiere. Non c'e' piu':
+  // il cantiere e' diventato `buildings/clearanceSite.ts`, condiviso con le
+  // arcologie, e il recinto e' lo stesso segnale per tutti — due colori direbbero
+  // che sono due cose diverse. Sta in `BUILDER.fencePalette`.
 
   /**
    * Sale con cui il seme del record sceglie l'esemplare.
@@ -81,11 +74,52 @@ export const LANDMARK = {
    * Un sale proprio le rende due domande diverse.
    */
   variantSalt: 0x5a3c_11d7,
+
+  /**
+   * Fin dove una parte **poggia** invece di sporgere, in voxel dal piano finito.
+   *
+   * E' cio' che l'opera di terra deve reggere, e la ragione per cui non e'
+   * «tutto l'ingombro». Il braccio di una gru passa sopra la darsena a tredici
+   * voxel d'altezza: contarlo vorrebbe dire riempire di terra l'acqua che
+   * sorvola, ed e' esattamente il difetto che questa maschera esiste per
+   * togliere. Sotto questa quota invece non c'e' niente a mezz'aria in nessuna
+   * ricetta — il piano di banchina, il capannone, la gamba della gru — quindi le
+   * prime quote *sono* il suolo che la struttura si costruisce.
+   *
+   * Quattro voxel sono due celle di terreno: abbastanza da prendere un piano piu'
+   * il primo corso di qualunque cosa ci stia sopra, non abbastanza da arrivare a
+   * un impalcato.
+   */
+  groundBand: 4,
+
+  /**
+   * Livello minimo dell'edificio che puo' ospitare una struttura sul tetto.
+   *
+   * **Sopra un grattacielo, non sopra una casa.** Uno scalo in quota su una
+   * palazzina di due piani non e' una citta' verticale, e' un tetto attrezzato:
+   * il gesto dice qualcosa solo se la torre e' gia' alta, e in cambio la torre
+   * smette di crescere — chi regge non cresce — quindi il giocatore sta anche
+   * spendendo la crescita futura di quel lotto.
+   *
+   * Sette su `BUILDER.maxLevel` a dodici: oltre la meta', dentro cio' che la
+   * gerarchia verticale concede solo al centro.
+   */
+  aloftMinLevel: 7,
 } as const;
 
-export interface LandmarkRecipe {
-  readonly kind: CatalystId;
-
+/**
+ * Cio' che basta a disegnare una sagoma da una tabella di parti.
+ *
+ * **Non e' un'astrazione anticipata: e' il confine fra due domande.** Questa
+ * meta' risponde a «che forma ha, a questo stadio, in questo verso», e non sa
+ * niente di catalizzatori, grembiuli o ormeggi — che sono cio' che fa di una
+ * sagoma *un landmark*. Averla separata e' quello che permette a un altro
+ * dominio con la stessa grammatica di parti — `src/world/arcology/`, che di
+ * catalizzatori non ne ha — di riusare `generateFromRecipe` invece di
+ * ricopiarlo: due copie dello stesso ciclo divergerebbero al primo stadio
+ * cumulativo che qualcuno tocca.
+ */
+export interface PartsRecipe {
   /**
    * Ingombro canonico `[lungo, corto]`, in voxel, con il fronte a est.
    *
@@ -107,9 +141,6 @@ export interface LandmarkRecipe {
    * davanti, altrimenti meta' del magazzino finisce in mare.
    */
   readonly anchor: readonly [number, number];
-
-  /** Raggio di Manhattan del grembiule dipinto attorno alla struttura. */
-  readonly apron: number;
 
   /**
    * Edifici entro il raggio del catalizzatore che sbloccano ogni stadio.
@@ -151,6 +182,70 @@ export interface LandmarkRecipe {
   readonly variants?: readonly LandmarkVariant[];
 }
 
+/** La sagoma di un ruolo, piu' cio' che ne fa il monumento di un catalizzatore. */
+export interface LandmarkRecipe extends PartsRecipe {
+  readonly kind: CatalystId;
+
+  /** Raggio di Manhattan del grembiule dipinto attorno alla struttura. */
+  readonly apron: number;
+
+  /**
+   * Dove i mezzi di `src/world/traffic/` stanno fermi, nel canonico.
+   *
+   * **Sta nella ricetta e non nel traffico**, ed e' la stessa ragione per cui
+   * l'ancora sta qui: sono coordinate *della forma*. Il punto in cui una barca
+   * attracca e' il bordo di una darsena che questa tabella disegna, e tenerlo
+   * altrove significherebbe due file da correggere ogni volta che il molo si
+   * sposta di una colonna — con il difetto che si vede solo a schermo, perche'
+   * nessun test puo' sapere che *quel* voxel era il bordo.
+   *
+   * Assente vale «nessun mezzo»: sette ruoli su nove non ne hanno.
+   */
+  readonly moorings?: readonly LandmarkMooring[];
+}
+
+/** Cosa sta fermo in un punto d'ormeggio. */
+export const BERTH = {
+  /** Barca da lavoro: compare appena la struttura esiste. */
+  vessel: 'vessel',
+  /** Accosto di una linea di traghetti, e destinazione della traversata. */
+  ferry: 'ferry',
+  /** Banchina di una nave da carico, che arriva dal largo. */
+  cargo: 'cargo',
+  /** Piazzola di sosta di un aereo. */
+  aircraft: 'aircraft',
+  /** Pilone d'ormeggio di un dirigibile. */
+  airship: 'airship',
+  /**
+   * Soglia di pista: non ci sta fermo niente.
+   *
+   * Sono i due capi da cui il circuito di volo si costruisce, e stanno qui
+   * perche' sono l'unica cosa che di una pista il traffico deve sapere — dove
+   * comincia, dove finisce, e quindi in che verso si decolla.
+   */
+  runway: 'runway',
+} as const;
+
+export type BerthKind = (typeof BERTH)[keyof typeof BERTH];
+
+export interface LandmarkMooring {
+  /** Colonna canonica, in voxel dallo spigolo dell'ingombro. */
+  readonly x: number;
+  readonly y: number;
+  /** Quota dal piano finito. Zero e' il piano stesso. */
+  readonly z: number;
+  readonly berth: BerthKind;
+  /**
+   * Verso in cui il mezzo guarda nel canonico, in radianti: `0` e' est.
+   *
+   * Un angolo e non un `Facing`, perche' quello che ne esce va sommato alla
+   * rotazione della ricetta e finisce dritto in una matrice di rotazione: gli
+   * indici andrebbero comunque tradotti, e tradurli due volte e' il modo con cui
+   * un molo si ritrova le barche di traverso su meta' dei versi.
+   */
+  readonly heading: number;
+}
+
 export interface LandmarkVariant {
   /** Nome dell'esemplare. Serve a chi legge la tabella e ai test, non al disegno. */
   readonly name: string;
@@ -168,22 +263,9 @@ export interface LandmarkVariant {
 // --- Scorciatoie di lettura delle ricette ---------------------------------
 //
 // Non sono astrazioni: sono nomi per gli argomenti posizionali, cosi' che una
-// riga di ricetta si legga come una frase invece che come nove numeri.
-
-function box(
-  kind: Part['kind'],
-  x: number,
-  y: number,
-  w: number,
-  h: number,
-  z: number,
-  height: number,
-  palette: number,
-  surface: Part['surface'],
-  extra: Partial<Pick<Part, 'step' | 'cap' | 'chamfer'>> = {},
-): Part {
-  return { kind, x, y, w, h, z, height, palette, surface, ...extra };
-}
+// riga di ricetta si legga come una frase invece che come nove numeri. `box` sta
+// in `parts.ts`, accanto al vocabolario che nomina: le tabelle che lo usano sono
+// due, e qui restano solo le scorciatoie che parlano di catalizzatori.
 
 /**
  * Una gru di banchina: gamba, braccio a sbalzo sull'acqua, contrappeso.
@@ -203,53 +285,31 @@ function craneAt(y: number): readonly Part[] {
 }
 
 /**
- * Una darsena: lo specchio d'acqua che il piano di banchina non ha riempito.
+ * Il piano di una banchina o di un molo: pietra alla quota del piano finito.
  *
- * **L'acqua e' scritta dentro lo stamp**, com'e' gia' lo stagno del parco, e non
- * e' un buco lasciato al terreno. Le opere portano *tutta* l'impronta alla quota
- * della banchina prima che lo stamp scriva — `buildWorks` riempie il riquadro,
- * non le sole colonne che una parte occupa — quindi qui sotto c'e' terra ferma e
- * questo e' un voxel di pelo d'acqua. E' l'unico modo che una ricetta ha di
- * tenersi dell'acqua dentro l'ingombro, ed e' cio' che permette a una barca di
- * stare *in* un porto invece che accanto.
+ * **Qui non c'e' piu' nessuna darsena disegnata, ed e' il punto.** Fino alla 4.x
+ * il porto scriveva l'acqua dentro il proprio stamp, perche' le opere portavano
+ * *tutta* l'impronta alla quota della banchina e sotto non restava mare da
+ * mostrare. Il risultato era una piattaforma rettangolare in mezzo al golfo con
+ * dentro una pozza piu' alta del mare che la circondava. Ora l'opera si getta
+ * solo sotto le colonne che una parte occupa (`stampFootprint` piu' la maschera
+ * di `buildWorks`), quindi **la darsena e' il mare che c'era**: la ricetta la
+ * ottiene non disegnando niente.
  */
-function basin(x: number, y: number, w: number, h: number): Part {
-  return box(PART.deck, x, y, w, h, 0, 1, PALETTE_SLOTS.water, SURFACE_KIND.plain);
+function quay(x: number, y: number, w: number, h: number): Part {
+  return box(PART.deck, x, y, w, h, 0, 1, GRADING.quayDeck, SURFACE_KIND.utility);
 }
 
 /**
- * Un pontile: un piano di legno alla quota del pelo d'acqua.
+ * Una bitta d'ormeggio: un cubo di ghisa sul filo della banchina.
  *
- * Sta a zero come la darsena, non un voxel piu' su, e la ragione e' la stessa
- * per cui una banchina sta due voxel sopra il mare: un pontile *galleggia*, e
- * cio' che lo distingue dal molo e' proprio non avere un salto sotto. A distanza
- * di gioco la differenza fra i due la fa il materiale, il legno contro la
- * pietra, e il fatto che uno sia sull'acqua e l'altro sopra.
+ * E' la parte piu' piccola del catalogo e serve a una cosa sola: dire dove
+ * finisce la pietra e comincia l'acqua. Su un molo lungo quattordici colonne il
+ * bordo e' altrimenti una linea sola, e a distanza isometrica una linea non ha
+ * spessore.
  */
-function pontoon(x: number, y: number, w: number, h: number): Part {
-  return box(PART.deck, x, y, w, h, 0, 1, PALETTE_SLOTS.wood, SURFACE_KIND.utility);
-}
-
-/**
- * Una barca all'ormeggio: scafo rastremato e tuga.
- *
- * Lo scafo parte dalla quota del pelo d'acqua e non da sotto: una ricetta non sa
- * scrivere sotto il proprio piano finito, e la linea di galleggiamento sul pelo
- * e' l'approssimazione che a distanza isometrica non si distingue da un
- * pescaggio vero. Due voxel di bordo libero — un cubo di terreno — piu' la tuga
- * sopra: e' quanto basta perche' di taglio la barca abbia un'altezza propria e
- * non legga come una chiazza di colore sull'acqua.
- */
-function moored(x: number, y: number, length: number): readonly Part[] {
-  return [
-    box(PART.hull, x, y, length, 3, 0, 2, PALETTE_SLOTS.metalDark, SURFACE_KIND.industrial, {
-      step: 1,
-      cap: PALETTE_SLOTS.wood,
-    }),
-    box(PART.mast, x + length - 3, y + 1, 2, 1, 2, 2, PALETTE_SLOTS.concretePale, SURFACE_KIND.plain, {
-      cap: PALETTE_SLOTS.glassDeep,
-    }),
-  ];
+function bollard(x: number, y: number): Part {
+  return box(PART.mast, x, y, 1, 1, 1, 1, PALETTE_SLOTS.metalDark, SURFACE_KIND.industrial);
 }
 
 /**
@@ -323,92 +383,116 @@ function tree(x: number, y: number): readonly Part[] {
  */
 export const LANDMARKS: Partial<Record<CatalystId, LandmarkRecipe>> = {
   // Il fronte canonico guarda l'acqua: `x` cresce verso il mare, la banchina sta
-  // sotto il click, il molo davanti e i magazzini alle spalle. La fila di bracci
-  // di gru sopra la linea dell'acqua e' la firma del ruolo.
+  // sotto il click, i moli davanti e i magazzini alle spalle.
+  //
+  // **La forma in pianta e' il porto.** Due bracci che escono dalla banchina, un
+  // pontile in mezzo, e fra loro due specchi d'acqua che la ricetta ottiene *non
+  // disegnando niente*: l'opera di terra si getta solo dove una parte poggia,
+  // quindi cio' che resta vuoto qui resta mare la' fuori. E' l'unica differenza
+  // fra un porto e un piazzale sul mare, e prima non c'era.
   port: {
     kind: 'port',
     span: [20, 12],
     height: 18,
-    anchor: [11, 6],
+    anchor: [10, 6],
     apron: 4,
     stages: [0, 6, 16, 32],
     parts: [
       [
-        box(PART.deck, 0, 0, 12, 12, 0, 1, GRADING.quayDeck, SURFACE_KIND.utility),
-        // Lo specchio d'acqua c'e' dal primo stadio: e' cio' che fa leggere il
-        // fronte come un porto quando la banchina e' ancora sola. Il molo dello
-        // stadio dopo lo taglia in due darsene, e riscrivere un voxel d'acqua
-        // come pietra e' il modo in cui una ricetta cumulativa esprime «qui ora
-        // c'e' terra» senza togliere niente a nessuno.
-        basin(12, 0, 8, 12),
-        box(PART.shell, 1, 2, 6, 7, 1, 8, PALETTE_SLOTS.concrete, SURFACE_KIND.industrial, {
+        // La banchina e il braccio di sopravento: il bacino esiste da subito,
+        // ed e' l'acqua che il molo ha appena chiuso su un lato.
+        quay(0, 0, 12, 12),
+        quay(12, 0, 8, 2),
+        box(PART.shell, 1, 1, 7, 5, 1, 8, PALETTE_SLOTS.concrete, SURFACE_KIND.industrial, {
           cap: PALETTE_SLOTS.concretePale,
         }),
-        box(PART.deck, 1, 2, 6, 7, 9, 1, PALETTE_SLOTS.roofPale, SURFACE_KIND.roofTech),
+        box(PART.deck, 1, 1, 7, 5, 9, 1, PALETTE_SLOTS.roofPale, SURFACE_KIND.roofTech),
+        bollard(11, 4),
+        bollard(11, 7),
+        bollard(13, 1),
+        bollard(17, 1),
       ],
       [
-        box(PART.slab, 12, 4, 8, 4, 0, 1, GRADING.quayDeck, SURFACE_KIND.utility),
-        pontoon(12, 3, 7, 1),
-        ...craneAt(5),
+        // Il braccio di sottovento chiude il bacino, e la prima gru porta il
+        // proprio sbraccio sopra l'acqua: e' la sagoma che si legge da lontano.
+        quay(12, 10, 8, 2),
+        ...craneAt(3),
+        bollard(13, 10),
+        bollard(17, 10),
       ],
       [
-        ...craneAt(1),
-        ...moored(13, 0, 6),
-        box(PART.slab, 1, 10, 6, 2, 1, 4, PALETTE_SLOTS.metalRust, SURFACE_KIND.plain),
-        box(PART.slab, 8, 10, 4, 2, 1, 2, PALETTE_SLOTS.glassDeep, SURFACE_KIND.plain),
-      ],
-      [
-        ...craneAt(9),
-        pontoon(12, 8, 7, 1),
-        ...moored(13, 9, 6),
-        box(PART.shell, 8, 0, 4, 3, 1, 6, PALETTE_SLOTS.concrete, SURFACE_KIND.industrial, {
+        ...craneAt(7),
+        box(PART.slab, 1, 7, 3, 2, 1, 3, PALETTE_SLOTS.metalRust, SURFACE_KIND.industrial, {
+          cap: PALETTE_SLOTS.metalBrass,
+        }),
+        box(PART.slab, 5, 7, 3, 2, 1, 2, PALETTE_SLOTS.glassDeep, SURFACE_KIND.industrial),
+        box(PART.shell, 8, 8, 4, 4, 1, 6, PALETTE_SLOTS.concrete, SURFACE_KIND.industrial, {
           cap: PALETTE_SLOTS.concretePale,
         }),
-        box(PART.deck, 8, 0, 4, 3, 7, 1, PALETTE_SLOTS.roofPale, SURFACE_KIND.roofTech),
-        box(PART.mast, 18, 5, 2, 2, 1, 12, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.civic, {
+        box(PART.deck, 8, 8, 4, 4, 7, 1, PALETTE_SLOTS.roofPale, SURFACE_KIND.roofTech),
+      ],
+      [
+        // La capitaneria in punta al braccio: la sola verticale sull'acqua, e la
+        // sola cosa accesa di notte in un ruolo fatto di lamiera.
+        box(PART.mast, 17, 0, 2, 2, 1, 12, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.civic, {
           cap: PALETTE_SLOTS.metalGold,
         }),
+        box(PART.slab, 16, 0, 4, 2, 13, 2, PALETTE_SLOTS.glassPale, SURFACE_KIND.luminous),
+        box(PART.deck, 16, 0, 4, 2, 15, 1, PALETTE_SLOTS.roofWhite, SURFACE_KIND.roofTech),
       ],
+    ],
+    // Il bacino e' `x` 12..19, `y` 2..9: la nave da carico accosta al braccio di
+    // sopravento, la barca da lavoro sta in fondo. Sono punti d'acqua vera —
+    // l'opera di terra non li tocca — quindi i mezzi ci galleggiano alla quota
+    // del mare invece che sei voxel sopra come quando l'ormeggio era disegnato.
+    moorings: [
+      { x: 15, y: 4, z: 0, berth: BERTH.cargo, heading: 0 },
+      { x: 14, y: 8, z: 0, berth: BERTH.vessel, heading: 0 },
     ],
     variants: [
       // Merci alla rinfusa: silo, silo, nastro. La sagoma resta quella del
-      // porto — banchina, magazzino, gru — e cambia cosa ci si scarica.
+      // porto — banchina, magazzini, gru — e cambia cosa ci si scarica.
       {
         name: 'granaio',
         parts: [
           [],
-          [box(PART.slab, 0, 9, 4, 3, 1, 12, PALETTE_SLOTS.concrete, SURFACE_KIND.industrial, {
+          [box(PART.slab, 8, 1, 3, 3, 1, 12, PALETTE_SLOTS.concrete, SURFACE_KIND.industrial, {
             chamfer: 1,
             cap: PALETTE_SLOTS.concretePale,
           })],
           [
-            box(PART.slab, 4, 9, 4, 3, 1, 9, PALETTE_SLOTS.concrete, SURFACE_KIND.industrial, {
+            box(PART.slab, 8, 4, 3, 3, 1, 9, PALETTE_SLOTS.concrete, SURFACE_KIND.industrial, {
               chamfer: 1,
               cap: PALETTE_SLOTS.concretePale,
             }),
-            box(PART.boom, 2, 10, 10, 2, 13, 2, PALETTE_SLOTS.metalDark, SURFACE_KIND.industrial, {
+            // Il nastro esce sopra il molo di sopravento: passa alto, e passare
+            // alto e' cio' che gli permette di scavalcare l'acqua senza che
+            // l'opera di terra debba riempirla.
+            box(PART.boom, 9, 1, 9, 2, 13, 2, PALETTE_SLOTS.metalDark, SURFACE_KIND.industrial, {
               cap: PALETTE_SLOTS.metalBrass,
             }),
           ],
-          [entrance(1, 8, 2, 1, 3)],
+          [entrance(1, 2, 1, 2, 3)],
         ],
       },
-      // Cantiere navale: due tralicci a cavallo della darsena e il ponte che li
-      // unisce. E' il portale sotto cui passa lo scafo, ed e' l'unico esemplare
-      // che si legge da sopra prima che di taglio.
+      // Cantiere navale: due tralicci, uno per braccio, e il ponte che li unisce
+      // scavalcando il bacino. E' il portale sotto cui passa lo scafo, ed e'
+      // l'unico esemplare che si legge da sopra prima che di taglio. I montanti
+      // stanno **sui moli** e mai sull'acqua: una gamba piantata nel bacino lo
+      // farebbe riempire di terra, che e' il difetto che questa fase toglie.
       {
         name: 'cantiere',
         parts: [
           [],
-          [box(PART.truss, 12, 0, 3, 12, 1, 13, PALETTE_SLOTS.metalRust, SURFACE_KIND.industrial, {
+          [box(PART.truss, 13, 0, 2, 2, 1, 12, PALETTE_SLOTS.metalRust, SURFACE_KIND.industrial, {
             step: 3,
             cap: PALETTE_SLOTS.metalBrass,
           })],
-          [box(PART.boom, 12, 4, 8, 3, 13, 2, PALETTE_SLOTS.metalRust, SURFACE_KIND.industrial, {
+          [box(PART.truss, 13, 10, 2, 2, 1, 12, PALETTE_SLOTS.metalRust, SURFACE_KIND.industrial, {
+            step: 3,
             cap: PALETTE_SLOTS.metalBrass,
           })],
-          [box(PART.truss, 17, 0, 3, 12, 1, 13, PALETTE_SLOTS.metalRust, SURFACE_KIND.industrial, {
-            step: 3,
+          [box(PART.boom, 13, 0, 2, 12, 13, 2, PALETTE_SLOTS.metalRust, SURFACE_KIND.industrial, {
             cap: PALETTE_SLOTS.metalBrass,
           })],
         ],
@@ -420,12 +504,12 @@ export const LANDMARKS: Partial<Record<CatalystId, LandmarkRecipe>> = {
         name: 'stazione',
         parts: [
           [],
-          [box(PART.pitch, 1, 2, 6, 7, 10, 4, PALETTE_SLOTS.roofPale, SURFACE_KIND.roofTech, {
+          [box(PART.pitch, 1, 1, 7, 5, 10, 4, PALETTE_SLOTS.roofPale, SURFACE_KIND.roofTech, {
             step: 1,
             cap: PALETTE_SLOTS.metalBrass,
           })],
-          [signBand(6, 3, 1, 5, 6)],
-          [entrance(6, 5, 1, 2, 4)],
+          [signBand(7, 2, 1, 3, 6)],
+          [entrance(7, 2, 1, 3, 4)],
         ],
       },
     ],
@@ -447,43 +531,62 @@ export const LANDMARKS: Partial<Record<CatalystId, LandmarkRecipe>> = {
     stages: [0, 5, 14, 28],
     parts: [
       [
-        // L'acqua per prima: tutto il resto le scrive sopra, e quel che resta
-        // scoperto e' lo specchio in cui le barche stanno.
-        basin(8, 0, 14, 12),
-        box(PART.deck, 0, 0, 8, 12, 0, 1, GRADING.quayDeck, SURFACE_KIND.utility),
+        // Il piazzale a terra e il molo che ne esce: **due sole strisce di
+        // pietra**, e tutto il resto del riquadro resta il mare che c'era. Sono
+        // i due accosti — sopra e sotto il molo — dove le barche di
+        // `world/traffic/` attraccano davvero, alla quota vera del pelo
+        // dell'acqua invece che sei voxel sopra come quando l'ormeggio era
+        // disegnato dentro lo stamp.
+        quay(0, 0, 8, 12),
+        quay(8, 4, 14, 4),
         box(PART.shell, 1, 3, 6, 6, 1, 6, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.civic, {
           cap: PALETTE_SLOTS.glassPale,
         }),
         box(PART.deck, 1, 3, 6, 6, 7, 1, PALETTE_SLOTS.roofWhite, SURFACE_KIND.roofTech),
-        // Il molo: stretto e lungo, perche' e' un passaggio e non un piazzale.
-        box(PART.slab, 8, 4, 12, 4, 0, 1, GRADING.quayDeck, SURFACE_KIND.utility),
-      ],
-      [
-        pontoon(8, 3, 11, 1),
-        ...moored(9, 0, 7),
-      ],
-      [
-        pontoon(8, 8, 11, 1),
-        ...moored(9, 9, 7),
-        // Il fanale in punta e' la sola verticale della ricetta: da lontano e'
-        // quello a separare un molo da una lingua di terra.
-        box(PART.mast, 18, 5, 2, 2, 1, 14, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.civic, {
-          cap: PALETTE_SLOTS.metalGold,
-        }),
+        bollard(9, 4),
+        bollard(9, 7),
       ],
       [
         // La pensilina sul molo: il vuoto sotto un tetto e' cio' che nessuna
         // scatola cava sa dare, ed e' la stessa primitiva del mercato.
-        box(PART.colonnade, 9, 4, 10, 4, 1, 5, PALETTE_SLOTS.wood, SURFACE_KIND.habitat, {
+        box(PART.colonnade, 9, 4, 7, 4, 1, 5, PALETTE_SLOTS.wood, SURFACE_KIND.habitat, {
           step: 3,
           cap: PALETTE_SLOTS.brickLight,
         }),
-        box(PART.slab, 1, 0, 6, 2, 1, 3, PALETTE_SLOTS.brickLight, SURFACE_KIND.habitat),
+        bollard(13, 4),
+        bollard(13, 7),
+      ],
+      [
+        // Il fanale in punta: da lontano e' quello a separare un molo da una
+        // lingua di terra.
+        box(PART.mast, 20, 5, 2, 2, 1, 12, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.civic, {
+          cap: PALETTE_SLOTS.metalGold,
+        }),
+        box(PART.slab, 20, 5, 2, 2, 13, 2, PALETTE_SLOTS.glassPale, SURFACE_KIND.luminous),
+        bollard(21, 4),
+        bollard(21, 7),
+      ],
+      [
+        // La sala d'attesa in testa al molo e la biglietteria a terra: due
+        // volumi bassi che dicono che di qui passano persone.
+        box(PART.shell, 16, 4, 4, 4, 1, 5, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.civic, {
+          cap: PALETTE_SLOTS.glassPale,
+        }),
+        box(PART.deck, 16, 4, 4, 4, 6, 1, PALETTE_SLOTS.roofWhite, SURFACE_KIND.roofTech),
         box(PART.shell, 1, 9, 6, 3, 1, 5, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.civic, {
           cap: PALETTE_SLOTS.glassPale,
         }),
         box(PART.deck, 1, 9, 6, 3, 6, 1, PALETTE_SLOTS.roofWhite, SURFACE_KIND.roofTech),
       ],
+    ],
+    // I due accosti, uno per lato del molo. Quello di nord e' il capolinea della
+    // traversata — se esiste un secondo imbarco, e' da li' che la barca parte —
+    // e quello di sud tiene la barca da lavoro che c'e' comunque: **un imbarco
+    // solo non e' una linea**, ed e' esattamente cio' che deve leggersi a
+    // schermo prima che nel tooltip.
+    moorings: [
+      { x: 13, y: 2, z: 0, berth: BERTH.ferry, heading: 0 },
+      { x: 13, y: 9, z: 0, berth: BERTH.vessel, heading: 0 },
     ],
     variants: [
       // Imbarcadero: la tettoia sul molo, l'ingresso e l'insegna. E' il ferry
@@ -493,7 +596,7 @@ export const LANDMARKS: Partial<Record<CatalystId, LandmarkRecipe>> = {
         name: 'imbarcadero',
         parts: [
           [],
-          [box(PART.pitch, 9, 4, 10, 4, 6, 3, PALETTE_SLOTS.roofPale, SURFACE_KIND.roofTech, {
+          [box(PART.pitch, 9, 4, 7, 4, 6, 3, PALETTE_SLOTS.roofPale, SURFACE_KIND.roofTech, {
             step: 1,
             cap: PALETTE_SLOTS.metalBrass,
           })],
@@ -501,35 +604,43 @@ export const LANDMARKS: Partial<Record<CatalystId, LandmarkRecipe>> = {
           [signBand(6, 4, 1, 4, 5)],
         ],
       },
-      // Faro in punta al molo: tamburo smussato, lanterna accesa, cupola a
-      // gradoni. E' l'unico landmark che di notte fa luce sull'acqua.
+      // Faro in punta al molo: tamburo smussato, ballatoio e cappello sopra il
+      // fanale. E' l'unico landmark che di notte fa luce sull'acqua, e il
+      // cappello sta **sopra** la lanterna del tronco invece che addosso: una
+      // cupola posata li' sopra la spegnerebbe, che e' il modo piu' silenzioso
+      // che un esemplare ha di rovinare la ricetta che varia.
       {
         name: 'faro',
         parts: [
           [],
-          [box(PART.slab, 18, 4, 4, 4, 1, 12, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.civic, {
+          [box(PART.slab, 19, 4, 3, 4, 1, 10, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.civic, {
             chamfer: 1,
             cap: PALETTE_SLOTS.metalGold,
           })],
-          [box(PART.slab, 19, 5, 2, 2, 11, 2, PALETTE_SLOTS.glassPale, SURFACE_KIND.luminous)],
-          [box(PART.steps, 18, 4, 4, 4, 13, 3, PALETTE_SLOTS.metalGold, SURFACE_KIND.roofTech, {
+          [box(PART.steps, 18, 4, 4, 4, 11, 2, PALETTE_SLOTS.stone, SURFACE_KIND.roofTech, {
+            step: 1,
+            chamfer: 1,
+          })],
+          [box(PART.steps, 19, 4, 3, 4, 15, 1, PALETTE_SLOTS.metalGold, SURFACE_KIND.roofTech, {
             step: 1,
             chamfer: 1,
           })],
         ],
       },
-      // Darsena da lavoro: una barca in piu' e la gru che la serve. Stessa
-      // banchina, altro mestiere.
+      // Darsena da lavoro: la gru che serve gli accosti, e il braccio che
+      // scavalca l'acqua passando alto. Stesso molo, altro mestiere.
       {
         name: 'darsena',
         parts: [
           [],
-          [...moored(15, 1, 6)],
-          [box(PART.truss, 8, 9, 2, 3, 1, 11, PALETTE_SLOTS.metalRust, SURFACE_KIND.industrial, {
+          [box(PART.truss, 10, 4, 2, 2, 1, 11, PALETTE_SLOTS.metalRust, SURFACE_KIND.industrial, {
             step: 3,
             cap: PALETTE_SLOTS.metalBrass,
           })],
-          [box(PART.boom, 8, 10, 9, 2, 11, 2, PALETTE_SLOTS.metalRust, SURFACE_KIND.industrial, {
+          [box(PART.boom, 10, 2, 2, 4, 11, 2, PALETTE_SLOTS.metalRust, SURFACE_KIND.industrial, {
+            cap: PALETTE_SLOTS.metalBrass,
+          })],
+          [box(PART.slab, 2, 0, 4, 2, 1, 3, PALETTE_SLOTS.metalRust, SURFACE_KIND.industrial, {
             cap: PALETTE_SLOTS.metalBrass,
           })],
         ],
@@ -813,96 +924,135 @@ export const LANDMARKS: Partial<Record<CatalystId, LandmarkRecipe>> = {
     ],
   },
 
-  // Un piano lungo e nient'altro alla sua altezza, piu' una torre sottile: e'
-  // il contrasto fra i due, non la pista da sola, a dire «aeroporto».
+  // **Un campo di volo, non una striscia d'asfalto accanto a una scatola.** La
+  // ricetta di prima aveva una pista larga quattro e lunga quattordici in un
+  // angolo del riquadro, e il resto era prato: da sopra non si leggeva come un
+  // aeroporto perche' mancava tutto quello che di un aeroporto si riconosce —
+  // il campo erboso spianato, il raccordo che porta la pista al piazzale, le
+  // piazzole di sosta, gli hangar in fondo. Qui la pista corre per tutta la
+  // lunghezza dell'ingombro, il raccordo la lega al piazzale e gli aerei di
+  // `world/traffic/` ci rullano davvero.
   airport: {
     kind: 'airport',
     span: [26, 12],
     height: 20,
-    anchor: [7, 6],
+    anchor: [6, 3],
     apron: 4,
     stages: [0, 10, 24, 44],
     parts: [
       [
-        box(PART.deck, 0, 0, 12, 12, 0, 1, PALETTE_SLOTS.concrete, SURFACE_KIND.utility),
-        box(PART.shell, 0, 1, 9, 9, 1, 7, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.civic, {
+        // Il campo spianato per intero: e' la prima cosa che dice «aeroporto»
+        // vista da sopra, ed e' anche cio' che rende l'opera di terra un piano
+        // unico invece di tre strisce a quote diverse.
+        box(PART.deck, 0, 0, 26, 12, 0, 1, PALETTE_SLOTS.grass, SURFACE_KIND.plain),
+        box(PART.deck, 0, 0, 12, 5, 0, 1, PALETTE_SLOTS.concrete, SURFACE_KIND.utility),
+        box(PART.shell, 1, 0, 8, 4, 1, 6, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.civic, {
           cap: PALETTE_SLOTS.glassPale,
         }),
-        box(PART.deck, 0, 1, 9, 9, 8, 1, PALETTE_SLOTS.roofWhite, SURFACE_KIND.roofTech),
+        box(PART.deck, 1, 0, 8, 4, 7, 1, PALETTE_SLOTS.roofWhite, SURFACE_KIND.roofTech),
       ],
       [
-        box(PART.deck, 12, 4, 14, 4, 0, 1, PALETTE_SLOTS.asphaltDark, SURFACE_KIND.utility),
-        // Le soglie sono lo stesso piano riscritto piu' chiaro: una pista senza
-        // segnaletica e' una striscia d'asfalto, e a distanza non si legge.
-        box(PART.deck, 14, 5, 3, 2, 0, 1, PALETTE_SLOTS.concretePale, SURFACE_KIND.utility),
-        box(PART.deck, 19, 5, 3, 2, 0, 1, PALETTE_SLOTS.concretePale, SURFACE_KIND.utility),
-        box(PART.deck, 24, 5, 2, 2, 0, 1, PALETTE_SLOTS.concretePale, SURFACE_KIND.utility),
+        // La pista, il raccordo e la segnaletica. Le soglie e la mezzeria sono
+        // lo stesso piano riscritto piu' chiaro: una pista senza segni e' una
+        // striscia d'asfalto, e a distanza di gioco non si legge.
+        box(PART.deck, 2, 6, 24, 3, 0, 1, PALETTE_SLOTS.asphaltDark, SURFACE_KIND.utility),
+        box(PART.deck, 2, 6, 2, 3, 0, 1, PALETTE_SLOTS.concretePale, SURFACE_KIND.utility),
+        box(PART.deck, 24, 6, 2, 3, 0, 1, PALETTE_SLOTS.concretePale, SURFACE_KIND.utility),
+        box(PART.deck, 7, 7, 3, 1, 0, 1, PALETTE_SLOTS.concretePale, SURFACE_KIND.utility),
+        box(PART.deck, 13, 7, 3, 1, 0, 1, PALETTE_SLOTS.concretePale, SURFACE_KIND.utility),
+        box(PART.deck, 19, 7, 3, 1, 0, 1, PALETTE_SLOTS.concretePale, SURFACE_KIND.utility),
+        box(PART.deck, 2, 5, 10, 1, 0, 1, PALETTE_SLOTS.asphalt, SURFACE_KIND.utility),
+        // Le luci di avvicinamento in testa alla pista: due cubi accesi, ed e'
+        // l'unica cosa che di notte dica da che parte si atterra.
+        box(PART.mast, 0, 6, 1, 3, 1, 2, PALETTE_SLOTS.glassPale, SURFACE_KIND.luminous),
       ],
       [
-        box(PART.mast, 10, 1, 3, 3, 1, 14, PALETTE_SLOTS.concrete, SURFACE_KIND.civic, {
+        // La torre di controllo: il contrasto fra il piano lungo e la verticale
+        // sottile e' cio' che dice il ruolo prima di qualunque dettaglio.
+        box(PART.mast, 9, 1, 3, 3, 1, 14, PALETTE_SLOTS.concrete, SURFACE_KIND.civic, {
           cap: PALETTE_SLOTS.concretePale,
         }),
-        box(PART.slab, 9, 0, 5, 5, 15, 3, PALETTE_SLOTS.glassPale, SURFACE_KIND.civic),
-        box(PART.deck, 9, 0, 5, 5, 18, 1, PALETTE_SLOTS.roofWhite, SURFACE_KIND.roofTech),
+        box(PART.slab, 8, 0, 5, 5, 15, 3, PALETTE_SLOTS.glassPale, SURFACE_KIND.civic),
+        box(PART.deck, 8, 0, 5, 5, 18, 1, PALETTE_SLOTS.roofWhite, SURFACE_KIND.roofTech),
       ],
       [
-        box(PART.shell, 13, 9, 10, 3, 1, 6, PALETTE_SLOTS.metalDark, SURFACE_KIND.industrial, {
+        // Gli hangar e il loro raccordo. Sono in fondo al campo, dalla parte
+        // opposta all'aerostazione: e' come si dispone uno scalo vero, e da
+        // sopra e' la simmetria spezzata a dire che i due lati fanno due cose.
+        box(PART.deck, 12, 9, 2, 3, 0, 1, PALETTE_SLOTS.asphalt, SURFACE_KIND.utility),
+        box(PART.shell, 14, 9, 10, 3, 1, 6, PALETTE_SLOTS.metalDark, SURFACE_KIND.industrial, {
           cap: PALETTE_SLOTS.metalBrass,
         }),
-        box(PART.deck, 13, 9, 10, 3, 7, 1, PALETTE_SLOTS.metalDark, SURFACE_KIND.roofTech),
-        box(PART.deck, 12, 8, 14, 1, 0, 1, PALETTE_SLOTS.asphalt, SURFACE_KIND.utility),
+        box(PART.deck, 14, 9, 10, 3, 7, 1, PALETTE_SLOTS.metalDark, SURFACE_KIND.roofTech),
+        // Le due piazzole di attesa a bordo pista: sono i riquadri chiari dove
+        // gli aerei del traffico stanno fermi fra un giro e l'altro, e stanno
+        // **lontano dai volumi** — un'ala di sei voxel parcheggiata contro
+        // l'aerostazione le passerebbe dentro.
+        box(PART.deck, 11, 3, 4, 2, 0, 1, PALETTE_SLOTS.concretePale, SURFACE_KIND.utility),
+        box(PART.deck, 17, 3, 4, 2, 0, 1, PALETTE_SLOTS.concretePale, SURFACE_KIND.utility),
       ],
     ],
+    // Le due soglie della pista e le due piazzole. Le soglie non ospitano
+    // niente: sono i capi da cui il circuito di volo si costruisce, cioe' la
+    // sola cosa che di una pista il traffico deve sapere.
+    moorings: [
+      { x: 2, y: 7, z: 0, berth: BERTH.runway, heading: 0 },
+      { x: 25, y: 7, z: 0, berth: BERTH.runway, heading: 0 },
+      { x: 13, y: 4, z: 0, berth: BERTH.aircraft, heading: 0 },
+      { x: 19, y: 4, z: 0, berth: BERTH.aircraft, heading: 0 },
+    ],
     variants: [
-      // Hub passeggeri: falda sull'aerostazione, un finger verso il piazzale,
+      // Hub passeggeri: falda sull'aerostazione, un finger sul piazzale,
       // ingresso e insegna sul fronte citta'.
       {
         name: 'hub',
         parts: [
           [],
-          [box(PART.pitch, 0, 1, 9, 9, 9, 4, PALETTE_SLOTS.roofWhite, SURFACE_KIND.roofTech, {
+          [box(PART.pitch, 1, 0, 8, 4, 8, 3, PALETTE_SLOTS.roofWhite, SURFACE_KIND.roofTech, {
             step: 1,
             cap: PALETTE_SLOTS.metalBrass,
           })],
-          [box(PART.boom, 9, 2, 3, 2, 4, 2, PALETTE_SLOTS.concretePale, SURFACE_KIND.civic, {
+          [box(PART.boom, 2, 4, 6, 2, 3, 2, PALETTE_SLOTS.concretePale, SURFACE_KIND.civic, {
             cap: PALETTE_SLOTS.glassPale,
           })],
-          [entrance(0, 4, 1, 3, 4), signBand(0, 3, 1, 5, 6)],
+          [entrance(1, 1, 1, 2, 4), signBand(1, 0, 1, 4, 5)],
         ],
       },
-      // Scalo merci: capannone a traliccio, cisterne smussate, torre di sfiato.
+      // Scalo merci: capannone a traliccio, cisterna smussata, torre di sfiato.
       // Nessuna fascia luminosa: di notte questo esemplare resta buio, ed e'
       // esattamente cio' che lo distingue dall'hub a colpo d'occhio.
       {
         name: 'merci',
         parts: [
           [],
-          [box(PART.truss, 13, 9, 10, 3, 7, 8, PALETTE_SLOTS.metalRust, SURFACE_KIND.industrial, {
+          [box(PART.truss, 14, 9, 10, 3, 7, 7, PALETTE_SLOTS.metalRust, SURFACE_KIND.industrial, {
             step: 3,
             cap: PALETTE_SLOTS.metalBrass,
           })],
-          [box(PART.slab, 23, 8, 3, 4, 1, 5, PALETTE_SLOTS.metalDark, SURFACE_KIND.industrial, {
+          [box(PART.slab, 22, 0, 4, 4, 1, 5, PALETTE_SLOTS.metalDark, SURFACE_KIND.industrial, {
             chamfer: 1,
             cap: PALETTE_SLOTS.metalBrass,
           })],
-          [box(PART.mast, 24, 0, 2, 2, 1, 16, PALETTE_SLOTS.metalRust, SURFACE_KIND.industrial, {
+          [box(PART.mast, 20, 1, 2, 2, 1, 16, PALETTE_SLOTS.metalRust, SURFACE_KIND.industrial, {
             cap: PALETTE_SLOTS.metalGold,
           })],
         ],
       },
-      // Radar: un traliccio in fondo alla pista con la cupola accesa in cima, e
-      // tre luci di avvicinamento sull'asse. E' l'esemplare che si legge di
-      // notte da lontano quanto di giorno.
+      // Radar: un traliccio in fondo al campo con la cupola accesa in cima. E'
+      // l'esemplare che si legge di notte da lontano quanto di giorno.
       {
         name: 'radar',
         parts: [
           [],
-          [box(PART.truss, 22, 0, 4, 4, 1, 15, PALETTE_SLOTS.concrete, SURFACE_KIND.civic, {
+          [box(PART.truss, 21, 0, 4, 4, 1, 15, PALETTE_SLOTS.concrete, SURFACE_KIND.civic, {
             step: 3,
             cap: PALETTE_SLOTS.concretePale,
           })],
-          [box(PART.slab, 23, 1, 2, 2, 16, 2, PALETTE_SLOTS.glassPale, SURFACE_KIND.luminous)],
-          [signBand(12, 5, 1, 2, 1), signBand(17, 5, 1, 2, 1), signBand(22, 5, 1, 2, 1)],
+          [box(PART.slab, 22, 1, 2, 2, 16, 2, PALETTE_SLOTS.glassPale, SURFACE_KIND.luminous)],
+          [
+            box(PART.mast, 16, 4, 1, 1, 1, 2, PALETTE_SLOTS.glassPale, SURFACE_KIND.luminous),
+            box(PART.mast, 20, 4, 1, 1, 1, 2, PALETTE_SLOTS.glassPale, SURFACE_KIND.luminous),
+          ],
         ],
       },
     ],
@@ -1212,12 +1362,103 @@ export const LANDMARKS: Partial<Record<CatalystId, LandmarkRecipe>> = {
   },
 };
 
-export function landmarkOf(kind: CatalystId): LandmarkRecipe | null {
+/**
+ * Lo scalo in quota: l'aeroporto quando il click cade su un tetto.
+ *
+ * **Non e' una variante e non poteva esserlo.** Un esemplare si sceglie dal
+ * seme e condivide ingombro e tronco con gli altri; qui l'ingombro *deve*
+ * cambiare, perche' un campo di volo largo ventisei colonne non sta su nessun
+ * tetto — `MAX_FOOTPRINT` e' otto. E' una ricetta a se' che il **luogo**
+ * seleziona, che e' l'unica cosa in questo dominio a non dipendere dal seme.
+ *
+ * Fuori dal catalogo `LANDMARKS`, e non per timidezza: quella tabella promette
+ * «una struttura per ruolo» e un test la verifica. Questa e' la seconda forma
+ * dello stesso ruolo, e tenerla in un'altra tabella e' il modo di dirlo senza
+ * indebolire la prima.
+ *
+ * Niente pista e niente ali: in quota si ormeggia, non si atterra. Il pilone e'
+ * tutta la struttura, ed e' anche tutto quello che serve a spiegarla.
+ */
+export const SKYPORT: LandmarkRecipe = {
+  kind: 'airport',
+  span: [8, 8],
+  height: 16,
+  anchor: [4, 4],
+  // Nessun grembiule: la cornice di suolo pubblico e' suolo, e qui sotto ci
+  // sono trenta voxel di edificio. Chi lo posa salta la mano di vernice.
+  apron: 0,
+  stages: [0, 4, 12, 24],
+  parts: [
+    [
+      box(PART.deck, 0, 0, 8, 8, 0, 1, PALETTE_SLOTS.concrete, SURFACE_KIND.utility),
+      box(PART.shell, 0, 0, 8, 8, 1, 1, PALETTE_SLOTS.metalDark, SURFACE_KIND.utility),
+      box(PART.deck, 2, 2, 4, 4, 0, 1, PALETTE_SLOTS.concretePale, SURFACE_KIND.utility),
+    ],
+    [
+      // Il pilone maggiore: e' la parte che dice il ruolo, e da qui in avanti la
+      // sagoma sul cielo e' quella di un ormeggio e non di un tetto attrezzato.
+      box(PART.mast, 2, 2, 2, 2, 1, 11, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.civic, {
+        cap: PALETTE_SLOTS.metalGold,
+      }),
+      box(PART.slab, 2, 2, 2, 2, 12, 1, PALETTE_SLOTS.glassPale, SURFACE_KIND.luminous),
+    ],
+    [
+      box(PART.shell, 5, 0, 3, 3, 1, 4, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.civic, {
+        cap: PALETTE_SLOTS.glassPale,
+      }),
+      box(PART.deck, 5, 0, 3, 3, 5, 1, PALETTE_SLOTS.roofWhite, SURFACE_KIND.roofTech),
+      box(PART.mast, 0, 7, 1, 1, 1, 3, PALETTE_SLOTS.glassPale, SURFACE_KIND.luminous),
+      box(PART.mast, 7, 7, 1, 1, 1, 3, PALETTE_SLOTS.glassPale, SURFACE_KIND.luminous),
+    ],
+    [
+      box(PART.mast, 4, 5, 2, 2, 1, 9, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.civic, {
+        cap: PALETTE_SLOTS.metalGold,
+      }),
+      box(PART.slab, 4, 5, 2, 2, 10, 1, PALETTE_SLOTS.glassPale, SURFACE_KIND.luminous),
+      box(PART.colonnade, 0, 3, 4, 4, 1, 3, PALETTE_SLOTS.metalDark, SURFACE_KIND.utility, {
+        step: 3,
+        cap: PALETTE_SLOTS.concretePale,
+      }),
+    ],
+  ],
+  // I due ormeggi stanno **accanto** ai piloni e a quote diverse, con le prue
+  // opposte: due sagome lunghe sedici voxel appese allo stesso tetto si
+  // attraverserebbero, e due dirigibili incastrati sono peggio di uno solo.
+  moorings: [
+    { x: 2, y: 2, z: 10, berth: BERTH.airship, heading: Math.PI },
+    { x: 5, y: 6, z: 8, berth: BERTH.airship, heading: 0 },
+  ],
+};
+
+/**
+ * Le ricette che un tetto sa ospitare, per ruolo.
+ *
+ * Una sola, per ora, e la tabella esiste comunque: il giorno in cui un secondo
+ * ruolo impara a posarsi in quota, il piazzamento non deve imparare niente.
+ */
+const ALOFT: Partial<Record<CatalystId, LandmarkRecipe>> = {
+  airport: SKYPORT,
+};
+
+/**
+ * La ricetta di un ruolo, a terra o su un tetto.
+ *
+ * `aloft` non e' una preferenza: e' il luogo che il click ha scelto, e un ruolo
+ * che non sa stare in quota risponde `null` invece di ripiegare a terra —
+ * ripiegare significherebbe costruire un campo di volo dentro un grattacielo.
+ */
+export function landmarkOf(kind: CatalystId, aloft = false): LandmarkRecipe | null {
+  if (aloft) return ALOFT[kind] ?? null;
   return LANDMARKS[kind] ?? null;
 }
 
+/** true se questo ruolo ha una forma da tetto oltre a quella da terra. */
+export function hasAloftRecipe(kind: CatalystId): boolean {
+  return ALOFT[kind] !== undefined;
+}
+
 /** Ultimo stadio raggiungibile da una ricetta. */
-export function maxStageOf(recipe: LandmarkRecipe): number {
+export function maxStageOf(recipe: PartsRecipe): number {
   return recipe.parts.length - 1;
 }
 
@@ -1228,7 +1469,7 @@ export function maxStageOf(recipe: LandmarkRecipe): number {
  * qui invece che in `generateLandmark` evita al generatore di distinguere il
  * caso: sceglie sempre dentro una lista, che a volte e' lunga uno.
  */
-export function variantsOf(recipe: LandmarkRecipe): readonly LandmarkVariant[] {
+export function variantsOf(recipe: PartsRecipe): readonly LandmarkVariant[] {
   if (recipe.variants === undefined || recipe.variants.length === 0) return [TRUNK_ONLY];
   return recipe.variants;
 }

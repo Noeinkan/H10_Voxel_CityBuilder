@@ -2,8 +2,9 @@ import type { TerrainMap } from '../world/terrain/TerrainMap';
 import { catalystById, type CatalystId } from './catalysts';
 import { BUILDING_CLASS, type BuildingClass } from './classes';
 import type { Catalyst } from './DesirabilityField';
+import { FARM_KIND, type FarmKind } from './farms';
 import { nextBuildSites } from './nextBuildSites';
-import { addBuilding, addCatalyst, createSimState, type SimState } from './SimState';
+import { addBuilding, addCatalyst, addFarm, createSimState, type SimState } from './SimState';
 
 /**
  * Catalizzatori piazzati da script per la scena di debug.
@@ -39,12 +40,15 @@ const SCENARIO = {
    * per sbaglio — e' la scena che le consegna una citta' iniziale, come farebbe
    * un salvataggio.
    *
-   * Il rapporto conta: `BALANCE` e' tarato perche' un edificio industriale
-   * sfami esattamente un edificio residenziale e un edificio commerciale ne
-   * serva uno, quindi una citta' in rapporto 1:1 sta in pareggio. Lasciando
-   * scegliere alla sola desiderabilita' si ottengono invece sedici edifici
-   * civici e nessuna fattoria, e la scena mostra una citta' che muore di fame —
-   * corretto come simulazione, inutile come demo.
+   * Il rapporto conta: `BALANCE` e' tarato perche' un edificio commerciale serva
+   * esattamente un edificio residenziale, e perche' un campo ne sfami due.
+   * Lasciando scegliere alla sola desiderabilita' si ottengono invece sedici
+   * edifici civici, e la scena mostra una citta' che muore di fame — corretto
+   * come simulazione, inutile come demo.
+   *
+   * **Dalla 3.1 l'industria non entra piu' nel pareggio alimentare**: le dieci
+   * fabbriche restano perche' servono i materiali, ma a sfamare le dieci case
+   * sono i cinque campi di `seedFarms`.
    */
   seedBuildings: [
     { class: BUILDING_CLASS.residential, count: 10 },
@@ -52,6 +56,19 @@ const SCENARIO = {
     { class: BUILDING_CLASS.industrial, count: 10 },
     { class: BUILDING_CLASS.civic, count: 4 },
   ] as readonly { class: BuildingClass; count: number }[],
+
+  /**
+   * Lotti agricoli del nucleo di partenza.
+   *
+   * Non hanno una posizione qui, e non e' una semplificazione: campo e frutteto
+   * vivono nel mondo, e la fixture della simulazione non sa dove sia la terra
+   * fertile. Consegna il contatore — dieci case, cinque campi, pareggio — e a
+   * disegnarli davvero e' il driver di `src/world/farms/` quando la scena ha un
+   * terreno sotto.
+   */
+  seedFarms: [
+    { kind: FARM_KIND.field, count: 5 },
+  ] as readonly { kind: FarmKind; count: number }[],
 
   /**
    * Ruolo, intensita' e raggio per posizione del reticolo, in ordine di
@@ -162,6 +179,13 @@ export function createScenarioState(terrainMap: TerrainMap, region: ScenarioRegi
       remaining[i]--;
       placed = true;
     }
+  }
+
+  // I lotti dopo gli edifici e non a giro con loro: non competono per un sito —
+  // qui non ne hanno uno — quindi non c'e' congestione da schivare fra un campo
+  // e il successivo.
+  for (const spec of SCENARIO.seedFarms) {
+    for (let i = 0; i < spec.count; i++) state = addFarm(state, spec.kind);
   }
 
   return state;

@@ -63,9 +63,49 @@ export const WATER_CLASS = {
 export type WaterClass = typeof WATER_CLASS[keyof typeof WATER_CLASS];
 
 /**
+ * Copertura del terreno: una cella piena **senza palette propria**.
+ *
+ * E' il secondo sovraccarico dichiarato di questo byte, e come quello dell'acqua
+ * non toglie niente a nessuno: `packVisualBlock` rifiuta la palette 0, quindi i
+ * byte con palette 0 e superficie non nulla non li produce mai nessuno. Sono
+ * sette valori liberi per davvero — non un ottavo linguaggio di superficie e non
+ * un trentatreesimo slot di palette.
+ *
+ * **Serve perche' un ciuffo d'erba non e' un cubo.** Il mesher lo toglie dal
+ * volume prima del greedy pass e al suo posto scrive prismi da 1/16, e per farlo
+ * deve poterlo riconoscere con certezza: la geometria da sola non basta, perche'
+ * la cima di una macchia d'alta quota e' `grassPale` appoggiato su `grass`
+ * esattamente come un ciuffo di pianura. Il marcatore e' il mondo che lo dichiara
+ * invece di lasciarlo indovinare.
+ *
+ * **La tinta non c'e' perche' non e' del ciuffo.** Una copertura prende il tono
+ * dal terreno su cui poggia, che il mesher ha gia' sotto gli occhi: portarselo
+ * dietro sarebbe una seconda copia della tabella di `groundcover.ts`. Ne segue
+ * che `blockPalette` di un marcatore vale 0 — cioe' che per `getBlock`, e quindi
+ * per chi cerca un ostacolo, un'erbetta non c'e'. E' il verso giusto: la
+ * copertura e' decorazione, non volume.
+ */
+export function packCoverMark(kind: number): number {
+  return (kind & BLOCK_SURFACE_MASK) << BLOCK_SURFACE_SHIFT;
+}
+
+/** Il tipo di copertura di un marcatore; vale 0 su qualunque altro byte. */
+export function coverMarkKind(block: number): number {
+  return (block & BLOCK_PALETTE_MASK) === 0 ? block >>> BLOCK_SURFACE_SHIFT : 0;
+}
+
+/** true per le celle piene che non portano un indice di palette. */
+export function isCoverMark(block: number): boolean {
+  return block !== 0 && (block & BLOCK_PALETTE_MASK) === 0;
+}
+
+/**
  * Compatta palette e semantica visuale nello stesso byte di `Chunk.blocks`.
  * Il vuoto resta sempre zero: un tipo di superficie da solo non rende solida
  * una cella e non deve creare chunk fantasma.
+ *
+ * Lo spazio con palette 0 e superficie non nulla lo scrive soltanto
+ * `packCoverMark`, che sta qui sopra apposta.
  */
 export function packVisualBlock(palette: number, surface: SurfaceKind = SURFACE_KIND.plain): number {
   if (palette === 0) return 0;

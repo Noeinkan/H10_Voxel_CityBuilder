@@ -1,10 +1,11 @@
 import type { ActionFailure } from '../game/actions';
 import type { GrowthStats } from '../game/growthScene';
 import type { PolicyId, TradeMode } from '../sim';
+import { BuildDock, type DockPanel } from './BuildDock';
 import { ControlsHint } from './ControlsHint';
+import { applyHudTokens } from './hudTokens';
 import {
   buildGameHudModel,
-  daylightControl,
   decisionMark,
   decisionNeedsRepaint,
   resolveEscapeTarget,
@@ -12,20 +13,15 @@ import {
   type GameHudModel,
   type GameTool,
   type HudPolicy,
-  type HudResource,
   type HudTradeMode,
 } from './GameHudModel';
-import { DAYLIGHT_MODE, type DaylightMode } from '../engine/daylight';
-import { createHudIcon, type HudIcon } from './hudIcons';
+import type { DaylightMode } from '../engine/daylight';
+import { ResourceBar } from './ResourceBar';
+import { ResourceTrend } from './ResourceTrend';
 import {
-  actionButton,
   barButton,
   cursorLine,
-  divider,
   iconButton,
-  labeledButton,
-  paintAction,
-  textButton,
   viewKeyRow,
 } from './hudWidgets';
 import { buildViewMenuModel, type ViewMenuModel } from './ViewMenuModel';
@@ -43,17 +39,36 @@ export interface GameHudHandlers {
   /** Ciclo, giorno fisso o notte fissa: sta accanto alla velocita' perche' e' tempo. */
   readonly onDaylight: (mode: DaylightMode) => void;
   readonly onTheme: (id: string) => void;
+  /**
+   * Apre il campionario dei voxel, che e' una **scena** e non un pannello.
+   *
+   * L'HUD non sa dove: l'indirizzo vuole il tema e l'ora in vigore, che vivono
+   * nell'engine, e aprire una scheda e' una decisione del composition root. Qui
+   * c'e' solo il bottone che lo chiede.
+   */
+  readonly onSwatch: () => void;
   readonly onView: (mode: InspectMode) => void;
   readonly onLevel: (z: number) => void;
   readonly onCancelTool: () => void;
   /** Molla l'isolato scelto in Block focus, lasciando accesa la vista. */
   readonly onReleaseBlock: () => void;
+  /** Chiude la scheda di selezione. Il pannello vive fuori dall'HUD; la catena
+   *  di Escape no, perche' e' una sola e sta qui. */
+  readonly onClearSelection: () => void;
 }
 
 export interface ThemeChoice {
   readonly id: string;
   readonly name: string;
   readonly swatches: readonly string[];
+  /**
+   * I `--hud-*` di questo tema, gia' calcolati.
+   *
+   * Arrivano fatti invece che derivati qui perche' derivarli vuol dire leggere
+   * l'atmosfera, e l'HUD non conosce l'engine: e' `main.ts` che mette insieme i
+   * due strati, ed e' li' che la derivazione sta.
+   */
+  readonly tokens: Readonly<Record<string, string>>;
 }
 
 export interface CursorInfo {
@@ -89,27 +104,17 @@ const FAILURE_LABEL: Readonly<Record<ActionFailure, string>> = {
   'needs-building': 'A terrace hangs off a facade: point at a building, not at the ground.',
   'building-too-short': 'This building is too low to carry a floor. Try a taller one.',
   'no-room-aloft': 'No room for a terrace on this facade. Try another building.',
+  'needs-shore': 'A ropeway starts on dry land. Point at a shore, not at the water.',
+  'needs-crossing': 'There is nothing to cross from here. Find a stretch of water with land on the far side.',
+  'no-room-for-line': 'No room for the towers here. Try further along the same shore.',
 };
-
-const DAYLIGHT_ICON: Readonly<Record<DaylightMode, HudIcon>> = {
-  [DAYLIGHT_MODE.cycle]: 'daylight',
-  [DAYLIGHT_MODE.day]: 'sun',
-  [DAYLIGHT_MODE.night]: 'moon',
-};
-
-const RESOURCE_ICON: Readonly<Record<HudResource['id'], HudIcon>> = {
-  funds: 'funds', population: 'population', food: 'food', materials: 'materials', satisfaction: 'satisfaction',
-};
-
-interface ResourceElements {
-  readonly value: HTMLElement;
-  readonly delta: HTMLElement;
-}
 
 /** HUD giocabile: risorse in alto, azioni in basso e pannelli contestuali. */
 export class GameHud {
   private readonly root: HTMLElement;
-  private readonly dock: HTMLElement;
+  /** La barra risorse e il dock si disegnano da soli: qui si compongono. */
+  private readonly bar: ResourceBar;
+  private readonly dock: BuildDock;
   private readonly toast: HTMLElement;
   private readonly policyDrawer: HTMLElement;
   private readonly themePicker: HTMLElement;
@@ -122,6 +127,8 @@ export class GameHud {
   private viewActive = false;
   /** Isolato scelto: Escape lo molla **prima** di spegnere la vista. */
   private blockLocked = false;
+  /** Scheda di selezione aperta: e' l'ultima cosa che il giocatore ha aperto. */
+  private selectionOpen = false;
   /**
    * Il modo gia' disegnato nella targa: i tasti cambiano solo con lui.
    *
@@ -137,23 +144,15 @@ export class GameHud {
   private readonly cursor: HTMLElement;
   private readonly help: ControlsHint;
   private readonly handlers: GameHudHandlers;
-  private readonly resources = new Map<HudResource['id'], ResourceElements>();
-  private readonly catalystButtons: HTMLButtonElement[] = [];
   private commercePanel!: HTMLElement;
   private readonly policyButtons = new Map<PolicyId, HTMLButtonElement>();
   private readonly tradeButtons = new Map<TradeMode, HTMLButtonElement>();
   private readonly decisionCard: HTMLElement;
-  private readonly expansionButton: HTMLButtonElement;
-  private readonly terraceButton: HTMLButtonElement;
-  private readonly policyToggle: HTMLButtonElement;
-  private readonly themeToggle: HTMLButtonElement;
-  private readonly viewToggle: HTMLButtonElement;
-  private readonly pauseButton: HTMLButtonElement;
-  private readonly daylightButton: HTMLButtonElement;
-  private daylightMode: DaylightMode = DAYLIGHT_MODE.cycle;
-  private readonly speedButtons = new Map<number, HTMLButtonElement>();
   private readonly themeButtons = new Map<string, HTMLButtonElement>();
+  private readonly themeTokens = new Map<string, Readonly<Record<string, string>>>();
   private readonly viewButtons = new Map<InspectMode, HTMLButtonElement>();
+  /** La finestra dei tick recenti: e' dell'HUD, non della simulazione. */
+  private readonly trend = new ResourceTrend();
   private selected: GameTool = { kind: 'none' };
   private model: GameHudModel = buildGameHudModel(null);
   private feedback: { readonly message: string; readonly tone: 'error' | 'neutral' } | null = null;
@@ -178,31 +177,12 @@ export class GameHud {
     this.root.className = 'game-hud';
     this.root.setAttribute('aria-label', 'City controls');
 
-    const resourceBar = document.createElement('header');
-    resourceBar.className = 'resource-bar hud-surface';
-    for (const resource of this.model.resources) resourceBar.appendChild(this.createResource(resource));
-
-    const time = document.createElement('div');
-    time.className = 'time-controls';
-    this.pauseButton = iconButton('pause', 'Pause simulation', () => handlers.onPause(!this.model.paused));
-    this.pauseButton.classList.add('hud-button--small');
-    time.appendChild(this.pauseButton);
-    for (const speed of [1, 2, 4]) {
-      const button = textButton(`${speed}×`, `Simulation speed ${speed}×`, () => handlers.onSpeed(speed));
-      button.classList.add('hud-button--small');
-      this.speedButtons.set(speed, button);
-      time.appendChild(button);
-    }
-    // Il ciclo del giorno sta con la velocita' e la pausa perche' e' la stessa
-    // domanda — quanto tempo passa mentre guardo — e perche' e' li' che si
-    // guarda quando la citta' e' buia e non si sa se tornera' giorno.
-    this.daylightButton = iconButton('daylight', 'Daylight', () =>
-      this.handlers.onDaylight(daylightControl(this.daylightMode).next));
-    this.daylightButton.classList.add('hud-button--small', 'daylight-toggle');
-    time.appendChild(this.daylightButton);
-    this.setDaylight(DAYLIGHT_MODE.cycle);
-    resourceBar.appendChild(time);
-    this.root.appendChild(resourceBar);
+    this.bar = new ResourceBar(this.model, {
+      onPause: (paused) => handlers.onPause(paused),
+      onSpeed: (speed) => handlers.onSpeed(speed),
+      onDaylight: (mode) => handlers.onDaylight(mode),
+    });
+    this.root.appendChild(this.bar.root);
 
     this.toast = document.createElement('div');
     this.toast.className = 'hud-toast';
@@ -215,88 +195,18 @@ export class GameHud {
     this.cursor.hidden = true;
     this.root.appendChild(this.cursor);
 
-    this.dock = document.createElement('nav');
-    this.dock.className = 'build-dock hud-surface';
-    this.dock.setAttribute('aria-label', 'Building actions');
-    // La toolbar e' organizzata per funzione, non per costo o per ordine di
-    // sblocco: prima cosa fa crescere la citta', poi cosa la collega, infine
-    // cosa le da' un carattere. E' l'unica classificazione che il giocatore puo'
-    // usare prima di conoscere i sette nomi.
-    //
-    // `catalystButtons` resta parallelo a `model.catalysts`, non ai gruppi: il
-    // ridisegno scorre la lista piatta, e tenere due ordini diversi sarebbe una
-    // corrispondenza da mantenere a mano a ogni ripittura.
-    for (const group of this.model.catalystGroups) {
-      const section = document.createElement('div');
-      section.className = 'dock-group';
-      const heading = document.createElement('span');
-      heading.className = 'dock-group-title';
-      heading.textContent = group.label;
-      section.appendChild(heading);
-
-      const row = document.createElement('div');
-      row.className = 'dock-group-row';
-      for (const action of group.actions) {
-        const button = actionButton(action, (action.catalystId ?? 'market') as HudIcon, () => {
-          this.feedback = null;
-          this.selectionNote = null;
-          this.selected = {
-            kind: 'catalyst',
-            class: action.class ?? 0,
-            id: action.catalystId,
-          };
-          handlers.onTool(this.selected);
-          this.paintSelection();
-          this.paintToast();
-        });
-        this.catalystButtons[this.model.catalysts.indexOf(action)] = button;
-        row.appendChild(button);
-      }
-      section.appendChild(row);
-      this.dock.appendChild(section);
-    }
-
-    this.expansionButton = actionButton(this.model.expansion, 'expansion', () => {
-      this.feedback = null;
-      this.selectionNote = null;
-      this.selected = { kind: 'expansion' };
-      handlers.onTool(this.selected);
-      this.paintSelection();
-      this.paintToast();
+    this.dock = new BuildDock(this.model, {
+      onTool: (tool) => this.pickTool(tool),
+      onSwatch: () => handlers.onSwatch(),
+      onPanel: (panel) => this.togglePanel(panel),
+      onHelp: () => this.toggleHelp(),
     });
-    this.expansionButton.classList.add('hud-button--accent');
-    // La mensola sta accanto all'espansione, e non fra i catalizzatori: sono la
-    // stessa domanda posta nei due versi — quando il suolo finisce, o si compra
-    // altra isola o si sale sopra quella che c'e'.
-    this.terraceButton = actionButton(this.model.terrace, 'terrace', () => {
-      this.feedback = null;
-      this.selectionNote = null;
-      this.selected = { kind: 'terrace' };
-      handlers.onTool(this.selected);
-      this.paintSelection();
-      this.paintToast();
-    });
-    this.terraceButton.classList.add('hud-button--accent');
-    this.dock.append(this.expansionButton, this.terraceButton, divider());
-    this.policyToggle = labeledButton('policies', 'Policies', 'Open city policies', () => this.togglePolicies());
-    this.policyToggle.setAttribute('aria-expanded', 'false');
-    this.dock.appendChild(this.policyToggle);
-    // Le viste stanno fra le politiche e il tema perche' e' li' che passa il
-    // confine: da qui in poi i bottoni non cambiano la citta', cambiano come la
-    // si guarda.
-    this.viewToggle = labeledButton('view', 'Views', 'Look inside the city · V', () => this.toggleViews());
-    this.viewToggle.setAttribute('aria-expanded', 'false');
-    this.dock.appendChild(this.viewToggle);
-    this.themeToggle = iconButton('theme', 'Change visual theme', () => this.toggleThemes());
-    this.themeToggle.setAttribute('aria-expanded', 'false');
-    this.dock.appendChild(this.themeToggle);
-    this.dock.appendChild(iconButton('help', 'Open help', () => this.toggleHelp()));
-    this.root.appendChild(this.dock);
+    this.root.appendChild(this.dock.root);
 
     this.policyDrawer = this.createPolicyDrawer();
     this.root.appendChild(this.policyDrawer);
     this.decisionCard = document.createElement('aside');
-    this.decisionCard.className = 'decision-card hud-surface';
+    this.decisionCard.className = 'decision-card hud-surface hud-surface--modal';
     this.decisionCard.hidden = true;
     this.decisionCard.setAttribute('aria-live', 'polite');
     this.root.appendChild(this.decisionCard);
@@ -314,9 +224,9 @@ export class GameHud {
     this.setView(buildViewMenuModel(INSPECT_MODE.off, INSPECT.defaultSliceZ, INSPECT.maxSliceZ));
 
     const publishDockHeight = (): void => {
-      document.documentElement.style.setProperty('--game-hud-bottom', `${this.dock.offsetHeight + 28}px`);
+      document.documentElement.style.setProperty('--game-hud-bottom', `${this.dock.root.offsetHeight + 28}px`);
     };
-    new ResizeObserver(publishDockHeight).observe(this.dock);
+    new ResizeObserver(publishDockHeight).observe(this.dock.root);
     requestAnimationFrame(publishDockHeight);
     this.paint(this.model);
   }
@@ -327,7 +237,17 @@ export class GameHud {
 
   update(stats: GrowthStats, now: number): void {
     this.lastPaint = now;
-    this.model = buildGameHudModel(stats);
+    // La finestra si nutre qui e non dentro il modello: `buildGameHudModel` e'
+    // puro e senza memoria, e deve restarlo. L'ancora e' `tickCount`, quindi
+    // ridipingere piu' volte dentro lo stesso tick non falsa la tendenza.
+    this.trend.sample(stats.state.tickCount, [
+      ['funds', stats.state.funds.stock],
+      ['population', stats.state.population.stock],
+      ['food', stats.state.food.stock],
+      ['materials', stats.state.materials.stock],
+      ['satisfaction', stats.state.satisfaction],
+    ]);
+    this.model = buildGameHudModel(stats, this.trend);
     this.paint(this.model);
   }
 
@@ -337,6 +257,40 @@ export class GameHud {
     this.selected = tool;
     this.paintSelection();
     this.paintToast();
+  }
+
+  /**
+   * Uno strumento scelto **dal dock**, e non annunciato da fuori.
+   *
+   * E' `setTool` piu' l'avviso a chi gioca: la differenza fra i due versi e'
+   * tutta qui, e tenerli separati evita che un annuncio in arrivo rimbalzi
+   * indietro come se fosse un clic.
+   */
+  private pickTool(tool: GameTool): void {
+    this.feedback = null;
+    this.selectionNote = null;
+    this.selected = tool;
+    // L'annuncio prima della ripittura, com'era quando i bottoni stavano qui:
+    // chi ascolta puo' rifiutare lo strumento, e dipingerlo premuto prima di
+    // saperlo mostrerebbe per un istante uno stato che non e' vero.
+    this.handlers.onTool(tool);
+    this.paintSelection();
+    this.paintToast();
+  }
+
+  /**
+   * Prende l'n-esimo strumento del dock, come farebbe un clic sulla tessera.
+   *
+   * Torna `false` quando quel posto non esiste o l'azione non e' disponibile,
+   * cosi' chi ascolta il tasto puo' lasciarlo passare ad altri invece di
+   * inghiottirlo: un `4` che non fa niente e non lo dice e' peggio di un `4`
+   * che non e' legato a niente.
+   */
+  selectToolByIndex(index: number): boolean {
+    const tool = this.dock.toolAt(index);
+    if (tool === null) return false;
+    this.pickTool(tool);
+    return true;
   }
 
   setSelectionNote(note: string | null): void {
@@ -351,26 +305,14 @@ export class GameHud {
     }
     const active = this.themeButtons.get(id);
     const name = active?.dataset.themeName ?? id;
-    const label = `Change visual theme, current: ${name}`;
-    this.themeToggle.setAttribute('aria-label', label);
-    this.themeToggle.dataset.tooltip = label;
+    this.dock.setThemeLabel(`Change visual theme, current: ${name}`);
+    // L'HUD cambia con il mondo, invece di restare crema sotto un cielo al neon.
+    const tokens = this.themeTokens.get(id);
+    if (tokens !== undefined) applyHudTokens(tokens);
   }
 
-  /**
-   * Il modo del ciclo, dal modello puro al bottone.
-   *
-   * L'icona **e'** lo stato: sole con l'orizzonte per il giro, sole pieno per il
-   * giorno fermo, falce per la notte ferma. Un bottone che cicla e mostra sempre
-   * la stessa icona costringe a leggere il tooltip per sapere dove si e'.
-   */
   setDaylight(mode: DaylightMode): void {
-    this.daylightMode = mode;
-    const control = daylightControl(mode);
-    this.daylightButton.replaceChildren(createHudIcon(DAYLIGHT_ICON[mode]));
-    this.daylightButton.setAttribute('aria-label', control.tooltip);
-    this.daylightButton.dataset.tooltip = control.tooltip;
-    this.daylightButton.dataset.active = control.frozen ? 'true' : 'false';
-    this.daylightButton.setAttribute('aria-pressed', control.frozen ? 'true' : 'false');
+    this.bar.setDaylight(mode);
   }
 
   /**
@@ -386,12 +328,10 @@ export class GameHud {
     }
 
     const active = model.bar.visible;
-    this.viewToggle.dataset.active = active ? 'true' : 'false';
-    const label = active
-      ? `Looking inside: ${model.activeLabel} · V to change`
-      : 'Look inside the city · V';
-    this.viewToggle.setAttribute('aria-label', label);
-    this.viewToggle.dataset.tooltip = label;
+    this.dock.setViewLabel(
+      active ? `Looking inside: ${model.activeLabel} · V to change` : 'Look inside the city · V',
+      active,
+    );
 
     this.viewActive = active;
     this.blockLocked = model.blockLocked;
@@ -487,10 +427,17 @@ export class GameHud {
     this.cursor.appendChild(reason);
   }
 
+  /** Il dock chiede un pannello per nome: quale sia il suo bottone lo sa lui. */
+  private togglePanel(panel: DockPanel): void {
+    if (panel === 'policies') this.togglePolicies();
+    else if (panel === 'themes') this.toggleThemes();
+    else this.toggleViews();
+  }
+
   togglePolicies(): void {
     const opening = this.policyDrawer.hidden;
     this.policyDrawer.hidden = !opening;
-    this.policyToggle.setAttribute('aria-expanded', opening ? 'true' : 'false');
+    this.dock.setExpanded('policies', opening);
     if (opening) {
       this.closeThemes();
       this.closeViews();
@@ -501,7 +448,7 @@ export class GameHud {
   toggleThemes(): void {
     const opening = this.themePicker.hidden;
     this.themePicker.hidden = !opening;
-    this.themeToggle.setAttribute('aria-expanded', opening ? 'true' : 'false');
+    this.dock.setExpanded('themes', opening);
     if (opening) {
       this.closePolicies();
       this.closeViews();
@@ -512,7 +459,7 @@ export class GameHud {
   toggleViews(): void {
     const opening = this.viewPicker.hidden;
     this.viewPicker.hidden = !opening;
-    this.viewToggle.setAttribute('aria-expanded', opening ? 'true' : 'false');
+    this.dock.setExpanded('views', opening);
     if (opening) {
       this.closePolicies();
       this.closeThemes();
@@ -527,6 +474,17 @@ export class GameHud {
     this.help.toggle();
   }
 
+  /**
+   * Dice all'HUD che una scheda di selezione e' aperta.
+   *
+   * L'HUD non la possiede e non la disegna: gliene importa una cosa sola, ed e'
+   * che Escape e' uno e la sua catena sta qui. Due listener sullo stesso tasto
+   * sarebbero due ordini di priorita' che nessuno mette d'accordo.
+   */
+  setSelectionOpen(open: boolean): void {
+    this.selectionOpen = open;
+  }
+
   handleEscape(): boolean {
     switch (resolveEscapeTarget(
       !this.viewPicker.hidden,
@@ -536,6 +494,7 @@ export class GameHud {
       this.selected,
       this.viewActive,
       this.blockLocked,
+      this.selectionOpen,
     )) {
       // Chiude il picker e non la vista: sono due cose distinte, e il colpo dopo
       // e' quello che spegne la vista. Chi ha il pannello aperto sopra la citta'
@@ -559,6 +518,9 @@ export class GameHud {
         this.handlers.onCancelTool();
         this.paintSelection();
         this.paintToast();
+        return true;
+      case 'selection':
+        this.handlers.onClearSelection();
         return true;
       case 'lock':
         this.handlers.onReleaseBlock();
@@ -612,27 +574,9 @@ export class GameHud {
     this.commercePanel.appendChild(note);
   }
 
-  private createResource(resource: HudResource): HTMLElement {
-    const item = document.createElement('div');
-    item.className = 'resource-item';
-    item.appendChild(createHudIcon(RESOURCE_ICON[resource.id]));
-    const label = document.createElement('span');
-    label.className = 'resource-label';
-    label.textContent = resource.label;
-    const value = document.createElement('span');
-    value.className = 'resource-value';
-    const number = document.createElement('span');
-    const delta = document.createElement('span');
-    delta.className = 'resource-delta';
-    value.append(number, delta);
-    item.append(label, value);
-    this.resources.set(resource.id, { value: number, delta });
-    return item;
-  }
-
   private createPolicyDrawer(): HTMLElement {
     const drawer = document.createElement('aside');
-    drawer.className = 'policy-drawer hud-surface';
+    drawer.className = 'policy-drawer hud-surface hud-surface--panel';
     drawer.hidden = true;
     drawer.setAttribute('aria-label', 'City policies');
     const header = document.createElement('header');
@@ -687,7 +631,7 @@ export class GameHud {
 
   private createThemePicker(themes: readonly ThemeChoice[]): HTMLElement {
     const picker = document.createElement('aside');
-    picker.className = 'theme-picker hud-surface';
+    picker.className = 'theme-picker hud-surface hud-surface--panel';
     picker.hidden = true;
     picker.setAttribute('aria-label', 'Visual themes');
 
@@ -721,6 +665,7 @@ export class GameHud {
       label.textContent = theme.name;
       button.append(preview, label);
       this.themeButtons.set(theme.id, button);
+      this.themeTokens.set(theme.id, theme.tokens);
       grid.appendChild(button);
     }
     picker.appendChild(grid);
@@ -770,7 +715,7 @@ export class GameHud {
    */
   private createViewPicker(): HTMLElement {
     const picker = document.createElement('aside');
-    picker.className = 'view-picker hud-surface';
+    picker.className = 'view-picker hud-surface hud-surface--panel';
     picker.hidden = true;
     picker.setAttribute('aria-label', 'City views');
 
@@ -905,45 +850,26 @@ export class GameHud {
 
   private closePolicies(): void {
     this.policyDrawer.hidden = true;
-    this.policyToggle.setAttribute('aria-expanded', 'false');
+    this.dock.setExpanded('policies', false);
   }
 
   private closeViews(): void {
     this.viewPicker.hidden = true;
-    this.viewToggle.setAttribute('aria-expanded', 'false');
+    this.dock.setExpanded('views', false);
   }
 
   private closeThemes(): void {
     this.themePicker.hidden = true;
-    this.themeToggle.setAttribute('aria-expanded', 'false');
+    this.dock.setExpanded('themes', false);
   }
 
   private paint(model: GameHudModel): void {
-    for (const resource of model.resources) {
-      const elements = this.resources.get(resource.id);
-      if (elements === undefined) continue;
-      elements.value.textContent = resource.value;
-      elements.delta.textContent = resource.delta === '' ? '' : ` ${resource.delta}`;
-      elements.delta.dataset.tone = resource.tone;
-    }
-    model.catalysts.forEach((action, index) => paintAction(this.catalystButtons[index], action));
-    paintAction(this.expansionButton, model.expansion);
-    paintAction(this.terraceButton, model.terrace);
+    this.bar.paint(model);
+    this.dock.paint(model);
     for (const policy of model.policies) this.paintPolicy(policy);
     this.paintCommerce(model.commerce);
     for (const mode of model.tradeModes) this.paintTradeMode(mode, model.tradeConnected);
     this.paintDecision(model);
-
-    this.pauseButton.replaceChildren(createHudIcon(model.paused ? 'play' : 'pause'));
-    const pauseLabel = model.paused ? 'Resume simulation' : 'Pause simulation';
-    this.pauseButton.setAttribute('aria-label', pauseLabel);
-    this.pauseButton.dataset.tooltip = pauseLabel;
-    this.pauseButton.dataset.active = model.paused ? 'true' : 'false';
-    for (const [speed, button] of this.speedButtons) {
-      const active = !model.paused && model.speed === speed;
-      button.dataset.active = active ? 'true' : 'false';
-      button.setAttribute('aria-pressed', active ? 'true' : 'false');
-    }
     this.paintSelection();
     this.paintToast();
   }
@@ -1018,16 +944,7 @@ export class GameHud {
   }
 
   private paintSelection(): void {
-    this.catalystButtons.forEach((button, index) => {
-      const action = this.model.catalysts[index];
-      const active = this.selected.kind === 'catalyst' && action !== undefined && (
-        this.selected.id !== undefined
-          ? this.selected.id === action.catalystId
-          : this.selected.class === action.class
-      );
-      button.setAttribute('aria-pressed', active ? 'true' : 'false');
-    });
-    this.expansionButton.setAttribute('aria-pressed', this.selected.kind === 'expansion' ? 'true' : 'false');
+    this.dock.paintSelection(this.selected);
   }
 
   private paintToast(): void {

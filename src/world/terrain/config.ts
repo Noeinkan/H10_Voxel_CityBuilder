@@ -259,6 +259,49 @@ export const TERRAIN = {
  * `[minimo, alternative]` per i conteggi, come `TreeShape.trunk`.
  */
 export const LANDFORM = {
+  // --- Deformazione della sagoma ------------------------------------------
+
+  /**
+   * Le armoniche che deformano il raggio di un rilievo o di una conca.
+   *
+   * Un'ellisse esatta si riconosce a colpo d'occhio, e su un lago si riconosce
+   * anche da lontano: lo specchio e' l'unica superficie dell'isola senza grana
+   * ne' terrazzamento, quindi il suo bordo e' l'unica curva che si legga per
+   * intero. La deformazione della maschera (`warpAmount`) non lo aiuta — lavora
+   * su lunghezze d'onda di seicento voxel, mentre un laghetto ne misura
+   * cinquanta.
+   *
+   * Poche armoniche in funzione dell'angolo bastano: due ondulazioni piu' tre
+   * non hanno assi di simmetria, e con la fase estratta dal seme ogni elemento
+   * ha la propria sagoma. Non e' rumore, ed e' deliberato: di un rumore il
+   * gradiente si sa solo misurandolo, di una somma di armoniche si sa in forma
+   * chiusa (`SHAPE_WARP_LIPSCHITZ` in `outline.ts`), e senza quel numero la
+   * deformazione spenderebbe di nascosto il margine di Lipschitz.
+   *
+   * **L'ampiezza si paga in pendenza, non in raggio**, ed e' la deformazione
+   * che si spegne sul bordo (`outline.ts`) a renderlo possibile: la sagoma non
+   * sporge dal cerchio che dichiara, quindi non chiede al sito una spianata piu'
+   * larga. Alzare queste ampiezze alza le sponde dei laghi e i fianchi delle
+   * colline, e prima o poi il margine di Lipschitz del campo; non toglie siti.
+   */
+  shapeWarp: [
+    { harmonic: 2, amplitude: 0.12 },
+    { harmonic: 3, amplitude: 0.06 },
+  ],
+
+  /**
+   * Sale della sagoma: la deformazione ha un flusso suo, non quello che sceglie
+   * dove stanno gli elementi.
+   *
+   * Estraendola dallo stesso PRNG, ogni fase consumata slittava tutte le
+   * estrazioni successive: ritoccare un'ampiezza qui spostava le colline e
+   * cambiava quali siti ospitano un lago, cioe' l'isola intera. Con un flusso
+   * per elemento la sagoma resta l'unica cosa che cambia — ed e' anche
+   * l'affermazione che si vuole poter fare, «e' la stessa isola di prima, con
+   * una forma in pianta diversa».
+   */
+  shapeWarpSalt: 0x5a_60_ba_5a,
+
   // --- Lobi della costa ---------------------------------------------------
 
   /** Quanti lobi si aggiungono all'isola base. */
@@ -316,8 +359,16 @@ export const LANDFORM = {
    * e rilievo 76, una cupola larga un quarto sale di una dozzina di voxel —
    * sei celle di terreno sopra cio' che la circonda, quanto basta perche' la
    * fascia di bioma cambi e la vetta non sia piu' una sola.
+   *
+   * Come `basinSlope`, ha assorbito il costo della deformazione invece di
+   * scaricarlo sull'ampiezza: a pendenza ferma le colline sarebbero scese di un
+   * quinto, e una collina piu' bassa e' esattamente cio' che questo numero
+   * esiste per evitare. Un rilievo paga il tetto in forma chiusa e non il
+   * fattore misurato — sale su tutto il raggio, quindi non ha una fascia
+   * stretta su cui misurare — e se lo puo' permettere: il fianco di una cupola
+   * resta la meta' della sponda di un lago.
    */
-  moundSlope: 0.22,
+  moundSlope: 0.28,
 
   moundJitter: 0.5,
 
@@ -406,8 +457,21 @@ export const LANDFORM = {
    * E' anche il numero che si avvicina di piu' al tetto di Lipschitz, ed e'
    * l'unico posto in cui succede: la sponda di un lago **e'** una scarpata, e
    * il campo la porta perche' vale meno di una cella su due colonne.
+   *
+   * **E' salito con la deformazione, e non poteva fare altrimenti.** La sponda
+   * deformata scende un decimo piu' ripida di quella nominale, e quel decimo si
+   * paga in pendenza oppure in raggio. In raggio non si poteva: la conca
+   * nascerebbe piu' larga, e piu' larga vuol dire una spianata che l'isola non
+   * ha — misurato sui seed di riferimento, i laghi passano da sette su otto a
+   * cinque, e quello del seed 1337 sparisce. In pendenza si', perche' li' il
+   * margine c'e': misurato sul campo, il dislivello peggiore fra due colonne
+   * resta a 0,70 contro il voxel intero che il terreno a celle non tollera.
+   *
+   * E' anche il motivo per cui non basta scriverci un numero piu' alto: la
+   * sponda vera vale `basinSlope` esatti perche' `planBasins` divide per il
+   * fattore misurato della sagoma. Chi alza questo, alza la scarpata.
    */
-  basinSlope: 0.62,
+  basinSlope: 0.72,
 
   /**
    * Le tre fasce della conca, in frazioni del raggio: fondo piatto fino a
@@ -426,8 +490,37 @@ export const LANDFORM = {
   /** Corone su cui si misura il salto che il raccordo deve assorbire. */
   basinBlendRings: [0.8, 0.95],
 
-  /** Raggio massimo di una conca, in frazioni del raggio dell'isola. */
-  basinMaxRadius: 0.34,
+  /**
+   * Allungamento della conca: quanto il semiasse maggiore supera il minore.
+   *
+   * E' la meta' della sagoma che le armoniche non sanno dare. Una
+   * deformazione angolare fa insenature e promontori ma lascia il lago
+   * *centrato*, mentre uno specchio naturale ha quasi sempre una direzione —
+   * segue l'avvallamento che lo ospita. L'orientamento e' estratto a parte,
+   * altrimenti tutti i laghi dell'isola punterebbero a est.
+   *
+   * Non costa pendenza: a scendere piu' ripida e' la sponda sul lato **corto**,
+   * ed e' il semiasse minore quello che il budget vincola. Costa ingombro, e
+   * l'ingombro e' la cosa cara — a differenza delle armoniche, un allungamento
+   * porta il bordo della conca piu' in la' davvero, quindi chiede al sito una
+   * spianata piu' lunga. Un quinto e' quanto se ne puo' chiedere restando ai
+   * sette laghi su otto seed che l'isola tonda gia' dava.
+   */
+  basinStretch: [1, 0.2],
+
+  /**
+   * Raggio massimo di una conca, in frazioni del raggio dell'isola — sul
+   * semiasse maggiore, che e' l'ingombro vero.
+   *
+   * E' salito con l'allungamento e non con le armoniche: il semiasse minore
+   * resta quello di prima — `basinSlope` ha assorbito la deformazione — ma
+   * quello maggiore lo supera fino a `basinStretch`, e il tetto deve lasciargli
+   * posto o le conche allungate verrebbero scartate tutte. La corona resta
+   * all'asciutto per la sua ragione di sempre: dove il terreno scende troppo,
+   * il salto che il raccordo dovrebbe assorbire cresce con il raggio quanto la
+   * fascia che lo assorbe, e `fitRadius` rinuncia.
+   */
+  basinMaxRadius: 0.38,
 
   /**
    * Passate del punto fisso che trova il raggio della conca.
@@ -501,10 +594,94 @@ export const TERRACE = {
    * essere rifiutato.
    */
   maxStep: 8,
+
+  /**
+   * Di quanto la quota di una cella viene scossa prima di posarsi sulla scala,
+   * in frazione dell'**alzata oltre la cella**.
+   *
+   * E' il numero che toglie ai gradoni la faccia di curve di livello: senza, il
+   * ciglio cade dove il campo attraversa una quota tonda, e su una cupola sono
+   * cerchi concentrici. Con, lo stesso ciglio serpeggia — e serpeggia tanto piu'
+   * quanto il fianco e' dolce, perche' mezzo voxel di quota su una pendenza di un
+   * quinto vale due colonne e mezzo di scostamento in pianta.
+   *
+   * **Frazione dell'alzata oltre la cella, e non un'ampiezza assoluta**, perche'
+   * li' sta l'invariante: in pianura l'alzata *e'* la cella, quindi l'ampiezza e'
+   * zero e il terreno resta quello di prima — che e' anche l'unico posto dove la
+   * citta' cresce. Piu' su, due celle contigue distano meno di due voxel piu' due
+   * ampiezze, e sotto la meta' quel totale resta dentro la pedata: due celle non
+   * possono ancora scavallare piu' di un'alzata. Alzarlo oltre 0,5 rompe
+   * esattamente quella proprieta', e il terreno comincia a spezzarsi di due
+   * alzate.
+   */
+  jitter: 0.45,
+
+  /**
+   * Passo delle due ottave del disturbo, in celle, e quanto pesa la lunga.
+   *
+   * Due e non una: la lunga fa serpeggiare il ciglio per decine di colonne, la
+   * corta ne sbreccia il filo. Con la sola lunga la scarpata resta una curva
+   * liscia spostata; con la sola corta il bordo si sgrana e a questa scala si
+   * legge come sporcizia invece che come roccia.
+   */
+  jitterSpan: 11,
+  jitterDetail: 3,
+  jitterMix: 0.45,
+
+  jitterSalt: 0x7e_44_a5_0e,
 } as const;
 
 /**
- * Erbette, fiori e sassi: un voxel appoggiato sopra la superficie.
+ * I grigi della roccia: uno strato per gradone.
+ *
+ * **La roccia e' l'unico bioma che si guarda di taglio prima che dall'alto.**
+ * Sopra la fascia della collina l'alzata vale otto voxel, quindi di una cella si
+ * vede piu' parete che pianta, e una parete di un grigio solo e' una campitura
+ * alta quattro cubi — lo stesso difetto che le erbette tolgono al prato, alla
+ * scala della montagna.
+ *
+ * **Il passo e' l'alzata, non un numero suo.** Uno strato e' orizzontale e si
+ * vede dove il terreno lo taglia; il terreno lo taglia dove si terrazza, quindi
+ * il disegno del colore e quello dei gradoni sono la stessa cosa. Una banda che
+ * non coincidesse con il gradino cadrebbe a meta' parete, e il taglio
+ * orizzontale in mezzo al muro racconterebbe una quota che li' non c'e'.
+ *
+ * **Non c'e' variazione in pianta, ed e' deliberato.** Il primo tentativo
+ * spezzava la banda con delle vene di rumore: due grigi affiancati sulla stessa
+ * quota non raccontano niente, perche' su una roccia significherebbero due
+ * strati diversi. Un pianoro e' di un grigio solo perche' *lo e'*; a dargli
+ * varieta' ci sono i sassi della copertura e `TERRACE.jitter`, che rompe la
+ * regolarita' del ciglio invece di quella del colore.
+ */
+export const ROCK = {
+  /**
+   * I grigi, dal piu' chiaro al piu' scuro.
+   *
+   * Sono quelli del gruppo `concrete` piu' il primo degli asfalti: la roccia
+   * nuda e il cemento della citta' condividono la rampa da sempre, e questo e'
+   * l'unico posto in cui il terreno la percorre invece di prenderne un gradino.
+   */
+  tones: [
+    PALETTE_SLOTS.concretePale,
+    PALETTE_SLOTS.concreteLight,
+    PALETTE_SLOTS.concrete,
+    PALETTE_SLOTS.asphaltDark,
+  ] as const,
+
+  /**
+   * Quanti grigi fa la superficie. Il sottosuolo prende sempre il successivo,
+   * quindi la rampa e' lunga uno in piu': cosi' la fascia di superficie resta
+   * il bordo chiaro della parete che la porta, su ogni banda e non solo su una.
+   */
+  surfaceTones: 3,
+
+  /** Voxel di quota per banda: l'alzata della roccia, cioe' un gradone. */
+  bandHeight: TERRACE.maxStep,
+
+} as const;
+
+/**
+ * Erbette, fiori e sassi: una cella appoggiata sopra la superficie.
  *
  * **E' l'unica decorazione del terreno che non e' un oggetto.** Un albero ha una
  * cella sua, un'origine e un ingombro da non far collidere; qui non c'e' niente
@@ -513,14 +690,22 @@ export const TERRACE = {
  * qui il fatto che viaggia come un byte per colonna nel `ColumnBlock` invece che
  * come un record.
  *
- * Le densita' sono per colonna e sono basse di proposito: a un voxel per cubo di
- * terreno la scala e' quella giusta — un quarto della faccia superiore di una
- * cella — e bastano poche percentuali perche' il prato smetta di leggersi come
- * una campitura piatta. Piu' su, e il prato diventa un tappeto rumoroso.
+ * Quella cella non e' un cubo: il mondo ci scrive un marcatore, e lame, steli e
+ * sassi li disegna il mesher in prismi da 1/16. Qui restano le due sole
+ * decisioni che sono del terreno — quanta ne cresce e di che tinta.
  */
 export const GROUND_COVER = {
-  /** Probabilita' per colonna, in ordine di `BIOME`. */
-  density: [0, 0.02, 0.05, 0.055, 0.05, 0.035] as const,
+  /**
+   * Probabilita' per colonna, in ordine di `BIOME`.
+   *
+   * **Sono scese di circa il quaranta per cento da quando la copertura ha una
+   * forma.** Un cubo pieno grande un quarto della faccia di una cella di terreno
+   * non si legge come un ciuffo a nessuna densita': si legge come un coriandolo,
+   * e l'unico modo di farne un prato era metterne tanti. Tre lame raccontano
+   * l'erba da sole, quindi la densita' e' tornata a fare il suo mestiere — dire
+   * quanto e' fitto il prato invece di supplire alla forma che mancava.
+   */
+  density: [0, 0.012, 0.03, 0.034, 0.03, 0.02] as const,
 
   /**
    * Quota della copertura fra quelle possibili, per bioma: la seconda voce e' la
@@ -551,7 +736,36 @@ export const GROUND_COVER = {
     PALETTE_SLOTS.metalBrass, //     plain
     PALETTE_SLOTS.brickLight, //     forest
     PALETTE_SLOTS.stone, //          hill
-    PALETTE_SLOTS.concretePale, //   rock
+    // Il sasso sulla roccia e' il piu' chiaro della palette e non il primo
+    // grigio della rampa: da quando la parete percorre `ROCK.tones`, un
+    // `concretePale` capitava sulla banda del proprio colore e spariva.
+    PALETTE_SLOTS.concreteWhite, //  rock
+  ] as const,
+
+  /**
+   * Tinta del solco coltivato, per bioma della colonna che lo porta.
+   *
+   * **Non e' una copertura spontanea e non ha una densita'.** Erba, fiori e sassi
+   * escono da un hash per colonna; un solco lo posa un lotto agricolo, che sa
+   * dove comincia e dove finisce. Qui c'e' solo la tinta, per la stessa ragione
+   * per cui c'e' quella dell'erbetta: la tabella derivata di `groundcover.ts` e'
+   * indicizzata dalla **palette del terreno**, cosi' il mesher legge cosa cresce
+   * dove senza sapere che esistono i biomi ne' i lotti.
+   *
+   * L'ottone in pianura non e' un vezzo: e' la stessa tinta del fiore, cioe' il
+   * solo tono caldo che la palette concede a un terreno verde, e a distanza
+   * isometrica e' quello che legge come grano maturo. Sulla collina il verde
+   * chiaro dice invece un raccolto ancora acerbo, che e' come stanno i campi in
+   * quota. Spiaggia, roccia e oceano valgono 0: li' non si coltiva, e un lotto
+   * non ci arriva perche' `plotPlan` non li ammette.
+   */
+  cropTone: [
+    0, //                            ocean
+    0, //                            beach
+    PALETTE_SLOTS.metalBrass, //     plain  — su `grass`, grano maturo
+    PALETTE_SLOTS.grassLight, //     forest — su `grassDark`
+    PALETTE_SLOTS.grassPale, //      hill   — su `grassLight`
+    0, //                            rock
   ] as const,
 
   /** Sale del seme: tiene la copertura scorrelata da alberi e sporgenze. */

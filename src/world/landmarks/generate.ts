@@ -2,7 +2,14 @@ import type { CatalystId } from '../../sim';
 import type { Facing } from '../streets/streetGrid';
 import type { VoxelStamp } from '../buildings/stamp';
 import { hashCoords } from '../rng';
-import { LANDMARK, landmarkOf, maxStageOf, variantsOf, type LandmarkRecipe } from './config';
+import {
+  LANDMARK,
+  landmarkOf,
+  maxStageOf,
+  variantsOf,
+  type BerthKind,
+  type PartsRecipe,
+} from './config';
 import { createCanvas, drawPart, orientPart, orientedSpan } from './parts';
 
 /**
@@ -51,6 +58,76 @@ export interface LandmarkRequest {
    * posizione nel mondo.
    */
   readonly seed?: number;
+
+  /**
+   * Vero se la struttura si posa su un tetto invece che sul terreno.
+   *
+   * Seleziona un'altra ricetta per lo stesso ruolo — non un altro esemplare —
+   * ed e' l'unica scelta di forma di questo dominio che dipende dal luogo
+   * invece che dal seme.
+   */
+  readonly aloft?: boolean;
+}
+
+/**
+ * Rotazione che ogni verso applica al canonico, in radianti.
+ *
+ * Deriva da `orientPart` e non e' una seconda convenzione: est lascia `+x`
+ * dov'e', ovest lo specchia, nord lo porta su `+y`, sud su `-y`. Sono gli stessi
+ * quattro casi di quel `switch`, letti come angoli invece che come indici.
+ */
+const FACING_ROTATION: readonly number[] = [0, Math.PI, Math.PI / 2, -Math.PI / 2];
+
+/** Un punto d'ormeggio gia' portato in coordinate di mondo. */
+export interface WorldMooring {
+  /** Centro della colonna, non il suo spigolo: qui ci sta un mezzo, non un voxel. */
+  readonly x: number;
+  readonly y: number;
+  /** Quota dal piano finito della struttura. */
+  readonly z: number;
+  readonly berth: BerthKind;
+  /** Verso in cui il mezzo guarda nel mondo, in radianti. */
+  readonly heading: number;
+}
+
+const NO_MOORINGS: readonly WorldMooring[] = [];
+
+/**
+ * Gli ormeggi di una struttura, portati sul verso vero e sulla sua posizione.
+ *
+ * L'ancora del punto passa da `orientPart` come quella del click, e per la
+ * stessa ragione: e' la stessa rotazione, e riscriverla qui con un altro segno e'
+ * il modo classico di far divergere le due. Ne esce un punto sul **centro** della
+ * colonna, perche' quello che ci sta sopra e' un mezzo largo tre voxel e non un
+ * cubo.
+ */
+export function landmarkMoorings(
+  kind: CatalystId,
+  facing: Facing,
+  originX: number,
+  originY: number,
+  aloft = false,
+): readonly WorldMooring[] {
+  const recipe = landmarkOf(kind, aloft);
+  if (recipe?.moorings === undefined) return NO_MOORINGS;
+
+  const [long, short] = recipe.span;
+  const turn = FACING_ROTATION[facing] ?? 0;
+  return recipe.moorings.map((mooring) => {
+    const spot = orientPart(
+      { kind: 0, x: mooring.x, y: mooring.y, w: 1, h: 1, z: 0, height: 1, palette: 0, surface: 0 },
+      facing,
+      long,
+      short,
+    );
+    return {
+      x: originX + spot.x + 0.5,
+      y: originY + spot.y + 0.5,
+      z: mooring.z,
+      berth: mooring.berth,
+      heading: mooring.heading + turn,
+    };
+  });
 }
 
 /**
@@ -60,21 +137,30 @@ export interface LandmarkRequest {
  * che `landmarkFacing` usa per il verso di ripiego, e senza sale un modulo
  * leggerebbe i bit bassi di una sequenza gia' impegnata.
  */
-export function variantIndexOf(recipe: LandmarkRecipe, seed: number): number {
+export function variantIndexOf(recipe: PartsRecipe, seed: number): number {
   const count = variantsOf(recipe).length;
   return hashCoords(LANDMARK.variantSalt, seed, 0) % count;
 }
 
+/** Ingombro in pianta e in quota di una ricetta su un verso. */
+export function recipeSpan(recipe: PartsRecipe, facing: Facing): {
+  sizeX: number;
+  sizeY: number;
+  sizeZ: number;
+} {
+  const [long, short] = recipe.span;
+  return { ...orientedSpan(facing, long, short), sizeZ: recipe.height };
+}
+
 /** Ingombro in pianta di un ruolo su un verso, o null se non ha una ricetta. */
-export function landmarkSpan(kind: CatalystId, facing: Facing): {
+export function landmarkSpan(kind: CatalystId, facing: Facing, aloft = false): {
   sizeX: number;
   sizeY: number;
   sizeZ: number;
 } | null {
-  const recipe = landmarkOf(kind);
+  const recipe = landmarkOf(kind, aloft);
   if (recipe === null) return null;
-  const [long, short] = recipe.span;
-  return { ...orientedSpan(facing, long, short), sizeZ: recipe.height };
+  return recipeSpan(recipe, facing);
 }
 
 /**
@@ -86,13 +172,25 @@ export function landmarkSpan(kind: CatalystId, facing: Facing): {
  * verso vero e si sottrae, cosi' il record del registry conserva la stessa
  * convenzione degli edifici — `x, y` e' l'angolo minimo dell'impronta.
  */
-export function landmarkOrigin(kind: CatalystId, facing: Facing, x: number, y: number): {
-  x: number;
-  y: number;
-} | null {
-  const recipe = landmarkOf(kind);
+export function landmarkOrigin(
+  kind: CatalystId,
+  facing: Facing,
+  x: number,
+  y: number,
+  aloft = false,
+): { x: number; y: number } | null {
+  const recipe = landmarkOf(kind, aloft);
   if (recipe === null) return null;
+  return recipeOrigin(recipe, facing, x, y);
+}
 
+/** Lo stesso conto di `landmarkOrigin`, per chi la ricetta ce l'ha gia' in mano. */
+export function recipeOrigin(
+  recipe: PartsRecipe,
+  facing: Facing,
+  x: number,
+  y: number,
+): { x: number; y: number } {
   const [long, short] = recipe.span;
   const [ax, ay] = recipe.anchor;
   // L'ancora e' un punto, cioe' una parte di lato uno: orientarla come una
@@ -108,7 +206,7 @@ export function landmarkOrigin(kind: CatalystId, facing: Facing, x: number, y: n
 }
 
 /** Stadio che un certo numero di edifici vicini sblocca. */
-export function stageForBuildings(recipe: LandmarkRecipe, buildings: number): number {
+export function stageForBuildings(recipe: PartsRecipe, buildings: number): number {
   let stage = 0;
   for (let i = 1; i < recipe.stages.length; i++) {
     if (buildings >= recipe.stages[i]) stage = i;
@@ -126,16 +224,55 @@ export function stageForBuildings(recipe: LandmarkRecipe, buildings: number): nu
  * `Builder.upgrade` sfrutta senza saperlo.
  */
 export function generateLandmark(request: LandmarkRequest): VoxelStamp | null {
-  const recipe = landmarkOf(request.kind);
+  const recipe = landmarkOf(request.kind, request.aloft);
   if (recipe === null) return null;
+  return generateFromRecipe(recipe, request);
+}
 
+/** Cosa serve a disegnare una ricetta: lo stadio, il verso, l'esemplare. */
+export interface RecipeRequest {
+  readonly stage: number;
+  readonly facing: Facing;
+  readonly seed?: number;
+
+  /**
+   * Primo stadio da disegnare. Assente vale zero, cioe' la sagoma cumulativa.
+   *
+   * **Serve a chi accoda un avanzamento, non a chi lo misura.** Gli stadi sono
+   * cumulativi, quindi la sagoma dello stadio n **contiene** quella dello stadio
+   * n-1 — voxel gia' scritti, che riscrivere non cambia niente e costa. Su un
+   * landmark alto venti voxel il costo non si vede; su un'arcologia alta
+   * centonovantadue vuol dire riportare in coda l'intera struttura a ogni
+   * stadio, e il tetto di chunk sporchi la scarterebbe in silenzio.
+   *
+   * Chiedere `from = stage` da' quindi il **delta**, che e' esattamente cio' che
+   * manca sul mondo. Chi invece deve misurare l'ingombro finale — la maschera
+   * dell'opera di terra, la finestra di cielo — lo lascia a zero, perche' li' la
+   * domanda e' sulla forma intera.
+   */
+  readonly from?: number;
+}
+
+/**
+ * Lo stamp di una ricetta di parti a un certo stadio.
+ *
+ * E' il ciclo che sta sotto a `generateLandmark` e a `generateArcology`, e sta
+ * qui per una ragione sola: la regola degli **stadi cumulativi** — «disegna da
+ * zero fino a `stage`, dentro un riquadro che e' sempre quello finale» — e'
+ * l'invariante su cui poggiano sia la cancellazione (che non ha mai niente da
+ * togliere) sia l'ingombro riservato (che non puo' restare bloccato a meta').
+ * Scritta due volte divergerebbe, e la divergenza si vedrebbe come una sagoma a
+ * pezzi mille tick dopo il piazzamento.
+ */
+export function generateFromRecipe(recipe: PartsRecipe, request: RecipeRequest): VoxelStamp {
   const [long, short] = recipe.span;
   const { sizeX, sizeY } = orientedSpan(request.facing, long, short);
   const canvas = createCanvas(sizeX, sizeY, recipe.height);
 
   const stage = Math.min(Math.max(request.stage, 0), maxStageOf(recipe));
+  const from = Math.min(Math.max(request.from ?? 0, 0), stage);
   const variant = variantsOf(recipe)[variantIndexOf(recipe, request.seed ?? 0)];
-  for (let s = 0; s <= stage; s++) {
+  for (let s = from; s <= stage; s++) {
     for (const part of recipe.parts[s]) {
       drawPart(canvas, orientPart(part, request.facing, long, short));
     }
@@ -156,8 +293,9 @@ export function generateLandmark(request: LandmarkRequest): VoxelStamp | null {
     anchorZ: 0,
     voxels: canvas.voxels,
     surfaces: canvas.surfaces,
-    // Un landmark non ha fasce: non e' costruito da una regola che sale, e la
-    // comparsa a budget scorre l'array lineare senza consultare questo indice.
+    // Una ricetta di parti non ha fasce: non e' costruita da una regola che
+    // sale, e la comparsa a budget scorre l'array lineare senza consultare
+    // questo indice.
     bandStarts: [0, recipe.height],
   };
 }

@@ -3,6 +3,7 @@ import {
   TYPOLOGIES,
   typologyById,
   type ClassProfile,
+  type LotRole,
   type TypologyDefinition,
   type TypologyShape,
 } from './config';
@@ -35,6 +36,16 @@ export interface TypologyQuery {
   readonly profile: LocalUrbanProfile | null;
   /** true se la colonna affaccia sul mare entro `BUILDER.coastalRadius`. */
   readonly coastal: boolean;
+  /**
+   * Dove il lotto cade dentro il proprio isolato, quando un lotto c'e'.
+   *
+   * Assente per chi chiede una forma senza un posto — una scena di prova, la
+   * rigenerazione di ripiego — e in quel caso le righe che lo dichiarano non
+   * qualificano. Non e' una condizione «sul luogo» nel senso di `demandsPlace`:
+   * quello parla del profilo della simulazione, che puo' mancare, mentre la
+   * maglia stradale c'e' sempre.
+   */
+  readonly lotRole?: LotRole;
 }
 
 /** Tipologia piu' specifica fra quelle che il luogo accetta. */
@@ -62,6 +73,7 @@ function accepts(candidate: TypologyDefinition, query: TypologyQuery): boolean {
   if (candidate.mixed !== undefined && candidate.mixed !== query.mixed) return false;
   if (candidate.minLevel !== undefined && query.level < candidate.minLevel) return false;
   if (candidate.coastal === true && !query.coastal) return false;
+  if (candidate.lotRole !== undefined && candidate.lotRole !== query.lotRole) return false;
 
   const profile = query.profile;
   if (profile === null) {

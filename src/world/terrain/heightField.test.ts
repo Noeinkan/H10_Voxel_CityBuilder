@@ -202,6 +202,46 @@ describe('HeightField — regolarita’', () => {
     }
   });
 
+  /**
+   * E' il difetto da cui nasce `outline.ts`, misurato dove si vedeva: sullo
+   * specchio. L'acqua e' l'unica superficie dell'isola senza grana ne'
+   * terrazzamento, quindi il suo bordo e' l'unica curva che si legga per
+   * intero — e una circonferenza esatta si riconosce da qualunque distanza.
+   */
+  it('il bordo di un lago non e’ una circonferenza', () => {
+    const field = new HeightField(1337, SHAPE);
+    const columns: { x: number; y: number }[] = [];
+    for (let y = 0; y < 512; y++) {
+      for (let x = 0; x < 512; x++) {
+        const level = field.waterLevelAt(x, y);
+        if (level > TERRAIN.seaLevel && field.heightAt(x, y) < level) columns.push({ x, y });
+      }
+    }
+    expect(columns.length).toBeGreaterThan(256);
+
+    let sumX = 0;
+    let sumY = 0;
+    for (const column of columns) {
+      sumX += column.x;
+      sumY += column.y;
+    }
+    const centreX = sumX / columns.length;
+    const centreY = sumY / columns.length;
+
+    // Il raggio dello specchio in sedici direzioni: se fosse un cerchio
+    // sarebbero sedici numeri uguali.
+    const sectors = new Array<number>(16).fill(0);
+    for (const column of columns) {
+      const dx = column.x - centreX;
+      const dy = column.y - centreY;
+      const angle = Math.atan2(dy, dx) + Math.PI;
+      const sector = Math.min(15, Math.floor((angle / (Math.PI * 2)) * 16));
+      sectors[sector] = Math.max(sectors[sector], Math.sqrt(dx * dx + dy * dy));
+    }
+    expect(Math.min(...sectors)).toBeGreaterThan(0);
+    expect(Math.max(...sectors) / Math.min(...sectors)).toBeGreaterThan(1.15);
+  });
+
   it('la quota massima dell’isola arriva in fascia rocciosa, per ogni seed', () => {
     for (const seed of SEEDS) {
       const field = new HeightField(seed, SHAPE);

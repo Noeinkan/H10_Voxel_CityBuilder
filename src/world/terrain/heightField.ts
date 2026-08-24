@@ -2,7 +2,6 @@ import { createNoise2D, type NoiseFunction2D } from 'simplex-noise';
 import { hashCoords, mulberry32 } from '../rng';
 import { TERRAIN } from './config';
 import {
-  ellipseRatio,
   lakeLevelAt,
   moundRise,
   planBasins,
@@ -13,6 +12,7 @@ import {
   type Lobe,
   type Mound,
 } from './landform';
+import { outlineRatio } from './outline';
 import type { IslandShape } from './region';
 
 /**
@@ -263,9 +263,7 @@ export class HeightField {
    */
   inBasinAt(x: number, y: number): boolean {
     for (const basin of this.basins) {
-      if (ellipseRatio(x, y, basin.centreX, basin.centreY, basin.radiusX, basin.radiusY) <= 1) {
-        return true;
-      }
+      if (outlineRatio(basin, x, y) <= 1) return true;
     }
     return false;
   }

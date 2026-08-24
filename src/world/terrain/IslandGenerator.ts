@@ -19,7 +19,7 @@ import {
 } from './columnBlock';
 import { treeAt, treeOrigin, treeSpec, treeTop, writeTree } from './decor';
 import { BIOME, BIOME_STRATA, TERRAIN, TREE_DECOR, WATER_IDS } from './config';
-import { coverAt, coverTone } from './groundcover';
+import { COVER, coverAt } from './groundcover';
 import { HeightField } from './heightField';
 import {
   ledgeAt,
@@ -30,6 +30,7 @@ import {
   writeLedge,
 } from './ledges';
 import { chunkSpanOf, shapeFromRegion, type IslandShape, type Region } from './region';
+import { rockBandAt, rockSubsoil, rockSurface } from './rockTone';
 import { isCliff } from './terrace';
 import { TerrainMap } from './TerrainMap';
 import { classifyWater } from './waterClass';
@@ -448,6 +449,13 @@ export function writeBlockColumns(
     const biome = block.biomes[i];
     const strata = BIOME_STRATA[biome];
 
+    // La roccia e' l'unico bioma che non ha una tinta sola: le sue pareti si
+    // guardano di taglio, e un grigio solo alto quattro cubi e' una campitura.
+    // Lo strato esce dalla quota — nessun dato in piu' nel blocco.
+    const band = biome === BIOME.rock ? rockBandAt(top) : 0;
+    const surface = biome === BIOME.rock ? rockSurface(band) : strata.surface;
+    const subsoil = biome === BIOME.rock ? rockSubsoil(band) : strata.subsoil;
+
     // Una colonna e' tre corse di terreno piu' due d'acqua, non trenta voxel
     // indipendenti: gli strati sono contigui per costruzione, quindi tagliarli
     // ai due confini di `STRATA_DEPTH` scrive lo stesso mondo di
@@ -455,8 +463,8 @@ export function writeBlockColumns(
     const surfaceZ = Math.max(0, top - STRATA_DEPTH.surface);
     const subsoilZ = Math.max(0, top - STRATA_DEPTH.subsoil);
     written += world.fillColumn(x, y, 0, subsoilZ, strata.deep);
-    written += world.fillColumn(x, y, subsoilZ, surfaceZ, strata.subsoil);
-    written += world.fillColumn(x, y, surfaceZ, top, strata.surface);
+    written += world.fillColumn(x, y, subsoilZ, surfaceZ, subsoil);
+    written += world.fillColumn(x, y, surfaceZ, top, surface);
 
     // L'acqua chiude ogni colonna che finisce sotto il proprio specchio: e' cio'
     // che circonda l'isola invece di lasciare una fossa vuota, ed e' anche cio'
@@ -475,11 +483,13 @@ export function writeBlockColumns(
       continue;
     }
 
-    // Il ciuffo d'erba sta **sopra** la colonna, come un albero: un voxel solo,
-    // e solo dove la colonna emerge.
-    const tone = coverTone(block.cover[i], biome);
-    if (tone !== 0) {
-      world.setBlock(x, y, top, tone);
+    // Il ciuffo d'erba sta **sopra** la colonna, come un albero: una cella sola,
+    // e solo dove la colonna emerge. Non porta una tinta perche' non e' un cubo:
+    // il mesher toglie il marcatore dal volume e ci disegna lame, steli e sassi
+    // in prismi da 1/16, prendendo il tono dal terreno che ha gia' sotto.
+    const cover = block.cover[i];
+    if (cover !== COVER.none) {
+      world.setCoverMark(x, y, top, cover);
       written++;
     }
   }

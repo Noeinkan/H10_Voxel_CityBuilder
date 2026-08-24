@@ -3,6 +3,7 @@ import { BALANCE } from './balance';
 import { BUILDING_CLASS, type BuildingClass } from './classes';
 import { resolveCommerce } from './commerce';
 import { decisionAt } from './decisions';
+import { FARM_KIND, farmUpkeepOf, farmWorkersOf, harvestOf } from './farms';
 import { resolveWeights, type Weights } from './policies';
 import { nextState, unitOf } from './rng';
 import type { Resource, SimState } from './SimState';
@@ -30,10 +31,17 @@ import { resolveExternalTrade, tradeLinksOf } from './trade';
  * produzione di questo tick e' gia' mangiabile e gia' vendibile in questo tick,
  * e la fame che ne segue pesa sulla popolazione dello stesso tick.
  *
- * **Due catene, un bacino.** Industria e commercio competono per la stessa
- * forza lavoro e si passano gli stessi materiali. E' quella competizione — non
- * due bilanci separati — a rendere leggibile la differenza fra una citta' di
- * fabbriche e una di mercati.
+ * **Tre catene, un bacino.** Industria, commercio e agricoltura competono per la
+ * stessa forza lavoro; le prime due si passano anche gli stessi materiali. E'
+ * quella competizione — non tre bilanci separati — a rendere leggibile la
+ * differenza fra una citta' di fabbriche, una di mercati e una che deve prima di
+ * tutto darsi da mangiare.
+ *
+ * **Il cibo non esce piu' dalla fabbrica.** Lo producono i lotti agricoli e le
+ * torri idroponiche, che il mondo dichiara con `addFarm`: e' l'unica risorsa che
+ * chiede **terra** invece che desiderabilita', ed e' quello a darle un posto
+ * sulla mappa. Una torre e' industria convertita — conta in `buildingCounts` e
+ * in `farmCounts` insieme — quindi produrre cibo in verticale costa materiali.
  *
  * **Uso misto.** Un edificio misto conta una volta sotto il suo uso primario e
  * una frazione (`mixedUse.secondaryShare`) sotto il secondo. Il bilancio non sa
@@ -63,17 +71,32 @@ export function tick(state: SimState, terrainMap: TerrainMap): SimState {
 
   // --- Lavoro --------------------------------------------------------------
   //
-  // Un solo bacino per due catene: la quota di organico e' condivisa, quindi
+  // Un solo bacino per tre catene: la quota di organico e' condivisa, quindi
   // aprire negozi mentre le fabbriche sono a corto di braccia rallenta anche
-  // quelle. E' la tensione che rende una scelta il rapporto fra le due.
+  // quelle — e adesso rallenta pure il raccolto. E' la tensione che rende una
+  // scelta il rapporto fra le tre.
+  //
+  // **Una torre non e' anche una fabbrica.** Chi porta la specializzazione
+  // `farming` sta in `buildingCounts[industrial]` per l'uso del suolo e in
+  // `farmCounts[tower]` per cio' che produce: qui va tolto dall'industria che
+  // fa materiali, o pagherebbe due volte l'organico e renderebbe due volte.
 
-  const workersNeeded = industrial * BALANCE.work.workersPerProduction +
-    commercial * BALANCE.commerce.workersPerCommercial;
+  const farmCounts = state.farmCounts;
+  const towers = farmCounts[FARM_KIND.tower] ?? 0;
+  const materialIndustry = Math.max(0, industrial - towers);
+
+  const workersNeeded = materialIndustry * BALANCE.work.workersPerProduction +
+    commercial * BALANCE.commerce.workersPerCommercial +
+    farmWorkersOf(farmCounts);
   const workersAvailable = population * BALANCE.work.workforceShare;
   const staffing = workersNeeded > 0 ? Math.min(1, workersAvailable / workersNeeded) : 0;
 
-  const foodProduced = industrial * BALANCE.food.perProduction * staffing;
-  const materialsProduced = industrial * weights.productionYield * staffing;
+  // La scomposizione e non il totale: la stessa aritmetica serve al bilancio e
+  // al referto che l'HUD mostra, e due conti separati divergerebbero.
+  const grown = harvestOf(farmCounts, staffing);
+  let foodProduced = 0;
+  for (const yielded of grown) foodProduced += yielded;
+  const materialsProduced = materialIndustry * weights.productionYield * staffing;
 
   // --- Cibo ----------------------------------------------------------------
 
@@ -109,7 +132,10 @@ export function tick(state: SimState, terrainMap: TerrainMap): SimState {
     (sum, id) => sum + BALANCE.gameplay.policy[id].upkeep,
     0,
   );
-  const upkeep = civicUpkeep + policyUpkeep;
+  // La torre idroponica e' l'unico produttore di cibo che costa fondi per tick:
+  // e' cio' che le impedisce di essere la risposta a tutto appena il suolo
+  // stringe. Campo e frutteto valgono zero e la somma li attraversa gratis.
+  const upkeep = civicUpkeep + policyUpkeep + farmUpkeepOf(farmCounts);
   const income = population * BALANCE.funds.taxPerResident + commerce.revenue;
   const fundsAvailable = state.funds.stock + income;
   const upkeepPaid = Math.min(upkeep, fundsAvailable);
@@ -166,6 +192,27 @@ export function tick(state: SimState, terrainMap: TerrainMap): SimState {
     funds: moved(state.funds, finiteStock(trade.fundsStock)),
     satisfaction,
     commerce,
+    // I sei numeri erano gia' tutti qui: venivano calcolati, usati per il saldo
+    // e buttati via una riga dopo. Tenerli e' cio' che permette all'HUD di dire
+    // **perche'** i fondi scendono invece che soltanto di quanto.
+    flows: {
+      tax: population * BALANCE.funds.taxPerResident,
+      retail: commerce.revenue,
+      trade: trade.funds,
+      civic: civicUpkeep,
+      policies: policyUpkeep,
+      farms: farmUpkeepOf(farmCounts),
+      paid: upkeepPaid,
+    },
+    // Stessa mossa di `flows`, sull'altra risorsa che ha piu' di una sorgente.
+    // Il raccolto per produttore era gia' qui — serve al bilancio — e tenerlo e'
+    // cio' che permette all'HUD di dire **da dove viene** il cibo invece che
+    // soltanto quanto ce n'e'.
+    harvest: {
+      grown,
+      imported: trade.food,
+      eaten: foodConsumed,
+    },
     trade: {
       connected: trade.connected,
       links: trade.links,

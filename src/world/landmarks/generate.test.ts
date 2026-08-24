@@ -2,10 +2,21 @@ import { describe, expect, it } from 'vitest';
 import { CATALYSTS, type CatalystId } from '../../sim';
 import { PALETTE_SIZE } from '../../engine/paletteSlots';
 import { FACING, type Facing } from '../streets/streetGrid';
-import { solidCount, STAMP_EMPTY, type VoxelStamp } from '../buildings/stamp';
-import { LANDMARKS, maxStageOf, variantsOf, type LandmarkRecipe } from './config';
+import { solidCount, stampFootprint, STAMP_EMPTY, type VoxelStamp } from '../buildings/stamp';
+import {
+  BERTH,
+  LANDMARK,
+  LANDMARKS,
+  SKYPORT,
+  hasAloftRecipe,
+  landmarkOf,
+  maxStageOf,
+  variantsOf,
+  type LandmarkRecipe,
+} from './config';
 import {
   generateLandmark,
+  landmarkMoorings,
   landmarkOrigin,
   landmarkSpan,
   stageForBuildings,
@@ -336,6 +347,150 @@ describe('catalogo dei landmark', () => {
     }
   });
 
+  it('gli ormeggi cadono dentro l ingombro dichiarato', () => {
+    for (const recipe of RECIPES) {
+      const [long, short] = recipe.span;
+      for (const mooring of recipe.moorings ?? []) {
+        expect({ kind: recipe.kind, ...inside(mooring, long, short, recipe.height) })
+          .toEqual({ kind: recipe.kind, x: true, y: true, z: true });
+      }
+    }
+  });
+
+  it('una barca ormeggia sull acqua, non sulla banchina', () => {
+    // **E' l'invariante che ha ridato il mare ai porti.** L'opera di terra si
+    // getta solo dove la ricetta poggia (`stampFootprint` fino a `groundBand`);
+    // un ormeggio su una di quelle colonne verrebbe quindi riempito di pietra, e
+    // la barca si ritroverebbe in mezzo al molo. Vale su **ogni** esemplare,
+    // perche' e' il seme a sceglierlo e nessuno sceglie il proprio.
+    const afloat: readonly string[] = [BERTH.vessel, BERTH.ferry, BERTH.cargo];
+
+    for (const recipe of RECIPES) {
+      const wet = (recipe.moorings ?? []).filter((mooring) => afloat.includes(mooring.berth));
+      if (wet.length === 0) continue;
+
+      for (let v = 0; v < variantsOf(recipe).length; v++) {
+        const seed = seedForVariant(recipe, v);
+        const stamp = generateLandmark({
+          kind: recipe.kind,
+          stage: maxStageOf(recipe),
+          facing: FACING.east,
+          seed,
+        })!;
+        const ground = stampFootprint(stamp, LANDMARK.groundBand);
+
+        for (const mooring of wet) {
+          expect({
+            kind: `${recipe.kind}/${variantsOf(recipe)[v].name}`,
+            at: `${mooring.x},${mooring.y}`,
+            built: ground[mooring.y * stamp.sizeX + mooring.x] === 1,
+          }).toEqual({
+            kind: `${recipe.kind}/${variantsOf(recipe)[v].name}`,
+            at: `${mooring.x},${mooring.y}`,
+            built: false,
+          });
+        }
+      }
+    }
+  });
+
+  it('ruotare porta gli ormeggi con se, ingombro e prua compresi', () => {
+    for (const recipe of RECIPES) {
+      if (recipe.moorings === undefined) continue;
+      for (const facing of ALL_FACINGS) {
+        const span = landmarkSpan(recipe.kind, facing)!;
+        const moorings = landmarkMoorings(recipe.kind, facing, 100, 200);
+        expect(moorings, recipe.kind).toHaveLength(recipe.moorings.length);
+
+        for (const mooring of moorings) {
+          expect({
+            kind: `${recipe.kind} ${facing}`,
+            x: mooring.x > 100 && mooring.x < 100 + span.sizeX,
+            y: mooring.y > 200 && mooring.y < 200 + span.sizeY,
+          }).toEqual({ kind: `${recipe.kind} ${facing}`, x: true, y: true });
+        }
+      }
+
+      // Il mezzo gira con la struttura: est e nord non possono dare la stessa
+      // prua, o meta' dei moli avrebbe le barche di traverso.
+      const east = landmarkMoorings(recipe.kind, FACING.east, 0, 0)[0];
+      const north = landmarkMoorings(recipe.kind, FACING.north, 0, 0)[0];
+      expect(north.heading - east.heading).toBeCloseTo(Math.PI / 2, 9);
+    }
+  });
+});
+
+describe('scalo in quota', () => {
+  it('e una ricetta a se, non un esemplare dell aeroporto', () => {
+    expect(hasAloftRecipe('airport')).toBe(true);
+    expect(hasAloftRecipe('port')).toBe(false);
+    expect(landmarkOf('airport', true)).toBe(SKYPORT);
+    expect(landmarkOf('airport')).not.toBe(SKYPORT);
+    expect(landmarkOf('port', true)).toBeNull();
+  });
+
+  it('sta su un tetto: l ingombro non supera l impronta massima di un edificio', () => {
+    // `MAX_FOOTPRINT` e' otto, e un tetto non e' mai piu' largo di cosi': una
+    // ricetta piu' grande sarebbe forma scritta e mai posabile.
+    expect(SKYPORT.span[0]).toBeLessThanOrEqual(8);
+    expect(SKYPORT.span[1]).toBeLessThanOrEqual(8);
+  });
+
+  it('ogni parte sta dentro l ingombro, e gli stadi sono cumulativi', () => {
+    const [long, short] = SKYPORT.span;
+    for (const stage of SKYPORT.parts) {
+      for (const part of stage) {
+        const bounds = partBounds(part);
+        expect(bounds.x0).toBeGreaterThanOrEqual(0);
+        expect(bounds.y0).toBeGreaterThanOrEqual(0);
+        expect(bounds.z0).toBeGreaterThanOrEqual(0);
+        expect(bounds.x1).toBeLessThan(long);
+        expect(bounds.y1).toBeLessThan(short);
+        expect(bounds.z1).toBeLessThan(SKYPORT.height);
+      }
+    }
+
+    for (let stage = 1; stage <= maxStageOf(SKYPORT); stage++) {
+      const before = solidCount(
+        generateLandmark({ kind: 'airport', stage: stage - 1, facing: FACING.east, aloft: true })!,
+      );
+      const after = solidCount(
+        generateLandmark({ kind: 'airport', stage, facing: FACING.east, aloft: true })!,
+      );
+      expect(after).toBeGreaterThan(before);
+    }
+  });
+
+  it('ormeggia dirigibili in quota, non barche a terra', () => {
+    const moorings = landmarkMoorings('airport', FACING.east, 40, 60, true);
+    expect(moorings).toHaveLength(2);
+    for (const mooring of moorings) {
+      expect(mooring.berth).toBe(BERTH.airship);
+      // In quota, non sull'impalcato: un dirigibile appoggiato al piano e' un
+      // capannone.
+      expect(mooring.z).toBeGreaterThan(0);
+    }
+    // Prue opposte: due sagome lunghe sedici voxel appese allo stesso tetto si
+    // attraverserebbero.
+    expect(Math.abs(moorings[0].heading - moorings[1].heading)).toBeCloseTo(Math.PI, 9);
+  });
+});
+
+/** Il punto sta dentro il riquadro canonico e sotto la quota dichiarata? */
+function inside(
+  mooring: { readonly x: number; readonly y: number; readonly z: number },
+  long: number,
+  short: number,
+  height: number,
+): { x: boolean; y: boolean; z: boolean } {
+  return {
+    x: mooring.x >= 0 && mooring.x < long,
+    y: mooring.y >= 0 && mooring.y < short,
+    z: mooring.z >= 0 && mooring.z < height,
+  };
+}
+
+describe('catalogo dei landmark — code', () => {
   it('un ruolo senza ricetta non produce uno stamp invece di produrne uno vuoto', () => {
     // Il ripiego deve restare riconoscibile dal chiamante anche ora che il
     // catalogo e' completo: un landmark assente e un landmark di zero voxel sono

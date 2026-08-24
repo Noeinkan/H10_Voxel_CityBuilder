@@ -57,6 +57,22 @@ export {
   type Catalyst,
   type CellRect,
 } from './DesirabilityField';
+export {
+  ALL_FARM_KINDS,
+  EMPTY_HARVEST,
+  FARM_COUNT,
+  FARM_KIND,
+  FARM_LABELS,
+  FARM_NAMES,
+  farmUpkeepOf,
+  farmWorkersOf,
+  foodDeficitOf,
+  foodYieldOf,
+  harvestOf,
+  isFarmKind,
+  type FarmKind,
+  type FoodReport,
+} from './farms';
 export { nextBuildSites, type BuildSite, type BuildSiteQuery } from './nextBuildSites';
 export {
   POLICIES,
@@ -73,6 +89,7 @@ export {
 } from './policies';
 export { policyConflict } from './policies';
 export {
+  ALL_SPECIALIZATIONS,
   dominantUse,
   specializationOf,
   urbanProfileAt,
@@ -111,12 +128,14 @@ export { nextState, unitOf } from './rng';
 export {
   addBuilding,
   addCatalyst,
+  addFarm,
   clearPolicies,
   createSimState,
   rebuildField,
   resolveDecision,
   removeBuildings,
   removeCatalyst,
+  removeFarm,
   reviveSimState,
   setCatalystStrength,
   setPolicyActive,

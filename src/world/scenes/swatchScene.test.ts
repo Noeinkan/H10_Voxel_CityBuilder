@@ -7,6 +7,9 @@ import { SURFACE_KIND_NAMES } from '../visualBlock';
 import { VoxelWorld } from '../VoxelWorld';
 import { createScene } from './cityScene';
 import {
+  CELL_FOOTPRINT,
+  CELL_HEIGHT,
+  CELL_TIERS,
   matrixCellRect,
   SCALE_ITEMS,
   SCALE_ORIGIN_Y,
@@ -217,6 +220,69 @@ describe('swatchScene', () => {
     // riferimento crescesse oltre la riserva, uscirebbe dall'estensione e
     // l'inquadratura lo taglierebbe senza dirlo.
     expect(buildingTop).toBeLessThanOrEqual(SWATCH.referenceHeight);
+  });
+
+  it('scrive un provino a gradoni, non una scatola', () => {
+    const world = generate();
+
+    // **Il punto di questo test e' il perche', non la forma.** Su un prisma
+    // isolato con la sommita' piatta tre famiglie di `microGeometry.ts` non
+    // possono scattare affatto — `emitSoffits` vuole un intradosso con aria
+    // sotto, `emitTerraceBoxes` una sommita' scoperta con volume di fianco,
+    // `emitFinials` una cella senza vicini in piano — e il campionario
+    // mostrerebbe un vocabolario piu' povero di quello vero. I tre gradoni sono
+    // le tre condizioni; appiattirli tornerebbe a nascondere gli emettitori
+    // senza che niente segnali il perche'.
+    const widths = CELL_TIERS.map((tier) => tier.side);
+    expect(Math.max(...widths.slice(1))).toBeGreaterThan(widths[0]);
+    expect(widths[widths.length - 1]).toBe(1);
+    let overhangs = false;
+    let setbacks = false;
+    for (let i = 1; i < CELL_TIERS.length; i++) {
+      if (CELL_TIERS[i].side > CELL_TIERS[i - 1].side) overhangs = true;
+      if (CELL_TIERS[i].side < CELL_TIERS[i - 1].side) setbacks = true;
+    }
+    expect(overhangs).toBe(true);
+    expect(setbacks).toBe(true);
+
+    // Ogni gradone e' centrato nel proprio ingombro: la sagoma dev'essere la
+    // stessa da qualunque lato la guardi la camera, o meta' campionario
+    // mostrerebbe gli sbalzi e meta' no a seconda dell'azimut.
+    for (const tier of CELL_TIERS) {
+      expect(tier.inset * 2 + tier.side).toBe(CELL_FOOTPRINT);
+    }
+
+    // E quel che sta scritto nel mondo e' davvero questo profilo, letto per
+    // livello su una cella qualunque.
+    const rect = matrixCellRect(1, 12);
+    let z = SWATCH.groundZ;
+    for (const tier of CELL_TIERS) {
+      for (let level = 0; level < tier.levels; level++) {
+        let solid = 0;
+        for (let x = rect.x0; x < rect.x1; x++) {
+          if (world.getBlock(x, rect.y0 + Math.floor(CELL_FOOTPRINT / 2), z) !== 0) solid++;
+        }
+        expect(solid).toBe(tier.side);
+        z++;
+      }
+    }
+    expect(z - SWATCH.groundZ).toBe(CELL_HEIGHT);
+  });
+
+  it('tiene l\'interasse sopra l\'occlusione della fila davanti', () => {
+    // In isometrica vera un voxel di quota si proietta in alto esattamente il
+    // doppio di un voxel di profondita': la fila davanti ne nasconde percio'
+    // `CELL_HEIGHT - cellPitch / 2`. Con interasse pari all'altezza sparirebbe
+    // meta' di ogni provino, ed e' il difetto che si vedeva a schermo prima che
+    // questo controllo esistesse.
+    const hidden = CELL_HEIGHT - SWATCH.cellPitch / 2;
+    const ledge = CELL_TIERS[0].levels + CELL_TIERS[1].levels;
+
+    // Sotto il filo dell'arretramento puo' anche sparire: li' c'e' il podio. Da
+    // quel filo in su — mensole, parapetti, fioriere, guglia — dev'essere tutto
+    // visibile senza ruotare la camera.
+    expect(hidden).toBeLessThan(ledge);
+    expect(SWATCH.cellPitch).toBeGreaterThan(CELL_FOOTPRINT);
   });
 
   it('e\' deterministica e non cambia se la si genera a passi', () => {

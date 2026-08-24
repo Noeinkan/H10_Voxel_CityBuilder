@@ -3,7 +3,13 @@ import { PALETTE_SLOTS } from '../paletteSlots';
 import { FOG_FLAT_EPSILON, FOG_LIFT_SHARPNESS } from '../atmosphere';
 import { NIGHT_WINDOWS } from '../nightWindows';
 import { SURFACE_KIND, WATER_CLASS } from '../../world/visualBlock';
-import { inspectCap, inspectDiscard, inspectHelpers } from './inspect.glsl';
+import {
+  inspectCap,
+  inspectDiscard,
+  inspectGhostSurface,
+  inspectHelpers,
+  inspectMelt,
+} from './inspect.glsl';
 
 /**
  * Fragment shader del voxel, nelle sue due varianti.
@@ -150,6 +156,7 @@ ${inspect ? inspectDiscard : ''}
   int surfaceIndex = int(vSurfaceIndex + 0.5);
   vec3 n = uFaceNormal[faceIndex];
 ${inspect ? inspectCap : ''}
+${inspect ? inspectGhostSurface : ''}
   vec3 albedo = uPalette[paletteIndex];
   bool isGlass = paletteIndex >= ${PALETTE_SLOTS.glass} && paletteIndex <= ${PALETTE_SLOTS.glassDark};
   if (isGlass) albedo = mix(albedo, uGlassTint, uGlassLift);
@@ -412,6 +419,7 @@ ${inspect ? inspectCap : ''}
   float towardSun = max(0.0, dot(uViewDirection, uSunDirection));
   fogTint = mix(fogTint, uSunColor, pow(towardSun, 4.0) * uFogSunTint);
 
+${inspect ? inspectMelt : ''}
   gl_FragColor = vec4(mix(shaded, fogTint, fogVeil), 1.0);
   // Nessun tone mapping qui: si scrive HDR lineare e ci pensa OutputPass.
   // Ecco perche' un cambio di tema non ricompila piu' nessun materiale di scena.

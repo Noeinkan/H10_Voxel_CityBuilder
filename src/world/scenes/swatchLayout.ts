@@ -42,26 +42,29 @@ export const SWATCH = {
   /** Slot del basamento: neutro, e `plain` perche' non deve emettere dettaglio. */
   plinthSlot: 4,
 
+  /** Bordo di basamento attorno ai soggetti: il piano di lettura, non un margine estetico. */
+  plinthMargin: 3,
+
   // --- Matrice palette x superficie -----------------------------------------
 
   /**
-   * Lato e altezza di una cella della matrice.
+   * Interasse fra due celle della matrice.
    *
-   * Non sono un cubo per estetica: la microgeometria emette solo dove il volume
-   * glielo racconta, e ogni emettitore di `microGeometry.ts` chiede una cosa
-   * diversa. `emitHabitat` vuole la sommita' di una corsa di facciata,
-   * `emitLuminous` i montanti **e** i traversi sopra e sotto, `emitPortals` un
-   * architrave con aria davanti un piano piu' in su, `emitRoofTech` un tetto
-   * esposto che confina con l'aria di fianco, `emitFacadeClass` i due bordi
-   * verticali della corsa. Un prisma isolato di lato quattro e alto sei, con
-   * aria attorno, li soddisfa tutti insieme — e sotto quei numeri qualche riga
-   * smetterebbe di mostrare qualcosa senza che niente segnali il perche'.
+   * **Non e' spaziatura a gusto: e' l'occlusione.** A `REST_PITCH`, cioe'
+   * l'isometrica vera `atan(1/√2)`, un voxel di quota si proietta in alto per
+   * `cos(pitch)` e un voxel di profondita' per `sin(pitch)/√2`. Il rapporto e'
+   * esattamente due, quindi di un provino alto `h` la fila davanti ne nasconde
+   * `h - cellPitch/2`. Con interasse pari all'altezza sparisce **meta'** di ogni
+   * provino, ed e' cosi' che una griglia di prismi distinti si legge come una
+   * massa unica.
+   *
+   * A dieci contro un'altezza di sette ne restano nascosti due, che sono il
+   * podio: tutto cio' che la microgeometria produce sta piu' in alto. Alzarlo
+   * ancora costa in fretta, perche' `frameRegion` inquadra sulla diagonale e la
+   * larghezza dell'inquadratura cresce con `sizeX + sizeY`: ogni voxel di
+   * interasse si paga trentuno volte in x e sette in y.
    */
-  cellSide: 4,
-  cellHeight: 6,
-
-  /** Interasse fra due celle: il vuoto che resta e' l'aria che serve ai prismi. */
-  cellPitch: 6,
+  cellPitch: 10,
 
   /** Distacco fra una fascia e la successiva, lungo +y. */
   bandGap: 10,
@@ -110,6 +113,59 @@ export const SWATCH = {
   referenceHeight: 36,
 } as const;
 
+/** Un gradone del provino: di quanto rientra in pianta, quanto e' largo, quanti livelli. */
+export interface SwatchTier {
+  readonly inset: number;
+  readonly side: number;
+  readonly levels: number;
+}
+
+/**
+ * La sagoma di un provino della matrice — **la stessa in tutte e 248 le celle**.
+ *
+ * Identica ovunque perche' e' l'unico modo di far variare una cosa sola: se
+ * cambiasse anche la forma, due celle vicine non sarebbero piu' confrontabili e
+ * il campionario smetterebbe di rispondere alla domanda per cui esiste.
+ *
+ * **Non e' un prisma perche' un prisma non racconta niente al mesher.** La
+ * microgeometria emette dove il volume glielo dice, e su un parallelepipedo
+ * isolato con la sommita' piatta tre famiglie di `microGeometry.ts` non possono
+ * scattare affatto: `emitFinials` vuole una cella di sommita' **senza vicini in
+ * piano**, `emitSoffits` un intradosso con aria sotto e aria di fianco,
+ * `emitTerraceBoxes` una sommita' scoperta che ha ancora volume di fianco.
+ * Nessuna delle tre esiste su una scatola, e sul campionario si leggeva percio'
+ * un vocabolario piu' povero di quello vero.
+ *
+ * I quattro gradoni sono la sagoma minima che le produce tutte:
+ *
+ * | gradone | cosa dichiara al mesher |
+ * | --- | --- |
+ * | podio, rientrato | regge lo sbalzo e gli lascia l'aria sotto |
+ * | sbalzo, a filo | intradosso scoperto sui quattro lati: **fasce di sbalzo** |
+ * | arretramento | la sua sommita' ha volume di fianco: **fioriere e cassoni** |
+ * | guglia, isolata | nessun vicino in piano: **collarino e ago** |
+ *
+ * In piu' ogni gradone spezza le corse verticali, quindi montanti, traversi,
+ * architravi, mensole e parapetti si moltiplicano invece di comparire una volta
+ * sola in cima. Misurato con `appendMicroGeometry` su un provino solo: da 21 a
+ * 55 prismi per `habitat`, da 25 a 77 per `civic`, da 4 a 22 per `roofTech`.
+ */
+export const CELL_TIERS: readonly SwatchTier[] = [
+  { inset: 1, side: 3, levels: 1 },
+  { inset: 0, side: 5, levels: 2 },
+  { inset: 1, side: 3, levels: 2 },
+  { inset: 2, side: 1, levels: 2 },
+];
+
+/** Lato in pianta del provino: il gradone piu' largo. */
+export const CELL_FOOTPRINT = CELL_TIERS.reduce(
+  (widest, tier) => Math.max(widest, tier.inset + tier.side),
+  0,
+);
+
+/** Altezza del provino, somma dei livelli dei gradoni. */
+export const CELL_HEIGHT = CELL_TIERS.reduce((total, tier) => total + tier.levels, 0);
+
 /** Colonne della matrice: uno slot di palette ciascuna, `empty` compreso. */
 export const SWATCH_COLUMNS = PALETTE_SIZE;
 
@@ -131,8 +187,8 @@ function bandSpan(count: number, side: number, pitch: number): number {
   return count <= 0 ? 0 : (count - 1) * pitch + side;
 }
 
-const MATRIX_WIDTH = bandSpan(SWATCH_COLUMNS, SWATCH.cellSide, SWATCH.cellPitch);
-const MATRIX_DEPTH = bandSpan(SWATCH_ROWS, SWATCH.cellSide, SWATCH.cellPitch);
+const MATRIX_WIDTH = bandSpan(SWATCH_COLUMNS, CELL_FOOTPRINT, SWATCH.cellPitch);
+const MATRIX_DEPTH = bandSpan(SWATCH_ROWS, CELL_FOOTPRINT, SWATCH.cellPitch);
 
 const BIOME_WIDTH = bandSpan(BIOME_NAMES.length, SWATCH.pillarSide, SWATCH.pillarPitch);
 const WATER_WIDTH = bandSpan(SWATCH_WATERS.length, SWATCH.pillarSide, SWATCH.pillarPitch);
@@ -196,9 +252,24 @@ function planScaleItems(): readonly ScaleItem[] {
   return items;
 }
 
-export const SCALE_ITEMS: readonly ScaleItem[] = planScaleItems();
+const RAW_SCALE_ITEMS = planScaleItems();
+const SCALE_WIDTH = RAW_SCALE_ITEMS.reduce((widest, item) => Math.max(widest, item.x0 + item.width), 0);
 
-const SCALE_WIDTH = SCALE_ITEMS.reduce((widest, item) => Math.max(widest, item.x0 + item.width), 0);
+/**
+ * Le due fasce strette stanno **centrate** sotto la matrice.
+ *
+ * Da quando l'interasse della matrice segue l'occlusione, la griglia e' larga il
+ * triplo della stratigrafia e della scala: allineate a sinistra lasciavano due
+ * terzi di basamento vuoto in un angolo, che a schermo si legge come una scena
+ * non finita invece che come uno spazio.
+ */
+const STRATA_X0 = Math.max(0, Math.floor((MATRIX_WIDTH - STRATA_WIDTH) / 2));
+const SCALE_X0 = Math.max(0, Math.floor((MATRIX_WIDTH - SCALE_WIDTH) / 2));
+
+export const SCALE_ITEMS: readonly ScaleItem[] = RAW_SCALE_ITEMS.map((item) => ({
+  ...item,
+  x0: item.x0 + SCALE_X0,
+}));
 const SCALE_DEPTH = SCALE_ITEMS.reduce((deepest, item) => Math.max(deepest, item.depth), 0);
 
 /** Estensione dell'intero campionario, basamento compreso. */
@@ -218,24 +289,49 @@ export interface SwatchExtent {
  * sapere quanto e' alto il proprio soggetto.
  */
 export function swatchExtent(): SwatchExtent {
+  const margin = SWATCH.plinthMargin;
   return {
-    minX: 0,
-    minY: 0,
-    sizeX: Math.max(MATRIX_WIDTH, STRATA_WIDTH, SCALE_WIDTH),
-    sizeY: SCALE_Y + SCALE_DEPTH,
+    minX: -margin,
+    minY: -margin,
+    sizeX: Math.max(MATRIX_WIDTH, STRATA_WIDTH, SCALE_WIDTH) + margin * 2,
+    sizeY: SCALE_Y + SCALE_DEPTH + margin * 2,
     sizeZ: SWATCH.groundZ + Math.max(
-      SWATCH.cellHeight,
+      CELL_HEIGHT,
       SWATCH.pillarHeight,
       SWATCH.referenceHeight,
     ),
   };
 }
 
-/** Riquadro della cella `(row, col)` della matrice. */
+/**
+ * Fin dove arriva il basamento alla riga `y`.
+ *
+ * **Il piano di lettura e' largo quanto cio' che ci sta sopra**, e non quanto il
+ * rettangolo che contiene tutto: la matrice e' larga il triplo delle altre due
+ * fasce, e un basamento rettangolare lascerebbe due terzi di grigio vuoto sotto
+ * la stratigrafia e la scala. Il profilo a gradini dichiara le tre fasce da se',
+ * senza etichette che in-world non ci sono.
+ */
+export function plinthSpanAt(y: number): { readonly x0: number; readonly x1: number } {
+  const margin = SWATCH.plinthMargin;
+  if (y < MATRIX_Y + MATRIX_DEPTH) return { x0: -margin, x1: MATRIX_WIDTH + margin };
+  if (y < SCALE_Y - SWATCH.bandGap) {
+    return { x0: STRATA_X0 - margin, x1: STRATA_X0 + STRATA_WIDTH + margin };
+  }
+  return { x0: SCALE_X0 - margin, x1: SCALE_X0 + SCALE_WIDTH + margin };
+}
+
+/**
+ * Riquadro in pianta della cella `(row, col)`: l'ingombro del gradone piu' largo.
+ *
+ * E' l'impronta, non il volume — i gradoni rientrano dentro questo riquadro e la
+ * loro quota la decide `CELL_TIERS`. Chi cerca un voxel di una combinazione lo
+ * cerca qui dentro, a qualunque altezza.
+ */
 export function matrixCellRect(row: number, col: number): SwatchRect {
   const x0 = col * SWATCH.cellPitch;
   const y0 = MATRIX_Y + row * SWATCH.cellPitch;
-  return { x0, y0, x1: x0 + SWATCH.cellSide, y1: y0 + SWATCH.cellSide };
+  return { x0, y0, x1: x0 + CELL_FOOTPRINT, y1: y0 + CELL_FOOTPRINT };
 }
 
 /**
@@ -245,7 +341,7 @@ export function strataPillarRect(index: number): SwatchRect {
   const biomes = BIOME_NAMES.length;
   const slot = index < biomes ? index : index - biomes;
   const offset = index < biomes ? 0 : BIOME_WIDTH + SWATCH.waterGap;
-  const x0 = offset + slot * SWATCH.pillarPitch;
+  const x0 = STRATA_X0 + offset + slot * SWATCH.pillarPitch;
   return { x0, y0: STRATA_Y, x1: x0 + SWATCH.pillarSide, y1: STRATA_Y + SWATCH.pillarSide };
 }
 

@@ -81,4 +81,71 @@ export const STREETS = {
 
   /** Colore della carreggiata principale. */
   arterialPalette: PALETTE_SLOTS.asphaltDark,
+
+  /**
+   * Isolati di margine oltre il riquadro fra i due capi di un raccordo.
+   *
+   * E' il gioco che la ricerca di `corridor.ts` ha per scansare un ostacolo. A
+   * zero il percorso resta chiuso nel rettangolo fra i due isolati e una baia che
+   * lo attraversa da parte a parte non ha aggiramento: la ricerca fallisce e il
+   * porto resta staccato, cioe' il difetto di partenza. A due, il percorso puo'
+   * uscire di quarantaquattro colonne per lato — abbastanza da girare attorno a
+   * una darsena o a uno sperone, troppo poco perche' una strada faccia il giro
+   * dell'isola per evitare una salita.
+   */
+  linkMargin: 2,
+
+  /**
+   * Isolati oltre i quali un raccordo non si tira piu'.
+   *
+   * Conta isolati e non colonne, come `BUILDER.blockSearchRadius`, quindi non
+   * segue la scala del voxel.
+   *
+   * **Non e' questo numero a decidere i casi veri, ed e' il motivo per cui e'
+   * largo.** Misurato su un'isola generata di lato 256, con una citta' di
+   * centosettantotto edifici: i siti di porto veri — terra asciutta che vede
+   * l'acqua — stanno **tutti entro cinque isolati** dalla rete gia' dipinta, e
+   * quello piu' lontano si collega con due tratti, settantatre colonne di
+   * carreggiata e sei frame di posa. Un raggio stretto non li toccherebbe
+   * comunque.
+   *
+   * Chi resta fuori, resta fuori **per l'acqua e non per la distanza**: il sito
+   * piu' remoto che l'isola ammette sta a dodici isolati, e sulla retta che lo
+   * separa dalla citta' ci sono settantacinque colonne rifiutate contro
+   * cinquantaquattro buone. Lo rifiuta `linkMinPaved`, e lo rifiuterebbe a
+   * qualunque portata — alzarla da dieci a quarantotto non ha cambiato quel caso
+   * di una colonna, ed e' esattamente cio' che si voleva verificare.
+   *
+   * Resta largo perche' un raggio stretto sarebbe **un secondo gate silenzioso**
+   * accanto a quello vero: la taratura del terreno e' per un'isola di lato 512
+   * (vedi `src/world/AGENTS.md`), dove le stesse distanze raddoppiano, e un
+   * numero tarato sui 256 taglierebbe la meta' di quella mappa senza che niente
+   * lo dica. Quarantotto e' la diagonale in isolati alla dimensione di taratura:
+   * copre qualunque coppia di punti sulla stessa terra, e lascia la domanda a chi
+   * la sa rispondere — non «quanto e' lontano» ma «ci si arriva a piedi asciutti».
+   */
+  linkReach: 48,
+
+  /**
+   * Quanto pesa, in un raccordo, una colonna che non si puo' dipingere.
+   *
+   * E' l'unico numero che decide se il percorso gira attorno a un ostacolo o ci
+   * passa attraverso. A uno peserebbe come una colonna qualunque e la strada
+   * andrebbe sempre dritta, riducendo la ricerca a una L; a ventiquattro, un
+   * passo che finisce in acqua costa quanto ventiquattro passi buoni, e conviene
+   * qualunque aggiramento che stia dentro `linkMargin`.
+   */
+  linkRefusedCost: 24,
+
+  /**
+   * Frazione di colonne dipingibili sotto la quale un passo e' impraticabile.
+   *
+   * Senza, un raccordo che attraversa una baia si costruisce comunque e dipinge
+   * il pugno di colonne che affiorano: quello che si vede non e' una strada ma
+   * dei sassi in mezzo all'acqua, che e' peggio del prato di prima perche'
+   * *sembra* un errore invece che un'assenza. A meta', un passo deve essere
+   * carreggiata per almeno meta' della sua lunghezza — sotto, la ricerca lo
+   * scansa, e se non c'e' alternativa il raccordo non nasce affatto.
+   */
+  linkMinPaved: 0.5,
 } as const;

@@ -3,6 +3,8 @@ import {
   CATALYSTS,
   CATALYST_GROUPS,
   CLASS_LABELS,
+  FARM_KIND,
+  FARM_LABELS,
   POLICIES,
   TRADE_MODES,
   catalystById,
@@ -10,6 +12,7 @@ import {
   policyConflict,
   tradeLinksOf,
   type BuildingClass,
+  type FoodReport,
   type CatalystGroup,
   type CatalystId,
   type CatalystSite,
@@ -23,6 +26,8 @@ import { typologiesForUses } from '../world/buildings/typology';
 import { SITE } from '../world/sites/config';
 import type { GrowthStats } from '../game/growthScene';
 import type { CityCondition } from '../game/cityCondition';
+import type { FundsReport } from '../sim/flows';
+import type { ResourceTrend, TrendDirection } from './ResourceTrend';
 
 /**
  * Il vincolo di sito detto al giocatore, non al codice.
@@ -42,14 +47,58 @@ export type GameTool =
   | { readonly kind: 'expansion' }
   /** La mensola: si indica un edificio, e gli si appende un piano in quota. */
   | { readonly kind: 'terrace' }
+  /** La funivia: si indica una riva, e la regola trova l'altra da sola. */
+  | { readonly kind: 'ropeway' }
   | { readonly kind: 'none' };
 
 export interface HudResource {
   readonly id: 'funds' | 'population' | 'food' | 'materials' | 'satisfaction';
   readonly label: string;
   readonly value: string;
+  /**
+   * L'ultimo passo, gia' formattato. **Vuoto quando non succede niente.**
+   *
+   * Prima qui compariva `±0`, cinque volte su cinque nei momenti tranquilli:
+   * cinque righe di rumore che occupavano lo spazio della sola informazione che
+   * conta, cioe' quale risorsa si sta muovendo.
+   */
   readonly delta: string;
   readonly tone: 'positive' | 'negative' | 'neutral';
+  /** Dove sta andando sulla finestra recente: e' la freccia. */
+  readonly trend: TrendDirection;
+  /** Quanto forte, 0..1: e' l'opacita' della freccia, non un secondo numero. */
+  readonly magnitude: number;
+  /** La finestra recente, per la sparkline. Vuota finche' non c'e' storia. */
+  readonly series: readonly number[];
+  /**
+   * Il tetto, dove ne esiste uno: e' un anello, non un numero nudo.
+   *
+   * `undefined` per denaro e materiali, che non hanno un massimo: inventarne uno
+   * per riempire un anello direbbe che esiste un "pieno" che non c'e'.
+   */
+  readonly fill?: HudFill;
+  /**
+   * Da dove viene e dove va, voce per voce. Solo dove la domanda ha senso.
+   *
+   * «Perche' sto perdendo denaro» non aveva risposta nell'HUD: il saldo dice di
+   * quanto, non di chi e' la colpa. Le voci arrivano dal referto del tick, non
+   * ricalcolate qui — duplicare il bilanciamento sarebbe il modo sicuro di farle
+   * divergere dal numero che le sta sopra.
+   */
+  readonly breakdown?: readonly HudFlow[];
+}
+
+/** Un riempimento 0..1 con la sua lettura in chiaro. */
+export interface HudFill {
+  readonly value: number;
+  readonly label: string;
+}
+
+/** Una voce del bilancio: quanto, come si chiama, e da che parte va. */
+export interface HudFlow {
+  readonly label: string;
+  readonly amount: number;
+  readonly direction: 'in' | 'out';
 }
 
 export interface HudAction {
@@ -84,6 +133,62 @@ export interface HudAction {
    * pianificare, e nasconderlo trasformerebbe la progressione in una sorpresa.
    */
   readonly locked?: boolean;
+  /**
+   * Quanto manca, 0..1, quando cio' che manca e' una **risorsa**.
+   *
+   * E' la meta' che rendeva `locked` indistinguibile da `disabled`: un bottone
+   * sbiadito dice "rotto", un bottone che si riempie dice "manca poco", e sono
+   * due messaggi opposti nel momento in cui la progressione dovrebbe motivare.
+   *
+   * Assente quando il blocco **non** si scioglie aspettando — l'ordine del
+   * tutorial, un conflitto fra policy, la citta' che non e' pronta. Riempire lì
+   * prometterebbe che accumulare denaro basta, e non basta.
+   */
+  readonly progress?: number;
+  /** Il requisito che sta vincolando, gia' leggibile: `240 / 320 funds`. */
+  readonly requirement?: string;
+  /** Lo stesso, in due cifre, per stare sotto una tessera: `240/320`. */
+  readonly requirementShort?: string;
+}
+
+/** Una soglia da superare: quanto se ne ha, quanto ne serve, come si chiama. */
+interface Threshold {
+  readonly have: number;
+  readonly need: number;
+  readonly label: string;
+}
+
+/**
+ * La soglia **vincolante** fra piu' soglie, come frazione e come etichetta.
+ *
+ * La piu' lontana, non la media ne' la prima: chi ha i fondi ma non gli abitanti
+ * deve vedere gli abitanti, o il riempimento prometterebbe che il bottone e'
+ * quasi pronto mentre manca tutt'altro. Con una soglia sola degenera in quella.
+ */
+function bindingThreshold(thresholds: readonly Threshold[]): {
+  readonly progress: number;
+  readonly requirement: string;
+  readonly requirementShort: string;
+} {
+  let worst = thresholds[0];
+  for (const candidate of thresholds) {
+    if (ratio(candidate) < ratio(worst)) worst = candidate;
+  }
+  return {
+    progress: ratio(worst),
+    requirement: `${Math.floor(worst.have)} / ${worst.need} ${worst.label}`,
+    // La stessa cosa senza la parola: sotto una tessera da 62px «0 / 48
+    // residents» non ci sta, e andava a finire sopra il costo. La parola resta
+    // nel tooltip, dove c'e' spazio e dove serve a distinguere fondi da
+    // abitanti; sulla tessera bastano le due cifre, perche' la barra che si
+    // riempie dice gia' di che grandezza si parla.
+    requirementShort: `${Math.floor(worst.have)}/${worst.need}`,
+  };
+}
+
+function ratio(threshold: Threshold): number {
+  if (threshold.need <= 0) return 1;
+  return Math.min(1, Math.max(0, threshold.have / threshold.need));
 }
 
 export interface HudPolicy extends HudAction {
@@ -119,6 +224,8 @@ export interface GameHudModel {
   readonly expansion: HudAction;
   /** La mensola posata a mano: il primo pezzo di citta' in quota che si sceglie. */
   readonly terrace: HudAction;
+  /** La funivia: l'altro modo di scavalcare il vuoto, e l'unico sull'acqua. */
+  readonly ropeway: HudAction;
   readonly policies: readonly HudPolicy[];
   readonly tradeModes: readonly HudTradeMode[];
   readonly tradeConnected: boolean;
@@ -136,6 +243,7 @@ export type EscapeTarget =
   | 'policies'
   | 'help'
   | 'tool'
+  | 'selection'
   | 'lock'
   | 'view'
   | 'none';
@@ -187,7 +295,10 @@ const POLICY_DESCRIPTION: Readonly<Record<PolicyId, string>> = {
   marketCharter: 'Increases retail reach and revenue.',
 };
 
-export function buildGameHudModel(stats: GrowthStats | null): GameHudModel {
+export function buildGameHudModel(
+  stats: GrowthStats | null,
+  trend?: ResourceTrend,
+): GameHudModel {
   const funds = stats?.state.funds.stock ?? 0;
   const population = stats?.state.population.stock ?? 0;
   const ready = stats !== null;
@@ -195,16 +306,47 @@ export function buildGameHudModel(stats: GrowthStats | null): GameHudModel {
   const resources: readonly HudResource[] = stats === null
     ? emptyResources()
     : [
-        resource('funds', 'Funds', stats.state.funds.stock, stats.state.funds.delta),
-        resource('population', 'Residents', stats.state.population.stock, stats.state.population.delta),
-        resource('food', 'Food', stats.state.food.stock, stats.state.food.delta),
-        resource('materials', 'Materials', stats.state.materials.stock, stats.state.materials.delta),
+        resource(
+          'funds',
+          'Funds',
+          stats.state.funds.stock,
+          stats.state.funds.delta,
+          trend,
+          undefined,
+          fundsBreakdown(stats.state.flows),
+        ),
+        resource('population', 'Residents', stats.state.population.stock, stats.state.population.delta, trend),
+        resource(
+          'food',
+          'Food',
+          stats.state.food.stock,
+          stats.state.food.delta,
+          trend,
+          // Il cibo ha un tetto che il numero nudo non mostra: quanti tick la
+          // citta' regge con le scorte che ha. E' la lettura che risponde a
+          // «sto per avere fame», e nessuna cifra di magazzino la da'.
+          foodReserve(stats.state.food.stock, population),
+          // E l'altra meta' della stessa domanda: **da dove viene**. Prima della
+          // 3.1 non aveva risposta perche' non c'era una risposta — il cibo
+          // usciva dal termine industriale, e la voce sarebbe stata «fabbriche».
+          foodBreakdown(stats.state.harvest),
+        ),
+        resource('materials', 'Materials', stats.state.materials.stock, stats.state.materials.delta, trend),
         {
           id: 'satisfaction',
           label: 'Happiness',
           value: `${Math.round(stats.state.satisfaction * 100)}%`,
           delta: '',
           tone: 'neutral',
+          trend: trend?.direction('satisfaction') ?? 'flat',
+          magnitude: trend?.magnitude('satisfaction') ?? 0,
+          series: trend?.window('satisfaction') ?? [],
+          // Gia' 0..1 per costruzione: e' l'unica delle cinque il cui tetto non
+          // va calcolato, perche' e' una quota e non uno stock.
+          fill: {
+            value: stats.state.satisfaction,
+            label: `${Math.round(stats.state.satisfaction * 100)}% of the city is content`,
+          },
         },
       ];
 
@@ -232,6 +374,12 @@ export function buildGameHudModel(stats: GrowthStats | null): GameHudModel {
       // Bloccato non vuol dire nascosto: il bottone resta nella toolbar e dice
       // perche' non si puo' ancora usare.
       locked: ready && !available,
+      // Solo quando a mancare sono i fondi: se e' il tutorial a fermarlo, un
+      // riempimento direbbe che basta aspettare, e invece bisogna costruire
+      // dell'altro.
+      ...(ready && orderOk && !fundsOk
+        ? bindingThreshold([{ have: funds, need: cost, label: 'funds' }])
+        : {}),
       reason: !ready
         ? 'The city is getting ready.'
         : !orderOk
@@ -255,6 +403,13 @@ export function buildGameHudModel(stats: GrowthStats | null): GameHudModel {
     label: 'Expand',
     cost: expansionRequirement.cost,
     available: ready && expansionPopulationOk && expansionFundsOk,
+    locked: ready && !(expansionPopulationOk && expansionFundsOk),
+    ...(ready && !(expansionPopulationOk && expansionFundsOk)
+      ? bindingThreshold([
+          { have: funds, need: expansionRequirement.cost, label: 'funds' },
+          { have: population, need: expansionRequirement.population, label: 'residents' },
+        ])
+      : {}),
     reason: !ready
       ? 'The city is getting ready.'
       : !expansionPopulationOk
@@ -275,6 +430,12 @@ export function buildGameHudModel(stats: GrowthStats | null): GameHudModel {
     // Bloccata non vuol dire nascosta, come per i catalizzatori: sapere che la
     // citta' potra' salire e' l'informazione che fa pianificare.
     locked: ready && !(terracePopulationOk && terraceFundsOk),
+    ...(ready && !(terracePopulationOk && terraceFundsOk)
+      ? bindingThreshold([
+          { have: funds, need: terraceRequirement.cost, label: 'funds' },
+          { have: population, need: terraceRequirement.population, label: 'residents' },
+        ])
+      : {}),
     reason: !ready
       ? 'The city is getting ready.'
       : !terracePopulationOk
@@ -283,6 +444,31 @@ export function buildGameHudModel(stats: GrowthStats | null): GameHudModel {
           ? 'Not enough funds.'
           : 'Hang a floor off a tall building: the city gains ground above the street.',
     description: 'Hang a floor off a tall building, above the street.',
+  };
+
+  const ropewayRequirement = BALANCE.gameplay.ropeway;
+  const ropewayPopulationOk = population >= ropewayRequirement.population;
+  const ropewayFundsOk = funds >= ropewayRequirement.cost;
+  const ropeway: HudAction = {
+    id: 'ropeway',
+    label: 'Ropeway',
+    cost: ropewayRequirement.cost,
+    available: ready && ropewayPopulationOk && ropewayFundsOk,
+    locked: ready && !(ropewayPopulationOk && ropewayFundsOk),
+    ...(ready && !(ropewayPopulationOk && ropewayFundsOk)
+      ? bindingThreshold([
+          { have: funds, need: ropewayRequirement.cost, label: 'funds' },
+          { have: population, need: ropewayRequirement.population, label: 'residents' },
+        ])
+      : {}),
+    reason: !ready
+      ? 'The city is getting ready.'
+      : !ropewayPopulationOk
+        ? `Requires ${ropewayRequirement.population} residents.`
+        : !ropewayFundsOk
+          ? 'Not enough funds.'
+          : 'Point at a shore: the line crosses water no bridge would span.',
+    description: 'Two towers and a cable across the water.',
   };
 
   const activePolicies = stats?.state.policies ?? [];
@@ -334,6 +520,7 @@ export function buildGameHudModel(stats: GrowthStats | null): GameHudModel {
     commerce: commerceOf(stats),
     expansion,
     terrace,
+    ropeway,
     policies,
     tradeModes,
     tradeConnected,
@@ -375,12 +562,19 @@ export function resolveEscapeTarget(
   tool: GameTool,
   viewActive: boolean,
   blockLocked = false,
+  selectionOpen = false,
 ): EscapeTarget {
   if (viewsOpen) return 'views';
   if (themesOpen) return 'themes';
   if (policiesOpen) return 'policies';
   if (helpOpen) return 'help';
   if (tool.kind !== 'none') return 'tool';
+  // Dopo lo strumento e prima del soggetto di studio, e non a caso. Con uno
+  // strumento in mano il toast promette gia' "Esc to cancel", e mangiare quel
+  // colpo per chiudere una scheda tradirebbe la promessa scritta a schermo; ma
+  // la scheda e' l'ultima cosa che il giocatore ha aperto, quindi viene prima di
+  // cio' che stava gia' guardando.
+  if (selectionOpen) return 'selection';
   // Prima si molla il soggetto, poi si esce dalla vista. Sono due passi e non uno
   // perche' sono due decisioni diverse: chi sta studiando un isolato e preme Esc
   // vuole quasi sempre tornare a scegliere, non spegnere la lente e ritrovarsi la
@@ -446,6 +640,11 @@ export function selectionMessage(tool: GameTool, catalysts: readonly HudAction[]
   if (tool.kind === 'terrace') {
     return 'Terrace selected · click a tall building · Esc to cancel';
   }
+  if (tool.kind === 'ropeway') {
+    // Si punta la **riva**, non l'acqua: e' l'unico strumento che chiede un capo
+    // e trova l'altro da solo, e senza dirlo si clicca in mezzo al mare.
+    return 'Ropeway selected · click a shore facing the water · Esc to cancel';
+  }
   return null;
 }
 
@@ -485,29 +684,115 @@ function commerceOf(stats: GrowthStats | null): HudCommerce | null {
   };
 }
 
+/**
+ * Il bilancio dei fondi in voci leggibili, senza gli zeri.
+ *
+ * Una riga a zero non e' informazione: chi non ha ancora policy attive non deve
+ * leggere «Policies 0», o le due voci che contano finiscono in mezzo al rumore.
+ * Gli oneri portano `paid` e non la somma nominale, perche' a cassa vuota si
+ * paga il possibile — ed e' quella la cifra che ha davvero lasciato la cassa.
+ */
+function fundsBreakdown(flows: FundsReport): readonly HudFlow[] {
+  const owed = flows.civic + flows.policies + flows.farms;
+  // Se non si e' potuto pagare tutto, ogni voce scala in proporzione: e' cio'
+  // che tiene la somma delle righe uguale al saldo scritto sopra.
+  const share = owed > 0 ? flows.paid / owed : 0;
+  const rows: readonly HudFlow[] = [
+    { label: 'Taxes', amount: flows.tax, direction: 'in' },
+    { label: 'Shops', amount: flows.retail, direction: 'in' },
+    { label: 'Trade', amount: Math.max(0, flows.trade), direction: 'in' },
+    { label: 'Imports', amount: Math.max(0, -flows.trade), direction: 'out' },
+    { label: 'Civic services', amount: flows.civic * share, direction: 'out' },
+    { label: 'Policies', amount: flows.policies * share, direction: 'out' },
+    { label: 'Farms', amount: flows.farms * share, direction: 'out' },
+  ];
+  return rows.filter((row) => row.amount >= 0.005);
+}
+
+/**
+ * Da dove viene il cibo, voce per voce.
+ *
+ * Le righe arrivano dal referto del tick e **non si ricalcolano qui**: e' la
+ * stessa regola di `fundsBreakdown`, e vale a maggior ragione per il cibo, dove
+ * il listino sta in case sfamate e rifarne il conto nell'interfaccia
+ * significherebbe copiare `FOOD_PER_HOUSE` in un secondo posto.
+ *
+ * Le etichette sono i produttori e non i tipi di lotto: chi guarda l'HUD vede
+ * campi e frutteti a schermo, e «Fields» e' il nome di quello che vede.
+ */
+function foodBreakdown(harvest: FoodReport): readonly HudFlow[] {
+  const rows: readonly HudFlow[] = [
+    { label: FARM_LABELS[FARM_KIND.field], amount: harvest.grown[FARM_KIND.field] ?? 0, direction: 'in' },
+    { label: FARM_LABELS[FARM_KIND.orchard], amount: harvest.grown[FARM_KIND.orchard] ?? 0, direction: 'in' },
+    { label: FARM_LABELS[FARM_KIND.tower], amount: harvest.grown[FARM_KIND.tower] ?? 0, direction: 'in' },
+    { label: 'Imports', amount: harvest.imported, direction: 'in' },
+    { label: 'Eaten', amount: harvest.eaten, direction: 'out' },
+  ];
+  return rows.filter((row) => row.amount >= 0.005);
+}
+
 function resource(
   id: HudResource['id'],
   label: string,
   stock: number,
   delta: number,
+  trend?: ResourceTrend,
+  fill?: HudFill,
+  breakdown?: readonly HudFlow[],
 ): HudResource {
-  const roundedDelta = delta.toFixed(1);
   return {
     id,
     label,
     value: formatInteger(stock),
-    delta: delta === 0 ? '±0' : `${delta > 0 ? '+' : ''}${roundedDelta}`,
+    // Vuoto e non `±0`: un indicatore che ripete "non e' successo niente" cinque
+    // volte insegna a non leggere la riga in cui compare.
+    delta: delta === 0 ? '' : `${delta > 0 ? '+' : ''}${delta.toFixed(1)}`,
     tone: delta > 0 ? 'positive' : delta < 0 ? 'negative' : 'neutral',
+    trend: trend?.direction(id) ?? 'flat',
+    magnitude: trend?.magnitude(id) ?? 0,
+    series: trend?.window(id) ?? [],
+    ...(fill === undefined ? {} : { fill }),
+    ...(breakdown === undefined || breakdown.length === 0 ? {} : { breakdown }),
   };
+}
+
+/**
+ * Quanto margine c'e' sopra la linea della carestia.
+ *
+ * L'anello e' pieno finche' le scorte stanno sopra `crisis.foodReserve` — la
+ * stessa soglia sotto la quale `cityCondition` dichiara la penuria — e si
+ * svuota avvicinandosi. Ancorarlo li' e non a un massimo inventato e' cio' che
+ * lo rende una risposta: «sto per avere fame» si legge dall'anello prima che il
+ * toast lo annunci, e le due superfici non possono dire cose diverse perche'
+ * leggono lo stesso numero.
+ *
+ * La riga in chiaro porta anche i tick di autonomia, che sono la lettura che
+ * il magazzino da solo non da': trecento unita' di cibo non dicono niente
+ * finche' non si sa quante bocche ci sono.
+ */
+function foodReserve(stock: number, population: number): HudFill {
+  const floor = BALANCE.gameplay.crisis.foodReserve;
+  const perTick = population * BALANCE.food.perResident;
+  const autonomy = perTick <= 0
+    ? 'no one to feed yet'
+    : `about ${Math.floor(stock / perTick)} ticks of eating`;
+  return {
+    value: floor <= 0 ? 1 : Math.min(1, stock / floor),
+    label: `${Math.floor(stock)} food — ${autonomy}; shortage below ${floor}`,
+  };
+}
+
+function emptyResource(id: HudResource['id'], label: string): HudResource {
+  return { id, label, value: '—', delta: '', tone: 'neutral', trend: 'flat', magnitude: 0, series: [] };
 }
 
 function emptyResources(): readonly HudResource[] {
   return [
-    { id: 'funds', label: 'Funds', value: '—', delta: '', tone: 'neutral' },
-    { id: 'population', label: 'Residents', value: '—', delta: '', tone: 'neutral' },
-    { id: 'food', label: 'Food', value: '—', delta: '', tone: 'neutral' },
-    { id: 'materials', label: 'Materials', value: '—', delta: '', tone: 'neutral' },
-    { id: 'satisfaction', label: 'Happiness', value: '—', delta: '', tone: 'neutral' },
+    emptyResource('funds', 'Funds'),
+    emptyResource('population', 'Residents'),
+    emptyResource('food', 'Food'),
+    emptyResource('materials', 'Materials'),
+    emptyResource('satisfaction', 'Happiness'),
   ];
 }
 

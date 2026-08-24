@@ -1,0 +1,17 @@
+{
+  "slug": "voxelcity",
+  "domain": "voxelcity.77.42.70.26.nip.io",
+  "repo": "https://github.com/Noeinkan/H10_Voxel_CityBuilder.git",
+  "ref": "main",
+  "type": "static-build",
+  "buildCommand": "npm run build",
+  "outputDir": "dist",
+  "spa": false,
+  "port": 8080,
+  "healthPath": "/",
+  "expectStatus": 200,
+  "memLimit": "128m",
+  "maxBody": "4m",
+  "readTimeout": "60s",
+  "notes": "Bundle Vite servito da nginx: nessun server applicativo, nessun segreto, nessuno stato da persistere. Una sola pagina (canvas WebGL) senza router client-side, quindi il fallback SPA resta spento e un path sconosciuto deve dare 404. Il build gira sul server e include 'tsc --noEmit': un errore di tipo fa fallire il deploy prima che qualcosa vada online."
+}

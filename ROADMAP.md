@@ -333,6 +333,89 @@ interruttori — podio, corte, coronamento piatto — invece di introdurre model
 disegnati a mano. La selezione dei siti è rimasta al suo costo perché il secondo
 uso si cerca solo sui siti che entrano davvero in lista.
 
+### Fase 3.1 — Il cibo ha un luogo
+
+Obiettivo: dare al cibo dei produttori che si vedano sulla mappa e che costino
+**terra**, così che la crescita della città diventi una pressione alimentare
+invece di un numero che sale.
+
+**Stato implementazione:** completata. Il gate resta da validare a schermo: i
+test coprono le regole — il verso dei solchi, il ritiro di un lotto, la
+raggiungibilità della torre — non la leggibilità della campagna mentre la si
+sorvola.
+
+**Perché la fase 3 si riapre.** La fase 3 ha separato uso urbano, catalizzatore e
+tipologia, ma il cibo è rimasto un termine dell'industria:
+
+```ts
+const foodProduced = industrial * BALANCE.food.perProduction * staffing;
+const materialsProduced = industrial * weights.productionYield * staffing;
+```
+
+La stessa fabbrica produceva cibo e materiali dallo stesso organico. Ne
+seguivano tre difetti, e il terzo è quello che conta: non si poteva **indicare**
+da dove viene il cibo; non esisteva competizione per il suolo, perché la capacità
+alimentare cresceva con la densità invece che contro; e l'unico modo di restare
+senza cibo era non costruire abbastanza industria — mai «non c'è più terra».
+L'unica cosa agricola del gioco, il mandato `communityGardens`, era decorazione
+più un regalo una tantum.
+
+- [x] Staccare il cibo dal termine industriale e dargli tre produttori con un <!-- size: L -->
+  listino in case sfamate; ridichiarare il pareggio 1:1 come prodotto derivato
+  (`FOOD_PER_HOUSE`) invece che come rapporto fra due costanti lontane.
+- [x] Contatori paralleli invece di un quinto uso urbano: `CLASS_COUNT` resta 4, <!-- size: M -->
+  il contratto 10 resta intatto e il campo di desiderabilità non guadagna un
+  quinto piano per chunk.
+- [x] Campi: lotti che nascono oltre il bordo dell'edificato, non entrano negli <!-- size: XL -->
+  indici di collisione, e si ritirano quando la città li ricopre.
+- [x] Solchi in microgeometria: due nuovi tipi di copertura che portano l'asse <!-- size: L -->
+  nel marcatore, così un lotto corre tutto in un verso e le colonne contigue si
+  saldano in una fila sola.
+- [x] Frutteti: stesso lotto, alberi da frutto su reticolo regolare — la <!-- size: M -->
+  regolarità contro il jitter del bosco naturale è tutta la leggibilità.
+- [x] Torre idroponica: una riga di catalogo con `specialization: 'farming'`, <!-- size: M -->
+  fasce luminose come luci di crescita, e un vero scambio fra materiali e cibo.
+- [x] HUD: il cibo mostra da dove viene invece di un `±0`; `communityGardens` <!-- size: M -->
+  smette di essere decorazione.
+
+**Gate:** si può indicare a schermo da dove viene il cibo; una città che si
+allarga sui propri campi vede la dispensa stringersi senza che nulla di scritto
+glielo dica; e quando il suolo finisce la risposta è salire.
+
+**Come è stato risolto.** Il listino di `BALANCE.farms` è in edifici residenziali
+sfamati — un campo due, un frutteto uno, una torre sei — e il cibo per tick lo fa
+`FOOD_PER_HOUSE`, che è `residentialCapacity * food.perResident`: cambiare la
+capacità di una casa muove il listino da solo, e il pareggio non si rompe più per
+distrazione. I campi non sono record del `BuildingRegistry` ma di un registro
+loro, perché non appartengono a nessuno dei due indici di collisione — in uno
+impedirebbero di costruirci sopra, nell'altro perfino di passarci una strada.
+Entrano nel mondo dalla coda della superficie e non da uno stamp, perché un
+marcatore di copertura *è* palette 0 e uno stamp non sa esprimerlo. Il terreno
+non si ridipinge: a leggere come campo è la regolarità dei solchi, non il colore
+del suolo — misurato a 5120 quad per chunk arato contro un tetto di 16384.
+
+Il frutteto è invece volume, quindi passa dalla coda della crescita come un
+edificio, e ne eredita budget e cancellazione senza aggiungere un quarto posto da
+cui i voxel entrano nel mondo. Il disegno di un albero è rimasto scritto una
+volta sola: `drawTree` è il corpo di `writeTree` senza la destinazione. La specie
+da frutto non compare in `FLORA` — non nasce da sola — ed è per questo che può
+avere una sagoma potata; a dire «coltivato» è il reticolo contro il jitter del
+bosco vero.
+
+La torre idroponica è **una riga di catalogo** e nient'altro: l'accento verde a
+livello alto esce `luminous` dalla grammatica che c'era già, quindi le fasce di
+coltura si accendono di notte senza un materiale, uno slot o un emettitore in
+più. A dire alla simulazione che è una torre è la **tipologia costruita** e non la
+specializzazione del luogo: in un distretto che esprime `farming` un edificio
+sotto `minLevel` prende comunque una forma normale, e contarlo come torre lo
+farebbe produrre cibo senza esserlo.
+
+L'HUD legge un referto del tick (`state.harvest`) invece di rifare il conto:
+duplicare il listino nell'interfaccia sarebbe il modo sicuro di far divergere le
+righe dal numero che le sta sopra. E `communityGardens` ha smesso di essere
+decorazione — abbassa la soglia di ciò che diventa frutteto, quindi il mandato si
+vede nella campagna oltre che negli isolati.
+
 ## Fase 4 — Forma urbana procedurale
 
 Obiettivo: trasformare la crescita urbana in un processo realmente verticale e
@@ -1532,14 +1615,45 @@ non può succedere, e il test presidia la scrittura invece della tabella. La
 proprietà si è già ripagata: quando il catalogo della flora è cresciuto, la
 fascia di scala si è allargata da sola.
 
-**La cella non è un cubo, ed è un vincolo del mesher e non un gusto.** Ogni
-emettitore di `microGeometry.ts` chiede una cosa diversa — `emitHabitat` la
-sommità di una corsa di facciata, `emitLuminous` montanti *e* traversi,
-`emitPortals` un architrave con aria davanti un piano più in su, `emitRoofTech`
-un tetto esposto che confina con l'aria di fianco — e un prisma isolato di lato
-quattro e alto sei li soddisfa tutti insieme. Sotto quei numeri qualche riga
-smetterebbe di mostrare qualcosa senza che niente segnali il perché, che è
-esattamente il difetto che la casella metteva in guardia.
+**Il provino non è un prisma, ed è un vincolo del mesher e non un gusto.** La
+prima versione lo era, e a schermo si vedeva: 248 scatole quasi identiche, con il
+dettaglio ridotto a una riga in cima. Misurando `appendMicroGeometry` su un
+provino solo si è visto che non era un'impressione — su un prisma isolato con la
+sommità piatta tre famiglie di emettitori non scattano **affatto**, perché
+nessuna delle loro condizioni geometriche esiste su una scatola: `emitSoffits`
+vuole un intradosso con aria sotto, `emitTerraceBoxes` una sommità scoperta che
+ha ancora volume di fianco, `emitFinials` una cella senza vicini in piano. Il
+campionario mostrava quindi un vocabolario **più povero di quello vero**, che è
+il difetto peggiore possibile per uno strumento che esiste per giudicare il
+vocabolario.
+
+`CELL_TIERS` porta la sagoma minima che le produce tutte — podio rientrato,
+sbalzo a filo, arretramento, guglia isolata — e in più ogni gradone spezza le
+corse verticali, così montanti, traversi, architravi, mensole e parapetti si
+moltiplicano invece di comparire una volta sola in cima. Misurato: da 21 a 55
+prismi di dettaglio per `habitat`, da 25 a 77 per `civic` e `industrial`, da 16 a
+64 per `luminous`, da 4 a 22 per `roofTech`. La sagoma è **identica in tutte e
+248 le celle**, ed è il punto: se variasse anche la forma, due celle vicine non
+sarebbero più confrontabili e l'unica variabile smetterebbe di essere
+palette × superficie.
+
+**L'interasse è governato dall'occlusione, e la relazione è esatta.** A
+`REST_PITCH`, cioè l'isometrica vera `atan(1/√2)`, un voxel di quota si proietta
+in alto per `cos(pitch)` e un voxel di profondità per `sin(pitch)/√2`: il
+rapporto è esattamente due, quindi la fila davanti nasconde
+`CELL_HEIGHT - cellPitch / 2` di quella dietro. Con interasse pari all'altezza —
+sei e sei, la prima versione — spariva **metà** di ogni provino, ed è così che
+una griglia di prismi distinti si legge come una massa unica. A dieci contro
+sette resta nascosto il podio e nient'altro. Alzarlo ancora costa in fretta,
+perché `frameRegion` inquadra sulla diagonale: ogni voxel di interasse si paga
+trentuno volte in x e sette in y, e la griglia rimpicciolisce per tutti. Un test
+tiene insieme i due numeri, così non si può ritoccarne uno solo.
+
+**Il basamento è largo quanto la fascia che regge.** Da quando l'interasse segue
+l'occlusione la matrice è larga il triplo della stratigrafia e della scala: un
+basamento rettangolare lasciava due terzi di grigio vuoto in un angolo, che a
+schermo si legge come una scena non finita. Il profilo a gradini dichiara le tre
+fasce da sé, che è anche l'unica etichetta possibile in una scena senza scritte.
 
 **Due righe restano piatte, e va detto invece che corretto.** `plain` non è un
 linguaggio, e `utility` è escluso dalla raccolta del mesher perché è metallo
@@ -1571,16 +1685,21 @@ colonne oltre il bordo — proprio quelle che l'inquadratura taglierebbe senza
 dirlo. Il test conta i voxel dentro l'estensione e li confronta con il totale,
 che è esatto.
 
-**Costo.** Circa quarantamila celle in tutto, contro i milioni di un'isola: la
-generazione finisce in pochi passi dentro `GENERATION_BUDGET_MS`. Il campionario
-non entra nel ciclo di frame di una città e non tocca né mesher né simulazione,
-quindi **le tabelle di misura di `README.md` e `src/sim/README.md` non vanno
-rimisurate**.
+**Costo.** 82 560 celle in 49 chunk, contro i milioni di un'isola: la generazione
+finisce in pochi passi dentro `GENERATION_BUDGET_MS` e `main` resta sotto un
+millisecondo. Il chunk peggiore porta nove provini, cioè meno di 4 200 quad di
+dettaglio contro i 16 384 di `MAX_DETAIL_QUADS_PER_CHUNK`: non tronca. Il
+campionario non entra nel ciclo di frame di una città e non tocca né mesher né
+simulazione, quindi **le tabelle di misura di `README.md` e `src/sim/README.md`
+non vanno rimisurate**.
 
 **Resta aperto.** Il campionario mostra il vocabolario, non le regole che lo
 compongono: quali superfici una tipologia usi davvero resta una domanda per
-`?scene=diorama`. Non ci sono etichette in-world — il nome di ciò che si guarda
-vive nell'overlay, e fuori da `?debug=1` il campionario è muto.
+`?scene=diorama`. Due prop non possono comparirci **per costruzione**: tende e
+insegne chiedono un `portal` sotto la stessa faccia, e un provino di una
+superficie sola non può averlo senza mentire sulla riga a cui appartiene. Non ci
+sono etichette in-world — il nome di ciò che si guarda vive nell'overlay, e fuori
+da `?debug=1` il campionario è muto.
 
 ### Fase 4.11 — Vedere dentro la città
 
@@ -2026,23 +2145,82 @@ cielo dentro il costruito, e quella finestra è ciò che dice la scala — senza
 torre grossa è solo grossa. Vale come vincolo di ricetta e non come nota di
 gusto: un'arcologia che riempie il proprio ingombro ha sbagliato ricetta.
 
-- [ ] Dare all'arcologia una ricetta di parti come i landmark — steli, impalcati <!-- size: XL -->
+**Stato implementazione:** cinque caselle su sei. Il dominio esiste in
+`src/world/arcology/` (ricetta, condizione, finestra di cielo, generatore) e il
+driver in `src/world/buildings/arcologyDriver.ts`; su una città cresciuta ne
+nascono due, quella del centro denso arriva all'ultimo stadio con quattro usi su
+quattro quote. **Resta aperto l'innesto nella rete in quota**: la struttura offre
+i propri attracchi ma nessun percorso ci si attacca ancora — dettaglio più sotto.
+
+- [x] Dare all'arcologia una ricetta di parti come i landmark — steli, impalcati <!-- size: XL -->
   abitati, corone, vuoti passanti — con l'ingombro riservato e gli stadi
   cumulativi che la 4.12 ha già.
-- [ ] Ammettere più usi dentro la stessa struttura, per fascia di quota, senza <!-- size: L -->
+- [x] Ammettere più usi dentro la stessa struttura, per fascia di quota, senza <!-- size: L -->
   che diventi una zona: la simulazione continua a contare capacità e occupazione
   come le conta oggi (invariante 7, e lo stesso vincolo che regge i cluster
   della 4.4).
-- [ ] Farla nascere da una condizione della città — densità, quota ammessa già <!-- size: L -->
+- [x] Farla nascere da una condizione della città — densità, quota ammessa già <!-- size: L -->
   satura, un mandato della 2.2 — e non da un nono bottone in toolbar: il
   giocatore modifica le condizioni della crescita, non posa la megastruttura.
 - [ ] Innestarla nella rete in quota della 4.5: un'arcologia che non si <!-- size: M -->
   raggiunge dagli impalcati è un monumento, non un pezzo di città.
-- [ ] Farne il vertice della gerarchia della 4.6 — l'eccezione governata, una o <!-- size: M -->
+- [x] Farne il vertice della gerarchia della 4.6 — l'eccezione governata, una o <!-- size: M -->
   due per isola — invece di una riga di catalogo che la tipologia può pescare
   ovunque.
-- [ ] Tenerla dentro i budget: attraversa decine di chunk, quindi cresce a <!-- size: L -->
+- [x] Tenerla dentro i budget: attraversa decine di chunk, quindi cresce a <!-- size: L -->
   segmenti come le campate e uno stadio per volta, mai in un frame solo.
+
+**Come è stato risolto, e cosa la misura ha smentito.**
+
+L'arcologia è la **quinta riga della stessa macchina** di `landmark`, `span`,
+`aerial` e `aloft`: un `BuildingRecord` con `arcology` valorizzato eredita
+occupazione, collisione, budget di chunk e comparsa a budget, e a cambiare è solo
+quale generatore disegna lo stamp. Il nucleo ricetta→stamp dei landmark è stato
+**estratto** (`PartsRecipe`, `generateFromRecipe`) invece che copiato, e con lui
+il cantiere di sventramento, che ora vive in `clearanceSite.ts` e serve due
+domìni. Gli usi arrivano a `src/sim/` **uno per fascia su colonne distinte**:
+`record.uses` è l'elenco di ciò che `addBuilding` ha accettato, `tally` conta
+quelle voci, e `countsByClass` resta esattamente uguale a `state.buildingCounts`
+senza che la simulazione impari una coordinata verticale.
+
+Tre cose le ha decise la misura contro il progetto:
+
+1. **`isPeakBlock` non entra nella condizione.** Sembrava ovvio chiedere che la
+   megastruttura stesse su uno degli isolati che la 4.6 elegge a picco, e con
+   quella riga in più non ne nasceva **nessuna** su nessun seed: due terzi degli
+   isolati eletti sono più stretti dell'ingombro, il centro è piccolo, e
+   l'intersezione dei tre insiemi era vuota. Tolta la riga, la prima arriva a
+   ottocento tick. `isPeakBlock` è un tiro ogni sette isolati su tutta la mappa,
+   tarato perché le guglie non diventino un bosco, e non ha niente da dire su una
+   struttura che esiste in due esemplari contati: la governance dell'eccezione è
+   `maxPerIsland`, che è un numero esatto invece di una probabilità.
+2. **Il modello di stadio dei landmark non si trasferisce.** Un landmark nasce
+   presto e il quartiere gli cresce intorno; un'arcologia nasce quando la città
+   ha *già smesso* di crescere, ed è la sua condizione a chiederlo. Dopo la
+   fondazione il conto dei vicini non sale quasi più — novantotto nel centro
+   denso, cinquantaquattro in periferia — e le soglie scritte a occhio non le
+   raggiungeva nessuno. Non è il tempo a far salire gli stadi, è il **luogo**:
+   dove il centro era pieno la struttura si completa, dove lo era meno resta un
+   podio con gli steli.
+3. **Un attracco in quota ha tre requisiti, e nessuno si vedeva dai test puri.**
+   Deve stare entro `maxNodes * stepPerNode` dal piano finito; deve essere largo
+   almeno `walkWidth` su *tutti e due* gli assi, perché `planBetween` rifiuta con
+   `noLanding` un fronte più stretto di una passerella su quell'asse; e non deve
+   partire a filo di un piano solido della struttura, o la corsia nasce dentro il
+   podio. La ricetta li ha violati uno per volta con la suite verde.
+
+**Perché la quarta casella è ancora aperta.** I piazzali ci sono, sono record
+`AERIAL_PART.node` indicizzati in `registry.decks`, stanno alla quota giusta e
+sono larghi abbastanza; `routePass` li esamina e prova i compagni. Su una città
+cresciuta nessuna coppia regge: le migliori muoiono su `blocked` — la corsia
+attraversa colonne dell'ingombro dell'arcologia, che il registry tiene occupate a
+**ogni** quota, quindi un piazzale rientrato dal filo non ha una via d'uscita su
+quell'asse — e le altre su `tooSteep`, perché i compagni disponibili sono in
+diagonale e la forma a zeta consuma il budget di pianerottoli. È una misura, non
+una supposizione, e la correzione tocca la geometria della ricetta (piazzali a
+filo su più fronti, con gli steli spostati per liberare gli angoli del podio) o
+`routePlan`. Fino ad allora l'arcologia è raggiungibile solo dalla propria scala
+interna, cioè è ancora un monumento.
 
 **Vincolo:** valgono i vincoli trasversali della fase, e in particolare i tre che
 qui si è più tentati di negoziare — nessun tipo di superficie in più (invariante
@@ -2148,6 +2326,52 @@ entrambe si notano solo da qui in poi.
   che un oggetto staccato dal contesto si legge per silhouette e ombra propria —
   ed è esattamente l'ombra che qui manca ancora.
 
+### Fase 4.16 — Tipologie, stili, sbalzi e dettaglio del retro
+
+Obiettivo: togliere alla città la ripetizione — due quartieri lontani si
+somigliavano, e un edificio era un prisma pulito da ogni lato.
+
+Dipende dalla 4.3 per la grammatica delle fasce, dalla 4.4 per l'aggregazione in
+fila e dalla 4.9 per il precedente dell'aggetto. Vive quasi tutta in
+`src/world/buildings/`, con una coda in `src/engine/mesher/`.
+
+**Stato implementazione:** completata. Il gate resta da validare a occhio su
+un'isola vera: i test coprono determinismo, coerenza d'isolato, invarianti dello
+sbalzo e budget, non la leggibilità a distanza di gioco.
+
+**Il vincolo che ha deciso metà della fase.** I 32 slot sono famiglie di
+*materia* e il loro colore lo scrive il tema, che è globale: un isolato rosa
+accanto a uno azzurro vorrebbe slot nuovi, cioè l'invariante 4. Uno stile può
+quindi dire *di che cosa* è fatto un quartiere, non che colore ha — e a distanza
+di gioco dice la stessa cosa, in tutti e sette i temi invece che in uno.
+
+- [x] Spezzare `generate.ts` nei suoi quattro moduli e fissare le impronte <!-- size: M -->
+  digitali della grammatica **prima** di muovere una riga.
+- [x] Lo stile come seconda dimensione, ortogonale all'uso e funzione pura di <!-- size: L -->
+  `(seed, quartiere)`: nessuno stato, coerenza d'isolato per costruzione.
+- [x] Smusso e portico come campi di `TypologyShape`; `shear`, `corner` e <!-- size: M -->
+  `gable` come voci di tabella, non come rami.
+- [x] Sbalzi veri fuori impronta, con l'invariante gemello — **uno sbalzo non <!-- size: XL -->
+  prende suolo** — e i due indici del registry a reggerlo.
+- [x] Il ruolo del lotto dentro l'isolato come criterio di catalogo, e la torre <!-- size: M -->
+  d'angolo come riga invece che come conseguenza non detta.
+- [x] Il dettaglio del retro in un modulo suo: calate, scale esterne, pergole. <!-- size: M -->
+
+**Vincolo:** nessuno slot di palette e nessun tipo di superficie in più
+(invarianti 4 e 5); `maxDirtyChunksPerBuilding` si ricalcola e non si stima; le
+misure di quad e di tempo si rilevano a mano su questa macchina.
+
+**Gate:** da inquadratura d'insieme due isolati si distinguono per **materia**
+prima che per funzione, e la distinzione regge cambiando tema con `1`..`9`; da
+vicino un edificio ha almeno un aggetto, un portico o uno smusso che ne rompe il
+prisma, e il retro non è più liscio come il fronte.
+
+**Resta aperto.** La passata di promozione non interroga `overlaps` per il volume
+nuovo, quindi una torre a terra può crescere fin dentro un edificio nato su un
+impalcato in quota. È preesistente e non lo introduce lo sbalzo; correggerlo
+significa fermare la crescita verticale sotto ogni impalcato, cioè una decisione
+di gioco. Da valutare insieme alla 4.9.
+
 **Gate della fase 4:** con la UI nascosta, la città comunica crescita verticale,
 connessioni fra livelli e struttura economica attraverso volumi e silhouette;
 ponti, terrazze e percorsi in quota restano leggibili alle normali distanze di
@@ -2194,6 +2418,12 @@ crema, un'unica ombra, icone a tratto sottile tutte dello stesso peso e dello
 stesso colore. Il risultato è che l'HUD sembra appoggiato sopra il gioco invece
 di appartenergli.
 
+**Stato: 7.1, 7.3 e 7.4 sono fatte** — il sottoinsieme che Alpha 0.2 chiede prima
+del playtest. Restano 7.2 (iconografia) e 7.5 (movimento e feedback). Delle tre
+rotture qui sotto, la seconda e la terza sono chiuse; la prima lo è per metà —
+le cinque risorse ora si distinguono per anello, tendenza e sparkline, ma
+l'**icona** è ancora la stessa a tratto unico, ed è appunto 7.2.
+
 Le tre rotture visibili a schermo, in ordine di gravità:
 
 1. **La barra risorse legge come cinque copie della stessa pastiglia.** Denaro,
@@ -2218,25 +2448,33 @@ e i numeri cedono il posto alle visualizzazioni dove possibile. Le fonti che
 hanno guidato questa fase sono in fondo alla sezione.
 
 **Vincoli che restano validi:** niente nuove dipendenze runtime — cornici e icone
-sono SVG inline e `border-image`, non un UI kit; `GameHudModel.ts` resta puro e
-testabile in `node`; il repaint dell'HUD resta fuori dal percorso caldo del
-frame; `prefers-reduced-motion` continua a spegnere tutto il movimento.
+sono SVG inline e CSS, non un UI kit; `GameHudModel.ts` resta puro e testabile in
+`node`; il repaint dell'HUD resta fuori dal percorso caldo del frame;
+`prefers-reduced-motion` continua a spegnere tutto il movimento.
 
 ### Fase 7.1 — Materiale dei pannelli e temi
 
-- [ ] Sostituire `--hud-shadow` con una scala di elevazione a tre livelli (dock, <!-- size: M -->
+- [x] Sostituire `--hud-shadow` con una scala di elevazione a tre livelli (dock, <!-- size: M -->
   drawer, modale) e aggiungere a `.hud-surface` bordo interno chiaro, gradiente
   verticale e ombra di contatto: un pannello deve leggersi come un oggetto
   appoggiato, non come un rettangolo trasparente.
-- [ ] Introdurre una cornice 9-slice via `border-image` con sorgente SVG in <!-- size: M -->
-  `data:` URI, così i pannelli scalano senza deformare gli angoli e senza asset
-  binari nel bundle.
-- [ ] Far derivare i token di `hud.css` dal tema attivo: `applyTheme` scrive <!-- size: L -->
-  `--hud-*` su `document.documentElement` a partire dalla palette del tema, e
-  l'HUD cambia con il mondo invece di restare crema sotto un cielo al neon.
+- [x] Cornice dei due oggetti di chrome — **ad anelli, non a `border-image`**. <!-- size: M -->
+  La tecnica 9-slice è incompatibile con la derivazione dei temi qui sotto: un
+  `data:` URI non legge le custom property, quindi la cornice dovrebbe essere
+  trasparente per non stonare, ma `border-image` ignora `border-radius` e sotto
+  una cornice trasparente si vedrebbero gli angoli **quadrati** del gradiente.
+  Tre anelli in `box-shadow` danno lo stesso risultato — nessun angolo deformato
+  quando il pannello scala, nessun asset binario — e per di più seguono i token.
+- [x] Far derivare i token di `hud.css` dal tema attivo: `hudTokens(theme)` in <!-- size: L -->
+  `src/ui/hudTokens.ts` sceglie pannello chiaro o scuro dalla luminanza
+  dell'aria, tinge verso il colore del mondo e blocca il contrasto AA; `main.ts`
+  li calcola e `GameHud.setTheme` li scrive su `document.documentElement`.
 
-**Gate:** cambiando tema, HUD e scena restano riconoscibilmente lo stesso gioco;
-nessun pannello perde contrasto AA sui sette temi.
+**Gate raggiunto:** cambiando tema, HUD e scena restano riconoscibilmente lo
+stesso gioco — neon e sci-fi portano un HUD scuro, gli altri cinque uno chiaro, e
+le sette superfici sono tutte distinte. Il contrasto è verificato due volte: in
+`node` su ogni token di testo (`hudTokens.test.ts`) e nel browser sui valori
+davvero dipinti, dove sta fra **4,57 e 15,63**.
 
 ### Fase 7.2 — Iconografia
 
@@ -2254,33 +2492,51 @@ sette catalizzatori dalla sola icona.
 
 ### Fase 7.3 — Indicatori
 
-- [ ] Sostituire il `delta` testuale con un indicatore di tendenza: freccia <!-- size: M -->
-  direzionale, magnitudine e sparkline breve sulla finestra dei tick recenti.
+- [x] Sostituire il `delta` testuale con un indicatore di tendenza: freccia <!-- size: M -->
+  direzionale, magnitudine (nell'opacità, non in una seconda cifra) e sparkline
+  sulla finestra dei tick recenti — `src/ui/ResourceTrend.ts`, campionata sul
+  `tickCount` perché l'HUD ridipinge più spesso di quanto la simulazione avanzi.
   Niente `±0` a schermo quando non succede niente.
-- [ ] Dove esiste un tetto (scorte di cibo contro consumo, banchi occupati), <!-- size: M -->
-  mostrarlo come anello o barra di riempimento invece che come numero nudo.
-- [ ] Numeri tabulari e conteggio animato sulle variazioni; stato di crisi con <!-- size: S -->
-  pulsazione e colore, non solo con testo rosso.
-- [ ] Su hover, popover con la scomposizione entrate/uscite della risorsa: la <!-- size: M -->
-  domanda "perché sto perdendo denaro" oggi non ha risposta nell'HUD.
+- [x] Dove esiste un tetto, un anello invece del numero nudo: il cibo contro la <!-- size: M -->
+  soglia della carestia — **lo stesso numero** che fa scattare il toast di
+  penuria, così le due superfici non possono divergere — e la soddisfazione, che
+  è già una quota. Denaro e materiali non hanno un massimo e non fingono di
+  averlo.
+- [x] Numeri tabulari e stato di crisi con pulsazione e colore, non solo con <!-- size: S -->
+  testo rosso. La pulsazione è CSS e si spegne sotto `prefers-reduced-motion`.
+- [x] Su hover (e col fuoco da tastiera), popover con la scomposizione <!-- size: M -->
+  entrate/uscite: i sei numeri esistevano già dentro `tick.ts` e venivano buttati
+  via una riga dopo essere serviti al saldo. Ora escono come `FundsReport`
+  (`src/sim/flows.ts`), derivato dal tick come `commerce` e non accumulato.
 
-**Gate:** dallo sguardo alla barra si capisce in che direzione sta andando la
-città senza aprire nessun pannello.
+**Gate raggiunto:** dallo sguardo alla barra si capisce in che direzione sta
+andando la città. Verificato con una città viva: anelli parziali, sparkline che
+si muovono, frecce accese e il popover che nomina tasse e negozi.
 
 ### Fase 7.4 — Strumenti
 
-- [ ] Separare `locked` da `disabled`: il bottone bloccato mostra il requisito <!-- size: M -->
-  mancante come riempimento progressivo (denaro accumulato sul costo, popolazione
-  sulla soglia) invece di sbiadire. Bloccato deve leggersi come "manca poco".
-- [ ] Tile icona-sopra-etichetta di dimensione uniforme, badge del tasto numerico <!-- size: M -->
-  1..9, badge di costo con l'icona della risorsa di 7.2.
-- [ ] Stato selezionato forte (non solo inversione di colore): cornice, sollevamento <!-- size: M -->
-  e anteprima del raggio in-world coerente col colore dello strumento.
-- [ ] I separatori di gruppo diventano guide etichettate continue, così crescita, <!-- size: S -->
-  connessioni e identità si leggono come tre corsie e non come otto bottoni.
+- [x] Separare `locked` da `disabled`: il bottone bloccato mostra il requisito <!-- size: M -->
+  mancante come riempimento progressivo invece di sbiadire, e il requisito è
+  quello **vincolante** — chi ha i fondi ma non gli abitanti vede gli abitanti.
+  Un blocco che non si scioglie aspettando (l'ordine del tutorial) resta invece
+  sbiadito: riempirlo allo 0% direbbe «manca tutto» quando la verità è «prima fai
+  un'altra cosa».
+- [x] Tile icona-sopra-etichetta di dimensione uniforme, badge del tasto numerico <!-- size: M -->
+  1..9, badge di costo con l'icona della risorsa. **I tasti `1`..`9` sono passati
+  dagli otto temi agli strumenti**, e i temi a `Shift`+`1`..`9`: la ragione che
+  teneva le cifre nude sui temi — «il dock è aperto a chiunque, quella
+  scorciatoia non può stare dietro `?debug=1`» — è esattamente quella che ora le
+  sposta. Nel campionario restano sui temi, perché lì non c'è dock.
+- [x] Stato selezionato forte: cornice d'accento, sollevamento e ombra colorata, <!-- size: M -->
+  oltre all'inversione. L'anteprima del raggio in-world tiene il colore che ha —
+  colorarla per strumento tocca l'engine e resta a 7.5.
+- [x] I separatori di gruppo sono diventati guide etichettate continue, e le <!-- size: S -->
+  corsie sono quattro: crescita, connessioni, identità e **portata** (espansione,
+  mensola, funivia, che prima galleggiavano fuori da ogni gruppo).
 
-**Gate:** un giocatore nuovo, guardando solo il dock, sa cosa può costruire ora,
-cosa gli manca per il resto e quale strumento ha in mano.
+**Gate raggiunto:** guardando solo il dock si vede cosa si può costruire ora
+(tessera piena), cosa manca per il resto (barra che avanza più le due cifre) e
+quale strumento si ha in mano (cornice e sollevamento).
 
 ### Fase 7.5 — Movimento e feedback
 
@@ -2315,9 +2571,10 @@ animazione compare nel profilo del frame.
 - [x] Primo sistema di strade procedurali usato come scheletro della crescita (fase 4.1). <!-- size: XL -->
 - [ ] Salvataggio locale minimo del ciclo completo. <!-- size: L -->
 - [ ] Playtest di 30 minuti con budget e criteri automatici registrati. <!-- size: M -->
-- [ ] Passata visiva su indicatori e strumenti: fasi 7.1, 7.3 e 7.4 (il resto <!-- size: L -->
-  della fase 7 puo' seguire, ma barra risorse e dock vanno sistemati prima del playtest,
-  altrimenti si misura la confusione della UI invece del bilanciamento).
+- [x] Passata visiva su indicatori e strumenti: **fasi 7.1, 7.3 e 7.4 fatte**. <!-- size: L -->
+  Barra risorse e dock si leggono a colpo d'occhio, e l'HUD cambia con il tema
+  invece di restare crema sotto ogni cielo. Il resto della fase 7 — iconografia
+  (7.2) e movimento (7.5) — può seguire senza bloccare il playtest.
 - [x] Guardare dentro la città: **fasi 4.11 e 4.13 fatte**. Le quattro viste <!-- size: M -->
   sono passate da strumento dell'harness a comando di gioco — dock, tasti senza
   debug, barra dei livelli — ed è la risposta alla domanda che una città densa

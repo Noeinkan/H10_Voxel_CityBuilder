@@ -2,10 +2,16 @@ import { SURFACE_KIND } from '../visualBlock';
 import type { TerrainMap } from '../terrain/TerrainMap';
 import type { VoxelWorld } from '../VoxelWorld';
 import { GRADING } from '../grading/config';
-import { GROUND, rampField } from '../grading/grade';
+import { GROUND, isDryLand, rampField } from '../grading/grade';
 import { StreetNetwork, type PavementCell } from '../streets/StreetNetwork';
 import { STREET_ROLE, type BlockId } from '../streets/streetGrid';
 import { STREETS } from '../streets/config';
+import {
+  blockNeighbours,
+  nearestBlock,
+  planCorridor,
+  type CorridorLeg,
+} from '../streets/corridor';
 import type { ReadonlyBuildingRegistry, BuildingRecord } from './BuildingRegistry';
 import { BUILDER } from './config';
 import { STAMP_EMPTY } from './stamp';
@@ -38,6 +44,16 @@ import { groundKindAt, nearLand } from './siteWorks';
 export interface SurfacePaint {
   readonly x: number;
   readonly y: number;
+  /**
+   * Palette del piano calpestabile, oppure **0 per lasciare il terreno dov'e'**.
+   *
+   * Lo zero e' arrivato con i lotti agricoli: un campo non ripavimenta niente —
+   * il grano cresce sul prato che c'e' gia' — e dargli un colore vorrebbe dire
+   * inventare uno slot di terra arata dentro una palette che ne ha trentadue e
+   * nessuno libero (invarianti 4 e 5). Chi passa 0 sta usando questa coda per la
+   * sola `cover`, e allora `deck`, `wall` e `coping` non hanno senso: senza un
+   * piano da reggere non c'e' nessun salto da costruire.
+   */
   readonly palette: number;
   readonly priority: number;
   /** Quota del piano finito. Se manca, si dipinge il terreno dov'e'. */
@@ -46,6 +62,18 @@ export interface SurfacePaint {
   readonly wall?: number;
   /** Coronamento del muro: l'ultimo voxel sotto il piano calpestabile. */
   readonly coping?: number;
+  /**
+   * Marcatore di copertura da posare sul voxel **sopra** il piano.
+   *
+   * E' il modo in cui un solco coltivato entra nel mondo, e passa da qui e non
+   * da uno stamp per una ragione di formato: uno stamp porta indici di palette e
+   * `STAMP_EMPTY` vale 0, mentre un marcatore *e'* palette 0 — inesprimibile in
+   * quel linguaggio. Questa coda invece dipinge colonne, che e' esattamente cio'
+   * che fa un campo, e ci porta in dote la priorita': una carreggiata che ripassa
+   * su un lotto vince, e il marcatore rimasto orfano sparisce da se', perche'
+   * `coverToneOn` non trova piu' il proprio terreno sotto.
+   */
+  readonly cover?: number;
 }
 
 export class SurfaceQueue {
@@ -54,8 +82,14 @@ export class SurfaceQueue {
   private readonly priority = new Map<string, number>();
   private head = 0;
 
-  /** Isolati la cui carreggiata e' gia' stata accodata: si dipinge una volta sola. */
-  private readonly paintedBlocks = new Set<string>();
+  /**
+   * Isolati la cui carreggiata e' gia' stata accodata: si dipinge una volta sola.
+   *
+   * Porta l'identita' e non piu' la sola chiave, da quando esiste il raccordo:
+   * questo e' **l'insieme dei nodi gia' sulla rete**, e chi cerca il piu' vicino
+   * ha bisogno degli indici di isolato, non di stringhe da riconvertire.
+   */
+  private readonly paintedBlocks = new Map<string, BlockId>();
 
   constructor(
     private readonly world: VoxelWorld,
@@ -96,12 +130,26 @@ export class SurfaceQueue {
   enqueueBlockStreets(block: BlockId): void {
     const key = this.streets.keyOf(block);
     if (this.paintedBlocks.has(key)) return;
-    this.paintedBlocks.add(key);
+    this.paintedBlocks.set(key, block);
 
-    const ring = this.streets.pavementRing(block);
-    const grade = this.rampAround(ring);
+    this.enqueuePavement(this.streets.pavementRing(block));
+    this.linkToNetwork(block);
+  }
 
-    for (const cell of ring) {
+  /**
+   * Accoda delle colonne di carreggiata con la quota di progetto che le regge.
+   *
+   * Era il corpo di `enqueueBlockStreets`, ed e' uscito da li' quando il raccordo
+   * ha avuto bisogno delle stesse identiche righe su un insieme di colonne che
+   * non e' un anello. Le due cose che fa — la rampa sul riquadro e il colore per
+   * ruolo — non hanno mai avuto niente a che vedere con la forma dell'insieme:
+   * chiedono solo delle colonne di strada e a che quota devono arrivare.
+   */
+  private enqueuePavement(cells: readonly PavementCell[]): void {
+    if (cells.length === 0) return;
+    const grade = this.rampAround(cells);
+
+    for (const cell of cells) {
       // Una banchina e' il bordo costruito della terra: oltre `quayReach` la
       // carreggiata smette invece di proseguire sul fondale.
       if (!nearLand(this.terrain, cell.x, cell.y)) continue;
@@ -128,6 +176,81 @@ export class SurfaceQueue {
         coping: shore ? GRADING.quayCoping : GRADING.terraceCoping,
       });
     }
+  }
+
+  /**
+   * Tira la strada che attacca alla rete un isolato nato staccato.
+   *
+   * **Non fa niente quasi sempre, ed e' il punto.** Un isolato che confina con
+   * uno gia' dipinto — anche solo per un angolo — condivide con lui la
+   * carreggiata, quindi e' gia' collegato e non c'e' niente da costruire: e' il
+   * caso di ogni edificio di una citta' che cresce per contiguita', cioe' della
+   * quasi totalita'. Le otto letture che lo verificano sono il prezzo che si paga
+   * per riconoscere i pochi casi in cui invece un raccordo serve davvero.
+   *
+   * **E quando serve, e' il porto.** Un landmark si pianta dove il giocatore
+   * clicca, e il clic non ha nessun obbligo di cadere accanto all'edificato: fino
+   * a qui quello che ne usciva era un rettangolo di banchina in mezzo alla
+   * spiaggia, con la citta' cinquecento colonne piu' in la' e niente in mezzo.
+   * Stessa cosa per un quartiere che la crescita ha scavalcato.
+   *
+   * La scansione dei nodi e' lineare nel numero di isolati dipinti, e non e' un
+   * costo che cresce col tempo di gioco in senso utile: gira **solo** su un
+   * isolato staccato, cioe' una manciata di volte per partita, e un'isola intera
+   * ne conta qualche centinaio.
+   */
+  private linkToNetwork(block: BlockId): void {
+    for (const neighbour of blockNeighbours(block)) {
+      if (this.paintedBlocks.has(this.streets.keyOf(neighbour))) return;
+    }
+
+    const target = nearestBlock(block, this.paintedBlocks.values());
+    if (target === null) return;
+
+    const route = planCorridor({
+      from: block,
+      to: target,
+      costOf: (leg) => this.legCost(leg),
+    });
+    if (route === null) return;
+
+    for (const leg of route) this.enqueuePavement(this.streets.corridorCells(leg));
+  }
+
+  /**
+   * Quanto costa al raccordo attraversare un passo, e `Infinity` se non si passa.
+   *
+   * **Giudica il terreno e non l'occupazione**, che e' la differenza fra questa e
+   * `canPaint`: una colonna presa da un edificio resta percorribile — la strada
+   * la salta e prosegue — mentre una parete o l'acqua fonda no. Confondere le due
+   * farebbe girare il percorso attorno alla citta' invece che attraverso, che e'
+   * l'esatto contrario di cio' che una strada fa.
+   *
+   * Il costo di base e' la lunghezza, cosi' a parita' di ostacoli vince il
+   * percorso corto; le colonne che non si possono dipingere lo caricano di
+   * `linkRefusedCost` ciascuna, ed e' quel rapporto a decidere se la strada gira
+   * attorno a una baia o ci finisce dentro.
+   */
+  private legCost(leg: CorridorLeg): number {
+    const rect = this.streets.corridorRect(leg);
+    let total = 0;
+    let passable = 0;
+
+    for (let y = rect.y0; y <= rect.y1; y++) {
+      for (let x = rect.x0; x <= rect.x1; x++) {
+        total++;
+        if (groundKindAt(this.terrain, x, y) === GROUND.refused) continue;
+        if (!nearLand(this.terrain, x, y)) continue;
+        passable++;
+      }
+    }
+
+    if (total === 0) return Number.POSITIVE_INFINITY;
+    // Un passo per meta' in acqua non e' una strada mezza costruita: e' un
+    // pugno di colonne staccate, che legge come un errore invece che come
+    // un'assenza. Meglio non passare di li' affatto.
+    if (passable < total * STREETS.linkMinPaved) return Number.POSITIVE_INFINITY;
+    return (total - passable) * STREETS.linkRefusedCost + total;
   }
 
   /**
@@ -161,9 +284,29 @@ export class SurfaceQueue {
         }
       }
 
-      this.world.setBlock(paint.x, paint.y, deck - 1, paint.palette);
+      // Palette 0 vuol dire «il terreno resta quello che e'»: e' il caso di un
+      // lotto agricolo, che posa solo il proprio solco. Scrivere lo zero qui
+      // svuoterebbe invece la colonna, cioe' aprirebbe un buco nel prato.
+      if (paint.palette !== STAMP_EMPTY) {
+        this.world.setBlock(paint.x, paint.y, deck - 1, paint.palette);
+        written++;
+      }
+
+      // Il marcatore va **sopra** il piano, dove il mesher lo cerca. Si scrive
+      // per ultimo: `clearDecorColumn` qui sopra ha appena ripulito la colonna
+      // per venti voxel, e posarlo prima vorrebbe dire toglierlo nello stesso
+      // giro. Non serve svuotare prima — `setCoverMark` sovrascrive.
+      //
+      // Lo **zero e' una richiesta**, non un'assenza: e' un lotto agricolo che si
+      // ritira e vuole indietro il proprio prato. `undefined` invece e' «non
+      // toccare», ed e' cio' che dice ogni colonna di carreggiata.
+      if (paint.cover !== undefined) {
+        if (paint.cover === 0) this.world.setBlock(paint.x, paint.y, deck, STAMP_EMPTY);
+        else this.world.setCoverMark(paint.x, paint.y, deck, paint.cover);
+        written++;
+      }
+
       this.priority.set(key, paint.priority);
-      written++;
     }
 
     if (this.head >= this.queue.length) {
@@ -196,9 +339,31 @@ export class SurfaceQueue {
     }
   }
 
+  /**
+   * Toglie tronchi e chiome sopra una colonna. **Non tocca l'acqua.**
+   *
+   * La bonifica parte dalla quota del terreno e sale di `decorClearanceHeight`,
+   * che e' tarato sulla conifera piu' alta: venti voxel. Su una colonna
+   * sommersa quella quota e' il **fondale**, quindi la passata cancellava tutta
+   * l'acqua sopra di esso — e attorno a ogni porto, a ogni molo e a ogni lotto
+   * sulla battigia restava un rettangolo di mare scavato fino al fondo. Si
+   * vedeva a colpo d'occhio e non lo diceva nessun test, perche' fino a qui
+   * l'opera di terra riempiva subito dopo le stesse colonne e il buco spariva
+   * sotto la banchina.
+   *
+   * Sott'acqua non cresce niente: non c'e' decoro da togliere, e la risposta
+   * giusta e' non fare niente.
+   *
+   * A dirlo e' il **bioma** e non il confronto fra quota e specchio, per la
+   * stessa ragione per cui `isDryLand` esiste: `classifyBiome` chiama oceano
+   * cio' che sta sotto il *proprio* specchio, che dentro una conca e' quello del
+   * lago, e una fixture di terreno piano dichiara terra a una quota qualsiasi.
+   */
   clearDecorColumn(x: number, y: number): void {
     const column = this.terrain.columnAt(x, y);
     if (column === null) return;
+    if (!isDryLand(column.biome)) return;
+
     const top = column.height + BUILDER.decorClearanceHeight;
     for (let z = column.height; z < top; z++) {
       if (this.world.getBlock(x, y, z) !== STAMP_EMPTY) {
@@ -213,16 +378,21 @@ export class SurfaceQueue {
   }
 
   /**
-   * Quota di progetto della carreggiata attorno a un isolato.
+   * Quota di progetto di un insieme di colonne di carreggiata.
    *
    * La battigia ancora la strada alla quota della banchina; tutto il resto
    * parte dal terreno. `rampField` alza poi il campo alla pendenza uno, ed e'
    * quella relazione a produrre la rampa: la carreggiata che scende al molo ci
    * arriva con un voxel per colonna invece di finirci sopra a picco.
    *
-   * Il rettangolo e' quello dell'anello, interno dell'isolato compreso: le
-   * colonne interne non si dipingono ma servono a propagare la distanza, e
-   * lasciarle fuori spezzerebbe la rampa proprio negli angoli.
+   * Il rettangolo e' quello dell'insieme intero — per un anello, interno
+   * dell'isolato compreso: le colonne che non si dipingono servono comunque a
+   * propagare la distanza, e lasciarle fuori spezzerebbe la rampa proprio negli
+   * angoli. Un tratto di raccordo e' una striscia, quindi il suo riquadro e' la
+   * striscia stessa, ed e' anche il motivo per cui la rampa si calcola **per
+   * tratto** invece che sul percorso intero: il riquadro di una L fra due capi
+   * lontani sarebbe il rettangolo che li contiene, cioe' decine di migliaia di
+   * celle per dipingerne qualche centinaio.
    */
   private rampAround(ring: readonly PavementCell[]): {
     levelAt: (x: number, y: number) => number;

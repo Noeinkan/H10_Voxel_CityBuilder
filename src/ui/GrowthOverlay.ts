@@ -85,6 +85,18 @@ export class GrowthOverlay {
       `aerial       ${stats.builder.terraces} terraces  ${stats.builder.routes} routes  ` +
         `${stats.builder.piers} piers  ${stats.builder.stacked} stacked  ` +
         `${stats.builder.lifts} lifts`,
+      // Non e' un gate come la riga sopra — una funivia la tira il giocatore, e
+      // zero vuol dire soltanto che non ne ha volute — ma sta qui perche' e'
+      // l'altro modo in cui la citta' scavalca il vuoto, e senza questa riga non
+      // c'e' modo di sapere che una linea e' stata registrata ma non e' comparsa.
+      `ropeways     ${stats.builder.ropeways}`,
+      // Il gate della 4.14, e i due numeri dicono due cose diverse: `arcologies`
+      // a zero vuol dire che la condizione non e' mai stata vera — il centro non
+      // ha ancora saturato la quota ammessa — mentre `clearing` fermo su uno con
+      // `arcologies` a zero vuol dire che il cantiere e' aperto e non chiude, che
+      // e' un difetto e non un'attesa.
+      `arcologies   ${stats.builder.arcologies}  clearing ${stats.builder.clearing}` +
+        `  cleared ${stats.builder.cleared}`,
       `blacklist    ${stats.builder.blacklisted}`,
       `rejected     ${rejected}`,
     ].join('\n');

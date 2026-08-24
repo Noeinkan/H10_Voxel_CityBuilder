@@ -1,18 +1,19 @@
 import { urbanProfileAt, type LocalUrbanProfile, type SimState } from '../../sim';
-import type { BuildingRecord } from './BuildingRegistry';
+import { envelopeOf, type BuildingRecord } from './BuildingRegistry';
 import type { AerialDriver } from './aerialDriver';
 import type { BuildContext } from './buildContext';
 import { dirtyChunkCount } from './chunkBudget';
 import { BUILDER, MAX_FOOTPRINT, upgradeThresholdOf } from './config';
-import { generateBuilding } from './generate';
+import { generateBuilding, groundSideOf } from './generate';
 import { anchorOf } from './growthQueue';
 import { allowedLevel, riseOf } from './hierarchy';
 import { recordStamp } from './recordStamp';
 import { buildWorks, isCoastal, surveyGrade } from './siteWorks';
 import type { SpanDriver } from './spanDriver';
 import { selectTypology, typologyProfile } from './typology';
+import { styleOf, styledProfile } from './style';
+import { blockRoom, lotRoleOf } from './blockForm';
 import { formOf, localUpgradeDiscount } from './urbanForm';
-import type { VoxelStamp } from './stamp';
 
 /**
  * La crescita verticale: chi promuove, e cosa diventa.
@@ -64,6 +65,9 @@ export class UpgradeDriver {
       // E la citta' in quota non ha un livello affatto: mensole, tratti, nodi e
       // gambe sono struttura, e non promuovono.
       if (record.aerial !== undefined) continue;
+      // E un'arcologia cresce di stadio dentro un inviluppo che non cambia mai:
+      // promuoverla vorrebbe dire rigenerarla come edificio, che non e'.
+      if (record.arcology !== undefined) continue;
       // **Chi regge qualcosa di abitato non cresce.** E' una domanda sola e sta
       // qui in alto perche' risponde di no senza leggere niente; il *togliere* —
       // che e' un atto — sta in fondo, quando la promozione e' decisa.
@@ -114,6 +118,17 @@ export class UpgradeDriver {
       level: nextLevel,
       profile,
       coastal: isCoastal(terrain, record.x, record.y),
+      // Il ruolo del lotto va ripassato, o promuovendo un angolo smetterebbe di
+      // essere un angolo: la torre perderebbe lanterna e smusso al primo livello
+      // in piu', che e' l'opposto di cio' che deve succedere crescendo. E' una
+      // funzione pura della maglia stradale, quindi si ricalcola invece di stare
+      // nel record — la rete non cambia.
+      lotRole: lotRoleOf(
+        this.ctx.streets.blockRect(this.ctx.streets.blockAt(record.x, record.y)),
+        record.x,
+        record.y,
+        record.footprint,
+      ),
     });
 
     const nextForm = formOf(profile);
@@ -128,7 +143,26 @@ export class UpgradeDriver {
     // carreggiata. Un edificio gia' accostato al fronte ha stanza zero e cresce
     // solo in altezza — che e' anche il motivo per cui i lotti d'angolo
     // diventano le torri dell'isolato invece di allargarsi sulla strada.
-    const room = this.blockRoom(record);
+    // La regola vive in `blockForm.ts` da quando la leggono in due: qui per
+    // decidere se allargare, alla nascita per scegliere la tipologia d'angolo.
+    const room = blockRoom(
+      this.ctx.streets.blockRect(this.ctx.streets.blockAt(record.x, record.y)),
+      record.x,
+      record.y,
+      record.footprint,
+    );
+    // Lo stile e' quello con cui l'edificio e' nato, non quello dell'isolato di
+    // adesso: un edificio che promuove resta lo stesso edificio, come restano la
+    // sua quota e il suo zoccolo. E' anche cio' che tiene `old` e `stamp`
+    // confrontabili — cancellare con un tessuto e riscrivere con un altro
+    // lascerebbe voxel orfani.
+    const style = styleOf(record.style);
+    // **Lo sbalzo si decide alla nascita e non si rinegozia.** Vale la stessa
+    // regola della fila e del corso di base, e la ragione e' piu' forte: un
+    // edificio che mettesse fuori un balcone promuovendo dovrebbe riverificare
+    // l'inviluppo, e fallendo cambierebbe sagoma sotto a chi ci si e' appoggiato.
+    // La tipologia nuova puo' chiederne uno diverso; il record non gliene da'.
+    const over = record.overhang ?? 0;
     let stamp = generateBuilding({
       class: record.class,
       level: nextLevel,
@@ -136,13 +170,17 @@ export class UpgradeDriver {
       footprintCap: Math.min(MAX_FOOTPRINT, room),
       footprintFloor: record.footprint,
       form: nextForm,
-      profile: typologyProfile(nextTypology),
-      shape: nextTypology.shape,
+      profile: styledProfile(typologyProfile(nextTypology), style),
+      shape: { ...nextTypology.shape, overhang: over },
       mixed: record.mixed,
       facing: record.facing,
       baseBandHeight: record.baseBand,
     });
-    if (stamp.sizeX > record.footprint && !this.fitsWider(record, stamp)) {
+    // Il confronto e' fra **impronte**, non fra inviluppi: lo sbalzo non e' un
+    // allargamento del lotto, e leggerlo come tale farebbe credere che ogni
+    // edificio sporgente stia crescendo in pianta a ogni promozione.
+    if (groundSideOf(stamp, over, record.facing) > record.footprint &&
+      !this.fitsWider(record, groundSideOf(stamp, over, record.facing), stamp.sizeZ)) {
       stamp = generateBuilding({
         class: record.class,
         level: nextLevel,
@@ -150,16 +188,23 @@ export class UpgradeDriver {
         footprintCap: record.footprint,
         footprintFloor: record.footprint,
         form: nextForm,
-        profile: typologyProfile(nextTypology),
-        shape: nextTypology.shape,
+        profile: styledProfile(typologyProfile(nextTypology), style),
+        shape: { ...nextTypology.shape, overhang: over },
         mixed: record.mixed,
         facing: record.facing,
         baseBandHeight: record.baseBand,
       });
     }
 
-    if (dirtyChunkCount(record.x, record.y, stamp.sizeX, record.baseZ, record.baseZ + stamp.sizeZ) >
-        BUILDER.maxDirtyChunksPerBuilding) {
+    // L'impronta di suolo della sagoma nuova: e' quella che va nel record, e da
+    // cui l'inviluppo si ricava.
+    const side = groundSideOf(stamp, over, record.facing);
+    const env = envelopeOf({
+      x: record.x, y: record.y, footprint: side, overhang: over, facing: record.facing,
+    });
+
+    if (dirtyChunkCount(env.x, env.y, env.sizeX, record.baseZ, record.baseZ + stamp.sizeZ,
+      env.sizeY) > BUILDER.maxDirtyChunksPerBuilding) {
       return;
     }
 
@@ -171,19 +216,21 @@ export class UpgradeDriver {
     // E quelle di altri che il volume nuovo attraverserebbe: un edificio che
     // cresce in altezza vince su un ponte che gli passa davanti.
     this.spans.dropIntersecting(
-      record.x, record.y, stamp.sizeX, stamp.sizeX,
+      env.x, env.y, env.sizeX, env.sizeY,
       record.baseZ, record.baseZ + stamp.sizeZ,
     );
 
-    if (stamp.sizeX > record.footprint) {
-      surface.clearExpandedSiteDecor(record, stamp.sizeX);
+    // Il decoro si bonifica sotto l'**impronta**: sotto lo sbalzo non c'e' niente
+    // da liberare, perche' li' l'edificio non poggia.
+    if (side > record.footprint) {
+      surface.clearExpandedSiteDecor(record, side);
     }
 
     const replaced = registry.replace(record.id, {
       x: record.x,
       y: record.y,
       baseZ: record.baseZ,
-      footprint: stamp.sizeX,
+      footprint: side,
       height: stamp.sizeZ,
       class: record.class,
       mixed: record.mixed,
@@ -191,6 +238,8 @@ export class UpgradeDriver {
       seed: record.seed,
       form: nextForm,
       typology: nextTypology.id,
+      style: record.style,
+      overhang: record.overhang,
       district: profile.district,
       specialization: profile.specialization,
       facing: record.facing,
@@ -223,33 +272,33 @@ export class UpgradeDriver {
   }
 
   /**
-   * Lato massimo che l'impronta puo' raggiungere restando dentro l'isolato.
+   * true se l'impronta allargata non tocca nessun altro edificio.
    *
-   * Non scende mai sotto l'impronta attuale: un edificio materializzato da una
-   * partita salvata puo' avere l'ancora su una colonna che la rete di oggi
-   * considera carreggiata, e in quel caso il riquadro dell'isolato non lo
-   * contiene. Rimpicciolirlo per questo sarebbe una demolizione mascherata da
-   * upgrade.
+   * **Il terreno si sonda sull'impronta, i vicini sull'inviluppo**, e le due cose
+   * vanno tenute separate: sondare il terreno sotto lo sbalzo chiederebbe una
+   * fondazione per dell'aria sopra il marciapiede, mentre cercare i vicini sulla
+   * sola impronta lascerebbe fuori le colonne in cui lo sbalzo **si sposta**
+   * crescendo. E' quest'ultimo il caso che si e' visto: l'aggetto non si allarga
+   * mai, ma se il nucleo cresce di due la striscia trasla di due, e va a finire
+   * su colonne che nessuno aveva guardato.
    */
-  private blockRoom(record: BuildingRecord): number {
-    const rect = this.ctx.streets.blockRect(this.ctx.streets.blockAt(record.x, record.y));
-    return Math.max(
-      record.footprint,
-      Math.min(rect.x1 - record.x + 1, rect.y1 - record.y + 1),
-    );
-  }
-
-  /** true se l'impronta allargata non tocca nessun altro edificio. */
-  private fitsWider(record: BuildingRecord, stamp: VoxelStamp): boolean {
-    const widened = surveyGrade(this.ctx.terrain, record.x, record.y, stamp.sizeX);
+  private fitsWider(record: BuildingRecord, side: number, height: number): boolean {
+    const widened = surveyGrade(this.ctx.terrain, record.x, record.y, side);
     if (widened === null) return false;
     if (widened.padZ > record.baseZ) return false;
 
-    for (let dy = 0; dy < stamp.sizeX; dy++) {
-      for (let dx = 0; dx < stamp.sizeX; dx++) {
-        for (const other of this.ctx.registry.at(record.x + dx, record.y + dy)) {
+    const env = envelopeOf({
+      x: record.x,
+      y: record.y,
+      footprint: side,
+      overhang: record.overhang,
+      facing: record.facing,
+    });
+    for (let dy = 0; dy < env.sizeY; dy++) {
+      for (let dx = 0; dx < env.sizeX; dx++) {
+        for (const other of this.ctx.registry.at(env.x + dx, env.y + dy)) {
           if (other.id === record.id) continue;
-          if (other.baseZ < record.baseZ + stamp.sizeZ &&
+          if (other.baseZ < record.baseZ + height &&
             record.baseZ < other.baseZ + other.height) {
             return false;
           }

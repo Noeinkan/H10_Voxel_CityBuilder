@@ -12,7 +12,9 @@ import { SURFACE_KIND, type SurfaceKind } from '../visualBlock';
 import type { VoxelWorld } from '../VoxelWorld';
 import type { SceneGenerator } from './cityScene';
 import {
+  CELL_TIERS,
   matrixCellRect,
+  plinthSpanAt,
   SCALE_ITEMS,
   SCALE_ORIGIN_Y,
   strataPillarRect,
@@ -143,7 +145,10 @@ class SwatchGenerator implements SceneGenerator {
     const y1 = Math.min(extent.minY + extent.sizeY, y0 + PLINTH_STRIP);
 
     for (let y = y0; y < y1; y++) {
-      for (let x = extent.minX; x < extent.minX + extent.sizeX; x++) {
+      // La riga e' larga quanto la fascia che regge, non quanto l'estensione:
+      // e' il profilo a gradini che dichiara le tre fasce senza etichette.
+      const span = plinthSpanAt(y);
+      for (let x = span.x0; x < span.x1; x++) {
         this.written += this.world.fillColumn(x, y, 0, SWATCH.groundZ, SWATCH.plinthSlot);
       }
     }
@@ -156,17 +161,26 @@ class SwatchGenerator implements SceneGenerator {
    * `packVisualBlock` restituisce zero per palette zero, quindi non c'e' niente
    * da scrivere — ed e' esattamente cio' che l'indice zero significa. Le
    * combinazioni vere sono percio' `PALETTE_SIZE - 1` per riga.
+   *
+   * Il provino e' la sagoma a gradoni di `CELL_TIERS`, uguale in ogni cella:
+   * podio, sbalzo, arretramento, guglia. La forma sta li' e non qui perche' la
+   * legge anche chi inquadra e chi nomina la cella sotto il cursore.
    */
   private writeMatrixRow(row: number): void {
     const surface = row as SurfaceKind;
-    const z1 = SWATCH.groundZ + SWATCH.cellHeight;
 
     for (let col = 1; col < SWATCH_COLUMNS; col++) {
       const rect = matrixCellRect(row, col);
-      for (let y = rect.y0; y < rect.y1; y++) {
-        for (let x = rect.x0; x < rect.x1; x++) {
-          this.written += this.world.fillColumn(x, y, SWATCH.groundZ, z1, col, surface);
+      let z = SWATCH.groundZ;
+      for (const tier of CELL_TIERS) {
+        const x0 = rect.x0 + tier.inset;
+        const y0 = rect.y0 + tier.inset;
+        for (let y = y0; y < y0 + tier.side; y++) {
+          for (let x = x0; x < x0 + tier.side; x++) {
+            this.written += this.world.fillColumn(x, y, z, z + tier.levels, col, surface);
+          }
         }
+        z += tier.levels;
       }
     }
   }

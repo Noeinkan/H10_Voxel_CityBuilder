@@ -1,10 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { AERIAL } from './config';
+import { AERIAL, DECK_HEIGHT } from './config';
 import {
   AERIAL_FACE,
   AERIAL_FACES,
   faceRuns,
-  overhangOf,
   planTerrace,
   type AerialSupport,
 } from './terracePlan';
@@ -51,6 +50,47 @@ describe('faceRuns — dove una facciata offre un piano', () => {
   });
 });
 
+describe('faceRuns — la quota su facciata piena', () => {
+  /** Una torre a prisma: nessuna fascia rientra, quindi nessuna quota e' un fatto. */
+  function prism(height = HOST.height): { ground: TestGround; host: AerialSupport } {
+    const host: AerialSupport = { ...HOST, height };
+    return {
+      ground: new TestGround(4).box(20, 20, 8, 8, host.baseZ, host.baseZ + height, host.id),
+      host,
+    };
+  }
+
+  it('non appiccica il balcone al marciapiede: comincia in facciata', () => {
+    const { ground, host } = prism();
+    const runs = faceRuns(ground, host, AERIAL_FACE.east);
+
+    expect(runs.length).toBeGreaterThan(0);
+    // **E' il difetto visibile a schermo.** Dove non c'e' una fascia da
+    // continuare la quota non la detta nessuno, e la piu' bassa possibile e'
+    // `minRise` — tre cubi sopra la strada, cioe' una pensilina.
+    expect(runs[0].z).toBeGreaterThan(host.baseZ + AERIAL.minRise);
+    expect(runs[0].z).toBe(
+      host.baseZ + Math.round(host.height * AERIAL.terrace.facadeRise),
+    );
+  });
+
+  it('distribuisce le quote sul fronte invece di impilarle', () => {
+    // Un ospite ne porta fino a `maxPerHost`: a quote consecutive erano una pila
+    // alta nove voxel su una torre di sessanta.
+    const { ground, host } = prism(60);
+    const runs = faceRuns(ground, host, AERIAL_FACE.east);
+
+    expect(runs.length).toBeGreaterThan(1);
+    expect(runs[1].z - runs[0].z).toBeGreaterThan(DECK_HEIGHT);
+  });
+
+  it('dove una fascia rientra la quota resta quella della fascia', () => {
+    // La regola che fa esistere la rete non si tocca: li' la quota e' un fatto
+    // dell'ospite, e la prima corsa e' la sommita' del basamento condiviso.
+    expect(faceRuns(city(), HOST, AERIAL_FACE.east)[0].z).toBe(19);
+  });
+});
+
 describe('planTerrace — la mensola', () => {
   it('sporge oltre l impronta dell ospite, alla quota di una fascia', () => {
     const result = planTerrace({ host: HOST, faces: [AERIAL_FACE.east], ...city() });
@@ -68,18 +108,43 @@ describe('planTerrace — la mensola', () => {
     expect(result.plan.host).toBe(HOST.id);
   });
 
-  it('quanto e larga tanto e profonda, e oltre lo sbalzo si fa le gambe', () => {
-    expect(overhangOf(3)).toBe(AERIAL.terrace.minOverhang);
-    expect(overhangOf(5)).toBe(5);
-    expect(overhangOf(40)).toBe(AERIAL.terrace.maxOverhang);
-
+  it('una mensola profonda si fa le gambe: non e una regola, e la conseguenza', () => {
     const result = planTerrace({ host: HOST, faces: [AERIAL_FACE.east], ...city() });
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    // Un fronte di otto porta una mensola di otto, che e' oltre `reach`: le gambe
-    // non sono una regola a parte, sono la conseguenza.
-    expect(result.plan.deck.rect.sizeX).toBe(8);
-    expect(result.plan.deck.piers.length).toBeGreaterThan(0);
+
+    const { rect, piers } = result.plan.deck;
+    // Lo sporto oltre `reach` chiede un appoggio, e `planDeck` glielo pianta.
+    expect(rect.sizeX).toBeGreaterThan(AERIAL.reach);
+    expect(piers.length).toBeGreaterThan(0);
+  });
+
+  it('non riempie la corsa: sta dentro il fronte a cui si appende', () => {
+    // **E' il vincolo che sostituisce «quanto e' larga, tanto e' profonda».** Il
+    // riquadro puo' essere piu' corto della corsa e scorrere lungo di lei, ma non
+    // puo' uscirne: oltre i due capi non c'e' piu' parete a cui appendersi.
+    const runs = faceRuns(city(), HOST, AERIAL_FACE.east);
+    const result = planTerrace({ host: HOST, faces: [AERIAL_FACE.east], ...city() });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    const { rect } = result.plan.deck;
+    expect(rect.y).toBeGreaterThanOrEqual(runs[0].from);
+    expect(rect.y + rect.sizeY).toBeLessThanOrEqual(runs[0].to + 1);
+  });
+
+  it('le facce non danno quattro volte lo stesso riquadro', () => {
+    // Il difetto che la forma esiste per togliere: con lo sporto legato alla sola
+    // lunghezza della corsa, un edificio a impronta quadrata usciva con quattro
+    // mensole identiche a meno di una rotazione.
+    const drawn = new Set<string>();
+    for (const face of AERIAL_FACES) {
+      const result = planTerrace({ host: HOST, faces: [face], ...city() });
+      if (!result.ok) continue;
+      const { rect } = result.plan.deck;
+      drawn.add(`${Math.min(rect.sizeX, rect.sizeY)}x${Math.max(rect.sizeX, rect.sizeY)}`);
+    }
+    expect(drawn.size).toBeGreaterThan(1);
   });
 
   it('funziona su tutte e quattro le facce, e ognuna esce dalla propria', () => {

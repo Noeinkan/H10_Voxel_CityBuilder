@@ -2,7 +2,7 @@ import { CHUNK } from '../chunkCoords';
 import { classifyBiome } from './biomes';
 import { TERRAIN } from './config';
 import type { HeightField } from './heightField';
-import { cellFloor, isCliff, terraceOf } from './terrace';
+import { cellFloor, isCliff, terraceAt } from './terrace';
 
 /**
  * Il reticolo di celle di un blocco: quota, bioma, pendenza e ciglio.
@@ -139,9 +139,17 @@ export function buildCellGrid(field: HeightField, baseX: number, baseY: number):
         gy * TERRAIN.cellSize + FIRST_COLUMN,
       );
       // Dentro la conca di un lago la scala fine: il fondo, la sponda e il pelo
-      // stanno dentro sei voxel, e un'alzata da otto se li porterebbe via.
+      // stanno dentro sei voxel, e un'alzata da otto se li porterebbe via. Li'
+      // non si scuote nemmeno la quota — una vasca ha il bordo che ha.
       const height = clampHeight(
-        field.inBasinAt(worldX, worldY) ? cellFloor(raw.height) : terraceOf(raw.height),
+        field.inBasinAt(worldX, worldY)
+          ? cellFloor(raw.height)
+          : terraceAt(
+              field.seed,
+              baseX / TERRAIN.cellSize + gx - CELL_MARGIN,
+              baseY / TERRAIN.cellSize + gy - CELL_MARGIN,
+              raw.height,
+            ),
       );
 
       const i = gy * GRID_SIDE + gx;

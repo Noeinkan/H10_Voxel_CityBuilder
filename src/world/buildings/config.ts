@@ -186,6 +186,22 @@ export const BUILDER = {
   catalystPlazaRadius: 4,
 
   /**
+   * Colore del recinto attorno a un riquadro che si sta sgomberando.
+   *
+   * **Un cantiere deve leggersi come un cantiere**, non come un buco. Fra
+   * l'apertura e la struttura passano diverse passate — gli edifici cadono uno
+   * per volta, a budget — e senza un segno il giocatore vede solo case che
+   * spariscono senza sapere perche'. Il ruggine e' il colore piu' lontano
+   * dall'asfalto del suolo pubblico che lo sostituira': il passaggio da recinto a
+   * grembiule si vede, ed e' il modo in cui il cantiere dichiara di aver finito.
+   *
+   * Stava in `LANDMARK` finche' a sventrare c'erano solo i landmark. Il cantiere
+   * e' ora di `clearanceSite.ts` e lo usano anche le arcologie: il recinto e' lo
+   * stesso segnale, e due colori direbbero che sono due cose diverse.
+   */
+  fencePalette: PALETTE_SLOTS.metalRust,
+
+  /**
    * Probabilita' che un edificio prenda il colore d'accento come corpo.
    *
    * Non e' un dettaglio decorativo: e' cio' che produce blocchi interi di colore
@@ -411,6 +427,59 @@ export const GRAMMAR = {
   terraceMinSide: 3,
 
   /**
+   * Voxel di cui l'inviluppo puo' uscire dall'impronta, **verso la strada**.
+   *
+   * Due sono un cubo di terreno: il piu' piccolo sbalzo che si legga come tale
+   * invece che come un bordo storto. Il tetto vero non e' un gusto ma
+   * aritmetica, e va riverificato se `MAX_FOOTPRINT` cambia:
+   * `MAX_FOOTPRINT + maxOverhang` deve restare sotto `CHUNK`, o l'inviluppo
+   * comincia ad attraversare tre colonne di chunk per asse e
+   * `maxDirtyChunksPerBuilding` non basta piu'. Il conto sta in
+   * `chunkBudget.test.ts`, che lo verifica invece di fidarsi di questa riga.
+   */
+  maxOverhang: 2,
+
+  /**
+   * Quota sotto cui nessuna fascia esce dall'impronta.
+   *
+   * Uno sbalzo a un voxel da terra non e' uno sbalzo, e' un ingombro sul
+   * marciapiede. Sei voxel sono tre cubi di terreno: ci si passa sotto, ed e'
+   * anche la quota sopra la quale il basamento condiviso di una fila
+   * (`CLUSTER.baseHeight`) ha finito di salire — cosi' uno sbalzo non puo' mai
+   * uscire dal fianco di uno zoccolo che i vicini condividono.
+   */
+  overhangFromZ: 6,
+
+  /**
+   * Smusso massimo ammesso a una tipologia, in voxel di lato.
+   *
+   * Sopra due, un lato da otto perde meta' della propria pianta e l'ottagono
+   * diventa un rombo: non e' piu' un angolo tagliato ma un'altra forma, e le
+   * facciate che restano sono troppo corte perche' la campata ci trovi una
+   * colonna. Due e' anche il cubo di terreno, cioe' il taglio piu' piccolo che si
+   * legga come voluto invece che come un errore di un voxel.
+   */
+  maxChamfer: 2,
+
+  /**
+   * Quota entro cui un portico e' vuoto, e altezza del suo architrave.
+   *
+   * Coincide con `portalHeight` e non e' una coincidenza: sono la stessa quota
+   * vista da due parti — l'ingresso di un edificio qualunque e la luce di un
+   * portico — e tenerle separate vorrebbe dire poter tarare un ingresso alto e
+   * un portico basso sulla stessa facciata.
+   */
+  arcadeHeight: 4,
+
+  /**
+   * Fronte minimo perche' un portico si apra.
+   *
+   * Sotto, fra i due cantonali — che restano sempre pieni, come nella campata —
+   * non resta spazio per una sola luce, e il portico sarebbe un buco in un muro.
+   */
+  arcadeMinSide: 5,
+
+  /**
    * Livello da cui la faccia d'accento comincia a essere luminosa.
    *
    * Sotto, resta la grammatica di superficie dell'uso: una casa appena costruita
@@ -453,6 +522,40 @@ export const BAND_OP = {
   setback: 5,
   /** Rientra due per lato e ricentra: e' il corpo sovrapposto, non un gradino. */
   stack: 6,
+  /**
+   * Scarto laterale di **due** voxel a parita' di dimensione.
+   *
+   * E' `jog` a scala leggibile. Un voxel di scarto su una torre da venti fasce
+   * non si vede: e' meta' cubo di terreno, e a distanza di gioco legge come un
+   * bordo storto invece che come un corpo spostato. Due voxel sono il cubo
+   * intero, ed e' lo scarto che produce le pile sfalsate — una fascia che sporge
+   * da una parte e rientra dall'altra, invece di una canna che sale dritta.
+   */
+  shear: 7,
+  /**
+   * Stringe un asse e allarga l'altro: il corpo che ruota invece di rastremarsi.
+   *
+   * E' l'unica voce che cambia **proporzione** senza cambiare massa. Tutte le
+   * altre o rimpiccioliscono o spostano, quindi una silhouette e' sempre una
+   * piramide o una canna; con questa una torre puo' presentare il lato lungo a
+   * una strada in basso e all'altra in alto, che e' cio' che da' il movimento
+   * alle pile senza spendere un voxel in piu'.
+   */
+  corner: 8,
+  /**
+   * Allarga la fascia di due **verso la strada**, oltre il filo dell'impronta.
+   *
+   * E' l'unica voce del repertorio che non sia una funzione della sola fascia
+   * sotto: le serve sapere da che parte guarda l'edificio, perche' uno sbalzo va
+   * sopra il marciapiede e mai sopra il vicino. Ed e' l'unica che esce
+   * dall'impronta — il resto della grammatica non puo' farlo per costruzione.
+   *
+   * Allarga invece di spostare, e la differenza si vede da dietro: spostando, il
+   * retro dell'edificio rientrerebbe di due e resterebbe un intaglio sul cortile.
+   * Allargando, il piano sporge sulla via e il resto resta dov'era, che e' come
+   * uno sbalzo e' fatto davvero.
+   */
+  jut: 9,
 } as const;
 
 export type BandOp = typeof BAND_OP[keyof typeof BAND_OP];
@@ -477,9 +580,39 @@ export const CROWN_KIND = {
   ridge: 3,
   /** Rientra di due per lato e sale: la lanterna dei civici alti, con dettaglio. */
   lantern: 4,
+  /**
+   * Tre rientranze di fila sul solo asse corto: la falda a gradoni.
+   *
+   * E' `ridge` portato fino in fondo. Quello rientra una volta e resta un
+   * cappello lungo; questo arriva al colmo, ed e' l'unica cima del repertorio che
+   * finisca su una **linea** invece che su un piano. Serve alle case basse e ai
+   * magazzini, dove un tetto piatto legge come un edificio non finito.
+   */
+  gable: 5,
 } as const;
 
 export type CrownKind = typeof CROWN_KIND[keyof typeof CROWN_KIND];
+
+/**
+ * Che parte di un isolato occupa un lotto.
+ *
+ * Sta qui accanto a `BAND_OP` e `CROWN_KIND` perche' e' la stessa cosa: un
+ * vocabolario che il catalogo cita per nome. La **regola** che lo calcola vive in
+ * `blockForm.ts`, come quella delle fasce vive in `bandOps.ts` — e in quel verso
+ * e non nell'altro: se il catalogo importasse la regola, le due dipendenze si
+ * chiuderebbero in cerchio e chi carica `blockForm` per primo troverebbe il
+ * catalogo a meta' costruzione. Non e' teoria — e' successo scrivendolo.
+ */
+export const LOT_ROLE = {
+  /** Sul fronte strada, in mezzo a un lato dell'isolato. */
+  frontage: 0,
+  /** All'incrocio di due fronti: e' il lotto che puo' allargarsi. */
+  corner: 1,
+  /** Nel cuore, senza un fronte proprio. */
+  interior: 2,
+} as const;
+
+export type LotRole = (typeof LOT_ROLE)[keyof typeof LOT_ROLE];
 
 export interface LevelCaps {
   /** Lato minimo naturale; durante un upgrade bloccato puo' restare piu' stretto. */
@@ -791,6 +924,58 @@ export interface TypologyShape {
    * volume: e' lo stesso voxel di sommita', con un altro slot.
    */
   readonly roofGarden: boolean;
+  /**
+   * Angoli tagliati in pianta, in voxel di lato. Zero e' lo spigolo vivo.
+   *
+   * E' lo stesso `chamfer` di `Part.chamfer` nei landmark, e usa lo stesso
+   * predicato — `planMask.ts`, che vive alla radice di `src/world/` proprio
+   * perche' i due domini lo condividono. Un edificio smussato di uno e' un
+   * ottagono, di due un tamburo: due forme che la grammatica delle fasce non sa
+   * produrre in nessun altro modo, perche' `BandRect` e' e resta un rettangolo.
+   *
+   * **Non e' una fascia in piu' e non cambia l'impronta**: e' lo stesso volume
+   * con quattro colonne in meno agli angoli, quindi collisione, budget di chunk e
+   * cancellazione non se ne accorgono. L'unico che se ne accorge, e nel verso
+   * giusto, e' `stampFootprint`: l'opera di terra smette di riempire un angolo
+   * che l'edificio non occupa.
+   */
+  readonly chamfer: number;
+
+  /**
+   * Il piano terra sul fronte strada diventa un portico.
+   *
+   * **E' l'unica cosa del repertorio che fa vuoto sotto un pieno.** Le fasce
+   * sanno rientrare, sporgere e sovrapporsi, ma quello che producono e' sempre
+   * un solido appoggiato: un porticato no, e a distanza di gioco e' proprio
+   * quell'ombra sotto il fronte a dire che li' sotto ci si cammina. La colonnata
+   * dei landmark lo sa fare da sempre (`PART.colonnade`); qui e' la stessa idea
+   * ridotta a una riga di catalogo.
+   *
+   * I pilastri seguono il passo dei montanti della classe (`bayPeriod`) e si
+   * contano dall'estremo piu' vicino, non da un capo: contati da un capo, un
+   * fronte che non e' multiplo del passo si ritrova il pilastro su un angolo e
+   * l'architrave nudo sull'altro.
+   */
+  readonly arcade: boolean;
+
+  /**
+   * Voxel di cui il corpo puo' sporgere oltre l'impronta, verso la strada.
+   *
+   * **E' l'unico campo che rompe un invariante dichiarato**, e vale la pena
+   * dirlo qui: «nessuna fascia esce dall'impronta» era vero e non lo e' piu'.
+   * Regge per la stessa ragione della mensola di `aerial/` — `overlaps` confronta
+   * gli intervalli di quota colonna per colonna, quindi prenotare aria sopra il
+   * marciapiede non toglie niente a nessuno — e con lo stesso complemento:
+   * **uno sbalzo non prende suolo**, quindi sotto ci passa ancora la carreggiata
+   * e accanto nasce ancora un lotto.
+   *
+   * Sporge **solo verso `facing`**, e non e' una comodita': verso il cuore
+   * dell'isolato ci sarebbe il vicino, e due inviluppi che si toccano sono voxel
+   * sovrascritti. Un edificio senza fronte strada non sporge affatto — non c'e'
+   * una via su cui farlo.
+   */
+  readonly overhang: number;
+
   /** Lato minimo dell'impronta imposto dalla tipologia. */
   readonly minFootprint: number;
   /** Lato massimo dell'impronta imposto dalla tipologia. */
@@ -816,6 +1001,15 @@ export interface TypologyRequirement {
    */
   readonly charter?: readonly CharterId[];
   readonly districts?: readonly DistrictId[];
+  /**
+   * Dove il lotto cade dentro il proprio isolato: angolo, fronte o cuore.
+   *
+   * **Non entra in `demandsPlace`** e non deve: il ruolo lo sa la maglia
+   * stradale, che c'e' sempre. Chi chiede una tipologia senza un lotto — una
+   * scena di prova, la rigenerazione di ripiego — non lo passa, e le righe che lo
+   * dichiarano restano fuori per confronto diretto invece che per un ramo.
+   */
+  readonly lotRole?: LotRole;
   /** La colonna deve affacciare sul mare entro il raggio di ricerca del Builder. */
   readonly coastal?: boolean;
   readonly minLevel?: number;
@@ -850,6 +1044,9 @@ export const DEFAULT_TYPOLOGY_SHAPE: TypologyShape = {
   courtyard: false,
   crownKind: CROWN_KIND.taper,
   roofGarden: false,
+  chamfer: 0,
+  arcade: false,
+  overhang: 0,
   minFootprint: 4,
   maxFootprint: MAX_FOOTPRINT,
 };
@@ -873,7 +1070,18 @@ export const TYPOLOGIES: readonly TypologyDefinition[] = [
     // qualifica — densita' alta e livello alto — vince lui, che ha priorita'
     // maggiore; qui sotto resta la casa-bottega.
     priority: 3,
-    shape: { ...DEFAULT_TYPOLOGY_SHAPE, podiumBands: 1, crownKind: CROWN_KIND.flat, maxFootprint: 6 },
+    shape: {
+      ...DEFAULT_TYPOLOGY_SHAPE,
+      podiumBands: 1,
+      crownKind: CROWN_KIND.flat,
+      maxFootprint: 6,
+      // Il portico al piano terra non e' un ornamento aggiunto alla casa-bottega:
+      // e' la casa-bottega. La «via di cinque piedi» — il marciapiede coperto
+      // ricavato sotto il primo piano — e' cio' che distingue una shophouse da
+      // una casa con un negozio dentro, ed e' anche il motivo per cui in una via
+      // fitta si cammina all'ombra.
+      arcade: true,
+    },
     profile: {
       bandHeight: [4, 4],
       shrinkBias: 0.12,
@@ -885,6 +1093,33 @@ export const TYPOLOGIES: readonly TypologyDefinition[] = [
     },
   },
   {
+    id: 'cornerTower',
+    label: 'Corner tower',
+    use: 0,
+    lotRole: LOT_ROLE.corner,
+    minDensity: 0.5,
+    minLevel: 4,
+    // Stessa priorita' di `commercialPodium` e **prima di lui nel catalogo**, che
+    // e' come si dice «piu' specifico» a parita' di peso: dove il lotto e' un
+    // angolo vince il vertice dell'isolato, altrove resta il podio. Sotto le due
+    // righe concesse dai mandati, che restano l'affermazione piu' forte.
+    priority: 5,
+    shape: {
+      ...DEFAULT_TYPOLOGY_SHAPE,
+      crownKind: CROWN_KIND.lantern,
+      // Lo smusso su un angolo non e' decorazione: e' il taglio che gli edifici
+      // veri hanno proprio li', dove due fronti si incontrano su un incrocio.
+      chamfer: 1,
+      maxFootprint: 6,
+    },
+    profile: {
+      bandHeight: [5, 7],
+      shrinkBias: 0.66,
+      roofProp: PALETTE_SLOTS.metalGold,
+      roofPropHeight: 6,
+    },
+  },
+  {
     id: 'commercialPodium',
     label: 'Podium block',
     use: 0,
@@ -892,10 +1127,19 @@ export const TYPOLOGIES: readonly TypologyDefinition[] = [
     minDensity: 0.4,
     minLevel: 2,
     priority: 5,
-    shape: { ...DEFAULT_TYPOLOGY_SHAPE, podiumBands: 2, minFootprint: 6 },
+    shape: {
+      ...DEFAULT_TYPOLOGY_SHAPE,
+      podiumBands: 2,
+      minFootprint: 6,
+      // Podio pieno sulla strada e piani che sporgono sopra: e' la sezione piu'
+      // comune di un fronte denso, ed e' anche la riga che porta lo sbalzo alla
+      // maggioranza degli edifici invece che a un caso raro.
+      overhang: 2,
+    },
     profile: {
       bandHeight: [4, 6],
       shrinkBias: 0.58,
+      growOps: [BAND_OP.jut, BAND_OP.jog, BAND_OP.grow, BAND_OP.shrinkOneSide],
       body: PALETTE_SLOTS.concretePale,
       bodyAlt: PALETTE_SLOTS.glassDeep,
       accent: PALETTE_SLOTS.glass,
@@ -959,6 +1203,70 @@ export const TYPOLOGIES: readonly TypologyDefinition[] = [
       crown: PALETTE_SLOTS.roofWhite,
       plinth: PALETTE_SLOTS.stone,
       garden: PALETTE_SLOTS.grassLight,
+    },
+  },
+  {
+    id: 'roundTower',
+    label: 'Round tower',
+    use: 0,
+    minWealth: 0.6,
+    minLevel: 6,
+    // Sta **prima** di `skyTerraces` a parita' di priorita', e l'ordine e' la
+    // regola: a livello 5 vince il gradone abitato, dal 6 in su il tamburo. E'
+    // la sola riga del catalogo la cui pianta non e' un rettangolo.
+    priority: 5,
+    shape: {
+      ...DEFAULT_TYPOLOGY_SHAPE,
+      chamfer: 2,
+      crownKind: CROWN_KIND.lantern,
+      minFootprint: 8,
+    },
+    profile: {
+      bandHeight: [6, 8],
+      shrinkBias: 0.7,
+      body: PALETTE_SLOTS.concretePale,
+      bodyAlt: PALETTE_SLOTS.glassPale,
+      accent: PALETTE_SLOTS.glass,
+      crown: PALETTE_SLOTS.roofWhite,
+      plinth: PALETTE_SLOTS.stone,
+      roofProp: PALETTE_SLOTS.metalGold,
+    },
+  },
+  {
+    id: 'stackedTenement',
+    label: 'Stacked tenement',
+    use: 0,
+    minDensity: 0.6,
+    minLevel: 4,
+    // Dopo `skyTerraces`, che ha la stessa priorita': dove c'e' anche la
+    // ricchezza vince il gradone: qui resta la densita' senza la ricchezza, che
+    // e' il caso da cui nasce la casa impilata invece della terrazza.
+    priority: 5,
+    shape: {
+      ...DEFAULT_TYPOLOGY_SHAPE,
+      crownKind: CROWN_KIND.flat,
+      maxFootprint: 6,
+      // La riga che porta lo sbalzo in citta'. E' anche quella giusta: la casa
+      // impilata nasce dove c'e' densita' e non ricchezza, ed e' esattamente il
+      // posto in cui si guadagna spazio sporgendo sulla via invece che comprando
+      // il lotto accanto.
+      overhang: 2,
+    },
+    profile: {
+      bandHeight: [4, 4],
+      shrinkBias: 0.3,
+      // L'unica riga che pesca le tre voci nuove: il corpo si sposta di un cubo
+      // intero, gira su se' stesso invece di rastremarsi, e ogni tanto esce sul
+      // marciapiede. E' la sagoma sfalsata che una catena di `shrink` non sa dare.
+      shrinkOps: [BAND_OP.corner, BAND_OP.shrinkOneSide, BAND_OP.jog],
+      growOps: [BAND_OP.jut, BAND_OP.shear, BAND_OP.corner, BAND_OP.jog],
+      bayPeriod: 2,
+      body: PALETTE_SLOTS.brickLight,
+      bodyAlt: PALETTE_SLOTS.wood,
+      accent: PALETTE_SLOTS.metalBrass,
+      crown: PALETTE_SLOTS.metalRust,
+      plinth: PALETTE_SLOTS.stoneDark,
+      roofPropHeight: 0,
     },
   },
   // Le due righe concesse dai mandati stanno in fondo all'uso e a priorita' 6:
@@ -1139,6 +1447,57 @@ export const TYPOLOGIES: readonly TypologyDefinition[] = [
       terrace: PALETTE_SLOTS.wood,
     },
   },
+  {
+    id: 'arcadeRow',
+    label: 'Arcade row',
+    use: 1,
+    minDensity: 0.45,
+    // Sotto `terraceArcade` (4): dove la gente sta bene il fronte commerciale si
+    // porta anche le terrazze sopra, e qui resta il solo portico.
+    priority: 3,
+    shape: {
+      ...DEFAULT_TYPOLOGY_SHAPE,
+      arcade: true,
+      podiumBands: 1,
+      crownKind: CROWN_KIND.flat,
+      minFootprint: 7,
+      // Portico sotto e piani che sporgono sopra: e' la stessa strada guadagnata
+      // due volte, ed e' la sezione che ogni via commerciale fitta ha davvero.
+      overhang: 2,
+    },
+    profile: {
+      bandHeight: [4, 5],
+      shrinkBias: 0.2,
+      footprintBias: 2,
+      body: PALETTE_SLOTS.stoneWarm,
+      bodyAlt: PALETTE_SLOTS.brick,
+      accent: PALETTE_SLOTS.metalBrass,
+      crown: PALETTE_SLOTS.roofPale,
+      plinth: PALETTE_SLOTS.stone,
+      growOps: [BAND_OP.jut, BAND_OP.keep, BAND_OP.jog],
+    },
+  },
+  {
+    id: 'marketHall',
+    label: 'Market hall',
+    use: 1,
+    // Dove il commercio e' rado, un capannone di mercato con la falda: un tetto
+    // piatto su un edificio basso e isolato legge come costruzione non finita.
+    maxDensity: 0.45,
+    priority: 2,
+    shape: { ...DEFAULT_TYPOLOGY_SHAPE, crownKind: CROWN_KIND.gable, minFootprint: 7 },
+    profile: {
+      bandHeight: [5, 6],
+      shrinkBias: 0,
+      footprintBias: 4,
+      body: PALETTE_SLOTS.wood,
+      bodyAlt: PALETTE_SLOTS.stoneWarm,
+      accent: PALETTE_SLOTS.metalBrass,
+      crown: PALETTE_SLOTS.roofPale,
+      plinth: PALETTE_SLOTS.stone,
+      roofPropHeight: 0,
+    },
+  },
   { id: 'retailRow', label: 'Retail row', use: 1, priority: 0, shape: { ...DEFAULT_TYPOLOGY_SHAPE, crownKind: CROWN_KIND.flat, maxFootprint: 6 }, profile: { bandHeight: [4, 4] } },
 
   // --- industriale ---------------------------------------------------------
@@ -1216,6 +1575,48 @@ export const TYPOLOGIES: readonly TypologyDefinition[] = [
     },
   },
   {
+    id: 'hydroponicTower',
+    label: 'Hydroponic tower',
+    use: 2,
+    specialization: 'farming',
+    // **Il cibo che sale.** E' l'unica tipologia che cambia il bilancio invece
+    // che la sola forma: la simulazione la conta fra i produttori di cibo e la
+    // toglie dall'industria che fa materiali. Nasce dove il suolo e' finito —
+    // densita' da centro — perche' in periferia un campo costa infinitamente
+    // meno e rende di piu' per fondo speso; e' `districts.ts` a imporre le due
+    // soglie, qui basta chiedere la specializzazione.
+    minLevel: 5,
+    // Sopra tutte le altre industriali: dove il luogo esprime `farming` la torre
+    // vince, o la specializzazione non si vedrebbe mai a schermo.
+    priority: 7,
+    shape: {
+      ...DEFAULT_TYPOLOGY_SHAPE,
+      crownKind: CROWN_KIND.flat,
+      minFootprint: 4,
+      // Le vasche in cima sono la stessa cosa che si vede in facciata, vista da
+      // sopra: il tetto piantato non e' un ornamento, e' il primo piano di
+      // coltura che si legge dall'alto in isometrica.
+      roofGarden: true,
+    },
+    profile: {
+      // Fasce alte e strette: una torre di serre e' un edificio a scaffali, e i
+      // piani si contano da fuori.
+      bandHeight: [5, 5],
+      shrinkBias: 0.08,
+      body: PALETTE_SLOTS.glassPale,
+      bodyAlt: PALETTE_SLOTS.glassDeep,
+      // **L'accento e' verde, e a livello 5 la grammatica lo emette `luminous`.**
+      // Non c'e' un materiale nuovo e non c'e' un emettitore nuovo: le luci di
+      // crescita sono la stessa lama che accende le torri di notte, con dentro
+      // la coltura invece del vetro. E' il rendimento piu' alto per riga di
+      // tabella di tutta la fase.
+      accent: PALETTE_SLOTS.grassLight,
+      garden: PALETTE_SLOTS.grassLight,
+      crown: PALETTE_SLOTS.metalDark,
+      plinth: PALETTE_SLOTS.concrete,
+    },
+  },
+  {
     id: 'industrialYard',
     label: 'Industrial yard',
     use: 2,
@@ -1289,6 +1690,212 @@ export const TYPOLOGIES: readonly TypologyDefinition[] = [
   },
   { id: 'civicSpire', label: 'Civic spire', use: 3, priority: 0, shape: DEFAULT_TYPOLOGY_SHAPE, profile: {} },
 ];
+
+/**
+ * Numeri della forma dell'isolato: dove cade un lotto e cosa ci guadagna.
+ *
+ * Stanno qui e non in `streets/config.ts` perche' rispondono a una domanda
+ * diversa. Quella li' dice **dove passano le strade**, e la sua risposta vale per
+ * la carreggiata come per il marciapiede; questa dice **cosa si costruisce** su un
+ * lotto a seconda di dove cade dentro il proprio isolato, che e' una scelta di
+ * forma urbana e non di tracciato.
+ */
+export const BLOCK = {
+  /**
+   * Quanto un lotto puo' stare lontano da un lato e ancora contare come suo.
+   *
+   * **Non si chiede il filo esatto.** `placeLot` scorre a passo di
+   * `STREETS.align` e l'impronta puo' uscire dispari, quindi fra il lotto e la
+   * carreggiata resta spesso un voxel: pretendere il filo direbbe «cuore
+   * d'isolato» a un edificio che sta sul fronte strada. Due voxel sono un cubo di
+   * terreno, cioe' il passo con cui i lotti si allineano.
+   */
+  edgeReach: TERRAIN.cellSize,
+
+  /**
+   * Livelli che un lotto d'angolo si guadagna.
+   *
+   * **Si somma dopo il clamp della gerarchia, non prima**, quindi non alza il
+   * tetto della fascia: lo raggiunge prima. Uno basta a far emergere l'angolo dal
+   * fronte senza produrre quattro guglie per isolato — il livello massimo resta
+   * un'eccezione governata da `skyline/`, e questo non e' un secondo modo di
+   * arrivarci.
+   */
+} as const;
+
+/**
+ * **L'angolo cambia forma, non altezza, e la differenza e' misurata.**
+ *
+ * La versione con un bonus di livello sull'angolo e' esistita ed e' stata tolta:
+ * un livello in piu' sui quattro angoli di ogni isolato spegneva i montanti
+ * della citta' in quota, e il gate della 4.9 — «ci si muove fra i livelli» —
+ * scendeva a zero. Il meccanismo e' quello dichiarato in `aerial/`: chi ospita un
+ * impalcato smette di promuovere, quindi spostare in alto il livello di nascita
+ * degli angoli cambia chi puo' fare da ospite, e la rete verticale resta senza
+ * appigli.
+ *
+ * Non e' una perdita. A dire «questo e' il vertice dell'isolato» bastano la
+ * lanterna, lo smusso e il coronamento d'oro di `cornerTower`, che sono forma e
+ * non quota — e la quota resta cio' che `skyline/` decide da solo.
+ */
+
+// --- Stili di quartiere ----------------------------------------------------
+
+/**
+ * Numeri della scelta dello stile. Vedi `style.ts` per la regola.
+ */
+export const STYLE = {
+  /**
+   * Sale che separa «che stile ha questo isolato» da ogni altra domanda posta
+   * sulle stesse coordinate.
+   *
+   * Serve per la ragione gia' scritta per `LANDMARK.variantSalt` e
+   * `SKYLINE.peakSalt`, e contro lo stesso inciampo: la maglia stradale deriva
+   * gia' da `(seed, kx, ky)`, e senza sale lo stile sarebbe correlato al jitter
+   * degli assi — cioe' gli isolati larghi tenderebbero a un colore e quelli
+   * stretti a un altro, che e' un motivo che nessuno ha scelto.
+   */
+  salt: 0x7b19_4c2f,
+
+  /**
+   * Isolati di lato che condividono lo stile.
+   *
+   * **A uno, la citta' e' coriandoli.** Uno stile per isolato sembra la scelta
+   * ovvia e produce mattone accanto a vetro accanto a ruggine per tutta
+   * l'isola: a distanza di gioco non si legge come quartiere ma come rumore,
+   * che e' l'esatto contrario di cio' per cui gli stili esistono. A due, quattro
+   * isolati contigui portano la stessa materia — una cinquantina di colonne di
+   * lato — e il cambio di tessuto cade su una strada invece che su ogni angolo.
+   */
+  blocksPerQuarter: 2,
+} as const;
+
+/** Gli slot che uno stile puo' ridipingere: il **tessuto**, non l'accento. */
+export type StylePalette = Pick<ClassProfile, 'body' | 'bodyAlt' | 'plinth' | 'crown'>;
+
+/**
+ * Uno stile: di che materia e' fatto un quartiere.
+ *
+ * **Non e' una tinta, ed e' la cosa piu' importante da sapere su questa
+ * tabella.** I 32 slot sono famiglie di materia — mattone, cemento, pietra,
+ * vetro, legno, metallo — e il loro *colore* lo scrive il tema, che e' globale.
+ * Uno stile non puo' quindi rendere rosa un isolato e azzurro quello accanto;
+ * puo' renderne uno di mattoni e l'altro di vetro, che a distanza di gioco si
+ * legge lo stesso e vale in tutti e sette i temi invece che in uno.
+ *
+ * **Ortogonale all'uso.** La stessa riga vale per una casa, una bottega e un
+ * capannone: e' il *luogo* a parlare, non la funzione. Cio' che distingue le
+ * funzioni sopravvive comunque, e non per prudenza — `classSurface` da' a ogni
+ * uso il proprio linguaggio di superficie, quindi un capannone imbiancato tiene
+ * le sue nervature di lamiera e un civico il suo curtain wall.
+ *
+ * **L'accento resta alla tipologia.** `accent`, `terrace`, `garden` e `roofProp`
+ * non sono nella tabella: il tessuto e' del quartiere, l'accento e' di cio' che
+ * quell'edificio *fa*. Un mercato del porto dentro un isolato imbiancato esce
+ * con le pareti chiare e le insegne d'ottone — che e' la lettura giusta, non un
+ * compromesso.
+ */
+export interface StyleDefinition {
+  readonly id: string;
+  readonly label: string;
+  /**
+   * Cio' che lo stile ridipinge. Parziale di proposito: una riga che lascia
+   * fuori `bodyAlt` sta dicendo «la cornice la decide l'edificio», ed e' il modo
+   * in cui uno stile puo' essere leggero invece che totale.
+   */
+  readonly palette: Partial<StylePalette>;
+}
+
+/**
+ * Il catalogo degli stili.
+ *
+ * Otto righe, e la prima non dipinge niente: senza un ripiego neutro ogni
+ * isolato dell'isola sarebbe caratterizzato, e un tessuto che non tace mai non
+ * fa risaltare niente. E' la stessa ragione per cui ogni uso chiude il catalogo
+ * delle tipologie con una riga senza condizioni.
+ */
+export const STYLES: readonly StyleDefinition[] = [
+  // Il quartiere che non dichiara niente: resta il profilo dell'uso.
+  { id: 'plain', label: 'Plain', palette: {} },
+  {
+    id: 'brickTown',
+    label: 'Brick town',
+    palette: {
+      body: PALETTE_SLOTS.brick,
+      bodyAlt: PALETTE_SLOTS.brickLight,
+      plinth: PALETTE_SLOTS.stoneWarm,
+      crown: PALETTE_SLOTS.roofPale,
+    },
+  },
+  {
+    id: 'timberRow',
+    label: 'Timber row',
+    palette: {
+      body: PALETTE_SLOTS.wood,
+      bodyAlt: PALETTE_SLOTS.brickLight,
+      plinth: PALETTE_SLOTS.stone,
+      crown: PALETTE_SLOTS.roofPale,
+    },
+  },
+  {
+    id: 'whitewash',
+    label: 'Whitewash',
+    palette: {
+      body: PALETTE_SLOTS.concreteWhite,
+      bodyAlt: PALETTE_SLOTS.concretePale,
+      plinth: PALETTE_SLOTS.stone,
+      crown: PALETTE_SLOTS.roofWhite,
+    },
+  },
+  {
+    id: 'graySlab',
+    label: 'Gray slab',
+    palette: {
+      body: PALETTE_SLOTS.concrete,
+      bodyAlt: PALETTE_SLOTS.concreteLight,
+      plinth: PALETTE_SLOTS.stoneDark,
+      crown: PALETTE_SLOTS.asphaltDark,
+    },
+  },
+  {
+    id: 'glassCurtain',
+    label: 'Glass curtain',
+    palette: {
+      body: PALETTE_SLOTS.glassDeep,
+      bodyAlt: PALETTE_SLOTS.glassPale,
+      plinth: PALETTE_SLOTS.stoneDark,
+      crown: PALETTE_SLOTS.metalDark,
+    },
+  },
+  {
+    id: 'oxide',
+    label: 'Oxide',
+    palette: {
+      body: PALETTE_SLOTS.metalRust,
+      bodyAlt: PALETTE_SLOTS.metalDark,
+      plinth: PALETTE_SLOTS.asphaltShadow,
+      crown: PALETTE_SLOTS.metalDark,
+    },
+  },
+  {
+    id: 'stoneCourt',
+    label: 'Stone court',
+    palette: {
+      body: PALETTE_SLOTS.stone,
+      bodyAlt: PALETTE_SLOTS.stoneWarm,
+      plinth: PALETTE_SLOTS.stoneDeep,
+      crown: PALETTE_SLOTS.roofWhite,
+    },
+  },
+];
+
+const STYLE_BY_ID = new Map<string, StyleDefinition>(
+  STYLES.map((entry) => [entry.id, entry]),
+);
+
+export function styleById(id: string): StyleDefinition | null {
+  return STYLE_BY_ID.get(id) ?? null;
+}
 
 export type TypologyId = (typeof TYPOLOGIES)[number]['id'];
 

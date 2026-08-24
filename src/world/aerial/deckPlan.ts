@@ -130,6 +130,16 @@ export interface DeckPlan {
   readonly baseZ: number;
   /** Voxel occupati in altezza: `deckZ - baseZ + 1`. */
   readonly height: number;
+  /**
+   * I riquadri a cui l'impalcato e' appeso, come li ha dichiarati chi lo chiede.
+   *
+   * Il piano se li porta dietro perche' **il generatore ne ha bisogno**: la
+   * sezione di una mensola si assottiglia allontanandosi dalla parete, e la
+   * parete e' l'ancoraggio. Senza, `generateDeck` dovrebbe farsi passare la
+   * faccia — un concetto della sola mensola — dentro la lingua comune delle tre
+   * forme in quota.
+   */
+  readonly anchors: readonly DeckRect[];
   readonly piers: readonly Pier[];
   /** Gli edifici su cui qualche gamba poggia, in ordine crescente di id. */
   readonly carriers: readonly number[];
@@ -197,6 +207,7 @@ export function planDeck(query: DeckQuery): DeckResult {
       deckZ,
       baseZ,
       height,
+      anchors: query.anchors,
       piers: legs,
       carriers: [...new Set(legs.map((pier) => pier.carrier))]
         .filter((id) => id !== 0)

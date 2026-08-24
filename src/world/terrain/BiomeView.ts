@@ -1,6 +1,6 @@
 import { CHUNK } from '../chunkCoords';
 import type { VoxelWorld } from '../VoxelWorld';
-import { paletteForDepth } from './biomes';
+import { paletteAt } from './biomes';
 import { columnLocalX, columnLocalY, COLUMNS_PER_CHUNK } from './columnBlock';
 import { BIOME_DEBUG_IDS, TERRAIN, WATER_IDS } from './config';
 import type { TerrainColumnChunk, TerrainMap } from './TerrainMap';
@@ -73,18 +73,23 @@ export class BiomeView {
           const z = submerged ? TERRAIN.seaLevel - 1 : height - 1;
           if (z < 0) continue;
 
+          const x = baseX + columnLocalX(i);
+          const y = baseY + columnLocalY(i);
+          // Il ripristino passa da `paletteAt` e non dal solo bioma: sulla
+          // roccia la tinta viene dallo strato di quota, e riscriverla dalla
+          // tabella spianerebbe i grigi di mezza montagna a ogni giro di `B`.
           const id = this.on
             ? BIOME_DEBUG_IDS[biome]
             : submerged
               ? WATER_IDS.surface
-              : paletteForDepth(biome, 0);
+              : paletteAt(biome, height, 0);
 
           // Ripristinando l'acqua va rimessa anche la sua classe, o il pelo
           // tornerebbe mare aperto ovunque: per un voxel d'acqua i bit di
           // superficie sono `WATER_CLASS`, non un linguaggio di facciata.
           const surface = !this.on && submerged ? (chunk.water[i] as SurfaceKind) : SURFACE_KIND.plain;
 
-          this.world.setBlock(baseX + columnLocalX(i), baseY + columnLocalY(i), z, id, surface);
+          this.world.setBlock(x, y, z, id, surface);
         }
         this.cursor = end;
         if (performance.now() - start >= budgetMs) break;

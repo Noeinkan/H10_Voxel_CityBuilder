@@ -95,8 +95,9 @@ Due cose da sapere prima di stupirsi:
 ## La scena `swatch`
 
 `?scene=swatch` compone **il vocabolario**, non un soggetto: tre fasce su un
-basamento continuo, inquadrate tutte insieme perché una scelta di look si fa
-affiancando le cose.
+basamento, inquadrate tutte insieme perché una scelta di look si fa affiancando
+le cose. Il basamento è largo quanto la fascia che regge, così il suo profilo a
+gradini dichiara le tre fasce senza etichette.
 
 - la **matrice** 32 × 8 — uno slot di palette per colonna, un `SURFACE_KIND` per
   riga. La prima colonna è un buco, ed è ciò che l'indice 0 significa: la
@@ -106,11 +107,31 @@ affiancando le cose.
 - la **scala**: il cubo di terreno e la sua scaletta, una specie d'albero per
   riga di `TREE_SHAPES`, e un edificio di riferimento.
 
+**Il provino non è un cubo, ed è la parte che conta.** Ogni cella della matrice
+è la stessa massa a quattro gradoni — podio, sbalzo, arretramento, guglia —
+definita in `CELL_TIERS`. Non è decorazione: su un prisma isolato con la sommità
+piatta tre famiglie di `mesher/microGeometry.ts` non scattano **affatto**
+(`emitSoffits` vuole un intradosso con aria sotto, `emitTerraceBoxes` una
+sommità scoperta con volume di fianco, `emitFinials` una cella senza vicini in
+piano), e il campionario mostrava un vocabolario più povero di quello vero.
+Misurato con `appendMicroGeometry` su un provino solo: da 21 a 55 prismi di
+dettaglio per `habitat`, da 25 a 77 per `civic`, da 4 a 22 per `roofTech`. La
+sagoma è identica in tutte le celle perché l'unica variabile dev'essere
+palette × superficie.
+
+L'interasse segue la stessa logica: a `REST_PITCH` un voxel di quota si proietta
+in alto il doppio di un voxel di profondità, quindi la fila davanti nasconde
+`CELL_HEIGHT - cellPitch / 2` di quella dietro. Con interasse pari all'altezza
+spariva metà di ogni provino e la griglia si leggeva come una massa unica.
+
 Tre cose da sapere prima di stupirsi:
 
 - le righe `plain` e `utility` **non hanno microgeometria**, e non è un difetto:
   la prima non è un linguaggio, e la seconda è metallo strutturale la cui forma
   arriva dalla mesh. Si distinguono per tinta;
+- tende e insegne (`emitAwnings`, `emitSigns`) non compaiono **da nessuna
+  parte**: chiedono un `portal` sotto la stessa faccia, e un provino di una
+  superficie sola non può averlo. Quelle si giudicano in `?scene=diorama`;
 - sulle colonne `water` e `waterDeep` i tre bit **non** portano una facciata ma
   `WATER_CLASS`: il fragment riconosce l'acqua dalla palette prima di leggerli
   (contratto 5). L'overlay lo dice sotto il cursore;
@@ -119,35 +140,65 @@ Tre cose da sapere prima di stupirsi:
 
 Il pannello a destra nomina fascia, riga e colonna sotto il cursore, e tiene in
 vista la legenda dell'ordine delle otto righe: in-world non ci sono etichette.
+**Nasce aperto anche senza `?debug=1`** e `F3` non lo spegne: è la legenda dello
+strumento, non una metrica. Per uno scatto pulito si chiude il suo `<details>`.
 Cambiare tema con `1`..`9` rilegge il campionario **senza rigenerarlo**, ed è il
-modo di riconoscere uno slot morto a colpo d'occhio.
+modo di riconoscere uno slot morto a colpo d'occhio. Qui le cifre restano nude
+(niente `Shift`): nel campionario non c'è dock a cui darle, e cambiare tema è
+esattamente lo strumento di lavoro.
+
+**Si apre anche dal gioco**, con il bottone a griglia del dock accanto al tema:
+`swatchUrl` (in `src/game/launchMode.ts`, testata in `node`) compone l'indirizzo
+con il tema e l'ora in vigore e lo apre in una **scheda nuova**, così la partita
+resta viva in quella di sotto. L'ora nel link ferma l'orologio.
 
 ```
 /?scene=swatch&debug=1
 /?scene=swatch&theme=neon&daylight=night     # le righe luminous e portal accese
+/?scene=swatch&theme=neon&hour=21.50         # quello che compone il bottone del dock
 ```
 
 ## Tasti
 
 `Q`/`E` ruotano attorno al punto di terra sotto al mouse (sul centro
-dell'inquadratura se il cursore è fuori dalla canvas), rotella zoom, drag destro
-o `WASD` pan, `F` inquadra tutto, `G` +64 chunk, `R` rebuild totale, `C` azzera
-i picchi, `B` colore per bioma, `H`/`Shift+H` sposta l'ora, `1`..`9` sceglie il tema, `T`/`P`/`M` in scena
+dell'inquadratura se il cursore è fuori dalla canvas), rotella zoom, drag
+sinistro o destro o `WASD` pan, **drag centrale orbita** anche sulla città —
+yaw continuo e inclinazione fra 12° e 82°, che restano dove li si lascia. Da un
+angolo libero `Q`/`E` riagganciano la griglia degli scatti tenendo
+l'inclinazione, e `F` inquadra tutto **e** rimette l'assetto isometrico.
+`G` +64 chunk, `R` rebuild totale, `C` azzera
+i picchi, `B` colore per bioma, `H`/`Shift+H` sposta l'ora, `T`/`P`/`M` in scena
 simulazione. `__simClass(i)` e il tasto `M` ciclano su quattro usi, non tre.
 Con un isolato scelto in Block focus il drag **orbita** invece di panare, `Q`/`E`
 girano a passi continui e `F` e `WASD` restano fermi: vedi *Viste di ispezione*.
 
 **Fuori dal gate del debug**, perché sono comandi di gioco e non misure: `V`
 cicla le viste, `L` cicla i modi del giorno (ciclo, giorno fisso, notte fissa),
-`[`/`]` e `PageDown`/`PageUp` muovono la quota della fetta (`Shift` per un piano
-intero). Rispondono anche alla radice, senza `?debug=1`.
+`1`..`9` scelgono lo **strumento** n-esimo del dock, `Shift`+`1`..`9` scelgono il
+**tema**, `[`/`]` e `PageDown`/`PageUp` muovono la quota della fetta (`Shift` per
+un piano intero). Rispondono anche alla radice, senza `?debug=1`.
+
+Le cifre nude sono passate dai temi agli strumenti con la fase 7.4, e la ragione
+è la stessa che le aveva tolte dal gate del debug: il dock è la prima superficie
+che un giocatore nuovo guarda per sapere cosa può costruire, e ogni tessera porta
+il proprio numero stampato in un angolo. Un `n` che non corrisponde a nessuna
+tessera disponibile **non viene ingoiato** e prosegue verso gli altri handler.
+Nel campionario le cifre nude restano sui temi, perché lì non c'è dock e
+cambiare tema **è** lo strumento.
 
 ## Viste di ispezione
 
-Quattro modi, un solo meccanismo: due predicati geometrici e un retino ordinato
-con `discard`, governati da tre uniform del materiale unico. La decisione — quale
+Quattro modi, un solo meccanismo: tre predicati geometrici e una rigatura con
+`discard`, governati da sei uniform del materiale unico. La decisione — quale
 modo, a che quota, su quale isolato — vive in `src/engine/inspect.ts`, è pura e
-si verifica in `node`; nel materiale entrano solo i numeri che ne escono.
+si verifica in `node`; i numeri della lente dei raggi X stanno in
+`src/engine/xray.ts`. Nel materiale entrano solo i numeri che ne escono.
+
+Velare non è però un solo `discard`: quello che resta di un occlusore si
+scioglie nella tinta della prospettiva aerea e perde finestre e insegne, e sul
+filo del voxel la rigatura cede, così il muro davanti diventa una **gabbia di
+vetro** invece di un pulviscolo. La densità cresce avvicinandosi alla camera, ed
+è ciò che permette di vedere più di una parete alla volta.
 
 **Sono una funzione di gioco, non dell'harness** (fase 4.12): il pulsante *Views*
 sta nel dock, le etichette che il giocatore legge vivono in

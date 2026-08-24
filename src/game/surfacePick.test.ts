@@ -9,6 +9,7 @@ describe('pickSurfaceCell', () => {
       x: 8,
       y: 9,
       z: 12,
+      hitZ: 12,
       buildable: true,
     });
   });
@@ -25,6 +26,7 @@ describe('pickSurfaceCell', () => {
       x: 31,
       y: 8,
       z: 12,
+      hitZ: 12,
       buildable: true,
     });
   });
@@ -43,7 +45,8 @@ describe('pickSolidCell', () => {
     const ray = { origin: [20, 9.5, 40], direction: [-0.3, 0, -0.954] } as const;
 
     expect(pickSolidCell(ray, map, null, 64)?.x).toBe(11);
-    expect(pickSolidCell(ray, map, tower, 64)).toEqual({ x: 16, y: 9, z: 12, buildable: true });
+    expect(pickSolidCell(ray, map, tower, 64))
+      .toEqual({ x: 16, y: 9, z: 12, hitZ: 30, buildable: true });
   });
 
   it('la colonna resta quella del terreno, anche fermandosi su un tetto', () => {
@@ -53,6 +56,18 @@ describe('pickSolidCell', () => {
     const straight = { origin: [15.5, 9.5, 40], direction: [0, 0, -1] } as const;
 
     expect(pickSolidCell(straight, map, tower, 64)?.z).toBe(12);
+  });
+
+  it('`hitZ` e\' la quota del puntatore: il tetto, non il suolo sotto la torre', () => {
+    // E' la separazione che rende posabile una mensola: il segnaposto va dove
+    // punta il mouse, e sotto una torre di trenta voxel «dove punta il mouse»
+    // e' diciotto voxel sopra la colonna che il gioco riceve.
+    const map = testTerrain({ chunksX: 1, chunksY: 1, height: 12 });
+    const straight = { origin: [15.5, 9.5, 40], direction: [0, 0, -1] } as const;
+
+    expect(pickSolidCell(straight, map, tower, 64)?.hitZ).toBe(30);
+    // Fuori dalla torre le due quote tornano a coincidere.
+    expect(pickSolidCell(straight, map, () => 0, 64)?.hitZ).toBe(12);
   });
 
   it('senza edifici risponde esattamente come la sola heightmap', () => {

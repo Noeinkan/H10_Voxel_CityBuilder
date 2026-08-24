@@ -18,6 +18,14 @@ import {
   type Catalyst,
 } from './DesirabilityField';
 import {
+  EMPTY_HARVEST,
+  FARM_COUNT,
+  FARM_KIND,
+  isFarmKind,
+  type FarmKind,
+  type FoodReport,
+} from './farms';
+import {
   classOfWeight,
   isPolicyId,
   policyById,
@@ -26,6 +34,7 @@ import {
   type PolicyId,
 } from './policies';
 import { EMPTY_COMMERCE, type CommerceReport } from './commerce';
+import { NO_FUNDS_FLOW, type FundsReport } from './flows';
 import { EMPTY_TRADE, isTradeMode, type TradeMode, type TradeReport } from './trade';
 
 /**
@@ -91,6 +100,21 @@ export interface SimStateData {
    */
   readonly mixedCounts: readonly number[];
 
+  /**
+   * Produttori di cibo, indicizzato come `FARM_KIND`.
+   *
+   * **Non e' un quinto `buildingCounts`.** Campo e frutteto non sono edifici e
+   * non compaiono altrove: sono lotti, vivono in `src/world/farms/` e la
+   * simulazione ne conosce solo il numero. La torre invece e' un edificio, e
+   * compare **due volte** — in `buildingCounts[industrial]` per il suolo che
+   * occupa e qui per cio' che produce. La somma delle due tabelle non e' il
+   * numero di cose costruite, esattamente come per `mixedCounts`.
+   *
+   * Nessuno di questi tre tocca il campo di desiderabilita': un produttore di
+   * cibo compete per la **terra**, non per l'attrattivita' di una colonna.
+   */
+  readonly farmCounts: readonly number[];
+
   readonly catalysts: readonly Catalyst[];
 
   /** Policy attive, sempre in ordine di catalogo. */
@@ -113,6 +137,26 @@ export interface SimStateData {
 
   /** Ultimo giro del commercio interno. Derivato dal tick, non un accumulo. */
   readonly commerce: CommerceReport;
+
+  /**
+   * Da dove e' venuto il cibo dell'ultimo tick e dove e' andato.
+   *
+   * Stessa natura di `commerce` e `flows`, e sta qui accanto per la stessa
+   * ragione: derivato dal tick, non accumulato. Risponde a «da dove viene quello
+   * che mangiamo», che con un saldo netto solo non ha risposta — ed e' la
+   * domanda che la 3.1 esiste per rendere ponibile.
+   */
+  readonly harvest: FoodReport;
+
+  /**
+   * Da dove sono venuti i fondi dell'ultimo tick e dove sono andati.
+   *
+   * Stessa natura di `commerce`, e per la stessa ragione sta qui accanto:
+   * derivato dal tick, non accumulato, quindi ricostruirlo non richiede
+   * storia. Risponde a «perche' sto perdendo denaro», che con un saldo netto
+   * solo non ha risposta.
+   */
+  readonly flows: FundsReport;
 
   /** Decisione sospesa e registro compatto degli esiti scelti. */
   readonly pendingDecision: CityDecision | null;
@@ -158,12 +202,15 @@ export function createSimState(options: SimStateOptions = {}): SimState {
     buildings: [],
     buildingCounts: new Array<number>(CLASS_COUNT).fill(0),
     mixedCounts: new Array<number>(CLASS_COUNT).fill(0),
+    farmCounts: new Array<number>(FARM_COUNT).fill(0),
     catalysts: catalysts.map(normaliseCatalyst),
     policies: canonicalPolicies(policies),
     charters: canonicalCharters(options.charters ?? []),
     tradeMode: options.tradeMode ?? 'balanced',
     trade: EMPTY_TRADE,
     commerce: EMPTY_COMMERCE,
+    harvest: EMPTY_HARVEST,
+    flows: NO_FUNDS_FLOW,
     pendingDecision: null,
     decisionHistory: [],
     nextDecisionTick: BALANCE.decisions.firstTick,
@@ -245,16 +292,65 @@ export function addBuilding(state: SimState, building: Building): SimState {
   const mixedCounts = state.mixedCounts.slice();
   if (mixed !== undefined) mixedCounts[mixed]++;
 
-  const record: Building = mixed === undefined
-    ? { x: building.x, y: building.y, class: building.class }
-    : { x: building.x, y: building.y, class: building.class, mixed };
+  // **Una torre si registra da una porta sola.** Chiedere a chi costruisce di
+  // chiamare anche `addFarm` vorrebbe dire che prima o poi qualcuno registra il
+  // volume e dimentica il raccolto, e il difetto sarebbe una citta' che affama
+  // se stessa senza che nulla lo dica. La specializzazione viaggia sul record,
+  // quindi `removeBuildings` sa disfare esattamente cio' che e' stato contato.
+  const farmCounts = state.farmCounts.slice();
+  if (building.specialization === 'farming') farmCounts[FARM_KIND.tower]++;
+
+  const record: Building = {
+    x: building.x,
+    y: building.y,
+    class: building.class,
+    ...(mixed === undefined ? {} : { mixed }),
+    ...(building.specialization === undefined ? {} : { specialization: building.specialization }),
+  };
 
   return {
     ...state,
     buildings: [...state.buildings, record],
     buildingCounts,
     mixedCounts,
+    farmCounts,
   };
+}
+
+/**
+ * Registra un produttore di cibo che non e' un edificio.
+ *
+ * E' la porta gemella di `addBuilding` per campi e frutteti: lotti che vivono in
+ * `src/world/farms/`, occupano terra e non compaiono in nessun istogramma di
+ * edifici. La torre non passa di qui — la registra `addBuilding` insieme al suo
+ * volume, perche' un edificio e' *anche* un edificio.
+ *
+ * **Non tocca il campo di desiderabilita' e non tiene una lista.** Un lotto non
+ * fa congestione, non attira nessuno e non va ricostruito da JSON per posizione:
+ * a sapere dove sta e' il mondo, che ce l'ha in mano. Qui serve un contatore, e
+ * un contatore e' tutto quello che c'e'.
+ */
+export function addFarm(state: SimState, kind: FarmKind): SimState {
+  if (!isFarmKind(kind) || kind === FARM_KIND.tower) return state;
+  const farmCounts = state.farmCounts.slice();
+  farmCounts[kind]++;
+  return { ...state, farmCounts };
+}
+
+/**
+ * Toglie un produttore di cibo. E' la porta opposta ad `addFarm`.
+ *
+ * La chiama chi ha visto la citta' costruire sopra un lotto: un campo mangiato
+ * da un isolato nuovo e' il modo in cui la crescita si porta via la propria
+ * dispensa, ed e' voluto. Un contatore gia' a zero resta a zero invece di
+ * scendere sotto, come `addBuilding` lascia cadere una cella piena.
+ */
+export function removeFarm(state: SimState, kind: FarmKind): SimState {
+  if (!isFarmKind(kind) || kind === FARM_KIND.tower) return state;
+  if ((state.farmCounts[kind] ?? 0) <= 0) return state;
+  const farmCounts = state.farmCounts.slice();
+  farmCounts[kind]--;
+  return { ...state, farmCounts };
 }
 
 /**
@@ -302,6 +398,7 @@ export function removeBuildings(state: SimState, doomed: readonly Building[]): S
 
   const buildingCounts = state.buildingCounts.slice();
   const mixedCounts = state.mixedCounts.slice();
+  const farmCounts = state.farmCounts.slice();
   for (const building of removed) {
     buildingCounts[building.class]--;
     // `addBuilding` normalizza `mixed` prima di conservarlo, quindi cio' che
@@ -309,11 +406,15 @@ export function removeBuildings(state: SimState, doomed: readonly Building[]): S
     // rifare la validazione, altrimenti due regole diverse conterebbero al
     // contrario sullo stesso edificio.
     if (building.mixed !== undefined) mixedCounts[building.mixed]--;
+    // Stessa ragione per la torre: si disfa cio' che il record dichiara, non
+    // cio' che il luogo esprimerebbe adesso. Uno sventramento che ricalcolasse
+    // la specializzazione lascerebbe il contatore fuori posto per sempre.
+    if (building.specialization === 'farming') farmCounts[FARM_KIND.tower]--;
   }
 
   state.field.removeBuildings(removed, survivors, state.catalysts, resolveWeights(state.policies));
 
-  return { ...state, buildings: survivors, buildingCounts, mixedCounts };
+  return { ...state, buildings: survivors, buildingCounts, mixedCounts, farmCounts };
 }
 
 /**
@@ -418,14 +519,25 @@ export function toSimStateData(state: SimState): SimStateData {
 export function reviveSimState(data: SimStateData): SimState {
   const compatible = data as SimStateData & Partial<Pick<
     SimStateData,
-    'tradeMode' | 'trade' | 'commerce' | 'mixedCounts' | 'charters'
+    'tradeMode' | 'trade' | 'commerce' | 'mixedCounts' | 'charters' | 'farmCounts'
+    | 'flows' | 'harvest'
     | 'pendingDecision' | 'decisionHistory' | 'nextDecisionTick'
   >>;
   const normalised: SimStateData = {
     ...data,
     catalysts: data.catalysts.map(normaliseCatalyst),
     mixedCounts: compatible.mixedCounts ?? countMixed(data.buildings),
+    // Delle tre voci solo la torre e' ricostruibile dai dati salvati, perche' e'
+    // un edificio e sta nella lista. Campo e frutteto sono lotti del mondo: un
+    // salvataggio che non li porta torna con zero, e a ripopolare il contatore
+    // e' il driver al primo giro. E' il verso giusto — la terra la sa il mondo.
+    farmCounts: compatible.farmCounts ?? countFarms(data.buildings),
     commerce: compatible.commerce ?? EMPTY_COMMERCE,
+    // Un salvataggio piu' vecchio non ha i flussi: si ricostruiscono al primo
+    // tick, come il commercio, perche' nessuno dei due e' un accumulo. Vale
+    // parola per parola anche per il referto del raccolto.
+    flows: compatible.flows ?? NO_FUNDS_FLOW,
+    harvest: compatible.harvest ?? EMPTY_HARVEST,
     policies: canonicalPolicies(data.policies),
     charters: canonicalCharters(compatible.charters ?? []),
     tradeMode: compatible.tradeMode !== undefined && isTradeMode(compatible.tradeMode)
@@ -481,6 +593,21 @@ function countMixed(buildings: readonly Building[]): readonly number[] {
     if (building.mixed === undefined || !isBuildingClass(building.mixed)) continue;
     if (building.mixed === building.class) continue;
     counts[building.mixed]++;
+  }
+  return counts;
+}
+
+/**
+ * Ricostruisce i contatori dei produttori dalla lista degli edifici.
+ *
+ * Puo' ricostruire **solo le torri**, ed e' una limitazione dichiarata: campo e
+ * frutteto non sono edifici e non stanno nella lista. Vedi la nota in
+ * `reviveSimState`.
+ */
+function countFarms(buildings: readonly Building[]): readonly number[] {
+  const counts = new Array<number>(FARM_COUNT).fill(0);
+  for (const building of buildings) {
+    if (building.specialization === 'farming') counts[FARM_KIND.tower]++;
   }
   return counts;
 }

@@ -14,6 +14,13 @@ import { hashCoords } from '../../world/rng';
 import { blockPalette, blockSurface, SURFACE_KIND, type SurfaceKind } from '../../world/visualBlock';
 import { PALETTE_SLOTS } from '../paletteSlots';
 import { MESH_UNITS_PER_VOXEL } from './meshTypes';
+// Il dettaglio del retro vive in un modulo suo — questo file e' gia' oltre il
+// budget di righe della cartella. Le due direzioni si chiudono in cerchio, ed e'
+// sicuro solo perche' **nessuna delle due valuta l'altra al caricamento**: qui si
+// chiama `appendStreetDetail` dentro il corpo di una funzione, e di la' si legge
+// `LATERAL_FACES` dentro il corpo di un emettitore. Un letterale di modulo che
+// dereferenziasse l'altro lato romperebbe il caricamento, non la compilazione.
+import { appendStreetDetail } from './microStreet';
 
 /**
  * Microgeometria architettonica in unita' fisse di 1/16 di voxel.
@@ -97,7 +104,7 @@ export type ChunkOrigin = readonly [number, number, number];
 const ORIGIN_ZERO: ChunkOrigin = [0, 0, 0];
 
 const U = MESH_UNITS_PER_VOXEL;
-const LATERAL_FACES = [FACE_PX, FACE_NX, FACE_PY, FACE_NY] as const;
+export const LATERAL_FACES = [FACE_PX, FACE_NX, FACE_PY, FACE_NY] as const;
 const SIDES = [-1, 1] as const;
 
 type Side = -1 | 1;
@@ -119,12 +126,12 @@ function encodeCell(x: number, y: number, z: number): number {
  *
  * L'indice e' la posizione dentro `LATERAL_FACES`, non l'indice di faccia.
  */
-interface SurfaceCells {
+export interface SurfaceCells {
   readonly bySurface: number[][];
   readonly facadeByFace: number[][];
 }
 
-function collectSurfaceCells(padded: Uint8Array): SurfaceCells {
+export function collectSurfaceCells(padded: Uint8Array): SurfaceCells {
   const bySurface = Array.from({ length: 8 }, () => [] as number[]);
   const facadeByFace = Array.from({ length: LATERAL_FACES.length }, () => [] as number[]);
   for (let z = 0; z < CHUNK; z++) {
@@ -209,7 +216,7 @@ function sharedCapMask(axis: number, negativeContinues: boolean, positiveContinu
  * possono superare `U`: e' cosi' che una corsa lunga `n` celle diventa un solo
  * box. `depth` misura la sporgenza oltre il piano della facciata.
  */
-function facadeBox(
+export function facadeBox(
   x: number,
   y: number,
   z: number,
@@ -242,7 +249,7 @@ function facadeBox(
  * dicono che la corsa prosegue oltre l'estremo: chi disegna arriva al confine
  * invece di rientrare, cosi' il pezzo accanto combacia.
  */
-interface RunSpec {
+export interface RunSpec {
   readonly runAxis: 0 | 1 | 2;
   readonly palette: number;
   /** Faccia aderente al voxel che regge il dettaglio: non viene mai emessa. */
@@ -261,7 +268,7 @@ interface RunSpec {
  * possiede le proprie celle e non puo' disegnare le nostre. Le due meta' si
  * incontrano perche' entrambe nascondono la testata sul confine condiviso.
  */
-function emitRuns(writer: MicroGeometryWriter, cells: readonly number[], spec: RunSpec): boolean {
+export function emitRuns(writer: MicroGeometryWriter, cells: readonly number[], spec: RunSpec): boolean {
   const axis = spec.runAxis;
   const dx = axis === 0 ? 1 : 0;
   const dy = axis === 1 ? 1 : 0;
@@ -310,7 +317,7 @@ function emitRuns(writer: MicroGeometryWriter, cells: readonly number[], spec: R
  * Niente testate condivise da mascherare: il prisma non tocca il confine, e la
  * cella appartiene a un chunk solo.
  */
-function emitPoints(writer: MicroGeometryWriter, cells: readonly number[], spec: RunSpec): boolean {
+export function emitPoints(writer: MicroGeometryWriter, cells: readonly number[], spec: RunSpec): boolean {
   for (const cell of cells) {
     const x = cell & 31;
     const y = (cell >>> 5) & 31;
@@ -653,13 +660,13 @@ const VINE_TOP = 11;
  * dall'ordine di visita. Il sale separa le domande — «qui c'e' un'insegna?» e
  * «qui c'e' un condizionatore?» non devono essere la stessa moneta.
  */
-function propRoll(origin: ChunkOrigin, x: number, y: number, z: number, salt: number): number {
+export function propRoll(origin: ChunkOrigin, x: number, y: number, z: number, salt: number): number {
   const h = hashCoords(hashCoords(salt, origin[0] + x, origin[1] + y), origin[2] + z, salt);
   return h / 4294967296;
 }
 
 /** true se questa faccia ha un ingresso sotto di se': e' cosi' che si legge il fronte strada. */
-function frontage(padded: Uint8Array, x: number, y: number, z: number, face: number): boolean {
+export function frontage(padded: Uint8Array, x: number, y: number, z: number, face: number): boolean {
   for (let d = 0; d <= FRONTAGE_REACH; d++) {
     if (z - d < -1) break;
     if (hasSurfaceFace(padded, x, y, z - d, SURFACE_KIND.portal, face)) return true;
@@ -675,7 +682,7 @@ function frontage(padded: Uint8Array, x: number, y: number, z: number, face: num
  * di un civico. Il valore neutro e' `plain`, che nessuna facciata usa, cosi' il
  * confronto resta un intero e non un `null` da controllare a parte.
  */
-function facadeAt(padded: Uint8Array, x: number, y: number, z: number, face: number): number {
+export function facadeAt(padded: Uint8Array, x: number, y: number, z: number, face: number): number {
   const block = blockAt(padded, x, y, z);
   if (block === 0 || !isExposed(padded, x, y, z, face)) return SURFACE_KIND.plain;
   const surface = blockSurface(block);
@@ -713,7 +720,7 @@ function wantsWallUnit(surface: number): boolean {
 }
 
 /** Sommita' di tetto tecnico scoperta: e' l'aggancio di antenne, cassoni e fioriere. */
-function openRoof(padded: Uint8Array, x: number, y: number, z: number): boolean {
+export function openRoof(padded: Uint8Array, x: number, y: number, z: number): boolean {
   const block = blockAt(padded, x, y, z);
   return block !== 0 && blockSurface(block) === SURFACE_KIND.roofTech &&
     isExposed(padded, x, y, z, FACE_PZ);
@@ -727,7 +734,7 @@ function openRoof(padded: Uint8Array, x: number, y: number, z: number): boolean 
  * copertura su cui posare qualcosa. Toglie anche il caso in cui un prop
  * comparirebbe su una sporgenza che da lontano e' una linea.
  */
-function interiorRoof(padded: Uint8Array, x: number, y: number, z: number): boolean {
+export function interiorRoof(padded: Uint8Array, x: number, y: number, z: number): boolean {
   for (const face of LATERAL_FACES) {
     const offset = FACE_NEIGHBOUR_OFFSETS[face];
     if (!openRoof(padded, x + offset[0], y + offset[1], z)) return false;
@@ -1105,7 +1112,11 @@ export function appendMicroGeometry(
   const roofs = bySurface[SURFACE_KIND.roofTech];
   if (!emitRoofMasts(padded, writer, roofs, origin)) return initial - writer.remainingQuads;
   if (!emitRoofCrowns(padded, writer, roofs, origin)) return initial - writer.remainingQuads;
-  emitTerraceBoxes(padded, writer, roofs, origin);
+  if (!emitTerraceBoxes(padded, writer, roofs, origin)) return initial - writer.remainingQuads;
+  // Il dettaglio del retro chiude la sequenza: e' l'ultimo a comparire e il primo
+  // a cadere. Vive in `microStreet.ts` — un file suo, perche' questo e' gia'
+  // oltre il budget di righe della cartella.
+  appendStreetDetail(padded, writer, facadeByFace, roofs, origin);
   return initial - writer.remainingQuads;
 }
 

@@ -9,6 +9,34 @@ leggere `src/world/`, ma il mondo non deve dipendere dall'engine.
 - I test girano in Node: mantieni la logica testabile fuori da Three.js e DOM.
 - `ChunkRenderer` legge solo `Chunk.blocks`; non accedere a `data`.
 - Una geometria e una draw call per chunk sono scelte deliberate.
+- **Cio' che si muove sta sopra la scena, non dentro il volume.** `TrafficView`
+  disegna barche, navi, aerei e dirigibili con mesh proprie: scriverli come voxel
+  e riscriverli al frame dopo marcherebbe sporchi i chunk della costa sessanta
+  volte al secondo, cioe' rimeshare mezza isola per far navigare una barca. E' la
+  stessa divisione di `InfluenceOverlay` e `PlacementCursor`, e vale per
+  qualunque cosa cambi posizione a ogni frame. A dire *dove* stanno e'
+  `src/world/traffic/`, che e' puro; qui resta il disegno.
+- Le sagome dei mezzi restano **di scatole**, e la loro luce esce da
+  `faceLight`: il resto della scena e' fatto di cubi di un voxel, e una
+  silhouette liscia o illuminata da un altro modello si vedrebbe come un corpo
+  estraneo. I colori arrivano dalla palette del tema per l'ora corrente, alla
+  cadenza dell'HUD e non per frame — un cambio d'ora sposta il sole di un decimo
+  di grado.
+- **Quali scatole lo dice `vehicleHulls.ts`, che non importa Three.** La cura per
+  una barca che sembra un mattone e' la stessa che `mesher/microGeometry.ts`
+  applica agli edifici: prismi piu' piccoli del voxel dove la forma cambia — uno
+  scafo in tre conci, una fascia di galleggiamento spessa tre decimi, un
+  parapetto due, un'ala in quattro pannelli che arretrano. Tenendole fuori dalla
+  vista si verificano in `node`, ed e' cosi' che un test puo' dire che il
+  fumaiolo disegnato chiude esattamente sulla bocca da cui esce il fumo.
+- **Il pennacchio e' l'unica geometria che si riscrive per frame**, e non poteva
+  essere altrimenti: uno sbuffo cambia posto, taglia e densita' a ogni istante.
+  Sta in una mesh sola per tutta la citta' — posizioni e colori RGBA in due
+  buffer dinamici, `drawRange` a tagliare la coda — invece di una mesh per
+  sbuffo, che sarebbe una draw call ogni volta che un traghetto respira. La
+  quarta componente del colore e' l'alfa, ed e' la sola ragione per cui il fumo
+  non ha bisogno di un materiale per sbuffo. *Dove* stiano gli sbuffi lo dice
+  `world/traffic/plume.ts`, che e' puro come le pose.
 
 ## Mesh, palette e temi
 
@@ -40,6 +68,35 @@ leggere `src/world/`, ma il mondo non deve dipendere dall'engine.
   agganciato li' pagherebbe da solo piu' di tutto il resto del modulo. Se un
   dettaglio deve comparire su una banchina o su una pista, la strada e' dare a
   quella parte un linguaggio costruito nella ricetta, non aprire `utility` qui.
+- **Il dettaglio del retro sta in `microStreet.ts`**, e la divisione non e'
+  ordine: `microGeometry.ts` e' oltre il budget di righe della cartella, e vale la
+  regola a monte — per una responsabilita' nuova un file nuovo. La responsabilita'
+  si nomina in una riga: cio' che un edificio mostra dove **non** si affaccia
+  sulla strada. L'aggancio e' `frontage` negato, ed e' la differenza fra una
+  tenda e una calata di scarico. I due moduli si importano a vicenda, ed e'
+  sicuro **solo** perche' nessuno dei due valuta l'altro al caricamento: un
+  letterale di modulo che dereferenziasse l'altro lato romperebbe il caricamento e
+  non la compilazione.
+- **Un prop di tetto parte da `(z + 1) * U`, uno di facciata da `facadeBox`.**
+  `openRoof` e `interiorRoof` rispondono sul voxel **solido** del tetto, non
+  sull'aria che ci sta sopra: un prisma steso da `z * U` finisce dentro quel pieno
+  e non lo vede nessuno, pur costando i suoi quad. Sul fronte il problema non si
+  pone perche' `facadeBox` prende una profondita' e sporge dal piano da se', ed e'
+  proprio questa asimmetria a rendere l'errore facile — e' gia' successo alla
+  pergola. Chi aggiunge un emettitore di tetto copi `emitRoofTech`,
+  `emitRoofMasts`, `emitTerraceBoxes` o `emitRoofCrowns`, e lo verifichi sulla
+  **quota** dei prismi: un conto di prismi non se ne accorge, perche' ci sono
+  tutti.
+- **La copertura del terreno e' l'unico dettaglio che sostituisce del volume**, e
+  sta apposta in un modulo suo (`coverDetail.ts`). `liftGroundCover` svuota le
+  celle marcate — nel volume paddato **e** nell'anello e nella fetta di soffitto,
+  o un ciuffo del chunk accanto proietterebbe la sua AO su questo — prima che
+  cielo, bagliore e greedy pass leggano; `restoreGroundCover` le rimette, perche'
+  chi chiama `greedyMesh` riusa il buffer e un mesher che consuma il proprio
+  input e' una trappola. Per la stessa ragione viene emessa **per prima** fra i
+  dettagli: e' la sola che, troncata dal tetto dei quad, lascerebbe una chiazza
+  calva invece di un edificio piu' spoglio. La tinta non e' nel marcatore — la
+  ricava dalla palette del terreno sotto, via `groundcover.ts`.
 - Struttura e prop si distinguono per l'**aggancio, non per l'aspetto**: se la
   posizione e' interamente decisa dalla geometria e' struttura e va sopra la
   riga dei prop in `appendMicroGeometry`; se serve un tiro per scegliere *quale*
@@ -176,10 +233,38 @@ disegnata una volta sola.
 
 La decisione sta in `inspect.ts`, che e' puro e si verifica in `node`: nel
 materiale entrano sei uniform e nient'altro. Il terzo predicato — la lente dei
-raggi X — e' un test raggio/volume e non una regione: `lensChord` in `inspect.ts`
-e il blocco corrispondente nel fragment sono due copie della stessa cosa, come
-`lighting.ts` e la sua meta' GLSL, e `inspect.test.ts` e' cio' che le tiene
-allineate.
+raggi X — e' un test raggio/volume e non una regione, e vive con i suoi numeri in
+`xray.ts`: `lensHit` e il blocco corrispondente nel fragment sono due copie della
+stessa cosa, come `lighting.ts` e la sua meta' GLSL, e `xray.test.ts` e' cio' che
+le tiene allineate.
+
+**Velare non e' un solo `discard`, ed e' la parte che si sbaglia per prima.** Un
+muro bucato a caso resta un muro rotto: si vede il pulviscolo di cio' che e'
+rimasto, non cio' che c'e' dietro. L'azione e' quindi una e composta di tre
+pezzi, tutti in `shaders/inspect.glsl.ts`:
+
+- la soglia e' una **rigatura** diagonale in pixel di schermo e non un Bayer. A
+  parita' di copertura un retino ordinato sparpaglia, e pixel sparsi leggono come
+  sporco davanti al soggetto; in fila leggono come una campitura. La densita' ne
+  cambia lo spessore e non il passo, quindi puo' variare con continuita';
+- la densita' **cresce avvicinandosi alla camera** (`XRAY.deep`). Non e' un
+  gusto: le soglie di una rampa sono annidate, quindi due pareti a pari densita'
+  sopravvivono sugli stessi pixel e quella davanti copre l'altra per intero. Era
+  il difetto per cui i raggi X non lasciavano vedere attraverso **niente**, e la
+  cura e' quella nota per la screen-door transparency — far variare la soglia con
+  la profondita';
+- cio' che resta perde il linguaggio di facciata e si scioglie nella tinta della
+  **prospettiva aerea**, in proporzione a quanto e' stato tolto. La tinta e'
+  quella della nebbia apposta: segue tema e ora senza un colore proprio da
+  scegliere per trentadue palette. La proporzionalita' e' cio' che separa da sola
+  i raggi X — dove l'occlusore deve andarsene — da Block focus, dove il contesto
+  velato **e'** la risposta e sbiancarlo la toglierebbe.
+
+Sul filo del voxel la densita' cede a `XRAY.lattice`, cosi' l'occlusore si
+riduce a una gabbia invece di sbriciolarsi: la sagoma resta leggibile mentre la
+faccia si apre. Vale solo dove c'e' una lente — su mezzo schermo di contesto un
+reticolo sarebbe rumore — e mai dentro un taglio, dove sarebbe il taglio non
+fatto.
 
 Tre predicati vicini che vale la pena non confondere, perche' ognuno risponde a
 una domanda diversa e ogni coppia diverge in un caso solo:

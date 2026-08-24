@@ -2,45 +2,32 @@ import {
   BALANCE,
   catalystById,
   catalystRoleOf,
-  removeBuildings,
   setCatalystStrength,
-  type Building,
   type BuildingClass,
   type CatalystId,
   type SimState,
 } from '../../sim';
 import { hashCoords } from '../rng';
 import { GRADING } from '../grading/config';
-import { GROUND } from '../grading/grade';
+import { GROUND, WORKS, isDryLand, type GradePlan } from '../grading/grade';
 import { FACING, type Facing } from '../streets/streetGrid';
 import { waterFacing } from '../sites/siteRules';
 import { SITE } from '../sites/config';
-import { LANDMARK, landmarkOf, maxStageOf } from '../landmarks/config';
+import { LANDMARK, hasAloftRecipe, landmarkOf, maxStageOf } from '../landmarks/config';
 import {
   generateLandmark,
   landmarkOrigin,
   landmarkSpan,
   stageForBuildings,
 } from '../landmarks/generate';
-import {
-  footprintDepth,
-  type BuildingRecord,
-  type ReadonlyBuildingRegistry,
-} from './BuildingRegistry';
+import { footprintDepth, type BuildingRecord } from './BuildingRegistry';
 import type { BuildContext } from './buildContext';
 import { fitsChunkBudget } from './chunkBudget';
-import {
-  CLEARANCE_KIND,
-  planClearance,
-  type ClearanceRecord,
-  type ClearanceRefusal,
-} from './clearance';
+import type { ClearanceRefusal } from './clearance';
+import { OPEN_SITE, type ClearanceBox, type ClearanceSites } from './clearanceSite';
 import { BUILDER, CLASS_PROFILE } from './config';
-import { anchorOf } from './growthQueue';
-import { recordStamp } from './recordStamp';
 import { buildWorks, groundKindAt, surveyGrade } from './siteWorks';
-import type { SpanDriver } from './spanDriver';
-import { EMPTY_STAMP } from './stamp';
+import { stampFootprint } from './stamp';
 
 /**
  * I monumenti dei catalizzatori: il piazzamento, il grembiule e gli stadi.
@@ -55,7 +42,13 @@ import { EMPTY_STAMP } from './stamp';
  * restano fuori dagli istogrammi: la simulazione non li ha mai contati come
  * edifici, e continua a non sapere che esistono (invariante 7).
  */
-/** Cosa il piazzamento di un landmark trova nel suo riquadro. */
+/**
+ * Cosa il piazzamento di un landmark trova nel suo riquadro.
+ *
+ * E' `ClearanceVerdict` sotto un altro nome, e il nome vale la riga: chi legge
+ * `landmarkClearance` sul `Builder` non deve andare a cercare che tipo torna un
+ * cantiere generico.
+ */
 export interface LandmarkSite {
   /** Edifici che porterebbe via. Zero dove il riquadro e' gia' libero. */
   readonly clears: number;
@@ -63,44 +56,52 @@ export interface LandmarkSite {
   readonly refusal: ClearanceRefusal | null;
 }
 
-/** Riquadro gia' libero, o ruolo senza una ricetta da piantarci. */
-const OPEN_SITE: LandmarkSite = { clears: 0, refusal: null };
-
 /**
- * Un riquadro che si sta sgomberando, e cosa deve ancora cadere.
+ * Cosa impedisce a una struttura di posarsi su un tetto.
  *
- * I condannati **restano nel registry** finche' i loro voxel non sono spariti,
- * ed e' la parte che fa funzionare tutto il resto: il riquadro resta prenotato
- * da cio' che si sta abbattendo, non c'e' una finestra in cui il sito legge
- * libero con i voxel ancora dentro, e la passata di upgrade li salta da sola
- * perche' li vede in coda di comparsa.
+ * Sono quattro gesti diversi e non un «qui no»: cercare un edificio, cercarne
+ * uno **piu' grande**, cercarne uno **piu' alto**, cercarne uno libero. E' la
+ * stessa ragione per cui i rifiuti della mensola sono tre — la regola che una
+ * torre debba essere alta abbastanza perche' ci si posi uno scalo non la
+ * indovina nessuno.
  */
-interface Demolition {
+export type AloftRefusal = 'needs-roof' | 'roof-too-small' | 'roof-too-low' | 'roof-occupied';
+
+/** Il tetto su cui una struttura in quota si posa. */
+export interface AloftSite {
+  /** L'edificio che la porta: da qui in avanti non promuove piu'. */
+  readonly hostId: number;
+  /** Angolo minimo dell'ingombro, centrato sul tetto. */
   readonly x: number;
   readonly y: number;
-  readonly kind: CatalystId;
-  readonly doomed: Map<number, BuildingRecord>;
+  /** Quota del piano: la prima cella libera sopra l'ospite. */
+  readonly z: number;
+  readonly facing: Facing;
 }
 
+/** Il verdetto sul tetto, o due null quando il ruolo a terra non ha alternative. */
+export interface AloftVerdict {
+  readonly site: AloftSite | null;
+  readonly refusal: AloftRefusal | null;
+}
+
+/** «Questa domanda non si applica»: il ruolo non sa stare in quota. */
+const NOT_ALOFT: AloftVerdict = { site: null, refusal: null };
+
 export class LandmarkDriver {
-  /** Cantieri aperti. Quasi sempre vuoto: e' un gesto del giocatore, non del tick. */
-  private readonly sites: Demolition[] = [];
-
-  private clearedCount = 0;
-
   constructor(
     private readonly ctx: BuildContext,
-    private readonly spans: SpanDriver,
+    /**
+     * Il cantiere, condiviso con chiunque altro debba farsi spazio.
+     *
+     * I condannati **restano nel registry** finche' i loro voxel non sono
+     * spariti, ed e' la parte che fa funzionare tutto il resto: il riquadro
+     * resta prenotato da cio' che si sta abbattendo, non c'e' una finestra in
+     * cui il sito legge libero con i voxel ancora dentro, e la passata di
+     * upgrade li salta da sola perche' li vede in coda di comparsa.
+     */
+    private readonly clearance: ClearanceSites,
   ) {}
-
-  /** Cantieri aperti ed edifici gia' portati via, per l'overlay di debug. */
-  get clearing(): number {
-    return this.sites.length;
-  }
-
-  get cleared(): number {
-    return this.clearedCount;
-  }
 
   /**
    * Costruisce il landmark di un catalizzatore, con il suo grembiule attorno.
@@ -119,6 +120,17 @@ export class LandmarkDriver {
    * che tutti e otto avevano prima.
    */
   place(x: number, y: number, kind: CatalystId): void {
+    // Il tetto vince quando c'e': puntare un grattacielo con lo strumento
+    // dell'aeroporto **e'** la richiesta di uno scalo in quota, e ripiegare a
+    // terra costruirebbe un campo di volo dentro l'isolato che si stava
+    // guardando. Chi non voleva il tetto punta il prato accanto.
+    const aloft = this.aloftSiteAt(x, y, kind);
+    if (aloft.site !== null) {
+      this.buildAloft(aloft.site, kind);
+      return;
+    }
+    if (aloft.refusal !== null) return;
+
     const built = this.buildStructure(x, y, kind);
     if (built !== null) this.paintApron(built, landmarkOf(kind)!.apron);
     // **Il riquadro pieno non e' piu' un rifiuto muto.** Finche' la struttura
@@ -141,70 +153,115 @@ export class LandmarkDriver {
    * momento di costruire — perche' qui interessa solo cosa e' gia' costruito.
    */
   siteAt(x: number, y: number, kind: CatalystId): LandmarkSite {
+    // Su un tetto non c'e' niente da sgomberare: la struttura si posa sopra cio'
+    // che c'e', non al suo posto. Vale anche per il tetto rifiutato — a dirlo e'
+    // il rifiuto del piazzamento, non il conto delle demolizioni.
+    const aloft = this.aloftSiteAt(x, y, kind);
+    if (aloft.site !== null || aloft.refusal !== null) return OPEN_SITE;
+
     const box = this.footprintOf(x, y, kind);
     if (box === null) return OPEN_SITE;
 
-    const records = recordsIn(this.ctx.registry, box);
-    if (records.length === 0) return OPEN_SITE;
-
-    const plan = planClearance(
-      records.map((record) => this.clearanceOf(record)),
-      BALANCE.gameplay.catalyst.clearing,
-    );
-    return { clears: plan.doomed.length, refusal: plan.refusal };
+    return this.clearance.survey(box, BALANCE.gameplay.catalyst.clearing);
   }
 
   /**
-   * Miete i condannati che hanno finito di sparire, e chiude i cantieri vuoti.
+   * Il tetto che questa colonna offre a un ruolo, o perche' non ne offre uno.
    *
-   * **Un record si toglie dal registry solo quando i suoi voxel non ci sono
-   * piu'.** Toglierlo prima aprirebbe una finestra in cui il suolo legge libero
-   * mentre l'edificio e' ancora li': un lotto ci nascerebbe dentro, e la
-   * cancellazione in coda gli mangerebbe i voxel. E' la stessa ragione per cui
-   * una campata si cancella di colpo invece che a rate — li' il volume e'
-   * piccolo abbastanza da permetterselo, qui no.
+   * **La presenza di un edificio sotto la colonna sceglie la strada**, e non c'e'
+   * un secondo strumento: puntare una torre con l'aeroporto in mano chiede uno
+   * scalo in quota, puntare il prato accanto chiede un campo di volo. E' l'unica
+   * decisione di forma di questo dominio che dipende dal luogo invece che dal
+   * seme, e sta qui perche' qui c'e' il registry.
    *
-   * La spazzata finale su ciascun volume e' quasi gratis — `clearVolume` salta
-   * le celle gia' vuote, e a questo punto lo sono quasi tutte — e serve a una
-   * cosa sola: se la sagoma rigenerata divergesse anche di un voxel da quella
-   * scritta, resterebbe un moncone dentro il riquadro del landmark.
+   * Due null significano «la domanda non si applica»: o il ruolo non ha una
+   * forma da tetto, o sotto la colonna non c'e' niente su cui posarsi. In
+   * entrambi i casi decide la strada di terra.
    */
-  clearancePass(state: SimState): SimState {
-    if (this.sites.length === 0) return state;
+  aloftSiteAt(x: number, y: number, kind: CatalystId): AloftVerdict {
+    if (!hasAloftRecipe(kind)) return NOT_ALOFT;
 
-    const { registry, growth } = this.ctx;
-    const gone: Building[] = [];
+    const support = this.ctx.registry.supportAt(x, y);
+    if (support.id === 0) return NOT_ALOFT;
 
-    for (let i = this.sites.length - 1; i >= 0; i--) {
-      const site = this.sites[i];
-
-      for (const [id, record] of site.doomed) {
-        if (growth.isGrowing(id)) continue;
-
-        growth.clearVolume(
-          record.x,
-          record.y,
-          record.footprint,
-          footprintDepth(record),
-          record.baseZ,
-          record.baseZ + record.height,
-        );
-        site.doomed.delete(id);
-        this.clearedCount++;
-
-        // Due cantieri sovrapposti possono aver condannato lo stesso record: il
-        // primo che lo miete lo toglie davvero, e il secondo non deve dirlo alla
-        // simulazione una seconda volta, o le toglierebbe un edificio che non
-        // esiste.
-        if (registry.remove(id)) gone.push(simBuildingOf(record));
-      }
-
-      if (site.doomed.size > 0) continue;
-      this.sites.splice(i, 1);
-      this.finish(site);
+    const host = this.ctx.registry.get(support.id);
+    if (host === null) return NOT_ALOFT;
+    // Solo un edificio vero: sopra un landmark, una campata o un impalcato ci
+    // sarebbe una catena di appoggi che nessuno sa far cadere in ordine.
+    if (host.landmark !== undefined || host.span !== undefined ||
+      host.aerial !== undefined || host.aloft === true) {
+      return { site: null, refusal: 'needs-roof' };
     }
 
-    return gone.length === 0 ? state : removeBuildings(state, gone);
+    const facing = (host.facing ?? FACING.east) as Facing;
+    const span = landmarkSpan(kind, facing, true);
+    if (span === null) return NOT_ALOFT;
+
+    const depth = footprintDepth(host);
+    if (host.footprint < span.sizeX || depth < span.sizeY) {
+      return { site: null, refusal: 'roof-too-small' };
+    }
+    if (host.level < LANDMARK.aloftMinLevel) return { site: null, refusal: 'roof-too-low' };
+
+    // Centrato sul tetto e non ancorato al click: un impalcato di otto colonne
+    // su un tetto di otto colonne ha un posto solo, e chiedere al giocatore di
+    // indovinarlo al voxel sarebbe un gesto di precisione senza motivo.
+    const originX = host.x + ((host.footprint - span.sizeX) >> 1);
+    const originY = host.y + ((depth - span.sizeY) >> 1);
+    const deckZ = host.baseZ + host.height;
+    if (this.ctx.registry.overlaps(
+      originX, originY, span.sizeX, deckZ, span.sizeZ, span.sizeY, [host.id],
+    )) {
+      return { site: null, refusal: 'roof-occupied' };
+    }
+
+    return { site: { hostId: host.id, x: originX, y: originY, z: deckZ, facing }, refusal: null };
+  }
+
+  /**
+   * Posa la struttura sul tetto: niente opera di terra, niente grembiule.
+   *
+   * Le due assenze sono la stessa cosa detta due volte — **qui sotto non c'e'
+   * terreno** — e sono anche tutto cio' che distingue questo percorso da quello
+   * di terra: stamp, record, coda di comparsa e avanzamento di stadio sono la
+   * macchina di sempre.
+   */
+  private buildAloft(site: AloftSite, kind: CatalystId): void {
+    const { registry, growth, seed } = this.ctx;
+    const recordSeed = hashCoords(seed, site.x, site.y);
+    const stamp = generateLandmark({
+      kind,
+      stage: 0,
+      facing: site.facing,
+      seed: recordSeed,
+      aloft: true,
+    });
+    const span = landmarkSpan(kind, site.facing, true);
+    if (stamp === null || span === null) return;
+
+    // Un piano di opera senza opera: `footZ === padZ` fa contare zero chunk alla
+    // fondazione, che e' esattamente quanto ne sporca una struttura che non
+    // scava. I ritagli si misurano poi come per chiunque altro.
+    const plan: GradePlan = { works: WORKS.none, padZ: site.z, footZ: site.z, fill: 0 };
+    if (!fitsChunkBudget(site.x, site.y, span.sizeX, span.sizeY, plan, stamp)) return;
+
+    const record = registry.add({
+      x: site.x,
+      y: site.y,
+      baseZ: site.z,
+      footprint: span.sizeX,
+      footprintY: span.sizeY,
+      height: span.sizeZ,
+      class: catalystById(kind).class,
+      level: 0,
+      seed: recordSeed,
+      facing: site.facing,
+      landmark: kind,
+      aloft: true,
+      supports: [site.hostId],
+    });
+
+    growth.enqueueSegments(record, stamp);
   }
 
   /**
@@ -242,7 +299,7 @@ export class LandmarkDriver {
       if (kind === undefined) continue;
       if (this.ctx.growth.isGrowing(record.id)) continue;
 
-      const recipe = landmarkOf(kind);
+      const recipe = landmarkOf(kind, record.aloft === true);
       if (recipe === null || record.level >= maxStageOf(recipe)) continue;
 
       // Il catalizzatore si ritrova dal riquadro e non da `record.x`, che e'
@@ -287,66 +344,19 @@ export class LandmarkDriver {
   /**
    * Apre il cantiere: condanna cio' che occupa il riquadro e ne accoda la fine.
    *
-   * **La demolizione passa dalla coda di comparsa, non da una passata sua.** Un
-   * volume da togliere accodato con una sagoma vuota come "nuova" non scrive
-   * niente e cancella tutto, a budget: la stessa macchina che fa salire un
-   * edificio voxel per voxel lo fa scendere, e il cantiere si sgombera al ritmo
-   * a cui la citta' cresce senza che nessuno lo abbia dovuto tarare.
-   *
-   * Le campate che poggiavano su un condannato cadono con lui, ed e' il vincolo
-   * che c'era gia': segue o sparisce, mai resta a mezz'aria.
+   * La regola su cosa puo' cadere e il modo in cui cade stanno in
+   * `clearanceSite.ts`; qui resta la sola cosa che e' dei landmark, cioe' che
+   * sul riquadro sgombero ci va **questa** struttura.
    */
   private open(x: number, y: number, kind: CatalystId): boolean {
     const box = this.footprintOf(x, y, kind);
     if (box === null) return false;
 
-    const records = recordsIn(this.ctx.registry, box);
-    const plan = planClearance(
-      records.map((record) => this.clearanceOf(record)),
-      BALANCE.gameplay.catalyst.clearing,
-    );
-    if (plan.refusal !== null || plan.doomed.length === 0) return false;
-
-    const byId = new Map(records.map((record) => [record.id, record]));
-    const doomed = new Map<number, BuildingRecord>();
-
-    for (const id of plan.doomed) {
-      const record = byId.get(id);
-      if (record === undefined) continue;
-      this.spans.dropSupportedBy(id);
-      this.ctx.growth.enqueue(id, anchorOf(record), EMPTY_STAMP, recordStamp(record));
-      doomed.set(id, record);
-    }
-    if (doomed.size === 0) return false;
-
-    this.sites.push({ x, y, kind, doomed });
-    this.paintFence(box);
-    return true;
-  }
-
-  /** Chiude un cantiere: sul riquadro sgombero ci sta la struttura che lo ha aperto. */
-  private finish(site: Demolition): void {
-    const built = this.buildStructure(site.x, site.y, site.kind);
-    if (built === null) this.paintPlaza(site.x, site.y, catalystById(site.kind).class);
-    else this.paintApron(built, landmarkOf(site.kind)!.apron);
-  }
-
-  /**
-   * Il recinto: l'anello attorno al riquadro, finche' il cantiere e' aperto.
-   *
-   * Sara' il grembiule a sostituirlo quando la struttura viene su — stessa
-   * cornice, colore diverso — e il cambio di colore e' il solo momento in cui il
-   * cantiere dichiara di aver finito.
-   */
-  private paintFence(box: Footprint): void {
-    for (let py = box.y - 1; py <= box.y + box.sizeY; py++) {
-      for (let px = box.x - 1; px <= box.x + box.sizeX; px++) {
-        const edge = px < box.x || py < box.y ||
-          px >= box.x + box.sizeX || py >= box.y + box.sizeY;
-        if (!edge) continue;
-        this.ctx.surface.enqueue({ x: px, y: py, palette: LANDMARK.fencePalette, priority: 1 });
-      }
-    }
+    return this.clearance.start(box, BALANCE.gameplay.catalyst.clearing, () => {
+      const built = this.buildStructure(x, y, kind);
+      if (built === null) this.paintPlaza(x, y, catalystById(kind).class);
+      else this.paintApron(built, landmarkOf(kind)!.apron);
+    });
   }
 
   /** L'ingombro che la ricetta occuperebbe cliccando qui, o null se non ne ha una. */
@@ -356,24 +366,6 @@ export class LandmarkDriver {
     const origin = landmarkOrigin(kind, facing, x, y);
     if (span === null || origin === null) return null;
     return { x: origin.x, y: origin.y, sizeX: span.sizeX, sizeY: span.sizeY };
-  }
-
-  /**
-   * Come la regola dello sventramento deve leggere un record.
-   *
-   * `carries` sta accanto ad `aerial`, e non e' un caso a parte: un edificio che
-   * ospita una mensola o porta una gamba **e'** citta' in quota, vista da sotto.
-   * Farlo cadere farebbe cadere quello che ci sta sopra, e sarebbe la
-   * demolizione a cascata che questa fase non vuole.
-   */
-  private clearanceOf(record: BuildingRecord): ClearanceRecord {
-    const kind = record.span !== undefined
-      ? CLEARANCE_KIND.span
-      : record.landmark !== undefined || record.aerial !== undefined ||
-        this.ctx.registry.carries(record.id)
-        ? CLEARANCE_KIND.structure
-        : CLEARANCE_KIND.building;
-    return { id: record.id, level: record.level, kind };
   }
 
   /** Costruisce la struttura e ne restituisce il record, o null se il luogo non la regge. */
@@ -393,12 +385,29 @@ export class LandmarkDriver {
     const stamp = generateLandmark({ kind, stage: 0, facing, seed: recordSeed });
     if (stamp === null) return null;
 
+    // **L'opera si getta sotto cio' che la ricetta occupa, non sotto il
+    // riquadro.** Il riquadro di un porto e' per meta' specchio d'acqua, e
+    // portarlo tutto alla quota della banchina produceva una piattaforma
+    // rettangolare in mezzo al mare con dentro una pozza piu' alta del mare
+    // stesso. La maschera si chiede allo **stadio finale**, perche' l'opera si
+    // costruisce una volta sola: uno stadio successivo non deve poter scoprire
+    // di aver bisogno di terra che nessuno ha gettato.
+    const finalStamp = generateLandmark({
+      kind,
+      stage: maxStageOf(landmarkOf(kind)!),
+      facing,
+      seed: recordSeed,
+    });
+    const mask = finalStamp === null
+      ? undefined
+      : stampFootprint(finalStamp, LANDMARK.groundBand);
+
     // `surveyGrade` e non il vincolo `nearLand` che ferma la carreggiata: un
     // molo **deve** poter uscire sull'acqua. Il limite qui e' la ricetta — un
     // ingombro dichiarato e finito — invece di una regola sul terreno, ed e' la
     // differenza fra una struttura progettata e una piattaforma che si allarga
     // finche' il fondale regge.
-    const plan = surveyGrade(terrain, origin.x, origin.y, span.sizeX, span.sizeY);
+    const plan = surveyGrade(terrain, origin.x, origin.y, span.sizeX, span.sizeY, mask);
     if (plan === null) return null;
     if (registry.overlaps(origin.x, origin.y, span.sizeX, plan.padZ, span.sizeZ, span.sizeY)) {
       return null;
@@ -408,7 +417,7 @@ export class LandmarkDriver {
     }
 
     surface.clearSiteDecor(origin.x, origin.y, span.sizeX, span.sizeY);
-    buildWorks(world, terrain, origin.x, origin.y, span.sizeX, plan, span.sizeY);
+    buildWorks(world, terrain, origin.x, origin.y, span.sizeX, plan, span.sizeY, mask);
 
     const record = registry.add({
       x: origin.x,
@@ -440,11 +449,17 @@ export class LandmarkDriver {
    * fondazione; portare anche la cornice alla quota del piano costruirebbe un
    * muro di contenimento largo quanto tutto l'anello, cioe' un podio che nessun
    * dislivello ha chiesto.
+   *
+   * **Si ferma sulla battigia.** Il suolo pubblico e' suolo: prolungarlo sul
+   * bassofondo — che `canPaint` ammette, perche' una banchina ci si costruisce —
+   * dipingeva un anello di asfalto sul fondale attorno a ogni porto, visibile in
+   * trasparenza sotto il pelo dell'acqua come un rettangolo scavato nel mare.
    */
   private paintApron(record: BuildingRecord, margin: number): void {
     const depth = footprintDepth(record);
     for (let py = record.y - margin; py < record.y + depth + margin; py++) {
       for (let px = record.x - margin; px < record.x + record.footprint + margin; px++) {
+        if (!isDryLand(this.ctx.terrain.biomeAt(px, py))) continue;
         this.ctx.surface.enqueue({ x: px, y: py, palette: LANDMARK.apronPalette, priority: 1 });
       }
     }
@@ -528,7 +543,13 @@ export class LandmarkDriver {
     // cio' che tiene vero l'invariante su cui poggia tutta questa funzione — lo
     // stadio nuovo copre il vecchio — perche' due esemplari diversi non si
     // coprono affatto, e la sagoma di prima resterebbe a pezzi in giro.
-    const stamp = generateLandmark({ kind, stage, facing, seed: record.seed });
+    const stamp = generateLandmark({
+      kind,
+      stage,
+      facing,
+      seed: record.seed,
+      aloft: record.aloft === true,
+    });
     if (stamp === null) return state;
 
     const replaced = this.ctx.registry.replace(record.id, { ...record, level: stage });
@@ -565,45 +586,4 @@ function catalystIn(state: SimState, record: BuildingRecord, kind: CatalystId): 
 }
 
 /** L'ingombro in pianta di una ricetta, gia' portato sul verso vero. */
-interface Footprint {
-  readonly x: number;
-  readonly y: number;
-  readonly sizeX: number;
-  readonly sizeY: number;
-}
-
-/**
- * I record distinti che stanno dentro un riquadro, a qualunque quota.
- *
- * **Non guarda le quote, e non e' una svista.** `overlaps` le confronta perche'
- * deve dire se due volumi si toccano; qui la domanda e' un'altra — «questo
- * riquadro e' impegnato?» — e cio' che sta sopra un landmark alto venti voxel e'
- * una mensola o una campata, cioe' i due casi che la regola tratta comunque a
- * parte. Guardare la colonna intera e' quindi piu' severo di quanto serva
- * esattamente dove la severita' non cambia la risposta, e costa una lettura in
- * meno per colonna.
- */
-function recordsIn(registry: ReadonlyBuildingRegistry, box: Footprint): BuildingRecord[] {
-  const found = new Map<number, BuildingRecord>();
-  for (let dy = 0; dy < box.sizeY; dy++) {
-    for (let dx = 0; dx < box.sizeX; dx++) {
-      for (const record of registry.at(box.x + dx, box.y + dy)) {
-        found.set(record.id, record);
-      }
-    }
-  }
-  return [...found.values()];
-}
-
-/**
- * Un record come la simulazione lo aveva contato.
- *
- * Un'impronta di otto colonne e' **un** edificio per `src/sim/`, registrato
- * sulla sua origine: e' la stessa coppia che `buildPass` le aveva passato, ed e'
- * l'unica con cui si puo' ritrovare cio' che va tolto.
- */
-function simBuildingOf(record: BuildingRecord): Building {
-  return record.mixed === undefined
-    ? { x: record.x, y: record.y, class: record.class }
-    : { x: record.x, y: record.y, class: record.class, mixed: record.mixed };
-}
+type Footprint = ClearanceBox;

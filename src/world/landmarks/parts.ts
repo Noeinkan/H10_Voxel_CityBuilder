@@ -1,4 +1,5 @@
 import { FACING, type Facing } from '../streets/streetGrid';
+import { inPlan, onPlanEdge } from '../planMask';
 import type { SurfaceKind } from '../visualBlock';
 
 /**
@@ -113,6 +114,29 @@ export interface Part {
   readonly cap?: number;
 }
 
+/**
+ * Una parte scritta come una frase invece che come nove numeri.
+ *
+ * Non e' un'astrazione: e' un nome per ciascun argomento posizionale. Sta qui e
+ * non nella tabella che la usa perche' le tabelle sono ormai due — i landmark e
+ * le arcologie — e la seconda copia avrebbe cominciato a divergere sull'ordine
+ * degli argomenti, che e' l'unica cosa che questa funzione ha da sbagliare.
+ */
+export function box(
+  kind: Part['kind'],
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  z: number,
+  height: number,
+  palette: number,
+  surface: Part['surface'],
+  extra: Partial<Pick<Part, 'step' | 'cap' | 'chamfer'>> = {},
+): Part {
+  return { kind, x, y, w, h, z, height, palette, surface, ...extra };
+}
+
 /** Riquadro occupato in pianta e in quota, per misurare senza disegnare. */
 export interface PartBounds {
   readonly x0: number;
@@ -224,33 +248,6 @@ export function drawPart(canvas: LandmarkCanvas, part: Part): void {
       // ricetta, che vede «ciminiera» e non «scatola 2x2x16».
       return drawPrism(canvas, part, false);
   }
-}
-
-/**
- * true se la cella sta dentro la pianta, cioe' se lo smusso non l'ha tagliata.
- *
- * Accetta coordinate fuori dal riquadro e risponde `false`: e' cio' che permette
- * a `onPlanEdge` di chiedere dei vicini senza controllare prima i bordi.
- */
-function inPlan(lx: number, ly: number, w: number, h: number, chamfer: number): boolean {
-  if (lx < 0 || ly < 0 || lx >= w || ly >= h) return false;
-  if (chamfer <= 0) return true;
-  return Math.min(lx, w - 1 - lx) + Math.min(ly, h - 1 - ly) >= chamfer;
-}
-
-/**
- * true se la cella e' sul bordo della pianta: le manca un vicino in piano.
- *
- * E' la generalizzazione del perimetro, e senza smusso ci ricade esattamente —
- * `lx === 0 || ly === 0 || ...` e' lo stesso insieme. Serve perche' una scatola
- * cava smussata ha il bordo *sulla diagonale*, dove il test per coordinate non
- * guarda: chiedere ai vicini invece che agli indici e' l'unico modo di far
- * valere lo smusso su tutte le primitive che hanno un perimetro.
- */
-function onPlanEdge(lx: number, ly: number, w: number, h: number, chamfer: number): boolean {
-  if (!inPlan(lx, ly, w, h, chamfer)) return false;
-  return !inPlan(lx - 1, ly, w, h, chamfer) || !inPlan(lx + 1, ly, w, h, chamfer) ||
-    !inPlan(lx, ly - 1, w, h, chamfer) || !inPlan(lx, ly + 1, w, h, chamfer);
 }
 
 /** Prisma pieno o cavo, sulla pianta che lo smusso ha lasciato. */

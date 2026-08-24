@@ -6,7 +6,9 @@ import {
   type Specialization,
 } from '../../sim';
 import type { BuildingForm } from './config';
+import type { ArcologyKind } from '../arcology/config';
 import type { SpanKind } from '../spans/config';
+import type { RopewayPart } from '../ropeway/config';
 import { isBuildable, takesGround, type AerialPart } from '../aerial/config';
 import { toChunk } from '../chunkCoords';
 
@@ -82,6 +84,38 @@ export interface BuildingRecord {
    * esprime *adesso* lascerebbe voxel orfani.
    */
   readonly typology?: string;
+
+  /**
+   * Stile del quartiere in cui l'edificio e' nato.
+   *
+   * **Ridondante per costruzione, e tenuto lo stesso.** `styleAt` e' una
+   * funzione pura di `(worldSeed, isolato)`, quindi chiunque abbia il seme del
+   * mondo lo ricava — ma `recordStamp` riceve un record e basta, e dargli il
+   * seme del mondo vorrebbe dire passarlo attraverso cinque chiamanti che non ne
+   * hanno altro uso. Un campo costa meno, e mette al riparo dal giorno in cui
+   * qualcuno riordina il catalogo degli stili: le sagome gia' scritte
+   * continuerebbero a rigenerarsi con la propria riga invece che con quella che
+   * ora occupa il suo posto.
+   */
+  readonly style?: string;
+
+  /**
+   * Voxel di cui il corpo sporge oltre l'impronta, verso `facing`.
+   *
+   * **Uno sbalzo non prende suolo**, ed e' il gemello dei due invarianti che
+   * questa cartella ha gia': una campata non prende suolo da nessuna parte, un
+   * impalcato lo prende solo con la gamba. Qui il record entra in `columns`
+   * sull'**inviluppo** — quindi niente si costruisce *attraverso* uno sbalzo — e
+   * in `groundColumns` sulla sola **impronta**, quindi sotto la carreggiata si
+   * dipinge ancora e accanto nasce ancora un lotto.
+   *
+   * Sta nel record per la stessa ragione di `typology`, `facing` e `baseBand`:
+   * e' meta' di cio' che serve a rigenerare la sagoma per cancellarla. Zero non
+   * si scrive — un edificio che non sporge non deve portarsi dietro un campo che
+   * dice «non sporgo».
+   */
+  readonly overhang?: number;
+
   readonly district?: DistrictId;
   readonly specialization?: Specialization | null;
   /**
@@ -108,6 +142,48 @@ export interface BuildingRecord {
    * significherebbe che l'HUD conta otto edifici che nessuno ha costruito.
    */
   readonly landmark?: CatalystId;
+
+  /**
+   * Vero se questo landmark poggia su un **tetto** invece che sul terreno.
+   *
+   * E' la quarta riga della stessa macchina di `landmark`, `span` e `aerial`: un
+   * flag dice quale ricetta disegna lo stamp, e occupazione, collisione, budget
+   * di chunk e comparsa a budget restano quelle che ci sono gia'. Cambia due
+   * cose, ed entrambe seguono dal non toccare terra: non prende le colonne di
+   * suolo — sotto ci passa ancora la carreggiata, che e' l'invariante di
+   * `aerial/` — e mette il proprio ospite fra quelli che **non promuovono**,
+   * perche' una torre che cambia sagoma sotto uno scalo lo lascerebbe appeso.
+   */
+  readonly aloft?: boolean;
+
+  /**
+   * Forma dell'arcologia, se questo record e' una megastruttura.
+   *
+   * **E' la quinta riga della stessa macchina di `landmark`, `span`, `aerial` e
+   * `aloft`**: un flag dice quale generatore disegna lo stamp, e occupazione,
+   * collisione, budget di chunk e comparsa a budget restano quelle che ci sono
+   * gia'. Come per un landmark, `level` e' lo **stadio** e non il livello urbano.
+   *
+   * A distinguerla dalle altre quattro c'e' `uses`: un'arcologia e' l'unica
+   * struttura che la simulazione conta, perche' e' l'unica che ospita davvero
+   * qualcuno.
+   */
+  readonly arcology?: ArcologyKind;
+
+  /**
+   * Gli usi che questa struttura ospita, uno per fascia di quota.
+   *
+   * **Non e' `mixed` generalizzato**, ed e' importante non confonderli. `mixed`
+   * e' il secondo uso della *grammatica delle fasce* di un edificio: cambia il
+   * colore e la forma del podio, quindi serve a **ridisegnarlo**. Questo non
+   * disegna niente: e' cio' che la struttura contiene, e serve a **contarlo**.
+   *
+   * `tally` legge queste voci al posto della `class` del record, e il driver
+   * chiama `addBuilding` una volta per voce dello stesso array: e' cosi' che
+   * `countsByClass` resta esattamente uguale a `state.buildingCounts` anche con
+   * una struttura che vale quattro edifici. Un solo posto da tenere allineato.
+   */
+  readonly uses?: readonly BuildingClass[];
 
   /**
    * Fila di edifici contigui a cui questo appartiene, se ne ha una.
@@ -148,6 +224,23 @@ export interface BuildingRecord {
   readonly span?: SpanKind;
 
   /**
+   * Parte di una funivia, se questo record e' una delle sue torri.
+   *
+   * **E' la quinta riga della stessa macchina di `landmark`, `span`, `aerial` e
+   * `aloft`**: un flag dice quale generatore disegna lo stamp, e occupazione,
+   * collisione, budget di chunk e comparsa a budget restano quelle che ci sono
+   * gia'. Una stazione prende suolo come un edificio — poggia a terra, e sotto
+   * di lei non passa niente — quindi qui non c'e' niente da togliere a
+   * `groundColumns`: l'unica differenza e' che non e' un edificio, e `tally` la
+   * salta come salta gli altri quattro.
+   *
+   * **La fune non ha un record**, e non e' una dimenticanza: non e' materia, e
+   * fra le due torri non prende nessuna colonna. Vale per lei la regola del
+   * traffico, non quella delle strutture.
+   */
+  readonly ropeway?: RopewayPart;
+
+  /**
    * Parte della citta' in quota, se questo record e' una delle sue.
    *
    * **E' la terza riga della stessa macchina di `landmark` e `span`**: un flag
@@ -186,6 +279,56 @@ export function footprintDepth(record: {
   readonly footprintY?: number;
 }): number {
   return record.footprintY ?? record.footprint;
+}
+
+/** Cio' che serve a ricostruire l'inviluppo di un record. */
+export interface EnvelopeSource {
+  readonly x: number;
+  readonly y: number;
+  readonly footprint: number;
+  readonly footprintY?: number;
+  readonly overhang?: number;
+  readonly facing?: number;
+}
+
+/** Riquadro in pianta, estremi esclusi in alto. */
+export interface PlanRect {
+  readonly x: number;
+  readonly y: number;
+  readonly sizeX: number;
+  readonly sizeY: number;
+}
+
+/**
+ * Il riquadro che un record **prenota**: l'impronta piu' lo sbalzo.
+ *
+ * **E' diverso dall'impronta solo in aria.** L'impronta e' cio' che poggia — la
+ * legge chi cerca un lotto, chi progetta l'opera di terra, chi dipinge la
+ * carreggiata — e non si muove di un voxel. L'inviluppo e' cio' che nessun altro
+ * puo' attraversare, e lo legge `overlaps`. Sono lo stesso rettangolo su ogni
+ * edificio che non sporge, cioe' su quasi tutti.
+ *
+ * Lo sbalzo va **da una parte sola**, quella di `facing`: e' cio' che permette a
+ * due edifici accostati di restare accostati. Un inviluppo simmetrico li farebbe
+ * collidere, e con loro cadrebbe l'aggregazione in fila — che e' precisamente il
+ * modo in cui questa citta' fa gli isolati.
+ */
+export function envelopeOf(record: EnvelopeSource): PlanRect {
+  const depth = footprintDepth(record);
+  const over = record.overhang ?? 0;
+  if (over <= 0 || record.facing === undefined) {
+    return { x: record.x, y: record.y, sizeX: record.footprint, sizeY: depth };
+  }
+  switch (record.facing) {
+    case 0:
+      return { x: record.x, y: record.y, sizeX: record.footprint + over, sizeY: depth };
+    case 1:
+      return { x: record.x - over, y: record.y, sizeX: record.footprint + over, sizeY: depth };
+    case 2:
+      return { x: record.x, y: record.y, sizeX: record.footprint, sizeY: depth + over };
+    default:
+      return { x: record.x, y: record.y - over, sizeX: record.footprint, sizeY: depth + over };
+  }
 }
 
 /**
@@ -258,6 +401,14 @@ export interface ReadonlyBuildingRegistry {
   /** Landmark dei catalizzatori: contati a parte, mai fra gli edifici. */
   readonly landmarkCount: number;
   /**
+   * Arcologie esistenti.
+   *
+   * Contate a parte come i landmark, ma per una ragione in piu': e' da qui che
+   * la passata legge il tetto di `ARCOLOGY.maxPerIsland`, invece di tenersi un
+   * contatore proprio che una demolizione potrebbe far divergere.
+   */
+  readonly arcologyCount: number;
+  /**
    * Le campate esistenti, in ordine di inserimento.
    *
    * Sono unita', non migliaia, e si tengono in un indice proprio invece di
@@ -282,6 +433,8 @@ export interface ReadonlyBuildingRegistry {
   readonly deckCount: number;
   /** Quante parti della citta' in quota esistono: mensole, tratti, nodi e gambe. */
   readonly aerialCount: number;
+  /** Quante torri di funivia esistono: due per linea. */
+  readonly ropewayCount: number;
   /**
    * Gli impalcati appesi a questo edificio.
    *
@@ -384,6 +537,26 @@ export class BuildingRegistry implements ReadonlyBuildingRegistry {
    */
   private aerialParts = 0;
 
+  /**
+   * Le torri di funivia esistenti.
+   *
+   * Stessa ragione delle quattro parti in quota, e stesso trattamento: prendono
+   * suolo come un edificio, ma un edificio non sono, e contarle fra loro
+   * mostrerebbe nell'HUD due civici che nessuno ha costruito per ogni linea.
+   */
+  private ropewayParts = 0;
+
+  /**
+   * Le arcologie esistenti.
+   *
+   * Non sono edifici — `count` le esclude come esclude le altre quattro
+   * strutture — ma **contengono** edifici, e quelli `classCounts` li conta. E'
+   * l'unico record del progetto per cui le due cose non coincidono, ed e' anche
+   * la ragione per cui questo contatore esiste separato: il tetto di
+   * `ARCOLOGY.maxPerIsland` si legge da qui e non contando a mano nella passata.
+   */
+  private arcologies = 0;
+
   private nextId = 1;
 
   /**
@@ -394,11 +567,16 @@ export class BuildingRegistry implements ReadonlyBuildingRegistry {
    * ragiona.
    */
   get count(): number {
-    return this.records.size - this.landmarks - this.spanIds.size - this.aerialParts;
+    return this.records.size - this.landmarks - this.spanIds.size - this.aerialParts -
+      this.ropewayParts - this.arcologies;
   }
 
   get landmarkCount(): number {
     return this.landmarks;
+  }
+
+  get arcologyCount(): number {
+    return this.arcologies;
   }
 
   get spans(): readonly BuildingRecord[] {
@@ -435,6 +613,11 @@ export class BuildingRegistry implements ReadonlyBuildingRegistry {
 
   get aerialCount(): number {
     return this.aerialParts;
+  }
+
+  /** Le torri di funivia: due per linea, e nessun edificio fra loro. */
+  get ropewayCount(): number {
+    return this.ropewayParts;
   }
 
   decksOf(supportId: number): readonly BuildingRecord[] {
@@ -643,12 +826,25 @@ export class BuildingRegistry implements ReadonlyBuildingRegistry {
   private index(record: BuildingRecord): void {
     const depth = footprintDepth(record);
     const onGround = takesGroundOf(record);
+    const env = envelopeOf(record);
 
-    for (let dy = 0; dy < depth; dy++) {
-      for (let dx = 0; dx < record.footprint; dx++) {
-        const key = `${record.x + dx},${record.y + dy}`;
-        push(this.columns, key, record.id);
-        if (onGround) push(this.groundColumns, key, record.id);
+    // **Un ciclo solo con un test dentro, mai due cicli.** Due cicli sullo stesso
+    // record — uno per l'inviluppo e uno per l'impronta — divergerebbero al primo
+    // che qualcuno tocca, e la divergenza sarebbe una colonna indicizzata in
+    // `columns` e non in `groundColumns` (o peggio il contrario) che nessun test
+    // guarda direttamente.
+    for (let dy = 0; dy < env.sizeY; dy++) {
+      for (let dx = 0; dx < env.sizeX; dx++) {
+        const cx = env.x + dx;
+        const cy = env.y + dy;
+        push(this.columns, `${cx},${cy}`, record.id);
+        // Il suolo e' l'impronta, non l'inviluppo: sotto lo sbalzo non c'e'
+        // niente che poggi.
+        if (onGround &&
+          cx >= record.x && cx < record.x + record.footprint &&
+          cy >= record.y && cy < record.y + depth) {
+          push(this.groundColumns, `${cx},${cy}`, record.id);
+        }
       }
     }
     push(this.buckets, `${toChunk(record.x)},${toChunk(record.y)}`, record.id);
@@ -662,7 +858,10 @@ export class BuildingRegistry implements ReadonlyBuildingRegistry {
     if (record.aerial !== undefined && isBuildable(record.aerial)) {
       this.deckIds.add(record.id);
     }
-    if (record.aerial !== undefined) {
+    // `aloft` entra qui accanto ad `aerial` e non e' un caso a parte: un landmark
+    // su un tetto e' cio' che sta sopra, visto da sotto, e il guinzaglio tira
+    // nella stessa direzione — chi regge non cresce.
+    if (record.aerial !== undefined || record.aloft === true) {
       for (const support of record.supports ?? EMPTY_IDS) {
         this.carried.set(support, (this.carried.get(support) ?? 0) + 1);
         push(this.decksBySupport, support, record.id);
@@ -672,10 +871,15 @@ export class BuildingRegistry implements ReadonlyBuildingRegistry {
 
   /** L'inverso esatto di `index`. */
   private unindex(record: BuildingRecord): void {
-    const depth = footprintDepth(record);
-    for (let dy = 0; dy < depth; dy++) {
-      for (let dx = 0; dx < record.footprint; dx++) {
-        const key = `${record.x + dx},${record.y + dy}`;
+    // Scandisce l'**inviluppo** come `index`, ed e' l'unica cosa che conta qui:
+    // togliere dalla sola impronta lascerebbe l'id dello sbalzo dentro `columns`
+    // per sempre, e quelle colonne resterebbero occupate da un edificio che non
+    // esiste piu'. `drop` su una chiave che non c'e' non fa niente, quindi lo
+    // stesso ciclo serve anche a `groundColumns`.
+    const env = envelopeOf(record);
+    for (let dy = 0; dy < env.sizeY; dy++) {
+      for (let dx = 0; dx < env.sizeX; dx++) {
+        const key = `${env.x + dx},${env.y + dy}`;
         drop(this.columns, key, record.id);
         drop(this.groundColumns, key, record.id);
       }
@@ -688,7 +892,7 @@ export class BuildingRegistry implements ReadonlyBuildingRegistry {
         drop(this.spansBySupport, support, record.id);
       }
     }
-    if (record.aerial !== undefined) {
+    if (record.aerial !== undefined || record.aloft === true) {
       this.deckIds.delete(record.id);
       for (const support of record.supports ?? EMPTY_IDS) {
         const left = (this.carried.get(support) ?? 0) - 1;
@@ -724,6 +928,27 @@ export class BuildingRegistry implements ReadonlyBuildingRegistry {
       this.aerialParts += delta;
       return;
     }
+    // E per le torri di una funivia, con la stessa ragione di sempre: prendono
+    // suolo, ma nessuna delle due e' mai passata da `addBuilding`.
+    if (record.ropeway !== undefined) {
+      this.ropewayParts += delta;
+      return;
+    }
+    // **Un'arcologia conta una volta per fascia, non una volta.** E' l'unica
+    // struttura che `addBuilding` vede davvero, e la vede quattro volte — una per
+    // uso, su quattro colonne distinte del suo ingombro. Contarla come un record
+    // solo, o non contarla affatto come le altre quattro strutture, farebbe
+    // divergere gli istogrammi dell'HUD dai conteggi su cui il bilancio ragiona:
+    // e' la stessa divergenza che le righe qui sopra esistono per evitare, presa
+    // dal lato opposto.
+    //
+    // `level` e' lo stadio, quindi resta fuori dall'istogramma dei livelli, come
+    // per un landmark.
+    if (record.arcology !== undefined) {
+      this.arcologies += delta;
+      for (const use of record.uses ?? EMPTY_USES) this.classCounts[use] += delta;
+      return;
+    }
 
     this.classCounts[record.class] += delta;
     if (record.mixed !== undefined) this.mixedCounts[record.mixed] += delta;
@@ -750,6 +975,9 @@ export class BuildingRegistry implements ReadonlyBuildingRegistry {
 /** Nessun appoggio: un edificio non e' una campata e non ne ha. */
 const EMPTY_IDS: readonly number[] = [];
 
+/** Nessun uso dichiarato: solo un'arcologia ne ha. */
+const EMPTY_USES: readonly BuildingClass[] = [];
+
 /**
  * true se il record occupa il suolo delle proprie colonne.
  *
@@ -760,6 +988,10 @@ const EMPTY_IDS: readonly number[] = [];
  */
 function takesGroundOf(record: BuildingRecord): boolean {
   if (record.span !== undefined) return false;
+  // Un landmark su un tetto e' l'unico che non prende il suolo delle proprie
+  // colonne pur non essendo `aerial`: sotto di lui c'e' l'edificio che lo
+  // ospita, e quello il suolo se l'e' gia' preso.
+  if (record.aloft === true) return false;
   if (record.aerial !== undefined) return takesGround(record.aerial);
   return true;
 }

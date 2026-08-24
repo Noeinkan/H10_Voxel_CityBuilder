@@ -1,0 +1,47 @@
+# voxelcity — bundle statico prodotto da un passo di build (Vite).
+# Immagine multi-stage: nel container esposto a internet non finiscono né la
+# toolchain né node_modules.
+services:
+  web:
+    build:
+      # Il contesto è la directory del sito, non il checkout: così il Dockerfile
+      # generato sta fuori dalla repo clonata e .dockerignore può tenere .env e
+      # repo/.git completamente fuori dal contesto di build.
+      context: .
+      dockerfile: Dockerfile
+      args:
+        BUILD_COMMAND: "npm run build"
+        OUTPUT_DIR: "dist"
+    image: site-voxelcity:${SITE_TAG:-latest}
+    container_name: site-voxelcity-web
+    volumes:
+      - ./site-nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    networks:
+      - edge
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp
+      - /var/cache/nginx
+      - /var/run
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    mem_limit: 128m
+    pids_limit: 128
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO /dev/null http://127.0.0.1:8080/ || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+networks:
+  edge:
+    external: true

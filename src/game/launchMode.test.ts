@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { resolveLaunchMode } from './launchMode';
+import { resolveLaunchMode, swatchUrl } from './launchMode';
 
 describe('resolveLaunchMode', () => {
   it('carica alla radice l’esperienza giocabile senza strumenti tecnici', () => {
@@ -46,6 +46,31 @@ describe('resolveLaunchMode', () => {
       simEnabled: false,
     });
     expect(resolveLaunchMode(new URLSearchParams('scene=city'))).toEqual({
+      debugEnabled: false,
+      growEnabled: false,
+      simEnabled: false,
+    });
+  });
+});
+
+describe('swatchUrl', () => {
+  it('porta con se il look che si sta guardando', () => {
+    const params = new URLSearchParams(swatchUrl('neon', 21.5));
+    expect(params.get('scene')).toBe('swatch');
+    expect(params.get('theme')).toBe('neon');
+    expect(params.get('hour')).toBe('21.50');
+  });
+
+  it('ferma l’orologio: un campione che cambia luce da solo non e un campione', () => {
+    // `hour` e' il parametro che *fissa* l'ora: il campionario aperto di notte
+    // deve restare di notte finche' lo si guarda.
+    expect(new URLSearchParams(swatchUrl('natural', 0)).has('hour')).toBe(true);
+  });
+
+  it('apre un harness e non una seconda partita', () => {
+    // La meta' che conta: il link non deve far ripartire crescita e HUD in una
+    // scheda dove non c'e' nessuna citta' su cui girino.
+    expect(resolveLaunchMode(new URLSearchParams(swatchUrl('pastel', 12)))).toEqual({
       debugEnabled: false,
       growEnabled: false,
       simEnabled: false,

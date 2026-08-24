@@ -12,15 +12,30 @@ export const CONTROL_HINTS: readonly ControlHint[] = [
   { keys: ['Q', 'E'], action: 'Rotate the city' },
   { keys: ['Wheel'], action: 'Zoom in and out' },
   { keys: ['Drag'], action: 'Pan the camera' },
-  { keys: ['F'], action: 'Frame the whole city' },
+  // L'orbita libera va detta **qui** e non solo dentro Block focus: il tasto
+  // centrale non lo prova nessuno per caso, e senza questa riga l'unico modo di
+  // scoprire che la citta' si puo' guardare da un altro angolo sarebbe isolare
+  // un isolato — cioe' passare da uno strumento per ottenere una vista.
+  { keys: ['Middle drag'], action: 'Orbit and tilt the view' },
+  { keys: ['F'], action: 'Frame the city and level the view' },
+  // Il click a mani vuote non fa niente di visibile finche' non si scopre che
+  // apre una scheda, e nessun bottone lo suggerisce: e' un gesto che si impara
+  // leggendolo, o per caso.
+  { keys: ['Click'], action: 'Inspect a building, block, column or voxel' },
+  // Le cifre nude sono degli **strumenti**, e i temi hanno ceduto loro il posto:
+  // il dock e' la prima cosa che si guarda per sapere cosa si puo' costruire, e
+  // il badge sulla tessera promette proprio questo tasto. Il tema si cambia una
+  // volta ogni tanto, e si accontenta di Shift.
+  { keys: ['1', '…', '9'], action: 'Pick the matching tool from the dock' },
+  { keys: ['Shift', '1..9'], action: 'Switch the visual theme' },
   { keys: ['V'], action: 'Cycle the views below' },
   // Il tasto **e'** la risposta a «non torna mai giorno»: dice che l'ora e' una
   // cosa che si decide, e non solo qualcosa che capita mentre si guarda.
   { keys: ['L'], action: 'Hold the day, hold the night, or let the clock run' },
-  // Una riga sola per i due usi, nell'ordine in cui Escape li prova: prima posa
-  // lo strumento, poi esce dalla vista. Due righe separate direbbero che sono
-  // due tasti, e chi legge non saprebbe quale dei due effetti aspettarsi.
-  { keys: ['Esc'], action: 'Cancel the tool, then leave the view' },
+  // Una riga sola per i tre usi, nell'ordine in cui Escape li prova: posa lo
+  // strumento, chiude la scheda, esce dalla vista. Righe separate direbbero che
+  // sono tre tasti, e chi legge non saprebbe quale effetto aspettarsi.
+  { keys: ['Esc'], action: 'Cancel the tool, close the card, then leave the view' },
 ];
 
 /** Una vista nella card: come si chiama e come si punta. */
@@ -74,7 +89,7 @@ export class ControlsHint {
   constructor(parent: HTMLElement, storage: HelpStorage | null = browserStorage()) {
     this.storage = storage;
     this.root = document.createElement('aside');
-    this.root.className = 'help-card hud-surface';
+    this.root.className = 'help-card hud-surface hud-surface--panel';
     this.root.setAttribute('aria-label', 'Controls help');
 
     const header = document.createElement('header');

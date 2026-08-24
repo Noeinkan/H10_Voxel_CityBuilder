@@ -1,7 +1,7 @@
 import type { SimState } from '../../sim';
 import { waterDistance } from '../sites/siteRules';
 import { SKYLINE } from '../skyline/config';
-import { allowedLevelAt, levelsAboveDeck } from '../skyline/tiers';
+import { allowedLevelAt, levelsAboveDeck, type SkylineQuery } from '../skyline/tiers';
 import type { BuildingRecord } from './BuildingRegistry';
 import type { BuildContext } from './buildContext';
 import { BUILDER } from './config';
@@ -42,9 +42,30 @@ export function allowedLevel(
   rise = 0,
 ): number {
   if (state === null) return BUILDER.maxLevel;
+  return levelsAboveDeck(
+    Math.min(BUILDER.maxLevel, allowedLevelAt(skylineQueryAt(ctx, x, y, state))),
+    rise,
+  );
+}
 
+/**
+ * Cio' che `skyline/` deve sapere di una colonna, raccolto dal mondo.
+ *
+ * **La raccolta e' una sola, e non e' un dettaglio.** Chi chiede «fin dove puo'
+ * salire» e chi chiede «in che fascia sta» stanno facendo due domande alla
+ * stessa regola, e ricostruirsi il query in due posti significa che il giorno in
+ * cui la regola guadagna un ingrediente uno dei due lo dimentica — con il
+ * difetto che si vede come una fascia dichiarata `core` da chi la legge e
+ * `middle` da chi ci costruisce.
+ */
+export function skylineQueryAt(
+  ctx: BuildContext,
+  x: number,
+  y: number,
+  state: SimState,
+): SkylineQuery {
   const block = ctx.streets.blockAt(x, y);
-  return levelsAboveDeck(Math.min(BUILDER.maxLevel, allowedLevelAt({
+  return {
     x,
     y,
     poles: state.catalysts,
@@ -53,7 +74,7 @@ export function allowedLevel(
     seed: ctx.seed,
     blockKx: block.kx,
     blockKy: block.ky,
-  })), rise);
+  };
 }
 
 /**

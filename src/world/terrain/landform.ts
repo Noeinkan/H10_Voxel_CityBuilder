@@ -1,5 +1,15 @@
 import { hashCoords, mulberry32 } from '../rng';
 import { LANDFORM, TERRAIN } from './config';
+import {
+  outlineOf,
+  outlinePoint,
+  outlineRatio,
+  planWarp,
+  SHAPE_WARP_LIPSCHITZ,
+  warpLipschitz,
+  type Outline,
+  type Warp,
+} from './outline';
 import type { IslandShape } from './region';
 
 /**
@@ -30,6 +40,11 @@ import type { IslandShape } from './region';
  * elementi non dipendono dalle `extensions` della maschera — un settore costiero
  * comprato dal giocatore non deve poter spostare una collina che sta dall'altra
  * parte dell'isola, o l'espansione contraddirebbe le colonne gia' generate.
+ *
+ * **La forma in pianta di un elemento sta in `outline.ts`**, e non e' piu'
+ * un'ellisse: rilievi e conche sono ellissi orientate con il raggio deformato da
+ * poche armoniche. Qui si dichiara *cosa* fa un elemento; li' *che sagoma* ha, e
+ * quanto quella sagoma costa in pendenza.
  */
 
 const TAU = Math.PI * 2;
@@ -55,11 +70,7 @@ export interface Lobe {
 }
 
 /** Un rilievo locale: cupola che alza l'elevazione verso il tetto. */
-export interface Mound {
-  readonly centreX: number;
-  readonly centreY: number;
-  readonly radiusX: number;
-  readonly radiusY: number;
+export interface Mound extends Outline {
   /** Frazione del margine residuo che la cupola si prende al centro. */
   readonly amplitude: number;
 }
@@ -88,16 +99,29 @@ export interface Mound {
  * `grading/`: quella regola parla di cosa la citta' *costruisce* sopra il
  * terreno, questa di che forma il terreno ha quando nasce.
  */
-export interface Basin {
-  readonly centreX: number;
-  readonly centreY: number;
-  readonly radiusX: number;
-  readonly radiusY: number;
+export interface Basin extends Outline {
   /** Elevazione del fondo e del bordo, nelle stesse unita' di `elevationAt`. */
   readonly floor: number;
   readonly rim: number;
   /** Quota della superficie del lago, in voxel. Multiplo di `TERRAIN.cellSize`. */
   readonly waterZ: number;
+}
+
+/**
+ * Dove starebbe una conca e che forma avrebbe, ma non quanto e' larga.
+ *
+ * E' la separazione che rende `fitRadius` un punto fisso su **un** numero: la
+ * sagoma — orientamento, allungamento, armoniche — si estrae una volta per
+ * candidato, il raggio si cerca. Senza, ogni passata dovrebbe riestrarre la
+ * forma e il punto fisso non convergerebbe su niente.
+ */
+export interface BasinSite {
+  readonly centreX: number;
+  readonly centreY: number;
+  /** Quanto il semiasse maggiore supera il minore. */
+  readonly stretch: number;
+  readonly angle: number;
+  readonly warp: Warp;
 }
 
 /**
@@ -145,20 +169,6 @@ export function basinWeight(ratio: number): number {
   return domeFalloff((ratio - LANDFORM.basinBank) / (1 - LANDFORM.basinBank));
 }
 
-/** Raggio normalizzato di un punto rispetto a un'ellisse. */
-export function ellipseRatio(
-  x: number,
-  y: number,
-  centreX: number,
-  centreY: number,
-  radiusX: number,
-  radiusY: number,
-): number {
-  const dx = (x - centreX) / radiusX;
-  const dy = (y - centreY) / radiusY;
-  return Math.sqrt(dx * dx + dy * dy);
-}
-
 /**
  * Altezza ammessa a una cupola di raggio `radius` perche' la sua pendenza
  * massima resti sotto `slope`.
@@ -177,6 +187,20 @@ export function capForRadius(radius: number, relief: number, slope: number): num
 /** Estrae un valore da un intervallo dichiarato come `[minimo, ampiezza]`. */
 function pick(rnd: () => number, range: readonly [number, number]): number {
   return range[0] + rnd() * range[1];
+}
+
+/**
+ * Il flusso da cui esce la **sagoma** dell'elemento `index`: orientamento,
+ * allungamento e armoniche.
+ *
+ * E' separato da quello che sceglie dove gli elementi stanno, e la ragione e'
+ * una proprieta' che si vuole poter affermare: cambiare un numero di
+ * `shapeWarp` cambia la forma in pianta e nient'altro. Con un flusso solo, ogni
+ * estrazione in piu' slittava tutte le successive — un'ampiezza ritoccata
+ * spostava le colline, e con loro i siti che ospitano un lago.
+ */
+function shapeStream(seed: number, index: number): () => number {
+  return mulberry32(hashCoords(seed, LANDFORM.shapeWarpSalt, index));
 }
 
 /** Estrae un intero da un intervallo dichiarato come `[minimo, alternative]`. */
@@ -237,6 +261,11 @@ export function planLobes(seed: number, shape: IslandShape, relief: number): Lob
  * dell'isola fa una collina vera, una sulla vetta non sfonda `maxHeight`, e
  * `elevationAt` non ha bisogno di un clamp che falserebbe il gradiente proprio
  * dove il terreno e' piu' alto.
+ *
+ * **Cupola e' un modo di dire, non piu' una forma.** Con la sagoma deformata le
+ * curve di livello della vetta smettono di essere cerchi concentrici, che era
+ * l'ultimo posto in cui il bersaglio si vedeva ancora: la maschera ha la sua
+ * deformazione da sempre, ma sopra la fascia della roccia comanda il rilievo.
  */
 export function planMounds(seed: number, shape: IslandShape, relief: number): Mound[] {
   const rnd = mulberry32(hashCoords(seed, LANDFORM.moundSalt, 0));
@@ -252,12 +281,30 @@ export function planMounds(seed: number, shape: IslandShape, relief: number): Mo
 
     const radiusX = radius * shape.radiusX;
     const radiusY = radius * shape.radiusY;
+    // La sagoma esce da un flusso suo: pescandola da `rnd` ogni fase
+    // consumata sposterebbe il rilievo successivo, e ritoccare un'ampiezza
+    // rifarebbe l'isola invece della sola forma in pianta.
+    const shapeRnd = shapeStream(seed, i);
+    const warp = planWarp(shapeRnd);
     mounds.push({
-      centreX: shape.centreX + distance * shape.radiusX * Math.cos(angle),
-      centreY: shape.centreY + distance * shape.radiusY * Math.sin(angle),
-      radiusX,
-      radiusY,
-      amplitude: capForRadius(Math.min(radiusX, radiusY), relief, LANDFORM.moundSlope),
+      ...outlineOf(
+        shape.centreX + distance * shape.radiusX * Math.cos(angle),
+        shape.centreY + distance * shape.radiusY * Math.sin(angle),
+        radiusX,
+        radiusY,
+        shapeRnd() * TAU,
+        warp,
+      ),
+      // La deformazione si paga qui, non sul fianco: dividendo la pendenza
+      // dichiarata per il suo fattore, il fianco piu' ripido della cupola
+      // deformata vale ancora `moundSlope` esatti. Il tetto in forma chiusa
+      // basta — una cupola sale su tutto il raggio, quindi non c'e' una fascia
+      // stretta su cui misurare, e il margine qui e' largo.
+      amplitude: capForRadius(
+        Math.min(radiusX, radiusY),
+        relief,
+        LANDFORM.moundSlope / SHAPE_WARP_LIPSCHITZ,
+      ),
     });
   }
 
@@ -300,13 +347,8 @@ export function planBasins(
   const siteMax = TERRAIN.seaLevel + LANDFORM.basinRimAbove[1];
   const spread = LANDFORM.basinReach[1];
   const maxRadius = LANDFORM.basinMaxRadius * Math.min(shape.radiusX, shape.radiusY);
-  // Raggio che la sponda impone da sola, prima di qualunque raccordo: il
-  // dislivello e' fisso, quindi lo e' anche questo.
-  const bankRadius =
-    (HALF_PI * LANDFORM.basinDrop)
-    / ((LANDFORM.basinBank - LANDFORM.basinPlateau) * LANDFORM.basinSlope);
 
-  const candidates: { x: number; y: number; radius: number; rimZ: number }[] = [];
+  const candidates: { site: BasinSite; radius: number; rimZ: number }[] = [];
   for (let i = 0; i < LANDFORM.basinCandidates; i++) {
     // Raggio come radice del progresso: e' cio' che distribuisce i candidati per
     // area invece che per raggio, senza addensarli al centro.
@@ -328,9 +370,37 @@ export function planBasins(
     const rimZ = toCell(here);
     if (rimZ - LANDFORM.basinDrop <= TERRAIN.seaLevel) continue;
 
-    const radius = fitRadius(heightAt, x, y, rimZ, bankRadius, maxRadius);
+    // La sagoma si estrae **prima** del raggio: `fitRadius` deve sondare il
+    // terreno lungo la conca che ci sara' davvero, e una conca allungata non
+    // trova lo stesso terreno di una tonda. Il flusso e' quello del candidato,
+    // non `rnd`, cosi' la forma di un sito non dipende da quanti siti sono
+    // stati scartati prima di lui.
+    const shapeRnd = shapeStream(seed, i);
+    const site: BasinSite = {
+      centreX: x,
+      centreY: y,
+      stretch: pick(shapeRnd, LANDFORM.basinStretch),
+      angle: shapeRnd() * TAU,
+      warp: planWarp(shapeRnd),
+    };
+
+    // La pendenza che la sponda di **questa** conca puo' permettersi: le sue
+    // armoniche moltiplicano il gradiente, quindi la sponda nominale scende
+    // piu' dolce perche' quella vera resti dentro `basinSlope`. Il fattore e'
+    // misurato sulla sua fase e sulla **sola sponda**, non sul tetto di tutte le
+    // fasi a tutti i raggi: qui ogni punto percentuale e' raggio, e il raggio
+    // decide se il sito la ospita.
+    const slope =
+      LANDFORM.basinSlope
+      / warpLipschitz(site.warp, LANDFORM.basinPlateau, LANDFORM.basinBank);
+    // Raggio che la sponda impone da sola, prima di qualunque raccordo: il
+    // dislivello e' fisso, quindi lo e' anche questo.
+    const bankRadius =
+      (HALF_PI * LANDFORM.basinDrop) / ((LANDFORM.basinBank - LANDFORM.basinPlateau) * slope);
+
+    const radius = fitRadius(heightAt, site, rimZ, bankRadius, maxRadius, slope);
     if (radius <= 0) continue;
-    candidates.push({ x, y, radius, rimZ });
+    candidates.push({ site, radius, rimZ });
   }
 
   // Il piu' stretto per primo: a parita' di dislivello un raccordo corto vuol
@@ -341,13 +411,11 @@ export function planBasins(
 
   for (const candidate of candidates) {
     if (basins.length >= wanted) break;
-    if (overlapsBasin(basins, candidate.x, candidate.y, candidate.radius)) continue;
+    const outline = basinOutline(candidate.site, candidate.radius);
+    if (overlapsBasin(basins, outline)) continue;
     const floorZ = candidate.rimZ - LANDFORM.basinDrop;
     basins.push({
-      centreX: candidate.x,
-      centreY: candidate.y,
-      radiusX: candidate.radius,
-      radiusY: candidate.radius,
+      ...outline,
       floor: (floorZ - TERRAIN.oceanFloor) / relief,
       rim: (candidate.rimZ - TERRAIN.oceanFloor) / relief,
       waterZ: floorZ + LANDFORM.basinWaterDepth,
@@ -355,6 +423,24 @@ export function planBasins(
   }
 
   return basins;
+}
+
+/**
+ * La sagoma che un sito prende con un dato semiasse minore.
+ *
+ * Il **minore** e' quello che il budget di pendenza vincola: la sponda scende
+ * piu' ripida dove la conca e' piu' stretta, quindi allungare una conca non
+ * costa pendenza — costa solo l'ingombro che `basinMaxRadius` limita.
+ */
+function basinOutline(site: BasinSite, radius: number): Outline {
+  return outlineOf(
+    site.centreX,
+    site.centreY,
+    radius * site.stretch,
+    radius,
+    site.angle,
+    site.warp,
+  );
 }
 
 /** Pendenza del terreno intorno al sito, misurata sulla scala di una conca. */
@@ -389,7 +475,7 @@ export function lakeLevelAt(basins: readonly Basin[], x: number, y: number): num
   let level = 0;
   for (const basin of basins) {
     if (basin.waterZ <= level) continue;
-    const ratio = ellipseRatio(x, y, basin.centreX, basin.centreY, basin.radiusX, basin.radiusY);
+    const ratio = outlineRatio(basin, x, y);
     // Il pelo sta dentro la **conca**, non dentro l'ellisse d'influenza: oltre
     // `basinBank` comincia il raccordo, dove il terreno torna quello che era e
     // puo' benissimo ripassare sotto la quota del lago senza essere il lago. A
@@ -418,37 +504,43 @@ export function lakeLevelAt(basins: readonly Basin[], x: number, y: number): num
  */
 export function fitRadius(
   heightAt: (x: number, y: number) => number,
-  centreX: number,
-  centreY: number,
+  site: BasinSite,
   rimZ: number,
   bankRadius: number,
   maxRadius: number,
+  slope: number,
 ): number {
-  const blend = (1 - LANDFORM.basinBank) * LANDFORM.basinSlope;
+  const blend = (1 - LANDFORM.basinBank) * slope;
   let radius = bankRadius;
   for (let pass = 0; pass < LANDFORM.basinFitPasses; pass++) {
-    if (radius > maxRadius) return 0;
-    const needed = (HALF_PI * ringMismatch(heightAt, centreX, centreY, radius, rimZ)) / blend;
+    // Il tetto vale sull'ingombro, cioe' sul semiasse maggiore: e' quello che
+    // deve restare dentro l'isola.
+    if (radius * site.stretch > maxRadius) return 0;
+    const needed =
+      (HALF_PI * ringMismatch(heightAt, basinOutline(site, radius), rimZ)) / blend;
     if (needed <= radius) return radius;
     radius = needed;
   }
   return 0;
 }
 
-/** Salto massimo fra il bordo imposto e il terreno, sulla fascia di raccordo. */
+/**
+ * Salto massimo fra il bordo imposto e il terreno, sulla fascia di raccordo.
+ *
+ * Le sonde stanno **sulla sagoma** e non su una circonferenza: da quando la
+ * conca e' allungata e deformata, il raccordo passa dove la sagoma lo porta, e
+ * un cerchio lo misurerebbe dove non c'e' — troppo dentro da un lato, gia'
+ * fuori dall'altro.
+ */
 function ringMismatch(
   heightAt: (x: number, y: number) => number,
-  centreX: number,
-  centreY: number,
-  radius: number,
+  outline: Outline,
   rimZ: number,
 ): number {
   let mismatch = 0;
   for (const ratio of LANDFORM.basinBlendRings) {
     for (let i = 0; i < LANDFORM.basinShoreProbes; i++) {
-      const angle = (i * TAU) / LANDFORM.basinShoreProbes;
-      const x = centreX + radius * ratio * Math.cos(angle);
-      const y = centreY + radius * ratio * Math.sin(angle);
+      const [x, y] = outlinePoint(outline, ratio, (i * TAU) / LANDFORM.basinShoreProbes);
       const here = Math.abs(heightAt(x, y) - rimZ);
       if (here > mismatch) mismatch = here;
     }
@@ -456,13 +548,22 @@ function ringMismatch(
   return mismatch;
 }
 
-/** Due conche non si sovrappongono: due pozze accostate leggono come una sola. */
-function overlapsBasin(basins: readonly Basin[], x: number, y: number, radius: number): boolean {
+/**
+ * Due conche non si sovrappongono: due pozze accostate leggono come una sola.
+ *
+ * Il confronto e' sui semiassi maggiori, che e' il caso peggiore: due conche
+ * allungate possono avvicinarsi molto piu' di cosi' senza toccarsi, ma
+ * distinguere l'orientamento vorrebbe dire risolvere l'intersezione di due
+ * ellissi ruotate per tenere una conca in piu' su un'isola che ne concede due.
+ */
+function overlapsBasin(basins: readonly Basin[], outline: Outline): boolean {
+  const major = Math.max(outline.radiusX, outline.radiusY);
   for (const basin of basins) {
-    const dx = x - basin.centreX;
-    const dy = y - basin.centreY;
+    const dx = outline.centreX - basin.centreX;
+    const dy = outline.centreY - basin.centreY;
     const distance = Math.sqrt(dx * dx + dy * dy);
-    if (distance < (radius + basin.radiusX) * LANDFORM.basinSpacing) return true;
+    const reach = major + Math.max(basin.radiusX, basin.radiusY);
+    if (distance < reach * LANDFORM.basinSpacing) return true;
   }
   return false;
 }
@@ -477,7 +578,7 @@ function overlapsBasin(basins: readonly Basin[], x: number, y: number, radius: n
 export function moundRise(mounds: readonly Mound[], x: number, y: number): number {
   let rise = 0;
   for (const mound of mounds) {
-    const ratio = ellipseRatio(x, y, mound.centreX, mound.centreY, mound.radiusX, mound.radiusY);
+    const ratio = outlineRatio(mound, x, y);
     if (ratio >= 1) continue;
     const value = mound.amplitude * domeFalloff(ratio);
     // Massimo e non somma: due cupole accostate devono fare una collina sola,
@@ -499,7 +600,7 @@ export function moundRise(mounds: readonly Mound[], x: number, y: number): numbe
 export function shapeBasins(elevation: number, basins: readonly Basin[], x: number, y: number): number {
   let out = elevation;
   for (const basin of basins) {
-    const ratio = ellipseRatio(x, y, basin.centreX, basin.centreY, basin.radiusX, basin.radiusY);
+    const ratio = outlineRatio(basin, x, y);
     if (ratio >= 1) continue;
     const target = basinProfile(ratio, basin.floor, basin.rim);
     out += basinWeight(ratio) * (target - out);

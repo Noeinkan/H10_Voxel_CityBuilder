@@ -170,6 +170,10 @@ const VIEW_KEYS: Readonly<Record<InspectMode, readonly ViewKeyHint[]>> = {
  */
 const BLOCK_LOCKED_KEYS: readonly ViewKeyHint[] = [
   { keys: ['Drag'], action: 'Turn around the block' },
+  // I tasti che nella citta' spostano l'inquadratura qui salgono lungo il
+  // soggetto, e sono l'unica riga che non si indovina dal gesto: chi li prova
+  // per abitudine si aspetta di volare via, non di arrivare in cima alla torre.
+  { keys: ['WASD'], action: 'Move up and across the block' },
   { keys: ['Wheel'], action: 'Move closer' },
   { keys: ['Esc'], action: 'Let the block go' },
 ];

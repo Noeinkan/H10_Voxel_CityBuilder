@@ -42,7 +42,8 @@ aggiungendo chunk alla mappa sparsa.
 | [src/engine/VoxelMaterial.ts](src/engine/VoxelMaterial.ts) | Unico `ShaderMaterial`, pannelli sci-fi world-space, emissione, AO e nebbia |
 | [src/engine/inspect.ts](src/engine/inspect.ts) | Viste di ispezione in TS puro: velo a retino, fetta a quota, sezione, isolato |
 | [src/engine/themes/](src/engine/themes/) | I temi grafici: 32 colori più l'atmosfera, applicati senza rimeshare |
-| [src/engine/IsoCameraController.ts](src/engine/IsoCameraController.ts) | Ortografica isometrica: scatti di 90°, zoom, pan vincolato |
+| [src/engine/IsoCameraController.ts](src/engine/IsoCameraController.ts) | Ortografica isometrica: scatti di 90°, zoom, pan vincolato, orbita libera |
+| [src/engine/CameraInput.ts](src/engine/CameraInput.ts) | La mappa dei gesti della camera: quale tasto pana, quale orbita |
 | [src/engine/InfluenceOverlay.ts](src/engine/InfluenceOverlay.ts) | Raggi dei catalizzatori e perimetri dei settori sbloccati |
 | [src/engine/InspectGuides.ts](src/engine/InspectGuides.ts) | Le linee che dicono dove è puntata una vista: riquadro, sezione, colonna a fuoco |
 | [src/engine/PlacementCursor.ts](src/engine/PlacementCursor.ts) | Segnaposto del piazzamento: leggibile a distanza e mai coperto dal rilievo |

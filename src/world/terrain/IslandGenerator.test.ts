@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { CHUNK } from '../chunkCoords';
 import { VoxelWorld } from '../VoxelWorld';
-import { paletteForDepth } from './biomes';
+import { paletteAt } from './biomes';
 import { columnIndex, COLUMNS_PER_CHUNK } from './columnBlock';
 import { BIOME, TERRACE, TERRAIN, WATER_IDS } from './config';
 import { HeightField } from './heightField';
@@ -617,11 +617,12 @@ describe('generateIsland — scrittura nel mondo', () => {
     expect(checked).toBe(50);
   });
 
-  it('la colonna scritta a corse coincide voxel per voxel con paletteForDepth', () => {
+  it('la colonna scritta a corse coincide voxel per voxel con paletteAt', () => {
     // Il generatore taglia la colonna ai due confini di `STRATA_DEPTH` e scrive
     // tre corse invece di trenta voxel: e' un'ottimizzazione di scrittura, non
     // una regola nuova. Questo test e' cio' che tiene le due letture della stessa
-    // stratigrafia — a tratti e per voxel — dalla stessa parte.
+    // stratigrafia — a tratti e per voxel — dalla stessa parte, banda di roccia
+    // compresa: e' l'unica tinta che non viene dal bioma.
     const { world, map } = referenceIsland();
 
     scanColumns(() => {
@@ -630,7 +631,7 @@ describe('generateIsland — scrittura nel mondo', () => {
           const height = map.heightAt(x, y);
           const biome = map.biomeAt(x, y);
           for (let z = 0; z < height; z++) {
-            const expected = paletteForDepth(biome, height - 1 - z);
+            const expected = paletteAt(biome, height, height - 1 - z);
             if (world.getBlock(x, y, z) !== expected) return `(${x}, ${y}, ${z}) fuori stratigrafia`;
           }
           for (let z = height; z < TERRAIN.seaLevel; z++) {

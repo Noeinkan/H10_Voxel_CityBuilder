@@ -3,6 +3,7 @@ import { CHUNK, CHUNK_AREA, idx, keyOf, SKY_PROBE, toChunk, toLocal } from './ch
 import {
   blockPalette,
   blockSurface,
+  packCoverMark,
   packVisualBlock,
   SURFACE_KIND,
   type SurfaceKind,
@@ -144,6 +145,24 @@ export class VoxelWorld {
    * valore non marca nulla.
    */
   setBlock(x: number, y: number, z: number, id: number, surface: SurfaceKind = SURFACE_KIND.plain): void {
+    this.writeBlock(x, y, z, packVisualBlock(id, surface));
+  }
+
+  /**
+   * Scrive una copertura del terreno: una cella piena che non porta una palette
+   * e che il mesher sostituisce con la propria microgeometria.
+   *
+   * Esiste separata da `setBlock` perche' `packVisualBlock` rifiuta la palette 0
+   * per un motivo che resta valido — una superficie da sola non deve rendere
+   * solida una cella — e questo e' l'unico caso in cui quel byte va scritto di
+   * proposito. Invalida geometria come qualunque altra scrittura, e una
+   * `setBlock(..., 0)` la cancella.
+   */
+  setCoverMark(x: number, y: number, z: number, kind: number): void {
+    this.writeBlock(x, y, z, packCoverMark(kind));
+  }
+
+  private writeBlock(x: number, y: number, z: number, next: number): void {
     const cx = toChunk(x);
     const cy = toChunk(y);
     const cz = toChunk(z);
@@ -151,7 +170,7 @@ export class VoxelWorld {
     let chunk = this.getChunk(cx, cy, cz);
     if (chunk === null) {
       // Svuotare una cella di un chunk inesistente non deve allocarlo.
-      if (id === 0) return;
+      if (next === 0) return;
       chunk = this.ensureChunk(cx, cy, cz);
     }
 
@@ -159,7 +178,6 @@ export class VoxelWorld {
     const ly = toLocal(y);
     const lz = toLocal(z);
     const i = idx(lx, ly, lz);
-    const next = packVisualBlock(id, surface);
     const prev = chunk.blocks[i];
     if (prev === next) return;
 

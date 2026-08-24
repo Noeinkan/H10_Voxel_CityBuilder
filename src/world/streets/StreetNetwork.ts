@@ -1,3 +1,4 @@
+import type { CorridorLeg } from './corridor';
 import {
   FACING,
   blockAt,
@@ -109,6 +110,52 @@ export class StreetNetwork {
     for (let y = south; y <= north; y++) {
       for (let x = west; x <= east; x++) {
         if (x >= rect.x0 && x <= rect.x1 && y >= rect.y0 && y <= rect.y1) continue;
+        out.push({ x, y, role: streetRoleAt(this.seed, x, y) });
+      }
+    }
+    return out;
+  }
+
+  /**
+   * Il riquadro di colonne che un tratto di raccordo copre, estremi inclusi.
+   *
+   * E' la sola cosa che traduce il vocabolario di `corridor.ts` — indici di linea
+   * — in coordinate del mondo, ed e' separata da `corridorCells` perche' i due
+   * lettori chiedono cose diverse: chi **valuta** un percorso scorre migliaia di
+   * passi e non deve allocare un array per ciascuno, chi lo **dipinge** ne
+   * percorre una manciata e vuole le celle gia' pronte.
+   */
+  corridorRect(leg: CorridorLeg): BlockRect {
+    if (leg.along === 0) {
+      return {
+        x0: lineStart(this.seed, 0, leg.from),
+        x1: lineEnd(this.seed, 0, leg.to),
+        y0: lineStart(this.seed, 1, leg.line),
+        y1: lineEnd(this.seed, 1, leg.line),
+      };
+    }
+    return {
+      x0: lineStart(this.seed, 0, leg.line),
+      x1: lineEnd(this.seed, 0, leg.line),
+      y0: lineStart(this.seed, 1, leg.from),
+      y1: lineEnd(this.seed, 1, leg.to),
+    };
+  }
+
+  /**
+   * Le colonne di carreggiata di un tratto di raccordo, ruolo gia' risolto.
+   *
+   * Il ruolo lo rilegge `streetRoleAt` colonna per colonna invece di essere
+   * dedotto da `leg`: un raccordo che corre su un asse secondario ne attraversa
+   * di principali, e agli incroci deve declassarsi come fa l'anello di un
+   * isolato. Dedurlo dal tratto darebbe una strada di un colore solo che
+   * scavalca la gerarchia proprio dove si vede di piu'.
+   */
+  corridorCells(leg: CorridorLeg): readonly PavementCell[] {
+    const rect = this.corridorRect(leg);
+    const out: PavementCell[] = [];
+    for (let y = rect.y0; y <= rect.y1; y++) {
+      for (let x = rect.x0; x <= rect.x1; x++) {
         out.push({ x, y, role: streetRoleAt(this.seed, x, y) });
       }
     }

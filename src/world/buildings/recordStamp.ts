@@ -1,6 +1,7 @@
 import { DEFAULT_BUILDING_FORM, typologyById, type TypologyDefinition } from './config';
 import { generateBuilding } from './generate';
 import { selectTypology, typologyProfile } from './typology';
+import { styleOf, styledProfile } from './style';
 import type { BuildingRecord } from './BuildingRegistry';
 import type { VoxelStamp } from './stamp';
 
@@ -34,7 +35,11 @@ export function recordStamp(record: BuildingRecord): VoxelStamp {
     footprintCap: record.footprint,
     footprintFloor: record.footprint,
     form: record.form ?? DEFAULT_BUILDING_FORM,
-    profile: typologyProfile(typology),
+    // Con lo stile **registrato**, per la stessa ragione della tipologia: se il
+    // catalogo degli stili cambiasse ordine, o se un giorno lo stile smettesse
+    // di essere una funzione pura dell'isolato, rigenerare con quello di oggi
+    // lascerebbe voxel orfani a terra.
+    profile: styledProfile(typologyProfile(typology), styleOf(record.style)),
     shape: typology.shape,
     mixed: record.mixed,
     facing: record.facing,

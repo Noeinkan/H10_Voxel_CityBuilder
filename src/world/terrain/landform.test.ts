@@ -5,7 +5,6 @@ import {
   basinWeight,
   capForRadius,
   domeFalloff,
-  ellipseRatio,
   lakeLevelAt,
   moundRise,
   planBasins,
@@ -14,6 +13,7 @@ import {
   shapeBasins,
   type Basin,
 } from './landform';
+import { outlineOf, outlineRatio, SHAPE_WARP_LIPSCHITZ } from './outline';
 import { shapeFromRegion } from './region';
 
 const SHAPE = shapeFromRegion({ minX: 0, minY: 0, sizeX: 512, sizeY: 512 });
@@ -75,7 +75,11 @@ describe('landform — il budget di pendenza', () => {
       }
       for (const mound of planMounds(seed, SHAPE, RELIEF)) {
         const radius = Math.min(mound.radiusX, mound.radiusY);
-        expect(domeSlope(mound.amplitude, radius)).toBeLessThanOrEqual(LANDFORM.moundSlope + 1e-9);
+        // Il tetto e' quello dichiarato **diviso** il fattore della sagoma: la
+        // deformazione moltiplica il gradiente, quindi il fianco vero della
+        // cupola deformata torna a valere `moundSlope` esatti.
+        expect(domeSlope(mound.amplitude, radius))
+          .toBeLessThanOrEqual(LANDFORM.moundSlope / SHAPE_WARP_LIPSCHITZ + 1e-9);
       }
     }
   });
@@ -111,8 +115,8 @@ describe('landform — lobi e rilievi', () => {
 
   it('due cupole accostate fanno una collina sola, non la somma delle due', () => {
     const mounds = [
-      { centreX: 0, centreY: 0, radiusX: 40, radiusY: 40, amplitude: 0.2 },
-      { centreX: 20, centreY: 0, radiusX: 40, radiusY: 40, amplitude: 0.2 },
+      { ...outlineOf(0, 0, 40, 40, 0, []), amplitude: 0.2 },
+      { ...outlineOf(20, 0, 40, 40, 0, []), amplitude: 0.2 },
     ];
     expect(moundRise(mounds, 10, 0)).toBeLessThanOrEqual(0.2);
     expect(moundRise(mounds, 200, 0)).toBe(0);
@@ -120,11 +124,10 @@ describe('landform — lobi e rilievi', () => {
 });
 
 describe('landform — conche', () => {
+  // Senza armoniche e senza allungamento: e' la conca circolare di prima, ed e'
+  // quella che rende leggibili le quote qui sotto.
   const basin: Basin = {
-    centreX: 100,
-    centreY: 100,
-    radiusX: 60,
-    radiusY: 60,
+    ...outlineOf(100, 100, 60, 60, 0, []),
     floor: 0.4,
     rim: 0.5,
     waterZ: 40,
@@ -171,16 +174,52 @@ describe('landform — conche', () => {
     const basins = planBasins(1337, SHAPE, RELIEF, () => TERRAIN.seaLevel + 24);
     for (let i = 0; i < basins.length; i++) {
       for (let j = i + 1; j < basins.length; j++) {
-        const ratio = ellipseRatio(
-          basins[j].centreX,
-          basins[j].centreY,
-          basins[i].centreX,
-          basins[i].centreY,
-          basins[i].radiusX + basins[j].radiusX,
-          basins[i].radiusY + basins[j].radiusY,
-        );
-        expect(ratio).toBeGreaterThanOrEqual(LANDFORM.basinSpacing - 1e-9);
+        const dx = basins[j].centreX - basins[i].centreX;
+        const dy = basins[j].centreY - basins[i].centreY;
+        const distance = Math.sqrt(dx * dx + dy * dy);
+        // Il criterio e' sui semiassi maggiori, come la regola che lo produce.
+        const reach =
+          Math.max(basins[i].radiusX, basins[i].radiusY)
+          + Math.max(basins[j].radiusX, basins[j].radiusY);
+        expect(distance / reach).toBeGreaterThanOrEqual(LANDFORM.basinSpacing - 1e-9);
       }
+    }
+  });
+
+  /**
+   * E' il difetto da cui nasce `outline.ts`: lo specchio e' l'unica superficie
+   * dell'isola senza grana ne' terrazzamento, quindi una circonferenza esatta si
+   * riconosce da qualunque distanza. Qui si misura il bordo del **lago** — la
+   * corona `basinBank`, dove l'acqua finisce — e non l'ellisse d'influenza.
+   */
+  it('il bordo di una conca non e’ una circonferenza', () => {
+    const basins = planBasins(1337, SHAPE, RELIEF, () => TERRAIN.seaLevel + 24);
+    expect(basins.length).toBeGreaterThan(0);
+
+    for (const found of basins) {
+      let nearest = Infinity;
+      let farthest = 0;
+      for (let i = 0; i < 180; i++) {
+        const angle = (i * Math.PI) / 90;
+        // Il raggio del bordo in questa direzione, cercato per bisezione sul
+        // raggio normalizzato: e' l'unica lettura che non presuppone la forma.
+        let low = 0;
+        let high = 4 * Math.max(found.radiusX, found.radiusY);
+        for (let step = 0; step < 40; step++) {
+          const mid = (low + high) / 2;
+          const x = found.centreX + mid * Math.cos(angle);
+          const y = found.centreY + mid * Math.sin(angle);
+          if (outlineRatio(found, x, y) < LANDFORM.basinBank) low = mid;
+          else high = mid;
+        }
+        nearest = Math.min(nearest, low);
+        farthest = Math.max(farthest, low);
+      }
+      // Un ottavo di scarto fra il raggio piu' lungo e il piu' corto e' il
+      // minimo che le sole armoniche garantiscono, allungamento a parte: la
+      // media di `w` e' zero, quindi il suo massimo non sta sotto il valore
+      // efficace della somma.
+      expect(farthest / nearest).toBeGreaterThan(1.15);
     }
   });
 });

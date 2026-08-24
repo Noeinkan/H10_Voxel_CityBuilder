@@ -54,6 +54,8 @@ export interface OverlayFrame {
   readonly pixelRatio: number;
   readonly zoom: number;
   readonly yawDegrees: number;
+  /** Da quando l'orbita vale anche sulla citta', non e' piu' una costante. */
+  readonly pitchDegrees: number;
 }
 
 /** Ogni quanti millisecondi si riscrive il DOM. */
@@ -140,7 +142,7 @@ export class DebugOverlay {
       `theme      ${frame.theme}`,
       `hour       ${formatHour(frame.hour)}  ${frame.hourMode}${frame.hourPinned ? '  pinned' : ''}   H ±1h  L mode`,
       `quality    ${frame.quality}  DPR ${frame.pixelRatio.toFixed(2)}`,
-      `camera     zoom ${frame.zoom.toFixed(2)}  yaw ${Math.round(frame.yawDegrees)}°`,
+      `camera     zoom ${frame.zoom.toFixed(2)}  yaw ${Math.round(frame.yawDegrees)}°  pitch ${Math.round(frame.pitchDegrees)}°`,
       generating ? `generate   ${(frame.generationProgress * 100).toFixed(0)} %` : '',
       '',
       'G +64 chunks   R rebuild   C reset peaks',

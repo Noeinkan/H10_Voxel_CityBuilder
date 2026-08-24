@@ -11,6 +11,1154 @@ coincide con il messaggio di commit.
 
 ---
 
+## In corso — L'arcologia: un'opera sola che vale un quartiere
+
+Fase 4.14, l'ultima della spina dorsale della fase 4. Non costruisce nessun
+meccanismo nuovo: compone i tre che 4.5, 4.6 e 4.9 avevano già chiuso. Il
+problema che risolve è che una città matura è un tappeto di torri — quando la
+quota ammessa satura, un isolato del centro non ha più niente da diventare.
+
+- **È la quinta riga della stessa macchina**, non un secondo Builder. Un
+  `BuildingRecord` con `arcology` valorizzato eredita occupazione, collisione,
+  budget di chunk e comparsa a budget da chi c'era già; a cambiare è solo quale
+  generatore disegna lo stamp. Il nucleo ricetta→stamp dei landmark è stato
+  **estratto** invece che copiato — `PartsRecipe`, `generateFromRecipe` — e con
+  lui il cantiere di sventramento, che ora vive in `clearanceSite.ts` e serve
+  due domìni: `landmarkDriver.ts` si è accorciato di un terzo.
+- **Non si posa.** Nessuno strumento in toolbar, nessun costo in `BALANCE`,
+  nessuna riga nuova in `src/sim/`. `arcologyReady` legge lo stato della città —
+  fascia `core`, isolato che contiene l'ingombro, densità costruita, e **quota
+  ammessa già satura nei vicini** — e le leve del giocatore restano quelle di
+  prima. L'ultima condizione è quella che conta: la megastruttura arriva dove la
+  città non ha più niente da diventare, non dove è semplicemente densa.
+- **Usi diversi su quote diverse, senza insegnare la verticale alla
+  simulazione.** La ricetta dichiara una fascia per stadio — podio produttivo,
+  mezzanino commerciale, corpi abitati, corona civica — ognuna con la propria
+  colonna d'ancoraggio dentro l'ingombro. Il driver chiama `addBuilding` una
+  volta per fascia nuova, `record.uses` registra ciò che è stato **accettato**, e
+  `tally` conta quelle voci: `countsByClass` resta esattamente uguale a
+  `state.buildingCounts` (invariante 7). Un'arcologia è un record e quattro
+  edifici per la simulazione, e la differenza fra i due conti è la somma di
+  `uses`.
+- **Il vuoto dentro l'ingombro è un vincolo verificato.** Il volume che legge
+  come megastruttura non è il più alto: è quello che scavalca il vuoto.
+  `skyWindowOf` cerca una fascia di quote vuota, flangiata dal costruito e
+  passante su un asse per almeno dodici quote consecutive; un test lo chiede a
+  ogni ricetta a **ogni** stadio, perché uno stadio successivo può benissimo
+  tappare il vuoto che quello prima aveva aperto. Il predicato ha sbagliato due
+  volte prima di funzionare — trovava il cavedio dentro uno stelo — e la
+  regressione è a test.
+- **Cresce per delta.** L'inviluppo è alto centonovantadue quote e non entra in
+  `maxDirtyChunksPerBuilding` nemmeno da lontano: ogni stadio accoda il proprio
+  `from = stage`, e `trimStampZ` taglia le quote vuote perché la stima sul
+  riquadro sia onesta. Senza il taglio una ricetta legittima sarebbe stata
+  scartata **in silenzio**, che è il difetto raccontato dal commento di quel
+  budget.
+
+Tre cose le ha decise la misura, non il progetto, e sono a commento nei file:
+
+- `isPeakBlock` era nella condizione ed è stato tolto. Con quella riga non
+  nasceva **nessuna** arcologia su nessun seed: due terzi degli isolati eletti
+  sono più stretti dell'ingombro, il centro è piccolo, e l'intersezione dei tre
+  insiemi era vuota. È un tiro ogni sette isolati su tutta la mappa, tarato
+  perché le guglie non diventino un bosco, e non ha niente da dire su una
+  struttura che esiste in due esemplari contati. La governance dell'eccezione è
+  `maxPerIsland`, che è un numero esatto invece di una probabilità.
+- Le soglie di stadio erano scritte sul modello dei landmark e nessuna arcologia
+  le raggiungeva. Un landmark nasce presto e il quartiere gli cresce intorno; una
+  megastruttura nasce quando la città ha **già smesso** di crescere, e il conto
+  dei vicini dopo la fondazione non sale quasi più — novantotto nel centro denso,
+  cinquantaquattro in periferia. Non è il tempo a far salire gli stadi, è il
+  **luogo**.
+- I piazzali in quota sono stati riscritti tre volte. Il primo stava a settanta
+  voxel dal piano finito e un percorso ne assorbe trentadue; il secondo era
+  profondo tre e `planBetween` rifiuta con `noLanding` un fronte più stretto di
+  una passerella *su quell'asse*; il terzo era a filo del tetto del podio, e la
+  corsia partiva dentro il podio. Ognuno dei tre era rotto con la suite pura
+  tutta verde.
+
+**Quello che non è chiuso.** L'innesto nella rete in quota (casella 4) è a metà:
+la struttura offre i propri attracchi — alla quota giusta, larghi quanto una
+passerella su tutti e due gli assi, rialzati sul tetto del podio, indicizzati in
+`registry.decks` — ma su una città cresciuta nessun percorso ci si attacca
+ancora. Le coppie migliori muoiono su `blocked` (la corsia attraversa colonne
+del proprio ingombro, che il registry tiene occupate a **ogni** quota) e su
+`tooSteep` (i compagni sono in diagonale, e la forma a zeta consuma il budget di
+pianerottoli). È misurato, non supposto; la correzione tocca la geometria della
+ricetta o `routePlan`, e non è in questo incremento.
+
+## In corso — L'HUD entra nel mondo: materiale, indicatori, strumenti
+
+Fase 7.1, 7.3 e 7.4 — il sottoinsieme che Alpha 0.2 chiede **prima** del
+playtest, «altrimenti si misura la confusione della UI invece del bilanciamento».
+La struttura era già giusta; era la pelle a essere generica.
+
+- **L'HUD segue il tema, e il contrasto non è una speranza.** `hudTokens.ts`
+  deriva i `--hud-*` dall'atmosfera: sotto una certa luminanza dell'aria il
+  pannello diventa **scuro** — neon e sci-fi lo sono — poi si tinge verso il
+  colore dell'aria e ogni colore che porta testo viene allontanato dalla
+  superficie finché non regge AA. È questo pavimento a rendere possibile una
+  derivazione *piena* invece che decorativa: il tema può spostare la tinta quanto
+  vuole senza poter rendere illeggibile una riga. Il gate è un test sui sette
+  temi, non un'occhiata a quello aperto.
+- **La cornice 9-slice non c'è, e la ragione è la derivazione stessa.** Un
+  `data:` URI non legge le custom property, quindi una cornice SVG resterebbe
+  ferma sul tema in cui è stata disegnata; per non stonare dovrebbe essere
+  trasparente, ma `border-image` ignora `border-radius` e sotto una cornice
+  trasparente si vedrebbero gli angoli **quadrati** del gradiente. Tre anelli in
+  `box-shadow` fanno lo stesso lavoro, seguono il raggio e seguono i token.
+  L'elevazione invece c'è ed è a tre livelli, ognuno due ombre: una corta di
+  contatto e una lunga d'ambiente.
+- **`locked` ha smesso di somigliare a `disabled`.** Un blocco per risorse si
+  **riempie** — il rapporto fra ciò che si ha e ciò che serve, con il requisito
+  *vincolante* e non il primo: chi ha i fondi ma non gli abitanti vede gli
+  abitanti. Un blocco che invece non si scioglie aspettando — l'ordine del
+  tutorial — resta sbiadito, perché riempirlo allo 0% direbbe «manca tutto»
+  quando la verità è «prima fai un'altra cosa».
+- **`±0` non compare più**, e al suo posto c'è dove si sta andando: freccia con
+  la magnitudine nell'opacità, sparkline sulla finestra dei tick recenti, anello
+  dove un tetto esiste davvero — cibo contro la soglia della carestia,
+  soddisfazione che è già una quota. Denaro e materiali non hanno un massimo e
+  non fingono di averlo.
+- **«Perché sto perdendo denaro» ha una risposta.** I sei numeri esistevano già
+  dentro `tick.ts`: venivano calcolati, usati per il saldo e buttati via una riga
+  dopo. Ora escono come `FundsReport` — stessa natura di `commerce`, derivato e
+  non accumulato — e un test verifica su quaranta tick che la somma delle voci
+  sia esattamente il `funds.delta` scritto due centimetri più su.
+- **I tasti `1`..`9` sono passati agli strumenti; i temi a `Shift`+`1`..`9`.** La
+  ragione che teneva le cifre nude sui temi — «il dock è aperto a chiunque,
+  quella scorciatoia non può stare dietro `?debug=1`» — è esattamente quella che
+  ora le sposta: il dock è la prima superficie che un giocatore nuovo guarda. Nel
+  campionario resta com'era, perché lì non c'è dock.
+- **`GameHud.ts` è stato spezzato prima di crescere**, non dopo: da 1108 a ~930
+  righe, con `ResourceBar.ts` e `BuildDock.ts` che prendono le due superfici su
+  cui la fase atterra. È la regola dei budget di `AGENTS.md` applicata nel verso
+  giusto — si estrae *prima* di aggiungere.
+
+Verificato a schermo oltre che in `node`: sui sette temi il contrasto misurato
+dal browser sta fra 4.57 e 15.63, e la barra è stata guardata con una città viva
+— anelli parziali, sparkline che si muovono, popover che nomina tasse e negozi.
+Due difetti sono usciti solo da lì: la pastiglia della risorsa non riprendeva il
+puntatore (`.game-hud` non lo passa, e il popover non si sarebbe mai aperto), e
+il requisito per esteso finiva **sopra** il costo su una tessera da 62px.
+
+## In corso — Il cibo ha un luogo (fase 3.1)
+
+Il cibo era l'unica risorsa senza un posto sulla mappa: usciva dal termine
+industriale, quindi la stessa fabbrica produceva cibo e materiali dallo stesso
+organico. Non si poteva indicare da dove venisse, e soprattutto la capacità
+alimentare cresceva **con** la densità invece che contro — l'unico modo di
+restare senza cibo era non costruire abbastanza industria, mai «non c'è più
+terra».
+
+- **`foodProduced` non legge più `industrial`.** Tre produttori con un costo in
+  terra — campi, frutteti, torri idroponiche — dichiarati dal mondo con `addFarm`
+  e contati in `SimState.farmCounts`. La fabbrica fa solo materiali.
+- **Contatori paralleli, non un quinto uso urbano.** `CLASS_COUNT` resta 4, il
+  contratto 10 resta intatto e il campo di desiderabilità non guadagna un quinto
+  `Uint8Array` per chunk: `uses.test.ts` e `simPerf.test.ts` passano invariati, ed
+  è quella la prova. Un produttore di cibo compete per la **terra**, non per
+  l'attrattività di una colonna.
+- **Il pareggio 1:1 è diventato un prodotto.** Era `food.perProduction /
+  food.perResident = 24 = residentialCapacity`: vero, documentato in tre posti, e
+  difeso da niente. Ora il listino di `BALANCE.farms` è in **case sfamate** — un
+  campo due, un frutteto una, una torre sei — e il cibo per tick lo fa
+  `FOOD_PER_HOUSE`, derivato. Cambiare la capacità di una casa muove il listino da
+  solo.
+- **Una torre è industria convertita.** Un edificio con `specialization:
+  'farming'` conta in `buildingCounts[industrial]` per il suolo e in
+  `farmCounts[tower]` per il raccolto, e `tick` lo toglie dall'industria che fa
+  materiali: convertire costa, ed è il punto.
+- **I campi non sono record del registry.** Non appartengono a nessuno dei due
+  indici di collisione — in `columns` impedirebbero di costruirci sopra, in
+  `groundColumns` perfino di passarci una strada — e la meccanica è esattamente
+  che la città si mangia i propri campi. Hanno un registro loro in
+  `src/world/farms/`, e il driver ritira il lotto quando `minFreeShare` non regge
+  più. Nessuna demolizione nuova: `clearance.ts` resta l'unica del progetto.
+- **Un campo entra dalla coda della superficie, non da uno stamp.** È una
+  questione di formato: uno stamp porta indici di palette e `STAMP_EMPTY` vale 0,
+  mentre un marcatore di copertura **è** palette 0. `SurfacePaint` guadagna
+  `cover`, e `palette: 0` significa «lascia il suolo dov'è».
+- **Il terreno non si ridipinge, e l'asse del solco sta nel marcatore.**
+  `COVER.cropX` / `cropY` usano due dei cinque valori liberi del marcatore: le
+  altre coperture prendono la giravolta da un hash della colonna, che per un
+  ciuffo è giusto e per un campo sarebbe rumore verde. Il solco è anche l'unica
+  forma che attraversa la propria cella da bordo a bordo, così colonne contigue si
+  saldano in una fila sola. Misurato: **5120 quad** di dettaglio per un chunk
+  arato per intero, contro un tetto di 16384.
+- **Un frutteto è volume, quindi passa dalla coda della crescita.** Consegna uno
+  stamp e ne eredita budget, affettamento e cancellazione, invece di aggiungere un
+  quarto posto da cui i voxel entrano nel mondo; il ritiro è uno stamp vuoto con
+  il volume vecchio come `erase`, la stessa strada di un upgrade. Il disegno di un
+  albero è rimasto scritto una volta sola: `drawTree` è il corpo di `writeTree`
+  senza la destinazione, e `writeTree` ora lo chiama.
+- **La specie da frutto non compare in `FLORA`**: non nasce da sola, la pianta
+  qualcuno, ed è per questo che può avere una sagoma potata — bassa, tonda, larga
+  uguale. A dire «coltivato» è la regolarità del reticolo contro il jitter del
+  bosco vero, non la specie.
+- **La torre idroponica è una riga di catalogo.** L'accento verde a livello alto
+  esce `luminous` dalla grammatica esistente, quindi le fasce di coltura si
+  accendono di notte senza un materiale, uno slot o un emettitore in più. A dire
+  alla simulazione che è una torre è la **tipologia costruita**, non la
+  specializzazione del luogo: sotto `minLevel` lì cresce una fabbrica normale, e
+  contarla come torre la farebbe produrre cibo senza esserlo.
+- **L'HUD dice da dove viene il cibo**, leggendo un referto del tick
+  (`state.harvest`) invece di rifare il conto — la stessa regola già scritta su
+  `HudResource.breakdown`, e il posto dove duplicare il listino sarebbe stato più
+  facile. Il numero dei lotti vivi passa sia dall'overlay sia da `__simStats`.
+- **`communityGardens` ha smesso di essere decorazione**: abbassa la soglia di ciò
+  che diventa frutteto, quindi il mandato si vede nella campagna oltre che negli
+  isolati.
+- `ALL_SPECIALIZATIONS` è derivato dalla tabella dei ruoli invece che riscritto:
+  il test di copertura del catalogo delle tipologie cadeva per l'aggiunta di
+  `farming`, cioè per il motivo sbagliato.
+
+## In corso — Il campionario mostrava meno vocabolario di quello che c'è
+
+Guardando `?scene=swatch` a schermo saltavano fuori due cose: i provini erano
+troppo vicini, e sembravano cubi con quasi nessuna varietà geometrica. La
+seconda non era un'impressione, ed era il difetto più grave possibile per uno
+strumento che esiste per giudicare il vocabolario.
+
+- **Tre famiglie di microgeometria non potevano scattare affatto.** Misurando
+  `appendMicroGeometry` su un provino solo si è visto che su un prisma isolato
+  con la sommità piatta non esiste nessuna delle condizioni che chiedono
+  `emitSoffits` (un intradosso con aria sotto), `emitTerraceBoxes` (una sommità
+  scoperta con ancora volume di fianco) e `emitFinials` (una cella senza vicini
+  in piano). Il campionario mostrava quindi **un vocabolario più povero di
+  quello vero**.
+- **`CELL_TIERS`: il provino è una massa a quattro gradoni**, non un prisma —
+  podio rientrato, sbalzo a filo, arretramento, guglia isolata. È la sagoma
+  minima che produce tutte e tre le condizioni, e in più ogni gradone spezza le
+  corse verticali, così montanti, traversi, architravi, mensole e parapetti si
+  moltiplicano invece di comparire una volta sola in cima. Misurato: da 21 a 55
+  prismi di dettaglio per `habitat`, da 25 a 77 per `civic`, da 16 a 64 per
+  `luminous`, da 4 a 22 per `roofTech`. La sagoma è **identica in tutte le
+  celle**: se variasse anche la forma, l'unica variabile smetterebbe di essere
+  palette × superficie e due celle vicine non sarebbero più confrontabili.
+- **L'interasse non era spaziatura, era occlusione.** A `REST_PITCH` un voxel di
+  quota si proietta in alto esattamente il doppio di un voxel di profondità,
+  quindi la fila davanti nasconde `CELL_HEIGHT - cellPitch / 2` di quella
+  dietro: a sei e sei spariva **metà** di ogni provino, ed è così che una griglia
+  di prismi distinti si legge come una massa unica. A dieci contro sette resta
+  nascosto il podio e nient'altro. Un test tiene insieme i due numeri, così non
+  si può ritoccarne uno solo.
+- **Il basamento è largo quanto la fascia che regge.** Con la matrice larga il
+  triplo delle altre due fasce, un basamento rettangolare lasciava due terzi di
+  grigio vuoto in un angolo. Il profilo a gradini dichiara le tre fasce da sé, ed
+  è l'unica etichetta possibile in una scena senza scritte; stratigrafia e scala
+  stanno centrate sotto la matrice.
+- **Il piano del cursore è sceso a metà provino.** In isometrica un voxel di
+  quota vale un voxel su ciascun asse di terra: tenerlo sulla sommità, ora che i
+  provini sono più alti, avrebbe spostato il referto di una casella intera.
+
+Verificato a schermo in `natural` e in `neon`+`night`, 1920 × 980: 82 560 celle
+in 49 chunk, `main` sotto il millisecondo, nessun errore di pagina. Il chunk
+peggiore porta nove provini, cioè meno di 4 200 quad di dettaglio contro i
+16 384 di `MAX_DETAIL_QUADS_PER_CHUNK`.
+
+Non ci sono nuovi slot di palette né nuovi tipi di superficie: vale ancora il
+vincolo della 4.10 — il campionario mostra quello che esiste. Tende e insegne
+restano invisibili qui **per costruzione**, perché chiedono un `portal` sotto la
+stessa faccia e un provino di una superficie sola non può averlo senza mentire
+sulla riga a cui appartiene: quelle si giudicano in `?scene=diorama`.
+
+File: `src/world/scenes/swatchLayout.ts`, `src/world/scenes/swatchScene.ts`,
+`src/world/scenes/swatchScene.test.ts`, `src/main.ts`;
+`.claude/skills/debug-harness/SKILL.md`, `src/world/AGENTS.md`, `ROADMAP.md`,
+`PROJECT_INDEX.md`.
+
+## In corso — La mensola smette di essere un quadrato appeso al marciapiede
+
+Tre difetti che si vedevano tutti insieme guardando una città cresciuta, e che
+avevano tre cause diverse.
+
+- **Le mensole stavano per terra.** `faceRuns` cerca dal basso in su, ed è la
+  regola che fa esistere la rete: la prima corsa è la sommità del basamento, che
+  la 4.4 rende condivisa da tutta la fila. Ma metà della città sale a prisma e non
+  arretra mai, e lì non c'è nessuna fascia da continuare: il ripiego su facciata
+  piena prendeva comunque la quota più bassa possibile, cioè `minRise` — tre cubi
+  sopra la strada. Su una torre di trenta cubi quella non è una mensola in
+  facciata, è una pensilina. Ora il ripiego parte da `facadeRise` dell'altezza
+  dell'ospite; dove una fascia c'è davvero non cambia niente.
+- **E stavano tutte insieme.** Le quote successive si prendevano a passo di
+  `DECK_HEIGHT`: le tre mensole di un ospite entravano in nove voxel, una pila
+  invece di una facciata abitata. Su facciata piena ogni quota vale l'altra, e ora
+  si distribuiscono sul fronte.
+- **Erano tutte quadrate**, e non per caso: `overhangOf` legava lo sporto alla
+  lunghezza della corsa, e dentro i due estremi quella riga è l'identità — con
+  `MAX_FOOTPRINT` a otto, *ogni* corsa usciva `run × run`. La regola resta come
+  misura di riferimento; il riquadro ora si dispone dentro la corsa in una di
+  quattro forme — balcone, loggia, ala, sperone — scelta da un hash di ospite,
+  faccia e quota. Ne segue anche la varietà delle gambe: un balcone sottile non ne
+  ha, uno sperone se le conta da solo.
+- **Ed erano spesse uguale dappertutto.** Travatura da due voxel su tutto il
+  perimetro: da fuori una lastra alta tre voxel, cioè un piano di edificio appeso
+  al muro. `terraceForm.ts` — puro, come le altre regole del dominio — dà alla sola
+  mensola una sezione a cuneo: la trave bassa accompagna l'attacco per
+  `taperReach` voxel, la trave alta prende il filo ma non la punta, che resta la
+  lastra da un voxel con cui una mensola deve finire. I due angoli lontani dalla
+  parete sono smussati, e il parapetto segue la diagonale invece di interrompersi
+  perché `emitRoofTech` guarda il filo, non il riquadro. Tratti di percorso e nodi
+  restano simmetrici: non hanno un davanti rispetto a cui calare.
+- **Un guinzaglio che mancava, trovato dal test della rete.** Un tratto di
+  percorso può avere per capo — o per appoggio di una gamba — una mensola, e
+  quella mensola restava sganciabile: l'ospite promuoveva, `releaseDecks` la
+  faceva cadere, e il tratto restava con un `supports` che non risolve più, cioè
+  una passerella che finisce nel vuoto. `buildRoute` lo dichiarava già («i due
+  capi reggono il percorso, e il percorso li immobilizza») senza che nessuno lo
+  imponesse; ora lo impone `registry.carries`, che è la stessa domanda che un
+  edificio si fa prima di promuovere, posta un piano più in alto.
+
+## In corso — Il raccordo: niente resta staccato dalla rete
+
+La maglia stradale copre il piano intero, ma a schermo esisteva solo dove
+qualcuno l'aveva dipinta, e chi dipinge lo faceva per il proprio isolato e basta.
+Due isolati contigui si trovavano collegati senza che nessuno se ne occupasse —
+condividono la carreggiata che li separa — mentre un porto piantato sulla costa
+restava un rettangolo di banchina in mezzo alla spiaggia, con la città
+cinquecento colonne più in là e prato in mezzo. Alla domanda «da qui a lì come ci
+si arriva» non rispondeva niente, in nessun punto del progetto.
+
+- **Il modello è quello di Frostpunk 2**: un insediamento nuovo non resta
+  scollegato, e la strada che lo attacca alla rete la traccia il gioco lungo il
+  percorso più economico. Qui il distretto è l'isolato, «la rete» è l'insieme
+  degli isolati già dipinti, e il percorso lo sceglie una ricerca a costo minimo.
+- **Sceglie linee, non le inventa.** `src/world/streets/corridor.ts` cammina sugli
+  incroci della maglia e ogni tratto corre su un asse che il seed dichiara già:
+  decide *quali* linee mostrare, non dove passano. L'invariante regge intatto — la
+  geometria della rete resta una funzione pura di `(seed, x, y)`, e ciò che è
+  stato dipinto resta stato di chi dipinge, come già era.
+- **Il terreno entra come costo e non come divieto**, la stessa scelta di
+  `accepts` in `lots.ts`: dentro il modulo non c'è né `TerrainMap` né mondo. Ed è
+  ciò che fa curvare la strada. Una L fra due punti separati da una darsena
+  finirebbe per metà sull'acqua; la ricerca gira attorno alla baia e ci arriva da
+  terra. Sono le otto candidate a L a fallire tutte insieme proprio nel caso che
+  il modulo esiste per risolvere: nessuna ha il grado di libertà per scansare un
+  ostacolo.
+- **Non fa niente quasi sempre, ed è il punto.** Un isolato che confina con uno
+  già dipinto — anche solo per un angolo — è già collegato, e le otto letture che
+  lo verificano sono il prezzo per riconoscere i pochi casi in cui un raccordo
+  serve davvero. La ricerca gira su un isolato staccato, cioè una manciata di
+  volte per partita.
+- **Un passo per metà in acqua non è una strada mezza costruita**: è un pugno di
+  colonne staccate, che legge come un errore invece che come un'assenza.
+  `STREETS.linkMinPaved` lo dichiara impraticabile, e se non c'è alternativa il
+  raccordo non nasce — un lembo di terra oltre un braccio di mare si collega con
+  un ponte o con una funivia, non con una carreggiata sul fondale.
+- **Il gate è una proprietà, non un giudizio a occhio**, come già lo è la
+  continuità della rete in quota: fra i due isolati si cammina sull'asfalto senza
+  staccare i piedi, e `surfaceQueue.test.ts` porta anche il controllo negativo —
+  senza raccordo il cammino non arriva — perché un test che passa comunque non
+  misura niente.
+- **Verificato su un'isola vera, e la prima taratura era sbagliata.** Su un'isola
+  generata di lato 256 con centosettantotto edifici: i siti di porto veri stanno
+  tutti entro **cinque isolati** dalla rete già dipinta, e quello più lontano si
+  collega con due tratti, **73 colonne** di carreggiata e **sei frame** di posa;
+  dopo il piazzamento le 10 472 colonne di asfalto dell'isola sono **una sola
+  componente connessa**. `STREETS.linkReach` era stato scelto a ragionamento —
+  dieci isolati, «oltre non è lontano, è altrove» — ed è salito a quarantotto:
+  non perché servisse ai casi veri, ma perché sarebbe stato un secondo gate
+  silenzioso accanto a quello vero su un'isola alla dimensione di taratura (512).
+  Il sito più remoto resta scollegato a qualunque portata, e per la ragione
+  giusta: fra lui e la città ci sono 75 colonne rifiutate contro 54 buone.
+- `enqueueBlockStreets` si è spezzato in due: `enqueuePavement` fa la rampa e il
+  colore per ruolo su un insieme qualunque di colonne di strada, e non ha mai
+  avuto niente a che vedere con la forma dell'insieme. La rampa si calcola **per
+  tratto** e non sul percorso intero: il riquadro di una L fra due capi lontani
+  sarebbe il rettangolo che li contiene, decine di migliaia di celle per
+  dipingerne qualche centinaio.
+
+## In corso — La funivia: una traversata che non prende suolo
+
+Il commento di `CROSSINGS.maxLength` diceva già cosa sta oltre i novantasei
+voxel: «la distanza oltre la quale un ponte smette di essere una scelta e diventa
+il modo per annullare la geografia. Uno stretto più largo di così vuole un
+traghetto». Il traghetto però è un catalizzatore — lo si piazza dove il *ruolo*
+ha senso, non dove serve attraversare — e fra due rive che si guardano non c'era
+ancora niente che il giocatore potesse **tirare**.
+
+- **L'invariante è l'opposto esatto di quello degli attraversamenti.** Lì «un
+  attraversamento prende suolo», con le pile che scendono nel fondale; in
+  `src/world/ropeway/` **una campata di fune non prende niente**: a terra ci sono
+  solo le due torri, e fra loro non c'è impalcato, non c'è carreggiata e non c'è
+  pila. È quello a permettere a `ROPEWAY.maxLength` di valere il doppio: senza un
+  impalcato da reggere il limite non è più strutturale ma di gioco.
+- **La fune non è materia**, e vale per lei la regola di `traffic/` invece di
+  quella delle strutture. È spessa meno di un voxel: scriverla a cubi lungo
+  centonovanta colonne darebbe una scaletta al posto di un cavo, con la pancia —
+  l'unica cosa che la distingua da un tirante — ridotta a una gradinata. La
+  calcola il piano come spezzata e la disegna `engine/RopewayView.ts`, che è la
+  prima vista fuori dal volume voxel a occuparsi di qualcosa che **sta fermo**:
+  finora ci finiva ciò che si muove, ora anche ciò che è troppo sottile.
+- **Due torri e nessun pilone, e non è una tabella lasciata a metà.** Fra le due
+  rive non c'è niente su cui piantare un appoggio, e sull'avvicinamento non c'è
+  spazio — la stazione arretra proprio perché lì la città è costruita. Una
+  traversata ha due torri, come le ha una funivia vera; il pilone intermedio è
+  roba da linea di montagna, e sarà la seconda voce di `ROPEWAY_PART`.
+- **La stazione arretra invece di rifiutare.** Il lungomare di una città
+  cresciuta è costruito: pretendere la piazzola sulla battigia avrebbe rifiutato
+  la funivia proprio dove la città c'è. Si cammina all'indietro fino a
+  `maxSetback` e si prende la prima buona, che è anche la più vicina all'acqua.
+- **Il franco si misura sulla prima quota libera, non sul terreno**, così la
+  linea scavalca un tetto come scavalca una collina. E la freccia entra *dentro*
+  il massimo invece di essere sommata alla fine: sommarla dopo alzerebbe anche le
+  torri, dove la fune non pende affatto.
+- **Le cabine sono due, sfasate di mezzo periodo.** Una sola sarebbe una navetta;
+  ciò che dice «servizio» è vederne una partire mentre l'altra arriva, e costa
+  zero perché la fase è già un campo della rotta. La corsa è la stessa `shuttle`
+  dei traghetti, esportata invece che riscritta.
+- **Un solo numero è condiviso fra i due domini**, ed è sorvegliato da un test:
+  `ROPEWAY.cabinDrop` deve valere `TRAFFIC.hull.gondola.height +
+  TRAFFIC.gondolaHanger`. Se divergessero, la cabina passerebbe più in basso di
+  quanto la fune è stata alzata per farla passare — e non lo direbbe nessun tipo.
+- **Il limite noto:** un edificio che cresce *dopo*, sotto la corsa, non alza la
+  fune. È il prezzo di una linea che non ha una colonna a registro fra i due
+  capi, ed è un difetto visibile e onesto.
+- Lo strumento è nell'HUD accanto a espansione e mensola, ed è deliberato: sono
+  le tre risposte a un suolo che finisce — comprarne altro, salire sopra quello
+  che c'è, o andare a prendere quello dall'altra parte dell'acqua. Costa 620 e
+  chiede 48 residenti, più di ogni altra cosa che si posi a mano, perché annulla
+  un pezzo di geografia.
+
+## In corso — I mezzi smettono di essere mattoni, e le navi vengono da fuori
+
+Barche e aerei erano tre o quattro scatole a testa: un aereo era una croce, una
+barca un parallelepipedo con sopra un cubo. A distanza isometrica quella è
+esattamente la forma che non si legge — e stonava con la città accanto, dove
+`mesher/microGeometry.ts` mette montanti, cornici e parapetti sotto il voxel.
+
+- **La cura è la stessa degli edifici, non un modello nuovo.** Restano scatole,
+  ma più piccole del voxel e messe dove la forma cambia: scafi rastremati in tre
+  conci invece che tronchi netti, una fascia di galleggiamento spessa tre decimi
+  che dà allo scafo un bordo inferiore, parapetti di due decimi lungo il ponte,
+  fasce di finestrini che sporgono di tre centesimi così girano su tutti e due i
+  fianchi con una scatola sola. L'aereo prende un'ala a freccia in quattro
+  pannelli per lato — è quella che, vista dall'alto, distingue un aereo da una
+  croce — più gondole dei motori, alette d'estremità e una deriva in tinta.
+- **`engine/vehicleHulls.ts` è un file nuovo, e non importa Three.** La vista sa
+  cucire scatole e colorarle; *quali* scatole è un'altra responsabilità, e
+  tenendola fuori si verifica in `node`. È così che un test può dire che il
+  fumaiolo disegnato chiude **esattamente** sulla bocca da cui esce il fumo.
+- **Il fumo è la stessa posa letta nel passato.** Uno sbuffo non è una particella
+  con una velocità da integrare: è dov'era la nave `age` secondi fa — che
+  `poseAt` sa già rispondere — più una salita e una deriva lineari. Ne discende
+  gratis tutto ciò che discende dalle pose: in pausa il fumo si ferma, a 4x
+  accelera, due partite identiche fanno lo stesso fumo negli stessi punti, e un
+  frame perso non lascia un buco nella scia. Ed è anche il motivo per cui la scia
+  è *giusta* invece che verosimile: uno sbuffo resta dove la nave l'ha lasciato
+  perché lì la nave c'era davvero.
+- **Una voce sola per due lettori.** `TRAFFIC.funnel` dice dove sta la bocca:
+  `vehicleHulls.ts` ci disegna il fumaiolo, `plume.ts` ci fa nascere gli sbuffi.
+  Due misure separate si sarebbero scoperte divergenti da uno screenshot, con il
+  pennacchio sospeso mezzo voxel sopra il cappello.
+- **Il pennacchio è l'unica geometria che si riscrive per frame**, e una mesh
+  sola per tutta la città: posizioni e colori **RGBA** in due buffer dinamici,
+  `drawRange` a tagliare la coda. La quarta componente del colore è l'alfa, ed è
+  la sola ragione per cui il fumo non ha bisogno di un materiale per sbuffo —
+  cioè di una draw call ogni volta che un traghetto respira.
+- **Una nave da carico adesso se ne va davvero.** Il capo lontano della sua rotta
+  non è più «centoventi voxel al largo» ma il **bordo del mondo** — fin dove il
+  mare generato arriva — e lì la nave sparisce per il tempo della sosta, poi
+  ricompare da quel punto. Il porto promette commercio *con il mondo*, e una nave
+  che inverte la marcia in mezzo al mare in piena vista dice l'esatto contrario:
+  che un fuori non c'è, e che quella è una navetta fra il molo e un punto d'acqua
+  qualsiasi.
+- **«Non c'è» è diventato esprimibile, e costa `null`.** `poseAt` restituisce
+  `VehiclePose | null` e `posesAt` lascia fuori dall'elenco chi è via: la vista
+  non ha imparato niente — le arriva un mezzo in meno, e il pool nasconde la mesh
+  in eccesso come faceva già. Il momento in cui un mezzo è fuori non è un secondo
+  meccanismo: è il **terzo tratto** del pendolo, quello che `shuttleAt` scriveva
+  già, marcato `away`. Una copia separata di «dove finisce l'andata» sarebbe
+  divergente alla prima modifica, e a divergere sarebbe l'istante in cui una nave
+  sparisce.
+- **Il fumo segue la stessa regola, e gratis.** Uno sbuffo emesso mentre la nave
+  era fuori non esiste; quelli lasciati *prima* di sparire restano a salire e
+  diradarsi sul bordo, che è esattamente ciò che lascia una nave partita.
+- **La tavolozza dei mezzi cresce di cinque voci**, tutte in `traffic/config.ts`
+  come impone la regola del dominio: sovrastruttura, calpestio, fascia di
+  galleggiamento, ferramenta e le tinte dei container. Sono quelle che separano
+  lo scafo da ciò che ci sta sopra: con una tinta sola una barca torna a leggersi
+  come un blocco, che è il difetto da cui nasce tutto questo incremento.
+
+## In corso — Il retro di un edificio smette di essere pulito come il fronte
+
+Tende, insegne, condizionatori e rampicanti vestivano il **fronte**. Il retro —
+dove in una città fitta stanno le calate, le scale e le pergole — era una parete
+liscia, e a distanza ravvicinata era la faccia che diceva "modello" invece di
+"edificio".
+
+- **`microStreet.ts` è un modulo suo**, e non tre funzioni in più in
+  `microGeometry.ts`, che è già oltre il budget di righe della cartella. È la
+  regola a monte del progetto: per una responsabilità nuova un file nuovo. E la
+  responsabilità si nomina in una riga — ciò che un edificio mostra dove **non**
+  si affaccia sulla strada.
+- **L'aggancio è `frontage`, e non è un ripiego.** Dice se sotto una faccia c'è un
+  ingresso, cioè se quella faccia guarda la via: tende, insegne e portali stanno
+  lì, le tubazioni no. Su un fronte pulito una calata di scarico legge come
+  sciatteria; sul retro è ciò che rende un isolato fitto credibile.
+- **Tre voci, in ordine di costo crescente**: le calate sono **una corsa per
+  colonna** — il tiro si semina sulla colonna e non sulla cella, quindi `emitRuns`
+  fonde l'intera calata in un box solo; le pergole sono due prismi per cella; le
+  scale sono l'emettitore più caro del progetto, e la loro forma lo impone — una
+  pedata sale con la cella, quindi non è una corsa e serve un prisma per gradino.
+  Se il tetto arriva a metà gruppo, a mancare è la cosa più cara.
+- **La pergola è la cima che il coronamento non poteva essere.** Una voce
+  `CROWN_KIND` con montanti e architrave era stata pensata e non funzionava:
+  `crownBands` restituisce rettangoli pieni, e il vuoto avrebbe voluto un
+  interruttore in `paint` per una cosa che il mesher sa già fare a 1/16 di voxel
+  invece che a uno.
+- **Un aggancio di tetto parte da `(z + 1) * U`, uno di facciata no**, ed è la
+  trappola in cui questo gruppo è già caduto: `openRoof` risponde sul voxel
+  **solido**, non sull'aria sopra, quindi la pergola stesa da `z * U` viveva
+  dentro il pieno — emessa, contata nel budget e invisibile. `facadeBox` prende
+  una profondità e sporge dal piano da sé, e la somiglianza fra i due casi è ciò
+  che rende l'errore facile. Il test la misura sulla **quota più bassa dei prismi
+  di legno** contro la sommità del voxel di tetto: un conto di prismi non poteva
+  segnalarla, perché c'erano tutti.
+- **Nessun linguaggio di superficie nuovo e nessuno slot nuovo** (invarianti 4 e
+  5): ogni aggancio nasce da superfici già esistenti più il vicinato.
+- **Costo, misurato.** In geometria, sulla fixture fitta: da **4 355 a 6 055 quad**
+  di dettaglio, +1 700 e +39%, cioè il 37% del tetto di 16 384. In tempo, sul
+  bench del mesher: 8,9 ms senza e 8,5 ms con — **dentro il rumore**, perché i tre
+  predicati cadono subito su tutto ciò che non è una facciata d'uso esposta.
+- **Il test misura il gruppo da solo**, con un writer che conta, e non passando da
+  `greedyMesh`: un ingresso porta con sé montanti, architrave e pensilina, quindi
+  una torre con le porte ha più dettaglio *in totale* proprio mentre ne ha **meno**
+  sul retro. E la regola si legge sulla **quota più bassa toccata**, non sul conto
+  dei prismi: una calata più corta resta un prisma, ed è la sua base a doversi
+  alzare.
+
+---
+
+## In corso — L'angolo dell'isolato smette di essere un caso
+
+Le torri d'angolo esistevano già, ma **per conseguenza e non per scelta**:
+`blockRoom` lascia allargarsi solo chi tocca due lati del riquadro, quindi i lotti
+d'angolo finivano per essere gli unici capaci di crescere in pianta. Finché la
+regola restava implicita non si poteva né rafforzare né tarare.
+
+- **`blockForm.ts` la dichiara**, e con lei `LOT_ROLE`: angolo, fronte, cuore. È
+  puro come `cluster.ts` — entrano un riquadro e un quadrato, esce un ruolo — e
+  vive fuori dalle passate perché lo leggono in due, la nascita per scegliere la
+  tipologia e la promozione per decidere se allargare. `blockRoom` esce da
+  `upgradeDriver`, dove era un metodo privato, per la stessa ragione.
+- **`lotRole` è un criterio di catalogo come gli altri**: un campo in
+  `TypologyRequirement`, una riga in `accepts`, zero rami. Non entra in
+  `demandsPlace` e non deve — quello parla del profilo della simulazione, che può
+  mancare, mentre la maglia stradale c'è sempre. Chi chiede una forma senza un
+  posto non lo passa, e le righe che lo dichiarano restano fuori per confronto
+  diretto.
+- **`cornerTower` è la riga che ne esce**: lanterna, smusso da uno e coronamento
+  d'oro, alla stessa priorità di `commercialPodium` ma **prima di lui nel
+  catalogo** — che è come si dice «più specifico» a parità di peso. Misurato: 39
+  edifici su 270 in una città di prova, cioè gli angoli e non un lato intero.
+- **Il ruolo si ripassa anche in promozione**, o un angolo smetterebbe di essere
+  un angolo: la torre perderebbe lanterna e smusso al primo livello in più, che è
+  l'opposto di quel che deve succedere crescendo.
+- **L'angolo cambia forma, non altezza, e la differenza è misurata.** La versione
+  con un bonus di livello sull'angolo è esistita ed è stata tolta: un livello in
+  più sui quattro angoli di ogni isolato **spegneva i montanti della città in
+  quota**, e il gate della 4.9 — «ci si muove fra i livelli» — scendeva a zero. Il
+  meccanismo è quello dichiarato in `aerial/`: chi ospita un impalcato smette di
+  promuovere, quindi spostare in alto il livello di nascita degli angoli cambia
+  chi può fare da ospite, e la rete verticale resta senza appigli.
+- **Il cuore dell'isolato è stato lasciato stare**, ed è l'altra cosa che la fase
+  ha imparato invece di imporre. Una riga che desse ai lotti interni una forma
+  propria è stata scritta e tolta: riempie i cuori d'isolato, che `aerial/` tiene
+  liberi apposta — «una gamba si sposta per trovare un tetto prima di piantarsi
+  nel prato» — e il gate della città in quota cadeva con lo stesso sintomo del
+  bonus d'angolo.
+- **Un difetto vero, trovato e corretto**: `fitsWider` cercava i vicini
+  sull'impronta e non sull'inviluppo. L'aggetto non si allarga mai, ma se il
+  nucleo cresce di due la striscia **trasla** di due, e finiva su colonne che
+  nessuno aveva guardato.
+- **Un difetto vero, trovato e lasciato**: la passata di promozione controlla il
+  budget di chunk e le campate, ma non interroga `overlaps` per il volume nuovo —
+  quindi una torre a terra può crescere fin dentro un edificio nato su un
+  impalcato in quota. È preesistente, non lo introduce lo sbalzo, e correggerlo
+  significherebbe fermare la crescita verticale sotto ogni impalcato: è una
+  decisione di gioco, non un ritocco. Il test dello sbalzo lo scansa in modo
+  esplicito invece che per caso.
+
+---
+
+## In corso — Il corpo esce dall'impronta, e non prende suolo
+
+`generate.ts` dichiarava che «nessuna fascia può uscire dall'impronta, e la
+collisione fra edifici resta bidimensionale». Era vero, ed era anche il motivo
+per cui questa città non poteva avere la sezione che ogni via fitta ha davvero:
+un piano che sporge sulla strada.
+
+- **L'invariante non è stato aggirato, è stato sostituito.** Al posto di «nessuna
+  fascia esce dall'impronta» ce ne sono due, e vanno tenuti insieme: *nessuna
+  fascia esce dall'**inviluppo***, e *l'inviluppo **non prende suolo***. Il
+  secondo è il gemello esatto dei due che questa cartella aveva già — una campata
+  non prende suolo da nessuna parte, un impalcato lo prende solo con la gamba — e
+  si legge dagli stessi due indici del registry: `columns` prende l'inviluppo,
+  quindi niente si costruisce *attraverso* uno sbalzo; `groundColumns` prende la
+  sola impronta, quindi sotto la carreggiata si dipinge ancora e accanto nasce
+  ancora un lotto.
+- **Si sporge solo verso la strada, e non è una comodità.** Verso il cuore
+  dell'isolato c'è il vicino, e due inviluppi che si toccano sono voxel
+  sovrascritti. Un inviluppo *simmetrico* — che sarebbe stato più semplice da
+  scrivere — farebbe collidere due membri di una stessa fila, e con loro cadrebbe
+  l'aggregazione in isolati, cioè il modo in cui questa città fa i fronti
+  continui. Un edificio senza fronte strada non sporge affatto: non c'è una via
+  su cui farlo, e il verso arriverebbe dal tiro d'accento — cioè da un numero che
+  chi ricostruisce l'inviluppo dal record non può ritrovare.
+- **Il verso non lo sa nessuna voce del repertorio.** `BAND_OP.jut` allarga di due
+  verso `facing`; tutto il resto continua a non sapere che lo sbalzo esista. A
+  impedire a un `jog` di sporgere dalla parte sbagliata non c'è una riga di
+  codice: c'è **dove l'impronta siede dentro l'inviluppo**, che è una posizione e
+  non un controllo.
+- **`jut` allarga invece di spostare**, e la differenza si vede da dietro:
+  spostando, il retro rientrerebbe di due e resterebbe un intaglio sul cortile.
+- **Sotto sei voxel non sporge niente** (`GRAMMAR.overhangFromZ`): uno sbalzo a un
+  voxel da terra non è uno sbalzo, è un ingombro sul marciapiede. Sei sono tre
+  cubi di terreno — ci si passa sotto — ed è anche la quota a cui il basamento
+  condiviso di una fila ha finito di salire.
+- **Il ripiego: lo sbalzo si negozia prima di rinunciare al posto.** Se a bloccare
+  è la sola striscia sopra il marciapiede, l'edificio ci rinuncia e sale diritto
+  invece di perdere un lotto buono per dell'aria. Funziona perché `over` allarga
+  il solo *filtro* di `nextRect` e le candidate si costruiscono tutte comunque:
+  lo stesso seme consuma gli stessi tiri, quindi la sagoma che ne esce è
+  **esattamente** quella che sarebbe uscita se la tipologia non avesse mai chiesto
+  uno sbalzo — impronta compresa, che è tirata molto prima.
+- **`maxDirtyChunksPerBuilding` resta 40, e il conto è rifatto invece che
+  ricordato.** Un tratto lungo `E` copre al massimo due colonne di chunk finché
+  `E ≤ CHUNK − 1`, e `edgeChunks` non ne aggiunge una terza quando ne attraversa
+  già due: con `MAX_FOOTPRINT + maxOverhang = 10` il fattore orizzontale resta due
+  per asse, esattamente com'era con otto. Il test lo verifica su tutte e trentadue
+  le fasi di cucitura, non su una.
+- **Un difetto latente svegliato e chiuso.** `clearObsoleteVoxelBatch` confrontava
+  gli indici locali della sagoma vecchia con quelli della nuova **senza passare
+  dalle ancore**: reggeva solo perché ogni stamp di edificio era ancorato in
+  `(0,0,0)`, e ha smesso di esserlo appena uno sbalzo ha potuto spostare l'ancora
+  di due colonne. Con due ancore diverse cancellava i voxel sbagliati, in
+  silenzio.
+- **`sliceStamps` non vede mai uno stamp ancorato**, e ora è dimostrato invece che
+  sperato: `cutout` azzera l'ancora, quindi su uno sbalzo darebbe pezzi ancorati
+  male — non capita perché l'inviluppo massimo è dieci contro un `segmentSide` di
+  sedici, e c'è un test che lo dice al posto di un commento che il prossimo cambio
+  di scala non leggerebbe.
+- **Tre righe di catalogo lo usano**: `stackedTenement` (densità senza ricchezza —
+  si guadagna spazio sporgendo, non comprando il lotto accanto) e `arcadeRow`
+  (portico sotto, piani che sporgono sopra: la stessa strada guadagnata due volte).
+
+
+## In corso — La pianta esce dall'angolo retto, e il piano terra si apre
+
+Tre forme che la città sapeva disegnare **solo su un monumento**: l'angolo
+tagliato, il vuoto sotto il pieno e la falda. La grammatica delle fasce muove un
+rettangolo, quindi non poteva produrre nessuna delle tre.
+
+- **`planMask.ts` sale alla radice di `src/world/`.** `inPlan` e `onPlanEdge`
+  vivevano in `landmarks/parts.ts` e ora li usano due domini: è la regola «ciò che
+  due domini usano non sta dentro uno dei due», la stessa che ha prodotto
+  `hierarchy.ts` e `urbanForm.ts`. In due copie disegnerebbero due ottagoni
+  diversi al primo ritocco.
+- **`TypologyShape.chamfer` porta il tamburo agli edifici.** È lo stesso campo di
+  `Part.chamfer` e lo stesso predicato: un edificio smussato di uno è un ottagono,
+  di due un tamburo. Non è una fascia in più e non cambia l'impronta — stesso
+  riquadro, stessa altezza, stesse fasce — quindi collisione, budget di chunk e
+  cancellazione non se ne accorgono. L'unico che se ne accorge, e nel verso
+  giusto, è `stampFootprint`: l'opera di terra smette di riempire l'angolo tagliato.
+- **Lo smusso si limita alla fascia, non all'edificio, e senza quel tetto era un
+  difetto.** Il taglio di Manhattan toglie `chamfer` a *ciascuno* dei due assi:
+  su un lato da quattro uno smusso da due lascia in piedi il solo quadrato
+  centrale da due — un palo dentro il riquadro, non un ottagono. E una torre
+  scende a `minBandSide` entro il primo quinto, quindi il caso non era raro, era
+  *ogni* torre. Misurato dal test che lo guarda: una fascia da dodici colonne
+  scendeva a due.
+- **`TypologyShape.arcade` è l'unica cosa del repertorio che fa vuoto sotto un
+  pieno.** Le fasce sanno rientrare, sporgere e sovrapporsi, ma quello che
+  producono è sempre un solido appoggiato. I pilastri seguono `bayPeriod` e si
+  contano dall'estremo più vicino, non da un capo: contati da un capo, un fronte
+  che non è multiplo del passo si ritrova il pilastro su un angolo e l'architrave
+  nudo sull'altro, e i quattro versi d'accento darebbero quattro portici diversi.
+- **Quattro voci nuove in tabella, zero rami nuovi.** `BAND_OP.shear` è `jog` a
+  scala leggibile — un voxel su una torre da venti fasce è mezzo cubo di terreno e
+  legge come bordo storto, due è il cubo intero; `BAND_OP.corner` è l'unica voce
+  che cambia proporzione senza cambiare massa, e senza il ricentro due di fila
+  porterebbero il corpo fuori dall'impronta invece di girarlo. `CROWN_KIND.gable`
+  è l'unica cima che finisce su una **linea** invece che su un piano.
+- **Quattro righe di catalogo le usano**, o sarebbero macchine spente:
+  `roundTower` (il tamburo), `stackedTenement` (le pile sfalsate, densità senza
+  ricchezza), `arcadeRow` (il portico) e `marketHall` (la falda dove il commercio
+  è rado).
+- **Le sessanta digest non si sono mosse**: i tre interruttori sono opt-in da
+  catalogo, e una città che non li chiede è identica a prima.
+
+---
+
+## In corso — Un quartiere è fatto di una materia sua
+
+Due edifici uguali ai due capi dell'isola erano dello stesso colore, e due case
+adiacenti di usi diversi erano di due colori diversi: l'esatto contrario di come
+si legge una città. Il colore dipendeva dall'uso e dalla tipologia, e niente
+diceva *dove* un edificio si trovasse.
+
+- **Lo stile è una seconda dimensione, ortogonale all'uso.** `STYLES` in
+  `buildings/config.ts` ha otto righe che ridipingono quattro slot — corpo,
+  cornice, zoccolo, coronamento — e la stessa riga vale per una casa, una bottega
+  e un capannone. La regola sta in `buildings/style.ts`, il catalogo in
+  `config.ts`: è lo stesso patto di `TYPOLOGIES` e `selectTypology`, e aggiungere
+  uno stile resta una riga di tabella.
+- **Non è una tinta, ed è la cosa da sapere prima di guardare lo schermo.** I 32
+  slot sono famiglie di *materia* e il loro colore lo scrive il tema, che è
+  globale: un isolato non può essere rosa e quello accanto azzurro senza slot
+  nuovi, cioè senza rompere l'invariante 4. Può essere di mattoni contro uno di
+  vetro, che a distanza di gioco si legge lo stesso e vale in tutti e sette i
+  temi invece che in uno.
+- **È una funzione pura di `(seed, quartiere)`, e non c'è niente da salvare.**
+  Come la maglia stradale, e per la stessa ragione. Ne segue la coerenza
+  d'isolato **per costruzione** — due edifici dello stesso quartiere non possono
+  uscire di materia diversa perché nessuno se lo deve ricordare — invece che per
+  disciplina di chi costruisce.
+- **Il quartiere è largo due isolati, e a uno la città era coriandoli.** Uno
+  stile per isolato sembra la scelta ovvia e produce mattone accanto a vetro
+  accanto a ruggine su tutta l'isola: a distanza non si legge come quartiere ma
+  come rumore. A due, il cambio di tessuto cade su una strada invece che su ogni
+  angolo.
+- **Non è agganciato al distretto, e la ragione è misurata.** `districtOf`
+  risponde `outskirts` finché due ruoli di catalizzatore non si sovrappongono
+  sulla stessa colonna — cioè quasi ovunque — quindi il tessuto sarebbe rimasto
+  spento sulla maggioranza del costruito. E il distretto **cambia quando la città
+  cresce**: la sagoma da cancellare cambierebbe sotto i piedi di chi la deve
+  cancellare, che è il difetto esatto per cui `recordStamp` esiste.
+- **L'accento resta alla tipologia**, e non per prudenza: il tessuto è del
+  quartiere, l'accento è di ciò che quell'edificio fa. Un mercato del porto
+  dentro un isolato imbiancato esce con le pareti chiare e le insegne d'ottone.
+  Ciò che distingue le funzioni sopravvive comunque anche altrove — `classSurface`
+  dà a ogni uso il proprio linguaggio di superficie, quindi un capannone
+  imbiancato tiene le nervature di lamiera.
+- **`record.style` viaggia con il record**, quarto campo dopo `typology`,
+  `facing` e `baseBand` e per la stessa ragione: è metà di ciò che serve a
+  rigenerare la sagoma per cancellarla. Un record scritto prima che gli stili
+  esistessero ripiega sul tessuto neutro e si rigenera identico a com'era.
+
+---
+
+## In corso — Il generatore di edifici si spezza, e la sua sagoma si fissa
+
+Preparazione, non funzionalità: `generate.ts` era a 849 righe e le prossime fasi
+— smusso, arcata, aggetto, stile d'isolato — ci finivano tutte dentro. Nessun
+comportamento cambia, e stavolta è **dimostrato** invece che dichiarato.
+
+- **`generate.ts` passa da 849 righe a 267**, e i quattro moduli che ne escono
+  sono la divisione che `src/world/AGENTS.md` già descriveva a parole: l'algebra
+  dei rettangoli in `bandRect.ts`, l'interprete del repertorio in `bandOps.ts`,
+  la chiusura della silhouette in `crowns.ts`, la vernice in `paint.ts`. La linea
+  di taglio è *lungo cosa si lavora separatamente* — cambiare una cima e cambiare
+  il ritmo di una facciata sono due lavori, e finché stavano in un file solo
+  toccarne uno prendeva in ostaggio l'altro.
+- **`generateDigest.test.ts` fissa le impronte digitali della grammatica**, ed è
+  la parte che valeva più dello split. La suite verificava che due chiamate
+  uguali dessero lo stesso stamp e che ogni stamp rispettasse i vincoli del
+  livello: entrambe sopravvivono benissimo a una grammatica cambiata per sbaglio.
+  Quello che nessun test copriva è lo spostamento di codice che consuma un tiro
+  in più, o nello stesso ordine ma in un punto diverso — la città resta legale,
+  resta deterministica, e non è più quella di ieri. Con `recordStamp` che
+  rigenera la sagoma per cancellarla, quel giorno gli edifici già costruiti
+  smettono di poter essere cancellati. Sessanta digest FNV su quattro usi, cinque
+  livelli e tre semi, **calcolate prima di muovere una riga**.
+- **Le sessanta digest non si sono mosse**, e con loro i 153 test di
+  `src/world/buildings/`. È la definizione operativa di «nessun comportamento
+  cambia».
+
+---
+
+## In corso — Il lago smette di essere un cerchio, il gradone una curva di livello
+
+Due difetti che si vedevano dalla stessa inquadratura, e con la stessa causa: la
+sagoma degli elementi del terreno era un'ellisse, e la tinta di un bioma un
+numero. A schermo diventavano un laghetto perfettamente circolare in cima alla
+montagna e quattro gradoni tutti della stessa campitura.
+
+- **La forma in pianta si stacca in `src/world/terrain/outline.ts`.** Rilievi e
+  conche non sono piu' ellissi allineate agli assi ma ellissi **orientate** con
+  il raggio deformato da due armoniche di fase propria. Sul terreno la
+  differenza si nota appena — quantizzazione, cigli e alberi rompono il contorno
+  da soli — ma lo specchio d'acqua e' l'unica superficie senza grana ne'
+  terrazzamento, quindi il suo bordo e' l'unica curva che si legga per intero.
+- **La deformazione si spegne verso il bordo, ed e' l'unica cosa che la rende
+  sostenibile.** Chi cerca un sito a una conca sonda il terreno lungo il bordo
+  della sagoma: una che sporgesse chiederebbe una spianata piu' larga di quella
+  che il raggio annuncia, cioe' pagherebbe in **terra piana**, che su un'isola
+  quasi tutta in pendenza e' la risorsa rara — misurato, i laghi scendevano da
+  sette isole su otto a cinque, e il seed di riferimento restava senza. Spenta
+  sul bordo, la sagoma resta dentro il cerchio che dichiara, la ricerca del sito
+  e' quella di sempre, e il costo si paga tutto in pendenza, dove il margine
+  c'e': `basinSlope` sale a 0,72 e `moundSlope` a 0,28, e il dislivello peggiore
+  fra due colonne misurato sul campo resta a 0,70 contro il voxel intero che il
+  terreno a celle non tollera.
+- **Il fattore si misura, non si stima.** `warpLipschitz` dice quanto una
+  deformazione moltiplica il gradiente **sulla fascia di raggi in cui il profilo
+  scende davvero**; chi la usa divide per quel numero la pendenza che dichiara,
+  quindi la sponda di un lago vale ancora `basinSlope` esatti. Il tetto in forma
+  chiusa resta come limite del modulo, e i test verificano che il misurato non lo
+  superi mai.
+- **La sagoma ha un flusso di PRNG suo** (`shapeWarpSalt`), separato da quello
+  che sceglie dove gli elementi stanno. Con un flusso solo, ogni fase estratta
+  slittava tutte le estrazioni successive: ritoccare un'ampiezza spostava le
+  colline e cambiava quali siti ospitano un lago, cioe' rifaceva l'isola invece
+  della sola forma in pianta.
+- **La roccia prende uno strato di grigio per gradone** (`rockTone.ts`): e' il
+  solo bioma che si guarda **di taglio**, e sopra la collina l'alzata vale otto
+  voxel, quindi di una cella si vede piu' parete che pianta. Il passo dello
+  strato e' l'alzata e non un numero suo — uno strato a meta' parete
+  racconterebbe una quota che li' non c'e' — e il sottosuolo prende sempre il
+  grigio successivo, cosi' il bordo chiaro che dice dove finisce un gradone non
+  sparisce su nessuno strato.
+- **La tinta viene dalla quota e da nient'altro**, e ci sono voluti due
+  tentativi sbagliati per arrivarci: chiazze da un hash — quadrati con i bordi
+  sugli assi, una trapunta — e poi vene di rumore interpolato, che i quadrati li
+  toglievano ma restavano colore senza significato. Su una roccia due grigi
+  affiancati alla stessa quota vorrebbero dire due strati alla stessa quota. Uno
+  strato e' orizzontale, si vede dove il terreno lo taglia, e il terreno lo
+  taglia dove si terrazza: il disegno del colore e quello dei gradoni sono la
+  stessa cosa, ed e' per quello che si legge. Un pianoro e' di un grigio solo
+  perche' lo e'.
+- **Il gradone smette di essere una curva di livello** (`TERRACE.jitter`). Il
+  campo e' dolce e la scala e' esatta, quindi il ciglio cadeva dove il campo
+  attraversa una quota tonda: su una cupola sono cerchi concentrici, e a schermo
+  si leggevano come scalini tirati col compasso. La quota di ogni cella viene ora
+  scossa da due ottave di rumore prima di posarsi — una lunga che fa serpeggiare
+  il ciglio, una corta che ne sbreccia il filo — e lo stesso gradone diventa una
+  scarpata. **L'ampiezza e' una frazione dell'alzata oltre la cella**, ed e' li'
+  che sta l'invariante: in pianura vale zero — dove cresce la citta' il terreno
+  resta quello di prima — e piu' su resta sotto la meta', quindi due celle
+  contigue non possono ancora scavallare piu' di un'alzata. Mezzo voxel di quota
+  su un fianco dolce vale due colonne e mezzo di scostamento in pianta: il
+  disturbo si vede percio' tanto piu' quanto il pendio e' gentile, cioe'
+  esattamente dove i gradoni sembravano risaie.
+- **Un albero scrive solo dove c'e' aria.** Una chioma nata su una cella bassa
+  poteva mangiare la parete della cella accanto, e da quando il ciglio serpeggia
+  succedeva spesso: adesso la roccia la ritaglia, come le succede in natura.
+- `paletteAt` e' la lettura unica di quella tinta: la usano il generatore, il
+  riempimento di un'opera di terra e il ripristino della vista per bioma, che
+  altrimenti spianava i grigi di mezza montagna a ogni giro di `B`.
+- Verificato a schermo su `?debug=1&terrain=1337` oltre che nei test.
+
+## In corso — I raggi X lasciano vedere davvero attraverso
+
+La vista c'era ma non serviva a niente: si accendeva, e i muri davanti al
+soggetto restavano lì. Il difetto non era nella geometria — la lente era già la
+sagoma esatta di ciò che si sta guardando — ma in **cosa il velo faceva a un
+frammento**, che era una cosa sola: `discard` su un retino di Bayer a densità
+fissa. Tre conseguenze, e tutte e tre si vedevano.
+
+- **Con una soglia ordinata i pixel superstiti sono sempre gli stessi.** Non è un
+  tiro di dado, è un insieme di soglie: il muro davanti e quello dietro
+  sopravvivevano *sugli stessi pixel*, e il primo copriva il secondo per intero.
+  Cinque pareti velate in fila si vedevano come una sola, cioè non si vedeva
+  attraverso niente. È l'artefatto noto della screen-door transparency, e la cura
+  nota è far variare la soglia con la profondità: ora la densità cresce
+  avvicinandosi alla camera (`XRAY.deep`), quindi chi sta dietro sopravvive su un
+  insieme più largo e spunta fra le righe di chi sta davanti.
+- **Ciò che sopravviveva restava muro a piena luce**, con le sue finestre e le
+  sue insegne. A bassa copertura quei pixel non leggevano come vetro ma come
+  sporco sopra al soggetto. Adesso un frammento velato perde il linguaggio di
+  facciata e si scioglie nella tinta della **prospettiva aerea** — la stessa a
+  cui tende la distanza, quindi segue tema e ora senza portarsi dietro un colore
+  proprio — in proporzione a quanto gli è stato tolto.
+- **Il Bayer sparpaglia.** Il retino è diventato una **rigatura** diagonale in
+  pixel di schermo: a parità di copertura i superstiti stanno in fila e leggono
+  come una campitura di disegno tecnico invece che come polvere. La densità ne
+  cambia lo spessore e non il passo, quindi può variare con continuità senza che
+  il disegno cambi trama sotto gli occhi.
+
+Sul **filo del voxel** la rigatura cede (`XRAY.lattice`): la faccia si apre ma lo
+spigolo resta, e l'occlusore si riduce a una gabbia di vetro invece di
+sbriciolarsi. È ciò che tiene leggibile la sagoma di quello che si sta
+attraversando — si continua a vedere *che c'è una torre davanti*.
+
+La proporzionalità dello scioglimento separa da sola le due famiglie senza un
+secondo numero da tenere d'accordo con il primo: nei raggi X la densità è alta e
+l'occlusore se ne va, in Block focus è bassa e il contesto resta leggibile — lì
+la sagoma velata **è** la risposta, e sbiancarla vorrebbe dire toglierla.
+
+- I numeri della lente si staccano in `src/engine/xray.ts`, con `lensHit` che
+  ora riporta anche la distanza dal soggetto e non solo la corda: `inspect.ts`
+  era oltre il budget di righe e teneva insieme due lavori con due cadenze
+  diverse — quali viste esistono, e come si guarda dentro un muro.
+- Verificato a schermo su città cresciuta, non solo nei test: la lente tocca la
+  sola colonna di occlusori del soggetto e lascia intatto il resto della città,
+  fetta, sezione e Block focus restano quelle di prima.
+
+## In corso — Le erbette smettono di essere coriandoli
+
+Sul prato c'erano dei dadi. La copertura del terreno nasceva come **un voxel
+pieno** appoggiato sulla superficie, grande un quarto della faccia di un cubo di
+terreno: alla distanza isometrica non si legge come un ciuffo d'erba, si legge
+come un cubetto colorato, e l'unico modo che c'era di farne un prato era
+metterne tanti — cioè peggiorare le due cose insieme.
+
+- **La cella di copertura non è più un cubo, è un marcatore.** Il mondo continua
+  a decidere se e cosa cresce su una colonna, esattamente come prima; quello che
+  scrive è `setCoverMark`, un byte con **palette 0** — un valore che
+  `packVisualBlock` non produce mai, perché per lui palette 0 è il vuoto. Non è
+  un nono tipo di superficie né un trentatreesimo slot: è spazio libero per
+  davvero, ed è il secondo sovraccarico dichiarato di quel byte dopo
+  `WATER_CLASS`.
+- **Il mesher toglie la cella e ci disegna dentro** (`engine/mesher/coverDetail.ts`).
+  Un ciuffo sono tre lame sfalsate di altezza diversa, un fiore uno stelo verde
+  con la corolla del bioma, un sasso una lastra bassa e larga: prismi da 1/16
+  nella stessa mesh del greedy pass, nessuna draw call in più. Quattro giravolte
+  da un hash delle coordinate di mondo, o un prato intero mostrerebbe la stessa
+  lama nella stessa direzione — che è il difetto del cubo, solo più piccolo.
+- **Toglierla è metà del guadagno.** Un cubo di copertura buca il piano superiore
+  del terreno e ogni buco spezza le corse del merge greedy; adesso il piano si
+  ricuce. Con lui se n'è andata anche l'AO che proiettava attorno a sé, che era
+  l'ombra di un dado.
+- **La tinta non viaggia nel marcatore.** La prende dalla palette del terreno su
+  cui poggia, via una tabella *derivata* da `GROUND_COVER` e `BIOME_STRATA`: il
+  bioma non arriva fino al mesher e non deve: nel volume c'è già, è la palette di
+  superficie. Ne segue un invariante nuovo e testato — due biomi non possono
+  condividere quella palette — e un comportamento che prima non c'era: un
+  marcatore sopravvissuto a una strada che gli ha ripavimentato la colonna sotto
+  **sparisce**, invece di mettersi un ciuffo d'erba sull'asfalto.
+- **Le densità sono scese di circa il quaranta per cento**, e tornano a dire
+  quanto è fitto il prato invece di supplire alla forma che mancava.
+- **Per `getBlock` un'erbetta non c'è più**, perché `blockPalette` di un
+  marcatore vale 0. È il verso giusto: la copertura è decorazione, non un
+  ostacolo per chi cerca dove costruire.
+
+File toccati: `src/engine/mesher/coverDetail.ts` e `coverDetail.test.ts` (nuovi),
+`src/engine/mesher/greedyMesher.ts`, `src/world/visualBlock.ts`,
+`src/world/VoxelWorld.ts`, `src/world/terrain/{groundcover,config,IslandGenerator}.ts`,
+i test di `visualBlock` e `groundcover`, più `AGENTS.md`, `src/world/AGENTS.md`,
+`src/engine/AGENTS.md` e `PROJECT_INDEX.md`.
+
+---
+
+## In corso — Il mare torna nei porti, e qualcosa ci naviga
+
+Quattro difetti che si vedevano prima di qualunque tooltip: il porto e il
+traghetto costruivano una piattaforma rettangolare in mezzo al golfo con dentro
+una pozza d'acqua **piu' alta del mare** che la circondava; il traghetto non
+aveva niente che attraversasse; l'aeroporto era una striscia d'asfalto in un
+angolo del proprio riquadro; e un settore costiero comprato restava terra vuota
+per sempre mentre il messaggio prometteva il contrario.
+
+- **La bonifica del decoro non scava piu' il mare, ed era lei a scavarlo.** La
+  passata che toglie tronchi e chiome parte dalla quota del terreno e sale di
+  venti voxel — la conifera piu' alta — ma su una colonna sommersa quella quota
+  e' il **fondale**: attorno a ogni porto, a ogni molo e a ogni lotto sulla
+  battigia restava un rettangolo di mare cancellato fino in fondo. Non lo diceva
+  nessun test perche' l'opera di terra riempiva subito dopo le stesse colonne, e
+  il buco spariva sotto la banchina. Ora `clearDecorColumn` si ferma dove il
+  bioma dice acqua: sott'acqua non cresce niente da togliere.
+- **L'opera di terra ha una maschera.** `buildWorks` e `surveyGrade` accettano
+  le colonne su cui la struttura poggia davvero (`stampFootprint` fino a
+  `LANDMARK.groundBand`) invece dell'ingombro intero. **La darsena e' il mare che
+  c'era**: la ricetta la ottiene non disegnando niente. Ne segue anche che un
+  molo puo' uscire accanto ad acqua fonda che il riquadro intero rifiutava, e che
+  il muro di banchina corre sul bordo della maschera — cioe' attorno al bacino —
+  invece che sul perimetro del rettangolo.
+- **`groundBand` separa cio' che poggia da cio' che sporge.** Il braccio di una
+  gru passa sopra l'acqua a tredici voxel: contarlo vorrebbe dire riempire di
+  terra il bacino che sorvola. Il grembiule, per la stessa ragione, si ferma
+  sulla battigia invece di dipingere un anello di asfalto sul fondale.
+- **Porto e traghetto ridisegnati in pianta.** Il porto e' una banchina con due
+  bracci che chiudono un bacino; il traghetto un piazzale e un molo stretto con
+  due accosti veri. Le barche disegnate *dentro* lo stamp sono sparite: erano
+  ferme per costruzione e — visto che uno stamp non sa scrivere sotto il proprio
+  piano finito — sospese sei voxel sopra il pelo dell'acqua.
+- **`src/world/traffic/`: cio' che si muove.** Barche all'ormeggio, traghetti di
+  linea, navi da carico, aerei in circuito e dirigibili al pilone. Il traffico
+  **non e' materia** — un voxel riscritto a ogni frame rimesherebbe mezza isola —
+  quindi qui si calcola *dove sta* un mezzo e a disegnarlo e' `TrafficView`, con
+  mesh proprie fuori dal volume. La posa e' una **funzione del tempo**: due
+  partite identiche mostrano le stesse barche negli stessi punti, e la velocita'
+  di gioco moltiplica un orologio invece di ritarare delle accelerazioni.
+- **La rotta di mare aggira la terra.** Due punti di costa vicini hanno quasi
+  sempre un pezzo d'isola in mezzo — e' proprio la forma che rende utile un
+  traghetto — quindi `planSeaLane` cerca in ampiezza su una griglia grossa e poi
+  tira la corda. Dove acqua non ce n'e', la linea resta **senza barca** invece di
+  farne passare una dentro la collina.
+- **Gli ormeggi li dichiara la ricetta.** Sono coordinate della forma: il bordo
+  di una darsena che `landmarks/config.ts` disegna. Un test verifica che un
+  ormeggio da barca non cada su una colonna che l'opera di terra riempie — su
+  **ogni** esemplare, perche' e' il seme a sceglierlo.
+- **L'aeroporto e' un campo di volo.** Pista per tutta la lunghezza
+  dell'ingombro, soglie e mezzeria, raccordo che la lega al piazzale, hangar in
+  fondo e il campo erboso spianato che da sopra dice «aeroporto» prima di
+  qualunque dettaglio. Gli aerei ci rullano, decollano e rientrano sul circuito.
+- **L'aeroporto sa posarsi su un grattacielo.** `SKYPORT` e' la seconda forma
+  dello stesso ruolo — un impalcato d'attracco con due piloni — e a sceglierla e'
+  il **luogo**: sotto la colonna c'e' un tetto, quindi non si costruisce una
+  pista ma un ormeggio, e ci stanno dei dirigibili. Un solo strumento, nessuna
+  scelta in piu' da fare. L'ospite deve essere alto almeno
+  `LANDMARK.aloftMinLevel` e da quel momento **smette di promuovere**: chi regge
+  non cresce, come per una mensola.
+- **Un settore comprato arriva con il proprio nucleo.** La citta' nasce dove il
+  campo di desiderabilita' esiste, e il campo esiste solo dove un catalizzatore
+  l'ha acceso: senza, i cinquecento fondi compravano terra su cui non compariva
+  mai niente. Il borgo che arriva con il settore e' quella promessa mantenuta al
+  minimo — abbastanza da far attecchire le prime case, non abbastanza da decidere
+  cosa diventera' il settore.
+
+File toccati: `src/world/traffic/` (nuovo: `config`, `seaLane`, `routes`,
+`poses`, piu' due file di test), `src/engine/TrafficView.ts` (nuovo),
+`src/world/landmarks/{config,generate}.ts`,
+`src/world/buildings/{stamp,siteWorks,surfaceQueue,landmarkDriver,BuildingRegistry,Builder}.ts`,
+`src/world/buildings/siteWorks.test.ts` (nuovo), `src/game/{actions,growthScene}.ts`,
+`src/sim/balance.ts`, `src/main.ts`, piu' `PROJECT_INDEX.md`, `src/world/AGENTS.md`
+e `src/engine/AGENTS.md`.
+
+---
+
+## In corso — Il campionario dei voxel entra nel gioco
+
+La 4.10 era pronta da un pezzo, ma si raggiungeva solo scrivendo `?scene=swatch`
+nella barra dell'indirizzo: chi gioca non l'ha mai vista, e chi la conosceva
+doveva ricordarsi il parametro.
+
+- **Un bottone nel dock, subito dopo il tema**, apre il campionario **in una
+  scheda nuova**. Sta lì e non accanto alle viste perché risponde a un'altra
+  domanda — quelle guardano dentro la città, questo guarda di cosa è fatta — e
+  chi ha appena cambiato tema è esattamente chi si chiede come suonino i
+  trentadue slot. La scheda è nuova perché il campionario è una **scena**:
+  ricaricarla al posto della città vorrebbe dire buttare la partita, che non ha
+  salvataggio.
+- **Il link porta con sé il look che si sta guardando** — tema e ora — perché il
+  campionario esiste per confrontare: aprirlo a mezzogiorno mentre la città è al
+  neon di notte mostrerebbe un vocabolario diverso da quello che ha fatto nascere
+  la domanda. L'ora **ferma** l'orologio: un campione che cambia luce da solo
+  mentre lo si giudica non è un campione. `swatchUrl` sta accanto a
+  `resolveLaunchMode` perché è la stessa corrispondenza letta al contrario, ed è
+  testata in `node` — compreso che il link apra un harness e non una seconda
+  partita.
+- **Il referto del campionario non è più un overlay tecnico.** È la legenda dello
+  strumento — in-world non ci sono etichette — quindi nasce aperto anche senza
+  `?debug=1`, e `F3` non lo spegne più. Senza questo, il bottone avrebbe portato
+  chi gioca davanti a duecentocinquanta prismi anonimi.
+- **`1`..`9` escono dal gate del debug**, come `V` e `L` prima di loro, e la loro
+  era l'incoerenza più vecchia: il tema si sceglie già da un bottone del dock
+  aperto a chiunque, mentre la scorciatoia per la stessa cosa stava dietro
+  `?debug=1`. Nel campionario è anche di più — cambiare tema **è** lo strumento,
+  ed è così che si riconosce uno slot morto a colpo d'occhio, che è metà del gate
+  della 4.10.
+
+## In corso — Un click sulla città apre una scheda
+
+Cliccare la città non selezionava niente. Tutto quello che il progetto già *sa* di
+un punto — bioma, opera di terra necessaria, fascia di skyline e tetto verticale,
+desiderabilità per i quattro usi, tipologia dell'edificio, quartiere, chi regge
+cosa — era raggiungibile solo dagli overlay tecnici dietro `F3`.
+
+- **Una pila, non quattro modalità.** Un click risolve insieme struttura,
+  isolato, colonna e voxel: sono la stessa domanda a quattro ingrandimenti, e
+  farli scegliere prima al giocatore vorrebbe dire chiedergli di sapere già la
+  risposta. Il pannello li mostra come quattro linguette, aperto sulla più
+  specifica che esiste, e la linguetta aperta comanda il contorno azzurro nel
+  mondo — è così che tutte e quattro le unità diventano selezionabili con un
+  gesto solo.
+- **Un record non è sempre un edificio.** `BuildingRecord` porta un `class` anche
+  quando è un ponte o una mensola, e landmark, campate e parti in quota non
+  entrano nei conteggi del registry: `SelectionPanelModel` si dirama su
+  `landmark` → `span` → `aerial` → edificio, così un molo mostra uno **stadio** e
+  mai un livello, e un viadotto non dice «Housing».
+- **Il quartiere del record e quello di adesso sono due righe distinte.** Il
+  primo è congelato alla nascita per poter rigenerare la sagoma, il secondo lo dà
+  `urbanProfileAt`: confonderli sarebbe un bug, e il valore della scheda sta nel
+  poterli confrontare.
+- **Il record giusto lo sceglie la quota.** L'occupazione è tridimensionale, e su
+  una colonna possono esserci una casa, una mensola e un ponte: cliccare il ponte
+  deve dare il ponte. La quota frazionaria che `pickSolidCell` restituisce già
+  diventa il voxel colpito, con il clamp che evita di prendere l'aria sopra il
+  tetto invece del tetto.
+- Il click si risolve su `pointerup` con una soglia di sei pixel e la guardia
+  esplicita sullo strumento in mano: `isPanButton` accetta anche il tasto
+  sinistro e `camera.attach` è il primo listener registrato, quindi ogni click
+  **è già** l'inizio di un pan. `Escape` chiude la scheda dopo lo strumento e
+  prima del soggetto di studio, dentro l'unica catena che c'è.
+- Il pannello sta sul bordo destro ancorato in alto e si ferma dove i drawer
+  cominciano, quindi le due superfici non si coprono mai senza doversi conoscere.
+  Si aggiorna a 150 ms come il resto dell'HUD.
+- **Il contorno in-world costruisce una geometria nuova a ogni cambio.** Il costo
+  non c'è: la selezione cambia a un clic, non a ogni frame. La prima stesura
+  motivava la scelta dicendo che alzare `needsUpdate` su un buffer preallocato
+  non arriva alla GPU — **non è vero**, e `TrafficView` scrive in
+  `attribute.array` senza ricostruire niente. La causa degli overlay invisibili
+  era `Float32BufferAttribute`, che dell'array passato fa una **copia**
+  (`new Float32Array(array)`): presa a buffer ancora vuoto, tutte le scritture
+  successive finivano in un array che nessuno carica, e la linea restava
+  `visible` con ogni vertice sull'origine. `InfluenceOverlay` e `plain` si
+  salvavano perché prendono la copia **tardi**, a posizioni già scritte.
+- Per la stessa ragione il contorno è una **fascia piena** e non solo una linea:
+  una linea da un pixel si perde sul terreno chiaro e in WebGL la larghezza non è
+  regolabile, che è già il motivo per cui il raggio d'influenza affianca al
+  proprio cerchio una fascia.
+
+**Chiuso.** Le guide di ispezione (`InspectGuides`) non si vedevano già a
+`b13b045` — riquadro, carreggiata della sezione e mirino sulla colonna a fuoco in
+scena e invisibili — per la copia descritta sopra. Correzione di una parola:
+`BufferAttribute` invece di `Float32BufferAttribute`, che tiene l'array per
+riferimento. Il disegno a buffer preallocato resta, ed è quello che qui conta:
+le guide inseguono il cursore, quindi ricostruire quattro geometrie sarebbe stato
+un costo a ogni frame, non a ogni clic.
+- File nuovi: `src/game/selection.ts`, `src/ui/SelectionPanelModel.ts`,
+  `src/ui/SelectionPanel.ts`, `src/engine/SelectionOutline.ts` più i due test
+  puri. Toccati: `src/main.ts`, `src/ui/GameHud.ts`, `src/ui/GameHudModel.ts`,
+  `src/ui/ControlsHint.ts`, `src/ui/hud.css`.
+
+## In corso — La quota di Levels si arma, non insegue
+
+Aprendo Levels bastava **muovere il mouse** perché la città si aprisse e si
+richiudesse da sola: la quota della fetta veniva riscritta a ogni frame dal suolo
+sotto il cursore. Poi, appena il puntatore usciva dall'isola, si inchiodava e non
+rispondeva più — da fuori sembrava un comando rotto.
+
+- **Il valore iniziale è un'*armatura*, non un inseguimento.** Partire dal suolo
+  che si sta guardando resta giusto — una quota assoluta cadrebbe dentro la
+  collina, perché la città sta a quaranta voxel sul mare — ma è una cosa che si fa
+  **una volta**, all'apertura. `InspectView.apply` chiude ora `sliceChosen` nello
+  stesso passo in cui scrive la quota.
+- Le due metà del difetto avevano la stessa causa. Il tremolio si vedeva subito;
+  il blocco no, ed era il più insidioso: fuori dall'isola `pointedCellAt` non
+  risponde e `focusColumn` ripiega sul centro dell'inquadratura, che non cambia
+  mai. Muovere la quota torna a essere un **gesto** — la barra e `[`/`]` — e i
+  gesti sono le uniche cose che la muovono.
+- `InspectView.test.ts`: la vista non importa Three né tocca il DOM, quindi si
+  verifica in node come `inspect.ts`. Sette casi, fra cui i due che riproducono
+  esattamente il difetto.
+
+## In corso — Girare attorno alla città, non solo attorno a un isolato
+
+L'orbita c'era già, ma la accendeva **uno strumento**: per guardare la propria
+città da un altro angolo bisognava aprire Block focus e isolarne un pezzo, cioè
+tagliare via tutto il resto. La vista generale aveva un'inclinazione sola e
+quattro yaw, e nessun modo di chiedere «da qui».
+
+- **Il drag centrale orbita, ovunque.** Yaw continuo e inclinazione fra 12° e
+  82°, gli stessi limiti dello studio e per le stesse ragioni geometriche. Il
+  perno è il centro dell'inquadratura, quindi girare non sposta: la cosa che si
+  stava guardando resta dov'era. Il tasto è il centrale perché è l'unico dei tre
+  che non serviva già a qualcos'altro — il sinistro piazza e sceglie un isolato,
+  il destro è l'unico pan col mouse quando si ha uno strumento in mano.
+- **L'angolo resta dove lo si lascia**, altrimenti sarebbe una sbirciata e non
+  un punto di vista: pan, zoom e `Q`/`E` lo conservano, e ci si costruisce da lì.
+- **`Q`/`E` riagganciano la griglia invece di contare gli scatti.** Lo scatto di
+  partenza si ricava ora dallo yaw **vero**: con il contatore di prima, da 145°
+  premere `E` puntava 135° e la città partiva all'indietro. Ricavandolo, il
+  bersaglio è sempre entro tre quarti d'angolo retto e la via breve è garantita
+  per costruzione — la normalizzazione a ±180° è sparita con lui, e `yawStep` con
+  entrambi: era stato ridondante dal momento in cui lo yaw poteva essere libero.
+- **`F` è la via di ritorno**: inquadra tutto **e** rimette l'assetto isometrico.
+  Sono la stessa domanda, e senza un gesto che la faccia la griglia si sarebbe
+  ritrovata solo ricaricando la pagina.
+- **`CameraInput.ts`, la mappa dei gesti.** `IsoCameraController` era a 682 righe
+  contro le ~600 del budget, ed è dove tre sessioni in parallelo si sono
+  incontrate: la cucitura è passata fra *quale gesto chiede cosa* e *come la
+  camera si muove*, che cambiano con frequenze molto diverse. Il controller
+  scende a 568 righe e i gesti si provano senza costruire una camera.
+- Il tasto centrale apre l'**autoscroll di Chrome**, e lo apre da `mousedown`: il
+  `preventDefault` sul pointer non basta, e senza la guardia esplicita chi orbita
+  si ritrova la rosetta di scorrimento in mezzo allo schermo.
+
 ## In corso — La città sospesa si collega, e ci si arriva (fase 4.9)
 
 La 4.9 era passata a metà: nascevano le mensole e sopra ci si costruiva, ma i
@@ -51,6 +1199,15 @@ Si abitava sopra la città senza poterci arrivare.
   azione in `game/actions.ts`, bottone nella toolbar accanto all'espansione — sono
   la stessa domanda posta nei due versi — e tre motivi di rifiuto distinti, perché
   chiedono tre gesti diversi.
+- **Il mirino stava mezzo schermo sotto il mouse.** `pickSolidCell` si fermava già
+  sulla torre giusta ma restituiva la sola quota del **terreno**, e il segnaposto
+  si disegnava lì: in isometrica la z è tutta verticale sullo schermo, quindi sotto
+  una torre alta il mirino finiva centinaia di pixel più in basso, in mezzo agli
+  edifici davanti, e sembrava puntare un altro isolato. Posare una mensola era un
+  gioco di tentativi. La cella porta ora anche `hitZ`, la quota a cui il raggio ha
+  davvero incontrato il solido — tetto o facciata — ed è quella che lo strumento
+  mensola usa per il mirino. La colonna resta quella del suolo: sono due domande
+  diverse e restano due campi.
 - **Una premessa era falsa.** `AERIAL.route.minSeparation` valeva 14 perché «sotto
   quella distanza ci pensa già la 4.5». Misurato: **nessuna delle 20 campate di
   una città cresciuta tocca una mensola**, perché `planSpan` cerca due corpi

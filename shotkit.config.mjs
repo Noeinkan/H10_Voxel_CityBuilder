@@ -143,6 +143,35 @@ async function mesherIdle(page, timeout = 120000) {
   await page.waitForTimeout(1500);
 }
 
+/**
+ * Clicca finche' sotto il cursore non c'e' una **struttura**.
+ *
+ * Il click a mani vuote apre sempre la scheda — anche sul prato, dove pero'
+ * mancano proprio le righe che valgono lo scatto. La spirale cerca quindi la
+ * linguetta Structure, non il pannello.
+ */
+async function selectBuilding(page, cx, cy) {
+  for (let r = 0; r <= 260; r += 26) {
+    for (let a = 0; a < 360; a += 30) {
+      const x = Math.round(cx + r * Math.cos((a * Math.PI) / 180));
+      const y = Math.round(cy + r * Math.sin((a * Math.PI) / 180) * 0.6);
+      if (x < 60 || x > 1080 || y < 130 || y > 790) continue;
+      await page.mouse.click(x, y);
+      await page.waitForTimeout(180);
+      const picked = await page.evaluate(() => {
+        const panel = document.querySelector('.selection-panel');
+        if (panel === null || panel.hidden) return null;
+        const tab = [...panel.querySelectorAll('.selection-tab')]
+          .find((button) => button.textContent === 'Structure' && !button.hidden);
+        return tab === undefined ? null : panel.querySelector('.selection-title')?.textContent;
+      });
+      if (picked !== null) return { x, y, title: picked };
+      if (r === 0) break;
+    }
+  }
+  return null;
+}
+
 /** Isola generata, catalizzatori piazzati, crescita avviata. */
 async function seedCity(page, { growMs = 45000, extras = true, answer = true } = {}) {
   await terrainReady(page);
@@ -295,6 +324,38 @@ export default {
         await mesherIdle(page);
         await openDebugPanels(page);
         await page.mouse.move(1418, 460);
+      },
+    },
+    {
+      name: '09-selection-card',
+      path: '/',
+      timeoutMs: 300000,
+      shows:
+        'la scheda di selezione aperta su un edificio: tipologia, uso e livello, quattro linguette per struttura, isolato, colonna e voxel, e il contorno azzurro sull impronta nel mondo',
+      alt: 'Voxel city with a side card describing the clicked building — its typology, use and level — and a blue outline around its footprint',
+      async prepare(page) {
+        await seedCity(page, { growMs: 60000 });
+        // In pausa prima di scegliere: a 4x la citta' continua a crescere
+        // mentre la spirale cerca, e una carta evento arriverebbe a coprire
+        // proprio l'edificio selezionato.
+        await page.getByRole('button', { name: /Pause simulation/i }).click();
+        await answerDecision(page);
+        await page.waitForTimeout(400);
+        const picked = await selectBuilding(page, ISLAND.x, ISLAND.y);
+        if (picked === null) throw new Error('nessuna struttura sotto la spirale di click');
+        // Lo zoom **non** tocca la selezione: la camera si avvicina al punto
+        // cliccato e il contorno resta sulla stessa impronta. A pieno campo un
+        // edificio e' sei colonne su un'isola da mille, e la fascia che lo
+        // circonda sarebbe qualche pixel. La rotella va mandata **sulla canvas**:
+        // sopra il pannello la prende lui e la camera non si muove.
+        await page.mouse.move(picked.x, picked.y);
+        for (let i = 0; i < 7; i++) {
+          await page.mouse.wheel(0, -500);
+          await page.waitForTimeout(150);
+        }
+        await page.waitForTimeout(1500);
+        // Niente `Escape`: adesso chiuderebbe proprio la scheda da fotografare.
+        await parkPointer(page, { escape: false });
       },
     },
     {

@@ -1,16 +1,47 @@
+/*
+ * I valori qui sotto sono il **tema chiaro di partenza**, non la verita':
+ * `hudTokens.ts` li riscrive tutti su `documentElement` a ogni cambio di tema, e
+ * l'HUD segue il mondo invece di restare crema sotto un cielo al neon. Restano
+ * scritti perche' il primo frame arriva prima di quel calcolo, e perche' un
+ * foglio di stile che non si spiega da solo obbliga a leggere il TypeScript.
+ */
 :root {
   --hud-cream: #fffaf0;
   --hud-cream-deep: #f2ead8;
   --hud-ink: #263833;
-  --hud-muted: #6c7f77;
+  --hud-muted: #5d726a;
   --hud-sage: #5f8f7f;
   --hud-sage-dark: #3f6e61;
+  --hud-on-accent: #fffaf0;
+  /* Per le superfici che si portano dietro il **proprio** fondo scuro — la bolla
+     del tooltip, i toast pieni — e che quindi non seguono il tema: il testo che
+     ci va sopra e' sempre chiaro, e non ha niente da derivare. */
+  --hud-on-dark: #fffaf0;
+  --hud-on-gold: #493a1d;
+  --hud-accent: #3f6e61;
+  --hud-accent-shape: #5f8f7f;
+  --hud-accent-soft: rgba(95, 143, 127, .22);
   --hud-coral: #e99a72;
   --hud-gold: #d9b45f;
   --hud-danger: #bd5f5b;
   --hud-positive: #3f8064;
-  --hud-shadow: 0 14px 38px rgba(42, 54, 48, .2);
+  --hud-gesture: #a5643f;
   --hud-border: 1px solid rgba(63, 87, 77, .18);
+  --hud-line: rgba(63, 87, 77, .18);
+  --hud-line-soft: rgba(63, 87, 77, .12);
+  --hud-well: rgba(38, 56, 51, .07);
+  --hud-raised: rgba(255, 255, 255, .7);
+  --hud-key: #ffffff;
+  --hud-edge: rgba(255, 255, 255, .62);
+  /*
+   * Tre livelli, e ognuno e' due ombre: una corta di contatto, che dice
+   * *appoggiato*, e una lunga d'ambiente, che dice *quanto in alto*. Con una
+   * sfocatura sola — com'era `--hud-shadow` — i livelli si distinguono solo
+   * misurandoli, e ogni pannello galleggiava alla stessa quota.
+   */
+  --hud-elev-1: 0 1px 2px rgba(42, 54, 48, .2), 0 8px 20px rgba(42, 54, 48, .14);
+  --hud-elev-2: 0 2px 5px rgba(42, 54, 48, .22), 0 16px 34px rgba(42, 54, 48, .2);
+  --hud-elev-3: 0 3px 8px rgba(42, 54, 48, .26), 0 28px 60px rgba(42, 54, 48, .28);
   --hud-radius: 16px;
   --hud-font: ui-rounded, "Segoe UI", system-ui, sans-serif;
   --hud-mono: ui-monospace, SFMono-Regular, Consolas, monospace;
@@ -19,11 +50,40 @@
 
 .hud-surface {
   color: var(--hud-ink);
-  background: rgba(255, 250, 240, .94);
+  /* Un gradiente verticale e un filo di luce in alto: e' la differenza fra un
+     oggetto appoggiato e un rettangolo trasparente. */
+  background: linear-gradient(180deg, var(--hud-cream), var(--hud-cream-deep));
   border: var(--hud-border);
-  box-shadow: var(--hud-shadow);
+  box-shadow: var(--hud-elev-1), inset 0 1px 0 var(--hud-edge);
   backdrop-filter: blur(14px) saturate(1.1);
   font-family: var(--hud-font);
+}
+
+/* I drawer stanno sopra il gioco, la modale sopra i drawer: tre quote, tre ombre. */
+.hud-surface--panel { box-shadow: var(--hud-elev-2), inset 0 1px 0 var(--hud-edge); }
+.hud-surface--modal { box-shadow: var(--hud-elev-3), inset 0 1px 0 var(--hud-edge); }
+
+/*
+ * La cornice dei due oggetti di chrome — barra risorse e dock.
+ *
+ * **Non e' un `border-image` 9-slice, e la ragione e' la derivazione dei temi.**
+ * Un `data:` URI non puo' leggere le custom property, quindi una cornice SVG
+ * resta ferma sul tema in cui e' stata disegnata; per non stonare dovrebbe
+ * essere trasparente, ma `border-image` ignora `border-radius`, e sotto una
+ * cornice trasparente si vedrebbero gli angoli **quadrati** del gradiente.
+ * L'unica uscita sarebbe una cornice piena, cioe' di nuovo un colore fisso.
+ *
+ * Tre anelli concentrici in `box-shadow` fanno lo stesso lavoro — filo di luce
+ * interno, stacco esterno, nessun angolo deformato quando il pannello scala — e
+ * per di piu' seguono il raggio e i token. Il costo e' lo stesso: nessun asset
+ * binario nel bundle, e nessuna geometria in piu'.
+ */
+.hud-surface--framed {
+  box-shadow:
+    inset 0 0 0 1px var(--hud-edge),
+    inset 0 0 0 2px var(--hud-line-soft),
+    0 0 0 1px var(--hud-line),
+    var(--hud-elev-1);
 }
 
 .hud-icon {
@@ -39,46 +99,203 @@
 
 .game-hud { position: fixed; inset: 0; z-index: 20; pointer-events: none; color: var(--hud-ink); font-family: var(--hud-font); }
 .resource-bar { position: absolute; top: 14px; left: 50%; transform: translateX(-50%); display: flex; align-items: stretch; gap: 5px; width: min(850px, calc(100vw - 28px)); padding: 6px; border-radius: var(--hud-radius); }
-.resource-item { display: grid; grid-template-columns: 22px auto; grid-template-rows: auto auto; align-items: center; min-width: 0; flex: 1 1 112px; padding: 5px 8px; border-radius: 11px; background: rgba(95, 143, 127, .08); }
-.resource-item .hud-icon { grid-row: 1 / 3; color: var(--hud-sage-dark); margin-right: 6px; }
-.resource-label { color: var(--hud-muted); font-size: 9px; font-weight: 800; letter-spacing: .09em; text-transform: uppercase; }
-.resource-value { font-size: 14px; font-weight: 800; line-height: 1.15; white-space: nowrap; }
-.resource-delta { margin-left: 4px; font-size: 9px; font-weight: 700; }
+.resource-item { display: grid; grid-template-columns: 26px auto 1fr; grid-template-rows: auto auto; align-items: center; min-width: 0; flex: 1 1 132px; padding: 5px 8px; border-radius: 11px; background: var(--hud-well); }
+.resource-item .hud-icon { color: var(--hud-sage-dark); }
+
+/*
+ * L'anello attorno all'icona: il tetto **e'** il contorno.
+ *
+ * Dove un massimo esiste — il cibo contro la soglia della carestia, la
+ * soddisfazione che e' gia' una quota — un numero nudo obbliga a ricordarsi
+ * quale sia il pieno. Denaro e materiali non ne hanno uno, e li' l'anello resta
+ * spento invece di inventarne uno.
+ */
+.resource-badge { position: relative; grid-row: 1 / 3; display: grid; place-items: center; width: 22px; height: 22px; margin-right: 6px; }
+.resource-badge > .hud-icon { grid-area: 1 / 1; width: 13px; height: 13px; }
+.resource-ring { grid-area: 1 / 1; width: 22px; height: 22px; transform: rotate(-90deg); }
+.resource-item[data-capped="false"] .resource-ring { visibility: hidden; }
+.resource-ring-track { fill: none; stroke: var(--hud-line-soft); stroke-width: 2; }
+.resource-ring-fill { fill: none; stroke: var(--hud-accent-shape); stroke-width: 2; stroke-linecap: round; transition: stroke-dashoffset 220ms ease; }
+.resource-ring-fill[data-low="true"] { stroke: var(--hud-danger); }
+
+.resource-label { grid-column: 2 / 4; color: var(--hud-muted); font-size: 9px; font-weight: 800; letter-spacing: .09em; text-transform: uppercase; }
+/* Cifre tabulari: senza, ogni scatto del contatore sposta le colonne accanto, e
+   una barra che balla si smette di guardare. */
+.resource-value { display: flex; align-items: baseline; gap: 2px; font-size: 14px; font-weight: 800; line-height: 1.15; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.resource-delta { font-size: 9px; font-weight: 700; font-variant-numeric: tabular-nums; }
 .resource-delta[data-tone="positive"] { color: var(--hud-positive); }
 .resource-delta[data-tone="negative"] { color: var(--hud-danger); }
 .resource-delta[data-tone="neutral"] { color: var(--hud-muted); }
-.time-controls { display: flex; align-items: center; gap: 3px; padding-left: 5px; border-left: 1px solid rgba(63, 87, 77, .13); pointer-events: auto; }
+/* La freccia dice il verso con la **sagoma**, non con il colore: resta leggibile
+   a chi non distingue rosso e verde, e l'opacita' porta la magnitudine. */
+.resource-arrow { font-size: 8px; line-height: 1; }
+.resource-arrow[data-trend="up"] { color: var(--hud-positive); }
+.resource-arrow[data-trend="down"] { color: var(--hud-danger); }
+/* La firma dell'ultimo tratto, non un grafico: nessun asse, nessuna griglia,
+   nessuna etichetta. Serve a vedere *la forma* di dove si sta andando. */
+.resource-spark { grid-row: 1 / 3; grid-column: 3; justify-self: end; width: 44px; height: 14px; margin-left: 6px; opacity: .55; }
+.resource-spark[hidden] { display: none; }
+.resource-spark polyline { fill: none; stroke: var(--hud-accent-shape); stroke-width: 1.4; stroke-linejoin: round; stroke-linecap: round; vector-effect: non-scaling-stroke; }
+
+/*
+ * Il perche' del saldo, al passaggio del mouse o col fuoco da tastiera.
+ *
+ * «Perche' sto perdendo denaro» era una domanda senza risposta nell'HUD: il
+ * saldo dice di quanto, non di chi e' la colpa. Un popover e non una riga fissa
+ * perche' e' una domanda occasionale, e tenerla sempre aperta costerebbe alla
+ * barra tutto lo spazio che ha.
+ */
+/* `.game-hud` non prende il puntatore e ogni superficie interattiva se lo
+   riprende: la pastiglia non lo era — era solo una lettura — e da qui in poi lo
+   e', o il popover non si aprirebbe mai perche' il click passa alla canvas. */
+.resource-item { position: relative; pointer-events: auto; }
+.resource-item:focus-visible { outline: 3px solid var(--hud-accent-shape); outline-offset: 1px; }
+.resource-flows { position: absolute; left: 50%; top: calc(100% + 8px); z-index: 40; display: grid; gap: 2px; min-width: 168px; padding: 8px 10px; transform: translate(-50%, 4px); border-radius: 10px; color: var(--hud-ink); background: linear-gradient(180deg, var(--hud-cream), var(--hud-cream-deep)); border: var(--hud-border); box-shadow: var(--hud-elev-2); font: 500 10px/1.4 var(--hud-font); opacity: 0; visibility: hidden; transition: opacity 120ms ease, transform 120ms ease; pointer-events: none; }
+.resource-flows[data-empty="true"] { display: none; }
+.resource-item:hover .resource-flows,
+.resource-item:focus-visible .resource-flows { opacity: 1; visibility: visible; transform: translate(-50%, 0); }
+.resource-flow { display: flex; align-items: baseline; justify-content: space-between; gap: 14px; }
+.resource-flow > strong { font-variant-numeric: tabular-nums; }
+.resource-flow[data-direction="in"] > strong { color: var(--hud-positive); }
+.resource-flow[data-direction="out"] > strong { color: var(--hud-danger); }
+
+/*
+ * La citta' in crisi si vede dalla barra, non solo dal toast.
+ *
+ * Il toast si legge una volta e poi diventa arredamento; la barra e' dove si
+ * guarda mentre si costruisce. Colore **e** pulsazione, perche' il colore da
+ * solo non si nota in periferia dello sguardo — ed e' la pulsazione la prima
+ * cosa che `prefers-reduced-motion` spegne.
+ */
+.resource-bar[data-condition="crisis"] { border-color: var(--hud-danger); }
+.resource-bar[data-condition="crisis"] .resource-ring-fill[data-low="true"] { animation: hud-pulse 1.6s ease-in-out infinite; }
+@keyframes hud-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .35; } }
+.time-controls { display: flex; align-items: center; gap: 3px; padding-left: 5px; border-left: 1px solid var(--hud-line-soft); pointer-events: auto; }
 /* Il ciclo del giorno e' tempo ma non e' velocita': un filo di stacco lo dice. */
 .daylight-toggle { margin-left: 5px; }
 
 .build-dock { position: absolute; left: 50%; bottom: 14px; transform: translateX(-50%); display: flex; align-items: flex-end; gap: 6px; max-width: calc(100vw - 28px); padding: 7px; border-radius: 18px; }
-.dock-divider { width: 1px; align-self: stretch; margin: 3px 1px; background: rgba(63, 87, 77, .16); }
+.dock-divider { width: 1px; align-self: stretch; margin: 3px 1px; background: var(--hud-line); }
 
-/* La toolbar e' divisa per funzione: crescita, connessioni, identita'. */
-.dock-group { display: grid; gap: 3px; }
-.dock-group-title { padding-left: 3px; color: var(--hud-muted); font-size: 8px; font-weight: 900; letter-spacing: .1em; text-transform: uppercase; }
-.dock-group-row { display: flex; align-items: center; gap: 4px; }
-/* Bloccato ma visibile: il bottone resta al suo posto e resta leggibile. */
-.hud-button[data-locked="true"]:disabled { opacity: .68; border-style: dashed; }
-.hud-button { position: relative; display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 38px; padding: 7px 10px; border: 1px solid rgba(63, 87, 77, .2); border-radius: 11px; background: rgba(255,255,255,.7); color: var(--hud-ink); font: 700 11px/1.15 var(--hud-font); cursor: pointer; pointer-events: auto; transition: transform 120ms ease, background 120ms ease, border-color 120ms ease, box-shadow 120ms ease; }
-.hud-button:hover:not(:disabled) { transform: translateY(-2px); border-color: rgba(63, 110, 97, .48); box-shadow: 0 6px 14px rgba(63, 87, 77, .14); }
-.hud-button:focus-visible { outline: 3px solid rgba(233, 154, 114, .48); outline-offset: 2px; }
-.hud-button[aria-pressed="true"], .hud-button[data-active="true"] { color: #fffaf0; background: var(--hud-sage-dark); border-color: var(--hud-sage-dark); }
-.hud-button:disabled { color: #98a39f; background: rgba(235, 232, 220, .68); border-color: rgba(63, 87, 77, .1); cursor: not-allowed; }
-.hud-button--accent:not(:disabled) { color: #493a1d; background: #f4daa0; border-color: rgba(167, 126, 43, .35); }
+/*
+ * La toolbar e' divisa per funzione: crescita, connessioni, identita', portata.
+ *
+ * Le corsie sono **guide etichettate continue** e non piu' otto bottoni separati
+ * da un filo: l'etichetta sta sopra una riga che corre per tutta la fila, cosi'
+ * si contano quattro gruppi prima ancora di leggerne i nomi.
+ */
+.dock-group { display: grid; gap: 4px; padding: 0 5px; }
+.dock-group + .dock-group { border-left: 1px solid var(--hud-line-soft); }
+.dock-group-title { padding-bottom: 3px; border-bottom: 1px solid var(--hud-line); color: var(--hud-muted); font-size: 8px; font-weight: 900; letter-spacing: .1em; text-transform: uppercase; }
+.dock-group-row { display: flex; align-items: stretch; gap: 4px; }
+
+/*
+ * Bloccato **non** e' disabilitato, ed e' la distinzione che 7.4 chiede.
+ *
+ * Sbiadire dice "rotto"; riempirsi dice "manca poco". Il riempimento e' il
+ * rapporto fra cio' che si ha e cio' che serve, scritto da `paintAction` in
+ * `--hud-progress`: il bottone avanza da solo mentre i fondi salgono, e il
+ * giocatore vede la progressione invece di subirla.
+ *
+ * **Il selettore chiede il requisito, non solo il blocco.** Un catalizzatore
+ * fermo per l'ordine del tutorial e' `locked` — resta visibile e al suo posto —
+ * ma non sta aspettando denaro: riempirlo allo 0% direbbe «manca tutto» quando
+ * la verita' e' «prima fai un'altra cosa». Quelli restano allo sbiadito di
+ * `:disabled`, che li' e' il messaggio giusto.
+ */
+.hud-button[data-locked="true"][data-requirement-short]:disabled {
+  opacity: 1;
+  color: var(--hud-muted);
+  background:
+    linear-gradient(90deg, var(--hud-accent-soft) calc(var(--hud-progress, 0) * 100%), transparent 0)
+    border-box,
+    var(--hud-well) border-box;
+  border-color: var(--hud-line);
+  border-style: solid;
+}
+/* La cifra di cio' che manca, sotto la tessera bloccata: il riempimento dice
+   "quanto", questa dice "quanto di cosa". */
+.hud-tile[data-locked="true"][data-requirement-short]:disabled .button-cost { display: none; }
+.hud-tile[data-locked="true"][data-requirement-short]:disabled::before {
+  content: attr(data-requirement-short);
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 2px;
+  color: var(--hud-muted);
+  font: 800 8px/1 var(--hud-mono);
+  text-align: center;
+}
+.hud-button { position: relative; display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 38px; padding: 7px 10px; border: 1px solid var(--hud-line); border-radius: 11px; background: var(--hud-raised); color: var(--hud-ink); font: 700 11px/1.15 var(--hud-font); cursor: pointer; pointer-events: auto; transition: transform 120ms ease, background 120ms ease, border-color 120ms ease, box-shadow 120ms ease; }
+.hud-button:hover:not(:disabled) { transform: translateY(-2px); border-color: var(--hud-accent-shape); box-shadow: var(--hud-elev-1); }
+.hud-button:focus-visible { outline: 3px solid var(--hud-accent-shape); outline-offset: 2px; }
+.hud-button[aria-pressed="true"], .hud-button[data-active="true"] { color: var(--hud-on-accent); background: var(--hud-sage-dark); border-color: var(--hud-sage-dark); }
+.hud-button:disabled { color: var(--hud-muted); background: var(--hud-well); border-color: var(--hud-line-soft); cursor: not-allowed; opacity: .62; }
+.hud-button--accent:not(:disabled) { color: var(--hud-on-gold); background: var(--hud-gold); border-color: var(--hud-gold); }
 .hud-button--icon { width: 38px; padding: 7px; }
 .hud-button--small { min-height: 30px; padding: 5px 7px; font-size: 10px; }
-.hud-button[data-tooltip]::after { content: attr(data-tooltip); position: absolute; left: 50%; bottom: calc(100% + 9px); z-index: 50; width: max-content; max-width: 230px; transform: translate(-50%, 4px); padding: 6px 8px; border-radius: 8px; color: #fffaf0; background: rgba(38, 56, 51, .96); font: 500 10px/1.35 var(--hud-font); text-align: center; opacity: 0; visibility: hidden; transition: opacity 120ms ease, transform 120ms ease; pointer-events: none; }
+
+/*
+ * La tessera: icona sopra, etichetta sotto, misura uguale per tutte.
+ *
+ * Prima ogni bottone era largo quanto la sua parola, e il dock si leggeva come
+ * un elenco di lunghezze diverse. Una griglia di tessere uguali si conta a
+ * colpo d'occhio — ed e' la condizione perche' un badge numerico voglia dire
+ * qualcosa, perche' un numero su una fila irregolare non si associa a niente.
+ */
+.hud-tile {
+  flex-direction: column;
+  gap: 3px;
+  width: 62px;
+  min-height: 62px;
+  padding: 7px 4px 12px;
+}
+.hud-tile .hud-icon { width: 22px; height: 22px; }
+.hud-tile .button-copy { align-items: center; gap: 0; max-width: 100%; }
+.hud-tile .button-copy > span:first-child { overflow: hidden; max-width: 54px; font-size: 9px; text-overflow: ellipsis; }
+/* Il costo porta l'icona della risorsa, non la parola "funds": si legge come si
+   legge la barra in alto, e le due superfici parlano la stessa lingua. */
+.hud-tile .button-cost { display: inline-flex; align-items: center; gap: 2px; font-size: 9px; font-variant-numeric: tabular-nums; }
+.hud-tile .button-cost .hud-icon { width: 9px; height: 9px; stroke-width: 2.4; }
+/* Il tasto che la sceglie, nell'angolo: e' un promemoria, non un'etichetta. */
+.hud-tile-key {
+  position: absolute;
+  top: 3px;
+  right: 4px;
+  color: var(--hud-muted);
+  font: 800 8px/1 var(--hud-mono);
+  opacity: .75;
+}
+
+/*
+ * Lo strumento in mano, e non solo un colore invertito.
+ *
+ * Cornice, sollevamento e alone: chi ha una tessera premuta deve poterlo vedere
+ * dalla coda dell'occhio mentre guarda la citta', che e' dove sta guardando
+ * davvero quando sta per cliccare.
+ */
+.hud-button[aria-pressed="true"].hud-tile {
+  transform: translateY(-3px);
+  box-shadow: 0 0 0 2px var(--hud-accent-shape), var(--hud-elev-2);
+}
+.hud-tile[aria-pressed="true"] .hud-tile-key { color: var(--hud-on-accent); opacity: 1; }
+.hud-button[data-tooltip]::after { content: attr(data-tooltip); position: absolute; left: 50%; bottom: calc(100% + 9px); z-index: 50; width: max-content; max-width: 230px; transform: translate(-50%, 4px); padding: 6px 8px; border-radius: 8px; color: var(--hud-on-dark); background: rgba(38, 56, 51, .96); font: 500 10px/1.35 var(--hud-font); text-align: center; opacity: 0; visibility: hidden; transition: opacity 120ms ease, transform 120ms ease; pointer-events: none; }
 .hud-button[data-tooltip]:hover::after, .hud-button[data-tooltip]:focus-visible::after { opacity: 1; visibility: visible; transform: translate(-50%, 0); }
 .button-copy { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; white-space: nowrap; }
 .button-cost { color: var(--hud-muted); font-size: 9px; font-weight: 700; }
-.hud-button[aria-pressed="true"] .button-cost { color: rgba(255,250,240,.76); }
+/* Su una pastiglia piena il costo non puo' restare `--hud-muted`: quel token e'
+   derivato contro il **pannello**, e su un pieno d'oro o d'accento sparisce. Si
+   scrive quindi con l'inchiostro di quel fondo, appena smorzato per restare
+   secondario rispetto all'etichetta. */
+.hud-button[aria-pressed="true"] .button-cost { color: var(--hud-on-accent); opacity: .82; }
+.hud-button--accent:not(:disabled) .button-cost { color: var(--hud-on-gold); opacity: .82; }
+.hud-button--accent:not(:disabled) .button-cost .hud-icon { color: var(--hud-on-gold); }
 
-.hud-toast { position: absolute; left: 50%; bottom: var(--game-hud-bottom); transform: translateX(-50%); max-width: min(620px, calc(100vw - 28px)); padding: 8px 13px; border-radius: 12px; color: var(--hud-ink); background: rgba(255,250,240,.94); border: var(--hud-border); box-shadow: 0 8px 24px rgba(42,54,48,.16); font: 700 11px/1.35 var(--hud-font); text-align: center; pointer-events: none; }
+.hud-toast { position: absolute; left: 50%; bottom: var(--game-hud-bottom); transform: translateX(-50%); max-width: min(620px, calc(100vw - 28px)); padding: 8px 13px; border-radius: 12px; color: var(--hud-ink); background: var(--hud-cream); border: var(--hud-border); box-shadow: 0 8px 24px var(--hud-line); font: 700 11px/1.35 var(--hud-font); text-align: center; pointer-events: none; }
 .hud-toast[data-tone="error"] { color: #7f3835; background: rgba(255, 238, 230, .97); border-color: rgba(189,95,91,.3); }
-.hud-toast[data-tone="selection"] { color: #fffaf0; background: rgba(63,110,97,.94); }
+.hud-toast[data-tone="selection"] { color: var(--hud-on-dark); background: rgba(63,110,97,.94); }
 .hud-toast[data-tone="warning"] { color: #7f3835; background: rgba(255,238,230,.97); border-color: rgba(189,95,91,.3); }
-.hud-toast[data-tone="success"] { color: #fffaf0; background: rgba(63,128,100,.96); }
+.hud-toast[data-tone="success"] { color: var(--hud-on-dark); background: rgba(63,128,100,.96); }
 
 .cursor-card { position: fixed; z-index: 60; display: grid; gap: 2px; max-width: 250px; padding: 8px 10px; border-radius: 10px; font: 10px/1.35 var(--hud-font); pointer-events: none; }
 .cursor-card[hidden] { display: none; }
@@ -96,7 +313,7 @@
 .commerce-note { margin: 5px 0 0; color: var(--hud-muted); font-size: 10px; line-height: 1.35; }
 
 .trade-list { display: grid; gap: 7px; }
-.trade-card, .decision-option, .view-option { display: grid; gap: 3px; width: 100%; padding: 9px 11px; text-align: left; color: inherit; background: rgba(255,255,255,.52); border: 1px solid rgba(62,76,69,.14); border-radius: 10px; cursor: pointer; }
+.trade-card, .decision-option, .view-option { display: grid; gap: 3px; width: 100%; padding: 9px 11px; text-align: left; color: inherit; background: var(--hud-raised); border: 1px solid var(--hud-line-soft); border-radius: 10px; cursor: pointer; }
 .trade-card > span, .decision-option > span, .view-option > span { color: var(--hud-muted); font-size: 10px; line-height: 1.35; }
 .trade-card[aria-pressed="true"] { border-color: var(--hud-positive); background: rgba(101,224,138,.12); }
 .trade-card:disabled { opacity: .5; cursor: not-allowed; }
@@ -114,10 +331,10 @@
 .drawer-title { margin: 0; font-size: 16px; }
 .drawer-subtitle { margin: 2px 0 0; color: var(--hud-muted); font-size: 11px; }
 .policy-list { display: grid; gap: 7px; }
-.policy-card { display: grid; grid-template-columns: 1fr auto; gap: 4px 10px; width: 100%; padding: 9px 10px; border: 1px solid rgba(63,87,77,.16); border-radius: 11px; color: var(--hud-ink); background: rgba(255,255,255,.58); font-family: var(--hud-font); text-align: left; cursor: pointer; }
-.policy-card:hover:not(:disabled) { border-color: rgba(63,110,97,.45); background: rgba(255,255,255,.9); }
-.policy-card:focus-visible { outline: 3px solid rgba(233,154,114,.48); outline-offset: 1px; }
-.policy-card[aria-pressed="true"] { border-color: var(--hud-sage); background: rgba(95,143,127,.16); }
+.policy-card { display: grid; grid-template-columns: 1fr auto; gap: 4px 10px; width: 100%; padding: 9px 10px; border: 1px solid var(--hud-line); border-radius: 11px; color: var(--hud-ink); background: var(--hud-raised); font-family: var(--hud-font); text-align: left; cursor: pointer; }
+.policy-card:hover:not(:disabled) { border-color: var(--hud-accent-shape); background: var(--hud-raised); }
+.policy-card:focus-visible { outline: 3px solid var(--hud-accent-shape); outline-offset: 1px; }
+.policy-card[aria-pressed="true"] { border-color: var(--hud-sage); background: var(--hud-accent-soft); }
 .policy-card:disabled { opacity: .55; cursor: not-allowed; }
 .policy-name { font-size: 12px; font-weight: 800; }
 .policy-state { color: var(--hud-sage-dark); font-size: 9px; font-weight: 900; letter-spacing: .08em; }
@@ -127,24 +344,24 @@
 .theme-picker { width: min(330px, calc(100vw - 28px)); }
 .theme-picker .drawer-title { margin-bottom: 10px; }
 .theme-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
-.theme-option { display: flex; align-items: center; gap: 8px; min-width: 0; padding: 7px 8px; border: 1px solid rgba(63,87,77,.16); border-radius: 10px; color: var(--hud-ink); background: rgba(255,255,255,.58); font: 700 10px/1.2 var(--hud-font); text-align: left; cursor: pointer; }
-.theme-option:hover { border-color: rgba(63,110,97,.45); background: rgba(255,255,255,.9); }
-.theme-option:focus-visible { outline: 3px solid rgba(233,154,114,.48); outline-offset: 1px; }
-.theme-option[aria-pressed="true"] { color: #fffaf0; background: var(--hud-sage-dark); border-color: var(--hud-sage-dark); }
+.theme-option { display: flex; align-items: center; gap: 8px; min-width: 0; padding: 7px 8px; border: 1px solid var(--hud-line); border-radius: 10px; color: var(--hud-ink); background: var(--hud-raised); font: 700 10px/1.2 var(--hud-font); text-align: left; cursor: pointer; }
+.theme-option:hover { border-color: var(--hud-accent-shape); background: var(--hud-raised); }
+.theme-option:focus-visible { outline: 3px solid var(--hud-accent-shape); outline-offset: 1px; }
+.theme-option[aria-pressed="true"] { color: var(--hud-on-accent); background: var(--hud-sage-dark); border-color: var(--hud-sage-dark); }
 .theme-swatches { display: flex; width: 42px; height: 22px; flex: 0 0 auto; overflow: hidden; border: 1px solid rgba(38,56,51,.18); border-radius: 7px; box-shadow: inset 0 0 0 1px rgba(255,255,255,.18); }
 .theme-swatches > span { flex: 1; }
 
 .view-picker { width: min(330px, calc(100vw - 28px)); }
 .view-list { display: grid; gap: 6px; margin-top: 11px; }
 .view-option { font-family: var(--hud-font); }
-.view-option:hover { border-color: rgba(63,110,97,.45); background: rgba(255,255,255,.9); }
-.view-option:focus-visible { outline: 3px solid rgba(233,154,114,.48); outline-offset: 1px; }
+.view-option:hover { border-color: var(--hud-accent-shape); background: var(--hud-raised); }
+.view-option:focus-visible { outline: 3px solid var(--hud-accent-shape); outline-offset: 1px; }
 .view-option strong { font-size: 12px; font-weight: 800; }
-.view-option[aria-pressed="true"] { color: #fffaf0; background: var(--hud-sage-dark); border-color: var(--hud-sage-dark); }
-.view-option[aria-pressed="true"] > span { color: rgba(255,250,240,.78); }
+.view-option[aria-pressed="true"] { color: var(--hud-on-accent); background: var(--hud-sage-dark); border-color: var(--hud-sage-dark); }
+.view-option[aria-pressed="true"] > span { color: var(--hud-on-accent); }
 /* Il gesto e' istruzione, non descrizione: peso diverso e accento caldo, lo
    stesso delle guide che compaiono nel mondo quando la vista si accende. */
-.view-option .view-gesture { color: #a5643f; font-weight: 700; }
+.view-option .view-gesture { color: var(--hud-gesture); font-weight: 700; }
 .view-option[aria-pressed="true"] .view-gesture { color: #ffcda8; }
 
 /* Angolo in alto a sinistra: le risorse sono centrate e non ci arrivano, i
@@ -156,18 +373,18 @@
 .view-bar-label { font-size: 15px; font-weight: 800; }
 /* Stesso accento caldo del gesto nel picker e delle guide nel mondo: le tre
    superfici che dicono "punta qui" si riconoscono dal colore. */
-.view-bar-gesture { margin: 3px 0 0; color: #a5643f; font: 700 10px/1.35 var(--hud-font); }
-.view-bar-keys { display: grid; gap: 3px; margin-top: 8px; padding-top: 8px; border-top: 1px solid rgba(63,87,77,.16); }
+.view-bar-gesture { margin: 3px 0 0; color: var(--hud-gesture); font: 700 10px/1.35 var(--hud-font); }
+.view-bar-keys { display: grid; gap: 3px; margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--hud-line); }
 .view-bar-key { display: flex; align-items: center; gap: 6px; color: var(--hud-muted); font-size: 10px; line-height: 1.35; }
 .view-bar-caps { display: flex; flex: 0 0 46px; gap: 3px; }
-.view-bar kbd { min-width: 16px; padding: 2px 4px; border: 1px solid rgba(63,87,77,.24); border-bottom-width: 2px; border-radius: 5px; color: var(--hud-ink); background: #fff; font: 700 9px/1.35 var(--hud-mono); text-align: center; }
+.view-bar kbd { min-width: 16px; padding: 2px 4px; border: 1px solid var(--hud-line); border-bottom-width: 2px; border-radius: 5px; color: var(--hud-ink); background: var(--hud-key); font: 700 9px/1.35 var(--hud-mono); text-align: center; }
 .view-bar-actions { display: flex; gap: 5px; margin-top: 9px; }
-.view-bar-button { flex: 1; padding: 6px 7px; border: 1px solid rgba(63,87,77,.2); border-radius: 9px; color: var(--hud-ink); background: rgba(255,255,255,.7); font: 800 10px/1.2 var(--hud-font); cursor: pointer; }
+.view-bar-button { flex: 1; padding: 6px 7px; border: 1px solid var(--hud-line); border-radius: 9px; color: var(--hud-ink); background: var(--hud-raised); font: 800 10px/1.2 var(--hud-font); cursor: pointer; }
 .view-bar-button:hover { border-color: rgba(63,110,97,.48); background: rgba(255,255,255,.95); }
-.view-bar-button:focus-visible { outline: 3px solid rgba(233,154,114,.48); outline-offset: 1px; }
+.view-bar-button:focus-visible { outline: 3px solid var(--hud-accent-shape); outline-offset: 1px; }
 /* L'uscita e' l'azione che il giocatore cerca per prima quando non capisce cosa
    sta guardando: e' piena, non un secondo bottone di pari peso. */
-.view-bar-exit { color: #fffaf0; background: var(--hud-sage-dark); border-color: var(--hud-sage-dark); }
+.view-bar-exit { color: var(--hud-on-accent); background: var(--hud-sage-dark); border-color: var(--hud-sage-dark); }
 .view-bar-exit:hover { background: #35604f; border-color: #35604f; }
 
 /* Bordo sinistro e non sopra il dock: si trascina la quota mentre si guarda la
@@ -180,7 +397,7 @@
    stato rimosso dai motori, e una rotazione via transform lascerebbe l'area di
    click dove non si vede piu' il cursore. */
 .level-rail input[type="range"] { writing-mode: vertical-lr; direction: rtl; width: 22px; height: min(300px, 34vh); margin: 0; accent-color: var(--hud-sage-dark); cursor: pointer; }
-.level-rail input[type="range"]:focus-visible { outline: 3px solid rgba(233,154,114,.48); outline-offset: 3px; }
+.level-rail input[type="range"]:focus-visible { outline: 3px solid var(--hud-accent-shape); outline-offset: 3px; }
 .level-rail-keys { display: flex; gap: 3px; }
 
 .help-card { left: 50%; right: auto; width: min(470px, calc(100vw - 28px)); transform: translateX(-50%); }
@@ -190,12 +407,48 @@
 .help-keys { display: flex; align-items: center; gap: 3px; }
 /* Le viste sotto i comandi, separate da una riga: sono un secondo argomento e
    non un'ottava scorciatoia, e mescolarle alla griglia le faceva sparire. */
-.help-views { margin-top: 13px; padding-top: 11px; border-top: 1px solid rgba(63,87,77,.16); }
+.help-views { margin-top: 13px; padding-top: 11px; border-top: 1px solid var(--hud-line); }
 .help-section-title { margin: 0; font-size: 11px; font-weight: 900; letter-spacing: .07em; text-transform: uppercase; color: var(--hud-sage-dark); }
 .help-section-lead { margin: 3px 0 8px; color: var(--hud-muted); font-size: 11px; }
 .help-view-row { display: grid; grid-template-columns: 78px 1fr; gap: 4px 10px; margin-top: 5px; color: var(--hud-muted); font-size: 10px; line-height: 1.35; }
 .help-view-row strong { color: var(--hud-ink); font-size: 11px; font-weight: 800; }
-.help-card kbd, .level-rail kbd { min-width: 18px; padding: 2px 5px; border: 1px solid rgba(63,87,77,.24); border-bottom-width: 2px; border-radius: 5px; color: var(--hud-ink); background: #fff; font: 700 9px/1.35 var(--hud-mono); text-align: center; }
+.help-card kbd, .level-rail kbd { min-width: 18px; padding: 2px 5px; border: 1px solid var(--hud-line); border-bottom-width: 2px; border-radius: 5px; color: var(--hud-ink); background: var(--hud-key); font: 700 9px/1.35 var(--hud-mono); text-align: center; }
+
+/* La scheda di selezione: bordo destro, ancorata in ALTO.
+   I drawer (politiche, temi, viste, aiuto) partono da `--game-hud-bottom` e
+   salgono; questa scende dalla barra risorse e si ferma dove loro cominciano,
+   quindi le due superfici non si coprono mai senza doversi conoscere. Fuori da
+   `.game-hud` perche' non e' del dock: si apre cliccando il mondo. */
+.selection-panel { position: fixed; right: 14px; top: 86px; z-index: 30; display: grid; align-content: start; gap: 9px; width: min(300px, calc(100vw - 28px)); max-height: calc(100vh - 100px - var(--game-hud-bottom)); overflow-y: auto; box-sizing: border-box; padding: 13px; border-radius: var(--hud-radius); pointer-events: auto; }
+.selection-panel[hidden] { display: none; }
+.selection-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+.selection-heading { display: grid; gap: 2px; min-width: 0; }
+.selection-title { font-size: 15px; line-height: 1.2; }
+.selection-subtitle { color: var(--hud-muted); font-size: 10px; line-height: 1.35; }
+.selection-close { display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 26px; flex: 0 0 auto; padding: 0; color: var(--hud-muted); background: var(--hud-well); border: 1px solid var(--hud-line-soft); border-radius: 8px; cursor: pointer; }
+.selection-close:hover { color: var(--hud-ink); background: var(--hud-accent-soft); }
+.selection-close:focus-visible { outline: 3px solid var(--hud-accent-shape); outline-offset: 2px; }
+.selection-tabs { display: flex; flex-wrap: wrap; gap: 3px; }
+.selection-tab { padding: 4px 8px; color: var(--hud-muted); background: var(--hud-well); border: 1px solid transparent; border-radius: 8px; font: 800 9px/1.35 var(--hud-font); letter-spacing: .07em; text-transform: uppercase; cursor: pointer; }
+.selection-tab[hidden] { display: none; }
+.selection-tab:hover { color: var(--hud-ink); }
+.selection-tab:focus-visible { outline: 3px solid var(--hud-accent-shape); outline-offset: 1px; }
+/* Lo stato attivo e' pieno e non solo scritto in grassetto: e' anche cio' che
+   dice quale unita' il contorno azzurro sta evidenziando nel mondo. */
+.selection-tab[data-active="true"] { color: var(--hud-on-accent); background: var(--hud-sage-dark); border-color: var(--hud-sage-dark); }
+.selection-body[hidden] { display: none; }
+.selection-summary { margin: 0 0 7px; color: var(--hud-muted); font-size: 10px; line-height: 1.4; }
+.selection-rows { display: grid; grid-template-columns: 96px 1fr; gap: 3px 10px; margin: 0; font-size: 10px; line-height: 1.4; }
+.selection-rows dt { color: var(--hud-muted); font-weight: 800; }
+.selection-rows dd { margin: 0; color: var(--hud-ink); overflow-wrap: anywhere; }
+/* Contornato e non pieno, benche' sia l'unica azione della scheda: il pieno
+   sage e' gia' preso dalla linguetta attiva, e due pieni nello stesso pannello
+   direbbero che sono due stati dello stesso interruttore. Si riempie al passaggio
+   del mouse, che e' quando smette di essere ambiguo. */
+.selection-action { display: block; width: 100%; margin-top: 10px; padding: 7px 9px; color: var(--hud-ink); background: var(--hud-well); border: 1px solid var(--hud-line); border-radius: 8px; font: 800 9px/1.35 var(--hud-font); letter-spacing: .07em; text-transform: uppercase; text-align: center; cursor: pointer; }
+.selection-action[hidden] { display: none; }
+.selection-action:hover { color: var(--hud-on-accent); background: var(--hud-sage-dark); border-color: var(--hud-sage-dark); }
+.selection-action:focus-visible { outline: 3px solid var(--hud-accent-shape); outline-offset: 2px; }
 
 .debug-panel { position: fixed; bottom: var(--game-hud-bottom); z-index: 16; max-width: calc(100vw - 28px); max-height: min(65vh, 620px); overflow: auto; box-sizing: border-box; color: #dcebe6; background: rgba(24,38,42,.94); border: 1px solid rgba(185,217,210,.24); border-radius: 11px; box-shadow: 0 10px 30px rgba(0,0,0,.25); backdrop-filter: blur(10px); font: 10px/1.45 var(--hud-mono); }
 .debug-panel[hidden] { display: none; }
@@ -222,13 +475,25 @@
   .resource-label { display: none; }
   .build-dock { gap: 4px; }
   .hud-button { padding: 7px 8px; }
+  /* La tessera si stringe ma resta una tessera: e' il costo a sparire per
+     primo, perche' e' l'unica riga che il tooltip ripete gia' per intero. */
+  .hud-tile { width: 54px; min-height: 54px; padding: 6px 3px 11px; }
+  .hud-tile .button-cost { display: none; }
   .button-cost { display: none; }
 }
 
 @media (max-width: 680px) {
   .dock-group-title { display: none; }
+  .dock-group { padding: 0 3px; }
+  .selection-panel { right: 8px; left: 8px; width: auto; }
   .hud-button .button-copy { display: none; }
   .hud-button { width: 40px; padding: 7px; }
+  /* Qui la tessera cede: resta la sola icona, come per gli altri bottoni. Il
+     badge del tasto resta, perche' e' cio' che la rende ancora raggiungibile. */
+  .hud-tile { width: 42px; min-height: 42px; padding: 7px 4px; }
+  /* Non c'e' piu' spazio sotto l'icona: il requisito resta nel tooltip, e il
+     riempimento continua a dire da solo quanto manca. */
+  .hud-tile[data-locked="true"][data-requirement-short]:disabled::before { display: none; }
   .resource-bar { top: 8px; width: calc(100vw - 16px); }
   .build-dock { bottom: 8px; max-width: calc(100vw - 16px); }
   .help-grid { grid-template-columns: 1fr; }
@@ -236,4 +501,11 @@
 
 @media (prefers-reduced-motion: reduce) {
   .hud-button, .policy-drawer, .theme-picker, .help-card { transition: none; }
+  /* Nessun sollevamento e nessuna pulsazione: restano cornice e colore, che
+     dicono la stessa cosa senza muoversi. */
+  .hud-button:hover:not(:disabled),
+  .hud-button[aria-pressed="true"].hud-tile { transform: none; }
+  .resource-ring-fill { transition: none; }
+  .resource-bar[data-condition="crisis"] .resource-ring-fill[data-low="true"] { animation: none; }
+  .resource-flows { transition: none; transform: translate(-50%, 0); }
 }

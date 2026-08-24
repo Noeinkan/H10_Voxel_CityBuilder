@@ -1,4 +1,5 @@
-import { AERIAL } from './config';
+import { hashCoords } from '../rng';
+import { AERIAL, DECK_HEIGHT } from './config';
 import {
   planDeck,
   type AerialProbe,
@@ -6,6 +7,7 @@ import {
   type DeckRect,
   type DeckRefusal,
 } from './deckPlan';
+import { terraceShape } from './terraceForm';
 
 /**
  * L'aggetto: la mensola che sporge da un fronte, alla quota di una fascia.
@@ -89,7 +91,10 @@ export function planTerrace(query: TerraceQuery): TerraceResult {
   for (const face of query.faces) {
     const attach = faceRuns(query, host, face);
     for (const run of attach) {
-      const rect = terraceRect(face, run);
+      // Ospite, faccia e quota: le tre cose che non cambiano piu' una volta che
+      // la mensola e' li'. La forma e' allora una funzione del posto, come la
+      // rete stradale lo e' del seme.
+      const rect = terraceRect(face, run, hashCoords(host.id, face, run.z));
       const result = planDeck({
         rect,
         deckZ: run.z,
@@ -143,6 +148,14 @@ export interface FaceRun {
  * Non e' una griglia imposta da fuori — quella questo dominio dichiara di non
  * volerla, ed e' il motivo per cui qui non esiste `align`. La quota continua a
  * venire da una fascia dell'ospite: solo dalla prima invece che dall'ultima.
+ *
+ * **Il ripiego su facciata piena parte piu' in alto, e non e' la stessa regola.**
+ * La riga sopra vale dove c'e' una fascia da continuare: li' la quota e' un fatto
+ * dell'edificio, e prendere la prima e' cio' che rende complanari due vicini.
+ * Dove la facciata e' piena non c'e' nessuna fascia da rispettare — il balcone
+ * sta in aria libera davanti al muro — e prendere comunque la quota piu' bassa
+ * voleva dire attaccarlo a tre cubi dal marciapiede: su una torre di trenta cubi
+ * quella non e' una mensola in facciata, e' una pensilina. Vedi `facadeRise`.
  */
 export function faceRuns(
   query: AerialProbe,
@@ -161,10 +174,29 @@ export function faceRuns(
 
   const top = host.baseZ + host.height - 1 - AERIAL.deckDrop;
   const floor = host.baseZ + AERIAL.minRise;
+  // **Su facciata piena la quota non la detta nessuno, quindi si sceglie.** Dove
+  // una fascia rientra la quota e' un fatto dell'edificio e si parte da `floor`;
+  // dove la facciata e' piena ogni quota vale l'altra, e partire comunque da
+  // `floor` significava `minRise` — tre cubi sopra il marciapiede — su meta'
+  // della citta'. Vedi `AERIAL.terrace.facadeRise`.
+  const facade = Math.min(top, host.baseZ + Math.max(
+    AERIAL.minRise,
+    Math.round(host.height * AERIAL.terrace.facadeRise),
+  ));
 
   const scan = (flat: boolean): FaceRun[] => {
+    const from = flat ? facade : floor;
+    // **Il passo distingue le due scansioni tanto quanto il punto di partenza.**
+    // Su una sagoma le corse sono le fasce, e saltare piu' dell'ingombro appena
+    // preso vorrebbe dire saltarne una; su facciata piena le quote sono tutte
+    // equivalenti, e prendere le quattro consecutive impilava le tre mensole di
+    // un ospite in nove voxel — una pila, non una facciata abitata.
+    const stride = flat
+      ? Math.max(DECK_HEIGHT, Math.floor((top - from) / AERIAL.terrace.attempts))
+      : DECK_HEIGHT;
+
     const out: FaceRun[] = [];
-    for (let z = floor; z <= top && out.length < AERIAL.terrace.attempts; z++) {
+    for (let z = from; z <= top && out.length < AERIAL.terrace.attempts; z++) {
       // La parete di ogni colonna della faccia, a questa quota.
       const walls: number[] = [];
       for (let cross = crossFrom; cross <= crossTo; cross++) {
@@ -185,7 +217,7 @@ export function faceRuns(
       // Una quota per corsa: due quote consecutive dello stesso corpo darebbero
       // due mensole sovrapposte, e la seconda verrebbe rifiutata comunque da
       // `blocked`.
-      z += AERIAL.girderDepth;
+      z += stride - 1;
     }
     return out;
   };
@@ -272,29 +304,22 @@ function longestRun(walls: readonly number[]): { wall: number; from: number; to:
  * l'impronta dell'ospite: e' voluto, ed e' la terrazza che c'era gia' — chi
  * scrive il record eccettua l'ospite dalla collisione, perche' l'aggetto e'
  * **attaccato** a lui e non in conflitto con lui.
+ *
+ * **Non occupa piu' tutta la corsa.** Quanto ne prende, quanto sporge e a quale
+ * capo si appoggia li decide `terraceShape` dal seme: la corsa resta la misura
+ * disponibile — e resta l'ancoraggio intero, che e' cio' da cui `planDeck`
+ * misura lo sbalzo — ma il riquadro ci si dispone dentro invece di riempirla.
  */
-function terraceRect(face: AerialFace, run: FaceRun): DeckRect {
+function terraceRect(face: AerialFace, run: FaceRun, seed: number): DeckRect {
   const axis = faceAxis(face);
   const outward = faceOutward(face);
-  const overhang = overhangOf(run.to - run.from + 1);
-  const start = outward > 0 ? run.wall + 1 : run.wall - overhang;
-  const length = run.to - run.from + 1;
+  const shape = terraceShape(run.to - run.from + 1, seed);
+  const start = outward > 0 ? run.wall + 1 : run.wall - shape.overhang;
+  const from = run.from + shape.shift;
 
   return axis === 0
-    ? { x: start, y: run.from, sizeX: overhang, sizeY: length }
-    : { x: run.from, y: start, sizeX: length, sizeY: overhang };
-}
-
-/**
- * Quanto sporge una mensola larga `run`.
- *
- * **Quanto e' larga, tanto e' profonda**, dentro i due estremi. Una facciata da
- * quattro porta un balcone, una da otto porta una terrazza vera — e quella, oltre
- * `AERIAL.reach`, si ritrova le proprie gambe. E' l'unica riga che lega le due
- * cose, e da lei viene tutta la varieta' delle mensole di una citta'.
- */
-export function overhangOf(run: number): number {
-  return Math.min(AERIAL.terrace.maxOverhang, Math.max(AERIAL.terrace.minOverhang, run));
+    ? { x: start, y: from, sizeX: shape.overhang, sizeY: shape.length }
+    : { x: from, y: start, sizeX: shape.length, sizeY: shape.overhang };
 }
 
 /** La striscia di parete a cui una struttura si appende: e' l'ancoraggio di `planDeck`. */

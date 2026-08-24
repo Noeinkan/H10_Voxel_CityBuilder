@@ -75,11 +75,14 @@ Non esiste uno script `lint` o un formatter configurato: non inventarne uno.
 5. La palette ha esattamente 32 slot; riusa gli indici di `paletteSlots.ts`.
    Per la stessa ragione i tipi di superficie sono **otto e basta**: i tre bit
    alti di `visualBlock` sono tutti impegnati, e prenderne un quarto
-   toglierebbe un bit alla palette. L'unica eccezione e' un sovraccarico
-   dichiarato e non un nono tipo: su un voxel d'**acqua** quei tre bit portano
-   `WATER_CLASS` invece di un linguaggio di facciata, perche' nessuno dei sette
-   si applica a una lastra d'acqua e il frammento riconosce l'acqua dalla
-   palette prima di leggerli.
+   toglierebbe un bit alla palette. Le eccezioni sono due sovraccarichi
+   dichiarati, non un nono tipo, e si riconoscono entrambi **prima** di leggere
+   la superficie: su un voxel d'**acqua** quei tre bit portano `WATER_CLASS`
+   invece di un linguaggio di facciata, perche' nessuno dei sette si applica a
+   una lastra d'acqua e il frammento riconosce l'acqua dalla palette; su una
+   **copertura del terreno** (`packCoverMark`) portano il tipo di erbetta, e li'
+   la palette e' 0 — cioe' un byte che `packVisualBlock` non produce mai, quindi
+   uno spazio libero per davvero e non un valore rubato a qualcuno.
 6. Mesher e generatore di terreno non importano Three.js.
 7. `src/sim/` non importa da `src/engine/` e non usa DOM o Three.js; non sa
    niente di come sono fatti gli edifici — la tipologia vive in
@@ -104,15 +107,19 @@ il posto sbagliato.
 | Strade | `src/world/streets/config.ts` |
 | Opere di terra | `src/world/grading/config.ts` |
 | Vincoli di sito | `src/world/sites/config.ts` |
+| Lotti agricoli | `src/world/farms/config.ts` |
 | Gerarchia verticale | `src/world/skyline/config.ts` |
 | Campate e rete in quota | `src/world/spans/config.ts` |
+| Citta' in quota | `src/world/aerial/config.ts` |
+| Arcologie | `src/world/arcology/config.ts` |
 | Simulazione | `src/sim/balance.ts` |
 | Costruzione e tipologie | `src/world/buildings/config.ts` |
 | Palette | `src/engine/palette.json` + `paletteSlots.ts` |
 | Temi | `src/engine/themes/` — un file per tema, colori piu' atmosfera |
 | Modello di luce | `src/engine/lighting.ts` — sole, ambiente, luminanza per faccia |
 | Finestre di notte | `src/engine/nightWindows.ts` — quota accesa, carattere della torre, guadagno notturno |
-| Viste di ispezione | `src/engine/inspect.ts` — densita' del retino, finestra, quota |
+| Viste di ispezione | `src/engine/inspect.ts` — densita' del velo, passo della rigatura, quota |
+| Lente dei raggi X | `src/engine/xray.ts` — respiro, profondita', gabbia sul filo del voxel |
 
 Non aggiornare a occhio le misure documentate nei README: sono verificate a mano
 su questa macchina.

@@ -1,7 +1,8 @@
 import { unitAt } from '../rng';
 import type { VoxelWorld } from '../VoxelWorld';
 import { CELL_STEPS } from './cellGrid';
-import { BIOME, BIOME_STRATA, LEDGE, TERRAIN } from './config';
+import { LEDGE, TERRAIN } from './config';
+import { rockBandAt, rockSubsoil, rockSurface } from './rockTone';
 
 /**
  * Sporgenze di roccia: una lastra che esce dal ciglio e resta sospesa.
@@ -118,8 +119,12 @@ export function writeLedge(
   const [dx, dy] = CELL_STEPS[spec.dir];
   // Una sporgenza e' roccia comunque sia il bioma che le sta sopra: e' la
   // **sezione** del gradone, non la sua superficie, e sotto il primo cubo di
-  // prato l'isola e' roccia dappertutto.
-  const strata = BIOME_STRATA[BIOME.rock];
+  // prato l'isola e' roccia dappertutto. Lo strato e' quello della quota a cui
+  // la lastra e' appesa: una cengia affiora dalla parete che la regge, e prende
+  // il grigio di quella.
+  const band = rockBandAt(spec.baseZ);
+  const surface = rockSurface(band);
+  const subsoil = rockSubsoil(band);
   let written = 0;
 
   // Colonna della lastra piu' vicina alla parete, sull'asse del salto: e' la
@@ -140,7 +145,7 @@ export function writeLedge(
       if (x < minX || x >= maxX || y < minY || y >= maxY) continue;
 
       for (let k = 0; k < thickness; k++) {
-        world.setBlock(x, y, spec.baseZ + k, k === thickness - 1 ? strata.surface : strata.subsoil);
+        world.setBlock(x, y, spec.baseZ + k, k === thickness - 1 ? surface : subsoil);
         written++;
       }
     }

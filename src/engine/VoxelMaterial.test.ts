@@ -5,6 +5,7 @@ import { sunDirection } from './lighting';
 import { NIGHT_WINDOWS } from './nightWindows';
 import { resolveTheme } from './themes';
 import { createVoxelMaterial } from './VoxelMaterial';
+import { XRAY } from './xray';
 
 /** Nomi dichiarati come uniform nel sorgente GLSL, in ordine di apparizione. */
 function declaredUniforms(source: string): string[] {
@@ -143,7 +144,7 @@ describe('createVoxelMaterial', () => {
     expect(material.fragmentShader).toContain('gl_FrontFacing');
     // Un velo non ha bisogno delle back-face: il taglio si', ma questo non taglia.
     expect(material.side).toBe(FrontSide);
-    expect(material.uniforms['uInspectVeil'].value).toBeCloseTo(INSPECT.xrayVeil, 10);
+    expect(material.uniforms['uInspectVeil'].value).toBeCloseTo(XRAY.veil, 10);
     // La lente si accende con il modo, ed e' l'unico modo che la usa: senza, il
     // predicato in piu' resterebbe nel sorgente a costo zero ma anche a effetto
     // zero, e il difetto si vedrebbe solo a schermo.

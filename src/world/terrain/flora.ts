@@ -56,6 +56,7 @@ export const TREE_SPECIES = {
   pine: 3,
   shrub: 4,
   scrub: 5,
+  fruit: 6,
 } as const;
 
 /**
@@ -176,6 +177,30 @@ export const TREE_SHAPES: readonly TreeShape[] = [
       { radius: 3, cut: 4, tone: 0 },
       { radius: 3, cut: 5, tone: 1 },
       { radius: 2, cut: 3, tone: 2 },
+    ],
+  },
+  // Da frutto: **l'unica specie che non nasce da sola.** Non compare in nessuna
+  // riga di `FLORA` — la pianta un frutteto, cioe' qualcuno — ed e' il motivo per
+  // cui puo' permettersi una sagoma che in natura non si spiegherebbe: bassa,
+  // tonda e larga uguale, cioe' potata.
+  //
+  // Raggio due, contro il quattro delle chiome selvatiche: e' quello che le
+  // permette di stare su un reticolo fitto senza che due chiome si tocchino, e a
+  // distanza isometrica sono la **regolarita' e la scala** — non la specie — a
+  // dire che quello e' un frutteto e non un pezzo di bosco.
+  //
+  // L'ottone in cima e' il frutto, ed e' lo stesso slot del fogliame autunnale e
+  // del grano maturo: la palette e' piena, e un tono caldo dentro il verde e'
+  // tutto quello che serve perche' si legga a colpo d'occhio.
+  {
+    trunk: [4, 2],
+    sink: 2,
+    tones: [PALETTE_SLOTS.grassDark, PALETTE_SLOTS.grass, PALETTE_SLOTS.metalBrass],
+    canopy: [
+      { radius: 2, cut: 3, tone: 0 },
+      { radius: 2, cut: 4, tone: 1 },
+      { radius: 2, cut: 3, tone: 1 },
+      { radius: 1, cut: 2, tone: 2 },
     ],
   },
 ];

@@ -1,6 +1,14 @@
 import { AERIAL, AERIAL_PART, isBuildable, type AerialPart } from './config';
 import type { DeckPlan, DeckRect, Pier } from './deckPlan';
 import type { LiftPlan } from './guideway';
+import {
+  chamfered,
+  cornerCutOf,
+  terraceEdge,
+  terraceGirder,
+  terraceSide,
+  type TerraceSide,
+} from './terraceForm';
 import { SURFACE_KIND } from '../visualBlock';
 import type { VoxelStamp } from '../buildings/stamp';
 
@@ -20,6 +28,13 @@ import type { VoxelStamp } from '../buildings/stamp';
  * abbastanza. La sola cosa che il tipo decide e' se il cuore e' suolo su cui si
  * costruisce o pavimentazione da attraversare.
  *
+ * **La mensola e' l'eccezione dichiarata, e la ragione e' che ha un davanti.** Un
+ * tratto e un nodo stanno in aria appesi ai propri capi, e la loro sezione e'
+ * simmetrica perche' non c'e' un verso rispetto a cui non esserlo; una mensola
+ * esce da una parete, e da quella parete alla punta la sezione **cala**. Cio' che
+ * cambia sta tutto in `terraceForm`, che e' puro come questo file: qui resta la
+ * riga che sceglie quale delle due sezioni scrivere.
+ *
  * **La sezione dice come sta in piedi.**
  *
  * ```
@@ -28,6 +43,14 @@ import type { VoxelStamp } from '../buildings/stamp';
  *   ██  ▒▒▒▒  ██     travatura sul bordo e sopra le gambe
  *   ██        ██     ...e piena, dove il nodo scende alla quota bassa
  *   ██        ██     la gamba, fino al proprio piede
+ * ```
+ *
+ * Quella di una mensola invece si assottiglia, e l'angolo esterno e' smussato:
+ *
+ * ```
+ *   ║░░░░░░░░░░╮     il piano arriva fino alla punta, e li' e' una lastra sola
+ *   ██▓▓▓▓▓▓▓▓       trave alta sul filo, meno la punta
+ *   ██               trave bassa: solo dove la mensola scarica sulla parete
  * ```
  *
  * Il parapetto non si disegna qui: si chiede `roofTech` al filo, e `emitRoofTech`
@@ -48,16 +71,35 @@ export function generateDeck(plan: DeckPlan, part: AerialPart, segment: DeckRect
   const planted = isBuildable(part) &&
     plan.rect.sizeX >= AERIAL.plantedMinWidth && plan.rect.sizeY >= AERIAL.plantedMinWidth;
 
+  // Una mensola ha un davanti; un tratto e un nodo no. `side` e' quel davanti, ed
+  // e' anche l'interruttore fra le due sezioni: nullo, si scrive l'impalcato
+  // piano che questo file ha sempre scritto.
+  const side: TerraceSide | null = part === AERIAL_PART.terrace && plan.anchors.length > 0
+    ? terraceSide(plan.rect, plan.anchors[0])
+    : null;
+  const cut = side === null ? 0 : cornerCutOf(plan.rect);
+
   for (let ly = 0; ly < sizeY; ly++) {
     for (let lx = 0; lx < sizeX; lx++) {
       const gx = segment.x + lx;
       const gy = segment.y + ly;
-      const edge = edgeAt(plan.rect, gx, gy);
+      // L'angolo smussato non e' un voxel che manca: e' la sagoma, e nemmeno il
+      // piano ci arriva.
+      if (side !== null && chamfered(plan.rect, side, cut, gx, gy)) continue;
+      const edge = side === null
+        ? edgeAt(plan.rect, gx, gy)
+        : terraceEdge(plan.rect, side, cut, gx, gy);
 
       for (let lz = 0; lz < height - 1; lz++) {
-        // Sotto la travatura il nodo e' pieno: e' il fianco che scende alla quota
-        // bassa, ed e' cio' che si vede del salto fra due livelli.
-        if (lz >= drop && !edge && !overPier(plan, gx, gy)) continue;
+        const carried = side === null
+          // Sotto la travatura il nodo e' pieno: e' il fianco che scende alla
+          // quota bassa, ed e' cio' che si vede del salto fra due livelli.
+          ? !(lz >= drop && !edge && !overPier(plan, gx, gy))
+          // La mensola cala verso la punta; sopra una gamba resta piena, perche'
+          // li' il carico scende davvero.
+          : terraceGirder(plan.rect, side, cut, gx, gy, lz) || overPier(plan, gx, gy);
+        if (!carried) continue;
+
         const index = lx + sizeX * (ly + sizeY * lz);
         voxels[index] = AERIAL.girderPalette;
         surfaces[index] = SURFACE_KIND.utility;

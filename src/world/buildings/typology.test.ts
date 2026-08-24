@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   ALL_CLASSES,
+  ALL_SPECIALIZATIONS,
   BUILDING_CLASS,
   catalystById,
   urbanProfileAt,
@@ -24,6 +25,8 @@ import {
 import { generateBuilding } from './generate';
 import { selectTypology, typologiesForUses, typologyProfile } from './typology';
 import { solidCount, STAMP_EMPTY, type VoxelStamp } from './stamp';
+import { PALETTE_SLOTS } from '../../engine/paletteSlots';
+import { SURFACE_KIND } from '../visualBlock';
 
 function source(kind: CatalystId, x = 0, y = 0): Catalyst {
   const definition = catalystById(kind);
@@ -80,17 +83,47 @@ describe('catalogo delle tipologie', () => {
     expect(new Set(TYPOLOGIES.map((entry) => entry.label)).size).toBe(TYPOLOGIES.length);
   });
 
-  it('copre tutte e cinque le specializzazioni', () => {
+  it('la torre idroponica accende le luci di crescita senza un emettitore nuovo', () => {
+    // E' il rendimento della fase 4: l'accento verde a livello alto esce
+    // `luminous` dalla grammatica che c'e' gia', quindi le fasce di coltura si
+    // vedono di notte senza un materiale, uno slot o un emettitore in piu'.
+    const tower = build(BUILDING_CLASS.industrial, 8, 11, 'hydroponicTower');
+
+    let lit = 0;
+    let greenLit = 0;
+    for (let i = 0; i < tower.voxels.length; i++) {
+      if (tower.surfaces[i] !== SURFACE_KIND.luminous) continue;
+      lit++;
+      if (tower.voxels[i] === PALETTE_SLOTS.grassLight) greenLit++;
+    }
+
+    expect(lit).toBeGreaterThan(0);
+    // Le facce luminose sono la coltura, non il vetro: se un giorno l'accento
+    // tornasse a essere un tono freddo, questo test lo dice.
+    expect(greenLit).toBe(lit);
+  });
+
+  it('sotto il livello che accende, la torre resta una fabbrica spenta', () => {
+    // `minLevel` la tiene fuori dai livelli bassi, ma la grammatica e' condivisa:
+    // vale la pena fissare che il verde non compaia acceso prima del tempo.
+    const low = build(BUILDING_CLASS.industrial, 1, 11, 'hydroponicTower');
+    let lit = 0;
+    for (let i = 0; i < low.voxels.length; i++) {
+      if (low.surfaces[i] === SURFACE_KIND.luminous) lit++;
+    }
+    expect(lit).toBe(0);
+  });
+
+  it('copre tutte le specializzazioni, quante che siano', () => {
+    // L'elenco atteso e' **derivato** dal vocabolario della simulazione e non
+    // riscritto qui: una specializzazione nuova senza una tipologia che la
+    // esprima e' un buco vero — nessun luogo la mostrerebbe mai a schermo — e
+    // deve far cadere questo test. Un elenco a mano lo faceva cadere anche
+    // quando il buco non c'era.
     const covered = new Set(
       TYPOLOGIES.map((entry) => entry.specialization).filter((value) => value !== undefined),
     );
-    expect([...covered].sort()).toEqual([
-      'entertainment',
-      'logistics',
-      'office',
-      'research',
-      'tourism',
-    ]);
+    expect([...covered].sort()).toEqual([...ALL_SPECIALIZATIONS].sort());
   });
 });
 
@@ -116,6 +149,36 @@ describe('selectTypology', () => {
       expect(chosen.minDensity).toBeUndefined();
       expect(chosen.coastal).toBeUndefined();
     }
+  });
+
+  it('la torre idroponica e’ raggiungibile: un polo industriale denso la esprime', () => {
+    // Una tipologia che nessun luogo puo' esprimere e' contenuto morto, e le
+    // soglie di `farming` sono le piu' alte del gruppo: vale la pena fissare che
+    // esista almeno un luogo che le supera davvero, invece di scoprirlo a
+    // schermo non trovandola mai.
+    const profile = profileOf(['factory', 'university', 'transport']);
+    expect(profile.specialization).toBe('farming');
+
+    const built = selectTypology({
+      use: BUILDING_CLASS.industrial,
+      level: BUILDER.maxLevel,
+      profile,
+      coastal: false,
+    });
+    expect(built.id).toBe('hydroponicTower');
+  });
+
+  it('sotto il proprio livello la torre cede a una fabbrica normale', () => {
+    // La specializzazione non basta: finche' la citta' non e' salita, li' ci sta
+    // una fabbrica. E' cio' che impedisce alla torre di comparire in periferia.
+    const profile = profileOf(['factory', 'university', 'transport']);
+    const low = selectTypology({
+      use: BUILDING_CLASS.industrial,
+      level: 1,
+      profile,
+      coastal: false,
+    });
+    expect(low.id).not.toBe('hydroponicTower');
   });
 
   it('e deterministica: stesso luogo, stessa tipologia', () => {

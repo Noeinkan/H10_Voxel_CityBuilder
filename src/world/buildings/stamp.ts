@@ -185,6 +185,108 @@ function cutout(
   };
 }
 
+/**
+ * Quali colonne dello stamp **poggiano**, in pianta.
+ *
+ * **E' la domanda dell'opera di terra, non del rendering.** Un'impronta
+ * rettangolare dice quanto spazio una struttura si riserva; questa dice su cosa
+ * si regge, ed e' la differenza fra una banchina e un'isola artificiale: il
+ * riquadro di un porto e' per meta' specchio d'acqua, e riempirlo tutto fino
+ * alla quota del piano — che e' cio' che `buildWorks` faceva senza maschera —
+ * cancellava il mare dentro cui il porto dovrebbe stare.
+ *
+ * **`maxZ` separa cio' che poggia da cio' che sporge.** Guardare tutte le quote
+ * darebbe la risposta sbagliata proprio dove serve: il braccio di una gru passa
+ * sopra la darsena a tredici voxel d'altezza, e contarlo vorrebbe dire riempire
+ * di terra l'acqua che sorvola. Le prime quote invece sono suolo per costruzione
+ * — nessuna ricetta ci mette qualcosa a mezz'aria — e sono quelle che l'opera
+ * deve reggere.
+ *
+ * Si chiede sempre allo **stadio finale**: l'opera si getta una volta sola, al
+ * piazzamento, e uno stadio successivo non deve poter scoprire di aver bisogno di
+ * terra che nessuno ha costruito.
+ */
+export function stampFootprint(stamp: VoxelStamp, maxZ: number = stamp.sizeZ): Uint8Array {
+  const plan = new Uint8Array(stamp.sizeX * stamp.sizeY);
+  const top = Math.min(maxZ, stamp.sizeZ);
+  for (let sz = 0; sz < top; sz++) {
+    const base = stamp.sizeX * stamp.sizeY * sz;
+    for (let i = 0; i < plan.length; i++) {
+      if (stamp.voxels[base + i] !== STAMP_EMPTY) plan[i] = 1;
+    }
+  }
+  return plan;
+}
+
+/** Uno stamp ridotto alle sole quote piene, con l'offset da cui riparte. */
+export interface TrimmedStamp {
+  /** Quote saltate in basso: chi lo accoda le somma alla propria ancora. */
+  readonly z0: number;
+  readonly stamp: VoxelStamp;
+}
+
+/**
+ * Lo stesso stamp senza le quote vuote in cima e in fondo.
+ *
+ * **Serve alla stima del tetto di chunk, non alla memoria.** Una struttura a
+ * stadi riserva l'inviluppo *finale* fin dal primo — e' cio' che le impedisce di
+ * restare bloccata a meta' — quindi la sagoma dello stadio zero e' alta quanto
+ * la corona che arrivera' fra mille tick ed e' piena solo in basso.
+ * `fitsChunkBudget` misura pero' il riquadro, non i voxel: senza il taglio una
+ * ricetta legittima verrebbe **scartata in silenzio**, che e' esattamente il
+ * difetto raccontato dal commento di `maxDirtyChunksPerBuilding`.
+ *
+ * **Si taglia in quota solo qui**, e non e' una deroga al divieto di
+ * `sliceStamps`: li' la cucitura cadrebbe a meta' di una colonna che compare in
+ * due tempi, e a schermo si vede; qui il taglio segue il pieno, quindi non
+ * separa niente che sia gia' stato disegnato.
+ *
+ * Uno stamp gia' pieno da cima a fondo — ogni edificio della citta' — **non
+ * viene copiato**: torna lui stesso con `z0` a zero.
+ */
+export function trimStampZ(stamp: VoxelStamp): TrimmedStamp {
+  const plane = stamp.sizeX * stamp.sizeY;
+  if (plane === 0 || stamp.sizeZ === 0) return { z0: 0, stamp };
+
+  let z0 = 0;
+  while (z0 < stamp.sizeZ && emptyPlane(stamp, z0, plane)) z0++;
+  // Tutto vuoto: non c'e' niente da scrivere, e lo stamp vuoto lo dice meglio di
+  // un ritaglio alto zero che porta ancora i lati dell'inviluppo.
+  if (z0 === stamp.sizeZ) return { z0: 0, stamp: EMPTY_STAMP };
+
+  let z1 = stamp.sizeZ - 1;
+  while (z1 > z0 && emptyPlane(stamp, z1, plane)) z1--;
+  if (z0 === 0 && z1 === stamp.sizeZ - 1) return { z0: 0, stamp };
+
+  const sizeZ = z1 - z0 + 1;
+  const from = z0 * plane;
+  return {
+    z0,
+    stamp: {
+      sizeX: stamp.sizeX,
+      sizeY: stamp.sizeY,
+      sizeZ,
+      anchorX: stamp.anchorX,
+      anchorY: stamp.anchorY,
+      anchorZ: 0,
+      voxels: stamp.voxels.slice(from, from + sizeZ * plane),
+      surfaces: stamp.surfaces.slice(from, from + sizeZ * plane),
+      // Le fasce dell'inviluppo non descrivono piu' il ritaglio, e la comparsa a
+      // budget scorre comunque l'array lineare: una fascia sola e' la risposta
+      // onesta, come gia' per i landmark.
+      bandStarts: [0, sizeZ],
+    },
+  };
+}
+
+function emptyPlane(stamp: VoxelStamp, z: number, plane: number): boolean {
+  const base = z * plane;
+  for (let i = 0; i < plane; i++) {
+    if (stamp.voxels[base + i] !== STAMP_EMPTY) return false;
+  }
+  return true;
+}
+
 /** Voxel pieni dello stamp. Serve alle misure e ai test, non al percorso caldo. */
 export function solidCount(stamp: VoxelStamp): number {
   let count = 0;

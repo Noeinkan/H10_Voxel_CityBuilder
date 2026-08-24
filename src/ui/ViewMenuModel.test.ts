@@ -147,6 +147,20 @@ describe('l’isolato scelto', () => {
     expect(model.bar.keys.filter((hint) => hint.keys.includes('Esc'))).toHaveLength(1);
   });
 
+  it('dice che i tasti del pan ora si muovono sul soggetto', () => {
+    const studying = buildViewMenuModel(INSPECT_MODE.block, 40, 90, true);
+    const pointing = buildViewMenuModel(INSPECT_MODE.block, 40, 90);
+
+    // Nella citta' WASD sposta l'inquadratura; con un isolato in mano sale lungo
+    // la torre e scorre sull'impronta, e chi non lo legge non prova nemmeno.
+    const move = studying.bar.keys.find((hint) => hint.keys.includes('WASD'));
+    expect(move?.action.toLowerCase()).toContain('block');
+    // Solo mentre si studia: puntando e basta i tasti panano la citta' come
+    // sempre, e annunciarli qui prometterebbe un movimento diverso da quello che
+    // succede davvero.
+    expect(pointing.bar.keys.some((hint) => hint.keys.includes('WASD'))).toBe(false);
+  });
+
   it('vale solo dentro Block focus', () => {
     // Chiedere di un isolato scelto mentre si guarda una fetta e' una domanda
     // senza senso, e accendere i suoi gesti prometterebbe tasti che non esistono.

@@ -17,6 +17,7 @@ import {
 import { buildWeightOf, GROUND, groundKindOf, type GroundKind } from '../world/grading/grade';
 import { siteRefusal } from '../world/sites/siteRules';
 import type { TerraceRefusal } from '../world/aerial/terracePlan';
+import type { RopewayRefusal } from '../world/ropeway/ropewayPlan';
 import type { TerrainMap } from '../world/terrain/TerrainMap';
 
 /**
@@ -52,7 +53,18 @@ export type ActionFailure =
    */
   | 'needs-building'
   | 'building-too-short'
-  | 'no-room-aloft';
+  | 'no-room-aloft'
+  /**
+   * I rifiuti della funivia, tradotti dal dominio della linea.
+   *
+   * Tre e non uno, e chiedono tre gesti diversi: puntare una riva, puntare una
+   * riva **di fronte a qualcosa**, cercare un altro punto della stessa costa.
+   * Un «non si puo'» solo manderebbe a cliccare a caso lungo tutto il perimetro
+   * dell'isola, che e' il posto peggiore in cui far tirare a indovinare.
+   */
+  | 'needs-shore'
+  | 'needs-crossing'
+  | 'no-room-for-line';
 
 export type ActionResult =
   | { readonly success: true; readonly state: SimState }
@@ -64,9 +76,10 @@ export function placeCatalyst(
   x: number,
   y: number,
   target: BuildingClass | CatalystId,
+  aloft = false,
 ): ActionResult {
   const definition = catalystDefinition(target);
-  const failure = catalystFailure(state, map, x, y, target);
+  const failure = catalystFailure(state, map, x, y, target, aloft);
   if (failure !== null) return { success: false, reason: failure };
 
   // Il prezzo e' quello che il cursore mostrava: si ricalcola dalla stessa
@@ -133,6 +146,13 @@ export function catalystSiteCost(
  * di implicare "ha senso costruirci questo". I due controlli restano distinti
  * anche nell'ordine — prima cosa regge il terreno, poi cosa ci sta — perche'
  * sono due rifiuti diversi e il giocatore deve leggere quello giusto.
+ *
+ * **`aloft` toglie di mezzo il terreno, non i controlli.** Una struttura che si
+ * posa su un tetto non ha niente da chiedere alla colonna sotto — non ci
+ * costruisce, e il vincolo di sito del ruolo parla di *quel* suolo: un aeroporto
+ * pretende un pianoro perche' una pista lo pretende, e sopra un grattacielo non
+ * c'e' nessuna pista. Il tetto ha una regola sua, e la applica `src/world/`
+ * prima di arrivare qui, come gia' fa per la mensola.
  */
 export function catalystFailure(
   state: SimState,
@@ -140,17 +160,18 @@ export function catalystFailure(
   x: number,
   y: number,
   target: BuildingClass | CatalystId,
+  aloft = false,
 ): ActionFailure | null {
   const definition = catalystDefinition(target);
   const site = catalystSiteCost(map, x, y, target);
   if (site === null) return 'terrain-loading';
-  if (site.ground === GROUND.refused) return 'not-buildable';
+  if (!aloft && site.ground === GROUND.refused) return 'not-buildable';
 
   // Il vincolo di sito precede quello di distanza: e' una proprieta' del luogo,
   // mentre la distanza e' una proprieta' della citta' gia' costruita, e sentirsi
   // dire "troppo vicino a un altro porto" dove un porto non starebbe comunque
   // manderebbe a cercare spazio invece che acqua.
-  const refusal = siteRefusal(map, x, y, definition.site);
+  const refusal = aloft ? null : siteRefusal(map, x, y, definition.site);
   if (refusal !== null) return refusal;
 
   const minDistance = BALANCE.gameplay.catalyst.minDistance;
@@ -216,6 +237,52 @@ export function placeTerrace(state: SimState, refusal: TerraceRefusal | null): A
   const failure = terraceFailure(state, refusal);
   if (failure !== null) return { success: false, reason: failure };
   return { success: true, state: spendFunds(state, BALANCE.gameplay.terrace.cost) };
+}
+
+/**
+ * Perche' il gioco rifiuta una funivia, dato cosa ne dice il mondo.
+ *
+ * Stessa forma di `terraceFailure`, e per la stessa ragione: la convalida del
+ * luogo entra gia' risolta dalla `ropewaySite` che il cursore interroga, e qui
+ * restano solo le due cose che il mondo non sa — quanto costa e se la citta' e'
+ * pronta.
+ */
+export function ropewayFailure(
+  state: SimState,
+  refusal: RopewayRefusal | null,
+): ActionFailure | null {
+  if (refusal !== null) return ROPEWAY_FAILURE[refusal];
+
+  const requirement = BALANCE.gameplay.ropeway;
+  if (state.population.stock < requirement.population) return 'population-required';
+  if (state.funds.stock < requirement.cost) return 'insufficient-funds';
+  return null;
+}
+
+/**
+ * Il rifiuto del dominio, detto come un gesto.
+ *
+ * `dryGap` e `noPartner` dicono al giocatore la stessa cosa — di qua non c'e'
+ * niente da attraversare — anche se al dominio dicono due cose diverse: la prima
+ * che l'acqua non c'e' o e' una pozza, la seconda che nessuna delle quattro
+ * direzioni ha portato da qualche parte. `tooTall` e `noPad` invece sono «qui
+ * no, poco piu' in la' si'», ed e' quello che il giocatore deve leggere.
+ */
+const ROPEWAY_FAILURE: Readonly<Record<RopewayRefusal, ActionFailure>> = {
+  notAshore: 'needs-shore',
+  noPartner: 'needs-crossing',
+  dryGap: 'needs-crossing',
+  tooShort: 'needs-crossing',
+  tooLong: 'needs-crossing',
+  noPad: 'no-room-for-line',
+  tooTall: 'no-room-for-line',
+};
+
+/** Tira una funivia e ne paga il prezzo. Il mondo l'ha gia' convalidata. */
+export function placeRopeway(state: SimState, refusal: RopewayRefusal | null): ActionResult {
+  const failure = ropewayFailure(state, refusal);
+  if (failure !== null) return { success: false, reason: failure };
+  return { success: true, state: spendFunds(state, BALANCE.gameplay.ropeway.cost) };
 }
 
 export function togglePolicy(state: SimState, id: PolicyId): ActionResult {

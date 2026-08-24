@@ -10,7 +10,6 @@ import {
   isBoundedRect,
   isCut,
   isOpenPlane,
-  lensChord,
   modeCuts,
   modeHasLevel,
   needsCap,
@@ -20,6 +19,7 @@ import {
   type InspectState,
   type InspectUniforms,
 } from './inspect';
+import { XRAY, lensChord } from './xray';
 
 /** Sguardo isometrico canonico: yaw 45 gradi, in discesa verso l'origine. */
 const VIEW: readonly [number, number, number] = [-0.577, -0.577, -0.577];
@@ -110,7 +110,7 @@ describe('inspectUniforms', () => {
     expect(hidden(u, centre.x, centre.y, centre.z)).toBe(false);
 
     // Vela, non taglia: la sagoma davanti resta leggibile.
-    expect(u.veil).toBe(INSPECT.xrayVeil);
+    expect(u.veil).toBe(XRAY.veil);
     expect(isCut(u)).toBe(false);
   });
 
@@ -135,7 +135,7 @@ describe('inspectUniforms', () => {
 
     const near = { x: focus.x - VIEW[0] * 30, y: focus.y - VIEW[1] * 30, z: focus.z - VIEW[2] * 30 };
     expect(hidden(u, near.x, near.y, near.z)).toBe(true);
-    expect(hidden(u, near.x + INSPECT.xrayBare * 4, near.y, near.z)).toBe(false);
+    expect(hidden(u, near.x + XRAY.bare * 4, near.y, near.z)).toBe(false);
     // Il pavimento e' la quota del terreno che si sta guardando.
     expect(u.lensMin[3]).toBe(focus.z);
   });
@@ -555,7 +555,7 @@ describe('sfumatura del bordo', () => {
     // punto a piena densita': i raggi X non aprirebbero piu' niente. La finestra
     // piu' stretta e' quella del suolo nudo, che non ha un edificio a darle
     // misura.
-    expect(INSPECT.feather).toBeGreaterThan(0);
-    expect(INSPECT.feather).toBeLessThan(INSPECT.xrayBare);
+    expect(XRAY.feather).toBeGreaterThan(0);
+    expect(XRAY.feather).toBeLessThan(XRAY.bare);
   });
 });
