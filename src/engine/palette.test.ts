@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { isValidHexColor, PALETTE_SIZE, paletteHex, toPaletteArray } from './palette';
-import { PALETTE_SLOTS } from './paletteSlots';
+import { PALETTE_SLOT_NAMES, PALETTE_SLOTS } from './paletteSlots';
+import {
+  ALL_SURFACE_KINDS,
+  SURFACE_KIND,
+  SURFACE_KIND_NAMES,
+} from '../world/visualBlock';
 
 describe('palette', () => {
   it('palette.json contiene esattamente 32 colori validi', () => {
@@ -47,5 +52,30 @@ describe('palette', () => {
       expect(value).toBeLessThan(PALETTE_SIZE);
     }
     expect(PALETTE_SLOTS.empty).toBe(0);
+  });
+
+  it('ogni slot ha un nome, e il nome torna al proprio indice', () => {
+    // I nomi sono derivati e non una seconda tabella: se un giorno smettessero
+    // di esserlo, il campionario mostrerebbe una colonna con il nome di quella
+    // accanto — un difetto che a schermo non si distingue da un colore sbagliato.
+    expect(PALETTE_SLOT_NAMES.length).toBe(PALETTE_SIZE);
+    for (const [name, index] of Object.entries(PALETTE_SLOTS)) {
+      expect(PALETTE_SLOT_NAMES[index]).toBe(name);
+    }
+    expect(PALETTE_SLOT_NAMES.some((name) => name === '')).toBe(false);
+  });
+});
+
+describe('grammatica di superficie', () => {
+  it('ogni linguaggio ha un nome, e i tre bit ne reggono esattamente otto', () => {
+    expect(SURFACE_KIND_NAMES.length).toBe(ALL_SURFACE_KINDS.length);
+    for (const [name, index] of Object.entries(SURFACE_KIND)) {
+      expect(SURFACE_KIND_NAMES[index]).toBe(name);
+    }
+
+    // Otto e basta: i tre bit alti di `visualBlock` sono tutti impegnati, e
+    // prenderne un quarto toglierebbe un bit alla palette (contratto 5).
+    expect(SURFACE_KIND_NAMES.length).toBe(8);
+    expect(ALL_SURFACE_KINDS).toEqual([0, 1, 2, 3, 4, 5, 6, 7]);
   });
 });

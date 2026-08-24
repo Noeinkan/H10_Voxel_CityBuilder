@@ -11,6 +11,188 @@ coincide con il messaggio di commit.
 
 ---
 
+## In corso — La città sospesa si collega, e ci si arriva (fase 4.9)
+
+La 4.9 era passata a metà: nascevano le mensole e sopra ci si costruiva, ma i
+percorsi restavano **zero** e non esisteva una sola via fra il suolo e la quota.
+Si abitava sopra la città senza poterci arrivare.
+
+- **Il verso della scansione, non il planner.** `faceRuns` cercava la corsa di
+  parete dall'alto in giù, quindi ogni ospite si prendeva la propria fascia più
+  alta e due vicini di livello diverso finivano a quote lontanissime. Invertito,
+  la prima corsa utile è la sommità del basamento — che la 4.4 rende condivisa da
+  tutta la fila — e i vicini sono complanari **per costruzione**, senza nessuna
+  griglia imposta da fuori. La mensola sta ora sul **solo fronte strada**: è lì
+  che il corridoio di un percorso corre sopra la carreggiata invece che sopra i
+  corpi degli edifici.
+- **Dove non c'è una fascia da continuare, la mensola è un balcone.** Metà della
+  città sale a prisma e non arretra affatto: 147 ospiti su 400 non avevano una
+  sola corsa utile. Con il ripiego su facciata piena le mensole di una città
+  matura passano da **39 a 53**, e le coppie con gli atterraggi allineati da 2 a
+  75.
+- **Il colmo era un pavimento, ed è diventato un tetto.** `crestOf` costringeva
+  ogni percorso a passare sopra ogni tetto sotto il proprio corridoio: 48 coppie
+  su 87 morivano lì. La corsa parte ora dalla quota dei due capi e si alza di un
+  pianerottolo per volta finché il luogo la accetta.
+- **La piega a zeta torna**, con la correzione che la roadmap chiedeva: il colmo
+  si misura sui **riquadri veri dei pezzi** e non sul corridoio della corsa,
+  perché il tratto di traverso e i due angoli stanno fuori da quel corridoio. I
+  rifiuti per sfalsamento scendono da **229 a 6**. Nel farlo è emerso un difetto
+  vero: il colmo poteva cadere *sotto* la quota di partenza, e allora il ciclo
+  non girava nemmeno una volta.
+- **La guida: una cosa sola posata in due modi.** `aerial/guideway.ts` è il
+  montante d'isolato — una guida verticale da terra a un impalcato abitato, con
+  le capsule ferme che di notte si accendono — e la stessa guida incassata nel
+  piano dei tratti di percorso è la monorotaia. È struttura di scena: niente si
+  muove, perché non ci sono oggetti animati fuori dai chunk. Il montante **sta
+  sul marciapiede**, e non è una concessione: sotto una mensola sul fronte strada
+  c'è o il proprio ospite o l'asfalto.
+- **La mensola in mano al giocatore**: costo in `BALANCE.gameplay.terrace`,
+  azione in `game/actions.ts`, bottone nella toolbar accanto all'espansione — sono
+  la stessa domanda posta nei due versi — e tre motivi di rifiuto distinti, perché
+  chiedono tre gesti diversi.
+- **Una premessa era falsa.** `AERIAL.route.minSeparation` valeva 14 perché «sotto
+  quella distanza ci pensa già la 4.5». Misurato: **nessuna delle 20 campate di
+  una città cresciuta tocca una mensola**, perché `planSpan` cerca due corpi
+  affacciati e un impalcato non è un corpo. La soglia scende a 6, con la ragione
+  vera al posto di quella sbagliata.
+
+`routePlan.ts` si è spezzato in due prima di crescere: le **forme** restano lì, la
+meccanica dei pezzi va in `routeDrafts.ts`.
+
+**Resta aperto, e va detto:** i percorsi nascono ma sono pochi — su una città
+matura ne conta uno. Il rifiuto che domina è ora `blocked`, ed è onesto: un
+percorso lungo alla quota di un mezzanino attraversa davvero dei corpi. Le
+mensole di uno stesso fronte sono però contigue e complanari, quindi il mezzanino
+continuo **esiste già come geometria** e non come collegamento dichiarato:
+riconoscerlo è il punto da cui riprendere. Restano fuori dalla 4.9 le due caselle
+di look e di costo. **Le tabelle di misura in `README.md` e `src/sim/README.md`
+vanno rimisurate a mano** e non sono state aggiornate qui.
+
+## In corso — La montagna, la flora e le erbette
+
+L'isola saliva sempre allo stesso modo: un cubo per volta. Il terreno si posava
+sul multiplo di `cellSize` sotto di sé, quindi due celle contigue non potevano
+differire di più di due voxel, e ne usciva un rilievo a curve di livello tutte
+identiche — leggibile, ma senza montagne. Una montagna non è un pendio con più
+scalini, è un pendio con scalini **più alti**.
+
+- **La pedata cresce con la quota.** `terrain/terrace.ts` è una scala monotona:
+  due voxel in pianura, quattro nella foresta, sei sulla collina, otto sulla
+  roccia — il passo cambia dove `TERRAIN` cambia fascia di bioma. Il campo
+  continuo **non è stato toccato**: a fare il muro è la quantizzazione, e il
+  vincolo di Lipschitz che regge tutto il resto vale immutato.
+- **Il tetto del dirupo è dimostrato, non sperato.** Ogni pedata è larga almeno
+  quanto il dislivello massimo fra due celle contigue, quindi due celle cadono su
+  pedate contigue e il salto peggiore possibile è **un'alzata**. Nessun clamp a
+  valle, e nessun seed sfortunato che possa produrre di più. `terrace.test.ts` lo
+  verifica sulla scala, `IslandGenerator.test.ts` sull'isola.
+- **La pianura è rimasta quella di prima.** Il terrazzamento comincia a
+  `beachMaxHeight`: sotto, il gradino è ancora il cubo di sempre, ed è la ragione
+  per cui la città non si accorge di niente. Sopra, il ciglio si paga come
+  qualunque dislivello — `GRADING.maxWorksStep` vale 24, tre volte l'alzata
+  massima, quindi un lotto a cavallo di un gradone costruisce il suo terrapieno
+  invece di essere rifiutato.
+- **Dentro una conca la scala resta fine.** Fondo, sponda e pelo di un lago
+  stanno dentro sei voxel: un'alzata da otto se li mangerebbe, la sponda
+  scenderebbe sotto il proprio pelo e il lago colerebbe a valle.
+  `HeightField.inBasinAt` spegne il terrazzamento sull'ellisse d'influenza.
+- **Sul ciglio affiora la roccia.** Una cella che sovrasta un salto di più di un
+  cubo diventa `rock`, e quindi smette di essere edificabile. La flora però si
+  decide sul bioma **di sotto**: il ciglio esiste solo dove il margine del
+  reticolo basta a calcolarlo, un albero deve valere lo stesso da qualunque
+  blocco lo si guardi.
+- **Le sporgenze: la prima cosa del terreno che non è una colonna.**
+  `terrain/ledges.ts` appende al ciglio una lastra di roccia con aria sotto,
+  quindi non rappresentabile come quota — vive fuori dalla `TerrainMap`, nel
+  mondo voxel e nel blocco come record, esattamente come un albero. Che «abbia
+  senso» è un vincolo verificato: si aggancia alla parete per un lato intero,
+  lascia sotto di sé una cella d'aria e sopra di sé una cella di parete, e si
+  assottiglia allontanandosi da ciò che la regge. Il salto minimo non è
+  dichiarato, è la somma di quelle tre cose.
+- **Un catalogo della flora, e sei specie invece di tre.** `terrain/flora.ts`:
+  abete d'alta quota stretto e alto, cespuglio da cinque voxel, macchia
+  schiacciata sopra il limite del bosco. Ogni bioma ha una lista pesata, quindi
+  la fascia si legge anche dalla *forma* di ciò che ci cresce e non solo dalla
+  densità. La roccia non è più nuda: era spoglia da quando era anche l'unico
+  terreno vietato alla città.
+- **Le erbette sono un byte per colonna.** Un voxel più chiaro sopra la
+  superficie — un quarto della faccia di un cubo, che è la scala che al terreno
+  mancava del tutto fra il prato e l'albero più piccolo. Niente record e niente
+  PRNG: la copertura non ha un ingombro e non può collidere, quindi basta un hash
+  (`unitAt`, che non alloca la chiusura di `mulberry32`). Fiori in pianura,
+  sassi in quota, conchiglie sulla riva.
+- **Un reticolo di celle con due celle di margine.** `terrain/cellGrid.ts`: per
+  dire se una cella è un ciglio servono le quattro intorno, e quelle di bordo
+  stanno fuori dal blocco. Il margine copre anche l'anello decorativo, quindi gli
+  alberi hanno smesso di ricampionare il campo per conto proprio.
+- **Un difetto che solo il test ha rivelato.** Un cespuglio di raggio due nato a
+  quattro colonne dal bordo non tocca il blocco, ma il suo record ne alzava
+  comunque `maxHeight`: un chunk allocato per una chioma che quel blocco non
+  scrive mai. Vale identico per una sporgenza ancorata al margine — entrambe si
+  ritagliano ora prima di finire nel blocco.
+
+File: `src/world/terrain/terrace.ts`, `src/world/terrain/cellGrid.ts`,
+`src/world/terrain/flora.ts`, `src/world/terrain/groundcover.ts`,
+`src/world/terrain/ledges.ts`, `src/world/terrain/config.ts`,
+`src/world/terrain/IslandGenerator.ts`, `src/world/terrain/heightField.ts`,
+`src/world/terrain/columnBlock.ts`, `src/world/terrain/decor.ts`,
+`src/world/terrain/TerrainStreamer.ts`, `src/world/rng.ts`,
+`src/sim/testTerrain.ts`, più i test di terrazzamento, copertura e sporgenze.
+
+---
+
+## In corso — Il campionario dei voxel (fase 4.10)
+
+Le scene erano quattro e nessuna guardava il **vocabolario**: `city`, `noise` e
+`slab` misurano il mesher, `diorama` guarda un edificio. L'unico modo di vedere
+uno slot di palette o un linguaggio di superficie era trovarlo per caso dentro un
+edificio generato, e l'unico modo di giudicare la scala di una chioma era
+aspettare che l'isola ne producesse una accanto a un edificio. Una scelta di look
+si fa affiancando le cose, e non c'era un posto dove affiancarle.
+
+- **`?scene=swatch`, tre fasce su un basamento continuo.** La matrice 32 × 8 —
+  uno slot di palette per colonna, un `SURFACE_KIND` per riga — la stratigrafia
+  di ogni bioma tagliata di fianco più i tre `WATER_CLASS`, e la fascia di scala
+  fra cubo di terreno, alberi ed edificio di riferimento. È una scena come le
+  altre, deterministica e a passi con budget: nessuna geometria dedicata, nessuno
+  slot di palette e nessun tipo di superficie in più.
+- **Due metà che non si toccano.** `scenes/swatchLayout.ts` dice dove sta cosa ed
+  è puro; `scenes/swatchScene.ts` scrive e basta. La geometria ha tre consumatori
+  — generatore, inquadratura, referto sotto il cursore — e due letture della
+  stessa griglia divergerebbero al primo ritocco.
+- **Le dimensioni si ricavano dalle tabelle.** Colonne da `PALETTE_SIZE`, righe da
+  `SURFACE_KIND`, alberi da `TREE_SHAPES`, pilastri dai biomi: uno slot o una
+  specie in più allargano il campionario da sé invece di restarne fuori. È la
+  forma forte di «accorgersi che uno slot nuovo non è mai stato aggiunto» — non
+  può succedere.
+- **La cella non è un cubo, e il perché è nel mesher.** Lato quattro e altezza sei
+  sono il minimo che soddisfa insieme tutti gli emettitori di `microGeometry.ts`.
+  Sotto quei numeri qualche riga smetterebbe di mostrare qualcosa senza che
+  niente segnali il perché.
+- **L'acqua era l'unico pezzo di vocabolario invisibile.** Sulle colonne `water` e
+  `waterDeep` il fragment riconosce l'acqua dalla palette prima di leggere i tre
+  bit, quindi lì `WATER_CLASS` prende il posto del linguaggio di facciata: i tre
+  pilastri d'acqua sono il solo posto in cui un tema con uno specchio morto si
+  riconosce, e il referto lo dice sotto il cursore.
+- **La colonna zero resta un buco.** `packVisualBlock` restituisce zero per
+  palette zero: non c'è niente da scrivere, ed è esattamente ciò che l'indice zero
+  significa. Le combinazioni vere sono trentuno per otto.
+- **Nomi derivati, non una seconda tabella.** `PALETTE_SLOT_NAMES` e
+  `SURFACE_KIND_NAMES` si ricavano dalle rispettive tabelle: un elenco scritto a
+  mano divergerebbe alla prima aggiunta, e il campionario mostrerebbe una colonna
+  con il nome di quella accanto.
+- **Un difetto che solo il test ha rivelato.** «Non scrivere fuori dall'estensione
+  dichiarata» sembrava un confronto con `world.bounds`, e non lo è: l'AABB del
+  mondo è granulare al chunk e avrebbe accettato in silenzio una scrittura trenta
+  colonne oltre il bordo. Il test conta i voxel dentro l'estensione e li confronta
+  con il totale.
+
+File: `src/world/scenes/swatchLayout.ts`, `src/world/scenes/swatchScene.ts`,
+`src/world/scenes/swatchScene.test.ts`, `src/ui/SwatchOverlay.ts` (nuovi);
+`src/world/scenes/cityScene.ts`, `src/world/visualBlock.ts`,
+`src/engine/paletteSlots.ts`, `src/engine/palette.test.ts`, `src/main.ts`.
+
 ## In corso — L'isola prende una forma: lobi, colline e laghi
 
 L'isola era **una cupola**, e non per caso: un rumore isotropo moltiplicato per

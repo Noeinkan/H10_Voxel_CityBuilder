@@ -7,6 +7,7 @@ import {
   DIORAMA_DEFAULT_LEVEL,
   type DioramaSubjectOptions,
 } from './dioramaScene';
+import { createSwatchScene } from './swatchScene';
 
 /**
  * Scene di test deterministiche per l'harness di performance.
@@ -19,9 +20,15 @@ import {
  *
  * La generazione e' esposta a passi con budget in millisecondi, cosi' anche il
  * popolamento iniziale non blocca il main thread oltre la soglia.
+ *
+ * Le altre due non misurano niente e sono **strumenti di giudizio**: 'diorama'
+ * guarda un edificio da vicino, 'swatch' guarda il vocabolario — ogni slot di
+ * palette per ogni linguaggio di superficie, la stratigrafia di ogni bioma, il
+ * rapporto di scala fra cella, albero ed edificio. Entrambe dichiarano da se' il
+ * proprio ingombro e ignorano la region richiesta.
  */
 
-export type SceneKind = 'city' | 'noise' | 'slab' | 'diorama';
+export type SceneKind = 'city' | 'noise' | 'slab' | 'diorama' | 'swatch';
 
 export interface SceneRegion {
   readonly originX: number;
@@ -85,6 +92,10 @@ export function createScene(world: VoxelWorld, options: SceneOptions): SceneGene
         typologyId: options.subject?.typologyId,
         mixed: options.subject?.mixed,
       });
+    case 'swatch':
+      // Il campionario dichiara da se' il proprio ingombro: la region richiesta
+      // non lo riguarda, come non riguarda il diorama.
+      return createSwatchScene(world);
   }
 }
 

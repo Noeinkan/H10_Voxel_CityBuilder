@@ -40,3 +40,16 @@ export const PALETTE_SLOTS = {
 } as const;
 
 export const PALETTE_SIZE = 32;
+
+/**
+ * Nome di ogni slot, indicizzato come la palette.
+ *
+ * E' **derivato** e non una seconda tabella: un elenco scritto a mano
+ * divergerebbe da `PALETTE_SLOTS` alla prima aggiunta, e il campionario della
+ * 4.10 mostrerebbe una colonna con il nome di quella accanto. Chi lo legge
+ * chiede un nome per un indice, che e' il verso opposto a quello dell'oggetto.
+ */
+const slotNames = new Array<string>(PALETTE_SIZE).fill('');
+for (const [name, index] of Object.entries(PALETTE_SLOTS)) slotNames[index] = name;
+
+export const PALETTE_SLOT_NAMES: readonly string[] = slotNames;

@@ -13,7 +13,7 @@ radice `/` avvia isola, crescita e Cozy HUD con gli overlay tecnici nascosti.
 | Parametro | Default | Effetto |
 | --- | --- | --- |
 | `debug` | — | `1` apre overlay e hotkey tecniche |
-| `scene` | — | Isola una scena `city`, `noise` (caso peggiore), `slab` o `diorama` |
+| `scene` | — | Isola una scena `city`, `noise` (caso peggiore), `slab`, `diorama` o `swatch` |
 | `class` | `commercial` | Uso del soggetto del diorama: `residential`, `commercial`, `industrial`, `civic` |
 | `level` | `6` | Livello del soggetto del diorama, 0…`BUILDER.maxLevel` |
 | `typology` | — | `<id>` forza la tipologia del soggetto (`officeTower`, `civicLantern`, …) |
@@ -92,6 +92,41 @@ Due cose da sapere prima di stupirsi:
 /?scene=diorama&class=civic&typology=civicLantern
 ```
 
+## La scena `swatch`
+
+`?scene=swatch` compone **il vocabolario**, non un soggetto: tre fasce su un
+basamento continuo, inquadrate tutte insieme perché una scelta di look si fa
+affiancando le cose.
+
+- la **matrice** 32 × 8 — uno slot di palette per colonna, un `SURFACE_KIND` per
+  riga. La prima colonna è un buco, ed è ciò che l'indice 0 significa: la
+  palette vuota non si scrive;
+- la **stratigrafia**: un pilastro tagliato per bioma, con gli stessi tre tagli
+  del terreno vero, più i tre `WATER_CLASS`;
+- la **scala**: il cubo di terreno e la sua scaletta, una specie d'albero per
+  riga di `TREE_SHAPES`, e un edificio di riferimento.
+
+Tre cose da sapere prima di stupirsi:
+
+- le righe `plain` e `utility` **non hanno microgeometria**, e non è un difetto:
+  la prima non è un linguaggio, e la seconda è metallo strutturale la cui forma
+  arriva dalla mesh. Si distinguono per tinta;
+- sulle colonne `water` e `waterDeep` i tre bit **non** portano una facciata ma
+  `WATER_CLASS`: il fragment riconosce l'acqua dalla palette prima di leggerli
+  (contratto 5). L'overlay lo dice sotto il cursore;
+- il campionario mostra **quello che esiste**. Se una combinazione si vede male,
+  il difetto sta altrove — qui non c'è geometria dedicata da correggere.
+
+Il pannello a destra nomina fascia, riga e colonna sotto il cursore, e tiene in
+vista la legenda dell'ordine delle otto righe: in-world non ci sono etichette.
+Cambiare tema con `1`..`9` rilegge il campionario **senza rigenerarlo**, ed è il
+modo di riconoscere uno slot morto a colpo d'occhio.
+
+```
+/?scene=swatch&debug=1
+/?scene=swatch&theme=neon&daylight=night     # le righe luminous e portal accese
+```
+
 ## Tasti
 
 `Q`/`E` ruotano attorno al punto di terra sotto al mouse (sul centro
@@ -148,6 +183,8 @@ Solo con `?debug=1`:
 - sempre: `__voxelStats()`, `__voxelReset()`, `__voxelExpand()`,
   `__voxelRebuildAll()`, `__voxelTheme(id?)`, `__voxelSun(azimuth?, elevation?)`, `__voxelHour(h?)`,
   `__voxelInspect(mode?, z?)`
+- con `scene=swatch`: `__voxelSwatch(x?, y?)` — senza argomenti dice cosa indica
+  il cursore, con una colonna interroga il campionario senza toccare il mouse
 - con terreno: `__terrainStats()`, `__terrainBiomeView()`, `__terrainExpand()`
 - con `sim=1`: `__simStats()`, `__simTick(n)`, `__simSites(n)`, `__simClass(i)`,
   `__simPolicy(id)`

@@ -1,11 +1,20 @@
-import { AERIAL, AERIAL_PART, type AerialPart } from './config';
+import { AERIAL, type AerialPart } from './config';
+import type { AerialProbe, DeckPlan, DeckRect, DeckRefusal } from './deckPlan';
 import {
-  planDeck,
-  type AerialProbe,
-  type DeckPlan,
-  type DeckRect,
-  type DeckRefusal,
-} from './deckPlan';
+  assemble,
+  climbProfile,
+  crestOf,
+  hubDraft,
+  hubPad,
+  hubSide,
+  placeHubs,
+  rectOf,
+  slideOrder,
+  walkDraft,
+  type Landing,
+  type PieceDraft,
+  type RouteEnd,
+} from './routeDrafts';
 import type { FaceRun } from './terracePlan';
 
 /**
@@ -42,28 +51,8 @@ import type { FaceRun } from './terracePlan';
  * una griglia.
  */
 
-/**
- * Un capo di percorso: una mensola o un nodo gia' costruiti.
- *
- * E' un `BuildingRecord` ridotto all'osso, come `SpanSupport` per le campate. Il
- * bordo del riquadro **e'** l'atterraggio: non c'e' niente da cercare, perche'
- * quella superficie l'ha gia' costruita qualcuno.
- */
-export interface RouteEnd {
-  readonly id: number;
-  readonly rect: DeckRect;
-  /** Quota del piano calpestabile. */
-  readonly deckZ: number;
-  /**
-   * Da che parte questo capo guarda il vuoto, se ha un ospite alle spalle.
-   *
-   * **Una mensola ha un davanti e un dietro.** Dietro c'e' l'edificio da cui
-   * sporge, e un percorso che partisse di li' comincerebbe dentro un muro: e'
-   * stato il rifiuto piu' comune del dominio finche' l'asse lo sceglieva la
-   * distanza. Assente su un nodo, che di spalle non ne ha.
-   */
-  readonly open?: { readonly axis: 0 | 1; readonly sign: number };
-}
+// L'atterraggio e i pezzi vivono in `routeDrafts.ts`: qui ci sono le forme.
+export type { RouteEnd };
 
 /** Un pezzo di percorso: un tratto o un nodo, con il piano che lo regge. */
 export interface RoutePiece {
@@ -103,8 +92,8 @@ export type RouteRefusal = (typeof ROUTE_REFUSALS)[number] | DeckRefusal;
 /**
  * Quanto lontano e' arrivato un tentativo prima di arrendersi.
  *
- * `planRoute` prova molte combinazioni — due assi, quattro atterraggi per capo,
- * tre pieghe — e quasi tutte falliscono. Restituire l'ultimo motivo direbbe solo
+ * `planRoute` prova molte combinazioni — due assi, tre forme, molte posizioni di
+ * piega — e quasi tutte falliscono. Restituire l'ultimo motivo direbbe solo
  * com'e' finito l'ultimo tentativo, che e' quasi sempre il piu' disperato: si
  * tiene invece **quello arrivato piu' avanti**, che e' l'unico che dice qualcosa
  * su cosa manca davvero a questa coppia.
@@ -191,13 +180,6 @@ function landingOf(end: RouteEnd, axis: 0 | 1, outward: 1 | -1): FaceRun {
   return { z: end.deckZ, wall: along, from, to: from + size - 1 };
 }
 
-interface Landing {
-  readonly lo: RouteEnd;
-  readonly hi: RouteEnd;
-  readonly runLo: FaceRun;
-  readonly runHi: FaceRun;
-}
-
 /**
  * Il percorso fra due atterraggi scelti, o perche' non c'e'.
  *
@@ -222,7 +204,7 @@ function planBetween(query: RouteQuery, axis: 0 | 1, landing: Landing): RouteRes
   // quanto una passerella, e' gia' il percorso.
   const shared = Math.min(runLo.to, runHi.to) - Math.max(runLo.from, runHi.from) + 1;
   if (shared >= width) {
-    const cross = Math.max(runLo.from, runHi.from) + ((shared - width) >> 1);
+    const cross = bestLane(query, axis, landing, { from, to, width });
     return planStraight(query, axis, landing, { from, to, cross, width });
   }
 
@@ -235,12 +217,58 @@ function planBetween(query: RouteQuery, axis: 0 | 1, landing: Landing): RouteRes
     return planStraight(query, axis, landing, { from, to, cross, width: hull });
   }
 
-  // **La piega non c'e', ed e' un debito dichiarato.** Un percorso a zeta esiste
-  // sulla carta — due pianerottoli e un tratto di traverso — ma i suoi nodi
-  // cadono in punti che il corridoio dritto non ha misurato, e su
-  // settecentocinquanta coppie non ne reggeva nessuno. Meglio non averlo che
-  // averlo rotto: chi non si guarda, per ora, non si collega.
-  return { ok: false, refusal: 'tooTight' };
+  // Sfalsati di molto: non resta che girare.
+  return planZigzag(query, axis, landing, { from, to, width });
+}
+
+/**
+ * La corsia piu' sgombra fra quelle che reggono tutti e due gli atterraggi.
+ *
+ * **Una mensola non sta tutta fuori dal proprio ospite.** L'aggetto parte dalla
+ * parete, e su una fascia rientrata le prime colonne cadono ancora dentro
+ * l'impronta — e' voluto, e' la terrazza che la grammatica produce gia'. Ma il
+ * corridoio di un percorso ereditava quella fascia, e allora **tagliava i corpi
+ * degli edifici vicini sullo stesso fronte**: su una citta' vera tutte e dieci
+ * le coppie con gli atterraggi allineati morivano cosi', che sono esattamente
+ * quelle il cui corridoio correrebbe lungo la strada.
+ *
+ * Si prova allora ogni corsia che poggi su tutti e due i capi per almeno meta'
+ * della propria larghezza — meno di cosi' la passerella arriverebbe di spigolo —
+ * e si tiene quella che ha meno roba sopra la testa. E' la stessa idea con cui
+ * un pianerottolo scorre lungo la corsa per trovare il vuoto invece di
+ * pretenderlo dove capita, applicata di traverso.
+ */
+function bestLane(
+  query: RouteQuery,
+  axis: 0 | 1,
+  landing: Landing,
+  route: { from: number; to: number; width: number },
+): number {
+  const { from, to, width } = route;
+  const { runLo, runHi } = landing;
+  const seat = width >> 1;
+
+  const first = Math.min(runLo.from, runHi.from) - width + seat;
+  const last = Math.max(runLo.to, runHi.to) - seat + 1;
+
+  let best = Math.max(runLo.from, runHi.from);
+  let lowest = Number.POSITIVE_INFINITY;
+
+  for (let cross = first; cross <= last; cross++) {
+    // Poggiata su tutti e due, o non e' una passerella fra i due.
+    const onLo = Math.min(cross + width - 1, runLo.to) - Math.max(cross, runLo.from) + 1;
+    const onHi = Math.min(cross + width - 1, runHi.to) - Math.max(cross, runHi.from) + 1;
+    if (onLo < seat || onHi < seat) continue;
+
+    const crest = crestOf(query, [rectOf(axis, from, to, cross, width)]);
+    // A parita' vince la prima, che sull'asse cresce: senza un ordine dichiarato
+    // la stessa citta' con lo stesso seme farebbe passare la corsia altrove.
+    if (crest < lowest) {
+      lowest = crest;
+      best = cross;
+    }
+  }
+  return best;
 }
 
 /**
@@ -261,20 +289,18 @@ function planStraight(
   const zLo = landing.runLo.z;
   const zHi = landing.runHi.z;
 
-  // **Il percorso scavalca.** La quota di corsa non e' quella dei due capi: e'
-  // quella che passa sopra tutto cio' che sta in mezzo, e i due capi ci salgono.
-  // Senza questa riga un percorso lungo fra due mensole a quote diverse
-  // attraversava qualunque cosa gli capitasse davanti — era il rifiuto piu'
-  // comune del dominio.
-  // Il colmo si misura sulla fascia che i **pianerottoli** occupano, non su
-  // quella dei tratti: un nodo e' piu' largo di una passerella, e un edificio
-  // appena fuori dal corridoio lo blocca lo stesso.
-  const pad = (hubSide(width) - width) >> 1;
-  const floor = Math.max(
-    zLo,
-    zHi,
-    crestOf(query, axis, from, to, cross - pad, width + 2 * pad),
-  );
+  // **Il percorso si infila, e scavalca solo se non passa.** La corsa parte dalla
+  // quota dei due capi: alla quota di una mensola, fra i corpi degli edifici,
+  // sopra una carreggiata, quasi sempre c'e' il vuoto che serve.
+  //
+  // Partire dal **colmo** — cioe' dalla quota che passa sopra ogni tetto sotto il
+  // corridoio — era la lettura precedente, e su una citta' vera cancellava la
+  // rete: delle cinquantadue coppie che la passata prova davvero, quarantotto
+  // morivano su `tooSteep` perche' il colmo chiedeva ai due capi di salire in
+  // cima al quartiere. Il colmo resta e serve al **caso peggiore** — sotto, il
+  // ciclo alza la corsa di un pianerottolo per volta finche' il luogo la accetta
+  // o finche' i salti finiscono — ma non e' piu' il punto di partenza.
+  const floor = Math.max(zLo, zHi);
   const side = hubSide(width);
 
   // **Se non passa, si alza.** Il colmo calcolato guarda cio' che il registry
@@ -297,246 +323,137 @@ function planStraight(
     const pieces: PieceDraft[] = [];
     let cursor = from;
     for (let i = 1; i <= nodes; i++) {
-      pieces.push(walk(axis, cursor, spots[i - 1] - 1, cross, width, profile[i - 1]));
-      pieces.push(hub(axis, spots[i - 1], cross, width, profile[i - 1], profile[i]));
+      pieces.push(walkDraft(axis, cursor, spots[i - 1] - 1, cross, width, profile[i - 1]));
+      pieces.push(hubDraft(axis, spots[i - 1], cross, width, profile[i - 1], profile[i]));
       cursor = spots[i - 1] + side;
     }
     if (to < cursor) return { ok: false, refusal: 'tooTight' };
-    pieces.push(walk(axis, cursor, to, cross, width, profile[nodes]));
+    pieces.push(walkDraft(axis, cursor, to, cross, width, profile[nodes]));
 
-    const result = assemble(query, landing, pieces);
+    const result = finish(query, landing, pieces);
     if (result.ok) return result;
     refusal = deepest(refusal, result.refusal);
   }
 }
 
 /**
- * Dove cadono i pianerottoli, cercando loro un posto invece di imporglielo.
+ * Il percorso a zeta: due angoli e un tratto di traverso.
  *
- * **E' il pezzo che decide se una rete esiste.** Un nodo e' un blocco di sei per
- * sei alto quanto il salto che assorbe: piantato a distanze uguali lungo la
- * corsa, nove volte su dieci finisce dentro qualcosa — e' stato il rifiuto di
- * milleduecento tentativi su millequattrocento. Lasciarlo scorrere lungo la
- * corsa, dalla posizione ideale verso fuori, costa qualche prova e trova il
- * vuoto che c'e'. E' anche il motivo per cui due percorsi paralleli girano in
- * punti diversi: il posto lo decide cio' che c'e' sotto.
+ * **E' la forma che era stata tolta, e il motivo per cui torna adesso.** La zeta
+ * esisteva gia' e non reggeva su nessuna coppia di una citta' vera: i suoi
+ * pianerottoli cadevano in punti che il corridoio dritto non misura, quindi il
+ * colmo prometteva un franco che il tratto di traverso non aveva. `crestOf` ora
+ * prende i **riquadri veri dei pezzi**, e ciascuna forma misura cio' che davvero
+ * scavalca — che e' tutta la correzione.
+ *
+ * I due angoli sono anche i due pianerottoli: uno sale dal capo basso alla quota
+ * di corsa, l'altro ridiscende all'altro capo. Non ce ne sono altri, ed e'
+ * voluto — `AERIAL.route.maxTurns` vale due, e una zeta che dovesse anche salire
+ * a tappe sarebbe un giro, non un collegamento.
  */
-function placeHubs(
+function planZigzag(
   query: RouteQuery,
   axis: 0 | 1,
-  route: {
-    from: number;
-    to: number;
-    cross: number;
-    width: number;
-    profile: readonly number[];
-  },
-): number[] | null {
-  const { from, to, cross, width, profile } = route;
+  landing: Landing,
+  route: { from: number; to: number; width: number },
+): RouteResult {
+  const { from, to, width } = route;
+  const { runLo, runHi } = landing;
+  const zLo = runLo.z;
+  const zHi = runHi.z;
   const side = hubSide(width);
-  const nodes = profile.length - 1;
+  const pad = hubPad(width);
 
-  const spots: number[] = [];
-  let cursor = from + 1;
-  for (let i = 1; i <= nodes; i++) {
-    const ideal = from + Math.round(((to - from + 1 - side) * i) / (nodes + 1));
-    const last = to - side;
-    let placed = -1;
+  // I due tratti dritti corrono in mezzeria del rispettivo atterraggio.
+  const crossLo = runLo.from + ((runLo.to - runLo.from + 1 - width) >> 1);
+  const crossHi = runHi.from + ((runHi.to - runHi.from + 1 - width) >> 1);
+  const step = Math.sign(crossHi - crossLo);
+  // Sotto un lato di pianerottolo i due angoli si compenetrerebbero: quel caso
+  // e' gia' del tratto largo, che lo risolve senza girare.
+  if (Math.abs(crossHi - crossLo) < side) return { ok: false, refusal: 'tooTight' };
 
-    for (const t of slideOrder(ideal, cursor, last)) {
-      const draft = hub(axis, t, cross, width, profile[i - 1], profile[i]);
-      const result = planDeck({
-        rect: draft.rect,
-        deckZ: draft.deckZ,
-        drop: draft.drop,
-        anchors: [],
-        ground: query.ground,
-        solid: query.solid,
-      });
-      if (result.ok) {
-        placed = t;
+  // La piega assorbe il dislivello con i suoi due angoli, uno per capo: piu' di
+  // cosi' vorrebbe pianerottoli in mezzo ai tratti, e i giri ammessi sono due.
+  const ideal = from + ((to - from + 1 - side) >> 1);
+  let refusal: RouteRefusal = 'tooTight';
+
+  for (const at of slideOrder(ideal, from + 1, to - side)) {
+    const hubLo = hubDraft(axis, at, crossLo, width, zLo, zLo);
+    const hubHi = hubDraft(axis, at, crossHi, width, zHi, zHi);
+    // Il tratto di traverso unisce i due angoli, e sta **fuori dal corridoio**:
+    // e' esattamente il pezzo che il colmo della corsa non misurava.
+    const linkFrom = step > 0 ? crossLo - pad + side : crossHi - pad + side;
+    const linkTo = step > 0 ? crossHi - pad - 1 : crossLo - pad - 1;
+
+    const crossAxis = (1 - axis) as 0 | 1;
+    const rects: DeckRect[] = [
+      rectOf(axis, from, at - 1, crossLo, width),
+      hubLo.rect,
+      hubHi.rect,
+      rectOf(axis, at + side, to, crossHi, width),
+    ];
+    if (linkFrom <= linkTo) rects.push(rectOf(crossAxis, linkFrom, linkTo, at + pad, width));
+
+    // **Il colmo si misura qui sui riquadri veri dei pezzi**, ed e' il difetto
+    // per cui la piega era stata tolta: il tratto di traverso e i due angoli
+    // stanno fuori dal corridoio, e il colmo della corsa non li guardava. Serve
+    // come tetto della ricerca — sopra di lui non c'e' piu' niente da scavalcare
+    // — mentre a partire e' sempre la quota dei due capi.
+    // Il colmo e' un **tetto** della ricerca, non un pavimento: sopra di lui non
+    // resta niente da scavalcare. Dove i due capi stanno gia' piu' in alto di
+    // tutto cio' che il percorso copre — il caso normale fra due mensole in
+    // aria — il tetto non deve far saltare il tentativo alla quota dei capi, che
+    // e' proprio quello giusto.
+    const start = Math.max(zLo, zHi);
+    const roof = Math.max(start, crestOf(query, rects));
+
+    for (let runZ = start; runZ <= roof; runZ += AERIAL.route.stepPerNode) {
+      // I due angoli sono anche i due pianerottoli, e ciascuno tiene un salto
+      // solo: piu' in alto della corsa nessuno dei due arriva.
+      if (runZ - zLo > AERIAL.route.stepPerNode || runZ - zHi > AERIAL.route.stepPerNode) {
+        refusal = deepest(refusal, 'tooSteep');
         break;
       }
-    }
-    if (placed < 0) return null;
-    spots.push(placed);
-    cursor = placed + side + 1;
-  }
-  return spots;
-}
 
-/** Le posizioni da provare: quella ideale, e poi via via piu' lontane. */
-function slideOrder(ideal: number, min: number, max: number): readonly number[] {
-  const out: number[] = [];
-  for (let step = 0; step <= AERIAL.route.hubSlide; step += 2) {
-    for (const t of step === 0 ? [ideal] : [ideal - step, ideal + step]) {
-      if (t >= min && t <= max) out.push(t);
-    }
-  }
-  return out;
-}
+      const drafts: PieceDraft[] = [
+        walkDraft(axis, from, at - 1, crossLo, width, zLo),
+        hubDraft(axis, at, crossLo, width, zLo, runZ),
+      ];
+      if (linkFrom <= linkTo) {
+        drafts.push(walkDraft(crossAxis, linkFrom, linkTo, at + pad, width, runZ));
+      }
+      drafts.push(
+        hubDraft(axis, at, crossHi, width, runZ, zHi),
+        walkDraft(axis, at + side, to, crossHi, width, zHi),
+      );
 
-/**
- * La quota piu' bassa a cui una corsa passa sopra tutto quello che copre.
- *
- * E' la stessa domanda del franco di `planDeck`, posta prima invece che dopo:
- * li' serve a rifiutare, qui a scegliere. Costa una lettura per colonna del
- * corridoio, ed e' la lettura che evita di provare quote che non possono
- * funzionare.
- */
-function crestOf(
-  probe: AerialProbe,
-  axis: 0 | 1,
-  from: number,
-  to: number,
-  cross: number,
-  width: number,
-): number {
-  let top = 0;
-  for (let v = from; v <= to; v++) {
-    for (let w = cross; w < cross + width; w++) {
-      const column = axis === 0 ? probe.ground(v, w) : probe.ground(w, v);
-      if (column.top > top) top = column.top;
+      const result = finish(query, landing, drafts);
+      if (result.ok) return result;
+      refusal = deepest(refusal, result.refusal);
     }
   }
-  return top + AERIAL.clearance + AERIAL.girderDepth;
+
+  return { ok: false, refusal };
 }
 
-/**
- * Le quote dei tratti, salendo da un capo alla corsa e ridiscendendo all'altro.
- *
- * Un pianerottolo per salto, e il salto ha un tetto: e' cio' che rende il
- * dislivello una cosa che si vede — un fianco alto quanto un mezzo piano —
- * invece di una rampa che questo progetto non sa disegnare. `null` se i
- * pianerottoli ammessi non bastano a coprire il dislivello.
- */
-function climbProfile(zLo: number, zHi: number, runZ: number): number[] | null {
-  const step = AERIAL.route.stepPerNode;
-  const up = Math.ceil((runZ - zLo) / step);
-  const down = Math.ceil((runZ - zHi) / step);
-  if (up + down > AERIAL.route.maxNodes) return null;
-
-  const profile: number[] = [];
-  for (let i = 0; i < up; i++) profile.push(zLo + Math.round(((runZ - zLo) * i) / up));
-  profile.push(runZ);
-  for (let i = 1; i <= down; i++) profile.push(runZ - Math.round(((runZ - zHi) * i) / down));
-  return profile;
-}
-
-/** Un pezzo prima che il luogo lo confermi: il riquadro, la quota e cosa e'. */
-interface PieceDraft {
-  readonly part: AerialPart;
-  readonly rect: DeckRect;
-  readonly deckZ: number;
-  readonly drop: number;
-}
-
-/** Lato di un pianerottolo: mai piu' stretto del tratto che ci arriva, piu' un bordo. */
-function hubSide(width: number): number {
-  return Math.max(AERIAL.route.nodeSide, width + 2);
-}
-
-/** Un tratto lungo l'asse del percorso, dalla colonna `from` alla `to` comprese. */
-function walk(
-  axis: 0 | 1,
-  from: number,
-  to: number,
-  cross: number,
-  width: number,
-  z: number,
-): PieceDraft {
-  return {
-    part: AERIAL_PART.walk,
-    rect: rectOf(axis, from, to, cross, width),
-    deckZ: z,
-    drop: 0,
-  };
-}
-
-/**
- * Un nodo, che tiene due quote.
- *
- * Il piano sta alla quota alta e il fianco scende fino alla bassa: il tratto che
- * arriva da sotto si appoggia al suo fianco, e il salto si vede. E' un
- * pianerottolo, ed e' anche un posto in cui si costruisce — sono i nodi abitati
- * a fare di una rete una citta' invece di un traliccio.
- */
-function hub(
-  axis: 0 | 1,
-  along: number,
-  cross: number,
-  width: number,
-  zA: number,
-  zB: number,
-): PieceDraft {
-  const side = hubSide(width);
-  const pad = (side - width) >> 1;
-  return {
-    part: AERIAL_PART.node,
-    rect: rectOf(axis, along, along + side - 1, cross - pad, side),
-    deckZ: Math.max(zA, zB),
-    drop: Math.abs(zA - zB),
-  };
-}
-
-/**
- * Chiede al luogo se i pezzi stanno in piedi, **prima i nodi**.
- *
- * L'ordine non e' un dettaglio: un nodo non e' appeso a niente e si pianta le
- * proprie gambe, e solo dopo i tratti possono contarlo come ancoraggio. Al
- * contrario, ogni tratto sarebbe uno sbalzo dal solo capo da cui parte.
- */
-function assemble(query: RouteQuery, landing: Landing, drafts: readonly PieceDraft[]): RouteResult {
-  const plans = new Map<number, DeckPlan>();
-
-  for (let i = 0; i < drafts.length; i++) {
-    if (drafts[i].part !== AERIAL_PART.node) continue;
-    const result = planDeck({
-      rect: drafts[i].rect,
-      deckZ: drafts[i].deckZ,
-      drop: drafts[i].drop,
-      anchors: [],
-      ground: query.ground,
-      solid: query.solid,
-    });
-    if (!result.ok) return { ok: false, refusal: result.refusal };
-    plans.set(i, result.plan);
-  }
-
-  for (let i = 0; i < drafts.length; i++) {
-    if (drafts[i].part === AERIAL_PART.node) continue;
-    const anchors: DeckRect[] = [];
-    anchors.push(i === 0 ? landing.lo.rect : drafts[i - 1].rect);
-    anchors.push(i === drafts.length - 1 ? landing.hi.rect : drafts[i + 1].rect);
-
-    const result = planDeck({
-      rect: drafts[i].rect,
-      deckZ: drafts[i].deckZ,
-      anchors,
-      ground: query.ground,
-      solid: query.solid,
-    });
-    if (!result.ok) return { ok: false, refusal: result.refusal };
-    plans.set(i, result.plan);
-  }
-
+/** Chiede al luogo se i pezzi reggono, e ne fa un piano di percorso. */
+function finish(
+  query: RouteQuery,
+  landing: Landing,
+  drafts: readonly PieceDraft[],
+): RouteResult {
+  const result = assemble(query, landing, drafts);
+  if (!result.ok) return result;
   return {
     ok: true,
     plan: {
       fromId: landing.lo.id,
       toId: landing.hi.id,
-      pieces: drafts.map((draft, i) => ({ part: draft.part, deck: plans.get(i) as DeckPlan })),
+      pieces: drafts.map((draft, i) => ({ part: draft.part, deck: result.plans[i] })),
       fromZ: landing.runLo.z,
       toZ: landing.runHi.z,
     },
   };
-}
-
-/** Un riquadro dato in coordinate «lungo l'asse» e «di traverso». */
-function rectOf(axis: 0 | 1, from: number, to: number, cross: number, width: number): DeckRect {
-  return axis === 0
-    ? { x: from, y: cross, sizeX: to - from + 1, sizeY: width }
-    : { x: cross, y: from, sizeX: width, sizeY: to - from + 1 };
 }
 
 /** Il centro di un capo su un asse, in mezzi voxel per non perdere il dispari. */
@@ -545,9 +462,3 @@ function centerOf(end: RouteEnd, axis: 0 | 1): number {
     ? 2 * end.rect.x + end.rect.sizeX
     : 2 * end.rect.y + end.rect.sizeY;
 }
-
-
-
-
-
-

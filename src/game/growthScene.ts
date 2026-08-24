@@ -30,11 +30,14 @@ import {
   expansionFailure,
   grantSite,
   placeCatalyst,
+  placeTerrace,
+  terraceFailure,
   togglePolicy,
   type ActionFailure,
   type ActionResult,
   type SiteCost,
 } from './actions';
+import type { TerraceRefusal } from '../world/aerial/terracePlan';
 import { cityCondition, isSelfSufficient, type CityCondition } from './cityCondition';
 import { onboardingAllows, onboardingOf, type OnboardingState } from './onboarding';
 
@@ -72,6 +75,7 @@ export class GrowthScene {
   private readonly unlocked = new Set<string>();
   private message = 'Choose a catalyst and place it on the island.';
   private clearanceMemo: { readonly key: string; readonly site: LandmarkSite } | null = null;
+  private terraceMemo: { readonly key: string; readonly refusal: TerraceRefusal | null } | null = null;
 
   constructor(
     world: VoxelWorld,
@@ -93,6 +97,7 @@ export class GrowthScene {
       // Le passate del Builder sono l'unico momento in cui il registry cambia:
       // quello che il cursore sapeva del riquadro sotto di se' e' di un tick fa.
       this.clearanceMemo = null;
+      this.terraceMemo = null;
     });
     this.builder.step();
   }
@@ -166,6 +171,56 @@ export class GrowthScene {
     const site = this.builder.landmarkClearance(x, y, role);
     this.clearanceMemo = { key, site };
     return site;
+  }
+
+  /**
+   * Perche' una mensola non si puo' posare qui, o null se si puo'.
+   *
+   * La porta del cursore. Chiede al mondo con `terraceSite`, che **non scrive**,
+   * e passa il rifiuto al gioco: e' la stessa coppia di domande dei
+   * catalizzatori — cosa dice il luogo, cosa dice il bilancio — nello stesso
+   * ordine.
+   */
+  terraceFailure(x: number, y: number): ActionFailure | null {
+    return terraceFailure(this.state, this.terraceRefusalAt(x, y));
+  }
+
+  /**
+   * Posa una mensola sull'edificio di questa colonna.
+   *
+   * **Si paga solo cio' che compare.** Il budget di chunk e' l'ultima parola e
+   * si scopre scrivendo: se `placeTerrace` dice di no dopo che la convalida e'
+   * passata, i fondi restano dove sono e il messaggio lo dice, invece di
+   * addebitare una struttura che non c'e'.
+   */
+  placeTerrace(x: number, y: number): ActionResult {
+    const result = placeTerrace(this.state, this.terraceRefusalAt(x, y));
+    if (!result.success) return result;
+
+    if (!this.builder.placeTerrace(x, y)) {
+      return { success: false, reason: 'no-room-aloft' };
+    }
+    this.terraceMemo = null;
+    return this.apply(result, 'Terrace built: the city gains a floor above the street.');
+  }
+
+  /**
+   * Cosa il mondo dice di questa colonna, con una voce di memoria.
+   *
+   * Vale la stessa ragione di `clearanceAt`: il cursore fa la stessa domanda a
+   * ogni `pointermove` e il click cade dove il cursore ha appena chiesto. Si
+   * invalida a ogni tick, che e' l'unico momento in cui il registry cambia da
+   * solo, e a ogni posa.
+   */
+  private terraceRefusalAt(x: number, y: number): TerraceRefusal | null {
+    const key = `${x},${y}`;
+    if (this.terraceMemo !== null && this.terraceMemo.key === key) {
+      return this.terraceMemo.refusal;
+    }
+    const site = this.builder.terraceSite(x, y);
+    const refusal = site.ok ? null : site.refusal;
+    this.terraceMemo = { key, refusal };
+    return refusal;
   }
 
   togglePolicy(id: PolicyId): ActionResult {

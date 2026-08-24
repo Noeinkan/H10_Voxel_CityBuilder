@@ -448,6 +448,151 @@ export const LANDFORM = {
   basinSalt: 0x0acc_a1a0,
 } as const;
 
+/**
+ * Il gradino con cui il terreno sale, a seconda di quanto e' gia' in alto.
+ *
+ * **La cella non e' il gradino.** `cellSize` e' la grana in pianta — quanto e'
+ * largo un cubo — e fino alla 4.x era anche il passo in quota, cioe' l'unico
+ * dislivello che due celle contigue potessero avere. Ne usciva un'isola a curve
+ * di livello tutte uguali: leggibile, ma senza montagne, perche' una montagna
+ * non e' un pendio con piu' scalini, e' un pendio con scalini **piu' alti**.
+ *
+ * Qui il passo cresce con la quota, e cresce con le fasce di bioma: due voxel
+ * sulla pianura, quattro nella foresta, sei sulla collina, otto sulla roccia.
+ * La costa e la pianura restano quelle di prima — `fromHeight` coincide con
+ * `beachMaxHeight` — perche' e' li' che la citta' cresce e un dirupo in mezzo a
+ * un isolato sarebbe un dispetto, non un paesaggio.
+ *
+ * **Il campo continuo non si tocca.** Il vincolo di Lipschitz vale ancora: e' la
+ * *quantizzazione* a fare il muro, non il rilievo. Ne segue la proprieta' che
+ * tiene in piedi tutto il resto — se ogni pedata e' larga almeno quanto il
+ * dislivello massimo fra due celle contigue (meno di due voxel, misurato in
+ * `heightField.test.ts`), allora due celle contigue non possono saltare piu' di
+ * **un'alzata**, e il dirupo peggiore possibile e' `maxStep`. Non c'e' nessun
+ * caso in cui il terreno si spezzi piu' di cosi', e non serve un clamp per
+ * garantirlo.
+ */
+export const TERRACE = {
+  /**
+   * Sotto questa quota il passo resta la cella: la pianura non si terrazza.
+   *
+   * E' `beachMaxHeight` e non un numero suo: sopra quella soglia finisce la
+   * spiaggia e comincia il rilievo, ed e' esattamente li' che ha senso che il
+   * terreno cominci a spezzarsi.
+   */
+  fromHeight: 24,
+
+  /**
+   * Ogni quanti voxel di quota l'alzata cresce di una cella.
+   *
+   * Otto, cioe' la stessa larghezza con cui `TERRAIN` divide roccia, collina e
+   * foresta: il passo cambia dove cambia la fascia, e le due letture del rilievo
+   * — il colore e la forma — raccontano la stessa storia invece di scavallarsi.
+   */
+  growth: 8,
+
+  /**
+   * Alzata massima, in voxel.
+   *
+   * Quattro celle. E' il muro piu' alto che l'isola sappia produrre da sola, ed
+   * e' dichiarato qui perche' e' anche il numero che le opere di terra devono
+   * poter colmare: sta largamente sotto `GRADING.maxWorksStep`, quindi un lotto
+   * che nasce a cavallo di un ciglio costruisce il suo terrapieno invece di
+   * essere rifiutato.
+   */
+  maxStep: 8,
+} as const;
+
+/**
+ * Erbette, fiori e sassi: un voxel appoggiato sopra la superficie.
+ *
+ * **E' l'unica decorazione del terreno che non e' un oggetto.** Un albero ha una
+ * cella sua, un'origine e un ingombro da non far collidere; qui non c'e' niente
+ * da tenere separato — la copertura si decide per colonna, con un hash e nessun
+ * PRNG da far avanzare, e vive interamente dentro la colonna che la porta. Da
+ * qui il fatto che viaggia come un byte per colonna nel `ColumnBlock` invece che
+ * come un record.
+ *
+ * Le densita' sono per colonna e sono basse di proposito: a un voxel per cubo di
+ * terreno la scala e' quella giusta — un quarto della faccia superiore di una
+ * cella — e bastano poche percentuali perche' il prato smetta di leggersi come
+ * una campitura piatta. Piu' su, e il prato diventa un tappeto rumoroso.
+ */
+export const GROUND_COVER = {
+  /** Probabilita' per colonna, in ordine di `BIOME`. */
+  density: [0, 0.02, 0.05, 0.055, 0.05, 0.035] as const,
+
+  /**
+   * Quota della copertura fra quelle possibili, per bioma: la seconda voce e' la
+   * frazione di copertura che diventa fiore (o sasso, in quota) invece che erba.
+   *
+   * Sulla spiaggia e sulla roccia l'erba non cresce, e li' la frazione vale 1:
+   * tutto quello che compare e' un sasso.
+   */
+  accentShare: [0, 1, 0.22, 0.12, 0.3, 1] as const,
+
+  /**
+   * Tinta dell'erbetta per bioma: sempre un tono piu' chiaro della superficie
+   * che la porta, o non si vedrebbe. Ignorata dove `accentShare` vale 1.
+   */
+  grassTone: [
+    0, //                          ocean
+    0, //                          beach
+    PALETTE_SLOTS.grassPale, //    plain  — su `grass`
+    PALETTE_SLOTS.grassLight, //   forest — su `grassDark`
+    PALETTE_SLOTS.grassPale, //    hill   — su `grassLight`
+    0, //                          rock
+  ] as const,
+
+  /** Tinta dell'accento: conchiglia sulla riva, fiore in pianura, sasso in quota. */
+  accentTone: [
+    0, //                            ocean
+    PALETTE_SLOTS.concreteWhite, //  beach
+    PALETTE_SLOTS.metalBrass, //     plain
+    PALETTE_SLOTS.brickLight, //     forest
+    PALETTE_SLOTS.stone, //          hill
+    PALETTE_SLOTS.concretePale, //   rock
+  ] as const,
+
+  /** Sale del seme: tiene la copertura scorrelata da alberi e sporgenze. */
+  salt: 0x60_c0_4e_11,
+} as const;
+
+/**
+ * Sporgenze di roccia: una lastra che esce dal ciglio e resta sospesa.
+ *
+ * **E' la prima cosa del terreno che non e' una colonna.** Tutto il resto
+ * dell'isola e' una quota per (x, y) — e' cio' che rende la `TerrainMap` una
+ * mappa 2D — mentre una sporgenza ha aria sotto, quindi non e' rappresentabile
+ * come altezza. Vive percio' fuori dalla mappa, esattamente come ci vive un
+ * albero: nel mondo voxel, e nel blocco come record.
+ *
+ * **Che abbia senso** e' un vincolo, non un auspicio: la lastra si aggancia alla
+ * parete per un lato intero, lascia sotto di se' almeno una cella d'aria e sopra
+ * di se' almeno una cella di parete. Il salto minimo che serve e' la somma delle
+ * tre, e non e' dichiarato qui: lo deduce `LEDGE_MIN_DROP` in `ledges.ts`, cosi'
+ * non c'e' un numero che possa raccontare una storia diversa dalla regola.
+ */
+export const LEDGE = {
+  /**
+   * Frazione dei cigli abbastanza alti che ne ricevono una.
+   *
+   * Sembra alta e non lo e': il salto minimo si raggiunge solo dove l'alzata
+   * vale sei o otto voxel, cioe' sopra la fascia della collina, e li' i cigli
+   * sono qualche centinaio di celle su un'isola intera. Un terzo di quelli
+   * significa una sessantina di sporgenze in tutto, quasi tutte sullo stesso
+   * versante — che e' come stanno le cenge vere, a filari interrotti e non
+   * sparse a caso.
+   */
+  density: 0.32,
+
+  /** Spessore della lastra e aria che le resta sotto, in voxel. */
+  thickness: 2,
+  clearance: 2,
+
+  salt: 0x1e_d6_e5_00,
+} as const;
+
 /** Biomi su cui si puo' costruire, prima di applicare la soglia di pendenza. */
 export const BUILDABLE_BIOMES: readonly boolean[] = [
   false, // ocean
@@ -522,14 +667,6 @@ export const TREE_DECOR = {
    * e non cinque perche' e' quanto lascia l'invariante qui sopra.
    */
   jitterSize: 4,
-  /**
-   * Densita' per bioma: niente alberi su oceano, spiaggia e roccia.
-   *
-   * Non cambia con la scala: la cella ha quattro volte l'area di prima e ospita
-   * un albero quattro volte piu' largo in pianta, quindi la frazione di suolo
-   * coperta da chioma resta quella calibrata.
-   */
-  density: [0, 0, 0.18, 0.62, 0.34, 0] as const,
 
   /**
    * Frazione dei voxel sull'ultimo anello di un livello di chioma che cade.
@@ -553,107 +690,12 @@ export const TREE_DECOR = {
 } as const;
 
 /**
- * Un livello di chioma: un disco orizzontale di foglie.
- *
- * `radius` e' il mezzo lato del quadrato, `cut` la distanza di Manhattan
- * massima ammessa al suo interno — e' quel numero, e non una forma dedicata, a
- * smussare gli angoli: `cut = radius` da' un rombo, `cut = 2 * radius` il
- * quadrato pieno, e i valori in mezzo tutte le vie di mezzo. `tone` indicizza
- * le tinte della specie.
+ * Il **catalogo della flora** — profili delle specie e chi cresce dove — sta in
+ * `flora.ts`, non qui. E' l'unica deroga alla regola "i numeri del terreno in un
+ * file solo", ed e' quella che l'ha resa sostenibile: fra i profili delle specie
+ * e le densita' per bioma sono un terzo di questo file, e sono anche l'unica
+ * parte che si tocca per ragioni di *aspetto* invece che di calibrazione.
  */
-export interface TreeCanopyLevel {
-  readonly radius: number;
-  readonly cut: number;
-  readonly tone: number;
-}
-
-/** Profilo completo di una specie: tronco piu' chioma impilata dal basso. */
-export interface TreeShape {
-  /** Altezza del tronco come `[minimo, alternative]`: una estrazione del PRNG. */
-  readonly trunk: readonly [number, number];
-  /**
-   * Di quanti livelli la chioma scende ad avvolgere il tronco.
-   *
-   * Deve restare minore di `trunk[0]`, altrimenti la chioma comincerebbe sotto
-   * la quota del suolo e scaverebbe la colonna che la sostiene.
-   */
-  readonly sink: number;
-  /** Tinte della chioma, dalla piu' scura alla piu' chiara. */
-  readonly tones: readonly number[];
-  /** Livelli dal basso verso l'alto; la lunghezza e' l'altezza della chioma. */
-  readonly canopy: readonly TreeCanopyLevel[];
-}
-
-/**
- * Catalogo delle specie, nell'ordine di `TREE_SPECIES` in `decor.ts`.
- *
- * La chioma si schiarisce salendo: e' quanto basta a farla leggere come volume
- * invece che come blocco unico, e non costa niente perche' il colore vive
- * nell'uniform di palette. Il raggio della specie non e' dichiarato — si ricava
- * dal massimo dei suoi livelli, cosi' una riga sbagliata non puo' mentire al
- * generatore su quanto largo sia l'anello da valutare.
- */
-export const TREE_SHAPES: readonly TreeShape[] = [
-  // Conifera: guglia a piani sfalsati, il classico abete a gradoni. I livelli
-  // larghi alternati agli stretti sono cio' che da' la silhouette dentellata —
-  // e con quattro raggi disponibili invece di due i gradoni sono davvero
-  // gradoni, non tre scalini contati.
-  {
-    trunk: [9, 4],
-    sink: 6,
-    tones: [PALETTE_SLOTS.grassDark, PALETTE_SLOTS.grass, PALETTE_SLOTS.grassLight],
-    canopy: [
-      { radius: 4, cut: 4, tone: 0 },
-      { radius: 4, cut: 5, tone: 0 },
-      { radius: 3, cut: 4, tone: 0 },
-      { radius: 4, cut: 4, tone: 0 },
-      { radius: 3, cut: 3, tone: 0 },
-      { radius: 3, cut: 4, tone: 1 },
-      { radius: 2, cut: 4, tone: 1 },
-      { radius: 3, cut: 3, tone: 1 },
-      { radius: 2, cut: 3, tone: 1 },
-      { radius: 2, cut: 2, tone: 2 },
-      { radius: 1, cut: 2, tone: 2 },
-      { radius: 0, cut: 0, tone: 2 },
-    ],
-  },
-  // Latifoglia: chioma tonda e piena, la piu' voluminosa delle tre. Il ventre
-  // sta a `cut: 7` su raggio 4, cioe' quasi il quadrato pieno: e' la sola via
-  // per una sfera, perche' il rombo a quella scala legge come un ottaedro.
-  {
-    trunk: [8, 5],
-    sink: 4,
-    tones: [PALETTE_SLOTS.grassDark, PALETTE_SLOTS.grass, PALETTE_SLOTS.grassLight],
-    canopy: [
-      { radius: 3, cut: 4, tone: 0 },
-      { radius: 4, cut: 5, tone: 0 },
-      { radius: 4, cut: 6, tone: 1 },
-      { radius: 4, cut: 7, tone: 1 },
-      { radius: 4, cut: 7, tone: 1 },
-      { radius: 4, cut: 6, tone: 1 },
-      { radius: 4, cut: 5, tone: 2 },
-      { radius: 3, cut: 4, tone: 2 },
-      { radius: 2, cut: 3, tone: 2 },
-      { radius: 1, cut: 2, tone: 2 },
-    ],
-  },
-  // Autunnale: stessa scala della latifoglia ma piu' schiacciata, e in caldo.
-  {
-    trunk: [8, 4],
-    sink: 4,
-    tones: [PALETTE_SLOTS.metalRust, PALETTE_SLOTS.brickLight, PALETTE_SLOTS.metalBrass],
-    canopy: [
-      { radius: 3, cut: 5, tone: 0 },
-      { radius: 4, cut: 6, tone: 0 },
-      { radius: 4, cut: 7, tone: 1 },
-      { radius: 4, cut: 7, tone: 1 },
-      { radius: 4, cut: 6, tone: 1 },
-      { radius: 3, cut: 5, tone: 2 },
-      { radius: 2, cut: 3, tone: 2 },
-      { radius: 1, cut: 2, tone: 2 },
-    ],
-  },
-];
 
 /**
  * Tinte piatte del toggle "colora per bioma" della scena di debug. Servono solo

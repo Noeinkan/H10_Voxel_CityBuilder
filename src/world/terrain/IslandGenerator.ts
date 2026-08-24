@@ -1,6 +1,14 @@
 import { CHUNK, CHUNK_SHIFT } from '../chunkCoords';
 import type { VoxelWorld } from '../VoxelWorld';
-import { classifyBiome, isBuildable, STRATA_DEPTH } from './biomes';
+import { isBuildable, STRATA_DEPTH } from './biomes';
+import {
+  buildCellGrid,
+  CELL_STEPS,
+  CELLS_PER_BLOCK,
+  gridIndex,
+  inGrid,
+  type CellGrid,
+} from './cellGrid';
 import {
   columnIndex,
   columnLocalX,
@@ -10,9 +18,19 @@ import {
   type ColumnBlock,
 } from './columnBlock';
 import { treeAt, treeOrigin, treeSpec, treeTop, writeTree } from './decor';
-import { BIOME_STRATA, TERRAIN, TREE_DECOR, WATER_IDS } from './config';
+import { BIOME, BIOME_STRATA, TERRAIN, TREE_DECOR, WATER_IDS } from './config';
+import { coverAt, coverTone } from './groundcover';
 import { HeightField } from './heightField';
+import {
+  ledgeAt,
+  ledgeSpec,
+  ledgeTop,
+  ledgeTouches,
+  LEDGE_RECORD_SIZE,
+  writeLedge,
+} from './ledges';
 import { chunkSpanOf, shapeFromRegion, type IslandShape, type Region } from './region';
+import { isCliff } from './terrace';
 import { TerrainMap } from './TerrainMap';
 import { classifyWater } from './waterClass';
 import type { SurfaceKind } from '../visualBlock';
@@ -29,6 +47,12 @@ import type { SurfaceKind } from '../visualBlock';
  * lettura di cio' che e' gia' stato generato. Da qui seguono le due proprieta'
  * che servono: la stessa coppia seed + region da' sempre lo stesso risultato, e
  * generare A poi B equivale a generare B poi A.
+ *
+ * **Tre cose finiscono nel mondo, non una.** Le colonne — quote, strati, acqua e
+ * copertura — piu' gli alberi e le sporgenze, che stanno *sopra* il terreno e
+ * possono ricadere nel blocco pur nascendo appena fuori. Le tre hanno una fase
+ * di scrittura ciascuna proprio perche' chi ha un budget di frame possa
+ * fermarsi in mezzo a una qualunque.
  */
 
 export type { IslandShape, Region } from './region';
@@ -64,9 +88,6 @@ export interface IslandResult {
   readonly generationMs: number;
 }
 
-/** L'anello decor richiede una colonna in piu' per calcolare la sua pendenza. */
-const HEIGHT_BORDER = TREE_DECOR.ring + 1;
-
 /**
  * Estremi dello scostamento di un'origine d'albero dentro la sua cella decor.
  *
@@ -76,16 +97,6 @@ const HEIGHT_BORDER = TREE_DECOR.ring + 1;
  */
 const JITTER_MIN = TREE_DECOR.ring;
 const JITTER_MAX = TREE_DECOR.ring + TREE_DECOR.jitterSize - 1;
-/** Lato del reticolo: blocco piu' anello decorativo e anello per la pendenza. */
-const PADDED = CHUNK + HEIGHT_BORDER * 2;
-
-/**
- * Reticolo di altezze continue riusato fra un blocco e l'altro.
- *
- * L'anello di bordo evita di ricampionare il campo cinque volte per colonna. Vive a livello di modulo perche'
- * ogni realm (main thread o worker) ha il suo ed e' a thread singolo.
- */
-const paddedHeights = new Float32Array(PADDED * PADDED);
 
 /**
  * Genera un'isola nella region indicata: scrive i voxel nel mondo e restituisce
@@ -123,6 +134,7 @@ export function generateIsland(
       ensureBlockChunks(world, block);
       voxels += writeBlockColumns(world, block, 0, COLUMNS_PER_CHUNK);
       voxels += writeBlockDecor(world, block, 0, block.decor.length / DECOR_RECORD_SIZE);
+      voxels += writeBlockLedges(world, block, 0, block.ledges.length / LEDGE_RECORD_SIZE);
       blocks++;
     }
   }
@@ -175,14 +187,7 @@ export function expandIsland(
 export function generateColumnBlock(field: HeightField, ccx: number, ccy: number): ColumnBlock {
   const baseX = ccx * CHUNK;
   const baseY = ccy * CHUNK;
-
-  for (let py = 0; py < PADDED; py++) {
-      const worldY = baseY + py - HEIGHT_BORDER;
-    const row = py * PADDED;
-    for (let px = 0; px < PADDED; px++) {
-      paddedHeights[row + px] = field.heightAt(baseX + px - HEIGHT_BORDER, worldY);
-    }
-  }
+  const cells = buildCellGrid(field, baseX, baseY);
 
   const heights = new Int16Array(COLUMNS_PER_CHUNK);
   const biomes = new Uint8Array(COLUMNS_PER_CHUNK);
@@ -190,6 +195,7 @@ export function generateColumnBlock(field: HeightField, ccx: number, ccy: number
   const buildable = new Uint8Array(COLUMNS_PER_CHUNK);
   const water = new Uint8Array(COLUMNS_PER_CHUNK);
   const waterTop = new Int16Array(COLUMNS_PER_CHUNK);
+  const cover = new Uint8Array(COLUMNS_PER_CHUNK);
 
   let maxHeight = 0;
   let buildableCount = 0;
@@ -200,27 +206,35 @@ export function generateColumnBlock(field: HeightField, ccx: number, ccy: number
   // `ColumnBlock` resta indicizzato per colonna e nessun consumatore a valle
   // (edificabilita', `TerrainMap`, opere di terra, picking, overlay) sa che la
   // grana e' cambiata.
-  const cells = CHUNK / TERRAIN.cellSize;
-  for (let cy = 0; cy < cells; cy++) {
-    for (let cx = 0; cx < cells; cx++) {
+  for (let cy = 0; cy < CELLS_PER_BLOCK; cy++) {
+    for (let cx = 0; cx < CELLS_PER_BLOCK; cx++) {
+      const g = gridIndex(cx, cy);
+      const height = cells.heights[g];
+      const slope = cells.slopes[g];
+      const level = cells.waterTop[g];
       const lx0 = cx * TERRAIN.cellSize;
       const ly0 = cy * TERRAIN.cellSize;
-      // La quota d'acqua della cella arriva prima del bioma: dentro una conca e'
-      // quella del lago, e "sommerso" si decide rispetto a quella, non rispetto
-      // al livello del mare.
-      const level = field.waterLevelAt(baseX + lx0, baseY + ly0);
-      const cell = sampleCell(lx0 + HEIGHT_BORDER, ly0 + HEIGHT_BORDER, level);
-      const build = isBuildable(cell.biome, cell.slope);
+
+      // Sul **ciglio** di un gradone affiora la roccia. E' la sola differenza
+      // fra la classificazione del reticolo e quella che finisce nella mappa, e
+      // non e' cosmetica: la faccia verticale che si vede di taglio e' alta fino
+      // a quattro cubi, e un prato tagliato di netto la farebbe leggere come un
+      // errore invece che come una parete. Da qui segue anche che il ciglio non
+      // si costruisce — la roccia non e' un bioma edificabile — che e' il verso
+      // giusto: il muro sta sotto, e il lotto lo prende comunque a due colonne
+      // di distanza pagando le sue opere.
+      const biome = isCliff(cells.drops[g]) ? BIOME.rock : cells.biomes[g];
+      const build = isBuildable(biome, slope);
 
       // La classe d'acqua si decide per cella come tutto il resto, e solo dove
       // la colonna e' sommersa: sonda il campo di quota, che e' funzione pura
       // del seed, quindi puo' guardare oltre il blocco senza cuciture al bordo.
       const waterClass =
-        cell.height < level
+        height < level
           ? classifyWater(
               baseX + lx0,
               baseY + ly0,
-              level - cell.height,
+              level - height,
               (wx, wy) => field.heightAt(wx, wy),
               level,
             )
@@ -229,24 +243,75 @@ export function generateColumnBlock(field: HeightField, ccx: number, ccy: number
       for (let dy = 0; dy < TERRAIN.cellSize; dy++) {
         for (let dx = 0; dx < TERRAIN.cellSize; dx++) {
           const i = columnIndex(lx0 + dx, ly0 + dy);
-          heights[i] = cell.height;
-          biomes[i] = cell.biome;
-          slopes[i] = cell.slope;
+          heights[i] = height;
+          biomes[i] = biome;
+          slopes[i] = slope;
           water[i] = waterClass;
           waterTop[i] = level;
           if (build) {
             buildable[i] = 1;
             buildableCount++;
           }
+          // La copertura e' l'unica cosa che si decide per colonna e non per
+          // cella: e' quello che le da' la scala giusta — un quarto della faccia
+          // superiore di un cubo — e non costa un PRNG, solo un hash.
+          if (height >= level) {
+            cover[i] = coverAt(field.seed, baseX + lx0 + dx, baseY + ly0 + dy, biome);
+            // Un ciuffo vale un voxel in piu' da allocare, ma solo dove c'e'
+            // davvero: contarlo su ogni colonna emersa lascerebbe un chunk vuoto
+            // ogni volta che la cima di un blocco cade su un confine di chunk.
+            if (cover[i] !== 0 && height + 1 > maxHeight) maxHeight = height + 1;
+          }
         }
       }
-      if (cell.height > maxHeight) maxHeight = cell.height;
+
+      if (height > maxHeight) maxHeight = height;
       // Un lago sta sopra il terreno che lo contiene: senza questo, il chunk in
       // cui galleggia la sua superficie potrebbe non essere allocato.
       if (level > maxHeight) maxHeight = level;
     }
   }
 
+  const decor = collectDecor(field, cells, baseX, baseY);
+  const ledges = collectLedges(field, cells, baseX, baseY);
+  for (let i = 0; i < decor.length; i += DECOR_RECORD_SIZE) {
+    const tree = treeSpec(decor[i], decor[i + 1], decor[i + 2], decor[i + 3]);
+    maxHeight = Math.max(maxHeight, treeTop(tree, decor[i + 4]));
+  }
+  for (let i = 0; i < ledges.length; i += LEDGE_RECORD_SIZE) {
+    maxHeight = Math.max(maxHeight, ledgeTop(ledges[i + 3]));
+  }
+
+  return {
+    ccx,
+    ccy,
+    heights,
+    biomes,
+    slopes,
+    buildable,
+    water,
+    waterTop,
+    cover,
+    decor: new Int16Array(decor),
+    ledges: new Int16Array(ledges),
+    maxHeight,
+    buildableCount,
+  };
+}
+
+/**
+ * Gli alberi che possono intersecare il blocco, in coordinate locali.
+ *
+ * L'anello di celle decorative da esaminare si ricava invertendo il jitter: da
+ * quali celle puo' arrivare un'origine che cade nel rettangolo allargato di
+ * `TREE_DECOR.ring`.
+ */
+function collectDecor(
+  field: HeightField,
+  cells: CellGrid,
+  baseX: number,
+  baseY: number,
+): number[] {
   const decor: number[] = [];
   const minX = baseX - TREE_DECOR.ring;
   const minY = baseY - TREE_DECOR.ring;
@@ -265,33 +330,85 @@ export function generateColumnBlock(field: HeightField, ccx: number, ccy: number
       // L'albero poggia sulla cella di terreno che lo ospita, non sul campo
       // continuo sotto il tronco: se ricampionasse per conto suo si troverebbe
       // mezzo voxel sopra o sotto il cubo su cui sta, e le radici resterebbero
-      // in aria. L'origine e' allineata alla cella, quindi il cubo e' uno solo.
-      const cell = sampleCell(
-        floorToCell(x) - baseX + HEIGHT_BORDER,
-        floorToCell(y) - baseY + HEIGHT_BORDER,
-        field.waterLevelAt(floorToCell(x), floorToCell(y)),
-      );
-      const tree = treeAt(field.seed, cellX, cellY, cell.height, cell.biome, cell.slope);
+      // in aria. La cella e' gia' nel reticolo — il margine di due celle copre
+      // esattamente l'anello decorativo — quindi non si ricampiona niente.
+      const cx = Math.floor((x - baseX) / TERRAIN.cellSize);
+      const cy = Math.floor((y - baseY) / TERRAIN.cellSize);
+      if (!inGrid(cx, cy)) continue;
+      const g = gridIndex(cx, cy);
+
+      // Il bioma e' quello del reticolo, non quello riscritto dal ciglio: la
+      // flora si decide sul terreno che c'e' sotto la roccia che affiora, ed e'
+      // anche l'unica lettura che ogni blocco puo' fare allo stesso modo — il
+      // ciglio esiste solo dove il margine basta a calcolarlo.
+      const tree = treeAt(field.seed, cellX, cellY, cells.heights[g], cells.biomes[g], cells.slopes[g]);
       if (tree === null) continue;
 
-      decor.push(x - baseX, y - baseY, tree.species, tree.trunkHeight, cell.height);
-      maxHeight = Math.max(maxHeight, treeTop(tree, cell.height));
+      // Un albero nato nell'anello puo' non arrivare a toccare il blocco: le
+      // specie non sono tutte larghe uguali, e un cespuglio di raggio due a
+      // quattro colonne dal bordo sta tutto di la'. Tenerne il record vorrebbe
+      // dire allocare chunk per una chioma che questo blocco non scrive.
+      if (
+        x + tree.canopyRadius < baseX || x - tree.canopyRadius >= baseX + CHUNK
+        || y + tree.canopyRadius < baseY || y - tree.canopyRadius >= baseY + CHUNK
+      ) {
+        continue;
+      }
+
+      decor.push(x - baseX, y - baseY, tree.species, tree.trunkHeight, cells.heights[g]);
     }
   }
+  return decor;
+}
 
-  return {
-    ccx,
-    ccy,
-    heights,
-    biomes,
-    slopes,
-    buildable,
-    water,
-    waterTop,
-    decor: new Int16Array(decor),
-    maxHeight,
-    buildableCount,
-  };
+/**
+ * Le sporgenze che cadono nel blocco, in coordinate locali.
+ *
+ * Si guarda un anello di **una** cella oltre il blocco: una lastra e' larga una
+ * cella e sporge dalla propria ancora, quindi piu' in la' di cosi' non puo'
+ * arrivare. Ogni blocco poi scrive solo il proprio rettangolo, come per gli
+ * alberi: la sporgenza a cavallo di una cucitura la disegnano in due, ciascuno
+ * per la sua meta', e con lo stesso identico calcolo.
+ */
+function collectLedges(
+  field: HeightField,
+  cells: CellGrid,
+  baseX: number,
+  baseY: number,
+): number[] {
+  const ledges: number[] = [];
+  const originCellX = baseX / TERRAIN.cellSize;
+  const originCellY = baseY / TERRAIN.cellSize;
+
+  for (let cy = -1; cy <= CELLS_PER_BLOCK; cy++) {
+    for (let cx = -1; cx <= CELLS_PER_BLOCK; cx++) {
+      const g = gridIndex(cx, cy);
+      const drop = cells.drops[g];
+      if (!isCliff(drop)) continue;
+
+      const dir = cells.dropDirs[g];
+      const [dx, dy] = CELL_STEPS[dir];
+      const below = gridIndex(cx + dx, cy + dy);
+      // Sotto la lastra ci va aria, e l'aria comincia sopra cio' che c'e': il
+      // terreno, oppure il pelo dell'acqua se e' piu' alto.
+      const floorZ = Math.max(cells.heights[below], cells.waterTop[below]);
+      const spec = ledgeAt(
+        field.seed,
+        originCellX + cx,
+        originCellY + cy,
+        cells.heights[g],
+        floorZ,
+        dir,
+      );
+      if (spec === null) continue;
+      // Una lastra ancorata al margine puo' cadere tutta di la' dalla cucitura:
+      // il record sarebbe solo una quota in piu' da allocare per niente.
+      if (!ledgeTouches(spec, baseX, baseY, baseX + CHUNK, baseY + CHUNK)) continue;
+
+      ledges.push(spec.x - baseX, spec.y - baseY, spec.dir, spec.baseZ);
+    }
+  }
+  return ledges;
 }
 
 /**
@@ -328,7 +445,8 @@ export function writeBlockColumns(
     const x = baseX + columnLocalX(i);
     const y = baseY + columnLocalY(i);
     const top = block.heights[i];
-    const strata = BIOME_STRATA[block.biomes[i]];
+    const biome = block.biomes[i];
+    const strata = BIOME_STRATA[biome];
 
     // Una colonna e' tre corse di terreno piu' due d'acqua, non trenta voxel
     // indipendenti: gli strati sono contigui per costruzione, quindi tagliarli
@@ -354,6 +472,15 @@ export function writeBlockColumns(
       const waterClass = block.water[i] as SurfaceKind;
       written += world.fillColumn(x, y, top, deepTop, WATER_IDS.deep);
       written += world.fillColumn(x, y, deepTop, level, WATER_IDS.surface, waterClass);
+      continue;
+    }
+
+    // Il ciuffo d'erba sta **sopra** la colonna, come un albero: un voxel solo,
+    // e solo dove la colonna emerge.
+    const tone = coverTone(block.cover[i], biome);
+    if (tone !== 0) {
+      world.setBlock(x, y, top, tone);
+      written++;
     }
   }
 
@@ -388,67 +515,34 @@ export function writeBlockDecor(world: VoxelWorld, block: ColumnBlock, from: num
   return written;
 }
 
-function clampHeight(value: number): number {
-  if (value < 0) return 0;
-  if (value > TERRAIN.maxHeight) return TERRAIN.maxHeight;
-  return value;
-}
+/** Scrive le sporgenze `[from, from + count)`, sempre dentro il rettangolo del blocco. */
+export function writeBlockLedges(
+  world: VoxelWorld,
+  block: ColumnBlock,
+  from: number,
+  count: number,
+): number {
+  const total = block.ledges.length / LEDGE_RECORD_SIZE;
+  const end = Math.min(total, from + count);
+  const baseX = block.ccx * CHUNK;
+  const baseY = block.ccy * CHUNK;
+  let written = 0;
 
-/** Coordinata di partenza della cella di terreno che contiene `v`. */
-function floorToCell(v: number): number {
-  return Math.floor(v / TERRAIN.cellSize) * TERRAIN.cellSize;
-}
-
-/** Quota, bioma e pendenza di una cella di terreno. */
-interface CellSample {
-  readonly height: number;
-  readonly biome: number;
-  readonly slope: number;
-}
-
-/**
- * Riassume una cella di terreno a partire dal suo angolo nel reticolo paddato.
- *
- * **Media e non campione d'angolo.** Prendere il valore di una sola colonna
- * ancorerebbe la cella a uno spigolo, e la quantizzazione trasformerebbe quel
- * mezzo voxel di scarto in un gradino intero: la media dei campioni della cella
- * centra il valore e toglie l'aliasing dal profilo della costa.
- *
- * **Pendenza media e non massima.** E' la stessa grandezza di prima — voxel di
- * dislivello per voxel — quindi tutte le soglie di `TERRAIN` valgono immutate.
- * Il massimo sui quattro angoli sarebbe stato un'altra grandezza: avrebbe
- * dichiarato ripida ogni cella che ne sfiora una, e mangiato l'edificabile.
- *
- * **Quantizzazione col pavimento.** Una cella non puo' stare a mezza quota: la
- * quota scende al multiplo di `cellSize` sotto di se', cosi' il cubo appoggia
- * sul terreno invece di sporgerne.
- */
-function sampleCell(px: number, py: number, waterZ: number): CellSample {
-  let heightSum = 0;
-  let slopeSum = 0;
-
-  for (let dy = 0; dy < TERRAIN.cellSize; dy++) {
-    for (let dx = 0; dx < TERRAIN.cellSize; dx++) {
-      const p = (py + dy) * PADDED + (px + dx);
-      const continuous = paddedHeights[p];
-      heightSum += continuous;
-
-      // Pendenza sul campo continuo, non sulle altezze quantizzate: quantizzare
-      // prima schiaccerebbe tutto su 0 e 1 e i biomi non avrebbero piu' nulla da
-      // cui distinguersi. L'anello paddato ricampiona le stesse coordinate mondo
-      // dei blocchi vicini, quindi il valore non dipende da quale blocco lo
-      // calcola.
-      slopeSum += Math.max(
-        Math.abs(paddedHeights[p + 1] - continuous),
-        Math.abs(paddedHeights[p - 1] - continuous),
-        Math.abs(paddedHeights[p + PADDED] - continuous),
-        Math.abs(paddedHeights[p - PADDED] - continuous),
-      );
-    }
+  for (let index = from; index < end; index++) {
+    const offset = index * LEDGE_RECORD_SIZE;
+    written += writeLedge(
+      world,
+      ledgeSpec(
+        baseX + block.ledges[offset],
+        baseY + block.ledges[offset + 1],
+        block.ledges[offset + 2],
+        block.ledges[offset + 3],
+      ),
+      baseX,
+      baseY,
+      baseX + CHUNK,
+      baseY + CHUNK,
+    );
   }
-
-  const columns = TERRAIN.cellSize * TERRAIN.cellSize;
-  const height = clampHeight(floorToCell(heightSum / columns));
-  const slope = slopeSum / columns;
-  return { height, biome: classifyBiome(height, slope, waterZ), slope };
+  return written;
 }

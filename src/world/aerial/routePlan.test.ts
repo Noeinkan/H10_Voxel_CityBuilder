@@ -89,13 +89,34 @@ describe('planRoute — il percorso lungo', () => {
     }
   });
 
-  it('due capi sfalsati di molto non si collegano: la piega e un debito dichiarato', () => {
-    // **Il limite della fase, scritto come test invece che come intenzione.** Un
-    // percorso a zeta esisteva, e i suoi pianerottoli cadevano in punti che il
-    // corridoio dritto non misura: su settecentocinquanta coppie di una citta'
-    // cresciuta non ne reggeva nessuno. Meglio non averlo che averlo rotto.
+  it('due capi sfalsati di molto si collegano piegando a zeta', () => {
+    // **La piega era un debito dichiarato, ed e' questo il test che lo chiude.**
+    // Esisteva e non reggeva su nessuna coppia di una citta' vera, perche' il
+    // colmo si misurava sul corridoio della corsa: il tratto di traverso e i due
+    // angoli stanno **fuori** da quel corridoio, quindi il franco promesso non
+    // era quello che avevano davvero. Ora `crestOf` prende i riquadri veri dei
+    // pezzi, e la zeta e' una forma come le altre.
     const { ground, a, b } = pair(30, { crossOffset: 16 });
-    expect(planRoute({ a, b, ...ground })).toEqual({ ok: false, refusal: 'tooTight' });
+    const result = planRoute({ a, b, ...ground });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    // Due angoli, non uno: e' cio' che distingue la zeta dalla corsa dritta.
+    const nodes = result.plan.pieces.filter((p) => p.part === AERIAL_PART.node);
+    expect(nodes.length).toBe(AERIAL.route.maxTurns);
+
+    // E il tratto di traverso c'e' davvero: un pezzo il cui lato lungo corre
+    // sull'asse **perpendicolare** a quello degli altri.
+    const walks = result.plan.pieces.filter((p) => p.part === AERIAL_PART.walk);
+    const across = walks.filter((p) => p.deck.rect.sizeY > p.deck.rect.sizeX);
+    expect(across.length).toBe(1);
+
+    // Ogni pezzo tocca il precedente: una zeta con un buco in mezzo sarebbe due
+    // mozziconi, non un collegamento.
+    for (let i = 1; i < result.plan.pieces.length; i++) {
+      expect(touching(result.plan.pieces[i - 1].deck.rect, result.plan.pieces[i].deck.rect))
+        .toBe(true);
+    }
   });
 
   it('i pianerottoli di un percorso non si sovrappongono fra loro', () => {
@@ -155,14 +176,30 @@ describe('planRoute — il percorso lungo', () => {
     }
   });
 
-  it('rifiuta chi e troppo vicino — ci pensa una campata — e chi e troppo lontano', () => {
-    const near = pair(6);
+  it('rifiuta chi si tocca quasi e chi e troppo lontano', () => {
+    // **Il minimo non e' piu' il tetto delle campate, ed e' una correzione
+    // misurata.** Diceva: sotto quella distanza il collegamento lo fa gia' la
+    // 4.5. Su una citta' cresciuta nessuna delle venti campate tocca una
+    // mensola — `planSpan` cerca due corpi affacciati, e un impalcato non e' un
+    // corpo — quindi il vuoto corto non lo colmava nessuno. Resta solo il vero
+    // minimo: due impalcati che si toccano quasi non hanno niente in mezzo da
+    // attraversare.
+    const near = pair(AERIAL.route.minSeparation - 2);
     expect(planRoute({ a: near.a, b: near.b, ...near.ground }))
       .toEqual({ ok: false, refusal: 'badSeparation' });
 
     const far = pair(AERIAL.route.maxSeparation + 10);
     expect(planRoute({ a: far.a, b: far.b, ...far.ground }))
       .toEqual({ ok: false, refusal: 'badSeparation' });
+  });
+
+  it('collega due impalcati vicini, che nessuna campata avrebbe collegato', () => {
+    // Il caso che la soglia vecchia escludeva: due mensole sullo stesso fronte,
+    // con in mezzo la carreggiata. E' il corridoio piu' sgombro che un quartiere
+    // fitto abbia, ed era l'unico che non veniva mai provato.
+    const { ground, a, b } = pair(AERIAL.route.minSeparation + 2);
+    const result = planRoute({ a, b, ...ground });
+    expect(result.ok).toBe(true);
   });
 
   it('rifiuta un dislivello che nessun pianerottolo assorbe', () => {
@@ -186,4 +223,10 @@ describe('planRoute — il percorso lungo', () => {
 function overlap(a: DeckRect, b: DeckRect): boolean {
   return a.x < b.x + b.sizeX && b.x < a.x + a.sizeX &&
     a.y < b.y + b.sizeY && b.y < a.y + a.sizeY;
+}
+
+/** true se i due riquadri si toccano o si sovrappongono, in pianta. */
+function touching(a: DeckRect, b: DeckRect): boolean {
+  return a.x <= b.x + b.sizeX && b.x <= a.x + a.sizeX &&
+    a.y <= b.y + b.sizeY && b.y <= a.y + a.sizeY;
 }

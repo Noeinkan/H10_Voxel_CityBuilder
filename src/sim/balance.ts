@@ -230,6 +230,27 @@ export const BALANCE = {
        */
       size: 128,
     },
+
+    /**
+     * La mensola posata a mano: il primo pezzo di citta' in quota che il
+     * giocatore sceglie invece di guardare crescere.
+     *
+     * **Costa meno di un settore e piu' di niente.** Un settore costiero e' un
+     * pezzo d'isola e vale cinquecento; una mensola e' un piano largo quanto una
+     * facciata, e il suo prezzo deve rendere una scelta il *dove*, non il *se* —
+     * a listino basso il giocatore ne semina ovunque e la quota smette di essere
+     * un luogo per diventare una decorazione.
+     *
+     * La soglia di popolazione e' quella dell'espansione dimezzata: la citta' in
+     * quota e' la risposta a un suolo che finisce, e proporla prima che il suolo
+     * cominci a stringere insegnerebbe a costruire in alto per abitudine invece
+     * che per necessita'.
+     */
+    terrace: {
+      cost: 180,
+      population: 24,
+    },
+
     success: {
       population: 120,
       buildingsPerClass: 3,

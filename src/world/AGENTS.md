@@ -58,11 +58,51 @@ e costruzione degli edifici. Questo modulo non dipende dal renderer.
 - Generatore e worker non importano Three.js o `src/engine/`.
 - Due tetti duri in `terrain/config.ts`: `warpAmount` piu' `warpDetail` sopra
   ~0,26 attacca terra al bordo della region; alzare `baseFrequency` o
-  `maxHeight` consuma il margine di Lipschitz. **L'invariante e' in celle**: due
-  celle adiacenti non differiscono di piu' di una cella, cioe' `cellSize` voxel,
-  e dentro una cella il dislivello e' zero per costruzione.
-  `heightField.test.ts` misura il margine sul campo continuo,
-  `IslandGenerator.test.ts` lo verifica sulle quote quantizzate.
+  `maxHeight` consuma il margine di Lipschitz. **L'invariante e' in celle e in
+  alzate**: due celle adiacenti cadono su pedate contigue della scala di
+  `terrace.ts`, quindi non differiscono di piu' di **un'alzata**, e dentro una
+  cella il dislivello e' zero per costruzione. `heightField.test.ts` misura il
+  margine sul campo continuo, `terrace.test.ts` la proprieta' della scala,
+  `IslandGenerator.test.ts` entrambe sulle quote quantizzate.
+- **La montagna la fa la quantizzazione, non il rilievo.** Il campo continuo
+  resta dolce — e deve restarci, e' cio' che tiene in piedi tutto il resto —
+  mentre `terrace.ts` allarga la **pedata** con la quota: due voxel in pianura,
+  quattro nella foresta, sei sulla collina, otto sulla roccia. Lo stesso fianco
+  di prima produce cosi' un muro di otto voxel invece di quattro gradini da due.
+  Perche' funzioni serve una sola cosa, ed e' dimostrata invece che sperata:
+  ogni pedata e' larga almeno `cellSize`, cioe' piu' del dislivello massimo fra
+  due celle contigue, quindi due celle non possono scavallare piu' di un'alzata.
+  Non c'e' nessun clamp a valle, e non serve.
+- **Dentro la conca di un lago la scala resta fine.** `HeightField.inBasinAt`
+  spegne il terrazzamento sull'ellisse d'influenza: fondo, sponda e pelo stanno
+  dentro sei voxel (`basinDrop`), e un'alzata da otto se li porterebbe via —
+  la sponda scenderebbe sotto il proprio pelo e il lago colerebbe a valle.
+  E' anche il verso giusto: una conca e' una vasca liscia, non una cava.
+- **Sul ciglio affiora la roccia, ed e' la sola cosa che il ciglio cambia.** Una
+  cella che sovrasta un salto di piu' di un cubo prende `BIOME.rock` — quindi
+  smette di essere edificabile, perche' la roccia non e' un bioma edificabile —
+  ma la **flora si decide sul bioma di sotto**, quello del reticolo. Non e' una
+  svista: il ciglio esiste solo dove il margine del reticolo basta a calcolarlo,
+  mentre la classificazione esiste ovunque, e un albero deve valere lo stesso da
+  qualunque blocco lo si guardi.
+- **Una sporgenza non e' una colonna.** E' la prima cosa del terreno con
+  dell'aria sotto, quindi non e' rappresentabile come quota e sta fuori dalla
+  `TerrainMap` — nel mondo voxel e nel blocco come record, esattamente come un
+  albero. Ne segue che nessuno ci costruisce sopra e che il picking non la vede:
+  ci si passa sotto. Il salto minimo che ne regge una non e' un numero di
+  `config.ts` ma `LEDGE_MIN_DROP`, dedotto da cio' che deve starci — aria,
+  lastra, e la cella di parete che le resta in testa.
+- **Chi raccoglie record deve ritagliarli al blocco, non solo scriverli.** Un
+  albero o una sporgenza nati nell'anello possono cadere **tutti** oltre la
+  cucitura: tenerne il record alza `maxHeight` e fa allocare un chunk che quel
+  blocco non riempira' mai. Il difetto si vede solo da un test —
+  «non alloca chunk verticali che resterebbero vuoti» — e non lancia niente.
+- **La copertura del terreno e' un byte per colonna, non un oggetto.** Erbette,
+  fiori e sassi si decidono con un hash (`unitAt`, che non alloca la chiusura di
+  `mulberry32`) e si scrivono dentro il ciclo che riempie la colonna: non hanno
+  un ingombro, non possono collidere, e a duecentosessantamila colonne per isola
+  un PRNG per colonna si sentirebbe. Un albero, che ha tutte e tre le cose, resta
+  un record.
 - **La sagoma e' dichiarata, il rumore fa la grana.** `terrain/landform.ts`
   compone l'isola da elementi con un nome — lobi che allungano la costa, rilievi
   che spostano le vette dal centro, conche che aprono un lago — perche' rumore
@@ -86,6 +126,21 @@ e costruzione degli edifici. Questo modulo non dipende dal renderer.
   risposta e' `map.waterTopAt(x, y)`. Un lago sta **sopra** il livello del mare
   per costruzione: sotto, il fondo di una conca arriverebbe al mare e quel che si
   apre e' una baia.
+
+## Scene
+
+- **Il campionario e' una scena, non un percorso di rendering.** `scenes/swatch*`
+  mostra il vocabolario — ogni slot per ogni linguaggio, la stratigrafia di ogni
+  bioma, la scala fra cella, albero ed edificio — riusando quello che c'e' gia':
+  `STRATA_DEPTH` per gli strati, `writeTree` per gli alberi, `generateBuilding`
+  per l'edificio. Non aggiunge geometria, materiali, slot di palette o tipi di
+  superficie (invarianti 4 e 5), e se una combinazione si vede male il difetto
+  sta altrove. Le sue dimensioni si ricavano dalle tabelle e mai da un letterale:
+  uno slot o una specie in piu' allargano la griglia da se'.
+- I numeri stanno in `scenes/swatchLayout.ts`, che e' puro e ha tre consumatori —
+  il generatore, l'inquadratura di `main.ts` e il referto sotto il cursore. Il
+  lato della cella non e' un gusto: e' il minimo che fa emettere insieme tutti
+  gli emettitori di `microGeometry.ts`, e abbassarlo spegne una riga in silenzio.
 
 ## Strade ed edifici
 
@@ -353,12 +408,31 @@ e costruzione degli edifici. Questo modulo non dipende dal renderer.
   e' l'impalcato** — niente `findLot`, niente opere di terra, niente fila.
   `src/sim/` non guadagna una coordinata verticale: conta le quote spese
   (`stack`) e chiede al mondo quante ce ne sono (`headroomAt`).
-- **La rete e' meta' fatta, e il limite e' scritto nei test.** Un percorso dritto
-  fra due mensole allineate funziona; la piega a zeta e' stata **tolta** perche' i
-  suoi pianerottoli cadevano in punti che il corridoio dritto non misura, e su
-  settecentocinquanta coppie di una citta' cresciuta non ne reggeva nessuno. Su
-  quella stessa citta' i percorsi restano **zero**: le mensole ci sono ma non si
-  guardano mai. Chi riprende da qui parta da li', non dal planner.
+- **La mensola nasce sulla prima fascia utile del fronte strada, e il verso della
+  scansione e' la regola.** `faceRuns` cerca dal basso in su: la prima corsa e' la
+  sommita' del basamento, che la 4.4 rende condivisa da tutta la fila, quindi due
+  vicini sono complanari **per costruzione** — senza `align` e senza una griglia
+  imposta da fuori. Cercando dall'alto ogni ospite si prendeva la propria fascia
+  piu' alta, e la rete non esisteva. Il fronte strada e' l'altra meta': li' il
+  corridoio di un percorso corre sopra la carreggiata invece che sopra i corpi.
+- **Dove non c'e' una fascia da continuare, la mensola e' un balcone.** Meta'
+  della citta' sale a prisma dentro il corso di base condiviso e non arretra
+  affatto: centoquarantasette ospiti su quattrocento non avevano una sola corsa
+  utile. Il ripiego su facciata piena e' cio' che rende le mensole abbastanza
+  fitte da guardarsi.
+- **Il colmo di un percorso e' un tetto, non un pavimento.** La corsa parte dalla
+  quota dei due capi e si alza di un pianerottolo per volta finche' il luogo la
+  accetta; `crestOf` dice solo fin dove ha senso salire, e si misura sui
+  **riquadri veri dei pezzi** — e' quello che ha reso possibile la piega a zeta,
+  il cui tratto di traverso sta fuori dal corridoio della corsa.
+- **La guida e' una cosa sola posata in due modi.** In verticale e' il montante
+  d'isolato (`AERIAL_PART.lift`), che sale da terra a un impalcato **abitato** ed
+  e' la sola risposta al «ci si muove fra i livelli» del gate; in orizzontale e'
+  un file di rotaia incassato nel piano di un tratto di percorso, che non e' ne'
+  un record ne' un voxel in piu'. Niente si muove: le capsule sono voxel fermi.
+- **Il montante sta sul marciapiede, una gamba no.** Non e' una concessione ma
+  l'unico posto disponibile: sotto una mensola sul fronte strada c'e' o il
+  proprio ospite o l'asfalto. E' il terzo parametro di `surveyFooting`.
 
 ## Verifica
 

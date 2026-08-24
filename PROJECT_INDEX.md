@@ -4,7 +4,7 @@ Mappa file per file di `src/`. Il *perché* delle scelte sta nei README
 ([README.md](README.md), [src/sim/README.md](src/sim/README.md)); le regole
 operative in [CLAUDE.md](CLAUDE.md). Qui c'è solo *dove sta cosa*.
 
-Quasi 33 mila righe di TypeScript, 61 file di test (621 test), 2 file di bench.
+Trentasettemila righe di TypeScript, 84 file di test (890 test), 2 file di bench.
 
 ## Direzione delle dipendenze
 
@@ -60,11 +60,13 @@ resto si apre a domanda — è ciò che tiene basso il contesto di partenza.
 | --- | --- | --- |
 | [VoxelWorld.ts](src/world/VoxelWorld.ts) | Storage sparso a chunk, dirty set, AABB, cache dell'ultimo chunk | `VoxelWorld`, `WorldBounds` |
 | [Chunk.ts](src/world/Chunk.ts) | Due `Uint8Array(32768)` — `blocks` (rendering) e `data` (simulazione) — allocati una volta sola | `Chunk` |
-| [visualBlock.ts](src/world/visualBlock.ts) | Packing visuale in un byte: palette 0..31 e superficie 0..7, che su un voxel d'acqua porta la classe dello specchio | `SURFACE_KIND`, `WATER_CLASS`, `packVisualBlock`, `blockPalette`, `blockSurface` |
+| [visualBlock.ts](src/world/visualBlock.ts) | Packing visuale in un byte: palette 0..31 e superficie 0..7, che su un voxel d'acqua porta la classe dello specchio | `SURFACE_KIND`, `SURFACE_KIND_NAMES`, `ALL_SURFACE_KINDS`, `WATER_CLASS`, `packVisualBlock`, `blockPalette`, `blockSurface` |
 | [chunkCoords.ts](src/world/chunkCoords.ts) | Costanti e conversioni di coordinate, indici delle facce, portata del sondaggio del cielo | `CHUNK`, `PADDED`, `SKY_PROBE`, `CEILING_VOL`, `idx`, `paddedIdx`, `ceilingIdx`, `toChunk`, `toLocal`, `keyOf`, `FACE_*` |
 | [rng.ts](src/world/rng.ts) | PRNG deterministico per la generazione | `mulberry32`, `hashCoords` |
-| [scenes/cityScene.ts](src/world/scenes/cityScene.ts) | Scene deterministiche a passi con budget: `city`, `noise`, `slab`, e il rimando a `diorama` | `createScene`, `SceneGenerator`, `SceneKind`, `SceneOptions`, `TILE`, `STREET`, `LOT` |
+| [scenes/cityScene.ts](src/world/scenes/cityScene.ts) | Scene deterministiche a passi con budget: `city`, `noise`, `slab`, e il rimando a `diorama` e `swatch` | `createScene`, `SceneGenerator`, `SceneKind`, `SceneOptions`, `TILE`, `STREET`, `LOT` |
 | [scenes/dioramaScene.ts](src/world/scenes/dioramaScene.ts) | Un edificio solo su un basamento con il fronte strada, per giudicare il dettaglio da vicino | `createDioramaScene`, `parseBuildingUse`, `DIORAMA_DEFAULT_LEVEL`, `DioramaScene`, `DioramaOptions`, `DioramaSubject`, `DioramaSubjectOptions` |
+| [scenes/swatchLayout.ts](src/world/scenes/swatchLayout.ts) | **Ogni** numero e ogni geometria del campionario, puro: estensione, riquadro di una cella, cella sotto una coordinata | `SWATCH`, `SWATCH_BAND`, `SWATCH_COLUMNS`, `SWATCH_ROWS`, `SWATCH_PILLARS`, `SWATCH_WATERS`, `SCALE_ITEMS`, `SCALE_ORIGIN_Y`, `swatchExtent`, `matrixCellRect`, `strataPillarRect`, `swatchCellAt`, `SwatchBand`, `SwatchCell`, `SwatchExtent`, `SwatchRect`, `ScaleItem` |
+| [scenes/swatchScene.ts](src/world/scenes/swatchScene.ts) | Il campionario dei voxel: matrice palette × superficie, stratigrafia per bioma, fascia di scala. Scrive e basta | `createSwatchScene` |
 
 API pubblica del mondo: `setBlock`/`getBlock` e `getSurfaceKind` (rendering, marca sporco),
 `fillColumn` (lo stesso su un tratto verticale, a costo di corsa invece che di
@@ -82,19 +84,28 @@ fa la grana. Nessun elemento sceglie la propria altezza, la ricava dal raggio
 attraverso il budget di pendenza, ed e' quello che tiene in piedi il vincolo di
 Lipschitz su cui si regge il terreno a celle.
 
+La **montagna la fa la quantizzazione, non il rilievo**: il campo resta dolce, e
+`terrace.ts` allarga la pedata con la quota — due voxel in pianura, otto sulla
+roccia. Da li' escono i cigli, e dai cigli le sporgenze.
+
 | File | Ruolo | Esporta |
 | --- | --- | --- |
-| [config.ts](src/world/terrain/config.ts) | **Ogni** soglia, frequenza, ampiezza, stratigrafia, densita' e forma degli alberi, piu' i numeri della sagoma | `TERRAIN`, `LANDFORM`, `BIOME`, `BIOME_NAMES`, `BIOME_STRATA`, `BUILDABLE_BIOMES`, `WATER_IDS`, `TREE_DECOR`, `TREE_SHAPES` |
+| [config.ts](src/world/terrain/config.ts) | **Ogni** soglia, frequenza, ampiezza, stratigrafia e numero della sagoma, del terrazzamento, della copertura e delle sporgenze | `TERRAIN`, `LANDFORM`, `TERRACE`, `GROUND_COVER`, `LEDGE`, `BIOME`, `BIOME_NAMES`, `BIOME_STRATA`, `BUILDABLE_BIOMES`, `WATER_IDS`, `TREE_DECOR` |
+| [terrace.ts](src/world/terrain/terrace.ts) | La scala di quote su cui il terreno si posa, l'alzata che cresce con la quota e il ciglio che ne esce | `terraceOf`, `terraceStepAt`, `cellFloor`, `isCliff` |
+| [flora.ts](src/world/terrain/flora.ts) | Catalogo delle specie e chi cresce dove: sei profili e una lista pesata per bioma | `TREE_SPECIES`, `TREE_SHAPES`, `TreeShape`, `TreeCanopyLevel`, `FLORA`, `BiomeFlora`, `SpeciesWeight`, `pickSpecies` |
+| [cellGrid.ts](src/world/terrain/cellGrid.ts) | Il reticolo di celle di un blocco, con due celle di margine: quota terrazzata, bioma, pendenza, salto e verso | `buildCellGrid`, `CellGrid`, `cellIsCliff`, `gridIndex`, `inGrid`, `CELL_MARGIN`, `CELLS_PER_BLOCK`, `GRID_SIDE`, `CELL_STEPS`, `HEIGHT_BORDER` |
+| [groundcover.ts](src/world/terrain/groundcover.ts) | Erbette, fiori e sassi: un voxel per colonna, da un hash e senza record | `COVER`, `CoverKind`, `coverAt`, `coverTone` |
+| [ledges.ts](src/world/terrain/ledges.ts) | Sporgenze di roccia sul ciglio: la prima cosa del terreno che non e' una colonna | `ledgeAt`, `ledgeSpec`, `ledgeTop`, `ledgeTouches`, `writeLedge`, `LedgeSpec`, `LEDGE_MIN_DROP`, `LEDGE_RECORD_SIZE` |
 | [heightField.ts](src/world/terrain/heightField.ts) | Maschera a lobi × 3 ottave di simplex, piu' rilievi e conche | `HeightField` |
 | [landform.ts](src/world/terrain/landform.ts) | La sagoma prima del rumore: lobi della costa, rilievi interni, conche dei laghi. Nessuna altezza dichiarata — la detta il budget di pendenza | `Lobe`, `Mound`, `Basin`, `planLobes`, `planMounds`, `planBasins`, `moundRise`, `shapeBasins`, `lakeLevelAt`, `domeFalloff`, `basinProfile`, `basinWeight`, `capForRadius`, `ellipseRatio`, `fitRadius` |
 | [biomes.ts](src/world/terrain/biomes.ts) | Bioma da altezza e pendenza, edificabilità, colore per profondità | `classifyBiome`, `isBuildable`, `paletteForDepth` |
 | [region.ts](src/world/terrain/region.ts) | Region, `IslandShape`, allineamento ai chunk di colonna | `Region`, `IslandShape`, `shapeFromRegion`, `alignRegion`, `chunkSpanOf` |
-| [columnBlock.ts](src/world/terrain/columnBlock.ts) | Blocco 32×32 di colonne piu' record di decorazioni, trasferibile fra worker e main; porta anche la quota d'acqua per colonna | `ColumnBlock`, `columnIndex`, `blockTransferables` |
-| [decor.ts](src/world/terrain/decor.ts) | Alberi deterministici per cella e scrittura ritagliata al blocco | `treeAt`, `treeSpec`, `treeTop`, `writeTree`, `TreeSpec` |
-| [IslandGenerator.ts](src/world/terrain/IslandGenerator.ts) | `generateIsland`, `expandIsland`, colonne e decorazioni | `generateIsland`, `expandIsland`, `generateColumnBlock`, `writeBlockColumns`, `writeBlockDecor` |
+| [columnBlock.ts](src/world/terrain/columnBlock.ts) | Blocco 32×32 di colonne piu' i record di alberi e sporgenze, trasferibile fra worker e main; porta anche la quota d'acqua e la copertura per colonna | `ColumnBlock`, `columnIndex`, `blockTransferables` |
+| [decor.ts](src/world/terrain/decor.ts) | Alberi deterministici per cella, specie dai pesi del bioma, scrittura ritagliata al blocco | `treeAt`, `treeSpec`, `treeTop`, `writeTree`, `TreeSpec`, `TREELESS_BIOMES` |
+| [IslandGenerator.ts](src/world/terrain/IslandGenerator.ts) | `generateIsland`, `expandIsland`, colonne, alberi e sporgenze | `generateIsland`, `expandIsland`, `generateColumnBlock`, `writeBlockColumns`, `writeBlockDecor`, `writeBlockLedges` |
 | [TerrainMap.ts](src/world/terrain/TerrainMap.ts) | Mappa sparsa per colonna, chunkata 32×32 come il mondo | `TerrainMap`, `TerrainColumn`, `TerrainColumnChunk` |
 | [terrainMessages.ts](src/world/terrain/terrainMessages.ts) | Protocollo main ↔ worker | `TerrainJob`, `BlockMessage`, `DoneMessage` |
-| [terrain.worker.ts](src/world/terrain/terrain.worker.ts) | Generazione fuori dal main thread, un blocco per volta (12,96 kB in bundle) | — |
+| [terrain.worker.ts](src/world/terrain/terrain.worker.ts) | Generazione fuori dal main thread, un blocco per volta (18,16 kB in bundle) | — |
 | [TerrainStreamer.ts](src/world/terrain/TerrainStreamer.ts) | Riceve i blocchi e li applica a budget di frame; è un `SceneGenerator` | `TerrainStreamer` |
 | [waterClass.ts](src/world/terrain/waterClass.ts) | Bassofondo, canale o mare aperto da profondita' e sponde, dove la profondita' esiste ancora | `classifyWater` |
 | [BiomeView.ts](src/world/terrain/BiomeView.ts) | Ricolore delle colonne per bioma, a passi con budget (tasto `B`) | `BiomeView` |
@@ -141,7 +152,7 @@ map.columnAt(120, 96); // { height, biome, slope, buildable }
 | [IsoCameraController.ts](src/engine/IsoCameraController.ts) | Ortografica isometrica: scatti di 90°, zoom, pan vincolato all'AABB, piu' il modo **orbita** per studiare un soggetto (yaw continuo, inclinazione 12°-82°, cattura e ripristino dell'inquadratura) | `IsoCameraController`, `IsoCameraOptions`, `IsoCameraState` |
 | [IsoCameraController.test.ts](src/engine/IsoCameraController.test.ts) | Contratto dei pulsanti pointer accettati per il pan, perno della rotazione sotto il cursore, orbita attorno al target con inclinazione clampata e ripristino identico | — |
 | [palette.ts](src/engine/palette.ts) | Caricamento della palette, validazione, HMR a caldo | `paletteHex`, `toPaletteArray`, `isValidHexColor`, `onPaletteChanged` |
-| [paletteSlots.ts](src/engine/paletteSlots.ts) | I 32 slot nominati | `PALETTE_SLOTS`, `PALETTE_SIZE` |
+| [paletteSlots.ts](src/engine/paletteSlots.ts) | I 32 slot nominati, piu' i nomi derivati per indice | `PALETTE_SLOTS`, `PALETTE_SIZE`, `PALETTE_SLOT_NAMES` |
 | [palette.json](src/engine/palette.json) | I 32 colori. Modificarlo a caldo non rimesha niente | — |
 
 ### `src/engine/themes/` — look intercambiabili
@@ -386,7 +397,9 @@ c'e' una griglia di livelli, e per la stessa ragione qui non esiste `align`.
 | [config.ts](src/world/aerial/config.ts) | **Ogni** sporto, luce, franco, cadenza e indice di palette | `AERIAL`, `AERIAL_PART`, `AerialPart`, `DECK_HEIGHT`, `takesGround`, `isBuildable` |
 | [deckPlan.ts](src/world/aerial/deckPlan.ts) | Il primitivo: dato un riquadro e una quota, dove servono le gambe | `planDeck`, `deckBaseZ`, `tileDeck`, `surveyFooting`, `rectsOverlap`, `DECK_REFUSALS`, `DeckPlan`, `DeckQuery`, `DeckRect`, `DeckRefusal`, `AerialColumn`, `AerialProbe`, `Pier` |
 | [terracePlan.ts](src/world/aerial/terracePlan.ts) | L'aggetto: da un edificio e un fronte al riquadro che sporge | `planTerrace`, `faceRuns`, `wallRect`, `overhangOf`, `faceAxis`, `faceOutward`, `AERIAL_FACE`, `AERIAL_FACES`, `TerracePlan`, `TerraceQuery`, `AerialSupport`, `FaceRun` |
-| [routePlan.ts](src/world/aerial/routePlan.ts) | La rete: un percorso dritto fra due mensole, con pianerottoli e gambe | `planRoute`, `ROUTE_REFUSALS`, `RoutePlan`, `RouteQuery`, `RouteEnd`, `RoutePiece`, `RouteRefusal` |
+| [routePlan.ts](src/world/aerial/routePlan.ts) | Le forme di un percorso fra due mensole: dritta, larga, a zeta | `planRoute`, `ROUTE_REFUSALS`, `RoutePlan`, `RouteQuery`, `RouteEnd`, `RoutePiece`, `RouteRefusal` |
+| [routeDrafts.ts](src/world/aerial/routeDrafts.ts) | I pezzi di un percorso e la meccanica che li regge: colmo, pianerottoli, montaggio | `crestOf`, `climbProfile`, `placeHubs`, `assemble`, `walkDraft`, `hubDraft`, `hubSide`, `hubPad`, `rectOf`, `slideOrder`, `PieceDraft`, `Landing`, `RouteEnd` |
+| [guideway.ts](src/world/aerial/guideway.ts) | La guida: il montante che porta da terra a un impalcato abitato | `planLift`, `LIFT_REFUSALS`, `LiftPlan`, `LiftTarget`, `LiftRefusal` |
 | [decks.ts](src/world/aerial/decks.ts) | Le quote edificabili di una colonna, ciascuna con il proprio riquadro | `decksAt`, `BuildDeck`, `DeckSource` |
 | [generate.ts](src/world/aerial/generate.ts) | Uno stamp per tutte e tre le forme: travatura, piano, parapetto, verde | `generateDeck`, `generatePier` |
 | [testProbe.ts](src/world/aerial/testProbe.ts) | Un luogo finto per i test puri: pareti, tetti, carreggiate | `TestGround` |
@@ -418,6 +431,7 @@ le scritture stanno in tre file invece che sparse in sei metodi.
 | [surfaceQueue.ts](src/world/buildings/surfaceQueue.ts) | Il suolo pubblico a budget: carreggiata per isolato, grembiuli, rampe e bonifica del decoro | `SurfaceQueue`, `SurfacePaint` |
 | [spanDriver.ts](src/world/buildings/spanDriver.ts) | La rete in quota: ponti, mezzanini e piazze. Vince chi unisce due componenti; una campata non prende suolo | `SpanDriver` |
 | [aerialDriver.ts](src/world/buildings/aerialDriver.ts) | Mensole, percorsi, gambe e le quote su cui si costruisce. Un impalcato vuoto cade, uno abitato no | `AerialDriver` |
+| [guideDriver.ts](src/world/buildings/guideDriver.ts) | La via da terra: un montante per ogni impalcato abitato che non ce l'ha | `GuideDriver` |
 | [landmarkDriver.ts](src/world/buildings/landmarkDriver.ts) | I monumenti dei catalizzatori: piazzamento, cantiere di sventramento, grembiule e avanzamento di stadio | `LandmarkDriver`, `LandmarkSite` |
 | [clearance.ts](src/world/buildings/clearance.ts) | Cosa un landmark puo' togliere di mezzo e cosa lo ferma. Puro: entrano record ridotti all'osso, esce un verdetto | `planClearance`, `CLEARANCE_KIND`, `ClearanceRecord`, `ClearanceRefusal` |
 | [recordStamp.ts](src/world/buildings/recordStamp.ts) | La sagoma **registrata** di un edificio, rigenerata dal record per poterla cancellare | `recordStamp`, `typologyOf` |
@@ -465,6 +479,7 @@ giocabile; gli overlay tecnici si alternano con `F3` o partono aperti con
 | [TerrainOverlay.ts](src/ui/TerrainOverlay.ts) | Progresso della generazione, istogramma dei biomi, colonne edificabili |
 | [SimOverlay.ts](src/ui/SimOverlay.ts) | Stock e delta per tick, heatmap 2D del campo, primi dieci candidati, pulsanti delle policy |
 | [InspectOverlay.ts](src/ui/InspectOverlay.ts) | Referto tecnico delle viste: modi, slider della quota, colonna a fuoco e id dell'isolato |
+| [SwatchOverlay.ts](src/ui/SwatchOverlay.ts) | Referto del campionario: fascia, riga e colonna sotto il cursore, legenda dell'ordine delle righe |
 | [ViewMenuModel.ts](src/ui/ViewMenuModel.ts) | Il menu delle viste dal lato del giocatore, puro: etichette, gesti, targa della vista attiva con i suoi tasti, gesti e tasti dell'isolato **scelto**, barra dei livelli, regola dello strumento |
 
 ## Test e bench
@@ -475,9 +490,13 @@ giocabile; gli overlay tecnici si alternano con `F3` o partono aperti con
 | [world/visualBlock.test.ts](src/world/visualBlock.test.ts) | Palette e superficie nello stesso byte, il vuoto ignora la superficie |
 | [world/scenes/cityScene.test.ts](src/world/scenes/cityScene.test.ts) | Determinismo, riempimento al 20%, ripresa a passi, nessuna scrittura fuori region |
 | [world/scenes/dioramaScene.test.ts](src/world/scenes/dioramaScene.test.ts) | Determinismo del soggetto, ingombro dichiarato, carreggiata sul fronte, superfici che arrivano al mondo, tipologia forzata |
+| [world/scenes/swatchScene.test.ts](src/world/scenes/swatchScene.test.ts) | Tutte le combinazioni palette × superficie — il modo per accorgersi che uno slot nuovo non e' mai stato aggiunto al campionario; la colonna vuota dello slot zero; i tre strati di ogni bioma su multipli di cella; i tre `WATER_CLASS`; la fascia di scala; determinismo, passi ed estensione dichiarata |
 | [world/terrain/heightField.test.ts](src/world/terrain/heightField.test.ts) | Margine di Lipschitz su otto seed — la rete di sicurezza della calibrazione; specchio d'acqua per colonna; un'estensione costiera non muove il resto dell'isola |
 | [world/terrain/landform.test.ts](src/world/terrain/landform.test.ts) | Cadute e profili, il budget di pendenza che nessun elemento supera, lobi dentro il bordo, conche solo dove il terreno e' piano e mai sovrapposte |
-| [world/terrain/IslandGenerator.test.ts](src/world/terrain/IslandGenerator.test.ts) | Determinismo per blocco, continuità al confine, `expandIsland` |
+| [world/terrain/IslandGenerator.test.ts](src/world/terrain/IslandGenerator.test.ts) | Determinismo per blocco, continuità al confine — l'alzata come tetto del salto e il cubo sotto la soglia del terrazzamento —, cigli che compaiono davvero e non si costruiscono, `expandIsland` |
+| [world/terrain/terrace.test.ts](src/world/terrain/terrace.test.ts) | Scala monotona su multipli di cella, alzata fra un cubo e il tetto, e la proprieta' che regge tutto: due quote vicine come due celle non saltano piu' di un'alzata |
+| [world/terrain/groundcover.test.ts](src/world/terrain/groundcover.test.ts) | Copertura funzione della sola colonna, densita' misurata contro quella dichiarata, una tinta per ogni copertura che un bioma sappia produrre |
+| [world/terrain/ledges.test.ts](src/world/terrain/ledges.test.ts) | Salto minimo dedotto, aria sotto la lastra e parete sopra, cuneo verso l'esterno, ritaglio al blocco e sporgenze vere sull'isola del seed di riferimento |
 | [world/terrain/TerrainMap.test.ts](src/world/terrain/TerrainMap.test.ts) | Mappa per colonna, istogramma, chunking |
 | [world/terrain/waterClass.test.ts](src/world/terrain/waterClass.test.ts) | La profondita' decide per prima, un braccio chiuso su un asse e' canale, una baia con una sponda sola resta mare |
 | [engine/mesher/greedyMesher.test.ts](src/engine/mesher/greedyMesher.test.ts) | Fusione dei quad, orientamento delle facce, casi limite |
@@ -485,7 +504,7 @@ giocabile; gli overlay tecnici si alternano con `F3` o partono aperti con
 | [engine/mesher/microGeometry.test.ts](src/engine/mesher/microGeometry.test.ts) | Unità fisse, facce nascoste, testate condivise, priorità e limite; i prop: aggancio all'ingresso, superficie per prisma, seme in coordinate di mondo, margine sotto il tetto |
 | [engine/palette.test.ts](src/engine/palette.test.ts) | 32 slot, validazione dei colori |
 | [engine/themes/themes.test.ts](src/engine/themes/themes.test.ts) | Ogni tema riempie i 32 slot, atmosfera in range |
-| [world/terrain/decor.test.ts](src/world/terrain/decor.test.ts) | Alberi deterministici, biomi esclusi, chiome non sovrapposte e profili delle specie |
+| [world/terrain/decor.test.ts](src/world/terrain/decor.test.ts) | Alberi deterministici, biomi esclusi, chiome non sovrapposte, profili delle specie e specie estratte solo dall'elenco del proprio bioma |
 | [game/loop.test.ts](src/game/loop.test.ts) | Cadenza fissa e limite del recupero |
 | [game/growthScene.test.ts](src/game/growthScene.test.ts) | Ciclo completo tick → costruzione → voxel, ordine del tutorial, usi misti e crescita verticale |
 | [game/actions.test.ts](src/game/actions.test.ts) | Costo del sito con le opere di terra, pagamento una volta sola, requisiti e rifiuti, sito dell'opera concessa |
@@ -515,7 +534,8 @@ giocabile; gli overlay tecnici si alternano con `F3` o partono aperti con
 | [world/spans/network.test.ts](src/world/spans/network.test.ts) | Union-find, grado per appoggio, la piazza come nodo, e la proprieta' di continuita' del gate |
 | [world/aerial/deckPlan.test.ts](src/world/aerial/deckPlan.test.ts) | Lo sbalzo e le sue gambe: mensola corta senza appoggi, profonda con i propri; nessuna colonna oltre `reach`; il piede che cerca un tetto; mai sulla carreggiata; il pianerottolo spesso |
 | [world/aerial/terracePlan.test.ts](src/world/aerial/terracePlan.test.ts) | La corsa di parete su una sommita' di fascia vera, il voxel che esce dall'impronta, lo sporto proporzionale alla larghezza, le quattro facce, determinismo |
-| [world/aerial/routePlan.test.ts](src/world/aerial/routePlan.test.ts) | Il percorso dritto piu' lungo di una campata, i pianerottoli che assorbono il dislivello, i rifiuti uno per uno, e **la piega dichiarata assente** |
+| [world/aerial/routePlan.test.ts](src/world/aerial/routePlan.test.ts) | Il percorso dritto piu' lungo di una campata, i pianerottoli che assorbono il dislivello, i rifiuti uno per uno, e **la piega a zeta con il suo tratto di traverso** |
+| [world/aerial/guideway.test.ts](src/world/aerial/guideway.test.ts) | Il montante che poggia davvero e tocca l'impalcato, il tetto preferito al prato, il marciapiede ammesso, i tre rifiuti |
 | [world/buildings/cluster.test.ts](src/world/buildings/cluster.test.ts) | Chi entra in fila e chi apre il gradino: mai scavare, tetto del riempimento, soglia di densità, termini adottati invariati |
 | [world/buildings/generate.test.ts](src/world/buildings/generate.test.ts) | Determinismo e limiti degli stamp; terrazze, giardini, soglie luminose, silhouette per uso, campate che spezzano la parete senza toccare volume né superfici, e corso di base che sposta la quota senza toccare la sagoma |
 | [world/buildings/typology.test.ts](src/world/buildings/typology.test.ts) | Copertura del catalogo, scelta deterministica dal luogo, forme distinguibili fra tipologie, righe concesse da un mandato |
@@ -546,7 +566,7 @@ La radice `/` avvia isola, crescita e Cozy HUD; gli overlay tecnici sono nascost
 | Parametro | Default | Effetto |
 | --- | --- | --- |
 | `debug` | — | `1` apre overlay e hotkey tecniche; `F3` li alterna a runtime |
-| `scene` | — | Isola una scena `city`, `noise` (caso peggiore), `slab` o `diorama` |
+| `scene` | — | Isola una scena `city`, `noise` (caso peggiore), `slab`, `diorama` o `swatch` |
 | `class`, `level`, `typology`, `mixed` | `commercial`, `6` | Soggetto della scena `diorama` |
 | `seed` | `1337` | Seed della generazione |
 | `size` | `512` | Lato del mondo in voxel (32…4096) |

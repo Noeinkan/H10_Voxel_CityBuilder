@@ -64,8 +64,27 @@ export interface ColumnBlock {
    */
   readonly waterTop: Int16Array;
 
+  /**
+   * Cosa spunta sopra la superficie della colonna: un valore di `COVER`.
+   *
+   * E' un array per colonna e non un elenco di record perche' una erbetta non e'
+   * un oggetto — non ha un ingombro da tenere separato dai vicini e non puo'
+   * collidere con niente. Un byte per colonna costa 1 kB per blocco e si scrive
+   * dentro lo stesso ciclo che riempie la colonna.
+   */
+  readonly cover: Uint8Array;
+
   /** Alberi che possono intersecare il blocco, anche con origine appena fuori. */
   readonly decor: Int16Array;
+
+  /**
+   * Sporgenze che cadono nel blocco, anche se ancorate a un ciglio appena fuori.
+   *
+   * Stessa forma del decoro e per la stessa ragione: sono cose che stanno
+   * **sopra** il terreno e non dentro la griglia delle colonne, quindi non
+   * possono viaggiare come un valore per colonna.
+   */
+  readonly ledges: Int16Array;
 
   /**
    * Quota piu' alta che il blocco arriva a occupare: dice quanti chunk in z
@@ -78,7 +97,7 @@ export interface ColumnBlock {
   readonly buildableCount: number;
 }
 
-/** I sette buffer del blocco, da passare come lista di transfer a `postMessage`. */
+/** I buffer del blocco, da passare come lista di transfer a `postMessage`. */
 export function blockTransferables(block: ColumnBlock): Transferable[] {
   return [
     block.heights.buffer,
@@ -87,6 +106,8 @@ export function blockTransferables(block: ColumnBlock): Transferable[] {
     block.buildable.buffer,
     block.water.buffer,
     block.waterTop.buffer,
+    block.cover.buffer,
     block.decor.buffer,
+    block.ledges.buffer,
   ];
 }

@@ -1,6 +1,6 @@
 export type HudIcon =
   | 'funds' | 'population' | 'food' | 'materials' | 'satisfaction'
-  | 'residential' | 'production' | 'civic' | 'expansion' | 'policies'
+  | 'residential' | 'production' | 'civic' | 'expansion' | 'terrace' | 'policies'
   | 'market' | 'factory' | 'park' | 'port' | 'airport' | 'transport' | 'university' | 'monument'
   | 'pause' | 'play' | 'theme' | 'view' | 'help' | 'close'
   | 'daylight' | 'sun' | 'moon';
@@ -23,6 +23,10 @@ const PATHS: Readonly<Record<HudIcon, string>> = {
   university: '<path d="m3 9 9-6 9 6-9 4-9-4ZM6 11v6M18 11v6M4 20h16M9 12v5M15 12v5"/>',
   monument: '<path d="M8 21h8M9 18h6M10 18V9h4v9M8 9h8l-4-6-4 6Z"/>',
   expansion: '<path d="M8 3H3v5M16 3h5v5M8 21H3v-5M16 21h5v-5M3 8l6 6M21 8l-6 6M3 16l6-6M21 16l-6-6"/>',
+  // Una torre di taglio con un piano che le esce dal fianco, e la trave sotto:
+  // e' la sezione che il generatore disegna davvero, ed e' l'unica cosa che
+  // distingue una mensola da un balcone qualunque — cio' che regge si vede.
+  terrace: '<path d="M8 21V6h7v15M15 11h6M15 14h5M17 14v-3M20 14v-3M4 21h16"/>',
   policies: '<path d="M4 4h16v16H4zM8 9h8M8 13h8M8 17h5"/>',
   pause: '<path d="M8 5v14M16 5v14"/>',
   play: '<path d="m8 5 11 7-11 7V5Z"/>',

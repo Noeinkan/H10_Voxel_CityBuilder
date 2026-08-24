@@ -16,6 +16,7 @@ import {
 } from '../sim';
 import { buildWeightOf, GROUND, groundKindOf, type GroundKind } from '../world/grading/grade';
 import { siteRefusal } from '../world/sites/siteRules';
+import type { TerraceRefusal } from '../world/aerial/terracePlan';
 import type { TerrainMap } from '../world/terrain/TerrainMap';
 
 /**
@@ -39,7 +40,19 @@ export type ActionFailure =
   | 'already-unlocked'
   | 'onboarding-order'
   | 'policy-incompatible'
-  | 'decision-option-invalid';
+  | 'decision-option-invalid'
+  /**
+   * I rifiuti della mensola, tradotti dal dominio in quota.
+   *
+   * Sono tre e non uno perche' chiedono tre gesti diversi: cercare un edificio,
+   * cercarne uno **piu' alto**, cercare un altro posto. Un «non si puo'» solo
+   * manderebbe a riprovare a caso proprio dove la regola e' meno intuitiva —
+   * che una facciata debba essere alta abbastanza perche' ci si appenda un piano
+   * non lo indovina nessuno.
+   */
+  | 'needs-building'
+  | 'building-too-short'
+  | 'no-room-aloft';
 
 export type ActionResult =
   | { readonly success: true; readonly state: SimState }
@@ -151,6 +164,58 @@ export function catalystFailure(
 
   if (state.funds.stock < site.cost) return 'insufficient-funds';
   return null;
+}
+
+/**
+ * Perche' il gioco rifiuta una mensola, dato cosa ne dice il mondo.
+ *
+ * **La convalida del luogo non si duplica**: entra gia' risolta, dalla stessa
+ * `terraceSite` che il cursore interroga e che il click ripercorre. Qui restano
+ * le due cose che il mondo non sa — quanto costa e se la citta' e' pronta — e la
+ * traduzione dei rifiuti del dominio in gesti che il giocatore possa fare.
+ *
+ * L'ordine e' quello in cui li si incontra: prima cosa manca al luogo, poi cosa
+ * manca alla citta'. Sentirsi dire «non abbastanza fondi» davanti a un prato,
+ * dove nessuna mensola starebbe comunque, manderebbe a cercare soldi invece che
+ * un edificio.
+ */
+export function terraceFailure(
+  state: SimState,
+  refusal: TerraceRefusal | null,
+): ActionFailure | null {
+  if (refusal !== null) return TERRACE_FAILURE[refusal];
+
+  const requirement = BALANCE.gameplay.terrace;
+  if (state.population.stock < requirement.population) return 'population-required';
+  if (state.funds.stock < requirement.cost) return 'insufficient-funds';
+  return null;
+}
+
+/**
+ * Il rifiuto del dominio, detto come un gesto.
+ *
+ * `noRun` e `tooLow` dicono la stessa cosa al giocatore — la facciata non e'
+ * abbastanza alta perche' ci si appenda un piano — anche se al dominio dicono
+ * due cose diverse: la prima che non c'e' una corsa di parete, la seconda che il
+ * piano starebbe troppo vicino al suolo. Il resto e' «qui no, altrove si'».
+ */
+const TERRACE_FAILURE: Readonly<Record<TerraceRefusal, ActionFailure>> = {
+  noHost: 'needs-building',
+  noRun: 'building-too-short',
+  tooLow: 'building-too-short',
+  hostFull: 'no-room-aloft',
+  blocked: 'no-room-aloft',
+  tooNarrow: 'no-room-aloft',
+  noFooting: 'no-room-aloft',
+  onStreet: 'no-room-aloft',
+  tooTall: 'no-room-aloft',
+};
+
+/** Posa una mensola e ne paga il prezzo. Il mondo l'ha gia' convalidata. */
+export function placeTerrace(state: SimState, refusal: TerraceRefusal | null): ActionResult {
+  const failure = terraceFailure(state, refusal);
+  if (failure !== null) return { success: false, reason: failure };
+  return { success: true, state: spendFunds(state, BALANCE.gameplay.terrace.cost) };
 }
 
 export function togglePolicy(state: SimState, id: PolicyId): ActionResult {

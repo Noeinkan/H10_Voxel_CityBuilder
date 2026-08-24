@@ -475,6 +475,56 @@ describe('Builder — la citta in quota', () => {
     }
   });
 
+  it('la citta in quota si collega: nascono dei percorsi', () => {
+    // **E' la riga che distingue questo incremento da quello prima.** Il planner
+    // dei percorsi funzionava gia' e i test puri lo coprivano; su una citta'
+    // cresciuta ne nascevano **zero**, perche' le mensole si prendevano la fascia
+    // piu' alta di ciascun ospite e non si guardavano mai. Se questo torna a
+    // zero, la rete e' di nuovo una promessa.
+    const { builder } = aerialCity();
+    expect(builder.stats.routes).toBeGreaterThan(0);
+
+    // Un percorso e' fatto di tratti e di pianerottoli, e i suoi due capi sono
+    // impalcati veri: un tratto d'estremita' che non trovasse il proprio capo in
+    // registry sarebbe una passerella che finisce nel vuoto, cioe' il difetto
+    // che il vincolo della fase esclude.
+    const walks = partsOf(builder, AERIAL_PART.walk);
+    expect(walks.length).toBeGreaterThan(0);
+
+    for (const piece of [...walks, ...partsOf(builder, AERIAL_PART.node)]) {
+      for (const support of piece.supports ?? []) {
+        expect(builder.registry.get(support), `pezzo ${piece.id} senza capo`).not.toBeNull();
+      }
+      // E sta in aria: un pezzo di percorso comincia sopra il terreno della
+      // propria colonna, mai dentro.
+      expect(piece.baseZ).toBeGreaterThan(0);
+    }
+  });
+
+  it('ci si muove fra i livelli: ogni montante tocca terra e impalcato', () => {
+    // **L'altra meta' del gate.** Si abitava sopra la citta' senza poterci
+    // arrivare: il montante e' la via, e questi sono i due fatti che deve
+    // garantire — che poggi su qualcosa di vero, e che arrivi davvero al piano
+    // che serve. Nessuna struttura sospesa, nemmeno qui.
+    const { builder } = aerialCity();
+    expect(builder.stats.lifts).toBeGreaterThan(0);
+
+    const lifts = partsOf(builder, AERIAL_PART.lift);
+    expect(lifts.length).toBe(builder.stats.lifts);
+
+    for (const lift of lifts) {
+      const served = builder.registry.get(lift.supports?.[0] ?? 0);
+      expect(served, `montante ${lift.id} senza impalcato`).not.toBeNull();
+      if (served === null) continue;
+
+      // Arriva **esattamente** sotto il piano che serve.
+      expect(lift.baseZ + lift.height).toBe(served.baseZ);
+      // E prende suolo, come una gamba e a differenza di tutto il resto della
+      // citta' in quota: e' la sola parte che comincia in basso.
+      expect(builder.registry.isOccupied(lift.x, lift.y)).toBe(true);
+    }
+  });
+
   it('a parita di seed la citta in quota e identica', () => {
     const shapeOf = (builder: Builder): string =>
       [...builder.registry.all]
@@ -487,6 +537,12 @@ describe('Builder — la citta in quota', () => {
 
     expect(shapeOf(a.builder)).toBe(shapeOf(b.builder));
     expect(a.builder.stats.terraces).toBe(b.builder.stats.terraces);
+    // Percorsi e montanti entrano nel confronto: sono le due strutture nuove, e
+    // sono anche quelle che scelgono un posto **cercandolo** — un pianerottolo
+    // che scorre, un piede che si sposta per trovare un tetto. E' li' che un
+    // ordine di visita non dichiarato si infilerebbe.
+    expect(a.builder.stats.routes).toBe(b.builder.stats.routes);
+    expect(a.builder.stats.lifts).toBe(b.builder.stats.lifts);
   });
 });
 

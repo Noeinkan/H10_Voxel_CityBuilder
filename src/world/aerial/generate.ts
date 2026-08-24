@@ -1,5 +1,6 @@
-import { AERIAL, isBuildable, type AerialPart } from './config';
+import { AERIAL, AERIAL_PART, isBuildable, type AerialPart } from './config';
 import type { DeckPlan, DeckRect, Pier } from './deckPlan';
+import type { LiftPlan } from './guideway';
 import { SURFACE_KIND } from '../visualBlock';
 import type { VoxelStamp } from '../buildings/stamp';
 
@@ -64,8 +65,18 @@ export function generateDeck(plan: DeckPlan, part: AerialPart, segment: DeckRect
 
       const index = lx + sizeX * (ly + sizeY * (height - 1));
       const green = planted && !edge && !inset(plan.rect, gx, gy);
-      voxels[index] = green ? AERIAL.gardenPalette : AERIAL.deckPalette;
-      surfaces[index] = edge ? SURFACE_KIND.roofTech : SURFACE_KIND.plain;
+      // **La linea corre incassata nel piano di un tratto, non sopra di lui.**
+      // Un binario in rilievo vorrebbe un voxel di altezza in piu' su tutto
+      // l'impalcato, cioe' un `DECK_HEIGHT` diverso per una decorazione; un file
+      // di guida al posto della pavimentazione non costa niente a nessun budget
+      // e legge come il maglev a filo di pavimento che deve leggere.
+      const railed = part === AERIAL_PART.walk && !edge && onRail(plan.rect, gx, gy);
+      voxels[index] = railed
+        ? AERIAL.guide.railPalette
+        : green ? AERIAL.gardenPalette : AERIAL.deckPalette;
+      surfaces[index] = edge
+        ? SURFACE_KIND.roofTech
+        : railed ? SURFACE_KIND.utility : SURFACE_KIND.plain;
     }
   }
 
@@ -82,6 +93,65 @@ export function generateDeck(plan: DeckPlan, part: AerialPart, segment: DeckRect
     // a budget scorre l'array lineare senza consultare questo indice.
     bandStarts: [0, height],
   };
+}
+
+/**
+ * Il montante: il fusto, la guida che gli corre addosso, e le capsule.
+ *
+ * ```
+ *   ██▓  fusto e guida, per tutta la salita
+ *   ██▓
+ *   ██◆  una capsula ogni `podPitch`, luminosa di notte
+ *   ██▓
+ * ```
+ *
+ * La guida sta su **un** file di colonne del fusto, non su tutti: e' quella
+ * asimmetria a farla leggere come una guida invece che come una scanalatura, e
+ * a dire da che parte si sale.
+ */
+export function generateLift(plan: LiftPlan): VoxelStamp {
+  const side = AERIAL.guide.side;
+  const length = side * side * plan.height;
+  const voxels = new Uint8Array(length);
+  const surfaces = new Uint8Array(length);
+
+  voxels.fill(AERIAL.guide.shaftPalette);
+  surfaces.fill(SURFACE_KIND.utility);
+
+  const { podStart, podPitch } = AERIAL.guide;
+  for (let lz = 0; lz < plan.height; lz++) {
+    // Una capsula ferma sulla guida: e' la parte che si accende, quindi e' anche
+    // la sola che dice, di notte, che quel fusto e' una linea e non un pilastro.
+    const pod = lz >= podStart && (lz - podStart) % podPitch === 0;
+    for (let ly = 0; ly < side; ly++) {
+      const index = 0 + side * (ly + side * lz);
+      voxels[index] = pod ? AERIAL.guide.podPalette : AERIAL.guide.railPalette;
+      surfaces[index] = pod ? SURFACE_KIND.luminous : SURFACE_KIND.utility;
+    }
+  }
+
+  return {
+    sizeX: side,
+    sizeY: side,
+    sizeZ: plan.height,
+    anchorX: 0,
+    anchorY: 0,
+    anchorZ: 0,
+    voxels,
+    surfaces,
+    bandStarts: [0, plan.height],
+  };
+}
+
+/**
+ * true se questa colonna porta la linea.
+ *
+ * Il file subito dentro il filo, su un lato solo: dall'altro resta il passaggio.
+ * Si sceglie il lato lungo la corsa, cioe' quello che il tratto percorre — su un
+ * riquadro piu' lungo che largo la linea corre nel verso in cui si va.
+ */
+function onRail(rect: DeckRect, gx: number, gy: number): boolean {
+  return rect.sizeX >= rect.sizeY ? gy === rect.y + 1 : gx === rect.x + 1;
 }
 
 /** Una gamba, dal proprio piede fino sotto la travatura. */

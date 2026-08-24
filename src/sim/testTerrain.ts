@@ -103,6 +103,10 @@ function blockOf(ccx: number, ccy: number, options: TestTerrainOptions): ColumnB
     water: new Uint8Array(COLUMNS_PER_CHUNK),
     // Fixture piana: nessun lago, quindi lo specchio e' il mare ovunque.
     waterTop: new Int16Array(COLUMNS_PER_CHUNK).fill(TERRAIN.seaLevel),
+    // Niente erbette e niente sporgenze: la fixture serve alla simulazione, che
+    // di cio' che sta sopra il terreno non sa nulla.
+    cover: new Uint8Array(COLUMNS_PER_CHUNK),
+    ledges: new Int16Array(0),
     decor: new Int16Array(0),
     maxHeight,
     buildableCount,

@@ -52,13 +52,23 @@ export const AERIAL_PART = {
   node: 2,
   /** Gamba, dal proprio piede fino sotto la travatura: l'unica che prende suolo. */
   pier: 3,
+  /**
+   * Montante: la guida verticale che porta da terra a un impalcato abitato.
+   *
+   * **E' la sola parte che risponde alla domanda del gate**, «ci si muove fra i
+   * livelli». Prende suolo come una gamba, e come lei non si costruisce sopra:
+   * la differenza e' cio' che ci corre addosso — una guida, non del cemento — e
+   * il fatto che nasce da un impalcato che qualcuno abita invece che da uno
+   * sbalzo da reggere.
+   */
+  lift: 4,
 } as const;
 
 export type AerialPart = (typeof AERIAL_PART)[keyof typeof AERIAL_PART];
 
 /** true se questa parte occupa il suolo della propria colonna. */
 export function takesGround(part: AerialPart): boolean {
-  return part === AERIAL_PART.pier;
+  return part === AERIAL_PART.pier || part === AERIAL_PART.lift;
 }
 
 /** true se sopra questa parte puo' nascere un edificio. */
@@ -205,15 +215,25 @@ export const AERIAL = {
     nodeSide: 6,
 
     /**
-     * Distanza minima e massima, in voxel, fra i due edifici che un percorso lega.
+     * Distanza minima e massima, in voxel, fra i due capi che un percorso lega.
      *
-     * Il minimo e' il tetto delle campate: sotto quella distanza il collegamento
-     * lo fa gia' la 4.5, meglio e senza gambe, e duplicarlo darebbe due strutture
-     * per lo stesso vuoto. Il massimo sono tre passi d'isolato: **e' il punto
-     * della fase** — la rete attraversa piu' di un isolato — ma non mezza isola,
-     * o un percorso solo costerebbe piu' chunk di un quartiere.
+     * **Il minimo valeva quattordici, e la ragione era sbagliata.** Diceva: sotto
+     * il tetto delle campate ci pensa gia' la 4.5, meglio e senza gambe. Misurato
+     * su una citta' cresciuta, **nessuna delle venti campate tocca una mensola**:
+     * `planSpan` cerca due corpi affacciati e una mensola non e' un corpo, quindi
+     * il vuoto corto fra due impalcati non lo colmava nessuno. Erano
+     * centocinquantuno coppie su millequattrocento, ed erano le migliori — due
+     * mensole vicine sullo stesso fronte stanno alla stessa quota e hanno in
+     * mezzo la carreggiata, cioe' l'unico corridoio davvero sgombro di un
+     * quartiere fitto.
+     *
+     * Sei voxel sono tre cubi: sotto, i due impalcati si toccano quasi, e un
+     * tratto di passerella piu' corto del proprio parapetto non si legge come un
+     * collegamento. Il massimo sono tre passi d'isolato: **e' il punto della
+     * fase** — la rete attraversa piu' di un isolato — ma non mezza isola, o un
+     * percorso solo costerebbe piu' chunk di un quartiere.
      */
-    minSeparation: 14,
+    minSeparation: 6,
     maxSeparation: 66,
 
     /**
@@ -373,6 +393,66 @@ export const AERIAL = {
    * un posto da cui guardarli. Un luogo comincia a esistere quando ci si sta.
    */
   plantedMinWidth: 6,
+
+  /**
+   * La guida: la mobilita' in quota, come struttura di scena.
+   *
+   * **Una cosa sola posata in due modi.** In verticale e' il montante d'isolato,
+   * che sale lungo una facciata da terra a un impalcato abitato; in orizzontale
+   * e' la linea, che corre incassata nel piano di un tratto di percorso. Non e'
+   * un meccanismo di simulazione e non si muove niente: questo progetto non ha
+   * oggetti animati fuori dai chunk, e le capsule sono voxel fermi sulla guida.
+   *
+   * Il montante non chiede appoggi propri: sale dentro il riquadro
+   * dell'impalcato che serve, quindi cio' che lo regge in cima e' l'impalcato
+   * stesso e cio' su cui poggia in basso lo trova `surveyFooting`, che sa gia'
+   * rifiutare la carreggiata e preferire un tetto al prato.
+   */
+  guide: {
+    /**
+     * Lato del montante, in voxel.
+     *
+     * Lo stesso di una gamba, e non per pigrizia: e' la sezione sotto cui una
+     * struttura verticale torna a leggersi come un filo invece che come un
+     * volume, ed e' la misura con cui la 4.5 ha gia' tarato i propri appoggi.
+     */
+    side: 2,
+
+    /**
+     * Quota, sopra il piede, a cui comincia la prima capsula.
+     *
+     * Sei voxel — tre cubi — cosi' che la capsula piu' bassa stia sopra la testa
+     * di chi passa e non davanti a una vetrina.
+     */
+    podStart: 6,
+
+    /**
+     * Passo delle capsule lungo la guida, in voxel.
+     *
+     * Dodici e' la luce massima di una campata, cioe' la distanza a cui due cose
+     * si leggono ancora come una coppia: piu' fitte diventano una catena, piu'
+     * rade non raccontano che li' si sale.
+     */
+    podPitch: 12,
+
+    /**
+     * Montanti proposti al massimo da una passata, e tick fra due passate.
+     *
+     * Piu' rada delle mensole e piu' fitta dei percorsi: un montante e' una
+     * struttura piccola, ma serve **uno per impalcato abitato** e non di piu' —
+     * due vie da terra allo stesso piano sono una ridondanza che non si legge.
+     */
+    perPass: 1,
+    ticksPerPass: 20,
+    examinedPerPass: 48,
+
+    /** Fusto del montante: cemento, come le gambe da cui eredita il mestiere. */
+    shaftPalette: PALETTE_SLOTS.concrete,
+    /** La guida vera: metallo, la grammatica delle infrastrutture. */
+    railPalette: PALETTE_SLOTS.metalDark,
+    /** La capsula: si accende di notte, ed e' cio' che dice che la linea e' viva. */
+    podPalette: PALETTE_SLOTS.metalBrass,
+  },
 
   /** Piano calpestabile: e' suolo, e prende il colore di un suolo costruito. */
   deckPalette: PALETTE_SLOTS.concreteLight,

@@ -35,6 +35,7 @@ aggiungendo chunk alla mappa sparsa.
 | [src/world/Chunk.ts](src/world/Chunk.ts) | `blocks` e `data`, due `Uint8Array(32768)` allocati una volta sola |
 | [src/world/visualBlock.ts](src/world/visualBlock.ts) | Packing del byte visuale: 5 bit di palette e 3 bit di grammatica sci-fi |
 | [src/world/scenes/cityScene.ts](src/world/scenes/cityScene.ts) | Scene deterministiche a passi con budget |
+| [src/world/scenes/swatchLayout.ts](src/world/scenes/swatchLayout.ts) | Il campionario: dove sta ogni slot, ogni linguaggio, ogni strato |
 | [src/engine/mesher/greedyMesher.ts](src/engine/mesher/greedyMesher.ts) | Greedy meshing puro, zero import da Three |
 | [src/engine/mesher/buildPaddedVolume.ts](src/engine/mesher/buildPaddedVolume.ts) | Chunk + tutti i 26 vicini immediati → volume 34³ |
 | [src/engine/ChunkRenderer.ts](src/engine/ChunkRenderer.ts) | Una geometria per chunk, coda a priorità, culling, upload a budget |
@@ -77,7 +78,7 @@ permettono di isolare le scene di verifica.
 | Parametro | Default | Effetto |
 | --- | --- | --- |
 | `debug` | — | `1` apre subito overlay e hotkey tecniche; `F3` li alterna a runtime |
-| `scene` | — | Isola una scena `city`, `noise` (caso peggiore) o `slab` |
+| `scene` | — | Isola una scena `city`, `noise` (caso peggiore), `slab`, `diorama` (un edificio da vicino) o `swatch` (il campionario del vocabolario visuale) |
 | `seed` | `1337` | Seed della generazione |
 | `size` | `512` | Lato del mondo in voxel |
 | `height` | `64` | Altezza del mondo in voxel |
@@ -337,11 +338,36 @@ replicano invece di accorciare gli array, così nessun consumatore a valle
 — edificabilità, `TerrainMap`, opere di terra, picking, overlay — sa che la
 grana è cambiata.
 
+### Terrazzamento: la montagna la fa la quantizzazione
+
+Finché la cella si posava sul multiplo di `cellSize` sotto di sé, due celle
+contigue non potevano differire di più di due voxel: l'isola saliva sempre allo
+stesso modo, un cubo per volta, a curve di livello tutte identiche. Una montagna
+non è un pendio con più scalini, è un pendio con scalini **più alti**.
+
+`terrace.ts` allarga quindi la **pedata** con la quota — due voxel in pianura,
+quattro nella foresta, sei sulla collina, otto sulla roccia — e il passo cambia
+dove `TERRAIN` cambia fascia di bioma. Il campo continuo non si tocca: a fare il
+muro è la quantizzazione, non il rilievo, e questo è ciò che tiene in piedi la
+calibrazione qui sotto.
+
+Il tetto del dirupo è una conseguenza, non una speranza. La scala è monotona e
+ogni pedata è larga almeno `cellSize`, cioè più del dislivello massimo fra due
+celle contigue: due celle cadono perciò su pedate contigue, e il salto peggiore
+possibile è **un'alzata**. Non c'è nessun clamp a valle.
+
+Due conseguenze in giro per il mondo. Dove il salto supera un cubo la cella è un
+**ciglio**: prende la tinta della roccia e smette di essere edificabile, mentre
+la flora continua a decidersi sul bioma di sotto. E dentro la conca di un lago la
+scala resta fine — fondo, sponda e pelo stanno dentro sei voxel, e un'alzata da
+otto se li porterebbe via.
+
 ### Calibrazione
 
-Il criterio "due celle adiacenti non differiscono di più di una cella" è un
-vincolo di Lipschitz sul campo continuo, non una proprietà delle cuciture: se il
-campo lo rispetta ovunque lo rispetta anche al confine. Le frequenze in
+Il criterio "due celle adiacenti non differiscono di più di un'alzata" è un
+vincolo di Lipschitz sul campo continuo più una proprietà della scala di
+`terrace.ts`, non una proprietà delle cuciture: se il campo lo rispetta ovunque
+lo rispetta anche al confine. Le frequenze in
 `config.ts` sono scelte perché il dislivello massimo misurato resti **sotto 0,8**
 su otto seed — margine voluto, così ritoccare il rilievo non fa cadere il
 criterio. `heightField.test.ts` è la rete di sicurezza.

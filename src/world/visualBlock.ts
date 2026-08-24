@@ -19,6 +19,23 @@ export const SURFACE_KIND = {
 export type SurfaceKind = typeof SURFACE_KIND[keyof typeof SURFACE_KIND];
 
 /**
+ * Nome di ogni linguaggio, indicizzato come i tre bit alti.
+ *
+ * Derivato dalla tabella e non riscritto accanto a lei: e' l'unico modo perche'
+ * un tipo nuovo non possa comparire senza nome. Lo legge il campionario, dove
+ * l'ordine delle righe e' l'unica convenzione disponibile e in-world non ci sono
+ * etichette. La lunghezza e' quella dell'oggetto, non un otto scritto a mano.
+ */
+const surfaceNames = new Array<string>(Object.keys(SURFACE_KIND).length).fill('');
+for (const [name, index] of Object.entries(SURFACE_KIND)) surfaceNames[index] = name;
+
+export const SURFACE_KIND_NAMES: readonly string[] = surfaceNames;
+
+/** I tipi di superficie in ordine di indice, per chi deve percorrerli tutti. */
+export const ALL_SURFACE_KINDS: readonly SurfaceKind[] =
+  surfaceNames.map((_, index) => index as SurfaceKind);
+
+/**
  * Per un voxel d'**acqua** i tre bit non portano un linguaggio di facciata ma la
  * classe dello specchio. E' un sovraccarico deliberato di questo campo.
  *

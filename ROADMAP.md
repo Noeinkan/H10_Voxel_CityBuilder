@@ -339,7 +339,7 @@ Obiettivo: trasformare la crescita urbana in un processo realmente verticale e
 tridimensionale, nel quale edifici, spazi pubblici e mobilità colonizzano quote
 diverse e formano una città stratificata, connessa e leggibile.
 
-**Dove siamo.** Nove sotto-fasi su quattordici sono chiuse, e due delle quattro
+**Dove siamo.** Dieci sotto-fasi su quattordici sono chiuse, e due delle quattro
 della spina dorsale sono arrivate: la 4.5 ha dato al progetto la prima struttura
 che non poggia a terra, la 4.6 ha rotto i tetti che tenevano la città a
 mezz'aria e le ha dato una gerarchia — le torri del centro arrivano ora a
@@ -388,7 +388,7 @@ quest'ordine, perché ognuna è il presupposto della successiva.
 | **4.14** | l'arcologia: un'opera sola che è un quartiere | la città è stratificata ma non ha megastrutture |
 
 Le altre restano dove sono e possono procedere in parallelo: 4.7 e 4.8 sono
-look, 4.10 è uno strumento. Nessuna delle due famiglie blocca l'altra, ma se
+look, 4.10 era uno strumento ed è arrivata. Nessuna delle due famiglie blocca l'altra, ma se
 c'è da scegliere si sceglie la spina dorsale — è la sola che cambia *cosa* è la
 città, invece di come si vede.
 
@@ -1373,18 +1373,18 @@ moltiplicherebbe per il numero di livelli tutta la memoria densa.
   mensola non è il modo di aggirare la gerarchia, è il modo in cui la
   gerarchia sale. Senza questo vincolo il secondo livello diventa la scorciatoia
   che rende inutile il primo.
-- [ ] Far esistere davvero la rete: i percorsi dritti fra mensole funzionano e <!-- size: L -->
+- [x] Far esistere davvero la rete: i percorsi dritti fra mensole funzionano e <!-- size: L -->
   sono coperti dai test, ma su una città cresciuta ne nascono **zero** — le
   mensole ci sono e non si guardano mai. Il pezzo che manca è la scelta di *dove*
   nasce una mensola, non il planner: se l'aggetto si posasse sul fronte strada,
   due vicini avrebbero atterraggi complanari.
-- [ ] Riportare la piega: un percorso a zeta esisteva e i suoi pianerottoli <!-- size: M -->
+- [x] Riportare la piega: un percorso a zeta esisteva e i suoi pianerottoli <!-- size: M -->
   cadevano in punti che il corridoio dritto non misura. Serve misurare il colmo
   sui riquadri veri dei pezzi, non su quello della corsa.
-- [ ] Lo strumento del giocatore: `Builder.placeTerrace` c'è già ed è la porta <!-- size: M -->
+- [x] Lo strumento del giocatore: `Builder.placeTerrace` c'è già ed è la porta <!-- size: M -->
   del mondo; mancano il costo in `BALANCE`, l'azione in `game/actions.ts`, il
   tool nell'HUD e le etichette di rifiuto.
-- [ ] Aggiungere mobilità in quota come struttura di scena — monorotaia, <!-- size: L -->
+- [x] Aggiungere mobilità in quota come struttura di scena — monorotaia, <!-- size: L -->
   sopraelevata, ascensori d'isolato — appoggiata alla rete di 4.5 e ai suoi
   appoggi reali.
 - [ ] Dare un fondo al vuoto: nuvole, foschia e livelli inferiori intravisti, così <!-- size: M -->
@@ -1401,22 +1401,67 @@ anche qui la regola di 4.5, una campata orfana è un bug e non uno stile.
 si muove fra i livelli; determinismo e budget reggono con due livelli sovrapposti
 come con uno, e il suolo originale resta ricostruibile dal seed.
 
-**Dove è arrivata, e dove no.** Il gate è passato per metà, ed è la metà che si
-vede: sulla città di prova nascono una quarantina di **mensole** e sopra di loro
-degli edifici, verificati da test e non a occhio. Quello che non c'è è il
-**muoversi fra i livelli**: i percorsi restano zero.
+**Come è stato risolto.** Il gate è passato: sulla città di prova si abita sopra
+la città **e** ci si muove fra i livelli, verificato da test sulla stessa fixture
+cresciuta e non a occhio. Quattro caselle su sei sono chiuse; le due che restano
+sono di look e di costo, e non toccano il gate.
 
-La diagnosi è misurata e vale la pena scriverla, perché non è quella che sembrava.
-Il planner dei percorsi funziona — i test puri lo coprono, compreso il dislivello
-che i pianerottoli assorbono — e a mancare sono i **luoghi**: su settecentocinquanta
-coppie di mensole di una città cresciuta, nessuna si affaccia sull'altra abbastanza
-da farci passare una passerella. Prima ancora, atterrare su una **facciata** invece
-che su una mensola non funziona affatto (zero su milleseicento tentativi): gli
-edifici sono piramidali, e una facciata offre una parete piana solo in alto, dove
-è troppo stretta, o sulla sommità del basamento, dove è così bassa che una corsa
-lunga finisce dentro l'edificio accanto. Da qui la forma che il dominio ha preso —
-**le mensole sono le stazioni, i percorsi sono le linee** — e da qui il punto da
-cui riprendere: fare in modo che le stazioni si guardino.
+**Il verso della scansione, non il planner.** Il planner dei percorsi funzionava
+già. A mancare erano i luoghi, e la causa stava in una riga: `faceRuns` cercava
+la corsa di parete **dall'alto in giù**, quindi ogni ospite si prendeva la fascia
+più alta che reggesse e due vicini di livello diverso finivano a quote
+lontanissime. Invertito il verso, la prima corsa utile è la sommità del basamento
+— che la 4.4 rende condivisa da tutta la fila — e i vicini diventano complanari
+**per costruzione**, senza nessuna griglia imposta da fuori. Alla mensola si è poi
+tolto il giro fra le quattro facce: sta sul solo fronte strada, perché è lì che il
+corridoio di un percorso corre sopra la carreggiata invece che sopra i corpi degli
+edifici.
+
+**Metà della città non arretra affatto.** È il difetto che solo la misura ha
+rivelato: impronte piccole e corpi che salgono a prisma dentro il corso di base
+condiviso non hanno **nessuna** sommità di fascia nella finestra utile, e
+centoquarantasette ospiti su quattrocento non offrivano una sola corsa. Dove non
+c'è una fascia da continuare la mensola si attacca ora alla facciata piena, come
+un balcone: le mensole di una città matura passano da trentanove a cinquantatré,
+e le coppie con gli atterraggi allineati da due a settantacinque.
+
+**Il colmo era un pavimento, e andava fatto tetto.** `crestOf` costringeva ogni
+percorso a passare sopra ogni tetto sotto il proprio corridoio: delle
+ottantasette coppie che la passata prova davvero, quarantotto morivano lì. Ora la
+corsa parte dalla quota dei due capi e si alza di un pianerottolo per volta
+finché il luogo la accetta — il colmo resta, come tetto della ricerca. La **piega
+a zeta** torna con la correzione che la roadmap chiedeva, `crestOf` sui riquadri
+veri dei pezzi invece che sul corridoio della corsa, e i rifiuti per sfalsamento
+scendono da duecentoventinove a sei. Nel farlo è emerso un difetto vero: il colmo
+poteva cadere **sotto** la quota di partenza, e allora il ciclo non girava
+nemmeno una volta.
+
+**La guida: una cosa sola posata in due modi.** `src/world/aerial/guideway.ts` è
+il montante d'isolato — una guida verticale che sale da terra fino a un impalcato
+abitato, con le capsule ferme che di notte si accendono — e la stessa guida
+incassata nel piano dei tratti di percorso è la monorotaia. È «struttura di
+scena»: niente si muove, perché questo progetto non ha oggetti animati fuori dai
+chunk. Il montante è la sola parte che risponde alla seconda metà del gate, ed è
+anche l'unica cosa qui che **sta sul marciapiede**: misurato, sotto una mensola
+sul fronte strada c'è o il proprio ospite o l'asfalto, e rifiutare la carreggiata
+come fa una gamba lasciava senza via tutti gli impalcati della città.
+
+**Una premessa era falsa, e la misura l'ha detto.** `AERIAL.route.minSeparation`
+valeva quattordici perché «sotto quella distanza il collegamento lo fa già la
+4.5». Su una città cresciuta **nessuna delle venti campate tocca una mensola** —
+`planSpan` cerca due corpi affacciati, e un impalcato non è un corpo — quindi il
+vuoto corto non lo colmava nessuno. La soglia scende a sei, con la ragione vera
+al posto di quella sbagliata.
+
+**Resta aperto, e va detto senza abbellirlo.** I percorsi nascono, ma sono
+**pochi**: su una città matura ne conta uno. Il rifiuto che domina è ora
+`blocked`, ed è onesto — un percorso lungo alla quota di un mezzanino, in un
+quartiere fitto, attraversa davvero dei corpi, e il tetto di salita di quattro
+pianerottoli non basta a scavalcare una torre. La strada per averne di più non è
+un'altra taratura ma un pezzo che manca: le mensole di uno stesso fronte sono
+contigue e complanari, quindi il mezzanino continuo esiste già come geometria e
+non come collegamento dichiarato. Riconoscerlo — un percorso che *attraversa* una
+mensola invece di esserne bloccato — è il punto da cui riprendere.
 
 ### Fase 4.10 — Campionario dei voxel
 
@@ -1437,21 +1482,26 @@ giudicare la scala relativa di una chioma è aspettare che l'isola ne produca un
 accanto a un edificio. Una scelta di look si fa affiancando le cose, e non c'è un
 posto dove affiancarle.
 
-- [ ] Aggiungere una `SceneKind` `swatch` su `?scene=swatch`, generata a passi con <!-- size: M -->
+**Stato implementazione:** completata. Il gate resta da validare a schermo: i
+test coprono la presenza di ogni combinazione, gli strati, la scala e
+l'estensione dichiarata, non la leggibilità della griglia in una inquadratura né
+il riconoscimento di uno slot morto a colpo d'occhio.
+
+- [x] Aggiungere una `SceneKind` `swatch` su `?scene=swatch`, generata a passi con <!-- size: M -->
   budget come le altre.
-- [ ] Disporre la griglia 32 × 8 — uno slot di palette per colonna, un <!-- size: M -->
+- [x] Disporre la griglia 32 × 8 — uno slot di palette per colonna, un <!-- size: M -->
   `SURFACE_KIND` per riga — con corse abbastanza lunghe e alte perché la
   microgeometria emetta davvero: un `habitat` senza qualche voxel di facciata non
   mostra niente.
-- [ ] Affiancare una colonna tagliata per bioma con la stratigrafia vera, così che <!-- size: M -->
+- [x] Affiancare una colonna tagliata per bioma con la stratigrafia vera, così che <!-- size: M -->
   l'invariante «ogni strato è alto un numero intero di celle» si veda di taglio
   invece di doverla dedurre dalle soglie.
-- [ ] Mettere nella stessa inquadratura la fascia di scala: le forme d'albero <!-- size: S -->
+- [x] Mettere nella stessa inquadratura la fascia di scala: le forme d'albero <!-- size: S -->
   accanto a un edificio di riferimento e a un pezzo di terreno.
-- [ ] Dare un nome a ciò che si guarda: riga e colonna sotto il cursore <!-- size: S -->
+- [x] Dare un nome a ciò che si guarda: riga e colonna sotto il cursore <!-- size: S -->
   nell'overlay, perché in-world non ci sono etichette e la sola convenzione
   d'ordine si dimentica.
-- [ ] Coprirla con un test in ambiente `node` che verifichi la presenza di tutte <!-- size: S -->
+- [x] Coprirla con un test in ambiente `node` che verifichi la presenza di tutte <!-- size: S -->
   le combinazioni: è il modo per accorgersi che uno slot nuovo non è mai stato
   aggiunto al campionario.
 
@@ -1465,6 +1515,72 @@ combinazioni palette × superficie, gli strati di ogni bioma e il rapporto di
 scala fra cella, albero ed edificio; passare da un tema all'altro rilegge il
 campionario senza rigenerare la scena, e un tema con uno slot morto si riconosce
 a colpo d'occhio.
+
+**Come è stato risolto.** Il campionario si è diviso in due metà come la 4.11:
+`scenes/swatchLayout.ts` dice **dove sta cosa** ed è puro, `scenes/swatchScene.ts`
+scrive e basta. Non è ordine per estetica — la geometria ha tre consumatori
+diversi (il generatore, l'inquadratura di `main.ts`, il referto sotto il cursore)
+e due letture della stessa griglia divergerebbero al primo ritocco. È la stessa
+separazione di `inspect.ts` rispetto a `InspectView.ts`.
+
+**Le dimensioni si ricavano dalle tabelle, mai da un letterale.** Le colonne sono
+`PALETTE_SIZE`, le righe sono quante ne ha `SURFACE_KIND`, gli alberi sono
+quanti ne ha `TREE_SHAPES`, i pilastri quanti sono i biomi: uno slot o una specie
+in più allargano il campionario da sé, invece di restarne fuori. È la forma
+forte della casella «accorgersi che uno slot nuovo non è mai stato aggiunto» —
+non può succedere, e il test presidia la scrittura invece della tabella. La
+proprietà si è già ripagata: quando il catalogo della flora è cresciuto, la
+fascia di scala si è allargata da sola.
+
+**La cella non è un cubo, ed è un vincolo del mesher e non un gusto.** Ogni
+emettitore di `microGeometry.ts` chiede una cosa diversa — `emitHabitat` la
+sommità di una corsa di facciata, `emitLuminous` montanti *e* traversi,
+`emitPortals` un architrave con aria davanti un piano più in su, `emitRoofTech`
+un tetto esposto che confina con l'aria di fianco — e un prisma isolato di lato
+quattro e alto sei li soddisfa tutti insieme. Sotto quei numeri qualche riga
+smetterebbe di mostrare qualcosa senza che niente segnali il perché, che è
+esattamente il difetto che la casella metteva in guardia.
+
+**Due righe restano piatte, e va detto invece che corretto.** `plain` non è un
+linguaggio, e `utility` è escluso dalla raccolta del mesher perché è metallo
+strutturale la cui forma arriva dalla mesh: sul campionario si distinguono per
+tinta e non per rilievo. Vale il vincolo della sotto-fase — se una combinazione
+si vede male, il difetto sta altrove.
+
+**La colonna zero è un buco, e non un voxel nero.** `packVisualBlock` restituisce
+zero per palette zero: non c'è niente da scrivere, ed è esattamente ciò che
+l'indice zero significa. Le combinazioni vere sono trentuno per otto.
+
+**L'acqua era l'unico pezzo di vocabolario che la matrice non poteva mostrare.**
+Sulle colonne `water` e `waterDeep` il fragment riconosce l'acqua dalla palette
+**prima** di leggere i tre bit, quindi lì il linguaggio di facciata non arriva
+mai a esprimersi e quello che si vede è `WATER_CLASS` (contratto 5). Da qui i tre
+pilastri d'acqua accanto ai sei biomi: sono il solo posto in cui un tema con uno
+specchio morto si riconosce. Il referto sotto il cursore lo dice, perché
+altrimenti si attribuirebbe alla superficie quello che sta facendo la palette.
+
+**La stratigrafia non è ridisegnata.** I tagli sono quelli di `writeBlockColumns`
+letti da `STRATA_DEPTH`, e gli alberi passano da `writeTree`: se campionario e
+isola mostrassero due vocabolari diversi, il campionario non servirebbe a
+giudicare l'isola. È la stessa regola del diorama.
+
+**Un difetto che solo il test ha rivelato.** «Non scrivere fuori dall'estensione
+dichiarata» sembrava un confronto con `world.bounds`, e non lo è: l'AABB del
+mondo è granulare al chunk e avrebbe accettato in silenzio una scrittura trenta
+colonne oltre il bordo — proprio quelle che l'inquadratura taglierebbe senza
+dirlo. Il test conta i voxel dentro l'estensione e li confronta con il totale,
+che è esatto.
+
+**Costo.** Circa quarantamila celle in tutto, contro i milioni di un'isola: la
+generazione finisce in pochi passi dentro `GENERATION_BUDGET_MS`. Il campionario
+non entra nel ciclo di frame di una città e non tocca né mesher né simulazione,
+quindi **le tabelle di misura di `README.md` e `src/sim/README.md` non vanno
+rimisurate**.
+
+**Resta aperto.** Il campionario mostra il vocabolario, non le regole che lo
+compongono: quali superfici una tipologia usi davvero resta una domanda per
+`?scene=diorama`. Non ci sono etichette in-world — il nome di ciò che si guarda
+vive nell'overlay, e fuori da `?debug=1` il campionario è muto.
 
 ### Fase 4.11 — Vedere dentro la città
 

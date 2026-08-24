@@ -28,3 +28,16 @@ export function hashCoords(seed: number, x: number, y: number): number {
   h = (h ^ (h >>> 16)) >>> 0;
   return h >>> 0;
 }
+
+/**
+ * Frazione uniforme in [0, 1) da una coppia di coordinate: l'hash, e basta.
+ *
+ * Esiste perche' `mulberry32` alloca una chiusura, e c'e' chi deve decidere
+ * qualcosa **per colonna**: su un'isola di lato 512 sono duecentosessantamila
+ * chiusure per una sola estrazione a testa. Quando le estrazioni sono piu' di
+ * una serve il PRNG vero — questa non ha stato e ridarebbe sempre lo stesso
+ * numero.
+ */
+export function unitAt(seed: number, x: number, y: number): number {
+  return hashCoords(seed, x, y) / 4294967296;
+}

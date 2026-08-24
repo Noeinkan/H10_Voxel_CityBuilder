@@ -40,13 +40,19 @@ export class AerialDriver {
   private routeCursor = 0;
 
   /**
-   * Quante mensole porta un edificio, e quali facce ha gia' occupate.
+   * Quante mensole porta ciascun edificio.
    *
-   * Due mappe sparse invece di una domanda al registry: la passata le consulta
-   * per ogni record che esamina, e ricavarle dai record vorrebbe dire risolvere
+   * Una mappa sparsa invece di una domanda al registry: la passata la consulta
+   * per ogni record che esamina, e ricavarla dai record vorrebbe dire risolvere
    * le mensole di ciascuno per sapere se vale la pena provarci.
+   *
+   * **Era una maschera di facce, ed e' diventata un conteggio.** Da quando la
+   * mensola nasce sul solo fronte strada le facce non sono piu' quattro: le
+   * mensole di un ospite si distinguono per **quota**, non per lato, e a tenerle
+   * separate basta `planDeck`, che rifiuta come `blocked` la corsa gia' occupata
+   * e manda il tentativo su quella sopra.
    */
-  private readonly terraceFaces = new Map<number, number>();
+  private readonly terraceCount = new Map<number, number>();
 
   /** Percorsi che arrivano a un edificio, e le coppie gia' collegate. */
   private readonly routeCount = new Map<number, number>();
@@ -124,6 +130,22 @@ export class AerialDriver {
 
   get piers(): number {
     return this.piersBuilt;
+  }
+
+  /**
+   * Come questo dominio vede il luogo, per chi ne condivide le regole.
+   *
+   * La passata della guida chiede al mondo esattamente le stesse due cose — su
+   * cosa si poggia, e dov'e' il vuoto — e costruirsene una copia vorrebbe dire
+   * due letture diverse dello stesso posto.
+   */
+  get siteProbe(): AerialProbe {
+    return this.probe;
+  }
+
+  /** true se qualcuno ha costruito su questo impalcato. */
+  isInhabited(deckId: number): boolean {
+    return this.inhabitedDecks.has(deckId);
   }
 
   /** true se su questa colonna corre un piano oltre al suolo. */
@@ -216,7 +238,7 @@ export class AerialDriver {
       const record = records[this.terraceCursor % records.length];
       this.terraceCursor++;
       if (!settled(record)) continue;
-      if (countFaces(this.terraceFaces.get(record.id) ?? 0) >= AERIAL.terrace.maxPerHost) continue;
+      if ((this.terraceCount.get(record.id) ?? 0) >= AERIAL.terrace.maxPerHost) continue;
 
       const result = this.planTerraceOn(record);
       if (!result.ok) continue;
@@ -268,16 +290,37 @@ export class AerialDriver {
   }
 
   /**
-   * Posa una mensola sull'edificio di questa colonna. false se non ce n'e' uno,
-   * se il fronte non la regge o se non entra nel budget di chunk.
+   * La mensola che nascerebbe su questa colonna, o perche' no. **Non scrive.**
+   *
+   * E' la domanda del cursore, e passa dalla stessa `planTerraceOn` della
+   * passata automatica e del click: tre strade diverse per lo stesso piazzamento
+   * finirebbero per accettare tre insiemi di luoghi diversi, ed e' esattamente
+   * il difetto che `catalystFailure` esiste per non avere.
+   *
+   * `noHost` non e' un rifiuto del dominio in quota — li' una mensola ha sempre
+   * un ospite per costruzione — ma del gesto: il giocatore ha cliccato dove non
+   * c'e' un edificio a cui appenderla.
+   */
+  terraceSite(x: number, y: number): TerraceResult {
+    const host = this.buildingAt(x, y);
+    if (host === null) return { ok: false, refusal: 'noHost' };
+    if ((this.terraceCount.get(host.id) ?? 0) >= AERIAL.terrace.maxPerHost) {
+      return { ok: false, refusal: 'hostFull' };
+    }
+    return this.planTerraceOn(host);
+  }
+
+  /**
+   * Posa una mensola sull'edificio di questa colonna. false se il fronte non la
+   * regge o se non entra nel budget di chunk.
    *
    * E' la porta del giocatore: la convalida economica sta in `game/actions.ts`,
-   * qui c'e' solo quella del mondo.
+   * qui c'e' solo quella del mondo. Il budget di chunk resta l'ultima parola e
+   * si puo' scoprire solo scrivendo, quindi il cursore puo' dire di si' e il
+   * click no — lo stesso patto che vale per un catalizzatore.
    */
   placeTerrace(x: number, y: number): boolean {
-    const host = this.buildingAt(x, y);
-    if (host === null) return false;
-    const result = this.planTerraceOn(host);
+    const result = this.terraceSite(x, y);
     return result.ok && this.buildTerrace(result.plan);
   }
 
@@ -322,9 +365,13 @@ export class AerialDriver {
         this.deckColumns.delete(`${record.x + dx},${record.y + dy}`);
       }
     }
-    // La faccia torna libera: l'ospite potra' riaverne una piu' in alto.
+    // Il posto torna libero: l'ospite potra' riaverne una piu' in alto.
     const host = record.supports?.[0];
-    if (host !== undefined) this.terraceFaces.delete(host);
+    if (host !== undefined) {
+      const left = (this.terraceCount.get(host) ?? 1) - 1;
+      if (left > 0) this.terraceCount.set(host, left);
+      else this.terraceCount.delete(host);
+    }
     this.ctx.registry.remove(record.id);
     if (record.aerial === AERIAL_PART.terrace) this.terracesBuilt--;
   }
@@ -338,17 +385,21 @@ export class AerialDriver {
    * il difetto che `catalystFailure` esiste per non avere.
    */
   private planTerraceOn(record: BuildingRecord): TerraceResult {
-    const used = this.terraceFaces.get(record.id) ?? 0;
-    const faces: AerialFace[] = [];
-    // L'ordine parte dal fronte strada e gira: la prima mensola sta dove
-    // l'edificio si affaccia, e le successive dove resta posto. Girare a partire
-    // dal `facing` — invece di provare sempre da est — e' cio' che distribuisce
-    // le mensole sui quattro lati di una citta' invece che su uno solo.
-    for (let i = 0; i < AERIAL_FACES.length; i++) {
-      const face = AERIAL_FACES[((record.facing ?? 0) + i) % AERIAL_FACES.length];
-      if ((used & (1 << face)) === 0) faces.push(face);
-    }
-    if (faces.length === 0) return { ok: false, refusal: 'noRun' };
+    // **La mensola sta sul fronte strada, e su nessun altro lato.** Girare fra le
+    // quattro facce distribuiva le mensole su tutta la sagoma, ed e' misurato che
+    // cosi' la rete non esiste: un percorso fra due mensole rivolte verso il
+    // cuore dell'isolato ha il corridoio sopra i corpi degli edifici, il colmo
+    // sale sopra i loro tetti e il dislivello da assorbire diventa quello di una
+    // torre. Sul fronte strada il corridoio corre invece **sopra la carreggiata**,
+    // dove non c'e' niente da scavalcare, e due vicini dello stesso isolato
+    // guardano lo stesso vuoto.
+    //
+    // Un ospite senza fronte — materializzato da un salvataggio, o nato dove la
+    // maglia non arriva — torna a provarle tutte: meglio una mensola orientata
+    // come capita che nessuna mensola.
+    const faces: readonly AerialFace[] = record.facing === undefined
+      ? AERIAL_FACES
+      : [record.facing as AerialFace];
 
     return planTerrace({
       host: aerialSupportOf(record),
@@ -379,7 +430,7 @@ export class AerialDriver {
     if (!this.deckFits(plan.deck, except)) return false;
 
     this.commitDeck(AERIAL_PART.terrace, plan.deck, [plan.host]);
-    this.terraceFaces.set(plan.host, (this.terraceFaces.get(plan.host) ?? 0) | (1 << plan.face));
+    this.terraceCount.set(plan.host, (this.terraceCount.get(plan.host) ?? 0) + 1);
     this.terracesBuilt++;
     return true;
   }
@@ -631,13 +682,6 @@ function aerialSupportOf(record: BuildingRecord): AerialSupport {
     baseZ: record.baseZ,
     height: record.height,
   };
-}
-
-/** Quante facce di un edificio portano gia' una mensola, dalla maschera. */
-function countFaces(mask: number): number {
-  let count = 0;
-  for (let bit = mask; bit !== 0; bit >>= 1) count += bit & 1;
-  return count;
 }
 
 /**

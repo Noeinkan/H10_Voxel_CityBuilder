@@ -86,6 +86,9 @@ const FAILURE_LABEL: Readonly<Record<ActionFailure, string>> = {
   'onboarding-order': 'Follow the tutorial order: residential, production, civic.',
   'policy-incompatible': 'This policy conflicts with one that is already active.',
   'decision-option-invalid': 'This decision option is no longer available.',
+  'needs-building': 'A terrace hangs off a facade: point at a building, not at the ground.',
+  'building-too-short': 'This building is too low to carry a floor. Try a taller one.',
+  'no-room-aloft': 'No room for a terrace on this facade. Try another building.',
 };
 
 const DAYLIGHT_ICON: Readonly<Record<DaylightMode, HudIcon>> = {
@@ -141,6 +144,7 @@ export class GameHud {
   private readonly tradeButtons = new Map<TradeMode, HTMLButtonElement>();
   private readonly decisionCard: HTMLElement;
   private readonly expansionButton: HTMLButtonElement;
+  private readonly terraceButton: HTMLButtonElement;
   private readonly policyToggle: HTMLButtonElement;
   private readonly themeToggle: HTMLButtonElement;
   private readonly viewToggle: HTMLButtonElement;
@@ -261,7 +265,19 @@ export class GameHud {
       this.paintToast();
     });
     this.expansionButton.classList.add('hud-button--accent');
-    this.dock.append(this.expansionButton, divider());
+    // La mensola sta accanto all'espansione, e non fra i catalizzatori: sono la
+    // stessa domanda posta nei due versi — quando il suolo finisce, o si compra
+    // altra isola o si sale sopra quella che c'e'.
+    this.terraceButton = actionButton(this.model.terrace, 'terrace', () => {
+      this.feedback = null;
+      this.selectionNote = null;
+      this.selected = { kind: 'terrace' };
+      handlers.onTool(this.selected);
+      this.paintSelection();
+      this.paintToast();
+    });
+    this.terraceButton.classList.add('hud-button--accent');
+    this.dock.append(this.expansionButton, this.terraceButton, divider());
     this.policyToggle = labeledButton('policies', 'Policies', 'Open city policies', () => this.togglePolicies());
     this.policyToggle.setAttribute('aria-expanded', 'false');
     this.dock.appendChild(this.policyToggle);
@@ -912,6 +928,7 @@ export class GameHud {
     }
     model.catalysts.forEach((action, index) => paintAction(this.catalystButtons[index], action));
     paintAction(this.expansionButton, model.expansion);
+    paintAction(this.terraceButton, model.terrace);
     for (const policy of model.policies) this.paintPolicy(policy);
     this.paintCommerce(model.commerce);
     for (const mode of model.tradeModes) this.paintTradeMode(mode, model.tradeConnected);

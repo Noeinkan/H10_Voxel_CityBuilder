@@ -40,6 +40,8 @@ const SITE_LABEL: Readonly<Record<CatalystSite, string | undefined>> = {
 export type GameTool =
   | { readonly kind: 'catalyst'; readonly class: BuildingClass; readonly id?: CatalystId }
   | { readonly kind: 'expansion' }
+  /** La mensola: si indica un edificio, e gli si appende un piano in quota. */
+  | { readonly kind: 'terrace' }
   | { readonly kind: 'none' };
 
 export interface HudResource {
@@ -115,6 +117,8 @@ export interface GameHudModel {
   readonly catalystGroups: readonly HudCatalystGroup[];
   readonly commerce: HudCommerce | null;
   readonly expansion: HudAction;
+  /** La mensola posata a mano: il primo pezzo di citta' in quota che si sceglie. */
+  readonly terrace: HudAction;
   readonly policies: readonly HudPolicy[];
   readonly tradeModes: readonly HudTradeMode[];
   readonly tradeConnected: boolean;
@@ -260,6 +264,27 @@ export function buildGameHudModel(stats: GrowthStats | null): GameHudModel {
           : `Purchase a coastal sector (${stats?.unlockedSectors.length ?? 0} already unlocked).`,
   };
 
+  const terraceRequirement = BALANCE.gameplay.terrace;
+  const terracePopulationOk = population >= terraceRequirement.population;
+  const terraceFundsOk = funds >= terraceRequirement.cost;
+  const terrace: HudAction = {
+    id: 'terrace',
+    label: 'Terrace',
+    cost: terraceRequirement.cost,
+    available: ready && terracePopulationOk && terraceFundsOk,
+    // Bloccata non vuol dire nascosta, come per i catalizzatori: sapere che la
+    // citta' potra' salire e' l'informazione che fa pianificare.
+    locked: ready && !(terracePopulationOk && terraceFundsOk),
+    reason: !ready
+      ? 'The city is getting ready.'
+      : !terracePopulationOk
+        ? `Requires ${terraceRequirement.population} residents.`
+        : !terraceFundsOk
+          ? 'Not enough funds.'
+          : 'Hang a floor off a tall building: the city gains ground above the street.',
+    description: 'Hang a floor off a tall building, above the street.',
+  };
+
   const activePolicies = stats?.state.policies ?? [];
   const policies = POLICIES.map((policy): HudPolicy => {
     const requirement = BALANCE.gameplay.policy[policy.id];
@@ -308,6 +333,7 @@ export function buildGameHudModel(stats: GrowthStats | null): GameHudModel {
     catalystGroups,
     commerce: commerceOf(stats),
     expansion,
+    terrace,
     policies,
     tradeModes,
     tradeConnected,
@@ -416,6 +442,9 @@ export function selectionMessage(tool: GameTool, catalysts: readonly HudAction[]
   }
   if (tool.kind === 'expansion') {
     return 'Expansion selected · choose a coastline edge · Esc to cancel';
+  }
+  if (tool.kind === 'terrace') {
+    return 'Terrace selected · click a tall building · Esc to cancel';
   }
   return null;
 }

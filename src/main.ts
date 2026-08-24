@@ -77,6 +77,7 @@ import { daylightControl } from './ui/GameHudModel';
 import { GrowthOverlay } from './ui/GrowthOverlay';
 import { InspectOverlay, type InspectOverlayFrame } from './ui/InspectOverlay';
 import { SimOverlay, type SimOverlayFrame } from './ui/SimOverlay';
+import { SwatchOverlay, type SwatchOverlayFrame } from './ui/SwatchOverlay';
 import { TerrainOverlay, type TerrainOverlayFrame } from './ui/TerrainOverlay';
 import {
   buildViewMenuModel,
@@ -93,6 +94,12 @@ import {
   parseBuildingUse,
   type DioramaScene,
 } from './world/scenes/dioramaScene';
+import {
+  SWATCH,
+  swatchCellAt,
+  swatchExtent,
+  type SwatchCell,
+} from './world/scenes/swatchLayout';
 import { StreetNetwork } from './world/streets/StreetNetwork';
 import { TERRAIN } from './world/terrain/config';
 import { BiomeView } from './world/terrain/BiomeView';
@@ -289,9 +296,14 @@ const camera = new IsoCameraController(world, window.innerWidth, window.innerHei
   // Il diorama e' l'eccezione: li' si guarda un edificio, non un suolo, e il
   // perno va a meta' della sua altezza — altrimenti `Q`/`E` lo fanno ruotare
   // attorno ai propri piedi e la cima esce di campo a ogni scatto.
-  targetHeight: diorama === null
-    ? 24
-    : diorama.subject.z + diorama.subject.sizeZ / 2,
+  // Il campionario e' l'altra eccezione, e per il motivo opposto: e' quasi
+  // piatto, e un perno a ventiquattro lo farebbe ruotare attorno a un punto
+  // sospeso sopra la griglia.
+  targetHeight: diorama !== null
+    ? diorama.subject.z + diorama.subject.sizeZ / 2
+    : sceneKind === 'swatch'
+      ? SWATCH.groundZ + SWATCH.cellHeight / 2
+      : 24,
 });
 camera.attach(renderer.domElement);
 
@@ -395,6 +407,18 @@ if (diorama !== null) {
   const s = diorama.subject;
   const span = Math.max(s.sizeX, s.sizeY) * 1.25;
   camera.frameRegion(s.x + s.sizeX / 2, s.y + s.sizeY / 2, span, span, s.sizeZ);
+} else if (sceneKind === 'swatch') {
+  // Qui si inquadra l'**estensione intera**, non mezza: il gate della 4.10
+  // chiede tutte le combinazioni in una sola inquadratura, e un campionario di
+  // cui si vede meta' non risponde alla domanda per cui esiste.
+  const e = swatchExtent();
+  camera.frameRegion(
+    e.minX + e.sizeX / 2,
+    e.minY + e.sizeY / 2,
+    e.sizeX,
+    e.sizeY,
+    e.sizeZ,
+  );
 } else if (terrain === null) {
   camera.frameRegion(worldSize / 2, worldSize / 2, worldSize / 2, worldSize / 2, worldHeight);
 } else if (growEnabled) {
@@ -417,9 +441,14 @@ const terrainOverlay =
   terrain !== null && !simEnabled && !growEnabled
     ? new TerrainOverlay(container, toggleBiomeView)
     : null;
+const swatchOverlay = sceneKind === 'swatch' ? new SwatchOverlay(container) : null;
 overlay.setVisible(debugVisible);
 terrainOverlay?.setVisible(debugVisible);
+swatchOverlay?.setVisible(debugVisible);
 let terrainApplyMs = 0;
+
+/** Cella del campionario sotto il cursore; la leggono overlay e hook globale. */
+let swatchCell: SwatchCell | null = null;
 
 /**
  * Le due scene che possono girare sopra l'isola.
@@ -584,6 +613,15 @@ if (growEnabled) {
   });
 }
 
+if (swatchOverlay !== null) {
+  renderer.domElement.addEventListener('pointermove', (event: PointerEvent) => {
+    swatchCell = swatchCellUnder(event.clientX, event.clientY);
+  });
+  renderer.domElement.addEventListener('pointerleave', () => {
+    swatchCell = null;
+  });
+}
+
 window.addEventListener('keydown', onUiKey);
 
 if (debugEnabled) {
@@ -689,6 +727,18 @@ if (debugEnabled) {
       available: INSPECT_MODES.map((candidate) => INSPECT_NAMES[candidate]),
     };
   };
+
+  if (swatchOverlay !== null) {
+    // Con `x` e `y` interroga una colonna qualsiasi del campionario senza
+    // muovere il mouse: e' cosi' che uno strumento headless verifica che una
+    // combinazione ci sia. Senza argomenti riporta cio' che il cursore indica.
+    debugGlobals['__voxelSwatch'] = (x?: number, y?: number): Record<string, unknown> => {
+      const cell = x === undefined || y === undefined
+        ? buildSwatchFrame().cell
+        : swatchCellAt(x, y);
+      return { extent: swatchExtent(), cell };
+    };
+  }
 
   if (terrain !== null) {
     debugGlobals['__terrainStats'] = (): Record<string, unknown> => ({
@@ -943,6 +993,9 @@ function onFrame(time: number): void {
   if (growthOverlay !== null && growthOverlay.needsPaint(time)) {
     growthOverlay.update(growthScene?.stats ?? null, time);
   }
+  if (swatchOverlay !== null && swatchOverlay.needsPaint(time)) {
+    swatchOverlay.update(buildSwatchFrame(), time);
+  }
   updateVitality(time);
   if (inspectOverlay.needsPaint(time)) {
     // La citta' cresce in altezza, e con lei la quota utile della fetta.
@@ -1140,6 +1193,25 @@ function onGamePointerMove(event: PointerEvent): void {
         // troppo tardi, ed e' esattamente il difetto muto che questa fase chiude.
         : landmarkNote(growthScene.catalystSite(cell.x, cell.y, catalyst.id)),
     });
+  } else if (selectedTool.kind === 'terrace') {
+    // La colonna che conta e' quella dell'**edificio**, non quella del terreno
+    // dietro di lui: una mensola si appende a un corpo, e chi la posa punta il
+    // corpo. E' la stessa distinzione che le viste di ispezione hanno gia'
+    // dovuto fare — la heightmap attraversa una torre come se fosse vetro.
+    const pointed = pointedCellAt(event.clientX, event.clientY) ?? cell;
+    const failure = growthScene.terraceFailure(pointed.x, pointed.y);
+    valid = failure === null;
+    influenceOverlay?.hideCursor();
+    gameHud?.updateCursor(event.clientX, event.clientY, {
+      title: 'Terrace',
+      details: `${BALANCE.gameplay.terrace.cost} funds · a floor above the street`,
+      valid,
+      reason: failure === null
+        ? 'This facade can carry a floor. The building stops growing once it does.'
+        : actionFailureLabel(failure),
+    });
+    preview.show(pointed.x, pointed.y, pointed.z, valid);
+    return;
   } else {
     const sector = coastalSectorAt(cell.x, cell.y, terrainRegion, BALANCE.gameplay.expansion.size);
     const failure = generator.done
@@ -1187,6 +1259,22 @@ function onGamePointerDown(event: PointerEvent): void {
     return;
   }
 
+  if (selectedTool.kind === 'terrace') {
+    const pointed = pointedCellAt(event.clientX, event.clientY) ?? cell;
+    const result = growthScene.placeTerrace(pointed.x, pointed.y);
+    if (!result.success) {
+      gameHud?.showFailure(result.reason);
+      return;
+    }
+    gameHud?.clearFeedback();
+    // Lo strumento resta in mano: una mensola sola non fa un piano di citta', e
+    // chi ne vuole una fila la posa un edificio dopo l'altro. E' il contrario
+    // del catalizzatore, che si piazza una volta e cambia un quartiere.
+    preview.hide();
+    gameHud?.updateCursor(0, 0, null);
+    return;
+  }
+
   if (!generator.done) {
     gameHud?.showFailure('terrain-loading');
     return;
@@ -1214,6 +1302,26 @@ function cursorRay(clientX: number, clientY: number): Ray3 {
     origin: [origin.x, origin.y, origin.z],
     direction: [direction.x, direction.y, direction.z],
   };
+}
+
+/**
+ * Quale cella del campionario sta sotto il cursore.
+ *
+ * Non passa da `pickSurfaceCell`, che vuole una `TerrainMap` e qui non c'e'
+ * terreno: il campionario e' piatto e la sua sommita' e' nota, quindi basta
+ * l'intersezione del raggio con il piano dei soggetti. Puntare la cima di un
+ * prisma o il basamento accanto risponde percio' la stessa cosa, ed e' il
+ * comportamento giusto — la domanda e' «quale casella», non «quale voxel».
+ */
+function swatchCellUnder(clientX: number, clientY: number): SwatchCell | null {
+  const ray = cursorRay(clientX, clientY);
+  const [ox, oy, oz] = ray.origin;
+  const [dx, dy, dz] = ray.direction;
+  if (dz >= -1e-8) return null;
+
+  const t = (SWATCH.groundZ + SWATCH.cellHeight - oz) / dz;
+  if (t < 0) return null;
+  return swatchCellAt(Math.floor(ox + dx * t), Math.floor(oy + dy * t));
 }
 
 /**
@@ -1322,12 +1430,21 @@ function actionFailureLabel(reason: ActionFailure): string {
     'needs-open-ground': 'Needs a wide, level clearing.',
     'too-close': 'Too close to a catalyst of the same class.',
     'insufficient-funds': 'Not enough funds.',
-    'population-required': `Requires ${BALANCE.gameplay.expansion.population} residents.`,
+    // Senza un numero: tre azioni con tre soglie diverse passano di qui — il
+    // settore, la mensola, le policy — e citare quella dell'espansione era
+    // gia' sbagliato per le policy. La cifra esatta sta nel tooltip di ciascuna
+    // azione, che la prende dal proprio listino.
+    'population-required': 'The city needs more residents for this.',
     'already-active': 'This action is already active.',
     'already-unlocked': 'This sector is already unlocked.',
     'onboarding-order': 'Complete the current tutorial step first.',
     'policy-incompatible': 'This policy conflicts with one that is already active.',
     'decision-option-invalid': 'This decision option is no longer available.',
+    // I tre della mensola dicono tre gesti diversi, ed e' il punto: cercare un
+    // edificio, cercarne uno piu' alto, cercare un altro posto.
+    'needs-building': 'Point at a building: a terrace hangs off a facade.',
+    'building-too-short': 'This building is too low to carry a floor.',
+    'no-room-aloft': 'No room for a terrace here.',
   };
   return labels[reason];
 }
@@ -1419,6 +1536,11 @@ function buildOverlayFrame(mainMs: number, renderMs: number, frameMs: number): O
     zoom: camera.zoom,
     yawDegrees: camera.yawDegrees,
   };
+}
+
+/** L'unica lettura del campionario: la consumano overlay e `__voxelSwatch()`. */
+function buildSwatchFrame(): SwatchOverlayFrame {
+  return { cell: swatchCell };
 }
 
 function onDebugKey(event: KeyboardEvent): void {
@@ -1532,6 +1654,7 @@ function setDebugVisible(visible: boolean): void {
   terrainOverlay?.setVisible(visible);
   simOverlay?.setVisible(visible);
   growthOverlay?.setVisible(visible);
+  swatchOverlay?.setVisible(visible);
   inspectOverlay.setVisible(visible);
 }
 
@@ -1580,6 +1703,7 @@ function expandWorld(): void {
 
 function parseSceneKind(value: string | null): SceneKind {
   if (value === 'noise' || value === 'slab' || value === 'city' || value === 'diorama') return value;
+  if (value === 'swatch') return value;
   return 'city';
 }
 

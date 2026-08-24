@@ -42,7 +42,29 @@ describe('buildGameHudModel', () => {
 
     expect(model.catalysts.every((action) => action.available)).toBe(true);
     expect(model.expansion.available).toBe(true);
+    expect(model.terrace.available).toBe(true);
     expect(model.policies.every((policy) => policy.available)).toBe(true);
+  });
+
+  it('la mensola resta visibile mentre e bloccata, e dice cosa manca', () => {
+    // **Bloccata non vuol dire nascosta**, come per i catalizzatori: sapere che
+    // la citta' potra' salire e quanto costa e' l'informazione che fa
+    // pianificare, e nasconderla renderebbe la quota una sorpresa.
+    const poor = buildGameHudModel(stats(2_000, 0)).terrace;
+    expect(poor).toMatchObject({ available: false, locked: true });
+    expect(poor.reason).toContain('residents');
+
+    const broke = buildGameHudModel(stats(0, 100)).terrace;
+    expect(broke).toMatchObject({ available: false, locked: true, reason: 'Not enough funds.' });
+    expect(broke.cost).toBeGreaterThan(0);
+  });
+
+  it('lo strumento mensola dice di puntare un edificio, non il suolo', () => {
+    // E' l'unico strumento che non si posa sul terreno: se il messaggio dicesse
+    // «clicca sull'isola», come per gli altri due, si cliccherebbe sul prato.
+    const message = selectionMessage({ kind: 'terrace' }, []);
+    expect(message).toContain('building');
+    expect(message).toContain('Esc to cancel');
   });
 
   it('durante il tutorial abilita solo il catalizzatore richiesto', () => {
@@ -212,6 +234,7 @@ function stats(
       routes: 0,
       piers: 0,
       stacked: 0,
+      lifts: 0,
       clearing: 0,
       cleared: 0,
     },

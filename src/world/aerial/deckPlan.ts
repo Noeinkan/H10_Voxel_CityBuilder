@@ -362,6 +362,17 @@ export function surveyFooting(
   probe: AerialProbe,
   x: number,
   y: number,
+  /**
+   * Se il piede puo' stare sulla carreggiata.
+   *
+   * **Falso per una gamba, vero per un montante**, e la differenza non e' una
+   * concessione: una gamba e' struttura che scarica un peso, e in mezzo alla
+   * strada e' un ostacolo alto quanto un isolato; un montante e' il posto da cui
+   * si sale, e sul marciapiede ci sta perche' e' li' che serve. E' anche l'unico
+   * posto in cui possa stare — misurato: sotto una mensola sul fronte strada
+   * c'e' il proprio ospite o c'e' l'asfalto, e nient'altro.
+   */
+  onPavement = false,
 ): { baseZ: number; carrier: number } | 'taken' | 'street' {
   let baseZ = -1;
   let carrier = 0;
@@ -369,9 +380,7 @@ export function surveyFooting(
   for (let dy = 0; dy < AERIAL.pierSide; dy++) {
     for (let dx = 0; dx < AERIAL.pierSide; dx++) {
       const column = probe.ground(x + dx, y + dy);
-      // Una gamba in mezzo alla carreggiata e' un ostacolo alto quanto un
-      // isolato: e' lo stesso rifiuto che un mezzanino riceve sopra una strada.
-      if (column.pavement) return 'street';
+      if (column.pavement && !onPavement) return 'street';
       // Al suolo il terreno deve reggere. Sopra un tetto la domanda non si pone:
       // quel piano lo regge gia' l'edificio che l'ha costruito.
       if (column.carrier === 0 && (!column.free || !column.firm)) return 'taken';

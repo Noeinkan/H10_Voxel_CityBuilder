@@ -1,7 +1,13 @@
 import type { SceneGenerator } from '../scenes/cityScene';
 import type { VoxelWorld } from '../VoxelWorld';
 import { COLUMNS_PER_CHUNK, DECOR_RECORD_SIZE, type ColumnBlock } from './columnBlock';
-import { ensureBlockChunks, writeBlockColumns, writeBlockDecor } from './IslandGenerator';
+import {
+  ensureBlockChunks,
+  writeBlockColumns,
+  writeBlockDecor,
+  writeBlockLedges,
+} from './IslandGenerator';
+import { LEDGE_RECORD_SIZE } from './ledges';
 import { chunkSpanOf, shapeFromRegion, type IslandShape, type Region } from './region';
 import type { BlockRequest, TerrainJob, TerrainMessage } from './terrainMessages';
 import { TerrainMap } from './TerrainMap';
@@ -30,6 +36,15 @@ const COLUMN_BATCH = 64;
  */
 const DECOR_BATCH = 8;
 
+/**
+ * Sporgenze scritte fra due controlli del budget.
+ *
+ * Piu' alto di quello degli alberi perche' una lastra e' sei voxel, non cento:
+ * il lotto vuole restare sullo stesso ordine di lavoro degli altri, non sullo
+ * stesso ordine di *conteggio*.
+ */
+const LEDGE_BATCH = 32;
+
 export class TerrainStreamer implements SceneGenerator {
   readonly map: TerrainMap;
   readonly shape: IslandShape;
@@ -44,6 +59,8 @@ export class TerrainStreamer implements SceneGenerator {
   private cursor = 0;
   /** Record decorativo corrente, dopo che tutte le colonne sono state scritte. */
   private decorCursor = 0;
+  /** Sporgenza corrente, dopo il decoro: e' l'ultima fase del blocco. */
+  private ledgeCursor = 0;
   private ensured = false;
 
   private receivedBlocks = 0;
@@ -155,9 +172,19 @@ export class TerrainStreamer implements SceneGenerator {
       // il terreno e possono fermarsi qui senza dipendere dall'ordine dei blocchi.
       if (this.decorCursor < decorCount) return false;
 
+      const ledgeCount = block.ledges.length / LEDGE_RECORD_SIZE;
+      while (this.ledgeCursor < ledgeCount) {
+        this.written += writeBlockLedges(this.world, block, this.ledgeCursor, LEDGE_BATCH);
+        this.ledgeCursor += LEDGE_BATCH;
+        if (performance.now() - start >= budgetMs) break;
+      }
+
+      if (this.ledgeCursor < ledgeCount) return false;
+
       this.pending.shift();
       this.cursor = 0;
       this.decorCursor = 0;
+      this.ledgeCursor = 0;
       this.ensured = false;
       this.appliedBlocks++;
 

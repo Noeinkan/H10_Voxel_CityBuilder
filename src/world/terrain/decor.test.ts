@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { VoxelWorld } from '../VoxelWorld';
-import { BIOME, TREE_DECOR, TREE_SHAPES } from './config';
+import { BIOME, TREE_DECOR } from './config';
 import { treeAt, treeSpec, treeTop, TREELESS_BIOMES, writeTree } from './decor';
+import { FLORA, TREE_SHAPES } from './flora';
 import { generateIsland, type Region } from './IslandGenerator';
 import { shapeFromRegion } from './region';
 
@@ -28,6 +29,42 @@ describe('decorazioni degli alberi', () => {
     for (const biome of TREELESS_BIOMES) {
       expect(treeAt(SEED, 0, 0, 28, biome, 0.1)).toBeNull();
     }
+  });
+
+  it('estrae solo specie dell’elenco del proprio bioma', () => {
+    for (let biome = 0; biome < FLORA.length; biome++) {
+      const allowed = new Set(FLORA[biome].species.map((entry) => entry.species));
+      for (let cell = 0; cell < 400; cell++) {
+        const tree = treeAt(SEED, cell, cell * 7, 34, biome, 0.1);
+        if (tree === null) continue;
+        expect(allowed.has(tree.species), `bioma ${biome}, specie ${tree.species}`).toBe(true);
+      }
+    }
+  });
+
+  it('la montagna e la pianura non fanno lo stesso bosco', () => {
+    // La proprieta' che il catalogo per bioma esiste per avere: sulla stessa
+    // griglia di celle, alla stessa quota e con la stessa pendenza, le due fasce
+    // devono produrre insiemi di specie diversi. Prima di `FLORA` erano identici
+    // per costruzione, e a distinguerle restava solo la densita'.
+    const speciesIn = (biome: number): Set<number> => {
+      const out = new Set<number>();
+      for (let cell = 0; cell < 600; cell++) {
+        const tree = treeAt(SEED, cell, -cell, 42, biome, 0.05);
+        if (tree !== null) out.add(tree.species);
+      }
+      return out;
+    };
+
+    const plain = speciesIn(BIOME.plain);
+    const rock = speciesIn(BIOME.rock);
+    expect(plain.size).toBeGreaterThan(1);
+    expect(rock.size).toBeGreaterThan(1);
+
+    // Non insiemi disgiunti — il cespuglio cresce dappertutto, ed e' giusto —
+    // ma ciascuna delle due deve avere qualcosa che l'altra non ha.
+    expect([...rock].some((species) => !plain.has(species))).toBe(true);
+    expect([...plain].some((species) => !rock.has(species))).toBe(true);
   });
 
   it('mantiene chiome distinte nella griglia delle celle', () => {

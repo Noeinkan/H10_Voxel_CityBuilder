@@ -3,7 +3,7 @@ import { CHUNK } from '../chunkCoords';
 import { VoxelWorld } from '../VoxelWorld';
 import { paletteForDepth } from './biomes';
 import { columnIndex, COLUMNS_PER_CHUNK } from './columnBlock';
-import { BIOME, TERRAIN, WATER_IDS } from './config';
+import { BIOME, TERRACE, TERRAIN, WATER_IDS } from './config';
 import { HeightField } from './heightField';
 import { expandIsland, generateColumnBlock, generateIsland, type Region } from './IslandGenerator';
 import { shapeFromRegion } from './region';
@@ -222,7 +222,7 @@ describe('generateIsland — continuita’ al confine', () => {
    * Le due meta' dell'isola generate separatamente, con la maschera dell'isola
    * intera: la cucitura cade in mezzo al rilievo, dove un gradino si vedrebbe.
    */
-  it('fra due region adiacenti il dislivello di colonne contigue non supera 1', () => {
+  it('fra due region adiacenti il dislivello di colonne contigue resta un’alzata', () => {
     const shape = shapeFromRegion(ISLAND);
     const world = new VoxelWorld();
 
@@ -240,16 +240,45 @@ describe('generateIsland — continuita’ al confine', () => {
       const delta = Math.abs(map.heightAt(256, y) - map.heightAt(255, y));
       if (delta > worst) worst = delta;
     }
-    // L'invariante e' in celle, non in colonne: due celle contigue non
-    // differiscono di piu' di una cella, cioe' `cellSize` voxel. Dentro una
-    // cella il dislivello e' zero per costruzione.
-    expect(worst).toBeLessThanOrEqual(TERRAIN.cellSize);
+    // L'invariante e' in celle e in **alzate**, non in cubi: due celle contigue
+    // cadono su pedate contigue della stessa scala, quindi il loro dislivello e'
+    // al piu' un'alzata. Dentro una cella resta zero per costruzione.
+    expect(worst).toBeLessThanOrEqual(TERRACE.maxStep);
   });
 
   it('la cucitura non e’ un caso particolare: vale per tutte le colonne dell’isola', () => {
     const { map } = referenceIsland();
 
     let worst = 0;
+    // La pianura non si terrazza, e questo e' cio' che lo verifica sul mondo
+    // vero invece che sulla scala: sotto la soglia il gradino resta il cubo di
+    // sempre, ed e' la sola ragione per cui la citta' non e' cambiata.
+    let worstBelowTerrace = 0;
+    for (let y = 1; y < 511; y++) {
+      for (let x = 1; x < 511; x++) {
+        const h = map.heightAt(x, y);
+        const neighbours = [map.heightAt(x + 1, y), map.heightAt(x, y + 1)];
+        for (const n of neighbours) {
+          const delta = Math.abs(n - h);
+          if (delta > worst) worst = delta;
+          if (Math.max(h, n) < TERRACE.fromHeight && delta > worstBelowTerrace) {
+            worstBelowTerrace = delta;
+          }
+        }
+      }
+    }
+    expect(worst).toBeLessThanOrEqual(TERRACE.maxStep);
+    expect(worstBelowTerrace).toBeLessThanOrEqual(TERRAIN.cellSize);
+  });
+
+  it('la montagna si spezza davvero: in quota compaiono i cigli', () => {
+    // E' il criterio della 4.x, e senza di lui il terrazzamento sarebbe un
+    // meccanismo che funziona su un'isola che non lo usa mai: le alzate alte
+    // esistono solo dove il rilievo ci arriva.
+    const { map } = referenceIsland();
+
+    let cliffs = 0;
+    let tallest = 0;
     for (let y = 1; y < 511; y++) {
       for (let x = 1; x < 511; x++) {
         const h = map.heightAt(x, y);
@@ -257,10 +286,35 @@ describe('generateIsland — continuita’ al confine', () => {
           Math.abs(map.heightAt(x + 1, y) - h),
           Math.abs(map.heightAt(x, y + 1) - h),
         );
-        if (delta > worst) worst = delta;
+        if (delta > TERRAIN.cellSize) cliffs++;
+        if (delta > tallest) tallest = delta;
       }
     }
-    expect(worst).toBeLessThanOrEqual(TERRAIN.cellSize);
+
+    expect(cliffs).toBeGreaterThan(500);
+    expect(tallest).toBeGreaterThan(TERRAIN.cellSize * 2);
+  });
+
+  it('sul ciglio affiora la roccia, e nessuno ci costruisce', () => {
+    const { map } = referenceIsland();
+
+    scanColumns(() => {
+      for (let y = 1; y < 511; y++) {
+        for (let x = 1; x < 511; x++) {
+          const h = map.heightAt(x, y);
+          const drop = Math.max(
+            h - map.heightAt(x + 1, y),
+            h - map.heightAt(x - 1, y),
+            h - map.heightAt(x, y + 1),
+            h - map.heightAt(x, y - 1),
+          );
+          if (drop <= TERRAIN.cellSize) continue;
+          if (map.biomeAt(x, y) !== BIOME.rock) return `(${x}, ${y}) ciglio senza roccia`;
+          if (map.isBuildable(x, y)) return `(${x}, ${y}) ciglio edificabile`;
+        }
+      }
+      return null;
+    });
   });
 
   it('ogni quota e’ un multiplo della cella: il terreno non sta mai a mezzo cubo', () => {

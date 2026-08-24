@@ -20,6 +20,7 @@ import type { BuildContext } from './buildContext';
 import { LandmarkDriver, type LandmarkSite } from './landmarkDriver';
 import { SpanDriver } from './spanDriver';
 import { AerialDriver } from './aerialDriver';
+import { GuideDriver } from './guideDriver';
 import { UpgradeDriver } from './upgradeDriver';
 import { allowedLevel } from './hierarchy';
 import { formOf, localLevelBonus } from './urbanForm';
@@ -53,6 +54,7 @@ import { FACING, type Facing } from '../streets/streetGrid';
 import { SPANS } from '../spans/config';
 import { AERIAL } from '../aerial/config';
 import { decksAt, type BuildDeck } from '../aerial/decks';
+import type { TerraceResult } from '../aerial/terracePlan';
 
 /**
  * Il ponte fra la simulazione e il mondo voxel.
@@ -136,20 +138,23 @@ export interface BuilderStats {
   readonly spans: number;
   readonly spanReach: number;
   /**
-   * La citta' in quota, in quattro numeri.
+   * La citta' in quota, in cinque numeri.
    *
    * Sono il gate della 4.9 reso leggibile senza aprire una console, come
-   * `spanReach` lo e' per la 4.5, e sono quattro perche' i modi di fallire sono
-   * quattro e diversi fra loro: `terraces` a zero vuol dire che nessun fronte
+   * `spanReach` lo e' per la 4.5, e sono cinque perche' i modi di fallire sono
+   * cinque e diversi fra loro: `terraces` a zero vuol dire che nessun fronte
    * regge una mensola; `routes` a zero che la citta' non si intreccia; `piers` a
    * zero con le altre due piene che tutto sta in piedi a sbalzo, cioe' che
    * `reach` e' troppo largo; `stacked` a zero che le quote nascono e nessuno ci
-   * costruisce sopra.
+   * costruisce sopra; `lifts` a zero che **non c'e' modo di arrivarci** — si
+   * abita sopra la citta' e non ci si muove fra i livelli, che e' esattamente la
+   * meta' del gate che la fase aveva lasciato aperta.
    */
   readonly terraces: number;
   readonly routes: number;
   readonly piers: number;
   readonly stacked: number;
+  readonly lifts: number;
   /**
    * Lo sventramento in due numeri: cantieri aperti adesso, edifici gia' portati
    * via in tutta la partita.
@@ -240,6 +245,7 @@ export class Builder {
   private readonly landmarks: LandmarkDriver;
   private readonly spans: SpanDriver;
   private readonly aerial: AerialDriver;
+  private readonly guides: GuideDriver;
   private readonly upgrades: UpgradeDriver;
 
   constructor(
@@ -264,6 +270,14 @@ export class Builder {
     // cadere quelle che poggiavano su cio' che abbatte.
     this.landmarks = new LandmarkDriver(this.ctx, this.spans);
     this.aerial = new AerialDriver(this.ctx, this.spans);
+    // La guida viene dopo la citta' in quota e le chiede due cose: come vede il
+    // luogo, e quali impalcati qualcuno abita. La freccia va in un verso solo —
+    // la citta' in quota non sa che la guida esiste.
+    this.guides = new GuideDriver(
+      this.ctx,
+      this.aerial.siteProbe,
+      (deckId) => this.aerial.isInhabited(deckId),
+    );
     this.upgrades = new UpgradeDriver(this.ctx, this.spans, this.aerial);
   }
 
@@ -293,6 +307,21 @@ export class Builder {
     return this.landmarks.siteAt(x, y, kind);
   }
 
+  /**
+   * La mensola che nascerebbe su questa colonna, o perche' no. Non scrive.
+   *
+   * La porta del cursore, come `landmarkClearance`: sta sul `Builder` e non sul
+   * driver perche' e' il `Builder` che il gioco tiene in mano.
+   */
+  terraceSite(x: number, y: number): TerraceResult {
+    return this.aerial.terraceSite(x, y);
+  }
+
+  /** Posa una mensola sull'edificio di questa colonna. La porta del click. */
+  placeTerrace(x: number, y: number): boolean {
+    return this.aerial.placeTerrace(x, y);
+  }
+
   get stats(): BuilderStats {
     return {
       placed: this.placedCount,
@@ -307,6 +336,7 @@ export class Builder {
       terraces: this.aerial.terraces,
       routes: this.aerial.routes,
       piers: this.aerial.piers,
+      lifts: this.guides.lifts,
       stacked: this.stackedCount,
       clearing: this.landmarks.clearing,
       cleared: this.landmarks.cleared,
@@ -378,6 +408,10 @@ export class Builder {
     // distinti — il dettaglio e il collegamento — e vanno a cadenze diverse.
     if (state.tickCount % AERIAL.terrace.ticksPerPass === 0) this.aerial.terracePass();
     if (state.tickCount % AERIAL.route.ticksPerPass === 0) this.aerial.routePass();
+    // E la via da terra viene per ultima, perche' serve un impalcato che qualcuno
+    // abiti gia': prima si costruisce sopra la citta', poi si guadagna il modo di
+    // arrivarci.
+    if (state.tickCount % AERIAL.guide.ticksPerPass === 0) this.guides.pass();
     return next;
   }
 

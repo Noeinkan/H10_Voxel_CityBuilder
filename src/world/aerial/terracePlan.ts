@@ -68,7 +68,15 @@ export interface TerracePlan {
   readonly deck: DeckPlan;
 }
 
-export type TerraceRefusal = DeckRefusal | 'noRun';
+/**
+ * Perche' una mensola non si puo' fare.
+ *
+ * I primi vengono dal luogo e valgono per la passata automatica come per il
+ * giocatore; gli ultimi due sono del **gesto** e li puo' produrre solo un click:
+ * in quota una mensola ha sempre un ospite per costruzione, ed e' chi indica una
+ * colonna che puo' indicarne una sbagliata.
+ */
+export type TerraceRefusal = DeckRefusal | 'noRun' | 'noHost' | 'hostFull';
 
 export type TerraceResult =
   | { readonly ok: true; readonly plan: TerracePlan }
@@ -117,12 +125,24 @@ export interface FaceRun {
 }
 
 /**
- * Le corse di parete di una faccia, dalla piu' alta in giu'.
+ * Le corse di parete di una faccia, **dalla piu' bassa in su**.
  *
  * Per ogni quota si cerca la parete rientrando dal filo dell'impronta, e si
  * tengono le colonne che la trovano **alla stessa profondita'**: e' quello che
  * rende la corsa un pezzo di facciata piano invece di un profilo a gradini, e una
  * mensola attaccata a un profilo a gradini sarebbe appesa nel vuoto da un lato.
+ *
+ * **Il verso della scansione e' cio' che fa esistere la rete.** Cercando dall'alto
+ * ogni ospite si prendeva la fascia piu' alta che reggesse, quindi due vicini di
+ * livello diverso finivano a quote lontanissime: su una citta' cresciuta, delle
+ * ottantasette coppie che la passata prova davvero, trentatre morivano sul
+ * dislivello. Dal basso la prima corsa utile e' la **sommita' del basamento**, e
+ * la 4.4 rende il corso di base condiviso da tutta la fila (`baseBand`): due
+ * vicini diventano complanari **per costruzione**.
+ *
+ * Non e' una griglia imposta da fuori — quella questo dominio dichiara di non
+ * volerla, ed e' il motivo per cui qui non esiste `align`. La quota continua a
+ * venire da una fascia dell'ospite: solo dalla prima invece che dall'ultima.
  */
 export function faceRuns(
   query: AerialProbe,
@@ -139,33 +159,49 @@ export function faceRuns(
   const crossFrom = axis === 0 ? host.y : host.x;
   const crossTo = crossFrom + (axis === 0 ? host.sizeY : host.sizeX) - 1;
 
-  const out: FaceRun[] = [];
   const top = host.baseZ + host.height - 1 - AERIAL.deckDrop;
   const floor = host.baseZ + AERIAL.minRise;
 
-  for (let z = top; z >= floor && out.length < AERIAL.terrace.attempts; z--) {
-    // La parete di ogni colonna della faccia, a questa quota.
-    const walls: number[] = [];
-    for (let cross = crossFrom; cross <= crossTo; cross++) {
-      walls.push(wallDepth(query, axis, outward, edge, cross, z, depth, maxRecess));
+  const scan = (flat: boolean): FaceRun[] => {
+    const out: FaceRun[] = [];
+    for (let z = floor; z <= top && out.length < AERIAL.terrace.attempts; z++) {
+      // La parete di ogni colonna della faccia, a questa quota.
+      const walls: number[] = [];
+      for (let cross = crossFrom; cross <= crossTo; cross++) {
+        walls.push(wallDepth(query, axis, outward, edge, cross, z, depth, maxRecess, flat));
+      }
+
+      const run = longestRun(walls);
+      if (run === null) continue;
+      const length = run.to - run.from + 1;
+      if (length < AERIAL.terrace.minRun) continue;
+
+      out.push({
+        z,
+        wall: run.wall,
+        from: crossFrom + run.from,
+        to: crossFrom + run.to,
+      });
+      // Una quota per corsa: due quote consecutive dello stesso corpo darebbero
+      // due mensole sovrapposte, e la seconda verrebbe rifiutata comunque da
+      // `blocked`.
+      z += AERIAL.girderDepth;
     }
+    return out;
+  };
 
-    const run = longestRun(walls);
-    if (run === null) continue;
-    const length = run.to - run.from + 1;
-    if (length < AERIAL.terrace.minRun) continue;
-
-    out.push({
-      z,
-      wall: run.wall,
-      from: crossFrom + run.from,
-      to: crossFrom + run.to,
-    });
-    // Una quota per corsa: due quote consecutive dello stesso corpo darebbero due
-    // mensole sovrapposte, e la seconda verrebbe rifiutata comunque da `blocked`.
-    z -= AERIAL.girderDepth;
-  }
-  return out;
+  // **Prima la fascia da continuare, poi il balcone.** Dove il corpo arretra, la
+  // sommita' della fascia sotto e' gia' una terrazza e l'aggetto la prosegue
+  // verso fuori: e' la forma per cui questo dominio esiste, e resta la prima da
+  // provare. Ma meta' della citta' non arretra affatto — impronte piccole e
+  // corpi che salgono a prisma dentro il corso di base condiviso della 4.4 —
+  // e su una citta' vera **centoquarantasette ospiti su quattrocento** non
+  // avevano una sola corsa utile, che e' il motivo per cui le mensole erano rade
+  // e non si guardavano mai. Su una facciata piena la mensola si attacca lo
+  // stesso: e' un balcone invece che una terrazza, sta in aria libera davanti al
+  // muro, e `planDeck` verifica il vuoto come per tutte le altre.
+  const runs = scan(false);
+  return runs.length > 0 ? runs : scan(true);
 }
 
 /**
@@ -188,14 +224,18 @@ function wallDepth(
   z: number,
   depth: number,
   maxRecess: number,
+  flat: boolean,
 ): number {
   const limit = Math.min(maxRecess, depth - 1);
   for (let step = 0; step <= limit; step++) {
     const along = edge - outward * step;
     const solid = axis === 0 ? probe.solid(along, cross, z) : probe.solid(cross, along, z);
-    // La parete c'e' se il voxel e' pieno e sopra di lui non c'e' niente: e' la
-    // sommita' di una fascia, cioe' il piano su cui la mensola si allinea.
     if (!solid) continue;
+    // Con `flat` basta che il muro ci sia: la mensola gli si appende davanti, e
+    // il vuoto in cui sta lo verifica `planDeck`. Senza, si pretende anche che
+    // sopra non ci sia niente — la sommita' di una fascia, cioe' il piano a cui
+    // l'aggetto si allinea per continuarlo.
+    if (flat) return along;
     const above = axis === 0 ? probe.solid(along, cross, z + 1) : probe.solid(cross, along, z + 1);
     return above ? -1 : along;
   }

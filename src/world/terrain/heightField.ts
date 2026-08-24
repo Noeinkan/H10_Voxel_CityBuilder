@@ -2,6 +2,7 @@ import { createNoise2D, type NoiseFunction2D } from 'simplex-noise';
 import { hashCoords, mulberry32 } from '../rng';
 import { TERRAIN } from './config';
 import {
+  ellipseRatio,
   lakeLevelAt,
   moundRise,
   planBasins,
@@ -244,6 +245,29 @@ export class HeightField {
   waterLevelAt(x: number, y: number): number {
     const lake = lakeLevelAt(this.basins, x, y);
     return lake > TERRAIN.seaLevel ? lake : TERRAIN.seaLevel;
+  }
+
+  /**
+   * true se la colonna cade nell'influenza di una conca — specchio, sponda e
+   * raccordo compresi.
+   *
+   * Serve a una cosa sola, ed e' il terrazzamento: una conca sta dentro sei
+   * voxel fra il bordo e il fondo, e un'alzata da otto se li mangerebbe interi.
+   * Terrazzata, la sponda scenderebbe sotto il proprio pelo e il lago colerebbe
+   * a valle. Qui la scala resta quella fine, che e' anche il verso giusto —
+   * una conca e' una vasca liscia, non una cava a gradoni.
+   *
+   * E' l'ellisse d'influenza e non il solo specchio: dentro `basinBank` c'e'
+   * l'acqua, ma sono le colonne del **raccordo** quelle che devono restare sopra
+   * il pelo, e stanno fuori da quel raggio.
+   */
+  inBasinAt(x: number, y: number): boolean {
+    for (const basin of this.basins) {
+      if (ellipseRatio(x, y, basin.centreX, basin.centreY, basin.radiusX, basin.radiusY) <= 1) {
+        return true;
+      }
+    }
+    return false;
   }
 
   /**

@@ -1,14 +1,8 @@
 import { PALETTE_SLOTS } from '../../engine/paletteSlots';
 import type { VoxelWorld } from '../VoxelWorld';
 import { hashCoords, mulberry32 } from '../rng';
-import { BIOME, TERRAIN, TREE_DECOR, TREE_SHAPES } from './config';
-
-/** Indici nel catalogo `TREE_SHAPES`: l'ordine dei due elenchi e' lo stesso. */
-export const TREE_SPECIES = {
-  conifer: 0,
-  broadleaf: 1,
-  autumn: 2,
-} as const;
+import { BIOME, TERRAIN, TREE_DECOR } from './config';
+import { FLORA, pickSpecies, TREE_SHAPES } from './flora';
 
 /**
  * Raggio di ingombro di ogni specie, dedotto dal suo profilo una volta sola.
@@ -63,15 +57,19 @@ export function treeAt(
   biome: number,
   slope: number,
 ): TreeSpec | null {
-  if (TREE_DECOR.density[biome] === undefined || TREE_DECOR.density[biome] === 0) return null;
+  const flora = FLORA[biome];
+  if (flora === undefined || flora.density <= 0) return null;
   if (slope >= TERRAIN.buildableMaxSlope || height < TERRAIN.seaLevel) return null;
 
   const random = mulberry32(hashCoords(seed, cellX, cellY));
-  if (random() >= TREE_DECOR.density[biome]) return null;
+  if (random() >= flora.density) return null;
 
   const x = cellX * TREE_DECOR.cellSize + treeJitter(random);
   const y = cellY * TREE_DECOR.cellSize + treeJitter(random);
-  const species = Math.floor(random() * TREE_SHAPES.length);
+  // La specie esce dai pesi del bioma, non dal catalogo intero: e' la sola
+  // differenza fra una montagna e una pianura piu' rada. Resta **una** sola
+  // estrazione, o `treeOrigin` leggerebbe il flusso sfasato.
+  const species = pickSpecies(flora, random());
   const shape = TREE_SHAPES[species];
   const trunkHeight = shape.trunk[0] + Math.floor(random() * shape.trunk[1]);
 
@@ -200,5 +198,13 @@ function pickLean(random: () => number, lean: number): number {
   return Math.floor(random() * (2 * lean + 1)) - lean;
 }
 
-/** I biomi che devono restare senza alberi, esposti per test e documentazione. */
-export const TREELESS_BIOMES: readonly number[] = [BIOME.ocean, BIOME.beach, BIOME.rock];
+/**
+ * I biomi che devono restare spogli, esposti per test e documentazione.
+ *
+ * **La roccia non c'e' piu'.** Era spoglia da quando era anche l'unico terreno
+ * vietato alla citta', cioe' un posto dove non succedeva niente; da quando la
+ * roccia si paga invece di essere rifiutata, l'unica ragione per tenerla nuda
+ * era l'inerzia. Restano l'acqua, dove non cresce niente, e la spiaggia, che e'
+ * il terreno su cui la citta' arriva per prima.
+ */
+export const TREELESS_BIOMES: readonly number[] = [BIOME.ocean, BIOME.beach];
