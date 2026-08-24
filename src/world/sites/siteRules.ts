@@ -35,66 +35,90 @@ const AXES: readonly (readonly [number, number])[] = [[1, 0], [-1, 0], [0, 1], [
 
 const AXIS_FACING: readonly Facing[] = [FACING.east, FACING.west, FACING.north, FACING.south];
 
+/** L'acqua piu' vicina sui quattro assi: da che parte, e a quante colonne. */
+export interface WaterSight {
+  readonly facing: Facing;
+  readonly distance: number;
+}
+
 /**
- * Colonne fino all'acqua piu' vicina sui quattro assi, o null entro `radius`.
+ * L'acqua piu' vicina sui quattro assi, o null se non ce n'e' entro `radius`.
  *
  * Guarda solo i quattro assi e non l'intero quadrato: chi cerca l'acqua ha
  * bisogno di sapere se ce n'e' *davanti*, e il quadrato costerebbe il quadrato
- * del raggio per ogni colonna valutata. Cerca a distanza crescente, quindi il
- * numero che esce e' la distanza vera e non quella del primo asse dell'elenco.
+ * del raggio per ogni colonna valutata. Cerca a distanza crescente, quindi cio'
+ * che esce e' l'acqua piu' vicina e non quella del primo asse dell'elenco.
  *
  * Una colonna non ancora generata non e' acqua: al bordo dello streaming si
  * salta, invece di promettere una costa che potrebbe non esserci.
  *
- * E' la marcia che `seesWater` e `waterFacing` facevano gia' ciascuno per conto
- * proprio, con la sola differenza di cosa ne restituivano. Ora ha tre chiamanti
- * con tre domande: se c'e' il mare, da che parte, e quanto lontano — quest'ultima
- * per la gerarchia verticale, che tiene bassa la citta' sul fronte costiero.
+ * **Una marcia sola per quattro domande** — se c'e' il mare, da che parte,
+ * quanto lontano, e le prime due insieme. Le tre scorciatoie qui sotto sono la
+ * stessa risposta letta in tre modi: tenerle come tre cicli separati significava
+ * che il porto, che le vuole tutte e due, scorreva il terreno due volte per
+ * ottenere due meta' della stessa cosa.
+ *
+ * Due letture senza allocazione invece di `columnAt`, che costruirebbe un
+ * oggetto per colonna. Non e' microtaratura: la gerarchia verticale la chiama
+ * una volta per record esaminato in una passata di upgrade, e `catalystFailure`
+ * una volta per `pointermove`.
+ *
+ * **«Costa» e «acqua» non sono la stessa colonna**, e `afloat` e' la differenza.
+ * `IslandGenerator` scrive i voxel d'acqua solo dove la cima della colonna sta
+ * *sotto* il pelo del mare; la colonna a quota esatta di `seaLevel` e' quindi
+ * asciutta, ed e' comunque battigia — bagnata, in vista del mare, un sito
+ * costiero a tutti gli effetti. Su quest'isola le quote sono quantizzate al cubo
+ * di terreno, quindi quell'orlo non e' una riga: e' una fascia larga celle
+ * intere. Chi chiede «questo posto e' sul mare?» la vuole dentro; chi ci deve
+ * posare uno scafo la vuole fuori, e chiederla dentro e' esattamente il difetto
+ * che teneva il porto senza barche — la darsena si fermava sulla sabbia.
  */
+export function sightWater(
+  map: TerrainMap,
+  x: number,
+  y: number,
+  radius: number,
+  /** Vero per fermarsi solo dove un mezzo galleggia davvero. */
+  afloat = false,
+): WaterSight | null {
+  const level = afloat ? TERRAIN.seaLevel - 1 : TERRAIN.seaLevel;
+  for (let d = 1; d <= radius; d++) {
+    for (let axis = 0; axis < AXES.length; axis++) {
+      const [dx, dy] = AXES[axis];
+      const cx = x + dx * d;
+      const cy = y + dy * d;
+      if (!map.has(cx, cy)) continue;
+      if (map.heightAt(cx, cy) <= level) {
+        return { facing: AXIS_FACING[axis], distance: d };
+      }
+    }
+  }
+  return null;
+}
+
+/** Colonne fino all'acqua piu' vicina, o null entro `radius`. */
 export function waterDistance(
   map: TerrainMap,
   x: number,
   y: number,
   radius: number,
 ): number | null {
-  for (let d = 1; d <= radius; d++) {
-    for (const [dx, dy] of AXES) {
-      const cx = x + dx * d;
-      const cy = y + dy * d;
-      // Due letture senza allocazione invece di `columnAt`, che costruirebbe un
-      // oggetto per colonna. Non e' microtaratura: la gerarchia verticale chiama
-      // questa funzione una volta per record esaminato in una passata di
-      // upgrade, e `catalystFailure` una volta per `pointermove`.
-      if (!map.has(cx, cy)) continue;
-      if (map.heightAt(cx, cy) <= TERRAIN.seaLevel) return d;
-    }
-  }
-  return null;
+  return sightWater(map, x, y, radius)?.distance ?? null;
 }
 
 /** true se la colonna vede il mare entro `radius`. */
 export function seesWater(map: TerrainMap, x: number, y: number, radius: number): boolean {
-  return waterDistance(map, x, y, radius) !== null;
+  return sightWater(map, x, y, radius) !== null;
 }
 
 /**
  * Il verso in cui l'acqua e' piu' vicina, o null se non ce n'e' entro `radius`.
  *
- * E' `seesWater` che invece di rispondere si'/no dice **da che parte**, e serve
- * a orientare cio' che il mare lo deve guardare: un molo che esce dalla parte
- * sbagliata e' un molo dentro la collina. Cerca a distanza crescente e non asse
- * per asse, cosi' vince l'acqua piu' vicina e non il primo asse dell'elenco.
+ * Serve a orientare cio' che il mare lo deve guardare: un molo che esce dalla
+ * parte sbagliata e' un molo dentro la collina.
  */
 export function waterFacing(map: TerrainMap, x: number, y: number, radius: number): Facing | null {
-  for (let d = 1; d <= radius; d++) {
-    for (let axis = 0; axis < AXES.length; axis++) {
-      const [dx, dy] = AXES[axis];
-      const column = map.columnAt(x + dx * d, y + dy * d);
-      if (column === null) continue;
-      if (column.height <= TERRAIN.seaLevel) return AXIS_FACING[axis];
-    }
-  }
-  return null;
+  return sightWater(map, x, y, radius)?.facing ?? null;
 }
 
 /**

@@ -1,3 +1,11 @@
+import {
+  CARVE_DEPTH,
+  CARVE_KIND,
+  carveIndex,
+  facadeInset,
+  packCarveMark,
+  roofInset,
+} from './carveMarks';
 import { MESH_UNITS_PER_VOXEL } from './meshTypes';
 import { PALETTE_SLOTS } from '../paletteSlots';
 import { FACE_NZ } from '../../world/chunkCoords';
@@ -59,9 +67,8 @@ import {
 
 const U = MESH_UNITS_PER_VOXEL;
 
-/** Sali per separare le tre domande. Vedi `propRoll`. */
+/** Sali per separare le due domande rimaste. Vedi `propRoll`. */
 const RISER_SALT = 0x51a9_3d17;
-const STAIR_SALT = 0x2f6b_c805;
 const PERGOLA_SALT = 0x9c14_7e6b;
 
 /**
@@ -75,12 +82,6 @@ const RISER_TOP = 16;
 
 /** Colonne di retro che portano una calata. */
 const RISER_CHANCE = 0.14;
-
-/** Fin dove una scala esterna ha senso: sopra, si prende l'ascensore. */
-const STAIR_TOP = 14;
-
-/** Facciate di retro che portano una scala. Bassa: e' l'emettitore piu' caro. */
-const STAIR_CHANCE = 0.05;
 
 /** Tetti scoperti che portano una pergola. */
 const PERGOLA_CHANCE = 0.18;
@@ -106,6 +107,7 @@ function emitRisers(
   writer: MicroGeometryWriter,
   facade: readonly number[][],
   origin: ChunkOrigin,
+  marks: Uint8Array,
 ): boolean {
   for (let i = 0; i < LATERAL_FACES.length; i++) {
     const face = LATERAL_FACES[i];
@@ -118,7 +120,9 @@ function emitRisers(
         propRoll(origin, x, y, 0, RISER_SALT) < RISER_CHANCE,
       // Stretta e poco profonda: un tubo, non una lesena. Fuori asse rispetto al
       // centro della cella, cosi' non si allinea con i montanti della campata.
-      box: (x, y, z, length) => facadeBox(x, y, z, face, 3, 6, 0, length * U, 2),
+      box: (x, y, z, length) => facadeBox(
+        x, y, z, face, 3, 6, 0, length * U, 2, facadeInset(marks, x, y, z, face),
+      ),
     });
     if (!ok) return false;
   }
@@ -126,7 +130,7 @@ function emitRisers(
 }
 
 /**
- * Scale esterne sul retro.
+ * Scale esterne sul retro, **dentro il loro vano**.
  *
  * **E' l'emettitore piu' caro del progetto, e la sua forma lo impone.** Una scala
  * non e' una corsa a quota costante: la pedata sale con la cella, quindi
@@ -138,30 +142,37 @@ function emitRisers(
  * fa leggere la rampa come una zeta invece che come una lastra appoggiata al
  * muro. Si alterna sulla parita' della quota, che e' il modo piu' corto di dire
  * «una rampa e un riposo».
+ *
+ * **Il dado non si tira piu' qui.** Dove sta una scala lo decide `carvePlan.ts`,
+ * che nella stessa colonna scava il vano: leggere la maschera invece di
+ * rilanciare la stessa moneta e' cio' che tiene rampa e vano allineati per
+ * costruzione, e non per due costanti tenute uguali a mano. Le quote si misurano
+ * dal filo della parete e non dal fondo del vano, quindi il pianerottolo arriva
+ * a un sedicesimo dal filo e la rampa resta tre dentro — che e' cio' che fa una
+ * scala in un vano invece di una appesa fuori.
  */
 function emitStairs(
-  padded: Uint8Array,
   writer: MicroGeometryWriter,
   facade: readonly number[][],
-  origin: ChunkOrigin,
+  marks: Uint8Array,
 ): boolean {
+  const shaft = CARVE_DEPTH[CARVE_KIND.stairwell];
   for (let i = 0; i < LATERAL_FACES.length; i++) {
     const face = LATERAL_FACES[i];
+    const mark = packCarveMark(CARVE_KIND.stairwell, face);
     const ok = emitPoints(writer, facade[i], {
       runAxis: 2,
       palette: PALETTE_SLOTS.metalRust,
       hiddenFace: (face ^ 1) as number,
-      has: (x, y, z) => z >= 2 && z <= STAIR_TOP &&
-        backFacade(padded, x, y, z, face) !== SURFACE_KIND.plain &&
-        propRoll(origin, x, y, 0, STAIR_SALT) < STAIR_CHANCE,
+      has: (x, y, z) => marks[carveIndex(x, y, z)] === mark,
       box: (x, y, z) => {
         const landing = (z & 1) === 0;
-        const depth = landing ? 5 : 3;
+        const depth = landing ? shaft - 1 : shaft - 3;
         // Il pianerottolo occupa tutta la cella, la rampa mezza: la zeta esce
         // dall'alternanza invece che da due emettitori.
         const start = landing ? 0 : U / 2;
         const end = landing ? U : U;
-        return facadeBox(x, y, z, face, start, end, 2, 5, depth);
+        return facadeBox(x, y, z, face, start, end, 2, 5, depth, shaft);
       },
     });
     if (!ok) return false;
@@ -195,7 +206,12 @@ function emitPergolas(
   writer: MicroGeometryWriter,
   roofs: readonly number[],
   origin: ChunkOrigin,
+  marks: Uint8Array,
 ): boolean {
+  // Sopra un vassoio il calpestio e' sceso, e un montante steso da `(z + 1) * U`
+  // resterebbe sospeso: la base la dice `roofInset`, non il letterale.
+  const base = (x: number, y: number, z: number): number =>
+    (z + 1) * U - roofInset(marks, x, y, z);
   const wanted = (x: number, y: number, z: number): boolean =>
     openRoof(padded, x, y, z) && interiorRoof(padded, x, y, z) &&
     propRoll(origin, x, y, z, PERGOLA_SALT) < PERGOLA_CHANCE;
@@ -223,7 +239,7 @@ function emitPergolas(
     hiddenFace: FACE_NZ,
     has: wanted,
     box: (x, y, z) => ({
-      min: [x * U + 1, y * U + 5, (z + 1) * U],
+      min: [x * U + 1, y * U + 5, base(x, y, z)],
       max: [x * U + 3, y * U + 11, (z + 1) * U + 11],
     }),
   });
@@ -242,8 +258,9 @@ export function appendStreetDetail(
   facade: readonly number[][],
   roofs: readonly number[],
   origin: ChunkOrigin,
+  marks: Uint8Array,
 ): boolean {
-  if (!emitRisers(padded, writer, facade, origin)) return false;
-  if (!emitPergolas(padded, writer, roofs, origin)) return false;
-  return emitStairs(padded, writer, facade, origin);
+  if (!emitRisers(padded, writer, facade, origin, marks)) return false;
+  if (!emitPergolas(padded, writer, roofs, origin, marks)) return false;
+  return emitStairs(writer, facade, marks);
 }

@@ -11,15 +11,11 @@ import { hashCoords } from '../rng';
 import { GRADING } from '../grading/config';
 import { GROUND, WORKS, isDryLand, type GradePlan } from '../grading/grade';
 import { FACING, type Facing } from '../streets/streetGrid';
-import { waterFacing } from '../sites/siteRules';
+import { sightWater, type WaterSight } from '../sites/siteRules';
 import { SITE } from '../sites/config';
 import { LANDMARK, hasAloftRecipe, landmarkOf, maxStageOf } from '../landmarks/config';
-import {
-  generateLandmark,
-  landmarkOrigin,
-  landmarkSpan,
-  stageForBuildings,
-} from '../landmarks/generate';
+import { generateLandmark, landmarkSpan, stageForBuildings } from '../landmarks/generate';
+import { placeRecipe, type Placement } from './landmarkSiting';
 import { footprintDepth, type BuildingRecord } from './BuildingRegistry';
 import type { BuildContext } from './buildContext';
 import { fitsChunkBudget } from './chunkBudget';
@@ -324,6 +320,29 @@ export class LandmarkDriver {
   }
 
   /**
+   * L'acqua che questo ruolo deve guardare, o null se non ne guarda nessuna.
+   *
+   * Una marcia sola per le due domande che il fronte mare pone — da che parte
+   * sta il mare, e a quante colonne — perche' il piazzamento di un porto le fa
+   * tutte e due: la prima orienta la struttura, la seconda la fa scorrere fin
+   * dove il mare comincia davvero.
+   *
+   * **Cerca l'acqua a galla, non la battigia.** Il vincolo di sito si accontenta
+   * dell'orlo bagnato — e ha ragione, quello *e'* un sito costiero — ma un molo
+   * che si ferma sull'orlo e' un molo sulla sabbia: qui la domanda e' dove
+   * cominci il volume in cui una barca sta, e su un'isola a quote quantizzate
+   * fra le due risposte ci sono celle intere.
+   */
+  private coastAt(x: number, y: number, kind: CatalystId): WaterSight | null {
+    if (catalystById(kind).site !== 'coastal') return null;
+    // Il ripiego non e' una formalita': dove non c'e' acqua a galla nemmeno a
+    // quattordici colonne, la battigia resta l'unica cosa che dica da che parte
+    // guardare — e un molo verso il mare sbagliato e' un molo dentro la collina.
+    return sightWater(this.ctx.terrain, x, y, SITE.shoreReach, true)
+      ?? sightWater(this.ctx.terrain, x, y, SITE.coastalRadius);
+  }
+
+  /**
    * Il verso in cui la struttura guarda.
    *
    * Un ruolo costiero guarda l'acqua — un molo che esce dalla parte sbagliata e'
@@ -332,13 +351,19 @@ export class LandmarkDriver {
    * arbitrario ma stabile: due partite sullo stesso seed mettono il monumento
    * nello stesso verso.
    */
-  private facingAt(x: number, y: number, kind: CatalystId): Facing {
-    if (catalystById(kind).site === 'coastal') {
-      const water = waterFacing(this.ctx.terrain, x, y, SITE.coastalRadius);
-      if (water !== null) return water;
-    }
+  private facingAt(x: number, y: number, coast: WaterSight | null): Facing {
+    if (coast !== null) return coast.facing;
     return this.ctx.streets.facingOf(x, y, 1)
       ?? ((hashCoords(this.ctx.seed, x, y) & 3) as Facing);
+  }
+
+  /** Dove la struttura si posa davvero, cliccando qui. Il conto sta in `landmarkSiting.ts`. */
+  private placementAt(x: number, y: number, kind: CatalystId): Placement | null {
+    const recipe = landmarkOf(kind);
+    if (recipe === null) return null;
+
+    const coast = this.coastAt(x, y, kind);
+    return placeRecipe(recipe, this.facingAt(x, y, coast), x, y, coast);
   }
 
   /**
@@ -361,20 +386,18 @@ export class LandmarkDriver {
 
   /** L'ingombro che la ricetta occuperebbe cliccando qui, o null se non ne ha una. */
   private footprintOf(x: number, y: number, kind: CatalystId): Footprint | null {
-    const facing = this.facingAt(x, y, kind);
-    const span = landmarkSpan(kind, facing);
-    const origin = landmarkOrigin(kind, facing, x, y);
-    if (span === null || origin === null) return null;
-    return { x: origin.x, y: origin.y, sizeX: span.sizeX, sizeY: span.sizeY };
+    const spot = this.placementAt(x, y, kind);
+    if (spot === null) return null;
+    return { x: spot.x, y: spot.y, sizeX: spot.span.sizeX, sizeY: spot.span.sizeY };
   }
 
   /** Costruisce la struttura e ne restituisce il record, o null se il luogo non la regge. */
   private buildStructure(x: number, y: number, kind: CatalystId): BuildingRecord | null {
     const { world, terrain, registry, growth, surface, seed } = this.ctx;
-    const facing = this.facingAt(x, y, kind);
-    const span = landmarkSpan(kind, facing);
-    const origin = landmarkOrigin(kind, facing, x, y);
-    if (span === null || origin === null) return null;
+    const spot = this.placementAt(x, y, kind);
+    if (spot === null) return null;
+    const { facing, span } = spot;
+    const origin = { x: spot.x, y: spot.y };
 
     // Il seme del record si calcola qui e non alla riga di `registry.add`: lo
     // legge anche il generatore, per scegliere l'esemplare, e le due risposte
@@ -587,3 +610,4 @@ function catalystIn(state: SimState, record: BuildingRecord, kind: CatalystId): 
 
 /** L'ingombro in pianta di una ricetta, gia' portato sul verso vero. */
 type Footprint = ClearanceBox;
+

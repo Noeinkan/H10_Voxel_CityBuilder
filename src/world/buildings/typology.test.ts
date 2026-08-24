@@ -3,7 +3,10 @@ import {
   ALL_CLASSES,
   ALL_SPECIALIZATIONS,
   BUILDING_CLASS,
+  CATALYSTS,
+  CHARTERS,
   catalystById,
+  ReachCache,
   urbanProfileAt,
   type BuildingClass,
   type CatalystId,
@@ -19,11 +22,21 @@ import {
   CROWN_KIND,
   DEFAULT_TYPOLOGY_SHAPE,
   GRAMMAR,
+  LOT_ROLE,
   TYPOLOGIES,
   type CrownKind,
+  type LotRole,
 } from './config';
 import { generateBuilding } from './generate';
-import { selectTypology, typologiesForUses, typologyProfile } from './typology';
+import {
+  bestProspectOf,
+  selectTypology,
+  typologiesForUses,
+  typologyAccepts,
+  typologyGapsOf,
+  typologyProfile,
+  type TypologyQuery,
+} from './typology';
 import { solidCount, STAMP_EMPTY, type VoxelStamp } from './stamp';
 import { PALETTE_SLOTS } from '../../engine/paletteSlots';
 import { SURFACE_KIND } from '../visualBlock';
@@ -45,7 +58,14 @@ function profileOf(
   policies: readonly PolicyId[] = [],
   charters: readonly CharterId[] = [],
 ): LocalUrbanProfile {
-  return urbanProfileAt({ catalysts: kinds.map((kind) => source(kind)), policies, charters }, 0, 0);
+  return urbanProfileAt({
+    catalysts: kinds.map((kind) => source(kind)),
+    policies,
+    charters,
+    // Senza costo di passo la portata e' la Chebyshev di sempre: qui si misura
+    // la scelta della tipologia, non come il terreno piega l'influenza.
+    reach: new ReachCache(),
+  }, 0, 0);
 }
 
 function build(use: BuildingClass, level: number, seed: number, typologyId: string, mixed?: BuildingClass): VoxelStamp {
@@ -263,6 +283,196 @@ describe('selectTypology', () => {
     for (const label of suggested) {
       const found = TYPOLOGIES.find((entry) => entry.label === label);
       expect(found?.priority).toBeGreaterThan(0);
+    }
+  });
+
+  /**
+   * La sovrapromessa tolta, misurata.
+   *
+   * Era il difetto che questo elenco portava scritto nel proprio commento:
+   * prometteva le forme di un uso senza le condizioni che le governano. Una riga
+   * dietro una specializzazione non arriva piazzando il catalizzatore, e
+   * nominarla li' insegnava a non fidarsi del tooltip.
+   */
+  it('non promette piu cio che dipende da una specializzazione', () => {
+    const gated = TYPOLOGIES.filter((entry) => entry.specialization !== undefined);
+    expect(gated.length).toBeGreaterThan(0);
+
+    for (const use of ALL_CLASSES) {
+      const suggested = typologiesForUses([use]);
+      for (const entry of gated) {
+        expect(suggested).not.toContain(entry.label);
+      }
+    }
+  });
+});
+
+/**
+ * Una griglia deterministica di luoghi, per le prove che devono valere ovunque.
+ *
+ * I profili nascono da `urbanProfileAt` su sottoinsiemi casuali di
+ * catalizzatori, non da campi riempiti a mano: cosi' ruoli, distretto,
+ * specializzazione e metriche restano fra loro coerenti come lo sono in partita,
+ * e la griglia non passa il tempo su profili che non possono esistere.
+ */
+function grid(samples = 240): readonly TypologyQuery[] {
+  const roles = CATALYSTS.map((entry) => entry.id);
+  const charters = CHARTERS.map((entry) => entry.id);
+  const lotRoles: readonly (LotRole | undefined)[] = [
+    undefined,
+    LOT_ROLE.frontage,
+    LOT_ROLE.corner,
+    LOT_ROLE.interior,
+  ];
+
+  // Congruenziale lineare: stesso seme, stessa griglia a ogni esecuzione. Un
+  // test che cambia campione a ogni giro non e' riproducibile, e questo deve
+  // poter fallire due volte di fila sullo stesso caso.
+  //
+  // **Si pesca dai bit alti.** In un LCG a modulo 2^32 i bit bassi hanno periodo
+  // cortissimo — l'ultimo alterna 0,1,0,1 — quindi `state % 2` non e' un
+  // sorteggio ma un contatore, e la griglia collassava su pochi campioni: tre
+  // generi di rifiuto su undici non venivano mai raggiunti.
+  let state = 0x5eed_1337 >>> 0;
+  const next = (bound: number): number => {
+    state = (Math.imul(state, 1_664_525) + 1_013_904_223) >>> 0;
+    return Math.floor((state / 0x1_0000_0000) * bound);
+  };
+
+  const queries: TypologyQuery[] = [];
+  for (let i = 0; i < samples; i++) {
+    const near = roles.filter(() => next(3) === 0);
+    const felt = charters.filter(() => next(6) === 0);
+    // Un campione su otto senza profilo: e' il piazzamento fuori simulazione, e
+    // ha un ramo tutto suo in entrambe le funzioni.
+    const profile = next(8) === 0 ? null : profileOf(near, [], felt);
+
+    // Estratto una volta sola: pescarlo due volte avanzerebbe il generatore fra
+    // la condizione e il valore, e il campione non sarebbe piu' quello scelto.
+    const lot = lotRoles[next(lotRoles.length)];
+
+    queries.push({
+      use: (next(ALL_CLASSES.length)) as BuildingClass,
+      ...(next(2) === 0 ? {} : { mixed: next(ALL_CLASSES.length) as BuildingClass }),
+      level: 1 + next(BUILDER.maxLevel),
+      profile,
+      coastal: next(2) === 0,
+      ...(lot === undefined ? {} : { lotRole: lot }),
+    });
+  }
+  return queries;
+}
+
+describe('cosa manca a un luogo per una tipologia', () => {
+  /**
+   * L'invariante che tiene insieme le due letture della stessa regola.
+   *
+   * `accepts` resta il booleano senza allocazioni del percorso caldo e
+   * `typologyGapsOf` e' la sua spiegazione: sono due traversate, e a impedire che
+   * si allontanino c'e' solo questo test. Cade il giorno in cui qualcuno aggiunge
+   * un ramo all'una senza aggiungerlo all'altra — che e' il giorno in cui il
+   * pannello comincerebbe a promettere una forma che il Builder rifiuta.
+   */
+  it('non riporta gap se e solo se la riga qualifica', () => {
+    let accepted = 0;
+    let refused = 0;
+
+    for (const query of grid()) {
+      for (const candidate of TYPOLOGIES) {
+        const qualifies = typologyAccepts(candidate, query);
+        expect(typologyGapsOf(candidate, query).length === 0).toBe(qualifies);
+        if (qualifies) accepted++; else refused++;
+      }
+    }
+
+    // Che la griglia veda **entrambi** gli esiti, o l'uguaglianza qui sopra
+    // sarebbe vera per il motivo sbagliato: una griglia degenerata che rifiuta
+    // tutto passerebbe questo test senza provare niente.
+    expect(accepted).toBeGreaterThan(100);
+    expect(refused).toBeGreaterThan(100);
+  });
+
+  // La stessa uguaglianza sul solo campo che conta davvero: ogni ramo di
+  // `accepts` deve poter cadere almeno una volta nella griglia, altrimenti
+  // quel ramo non e' coperto da niente.
+  it('la griglia esercita ogni genere di rifiuto', () => {
+    const seen = new Set<string>();
+    for (const query of grid()) {
+      for (const candidate of TYPOLOGIES) {
+        for (const gap of typologyGapsOf(candidate, query)) seen.add(gap.kind);
+      }
+    }
+
+    const kinds = [
+      'charter', 'coastal', 'district', 'level', 'lotRole',
+      'metric', 'mixed', 'place', 'roles', 'specialization', 'use',
+    ];
+    // `district` oggi non si raggiunge, e **non e' un buco della griglia**:
+    // nessuna riga del catalogo pone un vincolo di quartiere. Il ramo resta in
+    // `accepts` come punto di estensione, e l'eccezione qui e' legata alla sua
+    // causa invece che scritta a mano — il giorno in cui una riga lo usera', la
+    // griglia dovra' raggiungerlo o questo test lo dira'.
+    const zoned = TYPOLOGIES.some((entry) => entry.districts !== undefined);
+
+    expect([...seen].sort()).toEqual(kinds.filter((kind) => kind !== 'district' || zoned));
+  });
+
+  it('nomina il livello quando e il livello a mancare', () => {
+    const tower = TYPOLOGIES.find((entry) => entry.id === 'hydroponicTower');
+    expect(tower?.minLevel).toBeGreaterThan(1);
+
+    const gaps = typologyGapsOf(tower!, {
+      use: tower!.use,
+      level: 1,
+      profile: profileOf(['factory', 'university']),
+      coastal: false,
+    });
+    const level = gaps.find((gap) => gap.kind === 'level');
+
+    expect(level?.have).toBe(1);
+    expect(level?.need).toBe(tower!.minLevel);
+  });
+
+  it('nomina la specializzazione che la riga pretende', () => {
+    const tower = TYPOLOGIES.find((entry) => entry.id === 'hydroponicTower');
+    // Un prato: nessun ruolo, nessuna specializzazione, il livello piu' alto.
+    const gaps = typologyGapsOf(tower!, {
+      use: tower!.use,
+      level: BUILDER.maxLevel,
+      profile: profileOf([]),
+      coastal: false,
+    });
+
+    expect(gaps.find((gap) => gap.kind === 'specialization')?.wants).toEqual(['farming']);
+  });
+
+  it('la prospettiva e la riga piu specifica che il luogo non raggiunge', () => {
+    const query: TypologyQuery = {
+      use: BUILDING_CLASS.industrial,
+      level: BUILDER.maxLevel,
+      profile: profileOf(['factory']),
+      coastal: false,
+    };
+    const prospect = bestProspectOf(query);
+
+    expect(prospect).not.toBeNull();
+    expect(prospect!.gaps.length).toBeGreaterThan(0);
+    // Non raggiunta davvero, e piu' specifica di quella che il luogo ottiene.
+    expect(typologyAccepts(prospect!.definition, query)).toBe(false);
+    expect(prospect!.definition.priority).toBeGreaterThan(selectTypology(query).priority);
+  });
+
+  it('non propone cio che dipende dal ruolo del lotto', () => {
+    // L'angolo non e' un gesto: nominarlo manderebbe a cercare qualcosa che il
+    // giocatore non decide.
+    for (const use of ALL_CLASSES) {
+      const prospect = bestProspectOf({
+        use,
+        level: BUILDER.maxLevel,
+        profile: profileOf(['market', 'transport']),
+        coastal: true,
+      });
+      expect(prospect?.definition.lotRole).toBeUndefined();
     }
   });
 });

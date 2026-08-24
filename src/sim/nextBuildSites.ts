@@ -3,7 +3,7 @@ import { columnIndex } from '../world/terrain/columnBlock';
 import type { TerrainMap } from '../world/terrain/TerrainMap';
 import { BALANCE } from './balance';
 import { BUILDING_CLASS, type BuildingClass } from './classes';
-import { cellIndexOf, DesirabilityField } from './DesirabilityField';
+import { cellIndexOf, DesirabilityField, FREE } from './DesirabilityField';
 import type { SimState } from './SimState';
 
 /**
@@ -145,7 +145,8 @@ export function nextBuildSites(
     const commercial = values[BUILDING_CLASS.commercial];
     const industrial = values[BUILDING_CLASS.industrial];
     const civic = values[BUILDING_CLASS.civic];
-    const stack = chunk.stack;
+    const occupancy = chunk.occupancy;
+    const levels = chunk.levels;
 
     const originX = DesirabilityField.originOf(chunk.ccx);
     const originY = DesirabilityField.originOf(chunk.ccy);
@@ -176,7 +177,14 @@ export function nextBuildSites(
         // mondo si paga solo qui dentro, cioe' sulle sole celle che qualcosa
         // occupa gia': su una colonna vergine questo ramo non entra nemmeno, e
         // il costo resta quello del confronto con zero che c'era prima.
-        if (stack[i] !== 0 && stack[i] >= headroom(originX + lx, originY + ly)) continue;
+        //
+        // Le quote spese si leggono in due tempi perche' sono tenute in due
+        // posti: la prima **e'** l'occupazione, le altre stanno nella mappa
+        // sparsa del chunk, che sulla maggior parte dei chunk non esiste.
+        if (occupancy[i] !== FREE) {
+          const spent = levels === null ? 1 : levels.get(i) ?? 1;
+          if (spent >= headroom(originX + lx, originY + ly)) continue;
+        }
         if (buildable[columnIndex(lx, ly)] !== 1) continue;
 
         const x = originX + lx;

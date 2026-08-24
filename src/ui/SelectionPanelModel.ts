@@ -10,6 +10,7 @@ import { SPAN_KIND, type SpanKind } from '../world/spans/config';
 import { landmarkOf, maxStageOf } from '../world/landmarks/config';
 import { typologyOf } from '../world/buildings/recordStamp';
 import { footprintDepth, type BuildingRecord } from '../world/buildings/BuildingRegistry';
+import { prospectRows } from './prospects';
 import type {
   BlockInfo,
   ColumnInfo,
@@ -334,6 +335,12 @@ function columnSection(column: ColumnInfo): SelectionSection {
     { label: 'Skyline', value: `${TIER_LABELS[column.tier]} · up to level ${column.allowedLevel}` },
     { label: 'Demand', value: demandValue(column) },
     { label: 'District now', value: profileLabel(column) },
+    // Subito **sotto** il quartiere di adesso, dove la domanda nasce: leggere
+    // «industrial» apre da sola il «e allora cos'altro potrebbe essere», ed e'
+    // l'unica domanda del gioco che finora non aveva nessuna superficie a
+    // reggerla — le diciotto soglie che la decidono non comparivano da nessuna
+    // parte, nemmeno in debug.
+    ...prospectRows(column),
   ];
 
   if (column.waterTop > column.height) {

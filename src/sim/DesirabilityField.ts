@@ -6,6 +6,7 @@ import { ALL_CLASSES, CLASS_COUNT, type BuildingClass } from './classes';
 // `import type` si cancella in compilazione invece di chiudere un ciclo a runtime.
 import type { Specialization } from './districts';
 import { DESIRABILITY_WEIGHT_OF_CLASS, type Weights } from './policies';
+import { distAt, falloff, ReachCache, UNIFORM_COST, type ReachField, type StepCost } from './reach';
 
 /**
  * Campo di desiderabilita' per cella e per uso urbano, chunkato 32x32 come il mondo.
@@ -15,9 +16,16 @@ import { DESIRABILITY_WEIGHT_OF_CLASS, type Weights } from './policies';
  *     D = clamp(somma dei catalizzatori x influenza x pesoPolicy - congestione, 0, 255)
  *
  * dove il contributo di un catalizzatore e'
- * `strength * influenza[uso] * max(0, 1 - dist / radius)` in distanza di
- * Chebyshev, e la congestione e' il numero di edifici entro il raggio breve
- * moltiplicato per `congestionPerBuilding`.
+ * `strength * influenza[uso] * falloff(dist / radius)` e la congestione e' il
+ * numero di edifici entro il raggio breve moltiplicato per
+ * `congestionPerBuilding`.
+ *
+ * **La distanza e' geodetica e la calcola `reach.ts`**, che e' l'unico posto in
+ * cui vive la curva di decadimento. L'influenza si propaga sulle celle
+ * percorribili invece che in linea retta: l'acqua la ferma, un dirupo la
+ * rallenta, una strada la porta piu' lontano. Con costo di passo uniforme la
+ * geodetica coincide esattamente con la distanza di Chebyshev di prima, quindi
+ * il campo di un mondo senza terreno e' quello di sempre, cella per cella.
  *
  * **Un catalizzatore parla a piu' usi.** L'influenza e' un vettore, non una
  * classe: un mercato somma su residenziale e commerciale, una fabbrica somma
@@ -32,7 +40,7 @@ import { DESIRABILITY_WEIGHT_OF_CLASS, type Weights } from './policies';
  * ricostruzione completa indistinguibili, proprieta' verificata dai test.
  *
  * **Cosa si ricalcola.** Un catalizzatore aggiunto, rimosso o modificato tocca
- * il quadrato di Chebyshev del suo raggio, per i soli usi che influenza davvero
+ * il quadrato del suo raggio, per i soli usi che influenza davvero
  * — gli zeri della tabella non costano una passata. Un edificio nuovo tocca il
  * quadrato del raggio breve, per tutti gli usi. Nient'altro cambia, quindi
  * nient'altro viene visitato: non esiste una passata sull'intera mappa, ne' per
@@ -51,8 +59,15 @@ import { DESIRABILITY_WEIGHT_OF_CLASS, type Weights } from './policies';
 /** Celle in una colonna di chunk: 32 x 32, come `COLUMNS_PER_CHUNK` del terreno. */
 export const CELLS_PER_CHUNK = CHUNK * CHUNK;
 
-/** Cella libera nella griglia di occupazione. Le classi sono memorizzate come `class + 1`. */
-const FREE = 0;
+/**
+ * Cella libera nella griglia di occupazione. Le classi sono memorizzate come
+ * `class + 1`.
+ *
+ * Esportata perche' la scansione dei candidati legge `occupancy` per indice —
+ * una chiamata di metodo per cella costava venticinque volte tanto — e un `!== 0`
+ * scritto a mano li' sarebbe la stessa convenzione tenuta in due posti.
+ */
+export const FREE = 0;
 
 export interface Catalyst {
   readonly x: number;
@@ -63,7 +78,14 @@ export interface Catalyst {
   readonly kind?: CatalystId;
   /** Intensita' al centro, 0..255. */
   readonly strength: number;
-  /** Raggio di Chebyshev in celle. A distanza pari al raggio il contributo e' esattamente 0. */
+  /**
+   * Raggio in celle, misurato in distanza geodetica: a distanza pari al raggio
+   * il contributo e' esattamente 0.
+   *
+   * Resta anche il lato del quadrato che il campo ricalcola, e non e' una
+   * coincidenza: il costo di un passo non scende mai sotto 1, quindi la forma
+   * non puo' uscire dal quadrato di Chebyshev del suo raggio.
+   */
   readonly radius: number;
 }
 
@@ -113,7 +135,8 @@ export interface FieldChunkView {
   /** 0 se la cella e' libera. */
   readonly occupancy: Uint8Array;
   /**
-   * Quante quote della cella sono prese.
+   * Le sole colonne con **piu' di una** quota presa, per indice di cella.
+   * `null` dove in questo chunk non ne esiste nessuna.
    *
    * **E' la differenza fra «questa cella e' occupata» e «questa cella e'
    * piena».** Finche' la citta' stava tutta a terra le due domande coincidevano,
@@ -121,8 +144,15 @@ export interface FieldChunkView {
    * una colonna con un edificio puo' averne ancora spazio, e a dire quanto e' il
    * mondo — non questo campo, che continua a non avere una coordinata verticale.
    * Qui si contano le quote spese, li' si sa quante ce ne sono.
+   *
+   * **Sparsa, e non un array denso per cella.** Un byte per colonna sarebbe un
+   * byte su tutta l'isola per rappresentare qualcosa che esiste su una manciata
+   * di colonne, e per giunta dimensionato sul tetto del formato invece che sui
+   * livelli presenti. L'occupazione dice gia' che una quota c'e': qui stanno
+   * solo quelle **oltre** la prima, quindi una colonna a un livello solo costa
+   * esattamente quello che costava prima che la citta' salisse.
    */
-  readonly stack: Uint8Array;
+  readonly levels: ReadonlyMap<number, number> | null;
 }
 
 /** Rettangolo di celle, estremi inclusi. */
@@ -143,10 +173,10 @@ export interface CellRect {
  */
 interface CatalystGroup {
   readonly cls: BuildingClass;
-  readonly xs: number[];
-  readonly ys: number[];
   readonly radii: number[];
   readonly amps: number[];
+  /** La portata gia' calcolata, una per catalizzatore sopravvissuto al prefiltro. */
+  readonly reaches: ReachField[];
 }
 
 class FieldChunk {
@@ -164,8 +194,12 @@ class FieldChunk {
    */
   readonly occupancy: Uint8Array;
 
-  /** Quote prese, per cella. */
-  readonly stack: Uint8Array;
+  /**
+   * Le colonne di questo chunk che hanno piu' di una quota presa, con il loro
+   * conteggio. Nasce `null` e ci torna appena si svuota: la maggioranza dei
+   * chunk non ne vede mai una.
+   */
+  levels: Map<number, number> | null = null;
 
   /** Numero di edifici entro il raggio breve, per cella. */
   readonly crowd: Uint16Array;
@@ -179,8 +213,39 @@ class FieldChunk {
     for (let i = 0; i < CLASS_COUNT; i++) values.push(new Uint8Array(CELLS_PER_CHUNK));
     this.values = values;
     this.occupancy = new Uint8Array(CELLS_PER_CHUNK);
-    this.stack = new Uint8Array(CELLS_PER_CHUNK);
     this.crowd = new Uint16Array(CELLS_PER_CHUNK);
+  }
+
+  /**
+   * Quote prese sulla cella: 0 libera, 1 occupata, n impilata.
+   *
+   * L'occupazione e la mappa sparsa si leggono **sempre** insieme, ed e' la
+   * ragione per cui questo metodo sta qui e non in tre punti diversi.
+   */
+  stackOf(i: number): number {
+    if (this.occupancy[i] === FREE) return 0;
+    return this.levels?.get(i) ?? 1;
+  }
+
+  /** Porta la cella da `n` a `n + 1` quote. La cella e' gia' occupata. */
+  pushLevel(i: number, spent: number): void {
+    const levels = this.levels ?? (this.levels = new Map());
+    levels.set(i, spent + 1);
+  }
+
+  /**
+   * Toglie una quota a una cella impilata, e la voce quando torna a una sola.
+   *
+   * La mappa torna `null` quando si svuota, non resta vuota: il campo dichiara
+   * che togliere N edifici lo lascia com'era se non ci fossero mai stati, e una
+   * mappa vuota allocata sarebbe un residuo — piccolo, ma un residuo.
+   */
+  popLevel(i: number, spent: number): void {
+    const levels = this.levels;
+    if (levels === null) return;
+    if (spent > 2) levels.set(i, spent - 1);
+    else levels.delete(i);
+    if (levels.size === 0) this.levels = null;
   }
 }
 
@@ -191,6 +256,17 @@ export function cellIndexOf(lx: number, ly: number): number {
 
 export class DesirabilityField {
   private readonly map = new Map<string, FieldChunk>();
+
+  /**
+   * Portate gia' calcolate, una per catalizzatore.
+   *
+   * Vive qui e non nello stato perche' ha la stessa natura del campo: e' un
+   * indice derivato, si ricostruisce da catalizzatori e costo, e non entra
+   * nella serializzazione. Il Dijkstra si paga percio' una volta per
+   * piazzamento e non a ogni ricalcolo — cio' che tiene il ciclo per cella
+   * dov'era, con una lettura da un typed array al posto di un `Math.max`.
+   */
+  readonly reach: ReachCache;
 
   /** Stessa cache a un elemento del `VoxelWorld`: gli accessi sono spazialmente coerenti. */
   private cache: FieldChunk | null = null;
@@ -205,6 +281,15 @@ export class DesirabilityField {
   /** Celle visitate da tutte le operazioni di ricalcolo, cumulate. */
   private totalCells = 0;
 
+  /**
+   * Il costo di attraversamento entra come funzione e non come `TerrainMap`:
+   * `src/sim/` resta puro, e a leggere terreno e strade e' chi li ha in mano.
+   * Senza, la portata e' la distanza di Chebyshev di sempre.
+   */
+  constructor(cost: StepCost = UNIFORM_COST) {
+    this.reach = new ReachCache(cost);
+  }
+
   get chunkCount(): number {
     return this.map.size;
   }
@@ -214,19 +299,34 @@ export class DesirabilityField {
   }
 
   /**
-   * Byte occupati dai buffer del campo.
+   * Byte occupati dai buffer **densi** del campo.
    *
    * Si somma da `byteLength` invece di moltiplicare costanti a mano: aggiungere
    * un uso urbano allarga l'occupazione, e una formula scritta a parte sarebbe
    * il primo posto a restare indietro. Serve alla misura di memoria, che e' un
    * criterio di accettazione e non una curiosita'.
+   *
+   * Le quote oltre la prima non sono qui e non ci devono essere: stanno in una
+   * mappa sparsa che non ha un `byteLength` onesto da dichiarare, e a misurarla
+   * e' `stackedColumns`. E' la ragione per cui questo numero non cresce quando
+   * la citta' sale.
    */
   get byteLength(): number {
     let total = 0;
     for (const chunk of this.map.values()) {
       for (const values of chunk.values) total += values.byteLength;
-      total += chunk.occupancy.byteLength + chunk.stack.byteLength + chunk.crowd.byteLength;
+      total += chunk.occupancy.byteLength + chunk.crowd.byteLength;
     }
+    return total;
+  }
+
+  /**
+   * Colonne con piu' di una quota presa. E' il costo della citta' in quota,
+   * misurato dove viene speso: sulle colonne che la ospitano davvero.
+   */
+  get stackedColumns(): number {
+    let total = 0;
+    for (const chunk of this.map.values()) total += chunk.levels?.size ?? 0;
     return total;
   }
 
@@ -269,7 +369,7 @@ export class DesirabilityField {
   stackAt(x: number, y: number): number {
     const chunk = this.getChunk(toChunk(x), toChunk(y));
     if (chunk === null) return 0;
-    return chunk.stack[cellIndexOf(toLocal(x), toLocal(y))];
+    return chunk.stackOf(cellIndexOf(toLocal(x), toLocal(y)));
   }
 
   /** Uso primario che occupa la cella, o -1 se libera. */
@@ -299,8 +399,8 @@ export class DesirabilityField {
    * costruisce sopra, quel `false` sarebbe il campo che decide quante quote
    * esistono — cioe' proprio la coordinata verticale che questo modulo non deve
    * avere (invariante 7). A dire fin dove si sale e' il mondo, che interroga il
-   * campo *prima* di chiamare: qui resta il tetto del formato, perche' il
-   * contatore per cella e' un byte.
+   * campo *prima* di chiamare: qui resta solo il tetto di `BALANCE`, che e' una
+   * regola e non piu' un limite di formato.
    *
    * **La congestione somma anche i piani sovrapposti**, ed e' voluto: una citta'
    * impilata *e'* piu' densa, e un secondo livello che non si sentisse nella
@@ -309,13 +409,17 @@ export class DesirabilityField {
   addBuilding(building: Building, catalysts: readonly Catalyst[], weights: Weights): boolean {
     const chunk = this.ensureChunk(toChunk(building.x), toChunk(building.y));
     const i = cellIndexOf(toLocal(building.x), toLocal(building.y));
-    if (chunk.stack[i] >= BALANCE.limits.maxStackPerColumn) return false;
+    const spent = chunk.stackOf(i);
+    if (spent >= BALANCE.limits.maxStackPerColumn) return false;
 
-    if (chunk.occupancy[i] === FREE) {
+    if (spent === 0) {
       chunk.occupancy[i] = building.class + 1;
       this.occupied++;
+    } else {
+      // La prima quota la dice gia' l'occupazione: la mappa sparsa comincia
+      // dalla seconda, ed e' cio' che tiene il costo sui livelli presenti.
+      chunk.pushLevel(i, spent);
     }
-    chunk.stack[i]++;
 
     const radius = BALANCE.desirability.congestionRadius;
     const rect = rectAround(building.x, building.y, radius);
@@ -362,9 +466,18 @@ export class DesirabilityField {
       // Una cella a zero non e' un errore del chiamante: `addBuilding` rifiuta
       // chi sfora il tetto di quote, e quell'edificio nel campo non e' mai
       // entrato. Toglierlo lo stesso sfonderebbe il contatore verso il basso.
-      if (chunk.stack[i] === 0) continue;
+      const spent = chunk.stackOf(i);
+      if (spent === 0) continue;
 
-      chunk.stack[i]--;
+      // L'ultima quota di una colonna e' l'occupazione stessa, quindi toglierla
+      // e' liberare la cella; le altre stanno nella mappa sparsa. Chi resta si
+      // ritinge piu' sotto, quando si sa chi e' il primo dei superstiti.
+      if (spent > 1) chunk.popLevel(i, spent);
+      else {
+        chunk.occupancy[i] = FREE;
+        this.occupied--;
+      }
+
       const key = `${building.x},${building.y}`;
       if (!seen.has(key)) {
         seen.add(key);
@@ -388,13 +501,9 @@ export class DesirabilityField {
     for (const cell of cells) {
       const chunk = this.ensureChunk(toChunk(cell.x), toChunk(cell.y));
       const i = cellIndexOf(toLocal(cell.x), toLocal(cell.y));
-      if (chunk.stack[i] === 0) {
-        if (chunk.occupancy[i] !== FREE) {
-          chunk.occupancy[i] = FREE;
-          this.occupied--;
-        }
-        continue;
-      }
+      // La colonna svuotata l'ha gia' liberata il ciclo sopra: qui resta solo
+      // chi e' rimasto in piedi e va ritinto dell'uso del primo superstite.
+      if (chunk.occupancy[i] === FREE) continue;
       const survivor = first.get(`${cell.x},${cell.y}`);
       if (survivor !== undefined) chunk.occupancy[i] = survivor + 1;
     }
@@ -411,6 +520,9 @@ export class DesirabilityField {
    * questione ci sia ancora o no.
    */
   applyCatalystChange(catalyst: Catalyst, catalysts: readonly Catalyst[], weights: Weights): void {
+    // Spostare o cambiare un catalizzatore ne cambia la portata: la voce vecchia
+    // parlerebbe di un centro che non c'e' piu'.
+    this.reach.invalidate(catalyst.x, catalyst.y, catalyst.radius);
     const rect = rectAround(catalyst.x, catalyst.y, catalyst.radius);
     this.recomputeRect(rect, catalysts, weights, influencedClasses(catalyst));
   }
@@ -427,7 +539,7 @@ export class DesirabilityField {
     for (const chunk of this.map.values()) {
       for (const values of chunk.values) values.fill(0);
       chunk.occupancy.fill(FREE);
-      chunk.stack.fill(0);
+      chunk.levels = null;
       chunk.crowd.fill(0);
     }
     this.occupied = 0;
@@ -439,12 +551,12 @@ export class DesirabilityField {
       // Le quote si **sommano**, non si saltano: saltare il duplicato darebbe una
       // ricostruzione diversa dal percorso incrementale, e quella equivalenza e'
       // la proprieta' su cui poggia tutto il resto del modulo.
-      if (chunk.stack[i] >= BALANCE.limits.maxStackPerColumn) continue;
-      if (chunk.occupancy[i] === FREE) {
+      const spent = chunk.stackOf(i);
+      if (spent >= BALANCE.limits.maxStackPerColumn) continue;
+      if (spent === 0) {
         chunk.occupancy[i] = building.class + 1;
         this.occupied++;
-      }
-      chunk.stack[i]++;
+      } else chunk.pushLevel(i, spent);
       this.bumpCrowd(rectAround(building.x, building.y, radius), 1);
     }
 
@@ -519,21 +631,22 @@ export class DesirabilityField {
     // moltiplicazione sola invece di tre.
     const groups: CatalystGroup[] = [];
     for (const cls of classes) {
-      const group: CatalystGroup = { cls, xs: [], ys: [], radii: [], amps: [] };
+      const group: CatalystGroup = { cls, radii: [], amps: [], reaches: [] };
       const weight = weights[DESIRABILITY_WEIGHT_OF_CLASS[cls]];
 
       for (const catalyst of catalysts) {
         if (catalyst.radius <= 0 || catalyst.strength <= 0) continue;
         const influence = catalystInfluence(catalystRoleOf(catalyst))[cls];
         if (influence === 0) continue;
+        // Il prefiltro resta sul quadrato: la portata geodetica non puo'
+        // uscirne, perche' un passo non costa mai meno di una cella.
         if (catalyst.x + catalyst.radius < rect.minX) continue;
         if (catalyst.x - catalyst.radius > rect.maxX) continue;
         if (catalyst.y + catalyst.radius < rect.minY) continue;
         if (catalyst.y - catalyst.radius > rect.maxY) continue;
-        group.xs.push(catalyst.x);
-        group.ys.push(catalyst.y);
         group.radii.push(catalyst.radius);
         group.amps.push(catalyst.strength * influence * weight);
+        group.reaches.push(this.reach.get(catalyst.x, catalyst.y, catalyst.radius));
       }
 
       groups.push(group);
@@ -557,12 +670,10 @@ export class DesirabilityField {
 
           let sum = 0;
           for (let k = 0; k < group.amps.length; k++) {
-            const dx = x - group.xs[k];
-            const dy = y - group.ys[k];
-            const dist = Math.max(dx < 0 ? -dx : dx, dy < 0 ? -dy : dy);
+            const dist = distAt(group.reaches[k], x, y);
             const radius = group.radii[k];
             if (dist >= radius) continue;
-            sum += group.amps[k] * (1 - dist / radius);
+            sum += group.amps[k] * falloff(dist / radius);
           }
 
           const raw = Math.round(sum - congestion);

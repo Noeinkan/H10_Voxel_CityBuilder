@@ -1,10 +1,21 @@
 import { describe, expect, it } from 'vitest';
+import { BALANCE } from './balance';
 import { BUILDING_CLASS } from './classes';
 import { CATALYSTS } from './catalysts';
 import type { CharterId } from './charters';
-import { urbanProfileAt, type UrbanSources } from './districts';
+import {
+  ALL_SPECIALIZATIONS,
+  specializationGapsOf,
+  specializationOf,
+  urbanProfileAt,
+  type LocalUrbanProfile,
+  type Specialization,
+  type UrbanMetric,
+  type UrbanSources,
+} from './districts';
 import type { Catalyst } from './DesirabilityField';
 import type { PolicyId } from './policies';
+import { ReachCache } from './reach';
 
 function source(kind: Catalyst['kind'], x = 0, y = 0): Catalyst {
   const definition = CATALYSTS.find((entry) => entry.id === kind);
@@ -24,7 +35,10 @@ function sources(
   policies: readonly PolicyId[] = [],
   charters: readonly CharterId[] = [],
 ): UrbanSources {
-  return { catalysts, policies, charters };
+  // Cache nuda: senza un costo di passo si comporta come la Chebyshev di prima,
+  // che e' cio' che queste prove misurano. Una per chiamata, cosi' nessun test
+  // eredita le portate calcolate da un altro.
+  return { catalysts, policies, charters, reach: new ReachCache() };
 }
 
 describe('distretti emergenti', () => {
@@ -117,5 +131,121 @@ describe('mandati lasciati dalle decisioni', () => {
     // nessun mandato si sente, per quanti ne siano attivi.
     const far = urbanProfileAt(sources(green, [], ['communityGardens']), 500, 500);
     expect(far.charters).toEqual([]);
+  });
+});
+
+/**
+ * Riscrive un profilo e **ricalcola** la specializzazione.
+ *
+ * Non e' un dettaglio da fixture: il referto salta la specializzazione in
+ * vigore, quindi un profilo con quel campo scritto a mano cambierebbe cosa il
+ * test sta misurando senza dirlo.
+ */
+function reseat(profile: LocalUrbanProfile, patch: Partial<LocalUrbanProfile>): LocalUrbanProfile {
+  const next = { ...profile, ...patch };
+  return { ...next, specialization: specializationOf(next) };
+}
+
+/** Un luogo nudo: nessun ruolo in raggio, ogni metrica a zero. */
+function blank(patch: Partial<LocalUrbanProfile> = {}): LocalUrbanProfile {
+  return reseat({
+    district: 'outskirts',
+    density: 0,
+    wealth: 0,
+    accessibility: 0,
+    satisfaction: 0,
+    industry: 0,
+    roles: [],
+    charters: [],
+    uses: [0, 0, 0, 0],
+    specialization: null,
+  }, patch);
+}
+
+/** Chiude, uno per volta, ogni requisito che il referto riporta per `id`. */
+function satisfy(id: Specialization): LocalUrbanProfile {
+  let current = blank();
+  // Il tetto e' generoso — un ruolo piu' al massimo tre soglie — e un ciclo che
+  // non converge e' un difetto da far fallire, non da nascondere con un `while`.
+  for (let guard = 0; guard < 8; guard++) {
+    const gap = specializationGapsOf(current).find((entry) => entry.id === id);
+    if (gap === undefined) return current;
+    current = gap.metric === null
+      ? reseat(current, { roles: [gap.roles[0]] })
+      : reseat(current, { [gap.metric]: gap.need });
+  }
+  throw new Error(`i requisiti di ${id} non convergono`);
+}
+
+describe('cosa manca a un luogo per specializzarsi', () => {
+  /**
+   * La prova che il referto e la regola non si sono allontanati.
+   *
+   * `specializationGapsOf` deriva dalla tabella in `balance.ts`,
+   * `specializationOf` e' una catena di `if` scritta a mano: chiudere tutto cio'
+   * che il primo riporta **deve** bastare al secondo. Se un giorno la catena
+   * guadagnasse una condizione che la tabella non ha, qui il profilo resterebbe
+   * senza specializzazione e il test cadrebbe — che e' l'unico modo perche' il
+   * pannello non prometta un requisito che il codice non applica.
+   */
+  it('chiudere i requisiti riportati basta a ottenere la specializzazione', () => {
+    for (const id of ALL_SPECIALIZATIONS) {
+      expect(satisfy(id).specialization).not.toBeNull();
+    }
+  });
+
+  it('ogni requisito riportato e davvero vincolante', () => {
+    for (const id of ALL_SPECIALIZATIONS) {
+      const built = satisfy(id);
+
+      // Senza un ruolo che la apra, nessuna soglia basta.
+      expect(reseat(built, { roles: [] }).specialization).not.toBe(id);
+
+      // E ogni soglia della tabella, riabbassata sotto il minimo, la toglie.
+      for (const [metric, need] of Object.entries(BALANCE.districts.specialization[id])) {
+        expect(reseat(built, { [metric as UrbanMetric]: need - 0.01 }).specialization).not.toBe(id);
+      }
+    }
+  });
+
+  it('riporta la soglia piu lontana, non la prima', () => {
+    // Il ruolo c'e' e mancano entrambe le soglie, ma non alla stessa distanza:
+    // l'industria e' al'88% del minimo, la densita' al 19%. A essere riportata
+    // dev'essere la densita', perche' e' quella su cui agire per prima.
+    const industrial = blank({ roles: ['factory'], density: 0.1, industry: 0.3 });
+    const farming = specializationGapsOf(industrial).find((gap) => gap.id === 'farming');
+
+    expect(farming?.metric).toBe('density');
+    expect(farming?.need).toBe(BALANCE.districts.specialization.farming.density);
+    expect(farming?.have).toBe(0.1);
+  });
+
+  it('il ruolo mancante batte ogni soglia', () => {
+    // Metriche larghissime, ma nessuno dei due ruoli che aprono l'agricoltura:
+    // aspettare non servirebbe a niente, e il referto deve mandare a piazzare.
+    const green = blank({ roles: ['park'], density: 0.9, industry: 0.9 });
+    const farming = specializationGapsOf(green).find((gap) => gap.id === 'farming');
+
+    expect(farming?.metric).toBeNull();
+    expect(farming?.roles).toEqual(['factory', 'university']);
+  });
+
+  it('ordina dalla piu vicina alla piu lontana', () => {
+    // Chi ha ancora il ruolo da trovare sta in fondo per costruzione: il suo
+    // rapporto e' zero, e nessuna soglia mancante puo' fare peggio.
+    const gaps = specializationGapsOf(blank({ roles: ['factory'], density: 0.5, industry: 0.5 }));
+    expect(gaps.length).toBeGreaterThan(1);
+
+    const withRole = gaps.filter((gap) => gap.metric !== null);
+    const withoutRole = gaps.filter((gap) => gap.metric === null);
+    expect(gaps.slice(0, withRole.length)).toEqual(withRole);
+    expect(gaps.slice(withRole.length)).toEqual(withoutRole);
+  });
+
+  it('non riporta la specializzazione gia in vigore', () => {
+    const built = satisfy('farming');
+
+    expect(built.specialization).toBe('farming');
+    expect(specializationGapsOf(built).some((gap) => gap.id === 'farming')).toBe(false);
   });
 });

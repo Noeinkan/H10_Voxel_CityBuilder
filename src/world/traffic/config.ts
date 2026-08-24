@@ -124,6 +124,44 @@ export const TRAFFIC = {
   /** Quota di crociera sopra il piano della pista. */
   planeCruise: 44,
 
+  /**
+   * Franco fra la pancia di un aereo e la cosa piu' alta che sorvola.
+   *
+   * **Il circuito non e' piu' una quota fissa, ed e' questo numero a dirlo.**
+   * Quarantaquattro voxel sopra la pista bastavano finche' l'aeroporto stava al
+   * margine di una citta' bassa; con `BUILDER.maxLevel` a dodici una torre del
+   * centro supera i centoquaranta voxel, e un semilato di circuito da
+   * ottantaquattro ce la porta dentro in pieno. La rotta si alza percio' sopra
+   * cio' che trova sotto di se': la quota di crociera e' il massimo fra quella
+   * dichiarata e la cima sorvolata piu' questo franco.
+   *
+   * Diciotto voxel sono due piani buoni: abbastanza da leggersi come un
+   * sorvolo e non come una sfiorata, e abbastanza da coprire il coronamento che
+   * `supportAt` non conta perche' non e' un record a se'.
+   */
+  planeClearance: 18,
+
+  /**
+   * Lo stesso franco per cio' che in quota va piano: dirigibili, eVTOL, palloni.
+   *
+   * Piu' stretto di quello dell'aereo, e non per distrazione: un dirigibile che
+   * gira attorno al proprio pilone *appartiene* a quel tetto, e allontanarlo di
+   * due piani lo staccherebbe dalla struttura che lo tiene. Serve a non farlo
+   * passare dentro la torre accanto, non a portarlo in stratosfera.
+   */
+  aloftClearance: 10,
+
+  /**
+   * Passo con cui si sonda la citta' sotto una rotta di volo, in voxel.
+   *
+   * Tre celle di terreno. Il sondaggio serve a trovare **la cosa piu' alta**
+   * sotto una spezzata lunga qualche centinaio di voxel, non a profilarne il
+   * contorno: una torre e' larga almeno quattro colonne, quindi un passo di sei
+   * non ne salta nessuna che conti, e costa una cinquantina di letture per
+   * circuito invece di trecento.
+   */
+  ceilingStep: 6,
+
   /** Semilato del circuito di attesa attorno al campo, in voxel. */
   planeCircuit: 84,
 
@@ -148,6 +186,71 @@ export const TRAFFIC = {
    */
   airshipBob: 0.6,
   airshipBobPeriod: 7,
+
+  /**
+   * Velocita' di un eVTOL sul proprio circuito, in voxel al secondo.
+   *
+   * Fra il dirigibile e l'aereo, e piu' vicina al dirigibile: cio' che un eVTOL
+   * promette non e' la velocita' di crociera ma il fatto di posarsi su una
+   * piazzola di tre colonne. Troppo veloce, il giro attorno allo scalo finisce
+   * prima che l'occhio abbia visto dove si e' posato.
+   */
+  evtolSpeed: 9,
+
+  /** Quota di crociera di un eVTOL sopra la propria piazzola. */
+  evtolCruise: 22,
+
+  /**
+   * Raggio del giro che un eVTOL fa attorno al proprio scalo.
+   *
+   * Stretto, e piu' stretto di quello del dirigibile: e' il mezzo che serve il
+   * tetto su cui sta, non l'isola. Un circuito largo lo porterebbe fuori dalla
+   * torre e lo farebbe leggere come un aereo piccolo.
+   */
+  evtolCircuit: 26,
+
+  /**
+   * Velocita' di una mongolfiera, in voxel al secondo. La piu' lenta di tutte.
+   *
+   * Un pallone non si guida: sale, si lascia portare e torna. La lentezza **e'**
+   * la sagoma, come i conci rastremati sono quella del dirigibile.
+   */
+  balloonSpeed: 1.6,
+
+  /** Quanto una mongolfiera resta all'ormeggio, in frazione di periodo. */
+  balloonDwell: 0.18,
+
+  /** Quanto una mongolfiera sale sopra il proprio ormeggio, in voxel. */
+  balloonRise: 26,
+
+  /**
+   * Quanto la deriva porta lontano una mongolfiera, in voxel.
+   *
+   * Il verso lo dichiara l'ormeggio della ricetta e non il vento di `plume`: la
+   * deriva del pennacchio e' una costante del mondo, un ormeggio e' una
+   * coordinata canonica che ruota con la struttura, e legare il pallone al vento
+   * manderebbe meta' dei palloni della citta' dentro il proprio scalo.
+   */
+  balloonDrift: 46,
+
+  /**
+   * Quanto il pallone si allontana **mentre sale**, in voxel.
+   *
+   * E' il punto di mezzo della corsa, e serve a una cosa sola: senza, la salita
+   * si spalmerebbe su tutta la deriva e il pallone striscerebbe sui tetti per il
+   * primo terzo di ogni corsa. Corto rispetto a `balloonDrift` perche' un pallone
+   * sale ripido — l'aria calda non ha bisogno di rincorsa.
+   */
+  balloonLead: 12,
+
+  /**
+   * Beccheggio di una mongolfiera all'ormeggio.
+   *
+   * Piu' ampio di quello del dirigibile perche' e' piu' leggera: un involucro
+   * d'aria calda trattenuto da una cima si muove, ed e' l'unica cosa che dica
+   * che non e' appoggiato al pilone.
+   */
+  balloonBob: 0.9,
 
   // --- Mezzi appesi -------------------------------------------------------
 
@@ -196,6 +299,25 @@ export const TRAFFIC = {
     plane: { length: 9, width: 9, height: 2, palette: PALETTE_SLOTS.concreteWhite },
     /** Dirigibile: l'unico piu' alto che largo, ed e' la sua firma. */
     airship: { length: 16, width: 5, height: 5, palette: PALETTE_SLOTS.roofPale },
+    /**
+     * eVTOL: piu' largo che lungo, ed e' la sua firma.
+     *
+     * L'aereo ha l'ala a freccia e la fusoliera lunga; questo ha una cabina
+     * corta e quattro rotori su un trave trasversale, quindi la sagoma vista da
+     * sopra e' un quadrato con quattro dischi. Sono i due modi opposti di dire
+     * «vola» con delle scatole, e a distanza isometrica non si confondono.
+     */
+    evtol: { length: 5, width: 6, height: 2, palette: PALETTE_SLOTS.concreteWhite },
+    /**
+     * Mongolfiera: l'unica sagoma che sta quasi tutta **sopra** l'origine.
+     *
+     * `height` e' l'involucro, e la navicella gli pende sotto — lo scafo di una
+     * barca sta sotto il ponte, qui e' il contrario. Larga quanto alta perche'
+     * un pallone e' un pallone: schiacciarlo lo farebbe leggere come un
+     * dirigibile corto, che e' l'unica altra cosa in cielo con cui potrebbe
+     * confondersi.
+     */
+    balloon: { length: 7, width: 7, height: 9, palette: PALETTE_SLOTS.metalBrass },
     /**
      * Cabina di funivia: la sola sagoma che non poggia su niente.
      *
@@ -334,6 +456,10 @@ export const VEHICLE = {
   cargo: 'cargo',
   plane: 'plane',
   airship: 'airship',
+  /** eVTOL: l'unico che si posa su una piazzola invece di rullare o ormeggiare. */
+  evtol: 'evtol',
+  /** Mongolfiera: sale, si lascia portare dal vento e torna. */
+  balloon: 'balloon',
   /** Cabina di funivia: l'unico mezzo che non galleggia e non vola — pende. */
   gondola: 'gondola',
 } as const;
@@ -346,5 +472,7 @@ export const VEHICLE_KINDS: readonly VehicleKind[] = [
   VEHICLE.cargo,
   VEHICLE.plane,
   VEHICLE.airship,
+  VEHICLE.evtol,
+  VEHICLE.balloon,
   VEHICLE.gondola,
 ];

@@ -23,6 +23,7 @@ import {
 } from '../sim';
 import { DAYLIGHT, DAYLIGHT_MODE, nextDaylightMode, type DaylightMode } from '../engine/daylight';
 import { typologiesForUses } from '../world/buildings/typology';
+import { unlockLines } from './prospects';
 import { SITE } from '../world/sites/config';
 import type { GrowthStats } from '../game/growthScene';
 import type { CityCondition } from '../game/cityCondition';
@@ -123,8 +124,18 @@ export interface HudAction {
   /** Usi favoriti e penalizzati, gia' in etichette leggibili. */
   readonly favours?: readonly string[];
   readonly penalises?: readonly string[];
-  /** Tipologie che quel ruolo puo' far comparire, per nome di catalogo. */
+  /** Tipologie che quel ruolo puo' far comparire dal solo uso, per nome di catalogo. */
   readonly typologies?: readonly string[];
+  /**
+   * Forme che **solo** questo ruolo rende possibili, con il quartiere da
+   * attraversare per arrivarci.
+   *
+   * E' l'altra meta' di `typologies`, e la ragione per cui quell'elenco si e'
+   * accorciato: una forma dietro una specializzazione non e' qualcosa che si
+   * ottiene piazzando il catalizzatore, e prometterla senza la sua condizione
+   * insegnava a diffidare del tooltip. Qui la condizione c'e'.
+   */
+  readonly unlocks?: readonly string[];
   /**
    * true se l'azione e' bloccata ma resta visibile.
    *
@@ -370,6 +381,7 @@ export function buildGameHudModel(
       favours,
       penalises,
       typologies: typologiesForUses(catalyst.favours),
+      unlocks: unlockLines(catalyst.id),
       available,
       // Bloccato non vuol dire nascosto: il bottone resta nella toolbar e dice
       // perche' non si puo' ancora usare.

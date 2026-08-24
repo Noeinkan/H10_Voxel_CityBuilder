@@ -59,20 +59,39 @@ e costruzione degli edifici. Questo modulo non dipende dal renderer.
 - Due tetti duri in `terrain/config.ts`: `warpAmount` piu' `warpDetail` sopra
   ~0,26 attacca terra al bordo della region; alzare `baseFrequency` o
   `maxHeight` consuma il margine di Lipschitz. **L'invariante e' in celle e in
-  alzate**: due celle adiacenti cadono su pedate contigue della scala di
-  `terrace.ts`, quindi non differiscono di piu' di **un'alzata**, e dentro una
-  cella il dislivello e' zero per costruzione. `heightField.test.ts` misura il
+  alzate**: due celle adiacenti si posano su scale di `terrace.ts` che stanno
+  entrambe entro `TERRACE.maxStep` sotto la quota vera, quindi non differiscono
+  di piu' di **un'alzata** anche quando le due scale non sono la stessa, e dentro
+  una cella il dislivello e' zero per costruzione. `heightField.test.ts` misura il
   margine sul campo continuo, `terrace.test.ts` la proprieta' della scala,
   `IslandGenerator.test.ts` entrambe sulle quote quantizzate.
 - **La montagna la fa la quantizzazione, non il rilievo.** Il campo continuo
   resta dolce — e deve restarci, e' cio' che tiene in piedi tutto il resto —
-  mentre `terrace.ts` allarga la **pedata** con la quota: due voxel in pianura,
-  quattro nella foresta, sei sulla collina, otto sulla roccia. Lo stesso fianco
-  di prima produce cosi' un muro di otto voxel invece di quattro gradini da due.
-  Perche' funzioni serve una sola cosa, ed e' dimostrata invece che sperata:
-  ogni pedata e' larga almeno `cellSize`, cioe' piu' del dislivello massimo fra
-  due celle contigue, quindi due celle non possono scavallare piu' di un'alzata.
-  Non c'e' nessun clamp a valle, e non serve.
+  mentre `terrace.ts` allarga la **pedata** con la quota: in media due voxel in
+  pianura, quattro nella foresta, sei sulla collina, otto sulla roccia. Lo stesso
+  fianco di prima produce cosi' un muro di otto voxel invece di quattro gradini
+  da due.
+- **Una scala sola da' un muro solo, ed e' un teorema e non una taratura.** Se
+  l'alzata e' funzione della sola quota, tutte le celle di una fascia ne
+  condividono una; e siccome due celle contigue cadono su pedate contigue, il
+  salto vale *esattamente un'alzata*. Ogni parete della fascia esce percio' alta
+  uguale — per tutto il suo sviluppo e su tutta l'isola — e nessun disturbo in
+  pianta puo' cambiarlo, perche' spostare il ciglio non ne cambia il salto. Le
+  scale sono percio' `TERRACE.beddings`, tre: roccia fine, media e massiccia, un
+  grado di `cellSize` l'una dall'altra. Lo scarto e' **sistematico e non
+  estratto**, ed e' la differenza che conta: due scale che pescano dallo stesso
+  ventaglio si ritrovano di continuo sulla stessa pedata e da li' in poi sono la
+  stessa scala — misurate, tre su quattro condividevano ogni base fino a quota
+  66. Una stratificazione che sale sempre a passo suo diverge e resta divergente,
+  ed e' anche cio' che una stratificazione **e'**: uno spessore di strato
+  caratteristico, non una sequenza di spessori casuali.
+- **Il tetto del dirupo e' dimostrato, e la dimostrazione e' piu' forte di quella
+  che bastava a una scala sola.** Ogni scala posa su un multiplo di `cellSize` che
+  sta a meno di `maxStep` sotto la quota vera, quindi due celle contigue distano
+  meno di `maxStep` piu' il loro dislivello di campo (sotto i due voxel): fra
+  multipli di cella quel totale vale `maxStep` esatti, **comunque siano scelte le
+  due scale**. L'unica premessa e' che il dislivello resti sotto `cellSize`, che
+  e' la stessa di prima. Non c'e' nessun clamp a valle, e non serve.
 - **Dentro la conca di un lago la scala resta fine.** `HeightField.inBasinAt`
   spegne il terrazzamento sull'ellisse d'influenza: fondo, sponda e pelo stanno
   dentro sei voxel (`basinDrop`), e un'alzata da otto se li porterebbe via —
@@ -145,16 +164,32 @@ e costruzione degli edifici. Questo modulo non dipende dal renderer.
   niente si vede che non racconta niente; a dare varieta' e' il ciglio, non la
   tinta. La lettura e' una sola, `paletteAt`, e la usano il generatore, le opere
   di terra e la vista per bioma.
-- **Il ciglio non e' una curva di livello**, e senza `TERRACE.jitter` lo sarebbe:
-  il campo e' dolce e la scala e' esatta, quindi il gradone cade dove il campo
-  attraversa una quota tonda, cioe' su cerchi concentrici. La quota di una cella
-  viene percio' scossa da due ottave di rumore prima di posarsi sulla scala.
-  L'ampiezza e' una **frazione dell'alzata oltre la cella**, ed e' li' che sta
-  l'invariante: in pianura e' zero — la citta' cresce li' e un dirupo in mezzo a
-  un isolato sarebbe un dispetto — e sotto la meta' due celle contigue non
-  possono ancora scavallare piu' di un'alzata, perche' il loro dislivello piu'
-  due ampiezze resta dentro la pedata. Dentro la conca di un lago non si scuote
-  niente: una vasca ha il bordo che ha.
+- **Il ciglio non e' una curva di livello, e non e' nemmeno alto uguale**, e senza
+  il campo di stratificazione sarebbe tutte e due le cose: il campo di quota e'
+  dolce e una scala e' esatta, quindi il gradone cade dove il campo attraversa una
+  quota tonda — su una cupola, cerchi concentrici — e vale sempre l'alzata della
+  propria fascia. Le pedate di due stratificazioni cadono invece a quote diverse,
+  quindi il ciglio di una data quota cade a **raggi** diversi dove la
+  stratificazione cambia (la curva si spezza) e il salto assume valori diversi
+  lungo lo stesso sviluppo. Un solo meccanismo per due difetti.
+- **Il campo che sceglie la stratificazione ha due ottave, e fanno mestieri
+  diversi.** `beddingSpan` da' carattere a un versante intero — questo fianco sale
+  a gradoni larghi, quello accanto a scalini — ed e' la scala a cui una
+  stratificazione si legge come tale; `beddingBreak` spezza la singola scarpata
+  lungo la sua corsa, ed e' quella che toglie alla parete l'altezza costante. Con
+  la sola lunga ogni scarpata resta alta uguale per tutta la sua corsa; con la
+  sola corta il terreno si sgrana e a questa scala si legge come sporcizia.
+- **Il campo va allargato prima di quantizzarlo** (`beddingContrast`), o meta'
+  delle stratificazioni non verrebbe mai usata: il rumore di valore e' una
+  miscela bilineare, e mescolarne due ottave stringe ancora. Misurato, le due
+  stratificazioni centrali si prendevano il 91% dell'isola e le estreme il 9% —
+  le scale erano quattro dichiarate e due sul terreno, cioe' il difetto che si era
+  andati a togliere.
+- **Sotto `TERRACE.fromHeight` le stratificazioni coincidono**, ed e' la garanzia
+  di edificabilita': la pianura non si terrazza e non dipende da quale scala la
+  tocchi. La citta' cresce li', e un dirupo in mezzo a un isolato sarebbe un
+  dispetto. Dentro la conca di un lago la scala resta fine per la sua ragione:
+  una vasca ha il bordo che ha.
 - **Un albero scrive solo dove c'e' aria.** Il terreno del blocco e' gia' scritto
   quando parte la decorazione, quindi la chioma nata su una cella bassa viene
   ritagliata dalla parete della cella accanto invece di mangiarla. Vale per il
@@ -188,13 +223,35 @@ e costruzione degli edifici. Questo modulo non dipende dal renderer.
   uno slot o una specie in piu' allargano la griglia da se'.
 - I numeri stanno in `scenes/swatchLayout.ts`, che e' puro e ha tre consumatori —
   il generatore, l'inquadratura di `main.ts` e il referto sotto il cursore.
-- **Il provino della matrice e' una massa a gradoni, non un prisma**, e la forma
-  e' un requisito del mesher e non un gusto: `emitSoffits`, `emitTerraceBoxes` e
-  `emitFinials` chiedono rispettivamente un intradosso con aria sotto, una
-  sommita' scoperta con volume di fianco e una cella senza vicini in piano.
-  Nessuna delle tre esiste su una scatola, quindi appiattire `CELL_TIERS`
-  spegnerebbe tre famiglie di dettaglio senza che niente lo segnali. La sagoma
-  e' la stessa in ogni cella: l'unica variabile dev'essere palette x superficie.
+- **Il provino della matrice e' una massa articolata, non un prisma**, e la forma
+  e' un requisito del mesher e non un gusto: `emitSoffits`, `emitTerraceBoxes`,
+  `emitFinials` e il terzetto `emitRoofMasts`/`emitRoofCrowns`/`emitPergolas`
+  chiedono rispettivamente un intradosso con aria sotto, una sommita' scoperta
+  con volume di fianco, una cella senza vicini in piano e una sommita' scoperta
+  con **tutti e quattro** i vicini scoperti. Nessuna delle quattro esiste su una
+  scatola, quindi appiattire `CELL_PARTS` spegnerebbe altrettante famiglie di
+  dettaglio senza che niente lo segnali — ed e' successo: fino alla sagoma a
+  gradoni il tetto piu' largo era un anello di spessore uno, e chiome e pergole
+  non comparivano affatto. Il cortile e' li' per questo. La sagoma e' la stessa
+  in ogni cella: l'unica variabile dev'essere palette x superficie.
+- **La pianta del provino e' invariante per rotazione di 90 gradi**, e la ragione
+  e' la camera: a un quarto di giro meta' campionario mostrerebbe gli sbalzi e
+  meta' no. Non e' «ogni gradone e' centrato» — che valeva finche' i pezzi erano
+  quadrati pieni — ma la simmetria C4 della sagoma vera, cortili e pinnacoli
+  compresi, e un test la verifica su `cellSolidAt`. Chi vuole un recesso a L o
+  una torretta su un fianco solo sta rompendo questa riga, non aggirandola: lo
+  dichiari.
+- **La sagoma sta in un posto solo, `cellSolidAt`**, e la leggono in tre: il
+  generatore che la scrive, `swatchProbe.ts` che ne conta i prismi e il test che
+  confronta il mondo con lei. E' la stessa ragione per cui `matrixCellRect` sta
+  in `swatchLayout.ts` e non nel generatore.
+- **Quanto dettaglio emette una cella non si stima, si rimisura.**
+  `scenes/swatchProbe.ts` passa `appendMicroGeometry` vero con un writer che
+  conta al posto di scrivere: niente tabella scritta a mano che possa restare
+  indietro rispetto agli emettitori. Lo consumano il referto sotto il cursore e
+  i due controlli che tengono il campionario onesto — un pavimento di prismi per
+  linguaggio, cosi' una famiglia spenta cade li' invece di non lasciare traccia,
+  e il tetto di `MAX_DETAIL_QUADS_PER_CHUNK` sul chunk piu' carico.
 - **L'interasse e' governato dall'occlusione, non dallo spazio.** A `REST_PITCH`
   un voxel di quota si proietta in alto il doppio di un voxel di profondita', e
   la fila davanti nasconde `CELL_HEIGHT - cellPitch / 2` di quella dietro: con
@@ -505,6 +562,17 @@ e costruzione degli edifici. Questo modulo non dipende dal renderer.
   riga — la regola di scelta in `typology.ts` e' generica e non va toccata, e la
   grammatica in `generate.ts` non sa che le tipologie esistono. Ogni uso chiude
   il catalogo con un ripiego senza condizioni, cosi' la scelta non puo' fallire.
+- **`accepts` e `typologyGapsOf` sono due letture della stessa regola**, e a
+  tenerle insieme non c'e' la disciplina di chi le modifica ma il test di
+  equivalenza che percorre tutto il catalogo su una griglia di luoghi. Sono due
+  traversate di proposito: `accepts` sta nel percorso caldo — l'intero catalogo,
+  per ogni edificio posato — e restituire un vettore li' allocherebbe a ogni
+  posa. Se aggiungi un ramo all'una, aggiungilo all'altra; il test lo dira'
+  comunque, ed e' il primo posto in cui guardare quando cade.
+- **Cio' che il giocatore non puo' fare non si nomina.** `bestProspectOf` scarta
+  le righe bloccate sul ruolo di lotto o sull'uso ospitato: sono condizioni vere
+  ma non sono gesti, e prometterle manderebbe a cercare una mossa che non
+  esiste. E' il difetto opposto a quello che quella funzione corregge.
 
 ## La campagna
 
@@ -782,7 +850,8 @@ e costruzione degli edifici. Questo modulo non dipende dal renderer.
 
 ## Cio' che si muove
 
-- **Il traffico non e' materia.** Barche, navi, aerei e dirigibili di `traffic/`
+- **Il traffico non e' materia.** Barche, navi, aerei, dirigibili, eVTOL e
+  mongolfiere di `traffic/`
   non sono voxel e non devono diventarlo: scriverne uno nel `VoxelWorld` e
   riscriverlo al frame dopo marcherebbe sporchi i chunk della costa sessanta
   volte al secondo, cioe' rimeshare mezza isola per far navigare una barca. Qui
@@ -813,12 +882,41 @@ e costruzione degli edifici. Questo modulo non dipende dal renderer.
   fumaiolo: due misure separate si scoprirebbero divergenti da uno screenshot.
 - **Una rotta si ricalcola quando cambia la citta', non quando passa un frame.**
   Cercare una rotta di mare visita qualche migliaio di celle: `GrowthScene` la
-  rifa' solo quando cambia il numero di landmark o di catalizzatori.
+  rifa' quando cambia il numero di landmark o di catalizzatori, e **a scaglioni
+  di sessantaquattro edifici** — quello e' il segnale della citta' che si alza, e
+  senza di lui un circuito calcolato in mezzo ai campi resterebbe alla propria
+  quota mentre attorno crescono le torri.
+- **Le rotte in quota si alzano sopra la citta', e la quota dichiarata e' il
+  minimo.** `TRAFFIC.planeCruise` a quarantaquattro voxel bastava quando gli
+  edifici erano bassi; con `BUILDER.maxLevel` a dodici una torre supera i
+  centoquaranta, e un semilato di circuito da ottantaquattro la centra in pieno.
+  `skyRoutes.ts` sonda percio' il profilo **sotto la propria spezzata** — a passo
+  di `ceilingStep`, per segmenti e non per vertici, altrimenti due vertici a
+  ottantaquattro voxel di distanza saltano qualunque torre ci sia in mezzo — e
+  prende il massimo fra quota dichiarata e cima sorvolata piu' il franco. Il
+  profilo arriva come predicato (`CeilingProbe`), come gia' l'acqua: il dominio
+  non ha un registry e non deve averne uno.
 - **Gli ormeggi li dichiara la ricetta**, non il traffico: sono coordinate della
   forma — il bordo di una darsena che `landmarks/config.ts` disegna — e tenerle
   altrove vorrebbe dire due file da correggere ogni volta che un molo si sposta
   di una colonna, con il difetto visibile solo a schermo. Un test verifica che un
   ormeggio da barca **non** cada su una colonna che l'opera di terra riempie.
+- **Un ormeggio a galla pretende acqua, e a portargliela e' il piazzamento.** La
+  ricetta dichiara la propria `waterline` — la colonna in cui il mare deve
+  cominciare — e `landmarkDriver` fa scorrere la struttura lungo il fronte
+  finche' quella colonna cade sull'acqua vera. Senza, il porto era il difetto
+  piu' silenzioso del dominio: perfettamente costruito, con la sua fila di gru, e
+  **niente in acqua**, perche' il vincolo di sito ammette il click a sei colonne
+  dalla battigia mentre gli ormeggi stanno quattro e cinque colonne oltre, e su
+  meta' del fronte costiero la battigia e' un bassofondo asciutto largo dieci
+  colonne. Lo scorrimento e' limitato dall'ancora della ricetta: oltre, la colonna
+  cliccata uscirebbe dall'ingombro e `catalystIn` non ritroverebbe piu' il
+  catalizzatore, cioe' un monumento fermo allo stadio zero per sempre.
+- **«Costa» e «acqua» non sono la stessa colonna.** La colonna a quota esatta del
+  pelo del mare e' battigia — bagnata, in vista del mare, sito costiero a tutti
+  gli effetti — ma `IslandGenerator` non ci scrive nessun voxel d'acqua. Chi
+  chiede «e' un posto sul mare?» usa `sightWater` cosi' com'e'; chi ci deve posare
+  uno scafo passa `afloat`, e fra le due risposte ci sono celle intere.
 - **La rotta di mare aggira la terra.** I due capi di una linea stanno sulla
   costa per definizione, e due punti di costa vicini hanno quasi sempre un pezzo
   d'isola in mezzo: e' proprio la forma che rende utile un traghetto. Dove non

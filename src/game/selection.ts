@@ -21,7 +21,7 @@ import { waterDistance } from '../world/sites/siteRules';
 import { SKYLINE } from '../world/skyline/config';
 import { allowedLevelAt, tierAt, type SkylineQuery, type SkylineTier } from '../world/skyline/tiers';
 import { buildWeightOf, type GroundKind } from '../world/grading/grade';
-import { groundKindAt } from '../world/buildings/siteWorks';
+import { groundKindAt, isCoastal } from '../world/buildings/siteWorks';
 import { BUILDER } from '../world/buildings/config';
 import {
   footprintDepth,
@@ -84,6 +84,17 @@ export interface ColumnInfo {
   readonly stack: number;
   /** Il quartiere di **adesso**, che non e' quello congelato in un record. */
   readonly profile: LocalUrbanProfile;
+  /**
+   * true se la colonna vede il mare entro `BUILDER.coastalRadius`.
+   *
+   * Non e' `waterTop`, che parla di **questa** colonna: qui la domanda e' se
+   * l'affaccio ci sia, ed e' una delle condizioni che una tipologia pone. Si
+   * legge da `isCoastal`, cioe' dalla stessa funzione con lo stesso raggio che
+   * il Builder passa a `selectTypology` — con due misure diverse la scheda
+   * prometterebbe una forma che il Builder poi rifiuta, che e' esattamente il
+   * difetto che dire «cosa potrebbe crescere qui» esiste per chiudere.
+   */
+  readonly coastal: boolean;
 }
 
 /**
@@ -225,6 +236,7 @@ export function resolveSelection(query: SelectionQuery): Selection | null {
       crowd: state.field.crowdAt(cell.x, cell.y),
       stack: state.field.stackAt(cell.x, cell.y),
       profile: urbanProfileAt(state, cell.x, cell.y),
+      coastal: isCoastal(map, cell.x, cell.y),
     },
     structure: structureAt(registry, state, cell.x, cell.y, voxelZ),
     block: blockAt(query, streets.keyOf(block), streets.blockRect(block)),
@@ -425,7 +437,8 @@ function skylineQuery(query: SelectionQuery, x: number, y: number): SkylineQuery
   return {
     x,
     y,
-    poles: query.state.catalysts,
+    // Come in `hierarchy.ts`: la portata geodetica, non i catalizzatori nudi.
+    poles: query.state.reach.polesOf(query.state.catalysts),
     waterDistance: waterDistance(query.map, x, y, SKYLINE.coastNear),
     builtNeighbours: query.registry.countWithinRadius(x, y, SKYLINE.edgeRadius),
     seed: query.seed,

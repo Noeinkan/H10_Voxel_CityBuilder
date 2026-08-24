@@ -6,10 +6,14 @@ import {
   SURFACE_KIND,
   type SurfaceKind,
 } from '../../world/visualBlock';
+import { carvedFace } from './carveMarks';
+import { appendCarveDetail } from './carveGeometry';
+import { clearCarves, planCarves } from './carvePlan';
 import { appendCoverDetail, liftGroundCover, restoreGroundCover } from './coverDetail';
 import {
   appendMicroGeometry,
   MAX_DETAIL_QUADS_PER_CHUNK,
+  type BoxOptions,
   type ChunkOrigin,
   type FixedBox,
   type MicroGeometryWriter,
@@ -53,6 +57,15 @@ export interface MeshScratch {
    * emissiva vicina, 0..`GLOW_SOURCE`. Riempita da `sweepGlow`.
    */
   readonly glow: Uint8Array;
+  /**
+   * Per ogni cella del volume paddato, quale faccia e' scavata e con quale
+   * ricetta. Riempita da `planCarves`, letta dal mask loop, azzerata in fondo.
+   *
+   * Sta nello scratch e non a livello di modulo perche' il mask loop la legge
+   * per ogni faccia che sta per emettere: e' l'unico array nuovo del percorso
+   * caldo, e vive accanto agli altri due che quel ciclo gia' consulta.
+   */
+  readonly carveMarks: Uint8Array;
   capacityQuads: number;
 }
 
@@ -63,6 +76,8 @@ export const MAX_BASE_QUADS_PER_CHUNK = 6 * (CHUNK * CHUNK * CHUNK) * 0.5;
 export const MAX_QUADS_PER_CHUNK = MAX_BASE_QUADS_PER_CHUNK + MAX_DETAIL_QUADS_PER_CHUNK;
 
 const STRIDE: readonly [number, number, number] = [1, PADDED, PADDED * PADDED];
+
+const ORIGIN_ZERO: ChunkOrigin = [0, 0, 0];
 
 export function createScratch(initialQuads = 4096): MeshScratch {
   return {
@@ -76,6 +91,7 @@ export function createScratch(initialQuads = 4096): MeshScratch {
     skyGap: new Uint8Array(PADDED_VOL),
     skyRuns: new Uint8Array(PADDED * PADDED),
     glow: new Uint8Array(PADDED_VOL),
+    carveMarks: new Uint8Array(PADDED_VOL),
     capacityQuads: initialQuads,
   };
 }
@@ -135,12 +151,20 @@ export function greedyMesh(
   const mask = s.mask;
   const skyGap = s.skyGap;
   const glow = s.glow;
+  const carveMarks = s.carveMarks;
 
   // Le coperture escono dal volume prima di qualunque cosa lo legga: cielo, AO e
   // greedy pass devono vedere il terreno nudo, perche' al posto del cubo ci
   // andra' la microgeometria di `coverDetail.ts`. Il volume torna intatto in
   // fondo alla funzione.
   const cover = liftGroundCover(padded, ceiling);
+
+  // Gli scavi si decidono qui, prima del greedy pass, perche' il mask loop deve
+  // sapere quali facce **non** emettere. A differenza delle coperture non
+  // toccano il volume: la cella resta piena, quindi cielo, bagliore e AO dei
+  // vicini raccontano ancora la stessa parete. Una nicchia non deve scurire il
+  // muro a due metri.
+  const carves = planCarves(padded, carveMarks, origin ?? ORIGIN_ZERO);
 
   sweepSkyGap(padded, ceiling, skyGap, s.skyRuns);
   sweepGlow(padded, glow);
@@ -157,6 +181,11 @@ export function greedyMesh(
     const sd = STRIDE[d];
     const su = STRIDE[axisU];
     const sv = STRIDE[axisV];
+    // Gli stessi id che `faceId` ricompone piu' sotto: `FACE_PX` e' `0 * 2`,
+    // `FACE_PY` e' `1 * 2`, `FACE_PZ` e' `2 * 2`. Fuori dal ciclo perche' la
+    // maschera degli scavi si interroga per faccia e non per cella.
+    const positiveFace = d * 2;
+    const negativeFace = d * 2 + 1;
 
     for (let slice = -1; slice < CHUNK; slice++) {
       // Il piano della faccia, in coordinate locali di spigolo: 0..32.
@@ -171,10 +200,20 @@ export function greedyMesh(
         for (let i = 0; i < CHUNK; i++, n++, p += su) {
           const a = padded[p];
           const b = padded[p + sd];
+          // Una faccia scavata non si emette: al suo posto ci va la cavita' di
+          // `carveGeometry.ts`, e lasciare il quad piatto la coprirebbe. Il test
+          // costa una lettura e due confronti, e cade solo su facce che stanno
+          // gia' per essere emesse — sopprimere significa `mask[n] = 0`, cioe'
+          // il valore che il merge non fonde con niente, quindi non c'e' un
+          // campo nuovo da far entrare in `packFace`.
           if (a !== 0) {
-            mask[n] = b === 0 && canEmitPositive ? packFace(a, p + sd, su, sv, padded, skyGap, glow) : 0;
+            mask[n] = b === 0 && canEmitPositive && !carvedFace(carveMarks, p, positiveFace)
+              ? packFace(a, p + sd, su, sv, padded, skyGap, glow)
+              : 0;
           } else {
-            mask[n] = b !== 0 && canEmitNegative ? -packFace(b, p, su, sv, padded, skyGap, glow) : 0;
+            mask[n] = b !== 0 && canEmitNegative && !carvedFace(carveMarks, p + sd, negativeFace)
+              ? -packFace(b, p, su, sv, padded, skyGap, glow)
+              : 0;
           }
         }
       }
@@ -335,7 +374,13 @@ export function greedyMesh(
     get remainingQuads(): number {
       return MAX_DETAIL_QUADS_PER_CHUNK - (quadCount - baseQuadCount);
     },
-    emitBox(box: FixedBox, palette: number, hiddenFaces: number, surface: SurfaceKind): boolean {
+    emitBox(
+      box: FixedBox,
+      palette: number,
+      hiddenFaces: number,
+      surface: SurfaceKind,
+      options?: BoxOptions,
+    ): boolean {
       const faceCount = 6 - countBits(hiddenFaces & 0b11_1111);
       if (faceCount > this.remainingQuads) return false;
       if (quadCount + faceCount > s.capacityQuads) growScratch(s, quadCount + faceCount);
@@ -348,6 +393,8 @@ export function greedyMesh(
         levelAtBox(box, skyGap, SKY_LEVEL_STEP),
         levelAtBox(box, glow, GLOW_LEVEL_STEP),
         surface,
+        options?.inward === true,
+        options?.ao ?? SHADE_AO_FREE,
       );
       for (let axis = 0; axis < 3; axis++) {
         if (box.min[axis] < boundsMin[axis]) boundsMin[axis] = box.min[axis];
@@ -356,11 +403,28 @@ export function greedyMesh(
       return true;
     },
   };
-  // La copertura passa per prima: la sua cella non c'e' piu', quindi troncarla
-  // lascerebbe una chiazza calva invece di un dettaglio in meno.
+  // **L'ordine qui e' una scala di gravita', non una preferenza.**
+  //
+  // Gli scavi passano per primi perche' la loro faccia base e' gia' stata
+  // soppressa dal mask loop: troncarne uno non lascerebbe un edificio piu'
+  // spoglio ma un edificio **bucato**, cioe' un muro attraverso cui si vede
+  // l'interno. `planCarves` si e' gia' limitato a `MAX_CARVE_QUADS_PER_CHUNK`,
+  // che sta sotto il tetto dei dettagli, quindi arrivando per primi hanno la
+  // certezza di starci — ed e' quella certezza, non l'ordine da sola, a
+  // garantire che una faccia soppressa venga sempre pagata.
+  //
+  // La copertura viene subito dopo per la stessa ragione un grado piu' lieve: la
+  // sua cella non c'e' piu' nel volume, quindi troncarla lascia una chiazza
+  // calva. Tutto il resto, a cadere, lascia solo un edificio meno vestito.
+  const carveQuadCount = appendCarveDetail(padded, carveMarks, writer, carves);
   const coverQuadCount = appendCoverDetail(padded, writer, cover, origin);
-  const detailQuadCount = coverQuadCount + appendMicroGeometry(padded, writer, origin);
+  const detailQuadCount = carveQuadCount + coverQuadCount +
+    appendMicroGeometry(padded, writer, carveMarks, origin);
   restoreGroundCover(padded, ceiling, cover);
+  // La maschera vive nello scratch, che il pool riusa fra un job e l'altro:
+  // azzerare le sole celle toccate costa quanto il piano invece che quanto il
+  // volume.
+  clearCarves(carveMarks, carves);
 
   if (quadCount === 0) {
     return {
@@ -670,7 +734,19 @@ function clampPadded(value: number): number {
   return value < 0 ? 0 : value > PADDED - 1 ? PADDED - 1 : value;
 }
 
-/** Scrive i lati visibili di un prisma ortogonale negli stessi buffer del greedy pass. */
+/**
+ * Scrive i lati visibili di un prisma ortogonale negli stessi buffer del greedy
+ * pass.
+ *
+ * **`inward` rovescia il prisma, e sono due righe sole.** Il lato geometrico
+ * resta dov'e' — quello su `box.max[d]` sta su `box.max[d]` in ogni caso — ma
+ * porta l'id di faccia **opposto**, quindi `uFaceNormal[aFace]` gli da' la
+ * normale che punta verso il centro del prisma, e prende l'ordine di corner
+ * dell'altro verso, cosi' il front face guarda dentro invece che fuori. E' tutta
+ * la differenza fra un volume aggiunto e un vano scavato: `hiddenFaces`
+ * continua a parlare di lati del prisma, e chi disegna un vano ci nasconde la
+ * bocca invece del lato incollato.
+ */
 function writeDetailBox(
   scratch: MeshScratch,
   startQuad: number,
@@ -680,6 +756,8 @@ function writeDetailBox(
   sky: number,
   glow: number,
   surface: SurfaceKind,
+  inward: boolean,
+  ao: number,
 ): number {
   let written = 0;
   for (let face = 0; face < 6; face++) {
@@ -693,7 +771,8 @@ function writeDetailBox(
     const uMax = box.max[axisU];
     const vMin = box.min[axisV];
     const vMax = box.max[axisV];
-    const corners = positive
+    const facing = inward ? face ^ 1 : face;
+    const corners = positive !== inward
       ? [[uMin, vMin], [uMax, vMin], [uMax, vMax], [uMin, vMax]]
       : [[uMin, vMin], [uMin, vMax], [uMax, vMax], [uMax, vMin]];
     const quad = startQuad + written;
@@ -704,10 +783,10 @@ function writeDetailBox(
       scratch.positions[positionOffset + d] = normal;
       scratch.positions[positionOffset + axisU] = corners[corner][0];
       scratch.positions[positionOffset + axisV] = corners[corner][1];
-      scratch.faces[vertexBase + corner] = face;
+      scratch.faces[vertexBase + corner] = facing;
       scratch.palettes[vertexBase + corner] = palette;
       scratch.surfaces[vertexBase + corner] = surface;
-      scratch.shade[vertexBase + corner] = SHADE_AO_FREE |
+      scratch.shade[vertexBase + corner] = ao |
         (sky << SHADE_SKY_SHIFT) |
         (glow << SHADE_GLOW_SHIFT);
     }

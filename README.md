@@ -44,7 +44,7 @@ aggiungendo chunk alla mappa sparsa.
 | [src/engine/themes/](src/engine/themes/) | I temi grafici: 32 colori più l'atmosfera, applicati senza rimeshare |
 | [src/engine/IsoCameraController.ts](src/engine/IsoCameraController.ts) | Ortografica isometrica: scatti di 90°, zoom, pan vincolato, orbita libera |
 | [src/engine/CameraInput.ts](src/engine/CameraInput.ts) | La mappa dei gesti della camera: quale tasto pana, quale orbita |
-| [src/engine/InfluenceOverlay.ts](src/engine/InfluenceOverlay.ts) | Raggi dei catalizzatori e perimetri dei settori sbloccati |
+| [src/engine/InfluenceOverlay.ts](src/engine/InfluenceOverlay.ts) | Contorno della portata dei catalizzatori e perimetri dei settori sbloccati |
 | [src/engine/InspectGuides.ts](src/engine/InspectGuides.ts) | Le linee che dicono dove è puntata una vista: riquadro, sezione, colonna a fuoco |
 | [src/engine/PlacementCursor.ts](src/engine/PlacementCursor.ts) | Segnaposto del piazzamento: leggibile a distanza e mai coperto dal rilievo |
 | [src/ui/GameHud.ts](src/ui/GameHud.ts) | HUD Cozy City: risorse, costruzione, policy, tempo e feedback |
@@ -346,16 +346,36 @@ contigue non potevano differire di più di due voxel: l'isola saliva sempre allo
 stesso modo, un cubo per volta, a curve di livello tutte identiche. Una montagna
 non è un pendio con più scalini, è un pendio con scalini **più alti**.
 
-`terrace.ts` allarga quindi la **pedata** con la quota — due voxel in pianura,
-quattro nella foresta, sei sulla collina, otto sulla roccia — e il passo cambia
-dove `TERRAIN` cambia fascia di bioma. Il campo continuo non si tocca: a fare il
-muro è la quantizzazione, non il rilievo, e questo è ciò che tiene in piedi la
-calibrazione qui sotto.
+`terrace.ts` allarga quindi la **pedata** con la quota — in media due voxel in
+pianura, quattro nella foresta, sei sulla collina, otto sulla roccia — e il passo
+cambia dove `TERRAIN` cambia fascia di bioma. Il campo continuo non si tocca: a
+fare il muro è la quantizzazione, non il rilievo, e questo è ciò che tiene in
+piedi la calibrazione qui sotto.
 
-Il tetto del dirupo è una conseguenza, non una speranza. La scala è monotona e
-ogni pedata è larga almeno `cellSize`, cioè più del dislivello massimo fra due
-celle contigue: due celle cadono perciò su pedate contigue, e il salto peggiore
-possibile è **un'alzata**. Non c'è nessun clamp a valle.
+**Una scala sola dà però un muro solo, ed è un teorema e non una taratura.** Se
+l'alzata è funzione della sola quota, tutte le celle di una fascia ne condividono
+una; e siccome due celle contigue cadono su pedate contigue, il salto vale
+*esattamente un'alzata*. Ogni parete di quella fascia esce alta uguale, per tutto
+il suo sviluppo e su tutta l'isola, e nessun disturbo in pianta può cambiarlo —
+spostare il ciglio non ne cambia il salto. Le scale sono perciò **tre**, con
+alzate diverse alle stesse quote: roccia fine, media e massiccia, un grado di
+`cellSize` l'una dall'altra. Un campo di rumore a due ottave dice quale tocca a
+ogni cella — la lunga dà carattere a un versante intero, la corta spezza la
+singola scarpata lungo la sua corsa — e siccome le pedate di due scale cadono a
+quote diverse, il ciglio cambia altezza dove cambia la stratificazione.
+
+Lo scarto fra le tre è **sistematico e non estratto**, ed è la differenza che
+conta: due scale che pescano dallo stesso ventaglio si ritrovano di continuo sulla
+stessa pedata e da lì in poi sono la stessa scala. Una stratificazione che sale
+sempre a passo suo diverge e resta divergente — ed è anche ciò che una
+stratificazione *è*, uno spessore di strato caratteristico.
+
+Il tetto del dirupo resta una conseguenza, non una speranza, e la dimostrazione è
+più forte di quella che bastava a una scala sola. Ogni scala posa su un multiplo
+di `cellSize` che sta a meno di `maxStep` sotto la quota vera, quindi due celle
+contigue distano meno di `maxStep` più il loro dislivello di campo (sotto i due
+voxel): fra multipli di cella quel totale vale `maxStep` esatti, **comunque siano
+scelte le due scale**. Non c'è nessun clamp a valle.
 
 Due conseguenze in giro per il mondo. Dove il salto supera un cubo la cella è un
 **ciglio**: prende la tinta della roccia e smette di essere edificabile, mentre

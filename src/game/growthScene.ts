@@ -28,6 +28,8 @@ import {
   type ReadonlyBuildingRegistry,
 } from '../world/buildings/BuildingRegistry';
 import { hasAloftRecipe } from '../world/landmarks/config';
+import { createReachCost } from '../world/reachCost';
+import { StreetNetwork } from '../world/streets/StreetNetwork';
 import type { Facing } from '../world/streets/streetGrid';
 import { BIOME } from '../world/terrain/config';
 import type { Region } from '../world/terrain/region';
@@ -145,7 +147,14 @@ export class GrowthScene {
     _region: ScenarioRegion,
     seed: number,
   ) {
-    this.state = createSimState({ rngState: seed });
+    // Il costo di attraversamento entra qui e da nessun'altra parte: e' cio' che
+    // rende geodetica l'influenza dei catalizzatori invece che in linea retta.
+    // Senza, la simulazione ricadrebbe sulla Chebyshev di sempre, che su
+    // un'isola di canali e terrazze prometteva citta' dall'altra parte del mare.
+    this.state = createSimState({
+      rngState: seed,
+      reachCost: createReachCost(map, new StreetNetwork(seed)),
+    });
     this.builder = new Builder(world, map, seed);
   }
 
@@ -529,21 +538,50 @@ export class GrowthScene {
     // portano gia' la propria risposta: il loro array cambia identita' solo
     // quando ne nasce una.
     const rides = this.builder.ropewayRides;
-    const stamp = this.builder.registry.landmarkCount * 1024 + this.state.catalysts.length;
+    // **La citta' che cresce alza le rotte di volo**, quindi non basta piu' che
+    // cambino le strutture: un circuito calcolato quando l'aeroporto era in
+    // mezzo ai campi resterebbe alla propria quota mentre attorno crescono
+    // torri da centoquaranta voxel, e l'aereo ci passerebbe dentro. A scaglioni
+    // pero', e non a ogni edificio — quello sarebbe una ricerca di rotta di mare
+    // ogni volta che spunta una villetta. Sessantaquattro edifici e' molto meno
+    // di quanto serve a cambiare la sagoma di un quartiere.
+    const skyline = this.builder.registry.count >> 6;
+    const stamp = this.builder.registry.landmarkCount * 1024 + this.state.catalysts.length
+      + skyline * 1_048_576;
     if (stamp === this.routeStamp && rides === this.rides) return;
     this.routeStamp = stamp;
 
     const structures = this.trafficStructures();
-    const key = structures
+    const key = `${skyline}|${structures
       .map((item) => `${item.id}@${item.cx},${item.cy}:${item.facing}:${item.aloft ? 1 : 0}`)
-      .join('|');
+      .join('|')}`;
     if (key === this.routeKey && rides === this.rides) return;
     this.routeKey = key;
     this.rides = rides;
     this.routes = [
-      ...planTraffic(structures, (x, y) => this.isOpenWater(x, y)),
+      ...planTraffic(
+        structures,
+        (x, y) => this.isOpenWater(x, y),
+        (x, y) => this.ceilingAt(x, y),
+      ),
       ...planRopewayRoutes(rides),
     ];
+  }
+
+  /**
+   * Quanto e' alto cio' che occupa una colonna: terreno o costruito.
+   *
+   * E' l'unica cosa che `world/traffic/` sa della citta' vera, e arriva come
+   * predicato per la stessa ragione dell'acqua — quel dominio non ha un registry
+   * e non deve averne uno. Il terreno entra nel massimo insieme agli edifici:
+   * un circuito che scavalcasse le torri e non la collina dietro sarebbe lo
+   * stesso difetto guardato dall'altra parte.
+   */
+  private ceilingAt(x: number, y: number): number {
+    const cx = Math.floor(x);
+    const cy = Math.floor(y);
+    const ground = this.map.has(cx, cy) ? this.map.heightAt(cx, cy) : 0;
+    return Math.max(this.builder.registry.supportAt(cx, cy).z, ground);
   }
 
   /**

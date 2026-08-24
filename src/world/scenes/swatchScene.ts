@@ -12,7 +12,9 @@ import { SURFACE_KIND, type SurfaceKind } from '../visualBlock';
 import type { VoxelWorld } from '../VoxelWorld';
 import type { SceneGenerator } from './cityScene';
 import {
-  CELL_TIERS,
+  CELL_FOOTPRINT,
+  CELL_HEIGHT,
+  cellSolidAt,
   matrixCellRect,
   plinthSpanAt,
   SCALE_ITEMS,
@@ -162,25 +164,42 @@ class SwatchGenerator implements SceneGenerator {
    * da scrivere — ed e' esattamente cio' che l'indice zero significa. Le
    * combinazioni vere sono percio' `PALETTE_SIZE - 1` per riga.
    *
-   * Il provino e' la sagoma a gradoni di `CELL_TIERS`, uguale in ogni cella:
-   * podio, sbalzo, arretramento, guglia. La forma sta li' e non qui perche' la
-   * legge anche chi inquadra e chi nomina la cella sotto il cursore.
+   * Il provino e' la sagoma di `CELL_PARTS`, uguale in ogni cella: podio
+   * smussato, sbalzo a filo, quattro lame di corona attorno a un cortile,
+   * quattro pinnacoli isolati. La forma sta li' e non qui perche' la legge anche
+   * chi inquadra, chi ne conta i prismi e chi nomina la cella sotto il cursore.
+   *
+   * Si scrive per **corsa verticale** e non per pezzo: i pezzi si sovrappongono
+   * in quota — la corona e i pinnacoli sono lo stesso piano — e ripassarci sopra
+   * scriverebbe due volte le stesse colonne. `cellSolidAt` risponde una volta
+   * per cella, e `fillColumn` prende il tratto intero.
    */
   private writeMatrixRow(row: number): void {
     const surface = row as SurfaceKind;
 
     for (let col = 1; col < SWATCH_COLUMNS; col++) {
       const rect = matrixCellRect(row, col);
-      let z = SWATCH.groundZ;
-      for (const tier of CELL_TIERS) {
-        const x0 = rect.x0 + tier.inset;
-        const y0 = rect.y0 + tier.inset;
-        for (let y = y0; y < y0 + tier.side; y++) {
-          for (let x = x0; x < x0 + tier.side; x++) {
-            this.written += this.world.fillColumn(x, y, z, z + tier.levels, col, surface);
+      for (let ly = 0; ly < CELL_FOOTPRINT; ly++) {
+        for (let lx = 0; lx < CELL_FOOTPRINT; lx++) {
+          let level = 0;
+          while (level < CELL_HEIGHT) {
+            if (!cellSolidAt(lx, ly, level)) {
+              level++;
+              continue;
+            }
+            let end = level + 1;
+            while (end < CELL_HEIGHT && cellSolidAt(lx, ly, end)) end++;
+            this.written += this.world.fillColumn(
+              rect.x0 + lx,
+              rect.y0 + ly,
+              SWATCH.groundZ + level,
+              SWATCH.groundZ + end,
+              col,
+              surface,
+            );
+            level = end;
           }
         }
-        z += tier.levels;
       }
     }
   }

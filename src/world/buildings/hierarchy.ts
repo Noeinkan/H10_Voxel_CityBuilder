@@ -68,7 +68,9 @@ export function skylineQueryAt(
   return {
     x,
     y,
-    poles: state.catalysts,
+    // Non i catalizzatori nudi: i poli con la portata geodetica agganciata,
+    // cosi' la quota ammessa misura la stessa distanza della desiderabilita'.
+    poles: state.reach.polesOf(state.catalysts),
     waterDistance: waterDistance(ctx.terrain, x, y, SKYLINE.coastNear),
     builtNeighbours: ctx.registry.countWithinRadius(x, y, SKYLINE.edgeRadius),
     seed: ctx.seed,

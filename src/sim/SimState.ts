@@ -34,6 +34,7 @@ import {
   type PolicyId,
 } from './policies';
 import { EMPTY_COMMERCE, type CommerceReport } from './commerce';
+import type { ReachCache, StepCost } from './reach';
 import { NO_FUNDS_FLOW, type FundsReport } from './flows';
 import { EMPTY_TRADE, isTradeMode, type TradeMode, type TradeReport } from './trade';
 
@@ -169,6 +170,13 @@ export interface SimStateData {
 
 export interface SimState extends SimStateData {
   readonly field: DesirabilityField;
+  /**
+   * Le portate dei catalizzatori. E' sempre `field.reach`: il campo ne e' il
+   * proprietario, e qui sta perche' anche `urbanProfileAt` e la gerarchia dello
+   * skyline devono leggere le stesse, e perche' `UrbanSources` resti un
+   * sottoinsieme strutturale dello stato invece di doverne elencare i campi.
+   */
+  readonly reach: ReachCache;
 }
 
 export interface SimStateOptions {
@@ -178,6 +186,14 @@ export interface SimStateOptions {
   readonly charters?: readonly CharterId[];
   readonly selectedClass?: BuildingClass;
   readonly tradeMode?: TradeMode;
+  /**
+   * Costo di attraversamento di una cella, da cui la forma dell'influenza.
+   *
+   * Senza, la portata e' la distanza di Chebyshev di sempre: uno stato costruito
+   * senza mondo — un test, un bench — si comporta esattamente come prima che
+   * l'influenza diventasse geodetica.
+   */
+  readonly reachCost?: StepCost;
 }
 
 const ZERO_DELTA = 0;
@@ -217,9 +233,9 @@ export function createSimState(options: SimStateOptions = {}): SimState {
     selectedClass: options.selectedClass ?? BUILDING_CLASS.residential,
   };
 
-  const field = new DesirabilityField();
+  const field = new DesirabilityField(options.reachCost);
   field.rebuild(data.catalysts, data.buildings, resolveWeights(data.policies));
-  return { ...data, field };
+  return { ...data, field, reach: field.reach };
 }
 
 // --- Operazioni del giocatore ---------------------------------------------
@@ -505,7 +521,7 @@ export function resolveDecision(state: SimState, optionId: string): SimState | n
  * immutabili per contratto e non contengono cicli, funzioni o array tipizzati.
  */
 export function toSimStateData(state: SimState): SimStateData {
-  const { field: _field, ...data } = state;
+  const { field: _field, reach: _reach, ...data } = state;
   return data;
 }
 
@@ -513,10 +529,12 @@ export function toSimStateData(state: SimState): SimStateData {
  * Ricostruisce uno stato completo da dati letti da JSON.
  *
  * Il campo viene ricostruito, non caricato: essendo funzione pura di
- * catalizzatori, edifici e policy, il risultato coincide con quello che si
- * aveva prima di serializzare.
+ * catalizzatori, edifici, policy **e costo di attraversamento**, il risultato
+ * coincide con quello che si aveva prima di serializzare. Il costo va quindi
+ * ripassato: e' l'unico ingresso del campo che non stia nei dati salvati, e
+ * ometterlo da una citta' identica su un'isola piatta.
  */
-export function reviveSimState(data: SimStateData): SimState {
+export function reviveSimState(data: SimStateData, reachCost?: StepCost): SimState {
   const compatible = data as SimStateData & Partial<Pick<
     SimStateData,
     'tradeMode' | 'trade' | 'commerce' | 'mixedCounts' | 'charters' | 'farmCounts'
@@ -551,13 +569,19 @@ export function reviveSimState(data: SimStateData): SimState {
     decisionHistory: compatible.decisionHistory ?? [],
     nextDecisionTick: compatible.nextDecisionTick ?? BALANCE.decisions.firstTick,
   };
-  const field = new DesirabilityField();
+  const field = new DesirabilityField(reachCost);
   field.rebuild(normalised.catalysts, normalised.buildings, resolveWeights(normalised.policies));
-  return { ...normalised, field };
+  return { ...normalised, field, reach: field.reach };
 }
 
-/** Ricostruisce il campo dallo stato corrente. Serve dopo un caricamento o in un test. */
+/**
+ * Ricostruisce il campo dallo stato corrente. Serve dopo un caricamento o in un
+ * test, **e dopo che il terreno e' cambiato sotto**: allargare l'isola sposta
+ * il costo di attraversamento, e le portate gia' calcolate parlerebbero di una
+ * costa che non c'e' piu'.
+ */
 export function rebuildField(state: SimState): void {
+  state.reach.clear();
   state.field.rebuild(state.catalysts, state.buildings, resolveWeights(state.policies));
 }
 

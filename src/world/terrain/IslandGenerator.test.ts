@@ -279,6 +279,7 @@ describe('generateIsland — continuita’ al confine', () => {
 
     let cliffs = 0;
     let tallest = 0;
+    const sizes = new Set<number>();
     for (let y = 1; y < 511; y++) {
       for (let x = 1; x < 511; x++) {
         const h = map.heightAt(x, y);
@@ -286,13 +287,21 @@ describe('generateIsland — continuita’ al confine', () => {
           Math.abs(map.heightAt(x + 1, y) - h),
           Math.abs(map.heightAt(x, y + 1) - h),
         );
-        if (delta > TERRAIN.cellSize) cliffs++;
+        if (delta > TERRAIN.cellSize) {
+          cliffs++;
+          sizes.add(delta);
+        }
         if (delta > tallest) tallest = delta;
       }
     }
 
     expect(cliffs).toBeGreaterThan(500);
     expect(tallest).toBeGreaterThan(TERRAIN.cellSize * 2);
+    // E si spezza di misure diverse. Con una scala di quote sola il salto vale
+    // esattamente l'alzata della fascia, quindi ogni parete di una fascia esce
+    // alta uguale: le stratificazioni di `terrace.ts` esistono per questo, e qui
+    // si chiede all'isola vera di mostrarne l'effetto.
+    expect(sizes.size).toBeGreaterThanOrEqual(3);
   });
 
   it('sul ciglio affiora la roccia, e nessuno ci costruisce', () => {

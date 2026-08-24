@@ -42,8 +42,14 @@ const FACE_ORDER: readonly (readonly [number, number, number])[] = [
   [1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1],
 ];
 
-/** Le otto combinazioni di segno di un cubo, per faccia: quattro vertici a testa. */
-const FACE_CORNERS: readonly (readonly (readonly [number, number, number])[])[] = [
+/**
+ * Le otto combinazioni di segno di un cubo, per faccia: quattro vertici a testa.
+ *
+ * Esportata perche' non e' del traffico: e' il cubo, e chiunque disegni cubetti
+ * fuori dal volume voxel deve emetterne le facce in **quest'ordine**, o l'ombra
+ * che `faceShades` restituisce finirebbe sul lato sbagliato.
+ */
+export const FACE_CORNERS: readonly (readonly (readonly [number, number, number])[])[] = [
   [[1, -1, -1], [1, 1, -1], [1, 1, 1], [1, -1, 1]],
   [[-1, 1, -1], [-1, -1, -1], [-1, -1, 1], [-1, 1, 1]],
   [[1, 1, -1], [-1, 1, -1], [-1, 1, 1], [1, 1, 1]],

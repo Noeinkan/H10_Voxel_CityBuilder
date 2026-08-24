@@ -202,6 +202,30 @@ export interface LandmarkRecipe extends PartsRecipe {
    * Assente vale «nessun mezzo»: sette ruoli su nove non ne hanno.
    */
   readonly moorings?: readonly LandmarkMooring[];
+
+  /**
+   * Colonna canonica in cui la ricetta si aspetta che **cominci il mare**.
+   *
+   * **Senza questo numero il porto restava senza barche, ed e' il difetto che
+   * lo ha fatto nascere.** Il vincolo di sito ammette il click fino a
+   * `SITE.coastalRadius` colonne dall'acqua — sei, e lo fa apposta, perche' la
+   * scelta fra la banchina e il primo terreno asciutto dietro *e'* la decisione
+   * che un porto comporta — mentre gli ormeggi del porto stanno quattro e cinque
+   * colonne oltre il click. Su una costa che dista piu' di quattro, la darsena
+   * cadeva sull'asciutto, l'opera di terra la riempiva, e `planTraffic` scartava
+   * ogni ormeggio a galla: un porto perfettamente costruito, con la sua fila di
+   * gru, e niente in acqua.
+   *
+   * Dichiararlo permette al piazzamento di far **scorrere la struttura lungo il
+   * proprio fronte** finche' questa colonna cade sulla battigia vera: il
+   * catalizzatore resta dove il dito l'ha messo — e' lui a portare l'influenza —
+   * e la banchina va a incontrare l'acqua. Il conto sta in `landmarkDriver.ts`,
+   * che il terreno lo conosce; qui c'e' solo cosa la forma pretende.
+   *
+   * Assente vale «questa ricetta non guarda l'acqua», che e' il caso di sette
+   * ruoli su nove e di ogni ricetta da tetto.
+   */
+  readonly waterline?: number;
 }
 
 /** Cosa sta fermo in un punto d'ormeggio. */
@@ -216,6 +240,17 @@ export const BERTH = {
   aircraft: 'aircraft',
   /** Pilone d'ormeggio di un dirigibile. */
   airship: 'airship',
+  /**
+   * Piazzola di un eVTOL: non ci sta fermo niente, ci si posa.
+   *
+   * E' il solo ormeggio da cui parte un giro **chiuso** che torna a toccarlo:
+   * un pilone tiene appeso, una piazzola fa scendere. Il `heading` conta piu'
+   * che altrove — decide da che parte arriva l'avvicinamento — e va puntato
+   * verso il lato libero del tetto.
+   */
+  pad: 'pad',
+  /** Pilone di ritenuta di una mongolfiera: il capo di qua della sua corsa. */
+  balloon: 'balloon',
   /**
    * Soglia di pista: non ci sta fermo niente.
    *
@@ -441,6 +476,10 @@ export const LANDMARKS: Partial<Record<CatalystId, LandmarkRecipe>> = {
         box(PART.deck, 16, 0, 4, 2, 15, 1, PALETTE_SLOTS.roofWhite, SURFACE_KIND.roofTech),
       ],
     ],
+    // La banchina piena finisce a `x` 11 e i bracci escono da 12: **e' li' che
+    // il porto pretende il mare**, ed e' quello che il piazzamento va a cercare
+    // sul terreno vero invece di sperare che il click ci sia caduto sopra.
+    waterline: 12,
     // Il bacino e' `x` 12..19, `y` 2..9: la nave da carico accosta al braccio di
     // sopravento, la barca da lavoro sta in fondo. Sono punti d'acqua vera —
     // l'opera di terra non li tocca — quindi i mezzi ci galleggiano alla quota
@@ -579,6 +618,12 @@ export const LANDMARKS: Partial<Record<CatalystId, LandmarkRecipe>> = {
         box(PART.deck, 1, 9, 6, 3, 6, 1, PALETTE_SLOTS.roofWhite, SURFACE_KIND.roofTech),
       ],
     ],
+    // Il piazzale a terra e' `x` 0..7 e il molo esce da 8: e' quella la colonna
+    // su cui il piazzamento porta la battigia. Il ferry se la cavava gia' quasi
+    // sempre — gli accosti stanno a `x` 13, cioe' nove colonne oltre il click, e
+    // il mare entro sei le copriva comunque — ma «quasi sempre» qui vuol dire
+    // che il molo comincia sulla sabbia invece che sull'acqua.
+    waterline: 8,
     // I due accosti, uno per lato del molo. Quello di nord e' il capolinea della
     // traversata — se esiste un secondo imbarco, e' da li' che la barca parte —
     // e quello di sud tiene la barca da lavoro che c'e' comunque: **un imbarco
@@ -1376,8 +1421,13 @@ export const LANDMARKS: Partial<Record<CatalystId, LandmarkRecipe>> = {
  * dello stesso ruolo, e tenerla in un'altra tabella e' il modo di dirlo senza
  * indebolire la prima.
  *
- * Niente pista e niente ali: in quota si ormeggia, non si atterra. Il pilone e'
- * tutta la struttura, ed e' anche tutto quello che serve a spiegarla.
+ * Niente pista e niente ali: **in quota non si atterra su una corsa, ci si posa
+ * o ci si aggancia**, e i tre modi di farlo sono i tre mezzi che questo scalo
+ * mostra. Il dirigibile si appende a un pilone e ci resta; l'eVTOL scende su
+ * una piazzola di tre colonne, che e' l'unico modo di *arrivare* davvero su un
+ * tetto di otto; la mongolfiera si stacca da una cima, prende quota e rientra.
+ * Tre sagome che nessun campo di volo produrrebbe, e nessuna che chieda i
+ * ventisei voxel di pista che qui non ci sono.
  */
 export const SKYPORT: LandmarkRecipe = {
   kind: 'airport',
@@ -1409,6 +1459,14 @@ export const SKYPORT: LandmarkRecipe = {
       box(PART.deck, 5, 0, 3, 3, 5, 1, PALETTE_SLOTS.roofWhite, SURFACE_KIND.roofTech),
       box(PART.mast, 0, 7, 1, 1, 1, 3, PALETTE_SLOTS.glassPale, SURFACE_KIND.luminous),
       box(PART.mast, 7, 7, 1, 1, 1, 3, PALETTE_SLOTS.glassPale, SURFACE_KIND.luminous),
+      // La cima della mongolfiera nell'angolo libero, e nell'**unico** che lo
+      // sia: i due piloni stanno in diagonale al centro, l'aerostazione occupa
+      // il fronte e il colonnato il fianco. Un pallone e' largo sette voxel e
+      // deve potersene andare senza attraversare niente.
+      box(PART.mast, 0, 0, 1, 1, 1, 5, PALETTE_SLOTS.metalDark, SURFACE_KIND.industrial, {
+        cap: PALETTE_SLOTS.metalBrass,
+      }),
+      box(PART.slab, 0, 0, 2, 2, 0, 1, PALETTE_SLOTS.metalBrass, SURFACE_KIND.utility),
     ],
     [
       box(PART.mast, 4, 5, 2, 2, 1, 9, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.civic, {
@@ -1419,14 +1477,28 @@ export const SKYPORT: LandmarkRecipe = {
         step: 3,
         cap: PALETTE_SLOTS.concretePale,
       }),
+      // La piazzola dell'eVTOL **sopra l'aerostazione**, non sul piano: otto
+      // colonne di tetto sono tutte impegnate, e l'unico posto libero su uno
+      // scalo in quota e' un altro tetto. Sborda di una colonna a ovest, che e'
+      // lo sbalzo che la fa leggere come una piazzola invece che come la
+      // copertura del volume sotto.
+      box(PART.deck, 4, 0, 3, 3, 6, 1, PALETTE_SLOTS.asphaltDark, SURFACE_KIND.utility),
+      box(PART.deck, 5, 1, 1, 1, 6, 1, PALETTE_SLOTS.concretePale, SURFACE_KIND.utility),
     ],
   ],
-  // I due ormeggi stanno **accanto** ai piloni e a quote diverse, con le prue
-  // opposte: due sagome lunghe sedici voxel appese allo stesso tetto si
-  // attraverserebbero, e due dirigibili incastrati sono peggio di uno solo.
+  // **Quattro ormeggi per tre mestieri**, tutti su quote e angoli diversi.
+  //
+  // I due dirigibili stanno accanto ai piloni con le prue opposte: due sagome
+  // lunghe sedici voxel appese allo stesso tetto si attraverserebbero, e due
+  // dirigibili incastrati sono peggio di uno solo. La piazzola guarda a est —
+  // il verso da cui l'eVTOL scende — perche' e' l'unico lato del riquadro senza
+  // un pilone davanti; la cima del pallone guarda a sud per la stessa ragione,
+  // ed e' anche il verso in cui il pallone si allontana.
   moorings: [
     { x: 2, y: 2, z: 10, berth: BERTH.airship, heading: Math.PI },
     { x: 5, y: 6, z: 8, berth: BERTH.airship, heading: 0 },
+    { x: 5, y: 1, z: 7, berth: BERTH.pad, heading: 0 },
+    { x: 0, y: 0, z: 6, berth: BERTH.balloon, heading: -Math.PI / 2 },
   ],
 };
 

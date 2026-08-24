@@ -11,6 +11,7 @@
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
+    "docs:merge": "node scripts/docs-merge.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
     "bench": "vitest bench --run"

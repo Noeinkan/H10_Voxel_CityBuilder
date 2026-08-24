@@ -31,6 +31,7 @@ export interface OverlayFrame {
   readonly chunksNonEmpty: number;
   readonly chunksWithMesh: number;
   readonly chunksVisible: number;
+  readonly chunksFalling: number;
   readonly queued: number;
   readonly inFlight: number;
   readonly quads: number;
@@ -132,6 +133,7 @@ export class DebugOverlay {
       `           ${frame.chunksNonEmpty.toString().padStart(6)} non-empty`,
       `           ${frame.chunksWithMesh.toString().padStart(6)} with mesh`,
       `           ${frame.chunksVisible.toString().padStart(6)} visible`,
+      `           ${frame.chunksFalling.toString().padStart(6)} falling`,
       `queue      ${frame.queued.toString().padStart(6)} + ${frame.inFlight} in flight`,
       '',
       `mesher     ${frame.mesherLastMs.toFixed(2).padStart(6)} ms   avg ${frame.mesherAvgMs.toFixed(2)}  max ${frame.mesherMaxMs.toFixed(2)}`,

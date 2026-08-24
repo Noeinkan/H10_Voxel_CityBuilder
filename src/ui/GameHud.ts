@@ -86,6 +86,8 @@ export interface CursorInfo {
   readonly favours?: readonly string[];
   readonly penalises?: readonly string[];
   readonly typologies?: readonly string[];
+  /** Le forme che arrivano solo se il quartiere matura, con la loro condizione. */
+  readonly unlocks?: readonly string[];
 }
 
 const FAILURE_LABEL: Readonly<Record<ActionFailure, string>> = {
@@ -423,6 +425,11 @@ export class GameHud {
     }
     if (info.typologies !== undefined && info.typologies.length > 0) {
       this.cursor.appendChild(cursorLine('May build', info.typologies.join(', ')));
+    }
+    // La stessa riga della tessera, e non un testo suo: cursore e dock devono
+    // dire la stessa cosa dello stesso ruolo, o uno dei due si smette di leggere.
+    if (info.unlocks !== undefined && info.unlocks.length > 0) {
+      this.cursor.appendChild(cursorLine('Unlocks', info.unlocks.join('; ')));
     }
     this.cursor.appendChild(reason);
   }

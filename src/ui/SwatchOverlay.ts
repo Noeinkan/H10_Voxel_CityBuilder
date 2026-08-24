@@ -3,6 +3,7 @@ import {
   SWATCH_ROWS,
   type SwatchCell,
 } from '../world/scenes/swatchLayout';
+import type { SwatchDetail } from '../world/scenes/swatchProbe';
 import { SURFACE_KIND_NAMES } from '../world/visualBlock';
 
 /**
@@ -22,6 +23,13 @@ import { SURFACE_KIND_NAMES } from '../world/visualBlock';
 export interface SwatchOverlayFrame {
   /** Cella sotto il cursore, o null se il puntatore e' fuori dal campionario. */
   readonly cell: SwatchCell | null;
+  /**
+   * Prismi e quad che quella cella emette, o null fuori dalla matrice.
+   *
+   * E' la meta' che a occhio non si vede: una famiglia di emettitori spenta non
+   * lascia niente da guardare, e il numero la fa cadere subito.
+   */
+  readonly detail: SwatchDetail | null;
 }
 
 const REFRESH_MS = 200;
@@ -59,6 +67,7 @@ export class SwatchOverlay {
   update(frame: SwatchOverlayFrame, now: number): void {
     this.lastPaint = now;
     const cell = frame.cell;
+    const detail = frame.detail;
 
     this.summary.textContent = `${this.root.open ? '▾' : '▸'} SWATCH · ${cell?.band ?? '—'}`;
 
@@ -66,6 +75,9 @@ export class SwatchOverlay {
       `fascia     ${cell?.band ?? '—'}`,
       `sotto      ${cell?.label ?? '—'}`,
       cell?.note === null || cell?.note === undefined ? '' : `           ${cell.note}`,
+      // Sulle righe `plain` e `utility` scende a zero, ed e' corretto: non sono
+      // linguaggi di facciata e la microgeometria non le guarda affatto.
+      detail === null ? '' : `dettaglio  ${detail.prisms} prismi · ${detail.quads} quad`,
       '',
       `matrice    ${SWATCH_COLUMNS} colonne (slot) × ${SWATCH_ROWS} righe (superficie)`,
       ...SURFACE_KIND_NAMES.map((name, row) => `  riga ${row}    ${name}`),

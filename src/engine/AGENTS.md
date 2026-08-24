@@ -283,6 +283,52 @@ Limite noto e dichiarato: il predicato vive nel materiale di **scena** e non in
 quello di **profondita'**, quindi il volume nascosto continua a proiettare ombra.
 E' il motivo per cui un taglio le spegne tutte invece di correggerle.
 
+## La comparsa della prima isola
+
+Finche' la prima scena non e' a terra i pezzi arrivano **cadendo dal cielo**, e
+la cosa che conta sapere e' quale sia l'unita' che cade: il **chunk**, non il
+voxel.
+
+**A valle del greedy mesher il cubo singolo non esiste piu'.** Una distesa di
+celle identiche e' un quad solo, quindi un dislivello calcolato per vertice
+stirerebbe quel quad invece di farlo scendere: da li' una grandinata non si
+ritaglia, e nessun numero di bit in `aShade` cambia la cosa. Il chunk e' invece
+l'unita' rigida che il renderer ha gia' in mano — una mesh, una matrice — e
+muoverne l'origine porta giu' tutto il pezzo. Tre conseguenze:
+
+- **l'ombra segue da sola.** Il materiale di profondita' ripete la stessa
+  trasformazione di vertice del materiale di scena, quindi un chunk in aria
+  proietta da dove sta senza una seconda copia da tenere allineata. E' l'argomento
+  che ha deciso la mossa contro un dislivello negli shader. Un chunk in volo resta
+  pero' **fuori** dal volume su cui `SunShadow` si adatta: parte da fuori schermo,
+  e allargare il frustum del sole di centinaia di voxel darebbe texel giganti su
+  tutto quello che nel frattempo e' gia' atterrato;
+- **l'AABB si sposta con la mesh e non si allarga.** Un chunk in volo resta
+  cullabile con la stessa precisione di uno a terra;
+- una geometria che arriva a chunk gia' partito **eredita la posizione corrente**
+  e continua a scendere: un chunk scritto a meta' viene rimeshato, e ricominciare
+  la caduta lo farebbe risalire.
+
+Due cose che si sbagliano al primo tentativo, e le abbiamo sbagliate entrambe:
+
+- **la quota di partenza non e' una costante in voxel.** «Dal cielo» vuol dire da
+  fuori schermo, e quanto sia lontano il bordo alto dipende da zoom e
+  inclinazione: un dislivello `h` sposta un punto verso l'alto dello schermo di
+  `h * cos(pitch)`, esattamente, perche' la camera e' ortografica. `fallHeightFor`
+  ne chiede **un'altezza visibile intera** e non mezza, o il pezzo che riposa in
+  fondo allo schermo partirebbe ancora dentro l'inquadratura;
+- **la finestra non si chiude su `generator.done`.** Quando l'ultimo blocco e'
+  scritto restano in coda centinaia di chunk da meshare: disarmando li'
+  comparirebbero di colpo, cioe' proprio il pop che la caduta esiste per
+  togliere. Si chiude su `isIdle`.
+
+I cubetti veri sono l'altra meta' e stanno in `dropRain.ts` + `DropRainView.ts`,
+sopra la scena come tutto cio' che si muove. La loro mesh e' l'unica altra a
+riscriversi per frame oltre al pennacchio, e **vive qualche secondo**: la
+finestra si chiude con la prima scena e non si riapre — le espansioni costiere
+avvengono dentro una citta' viva, dove un pezzo di costa che cade dal cielo
+sarebbe un evento e non un caricamento.
+
 ## Verifica
 
 - Esegui `npm run typecheck`, `npm test` e `npm run build`.

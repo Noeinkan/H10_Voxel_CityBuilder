@@ -461,18 +461,22 @@ describe('scalo in quota', () => {
     }
   });
 
-  it('ormeggia dirigibili in quota, non barche a terra', () => {
+  it('ormeggia in quota tre mestieri, e nessuna barca a terra', () => {
     const moorings = landmarkMoorings('airport', FACING.east, 40, 60, true);
-    expect(moorings).toHaveLength(2);
+    // Dirigibile al pilone, eVTOL sulla piazzola, pallone alla cima: su otto
+    // colonne di tetto non ci sta una pista, e questi sono i tre modi che
+    // restano di arrivare in cima a un grattacielo.
+    expect(moorings.map((mooring) => mooring.berth).sort())
+      .toEqual([BERTH.airship, BERTH.airship, BERTH.balloon, BERTH.pad]);
     for (const mooring of moorings) {
-      expect(mooring.berth).toBe(BERTH.airship);
       // In quota, non sull'impalcato: un dirigibile appoggiato al piano e' un
       // capannone.
       expect(mooring.z).toBeGreaterThan(0);
     }
     // Prue opposte: due sagome lunghe sedici voxel appese allo stesso tetto si
     // attraverserebbero.
-    expect(Math.abs(moorings[0].heading - moorings[1].heading)).toBeCloseTo(Math.PI, 9);
+    const masts = moorings.filter((mooring) => mooring.berth === BERTH.airship);
+    expect(Math.abs(masts[0].heading - masts[1].heading)).toBeCloseTo(Math.PI, 9);
   });
 });
 

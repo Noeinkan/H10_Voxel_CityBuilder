@@ -58,11 +58,12 @@ export const SWATCH = {
    * provino, ed e' cosi' che una griglia di prismi distinti si legge come una
    * massa unica.
    *
-   * A dieci contro un'altezza di sette ne restano nascosti due, che sono il
-   * podio: tutto cio' che la microgeometria produce sta piu' in alto. Alzarlo
-   * ancora costa in fretta, perche' `frameRegion` inquadra sulla diagonale e la
-   * larghezza dell'inquadratura cresce con `sizeX + sizeY`: ogni voxel di
-   * interasse si paga trentuno volte in x e sette in y.
+   * A dieci contro un'altezza di nove ne restano nascosti quattro, e sopra il
+   * quarto c'e' `CELL_LEDGE`: tutto cio' che la microgeometria produce sta piu'
+   * in alto. Alzarlo ancora costa in fretta, perche' `frameRegion` inquadra
+   * sulla diagonale e la larghezza dell'inquadratura cresce con `sizeX + sizeY`:
+   * ogni voxel di interasse si paga trentuno volte in x e sette in y. E' anche
+   * il vincolo che tiene l'impronta a sette: `cellPitch` deve restarle sopra.
    */
   cellPitch: 10,
 
@@ -113,11 +114,30 @@ export const SWATCH = {
   referenceHeight: 36,
 } as const;
 
-/** Un gradone del provino: di quanto rientra in pianta, quanto e' largo, quanti livelli. */
-export interface SwatchTier {
-  readonly inset: number;
-  readonly side: number;
+/**
+ * Un pezzo del provino: un quadrato **centrato** nell'impronta, in un tratto di
+ * quota, eventualmente svuotato.
+ *
+ * La quota di partenza e' esplicita e non implicita nell'ordine, perche' due
+ * pezzi devono poter stare **alla stessa quota**: una corona cava e i pinnacoli
+ * che le crescono accanto sono lo stesso piano, e una pila sequenziale non sa
+ * dirlo.
+ *
+ * I tre modificatori sono tutti invarianti per rotazione di 90 gradi, ed e' la
+ * proprieta' che tiene in piedi il contratto della sagoma (vedi `CELL_PARTS`).
+ */
+export interface SwatchPart {
+  /** Quota di partenza sopra `SWATCH.groundZ`. */
+  readonly z0: number;
   readonly levels: number;
+  /** Lato del quadrato. L'arretramento si ricava: la pianta e' sempre centrata. */
+  readonly side: number;
+  /** Lato del vuoto centrale; assente vale pieno. */
+  readonly hole?: number;
+  /** Blocco d'angolo tolto: su un quadrato pieno e' una croce, su un anello lo spezza. */
+  readonly notch?: number;
+  /** Solo le quattro celle d'angolo del quadrato. */
+  readonly corners?: boolean;
 }
 
 /**
@@ -129,42 +149,121 @@ export interface SwatchTier {
  *
  * **Non e' un prisma perche' un prisma non racconta niente al mesher.** La
  * microgeometria emette dove il volume glielo dice, e su un parallelepipedo
- * isolato con la sommita' piatta tre famiglie di `microGeometry.ts` non possono
- * scattare affatto: `emitFinials` vuole una cella di sommita' **senza vicini in
- * piano**, `emitSoffits` un intradosso con aria sotto e aria di fianco,
- * `emitTerraceBoxes` una sommita' scoperta che ha ancora volume di fianco.
- * Nessuna delle tre esiste su una scatola, e sul campionario si leggeva percio'
- * un vocabolario piu' povero di quello vero.
+ * isolato con la sommita' piatta quattro famiglie di `microGeometry.ts` non
+ * possono scattare affatto. I quattro pezzi sono la sagoma che le produce tutte:
  *
- * I quattro gradoni sono la sagoma minima che le produce tutte:
+ * | pezzo | pianta | cosa dichiara al mesher |
+ * | --- | --- | --- |
+ * | podio, smussato | 5 con gli angoli tolti | regge lo sbalzo e gli lascia l'aria sotto; ogni angolo tolto e' un angolo interno in piu' |
+ * | sbalzo, a filo | 7 pieno | intradosso scoperto sui quattro lati: **fasce di sbalzo** |
+ * | corona, quattro lame | anello 7 spezzato agli angoli | la sommita' sotto ha volume di fianco: **fioriere e cassoni**; il cortile 5x5 che circonda e' la prima **sommita' con quattro vicini scoperti** del campionario |
+ * | pinnacoli | le quattro celle d'angolo | nessun vicino in piano, a **tutte** le quote: **collarino e ago**, piu' otto nervature a testa |
  *
- * | gradone | cosa dichiara al mesher |
- * | --- | --- |
- * | podio, rientrato | regge lo sbalzo e gli lascia l'aria sotto |
- * | sbalzo, a filo | intradosso scoperto sui quattro lati: **fasce di sbalzo** |
- * | arretramento | la sua sommita' ha volume di fianco: **fioriere e cassoni** |
- * | guglia, isolata | nessun vicino in piano: **collarino e ago** |
+ * **Il cortile e' la novita' che si vede.** `emitRoofMasts`, `emitRoofCrowns` e
+ * `emitPergolas` chiedono `interiorRoof`, cioe' una sommita' scoperta con tutti
+ * e quattro i vicini scoperti: sulla vecchia sagoma il tetto piu' largo era un
+ * anello di spessore uno, e nessuna delle tre poteva scattare. Qui la sommita'
+ * dello sbalzo resta scoperta su 33 celle, e 13 di quelle hanno i quattro
+ * vicini liberi.
  *
- * In piu' ogni gradone spezza le corse verticali, quindi montanti, traversi,
- * architravi, mensole e parapetti si moltiplicano invece di comparire una volta
- * sola in cima. Misurato con `appendMicroGeometry` su un provino solo: da 21 a
- * 55 prismi per `habitat`, da 25 a 77 per `civic`, da 4 a 22 per `roofTech`.
+ * **`notch` sulla corona non e' decorazione**: toglie all'anello proprio le
+ * celle che toccherebbero i pinnacoli, ed e' cio' che li rende colonne isolate
+ * per tutta la loro altezza invece che soltanto in punta.
+ *
+ * In piu' ogni cambio di pianta spezza le corse verticali, quindi montanti,
+ * traversi, architravi, mensole e parapetti si moltiplicano invece di comparire
+ * una volta sola in cima.
+ *
+ * **Misurato con `swatchProbe.ts`**, prismi per provino, sagoma vecchia a
+ * gradoni contro questa. Le prime due colonne sono la sola microgeometria, cioe'
+ * quel che questa sagoma cambia da sola; la terza e' il totale che il referto
+ * mostra oggi, scavi compresi.
+ *
+ * | linguaggio | gradoni | qui | con gli scavi |
+ * | --- | --- | --- | --- |
+ * | habitat | 47 | 119 | 137 |
+ * | industrial | 70 | 170 | 204 |
+ * | civic | 68 | 178 | 212 |
+ * | luminous | 64 | 176 | 304 |
+ * | portal | 60 | 180 | 308 |
+ * | roofTech | 21 | 61 | 77 |
+ *
+ * `roofTech` resta il piu' magro, e non e' un difetto della sagoma: quel
+ * linguaggio ha meno emettitori degli altri. Ma e' l'unico che e' passato da
+ * **zero** chiome e **zero** pergole ad averne, ed e' la misura che dice che il
+ * cortile fa il suo mestiere. `plain` e `utility` restano a zero, come devono.
+ *
+ * Il chunk piu' carico del campionario fa **10 629 quad** di dettaglio contro i
+ * 16 384 di `MAX_DETAIL_QUADS_PER_CHUNK` — il 65%, ed era meta' prima che gli
+ * scavi si sommassero a questa sagoma. Chi arricchisce ancora **rimisuri**
+ * invece di fidarsi di questa riga: il test lo fa da se', e a superare il tetto
+ * si perderebbero industrial e civic a meta' chunk.
  */
-export const CELL_TIERS: readonly SwatchTier[] = [
-  { inset: 1, side: 3, levels: 1 },
-  { inset: 0, side: 5, levels: 2 },
-  { inset: 1, side: 3, levels: 2 },
-  { inset: 2, side: 1, levels: 2 },
+export const CELL_PARTS: readonly SwatchPart[] = [
+  { z0: 0, levels: 3, side: 5, notch: 1 },
+  { z0: 3, levels: 2, side: 7 },
+  { z0: 5, levels: 2, side: 7, hole: 5, notch: 2 },
+  { z0: 5, levels: 4, side: 7, corners: true },
 ];
 
-/** Lato in pianta del provino: il gradone piu' largo. */
-export const CELL_FOOTPRINT = CELL_TIERS.reduce(
-  (widest, tier) => Math.max(widest, tier.inset + tier.side),
+/** Lato in pianta del provino: il pezzo piu' largo. */
+export const CELL_FOOTPRINT = CELL_PARTS.reduce((widest, part) => Math.max(widest, part.side), 0);
+
+/** Altezza del provino: fin dove arriva il pezzo piu' alto. */
+export const CELL_HEIGHT = CELL_PARTS.reduce(
+  (top, part) => Math.max(top, part.z0 + part.levels),
   0,
 );
 
-/** Altezza del provino, somma dei livelli dei gradoni. */
-export const CELL_HEIGHT = CELL_TIERS.reduce((total, tier) => total + tier.levels, 0);
+/**
+ * Quota sopra la quale il provino dev'essere **visibile per intero**.
+ *
+ * E' la sommita' dello sbalzo, cioe' il filo da cui in su sta tutto quello che
+ * la microgeometria produce. Sotto c'e' il podio, e li' l'occlusione della fila
+ * davanti e' accettabile; sopra no, o meta' del vocabolario si vedrebbe solo
+ * ruotando la camera. Lo consuma il test dell'interasse, che e' dove il conto
+ * dell'occlusione sta scritto per esteso.
+ */
+export const CELL_LEDGE = CELL_PARTS[1].z0 + CELL_PARTS[1].levels;
+
+/** true se la cella `(lx, ly)` del pezzo e' piena: quadrato meno vuoto meno smusso. */
+function inPart(part: SwatchPart, lx: number, ly: number): boolean {
+  const inset = (CELL_FOOTPRINT - part.side) / 2;
+  const sx = lx - inset;
+  const sy = ly - inset;
+  if (sx < 0 || sy < 0 || sx >= part.side || sy >= part.side) return false;
+
+  const last = part.side - 1;
+  if (part.corners === true) return (sx === 0 || sx === last) && (sy === 0 || sy === last);
+
+  const hole = part.hole ?? 0;
+  const holeInset = (part.side - hole) / 2;
+  if (hole > 0 && sx >= holeInset && sy >= holeInset && sx < holeInset + hole && sy < holeInset + hole) {
+    return false;
+  }
+
+  // Lo smusso e' un blocco quadrato per angolo, non la diagonale di Manhattan di
+  // `planMask.ts`: quella su un anello di spessore uno taglierebbe la cella
+  // d'angolo e nient'altro, mentre qui serve staccare la lama dal pinnacolo.
+  const notch = part.notch ?? 0;
+  return !(notch > 0 && Math.min(sx, last - sx) < notch && Math.min(sy, last - sy) < notch);
+}
+
+/**
+ * true se la cella `(lx, ly)` del provino e' piena al livello `level`.
+ *
+ * **E' l'unica descrizione della sagoma**, e la leggono in tre: il generatore che
+ * la scrive, la sonda che ne conta i prismi e il test che verifica il mondo.
+ * Due letture della stessa forma divergerebbero al primo ritocco, ed e' la
+ * stessa ragione per cui `matrixCellRect` sta qui e non nel generatore.
+ */
+export function cellSolidAt(lx: number, ly: number, level: number): boolean {
+  for (const part of CELL_PARTS) {
+    if (level < part.z0 || level >= part.z0 + part.levels) continue;
+    if (inPart(part, lx, ly)) return true;
+  }
+  return false;
+}
 
 /** Colonne della matrice: uno slot di palette ciascuna, `empty` compreso. */
 export const SWATCH_COLUMNS = PALETTE_SIZE;
@@ -322,11 +421,11 @@ export function plinthSpanAt(y: number): { readonly x0: number; readonly x1: num
 }
 
 /**
- * Riquadro in pianta della cella `(row, col)`: l'ingombro del gradone piu' largo.
+ * Riquadro in pianta della cella `(row, col)`: l'ingombro del pezzo piu' largo.
  *
- * E' l'impronta, non il volume — i gradoni rientrano dentro questo riquadro e la
- * loro quota la decide `CELL_TIERS`. Chi cerca un voxel di una combinazione lo
- * cerca qui dentro, a qualunque altezza.
+ * E' l'impronta, non il volume — i pezzi stanno dentro questo riquadro e quali
+ * celle riempiano lo dice `cellSolidAt`. Chi cerca un voxel di una combinazione
+ * lo cerca qui dentro, a qualunque altezza.
  */
 export function matrixCellRect(row: number, col: number): SwatchRect {
   const x0 = col * SWATCH.cellPitch;

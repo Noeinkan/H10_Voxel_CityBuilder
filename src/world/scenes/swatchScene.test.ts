@@ -1,15 +1,20 @@
 import { describe, expect, it } from 'vitest';
 import { PALETTE_SIZE } from '../../engine/paletteSlots';
+import { buildPaddedVolume } from '../../engine/mesher/buildPaddedVolume';
+import { MAX_DETAIL_QUADS_PER_CHUNK } from '../../engine/mesher/microGeometry';
+import { CHUNK, PADDED_VOL } from '../chunkCoords';
 import { BIOME, BIOME_NAMES, BIOME_STRATA, TERRAIN, WATER_IDS } from '../terrain/config';
 import { TREE_SHAPES } from '../terrain/flora';
 import { STRATA_DEPTH } from '../terrain/biomes';
-import { SURFACE_KIND_NAMES } from '../visualBlock';
+import { SURFACE_KIND, SURFACE_KIND_NAMES } from '../visualBlock';
 import { VoxelWorld } from '../VoxelWorld';
 import { createScene } from './cityScene';
 import {
   CELL_FOOTPRINT,
   CELL_HEIGHT,
-  CELL_TIERS,
+  CELL_LEDGE,
+  CELL_PARTS,
+  cellSolidAt,
   matrixCellRect,
   SCALE_ITEMS,
   SCALE_ORIGIN_Y,
@@ -22,6 +27,7 @@ import {
   swatchCellAt,
   swatchExtent,
 } from './swatchLayout';
+import { cellDetail, countDetail } from './swatchProbe';
 
 /** Genera tutto in una volta: il budget serve solo al frame loop. */
 function generate(budgetMs = Number.POSITIVE_INFINITY): VoxelWorld {
@@ -222,51 +228,108 @@ describe('swatchScene', () => {
     expect(buildingTop).toBeLessThanOrEqual(SWATCH.referenceHeight);
   });
 
-  it('scrive un provino a gradoni, non una scatola', () => {
-    const world = generate();
-
-    // **Il punto di questo test e' il perche', non la forma.** Su un prisma
-    // isolato con la sommita' piatta tre famiglie di `microGeometry.ts` non
-    // possono scattare affatto — `emitSoffits` vuole un intradosso con aria
-    // sotto, `emitTerraceBoxes` una sommita' scoperta con volume di fianco,
-    // `emitFinials` una cella senza vicini in piano — e il campionario
-    // mostrerebbe un vocabolario piu' povero di quello vero. I tre gradoni sono
-    // le tre condizioni; appiattirli tornerebbe a nascondere gli emettitori
-    // senza che niente segnali il perche'.
-    const widths = CELL_TIERS.map((tier) => tier.side);
-    expect(Math.max(...widths.slice(1))).toBeGreaterThan(widths[0]);
-    expect(widths[widths.length - 1]).toBe(1);
-    let overhangs = false;
-    let setbacks = false;
-    for (let i = 1; i < CELL_TIERS.length; i++) {
-      if (CELL_TIERS[i].side > CELL_TIERS[i - 1].side) overhangs = true;
-      if (CELL_TIERS[i].side < CELL_TIERS[i - 1].side) setbacks = true;
-    }
-    expect(overhangs).toBe(true);
-    expect(setbacks).toBe(true);
-
-    // Ogni gradone e' centrato nel proprio ingombro: la sagoma dev'essere la
-    // stessa da qualunque lato la guardi la camera, o meta' campionario
-    // mostrerebbe gli sbalzi e meta' no a seconda dell'azimut.
-    for (const tier of CELL_TIERS) {
-      expect(tier.inset * 2 + tier.side).toBe(CELL_FOOTPRINT);
-    }
-
-    // E quel che sta scritto nel mondo e' davvero questo profilo, letto per
-    // livello su una cella qualunque.
-    const rect = matrixCellRect(1, 12);
-    let z = SWATCH.groundZ;
-    for (const tier of CELL_TIERS) {
-      for (let level = 0; level < tier.levels; level++) {
-        let solid = 0;
-        for (let x = rect.x0; x < rect.x1; x++) {
-          if (world.getBlock(x, rect.y0 + Math.floor(CELL_FOOTPRINT / 2), z) !== 0) solid++;
+  it('scrive una sagoma simmetrica alla rotazione, non una scatola', () => {
+    // **Il vincolo e' la simmetria C4, e la ragione e' la camera.** La sagoma
+    // dev'essere la stessa da qualunque lato la si guardi, o a un quarto di giro
+    // meta' campionario mostrerebbe gli sbalzi e meta' no. Questa e' la versione
+    // forte del vecchio «ogni gradone e' centrato»: quella verificava la
+    // centratura di un quadrato, questa l'invarianza della pianta vera — cortili,
+    // smussi e pinnacoli compresi.
+    for (let level = 0; level < CELL_HEIGHT; level++) {
+      for (let ly = 0; ly < CELL_FOOTPRINT; ly++) {
+        for (let lx = 0; lx < CELL_FOOTPRINT; lx++) {
+          const turned = cellSolidAt(ly, CELL_FOOTPRINT - 1 - lx, level);
+          if (cellSolidAt(lx, ly, level) === turned) continue;
+          expect({ lx, ly, level, ruotata: turned }).toEqual({ lx, ly, level, ruotata: !turned });
         }
-        expect(solid).toBe(tier.side);
-        z++;
       }
     }
-    expect(z - SWATCH.groundZ).toBe(CELL_HEIGHT);
+
+    // Si allarga almeno una volta e si stringe almeno una volta: senza sbalzo non
+    // c'e' intradosso, senza arretramento non c'e' sommita' con volume di fianco.
+    // Si conta l'area, non il lato: un anello ha il lato del pieno che sostituisce.
+    const areas: number[] = [];
+    for (let level = 0; level < CELL_HEIGHT; level++) {
+      let area = 0;
+      for (let ly = 0; ly < CELL_FOOTPRINT; ly++) {
+        for (let lx = 0; lx < CELL_FOOTPRINT; lx++) if (cellSolidAt(lx, ly, level)) area++;
+      }
+      areas.push(area);
+    }
+    expect(Math.max(...areas)).toBeGreaterThan(areas[0]);
+    expect(areas[areas.length - 1]).toBeLessThan(Math.max(...areas));
+  });
+
+  it('porta le quattro precondizioni che la microgeometria chiede', () => {
+    // **Il punto di questo test e' il perche', non la forma.** Su un prisma
+    // isolato con la sommita' piatta quattro famiglie di `microGeometry.ts` non
+    // possono scattare affatto, e il campionario mostrerebbe un vocabolario piu'
+    // povero di quello vero. Qui si verificano le condizioni una per una sulla
+    // sagoma pura: appiattirla tornerebbe a spegnere gli emettitori, e a cadere
+    // sarebbe questa riga invece di niente.
+    const solid = (lx: number, ly: number, level: number): boolean =>
+      lx >= 0 && ly >= 0 && lx < CELL_FOOTPRINT && ly < CELL_FOOTPRINT &&
+      level >= 0 && level < CELL_HEIGHT && cellSolidAt(lx, ly, level);
+
+    // Sotto il livello zero c'e' il basamento, che e' pieno: l'aria sotto esiste
+    // solo dove un pezzo sporge oltre quello che lo regge.
+    const under = (lx: number, ly: number, level: number): boolean =>
+      level === 0 ? true : solid(lx, ly, level - 1);
+
+    const sides = [[1, 0], [-1, 0], [0, 1], [0, -1]] as const;
+    let isolatedTip = false;   // emitFinials
+    let soffit = false;        // emitSoffits
+    let setbackTop = false;    // emitTerraceBoxes
+    let interiorRoof = false;  // emitRoofMasts, emitRoofCrowns, emitPergolas
+
+    const open = (lx: number, ly: number, level: number): boolean =>
+      solid(lx, ly, level) && !solid(lx, ly, level + 1);
+
+    for (let level = 0; level < CELL_HEIGHT; level++) {
+      for (let ly = 0; ly < CELL_FOOTPRINT; ly++) {
+        for (let lx = 0; lx < CELL_FOOTPRINT; lx++) {
+          if (!solid(lx, ly, level)) continue;
+          const neighbours = sides.map(([dx, dy]) => solid(lx + dx, ly + dy, level));
+
+          if (open(lx, ly, level) && neighbours.every((full) => !full)) isolatedTip = true;
+          if (!under(lx, ly, level) && neighbours.some((full) => !full)) soffit = true;
+          if (open(lx, ly, level) &&
+            sides.some(([dx, dy]) => solid(lx + dx, ly + dy, level + 1))) {
+            setbackTop = true;
+          }
+          if (open(lx, ly, level) &&
+            sides.every(([dx, dy]) => open(lx + dx, ly + dy, level))) {
+            interiorRoof = true;
+          }
+        }
+      }
+    }
+
+    expect({ isolatedTip, soffit, setbackTop, interiorRoof })
+      .toEqual({ isolatedTip: true, soffit: true, setbackTop: true, interiorRoof: true });
+  });
+
+  it('scrive nel mondo esattamente la sagoma che dichiara', () => {
+    const world = generate();
+    const rect = matrixCellRect(1, 12);
+
+    for (let level = 0; level < CELL_HEIGHT; level++) {
+      for (let ly = 0; ly < CELL_FOOTPRINT; ly++) {
+        for (let lx = 0; lx < CELL_FOOTPRINT; lx++) {
+          const written = world.getBlock(rect.x0 + lx, rect.y0 + ly, SWATCH.groundZ + level) !== 0;
+          if (written === cellSolidAt(lx, ly, level)) continue;
+          expect({ lx, ly, level, scritto: written }).toEqual({ lx, ly, level, scritto: !written });
+        }
+      }
+    }
+
+    // E sopra la sagoma non c'e' altro: `CELL_HEIGHT` e' un'altezza dichiarata,
+    // non una speranza, e la consuma anche l'inquadratura di `main.ts`.
+    for (let ly = 0; ly < CELL_FOOTPRINT; ly++) {
+      for (let lx = 0; lx < CELL_FOOTPRINT; lx++) {
+        expect(world.getBlock(rect.x0 + lx, rect.y0 + ly, SWATCH.groundZ + CELL_HEIGHT)).toBe(0);
+      }
+    }
   });
 
   it('tiene l\'interasse sopra l\'occlusione della fila davanti', () => {
@@ -276,13 +339,61 @@ describe('swatchScene', () => {
     // meta' di ogni provino, ed e' il difetto che si vedeva a schermo prima che
     // questo controllo esistesse.
     const hidden = CELL_HEIGHT - SWATCH.cellPitch / 2;
-    const ledge = CELL_TIERS[0].levels + CELL_TIERS[1].levels;
 
-    // Sotto il filo dell'arretramento puo' anche sparire: li' c'e' il podio. Da
-    // quel filo in su — mensole, parapetti, fioriere, guglia — dev'essere tutto
-    // visibile senza ruotare la camera.
-    expect(hidden).toBeLessThan(ledge);
+    // Sotto il filo dello sbalzo puo' anche sparire: li' c'e' il podio. Da quel
+    // filo in su — mensole, parapetti, fioriere, cortile, pinnacoli — dev'essere
+    // tutto visibile senza ruotare la camera.
+    expect(hidden).toBeLessThan(CELL_LEDGE);
     expect(SWATCH.cellPitch).toBeGreaterThan(CELL_FOOTPRINT);
+
+    // L'impronta la dichiara il pezzo piu' largo, e nessuno esce dal riquadro:
+    // `matrixCellRect` promette quell'ingombro a chi cerca una combinazione.
+    for (const part of CELL_PARTS) expect(part.side).toBeLessThanOrEqual(CELL_FOOTPRINT);
+  });
+
+  it('accende ogni linguaggio di superficie, e resta sotto il tetto dei quad', () => {
+    // **Due misure, non una.** Il pavimento per linguaggio dice che una famiglia
+    // di emettitori non si e' spenta in silenzio — e' il difetto che la sagoma
+    // vecchia aveva su `emitRoofMasts` e compagni, e che non lasciava traccia da
+    // guardare. Il tetto dice che arricchire non ha spinto un chunk oltre
+    // `MAX_DETAIL_QUADS_PER_CHUNK`, dove il troncamento fa sparire industrial e
+    // civic a meta' chunk.
+    //
+    // I numeri sono misurati su questa sagoma e tenuti bassi apposta: servono a
+    // far cadere un appiattimento, non a inseguire ogni ritocco di un emettitore.
+    const floors: Record<string, number> = {
+      habitat: 20,
+      industrial: 80,
+      civic: 80,
+      luminous: 80,
+      portal: 60,
+      roofTech: 40,
+    };
+    for (const [name, floor] of Object.entries(floors)) {
+      const row = SURFACE_KIND_NAMES.indexOf(name);
+      expect({ name, prismi: cellDetail(row, 12).prisms >= floor })
+        .toEqual({ name, prismi: true });
+    }
+
+    // `plain` e `utility` restano a zero, e non e' un difetto: la prima non e' un
+    // linguaggio, la seconda e' metallo strutturale la cui forma arriva dalla
+    // mesh. `collectSurfaceCells` le salta entrambe prima di qualunque emettitore.
+    expect(cellDetail(SURFACE_KIND.plain, 12).prisms).toBe(0);
+    expect(cellDetail(SURFACE_KIND.utility, 12).prisms).toBe(0);
+
+    // Il conto vero, chunk per chunk: `buildPaddedVolume` da' lo stesso volume
+    // che riceve il mesher, cuciture comprese, quindi le celle a cavallo di un
+    // confine contano da entrambi i lati come contano davvero.
+    const world = generate();
+    const padded = new Uint8Array(PADDED_VOL);
+    let peak = 0;
+    for (const chunk of world.chunks.values()) {
+      padded.fill(0);
+      buildPaddedVolume(world, chunk, padded);
+      const origin = [chunk.cx * CHUNK, chunk.cy * CHUNK, chunk.cz * CHUNK] as const;
+      peak = Math.max(peak, countDetail(padded, origin).quads);
+    }
+    expect(peak).toBeLessThan(MAX_DETAIL_QUADS_PER_CHUNK);
   });
 
   it('e\' deterministica e non cambia se la si genera a passi', () => {

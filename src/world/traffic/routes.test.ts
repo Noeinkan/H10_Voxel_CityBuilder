@@ -188,19 +188,25 @@ describe('planTraffic', () => {
     expect(Math.max(...heights)).toBe(30 + TRAFFIC.planeCruise);
   });
 
-  it('lo scalo in quota ormeggia dirigibili e ne tiene uno in giro', () => {
+  it('lo scalo in quota mette in moto dirigibili, eVTOL e mongolfiere', () => {
     const routes = planTraffic(
       [structure('airport', 0, 0, { z: 96, aloft: true })],
       () => false,
     );
 
-    expect(kinds(routes)).toEqual([VEHICLE.airship, VEHICLE.airship, VEHICLE.airship]);
-    // Nessuna pista, quindi nessun circuito d'aereo: in quota si ormeggia.
+    // Due dirigibili appesi ai piloni, uno in orbita, un eVTOL che scende sulla
+    // piazzola e un pallone che sale e rientra: i tre modi di arrivare su un
+    // tetto, che e' cio' che uno scalo in quota promette al posto di una pista.
+    expect(kinds(routes)).toEqual([
+      VEHICLE.airship, VEHICLE.airship, VEHICLE.airship, VEHICLE.balloon, VEHICLE.evtol,
+    ]);
+    // Nessuna pista, quindi nessun circuito d'aereo: in quota non si atterra.
     expect(routes.filter((route) => route.kind === VEHICLE.plane)).toHaveLength(0);
 
-    const moored = routes.filter((route) => !route.closed);
+    const moored = routes.filter((route) => route.length === 0);
     expect(moored).toHaveLength(2);
     for (const route of moored) {
+      expect(route.kind).toBe(VEHICLE.airship);
       expect(route.path[0].z).toBeGreaterThan(96);
       // Il beccheggio e' la sola cosa che dica che galleggia invece di stare
       // appoggiato: fermo perfetto legge come un pezzo di edificio.
@@ -208,6 +214,73 @@ describe('planTraffic', () => {
       expect(poseAt(route, TRAFFIC.airshipBobPeriod * 0.25)!.z)
         .toBeGreaterThan(poseAt(route, 0)!.z);
     }
+  });
+
+  it('l eVTOL scende davvero sulla piazzola invece di sorvolarla', () => {
+    const routes = planTraffic(
+      [structure('airport', 0, 0, { z: 96, aloft: true })],
+      () => false,
+    );
+    const hop = routes.find((route) => route.kind === VEHICLE.evtol)!;
+
+    // Un vertice a terra e tutti gli altri in crociera: la differenza fra i due
+    // e' l'atterraggio, e non c'e' un secondo meccanismo a produrlo.
+    expect(hop.closed).toBe(true);
+    const heights = hop.path.map((point) => point.z);
+    const lowest = Math.min(...heights);
+    expect(heights.filter((z) => z === lowest)).toHaveLength(1);
+    expect(Math.max(...heights) - lowest).toBeGreaterThan(TRAFFIC.evtolCruise - 1);
+  });
+
+  it('la mongolfiera sale, si allontana e torna al proprio pilone', () => {
+    const routes = planTraffic(
+      [structure('airport', 0, 0, { z: 96, aloft: true })],
+      () => false,
+    );
+    const balloon = routes.find((route) => route.kind === VEHICLE.balloon)!;
+
+    // Va e torna: un giro chiuso farebbe ruotare su se' stesso un mezzo che un
+    // verso di marcia non ce l'ha.
+    expect(balloon.closed).toBe(false);
+    expect(balloon.dwell).toBeGreaterThan(0);
+    expect(balloon.bob).toBeGreaterThan(0);
+    // Sale **prima** di allontanarsi: senza il punto di mezzo la salita si
+    // spalmerebbe sulla deriva, e il pallone striscerebbe sui tetti.
+    expect(balloon.path).toHaveLength(3);
+    expect(balloon.path[1].z).toBe(balloon.path[2].z);
+    expect(balloon.path[1].z).toBeGreaterThan(balloon.path[0].z + TRAFFIC.balloonRise - 1);
+
+    // A inizio ciclo e' al pilone, a meta' al capo lontano. Il confronto e'
+    // largo quanto il beccheggio: quello e' una funzione dell'orologio e non
+    // della fase, quindi a un capolinea si somma comunque.
+    const at = (u: number): number =>
+      poseAt(balloon, balloon.period * (u - balloon.phase))!.z;
+    expect(Math.abs(at(0) - balloon.path[0].z)).toBeLessThanOrEqual(TRAFFIC.balloonBob);
+    expect(at(0.5)).toBeGreaterThan(at(0) + TRAFFIC.balloonRise - 2 * TRAFFIC.balloonBob);
+  });
+
+  it('il circuito di volo si alza sopra i grattacieli che sorvola', () => {
+    // **E' il difetto che il sondaggio esiste per togliere.** Con `maxLevel` a
+    // dodici una torre supera i centoquaranta voxel, e un circuito a quota fissa
+    // ci passava dentro in pieno: qui la quota dichiarata e' il minimo, non la
+    // regola.
+    const airport = structure('airport', 0, 0, { z: 0 });
+    const flat = planTraffic([airport], () => false).find((route) => route.closed)!;
+    const city = planTraffic([airport], () => false, () => 150).find((route) => route.closed)!;
+
+    expect(Math.max(...flat.path.map((point) => point.z)))
+      .toBe(TRAFFIC.planeCruise);
+    expect(Math.min(...city.path.map((point) => point.z)))
+      .toBeLessThan(TRAFFIC.planeCruise);
+    // Sopra la citta', non dentro: la crociera scavalca la cima piu' il franco.
+    expect(Math.max(...city.path.map((point) => point.z)))
+      .toBe(150 + TRAFFIC.planeClearance);
+  });
+
+  it('la citta bassa non alza niente: la quota dichiarata resta il minimo', () => {
+    const airport = structure('airport', 0, 0, { z: 0 });
+    const low = planTraffic([airport], () => false, () => 4).find((route) => route.closed)!;
+    expect(Math.max(...low.path.map((point) => point.z))).toBe(TRAFFIC.planeCruise);
   });
 
   it('lo stesso istante da sempre le stesse pose', () => {

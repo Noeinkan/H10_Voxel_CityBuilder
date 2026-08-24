@@ -46,6 +46,15 @@ import {
   parseQualityMode,
   type QualityProfile,
 } from './engine/RenderQuality';
+import { DropRainView } from './engine/DropRainView';
+import { fallHeightFor } from './engine/introDrop';
+import {
+  advanceRain,
+  clearRain,
+  createRain,
+  spawnOverChunk,
+  type RainColumn,
+} from './engine/dropRain';
 import { createSkyBackground } from './engine/SkyBackground';
 import { createPostProcessing } from './engine/PostProcessing';
 import { createSunShadow } from './engine/SunShadow';
@@ -78,6 +87,7 @@ import './ui/hud.css';
 import { DebugOverlay, type OverlayFrame } from './ui/DebugOverlay';
 import { GameHud, type GameTool } from './ui/GameHud';
 import { daylightControl } from './ui/GameHudModel';
+import { unlockLines } from './ui/prospects';
 import { hudTokens } from './ui/hudTokens';
 import { GrowthOverlay } from './ui/GrowthOverlay';
 import { InspectOverlay, type InspectOverlayFrame } from './ui/InspectOverlay';
@@ -104,10 +114,12 @@ import {
 import {
   CELL_HEIGHT,
   SWATCH,
+  SWATCH_BAND,
   swatchCellAt,
   swatchExtent,
   type SwatchCell,
 } from './world/scenes/swatchLayout';
+import { cellDetail, type SwatchDetail } from './world/scenes/swatchProbe';
 import { StreetNetwork } from './world/streets/StreetNetwork';
 import { TERRAIN } from './world/terrain/config';
 import { BiomeView } from './world/terrain/BiomeView';
@@ -194,6 +206,14 @@ const terrainSeed = terrainParam === null ? seed : parseInt(terrainParam, 10) ||
  * overlay. Hotkey e pannello restano invece dietro il debug, perche' sono
  * comandi e non un'inquadratura.
  */
+/**
+ * `?intro=0` toglie la caduta d'ingresso.
+ *
+ * Vale **anche senza** `debug`, come `?theme=`: e' cosi' che uno strumento di
+ * cattura ottiene l'isola ferma senza portarsi dietro gli overlay.
+ */
+const introEnabled = params.get('intro') !== '0';
+
 const initialInspectMode: InspectMode = parseInspectMode(params.get('inspect'));
 const initialSliceZ = clampSliceZ(
   params.get('slice') === null ? INSPECT.defaultSliceZ : Number(params.get('slice')),
@@ -598,6 +618,89 @@ const ropewayView = terrain !== null && growEnabled ? new RopewayView() : null;
 if (ropewayView !== null) scene.add(ropewayView.group);
 
 /**
+ * La comparsa della prima isola: i pezzi scendono dal cielo, con una pioggia di
+ * cubetti davanti a loro.
+ *
+ * A cadere e' il **chunk** e non il voxel — a valle del greedy mesher il cubo
+ * singolo non esiste piu' — quindi la caduta vive dentro `ChunkRenderer`, che le
+ * mesh le possiede gia'. I cubetti sono invece cubetti veri, sopra la scena come
+ * i mezzi: nel volume voxel non entra niente di tutto questo.
+ */
+const dropRainView = new DropRainView();
+scene.add(dropRainView.group);
+const dropRain = createRain();
+/** Vero finche' la comparsa d'ingresso ha ancora qualcosa da animare. */
+let introActive = introEnabled;
+
+/**
+ * Dove si posa un cubetto e di che colore e'.
+ *
+ * La `TerrainMap` adotta un blocco appena arriva dal worker, quindi la colonna e'
+ * interrogabile prima ancora che i suoi voxel siano scritti; la tinta la da'
+ * invece il voxel vero, cosi' un cubetto che cade sulla roccia non e' verde.
+ * `heights` e `waterTop` sono estremi **esclusivi**: la superficie e' il voxel
+ * sotto, e un lago o il mare la portano piu' in alto del terreno.
+ */
+function rainProbe(x: number, y: number): RainColumn | null {
+  if (terrain === null) return null;
+  const column = terrain.map.columnAt(x, y);
+  if (column === null) return null;
+
+  const surfaceZ = Math.max(column.height, terrain.map.waterTopAt(x, y)) - 1;
+  const palette = world.getBlock(x, y, surfaceZ);
+  if (palette === 0) return null;
+  return { z: surfaceZ, palette };
+}
+
+/**
+ * Da quanto in alto partono i pezzi, in voxel.
+ *
+ * Non e' una costante: «dal cielo» vuol dire **da fuori schermo**, e quanto sia
+ * lontano il bordo alto dipende da zoom e inclinazione. L'altezza visibile esce
+ * dal frustum ortografico, che e' l'unico posto in cui quel numero esiste
+ * davvero.
+ */
+function introFallHeight(): number {
+  const view = camera.camera;
+  return fallHeightFor((view.top - view.bottom) / view.zoom, camera.pitchDegrees);
+}
+
+/** Fissata all'apertura della finestra: durante il caricamento la camera sta ferma. */
+let introFall = introFallHeight();
+
+chunkRenderer.onChunkBorn = (cx, cy, cz, bornAt): void => {
+  spawnOverChunk(dropRain, cx, cy, cz, bornAt, introFall, rainProbe);
+};
+// Una volta sola e non per frame: la comparsa dura qualche secondo, e in quel
+// tratto il sole si sposta di un decimo di grado.
+dropRainView.setLighting(daylight.theme.colors, withHour(daylight.theme.atmosphere, daylight.hour));
+if (introActive) chunkRenderer.armDrop(performance.now() / 1000, introFall);
+
+/**
+ * Un frame della comparsa d'ingresso.
+ *
+ * `stepDrop` sta fra `update` e `cull`, per le ragioni scritte li'.
+ *
+ * **La finestra non si chiude su `generator.done`**, e questa e' la parte che si
+ * sbaglia per prima: quando l'ultimo blocco e' scritto restano in coda centinaia
+ * di chunk da meshare, e disarmando li' comparirebbero di colpo — cioe' proprio
+ * il pop che la caduta esiste per togliere. Si chiude quando non c'e' piu' niente
+ * da meshare, e l'effetto finisce quando anche l'ultimo pezzo e' atterrato e
+ * l'ultimo cubetto e' sparito.
+ */
+function stepIntro(seconds: number): void {
+  if (generator.done && chunkRenderer.isIdle) chunkRenderer.disarmDrop();
+  const flying = chunkRenderer.stepDrop(seconds);
+  advanceRain(dropRain, seconds);
+  dropRainView.draw(dropRain.cubes);
+
+  if (!chunkRenderer.dropIsArmed && !flying && dropRain.cubes.length === 0) {
+    introActive = false;
+    dropRainView.hide();
+  }
+}
+
+/**
  * Le linee che dicono dove e' puntata la vista.
  *
  * Non dipendono da `growEnabled`: le viste sono dell'harness prima ancora che
@@ -737,6 +840,7 @@ if (debugEnabled) {
       chunksAllocated: stats.chunksAllocated,
       chunksWithMesh: stats.chunksWithMesh,
       chunksVisible: stats.chunksVisible,
+      chunksFalling: stats.chunksFalling,
       queued: stats.queued,
       inFlight: stats.inFlight,
       solidVoxels: world.solidVoxelCount,
@@ -754,6 +858,17 @@ if (debugEnabled) {
     chunkRenderer.mesherPool.resetStats();
   };
   debugGlobals['__voxelExpand'] = (): void => expandWorld();
+  // Rimanda in cielo quello che c'e' gia': i numeri di `introDrop` e `dropRain`
+  // si tarano guardandoli, e ricaricare la pagina rigenererebbe anche l'isola.
+  debugGlobals['__voxelDrop'] = (): Record<string, unknown> => {
+    clearRain(dropRain);
+    // Rileggendo l'inquadratura: se nel frattempo si e' zoomato, la quota di
+    // partenza che era fuori schermo non lo sarebbe piu'.
+    introFall = introFallHeight();
+    chunkRenderer.replayDrop(performance.now() / 1000, introFall);
+    introActive = true;
+    return { fall: introFall, chunks: chunkRenderer.stats.chunksFalling };
+  };
   debugGlobals['__voxelRebuildAll'] = (): void => world.markAllDirty();
   debugGlobals['__voxelTheme'] = (id?: string): Record<string, unknown> => {
     if (id !== undefined) {
@@ -828,7 +943,7 @@ if (debugEnabled) {
       const cell = x === undefined || y === undefined
         ? buildSwatchFrame().cell
         : swatchCellAt(x, y);
-      return { extent: swatchExtent(), cell };
+      return { extent: swatchExtent(), cell, detail: detailOf(cell) };
     };
   }
 
@@ -1084,6 +1199,9 @@ function onFrame(time: number): void {
 
   const elapsed = performance.now() - workStart;
   chunkRenderer.update(camera.camera, Math.max(0.5, frameBudget - elapsed));
+  // Fra `update` e `cull`: un chunk nato adesso deve gia' scendere in questo
+  // frame, e il culling deve leggere gli AABB appena spostati.
+  if (introActive) stepIntro(time / 1000);
   chunkRenderer.cull(camera.camera);
 
   // La finestra di caricamento si chiude su `generator.done`, non su
@@ -1225,7 +1343,10 @@ function updateGrowth(dt: number): void {
   if (growthScene === null) {
     if (!generator.done) return;
     growthScene = new GrowthScene(world, terrain.map, terrainRegion, terrainSeed);
-    influenceOverlay?.refreshCatalysts(growthScene.simState.catalysts);
+    influenceOverlay?.refreshCatalysts(
+      growthScene.simState.catalysts,
+      growthScene.simState.reach,
+    );
     console.info('[growth] automatic scene ready');
     return;
   }
@@ -1317,7 +1438,13 @@ function onGamePointerMove(event: PointerEvent): void {
     const site = growthScene.catalystSiteCost(target.x, target.y, catalyst.id);
     const cost = site === null ? catalyst.cost : site.cost;
     valid = failure === null;
-    influenceOverlay?.showCursor(target.x, target.y, radius, valid);
+    influenceOverlay?.showCursor(
+      target.x,
+      target.y,
+      radius,
+      valid,
+      growthScene.simState.reach,
+    );
     preview.show(target.x, target.y, target.hitZ, valid);
     gameHud?.updateCursor(event.clientX, event.clientY, {
       title: catalyst.label,
@@ -1325,6 +1452,7 @@ function onGamePointerMove(event: PointerEvent): void {
       favours: catalyst.favours.map(classLabel),
       penalises: catalyst.penalises.map(classLabel),
       typologies: typologiesForUses(catalyst.favours),
+      unlocks: unlockLines(catalyst.id),
       valid,
       reason: failure !== null
         ? actionFailureLabel(failure)
@@ -1410,7 +1538,10 @@ function onGamePointerDown(event: PointerEvent): void {
     if (!result.success) gameHud?.showFailure(result.reason);
     else {
       gameHud?.clearFeedback();
-      influenceOverlay?.refreshCatalysts(growthScene.simState.catalysts);
+      influenceOverlay?.refreshCatalysts(
+        growthScene.simState.catalysts,
+        growthScene.simState.reach,
+      );
       selectedTool = { kind: 'none' };
       gameHud?.setTool(selectedTool);
       preview.hide();
@@ -1844,6 +1975,7 @@ function buildOverlayFrame(mainMs: number, renderMs: number, frameMs: number): O
     chunksNonEmpty: stats.chunksNonEmpty,
     chunksWithMesh: stats.chunksWithMesh,
     chunksVisible: stats.chunksVisible,
+    chunksFalling: stats.chunksFalling,
     queued: stats.queued,
     inFlight: stats.inFlight,
     quads: stats.quads,
@@ -1873,7 +2005,19 @@ function buildOverlayFrame(mainMs: number, renderMs: number, frameMs: number): O
 
 /** L'unica lettura del campionario: la consumano overlay e `__voxelSwatch()`. */
 function buildSwatchFrame(): SwatchOverlayFrame {
-  return { cell: swatchCell };
+  return { cell: swatchCell, detail: detailOf(swatchCell) };
+}
+
+/**
+ * Prismi di dettaglio della cella indicata, o null fuori dalla matrice.
+ *
+ * Solo la matrice: stratigrafia e fascia di scala non sono provini della stessa
+ * sagoma, e un conteggio li' risponderebbe a una domanda che nessuno ha fatto.
+ * `cellDetail` memoizza, quindi ripassare sulla stessa cella non rimisura.
+ */
+function detailOf(cell: SwatchCell | null): SwatchDetail | null {
+  if (cell === null || cell.band !== SWATCH_BAND.matrix) return null;
+  return cellDetail(cell.row, cell.col);
 }
 
 function onDebugKey(event: KeyboardEvent): void {

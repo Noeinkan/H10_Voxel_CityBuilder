@@ -1,3 +1,4 @@
+import { falloff } from '../../sim';
 import { hashCoords } from '../rng';
 import { SKYLINE } from './config';
 
@@ -54,8 +55,22 @@ export type SkylineTier = (typeof TIER)[keyof typeof TIER];
 export interface Pole {
   readonly x: number;
   readonly y: number;
-  /** Raggio di Chebyshev in colonne. A distanza pari al raggio il polo non si sente. */
+  /** Raggio in colonne. A distanza pari al raggio il polo non si sente. */
   readonly radius: number;
+
+  /**
+   * Peso del polo nella colonna, 0..1, quando chi chiama sa gia' misurarlo.
+   *
+   * E' la portata geodetica del catalizzatore: l'influenza gira attorno a un
+   * dirupo e si ferma sull'acqua invece di attraversarla in linea retta. Entra
+   * come funzione e non come `ReachCache` per la stessa ragione di
+   * `waterDistance` qui sotto — il dominio resta puro, e a misurare e' chi la
+   * cache ce l'ha gia' in mano.
+   *
+   * Assente, si ricade sulla distanza di Chebyshev: e' cio' che tiene in piedi i
+   * chiamanti che un polo lo costruiscono a mano, i test per primi.
+   */
+  readonly reachAt?: (x: number, y: number) => number;
 }
 
 export interface SkylineQuery {
@@ -87,19 +102,24 @@ export interface SkylineQuery {
 /**
  * Quanto forte si sente il polo piu' vicino, in 0..1.
  *
- * Stessa attenuazione lineare in distanza di Chebyshev che `DesirabilityField`
- * usa per i catalizzatori, e non e' una coincidenza da correggere: il campo e la
- * gerarchia devono dire «vicino al polo» nello stesso modo, altrimenti il centro
- * della desiderabilita' e il centro dello skyline cadrebbero in due punti
- * diversi. Vince il polo che si sente di piu', non la somma: due catalizzatori
+ * Stessa attenuazione che `DesirabilityField` usa per i catalizzatori, e non e'
+ * una coincidenza da correggere: il campo e la gerarchia devono dire «vicino al
+ * polo» nello stesso modo, altrimenti il centro della desiderabilita' e il
+ * centro dello skyline cadrebbero in due punti diversi. Per questo la curva non
+ * e' piu' riscritta qui ma importata da `src/sim/reach`, che ne e' l'unica
+ * copia. Vince il polo che si sente di piu', non la somma: due catalizzatori
  * accostati fanno un centro, non un centro alto il doppio.
  */
 export function poleReach(query: SkylineQuery): number {
   let best = 0;
   for (const pole of query.poles) {
     if (pole.radius <= 0) continue;
-    const distance = Math.max(Math.abs(pole.x - query.x), Math.abs(pole.y - query.y));
-    const reach = 1 - distance / pole.radius;
+    const reach =
+      pole.reachAt !== undefined
+        ? pole.reachAt(query.x, query.y)
+        : falloff(
+            Math.max(Math.abs(pole.x - query.x), Math.abs(pole.y - query.y)) / pole.radius,
+          );
     if (reach > best) best = reach;
   }
   return best;

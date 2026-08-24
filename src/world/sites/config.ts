@@ -29,6 +29,27 @@ export const SITE = {
   coastalRadius: 6,
 
   /**
+   * Fin dove una struttura costiera puo' allungarsi per raggiungere l'acqua
+   * vera, in colonne.
+   *
+   * **Non e' `coastalRadius` con un altro nome, e non va unificato con lui.**
+   * Quello dice se un piazzamento e' *ammesso*, e guarda la battigia: la colonna
+   * bagnata a quota esatta del pelo del mare e' costa a tutti gli effetti, e su
+   * sei colonne di raggio non c'e' niente da correggere. Questo dice quanto un
+   * molo puo' spingersi in fuori per trovare il volume in cui una barca sta, ed
+   * e' il doppio abbondante perche' su quest'isola i due numeri sono due cose
+   * diverse: meta' del fronte costiero e' una piattaforma di bassofondo
+   * asciutta larga dieci-quattordici colonne, e la' un porto ammesso sul
+   * bagnasciuga aveva la propria darsena sulla sabbia — cioe' nessuna barca.
+   *
+   * Quattordici e' il caso peggiore misurato su questo seed. Oltre, non c'e' un
+   * molo: c'e' una laguna, e un molo che l'attraversasse tutta uscirebbe con la
+   * colonna cliccata fuori dal proprio ingombro — che e' il vero limite, e lo
+   * impone `seawardDrift` con l'ancora della ricetta.
+   */
+  shoreReach: 14,
+
+  /**
    * Lato del quadrato che un ruolo di superficie deve trovare gia' quasi piano.
    *
    * Nove celle sono piu' del doppio dell'impronta massima di un edificio: e' cio'

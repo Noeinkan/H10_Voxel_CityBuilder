@@ -38,7 +38,7 @@ nextBuildSites(state, terrainMap, 10);           // [{ x, y, class, mixed, score
 | [tick.ts](tick.ts) | Il bilancio di un tick, funzione pura |
 | [DesirabilityField.ts](DesirabilityField.ts) | Campo per uso, `Uint8Array` chunkato 32×32, ricalcolo incrementale |
 | [policies.ts](policies.ts) | Catalogo delle policy e risoluzione dei pesi |
-| [districts.ts](districts.ts) | Profilo locale, distretti e specializzazioni emergenti dalla sovrapposizione |
+| [districts.ts](districts.ts) | Profilo locale, distretti e specializzazioni emergenti dalla sovrapposizione; `specializationGapsOf` legge la stessa regola all'indietro e dice cosa manca |
 | [commerce.ts](commerce.ts) | Il ciclo commerciale interno: domanda, organico, merce, ricavi |
 | [farms.ts](farms.ts) | I tre produttori di cibo, il listino in case sfamate e il referto del raccolto |
 | [flows.ts](flows.ts) | Da dove vengono i fondi di un tick e dove vanno: referto derivato, non un accumulo |
@@ -67,14 +67,19 @@ simulazione non esiste una coordinata verticale.
 - **`tick` non tocca il campo.** Il nuovo stato riceve lo stesso oggetto `field`,
   non ricalcolato: il costo di un tick non dipende dall'estensione della mappa.
 - **Il campo si ricalcola solo dove cambia.** Un catalizzatore tocca il quadrato
-  di Chebyshev del suo raggio (raggio 20 → 1681 celle), un edificio nuovo il
-  quadrato del raggio breve. Non esiste una passata sull'intera mappa.
+  del suo raggio (raggio 20 → 1681 celle), un edificio nuovo il quadrato del
+  raggio breve. Non esiste una passata sull'intera mappa. Il quadrato regge
+  anche con l'influenza geodetica, perché un passo non costa mai meno di una
+  cella: la forma non può uscirne.
 - **La simulazione non tocca `blocks`.** L'unica scrittura verso il mondo è
   `writeDesirabilityData`, che va in `VoxelWorld.data` e quindi non marca sporco
   niente e non invalida una mesh.
 - **Lo stato è serializzabile in JSON senza perdita.** `toSimStateData` dà dati
   puri, `reviveSimState` li rilegge; il campo non si serializza perché è
-  ricostruibile per intero da catalizzatori, edifici e policy.
+  ricostruibile per intero da catalizzatori, edifici, policy **e costo di
+  attraversamento**. Quest'ultimo non sta nei dati salvati: `reviveSimState` lo
+  riprende come secondo argomento, e ometterlo dà una città identica su
+  un'isola piatta.
 
 ## Come si calcola la desiderabilità
 
@@ -82,7 +87,7 @@ Per ogni cella e ogni uso:
 
 ```
 D = clamp(Σ contributi × pesoPolicy − congestione, 0, 255)
-contributo = strength × influenza[uso] × max(0, 1 − dist / radius)   dist = Chebyshev
+contributo = strength × influenza[uso] × falloff(dist / radius)
 congestione = edifici entro congestionRadius × congestionPerBuilding
 ```
 
@@ -90,6 +95,29 @@ A distanza pari al raggio il contributo è **esattamente 0**, e al centro vale
 **esattamente `strength`** per gli usi che il ruolo porta a pieno — quest'ultimo
 perché i quattro pesi base di desiderabilità valgono 1 in `balance.ts`, di
 proposito, e ogni ruolo ha almeno un'influenza pari a 1.
+
+**`dist` è geodetica, e la calcola [reach.ts](reach.ts)**, che è l'unico posto
+in cui vive la curva `falloff`. L'influenza si propaga sulle celle percorribili
+invece che in linea retta: l'acqua la ferma, un dirupo la rallenta, una strada
+la porta più lontano. I costi stanno in `BALANCE.reach`, li legge
+[../world/reachCost.ts](../world/reachCost.ts) — l'unico posto da cui terreno e
+strade si vedono insieme — e la simulazione riceve una funzione, non il mondo.
+
+Prima erano tre copie della stessa formula: qui, in `urbanProfileAt` per i
+distretti, e in `poleReach` per **l'altezza degli edifici**. Adesso è una sola,
+e il centro della desiderabilità non può più cadere in tre punti diversi.
+
+**Con costo uniforme la geodetica è esattamente la Chebyshev di prima.** Un
+passo diagonale copre 1 su entrambi gli assi allo stesso prezzo, quindi il
+minimo numero di passi verso `(dx, dy)` è `max(|dx|, |dy|)`. Non è un dettaglio
+implementativo: è ciò che rende il cambio una generalizzazione stretta, e ciò
+che tiene verdi senza modifiche i test scritti sulla forma di prima.
+
+**Il costo di un passo non scende mai sotto 1**, ed è un vincolo, non una
+taratura: la distanza geodetica resta perciò almeno quella di Chebyshev, e la
+forma non esce mai dal quadrato che il campo ricalcola. Una strada quindi non
+costa *meno* di 1 — a costare di più è tutto il resto, e la strada vince in
+termini relativi.
 
 **Un catalizzatore parla a più usi.** L'influenza è un vettore, non una classe:
 un mercato somma su residenziale e commerciale insieme, una fabbrica somma

@@ -656,6 +656,37 @@ export const BALANCE = {
     siteThreshold: [40, 34, 30, 25] as readonly number[],
   },
 
+  // --- Portata dei catalizzatori ------------------------------------------
+
+  /**
+   * Quanto costa attraversare una cella, in celle.
+   *
+   * L'influenza di un catalizzatore non viaggia piu' in linea retta: si propaga
+   * sulle celle percorribili, quindi l'acqua la ferma, un dirupo la rallenta e
+   * una strada la porta piu' lontano. Questi numeri sono la forma che ne esce.
+   *
+   * **Nessuno scende sotto 1, ed e' un vincolo e non una taratura.** Il campo
+   * ricalcola il quadrato di Chebyshev del raggio, e con un costo sotto 1 la
+   * portata uscirebbe da quel quadrato: si perderebbe l'equivalenza fra
+   * percorso incrementale e ricostruzione totale, che e' l'invariante su cui
+   * poggia tutto `DesirabilityField`. Una strada quindi non costa *meno*: a
+   * costare di piu' e' tutto il resto, e la strada vince in termini relativi.
+   *
+   * Di conseguenza la portata nel tessuto vale circa `radius / land`, cioe' meno
+   * del raggio nominale: i raggi dei ruoli sono tarati su questo, non sulla
+   * distanza in linea d'aria.
+   */
+  reach: {
+    /** Pavimentazione: il riferimento, e la portata piena. */
+    pavement: 1,
+    /** Terra edificabile fuori strada. */
+    land: 1.25,
+    /** Ciglio e pendenza forte: si passa, ma il giro si sente. */
+    steep: 2.5,
+    /** Acqua: invalicabile. Dietro a un braccio di mare non c'e' citta'. */
+    water: Infinity,
+  },
+
   // --- Limiti duri ---------------------------------------------------------
 
   limits: {
@@ -671,9 +702,13 @@ export const BALANCE = {
      *
      * Non e' bilanciamento ne' una scelta di forma urbana: **quante quote una
      * colonna ammetta davvero lo dice il mondo**, che sa dove passa una soletta
-     * e quanto e' alta. Questo e' il tetto del formato — il contatore per cella
-     * e' un byte — e serve a impedire che un mondo mal configurato lo faccia
-     * traboccare, non a decidere quanto sale la citta'.
+     * e quanto e' alta. Questo e' l'arresto d'emergenza, e serve a impedire che
+     * un mondo mal configurato impili all'infinito sulla stessa cella.
+     *
+     * **Non e' piu' il tetto di un formato.** Lo era finche' le quote stavano in
+     * un byte per cella; ora stanno in una mappa sparsa che non ha un massimo
+     * suo, quindi il numero e' rimasto quello ma la ragione e' cambiata — e
+     * abbassarlo e' una scelta legittima, non la rottura di una codifica.
      */
     maxStackPerColumn: 255,
   },

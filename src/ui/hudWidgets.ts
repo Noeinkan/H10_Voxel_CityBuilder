@@ -132,6 +132,13 @@ export function actionTooltip(action: HudAction): string {
   if (action.typologies !== undefined && action.typologies.length > 0) {
     lines.push(`May build: ${action.typologies.join(', ')}`);
   }
+  // In fondo, e dopo «May build», perche' e' la riga condizionale: quelle sopra
+  // arrivano piazzando, questa arriva se il quartiere matura. Metterla prima le
+  // farebbe leggere tutte come promesse dello stesso peso, che e' il difetto da
+  // cui questa riga nasce.
+  if (action.unlocks !== undefined && action.unlocks.length > 0) {
+    lines.push(`Unlocks: ${action.unlocks.join('; ')}`);
+  }
   return lines.join(' · ');
 }
 

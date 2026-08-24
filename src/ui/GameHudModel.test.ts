@@ -38,6 +38,20 @@ describe('buildGameHudModel', () => {
     expect(model.policies.find((policy) => policy.id === 'austerity')?.available).toBe(true);
   });
 
+  it('la tessera dice cosa il ruolo sblocca, non solo cosa favorisce', () => {
+    const model = buildGameHudModel(stats(2_000, 100));
+    const factory = model.catalysts.find((action) => action.catalystId === 'factory');
+    const market = model.catalysts.find((action) => action.catalystId === 'market');
+
+    // La torre esce dalla promessa incondizionata e rientra con la sua
+    // condizione: e' la correzione che questa fase porta al tooltip.
+    expect(factory?.typologies).not.toContain('Hydroponic tower');
+    expect(factory?.unlocks?.join(' ')).toContain('farming districts → Hydroponic tower');
+
+    // E resta legata al ruolo: chi non apre l'agricoltura non la nomina.
+    expect(market?.unlocks?.join(' ') ?? '').not.toContain('Hydroponic tower');
+  });
+
   it('abilita tutte le azioni quando i requisiti sono soddisfatti', () => {
     const model = buildGameHudModel(stats(2_000, 100));
 

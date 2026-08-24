@@ -2418,8 +2418,11 @@ crema, un'unica ombra, icone a tratto sottile tutte dello stesso peso e dello
 stesso colore. Il risultato è che l'HUD sembra appoggiato sopra il gioco invece
 di appartenergli.
 
-**Stato: 7.1, 7.3 e 7.4 sono fatte** — il sottoinsieme che Alpha 0.2 chiede prima
-del playtest. Restano 7.2 (iconografia) e 7.5 (movimento e feedback). Delle tre
+**Stato: 7.1, 7.3, 7.4 e 7.6 sono fatte** — il sottoinsieme che Alpha 0.2 chiede
+prima del playtest, più la leggibilità delle cause, che non era in programma qui
+e ci è finita perché è lo stesso difetto un piano più a fondo: la 7.1–7.5
+rendono leggibile lo **stato**, la 7.6 la **causa**. Restano 7.2 (iconografia) e
+7.5 (movimento e feedback). Delle tre
 rotture qui sotto, la seconda e la terza sono chiuse; la prima lo è per metà —
 le cinque risorse ora si distinguono per anello, tendenza e sparkline, ma
 l'**icona** è ancora la stessa a tratto unico, ed è appunto 7.2.
@@ -2549,6 +2552,39 @@ quale strumento si ha in mano (cornice e sollevamento).
 
 **Gate:** ogni azione ha una conseguenza visibile entro 150 ms e nessuna
 animazione compare nel profilo del frame.
+
+### Fase 7.6 — Leggibilità delle cause
+
+Le altre cinque sottofasi lavorano sulla leggibilità dello **stato**: cosa c'è
+adesso, dove sta andando, cosa si può premere. Questa lavora sulla leggibilità
+della **causa**, che è un difetto diverso e più grave: il giocatore vedeva i due
+capi della catena — piazzo un catalizzatore, compare un edificio — e mai il
+mezzo. Diciotto soglie in `specializationOf`, più i cancelli di ogni riga del
+catalogo delle tipologie, non comparivano in nessuna superficie del gioco.
+
+Il principio è quello che la 7.4 aveva già trovato per i bottoni e mai applicato
+altrove: **dove il gioco nomina un esito, nomina accanto la condizione
+vincolante** — la più lontana, non la prima.
+
+- [x] Ogni regola che rifiuta sa dire perché: `specializationGapsOf` derivata da <!-- size: M -->
+  `balance.ts`, `typologyGapsOf` speculare a `accepts`. Il dominio dice *cosa
+  manca*, `src/ui/prospects.ts` dice *come si chiama*.
+- [x] Due righe nella scheda di selezione, **accoppiate**: la forma che potrebbe <!-- size: M -->
+  crescere qui, e il quartiere che quella forma pretende. Non due risposte a due
+  domande scollegate.
+- [x] La tessera del catalizzatore smette di promettere ciò che le soglie non <!-- size: S -->
+  confermeranno: le tipologie dietro una specializzazione passano da `May build`
+  a `Unlocks`, con la condizione accanto.
+
+**Stato implementazione:** completata. **Il gate resta da validare a schermo:** i
+test coprono le regole — che il requisito riportato sia quello vincolante, che
+chiuderlo basti davvero a ottenere la specializzazione, che le due letture di
+`accepts` non divergano — non se un giocatore che non ha letto il codice
+*capisca*, cliccando in giro, come si arriva a una torre idroponica. Quello si
+misura con qualcuno davanti allo schermo, non con `npm test`.
+
+**Gate:** un giocatore che non ha mai visto il codice sa dire, cliccando su un
+isolato, cosa dovrebbe cambiare perché ci nasca una forma che ancora non c'è.
 
 ### Riferimenti
 

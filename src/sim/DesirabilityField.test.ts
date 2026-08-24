@@ -168,6 +168,38 @@ describe('DesirabilityField — il percorso incrementale e la ricostruzione coin
     expect(incremental[0].size).toBeGreaterThan(0);
   });
 
+  it('coincidono anche quando il costo di attraversamento piega l’influenza', () => {
+    // E' l'invariante che un cambio di forma puo' rompere in silenzio: con la
+    // Chebyshev il campo era una funzione della sola distanza, ora dipende
+    // anche da cosa c'e' in mezzo. Un canale verticale e una strada
+    // orizzontale, cosi' la forma non e' ne' simmetrica ne' convessa.
+    const cost = (x: number, y: number): number => {
+      if (x === 68) return Infinity;
+      return y === 60 ? 1 : 1.5;
+    };
+
+    let state = createSimState({ reachCost: cost });
+    state = addCatalyst(state, catalyst({ x: 60, y: 60, strength: 200, radius: 18 }));
+    state = addCatalyst(
+      state,
+      catalyst({ x: 80, y: 66, class: BUILDING_CLASS.industrial, strength: 150, radius: 22 }),
+    );
+    state = addBuilding(state, { x: 62, y: 61, class: BUILDING_CLASS.residential });
+    state = setCatalystStrength(state, 0, 240);
+
+    const incremental = [0, 1, 2].map((cls) => snapshot(state.field, cls as 0 | 1 | 2));
+
+    const fresh = new DesirabilityField(cost);
+    fresh.rebuild(state.catalysts, state.buildings, NO_POLICIES);
+    expect(incremental).toEqual([0, 1, 2].map((cls) => snapshot(fresh, cls as 0 | 1 | 2)));
+
+    // E la forma e' davvero cambiata: il muro a x = 68 taglia, e la strada a
+    // y = 60 porta piu' lontano di quanto arrivi la stessa distanza fuori.
+    const cls = BUILDING_CLASS.residential;
+    expect(state.field.valueAt(69, 60, cls)).toBe(0);
+    expect(state.field.valueAt(66, 60, cls)).toBeGreaterThan(state.field.valueAt(60, 66, cls));
+  });
+
   it('togliere un catalizzatore riporta il campo a com’era prima di aggiungerlo', () => {
     let state = addCatalyst(createSimState(), catalyst({ x: 60, y: 60, strength: 200, radius: 18 }));
     const before = snapshot(state.field, BUILDING_CLASS.residential);
@@ -220,10 +252,39 @@ describe('DesirabilityField — il percorso incrementale e la ricostruzione coin
 
     expect(state.field.stackAt(70, 70)).toBe(1);
     expect(state.field.occupantAt(70, 70)).toBe(BUILDING_CLASS.commercial);
+    // Tornata a una quota sola, la colonna esce dalla parte sparsa: da qui in
+    // poi costa quanto una che in quota non ci e' mai andata.
+    expect(state.field.stackedColumns).toBe(0);
 
     const fresh = new DesirabilityField();
     fresh.rebuild(state.catalysts, state.buildings, NO_POLICIES);
     expect(state.field.occupantAt(70, 70)).toBe(fresh.occupantAt(70, 70));
+  });
+
+  it('smontata la colonna, delle quote non resta traccia', () => {
+    let state = createSimState();
+    const tower = [
+      { x: 70, y: 70, class: BUILDING_CLASS.residential },
+      { x: 70, y: 70, class: BUILDING_CLASS.commercial },
+      { x: 70, y: 70, class: BUILDING_CLASS.civic },
+    ];
+    for (const building of tower) state = addBuilding(state, building);
+    expect(state.field.stackAt(70, 70)).toBe(3);
+    expect(state.field.stackedColumns).toBe(1);
+
+    state = removeBuildings(state, tower);
+
+    // Il modulo dichiara che togliere N edifici lo lascia come se non ci fossero
+    // mai stati. Da quando le quote oltre la prima stanno in una mappa sparsa,
+    // «come se non ci fossero mai stati» vuol dire anche che quella mappa non
+    // c'e': una mappa vuota allocata sarebbe un residuo, piccolo ma residuo.
+    expect(state.field.stackAt(70, 70)).toBe(0);
+    expect(state.field.stackedColumns).toBe(0);
+    expect(state.field.occupiedCells).toBe(0);
+
+    const fresh = new DesirabilityField();
+    fresh.rebuild(state.catalysts, state.buildings, NO_POLICIES);
+    expect(state.field.stackedColumns).toBe(fresh.stackedColumns);
   });
 });
 

@@ -14,9 +14,12 @@ colonna `(x, y)` e non costruisce voxel: il `Builder` e' esterno.
 - `tick` non muta input, non usa tempo/casualita' globale e non tocca il campo.
 - `addCatalyst`, `addBuilding` e `setPolicyActive` aggiornano il campo in place e
   trasferiscono la proprieta' al nuovo stato: non riusare quello precedente.
-- Il campo ricalcola da zero solo il rettangolo di Chebyshev toccato, e solo per
-  gli usi che quel catalizzatore influenza davvero; non accumulare contributi e
-  non scandire l'intera mappa.
+- Il campo ricalcola da zero solo il rettangolo toccato, e solo per gli usi che
+  quel catalizzatore influenza davvero; non accumulare contributi e non
+  scandire l'intera mappa.
+- La curva di decadimento sta solo in `reach.ts`: non riscriverla altrove, e
+  non far scendere sotto 1 un costo di passo — sotto, la portata uscirebbe dal
+  quadrato che il campo ricalcola e cadrebbe l'equivalenza con `rebuild`.
 - `writeDesirabilityData` scrive solo in `data`, mai in `blocks`.
 - `resolveWeights` riparte dai pesi base; non annullare policy dividendo.
 

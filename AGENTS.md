@@ -120,6 +120,8 @@ il posto sbagliato.
 | Finestre di notte | `src/engine/nightWindows.ts` — quota accesa, carattere della torre, guadagno notturno |
 | Viste di ispezione | `src/engine/inspect.ts` — densita' del velo, passo della rigatura, quota |
 | Lente dei raggi X | `src/engine/xray.ts` — respiro, profondita', gabbia sul filo del voxel |
+| Caduta d'ingresso | `src/engine/introDrop.ts` — quota, durata, jitter, rimbalzo |
+| Pioggia di cubetti | `src/engine/dropRain.ts` — semina per chunk, taglia, tetto dei vivi |
 
 Non aggiornare a occhio le misure documentate nei README: sono verificate a mano
 su questa macchina.
@@ -141,11 +143,15 @@ su questa macchina.
 - Non riattivare `noUncheckedIndexedAccess` senza discuterne (vedi il commento
   in `tsconfig.json`).
 - Non modificare `dist/` o `node_modules/`.
-- Se aggiungi file, aggiorna `PROJECT_INDEX.md` e il README di modulo pertinente.
+- Se aggiungi file, non scrivere a mano in `PROJECT_INDEX.md` ne' in
+  `CHANGELOG.md`: lascia un frammento in `docs/pending/` e fondilo con
+  `npm run docs:merge` (istruzioni in `docs/pending/README.md`). Il README di
+  modulo invece si aggiorna direttamente.
 - **Oltre ~600 righe un file va spezzato prima di aggiungerci altro.** Non e'
-  estetica: il semaforo fra agenti prende il lock **per path** e lo tiene fino a
-  fine turno, quindi un file grande e' un file su cui si lavora a lungo, e ogni
-  riga di troppo si paga in attesa di qualcun altro. La linea di taglio e' *lungo
+  estetica: il semaforo fra agenti prende il lock **per path**, e finche' ci
+  scrivi sopra lo rinnovi — un file grande e' un file su cui si lavora a lungo,
+  quindi il possesso dura quanto il lavoro e ogni riga di troppo si paga in
+  attesa di qualcun altro. La linea di taglio e' *lungo
   cosa si lavora separatamente* — gli shader stanno in `engine/shaders/` perche'
   scrivere GLSL e scrivere l'handle sono due lavori, non perche' sia piu'
   elegante — e non lungo l'astrazione migliore sulla carta. Il numero non e'
@@ -166,5 +172,8 @@ sia dall'hook globale: leggono la stessa fonte.
 4. Per percorsi caldi esegui il benchmark pertinente e segnala che le tabelle
    di misura richiedono verifica manuale.
 5. Per modifiche visuali verifica `?debug=1`, overlay e budget pertinenti.
+6. Scrivi il tuo frammento in `docs/pending/` e lancia `npm run docs:merge`. Se
+   la fusione non passa perche' l'indice e' occupato, consegna lo stesso: il
+   frammento resta li' e lo fonde il prossimo che passa.
 
 @RTK.md

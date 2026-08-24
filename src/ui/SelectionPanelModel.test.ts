@@ -80,6 +80,7 @@ function selection(structureInfo: StructureInfo | null, extra: Partial<Selection
       crowd: 3,
       stack: 1,
       profile: PROFILE,
+      coastal: false,
     },
     structure: structureInfo,
     block: {

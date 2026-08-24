@@ -11,6 +11,286 @@ coincide con il messaggio di commit.
 
 ---
 
+## In corso — L'indice e il changelog non si scrivono più a mano
+
+Con più agenti in parallelo, `PROJECT_INDEX.md` e `CHANGELOG.md` erano quasi un
+terzo dei rifiuti del semaforo: li aggiorna chiunque, e sempre nello stesso
+istante — a fine turno, quando l'incremento vuole atterrare.
+
+- **Un frammento per agente, in `docs/pending/`.** Ci si scrive la riga d'indice
+  e la voce di changelog; `npm run docs:merge` le mette al posto giusto — riga
+  in ordine alfabetico nella sezione della sua cartella, voce in coda
+  all'incremento in corso o in una sezione nuova se il titolo è diverso.
+- **Il blocco sparisce invece di spostarsi.** Il frammento è l'artefatto
+  durevole e la fusione è ritentabile da chiunque: se l'indice è occupato,
+  l'agente consegna lo stesso e il frammento resta lì per il prossimo che passa.
+  La fusione prende un lucchetto suo (`mkdir`, come il semaforo) perché due
+  merge insieme si sovrascriverebbero.
+- **La regola delle ~600 righe conserva il numero e corregge il motivo.** Il
+  lock non si tiene "fino a fine turno": da quando qualcuno lo aspetta scade in
+  90 secondi di fermo. Ma chi continua a scrivere lo rinnova, quindi il possesso
+  dura quanto il lavoro — ed è per questo che un file grande resta un punto di
+  serializzazione.
+
+## In corso — Il gioco si spiega all'indietro
+
+Il gioco si spiegava **in avanti** e il giocatore lo leggeva **all'indietro**.
+Ogni superficie rispondeva a «cos'è questa cosa» — descrizione del catalizzatore,
+raggio, usi favoriti; nessuna a «cosa devo fare per ottenerla». In mezzo c'erano
+diciotto soglie che non comparivano da nessuna parte, nemmeno in debug.
+
+Il difetto era già dichiarato per iscritto in `typology.ts`, sul tooltip che
+elenca cosa un ruolo può far nascere: *«un'approssimazione onesta: elenca le
+tipologie degli usi che il ruolo favorisce, non quelle che le soglie locali
+confermeranno»*. Onesta nell'intento, ma il giocatore la leggeva come una
+promessa.
+
+- **Ogni regola che rifiuta sa dire perché.** `specializationGapsOf`
+  (`src/sim/districts.ts`) e `typologyGapsOf` (`src/world/buildings/typology.ts`)
+  leggono all'indietro le due regole che decidono cosa nasce dove. La prima si
+  **deriva** dalla tabella in `balance.ts` — le chiavi delle soglie *sono* i campi
+  del profilo — quindi una soglia aggiunta lì compare nel referto da sola.
+- **La scheda di selezione risponde alla domanda che nessuno reggeva.** Due righe
+  nella sezione della colonna, subito sotto «District now»: quale quartiere questo
+  luogo potrebbe diventare e cosa lo trattiene, quale forma ci crescerebbe e cosa
+  le manca. Le due righe sono **accoppiate**: se la forma pretende un quartiere,
+  è quello che la riga sopra spiega. Scollegate avrebbero occupato lo stesso
+  spazio senza comporre una catena, che è la sola cosa per cui la scheda vale.
+- **Il requisito riportato è quello vincolante**, non il primo — la stessa scelta
+  che il dock fa dalla 7.4 — e un **ruolo mancante batte ogni soglia**: senza una
+  fabbrica in raggio, aspettare che la densità salga non serve a niente.
+- **La tessera dice cosa un ruolo sblocca invece di promettere.** Le tipologie
+  dietro una specializzazione escono da `May build` e rientrano in `Unlocks` con
+  la loro condizione (`farming districts → Hydroponic tower`), da `unlocksFor` in
+  `src/world/buildings/unlocks.ts` — derivata dai due cataloghi, non una terza
+  tabella. Cursore e dock leggono la stessa riga.
+- **`accepts` non è stata riscritta**: sta nel percorso caldo e resta il booleano
+  senza allocazioni. Le due traversate le tiene insieme un test di equivalenza su
+  tutto il catalogo per una griglia di luoghi — che al primo giro ha trovato due
+  difetti veri, un campionatore degenere (i bit bassi di un LCG) e un ramo di
+  `accepts` che nessuna riga del catalogo usa.
+
+## In corso — Il porto ha le barche, e gli aerei non passano più dentro le torri
+
+Tre difetti che si vedevano solo a schermo, e due dei tre si vedevano come
+un'**assenza** — la cosa che nessun test verde sa raccontare.
+
+- **Il porto non aveva barche, e la colpa era di un fuori-di-uno.** Il vincolo di
+  sito ammette il click fino a `SITE.coastalRadius` colonne dall'acqua; gli
+  ormeggi del porto stanno quattro e cinque colonne *oltre* il click; e
+  `sightWater` si fermava alla prima colonna con la cima `<= seaLevel`, cioè
+  sull'orlo **asciutto** della spiaggia — `IslandGenerator` scrive l'acqua solo
+  dove la cima sta *sotto* il pelo. Su un'isola a quote quantizzate quell'orlo non
+  è una riga ma una fascia di bassofondo larga dieci-quattordici colonne: misurato
+  su sedici piazzamenti del seed 4242, **tre porti su sedici** avevano una barca e
+  sei non avevano niente in acqua.
+- **La ricetta dichiara ora la propria linea d'acqua** (`LandmarkRecipe.waterline`:
+  12 per il porto, 8 per il ferry) e `landmarkDriver` fa **scorrere la struttura
+  lungo il proprio fronte** finché quella colonna cade sull'acqua vera. Il
+  catalizzatore resta dove il dito l'ha messo — è lui a portare l'influenza — e la
+  banchina va a incontrare il mare. Lo scorrimento è solo in avanti e limitato
+  dall'ancora della ricetta: oltre, la colonna cliccata uscirebbe dall'ingombro e
+  `catalystIn` non ritroverebbe più il catalizzatore, cioè un monumento fermo allo
+  stadio zero per sempre. Stessa misura, dopo: **sedici porti su sedici** con la
+  barca da lavoro in acqua, quindici con la nave in banchina, dodici con la nave
+  che parte davvero.
+- **`sightWater` distingue ora la battigia dall'acqua a galla** (`afloat`), e le
+  due risposte restano due: chi chiede «è un posto sul mare?» vuole l'orlo bagnato
+  dentro — quello *è* un sito costiero — e chi ci deve posare uno scafo lo vuole
+  fuori. Fondere le due, provato, sposta la gerarchia verticale su tutto il fronte
+  costiero e cambia dove la città cresce. Il raggio della ricerca a galla è suo
+  (`SITE.shoreReach`, 14).
+- **Gli aerei volavano dentro i grattacieli.** `TRAFFIC.planeCruise` a
+  quarantaquattro voxel bastava quando gli edifici erano bassi; con
+  `BUILDER.maxLevel` a dodici una torre supera i centoquaranta, e un semilato di
+  circuito da ottantaquattro la centra in pieno. La quota dichiarata diventa il
+  **minimo**: il nuovo `skyRoutes.ts` sonda il profilo sotto la propria spezzata —
+  per segmenti e non per vertici, o due vertici lontani ottantaquattro voxel
+  saltano qualunque torre ci sia in mezzo — e la crociera è il massimo fra quota
+  dichiarata e cima sorvolata più `planeClearance`. Le quote intermedie sono
+  frazioni della salita e non voxel, così decollo e finale salgono con lei. Vale
+  anche per l'orbita del dirigibile, con un franco più stretto (`aloftClearance`):
+  un dirigibile appartiene al tetto che lo tiene.
+- **Il profilo arriva come predicato** (`CeilingProbe`), esattamente come già
+  l'acqua: `world/traffic/` non ha un registry e non deve averne uno. A fornirlo è
+  `GrowthScene`, che somma `registry.supportAt` e il terreno — un circuito che
+  scavalcasse le torri e non la collina dietro sarebbe lo stesso difetto guardato
+  dall'altra parte — e che ora **rifà le rotte anche a scaglioni di sessantaquattro
+  edifici**: senza quel segnale, un circuito calcolato in mezzo ai campi resterebbe
+  alla propria quota mentre attorno cresce il centro.
+- **Lo scalo in quota mette in moto tre mestieri invece di uno.** Su otto colonne
+  di tetto non ci sta una pista, e il pilone da solo raccontava metà di quello che
+  un tetto attrezzato è: `SKYPORT` guadagna la **piazzola dell'eVTOL** sopra
+  l'aerostazione e la **cima della mongolfiera** nell'unico angolo libero, più i
+  due `BERTH` e le due sagome (`evtol` più largo che lungo con quattro dischi —
+  l'opposto esatto dell'aereo, visto da sopra; `balloon` a cinque conci alternati,
+  l'unica sagoma che sta quasi tutta *sopra* la propria origine). L'eVTOL fa un
+  giro chiuso il cui primo vertice **è** la piazzola, cioè scende davvero; il
+  pallone è un pendolo che sale prima di allontanarsi, e si allontana lungo il
+  verso del proprio ormeggio — legarlo al vento di `plume`, che è una costante del
+  mondo, manderebbe metà dei palloni dentro il proprio scalo su due versi di
+  rotazione su quattro.
+- **`traffic/routes.ts` si divide in tre** lungo *cosa si lavora separatamente*:
+  `routePath.ts` (di cosa è fatta una rotta e i quattro modi di costruirne una),
+  `routes.ts` (orchestrazione e ciò che galleggia), `skyRoutes.ts` (ciò che
+  scavalca la città). Nessun ciclo: le rotte in quota importano i tipi
+  dell'orchestratore come soli tipi, e le primitive dal file che le contiene.
+- File: `src/world/traffic/{config,routes,routePath,skyRoutes,routes.test}.ts`,
+  `src/world/landmarks/{config,generate.test}.ts`, `src/world/sites/{config,siteRules}.ts`,
+  `src/world/buildings/{landmarkDriver,landmarkCoast.test}.ts`,
+  `src/engine/vehicleHulls.ts`, `src/game/growthScene.ts`, `PROJECT_INDEX.md`,
+  `src/world/AGENTS.md`.
+
+---
+
+## In corso — Il ciglio smette di essere alto uguale
+
+Le pareti di roccia erano tutte alte due cubi. Non era una taratura sfortunata:
+era il teorema. Con **una** scala di quote l'alzata è funzione della sola quota,
+tutte le celle di una fascia ne condividono una, e siccome due celle contigue
+cadono su pedate contigue il salto vale *esattamente un'alzata* — un numero solo
+per fascia, su tutta l'isola. Nemmeno `TERRACE.jitter` poteva cambiarlo: scuoteva
+la quota prima di posarla, quindi spostava il ciglio **in pianta** e mai il suo
+salto.
+
+- **Le scale di `terrace.ts` diventano tre** (`TERRACE.beddings`): roccia fine,
+  media e massiccia, un `cellSize` l'una dall'altra rispetto alla tacca di
+  schedule, che ora ha un nome suo (`terraceScheduleAt`). Un campo di rumore a due
+  ottave sceglie quale tocca a ogni cella — `beddingSpan` dà carattere a un
+  versante intero, `beddingBreak` spezza la singola scarpata lungo la sua corsa —
+  e siccome le pedate di due scale cadono a quote diverse, il salto varia dove
+  varia la stratificazione. Sull'isola di riferimento i cigli passano da un
+  valore per fascia a 4, 6 e 8 voxel mescolati alle stesse quote.
+- **Lo scarto è sistematico e non estratto**, ed è la parte che è costata due
+  tentativi. Un'alzata tirata a sorte per ogni pedata sembrava dare più varietà e
+  ne dava meno: due scale che pescano dallo stesso ventaglio si ritrovano di
+  continuo sulla stessa pedata e da lì in poi *sono* la stessa scala — misurate,
+  tre su quattro condividevano ogni base fino a quota 66. Una stratificazione che
+  sale sempre a passo suo diverge e resta divergente, ed è anche ciò che una
+  stratificazione è: uno spessore di strato caratteristico.
+- **Il campo va allargato prima di quantizzarlo** (`beddingContrast`), o metà
+  delle scale non verrebbe mai usata: il rumore di valore è una miscela
+  bilineare, e mescolarne due ottave stringe ancora. Le due stratificazioni
+  centrali si prendevano il 91% dell'isola e le estreme il 9%.
+- **Il tetto del dirupo resta `TERRACE.maxStep`, e la dimostrazione è più forte
+  di prima.** Ogni scala posa su un multiplo di cella entro `maxStep` sotto la
+  quota vera, quindi due celle contigue distano meno di `maxStep` più il loro
+  dislivello di campo: fra multipli di cella quel totale vale `maxStep` esatti,
+  comunque siano scelte le due scale. Non dipende più da un margine stretto fra
+  ampiezza del disturbo e pedata — le soglie di `IslandGenerator.test.ts` sono
+  passate senza essere toccate.
+- **`TERRACE.jitter` e le sue quattro costanti spariscono.** Il campo di
+  stratificazione fa da solo il suo mestiere — il ciglio di una data quota cade a
+  raggi diversi dove la stratificazione cambia, quindi le curve di livello si
+  spezzano — e in più varia il salto. Un meccanismo al posto di due; e un
+  disturbo in quota si mangerebbe tutto il margine su cui poggia la
+  dimostrazione del tetto.
+- **La pianura è rimasta quella di prima, voxel per voxel.** Sotto
+  `TERRACE.fromHeight` tutte le stratificazioni coincidono: la città cresce lì, e
+  un dirupo in mezzo a un isolato sarebbe un dispetto. L'edificabile misurato
+  sull'isola di riferimento non cala.
+
+File: `src/world/terrain/terrace.ts`, `src/world/terrain/config.ts`, più
+`terrace.test.ts` (riscritto: la nuova invariante su qualunque coppia di scale, e
+il ciglio che a parità di quota non ha una sola altezza) e `IslandGenerator.test.ts`.
+
+---
+
+## In corso — L'isola si monta dal cielo
+
+Il primo caricamento era qualche secondo in cui l'isola **spuntava** a fasce:
+niente da guardare mentre lo streaming lavorava. Ora i pezzi entrano da fuori
+schermo e atterrano al loro posto, con una pioggia di cubetti davanti a loro.
+
+- **A cadere è il chunk, non il voxel, ed è una conseguenza del greedy mesher.**
+  A valle del meshing il cubo singolo non esiste più: una distesa di celle
+  identiche è un quad solo, quindi un dislivello calcolato per vertice
+  *stirerebbe* quel quad invece di farlo scendere. Il chunk è invece l'unità
+  rigida che il renderer ha già in mano — una mesh, una matrice — e muoverne
+  l'origine porta giù tutto il pezzo. **Nessun attributo di vertice nuovo,
+  nessun uniform, nessuna ricompilazione**: i contratti 1–6 restano intatti.
+- **L'ombra segue da sola.** Il materiale di profondità ripete la stessa
+  trasformazione di vertice di quello di scena, quindi un chunk in aria proietta
+  da dove sta senza una seconda copia da tenere allineata. È l'argomento che ha
+  deciso la mossa contro un dislivello negli shader, dove le copie sarebbero
+  state due. Un chunk in volo resta però **fuori** dal volume su cui si adatta la
+  shadow map: allargarne il frustum di centinaia di voxel darebbe texel giganti
+  su tutto quello che nel frattempo è già atterrato.
+- **La quota di partenza non è una costante in voxel**, ed è il primo errore che
+  abbiamo fatto: quarantotto voxel su un'isola larga cinquecento sono un
+  saltello, non una caduta dal cielo. «Dal cielo» vuol dire **da fuori schermo**,
+  e quanto sia lontano il bordo alto dipende da zoom e inclinazione — un
+  dislivello `h` sposta un punto verso l'alto dello schermo di `h · cos(pitch)`,
+  esattamente, perché la camera è ortografica. `fallHeightFor` legge l'altezza
+  visibile dal frustum e ne chiede una intera, non mezza: chi riposa in fondo
+  allo schermo deve partire comunque da sopra il bordo.
+- **La finestra non si chiude su `generator.done`**, ed è il secondo errore che
+  abbiamo fatto: quando l'ultimo blocco è scritto restano in coda centinaia di
+  chunk da meshare, e disarmando lì comparivano di colpo — cioè proprio il pop
+  che la caduta esiste per togliere. Si chiude quando non c'è più niente da
+  meshare (`chunkRenderer.isIdle`), e l'effetto finisce quando anche l'ultimo
+  pezzo è atterrato.
+- **Il tempo è quello dello streaming, non un orologio a parte.** Un chunk parte
+  nell'istante in cui la sua geometria è pronta, quindi l'isola compare con lo
+  stesso ritmo di prima più la durata di un'ultima caduta. Il ritardo porta un
+  jitter per chunk — senza, i pezzi consegnati insieme atterravano in lockstep e
+  la caduta si leggeva come una tapparella — e un termine per piano di chunk,
+  così il mondo si impila dal basso. Una geometria che arriva a chunk già partito
+  eredita la posizione corrente: un chunk scritto a metà viene rimeshato, e
+  ricominciare la caduta lo farebbe risalire.
+- **I cubetti veri sono l'altra metà**, e stanno sopra la scena come tutto ciò
+  che si muove: `dropRain.ts` decide dove, `DropRainView.ts` disegna in una mesh
+  sola con i buffer riscritti per frame e il `drawRange` a tagliare la coda —
+  l'idioma del pennacchio. Dove atterra un cubetto lo dice una sonda passata dal
+  chiamante, quindi il modulo non conosce né il mondo né Three e si verifica in
+  `node`. Sotto pressione la semina si assottiglia invece di interrompersi.
+- La finestra vale **solo per la prima scena**: le espansioni costiere avvengono
+  dentro una città viva, dove un pezzo di costa che cade dal cielo sarebbe un
+  evento e non un caricamento.
+- Numeri in `src/engine/introDrop.ts` e `src/engine/dropRain.ts`, uno per
+  dominio. `?intro=0` toglie l'effetto, `__voxelDrop()` lo rigioca senza
+  ricaricare, e l'overlay conta i chunk `falling` accanto a quelli visibili.
+
+## In corso — L'influenza prende la forma del luogo
+
+L'area di influenza di un catalizzatore non era un cerchio: era un **quadrato**.
+Il campo misurava in distanza di Chebyshev, l'overlay disegnava un cerchio
+euclideo, e sulla diagonale l'influenza vera arrivava il 41% oltre la linea
+promessa. Nel frattempo un cerchio di fabbrica attraversava trenta celle di mare
+e scavalcava un dirupo come se non ci fossero.
+
+- **La distanza è geodetica.** L'influenza si propaga sulle celle percorribili
+  invece che in linea retta: l'acqua la ferma, un dirupo la rallenta, una strada
+  la porta più lontano. Dijkstra a 8 vicini con coda a secchielli, tagliato al
+  raggio, in `src/sim/reach.ts`. I costi stanno in `BALANCE.reach` e a leggerli
+  è `src/world/reachCost.ts`, l'unico posto da cui terreno e strade si vedono
+  insieme; la simulazione riceve una funzione, non il mondo — com'è già per
+  `waterDistance` e `headroomAt`.
+- **Con costo uniforme è esattamente la Chebyshev di prima**, cella per cella:
+  un passo diagonale copre 1 su entrambi gli assi allo stesso prezzo. È una
+  generalizzazione stretta, non una sostituzione, ed è la ragione per cui i test
+  scritti sulla forma vecchia sono rimasti verdi senza toccarli.
+- **Il costo di un passo non scende mai sotto 1**, e non è una taratura: sotto,
+  la portata uscirebbe dal quadrato che il campo ricalcola e cadrebbe
+  l'equivalenza fra percorso incrementale e `rebuild`. Una strada perciò non
+  costa *meno* — a costare di più è tutto il resto.
+- **La curva di decadimento era scritta in tre posti** — il campo, i distretti,
+  e `poleReach`, che decide **l'altezza degli edifici**. Due dei tre avevano già
+  un commento che dichiarava di temere il disallineamento. Ora è una sola,
+  `falloff` in `reach.ts`, e il centro della città non può più cadere in tre
+  punti diversi.
+- **L'overlay traccia il contorno vero**, con marching squares sugli stessi dati
+  che il campo usa: segmenti sciolti e non un anello, perché un canale può
+  tagliare la forma in due. La fascia è spessa in distanza geodetica, quindi
+  segue il bordo ovunque vada senza giunti da cucire.
+- Il campo resta un indice derivato, ma adesso dipende anche dal terreno:
+  `reviveSimState` riprende il costo come secondo argomento, e `rebuildField`
+  azzera le portate — serve dopo che l'isola si è allargata sotto.
+
+Restano da rimisurare le righe di `npm run bench` che toccano il campo: il
+Dijkstra si paga una volta per piazzamento, non a ogni ricalcolo, ma il numero
+va preso e non stimato.
+
 ## In corso — L'arcologia: un'opera sola che vale un quartiere
 
 Fase 4.14, l'ultima della spina dorsale della fase 4. Non costruisce nessun

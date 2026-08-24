@@ -542,7 +542,8 @@ export const LANDFORM = {
 } as const;
 
 /**
- * Il gradino con cui il terreno sale, a seconda di quanto e' gia' in alto.
+ * Il gradino con cui il terreno sale, a seconda di quanto e' gia' in alto e di
+ * che stratificazione ha la roccia sotto quella cella.
  *
  * **La cella non e' il gradino.** `cellSize` e' la grana in pianta — quanto e'
  * largo un cubo — e fino alla 4.x era anche il passo in quota, cioe' l'unico
@@ -550,20 +551,31 @@ export const LANDFORM = {
  * di livello tutte uguali: leggibile, ma senza montagne, perche' una montagna
  * non e' un pendio con piu' scalini, e' un pendio con scalini **piu' alti**.
  *
- * Qui il passo cresce con la quota, e cresce con le fasce di bioma: due voxel
- * sulla pianura, quattro nella foresta, sei sulla collina, otto sulla roccia.
- * La costa e la pianura restano quelle di prima — `fromHeight` coincide con
- * `beachMaxHeight` — perche' e' li' che la citta' cresce e un dirupo in mezzo a
- * un isolato sarebbe un dispetto, non un paesaggio.
+ * Il passo cresce percio' con la quota, e cresce con le fasce di bioma: in media
+ * due voxel sulla pianura, quattro nella foresta, sei sulla collina, otto sulla
+ * roccia. La costa e la pianura restano quelle di prima — `fromHeight` coincide
+ * con `beachMaxHeight` — perche' e' li' che la citta' cresce e un dirupo in mezzo
+ * a un isolato sarebbe un dispetto, non un paesaggio.
+ *
+ * **Ma una scala sola da' un muro solo.** Se l'alzata e' funzione della sola
+ * quota, tutte le celle della stessa fascia ne condividono una, e siccome due
+ * celle contigue cadono su pedate contigue il salto vale *esattamente
+ * un'alzata*: ogni parete della fascia esce alta uguale, per tutto il suo
+ * sviluppo e su tutta l'isola. Il muro uniforme non era un difetto accanto
+ * all'invariante, **era** l'invariante. Le scale sono percio' `beddings`, con
+ * alzate diverse alle stesse quote, e un campo in pianta dice quale tocca a ogni
+ * cella: due celle contigue su scale diverse cadono su pedate che non si
+ * corrispondono, e il salto varia dove varia la stratificazione.
  *
  * **Il campo continuo non si tocca.** Il vincolo di Lipschitz vale ancora: e' la
  * *quantizzazione* a fare il muro, non il rilievo. Ne segue la proprieta' che
- * tiene in piedi tutto il resto — se ogni pedata e' larga almeno quanto il
- * dislivello massimo fra due celle contigue (meno di due voxel, misurato in
- * `heightField.test.ts`), allora due celle contigue non possono saltare piu' di
- * **un'alzata**, e il dirupo peggiore possibile e' `maxStep`. Non c'e' nessun
- * caso in cui il terreno si spezzi piu' di cosi', e non serve un clamp per
- * garantirlo.
+ * tiene in piedi tutto il resto, e regge comunque siano scelte le due scale —
+ * ogni scala posa su un multiplo di cella entro `maxStep` sotto la quota vera,
+ * quindi due celle contigue distano meno di `maxStep` piu' il dislivello del
+ * campo (sotto i due voxel, misurato in `heightField.test.ts`), e fra multipli
+ * di cella quel totale vale `maxStep` esatti. La dimostrazione per esteso sta in
+ * `terrace.ts`. Non c'e' nessun caso in cui il terreno si spezzi piu' di cosi',
+ * e non serve un clamp per garantirlo.
  */
 export const TERRACE = {
   /**
@@ -571,12 +583,14 @@ export const TERRACE = {
    *
    * E' `beachMaxHeight` e non un numero suo: sopra quella soglia finisce la
    * spiaggia e comincia il rilievo, ed e' esattamente li' che ha senso che il
-   * terreno cominci a spezzarsi.
+   * terreno cominci a spezzarsi. E' anche la quota sotto la quale tutte le
+   * stratificazioni **coincidono**, quindi la pianura non dipende da quale
+   * scala le tocchi.
    */
   fromHeight: 24,
 
   /**
-   * Ogni quanti voxel di quota l'alzata cresce di una cella.
+   * Ogni quanti voxel di quota l'alzata media cresce di una cella.
    *
    * Otto, cioe' la stessa larghezza con cui `TERRAIN` divide roccia, collina e
    * foresta: il passo cambia dove cambia la fascia, e le due letture del rilievo
@@ -591,44 +605,81 @@ export const TERRACE = {
    * e' dichiarato qui perche' e' anche il numero che le opere di terra devono
    * poter colmare: sta largamente sotto `GRADING.maxWorksStep`, quindi un lotto
    * che nasce a cavallo di un ciglio costruisce il suo terrapieno invece di
-   * essere rifiutato.
+   * essere rifiutato. `ROCK.bandHeight` ci e' agganciato: alzarlo allarga anche
+   * le bande di grigio, e sono due decisioni diverse.
    */
   maxStep: 8,
 
   /**
-   * Di quanto la quota di una cella viene scossa prima di posarsi sulla scala,
-   * in frazione dell'**alzata oltre la cella**.
+   * Quante scale di quota esistono, cioe' quante stratificazioni diverse la
+   * roccia dell'isola sa avere: fine, media, massiccia.
    *
-   * E' il numero che toglie ai gradoni la faccia di curve di livello: senza, il
-   * ciglio cade dove il campo attraversa una quota tonda, e su una cupola sono
-   * cerchi concentrici. Con, lo stesso ciglio serpeggia — e serpeggia tanto piu'
-   * quanto il fianco e' dolce, perche' mezzo voxel di quota su una pendenza di un
-   * quinto vale due colonne e mezzo di scostamento in pianta.
-   *
-   * **Frazione dell'alzata oltre la cella, e non un'ampiezza assoluta**, perche'
-   * li' sta l'invariante: in pianura l'alzata *e'* la cella, quindi l'ampiezza e'
-   * zero e il terreno resta quello di prima — che e' anche l'unico posto dove la
-   * citta' cresce. Piu' su, due celle contigue distano meno di due voxel piu' due
-   * ampiezze, e sotto la meta' quel totale resta dentro la pedata: due celle non
-   * possono ancora scavallare piu' di un'alzata. Alzarlo oltre 0,5 rompe
-   * esattamente quella proprieta', e il terreno comincia a spezzarsi di due
-   * alzate.
+   * **Tre e non di piu', perche' di piu' non ce ne stanno.** Le alzate sono
+   * multipli di cella fra `cellSize` e `maxStep`, cioe' quattro valori in tutto,
+   * e un ventaglio largo tre ne copre gia' la fascia utile a ogni quota. Una
+   * quarta stratificazione dovrebbe ripetere l'alzata di un'altra, e due scale
+   * con lo stesso passo sono la stessa scala.
    */
-  jitter: 0.45,
+  beddings: 3,
 
   /**
-   * Passo delle due ottave del disturbo, in celle, e quanto pesa la lunga.
+   * Di quante celle la stratificazione piu' massiccia supera la propria tacca di
+   * schedule. La piu' fine sta sotto di altrettanto.
    *
-   * Due e non una: la lunga fa serpeggiare il ciglio per decine di colonne, la
-   * corta ne sbreccia il filo. Con la sola lunga la scarpata resta una curva
-   * liscia spostata; con la sola corta il bordo si sgrana e a questa scala si
-   * legge come sporcizia invece che come roccia.
+   * **Un intero di celle e non una frazione**, perche' e' cio' che rende
+   * l'affermazione verificabile: dove lo schedule dice quattro escono due,
+   * quattro o sei, e mai un valore che non sia un multiplo di cella. Uno solo:
+   * lo scarto e' quello fra due fasce contigue, quindi il fianco resta quello
+   * dichiarato e cambia grana, non identita'.
    */
-  jitterSpan: 11,
-  jitterDetail: 3,
-  jitterMix: 0.45,
+  spread: 1,
 
-  jitterSalt: 0x7e_44_a5_0e,
+  /**
+   * Passo delle due ottave del campo che sceglie la stratificazione, in celle, e
+   * quanto pesa la lunga.
+   *
+   * Due e non una, e fanno due mestieri diversi. La **lunga** da' carattere a un
+   * versante intero — questo fianco sale a gradoni larghi, quello accanto a
+   * scalini — ed e' la scala a cui una stratificazione si legge come tale. La
+   * **corta** spezza il singolo ciglio lungo il suo sviluppo: e' quella che
+   * toglie alla parete l'altezza costante, che era la cosa che la faceva
+   * sembrare disegnata. Con la sola lunga ogni scarpata resta alta uguale per
+   * tutta la sua corsa; con la sola corta il terreno si sgrana e a questa scala
+   * si legge come sporcizia invece che come roccia.
+   *
+   * E' anche cio' che ha sostituito il disturbo di quota che scuoteva la cella
+   * prima di posarla: il ciglio di una data quota cade a raggi diversi dove la
+   * stratificazione cambia, quindi le curve di livello si spezzano da se'. Un
+   * disturbo in quota, oltre a non servire piu', si mangerebbe tutto il margine
+   * su cui poggia la dimostrazione del tetto.
+   */
+  beddingSpan: 20,
+  beddingBreak: 5,
+  beddingMix: 0.6,
+
+  /**
+   * Quanto il campo viene allargato attorno alla meta' prima di scegliere la
+   * stratificazione.
+   *
+   * **Senza, meta' delle scale non verrebbe mai usata.** Il rumore di valore e'
+   * una miscela bilineare di quattro angoli, e mescolarne due ottave stringe
+   * ancora: misurato sull'isola di riferimento, il campo grezzo sta fra 0,25 e
+   * 0,74 per il novanta per cento delle celle, quindi le due stratificazioni
+   * centrali si prendevano il 91% dell'isola e le estreme il 9%. Le scale erano
+   * quattro sulla carta e due sul terreno, ed e' esattamente la varieta' che si
+   * era andati a cercare. Due allarga quell'intervallo su tutto `[0, 1)`; le code
+   * che ne escono si appiattiscono sulle estreme, che e' il verso giusto — una
+   * stratificazione estrema e' una zona, non un puntino.
+   */
+  beddingContrast: 2,
+
+  /**
+   * Le scale **non portano il seme dell'isola**: sono il repertorio della
+   * grammatica del terreno — fine, media, massiccia — uguale ovunque e tabulabile
+   * una volta sola. Il seme entra solo da qui, cioe' da quale scala tocchi a
+   * quale posto.
+   */
+  beddingSalt: 0x7e_44_a5_0e,
 } as const;
 
 /**

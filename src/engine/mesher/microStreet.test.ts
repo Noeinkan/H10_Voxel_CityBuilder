@@ -10,6 +10,7 @@ import {
   type MicroGeometryWriter,
 } from './microGeometry';
 import { appendStreetDetail } from './microStreet';
+import { planCarves } from './carvePlan';
 import { MESH_UNITS_PER_VOXEL } from './meshTypes';
 
 /**
@@ -74,6 +75,11 @@ function streetBoxes(
   padded: Uint8Array,
   origin: readonly [number, number, number],
 ): readonly (FixedBox & { readonly palette: number })[] {
+  // La maschera degli scavi va riempita anche qui: da quando il vano scala e la
+  // rampa sono la stessa decisione, chiamare il gruppo con una maschera vuota
+  // misurerebbe un retro senza scale e il test non se ne accorgerebbe.
+  const marks = new Uint8Array(PADDED_VOL);
+  planCarves(padded, marks, origin);
   const { facadeByFace, bySurface } = collectSurfaceCells(padded);
   const boxes: (FixedBox & { palette: number })[] = [];
   const writer: MicroGeometryWriter = {
@@ -85,7 +91,7 @@ function streetBoxes(
       return true;
     },
   };
-  appendStreetDetail(padded, writer, facadeByFace, bySurface[SURFACE_KIND.roofTech], origin);
+  appendStreetDetail(padded, writer, facadeByFace, bySurface[SURFACE_KIND.roofTech], origin, marks);
   return boxes;
 }
 

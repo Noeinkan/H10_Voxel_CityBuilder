@@ -75,6 +75,18 @@ export {
 } from './farms';
 export { nextBuildSites, type BuildSite, type BuildSiteQuery } from './nextBuildSites';
 export {
+  computeReach,
+  distAt,
+  falloff,
+  reachAt,
+  ReachCache,
+  UNIFORM_COST,
+  type ReachField,
+  type ReachPole,
+  type ReachSource,
+  type StepCost,
+} from './reach';
+export {
   POLICIES,
   policyById,
   isPolicyId,
@@ -91,11 +103,15 @@ export { policyConflict } from './policies';
 export {
   ALL_SPECIALIZATIONS,
   dominantUse,
+  rolesForSpecialization,
+  specializationGapsOf,
   specializationOf,
   urbanProfileAt,
   type DistrictId,
   type LocalUrbanProfile,
   type Specialization,
+  type SpecializationGap,
+  type UrbanMetric,
   type UrbanSources,
 } from './districts';
 export {

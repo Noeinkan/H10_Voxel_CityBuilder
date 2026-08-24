@@ -17,6 +17,7 @@ import {
 } from 'three';
 import { CHUNK } from '../world/chunkCoords';
 import type { VoxelWorld } from '../world/VoxelWorld';
+import { dropDelay, dropLift, hasLanded } from './introDrop';
 import { buildCeilingSlab, buildPaddedVolume } from './mesher/buildPaddedVolume';
 import type { ChunkMeshResult } from './MesherPool';
 import { MesherPool } from './MesherPool';
@@ -31,6 +32,13 @@ interface ChunkMeshEntry {
   appliedJobId: number;
   /** Visibilita' da ripristinare dopo la pass d'ombra. */
   shadowVisible: boolean;
+  readonly cx: number;
+  readonly cy: number;
+  readonly cz: number;
+  /** Quota a cui l'origine del chunk torna: la caduta d'ingresso ci scende sopra. */
+  readonly restZ: number;
+  /** Istante da cui il chunk comincia a scendere; `Infinity` se non cade. */
+  bornAt: number;
 }
 
 /** Voce della coda di rebuild: le coordinate sono tenute in chiaro per non riparsare la chiave. */
@@ -52,6 +60,8 @@ export interface ChunkRendererStats {
   readonly geometryBytes: number;
   readonly quads: number;
   readonly detailQuads: number;
+  /** Chunk ancora in aria per la caduta d'ingresso. */
+  readonly chunksFalling: number;
 }
 
 /** Numero massimo di geometrie caricate per frame, oltre al budget di tempo. */
@@ -70,6 +80,15 @@ const RESCORE_INTERVAL = 15;
  */
 export class ChunkRenderer {
   readonly group = new Group();
+
+  /**
+   * Chiamato quando un chunk riceve la sua **prima** geometria mentre la caduta
+   * d'ingresso e' armata.
+   *
+   * E' l'unico modo che la pioggia di cubetti ha di sapere quale pezzo di isola
+   * sta arrivando: qui dentro non entra niente che la riguardi.
+   */
+  onChunkBorn: ((cx: number, cy: number, cz: number, bornAt: number) => void) | null = null;
 
   private readonly world: VoxelWorld;
   private readonly material: ShaderMaterial;
@@ -94,6 +113,13 @@ export class ChunkRenderer {
   private quadTotal = 0;
   private detailQuadTotal = 0;
   private visibleCount = 0;
+
+  /** I soli chunk che stanno scendendo: il frame non tocca gli altri. */
+  private readonly falling: ChunkMeshEntry[] = [];
+  private dropArmed = false;
+  private dropClock = 0;
+  /** Quota di partenza in voxel, decisa dall'inquadratura: vedi `fallHeightFor`. */
+  private dropFall = 0;
 
   constructor(world: VoxelWorld, material: ShaderMaterial, voxelSize: number, pool = new MesherPool()) {
     this.world = world;
@@ -122,6 +148,7 @@ export class ChunkRenderer {
       geometryBytes: this.geometryBytes,
       quads: this.quadTotal,
       detailQuads: this.detailQuadTotal,
+      chunksFalling: this.falling.length,
     };
   }
 
@@ -153,6 +180,63 @@ export class ChunkRenderer {
     }
   }
 
+  /**
+   * Apre la finestra della caduta d'ingresso: da qui in avanti un chunk che
+   * riceve la sua prima geometria nasce in cielo e ci scende.
+   *
+   * Il tempo e' in secondi ed e' lo stesso che riceve `stepDrop`. La quota di
+   * partenza arriva da fuori perche' dipende dall'inquadratura, che il renderer
+   * non ha nessun motivo di conoscere: la calcola `fallHeightFor`.
+   */
+  armDrop(now: number, fall: number): void {
+    this.dropArmed = true;
+    this.dropClock = now;
+    this.dropFall = fall;
+  }
+
+  /**
+   * Chiude la finestra. Chi e' gia' in aria finisce di scendere: e' `stepDrop`
+   * a dire quando non c'e' piu' niente da animare.
+   */
+  disarmDrop(): void {
+    this.dropArmed = false;
+  }
+
+  /** true finche' un chunk nuovo nasce ancora in cielo. */
+  get dropIsArmed(): boolean {
+    return this.dropArmed;
+  }
+
+  /** Rimanda in cielo tutto quello che c'e' gia': serve a tarare i numeri. */
+  replayDrop(now: number, fall: number): void {
+    this.armDrop(now, fall);
+    this.falling.length = 0;
+    for (const entry of this.entries.values()) this.launchDrop(entry);
+  }
+
+  /**
+   * Fa scendere i chunk in aria di un frame, e dice se ne resta qualcuno.
+   *
+   * Va chiamata fra `update` e `cull`: dopo la prima perche' un chunk nato in
+   * questo frame deve gia' scendere in questo frame, prima della seconda perche'
+   * il culling deve leggere gli AABB appena spostati. L'orologio resta indietro
+   * di un frame per chi nasce — sedici millisecondi su una caduta di un secondo.
+   */
+  stepDrop(now: number): boolean {
+    this.dropClock = now;
+    for (let i = this.falling.length - 1; i >= 0; i--) {
+      const entry = this.falling[i];
+      const age = now - entry.bornAt;
+      this.liftTo(entry, dropLift(age, this.dropFall));
+      if (!hasLanded(age)) continue;
+
+      entry.bornAt = Infinity;
+      this.falling[i] = this.falling[this.falling.length - 1];
+      this.falling.pop();
+    }
+    return this.falling.length > 0;
+  }
+
   /** Frustum culling per chunk: imposta `visible` e aggiorna il conteggio. */
   cull(camera: Camera): void {
     camera.updateMatrixWorld();
@@ -164,10 +248,13 @@ export class ChunkRenderer {
     for (const entry of this.entries.values()) {
       const inside = this.frustum.intersectsBox(entry.box);
       entry.mesh.visible = inside;
-      if (inside) {
-        visible++;
-        this.visibleBox.union(entry.box);
-      }
+      if (!inside) continue;
+      visible++;
+      // Un chunk ancora in aria **non** entra nel volume su cui si adatta la
+      // shadow map: parte da fuori schermo, e allargare il frustum del sole di
+      // qualche centinaio di voxel vorrebbe dire texel giganti su tutto quello
+      // che nel frattempo e' gia' atterrato.
+      if (entry.bornAt === Infinity) this.visibleBox.union(entry.box);
     }
     this.visibleCount = visible;
   }
@@ -220,6 +307,7 @@ export class ChunkRenderer {
       entry.geometry.dispose();
     }
     this.entries.clear();
+    this.falling.length = 0;
     this.pending.length = 0;
     this.pendingSet.clear();
     this.geometryBytes = 0;
@@ -351,7 +439,7 @@ export class ChunkRenderer {
         localMax.clone().add(mesh.position),
       );
       this.group.add(mesh);
-      this.entries.set(result.key, {
+      const entry: ChunkMeshEntry = {
         mesh,
         geometry,
         box,
@@ -359,10 +447,20 @@ export class ChunkRenderer {
         detailQuads: result.detailQuadCount,
         appliedJobId: result.jobId,
         shadowVisible: true,
-      });
+        cx: chunk.cx,
+        cy: chunk.cy,
+        cz: chunk.cz,
+        restZ: originZ,
+        bornAt: Infinity,
+      };
+      this.entries.set(result.key, entry);
       this.geometryBytes += bytes;
       this.quadTotal += result.quadCount;
       this.detailQuadTotal += result.detailQuadCount;
+      // Il pezzo parte per aria **prima** di essere disegnato: se aspettasse il
+      // frame dopo si vedrebbe un fotogramma al suo posto, cioe' proprio il pop
+      // che la caduta esiste per togliere.
+      if (this.dropArmed) this.launchDrop(entry);
       return;
     }
 
@@ -379,9 +477,48 @@ export class ChunkRenderer {
     existing.appliedJobId = result.jobId;
   }
 
+  /**
+   * Manda un chunk in cielo e lo mette fra quelli da far scendere.
+   *
+   * Il ritardo entra nell'istante di partenza invece che in un contatore a
+   * parte: `dropLift` di un'eta' negativa e' gia' la quota di attesa.
+   */
+  private launchDrop(entry: ChunkMeshEntry): void {
+    entry.bornAt = this.dropClock + dropDelay(entry.cx, entry.cy, entry.cz);
+    this.falling.push(entry);
+    this.liftTo(entry, this.dropFall);
+    this.onChunkBorn?.(entry.cx, entry.cy, entry.cz, entry.bornAt);
+  }
+
+  /**
+   * Porta l'origine del chunk a `lift` voxel sopra il suo posto.
+   *
+   * L'AABB si sposta con la mesh e non si allarga: un chunk in aria deve restare
+   * cullabile con la stessa precisione di uno a terra, e il frustum del sole si
+   * adatta al volume visibile.
+   */
+  private liftTo(entry: ChunkMeshEntry, lift: number): void {
+    const target = entry.restZ + lift * this.voxelSize;
+    const delta = target - entry.mesh.position.z;
+    if (delta === 0) return;
+
+    entry.mesh.position.z = target;
+    entry.mesh.updateMatrix();
+    entry.box.min.z += delta;
+    entry.box.max.z += delta;
+  }
+
   private removeEntry(key: string): void {
     const entry = this.entries.get(key);
     if (entry === undefined) return;
+
+    if (entry.bornAt !== Infinity) {
+      const at = this.falling.indexOf(entry);
+      if (at >= 0) {
+        this.falling[at] = this.falling[this.falling.length - 1];
+        this.falling.pop();
+      }
+    }
 
     const quads = entry.geometry.index === null ? 0 : entry.geometry.index.count / 6;
     this.group.remove(entry.mesh);

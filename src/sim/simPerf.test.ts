@@ -158,22 +158,41 @@ describe('costo della selezione dei siti', () => {
 describe('memoria del campo', () => {
   const terrainMap = testTerrain({ chunksX: MAP_SIDE_CHUNKS, chunksY: MAP_SIDE_CHUNKS });
 
+  /**
+   * Per colonna di chunk: un `Uint8Array` per uso, uno di occupazione e un
+   * `Uint16Array` di affollamento. Nessuna struttura sparsa fra le dense,
+   * nessun oggetto per cella: e' un conto che deve tornare a mano.
+   */
+  const perChunk = CELLS_PER_CHUNK * (CLASS_COUNT + 1) + CELLS_PER_CHUNK * 2;
+
   it('resta densa per colonna e limitata dai chunk toccati', () => {
     const state = cityOf256();
 
-    // Per colonna di chunk: un `Uint8Array` per uso, uno di occupazione, uno
-    // delle quote spese e un `Uint16Array` di affollamento. Nessuna struttura
-    // sparsa, nessun oggetto per cella: e' un conto che deve tornare a mano.
-    const perChunk = CELLS_PER_CHUNK * (CLASS_COUNT + 2) + CELLS_PER_CHUNK * 2;
     expect(state.field.byteLength).toBe(state.field.chunkCount * perChunk);
 
-    // Otto byte per colonna di mondo: quattro usi, l'occupazione, le quote e i
-    // due dell'affollamento. **La citta' in quota e' costata un byte per
-    // colonna**, non un indice `z` nel campo: quello avrebbe moltiplicato per il
-    // numero di livelli tutti e quattro gli usi, cioe' l'alternativa che la 4.9
-    // esiste per non prendere.
-    expect(perChunk / CELLS_PER_CHUNK).toBe(CLASS_COUNT + 4);
+    // Sette byte per colonna di mondo: quattro usi, l'occupazione e i due
+    // dell'affollamento. **La citta' in quota non e' costata niente qui**, ne'
+    // un indice `z` — che avrebbe moltiplicato per il numero di livelli tutti e
+    // quattro gli usi — ne' il byte per colonna con cui era cominciata.
+    expect(perChunk / CELLS_PER_CHUNK).toBe(CLASS_COUNT + 3);
     expect(state.field.byteLength).toBeLessThan(1_000_000);
+  });
+
+  it('la citta\' in quota si paga sulle colonne che la portano, non su tutte', () => {
+    // Il passo della fixture ripassa sulle stesse colonne dopo 250 edifici:
+    // duecentocinquanta stanno ognuno su una colonna sua, quattrocento ne
+    // impilano centocinquanta. E' il caso che prima allargava la memoria a tutti.
+    const flat = cityOf256(250);
+    const stacked = cityOf256(400);
+
+    expect(flat.field.stackedColumns).toBe(0);
+    expect(stacked.field.stackedColumns).toBe(150);
+    expect(stacked.field.stackAt(0, 0)).toBe(2);
+
+    // La memoria densa e' la stessa a colonna vergine e a colonna impilata: e'
+    // tutta la casella, ed e' anche la ragione per cui il conto sopra torna.
+    expect(flat.field.byteLength).toBe(flat.field.chunkCount * perChunk);
+    expect(stacked.field.byteLength).toBe(stacked.field.chunkCount * perChunk);
   });
 
   it('non cresce con i tick, solo con cio\' che il giocatore piazza', () => {

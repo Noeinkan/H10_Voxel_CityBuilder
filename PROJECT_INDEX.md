@@ -32,6 +32,7 @@ worker. `src/sim/` gira in Node senza DOM né GPU.
 | [index.html](index.html) | Pagina unica, `#app`, monta `src/main.ts` |
 | [package.json](package.json) | Script npm; dipendenze: `three`, `simplex-noise` |
 | [ROADMAP.md](ROADMAP.md) | Direzione del prodotto, milestone e gate dei prossimi incrementi |
+| [scripts/docs-merge.mjs](scripts/docs-merge.mjs) | `npm run docs:merge`: fonde i frammenti di `docs/pending/` in indice e changelog, con lucchetto per non pestarsi fra agenti |
 | [scripts/free-port.mjs](scripts/free-port.mjs) | Hook `prestart`/`predev`: libera la porta del dev server terminando le istanze node rimaste |
 | [shotkit.config.mjs](shotkit.config.mjs) | Ricette di cattura per gli scatti di riferimento in `.shots/` |
 | [tsconfig.json](tsconfig.json) | `strict` + flag extra; `noUncheckedIndexedAccess` off di proposito |
@@ -47,6 +48,7 @@ resto si apre a domanda — è ciò che tiene basso il contesto di partenza.
 | --- | --- | --- |
 | [AGENTS.md](AGENTS.md) | **Fonte unica** di comandi, convenzioni, contratti, budget e definizione di "finito" | sempre |
 | [CLAUDE.md](CLAUDE.md) | Puntatore: dove stanno le regole e cosa si sbaglia facilmente | sempre |
+| [docs/pending/README.md](docs/pending/README.md) | Formato dei frammenti di indice e changelog, e perché si scrive lì invece che nei due file | a domanda |
 | [src/engine/AGENTS.md](src/engine/AGENTS.md) | Renderer, mesher, palette, temi, modello di luce e pass | lavorando in `src/engine/` |
 | [src/world/AGENTS.md](src/world/AGENTS.md) | Storage, terreno, strade, edifici e catalogo delle tipologie | lavorando in `src/world/` |
 | [src/sim/AGENTS.md](src/sim/AGENTS.md) | Simulazione, stato, campo e relazioni di bilanciamento | lavorando in `src/sim/` |
@@ -63,10 +65,12 @@ resto si apre a domanda — è ciò che tiene basso il contesto di partenza.
 | [visualBlock.ts](src/world/visualBlock.ts) | Packing visuale in un byte: palette 0..31 e superficie 0..7, che su un voxel d'acqua porta la classe dello specchio e su una copertura del terreno — palette 0, un byte che il pack non produce mai — il tipo di erbetta | `SURFACE_KIND`, `SURFACE_KIND_NAMES`, `ALL_SURFACE_KINDS`, `WATER_CLASS`, `packVisualBlock`, `blockPalette`, `blockSurface`, `packCoverMark`, `coverMarkKind`, `isCoverMark` |
 | [chunkCoords.ts](src/world/chunkCoords.ts) | Costanti e conversioni di coordinate, indici delle facce, portata del sondaggio del cielo | `CHUNK`, `PADDED`, `SKY_PROBE`, `CEILING_VOL`, `idx`, `paddedIdx`, `ceilingIdx`, `toChunk`, `toLocal`, `keyOf`, `FACE_*` |
 | [rng.ts](src/world/rng.ts) | PRNG deterministico per la generazione | `mulberry32`, `hashCoords` |
+| [reachCost.ts](src/world/reachCost.ts) | Quanto costa all'influenza attraversare una colonna: l'acqua ferma, la strada porta lontano. L'unico posto da cui terreno e strade si leggono insieme | `createReachCost` |
 | [planMask.ts](src/world/planMask.ts) | Lo smusso della pianta, condiviso fra edifici e landmark: taglio di Manhattan, simmetrico allo scambio degli assi | `inPlan`, `onPlanEdge` |
 | [scenes/cityScene.ts](src/world/scenes/cityScene.ts) | Scene deterministiche a passi con budget: `city`, `noise`, `slab`, e il rimando a `diorama` e `swatch` | `createScene`, `SceneGenerator`, `SceneKind`, `SceneOptions`, `TILE`, `STREET`, `LOT` |
 | [scenes/dioramaScene.ts](src/world/scenes/dioramaScene.ts) | Un edificio solo su un basamento con il fronte strada, per giudicare il dettaglio da vicino | `createDioramaScene`, `parseBuildingUse`, `DIORAMA_DEFAULT_LEVEL`, `DioramaScene`, `DioramaOptions`, `DioramaSubject`, `DioramaSubjectOptions` |
-| [scenes/swatchLayout.ts](src/world/scenes/swatchLayout.ts) | **Ogni** numero e ogni geometria del campionario, puro: estensione, sagoma a gradoni del provino, riquadro di una cella, cella sotto una coordinata | `SWATCH`, `SWATCH_BAND`, `SWATCH_COLUMNS`, `SWATCH_ROWS`, `SWATCH_PILLARS`, `SWATCH_WATERS`, `CELL_TIERS`, `CELL_FOOTPRINT`, `CELL_HEIGHT`, `SCALE_ITEMS`, `SCALE_ORIGIN_Y`, `swatchExtent`, `matrixCellRect`, `strataPillarRect`, `plinthSpanAt`, `swatchCellAt`, `SwatchBand`, `SwatchCell`, `SwatchExtent`, `SwatchRect`, `SwatchTier`, `ScaleItem` |
+| [scenes/swatchLayout.ts](src/world/scenes/swatchLayout.ts) | **Ogni** numero e ogni geometria del campionario, puro: estensione, sagoma del provino a pezzi centrati, riquadro di una cella, cella sotto una coordinata | `SWATCH`, `SWATCH_BAND`, `SWATCH_COLUMNS`, `SWATCH_ROWS`, `SWATCH_PILLARS`, `SWATCH_WATERS`, `CELL_PARTS`, `CELL_FOOTPRINT`, `CELL_HEIGHT`, `CELL_LEDGE`, `cellSolidAt`, `SCALE_ITEMS`, `SCALE_ORIGIN_Y`, `swatchExtent`, `matrixCellRect`, `strataPillarRect`, `plinthSpanAt`, `swatchCellAt`, `SwatchBand`, `SwatchCell`, `SwatchExtent`, `SwatchRect`, `SwatchPart`, `ScaleItem` |
+| [scenes/swatchProbe.ts](src/world/scenes/swatchProbe.ts) | Quanti prismi di dettaglio emette una cella del campionario: rimisura con gli emettitori veri e un writer che conta invece di scrivere | `cellDetail`, `countDetail`, `SwatchDetail` |
 | [scenes/swatchScene.ts](src/world/scenes/swatchScene.ts) | Il campionario dei voxel: matrice palette × superficie, stratigrafia per bioma, fascia di scala. Scrive e basta | `createSwatchScene` |
 
 API pubblica del mondo: `setBlock`/`getBlock` e `getSurfaceKind` (rendering, marca sporco),
@@ -89,14 +93,17 @@ deformano il raggio, e che sul bordo torna il cerchio esatto che dichiara.
 
 La **montagna la fa la quantizzazione, non il rilievo**: il campo resta dolce, e
 `terrace.ts` allarga la pedata con la quota — due voxel in pianura, otto sulla
-roccia. Da li' escono i cigli, e dai cigli le sporgenze.
+roccia. Le scale sono pero' **tre** e non una, perche' con una sola il salto vale
+esattamente un'alzata e ogni parete di una fascia esce alta uguale: un campo in
+pianta sceglie fra roccia fine, media e massiccia, e il ciglio cambia altezza
+dove cambia la stratificazione. Da li' escono i cigli, e dai cigli le sporgenze.
 
 | File | Ruolo | Esporta |
 | --- | --- | --- |
 | [config.ts](src/world/terrain/config.ts) | **Ogni** soglia, frequenza, ampiezza, stratigrafia e numero della sagoma, del terrazzamento, della copertura, delle vene di roccia e delle sporgenze | `TERRAIN`, `LANDFORM`, `TERRACE`, `ROCK`, `GROUND_COVER`, `LEDGE`, `BIOME`, `BIOME_NAMES`, `BIOME_STRATA`, `BUILDABLE_BIOMES`, `WATER_IDS`, `TREE_DECOR` |
 | [outline.ts](src/world/terrain/outline.ts) | La forma in pianta di un elemento della sagoma: ellisse orientata con il raggio deformato da poche armoniche, che si spengono sul bordo. Il fattore di Lipschitz della deformazione, misurato e in forma chiusa | `Outline`, `Warp`, `WarpTerm`, `outlineOf`, `outlineRatio`, `outlinePoint`, `planWarp`, `warpLipschitz`, `SHAPE_WARP_LIPSCHITZ` |
 | [rockTone.ts](src/world/terrain/rockTone.ts) | I grigi della roccia: uno strato per gradone, e nessuna variazione in pianta — due grigi alla stessa quota vorrebbero dire due strati alla stessa quota | `rockBandAt`, `rockSurface`, `rockSubsoil` |
-| [terrace.ts](src/world/terrain/terrace.ts) | La scala di quote su cui il terreno si posa, l'alzata che cresce con la quota, il disturbo che toglie al ciglio la faccia di curva di livello, e il ciglio che ne esce | `terraceOf`, `terraceAt`, `terraceStepAt`, `cellFloor`, `isCliff` |
+| [terrace.ts](src/world/terrain/terrace.ts) | Le tre scale di quote su cui il terreno si posa, l'alzata che cresce con la quota e cambia con la stratificazione, il campo in pianta che sceglie la scala — e che toglie al ciglio sia la faccia di curva di livello sia l'altezza costante —, e il ciglio che ne esce | `terraceOf`, `terraceAt`, `terraceStepAt`, `terraceScheduleAt`, `cellFloor`, `isCliff` |
 | [flora.ts](src/world/terrain/flora.ts) | Catalogo delle specie e chi cresce dove: sei profili e una lista pesata per bioma | `TREE_SPECIES`, `TREE_SHAPES`, `TreeShape`, `TreeCanopyLevel`, `FLORA`, `BiomeFlora`, `SpeciesWeight`, `pickSpecies` |
 | [cellGrid.ts](src/world/terrain/cellGrid.ts) | Il reticolo di celle di un blocco, con due celle di margine: quota terrazzata, bioma, pendenza, salto e verso | `buildCellGrid`, `CellGrid`, `cellIsCliff`, `gridIndex`, `inGrid`, `CELL_MARGIN`, `CELLS_PER_BLOCK`, `GRID_SIDE`, `CELL_STEPS`, `HEIGHT_BORDER` |
 | [groundcover.ts](src/world/terrain/groundcover.ts) | Erbette, fiori e sassi: se e cosa cresce su una colonna, da un hash e senza record, piu' la tabella tinta/forma che il mesher legge dalla palette del terreno | `COVER`, `CoverKind`, `COVER_FORM`, `CoverForm`, `coverAt`, `coverToneOn`, `coverFormOn`, `coverGroundPalettes` |
@@ -150,18 +157,23 @@ map.columnAt(120, 96); // { height, biome, slope, buildable }
 | [FrameTiming.test.ts](src/engine/FrameTiming.test.ts) | Vero uno percento peggiore; tab nascosta e resume non contano come frame lenti | — |
 | [RenderQuality.ts](src/engine/RenderQuality.ts) | Pixel ratio adattivo con isteresi e profilo di effetti derivato: ombre, bloom, tilt-shift scendono insieme | `RenderQualityController`, `parseQualityMode`, `QualityMode`, `QualityProfile`, `QualityDecision`, `QualityReason` |
 | [RenderQuality.test.ts](src/engine/RenderQuality.test.ts) | Scende dopo due finestre lente, risale dopo dieci secondi stabili, i modi fissi hanno profilo fisso | — |
-| [InfluenceOverlay.ts](src/engine/InfluenceOverlay.ts) | Cerchi dei catalizzatori e perimetri dei settori, senza modificare le mesh voxel | `InfluenceOverlay` |
+| [InfluenceOverlay.ts](src/engine/InfluenceOverlay.ts) | Contorno della portata dei catalizzatori, tracciato con marching squares sui dati veri del campo, e perimetri dei settori | `InfluenceOverlay` |
 | [InspectGuides.ts](src/engine/InspectGuides.ts) | Le linee che dicono dove e' puntata una vista: riquadro, carreggiata della sezione, colonna a fuoco | `InspectGuides` |
 | [InspectView.ts](src/engine/InspectView.ts) | Lo stato delle viste di ispezione: colonna a fuoco, isolato scelto, aggancio della camera, ri-armo della quota. Il raccordo fra mondo e `inspect.ts`, che resta puro | `createInspectView`, `InspectView`, `InspectViewOptions`, `FocusCell` |
 | [InspectView.test.ts](src/engine/InspectView.test.ts) | La quota della fetta si arma una volta sola sul suolo guardato: non insegue il cursore, non salta al centro dell'inquadratura quando il raggio manca l'isola, non riscrive una quota scelta, si ri-arma solo riaprendo la vista | — |
 | [SelectionOutline.ts](src/engine/SelectionOutline.ts) | Il contorno di cio' che il giocatore ha scelto: base che segue il terreno, coperchio alla quota della cosa, montanti agli angoli. Colore proprio, perche' non e' una guida di ispezione | `SelectionOutline`, `SelectionBox` |
 | [AtmosphereControl.ts](src/engine/AtmosphereControl.ts) | Chi possiede tema, ora e modo del giorno, e li scrive in renderer, composer e materiale | `createAtmosphereControl`, `AtmosphereControl`, `AtmosphereOptions` |
 | [PlacementCursor.ts](src/engine/PlacementCursor.ts) | Segnaposto sotto il puntatore: base, mirino, onda e fascio, sempre sopra la scena | `PlacementCursor` |
-| [TrafficView.ts](src/engine/TrafficView.ts) | I mezzi in movimento, fuori dal volume voxel: geometria condivisa per tipo, colori dalla palette per la luce della faccia, e la mesh unica del pennacchio riscritta per frame | `TrafficView`, `faceShades` |
+| [TrafficView.ts](src/engine/TrafficView.ts) | I mezzi in movimento, fuori dal volume voxel: geometria condivisa per tipo, colori dalla palette per la luce della faccia, e la mesh unica del pennacchio riscritta per frame | `TrafficView`, `faceShades`, `FACE_CORNERS` |
 | [vehicleHulls.ts](src/engine/vehicleHulls.ts) | La forma dei mezzi in scatole, senza Three: scafi rastremati, fasce di galleggiamento, ali a freccia, ciminiere che chiudono sulla bocca dichiarata | `hullBlocks`, `HullBlock` |
 | [vehicleHulls.test.ts](src/engine/vehicleHulls.test.ts) | Sagoma articolata e simmetrica, ingombro in lunghezza, la fascia sul pelo dell'acqua, e il fumaiolo che chiude esattamente dove il pennacchio nasce | — |
 | [RopewayView.ts](src/engine/RopewayView.ts) | Le funi delle funivie, fuori dal volume voxel: un concio per tratto, riferimento costruito sul verso, geometria ricostruita solo quando nasce una linea | `RopewayView`, `CableLine` |
 | [RopewayView.test.ts](src/engine/RopewayView.test.ts) | Ogni faccia del concio guarda in fuori — una fune avvolta al contrario sparirebbe nel culling, e non lo direbbe nessun tipo —, l'array uguale non ricostruisce niente, la luce non lascia i vertici neri | — |
+| [introDrop.ts](src/engine/introDrop.ts) | La caduta con cui i pezzi della prima isola entrano in scena, in TS puro. **Ogni** numero: margine oltre il bordo dello schermo, durata, jitter per chunk, ritardo per piano, rimbalzo | `INTRO`, `DROP_SPAN`, `fallHeightFor`, `dropDelay`, `dropLift`, `hasLanded` |
+| [introDrop.test.ts](src/engine/introDrop.test.ts) | Accelera invece di galleggiare, non risale mai, il rimbalzo e' in voxel e non in frazione, la quota di partenza sta fuori schermo e non diverge a picco, il piano di chunk sopra atterra dopo quello sotto | — |
+| [dropRain.ts](src/engine/dropRain.ts) | I cubetti che piovono davanti al pezzo in arrivo: semina per chunk, discesa, tetto dei vivi. La colonna arriva come sonda, quindi niente mondo e niente Three | `RAIN`, `RainCube`, `RainColumn`, `RainProbe`, `RainState`, `createRain`, `clearRain`, `spawnOverChunk`, `advanceRain` |
+| [dropRain.test.ts](src/engine/dropRain.test.ts) | Semina dentro l'impronta, un piano di chunk solo per colonna, determinismo, il tetto assottiglia invece di interrompere, la pioggia si svuota tutta | — |
+| [DropRainView.ts](src/engine/DropRainView.ts) | La mesh unica dei cubetti, buffer dinamici e `drawRange` come il pennacchio; colori dalla palette per la luce della faccia | `DropRainView` |
 | [PlacementCursor.test.ts](src/engine/PlacementCursor.test.ts) | Posizione sulla colonna, stato valido/rifiutato, esclusione dalla profondita' | — |
 | [IsoCameraController.ts](src/engine/IsoCameraController.ts) | Ortografica isometrica: scatti di 90°, zoom, pan vincolato all'AABB, **orbita** libera (yaw continuo, inclinazione 12°-82°) e ritorno all'assetto, piu' il modo studio di un soggetto (pan del perno dentro il soggetto, cattura e ripristino dell'inquadratura) | `IsoCameraController`, `IsoCameraOptions`, `IsoCameraState` |
 | [IsoCameraController.test.ts](src/engine/IsoCameraController.test.ts) | Perno della rotazione sotto il cursore, orbita col tasto centrale che non sposta l'inquadratura, riaggancio della griglia dallo scatto piu' vicino, orbita attorno al target con inclinazione clampata, pan che sale lungo il soggetto e ripristino identico | — |
@@ -217,6 +229,8 @@ di crescita. Il `Builder`, esterno al modulo, consuma quei candidati. Dettagli i
 | [SimState.ts](src/sim/SimState.ts) | Stato, operazioni del giocatore, serializzazione JSON senza perdita | `createSimState`, `addCatalyst`, `addBuilding`, `addFarm`, `removeFarm`, `setPolicyActive`, `setSelectedClass`, `toSimStateData`, `reviveSimState`, `rebuildField` |
 | [tick.ts](src/sim/tick.ts) | Il bilancio di un tick, funzione pura | `tick`, `tickMany`, `weightsOf` |
 | [DesirabilityField.ts](src/sim/DesirabilityField.ts) | Campo per uso urbano, `Uint8Array` chunkato 32×32, ricalcolo incrementale | `DesirabilityField`, `rectAround`, `rectArea`, `Catalyst`, `Building`, `CellRect` |
+| [reach.ts](src/sim/reach.ts) | Portata geodetica di un catalizzatore e l'unica curva di decadimento del progetto: Dijkstra a 8 vicini tagliato al raggio, con cache per centro | `computeReach`, `distAt`, `reachAt`, `falloff`, `ReachCache`, `UNIFORM_COST`, `ReachField`, `StepCost` |
+| [reach.test.ts](src/sim/reach.test.ts) | Con costo uniforme riproduce la Chebyshev cella per cella; la forma non esce mai dal quadrato; l'acqua ferma e la strada porta lontano | — |
 | [policies.ts](src/sim/policies.ts) | Catalogo delle policy e risoluzione dei pesi | `POLICIES`, `resolveWeights`, `withPolicy`, `policyById`, `isPolicyId`, `Weights`, `PolicyId` |
 | [districts.ts](src/sim/districts.ts) | Profili locali, distretti e specializzazioni da campi sovrapposti | `urbanProfileAt`, `specializationOf`, `dominantUse`, `DistrictId`, `LocalUrbanProfile`, `Specialization` |
 | [commerce.ts](src/sim/commerce.ts) | Il ciclo commerciale interno: domanda, organico, merce, ricavi | `resolveCommerce`, `EMPTY_COMMERCE`, `CommerceReport` |
@@ -319,14 +333,21 @@ lavoro di questo dominio.
 | File | Ruolo | Esporta |
 | --- | --- | --- |
 | [config.ts](src/world/sites/config.ts) | **Ogni** distanza, lato e dislivello dei vincoli di sito | `SITE` |
-| [siteRules.ts](src/world/sites/siteRules.ts) | Cerca l'acqua sui quattro assi, ne dice il verso, misura un intorno piano, traduce l'etichetta in un motivo di rifiuto | `seesWater`, `waterFacing`, `openGround`, `siteRefusal`, `SiteRefusal` |
+| [siteRules.ts](src/world/sites/siteRules.ts) | Cerca l'acqua sui quattro assi — battigia o acqua a galla, che non sono la stessa colonna —, ne dice verso e distanza, misura un intorno piano, traduce l'etichetta in un motivo di rifiuto | `sightWater`, `WaterSight`, `seesWater`, `waterDistance`, `waterFacing`, `openGround`, `siteRefusal`, `SiteRefusal` |
 
 ```ts
 seesWater(map, x, y, SITE.coastalRadius);              // il mare e' entro il raggio?
 waterFacing(map, x, y, SITE.coastalRadius);            // da che parte? orienta il molo
+sightWater(map, x, y, SITE.shoreReach, true);          // { facing, distance } dell'acqua a galla
 openGround(map, x, y, SITE.openSpan, SITE.openMaxStep); // l'intorno regge un piano unico?
 siteRefusal(map, x, y, 'coastal');                     // 'needs-coast' | 'needs-open-ground' | null
 ```
+
+`afloat` non e' un dettaglio: la colonna a quota **esatta** del pelo del mare e'
+battigia — bagnata, in vista del mare, sito costiero a tutti gli effetti — ma
+`IslandGenerator` non ci scrive nessun voxel d'acqua. Chi chiede «e' un posto sul
+mare?» la vuole dentro; chi ci deve posare uno scafo la vuole fuori, e su
+quest'isola fra le due risposte ci sono dieci colonne di bassofondo.
 
 ## `src/world/skyline/` — la gerarchia verticale
 
@@ -364,19 +385,22 @@ Un landmark **non e' un tipo nuovo di cosa**: e' un `BuildingRecord` con
 budget di chunk, comparsa a budget e avanzamento. A cambiare e' solo quale
 generatore disegna lo stamp.
 
-| File | Ruolo | Esporta |
-| --- | --- | --- |
 Una ricetta dichiara anche i propri **ormeggi**: i punti in cui i mezzi di
-`src/world/traffic/` stanno fermi. Stanno qui e non la' perche' sono coordinate
-*della forma* — il bordo di una darsena che questa tabella disegna.
+`src/world/traffic/` stanno fermi, o da cui partono. Stanno qui e non la' perche'
+sono coordinate *della forma* — il bordo di una darsena che questa tabella
+disegna — e con loro sta la **linea d'acqua**, cioe' la colonna in cui la ricetta
+pretende che il mare cominci: e' quella che il piazzamento va a cercare sul
+terreno vero, facendo scorrere la struttura lungo il fronte finche' la banchina
+incontra l'acqua.
 
 Lo **scalo in quota** (`SKYPORT`) e' la seconda forma dell'aeroporto, scelta dal
 luogo invece che dal seme: sotto la colonna c'e' un tetto, quindi non si
-costruisce un campo di volo ma un pilone d'ormeggio.
+costruisce un campo di volo ma tre modi di arrivarci senza pista — il pilone del
+dirigibile, la piazzola dell'eVTOL, la cima della mongolfiera.
 
 | File | Ruolo | Esporta |
 | --- | --- | --- |
-| [config.ts](src/world/landmarks/config.ts) | **Ogni** ingombro, quota, soglia di stadio, ormeggio e indice di palette, piu' le nove ricette con tre esemplari a testa e la ricetta da tetto. Qui vive anche `PartsRecipe`, il formato che le arcologie condividono | `LANDMARK`, `LANDMARKS`, `SKYPORT`, `BERTH`, `landmarkOf`, `hasAloftRecipe`, `maxStageOf`, `variantsOf`, `PartsRecipe`, `LandmarkRecipe`, `LandmarkVariant`, `LandmarkMooring`, `BerthKind` |
+| [config.ts](src/world/landmarks/config.ts) | **Ogni** ingombro, quota, soglia di stadio, ormeggio, linea d'acqua e indice di palette, piu' le nove ricette con tre esemplari a testa e la ricetta da tetto. Qui vive anche `PartsRecipe`, il formato che le arcologie condividono | `LANDMARK`, `LANDMARKS`, `SKYPORT`, `BERTH`, `landmarkOf`, `hasAloftRecipe`, `maxStageOf`, `variantsOf`, `PartsRecipe`, `LandmarkRecipe`, `LandmarkVariant`, `LandmarkMooring`, `BerthKind` |
 | [parts.ts](src/world/landmarks/parts.ts) | Le dieci primitive con cui una ricetta si compone, lo smusso della pianta e la rotazione sul verso | `PART`, `Part`, `PartKind`, `box`, `partBounds`, `orientPart`, `orientedSpan`, `createCanvas`, `drawPart`, `LandmarkCanvas` |
 | [generate.ts](src/world/landmarks/generate.ts) | Compone tronco ed esemplare in uno stamp; ingombro, origine, stadio, scelta della variante dal seme e ormeggi portati sul verso vero. Il nucleo ricetta→stamp e' condiviso con le arcologie | `generateFromRecipe`, `recipeSpan`, `recipeOrigin`, `generateLandmark`, `landmarkSpan`, `landmarkOrigin`, `landmarkMoorings`, `stageForBuildings`, `variantIndexOf`, `RecipeRequest`, `LandmarkRequest`, `WorldMooring` |
 
@@ -424,9 +448,10 @@ worldBands(recipe, facing, ox, oy);                  // un uso per fascia, sulle
 ## `src/world/traffic/` — cio' che si muove
 
 I mezzi che i collegamenti mettono in moto: barche all'ormeggio, traghetti di
-linea, navi da carico, aerei in circuito, dirigibili al pilone. E' la risposta a
-un difetto che si vedeva prima di ogni tooltip — un imbarco che prometteva di
-collegare due punti dell'isola e non aveva niente che attraversasse.
+linea, navi da carico, aerei in circuito, dirigibili al pilone, eVTOL che si
+posano su un tetto, mongolfiere che se ne staccano. E' la risposta a un difetto
+che si vedeva prima di ogni tooltip — un imbarco che prometteva di collegare due
+punti dell'isola e non aveva niente che attraversasse.
 
 **Il traffico non e' materia**, ed e' l'invariante del dominio. Scrivere una
 barca nel `VoxelWorld` e riscriverla al frame dopo marcherebbe sporchi i chunk
@@ -434,27 +459,40 @@ della costa sessanta volte al secondo, cioe' rimeshare mezza isola per farla
 navigare: qui si calcola *dove sta* un mezzo a un certo istante, e a disegnarlo
 e' `engine/TrafficView.ts` con mesh proprie, fuori dal volume voxel.
 
-Puro come la rete stradale: entrano le strutture ridotte all'osso e un predicato
-che dice dov'e' l'acqua, escono delle rotte. **La posa e' una funzione del
-tempo, non un'integrazione**: due partite identiche mostrano le stesse barche
-negli stessi punti, e un frame perso non sposta niente.
+Puro come la rete stradale: entrano le strutture ridotte all'osso e **due**
+predicati — dov'e' l'acqua, quanto e' alto cio' che c'e' sotto — escono delle
+rotte. **La posa e' una funzione del tempo, non un'integrazione**: due partite
+identiche mostrano le stesse barche negli stessi punti, e un frame perso non
+sposta niente.
+
+Il taglio fra i tre file di rotte e' *lungo cosa si lavora separatamente*: una
+rotta di mare cerca l'acqua, una in quota scavalca la citta', e il pendolo con
+la sosta e' lo stesso conto per tutt'e due.
 
 | File | Ruolo | Esporta |
 | --- | --- | --- |
-| [config.ts](src/world/traffic/config.ts) | **Ogni** velocita', quota, sosta, misura di sagoma, ciminiera e indice di palette dei mezzi | `TRAFFIC`, `VEHICLE`, `VEHICLE_KINDS`, `VehicleKind`, `VehicleFunnel`, `funnelOf` |
+| [config.ts](src/world/traffic/config.ts) | **Ogni** velocita', quota, sosta, franco, misura di sagoma, ciminiera e indice di palette dei mezzi | `TRAFFIC`, `VEHICLE`, `VEHICLE_KINDS`, `VehicleKind`, `VehicleFunnel`, `funnelOf` |
 | [seaLane.ts](src/world/traffic/seaLane.ts) | La rotta fra due punti che resta sull'acqua: griglia grossa, ricerca in ampiezza, tiro di corda | `planSeaLane`, `LanePoint`, `LaneQuery` |
-| [routes.ts](src/world/traffic/routes.ts) | Da cosa la citta' ha costruito a cosa si muove: traversate, navi che escono dal mondo e ne tornano, circuiti di volo, orbite | `planTraffic`, `shuttle`, `TrafficStructure`, `TrafficRoute`, `TrafficWaypoint`, `WaterProbe` |
+| [routePath.ts](src/world/traffic/routePath.ts) | Di cosa e' fatta una rotta, e i quattro modi di costruirne una: fermo, pendolo con sosta, giro chiuso, lunghezze cumulate | `TrafficRoute`, `TrafficWaypoint`, `moored`, `shuttle`, `loop`, `measure`, `phaseOf` |
+| [routes.ts](src/world/traffic/routes.ts) | Orchestrazione e cio' che galleggia: traversate, navi che escono dal mondo e ne tornano | `planTraffic`, `TrafficStructure`, `WaterProbe`, `CeilingProbe`, e il rimando a `routePath` |
+| [skyRoutes.ts](src/world/traffic/skyRoutes.ts) | Le rotte in quota, e l'unica cosa che le accomuna: **passano sopra la citta' invece che dentro**. Circuito di volo, orbita, giro che si posa su una piazzola, corsa di un pallone | `flightCircuit`, `airshipOrbit`, `padCircuit`, `balloonFlight` |
 | [ropewayRoutes.ts](src/world/traffic/ropewayRoutes.ts) | Da una linea di funivia alle sue due cabine, sfasate di mezzo periodo. Qui la rotta e' gia' data: non c'e' niente da cercare | `planRopewayRoutes`, `RopewayLink` |
 | [poses.ts](src/world/traffic/poses.ts) | Dove sta un mezzo a un certo istante — o `null` se e' **fuori dal mondo**: pendolo con sosta, giro chiuso, beccheggio | `posesAt`, `poseAt`, `VehiclePose` |
 | [plume.ts](src/world/traffic/plume.ts) | Il fumo dei fumaioli: la stessa posa **letta nel passato**, piu' salita, deriva e diradamento | `puffsAt`, `SmokePuff` |
 
 ```ts
 planSeaLane({ from, to, water });        // spezzata che aggira la terra | null
-planTraffic(structures, water);          // le rotte che una citta' esprime
+planTraffic(structures, water, ceiling); // le rotte che una citta' esprime
 planRopewayRoutes(links);                // due cabine per linea, in controfase
 posesAt(routes, seconds);                // [{ kind, x, y, z, heading }, …]
 puffsAt(routes, seconds);                // [{ x, y, z, size, density }, …]
 ```
+
+`ceiling` e' facoltativo e vale «citta' piatta»: senza, le rotte in quota
+restano alla quota che dichiarano. Con — e `GrowthScene` lo passa — la crociera
+e' il **massimo** fra quella dichiarata e la cima sorvolata piu' il franco, che
+e' l'unica cosa che tenga un aereo fuori dai grattacieli quando `maxLevel` a
+dodici porta una torre oltre i centoquaranta voxel.
 
 ## `src/world/ropeway/` — la traversata che non prende suolo
 
@@ -589,6 +627,7 @@ le scritture stanno in tre file invece che sparse in sei metodi.
 | [guideDriver.ts](src/world/buildings/guideDriver.ts) | La via da terra: un montante per ogni impalcato abitato che non ce l'ha | `GuideDriver` |
 | [ropewayDriver.ts](src/world/buildings/ropewayDriver.ts) | Le funivie: due torri a registro, e una fune che non e' materia. Il solo driver senza una freccia che entra o che esce | `RopewayDriver`, `RopewayCable`, `RopewayRide` |
 | [landmarkDriver.ts](src/world/buildings/landmarkDriver.ts) | I monumenti dei catalizzatori: piazzamento, cantiere di sventramento, grembiule e avanzamento di stadio | `LandmarkDriver`, `LandmarkSite` |
+| [landmarkSiting.ts](src/world/buildings/landmarkSiting.ts) | Dove una struttura si posa davvero: verso, ingombro e l'angolo gia' portato **incontro all'acqua**. Puro, ed e' la sola meta' del piazzamento che un test interroga al voxel senza far crescere un'isola | `placeRecipe`, `seawardDrift`, `Placement` |
 | [arcologyDriver.ts](src/world/buildings/arcologyDriver.ts) | La megastruttura: condizione sull'isolato, cantiere, costruzione a stadi, piazzali in quota e dichiarazione degli usi alla simulazione | `ArcologyDriver` |
 | [clearance.ts](src/world/buildings/clearance.ts) | Cosa un landmark puo' togliere di mezzo e cosa lo ferma. Puro: entrano record ridotti all'osso, esce un verdetto | `planClearance`, `CLEARANCE_KIND`, `ClearanceRecord`, `ClearanceRefusal` |
 | [clearanceSite.ts](src/world/buildings/clearanceSite.ts) | Il cantiere di sventramento, condiviso da chi si prende un riquadro: sopralluogo, recinzione, demolizione a passate | `ClearanceSites`, `ClearanceBox`, `ClearanceVerdict`, `OPEN_SITE`, `clearanceOf`, `recordsIn`, `simBuildingOf` |
@@ -605,7 +644,8 @@ le scritture stanno in tre file invece che sparse in sei metodi.
 | [crowns.ts](src/world/buildings/crowns.ts) | Come si chiude la silhouette: una geometria per ogni voce di `CROWN_KIND` | `crownBands` |
 | [paint.ts](src/world/buildings/paint.ts) | La vernice: corpo, cornice, zoccolo, campate, portale, accento luminoso, terrazze e corte | `paint`, `classSurface`, `PaintRequest` |
 | [cluster.ts](src/world/buildings/cluster.ts) | A cosa si aggrega un lotto: quota e corso di base condivisi con i vicini di fronte. Puro, e il rifiuto è il gradino | `planCluster`, `joinsCluster`, `ClusterTerms`, `ClusterRequest` |
-| [typology.ts](src/world/buildings/typology.ts) | Sceglie la tipologia dal luogo; nessun numero, solo la regola | `selectTypology`, `typologyProfile`, `typologyShape`, `typologiesForUses`, `TypologyQuery` |
+| [typology.ts](src/world/buildings/typology.ts) | Sceglie la tipologia dal luogo, e dice **perché no** dove non la sceglie; nessun numero, solo la regola | `selectTypology`, `typologyProfile`, `typologyShape`, `typologiesForUses`, `typologyAccepts`, `typologyGapsOf`, `bestProspectOf`, `TypologyQuery`, `TypologyGap` |
+| [unlocks.ts](src/world/buildings/unlocks.ts) | Cosa un ruolo sblocca: le specializzazioni che apre e le forme che ci nascono dentro, derivate dai due cataloghi | `unlocksFor`, `RoleUnlock` |
 | [style.ts](src/world/buildings/style.ts) | Di che materia è fatto un quartiere: funzione pura di `(seed, isolato)`, nessuno stato | `styleAt`, `styledProfile`, `styleOf` |
 | [blockForm.ts](src/world/buildings/blockForm.ts) | Dove cade un lotto dentro il proprio isolato — angolo, fronte, cuore — e quanto spazio ha per allargarsi. Puro | `lotRoleOf`, `blockRoom` |
 | [stamp.ts](src/world/buildings/stamp.ts) | Volume voxel, ancora 3D e conversione in coordinate mondo | `VoxelStamp`, `VoxelAnchor`, `anchoredVoxel`, `STAMP_EMPTY` |
@@ -653,6 +693,7 @@ giocabile; gli overlay tecnici si alternano con `F3` o partono aperti con
 | [ViewMenuModel.ts](src/ui/ViewMenuModel.ts) | Il menu delle viste dal lato del giocatore, puro: etichette, gesti, targa della vista attiva con i suoi tasti, gesti e tasti dell'isolato **scelto**, barra dei livelli, regola dello strumento |
 | [SelectionPanel.ts](src/ui/SelectionPanel.ts) | La scheda di selezione: intestazione, quattro linguette, le righe di quella aperta e il suo bottone |
 | [SelectionPanelModel.ts](src/ui/SelectionPanelModel.ts) | Cosa la scheda dice e cosa offre, puro: il ramo che distingue landmark, campata, impalcato ed edificio, le righe di rendimento di ogni uso, il riquadro da evidenziare per sezione e l'interruttore che isola un isolato |
+| [prospects.ts](src/ui/prospects.ts) | La lingua di cosa un luogo **non** è ancora: le due righe che nominano il quartiere che potrebbe diventare e la forma che ci crescerebbe, più la riga di tooltip di ciò che un ruolo sblocca |
 
 ## Test e bench
 
@@ -662,11 +703,11 @@ giocabile; gli overlay tecnici si alternano con `F3` o partono aperti con
 | [world/visualBlock.test.ts](src/world/visualBlock.test.ts) | Palette e superficie nello stesso byte, il vuoto ignora la superficie |
 | [world/scenes/cityScene.test.ts](src/world/scenes/cityScene.test.ts) | Determinismo, riempimento al 20%, ripresa a passi, nessuna scrittura fuori region |
 | [world/scenes/dioramaScene.test.ts](src/world/scenes/dioramaScene.test.ts) | Determinismo del soggetto, ingombro dichiarato, carreggiata sul fronte, superfici che arrivano al mondo, tipologia forzata |
-| [world/scenes/swatchScene.test.ts](src/world/scenes/swatchScene.test.ts) | Tutte le combinazioni palette × superficie — il modo per accorgersi che uno slot nuovo non e' mai stato aggiunto al campionario; la colonna vuota dello slot zero; i tre strati di ogni bioma su multipli di cella; i tre `WATER_CLASS`; la fascia di scala; il provino a gradoni e l'interasse che lo tiene fuori dall'occlusione; determinismo, passi ed estensione dichiarata |
+| [world/scenes/swatchScene.test.ts](src/world/scenes/swatchScene.test.ts) | Tutte le combinazioni palette × superficie — il modo per accorgersi che uno slot nuovo non e' mai stato aggiunto al campionario; la colonna vuota dello slot zero; i tre strati di ogni bioma su multipli di cella; i tre `WATER_CLASS`; la fascia di scala; la simmetria C4 della sagoma e le quattro precondizioni che la microgeometria chiede; il mondo confrontato con `cellSolidAt`; l'interasse che tiene il provino fuori dall'occlusione; un pavimento di prismi per linguaggio e il tetto dei quad sul chunk piu' carico; determinismo, passi ed estensione dichiarata |
 | [world/terrain/heightField.test.ts](src/world/terrain/heightField.test.ts) | Margine di Lipschitz su otto seed — la rete di sicurezza della calibrazione; specchio d'acqua per colonna; un'estensione costiera non muove il resto dell'isola |
 | [world/terrain/landform.test.ts](src/world/terrain/landform.test.ts) | Cadute e profili, il budget di pendenza che nessun elemento supera, lobi dentro il bordo, conche solo dove il terreno e' piano e mai sovrapposte |
 | [world/terrain/IslandGenerator.test.ts](src/world/terrain/IslandGenerator.test.ts) | Determinismo per blocco, continuità al confine — l'alzata come tetto del salto e il cubo sotto la soglia del terrazzamento —, cigli che compaiono davvero e non si costruiscono, `expandIsland` |
-| [world/terrain/terrace.test.ts](src/world/terrain/terrace.test.ts) | Scala monotona su multipli di cella, alzata fra un cubo e il tetto, e la proprieta' che regge tutto: due quote vicine come due celle non saltano piu' di un'alzata |
+| [world/terrain/terrace.test.ts](src/world/terrain/terrace.test.ts) | Scale monotone su multipli di cella che coincidono sotto la spiaggia, alzata fra un cubo e il tetto e mai piu' grossa della propria tacca, la proprieta' che regge tutto — due quote vicine non distano piu' di un'alzata **su qualunque coppia di scale** — e il ciglio che a parita' di quota non ha una sola altezza |
 | [world/terrain/groundcover.test.ts](src/world/terrain/groundcover.test.ts) | Copertura funzione della sola colonna, densita' misurata contro quella dichiarata, una tinta e una forma per ogni copertura che un bioma sappia produrre, palette di superficie distinte fra biomi |
 | [world/terrain/ledges.test.ts](src/world/terrain/ledges.test.ts) | Salto minimo dedotto, aria sotto la lastra e parete sopra, cuneo verso l'esterno, ritaglio al blocco e sporgenze vere sull'isola del seed di riferimento |
 | [world/terrain/TerrainMap.test.ts](src/world/terrain/TerrainMap.test.ts) | Mappa per colonna, istogramma, chunking |
@@ -690,7 +731,9 @@ giocabile; gli overlay tecnici si alternano con `F3` o partono aperti con
 | [game/selection.test.ts](src/game/selection.test.ts) | Il record scelto e' quello il cui intervallo di quota contiene il punto colpito; il tetto e non l'aria sopra di lui; tre strati su quattro anche su terreno nudo; l'aggregato dell'isolato che non conta ne' i landmark ne' le campate ne' i vicini di fronte; il rendimento che passa per le policy attive, la quota dell'uso ospitato, e niente rendimento su cio' che edificio non e' |
 | [ui/SelectionPanelModel.test.ts](src/ui/SelectionPanelModel.test.ts) | Un landmark che mostra lo stadio e mai un livello, una campata senza uso urbano, i due usi di un edificio misto, il quartiere del record distinto da quello di adesso, l'acqua che legge la classe dello specchio, il riquadro evidenziato per ciascuna sezione, le righe di rendimento con la percentuale etichettata come cittadina, e l'interruttore che isola un isolato |
 | [ui/ControlsHint.test.ts](src/ui/ControlsHint.test.ts) | Completezza dei comandi camera e delle viste nella card di aiuto |
-| [ui/GameHudModel.test.ts](src/ui/GameHudModel.test.ts) | Risorse, requisiti, blocchi economici e policy attive del HUD; il requisito **vincolante** e non il primo, il blocco da tutorial che non finge una progressione, il delta vuoto al posto di `±0`, l'anello del cibo ancorato alla soglia della carestia |
+| [ui/GameHudModel.test.ts](src/ui/GameHudModel.test.ts) | Risorse, requisiti, blocchi economici e policy attive del HUD; il requisito **vincolante** e non il primo, il blocco da tutorial che non finge una progressione, il delta vuoto al posto di `±0`, l'anello del cibo ancorato alla soglia della carestia, e la tessera che dice cosa il ruolo *sblocca* invece di promettere ciò che le soglie non confermeranno |
+| [ui/prospects.test.ts](src/ui/prospects.test.ts) | Le righe che spiegano cosa manca: il ruolo mancante che batte ogni soglia, la soglia vincolante quando il ruolo c'è, il livello detto solo dove morde, e la riga del quartiere che spiega quella della forma invece di rispondere a un'altra domanda |
+| [world/buildings/unlocks.test.ts](src/world/buildings/unlocks.test.ts) | La torre idroponica nominata solo dai due ruoli che aprono l'agricoltura, ogni coppia ruolo/specializzazione coperta, e nessun ripiego spacciato per conquista |
 | [ui/hudTokens.test.ts](src/ui/hudTokens.test.ts) | Il gate della 7.1: contrasto AA di ogni token di testo sui sette temi, il testo sopra i pieni d'accento e d'oro, il pannello scuro sotto un'aria notturna, sette superfici distinte |
 | [ui/ResourceTrend.test.ts](src/ui/ResourceTrend.test.ts) | Campionamento idempotente sul tick, finestra scorrevole in ordine, direzione letta sulla finestra e non sull'ultimo passo, magnitudine relativa fra scale diverse, tick che torna indietro |
 | [ui/ResourceBar.test.ts](src/ui/ResourceBar.test.ts) | La sparkline: larghezza piena, verso corretto della `y`, autoscala sul proprio intervallo, serie ferma a mezza altezza |
@@ -706,10 +749,11 @@ giocabile; gli overlay tecnici si alternano con `F3` o partono aperti con
 | [world/sites/siteRules.test.ts](src/world/sites/siteRules.test.ts) | Ricerca dell'acqua sui quattro assi, intorno piano sotto il tetto proprio, motivi di rifiuto per ruolo |
 | [world/skyline/tiers.test.ts](src/world/skyline/tiers.test.ts) | Le tre fasce e il loro ordine, la costa che vince su tutto, la corona sul bordo dell'edificato, il cono monotono verso il polo, i picchi rari e deterministici, e il massimo teorico che coincide con `BUILDER.maxLevel` |
 | [world/buildings/Builder.test.ts](src/world/buildings/Builder.test.ts) | Candidato → occupazione della simulazione → voxel; allineamento alla rete stradale; opere di terra su isola vera; la banchina non si stacca dalla terra; landmark dei catalizzatori e avanzamento di stadio; isolati terrazzati — quota e basamento condivisi, nessun solco fra i membri, gradoni sul fianco; la rete in quota — appoggi reali, nessun suolo preso, un percorso continuo fra due isolati, nessuna campata orfana; i landmark lineari che compaiono a ritagli; due mandati opposti danno due città diverse; la gerarchia verticale — tre fasce e nessun altopiano, la corona bassa sulla costa, nessun edificio alto scartato in silenzio, la figura che tiene su isole di seed diverso |
-| [world/landmarks/generate.test.ts](src/world/landmarks/generate.test.ts) | Ingombro dichiarato, determinismo, stadi cumulativi, invarianza per rotazione, firma verticale e sagome distinte fra tutti i ruoli; gli ormeggi dentro l'ingombro e **sull'acqua** — una barca su una colonna che l'opera riempie finirebbe in mezzo al molo —, la prua che gira con la struttura, e lo scalo in quota come ricetta a se' |
+| [world/landmarks/generate.test.ts](src/world/landmarks/generate.test.ts) | Ingombro dichiarato, determinismo, stadi cumulativi, invarianza per rotazione, firma verticale e sagome distinte fra tutti i ruoli; gli ormeggi dentro l'ingombro e **sull'acqua** — una barca su una colonna che l'opera riempie finirebbe in mezzo al molo —, la prua che gira con la struttura, e lo scalo in quota come ricetta a se' con i suoi tre mestieri |
+| [world/buildings/landmarkCoast.test.ts](src/world/buildings/landmarkCoast.test.ts) | La banchina va **incontro al mare**: su un bassofondo asciutto largo dieci colonne il porto scorre fin sopra l'acqua vera invece di fermarsi sulla sabbia, guarda il mare aperto e non l'orlo bagnato, non arretra dove il mare comincia subito, e tiene comunque la colonna cliccata dentro il proprio ingombro |
 | [world/buildings/siteWorks.test.ts](src/world/buildings/siteWorks.test.ts) | La maschera dell'opera di terra: il molo esce su acqua che l'ingombro intero rifiuterebbe, il mare resta mare fuori dalla maschera, e il muro segue il bordo della maschera invece di quello del riquadro |
 | [world/traffic/seaLane.test.ts](src/world/traffic/seaLane.test.ts) | La rotta gira attorno alla terra invece di attraversarla, tiene i due capi, rinuncia dove non c'e' acqua, e da la stessa risposta a ogni partita |
-| [world/traffic/routes.test.ts](src/world/traffic/routes.test.ts) | Un imbarco solo non fa una linea; la traversata attracca ai due capi e aspetta; la nave da carico esce dal mondo al capo lontano — non c'e', invece di aspettare al largo — e da li' torna; il circuito di volo tocca la pista e sale in quota; lo scalo in quota ormeggia dirigibili invece di far atterrare aerei |
+| [world/traffic/routes.test.ts](src/world/traffic/routes.test.ts) | Un imbarco solo non fa una linea; la traversata attracca ai due capi e aspetta; la nave da carico esce dal mondo al capo lontano — non c'e', invece di aspettare al largo — e da li' torna; il circuito di volo tocca la pista, sale in quota e **si alza sopra i grattacieli che sorvola** invece di attraversarli; lo scalo in quota mette in moto dirigibili, eVTOL che si posano davvero e mongolfiere che salgono e rientrano |
 | [world/traffic/plume.test.ts](src/world/traffic/plume.test.ts) | Fuma solo chi ha una ciminiera; lo sbuffo appena uscito sta sulla bocca; gli sbuffi salgono, crescono e si diradano in ordine; la scia resta dove la nave e' passata invece di seguirla; una nave fuori dal mondo non fuma, ma la scia le sopravvive sul bordo |
 | [world/traffic/ropewayRoutes.test.ts](src/world/traffic/ropewayRoutes.test.ts) | Due cabine per linea che stanno sempre ai capi opposti, la corsa che segue la pancia della fune invece di tagliarla, e l'accordo fra `cabinDrop` e la sagoma appesa |
 | [world/ropeway/ropewayPlan.test.ts](src/world/ropeway/ropewayPlan.test.ts) | La sponda opposta trovata da un click solo; la fune ancorata ai centri delle torri e la pancia in mezzo; il franco sul mare e su una collina, colonna per colonna; la stazione che arretra su un lungomare costruito; i rifiuti uno per uno |

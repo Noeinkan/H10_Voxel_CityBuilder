@@ -30,6 +30,7 @@ radice `/` avvia isola, crescita e Cozy HUD con gli overlay tecnici nascosti.
 | `daylight` | `cycle` | `day` o `night` fermano l'orologio sull'ora del modo; è la stessa scelta del bottone nell'HUD e vale anche senza `debug` |
 | `inspect` | — | `xray`, `slice`, `section`, `block`: apre una vista di ispezione. Vale **anche senza** `debug` — è così che uno strumento di cattura inquadra una sezione senza overlay |
 | `slice` | — | `<z>` fissa la quota della fetta; senza, segue il suolo che si sta guardando |
+| `intro` | `1` | `0` toglie la caduta d'ingresso: la prima isola compare senza scendere dal cielo. Vale **anche senza** `debug`, serve a confrontare e a catturare uno scatto pulito |
 
 ## Ciclo giorno/notte
 
@@ -107,17 +108,33 @@ gradini dichiara le tre fasce senza etichette.
 - la **scala**: il cubo di terreno e la sua scaletta, una specie d'albero per
   riga di `TREE_SHAPES`, e un edificio di riferimento.
 
-**Il provino non è un cubo, ed è la parte che conta.** Ogni cella della matrice
-è la stessa massa a quattro gradoni — podio, sbalzo, arretramento, guglia —
-definita in `CELL_TIERS`. Non è decorazione: su un prisma isolato con la sommità
-piatta tre famiglie di `mesher/microGeometry.ts` non scattano **affatto**
-(`emitSoffits` vuole un intradosso con aria sotto, `emitTerraceBoxes` una
-sommità scoperta con volume di fianco, `emitFinials` una cella senza vicini in
-piano), e il campionario mostrava un vocabolario più povero di quello vero.
-Misurato con `appendMicroGeometry` su un provino solo: da 21 a 55 prismi di
-dettaglio per `habitat`, da 25 a 77 per `civic`, da 4 a 22 per `roofTech`. La
-sagoma è identica in tutte le celle perché l'unica variabile dev'essere
-palette × superficie.
+**Il provino non è un cubo, ed è la parte che conta.** Ogni cella della matrice è
+la stessa massa articolata, definita in `CELL_PARTS`: podio smussato, sbalzo a
+filo, quattro lame di corona attorno a un cortile, quattro pinnacoli isolati agli
+angoli. Non è decorazione — è ciò che fa scattare gli emettitori:
+
+| pezzo | cosa accende |
+| --- | --- |
+| sbalzo sopra il podio | `emitSoffits`: intradosso con aria sotto |
+| bordo attorno alla corona | `emitTerraceBoxes`: sommità scoperta con volume di fianco |
+| pinnacoli d'angolo | `emitFinials`: nessun vicino in piano, **a tutte le quote** |
+| cortile 5×5 | `emitRoofMasts`, `emitRoofCrowns`, `emitPergolas`: sommità con **quattro** vicini scoperti |
+
+L'ultima riga è quella che mancava: fino alla sagoma a gradoni il tetto più largo
+era un anello di spessore uno, e chiome e pergole erano **zero** su tutte e 248
+le celle senza che niente lo segnalasse. Il cortile è lì per questo.
+
+Misurato con `scenes/swatchProbe.ts`, prismi di sola microgeometria per provino,
+gradoni → sagoma attuale: `habitat` 47 → 119, `industrial` 70 → 170, `civic`
+68 → 178, `luminous` 64 → 176, `portal` 60 → 180, `roofTech` 21 → 61. Con gli
+scavi sommati — che è quel che il referto mostra — si arriva rispettivamente a
+137, 204, 212, 304, 308 e 77, e il chunk più carico fa **10 629 quad** di
+dettaglio contro i 16 384 del tetto. Chi arricchisce ancora rimisuri: un test
+tiene sia il pavimento per linguaggio sia il tetto per chunk.
+
+La sagoma è identica in tutte le celle perché l'unica variabile dev'essere
+palette × superficie, ed è **invariante per rotazione di 90 gradi**: a un quarto
+di giro si vedono gli stessi sbalzi, o metà campionario andrebbe letta orbitando.
 
 L'interasse segue la stessa logica: a `REST_PITCH` un voxel di quota si proietta
 in alto il doppio di un voxel di profondità, quindi la fila davanti nasconde
@@ -138,8 +155,14 @@ Tre cose da sapere prima di stupirsi:
 - il campionario mostra **quello che esiste**. Se una combinazione si vede male,
   il difetto sta altrove — qui non c'è geometria dedicata da correggere.
 
-Il pannello a destra nomina fascia, riga e colonna sotto il cursore, e tiene in
-vista la legenda dell'ordine delle otto righe: in-world non ci sono etichette.
+Il pannello a destra nomina fascia, riga e colonna sotto il cursore, ne dà i
+**prismi e i quad di dettaglio**, e tiene in vista la legenda dell'ordine delle
+otto righe: in-world non ci sono etichette. La riga `dettaglio` è quella che a
+occhio non si può ricavare — una famiglia di emettitori spenta non lascia niente
+da guardare — e la rimisura `scenes/swatchProbe.ts` con gli emettitori veri, non
+una tabella scritta a mano. Sul provino **isolato**: dove una cella scavalca un
+confine di chunk il conto vero si divide in due, e può differire di qualche
+prisma per le testate.
 **Nasce aperto anche senza `?debug=1`** e `F3` non lo spegne: è la legenda dello
 strumento, non una metrica. Per uno scatto pulito si chiude il suo `<details>`.
 Cambiare tema con `1`..`9` rilegge il campionario **senza rigenerarlo**, ed è il
@@ -185,6 +208,29 @@ il proprio numero stampato in un angolo. Un `n` che non corrisponde a nessuna
 tessera disponibile **non viene ingoiato** e prosegue verso gli altri handler.
 Nel campionario le cifre nude restano sui temi, perché lì non c'è dock e
 cambiare tema **è** lo strumento.
+
+## La caduta d'ingresso
+
+La **prima** isola non compare, atterra: ogni chunk nasce **fuori dal bordo alto
+dello schermo** e ci scende nell'istante in cui la sua geometria è pronta, con
+una pioggia di cubetti a fare da polvere davanti a lui. La quota di partenza non
+è una costante — la ricava `fallHeightFor` dall'altezza visibile e
+dall'inclinazione, perché quanto sia lontano il bordo dipende dallo zoom.
+
+La finestra vale **solo per la prima scena** e non si riapre, quindi le
+espansioni costiere non cadono. Non si chiude però su `generator.done`: lì
+restano in coda centinaia di chunk da meshare, e comparirebbero di colpo. Si
+chiude quando non c'è più niente da meshare.
+
+L'unità che cade è il **chunk** e non il voxel, ed è una conseguenza del greedy
+mesher, non una scelta di gusto: il perché sta in
+[src/engine/AGENTS.md](../../../src/engine/AGENTS.md). I cubetti veri sono
+un'altra cosa e stanno sopra la scena, come i mezzi.
+
+`__voxelDrop()` rimanda in cielo tutto quello che c'è già, così i numeri di
+`introDrop.ts` e `dropRain.ts` si tarano senza ricaricare la pagina; l'overlay
+conta i chunk `falling` accanto a quelli visibili, e `__voxelStats()` legge lo
+stesso campo. `?intro=0` toglie l'effetto.
 
 ## Viste di ispezione
 
@@ -233,9 +279,11 @@ Solo con `?debug=1`:
 
 - sempre: `__voxelStats()`, `__voxelReset()`, `__voxelExpand()`,
   `__voxelRebuildAll()`, `__voxelTheme(id?)`, `__voxelSun(azimuth?, elevation?)`, `__voxelHour(h?)`,
-  `__voxelInspect(mode?, z?)`
+  `__voxelInspect(mode?, z?)`, `__voxelDrop()`
 - con `scene=swatch`: `__voxelSwatch(x?, y?)` — senza argomenti dice cosa indica
-  il cursore, con una colonna interroga il campionario senza toccare il mouse
+  il cursore, con una colonna interroga il campionario senza toccare il mouse.
+  Restituisce `{ extent, cell, detail }`, e `detail` è il conteggio dei prismi:
+  è il modo di leggere tutte e otto le righe senza inseguire il cursore
 - con terreno: `__terrainStats()`, `__terrainBiomeView()`, `__terrainExpand()`
 - con `sim=1`: `__simStats()`, `__simTick(n)`, `__simSites(n)`, `__simClass(i)`,
   `__simPolicy(id)`

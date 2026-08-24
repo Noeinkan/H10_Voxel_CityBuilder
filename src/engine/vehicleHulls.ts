@@ -315,6 +315,78 @@ function airshipShape(hull: Hull): void {
 }
 
 /**
+ * eVTOL: cabina corta, quattro bracci e quattro dischi.
+ *
+ * **E' l'opposto dell'aereo, e deve esserlo.** Quello ha la fusoliera lunga e
+ * l'ala a freccia; questo e' piu' largo che lungo e da sopra — l'unico modo in
+ * cui questa camera lo vede — e' un quadrato con quattro cerchi agli angoli. Se
+ * si somigliassero, uno scalo in quota sembrerebbe un aeroporto piccolo invece
+ * che un'altra cosa.
+ *
+ * I pattini sotto la cabina non sono decorazione: sono l'unica parte che dica
+ * che questo mezzo **si posa**, ed e' la differenza fra un eVTOL fermo sulla
+ * piazzola e uno che le passa sopra.
+ */
+function evtolShape(hull: Hull): void {
+  const size = TRAFFIC.hull[VEHICLE.evtol];
+
+  // Cabina: corpo, muso che si stringe, coda con la deriva.
+  hull.box(0, 0, 1.0, 3.0, 1.8, 1.4, size.palette);
+  hull.box(1.7, 0, 1.0, 0.8, 1.4, 1.15, size.palette);
+  hull.box(0, 0, 1.1, 3.06, 1.86, 0.46, TRAFFIC.cabinPalette);
+  hull.box(1.8, 0, 1.1, 0.86, 1.46, 0.6, TRAFFIC.cabinPalette);
+  hull.box(-1.9, 0, 1.1, 1.0, 0.9, 0.8, size.palette);
+  hull.box(-2.3, 0, 1.7, 0.28, 0.22, 1.1, TRAFFIC.cabinPalette);
+
+  // Pattini: due travi e i quattro montanti che le tengono staccate dal ventre.
+  hull.pair(0, 0.85, 0.16, 3.0, 0.24, 0.32, TRAFFIC.trimPalette);
+  hull.pair(0.9, 0.85, 0.6, 0.22, 0.22, 0.6, TRAFFIC.trimPalette);
+  hull.pair(-0.9, 0.85, 0.6, 0.22, 0.22, 0.6, TRAFFIC.trimPalette);
+
+  // Bracci, gondole dei motori e dischi. Il disco e' spesso un decimo di voxel:
+  // a distanza isometrica e' proprio quella lastra sottile a leggersi come
+  // un'elica ferma invece che come un cilindro.
+  for (const along of [1.1, -1.1]) {
+    hull.pair(along, 1.5, 1.45, 0.5, 2.4, 0.3, TRAFFIC.trimPalette);
+    hull.pair(along, 2.5, 1.7, 0.8, 0.8, 0.5, TRAFFIC.housePalette);
+    hull.pair(along, 2.5, 2.05, 2.0, 2.0, 0.12, TRAFFIC.deckPalette);
+  }
+  hull.box(0, 0, 1.95, 0.34, 0.34, 0.26, TRAFFIC.lightPalette);
+}
+
+/**
+ * Mongolfiera: navicella, bruciatore e involucro a cinque conci.
+ *
+ * **L'unica sagoma che sta quasi tutta sopra la propria origine.** Uno scafo
+ * pende sotto il ponte; qui il volume e' in cima e l'origine e' il fondo del
+ * cesto, cioe' il punto che si appoggia al pilone.
+ *
+ * I conci alternano due tinte, ed e' l'unico trucco che serve: uno spicchio di
+ * pallone e' fatto di teli di colori diversi, e senza quell'alternanza cinque
+ * scatole concentriche leggono come una pigna invece che come un involucro.
+ */
+function balloonShape(hull: Hull): void {
+  const size = TRAFFIC.hull[VEHICLE.balloon];
+
+  // Navicella: il cesto e il suo bordo. E' la sola parte alla scala di chi ci sta.
+  hull.box(0, 0, 0.7, 1.8, 1.8, 1.4, TRAFFIC.deckPalette);
+  hull.box(0, 0, 1.45, 2.0, 2.0, 0.2, TRAFFIC.trimPalette);
+
+  // Montanti e bruciatore: la fiamma e' l'unica cosa accesa del mezzo.
+  hull.pair(0.7, 0.7, 2.1, 0.16, 0.16, 1.3, TRAFFIC.trimPalette);
+  hull.pair(-0.7, 0.7, 2.1, 0.16, 0.16, 1.3, TRAFFIC.trimPalette);
+  hull.box(0, 0, 2.7, 0.7, 0.7, 0.5, TRAFFIC.lightPalette);
+
+  // Involucro: bocca stretta, pancia larga quanto l'ingombro, calotta.
+  hull.box(0, 0, 3.4, 2.6, 2.6, 1.0, size.palette);
+  hull.box(0, 0, 4.4, 4.6, 4.6, 1.4, TRAFFIC.housePalette);
+  hull.box(0, 0, 5.8, size.width, size.width, 1.6, size.palette);
+  hull.box(0, 0, 7.2, 5.2, 5.2, 1.4, TRAFFIC.housePalette);
+  hull.box(0, 0, 8.4, 3.0, 3.0, 1.0, size.palette);
+  hull.box(0, 0, 9.1, 1.2, 1.2, 0.4, TRAFFIC.trimPalette);
+}
+
+/**
  * Cabina di funivia: la sola sagoma che pende invece di poggiare.
  *
  * **L'origine e' la pancia, non il pelo dell'acqua.** La rotta di una cabina e'
@@ -387,5 +459,7 @@ const SHAPES: Readonly<Record<VehicleKind, (hull: Hull) => void>> = {
   [VEHICLE.cargo]: cargoShape,
   [VEHICLE.plane]: planeShape,
   [VEHICLE.airship]: airshipShape,
+  [VEHICLE.evtol]: evtolShape,
+  [VEHICLE.balloon]: balloonShape,
   [VEHICLE.gondola]: gondolaShape,
 };

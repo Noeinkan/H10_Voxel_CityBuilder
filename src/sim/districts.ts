@@ -4,6 +4,7 @@ import { ALL_CLASSES, BUILDING_CLASS, CLASS_COUNT, type BuildingClass } from './
 import { charterById, type CharterId } from './charters';
 import type { Catalyst } from './DesirabilityField';
 import type { PolicyId } from './policies';
+import { reachAt, type ReachCache } from './reach';
 
 export type DistrictId =
   | 'outskirts'
@@ -76,6 +77,15 @@ export interface UrbanSources {
   readonly catalysts: readonly Catalyst[];
   readonly policies: readonly PolicyId[];
   readonly charters: readonly CharterId[];
+  /**
+   * Le portate dei catalizzatori, le stesse che alimentano la heatmap.
+   *
+   * E' obbligatoria di proposito. Con un default silenzioso alla distanza in
+   * linea retta, un chiamante che se la dimenticasse otterrebbe un profilo
+   * plausibile e sbagliato — cioe' esattamente il disallineamento fra distretti
+   * e desiderabilita' che questo campo esiste per rendere impossibile.
+   */
+  readonly reach: ReachCache;
 }
 
 /**
@@ -87,7 +97,7 @@ export function urbanProfileAt(
   x: number,
   y: number,
 ): LocalUrbanProfile {
-  const { catalysts, policies, charters } = sources;
+  const { catalysts, policies, charters, reach } = sources;
   const byRole = new Map<CatalystId, number>();
   const uses = new Array<number>(CLASS_COUNT).fill(0);
   let density = 0;
@@ -98,9 +108,11 @@ export function urbanProfileAt(
 
   for (const source of catalysts) {
     if (source.radius <= 0) continue;
-    const distance = Math.max(Math.abs(source.x - x), Math.abs(source.y - y));
-    if (distance >= source.radius) continue;
-    const influence = 1 - distance / source.radius;
+    // La stessa portata geodetica che scrive la heatmap, letta dalla stessa
+    // cache: il profilo locale e il campo non possono piu' divergere, perche'
+    // non c'e' piu' una seconda formula da tenere allineata a mano.
+    const influence = reachAt(reach.get(source.x, source.y, source.radius), x, y);
+    if (influence <= 0) continue;
     const id = catalystRoleOf(source);
     const definition = catalystById(id);
     byRole.set(id, (byRole.get(id) ?? 0) + influence);
@@ -243,6 +255,101 @@ export function specializationOf(profile: {
     profile.density >= limits.office.density) return 'office';
 
   return null;
+}
+
+/** I ruoli che aprono una specializzazione. La tabella resta privata. */
+export function rolesForSpecialization(id: Specialization): readonly CatalystId[] {
+  return SPECIALIZATION_ROLES[id];
+}
+
+/**
+ * Le cinque metriche su cui una specializzazione pone soglie.
+ *
+ * Sono i nomi dei campi di `LocalUrbanProfile`, e non e' una coincidenza da
+ * documentare ma la ragione per cui il referto qui sotto si **deriva** invece di
+ * ricopiare `balance.ts`: la chiave della soglia e' gia' il campo da leggere.
+ */
+export type UrbanMetric = 'density' | 'wealth' | 'accessibility' | 'satisfaction' | 'industry';
+
+/**
+ * Cosa manca a un luogo perche' esprima una specializzazione.
+ *
+ * Uno per specializzazione, e **quello vincolante**: fra due soglie mancanti si
+ * riporta la piu' lontana. Dire «manca la densita'» dove manca anche l'industria
+ * non e' meno vero, ed e' la sola su cui agire per prima — la stessa scelta che
+ * il dock fa da quando i bottoni bloccati mostrano un requisito solo.
+ */
+export interface SpecializationGap {
+  readonly id: Specialization;
+  /** La metrica corta, oppure `null` quando a mancare e' il ruolo. */
+  readonly metric: UrbanMetric | null;
+  /** Quanto ce n'e' e quanto ne servirebbe. Con `metric` a `null` valgono 0 e 1. */
+  readonly have: number;
+  readonly need: number;
+  /** I ruoli che sbloccherebbero. Serve a leggere il gap di ruolo, e c'e' sempre. */
+  readonly roles: readonly CatalystId[];
+}
+
+/**
+ * Specializzazioni che questo luogo **non** esprime, dalla piu' vicina alla piu'
+ * lontana, ognuna con la sua condizione vincolante.
+ *
+ * E' `specializationOf` letta all'indietro. Quella risponde *cos'e' questo
+ * posto*; questa *cosa gli manca per diventare altro*, che e' la domanda che il
+ * giocatore si fa davvero e che finora non aveva nessuna superficie a reggerla:
+ * le diciotto soglie del gruppo non comparivano da nessuna parte, nemmeno in
+ * debug.
+ *
+ * **Chi passa gia' tutte le soglie non compare.** Succede: l'ordine di
+ * specificita' fa vincere la piu' rara, quindi un profilo che qualificherebbe
+ * per `office` puo' ricevere `farming`. Riportarlo con zero gap direbbe «non
+ * manca niente» di qualcosa che non accadra' comunque, ed e' peggio del silenzio.
+ *
+ * **L'ordinamento sta qui e non in chi disegna.** Pannello e tessera devono
+ * indicare la stessa soglia vincolante, e con due ordinamenti sarebbero due.
+ */
+export function specializationGapsOf(profile: LocalUrbanProfile): readonly SpecializationGap[] {
+  const gaps: SpecializationGap[] = [];
+  for (const id of ALL_SPECIALIZATIONS) {
+    if (id === profile.specialization) continue;
+    const gap = bindingGapOf(profile, id);
+    if (gap !== null) gaps.push(gap);
+  }
+
+  // Rapporto decrescente: chi e' quasi arrivato per primo. La parita' si rompe
+  // sull'ordine di catalogo — che **non** e' quello di valutazione di
+  // `specializationOf`, e qui non deve esserlo: li' l'ordine sceglie un
+  // vincitore fra chi qualifica, qui serve solo perche' due luoghi identici non
+  // ricevano due risposte diverse.
+  return gaps.sort((a, b) => gapRatio(b) - gapRatio(a) ||
+    ALL_SPECIALIZATIONS.indexOf(a.id) - ALL_SPECIALIZATIONS.indexOf(b.id));
+}
+
+/** La condizione piu' lontana fra quelle che una specializzazione chiede, o null. */
+function bindingGapOf(profile: LocalUrbanProfile, id: Specialization): SpecializationGap | null {
+  const roles = SPECIALIZATION_ROLES[id];
+
+  // Il ruolo **prima** delle soglie, e non la piu' lontana fra tutte: senza un
+  // ruolo in raggio le soglie non contano comunque, e mandare ad aspettare che
+  // la densita' salga sarebbe mandare ad aspettare per sempre.
+  if (!roles.some((role) => profile.roles.includes(role))) {
+    return { id, metric: null, have: 0, need: 1, roles };
+  }
+
+  let worst: SpecializationGap | null = null;
+  for (const [metric, need] of Object.entries(BALANCE.districts.specialization[id])) {
+    const have = profile[metric as UrbanMetric];
+    if (have >= need) continue;
+    const gap: SpecializationGap = { id, metric: metric as UrbanMetric, have, need, roles };
+    if (worst === null || gapRatio(gap) < gapRatio(worst)) worst = gap;
+  }
+  return worst;
+}
+
+/** Quanto di un requisito c'e' gia', in [0, 1]. Zero dove manca il ruolo. */
+function gapRatio(gap: SpecializationGap): number {
+  if (gap.need <= 0) return 1;
+  return Math.min(1, Math.max(0, gap.have / gap.need));
 }
 
 /**

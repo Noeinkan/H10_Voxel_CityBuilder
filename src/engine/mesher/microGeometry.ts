@@ -8,11 +8,13 @@ import {
   FACE_PY,
   FACE_PZ,
   PADDED,
+  PADDED_VOL,
   paddedIdx,
 } from '../../world/chunkCoords';
 import { hashCoords } from '../../world/rng';
 import { blockPalette, blockSurface, SURFACE_KIND, type SurfaceKind } from '../../world/visualBlock';
 import { PALETTE_SLOTS } from '../paletteSlots';
+import { facadeInset, roofInset } from './carveMarks';
 import { MESH_UNITS_PER_VOXEL } from './meshTypes';
 // Il dettaglio del retro vive in un modulo suo — questo file e' gia' oltre il
 // budget di righe della cartella. Le due direzioni si chiudono in cerchio, ed e'
@@ -78,6 +80,29 @@ export interface FixedBox {
 }
 
 /**
+ * Come va disegnato un prisma. Tutto opzionale: senza, e' un pieno illuminato.
+ *
+ * **`inward` e' cio' che rende possibile la microgeometria riduttiva.** Le
+ * stesse sei facce, con l'id di faccia opposto e il winding invertito, smettono
+ * di descrivere un pieno e descrivono un **vuoto**: le pareti guardano dentro il
+ * prisma invece che fuori. Il materiale e' `FrontSide`, quindi il winding non e'
+ * ornamentale — sbagliarlo rende la cavita' invisibile invece che sbagliata.
+ */
+export interface BoxOptions {
+  /** Le facce guardano dentro il prisma: e' un vano scavato, non un volume aggiunto. */
+  readonly inward?: boolean;
+  /**
+   * AO costante sui quattro corner, 0..3. Senza, il corner del tutto libero.
+   *
+   * Dentro un incavo il valore libero significa «niente mi occlude», cioe'
+   * piatto e illuminato: e' esattamente cio' che farebbe leggere una nicchia
+   * come un adesivo invece che come un buco. Le cavita' lo abbassano, e il fondo
+   * piu' delle spalle.
+   */
+  readonly ao?: number;
+}
+
+/**
  * Writer implementato dal mesher per tenere dettagli e greedy pass nella stessa
  * mesh.
  *
@@ -85,10 +110,20 @@ export interface FixedBox {
  * gia' conosce. Serve perche' un'insegna deve poter uscire `luminous` e
  * prendersi la fascia accesa senza un materiale proprio, mentre un
  * condizionatore resta `utility`, cioe' metallo strutturale.
+ *
+ * `hiddenFaces` conserva sempre il suo significato **geometrico** — un bit per
+ * lato del prisma — anche sui vani: cambia solo quale lato si nasconde, che su
+ * un pieno e' quello incollato al voxel e su un vuoto e' la **bocca**.
  */
 export interface MicroGeometryWriter {
   readonly remainingQuads: number;
-  emitBox(box: FixedBox, palette: number, hiddenFaces: number, surface: SurfaceKind): boolean;
+  emitBox(
+    box: FixedBox,
+    palette: number,
+    hiddenFaces: number,
+    surface: SurfaceKind,
+    options?: BoxOptions,
+  ): boolean;
 }
 
 /**
@@ -102,6 +137,40 @@ export interface MicroGeometryWriter {
 export type ChunkOrigin = readonly [number, number, number];
 
 const ORIGIN_ZERO: ChunkOrigin = [0, 0, 0];
+
+/**
+ * La maschera degli scavi del chunk in lavorazione.
+ *
+ * Vive a livello di modulo invece di passare per quattordici firme, ed e' la
+ * stessa scelta che `coverDetail.ts` fa con `lifted`: il worker mesha un chunk
+ * alla volta, e cio' che gli emettitori le chiedono e' sempre la stessa cosa —
+ * di quanto e' arretrata la parete sotto questo prisma. `appendMicroGeometry` la
+ * posa prima di chiamare chiunque, e nessuno la scrive.
+ *
+ * **Senza, i prismi additivi resterebbero appesi nel vuoto.** Un montante di
+ * portale su una soglia arretrata di tre sedicesimi partirebbe dal filo del muro
+ * che li' non c'e' piu'. Il valore e' zero su ogni parete piatta, cioe' quasi
+ * ovunque, quindi non cambia una virgola di cio' che il mesher faceva prima.
+ */
+let carves: Uint8Array = new Uint8Array(PADDED_VOL);
+
+/** Di quanto arretra un prisma appoggiato a questa faccia. Zero su parete piatta. */
+function inset(x: number, y: number, z: number, face: number): number {
+  return facadeInset(carves, x, y, z, face);
+}
+
+/**
+ * La quota da cui parte un prop di tetto, in unita' di mesh.
+ *
+ * `openRoof` risponde sul voxel **solido**, quindi la base e' sempre stata
+ * `(z + 1) * U` — e da quando il vassoio abbassa il calpestio quella non e' piu'
+ * la superficie su cui il prop poggia. Chi aggiunge un emettitore di tetto usi
+ * questa e non il letterale: e' la stessa trappola gia' documentata in
+ * `src/engine/AGENTS.md`, un giro piu' in la'.
+ */
+function roofBase(x: number, y: number, z: number): number {
+  return (z + 1) * U - roofInset(carves, x, y, z);
+}
 
 const U = MESH_UNITS_PER_VOXEL;
 export const LATERAL_FACES = [FACE_PX, FACE_NX, FACE_PY, FACE_NY] as const;
@@ -166,7 +235,7 @@ export function collectSurfaceCells(padded: Uint8Array): SurfaceCells {
   return { bySurface, facadeByFace };
 }
 
-function blockAt(padded: Uint8Array, x: number, y: number, z: number): number {
+export function blockAt(padded: Uint8Array, x: number, y: number, z: number): number {
   return padded[paddedIdx(x + 1, y + 1, z + 1)];
 }
 
@@ -175,7 +244,7 @@ function isExposed(padded: Uint8Array, x: number, y: number, z: number, face: nu
   return blockAt(padded, x + offset[0], y + offset[1], z + offset[2]) === 0;
 }
 
-function hasSurfaceFace(
+export function hasSurfaceFace(
   padded: Uint8Array,
   x: number,
   y: number,
@@ -192,7 +261,7 @@ function oppositeFace(face: number): number {
 }
 
 /** Asse su cui scorre una facciata: quello ortogonale alla sua normale, nel piano. */
-function facadeHorizontalAxis(face: number): 0 | 1 {
+export function facadeHorizontalAxis(face: number): 0 | 1 {
   return face < 2 ? 1 : 0;
 }
 
@@ -215,6 +284,17 @@ function sharedCapMask(axis: number, negativeContinues: boolean, positiveContinu
  * `horizontal*` e `vertical*` sono offset dall'origine della cella `(x, y, z)` e
  * possono superare `U`: e' cosi' che una corsa lunga `n` celle diventa un solo
  * box. `depth` misura la sporgenza oltre il piano della facciata.
+ *
+ * **`inset` arretra il piano di riferimento dentro il voxel**, e serve a due
+ * cose sole. La prima e' descrivere il vano stesso: `inset` e `depth` uguali
+ * danno esattamente il volume scavato, e `depth` zero da' un box degenere sul
+ * fondo, cioe' un pannello. La seconda e' rimettere un prisma additivo sul filo
+ * di una bocca invece che a mezz'aria davanti a un vano — un montante di portale
+ * su una soglia arretrata. Vale zero per tutti i chiamanti storici, che
+ * continuano a sporgere dal filo della parete.
+ *
+ * Non provare a ottenere un vano con `depth` negativo: uscirebbe un box con
+ * `min` oltre `max`, che il writer scrive senza lamentarsi e nessuno vede.
  */
 export function facadeBox(
   x: number,
@@ -226,6 +306,7 @@ export function facadeBox(
   verticalStart: number,
   verticalEnd: number,
   depth: number,
+  inset = 0,
 ): FixedBox {
   const min: [number, number, number] = [x * U, y * U, z * U + verticalStart];
   const max: [number, number, number] = [(x + 1) * U, (y + 1) * U, z * U + verticalEnd];
@@ -236,8 +317,9 @@ export function facadeBox(
   const normalAxis = face < 2 ? 0 : 1;
   const positive = face === FACE_PX || face === FACE_PY;
   const plane = ((normalAxis === 0 ? x : y) + (positive ? 1 : 0)) * U;
-  min[normalAxis] = positive ? plane : plane - depth;
-  max[normalAxis] = positive ? plane + depth : plane;
+  const reference = positive ? plane - inset : plane + inset;
+  min[normalAxis] = positive ? reference : reference - depth;
+  max[normalAxis] = positive ? reference + depth : reference;
   return { min, max };
 }
 
@@ -252,12 +334,32 @@ export function facadeBox(
 export interface RunSpec {
   readonly runAxis: 0 | 1 | 2;
   readonly palette: number;
-  /** Faccia aderente al voxel che regge il dettaglio: non viene mai emessa. */
+  /**
+   * Lato del prisma che non viene mai emesso.
+   *
+   * Su un pieno e' la faccia aderente al voxel che lo regge; su un vano
+   * (`inward`) e' la **bocca**, cioe' il lato aperto verso l'aria. Restano altri
+   * lati da nascondere: `hiddenFaces` accetta una maschera, questo un solo bit,
+   * e chi ne vuole due passa da `emitBox`.
+   */
   readonly hiddenFace: number;
+  /** Altri lati da nascondere oltre a `hiddenFace`, come maschera di bit. */
+  readonly alsoHidden?: number;
   /** Linguaggio di superficie del prisma. Senza, e' metallo strutturale. */
   readonly surface?: SurfaceKind;
+  /** Il prisma e' un vano scavato e non un volume aggiunto. Vedi `BoxOptions`. */
+  readonly inward?: boolean;
+  /** AO costante sui quattro corner. Vedi `BoxOptions`. */
+  readonly ao?: number;
   has(x: number, y: number, z: number): boolean;
   box(x: number, y: number, z: number, length: number, openStart: boolean, openEnd: boolean): FixedBox;
+}
+
+/** Le opzioni di disegno di uno spec, o `undefined` se sono tutte al default. */
+function boxOptions(spec: RunSpec): BoxOptions | undefined {
+  return spec.inward === undefined && spec.ao === undefined
+    ? undefined
+    : { inward: spec.inward, ao: spec.ao };
 }
 
 /**
@@ -273,6 +375,8 @@ export function emitRuns(writer: MicroGeometryWriter, cells: readonly number[], 
   const dx = axis === 0 ? 1 : 0;
   const dy = axis === 1 ? 1 : 0;
   const dz = axis === 2 ? 1 : 0;
+  const options = boxOptions(spec);
+  const hidden = faceBit(spec.hiddenFace) | (spec.alsoHidden ?? 0);
 
   for (const cell of cells) {
     const x = cell & 31;
@@ -295,8 +399,9 @@ export function emitRuns(writer: MicroGeometryWriter, cells: readonly number[], 
     if (!writer.emitBox(
       spec.box(x, y, z, length, openStart, openEnd),
       spec.palette,
-      faceBit(spec.hiddenFace) | sharedCapMask(axis, openStart, openEnd),
+      hidden | sharedCapMask(axis, openStart, openEnd),
       spec.surface ?? SURFACE_KIND.utility,
+      options,
     )) {
       return false;
     }
@@ -318,6 +423,9 @@ export function emitRuns(writer: MicroGeometryWriter, cells: readonly number[], 
  * cella appartiene a un chunk solo.
  */
 export function emitPoints(writer: MicroGeometryWriter, cells: readonly number[], spec: RunSpec): boolean {
+  const options = boxOptions(spec);
+  const hidden = faceBit(spec.hiddenFace) | (spec.alsoHidden ?? 0);
+
   for (const cell of cells) {
     const x = cell & 31;
     const y = (cell >>> 5) & 31;
@@ -327,8 +435,9 @@ export function emitPoints(writer: MicroGeometryWriter, cells: readonly number[]
     if (!writer.emitBox(
       spec.box(x, y, z, 1, false, false),
       spec.palette,
-      faceBit(spec.hiddenFace),
+      hidden,
       spec.surface ?? SURFACE_KIND.utility,
+      options,
     )) {
       return false;
     }
@@ -357,7 +466,9 @@ function verticalEdgeSpec(
     hiddenFace: oppositeFace(face),
     has: (x, y, z) => hasSurfaceFace(padded, x, y, z, surface, face) &&
       !hasSurfaceFace(padded, x + dx, y + dy, z, surface, face),
-    box: (x, y, z, length) => facadeBox(x, y, z, face, start, start + width, 0, length * U, depth),
+    box: (x, y, z, length) => facadeBox(
+      x, y, z, face, start, start + width, 0, length * U, depth, inset(x, y, z, face),
+    ),
   };
 }
 
@@ -382,7 +493,9 @@ function emitPortals(padded: Uint8Array, writer: MicroGeometryWriter, cells: rea
       palette: PALETTE_SLOTS.metalBrass,
       hiddenFace: oppositeFace(face),
       has: isLintel,
-      box: (x, y, z, length) => facadeBox(x, y, z, face, 0, length * U, U - 2, U, 2),
+      box: (x, y, z, length) => facadeBox(
+        x, y, z, face, 0, length * U, U - 2, U, 2, inset(x, y, z, face),
+      ),
     })) {
       return false;
     }
@@ -393,7 +506,9 @@ function emitPortals(padded: Uint8Array, writer: MicroGeometryWriter, cells: rea
       hiddenFace: oppositeFace(face),
       // La pensilina sporge 4/16: le serve aria davanti, un piano piu' in alto.
       has: (x, y, z) => isLintel(x, y, z) && blockAt(padded, x + normal[0], y + normal[1], z + 1) === 0,
-      box: (x, y, z, length) => facadeBox(x, y, z, face, 0, length * U, U, U + 1, 4),
+      box: (x, y, z, length) => facadeBox(
+        x, y, z, face, 0, length * U, U, U + 1, 4, inset(x, y, z, face),
+      ),
     })) {
       return false;
     }
@@ -469,6 +584,7 @@ function emitLuminous(padded: Uint8Array, writer: MicroGeometryWriter, cells: re
           vertical,
           vertical + 1,
           1,
+          inset(x, y, z, face),
         ),
       })) {
         return false;
@@ -488,7 +604,9 @@ function emitHabitat(padded: Uint8Array, writer: MicroGeometryWriter, cells: rea
       hiddenFace: oppositeFace(face),
       has: (x, y, z) => hasSurfaceFace(padded, x, y, z, habitat, face) &&
         !hasSurfaceFace(padded, x, y, z + 1, habitat, face),
-      box: (x, y, z, length) => facadeBox(x, y, z, face, 0, length * U, U - 1, U, 3),
+      box: (x, y, z, length) => facadeBox(
+        x, y, z, face, 0, length * U, U - 1, U, 3, inset(x, y, z, face),
+      ),
     })) {
       return false;
     }
@@ -743,7 +861,7 @@ export function interiorRoof(padded: Uint8Array, x: number, y: number, z: number
 }
 
 /** true se sopra un vicino laterale c'e' ancora volume: la sommita' e' un arretramento. */
-function underSetback(padded: Uint8Array, x: number, y: number, z: number): boolean {
+export function underSetback(padded: Uint8Array, x: number, y: number, z: number): boolean {
   for (const face of LATERAL_FACES) {
     const offset = FACE_NEIGHBOUR_OFFSETS[face];
     if (blockAt(padded, x + offset[0], y + offset[1], z + 1) !== 0) return true;
@@ -777,7 +895,9 @@ function emitAwnings(
         // Le serve aria davanti: sporge 5/16, e sotto un volume non ci sta.
         blockAt(padded, x + normal[0], y + normal[1], z) === 0 &&
         frontage(padded, x, y, z, face),
-      box: (x, y, z, length) => facadeBox(x, y, z, face, 0, length * U, U - 4, U - 1, 5),
+      box: (x, y, z, length) => facadeBox(
+        x, y, z, face, 0, length * U, U - 4, U - 1, 5, inset(x, y, z, face),
+      ),
     })) {
       return false;
     }
@@ -812,7 +932,7 @@ function emitSigns(
         propRoll(origin, x, y, z, 0x51_6e) < 0.16 &&
         frontage(padded, x, y, z, face),
       // Sporge 8/16 e resta larga 2/16: e' una bandiera, non un pannello.
-      box: (x, y, z) => facadeBox(x, y, z, face, 6, 8, 3, 12, 8),
+      box: (x, y, z) => facadeBox(x, y, z, face, 6, 8, 3, 12, 8, inset(x, y, z, face)),
     })) {
       return false;
     }
@@ -843,7 +963,7 @@ function emitWallUnits(
         blockAt(padded, x + normal[0], y + normal[1], z) === 0 &&
         propRoll(origin, x, y, z, 0x1a_c0) < 0.012 &&
         !frontage(padded, x, y, z, face),
-      box: (x, y, z) => facadeBox(x, y, z, face, 4, 12, 4, 12, 3),
+      box: (x, y, z) => facadeBox(x, y, z, face, 4, 12, 4, 12, 3, inset(x, y, z, face)),
     })) {
       return false;
     }
@@ -871,7 +991,7 @@ function emitRoofMasts(
       propRoll(origin, x, y, z, 0x4d_a5) < 0.04 &&
       interiorRoof(padded, x, y, z),
     box: (x, y, z) => ({
-      min: [x * U + 7, y * U + 7, (z + 1) * U],
+      min: [x * U + 7, y * U + 7, roofBase(x, y, z)],
       max: [x * U + 9, y * U + 9, (z + 1) * U + 22],
     }),
   });
@@ -954,7 +1074,9 @@ function emitVines(
         has: (x, y, z) => z <= VINE_TOP &&
           facadeAt(padded, x, y, z, face) !== SURFACE_KIND.plain &&
           propRoll(origin, x, y, 0, side < 0 ? 0x7e_11 : 0x7e_22) < 0.12,
-        box: (x, y, z, length) => facadeBox(x, y, z, face, start, start + 3, 0, length * U, 2),
+        box: (x, y, z, length) => facadeBox(
+          x, y, z, face, start, start + 3, 0, length * U, 2, inset(x, y, z, face),
+        ),
       })) {
         return false;
       }
@@ -984,7 +1106,7 @@ function emitRoofCrowns(
       propRoll(origin, x, y, z, 0x6c_ea) < 0.05 &&
       interiorRoof(padded, x, y, z),
     box: (x, y, z) => ({
-      min: [x * U + 1, y * U + 1, (z + 1) * U],
+      min: [x * U + 1, y * U + 1, roofBase(x, y, z)],
       max: [x * U + 15, y * U + 15, (z + 1) * U + 7],
     }),
   });
@@ -1020,7 +1142,9 @@ function emitCornerPosts(
           // toccano sono due edifici, e li' non c'e' un cantonale ma un giunto.
           return own !== SURFACE_KIND.plain && facadeAt(padded, x, y, z, lateral) === own;
         },
-        box: (x, y, z, length) => facadeBox(x, y, z, face, start, start + 3, 0, length * U, 3),
+        box: (x, y, z, length) => facadeBox(
+          x, y, z, face, start, start + 3, 0, length * U, 3, inset(x, y, z, face),
+        ),
       })) {
         return false;
       }
@@ -1057,9 +1181,13 @@ function emitFacadeProps(
 export function appendMicroGeometry(
   padded: Uint8Array,
   writer: MicroGeometryWriter,
+  marks: Uint8Array,
   origin: ChunkOrigin = ORIGIN_ZERO,
 ): number {
   const initial = writer.remainingQuads;
+  // Da qui in giu' ogni prisma di facciata sa di quanto la sua parete e'
+  // arretrata. Vedi la nota su `carves`.
+  carves = marks;
   const { bySurface, facadeByFace } = collectSurfaceCells(padded);
   if (!emitPortals(padded, writer, bySurface[SURFACE_KIND.portal])) return initial - writer.remainingQuads;
   if (!emitRoofTech(padded, writer, bySurface[SURFACE_KIND.roofTech])) return initial - writer.remainingQuads;
@@ -1116,7 +1244,7 @@ export function appendMicroGeometry(
   // Il dettaglio del retro chiude la sequenza: e' l'ultimo a comparire e il primo
   // a cadere. Vive in `microStreet.ts` — un file suo, perche' questo e' gia'
   // oltre il budget di righe della cartella.
-  appendStreetDetail(padded, writer, facadeByFace, roofs, origin);
+  appendStreetDetail(padded, writer, facadeByFace, roofs, origin, marks);
   return initial - writer.remainingQuads;
 }
 
