@@ -19,7 +19,7 @@ import { iconButton, labeledButton, paintAction, tileButton } from './hudWidgets
  */
 
 /** I pannelli che il dock apre. Il dock non li possiede: chiede a chi li tiene. */
-export type DockPanel = 'policies' | 'themes' | 'views';
+export type DockPanel = 'city' | 'policies' | 'themes' | 'views';
 
 /**
  * Se due strumenti sono lo stesso strumento.
@@ -61,7 +61,8 @@ export class BuildDock {
    * possono divergere: se il dock cambia ordine, cambiano insieme.
    */
   private readonly tools: { readonly tool: GameTool; readonly button: HTMLButtonElement }[] = [];
-  private readonly policyToggle: HTMLButtonElement;
+  private readonly cityToggle: HTMLButtonElement;
+  private readonly policiesToggle: HTMLButtonElement;
   private readonly themeToggle: HTMLButtonElement;
   private readonly viewToggle: HTMLButtonElement;
 
@@ -82,12 +83,6 @@ export class BuildDock {
       heading.textContent = group.label;
       section.appendChild(heading);
 
-      // Quante tessere ha la corsia, per il CSS: sul rail alto le corsie si
-      // dividono l'altezza che avanza, e senza questo numero il `flex-grow`
-      // uguale per tutte darebbe all'identita' — che ne ha due — tessere alte il
-      // doppio di quelle delle connessioni, che ne hanno quattro.
-      section.style.setProperty('--dock-tiles', String(group.actions.length));
-
       const row = document.createElement('div');
       row.className = 'dock-group-row';
       for (const action of group.actions) {
@@ -96,7 +91,10 @@ export class BuildDock {
           class: action.class ?? 0,
           id: action.catalystId,
         };
-        const button = this.addTool(action, (action.catalystId ?? 'market') as HudIcon, tool, handlers);
+        // Nessun `as HudIcon` qui: era il cast a lasciar passare un ruolo senza
+        // icona: `PATHS[name]` tornava `undefined` e la tessera usciva vuota.
+        // Senza, e' il compilatore a chiedere il disegno quando nasce il ruolo.
+        const button = this.addTool(action, action.catalystId ?? 'market', tool, handlers);
         this.catalystButtons[model.catalysts.indexOf(action)] = button;
         row.appendChild(button);
       }
@@ -109,7 +107,6 @@ export class BuildDock {
     // stanno insieme e in una corsia loro, non fra i catalizzatori.
     const reach = document.createElement('div');
     reach.className = 'dock-group';
-    reach.style.setProperty('--dock-tiles', '3');
     const reachTitle = document.createElement('span');
     reachTitle.className = 'dock-group-title';
     reachTitle.textContent = 'Reach';
@@ -127,21 +124,30 @@ export class BuildDock {
     this.root.appendChild(reach);
 
     // I bottoni che non costruiscono niente stanno in un blocco loro, in coda.
-    // Nel rail verticale non e' solo ordine: cinque bottoni a tutta larghezza
-    // costerebbero cinque righe di un'altezza che le tessere si contendono, e i
-    // tre che portano solo un'icona non hanno bisogno di una riga per uno.
+    // Le tre porte stanno in una **riga**, non incolonnate: tre righe piene in
+    // fondo al dock erano esattamente cio' che lo faceva sbordare sotto il bordo
+    // di un portatile. Accanto, sulla stessa riga, le tre icone che non hanno
+    // bisogno di una parola per dirsi.
     const utility = document.createElement('div');
     utility.className = 'dock-utility';
 
-    this.policyToggle = labeledButton('policies', 'City', 'Open city overview and policies', () => handlers.onPanel('policies'));
-    this.policyToggle.setAttribute('aria-expanded', 'false');
-    utility.appendChild(this.policyToggle);
-    // Le viste stanno fra le politiche e il tema perche' e' li' che passa il
-    // confine: da qui in poi i bottoni non cambiano la citta', cambiano come la
-    // si guarda.
+    // Leggere e governare sono due porte distinte, non due linguette della stessa:
+    // chi cerca una cifra apre la dashboard, chi vuole cambiare una regola apre
+    // le policy, e nessuno dei due deve scorrere l'elenco dell'altro.
+    const doors = document.createElement('div');
+    doors.className = 'dock-utility-row';
+    this.cityToggle = labeledButton('city', 'City', 'Open the city dashboard', () => handlers.onPanel('city'));
+    this.cityToggle.setAttribute('aria-expanded', 'false');
+    doors.appendChild(this.cityToggle);
+    this.policiesToggle = labeledButton('policies', 'Policies', 'Open policies and trade', () => handlers.onPanel('policies'));
+    this.policiesToggle.setAttribute('aria-expanded', 'false');
+    doors.appendChild(this.policiesToggle);
+    // Le viste stanno dopo le due porte perche' e' li' che passa il confine: da
+    // qui in poi i bottoni non cambiano la citta', cambiano come la si guarda.
     this.viewToggle = labeledButton('view', 'Views', 'Look inside the city · V', () => handlers.onPanel('views'));
     this.viewToggle.setAttribute('aria-expanded', 'false');
-    utility.appendChild(this.viewToggle);
+    doors.appendChild(this.viewToggle);
+    utility.appendChild(doors);
 
     const icons = document.createElement('div');
     icons.className = 'dock-utility-row';
@@ -215,9 +221,11 @@ export class BuildDock {
   }
 
   setExpanded(panel: DockPanel, open: boolean): void {
-    const button = panel === 'policies'
-      ? this.policyToggle
-      : panel === 'themes' ? this.themeToggle : this.viewToggle;
+    const button = panel === 'city'
+      ? this.cityToggle
+      : panel === 'policies'
+        ? this.policiesToggle
+        : panel === 'themes' ? this.themeToggle : this.viewToggle;
     button.setAttribute('aria-expanded', open ? 'true' : 'false');
   }
 

@@ -14,7 +14,9 @@ import {
   type GameTool,
 } from './GameHudModel';
 import type { DaylightMode } from '../engine/daylight';
-import { PolicyDrawer } from './PolicyDrawer';
+import { CityDrawer } from './CityDrawer';
+import { PoliciesDrawer } from './PoliciesDrawer';
+import { drawerHeader } from './drawerBits';
 import { ResourceBar } from './ResourceBar';
 import { ResourceTrend } from './ResourceTrend';
 import {
@@ -33,6 +35,8 @@ export interface GameHudHandlers {
   readonly onPolicy: (id: PolicyId) => void;
   readonly onTrade: (mode: TradeMode) => void;
   readonly onDecision: (optionId: string) => void;
+  /** Rimanda la decisione sospesa senza scegliere. */
+  readonly onSnooze: () => void;
   readonly onPause: (paused: boolean) => void;
   readonly onSpeed: (speed: number) => void;
   /** Ciclo, giorno fisso o notte fissa: sta accanto alla velocita' perche' e' tempo. */
@@ -122,7 +126,8 @@ export class GameHud {
   private readonly toast: HTMLElement;
   /** Il contenitore del lato comandi: dock sopra, targa della vista in fondo. */
   private readonly railLeft: HTMLElement;
-  private readonly policyDrawer: PolicyDrawer;
+  private readonly cityDrawer: CityDrawer;
+  private readonly policiesDrawer: PoliciesDrawer;
   private readonly themePicker: HTMLElement;
   private readonly viewPicker: HTMLElement;
   private readonly viewBar: HTMLElement;
@@ -186,7 +191,6 @@ export class GameHud {
       onDaylight: (mode) => handlers.onDaylight(mode),
       onClouds: (on) => handlers.onClouds(on),
     });
-    this.root.appendChild(this.bar.root);
 
     this.toast = document.createElement('div');
     this.toast.className = 'hud-toast';
@@ -195,16 +199,17 @@ export class GameHud {
     this.root.appendChild(this.toast);
 
     this.cursor = document.createElement('div');
-    this.cursor.className = 'cursor-card hud-surface';
+    this.cursor.className = 'cursor-card';
     this.cursor.hidden = true;
     this.root.appendChild(this.cursor);
 
-    // Il rail sinistro: il dock e la targa della vista, che prima si dividevano
-    // lo stesso angolo a numeri. In colonna il dock si stringe per primo e la
-    // targa resta in fondo, quindi non esiste un'altezza di finestra in cui si
-    // coprano.
+    // Il rail sinistro e' **un solo** lato: i dati in alto, i comandi sotto, la
+    // targa della vista in fondo. Prima dati e comandi si dividevano i due bordi
+    // opposti dello schermo; adesso lo stato della citta' sta sopra le sue leve,
+    // e il corridoio verticale al centro resta interamente alla citta'.
     this.railLeft = document.createElement('div');
     this.railLeft.className = 'hud-rail-left';
+    this.railLeft.appendChild(this.bar.root);
     this.dock = new BuildDock(this.model, {
       onTool: (tool) => this.pickTool(tool),
       onSwatch: () => handlers.onSwatch(),
@@ -214,7 +219,16 @@ export class GameHud {
     this.railLeft.appendChild(this.dock.root);
     this.root.appendChild(this.railLeft);
 
-    this.policyDrawer = new PolicyDrawer(this.model, {
+    this.cityDrawer = new CityDrawer(this.model, {
+      onClose: () => this.closeCity(),
+      onDecision: (id) => {
+        this.feedback = null;
+        this.handlers.onDecision(id);
+      },
+      onSnooze: () => this.snoozeDecision(),
+    });
+    this.root.appendChild(this.cityDrawer.root);
+    this.policiesDrawer = new PoliciesDrawer(this.model, {
       onPolicy: (id) => {
         this.feedback = null;
         handlers.onPolicy(id);
@@ -222,7 +236,7 @@ export class GameHud {
       onTrade: (mode) => handlers.onTrade(mode),
       onClose: () => this.closePolicies(),
     });
-    this.root.appendChild(this.policyDrawer.root);
+    this.root.appendChild(this.policiesDrawer.root);
     this.decisionCard = document.createElement('aside');
     this.decisionCard.className = 'decision-card hud-surface hud-surface--modal';
     this.decisionCard.hidden = true;
@@ -241,19 +255,15 @@ export class GameHud {
     this.setTheme(activeThemeId);
     this.setView(buildViewMenuModel(INSPECT_MODE.off, INSPECT.defaultSliceZ, INSPECT.maxSliceZ));
 
-    // Quanto misurano davvero i due rail: la larghezza di quello sinistro
-    // dipende da quante tessere ci stanno, l'altezza della colonna risorse da
-    // quante risorse ci sono. Chi deve stargli fuori — la barra dei livelli, la
-    // scheda di selezione, gli overlay tecnici — legge questi due numeri invece
-    // di ripetere una misura che cambierebbe alla prossima tessera.
+    // Quanto misura davvero il rail sinistro: la sua larghezza dipende da quante
+    // tessere ci stanno, e chi gli sta fuori — la barra dei livelli, il toast,
+    // gli overlay tecnici — la legge da qui invece di ripetere una misura che
+    // cambierebbe alla prossima tessera.
     const publishRails = (): void => {
-      const style = document.documentElement.style;
-      style.setProperty('--game-hud-rail-left', `${this.railLeft.offsetWidth}px`);
-      style.setProperty('--game-hud-top', `${this.bar.root.offsetHeight + 24}px`);
+      document.documentElement.style.setProperty('--game-hud-rail-left', `${this.railLeft.offsetWidth}px`);
     };
     const rails = new ResizeObserver(publishRails);
-    rails.observe(this.dock.root);
-    rails.observe(this.bar.root);
+    rails.observe(this.railLeft);
     requestAnimationFrame(publishRails);
     this.paint(this.model);
   }
@@ -468,16 +478,34 @@ export class GameHud {
 
   /** Il dock chiede un pannello per nome: quale sia il suo bottone lo sa lui. */
   private togglePanel(panel: DockPanel): void {
-    if (panel === 'policies') this.togglePolicies();
+    if (panel === 'city') this.toggleCity();
+    else if (panel === 'policies') this.togglePolicies();
     else if (panel === 'themes') this.toggleThemes();
     else this.toggleViews();
   }
 
+  toggleCity(): void {
+    const opening = this.cityDrawer.hidden;
+    this.cityDrawer.hidden = !opening;
+    this.dock.setExpanded('city', opening);
+    if (opening) {
+      // La scheda di selezione vive fuori dall'HUD e sta sopra i cassetti: aprire
+      // un cassetto la chiude, o i due pannelli si sovrappongono sul bordo destro.
+      this.handlers.onClearSelection();
+      this.closePolicies();
+      this.closeThemes();
+      this.closeViews();
+      this.help.hide();
+    }
+  }
+
   togglePolicies(): void {
-    const opening = this.policyDrawer.hidden;
-    this.policyDrawer.hidden = !opening;
+    const opening = this.policiesDrawer.hidden;
+    this.policiesDrawer.hidden = !opening;
     this.dock.setExpanded('policies', opening);
     if (opening) {
+      this.handlers.onClearSelection();
+      this.closeCity();
       this.closeThemes();
       this.closeViews();
       this.help.hide();
@@ -489,6 +517,8 @@ export class GameHud {
     this.themePicker.hidden = !opening;
     this.dock.setExpanded('themes', opening);
     if (opening) {
+      this.handlers.onClearSelection();
+      this.closeCity();
       this.closePolicies();
       this.closeViews();
       this.help.hide();
@@ -500,6 +530,8 @@ export class GameHud {
     this.viewPicker.hidden = !opening;
     this.dock.setExpanded('views', opening);
     if (opening) {
+      this.handlers.onClearSelection();
+      this.closeCity();
       this.closePolicies();
       this.closeThemes();
       this.help.hide();
@@ -507,10 +539,29 @@ export class GameHud {
   }
 
   toggleHelp(): void {
+    const opening = !this.help.isOpen;
+    this.closeCity();
     this.closePolicies();
     this.closeThemes();
     this.closeViews();
+    if (opening) this.handlers.onClearSelection();
     this.help.toggle();
+  }
+
+  /**
+   * Chiude i pannelli di destra, tutti insieme.
+   *
+   * Serve alla scheda di selezione, che si apre sul bordo destro: i cassetti e i
+   * picker condividono quella striscia, e due pannelli sovrapposti non si
+   * leggono. La scheda vive fuori dall'HUD, quindi chi la apre non puo' toccare
+   * questi cassetti direttamente — passa di qui.
+   */
+  dismissPanels(): void {
+    this.closeCity();
+    this.closePolicies();
+    this.closeThemes();
+    this.closeViews();
+    this.help.hide();
   }
 
   /**
@@ -528,7 +579,7 @@ export class GameHud {
     switch (resolveEscapeTarget(
       !this.viewPicker.hidden,
       !this.themePicker.hidden,
-      !this.policyDrawer.hidden,
+      !this.cityDrawer.hidden || !this.policiesDrawer.hidden,
       this.help.isOpen,
       this.selected,
       this.viewActive,
@@ -546,6 +597,7 @@ export class GameHud {
         this.closeThemes();
         return true;
       case 'policies':
+        this.closeCity();
         this.closePolicies();
         return true;
       case 'help':
@@ -578,10 +630,11 @@ export class GameHud {
     picker.hidden = true;
     picker.setAttribute('aria-label', 'Visual themes');
 
-    const title = document.createElement('h2');
-    title.className = 'drawer-title';
-    title.textContent = 'Visual theme';
-    picker.appendChild(title);
+    picker.appendChild(drawerHeader({
+      title: 'Visual theme',
+      closeLabel: 'Close themes · Esc',
+      onClose: () => this.closeThemes(),
+    }));
 
     const grid = document.createElement('div');
     grid.className = 'theme-grid';
@@ -627,13 +680,12 @@ export class GameHud {
     picker.hidden = true;
     picker.setAttribute('aria-label', 'City views');
 
-    const title = document.createElement('h2');
-    title.className = 'drawer-title';
-    title.textContent = 'Look inside';
-    const subtitle = document.createElement('p');
-    subtitle.className = 'drawer-subtitle';
-    subtitle.textContent = 'Your city is dense enough to hide things. Open it up.';
-    picker.append(title, subtitle);
+    picker.appendChild(drawerHeader({
+      title: 'Look inside',
+      subtitle: 'Your city is dense enough to hide things. Open it up.',
+      closeLabel: 'Close views · Esc',
+      onClose: () => this.closeViews(),
+    }));
 
     const list = document.createElement('div');
     list.className = 'view-list';
@@ -756,8 +808,13 @@ export class GameHud {
     return rail;
   }
 
+  private closeCity(): void {
+    this.cityDrawer.hidden = true;
+    this.dock.setExpanded('city', false);
+  }
+
   private closePolicies(): void {
-    this.policyDrawer.hidden = true;
+    this.policiesDrawer.hidden = true;
     this.dock.setExpanded('policies', false);
   }
 
@@ -774,20 +831,38 @@ export class GameHud {
   private paint(model: GameHudModel): void {
     this.bar.paint(model);
     this.dock.paint(model);
-    this.policyDrawer.paint(model);
+    this.cityDrawer.paint(model);
+    this.policiesDrawer.paint(model);
     this.paintDecision(model);
     this.paintSelection();
     this.paintToast();
   }
 
+  private snoozeDecision(): void {
+    this.handlers.onSnooze();
+    this.showTransientFeedback('Decision postponed — answer it in the City dashboard.');
+  }
+
   private paintDecision(model: GameHudModel): void {
     const decision = model.decision;
-    this.decisionCard.hidden = decision === null;
     if (decision === null) {
-      if (decisionNeedsRepaint(this.paintedDecisionId, decision)) this.decisionCard.replaceChildren();
+      this.decisionCard.hidden = true;
+      if (decisionNeedsRepaint(this.paintedDecisionId, null)) this.decisionCard.replaceChildren();
       this.paintedDecisionId = null;
       return;
     }
+    // Rimandata: la carta si nasconde, ma la scelta resta in piedi e ricompare
+    // al termine dello snooze. Si svuota lo stato dipinto perche' i bottoni
+    // vanno ricostruiti con listener freschi al rientro.
+    if (model.decisionSnoozed) {
+      this.decisionCard.hidden = true;
+      if (this.paintedDecisionId !== null) {
+        this.paintedDecisionId = null;
+        this.decisionCard.replaceChildren();
+      }
+      return;
+    }
+    this.decisionCard.hidden = false;
     // Il repaint periodico non deve sostituire il bottone tra pointerdown e click.
     if (!decisionNeedsRepaint(this.paintedDecisionId, decision)) return;
     const title = document.createElement('h2');
@@ -808,7 +883,7 @@ export class GameHud {
       // Il segno che l'alternativa lascia sulla forma della citta'. Senza
       // questa riga il giocatore legge tre travasi di risorse e non sa che sta
       // scegliendo anche come cresceranno i suoi isolati.
-      const mark = decisionMark(option);
+      const mark = decisionMark(option, model.decisionActiveCharter);
       if (mark !== null) {
         const consequence = document.createElement('span');
         consequence.className = 'decision-mark';
@@ -818,7 +893,12 @@ export class GameHud {
       button.addEventListener('click', () => this.handlers.onDecision(option.id), { once: true });
       options.appendChild(button);
     }
-    this.decisionCard.replaceChildren(title, message, options);
+    const later = document.createElement('button');
+    later.type = 'button';
+    later.className = 'decision-later';
+    later.textContent = 'Decide later';
+    later.addEventListener('click', () => this.snoozeDecision(), { once: true });
+    this.decisionCard.replaceChildren(title, message, options, later);
     this.paintedDecisionId = decision.id;
   }
 
@@ -830,6 +910,7 @@ export class GameHud {
     if (this.feedback !== null) {
       this.toast.textContent = this.feedback.message;
       this.toast.dataset.tone = this.feedback.tone;
+      delete this.toast.dataset.kind;
       return;
     }
     const instruction = selectionMessage(this.selected, this.model.catalysts);
@@ -838,9 +919,28 @@ export class GameHud {
         ? instruction
         : `${this.selectionNote} · ${instruction}`;
       this.toast.dataset.tone = 'selection';
+      delete this.toast.dataset.kind;
       return;
     }
-    this.toast.textContent = this.model.message;
-    this.toast.dataset.tone = this.model.condition?.tone ?? 'neutral';
+    /*
+     * Della condizione qui resta il **titolo**, non il referto.
+     *
+     * `model.message` porta titolo e spiegazione insieme, ed e' la stessa coppia
+     * che il cassetto Citta' apre in cima alla sua colonna. Stampata qui restava
+     * aperta finche' la crisi durava: tre righe permanenti sopra la citta', che
+     * si leggono una volta e poi diventano arredamento — e nel frattempo coprono
+     * cio' che si sta costruendo. Il titolo basta a riconoscere lo stato con la
+     * coda dell'occhio; il perche' sta dove c'e' spazio per leggerlo, e chi lo
+     * vuole apre il cassetto.
+     *
+     * Il modello non cambia: `message` resta la lettura completa per chi la
+     * vuole intera, ed e' cio' che questo ramo stampava per difetto, non per
+     * scelta.
+     */
+    const condition = this.model.condition;
+    this.toast.textContent = condition?.title ?? this.model.message;
+    this.toast.dataset.tone = condition?.tone ?? 'neutral';
+    if (condition === null) delete this.toast.dataset.kind;
+    else this.toast.dataset.kind = 'condition';
   }
 }

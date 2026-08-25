@@ -1,9 +1,27 @@
+import type { CatalystId } from '../sim/catalysts';
+
 export type HudIcon =
   | 'funds' | 'population' | 'food' | 'materials' | 'satisfaction'
-  | 'residential' | 'production' | 'civic' | 'expansion' | 'terrace' | 'ropeway' | 'policies'
-  | 'market' | 'factory' | 'park' | 'port' | 'ferry' | 'airport' | 'transport' | 'university' | 'monument'
+  | 'residential' | 'production' | 'civic' | 'expansion' | 'terrace' | 'ropeway' | 'policies' | 'city'
+  | 'market' | 'factory' | 'park' | 'depot' | 'port' | 'ferry' | 'airport' | 'transport'
+  | 'university' | 'monument' | 'museum' | 'cathedral'
   | 'pause' | 'play' | 'theme' | 'view' | 'swatch' | 'help' | 'close'
   | 'daylight' | 'sun' | 'moon' | 'clouds' | 'cloudsOff';
+
+/*
+ * Ogni ruolo della toolbar deve avere la sua icona, e il compilatore lo esige.
+ *
+ * I due elenchi erano tenuti d'accordo a mano: quando `BALANCE` ha guadagnato
+ * museo, cattedrale e deposito, `PATHS` non li ha saputi, `PATHS[name]` e'
+ * tornato `undefined` e tre tessere sono uscite **vuote** — con l'etichetta, il
+ * prezzo e il tasto al loro posto, cioe' senza sembrare rotte.
+ *
+ * Questa riga e' cio' che impedisce che accada di nuovo: un ruolo nuovo in
+ * `BALANCE` che non trovi il suo disegno qui sotto rompe la compilazione, e non
+ * la tessera. Non produce niente a runtime.
+ */
+type Assert<T extends true> = T;
+export type EveryCatalystHasAnIcon = Assert<CatalystId extends HudIcon ? true : false>;
 
 const PATHS: Readonly<Record<HudIcon, string>> = {
   funds: '<circle cx="12" cy="12" r="8"/><path d="M9 10.2c0-1.1 1.2-2 3-2s3 .9 3 2-1.2 1.8-3 1.8-3 .9-3 2 1.2 2 3 2 3-.9 3-2M12 6v12"/>',
@@ -17,6 +35,10 @@ const PATHS: Readonly<Record<HudIcon, string>> = {
   market: '<path d="M4 10h16l-2-6H6l-2 6ZM5 10v10h14V10M9 20v-6h6v6M4 10c1 2 3 2 4 0 1 2 3 2 4 0 1 2 3 2 4 0 1 2 3 2 4 0"/>',
   factory: '<path d="M3 21V9l6 3V9l6 3V5h4v16H3ZM7 17h2M12 17h2M17 17h2"/>',
   park: '<path d="M12 21v-7M7 14h10l-2-3h2l-5-8-5 8h2l-2 3ZM5 21h14"/>',
+  // Un capannone con la serranda rigata, e non l'ennesima cassa: `materials` e'
+  // gia' un cubo di merce, e il deposito e' il **posto** dove quella merce sta.
+  // Le due righe nel vano sono cio' che lo distingue da una casa con la porta.
+  depot: '<path d="M3 21V9l9-5 9 5v12M3 21h18M7.5 21v-8h9v8M7.5 16h9M7.5 18.5h9"/>',
   port: '<path d="M12 3v14M8 7h8M5 12c0 5 3 8 7 9 4-1 7-4 7-9M3 12h4M17 12h4"/>',
     // Uno scafo con la cabina e l'onda sotto: il porto e' l'ancora, cioe' lo
       // scalo, e il traghetto e' la barca che ci passa. Le due tessere stanno
@@ -28,6 +50,15 @@ const PATHS: Readonly<Record<HudIcon, string>> = {
   transport: '<path d="M6 18h12M7 18l-2 3M17 18l2 3M5 15V7c0-3 14-3 14 0v8H5ZM8 11h.01M16 11h.01M7 15h10"/>',
   university: '<path d="m3 9 9-6 9 6-9 4-9-4ZM6 11v6M18 11v6M4 20h16M9 12v5M15 12v5"/>',
   monument: '<path d="M8 21h8M9 18h6M10 18V9h4v9M8 9h8l-4-6-4 6Z"/>',
+  // Un quadro appeso, non l'ennesimo frontone su colonne: `civic` e `university`
+  // hanno gia' quel tetto, e in fila da 22px tre timpani non si distinguono. Qui
+  // il segno e' **cio' che il museo contiene**, che e' anche la ragione per cui
+  // ci si va.
+  museum: '<path d="M4 4h16v13H4zM4 13l4.5-4.5 3 3L16 7l4 4M8.5 8h.01M8 21v-4M16 21v-4"/>',
+  // La guglia, il rosone e le due navate basse ai lati: e' la sagoma che si
+  // riconosce di profilo da lontano, ed e' l'unica del gruppo identita' che non
+  // possa essere scambiata per un edificio civico.
+  cathedral: '<path d="M12 2v3.5M10.5 3.5h3M8 21V10l4-4.5 4 4.5v11M4 21v-7l4-3M20 21v-7l-4-3M3 21h18"/><circle cx="12" cy="12.5" r="1.6"/>',
   expansion: '<path d="M8 3H3v5M16 3h5v5M8 21H3v-5M16 21h5v-5M3 8l6 6M21 8l-6 6M3 16l6-6M21 16l-6-6"/>',
   // Una torre di taglio con un piano che le esce dal fianco, e la trave sotto:
   // e' la sezione che il generatore disegna davvero, ed e' l'unica cosa che
@@ -38,6 +69,9 @@ const PATHS: Readonly<Record<HudIcon, string>> = {
   // la stessa ragione per cui esiste `ROPEWAY.sagRatio`.
   ropeway: '<path d="M4 21V6M20 21V8M4 6c6 7 10 7 16 2M11 11v2M9 13h4v3H9z"/>',
   policies: '<path d="M4 4h16v16H4zM8 9h8M8 13h8M8 17h5"/>',
+  // Tre edifici di tre altezze su una linea di terra: la dashboard e' la citta'
+  // letta tutta insieme, e uno skyline la dice meglio di una pagina di cifre.
+  city: '<path d="M3 21h18M5 21v-8h3v8M10 21V11h4v10M16 21V6h5v15"/>',
   pause: '<path d="M8 5v14M16 5v14"/>',
   play: '<path d="m8 5 11 7-11 7V5Z"/>',
   theme: '<path d="M12 3a9 9 0 1 0 0 18h1.5a2 2 0 0 0 0-4H12a2 2 0 1 1 0-4h3a6 6 0 0 0 6-6c0-2.2-4-4-9-4Z"/><path d="M7.5 9h.01M10 6.5h.01M14 6.5h.01M17 9h.01"/>',
