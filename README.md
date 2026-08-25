@@ -537,3 +537,13 @@ rifatte sulla scena vera prima di considerarle valide.
 
 Strade, pathfinding, salvataggio su disco, audio, cittadini simulati
 individualmente, fiumi, grotte, vegetazione, supporto mobile.
+
+## Licenza
+
+Copyright © 2026 Andrea Aita (Noeinkan). Tutti i diritti riservati.
+
+Questo progetto **non è open source**: il codice è visibile per essere mostrato,
+non per essere riusato. Copie, opere derivate, port, redistribuzione e uso come
+materiale di addestramento per modelli di IA non sono consentiti senza permesso
+scritto. Leggere e provarlo in locale sì. I termini completi stanno in
+[LICENSE](LICENSE); le dipendenze di terze parti restano sotto le loro licenze.

@@ -11,6 +11,91 @@ coincide con il messaggio di commit.
 
 ---
 
+## In corso — Polishing dell'HUD
+
+- **L'HUD si adatta allo schermo invece di spegnere le parole.** L'unità di
+  misura non è più il pixel ma `--hud-unit`, che vale 1px su una viewport da 1080
+  e scala con la quota fra un pavimento (0.85, sotto cui i corpi di testo non si
+  leggono e i bersagli non si colpiscono) e un tetto (1.15, oltre cui la cornice
+  mangia la città invece di servirla). Ogni token di spazio, testo, raggio e
+  taglia ne è un multiplo, quindi la scala è continua: niente scatti, niente
+  soglie, niente sparizioni.
+- **Le colonne del dock le decide la quota disponibile.** Dodici catalizzatori su
+  tre colonne fanno sette righe, ed erano quelle a chiedere ~975px di rail: più
+  di quanti un 1080p ne abbia davvero una volta tolte le barre del browser, ed è
+  il motivo per cui quasi tutti vedevano il ramo compatto. Gli stessi quattro
+  gruppi (4, 4, 4, 3) su quattro colonne stanno in quattro righe, una per gruppo.
+  Le tre colonne restano sopra i 1200px, dove c'è abbondanza vera: sono la
+  disposizione bella, non quella normale.
+- **Le rinunce cominciano dove prima erano già finite.** Il prezzo e la cifra del
+  requisito cedono a 700px di quota, l'etichetta a 600 — prima cedevano a 900 e
+  800, cioè su quasi ogni schermo reale. Fra gli 800 e i 600 ora ci si arriva con
+  le parole al loro posto.
+- **La colonna di ogni tessera è passata dal JS al CSS.** Deve cambiare insieme
+  al numero di colonne, e chi decide le colonne è la media query: tenere il
+  conteggio in `BuildDock` significava avere due fonti per lo stesso numero, con
+  la scheda che si sarebbe disallineata al primo ridimensionamento.
+
+## In corso — Licenza e proprieta' intellettuale
+
+- **`LICENSE` proprietaria in radice.** Il repository e' pubblico ma non e' open
+  source, e finora non lo diceva da nessuna parte: senza un file di licenza la
+  posizione di default era implicita, quindi illeggibile per chi arriva. Il
+  documento nega copia, opere derivate, redistribuzione e uso come materiale di
+  addestramento per modelli di IA, concede lettura ed esecuzione locale, e
+  chiarisce che le dipendenze di terze parti restano sotto le loro licenze.
+  Unico documento del progetto scritto in inglese: e' il testo che deve valere
+  davanti a chi arriva da fuori, e il pubblico di un repo su GitHub non e'
+  italiano.
+- **Rimando dal `README.md` e campi in `package.json`.** Una sezione "Licenza" in
+  fondo al README e i campi `author` / `license` nel manifest: la nota deve
+  trovarsi dove uno guarda per primo, non solo in un file che va aperto apposta.
+
+## In corso — Polishing dell'HUD
+
+- **Una scala di token al posto dei numeri a mano.** `hud.css` guadagna uno
+  strato geometrico accanto a quello cromatico: spaziatura su griglia 4pt, scala
+  tipografica a ratio stretto, quattro raggi, una scala di quote. Erano dodici
+  padding, dieci raggi e dodici corpi di testo decisi uno per uno; i valori del
+  tema restano derivati a runtime da `hudTokens.ts` e non sono stati toccati.
+- **I cinque pannelli del bordo destro hanno una larghezza sola.** Dashboard,
+  policy, viste, temi, aiuto e scheda di selezione andavano da 300 a 470px, e
+  siccome condividono lo stesso bordo destro il bordo *sinistro* saltava a ogni
+  cambio di pannello, scoprendo e ricoprendo la città. Adesso è `--panel-w`, e
+  una sola riga di media query li stringe tutti insieme.
+- **Il requisito non tocca più il bordo della tessera.** Lo spazio che ospita la
+  cifra sotto una tessera bloccata è diventato `--tile-foot`, e si spegne insieme
+  al testo: le media query sull'altezza stringevano il padding senza sapere che
+  ci stava dentro qualcosa.
+- **La condizione della città è una targa, non un paragrafo.** Il toast in basso
+  a sinistra portava titolo e spiegazione — la stessa coppia che il cassetto
+  Città apre in cima alla colonna — e restava aperto per tutta la crisi. Ora
+  resta il titolo; il perché sta dove c'è spazio per leggerlo.
+- **Museo, cattedrale e deposito avevano la tessera vuota.** `HudIcon` non
+  conosceva i tre ruoli aggiunti a `BALANCE`, `PATHS[name]` tornava `undefined` e
+  le tessere uscivano senza disegno — con etichetta, prezzo e tasto al loro
+  posto, cioè senza sembrare rotte. Aggiunte le tre icone e rimosso il cast in
+  `BuildDock` che lo lasciava passare: ora un ruolo senza icona rompe la
+  compilazione.
+- **Le schede escono dal rail, non dal bottone.** `left: 100%` finisce dove
+  finisce il bottone, e il dock è una griglia a tre colonne: la scheda di una
+  tessera in prima colonna si apriva sopra le due colonne accanto e sopra le
+  righe sotto, coprendo mezza toolbar proprio mentre la si stava leggendo. Ogni
+  bottone dichiara ora la sua colonna (`markRowColumns`) e il CSS scavalca quelle
+  che restano — con l'effetto che tutte le schede si aprono sulla stessa
+  verticale invece di saltare da tessera a tessera. Non è `position: fixed`
+  perché `.hud-button:hover` applica un `transform`, e un antenato trasformato
+  diventa il containing block anche dei discendenti fissi.
+- **Meno cose che si contraddicono.** `--hud-ink-soft`, usata e mai definita, era
+  un colore che non smorzava niente; `--dock-tiles` era scritto a ogni corsia del
+  dock con un commento che descriveva un `flex-grow` che nessuna regola CSS
+  applicava; allarme e avvertimento erano due regole di toast identiche parola
+  per parola, e il tooltip del rail era la stessa regola scritta due volte.
+
+## In corso — Sei nuovi landmark, due per categoria
+
+- **Sei nuovi catalizzatori: Power, School, Radio, Lighthouse, Theatre e Stadium.** Ogni gruppo della toolbar passa da quattro a sei ruoli, per un totale di diciotto. Ognuno porta costi, intensita', vettore di influenza, effetti locali e una ricetta con tre esemplari; il faro e' il solo nuovo vincolo di sito (`coastal`). Le sei ricette stanno in `recipes/` (tre file, uno per gruppo) e si uniscono a `LANDMARKS` con uno spread, mentre gli helper condivisi escono da `config.ts` e vanno in `vocab.ts` per non superare la regola delle seicento righe.
+
 ## In corso — Le megastrutture nel campionario
 
 - **Le tre arcologie chiudono la galleria dello swatch.** Twin Stem, Branching Core e Sky Weave arrivano da `ARCOLOGY_RECIPES` allo stadio finale, con una fascia di navigazione propria («Arcologie») e la scheda del soggetto: forma, stadio, fasce di uso e fronte. Come per edifici e landmark, ingombro e altezza escono dallo stamp generato — quasi duecento voxel — e la selezione li tratta da soggetti logici come gli altri, riusando la traversata di raggio e il contorno.

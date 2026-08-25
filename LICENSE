@@ -1,0 +1,73 @@
+# Proprietary Licence — All Rights Reserved
+
+Copyright © 2026 Andrea Aita (Noeinkan). All rights reserved.
+
+This repository and everything in it — source code, tests, assets, text,
+documentation, configuration, balance tables, design decisions and the structure
+of the code itself — is the work of the author and remains their exclusive
+intellectual property.
+
+**This is not free software and it is not open source.** The code is public so
+that it can be shown, not so that it can be taken: *public* does not mean *free
+to use*.
+
+## What is not granted
+
+No licence, express or implied, is granted over this work. Without the author's
+prior written permission you may **not**:
+
+- copy, reproduce or republish the work or any part of it, in any form or on any
+  medium;
+- create derivative works: ports, rewrites, translations into other languages,
+  adaptations, published forks;
+- distribute, resell, sublicense, rent or otherwise transfer the work to third
+  parties;
+- use it — in whole or in part — inside your own products, services or projects,
+  whether commercial or free, personal or corporate;
+- remove, obscure or alter the copyright and authorship notices;
+- use the code, text or assets as material to train, fine-tune or evaluate
+  machine-learning models or artificial-intelligence systems, or to generate
+  derivative works automatically.
+
+GitHub's *fork* feature, where the platform makes it available, operates strictly
+within GitHub's Terms of Service and grants no rights beyond what is written
+here — in particular it does not authorise publishing, distributing or reusing
+this code elsewhere.
+
+## What is granted
+
+- reading the code and studying it for personal learning;
+- cloning and running it locally to evaluate it, without redistributing it;
+- quoting short excerpts in reviews, articles or technical discussion, with
+  explicit attribution to the author and a link to this repository.
+
+## Contributions
+
+Unsolicited contributions are not accepted. If the author does accept a
+contribution, the contributor assigns to the author all economic rights in the
+contributed material, which then falls entirely under this licence.
+
+## Third-party components
+
+The dependencies declared in [package.json](package.json) — `three`,
+`simplex-noise` and the development dependencies — belong to their respective
+authors and remain subject to their own licences. This document neither covers
+them nor alters their terms.
+
+## Infringement
+
+The author reserves every remedy available to protect these rights, including
+takedown requests (DMCA and equivalent mechanisms) to platforms hosting
+unauthorised copies.
+
+## No warranty
+
+The work is provided "as is", without warranty of any kind, express or implied,
+including but not limited to the warranties of merchantability, fitness for a
+particular purpose and non-infringement. In no event shall the author be liable
+for any damages arising from the use of, or the inability to use, this work.
+
+## Permissions
+
+Any use not listed under "What is granted" requires written permission. Contact
+the author on GitHub: [@Noeinkan](https://github.com/Noeinkan).

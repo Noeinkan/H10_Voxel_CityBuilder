@@ -30,6 +30,7 @@ worker. `src/sim/` gira in Node senza DOM né GPU.
 | [AGENTS.md](AGENTS.md) | Regole operative globali e rimando alle regole locali |
 | [CHANGELOG.md](CHANGELOG.md) | Cosa e' cambiato e quando, per incremento |
 | [index.html](index.html) | Pagina unica, `#app`, monta `src/main.ts` |
+| [LICENSE](LICENSE) | Licenza proprietaria, tutti i diritti riservati: cosa non e' concesso, cosa si', terze parti (in inglese) |
 | [package.json](package.json) | Script npm; dipendenze: `three`, `simplex-noise` |
 | [ROADMAP.md](ROADMAP.md) | Direzione del prodotto, milestone e gate dei prossimi incrementi |
 | [scripts/docs-merge.mjs](scripts/docs-merge.mjs) | `npm run docs:merge`: fonde i frammenti di `docs/pending/` in indice e changelog, con lucchetto per non pestarsi fra agenti |
@@ -262,7 +263,7 @@ di crescita. Il `Builder`, esterno al modulo, consuma quei candidati. Dettagli i
 | [index.ts](src/sim/index.ts) | Barrel: superficie pubblica per chi sta fuori dalla cartella | tutto il resto |
 | [balance.ts](src/sim/balance.ts) | **Ogni** coefficiente, soglia e moltiplicatore, in un solo oggetto | `BALANCE` |
 | [classes.ts](src/sim/classes.ts) | I quattro usi urbani come indici densi | `BUILDING_CLASS`, `CLASS_NAMES`, `CLASS_LABELS`, `CLASS_COUNT`, `ALL_CLASSES` |
-| [catalysts.ts](src/sim/catalysts.ts) | Catalogo dei dodici ruoli: vettore di influenza, funzione di toolbar, effetti locali | `CATALYSTS`, `CATALYST_GROUPS`, `catalystById`, `isCatalystId`, `catalystInfluence`, `catalystRoleOf`, `defaultCatalystOfClass`, `CatalystId` |
+| [catalysts.ts](src/sim/catalysts.ts) | Catalogo dei diciotto ruoli: vettore di influenza, funzione di toolbar, effetti locali | `CATALYSTS`, `CATALYST_GROUPS`, `catalystById`, `isCatalystId`, `catalystInfluence`, `catalystRoleOf`, `defaultCatalystOfClass`, `CatalystId` |
 | [src/sim/materials.test.ts](src/sim/materials.test.ts) | Contratti su capacità, spesa, specializzazioni e compatibilità dei salvataggi |
 | [src/sim/materials.ts](src/sim/materials.ts) | Rendiconto dei materiali, capacità economica dei livelli e costi dei cantieri verticali |
 | [SimState.ts](src/sim/SimState.ts) | Stato, operazioni del giocatore, serializzazione JSON senza perdita | `createSimState`, `addCatalyst`, `addBuilding`, `addFarm`, `removeFarm`, `setPolicyActive`, `setSelectedClass`, `toSimStateData`, `reviveSimState`, `rebuildField`, `resolveDecision`, `snoozeDecision` |
@@ -439,10 +440,14 @@ dirigibile, la piazzola dell'eVTOL, la cima della mongolfiera.
 
 | File | Ruolo | Esporta |
 | --- | --- | --- |
-| [config.ts](src/world/landmarks/config.ts) | **Ogni** ingombro, quota, soglia di stadio, ormeggio, linea d'acqua e indice di palette, piu' le dodici ricette con tre esemplari a testa. Le **forme contestuali** (`FORMS`) affiancano la ricetta a terra: tre di facciata (`skyport`, `sky-park`, `sky-transit`) e tre d'acqua per il porto, scelte dal luogo e non dal seme. Dichiara anche il dislivello massimo della fondazione a terra. Qui vive `PartsRecipe`, il formato che le arcologie condividono | `LANDMARK`, `LANDMARKS`, `SKYPORT`, `BERTH`, `FORMS`, `LandmarkFormId`, `LandmarkForm`, `landmarkOf`, `hasFacadeForm`, `facadeFormOf`, `hasWaterForm`, `waterFormFor`, `formVariantOf`, `contextualFormsOf`, `isFacadeForm`, `maxStageOf`, `variantsOf`, `PartsRecipe`, `LandmarkRecipe`, `LandmarkVariant`, `LandmarkMooring`, `BerthKind` |
+| [config.ts](src/world/landmarks/config.ts) | **Ogni** ingombro, quota, soglia di stadio, ormeggio, linea d'acqua e indice di palette, piu' le diciotto ricette con tre esemplari a testa: dodici scritte qui, sei importate da `recipes/` e unite con uno spread. Le **forme contestuali** (`FORMS`) affiancano la ricetta a terra: tre di facciata (`skyport`, `sky-park`, `sky-transit`) e tre d'acqua per il porto, scelte dal luogo e non dal seme. Dichiara anche il dislivello massimo della fondazione a terra. Qui vive `PartsRecipe`, il formato che le arcologie condividono | `LANDMARK`, `LANDMARKS`, `SKYPORT`, `BERTH`, `FORMS`, `LandmarkFormId`, `LandmarkForm`, `landmarkOf`, `hasFacadeForm`, `facadeFormOf`, `hasWaterForm`, `waterFormFor`, `formVariantOf`, `contextualFormsOf`, `isFacadeForm`, `maxStageOf`, `variantsOf`, `PartsRecipe`, `LandmarkRecipe`, `LandmarkVariant`, `LandmarkMooring`, `BerthKind` |
 | [facadePlan.ts](src/world/landmarks/facadePlan.ts) | Piano puro dello Skyport di facciata: centra la ricetta fuori dall'ospite, riusa le corse delle terrazze e affida gli appoggi a `planDeck` | `planFacadeLandmark`, `FacadeLandmarkPlan`, `FacadeLandmarkQuery`, `FacadeLandmarkResult`, `FacadeLandmarkRefusal` |
 | [parts.ts](src/world/landmarks/parts.ts) | Le dieci primitive con cui una ricetta si compone, lo smusso della pianta e la rotazione sul verso | `PART`, `Part`, `PartKind`, `box`, `partBounds`, `orientPart`, `orientedSpan`, `createCanvas`, `drawPart`, `LandmarkCanvas` |
 | [generate.ts](src/world/landmarks/generate.ts) | Compone tronco ed esemplare in uno stamp; ingombro, origine, stadio, scelta della variante dal seme (o fissata dalla forma) e ormeggi portati sul verso vero. `landmarkWaterColumn` porta la linea d'acqua di una ricetta sul terreno vero. Il nucleo ricetta-stamp e' condiviso con le arcologie | `generateFromRecipe`, `recipeSpan`, `recipeOrigin`, `generateLandmark`, `landmarkSpan`, `landmarkOrigin`, `landmarkMoorings`, `landmarkWaterColumn`, `stageForBuildings`, `variantIndexOf`, `RecipeRequest`, `LandmarkRequest`, `WorldMooring` |
+| [recipes/connections.ts](src/world/landmarks/recipes/connections.ts) | Le due ricette nuove del gruppo Connections: torre radio e faro | `RADIO`, `LIGHTHOUSE` |
+| [recipes/growth.ts](src/world/landmarks/recipes/growth.ts) | Le due ricette nuove del gruppo Growth: centrale elettrica e scuola | `POWER`, `SCHOOL` |
+| [recipes/identity.ts](src/world/landmarks/recipes/identity.ts) | Le due ricette nuove del gruppo Identity: teatro e stadio | `THEATRE`, `STADIUM` |
+| [vocab.ts](src/world/landmarks/vocab.ts) | Scorciatoie condivise fra le ricette: gru di banchina, banchina, bitta, vano d'ingresso, fascia d'insegna e albero | `craneAt`, `quay`, `bollard`, `entrance`, `signBand`, `tree` |
 
 ```ts
 landmarkSpan('port', FACING.east);          // { sizeX, sizeY, sizeZ } | null
