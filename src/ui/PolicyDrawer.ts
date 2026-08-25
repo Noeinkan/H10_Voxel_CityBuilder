@@ -574,7 +574,16 @@ function overviewGroup(
   value.textContent = compact;
   summary.append(label, value);
   group.append(summary, content);
-  group.addEventListener('toggle', () => onToggle(group.open));
+  // Il `toggle` di <details> e' asincrono e corre contro il repaint a 150 ms che
+  // ricostruisce le sezioni: una sezione appena aperta poteva essere richiusa dal
+  // rebuild prima che l'evento arrivasse, o restare aperta accanto a quella nuova.
+  // Il click sul summary e' sincrono e resta l'unica fonte di verita' dello stato.
+  summary.addEventListener('click', (event) => {
+    event.preventDefault();
+    const next = !group.open;
+    group.open = next;
+    onToggle(next);
+  });
   return group;
 }
 

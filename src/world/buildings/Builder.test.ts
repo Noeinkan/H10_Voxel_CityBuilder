@@ -113,7 +113,9 @@ describe('Builder', () => {
     expect([...builder.registry.all][0]?.level).toBe(8);
     expect(builder.stats.growing).toBe(0);
     expect(world.solidVoxelCount).toBeGreaterThan(0);
-    expect(world.getSurfaceKind(12, 12, 12)).not.toBe(SURFACE_KIND.plain);
+    // Il ripiego residenziale smussa gli spigoli (`chamfer: 1`): la colonna
+    // d'ancora (12,12) e' un angolo tagliato, quindi si sonda un punto interno.
+    expect(world.getSurfaceKind(14, 14, 12)).not.toBe(SURFACE_KIND.plain);
   });
 
   it('circonda il landmark di suolo pubblico a budget, senza cambiare la quota', () => {

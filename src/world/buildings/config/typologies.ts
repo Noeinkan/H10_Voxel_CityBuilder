@@ -459,10 +459,10 @@ export const TYPOLOGIES: readonly TypologyDefinition[] = [
     label: 'Terraced housing',
     use: 0,
     priority: 0,
-    shape: { ...DEFAULT_TYPOLOGY_SHAPE, chamfer: 1 },
+    shape: { ...DEFAULT_TYPOLOGY_SHAPE, chamfer: 2 },
     profile: {
       shrinkBias: 0.48,
-      shrinkOps: [BAND_OP.setback, BAND_OP.shrinkOneSide, BAND_OP.shrink],
+      shrinkOps: [BAND_OP.setback, BAND_OP.stack, BAND_OP.shrinkOneSide, BAND_OP.shrink],
       growOps: [BAND_OP.grow, BAND_OP.shear, BAND_OP.corner, BAND_OP.jog],
     },
   },
@@ -666,6 +666,7 @@ export const TYPOLOGIES: readonly TypologyDefinition[] = [
       ...DEFAULT_TYPOLOGY_SHAPE,
       crownKind: CROWN_KIND.flat,
       arcade: true,
+      courtyard: true,
       maxFootprint: 6,
     },
     profile: {
@@ -815,7 +816,7 @@ export const TYPOLOGIES: readonly TypologyDefinition[] = [
     // Il ripiego di ogni uso porta la cima che distingue quell'uso da lontano:
     // e' la sola forma in cui "coronamenti per uso" resta una riga di tabella e
     // non un ramo dentro la grammatica. Qui una copertura lunga, da capannone.
-    shape: { ...DEFAULT_TYPOLOGY_SHAPE, crownKind: CROWN_KIND.ridge, chamfer: 1 },
+    shape: { ...DEFAULT_TYPOLOGY_SHAPE, crownKind: CROWN_KIND.ridge, chamfer: 2 },
     profile: {
       shrinkBias: 0.34,
       shrinkOps: [BAND_OP.stack, BAND_OP.setback, BAND_OP.shrinkOneSide],
@@ -893,7 +894,7 @@ export const TYPOLOGIES: readonly TypologyDefinition[] = [
     label: 'Civic spire',
     use: 3,
     priority: 0,
-    shape: { ...DEFAULT_TYPOLOGY_SHAPE, chamfer: 1 },
+    shape: { ...DEFAULT_TYPOLOGY_SHAPE, chamfer: 2 },
     profile: {
       shrinkOps: [BAND_OP.stack, BAND_OP.setback, BAND_OP.shrinkOneSide],
       growOps: [BAND_OP.grow, BAND_OP.corner, BAND_OP.shear, BAND_OP.jog],
