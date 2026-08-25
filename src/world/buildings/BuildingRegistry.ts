@@ -171,6 +171,20 @@ export interface BuildingRecord {
   readonly arcology?: ArcologyKind;
 
   /**
+   * Vicini entro `ARCOLOGY.radius` al momento della fondazione, congelati.
+   *
+   * Serve alla sola progressione degli stadi, e non al conteggio vivo: la
+   * fondazione sventra l'isolato, e ricalcolare `countWithinRadius` dopo lo
+   * sventramento toglie dal conto proprio gli edifici che avevano fatto
+   * superare `minBuilt` — il podio nasce e non trova piu' i vicini per salire
+   * alla corona. Congelando qui il valore letto da `arcologyReady`, la stessa
+   * misura decide fondazione e stadi, sullo stesso istante. Solo le arcologie
+   * lo portano: i landmark nascono presto e la citta' gli cresce intorno, quindi
+   * il loro stadio legge il conteggio vivo.
+   */
+  readonly foundedNeighbours?: number;
+
+  /**
    * Gli usi che questa struttura ospita, uno per fascia di quota.
    *
    * **Non e' `mixed` generalizzato**, ed e' importante non confonderli. `mixed`

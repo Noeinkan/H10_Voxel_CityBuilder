@@ -124,8 +124,10 @@ export class ArcologyDriver {
    * **Cosa fa avanzare uno stadio**: gli edifici costruiti entro
    * `ARCOLOGY.radius`, come per un landmark e per la stessa ragione — la
    * desiderabilita', sotto un centro saturo, e' saturata anch'essa e farebbe
-   * saltare tutti gli stadi al primo tick. Contare i record misura invece cio'
-   * che la citta' ha davvero costruito, e non scende mai.
+   * saltare tutti gli stadi al primo tick. A differenza del landmark, pero', il
+   * conteggio **non si ricalcola**: la fondazione sventra l'isolato, e il
+   * conteggio vivo scenderebbe proprio sotto la soglia che lo stadio successivo
+   * chiede. Si legge `foundedNeighbours`, congelato alla fondazione.
    *
    * La riconciliazione delle fasce e' **dichiarativa e non a evento**: si
    * confronta cio' che il record dice di aver dichiarato con cio' che lo stadio
@@ -148,11 +150,7 @@ export class ArcologyDriver {
         record.level < maxStageOf(recipe) &&
         this.ctx.growth.queued < BUILDER.maxGrowing
       ) {
-        const nearby = this.ctx.registry.countWithinRadius(
-          record.x + (record.footprint >> 1),
-          record.y + (footprintDepth(record) >> 1),
-          ARCOLOGY.radius,
-        );
+        const nearby = record.foundedNeighbours ?? 0;
         if (stageForBuildings(recipe, nearby) > record.level) {
           this.advance(record, recipe);
           advanced++;
@@ -263,15 +261,20 @@ export class ArcologyDriver {
       );
       const span = arcologySpan(recipe, facing);
 
+      // Il conteggio si legge qui, **prima** dello sventramento, e viaggia fino
+      // a `build` per essere congelato su `foundedNeighbours`: e' la stessa
+      // misura che decide la fondazione e, da li' in poi, ogni stadio.
+      const builtNeighbours = this.ctx.registry.countWithinRadius(
+        anchor.x, anchor.y, ARCOLOGY.radius,
+      );
+
       const refusal = arcologyReady({
         existing: this.ctx.registry.arcologyCount,
         tier: tierAt(skylineQueryAt(this.ctx, anchor.x, anchor.y, state)),
         blockRect: rect,
         spanX: span.sizeX,
         spanY: span.sizeY,
-        builtNeighbours: this.ctx.registry.countWithinRadius(
-          anchor.x, anchor.y, ARCOLOGY.radius,
-        ),
+        builtNeighbours,
         cappedNeighbours: this.cappedAround(anchor.x, anchor.y, state),
       });
       if (refusal !== null) {
@@ -319,9 +322,9 @@ export class ArcologyDriver {
       }
 
       const started = verdict.clears === 0
-        ? this.build(anchor.x, anchor.y, recipe, facing) !== null
+        ? this.build(anchor.x, anchor.y, recipe, facing, builtNeighbours) !== null
         : this.clearance.start(box, ARCOLOGY.clearing, () => {
-          this.build(anchor.x, anchor.y, recipe, facing);
+          this.build(anchor.x, anchor.y, recipe, facing, builtNeighbours);
         });
       // Un rifiuto del luogo — terreno che non regge, volume gia' impegnato,
       // budget di chunk — non consuma la passata: il prossimo isolato del
@@ -399,6 +402,7 @@ export class ArcologyDriver {
     y: number,
     recipe: ArcologyRecipe,
     facing: Facing,
+    foundedNeighbours: number,
   ): BuildingRecord | null {
     const { world, terrain, registry, growth, surface, seed } = this.ctx;
     const span = arcologySpan(recipe, facing);
@@ -447,6 +451,7 @@ export class ArcologyDriver {
       seed: recordSeed,
       facing,
       arcology: recipe.kind,
+      foundedNeighbours,
       uses: [],
     });
 

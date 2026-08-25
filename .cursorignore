@@ -1,0 +1,4 @@
+﻿# Non ingerire questi file nel contesto dell'agente: sono voluminosi e
+# raramente servono alla task. Restano tracciati da git (non in .gitignore).
+/CHANGELOG.md
+/ROADMAP.md

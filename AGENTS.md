@@ -153,34 +153,10 @@ per dire che andava tutto bene. I fallimenti si vedono per esteso come prima.
 
 ## Dove stanno i numeri
 
-Ogni costante di bilanciamento vive in un solo file per dominio. Se stai per
-scrivere una soglia, una frequenza o un moltiplicatore altrove, quasi sempre e'
-il posto sbagliato.
-
-| Dominio | File unico |
-| --- | --- |
-| Terreno | `src/world/terrain/config.ts` |
-| Strade | `src/world/streets/config.ts` |
-| Opere di terra | `src/world/grading/config.ts` |
-| Vincoli di sito | `src/world/sites/config.ts` |
-| Lotti agricoli | `src/world/farms/config.ts` |
-| Gerarchia verticale | `src/world/skyline/config.ts` |
-| Campate e rete in quota | `src/world/spans/config.ts` |
-| Citta' in quota | `src/world/aerial/config.ts` |
-| Arcologie | `src/world/arcology/config.ts` |
-| Simulazione | `src/sim/balance.ts` |
-| Costruzione e tipologie | `src/world/buildings/config.ts` |
-| Palette | `src/engine/palette.json` + `paletteSlots.ts` |
-| Temi | `src/engine/themes/` — un file per tema, colori piu' atmosfera |
-| Modello di luce | `src/engine/lighting.ts` — sole, ambiente, luminanza per faccia |
-| Finestre di notte | `src/engine/nightWindows.ts` — quota accesa, carattere della torre, guadagno notturno |
-| Viste di ispezione | `src/engine/inspect.ts` — densita' del velo, passo della rigatura, quota |
-| Lente dei raggi X | `src/engine/xray.ts` — respiro, profondita', gabbia sul filo del voxel |
-| Caduta d'ingresso | `src/engine/introDrop.ts` — quota, durata, jitter, rimbalzo |
-| Pioggia di cubetti | `src/engine/dropRain.ts` — semina per chunk, taglia, tetto dei vivi |
-
-Non aggiornare a occhio le misure documentate nei README: sono verificate a mano
-su questa macchina.
+Ogni costante di bilanciamento vive in un solo file per dominio: la tabella
+completa dominio -> file sta in [`docs/PROJECT_MAP.md`](docs/PROJECT_MAP.md).
+Se stai per scrivere una soglia, una frequenza o un moltiplicatore altrove,
+quasi sempre e' il posto sbagliato.
 
 ## Budget e pattern da evitare
 

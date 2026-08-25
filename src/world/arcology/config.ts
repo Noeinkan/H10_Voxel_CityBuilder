@@ -257,13 +257,27 @@ export const TWIN_STEM: ArcologyRecipe = {
    * cinquantaquattro, e i primi numeri scritti a occhio — centoquarantacinque per
    * l'ultimo stadio — non li avrebbe raggiunti nessuno.
    *
+   * **Il conto si legge una volta sola, alla fondazione, e resta congelato.**
+   * `climb` non ricalcola piu' `countWithinRadius`: lo sventramento toglie dal
+   * conteggio proprio gli edifici che avevano fatto superare `minBuilt`, e un
+   * podio fondato a sessantaquattro si ritrovava senza i vicini per la corona.
+   * `foundedNeighbours` congela il valore letto da `arcologyReady`, prima dello
+   * sventramento: la stessa misura decide fondazione e stadi.
+   *
+   * Le soglie sono percio' sulla scala **pre-sventramento**, che sta una decina
+   * di edifici sopra quella post-sventramento su cui erano stati tarati i primi
+   * numeri (minBuilt e' sessantaquattro, il conto di periferia dopo lo
+   * sventramento e' cinquantaquattro): da li' il +10 su tutta la scala. Il tetto
+   * della corona resta da riconfermare a runtime con `?debug=1`, perche' il conto
+   * del centro denso pre-sventramento e' una stima e non una misura.
+   *
    * Quindi non e' il tempo a far salire gli stadi, e' il **luogo**: quanto era
    * densa la citta' li' attorno decide fin dove quell'arcologia arriva, e ci
    * arriva in una manciata di passate. Dove il centro e' pieno la struttura si
    * completa; dove lo era meno resta un podio con gli steli, che e' la stessa
    * cosa detta dalla forma.
    */
-  stages: [0, 45, 60, 75, 92],
+  stages: [0, 55, 70, 85, 102],
   parts: [
     // --- 0 · il podio produttivo -------------------------------------------
     [
@@ -420,7 +434,9 @@ export const BRANCHING_CORE: ArcologyRecipe = {
   span: [14, 14],
   height: 188,
   anchor: [7, 7],
-  stages: [0, 40, 58, 72, 88],
+  // +10 come Twin Stem: le soglie leggono `foundedNeighbours`, congelato prima
+  // dello sventramento (vedi il commento su `TWIN_STEM.stages`).
+  stages: [0, 50, 68, 82, 98],
   parts: [
     [
       box(PART.slab, 0, 0, 14, 14, 0, 13, PALETTE_SLOTS.stoneDeep, SURFACE_KIND.industrial, {
@@ -490,7 +506,9 @@ export const SKY_WEAVE: ArcologyRecipe = {
   span: [14, 14],
   height: 184,
   anchor: [7, 7],
-  stages: [0, 42, 58, 74, 90],
+  // +10 come Twin Stem: le soglie leggono `foundedNeighbours`, congelato prima
+  // dello sventramento (vedi il commento su `TWIN_STEM.stages`).
+  stages: [0, 52, 68, 84, 100],
   parts: [
     [
       box(PART.slab, 0, 0, 14, 14, 0, 13, PALETTE_SLOTS.concrete, SURFACE_KIND.industrial, {

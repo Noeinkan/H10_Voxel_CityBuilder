@@ -1,8 +1,26 @@
+# Dipendenze e output di build
 node_modules/
 dist/
 .vite/
-*.local
-.DS_Store
-.shots/
+coverage/
+
+# Variabili d'ambiente: nessun .env va committato.
 # I segreti del sito vivono solo su /opt/sites/<slug>/.env sul server.
-.deploy/.env
+.env
+.env.*
+!.env.example
+
+# File locali di Vite
+*.local
+
+# Log
+*.log
+
+# Sistemi operativi
+.DS_Store
+Thumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# Screenshot del kit (generati, non di progetto)
+.shots/

@@ -10,6 +10,7 @@ import {
 import { AERIAL, AERIAL_PART } from '../aerial/config';
 import { ARCOLOGY, arcologyOf } from '../arcology/config';
 import { worldLandings } from '../arcology/generate';
+import { stageForBuildings } from '../landmarks/generate';
 import { FACING, type Facing } from '../streets/streetGrid';
 import { VoxelWorld } from '../VoxelWorld';
 import { generateIsland } from '../terrain/IslandGenerator';
@@ -172,6 +173,20 @@ describe('ArcologyDriver — sulla citta cresciuta', () => {
       .reduce((sum, record) => sum + (record.uses ?? []).length, 0);
     expect(declared).toBeGreaterThan(0);
     expect(city.builder.registry.count + declared).toBe(city.state.buildings.length);
+  });
+
+  it('lo stadio raggiunto e quello che il conteggio congelato alla fondazione decide', () => {
+    // **Il conteggio si legge una volta, alla fondazione, e non si ricalcola.**
+    // Lo sventramento toglie dal raggio gli edifici che avevano fatto superare
+    // `minBuilt`: se `climb` ricontasse i vicini vivi, la struttura si fermerebbe
+    // sotto la corona pur avendo il centro denso attorno. A convergenza lo stadio
+    // deve coincidere con quello che il valore congelato decide — e, con il conteggio
+    // vivo al suo posto, resterebbe sotto.
+    for (const record of arcologies(city.builder)) {
+      const recipe = arcologyOf(record.arcology!);
+      expect(record.foundedNeighbours).toBeDefined();
+      expect(record.level).toBe(stageForBuildings(recipe, record.foundedNeighbours!));
+    }
   });
 });
 

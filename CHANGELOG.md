@@ -11,6 +11,11 @@ coincide con il messaggio di commit.
 
 ---
 
+## In corso — Arcologie: gli stadi leggono il conteggio congelato
+
+- **Il podio non perde più i vicini che l'hanno reso possibile.** `climb` ricalcolava `countWithinRadius` dopo lo sventramento dell'isolato, che toglie dal raggio proprio gli edifici che avevano fatto superare `minBuilt`: un'arcologia fondata a sessantaquattro si fermava sotto la corona. Il conteggio si legge ora una volta sola, in `found`, prima dello sventramento, e viaggia su `foundedNeighbours` fino alla progressione degli stadi — la stessa misura decide fondazione e stadi, sullo stesso istante.
+- **Le soglie sono riallineate alla scala congelata.** Le `stages` delle tre ricette erano tarate sul conteggio post-sventramento (minBuilt 64 contro un conto di periferia a 54); sulla scala pre-sventramento stanno una decina di edifici più in alto, da cui il +10 su tutta la scala. Il tetto della corona resta da riconfermare a runtime con `?debug=1`, perché il conto del centro denso pre-sventramento è una stima e non una misura.
+
 ## In corso — Selezione esplorabile e contorno vivo
 
 - **Le quattro unita' della selezione sono ora raggiungibili.** La scheda di selezione ha una linguetta per struttura, isolato, colonna e voxel: prima mostrava soltanto la sezione di default e le altre restavano invisibili. Le linguette seguono il pattern ARIA del drawer (frecce, Home/End), stanno nel modello come copia in inglese provata dai test, e spostano il contorno in-world sull'unita' scelta.
