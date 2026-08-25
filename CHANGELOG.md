@@ -11,6 +11,12 @@ coincide con il messaggio di commit.
 
 ---
 
+## In corso — Il config degli edifici diventa una cartella
+
+- **`buildings/config.ts` si spezza in `buildings/config/`, e nessun consumatore cambia riga.** Duemila righe rispondevano a sei domande diverse — quanto in fretta la citta' cresce, di che parole e' fatta una forma, quanta massa da' un livello, che aspetto ha un uso, quale forma prende in un luogo preciso, di che materia e' fatto un quartiere — e chi cercava un numero doveva sapere in che terzo del file guardare. Ora sono sei moduli piu' un `index.ts` che li ri-esporta: i 134 file che importano `buildings/config` risolvono sulla facciata e restano intatti, e un numero nuovo va nel modulo che risponde alla sua domanda invece che in fondo al primo file aperto.
+- **Due commenti orfani spariscono, e uno resta ma attaccato a cio' che spiega.** Il JSDoc del bonus di livello sull'angolo documentava un campo di `BLOCK` tolto tempo fa e pendeva prima della parentesi chiusa; la prosa che *racconta* perche' e' stato tolto stava invece staccata sotto la costante, dove niente la legava a `BLOCK`. Ora c'e' solo la seconda, in testa a `BLOCK`. Stessa sorte per il «Tetti per livello» che stava sopra `MAX_FOOTPRINT` e parlava di `LEVEL_CAPS`: e' tornato dove serve, in `config/levels.ts`.
+- **Nessun valore e' cambiato.** `typecheck`, `build` e la suite intera danno lo stesso esito prima e dopo, compresi i tre test gia' rossi in partenza (`growthScene`, due in `Builder`).
+
 ## In corso — Forme contestuali dei landmark
 
 - **Il ruolo e la forma fisica sono ora due campi distinti.** `BuildingRecord.landmark` resta il catalizzatore (il ruolo di simulazione), mentre il nuovo `landmarkForm` conserva quale ricetta disegna lo stamp; `aloft` resta come flag meccanico denormalizzato («non prende suolo / l'ospite non cresce») derivato dalla forma. Avanzamento, selezione e rigenerazione ritrovano cosi' sempre la stessa ricetta, e il ruolo non decide piu' da solo che struttura compare.

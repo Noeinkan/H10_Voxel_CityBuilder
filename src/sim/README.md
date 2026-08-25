@@ -210,7 +210,7 @@ Un mandato viaggia sul suo **portante** — l'uso urbano che lo trasporta — qu
 si sente dove quell'uso c'è e non altrove: un mandato industriale non tocca un
 quartiere che di industria non ne ha. `LocalUrbanProfile.charters` elenca quelli
 percepiti sulla colonna, ed è ciò che le tipologie leggono: quattro righe di
-`world/buildings/config.ts` sono concesse da un mandato e senza quello non
+`world/buildings/config/typologies.ts` sono concesse da un mandato e senza quello non
 compaiono affatto.
 
 Il porto abilita un singolo scambio aggregato O(1) per tick. Le strategie

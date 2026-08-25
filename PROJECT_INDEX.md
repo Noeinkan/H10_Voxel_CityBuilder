@@ -660,6 +660,13 @@ le scritture stanno in tre file invece che sparse in sei metodi.
 | --- | --- | --- |
 | [Builder.ts](src/world/buildings/Builder.ts) | Orchestratore: il ciclo a tick, la nascita di un edificio sul lotto, le statistiche | `Builder`, `BuilderStats`, `REJECT_REASONS` |
 | [buildContext.ts](src/world/buildings/buildContext.ts) | Cio' che ogni driver ha in mano: mondo, terreno, strade, registry e le due code | `BuildContext` |
+| [config/builder.ts](src/world/buildings/config/builder.ts) | Cadenze, budget per frame, tetti di chunk, aggregazione in fila | `BUILDER`, `CLUSTER`, `BuildingForm`, `DEFAULT_BUILDING_FORM` |
+| [config/classProfile.ts](src/world/buildings/config/classProfile.ts) | Proporzioni e colori di base dei quattro usi urbani | `ClassProfile`, `CLASS_PROFILE` |
+| [config/grammar.ts](src/world/buildings/config/grammar.ts) | Vocabolario della forma: spessori, trasformazioni di fascia, cime, ruoli di lotto | `GRAMMAR`, `BAND_OP`, `CROWN_KIND`, `LOT_ROLE`, `MIN_FOOTPRINT`, `MAX_FOOTPRINT` |
+| [config/index.ts](src/world/buildings/config/index.ts) | Facciata dei numeri della costruzione: chi importa `buildings/config` non sa in quale modulo sta il numero che chiede | ri-esporta tutto cio' che segue |
+| [config/levels.ts](src/world/buildings/config/levels.ts) | Quanta massa da' un livello e come si arriva al successivo | `LevelCaps`, `LEVEL_CAPS`, `START_LEVEL_CDF`, `upgradeThresholdOf` |
+| [config/styles.ts](src/world/buildings/config/styles.ts) | Forma dell'isolato e catalogo degli stili di quartiere | `BLOCK`, `STYLE`, `STYLES`, `StyleDefinition`, `StylePalette`, `styleById` |
+| [config/typologies.ts](src/world/buildings/config/typologies.ts) | Catalogo delle tipologie: forma piu' condizioni, per uso | `TypologyShape`, `TypologyDefinition`, `DEFAULT_TYPOLOGY_SHAPE`, `TYPOLOGIES`, `TypologyId`, `typologyById` |
 | [src/world/buildings/crossingDriver.ts](src/world/buildings/crossingDriver.ts) | Driver a budget dei ponti fra settori: cerca appoggi locali, registra una campata lunga per settore e la lega alle torri |
 | [growthPoles.ts](src/world/buildings/growthPoles.ts) | Di chi e' il turno di crescere: il riquadro del polo di questa infornata | `poleRectAt` |
 | [growthQueue.ts](src/world/buildings/growthQueue.ts) | La coda di comparsa e le scritture a budget: un segmento per struttura, la sagoma nuova prima della cancellazione | `GrowthQueue`, `anchorOf` |
@@ -691,7 +698,6 @@ le scritture stanno in tre file invece che sparse in sei metodi.
 | [style.ts](src/world/buildings/style.ts) | Di che materia è fatto un quartiere: funzione pura di `(seed, isolato)`, nessuno stato | `styleAt`, `styledProfile`, `styleOf` |
 | [blockForm.ts](src/world/buildings/blockForm.ts) | Dove cade un lotto dentro il proprio isolato — angolo, fronte, cuore — e quanto spazio ha per allargarsi. Puro | `lotRoleOf`, `blockRoom` |
 | [stamp.ts](src/world/buildings/stamp.ts) | Volume voxel, ancora 3D e conversione in coordinate mondo | `VoxelStamp`, `VoxelAnchor`, `anchoredVoxel`, `STAMP_EMPTY` |
-| [config.ts](src/world/buildings/config.ts) | Cadenze, impronte, grammatica verticale, repertorio delle trasformazioni di fascia, cime, campate di facciata, aggregazione, profili visivi, **catalogo delle tipologie** e **catalogo degli stili** | `BUILDER`, `CLUSTER`, `GRAMMAR`, `BAND_OP`, `CROWN_KIND`, `LEVEL_CAPS`, `MIN_FOOTPRINT`, `MAX_FOOTPRINT`, `START_LEVEL_CDF`, `CLASS_PROFILE`, `TYPOLOGIES`, `STYLE`, `STYLES`, `DEFAULT_BUILDING_FORM`, `DEFAULT_TYPOLOGY_SHAPE`, `typologyById`, `styleById` |
 
 ## `src/game/` — ciclo di gioco
 

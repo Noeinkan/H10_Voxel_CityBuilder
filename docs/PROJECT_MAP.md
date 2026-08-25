@@ -80,7 +80,7 @@ il posto sbagliato.
 | Citta' in quota | `src/world/aerial/config.ts` |
 | Arcologie | `src/world/arcology/config.ts` |
 | Simulazione | `src/sim/balance.ts` |
-| Costruzione e tipologie | `src/world/buildings/config.ts` |
+| Costruzione e tipologie | `src/world/buildings/config/` |
 | Palette | `src/engine/palette.json` + `paletteSlots.ts` |
 | Temi | `src/engine/themes/` — un file per tema, colori piu' atmosfera |
 | Modello di luce | `src/engine/lighting.ts` — sole, ambiente, luminanza per faccia |

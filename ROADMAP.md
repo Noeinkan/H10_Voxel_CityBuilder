@@ -327,7 +327,7 @@ classe ma un vettore di influenza in `balance.ts`, che può anche essere negativ
 a reggerlo. Il commercio interno vive in `src/sim/commerce.ts` e compete con
 l'industria per la stessa forza lavoro e gli stessi materiali: è quella
 competizione, non due bilanci separati, a rendere distinguibili i due cicli. La
-tipologia è un catalogo di quindici righe in `world/buildings/config.ts` con la
+tipologia è un catalogo di quindici righe in `world/buildings/config/typologies.ts` con la
 sola regola di scelta in `typology.ts`, e piega la grammatica esistente con tre
 interruttori — podio, corte, coronamento piatto — invece di introdurre modelli
 disegnati a mano. La selezione dei siti è rimasta al suo costo perché il secondo

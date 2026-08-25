@@ -12,5 +12,11 @@ Per i driver specializzati leggi anche il riferimento pertinente:
   e [opere di terra e acqua](../../../docs/world/grading-water.md);
 - `crossingDriver*`: [opere di terra e acqua](../../../docs/world/grading-water.md).
 
-Cadenze, tetti, profili e grammatica restano in `config.ts`. La tipologia vive
-qui: `src/sim/` non conosce la forma degli edifici.
+Cadenze, tetti, profili e grammatica restano in `config/`, che si importa come
+`./config` e resta una facciata sola: `builder.ts` per cadenze e budget,
+`grammar.ts` per il vocabolario della forma, `levels.ts` per la massa di un
+livello, `classProfile.ts` per l'aspetto di un uso, `typologies.ts` per il
+catalogo, `styles.ts` per il tessuto di quartiere. Un numero nuovo va nel modulo
+che risponde alla sua domanda, non in fondo al primo file aperto.
+
+La tipologia vive qui: `src/sim/` non conosce la forma degli edifici.

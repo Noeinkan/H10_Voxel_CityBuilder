@@ -6,9 +6,9 @@
 > incoerenti con il dominio.
 
 - Passi, scostamenti e larghezze della carreggiata stanno in `streets/config.ts`;
-  cadenze, tetti e profili visivi in `buildings/config.ts`; gli spessori della
+  cadenze, tetti e profili visivi in `buildings/config/`; gli spessori della
   grammatica — zoccolo, portale, coronamento, dettaglio sul tetto — in
-  `buildings/config.ts::GRAMMAR`.
+  `buildings/config/grammar.ts::GRAMMAR`.
 - Assi e lotti si allineano a `STREETS.align`, che e' il cubo di terreno: un
   edificio a meta' cubo si troverebbe sotto l'impronta due quote diverse dove il
   terreno e' piatto, e le opere gli metterebbero sotto un riempimento che nessun
@@ -303,7 +303,7 @@
   accanto a uno azzurro vorrebbe slot nuovi (invariante 4). Un isolato di mattoni
   accanto a uno di vetro no, e a distanza di gioco dice la stessa cosa in tutti e
   sette i temi.
-- Il **catalogo delle tipologie** e' una tabella in `buildings/config.ts`:
+- Il **catalogo delle tipologie** e' una tabella in `buildings/config/typologies.ts`:
   condizioni sul luogo piu' forma. Aggiungere una tipologia e' aggiungere una
   riga — la regola di scelta in `typology.ts` e' generica e non va toccata, e la
   grammatica in `generate.ts` non sa che le tipologie esistono. Ogni uso chiude
