@@ -9,7 +9,7 @@ import {
 } from 'three';
 import { createAtmosphereControl } from './engine/AtmosphereControl';
 import { ChunkRenderer } from './engine/ChunkRenderer';
-import { InfluenceOverlay } from './engine/InfluenceOverlay';
+import { InfluenceOverlay, type ReachSummary } from './engine/InfluenceOverlay';
 import { InspectGuides } from './engine/InspectGuides';
 import { PlacementCursor } from './engine/PlacementCursor';
 import { TrafficView } from './engine/TrafficView';
@@ -641,8 +641,15 @@ if (influenceOverlay !== null) scene.add(influenceOverlay.group);
  * si muove non e' materia. Scrivere una barca nel `VoxelWorld` e riscriverla al
  * frame dopo marcherebbe sporchi i chunk della costa sessanta volte al secondo,
  * cioe' rimeshare mezza isola per farla navigare.
+ *
+ * Riceve gli uniform del materiale del voxel e non una copia: e' cosi' che una
+ * nave vede lo stesso sole, la stessa ombra e la stessa nebbia della costa dietro
+ * di lei, e che `applyAtmosphere` resta una scrittura sola invece di due elenchi
+ * da tenere allineati.
  */
-const trafficView = terrain !== null && growEnabled ? new TrafficView() : null;
+const trafficView = terrain !== null && growEnabled
+  ? new TrafficView(paletteHandle.material.uniforms)
+  : null;
 if (trafficView !== null) scene.add(trafficView.group);
 /** Ultima volta che i colori dei mezzi sono stati riscritti con l'ora corrente. */
 let trafficLitAt = 0;
@@ -1117,12 +1124,13 @@ function updateVitality(time: number): void {
 /**
  * Porta a schermo i mezzi in movimento.
  *
- * **Pose e fumo a ogni frame, i colori alla cadenza dell'HUD.** Sono due costi
- * diversi: una posa e' una matrice per mezzo — decine in tutta la partita — e un
- * pennacchio qualche centinaio di vertici in una mesh sola, mentre un ricolore
- * riscrive gli attributi di cinque geometrie. Il secondo dipende dall'ora, che
- * si muove di un centesimo alla volta, e non ha niente da guadagnare a essere
- * riscritto sessanta volte al secondo.
+ * **Pose, fumo e scia a ogni frame, i colori alla cadenza dell'HUD.** Sono due
+ * costi diversi: una posa e' una matrice per mezzo — decine in tutta la partita —
+ * mentre pennacchio e schiuma sono qualche centinaio di vertici in due mesh sole.
+ * I colori dipendono dall'ora, che si muove di un centesimo alla volta, e non
+ * hanno niente da guadagnare a essere riscritti sessanta volte al secondo; da
+ * quando le sagome prendono la tinta dagli uniform condivisi, quel ricolore
+ * riguarda il solo fumo, che porta un'alfa per sbuffo.
  *
  * L'orologio e' quello della scena e non quello del frame: in pausa le barche si
  * fermano, e a 4x attraversano quattro volte piu' in fretta.
@@ -1136,6 +1144,7 @@ function updateTraffic(time: number): void {
   }
   trafficView.setPoses(growthScene.trafficPoses());
   trafficView.setPuffs(growthScene.trafficPuffs());
+  trafficView.setWake(growthScene.trafficWake());
   // Le funi non si muovono: `setLines` confronta un riferimento e torna subito
   // finche' nessuno ne tira una nuova.
   ropewayView?.setLines(growthScene.ropewayCables());
@@ -1486,7 +1495,7 @@ function onGamePointerMove(event: PointerEvent): void {
     const site = growthScene.catalystSiteCost(target.x, target.y, catalyst.id);
     const cost = site === null ? catalyst.cost : site.cost;
     valid = failure === null;
-    influenceOverlay?.showCursor(
+    const coverage = influenceOverlay?.showCursor(
       target.x,
       target.y,
       radius,
@@ -1496,7 +1505,7 @@ function onGamePointerMove(event: PointerEvent): void {
     preview.show(target.x, target.y, target.hitZ, valid);
     gameHud?.updateCursor(event.clientX, event.clientY, {
       title: catalyst.label,
-      details: `${cost} funds${groundNote(site)} · radius ${radius} · mainly ${classLabel(catalyst.class)}`,
+      details: `${cost} funds${groundNote(site)} · ${reachNote(radius, coverage)} · mainly ${classLabel(catalyst.class)}`,
       favours: catalyst.favours.map(classLabel),
       penalises: catalyst.penalises.map(classLabel),
       typologies: typologiesForUses(catalyst.favours),
@@ -1909,6 +1918,24 @@ function groundNote(site: SiteCost | null): string {
 }
 
 /**
+ * Cosa il raggio nominale non dice: quanto terreno tocca davvero **da qui**.
+ *
+ * Da quando la portata e' geodetica il raggio e' un budget di cammino, e due
+ * siti a dieci celle di distanza possono coprire il doppio l'uno dell'altro
+ * perche' uno guarda l'entroterra e l'altro il mare. Il conto delle celle da
+ * solo non si legge — nessuno sa se tremila siano tante — ma due siti a
+ * confronto si', ed e' esattamente cio' che il giocatore sta facendo mentre
+ * muove il cursore. La percentuale in coda compare solo dove il sito e'
+ * tagliato: dirla sempre la ridurrebbe a rumore di fondo.
+ */
+function reachNote(radius: number, coverage: ReachSummary | undefined): string {
+  if (coverage === undefined) return `reach ${radius}`;
+  const cells = `${coverage.cells.toLocaleString('en-US')} cells`;
+  if (coverage.ratio >= 0.85) return `reach ${radius} · ${cells}`;
+  return `reach ${radius} · ${cells} (${Math.round((1 - coverage.ratio) * 100)}% blocked)`;
+}
+
+/**
  * Cosa succedera' al riquadro del landmark, detto sul cursore.
  *
  * Sono tutte posizioni **valide**: il catalizzatore si piazza e il suo campo
@@ -1916,6 +1943,14 @@ function groundNote(site: SiteCost | null): string {
  * dedurre — se il monumento comparira', e quante case costa.
  */
 function landmarkNote(site: LandmarkSite): string {
+  // **Il terreno per primo**, come nella regola che lo decide: dire quante case
+  // porta via un riquadro che nessuna opera reggerebbe manderebbe a cercare una
+  // sacca bassa dove il problema e' la parete. Ed e' il solo dei tre casi in cui
+  // non compare nemmeno la piazzola — `canPaint` scarta le colonne in parete —
+  // quindi la riga promette meno delle altre due, di proposito.
+  if (site.refusal === 'no-footing') {
+    return 'Valid position, but nothing can be built on this slope: the catalyst works, the landmark will not appear. Try flatter ground.';
+  }
   if (site.refusal === 'structure-in-the-way') {
     return 'Valid position. Something built to last stands here: only the plaza will appear.';
   }

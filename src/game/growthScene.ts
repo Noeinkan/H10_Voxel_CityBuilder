@@ -37,6 +37,7 @@ import type { TerrainMap } from '../world/terrain/TerrainMap';
 import { puffsAt, type SmokePuff } from '../world/traffic/plume';
 import { posesAt, type VehiclePose } from '../world/traffic/poses';
 import { planTraffic, type TrafficRoute, type TrafficStructure } from '../world/traffic/routes';
+import { wakeAt, type WakeMark } from '../world/traffic/wake';
 import type { VoxelWorld } from '../world/VoxelWorld';
 import { FixedStepLoop } from './loop';
 import {
@@ -527,6 +528,19 @@ export class GrowthScene {
   trafficPuffs(): readonly SmokePuff[] {
     this.syncTraffic();
     return puffsAt(this.routes, this.clock);
+  }
+
+  /**
+   * La schiuma che gli scafi hanno lasciato dietro di se'.
+   *
+   * La terza lettura delle stesse rotte, e non un terzo stato: un segno di scia
+   * e' dov'era la nave qualche secondo fa, come uno sbuffo di fumo. Chi vola e
+   * chi pende non ne lascia — la selezione sta in `wake.ts`, che sa quali mezzi
+   * galleggiano; qui non c'e' un tipo da controllare.
+   */
+  trafficWake(): readonly WakeMark[] {
+    this.syncTraffic();
+    return wakeAt(this.routes, this.clock);
   }
 
   private syncTraffic(): void {

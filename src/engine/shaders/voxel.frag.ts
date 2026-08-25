@@ -1,7 +1,13 @@
-import { PALETTE_SIZE } from '../palette';
 import { PALETTE_SLOTS } from '../paletteSlots';
-import { FOG_FLAT_EPSILON, FOG_LIFT_SHARPNESS } from '../atmosphere';
 import { cloudDeckHelpers, cloudDeckUniforms } from './cloudDeck.glsl';
+import {
+  sceneHelpers,
+  sceneUniforms,
+  shadowHelpers,
+  shadowUniforms,
+  surfaceHelpers,
+  surfaceUniforms,
+} from './scene.glsl';
 import { NIGHT_WINDOWS } from '../nightWindows';
 import { SURFACE_KIND, WATER_CLASS } from '../../world/visualBlock';
 import {
@@ -26,45 +32,19 @@ import {
  */
 export function buildFragmentShader(inspect: boolean): string {
   return /* glsl */ `
-uniform vec3 uPalette[${PALETTE_SIZE}];
-uniform vec3 uFaceNormal[6];
-uniform float uVoxelSize;
-
-uniform vec3 uSunDirection;
-uniform vec3 uSunColor;
-uniform float uSunWrap;
-uniform vec3 uSkyColor;
-uniform vec3 uBounceColor;
+// Palette, luce del sole, prospettiva aerea, materia e ombra proiettata: cio'
+// che questo programma condivide con quello dei mezzi, dichiarato una volta sola
+// in scene.glsl.ts. Quello che segue e' invece soltanto del voxel.
+${sceneUniforms}${surfaceUniforms}${shadowUniforms}
+// Visibilita' del cielo: l'unica parte del modello di luce che qui e' un dato
+// cotto nel mesher, e che un mezzo — sempre allo scoperto — non ha.
 uniform float uSkyOcclusion;
-uniform float uColorJitter;
-
-uniform vec3 uFogColor;
-uniform float uFogDensity;
-uniform float uFogSkyBlend;
-uniform float uFogHeightBase;
-uniform float uFogHeightFalloff;
-uniform float uFogAltitudeLift;
-uniform float uFogSunTint;
-uniform vec3 uSkyTopColor;
-uniform vec3 uSkyHorizonColor;
-uniform vec3 uViewDirection;
-uniform vec2 uResolution;
 
 // Lo strato di nuvole a quota: un piano nello spazio, non un secondo velo di
 // quota. La matematica e il perche' stanno in cloudDeck.ts, e questi stessi
 // uniform li dichiara anche il fondo procedurale — e' una nuvola sola.
 ${cloudDeckUniforms}
 
-uniform sampler2D uShadowMap;
-uniform mat4 uShadowMatrix;
-uniform float uShadowStrength;
-uniform float uShadowTexel;
-uniform float uShadowNormalBias;
-uniform float uShadowSoftness;
-
-uniform vec3 uGlassTint;
-uniform float uGlassLift;
-uniform float uTime;
 uniform vec3 uWaterHighlight;
 uniform vec3 uWaterShallowTint;
 uniform float uWaterStrength;
@@ -72,9 +52,7 @@ uniform float uWaterScale;
 uniform float uWaterSpeed;
 uniform float uWaterCalm;
 uniform float uWaterGlitter;
-uniform float uEmissiveStrength;
 uniform vec3 uSpillColor;
-uniform float uNight;
 uniform float uLitHomes;
 uniform float uLitSigns;
 
@@ -100,61 +78,7 @@ varying float vSurfaceIndex;
 varying vec2 vWorldXY;
 varying vec3 vWorldPosition;
 
-float hash21(vec2 p) {
-  p = fract(p * vec2(123.34, 456.21));
-  p += dot(p, p + 45.32);
-  return fract(p.x * p.y);
-}
-
-float hash31(vec3 p) {
-  p = fract(p * 0.1031);
-  p += dot(p, p.yzx + 33.33);
-  return fract((p.x + p.y) * p.z);
-}
-
-float boxMask(vec2 p, vec2 low, vec2 high) {
-  vec2 enter = smoothstep(low, low + vec2(0.045), p);
-  vec2 leave = 1.0 - smoothstep(high - vec2(0.045), high, p);
-  return enter.x * enter.y * leave.x * leave.y;
-}
-
-/**
- * Ombra proiettata del sole.
- *
- * Il bias e' normal-offset: si sposta il punto lungo la normale prima di
- * proiettarlo. Su facce allineate agli assi toglie l'acne senza staccare
- * l'ombra dalla base degli oggetti, come farebbe un bias in profondita'.
- */
-float sampleShadow(vec3 worldPosition, vec3 n) {
-  if (uShadowStrength <= 0.0) return 1.0;
-
-  vec4 coord = uShadowMatrix * vec4(worldPosition + n * uShadowNormalBias, 1.0);
-  vec3 uvz = coord.xyz / coord.w;
-  // Fuori dalla mappa non si sa nulla: meglio illuminato che un bordo netto.
-  if (uvz.x < 0.0 || uvz.x > 1.0 || uvz.y < 0.0 || uvz.y > 1.0 || uvz.z > 1.0) return 1.0;
-
-  float lit = 0.0;
-  if (uShadowSoftness <= 0.0) {
-    lit = step(uvz.z, texture2D(uShadowMap, uvz.xy).r);
-  } else {
-    float radius = uShadowTexel * uShadowSoftness;
-    for (int y = -1; y <= 1; y++) {
-      for (int x = -1; x <= 1; x++) {
-        vec2 offset = vec2(float(x), float(y)) * radius;
-        lit += step(uvz.z, texture2D(uShadowMap, uvz.xy + offset).r);
-      }
-    }
-    lit /= 9.0;
-  }
-  return mix(1.0, lit, uShadowStrength);
-}
-
-vec2 faceUv(int faceIndex, vec3 position) {
-  if (faceIndex < 2) return position.yz;
-  if (faceIndex < 4) return position.xz;
-  return position.xy;
-}
-${cloudDeckHelpers}${inspect ? inspectHelpers : ''}
+${sceneHelpers}${surfaceHelpers}${shadowHelpers}${cloudDeckHelpers}${inspect ? inspectHelpers : ''}
 void main() {
 ${inspect ? inspectDiscard : ''}
   int paletteIndex = int(vPaletteIndex + 0.5);
@@ -328,9 +252,7 @@ ${inspect ? inspectGhostSurface : ''}
   // piu' basso non viene nemmeno calcolata. Il rimbalzo resta pieno, ed e' cio'
   // che impedisce al sotto-ponte di diventare un buco nero.
   float skyReach = mix(1.0 - uSkyOcclusion, 1.0, vSkyVisibility);
-  vec3 ambient = mix(uBounceColor, uSkyColor * skyReach, n.z * 0.5 + 0.5);
-  float wrapped = clamp((dot(n, uSunDirection) + uSunWrap) / (1.0 + uSunWrap), 0.0, 1.0);
-  vec3 light = ambient + uSunColor * wrapped * shadow;
+  vec3 light = faceAmbient(n, skyReach) + uSunColor * faceDirect(n) * shadow;
 
   // La luce che **esce** dagli edifici. Non e' una luce dinamica: vGlow e' un
   // dato geometrico cotto nel mesher — quanto vicina sta una superficie
@@ -391,39 +313,11 @@ ${inspect ? inspectGhostSurface : ''}
   // Prospettiva aerea. La nebbia si miscela in spazio lineare, prima del tone
   // mapping: dopo, il colore di sfumatura non corrisponderebbe piu' a quello
   // dichiarato dal tema. La tinta tende al cielo alla stessa altezza di schermo
-  // del frammento, cosi' la distanza vi si scioglie.
-  //
-  // La densita' ha un profilo esponenziale in quota e viene **integrata lungo il
-  // raggio**, non valutata sul frammento: e' cio' che separa le quote invece
-  // delle sole distanze, perche' il raggio che arriva in cima a una torre ha
-  // attraversato aria rarefatta e quello che arriva in strada no. L'integrale e'
-  // in forma chiusa perche' la camera e' ortografica. La copia leggibile di
-  // queste righe, con il perche' e i suoi test, sta in atmosphere.ts.
-  float fogEntry = uFogHeightFalloff * (vWorldPosition.z - uViewDirection.z * vFogDepth - uFogHeightBase);
-  float fogExit = uFogHeightFalloff * (vWorldPosition.z - uFogHeightBase);
-  float fogSpan = fogExit - fogEntry;
-  // Raggio quasi orizzontale: il rapporto degenera in 0/0 e vale il suo limite.
-  float fogShape = abs(fogSpan) < ${FOG_FLAT_EPSILON.toFixed(6)}
-    ? exp(-fogEntry)
-    : (exp(-fogEntry) - exp(-fogExit)) / fogSpan;
-  float fogAmount = 1.0 - exp(-uFogDensity * vFogDepth * fogShape);
-
-  // Velo di quota: la parte dichiaratamente non fisica. Non dipende dalla
-  // distanza, quindi sopravvive allo zoom ravvicinato dove l'integrale e' quasi
-  // zero; decade piu' in fretta della nebbia, altrimenti velerebbe anche i tetti.
-  float fogLift = uFogAltitudeLift *
-    exp(-${FOG_LIFT_SHARPNESS.toFixed(1)} * uFogHeightFalloff * max(0.0, vWorldPosition.z - uFogHeightBase));
-  // Trasmittanza e non somma: due veli in fila non superano l'opacita' piena.
-  float fogVeil = 1.0 - (1.0 - clamp(fogAmount, 0.0, 1.0)) * (1.0 - clamp(fogLift, 0.0, 1.0));
-
-  // Stessa curva del gradiente di SkyBackground: erano due implementazioni della
-  // stessa mappatura, e divergendo cucivano una riga proprio all'orizzonte, dove
-  // il cielo e la nebbia si toccano.
-  float screenY = smoothstep(0.0, 1.0, clamp(gl_FragCoord.y / max(1.0, uResolution.y), 0.0, 1.0));
-  vec3 skyTint = mix(uSkyHorizonColor, uSkyTopColor, screenY);
-  vec3 fogTint = mix(uFogColor, skyTint, uFogSkyBlend);
-  float towardSun = max(0.0, dot(uViewDirection, uSunDirection));
-  fogTint = mix(fogTint, uSunColor, pow(towardSun, 4.0) * uFogSunTint);
+  // del frammento, cosi' la distanza vi si scioglie. L'integrale in quota, il
+  // velo e il gradiente stanno in scene.glsl.ts, che e' anche il modo in cui i
+  // mezzi si sfumano esattamente come la costa dietro di loro.
+  float fogVeil = aerialVeil(vWorldPosition.z, vFogDepth);
+  vec3 fogTint = aerialTint();
 
 ${inspect ? inspectMelt : ''}
   vec3 aerial = mix(shaded, fogTint, fogVeil);

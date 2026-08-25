@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import {
+  FLOATING_KINDS,
   funnelOf,
   TRAFFIC,
   VEHICLE,
   VEHICLE_KINDS,
-  type VehicleKind,
 } from '../world/traffic/config';
 import { hullBlocks, type HullBlock } from './vehicleHulls';
 
@@ -18,8 +18,6 @@ import { hullBlocks, type HullBlock } from './vehicleHulls';
  * accorgersi che le due letture hanno smesso di combaciare, senza questo test,
  * sarebbe uno screenshot con il fumo sospeso sopra il cappello.
  */
-
-const floating: readonly VehicleKind[] = [VEHICLE.boat, VEHICLE.ferry, VEHICLE.cargo];
 
 function top(block: HullBlock): number {
   return block.z + block.sizeZ / 2;
@@ -73,7 +71,7 @@ describe('hullBlocks', () => {
   });
 
   it('chi galleggia porta la fascia di galleggiamento sul pelo dell acqua', () => {
-    for (const kind of floating) {
+    for (const kind of FLOATING_KINDS) {
       const band = hullBlocks(kind).filter((block) => block.palette === TRAFFIC.bandPalette);
       expect(band.length).toBeGreaterThan(0);
       for (const block of band) {
@@ -81,6 +79,29 @@ describe('hullBlocks', () => {
         expect(top(block)).toBeGreaterThan(0);
       }
     }
+  });
+
+  it('ogni mezzo ha qualcosa che si veda di notte, e nessuna luce e dedotta dalla tinta', () => {
+    // Il materiale dei mezzi accende due cose e due sole: le scatole marcate
+    // `lamp` e le fasce vetrate. Un mezzo che non ha ne' le une ne' le altre si
+    // spegne del tutto quando cala la sera — la cabina di funivia sta in piedi
+    // sulla sola fascia vetrata, ed e' voluto: e' piccola e appesa, e un fanale
+    // in cima le costerebbe la silhouette.
+    for (const kind of VEHICLE_KINDS) {
+      const blocks = hullBlocks(kind);
+      const lamps = blocks.filter((block) => block.lamp);
+      const glazed = blocks.filter((block) => block.palette === TRAFFIC.cabinPalette);
+      expect(lamps.length + glazed.length, `${kind} si spegne di notte`).toBeGreaterThan(0);
+      // `lamp` e' un campo della scatola e non una lettura dello slot di palette,
+      // ma il verso stretto vale: un fanale e' sempre in tinta di fanale.
+      for (const lamp of lamps) expect(lamp.palette).toBe(TRAFFIC.lightPalette);
+    }
+
+    // E la sagoma su cui l'errore sarebbe invisibile in un conto: le pinne del
+    // dirigibile restano spente pur essendo in tinta di fanale.
+    const airship = hullBlocks(VEHICLE.airship);
+    const tinted = airship.filter((block) => block.palette === TRAFFIC.lightPalette);
+    expect(tinted.filter((block) => !block.lamp).length).toBeGreaterThan(0);
   });
 
   it('il fumaiolo disegnato chiude esattamente sulla bocca da cui esce il fumo', () => {
