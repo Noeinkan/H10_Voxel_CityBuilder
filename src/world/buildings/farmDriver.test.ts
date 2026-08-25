@@ -83,6 +83,28 @@ describe('FarmDriver — la campagna nasce fuori dalla citta’', () => {
     expect(builder.stats.farmPlots).toBe(0);
   });
 
+  /**
+   * Il driver chiedeva quanti lotti mancassero *a organico pieno*, passando un
+   * `1` scritto a mano: una stima su un'aritmetica diversa da quella con cui il
+   * tick calcola poi il raccolto. Una citta' a meta' organico ne raccoglieva la
+   * meta' e la campagna si fermava credendosi in pareggio.
+   */
+  it('a corto di braccia pianta dove a organico pieno si fermerebbe', () => {
+    const plots = (staffing: number): number => {
+      const world = new VoxelWorld();
+      const terrain = testTerrain({ chunksX: 8, chunksY: 8 });
+      const builder = new Builder(world, terrain, 1337);
+      // Sei campi per 240 abitanti: sopra il bersaglio a braccia piene, sotto
+      // appena le braccia mancano. E' esattamente la citta' che si credeva a
+      // posto mentre raccoglieva la meta'.
+      builder.onTick({ ...hungryCity(), farmCounts: [6, 0, 0], staffing });
+      return builder.stats.farmPlots;
+    };
+
+    expect(plots(1)).toBe(0);
+    expect(plots(0.5)).toBeGreaterThan(0);
+  });
+
   it('non pianta piu’ di `plotsPerPass` per passata', () => {
     const world = new VoxelWorld();
     const terrain = testTerrain({ chunksX: 8, chunksY: 8 });

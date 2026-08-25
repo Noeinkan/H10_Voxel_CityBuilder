@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { addCatalyst, createSimState, setTradeMode } from './SimState';
 import { tick } from './tick';
 import { testTerrain } from './testTerrain';
-import { resolveExternalTrade, tradeLinksOf } from './trade';
+import { foodImportShareOf, resolveExternalTrade, tradeLinksOf } from './trade';
 import { BUILDING_CLASS } from './classes';
 
 describe('commercio esterno', () => {
@@ -97,6 +97,30 @@ describe('collegamenti con l’esterno', () => {
     expect(port.food).toBe(0);
     expect(airport.food).toBe(0);
     expect(airport.funds / airport.materials).toBeGreaterThan(port.funds / port.materials);
+  });
+
+  /**
+   * La regressione diretta: `importFoodPerTick` era una quantita' assoluta, quindi
+   * i due scambi qui sotto tornavano **identici**. La domanda pero' vale
+   * `pop * food.perResident`, e una portata che non la segue e' sovrabbondante al
+   * primo isolato — un porto copriva il 667% della spesa a 240 abitanti — e
+   * decorativa al decimo: il 4,9% a 3.268.
+   */
+  it('la portata del porto segue la taglia della citta', () => {
+    const small = resolveExternalTrade({ ...common, links: ['port'], population: 100 });
+    const large = resolveExternalTrade({ ...common, links: ['port'], population: 1_000, funds: 1_000_000 });
+
+    expect(large.food / small.food).toBeCloseTo(10);
+  });
+
+  it('un collegamento resta un supplemento, non sostituisce la campagna', () => {
+    // Il tetto della portata a citta' ferma: tutti i collegamenti, tutta la
+    // priorita' sul cibo. Se questo arrivasse a 1 il cibo smetterebbe di
+    // competere per la terra, che e' l'unica ragione per cui ha un posto sulla
+    // mappa.
+    expect(foodImportShareOf(['port', 'airport'], 'foodImports')).toBeLessThan(1);
+    expect(foodImportShareOf(['port'], 'balanced')).toBeGreaterThan(0);
+    expect(foodImportShareOf([], 'foodImports')).toBe(0);
   });
 
   it('legge il ruolo e non il campo kind, in ordine di catalogo', () => {

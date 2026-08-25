@@ -23,7 +23,7 @@ import {
 } from '../sim';
 import { DAYLIGHT, DAYLIGHT_MODE, nextDaylightMode, type DaylightMode } from '../engine/daylight';
 import { typologiesForUses } from '../world/buildings/typology';
-import { unlockLines } from './prospects';
+import { pairingLines, unlockLines, yieldLine } from './prospects';
 import { SITE } from '../world/sites/config';
 import type { GrowthStats } from '../game/growthScene';
 import type { CityCondition } from '../game/cityCondition';
@@ -136,6 +136,24 @@ export interface HudAction {
    * insegnava a diffidare del tooltip. Qui la condizione c'e'.
    */
   readonly unlocks?: readonly string[];
+  /**
+   * Con chi accostarlo, e che quartiere ne esce.
+   *
+   * **E' l'anello di mezzo della catena, e mancava.** Un quartiere nasce dalla
+   * **coppia** di due campi sovrapposti, e sono i quartieri ad aprire le forme
+   * di `unlocks`: senza questa riga si leggeva la promessa e non la condizione
+   * che la avvera, e l'unico modo di scoprirla era piazzare catalizzatori a
+   * caso.
+   */
+  readonly pairs?: readonly string[];
+  /**
+   * Cosa arriva in cassa se il ruolo attecchisce.
+   *
+   * Un catalizzatore non produce niente: producono gli edifici che fa nascere.
+   * E' la sola riga che leghi lo strumento in mano alla barra delle risorse in
+   * cima allo schermo, e fra le due non c'era niente.
+   */
+  readonly yields?: string;
   /**
    * true se l'azione e' bloccata ma resta visibile.
    *
@@ -392,6 +410,8 @@ export function buildGameHudModel(
       penalises,
       typologies: typologiesForUses(catalyst.favours),
       unlocks: unlockLines(catalyst.id),
+      pairs: pairingLines(catalyst.id),
+      yields: yieldLine(catalyst.id) ?? undefined,
       available,
       // Bloccato non vuol dire nascosto: il bottone resta nella toolbar e dice
       // perche' non si puo' ancora usare.
@@ -402,12 +422,16 @@ export function buildGameHudModel(
       ...(ready && orderOk && !fundsOk
         ? bindingThreshold([{ have: funds, need: cost, label: 'funds' }])
         : {}),
+      // **Solo lo stato**, non piu' anche la descrizione: la frase che spiega
+      // cosa fa il ruolo vive in `description` e la scheda la mostra sempre.
+      // Concatenate, sparivano insieme appena il bottone si bloccava — e chi sta
+      // risparmiando per il porto e' esattamente chi vuole sapere a cosa serve.
       reason: !ready
         ? 'The city is getting ready.'
         : !orderOk
           ? `Complete this first: ${stats?.onboarding.title ?? 'the initial tutorial'}.`
           : fundsOk
-            ? `${catalyst.description} Select and place it on the island.`
+            ? 'Click a spot on the island to place it.'
             : 'Not enough funds.',
     };
   });
@@ -438,7 +462,8 @@ export function buildGameHudModel(
         ? `Requires ${expansionRequirement.population} residents.`
         : !expansionFundsOk
           ? 'Not enough funds.'
-          : `Purchase a coastal sector (${stats?.unlockedSectors.length ?? 0} already unlocked).`,
+          : `Click a coastline edge to buy it (${stats?.unlockedSectors.length ?? 0} sectors so far).`,
+    description: 'Buys the next sector of coast: more land to build on.',
   };
 
   const terraceRequirement = BALANCE.gameplay.terrace;
@@ -464,8 +489,8 @@ export function buildGameHudModel(
         ? `Requires ${terraceRequirement.population} residents.`
         : !terraceFundsOk
           ? 'Not enough funds.'
-          : 'Hang a floor off a tall building: the city gains ground above the street.',
-    description: 'Hang a floor off a tall building, above the street.',
+          : 'Click a tall building to hang a floor off it.',
+    description: 'Hangs a floor off a tall building: new ground above the street.',
   };
 
   const ropewayRequirement = BALANCE.gameplay.ropeway;
@@ -489,8 +514,8 @@ export function buildGameHudModel(
         ? `Requires ${ropewayRequirement.population} residents.`
         : !ropewayFundsOk
           ? 'Not enough funds.'
-          : 'Point at a shore: the line crosses water no bridge would span.',
-    description: 'Two towers and a cable across the water.',
+          : 'Click a shore facing the water: the far end is found for you.',
+    description: 'Two towers and a cable: crosses water no bridge would span.',
   };
 
   const activePolicies = stats?.state.policies ?? [];
@@ -742,6 +767,13 @@ function fundsBreakdown(flows: FundsReport): readonly HudFlow[] {
  *
  * Le etichette sono i produttori e non i tipi di lotto: chi guarda l'HUD vede
  * campi e frutteti a schermo, e «Fields» e' il nome di quello che vede.
+ *
+ * **Anche l'uscita dice chi**, e prima non lo diceva: «Eaten» nominava il gesto e
+ * non chi lo compie, e la domanda che la riga deve chiudere e' *chi mi mangia il
+ * raccolto*. La risposta e' una sola voce perche' il cibo ha **un solo
+ * consumatore** — gli abitanti, a `food.perResident` ciascuno — e non si scompone
+ * per edificio: le case ospitano chi mangia, non mangiano loro. Le fabbriche e i
+ * negozi non ne consumano affatto.
  */
 function foodBreakdown(harvest: FoodReport): readonly HudFlow[] {
   const rows: readonly HudFlow[] = [
@@ -749,7 +781,7 @@ function foodBreakdown(harvest: FoodReport): readonly HudFlow[] {
     { label: FARM_LABELS[FARM_KIND.orchard], amount: harvest.grown[FARM_KIND.orchard] ?? 0, direction: 'in' },
     { label: FARM_LABELS[FARM_KIND.tower], amount: harvest.grown[FARM_KIND.tower] ?? 0, direction: 'in' },
     { label: 'Imports', amount: harvest.imported, direction: 'in' },
-    { label: 'Eaten', amount: harvest.eaten, direction: 'out' },
+    { label: 'Residents', amount: harvest.eaten, direction: 'out' },
   ];
   return rows.filter((row) => row.amount >= 0.005);
 }

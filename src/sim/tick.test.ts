@@ -316,3 +316,60 @@ describe('tick — bilancio', () => {
     expect(onCramped.population.stock).toBeLessThan(onRoomy.population.stock);
   });
 });
+
+/**
+ * Il fronte dell'emergenza alimentare: cosa lo riarma e cosa no.
+ *
+ * Riarmarlo vuol dire «la carestia si puo' dichiarare di nuovo», e la domanda e'
+ * sempre la stessa: la citta' ha risolto in un modo che regge il tick successivo
+ * **senza** una decisione nuova? Il raccolto si', una dotazione no.
+ */
+describe('tick — il fronte dell’emergenza', () => {
+  const terrainMap = testTerrain({ chunksX: 8, chunksY: 8 });
+
+  /**
+   * Una citta' disarmata che raccoglie il 90% di cio' che mangia, con la dispensa
+   * piena di roba che non ha coltivato. Due campi su dodici case: sotto il
+   * pareggio, e la scorta e' li' apposta perche' non deve contare.
+   */
+  function starving(): SimState {
+    return {
+      ...standardCity(),
+      population: { stock: 100, delta: 0 },
+      farmCounts: [2, 0, 0],
+      food: { stock: 10_000, delta: 0 },
+      supplyArmed: false,
+    };
+  }
+
+  it('non si riarma su una dispensa piena che nessuno ha raccolto', () => {
+    expect(tick(starving(), terrainMap).supplyArmed).toBe(false);
+  });
+
+  /**
+   * Una citta' che **compra** il proprio cibo l'ha risolto davvero, e senza questo
+   * termine non riarmerebbe mai: il giorno in cui i fondi finissero, l'emergenza
+   * non tornerebbe piu' a suonare. Si somma la portata del collegamento e non
+   * quanto e' passato davvero, che dipende da quanto c'e' gia' in dispensa.
+   */
+  it('un collegamento con l’esterno riarma quello che il raccolto non copre', () => {
+    const connected = addCatalyst({ ...starving(), tradeMode: 'foodImports' }, {
+      x: 40,
+      y: 40,
+      kind: 'port',
+      class: BUILDING_CLASS.industrial,
+      strength: 190,
+      radius: 24,
+    });
+    const withAirport = addCatalyst(connected, {
+      x: 88,
+      y: 40,
+      kind: 'airport',
+      class: BUILDING_CLASS.commercial,
+      strength: 190,
+      radius: 24,
+    });
+
+    expect(tick(withAirport, terrainMap).supplyArmed).toBe(true);
+  });
+});

@@ -94,6 +94,20 @@ describe('SimState — serializzazione', () => {
     expect(reviveSimState(older as SimStateData).charters).toEqual([]);
   });
 
+  it('l’organico sopravvive al giro in JSON', () => {
+    const state = { ...populated(), staffing: 0.625 };
+
+    expect(reviveSimState(JSON.parse(JSON.stringify(toSimStateData(state)))).staffing).toBe(0.625);
+  });
+
+  it('rianima ottimista un salvataggio scritto prima dell’organico', () => {
+    // Era il comportamento del driver prima che questo numero esistesse, e il
+    // primo tick lo riscrive comunque con quello vero.
+    const { staffing: _staffing, ...older } = toSimStateData(populated());
+
+    expect(reviveSimState(older as SimStateData).staffing).toBe(1);
+  });
+
   it('lo stato serializzato non contiene array tipizzati ne’ oggetti opachi', () => {
     const data = toSimStateData(populated());
 

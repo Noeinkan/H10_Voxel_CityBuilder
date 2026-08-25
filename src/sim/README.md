@@ -119,6 +119,14 @@ forma non esce mai dal quadrato che il campo ricalcola. Una strada quindi non
 costa *meno* di 1 — a costare di più è tutto il resto, e la strada vince in
 termini relativi.
 
+**Il raggio è quindi un budget di cammino, non una distanza in linea d'aria.**
+Fuori strada un passo costa `reach.land`, quindi nel tessuto un raggio `r`
+arriva a circa `r / land` celle; i raggi dei ruoli sono tarati su questo, e sono
+stati alzati di un quarto — l'inverso esatto di `land = 1.25` — per far coprire
+alla città lontano dalle strade quanto copriva quando la distanza era in linea
+retta. Lungo la pavimentazione invece il budget si spende a costo pieno, e quel
+quarto in più resta tutto: è lì che la portata guadagna, non nel tessuto.
+
 **Un catalizzatore parla a più usi.** L'influenza è un vettore, non una classe:
 un mercato somma su residenziale e commerciale insieme, una fabbrica somma
 sull'industriale e *sottrae* dal residenziale. Il segno negativo non ha avuto
@@ -168,9 +176,15 @@ intrattenimento o uffici, valutate in ordine fisso dalla più rara alla più
 comune. Non entra nel campo e non è un uso: è ciò che distingue una torre di
 uffici da un hotel a parità di uso commerciale.
 
-Ogni 120 tick, dopo la prima finestra di 80 tick, lo stato apre una decisione
-con tre alternative. La decisione resta sospesa finché il giocatore sceglie e
-gli effetti sono dati serializzabili derivati dallo stato, senza casualità globale.
+Ogni 900 tick, dopo la prima finestra di 450, lo stato apre una decisione con
+tre alternative. La decisione resta sospesa finché il giocatore sceglie e gli
+effetti sono dati serializzabili derivati dallo stato, senza casualità globale.
+
+La scadenza è però un intervallo, non una memoria: da sola riapre una condizione
+vera finché resta vera. L'emergenza alimentare porta perciò un **fronte**
+(`supplyArmed`), che risolverla abbassa e solo un raccolto tornato in pareggio
+rialza — altrimenti una carestia cronica coprirebbe per sempre le altre due
+famiglie, dato che il ramo del cibo esce per primo.
 
 ### Il segno che una decisione lascia
 
@@ -308,9 +322,17 @@ fabbrica in torre è un vero scambio fra materiali e cibo.
 
 ### I due numeri che il cibo consegna fuori
 
-`missingPlotsOf` dice **quanti campi mancano**, e `fedShareOf` **quanto della
+`missingPlotsFor` dice **quanti campi mancano**, e `fedShareOf` **quanto della
 domanda è stata servita**. Sono le due domande che nessun altro può rispondersi
 da solo, e vivono qui per la stessa ragione del referto: il listino sta qui.
+
+Attraversa il confine solo la risposta: `missingPlotsFor` prende lo stato e legge
+da sé la popolazione, i contatori e l'**organico**. Non è un dettaglio di firma —
+il driver passava un `1` scritto a mano, cioè stimava il raccolto su un'aritmetica
+diversa da quella con cui `tick` lo calcola davvero, e una città a 0,8 di organico
+ne raccoglieva 0,8 credendosi in pareggio. Quale organico usare è una scelta della
+simulazione, che sa cosa ne farà; `missingPlotsOf` resta l'aritmetica sotto, dove
+i test la interrogano a organico scelto.
 
 Contano perché tutte e due erano state chieste male. Chi pianta riceveva il cibo
 mancante e lo riduceva a un booleano, quindi piantava sempre lo stesso numero di
@@ -320,6 +342,57 @@ le due divergevano dal primo isolato. Chi giudica chiedeva invece il segno di
 dispensa esaurita si ferma a zero e il delta vale **esattamente** zero. Una
 carestia stabile e un pareggio scrivevano lo stesso numero, e la città moriva di
 fame senza che niente lo dicesse.
+
+Lo stesso errore, in una terza forma, teneva accesa l'emergenza alimentare: si
+apriva sotto una **scorta** in dispensa, ma `missingPlotsOf` punta al pareggio e
+non a una scorta, quindi una città sfamata tiene lo stock a zero per costruzione
+e la condizione non poteva spegnersi — misurati 9000 tick su 9000 con la
+condizione vera. `fedShareOf` è la domanda giusta per aprirla; per **chiuderla**
+non basta, perché conta i pasti e i pasti li paga anche la dotazione appena
+concessa: l'allarme si riarmava sulla propria risposta. Il rientro si misura
+perciò sul raccolto (`decisions.recoveryCoverage`), che solo chi pianta muove —
+più la **portata** del collegamento esterno, non quanto è passato davvero: una
+città che compra il proprio cibo l'ha risolto, e senza quel termine non
+riarmerebbe mai, quindi il giorno in cui i fondi finissero l'emergenza non
+tornerebbe più a suonare.
+
+### Il pareggio secco era il bersaglio sbagliato
+
+`missingPlotsOf` puntava esattamente al pareggio, e la conseguenza si legge solo
+guardando la HUD di una città sana: **FOOD 0**. Il raccolto pareggia il pasto e
+non avanza niente, quindi non esiste nessuna scorta ad assorbire un lotto ritirato
+o un tick di organico basso. Il bersaglio ora è `food.targetCoverage`, e sta
+**sopra** `decisions.recoveryCoverage` per contratto: se stesse sotto, piantare
+non riarmerebbe mai il fronte e una carestia si potrebbe dichiarare una volta sola
+per partita.
+
+Misurato su 9000 tick, città di 3264 abitanti con industria e commercio a contendersi le braccia:
+
+| | prima | dopo |
+| --- | --- | --- |
+| quota di domanda servita | 0,80 | 1,00 |
+| tick con la città affamata | 6478 | 926 (solo l'avvio) |
+| scorta in dispensa | 0 | reale |
+| campi | 68 | 106 |
+| materiali per tick | 161,9 | 150,2 |
+
+I materiali che scendono del 7% non sono un effetto collaterale: sono **il**
+prezzo, e va pagato in braccia perché il bacino è uno solo. Una città che non
+mangia però non è una città che produce poco, è una città che muore.
+
+### Il commercio esterno è una quota, non una quantità
+
+`trade.importFoodShare` dice quanta della **spesa** un collegamento copre in un
+tick. Era una quantità assoluta, e una quantità contro una domanda che vale
+`pop × food.perResident` sbaglia da tutte e due le parti: un porto copriva il 667%
+della spesa a 240 abitanti — la campagna non serviva — e il 4,9% a 3268, cioè era
+decorativo. Resta comunque un supplemento: porto e aeroporto insieme, con la
+priorità sul cibo, arrivano al 55%, e il cibo continua a competere per la terra.
+
+Stessa forma per la dotazione dell'emergenza, che si conta in `decisions.reliefTicks`
+— **tick di respiro** sulla spesa vera. Una quantità non dice quanto tempo compra:
+cento tick di consumo, misurati a schermo, sono dieci secondi, e in dieci secondi
+non si pianta niente.
 
 ## Scena di debug
 
@@ -379,15 +452,25 @@ terreno, quindi il Dijkstra gira su un campo piatto e non pota niente:
 | Operazione | Media |
 | --- | --- |
 | tick | 0,0033 ms |
-| modifica di un catalizzatore di raggio 20 | 0,48 ms |
-| `nextBuildSites`, primi 10 | 4,27 ms |
-| `setPolicyActive` | 12,5 ms |
+| modifica di un catalizzatore di raggio 20 | 0,42 ms |
+| `nextBuildSites`, primi 10 | 2,0 ms |
+| `setPolicyActive` | 8,6 ms |
 
-Le due righe che toccano il campo sono **circa raddoppiate**, ed è il costo del
-Dijkstra. Si paga una volta per catalizzatore e non a ogni ricalcolo: dentro una
-stessa passata la cache serve tutte le celle, e a invalidare è solo il
-catalizzatore che è davvero cambiato. `tick` non è toccato, perché continua a
-non guardare il campo.
+Due misure a macchina ferma, concordi allo 0,1 ms. La prima presa mentre altri
+agenti giravano sullo stesso repo dava 0,48, 4,3 e 12,5 — fino al doppio, sulle
+stesse righe. Vale per chi rifà la tabella: sotto contesa di CPU questi numeri
+non significano niente.
+
+**Non sono confrontabili con le colonne qui sopra**, misurate su un'altra
+macchina: `tick` da solo è passato da 0,0010 a 0,0033 ms senza che il suo codice
+cambiasse. Il rapporto che regge il confronto è quello *relativo al tick*, e dice
+che il Dijkstra si vede dove deve: `setPolicyActive` è passato da 6420× a 2600×
+il costo di un tick, `nextBuildSites` da 4050× a 610×, la modifica di un
+catalizzatore da 220× a 127×. Il campo, in proporzione, costa **meno** di prima —
+perché la distanza non si ricalcola più per cella e per catalizzatore a ogni
+ricalcolo, ma una volta sola quando quel catalizzatore cambia.
+
+`tick` non è toccato, perché continua a non guardare il campo.
 
 Su terreno vero il Dijkstra costa **meno**, non di più: acqua e dirupi tagliano
 la coda prima del raggio, e le celle irraggiungibili non vengono mai visitate.

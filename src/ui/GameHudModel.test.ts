@@ -46,7 +46,7 @@ describe('buildGameHudModel', () => {
     // La torre esce dalla promessa incondizionata e rientra con la sua
     // condizione: e' la correzione che questa fase porta al tooltip.
     expect(factory?.typologies).not.toContain('Hydroponic tower');
-    expect(factory?.unlocks?.join(' ')).toContain('farming districts → Hydroponic tower');
+    expect(factory?.unlocks?.join(' ')).toContain('Hydroponic tower in farming districts');
 
     // E resta legata al ruolo: chi non apre l'agricoltura non la nomina.
     expect(market?.unlocks?.join(' ') ?? '').not.toContain('Hydroponic tower');
@@ -316,16 +316,27 @@ describe('il cibo dice da dove viene', () => {
     }));
 
     expect(model?.breakdown?.map((row) => row.label))
-      .toEqual(['Fields', 'Orchards', 'Towers', 'Imports', 'Eaten']);
-    expect(model?.breakdown?.find((row) => row.label === 'Eaten')?.direction).toBe('out');
+      .toEqual(['Fields', 'Orchards', 'Towers', 'Imports', 'Residents']);
+    expect(model?.breakdown?.find((row) => row.label === 'Residents')?.direction).toBe('out');
     expect(model?.breakdown?.find((row) => row.label === 'Fields')?.direction).toBe('in');
+  });
+
+  // Ogni riga dice **chi**: i produttori lo dicevano gia', l'uscita no. «Eaten»
+  // nominava il gesto, e la domanda a cui la riga serve e' chi mi mangia il
+  // raccolto. Uno solo, e non e' un edificio: sono gli abitanti.
+  it('nomina chi consuma, non il consumo', () => {
+    const model = foodRow(fed({ grown: [9, 0, 0], eaten: 4 }));
+
+    expect(model?.breakdown?.map((row) => row.label)).not.toContain('Eaten');
+    expect(model?.breakdown?.filter((row) => row.direction === 'out'))
+      .toEqual([{ label: 'Residents', amount: 4, direction: 'out' }]);
   });
 
   it('tace sui produttori che non ci sono, invece di scrivere zero', () => {
     // Cinque righe a zero sono la stessa cosa che il `±0` che la barra ha gia'
     // tolto: occupano lo spazio dell'unica informazione che conta.
     const model = foodRow(fed({ grown: [9, 0, 0], eaten: 4 }));
-    expect(model?.breakdown?.map((row) => row.label)).toEqual(['Fields', 'Eaten']);
+    expect(model?.breakdown?.map((row) => row.label)).toEqual(['Fields', 'Residents']);
   });
 
   it('le voci vengono dal referto del tick, non da un secondo conto', () => {

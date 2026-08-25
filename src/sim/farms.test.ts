@@ -11,6 +11,8 @@ import {
   foodDeficitOf,
   foodYieldOf,
   isFarmKind,
+  missingPlotsFor,
+  missingPlotsOf,
 } from './farms';
 import {
   addBuilding,
@@ -103,6 +105,67 @@ describe('farms — deficit', () => {
 
   it('non scende mai sotto zero: il surplus non e’ un deficit negativo', () => {
     expect(foodDeficitOf(10, counts(50), 1)).toBe(0);
+  });
+});
+
+describe('farms — il piano di chi pianta', () => {
+  const houses = 4;
+  const population = houses * BALANCE.weights.residentialCapacity;
+
+  /**
+   * Il piano non e' il deficit, e la differenza e' una dispensa.
+   *
+   * Al pareggio secco `foodDeficitOf` vale zero — ed e' giusto, e' un fatto — ma
+   * una citta' che punta al pareggio tiene lo stock a **zero per costruzione**: il
+   * raccolto pareggia il pasto e non avanza niente. Da li' ogni oscillazione e'
+   * carestia, ed era la ragione per cui la HUD mostrava FOOD 0 a citta' sana.
+   */
+  it('punta sopra il pareggio, dove il deficit e’ gia’ zero', () => {
+    expect(foodDeficitOf(population, counts(2), 1)).toBeCloseTo(0, 12);
+    expect(missingPlotsOf(population, counts(2), 1)).toBeGreaterThan(0);
+    // Il margine e' un margine, non una riserva senza fondo: un campo basta.
+    expect(missingPlotsOf(population, counts(3), 1)).toBe(0);
+  });
+
+  /**
+   * La stima si fa con le braccia che la citta' ha, non con quelle che vorrebbe.
+   * Il driver passava `1` scritto a mano: una citta' a meta' organico raccoglieva
+   * la meta' di cio' per cui aveva piantato e si fermava credendosi in pareggio.
+   */
+  it('con meno braccia chiede piu’ lotti', () => {
+    const full = missingPlotsOf(population, counts(2), 1);
+    const half = missingPlotsOf(population, counts(2), 0.5);
+
+    expect(half).toBeGreaterThan(full);
+  });
+
+  it('legge l’organico dallo stato, senza farselo passare', () => {
+    const base = { population: { stock: population }, farmCounts: counts(2) };
+
+    expect(missingPlotsFor({ ...base, staffing: 0.5 }))
+      .toBe(missingPlotsOf(population, counts(2), 0.5));
+    expect(missingPlotsFor({ ...base, staffing: 1 }))
+      .toBe(missingPlotsOf(population, counts(2), 1));
+  });
+});
+
+/**
+ * Un frutteto rende meta' di un campo: e' il suo prezzo, e sta nella **terra**.
+ * Con tre braccia ne pagava anche un secondo — 0,4 di cibo per braccio contro
+ * 0,6 — cioe' era peggiore su tutti gli assi, e il mandato `communityGardens`,
+ * che spinge verso il frutteto, peggiorava il raccolto due volte.
+ */
+describe('farms — il frutteto non e’ un declassamento', () => {
+  it('rende come un campo per braccio impiegato', () => {
+    const perWorker = (kind: number): number =>
+      foodYieldOf(counts(kind === FARM_KIND.field ? 1 : 0, kind === FARM_KIND.orchard ? 1 : 0), 1) /
+      BALANCE.farms[kind].workers;
+
+    expect(perWorker(FARM_KIND.orchard)).toBeCloseTo(perWorker(FARM_KIND.field), 12);
+  });
+
+  it('ma costa il doppio della terra per lo stesso raccolto', () => {
+    expect(foodYieldOf(counts(0, 2), 1)).toBeCloseTo(foodYieldOf(counts(1), 1), 12);
   });
 });
 
