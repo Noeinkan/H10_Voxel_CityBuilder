@@ -4,10 +4,12 @@ import type { VoxelStamp } from '../buildings/stamp';
 import { hashCoords } from '../rng';
 import {
   LANDMARK,
+  formVariantOf,
   landmarkOf,
   maxStageOf,
   variantsOf,
   type BerthKind,
+  type LandmarkFormId,
   type PartsRecipe,
 } from './config';
 import { createCanvas, drawPart, orientPart, orientedSpan } from './parts';
@@ -60,13 +62,13 @@ export interface LandmarkRequest {
   readonly seed?: number;
 
   /**
-   * Vero se la struttura si posa su un tetto invece che sul terreno.
+   * La forma contestuale, se il luogo ne ha scelta una.
    *
-   * Seleziona un'altra ricetta per lo stesso ruolo — non un altro esemplare —
-   * ed e' l'unica scelta di forma di questo dominio che dipende dal luogo
-   * invece che dal seme.
+   * Seleziona un'altra ricetta per lo stesso ruolo — o una variante fissata
+   * della ricetta a terra — ed e' l'unica scelta di forma di questo dominio che
+   * dipende dal luogo invece che dal seme.
    */
-  readonly aloft?: boolean;
+  readonly form?: LandmarkFormId;
 }
 
 /**
@@ -106,9 +108,9 @@ export function landmarkMoorings(
   facing: Facing,
   originX: number,
   originY: number,
-  aloft = false,
+  form?: LandmarkFormId,
 ): readonly WorldMooring[] {
-  const recipe = landmarkOf(kind, aloft);
+  const recipe = landmarkOf(kind, form);
   if (recipe?.moorings === undefined) return NO_MOORINGS;
 
   const [long, short] = recipe.span;
@@ -128,6 +130,34 @@ export function landmarkMoorings(
       heading: mooring.heading + turn,
     };
   });
+}
+
+/**
+ * La colonna di mondo su cui la ricetta si aspetta che **cominci il mare**, o
+ * null se non guarda l'acqua.
+ *
+ * E' la stessa rotazione degli ormeggi, chiesta per la colonna `waterline`
+ * invece che per un punto d'ormeggio: la profondita' e l'esposizione di quella
+ * colonna decidono il mestiere del porto, e `landmarkDriver` la classifica
+ * appena la struttura si e' posata.
+ */
+export function landmarkWaterColumn(
+  kind: CatalystId,
+  facing: Facing,
+  originX: number,
+  originY: number,
+  form?: LandmarkFormId,
+): { x: number; y: number } | null {
+  const recipe = landmarkOf(kind, form);
+  if (recipe?.waterline === undefined) return null;
+  const [long, short] = recipe.span;
+  const spot = orientPart(
+    { kind: 0, x: recipe.waterline, y: recipe.anchor[1], w: 1, h: 1, z: 0, height: 1, palette: 0, surface: 0 },
+    facing,
+    long,
+    short,
+  );
+  return { x: originX + spot.x, y: originY + spot.y };
 }
 
 /**
@@ -153,12 +183,12 @@ export function recipeSpan(recipe: PartsRecipe, facing: Facing): {
 }
 
 /** Ingombro in pianta di un ruolo su un verso, o null se non ha una ricetta. */
-export function landmarkSpan(kind: CatalystId, facing: Facing, aloft = false): {
+export function landmarkSpan(kind: CatalystId, facing: Facing, form?: LandmarkFormId): {
   sizeX: number;
   sizeY: number;
   sizeZ: number;
 } | null {
-  const recipe = landmarkOf(kind, aloft);
+  const recipe = landmarkOf(kind, form);
   if (recipe === null) return null;
   return recipeSpan(recipe, facing);
 }
@@ -177,9 +207,9 @@ export function landmarkOrigin(
   facing: Facing,
   x: number,
   y: number,
-  aloft = false,
+  form?: LandmarkFormId,
 ): { x: number; y: number } | null {
-  const recipe = landmarkOf(kind, aloft);
+  const recipe = landmarkOf(kind, form);
   if (recipe === null) return null;
   return recipeOrigin(recipe, facing, x, y);
 }
@@ -224,9 +254,12 @@ export function stageForBuildings(recipe: PartsRecipe, buildings: number): numbe
  * `Builder.upgrade` sfrutta senza saperlo.
  */
 export function generateLandmark(request: LandmarkRequest): VoxelStamp | null {
-  const recipe = landmarkOf(request.kind, request.aloft);
+  const recipe = landmarkOf(request.kind, request.form);
   if (recipe === null) return null;
-  return generateFromRecipe(recipe, request);
+  // La forma d'acqua fissa l'esemplare: il seme sceglie fra varianti, il luogo
+  // sceglie fra forme, e quando e' il luogo a decidere il seme non deve poter
+  // ribaltare il mestiere del porto.
+  return generateFromRecipe(recipe, { ...request, variant: formVariantOf(request.form) });
 }
 
 /** Cosa serve a disegnare una ricetta: lo stadio, il verso, l'esemplare. */
@@ -251,6 +284,14 @@ export interface RecipeRequest {
    * domanda e' sulla forma intera.
    */
   readonly from?: number;
+
+  /**
+   * Esemplare scelto da chi chiama, invece che dal seme.
+   *
+   * Le forme d'acqua lo usano per fissare il mestiere del porto: la classe
+   * dell'acqua davanti al molo decide la variante, non un tiro di seme.
+   */
+  readonly variant?: number;
 }
 
 /**
@@ -271,7 +312,7 @@ export function generateFromRecipe(recipe: PartsRecipe, request: RecipeRequest):
 
   const stage = Math.min(Math.max(request.stage, 0), maxStageOf(recipe));
   const from = Math.min(Math.max(request.from ?? 0, 0), stage);
-  const variant = variantsOf(recipe)[variantIndexOf(recipe, request.seed ?? 0)];
+  const variant = variantsOf(recipe)[request.variant ?? variantIndexOf(recipe, request.seed ?? 0)];
   for (let s = from; s <= stage; s++) {
     for (const part of recipe.parts[s]) {
       drawPart(canvas, orientPart(part, request.facing, long, short));

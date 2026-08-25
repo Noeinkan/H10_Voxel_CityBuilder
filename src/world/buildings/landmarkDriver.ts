@@ -13,9 +13,19 @@ import { GROUND, WORKS, isDryLand, type GradePlan } from '../grading/grade';
 import { FACING, type Facing } from '../streets/streetGrid';
 import { sightWater, type WaterSight } from '../sites/siteRules';
 import { SITE } from '../sites/config';
-import { LANDMARK, hasAloftRecipe, landmarkOf, maxStageOf } from '../landmarks/config';
+import {
+  LANDMARK,
+  facadeFormOf,
+  hasFacadeForm,
+  hasWaterForm,
+  landmarkOf,
+  maxStageOf,
+  waterFormFor,
+  type LandmarkFormId,
+} from '../landmarks/config';
 import { planFacadeLandmark } from '../landmarks/facadePlan';
-import { generateLandmark, landmarkSpan, stageForBuildings } from '../landmarks/generate';
+import { generateLandmark, landmarkSpan, landmarkWaterColumn, stageForBuildings } from '../landmarks/generate';
+import { classifyWater } from '../terrain/waterClass';
 import { AERIAL_FACES, type AerialFace, type AerialSupport } from '../aerial/terracePlan';
 import type { DeckPlan } from '../aerial/deckPlan';
 import { placeRecipe, type Placement } from './landmarkSiting';
@@ -211,7 +221,7 @@ export class LandmarkDriver {
    * entrambi i casi decide la strada di terra.
    */
   aloftSiteAt(x: number, y: number, kind: CatalystId): AloftVerdict {
-    if (!hasAloftRecipe(kind)) return NOT_ALOFT;
+    if (!hasFacadeForm(kind)) return NOT_ALOFT;
 
     const host = this.buildingAt(x, y);
     if (host === null) return NOT_ALOFT;
@@ -227,7 +237,7 @@ export class LandmarkDriver {
     let refusal: AloftRefusal = 'facade-too-narrow';
 
     for (const face of faces) {
-      const span = landmarkSpan(kind, face as Facing, true);
+      const span = landmarkSpan(kind, face as Facing, facadeFormOf(kind)!);
       if (span === null) return NOT_ALOFT;
       const result = planFacadeLandmark({
         host: aerialSupportOf(host),
@@ -295,15 +305,17 @@ export class LandmarkDriver {
    */
   private buildAloft(site: AloftSite, kind: CatalystId): void {
     const { registry, growth, seed } = this.ctx;
+    const form = facadeFormOf(kind);
+    if (form === null) return;
     const recordSeed = hashCoords(seed, site.x, site.y);
     const stamp = generateLandmark({
       kind,
       stage: 0,
       facing: site.facing,
       seed: recordSeed,
-      aloft: true,
+      form,
     });
-    const span = landmarkSpan(kind, site.facing, true);
+    const span = landmarkSpan(kind, site.facing, form);
     if (stamp === null || span === null) return;
 
     // Un piano di opera senza opera: `footZ === padZ` fa contare zero chunk alla
@@ -330,6 +342,7 @@ export class LandmarkDriver {
       seed: recordSeed,
       facing: site.facing,
       landmark: kind,
+      landmarkForm: form,
       aloft: true,
       supports: [site.hostId, ...piers],
     });
@@ -372,7 +385,7 @@ export class LandmarkDriver {
       if (kind === undefined) continue;
       if (this.ctx.growth.isGrowing(record.id)) continue;
 
-      const recipe = landmarkOf(kind, record.aloft === true);
+      const recipe = landmarkOf(kind, record.landmarkForm);
       if (recipe === null || record.level >= maxStageOf(recipe)) continue;
 
       // Il catalizzatore si ritrova dal riquadro e non da `record.x`, che e'
@@ -417,6 +430,40 @@ export class LandmarkDriver {
     // guardare — e un molo verso il mare sbagliato e' un molo dentro la collina.
     return sightWater(this.ctx.terrain, x, y, SITE.shoreReach, true)
       ?? sightWater(this.ctx.terrain, x, y, SITE.coastalRadius);
+  }
+
+  /**
+   * La forma d'acqua che il luogo seleziona, o `undefined` per la forma a terra.
+   *
+   * **La profondita' e l'esposizione dell'acqua decidono il mestiere del porto.**
+   * Il selettore sonda la colonna `waterline` della ricetta — quella su cui il
+   * piazzamento ha appena portato la battigia — e ne classifica lo specchio con
+   * `classifyWater`: mare aperto, canale protetto o bassofondo. Il risultato e'
+   * una forma d'acqua, cioe' una **variante fissata** della stessa sagoma, e non
+   * una geometria nuova.
+   *
+   * `undefined` copre due casi diversi e giusti entrambi: un ruolo che non ha
+   * forme d'acqua, e una colonna che non e' davvero sommersa — il piazzamento
+   * puo' posare la banchina sull'orlo senza far scorrere la struttura, e li' il
+   * seme sceglie l'esemplare come per qualunque altro landmark.
+   */
+  private waterFormAt(spot: Placement, kind: CatalystId): LandmarkFormId | undefined {
+    if (!hasWaterForm(kind)) return undefined;
+    const column = landmarkWaterColumn(kind, spot.facing, spot.x, spot.y);
+    if (column === null) return undefined;
+
+    const waterZ = this.ctx.terrain.waterTopAt(column.x, column.y);
+    const depth = waterZ - this.ctx.terrain.heightAt(column.x, column.y);
+    if (depth <= 0) return undefined;
+
+    const waterClass = classifyWater(
+      column.x,
+      column.y,
+      depth,
+      (wx, wy) => this.ctx.terrain.heightAt(wx, wy),
+      waterZ,
+    );
+    return waterFormFor(kind, waterClass) ?? undefined;
   }
 
   /**
@@ -488,7 +535,8 @@ export class LandmarkDriver {
    * fondale regge.
    */
   private footingAt(spot: Placement, kind: CatalystId, recordSeed: number): Footing | null {
-    const recipe = landmarkOf(kind);
+    const form = this.waterFormAt(spot, kind);
+    const recipe = landmarkOf(kind, form);
     if (recipe === null) return null;
 
     const finalStamp = generateLandmark({
@@ -496,6 +544,7 @@ export class LandmarkDriver {
       stage: maxStageOf(recipe),
       facing: spot.facing,
       seed: recordSeed,
+      form,
     });
     const mask = finalStamp === null
       ? undefined
@@ -525,6 +574,7 @@ export class LandmarkDriver {
     if (spot === null) return null;
     const { facing, span } = spot;
     const origin = { x: spot.x, y: spot.y };
+    const form = this.waterFormAt(spot, kind);
 
     // Il seme del record si calcola qui e non alla riga di `registry.add`: lo
     // legge anche il generatore, per scegliere l'esemplare, e le due risposte
@@ -532,7 +582,7 @@ export class LandmarkDriver {
     // sarebbe quella che il record dichiara, e un avanzamento — che il seme lo
     // rilegge dal record — ne ritroverebbe un'altra.
     const recordSeed = hashCoords(seed, x, y);
-    const stamp = generateLandmark({ kind, stage: 0, facing, seed: recordSeed });
+    const stamp = generateLandmark({ kind, stage: 0, facing, seed: recordSeed, form });
     if (stamp === null) return null;
 
     const footing = this.footingAt(spot, kind, recordSeed);
@@ -561,6 +611,7 @@ export class LandmarkDriver {
       seed: recordSeed,
       facing,
       landmark: kind,
+      landmarkForm: form,
     });
 
     growth.enqueueSegments(record, stamp);
@@ -678,7 +729,7 @@ export class LandmarkDriver {
       stage,
       facing,
       seed: record.seed,
-      aloft: record.aloft === true,
+      form: record.landmarkForm,
     });
     if (stamp === null) return state;
 

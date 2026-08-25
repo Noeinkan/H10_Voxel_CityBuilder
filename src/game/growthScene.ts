@@ -27,7 +27,7 @@ import {
   type BuildingRecord,
   type ReadonlyBuildingRegistry,
 } from '../world/buildings/BuildingRegistry';
-import { hasAloftRecipe } from '../world/landmarks/config';
+import { hasFacadeForm } from '../world/landmarks/config';
 import { createReachCost } from '../world/reachCost';
 import { StreetNetwork } from '../world/streets/StreetNetwork';
 import type { Facing } from '../world/streets/streetGrid';
@@ -240,7 +240,7 @@ export class GrowthScene {
    * chiederebbe il posto sbagliato. E' la stessa distinzione della mensola.
    */
   catalystUsesFacade(target: BuildingClass | CatalystId): boolean {
-    return hasAloftRecipe(roleOf(target));
+    return hasFacadeForm(roleOf(target));
   }
 
   private usesFacade(x: number, y: number, target: BuildingClass | CatalystId): boolean {
@@ -590,7 +590,7 @@ export class GrowthScene {
 
     const structures = this.trafficStructures();
     const key = `${skyline}|${structures
-      .map((item) => `${item.id}@${item.cx},${item.cy}:${item.facing}:${item.aloft ? 1 : 0}`)
+      .map((item) => `${item.id}@${item.cx},${item.cy}:${item.facing}:${item.form ?? 'ground'}`)
       .join('|')}`;
     if (key === this.routeKey && rides === this.rides) return;
     this.routeKey = key;
@@ -653,7 +653,7 @@ export class GrowthScene {
         y: record.y,
         facing: (record.facing ?? 0) as Facing,
         z: record.baseZ,
-        aloft: record.aloft === true,
+        form: record.landmarkForm,
       });
     }
     return out;

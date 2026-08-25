@@ -9,6 +9,7 @@ import type { BuildingForm } from './config';
 import type { ArcologyKind } from '../arcology/config';
 import type { SpanKind } from '../spans/config';
 import type { RopewayPart } from '../ropeway/config';
+import type { LandmarkFormId } from '../landmarks/config';
 import { isBuildable, takesGround, type AerialPart } from '../aerial/config';
 import { toChunk } from '../chunkCoords';
 
@@ -155,6 +156,21 @@ export interface BuildingRecord {
    * perche' una torre che cambia sagoma sotto uno scalo lo lascerebbe appeso.
    */
   readonly aloft?: boolean;
+
+  /**
+   * La forma contestuale con cui il landmark e' stato scritto, se il luogo ne
+   * ha scelta una.
+   *
+   * **E' la ricetta, e `landmark` il ruolo.** Il catalizzatore, l'influenza e la
+   * selezione restano del ruolo; questa stringa dice quale sagoma lo disegna.
+   * Due forme dello stesso ruolo convivono cosi' senza un secondo flag — il
+   * record conserva la forma e `landmarkDriver` la rilegge a ogni avanzamento.
+   *
+   * Resta fuori dall'indice: la sola cosa che il registry deve sapere di una
+   * forma e' se prende suolo, e quella e' `aloft`, denormalizzato al piazzamento
+   * e letto da `takesGroundOf` senza dipendere da `landmarks/`.
+   */
+  readonly landmarkForm?: LandmarkFormId;
 
   /**
    * Forma dell'arcologia, se questo record e' una megastruttura.

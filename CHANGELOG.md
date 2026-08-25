@@ -11,6 +11,13 @@ coincide con il messaggio di commit.
 
 ---
 
+## In corso — Forme contestuali dei landmark
+
+- **Il ruolo e la forma fisica sono ora due campi distinti.** `BuildingRecord.landmark` resta il catalizzatore (il ruolo di simulazione), mentre il nuovo `landmarkForm` conserva quale ricetta disegna lo stamp; `aloft` resta come flag meccanico denormalizzato («non prende suolo / l'ospite non cresce») derivato dalla forma. Avanzamento, selezione e rigenerazione ritrovano cosi' sempre la stessa ricetta, e il ruolo non decide piu' da solo che struttura compare.
+- **Le forme contestuali generalizzano `SKYPORT`.** Al posto della sola mappa `ALOFT`, `FORMS` elenca per chiave `LandmarkFormId` le seconde strutture di un ruolo: tre di facciata (`skyport`, `sky-park`, `sky-transit`) e tre d'acqua per il porto (`port-bulk`, `port-shipyard`, `port-passenger`). `landmarkOf(kind, form?)` legge da `FORMS` quando la forma c'e', altrimenti ripiega sulla ricetta a terra.
+- **Il porto promuove le sue tre varianti a forme scelte dal luogo.** La classe dell'acqua davanti al molo (`classifyWater`) decide il mestiere: `open` diventa bulk, `canal` diventa shipyard, `shallow` diventa passenger. Niente nuova geometria — banchina, gru e magazzini restano quelli — cambia solo cosa ci si scarica, e a deciderlo e' la profondita' e l'esposizione dell'acqua invece del seme.
+- **Il selettore prova facciata, poi acqua, poi terra.** `LandmarkDriver.place` interroga prima il sito in quota, poi il nuovo sito costiero, poi la fondazione a terra; il rifiuto del porto distingue «niente acqua» da «acqua del tipo sbagliato». I consumatori (`SelectionPanelModel`, `growthScene`, `swatchCatalog`, `routes`) leggono `landmarkForm` invece di `aloft`.
+
 ## In corso — Arcologie: gli stadi leggono il conteggio congelato
 
 - **Il podio non perde più i vicini che l'hanno reso possibile.** `climb` ricalcolava `countWithinRadius` dopo lo sventramento dell'isolato, che toglie dal raggio proprio gli edifici che avevano fatto superare `minBuilt`: un'arcologia fondata a sessantaquattro si fermava sotto la corona. Il conteggio si legge ora una volta sola, in `found`, prima dello sventramento, e viaggia su `foundedNeighbours` fino alla progressione degli stadi — la stessa misura decide fondazione e stadi, sullo stesso istante.

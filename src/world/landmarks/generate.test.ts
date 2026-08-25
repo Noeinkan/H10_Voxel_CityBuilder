@@ -5,15 +5,21 @@ import { FACING, type Facing } from '../streets/streetGrid';
 import { solidCount, stampFootprint, STAMP_EMPTY, type VoxelStamp } from '../buildings/stamp';
 import {
   BERTH,
+  FORMS,
   LANDMARK,
   LANDMARKS,
   SKYPORT,
-  hasAloftRecipe,
+  hasFacadeForm,
+  hasWaterForm,
+  isFacadeForm,
   landmarkOf,
   maxStageOf,
   variantsOf,
+  waterFormFor,
+  type LandmarkFormId,
   type LandmarkRecipe,
 } from './config';
+import { WATER_CLASS } from '../visualBlock';
 import {
   generateLandmark,
   landmarkMoorings,
@@ -422,11 +428,11 @@ describe('catalogo dei landmark', () => {
 
 describe('scalo in quota', () => {
   it('e una ricetta a se, non un esemplare dell aeroporto', () => {
-    expect(hasAloftRecipe('airport')).toBe(true);
-    expect(hasAloftRecipe('port')).toBe(false);
-    expect(landmarkOf('airport', true)).toBe(SKYPORT);
+    expect(hasFacadeForm('airport')).toBe(true);
+    expect(hasFacadeForm('port')).toBe(false);
+    expect(landmarkOf('airport', 'skyport')).toBe(SKYPORT);
     expect(landmarkOf('airport')).not.toBe(SKYPORT);
-    expect(landmarkOf('port', true)).toBeNull();
+    expect(landmarkOf('port', 'skyport')).toBeNull();
   });
 
   it('sta su una facciata: il fronte non supera l impronta massima di un edificio', () => {
@@ -452,17 +458,17 @@ describe('scalo in quota', () => {
 
     for (let stage = 1; stage <= maxStageOf(SKYPORT); stage++) {
       const before = solidCount(
-        generateLandmark({ kind: 'airport', stage: stage - 1, facing: FACING.east, aloft: true })!,
+        generateLandmark({ kind: 'airport', stage: stage - 1, facing: FACING.east, form: 'skyport' })!,
       );
       const after = solidCount(
-        generateLandmark({ kind: 'airport', stage, facing: FACING.east, aloft: true })!,
+        generateLandmark({ kind: 'airport', stage, facing: FACING.east, form: 'skyport' })!,
       );
       expect(after).toBeGreaterThan(before);
     }
   });
 
   it('ormeggia in quota tre mestieri, e nessuna barca a terra', () => {
-    const moorings = landmarkMoorings('airport', FACING.east, 40, 60, true);
+    const moorings = landmarkMoorings('airport', FACING.east, 40, 60, 'skyport');
     // Dirigibile al pilone, eVTOL sulla piazzola, pallone alla cima: su otto
     // colonne di tetto non ci sta una pista, e questi sono i tre modi che
     // restano di arrivare in cima a un grattacielo.
@@ -477,6 +483,68 @@ describe('scalo in quota', () => {
     // attraverserebbero.
     const masts = moorings.filter((mooring) => mooring.berth === BERTH.airship);
     expect(Math.abs(masts[0].heading - masts[1].heading)).toBeCloseTo(Math.PI, 9);
+  });
+});
+
+describe('forme contestuali', () => {
+  it('la forma d acqua fissa l esemplare e condivide la ricetta a terra', () => {
+    expect(hasWaterForm('port')).toBe(true);
+    expect(hasWaterForm('airport')).toBe(false);
+    expect(waterFormFor('port', WATER_CLASS.open)).toBe('port-bulk');
+    expect(waterFormFor('port', WATER_CLASS.canal)).toBe('port-shipyard');
+    expect(waterFormFor('port', WATER_CLASS.shallow)).toBe('port-passenger');
+    // La forma d'acqua non e' una seconda geometria: `landmarkOf` risponde la
+    // ricetta del catalogo, e la forma sceglie solo la variante da fissare.
+    expect(landmarkOf('port', 'port-bulk')).toBe(LANDMARKS.port);
+    expect(landmarkOf('port', 'port-passenger')).toBe(LANDMARKS.port);
+    // Un ruolo e una forma di un altro ruolo non si incrociano: un porto non
+    // puo' essere uno skyport.
+    expect(landmarkOf('port', 'skyport')).toBeNull();
+  });
+
+  it('una forma di facciata e una ricetta propria, e non prende suolo', () => {
+    expect(isFacadeForm('sky-park')).toBe(true);
+    expect(isFacadeForm('port-bulk')).toBe(false);
+    expect(hasFacadeForm('park')).toBe(true);
+    expect(hasFacadeForm('transport')).toBe(true);
+    expect(landmarkOf('park', 'sky-park')).not.toBe(LANDMARKS.park);
+    // Nessun grembiule su un tetto: la cornice di suolo pubblico e' suolo.
+    expect(landmarkOf('park', 'sky-park')!.apron).toBe(0);
+  });
+
+  it('ogni ricetta di forma rispetta ingombro, stadi e palette', () => {
+    for (const id of Object.keys(FORMS) as LandmarkFormId[]) {
+      const recipe = FORMS[id].recipe;
+      const [long, short] = recipe.span;
+      for (const stage of recipe.parts) {
+        for (const part of stage) {
+          const bounds = partBounds(part);
+          expect(bounds.x0, `${id} x0`).toBeGreaterThanOrEqual(0);
+          expect(bounds.y0, `${id} y0`).toBeGreaterThanOrEqual(0);
+          expect(bounds.z0, `${id} z0`).toBeGreaterThanOrEqual(0);
+          expect(bounds.x1, `${id} x1`).toBeLessThan(long);
+          expect(bounds.y1, `${id} y1`).toBeLessThan(short);
+          expect(bounds.z1, `${id} z1`).toBeLessThan(recipe.height);
+        }
+      }
+      expect(recipe.stages[0], id).toBe(0);
+      expect(recipe.stages, id).toHaveLength(recipe.parts.length);
+      const stamp = generateLandmark({
+        kind: recipe.kind,
+        stage: maxStageOf(recipe),
+        facing: FACING.east,
+        form: id,
+      })!;
+      for (const pal of stamp.voxels) expect(pal).toBeLessThan(PALETTE_SIZE);
+    }
+  });
+
+  it('una forma di facciata sta dentro l impronta massima di un edificio', () => {
+    for (const id of Object.keys(FORMS) as LandmarkFormId[]) {
+      if (!isFacadeForm(id)) continue;
+      expect(FORMS[id].recipe.span[0], id).toBeLessThanOrEqual(8);
+      expect(FORMS[id].recipe.span[1], id).toBeLessThanOrEqual(8);
+    }
   });
 });
 

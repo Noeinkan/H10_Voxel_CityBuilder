@@ -11,10 +11,13 @@ import { generateBuilding } from '../buildings/generate';
 import type { VoxelStamp } from '../buildings/stamp';
 import { typologyProfile } from '../buildings/typology';
 import {
+  FORMS,
   LANDMARKS,
-  SKYPORT,
+  contextualFormsOf,
+  isFacadeForm,
   maxStageOf,
   variantsOf,
+  type LandmarkFormId,
   type LandmarkRecipe,
   type PartsRecipe,
 } from '../landmarks/config';
@@ -23,9 +26,8 @@ import { FACING } from '../streets/streetGrid';
 import { BIOME_NAMES, TERRAIN } from '../terrain/config';
 import { treeSpec, treeTop } from '../terrain/decor';
 import { TREE_SHAPES } from '../terrain/flora';
-import { SURFACE_KIND_NAMES } from '../visualBlock';
+import { SURFACE_KIND_NAMES, WATER_CLASS } from '../visualBlock';
 import {
-  CELL_FOOTPRINT,
   CELL_HEIGHT,
   SCALE_ITEMS,
   SCALE_ORIGIN_Y,
@@ -209,7 +211,7 @@ function landmarkRows(): readonly (readonly PendingCatalogSubject[])[] {
     const recipe = LANDMARKS[catalyst.id];
     if (recipe === undefined) return [];
     const row = variantsOf(recipe).map((variant, index) => landmarkSubject(catalyst, recipe, index, variant.name));
-    if (catalyst.id === 'airport') row.push(skyportSubject(catalyst));
+    for (const form of contextualFormsOf(catalyst.id)) row.push(formSubject(catalyst, form));
     return row;
   });
 }
@@ -230,23 +232,48 @@ function landmarkSubject(
     label: `${catalyst.label} · ${variantName}`,
     note: catalyst.description,
     stamp,
-    info: landmarkInfo(catalyst, variantName, stage, seed, recipe, false),
+    info: landmarkInfo(catalyst, variantName, stage, seed, recipe),
   };
 }
 
-function skyportSubject(catalyst: CatalystDefinition): PendingCatalogSubject {
-  const stage = maxStageOf(SKYPORT);
+function formSubject(catalyst: CatalystDefinition, form: LandmarkFormId): PendingCatalogSubject {
+  const entry = FORMS[form];
+  const stage = maxStageOf(entry.recipe);
   const seed = 0;
   return {
-    id: 'landmark:airport:skyport',
+    id: `landmark:${catalyst.id}:${form}`,
     kind: 'landmark',
     band: 'landmarks',
-    label: 'Airport · Skyport',
-    note: 'Scalo in quota per dirigibili, eVTOL e mongolfiere.',
-    stamp: generateFromRecipe(SKYPORT, { stage, facing: FACING.east, seed }),
-    info: landmarkInfo(catalyst, 'skyport', stage, seed, SKYPORT, true),
+    label: `${catalyst.label} · ${FORM_LABELS[form]}`,
+    note: FORM_NOTES[form],
+    stamp: generateFromRecipe(entry.recipe, { stage, facing: FACING.east, seed, variant: entry.variant }),
+    info: landmarkInfo(catalyst, FORM_LABELS[form], stage, seed, entry.recipe, form),
   };
 }
+
+const FORM_LABELS: Readonly<Record<LandmarkFormId, string>> = {
+  skyport: 'Skyport',
+  'sky-park': 'Sky Park',
+  'sky-transit': 'Sky Transit',
+  'port-bulk': 'Bulk',
+  'port-shipyard': 'Shipyard',
+  'port-passenger': 'Passenger',
+};
+
+const FORM_NOTES: Readonly<Record<LandmarkFormId, string>> = {
+  skyport: 'Rooftop hub for airships, eVTOL and balloons.',
+  'sky-park': 'A garden laid over a rooftop.',
+  'sky-transit': 'A head station lifting the line onto a roof.',
+  'port-bulk': 'Deep-water berth for bulk cargo.',
+  'port-shipyard': 'Sheltered basin to launch hulls.',
+  'port-passenger': 'Light marina for small craft.',
+};
+
+const WATER_LABELS: Readonly<Record<number, string>> = {
+  [WATER_CLASS.open]: 'open water',
+  [WATER_CLASS.canal]: 'sheltered canal',
+  [WATER_CLASS.shallow]: 'shallows',
+};
 
 function landmarkInfo(
   catalyst: CatalystDefinition,
@@ -254,15 +281,18 @@ function landmarkInfo(
   stage: number,
   seed: number,
   recipe: PartsRecipe,
-  aloft: boolean,
+  form?: LandmarkFormId,
 ): readonly SwatchInfoRow[] {
+  const place = form === undefined
+    ? catalyst.site
+    : isFacadeForm(form) ? 'in quota' : WATER_LABELS[FORMS[form].waterClass!];
   return [
     { label: 'Ruolo', value: catalyst.id },
     { label: 'Variante', value: variant },
     { label: 'Stadio', value: `${stage} di ${maxStageOf(recipe)}` },
     { label: 'Seed', value: String(seed) },
     { label: 'Fronte', value: 'est' },
-    { label: 'Luogo', value: aloft ? 'in quota' : catalyst.site },
+    { label: 'Luogo', value: place },
     { label: 'Grembiule', value: `${'apron' in recipe ? recipe.apron : 0} voxel` },
   ];
 }
@@ -430,7 +460,7 @@ function subjectsExtent(subjects: readonly SwatchSubject[]): SwatchExtent {
   let minY = Number.POSITIVE_INFINITY;
   let maxX = Number.NEGATIVE_INFINITY;
   let maxY = Number.NEGATIVE_INFINITY;
-  let maxZ = SWATCH.groundZ;
+  let maxZ: number = SWATCH.groundZ;
   for (const subject of subjects) {
     minX = Math.min(minX, subject.rect.x0);
     minY = Math.min(minY, subject.rect.y0);

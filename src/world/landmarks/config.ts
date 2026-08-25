@@ -2,7 +2,7 @@ import type { CatalystId } from '../../sim';
 import { PALETTE_SLOTS } from '../../engine/paletteSlots';
 import { GRADING } from '../grading/config';
 import { TERRACE } from '../terrain/config';
-import { SURFACE_KIND } from '../visualBlock';
+import { SURFACE_KIND, WATER_CLASS, type WaterClass } from '../visualBlock';
 import { PART, box, type Part } from './parts';
 
 /**
@@ -1520,30 +1520,197 @@ export const SKYPORT: LandmarkRecipe = {
 };
 
 /**
- * Le ricette che una facciata sa ospitare, per ruolo.
+ * Il giardino pensile: il parco quando il click cade su un tetto.
  *
- * Una sola, per ora, e la tabella esiste comunque: il giorno in cui un secondo
- * ruolo impara a posarsi in quota, il piazzamento non deve imparare niente.
+ * Un parco a terra e' assenza di volume; in quota l'assenza non basta, perche'
+ * sopra un tetto vuoto non c'e' niente da leggere. La firma e' allora il bordo
+ * lastricato che chiude il prato e il chiosco centrale: e' il segno che quel
+ * tetto e' diventato un luogo, non una copertura.
  */
-const ALOFT: Partial<Record<CatalystId, LandmarkRecipe>> = {
-  airport: SKYPORT,
+export const SKY_PARK: LandmarkRecipe = {
+  kind: 'park',
+  span: [8, 8],
+  height: 12,
+  anchor: [4, 4],
+  apron: 0,
+  stages: [0, 3, 8, 14],
+  parts: [
+    [
+      box(PART.deck, 0, 0, 8, 8, 0, 1, PALETTE_SLOTS.grass, SURFACE_KIND.plain),
+      box(PART.deck, 0, 0, 8, 1, 0, 1, PALETTE_SLOTS.stoneWarm, SURFACE_KIND.utility),
+      box(PART.deck, 0, 7, 8, 1, 0, 1, PALETTE_SLOTS.stoneWarm, SURFACE_KIND.utility),
+      box(PART.deck, 0, 1, 1, 6, 0, 1, PALETTE_SLOTS.stoneWarm, SURFACE_KIND.utility),
+      box(PART.deck, 7, 1, 1, 6, 0, 1, PALETTE_SLOTS.stoneWarm, SURFACE_KIND.utility),
+    ],
+    [...tree(1, 1), ...tree(4, 1), ...tree(1, 4), ...tree(4, 4)],
+    [
+      box(PART.colonnade, 2, 2, 4, 4, 1, 4, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.civic, {
+        step: 2,
+        cap: PALETTE_SLOTS.stone,
+      }),
+    ],
+    [
+      box(PART.steps, 3, 3, 2, 2, 5, 2, PALETTE_SLOTS.roofWhite, SURFACE_KIND.roofTech, { step: 1 }),
+    ],
+  ],
 };
 
 /**
- * La ricetta di un ruolo, a terra o su una facciata.
+ * La stazione di testa in quota: il transito quando il click cade su un tetto.
  *
- * `aloft` non e' una preferenza: e' il luogo che il click ha scelto, e un ruolo
- * che non sa stare in quota risponde `null` invece di ripiegare a terra —
+ * Il viadotto a terra e' una linea sospesa fra appoggi; sopra un tetto non c'e'
+ * una linea da tirare, quindi la firma diventa il binario che **sale** — due
+ * pylon e un impalcato che li unisce — piu' il chiosco che lo serve. E' il nodo
+ * da cui il transito parte, invece del tratto che lo attraversa.
+ */
+export const SKY_TRANSIT: LandmarkRecipe = {
+  kind: 'transport',
+  span: [8, 8],
+  height: 16,
+  anchor: [4, 4],
+  apron: 0,
+  stages: [0, 4, 10, 18],
+  parts: [
+    [
+      box(PART.deck, 0, 0, 8, 8, 0, 1, PALETTE_SLOTS.asphalt, SURFACE_KIND.utility),
+      box(PART.shell, 1, 1, 6, 5, 1, 5, PALETTE_SLOTS.concrete, SURFACE_KIND.civic, {
+        cap: PALETTE_SLOTS.concretePale,
+      }),
+      box(PART.deck, 1, 1, 6, 5, 6, 1, PALETTE_SLOTS.roofPale, SURFACE_KIND.roofTech),
+    ],
+    [
+      box(PART.mast, 0, 2, 2, 2, 1, 8, PALETTE_SLOTS.concrete, SURFACE_KIND.utility, {
+        cap: PALETTE_SLOTS.stone,
+      }),
+      box(PART.mast, 6, 2, 2, 2, 1, 8, PALETTE_SLOTS.concrete, SURFACE_KIND.utility, {
+        cap: PALETTE_SLOTS.stone,
+      }),
+      box(PART.boom, 0, 2, 8, 2, 9, 2, PALETTE_SLOTS.concrete, SURFACE_KIND.utility, {
+        cap: PALETTE_SLOTS.asphaltDark,
+      }),
+    ],
+    [
+      box(PART.pitch, 1, 1, 6, 5, 7, 3, PALETTE_SLOTS.roofPale, SURFACE_KIND.roofTech, {
+        step: 1,
+        cap: PALETTE_SLOTS.metalBrass,
+      }),
+      box(PART.slab, 2, 1, 1, 5, 6, 1, PALETTE_SLOTS.glassPale, SURFACE_KIND.luminous),
+    ],
+    [
+      box(PART.mast, 3, 6, 2, 2, 1, 10, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.civic, {
+        cap: PALETTE_SLOTS.metalGold,
+      }),
+      box(PART.slab, 3, 6, 2, 2, 11, 1, PALETTE_SLOTS.glassPale, SURFACE_KIND.luminous),
+    ],
+  ],
+};
+
+/**
+ * Le forme contestuali: una seconda struttura dello stesso ruolo.
+ *
+ * **Sono la generalizzazione di `SKYPORT`.** Il ruolo resta `kind` — il
+ * catalizzatore, l'influenza, la selezione — e la forma dice quale ricetta
+ * disegna lo stamp. A scegliere la forma e' il **luogo**, non il seme: e' la
+ * differenza che separa una forma da una variante, che il seme la sceglie e
+ * condivide ingombro e tronco.
+ *
+ * Due modi di essere una seconda forma, e due tabelle lo dicono:
+ *
+ * - **forma di facciata** (`aloft`): una ricetta propria, con ingombro e firma
+ *   suoi. Si appende a un tetto, non prende suolo e non dipinge un grembiule;
+ * - **forma d'acqua**: un mestiere della ricetta a terra, espresso come una
+ *   **variante fissata** della stessa sagoma. Il porto non ha bisogno di una
+ *   seconda geometria — banchina, gru e magazzini restano quelli — gli cambia
+ *   solo cosa ci si scarica, e a deciderlo e' la classe dell'acqua davanti al
+ *   molo invece di un tiro di seme.
+ */
+export type LandmarkFormId =
+  | 'skyport'
+  | 'sky-park'
+  | 'sky-transit'
+  | 'port-bulk'
+  | 'port-shipyard'
+  | 'port-passenger';
+
+export interface LandmarkForm {
+  readonly kind: CatalystId;
+  /** true per le forme che si appendono a una facciata e non prendono suolo. */
+  readonly aloft: boolean;
+  readonly recipe: LandmarkRecipe;
+  /** Variante fissata della ricetta a terra: la forma d'acqua sceglie il mestiere. */
+  readonly variant?: number;
+  /** Classe d'acqua che seleziona questa forma. Solo per le forme d'acqua. */
+  readonly waterClass?: WaterClass;
+}
+
+export const FORMS: Readonly<Record<LandmarkFormId, LandmarkForm>> = {
+  skyport: { kind: 'airport', aloft: true, recipe: SKYPORT },
+  'sky-park': { kind: 'park', aloft: true, recipe: SKY_PARK },
+  'sky-transit': { kind: 'transport', aloft: true, recipe: SKY_TRANSIT },
+  'port-bulk': { kind: 'port', aloft: false, recipe: LANDMARKS.port!, variant: 0, waterClass: WATER_CLASS.open },
+  'port-shipyard': { kind: 'port', aloft: false, recipe: LANDMARKS.port!, variant: 1, waterClass: WATER_CLASS.canal },
+  'port-passenger': { kind: 'port', aloft: false, recipe: LANDMARKS.port!, variant: 2, waterClass: WATER_CLASS.shallow },
+};
+
+/**
+ * La ricetta di un ruolo, a terra o nella sua forma contestuale.
+ *
+ * `form` non e' una preferenza: e' il luogo che il click ha scelto, e un ruolo
+ * che non ha quella forma risponde `null` invece di ripiegare a terra —
  * ripiegare significherebbe costruire un campo di volo dentro un grattacielo.
  */
-export function landmarkOf(kind: CatalystId, aloft = false): LandmarkRecipe | null {
-  if (aloft) return ALOFT[kind] ?? null;
+export function landmarkOf(kind: CatalystId, form?: LandmarkFormId): LandmarkRecipe | null {
+  if (form !== undefined) {
+    const entry = FORMS[form];
+    return entry !== undefined && entry.kind === kind ? entry.recipe : null;
+  }
   return LANDMARKS[kind] ?? null;
 }
 
+/** true se la forma si appende a una facciata e non prende suolo. */
+export function isFacadeForm(form: LandmarkFormId): boolean {
+  return FORMS[form].aloft;
+}
+
 /** true se questo ruolo ha una forma da tetto oltre a quella da terra. */
-export function hasAloftRecipe(kind: CatalystId): boolean {
-  return ALOFT[kind] !== undefined;
+export function hasFacadeForm(kind: CatalystId): boolean {
+  return facadeFormOf(kind) !== null;
+}
+
+/** La forma da facciata di un ruolo, o null se non ne ha una. */
+export function facadeFormOf(kind: CatalystId): LandmarkFormId | null {
+  for (const id of contextualFormsOf(kind)) {
+    if (FORMS[id].aloft) return id;
+  }
+  return null;
+}
+
+/** true se questo ruolo sceglie una forma in base all'acqua. */
+export function hasWaterForm(kind: CatalystId): boolean {
+  return contextualFormsOf(kind).some((id) => !FORMS[id].aloft);
+}
+
+/** La forma d'acqua che questa classe seleziona, o null. */
+export function waterFormFor(kind: CatalystId, waterClass: WaterClass): LandmarkFormId | null {
+  for (const id of contextualFormsOf(kind)) {
+    const form = FORMS[id];
+    if (!form.aloft && form.waterClass === waterClass) return id;
+  }
+  return null;
+}
+
+/** La variante fissata da una forma, o `undefined` per la scelta dal seme. */
+export function formVariantOf(form: LandmarkFormId | undefined): number | undefined {
+  return form === undefined ? undefined : FORMS[form].variant;
+}
+
+/** Le forme contestuali di un ruolo, nell'ordine di dichiarazione. */
+export function contextualFormsOf(kind: CatalystId): readonly LandmarkFormId[] {
+  const out: LandmarkFormId[] = [];
+  for (const id of Object.keys(FORMS) as LandmarkFormId[]) {
+    if (FORMS[id].kind === kind) out.push(id);
+  }
+  return out;
 }
 
 /** Ultimo stadio raggiungibile da una ricetta. */

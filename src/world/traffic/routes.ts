@@ -1,5 +1,5 @@
 import { ferryLinesOf, type BuildingClass, type CatalystId } from '../../sim';
-import { BERTH } from '../landmarks/config';
+import { BERTH, type LandmarkFormId } from '../landmarks/config';
 import { landmarkMoorings, type WorldMooring } from '../landmarks/generate';
 import { FACING, type Facing } from '../streets/streetGrid';
 import { TRAFFIC, VEHICLE } from './config';
@@ -51,8 +51,11 @@ export interface TrafficStructure {
   readonly facing: Facing;
   /** Quota del piano finito. */
   readonly z: number;
-  /** Vero se la struttura poggia su un tetto invece che sul terreno. */
-  readonly aloft: boolean;
+  /**
+   * La forma contestuale con cui la struttura e' stata scritta, se il luogo ne
+   * ha scelta una. Decide la ricetta degli ormeggi; assente vale la forma a terra.
+   */
+  readonly form?: LandmarkFormId;
 }
 
 /** Cosa serve sapere del mare per tracciare una rotta. */
@@ -179,7 +182,7 @@ function mooringsOf(structure: TrafficStructure): readonly WorldMooring[] {
     structure.facing,
     structure.x,
     structure.y,
-    structure.aloft,
+    structure.form,
   );
 }
 

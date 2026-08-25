@@ -454,7 +454,7 @@ interface StructureHead {
 function structureHead(info: StructureInfo): StructureHead {
   const record = info.record;
   if (record.landmark !== undefined) {
-    const recipe = landmarkOf(record.landmark);
+    const recipe = landmarkOf(record.landmark, record.landmarkForm);
     // Per un landmark `level` **e'** lo stadio: la stessa macchina lo fa
     // avanzare, ma chiamarlo livello direbbe che compete con l'altezza degli
     // edifici, e non e' cosi'.

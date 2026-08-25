@@ -29,7 +29,6 @@ function structure(
     y,
     facing: FACING.east,
     z: TRAFFIC.waterZ,
-    aloft: false,
     ...extra,
   };
 }
@@ -190,7 +189,7 @@ describe('planTraffic', () => {
 
   it('lo scalo in quota mette in moto dirigibili, eVTOL e mongolfiere', () => {
     const routes = planTraffic(
-      [structure('airport', 0, 0, { z: 96, aloft: true })],
+      [structure('airport', 0, 0, { z: 96, form: 'skyport' })],
       () => false,
     );
 
@@ -218,7 +217,7 @@ describe('planTraffic', () => {
 
   it('l eVTOL scende davvero sulla piazzola invece di sorvolarla', () => {
     const routes = planTraffic(
-      [structure('airport', 0, 0, { z: 96, aloft: true })],
+      [structure('airport', 0, 0, { z: 96, form: 'skyport' })],
       () => false,
     );
     const hop = routes.find((route) => route.kind === VEHICLE.evtol)!;
@@ -234,7 +233,7 @@ describe('planTraffic', () => {
 
   it('la mongolfiera sale, si allontana e torna al proprio pilone', () => {
     const routes = planTraffic(
-      [structure('airport', 0, 0, { z: 96, aloft: true })],
+      [structure('airport', 0, 0, { z: 96, form: 'skyport' })],
       () => false,
     );
     const balloon = routes.find((route) => route.kind === VEHICLE.balloon)!;
