@@ -2,7 +2,9 @@ import { createHudIcon } from './hudIcons';
 import {
   buildSelectionPanelModel,
   defaultSection,
+  SECTION_TAB_LABELS,
   type SelectionActionId,
+  type SelectionPanelModel,
   type SelectionSection,
   type SelectionSectionId,
 } from './SelectionPanelModel';
@@ -48,8 +50,12 @@ export class SelectionPanel {
   private readonly root = document.createElement('aside');
   private readonly title = document.createElement('strong');
   private readonly subtitle = document.createElement('span');
+  private readonly tabs = document.createElement('div');
+  private readonly tabNodes = new Map<SelectionSectionId, HTMLButtonElement>();
   private readonly view: SectionView;
   private activeSection: SelectionSectionId = 'block';
+  private tabOrder: SelectionSectionId[] = [];
+  private latestModel: SelectionPanelModel | null = null;
 
   private lastPaint = 0;
 
@@ -76,7 +82,10 @@ export class SelectionPanel {
     heading.append(this.title, this.subtitle);
     head.append(heading, close);
 
-    this.root.append(head);
+    this.tabs.className = 'selection-tabs';
+    this.tabs.setAttribute('role', 'tablist');
+
+    this.root.append(head, this.tabs);
     this.view = this.createSection();
     parent.appendChild(this.root);
   }
@@ -120,6 +129,13 @@ export class SelectionPanel {
   private paint(selection: Selection, now: number, isolatedBlock: string | null): void {
     this.lastPaint = now;
     const model = buildSelectionPanelModel(selection, isolatedBlock);
+    this.latestModel = model;
+    this.syncTabs(model);
+    this.applyActiveTab();
+    this.paintSection(model);
+  }
+
+  private paintSection(model: SelectionPanelModel): void {
     let section = model.sections.find((candidate) => candidate.id === this.activeSection);
     if (section === undefined) {
       this.activeSection = 'block';
@@ -131,9 +147,77 @@ export class SelectionPanel {
     paintRows(this.view, section, section.summary);
   }
 
+  /**
+   * Le linguette delle quattro unita'.
+   *
+   * Si ricostruiscono solo quando l'insieme cambia — una selezione su un
+   * landmark ha la sezione `structure` in piu' — perche' i nodi devono restare
+   * stabili fra `pointerdown` e `click`, come i bottoni del dock.
+   */
+  private syncTabs(model: SelectionPanelModel): void {
+    const ids = model.sections.map((section) => section.id);
+    if (ids.length === this.tabOrder.length && ids.every((id, index) => id === this.tabOrder[index])) {
+      return;
+    }
+    this.tabOrder = ids;
+    this.tabNodes.clear();
+    this.tabs.replaceChildren();
+    for (const section of model.sections) {
+      const tab = document.createElement('button');
+      tab.type = 'button';
+      tab.className = 'selection-tab';
+      tab.id = `selection-tab-${section.id}`;
+      tab.textContent = SECTION_TAB_LABELS[section.id];
+      tab.setAttribute('role', 'tab');
+      tab.setAttribute('aria-controls', 'selection-body');
+      tab.addEventListener('click', () => this.select(section.id));
+      tab.addEventListener('keydown', (event) => this.moveTab(event, section.id));
+      this.tabNodes.set(section.id, tab);
+      this.tabs.appendChild(tab);
+    }
+  }
+
+  private applyActiveTab(): void {
+    for (const [id, tab] of this.tabNodes) {
+      const open = id === this.activeSection;
+      tab.setAttribute('aria-selected', open ? 'true' : 'false');
+      tab.tabIndex = open ? 0 : -1;
+      tab.dataset['active'] = open ? 'true' : 'false';
+    }
+    this.view.body.setAttribute('aria-labelledby', `selection-tab-${this.activeSection}`);
+  }
+
+  private select(id: SelectionSectionId): void {
+    if (this.activeSection === id) return;
+    this.activeSection = id;
+    this.applyActiveTab();
+    if (this.latestModel !== null) this.paintSection(this.latestModel);
+    this.handlers.onSection(id);
+  }
+
+  /** Frecce e Home/End seguono il pattern ARIA, come le linguette delle policy. */
+  private moveTab(event: KeyboardEvent, current: SelectionSectionId): void {
+    const index = this.tabOrder.indexOf(current);
+    const next = event.key === 'ArrowRight' || event.key === 'ArrowDown'
+      ? this.tabOrder[(index + 1) % this.tabOrder.length]
+      : event.key === 'ArrowLeft' || event.key === 'ArrowUp'
+        ? this.tabOrder[(index - 1 + this.tabOrder.length) % this.tabOrder.length]
+        : event.key === 'Home'
+          ? this.tabOrder[0]
+          : event.key === 'End'
+            ? this.tabOrder[this.tabOrder.length - 1]
+            : undefined;
+    if (next === undefined) return;
+    event.preventDefault();
+    this.select(next);
+    this.tabNodes.get(next)?.focus();
+  }
+
   private createSection(): SectionView {
     const body = document.createElement('div');
     body.className = 'selection-body';
+    body.id = 'selection-body';
+    body.setAttribute('role', 'tabpanel');
     const summary = document.createElement('p');
     summary.className = 'selection-summary';
     const rows = document.createElement('dl');

@@ -8,7 +8,12 @@ import { AERIAL_PART } from '../world/aerial/config';
 import { SURFACE_KIND, WATER_CLASS } from '../world/visualBlock';
 import type { BuildingRecord } from '../world/buildings/BuildingRegistry';
 import type { Selection, StructureInfo, UseInfo } from '../game/selection';
-import { buildSelectionPanelModel, defaultSection, extentOf } from './SelectionPanelModel';
+import {
+  buildSelectionPanelModel,
+  defaultSection,
+  extentOf,
+  SECTION_TAB_LABELS,
+} from './SelectionPanelModel';
 
 const PROFILE: LocalUrbanProfile = {
   district: 'harbor',
@@ -398,6 +403,23 @@ describe('buildSelectionPanelModel', () => {
     expect(actionOf(buildSelectionPanelModel(empty), 'block')).toBe('isolate-block');
     expect(rowsOf(buildSelectionPanelModel(empty), 'block'))
       .toContain('Productivity: no active buildings');
+  });
+});
+
+describe('SECTION_TAB_LABELS', () => {
+  it('dichiara tutte e quattro le unita\' in inglese', () => {
+    expect(SECTION_TAB_LABELS).toEqual({
+      structure: 'Structure',
+      block: 'Block',
+      column: 'Column',
+      voxel: 'Voxel',
+    });
+  });
+
+  it('ogni etichetta e\' una sola parola, adatta a una linguetta', () => {
+    for (const label of Object.values(SECTION_TAB_LABELS)) {
+      expect(label).toMatch(/^[A-Z][a-z]+$/);
+    }
   });
 });
 

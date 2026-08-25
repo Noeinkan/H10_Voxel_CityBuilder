@@ -11,11 +11,17 @@ coincide con il messaggio di commit.
 
 ---
 
+## In corso — Selezione esplorabile e contorno vivo
+
+- **Le quattro unita' della selezione sono ora raggiungibili.** La scheda di selezione ha una linguetta per struttura, isolato, colonna e voxel: prima mostrava soltanto la sezione di default e le altre restavano invisibili. Le linguette seguono il pattern ARIA del drawer (frecce, Home/End), stanno nel modello come copia in inglese provata dai test, e spostano il contorno in-world sull'unita' scelta.
+- **Il contorno di selezione non e' piu' una fascia ferma.** L'isolato riceve un riempimento semitrasparente che segue il terreno, angoli a L che inquadrano il riquadro, e un respiro lento di opacita' che tiene viva la selezione senza distrarre. Nessuna mesh voxel viene toccata: resta un overlay sopra la scena, e la forma si ricostruisce solo quando il riquadro cambia.
+
 ## In corso — La citta' leggibile
 
 - **Un centro informativo unico.** Il bottone `City` apre una panoramica degli obiettivi e delle informazioni globali che prima vivevano solo nello stato: capacita' abitativa, organico, copertura alimentare, bilanci, tipologie, livelli, infrastrutture e progresso verso l'autosufficienza.
 - **Scambi e decisioni verificabili.** Il drawer mostra il referto dell'ultimo tick commerciale, i collegamenti attivi, i mandati permanenti e le decisioni recenti invece di lasciare visibili soltanto i comandi che li modificano.
 - **Blocchi spiegabili anche da tastiera.** Le azioni non ancora disponibili usano `aria-disabled`: non si attivano, ma restano nel percorso del focus e aprono la scheda con requisito e avanzamento.
+- **La panoramica della citta' non e' piu' un unico foglio da scorrere.** Le cinque sezioni del tab City sono diventate righe comprimibili che si aprono una alla volta, cosi' il corpo scorre solo quando serve e il punto letto non salta. Il drawer intero si riduce poi a una maniglia sul bordo destro che conserva il solo titolo, senza confonderlo con chiuso: il bottone di minimizza resta accanto alla croce e la maniglia riapre con un clic.
 
 ## In corso — Skyport di facciata
 

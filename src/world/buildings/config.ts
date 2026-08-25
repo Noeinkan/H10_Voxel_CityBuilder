@@ -1200,8 +1200,13 @@ export const TYPOLOGIES: readonly TypologyDefinition[] = [
     minDensity: 0.55,
     minLevel: 4,
     priority: 4,
-    shape: { ...DEFAULT_TYPOLOGY_SHAPE, maxFootprint: 6 },
-    profile: { bandHeight: [6, 8], shrinkBias: 0.72 },
+    shape: { ...DEFAULT_TYPOLOGY_SHAPE, chamfer: 1, maxFootprint: 6 },
+    profile: {
+      bandHeight: [6, 8],
+      shrinkBias: 0.72,
+      shrinkOps: [BAND_OP.stack, BAND_OP.setback, BAND_OP.shrinkOneSide],
+      growOps: [BAND_OP.grow, BAND_OP.shear, BAND_OP.corner, BAND_OP.jog],
+    },
   },
   {
     id: 'roundTower',
@@ -1360,7 +1365,18 @@ export const TYPOLOGIES: readonly TypologyDefinition[] = [
       roofPropHeight: 0,
     },
   },
-  { id: 'terracedHousing', label: 'Terraced housing', use: 0, priority: 0, shape: DEFAULT_TYPOLOGY_SHAPE, profile: {} },
+  {
+    id: 'terracedHousing',
+    label: 'Terraced housing',
+    use: 0,
+    priority: 0,
+    shape: { ...DEFAULT_TYPOLOGY_SHAPE, chamfer: 1 },
+    profile: {
+      shrinkBias: 0.48,
+      shrinkOps: [BAND_OP.setback, BAND_OP.shrinkOneSide, BAND_OP.shrink],
+      growOps: [BAND_OP.grow, BAND_OP.shear, BAND_OP.corner, BAND_OP.jog],
+    },
+  },
 
   // --- commerciale ---------------------------------------------------------
   {
@@ -1389,10 +1405,17 @@ export const TYPOLOGIES: readonly TypologyDefinition[] = [
     specialization: 'office',
     minLevel: 3,
     priority: 5,
-    shape: { ...DEFAULT_TYPOLOGY_SHAPE, podiumBands: 1, minFootprint: 6 },
+    shape: {
+      ...DEFAULT_TYPOLOGY_SHAPE,
+      podiumBands: 1,
+      chamfer: 1,
+      minFootprint: 6,
+    },
     profile: {
       bandHeight: [6, 8],
       shrinkBias: 0.78,
+      shrinkOps: [BAND_OP.stack, BAND_OP.setback, BAND_OP.shrinkOneSide],
+      growOps: [BAND_OP.grow, BAND_OP.shear, BAND_OP.corner, BAND_OP.jog],
       body: PALETTE_SLOTS.glassDeep,
       bodyAlt: PALETTE_SLOTS.glassDark,
       accent: PALETTE_SLOTS.glassPale,
@@ -1408,10 +1431,17 @@ export const TYPOLOGIES: readonly TypologyDefinition[] = [
     specialization: 'tourism',
     minLevel: 2,
     priority: 5,
-    shape: { ...DEFAULT_TYPOLOGY_SHAPE, podiumBands: 1, minFootprint: 6 },
+    shape: {
+      ...DEFAULT_TYPOLOGY_SHAPE,
+      podiumBands: 1,
+      arcade: true,
+      minFootprint: 6,
+    },
     profile: {
       bandHeight: [4, 6],
       shrinkBias: 0.28,
+      shrinkOps: [BAND_OP.setback, BAND_OP.shrinkOneSide, BAND_OP.shrink],
+      growOps: [BAND_OP.grow, BAND_OP.jog, BAND_OP.shrinkOneSide],
       body: PALETTE_SLOTS.concreteWhite,
       bodyAlt: PALETTE_SLOTS.roofPale,
       accent: PALETTE_SLOTS.metalGold,
@@ -1538,7 +1568,24 @@ export const TYPOLOGIES: readonly TypologyDefinition[] = [
       roofPropHeight: 0,
     },
   },
-  { id: 'retailRow', label: 'Retail row', use: 1, priority: 0, shape: { ...DEFAULT_TYPOLOGY_SHAPE, crownKind: CROWN_KIND.flat, maxFootprint: 6 }, profile: { bandHeight: [4, 4] } },
+  {
+    id: 'retailRow',
+    label: 'Retail row',
+    use: 1,
+    priority: 0,
+    shape: {
+      ...DEFAULT_TYPOLOGY_SHAPE,
+      crownKind: CROWN_KIND.flat,
+      arcade: true,
+      maxFootprint: 6,
+    },
+    profile: {
+      bandHeight: [4, 4],
+      shrinkBias: 0.34,
+      shrinkOps: [BAND_OP.setback, BAND_OP.shrinkOneSide, BAND_OP.shrink],
+      growOps: [BAND_OP.grow, BAND_OP.jog, BAND_OP.shrinkOneSide],
+    },
+  },
 
   // --- industriale ---------------------------------------------------------
   {
@@ -1679,8 +1726,12 @@ export const TYPOLOGIES: readonly TypologyDefinition[] = [
     // Il ripiego di ogni uso porta la cima che distingue quell'uso da lontano:
     // e' la sola forma in cui "coronamenti per uso" resta una riga di tabella e
     // non un ramo dentro la grammatica. Qui una copertura lunga, da capannone.
-    shape: { ...DEFAULT_TYPOLOGY_SHAPE, crownKind: CROWN_KIND.ridge },
-    profile: {},
+    shape: { ...DEFAULT_TYPOLOGY_SHAPE, crownKind: CROWN_KIND.ridge, chamfer: 1 },
+    profile: {
+      shrinkBias: 0.34,
+      shrinkOps: [BAND_OP.stack, BAND_OP.setback, BAND_OP.shrinkOneSide],
+      growOps: [BAND_OP.grow, BAND_OP.corner, BAND_OP.shear, BAND_OP.jog],
+    },
   },
 
   // --- civico --------------------------------------------------------------
@@ -1733,17 +1784,32 @@ export const TYPOLOGIES: readonly TypologyDefinition[] = [
     // Sopra il solo ripiego: `culturalPavilion` (4) e `universityLab` (5) restano
     // piu' specifici, perche' dicono qualcosa del luogo e non dell'edificio.
     priority: 1,
-    shape: { ...DEFAULT_TYPOLOGY_SHAPE, crownKind: CROWN_KIND.lantern, minFootprint: 6 },
+    shape: {
+      ...DEFAULT_TYPOLOGY_SHAPE,
+      crownKind: CROWN_KIND.lantern,
+      chamfer: 1,
+      minFootprint: 6,
+    },
     profile: {
       bandHeight: [6, 8],
       shrinkBias: 0.68,
       shrinkOps: [BAND_OP.stack, BAND_OP.shrink, BAND_OP.setback],
-      growOps: [BAND_OP.shrink, BAND_OP.jog, BAND_OP.grow],
+      growOps: [BAND_OP.grow, BAND_OP.corner, BAND_OP.shear, BAND_OP.jog],
       roofProp: PALETTE_SLOTS.metalGold,
       roofPropHeight: 6,
     },
   },
-  { id: 'civicSpire', label: 'Civic spire', use: 3, priority: 0, shape: DEFAULT_TYPOLOGY_SHAPE, profile: {} },
+  {
+    id: 'civicSpire',
+    label: 'Civic spire',
+    use: 3,
+    priority: 0,
+    shape: { ...DEFAULT_TYPOLOGY_SHAPE, chamfer: 1 },
+    profile: {
+      shrinkOps: [BAND_OP.stack, BAND_OP.setback, BAND_OP.shrinkOneSide],
+      growOps: [BAND_OP.grow, BAND_OP.corner, BAND_OP.shear, BAND_OP.jog],
+    },
+  },
 ];
 
 /**

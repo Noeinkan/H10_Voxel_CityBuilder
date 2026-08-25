@@ -72,6 +72,35 @@ const LIFT = 0.4;
  */
 const LID_MIN_RISE = 1;
 
+/**
+ * Lunghezza del braccio degli angoli, in voxel.
+ *
+ * Su una fascia a terra — un isolato, una colonna — gli angoli sono l'unico
+ * ancoraggio che resta quando non c'e' ne' coperchio ne' montanti, e devono
+ * leggersi da lontano: un braccio corto si confonde con la fascia.
+ */
+const CORNER_ARM = 1.4;
+
+/**
+ * Periodo del respiro della selezione, in secondi.
+ *
+ * Piu' lento del cursore di piazzamento apposta: quello annuncia qualcosa che
+ * sta per accadere, questo e' uno stato che dura e deve restare calmo.
+ */
+const PULSE_PERIOD = 2.2;
+
+/** Opacita' di base del riempimento: sotto la fascia, sopra il terreno. */
+const FILL_OPACITY = 0.12;
+
+/**
+ * Tetto sui nodi della lastra di riempimento.
+ *
+ * Il riempimento segue il terreno e costa un nodo per colonna; un isolato
+ * enorme non deve trasformare un clic in una mesh da migliaia di triangoli. Il
+ * passo raddoppia finche' non si rientra nel tetto.
+ */
+const FILL_MAX_NODES = 4096;
+
 export interface SelectionBox {
   readonly x0: number;
   readonly y0: number;
@@ -101,23 +130,48 @@ export class SelectionOutline {
   });
   private readonly band = new Mesh(new BufferGeometry(), this.bandMaterial);
 
+  private readonly fillMaterial = new MeshBasicMaterial({
+    color: SELECTION_COLOR,
+    transparent: true,
+    opacity: FILL_OPACITY,
+    depthTest: false,
+    depthWrite: false,
+    side: DoubleSide,
+  });
+  private readonly fill = new Mesh(new BufferGeometry(), this.fillMaterial);
+  private fillPositions = new Float32Array(0);
+  private fillIndices = new Uint16Array(0);
+
   private readonly rim = loop(RING, 0.95);
   private readonly lid = loop(4, 0.85);
   private readonly posts = segments(4, 0.7);
+  private readonly corners = segments(8, 0.9);
+
+  private phase = 0;
 
   /** Ultimo riquadro disegnato: rifare un lavoro identico e' lavoro sprecato. */
   private last: readonly [number, number, number, number, number, number] | null = null;
 
   constructor(private readonly map: TerrainMap) {
+    this.fill.renderOrder = 21;
+    this.fill.visible = false;
+    this.fill.frustumCulled = false;
+    this.group.add(this.fill);
+
     this.band.renderOrder = 22;
     this.band.visible = false;
     this.band.frustumCulled = false;
     this.group.add(this.band);
+
     for (const [index, part] of [this.rim, this.lid, this.posts].entries()) {
       part.object.renderOrder = 23 + index;
       part.object.visible = false;
       this.group.add(part.object);
     }
+
+    this.corners.object.renderOrder = 24;
+    this.corners.object.visible = false;
+    this.group.add(this.corners.object);
   }
 
   show(box: SelectionBox): void {
@@ -139,17 +193,46 @@ export class SelectionOutline {
     const standing = lid - floor >= LID_MIN_RISE;
     if (standing) this.writeLid(x0, y0, x1, y1, floor, lid);
 
-    this.rebuild(standing);
+    // Il riempimento c'e' solo sulla sagoma piatta — l'isolato soprattutto:
+    // su un volume il coperchio dice gia' quanto e' grande, e una lastra a
+    // terra si confonderebbe con la base. Gli angoli invece ci sono sempre,
+    // perche' sono il solo ancoraggio che resta quando la sagoma e' una fascia.
+    const filled = !standing;
+    if (filled) this.writeFill(x0, y0, x1, y1, box.z0);
+    this.writeCorners(x0, y0, x1, y1, box.z0);
+
+    this.rebuild(standing, filled);
+    this.fill.visible = filled;
     this.band.visible = true;
     this.rim.object.visible = true;
     this.lid.object.visible = standing;
     this.posts.object.visible = standing;
+    this.corners.object.visible = true;
   }
 
   hide(): void {
+    this.fill.visible = false;
     this.band.visible = false;
+    this.corners.object.visible = false;
     for (const part of [this.rim, this.lid, this.posts]) part.object.visible = false;
     this.last = null;
+  }
+
+  /**
+   * Il respiro che tiene viva la selezione.
+   *
+   * Avanza solo a selezione accesa e costa qualche scrittura di opacita': la
+   * forma non si ricostruisce mai qui dentro, e un cambio di riquadro passa
+   * sempre da `show`. Il battito resta lento per non distrarre da una scena che
+   * sotto continua a crescere.
+   */
+  update(dt: number): void {
+    if (!this.band.visible) return;
+    this.phase = (this.phase + dt / PULSE_PERIOD) % 1;
+    const breathe = Math.sin(this.phase * Math.PI * 2);
+    this.bandMaterial.opacity = 0.42 + 0.1 * breathe;
+    this.fillMaterial.opacity = FILL_OPACITY + 0.05 * breathe;
+    this.corners.material.opacity = 0.9 + 0.1 * breathe;
   }
 
   /**
@@ -211,6 +294,73 @@ export class SelectionOutline {
   }
 
   /**
+   * Scrive la lastra che riempie la sagoma piatta.
+   *
+   * Segue il terreno come la fascia, con un nodo per colonna, cosi' un isolato
+   * si legge come un'**area** scelta e non come un bordo solo. E' la stessa
+   * regola della fascia — mai sotto la quota dichiarata — quindi su un pendio la
+   * lastra aderisce alla collina invece di tagliarla, che era il difetto per cui
+   * il coperchio non si disegna mai su un isolato.
+   */
+  private writeFill(x0: number, y0: number, x1: number, y1: number, z0: number): void {
+    let step = 1;
+    while ((Math.ceil((x1 - x0) / step) + 1) * (Math.ceil((y1 - y0) / step) + 1) > FILL_MAX_NODES) {
+      step *= 2;
+    }
+    const nx = Math.ceil((x1 - x0) / step) + 1;
+    const ny = Math.ceil((y1 - y0) / step) + 1;
+
+    const positions = new Float32Array(nx * ny * 3);
+    let written = 0;
+    for (let j = 0; j < ny; j++) {
+      const y = y0 + j * step;
+      for (let i = 0; i < nx; i++) {
+        const x = x0 + i * step;
+        writePoint(positions, written++, x, y, this.floorAt(x, y, z0) + LIFT);
+      }
+    }
+
+    const indices: number[] = [];
+    for (let j = 0; j < ny - 1; j++) {
+      for (let i = 0; i < nx - 1; i++) {
+        const a = j * nx + i;
+        const b = a + 1;
+        const c = a + nx;
+        const d = c + 1;
+        // Winding indifferente: il materiale e' DoubleSide.
+        indices.push(a, b, d, a, d, c);
+      }
+    }
+
+    this.fillPositions = positions;
+    this.fillIndices = new Uint16Array(indices);
+  }
+
+  /**
+   * Scrive gli angoli a L: quattro bracci che inquadrano il riquadro.
+   *
+   * Il braccio sta sulla quota dell'angolo che segna, non su una quota unica:
+   * su un pendio quattro L alla stessa altezza sembrerebbero staccati da tre
+   * angoli su quattro.
+   */
+  private writeCorners(x0: number, y0: number, x1: number, y1: number, z0: number): void {
+    const positions = this.corners.positions;
+    let written = 0;
+    for (const [cx, cy, dx, dy] of [
+      [x0, y0, 1, 1],
+      [x1, y0, -1, 1],
+      [x1, y1, -1, -1],
+      [x0, y1, 1, -1],
+    ] as const) {
+      const z = this.floorAt(cx, cy, z0) + LIFT;
+      writePoint(positions, written++, cx, cy, z);
+      writePoint(positions, written++, cx + dx * CORNER_ARM, cy, z);
+      writePoint(positions, written++, cx, cy, z);
+      writePoint(positions, written++, cx, cy + dy * CORNER_ARM, z);
+    }
+  }
+
+  /**
    * Sostituisce le geometrie invece di riscriverle in posto.
    *
    * Qui va bene cosi', ma **non perche' `needsUpdate` non funzioni**: funziona, e
@@ -225,13 +375,18 @@ export class SelectionOutline {
    * esce subito quando il riquadro e' lo stesso — al contrario di una guida che
    * insegue il cursore, dove la ricostruzione si pagherebbe a ogni frame.
    */
-  private rebuild(standing: boolean): void {
+  private rebuild(standing: boolean, filled: boolean): void {
     this.band.geometry.dispose();
     this.band.geometry = indexed(this.bandPositions, this.bandIndices);
     this.rim.replace();
+    this.corners.replace();
     if (standing) {
       this.lid.replace();
       this.posts.replace();
+    }
+    if (filled) {
+      this.fill.geometry.dispose();
+      this.fill.geometry = indexed(this.fillPositions, this.fillIndices);
     }
   }
 
@@ -258,9 +413,11 @@ export class SelectionOutline {
   }
 
   dispose(): void {
+    this.fill.geometry.dispose();
+    this.fillMaterial.dispose();
     this.band.geometry.dispose();
     this.bandMaterial.dispose();
-    for (const part of [this.rim, this.lid, this.posts]) {
+    for (const part of [this.rim, this.lid, this.posts, this.corners]) {
       part.object.geometry.dispose();
       part.material.dispose();
     }

@@ -1,6 +1,7 @@
 import type { PolicyId, TradeMode } from '../sim';
 import type { GameHudModel, HudCommerce, HudPolicy, HudTradeMode } from './GameHudModel';
 import type { CityOverviewModel, OverviewFact, OverviewGoal } from './CityOverviewModel';
+import { createHudIcon } from './hudIcons';
 import { iconButton } from './hudWidgets';
 
 /**
@@ -21,6 +22,8 @@ import { iconButton } from './hudWidgets';
  */
 
 export type PolicyTab = 'city' | 'policies' | 'commerce' | 'trade' | 'history';
+
+type OverviewSection = 'goals' | 'capacity' | 'economy' | 'shape' | 'infrastructure';
 
 /** I nomi delle linguette. Corti: sono etichette, non frasi. */
 const TAB_LABELS: Readonly<Record<PolicyTab, string>> = {
@@ -53,6 +56,8 @@ export class PolicyDrawer {
   private readonly tradeNote = document.createElement('p');
   private latestModel: GameHudModel;
   private active: PolicyTab = 'city';
+  private collapsed = false;
+  private openOverviewSection: OverviewSection | null = 'goals';
 
   constructor(model: GameHudModel, private readonly handlers: PolicyDrawerHandlers) {
     this.latestModel = model;
@@ -60,6 +65,16 @@ export class PolicyDrawer {
     this.root.className = 'policy-drawer hud-surface hud-surface--panel';
     this.root.hidden = true;
     this.root.setAttribute('aria-label', 'City information and policies');
+
+    const collapsedHandle = document.createElement('button');
+    collapsedHandle.type = 'button';
+    collapsedHandle.className = 'drawer-collapsed-handle';
+    collapsedHandle.setAttribute('aria-label', 'Expand city overview');
+    collapsedHandle.setAttribute('aria-expanded', 'false');
+    const collapsedLabel = document.createElement('span');
+    collapsedLabel.textContent = 'City overview';
+    collapsedHandle.append(createHudIcon('policies'), collapsedLabel);
+    collapsedHandle.addEventListener('click', () => this.setCollapsed(false));
 
     const header = document.createElement('header');
     header.className = 'drawer-header';
@@ -71,9 +86,22 @@ export class PolicyDrawer {
     subtitle.className = 'drawer-subtitle';
     subtitle.textContent = 'Read the whole city, then shape how it grows.';
     copy.append(title, subtitle);
+    const actions = document.createElement('div');
+    actions.className = 'drawer-header-actions';
+    const minimize = document.createElement('button');
+    minimize.type = 'button';
+    minimize.className = 'drawer-window-button drawer-minimize';
+    minimize.setAttribute('aria-label', 'Minimize city overview');
+    minimize.setAttribute('aria-expanded', 'true');
+    const minimizeMark = document.createElement('span');
+    minimizeMark.setAttribute('aria-hidden', 'true');
+    minimizeMark.textContent = '›';
+    minimize.appendChild(minimizeMark);
+    minimize.addEventListener('click', () => this.setCollapsed(true));
     const close = iconButton('close', 'Close city overview · Esc', () => this.handlers.onClose());
     close.classList.add('hud-button--small');
-    header.append(copy, close);
+    actions.append(minimize, close);
+    header.append(copy, actions);
 
     const tabs = document.createElement('div');
     tabs.className = 'drawer-tabs';
@@ -106,7 +134,7 @@ export class PolicyDrawer {
     this.fillTrade(model.tradeModes);
     this.fillHistory();
 
-    this.root.append(header, tabs, ...this.bodies.values());
+    this.root.append(collapsedHandle, header, tabs, ...this.bodies.values());
     this.select(this.active);
   }
 
@@ -116,14 +144,17 @@ export class PolicyDrawer {
 
   set hidden(value: boolean) {
     this.root.hidden = value;
-    if (!value) this.paint(this.latestModel);
+    if (!value) {
+      this.setCollapsed(false);
+      this.paint(this.latestModel);
+    }
   }
 
   paint(model: GameHudModel): void {
     this.latestModel = model;
     // Da chiuso basta conservare l'ultimo stato. Ricostruire decine di nodi sei
     // volte al secondo per un cassetto invisibile sarebbe lavoro di frame puro.
-    if (this.root.hidden) return;
+    if (this.root.hidden || this.collapsed) return;
     this.paintOverview(model.overview);
     for (const policy of model.policies) this.paintPolicy(policy);
     this.paintCommerce(model.commerce);
@@ -143,6 +174,18 @@ export class PolicyDrawer {
       const body = this.bodies.get(other);
       if (body !== undefined) body.hidden = !open;
     }
+  }
+
+  /** Riduce il cassetto a una maniglia sul bordo senza confonderlo con chiuso. */
+  private setCollapsed(value: boolean): void {
+    if (this.collapsed === value) return;
+    this.collapsed = value;
+    this.root.dataset['collapsed'] = value ? 'true' : 'false';
+    const handle = this.root.querySelector<HTMLButtonElement>('.drawer-collapsed-handle');
+    handle?.setAttribute('aria-expanded', value ? 'false' : 'true');
+    this.root.querySelector<HTMLButtonElement>('.drawer-minimize')
+      ?.setAttribute('aria-expanded', value ? 'false' : 'true');
+    if (!value) this.paint(this.latestModel);
   }
 
   /** Frecce e Home/End seguono il pattern ARIA senza uscire dal cassetto. */
@@ -234,12 +277,54 @@ export class PolicyDrawer {
 
     this.overviewPanel.replaceChildren(
       condition,
-      goalGroup('Self-sufficiency', overview.goals),
-      factGroup('Capacity', overview.capacity),
-      factGroup('Economy', overview.economy),
-      factGroup('City shape', overview.shape),
-      factGroup('Infrastructure', overview.infrastructure),
+      goalGroup(
+        'goals',
+        'Self-sufficiency',
+        overview.goals,
+        this.openOverviewSection === 'goals',
+        (open) => this.toggleOverviewSection('goals', open),
+      ),
+      factGroup(
+        'capacity',
+        'Capacity',
+        overview.capacity,
+        this.openOverviewSection === 'capacity',
+        (open) => this.toggleOverviewSection('capacity', open),
+      ),
+      factGroup(
+        'economy',
+        'Economy',
+        overview.economy,
+        this.openOverviewSection === 'economy',
+        (open) => this.toggleOverviewSection('economy', open),
+      ),
+      factGroup(
+        'shape',
+        'City shape',
+        overview.shape,
+        this.openOverviewSection === 'shape',
+        (open) => this.toggleOverviewSection('shape', open),
+      ),
+      factGroup(
+        'infrastructure',
+        'Infrastructure',
+        overview.infrastructure,
+        this.openOverviewSection === 'infrastructure',
+        (open) => this.toggleOverviewSection('infrastructure', open),
+      ),
     );
+  }
+
+  /** Una sola sezione aperta: la lista resta corta e il punto letto non salta. */
+  private toggleOverviewSection(id: OverviewSection, open: boolean): void {
+    if (open) {
+      this.openOverviewSection = id;
+      for (const section of this.overviewPanel.querySelectorAll<HTMLDetailsElement>('.overview-group')) {
+        if (section.dataset['section'] !== id) section.open = false;
+      }
+    } else if (this.openOverviewSection === id) {
+      this.openOverviewSection = null;
+    }
   }
 
   private paintTradeReport(overview: CityOverviewModel | null): void {
@@ -426,10 +511,13 @@ export class PolicyDrawer {
   }
 }
 
-function goalGroup(title: string, goals: readonly OverviewGoal[]): HTMLElement {
-  const group = document.createElement('section');
-  group.className = 'overview-group';
-  group.appendChild(sectionTitle(title));
+function goalGroup(
+  id: OverviewSection,
+  title: string,
+  goals: readonly OverviewGoal[],
+  open: boolean,
+  onToggle: (open: boolean) => void,
+): HTMLElement {
   const rows = document.createElement('div');
   rows.className = 'goal-list';
   for (const goal of goals) {
@@ -449,14 +537,44 @@ function goalGroup(title: string, goals: readonly OverviewGoal[]): HTMLElement {
     row.append(label, value, track);
     rows.appendChild(row);
   }
-  group.appendChild(rows);
-  return group;
+  const met = goals.filter((goal) => goal.met).length;
+  return overviewGroup(id, title, `${met}/${goals.length} ready`, rows, open, onToggle);
 }
 
-function factGroup(title: string, facts: readonly OverviewFact[]): HTMLElement {
-  const group = document.createElement('section');
+function factGroup(
+  id: OverviewSection,
+  title: string,
+  facts: readonly OverviewFact[],
+  open: boolean,
+  onToggle: (open: boolean) => void,
+): HTMLElement {
+  const lead = facts[0];
+  const compact = lead === undefined ? 'No data' : `${lead.label} ${lead.value}`;
+  return overviewGroup(id, title, compact, factRows(facts), open, onToggle);
+}
+
+function overviewGroup(
+  id: OverviewSection,
+  title: string,
+  compact: string,
+  content: HTMLElement,
+  open: boolean,
+  onToggle: (open: boolean) => void,
+): HTMLDetailsElement {
+  const group = document.createElement('details');
   group.className = 'overview-group';
-  group.append(sectionTitle(title), factRows(facts));
+  group.dataset['section'] = id;
+  group.open = open;
+  const summary = document.createElement('summary');
+  const label = document.createElement('span');
+  label.className = 'overview-group-title';
+  label.textContent = title;
+  const value = document.createElement('span');
+  value.className = 'overview-group-summary';
+  value.textContent = compact;
+  summary.append(label, value);
+  group.append(summary, content);
+  group.addEventListener('toggle', () => onToggle(group.open));
   return group;
 }
 

@@ -9,10 +9,12 @@ import {
   DEFAULT_TYPOLOGY_SHAPE,
   GRAMMAR,
   MAX_FOOTPRINT,
+  TYPOLOGIES,
   type BandOp,
   type TypologyShape,
 } from './config';
 import { generateBuilding } from './generate';
+import { typologyProfile } from './typology';
 import { nextRect } from './bandOps';
 import type { BandRect } from './bandRect';
 import { mulberry32 } from '../rng';
@@ -412,5 +414,66 @@ describe('le trasformazioni nuove', () => {
       if (new Set(profileOf(stamp)).size > 2) turned++;
     }
     expect(turned).toBeGreaterThan(20);
+  });
+});
+
+describe('il tessuto ordinario', () => {
+  const fallbacks = TYPOLOGIES.filter((entry) => entry.priority === 0);
+
+  it('usa vuoti o tagli anche quando il luogo non sblocca una tipologia rara', () => {
+    expect(fallbacks).toHaveLength(ALL_CLASSES.length);
+
+    for (const fallback of fallbacks) {
+      const request = {
+        class: fallback.use,
+        level: 6,
+        seed: 4817,
+        facing: 0,
+        profile: typologyProfile(fallback),
+      };
+      const carved = generateBuilding({ ...request, shape: fallback.shape });
+      const solid = generateBuilding({
+        ...request,
+        shape: {
+          ...fallback.shape,
+          courtyard: false,
+          chamfer: 0,
+          arcade: false,
+        },
+      });
+
+      expect(carved.sizeX, fallback.id).toBe(solid.sizeX);
+      expect(carved.sizeY, fallback.id).toBe(solid.sizeY);
+      expect(carved.sizeZ, fallback.id).toBe(solid.sizeZ);
+      expect(
+        carved.voxels.some((voxel, index) => voxel === STAMP_EMPTY && solid.voxels[index] !== STAMP_EMPTY),
+        fallback.id,
+      ).toBe(true);
+    }
+  });
+
+  it('alterna sottrazione e nuova crescita invece di rastremare soltanto', () => {
+    for (const fallback of fallbacks) {
+      let regrown = 0;
+      for (let seed = 0; seed < 40; seed++) {
+        const stamp = generateBuilding({
+          class: fallback.use,
+          level: 8,
+          seed: seed * 613 + 7,
+          facing: 0,
+          profile: typologyProfile(fallback),
+          shape: fallback.shape,
+        });
+        let previous = solidAt(stamp, stamp.bandStarts[0]);
+        let found = false;
+        for (let band = 1; band < stamp.bandStarts.length - 1; band++) {
+          const current = solidAt(stamp, stamp.bandStarts[band]);
+          if (current > previous) found = true;
+          previous = current;
+        }
+        if (found) regrown++;
+      }
+      expect(regrown, fallback.id).toBeGreaterThan(5);
+    }
   });
 });

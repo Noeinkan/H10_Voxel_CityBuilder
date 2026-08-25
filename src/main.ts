@@ -1221,6 +1221,9 @@ function onFrame(time: number): void {
 
   camera.update(dt);
   preview.update(dt);
+  // Il respiro del contorno di selezione: una scrittura di opacita' a frame,
+  // nessuna ricostruzione di geometria.
+  selectionOutline?.update(dt);
 
   // Finche' la prima scena non c'e', il frame non deve proteggere niente:
   // conviene spendere di piu' per frame e finire in una manciata di frame.

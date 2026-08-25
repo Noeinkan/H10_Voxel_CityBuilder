@@ -39,6 +39,19 @@ import type {
 
 export type SelectionSectionId = 'structure' | 'block' | 'column' | 'voxel';
 
+/**
+ * Etichetta corta da linguetta: l'intestazione intera («grassland at 21, 25»)
+ * non sta su un bottone, e le quattro unita' hanno nomi che sono gia' il loro
+ * significato. Vive nel modello perche' e' copia visibile, e va provata in
+ * inglese come il resto.
+ */
+export const SECTION_TAB_LABELS: Readonly<Record<SelectionSectionId, string>> = {
+  structure: 'Structure',
+  block: 'Block',
+  column: 'Column',
+  voxel: 'Voxel',
+};
+
 export interface SelectionRow {
   readonly label: string;
   readonly value: string;
