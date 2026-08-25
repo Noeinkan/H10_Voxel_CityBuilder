@@ -1626,14 +1626,21 @@ export const TYPOLOGIES: readonly TypologyDefinition[] = [
     // meno e rende di piu' per fondo speso; e' `districts.ts` a imporre le due
     // soglie, qui basta chiedere la specializzazione.
     //
-    // **Cinque era il secondo cancello chiuso.** Misurato su 225 edifici
-    // industriali dopo 250 secondi di gioco, il livello piu' alto raggiunto era
-    // quattro — e da otto edifici soli, con 131 ancora a zero. Anche con la
-    // soglia di distretto aperta, nessuna colonna sarebbe mai arrivata a
-    // dichiarare una torre. Tre e' dentro cio' che una promozione produce
-    // davvero, e resta abbastanza in alto da non farne una tipologia comune:
-    // chiede comunque un edificio gia' cresciuto, non il primo capannone.
-    minLevel: 3,
+    // **Cinque, e abbassarlo e' stato provato e disfatto.** Misurando la citta'
+    // non nasceva una torre nemmeno con la soglia di distretto aperta, perche'
+    // nessun edificio industriale arrivava al livello cinque; sembrava un
+    // secondo cancello chiuso, e portarlo a tre lo apriva. Non era pero' un
+    // fatto del gioco: era l'economia delle promozioni, in riscrittura in quel
+    // momento, a tenere gli edifici bassi.
+    //
+    // Il conto lo presentava `priority: 7` qui sotto. A tre, la torre vince su
+    // ogni altra tipologia industriale appena il distretto la esprime — cioe'
+    // proprio dove un capannone avrebbe cominciato a impilarsi — e le sostituisce
+    // con la propria sagoma tozza: la citta' smetteva di produrre torri alte, e
+    // con loro sparivano le arcologie, che una citta' bassa non le chiede. La
+    // soglia alta e' cio' che tiene questa tipologia un **premio** invece di un
+    // tetto sullo skyline industriale.
+    minLevel: 5,
     // Sopra tutte le altre industriali: dove il luogo esprime `farming` la torre
     // vince, o la specializzazione non si vedrebbe mai a schermo.
     priority: 7,
@@ -1653,7 +1660,7 @@ export const TYPOLOGIES: readonly TypologyDefinition[] = [
       shrinkBias: 0.08,
       body: PALETTE_SLOTS.glassPale,
       bodyAlt: PALETTE_SLOTS.glassDeep,
-      // **L'accento e' verde, e a livello 5 la grammatica lo emette `luminous`.**
+      // **L'accento e' verde, e ad alto livello la grammatica lo emette `luminous`.**
       // Non c'e' un materiale nuovo e non c'e' un emettitore nuovo: le luci di
       // crescita sono la stessa lama che accende le torri di notte, con dentro
       // la coltura invece del vetro. E' il rendimento piu' alto per riga di

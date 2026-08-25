@@ -392,9 +392,13 @@ export const BALANCE = {
        * Misurato piazzando i due catalizzatori sulla stessa colonna, il massimo
        * raggiungibile sulla mappa e' esattamente quello, e a sedici colonne di
        * distanza scende sotto 0,38. La soglia non era severa: era irraggiungibile
-       * per costruzione, e in 250 secondi di gioco con 225 edifici industriali
-       * non nasceva **una** torre. La via verticale al cibo era dichiarata in tre
+       * per costruzione — nessuna citta' di soli ruoli di crescita poteva
+       * esprimere `farming`, e la via verticale al cibo restava dichiarata in tre
        * documenti e chiusa nei numeri.
+       *
+       * L'altra meta' del cancello e' il `minLevel` della torre, e **quella non si
+       * tocca**: vive nel catalogo delle tipologie, fuori di qui, insieme alla
+       * ragione per cui abbassarla svuota lo skyline industriale.
        *
        * A 0,40 la fascia che qualifica esiste ed e' stretta: si apre solo dove
        * mercato e fabbrica si sovrappongono davvero, e si richiude appena i due
@@ -791,6 +795,17 @@ export const BALANCE = {
     perFerryLine: 0.05,
 
     /**
+     * Contributo di un ponte in quota che unisce la citta' primaria a un
+     * settore secondario.
+     *
+     * Vale un po' piu' di una linea di traghetto: arriva soltanto dopo che le
+     * due rive hanno prodotto torri abbastanza alte, quindi premia una fase
+     * urbana piu' matura. Otto punti sono percepibili sulla migrazione senza
+     * cancellare affollamento e servizi dal bersaglio della soddisfazione.
+     */
+    perIslandBridge: 0.08,
+
+    /**
      * Linee oltre le quali la citta' non ringrazia piu'.
      *
      * Senza un tetto, il traghetto sarebbe la via piu' economica per comprare
@@ -798,6 +813,9 @@ export const BALANCE = {
      * sono gia' una rete su un'isola di questa scala.
      */
     maxFerryLines: 3,
+
+    /** Un settore produce un ponte; il tetto difende salvataggi non affidabili. */
+    maxIslandBridges: 8,
   },
 
   // --- Campo di desiderabilita' -------------------------------------------
