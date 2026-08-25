@@ -71,6 +71,7 @@ export {
   foodYieldOf,
   harvestOf,
   isFarmKind,
+  missingPlotsFor,
   missingPlotsOf,
   type FarmKind,
   type FoodReport,
@@ -104,12 +105,14 @@ export {
 export { policyConflict } from './policies';
 export {
   ALL_SPECIALIZATIONS,
+  districtPairingsOf,
   dominantUse,
   rolesForSpecialization,
   specializationGapsOf,
   specializationOf,
   urbanProfileAt,
   type DistrictId,
+  type DistrictPairing,
   type LocalUrbanProfile,
   type Specialization,
   type SpecializationGap,

@@ -82,6 +82,12 @@ export class BuildDock {
       heading.textContent = group.label;
       section.appendChild(heading);
 
+      // Quante tessere ha la corsia, per il CSS: sul rail alto le corsie si
+      // dividono l'altezza che avanza, e senza questo numero il `flex-grow`
+      // uguale per tutte darebbe all'identita' — che ne ha due — tessere alte il
+      // doppio di quelle delle connessioni, che ne hanno quattro.
+      section.style.setProperty('--dock-tiles', String(group.actions.length));
+
       const row = document.createElement('div');
       row.className = 'dock-group-row';
       for (const action of group.actions) {
@@ -103,6 +109,7 @@ export class BuildDock {
     // stanno insieme e in una corsia loro, non fra i catalizzatori.
     const reach = document.createElement('div');
     reach.className = 'dock-group';
+    reach.style.setProperty('--dock-tiles', '3');
     const reachTitle = document.createElement('span');
     reachTitle.className = 'dock-group-title';
     reachTitle.textContent = 'Reach';

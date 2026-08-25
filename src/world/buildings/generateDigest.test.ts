@@ -17,11 +17,14 @@ import type { VoxelStamp } from './stamp';
  * la sagoma per cancellarla, quel giorno gli edifici gia' costruiti smettono di
  * poter essere cancellati.
  *
- * Le digest qui sotto sono state **calcolate su questo codice**, prima di
- * spezzare `generate.ts` nei suoi moduli. Se cadono dopo un refactor che
- * dichiarava di non cambiare niente, e' il refactor ad avere torto. Se cadono
- * dopo un cambio di grammatica dichiarato, si rigenerano — ma allora la citta'
- * gia' costruita va considerata persa, e va detto nel CHANGELOG.
+ * Le digest qui sotto sono state **calcolate su questo codice**. Se cadono dopo
+ * un refactor che dichiarava di non cambiare niente, e' il refactor ad avere
+ * torto. Se cadono dopo un cambio di grammatica dichiarato, si rigenerano — ma
+ * allora la citta' gia' costruita va considerata persa, e va detto nel CHANGELOG.
+ *
+ * Rigenerate quando `nextRect` ha smesso di prendere sempre la testa del
+ * repertorio (`preferredStart`): due tiri in piu' per fascia spostano tutta la
+ * sequenza, quindi **ogni** sagoma e' cambiata. Era il senso del cambiamento.
  */
 
 /**
@@ -63,29 +66,29 @@ const LEVELS = [0, 3, 6, 9, BUILDER.maxLevel] as const;
 
 /** Chiave `uso-livello-seme`. L'ordine degli usi e' contratto (invariante 10). */
 const DIGESTS: Readonly<Record<string, string>> = {
-  '0-0-13': '3a745605', '0-0-7932': 'e59f8769', '0-0-15851': 'a230086b',
-  '0-3-13': '51531c29', '0-3-7932': 'c4805ee6', '0-3-15851': '54db7937',
-  '0-6-13': '427e06cc', '0-6-7932': 'fcbc8b2c', '0-6-15851': '2197c4f0',
-  '0-9-13': '674608c5', '0-9-7932': 'f3b9e690', '0-9-15851': '709a7cb5',
-  '0-12-13': '534ace13', '0-12-7932': 'ed1f04fc', '0-12-15851': 'e67698fd',
+  '0-0-13': 'e3d2e329', '0-0-7932': '50669a8d', '0-0-15851': '4e7c2f2c',
+  '0-3-13': 'e057b060', '0-3-7932': '37353fc4', '0-3-15851': '2fcf4eb9',
+  '0-6-13': 'dd6a8e16', '0-6-7932': '45aefb82', '0-6-15851': '61b1477b',
+  '0-9-13': '96e9b384', '0-9-7932': '93d05149', '0-9-15851': 'cdfa8252',
+  '0-12-13': 'cbeec336', '0-12-7932': '3d5ff572', '0-12-15851': '7b3e3451',
 
-  '1-0-13': 'ca5daef0', '1-0-7932': 'c870e445', '1-0-15851': '73fd4033',
-  '1-3-13': 'b78f5665', '1-3-7932': 'ab8f3ed4', '1-3-15851': '336fd6b4',
-  '1-6-13': '1776a755', '1-6-7932': 'eee2ac6e', '1-6-15851': '89fa0883',
-  '1-9-13': '8ae0793a', '1-9-7932': 'f6c1aab6', '1-9-15851': '1c030343',
-  '1-12-13': 'aa862d2a', '1-12-7932': 'f8e15a03', '1-12-15851': 'fec1d0ec',
+  '1-0-13': '1a4397aa', '1-0-7932': '8893f4d9', '1-0-15851': '80aef66f',
+  '1-3-13': '07ab9682', '1-3-7932': '0aa06a2f', '1-3-15851': '88ebfdf2',
+  '1-6-13': '467f9cf3', '1-6-7932': 'aed24bd8', '1-6-15851': 'b106abff',
+  '1-9-13': '76652802', '1-9-7932': 'efd10d34', '1-9-15851': 'd2062fec',
+  '1-12-13': '9a409ed9', '1-12-7932': 'a9a265e5', '1-12-15851': 'be59a597',
 
-  '2-0-13': '9d464892', '2-0-7932': '6a3001b8', '2-0-15851': 'f5e82aa6',
-  '2-3-13': '960a2c24', '2-3-7932': 'a4c271c4', '2-3-15851': '23efe757',
-  '2-6-13': '871b4dfc', '2-6-7932': 'b74e113c', '2-6-15851': '891326e3',
-  '2-9-13': '7cdc687a', '2-9-7932': 'bce28300', '2-9-15851': '6ddf26d7',
-  '2-12-13': '215cdae0', '2-12-7932': '0c88d00c', '2-12-15851': '5afdafcf',
+  '2-0-13': '43f2eb39', '2-0-7932': '752581a9', '2-0-15851': '7ba32146',
+  '2-3-13': 'c9954129', '2-3-7932': 'efa1bdb4', '2-3-15851': '2ce428b2',
+  '2-6-13': '42c78222', '2-6-7932': '4dd5cd2a', '2-6-15851': '6463352c',
+  '2-9-13': '557a96c2', '2-9-7932': 'b0d13a02', '2-9-15851': '8fcb29f8',
+  '2-12-13': 'b5b78195', '2-12-7932': 'b739e846', '2-12-15851': '5d6d26f0',
 
-  '3-0-13': 'c6544e89', '3-0-7932': 'df4de7d9', '3-0-15851': 'baa8deb8',
-  '3-3-13': '061ff61f', '3-3-7932': '8be42247', '3-3-15851': 'b25515dc',
-  '3-6-13': '7ef97ce1', '3-6-7932': '28b69b17', '3-6-15851': '08b71073',
-  '3-9-13': '61eb909a', '3-9-7932': 'f65e9e13', '3-9-15851': '830bef14',
-  '3-12-13': 'd36b6695', '3-12-7932': '90303069', '3-12-15851': '98b84807',
+  '3-0-13': '4e6e6dee', '3-0-7932': '1b18d051', '3-0-15851': '4b6e7d78',
+  '3-3-13': '9089fac5', '3-3-7932': 'd7b2340c', '3-3-15851': '32dfc712',
+  '3-6-13': 'ce423c0c', '3-6-7932': 'c1a05030', '3-6-15851': 'cd923230',
+  '3-9-13': 'd4632327', '3-9-7932': 'ecc7793c', '3-9-15851': '094d07eb',
+  '3-12-13': '9a2eaf12', '3-12-7932': 'caf6b5ff', '3-12-15851': '3db6678c',
 };
 
 describe('impronte digitali della grammatica', () => {

@@ -225,9 +225,10 @@
    riga di prima, girata con la toolbar. */
 .dock-group + .dock-group { padding-top: 8px; border-top: 1px solid var(--hud-line-soft); }
 .dock-group-title { padding-bottom: 3px; border-bottom: 1px solid var(--hud-line); color: var(--hud-muted); font-size: 8px; font-weight: 900; letter-spacing: .1em; text-transform: uppercase; }
-/* Due tessere per riga: e' cio' che fa stare quattro corsie, tre bottoni di
-   portata e i pannelli dentro un'altezza di schermo senza rimpicciolire niente.
-   Una colonna sola sarebbe un rail piu' stretto ma alto il doppio. */
+/* Due tessere per riga e' il ripiego per gli schermi bassi, non il disegno: fa
+   stare quattro corsie, tre bottoni di portata e i pannelli in ~690px, al prezzo
+   di un rail largo il doppio. Sopra i 900px di finestra la media query in fondo
+   al file torna a una colonna, che e' dove questa toolbar vuole stare. */
 .dock-group-row { display: grid; grid-template-columns: repeat(2, 1fr); align-items: stretch; gap: 4px; }
 .dock-utility { display: grid; gap: 4px; padding: 8px 2px 0; border-top: 1px solid var(--hud-line-soft); }
 .dock-utility-row { display: flex; gap: 4px; }
@@ -326,10 +327,8 @@
   box-shadow: 0 0 0 2px var(--hud-accent-shape), var(--hud-elev-2);
 }
 .hud-tile[aria-pressed="true"] .hud-tile-key { color: var(--hud-on-accent); opacity: 1; }
-/* Un blocco di righe, non un periodo centrato: `actionTooltip` manda un a capo
-   per voce e `pre-line` lo rende. Centrato, un testo di quattro righe non ha un
-   bordo sinistro su cui tornare, ed e' meta' della ragione per cui si leggeva
-   come un muro. */
+/* La bolla di **una riga**: resta a chi ha una riga sola da dire — il tema, le
+   viste, la pausa. Le azioni del dock hanno una scheda vera, qui sotto. */
 .hud-button[data-tooltip]::after { content: attr(data-tooltip); position: absolute; left: 50%; bottom: calc(100% + 9px); z-index: 50; width: max-content; max-width: 260px; transform: translate(-50%, 4px); padding: 7px 9px; border-radius: 8px; color: var(--hud-on-dark); background: rgba(38, 56, 51, .96); font: 500 10px/1.4 var(--hud-font); text-align: left; white-space: pre-line; opacity: 0; visibility: hidden; transition: opacity 120ms ease, transform 120ms ease; pointer-events: none; }
 .hud-button[data-tooltip]:hover::after, .hud-button[data-tooltip]:focus-visible::after { opacity: 1; visibility: visible; transform: translate(-50%, 0); }
 /*
@@ -346,6 +345,69 @@
 .resource-bar .hud-button[data-tooltip]::after { left: auto; right: calc(100% + 10px); bottom: auto; top: 50%; transform: translate(4px, -50%); }
 .resource-bar .hud-button[data-tooltip]:hover::after,
 .resource-bar .hud-button[data-tooltip]:focus-visible::after { transform: translate(0, -50%); }
+
+/*
+ * La scheda di un'azione: nome e prezzo, cosa fa, come si comporta, il gesto.
+ *
+ * Un `::after` puo' portare una stringa e basta, e con una stringa sola tutte le
+ * voci pesano uguale: il nome dello strumento non c'era, il prezzo nemmeno, e i
+ * due elenchi correvano larghi quanto la frase che li spiegava. E' un elemento
+ * vero perche' e' la **gerarchia** a mancare, non lo spazio.
+ *
+ * **Si aggancia in alto e scende**, non e' centrata sul bottone: su un rail alto
+ * quanto lo schermo una scheda centrata sulla prima tessera perde la testa fuori
+ * dalla finestra, e su quelle in fondo perde il piede. Scendendo dal bordo
+ * superiore della tessera ha davanti tutta l'altezza che le resta sotto.
+ */
+.hud-tip {
+  position: absolute;
+  left: calc(100% + 10px);
+  top: 0;
+  z-index: 50;
+  display: grid;
+  gap: 7px;
+  width: 246px;
+  padding: 10px 12px 11px;
+  border-radius: 11px;
+  color: var(--hud-on-dark);
+  background: rgba(38, 56, 51, .97);
+  box-shadow: var(--hud-elev-2);
+  font: 500 10px/1.45 var(--hud-font);
+  text-align: left;
+  white-space: normal;
+  opacity: 0;
+  transform: translateX(-4px);
+  transition: opacity 120ms ease, transform 120ms ease;
+  pointer-events: none;
+}
+/* **Nessun `visibility: hidden`**, che invece la bolla di una riga si permette:
+   il bottone la indica con `aria-describedby`, e un ramo nascosto cosi' esce
+   dall'albero di accessibilita' — la descrizione non arriverebbe proprio a chi
+   non puo' vederla. Chiusa resta trasparente e sorda al puntatore, che e' quanto
+   basta. */
+.hud-button:hover > .hud-tip, .hud-button:focus-visible > .hud-tip { opacity: 1; transform: translateX(0); }
+.hud-tip-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.hud-tip-title { font-size: 12.5px; font-weight: 800; letter-spacing: .01em; }
+.hud-tip-cost { display: inline-flex; align-items: center; flex: 0 0 auto; gap: 3px; font-size: 10px; font-weight: 700; font-variant-numeric: tabular-nums; opacity: .74; }
+.hud-tip-cost .hud-icon { width: 10px; height: 10px; stroke-width: 2.4; }
+.hud-tip-lead { opacity: .88; }
+/* Etichetta a sinistra, valore a destra: e' una tabella di due colonne, e la
+   colonna fissa e' cio' che permette di scendere cercando «Where» senza
+   rileggere le righe sopra. */
+.hud-tip-rows { display: grid; gap: 4px; padding-top: 8px; border-top: 1px solid rgba(255, 255, 255, .15); }
+.hud-tip-row { display: grid; grid-template-columns: 58px 1fr; align-items: baseline; gap: 8px; }
+.hud-tip-key { color: inherit; font-size: 8px; font-weight: 900; letter-spacing: .09em; text-transform: uppercase; opacity: .55; }
+.hud-tip-value { font-weight: 600; }
+.hud-tip-note { padding-top: 8px; border-top: 1px solid rgba(255, 255, 255, .15); opacity: .72; }
+/* Il gesto e' in fondo perche' e' l'ultima cosa che serve; il blocco e' in fondo
+   perche' e' la prima che si rilegge. Stesso posto, colore diverso. */
+.hud-tip-status { font-weight: 800; opacity: .68; }
+/* Un caldo fisso e non `--hud-gesture`: quel token e' derivato contro il
+   **pannello** color crema, e su questo fondo verde scuro si spegnerebbe. E' lo
+   stesso di `.view-option[aria-pressed]`, che sta su un pieno per la stessa
+   ragione. */
+.hud-tip[data-blocked="true"] .hud-tip-status { color: #ffcda8; opacity: 1; }
+.hud-tip-detail { display: block; margin-top: 2px; font-weight: 700; font-variant-numeric: tabular-nums; opacity: .72; }
 .button-copy { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; white-space: nowrap; }
 .button-cost { color: var(--hud-muted); font-size: 9px; font-weight: 700; }
 /* Su una pastiglia piena il costo non puo' restare `--hud-muted`: quel token e'
@@ -585,6 +647,54 @@
 .debug-sites { margin: 6px 10px 0; color: inherit; font: inherit; }
 
 /*
+ * Sopra i 900px il rail prende l'altezza e **restituisce larghezza**.
+ *
+ * Due colonne di tessere sono 158px di chrome su un bordo dove la citta' vorrebbe
+ * esserci, e sotto l'ultimo bottone restavano duecento pixel vuoti: la toolbar
+ * era larga per non essere alta, su uno schermo che l'altezza ce l'aveva. In
+ * colonna singola scende a ~96px — la meta' — e i duecento pixel di prima
+ * tornano alle tessere, che diventano piu' grandi invece di piu' numerose.
+ *
+ * **Le tessere si dividono lo spazio, non lo pretendono.** Ogni corsia cresce in
+ * proporzione a quante ne ha (`--dock-tiles`, scritto da `BuildDock`), quindi la
+ * riga interna in `1fr` le fa venire tutte della stessa altezza — e quando la
+ * targa della vista compare in fondo al rail il dock si stringe da solo invece di
+ * uscire dallo schermo, che e' il motivo per cui qui non c'e' nessuna misura
+ * fissa da azzeccare.
+ */
+@media (min-height: 901px) {
+  .hud-rail-left { width: 96px; }
+  .build-dock { flex: 1 1 auto; min-height: 0; gap: 6px; }
+  .dock-group { flex: 1 1 auto; min-height: 0; grid-template-rows: auto 1fr; flex-grow: var(--dock-tiles, 1); }
+  .dock-group-row { grid-template-columns: 1fr; grid-auto-rows: 1fr; }
+  .dock-utility { flex: 0 0 auto; }
+  /* Nessuna altezza scelta a mano: la griglia la assegna, e il minimo e' solo il
+     pavimento sotto cui una tessera smette di essere un bersaglio. */
+  .hud-tile { width: auto; min-height: 36px; padding: 5px 4px 6px; }
+  .hud-tile .hud-icon { width: 20px; height: 20px; }
+  /* Il prezzo lascia la tessera e passa nell'intestazione della scheda, dove ha
+     l'icona accanto e non deve stare in nove pixel. E' anche cio' che tiene il
+     contenuto minimo della tessera sotto l'altezza che la griglia le da' quando
+     lo schermo e' alto quel tanto che basta, e non di piu'. */
+  .hud-tile .button-cost { display: none; }
+  /* Tre icone in 76px di corsia: la misura fissa da 38px le manderebbe a capo. */
+  .dock-utility-row > .hud-button--icon { width: auto; min-width: 0; padding: 7px 2px; }
+  .dock-utility-row .hud-icon { width: 16px; height: 16px; }
+  /* La targa perde i capitasti e non l'etichetta: in fondo a un rail stretto la
+     tabella dei tasti e' la parte che costa altezza al dock qui sopra. */
+  .view-bar { padding: 10px 9px 9px; }
+  .view-bar-keys { display: none; }
+  .view-bar-label { font-size: 13px; }
+}
+
+/* Piu' in alto di cosi' la tessera ha spazio da regalare, e il prezzo torna
+   dov'era: la scheda resta la lettura completa, la tessera ridiventa un
+   confronto a colpo d'occhio fra dodici cifre. */
+@media (min-height: 1150px) {
+  .hud-tile .button-cost { display: inline-flex; }
+}
+
+/*
  * Su un rail il vincolo cambia asse: non e' piu' la larghezza a finire, e'
  * l'altezza. Quattro corsie, tre bottoni di portata e i pannelli stanno in
  * ~690px; sotto quella soglia la tessera si stringe invece di far scorrere il
@@ -628,7 +738,8 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .hud-button, .policy-drawer, .theme-picker, .help-card { transition: none; }
+  .hud-button, .hud-tip, .policy-drawer, .theme-picker, .help-card { transition: none; }
+  .hud-tip { transform: none; }
   /* Nessun sollevamento e nessuna pulsazione: restano cornice e colore, che
      dicono la stessa cosa senza muoversi. */
   .hud-button:hover:not(:disabled),

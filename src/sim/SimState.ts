@@ -159,10 +159,46 @@ export interface SimStateData {
    */
   readonly flows: FundsReport;
 
+  /**
+   * Quota di organico dell'ultimo tick, in [0, 1]: braccia disponibili su braccia
+   * richieste da industria, commercio e campagna insieme.
+   *
+   * Stessa natura di `commerce`, `flows` e `harvest`, e sta qui per la stessa
+   * ragione: era gia' calcolato dentro `tick`, moltiplicava ogni produzione e
+   * veniva buttato via una riga dopo. Tenerlo non aggiunge un conto, ne toglie
+   * uno a chi lo rifaceva a modo suo.
+   *
+   * **Lo legge chi pianta.** Il `FarmDriver` chiedeva quanti lotti mancassero *a
+   * organico pieno*, cioe' su un'aritmetica diversa da quella con cui il tick
+   * calcola poi il raccolto: una citta' a 0,7 di organico raccoglieva il 70% di
+   * cio' per cui aveva piantato e nessuno se ne accorgeva. Da qui passa il numero
+   * vero.
+   *
+   * Vale `1` in uno stato mai ticcato — non c'e' ancora niente da tenere in piedi,
+   * e l'ottimismo e' il comportamento che c'era prima.
+   */
+  readonly staffing: number;
+
   /** Decisione sospesa e registro compatto degli esiti scelti. */
   readonly pendingDecision: CityDecision | null;
   readonly decisionHistory: readonly DecisionOutcome[];
   readonly nextDecisionTick: number;
+
+  /**
+   * Se l'emergenza alimentare puo' scattare.
+   *
+   * **E' il fronte che alla scelta mancava.** `nextDecisionTick` e' un
+   * intervallo, non una memoria: da solo riapre l'emergenza a ogni scadenza
+   * finche' la condizione e' vera, e la condizione — in una citta' che non
+   * riesce a sfamarsi — e' vera per sempre. Qui sta l'altra meta': risolvere
+   * un'emergenza la disarma, e a ricaricarla e' `tick` quando la citta' torna a
+   * coprire la propria spesa sopra `decisions.recoveryCoverage`.
+   *
+   * Una carestia cronica quindi viene chiesta **una volta**, non ogni novanta
+   * secondi: che sia in corso lo dice la HUD, e una scelta d'emergenza che si
+   * ripete senza che nulla sia cambiato non e' una scelta.
+   */
+  readonly supplyArmed: boolean;
 
   /** Classe di cui la scena di debug disegna la heatmap e scrive `VoxelWorld.data`. */
   readonly selectedClass: BuildingClass;
@@ -227,9 +263,11 @@ export function createSimState(options: SimStateOptions = {}): SimState {
     commerce: EMPTY_COMMERCE,
     harvest: EMPTY_HARVEST,
     flows: NO_FUNDS_FLOW,
+    staffing: 1,
     pendingDecision: null,
     decisionHistory: [],
     nextDecisionTick: BALANCE.decisions.firstTick,
+    supplyArmed: true,
     selectedClass: options.selectedClass ?? BUILDING_CLASS.residential,
   };
 
@@ -509,6 +547,11 @@ export function resolveDecision(state: SimState, optionId: string): SimState | n
     pendingDecision: null,
     decisionHistory: history,
     nextDecisionTick: state.tickCount + BALANCE.decisions.intervalTicks,
+    // Un'emergenza risolta non si ripropone alla scadenza successiva: torna a
+    // scattare solo dopo essere rientrata, e a dirlo e' `tick`. Le altre due
+    // famiglie non hanno un fronte perche' non descrivono un guasto — una
+    // piazza da assegnare si ripresenta, una carestia gia' dichiarata no.
+    supplyArmed: family === 'supply' ? false : state.supplyArmed,
   };
 }
 
@@ -538,8 +581,8 @@ export function reviveSimState(data: SimStateData, reachCost?: StepCost): SimSta
   const compatible = data as SimStateData & Partial<Pick<
     SimStateData,
     'tradeMode' | 'trade' | 'commerce' | 'mixedCounts' | 'charters' | 'farmCounts'
-    | 'flows' | 'harvest'
-    | 'pendingDecision' | 'decisionHistory' | 'nextDecisionTick'
+    | 'flows' | 'harvest' | 'staffing'
+    | 'pendingDecision' | 'decisionHistory' | 'nextDecisionTick' | 'supplyArmed'
   >>;
   const normalised: SimStateData = {
     ...data,
@@ -556,6 +599,10 @@ export function reviveSimState(data: SimStateData, reachCost?: StepCost): SimSta
     // parola per parola anche per il referto del raccolto.
     flows: compatible.flows ?? NO_FUNDS_FLOW,
     harvest: compatible.harvest ?? EMPTY_HARVEST,
+    // Idem per l'organico: un salvataggio che non lo porta torna ottimista, che
+    // e' come si comportava il driver prima che questo numero esistesse, e il
+    // primo tick lo riscrive con quello vero.
+    staffing: compatible.staffing ?? 1,
     policies: canonicalPolicies(data.policies),
     charters: canonicalCharters(compatible.charters ?? []),
     tradeMode: compatible.tradeMode !== undefined && isTradeMode(compatible.tradeMode)
@@ -568,6 +615,10 @@ export function reviveSimState(data: SimStateData, reachCost?: StepCost): SimSta
     pendingDecision: compatible.pendingDecision ?? null,
     decisionHistory: compatible.decisionHistory ?? [],
     nextDecisionTick: compatible.nextDecisionTick ?? BALANCE.decisions.firstTick,
+    // Un salvataggio che non porta il fronte torna armato: al primo tick, se la
+    // citta' mangia, resta armato senza aver disturbato nessuno; se non mangia,
+    // l'emergenza e' proprio la cosa che va chiesta.
+    supplyArmed: compatible.supplyArmed ?? true,
   };
   const field = new DesirabilityField(reachCost);
   field.rebuild(normalised.catalysts, normalised.buildings, resolveWeights(normalised.policies));

@@ -1,7 +1,7 @@
 export type HudIcon =
   | 'funds' | 'population' | 'food' | 'materials' | 'satisfaction'
   | 'residential' | 'production' | 'civic' | 'expansion' | 'terrace' | 'ropeway' | 'policies'
-  | 'market' | 'factory' | 'park' | 'port' | 'airport' | 'transport' | 'university' | 'monument'
+  | 'market' | 'factory' | 'park' | 'port' | 'ferry' | 'airport' | 'transport' | 'university' | 'monument'
   | 'pause' | 'play' | 'theme' | 'view' | 'swatch' | 'help' | 'close'
   | 'daylight' | 'sun' | 'moon' | 'clouds' | 'cloudsOff';
 
@@ -18,6 +18,12 @@ const PATHS: Readonly<Record<HudIcon, string>> = {
   factory: '<path d="M3 21V9l6 3V9l6 3V5h4v16H3ZM7 17h2M12 17h2M17 17h2"/>',
   park: '<path d="M12 21v-7M7 14h10l-2-3h2l-5-8-5 8h2l-2 3ZM5 21h14"/>',
   port: '<path d="M12 3v14M8 7h8M5 12c0 5 3 8 7 9 4-1 7-4 7-9M3 12h4M17 12h4"/>',
+    // Uno scafo con la cabina e l'onda sotto: il porto e' l'ancora, cioe' lo
+      // scalo, e il traghetto e' la barca che ci passa. Le due tessere stanno
+        // accanto e vogliono la stessa costa, quindi devono distinguersi da lontano —
+          // e prima di questa riga il traghetto non aveva icona affatto: `PATHS` non lo
+            // conosceva, e la tessera usciva vuota.
+              ferry: '<path d="M4 15h16l-2.2 4H6.2L4 15ZM7 15v-4h10v4M10 11V8h4v3M3 21c1.5 0 1.5-1 3-1s1.5 1 3 1 1.5-1 3-1 1.5 1 3 1 1.5-1 3-1"/>',
   airport: '<path d="M12 3c.8 0 1.4.9 1.4 2v4.2l7.1 4v2.1l-7.1-2.2v4.3l2.1 1.6v1.6L12 19.6l-3.5 1V19l2.1-1.6v-4.3l-7.1 2.2v-2.1l7.1-4V5c0-1.1.6-2 1.4-2Z"/>',
   transport: '<path d="M6 18h12M7 18l-2 3M17 18l2 3M5 15V7c0-3 14-3 14 0v8H5ZM8 11h.01M16 11h.01M7 15h10"/>',
   university: '<path d="m3 9 9-6 9 6-9 4-9-4ZM6 11v6M18 11v6M4 20h16M9 12v5M15 12v5"/>',

@@ -72,6 +72,41 @@ describe('GrowthScene', () => {
     expect(scene.stats.levels.slice(1).some((count) => count > 0)).toBe(true);
   });
 
+  it('fa crescere anche un catalizzatore piantato lontano dal nucleo', () => {
+    // **La classifica dei candidati e' globale e il punteggio e' assoluto**, e
+    // le due cose insieme affamavano ogni polo che non fosse il piu' forte della
+    // mappa: un mercato appena piazzato vale la propria intensita', mentre nel
+    // nucleo maturo due campi sovrapposti tengono migliaia di celle libere piu'
+    // in alto. I posti in lista finivano tutti li' e attorno al catalizzatore
+    // nuovo non nasceva niente — non poco, **niente**, per sempre. E' lo stesso
+    // difetto per cui su un'isola staccata non cresceva nulla nemmeno con il suo
+    // monumento sopra, perche' un'isola e' un polo che non tocca il nucleo.
+    const world = new VoxelWorld();
+    const map = testTerrain({ chunksX: 8, chunksY: 8, height: 12 });
+    const scene = new GrowthScene(world, map, { minX: 0, minY: 0, sizeX: 256, sizeY: 256 }, 1337);
+
+    expect(scene.placeCatalyst(48, 48, 'market').success).toBe(true);
+    expect(scene.placeCatalyst(84, 48, 'factory').success).toBe(true);
+    expect(scene.placeCatalyst(48, 84, 'park').success).toBe(true);
+    for (let i = 0; i < 800; i++) scene.advance(0.1);
+
+    const near = (): number => {
+      let count = 0;
+      for (const record of scene.registry.all) {
+        if (record.landmark !== undefined) continue;
+        if (Math.abs(record.x - 200) <= 40 && Math.abs(record.y - 200) <= 40) count++;
+      }
+      return count;
+    };
+
+    // Lontano da tutto: nessun campo lo tocca, quindi prima non c'e' niente.
+    expect(near()).toBe(0);
+    expect(scene.placeCatalyst(200, 200, 'market').success).toBe(true);
+    for (let i = 0; i < 800; i++) scene.advance(0.1);
+
+    expect(near()).toBeGreaterThan(0);
+  });
+
   it('un settore comprato arriva con il nucleo che lo fa crescere', () => {
     // **Terra e crescita non sono la stessa cosa.** La citta' nasce dove il
     // campo di desiderabilita' esiste, e il campo esiste solo dove un

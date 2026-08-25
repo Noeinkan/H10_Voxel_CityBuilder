@@ -22,7 +22,7 @@ import { fitsChunkBudget } from './chunkBudget';
 import type { ClearanceRefusal } from './clearance';
 import { OPEN_SITE, type ClearanceBox, type ClearanceSites } from './clearanceSite';
 import { BUILDER, CLASS_PROFILE } from './config';
-import { buildWorks, groundKindAt, surveyGrade } from './siteWorks';
+import { buildWorks, groundKindAt, surveyGrade, type WorksMask } from './siteWorks';
 import { stampFootprint } from './stamp';
 
 /**
@@ -39,18 +39,35 @@ import { stampFootprint } from './stamp';
  * edifici, e continua a non sapere che esistono (invariante 7).
  */
 /**
+ * Perche' la struttura non comparira', pur restando il piazzamento valido.
+ *
+ * Due motivi vengono dal costruito e li decide `clearance.ts`; il terzo viene
+ * dal **terreno**, ed e' quello che mancava: su un fianco di montagna nessuna
+ * opera regge un riquadro largo venti colonne, quindi `surveyGrade` rifiuta e
+ * non compare ne' la struttura ne' la piazzola di ripiego — `canPaint` scarta a
+ * sua volta ogni colonna in parete. Il catalizzatore si pagava, il campo
+ * funzionava, e sul terreno non si vedeva **niente**: era l'unico dei tre casi
+ * che il cursore non sapeva dire prima del click.
+ */
+export type LandmarkRefusal = ClearanceRefusal | 'no-footing';
+
+/**
  * Cosa il piazzamento di un landmark trova nel suo riquadro.
  *
- * E' `ClearanceVerdict` sotto un altro nome, e il nome vale la riga: chi legge
- * `landmarkClearance` sul `Builder` non deve andare a cercare che tipo torna un
- * cantiere generico.
+ * Era `ClearanceVerdict` sotto un altro nome, e non lo e' piu': il cantiere sa
+ * cosa e' costruito, non cosa regge sotto. Il nome vale comunque la riga — chi
+ * legge `landmarkClearance` sul `Builder` non deve andare a cercare che tipo
+ * torna un cantiere generico.
  */
 export interface LandmarkSite {
   /** Edifici che porterebbe via. Zero dove il riquadro e' gia' libero. */
   readonly clears: number;
   /** Perche' non ci si puo' piantare, o null. */
-  readonly refusal: ClearanceRefusal | null;
+  readonly refusal: LandmarkRefusal | null;
 }
+
+/** Riquadro che nessuna opera regge: la struttura non ci sta, comunque vada. */
+const NO_FOOTING: LandmarkSite = { clears: 0, refusal: 'no-footing' };
 
 /**
  * Cosa impedisce a una struttura di posarsi su un tetto.
@@ -144,9 +161,16 @@ export class LandmarkDriver {
    * Cosa il piazzamento troverebbe qui, senza toccare niente.
    *
    * E' la domanda del cursore, e **la stessa che fa il click**: se rispondesse
-   * con criteri diversi, "Valid position" tornerebbe a essere un'opinione. Non
-   * consulta il terreno — a dire se l'opera regge e' `buildStructure`, al
-   * momento di costruire — perche' qui interessa solo cosa e' gia' costruito.
+   * con criteri diversi, "Valid position" tornerebbe a essere un'opinione — ed e'
+   * esattamente quello che era diventata. Il terreno restava fuori «perche' qui
+   * interessa solo cosa e' gia' costruito», ma la struttura non compare per due
+   * ragioni e non per una: su un fianco di montagna e' l'opera a non reggere, e
+   * il cursore diceva «Valid position» a un click che non avrebbe prodotto
+   * niente — nemmeno la piazzola, perche' `canPaint` scarta le colonne in parete.
+   *
+   * **L'ordine e' quello di `catalystFailure`**: prima cosa regge il terreno, poi
+   * cosa ci sta sopra. Dire quante case porta via un riquadro che nessuna opera
+   * reggerebbe manderebbe a cercare una sacca bassa dove il problema e' la parete.
    */
   siteAt(x: number, y: number, kind: CatalystId): LandmarkSite {
     // Su un tetto non c'e' niente da sgomberare: la struttura si posa sopra cio'
@@ -155,10 +179,11 @@ export class LandmarkDriver {
     const aloft = this.aloftSiteAt(x, y, kind);
     if (aloft.site !== null || aloft.refusal !== null) return OPEN_SITE;
 
-    const box = this.footprintOf(x, y, kind);
-    if (box === null) return OPEN_SITE;
+    const spot = this.placementAt(x, y, kind);
+    if (spot === null) return OPEN_SITE;
+    if (this.footingAt(spot, kind, hashCoords(this.ctx.seed, x, y)) === null) return NO_FOOTING;
 
-    return this.clearance.survey(box, BALANCE.gameplay.catalyst.clearing);
+    return this.clearance.survey(boxOf(spot), BALANCE.gameplay.catalyst.clearing);
   }
 
   /**
@@ -374,21 +399,60 @@ export class LandmarkDriver {
    * sul riquadro sgombero ci va **questa** struttura.
    */
   private open(x: number, y: number, kind: CatalystId): boolean {
-    const box = this.footprintOf(x, y, kind);
-    if (box === null) return false;
+    const spot = this.placementAt(x, y, kind);
+    if (spot === null) return false;
+    // **Non si sgombera per niente.** Se il terreno non regge l'opera, la
+    // richiamata ricadrebbe comunque sulla piazzola: abbattere prima le case
+    // sarebbe un cantiere aperto per una struttura che non puo' comparire.
+    if (this.footingAt(spot, kind, hashCoords(this.ctx.seed, x, y)) === null) return false;
 
-    return this.clearance.start(box, BALANCE.gameplay.catalyst.clearing, () => {
+    return this.clearance.start(boxOf(spot), BALANCE.gameplay.catalyst.clearing, () => {
       const built = this.buildStructure(x, y, kind);
       if (built === null) this.paintPlaza(x, y, catalystById(kind).class);
       else this.paintApron(built, landmarkOf(kind)!.apron);
     });
   }
 
-  /** L'ingombro che la ricetta occuperebbe cliccando qui, o null se non ne ha una. */
-  private footprintOf(x: number, y: number, kind: CatalystId): Footprint | null {
-    const spot = this.placementAt(x, y, kind);
-    if (spot === null) return null;
-    return { x: spot.x, y: spot.y, sizeX: spot.span.sizeX, sizeY: spot.span.sizeY };
+  /**
+   * L'opera che reggerebbe la struttura qui, o null se non ce n'e' una.
+   *
+   * **Sta a parte perche' la fanno in tre**, e finche' la faceva solo chi
+   * costruisce il cursore poteva dire una cosa e il click farne un'altra: adesso
+   * il preventivo, l'apertura del cantiere e la costruzione chiedono la stessa
+   * cosa allo stesso terreno.
+   *
+   * **L'opera si getta sotto cio' che la ricetta occupa, non sotto il
+   * riquadro.** Il riquadro di un porto e' per meta' specchio d'acqua, e
+   * portarlo tutto alla quota della banchina produceva una piattaforma
+   * rettangolare in mezzo al mare con dentro una pozza piu' alta del mare
+   * stesso. La maschera si chiede allo **stadio finale**, perche' l'opera si
+   * costruisce una volta sola: uno stadio successivo non deve poter scoprire
+   * di aver bisogno di terra che nessuno ha gettato.
+   *
+   * `surveyGrade` e non il vincolo `nearLand` che ferma la carreggiata: un molo
+   * **deve** poter uscire sull'acqua. Il limite qui e' la ricetta — un ingombro
+   * dichiarato e finito — invece di una regola sul terreno, ed e' la differenza
+   * fra una struttura progettata e una piattaforma che si allarga finche' il
+   * fondale regge.
+   */
+  private footingAt(spot: Placement, kind: CatalystId, recordSeed: number): Footing | null {
+    const recipe = landmarkOf(kind);
+    if (recipe === null) return null;
+
+    const finalStamp = generateLandmark({
+      kind,
+      stage: maxStageOf(recipe),
+      facing: spot.facing,
+      seed: recordSeed,
+    });
+    const mask = finalStamp === null
+      ? undefined
+      : stampFootprint(finalStamp, LANDMARK.groundBand);
+
+    const plan = surveyGrade(
+      this.ctx.terrain, spot.x, spot.y, spot.span.sizeX, spot.span.sizeY, mask,
+    );
+    return plan === null ? null : { plan, mask };
   }
 
   /** Costruisce la struttura e ne restituisce il record, o null se il luogo non la regge. */
@@ -408,30 +472,10 @@ export class LandmarkDriver {
     const stamp = generateLandmark({ kind, stage: 0, facing, seed: recordSeed });
     if (stamp === null) return null;
 
-    // **L'opera si getta sotto cio' che la ricetta occupa, non sotto il
-    // riquadro.** Il riquadro di un porto e' per meta' specchio d'acqua, e
-    // portarlo tutto alla quota della banchina produceva una piattaforma
-    // rettangolare in mezzo al mare con dentro una pozza piu' alta del mare
-    // stesso. La maschera si chiede allo **stadio finale**, perche' l'opera si
-    // costruisce una volta sola: uno stadio successivo non deve poter scoprire
-    // di aver bisogno di terra che nessuno ha gettato.
-    const finalStamp = generateLandmark({
-      kind,
-      stage: maxStageOf(landmarkOf(kind)!),
-      facing,
-      seed: recordSeed,
-    });
-    const mask = finalStamp === null
-      ? undefined
-      : stampFootprint(finalStamp, LANDMARK.groundBand);
+    const footing = this.footingAt(spot, kind, recordSeed);
+    if (footing === null) return null;
+    const { plan, mask } = footing;
 
-    // `surveyGrade` e non il vincolo `nearLand` che ferma la carreggiata: un
-    // molo **deve** poter uscire sull'acqua. Il limite qui e' la ricetta — un
-    // ingombro dichiarato e finito — invece di una regola sul terreno, ed e' la
-    // differenza fra una struttura progettata e una piattaforma che si allarga
-    // finche' il fondale regge.
-    const plan = surveyGrade(terrain, origin.x, origin.y, span.sizeX, span.sizeY, mask);
-    if (plan === null) return null;
     if (registry.overlaps(origin.x, origin.y, span.sizeX, plan.padZ, span.sizeZ, span.sizeY)) {
       return null;
     }
@@ -609,5 +653,14 @@ function catalystIn(state: SimState, record: BuildingRecord, kind: CatalystId): 
 }
 
 /** L'ingombro in pianta di una ricetta, gia' portato sul verso vero. */
-type Footprint = ClearanceBox;
+function boxOf(spot: Placement): ClearanceBox {
+  return { x: spot.x, y: spot.y, sizeX: spot.span.sizeX, sizeY: spot.span.sizeY };
+}
+
+/** Cio' che il terreno concede a un riquadro: il piano, e dove l'opera esiste. */
+interface Footing {
+  readonly plan: GradePlan;
+  /** Colonne che l'opera deve reggere, o `undefined` per tutta l'impronta. */
+  readonly mask: WorksMask | undefined;
+}
 

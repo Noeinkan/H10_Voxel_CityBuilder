@@ -11,6 +11,266 @@ coincide con il messaggio di commit.
 
 ---
 
+## In corso — L'economia alimentare smette di essere una costante
+
+- **La portata del collegamento esterno segue la taglia della città.**
+  `trade.importFoodPerTick` era una quantità assoluta contro una domanda che vale
+  `pop × food.perResident`: un porto copriva il **667%** della spesa a 240
+  abitanti e il **4,9%** a 3268. Diventa `trade.importFoodShare`, una quota, con
+  `foodImportShareOf` come unica aritmetica per i suoi due lettori. Resta un
+  supplemento: porto e aeroporto insieme, con la priorità sul cibo, arrivano al
+  55% e non oltre.
+- **La campagna si dimensiona sull'organico che la città ha davvero.** Il driver
+  chiedeva quanti lotti mancassero *a organico pieno*, cioè stimava il raccolto su
+  un'aritmetica diversa da quella con cui `tick` lo calcola: una città a 0,8 di
+  organico ne raccoglieva 0,8 credendosi in pareggio. `staffing` entra nello stato
+  accanto a `commerce`, `flows` e `harvest` — era già calcolato e buttato via — e
+  `missingPlotsFor` lo legge da sé, così attraversa il confine solo la risposta.
+  Misurati su 9000 tick, città di 3264 abitanti con le braccia contese: quota di
+  domanda servita da **0,80 a 1,00**, tick con la città affamata da **6478 a 926**.
+- **Il pareggio secco teneva la dispensa a zero per costruzione.** È la FOOD 0
+  che si leggeva nella HUD di una città sana: il raccolto pareggiava il pasto e
+  non avanzava niente, quindi ogni oscillazione era una carestia. Nuovo
+  `food.targetCoverage`, che sta sopra `decisions.recoveryCoverage` per contratto —
+  sotto, piantare non riarmerebbe mai il fronte dell'emergenza. Il prezzo sono 38
+  campi in più e il 7% di materiali in meno: il bacino di braccia è uno solo.
+- **L'emergenza alimentare riconosce il porto.** Il fronte si riarmava solo sul
+  raccolto, quindi una città nutrita dal commercio non sarebbe rientrata mai e il
+  giorno in cui i fondi fossero finiti l'allarme non sarebbe tornato a suonare. Si
+  somma la **portata** e non quanto è passato davvero, che dipende da quanto c'è in
+  dispensa e che una dotazione falserebbe.
+- **La dotazione dell'emergenza si conta in tempo.** `decisions.reliefTicks`
+  sostituisce `foodGrant × scale` per le tre alternative: cento tick di consumo,
+  misurati a schermo, erano **dieci secondi**, e in dieci secondi non si pianta
+  niente. Seicento sono due terzi di `intervalTicks`, cioè il tempo di reagire
+  prima della decisione successiva. Sparisce anche l'arrotondamento a edifici
+  interi, che a popolazioni piccole rendeva il regalo a scatti.
+- **Il frutteto non è più un declassamento su tutti gli assi.** Rendeva 0,4 di
+  cibo per braccio contro gli 0,6 del campo, oltre a metà raccolto per lotto:
+  `communityGardens`, che spinge verso il frutteto, peggiorava il raccolto due
+  volte. Con due braccia invece di tre resta un solo costo, ed è quello giusto —
+  il doppio della **terra**, che è anche ciò che il mandato promette di sé.
+- **Anche la fiera del cibo paga in proporzione alla città.** Ultimo numero
+  alimentare rimasto piatto: a costo fisso era soddisfazione gratis appena la
+  città cresceva, cioè non era più una scelta fra tre alternative.
+- **La HUD nomina chi consuma.** La riga `Eaten` del tooltip del cibo diceva il
+  gesto e non chi lo compie; diventa `Residents`. Resta una riga sola perché il
+  cibo ha un solo consumatore — gli abitanti — e non si scompone per edificio.
+
+## In corso — I poli lontani crescono, e il cursore dice la verita' in montagna
+
+- **Ogni catalizzatore ha il suo turno di crescere.** `nextBuildSites` ordina i
+  candidati per desiderabilita' **assoluta** e ne restituisce i primi venti su
+  tutta la mappa: bastava un nucleo maturo — due o tre campi sovrapposti tengono
+  migliaia di celle libere sopra duecentoquaranta — perche' ogni catalizzatore
+  piantato lontano restasse senza una casa **per sempre**. Non lentezza: zero.
+  Misurato su una citta' di seicento edifici, un mercato accostato all'edificato
+  ne portava centosettantanove in centoventi secondi di gioco e lo stesso mercato
+  piazzato lontano zero; su un isolotto staccato, zero prima e duecentonovantadue
+  dopo. `poleRectAt` da' un turno a testa e `BuildSiteQuery.within` ritaglia la
+  classifica su quel polo, dove il confronto fra celle torna a essere fra pari;
+  cio' che il turno non spende lo spende la classifica di sempre, quindi il ritmo
+  complessivo resta quello tarato su `ticksPerBuild`.
+- **Un landmark che non puo' comparire lo dice prima del click.** Su un fianco di
+  montagna nessuna opera regge il riquadro di una ricetta, quindi la struttura non
+  compariva; la piazzola di ripiego nemmeno, perche' `canPaint` scarta le colonne
+  in parete. Il catalizzatore si pagava, il campo funzionava, e sul terreno non si
+  vedeva niente — mentre il cursore aveva appena scritto «Valid position». Il
+  preventivo ora chiede al terreno la stessa cosa che gli chiede il click
+  (`footingAt`, una sola funzione per tutti e tre i chiamanti) e il rifiuto
+  `no-footing` compare sul cursore. Il cantiere non si apre piu' per una struttura
+  che non puo' comparire: sgomberare e' definitivo, la struttura no.
+- **Le sinergie fra ruoli si leggono prima di comprarli.** Le coppie che fanno un
+  quartiere erano una catena di `if` dentro `districtOf` e non comparivano da
+  nessuna parte: erano l'unica sinergia del gioco e si scoprivano piazzando
+  catalizzatori a duecento fondi l'uno. Da tabella, la stessa regola risponde
+  anche alla domanda inversa — `districtPairingsOf` — e la scheda del dock guadagna
+  la riga «Pairs with», messa **prima** di «Only here» perche' l'ordine e' la
+  catena: due campi sovrapposti fanno un quartiere, e il quartiere apre le forme.
+- **Cosa il ruolo consegna alla citta'.** Fra lo strumento in mano e la barra
+  delle risorse non c'era niente: un mercato non porta fondi, porta i negozi che
+  li portano. La riga «Yields» nomina le risorse dei due usi piu' favoriti, e il
+  cibo compare sotto il residenziale invece che come voce sua — non lo produce
+  nessun uso urbano, lo consumano gli abitanti, e i campi arrivano da soli quando
+  il conto non torna.
+
+## In corso — Mezzi dentro il paesaggio
+
+- **I mezzi passano per un materiale di scena invece che per i colori nei
+  vertici.** Erano `MeshBasicMaterial` con la tinta di palette gia' moltiplicata
+  per l'ombra della faccia, riscritta alla cadenza dell'HUD: funzionava, e si
+  vedeva — una nave in fondo alla rada restava satura mentre la costa dietro si
+  scioglieva nella nebbia, quindi non stava *nel* paesaggio, ci stava sopra come
+  una figurina. Ora c'e' un programma proprio che prende **in prestito gli
+  uniform del voxel** — gli stessi oggetti, non delle copie — quindi stesso sole,
+  stessa ombra proiettata, stessa prospettiva aerea, stesso banco di nuvole, per
+  costruzione e non per allineamento manuale.
+- **Il GLSL condiviso vive in `shaders/scene.glsl.ts`, in tre blocchi.** Nebbia,
+  luce e ombra erano scritte dentro `voxel.frag.ts` perche' li' c'era l'unico
+  programma che le usasse; con tre materiali di scena una seconda copia sarebbe
+  una copia che diverge. I blocchi sono tre e non uno perche' un uniform
+  dichiarato e mai letto e' codice morto che sembra vivo: la schiuma non ha una
+  normale da cui campionare un'ombra, e non deve dichiarare la shadow map.
+- **Le sagome guadagnano fasciame, grana e finestrini accesi.** Il reticolo di
+  lamiera al passo del voxel e la variazione per cella si leggono nel **sistema
+  del mezzo** e non del mondo: agganciate alle coordinate mondo, scorrerebbero
+  sotto lo scafo mentre naviga. Di notte le fasce vetrate si accendono a
+  finestrino, come le facciate della citta'.
+- **I fanali sono dichiarati, non dedotti.** `HullBlock.lamp` viene dalla
+  scatola: `lightPalette` veste anche le pinne di un dirigibile, e dedurre
+  l'emissione dalla tinta le accenderebbe come due tubi al neon.
+- **Gli scafi lasciano una scia.** `world/traffic/wake.ts` e' il pennacchio letto
+  in orizzontale — la stessa posa letta nel passato, piu' un'apertura laterale
+  lineare — quindi in pausa si ferma, a 4x si allunga con la nave e due partite
+  identiche lasciano gli stessi segni. Serviva a una cosa sola: uno scafo che
+  scivola su un mare intatto e' una figurina appoggiata sopra, e nessun dettaglio
+  di sagoma corregge quella lettura. Una barca all'ormeggio non lascia niente.
+
+## In corso — Varieta' delle sagome
+
+- **Il repertorio delle fasce si pesca, non si prende in testa.** `nextRect`
+  provava le trasformazioni nell'ordine del profilo e teneva la prima che
+  reggeva: le voci dietro comparivano solo dove la testa non stava in piedi,
+  cioe' in cima alle torri e da nessun'altra parte. Misurato su quattrocento
+  semi, un `officeTower` di livello sei usciva con la **stessa identica sagoma
+  nel 96% dei casi** (sette sagome distinte in tutto). Ora il seme pesca il punto
+  di partenza con il minimo di due tiri — una triangolare, quindi la testa resta
+  la piu' probabile e «questo uso arretra profondo quando puo'» continua a essere
+  vero. Stesso campione: 38% e settantasei sagome. I tiri sono **sempre due**,
+  anche con un repertorio da una voce sola, o la sequenza del PRNG dipenderebbe
+  dall'esito e `recordStamp` non ritroverebbe i voxel da cancellare.
+- **La terrazza si misura sulla striscia scoperta, non sul lato della fascia.**
+  `GRAMMAR.terraceMinSide` valeva tre e chiedeva `rect.w >= 3`, ma nessuna fascia
+  di corpo scende sotto `minBandSide`, che vale quattro: la soglia non poteva
+  mordere. Ogni scarto — anche un `jog` da un voxel — usciva pavimentato e con il
+  parapetto di `emitRoofTech`, e meta' delle transizioni di fascia lasciava
+  proprio un anello da un voxel. E' il motivo per cui a schermo la terrazza non
+  era un luogo ma una cornice, ripetuta su ogni piano di ogni edificio della
+  citta'. Ora la soglia e' `GRAMMAR.terraceMinRing` e misura l'anello: sul
+  ripiego residenziale i voxel di pavimentazione passano dal 4,1% allo 0,7% del
+  volume, e la terrazza torna a dire che li' ci si sta.
+- **`roundTower` non era mai comparsa.** `selectTypology` tiene la prima riga a
+  parita' di priorita', e il tamburo stava **dopo** `skyTerraces`, che pretende
+  la stessa ricchezza con un livello in meno: ogni luogo che accettava il tamburo
+  accettava anche il gradone, e vinceva il gradone. Non falliva niente — la riga
+  c'era nel catalogo e a schermo non e' mai esistita. Spostata dove il suo stesso
+  commento la dichiarava; un test di catalogo ora rifiuta qualunque riga dominata
+  da una che la precede, che e' il difetto che non lancia niente.
+- **Le impronte digitali della grammatica sono rigenerate.** I due tiri in piu'
+  per fascia spostano tutta la sequenza: ogni sagoma e' cambiata, ed era il senso
+  del cambiamento. Una citta' gia' in memoria va considerata persa.
+
+## In corso — La scheda del dock, e un rail largo la metà
+
+- **Il tooltip di un'azione diventa una scheda.** Era una stringa in un `::after`,
+  e con una stringa sola tutte le voci pesano uguale: il nome dello strumento non
+  c'era, il prezzo nemmeno, e la frase che spiega *cosa fa* spariva appena il
+  bottone si bloccava — al suo posto restava «Not enough funds.» e nient'altro,
+  cioè proprio niente per chi stava decidendo se valesse la pena risparmiare.
+  `hudTip.ts` porta un modello puro — intestazione con nome e prezzo, la frase in
+  chiaro, le righe etichettate del comportamento, il gesto o il blocco in fondo —
+  e `paintAction` lo disegna come elemento, rifacendolo solo quando cambia.
+- **I numeri nudi diventano leggibili.** «Radius 52» chiedeva di sapere già cosa
+  sia grande in questa città: adesso è `Long · 52 tiles`, con la banda derivata
+  dal catalogo e non da soglie scritte a mano. Gli usi favoriti sono quattro in
+  tutto e vengono nominati tutti — l'elenco si accorciava a tre e chiudeva con
+  «+1 more», un'ellissi più lunga del nome che nascondeva. La riga degli sblocchi
+  perde la freccia: `Hydroponic tower in farming districts` invece di
+  `farming districts → Hydroponic tower`, cioè prima la cosa promessa e poi la
+  condizione.
+- **`reason` dice solo lo stato.** La descrizione del ruolo vive in
+  `description` e la scheda la mostra sempre; il motivo resta il gesto («Click a
+  spot on the island to place it.») o ciò che sta fermando il bottone.
+- **Il rail passa a una colonna sopra i 900px di finestra.** Due colonne di
+  tessere erano 158px di chrome su un bordo dove la città vorrebbe esserci, e
+  sotto l'ultimo bottone restavano duecento pixel vuoti: la toolbar era larga per
+  non essere alta, su uno schermo che l'altezza ce l'aveva. In colonna singola
+  scende a ~96px e le tessere si dividono l'altezza che avanza — ogni corsia
+  cresce in proporzione a quante ne ha (`--dock-tiles`), quindi restano tutte
+  della stessa misura e il dock si stringe da solo quando la targa della vista
+  compare in fondo al rail. Sotto quella soglia resta il layout a due colonne.
+- **Il traghetto ha un'icona.** `PATHS` non conosceva `ferry`, e quella tessera
+  usciva vuota da quando il ruolo esiste: uno scafo con la cabina e l'onda, che
+  si distingue dall'ancora del porto con cui divide la costa.
+
+## In corso — L'emergenza alimentare smette di suonare a vuoto
+
+- **La carestia si legge dai pasti, non dalla dispensa.** «Supplies under
+  pressure» si apriva quando lo stock di cibo scendeva sotto
+  `trade.foodReservePerResident`, cioè quando in magazzino non c'erano trenta
+  tick di scorta. Ma chi pianta i lotti punta al **pareggio** — `missingPlotsOf`
+  copre il deficit e nient'altro — quindi una città perfettamente sfamata tiene
+  lo stock intorno a zero per costruzione: i due bersagli erano incompatibili e
+  la condizione restava vera per sempre. Misurato su una città da 3268 abitanti
+  in pareggio esatto: **9000 tick su 9000** con la condizione vera, cioè
+  l'emergenza riproposta a ogni scadenza per il resto della partita, e le altre
+  due famiglie mai raggiungibili perché il ramo del cibo esce per primo. Ora la
+  soglia è su `fedShareOf` — la funzione che esiste apposta per distinguere la
+  carestia dal pareggio — e in quello scenario l'emergenza non si apre più.
+
+- **Un allarme che si riarmava sulla propria risposta.** Non bastava la soglia
+  giusta: con il rientro misurato sui pasti, la dotazione appena concessa
+  sfamava la città per un centinaio di tick, il fronte si ricaricava su *quel*
+  pasto e la carestia tornava puntuale appena il regalo finiva — dieci aperture
+  in novemila tick, esattamente quante prima. Il rientro ora si misura sul
+  **raccolto** (`decisions.recoveryCoverage`), che una dotazione non tocca:
+  rientra solo chi ha piantato campi o convertito industria in torri. Una
+  carestia strutturale viene chiesta una volta sola — da dieci aperture a una — e
+  che sia in corso continua a dirlo la HUD.
+
+- **`supplyArmed`, il fronte che alla scelta mancava.** `nextDecisionTick` è un
+  intervallo, non una memoria: da solo riapre l'emergenza a ogni scadenza finché
+  la condizione è vera. Risolvere un'emergenza ora la disarma e a ricaricarla è
+  `tick`, che è l'unico a sapere quanto la città ha raccolto davvero. Sopravvive
+  al giro in JSON; un salvataggio che non lo porta torna armato.
+
+- **Le dotazioni d'emergenza seguono la taglia della città.** `foodGrant` vale
+  cento tick di consumo di un edificio residenziale pieno, ma solo *Buy food
+  supplies* lo scalava con la popolazione: *Ration supplies* e *Community
+  gardens* davano 120 unità fisse, che a 3268 abitanti sono 0,7 tick di consumo
+  — meno di un secondo. Due alternative su tre erano gesti simbolici e il
+  catalogo non lo lasciava vedere. Ora scalano tutte e tre, costo dei giardini
+  compreso, e un test lega l'invariante: la dotazione copre cento tick a ogni
+  taglia.
+
+- **`DecisionStateView` dichiara solo ciò che guarda.** Portava `food`,
+  `materials` e `funds`: il primo era la condizione sostituita, gli altri due non
+  li leggeva nessuno. È la vista in cui si va a cercare *su cosa* si decide.
+
+## In corso — L'influenza prende la forma del luogo
+
+- **I raggi dei ruoli tarati sul cammino, non sulla linea d'aria.** Da quando la
+  portata e' geodetica un passo fuori strada costa `BALANCE.reach.land`, quindi
+  un raggio `r` arrivava a `r / land` celle nel tessuto: la citta' lontano dalle
+  strade copriva un quinto in meno di prima senza che nessuno l'avesse deciso. I
+  nove raggi sono stati alzati di un quarto — l'inverso esatto di `land = 1.25`
+  — che e' una conversione di unita' e non un bilanciamento. Lungo la
+  pavimentazione invece il budget si spende a costo pieno e quel quarto resta
+  tutto: e' li' che la meccanica guadagna, ed e' la differenza fra un mercato
+  sull'arteria e uno in mezzo agli isolati.
+- **Il cursore mostra il campo, non piu' solo il suo bordo.** Un perimetro dice
+  dove l'influenza finisce e tace su tutto il resto, mentre cio' che decide dove
+  conviene posare un catalizzatore e' *quanto* pesa dove arriva. Sotto al
+  contorno c'e' ora una velatura la cui opacita' segue `falloff` cella per cella
+  — l'alpha *e'* il contributo che la simulazione sommera' — e sopra tre
+  isolinee ai quarti di portata, che danno la misura come le curve di livello di
+  una carta. La fascia piena di larghezza fissa che stava al bordo non serve
+  piu': il gradiente non sfuma mai a zero, quindi il bordo resta leggibile anche
+  sul terreno chiaro, che era la ragione per cui la fascia esisteva.
+- **La geometria del cursore si ricostruisce per cella attraversata, non per
+  pixel.** Il puntatore manda eventi molto piu' fitti delle celle che tocca, e
+  la portata era gia' memorizzata: adesso lo e' anche il disegno, che altrimenti
+  ricostruirebbe qualche decina di migliaia di triangoli a ogni movimento del
+  mouse. Le isolinee interne costano una frazione del quadrato perche' la
+  geodetica non scende mai sotto la Chebyshev — oltre `level` celle in linea
+  d'aria non c'e' niente da guardare.
+- **Il cartellino dice quanto terreno il sito tocca davvero.** `reach 55 · 3.140
+  cells (38% blocked)`: il raggio nominale da solo non distingue piu' due siti a
+  dieci celle di distanza, di cui uno guarda l'entroterra e l'altro il mare. Il
+  confronto e' con un entroterra piatto e libero — `radius / land`, non il raggio
+  pieno — perche' misurare contro il raggio darebbe a ogni posto dell'isola la
+  stessa bocciatura. La percentuale compare solo dove il sito e' tagliato.
+
 ## In corso — Verifica proporzionata alla modifica
 
 - **`test:changed` e `test:related`.** La suite intera girava dopo ogni

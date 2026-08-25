@@ -122,34 +122,42 @@ export const BALANCE = {
       /**
        * Costo, intensita' al centro e raggio di ciascun ruolo.
        *
-       * **I raggi sono raddoppiati per conversione di unita', non per
-       * bilanciamento.** Il voxel di contenuto vale meta' di quanto valeva:
-       * un raggio di 22 copriva un certo numero di isolati, e per continuare a
-       * coprirne altrettanti deve valere 44 voxel. Lasciarli fermi avrebbe
-       * dimezzato la portata di ogni catalizzatore senza che nessuno lo avesse
-       * deciso.
+       * **Il raggio e' un budget di cammino, non una distanza in linea d'aria.**
+       * Da quando la portata e' geodetica un passo fuori strada costa
+       * `BALANCE.reach.land`, quindi nel tessuto un raggio `r` arriva a circa
+       * `r / land` celle. I valori qui sono stati alzati di un quarto — l'inverso
+       * esatto di `land = 1.25` — perche' la citta' lontano dalle strade
+       * coprisse quanto copriva prima: e' una conversione di unita', come il
+       * raddoppio che l'aveva preceduta quando il voxel di contenuto si e'
+       * dimezzato.
+       *
+       * Cio' che **non** e' conversione, ed e' il senso della meccanica: lungo la
+       * pavimentazione il budget si spende a costo pieno, quindi il quarto in
+       * piu' resta tutto. Un mercato su un'arteria arriva davvero a 55 celle
+       * lungo la strada, tagliando gli isolati si ferma sui 44 di prima, e
+       * dietro un braccio di mare non arriva affatto.
        *
        * `cost` e `strength` **non** si toccano: il primo e' denaro, il secondo
        * un'ampiezza di campo. Nessuno dei due e' una distanza.
        */
       roles: {
-        market: { cost: 120, strength: 210, radius: 44 },
-        factory: { cost: 150, strength: 205, radius: 40 },
-        park: { cost: 200, strength: 195, radius: 36 },
-        port: { cost: 320, strength: 190, radius: 48 },
+        market: { cost: 120, strength: 210, radius: 55 },
+        factory: { cost: 150, strength: 205, radius: 50 },
+        park: { cost: 200, strength: 195, radius: 45 },
+        port: { cost: 320, strength: 190, radius: 60 },
         // Costa meno del porto perche' promette meno: il porto apre il commercio
         // con il mondo, il traghetto collega due punti dell'isola fra loro. E'
         // il collegamento *interno*, ed e' l'unico che serva a qualcosa su una
         // sponda dove non c'e' ancora niente da esportare.
-        ferry: { cost: 260, strength: 180, radius: 46 },
+        ferry: { cost: 260, strength: 180, radius: 58 },
         // Costa piu' del porto perche' non chiede la costa: il fronte mare e'
         // un anello e finisce, mentre una superficie ampia si trova ovunque a
         // patto di cercarla. La differenza di prezzo e' il vincolo di sito
         // riportato in denaro.
-        airport: { cost: 420, strength: 185, radius: 50 },
-        transport: { cost: 240, strength: 185, radius: 52 },
-        university: { cost: 360, strength: 200, radius: 42 },
-        monument: { cost: 440, strength: 215, radius: 40 },
+        airport: { cost: 420, strength: 185, radius: 63 },
+        transport: { cost: 240, strength: 185, radius: 65 },
+        university: { cost: 360, strength: 200, radius: 53 },
+        monument: { cost: 440, strength: 215, radius: 50 },
       },
 
       /**
@@ -444,7 +452,23 @@ export const BALANCE = {
   trade: {
     foodReservePerResident: 1.5,
     materialReservePerBuilding: 2,
-    importFoodPerTick: 8,
+    /**
+     * Quanta della spesa alimentare della citta' un collegamento copre in un tick.
+     *
+     * **Era una quantita' assoluta, ed e' la correzione.** `importFoodPerTick: 8`
+     * andava contro una domanda che vale `pop * food.perResident`, quindi sbagliava
+     * da tutte e due le parti: a 240 abitanti un porto copriva il 667% della spesa
+     * — la campagna non serviva — e a 3.268 ne copriva il 4,9%, cioe' era
+     * decorativo. Il bersaglio della scorta qui accanto scala gia' con la
+     * popolazione: era la portata a non scalare.
+     *
+     * **Un supplemento, mai un'alternativa**, ed e' scelto perche' resti tale: da
+     * solo il porto copre il 12%, porto e aeroporto insieme il 31%, e con la
+     * priorita' sul cibo si arriva al 55%. Il cibo e' l'unica risorsa che compete
+     * per la **terra**, e un canale che sostituisse la campagna cancellerebbe
+     * proprio la tensione che le da' un posto sulla mappa.
+     */
+    importFoodShare: 0.12,
     importFoodPrice: 0.45,
     exportMaterialsPerTick: 5,
     exportMaterialPrice: 1.1,
@@ -479,11 +503,89 @@ export const BALANCE = {
     /** Novanta secondi di respiro dopo una scelta risolta. */
     intervalTicks: 900,
     minimumBuildings: 6,
+
+    /**
+     * Quanta della domanda alimentare deve restare servita perche' non sia
+     * emergenza, e quanta ne serve perche' l'emergenza si consideri rientrata.
+     *
+     * **Non e' piu' il livello del magazzino, ed e' la correzione.** La scelta
+     * si apriva sotto `trade.foodReservePerResident`, cioe' pretendeva una
+     * scorta di trenta tick in dispensa; ma chi pianta i campi punta al
+     * *pareggio* — `missingPlotsOf` copre il deficit e nient'altro — quindi una
+     * citta' perfettamente sfamata tiene comunque uno stock intorno a zero. I
+     * due bersagli erano incompatibili: il driver non poteva, per costruzione,
+     * soddisfare la condizione dell'allarme, che percio' restava vera per
+     * sempre. `fedShareOf` distingue la carestia dal pareggio — e' la ragione
+     * per cui esiste — ed e' la domanda giusta da fare qui.
+     *
+     * Nove decimi e non il pareggio esatto: il raccolto arriva a scatti — un
+     * lotto ritirato, una passata di semina che tarda — e chiedere il pieno
+     * farebbe di ogni singhiozzo un'emergenza.
+     */
+    hungerThreshold: 0.9,
+
+    /**
+     * Quanto il **raccolto** deve coprire della domanda perche' l'emergenza si
+     * consideri rientrata e possa tornare a scattare.
+     *
+     * **Si misura sulla produzione e non sui pasti**, ed e' il secondo mezzo
+     * errore corretto. Con il riarmo su `fedShareOf` la scelta continuava a
+     * ripresentarsi ogni novanta secondi — misurato: dieci aperture in novemila
+     * tick, cioe' quante prima — perche' la dotazione appena concessa sfamava
+     * la citta' per un centinaio di tick, il fronte si ricaricava su *quel*
+     * pasto, e la carestia tornava puntuale appena il regalo finiva. L'allarme
+     * si stava riarmando sulla propria risposta.
+     *
+     * Il raccolto invece una dotazione non lo tocca: rientra solo chi ha
+     * piantato campi o convertito industria in torri, cioe' chi ha davvero
+     * risolto. Una carestia strutturale viene percio' chiesta **una volta** — e
+     * che sia in corso continua a dirlo la HUD, che e' il suo mestiere.
+     *
+     * Sopra il pareggio e non al pareggio: a copertura esatta ogni oscillazione
+     * del raccolto riaprirebbe l'emergenza, e il margine e' cio' che distingue
+     * una citta' che ce la fa da una che ci arriva per un pelo.
+     */
+    recoveryCoverage: 1.05,
+
+    /**
+     * Quanti tick di respiro compra una risposta all'emergenza alimentare.
+     *
+     * **La dotazione si misura in tempo, non in cibo**, ed e' l'unica unita' che
+     * regge il confronto: `foodGrant` era una quantita', e una quantita' contro
+     * una spesa che cresce con la citta' vale un intervento a quarantotto
+     * abitanti e sette decimi di tick a tremila. Scalarla con la popolazione ha
+     * chiuso meta' del problema; l'altra meta' era che nemmeno cento tick di
+     * consumo sono un intervento — a schermo sono **dieci secondi**, e in dieci
+     * secondi non si pianta niente.
+     *
+     * Seicento e' scelto contro `intervalTicks`: due terzi del tempo che manca
+     * alla prossima decisione. Abbastanza perche' la citta' possa reagire —
+     * piantare, convertire, aprire un canale — e non tanto da rendere il cibo un
+     * problema risolto: quando il regalo finisce, se nessuno ha fatto niente, la
+     * carestia e' ancora li'.
+     */
+    reliefTicks: 600,
+
     foodGrant: 120,
     materialGrant: 80,
     fundsGrant: 160,
     decisionCost: 90,
     satisfactionStep: 0.08,
+
+    /**
+     * L'unita' su cui si misura la taglia di una citta', in abitanti.
+     *
+     * Vale `weights.residentialCapacity`: un edificio residenziale pieno. Ci si
+     * misurano i **costi** e le contropartite di una scelta — fondi spesi,
+     * materiali convertiti — che devono pesare uguale a ogni taglia di citta':
+     * finche' restavano piatti, a tremila abitanti i giardini di quartiere erano
+     * cibo gratis.
+     *
+     * Il **cibo** invece non passa piu' di qui: la dotazione dell'emergenza si
+     * conta in tick di respiro (`reliefTicks`) sulla spesa vera della citta',
+     * senza l'arrotondamento a edifici interi che a popolazioni piccole rendeva
+     * il regalo a scatti.
+     */
     populationScale: 24,
     historyLimit: 12,
 
@@ -542,6 +644,25 @@ export const BALANCE = {
   food: {
     /** Consumo per abitante per tick. */
     perResident: 0.05,
+
+    /**
+     * Quanta domanda la **campagna** punta a coprire, non il bilancio.
+     *
+     * `missingPlotsOf` puntava al pareggio secco, e quel bersaglio ha una
+     * conseguenza che non si legge finche' non la si vede in partita: una citta'
+     * sfamata tiene la dispensa a **zero per costruzione**, perche' il raccolto
+     * pareggia il pasto e non avanza niente. Da li' ogni oscillazione — un lotto
+     * mangiato da un isolato, un tick di organico basso — e' subito carestia, e
+     * non c'e' nessuna scorta a assorbirla.
+     *
+     * Il quindici per cento e' un margine, non una riserva: la scorta che ne
+     * nasce e' l'avanzo che si accumula, e cresce solo finche' la popolazione non
+     * raggiunge la campagna. Sta **sopra** `decisions.recoveryCoverage` apposta,
+     * ed e' un contratto legato in `contracts.test.ts`: se il bersaglio stesse
+     * sotto la soglia di rientro, piantare non riarmerebbe mai il fronte
+     * dell'emergenza e la carestia si potrebbe dichiarare una volta sola.
+     */
+    targetCoverage: 1.15,
   },
 
   /**
@@ -565,8 +686,22 @@ export const BALANCE = {
   farms: [
     /** Campo: la terra costa poco e rende poco per colonna, ma non chiede fondi. */
     { houses: 2, workers: 4, upkeep: 0 },
-    /** Frutteto: meno resa del campo, ma regge il pendio e sta bene in citta'. */
-    { houses: 1, workers: 3, upkeep: 0 },
+    /**
+     * Frutteto: meno resa del campo, ma regge il pendio e sta bene in citta'.
+     *
+     * **Le braccia sono due e non tre, ed e' una correzione.** A tre, un frutteto
+     * rendeva 0,4 di cibo per braccio contro gli 0,6 del campo: era peggiore *sia*
+     * per terra *sia* per lavoro, cioe' non aveva nessun asse su cui valere la
+     * pena. Il guaio si vedeva dal mandato `communityGardens`, che abbassa la
+     * soglia di cio' che diventa frutteto: l'alternativa che suona alimentare
+     * peggiorava il raccolto due volte.
+     *
+     * A parita' di cibo per braccio resta un solo costo, ed e' quello giusto: il
+     * frutteto vuole **il doppio della terra** per lo stesso raccolto. E' proprio
+     * cio' che il mandato promette di se' — *housing spreads low* — e la campagna
+     * si allarga invece di rendere meno.
+     */
+    { houses: 1, workers: 2, upkeep: 0 },
     /**
      * Torre idroponica: non prende suolo agricolo e ne vale sei, ma e' industria
      * convertita — un'unita' qui e' un'unita' di materiali in meno — e si paga in

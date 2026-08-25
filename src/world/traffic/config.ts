@@ -457,6 +457,73 @@ export const TRAFFIC = {
     peak: 0.8,
     palette: PALETTE_SLOTS.roofWhite,
   },
+
+  // --- Scia sull'acqua ------------------------------------------------------
+
+  /**
+   * La schiuma che uno scafo lascia dietro di se'.
+   *
+   * **E' il pennacchio letto in orizzontale**, e non per analogia: un segno di
+   * scia e' la stessa posa letta nel passato — dov'era la nave `age` secondi fa —
+   * piu' un'apertura laterale lineare. Ne discende tutto cio' che discendeva dal
+   * fumo: in pausa la scia si ferma, a 4x si allunga alla stessa velocita' della
+   * nave, e due partite identiche lasciano gli stessi segni negli stessi punti
+   * senza tenere in vita nessuno stato.
+   *
+   * **Serve a una cosa sola, ed e' quella che mancava di piu'.** Uno scafo che
+   * scivola su un mare intatto non e' *dentro* l'acqua: e' una figurina appoggiata
+   * sopra, e nessun dettaglio di sagoma corregge quella lettura. La fascia di
+   * galleggiamento da' il bordo inferiore, la scia da' il fatto che l'acqua si
+   * accorga del passaggio.
+   */
+  wake: {
+    /** Secondi fra due segni. Il numero di segni vivi e' `life / every`. */
+    every: 0.4,
+    /** Quanto vive un segno, in secondi. */
+    life: 7,
+    /**
+     * Quanto la V si apre in un secondo, in voxel.
+     *
+     * Un'apertura vera sta attorno ai diciannove gradi per mezzo scafo e non
+     * dipende dalla velocita'; questa e' la stessa cosa scritta nel tempo invece
+     * che nello spazio, e a velocita' di gioco da' un angolo dello stesso ordine.
+     */
+    spread: 0.9,
+    /** Larghezza della bava laterale appena aperta, e di quanto cresce in un secondo. */
+    width: 0.85,
+    growth: 0.5,
+    /**
+     * Quanto la scia centrale e' piu' larga della bava laterale.
+     *
+     * Le due non sono lo stesso segno: la V e' l'onda di prua, la centrale e'
+     * l'acqua rimestata dall'elica. Senza la seconda restano due righe parallele
+     * che sembrano un binario, e il mezzo pare passare **fra** le due invece che
+     * lasciarle entrambe.
+     */
+    washWidth: 1.9,
+    /** Quanto e' bianca la bava appena aperta, e quanto lo e' la scia centrale. */
+    peak: 0.5,
+    washPeak: 0.3,
+    /**
+     * Sotto questa velocita' non c'e' scia, in voxel al secondo.
+     *
+     * Una barca all'ormeggio ripete la stessa posa: senza questa soglia i segni
+     * si impilerebbero tutti nello stesso punto, e una barca ferma sarebbe la
+     * cosa piu' bianca del porto.
+     */
+    minSpeed: 0.8,
+    /**
+     * Quanto la schiuma sta sopra il pelo dell'acqua, in voxel.
+     *
+     * Il minimo che eviti lo z-fighting con la faccia superiore del mare, non un
+     * rilievo: una schiuma sollevata si vede da sotto quando la camera si
+     * abbassa, e diventa un nastro sospeso.
+     */
+    lift: 0.08,
+    /** Passo del granello di schiuma, in voxel: e' la scala su cui si sgrana. */
+    grain: 0.75,
+    palette: PALETTE_SLOTS.roofWhite,
+  },
 } as const;
 
 /** Una ciminiera, nel sistema del mezzo: `+x` e' la prua, `z` il pelo dell'acqua. */
@@ -499,3 +566,21 @@ export const VEHICLE_KINDS: readonly VehicleKind[] = [
   VEHICLE.balloon,
   VEHICLE.gondola,
 ];
+
+/**
+ * Chi galleggia, e quindi chi porta una fascia di galleggiamento e lascia scia.
+ *
+ * Un elenco e non un predicato su `hull`: cosa tocchi l'acqua e' una proprieta'
+ * del mezzo, non una conseguenza delle sue misure. Lo leggono la sagoma, la scia
+ * e il test che sorveglia la fascia — tre letture, una fonte.
+ */
+export const FLOATING_KINDS: readonly VehicleKind[] = [
+  VEHICLE.boat,
+  VEHICLE.ferry,
+  VEHICLE.cargo,
+];
+
+/** Vero se questo mezzo naviga: lo chiede la scia, che nasce solo sull'acqua. */
+export function floats(kind: VehicleKind): boolean {
+  return FLOATING_KINDS.includes(kind);
+}

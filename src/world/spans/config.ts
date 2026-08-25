@@ -202,7 +202,7 @@ export const SPANS = {
    *
    * Sotto, l'interno e' tutto passaggio e piantarlo lascerebbe due filari di
    * aiuola senza un posto da cui guardarli. E' la stessa soglia di spirito di
-   * `GRAMMAR.terraceMinSide`: un luogo comincia a esistere quando ci si sta.
+   * `GRAMMAR.terraceMinRing`: un luogo comincia a esistere quando ci si sta.
    */
   plantedMinWidth: 6,
 

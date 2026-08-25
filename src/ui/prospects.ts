@@ -1,4 +1,13 @@
-import { dominantUse, specializationGapsOf, type CatalystId, type SpecializationGap } from '../sim';
+import {
+  BUILDING_CLASS,
+  catalystById,
+  districtPairingsOf,
+  dominantUse,
+  specializationGapsOf,
+  type BuildingClass,
+  type CatalystId,
+  type SpecializationGap,
+} from '../sim';
 import { bestProspectOf, type TypologyGap } from '../world/buildings/typology';
 import { unlocksFor } from '../world/buildings/unlocks';
 import type { ColumnInfo } from '../game/selection';
@@ -36,14 +45,76 @@ function amount(value: number): string {
  * forme un ruolo apra, che e' una regola del mondo; **come si dice** e' di
  * questo strato, come per le righe della scheda qui sotto.
  *
- * La freccia e' il punto della riga: dice che fra il catalizzatore e la forma
+ * Il quartiere e' il punto della riga: dice che fra il catalizzatore e la forma
  * c'e' un passaggio, e che quel passaggio e' un quartiere. Un elenco piatto di
  * nomi e' esattamente cio' che prometteva troppo.
+ *
+ * **Una preposizione e non una freccia.** `office districts → Office tower`
+ * chiede di sapere da che parte si legge la freccia e mette la condizione prima
+ * della cosa promessa, che e' l'ordine sbagliato: qui si nomina la forma, e poi
+ * dove la si trova.
  */
 export function unlockLines(id: CatalystId): readonly string[] {
   return unlocksFor(id).map(
-    (unlock) => `${unlock.specialization} districts → ${unlock.typologies.join(', ')}`,
+    (unlock) => `${unlock.typologies.join(', ')} in ${unlock.specialization} districts`,
   );
+}
+
+/**
+ * Con chi questo ruolo va a braccetto, come righe di tooltip.
+ *
+ * **E' la sola sinergia del gioco, e non compariva da nessuna parte.** Due
+ * catalizzatori i cui campi si sovrappongono danno un quartiere che nessuno dei
+ * due da' da solo — porto piu' mercato fa un porto commerciale, universita' piu'
+ * trasporto fa un campus — e il quartiere e' cio' che poi apre le forme di
+ * `unlockLines`. Senza questa riga la catena aveva l'anello di mezzo invisibile:
+ * si leggeva «Only here: Office tower in office districts» senza sapere che un
+ * distretto e' una **coppia**, e ci si arrivava per tentativi da duecento fondi.
+ *
+ * Il nome del ruolo e non il suo id: `market` e `transport` si scrivono `Market`
+ * e `Transit` in ogni altro punto dell'interfaccia, e l'id nudo qui sarebbe
+ * l'unico posto in cui il giocatore legge il nome interno.
+ */
+export function pairingLines(id: CatalystId): readonly string[] {
+  return districtPairingsOf(id).map((pairing) => {
+    const partners = pairing.partners.map((role) => catalystById(role).label).join(' or ');
+    return `${partners} → ${pairing.district} quarter`;
+  });
+}
+
+/**
+ * Cosa un uso urbano consegna alla citta', in due parole.
+ *
+ * **E' l'anello che mancava fra il catalizzatore e le risorse.** Il tooltip
+ * dice gia' quali usi un ruolo attira, e la barra in alto dice quanti fondi,
+ * materiali e cibo ci sono: fra le due cose non c'era niente, e il giocatore non
+ * aveva modo di sapere che un mercato riempie la cassa **attraverso** i negozi
+ * che fa nascere, o che una fabbrica non produce materiali — li producono i
+ * capannoni che le crescono intorno.
+ *
+ * Il cibo compare sotto il residenziale e non come voce sua, ed e' il punto: non
+ * lo produce nessun uso urbano, lo **consumano** gli abitanti, e i campi che lo
+ * coltivano arrivano da soli quando il conto non torna. Detto altrove sarebbe una
+ * quinta riga; detto qui e' la conseguenza di far crescere le case.
+ */
+const CLASS_YIELD: Readonly<Record<BuildingClass, string>> = {
+  [BUILDING_CLASS.residential]: 'residents, and the food they eat',
+  [BUILDING_CLASS.commercial]: 'funds',
+  [BUILDING_CLASS.industrial]: 'materials',
+  [BUILDING_CLASS.civic]: 'satisfaction, paid for in funds',
+};
+
+/**
+ * Cosa arrivera' in cassa se questo ruolo attecchisce, dal contributo maggiore.
+ *
+ * Solo i due usi piu' favoriti: un ruolo che ne tocca tre elencherebbe mezza
+ * economia e non direbbe piu' niente su di se'. Sono gia' ordinati per
+ * influenza da `CatalystDefinition.favours`.
+ */
+export function yieldLine(id: CatalystId): string | null {
+  const favours = catalystById(id).favours.slice(0, 2);
+  if (favours.length === 0) return null;
+  return favours.map((cls) => CLASS_YIELD[cls]).join(', then ');
 }
 
 /**

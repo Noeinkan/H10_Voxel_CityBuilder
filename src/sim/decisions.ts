@@ -2,6 +2,7 @@ import { BALANCE } from './balance';
 import type { CatalystId } from './catalysts';
 import { type CharterFamily, type CharterId } from './charters';
 import { BUILDING_CLASS } from './classes';
+import { fedShareOf, type FoodReport } from './farms';
 
 export interface DecisionEffect {
   readonly food?: number;
@@ -55,14 +56,27 @@ export interface DecisionOutcome {
   readonly summary: string;
 }
 
+/**
+ * Cio' che serve a decidere quale scelta aprire, e nient'altro.
+ *
+ * Portava anche `food`, `materials` e `funds`: il primo era la condizione
+ * dell'emergenza alimentare — sostituita da `harvest` — e gli altri due non li
+ * leggeva nessuno. Una vista che dichiara piu' di quello che guarda non e' un
+ * dettaglio: e' il posto dove si va a cercare *su cosa* si decide.
+ */
 export interface DecisionStateView {
   readonly tickCount: number;
   readonly population: { readonly stock: number };
-  readonly food: { readonly stock: number };
-  readonly materials: { readonly stock: number };
-  readonly funds: { readonly stock: number };
   readonly buildingCounts: readonly number[];
   readonly decisionHistory: readonly DecisionOutcome[];
+  /**
+   * Referto dell'ultimo raccolto: e' da qui che si legge se la citta' mangia.
+   * Il livello della dispensa non lo dice — vale zero tanto in carestia quanto
+   * in pareggio.
+   */
+  readonly harvest: FoodReport;
+  /** Falso finche' un'emergenza alimentare gia' risolta non e' rientrata. */
+  readonly supplyArmed: boolean;
 }
 
 /** Apre una scelta soltanto alla scadenza; la scelta resta ferma finche' il giocatore risponde. */
@@ -71,24 +85,36 @@ export function decisionAt(state: DecisionStateView, nextDecisionTick: number): 
   const population = state.population.stock;
   const buildings = state.buildingCounts.reduce((sum, value) => sum + value, 0);
   const scale = Math.max(1, Math.floor(state.population.stock / BALANCE.decisions.populationScale));
-  if (population > 0 && state.food.stock < population * BALANCE.trade.foodReservePerResident) {
+  // La dotazione si conta in **tempo**: tanti tick di spesa vera della citta'.
+  // Una quantita', anche scalata a edifici interi, non dice quanto respiro
+  // compra — e cento tick di respiro, misurati a schermo, erano dieci secondi.
+  const relief = population * BALANCE.food.perResident * BALANCE.decisions.reliefTicks;
+  // Quanta della domanda alimentare e' stata davvero servita, non quanta ne
+  // resta in dispensa: le due coincidono solo in una citta' che ha una scorta,
+  // e questa simulazione non ne costruisce nessuna. Il fronte lo tiene
+  // `supplyArmed`, che `tick` ricarica quando la citta' torna a mangiare.
+  if (population > 0 && state.supplyArmed
+    && fedShareOf(state.harvest, population) < BALANCE.decisions.hungerThreshold) {
     return {
       id: `food-${state.tickCount}`,
       family: 'supply',
       title: 'Supplies under pressure',
-      message: 'The city food reserve no longer covers its residents. Choose an emergency response.',
+      message: 'The city can no longer feed all of its residents. Choose an emergency response.',
       options: [
         option('buy-food', 'Buy food supplies', 'Spend funds to restock the warehouses immediately.', {
           funds: -BALANCE.decisions.decisionCost * scale,
-          food: BALANCE.decisions.foodGrant * scale,
+          food: relief,
         }, { charter: 'importedSupply' }),
         option('ration', 'Ration supplies', 'Preserve resources at the cost of happiness.', {
           satisfaction: -BALANCE.decisions.satisfactionStep,
-          food: BALANCE.decisions.foodGrant,
+          food: relief,
         }, { charter: 'rationing' }),
+        // Anche il costo scala, o a citta' grande i giardini sarebbero cibo
+        // gratis: la dotazione e la sua contropartita sono la stessa taglia
+        // vista da due lati.
         option('community-gardens', 'Community gardens', 'Convert materials into food and public support.', {
-          materials: -BALANCE.decisions.materialGrant,
-          food: BALANCE.decisions.foodGrant,
+          materials: -BALANCE.decisions.materialGrant * scale,
+          food: relief,
           satisfaction: BALANCE.decisions.satisfactionStep,
         }, { charter: 'communityGardens', grant: { kind: 'park' } }),
       ],
@@ -144,8 +170,12 @@ export function decisionAt(state: DecisionStateView, nextDecisionTick: number): 
         materials: -BALANCE.decisions.materialGrant,
         funds: BALANCE.decisions.fundsGrant,
       }, { charter: 'soldReserves' }),
+      // Ultimo numero alimentare rimasto piatto, e per la stessa ragione degli
+      // altri non poteva restarci: una fiera che costa 120 di cibo a qualunque
+      // taglia e' soddisfazione gratis appena la citta' cresce, cioe' non e' piu'
+      // una scelta fra tre alternative ma una sola ovvia.
       option('food-fair', 'Food fair', 'Use food supplies to strengthen morale.', {
-        food: -BALANCE.decisions.foodGrant,
+        food: -BALANCE.decisions.foodGrant * scale,
         satisfaction: BALANCE.decisions.satisfactionStep,
       }, { charter: 'foodFair' }),
     ],

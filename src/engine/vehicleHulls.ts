@@ -37,6 +37,15 @@ export interface HullBlock {
   readonly sizeY: number;
   readonly sizeZ: number;
   readonly palette: number;
+  /**
+   * Vero se questa scatola e' una luce accesa e non un pezzo d'ottone.
+   *
+   * E' un campo e non una deduzione dallo slot di palette, e la differenza si
+   * vede di notte: `lightPalette` veste anche le pinne di un dirigibile, e dedurre
+   * l'emissione dalla tinta le accenderebbe come due tubi al neon. Chi disegna la
+   * sagoma sa quale scatola e' un fanale; il fragment non puo' saperlo.
+   */
+  readonly lamp: boolean;
 }
 
 /**
@@ -61,7 +70,7 @@ class Hull {
     sizeZ: number,
     palette: number,
   ): void {
-    this.blocks.push({ x, y, z, sizeX, sizeY, sizeZ, palette });
+    this.blocks.push({ x, y, z, sizeX, sizeY, sizeZ, palette, lamp: false });
   }
 
   /** Due scatole speculari rispetto all'asse: ali, motori, parapetti, parabordi. */
@@ -76,6 +85,25 @@ class Hull {
   ): void {
     this.box(x, y, z, sizeX, sizeY, sizeZ, palette);
     this.box(x, -y, z, sizeX, sizeY, sizeZ, palette);
+  }
+
+  /**
+   * Un fanale: la stessa scatola, ma dichiarata accesa.
+   *
+   * La tinta non e' un parametro perche' non e' una scelta della sagoma — una
+   * luce di via e' `lightPalette` su ogni mezzo, e lasciar decidere al chiamante
+   * significherebbe soltanto poter sbagliare.
+   */
+  lamp(x: number, y: number, z: number, sizeX: number, sizeY: number, sizeZ: number): void {
+    this.blocks.push({
+      x, y, z, sizeX, sizeY, sizeZ, palette: TRAFFIC.lightPalette, lamp: true,
+    });
+  }
+
+  /** Due fanali speculari: le estremita' alari, i capi di un traghetto. */
+  lampPair(x: number, y: number, z: number, sizeX: number, sizeY: number, sizeZ: number): void {
+    this.lamp(x, y, z, sizeX, sizeY, sizeZ);
+    this.lamp(x, -y, z, sizeX, sizeY, sizeZ);
   }
 
   /**
@@ -139,10 +167,10 @@ function boatShape(hull: Hull): void {
 
   // Albero con il fanale di testa, carico di coperta, fanale di via a prua.
   hull.box(-0.4, 0, 3.9, 0.16, 0.16, 1.5, TRAFFIC.trimPalette);
-  hull.box(-0.4, 0, 4.78, 0.26, 0.26, 0.26, TRAFFIC.lightPalette);
+  hull.lamp(-0.4, 0, 4.78, 0.26, 0.26, 0.26);
   hull.box(0.75, 0.6, 1.94, 1.1, 1.15, 0.75, TRAFFIC.cratePalettes[0]);
   hull.box(0.75, -0.6, 1.94, 1.1, 1.15, 0.75, TRAFFIC.cratePalettes[2]);
-  hull.box(3.2, 0, 1.55, 0.24, 0.24, 0.24, TRAFFIC.lightPalette);
+  hull.lamp(3.2, 0, 1.55, 0.24, 0.24, 0.24);
 }
 
 /**
@@ -163,7 +191,7 @@ function ferryShape(hull: Hull): void {
     hull.box(side * 4.45, 0, 1.05, 0.9, 3.2, 2.7, size.palette);
     hull.box(side * 5.2, 0, 1.2, 0.6, 2.0, 2.4, size.palette);
     hull.waterline(side * 4.45, 0.92, 3.2);
-    hull.box(side * 4.9, 0, deck + 0.35, 0.3, 0.3, 0.3, TRAFFIC.lightPalette);
+    hull.lamp(side * 4.9, 0, deck + 0.35, 0.3, 0.3, 0.3);
   }
 
   // Ponte di coperta e parapetto: la coppia che rende il traghetto una cosa su
@@ -185,7 +213,7 @@ function ferryShape(hull: Hull): void {
   funnelStack(hull, 4.2, funnel, 1.3);
 
   hull.box(1.3, 0, 6.03, 0.16, 0.16, 1.4, TRAFFIC.trimPalette);
-  hull.box(1.3, 0, 6.86, 0.26, 0.26, 0.26, TRAFFIC.lightPalette);
+  hull.lamp(1.3, 0, 6.86, 0.26, 0.26, 0.26);
 }
 
 /**
@@ -239,11 +267,11 @@ function cargoShape(hull: Hull): void {
   // di testa. Non e' decorazione — sono le due verticali che tengono in scala
   // una sagoma altrimenti tutta orizzontale.
   hull.box(6.4, 0, 4.9, 0.26, 0.26, 2.6, TRAFFIC.trimPalette);
-  hull.box(6.4, 0, 6.35, 0.3, 0.3, 0.3, TRAFFIC.lightPalette);
+  hull.lamp(6.4, 0, 6.35, 0.3, 0.3, 0.3);
   hull.box(-4.7, 0, 7.2, 0.16, 0.16, 1.3, TRAFFIC.trimPalette);
-  hull.box(-4.7, 0, 7.98, 0.26, 0.26, 0.26, TRAFFIC.lightPalette);
-  hull.box(8.0, 0, deck + 0.3, 0.3, 0.3, 0.3, TRAFFIC.lightPalette);
-  hull.box(-8.1, 0, deck + 0.3, 0.3, 0.3, 0.3, TRAFFIC.lightPalette);
+  hull.lamp(-4.7, 0, 7.98, 0.26, 0.26, 0.26);
+  hull.lamp(8.0, 0, deck + 0.3, 0.3, 0.3, 0.3);
+  hull.lamp(-8.1, 0, deck + 0.3, 0.3, 0.3, 0.3);
 }
 
 /**
@@ -279,7 +307,7 @@ function planeShape(hull: Hull): void {
   hull.pair(-1.25, 3.45, 0.74, 1.7, 0.85, 0.28, size.palette);
   hull.pair(-1.55, 4.1, 0.75, 1.2, 0.55, 0.24, size.palette);
   hull.pair(-1.65, 4.3, 1.1, 0.9, 0.22, 0.8, size.palette);
-  hull.pair(-1.2, 4.3, 1.55, 0.24, 0.24, 0.24, TRAFFIC.lightPalette);
+  hull.lampPair(-1.2, 4.3, 1.55, 0.24, 0.24, 0.24);
 
   // Motori: gondola scura appesa a un pilone, con l'anello chiaro della presa.
   hull.pair(0.1, 1.75, 0.15, 2.1, 0.85, 0.85, TRAFFIC.trimPalette);
@@ -312,6 +340,10 @@ function airshipShape(hull: Hull): void {
   hull.box(-half + 0.6, 0, axis, 0.6, size.width * 1.5, 0.5, TRAFFIC.lightPalette);
   hull.box(-half + 0.6, 0, axis, 0.6, 0.5, size.height * 1.3, TRAFFIC.lightPalette);
   hull.box(0, 0, 0.7, size.length * 0.28, size.width * 0.5, 1.4, TRAFFIC.cabinPalette);
+  // Il fanale di muso. Le pinne sono in tinta di livrea e restano spente: dedurre
+  // l'emissione dallo slot le accenderebbe come due tubi al neon, ed e' il motivo
+  // per cui `lamp` e' un campo della scatola invece che una lettura della tinta.
+  hull.lamp(half - 0.5, 0, axis, 0.4, 0.4, 0.4);
 }
 
 /**
@@ -351,7 +383,7 @@ function evtolShape(hull: Hull): void {
     hull.pair(along, 2.5, 1.7, 0.8, 0.8, 0.5, TRAFFIC.housePalette);
     hull.pair(along, 2.5, 2.05, 2.0, 2.0, 0.12, TRAFFIC.deckPalette);
   }
-  hull.box(0, 0, 1.95, 0.34, 0.34, 0.26, TRAFFIC.lightPalette);
+  hull.lamp(0, 0, 1.95, 0.34, 0.34, 0.26);
 }
 
 /**
@@ -375,7 +407,7 @@ function balloonShape(hull: Hull): void {
   // Montanti e bruciatore: la fiamma e' l'unica cosa accesa del mezzo.
   hull.pair(0.7, 0.7, 2.1, 0.16, 0.16, 1.3, TRAFFIC.trimPalette);
   hull.pair(-0.7, 0.7, 2.1, 0.16, 0.16, 1.3, TRAFFIC.trimPalette);
-  hull.box(0, 0, 2.7, 0.7, 0.7, 0.5, TRAFFIC.lightPalette);
+  hull.lamp(0, 0, 2.7, 0.7, 0.7, 0.5);
 
   // Involucro: bocca stretta, pancia larga quanto l'ingombro, calotta.
   hull.box(0, 0, 3.4, 2.6, 2.6, 1.0, size.palette);

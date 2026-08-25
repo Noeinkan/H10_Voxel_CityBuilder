@@ -381,20 +381,78 @@ export function dominantUse(profile: LocalUrbanProfile): BuildingClass {
   return best;
 }
 
+/**
+ * Le coppie di ruoli che fanno un quartiere, in ordine di specificita'.
+ *
+ * **Era una catena di `if`, e la differenza non e' di stile.** Quelle righe sono
+ * l'unica sinergia che il gioco abbia — due catalizzatori vicini danno qualcosa
+ * che nessuno dei due da' da solo — e non comparivano da nessuna parte:
+ * l'interfaccia elencava cosa un ruolo favorisce e cosa sblocca, mai con chi va
+ * a braccetto, e il giocatore non aveva modo di scoprirlo se non piazzando
+ * duecento fondi alla volta. Da tabella, la stessa regola risponde anche alla
+ * domanda inversa — `districtPairingsOf` — invece di richiedere una seconda
+ * lista scritta a mano che divergerebbe alla prima riga aggiunta.
+ *
+ * L'ordine e' contratto, come per le specializzazioni: vince la prima che passa,
+ * e le righe stanno dalla combinazione piu' rara alla piu' comune. `with` vuoto
+ * vale «basta il ruolo di `needs`», che e' il ripiego dei tre quartieri a un
+ * ruolo solo.
+ */
+const DISTRICT_RULES: readonly {
+  readonly id: DistrictId;
+  readonly needs: CatalystId;
+  readonly with: readonly CatalystId[];
+}[] = [
+  { id: 'harbor', needs: 'port', with: ['market', 'factory'] },
+  { id: 'campus', needs: 'university', with: ['transport', 'park'] },
+  { id: 'garden', needs: 'park', with: ['market', 'monument'] },
+  { id: 'monumental', needs: 'monument', with: ['market', 'transport'] },
+  { id: 'industrial', needs: 'factory', with: [] },
+  { id: 'transit', needs: 'transport', with: [] },
+  { id: 'market', needs: 'market', with: [] },
+];
+
 function districtOf(roles: readonly CatalystId[]): DistrictId {
   if (roles.length < 2) return 'outskirts';
-  if (has(roles, 'port') && (has(roles, 'market') || has(roles, 'factory'))) return 'harbor';
-  if (has(roles, 'university') && (has(roles, 'transport') || has(roles, 'park'))) return 'campus';
-  if (has(roles, 'park') && (has(roles, 'market') || has(roles, 'monument'))) return 'garden';
-  if (has(roles, 'monument') && (has(roles, 'market') || has(roles, 'transport'))) return 'monumental';
-  if (has(roles, 'factory')) return 'industrial';
-  if (has(roles, 'transport')) return 'transit';
-  if (has(roles, 'market')) return 'market';
+  for (const rule of DISTRICT_RULES) {
+    if (!roles.includes(rule.needs)) continue;
+    if (rule.with.length === 0) return rule.id;
+    if (rule.with.some((partner) => roles.includes(partner))) return rule.id;
+  }
   return 'mixed';
 }
 
-function has(roles: readonly CatalystId[], id: CatalystId): boolean {
-  return roles.includes(id);
+/** Un quartiere che due ruoli fanno insieme, visto da uno dei due. */
+export interface DistrictPairing {
+  readonly district: DistrictId;
+  /** I ruoli con cui accostarlo. Almeno uno basta. */
+  readonly partners: readonly CatalystId[];
+}
+
+/**
+ * I quartieri che questo ruolo apre **accostandolo a un altro**, e con chi.
+ *
+ * `districtOf` letta all'indietro, come `specializationGapsOf` lo e' di
+ * `specializationOf`. Solo le righe con un partner: un quartiere che un ruolo
+ * fa da solo non e' una sinergia, e prometterlo insegnerebbe a saltare la riga.
+ *
+ * Vale in **tutte e due i versi**: il porto compare fra i partner del mercato
+ * quanto il mercato fra quelli del porto, perche' la regola non distingue chi
+ * dei due sia arrivato prima e il giocatore nemmeno.
+ */
+export function districtPairingsOf(id: CatalystId): readonly DistrictPairing[] {
+  const out: DistrictPairing[] = [];
+
+  for (const rule of DISTRICT_RULES) {
+    if (rule.with.length === 0) continue;
+    if (rule.needs === id) {
+      out.push({ district: rule.id, partners: rule.with });
+    } else if (rule.with.includes(id)) {
+      out.push({ district: rule.id, partners: [rule.needs] });
+    }
+  }
+
+  return out;
 }
 
 function clamp01(value: number): number {

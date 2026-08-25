@@ -9,13 +9,39 @@ import {
   Mesh,
   MeshBasicMaterial,
 } from 'three';
-import { computeReach, distAt, type Catalyst, type ReachCache, type ReachField } from '../sim';
+import {
+  BALANCE,
+  computeReach,
+  distAt,
+  falloff,
+  type Catalyst,
+  type ReachCache,
+  type ReachField,
+} from '../sim';
 import type { Region } from '../world/terrain/region';
 import type { TerrainMap } from '../world/terrain/TerrainMap';
 import { TERRAIN } from '../world/terrain/config';
 
-/** Larghezza in celle della fascia sotto il contorno del cursore. */
-const CURSOR_BAND = 1.6;
+/**
+ * Livelli di portata su cui il cursore traccia una isolinea, oltre al bordo.
+ *
+ * Sono le curve di livello di una carta topografica, applicate a un campo che
+ * il giocatore non puo' vedere: il bordo dice *dove finisce*, e da solo lascia
+ * credere che dentro sia tutto uguale. Tre passi bastano a far leggere il
+ * gradiente e non affollano la mappa — con uno solo non si vede una pendenza,
+ * con sei si vede solo un bersaglio.
+ */
+const REACH_STEPS: readonly number[] = [0.25, 0.5, 0.75];
+
+/**
+ * Opacita' della velatura al bordo della portata e al centro.
+ *
+ * Il minimo non e' zero di proposito: una velatura che sfuma a niente lascia il
+ * bordo appeso a una linea da un pixel, che sul terreno chiaro si perde — e' la
+ * stessa ragione per cui prima del gradiente qui c'era una fascia piena.
+ */
+const FILL_MIN = 0.1;
+const FILL_PEAK = 0.44;
 
 /** Un colore per uso urbano, in ordine di `BUILDING_CLASS`. */
 const CLASS_COLORS: readonly number[] = [0x5f8f7f, 0xd8886a, 0xd9b45f, 0xe99a72];
@@ -23,6 +49,14 @@ const CLASS_COLORS: readonly number[] = [0x5f8f7f, 0xd8886a, 0xd9b45f, 0xe99a72]
 /** Gli stessi due stati del segnaposto: verde valido, rosso rifiutato. */
 const CURSOR_VALID = 0x2ff08d;
 const CURSOR_INVALID = 0xff5a4a;
+
+/** Quanto terreno la portata tocca davvero da un sito, e quanto le manca. */
+export interface ReachSummary {
+  /** Celle raggiunte. */
+  readonly cells: number;
+  /** Frazione di quelle che raggiungerebbe da un entroterra piatto e libero. */
+  readonly ratio: number;
+}
 
 /**
  * Contorni di influenza e perimetri dei settori, separati dalle mesh voxel.
@@ -34,39 +68,55 @@ const CURSOR_INVALID = 0xff5a4a;
  * l'acqua la ferma, una strada la porta piu' lontano — e non ha nessuna forma
  * chiusa da disegnare: l'unico contorno onesto e' quello estratto dai dati che
  * il campo usa davvero, con marching squares sul bordo della portata.
+ *
+ * **Il cursore pero' mostra il campo, non il suo bordo.** Un perimetro solo dice
+ * dove l'influenza finisce e tace su tutto il resto, mentre cio' che decide dove
+ * conviene posare un catalizzatore e' *quanto* pesa dove arriva. Sotto al
+ * contorno c'e' quindi una velatura che segue `falloff` cella per cella, e sopra
+ * tre isolinee ai quarti di portata: il gradiente si legge a colpo d'occhio, i
+ * quarti danno la misura, e la forma resta quella vera anche quando l'acqua la
+ * taglia a meta'.
  */
 export class InfluenceOverlay {
   readonly group = new Group();
   private readonly existing = new Group();
   private readonly sectors = new Group();
-  // Il contorno del cursore e' una fascia piena piu' il suo bordo: una linea da
-  // un pixel si perde sul terreno chiaro, e la larghezza non e' regolabile.
   private readonly cursorMaterial = lineMaterial(CURSOR_VALID, 1);
-  private readonly bandMaterial = new MeshBasicMaterial({
+  private readonly ringMaterial = lineMaterial(CURSOR_VALID, 0.3);
+  // Il colore sta nel materiale e l'intensita' nei vertici: cosi' passare da
+  // valido a rifiutato e' un `setHex`, e non ricostruisce la mesh.
+  private readonly fillMaterial = new MeshBasicMaterial({
     color: CURSOR_VALID,
+    vertexColors: true,
     transparent: true,
-    opacity: 0.3,
     depthTest: false,
     depthWrite: false,
     side: DoubleSide,
   });
   private readonly cursor = new LineSegments(new BufferGeometry(), this.cursorMaterial);
-  private readonly band = new Mesh(new BufferGeometry(), this.bandMaterial);
+  private readonly rings = new LineSegments(new BufferGeometry(), this.ringMaterial);
+  private readonly fill = new Mesh(new BufferGeometry(), this.fillMaterial);
 
   // Il catalizzatore sotto al cursore non e' ancora piazzato, quindi la sua
   // portata non sta nella cache della simulazione. Una voce sola basta: il
   // cursore si muove per celle intere, e fermo su una cella non ricalcola.
   private lastCursor: ReachField | null = null;
+  private lastSummary: ReachSummary = { cells: 0, ratio: 0 };
+  // Quale portata e' gia' disegnata. Il puntatore manda eventi molto piu' fitti
+  // delle celle che attraversa: senza questo, ogni pixel di movimento
+  // ricostruirebbe da capo qualche decina di migliaia di triangoli.
+  private drawn: ReachField | null = null;
 
   constructor(private readonly map: TerrainMap) {
-    this.group.add(this.existing, this.sectors, this.band, this.cursor);
-    this.cursor.visible = false;
-    this.band.visible = false;
-    this.band.renderOrder = 20;
-    this.cursor.renderOrder = 21;
+    this.group.add(this.existing, this.sectors, this.fill, this.rings, this.cursor);
+    this.hideCursor();
+    this.fill.renderOrder = 20;
+    this.rings.renderOrder = 21;
+    this.cursor.renderOrder = 22;
     // Fuori dalla profondita' come il segnaposto: il contorno resta leggibile
     // anche quando passa dietro a una collina.
     this.cursorMaterial.depthTest = false;
+    this.ringMaterial.depthTest = false;
   }
 
   refreshCatalysts(catalysts: readonly Catalyst[], reach: ReachCache): void {
@@ -74,7 +124,7 @@ export class InfluenceOverlay {
     for (const catalyst of catalysts) {
       const field = reach.get(catalyst.x, catalyst.y, catalyst.radius);
       const line = new LineSegments(
-        contourGeometry(this.map, field),
+        contourGeometry(this.map, field, field.radius),
         lineMaterial(CLASS_COLORS[catalyst.class], 0.42),
       );
       line.renderOrder = 18;
@@ -82,23 +132,39 @@ export class InfluenceOverlay {
     }
   }
 
-  showCursor(x: number, y: number, radius: number, valid: boolean, reach: ReachCache): void {
+  /** Mostra la portata del sito puntato, e ne restituisce la misura per l'HUD. */
+  showCursor(
+    x: number,
+    y: number,
+    radius: number,
+    valid: boolean,
+    reach: ReachCache,
+  ): ReachSummary {
     const field = this.cursorField(x, y, radius, reach);
+    if (field !== this.drawn) {
+      this.drawn = field;
+      this.cursor.geometry.dispose();
+      this.cursor.geometry = contourGeometry(this.map, field, radius);
+      this.rings.geometry.dispose();
+      this.rings.geometry = ringsGeometry(this.map, field);
+      this.fill.geometry.dispose();
+      this.fill.geometry = fillGeometry(this.map, field);
+    }
 
-    this.cursor.geometry.dispose();
-    this.cursor.geometry = contourGeometry(this.map, field);
-    this.band.geometry.dispose();
-    this.band.geometry = bandGeometry(this.map, field, CURSOR_BAND);
     const color = valid ? CURSOR_VALID : CURSOR_INVALID;
     this.cursorMaterial.color.setHex(color);
-    this.bandMaterial.color.setHex(color);
+    this.ringMaterial.color.setHex(color);
+    this.fillMaterial.color.setHex(color);
     this.cursor.visible = true;
-    this.band.visible = true;
+    this.rings.visible = true;
+    this.fill.visible = true;
+    return this.lastSummary;
   }
 
   hideCursor(): void {
     this.cursor.visible = false;
-    this.band.visible = false;
+    this.rings.visible = false;
+    this.fill.visible = false;
   }
 
   addSector(region: Region): void {
@@ -114,39 +180,121 @@ export class InfluenceOverlay {
     }
     const field = computeReach(x, y, radius, reach.cost);
     this.lastCursor = field;
+    this.lastSummary = coverageOf(field);
     return field;
   }
 }
 
-/** true se la cella e' dentro la portata. Fuori dal quadrato e' sempre false. */
-function inside(field: ReachField, x: number, y: number): boolean {
-  return distAt(field, x, y) < field.radius;
+/**
+ * Quante celle la portata raggiunge, e quanto sono rispetto a un entroterra
+ * piatto e libero.
+ *
+ * Il paragone **non** e' con il raggio nominale: fuori strada ogni passo costa
+ * `reach.land`, quindi nemmeno il sito perfetto arriverebbe mai al raggio pieno,
+ * e misurare contro quello darebbe a ogni posto dell'isola la stessa bocciatura.
+ * Cosi' invece l'uno e' l'entroterra buono, sopra c'e' il sito servito bene
+ * dalle strade, e sotto ci sono la costa, il dirupo e la penisola.
+ */
+function coverageOf(field: ReachField): ReachSummary {
+  const { cx, cy, radius } = field;
+  let cells = 0;
+  for (let y = cy - radius; y <= cy + radius; y++) {
+    for (let x = cx - radius; x <= cx + radius; x++) {
+      if (distAt(field, x, y) < radius) cells++;
+    }
+  }
+  const side = 2 * (radius / BALANCE.reach.land) - 1;
+  return { cells, ratio: cells / (side * side) };
+}
+
+/** true se la cella sta entro la distanza data. Fuori dal quadrato e' sempre false. */
+function inside(field: ReachField, x: number, y: number, level: number): boolean {
+  return distAt(field, x, y) < level;
 }
 
 /**
- * Il bordo della portata, con marching squares sui punti medi dei lati.
+ * La velatura sotto al contorno, una cella per quad e il peso nell'opacita'.
+ *
+ * E' il campo stesso reso visibile: l'alpha di ogni cella e' il suo `falloff`,
+ * quindi cio' che si vede e' esattamente cio' che la simulazione somma. Un quad
+ * per cella con una quota sola la tiene appoggiata al terrazzamento invece che
+ * sospesa a cavallo di un salto, come faceva la fascia che ha sostituito.
+ */
+function fillGeometry(map: TerrainMap, field: ReachField): BufferGeometry {
+  const { cx, cy, radius } = field;
+  const positions: number[] = [];
+  const colors: number[] = [];
+
+  for (let y = cy - radius; y <= cy + radius; y++) {
+    for (let x = cx - radius; x <= cx + radius; x++) {
+      const d = distAt(field, x, y);
+      if (d >= radius) continue;
+
+      const z = surfaceZ(map, x, y);
+      const alpha = FILL_MIN + (FILL_PEAK - FILL_MIN) * falloff(d / radius);
+      const x0 = x - 0.5;
+      const x1 = x + 0.5;
+      const y0 = y - 0.5;
+      const y1 = y + 0.5;
+      positions.push(x0, y0, z, x1, y0, z, x1, y1, z);
+      positions.push(x0, y0, z, x1, y1, z, x0, y1, z);
+      for (let vertex = 0; vertex < 6; vertex++) colors.push(1, 1, 1, alpha);
+    }
+  }
+
+  const result = geometry(new Float32Array(positions));
+  result.setAttribute('color', new Float32BufferAttribute(new Float32Array(colors), 4));
+  return result;
+}
+
+/** Le isolinee interne, tutte in una geometria sola: hanno lo stesso materiale. */
+function ringsGeometry(map: TerrainMap, field: ReachField): BufferGeometry {
+  const points: number[] = [];
+  for (const step of REACH_STEPS) {
+    contourPoints(map, field, field.radius * (1 - step), points);
+  }
+  return geometry(new Float32Array(points));
+}
+
+/**
+ * Il bordo della portata a una distanza data, con marching squares sui punti
+ * medi dei lati.
  *
  * Escono segmenti sciolti e non un anello: un canale che taglia la forma in due
  * produce piu' contorni, e un `LineLoop` li chiuderebbe con un segmento
- * fantasma da una sponda all'altra. Il quadrato non ha bisogno di un bordo di
- * guardia perche' la sua cornice e' gia' fuori portata per costruzione — a
- * distanza pari al raggio il peso e' zero.
+ * fantasma da una sponda all'altra. Al livello esterno il quadrato non ha
+ * bisogno di un bordo di guardia perche' la sua cornice e' gia' fuori portata
+ * per costruzione — a distanza pari al raggio il peso e' zero.
  */
-function contourGeometry(map: TerrainMap, field: ReachField): BufferGeometry {
-  const { cx, cy, radius } = field;
+function contourGeometry(map: TerrainMap, field: ReachField, level: number): BufferGeometry {
   const points: number[] = [];
+  contourPoints(map, field, level, points);
+  return geometry(new Float32Array(points));
+}
+
+function contourPoints(
+  map: TerrainMap,
+  field: ReachField,
+  level: number,
+  out: number[],
+): void {
+  const { cx, cy, radius } = field;
+  // La geodetica non scende mai sotto la Chebyshev — e' il vincolo `>= 1` sul
+  // costo di passo — quindi oltre `level` celle in linea d'aria non c'e' niente
+  // dentro, e le isolinee interne costano una frazione del quadrato intero.
+  const span = Math.min(radius, Math.ceil(level));
 
   const edge = (px: number, py: number): void => {
-    points.push(px, py, surfaceZ(map, px, py));
+    out.push(px, py, surfaceZ(map, px, py));
   };
 
-  for (let y = cy - radius; y < cy + radius; y++) {
-    for (let x = cx - radius; x < cx + radius; x++) {
+  for (let y = cy - span; y < cy + span; y++) {
+    for (let x = cx - span; x < cx + span; x++) {
       const code =
-        (inside(field, x, y) ? 1 : 0) |
-        (inside(field, x + 1, y) ? 2 : 0) |
-        (inside(field, x + 1, y + 1) ? 4 : 0) |
-        (inside(field, x, y + 1) ? 8 : 0);
+        (inside(field, x, y, level) ? 1 : 0) |
+        (inside(field, x + 1, y, level) ? 2 : 0) |
+        (inside(field, x + 1, y + 1, level) ? 4 : 0) |
+        (inside(field, x, y + 1, level) ? 8 : 0);
       if (code === 0 || code === 15) continue;
 
       // Punti medi dei quattro lati del quadrato di campionamento.
@@ -161,8 +309,6 @@ function contourGeometry(map: TerrainMap, field: ReachField): BufferGeometry {
       }
     }
   }
-
-  return geometry(new Float32Array(points));
 }
 
 type Midpoint = readonly [number, number];
@@ -213,37 +359,6 @@ function segmentsOf(
     default:
       return [];
   }
-}
-
-/**
- * La fascia interna al contorno, una cella per quad.
- *
- * E' spessa in **distanza geodetica** e non in linea d'aria, quindi segue il
- * bordo dovunque vada senza giunti da cucire: dove la portata gira attorno a un
- * dirupo, gira anche la fascia. Un quad per cella con una quota sola la tiene
- * anche appoggiata al terrazzamento, invece che sospesa a cavallo di un salto.
- */
-function bandGeometry(map: TerrainMap, field: ReachField, width: number): BufferGeometry {
-  const { cx, cy, radius } = field;
-  const inner = radius - width;
-  const positions: number[] = [];
-
-  for (let y = cy - radius; y <= cy + radius; y++) {
-    for (let x = cx - radius; x <= cx + radius; x++) {
-      const d = distAt(field, x, y);
-      if (d < inner || d >= radius) continue;
-
-      const z = surfaceZ(map, x, y);
-      const x0 = x - 0.5;
-      const x1 = x + 0.5;
-      const y0 = y - 0.5;
-      const y1 = y + 0.5;
-      positions.push(x0, y0, z, x1, y0, z, x1, y1, z);
-      positions.push(x0, y0, z, x1, y1, z, x0, y1, z);
-    }
-  }
-
-  return geometry(new Float32Array(positions));
 }
 
 function rectGeometry(map: TerrainMap, region: Region): BufferGeometry {

@@ -71,6 +71,26 @@ export function tradeLinksOf(
 }
 
 /**
+ * Quanta della spesa alimentare i collegamenti sanno coprire in un tick.
+ *
+ * **E' una quota e non una quantita'**, ed e' li' che stava il difetto: la
+ * domanda vale `pop * food.perResident` e cresce con la citta', quindi una
+ * portata assoluta sbaglia da tutte e due le parti — sovrabbondante al primo
+ * isolato, irrilevante al decimo. Vedi `trade.importFoodShare` per i numeri.
+ *
+ * Torna **la quota** e non gia' il cibo perche' ha due lettori: `resolveExternalTrade`
+ * la moltiplica per la domanda, e `tick` la somma alla copertura del raccolto per
+ * decidere se l'emergenza alimentare e' rientrata. Li' serve la *portata* e non
+ * quanto e' passato davvero — cio' che entra dipende da quanto c'e' gia' in
+ * dispensa, e una dotazione d'emergenza lo falserebbe.
+ */
+export function foodImportShareOf(links: readonly TradeLink[], mode: TradeMode): number {
+  let capacity = 0;
+  for (const link of links) capacity += BALANCE.trade.link[link].food;
+  return BALANCE.trade.importFoodShare * BALANCE.trade.modeMultiplier[mode].food * capacity;
+}
+
+/**
  * Un solo scambio aggregato per tick: costo O(1), attivo solo con un collegamento.
  *
  * **Le capacita' si sommano, i profili no.** Ogni collegamento porta la propria
@@ -98,12 +118,10 @@ export function resolveExternalTrade(inputs: {
     };
   }
 
-  let foodCapacity = 0;
   let materialsCapacity = 0;
   let priceWeighted = 0;
   for (const link of inputs.links) {
     const profile = BALANCE.trade.link[link];
-    foodCapacity += profile.food;
     materialsCapacity += profile.materials;
     priceWeighted += profile.materials * profile.price;
   }
@@ -111,7 +129,11 @@ export function resolveExternalTrade(inputs: {
   const multipliers = BALANCE.trade.modeMultiplier[inputs.mode];
   const foodTarget = inputs.population * BALANCE.trade.foodReservePerResident;
   const foodWanted = Math.max(0, foodTarget - inputs.food);
-  const foodByRate = BALANCE.trade.importFoodPerTick * multipliers.food * foodCapacity;
+  // La portata segue la taglia della citta': la quota la sa `foodImportShareOf`,
+  // qui si moltiplica per la spesa di questo tick. Una sola aritmetica per i due
+  // lettori — l'altro e' il fronte dell'emergenza in `tick`.
+  const foodByRate = inputs.population * BALANCE.food.perResident *
+    foodImportShareOf(inputs.links, inputs.mode);
   const foodByFunds = inputs.funds / BALANCE.trade.importFoodPrice;
   const foodImported = Math.min(foodWanted, foodByRate, foodByFunds);
   const importCost = foodImported * BALANCE.trade.importFoodPrice;

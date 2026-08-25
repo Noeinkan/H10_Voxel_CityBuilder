@@ -13,6 +13,10 @@ import {
   type TypologyShape,
 } from './config';
 import { generateBuilding } from './generate';
+import { nextRect } from './bandOps';
+import type { BandRect } from './bandRect';
+import { mulberry32 } from '../rng';
+import { SURFACE_KIND } from '../visualBlock';
 import { STAMP_EMPTY, type VoxelStamp } from './stamp';
 
 /**
@@ -230,6 +234,78 @@ describe('la falda', () => {
   });
 });
 
+describe('la terrazza', () => {
+  /** Un profilo che prova soltanto l'operazione indicata, a ogni fascia. */
+  function onlyOp(op: BandOp) {
+    return { ...CLASS_PROFILE[0], shrinkBias: 1, shrinkOps: [op], growOps: [op] };
+  }
+
+  /** Voxel verniciati di pavimentazione, e quanti di loro chiedono il parapetto. */
+  function terraceOf(stamp: VoxelStamp): { paved: number; railed: number } {
+    let paved = 0;
+    let railed = 0;
+    for (let i = 0; i < stamp.voxels.length; i++) {
+      if (stamp.voxels[i] !== CLASS_PROFILE[0].terrace) continue;
+      paved++;
+      if (stamp.surfaces[i] === SURFACE_KIND.roofTech) railed++;
+    }
+    return { paved, railed };
+  }
+
+  it('un arretramento da due e una terrazza, e porta il parapetto', () => {
+    let seen = 0;
+    for (let seed = 0; seed < 40; seed++) {
+      const stamp = generateBuilding({
+        class: 0, level: 8, seed: seed * 313 + 11, profile: onlyOp(BAND_OP.setback),
+      });
+      const { paved, railed } = terraceOf(stamp);
+      // Il parapetto arriva da `emitRoofTech`, che guarda la superficie: una
+      // terrazza pavimentata e non dichiarata sarebbe un pavimento sul vuoto.
+      expect(railed).toBe(paved);
+      if (paved > 0) seen++;
+    }
+    expect(seen).toBeGreaterThan(30);
+  });
+
+  it('uno scarto da un voxel resta un gradino', () => {
+    // **E' la regola che misura la striscia e non la fascia.** Il guardiano
+    // diceva `rect.w >= 3`, che con `minBandSide: 4` era sempre vero: ogni
+    // scarto usciva pavimentato col parapetto, e a schermo la terrazza non era
+    // un luogo ma una cornice su ogni piano di ogni edificio.
+    for (const op of [BAND_OP.jog, BAND_OP.shrinkOneSide, BAND_OP.shrink]) {
+      for (let seed = 0; seed < 40; seed++) {
+        const stamp = generateBuilding({
+          class: 0, level: 8, seed: seed * 313 + 11, profile: onlyOp(op),
+        });
+        expect(terraceOf(stamp).paved, `op${op} s${seed}`).toBe(0);
+      }
+    }
+  });
+
+  it('lo scarto muove davvero la fascia: il test sopra non e vuoto', () => {
+    // Senza questo, «nessuna terrazza» sarebbe soddisfatto anche da una
+    // grammatica che ha smesso di spostare le fasce.
+    const origins = new Set<string>();
+    const stamp = generateBuilding({
+      class: 0, level: 10, seed: 4242, profile: onlyOp(BAND_OP.jog),
+    });
+    const plane = stamp.sizeX * stamp.sizeY;
+    for (let sz = 0; sz < stamp.sizeZ; sz++) {
+      let minX = stamp.sizeX;
+      let minY = stamp.sizeY;
+      for (let sy = 0; sy < stamp.sizeY; sy++) {
+        for (let sx = 0; sx < stamp.sizeX; sx++) {
+          if (stamp.voxels[plane * sz + sx + stamp.sizeX * sy] === STAMP_EMPTY) continue;
+          if (sx < minX) minX = sx;
+          if (sy < minY) minY = sy;
+        }
+      }
+      origins.add(`${minX},${minY}`);
+    }
+    expect(origins.size).toBeGreaterThan(1);
+  });
+});
+
 describe('le trasformazioni nuove', () => {
   /** Un profilo che prova soltanto l'operazione indicata, per isolarne l'effetto. */
   function onlyOp(cls: BuildingClass, op: BandOp) {
@@ -259,6 +335,62 @@ describe('le trasformazioni nuove', () => {
           }
         }
       }
+    }
+  });
+
+  it('il repertorio si pesca, non si prende in testa', () => {
+    // Il difetto che `preferredStart` corregge: prendendo sempre la prima che
+    // regge, le voci dietro comparivano solo dove la testa non stava in piedi.
+    // Qui tutte e tre reggono, quindi con la regola vecchia il conto sarebbe
+    // 200-0-0.
+    const profile = {
+      ...CLASS_PROFILE[0],
+      shrinkBias: 1,
+      shrinkOps: [BAND_OP.keep, BAND_OP.jog, BAND_OP.setback],
+    };
+    // La fascia sta **dentro** il riquadro con un voxel di gioco per lato: sul
+    // filo dell'impronta uno scarto uscirebbe e la guardia lo scarterebbe, cioe'
+    // si misurerebbe il vincolo invece della pesca.
+    const prev: BandRect = { x0: 1, y0: 1, w: 6, h: 6 };
+    const box = { sizeX: 8, sizeY: 8, face: 0 };
+    const counts = { keep: 0, jog: 0, setback: 0, altro: 0 };
+
+    for (let seed = 0; seed < 200; seed++) {
+      const rect = nextRect(mulberry32(seed * 7919 + 1), prev, box, profile, null, false, prev);
+      if (rect.w === prev.w && rect.h === prev.h) {
+        if (rect.x0 === prev.x0 && rect.y0 === prev.y0) counts.keep++;
+        else counts.jog++;
+      } else if (rect.w === prev.w - 2 || rect.h === prev.h - 2) counts.setback++;
+      else counts.altro++;
+    }
+
+    // Tutte e tre esistono davvero...
+    expect(counts.keep).toBeGreaterThan(0);
+    expect(counts.jog).toBeGreaterThan(0);
+    expect(counts.setback).toBeGreaterThan(0);
+    expect(counts.altro).toBe(0);
+    // ...ma la testa resta la preferenza, non una fra tante: e' la meta' del
+    // contratto che una pesca uniforme cancellerebbe, e con essa la frase
+    // «questo uso arretra profondo quando puo'».
+    expect(counts.keep).toBeGreaterThan(counts.jog);
+    expect(counts.jog).toBeGreaterThan(counts.setback);
+  });
+
+  it('pesca senza legare la sequenza del PRNG all esito', () => {
+    // I due tiri di `preferredStart` si consumano sempre, anche quando il
+    // repertorio ha una voce sola e non c'e' niente da scegliere: e' cio' che
+    // tiene `recordStamp` capace di ritrovare i voxel da cancellare.
+    const profile = { ...CLASS_PROFILE[0], shrinkBias: 1, shrinkOps: [BAND_OP.jog] };
+    const prev: BandRect = { x0: 1, y0: 1, w: 6, h: 6 };
+    const box = { sizeX: 8, sizeY: 8, face: 0 };
+    for (let seed = 0; seed < 20; seed++) {
+      const a = mulberry32(seed * 613 + 5);
+      const b = mulberry32(seed * 613 + 5);
+      expect(nextRect(a, prev, box, profile, null, false, prev))
+        .toEqual(nextRect(b, prev, box, profile, null, false, prev));
+      // E dopo la fascia le due sequenze restano allineate: se una avesse
+      // consumato un tiro in piu' dell'altra, il confronto cadrebbe qui.
+      expect(a()).toBe(b());
     }
   });
 

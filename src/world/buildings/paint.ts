@@ -136,8 +136,6 @@ export function paint(request: PaintRequest): VoxelStamp {
     // come una rientranza pavimenterebbe l'intera copertura di ogni edificio a
     // tetto piatto, che non e' una terrazza ma il tetto di prima ridipinto.
     const above = isCrown || isRoofProp ? null : rects[b + 1];
-    const terraced = above !== null && rect.w >= GRAMMAR.terraceMinSide &&
-      rect.h >= GRAMMAR.terraceMinSide;
 
     // Il portico sta sulla sola fascia zero: e' il piano terra sul fronte
     // strada, non una loggia a meta' torre. Su un fronte troppo stretto non si
@@ -214,11 +212,18 @@ export function paint(request: PaintRequest): VoxelStamp {
             continue;
           }
 
-          // Scoperto: sommita' della fascia che la fascia sopra non copre. E'
-          // O(1) per voxel — il rettangolo di sopra e' gia' in mano al ciclo —
-          // e non alloca niente.
-          const open = terraced && sz === top && above !== null &&
-            !inside(above, sx, sy);
+          // Scoperto: sommita' della fascia che la fascia sopra non copre, e
+          // larga abbastanza perche' ci si stia. E' O(1) per voxel — il
+          // rettangolo di sopra e' gia' in mano al ciclo — e non alloca niente.
+          //
+          // **La larghezza si misura sulla striscia, non sulla fascia**, ed e'
+          // la differenza fra una terrazza e il bordo di un gradino: uno scarto
+          // da un voxel lascia scoperta una riga sola, che pavimentata legge
+          // come un errore di allineamento e in piu' si porta il parapetto di
+          // `emitRoofTech`. Li' la sommita' resta la cornice della fascia,
+          // com'e' su ogni piano che non ha una terrazza.
+          const open = sz === top && above !== null && !inside(above, sx, sy) &&
+            openRing(rect, above, sx, sy) >= GRAMMAR.terraceMinRing;
           // Il bordo resta pavimentato anche quando il cuore e' verde: ci si
           // affaccia, e il parapetto lo dice. Un giardino fino al filo del vuoto
           // sarebbe un prato sospeso, non una terrazza piantata.
@@ -287,6 +292,29 @@ export function paint(request: PaintRequest): VoxelStamp {
     surfaces,
     bandStarts,
   };
+}
+
+/**
+ * Larghezza della striscia scoperta a cui appartiene un voxel di sommita'.
+ *
+ * Il voxel sta fuori dal rettangolo di sopra su uno dei due assi, o su entrambi
+ * se e' d'angolo: la striscia e' l'arretramento del lato da cui e' rimasto
+ * fuori. **Sull'angolo vince la piu' larga**, e non e' una comodita': un voxel
+ * al crocevia fra una striscia da uno e una da tre appartiene alla terrazza, e
+ * togliergli il pavimento aprirebbe un intaglio nel suo spigolo.
+ *
+ * I lati da cui la fascia sopra **sporge** danno un arretramento negativo, e non
+ * serve escluderli: da quella parte non c'e' nessun voxel scoperto da misurare.
+ */
+function openRing(rect: BandRect, above: BandRect, sx: number, sy: number): number {
+  let width = 0;
+  if (sx < above.x0) width = above.x0 - rect.x0;
+  else if (sx >= above.x0 + above.w) width = rect.x0 + rect.w - (above.x0 + above.w);
+  if (sy < above.y0) width = Math.max(width, above.y0 - rect.y0);
+  else if (sy >= above.y0 + above.h) {
+    width = Math.max(width, rect.y0 + rect.h - (above.y0 + above.h));
+  }
+  return width;
 }
 
 /**

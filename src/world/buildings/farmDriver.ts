@@ -1,4 +1,4 @@
-import { addFarm, FARM_KIND, missingPlotsOf, removeFarm, type FarmKind, type SimState } from '../../sim';
+import { addFarm, FARM_KIND, missingPlotsFor, removeFarm, type FarmKind, type SimState } from '../../sim';
 import { FARMS } from '../farms/config';
 import { FarmRegistry } from '../farms/FarmRegistry';
 import { clearPlot, paintPlot } from '../farms/generate';
@@ -95,14 +95,16 @@ export class FarmDriver {
    * che cresce con la citta'. Il tetto per passata resta — la campagna deve
    * comparire, non apparire — ma adesso e' un tetto e non piu' il ritmo.
    *
-   * L'organico pieno e' deliberatamente ottimista: un lotto in piu' si valuta sul
-   * raccolto che *potrebbe* dare, non su quello che da' oggi con meta' delle
-   * braccia. Chiedere il contrario farebbe piantare campi a una citta' che ha
-   * gia' piu' campi che lavoratori.
+   * **La domanda si pone alla simulazione e basta.** Chiedeva quanti lotti
+   * mancassero *a organico pieno*, passando un `1` scritto qui: una stima su
+   * un'aritmetica diversa da quella con cui il tick calcola davvero il raccolto,
+   * e una citta' a due terzi di organico ne raccoglieva due terzi credendosi in
+   * pareggio. Quale organico usare non e' una scelta di chi pianta — e' della
+   * simulazione, che sa cosa ne fara' — quindi adesso attraversa il confine solo
+   * la risposta.
    */
   private wants(state: SimState): number {
-    const missing = missingPlotsOf(state.population.stock, state.farmCounts, 1);
-    return Math.min(FARMS.plotsPerPass, missing);
+    return Math.min(FARMS.plotsPerPass, missingPlotsFor(state));
   }
 
   /**

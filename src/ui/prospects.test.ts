@@ -11,7 +11,7 @@ import {
 import { GROUND } from '../world/grading/grade';
 import { TIER } from '../world/skyline/tiers';
 import type { ColumnInfo } from '../game/selection';
-import { prospectRows } from './prospects';
+import { pairingLines, prospectRows, yieldLine } from './prospects';
 
 function source(kind: CatalystId): Catalyst {
   const definition = catalystById(kind);
@@ -131,5 +131,60 @@ describe('cosa potrebbe crescere qui', () => {
     // portassero lo stesso testo una delle due sarebbe rumore.
     const rows = prospectRows(column(profileOf(['factory', 'university'])));
     expect(new Set(rows.map((row) => row.value)).size).toBe(rows.length);
+  });
+});
+
+describe('con chi accostare un ruolo', () => {
+  it('dice il quartiere che la coppia fa, e con chi farlo', () => {
+    // E' la sola sinergia del gioco e non compariva da nessuna parte: si
+    // scopriva piazzando catalizzatori a duecento fondi l'uno.
+    expect(pairingLines('port')).toEqual(['Market or Factory → harbor quarter']);
+  });
+
+  it('vale nei due versi: chi e nominato lo nomina', () => {
+    // La regola non distingue chi dei due sia arrivato prima, e il giocatore
+    // nemmeno: un mercato in mano deve poter leggere che accanto a un porto fa
+    // un porto commerciale, non solo il contrario.
+    expect(pairingLines('market')).toContain('Port → harbor quarter');
+    expect(pairingLines('factory')).toContain('Port → harbor quarter');
+  });
+
+  it('tace sui quartieri che un ruolo fa da solo', () => {
+    // `industrial`, `transit` e `market` non chiedono un partner: nominarli qui
+    // spaccerebbe per sinergia cio' che si ottiene comunque.
+    for (const line of pairingLines('transport')) expect(line).not.toContain('transit');
+    for (const line of pairingLines('factory')) expect(line).not.toContain('industrial');
+  });
+
+  it('usa il nome che il giocatore vede, non l id interno', () => {
+    // `transport` si chiama Transit ovunque nell'interfaccia: l'id nudo qui
+    // sarebbe l'unico posto in cui compare il nome di dentro.
+    const lines = pairingLines('university');
+    expect(lines.join(' ')).toContain('Transit');
+    expect(lines.join(' ')).not.toContain('transport');
+  });
+});
+
+describe('cosa ne ricava la citta', () => {
+  it('lega l uso favorito alla risorsa che porta', () => {
+    // Un catalizzatore non produce niente: producono gli edifici che fa nascere.
+    // Fra lo strumento in mano e la barra delle risorse non c'era altro.
+    expect(yieldLine('factory')).toContain('materials');
+    expect(yieldLine('market')).toContain('funds');
+  });
+
+  it('il cibo sta sotto le case, perche e li che si mangia', () => {
+    // Nessun uso urbano produce cibo: lo consumano gli abitanti, e i campi
+    // arrivano da soli quando il conto non torna. Dirlo qui e' dire la
+    // conseguenza di far crescere le case.
+    expect(yieldLine('market')).toContain('food');
+  });
+
+  it('si ferma ai due usi principali', () => {
+    // Un ruolo che ne tocca tre elencherebbe mezza economia e non direbbe piu'
+    // niente su di se'. La separazione e' una sola.
+    for (const catalyst of ['transport', 'monument', 'port'] as const) {
+      expect(yieldLine(catalyst)!.split(', then ')).toHaveLength(2);
+    }
   });
 });

@@ -129,9 +129,9 @@ export const AERIAL = {
     /**
      * Sporto minimo e massimo, in voxel.
      *
-     * Il minimo e' tre, cioe' la soglia di `GRAMMAR.terraceMinSide`: sotto, la
-     * pavimentazione mentirebbe e il parapetto sarebbe un bordo che nessuno legge
-     * come praticabile. Il massimo e' otto, l'impronta massima di un edificio:
+     * Il minimo e' tre, ed e' la domanda di `GRAMMAR.terraceMinRing` posta qui:
+     * sotto, la pavimentazione mentirebbe e il parapetto sarebbe un bordo che
+     * nessuno legge come praticabile. Il massimo e' otto, l'impronta massima di un edificio:
      * una mensola piu' profonda di cosi' non e' piu' un aggetto ma un edificio
      * appeso, e a quel punto conviene che sia un edificio.
      *

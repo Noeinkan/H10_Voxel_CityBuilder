@@ -435,15 +435,28 @@ export const GRAMMAR = {
   minBandSide: 4,
 
   /**
-   * Lato minimo perche' una rientranza diventi terrazza invece di restare uno
-   * scalino.
+   * Larghezza minima dell'**anello scoperto** perche' una rientranza diventi
+   * terrazza invece di restare uno scalino.
    *
-   * Sotto, l'anello scoperto e' largo un voxel e non ci si sta: verniciarlo di
+   * Sotto, l'anello e' largo un voxel e non ci si sta: verniciarlo di
    * pavimentazione mentirebbe, e — dato che la terrazza chiede a `emitRoofTech`
    * un parapetto — pagherebbe geometria di dettaglio per un bordo che nessuno
    * legge come praticabile.
+   *
+   * **Era `terraceMinSide` e misurava il lato della fascia, che e' un'altra
+   * cosa.** Il numero diceva tre, ma nessuna fascia di corpo scende sotto
+   * `minBandSide`, che vale quattro: la soglia non poteva mordere, e ogni
+   * scarto — anche un `jog` da un voxel — usciva pavimentato e col parapetto.
+   * Misurato sul ripiego residenziale, meta' delle transizioni di fascia
+   * lasciava un anello da un voxel solo, ed erano tutte terrazze. E' il motivo
+   * per cui a schermo la terrazza non era un luogo ma una cornice, ripetuta su
+   * ogni piano di ogni edificio della citta'.
+   *
+   * Due e' l'arretramento di `setback`, cioe' un cubo di terreno: la piu'
+   * piccola rientranza in cui pavimentazione, parapetto e giardino raccontino
+   * qualcosa.
    */
-  terraceMinSide: 3,
+  terraceMinRing: 2,
 
   /**
    * Voxel di cui l'inviluppo puo' uscire dall'impronta, **verso la strada**.
@@ -1191,6 +1204,41 @@ export const TYPOLOGIES: readonly TypologyDefinition[] = [
     profile: { bandHeight: [6, 8], shrinkBias: 0.72 },
   },
   {
+    id: 'roundTower',
+    label: 'Round tower',
+    use: 0,
+    minWealth: 0.6,
+    minLevel: 6,
+    // Sta **prima** di `skyTerraces` a parita' di priorita', e l'ordine e' la
+    // regola: a livello 5 vince il gradone abitato, dal 6 in su il tamburo. E'
+    // la sola riga del catalogo la cui pianta non e' un rettangolo.
+    //
+    // **Stava dopo, e questo la rendeva irraggiungibile.** `selectTypology`
+    // tiene la prima a parita' di priorita', e `skyTerraces` chiede tutto quello
+    // che chiede lei con un livello in meno: ogni luogo che accettava il tamburo
+    // accettava anche il gradone, e vinceva il gradone. Non falliva niente — la
+    // riga c'era, il test la trovava nel catalogo, e a schermo non e' mai
+    // comparsa una volta. E' meta' della ragione per cui la citta' ricca era
+    // fatta di un edificio solo.
+    priority: 5,
+    shape: {
+      ...DEFAULT_TYPOLOGY_SHAPE,
+      chamfer: 2,
+      crownKind: CROWN_KIND.lantern,
+      minFootprint: 8,
+    },
+    profile: {
+      bandHeight: [6, 8],
+      shrinkBias: 0.7,
+      body: PALETTE_SLOTS.concretePale,
+      bodyAlt: PALETTE_SLOTS.glassPale,
+      accent: PALETTE_SLOTS.glass,
+      crown: PALETTE_SLOTS.roofWhite,
+      plinth: PALETTE_SLOTS.stone,
+      roofProp: PALETTE_SLOTS.metalGold,
+    },
+  },
+  {
     id: 'skyTerraces',
     label: 'Sky terraces',
     use: 0,
@@ -1222,33 +1270,6 @@ export const TYPOLOGIES: readonly TypologyDefinition[] = [
       crown: PALETTE_SLOTS.roofWhite,
       plinth: PALETTE_SLOTS.stone,
       garden: PALETTE_SLOTS.grassLight,
-    },
-  },
-  {
-    id: 'roundTower',
-    label: 'Round tower',
-    use: 0,
-    minWealth: 0.6,
-    minLevel: 6,
-    // Sta **prima** di `skyTerraces` a parita' di priorita', e l'ordine e' la
-    // regola: a livello 5 vince il gradone abitato, dal 6 in su il tamburo. E'
-    // la sola riga del catalogo la cui pianta non e' un rettangolo.
-    priority: 5,
-    shape: {
-      ...DEFAULT_TYPOLOGY_SHAPE,
-      chamfer: 2,
-      crownKind: CROWN_KIND.lantern,
-      minFootprint: 8,
-    },
-    profile: {
-      bandHeight: [6, 8],
-      shrinkBias: 0.7,
-      body: PALETTE_SLOTS.concretePale,
-      bodyAlt: PALETTE_SLOTS.glassPale,
-      accent: PALETTE_SLOTS.glass,
-      crown: PALETTE_SLOTS.roofWhite,
-      plinth: PALETTE_SLOTS.stone,
-      roofProp: PALETTE_SLOTS.metalGold,
     },
   },
   {

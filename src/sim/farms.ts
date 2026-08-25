@@ -156,9 +156,18 @@ export function foodDeficitOf(
  * `farms/config.ts`, e le due divergevano dal primo isolato. Una citta' arrivava
  * a mangiare un terzo di cio' che le serviva senza che niente lo dicesse.
  *
- * Conta in **campi** e non nel lotto medio, ed e' deliberatamente ottimista come
- * l'organico pieno che il driver gli passa: un frutteto rende la meta', e
- * chiedere il pessimo farebbe piantare a una citta' gia' in pareggio.
+ * **Punta sopra il pareggio, e non e' la stessa cosa di `foodDeficitOf`.** Quello
+ * e' il fatto — quanto cibo manca adesso — e resta zero appena i conti tornano;
+ * questo e' il piano, e il piano lascia un margine (`food.targetCoverage`). Al
+ * pareggio secco la dispensa vale zero per costruzione, e una citta' senza scorta
+ * trasforma in carestia qualunque oscillazione.
+ *
+ * **Il divisore resta la resa a organico pieno**, anche quando il deficit e'
+ * misurato con le braccia di oggi. Non e' una svista: piantare un campo abbassa
+ * l'organico di *tutti* — e' un bacino solo — quindi contare il rimedio alla resa
+ * ridotta chiederebbe piu' lotti di quanti ne servano e la passata dopo ne
+ * chiederebbe altri. Contandolo ottimista il driver cammina verso il punto fisso
+ * invece di saltarlo, ed e' anche il verso in cui sbagliare costa meno.
  */
 export function missingPlotsOf(
   population: number,
@@ -166,7 +175,35 @@ export function missingPlotsOf(
   staffing: number,
 ): number {
   const perPlot = BALANCE.farms[FARM_KIND.field].houses * FOOD_PER_HOUSE;
-  return Math.ceil(foodDeficitOf(population, farmCounts, staffing) / perPlot);
+  // Il margine si chiede come «una citta' un po' piu' grande da sfamare», non
+  // come un coefficiente sul deficit: cosi' `foodDeficitOf` resta la stessa
+  // funzione con lo stesso significato, e il piano si distingue dal fatto.
+  const planFor = population * BALANCE.food.targetCoverage;
+  return Math.ceil(foodDeficitOf(planFor, farmCounts, staffing) / perPlot);
+}
+
+/**
+ * Quanti lotti mancano a **questa** citta'. E' la porta che usa chi pianta.
+ *
+ * Esiste perche' attraversi il confine un numero solo, come dichiara il
+ * `FarmDriver`: l'organico con cui stimare il raccolto e' una scelta della
+ * simulazione — e' lei che sa cosa `foodYieldOf` fara' di quel numero — non un
+ * parametro da indovinare fuori. `missingPlotsOf` resta l'aritmetica sotto,
+ * dove i test la possono interrogare a organico scelto.
+ *
+ * **L'organico e' quello vero, e prima era il pieno.** Il driver passava `1` per
+ * non far piantare campi a una citta' che ha gia' piu' campi che braccia; la
+ * conseguenza pero' era che una citta' a 0,7 di organico raccoglieva il 70% di
+ * cio' per cui aveva piantato e il driver si fermava credendosi in pareggio. Il
+ * timore resta vero ma lo copre il divisore ottimista di `missingPlotsOf`, non
+ * una domanda posta sulle braccia sbagliate.
+ */
+export function missingPlotsFor(state: {
+  readonly population: { readonly stock: number };
+  readonly farmCounts: readonly number[];
+  readonly staffing: number;
+}): number {
+  return missingPlotsOf(state.population.stock, state.farmCounts, state.staffing);
 }
 
 /**

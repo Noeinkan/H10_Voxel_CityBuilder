@@ -60,6 +60,7 @@ resto si apre a domanda — è ciò che tiene basso il contesto di partenza.
 
 | File | Ruolo | Esporta |
 | --- | --- | --- |
+| [src/world/traffic/wake.ts](src/world/traffic/wake.ts) | La scia sull'acqua: il pennacchio letto in orizzontale, dalle pose passate. |
 | [VoxelWorld.ts](src/world/VoxelWorld.ts) | Storage sparso a chunk, dirty set, AABB, cache dell'ultimo chunk | `VoxelWorld`, `WorldBounds` |
 | [Chunk.ts](src/world/Chunk.ts) | Due `Uint8Array(32768)` — `blocks` (rendering) e `data` (simulazione) — allocati una volta sola | `Chunk` |
 | [visualBlock.ts](src/world/visualBlock.ts) | Packing visuale in un byte: palette 0..31 e superficie 0..7, che su un voxel d'acqua porta la classe dello specchio e su una copertura del terreno — palette 0, un byte che il pack non produce mai — il tipo di erbetta | `SURFACE_KIND`, `SURFACE_KIND_NAMES`, `ALL_SURFACE_KINDS`, `WATER_CLASS`, `packVisualBlock`, `blockPalette`, `blockSurface`, `packCoverMark`, `coverMarkKind`, `isCoverMark` |
@@ -135,6 +136,10 @@ map.columnAt(120, 96); // { height, biome, slope, buildable }
 | --- | --- | --- |
 | [ChunkRenderer.ts](src/engine/ChunkRenderer.ts) | Una geometria per chunk, coda a priorità, frustum culling, upload a budget | `ChunkRenderer`, `ChunkRendererStats` |
 | [MesherPool.ts](src/engine/MesherPool.ts) | Pool di worker, job in volo, statistiche del mesher | `MesherPool`, `MesherStats`, `ChunkMeshResult` |
+| [src/engine/shaders/scene.glsl.ts](src/engine/shaders/scene.glsl.ts) | Il GLSL che i materiali di scena condividono: palette, luce, materia, ombra, prospettiva aerea. |
+| [src/engine/shaders/vehicle.glsl.ts](src/engine/shaders/vehicle.glsl.ts) | Il programma dei mezzi: normale che ruota con la sagoma, fasciame, finestrini accesi, fanali. |
+| [src/engine/shaders/wake.glsl.ts](src/engine/shaders/wake.glsl.ts) | Il programma della schiuma: bordo che si spegne e granello sulla cella del mondo. |
+| [src/engine/VehicleMaterial.ts](src/engine/VehicleMaterial.ts) | I materiali di mezzi e scia: non hanno uniform propri, prendono in prestito quelli del voxel. |
 | [VoxelMaterial.ts](src/engine/VoxelMaterial.ts) | Unico `ShaderMaterial`: palette, sole e ambiente nel fragment, jitter per voxel, prospettiva aerea | `createVoxelMaterial`, `VoxelMaterialHandle` |
 | [VoxelMaterial.test.ts](src/engine/VoxelMaterial.test.ts) | Ogni uniform dichiarato nel GLSL esiste davvero, su entrambe le varianti; cambiare tema non ricompila il programma; il retino entra solo alla prima vista attivata | — |
 | [lighting.ts](src/engine/lighting.ts) | Modello di luce in TS puro: direzione del sole, diffusa avvolgente, luminanza per faccia | `sunDirection`, `faceLight`, `faceLuminance`, `wrapDiffuse`, `FACE_NORMALS` |
@@ -157,7 +162,7 @@ map.columnAt(120, 96); // { height, biome, slope, buildable }
 | [FrameTiming.test.ts](src/engine/FrameTiming.test.ts) | Vero uno percento peggiore; tab nascosta e resume non contano come frame lenti | — |
 | [RenderQuality.ts](src/engine/RenderQuality.ts) | Pixel ratio adattivo con isteresi e profilo di effetti derivato: ombre, bloom, tilt-shift scendono insieme | `RenderQualityController`, `parseQualityMode`, `QualityMode`, `QualityProfile`, `QualityDecision`, `QualityReason` |
 | [RenderQuality.test.ts](src/engine/RenderQuality.test.ts) | Scende dopo due finestre lente, risale dopo dieci secondi stabili, i modi fissi hanno profilo fisso | — |
-| [InfluenceOverlay.ts](src/engine/InfluenceOverlay.ts) | Contorno della portata dei catalizzatori, tracciato con marching squares sui dati veri del campo, e perimetri dei settori | `InfluenceOverlay` |
+| [InfluenceOverlay.ts](src/engine/InfluenceOverlay.ts) | Portata dei catalizzatori: velatura a gradiente cella per cella, isolinee ai quarti e contorno, tutto tracciato con marching squares sui dati veri del campo; piu' i perimetri dei settori | `InfluenceOverlay`, `ReachSummary` |
 | [InspectGuides.ts](src/engine/InspectGuides.ts) | Le linee che dicono dove e' puntata una vista: riquadro, carreggiata della sezione, colonna a fuoco | `InspectGuides` |
 | [InspectView.ts](src/engine/InspectView.ts) | Lo stato delle viste di ispezione: colonna a fuoco, isolato scelto, aggancio della camera, ri-armo della quota. Il raccordo fra mondo e `inspect.ts`, che resta puro | `createInspectView`, `InspectView`, `InspectViewOptions`, `FocusCell` |
 | [InspectView.test.ts](src/engine/InspectView.test.ts) | La quota della fetta si arma una volta sola sul suolo guardato: non insegue il cursore, non salta al centro dell'inquadratura quando il raggio manca l'isola, non riscrive una quota scelta, si ri-arma solo riaprendo la vista | — |
@@ -623,6 +628,7 @@ le scritture stanno in tre file invece che sparse in sei metodi.
 | --- | --- | --- |
 | [Builder.ts](src/world/buildings/Builder.ts) | Orchestratore: il ciclo a tick, la nascita di un edificio sul lotto, le statistiche | `Builder`, `BuilderStats`, `REJECT_REASONS` |
 | [buildContext.ts](src/world/buildings/buildContext.ts) | Cio' che ogni driver ha in mano: mondo, terreno, strade, registry e le due code | `BuildContext` |
+| [growthPoles.ts](src/world/buildings/growthPoles.ts) | Di chi e' il turno di crescere: il riquadro del polo di questa infornata | `poleRectAt` |
 | [growthQueue.ts](src/world/buildings/growthQueue.ts) | La coda di comparsa e le scritture a budget: un segmento per struttura, la sagoma nuova prima della cancellazione | `GrowthQueue`, `anchorOf` |
 | [surfaceQueue.ts](src/world/buildings/surfaceQueue.ts) | Il suolo pubblico a budget: carreggiata per isolato, grembiuli, rampe e bonifica del decoro — che si ferma dove il bioma dice acqua | `SurfaceQueue`, `SurfacePaint` |
 | [spanDriver.ts](src/world/buildings/spanDriver.ts) | La rete in quota: ponti, mezzanini e piazze. Vince chi unisce due componenti; una campata non prende suolo | `SpanDriver` |
@@ -679,12 +685,13 @@ giocabile; gli overlay tecnici si alternano con `F3` o partono aperti con
 | --- | --- |
 | [hud.css](src/ui/hud.css) | Token, elevazione a tre livelli, cornice, tessere del dock, stati accessibili e layout responsivo Cozy City |
 | [hudIcons.ts](src/ui/hudIcons.ts) | Icone SVG interne, senza dipendenze o richieste di rete |
+| [hudTip.ts](src/ui/hudTip.ts) | La scheda che si apre da un'azione del dock: modello puro — nome, prezzo, cosa fa, righe etichettate, gesto o blocco — e il suo disegno in soli `<span>`, perché sta dentro un `<button>` |
 | [hudWidgets.ts](src/ui/hudWidgets.ts) | Le fabbriche DOM che non toccano `this`: bottoni, tessere, righe del cursore, tasti della targa, separatore |
 | [hudTokens.ts](src/ui/hudTokens.ts) | I `--hud-*` derivati dal tema attivo: pannello chiaro o scuro dalla luminanza dell'aria, tinta verso il mondo e contrasto AA garantito |
 | [GameHud.ts](src/ui/GameHud.ts) | Composizione dell'HUD: pannelli, decisioni, temi, targa della vista, catena di Escape e feedback contestuale |
 | [PolicyDrawer.ts](src/ui/PolicyDrawer.ts) | Il pannello di governo in tre linguette — politiche, commercio interno, commercio esterno — con l'intestazione ferma e solo il corpo che scorre |
 | [ResourceBar.ts](src/ui/ResourceBar.ts) | La colonna di destra: cinque risorse con tendenza, sparkline, anello del tetto e popover del bilancio, piu' i controlli del tempo |
-| [BuildDock.ts](src/ui/BuildDock.ts) | Il rail di sinistra: quattro corsie etichettate incolonnate, tessere icona-sopra-etichetta su due colonne con badge di tasto e costo, selezione per indice |
+| [BuildDock.ts](src/ui/BuildDock.ts) | Il rail di sinistra: quattro corsie etichettate incolonnate, tessere icona-sopra-etichetta con badge di tasto, una colonna sopra i 900px di finestra e due sotto, selezione per indice |
 | [ResourceTrend.ts](src/ui/ResourceTrend.ts) | La finestra dei tick recenti per risorsa: direzione, magnitudine e serie per la sparkline. Campionamento ancorato al tick |
 | [GameHudModel.ts](src/ui/GameHudModel.ts) | View model puro di risorse, tendenze, tetti, scomposizione dei fondi, requisiti vincolanti e disponibilità delle azioni |
 | [ControlsHint.ts](src/ui/ControlsHint.ts) | Onboarding contestuale persistente e pannello di aiuto |
@@ -703,7 +710,12 @@ giocabile; gli overlay tecnici si alternano con `F3` o partono aperti con
 
 | File | Copre |
 | --- | --- |
-| [ui/hudWidgets.test.ts](src/ui/hudWidgets.test.ts) | Le righe del tooltip: una voce per riga, elenchi che si contano invece di srotolarsi, ordine fra cio' che si costruisce e cio' che si sblocca |
+| [src/engine/VehicleMaterial.test.ts](src/engine/VehicleMaterial.test.ts) | Che gli uniform dei mezzi siano gli stessi oggetti del voxel, non delle copie. |
+| [ui/hudTip.test.ts](src/ui/hudTip.test.ts) | Il testo della scheda del dock: la descrizione che resta anche a bottone bloccato, i quattro usi nominati tutti, la portata in banda prima che in cifre, l'elenco che si chiude a parole |
+| [ui/hudWidgets.test.ts](src/ui/hudWidgets.test.ts) | L'elenco che si accorcia per la pastiglia al cursore: i primi nomi, poi quanti ne restano |
+| [world/buildings/growthPoles.test.ts](src/world/buildings/growthPoles.test.ts) | Il giro fra i poli: un turno a testa, il riquadro dell'influenza, nessun polo saltato |
+| [world/buildings/landmarkFooting.test.ts](src/world/buildings/landmarkFooting.test.ts) | Il landmark in montagna: il rifiuto `no-footing` detto prima del click, la stessa risposta che da' il click, nessun cantiere aperto per una struttura che non puo' comparire |
+| [src/world/traffic/wake.test.ts](src/world/traffic/wake.test.ts) | Che la V si apra, che i segni si tocchino e che una barca all'ormeggio non lasci niente. |
 | [world/VoxelWorld.test.ts](src/world/VoxelWorld.test.ts) | Sparsità, dirty set ai bordi, AABB, contratto `data` ≠ `blocks` |
 | [world/visualBlock.test.ts](src/world/visualBlock.test.ts) | Palette e superficie nello stesso byte, il vuoto ignora la superficie |
 | [world/scenes/cityScene.test.ts](src/world/scenes/cityScene.test.ts) | Determinismo, riempimento al 20%, ripresa a passi, nessuna scrittura fuori region |

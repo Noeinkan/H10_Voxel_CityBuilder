@@ -1,5 +1,6 @@
 import type { HudAction } from './GameHudModel';
 import { createHudIcon, type HudIcon } from './hudIcons';
+import { buildActionTip, tipElement, tipText, type HudTip } from './hudTip';
 import type { ViewKeyHint } from './ViewMenuModel';
 
 /**
@@ -11,7 +12,10 @@ import type { ViewKeyHint } from './ViewMenuModel';
  * decide chi aspetta chi, quando due agenti lavorano sullo stesso HUD.
  */
 export function actionButton(action: HudAction, icon: HudIcon, onClick: () => void): HTMLButtonElement {
-  const button = labeledButton(icon, action.label, action.reason, onClick);
+  // Niente `data-tooltip`: la bolla di una riga sola resta a chi ha una riga
+  // sola da dire, e queste azioni hanno una scheda intera. Gliela appende
+  // `paintAction`, che e' anche l'unico posto che sa se sono bloccate.
+  const button = labeledButton(icon, action.label, null, onClick);
   const copy = button.querySelector('.button-copy');
   const cost = document.createElement('span');
   cost.className = 'button-cost';
@@ -70,11 +74,16 @@ function onActivate(button: HTMLButtonElement, onClick: () => void): void {
   });
 }
 
-export function labeledButton(icon: HudIcon, label: string, tooltip: string, onClick: () => void): HTMLButtonElement {
+export function labeledButton(
+  icon: HudIcon,
+  label: string,
+  tooltip: string | null,
+  onClick: () => void,
+): HTMLButtonElement {
   const button = document.createElement('button');
   button.type = 'button';
   button.className = 'hud-button';
-  button.dataset.tooltip = tooltip;
+  if (tooltip !== null) button.dataset.tooltip = tooltip;
   button.setAttribute('aria-label', label);
   button.appendChild(createHudIcon(icon));
   const copy = document.createElement('span');
@@ -130,7 +139,33 @@ export function paintAction(button: HTMLButtonElement | undefined, action: HudAc
     // sopra il costo; la frase resta nel tooltip.
     button.dataset.requirementShort = action.requirementShort ?? '';
   }
-  button.dataset.tooltip = actionTooltip(action);
+  paintTip(button, buildActionTip(action));
+}
+
+/**
+ * La scheda del bottone, **rifatta solo quando cambia**.
+ *
+ * Il dock si ridipinge sei volte al secondo e la scheda cambia una volta ogni
+ * tanto — quando i fondi scavalcano il prezzo, o quando il tutorial si sposta.
+ * Ricostruirne dodici a ogni giro sarebbe un rumore di DOM che nessuno guarda,
+ * e cancellerebbe la bolla proprio sotto il puntatore di chi la sta leggendo.
+ */
+const paintedTips = new WeakMap<HTMLElement, string>();
+let tipSerial = 0;
+
+function paintTip(button: HTMLButtonElement, tip: HudTip): void {
+  const key = tipText(tip);
+  if (paintedTips.get(button) === key) return;
+  paintedTips.set(button, key);
+
+  button.querySelector('.hud-tip')?.remove();
+  const element = tipElement(tip);
+  tipSerial += 1;
+  element.id = `hud-tip-${tipSerial}`;
+  // Il bottone porta gia' il nome in `aria-label`: la scheda e' cio' che lo
+  // *descrive*, ed e' l'unico modo perche' chi non la vede la senta comunque.
+  button.setAttribute('aria-describedby', element.id);
+  button.appendChild(element);
 }
 
 /**
@@ -142,56 +177,17 @@ export function paintAction(button: HTMLButtonElement | undefined, action: HudAc
  */
 const TIP_LIST_MAX = 3;
 
-/** Un elenco che si accorcia da solo: i primi nomi, poi quanti ne restano. */
+/**
+ * Un elenco che si accorcia da solo: i primi nomi, poi quanti ne restano.
+ *
+ * Resta qui per la scheda al cursore, che e' una riga sola dentro una pastiglia
+ * stretta. La scheda del dock ha la sua — `nameList` in `hudTip.ts` — perche'
+ * li' l'elenco sta dentro una frase e la coda va detta a parole.
+ */
 export function shortList(items: readonly string[], separator = ', '): string {
   const rest = items.length - TIP_LIST_MAX;
   const shown = items.slice(0, TIP_LIST_MAX).join(separator);
   return rest > 0 ? `${shown}, +${rest} more` : shown;
-}
-
-/**
- * Motivo dell'azione, piu' cio' che quel ruolo favorisce e puo' far nascere.
- *
- * **Righe, non un periodo unico.** Le stesse voci separate da `·` formavano un
- * blocco di testo centrato in cui il motivo, il vincolo e i due elenchi avevano
- * tutti lo stesso peso: si leggeva dall'inizio o non si leggeva. Con un a capo
- * per voce ognuna si trova a colpo d'occhio, ed e' il CSS a renderli
- * (`white-space: pre-line`), non un elemento in piu' dentro il bottone.
- */
-export function actionTooltip(action: HudAction): string {
-  const lines = [action.reason];
-  // Quanto manca, in cifre, subito dopo il perche': il riempimento dice "poco"
-  // o "tanto" a colpo d'occhio, ma chi si ferma a leggere vuole il numero.
-  if (action.requirement !== undefined) lines.push(action.requirement);
-  // Subito dopo il motivo e prima di tutto il resto: un vincolo di sito cambia
-  // *dove* si clicca, e leggerlo in fondo all'elenco vorrebbe dire leggerlo
-  // dopo aver gia' scelto il punto.
-  if (action.site !== undefined) lines.push(action.site);
-
-  // Portata, usi favoriti e penalizzati stanno su **una** riga: sono i tre
-  // numeri della stessa domanda — dove arriva e su cosa spinge — e su tre righe
-  // separate sembravano tre argomenti.
-  const effect: string[] = [];
-  if (action.radius !== undefined) effect.push(`Radius ${action.radius}`);
-  if (action.favours !== undefined && action.favours.length > 0) {
-    effect.push(`favours ${shortList(action.favours)}`);
-  }
-  if (action.penalises !== undefined && action.penalises.length > 0) {
-    effect.push(`penalises ${shortList(action.penalises)}`);
-  }
-  if (effect.length > 0) lines.push(effect.join(' · '));
-
-  if (action.typologies !== undefined && action.typologies.length > 0) {
-    lines.push(`May build: ${shortList(action.typologies)}`);
-  }
-  // In fondo, e dopo «May build», perche' e' la riga condizionale: quelle sopra
-  // arrivano piazzando, questa arriva se il quartiere matura. Metterla prima le
-  // farebbe leggere tutte come promesse dello stesso peso, che e' il difetto da
-  // cui questa riga nasce.
-  if (action.unlocks !== undefined && action.unlocks.length > 0) {
-    lines.push(`Unlocks: ${shortList(action.unlocks, '; ')}`);
-  }
-  return lines.join('\n');
 }
 
 /** Una riga etichettata della scheda al cursore. */

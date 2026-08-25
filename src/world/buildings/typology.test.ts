@@ -26,6 +26,7 @@ import {
   TYPOLOGIES,
   type CrownKind,
   type LotRole,
+  type TypologyDefinition,
 } from './config';
 import { generateBuilding } from './generate';
 import {
@@ -92,6 +93,41 @@ describe('catalogo delle tipologie', () => {
         expect(entry.specialization).toBeUndefined();
         expect(entry.roles).toBeUndefined();
         expect(entry.minDensity).toBeUndefined();
+      }
+    }
+  });
+
+  it('nessuna riga e dominata da una che la precede', () => {
+    // **Una riga irraggiungibile non fallisce: sparisce.** `selectTypology`
+    // tiene la prima a parita' di priorita', quindi una riga preceduta da una
+    // che chiede *meno* di lei non puo' vincere da nessuna parte — e nessun
+    // test se ne accorgeva, perche' il catalogo continuava a contenerla.
+    // `roundTower` e' rimasta cosi' per un'intera fase, dietro `skyTerraces`
+    // che pretende la stessa ricchezza con un livello in meno.
+    const limits = [
+      'minLevel', 'minDensity', 'minWealth',
+      'minAccessibility', 'minSatisfaction', 'minIndustry',
+    ] as const;
+
+    /** true se `earlier` non chiede niente che `later` non chieda gia'. */
+    const dominates = (earlier: TypologyDefinition, later: TypologyDefinition): boolean => {
+      if (earlier.use !== later.use) return false;
+      if (earlier.priority < later.priority) return false;
+      if (earlier.maxDensity !== undefined) return false;
+      if (earlier.coastal === true && later.coastal !== true) return false;
+      if (earlier.lotRole !== undefined && earlier.lotRole !== later.lotRole) return false;
+      if (earlier.mixed !== undefined && earlier.mixed !== later.mixed) return false;
+      if (earlier.roles !== undefined || earlier.charter !== undefined) return false;
+      if (earlier.districts !== undefined) return false;
+      if (earlier.specialization !== undefined &&
+        earlier.specialization !== later.specialization) return false;
+      return limits.every((key) => (earlier[key] ?? 0) <= (later[key] ?? 0));
+    };
+
+    for (let i = 0; i < TYPOLOGIES.length; i++) {
+      for (let j = 0; j < i; j++) {
+        expect(dominates(TYPOLOGIES[j], TYPOLOGIES[i]), `${TYPOLOGIES[j].id} > ${TYPOLOGIES[i].id}`)
+          .toBe(false);
       }
     }
   });

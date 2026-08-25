@@ -8,7 +8,7 @@ import { resolveWeights, type Weights } from './policies';
 import { nextState, unitOf } from './rng';
 import type { Resource, SimState } from './SimState';
 import { servedFerryLines } from './ferry';
-import { resolveExternalTrade, tradeLinksOf } from './trade';
+import { foodImportShareOf, resolveExternalTrade, tradeLinksOf } from './trade';
 
 /**
  * Un tick di simulazione.
@@ -182,10 +182,35 @@ export function tick(state: SimState, terrainMap: TerrainMap): SimState {
     }),
   );
 
+  // Il fronte dell'emergenza alimentare si ricarica qui e non dentro
+  // `decisionAt`: la copertura e' un fatto di questo tick, e un allarme che si
+  // riarma nel ramo che lo legge non avrebbe mai un fronte da riconoscere.
+  //
+  // Si guarda il **raccolto** e non `fed`: quest'ultimo conta i pasti, e i pasti
+  // li paga anche la dotazione dell'emergenza precedente — l'allarme si
+  // riarmava sulla propria risposta e tornava a suonare appena il regalo
+  // finiva. Il raccolto lo muove solo chi pianta.
+  //
+  // Al raccolto si somma la **portata** del collegamento esterno, non `trade.food`:
+  // una citta' che compra il proprio cibo l'ha risolto davvero, e senza questo
+  // termine non riarmerebbe mai. La portata e' un fatto del porto e non della
+  // dispensa — quindi una dotazione non la gonfia — e resta alta anche quando i
+  // fondi finiscono, che e' proprio il momento in cui l'emergenza deve poter
+  // tornare a suonare.
+  const foodCoverage = foodDemand > 0
+    ? foodProduced / foodDemand + foodImportShareOf(trade.links, state.tradeMode)
+    : 1;
+  const supplyArmed = state.supplyArmed || foodCoverage >= BALANCE.decisions.recoveryCoverage;
+
   const next: SimState = {
     ...state,
     tickCount: state.tickCount + 1,
     rngState,
+    supplyArmed,
+    // Era gia' qui e moltiplicava ogni produzione: tenerlo e' cio' che permette a
+    // chi pianta di stimare il raccolto con la stessa aritmetica del bilancio
+    // invece che con l'organico pieno.
+    staffing,
     population: moved(state.population, populationStock),
     food: moved(state.food, finiteStock(trade.foodStock)),
     materials: moved(state.materials, finiteStock(trade.materialsStock)),
