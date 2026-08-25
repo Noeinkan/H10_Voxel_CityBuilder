@@ -8,6 +8,7 @@ import {
   type CharterId,
   type LocalUrbanProfile,
 } from '../sim';
+import { TYPOLOGIES } from '../world/buildings/config';
 import { GROUND } from '../world/grading/grade';
 import { TIER } from '../world/skyline/tiers';
 import type { ColumnInfo } from '../game/selection';
@@ -119,9 +120,13 @@ describe('cosa potrebbe crescere qui', () => {
     // nessun catalizzatore risolve, quindi va detta dove morde e taciuta dove
     // non morde: una riga che la ripetesse sempre smetterebbe di distinguere.
     const profile = profileOf(['factory']);
+    // La soglia si chiede al catalogo: scritta a mano, questo test verificava
+    // «la riga dice cinque» invece di «la riga dice il minimo della tipologia»,
+    // e diventava rosso a ogni ritaratura di quel numero.
+    const tower = TYPOLOGIES.find((entry) => entry.id === 'hydroponicTower');
 
     expect(valueOf(prospectRows(column(profile, { allowedLevel: 1 })), 'Could grow'))
-      .toContain('level 5');
+      .toContain(`level ${tower?.minLevel}`);
     expect(valueOf(prospectRows(column(profile, { allowedLevel: 6 })), 'Could grow'))
       .not.toContain('level');
   });
