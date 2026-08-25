@@ -66,32 +66,62 @@
    * posto solo, e la differenza fra 9 e 10px non vale la scelta che costa.
    */
 
+  /*
+   * L'unita' di misura dell'HUD, e **non** e' il pixel.
+   *
+   * Un'interfaccia tarata in pixel fissi e' tarata su uno schermo solo. Questa
+   * lo era su uno schermo altissimo: il rail chiedeva ~975px di quota, cioe' piu'
+   * di quanti ne restino su un 1080p una volta tolte le barre del browser — e
+   * infatti quasi tutti vedevano il ramo compatto, quello che spegne le parole.
+   * Il rimedio non e' spostare la soglia, e' smettere di avere una misura sola.
+   *
+   * `--hud-unit` vale 1px su una viewport da 1080 e scala con la quota, perche' e'
+   * la quota il vincolo di un rail verticale. Ha un **pavimento** — sotto lo 0.85
+   * i corpi di testo scendono dove non si leggono piu' e i bersagli dove non si
+   * colpiscono — e un **tetto**, perche' su un 4K una UI che cresce senza fine
+   * diventa una cornice che mangia la citta' invece di servirla. Fra i due limiti
+   * e' continua: niente scatti, niente soglie, niente sparizioni.
+   *
+   * Tutto il resto e' un multiplo di questa: i numeri qui sotto sono gli stessi di
+   * prima, e si leggono ancora come pixel a 1080.
+   */
+  --hud-unit: clamp(0.85px, 0.0926vh, 1.15px);
+
   /* Griglia 4pt, con i due mezzi passi che l'HUD usa davvero: il rail e' stretto
      e a 4px di salto certe pastiglie non stanno insieme. */
-  --space-05: 2px;
-  --space-1: 4px;
-  --space-15: 6px;
-  --space-2: 8px;
-  --space-3: 12px;
-  --space-4: 16px;
-  --space-6: 24px;
+  --space-05: calc(2 * var(--hud-unit));
+  --space-1: calc(4 * var(--hud-unit));
+  --space-15: calc(6 * var(--hud-unit));
+  --space-2: calc(8 * var(--hud-unit));
+  --space-3: calc(12 * var(--hud-unit));
+  --space-4: calc(16 * var(--hud-unit));
+  --space-6: calc(24 * var(--hud-unit));
 
   /* Ratio stretto (~1.125) e arrotondata all'intero: su una UI densa una scala
      larga salta da "etichetta" a "titolo" senza i gradi che servono in mezzo. */
-  --text-2xs: 9px;
-  --text-xs: 10px;
-  --text-sm: 11px;
-  --text-md: 12px;
-  --text-lg: 13px;
-  --text-xl: 15px;
-  --text-2xl: 18px;
+  --text-2xs: calc(9 * var(--hud-unit));
+  --text-xs: calc(10 * var(--hud-unit));
+  --text-sm: calc(11 * var(--hud-unit));
+  --text-md: calc(12 * var(--hud-unit));
+  --text-lg: calc(13 * var(--hud-unit));
+  --text-xl: calc(15 * var(--hud-unit));
+  --text-2xl: calc(18 * var(--hud-unit));
   /* Sotto i 9px si scende solo per i capitasti in mono — badge, chiavi, eyebrow —
      che sono glifi da riconoscere, non testo da leggere. */
-  --text-micro: 8px;
+  --text-micro: calc(8 * var(--hud-unit));
 
-  --radius-sm: 8px;
-  --radius-md: 11px;
-  --radius-lg: 16px;
+  /* Le due misure che danno la taglia al dock: la tessera e il suo disegno. Sono
+     qui e non nelle regole perche' la griglia le legge per decidere le colonne. */
+  --tile-w: calc(66 * var(--hud-unit));
+  --tile-h: calc(62 * var(--hud-unit));
+  --icon-sm: calc(15 * var(--hud-unit));
+  --icon-md: calc(18 * var(--hud-unit));
+  --icon-lg: calc(22 * var(--hud-unit));
+  --control-h: calc(38 * var(--hud-unit));
+
+  --radius-sm: calc(8 * var(--hud-unit));
+  --radius-md: calc(11 * var(--hud-unit));
+  --radius-lg: calc(16 * var(--hud-unit));
   --radius-pill: 999px;
   /* Il nome storico del raggio grande: lo usano le superfici che c'erano prima
      della scala, e non c'e' ragione di toccarle tutte per rinominarlo. */
@@ -105,10 +135,10 @@
    * faceva **saltare** il bordo sinistro di 150px. Nessuno dei cinque era
    * sbagliato; il difetto era che fossero cinque.
    */
-  --panel-w: 400px;
+  --panel-w: calc(400 * var(--hud-unit));
   --panel-pad: var(--space-3);
   /* Lo stacco dai bordi dello schermo, prima ripetuto a mano su ogni pannello. */
-  --hud-gap: 14px;
+  --hud-gap: calc(14 * var(--hud-unit));
 
   /*
    * Le quote, a passi di 100 e con i buchi in mezzo.
@@ -176,8 +206,8 @@
 }
 
 .hud-icon {
-  width: 18px;
-  height: 18px;
+  width: var(--icon-md);
+  height: var(--icon-md);
   flex: 0 0 auto;
   fill: none;
   stroke: currentColor;
@@ -193,7 +223,7 @@
 .resource-bar { flex: 0 0 auto; display: flex; flex-direction: column; align-items: stretch; gap: var(--space-05); width: 100%; padding: var(--space-1); border-radius: var(--radius-lg); pointer-events: auto; }
 /* Tabulari sull'**intera** pastiglia, non solo sul valore: il delta accanto
    cambia di segno e di cifre a ogni tick, e bastava lui a far ballare la riga. */
-.resource-item { position: relative; display: grid; grid-template-columns: 24px 1fr; grid-template-rows: auto auto; align-items: center; min-width: 0; padding: var(--space-1) var(--space-15); border-radius: var(--radius-md); background: var(--hud-well); font-variant-numeric: tabular-nums; pointer-events: auto; }
+.resource-item { position: relative; display: grid; grid-template-columns: calc(24 * var(--hud-unit)) 1fr; grid-template-rows: auto auto; align-items: center; min-width: 0; padding: var(--space-1) var(--space-15); border-radius: var(--radius-md); background: var(--hud-well); font-variant-numeric: tabular-nums; pointer-events: auto; }
 .resource-item .hud-icon { color: var(--hud-sage-dark); }
 
 /*
@@ -204,9 +234,10 @@
  * quale sia il pieno. Denaro e materiali non ne hanno uno, e li' l'anello resta
  * spento invece di inventarne uno.
  */
-.resource-badge { position: relative; grid-row: 1 / 3; display: grid; place-items: center; width: 20px; height: 20px; margin-right: var(--space-1); }
-.resource-badge > .hud-icon { grid-area: 1 / 1; width: 12px; height: 12px; }
-.resource-ring { grid-area: 1 / 1; width: 20px; height: 20px; transform: rotate(-90deg); }
+.resource-badge { position: relative; grid-row: 1 / 3; display: grid; place-items: center; width: calc(20 * var(--hud-unit)); height: calc(20 * var(--hud-unit)); margin-right: var(--space-1); }
+.resource-badge > .hud-icon { grid-area: 1 / 1; width: calc(12 * var(--hud-unit)); height: calc(12 * var(--hud-unit)); }
+/* L'anello resta in coordinate del viewBox: e' un SVG, scala con la sua casella. */
+.resource-ring { grid-area: 1 / 1; width: calc(20 * var(--hud-unit)); height: calc(20 * var(--hud-unit)); transform: rotate(-90deg); }
 .resource-item[data-capped="false"] .resource-ring { visibility: hidden; }
 .resource-ring-track { fill: none; stroke: var(--hud-line-soft); stroke-width: 2; }
 .resource-ring-fill { fill: none; stroke: var(--hud-accent-shape); stroke-width: 2; stroke-linecap: round; transition: stroke-dashoffset 220ms ease; }
@@ -249,7 +280,7 @@
 .resource-item:focus-visible { outline: 3px solid var(--hud-accent-shape); outline-offset: 1px; }
 /* Si apre **verso il centro**: la pastiglia sta sul bordo sinistro, e il popover
    esce a destra, sopra la citta', invece di uscire dallo schermo. */
-.resource-flows { position: absolute; left: calc(100% + var(--space-2)); top: calc(var(--space-1) * -1); z-index: var(--z-flows); display: grid; gap: var(--space-05); min-width: 168px; padding: var(--space-2) var(--space-15); transform: translateX(-6px); border-radius: var(--radius-md); color: var(--hud-ink); background: linear-gradient(180deg, var(--hud-cream), var(--hud-cream-deep)); border: var(--hud-border); box-shadow: var(--hud-elev-2); font: 500 var(--text-xs)/1.4 var(--hud-font); opacity: 0; visibility: hidden; transition: opacity 120ms ease, transform 120ms ease; pointer-events: none; }
+.resource-flows { position: absolute; left: calc(100% + var(--space-2)); top: calc(var(--space-1) * -1); z-index: var(--z-flows); display: grid; gap: var(--space-05); min-width: calc(168 * var(--hud-unit)); padding: var(--space-2) var(--space-15); transform: translateX(-6px); border-radius: var(--radius-md); color: var(--hud-ink); background: linear-gradient(180deg, var(--hud-cream), var(--hud-cream-deep)); border: var(--hud-border); box-shadow: var(--hud-elev-2); font: 500 var(--text-xs)/1.4 var(--hud-font); opacity: 0; visibility: hidden; transition: opacity 120ms ease, transform 120ms ease; pointer-events: none; }
 .resource-flows[data-empty="true"] { display: none; }
 /* `--hud-muted` e non `--hud-ink-soft`: quel token non e' mai esistito — ne' qui
    ne' fra quelli derivati — e la riga di status ereditava l'inchiostro pieno
@@ -282,9 +313,9 @@
 .time-group + .time-group { padding-top: var(--space-15); border-top: 1px solid var(--hud-line-soft); }
 .time-group-label { color: var(--hud-muted); font-size: var(--text-micro); font-weight: 900; letter-spacing: .09em; text-transform: uppercase; text-align: center; }
 .time-row { display: flex; align-items: center; justify-content: center; gap: var(--space-05); }
-.time-row > .hud-button { flex: 1 1 0; min-width: 0; width: auto; min-height: 26px; padding: var(--space-1) 1px; }
+.time-row > .hud-button { flex: 1 1 0; min-width: 0; width: auto; min-height: calc(26 * var(--hud-unit)); padding: var(--space-1) 1px; }
 .time-row > .hud-button--icon { width: auto; }
-.time-row .hud-icon { width: 14px; height: 14px; }
+.time-row .hud-icon { width: calc(14 * var(--hud-unit)); height: calc(14 * var(--hud-unit)); }
 
 /*
  * Il rail dei comandi: la stessa toolbar, incolonnata sul bordo sinistro.
@@ -322,17 +353,34 @@
    e' lo stesso oggetto («questo gruppo si chiama cosi'») su due superfici, e
    finche' divergevano le due meta' dell'HUD non sembravano parenti. */
 .dock-group-title { padding-bottom: var(--space-05); border-bottom: 1px solid var(--hud-line); color: var(--hud-muted); font-size: var(--text-micro); font-weight: 900; letter-spacing: .08em; text-transform: uppercase; }
-/* Tre tessere per riga, sempre: meta' delle righe di una colonna sola, e il
-   prezzo e' un rail largo tre tessere. E' cio' che tiene il dock — e le porte
-   qui sotto — dentro l'altezza di un portatile. */
-.dock-group-row { display: grid; grid-template-columns: repeat(3, 1fr); align-items: stretch; gap: var(--space-1); }
+/*
+ * Quante tessere per riga lo decide **la quota che c'e'**, non una costante.
+ *
+ * Tre colonne per dodici catalizzatori fanno sette righe, piu' quattro titoli di
+ * gruppo: e' da li' che venivano i ~975px di rail, cioe' piu' di quanti un 1080p
+ * ne abbia davvero. Gli stessi quattro gruppi — 4, 4, 4, 3 — su **quattro**
+ * colonne stanno in quattro righe, una per gruppo: ~230px in meno, pagati con
+ * una quarantina di pixel di larghezza. Su uno schermo 16:9 e' il baratto giusto,
+ * ed e' l'opposto di quello che si faceva prima, che pagava in parole.
+ *
+ * Le colonne si stringono verso l'alto e non verso il basso — `minmax(0,
+ * var(--tile-w))` — cosi' un rail a quattro colonne non si allarga oltre la
+ * misura della tessera e le etichette lunghe usano l'ellissi che hanno gia'.
+ */
+.dock-group-row { display: grid; grid-template-columns: repeat(var(--dock-cols), minmax(0, var(--tile-w))); align-items: stretch; gap: var(--space-1); --dock-cols: 3; --tile-cols: 3; }
+/* La colonna di ogni tessera, senza JS: cambia insieme a `--dock-cols` perche' e'
+   la stessa media query a muovere le due cose. Serve alla scheda, che deve
+   scavalcare le colonne rimaste per uscire dal rail invece che dal bottone. */
+.dock-group-row > :nth-child(3n+1) { --tile-col: 1; }
+.dock-group-row > :nth-child(3n+2) { --tile-col: 2; }
+.dock-group-row > :nth-child(3n+3) { --tile-col: 3; }
 .dock-utility { display: grid; gap: var(--space-1); padding: var(--space-2) var(--space-05) 0; border-top: 1px solid var(--hud-line-soft); }
 .dock-utility-row { display: flex; gap: var(--space-1); }
 .dock-utility-row > .hud-button { flex: 1; width: auto; min-width: 0; }
 /* Le tre porte in una riga, non incolonnate: parola e icona si stringono invece
    di sbordare sotto il bordo dello schermo. */
 .dock-utility-row > .hud-button:not(.hud-button--icon) { gap: var(--space-1); padding: var(--space-15) var(--space-1); font-size: var(--text-2xs); }
-.dock-utility-row > .hud-button:not(.hud-button--icon) .hud-icon { width: 15px; height: 15px; flex: 0 0 auto; }
+.dock-utility-row > .hud-button:not(.hud-button--icon) .hud-icon { width: var(--icon-sm); height: var(--icon-sm); flex: 0 0 auto; }
 
 /*
  * Bloccato **non** e' disabilitato, ed e' la distinzione che 7.4 chiede.
@@ -371,14 +419,14 @@
   font: 800 var(--text-micro)/1 var(--hud-mono);
   text-align: center;
 }
-.hud-button { position: relative; display: inline-flex; align-items: center; justify-content: center; gap: var(--space-15); min-height: 38px; padding: var(--space-15) var(--space-2); border: 1px solid var(--hud-line); border-radius: var(--radius-md); background: var(--hud-raised); color: var(--hud-ink); font: 700 var(--text-sm)/1.15 var(--hud-font); cursor: pointer; pointer-events: auto; transition: transform 120ms ease, background 120ms ease, border-color 120ms ease, box-shadow 120ms ease; }
+.hud-button { position: relative; display: inline-flex; align-items: center; justify-content: center; gap: var(--space-15); min-height: var(--control-h); padding: var(--space-15) var(--space-2); border: 1px solid var(--hud-line); border-radius: var(--radius-md); background: var(--hud-raised); color: var(--hud-ink); font: 700 var(--text-sm)/1.15 var(--hud-font); cursor: pointer; pointer-events: auto; transition: transform 120ms ease, background 120ms ease, border-color 120ms ease, box-shadow 120ms ease; }
 .hud-button:hover:not(:disabled):not([aria-disabled="true"]) { transform: translateY(-2px); border-color: var(--hud-accent-shape); box-shadow: var(--hud-elev-1); }
 .hud-button:focus-visible { outline: 3px solid var(--hud-accent-shape); outline-offset: 2px; }
 .hud-button[aria-pressed="true"], .hud-button[data-active="true"] { color: var(--hud-on-accent); background: var(--hud-sage-dark); border-color: var(--hud-sage-dark); }
 .hud-button:disabled, .hud-button[aria-disabled="true"] { color: var(--hud-muted); background: var(--hud-well); border-color: var(--hud-line-soft); cursor: not-allowed; opacity: .62; }
 .hud-button--accent:not(:disabled):not([aria-disabled="true"]) { color: var(--hud-on-gold); background: var(--hud-gold); border-color: var(--hud-gold); }
-.hud-button--icon { width: 38px; padding: var(--space-15); }
-.hud-button--small { min-height: 30px; padding: var(--space-1) var(--space-15); font-size: var(--text-xs); }
+.hud-button--icon { width: var(--control-h); padding: var(--space-15); }
+.hud-button--small { min-height: calc(30 * var(--hud-unit)); padding: var(--space-1) var(--space-15); font-size: var(--text-xs); }
 
 /*
  * La tessera: icona sopra, etichetta sotto, misura uguale per tutte.
@@ -406,14 +454,14 @@
   --tile-foot: var(--space-3);
   flex-direction: column;
   gap: var(--space-05);
-  width: 66px;
-  min-height: 62px;
+  width: var(--tile-w);
+  min-height: var(--tile-h);
   padding: var(--space-15) var(--space-1) var(--tile-foot);
 }
 /* Nella griglia del rail la colonna decide la larghezza: una misura fissa
    lascerebbe le tessere accostate a sinistra dentro celle piu' larghe. */
 .dock-group-row > .hud-tile { width: auto; min-width: 0; }
-.hud-tile .hud-icon { width: 22px; height: 22px; }
+.hud-tile .hud-icon { width: var(--icon-lg); height: var(--icon-lg); }
 .hud-tile .button-copy { align-items: center; gap: 0; max-width: 100%; min-width: 0; }
 .hud-tile .button-copy > span:first-child { overflow: hidden; max-width: 100%; font-size: var(--text-2xs); text-overflow: ellipsis; }
 /* Il costo porta l'icona della risorsa, non la parola "funds": si legge come si
@@ -444,7 +492,7 @@
 .hud-tile[aria-pressed="true"] .hud-tile-key { color: var(--hud-on-accent); opacity: 1; }
 /* La bolla di **una riga**: resta a chi ha una riga sola da dire — il tema, le
    viste, la pausa. Le azioni del dock hanno una scheda vera, qui sotto. */
-.hud-button[data-tooltip]::after { content: attr(data-tooltip); position: absolute; left: 50%; bottom: calc(100% + var(--space-2)); z-index: var(--z-tip); width: max-content; max-width: 260px; transform: translate(-50%, var(--space-1)); padding: var(--space-15) var(--space-2); border-radius: var(--radius-sm); color: var(--hud-on-dark); background: rgba(38, 56, 51, .96); font: 500 var(--text-xs)/1.4 var(--hud-font); text-align: left; white-space: pre-line; opacity: 0; visibility: hidden; transition: opacity 120ms ease, transform 120ms ease; pointer-events: none; }
+.hud-button[data-tooltip]::after { content: attr(data-tooltip); position: absolute; left: 50%; bottom: calc(100% + var(--space-2)); z-index: var(--z-tip); width: max-content; max-width: calc(260 * var(--hud-unit)); transform: translate(-50%, var(--space-1)); padding: var(--space-15) var(--space-2); border-radius: var(--radius-sm); color: var(--hud-on-dark); background: rgba(38, 56, 51, .96); font: 500 var(--text-xs)/1.4 var(--hud-font); text-align: left; white-space: pre-line; opacity: 0; visibility: hidden; transition: opacity 120ms ease, transform 120ms ease; pointer-events: none; }
 .hud-button[data-tooltip]:hover::after, .hud-button[data-tooltip]:focus-visible::after { opacity: 1; visibility: visible; transform: translate(-50%, 0); }
 /*
  * Sui rail la bolla esce **verso il centro**, non verso l'alto.
@@ -519,7 +567,7 @@
      destra dal rail, e su una finestra stretta — o con un rail largo, che e'
      `max-content` e cresce con le tessere — 246px rigidi finivano fuori dallo
      schermo portandosi via la meta' che spiega il prezzo. */
-  width: min(248px, calc(100vw - var(--game-hud-rail-left) - var(--space-6) * 2));
+  width: min(calc(248 * var(--hud-unit)), calc(100vw - var(--game-hud-rail-left) - var(--space-6) * 2));
   padding: var(--space-2) var(--space-3);
   border-radius: var(--radius-md);
   color: var(--hud-on-dark);
@@ -553,7 +601,7 @@
    riempivano fino a toccare il valore. `minmax` tiene l'incolonnamento — che e'
    cio' che permette di scendere cercando «Where» senza rileggere — e lascia alla
    riga piu' larga il diritto di allargare tutte le altre con se'. */
-.hud-tip-row { display: grid; grid-template-columns: minmax(52px, auto) 1fr; align-items: baseline; gap: var(--space-2); }
+.hud-tip-row { display: grid; grid-template-columns: minmax(calc(52 * var(--hud-unit)), auto) 1fr; align-items: baseline; gap: var(--space-2); }
 .hud-tip-key { color: inherit; font-size: var(--text-micro); font-weight: 900; letter-spacing: .09em; text-transform: uppercase; opacity: .55; }
 .hud-tip-value { font-weight: 600; }
 .hud-tip-note { padding-top: var(--space-2); border-top: 1px solid rgba(255, 255, 255, .15); opacity: .72; }
@@ -596,7 +644,7 @@
  */
 .hud-toast[data-kind="condition"] { max-width: min(320px, calc(100vw - var(--game-hud-rail-left) - var(--space-6) - var(--space-4))); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
-.cursor-card { position: fixed; z-index: var(--z-modal); display: grid; gap: var(--space-05); max-width: 250px; padding: var(--space-2) var(--space-15); border-radius: var(--radius-md); color: var(--hud-on-dark); background: rgba(38, 56, 51, .97); box-shadow: var(--hud-elev-2); font: var(--text-xs)/1.4 var(--hud-font); pointer-events: none; }
+.cursor-card { position: fixed; z-index: var(--z-modal); display: grid; gap: var(--space-05); max-width: calc(250 * var(--hud-unit)); padding: var(--space-2) var(--space-15); border-radius: var(--radius-md); color: var(--hud-on-dark); background: rgba(38, 56, 51, .97); box-shadow: var(--hud-elev-2); font: var(--text-xs)/1.4 var(--hud-font); pointer-events: none; }
 .cursor-card[hidden] { display: none; }
 .cursor-card strong { font-size: var(--text-sm); }
 .cursor-card > span { color: rgba(255, 255, 255, .7); }
@@ -712,60 +760,90 @@
 .debug-actions .debug-button { flex: 1; width: auto; margin: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .debug-sites { margin: var(--space-15) var(--space-15) 0; color: inherit; font: inherit; }
 
-/* Piu' in alto di cosi' la tessera ha spazio da regalare, e il prezzo torna
-   dov'era: la scheda resta la lettura completa, la tessera ridiventa un
-   confronto a colpo d'occhio fra dodici cifre. */
-@media (min-height: 1150px) {
-  .hud-tile .button-cost { display: inline-flex; }
-}
-
 /*
  * Su un rail il vincolo cambia asse: non e' piu' la larghezza a finire, e'
- * l'altezza. Con i dati sopra, il dock sotto e la targa in fondo, la quota
- * corta di un portatile si paga stringendo le tessere invece di far scorrere il
- * rail — una barra di scorrimento sulla toolbar principale nasconde gli
- * strumenti che non si sono ancora imparati.
+ * l'altezza. Con i dati sopra, il dock sotto e la targa in fondo, la quota corta
+ * di un portatile si paga **allargando la griglia**, non spegnendo le parole:
+ * quattro colonne invece di tre tolgono tre righe al dock, che e' piu' di quanto
+ * si guadagnasse prima nascondendo etichette, prezzi e titoli tutti insieme.
+ *
+ * La soglia sta a 1200 e non a 1000 perche' le tre colonne **non ci stanno** a
+ * 1080: il rail ne chiede circa 1030 su 1052 disponibili, venti pixel di margine
+ * su un conto che ha piu' di venti pixel di incertezza. Tre colonne sono la
+ * disposizione bella, non quella normale — si tengono dove c'e' abbondanza vera,
+ * e sotto vince quella che entra.
+ *
+ * Una barra di scorrimento sul dock resta fuori questione, e non solo perche'
+ * nasconderebbe gli strumenti che non si sono ancora imparati: `overflow-y` tira
+ * dietro di se' anche l'asse x — `visible` non e' una combinazione valida — e il
+ * contenitore di scorrimento ritaglierebbe le schede che escono di lato.
  */
-@media (max-height: 900px) {
-  /* L'altezza si guadagna dal **cielo** della tessera, non dal suo piede: sopra
-     c'e' solo aria, sotto c'e' la cifra del requisito. Stringere entrambi era il
-     modo in cui quel testo finiva contro il bordo. */
-  .hud-tile { min-height: 40px; padding: var(--space-1) var(--space-05) var(--tile-foot); }
-  .hud-tile .button-cost { display: none; }
-  .build-dock { gap: var(--space-1); }
-  .dock-group + .dock-group { padding-top: var(--space-15); }
-  .dock-utility .hud-button { min-height: 32px; }
-  /* La targa compatta: sul portatile i capitasti e il gesto sono la parte che
-     costa altezza, e il nome della vista basta da solo. */
-  .view-bar { padding: var(--space-2) var(--space-2) var(--space-15); }
+@media (max-height: 1200px) {
+  .dock-group-row { --dock-cols: 4; --tile-cols: 4; }
+  .dock-group-row > :nth-child(4n+1) { --tile-col: 1; }
+  .dock-group-row > :nth-child(4n+2) { --tile-col: 2; }
+  .dock-group-row > :nth-child(4n+3) { --tile-col: 3; }
+  .dock-group-row > :nth-child(4n+4) { --tile-col: 4; }
+  /* La targa compatta: i capitasti e il gesto sono la parte che costa altezza, e
+     il nome della vista basta da solo. */
   .view-bar-keys { display: none; }
   .view-bar-gesture { display: none; }
   .view-bar-actions { flex-direction: row; }
 }
 
-/* Sotto gli 800px l'etichetta lascia la tessera e passa nella scheda al
-   passaggio del mouse: resta l'icona col suo badge, e il dock diventa una
-   colonna di strumenti sola. Il requisito resta nel tooltip, e il riempimento
-   continua a dire da solo quanto manca. */
-@media (max-height: 800px) {
-  .dock-group-title { display: none; }
-  .dock-group + .dock-group { padding-top: var(--space-1); }
-  /* Qui la cifra del requisito sparisce, e la riserva che la ospitava se ne va
-     con lei: e' la stessa riga che decide le due cose. */
-  .hud-tile { --tile-foot: 0px; min-height: 32px; }
-  .hud-tile .button-copy { display: none; }
+/*
+ * Sotto i 700px la scala ha gia' toccato il suo pavimento e le colonne sono
+ * finite: qui, e solo qui, qualcosa cede davvero. Cede il **prezzo**, che e' la
+ * cosa che la scheda ripete per intero al passaggio del mouse — non l'etichetta,
+ * che e' l'unico modo di sapere cosa sia una tessera senza provarla.
+ */
+@media (max-height: 700px) {
+  /* La tessera perde il prezzo **e** la quota che gli serviva: `--tile-h` e' un
+     minimo, e lasciarlo a 62 avrebbe reso la rinuncia gratis per il contenuto e
+     inutile per il layout. */
+  :root { --tile-h: calc(42 * var(--hud-unit)); }
+  .hud-tile .button-cost { display: none; }
+  /* Con il prezzo se ne va anche la cifra del requisito, e con lei la riserva che
+     la ospitava: sono le due voci che la scheda ripete per intero al passaggio
+     del mouse, e qui valgono piu' come quota che come informazione. */
+  .hud-tile { --tile-foot: 0px; }
   .hud-tile[data-locked="true"][data-requirement-short][aria-disabled="true"]::before { display: none; }
+  .dock-group + .dock-group { padding-top: var(--space-1); }
+  .dock-utility .hud-button { min-height: calc(32 * var(--hud-unit)); }
+}
+
+/*
+ * L'ultimo ripiego, e vale la pena dire perche' e' l'ultimo.
+ *
+ * Sotto i 600px di quota non c'e' piu' niente da riorganizzare: la scala e' al
+ * pavimento, le colonne sono quattro e i gruppi stanno gia' in una riga ciascuno.
+ * Solo qui l'etichetta lascia la tessera e passa nella scheda, che e' il
+ * comportamento che prima cominciava a **800** — cioe' su quasi tutti gli
+ * schermi. Fra gli 800 e i 600 adesso ci si arriva con le parole al loro posto.
+ */
+@media (max-height: 600px) {
+  :root { --tile-h: calc(34 * var(--hud-unit)); }
+  .dock-group-title { display: none; }
+  .hud-tile .button-copy { display: none; }
+  /*
+   * **Niente `overflow` sul rail, nemmeno qui.** Sarebbe la rete ovvia, e non
+   * funziona: `overflow-y: auto` costringe anche l'asse x a `auto` — `visible`
+   * non e' una combinazione valida — e la scheda che esce di lato verrebbe
+   * ritagliata dal contenitore di scorrimento. Il rail resta senza scroll e il
+   * layout entra per costruzione: e' il senso di aver tolto quota alla tessera
+   * qui sopra invece di aggiungere una barra.
+   */
 }
 
 @media (max-width: 1000px) {
   /* Una riga, cinque pannelli: la larghezza responsive era scritta a mano solo
      sulla scheda di selezione, e gli altri quattro restavano larghi come su un
      desktop. Da qui in giu' si sposta il token e la seguono tutti. */
-  :root { --panel-w: 320px; }
+  :root { --panel-w: calc(320 * var(--hud-unit)); }
 }
 
 @media (max-width: 760px) {
-  :root { --panel-w: 260px; --hud-gap: var(--space-2); }
+  :root { --panel-w: calc(260 * var(--hud-unit)); --hud-gap: var(--space-2); }
   .build-dock .button-copy { display: none; }
   /* Come sulla quota corta: senza etichetta la tessera e' la sola icona, e la
      cifra del requisito se ne va insieme alla riserva che la teneva. */
