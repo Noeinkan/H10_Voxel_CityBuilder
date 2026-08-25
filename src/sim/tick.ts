@@ -169,6 +169,7 @@ export function tick(state: SimState, terrainMap: TerrainMap): SimState {
     funded,
     commerce.service,
     servedFerryLines(state.catalysts),
+    state.islandConnections,
   );
 
   // --- Popolazione ---------------------------------------------------------
@@ -345,6 +346,7 @@ function nextSatisfaction(
   funded: number,
   service: number,
   ferryLines: number,
+  islandConnections: number,
 ): number {
   const occupancy =
     capacity > 0
@@ -361,11 +363,18 @@ function nextSatisfaction(
   // Una linea di traghetto e' la terza leva, e l'unica che nasce da *dove* si e'
   // costruito invece che da quanto: due imbarchi lontani valgono, due vicini no.
   const crossings = ferryLines * BALANCE.satisfaction.perFerryLine;
+  // Un ponte fra isole arriva piu' tardi di un traghetto: pretende due skyline
+  // capaci di reggerlo, e per questo il suo contributo e' un poco piu' alto.
+  const islandBridges = Math.min(
+    BALANCE.satisfaction.maxIslandBridges,
+    islandConnections,
+  ) * BALANCE.satisfaction.perIslandBridge;
   const target = clamp01(
     BALANCE.satisfaction.base +
       funded * civic * BALANCE.satisfaction.perCivic +
       retail +
-      crossings -
+      crossings +
+      islandBridges -
       crowding,
   );
 

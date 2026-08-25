@@ -3,14 +3,13 @@ import type { DeckRect } from './deckPlan';
 
 /**
  * La forma di una mensola: che pezzo di fronte occupa, quanto sporge, come si
- * assottiglia verso la punta.
+ * termina verso la punta.
  *
  * **Esiste perche' la mensola aveva una forma sola.** `overhangOf` legava lo
  * sporto alla lunghezza della corsa, e dentro i due estremi quella riga e'
  * l'identita': ogni fronte fra tre e otto voxel — cioe' tutti, con
- * `MAX_FOOTPRINT` a otto — dava un **quadrato**, alto tre voxel su tutto il
- * perimetro. Quattro mensole su una citta' erano quattro volte lo stesso oggetto
- * in quattro dimensioni.
+ * `MAX_FOOTPRINT` a otto — dava un **quadrato**. Quattro mensole su una citta'
+ * erano quattro volte lo stesso oggetto in pianta.
  *
  * **Pura come le altre regole di questo dominio.** Entrano una lunghezza e un
  * seme, o un riquadro e una colonna; esce un numero o un booleano. Nessun mondo,
@@ -159,33 +158,6 @@ export function terraceEdge(
     if (chamfered(rect, side, cut, nx, ny)) return true;
   }
   return false;
-}
-
-/**
- * true se a questa quota della travatura, sotto questa colonna, corre una trave.
- *
- * **E' la rastremazione, ed e' tutta qui.** La trave bassa accompagna la mensola
- * per `taperReach` voxel oltre la parete e poi finisce: e' il punto in cui una
- * mensola scarica, ed e' l'unico in cui serve. La trave alta prende il filo, ma
- * **non la punta**, che resta la lastra da un voxel con cui una mensola deve
- * finire. Ne segue una sezione a cuneo — tre voxel all'attacco, uno all'estremo —
- * senza una riga che la disegni.
- *
- * `layer` e' la quota dentro la travatura, zero in basso: per una mensola vale
- * anche `lz`, perche' `planTerrace` non chiede mai un `drop`.
- */
-export function terraceGirder(
-  rect: DeckRect,
-  side: TerraceSide,
-  cut: number,
-  gx: number,
-  gy: number,
-  layer: number,
-): boolean {
-  if (chamfered(rect, side, cut, gx, gy)) return false;
-  const reach = reachOf(rect, side, gx, gy);
-  if (layer === 0) return reach < AERIAL.terrace.taperReach;
-  return reach < depthOf(rect, side) - 1 && terraceEdge(rect, side, cut, gx, gy);
 }
 
 /** I quattro vicini ortogonali, per chi cerca il filo di una sagoma. */

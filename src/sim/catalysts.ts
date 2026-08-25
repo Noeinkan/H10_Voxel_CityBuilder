@@ -78,7 +78,7 @@ export const CATALYSTS: readonly CatalystDefinition[] = [
   catalyst('park', 'Park', 'growth', 'any', 'Creates greener, happier, less industrial neighborhoods.'),
   catalyst('port', 'Port', 'connections', 'coastal', 'Unlocks external trade and concentrates industry and trade on the coast.'),
   catalyst('ferry', 'Ferry', 'connections', 'coastal', 'A pier with moored boats. Pair it with a second terminal across the water to open a line.'),
-  catalyst('airport', 'Airport', 'connections', 'open', 'Links the island without touching the coast: lifts shops and civic life, and drives housing away.'),
+  catalyst('airport', 'Airport', 'connections', 'open', 'Links the island without touching the coast. Place it on a level 7+ building with a facade at least 8 voxels wide to build a Skyport for airships, eVTOLs and balloons.'),
   catalyst('transport', 'Transit', 'connections', 'any', 'The all-rounder: lifts homes, shops and workshops alike, and asks nothing of the site.'),
   catalyst('university', 'University', 'identity', 'any', 'Builds a civic district around research and knowledge.'),
   catalyst('monument', 'Monument', 'identity', 'any', 'A landmark that attracts visitors, shops and civic pride.'),

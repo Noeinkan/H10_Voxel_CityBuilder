@@ -53,6 +53,9 @@ export const ARCOLOGY = {
   /** Stadi che una passata puo' far avanzare. */
   stagesPerPass: 1,
 
+  /** Separa la scelta della forma dagli altri hash sullo stesso isolato. */
+  kindSalt: 0x6a31_9d4b,
+
   /**
    * Quante arcologie l'isola ammette.
    *
@@ -75,18 +78,19 @@ export const ARCOLOGY = {
   radius: 24,
 
   /** Edifici entro il raggio sotto i quali qui non c'e' abbastanza citta'. */
-  minBuilt: 40,
+  minBuilt: 64,
 
   /**
-   * Vicini che hanno gia' raggiunto la propria quota ammessa.
+   * Vicini che non possono piu' crescere: al tetto o inchiodati dalla citta' in quota.
    *
    * **E' la mezza riga che rende la fase quello che dice di essere.** La densita'
    * da sola direbbe «qui c'e' molta citta'»; questa dice «qui la citta' non ha
    * piu' niente da diventare», che e' la condizione a cui l'arcologia e' la
-   * risposta. Senza, la megastruttura arriverebbe in un quartiere che stava
-   * ancora crescendo per conto suo, e le toglierebbe il posto.
+   * risposta. Un ospite di un impalcato abitato e' saturo anche sotto il tetto:
+   * la rete lo ha reso immutabile, quindi aspettare una promozione impossibile
+   * terrebbe chiusa la fase per sempre.
    */
-  minCapped: 8,
+  minCapped: 2,
 
   /**
    * Fin dove si puo' sventrare per farle spazio.
@@ -144,10 +148,14 @@ export const ARCOLOGY = {
   maxFill: 0.4,
 } as const;
 
-/** Le forme che un'arcologia puo' prendere. Una, per ora, e la tabella esiste comunque. */
+/** Le forme che un'arcologia puo' prendere. */
 export const ARCOLOGY_KIND = {
   /** Due steli, un mezzanino che li unisce, una corona che li richiude. */
   twinStem: 'twinStem',
+  /** Un nucleo che si divide in quattro bracci abitati e si ricuce in quota. */
+  branchingCore: 'branchingCore',
+  /** Tre steli sfalsati attraversati da impalcati su assi e quote diverse. */
+  skyWeave: 'skyWeave',
 } as const;
 
 export type ArcologyKind = (typeof ARCOLOGY_KIND)[keyof typeof ARCOLOGY_KIND];
@@ -398,8 +406,154 @@ export const TWIN_STEM: ArcologyRecipe = {
   ],
 };
 
+/**
+ * Un nucleo che si ramifica in quattro torri.
+ *
+ * L'ingombro da quattordici colonne e' deliberato: e' la misura degli isolati
+ * stretti che il mercato giocabile costruisce davvero. Il podio porta un solo
+ * fusto; due travi ortogonali lo dividono in quattro bracci e la corona li
+ * attraversa di nuovo, cosi' la struttura si legge come una biforcazione e non
+ * come quattro torri accostate.
+ */
+export const BRANCHING_CORE: ArcologyRecipe = {
+  kind: ARCOLOGY_KIND.branchingCore,
+  span: [14, 14],
+  height: 188,
+  anchor: [7, 7],
+  stages: [0, 40, 58, 72, 88],
+  parts: [
+    [
+      box(PART.slab, 0, 0, 14, 14, 0, 13, PALETTE_SLOTS.stoneDeep, SURFACE_KIND.industrial, {
+        chamfer: 2,
+      }),
+      box(PART.deck, 0, 0, 14, 14, 13, 1, PALETTE_SLOTS.concretePale, SURFACE_KIND.utility, {
+        chamfer: 2,
+      }),
+      box(PART.colonnade, 0, 0, 14, 14, 14, 4, PALETTE_SLOTS.metalDark, SURFACE_KIND.utility, {
+        step: 3,
+        chamfer: 2,
+        cap: PALETTE_SLOTS.concretePale,
+      }),
+      box(PART.deck, 0, 0, 14, 14, 18, 1, PALETTE_SLOTS.concretePale, SURFACE_KIND.utility, {
+        chamfer: 2,
+      }),
+      box(PART.slab, 4, 0, 6, 6, 19, 4, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.utility),
+      box(PART.slab, 4, 8, 6, 6, 19, 4, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.utility),
+    ],
+    [
+      box(PART.shell, 5, 5, 4, 4, 19, 48, PALETTE_SLOTS.glassDeep, SURFACE_KIND.luminous, {
+        cap: PALETTE_SLOTS.glassPale,
+      }),
+      box(PART.truss, 4, 4, 6, 6, 19, 38, PALETTE_SLOTS.metalRust, SURFACE_KIND.utility, {
+        step: 5,
+      }),
+    ],
+    [
+      box(PART.boom, 1, 5, 12, 4, 55, 6, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.civic),
+      box(PART.boom, 5, 1, 4, 12, 61, 6, PALETTE_SLOTS.glassPale, SURFACE_KIND.luminous),
+      box(PART.deck, 1, 5, 12, 4, 67, 1, PALETTE_SLOTS.roofWhite, SURFACE_KIND.roofTech),
+    ],
+    [
+      box(PART.shell, 1, 5, 3, 4, 68, 79, PALETTE_SLOTS.concreteLight, SURFACE_KIND.habitat),
+      box(PART.shell, 10, 5, 3, 4, 68, 79, PALETTE_SLOTS.concreteLight, SURFACE_KIND.habitat),
+      box(PART.shell, 5, 1, 4, 3, 68, 79, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.habitat),
+      box(PART.shell, 5, 10, 4, 3, 68, 79, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.habitat),
+    ],
+    [
+      box(PART.boom, 1, 5, 12, 4, 147, 5, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.civic),
+      box(PART.boom, 5, 1, 4, 12, 152, 5, PALETTE_SLOTS.glassPale, SURFACE_KIND.luminous),
+      box(PART.mast, 2, 6, 2, 2, 152, 34, PALETTE_SLOTS.metalDark, SURFACE_KIND.civic, {
+        cap: PALETTE_SLOTS.metalGold,
+      }),
+      box(PART.mast, 10, 6, 2, 2, 152, 34, PALETTE_SLOTS.metalDark, SURFACE_KIND.civic, {
+        cap: PALETTE_SLOTS.metalGold,
+      }),
+      box(PART.slab, 2, 6, 2, 2, 186, 2, PALETTE_SLOTS.glassPale, SURFACE_KIND.luminous),
+      box(PART.slab, 10, 6, 2, 2, 186, 2, PALETTE_SLOTS.glassPale, SURFACE_KIND.luminous),
+    ],
+  ],
+  bands: [
+    { stage: 0, use: BUILDING_CLASS.industrial, x: 2, y: 2, z: 0, label: 'podium' },
+    { stage: 2, use: BUILDING_CLASS.commercial, x: 7, y: 6, z: 55, label: 'crossroads' },
+    { stage: 3, use: BUILDING_CLASS.residential, x: 2, y: 7, z: 68, label: 'branches' },
+    { stage: 4, use: BUILDING_CLASS.civic, x: 7, y: 2, z: 152, label: 'crown' },
+  ],
+  landings: [
+    { stage: 0, x: 4, y: 0, w: 6, h: 6, z: 23 },
+    { stage: 0, x: 4, y: 8, w: 6, h: 6, z: 23 },
+  ],
+};
+
+/** Tre steli sfalsati, cuciti da due traversi che si incrociano in quota. */
+export const SKY_WEAVE: ArcologyRecipe = {
+  kind: ARCOLOGY_KIND.skyWeave,
+  span: [14, 14],
+  height: 184,
+  anchor: [7, 7],
+  stages: [0, 42, 58, 74, 90],
+  parts: [
+    [
+      box(PART.slab, 0, 0, 14, 14, 0, 13, PALETTE_SLOTS.concrete, SURFACE_KIND.industrial, {
+        chamfer: 2,
+      }),
+      box(PART.deck, 0, 0, 14, 14, 13, 1, PALETTE_SLOTS.concretePale, SURFACE_KIND.utility, {
+        chamfer: 2,
+      }),
+      box(PART.colonnade, 0, 0, 14, 14, 14, 4, PALETTE_SLOTS.metalDark, SURFACE_KIND.utility, {
+        step: 3,
+        chamfer: 2,
+        cap: PALETTE_SLOTS.concretePale,
+      }),
+      box(PART.deck, 0, 0, 14, 14, 18, 1, PALETTE_SLOTS.concretePale, SURFACE_KIND.utility, {
+        chamfer: 2,
+      }),
+      box(PART.slab, 4, 0, 6, 6, 19, 4, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.utility),
+      box(PART.slab, 4, 8, 6, 6, 19, 4, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.utility),
+    ],
+    [
+      box(PART.shell, 0, 2, 4, 5, 19, 75, PALETTE_SLOTS.glassDeep, SURFACE_KIND.luminous),
+      box(PART.shell, 5, 7, 4, 5, 19, 57, PALETTE_SLOTS.concreteLight, SURFACE_KIND.habitat),
+      box(PART.shell, 10, 2, 4, 5, 19, 75, PALETTE_SLOTS.glassDeep, SURFACE_KIND.luminous),
+    ],
+    [
+      box(PART.boom, 0, 3, 14, 3, 57, 5, PALETTE_SLOTS.glassPale, SURFACE_KIND.luminous),
+      box(PART.boom, 6, 3, 3, 10, 62, 5, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.civic),
+      box(PART.deck, 4, 8, 6, 6, 67, 1, PALETTE_SLOTS.roofWhite, SURFACE_KIND.roofTech),
+    ],
+    [
+      box(PART.shell, 1, 3, 3, 3, 94, 60, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.habitat),
+      box(PART.shell, 5, 8, 4, 4, 76, 78, PALETTE_SLOTS.concreteLight, SURFACE_KIND.habitat),
+      box(PART.shell, 10, 3, 3, 3, 94, 60, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.habitat),
+    ],
+    [
+      box(PART.boom, 1, 3, 12, 3, 154, 5, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.civic),
+      box(PART.boom, 6, 3, 3, 9, 159, 5, PALETTE_SLOTS.glassPale, SURFACE_KIND.luminous),
+      box(PART.mast, 2, 4, 2, 2, 159, 23, PALETTE_SLOTS.metalDark, SURFACE_KIND.civic, {
+        cap: PALETTE_SLOTS.metalGold,
+      }),
+      box(PART.mast, 10, 4, 2, 2, 159, 23, PALETTE_SLOTS.metalDark, SURFACE_KIND.civic, {
+        cap: PALETTE_SLOTS.metalGold,
+      }),
+      box(PART.slab, 2, 4, 2, 2, 182, 2, PALETTE_SLOTS.glassPale, SURFACE_KIND.luminous),
+      box(PART.slab, 10, 4, 2, 2, 182, 2, PALETTE_SLOTS.glassPale, SURFACE_KIND.luminous),
+    ],
+  ],
+  bands: [
+    { stage: 0, use: BUILDING_CLASS.industrial, x: 2, y: 2, z: 0, label: 'podium' },
+    { stage: 2, use: BUILDING_CLASS.commercial, x: 7, y: 4, z: 57, label: 'weave' },
+    { stage: 3, use: BUILDING_CLASS.residential, x: 2, y: 4, z: 94, label: 'spires' },
+    { stage: 4, use: BUILDING_CLASS.civic, x: 7, y: 9, z: 159, label: 'crown' },
+  ],
+  landings: [
+    { stage: 0, x: 4, y: 0, w: 6, h: 6, z: 23 },
+    { stage: 0, x: 4, y: 8, w: 6, h: 6, z: 23 },
+  ],
+};
+
 const ARCOLOGIES: Record<ArcologyKind, ArcologyRecipe> = {
   twinStem: TWIN_STEM,
+  branchingCore: BRANCHING_CORE,
+  skyWeave: SKY_WEAVE,
 };
 
 /** Tutte le ricette, in ordine di catalogo. */

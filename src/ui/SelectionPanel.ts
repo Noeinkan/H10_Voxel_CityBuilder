@@ -1,6 +1,7 @@
 import { createHudIcon } from './hudIcons';
 import {
   buildSelectionPanelModel,
+  defaultSection,
   type SelectionActionId,
   type SelectionSection,
   type SelectionSectionId,
@@ -48,6 +49,7 @@ export class SelectionPanel {
   private readonly title = document.createElement('strong');
   private readonly subtitle = document.createElement('span');
   private readonly view: SectionView;
+  private activeSection: SelectionSectionId = 'block';
 
   private lastPaint = 0;
 
@@ -84,7 +86,7 @@ export class SelectionPanel {
   }
 
   get section(): SelectionSectionId {
-    return 'block';
+    return this.activeSection;
   }
 
   needsPaint(now: number): boolean {
@@ -100,8 +102,9 @@ export class SelectionPanel {
    */
   show(selection: Selection, now: number, isolatedBlock: string | null = null): void {
     this.root.hidden = false;
+    this.activeSection = defaultSection(selection);
     this.paint(selection, now, isolatedBlock);
-    this.handlers.onSection('block');
+    this.handlers.onSection(this.activeSection);
   }
 
   /** Riscrive i valori senza toccare quale linguetta e' aperta. */
@@ -117,10 +120,15 @@ export class SelectionPanel {
   private paint(selection: Selection, now: number, isolatedBlock: string | null): void {
     this.lastPaint = now;
     const model = buildSelectionPanelModel(selection, isolatedBlock);
-    this.title.textContent = model.title;
-    this.subtitle.textContent = model.summary;
-    const block = model.sections.find((section) => section.id === 'block');
-    if (block !== undefined) paintRows(this.view, block, model.summary);
+    let section = model.sections.find((candidate) => candidate.id === this.activeSection);
+    if (section === undefined) {
+      this.activeSection = 'block';
+      section = model.sections.find((candidate) => candidate.id === 'block');
+    }
+    if (section === undefined) return;
+    this.title.textContent = section.title;
+    this.subtitle.textContent = section.summary;
+    paintRows(this.view, section, section.summary);
   }
 
   private createSection(): SectionView {

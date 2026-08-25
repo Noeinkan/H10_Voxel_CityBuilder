@@ -370,7 +370,7 @@ describe('generateBuilding', () => {
     expect(countPalette(stepped, profile.terrace)).toBeGreaterThan(0);
   });
 
-  it('pianta la terrazza solo dove la tipologia chiede un giardino', () => {
+  it('pianta terrazze e copertura solo dove la tipologia chiede un giardino', () => {
     const profile = CLASS_PROFILE[ALL_CLASSES[0]];
     const shape = { ...DEFAULT_TYPOLOGY_SHAPE, crownKind: CROWN_KIND.flat };
     const request = {
@@ -392,6 +392,26 @@ describe('generateBuilding', () => {
     expect(countPalette(planted, profile.garden)).toBeGreaterThan(0);
     // Il bordo resta pavimentato: ci si affaccia, e il parapetto lo dice.
     expect(countPalette(planted, profile.terrace)).toBeGreaterThan(0);
+  });
+
+  it('mostra il giardino sulla copertura anche senza rientranze del corpo', () => {
+    const profile = CLASS_PROFILE[ALL_CLASSES[0]];
+    const shared = {
+      class: ALL_CLASSES[0],
+      level: 5,
+      seed: 72,
+      shape: { ...DEFAULT_TYPOLOGY_SHAPE, crownKind: CROWN_KIND.flat },
+      profile: { ...profile, shrinkOps: [BAND_OP.keep], growOps: [BAND_OP.keep] },
+    } as const;
+    const paved = generateBuilding(shared);
+    const planted = generateBuilding({
+      ...shared,
+      shape: { ...shared.shape, roofGarden: true },
+    });
+
+    expect(countPalette(paved, profile.garden)).toBe(0);
+    expect(countPalette(planted, profile.garden)).toBeGreaterThan(0);
+    expect(solidCount(planted)).toBe(solidCount(paved));
   });
 
   it('non lascia scendere una fascia del corpo sotto il lato minimo', () => {

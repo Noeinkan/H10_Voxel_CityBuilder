@@ -154,10 +154,10 @@ describe('GrowthScene', () => {
     expect(onNewLand).toBeGreaterThan(0);
   });
 
-  it('l aeroporto puntato su un edificio chiede al tetto, non al terreno', () => {
+  it('l aeroporto puntato su un edificio chiede alla facciata, non al terreno', () => {
     // Lo stesso strumento produce due strutture, e a scegliere e' il luogo: la
     // colonna di un edificio chiede uno scalo in quota, quella del prato accanto
-    // un campo di volo. Il rifiuto deve venire dalla regola del tetto — e' cio'
+    // un campo di volo. Il rifiuto deve venire dalla regola della facciata — e' cio'
     // che dice al giocatore di cercare una torre invece di un pianoro.
     const world = new VoxelWorld();
     const map = testTerrain({ chunksX: 3, chunksY: 3, height: 12 });
@@ -169,8 +169,8 @@ describe('GrowthScene', () => {
     expect(scene.placeCatalyst(40, 60, 'park').success).toBe(true);
     for (let i = 0; i < 300; i++) scene.advance(0.1);
 
-    expect(scene.catalystUsesRooftop('airport')).toBe(true);
-    expect(scene.catalystUsesRooftop('port')).toBe(false);
+    expect(scene.catalystUsesFacade('airport')).toBe(true);
+    expect(scene.catalystUsesFacade('port')).toBe(false);
 
     const building = [...scene.registry.all].find((record) => record.landmark === undefined);
     expect(building).toBeDefined();

@@ -78,14 +78,15 @@ export function isBuildable(part: AerialPart): boolean {
 
 export const AERIAL = {
   /**
-   * Spessore strutturale sotto il piano calpestabile.
+   * Voxel pieni sotto il piano calpestabile.
    *
-   * Come per la campata, e per la stessa ragione: **cio' che regge si vede**. Un
-   * piano da un voxel appeso a una parete legge come un vassoio, non come una
-   * terrazza; con due — un cubo di terreno — di taglio l'aggetto ha un'altezza
-   * propria e da sotto si vede che c'e' una trave a tenerlo su.
+   * Il piano deve restare una lastra da **un voxel**: sommare due file di trave
+   * trasformava mensole e passerelle in volumi alti tre voxel, cioe' quasi un
+   * piano di edificio. A raccontare il carico restano le gambe, le teste dei
+   * nodi e la loro microgeometria; colare una travatura nel bordo duplicava quel
+   * segnale e mangiava il vuoto sotto il percorso.
    */
-  girderDepth: 2,
+  girderDepth: 0,
 
   /**
    * Voxel liberi fra la trave piu' bassa e cio' che c'e' sotto.
@@ -224,19 +225,6 @@ export const AERIAL = {
       // largo, cioe' l'unica forma che sporge davvero invece di allargarsi.
       { run: 0.5, depth: 1, align: 1 },
     ],
-
-    /**
-     * Fin dove la trave bassa accompagna la mensola, oltre il filo della parete.
-     *
-     * **E' la rastremazione, ed e' il motivo per cui una mensola non e' una
-     * cassa.** La travatura da due voxel su tutto il perimetro dava alla punta lo
-     * stesso spessore dell'attacco: da sotto e da lontano leggeva come una lastra
-     * di calcestruzzo alta tre voxel, cioe' un piano e mezzo di edificio appeso al
-     * muro. Due voxel di trave presso la parete e niente piu' in la' danno la
-     * sezione che una mensola ha davvero — grossa dove scarica, sottile dove
-     * finisce — e non costano un voxel in piu' a nessun budget: ne tolgono.
-     */
-    taperReach: 2,
 
     /**
      * Smusso massimo degli angoli esterni, in voxel.
@@ -562,7 +550,6 @@ export const AERIAL = {
 
 /** Voxel occupati in altezza da un impalcato piano: la travatura piu' il piano. */
 export const DECK_HEIGHT = AERIAL.girderDepth + 1;
-
 
 
 

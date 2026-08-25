@@ -429,8 +429,8 @@ describe('scalo in quota', () => {
     expect(landmarkOf('port', true)).toBeNull();
   });
 
-  it('sta su un tetto: l ingombro non supera l impronta massima di un edificio', () => {
-    // `MAX_FOOTPRINT` e' otto, e un tetto non e' mai piu' largo di cosi': una
+  it('sta su una facciata: il fronte non supera l impronta massima di un edificio', () => {
+    // `MAX_FOOTPRINT` e' otto, e una facciata non e' mai piu' larga di cosi': una
     // ricetta piu' grande sarebbe forma scritta e mai posabile.
     expect(SKYPORT.span[0]).toBeLessThanOrEqual(8);
     expect(SKYPORT.span[1]).toBeLessThanOrEqual(8);

@@ -257,6 +257,27 @@ describe('resolveSelection', () => {
     expect(resolveSelection({ ...base, cell: cell(21, 21, 41) })?.structure?.uses).toEqual([]);
   });
 
+  it('un landmark risale al catalizzatore che influenza davvero il quartiere', () => {
+    const registry = new BuildingRegistry();
+    registry.add({ ...record(20, 20, 12, 10), landmark: 'market' });
+    const catalyst = {
+      x: 21,
+      y: 22,
+      class: BUILDING_CLASS.residential,
+      kind: 'market' as const,
+      strength: 173,
+      radius: 24,
+    };
+    const state = createSimState({ catalysts: [catalyst] });
+
+    const picked = resolveSelection({
+      ...harness({ registry, state }),
+      cell: cell(21, 21, 18),
+    });
+
+    expect(picked?.structure?.catalyst).toEqual(catalyst);
+  });
+
   it('sta in piedi sul risultato vero di `pickSolidCell`', () => {
     // La quota che arriva qui e' frazionaria, perche' la marcia scende a passi
     // di un quarto di voxel: la catena va provata con quel numero e non con un

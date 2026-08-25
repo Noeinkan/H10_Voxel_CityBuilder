@@ -33,7 +33,7 @@ npm start            # = npm run dev, ma prima libera la porta 8020
 npm run dev          # http://localhost:8020/?debug=1
 npm run build        # typecheck + build Vite in dist/
 npm run preview      # http://localhost:8011/
-npm test             # suite intera; vedi "Verifica proporzionata"
+npm test             # suite intera, solo quando strettamente necessaria
 npm run test:changed
 npm run test:related
 npm run test:watch
@@ -50,9 +50,10 @@ Non esiste uno script `lint` o un formatter configurato: non inventarne uno.
 ## Verifica proporzionata
 
 La suite intera e' 134 file e 1482 test: **207 s misurati su questa macchina.**
-E' il prezzo giusto per consegnare, non per ogni riga che cambi. Mentre iteri usa
-il cerchio stretto — sullo stesso repo, i test legati a un singolo file sorgente
-sono 4 file e 8 s.
+Non e' una tassa di consegna e **non si lancia automaticamente a fine lavoro**:
+e' una verifica di ultima istanza, da usare soltanto quando il cerchio stretto
+non copre onestamente il rischio della modifica. Per default usa i test mirati —
+sullo stesso repo, quelli legati a un singolo file sorgente sono 4 file e 8 s.
 
 ```bash
 npm run test:changed                             # i test toccati dalle modifiche non committate
@@ -68,14 +69,30 @@ della suite e non scorciatoie.
 `test:changed` costa quanto e' larga la tua modifica, ed e' giusto cosi': se hai
 toccato `src/sim/index.ts` o `main.ts` ti ridara' tutti e 134 i file, perche'
 davvero dipendono da li'. Quando succede, non e' il comando che ha sbagliato.
+Quella esecuzione **e' gia' la suite necessaria**: non farle seguire un secondo
+`npm test` soltanto perche' il lavoro e' finito.
+
+La suite intera e' strettamente necessaria solo quando almeno una di queste cose
+e' vera:
+
+- tocchi `mesher.worker.ts`, `terrain.worker.ts` o il loro protocollo, che il
+  grafo degli import non vede;
+- la modifica attraversa piu' domini e `test:changed`/`test:related` non riesce a
+  rappresentarne i consumatori reali;
+- cambi configurazione globale di test, build o runtime condiviso in un modo che
+  puo' alterare test non collegati dagli import;
+- l'utente chiede esplicitamente la suite completa.
+
+Tempo residuo, abitudine o semplice «fine lavoro» non sono motivi sufficienti.
 
 C'e' un secondo motivo per non lanciarla a ogni giro, oltre al tempo: **sotto
 contesa di CPU la suite intera produce falsi fallimenti.** Due run consecutive
 sulla stessa identica working tree hanno dato 3 test rossi con quattro errori di
 timeout la prima, 1482 verdi la seconda. E' la stessa contesa per cui
 `testTimeout` sta a 30 s (vedi il commento in `vite.config.ts`). Un rosso
-comparso dopo una modifica che non c'entra niente merita una seconda run prima
-di inseguirlo.
+comparso dopo una modifica che non c'entra niente merita una seconda run dei
+**soli file falliti** prima di inseguirlo; non ripetere tutta la suite salvo che
+anche il difetto osservato sia globale.
 
 Restano fuori dal grafo i due worker, che si caricano per URL e non per import
 (`mesher.worker.ts`, `terrain.worker.ts`): se tocchi loro o il protocollo dei
@@ -206,8 +223,11 @@ sia dall'hook globale: leggono la stessa fonte.
 ## Definizione di completamento
 
 1. Aggiungi o aggiorna test per comportamento, contratti e casi limite toccati.
-2. Esegui `npm run typecheck` e, **una volta sola a fine lavoro**, `npm test`
-   intero. Mentre iteri basta il cerchio stretto: vedi "Verifica proporzionata".
+2. Esegui `npm run typecheck` e il piu' stretto fra `test:related`,
+   `test:changed` o i file/cartelle direttamente coinvolti che copra onestamente
+   la modifica. Esegui `npm test` intero **solo** nei casi strettamente necessari
+   elencati in "Verifica proporzionata", mai per il solo fatto di essere a fine
+   lavoro.
 3. Per bundle o worker esegui anche `npm run build`.
 4. Per percorsi caldi esegui il benchmark pertinente e segnala che le tabelle
    di misura richiedono verifica manuale.

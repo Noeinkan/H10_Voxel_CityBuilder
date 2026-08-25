@@ -49,12 +49,38 @@ resto si apre a domanda — è ciò che tiene basso il contesto di partenza.
 | [AGENTS.md](AGENTS.md) | **Fonte unica** di comandi, convenzioni, contratti, budget e definizione di "finito" | sempre |
 | [CLAUDE.md](CLAUDE.md) | Puntatore: dove stanno le regole e cosa si sbaglia facilmente | sempre |
 | [docs/pending/README.md](docs/pending/README.md) | Formato dei frammenti di indice e changelog, e perché si scrive lì invece che nei due file | a domanda |
+| [docs/world/aerial-city.md](docs/world/aerial-city.md) | Contratti e motivazioni della citta' in quota |
+| [docs/world/arcology.md](docs/world/arcology.md) | Contratti e casi limite delle arcologie |
+| [docs/world/farms.md](docs/world/farms.md) | Contratti della campagna e dei lotti agricoli |
+| [docs/world/grading-water.md](docs/world/grading-water.md) | Contratti delle opere di terra e dell'acqua |
+| [docs/world/README.md](docs/world/README.md) | Indice dei contratti di design di `src/world/` caricati per dominio |
+| [docs/world/rooftop-landmarks.md](docs/world/rooftop-landmarks.md) | Contratti dei landmark posati sugli edifici |
+| [docs/world/ropeway.md](docs/world/ropeway.md) | Contratti della funivia e della fune non voxel |
+| [docs/world/scenes.md](docs/world/scenes.md) | Contratti delle scene deterministiche e del campionario |
+| [docs/world/streets-buildings.md](docs/world/streets-buildings.md) | Contratti condivisi da strade, siti ed edifici |
+| [docs/world/terrain.md](docs/world/terrain.md) | Contratti, dimostrazioni e casi limite del terreno |
+| [docs/world/traffic.md](docs/world/traffic.md) | Contratti delle rotte e dei mezzi non voxel |
 | [src/engine/AGENTS.md](src/engine/AGENTS.md) | Renderer, mesher, palette, temi, modello di luce e pass | lavorando in `src/engine/` |
-| [src/world/AGENTS.md](src/world/AGENTS.md) | Storage, terreno, strade, edifici e catalogo delle tipologie | lavorando in `src/world/` |
+| [src/world/aerial/AGENTS.md](src/world/aerial/AGENTS.md) | Regole locali e riferimenti per la citta' in quota | lavorando in `src/world/aerial/` |
+| [src/world/AGENTS.md](src/world/AGENTS.md) | Contratti comuni e routing delle regole di `src/world/` | lavorando in `src/world/` |
 | [src/sim/AGENTS.md](src/sim/AGENTS.md) | Simulazione, stato, campo e relazioni di bilanciamento | lavorando in `src/sim/` |
 | [.claude/skills/debug-harness/SKILL.md](.claude/skills/debug-harness/SKILL.md) | Parametri URL, hotkey e hook globali | `/debug-harness` |
 | [docs/PROJECT_MAP.md](docs/PROJECT_MAP.md) | Mappa sintetica di dipendenze, punti di ingresso e flussi | a domanda |
 | [CHANGELOG.md](CHANGELOG.md) | Storia degli incrementi, con i file toccati da ciascuno | a domanda |
+| [src/world/arcology/AGENTS.md](src/world/arcology/AGENTS.md) | Regole locali e riferimenti per le arcologie | lavorando in `src/world/arcology/` |
+| [src/world/buildings/AGENTS.md](src/world/buildings/AGENTS.md) | Routing dei contratti per costruzione e driver | lavorando in `src/world/buildings/` |
+| [src/world/crossings/AGENTS.md](src/world/crossings/AGENTS.md) | Regole locali e riferimenti per gli attraversamenti | lavorando in `src/world/crossings/` |
+| [src/world/farms/AGENTS.md](src/world/farms/AGENTS.md) | Regole locali e riferimenti per i lotti agricoli | lavorando in `src/world/farms/` |
+| [src/world/grading/AGENTS.md](src/world/grading/AGENTS.md) | Regole locali e riferimenti per le opere di terra | lavorando in `src/world/grading/` |
+| [src/world/landmarks/AGENTS.md](src/world/landmarks/AGENTS.md) | Routing dei contratti per ricette e piazzamento | lavorando in `src/world/landmarks/` |
+| [src/world/ropeway/AGENTS.md](src/world/ropeway/AGENTS.md) | Regole locali e riferimenti per la funivia | lavorando in `src/world/ropeway/` |
+| [src/world/scenes/AGENTS.md](src/world/scenes/AGENTS.md) | Regole locali e riferimenti per le scene | lavorando in `src/world/scenes/` |
+| [src/world/sites/AGENTS.md](src/world/sites/AGENTS.md) | Regole locali e riferimenti per i vincoli di sito | lavorando in `src/world/sites/` |
+| [src/world/skyline/AGENTS.md](src/world/skyline/AGENTS.md) | Regole locali e riferimenti per la gerarchia verticale | lavorando in `src/world/skyline/` |
+| [src/world/spans/AGENTS.md](src/world/spans/AGENTS.md) | Routing dei contratti per campate e percorsi | lavorando in `src/world/spans/` |
+| [src/world/streets/AGENTS.md](src/world/streets/AGENTS.md) | Regole locali e riferimenti per la rete stradale | lavorando in `src/world/streets/` |
+| [src/world/terrain/AGENTS.md](src/world/terrain/AGENTS.md) | Regole locali e riferimenti per il terreno | lavorando in `src/world/terrain/` |
+| [src/world/traffic/AGENTS.md](src/world/traffic/AGENTS.md) | Regole locali e riferimenti per il traffico | lavorando in `src/world/traffic/` |
 
 ## `src/world/` — storage e mondo
 
@@ -412,6 +438,7 @@ dirigibile, la piazzola dell'eVTOL, la cima della mongolfiera.
 | File | Ruolo | Esporta |
 | --- | --- | --- |
 | [config.ts](src/world/landmarks/config.ts) | **Ogni** ingombro, quota, soglia di stadio, ormeggio, linea d'acqua e indice di palette, piu' le nove ricette con tre esemplari a testa e la ricetta da tetto. Dichiara anche il dislivello massimo della fondazione a terra. Qui vive `PartsRecipe`, il formato che le arcologie condividono | `LANDMARK`, `LANDMARKS`, `SKYPORT`, `BERTH`, `landmarkOf`, `hasAloftRecipe`, `maxStageOf`, `variantsOf`, `PartsRecipe`, `LandmarkRecipe`, `LandmarkVariant`, `LandmarkMooring`, `BerthKind` |
+| [facadePlan.ts](src/world/landmarks/facadePlan.ts) | Piano puro dello Skyport di facciata: centra la ricetta fuori dall'ospite, riusa le corse delle terrazze e affida gli appoggi a `planDeck` | `planFacadeLandmark`, `FacadeLandmarkPlan`, `FacadeLandmarkQuery`, `FacadeLandmarkResult`, `FacadeLandmarkRefusal` |
 | [parts.ts](src/world/landmarks/parts.ts) | Le dieci primitive con cui una ricetta si compone, lo smusso della pianta e la rotazione sul verso | `PART`, `Part`, `PartKind`, `box`, `partBounds`, `orientPart`, `orientedSpan`, `createCanvas`, `drawPart`, `LandmarkCanvas` |
 | [generate.ts](src/world/landmarks/generate.ts) | Compone tronco ed esemplare in uno stamp; ingombro, origine, stadio, scelta della variante dal seme e ormeggi portati sul verso vero. Il nucleo ricetta→stamp e' condiviso con le arcologie | `generateFromRecipe`, `recipeSpan`, `recipeOrigin`, `generateLandmark`, `landmarkSpan`, `landmarkOrigin`, `landmarkMoorings`, `stageForBuildings`, `variantIndexOf`, `RecipeRequest`, `LandmarkRequest`, `WorldMooring` |
 
@@ -444,7 +471,8 @@ megastruttura non e' il piu' alto: e' quello che scavalca il vuoto. Per questo
 
 | File | Ruolo | Esporta |
 | --- | --- | --- |
-| [config.ts](src/world/arcology/config.ts) | **Ogni** ingombro, quota, soglia, fascia d'uso, piazzale e indice di palette, piu' le ricette | `ARCOLOGY`, `ARCOLOGY_KIND`, `ARCOLOGY_RECIPES`, `TWIN_STEM`, `arcologyOf`, `ArcologyRecipe`, `ArcologyKind`, `ArcologyBand`, `ArcologyLanding` |
+| [catalog.ts](src/world/arcology/catalog.ts) | Sceglie in modo deterministico la prima ricetta che entra nell'isolato, senza lasciare che la forma da sedici renda irraggiungibili quelle da quattordici | `arcologyForBlock` |
+| [config.ts](src/world/arcology/config.ts) | **Ogni** ingombro, quota, soglia, fascia d'uso, piazzale e indice di palette, piu' le tre ricette Twin Stem, Branching Core e Sky Weave | `ARCOLOGY`, `ARCOLOGY_KIND`, `ARCOLOGY_RECIPES`, `TWIN_STEM`, `BRANCHING_CORE`, `SKY_WEAVE`, `arcologyOf`, `ArcologyRecipe`, `ArcologyKind`, `ArcologyBand`, `ArcologyLanding` |
 | [siting.ts](src/world/arcology/siting.ts) | Quando la citta' e' pronta a darsene una. Puro e senza mondo: entrano numeri gia' misurati, esce un verdetto | `arcologyReady`, `arcologyAnchor`, `ARCOLOGY_REFUSALS`, `ArcologyQuery`, `ArcologyRefusal`, `BlockBounds` |
 | [window.ts](src/world/arcology/window.ts) | La finestra di cielo e il riempimento, come proprieta' verificabili di uno stamp | `skyWindowOf`, `fillRatio`, `SkyWindow`, `SkyWindowRule` |
 | [generate.ts](src/world/arcology/generate.ts) | Ricetta→stamp, ingombro, origine, e le due tabelle di posti portate sul verso vero con la stessa rotazione delle parti | `generateArcology`, `arcologySpan`, `arcologyOrigin`, `worldBands`, `worldLandings`, `WorldBand`, `WorldLanding` |
@@ -576,6 +604,7 @@ predicati sul luogo, esce un piano.
 | [config.ts](src/world/crossings/config.ts) | **Ogni** luce, franco, passo di pila, pescaggio e indice di palette | `CROSSINGS`, `CROSSING_KIND`, `CrossingKind` |
 | [crossingPlan.ts](src/world/crossings/crossingPlan.ts) | Sceglie il compagno e convalida: asse, quota, pile, spalle, segmenti | `chooseCrossing`, `crossingBaseZ`, `CROSSING_HEIGHT`, `CROSSING_REFUSALS`, `CrossingPlan`, `CrossingQuery`, `CrossingProbe`, `CrossingTower`, `CrossingPier`, `CrossingSegment`, `CrossingResult`, `CrossingRefusal` |
 | [generate.ts](src/world/crossings/generate.ts) | Lo stamp di un segmento e quello di una pila | `generateCrossing`, `generateCrossingPier` |
+| [src/world/crossings/secondaryBridgePlan.ts](src/world/crossings/secondaryBridgePlan.ts) | Regola pura del ponte automatico: separa territorio primario e secondario, pretende torri mature e un canale d'acqua continuo |
 
 ```ts
 chooseCrossing({ x, y, ground, land, occupied, solid });          // ponte a terra
@@ -600,12 +629,12 @@ c'e' una griglia di livelli, e per la stessa ragione qui non esiste `align`.
 | [config.ts](src/world/aerial/config.ts) | **Ogni** sporto, luce, franco, cadenza e indice di palette | `AERIAL`, `AERIAL_PART`, `AerialPart`, `DECK_HEIGHT`, `takesGround`, `isBuildable` |
 | [deckPlan.ts](src/world/aerial/deckPlan.ts) | Il primitivo: dato un riquadro e una quota, dove servono le gambe | `planDeck`, `deckBaseZ`, `tileDeck`, `surveyFooting`, `rectsOverlap`, `DECK_REFUSALS`, `DeckPlan`, `DeckQuery`, `DeckRect`, `DeckRefusal`, `AerialColumn`, `AerialProbe`, `Pier` |
 | [terracePlan.ts](src/world/aerial/terracePlan.ts) | L'aggetto: da un edificio e un fronte al riquadro che sporge | `planTerrace`, `faceRuns`, `wallRect`, `faceAxis`, `faceOutward`, `AERIAL_FACE`, `AERIAL_FACES`, `TerracePlan`, `TerraceQuery`, `AerialSupport`, `FaceRun` |
-| [terraceForm.ts](src/world/aerial/terraceForm.ts) | La forma di una mensola: pianta fra quattro varianti, sezione che si assottiglia, angoli smussati | `terraceShape`, `overhangOf`, `terraceSide`, `terraceEdge`, `terraceGirder`, `chamfered`, `cornerCutOf`, `TerraceShape`, `TerraceSide` |
+| [terraceForm.ts](src/world/aerial/terraceForm.ts) | La forma di una mensola: pianta fra quattro varianti e angoli esterni smussati | `terraceShape`, `overhangOf`, `terraceSide`, `terraceEdge`, `chamfered`, `cornerCutOf`, `TerraceShape`, `TerraceSide` |
 | [routePlan.ts](src/world/aerial/routePlan.ts) | Le forme di un percorso fra due mensole: dritta, larga, a zeta | `planRoute`, `ROUTE_REFUSALS`, `RoutePlan`, `RouteQuery`, `RouteEnd`, `RoutePiece`, `RouteRefusal` |
 | [routeDrafts.ts](src/world/aerial/routeDrafts.ts) | I pezzi di un percorso e la meccanica che li regge: colmo, pianerottoli, montaggio | `crestOf`, `climbProfile`, `placeHubs`, `assemble`, `walkDraft`, `hubDraft`, `hubSide`, `hubPad`, `rectOf`, `slideOrder`, `PieceDraft`, `Landing`, `RouteEnd` |
 | [guideway.ts](src/world/aerial/guideway.ts) | La guida: il montante che porta da terra a un impalcato abitato | `planLift`, `LIFT_REFUSALS`, `LiftPlan`, `LiftTarget`, `LiftRefusal` |
 | [decks.ts](src/world/aerial/decks.ts) | Le quote edificabili di una colonna, ciascuna con il proprio riquadro | `decksAt`, `BuildDeck`, `DeckSource` |
-| [generate.ts](src/world/aerial/generate.ts) | Uno stamp per tutte le forme: travatura, piano, parapetto e verde; mensole rastremate e nodi alti vuoti fra piano e appoggi | `generateDeck`, `generateLift`, `generatePier` |
+| [generate.ts](src/world/aerial/generate.ts) | Uno stamp per tutte le forme: lastra da un voxel, parapetto e verde; nodi alti vuoti fra piano e appoggi | `generateDeck`, `generateLift`, `generatePier` |
 | [testProbe.ts](src/world/aerial/testProbe.ts) | Un luogo finto per i test puri: pareti, tetti, carreggiate | `TestGround` |
 
 ```ts
@@ -631,6 +660,7 @@ le scritture stanno in tre file invece che sparse in sei metodi.
 | --- | --- | --- |
 | [Builder.ts](src/world/buildings/Builder.ts) | Orchestratore: il ciclo a tick, la nascita di un edificio sul lotto, le statistiche | `Builder`, `BuilderStats`, `REJECT_REASONS` |
 | [buildContext.ts](src/world/buildings/buildContext.ts) | Cio' che ogni driver ha in mano: mondo, terreno, strade, registry e le due code | `BuildContext` |
+| [src/world/buildings/crossingDriver.ts](src/world/buildings/crossingDriver.ts) | Driver a budget dei ponti fra settori: cerca appoggi locali, registra una campata lunga per settore e la lega alle torri |
 | [growthPoles.ts](src/world/buildings/growthPoles.ts) | Di chi e' il turno di crescere: il riquadro del polo di questa infornata | `poleRectAt` |
 | [growthQueue.ts](src/world/buildings/growthQueue.ts) | La coda di comparsa e le scritture a budget: un segmento per struttura, la sagoma nuova prima della cancellazione | `GrowthQueue`, `anchorOf` |
 | [surfaceQueue.ts](src/world/buildings/surfaceQueue.ts) | Il suolo pubblico a budget: carreggiata per isolato, grembiuli, rampe e bonifica del decoro — che si ferma dove il bioma dice acqua | `SurfaceQueue`, `SurfacePaint` |
@@ -638,7 +668,7 @@ le scritture stanno in tre file invece che sparse in sei metodi.
 | [aerialDriver.ts](src/world/buildings/aerialDriver.ts) | Mensole, percorsi, gambe e le quote su cui si costruisce. Un impalcato vuoto cade, uno abitato no | `AerialDriver` |
 | [guideDriver.ts](src/world/buildings/guideDriver.ts) | La via da terra: un montante per ogni impalcato abitato che non ce l'ha | `GuideDriver` |
 | [ropewayDriver.ts](src/world/buildings/ropewayDriver.ts) | Le funivie: due torri a registro, e una fune che non e' materia. Il solo driver senza una freccia che entra o che esce | `RopewayDriver`, `RopewayCable`, `RopewayRide` |
-| [landmarkDriver.ts](src/world/buildings/landmarkDriver.ts) | I monumenti dei catalizzatori: piazzamento e fondazione su un solo gradone montano, cantiere di sventramento, grembiule e avanzamento di stadio | `LandmarkDriver`, `LandmarkSite` |
+| [landmarkDriver.ts](src/world/buildings/landmarkDriver.ts) | I monumenti dei catalizzatori: piazzamento e fondazione a terra, cantiere di sventramento, Skyport appeso alla facciata con piloni, grembiule e avanzamento di stadio | `LandmarkDriver`, `LandmarkSite`, `AloftSite`, `AloftVerdict` |
 | [landmarkSiting.ts](src/world/buildings/landmarkSiting.ts) | Dove una struttura si posa davvero: verso, ingombro e l'angolo gia' portato **incontro all'acqua**. Puro, ed e' la sola meta' del piazzamento che un test interroga al voxel senza far crescere un'isola | `placeRecipe`, `seawardDrift`, `Placement` |
 | [arcologyDriver.ts](src/world/buildings/arcologyDriver.ts) | La megastruttura: condizione sull'isolato, cantiere, costruzione a stadi, piazzali in quota e dichiarazione degli usi alla simulazione | `ArcologyDriver` |
 | [clearance.ts](src/world/buildings/clearance.ts) | Cosa un landmark puo' togliere di mezzo e cosa lo ferma. Puro: entrano record ridotti all'osso, esce un verdetto | `planClearance`, `CLEARANCE_KIND`, `ClearanceRecord`, `ClearanceRefusal` |
@@ -654,7 +684,7 @@ le scritture stanno in tre file invece che sparse in sei metodi.
 | [bandRect.ts](src/world/buildings/bandRect.ts) | Il rettangolo di una fascia e l'algebra che lo muove: appoggio, rientranze centrate, predicati di pianta | `BandRect`, `supported`, `inside`, `inset`, `shrink`, `shrinkAxis`, `pickInt`, `clamp` |
 | [bandOps.ts](src/world/buildings/bandOps.ts) | L'interprete del repertorio: prova le candidate nell'ordine del profilo e prende la prima che regge | `nextRect`, `applyOp`, `forcedOp` |
 | [crowns.ts](src/world/buildings/crowns.ts) | Come si chiude la silhouette: una geometria per ogni voce di `CROWN_KIND` | `crownBands` |
-| [paint.ts](src/world/buildings/paint.ts) | La vernice: corpo, cornice, zoccolo, campate, portale, accento luminoso, terrazze e corte | `paint`, `classSurface`, `PaintRequest` |
+| [paint.ts](src/world/buildings/paint.ts) | La vernice: corpo, cornice, zoccolo, campate, portale, accento luminoso, terrazze, giardini in copertura e corte | `paint`, `classSurface`, `PaintRequest` |
 | [cluster.ts](src/world/buildings/cluster.ts) | A cosa si aggrega un lotto: quota e corso di base condivisi con i vicini di fronte. Puro, e il rifiuto è il gradino | `planCluster`, `joinsCluster`, `ClusterTerms`, `ClusterRequest` |
 | [typology.ts](src/world/buildings/typology.ts) | Sceglie la tipologia dal luogo, e dice **perché no** dove non la sceglie; nessun numero, solo la regola | `selectTypology`, `typologyProfile`, `typologyShape`, `typologiesForUses`, `typologyAccepts`, `typologyGapsOf`, `bestProspectOf`, `TypologyQuery`, `TypologyGap` |
 | [unlocks.ts](src/world/buildings/unlocks.ts) | Cosa un ruolo sblocca: le specializzazioni che apre e le forme che ci nascono dentro, derivate dai due cataloghi | `unlocksFor`, `RoleUnlock` |
@@ -677,6 +707,7 @@ le scritture stanno in tre file invece che sparse in sei metodi.
 | [onboarding.ts](src/game/onboarding.ts) | Tutorial derivato dai catalizzatori, senza flag nascosti | `onboardingOf`, `onboardingAllows` |
 | [cityCondition.ts](src/game/cityCondition.ts) | Obiettivo di autosufficienza e crisi con indicazioni di recupero | `cityCondition`, `isSelfSufficient` |
 | [sectors.ts](src/game/sectors.ts) | Identità, region e maschera composta dei settori costieri | `coastalSectorAt`, `shapeWithSector` |
+| [src/game/tips.ts](src/game/tips.ts) | Consigli di gioco derivati dallo stato, in quattro famiglie ordinate per urgenza: crisi, colli di bottiglia, opportunità, meccaniche. Puro e senza storia. |
 
 ## `src/ui/` — HUD e overlay di debug
 
@@ -686,17 +717,21 @@ giocabile; gli overlay tecnici si alternano con `F3` o partono aperti con
 
 | File | Ruolo |
 | --- | --- |
+| [CityOverviewModel.ts](src/ui/CityOverviewModel.ts) | Modello puro della panoramica cittadina: obiettivi di autosufficienza, capacita', organico, bilanci, forma urbana, infrastrutture, scambi, mandati e decisioni recenti |
+| [GameHudControlsModel.ts](src/ui/GameHudControlsModel.ts) | Tipi e testo puro dei controlli dell'HUD: strumento selezionato e ciclo giorno/notte |
+| [GameHudEconomyModel.ts](src/ui/GameHudEconomyModel.ts) | Lettura economica pura dell'HUD: risorse, rendiconti, riserve e ciclo commerciale |
 | [hud.css](src/ui/hud.css) | Token, elevazione a tre livelli, cornice, tessere del dock, stati accessibili e layout responsivo Cozy City |
 | [hudIcons.ts](src/ui/hudIcons.ts) | Icone SVG interne, senza dipendenze o richieste di rete |
+| [hudPanels.css](src/ui/hudPanels.css) | Layout e stati dei pannelli informativi, della selezione e dei picker, separati dal chrome del mondo |
 | [hudTip.ts](src/ui/hudTip.ts) | La scheda che si apre da un'azione del dock: modello puro — nome, prezzo, cosa fa, righe etichettate, gesto o blocco — e il suo disegno in soli `<span>`, perché sta dentro un `<button>` |
-| [hudWidgets.ts](src/ui/hudWidgets.ts) | Le fabbriche DOM che non toccano `this`: bottoni, tessere, righe del cursore, tasti della targa, separatore |
+| [hudWidgets.ts](src/ui/hudWidgets.ts) | Fabbriche DOM e attivazione accessibile: le azioni bloccate restano raggiungibili per leggere requisito e avanzamento |
 | [hudTokens.ts](src/ui/hudTokens.ts) | I `--hud-*` derivati dal tema attivo: pannello chiaro o scuro dalla luminanza dell'aria, tinta verso il mondo e contrasto AA garantito |
 | [GameHud.ts](src/ui/GameHud.ts) | Composizione dell'HUD: pannelli, decisioni, temi, targa della vista, catena di Escape e feedback contestuale |
-| [PolicyDrawer.ts](src/ui/PolicyDrawer.ts) | Il pannello di governo in tre linguette — politiche, commercio interno, commercio esterno — con l'intestazione ferma e solo il corpo che scorre |
+| [PolicyDrawer.ts](src/ui/PolicyDrawer.ts) | Centro informativo in cinque linguette — citta', politiche, commercio, scambi e cronologia — con navigazione da tastiera e corpo scorrevole |
 | [ResourceBar.ts](src/ui/ResourceBar.ts) | La colonna di destra: cinque risorse con tendenza, sparkline, anello del tetto e popover del bilancio, piu' i controlli del tempo |
 | [BuildDock.ts](src/ui/BuildDock.ts) | Il rail di sinistra: quattro corsie etichettate incolonnate, tessere icona-sopra-etichetta con badge di tasto, una colonna sopra i 900px di finestra e due sotto, selezione per indice |
 | [ResourceTrend.ts](src/ui/ResourceTrend.ts) | La finestra dei tick recenti per risorsa: direzione, magnitudine e serie per la sparkline. Campionamento ancorato al tick |
-| [GameHudModel.ts](src/ui/GameHudModel.ts) | View model puro di risorse, tendenze, tetti, scomposizione dei fondi, requisiti vincolanti e disponibilità delle azioni |
+| [GameHudModel.ts](src/ui/GameHudModel.ts) | Composizione del modello HUD: panoramica cittadina, azioni, policy, risorse e disponibilita' |
 | [ControlsHint.ts](src/ui/ControlsHint.ts) | Onboarding contestuale persistente e pannello di aiuto |
 | [DebugOverlay.ts](src/ui/DebugOverlay.ts) | fps, draw call, triangoli, code, tempi di mesher e main thread |
 | [GrowthOverlay.ts](src/ui/GrowthOverlay.ts) | Conteggi, livelli, coda e scarti della crescita automatica |
@@ -714,10 +749,16 @@ giocabile; gli overlay tecnici si alternano con `F3` o partono aperti con
 | File | Copre |
 | --- | --- |
 | [src/engine/VehicleMaterial.test.ts](src/engine/VehicleMaterial.test.ts) | Che gli uniform dei mezzi siano gli stessi oggetti del voxel, non delle copie. |
+| [src/sim/islandConnections.test.ts](src/sim/islandConnections.test.ts) | Bonus di soddisfazione e crescita dei collegamenti fra isole, limiti e compatibilita' dei salvataggi |
+| [ui/CityOverviewModel.test.ts](src/ui/CityOverviewModel.test.ts) | Obiettivi comprensivi degli usi misti, capacita', organico, forma urbana, scambi reali, mandati e cronologia della panoramica cittadina |
 | [ui/hudTip.test.ts](src/ui/hudTip.test.ts) | Il testo della scheda del dock: la descrizione che resta anche a bottone bloccato, i quattro usi nominati tutti, la portata in banda prima che in cifre, l'elenco che si chiude a parole |
 | [ui/hudWidgets.test.ts](src/ui/hudWidgets.test.ts) | L'elenco che si accorcia per la pastiglia al cursore: i primi nomi, poi quanti ne restano |
+| [src/world/buildings/crossingDriver.test.ts](src/world/buildings/crossingDriver.test.ts) | Integrazione del ponte automatico con registry, coda voxel, occupazione del suolo e guinzaglio degli appoggi |
 | [world/buildings/growthPoles.test.ts](src/world/buildings/growthPoles.test.ts) | Il giro fra i poli: un turno a testa, il riquadro dell'influenza, nessun polo saltato |
+| [world/buildings/landmarkFacade.test.ts](src/world/buildings/landmarkFacade.test.ts) | Dal click sulla torre al record dello Skyport: piattaforma fuori dall'impronta, quota di facciata, ospite e piloni risolvibili |
 | [world/buildings/landmarkFooting.test.ts](src/world/buildings/landmarkFooting.test.ts) | Il landmark in montagna: il rifiuto `no-footing` detto prima del click, la stessa risposta che da' il click, un ciglio naturale ammesso ma non piu' gradoni cuciti insieme, nessun cantiere aperto per una struttura che non puo' comparire |
+| [src/world/crossings/secondaryBridgePlan.test.ts](src/world/crossings/secondaryBridgePlan.test.ts) | Territori distinti, soglia verticale e acqua reale per il piano del ponte automatico |
+| [world/landmarks/facadePlan.test.ts](src/world/landmarks/facadePlan.test.ts) | Piano di facciata sulle quattro direzioni, quota adattiva, appoggi e rifiuto di un fronte troppo stretto |
 | [src/world/traffic/wake.test.ts](src/world/traffic/wake.test.ts) | Che la V si apra, che i segni si tocchino e che una barca all'ormeggio non lasci niente. |
 | [world/VoxelWorld.test.ts](src/world/VoxelWorld.test.ts) | Sparsità, dirty set ai bordi, AABB, contratto `data` ≠ `blocks` |
 | [world/visualBlock.test.ts](src/world/visualBlock.test.ts) | Palette e superficie nello stesso byte, il vuoto ignora la superficie |

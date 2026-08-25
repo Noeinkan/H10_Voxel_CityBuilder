@@ -1,34 +1,37 @@
 import type { PolicyId, TradeMode } from '../sim';
 import type { GameHudModel, HudCommerce, HudPolicy, HudTradeMode } from './GameHudModel';
+import type { CityOverviewModel, OverviewFact, OverviewGoal } from './CityOverviewModel';
 import { iconButton } from './hudWidgets';
 
 /**
- * Il pannello di governo: politiche, commercio interno, commercio esterno.
+ * Il pannello di governo: stato della citta', scelte e memoria.
  *
  * Esce da `GameHud.ts` per la ragione di `AGENTS.md` — quel file e' oltre il
  * budget e il semaforo prende il lock per path — ma soprattutto perche' ne
- * cambia la **forma**. Le tre sezioni stavano incolonnate dentro un unico
+ * cambia la **forma**. Le sezioni stavano incolonnate dentro un unico
  * riquadro che scorreva tutto insieme, intestazione compresa: per leggere il
  * commercio esterno si scendeva oltre sette schede di policy, e arrivati la'
  * la croce per chiudere era rimasta fuori schermo. Nessuna delle due cose si
  * risolve spostando un `overflow` senza decidere *cosa* scorre.
  *
- * Qui scorre solo il corpo della linguetta aperta. L'intestazione e le tre
- * linguette stanno ferme, e le tre sezioni non si sommano piu' in altezza:
- * sono tre risposte a tre domande diverse, e si guarda quella che si sta
- * facendo.
+ * Qui scorre solo il corpo della linguetta aperta. Intestazione e linguette
+ * stanno ferme, e le sezioni non si sommano piu' in altezza: la panoramica
+ * porta i numeri che prima restavano chiusi nella simulazione, le altre dicono
+ * cosa li sta modificando e cosa e' successo.
  */
 
-export type PolicyTab = 'policies' | 'commerce' | 'trade';
+export type PolicyTab = 'city' | 'policies' | 'commerce' | 'trade' | 'history';
 
 /** I nomi delle linguette. Corti: sono etichette, non frasi. */
 const TAB_LABELS: Readonly<Record<PolicyTab, string>> = {
+  city: 'City',
   policies: 'Policies',
   commerce: 'Commerce',
   trade: 'Trade',
+  history: 'History',
 };
 
-const TABS: readonly PolicyTab[] = ['policies', 'commerce', 'trade'];
+const TABS: readonly PolicyTab[] = ['city', 'policies', 'commerce', 'trade', 'history'];
 
 export interface PolicyDrawerHandlers {
   readonly onPolicy: (id: PolicyId) => void;
@@ -43,27 +46,32 @@ export class PolicyDrawer {
   private readonly bodies = new Map<PolicyTab, HTMLElement>();
   private readonly policyButtons = new Map<PolicyId, HTMLButtonElement>();
   private readonly tradeButtons = new Map<TradeMode, HTMLButtonElement>();
+  private readonly overviewPanel = document.createElement('div');
   private readonly commercePanel = document.createElement('div');
+  private readonly tradeReportPanel = document.createElement('div');
+  private readonly historyPanel = document.createElement('div');
   private readonly tradeNote = document.createElement('p');
-  private active: PolicyTab = 'policies';
+  private latestModel: GameHudModel;
+  private active: PolicyTab = 'city';
 
   constructor(model: GameHudModel, private readonly handlers: PolicyDrawerHandlers) {
+    this.latestModel = model;
     this.root = document.createElement('aside');
     this.root.className = 'policy-drawer hud-surface hud-surface--panel';
     this.root.hidden = true;
-    this.root.setAttribute('aria-label', 'City policies');
+    this.root.setAttribute('aria-label', 'City information and policies');
 
     const header = document.createElement('header');
     header.className = 'drawer-header';
     const copy = document.createElement('div');
     const title = document.createElement('h2');
     title.className = 'drawer-title';
-    title.textContent = 'City policies';
+    title.textContent = 'City overview';
     const subtitle = document.createElement('p');
     subtitle.className = 'drawer-subtitle';
-    subtitle.textContent = 'Invest to shape how your city grows.';
+    subtitle.textContent = 'Read the whole city, then shape how it grows.';
     copy.append(title, subtitle);
-    const close = iconButton('close', 'Close policies · Esc', () => this.handlers.onClose());
+    const close = iconButton('close', 'Close city overview · Esc', () => this.handlers.onClose());
     close.classList.add('hud-button--small');
     header.append(copy, close);
 
@@ -79,6 +87,7 @@ export class PolicyDrawer {
       tab.setAttribute('role', 'tab');
       tab.setAttribute('aria-controls', `policy-body-${id}`);
       tab.addEventListener('click', () => this.select(id));
+      tab.addEventListener('keydown', (event) => this.moveTab(event, id));
       this.tabs.set(id, tab);
       tabs.appendChild(tab);
 
@@ -91,9 +100,11 @@ export class PolicyDrawer {
       this.bodies.set(id, body);
     }
 
+    this.fillOverview();
     this.fillPolicies(model.policies);
     this.fillCommerce();
     this.fillTrade(model.tradeModes);
+    this.fillHistory();
 
     this.root.append(header, tabs, ...this.bodies.values());
     this.select(this.active);
@@ -105,13 +116,21 @@ export class PolicyDrawer {
 
   set hidden(value: boolean) {
     this.root.hidden = value;
+    if (!value) this.paint(this.latestModel);
   }
 
   paint(model: GameHudModel): void {
+    this.latestModel = model;
+    // Da chiuso basta conservare l'ultimo stato. Ricostruire decine di nodi sei
+    // volte al secondo per un cassetto invisibile sarebbe lavoro di frame puro.
+    if (this.root.hidden) return;
+    this.paintOverview(model.overview);
     for (const policy of model.policies) this.paintPolicy(policy);
     this.paintCommerce(model.commerce);
+    this.paintTradeReport(model.overview);
     for (const mode of model.tradeModes) this.paintTradeMode(mode, model.tradeConnected);
     this.tradeNote.hidden = model.tradeConnected;
+    this.paintHistory(model.overview);
   }
 
   private select(id: PolicyTab): void {
@@ -119,10 +138,34 @@ export class PolicyDrawer {
     for (const [other, tab] of this.tabs) {
       const open = other === id;
       tab.setAttribute('aria-selected', open ? 'true' : 'false');
+      tab.tabIndex = open ? 0 : -1;
       tab.dataset['active'] = open ? 'true' : 'false';
       const body = this.bodies.get(other);
       if (body !== undefined) body.hidden = !open;
     }
+  }
+
+  /** Frecce e Home/End seguono il pattern ARIA senza uscire dal cassetto. */
+  private moveTab(event: KeyboardEvent, current: PolicyTab): void {
+    const index = TABS.indexOf(current);
+    const next = event.key === 'ArrowRight' || event.key === 'ArrowDown'
+      ? TABS[(index + 1) % TABS.length]
+      : event.key === 'ArrowLeft' || event.key === 'ArrowUp'
+        ? TABS[(index - 1 + TABS.length) % TABS.length]
+        : event.key === 'Home'
+          ? TABS[0]
+          : event.key === 'End' ? TABS[TABS.length - 1] : undefined;
+    if (next === undefined) return;
+    event.preventDefault();
+    this.select(next);
+    this.tabs.get(next)?.focus();
+  }
+
+  private fillOverview(): void {
+    const body = this.bodies.get('city');
+    if (body === undefined) return;
+    this.overviewPanel.className = 'city-overview';
+    body.appendChild(this.overviewPanel);
   }
 
   private fillPolicies(policies: readonly HudPolicy[]): void {
@@ -163,7 +206,112 @@ export class PolicyDrawer {
       this.tradeButtons.set(mode.id, button);
       list.appendChild(button);
     }
-    body.append(this.tradeNote, list);
+    this.tradeReportPanel.className = 'trade-report';
+    body.append(this.tradeReportPanel, this.tradeNote, list);
+  }
+
+  private fillHistory(): void {
+    const body = this.bodies.get('history');
+    if (body === undefined) return;
+    this.historyPanel.className = 'history-panel';
+    body.appendChild(this.historyPanel);
+  }
+
+  private paintOverview(overview: CityOverviewModel | null): void {
+    if (overview === null) {
+      this.overviewPanel.replaceChildren(note('The city is getting ready.'));
+      return;
+    }
+
+    const condition = document.createElement('section');
+    condition.className = 'overview-condition';
+    condition.dataset.tone = overview.condition.tone;
+    const title = document.createElement('strong');
+    title.textContent = overview.condition.title;
+    const message = document.createElement('span');
+    message.textContent = overview.condition.message;
+    condition.append(title, message);
+
+    this.overviewPanel.replaceChildren(
+      condition,
+      goalGroup('Self-sufficiency', overview.goals),
+      factGroup('Capacity', overview.capacity),
+      factGroup('Economy', overview.economy),
+      factGroup('City shape', overview.shape),
+      factGroup('Infrastructure', overview.infrastructure),
+    );
+  }
+
+  private paintTradeReport(overview: CityOverviewModel | null): void {
+    if (overview === null) {
+      this.tradeReportPanel.replaceChildren();
+      return;
+    }
+    const report = overview.trade;
+    const links = report.links.length === 0 ? 'None' : report.links.join(' · ');
+    this.tradeReportPanel.replaceChildren(
+      sectionTitle('Last tick'),
+      factRows([
+        { label: 'Connections', value: links },
+        { label: 'Food imported', value: `${report.food.toFixed(1)} / tick` },
+        { label: 'Materials exported', value: `${report.materials.toFixed(1)} / tick` },
+        {
+          label: 'Trade balance',
+          value: `${report.funds > 0 ? '+' : ''}${report.funds.toFixed(1)} funds / tick`,
+          tone: report.funds >= 0 ? 'positive' : 'warning',
+        },
+      ]),
+    );
+  }
+
+  private paintHistory(overview: CityOverviewModel | null): void {
+    if (overview === null) {
+      this.historyPanel.replaceChildren(note('The city is getting ready.'));
+      return;
+    }
+    const mandates = document.createElement('div');
+    mandates.className = 'mandate-list';
+    if (overview.mandates.length === 0) {
+      mandates.appendChild(note('No standing mandates. Decisions that reshape districts will appear here.'));
+    } else {
+      for (const mandate of overview.mandates) {
+        const item = document.createElement('article');
+        item.className = 'mandate-item';
+        const head = document.createElement('div');
+        const name = document.createElement('strong');
+        name.textContent = mandate.label;
+        const family = document.createElement('span');
+        family.textContent = mandate.family;
+        head.append(name, family);
+        const effect = document.createElement('p');
+        effect.textContent = mandate.effect;
+        item.append(head, effect);
+        mandates.appendChild(item);
+      }
+    }
+
+    const decisions = document.createElement('div');
+    decisions.className = 'decision-history';
+    if (overview.history.length === 0) {
+      decisions.appendChild(note('No decisions have been resolved yet.'));
+    } else {
+      for (const decision of overview.history) {
+        const row = document.createElement('div');
+        const tick = document.createElement('span');
+        tick.textContent = `Tick ${decision.tick}`;
+        const summary = document.createElement('strong');
+        summary.textContent = decision.summary;
+        row.append(tick, summary);
+        decisions.appendChild(row);
+      }
+    }
+
+    this.historyPanel.replaceChildren(
+      sectionTitle('Standing mandates'),
+      mandates,
+      sectionTitle('Recent decisions'),
+      decisions,
+    );
   }
 
   private createPolicyButton(policy: HudPolicy): HTMLButtonElement {
@@ -276,4 +424,74 @@ export class PolicyDrawer {
     note.textContent = commerce.message;
     this.commercePanel.appendChild(note);
   }
+}
+
+function goalGroup(title: string, goals: readonly OverviewGoal[]): HTMLElement {
+  const group = document.createElement('section');
+  group.className = 'overview-group';
+  group.appendChild(sectionTitle(title));
+  const rows = document.createElement('div');
+  rows.className = 'goal-list';
+  for (const goal of goals) {
+    const row = document.createElement('div');
+    row.className = 'goal-row';
+    row.dataset.met = goal.met ? 'true' : 'false';
+    const label = document.createElement('span');
+    label.textContent = goal.label;
+    const value = document.createElement('strong');
+    value.textContent = goal.value;
+    const track = document.createElement('span');
+    track.className = 'goal-track';
+    const fill = document.createElement('span');
+    fill.className = 'goal-fill';
+    fill.style.width = `${Math.round(goal.progress * 100)}%`;
+    track.appendChild(fill);
+    row.append(label, value, track);
+    rows.appendChild(row);
+  }
+  group.appendChild(rows);
+  return group;
+}
+
+function factGroup(title: string, facts: readonly OverviewFact[]): HTMLElement {
+  const group = document.createElement('section');
+  group.className = 'overview-group';
+  group.append(sectionTitle(title), factRows(facts));
+  return group;
+}
+
+function factRows(facts: readonly OverviewFact[]): HTMLElement {
+  const rows = document.createElement('div');
+  rows.className = 'overview-facts';
+  for (const fact of facts) {
+    const row = document.createElement('div');
+    row.className = 'overview-fact';
+    row.dataset.tone = fact.tone ?? 'neutral';
+    const label = document.createElement('span');
+    label.textContent = fact.label;
+    const value = document.createElement('strong');
+    value.textContent = fact.value;
+    row.append(label, value);
+    if (fact.note !== undefined) {
+      const detail = document.createElement('small');
+      detail.textContent = fact.note;
+      row.appendChild(detail);
+    }
+    rows.appendChild(row);
+  }
+  return rows;
+}
+
+function sectionTitle(value: string): HTMLElement {
+  const title = document.createElement('h3');
+  title.className = 'drawer-section-title';
+  title.textContent = value;
+  return title;
+}
+
+function note(value: string): HTMLElement {
+  const message = document.createElement('p');
+  message.className = 'drawer-note';
+  message.textContent = value;
+  return message;
 }

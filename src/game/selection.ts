@@ -6,9 +6,11 @@ import {
   FARM_KIND,
   effectiveCount,
   foodYieldOf,
+  catalystRoleOf,
   urbanProfileAt,
   weightsOf,
   type BuildingClass,
+  type Catalyst,
   type LocalUrbanProfile,
   type SimState,
 } from '../sim';
@@ -151,6 +153,8 @@ export interface UseInfo {
  */
 export interface StructureInfo {
   readonly record: BuildingRecord;
+  /** Catalizzatore rappresentato dal landmark, se questa struttura ne ha uno. */
+  readonly catalyst: Catalyst | null;
   /** true se qualcosa le e' appeso: chi regge non promuove piu'. */
   readonly carries: boolean;
   readonly spans: readonly BuildingRecord[];
@@ -309,6 +313,7 @@ function structureAt(
 
   return {
     record,
+    catalyst: catalystOf(state, record),
     carries: registry.carries(record.id),
     spans: registry.spansOf(record.id),
     decks: registry.decksOf(record.id),
@@ -474,6 +479,24 @@ function blockAt(query: SelectionQuery, key: string, rect: BlockRect): BlockInfo
       staffing: query.state.staffing,
     },
   };
+}
+
+/**
+ * Il catalizzatore a cui appartiene un landmark.
+ *
+ * L'ancora cliccata non coincide quasi mai con `record.x, record.y`: il record
+ * conserva l'angolo minimo della ricetta, mentre il catalizzatore resta nella
+ * colonna scelta dal giocatore. Ruolo e riquadro servono entrambi, perche' un
+ * ingombro largo puo' contenere piu' catalizzatori di natura diversa.
+ */
+function catalystOf(state: SimState, record: BuildingRecord): Catalyst | null {
+  const kind = record.landmark;
+  if (kind === undefined) return null;
+  const depth = footprintDepth(record);
+  return state.catalysts.find((catalyst) =>
+    catalystRoleOf(catalyst) === kind &&
+    catalyst.x >= record.x && catalyst.x < record.x + record.footprint &&
+    catalyst.y >= record.y && catalyst.y < record.y + depth) ?? null;
 }
 
 /**

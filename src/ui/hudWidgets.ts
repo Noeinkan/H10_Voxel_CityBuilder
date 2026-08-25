@@ -76,6 +76,12 @@ export function tileButton(
  */
 function onActivate(button: HTMLButtonElement, onClick: () => void): void {
   button.addEventListener('click', (event) => {
+    // Un'azione ancora bloccata resta raggiungibile: il fuoco apre la scheda
+    // che spiega requisito e avanzamento, ma il gesto non arriva al mondo.
+    if (button.getAttribute('aria-disabled') === 'true') {
+      button.focus();
+      return;
+    }
     if (event.detail > 0) button.blur();
     onClick();
   });
@@ -128,7 +134,11 @@ export function textButton(label: string, tooltip: string, onClick: () => void):
 
 export function paintAction(button: HTMLButtonElement | undefined, action: HudAction): void {
   if (button === undefined) return;
-  button.disabled = !action.available;
+  // `disabled` toglierebbe il bottone dall'ordine di tabulazione e impedirebbe
+  // proprio di leggere perche' non e' ancora disponibile. `aria-disabled`
+  // comunica lo stesso stato senza nascondere la spiegazione.
+  button.disabled = false;
+  button.setAttribute('aria-disabled', action.available ? 'false' : 'true');
   // Bloccato ma visibile: il bottone resta al suo posto e cambia solo stato,
   // cosi' la toolbar non si riordina sotto il dito mentre i fondi salgono.
   button.dataset.locked = action.locked === true ? 'true' : 'false';

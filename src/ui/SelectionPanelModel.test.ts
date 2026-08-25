@@ -39,7 +39,16 @@ function record(extra: Partial<BuildingRecord> = {}): BuildingRecord {
 }
 
 function structure(extra: Partial<BuildingRecord> = {}, info: Partial<StructureInfo> = {}): StructureInfo {
-  return { record: record(extra), carries: false, spans: [], decks: [], supports: [], uses: [], ...info };
+  return {
+    record: record(extra),
+    catalyst: null,
+    carries: false,
+    spans: [],
+    decks: [],
+    supports: [],
+    uses: [],
+    ...info,
+  };
 }
 
 function use(extra: Partial<UseInfo> = {}): UseInfo {
@@ -130,10 +139,16 @@ describe('buildSelectionPanelModel', () => {
     const model = buildSelectionPanelModel(selection(structure({ landmark: 'port', level: 2 })));
     const section = sectionOf(model, 'structure');
 
+    expect(model.title).toBe('Port');
     expect(section.title).toBe('Port');
     expect(section.summary).toContain('stage 2');
     expect(section.summary).not.toContain('level');
-    expect(rowsOf(model, 'structure').join(' ')).not.toContain('Use:');
+    const rows = rowsOf(model, 'structure');
+    expect(rows).toContain('Reach: radius 60 · follows streets and terrain');
+    expect(rows.some((row) => row.startsWith('Centre strength:'))).toBe(true);
+    expect(rows.some((row) => row.startsWith('Favours:'))).toBe(true);
+    expect(rows.some((row) => row.startsWith('Penalises:'))).toBe(true);
+    expect(rows.join(' ')).not.toContain('Use:');
   });
 
   it('una campata non mostra un uso urbano, benche\' il record ne porti uno', () => {
@@ -232,8 +247,9 @@ describe('buildSelectionPanelModel', () => {
     expect(model.title).toContain('Block');
   });
 
-  it('la selezione apre sempre l\'isolato, anche quando il click colpisce un edificio', () => {
+  it('un landmark apre la propria struttura, gli altri click restano sull\'isolato', () => {
     expect(defaultSection(selection(structure()))).toBe('block');
+    expect(defaultSection(selection(structure({ landmark: 'port' })))).toBe('structure');
     expect(defaultSection(selection(null))).toBe('block');
   });
 

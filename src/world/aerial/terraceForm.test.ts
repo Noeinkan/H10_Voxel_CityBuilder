@@ -6,7 +6,6 @@ import {
   cornerCutOf,
   overhangOf,
   terraceEdge,
-  terraceGirder,
   terraceShape,
   terraceSide,
   type TerraceSide,
@@ -14,7 +13,7 @@ import {
 
 /**
  * La forma di una mensola, verificata sui due difetti che questo file esiste per
- * togliere: **erano tutte quadrate** e **erano spesse uguale dappertutto**.
+ * togliere: **erano tutte quadrate** e senza un davanti leggibile.
  *
  * Sono due proprieta' che si controllano senza mondo e senza GPU — entrano un
  * numero e un riquadro — ed e' il motivo per cui la forma sta in un modulo puro
@@ -64,42 +63,6 @@ describe('terraceShape — la pianta', () => {
 
   it('e una funzione del seme, non un tiro: lo stesso seme da la stessa forma', () => {
     expect(terraceShape(RUN, 12345)).toEqual(terraceShape(RUN, 12345));
-  });
-});
-
-describe('terraceGirder — la sezione che si assottiglia', () => {
-  const rect: DeckRect = { x: 10, y: 0, sizeX: RUN, sizeY: 6 };
-  const cut = cornerCutOf(rect);
-
-  /** Voxel pieni sotto una colonna, il piano escluso. */
-  function girders(gx: number, gy: number): number {
-    let count = 0;
-    for (let layer = 0; layer < AERIAL.girderDepth; layer++) {
-      if (terraceGirder(rect, EAST, cut, gx, gy, layer)) count++;
-    }
-    return count;
-  }
-
-  it('all attacco e grossa, alla punta e una lastra sola', () => {
-    // Tre voxel dove scarica sulla parete — due di trave piu' il piano — e uno
-    // solo all'estremo. E' la rastremazione, ed e' cio' che toglie alla mensola
-    // la lettura di cassa appesa al muro.
-    expect(girders(rect.x, 3) + 1).toBe(AERIAL.girderDepth + 1);
-    expect(girders(rect.x + rect.sizeX - 1, 3) + 1).toBe(1);
-  });
-
-  it('la trave bassa finisce dove finisce la mensola vera', () => {
-    for (let gx = rect.x; gx < rect.x + rect.sizeX; gx++) {
-      const near = gx - rect.x < AERIAL.terrace.taperReach;
-      expect(terraceGirder(rect, EAST, cut, gx, 3, 0), `colonna ${gx}`).toBe(near);
-    }
-  });
-
-  it('il cuore resta vuoto: una mensola non e un blocco pieno', () => {
-    // Fuori dalla zona d'attacco la trave alta sta sul filo e basta, come per
-    // tutti gli impalcati di questo dominio.
-    expect(terraceGirder(rect, EAST, cut, rect.x + 4, 3, 1)).toBe(false);
-    expect(terraceGirder(rect, EAST, cut, rect.x + 4, rect.y, 1)).toBe(true);
   });
 });
 

@@ -5,10 +5,14 @@ alwaysApply: true
 
 # Budget di verifica
 
+- La fase di verifica ha un budget predefinito di **10 minuti complessivi**. Alla scadenza fermati, consegna i risultati disponibili e indica cio' che non hai verificato; superalo solo su richiesta esplicita dell'utente.
 - Non eseguire automaticamente `npm test` per una modifica ordinaria o localizzata, nemmeno alla consegna.
 - Durante l'iterazione usa il controllo piu' stretto che copre davvero il cambiamento: un singolo file di test oppure `npm run test:related -- <file-sorgente>`.
 - Usa `npm run test:changed` solo quando il diff e' abbastanza stretto da non trascinare quasi tutta la suite.
 - Esegui `npm run typecheck` quando tocchi TypeScript; esegui `npm run build` solo per bundle, worker o cambiamenti che richiedono davvero la build.
 - La suite completa e' riservata a una richiesta esplicita dell'utente oppure a modifiche trasversali per cui i test mirati non possono coprire onestamente il rischio. Prima di lanciarla, indica brevemente quel rischio.
+- Non eseguire lo stesso controllo fallito piu' di **due volte** senza una modifica pertinente fra i tentativi. Se il secondo fallimento e' identico o riguarda codice estraneo al diff, registralo e smetti di inseguirlo.
+- Per browser, GUI o infrastruttura esterna fai al massimo **un tentativo iniziale e un solo recupero**. Se falliscono per lo stesso problema di ambiente, interrompi la verifica visuale e segnalalo; non trasformare il collaudo in troubleshooting dell'infrastruttura.
+- Non correggere test o fixture estranei soltanto per ottenere una suite verde: sono lavoro fuori ambito e richiedono una richiesta separata.
 - Non ripetere un controllo gia' verde dopo modifiche che non possono influenzarlo, come sola documentazione.
 - Nel riepilogo elenca i controlli eseguiti e segnala con chiarezza quelli intenzionalmente non eseguiti.

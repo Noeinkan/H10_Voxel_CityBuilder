@@ -11,6 +11,58 @@ coincide con il messaggio di commit.
 
 ---
 
+## In corso — La citta' leggibile
+
+- **Un centro informativo unico.** Il bottone `City` apre una panoramica degli obiettivi e delle informazioni globali che prima vivevano solo nello stato: capacita' abitativa, organico, copertura alimentare, bilanci, tipologie, livelli, infrastrutture e progresso verso l'autosufficienza.
+- **Scambi e decisioni verificabili.** Il drawer mostra il referto dell'ultimo tick commerciale, i collegamenti attivi, i mandati permanenti e le decisioni recenti invece di lasciare visibili soltanto i comandi che li modificano.
+- **Blocchi spiegabili anche da tastiera.** Le azioni non ancora disponibili usano `aria-disabled`: non si attivano, ma restano nel percorso del focus e aprono la scheda con requisito e avanzamento.
+
+## In corso — Skyport di facciata
+
+- **Lo Skyport si appende agli edifici come una terrazza.** Puntando con l'aeroporto una torre di livello 7 o superiore e larga almeno otto voxel, il mirino si orienta sulla sua facciata e lo scalo nasce interamente fuori dall'impronta, alla quota letta dalla parete; gli sporti profondi ricevono i piloni calcolati dalla stessa regola della citta' in quota. Dirigibili, eVTOL e mongolfiere restano collegati al catalizzatore piantato dentro l'ospite.
+
+## In corso — Regole world a contesto locale
+
+- **Il contesto segue il dominio.** `src/world/AGENTS.md` conserva soltanto i contratti comuni e instrada verso `AGENTS.md` locali; le spiegazioni estese restano integralmente in `docs/world/`, cosi' terreno, edifici, traffico e gli altri sottodomini caricano solo i riferimenti pertinenti.
+
+## In corso — L'economia del cibo torna risolvibile, e il gioco lo dice
+
+- **`plotsPerPass` era metà di ciò che la sua derivazione diceva.** Scritto a mano in `FARMS` valeva `6`, mentre il conto nel commento accanto — `sitesPerBuild / ticksPerBuild` edifici per tick, tutti residenziali, un campo ogni due case, più il margine di `food.targetCoverage` — ne dava `12`. Sotto il tetto giusto l'offerta agricola tornava una costante contro una domanda che cresce con la città. Misurato su terreno pianeggiante, 1394 tick di fame contro 212. Adesso è un prodotto, `PLOTS_PER_PASS` in `farmDriver.ts`, dove i vocabolari di `BUILDER` e di `BALANCE` già si toccano, ed è legato da un test.
+- **Un campo con un masso in mezzo è ancora un campo.** `planPlot` rifiutava il quadrato intero alla prima colonna sterile o ripida: su una costa frastagliata quella regola non scarta i posti sbagliati, scarta quelli *quasi* giusti. L'isola tarata ha 31.900 colonne coltivabili — terra per 443 case — e i quadrati interamente puliti ne sfamavano 214. Con `FARMS.minArableShare` a nove decimi passano da 107 a 144 e le case sfamate da 214 a 288, senza costo a schermo: il solco è invisibile proprio sui biomi tollerati. L'occupazione resta invece assoluta.
+- **La soglia che apre la via verticale stava sopra il proprio soffitto.** `farming.density` valeva `0.52`, ma i ruoli che portano industria arrivano al massimo a `0.444` — mercato e fabbrica sulla stessa colonna, misurato — quindi nessuna città di soli ruoli di crescita poteva esprimere `farming`. A `0.40` la fascia esiste ed è stretta: con un Transit accanto alla fabbrica le torri idroponiche passano da 49 a 69 e i tick affamati da 1497 a 707 su 3000.
+- **Correzione a margine.** `orchardTrees` poteva piantare un albero fuori dal proprio lotto: il margine di mezza chioma era imposto sul bordo vicino e non su quello lontano, dove il jitter poteva scavalcarlo. A lato dodici non si vedeva per aritmetica, ma era vero lo stesso.
+- **La voce che guida il giocatore adesso nomina un gesto.** Diceva *«Add production near a residential area»* a una città affamata, e quel gesto non produce cibo. I consigli vivono in [src/game/tips.ts](src/game/tips.ts) — crisi, colli di bottiglia che nessuna barra mostra (l'organico condiviso, gli scaffali vuoti, la campagna rimasta indietro), opportunità e meccaniche non dette — e `cityCondition` sceglie di cosa si parla. La riga ha una permanenza minima di otto secondi, tenuta da `GrowthScene`: le condizioni si valutano dieci volte al secondo su segnali che oscillano, e senza sfarfallava fra due consigli ogni secondo e mezzo. Le crisi interrompono comunque, in entrata e in uscita.
+
+## In corso — Arcologie raggiungibili e ramificate
+
+- **Tre megastrutture invece di una sola irraggiungibile.** Branching Core divide un nucleo in quattro bracci e Sky Weave incrocia tre steli su quote diverse; entrambe entrano negli isolati giocabili da quattordici colonne, mentre Twin Stem resta sugli isolati larghi. La scelta e' deterministica per isolato e la maturita' viene verificata con forza e portata reali del mercato, cosi' la fase non resta verde soltanto nella fixture privilegiata.
+
+## In corso — Ponti automatici fra isole
+
+- **Lo skyline secondario apre il collegamento.** Un settore acquistato che sviluppa una torre abbastanza alta cerca una torre affacciata nella citta' primaria e genera automaticamente un ponte in quota soltanto sopra un canale d'acqua reale; la struttura compare a segmenti nel budget, non prende suolo e cade se cambia uno dei due appoggi.
+- **Collegarsi conviene.** Ogni ponte vivo aggiunge otto punti al bersaglio della soddisfazione, con tetto difensivo e compatibilita' per i salvataggi precedenti, quindi il nuovo quartiere riceve un vantaggio misurabile sulla crescita della popolazione.
+
+## In corso — Scalo in quota riconoscibile
+
+- **Lo Skyport si scopre dal dock.** La scheda dell'Aeroporto ora spiega che un click su un tetto 8×8 di livello 7 o superiore costruisce lo scalo per dirigibili, eVTOL e mongolfiere, invece di mostrare soltanto il requisito della radura per la pista a terra.
+
+## In corso — Impalcati sottili e idroponica leggibile
+
+- Mensole e passerelle sono ora lastre da un solo voxel: gambe, teste dei nodi e microgeometria raccontano il carico senza un bordo pieno alto tre voxel.
+- `roofGarden` dipinge anche la copertura vera, non soltanto le rientranze del corpo. Le torri idroponiche uniscono così le fasce verdi illuminate della facciata a una vasca visibile dall'alto nella vista isometrica della città.
+
+## In corso — Selezione e influenza dei landmark
+
+- **I landmark si possono studiare direttamente.** Un click su un landmark apre la sua scheda invece dell'isolato, evidenzia l'ingombro e mostra sul terreno il campo geodetico completo con gradiente e isolinee; la scheda dichiara inoltre portata, intensita', usi favoriti e usi penalizzati del catalizzatore reale associato.
+
+## In corso — L'economia del cibo torna risolvibile
+
+- **`plotsPerPass` era metà di ciò che la sua derivazione diceva.** Scritto a mano in `FARMS` valeva `6`, mentre il conto nel commento accanto — `sitesPerBuild / ticksPerBuild` edifici per tick, tutti residenziali, un campo ogni due case, più il margine di `food.targetCoverage` — ne dava `12`. Sotto il tetto giusto l'offerta agricola tornava una costante contro una domanda che cresce con la città. Misurato su terreno pianeggiante, 1394 tick di fame contro 212. Adesso è un prodotto, `PLOTS_PER_PASS` in `farmDriver.ts`, dove i vocabolari di `BUILDER` e di `BALANCE` già si toccano, ed è legato da un test.
+- **Un campo con un masso in mezzo è ancora un campo.** `planPlot` rifiutava il quadrato intero alla prima colonna sterile o ripida: su una costa frastagliata quella regola non scarta i posti sbagliati, scarta quelli *quasi* giusti. L'isola tarata ha 31.900 colonne coltivabili — terra per 443 case — e i quadrati interamente puliti ne sfamavano 214. Con `FARMS.minArableShare` a nove decimi passano da 107 a 144 e le case sfamate da 214 a 288, senza costo a schermo: il solco è invisibile proprio sui biomi tollerati. L'occupazione resta invece assoluta.
+- **La via verticale al cibo era dichiarata e chiusa nei numeri.** La soglia `farming.density` valeva `0.52`, ma i ruoli che portano industria arrivano al massimo a `0.444` — mercato e fabbrica sulla stessa colonna, misurato: era irraggiungibile per costruzione. E `hydroponicTower.minLevel` chiedeva il livello 5, dove su 225 edifici industriali il più alto raggiunto era 4. Con `0.40` e livello `3` le torri nascono dove il quartiere è davvero denso e industriale.
+- **Effetto misurato**, isola vera, stessa base, tutorial mercato/fabbrica/parco: la quota di domanda alimentare servita passa da `0.60` a `0.84`; aggiungendo un Transit sulla fabbrica passa da `0.71` a `1.00`, con 85 torri idroponiche contro 23 e i tick affamati da 2877 a 770 su 3000.
+- **Correzione a margine.** `orchardTrees` poteva piantare un albero fuori dal proprio lotto: il margine di mezza chioma era imposto sul bordo vicino e non su quello lontano, dove il jitter poteva scavalcarlo. A lato dodici non si vedeva per aritmetica, ma era vero lo stesso.
+
 ## In corso — Puntatore dei componenti da facciata
 
 - `PlacementCursor` riceve ora il piano di appoggio del componente: resta orizzontale su suolo e tetti e ruota di 90 gradi sulle quattro facciate verticali.

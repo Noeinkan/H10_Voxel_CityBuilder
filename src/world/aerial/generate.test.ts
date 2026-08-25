@@ -23,7 +23,7 @@ function ledge(depth = AERIAL.reach): DeckPlan {
   const result = planDeck({ rect, deckZ: 30, anchors: [anchor], ...ground });
   if (!result.ok) throw new Error(`il caso di prova non regge: ${result.refusal}`);
   // Senza gambe la sezione e' solo quella della mensola: `overPier` non ci mette
-  // nervature in mezzo, e cio' che si misura e' la rastremazione e basta.
+  // teste in mezzo, e cio' che si misura e' la lastra e basta.
   expect(result.plan.piers).toHaveLength(0);
   return result.plan;
 }
@@ -38,13 +38,15 @@ function columnHeight(stamp: VoxelStamp, lx: number, ly: number): number {
 }
 
 describe('generateDeck — la sezione di una mensola', () => {
-  it('cala dalla parete alla punta invece di essere spessa uguale', () => {
+  it('resta una lastra da un voxel dalla parete alla punta', () => {
     const plan = ledge();
     const stamp = generateDeck(plan, AERIAL_PART.terrace, plan.segments[0]);
     const mid = 3;
 
-    // All'attacco la travatura c'e' tutta; all'estremo resta il solo piano.
-    expect(columnHeight(stamp, 0, mid)).toBe(AERIAL.girderDepth + 1);
+    // Il valore e' fissato, non dedotto dalla configurazione: e' il test che
+    // impedisce alla mensola di tornare al volume alto tre visto in partita.
+    expect(stamp.sizeZ).toBe(1);
+    expect(columnHeight(stamp, 0, mid)).toBe(1);
     expect(columnHeight(stamp, stamp.sizeX - 1, mid)).toBe(1);
   });
 
@@ -59,17 +61,15 @@ describe('generateDeck — la sezione di una mensola', () => {
     expect(columnHeight(stamp, 0, stamp.sizeY - 1)).toBeGreaterThan(0);
   });
 
-  it('un tratto di percorso resta l impalcato simmetrico di sempre', () => {
-    // **La rastremazione e' della mensola, non degli impalcati.** Un tratto sta
-    // in aria appeso ai propri capi: non ha un davanti rispetto a cui calare, e
-    // assottigliargli un lato lo lascerebbe storto senza motivo.
+  it('anche un tratto di percorso e una lastra da un voxel', () => {
     const plan = ledge();
     const stamp = generateDeck(plan, AERIAL_PART.walk, plan.segments[0]);
     const mid = 3;
 
-    expect(columnHeight(stamp, 0, mid)).toBe(AERIAL.girderDepth + 1);
-    expect(columnHeight(stamp, stamp.sizeX - 1, mid)).toBe(AERIAL.girderDepth + 1);
-    expect(columnHeight(stamp, stamp.sizeX - 1, 0)).toBe(AERIAL.girderDepth + 1);
+    expect(stamp.sizeZ).toBe(1);
+    expect(columnHeight(stamp, 0, mid)).toBe(1);
+    expect(columnHeight(stamp, stamp.sizeX - 1, mid)).toBe(1);
+    expect(columnHeight(stamp, stamp.sizeX - 1, 0)).toBe(1);
   });
 });
 

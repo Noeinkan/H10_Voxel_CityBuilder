@@ -42,10 +42,10 @@ let city: City;
 /**
  * Una citta' matura su un'isola intera.
  *
- * Il catalizzatore e' largo e forte di proposito: serve un **centro saturo**,
- * cioe' un posto dove la quota ammessa e' gia' stata raggiunta dai vicini, e su
- * un'isola piccola quel posto non esiste — la fascia `core` di `skyline/` la
- * ritaglia dalla citta' costruita, non dalla mappa.
+ * Il mercato usa esattamente forza e portata del catalogo giocabile: una
+ * megastruttura raggiungibile solo dalla fixture a forza 255 esisterebbe nei
+ * test ma non in partita. Serve comunque un'isola intera, perche' la fascia
+ * `core` di `skyline/` la ritaglia dalla citta' costruita, non dalla mappa.
  */
 function grow(): City {
   const world = new VoxelWorld();
@@ -64,8 +64,8 @@ function grow(): City {
     x: 128,
     y: 128,
     class: BUILDING_CLASS.residential,
-    strength: 255,
-    radius: 96,
+    strength: BALANCE.gameplay.catalyst.roles.market.strength,
+    radius: BALANCE.gameplay.catalyst.roles.market.radius,
   });
 
   for (let i = 0; i < 1600; i++) {
@@ -93,7 +93,10 @@ describe('ArcologyDriver — sulla citta cresciuta', () => {
     // vederne mai una.** E' successo: con un `isPeakBlock` in piu' nella
     // condizione l'intersezione era vuota su ogni seed, e ogni altro test del
     // dominio restava verde perche' nessuno guardava la citta'.
-    expect(arcologies(city.builder).length).toBeGreaterThan(0);
+    expect(
+      arcologies(city.builder).length,
+      `ultimo rifiuto: ${city.builder.stats.arcologyRefusal ?? 'nessuno'}`,
+    ).toBeGreaterThan(0);
     expect(city.builder.stats.arcologies).toBe(arcologies(city.builder).length);
   });
 

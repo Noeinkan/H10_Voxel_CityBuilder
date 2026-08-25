@@ -53,6 +53,15 @@ describe('buildGameHudModel', () => {
     expect(market?.unlocks?.join(' ') ?? '').not.toContain('Hydroponic tower');
   });
 
+  it('l aeroporto insegna come costruire lo scalo in quota', () => {
+    const model = buildGameHudModel(stats(2_000, 100));
+    const airport = model.catalysts.find((action) => action.catalystId === 'airport');
+
+    expect(airport?.site).toContain('level 7+ facade at least 8 voxels wide');
+    expect(airport?.description).toContain('Skyport');
+    expect(airport?.description).toContain('airships, eVTOLs and balloons');
+  });
+
   it('abilita tutte le azioni quando i requisiti sono soddisfatti', () => {
     const model = buildGameHudModel(stats(2_000, 100));
 

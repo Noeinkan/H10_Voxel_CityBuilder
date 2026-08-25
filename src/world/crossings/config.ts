@@ -44,6 +44,26 @@ export type CrossingKind = (typeof CROSSING_KIND)[keyof typeof CROSSING_KIND];
 
 export const CROSSINGS = {
   /**
+   * La passata che trasforma un settore secondario maturo in un quartiere
+   * collegato alla citta' primaria.
+   *
+   * La geometria continua a rispondere alle soglie qui sotto: questa riga
+   * decide soltanto quanto spesso cercarla e quanto lavoro puo' ammettere. Un
+   * ponte per settore basta a dichiarare il collegamento; gli altri percorsi in
+   * quota restano il mestiere di `spans/`.
+   */
+  automatic: {
+    /** Due secondi e mezzo a 10 tick/s: la crescita si vede prima del ponte. */
+    ticksPerPass: 25,
+    /** Torri mature esaminate per settore in una passata. */
+    towersPerRegion: 32,
+    /** Acqua continua minima sotto la mezzeria: un canale, non una pozzanghera. */
+    minWaterRun: TERRAIN.cellSize * 2,
+    /** Tetto per ogni segmento che entra nella coda di crescita. */
+    maxDirtyChunks: 4,
+  },
+
+  /**
    * Larghezza dell'impalcato, in voxel.
    *
    * La stessa delle campate, e per la stessa ragione: sei voxel sono tre cubi di

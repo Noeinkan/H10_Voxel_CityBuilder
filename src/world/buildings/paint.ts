@@ -227,7 +227,14 @@ export function paint(request: PaintRequest): VoxelStamp {
           // Il bordo resta pavimentato anche quando il cuore e' verde: ci si
           // affaccia, e il parapetto lo dice. Un giardino fino al filo del vuoto
           // sarebbe un prato sospeso, non una terrazza piantata.
-          const planted = open && request.garden !== null && inset(rect, sx, sy);
+          const terracePlanted = open && request.garden !== null && inset(rect, sx, sy);
+          // `roofGarden` deve arrivare anche sulla copertura vera. Prima il
+          // verde compariva soltanto quando una fascia arretrava di almeno tre
+          // voxel: una torre idroponica a corpo diritto dichiarava il giardino
+          // nel catalogo e non ne mostrava nemmeno una cella dall'alto.
+          const roofPlanted = request.garden !== null && b === rects.length - 2 &&
+            sz === top && inset(rect, sx, sy);
+          const planted = terracePlanted || roofPlanted;
 
           const accent = !isCrown && !isRoofProp && !open && sz >= GRAMMAR.plinthHeight &&
             lit && (litFull || sz === top) &&

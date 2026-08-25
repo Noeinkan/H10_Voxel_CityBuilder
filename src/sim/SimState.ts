@@ -90,6 +90,9 @@ export interface SimStateData {
   /** Modificatore di soddisfazione, sempre in [0, 1]. */
   readonly satisfaction: number;
 
+  /** Ponti in quota vivi fra citta' primaria e settori secondari. */
+  readonly islandConnections: number;
+
   readonly buildings: readonly Building[];
 
   /** Edifici per **uso primario**, indicizzato come `BUILDING_CLASS`. */
@@ -265,6 +268,7 @@ export function createSimState(options: SimStateOptions = {}): SimState {
     materials: resource(BALANCE.start.materials),
     funds: resource(BALANCE.start.funds),
     satisfaction: BALANCE.start.satisfaction,
+    islandConnections: 0,
     buildings: [],
     buildingCounts: new Array<number>(CLASS_COUNT).fill(0),
     capacityCounts: new Array<number>(CLASS_COUNT).fill(0),
@@ -547,6 +551,16 @@ export function setSelectedClass(state: SimState, cls: BuildingClass): SimState 
   return { ...state, selectedClass: cls };
 }
 
+/** Sincronizza i collegamenti costruiti dal mondo senza toccare il campo. */
+export function setIslandConnections(state: SimState, count: number): SimState {
+  const islandConnections = Math.max(0, Math.min(
+    BALANCE.satisfaction.maxIslandBridges,
+    Math.floor(Number.isFinite(count) ? count : 0),
+  ));
+  if (islandConnections === state.islandConnections) return state;
+  return { ...state, islandConnections };
+}
+
 /** Cambia la priorita commerciale; non effettua scambi fuori dal tick. */
 export function setTradeMode(state: SimState, mode: TradeMode): SimState {
   if (state.tradeMode === mode) return state;
@@ -625,6 +639,7 @@ export function reviveSimState(data: SimStateData, reachCost?: StepCost): SimSta
     'tradeMode' | 'trade' | 'commerce' | 'mixedCounts' | 'charters' | 'farmCounts'
     | 'capacityCounts' | 'mixedCapacityCounts' | 'flows' | 'harvest' | 'materialFlows' | 'staffing'
     | 'pendingDecision' | 'decisionHistory' | 'nextDecisionTick' | 'supplyArmed'
+    | 'islandConnections'
   >>;
   const normalised: SimStateData = {
     ...data,
@@ -664,6 +679,7 @@ export function reviveSimState(data: SimStateData, reachCost?: StepCost): SimSta
     // citta' mangia, resta armato senza aver disturbato nessuno; se non mangia,
     // l'emergenza e' proprio la cosa che va chiesta.
     supplyArmed: compatible.supplyArmed ?? true,
+    islandConnections: compatible.islandConnections ?? 0,
   };
   const field = new DesirabilityField(reachCost);
   field.rebuild(normalised.catalysts, normalised.buildings, resolveWeights(normalised.policies));

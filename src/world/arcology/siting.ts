@@ -19,9 +19,10 @@ import { ARCOLOGY } from './config';
  * c'e' molta citta'» e' vero in mezzo nucleo di una partita matura; la domanda a
  * cui l'arcologia e' la risposta e' un'altra — «qui la citta' non ha piu' niente
  * da diventare» — e a dirla e' `cappedNeighbours`, cioe' quanti vicini hanno
- * gia' toccato la propria quota ammessa. Senza quella misura la megastruttura
- * arriverebbe in un quartiere che stava ancora crescendo per conto suo, e gli
- * toglierebbe il posto invece di dargli un seguito.
+ * gia' finito di crescere — al tetto oppure reso immutabile da una struttura
+ * abitata in quota. Senza quella misura la megastruttura arriverebbe in un
+ * quartiere che stava ancora crescendo per conto suo, e gli toglierebbe il
+ * posto invece di dargli un seguito.
  *
  * **`isPeakBlock` qui non entra, e la misura ha smentito il progetto.** Sembrava
  * ovvio chiedere che l'arcologia stesse su uno degli isolati che la 4.6 elegge a
@@ -88,7 +89,7 @@ export interface ArcologyQuery {
   readonly spanY: number;
   /** Record entro `ARCOLOGY.radius`. */
   readonly builtNeighbours: number;
-  /** Quanti di quelli hanno gia' raggiunto la propria quota ammessa. */
+  /** Quanti di quelli non possono piu' crescere. */
   readonly cappedNeighbours: number;
 }
 

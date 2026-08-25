@@ -168,6 +168,7 @@ export {
   removeFarm,
   reviveSimState,
   setCatalystStrength,
+  setIslandConnections,
   setPolicyActive,
   setSelectedClass,
   setTradeMode,

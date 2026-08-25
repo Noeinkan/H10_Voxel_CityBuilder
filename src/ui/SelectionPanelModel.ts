@@ -1,4 +1,4 @@
-import { BUILDING_CLASS, CLASS_LABELS, catalystById, type BuildingClass } from '../sim';
+import { BALANCE, BUILDING_CLASS, CLASS_LABELS, catalystById, type BuildingClass } from '../sim';
 import { PALETTE_SLOT_NAMES } from '../engine/paletteSlots';
 import { SURFACE_KIND_NAMES, WATER_CLASS, type SurfaceKind } from '../world/visualBlock';
 import { BIOME_NAMES } from '../world/terrain/config';
@@ -191,18 +191,18 @@ export function buildSelectionPanelModel(
   sections.push(blockSection(selection.block, isolatedBlock), columnSection(selection.column));
   sections.push(voxelSection(selection.voxel));
 
-  // La selezione del giocatore e' sempre l'isolato. Le letture piu' fini
-  // restano nel modello come diagnostica, ma non guidano piu' intestazione,
-  // contorno o gesto principale.
-  const lead = sections.find((section) => section.id === 'block')!;
+  const leadId = defaultSection(selection);
+  const lead = sections.find((section) => section.id === leadId)!;
   return { title: lead.title, summary: lead.summary, sections };
 }
 
 /**
- * La selezione di gioco ha una sola unita': l'isolato delimitato dalle strade.
+ * Un landmark e' un soggetto scelto direttamente: la sua scheda e il suo campo
+ * devono aprirsi al click. Negli altri casi resta l'isolato, l'unita' su cui il
+ * gioco sa offrire un gesto e un bilancio locale completo.
  */
-export function defaultSection(_selection: Selection): SelectionSectionId {
-  return 'block';
+export function defaultSection(selection: Selection): SelectionSectionId {
+  return selection.structure?.record.landmark === undefined ? 'block' : 'structure';
 }
 
 /**
@@ -246,7 +246,7 @@ export function extentOf(selection: Selection, section: SelectionSectionId): Sel
 function structureSection(selection: Selection): SelectionSection {
   const info = selection.structure!;
   const record = info.record;
-  const head = structureHead(record);
+  const head = structureHead(info);
   const rows: SelectionRow[] = [
     { label: 'Footprint', value: `${record.footprint} × ${footprintDepth(record)}` },
     { label: 'Height', value: `${record.height} voxels, from z ${record.baseZ}` },
@@ -438,7 +438,8 @@ interface StructureHead {
   readonly rows: readonly SelectionRow[];
 }
 
-function structureHead(record: BuildingRecord): StructureHead {
+function structureHead(info: StructureInfo): StructureHead {
+  const record = info.record;
   if (record.landmark !== undefined) {
     const recipe = landmarkOf(record.landmark);
     // Per un landmark `level` **e'** lo stadio: la stessa macchina lo fa
@@ -448,10 +449,19 @@ function structureHead(record: BuildingRecord): StructureHead {
       ? `stage ${record.level}`
       : `stage ${record.level} of ${maxStageOf(recipe)}`;
     const catalyst = catalystById(record.landmark);
+    const strength = info.catalyst?.strength
+      ?? catalyst.strength + record.level * BALANCE.gameplay.catalyst.stageBonus;
+    const favours = catalyst.favours.map((cls) => CLASS_LABELS[cls]).join(', ');
+    const penalises = catalyst.penalises.map((cls) => CLASS_LABELS[cls]).join(', ');
     return {
       title: catalyst.label,
       summary: `Landmark · ${stage}.`,
-      rows: [{ label: 'Influence', value: `radius ${catalyst.radius}` }],
+      rows: [
+        { label: 'Reach', value: `radius ${catalyst.radius} · follows streets and terrain` },
+        { label: 'Centre strength', value: `${strength}` },
+        { label: 'Favours', value: favours.length === 0 ? 'none' : favours },
+        { label: 'Penalises', value: penalises.length === 0 ? 'none' : penalises },
+      ],
     };
   }
 

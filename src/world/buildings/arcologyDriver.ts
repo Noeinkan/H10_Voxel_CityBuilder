@@ -9,10 +9,10 @@ import {
 } from '../../sim';
 import {
   ARCOLOGY,
-  ARCOLOGY_KIND,
   arcologyOf,
   type ArcologyRecipe,
 } from '../arcology/config';
+import { arcologyForBlock } from '../arcology/catalog';
 import {
   arcologyOrigin,
   arcologySpan,
@@ -252,8 +252,15 @@ export class ArcologyDriver {
 
       const rect = this.ctx.streets.blockRect(block);
       const anchor = arcologyAnchor(rect);
-      const recipe = arcologyOf(ARCOLOGY_KIND.twinStem);
-      const facing = this.facingAt(anchor.x, anchor.y, (recipe.span[0] >> 1) + 1);
+      const blockSide = Math.min(rect.x1 - rect.x0 + 1, rect.y1 - rect.y0 + 1);
+      const facing = this.facingAt(anchor.x, anchor.y, (blockSide >> 1) + 1);
+      const recipe = arcologyForBlock(
+        this.ctx.seed,
+        block.kx,
+        block.ky,
+        rect,
+        facing,
+      );
       const span = arcologySpan(recipe, facing);
 
       const refusal = arcologyReady({
@@ -353,7 +360,7 @@ export class ArcologyDriver {
   }
 
   /**
-   * Quanti vicini hanno gia' toccato la propria quota ammessa.
+   * Quanti vicini hanno gia' finito di crescere.
    *
    * **E' la misura che rende l'arcologia una risposta e non un capriccio**, ed e'
    * anche la piu' cara di questo dominio: `withinRadius` materializza i record e
@@ -369,7 +376,10 @@ export class ArcologyDriver {
         continue;
       }
       const cap = allowedLevel(this.ctx, record.x, record.y, state, riseOf(this.ctx, record));
-      if (record.level >= Math.min(cap, BUILDER.maxLevel)) capped++;
+      if (record.level >= Math.min(cap, BUILDER.maxLevel) ||
+        this.aerial.blocksUpgrade(record.id)) {
+        capped++;
+      }
     }
     return capped;
   }

@@ -1,6 +1,7 @@
 import {
   addBuilding,
   nextBuildSites,
+  setIslandConnections,
   urbanProfileAt,
   type Building,
   type BuildingClass,
@@ -79,6 +80,9 @@ import { SPANS } from '../spans/config';
 import { AERIAL } from '../aerial/config';
 import { decksAt, type BuildDeck } from '../aerial/decks';
 import type { TerraceResult } from '../aerial/terracePlan';
+import { CROSSINGS } from '../crossings/config';
+import type { Region } from '../terrain/region';
+import { CrossingDriver } from './crossingDriver';
 
 /**
  * Il ponte fra la simulazione e il mondo voxel.
@@ -340,6 +344,7 @@ export class Builder {
   private readonly clearance: ClearanceSites;
   private readonly landmarks: LandmarkDriver;
   private readonly spans: SpanDriver;
+  private readonly crossings: CrossingDriver;
   private readonly aerial: AerialDriver;
   private readonly guides: GuideDriver;
   private readonly upgrades: UpgradeDriver;
@@ -351,6 +356,7 @@ export class Builder {
     private readonly world: VoxelWorld,
     private readonly terrainMap: TerrainMap,
     private readonly worldSeed: number,
+    primaryRegion: Region | null = null,
   ) {
     this.streets = new StreetNetwork(worldSeed);
     this.growth = new GrowthQueue(world);
@@ -365,13 +371,14 @@ export class Builder {
       seed: worldSeed,
     };
     this.spans = new SpanDriver(this.ctx);
+    this.crossings = new CrossingDriver(this.ctx, primaryRegion);
     // Il cantiere ha bisogno delle campate prima di se stesso: sventrando fa
     // cadere quelle che poggiavano su cio' che abbatte. Ed e' **uno solo** per
     // Builder: due liste di cantieri potrebbero condannare lo stesso record e
     // dirlo due volte alla simulazione.
     this.clearance = new ClearanceSites(this.ctx, this.spans);
-    this.landmarks = new LandmarkDriver(this.ctx, this.clearance);
     this.aerial = new AerialDriver(this.ctx, this.spans);
+    this.landmarks = new LandmarkDriver(this.ctx, this.clearance, this.aerial);
     // La guida viene dopo la citta' in quota e le chiede due cose: come vede il
     // luogo, e quali impalcati qualcuno abita. La freccia va in un verso solo —
     // la citta' in quota non sa che la guida esiste.
@@ -412,6 +419,11 @@ export class Builder {
     this.landmarks.place(x, y, kind);
   }
 
+  /** Registra un territorio esterno su cui la crescita puo' aprire un ponte. */
+  registerSecondaryRegion(id: string, region: Region): void {
+    this.crossings.register(id, region);
+  }
+
   /**
    * Cosa il riquadro di un landmark troverebbe qui: quanti edifici porta via, o
    * perche' non ci si puo' piantare.
@@ -424,12 +436,12 @@ export class Builder {
   }
 
   /**
-   * Il tetto che questa colonna offre a un ruolo, o perche' non ne offre uno.
+   * La facciata che questa colonna offre a un ruolo, o perche' non ne offre una.
    *
    * Stessa porta di `landmarkClearance`, altra domanda: quella chiede cosa il
-   * riquadro porterebbe via a terra, questa se sopra un edificio ci sia posto.
+   * riquadro porterebbe via a terra, questa se fuori da un edificio ci sia posto.
    * Il gioco le fa entrambe prima del click e mostra la sola che si applica —
-   * un tetto sotto la colonna esclude l'altra, ed e' il modo in cui lo stesso
+   * un edificio sotto la colonna esclude l'altra, ed e' il modo in cui lo stesso
    * strumento produce due strutture senza chiedere una scelta in piu'.
    */
   landmarkAloftSite(x: number, y: number, kind: CatalystId): AloftVerdict {
@@ -570,6 +582,9 @@ export class Builder {
     // stanno i tetti, non da quanto una colonna e' desiderabile. E' anche il
     // motivo per cui questa passata non prende ne' restituisce lo stato.
     if (state.tickCount % SPANS.ticksPerPass === 0) this.spans.pass();
+    // Il ponte lungo viene dopo le campate locali: prima una citta' costruisce
+    // la propria rete, poi uno skyline maturo puo' scavalcare il mare.
+    if (state.tickCount % CROSSINGS.automatic.ticksPerPass === 0) this.crossings.pass();
     // E nemmeno la citta' in quota: una mensola dipende da come e' fatta una
     // facciata e un percorso da cosa c'e' fra due edifici, non da quanto una
     // colonna e' desiderabile — per questo nessuna delle due prende ne'
@@ -586,7 +601,7 @@ export class Builder {
     // edifici di questo tick resterebbe contato come produttore fino al giro
     // dopo, e la citta' rincorrerebbe la fame con un ritardo permanente.
     if (state.tickCount % FARMS.ticksPerPass === 0) next = this.farms.pass(next);
-    return next;
+    return setIslandConnections(next, this.crossings.count);
   }
 
   /**

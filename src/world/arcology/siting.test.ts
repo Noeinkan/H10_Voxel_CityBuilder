@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { TIER } from '../skyline/tiers';
-import { ARCOLOGY } from './config';
+import { FACING } from '../streets/streetGrid';
+import { arcologyForBlock } from './catalog';
+import { ARCOLOGY, ARCOLOGY_KIND, ARCOLOGY_RECIPES } from './config';
 import {
   ARCOLOGY_REFUSALS,
   arcologyAnchor,
@@ -84,5 +86,33 @@ describe('arcologyAnchor', () => {
   it('cade al centro dell isolato, cosi l ingombro ci sta simmetrico', () => {
     expect(arcologyAnchor({ x0: 0, y0: 0, x1: 19, y1: 19 })).toEqual({ x: 9, y: 9 });
     expect(arcologyAnchor({ x0: 10, y0: 4, x1: 25, y1: 21 })).toEqual({ x: 17, y: 12 });
+  });
+});
+
+describe('catalogo sul reticolo reale', () => {
+  it('su un isolato da quattordici sceglie una forma che entra', () => {
+    const rect = { x0: 0, y0: 0, x1: 13, y1: 13 };
+    for (let seed = 0; seed < 32; seed++) {
+      const recipe = arcologyForBlock(seed, 0, 0, rect, FACING.east);
+      expect(recipe.kind).not.toBe(ARCOLOGY_KIND.twinStem);
+      expect(recipe.span[0]).toBeLessThanOrEqual(14);
+      expect(recipe.span[1]).toBeLessThanOrEqual(14);
+    }
+  });
+
+  it('sugli isolati larghi rende raggiungibile ogni forma del catalogo', () => {
+    const rect = { x0: 0, y0: 0, x1: 19, y1: 19 };
+    const kinds = new Set<string>();
+    for (let kx = 0; kx < 64; kx++) {
+      kinds.add(arcologyForBlock(4242, kx, 0, rect, FACING.east).kind);
+    }
+    expect(kinds).toEqual(new Set(ARCOLOGY_RECIPES.map((recipe) => recipe.kind)));
+  });
+
+  it('la scelta resta deterministica', () => {
+    const rect = { x0: 10, y0: 20, x1: 29, y1: 39 };
+    expect(arcologyForBlock(1337, 4, -2, rect, FACING.north)).toBe(
+      arcologyForBlock(1337, 4, -2, rect, FACING.north),
+    );
   });
 });

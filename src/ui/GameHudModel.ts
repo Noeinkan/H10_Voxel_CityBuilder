@@ -3,8 +3,6 @@ import {
   CATALYSTS,
   CATALYST_GROUPS,
   CLASS_LABELS,
-  FARM_KIND,
-  FARM_LABELS,
   POLICIES,
   TRADE_MODES,
   catalystById,
@@ -12,8 +10,6 @@ import {
   policyConflict,
   tradeLinksOf,
   type BuildingClass,
-  type FoodReport,
-  type MaterialsReport,
   type CatalystGroup,
   type CatalystId,
   type CatalystSite,
@@ -22,14 +18,19 @@ import {
   type PolicyId,
   type TradeMode,
 } from '../sim';
-import { DAYLIGHT, DAYLIGHT_MODE, nextDaylightMode, type DaylightMode } from '../engine/daylight';
 import { typologiesForUses } from '../world/buildings/typology';
 import { pairingLines, unlockLines, yieldLine } from './prospects';
 import { SITE } from '../world/sites/config';
 import type { GrowthStats } from '../game/growthScene';
 import type { CityCondition } from '../game/cityCondition';
-import type { FundsReport } from '../sim/flows';
-import type { ResourceTrend, TrendDirection } from './ResourceTrend';
+import type { ResourceTrend } from './ResourceTrend';
+import { buildHudResources, commerceOf, type HudCommerce, type HudResource } from './GameHudEconomyModel';
+import type { GameTool } from './GameHudControlsModel';
+import { buildCityOverviewModel, type CityOverviewModel } from './CityOverviewModel';
+
+export { daylightControl, selectionMessage } from './GameHudControlsModel';
+export type { GameTool, HudDaylight } from './GameHudControlsModel';
+export type { HudCommerce, HudFill, HudFlow, HudResource } from './GameHudEconomyModel';
 
 /**
  * Il vincolo di sito detto al giocatore, non al codice.
@@ -41,69 +42,8 @@ import type { ResourceTrend, TrendDirection } from './ResourceTrend';
 const SITE_LABEL: Readonly<Record<CatalystSite, string | undefined>> = {
   any: undefined,
   coastal: 'Waterfront only',
-  open: `Needs a ${SITE.openSpan}×${SITE.openSpan} clearing`,
+  open: `Needs a ${SITE.openSpan}×${SITE.openSpan} clearing, or a level 7+ facade at least 8 voxels wide`,
 };
-
-export type GameTool =
-  | { readonly kind: 'catalyst'; readonly class: BuildingClass; readonly id?: CatalystId }
-  | { readonly kind: 'expansion' }
-  /** La mensola: si indica un edificio, e gli si appende un piano in quota. */
-  | { readonly kind: 'terrace' }
-  /** La funivia: si indica una riva, e la regola trova l'altra da sola. */
-  | { readonly kind: 'ropeway' }
-  | { readonly kind: 'none' };
-
-export interface HudResource {
-  readonly id: 'funds' | 'population' | 'food' | 'materials' | 'satisfaction';
-  readonly label: string;
-  readonly value: string;
-  /**
-   * L'ultimo passo, gia' formattato. **Vuoto quando non succede niente.**
-   *
-   * Prima qui compariva `±0`, cinque volte su cinque nei momenti tranquilli:
-   * cinque righe di rumore che occupavano lo spazio della sola informazione che
-   * conta, cioe' quale risorsa si sta muovendo.
-   */
-  readonly delta: string;
-  readonly tone: 'positive' | 'negative' | 'neutral';
-  /** Dove sta andando sulla finestra recente: e' la freccia. */
-  readonly trend: TrendDirection;
-  /** Quanto forte, 0..1: e' l'opacita' della freccia, non un secondo numero. */
-  readonly magnitude: number;
-  /** La finestra recente, per la sparkline. Vuota finche' non c'e' storia. */
-  readonly series: readonly number[];
-  /**
-   * Il tetto, dove ne esiste uno: e' un anello, non un numero nudo.
-   *
-   * `undefined` per denaro e materiali, che non hanno un massimo: inventarne uno
-   * per riempire un anello direbbe che esiste un "pieno" che non c'e'.
-   */
-  readonly fill?: HudFill;
-  /**
-   * Da dove viene e dove va, voce per voce. Solo dove la domanda ha senso.
-   *
-   * «Perche' sto perdendo denaro» non aveva risposta nell'HUD: il saldo dice di
-   * quanto, non di chi e' la colpa. Le voci arrivano dal referto del tick, non
-   * ricalcolate qui — duplicare il bilanciamento sarebbe il modo sicuro di farle
-   * divergere dal numero che le sta sopra.
-   */
-  readonly breakdown?: readonly HudFlow[];
-  /** Lettura operativa dello stock, mostrata sopra il rendiconto. */
-  readonly status?: string;
-}
-
-/** Un riempimento 0..1 con la sua lettura in chiaro. */
-export interface HudFill {
-  readonly value: number;
-  readonly label: string;
-}
-
-/** Una voce del bilancio: quanto, come si chiama, e da che parte va. */
-export interface HudFlow {
-  readonly label: string;
-  readonly amount: number;
-  readonly direction: 'in' | 'out';
-}
 
 export interface HudAction {
   readonly id: string;
@@ -264,6 +204,7 @@ export interface GameHudModel {
   readonly catalysts: readonly HudAction[];
   /** Gli stessi catalizzatori, raggruppati per funzione e in ordine di toolbar. */
   readonly catalystGroups: readonly HudCatalystGroup[];
+  readonly overview: CityOverviewModel | null;
   readonly commerce: HudCommerce | null;
   readonly expansion: HudAction;
   /** La mensola posata a mano: il primo pezzo di citta' in quota che si sceglie. */
@@ -315,20 +256,6 @@ export function decisionMark(option: DecisionOption): string | null {
   return parts.length === 0 ? null : parts.join(' ');
 }
 
-/** Riepilogo del ciclo commerciale, la seconda catena economica della citta'. */
-export interface HudCommerce {
-  readonly demand: number;
-  readonly served: number;
-  /** Quota di domanda servita, 0..100. */
-  readonly service: number;
-  /** Quota di banchi occupati, 0..100. */
-  readonly occupancy: number;
-  readonly revenue: number;
-  readonly goods: number;
-  readonly mixedBuildings: number;
-  readonly message: string;
-}
-
 const POLICY_DESCRIPTION: Readonly<Record<PolicyId, string>> = {
   denseHousing: 'Increases residential building capacity.',
   industrialSubsidy: 'Increases material production.',
@@ -348,61 +275,7 @@ export function buildGameHudModel(
   const population = stats?.state.population.stock ?? 0;
   const ready = stats !== null;
   const expectedCatalyst = stats?.onboarding.expectedCatalyst ?? null;
-  const resources: readonly HudResource[] = stats === null
-    ? emptyResources()
-    : [
-        resource(
-          'funds',
-          'Funds',
-          stats.state.funds.stock,
-          stats.state.funds.delta,
-          trend,
-          undefined,
-          fundsBreakdown(stats.state.flows),
-        ),
-        resource('population', 'Residents', stats.state.population.stock, stats.state.population.delta, trend),
-        resource(
-          'food',
-          'Food',
-          stats.state.food.stock,
-          stats.state.food.delta,
-          trend,
-          // Il cibo ha un tetto che il numero nudo non mostra: quanti tick la
-          // citta' regge con le scorte che ha. E' la lettura che risponde a
-          // «sto per avere fame», e nessuna cifra di magazzino la da'.
-          foodReserve(stats.state.food.stock, population),
-          // E l'altra meta' della stessa domanda: **da dove viene**. Prima della
-          // 3.1 non aveva risposta perche' non c'era una risposta — il cibo
-          // usciva dal termine industriale, e la voce sarebbe stata «fabbriche».
-          foodBreakdown(stats.state.harvest),
-        ),
-        resource(
-          'materials',
-          'Materials',
-          stats.state.materials.stock,
-          stats.state.materials.delta,
-          trend,
-          undefined,
-          materialsBreakdown(stats.state.materialFlows),
-          materialsStatus(stats.state.materials.stock, stats.state.materialFlows),
-        ),
-        {
-          id: 'satisfaction',
-          label: 'Happiness',
-          value: `${Math.round(stats.state.satisfaction * 100)}%`,
-          delta: '',
-          tone: 'neutral',
-          trend: trend?.direction('satisfaction') ?? 'flat',
-          magnitude: trend?.magnitude('satisfaction') ?? 0,
-          series: trend?.window('satisfaction') ?? [],
-          // Gia' 0..1 per costruzione: e' l'unica delle cinque il cui tetto non
-          // va calcolato, perche' e' una quota e non uno stock.
-          fill: {
-            value: stats.state.satisfaction,
-            label: `${Math.round(stats.state.satisfaction * 100)}% of the city is content`,
-          },
-        },
-      ];
+  const resources = buildHudResources(stats, trend);
 
   const catalysts: readonly HudAction[] = CATALYSTS.map((catalyst) => {
     const cost = catalyst.cost;
@@ -590,6 +463,7 @@ export function buildGameHudModel(
     resources,
     catalysts,
     catalystGroups,
+    overview: buildCityOverviewModel(stats),
     commerce: commerceOf(stats),
     expansion,
     terrace,
@@ -656,252 +530,6 @@ export function resolveEscapeTarget(
   return viewActive ? 'view' : 'none';
 }
 
-/** Il ciclo del giorno come lo vede il giocatore: un bottone e tre stati. */
-export interface HudDaylight {
-  readonly mode: DaylightMode;
-  readonly label: string;
-  readonly tooltip: string;
-  /** Il modo che il prossimo clic mette: il bottone e' uno, i modi tre. */
-  readonly next: DaylightMode;
-  /** Orologio fermo: il bottone si accende, come fa la pausa. */
-  readonly frozen: boolean;
-}
-
-const DAYLIGHT_LABEL: Readonly<Record<DaylightMode, string>> = {
-  [DAYLIGHT_MODE.cycle]: 'Auto',
-  [DAYLIGHT_MODE.day]: 'Day',
-  [DAYLIGHT_MODE.night]: 'Night',
-};
-
-/**
- * Cosa cambia ogni modo, in mezza riga.
- *
- * «Auto» da solo non dice niente a chi sta guardando un tramonto e si chiede se
- * durera': la durata del giro e' l'unica informazione che risponde, e viene da
- * `DAYLIGHT` perche' e' la stessa che l'orologio usa per camminare.
- */
-const DAYLIGHT_NOTE: Readonly<Record<DaylightMode, string>> = {
-  [DAYLIGHT_MODE.cycle]: `the clock runs, a full day takes ${Math.round(DAYLIGHT.daySeconds / 60)} minutes`,
-  [DAYLIGHT_MODE.day]: 'the sun stays up',
-  [DAYLIGHT_MODE.night]: 'the city stays lit',
-};
-
-/** Etichetta, nota e prossimo stato del bottone del ciclo giorno/notte. */
-export function daylightControl(mode: DaylightMode): HudDaylight {
-  const next = nextDaylightMode(mode);
-  return {
-    mode,
-    label: DAYLIGHT_LABEL[mode],
-    tooltip: `Daylight: ${DAYLIGHT_LABEL[mode]} — ${DAYLIGHT_NOTE[mode]}. Click for ${DAYLIGHT_LABEL[next]}, or press L.`,
-    next,
-    frozen: mode !== DAYLIGHT_MODE.cycle,
-  };
-}
-
-export function selectionMessage(tool: GameTool, catalysts: readonly HudAction[]): string | null {
-  if (tool.kind === 'catalyst') {
-    if (tool.id === undefined) {
-      const legacyLabel = CLASS_LABELS[tool.class] ?? 'Catalyst';
-      return `${legacyLabel} selected · click the island to place it · Esc to cancel`;
-    }
-    const action = catalysts.find((candidate) => candidate.catalystId === tool.id);
-    return `${action?.label ?? 'Catalyst'} selected · click the island to place it · Esc to cancel`;
-  }
-  if (tool.kind === 'expansion') {
-    return 'Expansion selected · choose a coastline edge · Esc to cancel';
-  }
-  if (tool.kind === 'terrace') {
-    return 'Terrace selected · click a tall building · Esc to cancel';
-  }
-  if (tool.kind === 'ropeway') {
-    // Si punta la **riva**, non l'acqua: e' l'unico strumento che chiede un capo
-    // e trova l'altro da solo, e senza dirlo si clicca in mezzo al mare.
-    return 'Ropeway selected · click a shore facing the water · Esc to cancel';
-  }
-  return null;
-}
-
-/**
- * Riassunto del ciclo commerciale.
- *
- * Il messaggio nomina la strozzatura, non lo stato: "manca personale" e "manca
- * merce" chiedono due azioni diverse, e senza dirlo il giocatore vede solo dei
- * negozi vuoti.
- */
-function commerceOf(stats: GrowthStats | null): HudCommerce | null {
-  if (stats === null) return null;
-  const report = stats.state.commerce;
-  const mixedBuildings = stats.state.mixedCounts.reduce((sum, value) => sum + value, 0);
-
-  const message = report.capacity === 0
-    ? 'No shops yet: place a Market to let commerce grow.'
-    : report.demand === 0
-      ? 'No residents to serve yet.'
-      : report.served < report.capacity * 0.95 && report.goods === 0
-        ? 'Shops have no goods to sell: industry is not producing enough materials.'
-        : report.service < 0.7
-          ? 'Demand outruns the shops: more commercial ground would raise happiness.'
-          : report.occupancy < 0.5
-            ? 'Shops are half empty: there are more of them than the city needs.'
-            : 'Commerce is balanced with demand.';
-
-  return {
-    demand: report.demand,
-    served: report.served,
-    service: Math.round(report.service * 100),
-    occupancy: Math.round(report.occupancy * 100),
-    revenue: report.revenue,
-    goods: report.goods,
-    mixedBuildings,
-    message,
-  };
-}
-
-/**
- * Il bilancio dei fondi in voci leggibili, senza gli zeri.
- *
- * Una riga a zero non e' informazione: chi non ha ancora policy attive non deve
- * leggere «Policies 0», o le due voci che contano finiscono in mezzo al rumore.
- * Gli oneri portano `paid` e non la somma nominale, perche' a cassa vuota si
- * paga il possibile — ed e' quella la cifra che ha davvero lasciato la cassa.
- */
-function fundsBreakdown(flows: FundsReport): readonly HudFlow[] {
-  const owed = flows.civic + flows.policies + flows.farms;
-  // Se non si e' potuto pagare tutto, ogni voce scala in proporzione: e' cio'
-  // che tiene la somma delle righe uguale al saldo scritto sopra.
-  const share = owed > 0 ? flows.paid / owed : 0;
-  const rows: readonly HudFlow[] = [
-    { label: 'Taxes', amount: flows.tax, direction: 'in' },
-    { label: 'Shops', amount: flows.retail, direction: 'in' },
-    { label: 'Trade', amount: Math.max(0, flows.trade), direction: 'in' },
-    { label: 'Imports', amount: Math.max(0, -flows.trade), direction: 'out' },
-    { label: 'Civic services', amount: flows.civic * share, direction: 'out' },
-    { label: 'Policies', amount: flows.policies * share, direction: 'out' },
-    { label: 'Farms', amount: flows.farms * share, direction: 'out' },
-  ];
-  return rows.filter((row) => row.amount >= 0.005);
-}
-
-/**
- * Da dove viene il cibo, voce per voce.
- *
- * Le righe arrivano dal referto del tick e **non si ricalcolano qui**: e' la
- * stessa regola di `fundsBreakdown`, e vale a maggior ragione per il cibo, dove
- * il listino sta in case sfamate e rifarne il conto nell'interfaccia
- * significherebbe copiare `FOOD_PER_HOUSE` in un secondo posto.
- *
- * Le etichette sono i produttori e non i tipi di lotto: chi guarda l'HUD vede
- * campi e frutteti a schermo, e «Fields» e' il nome di quello che vede.
- *
- * **Anche l'uscita dice chi**, e prima non lo diceva: «Eaten» nominava il gesto e
- * non chi lo compie, e la domanda che la riga deve chiudere e' *chi mi mangia il
- * raccolto*. La risposta e' una sola voce perche' il cibo ha **un solo
- * consumatore** — gli abitanti, a `food.perResident` ciascuno — e non si scompone
- * per edificio: le case ospitano chi mangia, non mangiano loro. Le fabbriche e i
- * negozi non ne consumano affatto.
- */
-function foodBreakdown(harvest: FoodReport): readonly HudFlow[] {
-  const rows: readonly HudFlow[] = [
-    { label: FARM_LABELS[FARM_KIND.field], amount: harvest.grown[FARM_KIND.field] ?? 0, direction: 'in' },
-    { label: FARM_LABELS[FARM_KIND.orchard], amount: harvest.grown[FARM_KIND.orchard] ?? 0, direction: 'in' },
-    { label: FARM_LABELS[FARM_KIND.tower], amount: harvest.grown[FARM_KIND.tower] ?? 0, direction: 'in' },
-    { label: 'Imports', amount: harvest.imported, direction: 'in' },
-    { label: 'Residents', amount: harvest.eaten, direction: 'out' },
-  ];
-  return rows.filter((row) => row.amount >= 0.005);
-}
-
-function materialsBreakdown(report: MaterialsReport): readonly HudFlow[] {
-  const rows: readonly HudFlow[] = [
-    { label: 'Industry', amount: report.produced, direction: 'in' },
-    { label: 'Building upkeep', amount: report.upkeep, direction: 'out' },
-    { label: 'Shops', amount: report.retail, direction: 'out' },
-    { label: 'Exports', amount: report.exported, direction: 'out' },
-    { label: 'Construction', amount: report.construction, direction: 'out' },
-  ];
-  return rows.filter((row) => row.amount >= 0.005);
-}
-
-function materialsStatus(stock: number, report: MaterialsReport): string {
-  if (report.waitingCost > stock) {
-    return `Construction waiting: ${report.waitingCost.toFixed(0)} materials required; ` +
-      `${Math.max(0, report.waitingCost - stock).toFixed(0)} still missing.`;
-  }
-  return `${report.reserve.toFixed(0)} materials reserved for construction; ` +
-    'shops and exports use only the surplus.';
-}
-
-function resource(
-  id: HudResource['id'],
-  label: string,
-  stock: number,
-  delta: number,
-  trend?: ResourceTrend,
-  fill?: HudFill,
-  breakdown?: readonly HudFlow[],
-  status?: string,
-): HudResource {
-  return {
-    id,
-    label,
-    value: formatInteger(stock),
-    // Vuoto e non `±0`: un indicatore che ripete "non e' successo niente" cinque
-    // volte insegna a non leggere la riga in cui compare.
-    delta: delta === 0 ? '' : `${delta > 0 ? '+' : ''}${delta.toFixed(1)}`,
-    tone: delta > 0 ? 'positive' : delta < 0 ? 'negative' : 'neutral',
-    trend: trend?.direction(id) ?? 'flat',
-    magnitude: trend?.magnitude(id) ?? 0,
-    series: trend?.window(id) ?? [],
-    ...(fill === undefined ? {} : { fill }),
-    ...(breakdown === undefined || breakdown.length === 0 ? {} : { breakdown }),
-    ...(status === undefined ? {} : { status }),
-  };
-}
-
-/**
- * Quanto margine c'e' sopra la linea della carestia.
- *
- * L'anello e' pieno finche' le scorte stanno sopra `crisis.foodReserve` — la
- * stessa soglia sotto la quale `cityCondition` dichiara la penuria — e si
- * svuota avvicinandosi. Ancorarlo li' e non a un massimo inventato e' cio' che
- * lo rende una risposta: «sto per avere fame» si legge dall'anello prima che il
- * toast lo annunci, e le due superfici non possono dire cose diverse perche'
- * leggono lo stesso numero.
- *
- * La riga in chiaro porta anche i tick di autonomia, che sono la lettura che
- * il magazzino da solo non da': trecento unita' di cibo non dicono niente
- * finche' non si sa quante bocche ci sono.
- */
-function foodReserve(stock: number, population: number): HudFill {
-  const floor = BALANCE.gameplay.crisis.foodReserve;
-  const perTick = population * BALANCE.food.perResident;
-  const autonomy = perTick <= 0
-    ? 'no one to feed yet'
-    : `about ${Math.floor(stock / perTick)} ticks of eating`;
-  return {
-    value: floor <= 0 ? 1 : Math.min(1, stock / floor),
-    label: `${Math.floor(stock)} food — ${autonomy}; shortage below ${floor}`,
-  };
-}
-
-function emptyResource(id: HudResource['id'], label: string): HudResource {
-  return { id, label, value: '—', delta: '', tone: 'neutral', trend: 'flat', magnitude: 0, series: [] };
-}
-
-function emptyResources(): readonly HudResource[] {
-  return [
-    emptyResource('funds', 'Funds'),
-    emptyResource('population', 'Residents'),
-    emptyResource('food', 'Food'),
-    emptyResource('materials', 'Materials'),
-    emptyResource('satisfaction', 'Happiness'),
-  ];
-}
-
 function capitalize(value: string): string {
   return value.length === 0 ? value : value[0].toUpperCase() + value.slice(1);
-}
-
-function formatInteger(value: number): string {
-  return Math.floor(value).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',');
 }

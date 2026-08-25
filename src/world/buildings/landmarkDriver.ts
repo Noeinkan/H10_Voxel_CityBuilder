@@ -14,9 +14,13 @@ import { FACING, type Facing } from '../streets/streetGrid';
 import { sightWater, type WaterSight } from '../sites/siteRules';
 import { SITE } from '../sites/config';
 import { LANDMARK, hasAloftRecipe, landmarkOf, maxStageOf } from '../landmarks/config';
+import { planFacadeLandmark } from '../landmarks/facadePlan';
 import { generateLandmark, landmarkSpan, stageForBuildings } from '../landmarks/generate';
+import { AERIAL_FACES, type AerialFace, type AerialSupport } from '../aerial/terracePlan';
+import type { DeckPlan } from '../aerial/deckPlan';
 import { placeRecipe, type Placement } from './landmarkSiting';
 import { footprintDepth, type BuildingRecord } from './BuildingRegistry';
+import type { AerialDriver } from './aerialDriver';
 import type { BuildContext } from './buildContext';
 import { fitsChunkBudget } from './chunkBudget';
 import type { ClearanceRefusal } from './clearance';
@@ -70,29 +74,35 @@ export interface LandmarkSite {
 const NO_FOOTING: LandmarkSite = { clears: 0, refusal: 'no-footing' };
 
 /**
- * Cosa impedisce a una struttura di posarsi su un tetto.
+ * Cosa impedisce a una struttura di appendersi a una facciata.
  *
  * Sono quattro gesti diversi e non un «qui no»: cercare un edificio, cercarne
  * uno **piu' grande**, cercarne uno **piu' alto**, cercarne uno libero. E' la
  * stessa ragione per cui i rifiuti della mensola sono tre — la regola che una
- * torre debba essere alta abbastanza perche' ci si posi uno scalo non la
+ * torre debba essere alta abbastanza perche' ci si appenda uno scalo non la
  * indovina nessuno.
  */
-export type AloftRefusal = 'needs-roof' | 'roof-too-small' | 'roof-too-low' | 'roof-occupied';
+export type AloftRefusal =
+  | 'needs-facade'
+  | 'facade-too-narrow'
+  | 'facade-too-low'
+  | 'facade-occupied';
 
-/** Il tetto su cui una struttura in quota si posa. */
+/** La piattaforma di facciata su cui una struttura in quota si posa. */
 export interface AloftSite {
   /** L'edificio che la porta: da qui in avanti non promuove piu'. */
   readonly hostId: number;
-  /** Angolo minimo dell'ingombro, centrato sul tetto. */
+  /** Angolo minimo dell'ingombro, interamente fuori dalla parete. */
   readonly x: number;
   readonly y: number;
-  /** Quota del piano: la prima cella libera sopra l'ospite. */
+  /** Prima quota occupata dalla piattaforma. */
   readonly z: number;
   readonly facing: Facing;
+  /** Il piano strutturale: porta con se' gli appoggi che lo sbalzo richiede. */
+  readonly deck: DeckPlan;
 }
 
-/** Il verdetto sul tetto, o due null quando il ruolo a terra non ha alternative. */
+/** Il verdetto sulla facciata, o due null quando il ruolo a terra non ha alternative. */
 export interface AloftVerdict {
   readonly site: AloftSite | null;
   readonly refusal: AloftRefusal | null;
@@ -114,6 +124,7 @@ export class LandmarkDriver {
      * upgrade li salta da sola perche' li vede in coda di comparsa.
      */
     private readonly clearance: ClearanceSites,
+    private readonly aerial: AerialDriver,
   ) {}
 
   /**
@@ -133,10 +144,10 @@ export class LandmarkDriver {
    * che tutti e otto avevano prima.
    */
   place(x: number, y: number, kind: CatalystId): void {
-    // Il tetto vince quando c'e': puntare un grattacielo con lo strumento
-    // dell'aeroporto **e'** la richiesta di uno scalo in quota, e ripiegare a
+    // La facciata vince quando c'e': puntare un grattacielo con lo strumento
+    // dell'aeroporto **e'** la richiesta di uno scalo appeso, e ripiegare a
     // terra costruirebbe un campo di volo dentro l'isolato che si stava
-    // guardando. Chi non voleva il tetto punta il prato accanto.
+    // guardando. Chi non voleva la facciata punta il prato accanto.
     const aloft = this.aloftSiteAt(x, y, kind);
     if (aloft.site !== null) {
       this.buildAloft(aloft.site, kind);
@@ -173,8 +184,8 @@ export class LandmarkDriver {
    * reggerebbe manderebbe a cercare una sacca bassa dove il problema e' la parete.
    */
   siteAt(x: number, y: number, kind: CatalystId): LandmarkSite {
-    // Su un tetto non c'e' niente da sgomberare: la struttura si posa sopra cio'
-    // che c'e', non al suo posto. Vale anche per il tetto rifiutato — a dirlo e'
+    // Su una facciata non c'e' niente da sgomberare: la struttura si posa fuori
+    // da cio' che c'e', non al suo posto. Vale anche per la facciata rifiutata — a dirlo e'
     // il rifiuto del piazzamento, non il conto delle demolizioni.
     const aloft = this.aloftSiteAt(x, y, kind);
     if (aloft.site !== null || aloft.refusal !== null) return OPEN_SITE;
@@ -187,7 +198,7 @@ export class LandmarkDriver {
   }
 
   /**
-   * Il tetto che questa colonna offre a un ruolo, o perche' non ne offre uno.
+   * La facciata che questa colonna offre a un ruolo, o perche' non ne offre una.
    *
    * **La presenza di un edificio sotto la colonna sceglie la strada**, e non c'e'
    * un secondo strumento: puntare una torre con l'aeroporto in mano chiede uno
@@ -196,51 +207,86 @@ export class LandmarkDriver {
    * seme, e sta qui perche' qui c'e' il registry.
    *
    * Due null significano «la domanda non si applica»: o il ruolo non ha una
-   * forma da tetto, o sotto la colonna non c'e' niente su cui posarsi. In
+   * forma in quota, o sotto la colonna non c'e' niente a cui appendersi. In
    * entrambi i casi decide la strada di terra.
    */
   aloftSiteAt(x: number, y: number, kind: CatalystId): AloftVerdict {
     if (!hasAloftRecipe(kind)) return NOT_ALOFT;
 
-    const support = this.ctx.registry.supportAt(x, y);
-    if (support.id === 0) return NOT_ALOFT;
-
-    const host = this.ctx.registry.get(support.id);
+    const host = this.buildingAt(x, y);
     if (host === null) return NOT_ALOFT;
-    // Solo un edificio vero: sopra un landmark, una campata o un impalcato ci
-    // sarebbe una catena di appoggi che nessuno sa far cadere in ordine.
-    if (host.landmark !== undefined || host.span !== undefined ||
-      host.aerial !== undefined || host.aloft === true) {
-      return { site: null, refusal: 'needs-roof' };
+    if (host.level < LANDMARK.aloftMinLevel) {
+      return { site: null, refusal: 'facade-too-low' };
     }
 
-    const facing = (host.facing ?? FACING.east) as Facing;
-    const span = landmarkSpan(kind, facing, true);
-    if (span === null) return NOT_ALOFT;
+    // Come per la terrazza, il fronte strada e' la prima scelta: li' lo sporto
+    // guarda un vuoto vero. Un record senza fronte prova tutti i lati in ordine.
+    const faces: readonly AerialFace[] = host.facing === undefined
+      ? AERIAL_FACES
+      : [host.facing as AerialFace];
+    let refusal: AloftRefusal = 'facade-too-narrow';
 
-    const depth = footprintDepth(host);
-    if (host.footprint < span.sizeX || depth < span.sizeY) {
-      return { site: null, refusal: 'roof-too-small' };
+    for (const face of faces) {
+      const span = landmarkSpan(kind, face as Facing, true);
+      if (span === null) return NOT_ALOFT;
+      const result = planFacadeLandmark({
+        host: aerialSupportOf(host),
+        faces: [face],
+        sizeX: span.sizeX,
+        sizeY: span.sizeY,
+        ...this.aerial.siteProbe,
+      });
+      if (!result.ok) {
+        refusal = result.refusal === 'noRun'
+          ? 'facade-too-narrow'
+          : result.refusal === 'tooLow'
+            ? 'facade-too-low'
+            : 'facade-occupied';
+        continue;
+      }
+
+      const { deck } = result.plan;
+      if (this.ctx.registry.overlaps(
+        deck.rect.x,
+        deck.rect.y,
+        span.sizeX,
+        deck.baseZ,
+        span.sizeZ,
+        span.sizeY,
+        [host.id],
+      )) {
+        refusal = 'facade-occupied';
+        continue;
+      }
+      return {
+        site: {
+          hostId: host.id,
+          x: deck.rect.x,
+          y: deck.rect.y,
+          z: deck.baseZ,
+          facing: face as Facing,
+          deck,
+        },
+        refusal: null,
+      };
     }
-    if (host.level < LANDMARK.aloftMinLevel) return { site: null, refusal: 'roof-too-low' };
 
-    // Centrato sul tetto e non ancorato al click: un impalcato di otto colonne
-    // su un tetto di otto colonne ha un posto solo, e chiedere al giocatore di
-    // indovinarlo al voxel sarebbe un gesto di precisione senza motivo.
-    const originX = host.x + ((host.footprint - span.sizeX) >> 1);
-    const originY = host.y + ((depth - span.sizeY) >> 1);
-    const deckZ = host.baseZ + host.height;
-    if (this.ctx.registry.overlaps(
-      originX, originY, span.sizeX, deckZ, span.sizeZ, span.sizeY, [host.id],
-    )) {
-      return { site: null, refusal: 'roof-occupied' };
+    return { site: null, refusal };
+  }
+
+  /** L'edificio ordinario sotto la colonna, anche se un impalcato lo attraversa. */
+  private buildingAt(x: number, y: number): BuildingRecord | null {
+    for (const record of this.ctx.registry.at(x, y)) {
+      if (record.aerial !== undefined || record.span !== undefined ||
+        record.landmark !== undefined || record.aloft === true) continue;
+      return record;
     }
-
-    return { site: { hostId: host.id, x: originX, y: originY, z: deckZ, facing }, refusal: null };
+    return null;
   }
 
   /**
-   * Posa la struttura sul tetto: niente opera di terra, niente grembiule.
+   * Posa la struttura sulla piattaforma di facciata: niente opera di terra,
+   * niente grembiule.
    *
    * Le due assenze sono la stessa cosa detta due volte — **qui sotto non c'e'
    * terreno** — e sono anche tutto cio' che distingue questo percorso da quello
@@ -265,6 +311,12 @@ export class LandmarkDriver {
     // scava. I ritagli si misurano poi come per chiunque altro.
     const plan: GradePlan = { works: WORKS.none, padZ: site.z, footZ: site.z, fill: 0 };
     if (!fitsChunkBudget(site.x, site.y, span.sizeX, span.sizeY, plan, stamp)) return;
+    if (registry.overlaps(
+      site.x, site.y, span.sizeX, site.z, span.sizeZ, span.sizeY, [site.hostId],
+    )) return;
+
+    const piers = this.aerial.commitFacadeSupports(site.deck, site.hostId);
+    if (piers === null) return;
 
     const record = registry.add({
       x: site.x,
@@ -279,7 +331,7 @@ export class LandmarkDriver {
       facing: site.facing,
       landmark: kind,
       aloft: true,
-      supports: [site.hostId],
+      supports: [site.hostId, ...piers],
     });
 
     growth.enqueueSegments(record, stamp);
@@ -327,7 +379,7 @@ export class LandmarkDriver {
       // l'angolo minimo dell'ingombro: la colonna cliccata sta dentro il
       // riquadro ma quasi mai nel suo spigolo, perche' e' la ricetta a dire
       // dove cade — la banchina sotto il dito, il molo davanti.
-      const index = catalystIn(next, record, kind);
+      const index = catalystIn(next, record, kind, this.ctx.registry.get(record.supports?.[0] ?? 0));
       if (index === -1) continue;
 
       const catalyst = next.catalysts[index];
@@ -655,12 +707,34 @@ export class LandmarkDriver {
  * ne contiene facilmente due, e il solo riquadro rinforzerebbe il mercato
  * accanto invece del porto che quella struttura e'.
  */
-function catalystIn(state: SimState, record: BuildingRecord, kind: CatalystId): number {
-  const depth = footprintDepth(record);
+function catalystIn(
+  state: SimState,
+  record: BuildingRecord,
+  kind: CatalystId,
+  host: BuildingRecord | null,
+): number {
+  // Uno Skyport sta interamente fuori dalla torre: il catalizzatore, invece,
+  // resta nella colonna cliccata dentro l'ospite. Per tutti gli altri landmark
+  // le due impronte coincidono come prima.
+  const anchor = record.aloft === true && host !== null ? host : record;
+  const depth = footprintDepth(anchor);
   return state.catalysts.findIndex((catalyst) =>
     catalystRoleOf(catalyst) === kind &&
-    catalyst.x >= record.x && catalyst.x < record.x + record.footprint &&
-    catalyst.y >= record.y && catalyst.y < record.y + depth);
+    catalyst.x >= anchor.x && catalyst.x < anchor.x + anchor.footprint &&
+    catalyst.y >= anchor.y && catalyst.y < anchor.y + depth);
+}
+
+/** La sagoma minima che il pianificatore delle piattaforme legge dal registry. */
+function aerialSupportOf(record: BuildingRecord): AerialSupport {
+  return {
+    id: record.id,
+    x: record.x,
+    y: record.y,
+    sizeX: record.footprint,
+    sizeY: footprintDepth(record),
+    baseZ: record.baseZ,
+    height: record.height,
+  };
 }
 
 /** L'ingombro in pianta di una ricetta, gia' portato sul verso vero. */

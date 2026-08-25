@@ -132,6 +132,12 @@ export class InfluenceOverlay {
     }
   }
 
+  /** Mostra per intero il campo del landmark scelto, non soltanto il suo bordo. */
+  showSelection(catalyst: Catalyst, reach: ReachCache): ReachSummary {
+    const field = reach.get(catalyst.x, catalyst.y, catalyst.radius);
+    return this.showField(field, CLASS_COLORS[catalyst.class] ?? CURSOR_VALID);
+  }
+
   /** Mostra la portata del sito puntato, e ne restituisce la misura per l'HUD. */
   showCursor(
     x: number,
@@ -141,17 +147,21 @@ export class InfluenceOverlay {
     reach: ReachCache,
   ): ReachSummary {
     const field = this.cursorField(x, y, radius, reach);
+    return this.showField(field, valid ? CURSOR_VALID : CURSOR_INVALID);
+  }
+
+  private showField(field: ReachField, color: number): ReachSummary {
     if (field !== this.drawn) {
       this.drawn = field;
       this.cursor.geometry.dispose();
-      this.cursor.geometry = contourGeometry(this.map, field, radius);
+      this.cursor.geometry = contourGeometry(this.map, field, field.radius);
       this.rings.geometry.dispose();
       this.rings.geometry = ringsGeometry(this.map, field);
       this.fill.geometry.dispose();
       this.fill.geometry = fillGeometry(this.map, field);
+      this.lastSummary = coverageOf(field);
     }
 
-    const color = valid ? CURSOR_VALID : CURSOR_INVALID;
     this.cursorMaterial.color.setHex(color);
     this.ringMaterial.color.setHex(color);
     this.fillMaterial.color.setHex(color);

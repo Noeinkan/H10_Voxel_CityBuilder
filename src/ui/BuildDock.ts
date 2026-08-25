@@ -133,7 +133,7 @@ export class BuildDock {
     const utility = document.createElement('div');
     utility.className = 'dock-utility';
 
-    this.policyToggle = labeledButton('policies', 'Policies', 'Open city policies', () => handlers.onPanel('policies'));
+    this.policyToggle = labeledButton('policies', 'City', 'Open city overview and policies', () => handlers.onPanel('policies'));
     this.policyToggle.setAttribute('aria-expanded', 'false');
     utility.appendChild(this.policyToggle);
     // Le viste stanno fra le politiche e il tema perche' e' li' che passa il
@@ -189,7 +189,7 @@ export class BuildDock {
   /** Lo strumento n-esimo del dock, se c'e' ed e' disponibile. Lo chiama un tasto. */
   toolAt(index: number): GameTool | null {
     const entry = this.tools[index];
-    if (entry === undefined || entry.button.disabled) return null;
+    if (entry === undefined || entry.button.getAttribute('aria-disabled') === 'true') return null;
     return entry.tool;
   }
 

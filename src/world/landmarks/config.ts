@@ -1442,7 +1442,7 @@ export const LANDMARKS: Partial<Record<CatalystId, LandmarkRecipe>> = {
  * o ci si aggancia**, e i tre modi di farlo sono i tre mezzi che questo scalo
  * mostra. Il dirigibile si appende a un pilone e ci resta; l'eVTOL scende su
  * una piazzola di tre colonne, che e' l'unico modo di *arrivare* davvero su un
- * tetto di otto; la mongolfiera si stacca da una cima, prende quota e rientra.
+ * piattaforma di otto; la mongolfiera si stacca da una cima, prende quota e rientra.
  * Tre sagome che nessun campo di volo produrrebbe, e nessuna che chieda i
  * ventisei voxel di pista che qui non ci sono.
  */
@@ -1451,8 +1451,8 @@ export const SKYPORT: LandmarkRecipe = {
   span: [8, 8],
   height: 16,
   anchor: [4, 4],
-  // Nessun grembiule: la cornice di suolo pubblico e' suolo, e qui sotto ci
-  // sono trenta voxel di edificio. Chi lo posa salta la mano di vernice.
+  // Nessun grembiule: la cornice di suolo pubblico e' suolo, mentre questa
+  // piattaforma sta fuori dalla facciata. Chi la posa salta la mano di vernice.
   apron: 0,
   stages: [0, 4, 12, 24],
   parts: [
@@ -1520,7 +1520,7 @@ export const SKYPORT: LandmarkRecipe = {
 };
 
 /**
- * Le ricette che un tetto sa ospitare, per ruolo.
+ * Le ricette che una facciata sa ospitare, per ruolo.
  *
  * Una sola, per ora, e la tabella esiste comunque: il giorno in cui un secondo
  * ruolo impara a posarsi in quota, il piazzamento non deve imparare niente.
@@ -1530,7 +1530,7 @@ const ALOFT: Partial<Record<CatalystId, LandmarkRecipe>> = {
 };
 
 /**
- * La ricetta di un ruolo, a terra o su un tetto.
+ * La ricetta di un ruolo, a terra o su una facciata.
  *
  * `aloft` non e' una preferenza: e' il luogo che il click ha scelto, e un ruolo
  * che non sa stare in quota risponde `null` invece di ripiegare a terra —

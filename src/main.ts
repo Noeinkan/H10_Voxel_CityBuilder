@@ -1466,7 +1466,7 @@ function buildInspectFrame(): InspectOverlayFrame {
 function onGamePointerMove(event: PointerEvent): void {
   if (selectedTool.kind === 'none' || growthScene === null || terrain === null) {
     preview.hide();
-    influenceOverlay?.hideCursor();
+    syncSelectionInfluence(resolvePickedSelection());
     gameHud?.updateCursor(0, 0, null);
     return;
   }
@@ -1485,7 +1485,7 @@ function onGamePointerMove(event: PointerEvent): void {
   let valid = false;
   if (selectedTool.kind === 'catalyst') {
     const catalyst = catalystById(selectedTool.id ?? defaultCatalystOfClass(selectedTool.class));
-    // Un ruolo che sa posarsi su un tetto va chiesto alla colonna dell'edificio
+    // Un ruolo che sa appendersi a una facciata va chiesto alla colonna dell'edificio
     // e non a quella del terreno dietro di lui: e' la stessa distinzione della
     // mensola, e per la stessa ragione — la heightmap attraversa una torre come
     // se fosse vetro e si ferma sulla terra dietro.
@@ -1502,7 +1502,18 @@ function onGamePointerMove(event: PointerEvent): void {
       valid,
       growthScene.simState.reach,
     );
-    preview.show(target.x, target.y, target.hitZ, valid);
+    const facade = growthScene.catalystUsesFacade(catalyst.id)
+      ? facadeFacingAt(target.x, target.y)
+      : null;
+    preview.show(
+      target.x,
+      target.y,
+      target.hitZ,
+      valid,
+      facade === null
+        ? PLACEMENT_SURFACE.horizontal
+        : PLACEMENT_FACADES[facade] ?? PLACEMENT_SURFACE.east,
+    );
     gameHud?.updateCursor(event.clientX, event.clientY, {
       title: catalyst.label,
       details: `${cost} funds${groundNote(site)} · ${reachNote(radius, coverage)} · mainly ${classLabel(catalyst.class)}`,
@@ -1526,9 +1537,7 @@ function onGamePointerMove(event: PointerEvent): void {
     // dovuto fare — la heightmap attraversa una torre come se fosse vetro.
     const pointed = pointedCellAt(event.clientX, event.clientY) ?? cell;
     const failure = growthScene.terraceFailure(pointed.x, pointed.y);
-    const facing = growthScene.registry.at(pointed.x, pointed.y).find(
-      (record) => record.aerial === undefined && record.span === undefined && record.landmark === undefined,
-    )?.facing ?? 0;
+    const facing = facadeFacingAt(pointed.x, pointed.y) ?? 0;
     valid = failure === null;
     influenceOverlay?.hideCursor();
     gameHud?.updateCursor(event.clientX, event.clientY, {
@@ -1665,12 +1674,12 @@ function onGamePointerDown(event: PointerEvent): void {
 }
 
 /**
- * Su quale colonna cade un catalizzatore: il terreno, o il tetto che si sta
+ * Su quale colonna cade un catalizzatore: il terreno, o la facciata che si sta
  * puntando.
  *
  * **Un solo strumento, due strutture.** L'aeroporto e' l'unico ruolo che sa
  * posarsi in quota, e non ha un pulsante suo: puntare un grattacielo *e'* la
- * richiesta di uno scalo sul tetto, puntare il prato accanto quella di un campo
+ * richiesta di uno scalo di facciata, puntare il prato accanto quella di un campo
  * di volo. Chiedere la colonna giusta e' l'unica cosa che serve perche' la
  * distinzione funzioni, e la decide `src/world/` guardando cosa c'e' sotto.
  */
@@ -1680,8 +1689,18 @@ function catalystTarget(
   kind: CatalystId,
   fallback: SurfaceCell,
 ): SurfaceCell {
-  if (growthScene === null || !growthScene.catalystUsesRooftop(kind)) return fallback;
+  if (growthScene === null || !growthScene.catalystUsesFacade(kind)) return fallback;
   return pointedCellAt(clientX, clientY) ?? fallback;
+}
+
+/** Il fronte dell'edificio ordinario puntato; null lascia il mirino sul terreno. */
+function facadeFacingAt(x: number, y: number): number | null {
+  if (growthScene === null) return null;
+  const record = growthScene.registry.at(x, y).find(
+    (candidate) => candidate.aerial === undefined && candidate.span === undefined &&
+      candidate.landmark === undefined && candidate.aloft !== true,
+  );
+  return record === undefined ? null : record.facing ?? 0;
 }
 
 /** Il raggio che parte dal pixel, in coordinate di mondo. */
@@ -1793,6 +1812,7 @@ function onSelectPointerUp(event: PointerEvent): void {
     return;
   }
   selectionPanel?.show(picked, performance.now(), isolatedBlockKey());
+  syncSelectionInfluence(picked);
   gameHud?.setSelectionOpen(true);
 }
 
@@ -1862,6 +1882,7 @@ function refreshSelection(now: number): void {
     return;
   }
   selectionPanel?.update(picked, now, isolatedBlockKey());
+  syncSelectionInfluence(picked);
   if (selectionPanel !== null) paintSelectionOutline(selectionPanel.section);
 }
 
@@ -1879,7 +1900,18 @@ function clearSelection(): void {
   selectedCell = null;
   selectionPanel?.close();
   selectionOutline?.hide();
+  influenceOverlay?.hideCursor();
   gameHud?.setSelectionOpen(false);
+}
+
+/** Il campo completo compare solo quando il click ha scelto un vero landmark. */
+function syncSelectionInfluence(picked: Selection | null): void {
+  const catalyst = picked?.structure?.catalyst;
+  if (catalyst === undefined || catalyst === null || growthScene === null) {
+    influenceOverlay?.hideCursor();
+    return;
+  }
+  influenceOverlay?.showSelection(catalyst, growthScene.simState.reach);
 }
 
 function beginCoastalExpansion(sector: CoastalSector): void {
@@ -1990,11 +2022,11 @@ function actionFailureLabel(reason: ActionFailure): string {
     'onboarding-order': 'Complete the current tutorial step first.',
     'policy-incompatible': 'This policy conflicts with one that is already active.',
     'decision-option-invalid': 'This decision option is no longer available.',
-    // I tre della mensola dicono tre gesti diversi, ed e' il punto: cercare un
-    // edificio, cercarne uno piu' alto, cercare un altro posto.
-    'needs-building': 'Point at a building: a terrace hangs off a facade.',
-    'building-too-short': 'This building is too low to carry a floor.',
-    'no-room-aloft': 'No room for a terrace here.',
+    // Mensola e Skyport condividono gli stessi gesti: cercare un edificio,
+    // cercarne uno piu' alto, cercare un'altra facciata.
+    'needs-building': 'Point at a building facade.',
+    'building-too-short': 'This building is too low to carry the structure.',
+    'no-room-aloft': 'No room on this facade.',
     // I tre della funivia dicono tre gesti diversi, come quelli della mensola:
     // andare sulla costa, cercare un braccio di mare, spostarsi lungo la stessa
     // riva. Il terzo e' quello che capita di piu' su un lungomare costruito.

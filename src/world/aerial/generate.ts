@@ -5,7 +5,6 @@ import {
   chamfered,
   cornerCutOf,
   terraceEdge,
-  terraceGirder,
   terraceSide,
   type TerraceSide,
 } from './terraceForm';
@@ -29,28 +28,25 @@ import type { VoxelStamp } from '../buildings/stamp';
  * costruisce o pavimentazione da attraversare.
  *
  * **La mensola e' l'eccezione dichiarata, e la ragione e' che ha un davanti.** Un
- * tratto e un nodo stanno in aria appesi ai propri capi, e la loro sezione e'
- * simmetrica perche' non c'e' un verso rispetto a cui non esserlo; una mensola
- * esce da una parete, e da quella parete alla punta la sezione **cala**. Cio' che
- * cambia sta tutto in `terraceForm`, che e' puro come questo file: qui resta la
- * riga che sceglie quale delle due sezioni scrivere.
+ * tratto e un nodo non hanno un verso; una mensola esce da una parete e smussa i
+ * due angoli alla punta. La sezione resta pero' la stessa lastra da un voxel del
+ * percorso: a dire come regge sono gli appoggi, non un bordo colato alto quasi
+ * quanto un piano di edificio.
  *
  * **La sezione dice come sta in piedi.**
  *
  * ```
  *   ║ ░░░░░░░░░ ║    parapetto sul filo, da emitRoofTech
  *   ─────────────    piano calpestabile
- *   ██  ▒▒▒▒  ██     travatura sul bordo e sopra le gambe
- *   ██        ██     ...e piena, dove il nodo scende alla quota bassa
+ *   ─────────────    lastra da un voxel
  *   ██        ██     la gamba, fino al proprio piede
  * ```
  *
- * Quella di una mensola invece si assottiglia, e l'angolo esterno e' smussato:
+ * Quella di una mensola smussa invece i due angoli esterni:
  *
  * ```
- *   ║░░░░░░░░░░╮     il piano arriva fino alla punta, e li' e' una lastra sola
- *   ██▓▓▓▓▓▓▓▓       trave alta sul filo, meno la punta
- *   ██               trave bassa: solo dove la mensola scarica sulla parete
+ *   ║░░░░░░░░░░╮     il piano arriva fino alla punta
+ *   ──────────╯      una sola lastra, come il percorso
  * ```
  *
  * Il parapetto non si disegna qui: si chiede `roofTech` al filo, e `emitRoofTech`
@@ -101,9 +97,10 @@ export function generateDeck(plan: DeckPlan, part: AerialPart, segment: DeckRect
           ? lz < drop
             ? part === AERIAL_PART.node && onPier(plan, gx, gy)
             : edge || overPier(plan, gx, gy)
-          // La mensola cala verso la punta; sopra una gamba resta piena, perche'
-          // li' il carico scende davvero.
-          : terraceGirder(plan.rect, side, cut, gx, gy, lz) || overPier(plan, gx, gy);
+          // Una mensola ordinaria e' una lastra sola. Questo ramo resta utile
+          // soltanto a un eventuale inviluppo verticale: sopra una gamba la
+          // testa continua fino al piano, senza colare il resto del riquadro.
+          : overPier(plan, gx, gy);
         if (!carried) continue;
 
         const index = lx + sizeX * (ly + sizeY * lz);

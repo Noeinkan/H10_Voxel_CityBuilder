@@ -344,6 +344,23 @@ export class AerialDriver {
     return result.ok && this.buildTerrace(result.plan);
   }
 
+  /**
+   * Materializza gli appoggi di una piattaforma che disegna da se' il proprio piano.
+   *
+   * Lo Skyport porta gia' soletta e bordo nella propria ricetta: registrarlo come
+   * una seconda terrazza sovrapposta duplicerebbe il volume. Le gambe restano
+   * pero' quelle di `planDeck`, perche' uno sporto di otto voxel non smette di
+   * aver bisogno di un appoggio solo perche' sopra cambia destinazione d'uso.
+   */
+  commitFacadeSupports(deck: DeckPlan, hostId: number): readonly number[] | null {
+    this.dropDeckSpans(deck);
+    if (!this.deckFits(deck, [hostId])) return null;
+
+    const piers: number[] = [];
+    for (const pier of deck.piers) piers.push(this.commitPier(pier));
+    return piers;
+  }
+
   /** Cancella un impalcato e le gambe che si era contate, e li toglie dal registry. */
   private dropDeck(record: BuildingRecord): void {
     // **Cio' che si appoggiava alla mensola cade con lei.** Una campata puo'

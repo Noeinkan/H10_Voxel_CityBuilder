@@ -68,7 +68,16 @@ import { onboardingAllows, onboardingOf, type OnboardingState } from './onboardi
 const TICK_RATE = 10;
 
 /**
- * I rifiuti del tetto, detti come gesti che il giocatore possa fare.
+ * Quanto una riga della voce resta prima di poter essere sostituita.
+ *
+ * Otto secondi: il tempo di leggerla e di guardare la citta' per capire di cosa
+ * parla. Le crisi non aspettano — quelle interrompono — quindi questo numero
+ * governa solo il passaggio fra consigli che possono aspettare.
+ */
+const COACH_DWELL_TICKS = 80;
+
+/**
+ * I rifiuti della facciata, detti come gesti che il giocatore possa fare.
  *
  * Riusano i tre motivi della mensola invece di aggiungerne quattro: dicono gia'
  * le stesse cose — cerca un edificio, cercane uno piu' alto, cercane uno libero
@@ -76,10 +85,10 @@ const TICK_RATE = 10;
  * aggiunge un modo di costruire in quota.
  */
 const ALOFT_FAILURE: Readonly<Record<AloftRefusal, ActionFailure>> = {
-  'needs-roof': 'needs-building',
-  'roof-too-small': 'needs-building',
-  'roof-too-low': 'building-too-short',
-  'roof-occupied': 'no-room-aloft',
+  'needs-facade': 'needs-building',
+  'facade-too-narrow': 'no-room-aloft',
+  'facade-too-low': 'building-too-short',
+  'facade-occupied': 'no-room-aloft',
 };
 
 /** Il ruolo dietro uno strumento, che sia gia' un ruolo o solo un uso urbano. */
@@ -116,6 +125,18 @@ export class GrowthScene {
   private paused = false;
   private speed = 1;
   private healthyTicks = 0;
+  /**
+   * La riga che la voce sta mostrando, e da quando.
+   *
+   * **Sta qui perche' la permanenza ha bisogno di memoria**, e `cityCondition`
+   * non ne ha ne' deve averne: e' una funzione pura dello stato, e la stessa
+   * citta' deve dire sempre la stessa cosa. Ma le condizioni si valutano dieci
+   * volte al secondo su segnali che oscillano — l'organico attraversa la propria
+   * soglia mentre la citta' cresce — e senza un tempo minimo la riga sfarfallava
+   * fra due consigli ogni secondo e mezzo, che e' il modo piu' rapido per
+   * rendere illeggibile un testo giusto.
+   */
+  private coach: { readonly condition: CityCondition; readonly sinceTick: number } | null = null;
   private readonly unlocked = new Set<string>();
   private message = 'Choose a catalyst and place it on the island.';
   private clearanceMemo: { readonly key: string; readonly site: LandmarkSite } | null = null;
@@ -145,7 +166,7 @@ export class GrowthScene {
   constructor(
     world: VoxelWorld,
     private readonly map: TerrainMap,
-    _region: ScenarioRegion,
+    region: ScenarioRegion,
     seed: number,
   ) {
     // Il costo di attraversamento entra qui e da nessun'altra parte: e' cio' che
@@ -156,7 +177,7 @@ export class GrowthScene {
       rngState: seed,
       reachCost: createReachCost(map, new StreetNetwork(seed)),
     });
-    this.builder = new Builder(world, map, seed);
+    this.builder = new Builder(world, map, seed, region);
   }
 
   advance(dt: number): void {
@@ -166,6 +187,7 @@ export class GrowthScene {
       this.state = tick(this.state, this.map);
       this.state = this.builder.onTick(this.state);
       this.healthyTicks = isSelfSufficient(this.state) ? this.healthyTicks + 1 : 0;
+      this.refreshCoach();
       this.lastTickMs = performance.now() - start;
       // Le passate del Builder sono l'unico momento in cui il registry cambia:
       // quello che il cursore sapeva del riquadro sotto di se' e' di un tick fa.
@@ -184,7 +206,7 @@ export class GrowthScene {
     // nuovo lo stesso numero, facendo il doppio del lavoro per dirlo.
     const clears = this.clearanceAt(x, y, target).clears;
 
-    const result = placeCatalyst(this.state, this.map, x, y, target, this.usesRooftop(x, y, target));
+    const result = placeCatalyst(this.state, this.map, x, y, target, this.usesFacade(x, y, target));
     if (result.success) {
       const placed = result.state.catalysts[result.state.catalysts.length - 1];
       // Il ruolo e non la classe: e' il ruolo a decidere quale struttura
@@ -202,7 +224,7 @@ export class GrowthScene {
   catalystFailure(x: number, y: number, target: BuildingClass | CatalystId): ActionFailure | null {
     if (!onboardingAllows(this.state, target)) return 'onboarding-order';
 
-    // Il tetto parla per primo quando c'e' un tetto: sotto la colonna c'e' un
+    // La facciata parla per prima quando c'e' un edificio: sotto la colonna c'e' un
     // edificio, quindi «non e' terreno edificabile» sarebbe la risposta a una
     // domanda che nessuno ha fatto.
     const aloft = this.builder.landmarkAloftSite(x, y, roleOf(target));
@@ -211,17 +233,17 @@ export class GrowthScene {
   }
 
   /**
-   * true se questo ruolo, puntato su un edificio, si posa sul tetto.
+   * true se questo ruolo, puntato su un edificio, si appende alla facciata.
    *
    * Serve a chi tiene il puntatore in mano: la colonna da interrogare non e'
    * quella del terreno dietro la torre ma quella della torre, e chi non lo sa
    * chiederebbe il posto sbagliato. E' la stessa distinzione della mensola.
    */
-  catalystUsesRooftop(target: BuildingClass | CatalystId): boolean {
+  catalystUsesFacade(target: BuildingClass | CatalystId): boolean {
     return hasAloftRecipe(roleOf(target));
   }
 
-  private usesRooftop(x: number, y: number, target: BuildingClass | CatalystId): boolean {
+  private usesFacade(x: number, y: number, target: BuildingClass | CatalystId): boolean {
     return this.builder.landmarkAloftSite(x, y, roleOf(target)).site !== null;
   }
 
@@ -423,6 +445,7 @@ export class GrowthScene {
     const result = buyExpansion(this.state, this.unlocked.has(sectorId));
     if (result.success) {
       this.unlocked.add(sectorId);
+      this.builder.registerSecondaryRegion(sectorId, region);
       // Il nucleo non si pianta adesso: il terreno del settore non esiste
       // ancora, e la ricerca del sito guarderebbe colonne non generate.
       this.pendingSectors.push(region);
@@ -647,11 +670,15 @@ export class GrowthScene {
     record: BuildingRecord,
     kind: CatalystId,
   ): { readonly x: number; readonly y: number } | null {
-    const depth = footprintDepth(record);
+    const host = record.aloft === true
+      ? this.builder.registry.get(record.supports?.[0] ?? 0)
+      : null;
+    const anchor = host ?? record;
+    const depth = footprintDepth(anchor);
     for (const catalyst of this.state.catalysts) {
       if (catalystRoleOf(catalyst) !== kind) continue;
-      if (catalyst.x < record.x || catalyst.x >= record.x + record.footprint) continue;
-      if (catalyst.y < record.y || catalyst.y >= record.y + depth) continue;
+      if (catalyst.x < anchor.x || catalyst.x >= anchor.x + anchor.footprint) continue;
+      if (catalyst.y < anchor.y || catalyst.y >= anchor.y + depth) continue;
       return catalyst;
     }
     return null;
@@ -698,9 +725,40 @@ export class GrowthScene {
       speed: this.speed,
       message: this.message,
       onboarding: onboardingOf(this.state),
-      condition: cityCondition(this.state, this.healthyTicks),
+      // Quella tenuta, non quella di adesso: fra un tick e l'altro sono la
+      // stessa cosa, e prima del primo tick non c'e' ancora niente da tenere.
+      condition: this.coach?.condition ?? cityCondition(this.state, this.healthyTicks),
       unlockedSectors: [...this.unlocked],
     };
+  }
+
+  /**
+   * Sceglie la riga della voce, e la lascia stare abbastanza da poterla leggere.
+   *
+   * Tre regole, in ordine. **Lo stesso argomento si riscrive sempre**: se il
+   * titolo non cambia sono numeri nuovi sulla stessa frase — l'organico che sale
+   * mentre la riga lo cita — e tenerli fermi sarebbe peggio che cambiare riga.
+   * **L'urgenza passa subito**, in tutte e due le direzioni: una crisi non
+   * aspetta il proprio turno, e la fine di una crisi nemmeno, perche' sapere che
+   * e' finita e' meta' dell'informazione. **Tutto il resto aspetta**, che e' cio'
+   * che spegne il tremolio fra un collo di bottiglia e un'opportunita'.
+   */
+  private refreshCoach(): void {
+    const next = cityCondition(this.state, this.healthyTicks);
+    const now = this.state.tickCount;
+    const held = this.coach;
+
+    if (held === null || held.condition.title === next.title) {
+      this.coach = { condition: next, sinceTick: held?.sinceTick ?? now };
+      return;
+    }
+
+    const urgent = next.kind === 'crisis' ||
+      next.kind === 'onboarding' ||
+      held.condition.kind === 'crisis';
+    if (urgent || now - held.sinceTick >= COACH_DWELL_TICKS) {
+      this.coach = { condition: next, sinceTick: now };
+    }
   }
 
   private apply(result: ActionResult, successMessage: string): ActionResult {

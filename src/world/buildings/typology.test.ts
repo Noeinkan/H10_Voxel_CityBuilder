@@ -159,6 +159,22 @@ describe('catalogo delle tipologie', () => {
     expect(greenLit).toBe(lit);
   });
 
+  it('la torre idroponica mostra colture in facciata e sul tetto', () => {
+    const tower = build(BUILDING_CLASS.industrial, 8, 11, 'hydroponicTower');
+    let green = 0;
+    for (const voxel of tower.voxels) {
+      if (voxel === PALETTE_SLOTS.grassLight) green++;
+    }
+
+    // Non una singola insegna: le colture devono occupare abbastanza celle da
+    // restare riconoscibili nella vista isometrica della citta' completa.
+    expect(green).toBeGreaterThan(tower.sizeZ);
+    const top = tower.sizeZ - 1;
+    const plane = tower.sizeX * tower.sizeY;
+    expect(tower.voxels.slice(plane * top).some((voxel) => voxel === PALETTE_SLOTS.grassLight))
+      .toBe(true);
+  });
+
   it('sotto il livello che accende, la torre resta una fabbrica spenta', () => {
     // `minLevel` la tiene fuori dai livelli bassi, ma la grammatica e' condivisa:
     // vale la pena fissare che il verde non compaia acceso prima del tempo.
