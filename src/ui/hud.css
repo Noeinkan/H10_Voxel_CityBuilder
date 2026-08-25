@@ -454,11 +454,40 @@
  * rail destro dall'altra parte. Il verso e' l'unica cosa che cambia: e' sempre
  * lo stesso testo, e si apre verso lo spazio che c'e'.
  */
+/*
+ * Fuori dal **rail**, non fuori dal bottone.
+ *
+ * `left: 100%` finisce dove finisce il bottone, e il rail e' una griglia: una
+ * tessera in prima colonna apriva 248px di scheda opaca sopra le due colonne
+ * accanto e sopra le righe sotto: per leggere cosa fa un deposito bisognava
+ * smettere di vedere meta' della toolbar. Il verso era gia' giusto, mancava la
+ * distanza.
+ *
+ * Quanto manchi lo sa la geometria della riga: ogni bottone dichiara la sua
+ * colonna, e la scheda scavalca quelle che gli restano a destra — ognuna larga
+ * quanto lui, piu' il suo gap — poi il padding che il pannello si tiene ai bordi
+ * e lo stacco dal rail. In ultima colonna la somma e' zero e si torna al
+ * comportamento di prima, che li' era corretto.
+ *
+ * Non e' `position: fixed`, che sarebbe la via ovvia: `.hud-button:hover` applica
+ * un `transform`, e un antenato trasformato diventa il containing block anche dei
+ * discendenti fissi — la scheda resterebbe ancorata al bottone credendo di essere
+ * ancorata alla finestra.
+ */
+.build-dock, .resource-bar { --tip-rail-pad: 0px; --tip-row-gap: 0px; }
+.dock-group-row, .dock-utility-row { --tip-row-gap: var(--space-1); --tip-rail-pad: calc(var(--space-05) + var(--space-15)); }
+.time-row { --tip-row-gap: var(--space-05); --tip-rail-pad: var(--space-1); }
+.build-dock .hud-button, .resource-bar .hud-button {
+  --tip-out: calc(
+    (var(--tile-cols, 1) - var(--tile-col, 1)) * (100% + var(--tip-row-gap))
+    + var(--tip-rail-pad) + var(--space-2)
+  );
+}
 /* Dock e barra risorse stanno sullo stesso rail e vogliono lo stesso verso: erano
    due regole gemelle scritte due volte, e una sola che cambiasse le avrebbe fatte
    divergere in silenzio. */
 .build-dock .hud-button[data-tooltip]::after,
-.resource-bar .hud-button[data-tooltip]::after { left: calc(100% + var(--space-2)); right: auto; bottom: auto; top: 50%; transform: translate(calc(var(--space-1) * -1), -50%); }
+.resource-bar .hud-button[data-tooltip]::after { left: calc(100% + var(--tip-out)); right: auto; bottom: auto; top: 50%; transform: translate(calc(var(--space-1) * -1), -50%); }
 .build-dock .hud-button[data-tooltip]:hover::after,
 .build-dock .hud-button[data-tooltip]:focus-visible::after,
 .resource-bar .hud-button[data-tooltip]:hover::after,
@@ -479,7 +508,9 @@
  */
 .hud-tip {
   position: absolute;
-  left: calc(100% + var(--space-2));
+  /* Stessa distanza della bolla, e per la stessa ragione: fuori dal rail, non
+     fuori dal bottone. Il calcolo sta accanto a `--tip-out`. */
+  left: calc(100% + var(--tip-out, var(--space-2)));
   top: 0;
   z-index: var(--z-tip);
   display: grid;

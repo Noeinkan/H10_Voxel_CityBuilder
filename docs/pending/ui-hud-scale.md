@@ -24,6 +24,15 @@
   posto, cioè senza sembrare rotte. Aggiunte le tre icone e rimosso il cast in
   `BuildDock` che lo lasciava passare: ora un ruolo senza icona rompe la
   compilazione.
+- **Le schede escono dal rail, non dal bottone.** `left: 100%` finisce dove
+  finisce il bottone, e il dock è una griglia a tre colonne: la scheda di una
+  tessera in prima colonna si apriva sopra le due colonne accanto e sopra le
+  righe sotto, coprendo mezza toolbar proprio mentre la si stava leggendo. Ogni
+  bottone dichiara ora la sua colonna (`markRowColumns`) e il CSS scavalca quelle
+  che restano — con l'effetto che tutte le schede si aprono sulla stessa
+  verticale invece di saltare da tessera a tessera. Non è `position: fixed`
+  perché `.hud-button:hover` applica un `transform`, e un antenato trasformato
+  diventa il containing block anche dei discendenti fissi.
 - **Meno cose che si contraddicono.** `--hud-ink-soft`, usata e mai definita, era
   un colore che non smorzava niente; `--dock-tiles` era scritto a ogni corsia del
   dock con un commento che descriveva un `flex-grow` che nessuna regola CSS

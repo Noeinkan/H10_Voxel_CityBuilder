@@ -60,6 +60,33 @@ export function tileButton(
 }
 
 /**
+ * Dice a ogni bottone della riga quale colonna occupa, e quante ce ne sono.
+ *
+ * Serve alla scheda e alla bolla, che escono a destra e devono scavalcare le
+ * colonne che restano prima di uscire dal rail: senza questi due numeri il CSS
+ * conosce la larghezza di un bottone ma non sa quanti gliene stiano accanto, e
+ * la scheda di una tessera in prima colonna si apre sopra la toolbar.
+ *
+ * Va chiamata **dopo** aver riempito la riga, ed e' l'unico modo perche' la
+ * colonna dichiarata e quella reale restino la stessa cosa quando il dock cambia:
+ * il numero viene dalla posizione nel DOM, non da un conteggio scritto a mano.
+ */
+export function markRowColumns(row: HTMLElement, columns?: number): void {
+  const cells = Array.from(row.children).filter(
+    (cell): cell is HTMLElement => cell instanceof HTMLElement,
+  );
+  // Una griglia a colonne fisse manda a capo: quattro tessere su tre colonne
+  // sono 3 + 1, e la quarta e' di nuovo in **prima** colonna — con la scheda che
+  // ha di nuovo due colonne intere da scavalcare. Contare i figli basta solo
+  // dove la riga e' una riga sola, cioe' nei flex.
+  const cols = columns ?? cells.length;
+  for (const [index, cell] of cells.entries()) {
+    cell.style.setProperty('--tile-col', String((index % cols) + 1));
+    cell.style.setProperty('--tile-cols', String(cols));
+  }
+}
+
+/**
  * Il clic col **mouse** non lascia il fuoco sul bottone.
  *
  * `:focus-visible` non e' solo la navigazione da tastiera: il browser lo

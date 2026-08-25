@@ -2,7 +2,7 @@ import { DAYLIGHT_MODE, type DaylightMode } from '../engine/daylight';
 import { daylightControl, type GameHudModel, type HudFlow, type HudResource } from './GameHudModel';
 import type { TrendDirection } from './ResourceTrend';
 import { createHudIcon, type HudIcon } from './hudIcons';
-import { iconButton, textButton } from './hudWidgets';
+import { iconButton, markRowColumns, textButton } from './hudWidgets';
 
 /**
  * La barra in alto: cosa la citta' ha, e quanto tempo passa mentre la si guarda.
@@ -171,6 +171,7 @@ export class ResourceBar {
       this.speedButtons.set(speed, button);
       simRow.appendChild(button);
     }
+    markRowColumns(simRow);
     simGroup.append(simLabel, simRow);
     time.appendChild(simGroup);
 
@@ -196,6 +197,7 @@ export class ResourceBar {
     this.cloudsButton.classList.add('hud-button--small');
     skyRow.appendChild(this.cloudsButton);
     this.setClouds(true);
+    markRowColumns(skyRow);
     skyGroup.append(skyLabel, skyRow);
     time.appendChild(skyGroup);
 

@@ -1,6 +1,6 @@
 import type { GameHudModel, GameTool, HudAction } from './GameHudModel';
 import type { HudIcon } from './hudIcons';
-import { iconButton, labeledButton, paintAction, tileButton } from './hudWidgets';
+import { iconButton, labeledButton, markRowColumns, paintAction, tileButton } from './hudWidgets';
 
 /**
  * Il rail di sinistra: cosa si puo' costruire, e come si guarda la citta'.
@@ -20,6 +20,16 @@ import { iconButton, labeledButton, paintAction, tileButton } from './hudWidgets
 
 /** I pannelli che il dock apre. Il dock non li possiede: chiede a chi li tiene. */
 export type DockPanel = 'city' | 'policies' | 'themes' | 'views';
+
+/**
+ * Quante tessere stanno in una riga della griglia.
+ *
+ * E' lo stesso tre di `grid-template-columns: repeat(3, 1fr)` in `hud.css`, e
+ * vive qui perche' la scheda di un'azione deve sapere quante colonne le restano
+ * a destra prima di uscire dal rail. Se cambia di la', cambia anche qui: sono i
+ * due lati della stessa griglia.
+ */
+const DOCK_COLUMNS = 3;
 
 /**
  * Se due strumenti sono lo stesso strumento.
@@ -98,6 +108,9 @@ export class BuildDock {
         this.catalystButtons[model.catalysts.indexOf(action)] = button;
         row.appendChild(button);
       }
+      // Tre, come `grid-template-columns`: e' l'unico numero che la riga non sa
+      // da sola, perche' i suoi figli possono essere quattro e andare a capo.
+      markRowColumns(row, DOCK_COLUMNS);
       section.appendChild(row);
       this.root.appendChild(section);
     }
@@ -120,6 +133,7 @@ export class BuildDock {
     this.ropewayButton = this.addTool(model.ropeway, 'ropeway', { kind: 'ropeway' }, handlers);
     this.ropewayButton.classList.add('hud-button--accent');
     reachRow.append(this.expansionButton, this.terraceButton, this.ropewayButton);
+    markRowColumns(reachRow, DOCK_COLUMNS);
     reach.append(reachTitle, reachRow);
     this.root.appendChild(reach);
 
@@ -147,6 +161,8 @@ export class BuildDock {
     this.viewToggle = labeledButton('view', 'Views', 'Look inside the city · V', () => handlers.onPanel('views'));
     this.viewToggle.setAttribute('aria-expanded', 'false');
     doors.appendChild(this.viewToggle);
+    // Righe flex: qui i figli sono anche le colonne, e il conteggio basta.
+    markRowColumns(doors);
     utility.appendChild(doors);
 
     const icons = document.createElement('div');
@@ -168,6 +184,7 @@ export class BuildDock {
       () => handlers.onSwatch(),
     ));
     icons.appendChild(iconButton('help', 'Open help', () => handlers.onHelp()));
+    markRowColumns(icons);
     utility.appendChild(icons);
     this.root.appendChild(utility);
   }
