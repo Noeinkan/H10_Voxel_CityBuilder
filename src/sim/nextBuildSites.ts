@@ -3,7 +3,7 @@ import { columnIndex } from '../world/terrain/columnBlock';
 import type { TerrainMap } from '../world/terrain/TerrainMap';
 import { BALANCE } from './balance';
 import { BUILDING_CLASS, type BuildingClass } from './classes';
-import { cellIndexOf, DesirabilityField, FREE } from './DesirabilityField';
+import { cellIndexOf, DesirabilityField, FREE, type CellRect } from './DesirabilityField';
 import type { SimState } from './SimState';
 
 /**
@@ -61,6 +61,30 @@ export interface BuildSiteQuery {
    * quello che pagava prima.
    */
   readonly headroomAt?: (x: number, y: number) => number;
+
+  /**
+   * Se presente, si guarda **solo dentro questo riquadro** di celle.
+   *
+   * **Esiste perche' il punteggio e' assoluto e la classifica e' globale**, e le
+   * due cose insieme affamano ogni polo che non sia il piu' forte della mappa.
+   * Un catalizzatore appena piazzato lontano dal centro vale al massimo la
+   * propria intensita' — duecentodieci per un mercato — mentre nel nucleo maturo
+   * due o tre campi sovrapposti tengono migliaia di celle libere sopra
+   * duecentoquaranta: i venti posti della lista finivano tutti li', e attorno al
+   * catalizzatore nuovo non nasceva **mai** niente. Non era lentezza, era zero, e
+   * lo era anche per un'isola con il suo bel monumento sopra.
+   *
+   * Il riquadro non e' una preferenza sull'ordinamento ma un ritaglio della
+   * domanda: chi costruisce chiede «dove cresce *questo* polo» e riceve la
+   * classifica di quel pezzo di mappa, dove il confronto fra celle torna a essere
+   * fra pari. La rotazione fra i poli — cioe' *quale* pezzo, a ogni infornata —
+   * sta in `growthPoles.ts`, accanto a chi le infornate le fa, con il resto di
+   * cio' che sa quante volte al secondo la citta' cresce.
+   *
+   * Costa anche **meno** della domanda globale: si scorrono le colonne di chunk
+   * che il riquadro tocca invece di tutte quelle allocate.
+   */
+  readonly within?: CellRect;
 }
 
 /**
@@ -85,7 +109,9 @@ export interface BuildSiteQuery {
  * **Dove si guarda.** Solo dentro le colonne di chunk che il campo ha allocato,
  * e il campo alloca solo dove un catalizzatore o un edificio l'ha toccato. Una
  * mappa senza catalizzatori non ha candidati e non costa nulla da interrogare,
- * per quanto sia grande.
+ * per quanto sia grande. Con `within` si guarda solo il riquadro chiesto, ed e'
+ * quello che impedisce alla classifica globale di affamare i poli lontani dal
+ * nucleo — il perche' sta sul campo.
  *
  * **Come si guarda.** I tre `Uint8Array` della colonna di chunk si prendono una
  * volta sola e poi si scorrono per indice. La versione con un accesso per cella
@@ -128,6 +154,7 @@ export function nextBuildSites(
     : thresholds.map((value) => value * share);
   const partners = BALANCE.mixedUse.partners;
   const headroom = query.headroomAt ?? GROUND_ONLY;
+  const within = query.within;
 
   const best: BuildSite[] = [];
 
@@ -151,8 +178,16 @@ export function nextBuildSites(
     const originX = DesirabilityField.originOf(chunk.ccx);
     const originY = DesirabilityField.originOf(chunk.ccy);
 
-    for (let ly = 0; ly < CHUNK; ly++) {
-      for (let lx = 0; lx < CHUNK; lx++) {
+    // Il ritaglio si applica agli estremi dei due cicli e non con un confronto
+    // per cella: su un riquadro di raggio 44 le colonne di chunk toccate sono
+    // nove, e otto di esse ci entrano solo per una striscia.
+    const fromX = within === undefined ? 0 : Math.max(0, within.minX - originX);
+    const toX = within === undefined ? CHUNK - 1 : Math.min(CHUNK - 1, within.maxX - originX);
+    const fromY = within === undefined ? 0 : Math.max(0, within.minY - originY);
+    const toY = within === undefined ? CHUNK - 1 : Math.min(CHUNK - 1, within.maxY - originY);
+
+    for (let ly = fromY; ly <= toY; ly++) {
+      for (let lx = fromX; lx <= toX; lx++) {
         const i = cellIndexOf(lx, ly);
 
         // Prima il campo: e' la lettura piu' economica e scarta quasi tutto.

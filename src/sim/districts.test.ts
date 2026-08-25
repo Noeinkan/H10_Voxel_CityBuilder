@@ -5,6 +5,7 @@ import { CATALYSTS } from './catalysts';
 import type { CharterId } from './charters';
 import {
   ALL_SPECIALIZATIONS,
+  districtPairingsOf,
   specializationGapsOf,
   specializationOf,
   urbanProfileAt,
@@ -70,6 +71,34 @@ describe('distretti emergenti', () => {
     expect(urbanProfileAt(sources([source('market')]), 0, 0).district).toBe('outskirts');
     expect(urbanProfileAt(sources([source('market'), source('park')]), 0, 0).district).toBe('garden');
     expect(urbanProfileAt(sources([source('port'), source('factory')]), 0, 0).district).toBe('harbor');
+  });
+
+  /**
+   * La regola dei quartieri letta all'indietro.
+   *
+   * Da quando le coppie sono una tabella invece di una catena di `if`, la stessa
+   * riga risponde a «cosa fanno questi due insieme» e a «con chi va accostato
+   * questo»: e' la seconda che l'interfaccia non sapeva dire, e una lista
+   * scritta a mano sarebbe divergita dalla prima riga aggiunta.
+   */
+  it('sa dire con chi accostare un ruolo, e nei due versi', () => {
+    for (const pairing of districtPairingsOf('port')) {
+      const district = urbanProfileAt(
+        sources([source('port'), source(pairing.partners[0])]), 0, 0,
+      ).district;
+      expect(district).toBe(pairing.district);
+    }
+
+    // Chi e' nominato lo nomina: la regola non distingue chi dei due sia
+    // arrivato prima, e il giocatore nemmeno.
+    expect(districtPairingsOf('market').map((entry) => entry.district)).toContain('harbor');
+  });
+
+  it('non spaccia per sinergia un quartiere che un ruolo fa da solo', () => {
+    // La fabbrica fa `industrial` senza nessun partner: comparire fra le coppie
+    // prometterebbe che serva qualcun altro per averlo.
+    expect(districtPairingsOf('factory').map((entry) => entry.district)).not.toContain('industrial');
+    expect(districtPairingsOf('transport').map((entry) => entry.district)).not.toContain('transit');
   });
 
   it('rende osservabile nello spazio l effetto delle policy', () => {

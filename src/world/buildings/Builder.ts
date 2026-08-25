@@ -5,9 +5,11 @@ import {
   type Building,
   type BuildingClass,
   type CatalystId,
+  type CellRect,
   type SimState,
 } from '../../sim';
 import { dirtyChunkCount } from './chunkBudget';
+import { poleRectAt } from './growthPoles';
 import {
   buildWorks,
   groundKindAt,
@@ -287,6 +289,15 @@ export class Builder {
   private readonly blacklist = new Set<string>();
 
   private readonly rejectedCounts = new Array<number>(REJECT_REASONS.length).fill(0);
+
+  /**
+   * Infornate fatte: e' il giro da cui `poleRectAt` ricava il polo di turno.
+   *
+   * Sta qui e non nel modulo che lo legge per la stessa ragione per cui il
+   * cursore della passata di upgrade sta nel suo driver: e' lo stato di **chi fa
+   * le passate**, e la regola che lo consuma resta pura.
+   */
+  private buildTurn = 0;
 
   private placedCount = 0;
 
@@ -598,16 +609,46 @@ export class Builder {
   // --- Costruzione -----------------------------------------------------------
 
   /**
-   * Un'infornata di costruzioni.
+   * Un'infornata di costruzioni: prima il polo di turno, poi la citta' intera.
+   *
+   * **Il turno viene prima, e non e' una preferenza.** La classifica dei
+   * candidati e' globale e il punteggio e' assoluto: senza un giro, i posti in
+   * lista li prende sempre il nucleo piu' maturo e ogni catalizzatore piantato
+   * lontano — o su un'isola — resta senza una casa per sempre. Il perche' per
+   * esteso sta in `growthPoles.ts`, che sceglie di chi e' il turno.
+   *
+   * **Il ripiego globale viene dopo, e non e' un ripensamento.** Un polo il cui
+   * quartiere e' finito — niente terreno, niente lotti, tutto costruito — non
+   * deve costare all'intera citta' l'infornata del suo turno: cio' che non ha
+   * speso lo spende la classifica di sempre, e il ritmo complessivo resta quello
+   * tarato su `ticksPerBuild`.
+   */
+  private buildPass(state: SimState): SimState {
+    const wanted = BUILDER.sitesPerBuild;
+    const pole = poleRectAt(state.catalysts, this.buildTurn++);
+
+    const turn = pole === null ? null : this.buildRound(state, wanted, pole);
+    const after = turn === null ? state : turn.state;
+    const left = wanted - (turn === null ? 0 : turn.accepted);
+    if (left <= 0) return after;
+    return this.buildRound(after, left, undefined).state;
+  }
+
+  /**
+   * Un giro d'infornata dentro un riquadro, o su tutta la mappa senza.
    *
    * Prende piu' candidati di quanti ne serva perche' la simulazione ragiona per
    * colonna: non sa cosa sia un'impronta, una pendenza o un chunk, quindi una
    * parte dei suoi candidati e' inevitabilmente inutilizzabile.
    */
-  private buildPass(state: SimState): SimState {
-    const wanted = BUILDER.sitesPerBuild;
+  private buildRound(
+    state: SimState,
+    wanted: number,
+    within: CellRect | undefined,
+  ): BuildRound {
     const sites = nextBuildSites(state, this.terrainMap, wanted * BUILDER.candidateOverfetch, {
       headroomAt: this.aerial.headroomAt,
+      within,
     });
 
     let next = state;
@@ -632,7 +673,7 @@ export class Builder {
       accepted++;
     }
 
-    return next;
+    return { state: next, accepted };
   }
 
   /**
@@ -1211,6 +1252,12 @@ export class Builder {
 
 /** Nessun vicino: chi costruisce a coordinate date non ha un fronte da guardare. */
 const EMPTY_TERMS: readonly ClusterTerms[] = [];
+
+/** Cosa un giro d'infornata lascia: lo stato nuovo e quanto ha speso del budget. */
+interface BuildRound {
+  readonly state: SimState;
+  readonly accepted: number;
+}
 
 /** Cosa serve al Builder per valutare un sito. */
 interface PlaceRequest {
