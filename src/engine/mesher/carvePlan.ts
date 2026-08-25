@@ -11,12 +11,13 @@ import {
   facadeAt,
   facadeHorizontalAxis,
   frontage,
-  hasSurfaceFace,
+  isExposed,
   LATERAL_FACES,
   openRoof,
   propRoll,
   underSetback,
   type ChunkOrigin,
+  type SurfaceCells,
 } from './microGeometry';
 
 /**
@@ -86,6 +87,18 @@ const STAIRWELL_SALT = 0x2f_6b_c8_05;
 export interface CarvePlan {
   /** Celle scavate, impacchettate come in `collectSurfaceCells`: `x | y<<5 | z<<10`. */
   readonly cells: number[];
+  /**
+   * Le stesse celle, divise per marchio.
+   *
+   * **Non e' una comodita', e' il costo del disegno.** `appendCarveDetail` fa
+   * una passata per ogni superficie di ogni ricetta su ogni faccia — una
+   * ottantina in tutto — e su una lista unica ognuna scorrerebbe anche tutte le
+   * celle che non la riguardano. Diviso qui, dove le celle si stanno gia'
+   * visitando, ogni passata vede solo le proprie.
+   *
+   * L'indice e' il byte della maschera, quindi bastano `ricette x 8` caselle.
+   */
+  readonly byMark: number[][];
   /** Quad prenotati. Mai oltre `MAX_CARVE_QUADS_PER_CHUNK`. */
   quads: number;
   /** Serve al disegno per rispondere sulle celle dell'anello. Vedi `carveKindFor`. */
@@ -96,7 +109,12 @@ export interface CarvePlan {
  * Vive a livello di modulo per la stessa ragione di `LiftedCover`: e' il buffer
  * di lavoro di una funzione sola, e il worker mesha un chunk alla volta.
  */
-const plan: CarvePlan = { cells: [], quads: 0, origin: [0, 0, 0] };
+const plan: CarvePlan = {
+  cells: [],
+  byMark: Array.from({ length: 64 }, () => [] as number[]),
+  quads: 0,
+  origin: [0, 0, 0],
+};
 
 /** true se la coordinata sta dentro il volume paddato, anello compreso. */
 function inPadded(c: number): boolean {
@@ -124,8 +142,9 @@ function roofOnBothAxes(padded: Uint8Array, x: number, y: number, z: number): bo
  * La ricetta che questa cella chiede su questa faccia, o `CARVE_KIND.none`.
  *
  * **E' l'unico posto in cui vive un aggancio di scavo**, e viene chiamato da due
- * parti per due ragioni diverse. `planCarves` lo interroga su ogni cella del
- * chunk e ne scrive il risultato nella maschera. `carveGeometry` lo interroga
+ * parti per due ragioni diverse. `planCarves` lo interroga sulle celle che
+ * `collectSurfaceCells` gli ha gia' filtrato, e ne scrive il risultato nella
+ * maschera. `carveGeometry` lo interroga
  * **solo sull'anello di padding**, quando `emitRuns` chiede se una corsa
  * prosegue oltre il confine: li' la maschera non c'e' — appartiene al chunk
  * accanto — e senza risposta ogni cucitura mostrerebbe la testata del vano come
@@ -146,11 +165,10 @@ export function carveKindFor(
   const outside = x < 0 || x >= CHUNK || y < 0 || y >= CHUNK || z < 0 || z >= CHUNK;
 
   if (face === FACE_PZ) {
-    // Il vassoio della terrazza: il calpestio scende sotto il filo del
-    // parapetto, che smette di leggere come un bordino e comincia a leggere come
-    // un parapetto. Sta sul **contorno** del tetto — dove `emitRoofTech` mette
-    // gia' la sua ringhiera — e non sul suo interno, che il greedy fonde in un
-    // quad solo e che scavare costerebbe senza mostrare niente.
+    // Il vassoio della terrazza: **tutto** il calpestio scende sotto il filo del
+    // parapetto, che resta dov'era e smette di leggere come un bordino. Da fuori
+    // la terrazza e' identica a prima — la facciata sale fino alla stessa quota —
+    // e a cambiare e' cio' che si vede guardandoci dentro.
     //
     // Non sugli arretramenti: li' `emitTerraceBoxes` posa fioriere e cassoni a
     // partire da `(z + 1) * U`, e abbassare il piano sotto di loro li lascerebbe
@@ -166,16 +184,32 @@ export function carveKindFor(
       : CARVE_KIND.none;
   }
 
+  // **Una lettura del voxel e una del vicino, poi solo confronti.** Il predicato
+  // gira su ogni coppia (cella, faccia esposta) del chunk, e la versione che
+  // interrogava `hasSurfaceFace` due volte prima di `facadeAt` ne pagava sei di
+  // indirizzamenti dove ne bastano due. La superficie del voxel decide da sola
+  // quale famiglia di ricette puo' rivendicarlo: un portale non e' mai una
+  // vetrata, e nessuno dei due e' una facciata d'uso.
+  const block = blockAt(padded, x, y, z);
+  if (block === 0 || !isExposed(padded, x, y, z, face)) return CARVE_KIND.none;
+  const surface = blockSurface(block);
+
   // La soglia: il vano dell'ingresso arretra dal filo della parete, e i montanti
   // di `emitPortals` girano attorno alla bocca invece che su un muro piatto.
-  if (hasSurfaceFace(padded, x, y, z, SURFACE_KIND.portal, face)) return CARVE_KIND.threshold;
+  if (surface === SURFACE_KIND.portal) return CARVE_KIND.threshold;
 
   // La vetrata a filo interno: la fascia d'accento rientra dietro la cornice che
   // `emitLuminous` gia' le disegna, e quella cornice diventa una strombatura.
-  if (hasSurfaceFace(padded, x, y, z, SURFACE_KIND.luminous, face)) return CARVE_KIND.glazing;
+  if (surface === SURFACE_KIND.luminous) return CARVE_KIND.glazing;
 
-  const use = facadeAt(padded, x, y, z, face);
-  if (use === SURFACE_KIND.plain) return CARVE_KIND.none;
+  if (surface !== SURFACE_KIND.habitat && surface !== SURFACE_KIND.industrial &&
+    surface !== SURFACE_KIND.civic) {
+    return CARVE_KIND.none;
+  }
+  // L'acqua porta `WATER_CLASS` in questi stessi bit, e due dei suoi tre valori
+  // coincidono con `habitat` e `industrial`. A riconoscerla dalla palette c'e'
+  // gia' `facadeAt`, ed e' l'unico posto che deve saperlo.
+  if (facadeAt(padded, x, y, z, face) === SURFACE_KIND.plain) return CARVE_KIND.none;
 
   // La loggia: il piano di facciata si ritira sotto lo sbalzo che lo copre.
   // L'aggancio e' quello di `emitSoffits` letto dal basso — la' e' l'intradosso
@@ -189,22 +223,21 @@ export function carveKindFor(
     return CARVE_KIND.loggia;
   }
 
-  // Da qui in giu' si va sul retro, dove `frontage` e' falso: un vano scala o
-  // una nicchia sul fronte strada leggerebbero come un difetto della facciata.
-  if (frontage(padded, x, y, z, face)) return CARVE_KIND.none;
-
-  // Il vano scala. Il tiro si semina sulla **colonna** — `z` fisso a zero — come
-  // fanno le calate e i rampicanti: cosi' il predicato risponde uguale a tutte le
-  // quote e la corsa verticale diventa un box solo invece di tratti staccati.
+  // **I dadi prima di `frontage`, ed e' una scelta di costo come in `emitAwnings`.**
+  // `frontage` e' l'unico predicato che scandisce una colonna — sei letture — e
+  // le due ricette che lo vogliono scattano su una cella su venti e su una su
+  // cinquanta. Interrogandolo per primo lo pagavano tutte.
   if (z >= ALCOVE_FLOOR && z <= STAIRWELL_TOP &&
-    propRoll(origin, x, y, 0, STAIRWELL_SALT) < STAIRWELL_CHANCE) {
+    propRoll(origin, x, y, 0, STAIRWELL_SALT) < STAIRWELL_CHANCE &&
+    !frontage(padded, x, y, z, face)) {
     return CARVE_KIND.stairwell;
   }
 
   // La nicchia, e non risponde sull'anello: e' l'unica ricetta che non corre,
   // quindi nessuna corsa le chiedera' mai se prosegue.
   if (!outside && z >= ALCOVE_FLOOR &&
-    propRoll(origin, x, y, z, ALCOVE_SALT) < ALCOVE_CHANCE) {
+    propRoll(origin, x, y, z, ALCOVE_SALT) < ALCOVE_CHANCE &&
+    !frontage(padded, x, y, z, face)) {
     return CARVE_KIND.alcove;
   }
 
@@ -246,16 +279,23 @@ export function carveRunAxis(kind: number, face: number): 0 | 1 | 2 {
 /**
  * Riempie la maschera degli scavi e restituisce il piano.
  *
- * La scansione ha la stessa forma e lo stesso filtro di `collectSurfaceCells`:
- * salta il vuoto, salta `plain` e `utility`. Non e' un'ottimizzazione di
- * contorno — `utility` e' la superficie di tutte le carreggiate e di tutti gli
- * impalcati, cioe' l'area dipinta piu' estesa del mondo, e nessuna ricetta la
- * rivendica.
+ * **Non scandisce il volume, riceve le liste che `collectSurfaceCells` ha gia'
+ * fatto.** La prima versione faceva la sua passata su tutte le 32 768 celle e
+ * interrogava quattro facce a testa: costava 7,8 ms per chunk, cioe' da sola
+ * quanto l'intero budget di rebuild. Le liste per superficie tolgono di mezzo il
+ * vuoto e i linguaggi che nessuna ricetta rivendica; `facadeByFace` toglie anche
+ * le celle **interne** di un edificio pieno, che sono i due terzi e non potranno
+ * mai portare un vano. E' lo stesso ragionamento per cui esistono per i prop, e
+ * hoistare quella scansione sopra il greedy pass non ne aggiunge una: la sposta.
  *
- * Quando la riserva finisce la scansione **si ferma** invece di saltare la
- * singola cella: fermarsi e' prevedibile e lascia intatta la coda del chunk,
- * mentre saltare farebbe entrare le ricette a caso a seconda di quanto costano.
- * La coda di una corsa gia' aperta che resta fuori non apre un buco: `emitRuns`
+ * L'ordine e' quello di `carveMarkFor`, e deve restarlo: la prima ricetta che
+ * rivendica una cella se la prende, e chi cuce due chunk si aspetta la stessa
+ * risposta da entrambe le parti. Le ricette non si contendono quasi mai una
+ * cella — la superficie del voxel ne ammette una sola — tranne dentro il gruppo
+ * di facciata, dove decide l'ordine delle facce.
+ *
+ * Quando la riserva finisce la scansione **si ferma**. Fermarsi e' prevedibile,
+ * e la coda di una corsa gia' aperta che resta fuori non apre un buco: `emitRuns`
  * legge la maschera, quindi la corsa finisce dove finisce il piano e le celle
  * successive conservano la loro faccia piatta.
  */
@@ -263,35 +303,72 @@ export function planCarves(
   padded: Uint8Array,
   marks: Uint8Array,
   origin: ChunkOrigin,
+  cells: SurfaceCells,
 ): CarvePlan {
   plan.cells.length = 0;
   plan.quads = 0;
   plan.origin = origin;
+  for (const bucket of plan.byMark) bucket.length = 0;
 
-  for (let z = 0; z < CHUNK; z++) {
-    for (let y = 0; y < CHUNK; y++) {
-      for (let x = 0; x < CHUNK; x++) {
-        const block = blockAt(padded, x, y, z);
-        if (block === 0) continue;
-        const surface = blockSurface(block);
-        if (surface === SURFACE_KIND.plain || surface === SURFACE_KIND.utility) continue;
+  // Il vassoio per primo, come in `carveMarkFor`. Non contende niente a nessuno:
+  // `roofTech` non e' una facciata d'uso, quindi nessuna ricetta laterale la
+  // guarda.
+  if (!claimAll(padded, marks, origin, cells.bySurface[SURFACE_KIND.roofTech], FACE_PZ)) {
+    return plan;
+  }
 
-        const mark = carveMarkFor(padded, origin, x, y, z);
-        if (mark === 0) continue;
-
-        const cost = continuesRun(marks, mark, x, y, z)
-          ? CONTINUE_COST
-          : CARVE_COST[mark >>> 3];
-        if (plan.quads + cost > MAX_CARVE_QUADS_PER_CHUNK) return plan;
-
-        marks[carveIndex(x, y, z)] = mark;
-        plan.cells.push(x | (y << 5) | (z << 10));
-        plan.quads += cost;
-      }
+  // Portali e vetrate arrivano dalle liste **volumetriche**: `collectSurfaceCells`
+  // filtra per faccia esposta solo i tre linguaggi d'uso, e l'esposizione qui la
+  // verifica `carveKindFor` con la lettura che farebbe comunque.
+  for (const surface of [SURFACE_KIND.portal, SURFACE_KIND.luminous] as const) {
+    for (const face of LATERAL_FACES) {
+      if (!claimAll(padded, marks, origin, cells.bySurface[surface], face)) return plan;
     }
   }
 
+  // Le facciate d'uso: qui la lista e' gia' filtrata per faccia, quindi ogni
+  // cella si guarda una volta sola e sulla faccia giusta.
+  for (let i = 0; i < LATERAL_FACES.length; i++) {
+    if (!claimAll(padded, marks, origin, cells.facadeByFace[i], LATERAL_FACES[i])) return plan;
+  }
+
   return plan;
+}
+
+/**
+ * Prende per il piano ogni cella della lista che rivendica un vano su `face`.
+ *
+ * Restituisce `false` quando la riserva e' finita, e il chiamante si ferma.
+ * Salta le celle gia' marcate: una cella si scava su una faccia sola, e chi e'
+ * arrivato prima ha la precedenza.
+ */
+function claimAll(
+  padded: Uint8Array,
+  marks: Uint8Array,
+  origin: ChunkOrigin,
+  cells: readonly number[],
+  face: number,
+): boolean {
+  for (const cell of cells) {
+    const x = cell & 31;
+    const y = (cell >>> 5) & 31;
+    const z = cell >>> 10;
+    const index = carveIndex(x, y, z);
+    if (marks[index] !== 0) continue;
+
+    const kind = carveKindFor(padded, origin, x, y, z, face);
+    if (kind === CARVE_KIND.none) continue;
+
+    const mark = packCarveMark(kind as CarveKind, face);
+    const cost = continuesRun(marks, mark, x, y, z) ? CONTINUE_COST : CARVE_COST[kind];
+    if (plan.quads + cost > MAX_CARVE_QUADS_PER_CHUNK) return false;
+
+    marks[index] = mark;
+    plan.cells.push(cell);
+    plan.byMark[mark].push(cell);
+    plan.quads += cost;
+  }
+  return true;
 }
 
 /**

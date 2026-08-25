@@ -11,6 +11,227 @@ coincide con il messaggio di commit.
 
 ---
 
+## In corso — Verifica proporzionata alla modifica
+
+- **`test:changed` e `test:related`.** La suite intera girava dopo ogni
+  modifica, anche di una riga. Ora il cerchio stretto risale il grafo degli
+  import e fa girare solo i test che toccano davvero cio' che hai cambiato; la
+  suite intera resta il passo di consegna, non l'abitudine.
+- **Reporter `dot` su `npm test`.** Un file di test per riga erano 134 righe di
+  output a ogni run, quasi tutte per dire che andava bene. I fallimenti si
+  vedono per esteso come prima.
+
+## In corso — HUD ai lati: il corridoio verticale torna alla citta'
+
+- **Comandi a sinistra, stato a destra, centro libero da bordo a bordo.** La barra risorse in alto e il dock in basso costavano ~190px su 1080 — il 18% dell'altezza — proprio nelle due bande dove in isometrica finiscono la cima delle torri e il piede dell'isola, cioe' esattamente cio' che una citta' che cresce in verticale chiede di guardare. Le quattro corsie del dock si incolonnano su una griglia di due tessere; le cinque risorse diventano una colonna sul bordo destro.
+- **Due misure pubblicate invece di numeri ripetuti.** `--game-hud-rail-left` e `--game-hud-top` li riscrive un `ResizeObserver` sul rail e sulla colonna: la barra dei livelli, la scheda di selezione e i pannelli di debug si spostano da soli quando cambia il numero di tessere, invece di portarsi dietro una costante che diverge alla prima aggiunta.
+- **La targa della vista entra nel rail.** Stava dove ora comincia il dock; adesso i due sono nello stesso contenitore in colonna — il dock in cima, la targa appoggiata al fondo — e non esiste altezza di finestra in cui si coprano.
+- **La bolla del tooltip esce verso il centro.** Su un rail appoggiato al bordo, una bolla centrata sopra una tessera perderebbe un centinaio di pixel fuori dallo schermo: dal dock si apre a destra, dalla colonna risorse a sinistra. Per la stessa ragione il dock **non** ha `overflow`, che ritaglierebbe la bolla a ogni passaggio: a tenerlo dentro lo schermo ci pensano due media query sull'**altezza**, che e' l'asse su cui un rail finisce lo spazio.
+- **Il rail si prende il puntatore su tutta la superficie.** Da barra orizzontale in fondo a colonna alta quanto lo schermo, i suoi margini sono diventati un bersaglio grande, e un clic caduto li' piazzava un catalizzatore nella citta' che ci sta dietro.
+
+## In corso — La campagna segue la fame
+
+- **Il deficit alimentare attraversa il confine come quantità, non come sì/no.**
+  `foodDeficitOf` diceva già quanti pasti mancano e `FarmDriver` lo riduceva a un
+  booleano: piantava due lotti ogni duecento tick che ne mancassero due o
+  duecento. La domanda però cresce con la città — un campo ogni due residenziali,
+  fino a cento edifici ogni duecento tick — mentre l'offerta restava una costante
+  di `farms/config.ts`, e le due divergevano dal primo isolato. Misurato su
+  quattromila tick: a 5110 abitanti la città raccoglieva 86 razioni contro le 255
+  che le servivano, e la forbice si allargava. Ora `missingPlotsOf` dice quanti
+  campi mancano, `plotsPerPass` è il tetto di una passata invece del ritmo, e la
+  cadenza scende a quattro secondi — che non si vedono, perché a città sfamata la
+  passata non pianta niente.
+
+- **La spirale dei lotti è centrata sull'isola e non sull'origine del mondo.**
+  L'isola sta in `[0, 512]` e il suo centro è `(256, 256)`; la ricerca partiva da
+  `(0, 0)`, cioè da un angolo di oceano. Dei 2025 candidati ne cadevano sulla
+  mappa 529, tutti nel quadrante sud-ovest: una città cresciuta a nord-est non
+  vedeva nascere un campo nemmeno affamata. Non si vedeva nei test perché
+  `testTerrain` genera a partire dal chunk `(0, 0)` — la fixture metteva il
+  terreno esattamente dove la spirale guardava — e il centro si legge ora da
+  `TerrainMap.shape`, che fuori dalle fixture c'è sempre.
+
+- **Un frutteto non pianta più alberi sulla carreggiata.** Un solco lo diceva già
+  da sé — porta la priorità più bassa della coda del suolo e la strada vince —
+  ma gli alberi sono volume e passavano da un'altra porta: `orchardStamp` riceve
+  la rete stradale e scarta l'albero il cui ingombro copre un asse. Piantare e
+  cancellare la ricevono entrambi, o l'impronta da spegnere non sarebbe più
+  quella scritta.
+
+- **Una carestia stabile non si legge più come un pareggio.** Ogni consumo è un
+  `min(domanda, disponibile)`, quindi uno stock esaurito si ferma a zero e il
+  delta vale *esattamente* zero: `isSelfSufficient` e l'allarme «Food shortage»
+  chiedevano il segno del delta e leggevano una città che mangiava un terzo di
+  ciò che le serviva come una in equilibrio — l'obiettivo scorreva e l'allarme
+  non compariva mai. Ora chiedono a `fedShareOf`, che è il `fed` del tick riletto
+  dal referto. Materiali e fondi hanno lo stesso punto cieco e restano sul delta:
+  chiuderlo chiede il loro equivalente di `fed`, che oggi il referto non porta.
+
+## In corso — La nave da carico non apparteneva alla città
+
+A distanza isometrica la nave era l'unico oggetto in scena con tre famiglie di
+palette sature addosso contemporaneamente: verde dell'erba, azzurro dei vetri e
+ruggine sui container, sopra uno scafo bruno. Un edificio a dieci voxel di
+distanza ne porta **una**, su una massa neutra — la nave faceva l'opposto, e
+proprio sulla superficie più estesa che di lei si vede.
+
+- **I container stanno nell'accento caldo del tema, più una neutra.**
+  `cratePalettes` passa da `[metalRust, glassDeep, grassDark]` a `[brickDark,
+  metalRust, concreteLight]`: due tinte della stessa famiglia calda e un grigio
+  chiaro. Il carico è una massa, non un accento, e segue quindi la regola con
+  cui la città fa le masse. Effetto collaterale voluto: i container ora
+  cambiano con la palette — magenta al neon, bruciato nell'industriale — invece
+  di restare tre tinte fisse, e l'azzurro sulla nave torna a essere solo un
+  vetro.
+- **Lo scafo della nave da carico esce dai metalli scuri.** `metalDark` è un
+  bruno caldo in tutti e sette i temi, mentre la fascia di galleggiamento è
+  `asphaltShadow`, che è fredda: la riga si leggeva come un nastro azzurro
+  incollato al fianco invece che come l'ombra dell'immersione. Con lo scafo su
+  `concrete` le due tinte tornano nella stessa famiglia, ed è quello che la
+  fascia deve essere — lo scafo in ombra.
+
+## In corso — HUD: tooltip che si chiudono e pannello di governo a linguette
+
+- **La bolla del tooltip non resta piu' aperta per sempre.** Un clic col mouse lasciava il fuoco sulla tessera del dock, e il browser riaccende `:focus-visible` sull'elemento a fuoco al primo tasto che arriva: in un gioco dove ogni tasto e' una scorciatoia sul mondo bastava scegliere uno strumento e muovere la camera. Ora il clic col mouse rilascia il fuoco (`detail > 0`, cosi' Enter e Spazio continuano a lasciarlo dov'e'), il che toglie di mezzo anche lo Spazio che ricliccava l'ultimo bottone.
+- **Il tooltip e' un blocco di righe, non un periodo unico.** Le voci erano incollate da `·` in un testo centrato dove il motivo, il vincolo e i due elenchi pesavano uguale; `May build` del monumento arrivava a diciassette nomi. Adesso una voce per riga, portata/favoriti/penalizzati insieme perche' sono la stessa domanda, ed elenchi che dopo tre nomi si contano (`+14 more`). La stessa regola vale per la scheda al cursore. Sparisce il `title` nativo, che raddoppiava lo stesso testo in una seconda bolla.
+- **Il pannello delle politiche si apre su tre linguette e non scorre piu' tutto insieme.** Intestazione e linguette stanno ferme — la croce per chiudere usciva dallo schermo appena si scendeva —, e politiche, commercio e commercio esterno non si sommano piu' in altezza. Sulla scheda di una policy resta la frase che dice *cosa fa*; *dove agisce* passa al `title`, e la riga dei numeri distingue la spesa una tantum dal mantenimento, o dice cosa manca invece del listino che non si puo' pagare.
+
+## In corso — Un edificio ora si posa, prima compariva
+
+`BUILDER.voxelsPerFrame` scende da **96 a 24**. Il budget era stato alzato
+insieme alla scala del voxel per tenere fermo *quanto costa* un edificio, e
+l'altra metà della stessa frase — «quanto ci mette a comparire» — era rimasta
+senza nessuno che la guardasse.
+
+- **Il pop, misurato.** Contati sugli stamp veri, un edificio di livello zero
+  sta fra i 290 e i 330 voxel solidi, ed è il 78% di quelli che nascono
+  (`START_LEVEL_CDF`). A novantasei cubi per frame erano **tre frame, cinquanta
+  millisecondi**: la casa non saliva, appariva già fatta. A ventiquattro impiega
+  circa un quinto di secondo, e una torre di livello massimo fra i due e i tre —
+  la durata torna proporzionata al volume invece di essere la stessa per tutti.
+- **Non è una manopola di prestazioni.** Il tetto di lavoro per frame resta
+  `maxGrowing * voxelsPerFrame` e la meshatura a valle ha già un budget in
+  millisecondi suo (`ChunkRenderer.update`): abbassare questo numero non compra
+  frame rate, allunga il gesto. Quello che costa davvero è il rimeshing — un
+  volume spalmato su quattro volte i frame sporca i propri chunk quattro volte
+  più spesso — ed è il motivo per cui il numero si ferma qui invece di scendere
+  a dieci, dove un capannone di livello massimo terrebbe occupato per sette
+  secondi uno dei dodici posti di `maxGrowing` e a rallentare sarebbe la passata
+  di upgrade.
+- **Il ritmo della città non si muove.** `ticksPerBuild` resta a 6: nascono
+  sempre cinque edifici al secondo, e con dodici posti in coda la capacità di
+  smaltimento resta abbondantemente sopra quella soglia. A cambiare è solo cosa
+  si vede succedere su ciascuno.
+
+## In corso — La microgeometria sapeva solo aggiungere
+
+Ogni emettitore di `microGeometry.ts` appoggiava il suo prisma **fuori** dal
+piano della faccia: `facadeBox` metteva il box in `[plane, plane + depth]`, i
+dettagli di tetto partivano da `(z + 1) * U`, e la faccia base del greedy pass
+restava sempre dov'era. A schermo il risultato era un vocabolario dimezzato —
+montanti, parapetti, cornici e tende tutti appiccicati a pareti perfettamente
+piatte — perché la soglia, la vetrata a filo interno, la loggia sotto lo sbalzo e
+la nicchia si leggono per l'**ombra di un rientro**, e con le sole sporgenze non
+si possono dire.
+
+- **La maschera degli scavi, e il punto in cui si innesta.** `greedyMesher.ts` ha
+  un solo posto in tutto il progetto in cui si decide se una faccia esiste: il
+  mask loop. `carvePlan.ts` gira **prima** del greedy pass e vi scrive un byte per
+  cella — ricetta nei bit alti, faccia nei bassi — che quel ciclo consulta con una
+  lettura e due confronti. Sopprimere significa `mask[n] = 0`, che è il valore che
+  il merge non fonde con niente: non c'è un campo nuovo da far entrare in
+  `packFace`.
+- **Scavare non tocca il volume, ed è la differenza con `liftGroundCover`.** La
+  cella resta piena, quindi cielo, bagliore e AO dei vicini raccontano ancora la
+  stessa parete. Una nicchia non deve scurire il muro a due metri.
+- **Una faccia soppressa va sempre pagata.** È l'invariante più forte del lavoro:
+  un dettaglio additivo troncato lascia un edificio più spoglio, uno riduttivo
+  troncato lascia un edificio **bucato**. `planCarves` si limita a
+  `MAX_CARVE_QUADS_PER_CHUNK` e scarta scavi interi, mai a metà;
+  `appendCarveDetail` scrive per primo fra i dettagli, quindi la riserva c'è
+  tutta.
+- **Sette ricette, tutte agganciate alla sola geometria** — nessuna modifica a
+  `src/world/`, `SurfaceKind` resta a sette linguaggi, nessuno slot nuovo: soglia
+  d'ingresso, vetrata a filo interno, loggia sotto uno sbalzo, nicchia, vano
+  scala, vassoio di terrazza e mezzanino. Il fondo di una soglia esce `portal` e
+  quello di una vetrata `luminous`, quindi di notte l'ingresso e la finestra si
+  accendono **dal fondo del vano** invece che dal filo del muro.
+- **Il riduttivo si compone con l'additivo invece di affiancarlo.** I montanti di
+  `emitPortals` girano attorno alla bocca di una soglia vera; la cornice di
+  `emitLuminous` diventa la strombatura di una vetrata arretrata; la rampa di
+  `microStreet` entra nel suo vano e non tira più il proprio dado — legge la
+  maschera, ed è così che vano e scala restano allineati per costruzione.
+  `facadeBox` ha guadagnato un `inset` e i prop di tetto un `roofBase`. Il
+  parapetto è l'unica cosa che **non** scende con il vassoio, ed è il punto.
+- **Il vano si disegna sul perimetro, non sulle celle**, e la prima stesura lo
+  sbagliava. Fondo, davanzale, architrave e due stipiti: una fascia luminosa alta
+  ventisei celle costa cinque quad invece di centotrenta, e due celle adiacenti
+  non producono più due spalle coincidenti in mezzo alla superficie.
+- **L'AO è metà del disegno.** `writeDetailBox` dava a ogni prisma il corner del
+  tutto libero, che dentro un incavo significa «niente mi occlude»: gli stipiti
+  scendono a 2 e il fondo a 1, ed è quella differenza — non la profondità, che a
+  1/16 è minuscola — a far leggere il vano da lontano.
+- **Costo, misurato.** Geometria: il dettaglio del chunk fitto passa da 6 055 a
+  7 739 quad, e il tetto di 16 384 non si è mosso. Tempo, sul bench `edifici
+  sci-fi` con lo scavo spento e acceso nella stessa finestra: **9,6 ms contro
+  11,6**, cioè +2,0 ms. La prima stesura ne costava +9,5, e le due cose che
+  l'hanno divisa per cinque valgono per chiunque aggiunga una ricetta — il piano
+  riceve le liste di `collectSurfaceCells` invece di scandire il volume (quella
+  scansione è stata **spostata** sopra il greedy pass, non aggiunta), e il disegno
+  scorre il secchiello del proprio marchio invece della lista intera.
+
+## In corso — Il campionario mostrava meno vocabolario di quello che esiste
+
+Le 248 celle della matrice erano la stessa massa a quattro gradoni centrati — la
+sagoma **minima** che fa scattare `emitSoffits`, `emitTerraceBoxes` e
+`emitFinials`. Minima era il problema: a schermo 248 torte nuziali quasi
+identiche, e la differenza fra `habitat`, `industrial`, `civic`, `luminous` e
+`roofTech` non si leggeva a colpo d'occhio. Peggio, tre emettitori restavano
+spenti del tutto senza che niente lo segnalasse.
+
+- **`CELL_PARTS`: il provino è una massa articolata, e il cortile è la parte che
+  mancava.** Podio smussato, sbalzo a filo, quattro lame di corona attorno a un
+  cortile 5×5, quattro pinnacoli isolati agli angoli. Il cortile lascia scoperte
+  33 celle della sommità dello sbalzo, e 13 hanno **tutti e quattro** i vicini
+  scoperti: è la condizione di `interiorRoof`, e finché il tetto più largo era un
+  anello di spessore uno `emitRoofMasts`, `emitRoofCrowns` e `emitPergolas` non
+  potevano scattare. Misurato: chiome e pergole erano **zero** su tutte e 248 le
+  celle. Lo `notch` sulla corona toglie all'anello proprio le celle che
+  toccherebbero i pinnacoli, ed è quello a renderli colonne isolate per tutta la
+  loro altezza invece che solo in punta — quattro finiali per cella contro uno.
+- **La simmetria è C4, non «ogni gradone è centrato».** La ragione non cambia —
+  la sagoma dev'essere la stessa da qualunque azimut, o a un quarto di giro metà
+  campionario andrebbe letta orbitando — ma la vecchia formulazione valeva solo
+  finché i pezzi erano quadrati pieni. Il test ora verifica l'invarianza per
+  rotazione di 90° della pianta vera, cortili e pinnacoli compresi: è la stessa
+  regola, controllata dove prima si controllava una sua conseguenza.
+- **La sagoma sta in un posto solo, `cellSolidAt`**, e la leggono in tre — il
+  generatore che la scrive, la sonda che ne conta i prismi, il test che confronta
+  il mondo con lei. La pila sequenziale di gradoni non bastava più: corona e
+  pinnacoli sono lo **stesso piano**, e due pezzi alla stessa quota una pila non
+  sa dirli.
+- **`swatchProbe.ts`: quanto dettaglio emette una cella non si stima, si
+  rimisura.** Passa gli emettitori veri con un writer che conta al posto di
+  scrivere, quindi nessuna tabella scritta a mano può restare indietro. Lo
+  consumano il referto sotto il cursore (riga `dettaglio`, e `__voxelSwatch()`
+  la restituisce) e due controlli nuovi: un **pavimento** di prismi per
+  linguaggio — così una famiglia spenta cade lì invece di non lasciare traccia,
+  che è esattamente il difetto appena chiuso — e il **tetto** di
+  `MAX_DETAIL_QUADS_PER_CHUNK` sul chunk più carico.
+- **Impronta da 5 a 7, interasse invariato.** Il vincolo è
+  `cellPitch > CELL_FOOTPRINT`, e 10 > 7 regge: `sizeX` passa da 321 a 323, cioè
+  l'inquadratura non cambia. Sopra `CELL_LEDGE` — la sommità dello sbalzo — deve
+  restare tutto visibile senza ruotare la camera, e con interasse 10 questo tiene
+  l'altezza a 9 livelli: è il conto dell'occlusione, non una scelta di gusto.
+- **Misurato, prismi di sola microgeometria per provino**, gradoni → sagoma
+  attuale: `habitat` 47 → 119, `industrial` 70 → 170, `civic` 68 → 178,
+  `luminous` 64 → 176, `portal` 60 → 180, `roofTech` 21 → 61. `plain` e `utility`
+  restano a zero, come devono. Con gli scavi sommati — quel che il referto mostra
+  — 137, 204, 212, 304, 308 e 77, e il chunk più carico fa **10 629 quad** di
+  dettaglio contro i 16 384 del tetto: era metà prima che le due cose si
+  sommassero, quindi chi arricchisce ancora rimisuri invece di fidarsi.
+
 ## In corso — L'indice e il changelog non si scrivono più a mano
 
 Con più agenti in parallelo, `PROJECT_INDEX.md` e `CHANGELOG.md` erano quasi un
@@ -135,9 +356,14 @@ un'**assenza** — la cosa che nessun test verde sa raccontare.
   `routes.ts` (orchestrazione e ciò che galleggia), `skyRoutes.ts` (ciò che
   scavalca la città). Nessun ciclo: le rotte in quota importano i tipi
   dell'orchestratore come soli tipi, e le primitive dal file che le contiene.
+- **Dove si posa una struttura costiera è ora una domanda pura** e vive in
+  `landmarkSiting.ts` invece che dentro il driver: verso, ingombro e angolo già
+  portato incontro all'acqua. `landmarkDriver.ts` scende da 630 a 558 righe — era
+  finito sopra la soglia dei 600 proprio per questa aggiunta — e lo scorrimento si
+  verifica al voxel senza far crescere un'isola.
 - File: `src/world/traffic/{config,routes,routePath,skyRoutes,routes.test}.ts`,
   `src/world/landmarks/{config,generate.test}.ts`, `src/world/sites/{config,siteRules}.ts`,
-  `src/world/buildings/{landmarkDriver,landmarkCoast.test}.ts`,
+  `src/world/buildings/{landmarkDriver,landmarkSiting,landmarkCoast.test}.ts`,
   `src/engine/vehicleHulls.ts`, `src/game/growthScene.ts`, `PROJECT_INDEX.md`,
   `src/world/AGENTS.md`.
 

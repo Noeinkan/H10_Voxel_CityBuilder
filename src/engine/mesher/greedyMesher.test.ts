@@ -34,15 +34,38 @@ function glowOf(shade: number): number {
   return (shade >>> SHADE_GLOW_SHIFT) & SHADE_GLOW_MASK;
 }
 
+/**
+ * Vertici del **solo greedy pass**: e' li' che vivono AO, cielo e bagliore per
+ * corner, ed e' di quelli che parlano i test di questo file.
+ *
+ * Il taglio non e' pedanteria da quando esiste la microgeometria riduttiva: il
+ * davanzale di un vano e' un pannello che guarda in su e sta sul piano di una
+ * faccia +Z, quindi cade dentro le stesse interrogazioni per piano. Ha la sua
+ * AO e il suo cielo — bassi, perche' e' dentro un incavo — e mescolarlo alla
+ * faccia di terreno accanto misurerebbe due cose diverse insieme.
+ */
+function baseVertices(mesh: { quadCount: number; detailQuadCount: number }): number {
+  return (mesh.quadCount - mesh.detailQuadCount) * 4;
+}
+
+type ShadedMesh = {
+  faces: Uint8Array;
+  positions: Int16Array;
+  shade: Uint8Array;
+  quadCount: number;
+  detailQuadCount: number;
+};
+
 /** Bagliore dei vertici della faccia `face` che sta sul piano `plane` dell'asse. */
 function glowOnFace(
-  mesh: { faces: Uint8Array; positions: Int16Array; shade: Uint8Array },
+  mesh: ShadedMesh,
   face: number,
   axis: number,
   plane: number,
 ): number[] {
   const found: number[] = [];
-  for (let i = 0; i < mesh.faces.length; i++) {
+  const limit = baseVertices(mesh);
+  for (let i = 0; i < limit; i++) {
     if (mesh.faces[i] !== face) continue;
     if (mesh.positions[i * 3 + axis] !== plane * MESH_UNITS_PER_VOXEL) continue;
     found.push(glowOf(mesh.shade[i]));
@@ -51,9 +74,10 @@ function glowOnFace(
 }
 
 /** Visibilita' del cielo dei vertici della faccia +Z posta alla quota `lz + 1`. */
-function skyOnTopFaceAt(mesh: { faces: Uint8Array; positions: Int16Array; shade: Uint8Array }, lz: number): number[] {
+function skyOnTopFaceAt(mesh: ShadedMesh, lz: number): number[] {
   const found: number[] = [];
-  for (let i = 0; i < mesh.faces.length; i++) {
+  const limit = baseVertices(mesh);
+  for (let i = 0; i < limit; i++) {
     if (mesh.faces[i] !== 4) continue;
     if (mesh.positions[i * 3 + 2] !== (lz + 1) * MESH_UNITS_PER_VOXEL) continue;
     found.push(skyOf(mesh.shade[i]));
@@ -152,7 +176,12 @@ describe('greedyMesh', () => {
 
     const mesh = greedyMesh(padded);
 
-    expect(mesh.quadCount - mesh.detailQuadCount).toBe(10);
+    // Nove e non dieci: la faccia +X del voxel `luminous` non viene emessa
+    // piatta, perche' `carvePlan` la scava come vetrata a filo interno e al suo
+    // posto ci va il vano. La proprieta' che questo test difende — due
+    // superfici diverse non si fondono — si legge sotto, sull'insieme delle
+    // superfici, e vale identica.
+    expect(mesh.quadCount - mesh.detailQuadCount).toBe(9);
     expect([...new Set(mesh.palettes)]).toContain(12);
     expect(new Set(mesh.surfaces)).toEqual(new Set([
       SURFACE_KIND.habitat,

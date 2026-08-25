@@ -12,6 +12,7 @@ import { clearCarves, planCarves } from './carvePlan';
 import { appendCoverDetail, liftGroundCover, restoreGroundCover } from './coverDetail';
 import {
   appendMicroGeometry,
+  collectSurfaceCells,
   MAX_DETAIL_QUADS_PER_CHUNK,
   type BoxOptions,
   type ChunkOrigin,
@@ -159,12 +160,20 @@ export function greedyMesh(
   // fondo alla funzione.
   const cover = liftGroundCover(padded, ceiling);
 
+  // **Una scansione sola per due lettori.** `collectSurfaceCells` filtra il
+  // volume per superficie e per faccia esposta, e serviva ai prop; da quando c'e'
+  // il piano degli scavi serve anche a lui, e per lui deve girare **prima** del
+  // greedy pass. Farla qui invece che dentro `appendMicroGeometry` non aggiunge
+  // una passata: la sposta, e il piano smette di doversene fare una sua — che
+  // costava 7,8 ms per chunk, cioe' l'intero budget di rebuild.
+  const surfaceCells = collectSurfaceCells(padded);
+
   // Gli scavi si decidono qui, prima del greedy pass, perche' il mask loop deve
   // sapere quali facce **non** emettere. A differenza delle coperture non
   // toccano il volume: la cella resta piena, quindi cielo, bagliore e AO dei
   // vicini raccontano ancora la stessa parete. Una nicchia non deve scurire il
   // muro a due metri.
-  const carves = planCarves(padded, carveMarks, origin ?? ORIGIN_ZERO);
+  const carves = planCarves(padded, carveMarks, origin ?? ORIGIN_ZERO, surfaceCells);
 
   sweepSkyGap(padded, ceiling, skyGap, s.skyRuns);
   sweepGlow(padded, glow);
@@ -419,7 +428,7 @@ export function greedyMesh(
   const carveQuadCount = appendCarveDetail(padded, carveMarks, writer, carves);
   const coverQuadCount = appendCoverDetail(padded, writer, cover, origin);
   const detailQuadCount = carveQuadCount + coverQuadCount +
-    appendMicroGeometry(padded, writer, carveMarks, origin);
+    appendMicroGeometry(padded, writer, carveMarks, surfaceCells, origin);
   restoreGroundCover(padded, ceiling, cover);
   // La maschera vive nello scratch, che il pool riusa fra un job e l'altro:
   // azzerare le sole celle toccate costa quanto il piano invece che quanto il

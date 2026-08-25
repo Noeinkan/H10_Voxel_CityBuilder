@@ -306,6 +306,21 @@ edificio industriale con `specialization: 'farming'`: conta come industria per i
 suolo che occupa e come produttore per ciò che raccoglie, quindi convertire una
 fabbrica in torre è un vero scambio fra materiali e cibo.
 
+### I due numeri che il cibo consegna fuori
+
+`missingPlotsOf` dice **quanti campi mancano**, e `fedShareOf` **quanto della
+domanda è stata servita**. Sono le due domande che nessun altro può rispondersi
+da solo, e vivono qui per la stessa ragione del referto: il listino sta qui.
+
+Contano perché tutte e due erano state chieste male. Chi pianta riceveva il cibo
+mancante e lo riduceva a un booleano, quindi piantava sempre lo stesso numero di
+lotti — un'offerta a ritmo costante contro una domanda che cresce con la città, e
+le due divergevano dal primo isolato. Chi giudica chiedeva invece il segno di
+`food.delta`: ma nessuno stock scende sotto zero *per costruzione*, quindi una
+dispensa esaurita si ferma a zero e il delta vale **esattamente** zero. Una
+carestia stabile e un pareggio scrivevano lo stesso numero, e la città moriva di
+fame senza che niente lo dicesse.
+
 ## Scena di debug
 
 `?debug=1&sim=1` — genera l'isola 256×256, piazza i catalizzatori da script e
@@ -356,6 +371,27 @@ Con `?debug=1&sim=1` sono esposti `__simStats()`, `__simTick(n)`, `__simSites(n)
 > tick, e `setPolicyActive` da 9000× a 6420×. Il quarto uso non ha reso più
 > costosi i percorsi caldi. Chi rifà la misura su una macchina ferma sostituisca
 > entrambe le colonne.
+
+**Cosa ha aggiunto l'influenza geodetica.** Misurato con `npm run bench` su
+questa macchina, stessa scena, **a costo uniforme** — la fixture del bench non ha
+terreno, quindi il Dijkstra gira su un campo piatto e non pota niente:
+
+| Operazione | Media |
+| --- | --- |
+| tick | 0,0033 ms |
+| modifica di un catalizzatore di raggio 20 | 0,48 ms |
+| `nextBuildSites`, primi 10 | 4,27 ms |
+| `setPolicyActive` | 12,5 ms |
+
+Le due righe che toccano il campo sono **circa raddoppiate**, ed è il costo del
+Dijkstra. Si paga una volta per catalizzatore e non a ogni ricalcolo: dentro una
+stessa passata la cache serve tutte le celle, e a invalidare è solo il
+catalizzatore che è davvero cambiato. `tick` non è toccato, perché continua a
+non guardare il campo.
+
+Su terreno vero il Dijkstra costa **meno**, non di più: acqua e dirupi tagliano
+la coda prima del raggio, e le celle irraggiungibili non vengono mai visitate.
+Questa riga va quindi presa come il tetto, non come il caso tipico.
 
 Il tick sta migliaia di volte sotto il suo budget perché non scorre né la mappa
 né il campo: legge quattro contatori di edifici, quattro di uso secondario e un

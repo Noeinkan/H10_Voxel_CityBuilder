@@ -293,8 +293,17 @@ export const TRAFFIC = {
     boat: { length: 7, width: 3, height: 2, palette: PALETTE_SLOTS.metalRust },
     /** Traghetto di linea: doppia estremita', tuga chiara. */
     ferry: { length: 11, width: 4, height: 3, palette: PALETTE_SLOTS.concreteWhite },
-    /** Nave da carico: la sagoma piu' lunga che naviga. */
-    cargo: { length: 17, width: 5, height: 4, palette: PALETTE_SLOTS.metalDark },
+    /**
+     * Nave da carico: la sagoma piu' lunga che naviga.
+     *
+     * Lo scafo sta nei corpi neutri e non fra i metalli scuri, che in ogni tema
+     * sono bruni caldi: sotto una fascia di galleggiamento `asphaltShadow` — che
+     * e' fredda — un bruno faceva leggere la riga come un nastro azzurro
+     * appiccicato al fianco invece che come l'ombra dell'immersione. Nella stessa
+     * famiglia la fascia torna a essere lo scafo in ombra, che e' cio' che deve
+     * sembrare.
+     */
+    cargo: { length: 17, width: 5, height: 4, palette: PALETTE_SLOTS.concrete },
     /** Aereo di linea. */
     plane: { length: 9, width: 9, height: 2, palette: PALETTE_SLOTS.concreteWhite },
     /** Dirigibile: l'unico piu' alto che largo, ed e' la sua firma. */
@@ -363,8 +372,22 @@ export const TRAFFIC = {
    * Fisso e non a caso: una nave e' un pool di mesh condivise per tipo, quindi
    * due navi da carico sono la **stessa** geometria: un tiro qui darebbe una
    * tinta sola per tutta la flotta, non una flotta variegata.
+   *
+   * **Due tinte calde e una neutra, non tre famiglie diverse.** Il carico e' la
+   * superficie piu' estesa che si veda della nave, quindi e' una massa e non un
+   * accento — e la citta' le masse le fa con i corpi neutri, tenendo i saturi
+   * per le parti piccole. Prendendo il verde dell'erba e l'azzurro dei vetri per
+   * due terzi della coperta, la nave era l'unica cosa in scena a non seguire
+   * quella regola: tre famiglie a saturazione piena su un oggetto solo, mentre a
+   * dieci voxel di distanza un edificio ne porta una. Dentro l'accento caldo del
+   * tema — mattone e ruggine — i container seguono la palette invece di restare
+   * tre tinte fisse, e l'azzurro sulla nave torna a essere soltanto un vetro.
    */
-  cratePalettes: [PALETTE_SLOTS.metalRust, PALETTE_SLOTS.glassDeep, PALETTE_SLOTS.grassDark],
+  cratePalettes: [
+    PALETTE_SLOTS.brickDark,
+    PALETTE_SLOTS.metalRust,
+    PALETTE_SLOTS.concreteLight,
+  ],
 
   /** Colore dei fanali di via e delle luci di navigazione. */
   lightPalette: PALETTE_SLOTS.metalGold,

@@ -53,6 +53,33 @@ describe('createVoxelMaterial', () => {
     expect(material.uniforms['uEmissiveStrength'].value).toBeCloseTo(0.95);
   });
 
+  it('lo strato di nuvole si accende solo per i temi che lo dichiarano', () => {
+    const handle = createVoxelMaterial(resolveTheme('natural').colors, 1);
+    const material = handle.material;
+
+    const withDeck = resolveTheme('neon').atmosphere;
+    handle.setAtmosphere(withDeck);
+    expect(withDeck.cloudDeck).toBeDefined();
+    expect(material.uniforms['uCloudAmount'].value).toBe(withDeck.cloudDeck?.amount);
+    expect(material.uniforms['uCloudHeight'].value).toBe(withDeck.cloudDeck?.height);
+    // Il tema da' una tinta propria allo strato: il fragment la usa al posto di
+    // quella della nebbia solo perche' questo interruttore vale uno.
+    expect(material.uniforms['uCloudTintBlend'].value).toBe(1);
+
+    // **Il tema senza strato lo spegne davvero, non lo lascia com'era.** E' la
+    // sola cosa che garantisca che una scena di ieri sia ancora quella di ieri:
+    // un uniform che sopravvive al cambio di tema sarebbe un residuo di quello
+    // di prima, e si vedrebbe solo passando da un tema all'altro.
+    const plain = resolveTheme('industrial').atmosphere;
+    handle.setAtmosphere(plain);
+    expect(plain.cloudDeck).toBeUndefined();
+    expect(material.uniforms['uCloudAmount'].value).toBe(0);
+    expect(material.uniforms['uCloudTintBlend'].value).toBe(0);
+    // La scala resta un divisore, anche spenta: uno zero qui sarebbe una
+    // divisione per zero nel punto di attraversamento.
+    expect(material.uniforms['uCloudScale'].value).toBeGreaterThan(0);
+  });
+
   it('ogni uniform dichiarato nel GLSL esiste davvero fra gli uniform', () => {
     // I test girano senza GPU, quindi nessuno compila lo shader: un nome
     // sbagliato non darebbe errore, l'uniform resterebbe a zero e il difetto si

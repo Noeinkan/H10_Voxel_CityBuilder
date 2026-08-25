@@ -1,4 +1,5 @@
 import type { FogModel } from '../atmosphere';
+import type { CloudDeckModel } from '../cloudDeck';
 import type { AmbientLight, SunLight } from '../lighting';
 
 /**
@@ -27,6 +28,27 @@ export interface Fog extends FogModel {
   readonly skyBlend: number;
   /** Riscaldamento della foschia guardando verso il sole (scattering in avanti). */
   readonly sunTint: number;
+}
+
+/**
+ * Lo strato di nuvole a quota: i banchi che avvolgono le cime.
+ *
+ * **Non e' la stessa cosa delle nuvole di `Sky`, e tenerle separate e' il
+ * punto.** Quelle sono fondo dipinto in coordinate di schermo, dietro tutto e
+ * senza una quota; questo e' una fascia nello spazio, attorno a una `height` del
+ * mondo, fatta di celle e attraversata dal raggio di vista. Si sente solo
+ * **attorno alla propria quota**: la citta' bassa resta pulita, e a essere
+ * avvolto e' cio' che e' salito abbastanza.
+ *
+ * Assente, non c'e' strato: il tema che non lo dichiara e' identico a com'era.
+ * I sette numeri e le formule che li consumano stanno in `cloudDeck.ts`.
+ */
+export interface CloudDeck extends CloudDeckModel {
+  /**
+   * Tinta delle nuvole. Assente, e' quella della nebbia — che segue il gradiente
+   * di cielo e l'ora, quindi non c'e' un colore in piu' da tarare per palette.
+   */
+  readonly tint?: string;
 }
 
 /** Fondo procedurale. Il sole qui disegnato e' lo stesso che proietta le ombre. */
@@ -144,6 +166,8 @@ export interface Atmosphere {
 
   readonly fog: Fog;
   readonly sky: Sky;
+  /** Lo strato di nuvole a quota. Assente, la scena e' quella di sempre. */
+  readonly cloudDeck?: CloudDeck;
   readonly shadow?: Shadow;
   readonly bloom?: Bloom;
   readonly tilt?: TiltShift;

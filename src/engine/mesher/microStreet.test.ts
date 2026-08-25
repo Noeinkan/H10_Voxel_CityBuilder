@@ -11,6 +11,7 @@ import {
 } from './microGeometry';
 import { appendStreetDetail } from './microStreet';
 import { planCarves } from './carvePlan';
+import { CARVE_DEPTH, CARVE_KIND } from './carveMarks';
 import { MESH_UNITS_PER_VOXEL } from './meshTypes';
 
 /**
@@ -79,7 +80,7 @@ function streetBoxes(
   // rampa sono la stessa decisione, chiamare il gruppo con una maschera vuota
   // misurerebbe un retro senza scale e il test non se ne accorgerebbe.
   const marks = new Uint8Array(PADDED_VOL);
-  planCarves(padded, marks, origin);
+  planCarves(padded, marks, origin, collectSurfaceCells(padded));
   const { facadeByFace, bySurface } = collectSurfaceCells(padded);
   const boxes: (FixedBox & { palette: number })[] = [];
   const writer: MicroGeometryWriter = {
@@ -127,14 +128,19 @@ describe('il dettaglio del retro', () => {
       .toBeGreaterThanOrEqual(FRONTAGE_LIMIT * MESH_UNITS_PER_VOXEL);
   });
 
-  it('la pergola sta sopra il voxel di tetto, non dentro', () => {
+  it('la pergola sta sopra il calpestio del tetto, non dentro il voxel', () => {
     // **La trappola di questo gruppo, e ci e' gia' caduto.** L'aggancio di
     // facciata sporge dal piano da se', perche' `facadeBox` prende una
     // profondita'; l'aggancio di tetto no — `openRoof` risponde sul voxel
     // **solido**, quindi un prisma steso da `z * U` finisce sepolto dentro il
     // pieno e non lo vede nessuno. Costa i suoi quad e non rende un pixel, che e'
     // il difetto che nessun conto di prismi puo' segnalare: erano tutti li'.
-    const roofTop = (ROOF_Z + 1) * MESH_UNITS_PER_VOXEL;
+    //
+    // Il riferimento non e' piu' il filo del voxel ma il **calpestio**: sopra un
+    // vassoio quello e' sceso di `CARVE_DEPTH.tray`, e una pergola che restasse
+    // alla quota vecchia galleggerebbe. La misura resta la stessa domanda — un
+    // prisma di tetto non deve finire dentro il pieno — con il piano giusto.
+    const roofTop = (ROOF_Z + 1) * MESH_UNITS_PER_VOXEL - CARVE_DEPTH[CARVE_KIND.tray];
     const pergola = streetBoxes(tower(false), [0, 0, 0])
       .filter((box) => box.palette === PALETTE_SLOTS.wood);
 

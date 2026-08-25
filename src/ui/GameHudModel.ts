@@ -206,7 +206,17 @@ export interface HudPolicy extends HudAction {
   readonly id: PolicyId;
   readonly population: number;
   readonly active: boolean;
+  /** Cosa fa, in una frase. Sta sulla scheda. */
   readonly description: string;
+  /**
+   * **Dove** agisce, in una frase. Sta nel `title`, non sulla scheda.
+   *
+   * Era concatenata a `description`, e la scheda ne usciva con due frasi che
+   * dicono quasi la stessa cosa: sette schede da quattro righe l'una sono
+   * esattamente lo scroll che il pannello non riusciva a farsi leggere. La
+   * seconda frase resta a disposizione, ma a domanda.
+   */
+  readonly effect: string;
   readonly upkeep: number;
 }
 
@@ -509,7 +519,8 @@ export function buildGameHudModel(
             : !fundsOk
               ? 'Not enough funds.'
               : `${POLICY_DESCRIPTION[policy.id]} ${policy.spatialEffect}`,
-      description: `${POLICY_DESCRIPTION[policy.id]} ${policy.spatialEffect}`,
+      description: POLICY_DESCRIPTION[policy.id],
+      effect: policy.spatialEffect,
     };
   });
 

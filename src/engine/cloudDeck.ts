@@ -6,78 +6,131 @@
  * fragment shader riscrive in GLSL. `cloudDeck.test.ts` e' cio' che tiene
  * allineate le due copie.
  *
- * **Non e' un secondo velo di quota: e' un piano nello spazio.** La differenza
- * si vede subito. Il velo di `fogAltitudeLift` e' una funzione della sola quota
- * del frammento, quindi tinge il basso in modo uniforme e resta una tinta
- * piatta: da' foschia, non un *fondo*. Qui invece c'e' uno strato a una quota
- * del mondo, e cio' che decide quanto un frammento sia velato e' se il raggio
- * che lo raggiunge **attraversa** lo strato:
+ * **Quattro scelte, e nessuna delle quattro e' quella ovvia.**
  *
- * - un frammento sopra la sommita' dello strato non e' velato affatto;
- * - uno sotto la base lo e' per intero;
- * - dentro, in proporzione a quanto ne resta sopra di lui.
+ * 1. **E' uno strato vero, e si vede anche dove non c'e' niente sotto.** La
+ *    prima versione lo disegnava solo sui frammenti, quindi la nuvola esisteva
+ *    solo dove qualcosa la riceveva: su una citta' giovane, da nessuna parte.
+ *    Il piano invece e' li' comunque, e il fondo procedurale lo disegna con le
+ *    stesse formule di questo file — l'unica differenza e' da dove arriva il
+ *    punto di attraversamento, un frammento di qua e una matrice di la'.
  *
- * E' questo che fa leggere alta una quota alta: un impalcato sopra le nuvole si
- * staglia pulito mentre la citta' sotto sparisce, e non c'e' bisogno di vedere
- * il suolo per sapere quanto e' lontano.
+ * 2. **La nuvola e' fatta di celle, come tutto il resto.** Il rumore non si
+ *    campiona con continuita' ma sulla **cella di mondo** in cui cade il punto:
+ *    il bordo di un banco e' netto e allineato alla griglia dei voxel, non una
+ *    sfumatura. In un gioco fatto di cubi una nuvola sfumata e' l'unico oggetto
+ *    che non lo e'.
  *
- * **La copertura non e' continua, ed e' la seconda meta' del lavoro.** Un velo
- * pieno sotto lo strato cancellerebbe i livelli inferiori invece di lasciarli
- * intravedere: una soglia sul rumore apre i **varchi**, e la citta' bassa si
- * legge a tratti attraverso di essi. Un pavimento di nuvole senza buchi e' un
- * fondale, non un fondo.
+ * 3. **Ha uno spessore che si vede, e per vederlo si attraversa.** Lo strato
+ *    non e' un piano con una rampa di opacita' addosso — quello era il giro
+ *    precedente, e a schermo dava un velo piatto — ma una **lastra**: il raggio
+ *    la taglia su `CLOUD_SLICES` quote e il banco e' l'unione dei campioni. Con
+ *    una camera obliqua le quote cadono su XY diversi, quindi un banco e' un
+ *    prisma di cui si vede il **fianco**, e il fianco e' cio' che si legge come
+ *    volume. Il fianco e' anche piu' scuro della sommita' (`cloudShade`): due
+ *    facce con la stessa tinta tornerebbero a essere una macchia sola.
  *
- * **Il rumore si campiona dove il raggio taglia lo strato**, non sull'XY del
- * frammento. E' la riga che fa la differenza fra nuvole che stanno ferme nel
- * mondo — con la loro parallasse, mentre la camera scorre — e nuvole dipinte
- * sui tetti degli edifici. Il punto di attraversamento e' in forma chiusa per
- * la stessa ragione per cui lo e' l'integrale di nebbia: la camera e'
- * ortografica, tutti i raggi di vista sono paralleli, e la quota lungo il raggio
- * e' lineare.
+ * 4. **Ci si vede attraverso con la rigatura dei raggi X**, non con una
+ *    trasparenza. E' la stessa `hatchThreshold` di `inspect.glsl.ts`, con la
+ *    stessa costante: a parita' di copertura una soglia ordinata sparpaglia e i
+ *    pixel sparsi leggono come sporco, mentre in fila leggono come campitura.
+ *    La densita' della nuvola decide **quante** righe, cosi' un banco fitto
+ *    copre quasi tutto e uno rado lascia vedere la torre che ci sta dentro.
+ *
+ * **Ogni attraversamento e' in forma chiusa**, per la stessa ragione per cui lo
+ * e' l'integrale di nebbia: la camera e' ortografica, tutti i raggi di vista
+ * sono paralleli, e la quota lungo il raggio e' lineare. Campionare **la'** e
+ * non sull'XY del frammento e' cio' che fa stare le nuvole ferme nel mondo, con
+ * la loro parallasse, invece che dipinte sui tetti.
  */
 
+import { INSPECT } from './inspect';
+
 /**
- * I sei numeri che descrivono lo strato.
+ * I sette numeri che descrivono lo strato.
  *
  * Sta qui e non in `themes/theme.ts` per la stessa ragione di `FogModel`: chi
  * li tara deve poter leggere le formule che li consumano senza cambiare file.
  */
 export interface CloudDeckModel {
   /**
-   * Quota del piano medio dello strato, in voxel di mondo.
+   * Quota del cuore della lastra, in voxel di mondo.
    *
-   * **Segue la scala della citta', non un gusto.** Va tenuta sopra i podi e
-   * sotto le cime: piu' in basso lo strato copre la citta' al suolo e basta,
-   * piu' in alto non ci passa piu' niente sotto e lo strato non separa niente.
+   * **Segue la scala della citta', non un gusto.** Va tenuta dove arrivano le
+   * cime: piu' in basso la nuvola avvolge il tessuto ordinario e diventa smog,
+   * piu' in alto non incontra piu' niente e non si vede affatto.
    */
   readonly height: number;
-  /** Spessore: dentro, il velo cresce con continuita' invece di scattare. */
-  readonly thickness: number;
-  /** Velo di picco dove la nuvola e' piena, 0..1. A 0 lo strato non esiste. */
-  readonly amount: number;
   /**
-   * Frazione del piano occupata dalla nuvola, 0..1.
+   * Spessore della lastra, in voxel: quanto e' **alta** una nuvola.
    *
-   * E' il parametro che apre i varchi, e va guardato **insieme** ad `amount`:
-   * il primo dice quanto e' fitta una macchia, questo quanta parte del cielo ne
-   * porta una. A 1 lo strato e' un coperchio e i livelli inferiori spariscono
-   * per sempre, che e' esattamente cio' che questo modello esiste per evitare.
+   * Non e' una sfumatura ai bordi ma una misura vera, e in una vista obliqua si
+   * legge come larghezza del fianco: un banco visto di taglio sporge di circa
+   * `thickness` anche in orizzontale. Sopra la sommita' non c'e' piu' nuvola —
+   * una cima che emerge esce pulita — e il taglio non e' una riga netta perche'
+   * le fette che restano davanti diminuiscono a scalini salendo.
    */
+  readonly thickness: number;
+  /**
+   * Quanta parte dei pixel un banco pieno arriva a coprire, 0..1.
+   *
+   * **Sotto 1 per contratto**, non per taratura: a 1 la rigatura si chiude e la
+   * nuvola diventa un muro. Ci si deve poter vedere attraverso sempre.
+   */
+  readonly amount: number;
+  /** Frazione di celle che porta nuvola, 0..1. E' cio' che apre i varchi. */
   readonly coverage: number;
-  /** Dimensione delle macchie in voxel: e' il periodo del rumore. */
+  /**
+   * Lato della cella di nuvola, in voxel.
+   *
+   * E' la grana: sotto una manciata di voxel il banco torna a essere una
+   * sfumatura, sopra la ventina diventa un muro squadrato senza dettaglio.
+   */
+  readonly cellSize: number;
+  /** Periodo del rumore in voxel: quanto e' grande un banco, non una cella. */
   readonly scale: number;
-  /** Deriva dello strato, in frazioni di macchia al secondo. */
+  /** Deriva del banco, in periodi al secondo. */
   readonly speed: number;
 }
 
+/** Densita' e faccia colpita: cio' che serve per dipingere il pixel. */
+export interface CloudHit {
+  /** Quanta parte dei pixel copre, in 0..`amount`. Zero vuol dire niente. */
+  readonly density: number;
+  /** 1 sulla sommita' della lastra, 0 sul fianco piu' profondo. */
+  readonly face: number;
+}
+
 /**
- * Morbidezza del bordo di una macchia, in unita' di rumore.
+ * Su quante quote si campiona la lastra.
  *
- * Non e' estetica pura: con una soglia netta il bordo si accende su un pixel e
- * il rumore per-frammento si vede come un contorno seghettato. E' una costante e
- * non un parametro di tema perche' vive nella scala del rumore, che non cambia.
+ * E' il numero che compra lo spessore, e si paga per pixel: quattro fette sono
+ * quattro letture di rumore invece di una. Sotto tre il fianco diventa una
+ * scala di due gradini e si legge come errore; sopra cinque non si distingue
+ * piu' niente di nuovo, perche' la quantizzazione per cella ha gia' mangiato la
+ * differenza. Con lo strato spento — che e' il valore di partenza del gioco —
+ * non si paga niente: la densita' esce a zero prima del ciclo.
  */
-export const CLOUD_EDGE_SOFTNESS = 0.12;
+export const CLOUD_SLICES = 4;
+
+/**
+ * Quanto e' piu' scuro il fianco della lastra rispetto alla sua sommita'.
+ *
+ * Senza, il prisma resta un'unica campitura piatta e lo spessore si vede solo
+ * come sagoma piu' larga — che e' esattamente il difetto da cui questo giro e'
+ * partito. Non e' un'illuminazione: e' il minimo che serve perche' due facce
+ * dello stesso banco non siano lo stesso colore.
+ */
+export const CLOUD_SIDE_SHADE = 0.72;
+
+/**
+ * Densita' minima di una cella che porta nuvola.
+ *
+ * Una cella appena sopra soglia sarebbe indistinguibile dal vuoto e il bordo del
+ * banco si sfrangerebbe in pixel isolati — cioe' proprio lo sporco che la
+ * rigatura esiste per non produrre. Sotto questa soglia una cella e' vuota.
+ */
+export const CLOUD_MIN_DENSITY = 0.45;
 
 /**
  * Sotto questa componente verticale il raggio e' troppo radente perche' la
@@ -90,73 +143,130 @@ export const CLOUD_EDGE_SOFTNESS = 0.12;
  */
 export const CLOUD_GRAZING_EPSILON = 0.05;
 
+const NO_CLOUD: CloudHit = { density: 0, face: 0 };
+
+/** Quota della sommita' della lastra: sopra di qui non c'e' nuvola. */
+export function cloudTop(deck: CloudDeckModel): number {
+  return deck.height + thicknessOf(deck) / 2;
+}
+
+/** Quota della base: sotto di qui la lastra sta davanti tutta intera. */
+export function cloudBase(deck: CloudDeckModel): number {
+  return deck.height - thicknessOf(deck) / 2;
+}
+
 /**
- * Dove il raggio che arriva a questo frammento attraversa il piano dello strato.
+ * Quota della fetta `index`, dalla sommita' verso il basso.
+ *
+ * Le fette stanno al **centro** del loro strato e non ai bordi: campionare sui
+ * bordi metterebbe due fette a coincidere con la sommita' e la base, e la lastra
+ * risulterebbe piu' spessa di quanto e'.
+ */
+export function cloudSliceHeight(index: number, deck: CloudDeckModel): number {
+  return cloudTop(deck) - (index + 0.5) * (thicknessOf(deck) / CLOUD_SLICES);
+}
+
+/**
+ * Dove il raggio che arriva a un punto attraversa un piano orizzontale.
  *
  * `viewDir` e' la direzione di sguardo — dalla camera verso la scena, quindi con
  * `z` negativa — ed e' un vettore per frame e non per pixel: la camera e'
  * ortografica. Risalendo il raggio di `s` la quota vale `z - viewDir.z * s`, e
- * imporla uguale a quella dello strato da' `s` in una divisione sola.
+ * imporla uguale a quella del piano da' `s` in una divisione sola.
  */
 export function cloudCrossing(
   x: number,
   y: number,
   z: number,
   viewDir: readonly [number, number, number],
-  deck: CloudDeckModel,
+  planeZ: number,
 ): [number, number] {
   const dz = grazingGuard(viewDir[2]);
-  const s = (z - deck.height) / dz;
+  const s = (z - planeZ) / dz;
   return [x - viewDir[0] * s, y - viewDir[1] * s];
 }
 
 /**
- * Quanta parte dello strato sta fra la camera e un frammento a questa quota,
- * in 0..1. Zero sopra la sommita', uno sotto la base.
+ * Densita' della cella di nuvola in un punto del piano: 0 dove non ce n'e',
+ * fra `CLOUD_MIN_DENSITY` e 1 dove ce n'e'.
+ *
+ * **Il rumore si legge sulla cella, non sul punto.** E' la riga che rende la
+ * nuvola un oggetto di voxel: dentro una cella il valore e' uno solo, quindi il
+ * bordo del banco cade sulla griglia del mondo e non dove capita.
  */
-export function cloudDepth(height: number, deck: CloudDeckModel): number {
-  const half = deck.thickness / 2;
-  return 1 - smoothstep(deck.height - half, deck.height + half, height);
+export function cloudCell(x: number, y: number, time: number, deck: CloudDeckModel): number {
+  const cell = Math.max(1e-3, deck.cellSize);
+  // Il centro della cella, non il suo spigolo: campionare sullo spigolo
+  // aggancia il rumore alla griglia e fa comparire filari di celle uguali.
+  const cx = (Math.floor(x / cell) + 0.5) * cell;
+  const cy = (Math.floor(y / cell) + 0.5) * cell;
+  const scale = Math.max(1e-3, deck.scale);
+
+  const value = cloudNoise(cx / scale + time * deck.speed, cy / scale);
+  if (value < 1 - deck.coverage) return 0;
+  // Riscalato sopra la soglia: al bordo del banco le celle sono rade, nel cuore
+  // sono piene. Senza, un banco sarebbe una macchia di densita' uniforme.
+  const over = deck.coverage <= 0 ? 0 : (value - (1 - deck.coverage)) / deck.coverage;
+  return CLOUD_MIN_DENSITY + (1 - CLOUD_MIN_DENSITY) * clamp01(over);
 }
 
 /**
- * Quanto e' piena la nuvola in un punto del piano, in 0..1.
+ * La soglia della rigatura in un pixel di schermo: la stessa `hatchThreshold`
+ * dei raggi X, con la stessa costante.
  *
- * La soglia si muove con la copertura: piu' copertura, piu' basso il valore di
- * rumore che basta a fare nuvola. L'intervallo e' mappato in modo che gli
- * estremi siano **esatti** — a copertura 0 non passa niente, a 1 passa tutto —
- * invece di lasciare mezza soglia dentro il dominio del rumore.
- *
- * Fra gli estremi la corrispondenza con la frazione di piano coperta e'
- * approssimativa, e non poteva essere altrimenti: il rumore non e' uniforme ma
- * a campana attorno a mezzo, quindi a copertura 0,5 copre davvero meta' piano,
- * e agli estremi la curva e' piu' pigra di cosi'.
+ * Vale la ragione scritta li': a parita' di copertura un retino ordinato
+ * sparpaglia e i pixel sparsi leggono come sporco davanti al soggetto, mentre in
+ * fila leggono come una campitura. Riusarla vuol dire anche che nuvola e vista
+ * di ispezione parlano la stessa lingua invece di due dialetti simili.
  */
-export function cloudMass(noise: number, deck: CloudDeckModel): number {
-  const lo = 1 - deck.coverage * (1 + 2 * CLOUD_EDGE_SOFTNESS);
-  return smoothstep(lo, lo + 2 * CLOUD_EDGE_SOFTNESS, noise);
+export function cloudHatch(fragX: number, fragY: number): number {
+  return fract((fragX + fragY) / INSPECT.hatch);
 }
 
 /**
- * Rumore dello strato in un punto del suo piano, in 0..1.
+ * Attraversa la lastra sul raggio che arriva a questo punto.
  *
- * Due ottave e non quattro: le macchie di uno strato di nuvole sono grandi, e la
- * terza ottava aggiungerebbe un dettaglio che a questa scala si vede come
- * sfarfallio. La normalizzazione per la somma delle ampiezze e' cio' che rende
- * esatto — e non approssimato — l'intervallo su cui poggia il tetto del velo.
+ * **Le fette sotto il punto non contano**: stanno dietro al frammento, e una
+ * nuvola dietro un tetto non lo copre. E' questo che fa uscire pulita una cima
+ * che emerge, e che la fa entrare nel banco a scalini invece che di colpo.
+ *
+ * Della lastra si tiene la cella **piu' fitta** fra quelle attraversate — il
+ * banco e' pieno, non un accumulo di veli — ma la faccia e' quella della
+ * **prima** fetta colpita dall'alto: se la sommita' non c'e' e c'e' una fetta
+ * sotto, quel pixel sta guardando il fianco del prisma.
  */
-export function cloudNoise(x: number, y: number): number {
-  return (0.5 * valueNoise(x, y) + 0.25 * valueNoise(x * 2.03 + 17, y * 2.03 + 17)) / 0.75;
+export function cloudTrace(
+  x: number,
+  y: number,
+  z: number,
+  viewDir: readonly [number, number, number],
+  time: number,
+  deck: CloudDeckModel,
+): CloudHit {
+  if (deck.amount <= 0) return NO_CLOUD;
+  if (z >= cloudTop(deck)) return NO_CLOUD;
+
+  let best = 0;
+  let face = 0;
+  for (let i = 0; i < CLOUD_SLICES; i++) {
+    const sliceZ = cloudSliceHeight(i, deck);
+    if (sliceZ < z) continue;
+    const [cx, cy] = cloudCrossing(x, y, z, viewDir, sliceZ);
+    const value = cloudCell(cx, cy, time, deck);
+    if (best <= 0 && value > 0) face = 1 - i / (CLOUD_SLICES - 1);
+    if (value > best) best = value;
+  }
+  return { density: deck.amount * best, face };
 }
 
 /**
- * Il velo dello strato su un frammento, in 0..`amount`.
+ * Quanta parte dei pixel la nuvola copre su questo frammento, in 0..`amount`.
  *
- * E' la composizione delle quattro funzioni sopra, ed e' la sola che il fragment
- * chiama. Non supera mai `amount`: un varco resta sempre possibile, un muro
- * pieno no.
+ * E' una **densita' di rigatura**, non un'opacita': chi la consuma la confronta
+ * con `cloudHatch` e decide pixel per pixel, cosi' cio' che sta dietro si vede
+ * fra le righe invece di essere impastato con la nuvola.
  */
-export function cloudDeckVeil(
+export function cloudDensity(
   x: number,
   y: number,
   z: number,
@@ -164,14 +274,77 @@ export function cloudDeckVeil(
   time: number,
   deck: CloudDeckModel,
 ): number {
-  if (deck.amount <= 0) return 0;
-  const depth = cloudDepth(z, deck);
-  if (depth <= 0) return 0;
+  return cloudTrace(x, y, z, viewDir, time, deck).density;
+}
 
-  const [cx, cy] = cloudCrossing(x, y, z, viewDir, deck);
-  const drift = time * deck.speed;
-  const noise = cloudNoise(cx / deck.scale + drift, cy / deck.scale);
-  return deck.amount * depth * cloudMass(noise, deck);
+/**
+ * La stessa lastra su un pixel di cielo, dove non c'e' nessun frammento.
+ *
+ * Dietro il fondo non c'e' niente, quindi lo strato gli sta davanti **tutto**:
+ * basta scendere lungo il raggio fino alla base e da li' attraversare come da un
+ * frammento qualunque. Passare per la stessa `cloudTrace` invece di riscriverla
+ * e' cio' che fa combaciare le due meta' sul filo della sagoma dell'isola —
+ * stesse fette, stesse celle, stessa faccia.
+ */
+export function cloudSkyTrace(
+  x: number,
+  y: number,
+  z: number,
+  viewDir: readonly [number, number, number],
+  time: number,
+  deck: CloudDeckModel,
+): CloudHit {
+  const base = cloudBase(deck);
+  const [bx, by] = cloudCrossing(x, y, z, viewDir, base);
+  return cloudTrace(bx, by, base, viewDir, time, deck);
+}
+
+/** Come sopra, quando al chiamante serve solo quante righe coprire. */
+export function cloudSkyDensity(
+  x: number,
+  y: number,
+  z: number,
+  viewDir: readonly [number, number, number],
+  time: number,
+  deck: CloudDeckModel,
+): number {
+  return cloudSkyTrace(x, y, z, viewDir, time, deck).density;
+}
+
+/** Quanto scurire la tinta del banco su questa faccia: piena in cima, meno di lato. */
+export function cloudShade(face: number): number {
+  return CLOUD_SIDE_SHADE + (1 - CLOUD_SIDE_SHADE) * clamp01(face);
+}
+
+/** true se la nuvola copre **questo** pixel. E' la domanda che il fragment fa. */
+export function cloudCovers(
+  x: number,
+  y: number,
+  z: number,
+  viewDir: readonly [number, number, number],
+  time: number,
+  fragX: number,
+  fragY: number,
+  deck: CloudDeckModel,
+): boolean {
+  return cloudHatch(fragX, fragY) < cloudDensity(x, y, z, viewDir, time, deck);
+}
+
+/**
+ * Rumore dello strato, in 0..1.
+ *
+ * Due ottave e non quattro: i banchi sono grandi, e la terza ottava a questa
+ * scala si perderebbe comunque dentro la quantizzazione per cella. La
+ * normalizzazione per la somma delle ampiezze e' cio' che rende esatto — e non
+ * approssimato — l'intervallo su cui poggia la soglia di copertura.
+ */
+export function cloudNoise(x: number, y: number): number {
+  return (0.5 * valueNoise(x, y) + 0.25 * valueNoise(x * 2.03 + 17, y * 2.03 + 17)) / 0.75;
+}
+
+/** Uno spessore nullo farebbe collassare la lastra su un piano solo. */
+function thicknessOf(deck: CloudDeckModel): number {
+  return Math.max(deck.thickness, 1e-3);
 }
 
 /** Tiene la componente verticale lontana dallo zero, con il suo segno. */
@@ -199,13 +372,13 @@ function valueNoise(x: number, y: number): number {
  * **Il secondo passo non ha un `fract` addosso**, e non e' una svista da
  * correggere: e' proprio uscire da 0..1 prima di moltiplicare che rende il
  * risultato quasi uniforme. Chiudendolo dentro l'intervallo si finisce a
- * moltiplicare due uniformi, la cui media e' un quarto — misurato, il rumore
- * si accalcava sul basso e le nuvole non arrivavano mai a essere piene.
+ * moltiplicare due uniformi, la cui media e' un quarto — misurato, il rumore si
+ * accalcava sul basso e i banchi non arrivavano mai a essere pieni.
  *
- * Fra CPU e GPU la precisione dei float cambia il **disegno** delle macchie,
+ * Fra CPU e GPU la precisione dei float cambia il **disegno** delle celle,
  * perche' si prende la parte frazionaria di numeri nell'ordine delle migliaia.
  * Non cambia niente di cio' su cui il modello poggia — intervallo, determinismo,
- * continuita' — ed e' su quello che il test insiste.
+ * quantizzazione — ed e' su quello che il test insiste.
  */
 function hash(x: number, y: number): number {
   let px = fract(x * 123.34);
@@ -221,12 +394,6 @@ function fract(value: number): number {
 }
 
 function smootherStep(t: number): number {
-  return t * t * (3 - 2 * t);
-}
-
-function smoothstep(edge0: number, edge1: number, x: number): number {
-  if (edge1 <= edge0) return x < edge0 ? 0 : 1;
-  const t = clamp01((x - edge0) / (edge1 - edge0));
   return t * t * (3 - 2 * t);
 }
 

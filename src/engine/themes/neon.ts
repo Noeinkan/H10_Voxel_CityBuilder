@@ -63,6 +63,20 @@ export const neon: Theme = {
       cloudSpeed: 0.006,
       cloudTint: '#2a3a5c',
     },
+    // Banchi piu' bassi e piu' fitti degli altri due: qui lo smog sale, e le
+    // quote abitate piu' ardite ci entrano dentro invece di stargli sotto. La
+    // tinta e' il viola che l'asfalto bagnato rimanda in alto, non il grigio
+    // della nebbia.
+    cloudDeck: {
+      height: 106,
+      thickness: 36,
+      amount: 0.85,
+      coverage: 0.46,
+      cellSize: 6,
+      scale: 72,
+      speed: 0.006,
+      tint: '#3b2f4a',
+    },
     shadow: { strength: 0.55, softness: 1.8 },
     bloom: { threshold: 0.9, strength: 1.1, radius: 0.75 },
     tilt: { strength: 0.3, focus: 0.5, width: 0.45 },

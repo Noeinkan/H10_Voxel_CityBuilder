@@ -12,16 +12,15 @@ import {
   selectionMessage,
   type GameHudModel,
   type GameTool,
-  type HudPolicy,
-  type HudTradeMode,
 } from './GameHudModel';
 import type { DaylightMode } from '../engine/daylight';
+import { PolicyDrawer } from './PolicyDrawer';
 import { ResourceBar } from './ResourceBar';
 import { ResourceTrend } from './ResourceTrend';
 import {
   barButton,
   cursorLine,
-  iconButton,
+  shortList,
   viewKeyRow,
 } from './hudWidgets';
 import { buildViewMenuModel, type ViewMenuModel } from './ViewMenuModel';
@@ -38,6 +37,8 @@ export interface GameHudHandlers {
   readonly onSpeed: (speed: number) => void;
   /** Ciclo, giorno fisso o notte fissa: sta accanto alla velocita' perche' e' tempo. */
   readonly onDaylight: (mode: DaylightMode) => void;
+  /** I banchi di nuvole in quota, accesi o spenti. */
+  readonly onClouds: (on: boolean) => void;
   readonly onTheme: (id: string) => void;
   /**
    * Apre il campionario dei voxel, che e' una **scena** e non un pannello.
@@ -118,7 +119,9 @@ export class GameHud {
   private readonly bar: ResourceBar;
   private readonly dock: BuildDock;
   private readonly toast: HTMLElement;
-  private readonly policyDrawer: HTMLElement;
+  /** Il contenitore del lato comandi: dock sopra, targa della vista in fondo. */
+  private readonly railLeft: HTMLElement;
+  private readonly policyDrawer: PolicyDrawer;
   private readonly themePicker: HTMLElement;
   private readonly viewPicker: HTMLElement;
   private readonly viewBar: HTMLElement;
@@ -146,9 +149,6 @@ export class GameHud {
   private readonly cursor: HTMLElement;
   private readonly help: ControlsHint;
   private readonly handlers: GameHudHandlers;
-  private commercePanel!: HTMLElement;
-  private readonly policyButtons = new Map<PolicyId, HTMLButtonElement>();
-  private readonly tradeButtons = new Map<TradeMode, HTMLButtonElement>();
   private readonly decisionCard: HTMLElement;
   private readonly themeButtons = new Map<string, HTMLButtonElement>();
   private readonly themeTokens = new Map<string, Readonly<Record<string, string>>>();
@@ -183,6 +183,7 @@ export class GameHud {
       onPause: (paused) => handlers.onPause(paused),
       onSpeed: (speed) => handlers.onSpeed(speed),
       onDaylight: (mode) => handlers.onDaylight(mode),
+      onClouds: (on) => handlers.onClouds(on),
     });
     this.root.appendChild(this.bar.root);
 
@@ -197,16 +198,30 @@ export class GameHud {
     this.cursor.hidden = true;
     this.root.appendChild(this.cursor);
 
+    // Il rail sinistro: il dock e la targa della vista, che prima si dividevano
+    // lo stesso angolo a numeri. In colonna il dock si stringe per primo e la
+    // targa resta in fondo, quindi non esiste un'altezza di finestra in cui si
+    // coprano.
+    this.railLeft = document.createElement('div');
+    this.railLeft.className = 'hud-rail-left';
     this.dock = new BuildDock(this.model, {
       onTool: (tool) => this.pickTool(tool),
       onSwatch: () => handlers.onSwatch(),
       onPanel: (panel) => this.togglePanel(panel),
       onHelp: () => this.toggleHelp(),
     });
-    this.root.appendChild(this.dock.root);
+    this.railLeft.appendChild(this.dock.root);
+    this.root.appendChild(this.railLeft);
 
-    this.policyDrawer = this.createPolicyDrawer();
-    this.root.appendChild(this.policyDrawer);
+    this.policyDrawer = new PolicyDrawer(this.model, {
+      onPolicy: (id) => {
+        this.feedback = null;
+        handlers.onPolicy(id);
+      },
+      onTrade: (mode) => handlers.onTrade(mode),
+      onClose: () => this.closePolicies(),
+    });
+    this.root.appendChild(this.policyDrawer.root);
     this.decisionCard = document.createElement('aside');
     this.decisionCard.className = 'decision-card hud-surface hud-surface--modal';
     this.decisionCard.hidden = true;
@@ -217,7 +232,7 @@ export class GameHud {
     this.viewPicker = this.createViewPicker();
     this.root.appendChild(this.viewPicker);
     this.viewBar = this.createViewBar();
-    this.root.appendChild(this.viewBar);
+    this.railLeft.appendChild(this.viewBar);
     this.levelRail = this.createLevelRail();
     this.root.appendChild(this.levelRail);
     parent.appendChild(this.root);
@@ -225,11 +240,20 @@ export class GameHud {
     this.setTheme(activeThemeId);
     this.setView(buildViewMenuModel(INSPECT_MODE.off, INSPECT.defaultSliceZ, INSPECT.maxSliceZ));
 
-    const publishDockHeight = (): void => {
-      document.documentElement.style.setProperty('--game-hud-bottom', `${this.dock.root.offsetHeight + 28}px`);
+    // Quanto misurano davvero i due rail: la larghezza di quello sinistro
+    // dipende da quante tessere ci stanno, l'altezza della colonna risorse da
+    // quante risorse ci sono. Chi deve stargli fuori — la barra dei livelli, la
+    // scheda di selezione, gli overlay tecnici — legge questi due numeri invece
+    // di ripetere una misura che cambierebbe alla prossima tessera.
+    const publishRails = (): void => {
+      const style = document.documentElement.style;
+      style.setProperty('--game-hud-rail-left', `${this.railLeft.offsetWidth}px`);
+      style.setProperty('--game-hud-top', `${this.bar.root.offsetHeight + 24}px`);
     };
-    new ResizeObserver(publishDockHeight).observe(this.dock.root);
-    requestAnimationFrame(publishDockHeight);
+    const rails = new ResizeObserver(publishRails);
+    rails.observe(this.dock.root);
+    rails.observe(this.bar.root);
+    requestAnimationFrame(publishRails);
     this.paint(this.model);
   }
 
@@ -311,6 +335,10 @@ export class GameHud {
     // L'HUD cambia con il mondo, invece di restare crema sotto un cielo al neon.
     const tokens = this.themeTokens.get(id);
     if (tokens !== undefined) applyHudTokens(tokens);
+  }
+
+  setClouds(on: boolean): void {
+    this.bar.setClouds(on);
   }
 
   setDaylight(mode: DaylightMode): void {
@@ -423,13 +451,16 @@ export class GameHud {
     if (info.penalises !== undefined && info.penalises.length > 0) {
       this.cursor.appendChild(cursorLine('Penalises', info.penalises.join(', ')));
     }
+    // Accorciati come nel tooltip, e con la stessa funzione: la scheda al
+    // cursore sta aperta **mentre** si mira, ed e' il momento in cui diciassette
+    // nomi di tipologia coprono il punto che si sta cercando di guardare.
     if (info.typologies !== undefined && info.typologies.length > 0) {
-      this.cursor.appendChild(cursorLine('May build', info.typologies.join(', ')));
+      this.cursor.appendChild(cursorLine('May build', shortList(info.typologies)));
     }
     // La stessa riga della tessera, e non un testo suo: cursore e dock devono
     // dire la stessa cosa dello stesso ruolo, o uno dei due si smette di leggere.
     if (info.unlocks !== undefined && info.unlocks.length > 0) {
-      this.cursor.appendChild(cursorLine('Unlocks', info.unlocks.join('; ')));
+      this.cursor.appendChild(cursorLine('Unlocks', shortList(info.unlocks, '; ')));
     }
     this.cursor.appendChild(reason);
   }
@@ -540,102 +571,6 @@ export class GameHud {
     }
   }
 
-  /**
-   * Il ciclo commerciale in quattro numeri e una frase.
-   *
-   * "Servita" e "pieni" sono due cose diverse e vanno mostrate insieme: la
-   * prima dice se la citta' trova cio' che cerca, la seconda se i negozi che ha
-   * costruito servono a qualcosa. Con un solo numero, "troppi negozi" e "pochi
-   * negozi" si leggerebbero uguale.
-   */
-  private paintCommerce(commerce: GameHudModel['commerce']): void {
-    if (commerce === null) {
-      this.commercePanel.replaceChildren();
-      return;
-    }
-
-    const rows: readonly (readonly [string, string])[] = [
-      ['Demand served', `${commerce.service}%`],
-      ['Shops in use', `${commerce.occupancy}%`],
-      ['Revenue', `${commerce.revenue.toFixed(2)} / tick`],
-      ['Goods sold', `${commerce.goods.toFixed(2)} / tick`],
-      ['Mixed-use blocks', `${commerce.mixedBuildings}`],
-    ];
-
-    this.commercePanel.replaceChildren(
-      ...rows.map(([label, value]) => {
-        const row = document.createElement('div');
-        row.className = 'commerce-row';
-        const name = document.createElement('span');
-        name.textContent = label;
-        const amount = document.createElement('strong');
-        amount.textContent = value;
-        row.append(name, amount);
-        return row;
-      }),
-    );
-
-    const note = document.createElement('p');
-    note.className = 'commerce-note';
-    note.textContent = commerce.message;
-    this.commercePanel.appendChild(note);
-  }
-
-  private createPolicyDrawer(): HTMLElement {
-    const drawer = document.createElement('aside');
-    drawer.className = 'policy-drawer hud-surface hud-surface--panel';
-    drawer.hidden = true;
-    drawer.setAttribute('aria-label', 'City policies');
-    const header = document.createElement('header');
-    header.className = 'drawer-header';
-    const copy = document.createElement('div');
-    const title = document.createElement('h2');
-    title.className = 'drawer-title';
-    title.textContent = 'City policies';
-    const subtitle = document.createElement('p');
-    subtitle.className = 'drawer-subtitle';
-    subtitle.textContent = 'Invest to shape how your city grows.';
-    copy.append(title, subtitle);
-    const close = iconButton('close', 'Close policies', () => this.closePolicies());
-    close.classList.add('hud-button--small');
-    header.append(copy, close);
-    drawer.appendChild(header);
-    const list = document.createElement('div');
-    list.className = 'policy-list';
-    for (const policy of this.model.policies) {
-      const button = this.createPolicyButton(policy);
-      this.policyButtons.set(policy.id, button);
-      list.appendChild(button);
-    }
-    drawer.appendChild(list);
-
-    // Il commercio interno sta accanto a quello esterno perche' sono la stessa
-    // domanda vista da due lati: cosa la citta' vende a se stessa e cosa vende
-    // fuori. Separarli in due pannelli renderebbe invisibile che competono per
-    // gli stessi materiali.
-    const commerceTitle = document.createElement('h3');
-    commerceTitle.className = 'drawer-section-title';
-    commerceTitle.textContent = 'Commerce';
-    drawer.appendChild(commerceTitle);
-    this.commercePanel = document.createElement('div');
-    this.commercePanel.className = 'commerce-panel';
-    drawer.appendChild(this.commercePanel);
-
-    const tradeTitle = document.createElement('h3');
-    tradeTitle.className = 'drawer-section-title';
-    tradeTitle.textContent = 'External trade';
-    drawer.appendChild(tradeTitle);
-    const tradeList = document.createElement('div');
-    tradeList.className = 'trade-list';
-    for (const mode of this.model.tradeModes) {
-      const button = this.createTradeButton(mode);
-      this.tradeButtons.set(mode.id, button);
-      tradeList.appendChild(button);
-    }
-    drawer.appendChild(tradeList);
-    return drawer;
-  }
-
   private createThemePicker(themes: readonly ThemeChoice[]): HTMLElement {
     const picker = document.createElement('aside');
     picker.className = 'theme-picker hud-surface hud-surface--panel';
@@ -677,41 +612,6 @@ export class GameHud {
     }
     picker.appendChild(grid);
     return picker;
-  }
-
-  private createPolicyButton(policy: HudPolicy): HTMLButtonElement {
-    const button = document.createElement('button');
-    button.type = 'button';
-    button.className = 'policy-card';
-    button.addEventListener('click', () => {
-      this.feedback = null;
-      this.handlers.onPolicy(policy.id);
-    });
-    const name = document.createElement('span');
-    name.className = 'policy-name';
-    name.textContent = policy.label;
-    const state = document.createElement('span');
-    state.className = 'policy-state';
-    const description = document.createElement('span');
-    description.className = 'policy-description';
-    description.textContent = policy.description;
-    const requirement = document.createElement('span');
-    requirement.className = 'policy-requirement';
-    button.append(name, state, description, requirement);
-    return button;
-  }
-
-  private createTradeButton(mode: HudTradeMode): HTMLButtonElement {
-    const button = document.createElement('button');
-    button.type = 'button';
-    button.className = 'trade-card';
-    button.addEventListener('click', () => this.handlers.onTrade(mode.id));
-    const name = document.createElement('strong');
-    name.textContent = mode.label;
-    const description = document.createElement('span');
-    description.textContent = mode.description;
-    button.append(name, description);
-    return button;
   }
 
   /**
@@ -873,39 +773,10 @@ export class GameHud {
   private paint(model: GameHudModel): void {
     this.bar.paint(model);
     this.dock.paint(model);
-    for (const policy of model.policies) this.paintPolicy(policy);
-    this.paintCommerce(model.commerce);
-    for (const mode of model.tradeModes) this.paintTradeMode(mode, model.tradeConnected);
+    this.policyDrawer.paint(model);
     this.paintDecision(model);
     this.paintSelection();
     this.paintToast();
-  }
-
-  private paintPolicy(policy: HudPolicy): void {
-    const button = this.policyButtons.get(policy.id);
-    if (button === undefined) return;
-    button.disabled = !policy.available;
-    button.setAttribute('aria-pressed', policy.active ? 'true' : 'false');
-    button.title = policy.reason;
-    const state = button.querySelector<HTMLElement>('.policy-state');
-    const requirement = button.querySelector<HTMLElement>('.policy-requirement');
-    if (state !== null) state.textContent = policy.active ? 'ACTIVE' : '';
-    if (requirement !== null) {
-      const population = policy.population > 0 ? ` · ${policy.population} residents` : '';
-      requirement.textContent = policy.active
-        ? `Select to deactivate · ${policy.upkeep.toFixed(1)} funds/tick`
-        : `${policy.cost} funds${population} · ${policy.upkeep.toFixed(1)} funds/tick`;
-    }
-  }
-
-  private paintTradeMode(mode: HudTradeMode, connected: boolean): void {
-    const button = this.tradeButtons.get(mode.id);
-    if (button === undefined) return;
-    button.disabled = !mode.available;
-    button.setAttribute('aria-pressed', mode.active ? 'true' : 'false');
-    button.title = connected
-      ? mode.description
-      : 'Build a Port or an Airport to unlock external trade.';
   }
 
   private paintDecision(model: GameHudModel): void {

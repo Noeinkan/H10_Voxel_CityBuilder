@@ -58,6 +58,19 @@ export const scifi: Theme = {
       cloudSpeed: 0.007,
       cloudTint: '#4a6280',
     },
+    // Lastra piu' alta e piu' rada degli altri due: qui le torri sono la firma
+    // del tema, e banchi fitti ne annegherebbero la meta'. La tinta e' quella
+    // dell'orizzonte, cosi' cio' che emerge si staglia sul proprio fondo.
+    cloudDeck: {
+      height: 133,
+      thickness: 38,
+      amount: 0.74,
+      coverage: 0.34,
+      cellSize: 7,
+      scale: 92,
+      speed: 0.007,
+      tint: '#3a5570',
+    },
     shadow: { strength: 0.92, softness: 1.2 },
     bloom: { threshold: 1.0, strength: 0.7, radius: 0.65 },
     tilt: { strength: 0.34, focus: 0.5, width: 0.44 },

@@ -86,18 +86,35 @@ export const FARMS = {
    */
   minFreeShare: 0.7,
 
-  /** Lotti piantati al massimo in una passata: la comparsa resta a budget. */
-  plotsPerPass: 2,
+  /**
+   * Lotti piantati al massimo in una passata.
+   *
+   * **E' un tetto, non il ritmo**, e la differenza e' tutta la meccanica. Quanti
+   * piantarne lo dice `missingPlotsOf`: il driver chiede alla simulazione quanti
+   * campi mancano e ne pianta quel numero, fin qui. Finche' questo numero era
+   * anche il ritmo — due lotti, sempre, comunque andasse — l'offerta era una
+   * costante contro una domanda che cresce con la citta', e le due divergevano
+   * dal primo isolato.
+   *
+   * Sei perche' e' il caso peggiore che il costruttore sa produrre: tre edifici
+   * ogni sei tick (`BUILDER.sitesPerBuild`, `BUILDER.ticksPerBuild`), un campo
+   * ogni due residenziali, e questa cadenza. Piu' alto non servirebbe a niente —
+   * il deficit taglia comunque prima — e farebbe comparire mezza campagna in un
+   * istante.
+   */
+  plotsPerPass: 6,
 
   /**
    * Tick fra una passata e l'altra.
    *
-   * Piu' rada di quella degli edifici: la campagna e' lo sfondo lento della
-   * citta', e un campo che comparisse ogni pochi tick leggerebbe come un
-   * lampeggio invece che come un paesaggio. Sono venti secondi a dieci tick al
-   * secondo.
+   * Quattro secondi a dieci tick al secondo. **Erano venti**, per tenere la
+   * campagna lo sfondo lento della citta', e il ritmo di comparsa resta quello:
+   * a citta' sfamata `missingPlotsOf` vale zero e la passata non pianta niente,
+   * quindi la cadenza fitta non si vede. Si sente solo quando c'e' fame, che e'
+   * esattamente quando la campagna deve rincorrere invece di aspettare venti
+   * secondi per due lotti.
    */
-  ticksPerPass: 200,
+  ticksPerPass: 40,
 
   /**
    * Candidati sondati in una passata prima di rinunciare a piantare.
@@ -116,6 +133,10 @@ export const FARMS = {
    * dell'isola tarata (512) e dei suoi settori costieri. Oltre non c'e' niente
    * da sondare, e senza un tetto il cursore continuerebbe ad allargarsi
    * sull'oceano per tutta la partita.
+   *
+   * Vale **a spirale centrata sull'isola**: e' cio' che il numero ha sempre
+   * dichiarato, e finche' il centro stava sull'origine del mondo ne copriva un
+   * quadrante solo.
    */
   searchRings: 22,
 

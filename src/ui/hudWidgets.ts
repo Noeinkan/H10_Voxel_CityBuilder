@@ -48,6 +48,28 @@ export function tileButton(
   return button;
 }
 
+/**
+ * Il clic col **mouse** non lascia il fuoco sul bottone.
+ *
+ * `:focus-visible` non e' solo la navigazione da tastiera: il browser lo
+ * riaccende sull'elemento gia' a fuoco appena arriva un tasto qualsiasi, e qui
+ * ogni tasto e' una scorciatoia sul mondo — WASD, `V`, `L`, le cifre del dock.
+ * Bastava quindi scegliere uno strumento e poi muovere la camera perche' la
+ * bolla del tooltip si aprisse sopra l'ultima tessera cliccata e non si
+ * chiudesse **mai** piu': niente la riguardava, e il fuoco restava li'.
+ *
+ * `detail` distingue i due gesti — 0 e' Enter o Spazio — perche' a chi naviga da
+ * tastiera il fuoco va lasciato dov'e', o il dock diventa intraversabile. E'
+ * anche cio' che toglie di mezzo lo Spazio che ricliccava l'ultimo bottone
+ * mentre la mano era sul mondo.
+ */
+function onActivate(button: HTMLButtonElement, onClick: () => void): void {
+  button.addEventListener('click', (event) => {
+    if (event.detail > 0) button.blur();
+    onClick();
+  });
+}
+
 export function labeledButton(icon: HudIcon, label: string, tooltip: string, onClick: () => void): HTMLButtonElement {
   const button = document.createElement('button');
   button.type = 'button';
@@ -61,7 +83,7 @@ export function labeledButton(icon: HudIcon, label: string, tooltip: string, onC
   text.textContent = label;
   copy.appendChild(text);
   button.appendChild(copy);
-  button.addEventListener('click', onClick);
+  onActivate(button, onClick);
   return button;
 }
 
@@ -72,7 +94,7 @@ export function iconButton(icon: HudIcon, label: string, onClick: () => void): H
   button.dataset.tooltip = label;
   button.setAttribute('aria-label', label);
   button.appendChild(createHudIcon(icon));
-  button.addEventListener('click', onClick);
+  onActivate(button, onClick);
   return button;
 }
 
@@ -84,7 +106,7 @@ export function textButton(label: string, tooltip: string, onClick: () => void):
   button.dataset.tooltip = tooltip;
   button.setAttribute('aria-label', tooltip);
   button.setAttribute('aria-pressed', 'false');
-  button.addEventListener('click', onClick);
+  onActivate(button, onClick);
   return button;
 }
 
@@ -109,10 +131,33 @@ export function paintAction(button: HTMLButtonElement | undefined, action: HudAc
     button.dataset.requirementShort = action.requirementShort ?? '';
   }
   button.dataset.tooltip = actionTooltip(action);
-  button.title = actionTooltip(action);
 }
 
-/** Motivo dell'azione, piu' cio' che quel ruolo favorisce e puo' far nascere. */
+/**
+ * Quanti nomi entrano in un elenco prima di diventare un conteggio.
+ *
+ * Tre e' quanti se ne ricordano leggendo; il diciassettesimo nome del monumento
+ * non informava nessuno — allungava una riga che a quel punto si saltava
+ * intera, e con lei le due righe utili che le stavano sotto.
+ */
+const TIP_LIST_MAX = 3;
+
+/** Un elenco che si accorcia da solo: i primi nomi, poi quanti ne restano. */
+export function shortList(items: readonly string[], separator = ', '): string {
+  const rest = items.length - TIP_LIST_MAX;
+  const shown = items.slice(0, TIP_LIST_MAX).join(separator);
+  return rest > 0 ? `${shown}, +${rest} more` : shown;
+}
+
+/**
+ * Motivo dell'azione, piu' cio' che quel ruolo favorisce e puo' far nascere.
+ *
+ * **Righe, non un periodo unico.** Le stesse voci separate da `·` formavano un
+ * blocco di testo centrato in cui il motivo, il vincolo e i due elenchi avevano
+ * tutti lo stesso peso: si leggeva dall'inizio o non si leggeva. Con un a capo
+ * per voce ognuna si trova a colpo d'occhio, ed e' il CSS a renderli
+ * (`white-space: pre-line`), non un elemento in piu' dentro il bottone.
+ */
 export function actionTooltip(action: HudAction): string {
   const lines = [action.reason];
   // Quanto manca, in cifre, subito dopo il perche': il riempimento dice "poco"
@@ -122,24 +167,31 @@ export function actionTooltip(action: HudAction): string {
   // *dove* si clicca, e leggerlo in fondo all'elenco vorrebbe dire leggerlo
   // dopo aver gia' scelto il punto.
   if (action.site !== undefined) lines.push(action.site);
-  if (action.radius !== undefined) lines.push(`Radius ${action.radius}`);
+
+  // Portata, usi favoriti e penalizzati stanno su **una** riga: sono i tre
+  // numeri della stessa domanda — dove arriva e su cosa spinge — e su tre righe
+  // separate sembravano tre argomenti.
+  const effect: string[] = [];
+  if (action.radius !== undefined) effect.push(`Radius ${action.radius}`);
   if (action.favours !== undefined && action.favours.length > 0) {
-    lines.push(`Favours: ${action.favours.join(', ')}`);
+    effect.push(`favours ${shortList(action.favours)}`);
   }
   if (action.penalises !== undefined && action.penalises.length > 0) {
-    lines.push(`Penalises: ${action.penalises.join(', ')}`);
+    effect.push(`penalises ${shortList(action.penalises)}`);
   }
+  if (effect.length > 0) lines.push(effect.join(' · '));
+
   if (action.typologies !== undefined && action.typologies.length > 0) {
-    lines.push(`May build: ${action.typologies.join(', ')}`);
+    lines.push(`May build: ${shortList(action.typologies)}`);
   }
   // In fondo, e dopo «May build», perche' e' la riga condizionale: quelle sopra
   // arrivano piazzando, questa arriva se il quartiere matura. Metterla prima le
   // farebbe leggere tutte come promesse dello stesso peso, che e' il difetto da
   // cui questa riga nasce.
   if (action.unlocks !== undefined && action.unlocks.length > 0) {
-    lines.push(`Unlocks: ${action.unlocks.join('; ')}`);
+    lines.push(`Unlocks: ${shortList(action.unlocks, '; ')}`);
   }
-  return lines.join(' · ');
+  return lines.join('\n');
 }
 
 /** Una riga etichettata della scheda al cursore. */

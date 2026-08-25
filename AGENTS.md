@@ -33,7 +33,9 @@ npm start            # = npm run dev, ma prima libera la porta 8020
 npm run dev          # http://localhost:8020/?debug=1
 npm run build        # typecheck + build Vite in dist/
 npm run preview      # http://localhost:8011/
-npm test
+npm test             # suite intera; vedi "Verifica proporzionata"
+npm run test:changed
+npm run test:related
 npm run test:watch
 npm run bench
 npm run typecheck
@@ -44,6 +46,43 @@ node rimasta sulla 8020: `strictPort` fa fallire l'avvio invece di scivolare su
 un'altra porta. Se la porta la tiene un programma estraneo, lascia fallire vite.
 
 Non esiste uno script `lint` o un formatter configurato: non inventarne uno.
+
+## Verifica proporzionata
+
+La suite intera e' 134 file e 1482 test: **207 s misurati su questa macchina.**
+E' il prezzo giusto per consegnare, non per ogni riga che cambi. Mentre iteri usa
+il cerchio stretto — sullo stesso repo, i test legati a un singolo file sorgente
+sono 4 file e 8 s.
+
+```bash
+npm run test:changed                             # i test toccati dalle modifiche non committate
+npm run test:related -- src/engine/daylight.ts   # ...quelli legati a file che scegli tu
+npm test -- src/sim                              # una cartella, se sai gia' dove guardare
+```
+
+I primi due non filtrano per nome: risalgono il grafo degli import, quindi un
+test che arriva al file che hai toccato entra anche se sta in un'altra cartella
+— `daylight.ts` ne tira dentro quattro. E' questo che li rende sostituti onesti
+della suite e non scorciatoie.
+
+`test:changed` costa quanto e' larga la tua modifica, ed e' giusto cosi': se hai
+toccato `src/sim/index.ts` o `main.ts` ti ridara' tutti e 134 i file, perche'
+davvero dipendono da li'. Quando succede, non e' il comando che ha sbagliato.
+
+C'e' un secondo motivo per non lanciarla a ogni giro, oltre al tempo: **sotto
+contesa di CPU la suite intera produce falsi fallimenti.** Due run consecutive
+sulla stessa identica working tree hanno dato 3 test rossi con quattro errori di
+timeout la prima, 1482 verdi la seconda. E' la stessa contesa per cui
+`testTimeout` sta a 30 s (vedi il commento in `vite.config.ts`). Un rosso
+comparso dopo una modifica che non c'entra niente merita una seconda run prima
+di inseguirlo.
+
+Restano fuori dal grafo i due worker, che si caricano per URL e non per import
+(`mesher.worker.ts`, `terrain.worker.ts`): se tocchi loro o il protocollo dei
+messaggi, il cerchio stretto non se ne accorge e serve la suite.
+
+`npm test` usa il reporter `dot`: una riga per file erano 134 righe di output
+per dire che andava tutto bene. I fallimenti si vedono per esteso come prima.
 
 ## Convenzioni
 
@@ -167,7 +206,8 @@ sia dall'hook globale: leggono la stessa fonte.
 ## Definizione di completamento
 
 1. Aggiungi o aggiorna test per comportamento, contratti e casi limite toccati.
-2. Esegui almeno `npm run typecheck` e `npm test`.
+2. Esegui `npm run typecheck` e, **una volta sola a fine lavoro**, `npm test`
+   intero. Mentre iteri basta il cerchio stretto: vedi "Verifica proporzionata".
 3. Per bundle o worker esegui anche `npm run build`.
 4. Per percorsi caldi esegui il benchmark pertinente e segnala che le tabelle
    di misura richiedono verifica manuale.

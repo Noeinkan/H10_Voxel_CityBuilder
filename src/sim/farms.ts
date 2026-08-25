@@ -142,3 +142,46 @@ export function foodDeficitOf(
   const demand = population * BALANCE.food.perResident;
   return Math.max(0, demand - foodYieldOf(farmCounts, staffing));
 }
+
+/**
+ * Quanti lotti mancano alla citta' per pareggiare, o 0 se e' a posto.
+ *
+ * E' `foodDeficitOf` diviso la resa di un campo, e sta **qui** perche' qui sta il
+ * listino: chi pianta sa dove c'e' terra fertile, non quanto rende un solco.
+ *
+ * **E' il numero che prima si perdeva.** Fino alla 4.7 attraversava il confine il
+ * cibo mancante e il driver lo riduceva a un booleano: piantava due lotti che ne
+ * mancassero due o duecento. La domanda pero' cresce con la citta' — un campo
+ * ogni due residenziali — mentre l'offerta restava una costante di
+ * `farms/config.ts`, e le due divergevano dal primo isolato. Una citta' arrivava
+ * a mangiare un terzo di cio' che le serviva senza che niente lo dicesse.
+ *
+ * Conta in **campi** e non nel lotto medio, ed e' deliberatamente ottimista come
+ * l'organico pieno che il driver gli passa: un frutteto rende la meta', e
+ * chiedere il pessimo farebbe piantare a una citta' gia' in pareggio.
+ */
+export function missingPlotsOf(
+  population: number,
+  farmCounts: readonly number[],
+  staffing: number,
+): number {
+  const perPlot = BALANCE.farms[FARM_KIND.field].houses * FOOD_PER_HOUSE;
+  return Math.ceil(foodDeficitOf(population, farmCounts, staffing) / perPlot);
+}
+
+/**
+ * Quanta della domanda alimentare e' stata davvero servita, in [0, 1].
+ *
+ * E' il `fed` del tick riletto dal referto, non un secondo conto — vale la stessa
+ * ragione per cui `FoodReport` esiste.
+ *
+ * **Serve perche' il segno del delta non sa distinguere una carestia da un
+ * pareggio.** Ogni consumo e' un `min(domanda, disponibile)`, quindi uno stock
+ * esaurito si ferma a zero e il delta vale *esattamente* zero: una citta' che
+ * mangia un terzo di cio' che le serve e una in equilibrio scrivono lo stesso
+ * numero. Chi deve rispondere a «la citta' mangia?» chiede qui.
+ */
+export function fedShareOf(harvest: FoodReport, population: number): number {
+  const demand = population * BALANCE.food.perResident;
+  return demand > 0 ? Math.min(1, harvest.eaten / demand) : 1;
+}

@@ -12,7 +12,9 @@
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
     "docs:merge": "node scripts/docs-merge.mjs",
-    "test": "vitest run",
+    "test": "vitest run --reporter=dot",
+    "test:changed": "vitest run --reporter=dot --changed",
+    "test:related": "vitest related --run --reporter=dot",
     "test:watch": "vitest",
     "bench": "vitest bench --run"
   },

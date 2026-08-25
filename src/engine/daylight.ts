@@ -261,6 +261,18 @@ export function withHour(atmosphere: Atmosphere, hour: number): Atmosphere {
       // da alonare, e quello che resta e' il chiarore dell'ultima luce.
       sunGlow: atmosphere.sky.sunGlow * lerp(0.15, 1, day),
     },
+    // Lo strato di nuvole si spegne come le bande del cielo, e per la stessa
+    // ragione: un pavimento di nuvole rimasto diurno sotto una citta' notturna
+    // sarebbe la cosa piu' chiara dell'inquadratura. Solo la tinta pero' — la
+    // forma dello strato e' geometria, e la notte non la sposta.
+    // Lo strato senza tinta propria non passa di qui e non deve: prende quella
+    // della nebbia, che due righe piu' su la notte ha gia' piegato.
+    cloudDeck: atmosphere.cloudDeck?.tint === undefined
+      ? atmosphere.cloudDeck
+      : {
+        ...atmosphere.cloudDeck,
+        tint: mixHex(atmosphere.cloudDeck.tint, DAYLIGHT.nightCloud, reach),
+      },
     // Il mare non ha un colore proprio: ha quello di cio' che riflette. Il
     // riflesso del tema e' di mezzogiorno, e lasciarlo acceso su un mare
     // notturno stampava un quadrettato chiaro largo quanto l'inquadratura.

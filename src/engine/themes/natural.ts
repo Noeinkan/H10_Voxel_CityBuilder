@@ -41,6 +41,19 @@ export const natural: Theme = {
       cloudSpeed: 0.01,
       cloudTint: '#ffffff',
     },
+    // I banchi che avvolgono le cime. Il cuore sta a 120, cioe' sopra le quote
+    // abitate della 4.9 e in mezzo alle sole torri: la lastra va da 100 a 140 e
+    // il tessuto ordinario le resta tutto sotto, pulito. Senza tinta propria —
+    // prende quella della nebbia, che segue il cielo e l'ora.
+    cloudDeck: {
+      height: 120,
+      thickness: 40,
+      amount: 0.8,
+      coverage: 0.4,
+      cellSize: 6,
+      scale: 80,
+      speed: 0.01,
+    },
     shadow: { strength: 0.9, softness: 1.4 },
     bloom: { threshold: 1.25, strength: 0.3, radius: 0.5 },
     tilt: { strength: 0.35, focus: 0.5, width: 0.42 },

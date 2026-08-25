@@ -1,4 +1,5 @@
 import {
+  Matrix4,
   Raycaster,
   Scene,
   SRGBColorSpace,
@@ -268,6 +269,18 @@ const initialTheme: Theme = resolveTheme(params.get('theme'));
 const initialMode: DaylightMode = resolveDaylightMode(params.get('daylight'));
 
 /**
+ * `?clouds=1` parte con i banchi in cielo. Vale anche senza `debug`, come
+ * `?theme=`.
+ *
+ * **Di partenza sono spenti**, ed e' una scelta: la lastra e' un fondo per il
+ * vuoto, cioe' serve quando si guarda una citta' che sta gia' in quota, e sopra
+ * una citta' a terra e' solo qualcosa davanti. Chi la vuole la accende, dal
+ * bottone o con C, e chi inquadra una torre per una cattura non se la trova
+ * davanti senza averla chiesta.
+ */
+let cloudsOn = params.get('clouds') === '1';
+
+/**
  * `?hour=<0..24>` fissa l'ora e **ferma** il ciclo: vale anche senza `debug`,
  * come `?theme=` e `?inspect=`, perche' e' un'inquadratura e non una misura.
  *
@@ -298,6 +311,9 @@ const sunShadow = createSunShadow(VOXEL_SIZE, SHADOW_SIZE);
 /** Direzione del sole nel mondo, e la stessa portata in spazio vista. */
 const sunWorld = new Vector3();
 const sunView = new Vector3();
+
+/** Riusata a ogni frame: e' l'unica cosa che porta il fondo procedurale nel mondo. */
+const skyInvViewProj = new Matrix4();
 
 
 // uResolution lavora su gl_FragCoord, che e' in pixel del drawing buffer:
@@ -389,6 +405,27 @@ const daylight = createAtmosphereControl({
 });
 
 daylight.applyTheme(initialTheme);
+// Dopo il tema: `applyTheme` riscrive lo strato del tema nuovo, e l'interruttore
+// del giocatore vale sopra di esso.
+paletteHandle.setClouds(cloudsOn);
+skyBackground.setClouds(cloudsOn);
+
+/**
+ * Accende o spegne i banchi in quota.
+ *
+ * Sta qui e non nell'`AtmosphereControl` perche' non e' un'ora ne' un tema: e'
+ * una preferenza di vista, come la qualita'. Il tema continua a dire **come**
+ * sono fatte le nuvole, questo solo se si vedono.
+ */
+function setClouds(on: boolean): void {
+  if (on === cloudsOn) return;
+  cloudsOn = on;
+  paletteHandle.setClouds(on);
+  skyBackground.setClouds(on);
+  gameHud?.setClouds(on);
+  gameHud?.showTransientFeedback(`Clouds · ${on ? 'on' : 'off'}`);
+  console.info(`[clouds] ${on ? 'on' : 'off'}`);
+}
 
 // La scena di terreno arriva da un worker, quindi non e' pronta a costruttore:
 // il primo blocco entra al primo `step` che trova qualcosa in coda.
@@ -549,6 +586,7 @@ if (growEnabled) {
     onPause: (paused) => growthScene?.setPaused(paused),
     onSpeed: (speed) => growthScene?.setSpeed(speed),
     onDaylight: (mode) => daylight.setMode(mode),
+    onClouds: (on) => setClouds(on),
     onTheme: (id) => {
       const index = THEMES.findIndex((candidate) => candidate.id === id);
       if (index >= 0) daylight.cycleTheme(index);
@@ -582,8 +620,10 @@ if (growEnabled) {
     tokens: hudTokens(candidate),
   })), daylight.theme.id);
   // Il bottone nasce sul ciclo: se l'URL ha chiesto altro, va detto subito o la
-  // prima cosa che il giocatore legge e' falsa.
+  // prima cosa che il giocatore legge e' falsa. Lo stesso per le nuvole, che di
+  // partenza sono spente mentre la barra le dipinge accese.
   gameHud.setDaylight(daylight.mode);
+  gameHud.setClouds(cloudsOn);
 }
 
 const picker = new Raycaster();
@@ -1222,6 +1262,14 @@ function onFrame(time: number): void {
   sunView.copy(sunWorld).transformDirection(camera.camera.matrixWorldInverse);
   skyBackground.setSunScreen(sunView.x * 1.35, sunView.y * 1.35, sunView.z < 0);
   skyBackground.setTime(time / 1000);
+  // Dalla NDC al mondo, per il solo strato di nuvole: il fondo e' un quad in
+  // NDC e senza questa non saprebbe a che punto del piano corrisponde un pixel.
+  // Due moltiplicazioni di matrici per frame, non per pixel.
+  skyInvViewProj.multiplyMatrices(
+    camera.camera.matrixWorld,
+    camera.camera.projectionMatrixInverse,
+  );
+  skyBackground.setCamera(skyInvViewProj, viewDirection.x, viewDirection.y, viewDirection.z);
   post.render();
   const renderMs = performance.now() - renderStart;
 
@@ -2090,6 +2138,12 @@ function onUiKey(event: KeyboardEvent): void {
   // non misura. `H` resta la manopola fine dell'harness, di un'ora alla volta.
   if (event.code === 'KeyL') {
     daylight.setMode(nextDaylightMode(daylight.mode));
+    return;
+  }
+  // E per la stessa ragione le nuvole: un banco davanti alla torre che si sta
+  // guardando si toglie, non si sopporta.
+  if (event.code === 'KeyC') {
+    setClouds(!cloudsOn);
     return;
   }
   // Tasti 1..9: gli **strumenti** del dock; con Shift, i temi.

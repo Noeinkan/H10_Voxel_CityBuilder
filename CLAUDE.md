@@ -50,9 +50,11 @@ non "per contesto".
 - **Non c'è ancora un gioco completo**: il builder piazza edifici automatici
   dalle decisioni della simulazione, ma pathfinding, salvataggio e audio non
   esistono. Non assumere che ci siano.
-- Aggiungendo un file, aggiorna la tabella in `PROJECT_INDEX.md` e, se è una
-  superficie pubblica, quella nel README di sezione. Un incremento che chiude un
-  commit va anche in `CHANGELOG.md`.
+- **`PROJECT_INDEX.md` e `CHANGELOG.md` non si scrivono a mano.** Aggiungendo un
+  file, o chiudendo un incremento, lascia un frammento in `docs/pending/` e
+  fondilo con `npm run docs:merge`: sono i due file che tutti aggiornano nello
+  stesso istante, ed erano quasi un terzo dei rifiuti del semaforo. Il README di
+  sezione invece, se è una superficie pubblica, si aggiorna direttamente.
 
 ## Compattazione
 

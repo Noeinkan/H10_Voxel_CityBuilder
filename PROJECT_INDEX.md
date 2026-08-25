@@ -206,9 +206,12 @@ uniform e stato del renderer: nessuna geometria viene toccata.
 
 | File | Ruolo | Esporta |
 | --- | --- | --- |
-| [greedyMesher.ts](src/engine/mesher/greedyMesher.ts) | Greedy meshing, AO e visibilita' del cielo per faccia, scratch riusato fra job | `greedyMesh`, `createScratch`, `MeshScratch`, `MAX_QUADS_PER_CHUNK`, `MAX_BASE_QUADS_PER_CHUNK`, `SHADE_AO_MASK`, `SHADE_SKY_SHIFT`, `SHADE_SKY_MASK` |
-| [microGeometry.ts](src/engine/mesher/microGeometry.ts) | Prismi sci-fi a 1/16 di voxel accodati al greedy pass: struttura (portali, parapetti, cornici, finiali sulle colonne isolate, fasce sugli sbalzi) piu' i prop appesi alle giunzioni | `appendMicroGeometry`, `MicroGeometryWriter`, `ChunkOrigin`, `FixedBox`, `RunSpec`, `MAX_DETAIL_QUADS_PER_CHUNK`, `collectSurfaceCells`, `emitRuns`, `emitPoints`, `facadeBox`, `facadeAt`, `frontage`, `openRoof`, `interiorRoof`, `propRoll`, `LATERAL_FACES` |
+| [greedyMesher.ts](src/engine/mesher/greedyMesher.ts) | Greedy meshing, AO e visibilita' del cielo per faccia, scratch riusato fra job. Il mask loop salta le facce che la maschera degli scavi dichiara scavate | `greedyMesh`, `createScratch`, `MeshScratch`, `MAX_QUADS_PER_CHUNK`, `MAX_BASE_QUADS_PER_CHUNK`, `SHADE_AO_MASK`, `SHADE_SKY_SHIFT`, `SHADE_SKY_MASK` |
+| [microGeometry.ts](src/engine/mesher/microGeometry.ts) | Microgeometria **additiva** a 1/16 di voxel accodata al greedy pass: struttura (portali, parapetti, cornici, finiali sulle colonne isolate, fasce sugli sbalzi) piu' i prop appesi alle giunzioni. I prismi di facciata si appoggiano al filo del vano quando la parete e' scavata | `appendMicroGeometry`, `MicroGeometryWriter`, `BoxOptions`, `ChunkOrigin`, `FixedBox`, `RunSpec`, `SurfaceCells`, `MAX_DETAIL_QUADS_PER_CHUNK`, `collectSurfaceCells`, `emitRuns`, `emitPoints`, `facadeBox`, `facadeAt`, `facadeHorizontalAxis`, `frontage`, `openRoof`, `interiorRoof`, `underSetback`, `blockAt`, `isExposed`, `hasSurfaceFace`, `propRoll`, `LATERAL_FACES` |
 | [microStreet.ts](src/engine/mesher/microStreet.ts) | Il dettaglio del **retro** e del tetto praticabile: calate, scale esterne, pergole. Si aggancia dove `frontage` è falso | `appendStreetDetail` |
+| [carveMarks.ts](src/engine/mesher/carveMarks.ts) | Le ricette di scavo e il byte che le trasporta: modulo foglia, letto dal greedy pass, dal piano, dal disegno e dagli emettitori additivi | `CARVE_KIND`, `CarveKind`, `CARVE_DEPTH`, `packCarveMark`, `carveIndex`, `carvedFace`, `carveKindAt`, `carveFaceAt`, `facadeInset`, `roofInset` |
+| [carvePlan.ts](src/engine/mesher/carvePlan.ts) | *Dove* si scava: aggancio geometrico per ricetta, maschera per faccia, riserva di quad. Gira **prima** del greedy pass e non tocca il volume | `planCarves`, `clearCarves`, `carveMarkFor`, `carveKindFor`, `carveRunAxis`, `CarvePlan`, `MAX_CARVE_QUADS_PER_CHUNK` |
+| [carveGeometry.ts](src/engine/mesher/carveGeometry.ts) | Microgeometria **riduttiva**: soglie, vetrate a filo interno, logge, nicchie, vani scala, vassoi di terrazza e mezzanini. Disegna il perimetro del vano, non le celle | `appendCarveDetail` |
 | [coverDetail.ts](src/engine/mesher/coverDetail.ts) | Erbette in microgeometria: toglie dal volume le celle marcate — anello e soffitto compresi — ci disegna lame, steli e sassi a 1/16, e rimette il volume com'era | `liftGroundCover`, `restoreGroundCover`, `appendCoverDetail`, `LiftedCover` |
 | [buildPaddedVolume.ts](src/engine/mesher/buildPaddedVolume.ts) | Chunk + tutti i 26 vicini immediati → volume 34³; e la fetta di soffitto 34×34×`SKY_PROBE` che il cielo deve poter guardare | `buildPaddedVolume`, `buildCeilingSlab` |
 | [meshTypes.ts](src/engine/mesher/meshTypes.ts) | Job e risultato, array trasferibili | `MeshJob`, `MeshArrays`, `MeshResult`, `MESH_UNITS_PER_VOXEL` |
@@ -237,7 +240,7 @@ di crescita. Il `Builder`, esterno al modulo, consuma quei candidati. Dettagli i
 | [flows.ts](src/sim/flows.ts) | Da dove vengono i fondi di un tick e dove vanno: referto derivato come `commerce`, non un accumulo | `FundsReport`, `NO_FUNDS_FLOW`, `fundsIn`, `fundsOut`, `dominantOutflow` |
 | [decisions.ts](src/sim/decisions.ts) | Scelte periodiche deterministiche, con mandato e opera concessi | `decisionAt`, `decisionOption`, `CityDecision`, `DecisionGrant` |
 | [charters.ts](src/sim/charters.ts) | Mandati lasciati dalle decisioni: uno slot per famiglia, permanenti | `CHARTERS`, `charterById`, `charterOfFamily`, `isCharterId`, `withCharter`, `withoutFamily`, `canonicalCharters`, `Charter`, `CharterFamily`, `CharterId` |
-| [farms.ts](src/sim/farms.ts) | I tre produttori di cibo: listino in case sfamate, braccia, manutenzione, referto del raccolto | `FARM_KIND`, `ALL_FARM_KINDS`, `harvestOf`, `foodYieldOf`, `farmWorkersOf`, `farmUpkeepOf`, `foodDeficitOf`, `isFarmKind`, `FarmKind`, `FoodReport`, `EMPTY_HARVEST` |
+| [farms.ts](src/sim/farms.ts) | I tre produttori di cibo: listino in case sfamate, braccia, manutenzione, referto del raccolto, e i due numeri che il bilancio consegna a chi pianta e a chi giudica | `FARM_KIND`, `ALL_FARM_KINDS`, `harvestOf`, `foodYieldOf`, `farmWorkersOf`, `farmUpkeepOf`, `foodDeficitOf`, `missingPlotsOf`, `fedShareOf`, `isFarmKind`, `FarmKind`, `FoodReport`, `EMPTY_HARVEST` |
 | [trade.ts](src/sim/trade.ts) | Import/export aggregato sbloccato dal porto | `resolveExternalTrade`, `TRADE_MODES`, `TradeMode` |
 | [ferry.ts](src/sim/ferry.ts) | Quali imbarchi sono serviti da una linea: la coppia, non il singolo molo | `ferryLinesOf`, `servedFerryLines`, `FerryLine`, `FerryTerminal` |
 | [nextBuildSites.ts](src/sim/nextBuildSites.ts) | I candidati, ordinati, filtrati e con l'eventuale secondo uso | `nextBuildSites`, `BuildSite`, `BuildSiteQuery` |
@@ -679,8 +682,9 @@ giocabile; gli overlay tecnici si alternano con `F3` o partono aperti con
 | [hudWidgets.ts](src/ui/hudWidgets.ts) | Le fabbriche DOM che non toccano `this`: bottoni, tessere, righe del cursore, tasti della targa, separatore |
 | [hudTokens.ts](src/ui/hudTokens.ts) | I `--hud-*` derivati dal tema attivo: pannello chiaro o scuro dalla luminanza dell'aria, tinta verso il mondo e contrasto AA garantito |
 | [GameHud.ts](src/ui/GameHud.ts) | Composizione dell'HUD: pannelli, decisioni, temi, targa della vista, catena di Escape e feedback contestuale |
-| [ResourceBar.ts](src/ui/ResourceBar.ts) | La barra in alto: cinque risorse con tendenza, sparkline, anello del tetto e popover del bilancio, piu' i controlli del tempo |
-| [BuildDock.ts](src/ui/BuildDock.ts) | Il dock in basso: quattro corsie etichettate, tessere icona-sopra-etichetta con badge di tasto e costo, selezione per indice |
+| [PolicyDrawer.ts](src/ui/PolicyDrawer.ts) | Il pannello di governo in tre linguette — politiche, commercio interno, commercio esterno — con l'intestazione ferma e solo il corpo che scorre |
+| [ResourceBar.ts](src/ui/ResourceBar.ts) | La colonna di destra: cinque risorse con tendenza, sparkline, anello del tetto e popover del bilancio, piu' i controlli del tempo |
+| [BuildDock.ts](src/ui/BuildDock.ts) | Il rail di sinistra: quattro corsie etichettate incolonnate, tessere icona-sopra-etichetta su due colonne con badge di tasto e costo, selezione per indice |
 | [ResourceTrend.ts](src/ui/ResourceTrend.ts) | La finestra dei tick recenti per risorsa: direzione, magnitudine e serie per la sparkline. Campionamento ancorato al tick |
 | [GameHudModel.ts](src/ui/GameHudModel.ts) | View model puro di risorse, tendenze, tetti, scomposizione dei fondi, requisiti vincolanti e disponibilità delle azioni |
 | [ControlsHint.ts](src/ui/ControlsHint.ts) | Onboarding contestuale persistente e pannello di aiuto |
@@ -699,6 +703,7 @@ giocabile; gli overlay tecnici si alternano con `F3` o partono aperti con
 
 | File | Copre |
 | --- | --- |
+| [ui/hudWidgets.test.ts](src/ui/hudWidgets.test.ts) | Le righe del tooltip: una voce per riga, elenchi che si contano invece di srotolarsi, ordine fra cio' che si costruisce e cio' che si sblocca |
 | [world/VoxelWorld.test.ts](src/world/VoxelWorld.test.ts) | Sparsità, dirty set ai bordi, AABB, contratto `data` ≠ `blocks` |
 | [world/visualBlock.test.ts](src/world/visualBlock.test.ts) | Palette e superficie nello stesso byte, il vuoto ignora la superficie |
 | [world/scenes/cityScene.test.ts](src/world/scenes/cityScene.test.ts) | Determinismo, riempimento al 20%, ripresa a passi, nessuna scrittura fuori region |
@@ -715,6 +720,7 @@ giocabile; gli overlay tecnici si alternano con `F3` o partono aperti con
 | [engine/mesher/greedyMesher.test.ts](src/engine/mesher/greedyMesher.test.ts) | Fusione dei quad, orientamento delle facce, casi limite |
 | [engine/mesher/buildPaddedVolume.test.ts](src/engine/mesher/buildPaddedVolume.test.ts) | Piani, spigoli e angoli del padding |
 | [engine/mesher/microGeometry.test.ts](src/engine/mesher/microGeometry.test.ts) | Unità fisse, facce nascoste, testate condivise, priorità e limite; i prop: aggancio all'ingresso, superficie per prisma, seme in coordinate di mondo, margine sotto il tetto |
+| [engine/mesher/carveGeometry.test.ts](src/engine/mesher/carveGeometry.test.ts) | La faccia soppressa e pagata dal vano, il winding di ogni quad di dettaglio verificato sul prodotto vettoriale, il gradiente di AO, il costo che segue il perimetro, la riserva come limite superiore, la cucitura fra chunk senza setto |
 | [engine/mesher/microStreet.test.ts](src/engine/mesher/microStreet.test.ts) | Il dettaglio del retro misurato da solo, con un writer che conta: scende a terra su una parete cieca, si alza sopra la quota franca dove c'è un ingresso, segue le coordinate di mondo |
 | [engine/mesher/coverDetail.test.ts](src/engine/mesher/coverDetail.test.ts) | Il cubo sparisce e restano i prismi, il volume torna intatto, la faccia di terreno si ricuce, niente esce dalla cella; fiore, sasso, marcatore rimasto senza il suo terreno, anello di padding |
 | [engine/palette.test.ts](src/engine/palette.test.ts) | 32 slot, validazione dei colori |

@@ -239,7 +239,7 @@ export function blockAt(padded: Uint8Array, x: number, y: number, z: number): nu
   return padded[paddedIdx(x + 1, y + 1, z + 1)];
 }
 
-function isExposed(padded: Uint8Array, x: number, y: number, z: number, face: number): boolean {
+export function isExposed(padded: Uint8Array, x: number, y: number, z: number, face: number): boolean {
   const offset = FACE_NEIGHBOUR_OFFSETS[face];
   return blockAt(padded, x + offset[0], y + offset[1], z + offset[2]) === 0;
 }
@@ -1182,13 +1182,17 @@ export function appendMicroGeometry(
   padded: Uint8Array,
   writer: MicroGeometryWriter,
   marks: Uint8Array,
+  cells: SurfaceCells,
   origin: ChunkOrigin = ORIGIN_ZERO,
 ): number {
   const initial = writer.remainingQuads;
   // Da qui in giu' ogni prisma di facciata sa di quanto la sua parete e'
   // arretrata. Vedi la nota su `carves`.
   carves = marks;
-  const { bySurface, facadeByFace } = collectSurfaceCells(padded);
+  // La scansione la fa `greedyMesh` prima del greedy pass, perche' il piano
+  // degli scavi ne ha bisogno **prima**. Rifarla qui sarebbe la stessa passata
+  // due volte.
+  const { bySurface, facadeByFace } = cells;
   if (!emitPortals(padded, writer, bySurface[SURFACE_KIND.portal])) return initial - writer.remainingQuads;
   if (!emitRoofTech(padded, writer, bySurface[SURFACE_KIND.roofTech])) return initial - writer.remainingQuads;
   if (!emitLuminous(padded, writer, bySurface[SURFACE_KIND.luminous])) return initial - writer.remainingQuads;

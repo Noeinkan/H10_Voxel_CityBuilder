@@ -37,25 +37,46 @@ import {
  * una sola volta in modo diverso il risultato non sarebbe un dettaglio storto ma
  * un muro **bucato**. Rileggere invece di rivalutare toglie la possibilita'.
  *
- * **Un vano e' tre pezzi, e nessuno dei tre e' una primitiva nuova.**
+ * **Nessuna primitiva nuova, e due modi di usarle.**
  *
- * - le **spalle** sono un `emitBox` con `inward`: le stesse sei facce con l'id
- *   opposto e il winding invertito, che smettono di descrivere un pieno e
- *   descrivono un vuoto. Bocca e fondo si nascondono;
- * - il **fondo** e' un box a spessore nullo con cinque facce su sei nascoste,
- *   cioe' un pannello. `writeDetailBox` gira gia' su sei facce e ne salta
- *   cinque, il conto dei quad viene giusto da solo e l'AABB non si allarga.
- *   Sta separato dalle spalle per una ragione sola: puo' essere piu' scuro;
- * - il **telaio** e' lo stesso pannello, sul filo della parete, e serve alla
- *   sola nicchia — l'unica ricetta piu' stretta della cella, quindi l'unica che
- *   lasci scoperto un anello di muro attorno alla bocca.
+ * Un vano che copre piu' celle si disegna sul suo **perimetro**: fondo,
+ * davanzale, architrave e due stipiti, ognuno una corsa con il suo aggancio.
+ * Sono tutti box a spessore nullo con cinque facce su sei nascoste, cioe'
+ * pannelli — `writeDetailBox` gira gia' su sei facce e ne salta cinque, quindi
+ * il conto dei quad viene giusto da solo e l'AABB non si allarga.
+ *
+ * Un vano che sta **dentro una cella** — la sola nicchia — si disegna invece
+ * come un `emitBox` con `inward`: le stesse sei facce con l'id opposto e il
+ * winding invertito, che smettono di descrivere un pieno e descrivono un vuoto.
+ * Quattro stipiti in una chiamata sola, che su un vano isolato e' esattamente
+ * cio' che serve. Ci si aggiunge il **telaio**, quattro pannelli sul filo della
+ * parete: e' l'unica ricetta piu' stretta della cella, quindi l'unica che lasci
+ * scoperto un anello di muro attorno alla bocca.
  *
  * **L'AO e' meta' del disegno.** `writeDetailBox` da' a ogni prisma il corner
- * del tutto libero, che dentro un incavo significa «niente mi occlude»: una
- * nicchia cosi' legge come un adesivo, non come un buco. Le spalle scendono a 2
- * e il fondo a 1, ed e' quella differenza — non la profondita', che a 1/16 e'
- * minuscola — a far leggere il vano da lontano.
- */
+ *  * del tutto libero, che dentro un incavo significa «niente mi occlude»: una
+  * nicchia cosi' legge come un adesivo, non come un buco. Gli stipiti scendono a
+   * 2 e il fondo a 1, ed e' quella differenza — non la profondita', che a 1/16 e'
+    * minuscola — a far leggere il vano da lontano.
+     *
+      * **Costo, misurato** e non stimato, su questa macchina.
+       *
+        * In **geometria**: 1 752 quad su `everyRecipe`, e il dettaglio complessivo del
+         * chunk fitto di `microGeometry.test.ts` passa da 6 055 a 7 739. Il tetto di
+          * 16 384 non si e' mosso, e il margine resta oltre il cinquanta per cento.
+           *
+            * In **tempo**, sul bench `edifici sci-fi (con microgeometria)`, con lo scavo
+             * spento e acceso nella stessa finestra: **9,6 ms contro 11,6**, cioe' +2,0 ms e
+              * +21%. Il gruppo si divide in 1,4 ms di piano e 0,6 di disegno, ed e' l'unica
+               * voce della microgeometria che paga un predicato su **ogni** facciata esposta
+                * invece che su una giunzione — le altre si agganciano dove il volume cambia,
+                 * questa deve chiedersi di ogni parete se e' un vano.
+                  *
+                   * **La prima stesura costava +9,5 ms**, e le due cose che l'hanno divisa per
+                    * cinque valgono per chiunque ne aggiunga una ricetta: il piano non scandisce il
+                     * volume ma riceve le liste di `collectSurfaceCells` (vedi `carvePlan.ts`), e il
+                      * disegno scorre il secchiello del proprio marchio invece della lista intera.
+                       */
 
 const U = MESH_UNITS_PER_VOXEL;
 
@@ -172,6 +193,8 @@ function emitWallCarves(
 
   for (const face of LATERAL_FACES) {
     const mark = packCarveMark(kind, face);
+    const cells = carves.byMark[mark];
+    if (cells.length === 0) continue;
     const hAxis = facadeHorizontalAxis(face);
     const has = (x: number, y: number, z: number): boolean =>
       carvedAs(padded, marks, carves.origin, mark, x, y, z);
@@ -204,7 +227,7 @@ function emitWallCarves(
         recess,
       ),
     };
-    if (!emitRuns(writer, carves.cells, back)) return false;
+    if (!emitRuns(writer, cells, back)) return false;
 
     // Davanzale e architrave: i due bordi orizzontali, degeneri in z.
     for (const below of [true, false]) {
@@ -220,7 +243,7 @@ function emitWallCarves(
           return facadeBox(x, y, z, face, 0, length * U, v, v, recess, recess);
         },
       };
-      if (!emitRuns(writer, carves.cells, strip)) return false;
+      if (!emitRuns(writer, cells, strip)) return false;
     }
 
     // Stipiti: i due bordi verticali, degeneri sull'asse orizzontale.
@@ -237,7 +260,7 @@ function emitWallCarves(
           return facadeBox(x, y, z, face, h, h, 0, length * U, recess, recess);
         },
       };
-      if (!emitRuns(writer, carves.cells, strip)) return false;
+      if (!emitRuns(writer, cells, strip)) return false;
     }
   }
   return true;
@@ -262,6 +285,8 @@ function emitTrayCarves(
   const recess = CARVE_DEPTH[CARVE_KIND.tray];
   const material = CARVE_MATERIAL[CARVE_KIND.tray];
   const mark = packCarveMark(CARVE_KIND.tray, FACE_PZ);
+  const cells = carves.byMark[mark];
+  if (cells.length === 0) return true;
   const has = (x: number, y: number, z: number): boolean =>
     carvedAs(padded, marks, carves.origin, mark, x, y, z);
 
@@ -280,7 +305,7 @@ function emitTrayCarves(
       max: [(x + length) * U, (y + 1) * U, floorZ(z)],
     }),
   };
-  if (!emitRuns(writer, carves.cells, floor)) return false;
+  if (!emitRuns(writer, cells, floor)) return false;
 
   for (const axis of [0, 1] as const) {
     for (const side of [-1, 1] as const) {
@@ -305,7 +330,7 @@ function emitTrayCarves(
           return { min, max };
         },
       };
-      if (!emitRuns(writer, carves.cells, wall)) return false;
+      if (!emitRuns(writer, cells, wall)) return false;
     }
   }
   return true;
@@ -337,7 +362,6 @@ const ALCOVE_V1 = 13;
  */
 function emitAlcoves(
   padded: Uint8Array,
-  marks: Uint8Array,
   writer: MicroGeometryWriter,
   carves: CarvePlan,
 ): boolean {
@@ -350,47 +374,49 @@ function emitAlcoves(
     [ALCOVE_H1, U, ALCOVE_V0, ALCOVE_V1],
   ];
 
-  for (const cell of carves.cells) {
-    const x = cell & 31;
-    const y = (cell >>> 5) & 31;
-    const z = cell >>> 10;
-    const mark = marks[carveIndex(x, y, z)];
-    if (mark >>> 3 !== CARVE_KIND.alcove) continue;
-    const face = mark & 7;
+  for (const face of LATERAL_FACES) {
+    const hidden = ALL_FACES & ~faceBit(face);
+    for (const cell of carves.byMark[packCarveMark(CARVE_KIND.alcove, face)]) {
+      const x = cell & 31;
+      const y = (cell >>> 5) & 31;
+      const z = cell >>> 10;
 
-    const shell = facadeBox(x, y, z, face, ALCOVE_H0, ALCOVE_H1, ALCOVE_V0, ALCOVE_V1, recess, recess);
-    if (!writer.emitBox(
-      shell,
-      material.side,
-      faceBit(face) | faceBit(face ^ 1),
-      SURFACE_KIND.utility,
-      { inward: true, ao: SIDE_AO },
-    )) {
-      return false;
-    }
-
-    const back = facadeBox(x, y, z, face, ALCOVE_H0, ALCOVE_H1, ALCOVE_V0, ALCOVE_V1, 0, recess);
-    if (!writer.emitBox(
-      back,
-      material.back,
-      ALL_FACES & ~faceBit(face),
-      material.backSurface,
-      { ao: BACK_AO },
-    )) {
-      return false;
-    }
-
-    const block = blockAt(padded, x, y, z);
-    const wallPalette = blockPalette(block);
-    const wallSurface = blockSurface(block) as SurfaceKind;
-    for (const [h0, h1, v0, v1] of ring) {
+      // Gli stipiti in una chiamata sola: e' il caso per cui `inward` esiste.
       if (!writer.emitBox(
-        facadeBox(x, y, z, face, h0, h1, v0, v1, 0, 0),
-        wallPalette,
-        ALL_FACES & ~faceBit(face),
-        wallSurface,
+        facadeBox(x, y, z, face, ALCOVE_H0, ALCOVE_H1, ALCOVE_V0, ALCOVE_V1, recess, recess),
+        material.side,
+        faceBit(face) | faceBit(face ^ 1),
+        SURFACE_KIND.utility,
+        { inward: true, ao: SIDE_AO },
       )) {
         return false;
+      }
+
+      if (!writer.emitBox(
+        facadeBox(x, y, z, face, ALCOVE_H0, ALCOVE_H1, ALCOVE_V0, ALCOVE_V1, 0, recess),
+        material.back,
+        hidden,
+        material.backSurface,
+        { ao: BACK_AO },
+      )) {
+        return false;
+      }
+
+      // Il telaio porta palette e linguaggio del **muro**, non un rivestimento:
+      // sostituisce un pezzo della faccia piatta che il mask loop ha soppresso, e
+      // una tinta diversa si vedrebbe come un riquadro attorno alla nicchia.
+      const block = blockAt(padded, x, y, z);
+      const wallPalette = blockPalette(block);
+      const wallSurface = blockSurface(block) as SurfaceKind;
+      for (const [h0, h1, v0, v1] of ring) {
+        if (!writer.emitBox(
+          facadeBox(x, y, z, face, h0, h1, v0, v1, 0, 0),
+          wallPalette,
+          hidden,
+          wallSurface,
+        )) {
+          return false;
+        }
       }
     }
   }
@@ -421,10 +447,12 @@ function emitMezzanines(
 
   for (const face of LATERAL_FACES) {
     const mark = packCarveMark(CARVE_KIND.loggia, face);
+    const cells = carves.byMark[mark];
+    if (cells.length === 0) continue;
     const loggia = (x: number, y: number, z: number): boolean =>
       carvedAs(padded, marks, carves.origin, mark, x, y, z);
 
-    const ok = emitRuns(writer, carves.cells, {
+    const ok = emitRuns(writer, cells, {
       runAxis: facadeHorizontalAxis(face),
       palette: PALETTE_SLOTS.concreteLight,
       // Il retro della lastra sta contro il fondo del vano: la' non si vede.
@@ -471,7 +499,7 @@ export function appendCarveDetail(
     if (!emitWallCarves(padded, marks, writer, carves, kind)) return initial - writer.remainingQuads;
   }
   if (!emitTrayCarves(padded, marks, writer, carves)) return initial - writer.remainingQuads;
-  if (!emitAlcoves(padded, marks, writer, carves)) return initial - writer.remainingQuads;
+  if (!emitAlcoves(padded, writer, carves)) return initial - writer.remainingQuads;
   emitMezzanines(padded, marks, writer, carves);
   return initial - writer.remainingQuads;
 }

@@ -1,4 +1,4 @@
-import { addFarm, FARM_KIND, foodDeficitOf, removeFarm, type FarmKind, type SimState } from '../../sim';
+import { addFarm, FARM_KIND, missingPlotsOf, removeFarm, type FarmKind, type SimState } from '../../sim';
 import { FARMS } from '../farms/config';
 import { FarmRegistry } from '../farms/FarmRegistry';
 import { clearPlot, paintPlot } from '../farms/generate';
@@ -54,6 +54,18 @@ export class FarmDriver {
    */
   private cursor = 0;
 
+  /**
+   * Dove passa una carreggiata.
+   *
+   * Legata una volta sola perche' lo stamp di un frutteto la chiama qualche
+   * centinaio di volte per lotto. La rete e' una funzione pura del seme, quindi
+   * non c'e' nessuno stato da rileggere e la stessa chiusura vale per tutta la
+   * partita — che e' anche cio' che permette alla cancellazione di ricostruire
+   * esattamente l'impronta che era stata scritta.
+   */
+  private readonly paved = (x: number, y: number): boolean =>
+    this.ctx.streets.isPavement(x, y);
+
   constructor(private readonly ctx: BuildContext) {}
 
   /** Lotti vivi adesso. Lo legge l'overlay di debug. */
@@ -69,18 +81,28 @@ export class FarmDriver {
    * la citta' rincorrerebbe la fame con un tick di ritardo permanente.
    */
   pass(state: SimState): SimState {
-    let next = this.retirePass(state);
-    if (this.wants(next)) next = this.plantPass(next);
-    return next;
+    const next = this.retirePass(state);
+    const wanted = this.wants(next);
+    return wanted > 0 ? this.plantPass(next, wanted) : next;
   }
 
-  /** true se il raccolto di adesso non copre la domanda di adesso. */
-  private wants(state: SimState): boolean {
-    // L'organico pieno e' deliberatamente ottimista: un lotto in piu' si valuta
-    // sul raccolto che *potrebbe* dare, non su quello che da' oggi con meta'
-    // delle braccia. Chiedere il contrario farebbe piantare campi a una citta'
-    // che ha gia' piu' campi che lavoratori.
-    return foodDeficitOf(state.population.stock, state.farmCounts, 1) > 0;
+  /**
+   * Quanti lotti questa passata deve provare a piantare.
+   *
+   * **Una quantita' e non un si'/no.** La simulazione dice quanti campi mancano;
+   * fermarsi a `> 0` significava piantarne comunque `plotsPerPass` che ne
+   * mancasse uno o cento, cioe' un'offerta a ritmo costante contro una domanda
+   * che cresce con la citta'. Il tetto per passata resta — la campagna deve
+   * comparire, non apparire — ma adesso e' un tetto e non piu' il ritmo.
+   *
+   * L'organico pieno e' deliberatamente ottimista: un lotto in piu' si valuta sul
+   * raccolto che *potrebbe* dare, non su quello che da' oggi con meta' delle
+   * braccia. Chiedere il contrario farebbe piantare campi a una citta' che ha
+   * gia' piu' campi che lavoratori.
+   */
+  private wants(state: SimState): number {
+    const missing = missingPlotsOf(state.population.stock, state.farmCounts, 1);
+    return Math.min(FARMS.plotsPerPass, missing);
   }
 
   /**
@@ -117,7 +139,7 @@ export class FarmDriver {
           this.ownerIdOf(plot),
           { x: plot.x, y: plot.y, z: this.ctx.terrain.heightAt(plot.x, plot.y) },
           EMPTY_STAMP,
-          orchardStamp(plot, this.ctx.seed),
+          orchardStamp(plot, this.ctx.seed, this.paved),
         );
       }
       this.registry.remove(plot);
@@ -139,15 +161,16 @@ export class FarmDriver {
     return -1 - Math.abs(hashCoords(FARMS.salt, plot.x, plot.y) % 0x7f_ff_ff);
   }
 
-  /** Pianta fino a `plotsPerPass` lotti, cercando dal cursore in avanti. */
-  private plantPass(state: SimState): SimState {
+  /** Pianta fino a `wanted` lotti, cercando dal cursore in avanti. */
+  private plantPass(state: SimState, wanted: number): SimState {
     let next = state;
     let planted = 0;
+    const centre = this.centre;
 
     for (let step = 0; step < FARMS.searchDepth; step++) {
-      if (planted >= FARMS.plotsPerPass) break;
+      if (planted >= wanted) break;
 
-      const corner = this.candidateAt(this.cursor + step);
+      const corner = this.candidateAt(this.cursor + step, centre);
       if (this.registry.has(corner.x, corner.y)) continue;
 
       const plan = planPlot({
@@ -173,7 +196,7 @@ export class FarmDriver {
         this.ctx.growth.enqueue(
           this.ownerIdOf(plan.plot),
           { x: plan.plot.x, y: plan.plot.y, z: this.ctx.terrain.heightAt(plan.plot.x, plan.plot.y) },
-          orchardStamp(plan.plot, this.ctx.seed),
+          orchardStamp(plan.plot, this.ctx.seed, this.paved),
         );
       }
       this.registry.add(plan.plot);
@@ -186,16 +209,42 @@ export class FarmDriver {
   }
 
   /**
-   * L'angolo di reticolo di indice `n`, su una spirale quadrata attorno all'origine.
+   * Centro della spirale: il centro dell'isola, portato sul reticolo dei lotti.
+   *
+   * **Non l'origine del mondo, ed e' la correzione.** L'isola sta in `[0, 512]`
+   * e il suo centro e' `(256, 256)`: una spirale ancorata a `(0, 0)` parte da un
+   * angolo di oceano, spende tre quarti dei propri candidati su coordinate che
+   * non esistono — misurati: 529 dei 2025 cadono sulla mappa — e non arriva mai
+   * oltre il quadrante sud-ovest. Una citta' cresciuta a nord-est non vedeva
+   * nascere un campo nemmeno affamata.
+   *
+   * Non si vedeva nei test perche' `testTerrain` genera a partire dal chunk
+   * `(0, 0)`: la fixture mette il terreno esattamente dove la spirale guardava.
+   * Senza maschera si ricade li', che e' il comportamento giusto per quelle.
+   *
+   * Lo snap al reticolo non e' cosmetico: l'angolo di un lotto deve restare
+   * multiplo del cubo di terreno, o l'impronta trova sotto di se' due quote
+   * diverse dove il terreno e' piatto.
+   */
+  private get centre(): { readonly x: number; readonly y: number } {
+    const shape = this.ctx.terrain.shape;
+    if (shape === null) return { x: 0, y: 0 };
+    return {
+      x: Math.round(shape.centreX / FARMS.lattice) * FARMS.lattice,
+      y: Math.round(shape.centreY / FARMS.lattice) * FARMS.lattice,
+    };
+  }
+
+  /**
+   * L'angolo di reticolo di indice `n`, su una spirale quadrata attorno a `centre`.
    *
    * **Una spirale e non una scansione per righe.** Per righe, i primi lotti
    * nascerebbero tutti sul bordo sud dell'isola comunque stia la citta'; a
    * spirale la ricerca parte dal centro e si allarga, cioe' trova per prima la
    * campagna *appena fuori* dall'edificato — che e' dove un campo si vede e ha
-   * senso. Il centro della spirale e' l'origine del mondo, che e' anche dove la
-   * citta' comincia.
+   * senso.
    */
-  private candidateAt(n: number): { x: number; y: number } {
+  private candidateAt(n: number, centre: { readonly x: number; readonly y: number }): { x: number; y: number } {
     // Il giro si chiude su `searchRings`: oltre non c'e' isola, e senza un tetto
     // il cursore continuerebbe a crescere scandendo oceano per sempre.
     const index = ((n % SPIRAL_CELLS) + SPIRAL_CELLS) % SPIRAL_CELLS;
@@ -211,7 +260,7 @@ export class FarmDriver {
       start += cells;
       ring++;
     }
-    if (ring === 0) return { x: 0, y: 0 };
+    if (ring === 0) return { x: centre.x, y: centre.y };
 
     // Ogni lato dell'anello porta `2r` celle: l'angolo appartiene al lato
     // successivo, o si conterebbe due volte.
@@ -221,9 +270,9 @@ export class FarmDriver {
     const cell = ring * FARMS.lattice;
     const step = (offset % side) * FARMS.lattice;
 
-    if (edge === 0) return { x: -cell + step, y: -cell };
-    if (edge === 1) return { x: cell, y: -cell + step };
-    if (edge === 2) return { x: cell - step, y: cell };
-    return { x: -cell, y: cell - step };
+    if (edge === 0) return { x: centre.x - cell + step, y: centre.y - cell };
+    if (edge === 1) return { x: centre.x + cell, y: centre.y - cell + step };
+    if (edge === 2) return { x: centre.x + cell - step, y: centre.y + cell };
+    return { x: centre.x - cell, y: centre.y + cell - step };
   }
 }

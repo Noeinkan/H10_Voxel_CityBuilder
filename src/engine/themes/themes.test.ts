@@ -121,6 +121,35 @@ describe('temi', () => {
     }
   });
 
+  it('lo strato di nuvole, dove c’e’, sta sopra la citta’ e lascia varchi', () => {
+    for (const theme of THEMES) {
+      const deck = theme.atmosphere.cloudDeck;
+      if (deck === undefined) continue;
+
+      // Sopra il pianoro dell'isola e sotto le cime della 4.6: piu' in basso e
+      // copre la citta' al suolo e basta, piu' in alto e non ci passa niente
+      // sotto, cioe' non separa piu' nessuna quota da nessun'altra.
+      expect(deck.height, theme.id).toBeGreaterThan(theme.atmosphere.fog.heightBase);
+      expect(deck.height, theme.id).toBeLessThan(150);
+      expect(deck.thickness, theme.id).toBeGreaterThan(0);
+
+      for (const value of [deck.amount, deck.coverage]) {
+        expect(value, theme.id).toBeGreaterThanOrEqual(0);
+        expect(value, theme.id).toBeLessThanOrEqual(1);
+      }
+      // **Una copertura piena e' un coperchio**, e un coperchio cancella i
+      // livelli inferiori invece di lasciarli intravedere: e' esattamente cio'
+      // che questo strato esiste per non fare.
+      expect(deck.coverage, theme.id).toBeLessThan(0.8);
+
+      // La scala e' un divisore del punto di attraversamento, e macchie sotto
+      // la decina di voxel non sono nuvole ma rumore per pixel.
+      expect(deck.scale, theme.id).toBeGreaterThan(10);
+      expect(deck.speed, theme.id).toBeGreaterThanOrEqual(0);
+      if (deck.tint !== undefined) expect(isValidHexColor(deck.tint), theme.id).toBe(true);
+    }
+  });
+
   it('i parametri di superficie e di output restano in range', () => {
     for (const theme of THEMES) {
       const a = theme.atmosphere;

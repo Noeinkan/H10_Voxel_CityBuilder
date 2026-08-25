@@ -149,11 +149,30 @@ export const BUILDER = {
   /**
    * Cubi scritti per frame per struttura: la crescita e' voxel-per-voxel.
    *
-   * Un edificio e' fatto di circa otto volte i voxel di prima a parita' di
-   * volume costruito. Il budget sale con lui, altrimenti non cambia quanto costa
-   * un edificio ma solo quanto ci mette a comparire.
+   * **E' la durata della posa, non il suo costo.** Il tetto di lavoro per frame
+   * lo fissa `maxGrowing * voxelsPerFrame`, e la meshatura a valle ha gia' un
+   * budget in millisecondi suo (`ChunkRenderer.update`): questo numero non
+   * compra frame rate, decide quanto un edificio ci mette a salire.
+   *
+   * **Novantasei era un pop.** Il budget era stato alzato con la scala del voxel
+   * per tenere fermo *quanto costa* un edificio, e l'altra meta' della frase —
+   * «quanto ci mette a comparire» — era rimasta senza qualcuno che la guardasse.
+   * Misurata sugli stamp veri, una sagoma di livello zero sta fra i 290 e i 330
+   * voxel solidi ed e' il 78% di quelle che nascono (`START_LEVEL_CDF`): a
+   * novantasei erano tre frame, cioe' comparire, non salire.
+   *
+   * A ventiquattro la stessa casa impiega circa un quinto di secondo e una torre
+   * di livello massimo fra i due e i tre secondi. La posa si legge, e resta
+   * proporzionata al volume invece di durare uguale per tutti.
+   *
+   * **Si paga in rimeshature, ed e' li' che il numero trova il fondo.** Un
+   * volume spalmato su quattro volte i frame sporca i propri chunk quattro volte
+   * piu' spesso, e ogni passata e' un job di meshing. Scendere ancora — a dieci,
+   * dove un capannone di livello massimo prenderebbe sette secondi — terrebbe
+   * occupato per tutto quel tempo uno dei dodici posti di `maxGrowing`, e a
+   * rallentare sarebbe la passata di upgrade, non l'animazione.
    */
-  voxelsPerFrame: 96,
+  voxelsPerFrame: 24,
 
   /**
    * Edifici che possono crescere contemporaneamente.

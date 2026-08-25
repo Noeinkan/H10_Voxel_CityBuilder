@@ -3,7 +3,7 @@ export type HudIcon =
   | 'residential' | 'production' | 'civic' | 'expansion' | 'terrace' | 'ropeway' | 'policies'
   | 'market' | 'factory' | 'park' | 'port' | 'airport' | 'transport' | 'university' | 'monument'
   | 'pause' | 'play' | 'theme' | 'view' | 'swatch' | 'help' | 'close'
-  | 'daylight' | 'sun' | 'moon';
+  | 'daylight' | 'sun' | 'moon' | 'clouds' | 'cloudsOff';
 
 const PATHS: Readonly<Record<HudIcon, string>> = {
   funds: '<circle cx="12" cy="12" r="8"/><path d="M9 10.2c0-1.1 1.2-2 3-2s3 .9 3 2-1.2 1.8-3 1.8-3 .9-3 2 1.2 2 3 2 3-.9 3-2M12 6v12"/>',
@@ -52,6 +52,11 @@ const PATHS: Readonly<Record<HudIcon, string>> = {
   daylight: '<path d="M3 19h18M6.5 19a5.5 5.5 0 0 1 11 0M12 5v2.5M5.6 8.2l1.8 1.8M18.4 8.2l-1.8 1.8"/>',
   sun: '<circle cx="12" cy="12" r="4.2"/><path d="M12 2.5v2.6M12 18.9v2.6M4.6 4.6l1.9 1.9M17.5 17.5l1.9 1.9M2.5 12h2.6M18.9 12h2.6M4.6 19.4l1.9-1.9M17.5 6.5l1.9-1.9"/>',
   moon: '<path d="M20 14.4A8.6 8.6 0 0 1 9.6 4 7.6 7.6 0 1 0 20 14.4Z"/>',
+  // I banchi in quota, e sotto le cime che ne escono: un contorno di nuvola da
+  // solo direbbe "meteo", mentre qui la cosa da dire e' che qualcosa ci sta
+  // dentro. Squadrata come tutto il resto — la nuvola del gioco e' di celle.
+  clouds: '<path d="M4 11h4V8h4v3h3V6h4v5h1M4 11v3h16v-3M7 17l2 3M13 17l2 3"/>',
+  cloudsOff: '<path d="M4 11h4V8h4v3h3V6h4v5h1M4 11v3h16v-3M4 20 20 4"/>',
 };
 
 export function createHudIcon(name: HudIcon): SVGSVGElement {

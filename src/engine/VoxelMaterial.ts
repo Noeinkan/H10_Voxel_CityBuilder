@@ -62,6 +62,14 @@ export interface VoxelMaterialHandle {
    */
   setNight(night: number): void;
   /**
+   * Accende o spegne lo strato di nuvole, senza dimenticare com'era tarato.
+   *
+   * E' un interruttore del giocatore come il modo del ciclo solare, non un
+   * livello di qualita': un tema che le nuvole non le ha resta identico in
+   * entrambe le posizioni.
+   */
+  setClouds(on: boolean): void;
+  /**
    * Quante finestre sono accese e quanto sono accese le insegne, 0..1.
    *
    * Sono due numeri e non una struttura perche' e' tutto cio' che il fragment
@@ -139,6 +147,7 @@ export function createVoxelMaterial(hexColors: readonly string[], voxelSize: num
   const glassTint = new Color(1, 1, 1);
   const waterHighlight = new Color(1, 1, 1);
   const waterShallowTint = new Color(1, 1, 1);
+  const cloudTint = new Color(1, 1, 1);
   const spillColor = new Color(1, 1, 1);
   const viewDirection = new Vector3(0, 0, -1);
   const resolution = new Vector2(1, 1);
@@ -149,6 +158,16 @@ export function createVoxelMaterial(hexColors: readonly string[], voxelSize: num
   const inspectLensMax = new Vector3(0, 0, 0);
   /** Vero da quando la variante con il `discard` e' stata composta. */
   let inspectCompiled = false;
+
+  /**
+   * Lo strato di nuvole del tema in vigore, e se il giocatore lo vuole vedere.
+   *
+   * Due variabili e non una perche' sono due fatti indipendenti: il tema dice
+   * quanto e' fitto un banco, l'interruttore se ce n'e' uno. Tenendo il primo da
+   * parte, riaccendere non deve rileggere il tema — e spegnere non lo perde.
+   */
+  let deckAmount = 0;
+  let cloudsOn = true;
 
   const material = new ShaderMaterial({
     vertexShader,
@@ -177,6 +196,18 @@ export function createVoxelMaterial(hexColors: readonly string[], voxelSize: num
       uSkyHorizonColor: { value: skyHorizonColor },
       uViewDirection: { value: viewDirection },
       uResolution: { value: resolution },
+
+      uCloudHeight: { value: 0 },
+      uCloudThickness: { value: 1 },
+      // Zero: lo strato non esiste finche' un tema non lo dichiara, e il
+      // fragment esce dal ramo sul primo confronto.
+      uCloudAmount: { value: 0 },
+      uCloudCoverage: { value: 0 },
+      uCloudCellSize: { value: 1 },
+      uCloudScale: { value: 1 },
+      uCloudSpeed: { value: 0 },
+      uCloudTint: { value: cloudTint },
+      uCloudTintBlend: { value: 0 },
 
       uShadowMap: { value: null },
       uShadowMatrix: { value: shadowMatrix },
@@ -253,6 +284,22 @@ export function createVoxelMaterial(hexColors: readonly string[], voxelSize: num
       material.uniforms['uFogAltitudeLift'].value = atmosphere.fog.altitudeLift;
       material.uniforms['uFogSunTint'].value = atmosphere.fog.sunTint;
 
+      // Lo strato di nuvole. Il tema che non lo dichiara scrive `amount: 0`, che
+      // nel fragment e' il ramo che esce subito: il resto dei numeri non viene
+      // nemmeno letto, e non serve un secondo programma per farne a meno.
+      deckAmount = atmosphere.cloudDeck?.amount ?? 0;
+      const deck = atmosphere.cloudDeck;
+      material.uniforms['uCloudHeight'].value = deck?.height ?? 0;
+      material.uniforms['uCloudThickness'].value = deck?.thickness ?? 1;
+      material.uniforms['uCloudAmount'].value = cloudsOn ? deckAmount : 0;
+      material.uniforms['uCloudCoverage'].value = deck?.coverage ?? 0;
+      material.uniforms['uCloudCellSize'].value = Math.max(1e-3, deck?.cellSize ?? 1);
+      // Mai zero: e' un divisore del punto di attraversamento.
+      material.uniforms['uCloudScale'].value = Math.max(1e-3, deck?.scale ?? 1);
+      material.uniforms['uCloudSpeed'].value = deck?.speed ?? 0;
+      cloudTint.setStyle(deck?.tint ?? '#ffffff', SRGBColorSpace);
+      material.uniforms['uCloudTintBlend'].value = deck?.tint === undefined ? 0 : 1;
+
       glassTint.setStyle(atmosphere.glassTint ?? '#ffffff', SRGBColorSpace);
       waterHighlight.setStyle(atmosphere.water?.highlight ?? atmosphere.fog.color, SRGBColorSpace);
       // Il fondale sfuma verso la riva: senza una tinta propria il bassofondo
@@ -282,6 +329,12 @@ export function createVoxelMaterial(hexColors: readonly string[], voxelSize: num
     },
     setNight(night: number): void {
       material.uniforms['uNight'].value = night;
+    },
+    setClouds(on: boolean): void {
+      cloudsOn = on;
+      // Un uniform a zero, non un programma diverso: spegnere le nuvole non deve
+      // ricompilare niente, come non lo fa spegnere le ombre.
+      material.uniforms['uCloudAmount'].value = on ? deckAmount : 0;
     },
     setVitality(homes: number, commerce: number): void {
       material.uniforms['uLitHomes'].value = homes;

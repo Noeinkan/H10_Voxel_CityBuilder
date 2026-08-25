@@ -87,6 +87,49 @@ leggere `src/world/`, ma il mondo non deve dipendere dall'engine.
   `emitRoofMasts`, `emitTerraceBoxes` o `emitRoofCrowns`, e lo verifichi sulla
   **quota** dei prismi: un conto di prismi non se ne accorge, perche' ci sono
   tutti.
+- **La microgeometria ha due direzioni, e la riduttiva ha un contratto piu'
+  stretto.** Un prisma additivo sbagliato e' un prisma sbagliato; un vano
+  sbagliato e' un **muro bucato**, perche' la sua faccia piatta e' gia' stata
+  soppressa dal mask loop quando `carveGeometry.ts` scrive. Da qui tre regole che
+  non si negoziano:
+  - *dove* si scava lo decide `carvePlan.ts` **prima** del greedy pass, e lo
+    scrive nella maschera; chi disegna la **rilegge** e non rivaluta mai un
+    aggancio. Due meta' che rispondono diverso anche una volta sola aprono un
+    buco passante;
+  - `planCarves` si limita a `MAX_CARVE_QUADS_PER_CHUNK` e `appendCarveDetail`
+    scrive **per primo** fra i dettagli: uno scavo o e' interamente pianificato e
+    pagato, o non esiste e la parete resta piatta. Non c'e' una terza possibilita',
+    e chi aggiunge una ricetta aggiorni `CARVE_COST`, che e' un **limite
+    superiore** di cio' che quella ricetta disegna;
+  - a differenza delle coperture, scavare **non tocca il volume**. La cella resta
+    piena, quindi cielo, bagliore e AO dei vicini non cambiano: una nicchia non
+    deve scurire il muro a due metri.
+- **Un vano si disegna sul perimetro della regione, non sulle sue celle.** Fondo,
+  davanzale, architrave e due stipiti, ognuno una corsa con l'aggancio «scavata, e
+  il vicino da quella parte no». Un vano per cella e' la strada facile e produce
+  spalle coincidenti in mezzo alla superficie, oltre a costare cinque quad per
+  cella invece di cinque per regione. Il solo fondo dipende dall'area — una corsa
+  e' monodimensionale — e costa una riga per riga: e' il limite dichiarato del
+  modello, e decide da che parte conviene far correre la corsa.
+- **`planCarves` non scandisce il volume: riceve le liste di
+  `collectSurfaceCells`**, che per questo gira in `greedyMesh` **prima** del
+  greedy pass invece che dentro `appendMicroGeometry`. Non e' una passata in piu',
+  e' la stessa spostata. La versione che si faceva la sua scansione costava 7,8 ms
+  per chunk — da sola l'intero budget di rebuild — e `facadeByFace` toglie di
+  mezzo le celle interne, che sono i due terzi.
+- **Un prisma additivo appoggiato a una parete scavata deve arretrare con lei.**
+  `facadeBox` prende un `inset`, e chi costruisce un prisma di facciata gli passa
+  `facadeInset`; chi ne posa uno di tetto parte da `roofBase`, non dal letterale
+  `(z + 1) * U`. Il parapetto e' l'unica eccezione voluta: **non** legge
+  `roofInset`, ed e' precisamente la ragione per cui il vassoio esiste — il
+  calpestio scende, lui resta, e da dentro cresce.
+- **Il winding non e' ornamentale.** Il materiale e' `FrontSide` e la normale
+  arriva da `uFaceNormal[aFace]`: un quad orientato male non e' storto, e'
+  **invisibile**. `emitBox` con `inward` scrive lo stesso lato geometrico con
+  l'id di faccia opposto e i corner nell'altro verso, ed e' tutta la differenza
+  fra un volume aggiunto e un vano scavato. Il test che lo sorveglia verifica il
+  prodotto vettoriale del primo triangolo di **ogni** quad di dettaglio, che e'
+  l'unica cosa che la GPU guarda davvero.
 - **La copertura del terreno e' l'unico dettaglio che sostituisce del volume**, e
   sta apposta in un modulo suo (`coverDetail.ts`). `liftGroundCover` svuota le
   celle marcate — nel volume paddato **e** nell'anello e nella fetta di soffitto,

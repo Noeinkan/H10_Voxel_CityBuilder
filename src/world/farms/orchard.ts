@@ -72,10 +72,26 @@ export function orchardTrees(plot: FarmPlot, seed: number): { x: number; y: numb
  * pendenza per colonna e' gia' limitata da `FARMS.maxSlope`, e l'alternativa —
  * uno stamp per albero — moltiplicherebbe per venti le voci in coda per
  * guadagnare un voxel di quota.
+ *
+ * **La strada vince, e qui va detto a mano.** Un solco lo dice da se': porta
+ * `FARM_PAINT_PRIORITY`, che e' sotto la carreggiata, e la coda del suolo lo
+ * scarta dove passa un asse. Un albero pero' non e' superficie, e' volume: senza
+ * `paved` un frutteto pianta tronchi in mezzo alla carreggiata, e cio' che si
+ * legge non e' un albero ma un gradino da due voxel sulla strada. Si scarta
+ * l'albero intero e non i suoi voxel, o resterebbe mezza chioma sospesa.
+ *
+ * Il predicato e' opzionale perche' `plotPlan` e le sue prove non hanno una rete
+ * stradale in mano; chi pianta davvero ce l'ha, e deve passarla — **anche
+ * quando cancella**, o l'impronta da spegnere non sarebbe piu' quella scritta.
  */
-export function orchardStamp(plot: FarmPlot, seed: number): VoxelStamp {
-  const trees = orchardTrees(plot, seed).map((origin) =>
-    treeSpec(origin.x, origin.y, TREE_SPECIES.fruit, trunkOf(seed, plot, origin)));
+export function orchardStamp(
+  plot: FarmPlot,
+  seed: number,
+  paved?: (x: number, y: number) => boolean,
+): VoxelStamp {
+  const trees = orchardTrees(plot, seed)
+    .map((origin) => treeSpec(origin.x, origin.y, TREE_SPECIES.fruit, trunkOf(seed, plot, origin)))
+    .filter((tree) => paved === undefined || !overPavement(plot, tree, paved));
 
   const sizeX = plot.side;
   const sizeY = plot.side;
@@ -113,6 +129,27 @@ export function orchardStamp(plot: FarmPlot, seed: number): VoxelStamp {
     // l'alto, come un edificio, invece che tutto insieme.
     bandStarts: Array.from({ length: sizeZ + 1 }, (_, z) => z),
   };
+}
+
+/**
+ * true se l'ingombro dell'albero copre una colonna di carreggiata.
+ *
+ * Il quadrato della chioma e non la sola colonna del tronco: una chioma che
+ * sporge sulla strada e' comunque il voxel piu' alto di quella colonna, e chi
+ * misura la pendenza di una rampa la troverebbe li'.
+ */
+function overPavement(
+  plot: FarmPlot,
+  tree: { readonly x: number; readonly y: number; readonly canopyRadius: number },
+  paved: (x: number, y: number) => boolean,
+): boolean {
+  const r = tree.canopyRadius;
+  for (let dy = -r; dy <= r; dy++) {
+    for (let dx = -r; dx <= r; dx++) {
+      if (paved(plot.x + tree.x + dx, plot.y + tree.y + dy)) return true;
+    }
+  }
+  return false;
 }
 
 /** Altezza del tronco, dal seme della propria posizione: un frutteto non e' un vivaio. */

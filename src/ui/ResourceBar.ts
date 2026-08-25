@@ -115,6 +115,8 @@ export interface ResourceBarHandlers {
   readonly onSpeed: (speed: number) => void;
   /** Ciclo, giorno fisso o notte fissa: sta accanto alla velocita' perche' e' tempo. */
   readonly onDaylight: (mode: DaylightMode) => void;
+  /** I banchi in quota, accesi o spenti. Sta accanto al ciclo: sono entrambi cielo. */
+  readonly onClouds: (on: boolean) => void;
 }
 
 export class ResourceBar {
@@ -125,6 +127,8 @@ export class ResourceBar {
   private readonly speedButtons = new Map<number, HTMLButtonElement>();
   private readonly daylightButton: HTMLButtonElement;
   private daylightMode: DaylightMode = DAYLIGHT_MODE.cycle;
+  private readonly cloudsButton: HTMLButtonElement;
+  private clouds = true;
   /**
    * L'ultimo stato dipinto, non il modello.
    *
@@ -158,6 +162,14 @@ export class ResourceBar {
     this.daylightButton.classList.add('hud-button--small', 'daylight-toggle');
     time.appendChild(this.daylightButton);
     this.setDaylight(DAYLIGHT_MODE.cycle);
+
+    // Le nuvole stanno accanto al ciclo perche' sono la stessa domanda — che
+    // cielo c'e' mentre guardo — e perche' e' l'altra cosa che cambia la scena
+    // senza cambiare la citta'.
+    this.cloudsButton = iconButton('clouds', 'Clouds', () => handlers.onClouds(!this.clouds));
+    this.cloudsButton.classList.add('hud-button--small', 'daylight-toggle');
+    time.appendChild(this.cloudsButton);
+    this.setClouds(true);
     this.root.appendChild(time);
   }
 
@@ -225,6 +237,25 @@ export class ResourceBar {
     this.daylightButton.dataset.tooltip = control.tooltip;
     this.daylightButton.dataset.active = control.frozen ? 'true' : 'false';
     this.daylightButton.setAttribute('aria-pressed', control.frozen ? 'true' : 'false');
+  }
+
+  /**
+   * I banchi in quota, accesi o spenti.
+   *
+   * Come per il ciclo, l'icona **e'** lo stato: la nuvola barrata dice che le
+   * cime sono libere. Il bottone resta anche nei temi che i banchi non li hanno,
+   * ed e' voluto — sparire e ricomparire cambiando tema sarebbe una barra che si
+   * riscrive sotto le mani.
+   */
+  setClouds(on: boolean): void {
+    this.clouds = on;
+    const label = on ? 'Clouds on — click to clear the peaks, or press C.'
+      : 'Clouds off — click to bring the banks back, or press C.';
+    this.cloudsButton.replaceChildren(createHudIcon(on ? 'clouds' : 'cloudsOff'));
+    this.cloudsButton.setAttribute('aria-label', label);
+    this.cloudsButton.dataset.tooltip = label;
+    this.cloudsButton.dataset.active = on ? 'true' : 'false';
+    this.cloudsButton.setAttribute('aria-pressed', on ? 'true' : 'false');
   }
 
   private createResource(resource: HudResource): HTMLElement {

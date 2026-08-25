@@ -3,13 +3,19 @@ import type { HudIcon } from './hudIcons';
 import { iconButton, labeledButton, paintAction, tileButton } from './hudWidgets';
 
 /**
- * Il dock in basso: cosa si puo' costruire, e come si guarda la citta'.
+ * Il rail di sinistra: cosa si puo' costruire, e come si guarda la citta'.
  *
  * Esce da `GameHud.ts` insieme alla barra risorse, e per la stessa ragione: e'
  * la superficie su cui atterrano gli strumenti della fase 7, e farla crescere
  * dentro un file da mille righe significherebbe tenerlo bloccato per tutto il
  * tempo. Qui c'e' il disegno e la ripittura; **cosa** sia disponibile lo decide
  * `GameHudModel`, e cosa faccia un clic lo decide chi costruisce il dock.
+ *
+ * **Sta di lato e non in fondo**, e la ragione e' la citta': cresce in verticale,
+ * e una barra in basso piu' una in alto toglievano ~190px di corridoio proprio
+ * dove in isometrica finiscono la cima delle torri e il piede dell'isola. Le
+ * corsie restano le stesse quattro, incolonnate invece che in fila; la griglia a
+ * due tessere e' cio' che le tiene tutte a schermo senza far scorrere il rail.
  */
 
 /** I pannelli che il dock apre. Il dock non li possiede: chiede a chi li tiene. */
@@ -113,18 +119,28 @@ export class BuildDock {
     reach.append(reachTitle, reachRow);
     this.root.appendChild(reach);
 
+    // I bottoni che non costruiscono niente stanno in un blocco loro, in coda.
+    // Nel rail verticale non e' solo ordine: cinque bottoni a tutta larghezza
+    // costerebbero cinque righe di un'altezza che le tessere si contendono, e i
+    // tre che portano solo un'icona non hanno bisogno di una riga per uno.
+    const utility = document.createElement('div');
+    utility.className = 'dock-utility';
+
     this.policyToggle = labeledButton('policies', 'Policies', 'Open city policies', () => handlers.onPanel('policies'));
     this.policyToggle.setAttribute('aria-expanded', 'false');
-    this.root.appendChild(this.policyToggle);
+    utility.appendChild(this.policyToggle);
     // Le viste stanno fra le politiche e il tema perche' e' li' che passa il
     // confine: da qui in poi i bottoni non cambiano la citta', cambiano come la
     // si guarda.
     this.viewToggle = labeledButton('view', 'Views', 'Look inside the city · V', () => handlers.onPanel('views'));
     this.viewToggle.setAttribute('aria-expanded', 'false');
-    this.root.appendChild(this.viewToggle);
+    utility.appendChild(this.viewToggle);
+
+    const icons = document.createElement('div');
+    icons.className = 'dock-utility-row';
     this.themeToggle = iconButton('theme', 'Change visual theme', () => handlers.onPanel('themes'));
     this.themeToggle.setAttribute('aria-expanded', 'false');
-    this.root.appendChild(this.themeToggle);
+    icons.appendChild(this.themeToggle);
     // Subito dopo il tema, e non accanto alle viste: il campionario e' il
     // vocabolario **da cui** la citta' e' fatta, non un modo di guardare quella
     // che c'e'. Chi ha appena cambiato tema e' esattamente chi si chiede come
@@ -133,12 +149,14 @@ export class BuildDock {
     // Apre una scheda a parte, e il tooltip lo dice prima del clic: la scena e'
     // un'altra e ricaricare qui vorrebbe dire perdere la partita, che non e'
     // salvabile. Nessun `aria-expanded` — non apre un pannello, se ne va.
-    this.root.appendChild(iconButton(
+    icons.appendChild(iconButton(
       'swatch',
       'Voxel swatches: every palette slot and surface, in a new tab',
       () => handlers.onSwatch(),
     ));
-    this.root.appendChild(iconButton('help', 'Open help', () => handlers.onHelp()));
+    icons.appendChild(iconButton('help', 'Open help', () => handlers.onHelp()));
+    utility.appendChild(icons);
+    this.root.appendChild(utility);
   }
 
   /**

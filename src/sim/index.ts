@@ -66,10 +66,12 @@ export {
   FARM_NAMES,
   farmUpkeepOf,
   farmWorkersOf,
+  fedShareOf,
   foodDeficitOf,
   foodYieldOf,
   harvestOf,
   isFarmKind,
+  missingPlotsOf,
   type FarmKind,
   type FoodReport,
 } from './farms';

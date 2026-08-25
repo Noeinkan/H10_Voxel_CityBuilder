@@ -1,4 +1,4 @@
-import { ALL_CLASSES, BALANCE, type SimState } from '../sim';
+import { ALL_CLASSES, BALANCE, fedShareOf, type SimState } from '../sim';
 import { onboardingOf } from './onboarding';
 
 export type CityConditionTone = 'objective' | 'warning' | 'success';
@@ -10,13 +10,25 @@ export interface CityCondition {
   readonly message: string;
 }
 
+/**
+ * **Il cibo si chiede a `fedShareOf` e non al segno del delta.** Uno stock
+ * esaurito si ferma a zero e il delta vale esattamente zero, quindi una citta'
+ * che mangiava un terzo di cio' che le serviva superava questo controllo come
+ * una in equilibrio — l'obiettivo scorreva mentre la citta' moriva di fame.
+ * Sfamata vuol dire che la domanda del tick e' stata servita tutta, non che il
+ * magazzino non e' sceso.
+ *
+ * Materiali e fondi hanno lo stesso punto cieco e restano sul delta: chiuderlo
+ * chiede il loro equivalente di `fed`, che oggi il referto non porta.
+ */
 export function isSelfSufficient(state: SimState): boolean {
   const target = BALANCE.gameplay.success;
   return state.population.stock >= target.population &&
     ALL_CLASSES.every(
       (cls) => state.buildingCounts[cls] + state.mixedCounts[cls] >= target.buildingsPerClass,
     ) &&
-    state.food.delta >= 0 && state.materials.delta >= 0 && state.funds.delta >= 0 &&
+    fedShareOf(state.harvest, state.population.stock) >= 1 &&
+    state.materials.delta >= 0 && state.funds.delta >= 0 &&
     state.satisfaction >= target.satisfaction;
 }
 
@@ -32,7 +44,13 @@ export function cityCondition(state: SimState, stableTicks: number): CityConditi
     };
   }
 
-  if (state.population.stock > 0 && state.food.stock <= BALANCE.gameplay.crisis.foodReserve && state.food.delta < 0) {
+  // Riserva quasi finita **e** raccolto che non copre la domanda. La seconda
+  // meta' era `food.delta < 0`, e a scorte esaurite quel delta e' esattamente
+  // zero: l'allarme non compariva proprio nel caso che deve segnalare — la
+  // carestia stabile, dove la citta' mangia solo cio' che raccoglie e non basta.
+  if (state.population.stock > 0 &&
+    state.food.stock <= BALANCE.gameplay.crisis.foodReserve &&
+    fedShareOf(state.harvest, state.population.stock) < 1) {
     return {
       kind: 'crisis',
       tone: 'warning',

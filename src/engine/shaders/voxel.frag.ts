@@ -1,6 +1,7 @@
 import { PALETTE_SIZE } from '../palette';
 import { PALETTE_SLOTS } from '../paletteSlots';
 import { FOG_FLAT_EPSILON, FOG_LIFT_SHARPNESS } from '../atmosphere';
+import { cloudDeckHelpers, cloudDeckUniforms } from './cloudDeck.glsl';
 import { NIGHT_WINDOWS } from '../nightWindows';
 import { SURFACE_KIND, WATER_CLASS } from '../../world/visualBlock';
 import {
@@ -48,6 +49,11 @@ uniform vec3 uSkyTopColor;
 uniform vec3 uSkyHorizonColor;
 uniform vec3 uViewDirection;
 uniform vec2 uResolution;
+
+// Lo strato di nuvole a quota: un piano nello spazio, non un secondo velo di
+// quota. La matematica e il perche' stanno in cloudDeck.ts, e questi stessi
+// uniform li dichiara anche il fondo procedurale — e' una nuvola sola.
+${cloudDeckUniforms}
 
 uniform sampler2D uShadowMap;
 uniform mat4 uShadowMatrix;
@@ -148,7 +154,7 @@ vec2 faceUv(int faceIndex, vec3 position) {
   if (faceIndex < 4) return position.xz;
   return position.xy;
 }
-${inspect ? inspectHelpers : ''}
+${cloudDeckHelpers}${inspect ? inspectHelpers : ''}
 void main() {
 ${inspect ? inspectDiscard : ''}
   int paletteIndex = int(vPaletteIndex + 0.5);
@@ -420,7 +426,28 @@ ${inspect ? inspectGhostSurface : ''}
   fogTint = mix(fogTint, uSunColor, pow(towardSun, 4.0) * uFogSunTint);
 
 ${inspect ? inspectMelt : ''}
-  gl_FragColor = vec4(mix(shaded, fogTint, fogVeil), 1.0);
+  vec3 aerial = mix(shaded, fogTint, fogVeil);
+
+  // Lo strato di nuvole si compone **dopo** la nebbia e per sovrapposizione
+  // ordinata, non per trasmittanza: sta fra la camera e il frammento, quindi
+  // copre cio' che la prospettiva aerea ha gia' fatto invece di mescolarcisi.
+  // Senza una tinta propria e' la stessa della nebbia — che segue il gradiente
+  // di cielo e lo scattering verso il sole — e allora lo strato aggiunge una
+  // forma senza aggiungere un colore da tarare per sette palette.
+  //
+  // **Il pixel e' o nuvola o citta', mai una media dei due.** E' la trasparenza
+  // a rigatura dei raggi X: la densita' decide quante righe, e fra le righe si
+  // vede cio' che sta dentro il banco. Una miscela darebbe la nebbiolina da cui
+  // questa fase e' partita, e con cui non si vede attraverso niente.
+  //
+  // La faccia colpita scurisce la tinta: e' cio' che fa leggere la lastra come
+  // spessa invece che larga, perche' di un prisma si vede la sommita' **e** il
+  // fianco, e con lo stesso colore sarebbero una macchia sola.
+  vec2 cloud = cloudTrace(vWorldPosition, uViewDirection, uTime);
+  if (cloudHatch(gl_FragCoord.xy) < cloud.x) {
+    aerial = mix(fogTint, uCloudTint, uCloudTintBlend) * cloudShade(cloud.y);
+  }
+  gl_FragColor = vec4(aerial, 1.0);
   // Nessun tone mapping qui: si scrive HDR lineare e ci pensa OutputPass.
   // Ecco perche' un cambio di tema non ricompila piu' nessun materiale di scena.
 }

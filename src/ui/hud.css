@@ -45,7 +45,20 @@
   --hud-radius: 16px;
   --hud-font: ui-rounded, "Segoe UI", system-ui, sans-serif;
   --hud-mono: ui-monospace, SFMono-Regular, Consolas, monospace;
-  --game-hud-bottom: 94px;
+  /*
+   * Il corridoio verticale e' della citta', non dell'interfaccia.
+   *
+   * La citta' cresce in alto, e in isometrica la cima delle torri finisce nella
+   * banda alta dello schermo mentre il piede dell'isola sta in quella bassa: una
+   * barra sopra e un dock sotto costavano ~190px su 1080 esattamente dove serve
+   * guardare. Da qui in poi il chrome sta ai lati — comandi a sinistra, stato a
+   * destra — e questi tre numeri sono cio' che tutti gli altri pannelli leggono
+   * per non finirci sopra. I due `rail` li riscrive un `ResizeObserver`, perche'
+   * la larghezza vera dipende da quante tessere ci stanno.
+   */
+  --game-hud-rail-left: 158px;
+  --game-hud-top: 14px;
+  --game-hud-bottom: 18px;
 }
 
 .hud-surface {
@@ -98,8 +111,10 @@
 }
 
 .game-hud { position: fixed; inset: 0; z-index: 20; pointer-events: none; color: var(--hud-ink); font-family: var(--hud-font); }
-.resource-bar { position: absolute; top: 14px; left: 50%; transform: translateX(-50%); display: flex; align-items: stretch; gap: 5px; width: min(850px, calc(100vw - 28px)); padding: 6px; border-radius: var(--hud-radius); }
-.resource-item { display: grid; grid-template-columns: 26px auto 1fr; grid-template-rows: auto auto; align-items: center; min-width: 0; flex: 1 1 132px; padding: 5px 8px; border-radius: 11px; background: var(--hud-well); }
+/* Colonna e non piu' fila: le cinque risorse si leggono una sotto l'altra sul
+   bordo destro, e la banda alta al centro torna alla citta'. */
+.resource-bar { position: absolute; top: 14px; right: 14px; display: flex; flex-direction: column; align-items: stretch; gap: 4px; width: 186px; max-height: calc(100vh - 28px); padding: 6px; border-radius: var(--hud-radius); pointer-events: auto; }
+.resource-item { display: grid; grid-template-columns: 26px auto 1fr; grid-template-rows: auto auto; align-items: center; min-width: 0; padding: 5px 8px; border-radius: 11px; background: var(--hud-well); }
 .resource-item .hud-icon { color: var(--hud-sage-dark); }
 
 /*
@@ -150,10 +165,12 @@
    e', o il popover non si aprirebbe mai perche' il click passa alla canvas. */
 .resource-item { position: relative; pointer-events: auto; }
 .resource-item:focus-visible { outline: 3px solid var(--hud-accent-shape); outline-offset: 1px; }
-.resource-flows { position: absolute; left: 50%; top: calc(100% + 8px); z-index: 40; display: grid; gap: 2px; min-width: 168px; padding: 8px 10px; transform: translate(-50%, 4px); border-radius: 10px; color: var(--hud-ink); background: linear-gradient(180deg, var(--hud-cream), var(--hud-cream-deep)); border: var(--hud-border); box-shadow: var(--hud-elev-2); font: 500 10px/1.4 var(--hud-font); opacity: 0; visibility: hidden; transition: opacity 120ms ease, transform 120ms ease; pointer-events: none; }
+/* Si apre **verso l'interno**: la pastiglia sta ormai sul bordo destro, e un
+   popover centrato sotto di lei uscirebbe per meta' dallo schermo. */
+.resource-flows { position: absolute; right: calc(100% + 8px); top: -4px; z-index: 40; display: grid; gap: 2px; min-width: 168px; padding: 8px 10px; transform: translateX(6px); border-radius: 10px; color: var(--hud-ink); background: linear-gradient(180deg, var(--hud-cream), var(--hud-cream-deep)); border: var(--hud-border); box-shadow: var(--hud-elev-2); font: 500 10px/1.4 var(--hud-font); opacity: 0; visibility: hidden; transition: opacity 120ms ease, transform 120ms ease; pointer-events: none; }
 .resource-flows[data-empty="true"] { display: none; }
 .resource-item:hover .resource-flows,
-.resource-item:focus-visible .resource-flows { opacity: 1; visibility: visible; transform: translate(-50%, 0); }
+.resource-item:focus-visible .resource-flows { opacity: 1; visibility: visible; transform: translateX(0); }
 .resource-flow { display: flex; align-items: baseline; justify-content: space-between; gap: 14px; }
 .resource-flow > strong { font-variant-numeric: tabular-nums; }
 .resource-flow[data-direction="in"] > strong { color: var(--hud-positive); }
@@ -170,12 +187,31 @@
 .resource-bar[data-condition="crisis"] { border-color: var(--hud-danger); }
 .resource-bar[data-condition="crisis"] .resource-ring-fill[data-low="true"] { animation: hud-pulse 1.6s ease-in-out infinite; }
 @keyframes hud-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .35; } }
-.time-controls { display: flex; align-items: center; gap: 3px; padding-left: 5px; border-left: 1px solid var(--hud-line-soft); pointer-events: auto; }
+/* In coda alla colonna, con un filo sopra invece che di fianco: i sei bottoni
+   avvolgono su due righe invece di stringersi oltre il dito. */
+.time-controls { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 3px; margin-top: 3px; padding-top: 6px; border-top: 1px solid var(--hud-line-soft); pointer-events: auto; }
 /* Il ciclo del giorno e' tempo ma non e' velocita': un filo di stacco lo dice. */
 .daylight-toggle { margin-left: 5px; }
 
-.build-dock { position: absolute; left: 50%; bottom: 14px; transform: translateX(-50%); display: flex; align-items: flex-end; gap: 6px; max-width: calc(100vw - 28px); padding: 7px; border-radius: 18px; }
-.dock-divider { width: 1px; align-self: stretch; margin: 3px 1px; background: var(--hud-line); }
+/*
+ * Il rail dei comandi: la stessa toolbar, incolonnata sul bordo sinistro.
+ *
+ * Scorre solo se non ci sta — su uno schermo basso e' l'unica alternativa a
+ * tessere troppo piccole per essere colpite — e la sua larghezza vera finisce in
+ * `--game-hud-rail-left`, che e' cio' che tiene la barra dei livelli e i pannelli
+ * di debug fuori da qui senza che nessuno dei due sappia quante tessere ci sono.
+ */
+/* Il rail si prende il puntatore su **tutta** la sua superficie, non solo sui
+   bottoni: da orizzontale in fondo a colonna alta quanto lo schermo, i suoi
+   margini sono diventati un bersaglio grande, e un clic caduto li' piazzava un
+   catalizzatore nella citta' che ci sta dietro. */
+/* **Niente `overflow` qui.** Una barra di scorrimento sul dock sembrava la rete
+   di sicurezza per gli schermi bassi, ma `overflow: auto` ritaglia *sempre*, e
+   la bolla del tooltip adesso esce di lato: sarebbe stata tagliata a ogni
+   passaggio del mouse per proteggere un caso che le due media query sull'altezza
+   gia' evitano stringendo la tessera. */
+.build-dock { display: flex; flex-direction: column; align-items: stretch; flex: 0 0 auto; gap: 8px; padding: 7px; border-radius: 18px; pointer-events: auto; }
+.dock-divider { height: 1px; align-self: stretch; margin: 1px 3px; background: var(--hud-line); }
 
 /*
  * La toolbar e' divisa per funzione: crescita, connessioni, identita', portata.
@@ -184,10 +220,18 @@
  * da un filo: l'etichetta sta sopra una riga che corre per tutta la fila, cosi'
  * si contano quattro gruppi prima ancora di leggerne i nomi.
  */
-.dock-group { display: grid; gap: 4px; padding: 0 5px; }
-.dock-group + .dock-group { border-left: 1px solid var(--hud-line-soft); }
+.dock-group { display: grid; gap: 4px; padding: 0 2px; }
+/* Incolonnate, il filo che le separa corre sopra e non di fianco: e' la stessa
+   riga di prima, girata con la toolbar. */
+.dock-group + .dock-group { padding-top: 8px; border-top: 1px solid var(--hud-line-soft); }
 .dock-group-title { padding-bottom: 3px; border-bottom: 1px solid var(--hud-line); color: var(--hud-muted); font-size: 8px; font-weight: 900; letter-spacing: .1em; text-transform: uppercase; }
-.dock-group-row { display: flex; align-items: stretch; gap: 4px; }
+/* Due tessere per riga: e' cio' che fa stare quattro corsie, tre bottoni di
+   portata e i pannelli dentro un'altezza di schermo senza rimpicciolire niente.
+   Una colonna sola sarebbe un rail piu' stretto ma alto il doppio. */
+.dock-group-row { display: grid; grid-template-columns: repeat(2, 1fr); align-items: stretch; gap: 4px; }
+.dock-utility { display: grid; gap: 4px; padding: 8px 2px 0; border-top: 1px solid var(--hud-line-soft); }
+.dock-utility-row { display: flex; gap: 4px; }
+.dock-utility-row > .hud-button { flex: 1; width: auto; }
 
 /*
  * Bloccato **non** e' disabilitato, ed e' la distinzione che 7.4 chiede.
@@ -246,13 +290,16 @@
 .hud-tile {
   flex-direction: column;
   gap: 3px;
-  width: 62px;
+  width: 66px;
   min-height: 62px;
   padding: 7px 4px 12px;
 }
+/* Nella griglia del rail la colonna decide la larghezza: una misura fissa
+   lascerebbe le tessere accostate a sinistra dentro celle piu' larghe. */
+.dock-group-row > .hud-tile { width: auto; min-width: 0; }
 .hud-tile .hud-icon { width: 22px; height: 22px; }
-.hud-tile .button-copy { align-items: center; gap: 0; max-width: 100%; }
-.hud-tile .button-copy > span:first-child { overflow: hidden; max-width: 54px; font-size: 9px; text-overflow: ellipsis; }
+.hud-tile .button-copy { align-items: center; gap: 0; max-width: 100%; min-width: 0; }
+.hud-tile .button-copy > span:first-child { overflow: hidden; max-width: 100%; font-size: 9px; text-overflow: ellipsis; }
 /* Il costo porta l'icona della risorsa, non la parola "funds": si legge come si
    legge la barra in alto, e le due superfici parlano la stessa lingua. */
 .hud-tile .button-cost { display: inline-flex; align-items: center; gap: 2px; font-size: 9px; font-variant-numeric: tabular-nums; }
@@ -279,8 +326,26 @@
   box-shadow: 0 0 0 2px var(--hud-accent-shape), var(--hud-elev-2);
 }
 .hud-tile[aria-pressed="true"] .hud-tile-key { color: var(--hud-on-accent); opacity: 1; }
-.hud-button[data-tooltip]::after { content: attr(data-tooltip); position: absolute; left: 50%; bottom: calc(100% + 9px); z-index: 50; width: max-content; max-width: 230px; transform: translate(-50%, 4px); padding: 6px 8px; border-radius: 8px; color: var(--hud-on-dark); background: rgba(38, 56, 51, .96); font: 500 10px/1.35 var(--hud-font); text-align: center; opacity: 0; visibility: hidden; transition: opacity 120ms ease, transform 120ms ease; pointer-events: none; }
+/* Un blocco di righe, non un periodo centrato: `actionTooltip` manda un a capo
+   per voce e `pre-line` lo rende. Centrato, un testo di quattro righe non ha un
+   bordo sinistro su cui tornare, ed e' meta' della ragione per cui si leggeva
+   come un muro. */
+.hud-button[data-tooltip]::after { content: attr(data-tooltip); position: absolute; left: 50%; bottom: calc(100% + 9px); z-index: 50; width: max-content; max-width: 260px; transform: translate(-50%, 4px); padding: 7px 9px; border-radius: 8px; color: var(--hud-on-dark); background: rgba(38, 56, 51, .96); font: 500 10px/1.4 var(--hud-font); text-align: left; white-space: pre-line; opacity: 0; visibility: hidden; transition: opacity 120ms ease, transform 120ms ease; pointer-events: none; }
 .hud-button[data-tooltip]:hover::after, .hud-button[data-tooltip]:focus-visible::after { opacity: 1; visibility: visible; transform: translate(-50%, 0); }
+/*
+ * Sui rail la bolla esce **verso il centro**, non verso l'alto.
+ *
+ * Centrata sopra una tessera larga 66px e appoggiata al bordo dello schermo,
+ * una bolla da 260px ne perderebbe un centinaio fuori dalla finestra — e sul
+ * rail destro dall'altra parte. Il verso e' l'unica cosa che cambia: e' sempre
+ * lo stesso testo, e si apre verso lo spazio che c'e'.
+ */
+.build-dock .hud-button[data-tooltip]::after { left: calc(100% + 10px); bottom: auto; top: 50%; transform: translate(-4px, -50%); }
+.build-dock .hud-button[data-tooltip]:hover::after,
+.build-dock .hud-button[data-tooltip]:focus-visible::after { transform: translate(0, -50%); }
+.resource-bar .hud-button[data-tooltip]::after { left: auto; right: calc(100% + 10px); bottom: auto; top: 50%; transform: translate(4px, -50%); }
+.resource-bar .hud-button[data-tooltip]:hover::after,
+.resource-bar .hud-button[data-tooltip]:focus-visible::after { transform: translate(0, -50%); }
 .button-copy { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; white-space: nowrap; }
 .button-cost { color: var(--hud-muted); font-size: 9px; font-weight: 700; }
 /* Su una pastiglia piena il costo non puo' restare `--hud-muted`: quel token e'
@@ -327,6 +392,30 @@
 
 .policy-drawer, .theme-picker, .view-picker, .help-card { position: absolute; right: 14px; bottom: var(--game-hud-bottom); width: min(360px, calc(100vw - 28px)); max-height: min(620px, calc(100vh - var(--game-hud-bottom) - 28px)); overflow: auto; box-sizing: border-box; border-radius: var(--hud-radius); padding: 14px; pointer-events: auto; transition: opacity 150ms ease, transform 150ms ease; }
 .policy-drawer[hidden], .theme-picker[hidden], .view-picker[hidden], .help-card[hidden] { display: block; opacity: 0; visibility: hidden; transform: translateY(10px); pointer-events: none; }
+/* I tre che salgono dal bordo destro si fermano dove comincia la colonna delle
+   risorse: lo stato della citta' e' l'unica cosa che deve restare leggibile
+   **mentre** si decide, e un cassetto che gliela copre obbliga a chiuderlo per
+   controllare quanto costa cio' che si sta scegliendo. La scheda di aiuto no:
+   e' centrata, e li' non c'e' niente da coprire. */
+.policy-drawer, .theme-picker, .view-picker { max-height: min(620px, calc(100vh - var(--game-hud-top) - var(--game-hud-bottom) - 14px)); }
+
+/*
+ * Il pannello di governo non scorre: scorre il **corpo** della linguetta aperta.
+ *
+ * Con l'`overflow` sul riquadro intero scivolava via tutto insieme, intestazione
+ * compresa: la croce per chiudere usciva dallo schermo esattamente quando si era
+ * scesi abbastanza da volerla. Tre righe di griglia — testa, linguette, corpo —
+ * e solo l'ultima ha una barra.
+ */
+.policy-drawer { display: grid; grid-template-rows: auto auto minmax(0, 1fr); gap: 10px; overflow: hidden; }
+.policy-drawer[hidden] { display: grid; }
+.policy-drawer .drawer-header { margin-bottom: 0; }
+.drawer-tabs { display: flex; flex-wrap: wrap; gap: 3px; }
+.drawer-body { min-height: 0; overflow-y: auto; }
+.drawer-body[hidden] { display: none; }
+.drawer-note { margin: 0 0 8px; color: var(--hud-muted); font-size: 10px; line-height: 1.35; }
+.drawer-note[hidden] { display: none; }
+
 .drawer-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
 .drawer-title { margin: 0; font-size: 16px; }
 .drawer-subtitle { margin: 2px 0 0; color: var(--hud-muted); font-size: 11px; }
@@ -340,6 +429,9 @@
 .policy-state { color: var(--hud-sage-dark); font-size: 9px; font-weight: 900; letter-spacing: .08em; }
 .policy-description { grid-column: 1 / 3; color: var(--hud-muted); font-size: 10px; line-height: 1.35; }
 .policy-requirement { grid-column: 1 / 3; color: #80662d; font-size: 9px; font-weight: 700; }
+/* Dove non si puo' comprare, al posto del listino c'e' il motivo — e il motivo
+   non e' un prezzo, quindi non ne ha il colore. */
+.policy-requirement[data-blocked="true"] { color: var(--hud-danger); }
 
 .theme-picker { width: min(330px, calc(100vw - 28px)); }
 .theme-picker .drawer-title { margin-bottom: 10px; }
@@ -364,11 +456,21 @@
 .view-option .view-gesture { color: var(--hud-gesture); font-weight: 700; }
 .view-option[aria-pressed="true"] .view-gesture { color: #ffcda8; }
 
-/* Angolo in alto a sinistra: le risorse sono centrate e non ci arrivano, i
-   pannelli stanno in basso a destra e la quota a meta' del bordo sinistro. E'
-   l'unico posto dove una targa di stato non copre niente e non va cercata. */
-.view-bar { position: absolute; left: 14px; top: 14px; display: grid; gap: 3px; width: 214px; padding: 11px 12px 10px; border-radius: var(--hud-radius); pointer-events: auto; transition: opacity 150ms ease, transform 150ms ease; }
-.view-bar[hidden] { display: grid; opacity: 0; visibility: hidden; transform: translateX(-10px); pointer-events: none; }
+/*
+ * Il rail sinistro tiene insieme le due superfici del lato comandi.
+ *
+ * La targa della vista stava in alto a sinistra, cioe' dove ora comincia il
+ * dock. Un contenitore invece di due `position: absolute` che si evitano a
+ * numeri: il dock occupa l'altezza che gli serve, la targa si appoggia al fondo
+ * con `margin-top: auto`, e fra le due non resta un margine da indovinare.
+ *
+ * Il prezzo e' la dissolvenza della targa, che diventa un'apparizione secca: in
+ * colonna un elemento che resta nel flusso mentre e' invisibile schiaccerebbe il
+ * dock per sempre.
+ */
+.hud-rail-left { position: absolute; left: 14px; top: 14px; bottom: 14px; display: flex; flex-direction: column; align-items: stretch; gap: 10px; width: max-content; pointer-events: none; }
+.view-bar { display: grid; flex: 0 0 auto; margin-top: auto; gap: 3px; padding: 11px 12px 10px; border-radius: var(--hud-radius); pointer-events: auto; }
+.view-bar[hidden] { display: none; }
 .view-bar-eyebrow { color: var(--hud-muted); font-size: 8px; font-weight: 900; letter-spacing: .1em; text-transform: uppercase; }
 .view-bar-label { font-size: 15px; font-weight: 800; }
 /* Stesso accento caldo del gesto nel picker e delle guide nel mondo: le tre
@@ -378,7 +480,9 @@
 .view-bar-key { display: flex; align-items: center; gap: 6px; color: var(--hud-muted); font-size: 10px; line-height: 1.35; }
 .view-bar-caps { display: flex; flex: 0 0 46px; gap: 3px; }
 .view-bar kbd { min-width: 16px; padding: 2px 4px; border: 1px solid var(--hud-line); border-bottom-width: 2px; border-radius: 5px; color: var(--hud-ink); background: var(--hud-key); font: 700 9px/1.35 var(--hud-mono); text-align: center; }
-.view-bar-actions { display: flex; gap: 5px; margin-top: 9px; }
+/* Incolonnati: sul rail due bottoni affiancati avrebbero ~70px l'uno, e
+   «Change view» andrebbe a capo dentro la propria pastiglia. */
+.view-bar-actions { display: flex; flex-direction: column; gap: 5px; margin-top: 9px; }
 .view-bar-button { flex: 1; padding: 6px 7px; border: 1px solid var(--hud-line); border-radius: 9px; color: var(--hud-ink); background: var(--hud-raised); font: 800 10px/1.2 var(--hud-font); cursor: pointer; }
 .view-bar-button:hover { border-color: rgba(63,110,97,.48); background: rgba(255,255,255,.95); }
 .view-bar-button:focus-visible { outline: 3px solid var(--hud-accent-shape); outline-offset: 1px; }
@@ -387,9 +491,10 @@
 .view-bar-exit { color: var(--hud-on-accent); background: var(--hud-sage-dark); border-color: var(--hud-sage-dark); }
 .view-bar-exit:hover { background: #35604f; border-color: #35604f; }
 
-/* Bordo sinistro e non sopra il dock: si trascina la quota mentre si guarda la
-   citta', ed e' l'unico lato che nessun altro pannello di gioco occupa. */
-.level-rail { position: absolute; left: 14px; top: 50%; display: grid; justify-items: center; gap: 7px; padding: 12px 10px; border-radius: var(--hud-radius); transform: translateY(-50%); pointer-events: auto; transition: opacity 150ms ease, transform 150ms ease; }
+/* Appena a destra del rail dei comandi: la quota si trascina mentre si guarda la
+   citta', e vuole un bordo verticale — ma quel bordo adesso e' occupato, e la
+   larghezza vera del rail la sa solo chi lo misura. */
+.level-rail { position: absolute; left: calc(var(--game-hud-rail-left) + 28px); top: 50%; display: grid; justify-items: center; gap: 7px; padding: 12px 10px; border-radius: var(--hud-radius); transform: translateY(-50%); pointer-events: auto; transition: opacity 150ms ease, transform 150ms ease; }
 .level-rail[hidden] { display: grid; opacity: 0; visibility: hidden; transform: translate(-10px, -50%); pointer-events: none; }
 .level-rail-title { color: var(--hud-muted); font-size: 8px; font-weight: 900; letter-spacing: .1em; text-transform: uppercase; }
 .level-rail-value { font-size: 15px; font-weight: 800; font-variant-numeric: tabular-nums; }
@@ -402,6 +507,11 @@
 
 .help-card { left: 50%; right: auto; width: min(470px, calc(100vw - 28px)); transform: translateX(-50%); }
 .help-card[hidden] { transform: translate(-50%, 10px); }
+/* La scheda di aiuto e' l'altra superficie che scorre davvero: la sua
+   intestazione resta appiccicata in cima per la stessa ragione per cui quella
+   del pannello di governo e' uscita dallo scorrimento — la croce per chiudere
+   non puo' essere il primo pezzo che se ne va. */
+.help-card .drawer-header { position: sticky; top: -14px; z-index: 1; margin: -14px -14px 10px; padding: 14px 14px 8px; background: var(--hud-cream); }
 .help-grid { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 7px 16px; }
 .help-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; color: var(--hud-muted); font-size: 11px; }
 .help-keys { display: flex; align-items: center; gap: 3px; }
@@ -414,12 +524,12 @@
 .help-view-row strong { color: var(--hud-ink); font-size: 11px; font-weight: 800; }
 .help-card kbd, .level-rail kbd { min-width: 18px; padding: 2px 5px; border: 1px solid var(--hud-line); border-bottom-width: 2px; border-radius: 5px; color: var(--hud-ink); background: var(--hud-key); font: 700 9px/1.35 var(--hud-mono); text-align: center; }
 
-/* La scheda di selezione: bordo destro, ancorata in ALTO.
-   I drawer (politiche, temi, viste, aiuto) partono da `--game-hud-bottom` e
-   salgono; questa scende dalla barra risorse e si ferma dove loro cominciano,
-   quindi le due superfici non si coprono mai senza doversi conoscere. Fuori da
-   `.game-hud` perche' non e' del dock: si apre cliccando il mondo. */
-.selection-panel { position: fixed; right: 14px; top: 86px; z-index: 30; display: grid; align-content: start; gap: 9px; width: min(300px, calc(100vw - 28px)); max-height: calc(100vh - 100px - var(--game-hud-bottom)); overflow-y: auto; box-sizing: border-box; padding: 13px; border-radius: var(--hud-radius); pointer-events: auto; }
+/* La scheda di selezione continua il rail destro: comincia dove finisce la
+   colonna delle risorse — `--game-hud-top`, che quella colonna pubblica —, i
+   drawer salgono dal fondo, e le due superfici si incontrano a meta' senza
+   doversi conoscere. Fuori da `.game-hud` perche' non e' del dock: si apre
+   cliccando il mondo. */
+.selection-panel { position: fixed; right: 14px; top: var(--game-hud-top); z-index: 30; display: grid; align-content: start; gap: 9px; width: min(300px, calc(100vw - 28px)); max-height: calc(100vh - var(--game-hud-top) - var(--game-hud-bottom) - 14px); overflow-y: auto; box-sizing: border-box; padding: 13px; border-radius: var(--hud-radius); pointer-events: auto; }
 .selection-panel[hidden] { display: none; }
 .selection-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
 .selection-heading { display: grid; gap: 2px; min-width: 0; }
@@ -429,13 +539,16 @@
 .selection-close:hover { color: var(--hud-ink); background: var(--hud-accent-soft); }
 .selection-close:focus-visible { outline: 3px solid var(--hud-accent-shape); outline-offset: 2px; }
 .selection-tabs { display: flex; flex-wrap: wrap; gap: 3px; }
-.selection-tab { padding: 4px 8px; color: var(--hud-muted); background: var(--hud-well); border: 1px solid transparent; border-radius: 8px; font: 800 9px/1.35 var(--hud-font); letter-spacing: .07em; text-transform: uppercase; cursor: pointer; }
-.selection-tab[hidden] { display: none; }
-.selection-tab:hover { color: var(--hud-ink); }
-.selection-tab:focus-visible { outline: 3px solid var(--hud-accent-shape); outline-offset: 1px; }
+/* Le linguette del pannello di governo hanno lo stesso aspetto e per scelta:
+   sono lo stesso gesto — «guardo un'altra faccia della stessa cosa» — e due
+   disegni diversi lo direbbero due volte in due lingue. */
+.selection-tab, .drawer-tab { padding: 4px 8px; color: var(--hud-muted); background: var(--hud-well); border: 1px solid transparent; border-radius: 8px; font: 800 9px/1.35 var(--hud-font); letter-spacing: .07em; text-transform: uppercase; cursor: pointer; }
+.selection-tab[hidden], .drawer-tab[hidden] { display: none; }
+.selection-tab:hover, .drawer-tab:hover { color: var(--hud-ink); }
+.selection-tab:focus-visible, .drawer-tab:focus-visible { outline: 3px solid var(--hud-accent-shape); outline-offset: 1px; }
 /* Lo stato attivo e' pieno e non solo scritto in grassetto: e' anche cio' che
    dice quale unita' il contorno azzurro sta evidenziando nel mondo. */
-.selection-tab[data-active="true"] { color: var(--hud-on-accent); background: var(--hud-sage-dark); border-color: var(--hud-sage-dark); }
+.selection-tab[data-active="true"], .drawer-tab[data-active="true"] { color: var(--hud-on-accent); background: var(--hud-sage-dark); border-color: var(--hud-sage-dark); }
 .selection-body[hidden] { display: none; }
 .selection-summary { margin: 0 0 7px; color: var(--hud-muted); font-size: 10px; line-height: 1.4; }
 .selection-rows { display: grid; grid-template-columns: 96px 1fr; gap: 3px 10px; margin: 0; font-size: 10px; line-height: 1.4; }
@@ -452,13 +565,15 @@
 
 .debug-panel { position: fixed; bottom: var(--game-hud-bottom); z-index: 16; max-width: calc(100vw - 28px); max-height: min(65vh, 620px); overflow: auto; box-sizing: border-box; color: #dcebe6; background: rgba(24,38,42,.94); border: 1px solid rgba(185,217,210,.24); border-radius: 11px; box-shadow: 0 10px 30px rgba(0,0,0,.25); backdrop-filter: blur(10px); font: 10px/1.45 var(--hud-mono); }
 .debug-panel[hidden] { display: none; }
-.debug-panel--left { left: 14px; }
+/* Oltre il rail dei comandi, non sopra: gli overlay tecnici sono opachi e
+   coprirebbero l'unica superficie con cui si gioca. */
+.debug-panel--left { left: calc(var(--game-hud-rail-left) + 28px); }
 .debug-panel--right { right: 14px; }
 /* In alto a sinistra: basso-sinistra e destra sono gia' presi, e la barra
    risorse e' centrata e non arriva fin qui. Sotto la targa della vista, che
    occupa lo stesso angolo e serve al giocatore: questo pannello serve a chi
    sviluppa, e cede il posto. */
-.debug-panel--inspect { left: 14px; top: 220px; bottom: auto; }
+.debug-panel--inspect { left: calc(var(--game-hud-rail-left) + 28px); top: 220px; bottom: auto; }
 .debug-range { display: block; width: calc(100% - 20px); margin: 0 10px 8px; accent-color: #78c8b4; }
 .debug-summary { padding: 7px 10px; color: #b9d9d2; cursor: pointer; user-select: none; list-style: none; font: 800 10px/1.4 var(--hud-font); letter-spacing: .04em; white-space: nowrap; }
 .debug-body { margin: 0; padding: 9px 11px 11px; border-top: 1px solid rgba(185,217,210,.14); color: inherit; font: inherit; white-space: pre; min-width: 260px; }
@@ -469,33 +584,46 @@
 .debug-actions .debug-button { flex: 1; width: auto; margin: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .debug-sites { margin: 6px 10px 0; color: inherit; font: inherit; }
 
-@media (max-width: 900px) {
-  .resource-bar { overflow-x: auto; justify-content: flex-start; }
-  .resource-item { min-width: 104px; }
-  .resource-label { display: none; }
-  .build-dock { gap: 4px; }
-  .hud-button { padding: 7px 8px; }
-  /* La tessera si stringe ma resta una tessera: e' il costo a sparire per
-     primo, perche' e' l'unica riga che il tooltip ripete gia' per intero. */
-  .hud-tile { width: 54px; min-height: 54px; padding: 6px 3px 11px; }
+/*
+ * Su un rail il vincolo cambia asse: non e' piu' la larghezza a finire, e'
+ * l'altezza. Quattro corsie, tre bottoni di portata e i pannelli stanno in
+ * ~690px; sotto quella soglia la tessera si stringe invece di far scorrere il
+ * rail, perche' una barra di scorrimento sulla toolbar principale nasconde gli
+ * strumenti che non si sono ancora imparati.
+ */
+@media (max-height: 900px) {
+  .hud-tile { width: 58px; min-height: 54px; padding: 6px 3px 11px; }
   .hud-tile .button-cost { display: none; }
-  .button-cost { display: none; }
+  .build-dock { gap: 6px; }
 }
 
-@media (max-width: 680px) {
+@media (max-height: 760px) {
   .dock-group-title { display: none; }
-  .dock-group { padding: 0 3px; }
-  .selection-panel { right: 8px; left: 8px; width: auto; }
-  .hud-button .button-copy { display: none; }
-  .hud-button { width: 40px; padding: 7px; }
-  /* Qui la tessera cede: resta la sola icona, come per gli altri bottoni. Il
-     badge del tasto resta, perche' e' cio' che la rende ancora raggiungibile. */
-  .hud-tile { width: 42px; min-height: 42px; padding: 7px 4px; }
+  .dock-group + .dock-group { padding-top: 5px; }
+  .hud-tile { min-height: 46px; padding: 6px 3px; }
+  .hud-tile .button-copy { display: none; }
   /* Non c'e' piu' spazio sotto l'icona: il requisito resta nel tooltip, e il
      riempimento continua a dire da solo quanto manca. */
   .hud-tile[data-locked="true"][data-requirement-short]:disabled::before { display: none; }
-  .resource-bar { top: 8px; width: calc(100vw - 16px); }
-  .build-dock { bottom: 8px; max-width: calc(100vw - 16px); }
+  .view-bar-keys { display: none; }
+}
+
+/* I due rail sono ~350px di larghezza: sotto i 1000px sono un terzo dello
+   schermo, e le risorse cedono per prime — restano cifra e icona, che e' cio'
+   che si guarda con la coda dell'occhio. */
+@media (max-width: 1000px) {
+  .resource-bar { width: 132px; }
+  .resource-label { display: none; }
+  .resource-spark { display: none; }
+  .selection-panel { width: min(260px, calc(100vw - 28px)); }
+}
+
+@media (max-width: 760px) {
+  .build-dock .button-copy { display: none; }
+  .hud-tile { width: 44px; min-height: 44px; padding: 7px 4px; }
+  .dock-utility .hud-button { width: auto; padding: 7px; }
+  .resource-bar { width: 104px; }
+  .selection-panel { right: 8px; width: min(220px, calc(100vw - 16px)); }
   .help-grid { grid-template-columns: 1fr; }
 }
 

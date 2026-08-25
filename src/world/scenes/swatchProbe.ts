@@ -4,6 +4,7 @@ import { appendCarveDetail } from '../../engine/mesher/carveGeometry';
 import { planCarves } from '../../engine/mesher/carvePlan';
 import {
   appendMicroGeometry,
+  collectSurfaceCells,
   MAX_DETAIL_QUADS_PER_CHUNK,
   type ChunkOrigin,
   type FixedBox,
@@ -110,10 +111,15 @@ export function countDetail(padded: Uint8Array, origin: ChunkOrigin): SwatchDeta
 
   // La maschera degli scavi e' nuova a ogni chiamata, quindi non c'e' un
   // `clearCarves` da fare: il pool del mesher la riusa, la sonda no.
+  //
+  // La scansione per superficie si fa una volta e la leggono in due, com'e' in
+  // `greedyMesh`: il piano degli scavi la vuole prima del disegno, e rifarla
+  // dentro `appendMicroGeometry` sarebbe la stessa passata due volte.
   const marks = new Uint8Array(PADDED_VOL);
-  const carves = planCarves(padded, marks, origin);
+  const cells = collectSurfaceCells(padded);
+  const carves = planCarves(padded, marks, origin, cells);
   appendCarveDetail(padded, marks, writer, carves);
-  appendMicroGeometry(padded, writer, marks, origin);
+  appendMicroGeometry(padded, writer, marks, cells, origin);
   return { prisms, quads };
 }
 

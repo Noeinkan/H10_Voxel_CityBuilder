@@ -25,18 +25,44 @@ describe('createSkyBackground', () => {
     const handle = createSkyBackground(resolveTheme('diorama').atmosphere);
     const { mesh } = handle;
     const material = materialOf(mesh);
-    const before = material.uniforms['uCloudAmount'].value;
+    const before = material.uniforms['uBandAmount'].value;
 
     handle.setAtmosphere(resolveTheme('industrial').atmosphere);
 
     expect(handle.mesh).toBe(mesh);
     expect(materialOf(handle.mesh)).toBe(material);
     // industrial e' il tema piu' nuvoloso: il valore deve essersi mosso.
-    expect(material.uniforms['uCloudAmount'].value).not.toBe(before);
-    expect(material.uniforms['uCloudAmount'].value).toBeCloseTo(
+    expect(material.uniforms['uBandAmount'].value).not.toBe(before);
+    expect(material.uniforms['uBandAmount'].value).toBeCloseTo(
       resolveTheme('industrial').atmosphere.sky.cloudAmount,
       10,
     );
+    handle.dispose();
+  });
+
+  it('le bande dipinte e lo strato in quota sono due cose distinte', () => {
+    // `uBand*` e' il fondo dipinto in coordinate di schermo, `uCloud*` il piano
+    // a una quota del mondo. Portavano lo stesso nome, e con due nuvole in scena
+    // sarebbe stato lo stesso uniform per due mestieri.
+    const handle = createSkyBackground(resolveTheme('natural').atmosphere);
+    const material = materialOf(handle.mesh);
+    const deck = resolveTheme('natural').atmosphere.cloudDeck;
+
+    expect(deck).toBeDefined();
+    expect(material.uniforms['uBandAmount'].value).toBeCloseTo(
+      resolveTheme('natural').atmosphere.sky.cloudAmount,
+      10,
+    );
+    expect(material.uniforms['uCloudAmount'].value).toBeCloseTo(deck?.amount ?? -1, 10);
+    expect(material.uniforms['uCloudHeight'].value).toBe(deck?.height);
+
+    // L'interruttore spegne lo strato e lascia stare le bande: sono due cieli
+    // diversi, e il bottone ne governa uno solo.
+    handle.setClouds(false);
+    expect(material.uniforms['uCloudAmount'].value).toBe(0);
+    expect(material.uniforms['uBandAmount'].value).toBeGreaterThan(0);
+    handle.setClouds(true);
+    expect(material.uniforms['uCloudAmount'].value).toBeCloseTo(deck?.amount ?? -1, 10);
     handle.dispose();
   });
 
