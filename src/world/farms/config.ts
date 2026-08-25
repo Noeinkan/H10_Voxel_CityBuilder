@@ -11,20 +11,28 @@ import { STREETS } from '../streets/config';
  * `sim/balance.ts`, perche' sono bilanciamento e non geografia. Qui c'e' solo
  * dove un lotto puo' stare e come e' fatto.
  */
+/**
+ * Lato di un lotto, in colonne.
+ *
+ * Multiplo di `STREETS.align` — cioe' del cubo di terreno — per la stessa
+ * ragione dei lotti edificati: un bordo a meta' cubo troverebbe sotto la propria
+ * impronta due quote diverse dove il terreno e' piatto.
+ *
+ * Dodici e non ventidue (il passo di un isolato): un campo non e' un isolato e
+ * non deve leggersi come uno. A questa scala ne stanno tre in fila nello spazio
+ * di due isolati, ed e' la grana che fa leggere la campagna come campagna invece
+ * che come lotti vuoti in attesa.
+ *
+ * **Non si rimpicciolisce per far stare piu' campi sull'isola**, ed e' stato
+ * provato: sotto dodici il reticolo degli alberi di `orchard.ts` degrada a un
+ * nodo solo — `TREE_PITCH` vale 5, dedotto dalla chioma — e un frutteto con un
+ * albero non e' un frutteto. La capienza alimentare si allarga con
+ * `minArableShare`, che e' la stessa terra recuperata senza toccare la grana.
+ */
+const PLOT_SIDE = 12;
+
 export const FARMS = {
-  /**
-   * Lato di un lotto, in colonne.
-   *
-   * Multiplo di `STREETS.align` — cioe' del cubo di terreno — per la stessa
-   * ragione dei lotti edificati: un bordo a meta' cubo troverebbe sotto la
-   * propria impronta due quote diverse dove il terreno e' piatto.
-   *
-   * Dodici e non ventidue (il passo di un isolato): un campo non e' un isolato
-   * e non deve leggersi come uno. A questa scala ne stanno tre in fila nello
-   * spazio di due isolati, ed e' la grana che fa leggere la campagna come
-   * campagna invece che come lotti vuoti in attesa.
-   */
-  plotSide: 12,
+  plotSide: PLOT_SIDE,
 
   /**
    * Ogni quante colonne corre un solco.
@@ -43,10 +51,39 @@ export const FARMS = {
    * Vale il lato: due lotti non si sovrappongono mai per costruzione, e non c'e'
    * niente da controllare fra l'uno e l'altro.
    */
-  lattice: 12,
+  lattice: PLOT_SIDE,
 
   /** Pendenza oltre la quale non si coltiva. E' la stessa che regge un edificio. */
   maxSlope: TERRAIN.buildableMaxSlope,
+
+  /**
+   * Frazione delle colonne del quadrato che devono essere coltivabili.
+   *
+   * **Era uno, ed e' li' che finiva il cibo dell'isola.** Il rifiuto era del
+   * quadrato intero alla prima colonna sterile o ripida — un campo bucato non e'
+   * un campo — e su una costa frastagliata quella regola non scarta i posti
+   * sbagliati, scarta quelli **quasi** giusti. Misurato sull'isola tarata: le
+   * colonne coltivabili sono 31.900, cioe' terra per 443 case, ma i quadrati
+   * interamente puliti ne sfamavano **214**, contro una domanda che a citta'
+   * matura sta fra 360 e 455 di cibo per tick. Piu' della meta' della campagna
+   * possibile veniva buttata via da un masso per volta.
+   *
+   * A nove decimi i quadrati buoni passano da 107 a 144 e le case sfamate da 214
+   * a 288. Il divario si chiude quasi, e resta aperto quel tanto che basta
+   * perche' la torre idroponica abbia ancora un mestiere — che e' la curva
+   * dichiarata in `sim/farms.ts`: quando l'isola finisce, il cibo sale con tutto
+   * il resto.
+   *
+   * **Non costa niente a schermo.** Un solco e' un marcatore di copertura, e la
+   * copertura non si vede sui biomi senza erba: le colonne tollerate sono
+   * esattamente quelle su cui il solco era gia' invisibile. Il campo continua a
+   * leggersi come un quadrato regolare, con un masso in mezzo.
+   *
+   * Resta una **soglia alta** di proposito: dieci colonne su centoquarantaquattro
+   * sono un affioramento, non un pendio. Sotto, il lotto smetterebbe di essere un
+   * campo e diventerebbe una campitura su terreno che non lo regge.
+   */
+  minArableShare: 0.9,
 
   /**
    * I biomi che reggono un lotto.
@@ -87,22 +124,15 @@ export const FARMS = {
   minFreeShare: 0.7,
 
   /**
-   * Lotti piantati al massimo in una passata.
+   * Il tetto per passata **non sta qui**: e' `PLOTS_PER_PASS`, in `farmDriver.ts`.
    *
-   * **E' un tetto, non il ritmo**, e la differenza e' tutta la meccanica. Quanti
-   * piantarne lo dice `missingPlotsOf`: il driver chiede alla simulazione quanti
-   * campi mancano e ne pianta quel numero, fin qui. Finche' questo numero era
-   * anche il ritmo — due lotti, sempre, comunque andasse — l'offerta era una
-   * costante contro una domanda che cresce con la citta', e le due divergevano
-   * dal primo isolato.
-   *
-   * Sei perche' e' il caso peggiore che il costruttore sa produrre: tre edifici
-   * ogni sei tick (`BUILDER.sitesPerBuild`, `BUILDER.ticksPerBuild`), un campo
-   * ogni due residenziali, e questa cadenza. Piu' alto non servirebbe a niente —
-   * il deficit taglia comunque prima — e farebbe comparire mezza campagna in un
-   * istante.
+   * Non e' geografia. E' il ritmo del costruttore letto dall'altra parte — quanti
+   * residenziali un'infornata sa produrre — diviso per cio' che un campo sfama,
+   * cioe' due numeri che stanno in `BUILDER` e in `BALANCE`. Scritto a mano qui
+   * era `6`, mentre la sua stessa derivazione ne dava `12`: il conto era nel
+   * commento e nessuno lo rifaceva. Adesso e' un prodotto, e vive dove i due
+   * vocabolari gia' si toccano.
    */
-  plotsPerPass: 6,
 
   /**
    * Tick fra una passata e l'altra.
@@ -123,22 +153,32 @@ export const FARMS = {
    * una partita senza terra fertile scandirebbe tutto il reticolo a ogni
    * passata. Con questo, il costo di una passata e' fisso comunque sia grande
    * l'isola.
+   *
+   * **Il numero e' un budget di colonne, non di candidati**, ed e' per questo che
+   * si ricava dal lato: `planPlot` sonda `plotSide²` colonne per candidato,
+   * quindi il prodotto dei due e' la scansione che una passata paga davvero.
+   * Scritto come letterale, rimpicciolire il lotto avrebbe ridotto in silenzio la
+   * scansione proprio quando i quadrati da provare diventano piu' numerosi.
    */
-  searchDepth: 96,
+  searchDepth: Math.round((96 * 12 * 12) / (PLOT_SIDE * PLOT_SIDE)),
 
   /**
    * Anelli della spirale, cioe' fin dove si cerca terra da coltivare.
    *
-   * Ventidue anelli a passo dodici coprono un quadrato di lato 540, che e' piu'
-   * dell'isola tarata (512) e dei suoi settori costieri. Oltre non c'e' niente
-   * da sondare, e senza un tetto il cursore continuerebbe ad allargarsi
-   * sull'oceano per tutta la partita.
+   * Devono coprire un quadrato piu' largo dell'isola tarata (512) e dei suoi
+   * settori costieri: oltre non c'e' niente da sondare, e senza un tetto il
+   * cursore continuerebbe ad allargarsi sull'oceano per tutta la partita.
+   *
+   * **Ricavati dal passo e non scritti a mano.** Ventidue e' cio' che a passo
+   * dodici copre esattamente quel quadrato, ed e' il valore che questa formula
+   * restituisce oggi; scritto a mano, un passo piu' stretto avrebbe lasciato
+   * fuori dalla campagna la corona esterna dell'isola senza che nulla lo dicesse.
    *
    * Vale **a spirale centrata sull'isola**: e' cio' che il numero ha sempre
    * dichiarato, e finche' il centro stava sull'origine del mondo ne copriva un
    * quadrante solo.
    */
-  searchRings: 22,
+  searchRings: Math.ceil((540 / PLOT_SIDE - 1) / 2),
 
   /** Sale del seme dei lotti: li tiene scorrelati da alberi, copertura e stile. */
   salt: 0x5f_a4_11_03,

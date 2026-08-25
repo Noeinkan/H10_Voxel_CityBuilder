@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { Mesh, type LineBasicMaterial, type MeshBasicMaterial } from 'three';
-import { PlacementCursor } from './PlacementCursor';
+import { Mesh, Vector3, type LineBasicMaterial, type MeshBasicMaterial } from 'three';
+import { PLACEMENT_SURFACE, PlacementCursor } from './PlacementCursor';
 
 type Tinted = MeshBasicMaterial | LineBasicMaterial;
 
@@ -34,6 +34,25 @@ describe('PlacementCursor', () => {
     expect(new Set(valid).size).toBe(1);
     expect(new Set(invalid).size).toBe(1);
     expect(valid[0]).not.toBe(invalid[0]);
+  });
+
+  it('segue il piano di appoggio dei componenti da facciata', () => {
+    const cursor = new PlacementCursor();
+    const normal = new Vector3(0, 0, 1);
+
+    for (const [surface, expected] of [
+      [PLACEMENT_SURFACE.east, [1, 0, 0]],
+      [PLACEMENT_SURFACE.west, [-1, 0, 0]],
+      [PLACEMENT_SURFACE.north, [0, 1, 0]],
+      [PLACEMENT_SURFACE.south, [0, -1, 0]],
+      [PLACEMENT_SURFACE.horizontal, [0, 0, 1]],
+    ] as const) {
+      cursor.show(4, -7, 12, true, surface);
+      normal.set(0, 0, 1).applyQuaternion(cursor.group.quaternion);
+      expect(normal.x).toBeCloseTo(expected[0], 10);
+      expect(normal.y).toBeCloseTo(expected[1], 10);
+      expect(normal.z).toBeCloseTo(expected[2], 10);
+    }
   });
 
   it('resta fuori dalla profondita’, cosi’ nessun rilievo lo nasconde', () => {

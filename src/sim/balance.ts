@@ -278,6 +278,7 @@ export const BALANCE = {
      */
     terrace: {
       cost: 180,
+      materials: 35,
       population: 24,
     },
 
@@ -296,6 +297,7 @@ export const BALANCE = {
      */
     ropeway: {
       cost: 620,
+      materials: 120,
       population: 48,
     },
 
@@ -377,12 +379,30 @@ export const BALANCE = {
       /**
        * La torre idroponica nasce **dove il suolo e' finito**, non dove il cibo
        * scarseggia: la fame e' un fatto della citta' intera e questo profilo
-       * descrive una colonna. Le due soglie sono percio' le piu' alte del
-       * gruppo — densita' da centro e impatto industriale gia' presente — e
-       * sono cio' che la tiene fuori dalla periferia, dove un campo costa
-       * infinitamente meno e rende di piu' per fondo speso.
+       * descrive una colonna. Le due soglie restano in cima al gruppo — densita'
+       * da centro, alla pari con `office`, e l'impatto industriale piu' alto di
+       * tutti — ed e' cio' che la tiene fuori dalla periferia, dove un campo
+       * costa infinitamente meno e rende di piu' per fondo speso. L'ordine di
+       * valutazione in `specializationOf` non cambia: `farming` si chiede per
+       * prima, quindi la parita' su `density` non la fa perdere contro nessuno.
+       *
+       * **La densita' era 0,52, cioe' sopra il proprio soffitto.** I ruoli che
+       * portano industria contribuiscono `density` 25 (fabbrica) e 55 (mercato):
+       * sommati a influenza piena fanno 80 su `metricScale` 180, cioe' **0,444**.
+       * Misurato piazzando i due catalizzatori sulla stessa colonna, il massimo
+       * raggiungibile sulla mappa e' esattamente quello, e a sedici colonne di
+       * distanza scende sotto 0,38. La soglia non era severa: era irraggiungibile
+       * per costruzione, e in 250 secondi di gioco con 225 edifici industriali
+       * non nasceva **una** torre. La via verticale al cibo era dichiarata in tre
+       * documenti e chiusa nei numeri.
+       *
+       * A 0,40 la fascia che qualifica esiste ed e' stretta: si apre solo dove
+       * mercato e fabbrica si sovrappongono davvero, e si richiude appena i due
+       * si allontanano. E' la stessa promessa di prima — una torre e' rara e si
+       * guadagna — detta con un numero che sta sotto il soffitto invece che
+       * sopra.
        */
-      farming: { density: 0.52, industry: 0.34 },
+      farming: { density: 0.4, industry: 0.34 },
     },
   },
 
@@ -451,7 +471,6 @@ export const BALANCE = {
 
   trade: {
     foodReservePerResident: 1.5,
-    materialReservePerBuilding: 2,
     /**
      * Quanta della spesa alimentare della citta' un collegamento copre in un tick.
      *
@@ -729,8 +748,20 @@ export const BALANCE = {
   // --- Materiali -----------------------------------------------------------
 
   materials: {
+    /** Scorta per edificio che negozi ed export non possono consumare. */
+    reservePerBuilding: 2,
     /** Manutenzione per edificio per tick, in materiali. */
     upkeepPerBuilding: 0.02,
+    /** Capacita' aggiunta da ogni livello, uguale per tutti gli usi. */
+    capacityPerLevel: 0.25,
+    /** Tetto del bonus: al livello 12 un edificio vale quattro edifici base. */
+    maxCapacityBonus: 3,
+    /** Il tessuto urbano cresce gratis; dal grattacielo in poi serve la filiera. */
+    freeThroughLevel: 6,
+    /** Base della curva quadratica dei costi degli upgrade. */
+    upgradeBaseCost: 2,
+    /** Scorta consumata quando si apre il cantiere di un'arcologia. */
+    arcologyCost: 200,
   },
 
   // --- Soddisfazione -------------------------------------------------------

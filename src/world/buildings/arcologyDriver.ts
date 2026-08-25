@@ -1,4 +1,12 @@
-import { BUILDING_CLASS, addBuilding, type BuildingClass, type SimState } from '../../sim';
+import {
+  BALANCE,
+  BUILDING_CLASS,
+  addBuilding,
+  deferConstruction,
+  spendConstructionMaterials,
+  type BuildingClass,
+  type SimState,
+} from '../../sim';
 import {
   ARCOLOGY,
   ARCOLOGY_KIND,
@@ -71,7 +79,7 @@ export class ArcologyDriver {
    * e che il numero da tarare e' un altro. E' la stessa ragione per cui
    * `REJECT_REASONS` esiste per gli edifici.
    */
-  private lastRefusal: ArcologyRefusal | null = null;
+  private lastRefusal: ArcologyDriverRefusal | null = null;
 
   constructor(
     private readonly ctx: BuildContext,
@@ -90,7 +98,7 @@ export class ArcologyDriver {
     return this.ctx.registry.arcologyCount;
   }
 
-  get refusal(): ArcologyRefusal | null {
+  get refusal(): ArcologyDriverRefusal | null {
     return this.lastRefusal;
   }
 
@@ -267,6 +275,15 @@ export class ArcologyDriver {
       }
       this.lastRefusal = null;
 
+      // La maturita' urbanistica apre la possibilita', il magazzino apre il
+      // cantiere. Si controlla prima di sgomberare: una citta' che non puo'
+      // pagare non deve perdere ne' edifici ne' mensole mentre aspetta le
+      // fabbriche.
+      if (state.materials.stock < BALANCE.materials.arcologyCost) {
+        this.lastRefusal = 'materials';
+        return deferConstruction(state, BALANCE.materials.arcologyCost);
+      }
+
       const origin = arcologyOrigin(recipe, facing, anchor.x, anchor.y);
       const box: ClearanceBox = {
         x: origin.x,
@@ -303,7 +320,9 @@ export class ArcologyDriver {
       // budget di chunk — non consuma la passata: il prossimo isolato del
       // cursore puo' andare bene, e aspettare venti tick per scoprirlo sarebbe
       // solo lentezza.
-      if (started) return state;
+      if (started) {
+        return spendConstructionMaterials(state, BALANCE.materials.arcologyCost) ?? state;
+      }
       this.lastRefusal = 'site';
     }
 
@@ -529,3 +548,5 @@ export class ArcologyDriver {
       ?? ((hashCoords(this.ctx.seed, x, y) & 3) as Facing);
   }
 }
+
+export type ArcologyDriverRefusal = ArcologyRefusal | 'materials';

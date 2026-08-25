@@ -8,6 +8,15 @@
 
 export { BALANCE } from './balance';
 export {
+  EMPTY_MATERIALS,
+  capacityAtLevel,
+  deferConstruction,
+  spendConstructionMaterials,
+  upgradeBuilding,
+  upgradeMaterialCost,
+  type MaterialsReport,
+} from './materials';
+export {
   ALL_CLASSES,
   BUILDING_CLASS,
   CLASS_LABELS,

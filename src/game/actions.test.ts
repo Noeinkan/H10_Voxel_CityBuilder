@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { BUILDING_CLASS, catalystById, createSimState, defaultCatalystOfClass } from '../sim';
+import { BALANCE, BUILDING_CLASS, catalystById, createSimState, defaultCatalystOfClass } from '../sim';
 import { testTerrain } from '../sim/testTerrain';
 import { BUILD_WEIGHT, GRADING } from '../world/grading/config';
 import { TERRAIN } from '../world/terrain/config';
@@ -9,6 +9,10 @@ import {
   catalystSiteCost,
   grantSite,
   placeCatalyst,
+  placeRopeway,
+  placeTerrace,
+  ropewayFailure,
+  terraceFailure,
   togglePolicy,
 } from './actions';
 
@@ -32,6 +36,32 @@ function coast() {
 }
 
 describe('azioni di gioco', () => {
+  it('terrazze e funivie richiedono industria e pagano entrambi i listini', () => {
+    const base = createSimState();
+    const ready = {
+      ...base,
+      population: { stock: 100, delta: 0 },
+      funds: { stock: 2_000, delta: 0 },
+    };
+    const empty = { ...ready, materials: { stock: 0, delta: 0 } };
+    expect(terraceFailure(empty, null)).toBe('insufficient-materials');
+    expect(ropewayFailure(empty, null)).toBe('insufficient-materials');
+
+    const terrace = placeTerrace(ready, null);
+    expect(terrace.success).toBe(true);
+    if (!terrace.success) return;
+    expect(terrace.state.funds.stock).toBe(2_000 - BALANCE.gameplay.terrace.cost);
+    expect(terrace.state.materials.stock)
+      .toBe(base.materials.stock - BALANCE.gameplay.terrace.materials);
+    expect(terrace.state.materialFlows.construction).toBe(BALANCE.gameplay.terrace.materials);
+
+    const ropeway = placeRopeway(ready, null);
+    expect(ropeway.success).toBe(true);
+    if (!ropeway.success) return;
+    expect(ropeway.state.materials.stock)
+      .toBe(base.materials.stock - BALANCE.gameplay.ropeway.materials);
+  });
+
   it('piazza un catalizzatore pagando una sola volta', () => {
     const map = testTerrain({ chunksX: 1, chunksY: 1, height: 12 });
     const state = createSimState();

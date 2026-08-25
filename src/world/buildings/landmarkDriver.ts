@@ -452,7 +452,18 @@ export class LandmarkDriver {
     const plan = surveyGrade(
       this.ctx.terrain, spot.x, spot.y, spot.span.sizeX, spot.span.sizeY, mask,
     );
-    return plan === null ? null : { plan, mask };
+    if (plan === null) return null;
+
+    // Il tetto generale delle opere e' tarato sulla banchina: applicarlo anche
+    // al terrapieno permetterebbe a un landmark largo di prendere piu' gradoni
+    // della montagna e mostrarsi come poche pareti altissime attorno al lago.
+    // Un porto resta sul proprio ramo, perche' li' il salto e' davvero quello
+    // fra piano e fondale e la ricetta ne disegna la forma.
+    if (plan.works === WORKS.terrace &&
+      plan.padZ - plan.footZ > LANDMARK.maxTerraceDrop) {
+      return null;
+    }
+    return { plan, mask };
   }
 
   /** Costruisce la struttura e ne restituisce il record, o null se il luogo non la regge. */

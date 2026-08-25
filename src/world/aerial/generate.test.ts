@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { AERIAL, AERIAL_PART } from './config';
 import { planDeck, type DeckPlan, type DeckRect } from './deckPlan';
-import { generateDeck } from './generate';
+import { generateDeck, generatePier } from './generate';
 import { TestGround } from './testProbe';
 import { STAMP_EMPTY, type VoxelStamp } from '../buildings/stamp';
+import { SURFACE_KIND } from '../visualBlock';
 
 /**
  * Il generatore in quota, verificato su cio' che si vede da fuori: la **sezione**.
@@ -69,5 +70,43 @@ describe('generateDeck — la sezione di una mensola', () => {
     expect(columnHeight(stamp, 0, mid)).toBe(AERIAL.girderDepth + 1);
     expect(columnHeight(stamp, stamp.sizeX - 1, mid)).toBe(AERIAL.girderDepth + 1);
     expect(columnHeight(stamp, stamp.sizeX - 1, 0)).toBe(AERIAL.girderDepth + 1);
+  });
+});
+
+describe('generateDeck — la sezione di un nodo', () => {
+  it('il salto allunga gli appoggi senza colare pieno tutto il pianerottolo', () => {
+    const rect: DeckRect = { x: 10, y: 20, sizeX: 6, sizeY: 6 };
+    const drop = AERIAL.route.stepPerNode;
+    const plan: DeckPlan = {
+      rect,
+      deckZ: 30,
+      baseZ: 30 - AERIAL.girderDepth - drop,
+      height: AERIAL.girderDepth + 1 + drop,
+      anchors: [],
+      piers: [{ x: 10, y: 20, baseZ: 4, height: 16, carrier: 0, massive: true }],
+      carriers: [],
+      segments: [rect],
+    };
+
+    const stamp = generateDeck(plan, AERIAL_PART.node, rect);
+
+    // Sopra la gamba la struttura resta continua; sul filo lontano rimangono
+    // soltanto piano e travatura, e nel cuore il piano costruibile da un voxel.
+    expect(columnHeight(stamp, 0, 0)).toBe(plan.height);
+    expect(columnHeight(stamp, stamp.sizeX - 1, 3)).toBe(AERIAL.girderDepth + 1);
+    expect(columnHeight(stamp, 3, 3)).toBe(1);
+  });
+});
+
+describe('generatePier — peso visivo', () => {
+  it('distingue il sostegno ordinario dal pilone di un carico pesante', () => {
+    const base = { x: 10, y: 20, baseZ: 4, height: 16, carrier: 0 };
+    const slender = generatePier({ ...base, massive: false });
+    const massive = generatePier({ ...base, massive: true });
+
+    expect([...slender.surfaces]).toEqual(
+      expect.arrayContaining([SURFACE_KIND.utility]),
+    );
+    expect([...massive.surfaces].every((surface) => surface === SURFACE_KIND.plain)).toBe(true);
   });
 });

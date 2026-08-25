@@ -128,4 +128,10 @@ describe('buildActionTip', () => {
     // con lo schermo non vede nemmeno l'etichetta.
     expect(tipText(buildActionTip(action())).split('\n')[0]).toBe('Monument · 440 funds');
   });
+
+  it('nomina entrambi i prezzi quando l opera consuma anche materiali', () => {
+    const tip = buildActionTip(action({ materialCost: 35 }));
+    expect(tip.materialCost).toBe(35);
+    expect(tipText(tip).split('\n')[0]).toBe('Monument · 440 funds · 35 materials');
+  });
 });

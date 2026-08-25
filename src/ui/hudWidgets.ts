@@ -22,6 +22,13 @@ export function actionButton(action: HudAction, icon: HudIcon, onClick: () => vo
   // L'icona della risorsa accanto alla cifra, non la parola: il costo si legge
   // come si legge la barra in alto, e le due superfici parlano la stessa lingua.
   cost.append(createHudIcon('funds'), document.createTextNode(String(action.cost)));
+  if (action.materialCost !== undefined) {
+    cost.append(
+      document.createTextNode(' · '),
+      createHudIcon('materials'),
+      document.createTextNode(String(action.materialCost)),
+    );
+  }
   copy?.appendChild(cost);
   button.setAttribute('aria-pressed', 'false');
   return button;

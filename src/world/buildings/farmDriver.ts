@@ -1,4 +1,13 @@
-import { addFarm, FARM_KIND, missingPlotsFor, removeFarm, type FarmKind, type SimState } from '../../sim';
+import {
+  addFarm,
+  BALANCE,
+  FARM_KIND,
+  missingPlotsFor,
+  removeFarm,
+  type FarmKind,
+  type SimState,
+} from '../../sim';
+import { BUILDER } from './config';
 import { FARMS } from '../farms/config';
 import { FarmRegistry } from '../farms/FarmRegistry';
 import { clearPlot, paintPlot } from '../farms/generate';
@@ -10,6 +19,39 @@ import type { BuildContext } from './buildContext';
 
 /** Celle della spirale entro `searchRings`: il quadrato di lato `2r + 1`. */
 const SPIRAL_CELLS = (2 * FARMS.searchRings + 1) ** 2;
+
+/**
+ * Lotti piantati al massimo in una passata.
+ *
+ * **E' un tetto, non il ritmo**, e la differenza e' tutta la meccanica: quanti
+ * piantarne lo dice `missingPlotsFor`, e questo numero e' solo il punto in cui
+ * una passata si ferma perche' mezza campagna non compaia in un istante.
+ *
+ * **Ed e' derivato apposta.** Stava scritto a mano in `FARMS` — `6` — con la
+ * propria derivazione nel commento accanto: il caso peggiore che il costruttore
+ * sa produrre e' `sitesPerBuild / ticksPerBuild` edifici per tick, tutti
+ * residenziali, cioe' venti in una passata da quaranta tick; a un campo ogni due
+ * case fanno dieci lotti, e con il margine a cui la campagna punta
+ * (`food.targetCoverage`) dodici. Il conto era li' e dava il doppio del numero
+ * scritto sotto.
+ *
+ * Non era un dettaglio. Sotto il tetto giusto l'offerta torna a essere una
+ * costante contro una domanda che cresce con la citta' — il difetto che
+ * `missingPlotsOf` era nato per chiudere, riaperto un livello piu' in basso — e
+ * per tutta la crescita la citta' mangia i due terzi di cio' che le serve con la
+ * dispensa a zero. Misurato su terreno pianeggiante: 1394 tick di fame contro
+ * 212, cioe' due minuti di carestia contro venti secondi di stretta iniziale.
+ *
+ * Un prodotto e non un letterale perche' i tre numeri da cui dipende vivono in
+ * due file lontani, e questa e' esattamente la relazione che si e' gia' rotta
+ * una volta per distrazione: cambiare la cadenza del costruttore, o quanto un
+ * campo sfama, adesso muove il tetto da solo.
+ */
+export const PLOTS_PER_PASS = Math.ceil(
+  ((BUILDER.sitesPerBuild / BUILDER.ticksPerBuild) * FARMS.ticksPerPass) /
+    BALANCE.farms[FARM_KIND.field].houses *
+    BALANCE.food.targetCoverage,
+);
 
 /**
  * Il produttore della simulazione che corrisponde a un lotto del mondo.
@@ -90,7 +132,7 @@ export class FarmDriver {
    * Quanti lotti questa passata deve provare a piantare.
    *
    * **Una quantita' e non un si'/no.** La simulazione dice quanti campi mancano;
-   * fermarsi a `> 0` significava piantarne comunque `plotsPerPass` che ne
+   * fermarsi a `> 0` significava piantarne comunque `PLOTS_PER_PASS` che ne
    * mancasse uno o cento, cioe' un'offerta a ritmo costante contro una domanda
    * che cresce con la citta'. Il tetto per passata resta — la campagna deve
    * comparire, non apparire — ma adesso e' un tetto e non piu' il ritmo.
@@ -104,7 +146,7 @@ export class FarmDriver {
    * la risposta.
    */
   private wants(state: SimState): number {
-    return Math.min(FARMS.plotsPerPass, missingPlotsFor(state));
+    return Math.min(PLOTS_PER_PASS, missingPlotsFor(state));
   }
 
   /**

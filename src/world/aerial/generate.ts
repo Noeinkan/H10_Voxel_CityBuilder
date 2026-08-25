@@ -92,9 +92,15 @@ export function generateDeck(plan: DeckPlan, part: AerialPart, segment: DeckRect
 
       for (let lz = 0; lz < height - 1; lz++) {
         const carried = side === null
-          // Sotto la travatura il nodo e' pieno: e' il fianco che scende alla
-          // quota bassa, ed e' cio' che si vede del salto fra due livelli.
-          ? !(lz >= drop && !edge && !overPier(plan, gx, gy))
+          // Il `drop` e' un inviluppo di quota, non un blocco da colare pieno.
+          // Sotto la travatura del nodo continua soltanto la testa delle gambe:
+          // riempire tutto il riquadro trasformava un pianerottolo da 6 x 6 con
+          // un salto di otto voxel in un cubo quasi pieno alto dieci. La fascia
+          // alta resta invece la travatura simmetrica di bordo e nervature che
+          // regge il piano costruibile.
+          ? lz < drop
+            ? part === AERIAL_PART.node && onPier(plan, gx, gy)
+            : edge || overPier(plan, gx, gy)
           // La mensola cala verso la punta; sopra una gamba resta piena, perche'
           // li' il carico scende davvero.
           : terraceGirder(plan.rect, side, cut, gx, gy, lz) || overPier(plan, gx, gy);
@@ -204,7 +210,10 @@ export function generatePier(pier: Pier): VoxelStamp {
   const surfaces = new Uint8Array(length);
 
   voxels.fill(AERIAL.pierPalette);
-  surfaces.fill(SURFACE_KIND.utility);
+  // `plain` e' il segnale geometrico dei carichi pesanti: il mesher assottiglia
+  // soltanto il 2 x 2 utility in calcestruzzo, senza introdurre un nono tipo di
+  // superficie ne' cambiare l'ingombro strutturale nel mondo.
+  surfaces.fill(pier.massive ? SURFACE_KIND.plain : SURFACE_KIND.utility);
 
   return {
     sizeX: side,
@@ -232,6 +241,15 @@ function overPier(plan: DeckPlan, gx: number, gy: number): boolean {
   for (const pier of plan.piers) {
     if (gx >= pier.x && gx < pier.x + AERIAL.pierSide) return true;
     if (gy >= pier.y && gy < pier.y + AERIAL.pierSide) return true;
+  }
+  return false;
+}
+
+/** true se la colonna sta proprio sopra la testa di una gamba. */
+function onPier(plan: DeckPlan, gx: number, gy: number): boolean {
+  for (const pier of plan.piers) {
+    if (gx >= pier.x && gx < pier.x + AERIAL.pierSide &&
+      gy >= pier.y && gy < pier.y + AERIAL.pierSide) return true;
   }
   return false;
 }

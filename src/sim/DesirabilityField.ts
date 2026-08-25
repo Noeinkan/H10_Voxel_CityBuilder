@@ -101,6 +101,8 @@ export interface Building {
   readonly x: number;
   readonly y: number;
   readonly class: BuildingClass;
+  /** Livello edilizio: cambia la capacita' economica, non il campo. */
+  readonly level?: number;
   /** Uso secondario ospitato, se l'edificio e' misto. */
   readonly mixed?: BuildingClass;
   /**

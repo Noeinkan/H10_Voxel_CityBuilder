@@ -36,6 +36,11 @@ import {
 import { EMPTY_COMMERCE, type CommerceReport } from './commerce';
 import type { ReachCache, StepCost } from './reach';
 import { NO_FUNDS_FLOW, type FundsReport } from './flows';
+import {
+  capacityAtLevel,
+  EMPTY_MATERIALS,
+  type MaterialsReport,
+} from './materials';
 import { EMPTY_TRADE, isTradeMode, type TradeMode, type TradeReport } from './trade';
 
 /**
@@ -90,6 +95,9 @@ export interface SimStateData {
   /** Edifici per **uso primario**, indicizzato come `BUILDING_CLASS`. */
   readonly buildingCounts: readonly number[];
 
+  /** Capacita' primaria, comprensiva del livello, indicizzata per uso. */
+  readonly capacityCounts: readonly number[];
+
   /**
    * Edifici per **uso secondario**, con la stessa indicizzazione.
    *
@@ -100,6 +108,9 @@ export interface SimStateData {
    * che e' l'unico posto in cui i due conteggi si incontrano.
    */
   readonly mixedCounts: readonly number[];
+
+  /** Capacita' secondaria prima della quota per uso misto. */
+  readonly mixedCapacityCounts: readonly number[];
 
   /**
    * Produttori di cibo, indicizzato come `FARM_KIND`.
@@ -148,6 +159,9 @@ export interface SimStateData {
    * domanda che la 3.1 esiste per rendere ponibile.
    */
   readonly harvest: FoodReport;
+
+  /** Produzione, consumi e cantieri dei materiali nell'ultimo giro. */
+  readonly materialFlows: MaterialsReport;
 
   /**
    * Da dove sono venuti i fondi dell'ultimo tick e dove sono andati.
@@ -253,7 +267,9 @@ export function createSimState(options: SimStateOptions = {}): SimState {
     satisfaction: BALANCE.start.satisfaction,
     buildings: [],
     buildingCounts: new Array<number>(CLASS_COUNT).fill(0),
+    capacityCounts: new Array<number>(CLASS_COUNT).fill(0),
     mixedCounts: new Array<number>(CLASS_COUNT).fill(0),
+    mixedCapacityCounts: new Array<number>(CLASS_COUNT).fill(0),
     farmCounts: new Array<number>(FARM_COUNT).fill(0),
     catalysts: catalysts.map(normaliseCatalyst),
     policies: canonicalPolicies(policies),
@@ -262,6 +278,7 @@ export function createSimState(options: SimStateOptions = {}): SimState {
     trade: EMPTY_TRADE,
     commerce: EMPTY_COMMERCE,
     harvest: EMPTY_HARVEST,
+    materialFlows: EMPTY_MATERIALS,
     flows: NO_FUNDS_FLOW,
     staffing: 1,
     pendingDecision: null,
@@ -343,8 +360,15 @@ export function addBuilding(state: SimState, building: Building): SimState {
   const buildingCounts = state.buildingCounts.slice();
   buildingCounts[building.class]++;
 
+  const level = normaliseLevel(building.level);
+  const capacity = capacityAtLevel(level);
+  const capacityCounts = state.capacityCounts.slice();
+  capacityCounts[building.class] += capacity;
+
   const mixedCounts = state.mixedCounts.slice();
   if (mixed !== undefined) mixedCounts[mixed]++;
+  const mixedCapacityCounts = state.mixedCapacityCounts.slice();
+  if (mixed !== undefined) mixedCapacityCounts[mixed] += capacity;
 
   // **Una torre si registra da una porta sola.** Chiedere a chi costruisce di
   // chiamare anche `addFarm` vorrebbe dire che prima o poi qualcuno registra il
@@ -352,12 +376,13 @@ export function addBuilding(state: SimState, building: Building): SimState {
   // se stessa senza che nulla lo dica. La specializzazione viaggia sul record,
   // quindi `removeBuildings` sa disfare esattamente cio' che e' stato contato.
   const farmCounts = state.farmCounts.slice();
-  if (building.specialization === 'farming') farmCounts[FARM_KIND.tower]++;
+  if (building.specialization === 'farming') farmCounts[FARM_KIND.tower] += capacity;
 
   const record: Building = {
     x: building.x,
     y: building.y,
     class: building.class,
+    ...(level === 0 ? {} : { level }),
     ...(mixed === undefined ? {} : { mixed }),
     ...(building.specialization === undefined ? {} : { specialization: building.specialization }),
   };
@@ -366,7 +391,9 @@ export function addBuilding(state: SimState, building: Building): SimState {
     ...state,
     buildings: [...state.buildings, record],
     buildingCounts,
+    capacityCounts,
     mixedCounts,
+    mixedCapacityCounts,
     farmCounts,
   };
 }
@@ -451,24 +478,39 @@ export function removeBuildings(state: SimState, doomed: readonly Building[]): S
   if (removed.length === 0) return state;
 
   const buildingCounts = state.buildingCounts.slice();
+  const capacityCounts = state.capacityCounts.slice();
   const mixedCounts = state.mixedCounts.slice();
+  const mixedCapacityCounts = state.mixedCapacityCounts.slice();
   const farmCounts = state.farmCounts.slice();
   for (const building of removed) {
     buildingCounts[building.class]--;
+    const capacity = capacityAtLevel(building.level ?? 0);
+    capacityCounts[building.class] -= capacity;
     // `addBuilding` normalizza `mixed` prima di conservarlo, quindi cio' che
     // c'e' qui e' esattamente cio' che era stato contato: si decrementa senza
     // rifare la validazione, altrimenti due regole diverse conterebbero al
     // contrario sullo stesso edificio.
-    if (building.mixed !== undefined) mixedCounts[building.mixed]--;
+    if (building.mixed !== undefined) {
+      mixedCounts[building.mixed]--;
+      mixedCapacityCounts[building.mixed] -= capacity;
+    }
     // Stessa ragione per la torre: si disfa cio' che il record dichiara, non
     // cio' che il luogo esprimerebbe adesso. Uno sventramento che ricalcolasse
     // la specializzazione lascerebbe il contatore fuori posto per sempre.
-    if (building.specialization === 'farming') farmCounts[FARM_KIND.tower]--;
+    if (building.specialization === 'farming') farmCounts[FARM_KIND.tower] -= capacity;
   }
 
   state.field.removeBuildings(removed, survivors, state.catalysts, resolveWeights(state.policies));
 
-  return { ...state, buildings: survivors, buildingCounts, mixedCounts, farmCounts };
+  return {
+    ...state,
+    buildings: survivors,
+    buildingCounts,
+    capacityCounts,
+    mixedCounts,
+    mixedCapacityCounts,
+    farmCounts,
+  };
 }
 
 /**
@@ -581,13 +623,15 @@ export function reviveSimState(data: SimStateData, reachCost?: StepCost): SimSta
   const compatible = data as SimStateData & Partial<Pick<
     SimStateData,
     'tradeMode' | 'trade' | 'commerce' | 'mixedCounts' | 'charters' | 'farmCounts'
-    | 'flows' | 'harvest' | 'staffing'
+    | 'capacityCounts' | 'mixedCapacityCounts' | 'flows' | 'harvest' | 'materialFlows' | 'staffing'
     | 'pendingDecision' | 'decisionHistory' | 'nextDecisionTick' | 'supplyArmed'
   >>;
   const normalised: SimStateData = {
     ...data,
     catalysts: data.catalysts.map(normaliseCatalyst),
     mixedCounts: compatible.mixedCounts ?? countMixed(data.buildings),
+    capacityCounts: compatible.capacityCounts ?? countCapacities(data.buildings, false),
+    mixedCapacityCounts: compatible.mixedCapacityCounts ?? countCapacities(data.buildings, true),
     // Delle tre voci solo la torre e' ricostruibile dai dati salvati, perche' e'
     // un edificio e sta nella lista. Campo e frutteto sono lotti del mondo: un
     // salvataggio che non li porta torna con zero, e a ripopolare il contatore
@@ -599,6 +643,7 @@ export function reviveSimState(data: SimStateData, reachCost?: StepCost): SimSta
     // parola per parola anche per il referto del raccolto.
     flows: compatible.flows ?? NO_FUNDS_FLOW,
     harvest: compatible.harvest ?? EMPTY_HARVEST,
+    materialFlows: compatible.materialFlows ?? EMPTY_MATERIALS,
     // Idem per l'organico: un salvataggio che non lo porta torna ottimista, che
     // e' come si comportava il driver prima che questo numero esistesse, e il
     // primo tick lo riscrive con quello vero.
@@ -682,9 +727,26 @@ function countMixed(buildings: readonly Building[]): readonly number[] {
 function countFarms(buildings: readonly Building[]): readonly number[] {
   const counts = new Array<number>(FARM_COUNT).fill(0);
   for (const building of buildings) {
-    if (building.specialization === 'farming') counts[FARM_KIND.tower]++;
+    if (building.specialization === 'farming') {
+      counts[FARM_KIND.tower] += capacityAtLevel(building.level ?? 0);
+    }
   }
   return counts;
+}
+
+function countCapacities(buildings: readonly Building[], mixed: boolean): readonly number[] {
+  const counts = new Array<number>(CLASS_COUNT).fill(0);
+  for (const building of buildings) {
+    const cls = mixed ? building.mixed : building.class;
+    if (cls === undefined || !isBuildingClass(cls)) continue;
+    counts[cls] += capacityAtLevel(building.level ?? 0);
+  }
+  return counts;
+}
+
+function normaliseLevel(level: number | undefined): number {
+  if (level === undefined || !Number.isFinite(level)) return 0;
+  return Math.max(0, Math.floor(level));
 }
 
 function clampInt(value: number, min: number, max: number): number {

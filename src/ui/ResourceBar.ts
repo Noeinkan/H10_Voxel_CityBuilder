@@ -83,22 +83,28 @@ export function sparkPoints(series: readonly number[]): string {
  * riscrivono in place, cosi' il popover non si smonta sotto il puntatore di chi
  * lo sta leggendo mentre la simulazione avanza.
  */
-function paintFlows(host: HTMLElement, flows: readonly HudFlow[] | undefined): void {
-  if (flows === undefined || flows.length === 0) {
+function paintFlows(
+  host: HTMLElement,
+  flows: readonly HudFlow[] | undefined,
+  status: string | undefined,
+): void {
+  host.dataset.status = status ?? '';
+  const rows = flows ?? [];
+  if (rows.length === 0 && status === undefined) {
     host.replaceChildren();
     host.dataset.empty = 'true';
     return;
   }
   host.dataset.empty = 'false';
-  if (host.childElementCount !== flows.length) {
-    host.replaceChildren(...flows.map(() => {
+  if (host.childElementCount !== rows.length) {
+    host.replaceChildren(...rows.map(() => {
       const row = document.createElement('div');
       row.className = 'resource-flow';
       row.append(document.createElement('span'), document.createElement('strong'));
       return row;
     }));
   }
-  flows.forEach((flow, index) => {
+  rows.forEach((flow, index) => {
     const row = host.children[index];
     if (!(row instanceof HTMLElement)) return;
     row.dataset.direction = flow.direction;
@@ -207,7 +213,7 @@ export class ResourceBar {
         elements.ring.dataset.low = fill.value < 0.25 ? 'true' : 'false';
       }
 
-      paintFlows(elements.flows, resource.breakdown);
+      paintFlows(elements.flows, resource.breakdown, resource.status);
     }
 
     this.pauseButton.replaceChildren(createHudIcon(model.paused ? 'play' : 'pause'));

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { BUILDING_CLASS } from '../../sim';
 import { testTerrain } from '../../sim/testTerrain';
 import { GRADING } from '../grading/config';
-import { TERRAIN } from '../terrain/config';
+import { TERRACE, TERRAIN } from '../terrain/config';
 import type { TerrainMap } from '../terrain/TerrainMap';
 import { VoxelWorld } from '../VoxelWorld';
 import { Builder } from './Builder';
@@ -47,6 +47,18 @@ function ledge(rows: number): TerrainMap {
   });
 }
 
+/** Due pedate piane: cambia solo quanti gradoni il landmark prova a cucire. */
+function terraces(drop: number): TerrainMap {
+  return testTerrain({
+    chunksX: 4,
+    chunksY: 4,
+    heightAt: (_x, y) => y < ROW ? PLATEAU : PLATEAU + drop,
+    // Le pedate sono lavorabili; e' il dislivello complessivo dell'impronta,
+    // non una parete dichiarata, a dover fermare l'opera troppo alta.
+    slopeAt: () => 0.1,
+  });
+}
+
 function builderOn(map: TerrainMap): Builder {
   return new Builder(new VoxelWorld(), map, 4242);
 }
@@ -85,6 +97,18 @@ describe('un landmark su una cengia di montagna', () => {
     builder.placeLandmark(SPOT, ROW, 'market');
     settle(builder);
     expect([...builder.registry.all].some((record) => record.landmark === 'market')).toBe(true);
+  });
+
+  it('scavalca un ciglio naturale ma non cuce insieme mezzo versante', () => {
+    const oneRiser = builderOn(terraces(TERRACE.maxStep));
+    expect(oneRiser.landmarkClearance(SPOT, ROW, 'monument').refusal).toBeNull();
+
+    const mountainside = builderOn(terraces(TERRACE.maxStep * 2));
+    expect(mountainside.landmarkClearance(SPOT, ROW, 'monument').refusal).toBe('no-footing');
+    mountainside.placeLandmark(SPOT, ROW, 'monument');
+    settle(mountainside);
+    expect([...mountainside.registry.all].some((record) => record.landmark === 'monument'))
+      .toBe(false);
   });
 
   it('non apre un cantiere per una struttura che non puo comparire', () => {

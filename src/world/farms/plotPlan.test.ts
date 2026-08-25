@@ -60,11 +60,32 @@ describe('planPlot — quando non ci sta', () => {
     expect(plan).toEqual({ ok: false, reason: 'occupied' });
   });
 
-  it('rifiuta per una sola colonna sterile', () => {
+  /** Un lotto in cui le prime `count` colonne di scansione sono roccia. */
+  function withRock(count: number): FarmPlotQuery {
+    return fertile({
+      biomeAt: (x, y) => (y * FARMS.plotSide + x < count ? BIOME.rock : BIOME.plain),
+    });
+  }
+
+  it('tollera qualche masso ma rifiuta un quadrato troppo magro', () => {
+    // **Un campo bucato non e' un campo, un campo con un masso in mezzo lo e'
+    // ancora.** La soglia si chiede alla configurazione invece di scriverne il
+    // valore: e' la capienza alimentare dell'isola, ed e' un numero che si tara.
+    const cells = FARMS.plotSide * FARMS.plotSide;
+    const tolerated = cells - Math.ceil(cells * FARMS.minArableShare);
+
+    expect(planPlot(withRock(tolerated)).ok).toBe(true);
+    expect(planPlot(withRock(tolerated + 1))).toEqual({ ok: false, reason: 'infertile' });
+  });
+
+  it('il rifiuto nomina il motivo che ha pesato di piu’', () => {
+    // Con due contatori in mano, sceglierne uno a caso sarebbe una diagnosi
+    // peggiore di nessuna: chi guarda un overlay deve leggere «qui e' ripido».
+    const cells = FARMS.plotSide * FARMS.plotSide;
     const plan = planPlot(fertile({
-      biomeAt: (x, y) => (x === 11 && y === 11 ? BIOME.rock : BIOME.plain),
+      slopeAt: (x, y) => (y * FARMS.plotSide + x < cells / 2 ? FARMS.maxSlope : 0),
     }));
-    expect(plan).toEqual({ ok: false, reason: 'infertile' });
+    expect(plan).toEqual({ ok: false, reason: 'steep' });
   });
 
   it('rifiuta la pendenza con lo stesso limite che rifiuta un edificio', () => {

@@ -3,6 +3,7 @@ import type { GrowthStats } from '../game/growthScene';
 import { cityCondition } from '../game/cityCondition';
 import { onboardingOf } from '../game/onboarding';
 import { catalystById } from '../sim/catalysts';
+import { BALANCE } from '../sim/balance';
 import { createSimState } from '../sim/SimState';
 import { EMPTY_HARVEST, type FoodReport } from '../sim/farms';
 import type { PolicyId } from '../sim/policies';
@@ -177,6 +178,46 @@ describe('buildGameHudModel', () => {
     const model = buildGameHudModel(stats(1_250, 12));
     expect(model.resources.find((entry) => entry.id === 'funds')?.fill).toBeUndefined();
     expect(model.resources.find((entry) => entry.id === 'materials')?.fill).toBeUndefined();
+  });
+
+  it('le opere in quota mostrano e verificano anche il costo in materiali', () => {
+    const base = stats(2_000, 100);
+    const state = { ...base.state, materials: { stock: 0, delta: 0 } };
+    const model = buildGameHudModel({ ...base, state });
+
+    expect(model.terrace.materialCost).toBe(BALANCE.gameplay.terrace.materials);
+    expect(model.terrace.available).toBe(false);
+    expect(model.terrace.reason).toContain('grow industry');
+    expect(model.ropeway.materialCost).toBe(BALANCE.gameplay.ropeway.materials);
+    expect(model.ropeway.available).toBe(false);
+  });
+
+  it('i materiali spiegano produzione, usi e il prossimo cantiere bloccato', () => {
+    const base = stats(1_250, 12);
+    const state = {
+      ...base.state,
+      materials: { stock: 7, delta: -3 },
+      materialFlows: {
+        produced: 5,
+        upkeep: 1,
+        retail: 2,
+        exported: 0,
+        construction: 5,
+        reserve: 12,
+        waitingCost: 20,
+      },
+    };
+    const materials = buildGameHudModel({ ...base, state }).resources
+      .find((entry) => entry.id === 'materials');
+
+    expect(materials?.breakdown).toEqual([
+      { label: 'Industry', amount: 5, direction: 'in' },
+      { label: 'Building upkeep', amount: 1, direction: 'out' },
+      { label: 'Shops', amount: 2, direction: 'out' },
+      { label: 'Construction', amount: 5, direction: 'out' },
+    ]);
+    expect(materials?.status).toContain('20 materials required');
+    expect(materials?.status).toContain('13 still missing');
   });
 
   it('assegna a Escape la superficie aperta con priorità corretta', () => {

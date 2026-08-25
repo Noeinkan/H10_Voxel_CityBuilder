@@ -1625,7 +1625,15 @@ export const TYPOLOGIES: readonly TypologyDefinition[] = [
     // densita' da centro — perche' in periferia un campo costa infinitamente
     // meno e rende di piu' per fondo speso; e' `districts.ts` a imporre le due
     // soglie, qui basta chiedere la specializzazione.
-    minLevel: 5,
+    //
+    // **Cinque era il secondo cancello chiuso.** Misurato su 225 edifici
+    // industriali dopo 250 secondi di gioco, il livello piu' alto raggiunto era
+    // quattro — e da otto edifici soli, con 131 ancora a zero. Anche con la
+    // soglia di distretto aperta, nessuna colonna sarebbe mai arrivata a
+    // dichiarare una torre. Tre e' dentro cio' che una promozione produce
+    // davvero, e resta abbastanza in alto da non farne una tipologia comune:
+    // chiede comunque un edificio gia' cresciuto, non il primo capannone.
+    minLevel: 3,
     // Sopra tutte le altre industriali: dove il luogo esprime `farming` la torre
     // vince, o la specializzazione non si vedrebbe mai a schermo.
     priority: 7,

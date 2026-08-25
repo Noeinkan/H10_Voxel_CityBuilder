@@ -49,8 +49,15 @@ export function orchardTrees(plot: FarmPlot, seed: number): { x: number; y: numb
   // Si parte a mezzo passo dal bordo: un albero sul filo dell'impronta avrebbe
   // meta' chioma fuori dal lotto, cioe' addosso a quello accanto.
   const start = TREE_PITCH >> 1;
-  for (let dy = start; dy < plot.side; dy += TREE_PITCH) {
-    for (let dx = start; dx < plot.side; dx += TREE_PITCH) {
+  // **E si smette a mezzo passo dall'altro bordo, jitter compreso.** Il margine
+  // vale da tutte e due le parti — e' la stessa mezza chioma — ma sul lato
+  // lontano nessuno lo imponeva: il ciclo arrivava fino a `side` e lo
+  // scostamento poteva spingere l'ultimo albero *fuori* dal lotto. A lato dodici
+  // non si vedeva per aritmetica — i nodi cadono a 2 e 7, e 7+1 sta dentro
+  // comunque — ma era vero lo stesso, e a lato otto il nodo a 7 usciva.
+  const limit = plot.side - start - TREE_JITTER;
+  for (let dy = start; dy < limit; dy += TREE_PITCH) {
+    for (let dx = start; dx < limit; dx += TREE_PITCH) {
       // Un voxel di scarto, non di piu': serve a togliere l'aria di scacchiera
       // esatta senza cancellare il reticolo, che e' cio' che si deve leggere.
       const noise = hashCoords(seed ^ TREE_SALT, plot.x + dx, plot.y + dy);

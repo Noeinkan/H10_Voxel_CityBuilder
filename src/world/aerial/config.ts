@@ -430,6 +430,18 @@ export const AERIAL = {
   pierSide: 2,
 
   /**
+   * Carico oltre il quale una gamba conserva la sezione voxel piena.
+   *
+   * Le gambe ordinarie tengono l'ingombro strutturale di due per due — collisioni
+   * e appoggio non cambiano — ma il mesher le rende a sezione sottile. Un piano
+   * di almeno sessantaquattro colonne o un nodo che assorbe sei quote e' invece una
+   * componente pesante: li' il pieno e' una lettura del carico, non una scala
+   * ereditata dal voxel.
+   */
+  heavySupportMinArea: 64,
+  heavySupportMinDrop: 6,
+
+  /**
    * Di quanto una gamba puo' scorrere per cercare un appoggio migliore.
    *
    * **Una gamba si sposta per trovare un tetto.** Prima di piantarla nel prato la
@@ -550,8 +562,6 @@ export const AERIAL = {
 
 /** Voxel occupati in altezza da un impalcato piano: la travatura piu' il piano. */
 export const DECK_HEIGHT = AERIAL.girderDepth + 1;
-
-
 
 
 

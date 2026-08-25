@@ -3,7 +3,9 @@ import {
   BALANCE,
   BUILDING_CLASS,
   CLASS_COUNT,
+  FARM_KIND,
   effectiveCount,
+  foodYieldOf,
   urbanProfileAt,
   weightsOf,
   type BuildingClass,
@@ -176,6 +178,24 @@ export interface BlockInfo {
   readonly landmarks: number;
   readonly structures: number;
   readonly maxLevel: number;
+  /** Capacita' e flussi attribuibili agli edifici dentro questo isolato. */
+  readonly productivity: BlockProductivity;
+}
+
+/**
+ * Cosa l'isolato mette a disposizione o produce con le policy e l'organico di
+ * adesso. Le capacita' non dipendono dall'organico; i due flussi produttivi si'.
+ */
+export interface BlockProductivity {
+  readonly housingCapacity: number;
+  readonly commerceCapacity: number;
+  readonly materialsCapacityPerTick: number;
+  readonly materialsPerTick: number;
+  readonly foodCapacityPerTick: number;
+  readonly foodPerTick: number;
+  readonly civicUpkeepPerTick: number;
+  /** Quota di organico cittadina applicata a materiali e cibo. */
+  readonly staffing: number;
 }
 
 export interface Selection {
@@ -387,10 +407,12 @@ function blockAt(query: SelectionQuery, key: string, rect: BlockRect): BlockInfo
   const reach = Math.max(rect.x1 - centreX, centreX - rect.x0, rect.y1 - centreY, centreY - rect.y0);
 
   const byClass = new Array<number>(CLASS_COUNT).fill(0);
+  const effectiveByClass = new Array<number>(CLASS_COUNT).fill(0);
   let buildings = 0;
   let landmarks = 0;
   let structures = 0;
   let maxLevel = 0;
+  let farmTowers = 0;
 
   for (const record of query.registry.withinRadius(centreX, centreY, reach)) {
     if (record.x + record.footprint - 1 < rect.x0 || record.x > rect.x1) continue;
@@ -408,8 +430,29 @@ function blockAt(query: SelectionQuery, key: string, rect: BlockRect): BlockInfo
     }
     buildings++;
     byClass[record.class]++;
+    if (record.arcology !== undefined) {
+      // Un'arcologia e' un record ma la simulazione la conta una volta per
+      // fascia abitata: `uses` e' la stessa fonte che usa il driver.
+      for (const use of record.uses ?? []) effectiveByClass[use]++;
+    } else {
+      effectiveByClass[record.class]++;
+      if (record.mixed !== undefined && record.mixed !== record.class) {
+        effectiveByClass[record.mixed] += BALANCE.mixedUse.secondaryShare;
+      }
+      if (record.specialization === 'farming') farmTowers++;
+    }
     if (record.level > maxLevel) maxLevel = record.level;
   }
+
+  const weights = weightsOf(query.state);
+  const materialIndustry = Math.max(
+    0,
+    (effectiveByClass[BUILDING_CLASS.industrial] ?? 0) - farmTowers,
+  );
+  const localFarms: number[] = [];
+  localFarms[FARM_KIND.tower] = farmTowers;
+  const materialsCapacityPerTick = materialIndustry * weights.productionYield;
+  const foodCapacityPerTick = foodYieldOf(localFarms, 1);
 
   return {
     key,
@@ -420,6 +463,16 @@ function blockAt(query: SelectionQuery, key: string, rect: BlockRect): BlockInfo
     landmarks,
     structures,
     maxLevel,
+    productivity: {
+      housingCapacity: (effectiveByClass[BUILDING_CLASS.residential] ?? 0) * weights.residentialCapacity,
+      commerceCapacity: (effectiveByClass[BUILDING_CLASS.commercial] ?? 0) * weights.commercialCapacity,
+      materialsCapacityPerTick,
+      materialsPerTick: materialsCapacityPerTick * query.state.staffing,
+      foodCapacityPerTick,
+      foodPerTick: foodYieldOf(localFarms, query.state.staffing),
+      civicUpkeepPerTick: (effectiveByClass[BUILDING_CLASS.civic] ?? 0) * weights.civicUpkeep,
+      staffing: query.state.staffing,
+    },
   };
 }
 

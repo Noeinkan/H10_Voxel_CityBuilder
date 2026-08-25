@@ -135,6 +135,7 @@ map.columnAt(120, 96); // { height, biome, slope, buildable }
 | File | Ruolo | Esporta |
 | --- | --- | --- |
 | [ChunkRenderer.ts](src/engine/ChunkRenderer.ts) | Una geometria per chunk, coda a priorità, frustum culling, upload a budget | `ChunkRenderer`, `ChunkRendererStats` |
+| [src/engine/mesher/aerialSupportDetail.ts](src/engine/mesher/aerialSupportDetail.ts) | Sostegni aerei riduttivi: conserva il 2 x 2 logico, lo sostituisce nel volume di meshing con fusti a 1/16, capitelli dritti o arcuati e lascia pieni i carichi massivi. |
 | [MesherPool.ts](src/engine/MesherPool.ts) | Pool di worker, job in volo, statistiche del mesher | `MesherPool`, `MesherStats`, `ChunkMeshResult` |
 | [src/engine/shaders/scene.glsl.ts](src/engine/shaders/scene.glsl.ts) | Il GLSL che i materiali di scena condividono: palette, luce, materia, ombra, prospettiva aerea. |
 | [src/engine/shaders/vehicle.glsl.ts](src/engine/shaders/vehicle.glsl.ts) | Il programma dei mezzi: normale che ruota con la sagoma, fasciame, finestrini accesi, fanali. |
@@ -234,6 +235,8 @@ di crescita. Il `Builder`, esterno al modulo, consuma quei candidati. Dettagli i
 | [balance.ts](src/sim/balance.ts) | **Ogni** coefficiente, soglia e moltiplicatore, in un solo oggetto | `BALANCE` |
 | [classes.ts](src/sim/classes.ts) | I quattro usi urbani come indici densi | `BUILDING_CLASS`, `CLASS_NAMES`, `CLASS_LABELS`, `CLASS_COUNT`, `ALL_CLASSES` |
 | [catalysts.ts](src/sim/catalysts.ts) | Catalogo dei sette ruoli: vettore di influenza, funzione di toolbar, effetti locali | `CATALYSTS`, `CATALYST_GROUPS`, `catalystById`, `isCatalystId`, `catalystInfluence`, `catalystRoleOf`, `defaultCatalystOfClass`, `CatalystId` |
+| [src/sim/materials.test.ts](src/sim/materials.test.ts) | Contratti su capacità, spesa, specializzazioni e compatibilità dei salvataggi |
+| [src/sim/materials.ts](src/sim/materials.ts) | Rendiconto dei materiali, capacità economica dei livelli e costi dei cantieri verticali |
 | [SimState.ts](src/sim/SimState.ts) | Stato, operazioni del giocatore, serializzazione JSON senza perdita | `createSimState`, `addCatalyst`, `addBuilding`, `addFarm`, `removeFarm`, `setPolicyActive`, `setSelectedClass`, `toSimStateData`, `reviveSimState`, `rebuildField` |
 | [tick.ts](src/sim/tick.ts) | Il bilancio di un tick, funzione pura | `tick`, `tickMany`, `weightsOf` |
 | [DesirabilityField.ts](src/sim/DesirabilityField.ts) | Campo per uso urbano, `Uint8Array` chunkato 32×32, ricalcolo incrementale | `DesirabilityField`, `rectAround`, `rectArea`, `Catalyst`, `Building`, `CellRect` |
@@ -408,7 +411,7 @@ dirigibile, la piazzola dell'eVTOL, la cima della mongolfiera.
 
 | File | Ruolo | Esporta |
 | --- | --- | --- |
-| [config.ts](src/world/landmarks/config.ts) | **Ogni** ingombro, quota, soglia di stadio, ormeggio, linea d'acqua e indice di palette, piu' le nove ricette con tre esemplari a testa e la ricetta da tetto. Qui vive anche `PartsRecipe`, il formato che le arcologie condividono | `LANDMARK`, `LANDMARKS`, `SKYPORT`, `BERTH`, `landmarkOf`, `hasAloftRecipe`, `maxStageOf`, `variantsOf`, `PartsRecipe`, `LandmarkRecipe`, `LandmarkVariant`, `LandmarkMooring`, `BerthKind` |
+| [config.ts](src/world/landmarks/config.ts) | **Ogni** ingombro, quota, soglia di stadio, ormeggio, linea d'acqua e indice di palette, piu' le nove ricette con tre esemplari a testa e la ricetta da tetto. Dichiara anche il dislivello massimo della fondazione a terra. Qui vive `PartsRecipe`, il formato che le arcologie condividono | `LANDMARK`, `LANDMARKS`, `SKYPORT`, `BERTH`, `landmarkOf`, `hasAloftRecipe`, `maxStageOf`, `variantsOf`, `PartsRecipe`, `LandmarkRecipe`, `LandmarkVariant`, `LandmarkMooring`, `BerthKind` |
 | [parts.ts](src/world/landmarks/parts.ts) | Le dieci primitive con cui una ricetta si compone, lo smusso della pianta e la rotazione sul verso | `PART`, `Part`, `PartKind`, `box`, `partBounds`, `orientPart`, `orientedSpan`, `createCanvas`, `drawPart`, `LandmarkCanvas` |
 | [generate.ts](src/world/landmarks/generate.ts) | Compone tronco ed esemplare in uno stamp; ingombro, origine, stadio, scelta della variante dal seme e ormeggi portati sul verso vero. Il nucleo ricetta→stamp e' condiviso con le arcologie | `generateFromRecipe`, `recipeSpan`, `recipeOrigin`, `generateLandmark`, `landmarkSpan`, `landmarkOrigin`, `landmarkMoorings`, `stageForBuildings`, `variantIndexOf`, `RecipeRequest`, `LandmarkRequest`, `WorldMooring` |
 
@@ -602,7 +605,7 @@ c'e' una griglia di livelli, e per la stessa ragione qui non esiste `align`.
 | [routeDrafts.ts](src/world/aerial/routeDrafts.ts) | I pezzi di un percorso e la meccanica che li regge: colmo, pianerottoli, montaggio | `crestOf`, `climbProfile`, `placeHubs`, `assemble`, `walkDraft`, `hubDraft`, `hubSide`, `hubPad`, `rectOf`, `slideOrder`, `PieceDraft`, `Landing`, `RouteEnd` |
 | [guideway.ts](src/world/aerial/guideway.ts) | La guida: il montante che porta da terra a un impalcato abitato | `planLift`, `LIFT_REFUSALS`, `LiftPlan`, `LiftTarget`, `LiftRefusal` |
 | [decks.ts](src/world/aerial/decks.ts) | Le quote edificabili di una colonna, ciascuna con il proprio riquadro | `decksAt`, `BuildDeck`, `DeckSource` |
-| [generate.ts](src/world/aerial/generate.ts) | Uno stamp per tutte e tre le forme: travatura, piano, parapetto, verde; la mensola con la sua sezione a cuneo | `generateDeck`, `generateLift`, `generatePier` |
+| [generate.ts](src/world/aerial/generate.ts) | Uno stamp per tutte le forme: travatura, piano, parapetto e verde; mensole rastremate e nodi alti vuoti fra piano e appoggi | `generateDeck`, `generateLift`, `generatePier` |
 | [testProbe.ts](src/world/aerial/testProbe.ts) | Un luogo finto per i test puri: pareti, tetti, carreggiate | `TestGround` |
 
 ```ts
@@ -635,7 +638,7 @@ le scritture stanno in tre file invece che sparse in sei metodi.
 | [aerialDriver.ts](src/world/buildings/aerialDriver.ts) | Mensole, percorsi, gambe e le quote su cui si costruisce. Un impalcato vuoto cade, uno abitato no | `AerialDriver` |
 | [guideDriver.ts](src/world/buildings/guideDriver.ts) | La via da terra: un montante per ogni impalcato abitato che non ce l'ha | `GuideDriver` |
 | [ropewayDriver.ts](src/world/buildings/ropewayDriver.ts) | Le funivie: due torri a registro, e una fune che non e' materia. Il solo driver senza una freccia che entra o che esce | `RopewayDriver`, `RopewayCable`, `RopewayRide` |
-| [landmarkDriver.ts](src/world/buildings/landmarkDriver.ts) | I monumenti dei catalizzatori: piazzamento, cantiere di sventramento, grembiule e avanzamento di stadio | `LandmarkDriver`, `LandmarkSite` |
+| [landmarkDriver.ts](src/world/buildings/landmarkDriver.ts) | I monumenti dei catalizzatori: piazzamento e fondazione su un solo gradone montano, cantiere di sventramento, grembiule e avanzamento di stadio | `LandmarkDriver`, `LandmarkSite` |
 | [landmarkSiting.ts](src/world/buildings/landmarkSiting.ts) | Dove una struttura si posa davvero: verso, ingombro e l'angolo gia' portato **incontro all'acqua**. Puro, ed e' la sola meta' del piazzamento che un test interroga al voxel senza far crescere un'isola | `placeRecipe`, `seawardDrift`, `Placement` |
 | [arcologyDriver.ts](src/world/buildings/arcologyDriver.ts) | La megastruttura: condizione sull'isolato, cantiere, costruzione a stadi, piazzali in quota e dichiarazione degli usi alla simulazione | `ArcologyDriver` |
 | [clearance.ts](src/world/buildings/clearance.ts) | Cosa un landmark puo' togliere di mezzo e cosa lo ferma. Puro: entrano record ridotti all'osso, esce un verdetto | `planClearance`, `CLEARANCE_KIND`, `ClearanceRecord`, `ClearanceRefusal` |
@@ -670,7 +673,7 @@ le scritture stanno in tre file invece che sparse in sei metodi.
 | [launchMode.ts](src/game/launchMode.ts) | Risoluzione pura della modalita' iniziale e degli harness URL, e l'indirizzo del campionario letto al contrario | `resolveLaunchMode`, `swatchUrl`, `LaunchMode` |
 | [actions.ts](src/game/actions.ts) | Azioni economiche atomiche: catalizzatori, policy, decisioni, commercio ed espansione | `placeCatalyst`, `catalystFailure`, `catalystSiteCost`, `togglePolicy`, `chooseDecision`, `changeTradeMode`, `buyExpansion`, `expansionFailure`, `SiteCost`, `ActionResult`, `ActionFailure` |
 | [surfacePick.ts](src/game/surfacePick.ts) | Selezione pura della colonna da un raggio 3D: sulla sola heightmap per chi costruisce, sugli edifici compresi per chi guarda | `pickSurfaceCell`, `pickSolidCell`, `Ray3`, `SurfaceCell`, `BuiltTop` |
-| [selection.ts](src/game/selection.ts) | Cosa c'è sotto un punto, in quattro strati insieme: struttura, isolato, colonna, voxel. Puro, e il record giusto lo sceglie la quota. `UseInfo` è cosa la simulazione dice di un edificio *come* questo — rendimento del tipo, parco costruito, quota d'uso della città — e mai di questo | `resolveSelection`, `Selection`, `SelectionQuery`, `StructureInfo`, `UseInfo`, `BlockInfo`, `ColumnInfo`, `VoxelInfo` |
+| [selection.ts](src/game/selection.ts) | Cosa c'è sotto un punto, con l'isolato come unità di selezione. `BlockProductivity` aggrega capacità residenziale e commerciale, materiali, cibo e costo civico dagli edifici dell'isolato, applicando policy, usi misti, torri agricole e organico cittadino | `resolveSelection`, `Selection`, `SelectionQuery`, `StructureInfo`, `UseInfo`, `BlockInfo`, `BlockProductivity`, `ColumnInfo`, `VoxelInfo` |
 | [onboarding.ts](src/game/onboarding.ts) | Tutorial derivato dai catalizzatori, senza flag nascosti | `onboardingOf`, `onboardingAllows` |
 | [cityCondition.ts](src/game/cityCondition.ts) | Obiettivo di autosufficienza e crisi con indicazioni di recupero | `cityCondition`, `isSelfSufficient` |
 | [sectors.ts](src/game/sectors.ts) | Identità, region e maschera composta dei settori costieri | `coastalSectorAt`, `shapeWithSector` |
@@ -702,8 +705,8 @@ giocabile; gli overlay tecnici si alternano con `F3` o partono aperti con
 | [InspectOverlay.ts](src/ui/InspectOverlay.ts) | Referto tecnico delle viste: modi, slider della quota, colonna a fuoco e id dell'isolato |
 | [SwatchOverlay.ts](src/ui/SwatchOverlay.ts) | Referto del campionario: fascia, riga e colonna sotto il cursore, legenda dell'ordine delle righe |
 | [ViewMenuModel.ts](src/ui/ViewMenuModel.ts) | Il menu delle viste dal lato del giocatore, puro: etichette, gesti, targa della vista attiva con i suoi tasti, gesti e tasti dell'isolato **scelto**, barra dei livelli, regola dello strumento |
-| [SelectionPanel.ts](src/ui/SelectionPanel.ts) | La scheda di selezione: intestazione, quattro linguette, le righe di quella aperta e il suo bottone |
-| [SelectionPanelModel.ts](src/ui/SelectionPanelModel.ts) | Cosa la scheda dice e cosa offre, puro: il ramo che distingue landmark, campata, impalcato ed edificio, le righe di rendimento di ogni uso, il riquadro da evidenziare per sezione e l'interruttore che isola un isolato |
+| [SelectionPanel.ts](src/ui/SelectionPanel.ts) | La scheda di selezione dell'isolato: una sola unità, senza linguette per struttura, colonna o voxel, con righe e gesto di isolamento |
+| [SelectionPanelModel.ts](src/ui/SelectionPanelModel.ts) | Cosa la scheda dice e cosa offre, puro: l'isolato guida sempre intestazione e contorno e pubblica capacità e flussi produttivi locali; le letture più fini restano diagnostiche interne |
 | [prospects.ts](src/ui/prospects.ts) | La lingua di cosa un luogo **non** è ancora: le due righe che nominano il quartiere che potrebbe diventare e la forma che ci crescerebbe, più la riga di tooltip di ciò che un ruolo sblocca |
 
 ## Test e bench
@@ -714,7 +717,7 @@ giocabile; gli overlay tecnici si alternano con `F3` o partono aperti con
 | [ui/hudTip.test.ts](src/ui/hudTip.test.ts) | Il testo della scheda del dock: la descrizione che resta anche a bottone bloccato, i quattro usi nominati tutti, la portata in banda prima che in cifre, l'elenco che si chiude a parole |
 | [ui/hudWidgets.test.ts](src/ui/hudWidgets.test.ts) | L'elenco che si accorcia per la pastiglia al cursore: i primi nomi, poi quanti ne restano |
 | [world/buildings/growthPoles.test.ts](src/world/buildings/growthPoles.test.ts) | Il giro fra i poli: un turno a testa, il riquadro dell'influenza, nessun polo saltato |
-| [world/buildings/landmarkFooting.test.ts](src/world/buildings/landmarkFooting.test.ts) | Il landmark in montagna: il rifiuto `no-footing` detto prima del click, la stessa risposta che da' il click, nessun cantiere aperto per una struttura che non puo' comparire |
+| [world/buildings/landmarkFooting.test.ts](src/world/buildings/landmarkFooting.test.ts) | Il landmark in montagna: il rifiuto `no-footing` detto prima del click, la stessa risposta che da' il click, un ciglio naturale ammesso ma non piu' gradoni cuciti insieme, nessun cantiere aperto per una struttura che non puo' comparire |
 | [src/world/traffic/wake.test.ts](src/world/traffic/wake.test.ts) | Che la V si apra, che i segni si tocchino e che una barca all'ormeggio non lasci niente. |
 | [world/VoxelWorld.test.ts](src/world/VoxelWorld.test.ts) | Sparsità, dirty set ai bordi, AABB, contratto `data` ≠ `blocks` |
 | [world/visualBlock.test.ts](src/world/visualBlock.test.ts) | Palette e superficie nello stesso byte, il vuoto ignora la superficie |
@@ -747,7 +750,7 @@ giocabile; gli overlay tecnici si alternano con `F3` o partono aperti con
 | [game/cityCondition.test.ts](src/game/cityCondition.test.ts) | Priorità delle crisi e stabilità richiesta per il successo |
 | [game/sectors.test.ts](src/game/sectors.test.ts) | Identità uniche, terra utile e continuità delle espansioni |
 | [game/selection.test.ts](src/game/selection.test.ts) | Il record scelto e' quello il cui intervallo di quota contiene il punto colpito; il tetto e non l'aria sopra di lui; tre strati su quattro anche su terreno nudo; l'aggregato dell'isolato che non conta ne' i landmark ne' le campate ne' i vicini di fronte; il rendimento che passa per le policy attive, la quota dell'uso ospitato, e niente rendimento su cio' che edificio non e' |
-| [ui/SelectionPanelModel.test.ts](src/ui/SelectionPanelModel.test.ts) | Un landmark che mostra lo stadio e mai un livello, una campata senza uso urbano, i due usi di un edificio misto, il quartiere del record distinto da quello di adesso, l'acqua che legge la classe dello specchio, il riquadro evidenziato per ciascuna sezione, le righe di rendimento con la percentuale etichettata come cittadina, e l'interruttore che isola un isolato |
+| [ui/SelectionPanelModel.test.ts](src/ui/SelectionPanelModel.test.ts) | Selezione sempre aperta sull'isolato, capacità e flussi mostrati nella scheda, fallback esplicito per isolati vuoti, oltre ai contratti delle letture diagnostiche |
 | [ui/ControlsHint.test.ts](src/ui/ControlsHint.test.ts) | Completezza dei comandi camera e delle viste nella card di aiuto |
 | [ui/GameHudModel.test.ts](src/ui/GameHudModel.test.ts) | Risorse, requisiti, blocchi economici e policy attive del HUD; il requisito **vincolante** e non il primo, il blocco da tutorial che non finge una progressione, il delta vuoto al posto di `±0`, l'anello del cibo ancorato alla soglia della carestia, e la tessera che dice cosa il ruolo *sblocca* invece di promettere ciò che le soglie non confermeranno |
 | [ui/prospects.test.ts](src/ui/prospects.test.ts) | Le righe che spiegano cosa manca: il ruolo mancante che batte ogni soglia, la soglia vincolante quando il ruolo c'è, il livello detto solo dove morde, e la riga del quartiere che spiega quella della forma invece di rispondere a un'altra domanda |

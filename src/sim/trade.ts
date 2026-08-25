@@ -138,7 +138,7 @@ export function resolveExternalTrade(inputs: {
   const foodImported = Math.min(foodWanted, foodByRate, foodByFunds);
   const importCost = foodImported * BALANCE.trade.importFoodPrice;
 
-  const materialTarget = inputs.buildings * BALANCE.trade.materialReservePerBuilding;
+  const materialTarget = inputs.buildings * BALANCE.materials.reservePerBuilding;
   const materialSurplus = Math.max(0, inputs.materials - materialTarget);
   const materialsExported = Math.min(
     materialSurplus,

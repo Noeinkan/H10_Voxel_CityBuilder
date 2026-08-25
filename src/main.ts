@@ -11,7 +11,7 @@ import { createAtmosphereControl } from './engine/AtmosphereControl';
 import { ChunkRenderer } from './engine/ChunkRenderer';
 import { InfluenceOverlay, type ReachSummary } from './engine/InfluenceOverlay';
 import { InspectGuides } from './engine/InspectGuides';
-import { PlacementCursor } from './engine/PlacementCursor';
+import { PLACEMENT_FACADES, PLACEMENT_SURFACE, PlacementCursor } from './engine/PlacementCursor';
 import { TrafficView } from './engine/TrafficView';
 import { RopewayView } from './engine/RopewayView';
 import { FrameTiming } from './engine/FrameTiming';
@@ -1526,6 +1526,9 @@ function onGamePointerMove(event: PointerEvent): void {
     // dovuto fare — la heightmap attraversa una torre come se fosse vetro.
     const pointed = pointedCellAt(event.clientX, event.clientY) ?? cell;
     const failure = growthScene.terraceFailure(pointed.x, pointed.y);
+    const facing = growthScene.registry.at(pointed.x, pointed.y).find(
+      (record) => record.aerial === undefined && record.span === undefined && record.landmark === undefined,
+    )?.facing ?? 0;
     valid = failure === null;
     influenceOverlay?.hideCursor();
     gameHud?.updateCursor(event.clientX, event.clientY, {
@@ -1541,7 +1544,13 @@ function onGamePointerMove(event: PointerEvent): void {
     // una torre di quaranta voxel finiva trecento pixel piu' in basso, in mezzo
     // agli edifici davanti, e sembrava puntare un altro isolato. Era il motivo
     // per cui una mensola si posava a tentativi.
-    preview.show(pointed.x, pointed.y, pointed.hitZ, valid);
+    preview.show(
+      pointed.x,
+      pointed.y,
+      pointed.hitZ,
+      valid,
+      PLACEMENT_FACADES[facing] ?? PLACEMENT_SURFACE.east,
+    );
     return;
   } else if (selectedTool.kind === 'ropeway') {
     // La colonna del **terreno**, non quella dell'edificio: una funivia parte da
@@ -1970,6 +1979,7 @@ function actionFailureLabel(reason: ActionFailure): string {
     'needs-open-ground': 'Needs a wide, level clearing.',
     'too-close': 'Too close to a catalyst of the same class.',
     'insufficient-funds': 'Not enough funds.',
+    'insufficient-materials': 'Not enough materials. Grow industry first.',
     // Senza un numero: tre azioni con tre soglie diverse passano di qui — il
     // settore, la mensola, le policy — e citare quella dell'espansione era
     // gia' sbagliato per le policy. La cifra esatta sta nel tooltip di ciascuna

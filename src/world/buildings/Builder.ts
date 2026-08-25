@@ -26,7 +26,7 @@ import {
   type LandmarkSite,
 } from './landmarkDriver';
 import { ARCOLOGY } from '../arcology/config';
-import type { ArcologyRefusal } from '../arcology/siting';
+import type { ArcologyDriverRefusal } from './arcologyDriver';
 import { ArcologyDriver } from './arcologyDriver';
 import { ClearanceSites } from './clearanceSite';
 import { SpanDriver } from './spanDriver';
@@ -150,6 +150,7 @@ function simBuilding(record: BuildingRecord): Building {
     x: record.x,
     y: record.y,
     class: record.class,
+    level: record.level,
     ...(record.mixed === undefined ? {} : { mixed: record.mixed }),
     ...(built === undefined ? {} : { specialization: built }),
   };
@@ -239,7 +240,7 @@ export interface BuilderStats {
    * vorrebbe dire che la condizione e' insoddisfacibile e che il numero da
    * rivedere e' un altro.
    */
-  readonly arcologyRefusal: ArcologyRefusal | null;
+  readonly arcologyRefusal: ArcologyDriverRefusal | null;
   /**
    * Lo sventramento in due numeri: cantieri aperti adesso, edifici gia' portati
    * via in tutta la partita.
@@ -527,6 +528,7 @@ export class Builder {
         y: building.y,
         class: building.class,
         mixed: building.mixed,
+        level: building.level,
         animate: false,
         state: null,
         // Le coordinate arrivano da una partita gia' giocata: spostarle sul
@@ -555,8 +557,13 @@ export class Builder {
     // Un sito bocciato lo era rispetto a una colonna che adesso e' libera.
     if (this.clearance.cleared !== clearedBefore) this.forget();
     if (state.tickCount % BUILDER.ticksPerBuild === 0) next = this.buildPass(next);
+    // Il megaprogetto maturo prenota il magazzino prima degli upgrade ordinari.
+    // Altrimenti una passata da sessantaquattro torri spenderebbe fino all'ultima
+    // unita' disponibile e l'arcologia, pur avendo tutte le condizioni urbane,
+    // resterebbe in attesa per sempre per una pura conseguenza dell'ordine.
+    if (state.tickCount % ARCOLOGY.ticksPerPass === 0) next = this.arcologies.pass(next);
     if (state.tickCount % BUILDER.ticksPerUpgrade === 0) {
-      this.upgrades.pass(next);
+      next = this.upgrades.pass(next);
       next = this.landmarks.pass(next);
     }
     // La rete in quota non legge la simulazione: una campata dipende da dove
@@ -579,12 +586,6 @@ export class Builder {
     // edifici di questo tick resterebbe contato come produttore fino al giro
     // dopo, e la citta' rincorrerebbe la fame con un ritardo permanente.
     if (state.tickCount % FARMS.ticksPerPass === 0) next = this.farms.pass(next);
-    // E l'arcologia in fondo a tutto, alla cadenza piu' rada: la sua condizione
-    // e' vera solo su una citta' che ha gia' smesso di crescere in alto, quindi
-    // ogni passata anticipata sarebbe una scansione che risponde di no. Legge lo
-    // stato — deve chiedere la quota ammessa — e lo restituisce, perche' le sue
-    // fasce sono edifici che la simulazione conta.
-    if (state.tickCount % ARCOLOGY.ticksPerPass === 0) next = this.arcologies.pass(next);
     return next;
   }
 
@@ -757,7 +758,9 @@ export class Builder {
     // della tipologia e non nel livello. Un bonus di livello sull'angolo e' stato
     // provato e tolto — spegneva i montanti della citta' in quota. La misura e il
     // perche' stanno accanto a `BLOCK` in `config.ts`.
-    const level = Math.min(allowed, startLevel(seed) + localLevelBonus(form));
+    const level = request.level === undefined
+      ? Math.min(allowed, startLevel(seed) + localLevelBonus(form))
+      : Math.min(BUILDER.maxLevel, Math.max(0, Math.floor(request.level)));
     const typology = selectTypology({
       use: cls,
       mixed,
@@ -1265,6 +1268,8 @@ interface PlaceRequest {
   readonly y: number;
   readonly class: BuildingClass;
   readonly mixed?: BuildingClass;
+  /** Livello gia' salvato; assente per una costruzione nuova. */
+  readonly level?: number;
   readonly animate: boolean;
   /** Senza stato non c'e' profilo locale: le tipologie condizionate restano fuori. */
   readonly state: SimState | null;

@@ -11,6 +11,42 @@ coincide con il messaggio di commit.
 
 ---
 
+## In corso — Puntatore dei componenti da facciata
+
+- `PlacementCursor` riceve ora il piano di appoggio del componente: resta orizzontale su suolo e tetti e ruota di 90 gradi sulle quattro facciate verticali.
+- La terrazza passa al puntatore la faccia stradale dell'edificio ospite, cosi' mirino, onda e fascio anticipano l'assetto del piazzamento invece di restare stesi sul tetto.
+
+## In corso — Economia verso le nuvole
+
+- **I materiali ora costruiscono davvero la verticale.** L'industria alimenta una riserva protetta da negozi ed export; grattacieli, terrazze, funivie e arcologie la consumano, mentre i livelli aumentano capacità e resa in modo controllato.
+- **Il saldo è spiegabile.** Il popover dei materiali separa produzione, manutenzione, negozi, export e cantieri e indica quanto manca al prossimo cantiere bloccato.
+
+## In corso — Il tetto della campagna copre di nuovo il costruttore
+
+- **`plotsPerPass` era metà di ciò che la sua derivazione diceva.** Scritto a mano in `FARMS` valeva `6`, mentre il conto nel commento accanto — `sitesPerBuild / ticksPerBuild` edifici per tick, tutti residenziali, un campo ogni due case, più il margine di `food.targetCoverage` — ne dava `12`. Sotto il tetto giusto l'offerta agricola tornava una costante contro una domanda che cresce con la città: per tutta la crescita la città mangiava i due terzi di ciò che le serviva con la dispensa a zero. Misurato su terreno pianeggiante, 1394 tick di fame contro 212.
+- **Adesso è un prodotto, non un letterale.** Il tetto vive in `PLOTS_PER_PASS` dentro `farmDriver.ts`, dove i vocabolari di `BUILDER` e di `BALANCE` già si toccano, ed è legato da un test: cambiare la cadenza del costruttore o quanto un campo sfama muove il tetto da solo invece di farlo mentire.
+
+## In corso — Sostegni aerei più sottili
+
+- **Gambe proporzionate al carico.** Terrazze e impalcati ordinari mostrano ora fusti sottili con piede e capitello di microgeometria, a volte aperto a Y; grandi aggetti e nodi con forti salti conservano piloni voxel pieni, senza cambiare occupazione o collisioni.
+
+## In corso — Landmark leggibili in montagna
+
+- **Un landmark non diventa piu' una guglia di fondazione sul versante.** Il terrapieno puo' scavalcare un solo ciglio naturale; oltre, cursore e click rifiutano il sito invece di unire piu' terrazze con pareti alte mezzo fianco. Le banchine conservano il proprio tetto piu' ampio verso il fondale.
+
+## In corso — Selezione per isolato e produttività
+
+- **Il click sceglie sempre l'isolato.** La scheda non offre più le linguette Structure, Column e Voxel e il contorno richiesto al renderer è sempre quello del blocco stradale.
+- **Il rendimento è leggibile dove si decide.** La scheda dell'isolato mostra capacità abitativa e commerciale, materiali e cibo per tick, costo civico e quota di organico; l'aggregato segue policy, usi misti, arcologie e la conversione delle torri idroponiche da materiali a cibo.
+
+## In corso — Riserva dei materiali
+
+- **La produzione torna visibile nel magazzino.** Il commercio interno usa soltanto i materiali sopra la riserva per edificio, come gia' faceva l'export: una citta' con domanda pari alla produzione non resta piu' bloccata a stock e delta zero mentre le fabbriche lavorano.
+
+## In corso — Nodi in quota alleggeriti
+
+- **Il salto non e' piu' un blocco pieno.** Nei nodi fra percorsi a quote diverse l'altezza supplementare prolunga soltanto le teste delle gambe; il piano costruibile e la sua travatura restano invariati, senza trasformare un pianerottolo da 6 x 6 in un prisma pieno alto fino a dieci voxel.
+
 ## In corso — L'economia alimentare smette di essere una costante
 
 - **La portata del collegamento esterno segue la taglia della città.**

@@ -126,15 +126,42 @@ export function planPlot(query: FarmPlotQuery): FarmPlan {
   // Il bioma piu' frequente del quadrato decide cosa ci si pianta. Si conta
   // nella stessa scansione che valida — un secondo giro sulle stesse 144 colonne
   // per una domanda che si puo' rispondere in questa non si giustifica.
+  //
+  // **Un campo bucato non e' un campo, ma un campo con un masso in mezzo lo e'
+  // ancora.** Il rifiuto resta del quadrato intero — non si pianta mezzo lotto —
+  // ma la soglia e' una frazione: `FARMS.minArableShare`. Colonna per colonna la
+  // regola era cosi' severa da scartare i posti *quasi* giusti, che su una costa
+  // frastagliata sono la meta' della campagna possibile.
+  //
+  // L'occupazione resta invece assoluta: un edificio nel quadrato e' un fatto
+  // diverso da un affioramento di roccia, e li' il lotto non ci sta davvero.
   let wooded = 0;
+  let arable = 0;
+  let infertile = 0;
+  let steep = 0;
   for (let py = y; py < y + side; py++) {
     for (let px = x; px < x + side; px++) {
       if (query.occupied(px, py)) return refuse('occupied');
       const biome = query.biomeAt(px, py);
-      if (!FARMS.fertile.includes(biome)) return refuse('infertile');
-      if (query.slopeAt(px, py) >= FARMS.maxSlope) return refuse('steep');
+      if (!FARMS.fertile.includes(biome)) {
+        infertile++;
+        continue;
+      }
+      if (query.slopeAt(px, py) >= FARMS.maxSlope) {
+        steep++;
+        continue;
+      }
+      arable++;
       if (biome !== BIOME.plain) wooded++;
     }
+  }
+
+  const cells = side * side;
+  // Il motivo e' quello che ha pesato di piu': e' cio' che un overlay deve dire
+  // al giocatore — «qui e' sasso» o «qui e' ripido» — e con due contatori in mano
+  // sceglierne uno a caso sarebbe una diagnosi peggiore di nessuna.
+  if (arable < cells * FARMS.minArableShare) {
+    return refuse(infertile >= steep ? 'infertile' : 'steep');
   }
 
   return {
@@ -147,7 +174,11 @@ export function planPlot(query: FarmPlotQuery): FarmPlan {
       // un quarto. Il confronto e' fra interi apposta: una frazione qui
       // introdurrebbe una virgola mobile in una decisione che deve restare
       // identica a se stessa a ogni rigenerazione.
-      kind: wooded * (query.preferOrchard === true ? 4 : 2) > side * side
+      //
+      // Si guarda sul **coltivabile** e non sul quadrato: le colonne tollerate
+      // non sono ne' prato ne' bosco, e contarle nel denominatore farebbe
+      // scivolare a campo un frutteto per via di un masso.
+      kind: wooded * (query.preferOrchard === true ? 4 : 2) > arable
         ? PLOT_KIND.orchard
         : PLOT_KIND.field,
       alongY: (hashCoords(seed ^ FARMS.salt, x, y) & 1) === 1,

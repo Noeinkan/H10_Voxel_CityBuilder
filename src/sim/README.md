@@ -42,6 +42,7 @@ nextBuildSites(state, terrainMap, 10);           // [{ x, y, class, mixed, score
 | [commerce.ts](commerce.ts) | Il ciclo commerciale interno: domanda, organico, merce, ricavi |
 | [farms.ts](farms.ts) | I tre produttori di cibo, il listino in case sfamate e il referto del raccolto |
 | [flows.ts](flows.ts) | Da dove vengono i fondi di un tick e dove vanno: referto derivato, non un accumulo |
+| [materials.ts](materials.ts) | Flussi dei materiali, capacità dei livelli e curva dei costi verticali |
 | [decisions.ts](decisions.ts) | Decisioni periodiche e alternative deterministiche |
 | [charters.ts](charters.ts) | Mandati lasciati dalle decisioni: uno slot per famiglia, permanenti |
 | [trade.ts](trade.ts) | Commercio esterno O(1) sbloccato dal porto |
@@ -236,6 +237,26 @@ magazzino fornisce. `service` (quanta domanda è servita) e `occupancy` (quanto
 sono pieni i banchi) restano due numeri distinti: con uno solo, "troppi negozi" e
 "pochi negozi" si leggerebbero uguale.
 
+## Materiali e crescita verticale
+
+`state.materialFlows` è il rendiconto dell'ultimo giro: industria in entrata;
+manutenzione, negozi, export e cantieri in uscita. Porta anche la riserva e il
+prezzo del cantiere meno caro rimasto in attesa, così l'HUD può distinguere una
+fabbrica spenta da una produzione interamente assorbita.
+
+La riserva vale `buildings × reservePerBuilding`. Manutenzione, negozi ed export
+non la consumano; i cantieri sì. Per questo lo stock può scendere mentre la città
+sale, poi l'industria lo ricostituisce prima che il commercio torni a vendere il
+surplus. Terrazze, funivie e fondazione dell'arcologia passano dalla stessa
+operazione e compaiono tutti sotto `construction`.
+
+I livelli non moltiplicano la resa uno a uno. `capacityAtLevel` aggiunge 0,25 per
+livello fino a un massimo di quattro edifici base: una torre conta di più, ma non
+rende inutile costruire un quartiere. Il tessuto fino al livello 6 cresce senza
+materiali; dal livello 7 parte una curva quadratica. È lì che la forma diventa
+economia: senza industria il centro arriva al tessuto medio, ma non finanzia i
+grattacieli che attraversano le nuvole.
+
 ## Il bilancio dei fondi, voce per voce
 
 `state.flows` è un `FundsReport`: tasse, incasso dei negozi, saldo del commercio
@@ -255,7 +276,9 @@ dice di quanto, non di chi è la colpa, e con sei voci in gioco un numero solo n
 indica nessuna azione da fare.
 
 Un edificio **a uso misto** ha un uso primario e un secondo uso che ne porta
-`mixedUse.secondaryShare` di capacità economica. Nasce dove due campi
+`mixedUse.secondaryShare` di capacità economica. La capacità primaria e quella
+secondaria stanno in `capacityCounts` e `mixedCapacityCounts`, perché il livello
+non deve trasformare `buildingCounts` in un conteggio frazionario. Nasce dove due campi
 compatibili superano insieme le loro soglie — la seconda ridotta, perché il
 secondo uso è ospite — e non è una zona: resta un volume, una cella occupata,
 una riga fra i candidati. `buildingCounts` lo conta sotto il primario e

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { CHUNK, PADDED_VOL, paddedIdx } from '../../world/chunkCoords';
-import { packVisualBlock, SURFACE_KIND } from '../../world/visualBlock';
+import { packVisualBlock, SURFACE_KIND, type SurfaceKind } from '../../world/visualBlock';
 import { PALETTE_SLOTS } from '../paletteSlots';
 import { greedyMesh } from './greedyMesher';
 import { MAX_DETAIL_QUADS_PER_CHUNK } from './microGeometry';
@@ -113,6 +113,56 @@ describe('microgeometria 1/16', () => {
     setLocal(hidden, 8, 8, 7, PALETTE_SLOTS.concrete);
     setLocal(hidden, 8, 8, 9, PALETTE_SLOTS.concrete);
     expect(greedyMesh(hidden).detailQuadCount).toBe(0);
+  });
+
+  it('rende sottile una gamba ordinaria senza cambiare il volume sorgente', () => {
+    const padded = volume();
+    const pier = packVisualBlock(PALETTE_SLOTS.concrete, SURFACE_KIND.utility);
+    for (let z = 4; z < 12; z++) {
+      for (let y = 8; y < 10; y++) {
+        for (let x = 8; x < 10; x++) setLocal(padded, x, y, z, pier);
+      }
+    }
+    const original = padded.slice();
+
+    const mesh = greedyMesh(padded, undefined, undefined, [32, 64, 0]);
+    const xs = [...mesh.positions].filter((_, index) => index % 3 === 0);
+
+    // Il 2 x 2 logico occuperebbe [128, 160]; il fusto visibile resta nel mezzo
+    // e tutta la mesh appartiene al dettaglio, perche' i cubi sono stati levati.
+    expect(Math.min(...xs)).toBeGreaterThan(8 * MESH_UNITS_PER_VOXEL);
+    expect(Math.max(...xs)).toBeLessThan(10 * MESH_UNITS_PER_VOXEL);
+    expect(mesh.quadCount).toBe(mesh.detailQuadCount);
+    expect(mesh.detailQuadCount).toBeGreaterThan(0);
+    expect(padded).toEqual(original);
+  });
+
+  it('alterna teste dritte e arcuate, ma lascia pieno il pilone pesante', () => {
+    const makePier = (surface: SurfaceKind): Uint8Array => {
+      const padded = volume();
+      const pier = packVisualBlock(PALETTE_SLOTS.concrete, surface);
+      for (let z = 4; z < 12; z++) {
+        for (let y = 8; y < 10; y++) {
+          for (let x = 8; x < 10; x++) setLocal(padded, x, y, z, pier);
+        }
+      }
+      return padded;
+    };
+
+    const variants = new Set<number>();
+    for (let cx = 0; cx < 8; cx++) {
+      variants.add(greedyMesh(
+        makePier(SURFACE_KIND.utility),
+        undefined,
+        undefined,
+        [cx * CHUNK, 0, 0],
+      ).detailQuadCount);
+    }
+    expect(variants.size).toBe(2);
+
+    const massive = greedyMesh(makePier(SURFACE_KIND.plain));
+    expect(massive.detailQuadCount).toBe(0);
+    expect(massive.quadCount).toBeGreaterThan(0);
   });
 
   it('usa il padding per non creare un parapetto sul confine condiviso', () => {

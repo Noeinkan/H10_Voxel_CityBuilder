@@ -121,6 +121,8 @@ export interface Pier {
   readonly height: number;
   /** Record su cui il piede poggia, o 0 se e' terreno nudo. */
   readonly carrier: number;
+  /** Un carico grande conserva la sezione piena invece del fusto di microgeometria. */
+  readonly massive: boolean;
 }
 
 export interface DeckPlan {
@@ -197,7 +199,9 @@ export function planDeck(query: DeckQuery): DeckResult {
     }
   }
 
-  const legs = placeLegs(query, baseZ);
+  const massive = rect.sizeX * rect.sizeY >= AERIAL.heavySupportMinArea ||
+    drop >= AERIAL.heavySupportMinDrop;
+  const legs = placeLegs(query, baseZ, massive);
   if (typeof legs === 'string') return refuse(legs);
 
   return {
@@ -230,7 +234,7 @@ export function planDeck(query: DeckQuery): DeckResult {
  * in cui si ragiona a mano, e a queste dimensioni — riquadri da qualche decina di
  * colonne — la differenza con una distribuzione ottima non si vede.
  */
-function placeLegs(query: DeckQuery, baseZ: number): Pier[] | DeckRefusal {
+function placeLegs(query: DeckQuery, baseZ: number, massive: boolean): Pier[] | DeckRefusal {
   const { rect } = query;
   const anchors = [...query.anchors];
   const piers: Pier[] = [];
@@ -244,7 +248,7 @@ function placeLegs(query: DeckQuery, baseZ: number): Pier[] | DeckRefusal {
 
     if (rect.sizeX < AERIAL.pierSide || rect.sizeY < AERIAL.pierSide) return 'tooNarrow';
 
-    const footing = plantLeg(query, worst, baseZ);
+    const footing = plantLeg(query, worst, baseZ, massive);
     if (typeof footing === 'string') return footing;
 
     piers.push(footing);
@@ -311,6 +315,7 @@ function plantLeg(
   query: DeckQuery,
   at: { x: number; y: number },
   baseZ: number,
+  massive: boolean,
 ): Pier | DeckRefusal {
   const { rect } = query;
   let fallback: Pier | null = null;
@@ -334,7 +339,7 @@ function plantLeg(
       continue;
     }
 
-    const pier: Pier = { x, y, baseZ: footing.baseZ, height, carrier: footing.carrier };
+    const pier: Pier = { x, y, baseZ: footing.baseZ, height, carrier: footing.carrier, massive };
     // Un tetto e' l'appoggio giusto e si prende subito. Il prato si tiene da
     // parte: vale solo se nessuna posizione trova di meglio.
     if (footing.carrier !== 0) return pier;

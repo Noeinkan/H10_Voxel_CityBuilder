@@ -54,7 +54,19 @@ describe('planDeck — lo sbalzo e le gambe', () => {
       expect(pier.baseZ).toBe(4);
       expect(pier.baseZ + pier.height).toBe(result.plan.baseZ);
       expect(pier.height).toBeGreaterThanOrEqual(AERIAL.clearance);
+      expect(pier.massive).toBe(false);
     }
+  });
+
+  it('conserva pieni soltanto gli appoggi di un piano davvero massivo', () => {
+    const { ground, rect, anchor } = wall(Math.ceil(AERIAL.heavySupportMinArea / 6));
+    const result = planDeck({ rect, deckZ: 30, anchors: [anchor], ...ground });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(rect.sizeX * rect.sizeY).toBeGreaterThanOrEqual(AERIAL.heavySupportMinArea);
+    expect(result.plan.piers.length).toBeGreaterThan(0);
+    expect(result.plan.piers.every((pier) => pier.massive)).toBe(true);
   });
 
   it('nessuna colonna resta oltre lo sbalzo ammesso da un appoggio', () => {
@@ -156,6 +168,7 @@ describe('planDeck — il vuoto', () => {
     // Senza ancoraggi il nodo sta sulle proprie gambe: e' cio' che lo rende un
     // pianerottolo vero e non un gomito appeso ai tratti che ci arrivano.
     expect(result.plan.piers.length).toBeGreaterThan(0);
+    expect(result.plan.piers.every((pier) => !pier.massive)).toBe(true);
   });
 });
 

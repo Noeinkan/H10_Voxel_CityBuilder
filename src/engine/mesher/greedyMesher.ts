@@ -11,6 +11,11 @@ import { appendCarveDetail } from './carveGeometry';
 import { clearCarves, planCarves } from './carvePlan';
 import { appendCoverDetail, liftGroundCover, restoreGroundCover } from './coverDetail';
 import {
+  appendAerialSupportDetail,
+  liftAerialSupports,
+  restoreAerialSupports,
+} from './aerialSupportDetail';
+import {
   appendMicroGeometry,
   collectSurfaceCells,
   MAX_DETAIL_QUADS_PER_CHUNK,
@@ -159,6 +164,11 @@ export function greedyMesh(
   // andra' la microgeometria di `coverDetail.ts`. Il volume torna intatto in
   // fondo alla funzione.
   const cover = liftGroundCover(padded, ceiling);
+
+  // Le gambe ordinarie conservano nel mondo il proprio 2 x 2 pieno, ma nel
+  // volume di rendering lasciano posto a un fusto in sedicesimi. Come per la
+  // copertura, il volume viene ripristinato prima di uscire.
+  const aerialSupports = liftAerialSupports(padded, origin);
 
   // **Una scansione sola per due lettori.** `collectSurfaceCells` filtra il
   // volume per superficie e per faccia esposta, e serviva ai prop; da quando c'e'
@@ -427,8 +437,10 @@ export function greedyMesh(
   // calva. Tutto il resto, a cadere, lascia solo un edificio meno vestito.
   const carveQuadCount = appendCarveDetail(padded, carveMarks, writer, carves);
   const coverQuadCount = appendCoverDetail(padded, writer, cover, origin);
-  const detailQuadCount = carveQuadCount + coverQuadCount +
+  const supportQuadCount = appendAerialSupportDetail(writer, aerialSupports);
+  const detailQuadCount = carveQuadCount + coverQuadCount + supportQuadCount +
     appendMicroGeometry(padded, writer, carveMarks, surfaceCells, origin);
+  restoreAerialSupports(padded, aerialSupports);
   restoreGroundCover(padded, ceiling, cover);
   // La maschera vive nello scratch, che il pool riusa fra un job e l'altro:
   // azzerare le sole celle toccate costa quanto il piano invece che quanto il

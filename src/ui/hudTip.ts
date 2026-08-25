@@ -27,6 +27,7 @@ export interface HudTipRow {
 export interface HudTip {
   readonly title: string;
   readonly cost: number;
+  readonly materialCost: number | null;
   /** Cosa fa, in una frase. **C'e' anche quando l'azione e' bloccata.** */
   readonly lead: string | null;
   readonly rows: readonly HudTipRow[];
@@ -116,6 +117,7 @@ export function buildActionTip(action: HudAction): HudTip {
   return {
     title: action.label,
     cost: action.cost,
+    materialCost: action.materialCost ?? null,
     lead: action.description ?? null,
     rows,
     note: action.unlocks !== undefined && action.unlocks.length > 0
@@ -131,7 +133,8 @@ export function buildActionTip(action: HudAction): HudTip {
 
 /** Il testo intero della scheda, per chi la legge invece di guardarla. */
 export function tipText(tip: HudTip): string {
-  const lines = [`${tip.title} · ${tip.cost} funds`];
+  const materialCost = tip.materialCost === null ? '' : ` · ${tip.materialCost} materials`;
+  const lines = [`${tip.title} · ${tip.cost} funds${materialCost}`];
   if (tip.lead !== null) lines.push(tip.lead);
   for (const row of tip.rows) lines.push(`${row.label}: ${row.value}`);
   if (tip.note !== null) lines.push(tip.note);
@@ -156,6 +159,13 @@ export function tipElement(tip: HudTip): HTMLElement {
   head.appendChild(block('hud-tip-title', tip.title));
   const cost = block('hud-tip-cost');
   cost.append(createHudIcon('funds'), document.createTextNode(String(tip.cost)));
+  if (tip.materialCost !== null) {
+    cost.append(
+      document.createTextNode(' · '),
+      createHudIcon('materials'),
+      document.createTextNode(String(tip.materialCost)),
+    );
+  }
   head.appendChild(cost);
   root.appendChild(head);
 

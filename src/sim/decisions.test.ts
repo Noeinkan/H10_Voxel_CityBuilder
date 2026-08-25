@@ -264,7 +264,9 @@ function establishedCity(population = 48): SimState {
     // Residenziale, commerciale, industriale, civico: la decisione sullo spazio
     // pubblico chiede almeno un civico, quella sull'investimento un industriale.
     buildingCounts: [4, 1, 2, 1],
+    capacityCounts: [4, 1, 2, 1],
     mixedCounts: [0, 0, 0, 0],
+    mixedCapacityCounts: [0, 0, 0, 0],
   };
 }
 

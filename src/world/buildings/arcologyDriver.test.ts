@@ -1,5 +1,6 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import {
+  BALANCE,
   BUILDING_CLASS,
   addCatalyst,
   createSimState,
@@ -52,7 +53,13 @@ function grow(): City {
   const { map } = generateIsland(world, seed, { minX: 0, minY: 0, sizeX: 256, sizeY: 256 });
   const builder = new Builder(world, map, seed);
 
-  let state = createSimState();
+  let state = {
+    ...createSimState(),
+    // Questa suite misura struttura, rete e dichiarazione degli usi. La filiera
+    // che accumula la scorta ha test propri: qui il magazzino largo impedisce ai
+    // normali grattacieli di consumare la fixture prima del megaprogetto.
+    materials: { stock: 100_000, delta: 0 },
+  };
   state = addCatalyst(state, {
     x: 128,
     y: 128,
@@ -68,6 +75,7 @@ function grow(): City {
     // registro e non nel mondo, e le sonde sui voxel leggerebbero aria.
     while (builder.stats.growing > 0) builder.step();
   }
+  expect(state.materials.stock).toBeLessThan(100_000 - BALANCE.materials.arcologyCost);
   return { builder, state };
 }
 

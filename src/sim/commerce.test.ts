@@ -4,7 +4,7 @@ import { BUILDING_CLASS } from './classes';
 import { resolveCommerce } from './commerce';
 import { addBuilding, createSimState, type SimState } from './SimState';
 import { testTerrain } from './testTerrain';
-import { tickMany } from './tick';
+import { tick, tickMany } from './tick';
 
 const CAPACITY = BALANCE.weights.commercialCapacity;
 
@@ -105,6 +105,24 @@ describe('resolveCommerce — le tre strozzature', () => {
 
 describe('commercio nel tick — due cicli economici distinguibili', () => {
   const map = testTerrain({ chunksX: 4, chunksY: 4 });
+
+  it('ricostituisce la riserva prima di consegnare materiali ai negozi', () => {
+    let state = city(4, 8, 1);
+    state = {
+      ...state,
+      population: { stock: 4 * CAPACITY, delta: 0 },
+      materials: { stock: 0, delta: 0 },
+    };
+
+    const first = tick(state, map);
+    expect(first.materials.stock).toBeGreaterThan(0);
+    expect(first.commerce.goods).toBe(0);
+
+    const settled = tickMany(first, map, 100);
+    const reserve = settled.buildings.length * BALANCE.materials.reservePerBuilding;
+    expect(settled.materials.stock).toBeCloseTo(reserve, 9);
+    expect(settled.commerce.goods).toBeGreaterThan(0);
+  });
 
   it('la citta mercantile fa fondi, quella industriale fa materiali', () => {
     // Stessa base residenziale, stesso numero di edifici non residenziali:

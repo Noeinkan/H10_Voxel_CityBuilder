@@ -30,6 +30,23 @@ const HALO_OUTER = 1.58;
 /** Un respiro lento: abbastanza da attirare l'occhio, non da distrarre. */
 const PULSE_PERIOD = 1.5;
 
+/** Piano su cui poggia il gesto di piazzamento; il nome indica la normale. */
+export const PLACEMENT_SURFACE = {
+  horizontal: 'horizontal',
+  east: 'east',
+  west: 'west',
+  north: 'north',
+  south: 'south',
+} as const;
+export type PlacementSurface = (typeof PLACEMENT_SURFACE)[keyof typeof PLACEMENT_SURFACE];
+/** Le quattro normali verticali, nello stesso ordine cardinale usato dal mondo. */
+export const PLACEMENT_FACADES: readonly PlacementSurface[] = [
+  PLACEMENT_SURFACE.east,
+  PLACEMENT_SURFACE.west,
+  PLACEMENT_SURFACE.north,
+  PLACEMENT_SURFACE.south,
+];
+
 /**
  * Il segnaposto sotto il puntatore mentre si piazza qualcosa.
  *
@@ -76,9 +93,22 @@ export class PlacementCursor {
     this.group.visible = false;
   }
 
-  /** `z` e' la quota della superficie: la cella e' quella sotto il puntatore. */
-  show(x: number, y: number, z: number, valid: boolean): void {
+  /**
+   * `z` e' la quota della superficie: la cella e' quella sotto il puntatore.
+   *
+   * Il piano segue l'appoggio del componente: suolo e tetti sono orizzontali,
+   * una facciata e' verticale e il fascio esce lungo la sua normale. Tenere qui
+   * la rotazione evita che ogni strumento da parete inventi il proprio cursore.
+   */
+  show(
+    x: number,
+    y: number,
+    z: number,
+    valid: boolean,
+    surface: PlacementSurface = PLACEMENT_SURFACE.horizontal,
+  ): void {
     this.group.position.set(x + 0.5, y + 0.5, z);
+    orientToSurface(this.group, surface);
     if (valid !== this.valid) {
       this.valid = valid;
       this.color.setHex(valid ? VALID : INVALID);
@@ -105,6 +135,26 @@ export class PlacementCursor {
   private tint<T extends MeshBasicMaterial | LineBasicMaterial>(material: T): T {
     this.tinted.push(material);
     return material;
+  }
+}
+
+/** Porta la normale locale +Z sulla normale del piano scelto. */
+function orientToSurface(group: Group, surface: PlacementSurface): void {
+  switch (surface) {
+    case PLACEMENT_SURFACE.east:
+      group.rotation.set(0, Math.PI / 2, 0);
+      return;
+    case PLACEMENT_SURFACE.west:
+      group.rotation.set(0, -Math.PI / 2, 0);
+      return;
+    case PLACEMENT_SURFACE.north:
+      group.rotation.set(-Math.PI / 2, 0, 0);
+      return;
+    case PLACEMENT_SURFACE.south:
+      group.rotation.set(Math.PI / 2, 0, 0);
+      return;
+    case PLACEMENT_SURFACE.horizontal:
+      group.rotation.set(0, 0, 0);
   }
 }
 

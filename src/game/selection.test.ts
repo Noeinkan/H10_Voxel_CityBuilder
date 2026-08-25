@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { BALANCE, BUILDING_CLASS, addBuilding, createSimState, type SimState } from '../sim';
+import {
+  BALANCE,
+  BUILDING_CLASS,
+  FARM_KIND,
+  addBuilding,
+  createSimState,
+  foodYieldOf,
+  type SimState,
+} from '../sim';
 import { testTerrain } from '../sim/testTerrain';
 import { VoxelWorld } from '../world/VoxelWorld';
 import { SURFACE_KIND } from '../world/visualBlock';
@@ -122,6 +130,43 @@ describe('resolveSelection', () => {
     expect(picked?.block.byClass[BUILDING_CLASS.residential]).toBe(1);
     expect(picked?.block.byClass[BUILDING_CLASS.commercial]).toBe(1);
     expect(picked?.block.maxLevel).toBe(3);
+    expect(picked?.block.productivity.housingCapacity).toBe(BALANCE.weights.residentialCapacity);
+    expect(picked?.block.productivity.commerceCapacity).toBe(BALANCE.weights.commercialCapacity);
+  });
+
+  it('la produttivita\' dell\'isolato segue usi misti, torri agricole e organico', () => {
+    const registry = new BuildingRegistry();
+    const streets = new StreetNetwork(SEED);
+    const rect = streets.blockRect(streets.blockAt(40, 40));
+
+    registry.add({
+      ...record(rect.x0, rect.y0, 12, 8),
+      class: BUILDING_CLASS.commercial,
+      mixed: BUILDING_CLASS.residential,
+    });
+    registry.add({
+      ...record(rect.x0 + 5, rect.y0, 12, 8),
+      class: BUILDING_CLASS.industrial,
+    });
+    registry.add({
+      ...record(rect.x0 + 10, rect.y0, 12, 8),
+      class: BUILDING_CLASS.industrial,
+      specialization: 'farming',
+    });
+    const state = { ...createSimState(), staffing: 0.5 };
+
+    const picked = resolveSelection({ ...harness({ registry, streets, state }), cell: cell(40, 40, 12) });
+    const productivity = picked?.block.productivity;
+
+    expect(productivity?.housingCapacity).toBe(
+      BALANCE.weights.residentialCapacity * BALANCE.mixedUse.secondaryShare,
+    );
+    expect(productivity?.commerceCapacity).toBe(BALANCE.weights.commercialCapacity);
+    expect(productivity?.materialsPerTick).toBe(BALANCE.weights.productionYield * 0.5);
+    const localFarms: number[] = [];
+    localFarms[FARM_KIND.tower] = 1;
+    expect(productivity?.foodPerTick).toBe(foodYieldOf(localFarms, 0.5));
+    expect(productivity?.staffing).toBe(0.5);
   });
 
   it('l\'aggregato non prende gli edifici dell\'isolato accanto', () => {

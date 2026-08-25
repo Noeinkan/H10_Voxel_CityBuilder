@@ -191,20 +191,18 @@ export function buildSelectionPanelModel(
   sections.push(blockSection(selection.block, isolatedBlock), columnSection(selection.column));
   sections.push(voxelSection(selection.voxel));
 
-  const lead = structure ?? sections[0];
+  // La selezione del giocatore e' sempre l'isolato. Le letture piu' fini
+  // restano nel modello come diagnostica, ma non guidano piu' intestazione,
+  // contorno o gesto principale.
+  const lead = sections.find((section) => section.id === 'block')!;
   return { title: lead.title, summary: lead.summary, sections };
 }
 
 /**
- * La sezione da aprire per prima: la piu' specifica che esiste qui.
- *
- * Chi clicca una torre vuole la torre; chi clicca un prato non ha una torre da
- * volere, e la domanda piu' probabile diventa «cosa ci posso fare», che e' la
- * colonna. L'isolato e il voxel non sono mai la prima risposta: il primo e' piu'
- * largo di cio' che si e' indicato, il secondo piu' stretto.
+ * La selezione di gioco ha una sola unita': l'isolato delimitato dalle strade.
  */
-export function defaultSection(selection: Selection): SelectionSectionId {
-  return selection.structure === null ? 'column' : 'structure';
+export function defaultSection(_selection: Selection): SelectionSectionId {
+  return 'block';
 }
 
 /**
@@ -314,6 +312,7 @@ function blockSection(block: BlockInfo, isolatedBlock: string | null): Selection
   if (block.structures > 0) {
     rows.push({ label: 'Elevated parts', value: `${block.structures}` });
   }
+  rows.push(...productivityRows(block));
 
   return {
     id: 'block',
@@ -324,6 +323,63 @@ function blockSection(block: BlockInfo, isolatedBlock: string | null): Selection
     // che si fa chi lo trova vuoto, e il terreno da solo e' gia' una risposta.
     action: isolatedBlock === block.key ? RELEASE_BLOCK : ISOLATE_BLOCK,
   };
+}
+
+/**
+ * Il bilancio attribuibile a questo isolato, senza spacciare per locale cio' che
+ * resta cittadino: l'organico e' percio' dichiarato esplicitamente citywide.
+ */
+function productivityRows(block: BlockInfo): readonly SelectionRow[] {
+  const { productivity } = block;
+  const rows: SelectionRow[] = [];
+  if (productivity.housingCapacity > 0) {
+    rows.push({ label: 'Housing capacity', value: `${amount(productivity.housingCapacity)} residents` });
+  }
+  if (productivity.commerceCapacity > 0) {
+    rows.push({
+      label: 'Commerce capacity',
+      value: `${amount(productivity.commerceCapacity)} customers a tick`,
+    });
+  }
+  if (productivity.materialsCapacityPerTick > 0) {
+    rows.push({
+      label: 'Materials',
+      value: productiveFlow(
+        productivity.materialsPerTick,
+        productivity.materialsCapacityPerTick,
+      ),
+    });
+  }
+  if (productivity.foodCapacityPerTick > 0) {
+    rows.push({
+      label: 'Food',
+      value: productiveFlow(productivity.foodPerTick, productivity.foodCapacityPerTick),
+    });
+  }
+  if (productivity.civicUpkeepPerTick > 0) {
+    rows.push({
+      label: 'Civic upkeep',
+      value: `${amount(productivity.civicUpkeepPerTick)} funds a tick`,
+    });
+  }
+
+  if (rows.length === 0) return [{ label: 'Productivity', value: 'no active buildings' }];
+  if (
+    productivity.commerceCapacity > 0
+    || productivity.materialsCapacityPerTick > 0
+    || productivity.foodCapacityPerTick > 0
+  ) {
+    rows.push({
+      label: 'Workforce',
+      value: `${Math.round(productivity.staffing * 100)}% staffed citywide`,
+    });
+  }
+  return rows;
+}
+
+function productiveFlow(current: number, capacity: number): string {
+  if (current === capacity) return `${amount(current)} a tick`;
+  return `${amount(current)} of ${amount(capacity)} a tick`;
 }
 
 function columnSection(column: ColumnInfo): SelectionSection {

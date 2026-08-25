@@ -98,6 +98,7 @@ const FAILURE_LABEL: Readonly<Record<ActionFailure, string>> = {
   'needs-open-ground': 'An Airport needs a wide, level clearing to lay a runway on.',
   'too-close': 'Too close to another catalyst of the same type.',
   'insufficient-funds': 'You do not have enough funds yet.',
+  'insufficient-materials': 'You do not have enough materials yet. Grow industry first.',
   'population-required': 'The city must grow before you can do this.',
   'already-active': 'This policy is already active.',
   'already-unlocked': 'This sector is already unlocked. Choose another one.',

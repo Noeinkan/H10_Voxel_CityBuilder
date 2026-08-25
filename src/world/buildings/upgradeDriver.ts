@@ -1,9 +1,16 @@
-import { urbanProfileAt, type LocalUrbanProfile, type SimState } from '../../sim';
+import {
+  deferConstruction,
+  upgradeBuilding,
+  upgradeMaterialCost,
+  urbanProfileAt,
+  type LocalUrbanProfile,
+  type SimState,
+} from '../../sim';
 import { envelopeOf, type BuildingRecord } from './BuildingRegistry';
 import type { AerialDriver } from './aerialDriver';
 import type { BuildContext } from './buildContext';
 import { dirtyChunkCount } from './chunkBudget';
-import { BUILDER, MAX_FOOTPRINT, upgradeThresholdOf } from './config';
+import { BUILDER, MAX_FOOTPRINT, typologyById, upgradeThresholdOf } from './config';
 import { generateBuilding, groundSideOf } from './generate';
 import { anchorOf } from './growthQueue';
 import { allowedLevel, riseOf } from './hierarchy';
@@ -44,10 +51,11 @@ export class UpgradeDriver {
    * Promuove al livello successivo gli edifici su cui la desiderabilita' e'
    * salita abbastanza.
    */
-  pass(state: SimState): void {
+  pass(state: SimState): SimState {
     const records = [...this.ctx.registry.all];
-    if (records.length === 0) return;
+    if (records.length === 0) return state;
 
+    let next = state;
     const budget = Math.min(BUILDER.upgradesPerPass, records.length);
     for (let i = 0; i < budget; i++) {
       if (this.ctx.growth.queued >= BUILDER.maxGrowing) break;
@@ -81,13 +89,19 @@ export class UpgradeDriver {
       // risponde di no piu' spesso, e senza leggere il campo, e' anche cio' che
       // tiene la passata al costo di prima su una citta' che ora ha il doppio
       // dei livelli da scalare.
-      if (nextLevel > allowedLevel(this.ctx, record.x, record.y, state, riseOf(this.ctx, record))) {
+      if (nextLevel > allowedLevel(this.ctx, record.x, record.y, next, riseOf(this.ctx, record))) {
         continue;
       }
 
-      const profile = urbanProfileAt(state, record.x, record.y);
+      const profile = urbanProfileAt(next, record.x, record.y);
       const threshold = upgradeThresholdOf(nextLevel) - localUpgradeDiscount(formOf(profile));
-      if (state.field.valueAt(record.x, record.y, record.class) <= threshold) {
+      if (next.field.valueAt(record.x, record.y, record.class) <= threshold) {
+        continue;
+      }
+
+      const cost = upgradeMaterialCost(nextLevel);
+      if (next.materials.stock < cost) {
+        next = deferConstruction(next, cost);
         continue;
       }
 
@@ -95,8 +109,19 @@ export class UpgradeDriver {
       // successiva le ripropone alla quota nuova. Farlo prima le avrebbe fatte
       // oscillare a ogni edificio che la passata scarta per soglia.
       this.aerial.releaseDecks(record.id);
-      this.upgrade(record, nextLevel, profile);
+      const replaced = this.upgrade(record, nextLevel, profile);
+      if (replaced === null) continue;
+      const specialization = nextTypologySpecialization(replaced);
+      next = upgradeBuilding(next, {
+        x: replaced.x,
+        y: replaced.y,
+        class: replaced.class,
+        level: replaced.level,
+        ...(replaced.mixed === undefined ? {} : { mixed: replaced.mixed }),
+        ...(specialization === undefined ? {} : { specialization }),
+      }, cost);
     }
+    return next;
   }
 
   /**
@@ -107,7 +132,11 @@ export class UpgradeDriver {
    * l'anello aggiuntivo e' libero; altrimenti il livello nuovo viene rigenerato
    * con l'impronta vecchia come tetto, e cresce solo in altezza.
    */
-  private upgrade(record: BuildingRecord, nextLevel: number, profile: LocalUrbanProfile): void {
+  private upgrade(
+    record: BuildingRecord,
+    nextLevel: number,
+    profile: LocalUrbanProfile,
+  ): BuildingRecord | null {
     const { world, terrain, streets, registry, growth, surface } = this.ctx;
     // Salendo di livello la colonna puo' meritare una tipologia diversa: una
     // casa-bottega che diventa podio commerciale e' proprio il racconto che
@@ -205,7 +234,7 @@ export class UpgradeDriver {
 
     if (dirtyChunkCount(env.x, env.y, env.sizeX, record.baseZ, record.baseZ + stamp.sizeZ,
       env.sizeY) > BUILDER.maxDirtyChunksPerBuilding) {
-      return;
+      return null;
     }
 
     // La sagoma su cui le sue campate poggiavano sta per cambiare: cadono con
@@ -249,7 +278,7 @@ export class UpgradeDriver {
       cluster: record.cluster,
       baseBand: record.baseBand,
     });
-    if (replaced === null) return;
+    if (replaced === null) return null;
 
     // La fondazione dell'anello aggiuntivo va gettata prima di salire: senza,
     // l'impronta allargata poggerebbe nel vuoto sulle colonne nuove.
@@ -269,6 +298,7 @@ export class UpgradeDriver {
     surface.enqueueBlockStreets(streets.blockAt(replaced.x, replaced.y));
     growth.enqueue(replaced.id, anchorOf(replaced), stamp, old);
     this.upgraded++;
+    return replaced;
   }
 
   /**
@@ -308,4 +338,8 @@ export class UpgradeDriver {
     return true;
   }
 
+}
+
+function nextTypologySpecialization(record: BuildingRecord) {
+  return record.typology === undefined ? undefined : typologyById(record.typology)?.specialization;
 }

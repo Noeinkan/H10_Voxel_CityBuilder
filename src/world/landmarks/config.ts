@@ -1,6 +1,7 @@
 import type { CatalystId } from '../../sim';
 import { PALETTE_SLOTS } from '../../engine/paletteSlots';
 import { GRADING } from '../grading/config';
+import { TERRACE } from '../terrain/config';
 import { SURFACE_KIND } from '../visualBlock';
 import { PART, box, type Part } from './parts';
 
@@ -74,6 +75,22 @@ export const LANDMARK = {
    * Un sale proprio le rende due domande diverse.
    */
   variantSalt: 0x5a3c_11d7,
+
+  /**
+   * Dislivello massimo che il terrapieno di un landmark puo' colmare.
+   *
+   * `GRADING.maxWorksStep` non va bene qui: copre la banchina che scende sul
+   * fondale, e su una montagna lascerebbe un riquadro largo dodici colonne
+   * prendere due o tre gradoni insieme. La struttura salirebbe alla quota del
+   * piu' alto e le poche colonne esposte del muro diventerebbero guglie sottili
+   * alte mezzo versante. Un landmark puo' scavalcare **un** ciglio naturale,
+   * non cucire insieme piu' terrazze; l'alzata massima del terreno e' la misura
+   * che dichiara esattamente quel limite.
+   *
+   * La banchina resta fuori da questa soglia: un porto ha davvero bisogno del
+   * tetto strutturale piu' largo per arrivare dal piano al fondale.
+   */
+  maxTerraceDrop: TERRACE.maxStep,
 
   /**
    * Fin dove una parte **poggia** invece di sporgere, in voxel dal piano finito.

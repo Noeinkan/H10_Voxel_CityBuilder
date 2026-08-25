@@ -8,6 +8,7 @@ import {
   resolveDecision,
   setPolicyActive,
   setTradeMode,
+  spendConstructionMaterials,
   type BuildingClass,
   type CatalystId,
   type PolicyId,
@@ -36,6 +37,7 @@ export type ActionFailure =
   | 'needs-open-ground'
   | 'too-close'
   | 'insufficient-funds'
+  | 'insufficient-materials'
   | 'population-required'
   | 'already-active'
   | 'already-unlocked'
@@ -209,6 +211,7 @@ export function terraceFailure(
   const requirement = BALANCE.gameplay.terrace;
   if (state.population.stock < requirement.population) return 'population-required';
   if (state.funds.stock < requirement.cost) return 'insufficient-funds';
+  if (state.materials.stock < requirement.materials) return 'insufficient-materials';
   return null;
 }
 
@@ -236,7 +239,11 @@ const TERRACE_FAILURE: Readonly<Record<TerraceRefusal, ActionFailure>> = {
 export function placeTerrace(state: SimState, refusal: TerraceRefusal | null): ActionResult {
   const failure = terraceFailure(state, refusal);
   if (failure !== null) return { success: false, reason: failure };
-  return { success: true, state: spendFunds(state, BALANCE.gameplay.terrace.cost) };
+  const funded = spendFunds(state, BALANCE.gameplay.terrace.cost);
+  const supplied = spendConstructionMaterials(funded, BALANCE.gameplay.terrace.materials);
+  return supplied === null
+    ? { success: false, reason: 'insufficient-materials' }
+    : { success: true, state: supplied };
 }
 
 /**
@@ -256,6 +263,7 @@ export function ropewayFailure(
   const requirement = BALANCE.gameplay.ropeway;
   if (state.population.stock < requirement.population) return 'population-required';
   if (state.funds.stock < requirement.cost) return 'insufficient-funds';
+  if (state.materials.stock < requirement.materials) return 'insufficient-materials';
   return null;
 }
 
@@ -282,7 +290,11 @@ const ROPEWAY_FAILURE: Readonly<Record<RopewayRefusal, ActionFailure>> = {
 export function placeRopeway(state: SimState, refusal: RopewayRefusal | null): ActionResult {
   const failure = ropewayFailure(state, refusal);
   if (failure !== null) return { success: false, reason: failure };
-  return { success: true, state: spendFunds(state, BALANCE.gameplay.ropeway.cost) };
+  const funded = spendFunds(state, BALANCE.gameplay.ropeway.cost);
+  const supplied = spendConstructionMaterials(funded, BALANCE.gameplay.ropeway.materials);
+  return supplied === null
+    ? { success: false, reason: 'insufficient-materials' }
+    : { success: true, state: supplied };
 }
 
 export function togglePolicy(state: SimState, id: PolicyId): ActionResult {

@@ -1,7 +1,6 @@
 import { createHudIcon } from './hudIcons';
 import {
   buildSelectionPanelModel,
-  defaultSection,
   type SelectionActionId,
   type SelectionSection,
   type SelectionSectionId,
@@ -21,14 +20,6 @@ import type { Selection } from '../game/selection';
  * `SelectionPanelModel`, che e' puro ed e' li' che le prove stanno.
  */
 
-/** Nomi delle quattro linguette. Corti: sono etichette, non frasi. */
-const TAB_LABELS: Readonly<Record<SelectionSectionId, string>> = {
-  structure: 'Structure',
-  block: 'Block',
-  column: 'Column',
-  voxel: 'Voxel',
-};
-
 const REFRESH_MS = 150;
 
 export interface SelectionPanelHandlers {
@@ -46,7 +37,6 @@ export interface SelectionPanelHandlers {
 }
 
 interface SectionView {
-  readonly tab: HTMLButtonElement;
   readonly body: HTMLElement;
   readonly summary: HTMLElement;
   readonly rows: HTMLElement;
@@ -57,10 +47,8 @@ export class SelectionPanel {
   private readonly root = document.createElement('aside');
   private readonly title = document.createElement('strong');
   private readonly subtitle = document.createElement('span');
-  private readonly tabs = document.createElement('div');
-  private readonly views = new Map<SelectionSectionId, SectionView>();
+  private readonly view: SectionView;
 
-  private active: SelectionSectionId = 'column';
   private lastPaint = 0;
 
   constructor(parent: HTMLElement, private readonly handlers: SelectionPanelHandlers) {
@@ -86,13 +74,8 @@ export class SelectionPanel {
     heading.append(this.title, this.subtitle);
     head.append(heading, close);
 
-    this.tabs.className = 'selection-tabs';
-    this.tabs.setAttribute('role', 'tablist');
-
-    this.root.append(head, this.tabs);
-    for (const id of ['structure', 'block', 'column', 'voxel'] as const) {
-      this.views.set(id, this.createSection(id));
-    }
+    this.root.append(head);
+    this.view = this.createSection();
     parent.appendChild(this.root);
   }
 
@@ -101,7 +84,7 @@ export class SelectionPanel {
   }
 
   get section(): SelectionSectionId {
-    return this.active;
+    return 'block';
   }
 
   needsPaint(now: number): boolean {
@@ -116,10 +99,9 @@ export class SelectionPanel {
    * l'isolato del palazzo che ha appena smesso di guardare.
    */
   show(selection: Selection, now: number, isolatedBlock: string | null = null): void {
-    this.active = defaultSection(selection);
     this.root.hidden = false;
     this.paint(selection, now, isolatedBlock);
-    this.handlers.onSection(this.active);
+    this.handlers.onSection('block');
   }
 
   /** Riscrive i valori senza toccare quale linguetta e' aperta. */
@@ -137,44 +119,13 @@ export class SelectionPanel {
     const model = buildSelectionPanelModel(selection, isolatedBlock);
     this.title.textContent = model.title;
     this.subtitle.textContent = model.summary;
-
-    const present = new Set(model.sections.map((section) => section.id));
-    // Se la sezione aperta non esiste piu' — un edificio demolito sotto il
-    // pannello, o promosso mentre lo si guarda — si ricade sulla colonna invece
-    // di lasciare una scheda che descrive qualcosa che non c'e'.
-    if (!present.has(this.active)) {
-      this.active = defaultSection(selection);
-      this.handlers.onSection(this.active);
-    }
-
-    for (const [id, view] of this.views) {
-      const section = model.sections.find((entry) => entry.id === id) ?? null;
-      view.tab.hidden = section === null;
-      view.body.hidden = section === null || id !== this.active;
-      const open = section !== null && id === this.active;
-      view.tab.setAttribute('aria-selected', open ? 'true' : 'false');
-      view.tab.dataset['active'] = open ? 'true' : 'false';
-      if (section !== null && open) paintRows(view, section, model.summary);
-    }
+    const block = model.sections.find((section) => section.id === 'block');
+    if (block !== undefined) paintRows(this.view, block, model.summary);
   }
 
-  private createSection(id: SelectionSectionId): SectionView {
-    const tab = document.createElement('button');
-    tab.type = 'button';
-    tab.className = 'selection-tab';
-    tab.id = `selection-tab-${id}`;
-    tab.textContent = TAB_LABELS[id];
-    tab.setAttribute('role', 'tab');
-    tab.setAttribute('aria-controls', `selection-body-${id}`);
-    tab.addEventListener('click', () => this.select(id));
-    this.tabs.appendChild(tab);
-
+  private createSection(): SectionView {
     const body = document.createElement('div');
     body.className = 'selection-body';
-    body.id = `selection-body-${id}`;
-    body.setAttribute('role', 'tabpanel');
-    body.setAttribute('aria-labelledby', tab.id);
-    body.hidden = true;
     const summary = document.createElement('p');
     summary.className = 'selection-summary';
     const rows = document.createElement('dl');
@@ -197,19 +148,7 @@ export class SelectionPanel {
     body.append(summary, rows, action);
     this.root.appendChild(body);
 
-    return { tab, body, summary, rows, action };
-  }
-
-  private select(id: SelectionSectionId): void {
-    if (this.active === id) return;
-    this.active = id;
-    for (const [other, view] of this.views) {
-      const open = other === id;
-      view.body.hidden = !open || view.tab.hidden;
-      view.tab.setAttribute('aria-selected', open ? 'true' : 'false');
-      view.tab.dataset['active'] = open ? 'true' : 'false';
-    }
-    this.handlers.onSection(id);
+    return { body, summary, rows, action };
   }
 }
 

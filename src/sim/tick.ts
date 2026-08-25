@@ -114,13 +114,18 @@ export function tick(state: SimState, terrainMap: TerrainMap): SimState {
 
   const maintenance = state.buildings.length * BALANCE.materials.upkeepPerBuilding;
   const materialsAvailable = state.materials.stock + materialsProduced;
-  const materialsAfterUpkeep = materialsAvailable - Math.min(maintenance, materialsAvailable);
+  const materialUpkeepPaid = Math.min(maintenance, materialsAvailable);
+  const materialsAfterUpkeep = materialsAvailable - materialUpkeepPaid;
+  const materialReserve = state.buildings.length * BALANCE.materials.reservePerBuilding;
 
   const commerce = resolveCommerce({
     commercial,
     population,
     staffing,
-    materials: materialsAfterUpkeep,
+    // I negozi trasformano in merce solo il surplus. Prima consumavano anche
+    // l'ultima unita' prodotta: con domanda pari all'offerta lo stock restava a
+    // zero e il delta pure, facendo sembrare spenta un'industria che lavorava.
+    materials: Math.max(0, materialsAfterUpkeep - materialReserve),
     capacityPerBuilding: weights.commercialCapacity,
   });
   const materialsStock = finiteStock(materialsAfterUpkeep - commerce.goods);
@@ -238,6 +243,15 @@ export function tick(state: SimState, terrainMap: TerrainMap): SimState {
       imported: trade.food,
       eaten: foodConsumed,
     },
+    materialFlows: {
+      produced: materialsProduced,
+      upkeep: materialUpkeepPaid,
+      retail: commerce.goods,
+      exported: trade.materials,
+      construction: 0,
+      reserve: materialReserve,
+      waitingCost: 0,
+    },
     trade: {
       connected: trade.connected,
       links: trade.links,
@@ -274,8 +288,8 @@ export function weightsOf(state: SimState): Weights {
  * ospita davvero due funzioni, ma in un volume solo, e la capacita' lo dice.
  */
 export function effectiveCount(state: SimState, cls: BuildingClass): number {
-  const mixed = state.mixedCounts[cls] ?? 0;
-  return state.buildingCounts[cls] + mixed * BALANCE.mixedUse.secondaryShare;
+  const mixed = state.mixedCapacityCounts[cls] ?? 0;
+  return state.capacityCounts[cls] + mixed * BALANCE.mixedUse.secondaryShare;
 }
 
 interface PopulationInputs {

@@ -104,11 +104,13 @@ describe('Builder', () => {
       x: 12,
       y: 12,
       class: BUILDING_CLASS.residential,
+      level: 8,
     });
 
     builder.materialize(state.buildings);
 
     expect(builder.registry.count).toBe(1);
+    expect([...builder.registry.all][0]?.level).toBe(8);
     expect(builder.stats.growing).toBe(0);
     expect(world.solidVoxelCount).toBeGreaterThan(0);
     expect(world.getSurfaceKind(12, 12, 12)).not.toBe(SURFACE_KIND.plain);

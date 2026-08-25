@@ -92,6 +92,16 @@ function selection(structureInfo: StructureInfo | null, extra: Partial<Selection
       landmarks: 1,
       structures: 2,
       maxLevel: 5,
+      productivity: {
+        housingCapacity: 72,
+        commerceCapacity: 24,
+        materialsCapacityPerTick: 0,
+        materialsPerTick: 0,
+        foodCapacityPerTick: 0,
+        foodPerTick: 0,
+        civicUpkeepPerTick: 0,
+        staffing: 1,
+      },
     },
     ...extra,
   };
@@ -100,6 +110,12 @@ function selection(structureInfo: StructureInfo | null, extra: Partial<Selection
 function rowsOf(model: ReturnType<typeof buildSelectionPanelModel>, id: string): readonly string[] {
   const section = model.sections.find((entry) => entry.id === id);
   return section === undefined ? [] : section.rows.map((row) => `${row.label}: ${row.value}`);
+}
+
+function sectionOf(model: ReturnType<typeof buildSelectionPanelModel>, id: string) {
+  const section = model.sections.find((entry) => entry.id === id);
+  if (section === undefined) throw new Error(`sezione ${id} attesa`);
+  return section;
 }
 
 function actionOf(model: ReturnType<typeof buildSelectionPanelModel>, id: string): string | null {
@@ -112,10 +128,11 @@ describe('buildSelectionPanelModel', () => {
     // fa avanzare: chiamarlo livello direbbe che un molo compete in altezza con
     // le torri, che e' il contrario di cio' che i due numeri significano.
     const model = buildSelectionPanelModel(selection(structure({ landmark: 'port', level: 2 })));
+    const section = sectionOf(model, 'structure');
 
-    expect(model.title).toBe('Port');
-    expect(model.summary).toContain('stage 2');
-    expect(model.summary).not.toContain('level');
+    expect(section.title).toBe('Port');
+    expect(section.summary).toContain('stage 2');
+    expect(section.summary).not.toContain('level');
     expect(rowsOf(model, 'structure').join(' ')).not.toContain('Use:');
   });
 
@@ -127,17 +144,18 @@ describe('buildSelectionPanelModel', () => {
       selection(structure({ span: SPAN_KIND.bridge, class: BUILDING_CLASS.residential })),
     );
 
-    expect(model.title).toBe('Skybridge');
+    const section = sectionOf(model, 'structure');
+    expect(section.title).toBe('Skybridge');
     expect(rowsOf(model, 'structure').join(' ')).not.toContain('Housing');
-    expect(model.summary).toContain('takes no ground');
+    expect(section.summary).toContain('takes no ground');
   });
 
   it('una mensola dice se il suolo lo prende o no', () => {
     const hanging = buildSelectionPanelModel(selection(structure({ aerial: AERIAL_PART.terrace })));
     const standing = buildSelectionPanelModel(selection(structure({ aerial: AERIAL_PART.pier })));
 
-    expect(hanging.summary).toContain('hangs above');
-    expect(standing.summary).toContain('stands on');
+    expect(sectionOf(hanging, 'structure').summary).toContain('hangs above');
+    expect(sectionOf(standing, 'structure').summary).toContain('stands on');
   });
 
   it('un edificio misto mostra i due usi nell\'ordine di contratto', () => {
@@ -146,7 +164,7 @@ describe('buildSelectionPanelModel', () => {
       mixed: BUILDING_CLASS.residential,
     })));
 
-    expect(model.summary).toBe('Commerce over Housing · level 3.');
+    expect(sectionOf(model, 'structure').summary).toBe('Commerce over Housing · level 3.');
     // E una volta sola: l'intestazione lo dice, le righe no.
     expect(rowsOf(model, 'structure').join(' ')).not.toContain('Commerce over Housing');
   });
@@ -214,9 +232,44 @@ describe('buildSelectionPanelModel', () => {
     expect(model.title).toContain('Block');
   });
 
-  it('la sezione aperta per prima e\' la piu\' specifica che esiste', () => {
-    expect(defaultSection(selection(structure()))).toBe('structure');
-    expect(defaultSection(selection(null))).toBe('column');
+  it('la selezione apre sempre l\'isolato, anche quando il click colpisce un edificio', () => {
+    expect(defaultSection(selection(structure()))).toBe('block');
+    expect(defaultSection(selection(null))).toBe('block');
+  });
+
+  it('l\'isolato mostra le capacita\' e i flussi che gli appartengono', () => {
+    const model = buildSelectionPanelModel(selection(structure()));
+    const rows = rowsOf(model, 'block');
+
+    expect(model.title).toBe('Block 2,3');
+    expect(rows).toContain('Housing capacity: 72 residents');
+    expect(rows).toContain('Commerce capacity: 24 customers a tick');
+  });
+
+  it('i flussi produttivi dichiarano l\'organico cittadino che li limita', () => {
+    const picked = selection(structure());
+    const model = buildSelectionPanelModel({
+      ...picked,
+      block: {
+        ...picked.block,
+        productivity: {
+          housingCapacity: 0,
+          commerceCapacity: 0,
+          materialsCapacityPerTick: 2.5,
+          materialsPerTick: 1.25,
+          foodCapacityPerTick: 12,
+          foodPerTick: 6,
+          civicUpkeepPerTick: 2,
+          staffing: 0.5,
+        },
+      },
+    });
+    const rows = rowsOf(model, 'block');
+
+    expect(rows).toContain('Materials: 1.3 of 2.5 a tick');
+    expect(rows).toContain('Food: 6 of 12 a tick');
+    expect(rows).toContain('Civic upkeep: 2 funds a tick');
+    expect(rows).toContain('Workforce: 50% staffed citywide');
   });
 
   it('un uso dice cosa rende il tipo, quanti ne ha la citta\' e quanto ne usa', () => {
@@ -313,10 +366,22 @@ describe('buildSelectionPanelModel', () => {
         landmarks: 0,
         structures: 0,
         maxLevel: 0,
+        productivity: {
+          housingCapacity: 0,
+          commerceCapacity: 0,
+          materialsCapacityPerTick: 0,
+          materialsPerTick: 0,
+          foodCapacityPerTick: 0,
+          foodPerTick: 0,
+          civicUpkeepPerTick: 0,
+          staffing: 1,
+        },
       },
     });
 
     expect(actionOf(buildSelectionPanelModel(empty), 'block')).toBe('isolate-block');
+    expect(rowsOf(buildSelectionPanelModel(empty), 'block'))
+      .toContain('Productivity: no active buildings');
   });
 });
 

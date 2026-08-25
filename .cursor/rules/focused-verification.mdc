@@ -1,0 +1,14 @@
+---
+description: Prefer focused verification and avoid routine full-suite runs
+alwaysApply: true
+---
+
+# Budget di verifica
+
+- Non eseguire automaticamente `npm test` per una modifica ordinaria o localizzata, nemmeno alla consegna.
+- Durante l'iterazione usa il controllo piu' stretto che copre davvero il cambiamento: un singolo file di test oppure `npm run test:related -- <file-sorgente>`.
+- Usa `npm run test:changed` solo quando il diff e' abbastanza stretto da non trascinare quasi tutta la suite.
+- Esegui `npm run typecheck` quando tocchi TypeScript; esegui `npm run build` solo per bundle, worker o cambiamenti che richiedono davvero la build.
+- La suite completa e' riservata a una richiesta esplicita dell'utente oppure a modifiche trasversali per cui i test mirati non possono coprire onestamente il rischio. Prima di lanciarla, indica brevemente quel rischio.
+- Non ripetere un controllo gia' verde dopo modifiche che non possono influenzarlo, come sola documentazione.
+- Nel riepilogo elenca i controlli eseguiti e segnala con chiarezza quelli intenzionalmente non eseguiti.

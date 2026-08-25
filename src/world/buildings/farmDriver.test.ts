@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  BALANCE,
   BUILDING_CLASS,
   FARM_KIND,
   addCatalyst,
@@ -13,6 +14,8 @@ import { COVER } from '../terrain/groundcover';
 import { VoxelWorld } from '../VoxelWorld';
 import { coverMarkKind, isCoverMark } from '../visualBlock';
 import { Builder } from './Builder';
+import { BUILDER } from './config';
+import { PLOTS_PER_PASS } from './farmDriver';
 
 /**
  * Una citta' che ha fame: popolazione vera, nessun lotto agricolo.
@@ -105,14 +108,27 @@ describe('FarmDriver — la campagna nasce fuori dalla citta’', () => {
     expect(plots(0.5)).toBeGreaterThan(0);
   });
 
-  it('non pianta piu’ di `plotsPerPass` per passata', () => {
+  it('non pianta piu’ di `PLOTS_PER_PASS` per passata', () => {
     const world = new VoxelWorld();
     const terrain = testTerrain({ chunksX: 8, chunksY: 8 });
     const builder = new Builder(world, terrain, 1337);
 
     builder.onTick(hungryCity());
 
-    expect(builder.stats.farmPlots).toBeLessThanOrEqual(FARMS.plotsPerPass);
+    expect(builder.stats.farmPlots).toBeLessThanOrEqual(PLOTS_PER_PASS);
+  });
+
+  it('il tetto copre il caso peggiore del costruttore', () => {
+    // **E' la relazione che si e' gia' rotta una volta.** Scritto a mano il tetto
+    // valeva `6` contro i `12` della propria derivazione, e sotto quel numero la
+    // campagna non poteva raggiungere la citta' per costruzione: l'offerta
+    // tornava una costante contro una domanda che cresce. Qui si lega il conto,
+    // non il numero — cambiare la cadenza del costruttore deve muovere il tetto,
+    // non farlo mentire.
+    const worstCase = (BUILDER.sitesPerBuild / BUILDER.ticksPerBuild) * FARMS.ticksPerPass;
+    const housesPerPlot = BALANCE.farms[FARM_KIND.field].houses;
+
+    expect(PLOTS_PER_PASS).toBeGreaterThanOrEqual(worstCase / housesPerPlot);
   });
 });
 

@@ -13,6 +13,7 @@ import {
   tradeLinksOf,
   type BuildingClass,
   type FoodReport,
+  type MaterialsReport,
   type CatalystGroup,
   type CatalystId,
   type CatalystSite,
@@ -87,6 +88,8 @@ export interface HudResource {
    * divergere dal numero che le sta sopra.
    */
   readonly breakdown?: readonly HudFlow[];
+  /** Lettura operativa dello stock, mostrata sopra il rendiconto. */
+  readonly status?: string;
 }
 
 /** Un riempimento 0..1 con la sua lettura in chiaro. */
@@ -106,6 +109,8 @@ export interface HudAction {
   readonly id: string;
   readonly label: string;
   readonly cost: number;
+  /** Materiali richiesti oltre ai fondi, solo per le opere fisiche. */
+  readonly materialCost?: number;
   readonly available: boolean;
   readonly reason: string;
   readonly radius?: number;
@@ -339,6 +344,7 @@ export function buildGameHudModel(
   trend?: ResourceTrend,
 ): GameHudModel {
   const funds = stats?.state.funds.stock ?? 0;
+  const materials = stats?.state.materials.stock ?? 0;
   const population = stats?.state.population.stock ?? 0;
   const ready = stats !== null;
   const expectedCatalyst = stats?.onboarding.expectedCatalyst ?? null;
@@ -370,7 +376,16 @@ export function buildGameHudModel(
           // usciva dal termine industriale, e la voce sarebbe stata «fabbriche».
           foodBreakdown(stats.state.harvest),
         ),
-        resource('materials', 'Materials', stats.state.materials.stock, stats.state.materials.delta, trend),
+        resource(
+          'materials',
+          'Materials',
+          stats.state.materials.stock,
+          stats.state.materials.delta,
+          trend,
+          undefined,
+          materialsBreakdown(stats.state.materialFlows),
+          materialsStatus(stats.state.materials.stock, stats.state.materialFlows),
+        ),
         {
           id: 'satisfaction',
           label: 'Happiness',
@@ -469,17 +484,20 @@ export function buildGameHudModel(
   const terraceRequirement = BALANCE.gameplay.terrace;
   const terracePopulationOk = population >= terraceRequirement.population;
   const terraceFundsOk = funds >= terraceRequirement.cost;
+  const terraceMaterialsOk = materials >= terraceRequirement.materials;
   const terrace: HudAction = {
     id: 'terrace',
     label: 'Terrace',
     cost: terraceRequirement.cost,
-    available: ready && terracePopulationOk && terraceFundsOk,
+    materialCost: terraceRequirement.materials,
+    available: ready && terracePopulationOk && terraceFundsOk && terraceMaterialsOk,
     // Bloccata non vuol dire nascosta, come per i catalizzatori: sapere che la
     // citta' potra' salire e' l'informazione che fa pianificare.
-    locked: ready && !(terracePopulationOk && terraceFundsOk),
-    ...(ready && !(terracePopulationOk && terraceFundsOk)
+    locked: ready && !(terracePopulationOk && terraceFundsOk && terraceMaterialsOk),
+    ...(ready && !(terracePopulationOk && terraceFundsOk && terraceMaterialsOk)
       ? bindingThreshold([
           { have: funds, need: terraceRequirement.cost, label: 'funds' },
+          { have: materials, need: terraceRequirement.materials, label: 'materials' },
           { have: population, need: terraceRequirement.population, label: 'residents' },
         ])
       : {}),
@@ -489,6 +507,8 @@ export function buildGameHudModel(
         ? `Requires ${terraceRequirement.population} residents.`
         : !terraceFundsOk
           ? 'Not enough funds.'
+          : !terraceMaterialsOk
+            ? 'Not enough materials: grow industry before building aloft.'
           : 'Click a tall building to hang a floor off it.',
     description: 'Hangs a floor off a tall building: new ground above the street.',
   };
@@ -496,15 +516,18 @@ export function buildGameHudModel(
   const ropewayRequirement = BALANCE.gameplay.ropeway;
   const ropewayPopulationOk = population >= ropewayRequirement.population;
   const ropewayFundsOk = funds >= ropewayRequirement.cost;
+  const ropewayMaterialsOk = materials >= ropewayRequirement.materials;
   const ropeway: HudAction = {
     id: 'ropeway',
     label: 'Ropeway',
     cost: ropewayRequirement.cost,
-    available: ready && ropewayPopulationOk && ropewayFundsOk,
-    locked: ready && !(ropewayPopulationOk && ropewayFundsOk),
-    ...(ready && !(ropewayPopulationOk && ropewayFundsOk)
+    materialCost: ropewayRequirement.materials,
+    available: ready && ropewayPopulationOk && ropewayFundsOk && ropewayMaterialsOk,
+    locked: ready && !(ropewayPopulationOk && ropewayFundsOk && ropewayMaterialsOk),
+    ...(ready && !(ropewayPopulationOk && ropewayFundsOk && ropewayMaterialsOk)
       ? bindingThreshold([
           { have: funds, need: ropewayRequirement.cost, label: 'funds' },
+          { have: materials, need: ropewayRequirement.materials, label: 'materials' },
           { have: population, need: ropewayRequirement.population, label: 'residents' },
         ])
       : {}),
@@ -514,6 +537,8 @@ export function buildGameHudModel(
         ? `Requires ${ropewayRequirement.population} residents.`
         : !ropewayFundsOk
           ? 'Not enough funds.'
+          : !ropewayMaterialsOk
+            ? 'Not enough materials: grow industry before crossing the water.'
           : 'Click a shore facing the water: the far end is found for you.',
     description: 'Two towers and a cable: crosses water no bridge would span.',
   };
@@ -786,6 +811,26 @@ function foodBreakdown(harvest: FoodReport): readonly HudFlow[] {
   return rows.filter((row) => row.amount >= 0.005);
 }
 
+function materialsBreakdown(report: MaterialsReport): readonly HudFlow[] {
+  const rows: readonly HudFlow[] = [
+    { label: 'Industry', amount: report.produced, direction: 'in' },
+    { label: 'Building upkeep', amount: report.upkeep, direction: 'out' },
+    { label: 'Shops', amount: report.retail, direction: 'out' },
+    { label: 'Exports', amount: report.exported, direction: 'out' },
+    { label: 'Construction', amount: report.construction, direction: 'out' },
+  ];
+  return rows.filter((row) => row.amount >= 0.005);
+}
+
+function materialsStatus(stock: number, report: MaterialsReport): string {
+  if (report.waitingCost > stock) {
+    return `Construction waiting: ${report.waitingCost.toFixed(0)} materials required; ` +
+      `${Math.max(0, report.waitingCost - stock).toFixed(0)} still missing.`;
+  }
+  return `${report.reserve.toFixed(0)} materials reserved for construction; ` +
+    'shops and exports use only the surplus.';
+}
+
 function resource(
   id: HudResource['id'],
   label: string,
@@ -794,6 +839,7 @@ function resource(
   trend?: ResourceTrend,
   fill?: HudFill,
   breakdown?: readonly HudFlow[],
+  status?: string,
 ): HudResource {
   return {
     id,
@@ -808,6 +854,7 @@ function resource(
     series: trend?.window(id) ?? [],
     ...(fill === undefined ? {} : { fill }),
     ...(breakdown === undefined || breakdown.length === 0 ? {} : { breakdown }),
+    ...(status === undefined ? {} : { status }),
   };
 }
 
