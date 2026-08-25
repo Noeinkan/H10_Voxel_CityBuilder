@@ -672,7 +672,7 @@ export const TYPOLOGIES: readonly TypologyDefinition[] = [
     profile: {
       bandHeight: [4, 4],
       shrinkBias: 0.34,
-      shrinkOps: [BAND_OP.setback, BAND_OP.shrinkOneSide, BAND_OP.shrink],
+      shrinkOps: [BAND_OP.stack, BAND_OP.setback, BAND_OP.shrinkOneSide, BAND_OP.shrink],
       growOps: [BAND_OP.grow, BAND_OP.jog, BAND_OP.shrinkOneSide],
     },
   },

@@ -22,6 +22,7 @@ function inspectState(patch: Partial<InspectState>): InspectState {
     view: [0, 0, -1],
     block: null,
     subject: null,
+    landmark: null,
     section: null,
     locked: false,
     ...patch,

@@ -17,6 +17,7 @@ function xrayState(patch: Partial<InspectState> = {}): InspectState {
     view: VIEW,
     block: null,
     subject: SUBJECT,
+    landmark: null,
     section: null,
     locked: false,
     ...patch,
@@ -127,5 +128,22 @@ describe('la lente dei raggi X', () => {
     const bare = inspectUniforms(xrayState({ subject: null, focus: { x: 100, y: 100, z: 20 } }));
     expect(bare.lensMax[0] - bare.lensMin[0]).toBeGreaterThan(XRAY.bare);
     expect(bare.veil).toBe(XRAY.veil);
+  });
+
+  it('la ricerca del landmark ha una portata e non cattura la citta’ intera', () => {
+    // Una portata infinita aggancerebbe ogni colonna al monumento piu' vicino,
+    // e la lente smetterebbe di rispondere a cio' che si sta guardando davvero.
+    expect(XRAY.landmarkReach).toBeGreaterThan(0);
+    expect(XRAY.landmarkReach).toBeLessThan(XRAY.depth);
+  });
+
+  it('l’accensione tigne senza accendere a giorno il landmark', () => {
+    // `tint` e `boost` sono due manopole distinte e devono restare nel loro
+    // intervallo: la prima spiega quale cosa e' un landmark, la seconda la fa
+    // leggere sotto il velo — nessuna delle due deve diventare un faro.
+    for (const value of [XRAY.glow.tint, XRAY.glow.boost]) {
+      expect(value).toBeGreaterThan(0);
+      expect(value).toBeLessThan(1);
+    }
   });
 });

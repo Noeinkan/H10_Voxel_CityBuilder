@@ -156,6 +156,8 @@ export function createVoxelMaterial(hexColors: readonly string[], voxelSize: num
   const inspectRect = new Vector4(-1e9, -1e9, 1e9, 1e9);
   const inspectLensMin = new Vector4(0, 0, 0, 0);
   const inspectLensMax = new Vector3(0, 0, 0);
+  const inspectGlowMin = new Vector3(0, 0, 0);
+  const inspectGlowMax = new Vector3(0, 0, 0);
   /** Vero da quando la variante con il `discard` e' stata composta. */
   let inspectCompiled = false;
 
@@ -243,6 +245,8 @@ export function createVoxelMaterial(hexColors: readonly string[], voxelSize: num
       uInspectInside: { value: 1 },
       uInspectLensMin: { value: inspectLensMin },
       uInspectLensMax: { value: inspectLensMax },
+      uInspectGlowMin: { value: inspectGlowMin },
+      uInspectGlowMax: { value: inspectGlowMax },
     },
     side: FrontSide,
     transparent: false,
@@ -373,6 +377,8 @@ export function createVoxelMaterial(hexColors: readonly string[], voxelSize: num
         uniforms.lensMin[3],
       );
       inspectLensMax.set(uniforms.lensMax[0], uniforms.lensMax[1], uniforms.lensMax[2]);
+      inspectGlowMin.set(uniforms.glowMin[0], uniforms.glowMin[1], uniforms.glowMin[2]);
+      inspectGlowMax.set(uniforms.glowMax[0], uniforms.glowMax[1], uniforms.glowMax[2]);
       material.uniforms['uInspectVeil'].value = uniforms.veil;
       material.uniforms['uInspectInside'].value = uniforms.inside;
 

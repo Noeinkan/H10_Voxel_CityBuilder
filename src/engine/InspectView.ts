@@ -1,4 +1,4 @@
-import type { ReadonlyBuildingRegistry } from '../world/buildings/BuildingRegistry';
+import type { BuildingRecord, ReadonlyBuildingRegistry } from '../world/buildings/BuildingRegistry';
 import type { BlockRect } from '../world/streets/streetGrid';
 import type { StreetNetwork } from '../world/streets/StreetNetwork';
 import type { TerrainMap } from '../world/terrain/TerrainMap';
@@ -17,6 +17,7 @@ import {
   type InspectState,
   type InspectUniforms,
 } from './inspect';
+import { XRAY } from './xray';
 import type { InspectGuides } from './InspectGuides';
 import type { IsoCameraController, IsoCameraState } from './IsoCameraController';
 import type { VoxelMaterialHandle } from './VoxelMaterial';
@@ -154,6 +155,12 @@ export function createInspectView(options: InspectViewOptions): InspectView {
   let subject: InspectBox | null = null;
 
   /**
+   * Il landmark che la lente deve accendere, quando sotto il cursore ce n'e' uno
+   * a portata. Resta null quando il soggetto e' un edificio qualunque.
+   */
+  let landmark: InspectBox | null = null;
+
+  /**
    * L'isolato **scelto**, quando c'e'.
    *
    * Finche' e' null, Block focus insegue il cursore come sempre. Da qui in poi
@@ -195,6 +202,7 @@ export function createInspectView(options: InspectViewOptions): InspectView {
       view: [viewDirection[0], viewDirection[1], viewDirection[2]],
       block: blockRect,
       subject,
+      landmark,
       section: focus === null || streets === null
         ? null
         : { axis, at: streets.nearestLine(axis, axis === 0 ? focus.x : focus.y) },
@@ -236,6 +244,24 @@ export function createInspectView(options: InspectViewOptions): InspectView {
   }
 
   /**
+   * Il volume occupato da un record, negli estremi aperti della lente.
+   *
+   * Lo stesso conto per `subjectAt` e `landmarkNear`: due copie divergerebbero
+   * al primo record con `footprintY`, e la lente guarderebbe una scatola diversa
+   * da quella che accende.
+   */
+  function boxOf(record: BuildingRecord): InspectBox {
+    return {
+      x0: record.x,
+      y0: record.y,
+      z0: record.baseZ,
+      x1: record.x + record.footprint,
+      y1: record.y + (record.footprintY ?? record.footprint),
+      z1: record.baseZ + record.height,
+    };
+  }
+
+  /**
    * Il volume da guardare, sulla colonna a fuoco.
    *
    * Il registro sa gia' tutto quello che serve — angolo, impronta, base, altezza
@@ -257,14 +283,36 @@ export function createInspectView(options: InspectViewOptions): InspectView {
       const above = record.baseZ + record.height;
       if (above <= top) continue;
       top = above;
-      best = {
-        x0: record.x,
-        y0: record.y,
-        z0: record.baseZ,
-        x1: record.x + record.footprint,
-        y1: record.y + (record.footprintY ?? record.footprint),
-        z1: above,
-      };
+      best = boxOf(record);
+    }
+    return best;
+  }
+
+  /**
+   * Il landmark piu' vicino alla colonna puntata, entro `XRAY.landmarkReach`.
+   *
+   * E' la domanda nuova dei raggi X: trovare i landmark che la crescita ha
+   * circondato e accenderli attraverso gli edifici. La distanza e' di Chebyshev
+   * dalla colonna all'impronta **vera**, non al solo angolo minimo: cosi' un
+   * molo o una pista si agganciano anche sul fianco lungo, dove l'angolo e'
+   * lontano ma la struttura passa vicino. Senza landmark a portata si lascia la
+   * risposta al solito `subjectAt`, che guarda l'edificio sotto il cursore.
+   */
+  function landmarkNear(cell: FocusCell | null): InspectBox | null {
+    const registry = options.registry();
+    if (cell === null || registry === undefined) return null;
+
+    let best: InspectBox | null = null;
+    let bestDist = Infinity;
+    for (const record of registry.all) {
+      if (record.landmark === undefined) continue;
+      const depth = record.footprintY ?? record.footprint;
+      const dx = Math.max(record.x - cell.x, 0, cell.x - (record.x + record.footprint - 1));
+      const dy = Math.max(record.y - cell.y, 0, cell.y - (record.y + depth - 1));
+      const dist = Math.max(dx, dy);
+      if (dist > XRAY.landmarkReach || dist >= bestDist) continue;
+      bestDist = dist;
+      best = boxOf(record);
     }
     return best;
   }
@@ -415,6 +463,7 @@ export function createInspectView(options: InspectViewOptions): InspectView {
       // perche' la finestra si e' aperta la'.
       focus = null;
       subject = null;
+      landmark = null;
       // Uscendo da Levels la quota si ri-arma, e una fetta riaperta riparte dal
       // suolo che si sta guardando invece che da una quota scelta mezz'ora fa,
       // che nel frattempo puo' essere finita sottoterra. Vale per ogni uscita e
@@ -471,7 +520,13 @@ export function createInspectView(options: InspectViewOptions): InspectView {
       }
       blockKey = null;
       blockRect = null;
-      subject = mode === INSPECT_MODE.xray ? subjectAt(focus) : null;
+      // Il landmark vince sull'edificio: quando ce n'e' uno a portata, la lente
+      // guarda lui — e' cio' che fa trovare i monumenti sepolti dalla crescita —
+      // e l'accensione lo marca. Senza, si torna all'edificio piu' alto sulla
+      // colonna, che resta la domanda di sempre.
+      const landmarkBox = mode === INSPECT_MODE.xray ? landmarkNear(focus) : null;
+      subject = mode === INSPECT_MODE.xray ? landmarkBox ?? subjectAt(focus) : null;
+      landmark = landmarkBox;
 
       if (focus !== null && streets !== null) {
         const block = streets.blockAt(focus.x, focus.y);

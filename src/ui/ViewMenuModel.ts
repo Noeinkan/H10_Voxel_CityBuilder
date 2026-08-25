@@ -102,7 +102,7 @@ const LABELS: Readonly<Record<InspectMode, string>> = {
  */
 const DESCRIPTIONS: Readonly<Record<InspectMode, string>> = {
   [INSPECT_MODE.off]: 'The city as it stands.',
-  [INSPECT_MODE.xray]: 'See through whatever stands in front of what you are looking at.',
+  [INSPECT_MODE.xray]: 'Find landmarks swallowed by growth and light them up through the buildings.',
   [INSPECT_MODE.slice]: 'Cut the city at a height and walk down floor by floor.',
   [INSPECT_MODE.section]: 'Slice along a street and read the block fronts.',
   [INSPECT_MODE.block]: 'Fade everything outside one block, keeping it in context.',
@@ -125,7 +125,7 @@ const DESCRIPTIONS: Readonly<Record<InspectMode, string>> = {
  */
 const GESTURES: Readonly<Record<InspectMode, string>> = {
   [INSPECT_MODE.off]: '',
-  [INSPECT_MODE.xray]: 'Point at a building: whatever stands in front of it fades out of the way.',
+  [INSPECT_MODE.xray]: 'Point near a landmark: it lights up through whatever hides it.',
   [INSPECT_MODE.slice]: 'Drag the Level rail on the left, or press [ and ] — hold Shift for a whole floor.',
   [INSPECT_MODE.section]: 'Point at a block: the cut falls on the nearest street. Q and E turn it.',
   [INSPECT_MODE.block]: 'Point at the block you want to keep, then click to study it on its own.',

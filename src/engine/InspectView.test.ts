@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest';
 
+import type { BuildingRecord, ReadonlyBuildingRegistry } from '../world/buildings/BuildingRegistry';
 import type { TerrainColumn, TerrainMap } from '../world/terrain/TerrainMap';
 import type { VoxelWorld } from '../world/VoxelWorld';
-import { INSPECT, INSPECT_MODE } from './inspect';
+import { INSPECT, INSPECT_MODE, type InspectMode } from './inspect';
 import { createInspectView, type FocusCell, type InspectView } from './InspectView';
 import type { IsoCameraController } from './IsoCameraController';
 import type { VoxelMaterialHandle } from './VoxelMaterial';
@@ -46,7 +47,14 @@ interface Harness {
   point(cell: FocusCell | null): void;
 }
 
-function makeView(options: { sliceZ?: number; sliceFromUrl?: boolean } = {}): Harness {
+function makeView(
+  options: {
+    sliceZ?: number;
+    sliceFromUrl?: boolean;
+    mode?: InspectMode;
+    registry?: () => ReadonlyBuildingRegistry | undefined;
+  } = {},
+): Harness {
   let pointed: FocusCell | null = null;
   const view = createInspectView({
     world,
@@ -55,10 +63,10 @@ function makeView(options: { sliceZ?: number; sliceFromUrl?: boolean } = {}): Ha
     guides: null,
     streets: null,
     map: () => map,
-    registry: () => undefined,
+    registry: options.registry ?? (() => undefined),
     pointedCellAt: () => pointed,
     toolActive: () => false,
-    mode: INSPECT_MODE.slice,
+    mode: options.mode ?? INSPECT_MODE.slice,
     sliceZ: options.sliceZ ?? INSPECT.defaultSliceZ,
     sliceFromUrl: options.sliceFromUrl ?? false,
   });
@@ -145,5 +153,102 @@ describe('InspectView, quota della fetta', () => {
     harness.view.apply(VIEW);
 
     expect(harness.view.sliceZ).toBe(FAR_HEIGHT + INSPECT.sliceCoarse);
+  });
+});
+
+describe('InspectView, la ricerca del landmark', () => {
+  function landmark(x: number, y: number, extra: Partial<BuildingRecord> = {}): BuildingRecord {
+    return {
+      id: 1,
+      x,
+      y,
+      baseZ: 12,
+      footprint: 4,
+      height: 20,
+      class: 0,
+      level: 1,
+      seed: 0,
+      landmark: 'market',
+      ...extra,
+    };
+  }
+
+  function building(x: number, y: number): BuildingRecord {
+    return {
+      id: 2,
+      x,
+      y,
+      baseZ: 12,
+      footprint: 4,
+      height: 40,
+      class: 0,
+      level: 3,
+      seed: 0,
+    };
+  }
+
+  function registryOf(records: BuildingRecord[]): ReadonlyBuildingRegistry {
+    return {
+      all: records[Symbol.iterator](),
+      at: (x: number, y: number) => records.filter((record) => {
+        const depth = record.footprintY ?? record.footprint;
+        return x >= record.x && x < record.x + record.footprint
+          && y >= record.y && y < record.y + depth;
+      }),
+    } as unknown as ReadonlyBuildingRegistry;
+  }
+
+  it('punta il landmark piu’ vicino e lo accende, non l’edificio sotto il cursore', () => {
+    const lm = landmark(100, 100);
+    const harness = makeView({
+      mode: INSPECT_MODE.xray,
+      registry: () => registryOf([building(90, 90), lm]),
+    });
+    hover(harness, { x: 104, y: 104, z: 40 });
+    harness.view.apply(VIEW);
+
+    // La lente guarda il landmark anche se il cursore sta su una colonna di
+    // confine: e' cio' che i raggi X esistono per trovare, non l'edificio alto.
+    const lens = harness.view.payload;
+    expect(lens.lensMin[0]).toBeLessThanOrEqual(lm.x);
+    expect(lens.glowMin).toEqual([100, 100, 12]);
+    expect(lens.glowMax).toEqual([104, 104, 32]);
+    expect(lens.glowMax[0]).toBeGreaterThan(lens.glowMin[0]);
+  });
+
+  it('fuori portata lascia l’edificio sotto il cursore e non accende niente', () => {
+    const harness = makeView({
+      mode: INSPECT_MODE.xray,
+      registry: () => registryOf([landmark(200, 200), building(90, 90)]),
+    });
+    hover(harness, { x: 92, y: 92, z: 40 });
+    harness.view.apply(VIEW);
+
+    const lens = harness.view.payload;
+    expect(lens.glowMax[0]).toBeLessThanOrEqual(lens.glowMin[0]);
+    // La lente resta l'edificio puntato: il pavimento e' la sua base.
+    expect(lens.lensMin[3]).toBe(12);
+  });
+
+  it('misura la distanza dall’impronta, non dal solo angolo minimo', () => {
+    // Una struttura lineare — footprint lungo y — aggancia il cursore sul
+    // fianco, dove l'angolo minimo e' lontano ma la struttura passa vicino.
+    const pier = landmark(100, 100, { footprintY: 40 });
+    const harness = makeView({
+      mode: INSPECT_MODE.xray,
+      registry: () => registryOf([pier]),
+    });
+    hover(harness, { x: 102, y: 130, z: 12 });
+    harness.view.apply(VIEW);
+
+    expect(harness.view.payload.glowMax[0]).toBeGreaterThan(harness.view.payload.glowMin[0]);
+  });
+
+  it('senza registro non c’e’ nessun landmark da accendere', () => {
+    const harness = makeView({ mode: INSPECT_MODE.xray });
+    hover(harness, { x: 92, y: 92, z: 40 });
+    harness.view.apply(VIEW);
+
+    expect(harness.view.payload.glowMax[0]).toBeLessThanOrEqual(harness.view.payload.glowMin[0]);
   });
 });

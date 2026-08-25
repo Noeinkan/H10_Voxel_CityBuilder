@@ -16,14 +16,14 @@ import { iconButton } from './hudWidgets';
  * risolve spostando un `overflow` senza decidere *cosa* scorre.
  *
  * Qui scorre solo il corpo della linguetta aperta. Intestazione e linguette
- * stanno ferme, e le sezioni non si sommano piu' in altezza: la panoramica
- * porta i numeri che prima restavano chiusi nella simulazione, le altre dicono
- * cosa li sta modificando e cosa e' successo.
+ * stanno ferme, e la panoramica sta **tutta in vista** senza nascondersi dietro
+ * una fisarmonica: ogni sezione e' un'intestazione con le sue cifre in una
+ * griglia a due colonne, etichetta sopra e valore sotto, cosi' si legge a colpo
+ * d'occhio invece di aprire una riga alla volta. Le altre linguette dicono cosa
+ * li sta modificando e cosa e' successo.
  */
 
 export type PolicyTab = 'city' | 'policies' | 'commerce' | 'trade' | 'history';
-
-type OverviewSection = 'goals' | 'capacity' | 'economy' | 'shape' | 'infrastructure';
 
 /** I nomi delle linguette. Corti: sono etichette, non frasi. */
 const TAB_LABELS: Readonly<Record<PolicyTab, string>> = {
@@ -57,7 +57,6 @@ export class PolicyDrawer {
   private latestModel: GameHudModel;
   private active: PolicyTab = 'city';
   private collapsed = false;
-  private openOverviewSection: OverviewSection | null = 'goals';
 
   constructor(model: GameHudModel, private readonly handlers: PolicyDrawerHandlers) {
     this.latestModel = model;
@@ -277,54 +276,12 @@ export class PolicyDrawer {
 
     this.overviewPanel.replaceChildren(
       condition,
-      goalGroup(
-        'goals',
-        'Self-sufficiency',
-        overview.goals,
-        this.openOverviewSection === 'goals',
-        (open) => this.toggleOverviewSection('goals', open),
-      ),
-      factGroup(
-        'capacity',
-        'Capacity',
-        overview.capacity,
-        this.openOverviewSection === 'capacity',
-        (open) => this.toggleOverviewSection('capacity', open),
-      ),
-      factGroup(
-        'economy',
-        'Economy',
-        overview.economy,
-        this.openOverviewSection === 'economy',
-        (open) => this.toggleOverviewSection('economy', open),
-      ),
-      factGroup(
-        'shape',
-        'City shape',
-        overview.shape,
-        this.openOverviewSection === 'shape',
-        (open) => this.toggleOverviewSection('shape', open),
-      ),
-      factGroup(
-        'infrastructure',
-        'Infrastructure',
-        overview.infrastructure,
-        this.openOverviewSection === 'infrastructure',
-        (open) => this.toggleOverviewSection('infrastructure', open),
-      ),
+      overviewSection('Self-sufficiency', goalRows(overview.goals)),
+      overviewSection('Capacity', factRows(overview.capacity)),
+      overviewSection('Economy', factRows(overview.economy)),
+      overviewSection('City shape', factRows(overview.shape)),
+      overviewSection('Infrastructure', factRows(overview.infrastructure)),
     );
-  }
-
-  /** Una sola sezione aperta: la lista resta corta e il punto letto non salta. */
-  private toggleOverviewSection(id: OverviewSection, open: boolean): void {
-    if (open) {
-      this.openOverviewSection = id;
-      for (const section of this.overviewPanel.querySelectorAll<HTMLDetailsElement>('.overview-group')) {
-        if (section.dataset['section'] !== id) section.open = false;
-      }
-    } else if (this.openOverviewSection === id) {
-      this.openOverviewSection = null;
-    }
   }
 
   private paintTradeReport(overview: CityOverviewModel | null): void {
@@ -511,13 +468,17 @@ export class PolicyDrawer {
   }
 }
 
-function goalGroup(
-  id: OverviewSection,
-  title: string,
-  goals: readonly OverviewGoal[],
-  open: boolean,
-  onToggle: (open: boolean) => void,
-): HTMLElement {
+function overviewSection(title: string, content: HTMLElement): HTMLElement {
+  const section = document.createElement('section');
+  section.className = 'overview-section';
+  const heading = document.createElement('h3');
+  heading.className = 'overview-section-title';
+  heading.textContent = title;
+  section.append(heading, content);
+  return section;
+}
+
+function goalRows(goals: readonly OverviewGoal[]): HTMLElement {
   const rows = document.createElement('div');
   rows.className = 'goal-list';
   for (const goal of goals) {
@@ -537,54 +498,7 @@ function goalGroup(
     row.append(label, value, track);
     rows.appendChild(row);
   }
-  const met = goals.filter((goal) => goal.met).length;
-  return overviewGroup(id, title, `${met}/${goals.length} ready`, rows, open, onToggle);
-}
-
-function factGroup(
-  id: OverviewSection,
-  title: string,
-  facts: readonly OverviewFact[],
-  open: boolean,
-  onToggle: (open: boolean) => void,
-): HTMLElement {
-  const lead = facts[0];
-  const compact = lead === undefined ? 'No data' : `${lead.label} ${lead.value}`;
-  return overviewGroup(id, title, compact, factRows(facts), open, onToggle);
-}
-
-function overviewGroup(
-  id: OverviewSection,
-  title: string,
-  compact: string,
-  content: HTMLElement,
-  open: boolean,
-  onToggle: (open: boolean) => void,
-): HTMLDetailsElement {
-  const group = document.createElement('details');
-  group.className = 'overview-group';
-  group.dataset['section'] = id;
-  group.open = open;
-  const summary = document.createElement('summary');
-  const label = document.createElement('span');
-  label.className = 'overview-group-title';
-  label.textContent = title;
-  const value = document.createElement('span');
-  value.className = 'overview-group-summary';
-  value.textContent = compact;
-  summary.append(label, value);
-  group.append(summary, content);
-  // Il `toggle` di <details> e' asincrono e corre contro il repaint a 150 ms che
-  // ricostruisce le sezioni: una sezione appena aperta poteva essere richiusa dal
-  // rebuild prima che l'evento arrivasse, o restare aperta accanto a quella nuova.
-  // Il click sul summary e' sincrono e resta l'unica fonte di verita' dello stato.
-  summary.addEventListener('click', (event) => {
-    event.preventDefault();
-    const next = !group.open;
-    group.open = next;
-    onToggle(next);
-  });
-  return group;
+  return rows;
 }
 
 function factRows(facts: readonly OverviewFact[]): HTMLElement {

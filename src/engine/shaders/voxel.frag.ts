@@ -14,6 +14,7 @@ import {
   inspectCap,
   inspectDiscard,
   inspectGhostSurface,
+  inspectGlow,
   inspectHelpers,
   inspectMelt,
 } from './inspect.glsl';
@@ -66,6 +67,11 @@ uniform float uInspectInside;
 // minimo e' il pavimento, e sotto quella quota non si vela mai.
 uniform vec4 uInspectLensMin;
 uniform vec3 uInspectLensMax;
+// Il landmark che la lente accende, col suo volume esatto: spento quando il
+// massimo non supera il minimo. Non ha un pavimento suo perche' la base del
+// landmark e' gia' la quota sotto cui non c'e' niente da accendere.
+uniform vec3 uInspectGlowMin;
+uniform vec3 uInspectGlowMax;
 
 varying float vAO;
 varying float vOcclusion;
@@ -264,6 +270,7 @@ ${inspect ? inspectGhostSurface : ''}
   light += uSpillColor * vGlow * vGlow * uNight;
 
   vec3 shaded = detailed * light * vAO + emission * uEmissiveStrength;
+${inspect ? inspectGlow : ''}
 
   // Tre risposte d'acqua, dalla classe che il generatore ha scritto nei bit di
   // superficie. Il mesher emette del mare la sola faccia superiore, quindi senza

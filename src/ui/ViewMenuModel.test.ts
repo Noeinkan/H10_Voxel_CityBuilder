@@ -51,7 +51,7 @@ describe('buildViewMenuModel', () => {
     // del soggetto, e una riga che avvisa di avvicinarsi descriverebbe il
     // difetto di prima invece della vista di adesso.
     const xray = model.options.find((option) => option.mode === INSPECT_MODE.xray);
-    expect(xray?.gesture).toContain('Point at a building');
+    expect(xray?.gesture).toContain('Point near a landmark');
     expect(xray?.gesture).not.toMatch(/\d/);
   });
 

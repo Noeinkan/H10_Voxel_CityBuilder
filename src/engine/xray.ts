@@ -120,6 +120,39 @@ export const XRAY = {
    * casa bassa: quel tanto che basta a scoprire il posto, non l'isolato.
    */
   bare: 10,
+
+  /**
+   * Quanto lontano dalla colonna puntata si cerca un landmark, in voxel.
+   *
+   * E' la portata della domanda nuova che i raggi X fanno: non «che edificio
+   * c'e' qui» ma «c'e' un landmark nascosto qui attorno». Troppo corta e il
+   * landmark va trovato al pixel; troppo lunga e ogni punto della citta' si
+   * aggancia al monumento piu' vicino invece di guardare cio' che ha sotto.
+   * Mezzo chunk copre la strada davanti a un landmark — proprio quella che la
+   * crescita ha riempito — senza rubare la lente agli isolati lontani.
+   */
+  landmarkReach: 16,
+
+  /**
+   * Come il landmark scelto si accende sotto la lente.
+   *
+   * E' la seconda azione dei raggi X, e non un velo invertito: il soggetto sta
+   * dentro la lente e non si vela mai, quindi qui riceve in piu' una tinta calda
+   * che lo stacca da cio' che gli sta davanti, ormai ridotto a gabbia. `tint` e'
+   * quanto il suo colore cede all'arancio, `boost` quanto si schiarisce oltre:
+   * due manopole distinte perche' la prima spiega *quale* cosa e' un landmark e
+   * la seconda la fa leggere anche sotto il velo.
+   */
+  glow: {
+    /** Tinta dell'alone: lo stesso arancione delle guide (`#ff9a5e`). */
+    r: 1.0,
+    g: 0.604,
+    b: 0.369,
+    /** Quanto il colore del landmark cede alla tinta, 0..1. */
+    tint: 0.4,
+    /** Quanto il landmark si schiarisce in piu', 0..1. */
+    boost: 0.3,
+  },
 } as const;
 
 /**

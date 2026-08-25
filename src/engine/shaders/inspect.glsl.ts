@@ -187,3 +187,34 @@ export const inspectGhostSurface = /* glsl */ `
 export const inspectMelt = /* glsl */ `
   fogVeil = max(fogVeil, inspectGhost * ${INSPECT.melt.toFixed(2)});
 `;
+
+/**
+ * Il landmark sotto la lente si accende invece di velarsi.
+ *
+ * E' la seconda azione dei raggi X, e non un velo invertito: il soggetto sta
+ * dentro la lente — il test a lastre gli da' `enter <= 0` — e non si vela mai.
+ * Qui riceve in piu' una tinta calda che lo stacca da cio' che gli sta davanti,
+ * ormai ridotto a gabbia e sciolto nell'aria.
+ *
+ * Il predicato legge la **cella** e non la posizione del frammento: due facce a
+ * contatto — l'ultima del landmark e la prima dell'edificio accanto — stanno
+ * sulla stessa coordinata, ma la loro cella differisce perche' il raggio di
+ * mezza cella lungo la normale spinge ciascuna dentro il proprio volume. E'
+ * l'unica cosa che distingue il landmark dal vicino che lo tocca.
+ */
+export const inspectGlow = /* glsl */ `
+  if (uInspectGlowMax.x > uInspectGlowMin.x) {
+    bool landmarkCell =
+      cell.x >= uInspectGlowMin.x && cell.x < uInspectGlowMax.x &&
+      cell.y >= uInspectGlowMin.y && cell.y < uInspectGlowMax.y &&
+      cell.z >= uInspectGlowMin.z && cell.z < uInspectGlowMax.z;
+    if (landmarkCell) {
+      vec3 glow = vec3(
+        ${XRAY.glow.r.toFixed(3)},
+        ${XRAY.glow.g.toFixed(3)},
+        ${XRAY.glow.b.toFixed(3)});
+      shaded = mix(shaded, glow, ${XRAY.glow.tint.toFixed(2)});
+      shaded += glow * ${XRAY.glow.boost.toFixed(2)};
+    }
+  }
+`;

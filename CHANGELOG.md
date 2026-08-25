@@ -11,6 +11,12 @@ coincide con il messaggio di commit.
 
 ---
 
+## In corso — La lente dei raggi X trova i landmark sommersi
+
+- **Punta e rivela il landmark piu' vicino.** Il soggetto dei raggi X non e' piu' soltanto l'edificio sotto il cursore: entro `XRAY.landmarkReach` la lente si aggancia al landmark piu' vicino, misurato sull'impronta vera — un molo o una pista si agganciano anche sul fianco lungo — cosi' i monumenti che la crescita ha circondato si trovano puntando nei paraggi invece che al pixel.
+- **Il landmark si accende, non si vela soltanto.** Un volume nuovo nelle uniform (`uInspectGlowMin`/`uInspectGlowMax`) porta il landmark esatto nel fragment, che lo tinge di un arancione caldo e lo schiarisce (`XRAY.glow.tint`/`boost`): resta pieno dentro la lente mentre cio' che lo copre si riduce a gabbia. Il predicato legge la **cella** e non la posizione, quindi non tigne il vicino che tocca il landmark sul bordo.
+- Senza landmark a portata la lente torna alla domanda di sempre — l'edificio piu' alto sulla colonna — e l'accensione resta spenta.
+
 ## In corso — Il config degli edifici diventa una cartella
 
 - **`buildings/config.ts` si spezza in `buildings/config/`, e nessun consumatore cambia riga.** Duemila righe rispondevano a sei domande diverse — quanto in fretta la citta' cresce, di che parole e' fatta una forma, quanta massa da' un livello, che aspetto ha un uso, quale forma prende in un luogo preciso, di che materia e' fatto un quartiere — e chi cercava un numero doveva sapere in che terzo del file guardare. Ora sono sei moduli piu' un `index.ts` che li ri-esporta: i 134 file che importano `buildings/config` risolvono sulla facciata e restano intatti, e un numero nuovo va nel modulo che risponde alla sua domanda invece che in fondo al primo file aperto.

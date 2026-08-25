@@ -252,6 +252,15 @@ export interface InspectState {
    * resto. Con il volume in mano la lente si dimensiona da sola.
    */
   readonly subject: InspectBox | null;
+  /**
+   * Il landmark che la lente deve **accendere**, se il soggetto ne e' uno.
+   *
+   * Distinto da `subject` perche' sono due azioni diverse: il velo sa dissolvere
+   * qualunque cosa stia davanti, l'accensione vale solo per i landmark. Quando il
+   * soggetto e' un edificio qualunque questo resta null e il velo lavora da solo;
+   * quando e' un landmark, qui c'e' la stessa scatola che il frammento accende.
+   */
+  readonly landmark: InspectBox | null;
   readonly section: InspectSection | null;
   /**
    * true se l'isolato e' stato **scelto** invece che solo puntato.
@@ -282,6 +291,10 @@ export interface InspectUniforms {
   readonly lensMin: readonly [number, number, number, number];
   /** Spigolo massimo. A `lensMax[0] <= lensMin[0]` la lente e' spenta. */
   readonly lensMax: readonly [number, number, number];
+  /** Spigolo minimo del landmark da accendere; spento se `glowMax[0] <= glowMin[0]`. */
+  readonly glowMin: readonly [number, number, number];
+  /** Spigolo massimo del landmark da accendere. */
+  readonly glowMax: readonly [number, number, number];
   /** 0 spento, fra 0 e 1 retino, 1 taglio pieno. */
   readonly veil: number;
 }
@@ -300,6 +313,10 @@ const OPEN_RECT: readonly [number, number, number, number] = [-1e9, -1e9, 1e9, 1
 const NO_LENS_MIN: readonly [number, number, number, number] = [0, 0, 0, 0];
 const NO_LENS_MAX: readonly [number, number, number] = [0, 0, 0];
 
+/** Landmark spento: nessun volume da accendere. */
+const NO_GLOW_MIN: readonly [number, number, number] = [0, 0, 0];
+const NO_GLOW_MAX: readonly [number, number, number] = [0, 0, 0];
+
 /**
  * Payload che non nasconde niente.
  *
@@ -312,6 +329,8 @@ const NEUTRAL: InspectUniforms = {
   inside: 1,
   lensMin: NO_LENS_MIN,
   lensMax: NO_LENS_MAX,
+  glowMin: NO_GLOW_MIN,
+  glowMax: NO_GLOW_MAX,
   veil: 0,
 };
 
@@ -338,6 +357,7 @@ export function inspectUniforms(state: InspectState): InspectUniforms {
       const subject = xraySubject(state);
       if (subject === null) return NEUTRAL;
       const margin = xrayMargin(state);
+      const landmark = state.landmark;
       return {
         // Qui i primi due predicati sono inerti: «davanti» e «dentro la
         // finestra» non sono piu' due domande, sono la stessa — il raggio
@@ -348,6 +368,11 @@ export function inspectUniforms(state: InspectState): InspectUniforms {
         inside: 1,
         lensMin: [subject.x0 - margin, subject.y0 - margin, subject.z0 - margin, subject.z0],
         lensMax: [subject.x1 + margin, subject.y1 + margin, subject.z1 + margin],
+        // L'accensione e' esattamente il soggetto, senza il respiro del velo: il
+        // frammento legge la cella, e un alone largo quanto il retino tignerebbe
+        // i vicini che toccano il landmark invece del solo landmark.
+        glowMin: landmark === null ? NO_GLOW_MIN : [landmark.x0, landmark.y0, landmark.z0],
+        glowMax: landmark === null ? NO_GLOW_MAX : [landmark.x1, landmark.y1, landmark.z1],
         veil: XRAY.veil,
       };
     }
@@ -359,6 +384,8 @@ export function inspectUniforms(state: InspectState): InspectUniforms {
         inside: 1,
         lensMin: NO_LENS_MIN,
         lensMax: NO_LENS_MAX,
+        glowMin: NO_GLOW_MIN,
+        glowMax: NO_GLOW_MAX,
         veil: INSPECT.cut,
       };
     }
@@ -379,6 +406,8 @@ export function inspectUniforms(state: InspectState): InspectUniforms {
         inside: 1,
         lensMin: NO_LENS_MIN,
         lensMax: NO_LENS_MAX,
+        glowMin: NO_GLOW_MIN,
+        glowMax: NO_GLOW_MAX,
         veil: INSPECT.cut,
       };
     }
@@ -396,6 +425,8 @@ export function inspectUniforms(state: InspectState): InspectUniforms {
         inside: -1,
         lensMin: NO_LENS_MIN,
         lensMax: NO_LENS_MAX,
+        glowMin: NO_GLOW_MIN,
+        glowMax: NO_GLOW_MAX,
         // ...finche' l'isolato e' solo puntato. Scegliendolo la domanda cambia, e
         // con lei la densita': a `cut` il retino scarta tutto e il contesto
         // sparisce del tutto, lasciando un modellino da girare in mano.

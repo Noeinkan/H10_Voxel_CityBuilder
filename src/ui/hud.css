@@ -61,6 +61,10 @@
   --game-hud-rail-left: 158px;
   --game-hud-top: 14px;
   --game-hud-bottom: 18px;
+  /* La colonna delle risorse occupa l'estremo bordo destro: il cassetto della
+     citta' si accosta alla sua sinistra invece di coprirla. La larghezza reale
+     cambia con i breakpoint qui sotto. */
+  --resource-col: 200px;
 }
 
 .hud-surface {
@@ -459,6 +463,24 @@
 .policy-drawer, .theme-picker, .view-picker { max-height: min(620px, calc(100vh - var(--game-hud-top) - var(--game-hud-bottom) - 14px)); }
 
 /*
+ * Il cassetto della citta' e' un vero cassetto destro: alto quanto il corridoio
+ * verticale e appoggiato alla sinistra della colonna delle risorse. Cosi' la
+ * panoramica sta tutta in vista — i numeri sono l'unica cosa che il cassetto
+ * deve far leggere — e non scorre dietro un'altezza massima che, salendo dal
+ * bordo, finirebbe per coprire le risorse mentre si sceglie.
+ */
+.policy-drawer {
+  right: calc(14px + var(--resource-col) + 14px);
+  /* Il margine superiore e' quello della colonna risorse: 14px, non
+     `--game-hud-top`, che un ResizeObserver riscrive all'altezza della colonna
+     e farebbe scendere il cassetto sotto di essa. */
+  top: 14px;
+  bottom: var(--game-hud-bottom);
+  max-height: none;
+  width: min(420px, calc(100vw - var(--resource-col) - 42px));
+}
+
+/*
  * Il rail sinistro tiene insieme le due superfici del lato comandi.
  *
  * La targa della vista stava in alto a sinistra, cioe' dove ora comincia il
@@ -571,12 +593,14 @@
    schermo, e le risorse cedono per prime — restano cifra e icona, che e' cio'
    che si guarda con la coda dell'occhio. */
 @media (max-width: 1000px) {
+  :root { --resource-col: 146px; }
   .resource-bar { width: 132px; }
   .resource-label { display: none; }
   .resource-spark { display: none; }
 }
 
 @media (max-width: 760px) {
+  :root { --resource-col: 118px; }
   .build-dock .button-copy { display: none; }
   .hud-tile { width: 44px; min-height: 44px; padding: 7px 4px; }
   .dock-utility .hud-button { width: auto; padding: 7px; }

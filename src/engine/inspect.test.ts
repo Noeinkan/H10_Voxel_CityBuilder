@@ -32,6 +32,7 @@ function stateOf(patch: Partial<InspectState>): InspectState {
     view: VIEW,
     block: null,
     subject: null,
+    landmark: null,
     section: null,
     locked: false,
     ...patch,
@@ -226,6 +227,44 @@ describe('inspectUniforms', () => {
           expect(hidden(u, x, y, z), `spigolo ${x},${y},${z}`).toBe(false);
         }
       }
+    }
+  });
+
+  it('i raggi X accendono il landmark sotto il cursore, con il suo volume esatto', () => {
+    const subject = { x0: 100, y0: 100, z0: 20, x1: 108, y1: 108, z1: 60 };
+    const landmark = { x0: 100, y0: 100, z0: 20, x1: 108, y1: 108, z1: 60 };
+    const u = inspectUniforms(stateOf({ mode: INSPECT_MODE.xray, subject, landmark }));
+
+    // L'accensione non prende il respiro del velo: e' il landmark, non l'alone,
+    // e deve fermarsi esattamente sul suo bordo per non tignere i vicini.
+    expect(u.glowMin).toEqual([100, 100, 20]);
+    expect(u.glowMax).toEqual([108, 108, 60]);
+    // La lente resta quella di prima, allargata del respiro: accendere e'
+    // un'azione in piu', non un velo piu' largo.
+    expect(u.lensMin[0]).toBeLessThan(100);
+    expect(u.veil).toBe(XRAY.veil);
+  });
+
+  it('senza landmark sotto il cursore la lente vela ma non accende niente', () => {
+    const u = inspectUniforms(stateOf({
+      mode: INSPECT_MODE.xray,
+      subject: { x0: 100, y0: 100, z0: 20, x1: 108, y1: 108, z1: 60 },
+    }));
+
+    expect(u.glowMax[0]).toBeLessThanOrEqual(u.glowMin[0]);
+  });
+
+  it('nessun modo oltre ai raggi X accende un landmark', () => {
+    const landmark = { x0: 0, y0: 0, z0: 0, x1: 4, y1: 4, z1: 8 };
+    for (const mode of [INSPECT_MODE.off, INSPECT_MODE.slice, INSPECT_MODE.section, INSPECT_MODE.block]) {
+      const u = inspectUniforms(stateOf({
+        mode,
+        focus: { x: 10, y: 10, z: 10 },
+        block: { x0: 0, y0: 0, x1: 8, y1: 8 },
+        section: { axis: 1, at: 64 },
+        landmark,
+      }));
+      expect(u.glowMax[0]).toBeLessThanOrEqual(u.glowMin[0]);
     }
   });
 

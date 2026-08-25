@@ -44,7 +44,7 @@ const REFRESH_MS = 200;
 /** Cosa risponde ogni modo: e' la riga che si legge prima di scegliere. */
 const MODE_HELP: Readonly<Record<InspectMode, string>> = {
   [INSPECT_MODE.off]: 'nessuna vista attiva',
-  [INSPECT_MODE.xray]: 'vela cio’ che copre l’edificio sotto il cursore',
+  [INSPECT_MODE.xray]: 'rivela e accende il landmark piu’ vicino attraverso gli edifici',
   [INSPECT_MODE.slice]: 'taglia sopra la quota: la citta’ al piano n',
   [INSPECT_MODE.section]: 'taglia su una carreggiata, dal lato della camera',
   [INSPECT_MODE.block]: 'vela tutto fuori dall’isolato sotto il cursore',
