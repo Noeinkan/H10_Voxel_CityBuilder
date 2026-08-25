@@ -986,6 +986,106 @@ export const LANDMARKS: Partial<Record<CatalystId, LandmarkRecipe>> = {
     ],
   },
 
+  // Un piazzale merci: due capannoni paralleli e una gru a portale sul varco
+  // che li separa. E' la crescita che si riconosce dal movimento — niente fumo
+  // di ciminiera ne' falde, ma una macchina ferma sopra le merci che sposta.
+  depot: {
+    kind: 'depot',
+    span: [16, 12],
+    height: 14,
+    anchor: [8, 6],
+    apron: 4,
+    stages: [0, 6, 16, 32],
+    parts: [
+      [
+        box(PART.deck, 0, 0, 16, 12, 0, 1, PALETTE_SLOTS.asphaltDark, SURFACE_KIND.utility),
+        box(PART.shell, 0, 0, 12, 5, 1, 6, PALETTE_SLOTS.metalDark, SURFACE_KIND.industrial, {
+          cap: PALETTE_SLOTS.metalBrass,
+        }),
+        box(PART.deck, 0, 0, 12, 5, 7, 1, PALETTE_SLOTS.metalDark, SURFACE_KIND.roofTech),
+      ],
+      [
+        box(PART.shell, 0, 7, 12, 5, 1, 5, PALETTE_SLOTS.stoneDeep, SURFACE_KIND.industrial, {
+          cap: PALETTE_SLOTS.metalDark,
+        }),
+        box(PART.deck, 0, 7, 12, 5, 6, 1, PALETTE_SLOTS.metalDark, SURFACE_KIND.roofTech),
+        box(PART.mast, 2, 5, 2, 2, 1, 7, PALETTE_SLOTS.metalRust, SURFACE_KIND.industrial, {
+          cap: PALETTE_SLOTS.metalBrass,
+        }),
+        box(PART.mast, 10, 5, 2, 2, 1, 7, PALETTE_SLOTS.metalRust, SURFACE_KIND.industrial, {
+          cap: PALETTE_SLOTS.metalBrass,
+        }),
+        box(PART.boom, 2, 5, 10, 2, 8, 2, PALETTE_SLOTS.metalRust, SURFACE_KIND.industrial, {
+          cap: PALETTE_SLOTS.metalBrass,
+        }),
+      ],
+      [
+        box(PART.slab, 12, 0, 2, 2, 1, 3, PALETTE_SLOTS.concrete, SURFACE_KIND.industrial, {
+          cap: PALETTE_SLOTS.concretePale,
+        }),
+        box(PART.slab, 12, 3, 2, 2, 1, 3, PALETTE_SLOTS.concrete, SURFACE_KIND.industrial, {
+          cap: PALETTE_SLOTS.concretePale,
+        }),
+        box(PART.slab, 14, 0, 2, 2, 1, 4, PALETTE_SLOTS.metalDark, SURFACE_KIND.industrial, {
+          cap: PALETTE_SLOTS.metalBrass,
+        }),
+      ],
+      [
+        box(PART.shell, 12, 7, 4, 4, 1, 6, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.civic, {
+          cap: PALETTE_SLOTS.glassPale,
+        }),
+        box(PART.deck, 12, 7, 4, 4, 7, 1, PALETTE_SLOTS.roofWhite, SURFACE_KIND.roofTech),
+        entrance(15, 8, 1, 2, 4),
+        signBand(12, 8, 1, 2, 3),
+      ],
+    ],
+    variants: [
+      // Container in piu' sul tetto e un palo luce sul varco ovest.
+      {
+        name: 'container',
+        parts: [
+          [],
+          [box(PART.slab, 2, 7, 2, 2, 7, 3, PALETTE_SLOTS.metalDark, SURFACE_KIND.industrial, {
+            cap: PALETTE_SLOTS.metalBrass,
+          })],
+          [box(PART.mast, 0, 5, 2, 2, 1, 6, PALETTE_SLOTS.metalRust, SURFACE_KIND.industrial, {
+            cap: PALETTE_SLOTS.metalGold,
+          })],
+          [],
+        ],
+      },
+      // Silo, silo: il granaio in versione merci, con i tamburi smussati.
+      {
+        name: 'silos',
+        parts: [
+          [],
+          [box(PART.slab, 2, 1, 3, 3, 8, 4, PALETTE_SLOTS.concrete, SURFACE_KIND.industrial, {
+            chamfer: 1,
+            cap: PALETTE_SLOTS.concretePale,
+          })],
+          [box(PART.slab, 5, 1, 3, 3, 8, 4, PALETTE_SLOTS.concrete, SURFACE_KIND.industrial, {
+            chamfer: 1,
+            cap: PALETTE_SLOTS.concretePale,
+          })],
+          [],
+        ],
+      },
+      // Officina: una falda sul capannone nord e un fanale acceso sul varco.
+      {
+        name: 'officina',
+        parts: [
+          [],
+          [box(PART.pitch, 0, 0, 12, 5, 8, 4, PALETTE_SLOTS.roofPale, SURFACE_KIND.roofTech, {
+            step: 1,
+            cap: PALETTE_SLOTS.metalBrass,
+          })],
+          [],
+          [box(PART.mast, 11, 6, 1, 1, 1, 3, PALETTE_SLOTS.glassPale, SURFACE_KIND.luminous)],
+        ],
+      },
+    ],
+  },
+
   // **Un campo di volo, non una striscia d'asfalto accanto a una scatola.** La
   // ricetta di prima aveva una pista larga quattro e lunga quattordici in un
   // angolo del riquadro, e il resto era prato: da sopra non si leggeva come un
@@ -1418,6 +1518,183 @@ export const LANDMARKS: Partial<Record<CatalystId, LandmarkRecipe>> = {
           [box(PART.truss, 3, 4, 6, 4, 14, 6, PALETTE_SLOTS.metalGold, SURFACE_KIND.civic, {
             step: 2,
           })],
+        ],
+      },
+    ],
+  },
+
+  // Un museo: basamento, portico a colonne sul fronte e una cupola a gradoni.
+  // La cupola smussata e' la firma del ruolo, e il lanternino acceso in cima e'
+  // cio' che lo tiene visibile di notte.
+  museum: {
+    kind: 'museum',
+    span: [14, 12],
+    height: 18,
+    anchor: [7, 6],
+    apron: 4,
+    stages: [0, 8, 20, 40],
+    parts: [
+      [
+        box(PART.deck, 0, 0, 14, 12, 0, 1, PALETTE_SLOTS.stone, SURFACE_KIND.utility),
+        box(PART.shell, 1, 1, 12, 10, 1, 5, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.civic, {
+          cap: PALETTE_SLOTS.glassPale,
+        }),
+        box(PART.deck, 1, 1, 12, 10, 6, 1, PALETTE_SLOTS.roofWhite, SURFACE_KIND.roofTech),
+      ],
+      [
+        box(PART.colonnade, 11, 1, 3, 10, 1, 5, PALETTE_SLOTS.stone, SURFACE_KIND.civic, {
+          step: 3,
+          cap: PALETTE_SLOTS.concreteWhite,
+        }),
+      ],
+      [
+        box(PART.steps, 3, 1, 8, 10, 7, 5, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.civic, {
+          step: 1,
+          chamfer: 1,
+          cap: PALETTE_SLOTS.metalGold,
+        }),
+      ],
+      [
+        box(PART.mast, 6, 5, 2, 2, 11, 3, PALETTE_SLOTS.glassPale, SURFACE_KIND.luminous, {
+          cap: PALETTE_SLOTS.metalGold,
+        }),
+        entrance(12, 5, 1, 2, 4),
+        signBand(12, 4, 1, 4, 3),
+      ],
+    ],
+    variants: [
+      // Rotonda: la cupola si allarga e si smussa di piu', fino al tamburo.
+      {
+        name: 'rotonda',
+        parts: [
+          [],
+          [box(PART.steps, 2, 2, 10, 8, 7, 4, PALETTE_SLOTS.stoneWarm, SURFACE_KIND.civic, {
+            step: 1,
+            chamfer: 2,
+            cap: PALETTE_SLOTS.concreteWhite,
+          })],
+          [],
+          [],
+        ],
+      },
+      // Biblioteca: un'ala a falda che esce dal fianco del basamento.
+      {
+        name: 'biblioteca',
+        parts: [
+          [],
+          [],
+          [box(PART.pitch, 1, 1, 5, 10, 7, 4, PALETTE_SLOTS.roofPale, SURFACE_KIND.roofTech, {
+            step: 1,
+            cap: PALETTE_SLOTS.metalBrass,
+          })],
+          [],
+        ],
+      },
+      // Facciata: una torre d'angolo che da' al fronte una verticale propria.
+      {
+        name: 'facciata',
+        parts: [
+          [],
+          [],
+          [],
+          [box(PART.mast, 0, 0, 2, 2, 1, 6, PALETTE_SLOTS.stoneWarm, SURFACE_KIND.civic, {
+            cap: PALETTE_SLOTS.metalGold,
+          })],
+        ],
+      },
+    ],
+  },
+
+  // La cosa piu' alta dopo il monumento: navata a falda, due torri in facciata
+  // e una guglia sulla crociera. La firma e' la doppia verticale, che nessun
+  // altro ruolo ha.
+  //
+  // **La pianta non e' quadrata, e non e' un vezzo.** La falda segue l'asse
+  // lungo: con un quadrato il colmo non avrebbe un asse da seguire, e le parti
+  // piazzate rispetto alla gronda — l'ingresso e il rosone sul fronte — si
+  // troverebbero una volta sulla gronda e una volta sul colmo a seconda del
+  // verso, facendo cambiare il conto di voxel. L'asse lungo e' cio' che tiene
+  // l'intera ricetta invariante per rotazione.
+  cathedral: {
+    kind: 'cathedral',
+    span: [14, 10],
+    height: 28,
+    anchor: [7, 5],
+    apron: 5,
+    stages: [0, 10, 24, 48],
+    parts: [
+      [
+        box(PART.deck, 0, 0, 14, 10, 0, 1, PALETTE_SLOTS.stone, SURFACE_KIND.utility),
+        box(PART.pitch, 1, 1, 12, 8, 1, 6, PALETTE_SLOTS.stoneWarm, SURFACE_KIND.civic, {
+          step: 1,
+          cap: PALETTE_SLOTS.concreteWhite,
+        }),
+      ],
+      [
+        box(PART.mast, 1, 1, 2, 2, 1, 14, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.civic, {
+          cap: PALETTE_SLOTS.metalGold,
+        }),
+        box(PART.mast, 1, 7, 2, 2, 1, 14, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.civic, {
+          cap: PALETTE_SLOTS.metalGold,
+        }),
+      ],
+      [
+        box(PART.mast, 6, 4, 2, 2, 1, 20, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.civic, {
+          cap: PALETTE_SLOTS.metalGold,
+        }),
+        box(PART.steps, 6, 4, 2, 2, 21, 3, PALETTE_SLOTS.metalGold, SURFACE_KIND.roofTech, {
+          step: 1,
+        }),
+      ],
+      [
+        entrance(12, 4, 1, 2, 4),
+        box(PART.slab, 12, 4, 1, 2, 5, 2, PALETTE_SLOTS.glassDeep, SURFACE_KIND.civic, {
+          cap: PALETTE_SLOTS.glassPale,
+        }),
+      ],
+    ],
+    variants: [
+      // Campanile: una torre sola e altissima sull'angolo di fronte, con la
+      // cella dorata. Sta sul fianco dell'ingresso, non sulla torre, cosi' la
+      // sua ombra sul tronco non cambia col verso.
+      {
+        name: 'campanile',
+        parts: [
+          [],
+          [box(PART.mast, 12, 8, 2, 2, 1, 22, PALETTE_SLOTS.stoneWarm, SURFACE_KIND.civic, {
+            cap: PALETTE_SLOTS.metalGold,
+          })],
+          [box(PART.steps, 12, 8, 2, 2, 23, 2, PALETTE_SLOTS.metalGold, SURFACE_KIND.roofTech, {
+            step: 1,
+          })],
+          [],
+        ],
+      },
+      // Guglie: le due torri di facciata salgono ancora, sopra la navata.
+      {
+        name: 'guglie',
+        parts: [
+          [],
+          [box(PART.mast, 1, 1, 2, 2, 15, 6, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.civic, {
+            cap: PALETTE_SLOTS.metalGold,
+          })],
+          [box(PART.mast, 1, 7, 2, 2, 15, 6, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.civic, {
+            cap: PALETTE_SLOTS.metalGold,
+          })],
+          [],
+        ],
+      },
+      // Chiostro: un portico basso che lega la chiesa al suo fianco.
+      {
+        name: 'chiostro',
+        parts: [
+          [],
+          [box(PART.colonnade, 1, 8, 4, 2, 1, 4, PALETTE_SLOTS.stone, SURFACE_KIND.civic, {
+            step: 2,
+            cap: PALETTE_SLOTS.concreteWhite,
+          })],
+          [],
+          [],
         ],
       },
     ],

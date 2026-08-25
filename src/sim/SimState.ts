@@ -8,6 +8,7 @@ import {
   type CharterId,
 } from './charters';
 import {
+  decisionFingerprint,
   decisionOption,
   type CityDecision,
   type DecisionOutcome,
@@ -200,6 +201,22 @@ export interface SimStateData {
   readonly pendingDecision: CityDecision | null;
   readonly decisionHistory: readonly DecisionOutcome[];
   readonly nextDecisionTick: number;
+  /**
+   * Impronta della citta' all'ultima decisione risolta.
+   *
+   * Serve alla cadenza a eventi: finche' resta uguale, una scelta contestuale
+   * non si riapre solo perche' il tempo e' scaduto. Vale `-1` finche' nessuna
+   * decisione e' stata presa, cosi' la prima si apre comunque.
+   */
+  readonly decisionStamp: number;
+  /**
+   * Tick fino al quale la decisione sospesa resta nascosta.
+   *
+   * Il «decidi piu' tardi» non risolve e non cambia la decisione: nasconde la
+   * carta per `decisions.snoozeTicks` e poi la ripropone identica. Sta nello
+   * stato perche' e' un fatto del gioco, non dell'HUD.
+   */
+  readonly decisionDismissedUntil: number;
 
   /**
    * Se l'emergenza alimentare puo' scattare.
@@ -288,6 +305,8 @@ export function createSimState(options: SimStateOptions = {}): SimState {
     pendingDecision: null,
     decisionHistory: [],
     nextDecisionTick: BALANCE.decisions.firstTick,
+    decisionStamp: -1,
+    decisionDismissedUntil: 0,
     supplyArmed: true,
     selectedClass: options.selectedClass ?? BUILDING_CLASS.residential,
   };
@@ -603,12 +622,28 @@ export function resolveDecision(state: SimState, optionId: string): SimState | n
     pendingDecision: null,
     decisionHistory: history,
     nextDecisionTick: state.tickCount + BALANCE.decisions.intervalTicks,
+    // L'impronta riparte da qui: la prossima scelta contestuale attende un
+    // cambiamento reale invece di ripresentarsi alla scadenza.
+    decisionStamp: decisionFingerprint(state),
+    decisionDismissedUntil: 0,
     // Un'emergenza risolta non si ripropone alla scadenza successiva: torna a
     // scattare solo dopo essere rientrata, e a dirlo e' `tick`. Le altre due
     // famiglie non hanno un fronte perche' non descrivono un guasto — una
     // piazza da assegnare si ripresenta, una carestia gia' dichiarata no.
     supplyArmed: family === 'supply' ? false : state.supplyArmed,
   };
+}
+
+/**
+ * Rimanda la decisione sospesa senza risolverla.
+ *
+ * La scelta resta com'e': si nasconde per `decisions.snoozeTicks` e poi
+ * riappare identica. Non tocca `nextDecisionTick` ne' l'impronta, perche' non
+ * e' una risoluzione — e' il giocatore che si prende tempo.
+ */
+export function snoozeDecision(state: SimState): SimState {
+  if (state.pendingDecision === null) return state;
+  return { ...state, decisionDismissedUntil: state.tickCount + BALANCE.decisions.snoozeTicks };
 }
 
 // --- Serializzazione -------------------------------------------------------
@@ -639,6 +674,7 @@ export function reviveSimState(data: SimStateData, reachCost?: StepCost): SimSta
     'tradeMode' | 'trade' | 'commerce' | 'mixedCounts' | 'charters' | 'farmCounts'
     | 'capacityCounts' | 'mixedCapacityCounts' | 'flows' | 'harvest' | 'materialFlows' | 'staffing'
     | 'pendingDecision' | 'decisionHistory' | 'nextDecisionTick' | 'supplyArmed'
+    | 'decisionStamp' | 'decisionDismissedUntil'
     | 'islandConnections'
   >>;
   const normalised: SimStateData = {
@@ -675,6 +711,10 @@ export function reviveSimState(data: SimStateData, reachCost?: StepCost): SimSta
     pendingDecision: compatible.pendingDecision ?? null,
     decisionHistory: compatible.decisionHistory ?? [],
     nextDecisionTick: compatible.nextDecisionTick ?? BALANCE.decisions.firstTick,
+    // Un salvataggio che non porta l'impronta torna a `-1`: la prima scelta
+    // contestuale si apre comunque, come in una partita nuova.
+    decisionStamp: compatible.decisionStamp ?? -1,
+    decisionDismissedUntil: compatible.decisionDismissedUntil ?? 0,
     // Un salvataggio che non porta il fronte torna armato: al primo tick, se la
     // citta' mangia, resta armato senza aver disturbato nessuno; se non mangia,
     // l'emergenza e' proprio la cosa che va chiesta.

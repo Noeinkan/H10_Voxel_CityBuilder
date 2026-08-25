@@ -130,6 +130,7 @@ export {
 } from './districts';
 export {
   decisionAt,
+  decisionFingerprint,
   decisionOption,
   type CityDecision,
   type DecisionEffect,
@@ -172,6 +173,7 @@ export {
   setPolicyActive,
   setSelectedClass,
   setTradeMode,
+  snoozeDecision,
   toSimStateData,
   type Resource,
   type SimState,

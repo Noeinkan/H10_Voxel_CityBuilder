@@ -8,6 +8,7 @@ import {
   resolveDecision,
   setPolicyActive,
   setTradeMode,
+  snoozeDecision,
   spendConstructionMaterials,
   type BuildingClass,
   type CatalystId,
@@ -345,6 +346,14 @@ export function chooseDecision(state: SimState, optionId: string): ActionResult 
   return next === null
     ? { success: false, reason: 'decision-option-invalid' }
     : { success: true, state: next };
+}
+
+/** Rimanda la decisione sospesa senza scegliere: si nasconde e ricompare dopo. */
+export function deferDecision(state: SimState): ActionResult {
+  if (state.pendingDecision === null) {
+    return { success: false, reason: 'decision-option-invalid' };
+  }
+  return { success: true, state: snoozeDecision(state) };
 }
 
 export function changeTradeMode(state: SimState, mode: TradeMode): ActionResult {

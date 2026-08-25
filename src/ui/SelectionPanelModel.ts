@@ -1,4 +1,11 @@
-import { BALANCE, BUILDING_CLASS, CLASS_LABELS, catalystById, type BuildingClass } from '../sim';
+import {
+  BALANCE,
+  BUILDING_CLASS,
+  CLASS_LABELS,
+  catalystById,
+  type BuildingClass,
+  type CatalystEffects,
+} from '../sim';
 import { PALETTE_SLOT_NAMES } from '../engine/paletteSlots';
 import { SURFACE_KIND_NAMES, WATER_CLASS, type SurfaceKind } from '../world/visualBlock';
 import { BIOME_NAMES } from '../world/terrain/config';
@@ -210,12 +217,14 @@ export function buildSelectionPanelModel(
 }
 
 /**
- * Un landmark e' un soggetto scelto direttamente: la sua scheda e il suo campo
- * devono aprirsi al click. Negli altri casi resta l'isolato, l'unita' su cui il
- * gioco sa offrire un gesto e un bilancio locale completo.
+ * La struttura e' il soggetto piu' specifico che esiste nel punto scelto: la sua
+ * scheda e il suo campo devono aprirsi al click, che sia un palazzo, un ponte o
+ * una mensola. Solo dove non c'e' una struttura — terreno nudo, acqua — resta
+ * l'isolato, l'unita' su cui il gioco sa offrire un gesto e un bilancio locale
+ * completo.
  */
 export function defaultSection(selection: Selection): SelectionSectionId {
-  return selection.structure?.record.landmark === undefined ? 'block' : 'structure';
+  return selection.structure === null ? 'block' : 'structure';
 }
 
 /**
@@ -283,7 +292,10 @@ function structureSection(selection: Selection): SelectionSection {
   // leggono insieme o si contraddicono: «Level 6 of 6» accanto a «room for 24
   // residents» chiede da sola perche' quel palazzo sia cresciuto, e la riga che
   // risponde deve stare dove la domanda nasce.
-  for (const use of info.uses) rows.push(useRow(use));
+  for (const use of info.uses) {
+    rows.push(useRow(use));
+    rows.push(needRow(use));
+  }
   if (info.uses.length > 0) rows.push(GROWING_ROW);
 
   if (record.district !== undefined) {
@@ -466,14 +478,20 @@ function structureHead(info: StructureInfo): StructureHead {
       ?? catalyst.strength + record.level * BALANCE.gameplay.catalyst.stageBonus;
     const favours = catalyst.favours.map((cls) => CLASS_LABELS[cls]).join(', ');
     const penalises = catalyst.penalises.map((cls) => CLASS_LABELS[cls]).join(', ');
+    const district = effectSummary(catalyst.effects);
     return {
       title: catalyst.label,
       summary: `Landmark · ${stage}.`,
       rows: [
+        // La prima riga dice cosa **fa** il landmark, non com'e' fatto: e' la
+        // domanda di chi lo clicca, e prima non aveva risposta — la scheda
+        // mostrava la portata e non il mestiere.
+        { label: 'Produces', value: catalyst.description },
         { label: 'Reach', value: `radius ${catalyst.radius} · follows streets and terrain` },
         { label: 'Centre strength', value: `${strength}` },
         { label: 'Favours', value: favours.length === 0 ? 'none' : favours },
         { label: 'Penalises', value: penalises.length === 0 ? 'none' : penalises },
+        { label: 'District', value: district },
       ],
     };
   }
@@ -512,6 +530,33 @@ function isBuilding(record: BuildingRecord): boolean {
   return record.landmark === undefined
     && record.span === undefined
     && record.aerial === undefined;
+}
+
+/**
+ * Le cinque metriche che un catalizzatore versa nel profilo del quartiere.
+ *
+ * L'ordine e' fisso perche' e' un elenco da leggere, non una mappa da cercare:
+ * chi confronta due landmark vuole trovare `wealth` nello stesso posto tutte le
+ * volte. Un valore a zero non compare — il ruolo non tocca quella metrica, e
+ * stamparlo farebbe credere che «0» sia una scelta invece di un'assenza.
+ */
+const EFFECT_LABELS: readonly { readonly key: keyof CatalystEffects; readonly label: string }[] = [
+  { key: 'density', label: 'density' },
+  { key: 'wealth', label: 'wealth' },
+  { key: 'accessibility', label: 'accessibility' },
+  { key: 'satisfaction', label: 'satisfaction' },
+  { key: 'industry', label: 'industry' },
+];
+
+/** «wealth +105 · accessibility +135»: cio' che il landmark versa nel quartiere. */
+function effectSummary(effects: CatalystEffects): string {
+  const parts: string[] = [];
+  for (const { key, label } of EFFECT_LABELS) {
+    const value = effects[key];
+    if (value === 0) continue;
+    parts.push(`${label} ${value > 0 ? '+' : '-'}${Math.abs(value)}`);
+  }
+  return parts.join(' · ');
 }
 
 // --- Cio' che la simulazione dice di un edificio come questo ------------------
@@ -568,6 +613,57 @@ function useRow(use: UseInfo): SelectionRow {
     label: use.secondary ? `${classLabel(use.cls)} (hosted)` : classLabel(use.cls),
     value: parts.join(' · '),
   };
+}
+
+/**
+ * Cio' che manca a un edificio di questo uso per rendere al pieno.
+ *
+ * Non e' un secondo rendimento: e' l'**ingresso** che il tipo consuma, ed e' la
+ * risposta alla domanda che chi clicca un edificio si sta facendo — «perche' non
+ * rende di piu'?». Le case vogliono residenti, negozi e fabbriche vogliono
+ * braccia (l'organico cittadino, condiviso con la campagna), i servizi vogliono
+ * fondi. Come il resto della scheda, la cifra e' della **citta'**, non di questo
+ * esemplare: la simulazione non conserva niente di piu' specifico.
+ */
+const NEED_PHRASE: Readonly<Record<BuildingClass, (use: UseInfo) => string>> = {
+  [BUILDING_CLASS.residential]: (use) => {
+    if (use.cityUse === null) return 'residents to move in';
+    const occupied = Math.round(use.cityUse * 100);
+    return occupied >= 100
+      ? 'residents — every home in the city is occupied'
+      : `residents — ${100 - occupied}% of homes in the city are empty`;
+  },
+  [BUILDING_CLASS.commercial]: commercialPhrase,
+  [BUILDING_CLASS.industrial]: (use) => staffingPhrase('workers', use.staffing),
+  [BUILDING_CLASS.civic]: () => 'funds — its upkeep is paid from the treasury each tick',
+};
+
+function staffingPhrase(who: string, staffing: number): string {
+  const staffed = Math.round(staffing * 100);
+  return staffed >= 100
+    ? `${who} — the city workforce is fully staffed`
+    : `${who} — the city workforce is ${staffed}% staffed`;
+}
+
+/**
+ * Il commercio ha due ingressi: le braccia dell'organico, condiviso con
+ * industria e campagna, e i clienti che la popolazione porta. Dire solo il
+ * primo farebbe leggere «non manca niente» a un negozio pieno di commessi e
+ * vuoto di gente, quindi l'occupazione dice anche il secondo.
+ */
+function commercialPhrase(use: UseInfo): string {
+  const parts = [staffingPhrase('workers', use.staffing)];
+  if (use.cityUse !== null) {
+    const busy = Math.round(use.cityUse * 100);
+    parts.push(busy >= 100
+      ? 'every shop in the city is busy'
+      : `${100 - busy}% of shops in the city stand idle`);
+  }
+  return parts.join(' · ');
+}
+
+function needRow(use: UseInfo): SelectionRow {
+  return { label: 'Needs', value: NEED_PHRASE[use.cls](use) };
 }
 
 /** Interi senza virgola, il resto a un decimale: `productionYield` vale 2,5. */

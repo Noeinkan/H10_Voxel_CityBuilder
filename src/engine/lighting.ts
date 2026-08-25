@@ -136,6 +136,24 @@ export function faceLuminance(model: LightingModel): number[] {
   return FACE_NORMALS.map((normal) => relativeLuminance(faceLight(model, normal)));
 }
 
+/**
+ * Fresnel del bordo chiaro, 0 su una faccia rivolta alla camera e 1 di taglio.
+ *
+ * `view` e' la direzione di sguardo **dalla camera verso la scena** (come
+ * `uViewDirection`), `normal` la normale della faccia: per una faccia visibile i
+ * due sono quasi opposti, quindi il prodotto e' negativo e `-dot` e' positivo. E'
+ * la meta' TypeScript del blocco corrispondente in `voxel.frag.ts`; entrambi i
+ * vettori si assumono unitari, come nel frammento.
+ */
+export function rimFactor(
+  normal: readonly [number, number, number],
+  view: readonly [number, number, number],
+  power: number,
+): number {
+  const facing = Math.max(0, -(normal[0] * view[0] + normal[1] * view[1] + normal[2] * view[2]));
+  return Math.pow(1 - facing, power);
+}
+
 function srgbToLinear(channel: number): number {
   return channel <= 0.04045 ? channel / 12.92 : Math.pow((channel + 0.055) / 1.055, 2.4);
 }

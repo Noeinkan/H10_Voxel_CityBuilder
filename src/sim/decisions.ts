@@ -1,6 +1,6 @@
 import { BALANCE } from './balance';
 import type { CatalystId } from './catalysts';
-import { type CharterFamily, type CharterId } from './charters';
+import { charterOfFamily, type CharterFamily, type CharterId } from './charters';
 import { BUILDING_CLASS } from './classes';
 import { fedShareOf, type FoodReport } from './farms';
 
@@ -77,7 +77,56 @@ export interface DecisionStateView {
   readonly harvest: FoodReport;
   /** Falso finche' un'emergenza alimentare gia' risolta non e' rientrata. */
   readonly supplyArmed: boolean;
+  /**
+   * Mandati attivi: servono a dire se un'alternativa rinnova o solleva un
+   * mandato gia' in piedi, invece di ripetere sempre la stessa scelta.
+   */
+  readonly charters: readonly CharterId[];
+  /**
+   * Impronta della citta' all'ultima risoluzione: finche' non cambia, una
+   * scelta contestuale non si riapre solo perche' e' scaduto il tempo.
+   */
+  readonly decisionStamp: number;
 }
+
+/**
+ * Un'impronta grossolana e deterministica della forma della citta'.
+ *
+ * Cambia solo quando succede qualcosa di decidibile: compare una classe di
+ * edifici nuova, oppure la popolazione attraversa un ordine di grandezza. Non
+ * conta gli edifici uno a uno — quella cambierebbe ogni tick mentre la citta'
+ * cresce, e la scelta si riaprirebbe per qualunque cantiere. E' il confronto
+ * con `decisionStamp` a decidere se una scelta contestuale ha davvero qualcosa
+ * di nuovo da chiedere.
+ */
+export function decisionFingerprint(state: DecisionStateView): number {
+  const population = state.population.stock;
+  const popBucket = population <= 0 ? 0 : Math.floor(Math.log2(population + 1));
+  let classes = 0;
+  for (let cls = 0; cls < state.buildingCounts.length; cls++) {
+    classes = classes * 2 + ((state.buildingCounts[cls] ?? 0) > 0 ? 1 : 0);
+  }
+  return classes * 64 + popBucket;
+}
+
+/**
+ * Le due voci con cui una stessa scelta si ripresenta, scelte dal numero di
+ * scadenza: la stessa decisione non si legge identica ogni volta.
+ */
+const PUBLIC_SQUARE_TITLES = [
+  'A contested square',
+  'A square in need of purpose',
+  'The new square opens',
+] as const;
+const PUBLIC_SQUARE_MESSAGES = [
+  'A growing civic district needs a use for its new public square.',
+  'Residents, merchants and the town hall each want the square for something different.',
+  'The civic district has opened a public square: what should it become?',
+] as const;
+const INVESTMENT_TITLES = [
+  'Neighborhood investment',
+  'Where the city invests next',
+] as const;
 
 /** Apre una scelta soltanto alla scadenza; la scelta resta ferma finche' il giocatore risponde. */
 export function decisionAt(state: DecisionStateView, nextDecisionTick: number): CityDecision | null {
@@ -127,57 +176,139 @@ export function decisionAt(state: DecisionStateView, nextDecisionTick: number): 
     && (state.buildingCounts[BUILDING_CLASS.industrial] ?? 0) > 0;
   if (!publicSpaceAvailable && !investmentAvailable) return null;
 
+  // Una scelta contestuale attende un cambiamento reale: sotto il tetto di
+  // inattivita' non si riapre solo perche' il tempo e' scaduto. L'emergenza
+  // alimentare e' gia' passata sopra: quella e' un guasto, non una routine.
+  const idle = state.tickCount - (nextDecisionTick - BALANCE.decisions.intervalTicks);
+  if (decisionFingerprint(state) === state.decisionStamp
+    && idle < BALANCE.decisions.maxIdleTicks) {
+    return null;
+  }
+
   // La famiglia dell'ultima decisione risolta, non il prefisso del suo id: da
   // quando ogni decisione dichiara il proprio slot, la rotazione fra le due
   // scelte contestuali si legge dal campo invece che da una stringa.
   const lastFamily = state.decisionHistory.at(-1)?.family;
   if (publicSpaceAvailable && (lastFamily !== 'publicSpace' || !investmentAvailable)) {
-    return {
-      id: `public-space-${state.tickCount}`,
-      family: 'publicSpace',
-      title: 'A contested square',
-      message: 'A growing civic district needs a use for its new public square.',
-      options: [
-        option('festival', 'Fund a festival', 'Spend funds to increase happiness.', {
-          funds: -BALANCE.decisions.decisionCost,
-          satisfaction: BALANCE.decisions.satisfactionStep,
-        }, { charter: 'festivalGrounds' }),
-        option('materials-market', 'Lease it to the market', 'Gain funds by trading away materials.', {
-          materials: -BALANCE.decisions.materialGrant,
-          funds: BALANCE.decisions.fundsGrant,
-        }, { charter: 'leasedSquare', grant: { kind: 'market' } }),
-        // L'unica alternativa che *toglie*: tenere la piazza libera revoca il
-        // mandato della famiglia invece di non fare niente.
-        option('leave-open', 'Keep the space open', 'No cost: the city retains flexibility.', {},
-          { charter: null }),
-      ],
-    };
+    return publicSpaceDecision(state, nextDecisionTick);
   }
 
   if (!investmentAvailable) return null;
+  return investmentDecision(state, nextDecisionTick, buildings, scale);
+}
+
+/** La piazza contesa, con le alternative che riflettono il mandato in piedi. */
+function publicSpaceDecision(
+  state: DecisionStateView,
+  nextDecisionTick: number,
+): CityDecision {
+  const flavor = nextDecisionTick % PUBLIC_SQUARE_TITLES.length;
+  const active = charterOfFamily(state.charters, 'publicSpace');
+  return {
+    id: `public-space-${state.tickCount}`,
+    family: 'publicSpace',
+    title: PUBLIC_SQUARE_TITLES[flavor],
+    message: PUBLIC_SQUARE_MESSAGES[flavor],
+    options: [
+      option(
+        'festival',
+        active === 'festivalGrounds' ? 'Renew the festival' : 'Fund a festival',
+        active === 'festivalGrounds'
+          ? 'Spend funds to keep the festival going and raise happiness.'
+          : 'Spend funds to increase happiness.',
+        {
+          funds: -BALANCE.decisions.decisionCost,
+          satisfaction: BALANCE.decisions.satisfactionStep,
+        },
+        { charter: 'festivalGrounds' },
+      ),
+      option(
+        'materials-market',
+        active === 'leasedSquare' ? 'Renew the market lease' : 'Lease it to the market',
+        active === 'leasedSquare'
+          ? 'Trade away materials to keep the lease and gain funds.'
+          : 'Gain funds by trading away materials.',
+        {
+          materials: -BALANCE.decisions.materialGrant,
+          funds: BALANCE.decisions.fundsGrant,
+        },
+        { charter: 'leasedSquare', grant: { kind: 'market' } },
+      ),
+      // L'unica alternativa che *toglie*: tenere la piazza libera revoca il
+      // mandato della famiglia invece di non fare niente. Se non c'e' nessun
+      // mandato da revocare, resta una scelta senza conseguenze.
+      option(
+        'leave-open',
+        'Keep the space open',
+        active === null
+          ? 'No cost: the city retains flexibility.'
+          : 'Lift the standing mandate and keep the square flexible.',
+        {},
+        { charter: null },
+      ),
+    ],
+  };
+}
+
+/** L'investimento di quartiere, con le alternative che riflettono il mandato in piedi. */
+function investmentDecision(
+  state: DecisionStateView,
+  nextDecisionTick: number,
+  buildings: number,
+  scale: number,
+): CityDecision {
+  const flavor = nextDecisionTick % INVESTMENT_TITLES.length;
+  const active = charterOfFamily(state.charters, 'investment');
+  const message = flavor === 0
+    ? `The city now has ${buildings} buildings. Choose where to direct its next investment.`
+    : `With ${buildings} buildings, the council can back one new direction.`;
   return {
     id: `investment-${state.tickCount}`,
     family: 'investment',
-    title: 'Neighborhood investment',
-    message: `The city now has ${buildings} buildings. Choose where to direct its next investment.`,
+    title: INVESTMENT_TITLES[flavor],
+    message,
     options: [
-      option('local-grant', 'Support local shops', 'Convert funds into materials and public trust.', {
-        funds: -BALANCE.decisions.decisionCost,
-        materials: BALANCE.decisions.materialGrant,
-        satisfaction: BALANCE.decisions.satisfactionStep,
-      }, { charter: 'localShops', grant: { kind: 'market' } }),
-      option('sell-reserve', 'Sell the reserves', 'Gain immediate funds by consuming materials.', {
-        materials: -BALANCE.decisions.materialGrant,
-        funds: BALANCE.decisions.fundsGrant,
-      }, { charter: 'soldReserves' }),
+      option(
+        'local-grant',
+        active === 'localShops' ? 'Renew support for local shops' : 'Support local shops',
+        active === 'localShops'
+          ? 'Convert funds into materials and keep the arcades alive.'
+          : 'Convert funds into materials and public trust.',
+        {
+          funds: -BALANCE.decisions.decisionCost,
+          materials: BALANCE.decisions.materialGrant,
+          satisfaction: BALANCE.decisions.satisfactionStep,
+        },
+        { charter: 'localShops', grant: { kind: 'market' } },
+      ),
+      option(
+        'sell-reserve',
+        active === 'soldReserves' ? 'Sell more of the reserves' : 'Sell the reserves',
+        active === 'soldReserves'
+          ? 'Gain more funds by consuming materials.'
+          : 'Gain immediate funds by consuming materials.',
+        {
+          materials: -BALANCE.decisions.materialGrant,
+          funds: BALANCE.decisions.fundsGrant,
+        },
+        { charter: 'soldReserves' },
+      ),
       // Ultimo numero alimentare rimasto piatto, e per la stessa ragione degli
       // altri non poteva restarci: una fiera che costa 120 di cibo a qualunque
       // taglia e' soddisfazione gratis appena la citta' cresce, cioe' non e' piu'
       // una scelta fra tre alternative ma una sola ovvia.
-      option('food-fair', 'Food fair', 'Use food supplies to strengthen morale.', {
-        food: -BALANCE.decisions.foodGrant * scale,
-        satisfaction: BALANCE.decisions.satisfactionStep,
-      }, { charter: 'foodFair' }),
+      option(
+        'food-fair',
+        active === 'foodFair' ? 'Hold the food fair again' : 'Food fair',
+        active === 'foodFair'
+          ? 'Use food supplies to keep morale high.'
+          : 'Use food supplies to strengthen morale.',
+        {
+          food: -BALANCE.decisions.foodGrant * scale,
+          satisfaction: BALANCE.decisions.satisfactionStep,
+        },
+        { charter: 'foodFair' },
+      ),
     ],
   };
 }

@@ -151,31 +151,54 @@ export class ResourceBar {
 
     const time = document.createElement('div');
     time.className = 'time-controls';
+
+    // Due gruppi e non una fila che avvolge: il tempo e il cielo sono due domande
+    // diverse — quanto scorre mentre guardo, e che cielo c'e' mentre guardo — e
+    // mescolate in sei bottoni si rispondevano l'una contro l'altra.
+    const simGroup = document.createElement('div');
+    simGroup.className = 'time-group';
+    const simLabel = document.createElement('span');
+    simLabel.className = 'time-group-label';
+    simLabel.textContent = 'Time';
+    const simRow = document.createElement('div');
+    simRow.className = 'time-row';
     this.pauseButton = iconButton('pause', 'Pause simulation', () => handlers.onPause(!this.paused));
     this.pauseButton.classList.add('hud-button--small');
-    time.appendChild(this.pauseButton);
+    simRow.appendChild(this.pauseButton);
     for (const speed of [1, 2, 4]) {
       const button = textButton(`${speed}×`, `Simulation speed ${speed}×`, () => handlers.onSpeed(speed));
       button.classList.add('hud-button--small');
       this.speedButtons.set(speed, button);
-      time.appendChild(button);
+      simRow.appendChild(button);
     }
-    // Il ciclo del giorno sta con la velocita' e la pausa perche' e' la stessa
-    // domanda — quanto tempo passa mentre guardo — e perche' e' li' che si
-    // guarda quando la citta' e' buia e non si sa se tornera' giorno.
+    simGroup.append(simLabel, simRow);
+    time.appendChild(simGroup);
+
+    const skyGroup = document.createElement('div');
+    skyGroup.className = 'time-group';
+    const skyLabel = document.createElement('span');
+    skyLabel.className = 'time-group-label';
+    skyLabel.textContent = 'Sky';
+    const skyRow = document.createElement('div');
+    skyRow.className = 'time-row';
+    // Il ciclo del giorno sta col cielo perche' e' la stessa domanda — che cielo
+    // c'e' mentre guardo — e perche' e' li' che si guarda quando la citta' e'
+    // buia e non si sa se tornera' giorno.
     this.daylightButton = iconButton('daylight', 'Daylight', () =>
       handlers.onDaylight(daylightControl(this.daylightMode).next));
-    this.daylightButton.classList.add('hud-button--small', 'daylight-toggle');
-    time.appendChild(this.daylightButton);
+    this.daylightButton.classList.add('hud-button--small');
+    skyRow.appendChild(this.daylightButton);
     this.setDaylight(DAYLIGHT_MODE.cycle);
 
-    // Le nuvole stanno accanto al ciclo perche' sono la stessa domanda — che
-    // cielo c'e' mentre guardo — e perche' e' l'altra cosa che cambia la scena
-    // senza cambiare la citta'.
+    // Le nuvole stanno accanto al ciclo perche' sono la stessa domanda, e sono
+    // l'altra cosa che cambia la scena senza cambiare la citta'.
     this.cloudsButton = iconButton('clouds', 'Clouds', () => handlers.onClouds(!this.clouds));
-    this.cloudsButton.classList.add('hud-button--small', 'daylight-toggle');
-    time.appendChild(this.cloudsButton);
+    this.cloudsButton.classList.add('hud-button--small');
+    skyRow.appendChild(this.cloudsButton);
     this.setClouds(true);
+    skyGroup.append(skyLabel, skyRow);
+    time.appendChild(skyGroup);
+
     this.root.appendChild(time);
   }
 
@@ -327,6 +350,14 @@ export class ResourceBar {
     // Raggiungibile da tastiera: senza, la scomposizione esiste solo per chi usa
     // il mouse, e la domanda che risponde non e' un extra decorativo.
     item.tabIndex = 0;
+    // Un clic col mouse lascia il fuoco sulla pastiglia, e il browser riaccende
+    // `:focus-visible` appena arriva un tasto qualsiasi — il primo `V` o `WASD`
+    // aprirebbe di nuovo la scomposizione sopra l'ultima pastiglia toccata,
+    // come accadeva ai bottoni del dock prima del loro `blur()`. Chi naviga da
+    // tastiera non passa di qui (`detail` 0), quindi il fuoco gli resta.
+    item.addEventListener('click', (event) => {
+      if (event.detail > 0) item.blur();
+    });
     this.resources.set(resource.id, { item, value: number, delta, arrow, spark: line, ring, flows });
     return item;
   }

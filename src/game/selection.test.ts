@@ -207,6 +207,18 @@ describe('resolveSelection', () => {
     expect(uses[0]?.cityUse).toBeTypeOf('number');
   });
 
+  it('l\'uso porta l\'organico dell\'ultimo tick, che e\' un fatto della citta\'', () => {
+    // Il `staffing` arriva dallo stato e vale per tutta la citta': e' il numero
+    // che la scheda usa per dire a una fabbrica quanti lavoratori le mancano.
+    const registry = new BuildingRegistry();
+    registry.add({ ...record(20, 20, 12, 10), class: BUILDING_CLASS.industrial });
+    const state = { ...createSimState(), staffing: 0.5 };
+
+    const picked = resolveSelection({ ...harness({ registry, state }), cell: cell(21, 21, 18) });
+
+    expect(picked?.structure?.uses[0]?.staffing).toBe(0.5);
+  });
+
   it('il rendimento passa per le policy attive, e non per la costante nuda', () => {
     // `denseHousing` moltiplica `residentialCapacity`: leggere `BALANCE` a crudo
     // mostrerebbe una capacita' che il tick non usa piu'.

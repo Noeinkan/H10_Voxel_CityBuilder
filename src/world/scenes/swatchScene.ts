@@ -16,7 +16,6 @@ import {
   CELL_HEIGHT,
   cellSolidAt,
   matrixCellRect,
-  plinthSpanAt,
   SCALE_ITEMS,
   SCALE_ORIGIN_Y,
   strataPillarRect,
@@ -25,8 +24,13 @@ import {
   SWATCH_PILLARS,
   SWATCH_ROWS,
   SWATCH_WATERS,
-  swatchExtent,
 } from './swatchLayout';
+import {
+  SWATCH_CATALOG_SUBJECTS,
+  swatchExtent,
+  swatchPlinthSpanAt,
+  type SwatchCatalogSubject,
+} from './swatchCatalog';
 
 /**
  * Il campionario dei voxel: tutto il vocabolario visuale in una inquadratura.
@@ -45,8 +49,11 @@ import {
  *
  * Tre fasce lungo +y, su un basamento continuo: la matrice palette x superficie,
  * la stratigrafia di ogni bioma piu' i tre specchi d'acqua, e la fascia di scala
- * fra cella di terreno, albero ed edificio. Dove stanno lo dice
- * `swatchLayout.ts`; qui si scrive soltanto.
+ * fra cella di terreno, albero ed edificio. Piu' in la' lungo +y seguono le due
+ * gallerie del catalogo — tutte le tipologie edilizie e tutti i landmark — che
+ * `swatchCatalog.ts` deriva dagli stamp reali. Dove stanno le prime tre lo dice
+ * `swatchLayout.ts`, dove stanno le gallerie `swatchCatalog.ts`; qui si scrive
+ * soltanto.
  */
 
 /** Righe di basamento scritte per passo: e' l'unita' di lavoro piu' grossa. */
@@ -61,7 +68,8 @@ type SwatchTask =
   | { readonly kind: 'plinth'; readonly index: number }
   | { readonly kind: 'row'; readonly index: number }
   | { readonly kind: 'pillar'; readonly index: number }
-  | { readonly kind: 'scale'; readonly index: number };
+  | { readonly kind: 'scale'; readonly index: number }
+  | { readonly kind: 'subject'; readonly index: number };
 
 export function createSwatchScene(world: VoxelWorld): SceneGenerator {
   return new SwatchGenerator(world);
@@ -88,6 +96,9 @@ class SwatchGenerator implements SceneGenerator {
     for (let index = 0; index < SWATCH_ROWS; index++) tasks.push({ kind: 'row', index });
     for (let index = 0; index < SWATCH_PILLARS; index++) tasks.push({ kind: 'pillar', index });
     for (let index = 0; index < SCALE_ITEMS.length; index++) tasks.push({ kind: 'scale', index });
+    for (let index = 0; index < SWATCH_CATALOG_SUBJECTS.length; index++) {
+      tasks.push({ kind: 'subject', index });
+    }
     this.tasks = tasks;
   }
 
@@ -131,11 +142,14 @@ class SwatchGenerator implements SceneGenerator {
       case 'scale':
         this.writeScaleItem(task.index);
         return;
+      case 'subject':
+        this.writeSubject(SWATCH_CATALOG_SUBJECTS[task.index]);
+        return;
     }
   }
 
   /**
-   * Il piano di lettura, continuo sotto tutte e tre le fasce.
+   * Il piano di lettura, continuo sotto le fasce e sotto le due gallerie.
    *
    * E' `plain` e in uno slot neutro: qualunque linguaggio di superficie qui
    * aggiungerebbe dettaglio a un fondo che serve a non averne, e i prismi del
@@ -148,8 +162,8 @@ class SwatchGenerator implements SceneGenerator {
 
     for (let y = y0; y < y1; y++) {
       // La riga e' larga quanto la fascia che regge, non quanto l'estensione:
-      // e' il profilo a gradini che dichiara le tre fasce senza etichette.
-      const span = plinthSpanAt(y);
+      // e' il profilo a gradini che dichiara le fasce senza etichette.
+      const span = swatchPlinthSpanAt(y);
       for (let x = span.x0; x < span.x1; x++) {
         this.written += this.world.fillColumn(x, y, 0, SWATCH.groundZ, SWATCH.plinthSlot);
       }
@@ -307,8 +321,17 @@ class SwatchGenerator implements SceneGenerator {
 
   /** Lo stesso stamp che il Builder metterebbe in citta', su un fronte a est. */
   private writeReference(x0: number): void {
-    const stamp = this.reference;
-    const anchor = { x: x0, y: SCALE_ORIGIN_Y, z: SWATCH.groundZ };
+    this.writeStamp(this.reference, x0, SCALE_ORIGIN_Y, SWATCH.groundZ);
+  }
+
+  /** Un modello del catalogo, nello stesso posto del suo riquadro dichiarato. */
+  private writeSubject(subject: SwatchCatalogSubject): void {
+    this.writeStamp(subject.stamp, subject.rect.x0, subject.rect.y0, SWATCH.groundZ);
+  }
+
+  /** Scrive uno stamp ancorato al suo angolo, voxel per voxel. */
+  private writeStamp(stamp: VoxelStamp, x0: number, y0: number, z0: number): void {
+    const anchor = { x: x0, y: y0, z: z0 };
 
     for (let sz = 0; sz < stamp.sizeZ; sz++) {
       for (let sy = 0; sy < stamp.sizeY; sy++) {

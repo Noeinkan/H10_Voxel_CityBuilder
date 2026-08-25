@@ -5,6 +5,7 @@ import {
   faceLuminance,
   hexToLinear,
   relativeLuminance,
+  rimFactor,
   sunDirection,
   wrapDiffuse,
   type LightingModel,
@@ -113,6 +114,35 @@ describe('faceLight', () => {
     const away: [number, number, number] = [-Math.sign(sx), 0, 0];
     expect(sy).toBeGreaterThan(0);
     expect(relativeLuminance(faceLight(model, away))).toBeGreaterThan(0.3);
+  });
+});
+
+describe('rimFactor', () => {
+  // Sguardo verso la scena, inclinato come una camera isometrica (versore).
+  const view: [number, number, number] = [0.5, 0.5, -0.7071];
+
+  it('vale 0 su una faccia rivolta alla camera e 1 di taglio', () => {
+    // Faccia +Z rivolta in alto con sguardo verticale: e' frontale, bordo nullo.
+    expect(rimFactor([0, 0, 1], [0, 0, -1], 2)).toBe(0);
+    // Una normale perpendicolare allo sguardo e' un profilo pieno.
+    expect(rimFactor([0.7071, -0.7071, 0], view, 2)).toBeCloseTo(1, 10);
+  });
+
+  it('cresce con l’angolo di scorcio e si stringe con l’esponente', () => {
+    // La faccia superiore, con una vista inclinata in basso, e' quasi frontale.
+    const top = rimFactor([0, 0, 1], view, 2);
+    const grazing = rimFactor([0.7071, -0.7071, 0], view, 2);
+    expect(grazing).toBeGreaterThan(top);
+    // A parita' di angolo, un esponente piu' alto stringe il bordo al solo profilo.
+    expect(rimFactor([0, 0, 1], view, 4)).toBeLessThan(top);
+  });
+
+  it('resta sempre in [0, 1]', () => {
+    for (const normal of FACE_NORMALS) {
+      const value = rimFactor(normal, view, 3);
+      expect(value).toBeGreaterThanOrEqual(0);
+      expect(value).toBeLessThanOrEqual(1);
+    }
   });
 });
 

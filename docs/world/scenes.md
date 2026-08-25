@@ -48,3 +48,24 @@
   un voxel di quota si proietta in alto il doppio di un voxel di profondita', e
   la fila davanti nasconde `CELL_HEIGHT - cellPitch / 2` di quella dietro: con
   interasse pari all'altezza sparisce meta' di ogni provino. Un test lo fissa.
+- **La galleria e' un catalogo, non un secondo disegno.** `scenes/swatchCatalog.ts`
+  deriva le fasce in fondo al campionario dagli stamp veri: ogni tipologia di
+  `TYPOLOGIES` a livello `SWATCH_BUILDING_LEVEL`, seme 0 e fronte est, ogni
+  landmark di `LANDMARKS` allo stadio finale — tutte le varianti piu' le forme
+  contestuali di `FORMS`, Skyport compreso — con un seme che produce davvero
+  l'esemplare dichiarato, e ogni arcologia di `ARCOLOGY_RECIPES` allo stadio
+  finale. Ingombri e altezze escono dagli stamp, mai da riquadri copiati a mano,
+  quindi una tipologia, un esemplare o una megastruttura nuovi compaiono da soli.
+- **Gli otto voxel fra due soggetti sono vuoto, non spazio di nessuno.**
+  `SWATCH_ITEM_GAP` separa i riquadri delle gallerie e fa da margine alle
+  inquadrature; `swatchSubjectAt` risponde solo dentro un riquadro, cosi' il
+  vuoto non e' selezionabile. Il basamento sotto l'ingombro di un soggetto resta
+  cliccabile: a decidere e' la colonna del voxel colpito, non la sua quota.
+- **La selezione passa da una traversata di raggio, non da un piano.**
+  `scenes/swatchPick.ts` e' una DDA pura (`firstSolidVoxel`) sul primo solido
+  visibile; `main.ts` la consuma per hover, click persistente e referto del voxel
+  esatto. Il contorno riusa `SelectionOutline` con una quota piatta
+  (`heightAt` = `SWATCH.groundZ`): nessun rebuild di mesh, nessuna geometria nuova.
+- **Il pannello ha sei pulsanti** — Matrice, Scala, Edifici, Landmark, Arcologie,
+  Tutto — che inquadrano la fascia con `swatchFocusExtent`; si parte da Tutto. La
+  scelta sopravvive alla navigazione, il clic nel vuoto e `Esc` la mollano.

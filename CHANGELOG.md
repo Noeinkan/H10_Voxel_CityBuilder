@@ -11,6 +11,64 @@ coincide con il messaggio di commit.
 
 ---
 
+## In corso — Le megastrutture nel campionario
+
+- **Le tre arcologie chiudono la galleria dello swatch.** Twin Stem, Branching Core e Sky Weave arrivano da `ARCOLOGY_RECIPES` allo stadio finale, con una fascia di navigazione propria («Arcologie») e la scheda del soggetto: forma, stadio, fasce di uso e fronte. Come per edifici e landmark, ingombro e altezza escono dallo stamp generato — quasi duecento voxel — e la selezione li tratta da soggetti logici come gli altri, riusando la traversata di raggio e il contorno.
+
+## In corso — Galleria completa e selezionabile nel campionario
+
+- **Tutte le tipologie e tutti i landmark stanno nel campionario, selezionabili.** Le due fasce in fondo alla scena swatch derivano dal catalogo vero — ogni riga di `TYPOLOGIES` a livello 6 e ogni landmark allo stadio finale, varianti e forme contestuali incluse — con ingombri e altezze misurati dagli stamp generati, mai copiati a mano. Il vuoto minimo fra i soggetti e' di otto voxel e non appartiene a nessuno. Il pannello guadagna cinque pulsanti di navigazione (Matrice, Scala, Edifici, Landmark, Tutto) e la scheda del soggetto; hover e click risolvono il soggetto con una traversata di raggio sul primo solido visibile, e il contorno riusa `SelectionOutline` con una quota piatta, senza toccare mesh ne' palette.
+
+## In corso — Dodici ruoli, quattro per gruppo
+
+- **Tre nuovi catalizzatori: Depot, Museum e Cathedral.** La crescita guadagna il piazzale merci (`depot`, commercio e industria), l'identita' il museo (ricchezza e soddisfazione) e la cattedrale (soddisfazione pura): ora ogni gruppo ne ha quattro. Ognuno porta costi, intensita', vettore di influenza, effetti locali e una ricetta con tre esemplari. Il deposito apre la specializzazione logistica, il museo il turismo e la cattedrale fa quartiere con il parco (`garden`).
+
+## In corso — Il dock va a tre colonne
+
+- **City, Policies e Views non sbordano piu'.** Le tre porte stavano incolonnate in fondo al dock e finivano oltre il bordo dello schermo; ora stanno in una **riga** sola, accanto alle tre icone, e il dock scende a **tre tessere per riga** — meta' delle righe di prima. Il rail si allarga a tre tessere, e parola e icona delle porte si stringono invece di uscire.
+
+## In corso — Il dock resta a due colonne
+
+- **Niente piu' tessere sovrapposte.** La colonna singola da 96px non bastava piu' ai dati sopra e alle tessere sotto, e stringerle con `flex` le faceva scavalcare il proprio contenuto. Il dock resta **sempre a due colonne** — meta' delle righe, rail largo il doppio — e si accorcia solo con le media query sull'altezza, che tolgono prima il prezzo e poi l'etichetta, mai il bersaglio.
+
+## In corso — Post-processing: raggi del sole, contorno e colore
+
+- **Vignettatura e ritocco di colore dopo il tone mapping.** Un pass finale in sRGB — saturazione, contrasto e vignettatura — rende i colori piu' vivi senza toccare la palette ne' le mesh: i default stanno in `PostProcessing.ts` (`DEFAULT_GRADE`) e un tema li riscrive con `atmosphere.grade`.
+- **Raggi del sole in spazio schermo.** Una pass accumula il bagliore verso la posizione del disco solare — la stessa coppia di `SkyBackground`, quindi irradiano dal punto giusto — e si spegne quando il sole e' dietro la camera; `atmosphere.godRays` ne tara la forza.
+- **Contorno scuro delle sagome dalla profondita'.** Un Sobel sulla profondita' della scena marca i soli profili: con la camera ortografica dentro l'edificato non c'e' discontinuita' da segnare, quindi restano solo le sagome contro il cielo. Una pass a schermo pieno, spenta nel profilo `performance`; `atmosphere.outline` ne tara la forza.
+- **Bordo chiaro delle facce di scorcio nel materiale.** Un fresnel su normale e direzione di sguardo accende i profili dei volumi senza attributi ne' pass nuove: `rimFactor` in `lighting.ts` con la sua meta' GLSL in `voxel.frag.ts`, e `atmosphere.rim` lo regola.
+- **Tutto e' gated dalla qualita'.** `RenderQuality` spegne ritocco, raggi e contorno nel profilo `performance` come gia' fa con bloom e tilt; l'overlay e l'hook `__voxelStats` li elencano nella stringa degli effetti.
+
+## In corso — Decisioni meno frequenti e meno ripetitive
+
+- **Le decisioni si aprono quando la citta' cambia, non a orologio.** Una scelta
+  contestuale attende un cambiamento reale — una nuova classe di edifici, un
+  ordine di grandezza in piu' di abitanti — con un tetto di inattivita'
+  (`decisions.maxIdleTicks`) oltre il quale si riapre comunque. L'emergenza
+  alimentare resta un guasto e non cambia cadenza.
+- **Alternative che rinnovano invece di ripetersi.** Quando il mandato della
+  famiglia e' gia' attivo, l'opzione lo rinnova («Renew the festival») e
+  «Keep the space open» solleva il mandato solo se c'e' davvero qualcosa da
+  sollevare.
+- **Testo parametrizzato e a rotazione.** Titoli e messaggi cambiano con i
+  numeri vivi della citta' e con la scadenza, senza intaccare il determinismo.
+- **Niente piu' modale che blocca.** «Decide later» rimanda la carta per
+  `decisions.snoozeTicks`; la scelta resta rispondibile nell'inbox del City
+  dashboard, in cima al cassetto della citta'.
+
+## In corso — Correzione del rail sul portatile
+
+- **Il dock non sborda piu' dal bordo inferiore.** `flex: 1 1 auto` e le corsie che si dividono l'altezza in proporzione alle tessere fanno stringere il dock fra i dati sopra e la targa sotto; sotto gli 800px le etichette lasciano la tessera e passano nella scheda al passaggio del mouse, cosi' la colonna resta intera su un portatile.
+- **`V` non riapre piu' i popover a caso.** La pastiglia delle risorse, come i bottoni del dock, si sfoca al clic col mouse: il browser non riaccende piu' `:focus-visible` sul primo tasto, e la scomposizione del saldo non riappare sopra l'ultima risorsa toccata.
+
+## In corso — Riprogettazione dell'HUD
+
+- **La dashboard della citta' si separa dal governo.** `PolicyDrawer.ts` — cinque linguette che mescolavano leggere e agire — si spezza in `CityDrawer` (sola lettura: condizione, traguardi, capacita', economia, commercio, scambi, forma, infrastrutture, storia) e `PoliciesDrawer` (policy e rotte commerciali). Il dock guadagna due porte, «City» e «Policies», al posto della sola panoramica.
+- **Dati e comandi condividono una sola sidebar a sinistra.** La colonna delle risorse lascia il bordo destro e sale in cima al rail sinistro — risorse, tempo e cielo sopra, il dock dei comandi sotto — cosi' lo stato della citta' sta sopra le sue leve e non occorre un secondo bordo da guardare. Il lato destro resta interamente ai pannelli che si aprono e si chiudono.
+- **Il corridoio verticale torna interamente alla citta'.** Toast, carta decisione e aiuto erano centrati e cadevano dove le torri crescono in altezza; ora il toast sta in basso a sinistra accanto al rail, e decisione, aiuto e selezione salgono dal bordo destro.
+- **Tempo e cielo sono due gruppi nella colonna dei dati.** Pausa e velocita' stanno sotto «Time», ciclo del giorno e nuvole sotto «Sky», invece di sei bottoni che avvolgevano a caso.
+- **La scheda al cursore parla la lingua del tooltip.** Era l'unica superficie chiara fra i due popover scuri: ora e' un popover scuro come la scheda del dock, e i picker di tema e viste guadagnano la croce come gli altri cassetti.
+
 ## In corso — La lente dei raggi X trova i landmark sommersi
 
 - **Punta e rivela il landmark piu' vicino.** Il soggetto dei raggi X non e' piu' soltanto l'edificio sotto il cursore: entro `XRAY.landmarkReach` la lente si aggancia al landmark piu' vicino, misurato sull'impronta vera — un molo o una pista si agganciano anche sul fianco lungo — cosi' i monumenti che la crescita ha circondato si trovano puntando nei paraggi invece che al pixel.

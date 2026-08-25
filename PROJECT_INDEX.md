@@ -86,6 +86,8 @@ resto si apre a domanda — è ciò che tiene basso il contesto di partenza.
 
 | File | Ruolo | Esporta |
 | --- | --- | --- |
+| [scenes/swatchCatalog.ts](src/world/scenes/swatchCatalog.ts) | Catalogo dei soggetti del campionario: ogni tipologia a livello 6 e ogni landmark — varianti e forme contestuali, Skyport compreso — derivati dagli stamp veri, con fasce, riquadri, scheda e inquadrature | `SWATCH_ITEM_GAP`, `SWATCH_BUILDING_LEVEL`, `SWATCH_FOCUS`, `SWATCH_FOCUSES`, `SWATCH_BUILDINGS`, `SWATCH_LANDMARKS`, `SWATCH_CATALOG_SUBJECTS`, `SWATCH_SUBJECTS`, `swatchExtent`, `swatchFocusExtent`, `swatchSubjectAt`, `swatchPlinthSpanAt`, `SwatchFocus`, `SwatchSubject`, `SwatchCatalogSubject`, `SwatchSubjectKind`, `SwatchInfoRow` |
+| [scenes/swatchPick.ts](src/world/scenes/swatchPick.ts) | Traversata DDA del raggio nel volume del campionario: il primo solido visibile, puro e senza mondo | `firstSolidVoxel`, `VoxelRay`, `VoxelHit`, `SwatchBox` |
 | [src/world/traffic/wake.ts](src/world/traffic/wake.ts) | La scia sull'acqua: il pennacchio letto in orizzontale, dalle pose passate. |
 | [VoxelWorld.ts](src/world/VoxelWorld.ts) | Storage sparso a chunk, dirty set, AABB, cache dell'ultimo chunk | `VoxelWorld`, `WorldBounds` |
 | [Chunk.ts](src/world/Chunk.ts) | Due `Uint8Array(32768)` — `blocks` (rendering) e `data` (simulazione) — allocati una volta sola | `Chunk` |
@@ -98,7 +100,7 @@ resto si apre a domanda — è ciò che tiene basso il contesto di partenza.
 | [scenes/dioramaScene.ts](src/world/scenes/dioramaScene.ts) | Un edificio solo su un basamento con il fronte strada, per giudicare il dettaglio da vicino | `createDioramaScene`, `parseBuildingUse`, `DIORAMA_DEFAULT_LEVEL`, `DioramaScene`, `DioramaOptions`, `DioramaSubject`, `DioramaSubjectOptions` |
 | [scenes/swatchLayout.ts](src/world/scenes/swatchLayout.ts) | **Ogni** numero e ogni geometria del campionario, puro: estensione, sagoma del provino a pezzi centrati, riquadro di una cella, cella sotto una coordinata | `SWATCH`, `SWATCH_BAND`, `SWATCH_COLUMNS`, `SWATCH_ROWS`, `SWATCH_PILLARS`, `SWATCH_WATERS`, `CELL_PARTS`, `CELL_FOOTPRINT`, `CELL_HEIGHT`, `CELL_LEDGE`, `cellSolidAt`, `SCALE_ITEMS`, `SCALE_ORIGIN_Y`, `swatchExtent`, `matrixCellRect`, `strataPillarRect`, `plinthSpanAt`, `swatchCellAt`, `SwatchBand`, `SwatchCell`, `SwatchExtent`, `SwatchRect`, `SwatchPart`, `ScaleItem` |
 | [scenes/swatchProbe.ts](src/world/scenes/swatchProbe.ts) | Quanti prismi di dettaglio emette una cella del campionario: rimisura con gli emettitori veri e un writer che conta invece di scrivere | `cellDetail`, `countDetail`, `SwatchDetail` |
-| [scenes/swatchScene.ts](src/world/scenes/swatchScene.ts) | Il campionario dei voxel: matrice palette × superficie, stratigrafia per bioma, fascia di scala. Scrive e basta | `createSwatchScene` |
+| [scenes/swatchScene.ts](src/world/scenes/swatchScene.ts) | Il campionario dei voxel: matrice palette × superficie, stratigrafia per bioma, fascia di scala e le due gallerie del catalogo. Scrive e basta | `createSwatchScene` |
 
 API pubblica del mondo: `setBlock`/`getBlock` e `getSurfaceKind` (rendering, marca sporco),
 `fillColumn` (lo stesso su un tratto verticale, a costo di corsa invece che di
@@ -260,10 +262,10 @@ di crescita. Il `Builder`, esterno al modulo, consuma quei candidati. Dettagli i
 | [index.ts](src/sim/index.ts) | Barrel: superficie pubblica per chi sta fuori dalla cartella | tutto il resto |
 | [balance.ts](src/sim/balance.ts) | **Ogni** coefficiente, soglia e moltiplicatore, in un solo oggetto | `BALANCE` |
 | [classes.ts](src/sim/classes.ts) | I quattro usi urbani come indici densi | `BUILDING_CLASS`, `CLASS_NAMES`, `CLASS_LABELS`, `CLASS_COUNT`, `ALL_CLASSES` |
-| [catalysts.ts](src/sim/catalysts.ts) | Catalogo dei sette ruoli: vettore di influenza, funzione di toolbar, effetti locali | `CATALYSTS`, `CATALYST_GROUPS`, `catalystById`, `isCatalystId`, `catalystInfluence`, `catalystRoleOf`, `defaultCatalystOfClass`, `CatalystId` |
+| [catalysts.ts](src/sim/catalysts.ts) | Catalogo dei dodici ruoli: vettore di influenza, funzione di toolbar, effetti locali | `CATALYSTS`, `CATALYST_GROUPS`, `catalystById`, `isCatalystId`, `catalystInfluence`, `catalystRoleOf`, `defaultCatalystOfClass`, `CatalystId` |
 | [src/sim/materials.test.ts](src/sim/materials.test.ts) | Contratti su capacità, spesa, specializzazioni e compatibilità dei salvataggi |
 | [src/sim/materials.ts](src/sim/materials.ts) | Rendiconto dei materiali, capacità economica dei livelli e costi dei cantieri verticali |
-| [SimState.ts](src/sim/SimState.ts) | Stato, operazioni del giocatore, serializzazione JSON senza perdita | `createSimState`, `addCatalyst`, `addBuilding`, `addFarm`, `removeFarm`, `setPolicyActive`, `setSelectedClass`, `toSimStateData`, `reviveSimState`, `rebuildField` |
+| [SimState.ts](src/sim/SimState.ts) | Stato, operazioni del giocatore, serializzazione JSON senza perdita | `createSimState`, `addCatalyst`, `addBuilding`, `addFarm`, `removeFarm`, `setPolicyActive`, `setSelectedClass`, `toSimStateData`, `reviveSimState`, `rebuildField`, `resolveDecision`, `snoozeDecision` |
 | [tick.ts](src/sim/tick.ts) | Il bilancio di un tick, funzione pura | `tick`, `tickMany`, `weightsOf` |
 | [DesirabilityField.ts](src/sim/DesirabilityField.ts) | Campo per uso urbano, `Uint8Array` chunkato 32×32, ricalcolo incrementale | `DesirabilityField`, `rectAround`, `rectArea`, `Catalyst`, `Building`, `CellRect` |
 | [reach.ts](src/sim/reach.ts) | Portata geodetica di un catalizzatore e l'unica curva di decadimento del progetto: Dijkstra a 8 vicini tagliato al raggio, con cache per centro | `computeReach`, `distAt`, `reachAt`, `falloff`, `ReachCache`, `UNIFORM_COST`, `ReachField`, `StepCost` |
@@ -272,7 +274,7 @@ di crescita. Il `Builder`, esterno al modulo, consuma quei candidati. Dettagli i
 | [districts.ts](src/sim/districts.ts) | Profili locali, distretti e specializzazioni da campi sovrapposti | `urbanProfileAt`, `specializationOf`, `dominantUse`, `DistrictId`, `LocalUrbanProfile`, `Specialization` |
 | [commerce.ts](src/sim/commerce.ts) | Il ciclo commerciale interno: domanda, organico, merce, ricavi | `resolveCommerce`, `EMPTY_COMMERCE`, `CommerceReport` |
 | [flows.ts](src/sim/flows.ts) | Da dove vengono i fondi di un tick e dove vanno: referto derivato come `commerce`, non un accumulo | `FundsReport`, `NO_FUNDS_FLOW`, `fundsIn`, `fundsOut`, `dominantOutflow` |
-| [decisions.ts](src/sim/decisions.ts) | Scelte periodiche deterministiche, con mandato e opera concessi | `decisionAt`, `decisionOption`, `CityDecision`, `DecisionGrant` |
+| [decisions.ts](src/sim/decisions.ts) | Scelte periodiche deterministiche, con cadenza a eventi, mandato e opera concessi | `decisionAt`, `decisionFingerprint`, `decisionOption`, `CityDecision`, `DecisionGrant` |
 | [charters.ts](src/sim/charters.ts) | Mandati lasciati dalle decisioni: uno slot per famiglia, permanenti | `CHARTERS`, `charterById`, `charterOfFamily`, `isCharterId`, `withCharter`, `withoutFamily`, `canonicalCharters`, `Charter`, `CharterFamily`, `CharterId` |
 | [farms.ts](src/sim/farms.ts) | I tre produttori di cibo: listino in case sfamate, braccia, manutenzione, referto del raccolto, e i due numeri che il bilancio consegna a chi pianta e a chi giudica | `FARM_KIND`, `ALL_FARM_KINDS`, `harvestOf`, `foodYieldOf`, `farmWorkersOf`, `farmUpkeepOf`, `foodDeficitOf`, `missingPlotsOf`, `fedShareOf`, `isFarmKind`, `FarmKind`, `FoodReport`, `EMPTY_HARVEST` |
 | [trade.ts](src/sim/trade.ts) | Import/export aggregato sbloccato dal porto | `resolveExternalTrade`, `TRADE_MODES`, `TradeMode` |
@@ -437,7 +439,7 @@ dirigibile, la piazzola dell'eVTOL, la cima della mongolfiera.
 
 | File | Ruolo | Esporta |
 | --- | --- | --- |
-| [config.ts](src/world/landmarks/config.ts) | **Ogni** ingombro, quota, soglia di stadio, ormeggio, linea d'acqua e indice di palette, piu' le nove ricette con tre esemplari a testa. Le **forme contestuali** (`FORMS`) affiancano la ricetta a terra: tre di facciata (`skyport`, `sky-park`, `sky-transit`) e tre d'acqua per il porto, scelte dal luogo e non dal seme. Dichiara anche il dislivello massimo della fondazione a terra. Qui vive `PartsRecipe`, il formato che le arcologie condividono | `LANDMARK`, `LANDMARKS`, `SKYPORT`, `BERTH`, `FORMS`, `LandmarkFormId`, `LandmarkForm`, `landmarkOf`, `hasFacadeForm`, `facadeFormOf`, `hasWaterForm`, `waterFormFor`, `formVariantOf`, `contextualFormsOf`, `isFacadeForm`, `maxStageOf`, `variantsOf`, `PartsRecipe`, `LandmarkRecipe`, `LandmarkVariant`, `LandmarkMooring`, `BerthKind` |
+| [config.ts](src/world/landmarks/config.ts) | **Ogni** ingombro, quota, soglia di stadio, ormeggio, linea d'acqua e indice di palette, piu' le dodici ricette con tre esemplari a testa. Le **forme contestuali** (`FORMS`) affiancano la ricetta a terra: tre di facciata (`skyport`, `sky-park`, `sky-transit`) e tre d'acqua per il porto, scelte dal luogo e non dal seme. Dichiara anche il dislivello massimo della fondazione a terra. Qui vive `PartsRecipe`, il formato che le arcologie condividono | `LANDMARK`, `LANDMARKS`, `SKYPORT`, `BERTH`, `FORMS`, `LandmarkFormId`, `LandmarkForm`, `landmarkOf`, `hasFacadeForm`, `facadeFormOf`, `hasWaterForm`, `waterFormFor`, `formVariantOf`, `contextualFormsOf`, `isFacadeForm`, `maxStageOf`, `variantsOf`, `PartsRecipe`, `LandmarkRecipe`, `LandmarkVariant`, `LandmarkMooring`, `BerthKind` |
 | [facadePlan.ts](src/world/landmarks/facadePlan.ts) | Piano puro dello Skyport di facciata: centra la ricetta fuori dall'ospite, riusa le corse delle terrazze e affida gli appoggi a `planDeck` | `planFacadeLandmark`, `FacadeLandmarkPlan`, `FacadeLandmarkQuery`, `FacadeLandmarkResult`, `FacadeLandmarkRefusal` |
 | [parts.ts](src/world/landmarks/parts.ts) | Le dieci primitive con cui una ricetta si compone, lo smusso della pianta e la rotazione sul verso | `PART`, `Part`, `PartKind`, `box`, `partBounds`, `orientPart`, `orientedSpan`, `createCanvas`, `drawPart`, `LandmarkCanvas` |
 | [generate.ts](src/world/landmarks/generate.ts) | Compone tronco ed esemplare in uno stamp; ingombro, origine, stadio, scelta della variante dal seme (o fissata dalla forma) e ormeggi portati sul verso vero. `landmarkWaterColumn` porta la linea d'acqua di una ricetta sul terreno vero. Il nucleo ricetta-stamp e' condiviso con le arcologie | `generateFromRecipe`, `recipeSpan`, `recipeOrigin`, `generateLandmark`, `landmarkSpan`, `landmarkOrigin`, `landmarkMoorings`, `landmarkWaterColumn`, `stageForBuildings`, `variantIndexOf`, `RecipeRequest`, `LandmarkRequest`, `WorldMooring` |
@@ -723,7 +725,9 @@ giocabile; gli overlay tecnici si alternano con `F3` o partono aperti con
 
 | File | Ruolo |
 | --- | --- |
+| [CityDrawer.ts](src/ui/CityDrawer.ts) | Dashboard di sola lettura: condizione, traguardi, capacita', economia, commercio, scambi, forma, infrastrutture e storia in una colonna, senza interruttori |
 | [CityOverviewModel.ts](src/ui/CityOverviewModel.ts) | Modello puro della panoramica cittadina: obiettivi di autosufficienza, capacita', organico, bilanci, forma urbana, infrastrutture, scambi, mandati e decisioni recenti |
+| [drawerBits.ts](src/ui/drawerBits.ts) | Mattoni condivisi dei cassetti di destra: intestazione con croce, righe dei fatti e barre dei traguardi |
 | [GameHudControlsModel.ts](src/ui/GameHudControlsModel.ts) | Tipi e testo puro dei controlli dell'HUD: strumento selezionato e ciclo giorno/notte |
 | [GameHudEconomyModel.ts](src/ui/GameHudEconomyModel.ts) | Lettura economica pura dell'HUD: risorse, rendiconti, riserve e ciclo commerciale |
 | [hud.css](src/ui/hud.css) | Token, elevazione a tre livelli, cornice, tessere del dock, stati accessibili e layout responsivo Cozy City |
@@ -733,8 +737,8 @@ giocabile; gli overlay tecnici si alternano con `F3` o partono aperti con
 | [hudWidgets.ts](src/ui/hudWidgets.ts) | Fabbriche DOM e attivazione accessibile: le azioni bloccate restano raggiungibili per leggere requisito e avanzamento |
 | [hudTokens.ts](src/ui/hudTokens.ts) | I `--hud-*` derivati dal tema attivo: pannello chiaro o scuro dalla luminanza dell'aria, tinta verso il mondo e contrasto AA garantito |
 | [GameHud.ts](src/ui/GameHud.ts) | Composizione dell'HUD: pannelli, decisioni, temi, targa della vista, catena di Escape e feedback contestuale |
-| [PolicyDrawer.ts](src/ui/PolicyDrawer.ts) | Centro informativo in cinque linguette — citta', politiche, commercio, scambi e cronologia — con navigazione da tastiera e corpo scorrevole |
-| [ResourceBar.ts](src/ui/ResourceBar.ts) | La colonna di destra: cinque risorse con tendenza, sparkline, anello del tetto e popover del bilancio, piu' i controlli del tempo |
+| [PoliciesDrawer.ts](src/ui/PoliciesDrawer.ts) | Il cassetto di governo: policy e rotte commerciali, le due cose che si toccano, separate dalla lettura |
+| [ResourceBar.ts](src/ui/ResourceBar.ts) | I dati in cima al rail sinistro: cinque risorse con anello del tetto e popover del bilancio, poi i gruppi Time e Sky |
 | [BuildDock.ts](src/ui/BuildDock.ts) | Il rail di sinistra: quattro corsie etichettate incolonnate, tessere icona-sopra-etichetta con badge di tasto, una colonna sopra i 900px di finestra e due sotto, selezione per indice |
 | [ResourceTrend.ts](src/ui/ResourceTrend.ts) | La finestra dei tick recenti per risorsa: direzione, magnitudine e serie per la sparkline. Campionamento ancorato al tick |
 | [GameHudModel.ts](src/ui/GameHudModel.ts) | Composizione del modello HUD: panoramica cittadina, azioni, policy, risorse e disponibilita' |
@@ -765,6 +769,8 @@ giocabile; gli overlay tecnici si alternano con `F3` o partono aperti con
 | [world/buildings/landmarkFooting.test.ts](src/world/buildings/landmarkFooting.test.ts) | Il landmark in montagna: il rifiuto `no-footing` detto prima del click, la stessa risposta che da' il click, un ciglio naturale ammesso ma non piu' gradoni cuciti insieme, nessun cantiere aperto per una struttura che non puo' comparire |
 | [src/world/crossings/secondaryBridgePlan.test.ts](src/world/crossings/secondaryBridgePlan.test.ts) | Territori distinti, soglia verticale e acqua reale per il piano del ponte automatico |
 | [world/landmarks/facadePlan.test.ts](src/world/landmarks/facadePlan.test.ts) | Piano di facciata sulle quattro direzioni, quota adattiva, appoggi e rifiuto di un fronte troppo stretto |
+| [world/scenes/swatchCatalog.test.ts](src/world/scenes/swatchCatalog.test.ts) | Le cinque fasce di navigazione e le loro inquadrature |
+| [world/scenes/swatchPick.test.ts](src/world/scenes/swatchPick.test.ts) | La DDA: primo solido, oggetto alto davanti a un altro, vuoti, riquadro mancato |
 | [src/world/traffic/wake.test.ts](src/world/traffic/wake.test.ts) | Che la V si apra, che i segni si tocchino e che una barca all'ormeggio non lasci niente. |
 | [world/VoxelWorld.test.ts](src/world/VoxelWorld.test.ts) | Sparsità, dirty set ai bordi, AABB, contratto `data` ≠ `blocks` |
 | [world/visualBlock.test.ts](src/world/visualBlock.test.ts) | Palette e superficie nello stesso byte, il vuoto ignora la superficie |

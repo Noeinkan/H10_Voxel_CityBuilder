@@ -160,9 +160,12 @@ export const BUILDER = {
    * voxel solidi ed e' il 78% di quelle che nascono (`START_LEVEL_CDF`): a
    * novantasei erano tre frame, cioe' comparire, non salire.
    *
-   * A ventiquattro la stessa casa impiega circa un quinto di secondo e una torre
-   * di livello massimo fra i due e i tre secondi. La posa si legge, e resta
-   * proporzionata al volume invece di durare uguale per tutti.
+   * A ventiquattro la stessa casa impiegava circa un quinto di secondo e una
+   * torre di livello massimo fra i due e i tre secondi: la posa era ancora un
+   * pop, non una salita. A dodici — la meta' — la casa impiega circa due quinti
+   * di secondo e la torre fra i quattro e i sei secondi. La costruzione si
+   * legge come un lavoro in corso, e resta proporzionata al volume invece di
+   * durare uguale per tutti.
    *
    * **Si paga in rimeshature, ed e' li' che il numero trova il fondo.** Un
    * volume spalmato su quattro volte i frame sporca i propri chunk quattro volte
@@ -171,7 +174,7 @@ export const BUILDER = {
    * occupato per tutto quel tempo uno dei dodici posti di `maxGrowing`, e a
    * rallentare sarebbe la passata di upgrade, non l'animazione.
    */
-  voxelsPerFrame: 24,
+  voxelsPerFrame: 8,
 
   /**
    * Edifici che possono crescere contemporaneamente.

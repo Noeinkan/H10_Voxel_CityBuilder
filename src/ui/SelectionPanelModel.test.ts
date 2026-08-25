@@ -63,6 +63,7 @@ function use(extra: Partial<UseInfo> = {}): UseInfo {
     perBuilding: 24,
     count: 37,
     cityUse: 0.82,
+    staffing: 0.5,
     ...extra,
   };
 }
@@ -154,6 +155,20 @@ describe('buildSelectionPanelModel', () => {
     expect(rows.some((row) => row.startsWith('Favours:'))).toBe(true);
     expect(rows.some((row) => row.startsWith('Penalises:'))).toBe(true);
     expect(rows.join(' ')).not.toContain('Use:');
+  });
+
+  it('un landmark dice cosa produce, non solo quanto copre', () => {
+    // La portata e la forza dicono *dove* agisce un catalizzatore; il mestiere —
+    // aprire il commercio, attirare negozi — e' la domanda di chi lo clicca, e
+    // prima non aveva risposta.
+    const model = buildSelectionPanelModel(selection(structure({ landmark: 'port', level: 2 })));
+    const rows = rowsOf(model, 'structure');
+
+    expect(rows.some((row) => row.startsWith('Produces:'))).toBe(true);
+    expect(rows.join(' ')).toContain('external trade');
+    expect(rows).toContain(
+      'District: density +30 · wealth +60 · accessibility +135 · satisfaction -20 · industry +85',
+    );
   });
 
   it('una campata non mostra un uso urbano, benche\' il record ne porti uno', () => {
@@ -252,9 +267,10 @@ describe('buildSelectionPanelModel', () => {
     expect(model.title).toContain('Block');
   });
 
-  it('un landmark apre la propria struttura, gli altri click restano sull\'isolato', () => {
-    expect(defaultSection(selection(structure()))).toBe('block');
+  it('la struttura apre la propria scheda, il terreno nudo resta sull\'isolato', () => {
+    expect(defaultSection(selection(structure()))).toBe('structure');
     expect(defaultSection(selection(structure({ landmark: 'port' })))).toBe('structure');
+    expect(defaultSection(selection(structure({ span: SPAN_KIND.bridge })))).toBe('structure');
     expect(defaultSection(selection(null))).toBe('block');
   });
 
@@ -262,7 +278,7 @@ describe('buildSelectionPanelModel', () => {
     const model = buildSelectionPanelModel(selection(structure()));
     const rows = rowsOf(model, 'block');
 
-    expect(model.title).toBe('Block 2,3');
+    expect(sectionOf(model, 'block').title).toBe('Block 2,3');
     expect(rows).toContain('Housing capacity: 72 residents');
     expect(rows).toContain('Commerce capacity: 24 customers a tick');
   });
@@ -300,6 +316,43 @@ describe('buildSelectionPanelModel', () => {
 
     expect(rowsOf(model, 'structure'))
       .toContain('Housing: room for 24 residents · one of 37 · 82% used citywide');
+  });
+
+  it('ogni uso dichiara cio\' che gli manca per rendere al pieno', () => {
+    // L'ingresso, non il rendimento: una casa vuole residenti, una fabbrica
+    // braccia, un servizio fondi. La cifra e' della citta', come il resto.
+    const homes = buildSelectionPanelModel(selection(structure({}, { uses: [use()] })));
+    expect(rowsOf(homes, 'structure')).toContain('Needs: residents — 18% of homes in the city are empty');
+
+    const factory = buildSelectionPanelModel(selection(structure(
+      { class: BUILDING_CLASS.industrial },
+      { uses: [use({ cls: BUILDING_CLASS.industrial, cityUse: null, staffing: 0.5 })] },
+    )));
+    expect(rowsOf(factory, 'structure')).toContain('Needs: workers — the city workforce is 50% staffed');
+
+    const shop = buildSelectionPanelModel(selection(structure(
+      { class: BUILDING_CLASS.commercial },
+      { uses: [use({ cls: BUILDING_CLASS.commercial, cityUse: 0.74, staffing: 1 })] },
+    )));
+    expect(rowsOf(shop, 'structure'))
+      .toContain('Needs: workers — the city workforce is fully staffed · 26% of shops in the city stand idle');
+
+    const civic = buildSelectionPanelModel(selection(structure(
+      { class: BUILDING_CLASS.civic },
+      { uses: [use({ cls: BUILDING_CLASS.civic, cityUse: null })] },
+    )));
+    expect(rowsOf(civic, 'structure'))
+      .toContain('Needs: funds — its upkeep is paid from the treasury each tick');
+  });
+
+  it('una casa piena non chiede piu\' residenti', () => {
+    const model = buildSelectionPanelModel(selection(structure(
+      {},
+      { uses: [use({ cityUse: 1 })] },
+    )));
+
+    expect(rowsOf(model, 'structure'))
+      .toContain('Needs: residents — every home in the city is occupied');
   });
 
   it('la percentuale e\' della citta\', e senza un dato non si inventa', () => {

@@ -95,7 +95,7 @@ import { InspectOverlay, type InspectOverlayFrame } from './ui/InspectOverlay';
 import { SelectionPanel } from './ui/SelectionPanel';
 import { extentOf, type SelectionActionId, type SelectionSectionId } from './ui/SelectionPanelModel';
 import { SimOverlay, type SimOverlayFrame } from './ui/SimOverlay';
-import { SwatchOverlay, type SwatchOverlayFrame } from './ui/SwatchOverlay';
+import { SwatchOverlay, type SwatchOverlayFrame, type SwatchVoxel } from './ui/SwatchOverlay';
 import { TerrainOverlay, type TerrainOverlayFrame } from './ui/TerrainOverlay';
 import {
   buildViewMenuModel,
@@ -112,15 +112,18 @@ import {
   parseBuildingUse,
   type DioramaScene,
 } from './world/scenes/dioramaScene';
+import { CELL_HEIGHT, SWATCH } from './world/scenes/swatchLayout';
 import {
-  CELL_HEIGHT,
-  SWATCH,
-  SWATCH_BAND,
-  swatchCellAt,
+  SWATCH_FOCUS,
+  SWATCH_FOCUSES,
   swatchExtent,
-  type SwatchCell,
-} from './world/scenes/swatchLayout';
+  swatchFocusExtent,
+  swatchSubjectAt,
+  type SwatchFocus,
+  type SwatchSubject,
+} from './world/scenes/swatchCatalog';
 import { cellDetail, type SwatchDetail } from './world/scenes/swatchProbe';
+import { firstSolidVoxel } from './world/scenes/swatchPick';
 import { StreetNetwork } from './world/streets/StreetNetwork';
 import { TERRAIN } from './world/terrain/config';
 import { BiomeView } from './world/terrain/BiomeView';
@@ -374,6 +377,9 @@ function applyQualityProfile(profile: QualityProfile): void {
   post.setQuality({
     bloom: profile.bloom,
     tilt: profile.tilt,
+    grade: profile.grade,
+    godRays: profile.godRays,
+    outline: profile.outline,
     bloomScale: profile.bloomScale,
   });
 }
@@ -473,10 +479,9 @@ if (diorama !== null) {
   const span = Math.max(s.sizeX, s.sizeY) * 1.25;
   camera.frameRegion(s.x + s.sizeX / 2, s.y + s.sizeY / 2, span, span, s.sizeZ);
 } else if (sceneKind === 'swatch') {
-  // Qui si inquadra l'**estensione intera**, non mezza: il gate della 4.10
-  // chiede tutte le combinazioni in una sola inquadratura, e un campionario di
-  // cui si vede meta' non risponde alla domanda per cui esiste.
-  const e = swatchExtent();
+  // Si parte da «Tutto», l'estensione intera: la prima immagine e' il
+  // campionario completo, poi i pulsanti del pannello inquadrano una fascia.
+  const e = swatchFocusExtent(SWATCH_FOCUS.all);
   camera.frameRegion(
     e.minX + e.sizeX / 2,
     e.minY + e.sizeY / 2,
@@ -506,7 +511,9 @@ const terrainOverlay =
   terrain !== null && !simEnabled && !growEnabled
     ? new TerrainOverlay(container, toggleBiomeView)
     : null;
-const swatchOverlay = sceneKind === 'swatch' ? new SwatchOverlay(container) : null;
+const swatchOverlay = sceneKind === 'swatch'
+  ? new SwatchOverlay(container, (focus) => frameSwatchFocus(focus))
+  : null;
 overlay.setVisible(debugVisible);
 terrainOverlay?.setVisible(debugVisible);
 // Il referto del campionario **non** e' un overlay tecnico, ed e' l'unico che
@@ -518,8 +525,18 @@ terrainOverlay?.setVisible(debugVisible);
 swatchOverlay?.setVisible(true);
 let terrainApplyMs = 0;
 
-/** Cella del campionario sotto il cursore; la leggono overlay e hook globale. */
-let swatchCell: SwatchCell | null = null;
+/** Soggetto del campionario sotto il cursore; lo leggono overlay e hook globale. */
+let swatchSubject: SwatchSubject | null = null;
+/** Soggetto scelto con un clic: sopravvive alla navigazione fra le fasce. */
+let swatchSelection: SwatchSubject | null = null;
+/** Il voxel davvero colpito dal raggio, con il referto per la scheda. */
+let swatchVoxel: SwatchVoxel | null = null;
+/** Fascia inquadrata dai pulsanti; si parte da «Tutto». */
+let swatchFocus: SwatchFocus = SWATCH_FOCUS.all;
+/** Braccio anti-pan: sotto questa soglia il rilascio e' un clic, non una rotazione. */
+let swatchPointerDown = false;
+let swatchPointerX = 0;
+let swatchPointerY = 0;
 
 /**
  * Le due scene che possono girare sopra l'isola.
@@ -581,6 +598,10 @@ if (growEnabled) {
       },
       onDecision: (optionId) => {
         const result = growthScene?.chooseDecision(optionId);
+        if (result !== undefined && !result.success) gameHud?.showFailure(result.reason);
+      },
+      onSnooze: () => {
+        const result = growthScene?.snoozeDecision();
         if (result !== undefined && !result.success) gameHud?.showFailure(result.reason);
       },
     onPause: (paused) => growthScene?.setPaused(paused),
@@ -763,8 +784,22 @@ if (inspectGuides !== null) scene.add(inspectGuides.group);
  * ho scelto» invece di «dov'e' puntata la lente» — e le due possono essere accese
  * insieme su due cose diverse.
  */
-const selectionOutline = terrain !== null && growEnabled ? new SelectionOutline(terrain.map) : null;
+const selectionOutline = terrain !== null && growEnabled
+  ? new SelectionOutline((x, y) => Math.max(TERRAIN.seaLevel, terrain.map.heightAt(x, y)))
+  : null;
 if (selectionOutline !== null) scene.add(selectionOutline.group);
+
+/**
+ * Il contorno della scelta nel campionario.
+ *
+ * Riusa la stessa vista della citta' ma con una quota di suolo piatta: il
+ * basamento del campionario e' uniforme, quindi `heightAt` risponde sempre
+ * `SWATCH.groundZ`. Il riquadro del soggetto scelto arriva da `swatchSubjectAt`.
+ */
+const swatchOutline = sceneKind === 'swatch'
+  ? new SelectionOutline(() => SWATCH.groundZ)
+  : null;
+if (swatchOutline !== null) scene.add(swatchOutline.group);
 
 /**
  * La rete stradale vista dall'harness.
@@ -857,11 +892,22 @@ if (selectionPanel !== null && terrain !== null) {
 
 if (swatchOverlay !== null) {
   renderer.domElement.addEventListener('pointermove', (event: PointerEvent) => {
-    swatchCell = swatchCellUnder(event.clientX, event.clientY);
+    const pick = swatchPickAt(event.clientX, event.clientY);
+    swatchSubject = pick?.subject ?? null;
+    swatchVoxel = pick?.voxel ?? null;
+    refreshSwatchOutline();
   });
   renderer.domElement.addEventListener('pointerleave', () => {
-    swatchCell = null;
+    swatchSubject = null;
+    swatchVoxel = null;
+    refreshSwatchOutline();
   });
+  renderer.domElement.addEventListener('pointerdown', (event: PointerEvent) => {
+    swatchPointerDown = event.button === 0;
+    swatchPointerX = event.clientX;
+    swatchPointerY = event.clientY;
+  });
+  renderer.domElement.addEventListener('pointerup', onSwatchPointerUp);
 }
 
 window.addEventListener('keydown', onUiKey);
@@ -984,13 +1030,23 @@ if (debugEnabled) {
 
   if (swatchOverlay !== null) {
     // Con `x` e `y` interroga una colonna qualsiasi del campionario senza
-    // muovere il mouse: e' cosi' che uno strumento headless verifica che una
-    // combinazione ci sia. Senza argomenti riporta cio' che il cursore indica.
+    // muovere il mouse: e' cosi' che uno strumento headless verifica che un
+    // soggetto ci sia. Senza argomenti riporta cio' che il cursore indica; le
+    // fasce disponibili escono dalla stessa fonte del pannello.
     debugGlobals['__voxelSwatch'] = (x?: number, y?: number): Record<string, unknown> => {
-      const cell = x === undefined || y === undefined
-        ? buildSwatchFrame().cell
-        : swatchCellAt(x, y);
-      return { extent: swatchExtent(), cell, detail: detailOf(cell) };
+      const frame = buildSwatchFrame();
+      const subject = x === undefined || y === undefined
+        ? frame.subject
+        : swatchSubjectAt(x, y);
+      return {
+        extent: swatchExtent(),
+        subject,
+        selection: frame.selection,
+        voxel: frame.voxel,
+        detail: detailOf(subject),
+        focus: frame.focus,
+        focuses: SWATCH_FOCUSES,
+      };
     };
   }
 
@@ -1273,6 +1329,8 @@ function onFrame(time: number): void {
   // direzione: la componente xy dice dove sta, la z se e' davanti o dietro.
   sunView.copy(sunWorld).transformDirection(camera.camera.matrixWorldInverse);
   skyBackground.setSunScreen(sunView.x * 1.35, sunView.y * 1.35, sunView.z < 0);
+  // Stessa posizione a schermo del disco: i raggi del sole irradiano da li'.
+  post.setSunScreen(sunView.x * 1.35, sunView.y * 1.35, sunView.z < 0);
   skyBackground.setTime(time / 1000);
   // Dalla NDC al mondo, per il solo strato di nuvole: il fondo e' un quad in
   // NDC e senza questa non saprebbe a che punto del piano corrisponde un pixel.
@@ -1723,31 +1781,98 @@ function cursorRay(clientX: number, clientY: number): Ray3 {
 }
 
 /**
- * Quale cella del campionario sta sotto il cursore.
+ * Quale soggetto del campionario sta sotto il cursore, e su quale voxel esatto.
  *
- * Non passa da `pickSurfaceCell`, che vuole una `TerrainMap` e qui non c'e'
- * terreno: il campionario e' piatto e la quota dei soggetti e' nota, quindi
- * basta l'intersezione del raggio con un piano. Puntare la cima di un provino o
- * il basamento accanto risponde percio' la stessa cosa, ed e' il comportamento
- * giusto — la domanda e' «quale casella», non «quale voxel».
- *
- * **Il piano sta a meta' provino, e la meta' e' quel che minimizza l'errore.**
- * In isometrica un voxel di quota si sposta a schermo quanto un voxel su
- * ciascun asse di terra: mettere il piano sul basamento sbaglierebbe di tutta
- * l'altezza puntando una guglia, metterlo sulla sommita' sbaglierebbe di
- * altrettanto puntando il vuoto fra due celle. A meta' l'errore e' meta'
- * altezza per parte, cioe' un terzo scarso di interasse, e si resta dentro la
- * casella indicata.
+ * Una sola traversata di raggio per entrambe le risposte: il voxel colpito dice
+ * *dove* si e' puntato, il soggetto si ricava dalla colonna di quel voxel. Il
+ * vuoto fra due soggetti non appartiene a nessuno — il basamento sotto il vuoto
+ * si attraversa ma `swatchSubjectAt` non lo assegna a nulla.
  */
-function swatchCellUnder(clientX: number, clientY: number): SwatchCell | null {
+function swatchPickAt(
+  clientX: number,
+  clientY: number,
+): { readonly subject: SwatchSubject | null; readonly voxel: SwatchVoxel | null } | null {
   const ray = cursorRay(clientX, clientY);
-  const [ox, oy, oz] = ray.origin;
-  const [dx, dy, dz] = ray.direction;
-  if (dz >= -1e-8) return null;
+  const extent = swatchExtent();
+  const hit = firstSolidVoxel(
+    {
+      ox: ray.origin[0],
+      oy: ray.origin[1],
+      oz: ray.origin[2],
+      dx: ray.direction[0],
+      dy: ray.direction[1],
+      dz: ray.direction[2],
+    },
+    {
+      minX: extent.minX,
+      minY: extent.minY,
+      minZ: 0,
+      maxX: extent.minX + extent.sizeX,
+      maxY: extent.minY + extent.sizeY,
+      maxZ: extent.sizeZ,
+    },
+    (x, y, z) => world.getBlock(x, y, z) !== 0,
+  );
+  if (hit === null) return null;
+  return {
+    subject: swatchSubjectAt(hit.x, hit.y),
+    voxel: {
+      x: hit.x,
+      y: hit.y,
+      z: hit.z,
+      palette: world.getBlock(hit.x, hit.y, hit.z),
+      surface: world.getSurfaceKind(hit.x, hit.y, hit.z),
+    },
+  };
+}
 
-  const t = (SWATCH.groundZ + CELL_HEIGHT / 2 - oz) / dz;
-  if (t < 0) return null;
-  return swatchCellAt(Math.floor(ox + dx * t), Math.floor(oy + dy * t));
+/** Inquadra una fascia del campionario, con un margine che non appartiene agli oggetti. */
+function frameSwatchFocus(focus: SwatchFocus): void {
+  swatchFocus = focus;
+  const e = swatchFocusExtent(focus);
+  camera.frameRegion(
+    e.minX + e.sizeX / 2,
+    e.minY + e.sizeY / 2,
+    e.sizeX,
+    e.sizeY,
+    e.sizeZ,
+  );
+}
+
+/**
+ * Il contorno segue la scelta persistente; senza, l'eventuale hover.
+ *
+ * Una scelta sopravvive alla navigazione fra le fasce e al cursore che se ne va:
+ * il contorno continua a dire cosa si sta guardando finche' non si deseleziona.
+ */
+function refreshSwatchOutline(): void {
+  if (swatchOutline === null) return;
+  const subject = swatchSelection ?? swatchSubject;
+  if (subject === null) {
+    swatchOutline.hide();
+    return;
+  }
+  swatchOutline.show({
+    x0: subject.rect.x0,
+    y0: subject.rect.y0,
+    x1: subject.rect.x1 - 1,
+    y1: subject.rect.y1 - 1,
+    z0: SWATCH.groundZ,
+    z: subject.z1,
+  });
+}
+
+/** Il rilascio che sceglie, con la stessa soglia anti-pan del clic di gioco. */
+function onSwatchPointerUp(event: PointerEvent): void {
+  if (!swatchPointerDown || event.button !== 0) return;
+  swatchPointerDown = false;
+  const moved = Math.abs(event.clientX - swatchPointerX) + Math.abs(event.clientY - swatchPointerY);
+  if (moved > SELECT_CLICK_SLOP) return;
+
+  const pick = swatchPickAt(event.clientX, event.clientY);
+  swatchSelection = pick?.subject ?? null;
+  swatchVoxel = pick?.voxel ?? null;
+  refreshSwatchOutline();
 }
 
 /**
@@ -1814,6 +1939,9 @@ function onSelectPointerUp(event: PointerEvent): void {
     clearSelection();
     return;
   }
+  // La scheda si apre sul bordo destro, dove stanno anche i cassetti: chiuderli
+  // prima che compaia e' cio' che la tiene leggibile invece di sovrapposta.
+  gameHud?.dismissPanels();
   selectionPanel?.show(picked, performance.now(), isolatedBlockKey());
   syncSelectionInfluence(picked);
   gameHud?.setSelectionOpen(true);
@@ -2073,6 +2201,9 @@ function effectStats(): { shadowMs: number; shadowSize: number; effects: string 
   if (shadow.enabled) parts.push('shadow');
   if (qualityProfile.bloom) parts.push('bloom');
   if (qualityProfile.tilt) parts.push('tilt');
+  if (qualityProfile.grade) parts.push('grade');
+  if (qualityProfile.godRays) parts.push('rays');
+  if (qualityProfile.outline) parts.push('outline');
   return {
     shadowMs: shadow.lastPassMs,
     shadowSize: shadow.enabled ? shadow.size : 0,
@@ -2133,19 +2264,26 @@ function buildOverlayFrame(mainMs: number, renderMs: number, frameMs: number): O
 
 /** L'unica lettura del campionario: la consumano overlay e `__voxelSwatch()`. */
 function buildSwatchFrame(): SwatchOverlayFrame {
-  return { cell: swatchCell, detail: detailOf(swatchCell) };
+  const subject = swatchSubject ?? swatchSelection;
+  return {
+    focus: swatchFocus,
+    subject,
+    selection: swatchSelection,
+    voxel: swatchVoxel,
+    detail: detailOf(subject),
+  };
 }
 
 /**
  * Prismi di dettaglio della cella indicata, o null fuori dalla matrice.
  *
- * Solo la matrice: stratigrafia e fascia di scala non sono provini della stessa
+ * Solo la matrice: stratigrafia, scala e gallerie non sono provini della stessa
  * sagoma, e un conteggio li' risponderebbe a una domanda che nessuno ha fatto.
  * `cellDetail` memoizza, quindi ripassare sulla stessa cella non rimisura.
  */
-function detailOf(cell: SwatchCell | null): SwatchDetail | null {
-  if (cell === null || cell.band !== SWATCH_BAND.matrix) return null;
-  return cellDetail(cell.row, cell.col);
+function detailOf(subject: SwatchSubject | null): SwatchDetail | null {
+  if (subject === null || subject.kind !== 'matrix') return null;
+  return cellDetail(subject.row, subject.col);
 }
 
 function onDebugKey(event: KeyboardEvent): void {
@@ -2196,6 +2334,14 @@ function onUiKey(event: KeyboardEvent): void {
   if (event.code === 'F3') {
     event.preventDefault();
     setDebugVisible(!debugVisible);
+    return;
+  }
+  // Nel campionario Esc molla la scelta: e' lo stesso gesto del gioco, senza
+  // nessun pannello da chiudere prima.
+  if (event.code === 'Escape' && swatchOverlay !== null && swatchSelection !== null) {
+    event.preventDefault();
+    swatchSelection = null;
+    refreshSwatchOutline();
     return;
   }
   if (event.code === 'Escape' && gameHud?.handleEscape()) {

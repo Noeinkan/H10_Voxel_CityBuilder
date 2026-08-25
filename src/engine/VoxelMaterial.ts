@@ -133,6 +133,16 @@ const DEFAULT_SPILL = '#ffb469';
  */
 const DEFAULT_SPILL_INTENSITY = 0.22;
 
+/**
+ * Bordo chiaro delle facce di scorcio, quando il tema non ne dichiara uno.
+ *
+ * E' il segnale "cartoon" richiesto ovunque, quindi vive qui come default e non
+ * in ogni tema: un tema puo' alzarlo o spegnerlo con `rim`, ma senza quel campo
+ * la scena lo riceve gia' sottile. L'intensita' e' bassa apposta — e' un
+ * profilo, non una lampada — e l'esponente 3 stringe il bordo al solo scorcio.
+ */
+const DEFAULT_RIM = { strength: 0.16, power: 3, color: '#ffffff' };
+
 export function createVoxelMaterial(hexColors: readonly string[], voxelSize: number): VoxelMaterialHandle {
   const paletteArray = toPaletteArray(hexColors);
   const faceNormals = FACE_NORMALS.map(([x, y, z]) => new Vector3(x, y, z));
@@ -149,6 +159,7 @@ export function createVoxelMaterial(hexColors: readonly string[], voxelSize: num
   const waterShallowTint = new Color(1, 1, 1);
   const cloudTint = new Color(1, 1, 1);
   const spillColor = new Color(1, 1, 1);
+  const rimColor = new Color(1, 1, 1);
   const viewDirection = new Vector3(0, 0, -1);
   const resolution = new Vector2(1, 1);
   const shadowMatrix = new Matrix4();
@@ -233,6 +244,9 @@ export function createVoxelMaterial(hexColors: readonly string[], voxelSize: num
       uEmissiveStrength: { value: 0.35 },
       uSpillColor: { value: spillColor },
       uNight: { value: 0 },
+      uRimStrength: { value: DEFAULT_RIM.strength },
+      uRimPower: { value: DEFAULT_RIM.power },
+      uRimColor: { value: rimColor },
       // I default valgono per chi non ha una simulazione dietro — il diorama,
       // le scene di misura — e sono il comportamento che il materiale aveva
       // prima che l'economia potesse accendere le luci.
@@ -330,6 +344,13 @@ export function createVoxelMaterial(hexColors: readonly string[], voxelSize: num
       spillColor
         .setStyle(atmosphere.nightSpill?.color ?? DEFAULT_SPILL, SRGBColorSpace)
         .multiplyScalar(atmosphere.nightSpill?.intensity ?? DEFAULT_SPILL_INTENSITY);
+
+      // Bordo chiaro delle facce di scorcio. Colore e forza sono due uniform
+      // separate: il colore arriva come tinta, la forza e' la sua scala, cosi' un
+      // tema che vuole solo spegnerlo scrive `strength: 0` senza toccare la tinta.
+      material.uniforms['uRimStrength'].value = atmosphere.rim?.strength ?? DEFAULT_RIM.strength;
+      material.uniforms['uRimPower'].value = atmosphere.rim?.power ?? DEFAULT_RIM.power;
+      rimColor.setStyle(atmosphere.rim?.color ?? DEFAULT_RIM.color, SRGBColorSpace);
     },
     setNight(night: number): void {
       material.uniforms['uNight'].value = night;

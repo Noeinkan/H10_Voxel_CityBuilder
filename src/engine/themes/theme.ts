@@ -87,6 +87,63 @@ export interface TiltShift {
 }
 
 /**
+ * Vignettatura e ritocco di colore, applicati dopo il tone mapping.
+ *
+ * Non sono un tema a parte ma una manopola che ogni tema puo' alzare: vivono in
+ * spazio sRGB, dove saturazione e contrasto hanno un significato visivo stabile,
+ * e non toccano ne' la palette ne' le mesh — un cambio qui e' un uniform.
+ */
+export interface Grade {
+  /** Saturazione: 1 e' il neutro, sopra piu' vivo, sotto piu' spento. */
+  readonly saturation: number;
+  /** Contrasto attorno al grigio medio: 0 e' il neutro, positivo schiaccia. */
+  readonly contrast: number;
+  /** Oscuramento degli angoli, 0..1. 0 spegne la vignettatura. */
+  readonly vignette: number;
+}
+
+/**
+ * Raggi del sole in spazio schermo.
+ *
+ * Un'unica pass che accumula il bagliore lungo la direzione del sole, centrata
+ * sulla stessa posizione a schermo in cui `SkyBackground` disegna il disco. Non
+ * e' una luce nuova: rilegge cio' che il bloom ha gia' acceso.
+ */
+export interface GodRays {
+  /** Forza dei raggi. 0 spegne la pass. */
+  readonly strength: number;
+}
+
+/**
+ * Contorno scuro delle sagome, ricavato dalla profondita'.
+ *
+ * Un gradiente di profondita' esiste solo dove una sagoma si staglia sul cielo
+ * (o su un'altra quota): con la camera ortografica tutti i raggi sono paralleli,
+ * quindi dentro l'edificato non c'e' discontinuita' da marcare e le sole linee
+ * che restano sono i profili. E' esattamente il segnale "cartoon" che serve, e
+ * costa una pass a schermo pieno.
+ */
+export interface Outline {
+  /** Forza del contorno scuro, 0..1. 0 lo spegne. */
+  readonly strength: number;
+}
+
+/**
+ * Bordo chiaro delle facce di scorcio: il segnale "cartoon" nel materiale.
+ *
+ * E' un fresnel, non una luce: vale 0 su una faccia rivolta alla camera e 1 su
+ * una di taglio, quindi accende i soli profili dei volumi. Vive nel fragment del
+ * voxel e non richiede un secondo pass ne' un attributo nuovo.
+ */
+export interface RimLight {
+  readonly strength: number;
+  /** Esponente del fresnel: piu' alto, piu' il bordo si stringe al solo profilo. */
+  readonly power: number;
+  /** Tinta del bordo. Assente, bianco neutro. */
+  readonly color?: string;
+}
+
+/**
  * Riflesso opaco animato sulla sola faccia superiore dell'acqua.
  *
  * Non e' una risposta sola: il generatore classifica ogni specchio in
@@ -171,6 +228,14 @@ export interface Atmosphere {
   readonly shadow?: Shadow;
   readonly bloom?: Bloom;
   readonly tilt?: TiltShift;
+  /** Ritocco di colore e vignettatura dopo il tone mapping. */
+  readonly grade?: Grade;
+  /** Raggi del sole in spazio schermo. */
+  readonly godRays?: GodRays;
+  /** Contorno scuro delle sagome, dalla profondita'. */
+  readonly outline?: Outline;
+  /** Bordo chiaro delle facce di scorcio, nel materiale. */
+  readonly rim?: RimLight;
 
   /** Risposta economica del vetro, senza trasparenza o materiale separato. */
   readonly glassTint?: string;

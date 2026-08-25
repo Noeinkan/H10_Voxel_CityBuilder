@@ -19,6 +19,12 @@ export interface QualityProfile {
   readonly tilt: boolean;
   /** Frazione di risoluzione a cui gira il bloom. */
   readonly bloomScale: number;
+  /** Ritocco di colore e vignettatura: una pass a schermo pieno, quasi gratis. */
+  readonly grade: boolean;
+  /** Raggi del sole in spazio schermo. */
+  readonly godRays: boolean;
+  /** Contorno scuro delle sagome dalla profondita'. */
+  readonly outline: boolean;
 }
 
 /**
@@ -32,9 +38,9 @@ export interface QualityProfile {
  * spegne comunque del tutto.
  */
 const PROFILES: readonly QualityProfile[] = [
-  { shadowSize: 2048, shadowSoftness: 1, bloom: true, tilt: true, bloomScale: 1 },
-  { shadowSize: 1024, shadowSoftness: 1, bloom: true, tilt: true, bloomScale: 0.5 },
-  { shadowSize: 0, shadowSoftness: 0, bloom: false, tilt: false, bloomScale: 0.5 },
+  { shadowSize: 2048, shadowSoftness: 1, bloom: true, tilt: true, bloomScale: 1, grade: true, godRays: true, outline: true },
+  { shadowSize: 1024, shadowSoftness: 1, bloom: true, tilt: true, bloomScale: 0.5, grade: true, godRays: true, outline: true },
+  { shadowSize: 0, shadowSoftness: 0, bloom: false, tilt: false, bloomScale: 0.5, grade: false, godRays: false, outline: false },
 ];
 
 export interface QualityDecision {

@@ -144,6 +144,9 @@ export const BALANCE = {
         market: { cost: 120, strength: 210, radius: 55 },
         factory: { cost: 150, strength: 205, radius: 50 },
         park: { cost: 200, strength: 195, radius: 45 },
+        // Un quarto di turno per la crescita: un piazzale merci che serve
+        // negozi e officine e tiene l'industria vicina ai suoi clienti.
+        depot: { cost: 180, strength: 200, radius: 48 },
         port: { cost: 320, strength: 190, radius: 60 },
         // Costa meno del porto perche' promette meno: il porto apre il commercio
         // con il mondo, il traghetto collega due punti dell'isola fra loro. E'
@@ -158,6 +161,8 @@ export const BALANCE = {
         transport: { cost: 240, strength: 185, radius: 65 },
         university: { cost: 360, strength: 200, radius: 53 },
         monument: { cost: 440, strength: 215, radius: 50 },
+        museum: { cost: 380, strength: 195, radius: 52 },
+        cathedral: { cost: 400, strength: 205, radius: 50 },
       },
 
       /**
@@ -175,6 +180,7 @@ export const BALANCE = {
         market: { residential: 1, commercial: 1, industrial: 0, civic: 0.15 },
         factory: { residential: -0.2, commercial: 0.2, industrial: 1, civic: 0 },
         park: { residential: 0.7, commercial: 0.2, industrial: -0.35, civic: 1 },
+        depot: { residential: -0.2, commercial: 1, industrial: 0.65, civic: 0.15 },
         port: { residential: 0, commercial: 0.7, industrial: 1, civic: 0 },
         // L'opposto del porto sullo stesso fronte mare: da un imbarco passano
         // persone, non container, quindi tira su negozi e case e lascia stare i
@@ -185,6 +191,8 @@ export const BALANCE = {
         transport: { residential: 1, commercial: 0.8, industrial: 0.45, civic: 0.2 },
         university: { residential: 0.5, commercial: 0.45, industrial: 0, civic: 1 },
         monument: { residential: 0.55, commercial: 0.75, industrial: -0.2, civic: 1 },
+        museum: { residential: 0.25, commercial: 0.6, industrial: -0.1, civic: 1 },
+        cathedral: { residential: 0.5, commercial: 0.25, industrial: -0.15, civic: 1 },
       },
     },
     policy: {
@@ -326,12 +334,15 @@ export const BALANCE = {
       market: { density: 55, wealth: 105, accessibility: 45, satisfaction: 25, industry: 0 },
       factory: { density: 25, wealth: 35, accessibility: 25, satisfaction: -55, industry: 145 },
       park: { density: -25, wealth: 35, accessibility: 10, satisfaction: 145, industry: -20 },
+      depot: { density: 30, wealth: 40, accessibility: 120, satisfaction: -20, industry: 100 },
       port: { density: 30, wealth: 60, accessibility: 135, satisfaction: -20, industry: 85 },
       ferry: { density: 50, wealth: 45, accessibility: 130, satisfaction: 40, industry: 10 },
       airport: { density: 35, wealth: 70, accessibility: 150, satisfaction: -35, industry: 45 },
       transport: { density: 95, wealth: 25, accessibility: 155, satisfaction: 5, industry: 20 },
       university: { density: 40, wealth: 105, accessibility: 55, satisfaction: 75, industry: 5 },
       monument: { density: 65, wealth: 70, accessibility: 35, satisfaction: 125, industry: -10 },
+      museum: { density: 20, wealth: 120, accessibility: 45, satisfaction: 90, industry: 0 },
+      cathedral: { density: 30, wealth: 35, accessibility: 20, satisfaction: 150, industry: -5 },
     },
     spatialPolicy: {
       denseHousing: { density: 45 },
@@ -525,6 +536,17 @@ export const BALANCE = {
     firstTick: 450,
     /** Novanta secondi di respiro dopo una scelta risolta. */
     intervalTicks: 900,
+    /**
+     * Dopo quanto tempo senza cambiamenti la scelta contestuale si apre comunque.
+     *
+     * Sotto, una decisione ordinaria attende un cambiamento reale della citta'
+     * (una nuova classe di edifici, un ordine di grandezza in piu' di abitanti):
+     * una citta' ferma non viene interrotta. Questo tetto evita che resti muta
+     * per sempre quando il giocatore costruisce senza cambiare categoria.
+     */
+    maxIdleTicks: 3000,
+    /** Quanto dura il «decidi piu' tardi» prima che la carta ricompaia. */
+    snoozeTicks: 600,
     minimumBuildings: 6,
 
     /**

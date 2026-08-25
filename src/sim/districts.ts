@@ -183,9 +183,9 @@ export function urbanProfileAt(
  */
 const SPECIALIZATION_ROLES: Readonly<Record<Specialization, readonly CatalystId[]>> = {
   office: ['market', 'transport'],
-  tourism: ['monument', 'park', 'port'],
+  tourism: ['monument', 'park', 'port', 'museum'],
   research: ['university'],
-  logistics: ['port', 'transport', 'airport'],
+  logistics: ['port', 'transport', 'airport', 'depot'],
   entertainment: ['monument', 'market', 'park'],
   // La torre idroponica e' industria convertita, quindi nasce dove l'industria
   // c'e' gia'. L'universita' e' l'altra meta': coltivare in verticale e' una
@@ -405,7 +405,7 @@ const DISTRICT_RULES: readonly {
 }[] = [
   { id: 'harbor', needs: 'port', with: ['market', 'factory'] },
   { id: 'campus', needs: 'university', with: ['transport', 'park'] },
-  { id: 'garden', needs: 'park', with: ['market', 'monument'] },
+  { id: 'garden', needs: 'park', with: ['market', 'monument', 'cathedral'] },
   { id: 'monumental', needs: 'monument', with: ['market', 'transport'] },
   { id: 'industrial', needs: 'factory', with: [] },
   { id: 'transit', needs: 'transport', with: [] },

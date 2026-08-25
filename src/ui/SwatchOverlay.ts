@@ -1,36 +1,64 @@
 import {
-  SWATCH_COLUMNS,
-  SWATCH_ROWS,
-  type SwatchCell,
-} from '../world/scenes/swatchLayout';
+  SWATCH_FOCUSES,
+  type SwatchFocus,
+  type SwatchSubject,
+} from '../world/scenes/swatchCatalog';
 import type { SwatchDetail } from '../world/scenes/swatchProbe';
+import { PALETTE_SLOT_NAMES } from '../engine/paletteSlots';
 import { SURFACE_KIND_NAMES } from '../world/visualBlock';
 
 /**
- * Referto del campionario: cosa si sta guardando, riga e colonna.
+ * Referto e navigazione del campionario.
  *
  * Esiste per la stessa ragione di `InspectOverlay`: **in-world non ci sono
- * etichette**. Una griglia di duecentocinquanta prismi e' leggibile solo se
- * qualcosa dice quale slot e quale linguaggio sia quello sotto il cursore, e la
- * sola convenzione d'ordine si dimentica fra una sessione e l'altra — tanto piu'
- * che il campionario esiste proprio per giudicare un tema che non si conosce
- * ancora.
- *
- * La legenda delle righe sta sempre in vista e non solo sotto il cursore: e' la
- * mappa, e serve prima di sapere dove puntare.
+ * etichette**. Da quando la scena e' cresciuta fino alle gallerie di edifici e
+ * landmark, un pannello che nomina solo la matrice non basta piu': qui stanno i
+ * cinque pulsanti che inquadrano una fascia e la scheda del soggetto sotto il
+ * cursore — nome, uso o ruolo, variante, livello o stadio, ingombro e altezza —
+ * piu' il referto del voxel davvero colpito.
  */
 
+/** Il voxel colpito dal raggio, con il suo referto di palette e superficie. */
+export interface SwatchVoxel {
+  readonly x: number;
+  readonly y: number;
+  readonly z: number;
+  /** Slot di palette del voxel. */
+  readonly palette: number;
+  /** Indice del linguaggio di superficie del voxel. */
+  readonly surface: number;
+}
+
 export interface SwatchOverlayFrame {
-  /** Cella sotto il cursore, o null se il puntatore e' fuori dal campionario. */
-  readonly cell: SwatchCell | null;
-  /**
-   * Prismi e quad che quella cella emette, o null fuori dalla matrice.
-   *
-   * E' la meta' che a occhio non si vede: una famiglia di emettitori spenta non
-   * lascia niente da guardare, e il numero la fa cadere subito.
-   */
+  /** Fascia inquadrata dai pulsanti. */
+  readonly focus: SwatchFocus;
+  /** Soggetto sotto il cursore, o la scelta persistente quando il cursore e' fuori. */
+  readonly subject: SwatchSubject | null;
+  /** Scelta persistente: sopravvive alla navigazione fra le fasce. */
+  readonly selection: SwatchSubject | null;
+  /** Il voxel davvero colpito, o null se il cursore non tocca nulla. */
+  readonly voxel: SwatchVoxel | null;
+  /** Prismi e quad della cella di matrice, o null fuori dalla matrice. */
   readonly detail: SwatchDetail | null;
 }
+
+const FOCUS_LABELS: Readonly<Record<SwatchFocus, string>> = {
+  matrix: 'Matrice',
+  scale: 'Scala',
+  buildings: 'Edifici',
+  landmarks: 'Landmark',
+  arcologies: 'Arcologie',
+  all: 'Tutto',
+};
+
+const KIND_LABELS: Readonly<Record<SwatchSubject['kind'], string>> = {
+  matrix: 'matrice',
+  strata: 'stratigrafia',
+  scale: 'scala',
+  building: 'edificio',
+  landmark: 'landmark',
+  arcology: 'arcologia',
+};
 
 const REFRESH_MS = 200;
 
@@ -38,17 +66,31 @@ export class SwatchOverlay {
   private readonly root: HTMLDetailsElement;
   private readonly summary: HTMLElement;
   private readonly body: HTMLPreElement;
+  private readonly buttons = new Map<SwatchFocus, HTMLButtonElement>();
   private lastPaint = 0;
 
-  constructor(parent: HTMLElement) {
+  constructor(parent: HTMLElement, onFocus: (focus: SwatchFocus) => void) {
     this.root = document.createElement('details');
     this.root.className = 'debug-panel debug-panel--right';
     this.root.open = true;
 
     this.summary = document.createElement('summary');
     this.summary.className = 'debug-summary';
-    this.summary.textContent = '▾ SWATCH · —';
+    this.summary.textContent = '▾ SWATCH · Tutto';
     this.root.appendChild(this.summary);
+
+    const actions = document.createElement('div');
+    actions.className = 'debug-actions';
+    for (const focus of SWATCH_FOCUSES) {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'debug-button';
+      button.textContent = FOCUS_LABELS[focus];
+      button.addEventListener('click', () => onFocus(focus));
+      this.buttons.set(focus, button);
+      actions.appendChild(button);
+    }
+    this.root.appendChild(actions);
 
     this.body = document.createElement('pre');
     this.body.className = 'debug-body';
@@ -66,28 +108,30 @@ export class SwatchOverlay {
 
   update(frame: SwatchOverlayFrame, now: number): void {
     this.lastPaint = now;
-    const cell = frame.cell;
-    const detail = frame.detail;
+    const subject = frame.subject;
+    const voxel = frame.voxel;
 
-    this.summary.textContent = `${this.root.open ? '▾' : '▸'} SWATCH · ${cell?.band ?? '—'}`;
+    for (const [focus, button] of this.buttons) setActive(button, focus === frame.focus);
+    this.summary.textContent = `${this.root.open ? '▾' : '▸'} SWATCH · ${FOCUS_LABELS[frame.focus]}`;
+
+    const voxelLine = voxel === null
+      ? 'voxel      —'
+      : `voxel      ${voxel.x}, ${voxel.y}, ${voxel.z} · slot ${voxel.palette} (${PALETTE_SLOT_NAMES[voxel.palette]}) · ${SURFACE_KIND_NAMES[voxel.surface]} (${voxel.surface})`;
 
     this.body.textContent = [
-      `fascia     ${cell?.band ?? '—'}`,
-      `sotto      ${cell?.label ?? '—'}`,
-      cell?.note === null || cell?.note === undefined ? '' : `           ${cell.note}`,
-      // Sulle righe `plain` e `utility` scende a zero, ed e' corretto: non sono
-      // linguaggi di facciata e la microgeometria non le guarda affatto.
-      detail === null ? '' : `dettaglio  ${detail.prisms} prismi · ${detail.quads} quad`,
+      `fascia     ${FOCUS_LABELS[frame.focus]}`,
+      `sotto      ${subject?.label ?? '—'}`,
+      subject === null ? '' : `           ${KIND_LABELS[subject.kind]}${subject.note === null ? '' : ` · ${subject.note}`}`,
+      ...(subject === null ? [] : subject.info.map((row) => rowLine(row.label, row.value))),
+      subject === null ? '' : `           ${subject.rect.x1 - subject.rect.x0} × ${subject.rect.y1 - subject.rect.y0} voxel · altezza ${subject.z1 - subject.z0}`,
+      frame.selection === null
+        ? ''
+        : `scelto     ${frame.selection.label}${frame.selection === subject ? '' : '  (Esc per mollare)'}`,
+      voxelLine,
+      frame.detail === null ? '' : `dettaglio  ${frame.detail.prisms} prismi · ${frame.detail.quads} quad`,
       '',
-      `matrice    ${SWATCH_COLUMNS} colonne (slot) × ${SWATCH_ROWS} righe (superficie)`,
-      ...SURFACE_KIND_NAMES.map((name, row) => `  riga ${row}    ${name}`),
-      '',
-      // Solo cio' che funziona **qui e ora**. Il campionario si apre anche dal
-      // dock del gioco, senza `?debug=1`: `H` sta dietro `F3` insieme al resto
-      // dell'harness, e prometterlo in prima riga sarebbe una riga falsa per chi
-      // arriva dal bottone. Tema e ciclo del giorno no — quelli sono lo
-      // strumento, ed e' con loro che si riconosce uno slot morto.
       '1..9 tema   L giorno/notte   F3 strumenti tecnici (H ±1h)',
+      'clic sceglie · Esc molla',
     ]
       .filter((line) => line !== '')
       .join('\n');
@@ -96,4 +140,15 @@ export class SwatchOverlay {
   dispose(): void {
     this.root.remove();
   }
+}
+
+/** Riga di scheda allineata: etichetta a sinistra, valore a capo con rientro. */
+function rowLine(label: string, value: string): string {
+  return `           ${label.padEnd(10)} ${value}`;
+}
+
+/** Stesso stato attivo dei pulsanti di `InspectOverlay`: un solo linguaggio. */
+function setActive(button: HTMLButtonElement, active: boolean): void {
+  button.style.background = active ? 'rgba(120,200,180,0.22)' : 'rgba(216,220,224,0.08)';
+  button.style.borderColor = active ? 'rgba(120,200,180,0.6)' : 'rgba(216,220,224,0.28)';
 }

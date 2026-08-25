@@ -2,9 +2,9 @@ import { describe, expect, it } from 'vitest';
 import { BALANCE } from './balance';
 import { isCatalystId } from './catalysts';
 import { charterOfFamily, isCharterId } from './charters';
-import { decisionAt, type DecisionOption } from './decisions';
+import { decisionAt, decisionFingerprint, type DecisionOption } from './decisions';
 import { EMPTY_HARVEST, type FoodReport } from './farms';
-import { createSimState, resolveDecision, type SimState } from './SimState';
+import { createSimState, resolveDecision, snoozeDecision, type SimState } from './SimState';
 import { testTerrain } from './testTerrain';
 import { tickMany } from './tick';
 
@@ -45,9 +45,47 @@ describe('decisioni periodiche', () => {
     const resolved = resolveDecision(first, 'leave-open');
     if (resolved === null) throw new Error('decisione attesa');
 
-    const second = tickMany(resolved, map, BALANCE.decisions.intervalTicks);
+    // L'impronta si riporta a -1 per riaprire comunque: la scadenza da sola non
+    // basterebbe, e qui si verifica la rotazione, non la cadenza.
+    const reopened = { ...resolved, decisionStamp: -1 };
+    const second = tickMany(reopened, map, BALANCE.decisions.intervalTicks);
     expect(second.pendingDecision?.id).toMatch(/^investment-/);
     expect(second.pendingDecision?.family).toBe('investment');
+  });
+
+  it('non riapre una scelta contestuale se la citta non e cambiata', () => {
+    const city = establishedCity();
+    const stamp = decisionFingerprint(city);
+    const quiet = { ...city, decisionStamp: stamp, tickCount: BALANCE.decisions.intervalTicks };
+    expect(decisionAt(quiet, BALANCE.decisions.intervalTicks)).toBeNull();
+  });
+
+  it('si riapre comunque quando e passato il tetto di inattivita', () => {
+    const city = establishedCity();
+    const stamp = decisionFingerprint(city);
+    const overdue = { ...city, decisionStamp: stamp, tickCount: BALANCE.decisions.maxIdleTicks };
+    expect(decisionAt(overdue, BALANCE.decisions.intervalTicks)?.family).toBe('publicSpace');
+  });
+
+  it('rinnova invece di ripetere quando il mandato della famiglia e gia attivo', () => {
+    const leased = resolveDecision(pending(establishedCity()), 'materials-market');
+    if (leased === null) throw new Error('decisione attesa');
+    const reopened = pending({
+      ...leased,
+      tickCount: leased.nextDecisionTick,
+      decisionHistory: [],
+      decisionStamp: -1,
+    });
+    const option = reopened.pendingDecision?.options.find((entry) => entry.id === 'materials-market');
+    expect(option?.label).toContain('Renew');
+  });
+
+  it('rimanda la scelta senza risolverla e la ripropone identica', () => {
+    const waiting = pending(establishedCity());
+    const snoozed = snoozeDecision(waiting);
+    expect(snoozed.pendingDecision).toEqual(waiting.pendingDecision);
+    expect(snoozed.decisionDismissedUntil).toBe(waiting.tickCount + BALANCE.decisions.snoozeTicks);
+    expect(snoozed.charters).toEqual(waiting.charters);
   });
 });
 
@@ -103,8 +141,13 @@ describe('il segno che una decisione lascia sulla citta', () => {
     if (leased === null) throw new Error('decisione attesa');
 
     // Dopo una decisione sullo spazio pubblico tocca all'investimento: si
-    // riapre la stessa famiglia azzerando il registro.
-    const reopened = pending({ ...leased, tickCount: leased.nextDecisionTick, decisionHistory: [] });
+    // riapre la stessa famiglia azzerando registro e impronta.
+    const reopened = pending({
+      ...leased,
+      tickCount: leased.nextDecisionTick,
+      decisionHistory: [],
+      decisionStamp: -1,
+    });
     expect(reopened.pendingDecision?.family).toBe('publicSpace');
     expect(resolveDecision(reopened, 'leave-open')?.charters).toEqual([]);
   });

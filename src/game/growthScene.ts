@@ -46,6 +46,7 @@ import {
   catalystSiteCost,
   changeTradeMode,
   chooseDecision,
+  deferDecision,
   expansionFailure,
   grantSite,
   placeCatalyst,
@@ -402,6 +403,11 @@ export class GrowthScene {
     const result = this.apply(chooseDecision(this.state, optionId), 'Decision applied to the city.');
     if (result.success && grant !== undefined) this.buildGrant(grant);
     return result;
+  }
+
+  /** Rimanda la decisione sospesa: si nasconde e ricompare dopo `snoozeTicks`. */
+  snoozeDecision(): ActionResult {
+    return this.apply(deferDecision(this.state), 'Decision postponed.');
   }
 
   /**

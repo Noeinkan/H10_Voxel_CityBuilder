@@ -8,6 +8,10 @@ import { TREE_SHAPES } from '../terrain/flora';
 import { STRATA_DEPTH } from '../terrain/biomes';
 import { SURFACE_KIND, SURFACE_KIND_NAMES } from '../visualBlock';
 import { VoxelWorld } from '../VoxelWorld';
+import { TYPOLOGIES } from '../buildings/config';
+import { CATALYSTS } from '../../sim/catalysts';
+import { LANDMARKS, contextualFormsOf, variantsOf } from '../landmarks/config';
+import { ARCOLOGY_RECIPES } from '../arcology/config';
 import { createScene } from './cityScene';
 import {
   CELL_FOOTPRINT,
@@ -25,8 +29,19 @@ import {
   SWATCH_ROWS,
   SWATCH_WATERS,
   swatchCellAt,
-  swatchExtent,
 } from './swatchLayout';
+import {
+  SWATCH_ARCOLOGIES,
+  SWATCH_BUILDINGS,
+  SWATCH_BUILDING_LEVEL,
+  SWATCH_CATALOG_SUBJECTS,
+  SWATCH_ITEM_GAP,
+  SWATCH_LANDMARKS,
+  SWATCH_SUBJECTS,
+  swatchExtent,
+  swatchSubjectAt,
+  type SwatchSubject,
+} from './swatchCatalog';
 import { cellDetail, countDetail } from './swatchProbe';
 
 /** Genera tutto in una volta: il budget serve solo al frame loop. */
@@ -455,4 +470,120 @@ describe('swatchScene', () => {
     // Le due colonne d'acqua devono dirlo: li' i tre bit non sono una facciata.
     expect(swatchCellAt(matrixCellRect(0, 24).x0, matrixCellRect(0, 24).y0)?.note).toContain('acqua');
   });
+
+  it('cataloga ogni tipologia una volta sola, derivata dal catalogo', () => {
+    // Il conteggio si deriva da `TYPOLOGIES`, non da un letterale: una tipologia
+    // nuova compare qui da se', e l'id porta l'id del catalogo quindi un
+    // doppione emergerebbe come id ripetuto.
+    expect(SWATCH_BUILDINGS.length).toBe(TYPOLOGIES.length);
+
+    const ids = SWATCH_BUILDINGS.map((subject) => subject.id);
+    expect(new Set(ids).size).toBe(ids.length);
+
+    for (const subject of SWATCH_BUILDINGS) {
+      expect(subject.kind).toBe('building');
+      expect(subject.stamp.sizeX).toBeGreaterThan(0);
+      expect(subject.stamp.sizeZ).toBeGreaterThan(0);
+      // Livello, seme e fronte uniformi: e' cio' che li rende confrontabili.
+      expect(infoValue(subject, 'Livello')).toBe(String(SWATCH_BUILDING_LEVEL));
+      expect(infoValue(subject, 'Seed')).toBe('0');
+      expect(infoValue(subject, 'Fronte')).toBe('est');
+    }
+  });
+
+  it('cataloga i landmark da varianti e forme dichiarate, senza conteggi a mano', () => {
+    // Quanti soggetti landmark ci siano lo decide il catalogo: varianti piu'
+    // forme contestuali, per ogni ruolo con una ricetta. Nessun numero scritto.
+    const expected = CATALYSTS.reduce((total, catalyst) => {
+      const recipe = LANDMARKS[catalyst.id];
+      if (recipe === undefined) return total;
+      return total + variantsOf(recipe).length + contextualFormsOf(catalyst.id).length;
+    }, 0);
+    expect(SWATCH_LANDMARKS.length).toBe(expected);
+
+    const ids = SWATCH_LANDMARKS.map((subject) => subject.id);
+    expect(new Set(ids).size).toBe(ids.length);
+
+    for (const subject of SWATCH_LANDMARKS) {
+      expect(subject.kind).toBe('landmark');
+      expect(subject.stamp.sizeX).toBeGreaterThan(0);
+      expect(subject.stamp.sizeZ).toBeGreaterThan(0);
+      expect(infoValue(subject, 'Fronte')).toBe('est');
+    }
+  });
+
+  it('cataloga le arcologie dallo stesso catalogo delle megastrutture', () => {
+    // Le tre megastrutture vengono da `ARCOLOGY_RECIPES`, senza conteggi a mano:
+    // una ricetta nuova comparirebbe qui da sola. Il tratto che le distingue
+    // dagli altri soggetti e' l'altezza: quasi duecento voxel.
+    expect(SWATCH_ARCOLOGIES.length).toBe(ARCOLOGY_RECIPES.length);
+
+    const ids = SWATCH_ARCOLOGIES.map((subject) => subject.id);
+    expect(new Set(ids).size).toBe(ids.length);
+
+    for (const subject of SWATCH_ARCOLOGIES) {
+      expect(subject.kind).toBe('arcology');
+      expect(subject.stamp.sizeX).toBeGreaterThan(0);
+      expect(subject.stamp.sizeZ).toBeGreaterThan(100);
+      expect(infoValue(subject, 'Seed')).toBe('0');
+      expect(infoValue(subject, 'Fronte')).toBe('est');
+    }
+  });
+
+  it('tiene il vuoto minimo e nessuna sovrapposizione fra i soggetti del catalogo', () => {
+    // A due a due i riquadri non si toccano: su un solo asse devono essere
+    // disgiunti, altrimenti la galleria si leggerebbe come una massa unica.
+    for (let i = 0; i < SWATCH_CATALOG_SUBJECTS.length; i++) {
+      const a = SWATCH_CATALOG_SUBJECTS[i];
+      for (let j = i + 1; j < SWATCH_CATALOG_SUBJECTS.length; j++) {
+        const b = SWATCH_CATALOG_SUBJECTS[j];
+        const overlap = a.rect.x0 < b.rect.x1 && b.rect.x0 < a.rect.x1 &&
+          a.rect.y0 < b.rect.y1 && b.rect.y0 < a.rect.y1;
+        expect({ overlap, a: a.id, b: b.id }).toEqual({ overlap: false, a: a.id, b: b.id });
+      }
+    }
+
+    // I primi due edifici stanno in fila: il vuoto fra loro e' esattamente il
+    // minimo, e quel vuoto non appartiene a nessuno dei due.
+    const first = SWATCH_BUILDINGS[0];
+    const second = SWATCH_BUILDINGS[1];
+    expect(second.rect.x0).toBe(first.rect.x1 + SWATCH_ITEM_GAP);
+    expect(swatchSubjectAt(first.rect.x1, first.rect.y0)).toBeNull();
+    expect(swatchSubjectAt(first.rect.x0, first.rect.y0)?.id).toBe(first.id);
+  });
+
+  it('l\'estensione dichiarata contiene ogni soggetto, e le gallerie sono scritte', () => {
+    const extent = swatchExtent();
+    for (const subject of SWATCH_SUBJECTS) {
+      expect(subject.rect.x0).toBeGreaterThanOrEqual(extent.minX);
+      expect(subject.rect.y0).toBeGreaterThanOrEqual(extent.minY);
+      expect(subject.rect.x1).toBeLessThanOrEqual(extent.minX + extent.sizeX);
+      expect(subject.rect.y1).toBeLessThanOrEqual(extent.minY + extent.sizeY);
+      expect(subject.z1).toBeLessThanOrEqual(extent.sizeZ);
+    }
+
+    // La galleria non e' solo dichiarata: ogni soggetto ha almeno un voxel pieno.
+    const world = generate();
+    for (const subject of SWATCH_CATALOG_SUBJECTS) {
+      expect({ id: subject.id, written: hasSolidIn(world, subject) })
+        .toEqual({ id: subject.id, written: true });
+    }
+  });
 });
+
+/** Il valore di una riga della scheda, o null se la riga non c'e'. */
+function infoValue(subject: SwatchSubject, label: string): string | null {
+  return subject.info.find((row) => row.label === label)?.value ?? null;
+}
+
+/** true se dentro il riquadro del soggetto c'e' almeno un voxel pieno. */
+function hasSolidIn(world: VoxelWorld, subject: SwatchSubject): boolean {
+  for (let y = subject.rect.y0; y < subject.rect.y1; y++) {
+    for (let x = subject.rect.x0; x < subject.rect.x1; x++) {
+      for (let z = SWATCH.groundZ; z < subject.z1; z++) {
+        if (world.getBlock(x, y, z) !== 0) return true;
+      }
+    }
+  }
+  return false;
+}

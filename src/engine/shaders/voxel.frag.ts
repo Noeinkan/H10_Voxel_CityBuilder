@@ -57,6 +57,13 @@ uniform vec3 uSpillColor;
 uniform float uLitHomes;
 uniform float uLitSigns;
 
+// Bordo chiaro delle facce di scorcio, il segnale "cartoon". Colore e forza
+// sono uniform separati perche' sono due fonti: la tinta e' del tema, la forza
+// del tema o del default — e spegnere il bordo e' solo scrivere uRimStrength.
+uniform float uRimStrength;
+uniform float uRimPower;
+uniform vec3 uRimColor;
+
 // Viste di ispezione: tre predicati geometrici e una sola densita'. Il materiale
 // non sa quale modo sia attivo: quella decisione vive in inspect.ts.
 uniform vec4 uInspectPlane;
@@ -270,6 +277,16 @@ ${inspect ? inspectGhostSurface : ''}
   light += uSpillColor * vGlow * vGlow * uNight;
 
   vec3 shaded = detailed * light * vAO + emission * uEmissiveStrength;
+
+  // Bordo chiaro delle facce di scorcio: il segnale "cartoon". Il fresnel usa la
+  // direzione di sguardo (dalla camera alla scena) e la normale della faccia:
+  // per una faccia visibile i due sono quasi opposti, quindi il prodotto e'
+  // negativo e max(0, -dot) cresce avvicinandosi al profilo. E' la meta' GLSL
+  // di rimFactor in lighting.ts, e non richiede attributi ne' pass nuove.
+  float rimFacing = max(0.0, -dot(n, uViewDirection));
+  float rim = pow(1.0 - rimFacing, uRimPower);
+  shaded += uRimColor * rim * uRimStrength;
+
 ${inspect ? inspectGlow : ''}
 
   // Tre risposte d'acqua, dalla classe che il generatore ha scritto nei bit di

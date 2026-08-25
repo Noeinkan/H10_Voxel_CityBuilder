@@ -22,6 +22,13 @@ import {
   type PartsRecipe,
 } from '../landmarks/config';
 import { generateFromRecipe, variantIndexOf } from '../landmarks/generate';
+import {
+  ARCOLOGY_KIND,
+  ARCOLOGY_RECIPES,
+  type ArcologyKind,
+  type ArcologyRecipe,
+} from '../arcology/config';
+import { generateArcology } from '../arcology/generate';
 import { FACING } from '../streets/streetGrid';
 import { BIOME_NAMES, TERRAIN } from '../terrain/config';
 import { treeSpec, treeTop } from '../terrain/decor';
@@ -55,6 +62,7 @@ export const SWATCH_FOCUS = {
   scale: 'scale',
   buildings: 'buildings',
   landmarks: 'landmarks',
+  arcologies: 'arcologies',
   all: 'all',
 } as const;
 
@@ -65,10 +73,17 @@ export const SWATCH_FOCUSES: readonly SwatchFocus[] = [
   SWATCH_FOCUS.scale,
   SWATCH_FOCUS.buildings,
   SWATCH_FOCUS.landmarks,
+  SWATCH_FOCUS.arcologies,
   SWATCH_FOCUS.all,
 ];
 
-export type SwatchSubjectKind = 'matrix' | 'strata' | 'scale' | 'building' | 'landmark';
+export type SwatchSubjectKind =
+  | 'matrix'
+  | 'strata'
+  | 'scale'
+  | 'building'
+  | 'landmark'
+  | 'arcology';
 
 export interface SwatchInfoRow {
   readonly label: string;
@@ -93,19 +108,49 @@ export interface SwatchSubject {
 }
 
 export interface SwatchCatalogSubject extends SwatchSubject {
-  readonly kind: 'building' | 'landmark';
+  readonly kind: 'building' | 'landmark' | 'arcology';
   readonly stamp: VoxelStamp;
 }
 
 interface PendingCatalogSubject {
   readonly id: string;
-  readonly kind: 'building' | 'landmark';
-  readonly band: 'buildings' | 'landmarks';
+  readonly kind: 'building' | 'landmark' | 'arcology';
+  readonly band: 'buildings' | 'landmarks' | 'arcologies';
   readonly label: string;
   readonly note: string | null;
   readonly info: readonly SwatchInfoRow[];
   readonly stamp: VoxelStamp;
 }
+
+const FORM_LABELS: Readonly<Record<LandmarkFormId, string>> = {
+  skyport: 'Skyport',
+  'sky-park': 'Sky Park',
+  'sky-transit': 'Sky Transit',
+  'port-bulk': 'Bulk',
+  'port-shipyard': 'Shipyard',
+  'port-passenger': 'Passenger',
+};
+
+const FORM_NOTES: Readonly<Record<LandmarkFormId, string>> = {
+  skyport: 'Rooftop hub for airships, eVTOL and balloons.',
+  'sky-park': 'A garden laid over a rooftop.',
+  'sky-transit': 'A head station lifting the line onto a roof.',
+  'port-bulk': 'Deep-water berth for bulk cargo.',
+  'port-shipyard': 'Sheltered basin to launch hulls.',
+  'port-passenger': 'Light marina for small craft.',
+};
+
+const WATER_LABELS: Readonly<Record<number, string>> = {
+  [WATER_CLASS.open]: 'open water',
+  [WATER_CLASS.canal]: 'sheltered canal',
+  [WATER_CLASS.shallow]: 'shallows',
+};
+
+const ARCOLOGY_LABELS: Readonly<Record<ArcologyKind, string>> = {
+  [ARCOLOGY_KIND.twinStem]: 'Twin Stem',
+  [ARCOLOGY_KIND.branchingCore]: 'Branching Core',
+  [ARCOLOGY_KIND.skyWeave]: 'Sky Weave',
+};
 
 const BASE_EXTENT = baseExtentOf();
 const BUILDING_START_Y = BASE_EXTENT.minY + BASE_EXTENT.sizeY + SWATCH.bandGap;
@@ -114,12 +159,17 @@ const BUILDING_LAYOUT = placeRows(BUILDING_ROWS, BUILDING_START_Y);
 const LANDMARK_START_Y = BUILDING_LAYOUT.y1 + SWATCH.bandGap;
 const LANDMARK_ROWS = landmarkRows();
 const LANDMARK_LAYOUT = placeRows(LANDMARK_ROWS, LANDMARK_START_Y);
+const ARCOLOGY_START_Y = LANDMARK_LAYOUT.y1 + SWATCH.bandGap;
+const ARCOLOGY_ROWS = arcologyRows();
+const ARCOLOGY_LAYOUT = placeRows(ARCOLOGY_ROWS, ARCOLOGY_START_Y);
 
 export const SWATCH_BUILDINGS: readonly SwatchCatalogSubject[] = BUILDING_LAYOUT.subjects;
 export const SWATCH_LANDMARKS: readonly SwatchCatalogSubject[] = LANDMARK_LAYOUT.subjects;
+export const SWATCH_ARCOLOGIES: readonly SwatchCatalogSubject[] = ARCOLOGY_LAYOUT.subjects;
 export const SWATCH_CATALOG_SUBJECTS: readonly SwatchCatalogSubject[] = [
   ...SWATCH_BUILDINGS,
   ...SWATCH_LANDMARKS,
+  ...SWATCH_ARCOLOGIES,
 ];
 
 const BASE_SUBJECTS = baseSubjects();
@@ -130,6 +180,7 @@ export const SWATCH_SUBJECTS: readonly SwatchSubject[] = [
 
 const BUILDING_EXTENT = subjectsExtent(SWATCH_BUILDINGS);
 const LANDMARK_EXTENT = subjectsExtent(SWATCH_LANDMARKS);
+const ARCOLOGY_EXTENT = subjectsExtent(SWATCH_ARCOLOGIES);
 const FULL_EXTENT = completeExtent();
 
 export function swatchExtent(): SwatchExtent {
@@ -141,6 +192,7 @@ export function swatchFocusExtent(focus: SwatchFocus): SwatchExtent {
   if (focus === SWATCH_FOCUS.all) return FULL_EXTENT;
   if (focus === SWATCH_FOCUS.buildings) return padded(BUILDING_EXTENT, SWATCH_ITEM_GAP);
   if (focus === SWATCH_FOCUS.landmarks) return padded(LANDMARK_EXTENT, SWATCH_ITEM_GAP);
+  if (focus === SWATCH_FOCUS.arcologies) return padded(ARCOLOGY_EXTENT, SWATCH_ITEM_GAP);
 
   const subjects = focus === SWATCH_FOCUS.matrix
     ? BASE_SUBJECTS.filter((subject) => subject.kind === 'matrix')
@@ -167,6 +219,9 @@ export function swatchPlinthSpanAt(y: number): { readonly x0: number; readonly x
   }
   if (y >= LANDMARK_EXTENT.minY && y < LANDMARK_EXTENT.minY + LANDMARK_EXTENT.sizeY) {
     return bandPlinth(LANDMARK_EXTENT);
+  }
+  if (y >= ARCOLOGY_EXTENT.minY && y < ARCOLOGY_EXTENT.minY + ARCOLOGY_EXTENT.sizeY) {
+    return bandPlinth(ARCOLOGY_EXTENT);
   }
   return { x0: 0, x1: 0 };
 }
@@ -251,30 +306,6 @@ function formSubject(catalyst: CatalystDefinition, form: LandmarkFormId): Pendin
   };
 }
 
-const FORM_LABELS: Readonly<Record<LandmarkFormId, string>> = {
-  skyport: 'Skyport',
-  'sky-park': 'Sky Park',
-  'sky-transit': 'Sky Transit',
-  'port-bulk': 'Bulk',
-  'port-shipyard': 'Shipyard',
-  'port-passenger': 'Passenger',
-};
-
-const FORM_NOTES: Readonly<Record<LandmarkFormId, string>> = {
-  skyport: 'Rooftop hub for airships, eVTOL and balloons.',
-  'sky-park': 'A garden laid over a rooftop.',
-  'sky-transit': 'A head station lifting the line onto a roof.',
-  'port-bulk': 'Deep-water berth for bulk cargo.',
-  'port-shipyard': 'Sheltered basin to launch hulls.',
-  'port-passenger': 'Light marina for small craft.',
-};
-
-const WATER_LABELS: Readonly<Record<number, string>> = {
-  [WATER_CLASS.open]: 'open water',
-  [WATER_CLASS.canal]: 'sheltered canal',
-  [WATER_CLASS.shallow]: 'shallows',
-};
-
 function landmarkInfo(
   catalyst: CatalystDefinition,
   variant: string,
@@ -302,6 +333,32 @@ function seedForVariant(recipe: PartsRecipe, wanted: number): number {
     if (variantIndexOf(recipe, seed) === wanted) return seed;
   }
   throw new Error(`nessun seed per la variante landmark ${wanted}`);
+}
+
+function arcologyRows(): readonly (readonly PendingCatalogSubject[])[] {
+  // Le tre megastrutture in fila: sono larghe poche decine di voxel ma alte
+  // quasi duecento, quindi una riga sola basta a tenerle leggibili.
+  return [ARCOLOGY_RECIPES.map((recipe) => arcologySubject(recipe))];
+}
+
+function arcologySubject(recipe: ArcologyRecipe): PendingCatalogSubject {
+  const stage = maxStageOf(recipe);
+  const stamp = generateArcology(recipe, { stage, facing: FACING.east, seed: 0 });
+  return {
+    id: `arcology:${recipe.kind}`,
+    kind: 'arcology',
+    band: 'arcologies',
+    label: ARCOLOGY_LABELS[recipe.kind],
+    note: 'la megastruttura: quattro usi su quote diverse dentro un solo volume',
+    stamp,
+    info: [
+      { label: 'Forma', value: recipe.kind },
+      { label: 'Stadio', value: `${stage} di ${maxStageOf(recipe)}` },
+      { label: 'Seed', value: '0' },
+      { label: 'Fronte', value: 'est' },
+      { label: 'Fasce', value: recipe.bands.map((band) => band.label).join(' · ') },
+    ],
+  };
 }
 
 function shapeLabel(shape: TypologyShape): string {

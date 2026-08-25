@@ -47,17 +47,24 @@ describe('RenderQualityController', () => {
       shadowSize: 2048,
       bloom: true,
       tilt: true,
+      grade: true,
+      godRays: true,
+      outline: true,
     });
     expect(new RenderQualityController('balanced', 2).profile).toMatchObject({
       shadowSize: 1024,
       shadowSoftness: 1,
       bloom: true,
+      grade: true,
     });
     // `performance` e' l'unico che spegne del tutto le pass aggiuntive.
     expect(new RenderQualityController('performance', 2).profile).toMatchObject({
       shadowSize: 0,
       bloom: false,
       tilt: false,
+      grade: false,
+      godRays: false,
+      outline: false,
     });
   });
 

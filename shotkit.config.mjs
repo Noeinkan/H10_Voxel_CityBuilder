@@ -263,13 +263,13 @@ export default {
       path: '/',
       timeoutMs: 300000,
       shows:
-        'il cassetto delle politiche: leve attivabili, pannello del commercio con la produzione per settore e le strategie di scambio',
-      alt: 'Side drawer with city policies, commerce figures and trade strategies open over the city',
+        'il cassetto delle politiche: leve attivabili e strategie di scambio, separate dalla dashboard della citta',
+      alt: 'Side drawer with city policies and trade strategies open over the city',
       async prepare(page) {
         await seedCity(page, { growMs: 45000 });
         await parkPointer(page);
         await page.getByRole('button', { name: /^Policies/i }).click();
-        await page.waitForSelector('.policy-drawer:not([hidden])', { timeout: 15000 });
+        await page.waitForSelector('.policies-drawer:not([hidden])', { timeout: 15000 });
         await parkPointer(page, { escape: false });
       },
     },

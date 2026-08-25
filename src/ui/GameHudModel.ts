@@ -7,12 +7,14 @@ import {
   TRADE_MODES,
   catalystById,
   charterById,
+  charterOfFamily,
   policyConflict,
   tradeLinksOf,
   type BuildingClass,
   type CatalystGroup,
   type CatalystId,
   type CatalystSite,
+  type CharterId,
   type CityDecision,
   type DecisionOption,
   type PolicyId,
@@ -215,6 +217,13 @@ export interface GameHudModel {
   readonly tradeModes: readonly HudTradeMode[];
   readonly tradeConnected: boolean;
   readonly decision: CityDecision | null;
+  /**
+   * true quando la decisione sospesa e' stata rimandata con «decidi piu' tardi»
+   * e la carta deve restare nascosta per `decisions.snoozeTicks`.
+   */
+  readonly decisionSnoozed: boolean;
+  /** Mandato attivo della famiglia della decisione sospesa, o null. */
+  readonly decisionActiveCharter: CharterId | null;
   readonly paused: boolean;
   readonly speed: number;
   readonly message: string;
@@ -248,11 +257,19 @@ export function decisionNeedsRepaint(
  * scelta deve cambiare la forma di un quartiere — e va distinto da una riga
  * vuota, che sembrerebbe un difetto di disegno.
  */
-export function decisionMark(option: DecisionOption): string | null {
+export function decisionMark(
+  option: DecisionOption,
+  activeCharter: CharterId | null = null,
+): string | null {
   const parts: string[] = [];
   if (option.grant !== undefined) parts.push(`Builds a ${catalystById(option.grant.kind).label}.`);
-  if (option.charter === null) parts.push('Lifts the standing mandate for this decision.');
-  else if (option.charter !== undefined) parts.push(charterById(option.charter).spatialEffect);
+  if (option.charter === null) {
+    // «Solleva il mandato» ha senso solo se c'e' davvero un mandato da
+    // sollevare: senza, l'alternativa non lascia segno e la riga tace.
+    if (activeCharter !== null) parts.push('Lifts the standing mandate for this decision.');
+  } else if (option.charter !== undefined) {
+    parts.push(charterById(option.charter).spatialEffect);
+  }
   return parts.length === 0 ? null : parts.join(' ');
 }
 
@@ -458,6 +475,13 @@ export function buildGameHudModel(
     available: ready && tradeConnected,
   }));
 
+  const pendingDecision = stats?.state.pendingDecision ?? null;
+  const decisionSnoozed = pendingDecision !== null && stats !== null
+    && stats.state.tickCount < stats.state.decisionDismissedUntil;
+  const decisionActiveCharter = pendingDecision === null || stats === null
+    ? null
+    : charterOfFamily(stats.state.charters, pendingDecision.family);
+
   return {
     ready,
     resources,
@@ -471,7 +495,9 @@ export function buildGameHudModel(
     policies,
     tradeModes,
     tradeConnected,
-    decision: stats?.state.pendingDecision ?? null,
+    decision: pendingDecision,
+    decisionSnoozed,
+    decisionActiveCharter,
     paused: stats?.paused ?? false,
     speed: stats?.speed ?? 1,
     message: stats === null

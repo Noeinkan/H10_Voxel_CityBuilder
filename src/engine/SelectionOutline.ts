@@ -11,8 +11,8 @@ import {
   Mesh,
   MeshBasicMaterial,
 } from 'three';
-import { TERRAIN } from '../world/terrain/config';
-import type { TerrainMap } from '../world/terrain/TerrainMap';
+/** Quota del suolo in una colonna: e' l'unica cosa che il contorno sa del terreno. */
+export type HeightAt = (x: number, y: number) => number;
 
 /**
  * Il contorno di cio' che il giocatore ha scelto.
@@ -152,7 +152,7 @@ export class SelectionOutline {
   /** Ultimo riquadro disegnato: rifare un lavoro identico e' lavoro sprecato. */
   private last: readonly [number, number, number, number, number, number] | null = null;
 
-  constructor(private readonly map: TerrainMap) {
+  constructor(private readonly heightAt: HeightAt) {
     this.fill.renderOrder = 21;
     this.fill.visible = false;
     this.fill.frustumCulled = false;
@@ -408,8 +408,7 @@ export class SelectionOutline {
    * c'entra piu' niente.
    */
   private floorAt(x: number, y: number, z0: number): number {
-    const ground = Math.max(TERRAIN.seaLevel, this.map.heightAt(Math.floor(x), Math.floor(y)));
-    return Math.max(ground, z0);
+    return Math.max(this.heightAt(Math.floor(x), Math.floor(y)), z0);
   }
 
   dispose(): void {

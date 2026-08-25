@@ -141,6 +141,16 @@ export interface UseInfo {
   readonly count: number;
   /** Quanto la citta' usa cio' che ha di questo uso, in [0, 1], o `null`. */
   readonly cityUse: number | null;
+  /**
+   * Quota di organico dell'ultimo tick, in [0, 1].
+   *
+   * E' il tetto che industria, commercio e campagna condividono: un edificio
+   * produttivo rende al pieno solo se la citta' ha le braccia per farlo lavorare.
+   * Come `count` e `cityUse` e' un fatto della **citta'**, non di questo
+   * esemplare, ed e' il numero che la scheda usa per dire a un negozio o a una
+   * fabbrica quanti lavoratori gli mancano.
+   */
+  readonly staffing: number;
 }
 
 /**
@@ -373,6 +383,7 @@ function useInfo(
     // Sul rendimento **pieno**: la quota d'uso e' della citta', e la citta' non ha
     // una capacita' diversa a seconda di quale dei suoi edifici si sta guardando.
     cityUse: cityUseOf(state, cls, full),
+    staffing: state.staffing,
   };
 }
 
