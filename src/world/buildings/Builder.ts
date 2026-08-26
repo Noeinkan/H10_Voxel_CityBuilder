@@ -13,7 +13,6 @@ import { dirtyChunkCount, fitsChunkBudget } from './chunkBudget';
 import { buildStamp } from './assemble';
 import { poleRectAt } from './growthPoles';
 import {
-  buildWorks,
   groundKindAt,
   hasUnworkableColumn,
   isCoastal,
@@ -71,7 +70,6 @@ import { GrowthQueue, anchorOf } from './growthQueue';
 import { SurfaceQueue } from './surfaceQueue';
 import {
   GROUND,
-  WORKS,
   type GradePlan,
 } from '../grading/grade';
 import { StreetNetwork } from '../streets/StreetNetwork';
@@ -354,7 +352,7 @@ export class Builder {
   private readonly arcologies: ArcologyDriver;
 
   constructor(
-    private readonly world: VoxelWorld,
+    world: VoxelWorld,
     private readonly terrainMap: TerrainMap,
     private readonly worldSeed: number,
     primaryRegion: Region | null = null,
@@ -873,7 +871,12 @@ export class Builder {
       }, footprintCap)
       : draft;
 
-    const baseZ = terms?.deck ?? deck.z;
+    // **Gli edifici sorgono dal terreno e non lo livellano.** La base scende
+    // alla quota piu' bassa dell'impronta — anche sulla battigia, dove prima
+    // nasceva una banchina — e la sagoma si inserisce nel fianco: niente muro
+    // di contenimento, niente banchina, niente cumulo di terra sotto la casa. Su
+    // terreno piatto la base non cambia: `footZ` e `deck.z` coincidono.
+    const baseZ = plan !== null ? plan.footZ : terms?.deck ?? deck.z;
 
     // **Lo sbalzo si negozia prima di rinunciare al posto.** Se a bloccare e' la
     // sola striscia sopra il marciapiede — un'altra sporgenza, una campata —
@@ -936,15 +939,6 @@ export class Builder {
 
     if (plan !== null) {
       this.surface.clearSiteDecor(x, y, footprint);
-      // Il salto che la fila aggiunge sotto il membro e' costruito, non versato:
-      // senza questo il dislivello verso il deck verrebbe riempito di stratigrafia
-      // di bioma e leggerebbe come terreno nudo invece che come muro. E' lo stesso
-      // ritocco che l'upgrade fa gia' sull'anello allargato.
-      buildWorks(this.world, this.terrainMap, x, y, footprint, {
-        ...plan,
-        padZ: baseZ,
-        works: baseZ > plan.padZ && plan.works === WORKS.none ? WORKS.terrace : plan.works,
-      });
     }
 
     const record = this.registryImpl.add({

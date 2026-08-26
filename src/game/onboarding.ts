@@ -39,8 +39,8 @@ export function onboardingOf(state: SimState): OnboardingState {
       1);
   }
   if (!hasRole(state, 'park')) {
-    return step('park', '3 · Complete the neighborhood',
-      'Add the Park. Public services support happiness as the population grows.',
+    return step('park', '3 · Place the Park',
+      'Place the Park so its field overlaps the Market and the Factory: the overlap opens mixed-use blocks and keeps happiness up as the population grows.',
       2);
   }
   return {

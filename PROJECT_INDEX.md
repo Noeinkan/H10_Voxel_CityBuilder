@@ -712,6 +712,7 @@ le scritture stanno in tre file invece che sparse in sei metodi.
 
 | File | Ruolo | Esporta |
 | --- | --- | --- |
+| [coach.ts](src/game/coach.ts) | Il coach di sviluppo: la rotta della voce in nove tier ordinati (cibo, connessioni, identita', distretti, stadi, skyline, tetti, citta' in quota, arcologie). Puro, derivato dallo stato e da fatti del mondo gia' misurati | `coachSuggestion`, `coachSuggestions`, `CoachSuggestion`, `CoachContext`, `CoachLandmark`, `CoachTier` |
 | [loop.ts](src/game/loop.ts) | Passo fisso della simulazione con tetto di recupero | `FixedStepLoop` |
 | [growthScene.ts](src/game/growthScene.ts) | Cablaggio esclusivo di `grow=1`: tick, Builder e animazione | `GrowthScene`, `GrowthStats` |
 | [simScene.ts](src/game/simScene.ts) | Cablaggio di `sim=1`: la simulazione che gira sull'isola senza costruirci. Gemello di `growthScene` per la scena di misura | `SimScene`, `SIM_TICK_RATE`, `SIM_SITE_COUNT` |
@@ -722,7 +723,7 @@ le scritture stanno in tre file invece che sparse in sei metodi.
 | [onboarding.ts](src/game/onboarding.ts) | Tutorial derivato dai catalizzatori, senza flag nascosti | `onboardingOf`, `onboardingAllows` |
 | [cityCondition.ts](src/game/cityCondition.ts) | Obiettivo di autosufficienza e crisi con indicazioni di recupero | `cityCondition`, `isSelfSufficient` |
 | [sectors.ts](src/game/sectors.ts) | Identità, region e maschera composta dei settori costieri | `coastalSectorAt`, `shapeWithSector` |
-| [src/game/tips.ts](src/game/tips.ts) | Consigli di gioco derivati dallo stato, in quattro famiglie ordinate per urgenza: crisi, colli di bottiglia, opportunità, meccaniche. Puro e senza storia. |
+| [tips.ts](src/game/tips.ts) | La salute della citta' in due famiglie ordinate per urgenza: crisi e colli di bottiglia. Puro e senza storia; opportunita' e meccaniche sono migrate nel coach | `tipsFor`, `urgentTip`, `GameTip`, `TipKind` |
 
 ## `src/ui/` — HUD e overlay di debug
 
@@ -766,6 +767,7 @@ giocabile; gli overlay tecnici si alternano con `F3` o partono aperti con
 | File | Copre |
 | --- | --- |
 | [src/engine/VehicleMaterial.test.ts](src/engine/VehicleMaterial.test.ts) | Che gli uniform dei mezzi siano gli stessi oggetti del voxel, non delle copie. |
+| [game/coach.test.ts](src/game/coach.test.ts) | Ogni tier acceso e spento, priorita' fra cibo e connessioni, stadio del landmark vicino e lontano dalla soglia, purezza dello stesso contesto |
 | [src/sim/islandConnections.test.ts](src/sim/islandConnections.test.ts) | Bonus di soddisfazione e crescita dei collegamenti fra isole, limiti e compatibilita' dei salvataggi |
 | [ui/CityOverviewModel.test.ts](src/ui/CityOverviewModel.test.ts) | Obiettivi comprensivi degli usi misti, capacita', organico, forma urbana, scambi reali, mandati e cronologia della panoramica cittadina |
 | [ui/hudTip.test.ts](src/ui/hudTip.test.ts) | Il testo della scheda del dock: la descrizione che resta anche a bottone bloccato, i quattro usi nominati tutti, la portata in banda prima che in cifre, l'elenco che si chiude a parole |

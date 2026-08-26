@@ -10,6 +10,7 @@ import {
 } from '../sim';
 import { bestProspectOf, type TypologyGap } from '../world/buildings/typology';
 import { unlocksFor } from '../world/buildings/unlocks';
+import { landmarkOf } from '../world/landmarks/config';
 import type { ColumnInfo } from '../game/selection';
 import type { SelectionRow } from './SelectionPanelModel';
 
@@ -80,6 +81,25 @@ export function pairingLines(id: CatalystId): readonly string[] {
     const partners = pairing.partners.map((role) => catalystById(role).label).join(' or ');
     return `${partners} → ${pairing.district} quarter`;
   });
+}
+
+/**
+ * Quanto un landmark cresce, come righe di tooltip.
+ *
+ * Gli stadi sono la promessa di crescita di un monumento: piazzato presto,
+ * rinforza il proprio catalizzatore a ogni soglia di edifici vicini. Lo stadio
+ * zero e' il piazzamento e non si conta; i numeri veri sono le soglie
+ * successive. Un ruolo senza ricetta non ha stadi, e la riga tace.
+ */
+export function stageLines(id: CatalystId): readonly string[] | null {
+  const recipe = landmarkOf(id);
+  if (recipe === null) return null;
+  const thresholds = recipe.stages.slice(1);
+  if (thresholds.length === 0) return null;
+  return [
+    `Grows at ${thresholds.join(' · ')} nearby buildings`,
+    'Each stage strengthens the catalyst',
+  ];
 }
 
 /**

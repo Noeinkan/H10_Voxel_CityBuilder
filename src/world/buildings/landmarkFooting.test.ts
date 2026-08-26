@@ -59,6 +59,16 @@ function terraces(drop: number): TerrainMap {
   });
 }
 
+/** Un piano con una sola parete a sud: sopra `edgeY` nessuna opera raddrizza. */
+function cliff(edgeY: number): TerrainMap {
+  return testTerrain({
+    chunksX: 4,
+    chunksY: 4,
+    heightAt: () => PLATEAU,
+    slopeAt: (_x, y) => (y <= edgeY ? 0.1 : GRADING.maxTerraceSlope + 0.2),
+  });
+}
+
 function builderOn(map: TerrainMap): Builder {
   return new Builder(new VoxelWorld(), map, 4242);
 }
@@ -114,10 +124,12 @@ describe('un landmark su una cengia di montagna', () => {
   it('non apre un cantiere per una struttura che non puo comparire', () => {
     // Sgomberare e' definitivo, la struttura no: senza questo controllo il
     // riquadro si portava via le case e poi ripiegava comunque sulla piazzola.
-    const builder = builderOn(ledge(6));
+    // Le case stanno sul piano, il riquadro del mercato le sormonta e il suo
+    // bordo sud esce sulla parete: l'opera non regge, e le case restano.
+    const builder = builderOn(cliff(ROW + 2));
     builder.materialize([
-      { x: SPOT - 4, y: ROW - 2, class: BUILDING_CLASS.residential },
-      { x: SPOT + 2, y: ROW - 2, class: BUILDING_CLASS.residential },
+      { x: SPOT - 4, y: ROW - 10, class: BUILDING_CLASS.residential },
+      { x: SPOT + 8, y: ROW - 10, class: BUILDING_CLASS.residential },
     ]);
     const before = builder.registry.count;
     expect(before).toBeGreaterThan(0);

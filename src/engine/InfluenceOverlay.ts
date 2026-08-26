@@ -11,6 +11,7 @@ import {
 } from 'three';
 import {
   BALANCE,
+  catalystById,
   computeReach,
   distAt,
   falloff,
@@ -18,6 +19,7 @@ import {
   type ReachCache,
   type ReachField,
 } from '../sim';
+import type { CoachSuggestion } from '../game/coach';
 import type { Region } from '../world/terrain/region';
 import type { TerrainMap } from '../world/terrain/TerrainMap';
 import { TERRAIN } from '../world/terrain/config';
@@ -45,6 +47,9 @@ const FILL_PEAK = 0.44;
 
 /** Un colore per uso urbano, in ordine di `BUILDING_CLASS`. */
 const CLASS_COLORS: readonly number[] = [0x5f8f7f, 0xd8886a, 0xd9b45f, 0xe99a72];
+
+/** Il colore dedicato al coach: diverso dagli usi urbani e dal cursore. */
+const COACH_GROW_COLOR = 0x3ddc84;
 
 /** Gli stessi due stati del segnaposto: verde valido, rosso rifiutato. */
 const CURSOR_VALID = 0x2ff08d;
@@ -96,6 +101,8 @@ export class InfluenceOverlay {
   private readonly cursor = new LineSegments(new BufferGeometry(), this.cursorMaterial);
   private readonly rings = new LineSegments(new BufferGeometry(), this.ringMaterial);
   private readonly fill = new Mesh(new BufferGeometry(), this.fillMaterial);
+  /** Artefatti del coach: contorno di portata e anello sul landmark da crescere. */
+  private readonly coach = new Group();
 
   // Il catalizzatore sotto al cursore non e' ancora piazzato, quindi la sua
   // portata non sta nella cache della simulazione. Una voce sola basta: il
@@ -106,9 +113,15 @@ export class InfluenceOverlay {
   // delle celle che attraversa: senza questo, ogni pixel di movimento
   // ricostruirebbe da capo qualche decina di migliaia di triangoli.
   private drawn: ReachField | null = null;
+  /** I catalizzatori di `refreshCatalysts`, per risolvere l'evidenza del coach. */
+  private catalysts: readonly Catalyst[] = [];
+  /** Id del suggerimento gia' disegnato, per non ricostruire la geometria. */
+  private coachId: string | null = null;
+  /** true quando l'evidenza del coach riusa `showSelection`, che scrive sul cursore. */
+  private coachHighlighted = false;
 
   constructor(private readonly map: TerrainMap) {
-    this.group.add(this.existing, this.sectors, this.fill, this.rings, this.cursor);
+    this.group.add(this.existing, this.sectors, this.fill, this.rings, this.cursor, this.coach);
     this.hideCursor();
     this.fill.renderOrder = 20;
     this.rings.renderOrder = 21;
@@ -120,6 +133,7 @@ export class InfluenceOverlay {
   }
 
   refreshCatalysts(catalysts: readonly Catalyst[], reach: ReachCache): void {
+    this.catalysts = catalysts;
     clearLines(this.existing);
     for (const catalyst of catalysts) {
       const field = reach.get(catalyst.x, catalyst.y, catalyst.radius);
@@ -175,6 +189,71 @@ export class InfluenceOverlay {
     this.cursor.visible = false;
     this.rings.visible = false;
     this.fill.visible = false;
+  }
+
+  /**
+   * Disegna gli artefatti del coach: il contorno del landmark da crescere, o
+   * l'evidenza del catalizzatore da toccare.
+   *
+   * **La geometria si ricostruisce solo quando cambia l'id.** La valutazione del
+   * coach gira una volta per tick, ma il refresh dell'HUD e' piu' fitto: senza
+   * questa memoria il contorno verrebbe rifatto a ogni giro, e il costo del
+   * marching-squares non e' da pagare sessanta volte al secondo.
+   */
+  showCoach(suggestion: CoachSuggestion, reach: ReachCache): void {
+    if (this.coachId === suggestion.id) return;
+    this.hideCoach();
+    this.coachId = suggestion.id;
+
+    if (suggestion.grow !== null) {
+      const radius = catalystById(suggestion.grow.kind).radius;
+      const field = reach.get(suggestion.grow.x, suggestion.grow.y, radius);
+      this.drawCoachGrow(field);
+    }
+
+    if (suggestion.highlight !== null) {
+      const { x, y } = suggestion.highlight;
+      const catalyst = this.catalysts.find((entry) => entry.x === x && entry.y === y);
+      if (catalyst !== undefined) {
+        this.coachHighlighted = true;
+        this.showSelection(catalyst, reach);
+      }
+    }
+  }
+
+  /** Svuota gli artefatti del coach, compresa l'evidenza riusata dal cursore. */
+  hideCoach(): void {
+    clearObjects(this.coach);
+    if (this.coachHighlighted) {
+      this.hideCursor();
+      this.coachHighlighted = false;
+    }
+    this.coachId = null;
+  }
+
+  /**
+   * Il contorno e la velatura della portata del landmark da crescere, nel colore
+   * del coach. Mostra dove i nuovi edifici farebbero avanzare lo stadio, senza
+   * passare dai voxel: come il resto dell'overlay, e' sopra la scena.
+   */
+  private drawCoachGrow(field: ReachField): void {
+    const contour = new LineSegments(
+      contourGeometry(this.map, field, field.radius),
+      lineMaterial(COACH_GROW_COLOR, 0.9),
+    );
+    contour.renderOrder = 19;
+    this.coach.add(contour);
+
+    const rings = new LineSegments(
+      ringsGeometry(this.map, field),
+      lineMaterial(COACH_GROW_COLOR, 0.35),
+    );
+    rings.renderOrder = 19;
+    this.coach.add(rings);
+
+    const fill = new Mesh(fillGeometry(this.map, field), coachFillMaterial());
+    fill.renderOrder = 18;
+    this.coach.add(fill);
   }
 
   addSector(region: Region): void {
@@ -407,6 +486,31 @@ function clearLines(group: Group): void {
   for (const child of [...group.children]) {
     group.remove(child);
     if (child instanceof LineSegments || child instanceof LineLoop) {
+      child.geometry.dispose();
+      const material = child.material;
+      if (Array.isArray(material)) material.forEach((entry) => entry.dispose());
+      else material.dispose();
+    }
+  }
+}
+
+/** La velatura del coach: stessi pesi della portata, tinta dedicata. */
+function coachFillMaterial(): MeshBasicMaterial {
+  return new MeshBasicMaterial({
+    color: COACH_GROW_COLOR,
+    vertexColors: true,
+    transparent: true,
+    depthTest: false,
+    depthWrite: false,
+    side: DoubleSide,
+  });
+}
+
+/** Svuota un gruppo smaltendo geometria e materiale di ogni figlio. */
+function clearObjects(group: Group): void {
+  for (const child of [...group.children]) {
+    group.remove(child);
+    if (child instanceof Mesh || child instanceof LineSegments || child instanceof LineLoop) {
       child.geometry.dispose();
       const material = child.material;
       if (Array.isArray(material)) material.forEach((entry) => entry.dispose());

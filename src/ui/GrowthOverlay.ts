@@ -58,6 +58,9 @@ export class GrowthOverlay {
     ).join('  ');
     this.body.textContent = [
       `growth       tick ${stats.tick}  ${stats.tickMs.toFixed(3)} ms`,
+      // Il coach e' la rotta della voce: tier e id bastano a sapere cosa sta
+      // consigliando, e sono la stessa fonte dell'hook globale `__growStats`.
+      `coach        ${coachLine(stats.coach)}`,
       `buildings    ${stats.buildings}  ${this.rate.toFixed(1)}/s`,
       `uses         ${stats.countsByClass.map((n, i) => `${CLASS_NAMES[i].slice(0, 4)} ${n}`).join('  ')}`,
       `mixed        ${stats.mixedByClass.map((n, i) => `${CLASS_NAMES[i].slice(0, 4)} ${n}`).join('  ')}`,
@@ -110,4 +113,9 @@ function levelsOf(levels: readonly number[]): string {
     .filter((entry) => entry.count > 0);
   if (seen.length === 0) return 'none yet';
   return seen.map((entry) => `L${entry.level} ${entry.count}`).join('  ');
+}
+
+/** La riga del coach: tier e id, o «quiet» quando non ha niente da dire. */
+function coachLine(coach: GrowthStats['coach']): string {
+  return coach === null ? 'quiet' : `${coach.tier}  ${coach.id}`;
 }

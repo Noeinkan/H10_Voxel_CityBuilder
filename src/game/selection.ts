@@ -4,6 +4,7 @@ import {
   BUILDING_CLASS,
   CLASS_COUNT,
   FARM_KIND,
+  catalystById,
   effectiveCount,
   foodYieldOf,
   catalystRoleOf,
@@ -27,6 +28,7 @@ import { allowedLevelAt, tierAt, type SkylineQuery, type SkylineTier } from '../
 import { buildWeightOf, type GroundKind } from '../world/grading/grade';
 import { groundKindAt, isCoastal } from '../world/buildings/siteWorks';
 import { BUILDER } from '../world/buildings/config';
+import { landmarkOf, maxStageOf } from '../world/landmarks/config';
 import {
   footprintDepth,
   type BuildingRecord,
@@ -165,6 +167,17 @@ export interface StructureInfo {
   readonly record: BuildingRecord;
   /** Catalizzatore rappresentato dal landmark, se questa struttura ne ha uno. */
   readonly catalyst: Catalyst | null;
+  /**
+   * Crescita del landmark, per i soli record con `landmark`: stadio attuale,
+   * massimo, edifici vicini e soglia dello stadio successivo. Assente per chi
+   * non e' un landmark o non ha una ricetta.
+   */
+  readonly landmark?: {
+    readonly stage: number;
+    readonly maxStage: number;
+    readonly nearby: number;
+    readonly nextAt: number | null;
+  };
   /** true se qualcosa le e' appeso: chi regge non promuove piu'. */
   readonly carries: boolean;
   readonly spans: readonly BuildingRecord[];
@@ -321,9 +334,11 @@ function structureAt(
     .find((candidate) => candidate.baseZ <= z && z < candidate.baseZ + candidate.height);
   if (record === undefined) return null;
 
+  const catalyst = catalystOf(state, record);
   return {
     record,
-    catalyst: catalystOf(state, record),
+    catalyst,
+    landmark: landmarkStage(registry, catalyst, record),
     carries: registry.carries(record.id),
     spans: registry.spansOf(record.id),
     decks: registry.decksOf(record.id),
@@ -331,6 +346,37 @@ function structureAt(
       .map((id) => registry.get(id))
       .filter((support): support is BuildingRecord => support !== null),
     uses: usesOf(state, record),
+  };
+}
+
+/**
+ * La crescita di un landmark, o `undefined` per chi non lo e'.
+ *
+ * **Gli stessi numeri del driver**: `withinRadius` per gli edifici vicini e la
+ * soglia dello stadio successivo dalla ricetta. Cosi' la scheda dice quanti
+ * edifici mancano davvero, e il numero coincide con quello che fa avanzare il
+ * monumento.
+ */
+function landmarkStage(
+  registry: ReadonlyBuildingRegistry,
+  catalyst: Catalyst | null,
+  record: BuildingRecord,
+): StructureInfo['landmark'] {
+  const kind = record.landmark;
+  if (kind === undefined) return undefined;
+  const recipe = landmarkOf(kind, record.landmarkForm);
+  if (recipe === null) return undefined;
+
+  const maxStage = maxStageOf(recipe);
+  if (catalyst === null || record.level >= maxStage) {
+    return { stage: record.level, maxStage, nearby: 0, nextAt: null };
+  }
+  const nearby = registry.withinRadius(catalyst.x, catalyst.y, catalystById(kind).radius).length;
+  return {
+    stage: record.level,
+    maxStage,
+    nearby,
+    nextAt: recipe.stages[record.level + 1] ?? null,
   };
 }
 

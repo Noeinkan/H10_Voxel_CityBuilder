@@ -489,6 +489,10 @@ function structureHead(info: StructureInfo): StructureHead {
         { label: 'Produces', value: catalyst.description },
         { label: 'Reach', value: `radius ${catalyst.radius} · follows streets and terrain` },
         { label: 'Centre strength', value: `${strength}` },
+        // Quanto manca allo stadio successivo, solo finche' il monumento non e'
+        // arrivato in cima: e' la stessa domanda del coach, e la risposta viene
+        // dagli stessi numeri (`withinRadius` + la soglia della ricetta).
+        ...landmarkStageRow(info),
         { label: 'Favours', value: favours.length === 0 ? 'none' : favours },
         { label: 'Penalises', value: penalises.length === 0 ? 'none' : penalises },
         { label: 'District', value: district },
@@ -557,6 +561,23 @@ function effectSummary(effects: CatalystEffects): string {
     parts.push(`${label} ${value > 0 ? '+' : '-'}${Math.abs(value)}`);
   }
   return parts.join(' · ');
+}
+
+/**
+ * La riga dello stadio, solo per un landmark che deve ancora crescere.
+ *
+ * «2/4 · 14/16 buildings nearby»: a che stadio e' il monumento, quanti edifici
+ * ha gia' attorno e quanti ne servono per lo stadio successivo. Il numero viene
+ * dagli stessi calcoli del driver (`withinRadius` e la soglia della ricetta), e
+ * per questo coincide con cio' che fa davvero avanzare la struttura.
+ */
+function landmarkStageRow(info: StructureInfo): readonly SelectionRow[] {
+  const growth = info.landmark;
+  if (growth === undefined || growth.nextAt === null) return [];
+  return [{
+    label: 'Stage',
+    value: `${growth.stage}/${growth.maxStage} · ${growth.nearby}/${growth.nextAt} buildings nearby`,
+  }];
 }
 
 // --- Cio' che la simulazione dice di un edificio come questo ------------------

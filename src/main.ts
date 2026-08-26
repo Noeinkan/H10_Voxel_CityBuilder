@@ -63,8 +63,8 @@ import { SelectionOutline } from './engine/SelectionOutline';
 import { resolveTheme, THEMES, type Theme } from './engine/themes';
 import { createVoxelMaterial } from './engine/VoxelMaterial';
 import { GrowthScene } from './game/growthScene';
-import { resolveLaunchMode, swatchUrl } from './game/launchMode';
-import { resolveSelection, type Selection } from './game/selection';
+import type { CoachSuggestion } from './game/coach';
+import { resolveLaunchMode, swatchUrl } from './game/launchMode';import { resolveSelection, type Selection } from './game/selection';
 import { pickSolidCell, pickSurfaceCell, type Ray3, type SurfaceCell } from './game/surfacePick';
 import { SimScene, SIM_SITE_COUNT, SIM_TICK_RATE } from './game/simScene';
 import { coastalSectorAt, shapeWithSector, type CoastalSector } from './game/sectors';
@@ -590,6 +590,8 @@ growthOverlay?.setVisible(debugVisible);
 inspectOverlay.setVisible(debugVisible);
 let selectedTool: GameTool = { kind: 'none' };
 let gameHud: GameHud | null = null;
+/** Id del suggerimento del coach gia' disegnato in-world, per non ridisegnarlo. */
+let paintedCoachId: string | null = null;
 if (growEnabled) {
   gameHud = new GameHud(container, {
     onTool: (tool) => {
@@ -611,6 +613,7 @@ if (growEnabled) {
       selectedTool = tool;
       preview.hide();
       influenceOverlay?.hideCursor();
+      influenceOverlay?.hideCoach();
     },
       onPolicy: (id) => {
         const result = growthScene?.togglePolicy(id);
@@ -648,6 +651,7 @@ if (growEnabled) {
       selectedTool = { kind: 'none' };
       preview.hide();
       influenceOverlay?.hideCursor();
+      influenceOverlay?.hideCoach();
       gameHud?.updateCursor(0, 0, null);
     },
     onReleaseBlock: () => inspect.unlockBlock(),
@@ -1398,6 +1402,7 @@ function onFrame(time: number): void {
     // scritta nelle uniform per il frame corrente, e il pannello non deve
     // ridisegnarsi sessanta volte al secondo per dirlo.
     gameHud.setView(viewMenuModel());
+    syncCoachArtifact(growthScene.stats.coach);
   }
   // Stessa cadenza, e per lo stesso motivo: cio' che la scheda racconta —
   // desiderabilita', quartiere, livello di un edificio promosso — cambia a dieci
@@ -2067,6 +2072,28 @@ function syncSelectionInfluence(picked: Selection | null): void {
     return;
   }
   influenceOverlay?.showSelection(catalyst, growthScene.simState.reach);
+}
+
+/**
+ * Porta in-world l'artefatto del coach, alla cadenza dell'HUD.
+ *
+ * **Il cursore di piazzamento ha precedenza.** Quando uno strumento e' in mano
+ * il coach si nasconde — l'evidenza della portata appartiene a cio' che si sta
+ * per posare — e ricompare appena lo si molla. Si disegna solo al cambio di
+ * suggerimento, non a ogni refresh.
+ */
+function syncCoachArtifact(coach: CoachSuggestion | null): void {
+  if (selectedTool.kind !== 'none' || coach === null ||
+    growthScene === null || influenceOverlay === null) {
+    if (paintedCoachId !== null) {
+      paintedCoachId = null;
+      influenceOverlay?.hideCoach();
+    }
+    return;
+  }
+  if (coach.id === paintedCoachId) return;
+  paintedCoachId = coach.id;
+  influenceOverlay.showCoach(coach, growthScene.simState.reach);
 }
 
 function beginCoastalExpansion(sector: CoastalSector): void {

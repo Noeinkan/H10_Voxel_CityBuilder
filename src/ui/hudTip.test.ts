@@ -103,6 +103,20 @@ describe('buildActionTip', () => {
     expect(valueOf(tip, 'Grows')).toBe('Form 1, Form 2, Form 3 and 14 more');
   });
 
+  it('legge gli stadi del monumento sotto la forma che cresce', () => {
+    const tip = buildActionTip(action({
+      typologies: ['Market hall'],
+      stages: ['Grows at 6 · 16 · 32 nearby buildings', 'Each stage strengthens the catalyst'],
+    }));
+
+    const grows = tip.rows.filter((row) => row.label === 'Grows');
+    expect(grows.map((row) => row.value)).toEqual([
+      'Market hall',
+      'Grows at 6 · 16 · 32 nearby buildings',
+      'Each stage strengthens the catalyst',
+    ]);
+  });
+
   it('non stampa una riga per un elenco vuoto', () => {
     const tip = buildActionTip(action({ favours: [], typologies: [], unlocks: [] }));
 

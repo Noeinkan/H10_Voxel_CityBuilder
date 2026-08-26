@@ -176,7 +176,7 @@ export const BUILDER = {
    * sporca i suoi chunk una volta per fascia, e sporcare cento chunk nello
    * stesso frame e' esattamente il picco che fa cadere il fps sotto la soglia.
    */
-  maxGrowing: 12,
+  maxGrowing: 20,
 
   /**
    * Voxel di superficie urbana scritti per frame.

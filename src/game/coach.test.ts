@@ -68,6 +68,27 @@ function context(state: SimState, overrides: Partial<CoachContext> = {}): CoachC
   };
 }
 
+/**
+ * Una citta' con un solo catalizzatore di identita': niente cibo da sistemare,
+ * niente fondi per il porto, niente distretti da proporre. E' il letto su cui
+ * un consiglio di stadio — o qualunque tier piu' basso — puo' emergere da solo.
+ */
+function stageCity(overrides: Partial<SimState> = {}): SimState {
+  let state = createSimState();
+  state = addCatalyst(state, {
+    x: 0, y: 0, class: catalystById('university').class, kind: 'university',
+    strength: 200, radius: 12,
+  });
+  return {
+    ...state,
+    population: { stock: POPULATION, delta: 1 },
+    harvest: fedAt(POPULATION, 1),
+    food: { stock: 500, delta: 1 },
+    funds: { stock: 0, delta: 0 },
+    ...overrides,
+  };
+}
+
 describe('coach — il cibo', () => {
   it('propone la serra a una citta’ che mangia piu’ di quanto produce', () => {
     const state = city({ harvest: fedAt(POPULATION, 0.6) });
@@ -155,7 +176,8 @@ describe('coach — i distretti', () => {
     const lone = addCatalyst(state, {
       x: 0, y: 0, class: catalystById('market').class, kind: 'market', strength: 200, radius: 12,
     });
-    expect(coachSuggestion(context(lone))?.id).not.toBe('coach-overlap');
+    const tip = coachSuggestion(context({ ...lone, funds: { stock: 0, delta: 0 } }));
+    expect(tip?.tier).not.toBe('district');
   });
 });
 
@@ -164,7 +186,7 @@ describe('coach — gli stadi', () => {
     const landmark: CoachLandmark = {
       kind: 'market', x: 0, y: 0, stage: 1, nextAt: 16, nearby: 12,
     };
-    const tip = coachSuggestion(context(city(), { landmarks: [landmark] }));
+    const tip = coachSuggestion(context(stageCity(), { landmarks: [landmark] }));
     expect(tip?.id).toBe('coach-stage-market');
     expect(tip?.message).toContain('4 more');
     expect(tip?.grow?.nextAt).toBe(16);
@@ -175,14 +197,14 @@ describe('coach — gli stadi', () => {
     const landmark: CoachLandmark = {
       kind: 'market', x: 0, y: 0, stage: 3, nextAt: null, nearby: 40,
     };
-    expect(coachSuggestion(context(city(), { landmarks: [landmark] }))?.tier).not.toBe('stage');
+    expect(coachSuggestion(context(stageCity(), { landmarks: [landmark] }))?.tier).not.toBe('stage');
   });
 
   it('non parla di un landmark ancora lontano dalla soglia', () => {
     const landmark: CoachLandmark = {
       kind: 'market', x: 0, y: 0, stage: 1, nextAt: 32, nearby: 4,
     };
-    expect(coachSuggestion(context(city(), { landmarks: [landmark] }))?.tier).not.toBe('stage');
+    expect(coachSuggestion(context(stageCity(), { landmarks: [landmark] }))?.tier).not.toBe('stage');
   });
 });
 

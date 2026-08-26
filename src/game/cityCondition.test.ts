@@ -123,5 +123,8 @@ function selfSufficientCity(): SimState {
     materials: { stock: 100, delta: 1 },
     funds: { stock: 100, delta: 1 },
     satisfaction: BALANCE.gameplay.success.satisfaction,
+    // Campi a sufficienza, altrimenti `countryside-behind` (un collo di
+    // bottiglia) passerebbe davanti al successo nella scala della voce.
+    farmCounts: [3, 0, 0],
   };
 }

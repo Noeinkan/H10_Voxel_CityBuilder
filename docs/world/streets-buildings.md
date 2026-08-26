@@ -56,7 +56,13 @@
   niente — e la quota finita e' sempre il massimo delle colonne, mai la media:
   livellare verso il basso toglierebbe isola, e un voxel tolto non torna. La
   battigia e il fianco in pendenza sono meta' della terra emersa, e senza opere
-  la citta' li saltava del tutto.
+  la citta' li saltava del tutto. **L'edificio e' l'eccezione**: non chiede ne'
+  terrapieno ne' banchina sotto di se', affonda invece nel terreno — la base
+  scende alla quota piu' bassa dell'impronta (`Builder.place`, `baseZ =
+  plan.footZ`), sul pendio come sulla battigia, e la sagoma si inserisce nel
+  fianco. A riempire fino al massimo restano landmark e arcologie, che un podio
+  ce l'hanno per costruzione, e la carreggiata costiera, il cui molo e' suolo
+  pubblico.
 - **Il terreno si paga, non si vieta.** `groundKindOf` classifica e
   `BUILD_WEIGHT` mette un prezzo; l'unico rifiuto rimasto sulla terra emersa e'
   la pendenza oltre `maxTerraceSlope`. La roccia piana **non** e' un rifiuto: lo

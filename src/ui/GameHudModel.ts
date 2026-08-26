@@ -21,10 +21,11 @@ import {
   type TradeMode,
 } from '../sim';
 import { typologiesForUses } from '../world/buildings/typology';
-import { pairingLines, unlockLines, yieldLine } from './prospects';
+import { pairingLines, stageLines, unlockLines, yieldLine } from './prospects';
 import { SITE } from '../world/sites/config';
 import type { GrowthStats } from '../game/growthScene';
 import type { CityCondition } from '../game/cityCondition';
+import type { CoachSuggestion } from '../game/coach';
 import type { ResourceTrend } from './ResourceTrend';
 import { buildHudResources, commerceOf, type HudCommerce, type HudResource } from './GameHudEconomyModel';
 import type { GameTool } from './GameHudControlsModel';
@@ -101,6 +102,14 @@ export interface HudAction {
    * cima allo schermo, e fra le due non c'era niente.
    */
   readonly yields?: string;
+  /**
+   * Quanto il landmark cresce, come righe di tooltip.
+   *
+   * Lo stadio e' la quarta dimensione dell'effetto di un catalizzatore: un
+   * monumento piazzato presto rinforza il proprio campo a ogni soglia di edifici
+   * vicini. Assente per i ruoli senza ricetta — la serra ce l'ha, il radio no.
+   */
+  readonly stages?: readonly string[];
   /**
    * true se l'azione e' bloccata ma resta visibile.
    *
@@ -228,6 +237,8 @@ export interface GameHudModel {
   readonly speed: number;
   readonly message: string;
   readonly condition: CityCondition | null;
+  /** La rotta suggerita dal coach, gia' calcolata dalla scena di crescita. */
+  readonly coach: CoachSuggestion | null;
   readonly unlockedSectors: number;
 }
 
@@ -317,6 +328,7 @@ export function buildGameHudModel(
       unlocks: unlockLines(catalyst.id),
       pairs: pairingLines(catalyst.id),
       yields: yieldLine(catalyst.id) ?? undefined,
+      stages: stageLines(catalyst.id) ?? undefined,
       available,
       // Bloccato non vuol dire nascosto: il bottone resta nella toolbar e dice
       // perche' non si puo' ancora usare.
@@ -504,6 +516,7 @@ export function buildGameHudModel(
       ? 'Preparing the city…'
       : `${stats.condition.title} · ${stats.condition.message}`,
     condition: stats?.condition ?? null,
+    coach: stats?.coach ?? null,
     unlockedSectors: stats?.unlockedSectors.length ?? 0,
   };
 }

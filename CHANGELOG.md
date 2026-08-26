@@ -11,6 +11,16 @@ coincide con il messaggio di commit.
 
 ---
 
+## In corso — Edifici che sorgono dal terreno senza livellare
+
+- **La fondazione degli edifici non livella piu' il terreno.** `Builder.place` scende con la base alla quota naturale piu' bassa dell'impronta (`baseZ = plan.footZ`) sul pendio come sulla battigia: niente terrapieno, niente banchina e niente cumulo di terra sotto la casa. `buildWorks` esce dal percorso dell'edificio ordinario e resta a landmark, arcologie, upgrade e carreggiata costiera.
+
+## In corso — Coach di sviluppo
+
+- **Il coach sostituisce la guida statica.** Un motore puro in `src/game/coach.ts` legge lo stato e una manciata di fatti del mondo (stadio dei landmark, quota del centro, arcologie) e suggerisce il prossimo passo di sviluppo su nove tier ordinati. `tips.ts` si riduce alla salute — crisi e colli di bottiglia — mentre opportunita' e meccaniche (`open-trade`, `ferry-needs-a-pair`, `overlap`, `the-city-eats-its-farms`, `towers-are-converted-industry`) sono assorbite dal coach; `evergreenTip` sparisce. La serra entra nel consiglio di crisi sul cibo e nel tier `food`.
+- **Nuove soglie della voce.** `coach.ts` dichiara le soglie di *quando parlare* — cibo insufficiente sotto il pareggio, vicinanza alla soglia di stadio — accanto a quelle di `tips.ts` e mai in `balance.ts`. `cityCondition` ordina onboarding → crisi → collo di bottiglia → coach → successo, e il coach arriva da `GrowthStats.coach` al toast e all'`InfluenceOverlay`.
+- **Gli stadi nel dock, nella scheda e in-world.** Il tooltip del dock guadagna la riga «Grows» con le soglie di stadio, la scheda di selezione mostra «Stage 2/4 · 14/16 buildings nearby» sui landmark non al massimo, e l'overlay in-world segna il landmark a meta' stadio con un colore dedicato.
+
 ## In corso — La serra: il landmark che produce cibo
 
 - **Il deposito cede il posto alla serra.** Nel gruppo crescita il `depot` —

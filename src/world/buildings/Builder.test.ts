@@ -31,7 +31,7 @@ import { generateIsland } from '../terrain/IslandGenerator';
 import { SURFACE_KIND, blockPalette } from '../visualBlock';
 import { WATER_IDS } from '../terrain/config';
 import { Builder, REJECT_REASONS } from './Builder';
-import { BUILDER, CLASS_PROFILE, CLUSTER, MAX_FOOTPRINT } from './config';
+import { BUILDER, CLASS_PROFILE, MAX_FOOTPRINT } from './config';
 import { GRADING } from '../grading/config';
 import { GROUND, groundKindOf, isDryLand, type GroundKind } from '../grading/grade';
 import { SKYLINE } from '../skyline/config';
@@ -985,6 +985,27 @@ describe('Builder — opere di terra', () => {
     expect(onShore.length).toBeGreaterThan(0);
   });
 
+  it('sulla battigia l edificio affonda alla quota piu bassa, senza banchina', () => {
+    const terrain = coast();
+    const { records } = grow(terrain, 26, 20);
+
+    const onShore = records.filter((r) => lotGround(terrain, r).includes(GROUND.shore));
+    expect(onShore.length).toBeGreaterThan(0);
+
+    for (const record of onShore) {
+      let lowest = Number.POSITIVE_INFINITY;
+      for (let dy = 0; dy < record.footprint; dy++) {
+        for (let dx = 0; dx < record.footprint; dx++) {
+          const height = terrain.heightAt(record.x + dx, record.y + dy);
+          if (height < lowest) lowest = height;
+        }
+      }
+      // Come sul fianco: la base sta alla quota naturale piu' bassa, non al
+      // piano della banchina — l'edificio sorge dalla battigia e non la livella.
+      expect(record.baseZ).toBe(lowest);
+    }
+  });
+
   it('la banchina si spinge oltre la battigia, sopra l acqua', () => {
     // Sull'isola vera e non sulla fixture: il molo nasce dove la citta'
     // incontra il bassofondo, e una costa scritta a mano o lo mette sotto il
@@ -1522,7 +1543,7 @@ describe('Builder — isolati terrazzati', () => {
     }
   });
 
-  it('su un fianco la fila si spezza a gradoni invece di scavare', () => {
+  it('su un fianco la fila si spezza a gradoni e affonda nel pendio', () => {
     const terrain = hillside();
     const { records } = grow(terrain, 1337, 20, [[64, 64]], 80);
 
@@ -1532,18 +1553,16 @@ describe('Builder — isolati terrazzati', () => {
     expect(ids.size).toBeGreaterThan(1);
 
     for (const record of records) {
-      let highest = 0;
+      let lowest = Number.POSITIVE_INFINITY;
       for (let dy = 0; dy < record.footprint; dy++) {
         for (let dx = 0; dx < record.footprint; dx++) {
           const height = terrain.heightAt(record.x + dx, record.y + dy);
-          // Si riempie e non si scava: nessuna colonna sta sopra il piano.
-          expect(height).toBeLessThanOrEqual(record.baseZ);
-          if (height > highest) highest = height;
+          if (height < lowest) lowest = height;
         }
       }
-      // E il riempimento che l'aggregazione aggiunge resta dentro il suo tetto:
-      // e' il numero che tiene il membro dentro il budget di chunk.
-      expect(record.baseZ - highest).toBeLessThanOrEqual(CLUSTER.maxJoinFill);
+      // Si affonda e non si riempie: la base sta alla quota piu' bassa
+      // dell'impronta, e nessun cumulo di terra solleva la casa.
+      expect(record.baseZ).toBe(lowest);
     }
   });
 

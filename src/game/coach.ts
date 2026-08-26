@@ -193,8 +193,8 @@ function connectionsSuggestion(context: CoachContext): CoachSuggestion | null {
     return {
       id: 'coach-ferry-pair',
       tier: 'connections',
-      title: 'A pier is not a line',
-      message: 'A Ferry only pays off in pairs. Place a second terminal on the far shore, far enough that the crossing is a crossing — then the line opens and both sides get happier.',
+      title: 'Place a second Ferry',
+      message: 'A Ferry only pays off in pairs. Place a second Ferry terminal on the opposite coast: the line opens and both sides get happier.',
       highlight: catalystAnchor(state, 'ferry'),
       grow: null,
     };
@@ -213,10 +213,10 @@ function identitySuggestion(context: CoachContext): CoachSuggestion | null {
   if (hasIdentity) return null;
 
   return {
-    id: 'coach-identity',
-    tier: 'identity',
-    title: 'Give the city an identity',
-    message: 'Growth and connections are in place, but the city has no character. Place a University (or another identity landmark): it anchors a civic district no growth catalyst builds.',
+      id: 'coach-identity',
+      tier: 'identity',
+      title: 'Give the city an identity',
+      message: 'Growth and connections are in place, but the city has no character. Place a University beside your Park or Transport: together they open a campus quarter that no growth catalyst builds.',
     highlight: null,
     grow: null,
   };
@@ -233,13 +233,17 @@ function districtSuggestion(context: CoachContext): CoachSuggestion | null {
       id: 'coach-overlap',
       tier: 'district',
       title: 'Overlap your fields',
-      message: 'Nobody zones anything in this city. Where two influence fields overlap, a block starts hosting two uses at once — a shop under the flats. Place your next catalyst so its reach touches an existing one.',
+      message: 'Nobody zones anything in this city. Where two influence fields overlap, a block starts hosting two uses at once — a shop under the flats. Place a catalyst so its field overlaps the Market or Factory.',
       highlight: null,
       grow: null,
     };
   }
 
-  return pairSuggestion(context);
+  // Una coppia si propone solo a chi ha gia' imparato a sovrapporre: prima di
+  // aver visto un uso misto, «metti X accanto a Y» e' la stessa lezione con un
+  // nome in piu', e i due consigli si contenderebbero la riga.
+  if (mixed > 0) return pairSuggestion(context);
+  return null;
 }
 
 /**
@@ -311,7 +315,7 @@ function skylineSuggestion(context: CoachContext): CoachSuggestion | null {
     id: 'coach-skyline',
     tier: 'skyline',
     title: 'Raise the center',
-    message: 'Your tallest tower is below what the core allows. Concentrate your catalysts so their fields overlap: it is the only way a block earns the core tier, and with it the height.',
+    message: 'Your tallest tower is below what the core allows. Place catalysts so their fields overlap the center: a block only earns the core tier — and its height — where two fields touch.',
     highlight: null,
     grow: null,
   };
@@ -344,7 +348,7 @@ function aerialSuggestion(context: CoachContext): CoachSuggestion | null {
       id: 'coach-terrace',
       tier: 'aerial',
       title: 'Hang a floor off a tower',
-      message: 'Buildings are tall enough to carry a floor above the street. Choose the Terrace and hang it off a facade: it is the first piece of the city aloft.',
+      message: 'Buildings are tall enough to carry a floor above the street. Choose the Terrace and hang it off the facade of a tall building: it is the first piece of the city aloft.',
       highlight: null,
       grow: null,
     };
@@ -354,7 +358,7 @@ function aerialSuggestion(context: CoachContext): CoachSuggestion | null {
       id: 'coach-aerial-route',
       tier: 'aerial',
       title: 'Join the terraces',
-      message: 'Your terraces stand alone. Keep building aloft and facing one another: walkways will join them into an aerial network that crosses whole blocks.',
+      message: 'Your terraces stand alone. Hang another Terrace facing the first: facing terraces weave a walkway between them, and the network crosses whole blocks.',
       highlight: null,
       grow: null,
     };
@@ -364,7 +368,7 @@ function aerialSuggestion(context: CoachContext): CoachSuggestion | null {
       id: 'coach-lifts',
       tier: 'aerial',
       title: 'Reach the city above',
-      message: 'The city lives above the street, but nothing climbs to it. Keep the decks inhabited and lifts will rise to connect the levels.',
+      message: 'The city lives above the street, but nothing climbs to it. Build on your decks: inhabited decks raise lifts that connect the levels to the street.',
       highlight: null,
       grow: null,
     };
@@ -392,7 +396,7 @@ function arcologySuggestion(context: CoachContext): CoachSuggestion | null {
     id: 'coach-arcology',
     tier: 'arcology',
     title: 'The center is about to crown',
-    message: 'The core is dense and its towers have stopped growing: an arcology is about to crown the city. Keep the center built out to see it rise.',
+    message: 'The core is dense and its towers have stopped growing: an arcology is about to crown the city. Place more catalysts so their fields overlap the core, and it rises on its own.',
     highlight: null,
     grow: null,
   };

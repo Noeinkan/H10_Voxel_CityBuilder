@@ -787,8 +787,7 @@ export class GrowthScene {
   private refreshCoach(): void {
     const suggestion = coachSuggestion(this.buildCoachContext());
     this.suggestion = suggestion;
-    const next = cityCondition(this.state, this.healthyTicks, suggestion);
-    const now = this.state.tickCount;
+    const next = cityCondition(this.state, this.healthyTicks, suggestion);    const now = this.state.tickCount;
     const held = this.coach;
 
     if (held === null || sameCoachLine(held, next, suggestion)) {
@@ -822,7 +821,7 @@ export class GrowthScene {
   private buildCoachContext(): CoachContext {
     const stats = this.builder.stats;
     const hasArcology = stats.arcologies > 0;
-    const landmarks = this.coachLandmarks();
+    const scanned = this.scanLandmarks();
     return {
       state: this.state,
       tallestLevel: this.tallestLevel(),
@@ -831,7 +830,7 @@ export class GrowthScene {
       // La condizione dell'arcologia e' prossima quando il centro ha abbastanza
       // costruito ma non ancora saturo: e' il rifiuto `notCapped` del driver.
       arcologyNear: !hasArcology && stats.arcologyRefusal === 'notCapped',
-      hasAloftLandmark: this.hasAloftLandmark(),
+      hasAloftLandmark: scanned.hasAloftLandmark,
       aerial: {
         terraces: stats.terraces,
         routes: stats.routes,
@@ -841,33 +840,46 @@ export class GrowthScene {
       },
       spans: stats.spans,
       ropeways: stats.ropeways,
-      landmarks,
+      landmarks: scanned.landmarks,
     };
   }
 
-  /** I landmark non ancora al massimo, con gli edifici dentro il loro raggio. */
-  private coachLandmarks(): readonly CoachLandmark[] {
-    const out: CoachLandmark[] = [];
+  /**
+   * Una sola passata sul registry: i landmark non ancora al massimo, con gli
+   * edifici dentro il loro raggio, e se esiste gia' un landmark in quota.
+   *
+   * Gli stadi si ricavano con `landmarkOf`/`maxStageOf`/`countWithinRadius`, le
+   * stesse misure di `landmarkDriver.pass`: cosi' i numeri che il coach cita
+   * coincidono con quelli che fanno davvero avanzare il landmark. Il conteggio
+   * passa da `countWithinRadius` e non da `withinRadius().length`, che
+   * materializzerebbe un array per ogni landmark a ogni tick.
+   */
+  private scanLandmarks(): {
+    readonly landmarks: CoachLandmark[];
+    readonly hasAloftLandmark: boolean;
+  } {
+    const landmarks: CoachLandmark[] = [];
+    let hasAloftLandmark = false;
     for (const record of this.builder.registry.all) {
       const kind = record.landmark;
       if (kind === undefined) continue;
-      const recipe = landmarkOf(kind, record.landmarkForm);
-      if (recipe === null) continue;
-      if (record.level >= maxStageOf(recipe)) continue;
+      if (record.aloft === true) hasAloftLandmark = true;
 
+      const recipe = landmarkOf(kind, record.landmarkForm);
+      if (recipe === null || record.level >= maxStageOf(recipe)) continue;
       const catalyst = this.catalystOf(record, kind);
       if (catalyst === null) continue;
       const nextAt = recipe.stages[record.level + 1];
       if (nextAt === undefined) continue;
 
-      const nearby = this.builder.registry.withinRadius(
+      const nearby = this.builder.registry.countWithinRadius(
         catalyst.x,
         catalyst.y,
         catalystById(kind).radius,
-      ).length;
-      out.push({ kind, x: catalyst.x, y: catalyst.y, stage: record.level, nextAt, nearby });
+      );
+      landmarks.push({ kind, x: catalyst.x, y: catalyst.y, stage: record.level, nextAt, nearby });
     }
-    return out;
+    return { landmarks, hasAloftLandmark };
   }
 
   /** Il livello piu' alto raggiunto dal costruito, o zero su una citta' vuota. */
@@ -877,14 +889,6 @@ export class GrowthScene {
       if ((levels[level] ?? 0) > 0) return level;
     }
     return 0;
-  }
-
-  /** true se esiste gia' un landmark in quota (Skyport, giardino o transito da tetto). */
-  private hasAloftLandmark(): boolean {
-    for (const record of this.builder.registry.all) {
-      if (record.landmark !== undefined && record.aloft === true) return true;
-    }
-    return false;
   }
 
   private apply(result: ActionResult, successMessage: string): ActionResult {

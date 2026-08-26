@@ -114,7 +114,7 @@ function crisisTips(state: SimState): GameTip[] {
       id: 'budget-deficit',
       kind: 'crisis',
       title: 'Budget deficit',
-      message: 'Services cost more than your income. Shops are what pay for them, so let commerce grow — or switch on Austerity. No buildings will be lost.',
+      message: 'Services cost more than your income, and only shops pay for them. Place a Market so commerce can grow, or switch on Austerity. No buildings will be lost.',
     });
   }
 
@@ -123,7 +123,7 @@ function crisisTips(state: SimState): GameTip[] {
       id: 'unhappy-city',
       kind: 'crisis',
       title: 'Critical happiness',
-      message: 'The city is overcrowded or underserved. A Park raises civic life, shops raise it too by serving people — and more housing lowers the crowding that causes it.',
+      message: 'The city is overcrowded or underserved. Place a Park to raise civic life and a Market so shops serve people; more housing lowers the crowding that causes it.',
     });
   }
 
@@ -176,8 +176,8 @@ function bottleneckTips(state: SimState): GameTip[] {
     out.push({
       id: 'short-handed',
       kind: 'bottleneck',
-      title: 'Short of hands',
-      message: `Factories, shops and fields share one workforce, and it is only ${percent}% staffed — every one of them is producing that fraction. Let housing catch up before adding more industry.`,
+      title: 'Build more homes',
+      message: `Factories, shops and fields share one workforce, and it is only ${percent}% staffed — every one of them is producing that fraction. Build more homes: houses grow around your Market, so place another Market instead of more industry.`,
     });
   }
 
@@ -190,8 +190,8 @@ function bottleneckTips(state: SimState): GameTip[] {
     out.push({
       id: 'empty-shelves',
       kind: 'bottleneck',
-      title: 'Empty shelves',
-      message: 'Your shops are open with nothing to sell: commerce burns materials, and the warehouse is empty. A Factory is what stocks them — until then the shops earn nothing.',
+      title: 'Place a Factory',
+      message: 'Your shops are open with nothing to sell: commerce burns materials, and the warehouse is empty. Place a Factory to stock them — until then the shops earn nothing.',
     });
   }
 
@@ -203,8 +203,8 @@ function bottleneckTips(state: SimState): GameTip[] {
     out.push({
       id: 'countryside-behind',
       kind: 'bottleneck',
-      title: 'The countryside is behind',
-      message: `The city is eating well today, but it has outgrown its fields by about ${wanted} plots and the farms are still catching up. Growth from here will run the pantry down.`,
+      title: 'Plant more farms',
+      message: `The city is eating well today, but it has outgrown its fields by about ${wanted} plots. Plant more farms — or place a Greenhouse beside your Factory to grow hydroponic towers without farmland.`,
     });
   }
 

@@ -107,6 +107,12 @@ export function buildActionTip(action: HudAction): HudTip {
   if (action.typologies !== undefined && action.typologies.length > 0) {
     rows.push({ label: 'Grows', value: nameList(action.typologies) });
   }
+  // Gli stadi del monumento stanno sotto la forma che cresce: e' la quarta
+  // dimensione dell'effetto di un catalizzatore — influenza, coppie, resa e
+  // stadi — e si legge accanto alle tipologie che quel ruolo fa nascere.
+  if (action.stages !== undefined) {
+    for (const stage of action.stages) rows.push({ label: 'Grows', value: stage });
+  }
   // La coppia sta **prima** di «Only here», e l'ordine e' la catena: due campi
   // sovrapposti fanno un quartiere, e il quartiere apre le forme. Letta dopo,
   // la promessa arriverebbe di nuovo senza la sua condizione.

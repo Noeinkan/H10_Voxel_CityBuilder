@@ -952,6 +952,9 @@ export class GameHud {
     this.toast.textContent = condition?.title ?? this.model.message;
     this.toast.dataset.tone = condition?.tone ?? 'neutral';
     if (condition === null) delete this.toast.dataset.kind;
-    else this.toast.dataset.kind = 'condition';
+    // Il coach arriva come una condizione di kind `coach`: gli si da' il proprio
+    // dataset perche' lo stile lo distingua dal traguardo e dai colli di
+    // bottiglia, senza doverne cambiare il tono (che resta `objective`).
+    else this.toast.dataset.kind = condition.kind === 'coach' ? 'coach' : 'condition';
   }
 }
