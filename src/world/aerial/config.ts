@@ -1,4 +1,11 @@
 import { PALETTE_SLOTS } from '../../engine/paletteSlots';
+import { SCALE, minFootprintOf } from '../scale';
+
+/** Il modulo degli edifici: e' il tetto di sporto e di larghezza di cio' che sta in quota. */
+const MODULE = SCALE.moduleFootprint;
+
+/** Il nodo deve ospitare l'impronta minima: sotto, non ci si costruisce. */
+const NODE_SIDE = minFootprintOf();
 
 /**
  * Unica fonte di verita' dei numeri della citta' in quota.
@@ -132,9 +139,17 @@ export const AERIAL = {
      *
      * Il minimo e' tre, ed e' la domanda di `GRAMMAR.terraceMinRing` posta qui:
      * sotto, la pavimentazione mentirebbe e il parapetto sarebbe un bordo che
-     * nessuno legge come praticabile. Il massimo e' otto, l'impronta massima di un edificio:
-     * una mensola piu' profonda di cosi' non e' piu' un aggetto ma un edificio
-     * appeso, e a quel punto conviene che sia un edificio.
+     * nessuno legge come praticabile.
+     *
+     * **Il massimo e' microgeometria, e resta fisso.** Era `MODULE`, e con il
+     * raddoppio del modulo e' passato da otto a sedici: la forma «loggia» su un
+     * fronte da sedici usciva dodici per sedici, quattro volte l'area di prima,
+     * cioe' un altopiano verde grande quanto l'isolato — e ci usciva dal primo
+     * minuto. E' esattamente il caso che `scale.ts` dichiara di tenere fuori
+     * dalla scala («si scala solo la *struttura*»), ed e' anche il motivo per cui
+     * lo sbalzo degli edifici, in `GRAMMAR.maxOverhang`, e' rimasto fisso a due.
+     * La corsa continua invece a seguire la facciata, ed e' giusto: un fronte
+     * largo porta un balcone largo. E' la **profondita'** che fa la piattaforma.
      *
      * **Il massimo esiste anche per farsi le gambe.** Oltre `reach` la mensola
      * non sta piu' in piedi da sola, e `planDeck` le pianta un appoggio: e' cosi'
@@ -143,6 +158,22 @@ export const AERIAL = {
      */
     minOverhang: 3,
     maxOverhang: 8,
+
+    /**
+     * Lo sporto del **mensolone**, cioe' quello della fase delle megastrutture.
+     *
+     * **E' l'unico numero di questo dominio che ha due valori, e non e' una
+     * taratura: e' una fase.** Un aggetto profondo quanto il modulo non e' un
+     * balcone, e' un pezzo di suolo in quota — la lettura giusta quando la citta'
+     * sta tirando su le proprie arcologie, e la lettura sbagliata su un quartiere
+     * di case, dove la stessa mensola copre l'isolato che dovrebbe decorare.
+     *
+     * Chi decide quale dei due vale e' `AerialDriver.terraceOverhang`, e guarda
+     * una cosa sola: se un'arcologia e' stata fondata. Le mensole gia' posate
+     * restano quelle che erano, quindi il salto di scala si legge come una
+     * stratificazione della citta' invece che come un ritocco globale.
+     */
+    megaOverhang: MODULE,
 
     /**
      * Di quanto la parete d'attacco puo' essere rientrata dal filo dell'impronta.
@@ -268,22 +299,21 @@ export const AERIAL = {
      * Larghezza fino a cui un tratto si allarga invece di piegare.
      *
      * Due fronti sfalsati di poco non hanno bisogno di una zeta: il tratto si
-     * prende tutte e due le corse e diventa un viale in quota. Otto voxel sono
-     * l'impronta massima di un edificio — oltre, non e' piu' un percorso ma un
-     * impalcato, e per quello c'e' la mensola.
+     * prende tutte e due le corse e diventa un viale in quota. Il tetto e' il
+     * modulo degli edifici — oltre, non e' piu' un percorso ma un impalcato, e
+     * per quello c'e' la mensola.
      */
-    maxWidth: 8,
+    maxWidth: MODULE,
 
     /**
      * Lato di un nodo.
      *
-     * Sei voxel sono tre cubi: il minimo perche' l'incrocio di due tratti larghi
-     * quattro sia un luogo e non una piega. E' anche la soglia da cui il cuore di
-     * un impalcato diventa verde, e da cui `MIN_FOOTPRINT` ci sta dentro: sul
-     * nodo si puo' costruire, ed e' voluto — sono i pianerottoli abitati che
-     * tengono su una rete invece dei semplici gomiti.
+     * Il minimo perche' l'incrocio di due tratti larghi `walkWidth` sia un luogo
+     * e non una piega, e da cui l'impronta minima ci sta dentro: sul nodo si puo'
+     * costruire, ed e' voluto — sono i pianerottoli abitati che tengono su una
+     * rete invece dei semplici gomiti.
      */
-    nodeSide: 6,
+    nodeSide: NODE_SIDE,
 
     /**
      * Distanza minima e massima, in voxel, fra i due capi che un percorso lega.
@@ -371,10 +401,10 @@ export const AERIAL = {
      * incontra, e la rete restava a zero.
      *
      * Un percorso, a differenza di una mensola, non ha bisogno di stare sul
-     * piano della facciata: gli basta una parete su cui atterrare. Otto e'
-     * l'impronta massima, cioe' «ovunque dentro l'edificio».
+     * piano della facciata: gli basta una parete su cui atterrare. Il tetto e' il
+     * modulo degli edifici, cioe' «ovunque dentro l'edificio».
      */
-    maxRecess: 8,
+    maxRecess: MODULE,
   },
 
   /**
@@ -391,6 +421,17 @@ export const AERIAL = {
    * Quattro su dodici e' invece una soglia che si raggiunge presto e che
    * garantisce comunque un corpo: sotto, l'ospite e' una casupola, e una mensola
    * attaccata a una casupola e' piu' grande di lei.
+   *
+   * **Con `maxLevel` a venti e' diventata quattro su ventuno, e resta tre.** La
+   * tentazione era di renderla una frazione della scala — il commento qui sopra
+   * la chiama gia' «quattro su dodici» — ma un quarto la porta a cinque, e a
+   * cinque la rete in quota non nasce piu': su duecentodieci tick di citta' i
+   * percorsi passano da qualcuno a **zero**, perche' meno ospiti vuol dire meno
+   * mensole e meno coppie che si guardano. La soglia bassa e' la stessa misura
+   * che ha scartato la regola ovvia, e vale ancora.
+   *
+   * Che le mensole comparissero presto **e grandi** era un problema dello
+   * sporto, non di questa soglia: vedi `terrace.megaOverhang`.
    */
   minHostLevel: 3,
 
