@@ -144,9 +144,10 @@ export const BALANCE = {
         market: { cost: 120, strength: 210, radius: 55 },
         factory: { cost: 150, strength: 205, radius: 50 },
         park: { cost: 200, strength: 195, radius: 45 },
-        // Un quarto di turno per la crescita: un piazzale merci che serve
-        // negozi e officine e tiene l'industria vicina ai suoi clienti.
-        depot: { cost: 180, strength: 200, radius: 48 },
+        // La crescita che sfama: una serra produce cibo e riconverte l'industria
+        // vicina in torri idroponiche. Costa come la fabbrica perche' e' il suo
+        // gemello sull'altra risorsa — li' i materiali, qui il pasto.
+        greenhouse: { cost: 180, strength: 200, radius: 48 },
         power: { cost: 200, strength: 200, radius: 48 },
         school: { cost: 260, strength: 195, radius: 50 },
         port: { cost: 320, strength: 190, radius: 60 },
@@ -186,7 +187,10 @@ export const BALANCE = {
         market: { residential: 1, commercial: 1, industrial: 0, civic: 0.15 },
         factory: { residential: -0.2, commercial: 0.2, industrial: 1, civic: 0 },
         park: { residential: 0.7, commercial: 0.2, industrial: -0.35, civic: 1 },
-        depot: { residential: -0.2, commercial: 1, industrial: 0.65, civic: 0.15 },
+        // La serra non accende l'industria: la **converte**. A far nascere i
+        // capannoni che poi diventano torri idroponiche e' la fabbrica; qui le
+        // case si avvicinano al cibo e i negozi lo vendono.
+        greenhouse: { residential: 1, commercial: 0.4, industrial: 0, civic: 0.15 },
         power: { residential: -0.35, commercial: 0.25, industrial: 1, civic: 0 },
         school: { residential: 0.75, commercial: 0.25, industrial: -0.1, civic: 1 },
         port: { residential: 0, commercial: 0.7, industrial: 1, civic: 0 },
@@ -321,6 +325,17 @@ export const BALANCE = {
       population: 48,
     },
 
+    /**
+     * I landmark: monumenti che coronano una citta' gia' edificata.
+     *
+     * Piazzarne uno su una citta' vuota gettava sotto la struttura un terrapieno
+     * a scala di isolato — una mega-piattaforma di terra su niente. La soglia di
+     * edifici costruisce il «gia' edificata»: sotto, il landmark non si piazza.
+     */
+    landmark: {
+      requiredBuildings: 16,
+    },
+
     success: {
       population: 120,
       buildingsPerClass: 3,
@@ -346,7 +361,7 @@ export const BALANCE = {
       market: { density: 55, wealth: 105, accessibility: 45, satisfaction: 25, industry: 0 },
       factory: { density: 25, wealth: 35, accessibility: 25, satisfaction: -55, industry: 145 },
       park: { density: -25, wealth: 35, accessibility: 10, satisfaction: 145, industry: -20 },
-      depot: { density: 30, wealth: 40, accessibility: 120, satisfaction: -20, industry: 100 },
+      greenhouse: { density: 55, wealth: 45, accessibility: 35, satisfaction: 10, industry: 75 },
       power: { density: 30, wealth: 25, accessibility: 20, satisfaction: -65, industry: 150 },
       school: { density: 45, wealth: 70, accessibility: 40, satisfaction: 110, industry: -5 },
       port: { density: 30, wealth: 60, accessibility: 135, satisfaction: -20, industry: 85 },
@@ -434,6 +449,13 @@ export const BALANCE = {
        * si allontanano. E' la stessa promessa di prima — una torre e' rara e si
        * guadagna — detta con un numero che sta sotto il soffitto invece che
        * sopra.
+       *
+       * **La serra e' la terza porta, e la sola dentro la crescita.** Finche'
+       * `farming` chiedeva fabbrica o universita', il cibo verticale restava un
+       * lusso del gruppo identita'; una serra accanto a una fabbrica o a un
+       * mercato supera adesso le due soglie con soli ruoli di crescita. Da sola
+       * non basta — la sua densita' sta sotto 0,4 — quindi la torre resta una
+       * conquista e non un piazzamento.
        */
       farming: { density: 0.4, industry: 0.34 },
     },

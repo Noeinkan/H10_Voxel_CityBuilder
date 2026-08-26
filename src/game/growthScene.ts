@@ -27,7 +27,7 @@ import {
   type BuildingRecord,
   type ReadonlyBuildingRegistry,
 } from '../world/buildings/BuildingRegistry';
-import { hasFacadeForm } from '../world/landmarks/config';
+import { hasFacadeForm, landmarkOf, maxStageOf } from '../world/landmarks/config';
 import { createReachCost } from '../world/reachCost';
 import { StreetNetwork } from '../world/streets/StreetNetwork';
 import type { Facing } from '../world/streets/streetGrid';
@@ -65,6 +65,12 @@ import type { RopewayCable, RopewayRide } from '../world/buildings/ropewayDriver
 import { planRopewayRoutes } from '../world/traffic/ropewayRoutes';
 import { cityCondition, isSelfSufficient, type CityCondition } from './cityCondition';
 import { onboardingAllows, onboardingOf, type OnboardingState } from './onboarding';
+import {
+  coachSuggestion,
+  type CoachContext,
+  type CoachLandmark,
+  type CoachSuggestion,
+} from './coach';
 
 const TICK_RATE = 10;
 
@@ -96,6 +102,24 @@ const ALOFT_FAILURE: Readonly<Record<AloftRefusal, ActionFailure>> = {
 function roleOf(target: BuildingClass | CatalystId): CatalystId {
   return typeof target === 'number' ? defaultCatalystOfClass(target) : target;
 }
+
+/**
+ * Se la riga tenuta e quella nuova sono lo stesso argomento.
+ *
+ * **Il coach si confronta per id, il resto per titolo.** Lo stesso consiglio
+ * deve riscriversi con i numeri aggiornati — l'organico che sale mentre la riga
+ * lo cita — e due suggerimenti diversi possono pure condividere il titolo; un
+ * id stabile li distingue senza ambiguita'. Per le righe che il coach non
+ * produce vale il titolo, com'era prima.
+ */
+function sameCoachLine(
+  held: { readonly condition: CityCondition; readonly coachId: string | null },
+  next: CityCondition,
+  suggestion: CoachSuggestion | null,
+): boolean {
+  if (next.kind === 'coach') return held.coachId === (suggestion?.id ?? null);
+  return held.condition.title === next.title;
+}
 export interface GrowthStats {
   readonly ready: true;
   readonly tick: number;
@@ -114,6 +138,8 @@ export interface GrowthStats {
   readonly message: string;
   readonly onboarding: OnboardingState;
   readonly condition: CityCondition;
+  /** La rotta di sviluppo suggerita adesso: alimenta toast e artefatti in-world. */
+  readonly coach: CoachSuggestion | null;
   readonly unlockedSectors: readonly string[];
 }
 
@@ -137,7 +163,14 @@ export class GrowthScene {
    * fra due consigli ogni secondo e mezzo, che e' il modo piu' rapido per
    * rendere illeggibile un testo giusto.
    */
-  private coach: { readonly condition: CityCondition; readonly sinceTick: number } | null = null;
+  private coach: {
+    readonly condition: CityCondition;
+    readonly sinceTick: number;
+    /** Id del suggerimento dietro la condizione, per la permanenza: null senza coach. */
+    readonly coachId: string | null;
+  } | null = null;
+  /** La rotta suggerita adesso, ricalcolata a ogni tick e mostrata dall'overlay. */
+  private suggestion: CoachSuggestion | null = null;
   private readonly unlocked = new Set<string>();
   private message = 'Choose a catalyst and place it on the island.';
   private clearanceMemo: { readonly key: string; readonly site: LandmarkSite } | null = null;
@@ -733,7 +766,9 @@ export class GrowthScene {
       onboarding: onboardingOf(this.state),
       // Quella tenuta, non quella di adesso: fra un tick e l'altro sono la
       // stessa cosa, e prima del primo tick non c'e' ancora niente da tenere.
-      condition: this.coach?.condition ?? cityCondition(this.state, this.healthyTicks),
+      condition: this.coach?.condition
+        ?? cityCondition(this.state, this.healthyTicks, this.suggestion),
+      coach: this.suggestion,
       unlockedSectors: [...this.unlocked],
     };
   }
@@ -750,12 +785,18 @@ export class GrowthScene {
    * che spegne il tremolio fra un collo di bottiglia e un'opportunita'.
    */
   private refreshCoach(): void {
-    const next = cityCondition(this.state, this.healthyTicks);
+    const suggestion = coachSuggestion(this.buildCoachContext());
+    this.suggestion = suggestion;
+    const next = cityCondition(this.state, this.healthyTicks, suggestion);
     const now = this.state.tickCount;
     const held = this.coach;
 
-    if (held === null || held.condition.title === next.title) {
-      this.coach = { condition: next, sinceTick: held?.sinceTick ?? now };
+    if (held === null || sameCoachLine(held, next, suggestion)) {
+      this.coach = {
+        condition: next,
+        sinceTick: held?.sinceTick ?? now,
+        coachId: suggestion?.id ?? null,
+      };
       return;
     }
 
@@ -763,8 +804,87 @@ export class GrowthScene {
       next.kind === 'onboarding' ||
       held.condition.kind === 'crisis';
     if (urgent || now - held.sinceTick >= COACH_DWELL_TICKS) {
-      this.coach = { condition: next, sinceTick: now };
+      this.coach = {
+        condition: next,
+        sinceTick: now,
+        coachId: suggestion?.id ?? null,
+      };
     }
+  }
+
+  /**
+   * I fatti del mondo che il coach legge, raccolti una volta per tick.
+   *
+   * Gli stadi si ricavano con `landmarkOf`/`maxStageOf`/`withinRadius`, le
+   * stesse funzioni di `landmarkDriver.pass`: cosi' i numeri che il coach cita
+   * coincidono con quelli che fanno davvero avanzare il landmark.
+   */
+  private buildCoachContext(): CoachContext {
+    const stats = this.builder.stats;
+    const hasArcology = stats.arcologies > 0;
+    const landmarks = this.coachLandmarks();
+    return {
+      state: this.state,
+      tallestLevel: this.tallestLevel(),
+      hasArcology,
+      clearing: stats.clearing > 0,
+      // La condizione dell'arcologia e' prossima quando il centro ha abbastanza
+      // costruito ma non ancora saturo: e' il rifiuto `notCapped` del driver.
+      arcologyNear: !hasArcology && stats.arcologyRefusal === 'notCapped',
+      hasAloftLandmark: this.hasAloftLandmark(),
+      aerial: {
+        terraces: stats.terraces,
+        routes: stats.routes,
+        lifts: stats.lifts,
+        piers: stats.piers,
+        stacked: stats.stacked,
+      },
+      spans: stats.spans,
+      ropeways: stats.ropeways,
+      landmarks,
+    };
+  }
+
+  /** I landmark non ancora al massimo, con gli edifici dentro il loro raggio. */
+  private coachLandmarks(): readonly CoachLandmark[] {
+    const out: CoachLandmark[] = [];
+    for (const record of this.builder.registry.all) {
+      const kind = record.landmark;
+      if (kind === undefined) continue;
+      const recipe = landmarkOf(kind, record.landmarkForm);
+      if (recipe === null) continue;
+      if (record.level >= maxStageOf(recipe)) continue;
+
+      const catalyst = this.catalystOf(record, kind);
+      if (catalyst === null) continue;
+      const nextAt = recipe.stages[record.level + 1];
+      if (nextAt === undefined) continue;
+
+      const nearby = this.builder.registry.withinRadius(
+        catalyst.x,
+        catalyst.y,
+        catalystById(kind).radius,
+      ).length;
+      out.push({ kind, x: catalyst.x, y: catalyst.y, stage: record.level, nextAt, nearby });
+    }
+    return out;
+  }
+
+  /** Il livello piu' alto raggiunto dal costruito, o zero su una citta' vuota. */
+  private tallestLevel(): number {
+    const levels = this.builder.registry.levelHistogram;
+    for (let level = levels.length - 1; level >= 0; level--) {
+      if ((levels[level] ?? 0) > 0) return level;
+    }
+    return 0;
+  }
+
+  /** true se esiste gia' un landmark in quota (Skyport, giardino o transito da tetto). */
+  private hasAloftLandmark(): boolean {
+    for (const record of this.builder.registry.all) {
+      if (record.landmark !== undefined && record.aloft === true) return true;
+    }
+    return false;
   }
 
   private apply(result: ActionResult, successMessage: string): ActionResult {

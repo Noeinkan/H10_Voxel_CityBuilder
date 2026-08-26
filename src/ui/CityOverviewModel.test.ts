@@ -113,6 +113,7 @@ function stats(): GrowthStats {
     message: 'Ready.',
     onboarding: onboardingOf(state),
     condition: cityCondition(state, 5),
+    coach: null,
     unlockedSectors: ['north', 'south'],
   };
 }

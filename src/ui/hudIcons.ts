@@ -3,7 +3,7 @@ import type { CatalystId } from '../sim/catalysts';
 export type HudIcon =
   | 'funds' | 'population' | 'food' | 'materials' | 'satisfaction'
   | 'residential' | 'production' | 'civic' | 'expansion' | 'terrace' | 'ropeway' | 'policies' | 'city'
-  | 'market' | 'factory' | 'park' | 'depot' | 'power' | 'school' | 'port' | 'ferry' | 'airport' | 'transport' | 'radio' | 'lighthouse'
+  | 'market' | 'factory' | 'park' | 'greenhouse' | 'power' | 'school' | 'port' | 'ferry' | 'airport' | 'transport' | 'radio' | 'lighthouse'
   | 'university' | 'monument' | 'museum' | 'cathedral' | 'theatre' | 'stadium'
   | 'pause' | 'play' | 'theme' | 'view' | 'swatch' | 'help' | 'close'
   | 'daylight' | 'sun' | 'moon' | 'clouds' | 'cloudsOff';
@@ -35,10 +35,10 @@ const PATHS: Readonly<Record<HudIcon, string>> = {
   market: '<path d="M4 10h16l-2-6H6l-2 6ZM5 10v10h14V10M9 20v-6h6v6M4 10c1 2 3 2 4 0 1 2 3 2 4 0 1 2 3 2 4 0 1 2 3 2 4 0"/>',
   factory: '<path d="M3 21V9l6 3V9l6 3V5h4v16H3ZM7 17h2M12 17h2M17 17h2"/>',
   park: '<path d="M12 21v-7M7 14h10l-2-3h2l-5-8-5 8h2l-2 3ZM5 21h14"/>',
-  // Un capannone con la serranda rigata, e non l'ennesima cassa: `materials` e'
-  // gia' un cubo di merce, e il deposito e' il **posto** dove quella merce sta.
-  // Le due righe nel vano sono cio' che lo distingue da una casa con la porta.
-  depot: '<path d="M3 21V9l9-5 9 5v12M3 21h18M7.5 21v-8h9v8M7.5 16h9M7.5 18.5h9"/>',
+  // Una casa di vetro a falda con i montanti in vista: e' la serra, e le righe
+  // dei vetri sono cio' che la distingue da un capannone pieno. `factory` ha il
+  // tetto a dente di sega, qui il colmo e' uno solo.
+  greenhouse: '<path d="M3 20V9l2-3h14l2 3v11H3ZM7 20V9M12 20V9M17 20V9M3 13h18M3 16h18"/>',
   port: '<path d="M12 3v14M8 7h8M5 12c0 5 3 8 7 9 4-1 7-4 7-9M3 12h4M17 12h4"/>',
     // Uno scafo con la cabina e l'onda sotto: il porto e' l'ancora, cioe' lo
       // scalo, e il traghetto e' la barca che ci passa. Le due tessere stanno

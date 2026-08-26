@@ -2172,6 +2172,7 @@ function actionFailureLabel(reason: ActionFailure): string {
     // gia' sbagliato per le policy. La cifra esatta sta nel tooltip di ciascuna
     // azione, che la prende dal proprio listino.
     'population-required': 'The city needs more residents for this.',
+    'landmark-requires-city': 'This monument crowns an established city. Build more first.',
     'already-active': 'This action is already active.',
     'already-unlocked': 'This sector is already unlocked.',
     'onboarding-order': 'Complete the current tutorial step first.',

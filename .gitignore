@@ -24,3 +24,6 @@ $RECYCLE.BIN/
 
 # Screenshot del kit (generati, non di progetto)
 .shots/
+
+# Stato locale di Kilo (piani, sessioni)
+.kilo/

@@ -108,12 +108,15 @@
 .view-bar[hidden] { display: none; }
 .view-bar-eyebrow { color: var(--hud-muted); font-size: var(--text-micro); font-weight: 900; letter-spacing: .1em; text-transform: uppercase; }
 .view-bar-label { font-size: var(--text-xl); font-weight: 800; }
-.view-bar-gesture { margin: var(--space-05) 0 0; color: var(--hud-gesture); font: 700 var(--text-xs)/1.35 var(--hud-font); }
-.view-bar-keys { display: grid; gap: var(--space-05); margin-top: var(--space-2); padding-top: var(--space-2); border-top: 1px solid var(--hud-line); }
+/* Il gesto e i capitasti sono la parte della targa che costa quota: li accende e
+   li spegne il gradino di densita' del rail, che e' l'unico a sapere se ci stia
+   ancora. Il nome della vista, sopra, non li segue mai: quello resta. */
+.view-bar-gesture { display: var(--rail-view-detail, block); margin: var(--space-05) 0 0; color: var(--hud-gesture); font: 700 var(--text-xs)/1.35 var(--hud-font); }
+.view-bar-keys { display: var(--rail-view-detail, grid); gap: var(--space-05); margin-top: var(--space-2); padding-top: var(--space-2); border-top: 1px solid var(--hud-line); }
 .view-bar-key { display: flex; align-items: center; gap: var(--space-15); color: var(--hud-muted); font-size: var(--text-xs); line-height: 1.35; }
 .view-bar-caps { display: flex; flex: 0 0 calc(46 * var(--hud-unit)); gap: var(--space-05); }
 .view-bar kbd { min-width: calc(16 * var(--hud-unit)); padding: var(--space-05) var(--space-1); border: 1px solid var(--hud-line); border-bottom-width: 2px; border-radius: var(--radius-sm); color: var(--hud-ink); background: var(--hud-key); font: 700 var(--text-2xs)/1.35 var(--hud-mono); text-align: center; }
-.view-bar-actions { display: flex; flex-direction: column; gap: var(--space-1); margin-top: var(--space-2); }
+.view-bar-actions { display: flex; flex-direction: var(--rail-view-actions, column); gap: var(--space-1); margin-top: var(--space-2); }
 .view-bar-button { flex: 1; padding: var(--space-15) var(--space-15); border: 1px solid var(--hud-line); border-radius: var(--radius-sm); color: var(--hud-ink); background: var(--hud-raised); font: 800 var(--text-xs)/1.2 var(--hud-font); cursor: pointer; }
 .view-bar-button:hover { border-color: rgba(63,110,97,.48); background: rgba(255,255,255,.95); }
 .view-bar-button:focus-visible { outline: 3px solid var(--hud-accent-shape); outline-offset: 1px; }

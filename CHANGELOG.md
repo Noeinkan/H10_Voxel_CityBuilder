@@ -11,6 +11,23 @@ coincide con il messaggio di commit.
 
 ---
 
+## In corso — La serra: il landmark che produce cibo
+
+- **Il deposito cede il posto alla serra.** Nel gruppo crescita il `depot` —
+  ridondante con fabbrica e mercato, e con `logistics` gia' aperto da
+  porto/transito/aeroporto — diventa `greenhouse`: un landmark di vetro che porta
+  l'agricoltura dentro la citta'. La serra apre la specializzazione `farming`
+  accanto a una fabbrica o a un mercato (`SPECIALIZATION_ROLES.farming` ora e'
+  `['factory', 'university', 'greenhouse']`), quindi le torri idroponiche non
+  chiedono piu' un campus e il cibo verticale diventa una scelta del gruppo
+  crescita. Da sola non basta: la sua densita' resta sotto 0,4, e la torre
+  continua a essere una conquista e non un piazzamento.
+- **La serra e' la cintura fertile.** Il `FarmDriver` pianta i lotti per primi
+  attorno alle serre (`FARMS.fertileSearchDepth`) invece che solo a spirale dal
+  centro dell'isola: il landmark decide *dove* comincia la campagna, e solo dopo
+  si ripiega sul giro storico. Senza serre il comportamento non cambia, quindi la
+  partita iniziale resta intatta.
+
 ## In corso — Landmark nuovi: firma, stadi e microgeometrie
 
 - **Le sei ricette nuove hanno una firma e delle microgeometrie.** Centrali,

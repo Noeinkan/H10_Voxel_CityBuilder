@@ -12,6 +12,7 @@ import {
   LEVEL_CAPS,
   MAX_FOOTPRINT,
 } from './config';
+import { assembleBuilding } from './assemble';
 import { generateBuilding, startLevel } from './generate';
 import { anchoredVoxel, STAMP_EMPTY, bandCount, solidCount, type VoxelStamp } from './stamp';
 import { SURFACE_KIND } from '../visualBlock';
@@ -256,17 +257,26 @@ describe('generateBuilding', () => {
     expect(checked).toBeGreaterThan(0);
   });
 
-  it('produce uno skyline piu alto del rilievo, e una punta a matita', () => {
+  it('produce uno skyline piu alto del rilievo, con la punta sull assemblaggio', () => {
+    // Il singolo non raggiunge piu' il lato pieno del modulo: satura a meta'
+    // modulo, e la sua altezza (che non dipende dall'impronta) resta il picco
+    // dello skyline. Il 16x16 e oltre — con il giusto rapporto altezza/base —
+    // nasce dal podio di `assembleBuilding`, non dal modulo singolo.
+    const mid = MAX_FOOTPRINT / 2 + MAX_FOOTPRINT / 4;
     let tallest = 0;
     for (let seed = 0; seed < 64; seed++) {
-      const stamp = generateBuilding({ class: ALL_CLASSES[3], level: BUILDER.maxLevel, seed });
-      tallest = Math.max(tallest, stamp.sizeZ);
-      expect(stamp.sizeX).toBe(MAX_FOOTPRINT);
+      const single = generateBuilding({ class: ALL_CLASSES[3], level: BUILDER.maxLevel, seed });
+      tallest = Math.max(tallest, single.sizeZ);
+      expect(single.sizeX).toBe(mid);
+      expect(single.sizeX).toBeLessThan(MAX_FOOTPRINT);
+    }
+    for (let seed = 0; seed < 64; seed++) {
+      const assembled = assembleBuilding({ class: ALL_CLASSES[3], level: BUILDER.maxLevel, seed }, 20);
       // **La punta resta una punta, non un filo.** Il tetto qui e' un rapporto
       // altezza/lato, non un numero: oltre venti a uno non e' piu' una guglia,
-      // e' un filo. Il modulo raddoppiato allarga la base, quindi il tetto
-      // regge anche una torre piu' alta di quella della scala precedente.
-      expect(stamp.sizeZ / stamp.sizeX).toBeLessThanOrEqual(20);
+      // e' un filo. L'assemblaggio allarga la base oltre il modulo, quindi il
+      // podio regge una torre piu' alta di quella della scala precedente.
+      expect(assembled.sizeZ / assembled.sizeX).toBeLessThanOrEqual(20);
     }
     // La torre di punta supera il rilievo che la ospita, e da inquadratura
     // d'insieme la citta' smette di stare sotto la collina. Il tetto e il

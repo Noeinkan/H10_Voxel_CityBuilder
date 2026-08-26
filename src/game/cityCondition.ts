@@ -1,11 +1,12 @@
 import { ALL_CLASSES, BALANCE, fedShareOf, type SimState } from '../sim';
 import { onboardingOf } from './onboarding';
-import { evergreenTip, urgentTip, TIP_TURN_TICKS } from './tips';
+import { urgentTip } from './tips';
+import type { CoachSuggestion } from './coach';
 
 export type CityConditionTone = 'objective' | 'warning' | 'success';
 
 export interface CityCondition {
-  readonly kind: 'onboarding' | 'development' | 'crisis' | 'success';
+  readonly kind: 'onboarding' | 'development' | 'crisis' | 'coach' | 'success';
   readonly tone: CityConditionTone;
   readonly title: string;
   readonly message: string;
@@ -36,18 +37,21 @@ export function isSelfSufficient(state: SimState): boolean {
 /**
  * Condizione direzionale, ordinata dalla crisi piu' recuperabile al successo.
  *
- * **Le crisi e i consigli sono lo stesso elenco.** Le tre condizioni che stavano
- * scritte qui — cibo, fondi, soddisfazione — vivono adesso in `tips.ts` insieme
- * ai colli di bottiglia, alle opportunita' e alle meccaniche, perche' erano gia'
- * dei consigli: la differenza fra «la citta' non mangia» e «la citta' e' a corto
- * di braccia» e' l'urgenza, non la natura. Tenerne tre qui e il resto altrove
- * avrebbe voluto dire due voci che si contendono la stessa riga di schermo.
+ * **La scala della voce.** Il tutorial per primo, poi la salute — crisi e colli
+ * di bottiglia, che sono l'unica cosa rimasta in `tips.ts` — poi il **coach**, la
+ * rotta di sviluppo che e' sempre presente finche' la citta' ha qualcosa da
+ * diventare, e solo quando il coach tace il traguardo. Un traguardo e' sempre lo
+ * stesso e si puo' rileggere quando si vuole; una direzione e' vera adesso e
+ * smettera' di esserlo appena il giocatore la segue.
  *
- * Qui resta cio' che questa funzione ha sempre fatto: **decidere di cosa si
- * parla**, cioe' l'ordine fra il tutorial, l'urgenza, il traguardo e la regola
- * da raccontare quando non succede niente.
+ * Il coach arriva gia' calcolato: `cityCondition` resta pura e decide solo
+ * l'ordine, mentre a valutare la rotta e' `growthScene` una volta per tick.
  */
-export function cityCondition(state: SimState, stableTicks: number): CityCondition {
+export function cityCondition(
+  state: SimState,
+  stableTicks: number,
+  coach: CoachSuggestion | null = null,
+): CityCondition {
   const onboarding = onboardingOf(state);
   if (onboarding.step !== 'complete') {
     return {
@@ -65,25 +69,25 @@ export function cityCondition(state: SimState, stableTicks: number): CityConditi
     return { kind: 'crisis', tone: 'warning', title: urgent.title, message: urgent.message };
   }
 
+  // I colli di bottiglia passano davanti al coach e al traguardo: «l'organico e'
+  // al 42%» e' vero adesso e smettera' di esserlo, mentre la rotta puo' aspettare.
+  if (urgent !== null) {
+    return { kind: 'development', tone: 'warning', title: urgent.title, message: urgent.message };
+  }
+
+  // Il coach e' la direzione: sempre presente, finche' la citta' ha un prossimo
+  // passo da fare.
+  if (coach !== null) {
+    return { kind: 'coach', tone: 'objective', title: coach.title, message: coach.message };
+  }
+
+  // Il traguardo compare solo quando il coach non ha piu' niente da dire.
   if (stableTicks >= BALANCE.gameplay.success.stableTicks) {
     return {
       kind: 'success',
       tone: 'success',
       title: 'Self-sufficient city',
       message: 'Population, resources, and services are stable. Expand or aim for a more ambitious skyline.',
-    };
-  }
-
-  // Colli di bottiglia e opportunita' passano davanti al traguardo, e non e' una
-  // svista: il traguardo e' sempre lo stesso e si puo' rileggere quando si vuole,
-  // mentre «l'organico e' al 42%» e' vero adesso e smettera' di esserlo. La riga
-  // di schermo e' una sola, e va a cio' che cambia.
-  if (urgent !== null) {
-    return {
-      kind: 'development',
-      tone: urgent.kind === 'bottleneck' ? 'warning' : 'objective',
-      title: urgent.title,
-      message: urgent.message,
     };
   }
 
@@ -102,32 +106,11 @@ export function cityCondition(state: SimState, stableTicks: number): CityConditi
     };
   }
 
-  // **La citta' che va bene e' quella a cui si puo' insegnare qualcosa.** Qui non
-  // c'e' niente da riparare e il traguardo e' un'attesa a orologio: e' l'unico
-  // momento in cui una regola che il gioco non dice da nessuna parte ha spazio
-  // per essere letta. Si alterna al conto alla rovescia invece di sostituirlo,
-  // perche' quanto manca resta la domanda che il giocatore si fa.
   const seconds = Math.ceil((BALANCE.gameplay.success.stableTicks - stableTicks) / 10);
-  const goal = {
-    kind: 'development' as const,
-    tone: 'objective' as const,
-    title: 'Goal · self-sufficient city',
-    message: `Keep food, materials, and funds balanced for ${seconds} seconds.`,
-  };
-
-  // I turni pari sono del traguardo, i dispari della regola — e l'indice della
-  // regola conta i **soli** turni dispari, o meta' dell'elenco non uscirebbe mai.
-  // Il conto passa dal `tickCount` e non da un timer, quindi la riga non cambia
-  // mentre il gioco e' in pausa: che e' proprio quando la si sta leggendo.
-  const turn = Math.floor(state.tickCount / TIP_TURN_TICKS);
-  if (turn % 2 === 0) return goal;
-
-  const evergreen = evergreenTip(state, Math.floor(turn / 2));
-  if (evergreen === null) return goal;
   return {
     kind: 'development',
     tone: 'objective',
-    title: evergreen.title,
-    message: evergreen.message,
+    title: 'Goal · self-sufficient city',
+    message: `Keep food, materials, and funds balanced for ${seconds} seconds.`,
   };
 }

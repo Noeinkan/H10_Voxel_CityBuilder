@@ -16,8 +16,8 @@ export type { LevelCaps };
  * di `maxLevel`, e dimenticarne uno faceva leggere `undefined` — con il difetto
  * documentato piu' sotto su `startLevel`. Ora sono `levelCapsOf` e
  * `startLevelCdfOf` di `src/world/scale.ts`: la massa di un livello segue le
- * manopole da sola, e la silhouette resta quella di sempre (l'impronta satura
- * per prima, poi le fasce continuano a salire).
+ * manopole da sola — l'impronta degli edifici ordinari satura a meta' modulo,
+ * mai al lato pieno, e le fasce continuano a salire.
  */
 export const LEVEL_CAPS: readonly LevelCaps[] = levelCapsOf();
 

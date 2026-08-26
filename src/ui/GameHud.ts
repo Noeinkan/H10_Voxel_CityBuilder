@@ -19,6 +19,7 @@ import { PoliciesDrawer } from './PoliciesDrawer';
 import { drawerHeader } from './drawerBits';
 import { ResourceBar } from './ResourceBar';
 import { ResourceTrend } from './ResourceTrend';
+import { watchRailDensity } from './railDensity';
 import {
   barButton,
   cursorLine,
@@ -104,6 +105,7 @@ const FAILURE_LABEL: Readonly<Record<ActionFailure, string>> = {
   'insufficient-funds': 'You do not have enough funds yet.',
   'insufficient-materials': 'You do not have enough materials yet. Grow industry first.',
   'population-required': 'The city must grow before you can do this.',
+  'landmark-requires-city': 'This monument crowns an established city. Build more first.',
   'already-active': 'This policy is already active.',
   'already-unlocked': 'This sector is already unlocked. Choose another one.',
   'onboarding-order': 'Follow the tutorial order: residential, production, civic.',
@@ -265,6 +267,15 @@ export class GameHud {
     const rails = new ResizeObserver(publishRails);
     rails.observe(this.railLeft);
     requestAnimationFrame(publishRails);
+
+    // E quanto stretto debba stare, che e' l'altra meta' della stessa domanda:
+    // la larghezza la decide quante tessere ci sono, la quota decide quanto si
+    // possa mostrare di ognuna. Nessuna soglia in pixel qui dentro — il perche'
+    // sta in `railDensity.ts`, insieme al ciclo che misura. L'HUD vive quanto la
+    // pagina, come i due osservatori qui sopra: la funzione che stacca il ciclo
+    // c'e' per chi lo montera' altrove, non perche' qui serva chiamarla.
+    watchRailDensity(this.railLeft);
+
     this.paint(this.model);
   }
 

@@ -10,6 +10,17 @@ import {
 } from '../sim';
 import { BALANCE } from '../sim/balance';
 import { cityCondition, isSelfSufficient } from './cityCondition';
+import type { CoachSuggestion } from './coach';
+
+/** Un coach qualunque: al test serve la priorita', non il contenuto. */
+const COACH: CoachSuggestion = {
+  id: 'test-coach',
+  tier: 'district',
+  title: 'Test coach',
+  message: 'Do the thing.',
+  highlight: null,
+  grow: null,
+};
 
 describe('condizioni della città', () => {
   it('mostra prima il tutorial e poi una crisi con una via di recupero', () => {
@@ -45,6 +56,37 @@ describe('condizioni della città', () => {
     expect(isSelfSufficient(state)).toBe(false);
     expect(cityCondition(state, 0).kind).toBe('crisis');
     expect(cityCondition(state, 0).title).toBe('Food shortage');
+  });
+
+  it('ordina onboarding → crisi → collo di bottiglia → coach → successo', () => {
+    // Il tutorial vince su tutto.
+    expect(cityCondition(createSimState(), 0, COACH).kind).toBe('onboarding');
+
+    // La crisi passa davanti al coach.
+    const starving = {
+      ...completeCity(),
+      food: { stock: 0, delta: -2 },
+      population: { stock: 60, delta: -1 },
+    };
+    expect(cityCondition(starving, 0, COACH).kind).toBe('crisis');
+
+    // Il collo di bottiglia passa davanti al coach: «l'organico e' al 40%» e'
+    // vero adesso, la rotta puo' aspettare.
+    let bottleneck = completeCity();
+    bottleneck = addBuilding(bottleneck, { x: 0, y: 20, class: BUILDING_CLASS.industrial });
+    bottleneck = { ...bottleneck, staffing: 0.4, population: { stock: 60, delta: 1 } };
+    const held = cityCondition(bottleneck, 0, COACH);
+    expect(held.kind).toBe('development');
+    expect(held.tone).toBe('warning');
+
+    // Con la salute a posto la riga va al coach.
+    expect(cityCondition(selfSufficientCity(), 0, COACH).kind).toBe('coach');
+
+    // Il traguardo compare solo quando il coach tace.
+    expect(cityCondition(
+      selfSufficientCity(),
+      BALANCE.gameplay.success.stableTicks,
+    ).kind).toBe('success');
   });
 });
 

@@ -74,11 +74,11 @@ describe('cosa potrebbe crescere qui', () => {
   it('manda a piazzare quando manca il ruolo, non ad aspettare', () => {
     // Un porto: l'uso dominante e' industriale, quindi la forma in prospettiva e'
     // la torre idroponica — che pretende l'agricoltura, di cui pero' nessuno dei
-    // due ruoli e' in raggio. Aspettare che una soglia salga non servirebbe, e la
+    // tre ruoli e' in raggio. Aspettare che una soglia salga non servirebbe, e la
     // riga deve nominare un gesto invece di un numero.
     const become = valueOf(prospectRows(column(profileOf(['port']))), 'Could become');
 
-    expect(become).toBe('farming — needs factory or university in range');
+    expect(become).toBe('farming — needs factory or university or greenhouse in range');
   });
 
   /**
@@ -191,5 +191,13 @@ describe('cosa ne ricava la citta', () => {
     for (const catalyst of ['transport', 'monument', 'port'] as const) {
       expect(yieldLine(catalyst)!.split(', then ')).toHaveLength(2);
     }
+  });
+
+  it('la serra rende cibo, non materiali', () => {
+    // La serra non accende l'industria: la converte. La sua resa e' il cibo dei
+    // campi e delle torri idroponiche, e non passa dai favori perche' il cibo non
+    // e' un uso urbano.
+    expect(yieldLine('greenhouse')).toContain('food');
+    expect(yieldLine('greenhouse')).not.toContain('materials');
   });
 });

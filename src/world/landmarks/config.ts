@@ -885,101 +885,88 @@ export const LANDMARKS: Partial<Record<CatalystId, LandmarkRecipe>> = {
     ],
   },
 
-  // Un piazzale merci: due capannoni paralleli e una gru a portale sul varco
-  // che li separa. E' la crescita che si riconosce dal movimento — niente fumo
-  // di ciminiera ne' falde, ma una macchina ferma sopra le merci che sposta.
-  depot: {
-    kind: 'depot',
-    span: [16, 12],
+  // Una serra: un capannone di vetro a falda, con le vasche d'acqua e le aiole
+  // che la nutrono. E' la crescita che si riconosce dal **vetro** — nessun altro
+  // ruolo del gruppo e' una scatola trasparente — e dal colmo, che la separa da
+  // un capannone di lamiera. Produce cibo, non merce: al posto della gru c'e'
+  // l'acqua, e al posto del piazzale le aiole.
+  greenhouse: {
+    kind: 'greenhouse',
+    span: [14, 12],
     height: 14,
-    anchor: [8, 6],
+    anchor: [7, 6],
     apron: 4,
     stages: [0, 6, 16, 32],
     parts: [
       [
-        box(PART.deck, 0, 0, 16, 12, 0, 1, PALETTE_SLOTS.asphaltDark, SURFACE_KIND.utility),
-        box(PART.shell, 0, 0, 12, 5, 1, 6, PALETTE_SLOTS.metalDark, SURFACE_KIND.industrial, {
+        box(PART.deck, 0, 0, 14, 12, 0, 1, PALETTE_SLOTS.stone, SURFACE_KIND.utility),
+        box(PART.shell, 1, 1, 12, 10, 1, 6, PALETTE_SLOTS.glassPale, SURFACE_KIND.industrial, {
           cap: PALETTE_SLOTS.metalBrass,
         }),
-        box(PART.deck, 0, 0, 12, 5, 7, 1, PALETTE_SLOTS.metalDark, SURFACE_KIND.roofTech),
-      ],
-      [
-        box(PART.shell, 0, 7, 12, 5, 1, 5, PALETTE_SLOTS.stoneDeep, SURFACE_KIND.industrial, {
-          cap: PALETTE_SLOTS.metalDark,
-        }),
-        box(PART.deck, 0, 7, 12, 5, 6, 1, PALETTE_SLOTS.metalDark, SURFACE_KIND.roofTech),
-        box(PART.mast, 2, 5, 2, 2, 1, 7, PALETTE_SLOTS.metalRust, SURFACE_KIND.industrial, {
-          cap: PALETTE_SLOTS.metalBrass,
-        }),
-        box(PART.mast, 10, 5, 2, 2, 1, 7, PALETTE_SLOTS.metalRust, SURFACE_KIND.industrial, {
-          cap: PALETTE_SLOTS.metalBrass,
-        }),
-        box(PART.boom, 2, 5, 10, 2, 8, 2, PALETTE_SLOTS.metalRust, SURFACE_KIND.industrial, {
+        box(PART.pitch, 1, 1, 12, 10, 7, 4, PALETTE_SLOTS.glassPale, SURFACE_KIND.industrial, {
+          step: 1,
           cap: PALETTE_SLOTS.metalBrass,
         }),
       ],
       [
-        box(PART.slab, 12, 0, 2, 2, 1, 3, PALETTE_SLOTS.concrete, SURFACE_KIND.industrial, {
+        box(PART.slab, 0, 0, 3, 3, 1, 6, PALETTE_SLOTS.concrete, SURFACE_KIND.industrial, {
+          chamfer: 1,
           cap: PALETTE_SLOTS.concretePale,
         }),
-        box(PART.slab, 12, 3, 2, 2, 1, 3, PALETTE_SLOTS.concrete, SURFACE_KIND.industrial, {
+        box(PART.slab, 0, 3, 2, 2, 1, 4, PALETTE_SLOTS.concrete, SURFACE_KIND.industrial, {
+          chamfer: 1,
           cap: PALETTE_SLOTS.concretePale,
-        }),
-        box(PART.slab, 14, 0, 2, 2, 1, 4, PALETTE_SLOTS.metalDark, SURFACE_KIND.industrial, {
-          cap: PALETTE_SLOTS.metalBrass,
         }),
       ],
       [
-        box(PART.shell, 12, 7, 4, 4, 1, 6, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.civic, {
-          cap: PALETTE_SLOTS.glassPale,
+        box(PART.shell, 11, 0, 3, 2, 1, 4, PALETTE_SLOTS.brick, SURFACE_KIND.habitat, {
+          cap: PALETTE_SLOTS.roofPale,
         }),
-        box(PART.deck, 12, 7, 4, 4, 7, 1, PALETTE_SLOTS.roofWhite, SURFACE_KIND.roofTech),
-        entrance(15, 8, 1, 2, 4),
-        signBand(12, 8, 1, 2, 3),
+        box(PART.deck, 11, 0, 3, 2, 5, 1, PALETTE_SLOTS.roofPale, SURFACE_KIND.roofTech),
+        box(PART.slab, 1, 0, 3, 1, 0, 1, PALETTE_SLOTS.grassDark, SURFACE_KIND.plain),
+        box(PART.slab, 6, 0, 3, 1, 0, 1, PALETTE_SLOTS.grassDark, SURFACE_KIND.plain),
+        box(PART.slab, 1, 11, 3, 1, 0, 1, PALETTE_SLOTS.grassDark, SURFACE_KIND.plain),
+        box(PART.slab, 6, 11, 3, 1, 0, 1, PALETTE_SLOTS.grassDark, SURFACE_KIND.plain),
+      ],
+      [
+        entrance(1, 4, 1, 2, 4),
+        signBand(1, 3, 1, 4, 5),
+        box(PART.mast, 5, 5, 2, 2, 11, 3, PALETTE_SLOTS.metalRust, SURFACE_KIND.industrial, {
+          cap: PALETTE_SLOTS.metalGold,
+        }),
       ],
     ],
     variants: [
-      // Container in piu' sul tetto e un palo luce sul varco ovest.
+      // Vivaio: aiole rialzate lungo il retro, dove le piantine stanno fuori.
       {
-        name: 'container',
+        name: 'vivaio',
         parts: [
           [],
-          [box(PART.slab, 2, 7, 2, 2, 7, 3, PALETTE_SLOTS.metalDark, SURFACE_KIND.industrial, {
-            cap: PALETTE_SLOTS.metalBrass,
-          })],
-          [box(PART.mast, 0, 5, 2, 2, 1, 6, PALETTE_SLOTS.metalRust, SURFACE_KIND.industrial, {
-            cap: PALETTE_SLOTS.metalGold,
-          })],
+          [],
+          [box(PART.slab, 0, 11, 6, 1, 1, 2, PALETTE_SLOTS.grassDark, SURFACE_KIND.plain)],
           [],
         ],
       },
-      // Silo, silo: il granaio in versione merci, con i tamburi smussati.
+      // Acquaponica: una vasca alta sul bordo est, il serbatoio di ricircolo.
       {
-        name: 'silos',
+        name: 'acquaponica',
         parts: [
           [],
-          [box(PART.slab, 2, 1, 3, 3, 8, 4, PALETTE_SLOTS.concrete, SURFACE_KIND.industrial, {
-            chamfer: 1,
+          [box(PART.slab, 13, 3, 1, 4, 1, 6, PALETTE_SLOTS.concrete, SURFACE_KIND.industrial, {
             cap: PALETTE_SLOTS.concretePale,
           })],
-          [box(PART.slab, 5, 1, 3, 3, 8, 4, PALETTE_SLOTS.concrete, SURFACE_KIND.industrial, {
-            chamfer: 1,
-            cap: PALETTE_SLOTS.concretePale,
-          })],
+          [],
           [],
         ],
       },
-      // Officina: una falda sul capannone nord e un fanale acceso sul varco.
+      // Ricerca: un condotto acceso che esce dal colmo, la serra che lavora di notte.
       {
-        name: 'officina',
+        name: 'ricerca',
         parts: [
           [],
-          [box(PART.pitch, 0, 0, 12, 5, 8, 4, PALETTE_SLOTS.roofPale, SURFACE_KIND.roofTech, {
-            step: 1,
-            cap: PALETTE_SLOTS.metalBrass,
-          })],
           [],
-          [box(PART.mast, 11, 6, 1, 1, 1, 3, PALETTE_SLOTS.glassPale, SURFACE_KIND.luminous)],
+          [],
+          [box(PART.mast, 13, 9, 1, 1, 1, 4, PALETTE_SLOTS.glassPale, SURFACE_KIND.luminous)],
         ],
       },
     ],

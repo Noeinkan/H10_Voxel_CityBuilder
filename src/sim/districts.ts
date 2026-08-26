@@ -185,13 +185,13 @@ const SPECIALIZATION_ROLES: Readonly<Record<Specialization, readonly CatalystId[
   office: ['market', 'transport'],
   tourism: ['monument', 'park', 'port', 'museum'],
   research: ['university'],
-  logistics: ['port', 'transport', 'airport', 'depot'],
+  logistics: ['port', 'transport', 'airport'],
   entertainment: ['monument', 'market', 'park'],
   // La torre idroponica e' industria convertita, quindi nasce dove l'industria
-  // c'e' gia'. L'universita' e' l'altra meta': coltivare in verticale e' una
-  // tecnica prima che un mestiere, e un campus accanto e' cio' che la spiega
-  // senza aggiungere un albero tecnologico che questo gioco non ha.
-  farming: ['factory', 'university'],
+  // c'e' gia'. L'universita' la spiega come tecnica, la serra la rende una
+  // scelta del gruppo crescita: il cibo verticale non deve piu' aspettare un
+  // campus, basta volerlo coltivare accanto a una fabbrica o a un mercato.
+  farming: ['factory', 'university', 'greenhouse'],
 };
 
 /**

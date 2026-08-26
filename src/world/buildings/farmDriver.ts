@@ -205,47 +205,93 @@ export class FarmDriver {
     return -1 - Math.abs(hashCoords(FARMS.salt, plot.x, plot.y) % 0x7f_ff_ff);
   }
 
-  /** Pianta fino a `wanted` lotti, cercando dal cursore in avanti. */
+  /**
+   * Prova a piantare un lotto su un angolo di reticolo, se il terreno lo regge.
+   *
+   * Torna lo stato aggiornato o `null`. E' la coda di prima estratta perche' la
+   * ricerca ha adesso due partenze — la serra e il centro dell'isola — e due
+   * copie del ciclo divergerebbero alla prima condizione aggiunta.
+   */
+  private tryPlant(
+    corner: { readonly x: number; readonly y: number },
+    state: SimState,
+    next: SimState,
+  ): SimState | null {
+    if (this.registry.has(corner.x, corner.y)) return null;
+
+    const plan = planPlot({
+      x: corner.x,
+      y: corner.y,
+      seed: this.ctx.seed,
+      // Il mandato dei giardini di quartiere si legge dallo stato e non dal
+      // profilo locale: qui non c'e' un edificio di cui decidere la forma, c'e'
+      // un pezzo di campagna, e la lista dei mandati e' globale.
+      preferOrchard: state.charters.includes('communityGardens'),
+      biomeAt: (x, y) => this.ctx.terrain.biomeAt(x, y),
+      slopeAt: (x, y) => this.ctx.terrain.slopeAt(x, y),
+      occupied: (x, y) => this.ctx.registry.isOccupied(x, y),
+      builtNear: (x, y) => this.ctx.registry.countWithinRadius(x, y, FARMS.edgeRadius),
+    });
+    if (!plan.ok) return null;
+
+    for (const paint of paintPlot(plan.plot)) this.ctx.surface.enqueue(paint);
+    // Gli alberi di un frutteto passano dalla coda della crescita come ogni
+    // altro volume: sono un migliaio di voxel, e scriverli nel tick che li
+    // decide farebbe cadere proprio il frame in cui la campagna compare.
+    if (plan.plot.kind === PLOT_KIND.orchard) {
+      this.ctx.growth.enqueue(
+        this.ownerIdOf(plan.plot),
+        { x: plan.plot.x, y: plan.plot.y, z: this.ctx.terrain.heightAt(plan.plot.x, plan.plot.y) },
+        orchardStamp(plan.plot, this.ctx.seed, this.paved),
+      );
+    }
+    this.registry.add(plan.plot);
+    return addFarm(next, kindOf(plan.plot));
+  }
+
+  /**
+   * Le serre in piedi, portate sul reticolo dei lotti.
+   *
+   * La simulazione le conosce come catalizzatori `greenhouse`; qui conta solo la
+   * loro posizione, da cui riparte la spirale della cintura fertile. Senza serre
+   * la lista e' vuota e la campagna torna a nascere dal centro dell'isola.
+   */
+  private greenhousesOf(state: SimState): readonly { readonly x: number; readonly y: number }[] {
+    return state.catalysts
+      .filter((catalyst) => catalyst.kind === 'greenhouse')
+      .map((catalyst) => ({
+        x: Math.round(catalyst.x / FARMS.lattice) * FARMS.lattice,
+        y: Math.round(catalyst.y / FARMS.lattice) * FARMS.lattice,
+      }));
+  }
+
+  /** Pianta fino a `wanted` lotti, cercando prima attorno alle serre. */
   private plantPass(state: SimState, wanted: number): SimState {
     let next = state;
     let planted = 0;
-    const centre = this.centre;
+
+    // La cintura fertile: con una serra in piedi i lotti nascono per primi nel
+    // suo raggio — e' il gesto che da' alla serra un posto sulla mappa — e solo
+    // dopo si ripiega sul giro storico dal centro dell'isola.
+    for (const greenhouse of this.greenhousesOf(state)) {
+      if (planted >= wanted) break;
+      for (let step = 0; step < FARMS.fertileSearchDepth; step++) {
+        if (planted >= wanted) break;
+        const after = this.tryPlant(this.candidateAt(step, greenhouse), state, next);
+        if (after !== null) {
+          next = after;
+          planted++;
+        }
+      }
+    }
 
     for (let step = 0; step < FARMS.searchDepth; step++) {
       if (planted >= wanted) break;
-
-      const corner = this.candidateAt(this.cursor + step, centre);
-      if (this.registry.has(corner.x, corner.y)) continue;
-
-      const plan = planPlot({
-        x: corner.x,
-        y: corner.y,
-        seed: this.ctx.seed,
-        // Il mandato dei giardini di quartiere si legge dallo stato e non dal
-        // profilo locale: qui non c'e' un edificio di cui decidere la forma, c'e'
-        // un pezzo di campagna, e la lista dei mandati e' globale.
-        preferOrchard: state.charters.includes('communityGardens'),
-        biomeAt: (x, y) => this.ctx.terrain.biomeAt(x, y),
-        slopeAt: (x, y) => this.ctx.terrain.slopeAt(x, y),
-        occupied: (x, y) => this.ctx.registry.isOccupied(x, y),
-        builtNear: (x, y) => this.ctx.registry.countWithinRadius(x, y, FARMS.edgeRadius),
-      });
-      if (!plan.ok) continue;
-
-      for (const paint of paintPlot(plan.plot)) this.ctx.surface.enqueue(paint);
-      // Gli alberi di un frutteto passano dalla coda della crescita come ogni
-      // altro volume: sono un migliaio di voxel, e scriverli nel tick che li
-      // decide farebbe cadere proprio il frame in cui la campagna compare.
-      if (plan.plot.kind === PLOT_KIND.orchard) {
-        this.ctx.growth.enqueue(
-          this.ownerIdOf(plan.plot),
-          { x: plan.plot.x, y: plan.plot.y, z: this.ctx.terrain.heightAt(plan.plot.x, plan.plot.y) },
-          orchardStamp(plan.plot, this.ctx.seed, this.paved),
-        );
+      const after = this.tryPlant(this.candidateAt(this.cursor + step, this.centre), state, next);
+      if (after !== null) {
+        next = after;
+        planted++;
       }
-      this.registry.add(plan.plot);
-      next = addFarm(next, kindOf(plan.plot));
-      planted++;
     }
 
     this.cursor += FARMS.searchDepth;

@@ -17,6 +17,8 @@ import {
   type TradeMode,
 } from '../sim';
 import { buildWeightOf, GROUND, groundKindOf, type GroundKind } from '../world/grading/grade';
+import { landmarkOf } from '../world/landmarks/config';
+import { SCALE } from '../world/scale';
 import { siteRefusal } from '../world/sites/siteRules';
 import type { TerraceRefusal } from '../world/aerial/terracePlan';
 import type { RopewayRefusal } from '../world/ropeway/ropewayPlan';
@@ -40,6 +42,7 @@ export type ActionFailure =
   | 'insufficient-funds'
   | 'insufficient-materials'
   | 'population-required'
+  | 'landmark-requires-city'
   | 'already-active'
   | 'already-unlocked'
   | 'onboarding-order'
@@ -184,6 +187,17 @@ export function catalystFailure(
     if (Math.max(Math.abs(catalyst.x - x), Math.abs(catalyst.y - y)) < minDistance) {
       return 'too-close';
     }
+  }
+
+  // Un landmark che supera il modulo corona una citta' gia' edificata: su una
+  // citta' vuota il terrapieno che il piazzamento getta sotto la struttura
+  // sarebbe una mega-piattaforma di terra su niente. I monumenti piccoli — un
+  // mercato, una fabbrica — restano liberi, perche' la citta' nasce da loro.
+  const recipe = landmarkOf(definition.id);
+  if (recipe !== null &&
+    Math.max(recipe.span[0], recipe.span[1]) > SCALE.moduleFootprint &&
+    state.buildings.length < BALANCE.gameplay.landmark.requiredBuildings) {
+    return 'landmark-requires-city';
   }
 
   if (state.funds.stock < site.cost) return 'insufficient-funds';

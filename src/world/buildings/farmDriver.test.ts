@@ -4,6 +4,7 @@ import {
   BUILDING_CLASS,
   FARM_KIND,
   addCatalyst,
+  catalystById,
   createSimState,
   type SimState,
 } from '../../sim';
@@ -84,6 +85,40 @@ describe('FarmDriver — la campagna nasce fuori dalla citta’', () => {
     builder.onTick(createSimState());
 
     expect(builder.stats.farmPlots).toBe(0);
+  });
+
+  it('la serra e’ la cintura fertile: i lotti nascono attorno a lei, non al centro', () => {
+    const world = new VoxelWorld();
+    const terrain = testTerrain({ chunksX: 8, chunksY: 8 });
+    const builder = new Builder(world, terrain, 1337);
+
+    const greenhouse = catalystById('greenhouse');
+    const state = addCatalyst(hungryCity(), {
+      x: 120,
+      y: 120,
+      kind: 'greenhouse',
+      class: greenhouse.class,
+      strength: greenhouse.strength,
+      radius: greenhouse.radius,
+    });
+
+    builder.onTick(state);
+    drain(builder);
+
+    const marks = coverMarks(world);
+    expect(marks.length).toBeGreaterThan(0);
+
+    // Il baricentro dei solchi deve cadere vicino alla serra, non vicino
+    // all'origine da cui partiva la spirale prima della cintura fertile.
+    let sx = 0;
+    let sy = 0;
+    for (const mark of marks) {
+      sx += mark.x;
+      sy += mark.y;
+    }
+    const cx = sx / marks.length;
+    const cy = sy / marks.length;
+    expect((cx - 120) ** 2 + (cy - 120) ** 2).toBeLessThan(cx ** 2 + cy ** 2);
   });
 
   /**

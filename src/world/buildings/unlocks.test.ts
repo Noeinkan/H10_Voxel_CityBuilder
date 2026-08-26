@@ -5,16 +5,16 @@ import { unlocksFor } from './unlocks';
 
 describe('cosa sblocca un ruolo', () => {
   it('nomina la torre idroponica solo dove l agricoltura puo nascere', () => {
-    // I due ruoli che aprono l'agricoltura la promettono; nessun altro lo fa, ed
+    // I tre ruoli che aprono l'agricoltura la promettono; nessun altro lo fa, ed
     // e' il punto: prima la torre compariva accanto a ogni ruolo che favorisse
     // l'industria, cioe' anche dove non sarebbe mai arrivata.
-    for (const id of ['factory', 'university'] as const) {
+    for (const id of ['factory', 'university', 'greenhouse'] as const) {
       const farming = unlocksFor(id).find((entry) => entry.specialization === 'farming');
       expect(farming?.typologies).toContain('Hydroponic tower');
     }
 
     for (const catalyst of CATALYSTS) {
-      if (catalyst.id === 'factory' || catalyst.id === 'university') continue;
+      if (catalyst.id === 'factory' || catalyst.id === 'university' || catalyst.id === 'greenhouse') continue;
       const promised = unlocksFor(catalyst.id).flatMap((entry) => entry.typologies);
       expect(promised).not.toContain('Hydroponic tower');
     }

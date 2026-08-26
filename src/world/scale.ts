@@ -109,12 +109,12 @@ export function terraceMinRingOf(module: number = SCALE.moduleFootprint): number
 /**
  * Il lato sotto cui una fascia non viene svuotata in una corte.
  *
- * Tre quarti del modulo: la corte svuota il cuore solo dove il vuoto interno
- * resta un cortile leggibile e non un pozzo. Sotto, il perimetro non lascia
- * spazio a un cuore.
+ * Meta' del modulo, cioe' il lato minimo di un edificio ordinario: sotto non
+ * c'e' una casa ma un palo, e non c'e' un cuore da svuotare. La corte si apre
+ * cosi' su ogni casa, senza chiedere il lato pieno che spetta agli assemblaggi.
  */
 export function courtyardMinSideOf(module: number = SCALE.moduleFootprint): number {
-  return Math.round((module * 3) / 4);
+  return module / 2;
 }
 
 /**
@@ -143,11 +143,12 @@ export interface LevelCaps {
 /**
  * La massa di ogni livello, generata dalle manopole.
  *
- * **Riproduce la silhouette della tabella scritta a mano**: l'impronta satura
- * per prima (raggiunge `module` intorno a meta' scala), poi le fasce continuano
- * a salire con un'accelerazione in cima che da' alle torri la loro altezza. Con
- * `module` 8 e `maxLevel` 12 restituisce esattamente le tredici voci di prima:
- * la derivazione e' fedele, non una nuova taratura.
+ * **L'impronta degli edifici ordinari satura a `mid`, mai al lato pieno del
+ * modulo**: il lato pieno e' riservato agli assemblaggi su podio (solo oltre il
+ * modulo `buildStamp` passa a `assembleBuilding`), quindi un singolo
+ * `generateBuilding` non produce mai un 16x16 — quel segnale visivo appartiene
+ * alle megastrutture. Le fasce continuano a salire con un'accelerazione in cima
+ * che da' alle torri la loro altezza.
  */
 export function levelCapsOf(
   module: number = SCALE.moduleFootprint,
@@ -155,11 +156,10 @@ export function levelCapsOf(
 ): readonly LevelCaps[] {
   const min = module / 2;
   const mid = min + module / 4;
-  // L'impronta massima satura presto, la minima a meta' scala, cosi' le torri
-  // alte nascono gia' al massimo dell'impronta ma i livelli bassi restano vari.
-  const maxFull = Math.max(1, Math.round(V / 6));
-  const minMid = Math.max(maxFull, Math.round(V / 4));
-  const minFull = Math.max(minMid, Math.round(V / 2));
+  // Il lato pieno del modulo resta agli assemblaggi: il tetto d'impronta satura
+  // a `mid` e la minima ci arriva a meta' scala, cosi' i livelli bassi restano
+  // vari ma nessun volume singolo raggiunge il modulo.
+  const minMid = Math.max(1, Math.round(V / 4));
   // Le fasce salgono un livello alla volta fin qui, poi accelerano in cima.
   const linearEnd = Math.max(1, Math.round((V * 5) / 6));
 
@@ -167,8 +167,8 @@ export function levelCapsOf(
   let prevMinBands = 0;
   let prevMaxBands = 0;
   for (let level = 0; level <= V; level++) {
-    const maxFootprint = level >= maxFull ? module : mid;
-    const minFootprint = level >= minFull ? module : level >= minMid ? mid : min;
+    const maxFootprint = mid;
+    const minFootprint = level >= minMid ? mid : min;
     let minBands: number;
     let maxBands: number;
     if (level <= linearEnd) {

@@ -74,34 +74,37 @@ describe('levelCapsOf', () => {
     }
   });
 
-  it('in cima l impronta e satura e le fasce sono le piu alte', () => {
+  it('in cima l impronta satura a meta modulo, mai al lato pieno', () => {
     for (const { module, maxLevel } of PAIRS) {
       const top = levelCapsOf(module, maxLevel)[maxLevel];
-      expect(top.minFootprint).toBe(module);
-      expect(top.maxFootprint).toBe(module);
+      const mid = module / 2 + module / 4;
+      expect(top.minFootprint).toBe(mid);
+      expect(top.maxFootprint).toBe(mid);
+      expect(top.maxFootprint).toBeLessThan(module);
       const below = levelCapsOf(module, maxLevel)[maxLevel - 1];
       expect(top.minBands).toBeGreaterThan(below.minBands);
       expect(top.maxBands).toBeGreaterThan(below.maxBands);
     }
   });
 
-  it('riproduce la silhouette storica con le manopole di partenza', () => {
-    // La derivazione e' fedele, non una nuova taratura: con modulo 8 e 12 livelli
-    // deve restituire esattamente le tredici voci scritte a mano.
+  it('con le manopole di partenza l impronta ordinaria satura a meta modulo', () => {
+    // Il lato pieno del modulo resta agli assemblaggi: con modulo 8 e 12 livelli
+    // il tetto d'impronta satura a 6 (meta modulo) e mai a 8. Le fasce non
+    // cambiano rispetto alla tabella storica.
     expect(levelCapsOf(8, 12)).toEqual([
       { minFootprint: 4, maxFootprint: 6, minBands: 1, maxBands: 2 },
       { minFootprint: 4, maxFootprint: 6, minBands: 2, maxBands: 3 },
-      { minFootprint: 4, maxFootprint: 8, minBands: 3, maxBands: 4 },
-      { minFootprint: 6, maxFootprint: 8, minBands: 4, maxBands: 5 },
-      { minFootprint: 6, maxFootprint: 8, minBands: 5, maxBands: 6 },
-      { minFootprint: 6, maxFootprint: 8, minBands: 6, maxBands: 7 },
-      { minFootprint: 8, maxFootprint: 8, minBands: 7, maxBands: 8 },
-      { minFootprint: 8, maxFootprint: 8, minBands: 8, maxBands: 9 },
-      { minFootprint: 8, maxFootprint: 8, minBands: 9, maxBands: 10 },
-      { minFootprint: 8, maxFootprint: 8, minBands: 10, maxBands: 11 },
-      { minFootprint: 8, maxFootprint: 8, minBands: 11, maxBands: 12 },
-      { minFootprint: 8, maxFootprint: 8, minBands: 13, maxBands: 15 },
-      { minFootprint: 8, maxFootprint: 8, minBands: 16, maxBands: 19 },
+      { minFootprint: 4, maxFootprint: 6, minBands: 3, maxBands: 4 },
+      { minFootprint: 6, maxFootprint: 6, minBands: 4, maxBands: 5 },
+      { minFootprint: 6, maxFootprint: 6, minBands: 5, maxBands: 6 },
+      { minFootprint: 6, maxFootprint: 6, minBands: 6, maxBands: 7 },
+      { minFootprint: 6, maxFootprint: 6, minBands: 7, maxBands: 8 },
+      { minFootprint: 6, maxFootprint: 6, minBands: 8, maxBands: 9 },
+      { minFootprint: 6, maxFootprint: 6, minBands: 9, maxBands: 10 },
+      { minFootprint: 6, maxFootprint: 6, minBands: 10, maxBands: 11 },
+      { minFootprint: 6, maxFootprint: 6, minBands: 11, maxBands: 12 },
+      { minFootprint: 6, maxFootprint: 6, minBands: 13, maxBands: 15 },
+      { minFootprint: 6, maxFootprint: 6, minBands: 16, maxBands: 19 },
     ]);
   });
 });

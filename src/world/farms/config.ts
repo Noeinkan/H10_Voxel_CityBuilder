@@ -180,6 +180,18 @@ export const FARMS = {
    */
   searchRings: Math.ceil((540 / PLOT_SIDE - 1) / 2),
 
+  /**
+   * Quanti candidati sondare attorno a ogni serra prima di ripiegare sul giro
+   * dell'isola.
+   *
+   * La serra e' la cintura fertile: i lotti nascono per primi nel suo raggio, e
+   * questo numero e' il budget di quella ricerca. Vale quanto i due anelli piu'
+   * stretti della spirale — fino a un paio di lotti in fila — perche' la serra
+   * non deve reclutare l'intera campagna: dice *dove cominciare*, non *dove
+   * finire*.
+   */
+  fertileSearchDepth: 24,
+
   /** Sale del seme dei lotti: li tiene scorrelati da alberi, copertura e stile. */
   salt: 0x5f_a4_11_03,
 } as const;

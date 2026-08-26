@@ -466,6 +466,7 @@ function stats(
     message: 'Ready.',
     onboarding: onboardingOf(state),
     condition: cityCondition(state, 0),
+    coach: null,
     unlockedSectors: [],
   };
 }

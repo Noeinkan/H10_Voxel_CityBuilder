@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { BALANCE, BUILDING_CLASS, catalystById, createSimState, defaultCatalystOfClass } from '../sim';
+import {
+  BALANCE,
+  BUILDING_CLASS,
+  addBuilding,
+  catalystById,
+  createSimState,
+  defaultCatalystOfClass,
+  type SimState,
+} from '../sim';
 import { testTerrain } from '../sim/testTerrain';
 import { BUILD_WEIGHT, GRADING } from '../world/grading/config';
 import { TERRAIN } from '../world/terrain/config';
@@ -33,6 +41,15 @@ function coast() {
     chunksY: 2,
     heightAt: (x) => (x < SHORE_X ? TERRAIN.seaLevel - 6 : TERRAIN.beachMaxHeight + 6),
   });
+}
+
+/** Una citta' con abbastanza edifici perche' i monumenti grandi si possano piazzare. */
+function grownCity(funds = 2_000): SimState {
+  let state = createSimState();
+  for (let i = 0; i < BALANCE.gameplay.landmark.requiredBuildings; i++) {
+    state = addBuilding(state, { x: i * 3, y: 60, class: BUILDING_CLASS.residential });
+  }
+  return { ...state, funds: { stock: funds, delta: 0 } };
 }
 
 describe('azioni di gioco', () => {
@@ -98,7 +115,7 @@ describe('azioni di gioco', () => {
 
   it('permette ruoli diversi della stessa classe e blocca policy incompatibili', () => {
     const map = coast();
-    const port = placeCatalyst(createSimState(), map, SHORE_X, 32, 'port');
+    const port = placeCatalyst(grownCity(), map, SHORE_X, 32, 'port');
     if (!port.success) throw new Error('porto fixture non valido');
     expect(placeCatalyst(port.state, map, SHORE_X + 2, 34, 'factory').success).toBe(true);
 
@@ -118,7 +135,7 @@ describe('azioni di gioco', () => {
 
   it('il porto vuole il fronte mare, e lo dice prima del click', () => {
     const map = coast();
-    const state = { ...createSimState(), funds: { stock: 2_000, delta: 0 } };
+    const state = grownCity();
     const inland = SHORE_X + 20;
 
     expect(catalystFailure(state, map, inland, 32, 'port')).toBe('needs-coast');
@@ -132,9 +149,19 @@ describe('azioni di gioco', () => {
     expect(catalystFailure(state, map, inland, 32, 'market')).toBeNull();
   });
 
+  it('il monumento grande aspetta una citta edificata, il piccolo no', () => {
+    const map = coast();
+    const funded = { ...createSimState(), funds: { stock: 2_000, delta: 0 } };
+    // Un porto — ingombro oltre il modulo — non si piazza su una citta' vuota:
+    // il terrapieno che getterebbe sarebbe una mega-piattaforma su niente.
+    expect(catalystFailure(funded, map, SHORE_X, 32, 'port')).toBe('landmark-requires-city');
+    // Un mercato — ingombro dentro il modulo — resta libero anche all'inizio.
+    expect(catalystFailure(funded, map, SHORE_X + 20, 32, 'market')).toBeNull();
+  });
+
   it('l’aeroporto vuole una superficie, che la battigia non e’', () => {
     const map = coast();
-    const state = { ...createSimState(), funds: { stock: 2_000, delta: 0 } };
+    const state = grownCity();
 
     expect(catalystFailure(state, map, SHORE_X, 32, 'airport')).toBe('needs-open-ground');
     expect(catalystFailure(state, map, SHORE_X + 20, 32, 'airport')).toBeNull();
@@ -143,13 +170,7 @@ describe('azioni di gioco', () => {
   it('il vincolo di sito precede la distanza e i fondi', () => {
     const map = coast();
     const inland = SHORE_X + 20;
-    const first = placeCatalyst(
-      { ...createSimState(), funds: { stock: 2_000, delta: 0 } },
-      map,
-      SHORE_X,
-      32,
-      'port',
-    );
+    const first = placeCatalyst(grownCity(), map, SHORE_X, 32, 'port');
     if (!first.success) throw new Error('porto fixture non valido');
 
     // Senza fondi e a due passi da un altro porto: il motivo che si legge resta

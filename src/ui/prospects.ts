@@ -112,6 +112,10 @@ const CLASS_YIELD: Readonly<Record<BuildingClass, string>> = {
  * influenza da `CatalystDefinition.favours`.
  */
 export function yieldLine(id: CatalystId): string | null {
+  // La serra e' l'unico ruolo che produce cibo **davvero**: i campi crescono
+  // attorno a lei e l'industria vicina diventa torri idroponiche. Il cibo non e'
+  // un uso urbano, quindi non passa da `CLASS_YIELD` — la resa si dichiara qui.
+  if (id === 'greenhouse') return 'food, then residents';
   const favours = catalystById(id).favours.slice(0, 2);
   if (favours.length === 0) return null;
   return favours.map((cls) => CLASS_YIELD[cls]).join(', then ');

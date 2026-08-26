@@ -250,13 +250,25 @@ describe('cosa manca a un luogo per specializzarsi', () => {
   });
 
   it('il ruolo mancante batte ogni soglia', () => {
-    // Metriche larghissime, ma nessuno dei due ruoli che aprono l'agricoltura:
+    // Metriche larghissime, ma nessuno dei tre ruoli che aprono l'agricoltura:
     // aspettare non servirebbe a niente, e il referto deve mandare a piazzare.
     const green = blank({ roles: ['park'], density: 0.9, industry: 0.9 });
     const farming = specializationGapsOf(green).find((gap) => gap.id === 'farming');
 
     expect(farming?.metric).toBeNull();
-    expect(farming?.roles).toEqual(['factory', 'university']);
+    expect(farming?.roles).toEqual(['factory', 'university', 'greenhouse']);
+  });
+
+  it('la serra apre l’agricoltura insieme a una fabbrica o a un mercato', () => {
+    // La serra da sola non basta: la sua densita' sta sotto 0,4, e la torre
+    // resta una conquista. Accanto a chi porta industria o densita' invece
+    // supera le soglie, ed e' il ponte che porta il cibo verticale dentro il
+    // gruppo crescita senza aspettare un campus.
+    expect(urbanProfileAt(sources([source('greenhouse')]), 0, 0).specialization).toBeNull();
+    expect(urbanProfileAt(sources([source('greenhouse'), source('factory')]), 0, 0).specialization)
+      .toBe('farming');
+    expect(urbanProfileAt(sources([source('greenhouse'), source('market')]), 0, 0).specialization)
+      .toBe('farming');
   });
 
   it('ordina dalla piu vicina alla piu lontana', () => {

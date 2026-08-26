@@ -76,7 +76,7 @@ export const CATALYSTS: readonly CatalystDefinition[] = [
   catalyst('market', 'Market', 'growth', 'any', 'Draws in shops and homes together: the seed of a mixed-use block.'),
   catalyst('factory', 'Factory', 'growth', 'any', 'Boosts industry and jobs, and pushes housing away from its fumes.'),
   catalyst('park', 'Park', 'growth', 'any', 'Creates greener, happier, less industrial neighborhoods.'),
-  catalyst('depot', 'Depot', 'growth', 'any', 'A goods yard that feeds workshops and shops, and keeps industry close to its customers.'),
+  catalyst('greenhouse', 'Greenhouse', 'growth', 'any', 'A glass farm that grows food in the city and turns nearby industry into hydroponic towers.'),
   catalyst('power', 'Power Station', 'growth', 'any', 'Feeds factories and workshops with power, and drives housing away from its chimneys.'),
   catalyst('school', 'School', 'growth', 'any', 'A courtyard school that lifts housing and civic life around it.'),
   catalyst('port', 'Port', 'connections', 'coastal', 'Unlocks external trade and concentrates industry and trade on the coast.'),

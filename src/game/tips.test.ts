@@ -10,7 +10,7 @@ import {
   FARM_KIND,
   type SimState,
 } from '../sim';
-import { evergreenTip, tipsFor, urgentTip, TIP_TURN_TICKS } from './tips';
+import { tipsFor, urgentTip } from './tips';
 
 const POPULATION = 400;
 
@@ -95,11 +95,14 @@ describe('tips — cosa la citta’ ha da dire', () => {
     expect(tipsFor(state).map((tip) => tip.kind)[0]).toBe('crisis');
   });
 
-  it('non propone mai una meccanica come cosa urgente', () => {
-    // Gli evergreen sono veri sempre, quindi entrerebbero in ogni elenco: se
-    // scivolassero in `urgentTip` coprirebbero una crisi con una nozione.
+  it('la voce parla solo di salute, mai di rotta', () => {
+    // Le opportunita' e le meccaniche stanno nel coach: qui restano solo crisi e
+    // colli di bottiglia, ed e' la garanzia che non ci siano due voci sulla
+    // stessa riga di schermo.
     for (const state of [city(), starving()]) {
-      expect(urgentTip(state)?.kind).not.toBe('mechanic');
+      for (const tip of tipsFor(state)) {
+        expect(['crisis', 'bottleneck']).toContain(tip.kind);
+      }
     }
   });
 });
@@ -107,7 +110,7 @@ describe('tips — cosa la citta’ ha da dire', () => {
 describe('tips — il consiglio sul cibo nomina il gesto giusto', () => {
   it('senza torri ne’ porto propone tutte e due le vie d’uscita', () => {
     const message = urgentTip(starving())?.message ?? '';
-    expect(message).toContain('Transit');
+    expect(message).toContain('Greenhouse');
     expect(message).toContain('Port');
     // La rassicurazione resta: la fame non e' una sconfitta, e dirlo evita che
     // il giocatore ricominci la partita quando basterebbe aspettare.
@@ -123,12 +126,12 @@ describe('tips — il consiglio sul cibo nomina il gesto giusto', () => {
     expect(message).not.toContain('a Port opens');
   });
 
-  it('a chi le torri ce le ha gia’ parla di commercio e non di torri', () => {
+  it('a chi le torri ce le ha gia’ parla di commercio e non di serra', () => {
     const farmCounts = [0, 0, 0];
     farmCounts[FARM_KIND.tower] = 4;
     const message = urgentTip(starving({ farmCounts }))?.message ?? '';
     expect(message).toContain('Port');
-    expect(message).not.toContain('Transit');
+    expect(message).not.toContain('Greenhouse');
   });
 });
 
@@ -154,56 +157,5 @@ describe('tips — i colli di bottiglia che nessuna barra mostra', () => {
       harvest: fedAt(4000, 1),
     });
     expect(idOf(state)).toBe('countryside-behind');
-  });
-});
-
-describe('tips — le opportunita’', () => {
-  it('propone il porto solo a chi puo’ permetterselo e non ne ha', () => {
-    const cost = catalystById('port').cost;
-    expect(idOf(city({ funds: { stock: cost, delta: 1 } }))).toBe('open-trade');
-    expect(idOf(city({ funds: { stock: cost - 1, delta: 1 } }))).not.toBe('open-trade');
-  });
-
-  it('dice a chi ha un molo solo che gliene manca un secondo', () => {
-    const state = addCatalyst(city(), {
-      x: 200, y: 0, class: catalystById('ferry').class, kind: 'ferry', strength: 180, radius: 12,
-    });
-    expect(idOf(state)).toBe('ferry-needs-a-pair');
-  });
-});
-
-describe('tips — la rotazione degli evergreen', () => {
-  it('percorre tutto l’elenco invece di saltarne meta’', () => {
-    // **E' il difetto che ha fatto spostare il turno fuori da qui.** Chi mostra
-    // questi consigli li alterna con il traguardo, quindi ne consuma uno ogni
-    // due giri: con l'indice ricavato dal tick, meta' dell'elenco non sarebbe
-    // uscita mai.
-    const state = city();
-    const available = tipsFor(state).filter((tip) => tip.kind === 'mechanic');
-    expect(available.length).toBeGreaterThan(1);
-
-    const seen = new Set<string>();
-    for (let turn = 0; turn < available.length * 2; turn++) {
-      seen.add(evergreenTip(state, turn)?.id ?? '');
-    }
-    expect([...seen].sort()).toEqual(available.map((tip) => tip.id).sort());
-  });
-
-  it('e’ deterministico e non ha un turno che manda in errore', () => {
-    const state = city();
-    expect(evergreenTip(state, 3)).toEqual(evergreenTip(state, 3));
-    expect(evergreenTip(state, 0)).not.toBeNull();
-    expect(() => evergreenTip(state, -1)).not.toThrow();
-  });
-
-  it('tace del tutto quando non c’e’ nessuna regola osservabile', () => {
-    // Una citta' vuota non ha campi da mangiarsi ne' torri da spiegare, e i due
-    // catalizzatori che servono all'uso misto non ci sono: qui la voce non ha
-    // niente da insegnare, e deve dirlo tacendo invece di riempire.
-    expect(evergreenTip(createSimState(), 0)).toBeNull();
-  });
-
-  it('la durata di un turno e’ quella che la voce usa per alternare', () => {
-    expect(TIP_TURN_TICKS).toBeGreaterThan(0);
   });
 });
