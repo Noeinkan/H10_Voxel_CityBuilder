@@ -16,8 +16,8 @@ function ready(over: Partial<ArcologyQuery> = {}): ArcologyQuery {
     existing: 0,
     tier: TIER.core,
     blockRect: { x0: 0, y0: 0, x1: 19, y1: 19 },
-    spanX: 16,
-    spanY: 16,
+    spanX: 20,
+    spanY: 20,
     builtNeighbours: ARCOLOGY.minBuilt,
     cappedNeighbours: ARCOLOGY.minCapped,
     ...over,
@@ -46,7 +46,7 @@ describe('arcologyReady', () => {
   });
 
   it('accetta un isolato largo esattamente quanto l ingombro', () => {
-    expect(arcologyReady(ready({ blockRect: { x0: 3, y0: 7, x1: 18, y1: 22 } }))).toBeNull();
+    expect(arcologyReady(ready({ blockRect: { x0: 3, y0: 7, x1: 22, y1: 26 } }))).toBeNull();
   });
 
   it('rifiuta dove non c e abbastanza citta costruita', () => {
@@ -90,13 +90,13 @@ describe('arcologyAnchor', () => {
 });
 
 describe('catalogo sul reticolo reale', () => {
-  it('su un isolato da quattordici sceglie una forma che entra', () => {
-    const rect = { x0: 0, y0: 0, x1: 13, y1: 13 };
+  it('su un isolato da diciotto sceglie una forma che entra', () => {
+    const rect = { x0: 0, y0: 0, x1: 17, y1: 17 };
     for (let seed = 0; seed < 32; seed++) {
       const recipe = arcologyForBlock(seed, 0, 0, rect, FACING.east);
       expect(recipe.kind).not.toBe(ARCOLOGY_KIND.twinStem);
-      expect(recipe.span[0]).toBeLessThanOrEqual(14);
-      expect(recipe.span[1]).toBeLessThanOrEqual(14);
+      expect(recipe.span[0]).toBeLessThanOrEqual(18);
+      expect(recipe.span[1]).toBeLessThanOrEqual(18);
     }
   });
 

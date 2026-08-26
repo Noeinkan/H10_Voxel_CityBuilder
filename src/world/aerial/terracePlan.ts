@@ -62,6 +62,14 @@ export interface TerraceQuery extends AerialProbe {
   readonly host: AerialSupport;
   /** Le facce da provare, nell'ordine. Chi chiama toglie quelle gia' occupate. */
   readonly faces: readonly AerialFace[];
+  /**
+   * Quanto e' concesso sporgere. Assente vale il balcone (`maxOverhang`).
+   *
+   * **E' la fase della citta', e passa di qui perche' questo file non la
+   * conosce.** Chi chiama sa se le megastrutture sono cominciate; qui resta una
+   * misura come tutte le altre, e la regola non cambia forma per saperla.
+   */
+  readonly maxOverhang?: number;
 }
 
 export interface TerracePlan {
@@ -94,7 +102,7 @@ export function planTerrace(query: TerraceQuery): TerraceResult {
       // Ospite, faccia e quota: le tre cose che non cambiano piu' una volta che
       // la mensola e' li'. La forma e' allora una funzione del posto, come la
       // rete stradale lo e' del seme.
-      const rect = terraceRect(face, run, hashCoords(host.id, face, run.z));
+      const rect = terraceRect(face, run, hashCoords(host.id, face, run.z), query.maxOverhang);
       const result = planDeck({
         rect,
         deckZ: run.z,
@@ -310,10 +318,15 @@ function longestRun(walls: readonly number[]): { wall: number; from: number; to:
  * disponibile — e resta l'ancoraggio intero, che e' cio' da cui `planDeck`
  * misura lo sbalzo — ma il riquadro ci si dispone dentro invece di riempirla.
  */
-function terraceRect(face: AerialFace, run: FaceRun, seed: number): DeckRect {
+function terraceRect(
+  face: AerialFace,
+  run: FaceRun,
+  seed: number,
+  maxOverhang?: number,
+): DeckRect {
   const axis = faceAxis(face);
   const outward = faceOutward(face);
-  const shape = terraceShape(run.to - run.from + 1, seed);
+  const shape = terraceShape(run.to - run.from + 1, seed, maxOverhang);
   const start = outward > 0 ? run.wall + 1 : run.wall - shape.overhang;
   const from = run.from + shape.shift;
 

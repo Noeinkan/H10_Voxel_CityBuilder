@@ -45,16 +45,17 @@ export function inset(rect: BandRect, sx: number, sy: number): boolean {
 }
 
 /**
- * Rientranza centrata di un voxel per lato, che non svuota mai il rettangolo.
+ * Rientranza centrata di `step` voxel per lato, che non svuota mai il rettangolo.
  *
- * Il minimo a 1 non e' una comodita': un lato di due voxel rientrato di uno per
- * parte resterebbe largo zero, e il coronamento sparirebbe proprio sugli
- * edifici piu' piccoli — dove si nota di piu', perche' la loro silhouette e'
- * quasi tutta cima.
+ * Il passo e' l'unita' degli scarti di fascia (vedi `scale.bandStepOf`): a un
+ * voxel per lato sul modulo di partenza, a due sul modulo raddoppiato. Il minimo
+ * a 1 non e' una comodita': un lato di due voxel rientrato di uno per parte
+ * resterebbe largo zero, e il coronamento sparirebbe proprio sugli edifici piu'
+ * piccoli — dove si nota di piu', perche' la loro silhouette e' quasi tutta cima.
  */
-export function shrink(rect: BandRect): BandRect {
-  const w = Math.max(1, rect.w - 2);
-  const h = Math.max(1, rect.h - 2);
+export function shrink(rect: BandRect, step = 1): BandRect {
+  const w = Math.max(1, rect.w - 2 * step);
+  const h = Math.max(1, rect.h - 2 * step);
   return {
     x0: rect.x0 + ((rect.w - w) >> 1),
     y0: rect.y0 + ((rect.h - h) >> 1),
@@ -64,18 +65,18 @@ export function shrink(rect: BandRect): BandRect {
 }
 
 /**
- * Rientranza di un voxel per lato sul solo asse corto.
+ * Rientranza di `step` voxel per lato sul solo asse corto.
  *
  * Serve al coronamento `ridge` e a nient'altro: rientrare su entrambi gli assi
  * darebbe un cappello, rientrare sull'asse lungo darebbe una lama. A parita' di
  * lato sceglie x, cosi' resta una funzione della sola forma e non del seme.
  */
-export function shrinkAxis(rect: BandRect): BandRect {
+export function shrinkAxis(rect: BandRect, step = 1): BandRect {
   if (rect.w <= rect.h) {
-    const w = Math.max(1, rect.w - 2);
+    const w = Math.max(1, rect.w - 2 * step);
     return { ...rect, x0: rect.x0 + ((rect.w - w) >> 1), w };
   }
-  const h = Math.max(1, rect.h - 2);
+  const h = Math.max(1, rect.h - 2 * step);
   return { ...rect, y0: rect.y0 + ((rect.h - h) >> 1), h };
 }
 

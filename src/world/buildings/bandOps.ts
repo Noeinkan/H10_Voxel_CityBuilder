@@ -1,5 +1,18 @@
 import { BAND_OP, GRAMMAR, MIN_FOOTPRINT, type BandOp, type ClassProfile } from './config';
 import { pickInt, shrink, supported, type BandRect } from './bandRect';
+import { bandStepOf } from '../scale';
+
+/**
+ * Il passo degli scarti, in voxel.
+ *
+ * **E' l'unita' della grammatica, non un tiro.** Con il modulo raddoppiato vale
+ * due invece di uno: le rientranze e gli scarti sotto diventano multipli di
+ * questo passo, cosi' lo stesso repertorio compone una casa da otto voxel o un
+ * modulo da sedici senza cambiare ne' il numero ne' l'ordine dei tiri consumati
+ * — solo la *grandezza* degli scarti. `keep` e `jut` restano fuori: non
+ * spostano, e lo sbalzo e' microgeometria.
+ */
+const STEP = bandStepOf();
 
 /**
  * L'interprete della grammatica delle fasce.
@@ -139,7 +152,7 @@ export function applyOp(random: () => number, op: BandOp, prev: BandRect, face: 
     case BAND_OP.keep:
       return prev;
     case BAND_OP.shrink:
-      return shrink(prev);
+      return shrink(prev, STEP);
     case BAND_OP.shrinkOneSide:
       return shrinkOneSide(random, prev);
     case BAND_OP.jog:
@@ -184,22 +197,25 @@ function jut(prev: BandRect, face: number): BandRect {
 }
 
 /**
- * Scarto laterale di due voxel: `jog` a scala leggibile.
+ * Scarto laterale di due passi: `jog` a scala leggibile.
  *
  * Consuma un tiro come `jog`, e con lo stesso intervallo: le due sono la stessa
  * scelta a due scale, e dargli intervalli diversi renderebbe la sequenza del
- * PRNG dipendente da quale delle due il repertorio elenca per prima.
+ * PRNG dipendente da quale delle due il repertorio elenca per prima. Due passi
+ * sono il cubo di terreno intero sul modulo di partenza, e lo scarto che produce
+ * le pile sfalsate — una fascia che sporge da una parte e rientra dall'altra.
  */
 function shear(random: () => number, rect: BandRect): BandRect {
+  const off = 2 * STEP;
   switch (pickInt(random, 0, 3)) {
     case 0:
-      return { ...rect, x0: rect.x0 + 2 };
+      return { ...rect, x0: rect.x0 + off };
     case 1:
-      return { ...rect, x0: rect.x0 - 2 };
+      return { ...rect, x0: rect.x0 - off };
     case 2:
-      return { ...rect, y0: rect.y0 + 2 };
+      return { ...rect, y0: rect.y0 + off };
     default:
-      return { ...rect, y0: rect.y0 - 2 };
+      return { ...rect, y0: rect.y0 - off };
   }
 }
 
@@ -211,77 +227,83 @@ function shear(random: () => number, rect: BandRect): BandRect {
  * `corner` di fila porterebbero il corpo fuori dall'impronta invece di girarlo.
  */
 function corner(random: () => number, rect: BandRect): BandRect {
+  const off = STEP;
+  const side = 2 * STEP;
   if (pickInt(random, 0, 1) === 0) {
-    return { x0: rect.x0 + 1, y0: rect.y0 - 1, w: rect.w - 2, h: rect.h + 2 };
+    return { x0: rect.x0 + off, y0: rect.y0 - off, w: rect.w - side, h: rect.h + side };
   }
-  return { x0: rect.x0 - 1, y0: rect.y0 + 1, w: rect.w + 2, h: rect.h - 2 };
+  return { x0: rect.x0 - off, y0: rect.y0 + off, w: rect.w + side, h: rect.h - side };
 }
 
-/** Rientranza di un voxel su un lato solo: produce le terrazze asimmetriche. */
+/** Rientranza di un passo su un lato solo: produce le terrazze asimmetriche. */
 function shrinkOneSide(random: () => number, rect: BandRect): BandRect {
+  const off = STEP;
   switch (pickInt(random, 0, 3)) {
     case 0:
-      return { ...rect, x0: rect.x0 + 1, w: rect.w - 1 };
+      return { ...rect, x0: rect.x0 + off, w: rect.w - off };
     case 1:
-      return { ...rect, w: rect.w - 1 };
+      return { ...rect, w: rect.w - off };
     case 2:
-      return { ...rect, y0: rect.y0 + 1, h: rect.h - 1 };
+      return { ...rect, y0: rect.y0 + off, h: rect.h - off };
     default:
-      return { ...rect, h: rect.h - 1 };
+      return { ...rect, h: rect.h - off };
   }
 }
 
-/** Scarto laterale di un voxel a parita' di dimensione: la fascia sporge da un lato. */
+/** Scarto laterale di un passo a parita' di dimensione: la fascia sporge da un lato. */
 function jog(random: () => number, rect: BandRect): BandRect {
+  const off = STEP;
   switch (pickInt(random, 0, 3)) {
     case 0:
-      return { ...rect, x0: rect.x0 + 1 };
+      return { ...rect, x0: rect.x0 + off };
     case 1:
-      return { ...rect, x0: rect.x0 - 1 };
+      return { ...rect, x0: rect.x0 - off };
     case 2:
-      return { ...rect, y0: rect.y0 + 1 };
+      return { ...rect, y0: rect.y0 + off };
     default:
-      return { ...rect, y0: rect.y0 - 1 };
+      return { ...rect, y0: rect.y0 - off };
   }
 }
 
-/** Allargamento di un voxel su un lato, dentro il riquadro. */
+/** Allargamento di un passo su un lato, dentro il riquadro. */
 function grow(random: () => number, rect: BandRect): BandRect {
+  const off = STEP;
   switch (pickInt(random, 0, 3)) {
     case 0:
-      return { ...rect, x0: rect.x0 - 1, w: rect.w + 1 };
+      return { ...rect, x0: rect.x0 - off, w: rect.w + off };
     case 1:
-      return { ...rect, w: rect.w + 1 };
+      return { ...rect, w: rect.w + off };
     case 2:
-      return { ...rect, y0: rect.y0 - 1, h: rect.h + 1 };
+      return { ...rect, y0: rect.y0 - off, h: rect.h + off };
     default:
-      return { ...rect, h: rect.h + 1 };
+      return { ...rect, h: rect.h + off };
   }
 }
 
 /**
- * Arretramento di due voxel su un lato: la rientranza in cui ci si sta.
+ * Arretramento di due passi su un lato: la rientranza in cui ci si sta.
  *
- * Un voxel di scarto lascia un anello largo uno, che a distanza di gioco e' un
- * gradino e non una terrazza — e infatti `terraceMinRing` lo scarta. Due voxel
+ * Un passo di scarto lascia un anello largo uno, che a distanza di gioco e' un
+ * gradino e non una terrazza — e infatti `terraceMinRing` lo scarta. Due passi
  * sono un cubo di terreno intero: e' la piu' piccola rientranza che la
- * pavimentazione, il parapetto e un giardino riescono a raccontare.
+ * pavimentazione, il parapetto e un giardino riescano a raccontare.
  */
 function setback(random: () => number, rect: BandRect): BandRect {
+  const off = 2 * STEP;
   switch (pickInt(random, 0, 3)) {
     case 0:
-      return { ...rect, x0: rect.x0 + 2, w: rect.w - 2 };
+      return { ...rect, x0: rect.x0 + off, w: rect.w - off };
     case 1:
-      return { ...rect, w: rect.w - 2 };
+      return { ...rect, w: rect.w - off };
     case 2:
-      return { ...rect, y0: rect.y0 + 2, h: rect.h - 2 };
+      return { ...rect, y0: rect.y0 + off, h: rect.h - off };
     default:
-      return { ...rect, h: rect.h - 2 };
+      return { ...rect, h: rect.h - off };
   }
 }
 
 /**
- * Corpo sovrapposto: rientra di due per lato e si ricentra.
+ * Corpo sovrapposto: rientra di due passi per lato e si ricentra.
  *
  * Non consuma tiri, come `shrink`, ed e' voluto: `stack` deve dare *sempre* la
  * stessa cosa — una torre che riparte, non una torre che si sposta. Il ricentro
@@ -289,13 +311,13 @@ function setback(random: () => number, rect: BandRect): BandRect {
  * costruzione e la mensola non c'entra: qui non sporge niente.
  */
 function stack(rect: BandRect): BandRect {
-  const w = rect.w - 4;
-  const h = rect.h - 4;
+  const w = rect.w - 4 * STEP;
+  const h = rect.h - 4 * STEP;
   // Il corpo che riparte deve restare un corpo: sotto `MIN_FOOTPRINT` non e' un
   // volume nuovo ma il resto del precedente, e su una torre alta `stack` a ogni
   // fascia porterebbe la cima a un voxel in quattro passi. Chiedere che il
   // risultato sia ancora un edificio limita l'operazione a una o due volte per
   // silhouette senza contare nulla: e' la geometria a esaurirla.
   if (w < MIN_FOOTPRINT || h < MIN_FOOTPRINT) return { ...rect, w: 0, h: 0 };
-  return { x0: rect.x0 + 2, y0: rect.y0 + 2, w, h };
+  return { x0: rect.x0 + 2 * STEP, y0: rect.y0 + 2 * STEP, w, h };
 }

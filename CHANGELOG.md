@@ -11,6 +11,23 @@ coincide con il messaggio di commit.
 
 ---
 
+## In corso — Landmark nuovi: firma, stadi e microgeometrie
+
+- **Le sei ricette nuove hanno una firma e delle microgeometrie.** Centrali,
+  scuola, torre radio, faro, teatro e stadio non sono piu' prismi smussati con
+  salti di stadio appena leggibili: la centrale guadagna il capannone a falda e
+  le torri a tamburo, la scuola una U vera con il cortile aperto sul retro e la
+  falda sulle ali, il faro una torre che si rastrema davvero (6x6 -> 4x4 -> 2x2
+  con ballatoi), lo stadio una tribuna a due ordini. `entrance()` e `signBand()`
+  aprono ora porta e insegna su tutti e sei (prima solo sul teatro), portando i
+  canali `portal` e `luminous` del mesher dove c'erano solo `plain` e `utility`,
+  che `collectSurfaceCells` scarta per contratto.
+
+## In corso — Scala degli edifici
+
+- **Il lotto a terra cresce fino alla larghezza dell'isolato.** `findLot` non chiede piu' un'impronta fissa al modulo: passa il lato libero dell'isolato, e oltre `MAX_FOOTPRINT` lo stamp diventa un assemblaggio — sotto-volumi `generateBuilding` su un podio condiviso, fusi in un solo `VoxelStamp`. Nascita, promozione e cancellazione passano dallo stesso dispatcher (`buildStamp`) con lo stesso sale, cosi' la cancellazione rigenera esattamente cio' che e' stato scritto.
+- **La camera e l'altezza del mondo seguono la scala verticale.** `worldHeight` non tronca piu' le torri a 64: default e tetto derivano da `maxTowerHeightOf() + TERRAIN.maxHeight`; l'inquadratura della crescita lascia spazio alla torre piu' alta sopra il pianoro dell'isola.
+
 ## In corso — Polishing dell'HUD
 
 - **L'HUD si adatta allo schermo invece di spegnere le parole.** L'unità di

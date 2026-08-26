@@ -2,8 +2,12 @@ import { BUILDING_CLASS, type BuildingClass } from '../../sim';
 import { GRAMMAR } from './config';
 import { inside, inset, type BandRect } from './bandRect';
 import { inPlan } from '../planMask';
+import { courtyardMinSideOf } from '../scale';
 import type { VoxelStamp } from './stamp';
 import { SURFACE_KIND, type SurfaceKind } from '../visualBlock';
+
+/** Il lato sotto cui una fascia non viene svuotata in una corte (vedi `scale`). */
+const COURT_MIN_SIDE = courtyardMinSideOf();
 
 /**
  * Riempie i voxel dalle fasce.
@@ -113,7 +117,7 @@ export function paint(request: PaintRequest): VoxelStamp {
     // il podio: un isolato a corte ha un cortile, non un pozzo che lo attraversa
     // dal tetto alle fondamenta.
     const hollow = request.courtyard && !isCrown && !isRoofProp && !isPodium &&
-      rect.w >= 6 && rect.h >= 6;
+      rect.w >= COURT_MIN_SIDE && rect.h >= COURT_MIN_SIDE;
 
     const bandBody = isPodium && request.podiumBody !== null ? request.podiumBody : request.body;
     const bandAlt = isPodium && request.podiumAlt !== null ? request.podiumAlt : request.bodyAlt;

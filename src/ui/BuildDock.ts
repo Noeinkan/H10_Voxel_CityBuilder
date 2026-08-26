@@ -21,15 +21,6 @@ import { iconButton, labeledButton, markRowColumns, paintAction, tileButton } fr
 /** I pannelli che il dock apre. Il dock non li possiede: chiede a chi li tiene. */
 export type DockPanel = 'city' | 'policies' | 'themes' | 'views';
 
-/**
- * Quante tessere stanno in una riga della griglia.
- *
- * E' lo stesso tre di `grid-template-columns: repeat(3, 1fr)` in `hud.css`, e
- * vive qui perche' la scheda di un'azione deve sapere quante colonne le restano
- * a destra prima di uscire dal rail. Se cambia di la', cambia anche qui: sono i
- * due lati della stessa griglia.
- */
-const DOCK_COLUMNS = 3;
 
 /**
  * Se due strumenti sono lo stesso strumento.
@@ -108,9 +99,9 @@ export class BuildDock {
         this.catalystButtons[model.catalysts.indexOf(action)] = button;
         row.appendChild(button);
       }
-      // Tre, come `grid-template-columns`: e' l'unico numero che la riga non sa
-      // da sola, perche' i suoi figli possono essere quattro e andare a capo.
-      markRowColumns(row, DOCK_COLUMNS);
+      // Niente conteggio da qui: le colonne del dock cambiano con la quota dello
+      // schermo, e chi le decide — la media query — e' anche l'unico che possa
+      // dire in che colonna sia caduta una tessera. Sta tutto in `hud.css`.
       section.appendChild(row);
       this.root.appendChild(section);
     }
@@ -133,7 +124,6 @@ export class BuildDock {
     this.ropewayButton = this.addTool(model.ropeway, 'ropeway', { kind: 'ropeway' }, handlers);
     this.ropewayButton.classList.add('hud-button--accent');
     reachRow.append(this.expansionButton, this.terraceButton, this.ropewayButton);
-    markRowColumns(reachRow, DOCK_COLUMNS);
     reach.append(reachTitle, reachRow);
     this.root.appendChild(reach);
 

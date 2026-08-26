@@ -9,7 +9,8 @@ import {
   type CellRect,
   type SimState,
 } from '../../sim';
-import { dirtyChunkCount } from './chunkBudget';
+import { dirtyChunkCount, fitsChunkBudget } from './chunkBudget';
+import { buildStamp } from './assemble';
 import { poleRectAt } from './growthPoles';
 import {
   buildWorks,
@@ -60,7 +61,7 @@ import {
   typologyById,
 } from './config';
 import { planCluster, type ClusterTerms } from './cluster';
-import { generateBuilding, startLevel } from './generate';
+import { startLevel } from './generate';
 import { selectTypology, typologyProfile } from './typology';
 import { styleAt, styledProfile } from './style';
 import { lotRoleOf } from './blockForm';
@@ -789,7 +790,7 @@ export class Builder {
     // costruzione. Non e' un tiro e non e' uno stato — vedi `style.ts`.
     const style = styleAt(this.worldSeed, this.streets.blockAt(x, y));
     const drawProfile = styledProfile(typologyProfile(typology), style);
-    const draft = generateBuilding({
+    const draft = buildStamp({
       class: cls,
       level,
       seed,
@@ -800,13 +801,17 @@ export class Builder {
       shape: typology.shape,
       mixed,
       facing,
-    });
+    }, footprintCap);
     // **Nucleo e inviluppo si separano qui, e da qui in poi non vanno confusi.**
     // `footprint` e' cio' che poggia — lo leggono lotto, opera di terra, fila,
     // decoro e carreggiata — mentre lo stamp puo' essere piu' largo di `over`
     // sopra il marciapiede. Sono lo stesso numero su ogni edificio che non
     // sporge, cioe' su quasi tutti.
-    const over = overhangFor(typology.shape, facing);
+    // Un lotto oltre il modulo e' un assemblaggio: riempie l'impronta e non
+    // aggetta, quindi lo sbalzo si azzera. Cosi' `groundSideOf` coincide con
+    // `footprintCap`, e le righe di scorrimento/slack qui sotto restano inattive.
+    const assembled = footprintCap > MAX_FOOTPRINT;
+    const over = assembled ? 0 : overhangFor(typology.shape, facing);
     const footprint = groundSideOf(draft, over, facing);
 
     // L'impronta puo' uscire piu' stretta del lotto verificato. La si accosta
@@ -853,7 +858,7 @@ export class Builder {
     // Gira solo dove la fila un basamento ce l'ha davvero, e sta comunque fuori
     // dal ciclo di frame.
     const shaped = baseBand > 0
-      ? generateBuilding({
+      ? buildStamp({
         class: cls,
         level,
         seed,
@@ -865,7 +870,7 @@ export class Builder {
         mixed,
         facing,
         baseBandHeight: baseBand,
-      })
+      }, footprintCap)
       : draft;
 
     const baseZ = terms?.deck ?? deck.z;
@@ -887,7 +892,7 @@ export class Builder {
       if (this.registryImpl.overlaps(wide.x, wide.y, wide.sizeX, baseZ, shaped.sizeZ, wide.sizeY) &&
         !this.registryImpl.overlaps(x, y, footprint, baseZ, shaped.sizeZ)) {
         overhang = 0;
-        stamp = generateBuilding({
+        stamp = buildStamp({
           class: cls,
           level,
           seed,
@@ -899,7 +904,7 @@ export class Builder {
           mixed,
           facing,
           baseBandHeight: baseBand > 0 ? baseBand : undefined,
-        });
+        }, footprintCap);
       }
     }
 
@@ -916,8 +921,16 @@ export class Builder {
       // Blacklistarla toglierebbe il lotto a terra per un ingombro di sopra.
       return this.reject(key, 'occupied', plan !== null);
     }
-    if (dirtyChunkCount(env.x, env.y, env.sizeX, plan?.footZ ?? baseZ, baseZ + stamp.sizeZ,
-      env.sizeY) > BUILDER.maxDirtyChunksPerBuilding) {
+    // Un assemblaggio puo' superare `segmentSide` in pianta: la fondazione si
+    // getta in un colpo e la sagoma si spezza in ritagli che compaiono uno per
+    // volta, quindi il tetto di chunk va verificato per ritaglio, come gia'
+    // fanno landmark e arcologie con `fitsChunkBudget`. Un edificio singolo
+    // resta sul conto intero di sempre.
+    const overBudget = assembled
+      ? plan === null || !fitsChunkBudget(env.x, env.y, env.sizeX, env.sizeY, plan, stamp)
+      : dirtyChunkCount(env.x, env.y, env.sizeX, plan?.footZ ?? baseZ, baseZ + stamp.sizeZ,
+        env.sizeY) > BUILDER.maxDirtyChunksPerBuilding;
+    if (overBudget) {
       return this.reject(key, 'chunkBudget', plan !== null);
     }
 
@@ -959,7 +972,7 @@ export class Builder {
       baseBand: baseBand > 0 ? baseBand : undefined,
     });
 
-    if (request.animate) this.growth.enqueue(record.id, anchorOf(record), stamp);
+    if (request.animate) this.growth.enqueueSegments(record, stamp);
     else this.growth.writeStamp(anchorOf(record), stamp, 0, stamp.sizeZ, false);
     this.surface.enqueueBlockStreets(this.streets.blockAt(x, y));
     this.placedCount++;
@@ -1189,11 +1202,17 @@ export class Builder {
           const key = this.streets.keyOf(block);
           if (this.fullBlocks.has(key)) continue;
 
+          // Il lotto a terra puo' crescere fino alla larghezza libera
+          // dell'isolato: oltre il modulo l'assemblatore scompone l'impronta in
+          // sotto-volumi, quindi il tetto non e' piu' `MAX_FOOTPRINT` ma il lato
+          // dell'isolato. `placeLot` clampa gia' a `min(side, width, height)`.
+          const rect = this.streets.blockRect(block);
+          const blockSide = Math.min(rect.x1 - rect.x0 + 1, rect.y1 - rect.y0 + 1);
           const lot = placeLot({
-            rect: this.streets.blockRect(block),
+            rect,
             x,
             y,
-            footprint: MAX_FOOTPRINT,
+            footprint: blockSide,
             accepts: (lx, ly, side) => this.lotIsFree(lx, ly, side),
           });
           if (lot !== null) return lot;

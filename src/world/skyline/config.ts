@@ -1,3 +1,14 @@
+import { skylineCapsOf } from '../scale';
+
+/**
+ * I tre tetti e i due bonus, derivati dal livello massimo.
+ *
+ * La somma `levelCap[core] + coneBonus + peakBonus` deve valere esattamente il
+ * livello massimo, e `skylineCapsOf` la garantisce per costruzione: alzare
+ * `maxLevel` alza la fascia del centro, non il cono o il picco.
+ */
+const { levelCap, coneBonus, peakBonus } = skylineCapsOf();
+
 /**
  * Unica fonte di verita' dei numeri della gerarchia verticale.
  *
@@ -19,13 +30,13 @@ export const SKYLINE = {
    * un ramo di codice: aggiungerne una e' aggiungere una voce qui e una in
    * `TIER`.
    *
-   * La somma con i due bonus e' voluta: `9 + coneBonus + peakBonus` fa
-   * esattamente `BUILDER.maxLevel`. Il livello massimo e' quindi raggiungibile
+   * La somma con i due bonus e' voluta: `levelCap[core] + coneBonus + peakBonus`
+   * fa esattamente `BUILDER.maxLevel`. Il livello massimo e' quindi raggiungibile
    * **solo** dove centro, prossimita' al polo e isolato eletto coincidono, ed e'
    * la definizione strutturale di «eccezione governata»: pochi picchi per
    * costruzione, non per fortuna.
    */
-  levelCap: [3, 6, 9] as readonly number[],
+  levelCap,
 
   /**
    * Livelli che la vicinanza al polo aggiunge, dentro il solo centro.
@@ -36,10 +47,10 @@ export const SKYLINE = {
    * rampa avrebbe un gradino solo, che a colpo d'occhio e' un confine e non una
    * pendenza.
    */
-  coneBonus: 2,
+  coneBonus,
 
   /** Il livello in piu' dell'isolato eletto. */
-  peakBonus: 1,
+  peakBonus,
 
   /**
    * Isolati ammessi a un picco: uno ogni `peakEvery`.

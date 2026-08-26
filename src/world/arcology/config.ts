@@ -241,12 +241,16 @@ export interface ArcologyRecipe extends PartsRecipe {
  */
 export const TWIN_STEM: ArcologyRecipe = {
   kind: ARCOLOGY_KIND.twinStem,
-  span: [16, 16],
-  height: 192,
+  // **L'ingombro supera il modulo e sta nel segmento.** Sopra il modulo c'e' una
+  // megastruttura, non una torre grossa; dentro `segmentSide` perche' non si
+  // spezzi in pianta. L'ingombro scala con il modulo (`arcologySpanOf`), come la
+  // quota che deve superare la torre piu' alta del catalogo.
+  span: [20, 20],
+  height: 256,
   // Il centro: a differenza del porto, qui non c'e' un fronte da tenere sotto il
   // dito. La colonna che apre il cantiere e' quella che la condizione ha scelto,
   // e sta al centro dell'isolato che l'arcologia si prende per intero.
-  anchor: [8, 8],
+  anchor: [10, 10],
   /**
    * **Tarati sulla misura, e la misura ha cambiato l'idea che c'era dietro.**
    * Il modello dei landmark — un catalizzatore piantato presto, il quartiere che
@@ -281,111 +285,98 @@ export const TWIN_STEM: ArcologyRecipe = {
   parts: [
     // --- 0 · il podio produttivo -------------------------------------------
     [
-      box(PART.slab, 0, 0, 16, 16, 0, 15, PALETTE_SLOTS.concrete, SURFACE_KIND.industrial, {
+      box(PART.slab, 0, 0, 20, 20, 0, 15, PALETTE_SLOTS.concrete, SURFACE_KIND.industrial, {
         chamfer: 3,
       }),
-      box(PART.deck, 0, 0, 16, 16, 15, 1, PALETTE_SLOTS.concretePale, SURFACE_KIND.utility, {
+      box(PART.deck, 0, 0, 20, 20, 15, 1, PALETTE_SLOTS.concretePale, SURFACE_KIND.utility, {
         chamfer: 3,
       }),
       // Il portico: e' l'unica primitiva che produce vuoto **sotto** un pieno, e
       // qui serve a dire che il podio e' abitato invece che pieno. Non e' una
       // finestra di cielo — quattro voxel non si vedono da fuori — ed e' la
       // ragione per cui `window.minHeight` esiste.
-      box(PART.colonnade, 0, 0, 16, 16, 16, 4, PALETTE_SLOTS.metalDark, SURFACE_KIND.industrial, {
+      box(PART.colonnade, 0, 0, 20, 20, 16, 4, PALETTE_SLOTS.metalDark, SURFACE_KIND.industrial, {
         step: 3,
         chamfer: 3,
         cap: PALETTE_SLOTS.concretePale,
       }),
-      // Il tetto del podio, e non e' una finitura: e' **la quota a cui la rete in
-      // quota sa arrivare**. Ventuno voxel sopra il piano finito stanno dentro i
-      // trentadue che quattro pianerottoli assorbono, e ci sta anche una mensola
-      // di un edificio normale del centro. Il piazzale del mezzanino, settanta
-      // voxel piu' su, non ci sta e non ci stara' mai: senza questo piano
-      // l'arcologia sarebbe attraccabile solo sulla carta.
-      box(PART.deck, 0, 0, 16, 16, 20, 1, PALETTE_SLOTS.concretePale, SURFACE_KIND.utility, {
+      // Il tetto del podio: e' la quota a cui la rete in quota sa arrivare.
+      box(PART.deck, 0, 0, 20, 20, 20, 1, PALETTE_SLOTS.concretePale, SURFACE_KIND.utility, {
         chamfer: 3,
       }),
-      // I due moli, uno per fronte. **Sono rialzati, e il rialzo e' la
-      // correzione di una misura.** Con il piazzale a filo del tetto, la corsia
-      // di un percorso partiva alla quota del tetto stesso: sull'asse dominante
-      // i primi cinque voxel cadevano dentro il podio, e la coppia migliore
-      // della citta' — dislivello uno, undici voxel di vuoto — moriva su
-      // `blocked` senza che si vedesse da nessuna parte. Quattro voxel di
-      // zoccolo bastano perche' la corsia passi **sopra** il tetto invece che
-      // dentro.
-      box(PART.slab, 5, 0, 6, 6, 21, 4, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.utility),
-      box(PART.slab, 5, 10, 6, 6, 21, 4, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.utility),
+      // I due moli, uno per fronte. Sono rialzati, cosi' la corsia di un percorso
+      // passa sopra il tetto invece che dentro.
+      box(PART.slab, 7, 0, 6, 6, 21, 4, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.utility),
+      box(PART.slab, 7, 14, 6, 6, 21, 4, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.utility),
     ],
     // --- 1 · i due steli ----------------------------------------------------
     [
       // Partono da ventuno perche' sotto c'e' il tetto del podio: gli steli
       // **poggiano** su quel piano invece di attraversarlo.
-      box(PART.shell, 0, 3, 5, 10, 21, 77, PALETTE_SLOTS.concreteLight, SURFACE_KIND.habitat, {
+      box(PART.shell, 2, 5, 5, 10, 21, 108, PALETTE_SLOTS.concreteLight, SURFACE_KIND.habitat, {
         cap: PALETTE_SLOTS.concreteWhite,
       }),
-      box(PART.shell, 11, 3, 5, 10, 21, 77, PALETTE_SLOTS.concreteLight, SURFACE_KIND.habitat, {
+      box(PART.shell, 13, 5, 5, 10, 21, 108, PALETTE_SLOTS.concreteLight, SURFACE_KIND.habitat, {
         cap: PALETTE_SLOTS.concreteWhite,
       }),
       // I due montanti di servizio, sulle spalle opposte dei due steli: hanno
       // aria dentro, ed e' l'aria a dire «struttura» prima di qualunque colore.
-      box(PART.truss, 1, 12, 3, 4, 21, 59, PALETTE_SLOTS.metalRust, SURFACE_KIND.utility, {
+      box(PART.truss, 3, 14, 3, 4, 21, 84, PALETTE_SLOTS.metalRust, SURFACE_KIND.utility, {
         step: 5,
       }),
-      box(PART.truss, 12, 0, 3, 4, 21, 59, PALETTE_SLOTS.metalRust, SURFACE_KIND.utility, {
+      box(PART.truss, 14, 2, 3, 4, 21, 84, PALETTE_SLOTS.metalRust, SURFACE_KIND.utility, {
         step: 5,
       }),
     ],
     // --- 2 · il mezzanino commerciale --------------------------------------
     [
-      // La trave che scavalca: sotto restano quarantadue quote di vuoto passante,
-      // ed e' quella la finestra di cielo.
-      box(PART.boom, 5, 5, 6, 6, 62, 6, PALETTE_SLOTS.glassPale, SURFACE_KIND.luminous),
-      box(PART.deck, 5, 5, 6, 6, 68, 1, PALETTE_SLOTS.roofWhite, SURFACE_KIND.roofTech),
-      box(PART.slab, 6, 6, 4, 4, 69, 8, PALETTE_SLOTS.glass, SURFACE_KIND.luminous, {
+      // La trave che scavalca: sotto restano settantanove quote di vuoto
+      // passante, ed e' quella la finestra di cielo.
+      box(PART.boom, 7, 7, 6, 6, 100, 6, PALETTE_SLOTS.glassPale, SURFACE_KIND.luminous),
+      box(PART.deck, 7, 7, 6, 6, 106, 1, PALETTE_SLOTS.roofWhite, SURFACE_KIND.roofTech),
+      box(PART.slab, 8, 8, 4, 4, 107, 8, PALETTE_SLOTS.glass, SURFACE_KIND.luminous, {
         cap: PALETTE_SLOTS.glassPale,
       }),
-      // Il piazzale del mezzanino: sei per sei come quello del podio, e per la
-      // stessa misura — sotto la larghezza di una passerella un attracco non e'
-      // un attracco.
-      box(PART.deck, 5, 0, 6, 6, 68, 1, PALETTE_SLOTS.concretePale, SURFACE_KIND.utility),
+      // Il piazzale del mezzanino, sul fronte sud.
+      box(PART.deck, 7, 0, 6, 6, 106, 1, PALETTE_SLOTS.concretePale, SURFACE_KIND.utility),
     ],
     // --- 3 · i corpi abitati ------------------------------------------------
     [
-      box(PART.deck, 0, 3, 5, 10, 98, 1, PALETTE_SLOTS.roofPale, SURFACE_KIND.roofTech),
-      box(PART.deck, 11, 3, 5, 10, 98, 1, PALETTE_SLOTS.roofPale, SURFACE_KIND.roofTech),
-      box(PART.shell, 1, 4, 3, 8, 99, 51, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.habitat, {
+      box(PART.deck, 2, 5, 5, 10, 129, 1, PALETTE_SLOTS.roofPale, SURFACE_KIND.roofTech),
+      box(PART.deck, 13, 5, 5, 10, 129, 1, PALETTE_SLOTS.roofPale, SURFACE_KIND.roofTech),
+      box(PART.shell, 3, 6, 3, 8, 130, 72, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.habitat, {
         cap: PALETTE_SLOTS.glassPale,
       }),
-      box(PART.shell, 12, 4, 3, 8, 99, 51, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.habitat, {
+      box(PART.shell, 14, 6, 3, 8, 130, 72, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.habitat, {
         cap: PALETTE_SLOTS.glassPale,
       }),
     ],
     // --- 4 · la corona civica -----------------------------------------------
     [
-      // Il secondo scavalco, ottanta quote sopra il primo: e' quello che si vede
-      // da inquadratura d'insieme, ed e' anche cio' che chiude i due corpi in una
+      // Il secondo scavalco, sopra il primo: e' quello che si vede da
+      // inquadratura d'insieme, ed e' anche cio' che chiude i due corpi in una
       // struttura sola invece di lasciarli due torri gemelle.
-      box(PART.boom, 4, 6, 8, 4, 150, 5, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.civic),
-      box(PART.deck, 4, 6, 8, 4, 155, 1, PALETTE_SLOTS.roofWhite, SURFACE_KIND.roofTech),
-      box(PART.steps, 5, 6, 6, 4, 156, 6, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.civic, {
+      box(PART.boom, 6, 8, 8, 4, 202, 5, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.civic),
+      box(PART.deck, 6, 8, 8, 4, 207, 1, PALETTE_SLOTS.roofWhite, SURFACE_KIND.roofTech),
+      box(PART.steps, 7, 8, 6, 4, 208, 6, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.civic, {
         step: 1,
         chamfer: 1,
       }),
-      box(PART.mast, 2, 7, 2, 2, 150, 40, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.civic, {
+      box(PART.mast, 4, 9, 2, 2, 202, 52, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.civic, {
         cap: PALETTE_SLOTS.metalGold,
       }),
-      box(PART.mast, 12, 7, 2, 2, 150, 40, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.civic, {
+      box(PART.mast, 14, 9, 2, 2, 202, 52, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.civic, {
         cap: PALETTE_SLOTS.metalGold,
       }),
-      box(PART.slab, 2, 7, 2, 2, 190, 2, PALETTE_SLOTS.glassPale, SURFACE_KIND.luminous),
-      box(PART.slab, 12, 7, 2, 2, 190, 2, PALETTE_SLOTS.glassPale, SURFACE_KIND.luminous),
+      box(PART.slab, 4, 9, 2, 2, 254, 2, PALETTE_SLOTS.glassPale, SURFACE_KIND.luminous),
+      box(PART.slab, 14, 9, 2, 2, 254, 2, PALETTE_SLOTS.glassPale, SURFACE_KIND.luminous),
     ],
   ],
   bands: [
-    { stage: 0, use: BUILDING_CLASS.industrial, x: 3, y: 3, z: 0, label: 'podium' },
-    { stage: 2, use: BUILDING_CLASS.commercial, x: 8, y: 8, z: 62, label: 'mezzanine' },
-    { stage: 3, use: BUILDING_CLASS.residential, x: 2, y: 8, z: 99, label: 'bodies' },
-    { stage: 4, use: BUILDING_CLASS.civic, x: 13, y: 8, z: 150, label: 'crown' },
+    { stage: 0, use: BUILDING_CLASS.industrial, x: 5, y: 5, z: 0, label: 'podium' },
+    { stage: 2, use: BUILDING_CLASS.commercial, x: 10, y: 10, z: 100, label: 'mezzanine' },
+    { stage: 3, use: BUILDING_CLASS.residential, x: 4, y: 10, z: 129, label: 'bodies' },
+    { stage: 4, use: BUILDING_CLASS.civic, x: 15, y: 10, z: 202, label: 'crown' },
   ],
   /**
    * Tre misure hanno riscritto questa tabella, e nessuna si vedeva dai test puri.
@@ -414,157 +405,157 @@ export const TWIN_STEM: ArcologyRecipe = {
    * uno solo non ci si arriva.
    */
   landings: [
-    { stage: 0, x: 5, y: 0, w: 6, h: 6, z: 25 },
-    { stage: 0, x: 5, y: 10, w: 6, h: 6, z: 25 },
-    { stage: 2, x: 5, y: 0, w: 6, h: 6, z: 69 },
+    { stage: 0, x: 7, y: 0, w: 6, h: 6, z: 25 },
+    { stage: 0, x: 7, y: 14, w: 6, h: 6, z: 25 },
+    { stage: 2, x: 7, y: 0, w: 6, h: 6, z: 107 },
   ],
 };
 
 /**
  * Un nucleo che si ramifica in quattro torri.
  *
- * L'ingombro da quattordici colonne e' deliberato: e' la misura degli isolati
- * stretti che il mercato giocabile costruisce davvero. Il podio porta un solo
- * fusto; due travi ortogonali lo dividono in quattro bracci e la corona li
- * attraversa di nuovo, cosi' la struttura si legge come una biforcazione e non
- * come quattro torri accostate.
+ * L'ingombro da diciotto colonne e' deliberato: e' la misura degli isolati
+ * stretti che il mercato giocabile costruisce davvero, appena sotto la Twin
+ * Stem. Il podio porta un solo fusto; due travi ortogonali lo dividono in
+ * quattro bracci e la corona li attraversa di nuovo, cosi' la struttura si
+ * legge come una biforcazione e non come quattro torri accostate.
  */
 export const BRANCHING_CORE: ArcologyRecipe = {
   kind: ARCOLOGY_KIND.branchingCore,
-  span: [14, 14],
-  height: 188,
-  anchor: [7, 7],
+  span: [18, 18],
+  height: 248,
+  anchor: [9, 9],
   // +10 come Twin Stem: le soglie leggono `foundedNeighbours`, congelato prima
   // dello sventramento (vedi il commento su `TWIN_STEM.stages`).
   stages: [0, 50, 68, 82, 98],
   parts: [
     [
-      box(PART.slab, 0, 0, 14, 14, 0, 13, PALETTE_SLOTS.stoneDeep, SURFACE_KIND.industrial, {
+      box(PART.slab, 0, 0, 18, 18, 0, 13, PALETTE_SLOTS.stoneDeep, SURFACE_KIND.industrial, {
         chamfer: 2,
       }),
-      box(PART.deck, 0, 0, 14, 14, 13, 1, PALETTE_SLOTS.concretePale, SURFACE_KIND.utility, {
+      box(PART.deck, 0, 0, 18, 18, 13, 1, PALETTE_SLOTS.concretePale, SURFACE_KIND.utility, {
         chamfer: 2,
       }),
-      box(PART.colonnade, 0, 0, 14, 14, 14, 4, PALETTE_SLOTS.metalDark, SURFACE_KIND.utility, {
+      box(PART.colonnade, 0, 0, 18, 18, 14, 4, PALETTE_SLOTS.metalDark, SURFACE_KIND.utility, {
         step: 3,
         chamfer: 2,
         cap: PALETTE_SLOTS.concretePale,
       }),
-      box(PART.deck, 0, 0, 14, 14, 18, 1, PALETTE_SLOTS.concretePale, SURFACE_KIND.utility, {
+      box(PART.deck, 0, 0, 18, 18, 18, 1, PALETTE_SLOTS.concretePale, SURFACE_KIND.utility, {
         chamfer: 2,
       }),
-      box(PART.slab, 4, 0, 6, 6, 19, 4, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.utility),
-      box(PART.slab, 4, 8, 6, 6, 19, 4, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.utility),
+      box(PART.slab, 6, 0, 6, 6, 19, 4, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.utility),
+      box(PART.slab, 6, 12, 6, 6, 19, 4, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.utility),
     ],
     [
-      box(PART.shell, 5, 5, 4, 4, 19, 48, PALETTE_SLOTS.glassDeep, SURFACE_KIND.luminous, {
+      box(PART.shell, 7, 7, 4, 4, 19, 62, PALETTE_SLOTS.glassDeep, SURFACE_KIND.luminous, {
         cap: PALETTE_SLOTS.glassPale,
       }),
-      box(PART.truss, 4, 4, 6, 6, 19, 38, PALETTE_SLOTS.metalRust, SURFACE_KIND.utility, {
+      box(PART.truss, 6, 6, 6, 6, 19, 50, PALETTE_SLOTS.metalRust, SURFACE_KIND.utility, {
         step: 5,
       }),
     ],
     [
-      box(PART.boom, 1, 5, 12, 4, 55, 6, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.civic),
-      box(PART.boom, 5, 1, 4, 12, 61, 6, PALETTE_SLOTS.glassPale, SURFACE_KIND.luminous),
-      box(PART.deck, 1, 5, 12, 4, 67, 1, PALETTE_SLOTS.roofWhite, SURFACE_KIND.roofTech),
+      box(PART.boom, 3, 7, 12, 4, 75, 6, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.civic),
+      box(PART.boom, 7, 3, 4, 12, 81, 6, PALETTE_SLOTS.glassPale, SURFACE_KIND.luminous),
+      box(PART.deck, 3, 7, 12, 4, 87, 1, PALETTE_SLOTS.roofWhite, SURFACE_KIND.roofTech),
     ],
     [
-      box(PART.shell, 1, 5, 3, 4, 68, 79, PALETTE_SLOTS.concreteLight, SURFACE_KIND.habitat),
-      box(PART.shell, 10, 5, 3, 4, 68, 79, PALETTE_SLOTS.concreteLight, SURFACE_KIND.habitat),
-      box(PART.shell, 5, 1, 4, 3, 68, 79, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.habitat),
-      box(PART.shell, 5, 10, 4, 3, 68, 79, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.habitat),
+      box(PART.shell, 3, 7, 3, 4, 88, 81, PALETTE_SLOTS.concreteLight, SURFACE_KIND.habitat),
+      box(PART.shell, 12, 7, 3, 4, 88, 81, PALETTE_SLOTS.concreteLight, SURFACE_KIND.habitat),
+      box(PART.shell, 7, 3, 4, 3, 88, 81, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.habitat),
+      box(PART.shell, 7, 12, 4, 3, 88, 81, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.habitat),
     ],
     [
-      box(PART.boom, 1, 5, 12, 4, 147, 5, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.civic),
-      box(PART.boom, 5, 1, 4, 12, 152, 5, PALETTE_SLOTS.glassPale, SURFACE_KIND.luminous),
-      box(PART.mast, 2, 6, 2, 2, 152, 34, PALETTE_SLOTS.metalDark, SURFACE_KIND.civic, {
+      box(PART.boom, 3, 7, 12, 4, 170, 5, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.civic),
+      box(PART.boom, 7, 3, 4, 12, 175, 5, PALETTE_SLOTS.glassPale, SURFACE_KIND.luminous),
+      box(PART.mast, 4, 8, 2, 2, 175, 71, PALETTE_SLOTS.metalDark, SURFACE_KIND.civic, {
         cap: PALETTE_SLOTS.metalGold,
       }),
-      box(PART.mast, 10, 6, 2, 2, 152, 34, PALETTE_SLOTS.metalDark, SURFACE_KIND.civic, {
+      box(PART.mast, 12, 8, 2, 2, 175, 71, PALETTE_SLOTS.metalDark, SURFACE_KIND.civic, {
         cap: PALETTE_SLOTS.metalGold,
       }),
-      box(PART.slab, 2, 6, 2, 2, 186, 2, PALETTE_SLOTS.glassPale, SURFACE_KIND.luminous),
-      box(PART.slab, 10, 6, 2, 2, 186, 2, PALETTE_SLOTS.glassPale, SURFACE_KIND.luminous),
+      box(PART.slab, 4, 8, 2, 2, 246, 2, PALETTE_SLOTS.glassPale, SURFACE_KIND.luminous),
+      box(PART.slab, 12, 8, 2, 2, 246, 2, PALETTE_SLOTS.glassPale, SURFACE_KIND.luminous),
     ],
   ],
   bands: [
-    { stage: 0, use: BUILDING_CLASS.industrial, x: 2, y: 2, z: 0, label: 'podium' },
-    { stage: 2, use: BUILDING_CLASS.commercial, x: 7, y: 6, z: 55, label: 'crossroads' },
-    { stage: 3, use: BUILDING_CLASS.residential, x: 2, y: 7, z: 68, label: 'branches' },
-    { stage: 4, use: BUILDING_CLASS.civic, x: 7, y: 2, z: 152, label: 'crown' },
+    { stage: 0, use: BUILDING_CLASS.industrial, x: 4, y: 4, z: 0, label: 'podium' },
+    { stage: 2, use: BUILDING_CLASS.commercial, x: 9, y: 8, z: 75, label: 'crossroads' },
+    { stage: 3, use: BUILDING_CLASS.residential, x: 4, y: 9, z: 88, label: 'branches' },
+    { stage: 4, use: BUILDING_CLASS.civic, x: 9, y: 4, z: 170, label: 'crown' },
   ],
   landings: [
-    { stage: 0, x: 4, y: 0, w: 6, h: 6, z: 23 },
-    { stage: 0, x: 4, y: 8, w: 6, h: 6, z: 23 },
+    { stage: 0, x: 6, y: 0, w: 6, h: 6, z: 23 },
+    { stage: 0, x: 6, y: 12, w: 6, h: 6, z: 23 },
   ],
 };
 
 /** Tre steli sfalsati, cuciti da due traversi che si incrociano in quota. */
 export const SKY_WEAVE: ArcologyRecipe = {
   kind: ARCOLOGY_KIND.skyWeave,
-  span: [14, 14],
-  height: 184,
-  anchor: [7, 7],
+  span: [18, 18],
+  height: 244,
+  anchor: [9, 9],
   // +10 come Twin Stem: le soglie leggono `foundedNeighbours`, congelato prima
   // dello sventramento (vedi il commento su `TWIN_STEM.stages`).
   stages: [0, 52, 68, 84, 100],
   parts: [
     [
-      box(PART.slab, 0, 0, 14, 14, 0, 13, PALETTE_SLOTS.concrete, SURFACE_KIND.industrial, {
+      box(PART.slab, 0, 0, 18, 18, 0, 13, PALETTE_SLOTS.concrete, SURFACE_KIND.industrial, {
         chamfer: 2,
       }),
-      box(PART.deck, 0, 0, 14, 14, 13, 1, PALETTE_SLOTS.concretePale, SURFACE_KIND.utility, {
+      box(PART.deck, 0, 0, 18, 18, 13, 1, PALETTE_SLOTS.concretePale, SURFACE_KIND.utility, {
         chamfer: 2,
       }),
-      box(PART.colonnade, 0, 0, 14, 14, 14, 4, PALETTE_SLOTS.metalDark, SURFACE_KIND.utility, {
+      box(PART.colonnade, 0, 0, 18, 18, 14, 4, PALETTE_SLOTS.metalDark, SURFACE_KIND.utility, {
         step: 3,
         chamfer: 2,
         cap: PALETTE_SLOTS.concretePale,
       }),
-      box(PART.deck, 0, 0, 14, 14, 18, 1, PALETTE_SLOTS.concretePale, SURFACE_KIND.utility, {
+      box(PART.deck, 0, 0, 18, 18, 18, 1, PALETTE_SLOTS.concretePale, SURFACE_KIND.utility, {
         chamfer: 2,
       }),
-      box(PART.slab, 4, 0, 6, 6, 19, 4, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.utility),
-      box(PART.slab, 4, 8, 6, 6, 19, 4, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.utility),
+      box(PART.slab, 6, 0, 6, 6, 19, 4, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.utility),
+      box(PART.slab, 6, 12, 6, 6, 19, 4, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.utility),
     ],
     [
-      box(PART.shell, 0, 2, 4, 5, 19, 75, PALETTE_SLOTS.glassDeep, SURFACE_KIND.luminous),
-      box(PART.shell, 5, 7, 4, 5, 19, 57, PALETTE_SLOTS.concreteLight, SURFACE_KIND.habitat),
-      box(PART.shell, 10, 2, 4, 5, 19, 75, PALETTE_SLOTS.glassDeep, SURFACE_KIND.luminous),
+      box(PART.shell, 2, 4, 4, 5, 19, 96, PALETTE_SLOTS.glassDeep, SURFACE_KIND.luminous),
+      box(PART.shell, 7, 9, 4, 5, 19, 73, PALETTE_SLOTS.concreteLight, SURFACE_KIND.habitat),
+      box(PART.shell, 12, 4, 4, 5, 19, 96, PALETTE_SLOTS.glassDeep, SURFACE_KIND.luminous),
     ],
     [
-      box(PART.boom, 0, 3, 14, 3, 57, 5, PALETTE_SLOTS.glassPale, SURFACE_KIND.luminous),
-      box(PART.boom, 6, 3, 3, 10, 62, 5, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.civic),
-      box(PART.deck, 4, 8, 6, 6, 67, 1, PALETTE_SLOTS.roofWhite, SURFACE_KIND.roofTech),
+      box(PART.boom, 2, 5, 14, 3, 75, 5, PALETTE_SLOTS.glassPale, SURFACE_KIND.luminous),
+      box(PART.boom, 8, 5, 3, 10, 80, 5, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.civic),
+      box(PART.deck, 6, 10, 6, 6, 85, 1, PALETTE_SLOTS.roofWhite, SURFACE_KIND.roofTech),
     ],
     [
-      box(PART.shell, 1, 3, 3, 3, 94, 60, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.habitat),
-      box(PART.shell, 5, 8, 4, 4, 76, 78, PALETTE_SLOTS.concreteLight, SURFACE_KIND.habitat),
-      box(PART.shell, 10, 3, 3, 3, 94, 60, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.habitat),
+      box(PART.shell, 3, 5, 3, 3, 120, 76, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.habitat),
+      box(PART.shell, 7, 10, 4, 4, 98, 98, PALETTE_SLOTS.concreteLight, SURFACE_KIND.habitat),
+      box(PART.shell, 12, 5, 3, 3, 120, 76, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.habitat),
     ],
     [
-      box(PART.boom, 1, 3, 12, 3, 154, 5, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.civic),
-      box(PART.boom, 6, 3, 3, 9, 159, 5, PALETTE_SLOTS.glassPale, SURFACE_KIND.luminous),
-      box(PART.mast, 2, 4, 2, 2, 159, 23, PALETTE_SLOTS.metalDark, SURFACE_KIND.civic, {
+      box(PART.boom, 3, 5, 12, 3, 196, 5, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.civic),
+      box(PART.boom, 8, 5, 3, 9, 201, 5, PALETTE_SLOTS.glassPale, SURFACE_KIND.luminous),
+      box(PART.mast, 4, 6, 2, 2, 201, 41, PALETTE_SLOTS.metalDark, SURFACE_KIND.civic, {
         cap: PALETTE_SLOTS.metalGold,
       }),
-      box(PART.mast, 10, 4, 2, 2, 159, 23, PALETTE_SLOTS.metalDark, SURFACE_KIND.civic, {
+      box(PART.mast, 12, 6, 2, 2, 201, 41, PALETTE_SLOTS.metalDark, SURFACE_KIND.civic, {
         cap: PALETTE_SLOTS.metalGold,
       }),
-      box(PART.slab, 2, 4, 2, 2, 182, 2, PALETTE_SLOTS.glassPale, SURFACE_KIND.luminous),
-      box(PART.slab, 10, 4, 2, 2, 182, 2, PALETTE_SLOTS.glassPale, SURFACE_KIND.luminous),
+      box(PART.slab, 4, 6, 2, 2, 242, 2, PALETTE_SLOTS.glassPale, SURFACE_KIND.luminous),
+      box(PART.slab, 12, 6, 2, 2, 242, 2, PALETTE_SLOTS.glassPale, SURFACE_KIND.luminous),
     ],
   ],
   bands: [
-    { stage: 0, use: BUILDING_CLASS.industrial, x: 2, y: 2, z: 0, label: 'podium' },
-    { stage: 2, use: BUILDING_CLASS.commercial, x: 7, y: 4, z: 57, label: 'weave' },
-    { stage: 3, use: BUILDING_CLASS.residential, x: 2, y: 4, z: 94, label: 'spires' },
-    { stage: 4, use: BUILDING_CLASS.civic, x: 7, y: 9, z: 159, label: 'crown' },
+    { stage: 0, use: BUILDING_CLASS.industrial, x: 4, y: 4, z: 0, label: 'podium' },
+    { stage: 2, use: BUILDING_CLASS.commercial, x: 9, y: 6, z: 75, label: 'weave' },
+    { stage: 3, use: BUILDING_CLASS.residential, x: 4, y: 6, z: 120, label: 'spires' },
+    { stage: 4, use: BUILDING_CLASS.civic, x: 9, y: 11, z: 196, label: 'crown' },
   ],
   landings: [
-    { stage: 0, x: 4, y: 0, w: 6, h: 6, z: 23 },
-    { stage: 0, x: 4, y: 8, w: 6, h: 6, z: 23 },
+    { stage: 0, x: 6, y: 0, w: 6, h: 6, z: 23 },
+    { stage: 0, x: 6, y: 12, w: 6, h: 6, z: 23 },
   ],
 };
 

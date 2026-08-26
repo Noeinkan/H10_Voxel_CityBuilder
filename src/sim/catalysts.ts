@@ -1,14 +1,14 @@
 import { BALANCE } from './balance';
 import { ALL_CLASSES, BUILDING_CLASS, CLASS_COUNT, CLASS_NAMES, type BuildingClass } from './classes';
 
-/** Gli otto modi in cui il giocatore puo' orientare la crescita. */
+/** I diciotto modi in cui il giocatore puo' orientare la crescita. */
 export type CatalystId = keyof typeof BALANCE.gameplay.catalyst.roles;
 
 /**
  * Funzione del catalizzatore nella toolbar.
  *
  * Non e' una categoria estetica: risponde alla domanda "cosa sto per fare",
- * che e' l'unica cosa che il giocatore sa prima di aver imparato i sette nomi.
+ * che e' l'unica cosa che il giocatore sa prima di aver imparato i diciotto nomi.
  * Crescita fa nascere isolati, connessioni collegano la citta' al resto del
  * mondo e fra i suoi poli, identita' le da' un carattere che resta.
  */
@@ -77,14 +77,20 @@ export const CATALYSTS: readonly CatalystDefinition[] = [
   catalyst('factory', 'Factory', 'growth', 'any', 'Boosts industry and jobs, and pushes housing away from its fumes.'),
   catalyst('park', 'Park', 'growth', 'any', 'Creates greener, happier, less industrial neighborhoods.'),
   catalyst('depot', 'Depot', 'growth', 'any', 'A goods yard that feeds workshops and shops, and keeps industry close to its customers.'),
+  catalyst('power', 'Power Station', 'growth', 'any', 'Feeds factories and workshops with power, and drives housing away from its chimneys.'),
+  catalyst('school', 'School', 'growth', 'any', 'A courtyard school that lifts housing and civic life around it.'),
   catalyst('port', 'Port', 'connections', 'coastal', 'Unlocks external trade and concentrates industry and trade on the coast.'),
   catalyst('ferry', 'Ferry', 'connections', 'coastal', 'A pier with moored boats. Pair it with a second terminal across the water to open a line.'),
   catalyst('airport', 'Airport', 'connections', 'open', 'Links the island without touching the coast. Place it on a level 7+ building with a facade at least 8 voxels wide to build a Skyport for airships, eVTOLs and balloons.'),
   catalyst('transport', 'Transit', 'connections', 'any', 'The all-rounder: lifts homes, shops and workshops alike, and asks nothing of the site.'),
+  catalyst('radio', 'Radio Tower', 'connections', 'any', 'Broadcasts across the island, drawing commerce and keeping trade and civic life in touch.'),
+  catalyst('lighthouse', 'Lighthouse', 'connections', 'coastal', 'Guides the coast, drawing homes and civic life to the waterfront.'),
   catalyst('university', 'University', 'identity', 'any', 'Builds a civic district around research and knowledge.'),
   catalyst('monument', 'Monument', 'identity', 'any', 'A landmark that attracts visitors, shops and civic pride.'),
   catalyst('museum', 'Museum', 'identity', 'any', 'A house of knowledge and craft that draws visitors and scholars alike.'),
   catalyst('cathedral', 'Cathedral', 'identity', 'any', 'A place of gathering and quiet that anchors a neighborhood for good.'),
+  catalyst('theatre', 'Theatre', 'identity', 'any', 'A stage and hall that bring visitors, commerce and civic pride.'),
+  catalyst('stadium', 'Stadium', 'identity', 'any', 'A wide, hollow bowl that packs in crowds and commerce.'),
 ];
 
 /** Gruppi in ordine di toolbar, con l'etichetta della sezione. */

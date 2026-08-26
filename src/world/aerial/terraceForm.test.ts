@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { SCALE } from '../scale';
 import { AERIAL } from './config';
 import type { DeckRect } from './deckPlan';
 import {
@@ -20,8 +21,11 @@ import {
  * invece che dentro il generatore.
  */
 
-/** Il fronte piu' lungo che un edificio possa offrire: `MAX_FOOTPRINT` e' otto. */
+/** Un fronte di mezzo modulo: la corsa su cui le quattro forme si distinguono. */
 const RUN = 8;
+
+/** Il fronte piu' lungo che un edificio possa offrire: l'impronta del modulo. */
+const MODULE = SCALE.moduleFootprint;
 
 /** Una mensola che sporge verso est: la parete e' la colonna a `x - 1`. */
 const EAST: TerraceSide = { axis: 0, outward: 1 };
@@ -59,6 +63,26 @@ describe('terraceShape — la pianta', () => {
     expect(overhangOf(3)).toBe(AERIAL.terrace.minOverhang);
     expect(overhangOf(5)).toBe(5);
     expect(overhangOf(40)).toBe(AERIAL.terrace.maxOverhang);
+    // Il tetto e' un parametro, e chi ha visto sorgere un'arcologia passa il suo.
+    expect(overhangOf(40, AERIAL.terrace.megaOverhang)).toBe(AERIAL.terrace.megaOverhang);
+  });
+
+  it('il tetto della fase e cio che separa il balcone dal mensolone', () => {
+    // **E' il difetto scritto come test.** Con `maxOverhang` legato al modulo, un
+    // fronte al modulo dava una loggia profonda quanto il modulo — un altopiano
+    // grande quanto l'isolato — e la dava dal primo minuto di gioco. La corsa
+    // continua a seguire la facciata; e' la profondita' che fa la piattaforma.
+    const run = MODULE;
+    const deepest = (max?: number): number => Math.max(
+      ...AERIAL.terrace.forms.map((_, seed) => terraceShape(run, seed, max).overhang),
+    );
+
+    // La forma piu' profonda del repertorio satura il tetto che le tocca, e non
+    // puo' superare la corsa: vale per qualunque coppia di manopole.
+    expect(deepest()).toBe(Math.min(run, AERIAL.terrace.maxOverhang));
+    expect(deepest(AERIAL.terrace.megaOverhang)).toBe(
+      Math.min(run, AERIAL.terrace.megaOverhang),
+    );
   });
 
   it('e una funzione del seme, non un tiro: lo stesso seme da la stessa forma', () => {

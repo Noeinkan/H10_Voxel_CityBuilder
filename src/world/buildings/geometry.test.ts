@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { ALL_CLASSES, type BuildingClass } from '../../sim';
 import { inPlan } from '../planMask';
+import { SCALE, bandStepOf } from '../scale';
 import {
   BAND_OP,
   BUILDER,
@@ -344,17 +345,19 @@ describe('le trasformazioni nuove', () => {
     // Il difetto che `preferredStart` corregge: prendendo sempre la prima che
     // regge, le voci dietro comparivano solo dove la testa non stava in piedi.
     // Qui tutte e tre reggono, quindi con la regola vecchia il conto sarebbe
-    // 200-0-0.
+    // 200-0-0. Il riquadro si dimensione sul modulo e sul passo, non su numeri
+    // fissi: uno scarto di un passo deve trovare spazio dentro il riquadro.
+    const step = bandStepOf();
     const profile = {
       ...CLASS_PROFILE[0],
       shrinkBias: 1,
       shrinkOps: [BAND_OP.keep, BAND_OP.jog, BAND_OP.setback],
     };
-    // La fascia sta **dentro** il riquadro con un voxel di gioco per lato: sul
-    // filo dell'impronta uno scarto uscirebbe e la guardia lo scarterebbe, cioe'
-    // si misurerebbe il vincolo invece della pesca.
-    const prev: BandRect = { x0: 1, y0: 1, w: 6, h: 6 };
-    const box = { sizeX: 8, sizeY: 8, face: 0 };
+    // La fascia sta dentro il riquadro con un passo di gioco per lato: sul filo
+    // dell'impronta uno scarto uscirebbe e la guardia lo scarterebbe, cioe' si
+    // misurerebbe il vincolo invece della pesca.
+    const prev: BandRect = { x0: step, y0: step, w: (3 * SCALE.moduleFootprint) / 4, h: (3 * SCALE.moduleFootprint) / 4 };
+    const box = { sizeX: SCALE.moduleFootprint, sizeY: SCALE.moduleFootprint, face: 0 };
     const counts = { keep: 0, jog: 0, setback: 0, altro: 0 };
 
     for (let seed = 0; seed < 200; seed++) {
@@ -362,7 +365,7 @@ describe('le trasformazioni nuove', () => {
       if (rect.w === prev.w && rect.h === prev.h) {
         if (rect.x0 === prev.x0 && rect.y0 === prev.y0) counts.keep++;
         else counts.jog++;
-      } else if (rect.w === prev.w - 2 || rect.h === prev.h - 2) counts.setback++;
+      } else if (rect.w === prev.w - 2 * step || rect.h === prev.h - 2 * step) counts.setback++;
       else counts.altro++;
     }
 

@@ -441,9 +441,32 @@ export class AerialDriver {
     return planTerrace({
       host: aerialSupportOf(record),
       faces,
+      maxOverhang: this.terraceOverhang(),
       ground: this.probe.ground,
       solid: this.probe.solid,
     });
+  }
+
+  /**
+   * Lo sporto che la citta' concede in questo momento.
+   *
+   * **E' l'unica riga di questo dominio che guarda in che fase siamo**, ed e' qui
+   * e non in `aerial/` perche' quelle sono regole pure: sanno quanto sporgere, non
+   * quando. La domanda e' una sola — c'e' gia' un'arcologia? — e la risposta e'
+   * il confine fra il balcone e il mensolone.
+   *
+   * **Il mensolone e' la stessa forma a scala di megastruttura**, e a quella
+   * scala ha senso solo dove la citta' sta gia' tirando su le proprie: prima e'
+   * un altopiano che copre l'isolato che dovrebbe decorare. Fondata la prima
+   * arcologia, gli aggetti nuovi nascono profondi quanto il modulo; quelli gia'
+   * posati restano quelli che erano, quindi la citta' si stratifica invece di
+   * cambiare tutta insieme — che e' come si e' comportata ogni altra soglia di
+   * questo progetto.
+   */
+  private terraceOverhang(): number {
+    return this.ctx.registry.arcologyCount > 0
+      ? AERIAL.terrace.megaOverhang
+      : AERIAL.terrace.maxOverhang;
   }
 
   /** L'edificio vero che occupa il suolo di questa colonna, se ce n'e' uno. */

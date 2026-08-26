@@ -1,5 +1,14 @@
 import { PALETTE_SLOTS } from '../../engine/paletteSlots';
 import { TERRAIN } from '../terrain/config';
+import { streetPitchOf } from '../scale';
+
+/**
+ * Passo e scostamento della maglia, derivati dal modulo degli edifici.
+ *
+ * La coppia esce da `streetPitchOf` di `src/world/scale.ts`: il vincolo e' che
+ * l'isolato piu' stretto regga il modulo piu' largo piu' due cubi di marciapiede.
+ */
+const { pitch, jitter } = streetPitchOf();
 
 /**
  * Unica fonte di verita' dei numeri della rete stradale.
@@ -23,24 +32,21 @@ export const STREETS = {
   /**
    * Distanza nominale fra due assi consecutivi.
    *
-   * E' il numero che decide la scala della citta'. Ventidue colonne con
-   * l'impronta massima a otto lasciano un isolato che ospita tre edifici per
-   * lato piu' un cuore libero: sotto le diciotto il cuore sparisce e la citta'
-   * diventa una scacchiera di edifici attaccati, sopra le trenta gli isolati
-   * leggono come campi recintati invece che come isolati.
+   * E' il numero che decide la scala della citta', ed e' **derivato dal modulo**
+   * degli edifici (vedi `streetPitchOf`): un isolato deve ospitare il modulo piu'
+   * largo piu' il marciapiede, senza diventare un campo recintato.
    */
-  pitch: 22,
+  pitch,
 
   /**
    * Scostamento massimo di un asse dalla sua posizione nominale.
    *
    * E' l'unica cosa che separa questa maglia da un reticolo perfetto, e va
    * tenuta sotto meta' del passo: a `pitch / 2` due assi consecutivi possono
-   * toccarsi e l'isolato fra loro sparisce. A quattro, il lato di un isolato
-   * varia fra 14 e 30 colonne — abbastanza da non leggersi come una griglia, mai
-   * abbastanza da non ospitare l'impronta massima.
+   * toccarsi e l'isolato fra loro sparisce. Derivata insieme al passo, cosi'
+   * l'isolato piu' stretto (`pitch - 2 * jitter`) regge sempre il modulo.
    */
-  jitter: 4,
+  jitter,
 
   /** Un asse ogni quanti e' principale. */
   arterialEvery: 4,

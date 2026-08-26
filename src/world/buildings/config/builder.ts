@@ -1,5 +1,11 @@
 import { PALETTE_SLOTS } from '../../../engine/paletteSlots';
 import { TERRAIN } from '../../terrain/config';
+import {
+  SCALE,
+  coastalRadiusOf,
+  maxDirtyChunksPerBuildingOf,
+  segmentSideOf,
+} from '../../scale';
 
 /**
  * Ritmo e tetti della costruzione: quanto in fretta la citta' cresce.
@@ -76,16 +82,15 @@ export const BUILDER = {
   /**
    * Livello massimo raggiungibile. Oltre, un edificio smette di crescere.
    *
-   * **E' il piu' visibile dei tre tetti che tenevano la citta' a mezz'aria, ed
-   * era l'unico che da solo non spostava niente.** A sei livelli una torre
-   * arrivava a una sessantina di voxel contro gli ottanta del rilievo: gli
-   * edifici salivano, la citta' no. Alzarlo qui funziona solo perche' sono
-   * saliti insieme a lui `LEVEL_CAPS`, `START_LEVEL_CDF`,
-   * `maxDirtyChunksPerBuilding` e `GRAMMAR.minBandSide`, e perche' esiste
-   * `src/world/skyline/`: senza una quota ammessa per colonna, dodici livelli su
-   * un campo saturo darebbero un altopiano piu' alto e non uno skyline.
+   * **E' la manopola verticale della scala**, importata da `src/world/scale.ts`.
+   * Alzarla da sola non spostava niente finche' i numeri accoppiati erano scritti
+   * a mano: ora `LEVEL_CAPS`, `START_LEVEL_CDF`, `maxDirtyChunksPerBuilding` e
+   * `GRAMMAR.minBandSide` derivano da qui, e `src/world/skyline/` continua a
+   * decidere fin dove una colonna puo' salire — senza una quota ammessa per
+   * colonna, venti livelli su un campo saturo darebbero un altopiano e non uno
+   * skyline.
    */
-  maxLevel: 12,
+  maxLevel: SCALE.maxLevel,
 
   /**
    * Desiderabilita' che la colonna deve superare per promuovere un edificio al
@@ -110,40 +115,28 @@ export const BUILDER = {
    * Chunk che un singolo edificio puo' marcare sporchi, fondazione inclusa.
    *
    * E' un tetto duro verificato prima di scrivere, non una speranza: un edificio
-   * che sfora viene scartato — in silenzio, perche' non e' un errore. Ventiquattro
-   * copre una torre alta a cavallo di una cucitura senza lasciare che un singolo
-   * upgrade sporchi una regione intera.
-   *
-   * Otto bastavano a un'impronta di quattro. Con otto voxel di lato una torre di
-   * livello massimo attraversa il triplo dei chunk, e lasciando il tetto dov'era
-   * sparirebbero esattamente gli edifici alti — senza che niente lo dica.
-   *
-   * **Quaranta e' aritmetica, non margine.** Con `maxLevel: 12` una torre supera
-   * i centoquaranta voxel. `edgeChunks` aggiunge una colonna di chunk **solo
-   * quando l'impronta non ne attraversa gia' due**, quindi le colonne effettive
-   * restano due per asse comunque cada l'impronta; in quota una torre copre
-   * cinque piani di chunk piu' i due di bordo. Il caso peggiore vale percio'
-   * `2 x 2 x 7 = 28`, e quaranta lascia spazio alla fondazione a cavallo di una
-   * cucitura. Non si taglia in quota per rientrare: `sliceStamps` dichiara
-   * apposta di tagliare solo in pianta, perche' una cucitura orizzontale a meta'
-   * di una torre si vede.
+   * che sfora viene scartato — in silenzio, perche' non e' un errore. **Deriva
+   * dalla torre piu' alta che `maxLevel` sa produrre** (`maxDirtyChunksPerBuildingOf`),
+   * non da un numero ricordato: due colonne di chunk per asse, i piani che la
+   * torre attraversa piu' i due di bordo, e un margine per la fondazione a
+   * cavallo di una cucitura. Non si taglia in quota per rientrare: `sliceStamps`
+   * dichiara apposta di tagliare solo in pianta, perche' una cucitura orizzontale
+   * a meta' di una torre si vede.
    */
-  maxDirtyChunksPerBuilding: 40,
+  maxDirtyChunksPerBuilding: maxDirtyChunksPerBuildingOf(),
 
   /**
    * Lato oltre il quale uno stamp compare a ritagli invece che in un colpo solo.
    *
    * **Le strutture grandi si spezzano, non si esentano.** Un molo lungo ventisei
    * colonne attraversa piu' piani di chunk di una torre alta: scriverlo intero li
-   * marca tutti nello stesso frame, ed e' il motivo per cui la 4.12 aveva dovuto
-   * alzare il tetto per i landmark invece di rispettarlo. A sedici — mezzo chunk
-   * — un ritaglio tocca al massimo due colonne di chunk per asse, e il picco
-   * torna quello di un edificio qualunque.
+   * marca tutti nello stesso frame. **Deriva dal modulo** (`segmentSideOf`): deve
+   * reggere `MAX_FOOTPRINT + maxOverhang` senza spezzare un edificio normale.
    *
    * Non e' una manopola da girare per far entrare una ricetta: se un ritaglio
    * non ci sta, e' questo numero a doversi abbassare.
    */
-  segmentSide: 16,
+  segmentSide: segmentSideOf(),
 
   /**
    * Cubi scritti per frame per struttura: la crescita e' voxel-per-voxel.
@@ -235,10 +228,11 @@ export const BUILDER = {
    * Raggio di Chebyshev entro cui una colonna non edificabile fa "costa".
    *
    * Serve alla sola selezione della tipologia: e' cio' che distingue un mercato
-   * sul porto da un mercato qualunque. Quattordici colonne perche' l'impronta
-   * massima e' otto e il mercato deve vedere l'acqua, non sfiorarla.
+   * sul porto da un mercato qualunque. **Deriva dal modulo** (`coastalRadiusOf`):
+   * l'impronta massima piu' tre cubi, perche' il mercato deve vedere l'acqua,
+   * non sfiorarla.
    */
-  coastalRadius: 14,
+  coastalRadius: coastalRadiusOf(),
 
   /** Quanto il profilo locale anticipa il livello con cui nasce un edificio. */
   localLevel: {

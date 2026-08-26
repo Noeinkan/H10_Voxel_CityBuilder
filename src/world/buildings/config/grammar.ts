@@ -1,3 +1,11 @@
+import {
+  MAX_OVERHANG,
+  SCALE,
+  minBandSideOf,
+  minFootprintOf,
+  terraceMinRingOf,
+} from '../../scale';
+
 /**
  * Il vocabolario della forma: spessori, trasformazioni di fascia, coronamenti e
  * ruoli di lotto.
@@ -13,22 +21,22 @@
 /**
  * Lato massimo assoluto di un'impronta, su qualunque livello.
  *
- * E' in voxel, e il voxel di un edificio e' quello fine: un edificio e' fatto
- * di mattoni piu' piccoli del cubo di terreno su cui poggia (`TERRAIN.cellSize`).
- * Otto voxel di lato sono quattro cubi di terreno — la stessa area di prima,
- * con il doppio del dettaglio per lato in facciata.
+ * **E' la manopola orizzontale della scala**, importata da `src/world/scale.ts`
+ * e non piu' un numero scritto qui: e' in voxel, e il voxel di un edificio e'
+ * quello fine — un edificio e' fatto di mattoni piu' piccoli del cubo di terreno
+ * su cui poggia (`TERRAIN.cellSize`). Raddoppiare il modulo qui significa
+ * raddoppiare l'asse orizzontale senza ritoccare nessun altro numero.
  */
-export const MAX_FOOTPRINT = 8;
+export const MAX_FOOTPRINT = SCALE.moduleFootprint;
 
 /**
  * Lato minimo assoluto: sotto, un edificio e' un palo e non una casa.
  *
- * Quattro voxel sono due cubi di terreno, cioe' lo stesso ingombro minimo di
- * prima. Serve dichiarato perche' il tiro dell'impronta parte da qui, e con
- * `MAX_FOOTPRINT` raddoppiato un minimo di due darebbe casupole che alla scala
- * nuova leggono come garage.
+ * Deriva dal modulo (`moduleFootprint / 2`): serve dichiarato perche' il tiro
+ * dell'impronta parte da qui, e un minimo che non seguisse la scala darebbe
+ * casupole o pali a seconda di dove si gira la manopola.
  */
-export const MIN_FOOTPRINT = 4;
+export const MIN_FOOTPRINT = minFootprintOf();
 
 /**
  * Spessori della grammatica, in voxel.
@@ -91,51 +99,42 @@ export const GRAMMAR = {
    * a punta di spillo: succedeva gia' con `shrink` ripetuto, e con `stack` in
    * repertorio succederebbe in meta' delle fasce.
    *
-   * **Due bastavano su otto fasce, non su ventisei.** Con `maxLevel: 12` una
-   * torre ha tre volte le fasce di prima, e una catena di `shrink` la portava al
-   * minimo entro il primo terzo: sopra restava uno stelo da un cubo di terreno
-   * per due terzi dell'altezza, cioe' un palo. A quattro voxel — due cubi — lo
-   * stelo resta un volume per tutta la salita. Il coronamento puo' assottigliarsi
-   * oltre, perche' e' il suo mestiere; il corpo no.
+   * **Deriva dal modulo, e non e' un gusto.** Con gli scarti di fascia
+   * proporzionali al modulo (vedi `bandOps.ts`), un `minBandSide` fermo
+   * riporterebbe un modulo largo a restringersi a un palo entro le prime fasce.
+   * Meta' del modulo tiene il corpo un volume per tutta la salita: il coronamento
+   * puo' assottigliarsi oltre, perche' e' il suo mestiere; il corpo no.
    */
-  minBandSide: 4,
+  minBandSide: minBandSideOf(),
 
   /**
    * Larghezza minima dell'**anello scoperto** perche' una rientranza diventi
    * terrazza invece di restare uno scalino.
    *
-   * Sotto, l'anello e' largo un voxel e non ci si sta: verniciarlo di
+   * Sotto, l'anello e' largo un passo e non ci si sta: verniciarlo di
    * pavimentazione mentirebbe, e — dato che la terrazza chiede a `emitRoofTech`
    * un parapetto — pagherebbe geometria di dettaglio per un bordo che nessuno
    * legge come praticabile.
    *
-   * **Era `terraceMinSide` e misurava il lato della fascia, che e' un'altra
-   * cosa.** Il numero diceva tre, ma nessuna fascia di corpo scende sotto
-   * `minBandSide`, che vale quattro: la soglia non poteva mordere, e ogni
-   * scarto — anche un `jog` da un voxel — usciva pavimentato e col parapetto.
-   * Misurato sul ripiego residenziale, meta' delle transizioni di fascia
-   * lasciava un anello da un voxel solo, ed erano tutte terrazze. E' il motivo
-   * per cui a schermo la terrazza non era un luogo ma una cornice, ripetuta su
-   * ogni piano di ogni edificio della citta'.
-   *
-   * Due e' l'arretramento di `setback`, cioe' un cubo di terreno: la piu'
-   * piccola rientranza in cui pavimentazione, parapetto e giardino raccontino
-   * qualcosa.
+   * **Deriva dal passo degli scarti** (`terraceMinRingOf`): e' la profondita' di
+   * `setback`, cioe' due passi. Uno scarto da un passo solo — un `jog` — resta
+   * un gradino, ed e' proprio la distinzione che tiene la terrazza un luogo
+   * invece che una cornice su ogni piano.
    */
-  terraceMinRing: 2,
+  terraceMinRing: terraceMinRingOf(),
 
   /**
    * Voxel di cui l'inviluppo puo' uscire dall'impronta, **verso la strada**.
    *
-   * Due sono un cubo di terreno: il piu' piccolo sbalzo che si legga come tale
-   * invece che come un bordo storto. Il tetto vero non e' un gusto ma
-   * aritmetica, e va riverificato se `MAX_FOOTPRINT` cambia:
-   * `MAX_FOOTPRINT + maxOverhang` deve restare sotto `CHUNK`, o l'inviluppo
-   * comincia ad attraversare tre colonne di chunk per asse e
-   * `maxDirtyChunksPerBuilding` non basta piu'. Il conto sta in
-   * `chunkBudget.test.ts`, che lo verifica invece di fidarsi di questa riga.
+   * **E' microgeometria e resta fisso.** Due sono un cubo di terreno: il piu'
+   * piccolo sbalzo che si legga come tale invece che come un bordo storto. Sta
+   * in `scale.ts` come `MAX_OVERHANG` perche' `segmentSide` deve tenerne conto,
+   * e qui lo si riesporta perche' il vocabolario e' il posto in cui la grammatica
+   * lo cita. Il tetto vero non e' un gusto ma aritmetica: `MAX_FOOTPRINT +
+   * maxOverhang` deve restare sotto `CHUNK` e dentro `segmentSide`, e i conti
+   * stanno in `scale.test.ts` e `overhang.test.ts`.
    */
-  maxOverhang: 2,
+  maxOverhang: MAX_OVERHANG,
 
   /**
    * Quota sotto cui nessuna fascia esce dall'impronta.

@@ -1,5 +1,16 @@
 import { CROWN_KIND, GRAMMAR, type CrownKind } from './config';
 import { shrink, shrinkAxis, type BandRect } from './bandRect';
+import { bandStepOf } from '../scale';
+
+/**
+ * Il passo delle rientranze del coronamento.
+ *
+ * Le rientranze `shrink`/`shrinkAxis` qui sotto seguono lo stesso passo degli
+ * scarti di fascia (`bandStepOf`): un coronamento sul modulo raddoppiato rientra
+ * il doppio, cosi' la cima resta leggibile come cima invece di diventare un
+ * puntino in mezzo a una facciata larga il doppio.
+ */
+const STEP = bandStepOf();
 
 /**
  * Come si chiude la silhouette.
@@ -40,41 +51,41 @@ export function crownBands(
       // racconto degli arretramenti sotto.
       return {
         bands: [
-          { rect: shrink(top), height: GRAMMAR.flatCrownHeight },
-          { rect: shrink(shrink(top)), height: GRAMMAR.flatCrownHeight },
+          { rect: shrink(top, STEP), height: GRAMMAR.flatCrownHeight },
+          { rect: shrink(shrink(top, STEP), STEP), height: GRAMMAR.flatCrownHeight },
         ],
         roofProp: false,
       };
     case CROWN_KIND.ridge:
       // Rientra su un asse solo, e sul lato lungo resta larga quanto il corpo:
       // e' la copertura di un mercato o di un deposito vista di fianco.
-      return { bands: [{ rect: shrinkAxis(top), height: GRAMMAR.flatCrownHeight }], roofProp: false };
+      return { bands: [{ rect: shrinkAxis(top, STEP), height: GRAMMAR.flatCrownHeight }], roofProp: false };
     case CROWN_KIND.gable: {
       // Tre rientranze di fila sullo stesso asse: `shrinkAxis` sceglie sempre il
       // lato corto, quindi la falda sale sempre verso il colmo lungo — anche
       // sulle impronte non quadrate, e senza che questa funzione sappia quale
       // asse sia. Su un'impronta stretta l'ultimo gradone degenera in una linea,
       // ed e' la cosa giusta: quello *e'* il colmo.
-      const first = shrinkAxis(top);
-      const second = shrinkAxis(first);
+      const first = shrinkAxis(top, STEP);
+      const second = shrinkAxis(first, STEP);
       return {
         bands: [
           { rect: first, height: GRAMMAR.flatCrownHeight },
           { rect: second, height: GRAMMAR.flatCrownHeight },
-          { rect: shrinkAxis(second), height: GRAMMAR.flatCrownHeight },
+          { rect: shrinkAxis(second, STEP), height: GRAMMAR.flatCrownHeight },
         ],
         roofProp: false,
       };
     }
     case CROWN_KIND.lantern:
-      // L'unica cima che sale invece di chiudere. Rientra di due per lato e si
-      // porta dietro il supplemento: senza, resterebbe un cappello basso e
+      // L'unica cima che sale invece di chiudere. Rientra di due passi per lato e
+      // si porta dietro il supplemento: senza, resterebbe un cappello basso e
       // stretto, cioe' il contrario di una torretta.
       return {
-        bands: [{ rect: shrink(shrink(top)), height: height + GRAMMAR.lanternRise }],
+        bands: [{ rect: shrink(shrink(top, STEP), STEP), height: height + GRAMMAR.lanternRise }],
         roofProp: true,
       };
     default:
-      return { bands: [{ rect: shrink(top), height }], roofProp: true };
+      return { bands: [{ rect: shrink(top, STEP), height }], roofProp: true };
   }
 }

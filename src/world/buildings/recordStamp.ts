@@ -1,5 +1,5 @@
 import { DEFAULT_BUILDING_FORM, typologyById, type TypologyDefinition } from './config';
-import { generateBuilding } from './generate';
+import { buildStamp } from './assemble';
 import { selectTypology, typologyProfile } from './typology';
 import { styleOf, styledProfile } from './style';
 import type { BuildingRecord } from './BuildingRegistry';
@@ -28,7 +28,7 @@ import type { VoxelStamp } from './stamp';
  */
 export function recordStamp(record: BuildingRecord): VoxelStamp {
   const typology = typologyOf(record);
-  return generateBuilding({
+  return buildStamp({
     class: record.class,
     level: record.level,
     seed: record.seed,
@@ -44,7 +44,7 @@ export function recordStamp(record: BuildingRecord): VoxelStamp {
     mixed: record.mixed,
     facing: record.facing,
     baseBandHeight: record.baseBand,
-  });
+  }, record.footprint);
 }
 
 /** Tipologia registrata di un edificio, o quella di ripiego del suo uso. */

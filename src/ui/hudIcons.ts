@@ -3,8 +3,8 @@ import type { CatalystId } from '../sim/catalysts';
 export type HudIcon =
   | 'funds' | 'population' | 'food' | 'materials' | 'satisfaction'
   | 'residential' | 'production' | 'civic' | 'expansion' | 'terrace' | 'ropeway' | 'policies' | 'city'
-  | 'market' | 'factory' | 'park' | 'depot' | 'port' | 'ferry' | 'airport' | 'transport'
-  | 'university' | 'monument' | 'museum' | 'cathedral'
+  | 'market' | 'factory' | 'park' | 'depot' | 'power' | 'school' | 'port' | 'ferry' | 'airport' | 'transport' | 'radio' | 'lighthouse'
+  | 'university' | 'monument' | 'museum' | 'cathedral' | 'theatre' | 'stadium'
   | 'pause' | 'play' | 'theme' | 'view' | 'swatch' | 'help' | 'close'
   | 'daylight' | 'sun' | 'moon' | 'clouds' | 'cloudsOff';
 
@@ -59,6 +59,25 @@ const PATHS: Readonly<Record<HudIcon, string>> = {
   // riconosce di profilo da lontano, ed e' l'unica del gruppo identita' che non
   // possa essere scambiata per un edificio civico.
   cathedral: '<path d="M12 2v3.5M10.5 3.5h3M8 21V10l4-4.5 4 4.5v11M4 21v-7l4-3M20 21v-7l-4-3M3 21h18"/><circle cx="12" cy="12.5" r="1.6"/>',
+  // Due torri di raffreddamento a clessidra e una ciminiera sottile: il fumo
+  // non c'e', e la verticale magra accanto ai due tamburi e' la firma della
+  // centrale prima di qualunque colore.
+  power: '<path d="M3 20V10l1.5-2.5L6 10v10M9 20V10l1.5-2.5L12 10v10M15 20V4h2v16"/>',
+  // Due ali e il corpo che le unisce, con la torre dell'orologio che esce dal
+  // tetto: e' il quadrante, non il campanile, a distinguerla dalla cattedrale.
+  school: '<path d="M3 20V8h6v12M15 20V8h6v12M9 20h6M12 8V2"/><circle cx="12" cy="4" r="1.3"/>',
+  // Un traliccio a croci diagonali e l'antenna in cima: l'aria fra i montanti
+  // e' cio' che separa una torre radio da un monumento pieno.
+  radio: '<path d="M9 20V5M15 20V5M9 5l3-2 3 2M12 5V2M7 20h10M9 8l6 3M15 8l-6 3M9 12l6 3M15 12l-6 3M9 16l6 3M15 16l-6 3"/>',
+  // La torre rastremata, la lanterna accesa e la casa del custode ai piedi:
+  // e' l'unica verticale del gruppo collegamenti che parli di costa.
+  lighthouse: '<path d="M10 20V8l2-3 2 3v12M10 20h4M10 8h4M12 5V2M11 2h2M3 20h5M4 20v-4h3v4"/>',
+  // Torre scenica alta, sala a falda e colonnato d'ingresso: tre altezze
+  // diverse che nessun altro ruolo del gruppo identita' compone cosi'.
+  theatre: '<path d="M4 20V6h6v14M10 20v-3l5-4 5 4v3M10 20h10M3 14h1M3 17h1M3 20h1"/>',
+  // Due ovali concentrici, bassi e larghi: il catino cavo si legge da sopra
+  // prima che di taglio, ed e' l'unica sagoma non verticale del catalogo.
+  stadium: '<path d="M3 12c0-4 4-6 9-6s9 2 9 6c0 5-4 8-9 8s-9-3-9-8ZM6 12c0-3 2.5-4.5 6-4.5s6 1.5 6 4.5c0 3.5-2.5 5.5-6 5.5s-6-2-6-5.5Z"/>',
   expansion: '<path d="M8 3H3v5M16 3h5v5M8 21H3v-5M16 21h5v-5M3 8l6 6M21 8l-6 6M3 16l6-6M21 16l-6-6"/>',
   // Una torre di taglio con un piano che le esce dal fianco, e la trave sotto:
   // e' la sezione che il generatore disegna davvero, ed e' l'unica cosa che

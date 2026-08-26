@@ -126,6 +126,7 @@ import { cellDetail, type SwatchDetail } from './world/scenes/swatchProbe';
 import { firstSolidVoxel } from './world/scenes/swatchPick';
 import { StreetNetwork } from './world/streets/StreetNetwork';
 import { TERRAIN } from './world/terrain/config';
+import { maxTowerHeightOf } from './world/scale';
 import { BiomeView } from './world/terrain/BiomeView';
 import { expandIsland } from './world/terrain/IslandGenerator';
 import { TerrainStreamer } from './world/terrain/TerrainStreamer';
@@ -172,6 +173,15 @@ const LOADING_GENERATION_BUDGET_MS = 9;
 const VOXEL_SIZE = 1;
 
 /**
+ * Il piano su cui la camera pana, ruota e si centra: il pianoro dell'isola.
+ *
+ * Non e' l'altezza di una torre — e' il suolo che si guarda. Serve anche
+ * all'inquadratura della crescita, che deve lasciare sopra di esso lo spazio
+ * della torre piu' alta che la scala verticale produce.
+ */
+const ISLAND_PIVOT = 24;
+
+/**
  * Lato dell'isola della scena di debug del terreno, in voxel.
  *
  * Raddoppiato insieme alla scala del contenuto. Un edificio ora e' largo il
@@ -189,7 +199,16 @@ let debugVisible = debugEnabled;
 const sceneKind = parseSceneKind(params.get('scene'));
 const seed = parseInt(params.get('seed') ?? '1337', 10) || 1337;
 const worldSize = clampInt(params.get('size'), 512, 32, 4096);
-const worldHeight = clampInt(params.get('height'), 64, 32, 256);
+// L'altezza del mondo deve contenere la torre piu' alta che la scala verticale
+// produce, sopra il rilievo dell'isola. Prima era un 64 fisso: troncava le
+// torri da ~237 voxel prima ancora che nascessero. Default e tetto derivano
+// dalla manopola verticale, l'override da URL resta.
+const worldHeight = clampInt(
+  params.get('height'),
+  maxTowerHeightOf() + TERRAIN.maxHeight,
+  32,
+  maxTowerHeightOf() + TERRAIN.maxHeight,
+);
 const qualityMode = parseQualityMode(params.get('quality'));
 
 /**
@@ -350,7 +369,7 @@ const camera = new IsoCameraController(world, window.innerWidth, window.innerHei
     ? diorama.subject.z + diorama.subject.sizeZ / 2
     : sceneKind === 'swatch'
       ? SWATCH.groundZ + CELL_HEIGHT / 2
-      : 24,
+      : ISLAND_PIVOT,
 });
 camera.attach(renderer.domElement);
 
@@ -496,11 +515,16 @@ if (diorama !== null) {
   // si inquadra il nucleo centrale lasciando alle torri spazio verticale.
   //
   // `spanZ` non e' decorativo: entra in `projectedHeight`, quindi l'inquadratura
-  // d'apertura **non** e' indipendente dall'altezza della citta'. Duecentoquaranta
-  // erano tarati su torri da sessanta voxel; con la 4.6 un civico di livello
-  // massimo ne fa centocinquanta sopra un terreno che parte a ventiquattro, e a
-  // spanZ invariato la punta sarebbe nata fuori campo.
-  camera.frameRegion(TERRAIN_SIZE / 2, TERRAIN_SIZE / 2, 420, 420, 320);
+  // d'apertura **non** e' indipendente dall'altezza della citta'. Deriva dalla
+  // torre piu' alta che la scala verticale produce, sopra il pianoro dell'isola:
+  // a spanZ invariato la punta nascerebbe fuori campo.
+  camera.frameRegion(
+    TERRAIN_SIZE / 2,
+    TERRAIN_SIZE / 2,
+    420,
+    420,
+    maxTowerHeightOf() + ISLAND_PIVOT,
+  );
 } else {
   // L'isola invece si guarda intera: 512 di lato stanno in poche centinaia di chunk.
   camera.frameRegion(TERRAIN_SIZE / 2, TERRAIN_SIZE / 2, TERRAIN_SIZE, TERRAIN_SIZE, 160);

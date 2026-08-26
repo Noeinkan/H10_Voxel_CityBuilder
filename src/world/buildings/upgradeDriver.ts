@@ -11,7 +11,9 @@ import type { AerialDriver } from './aerialDriver';
 import type { BuildContext } from './buildContext';
 import { dirtyChunkCount } from './chunkBudget';
 import { BUILDER, MAX_FOOTPRINT, typologyById, upgradeThresholdOf } from './config';
-import { generateBuilding, groundSideOf } from './generate';
+import { buildStamp } from './assemble';
+import { groundSideOf } from './generate';
+import { sliceStamps, type VoxelStamp } from './stamp';
 import { anchorOf } from './growthQueue';
 import { allowedLevel, riseOf } from './hierarchy';
 import { recordStamp } from './recordStamp';
@@ -192,11 +194,11 @@ export class UpgradeDriver {
     // l'inviluppo, e fallendo cambierebbe sagoma sotto a chi ci si e' appoggiato.
     // La tipologia nuova puo' chiederne uno diverso; il record non gliene da'.
     const over = record.overhang ?? 0;
-    let stamp = generateBuilding({
+    let stamp = buildStamp({
       class: record.class,
       level: nextLevel,
       seed: record.seed,
-      footprintCap: Math.min(MAX_FOOTPRINT, room),
+      footprintCap: room,
       footprintFloor: record.footprint,
       form: nextForm,
       profile: styledProfile(typologyProfile(nextTypology), style),
@@ -204,13 +206,19 @@ export class UpgradeDriver {
       mixed: record.mixed,
       facing: record.facing,
       baseBandHeight: record.baseBand,
-    });
+    }, room);
+    // Un assemblaggio riempie il lotto e non aggetta: lo sbalzo del record vale
+    // solo su un singolo modulo. Il generatore forza `overhang` a zero sui
+    // sotto-volumi, e chi misura l'impronta di suolo deve fare lo stesso —
+    // altrimenti `groundSideOf` sottrae una striscia che lo stamp non ha e il
+    // record diverge dalla sagoma scritta.
+    let overhang = room > MAX_FOOTPRINT ? 0 : over;
+    let side = groundSideOf(stamp, overhang, record.facing);
     // Il confronto e' fra **impronte**, non fra inviluppi: lo sbalzo non e' un
     // allargamento del lotto, e leggerlo come tale farebbe credere che ogni
     // edificio sporgente stia crescendo in pianta a ogni promozione.
-    if (groundSideOf(stamp, over, record.facing) > record.footprint &&
-      !this.fitsWider(record, groundSideOf(stamp, over, record.facing), stamp.sizeZ)) {
-      stamp = generateBuilding({
+    if (side > record.footprint && !this.fitsWider(record, side, stamp.sizeZ)) {
+      stamp = buildStamp({
         class: record.class,
         level: nextLevel,
         seed: record.seed,
@@ -222,20 +230,25 @@ export class UpgradeDriver {
         mixed: record.mixed,
         facing: record.facing,
         baseBandHeight: record.baseBand,
-      });
+      }, record.footprint);
+      overhang = record.footprint > MAX_FOOTPRINT ? 0 : over;
+      side = groundSideOf(stamp, overhang, record.facing);
     }
 
     // L'impronta di suolo della sagoma nuova: e' quella che va nel record, e da
     // cui l'inviluppo si ricava.
-    const side = groundSideOf(stamp, over, record.facing);
     const env = envelopeOf({
-      x: record.x, y: record.y, footprint: side, overhang: over, facing: record.facing,
+      x: record.x, y: record.y, footprint: side, overhang, facing: record.facing,
     });
 
-    if (dirtyChunkCount(env.x, env.y, env.sizeX, record.baseZ, record.baseZ + stamp.sizeZ,
-      env.sizeY) > BUILDER.maxDirtyChunksPerBuilding) {
-      return null;
-    }
+    // Un assemblaggio supera `segmentSide` in pianta e compare a ritagli: il tetto
+    // di chunk va verificato per ritaglio, come alla nascita. Un singolo modulo
+    // resta sul conto intero di sempre.
+    const overBudget = side > MAX_FOOTPRINT
+      ? this.stampExceedsBudget(record, stamp)
+      : dirtyChunkCount(env.x, env.y, env.sizeX, record.baseZ, record.baseZ + stamp.sizeZ,
+        env.sizeY) > BUILDER.maxDirtyChunksPerBuilding;
+    if (overBudget) return null;
 
     // La sagoma su cui le sue campate poggiavano sta per cambiare: cadono con
     // lei, e la passata successiva le ripropone alla quota nuova. E' il vincolo
@@ -268,7 +281,7 @@ export class UpgradeDriver {
       form: nextForm,
       typology: nextTypology.id,
       style: record.style,
-      overhang: record.overhang,
+      overhang: overhang > 0 ? overhang : undefined,
       district: profile.district,
       specialization: profile.specialization,
       facing: record.facing,
@@ -296,9 +309,38 @@ export class UpgradeDriver {
     }
 
     surface.enqueueBlockStreets(streets.blockAt(replaced.x, replaced.y));
-    growth.enqueue(replaced.id, anchorOf(replaced), stamp, old);
+    if (side > MAX_FOOTPRINT) {
+      // Un assemblaggio compare a ritagli; la sagoma vecchia e' tutta coperta
+      // dalla nuova (stesso seme, stessa impronta, piu' alta), quindi non c'e'
+      // niente da cancellare oltre ai ritagli che si scrivono.
+      growth.enqueueSegments(replaced, stamp);
+    } else {
+      growth.enqueue(replaced.id, anchorOf(replaced), stamp, old);
+    }
     this.upgraded++;
     return replaced;
+  }
+
+  /**
+   * true se uno dei ritagli di un assemblaggio sfora il tetto di chunk sporchi.
+   *
+   * E' la meta' del controllo di `fitsChunkBudget` che riguarda la sagoma: la
+   * fondazione qui non si riscrive (stessa impronta), quindi basta verificare che
+   * ogni ritaglio — che compare da solo — stia dentro il budget.
+   */
+  private stampExceedsBudget(record: BuildingRecord, stamp: VoxelStamp): boolean {
+    for (const slice of sliceStamps(stamp, BUILDER.segmentSide)) {
+      const count = dirtyChunkCount(
+        record.x + slice.offsetX,
+        record.y + slice.offsetY,
+        slice.stamp.sizeX,
+        record.baseZ,
+        record.baseZ + slice.stamp.sizeZ,
+        slice.stamp.sizeY,
+      );
+      if (count > BUILDER.maxDirtyChunksPerBuilding) return true;
+    }
+    return false;
   }
 
   /**

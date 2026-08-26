@@ -17,6 +17,7 @@ import { anchoredVoxel, STAMP_EMPTY, bandCount, solidCount, type VoxelStamp } fr
 import { SURFACE_KIND } from '../visualBlock';
 import { START_LEVEL_CDF } from './config';
 import { TERRAIN } from '../terrain/config';
+import { maxTowerHeightOf } from '../scale';
 
 type StampCase = { stamp: VoxelStamp; cls: BuildingClass; level: number };
 
@@ -261,24 +262,19 @@ describe('generateBuilding', () => {
       const stamp = generateBuilding({ class: ALL_CLASSES[3], level: BUILDER.maxLevel, seed });
       tallest = Math.max(tallest, stamp.sizeZ);
       expect(stamp.sizeX).toBe(MAX_FOOTPRINT);
-      // **La 4.6 ha cambiato questo numero, e va detto invece che allentato.**
-      // Stava a dieci perche' il livello massimo era sei; con dodici la punta
-      // arriva a diciannove a uno, cioe' una torre-matita. Non e' una
-      // regressione tollerata: e' l'unica forma disponibile finche'
-      // `MAX_FOOTPRINT` resta otto, e otto non puo' salire senza allargare
-      // `STREETS.pitch` — l'isolato piu' stretto e' largo quattordici colonne.
-      // Il tetto qui resta perche' *un* tetto serve: oltre venti a uno non e'
-      // piu' una guglia, e' un filo.
+      // **La punta resta una punta, non un filo.** Il tetto qui e' un rapporto
+      // altezza/lato, non un numero: oltre venti a uno non e' piu' una guglia,
+      // e' un filo. Il modulo raddoppiato allarga la base, quindi il tetto
+      // regge anche una torre piu' alta di quella della scala precedente.
       expect(stamp.sizeZ / stamp.sizeX).toBeLessThanOrEqual(20);
     }
-    // Sedici-diciannove fasce da sei-otto voxel piu' coronamento e dettaglio: un
-    // civico di livello massimo arriva a centocinquanta voxel. **E' il punto
-    // della fase**, non un effetto collaterale: la torre di punta supera il
-    // rilievo che la ospita, e da inquadratura d'insieme la citta' smette di
-    // stare sotto la collina.
+    // La torre di punta supera il rilievo che la ospita, e da inquadratura
+    // d'insieme la citta' smette di stare sotto la collina. Il tetto e il
+    // pavimento vengono dalla derivazione (`maxTowerHeightOf`), non da un numero
+    // ricordato: e' la stessa rete che tiene `maxDirtyChunksPerBuilding`.
     expect(tallest).toBeGreaterThan(TERRAIN.maxHeight);
-    expect(tallest).toBeGreaterThanOrEqual(140);
-    expect(tallest).toBeLessThanOrEqual(165);
+    expect(tallest).toBeGreaterThan(maxTowerHeightOf() * 0.7);
+    expect(tallest).toBeLessThanOrEqual(maxTowerHeightOf());
   });
 
   it('le tabelle indicizzate per livello coprono tutti i livelli', () => {

@@ -87,6 +87,7 @@ resto si apre a domanda — è ciò che tiene basso il contesto di partenza.
 
 | File | Ruolo | Esporta |
 | --- | --- | --- |
+| [scale.ts](src/world/scale.ts) | La scala degli edifici come manopola ripetibile: le due manopole e ogni numero accoppiato derivato, cosi' cambiare `SCALE` non lascia accoppiamenti scoperti | `SCALE`, `MAX_OVERHANG`, `MAX_BAND_HEIGHT`, `LevelCaps`, `minFootprintOf`, `minBandSideOf`, `bandStepOf`, `terraceMinRingOf`, `courtyardMinSideOf`, `segmentSideOf`, `levelCapsOf`, `startLevelCdfOf`, `skylineCapsOf`, `maxTowerHeightOf`, `maxDirtyChunksPerBuildingOf`, `streetPitchOf`, `coastalRadiusOf`, `arcologySpanOf` |
 | [scenes/swatchCatalog.ts](src/world/scenes/swatchCatalog.ts) | Catalogo dei soggetti del campionario: ogni tipologia a livello 6 e ogni landmark — varianti e forme contestuali, Skyport compreso — derivati dagli stamp veri, con fasce, riquadri, scheda e inquadrature | `SWATCH_ITEM_GAP`, `SWATCH_BUILDING_LEVEL`, `SWATCH_FOCUS`, `SWATCH_FOCUSES`, `SWATCH_BUILDINGS`, `SWATCH_LANDMARKS`, `SWATCH_CATALOG_SUBJECTS`, `SWATCH_SUBJECTS`, `swatchExtent`, `swatchFocusExtent`, `swatchSubjectAt`, `swatchPlinthSpanAt`, `SwatchFocus`, `SwatchSubject`, `SwatchCatalogSubject`, `SwatchSubjectKind`, `SwatchInfoRow` |
 | [scenes/swatchPick.ts](src/world/scenes/swatchPick.ts) | Traversata DDA del raggio nel volume del campionario: il primo solido visibile, puro e senza mondo | `firstSolidVoxel`, `VoxelRay`, `VoxelHit`, `SwatchBox` |
 | [src/world/traffic/wake.ts](src/world/traffic/wake.ts) | La scia sull'acqua: il pennacchio letto in orizzontale, dalle pose passate. |
@@ -665,6 +666,7 @@ le scritture stanno in tre file invece che sparse in sei metodi.
 
 | File | Ruolo | Esporta |
 | --- | --- | --- |
+| [assemble.ts](src/world/buildings/assemble.ts) | L'assemblatore dei lotti oltre il modulo: sotto-volumi su un podio condiviso, fusi in un solo stamp, e il dispatcher unico di nascita, promozione e cancellazione | `assembleBuilding`, `buildStamp`, `assembleLayoutCells`, `AssembleCell` |
 | [Builder.ts](src/world/buildings/Builder.ts) | Orchestratore: il ciclo a tick, la nascita di un edificio sul lotto, le statistiche | `Builder`, `BuilderStats`, `REJECT_REASONS` |
 | [buildContext.ts](src/world/buildings/buildContext.ts) | Cio' che ogni driver ha in mano: mondo, terreno, strade, registry e le due code | `BuildContext` |
 | [config/builder.ts](src/world/buildings/config/builder.ts) | Cadenze, budget per frame, tetti di chunk, aggregazione in fila | `BUILDER`, `CLUSTER`, `BuildingForm`, `DEFAULT_BUILDING_FORM` |

@@ -55,9 +55,14 @@ export interface TerraceShape {
  * consegnarla tale e quale. Una facciata da quattro porta ancora un balcone e una
  * da otto una terrazza vera — e quella, oltre `AERIAL.reach`, si ritrova le
  * proprie gambe.
+ *
+ * **Il tetto e' un parametro perche' e' una fase, non una costante.** Il valore
+ * ordinario e' quello del balcone; chi ha visto sorgere un'arcologia passa
+ * `AERIAL.terrace.megaOverhang` e ottiene il mensolone. La funzione resta pura:
+ * entra un numero, esce un numero, e la fase la conosce solo chi chiama.
  */
-export function overhangOf(run: number): number {
-  return Math.min(AERIAL.terrace.maxOverhang, Math.max(AERIAL.terrace.minOverhang, run));
+export function overhangOf(run: number, max: number = AERIAL.terrace.maxOverhang): number {
+  return Math.min(max, Math.max(AERIAL.terrace.minOverhang, run));
 }
 
 /**
@@ -68,15 +73,19 @@ export function overhangOf(run: number): number {
  * quattro varianti quasi uguali — non c'e' spazio per altro — e un fronte da otto
  * ne da' quattro davvero diverse, che e' dove la varieta' si vede.
  */
-export function terraceShape(run: number, seed: number): TerraceShape {
+export function terraceShape(
+  run: number,
+  seed: number,
+  max: number = AERIAL.terrace.maxOverhang,
+): TerraceShape {
   const { forms, minRun } = AERIAL.terrace;
   const form = forms[seed % forms.length];
 
   const length = clamp(Math.round(run * form.run), Math.min(run, minRun), run);
   const overhang = clamp(
-    Math.round(overhangOf(run) * form.depth),
+    Math.round(overhangOf(run, max) * form.depth),
     AERIAL.terrace.minOverhang,
-    AERIAL.terrace.maxOverhang,
+    max,
   );
   return { length, overhang, shift: Math.round((run - length) * form.align) };
 }

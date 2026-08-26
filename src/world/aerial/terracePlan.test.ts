@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { SCALE } from '../scale';
 import { AERIAL, DECK_HEIGHT } from './config';
 import {
   AERIAL_FACE,
@@ -176,5 +177,61 @@ describe('planTerrace — la mensola', () => {
     const a = planTerrace({ host: HOST, faces: AERIAL_FACES, ...city() });
     const b = planTerrace({ host: HOST, faces: AERIAL_FACES, ...city() });
     expect(a).toEqual(b);
+  });
+});
+
+describe('planTerrace — il balcone e il mensolone', () => {
+  /**
+   * Un ospite all'impronta piena del modulo.
+   *
+   * **E' l'unico fronte su cui le due fasi divergono**, e il perche' e' in
+   * `overhangOf`: lo sporto non supera mai la corsa, quindi su un fronte da otto
+   * il mensolone esce identico al balcone. La regressione si vedeva a schermo
+   * proprio perche' il modulo raddoppiato ha reso comuni i fronti da sedici.
+   */
+  const WIDE: AerialSupport = {
+    id: 9,
+    x: 40,
+    y: 40,
+    sizeX: SCALE.moduleFootprint,
+    sizeY: SCALE.moduleFootprint,
+    baseZ: 4,
+    height: 32,
+  };
+
+  function wideCity(): TestGround {
+    return new TestGround(4).tower(
+      WIDE.x, WIDE.y, WIDE.sizeX, WIDE.baseZ, 20, WIDE.baseZ + WIDE.height, 1, WIDE.id,
+    );
+  }
+
+  /** La profondita' dell'aggetto che questo fronte porta, con il tetto dato. */
+  function depthOf(maxOverhang?: number): number {
+    const result = planTerrace({
+      host: WIDE,
+      faces: [AERIAL_FACE.east],
+      maxOverhang,
+      ...wideCity(),
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error(result.refusal);
+    return result.plan.deck.rect.sizeX;
+  }
+
+  it('senza fase resta un balcone, anche su un fronte al modulo', () => {
+    // **E' la regressione scritta come test.** Con lo sporto legato al modulo, un
+    // fronte da sedici dava una loggia profonda sedici — un altopiano verde
+    // grande quanto l'isolato — e la dava dal primo minuto di gioco.
+    expect(depthOf()).toBeLessThanOrEqual(AERIAL.terrace.maxOverhang);
+  });
+
+  it('con le megastrutture lo stesso fronte porta il mensolone', () => {
+    const mega = depthOf(AERIAL.terrace.megaOverhang);
+    expect(mega).toBeLessThanOrEqual(AERIAL.terrace.megaOverhang);
+    // Le due manopole divergono finche' il modulo sta sopra la profondita' del
+    // balcone: sotto, la fase non ha niente da aprire ed e' giusto che coincidano.
+    if (AERIAL.terrace.megaOverhang > AERIAL.terrace.maxOverhang) {
+      expect(mega).toBeGreaterThan(depthOf());
+    }
   });
 });

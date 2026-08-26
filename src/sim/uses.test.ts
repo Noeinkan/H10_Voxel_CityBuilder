@@ -96,7 +96,7 @@ describe('vettore di influenza dei catalizzatori', () => {
     }
   });
 
-  it('divide gli otto ruoli in tre funzioni di toolbar', () => {
+  it('divide i diciotto ruoli in tre funzioni di toolbar', () => {
     const grouped = CATALYST_GROUPS.flatMap((group) =>
       CATALYSTS.filter((entry) => entry.group === group.id),
     );
@@ -124,7 +124,7 @@ describe('vettore di influenza dei catalizzatori', () => {
   });
 
   it('nessun altro ruolo ha un vincolo di luogo', () => {
-    const constrained = new Set(['port', 'airport', 'ferry']);
+    const constrained = new Set(['port', 'airport', 'ferry', 'lighthouse']);
     for (const definition of CATALYSTS) {
       if (constrained.has(definition.id)) continue;
       expect({ id: definition.id, site: definition.site }).toEqual({ id: definition.id, site: 'any' });
