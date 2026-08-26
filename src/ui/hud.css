@@ -113,7 +113,11 @@
   /* Le due misure che danno la taglia al dock: la tessera e il suo disegno. Sono
      qui e non nelle regole perche' la griglia le legge per decidere le colonne. */
   --tile-w: calc(66 * var(--hud-unit));
-  --tile-h: calc(62 * var(--hud-unit));
+  /* La quota della tessera non e' piu' un numero solo: la decidono il gradino di
+     densita' del rail — `--rail-tile-h`, in unita' HUD — e la stretta continua
+     dell'ultimo gradino. I due default stanno accanto ai gradini, piu' sotto,
+     cosi' la tessera e' definita anche prima che qualcuno misuri. */
+  --tile-h: calc(var(--rail-tile-h, 62) * var(--hud-unit) * var(--rail-squeeze, 1));
   --icon-sm: calc(15 * var(--hud-unit));
   --icon-md: calc(18 * var(--hud-unit));
   --icon-lg: calc(22 * var(--hud-unit));
@@ -348,33 +352,49 @@
 .dock-group { display: grid; gap: var(--space-1); padding: 0 var(--space-05); }
 /* Incolonnate, il filo che le separa corre sopra e non di fianco: e' la stessa
    riga di prima, girata con la toolbar. */
-.dock-group + .dock-group { padding-top: var(--space-2); border-top: 1px solid var(--hud-line-soft); }
+.dock-group + .dock-group { padding-top: var(--rail-group-gap, var(--space-2)); border-top: 1px solid var(--hud-line-soft); }
 /* Stessa tripletta dei titoli di sezione nei cassetti — corpo, peso, spaziatura:
    e' lo stesso oggetto («questo gruppo si chiama cosi'») su due superfici, e
    finche' divergevano le due meta' dell'HUD non sembravano parenti. */
-.dock-group-title { padding-bottom: var(--space-05); border-bottom: 1px solid var(--hud-line); color: var(--hud-muted); font-size: var(--text-micro); font-weight: 900; letter-spacing: .08em; text-transform: uppercase; }
+.dock-group-title { display: var(--rail-title, block); padding-bottom: var(--space-05); border-bottom: 1px solid var(--hud-line); color: var(--hud-muted); font-size: var(--text-micro); font-weight: 900; letter-spacing: .08em; text-transform: uppercase; }
 /*
  * Quante tessere per riga lo decide **la quota che c'e'**, non una costante.
  *
- * Tre colonne per dodici catalizzatori fanno sette righe, piu' quattro titoli di
- * gruppo: e' da li' che venivano i ~975px di rail, cioe' piu' di quanti un 1080p
- * ne abbia davvero. Gli stessi quattro gruppi — 4, 4, 4, 3 — su **quattro**
- * colonne stanno in quattro righe, una per gruppo: ~230px in meno, pagati con
- * una quarantina di pixel di larghezza. Su uno schermo 16:9 e' il baratto giusto,
- * ed e' l'opposto di quello che si faceva prima, che pagava in parole.
+ * **Quattro e' il caso normale, tre e' l'eccezione** — il contrario di come era
+ * scritto. Le tre colonne sono la disposizione bella, e si tengono solo dove
+ * avanza posto; scriverle come default significava che una pagina non ancora
+ * misurata partiva dalla disposizione piu' larga in verticale.
+ *
+ * Attenzione a cosa compra oggi questa leva, perche' e' cambiato e il commento
+ * che c'era prima prometteva ancora la vecchia resa. Con quattro colonne e
+ * gruppi da quattro, passare da tre a quattro toglieva tre righe al dock:
+ * ~230px. I gruppi adesso sono da **sei**, e sei tessere fanno due righe sia su
+ * tre colonne sia su quattro — la quota e' la stessa, e cio' che si guadagna e'
+ * solo **larghezza**: ~44px di rail in meno restituiti alla citta'. Resta una
+ * leva utile, ma non e' piu' quella che risolve una finestra bassa; a farlo sono
+ * i gradini che tolgono prezzo ed etichetta, piu' sotto. Se un gruppo tornera' a
+ * quattro tessere, o ne prendera' sette, la leva ricomincera' a comprare righe
+ * da sola — ed e' per questo che il gradino resta al suo posto.
  *
  * Le colonne si stringono verso l'alto e non verso il basso — `minmax(0,
  * var(--tile-w))` — cosi' un rail a quattro colonne non si allarga oltre la
  * misura della tessera e le etichette lunghe usano l'ellissi che hanno gia'.
  */
-.dock-group-row { display: grid; grid-template-columns: repeat(var(--dock-cols), minmax(0, var(--tile-w))); align-items: stretch; gap: var(--space-1); --dock-cols: 3; --tile-cols: 3; }
-/* La colonna di ogni tessera, senza JS: cambia insieme a `--dock-cols` perche' e'
-   la stessa media query a muovere le due cose. Serve alla scheda, che deve
-   scavalcare le colonne rimaste per uscire dal rail invece che dal bottone. */
-.dock-group-row > :nth-child(3n+1) { --tile-col: 1; }
-.dock-group-row > :nth-child(3n+2) { --tile-col: 2; }
-.dock-group-row > :nth-child(3n+3) { --tile-col: 3; }
+.dock-group-row { display: grid; grid-template-columns: repeat(var(--dock-cols), minmax(0, var(--tile-w))); align-items: stretch; gap: var(--space-1); --dock-cols: var(--rail-cols, 4); --tile-cols: var(--rail-cols, 4); }
+/* La colonna di ogni tessera, senza JS: cambia insieme a `--rail-cols` perche' e'
+   lo stesso gradino di densita' a muovere le due cose. Serve alla scheda, che
+   deve scavalcare le colonne rimaste per uscire dal rail invece che dal bottone. */
+.dock-group-row > :nth-child(4n+1) { --tile-col: 1; }
+.dock-group-row > :nth-child(4n+2) { --tile-col: 2; }
+.dock-group-row > :nth-child(4n+3) { --tile-col: 3; }
+.dock-group-row > :nth-child(4n+4) { --tile-col: 4; }
+:root[data-hud-density="0"] .dock-group-row > :nth-child(3n+1) { --tile-col: 1; }
+:root[data-hud-density="0"] .dock-group-row > :nth-child(3n+2) { --tile-col: 2; }
+:root[data-hud-density="0"] .dock-group-row > :nth-child(3n+3) { --tile-col: 3; }
 .dock-utility { display: grid; gap: var(--space-1); padding: var(--space-2) var(--space-05) 0; border-top: 1px solid var(--hud-line-soft); }
+/* Le porte sono l'ultima cosa del rail, quindi la prima a finire sotto il bordo:
+   nei gradini stretti perdono qualche pixel di bersaglio, mai la parola. */
+.dock-utility .hud-button { min-height: var(--rail-utility-h, var(--control-h)); }
 .dock-utility-row { display: flex; gap: var(--space-1); }
 .dock-utility-row > .hud-button { flex: 1; width: auto; min-width: 0; }
 /* Le tre porte in una riga, non incolonnate: parola e icona si stringono invece
@@ -411,6 +431,10 @@
 .hud-tile[data-locked="true"][data-requirement-short][aria-disabled="true"] .button-cost { display: none; }
 .hud-tile[data-locked="true"][data-requirement-short][aria-disabled="true"]::before {
   content: attr(data-requirement-short);
+  /* Stesso token del prezzo: sono le due voci che la scheda ripete per intero al
+     passaggio del mouse, e nel gradino stretto valgono piu' come quota che come
+     informazione. Se ne vanno insieme, o non se ne va nessuna delle due. */
+  display: var(--rail-cost, block);
   position: absolute;
   left: 0;
   right: 0;
@@ -447,26 +471,38 @@
  * esattamente dove si guarda per capire quanto manca.
  *
  * Con un nome proprio la riserva si accende e si spegne **insieme** a cio' che
- * ospita: resta piena finche' la cifra si vede, va a zero nella query che la
- * nasconde, e nessuna delle due puo' piu' cambiare da sola.
+ * ospita: resta piena finche' la cifra si vede, va a zero nel gradino che la
+ * nasconde, e nessuna delle due puo' piu' cambiare da sola — adesso alla
+ * lettera, perche' e' lo stesso token (`--rail-cost`) a spegnere il prezzo, la
+ * cifra del requisito e la riserva che le ospita.
+ */
+/*
+ * La stretta finale prende la tessera **intera**, non solo il suo minimo.
+ *
+ * `--tile-h` e' un `min-height`, e un minimo sotto l'ingombro del contenuto non
+ * toglie un pixel: all'ultimo gradino la tessera e' gia' la sua icona piu' il
+ * suo padding, quindi assottigliare il solo minimo faceva guadagnare tre pixel a
+ * riga — misurati — e lasciava le porte fuori dallo schermo comunque. Con
+ * l'icona e il cappello che scendono insieme il minimo torna a essere il vincolo
+ * che decide, ed e' di nuovo lui a governare la quota.
  */
 .hud-tile {
-  --tile-foot: var(--space-3);
+  --tile-foot: var(--rail-tile-foot, var(--space-3));
   flex-direction: column;
   gap: var(--space-05);
   width: var(--tile-w);
   min-height: var(--tile-h);
-  padding: var(--space-15) var(--space-1) var(--tile-foot);
+  padding: calc(var(--space-15) * var(--rail-squeeze, 1)) var(--space-1) var(--tile-foot);
 }
 /* Nella griglia del rail la colonna decide la larghezza: una misura fissa
    lascerebbe le tessere accostate a sinistra dentro celle piu' larghe. */
 .dock-group-row > .hud-tile { width: auto; min-width: 0; }
-.hud-tile .hud-icon { width: var(--icon-lg); height: var(--icon-lg); }
-.hud-tile .button-copy { align-items: center; gap: 0; max-width: 100%; min-width: 0; }
+.hud-tile .hud-icon { width: calc(var(--icon-lg) * var(--rail-squeeze, 1)); height: calc(var(--icon-lg) * var(--rail-squeeze, 1)); }
+.hud-tile .button-copy { display: var(--rail-copy, flex); align-items: center; gap: 0; max-width: 100%; min-width: 0; }
 .hud-tile .button-copy > span:first-child { overflow: hidden; max-width: 100%; font-size: var(--text-2xs); text-overflow: ellipsis; }
 /* Il costo porta l'icona della risorsa, non la parola "funds": si legge come si
    legge la barra in alto, e le due superfici parlano la stessa lingua. */
-.hud-tile .button-cost { display: inline-flex; align-items: center; gap: var(--space-05); font-size: var(--text-2xs); font-variant-numeric: tabular-nums; }
+.hud-tile .button-cost { display: var(--rail-cost, inline-flex); align-items: center; gap: var(--space-05); font-size: var(--text-2xs); font-variant-numeric: tabular-nums; }
 .hud-tile .button-cost .hud-icon { width: 9px; height: 9px; stroke-width: 2.4; }
 /* Il tasto che la sceglie, nell'angolo: e' un promemoria, non un'etichetta. */
 .hud-tile-key {
@@ -761,78 +797,143 @@
 .debug-sites { margin: var(--space-15) var(--space-15) 0; color: inherit; font: inherit; }
 
 /*
+ * I gradini di densita' del rail, e perche' non sono piu' delle media query.
+ *
  * Su un rail il vincolo cambia asse: non e' piu' la larghezza a finire, e'
- * l'altezza. Con i dati sopra, il dock sotto e la targa in fondo, la quota corta
- * di un portatile si paga **allargando la griglia**, non spegnendo le parole:
- * quattro colonne invece di tre tolgono tre righe al dock, che e' piu' di quanto
- * si guadagnasse prima nascondendo etichette, prezzi e titoli tutti insieme.
+ * l'altezza. La gerarchia delle rinunce resta quella di prima, ed e' buona —
+ * prima si **allarga la griglia**, che costa larghezza e non parole; poi cede il
+ * **prezzo**, che la scheda ripete per intero al passaggio del mouse; solo per
+ * ultima cede l'**etichetta**, che e' l'unico modo di sapere cosa sia una
+ * tessera senza provarla.
  *
- * La soglia sta a 1200 e non a 1000 perche' le tre colonne **non ci stanno** a
- * 1080: il rail ne chiede circa 1030 su 1052 disponibili, venti pixel di margine
- * su un conto che ha piu' di venti pixel di incertezza. Tre colonne sono la
- * disposizione bella, non quella normale — si tengono dove c'e' abbondanza vera,
- * e sotto vince quella che entra.
+ * A essere sbagliate erano le soglie. `@media (max-height: 1200px | 700 | 600)`
+ * sono tre numeri calcolati a mano su una configurazione sola, e nessuno dei tre
+ * teneva conto del fatto che `--hud-unit` ha un **pavimento**: sotto i 918px di
+ * viewport la scala non scende piu', quindi il rail smette di rimpicciolirsi e
+ * chiede 835px fissi — mentre la prima soglia che togliesse qualcosa aspettava i
+ * 700. Misurato: fra 859 e 708 di quota, e di nuovo fra 708 e 596, il rail
+ * sbordava e la riga `City / Policies / Views` finiva sotto il bordo dello
+ * schermo. E' l'intervallo in cui stanno quasi tutti i portatili — un 1080p con
+ * lo zoom di Windows al 125% atterra a ~780 — cioe' il caso normale, non un caso
+ * limite.
  *
- * Una barra di scorrimento sul dock resta fuori questione, e non solo perche'
- * nasconderebbe gli strumenti che non si sono ancora imparati: `overflow-y` tira
- * dietro di se' anche l'asse x — `visible` non e' una combinazione valida — e il
- * contenitore di scorrimento ritaglierebbe le schede che escono di lato.
+ * Il rimedio non e' spostare le soglie di novanta pixel: e' smettere di
+ * scriverle. Quale gradino serva lo dice una **misura** — `railDensity.ts`
+ * confronta la quota che il contenuto chiede con quella che il rail ha, e stringe
+ * finche' non entra — e cosi' una tessera in piu' domani, la targa della vista
+ * che si accende, o uno zoom di pagina sono gia' previsti invece di riaprire un
+ * buco. Le uniche media query che restano sono sulla **larghezza**, dove il
+ * vincolo e' davvero quello.
+ *
+ * Ogni blocco qui sotto ridichiara tutti i token che gli servono invece di
+ * ereditare dal gradino precedente: sono selettori fratelli, non annidati, e la
+ * ripetizione e' il prezzo perche' ciascuno si legga come una descrizione
+ * completa di quel gradino.
+ *
+ * Una barra di scorrimento sul rail resta fuori questione a ogni gradino, e non
+ * solo perche' nasconderebbe gli strumenti che non si sono ancora imparati:
+ * `overflow-y` tira dietro di se' anche l'asse x — `visible` non e' una
+ * combinazione valida — e il contenitore di scorrimento ritaglierebbe le schede
+ * che escono di lato, che al gradino stretto sono l'unico modo di sapere cosa
+ * faccia una tessera senza etichetta.
  */
-@media (max-height: 1200px) {
-  .dock-group-row { --dock-cols: 4; --tile-cols: 4; }
-  .dock-group-row > :nth-child(4n+1) { --tile-col: 1; }
-  .dock-group-row > :nth-child(4n+2) { --tile-col: 2; }
-  .dock-group-row > :nth-child(4n+3) { --tile-col: 3; }
-  .dock-group-row > :nth-child(4n+4) { --tile-col: 4; }
+
+/*
+ * Il gradino 1, cioe' il **default**: quattro colonne, targa compatta, prezzo ed
+ * etichetta al loro posto. E' quello che entra su uno schermo normale, ed e'
+ * scritto sul `:root` nudo perche' e' anche cio' che vale nel primo fotogramma,
+ * prima che qualcuno abbia misurato alcunche'.
+ *
+ * `initial` su una custom property la rende *guaranteed-invalid*, cioe' fa
+ * scattare il fallback di `var()`: e' il modo di dire «qui la regola decide da
+ * se'» senza ripetere il valore in due posti.
+ */
+:root {
+  --rail-cols: 4;
+  --rail-tile-h: 62;
+  --rail-tile-foot: var(--space-3);
+  --rail-cost: initial;
+  --rail-copy: initial;
+  --rail-title: initial;
+  --rail-group-gap: var(--space-2);
+  --rail-utility-h: var(--control-h);
   /* La targa compatta: i capitasti e il gesto sono la parte che costa altezza, e
      il nome della vista basta da solo. */
-  .view-bar-keys { display: none; }
-  .view-bar-gesture { display: none; }
-  .view-bar-actions { flex-direction: row; }
+  --rail-view-detail: none;
+  --rail-view-actions: row;
+  /* La stretta continua dell'ultimo gradino: spenta finche' non serve. */
+  --rail-squeeze: 1;
 }
 
 /*
- * Sotto i 700px la scala ha gia' toccato il suo pavimento e le colonne sono
- * finite: qui, e solo qui, qualcosa cede davvero. Cede il **prezzo**, che e' la
- * cosa che la scheda ripete per intero al passaggio del mouse — non l'etichetta,
- * che e' l'unico modo di sapere cosa sia una tessera senza provarla.
+ * Il gradino 0: tre colonne e la targa per intero. E' la disposizione bella, e si
+ * tiene solo dove la quota avanza davvero — su un 1080p non ci sta, il rail ne
+ * chiederebbe piu' di quanti ne restino tolte le barre del browser.
  */
-@media (max-height: 700px) {
-  /* La tessera perde il prezzo **e** la quota che gli serviva: `--tile-h` e' un
-     minimo, e lasciarlo a 62 avrebbe reso la rinuncia gratis per il contenuto e
-     inutile per il layout. */
-  :root { --tile-h: calc(42 * var(--hud-unit)); }
-  .hud-tile .button-cost { display: none; }
-  /* Con il prezzo se ne va anche la cifra del requisito, e con lei la riserva che
-     la ospitava: sono le due voci che la scheda ripete per intero al passaggio
-     del mouse, e qui valgono piu' come quota che come informazione. */
-  .hud-tile { --tile-foot: 0px; }
-  .hud-tile[data-locked="true"][data-requirement-short][aria-disabled="true"]::before { display: none; }
-  .dock-group + .dock-group { padding-top: var(--space-1); }
-  .dock-utility .hud-button { min-height: calc(32 * var(--hud-unit)); }
+:root[data-hud-density="0"] {
+  --rail-cols: 3;
+  --rail-view-detail: initial;
+  --rail-view-actions: column;
 }
 
 /*
- * L'ultimo ripiego, e vale la pena dire perche' e' l'ultimo.
+ * Il gradino 2: cede il prezzo, e con lui la cifra del requisito e la riserva che
+ * la ospitava. `--rail-tile-h` scende con loro — e' un minimo, e lasciarlo a 62
+ * avrebbe reso la rinuncia gratis per il contenuto e inutile per il layout.
+ */
+:root[data-hud-density="2"] {
+  --rail-cols: 4;
+  --rail-tile-h: 42;
+  --rail-tile-foot: 0px;
+  --rail-cost: none;
+  --rail-copy: initial;
+  --rail-title: initial;
+  --rail-group-gap: var(--space-1);
+  --rail-utility-h: calc(32 * var(--hud-unit));
+  --rail-view-detail: none;
+  --rail-view-actions: row;
+}
+
+/*
+ * Il gradino 3: cede il **titolo di gruppo**, non l'etichetta.
  *
- * Sotto i 600px di quota non c'e' piu' niente da riorganizzare: la scala e' al
- * pavimento, le colonne sono quattro e i gruppi stanno gia' in una riga ciascuno.
- * Solo qui l'etichetta lascia la tessera e passa nella scheda, che e' il
- * comportamento che prima cominciava a **800** — cioe' su quasi tutti gli
- * schermi. Fra gli 800 e i 600 adesso ci si arriva con le parole al loro posto.
+ * Era un gradino solo con quello dopo, e sbagliava: sapere che una tessera si
+ * chiama «Market» vale piu' che sapere che sta sotto «Growth», e i gruppi
+ * restano comunque separati dal filo che li divide. Misurati sul rail vero, i
+ * quattro titoli piu' la spaziatura che si portano dietro sono ~60px — abbastanza
+ * perche' una finestra da 650px tenga le parole invece di perderle tutte in una
+ * volta, che e' quello che succedeva prima.
  */
-@media (max-height: 600px) {
-  :root { --tile-h: calc(34 * var(--hud-unit)); }
-  .dock-group-title { display: none; }
-  .hud-tile .button-copy { display: none; }
-  /*
-   * **Niente `overflow` sul rail, nemmeno qui.** Sarebbe la rete ovvia, e non
-   * funziona: `overflow-y: auto` costringe anche l'asse x a `auto` — `visible`
-   * non e' una combinazione valida — e la scheda che esce di lato verrebbe
-   * ritagliata dal contenitore di scorrimento. Il rail resta senza scroll e il
-   * layout entra per costruzione: e' il senso di aver tolto quota alla tessera
-   * qui sopra invece di aggiungere una barra.
-   */
+:root[data-hud-density="3"] {
+  --rail-cols: 4;
+  --rail-tile-h: 42;
+  --rail-tile-foot: 0px;
+  --rail-cost: none;
+  --rail-copy: initial;
+  --rail-title: none;
+  --rail-group-gap: var(--space-1);
+  --rail-utility-h: calc(32 * var(--hud-unit));
+  --rail-view-detail: none;
+  --rail-view-actions: row;
+}
+
+/*
+ * Il gradino 4: qui, e solo qui, l'etichetta lascia la tessera e passa nella
+ * scheda. Non c'e' un gradino 5 — non e' rimasto niente da riorganizzare — e da
+ * qui in giu' e' `--rail-squeeze` a fare il resto, assottigliando la tessera del
+ * tanto che manca invece di lasciare le porte sotto il bordo dello schermo.
+ */
+:root[data-hud-density="4"] {
+  --rail-cols: 4;
+  --rail-tile-h: 34;
+  --rail-tile-foot: 0px;
+  --rail-cost: none;
+  --rail-copy: none;
+  --rail-title: none;
+  --rail-group-gap: var(--space-1);
+  --rail-utility-h: calc(32 * var(--hud-unit));
+  --rail-view-detail: none;
+  --rail-view-actions: row;
 }
 
 @media (max-width: 1000px) {
