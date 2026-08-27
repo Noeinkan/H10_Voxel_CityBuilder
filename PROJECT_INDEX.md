@@ -27,6 +27,7 @@ worker. `src/sim/` gira in Node senza DOM né GPU.
 
 | File | Ruolo |
 | --- | --- |
+| [.cursor/rules/project-index-first.mdc](.cursor/rules/project-index-first.mdc) | Regola globale: consulta il Project Index prima della ricerca e sincronizzalo con ogni modifica |
 | [AGENTS.md](AGENTS.md) | Regole operative globali e rimando alle regole locali |
 | [CHANGELOG.md](CHANGELOG.md) | Cosa e' cambiato e quando, per incremento |
 | [index.html](index.html) | Pagina unica, `#app`, monta `src/main.ts` |

@@ -1,6 +1,7 @@
 import {
   BALANCE,
   BUILDING_CLASS,
+  catalystRoleOf,
   effectiveCount,
   FARM_KIND,
   fedShareOf,
@@ -140,8 +141,17 @@ function crisisTips(state: SimState): GameTip[] {
 function foodAdvice(state: SimState): string {
   const towers = state.farmCounts[FARM_KIND.tower] ?? 0;
   const connected = state.trade.links.length > 0;
+  const hasGreenhouse = state.catalysts.some(
+    (catalyst) => catalystRoleOf(catalyst) === 'greenhouse',
+  );
   const recover = 'Population declines slowly and can recover.';
 
+  if (towers <= 0 && hasGreenhouse) {
+    const trade = connected
+      ? 'Keep trade on Prioritize food while it grows.'
+      : 'A Port on the coast can cover part of the deficit while it grows.';
+    return `People don't have enough food: the Greenhouse is already in place, but no hydroponic tower has formed yet. To fix that, overlap its ring with your Factory (or Market) and let an industrial building inside grow until a Hydroponic tower appears. ${trade} ${recover}`;
+  }
   if (!connected && towers <= 0) {
     return `People don't have enough food: the fields alone can no longer feed the city — the island runs out of good ground long before it runs out of people. To fix that, place a Greenhouse close to your Factory (or Market): the glass farm turns nearby industry into hydroponic towers. A Port on the coast opens food imports instead. ${recover}`;
   }
@@ -200,11 +210,17 @@ function bottleneckTips(state: SimState): GameTip[] {
   const wanted = missingPlotsFor(state);
   if (wanted > 0 && state.population.stock > 0 &&
     fedShareOf(state.harvest, state.population.stock) >= 1) {
+    const hasGreenhouse = state.catalysts.some(
+      (catalyst) => catalystRoleOf(catalyst) === 'greenhouse',
+    );
+    const response = hasGreenhouse
+      ? 'Keep open ground inside the existing Greenhouse ring for new plots, or overlap that ring with the Factory so dense industry can become hydroponic towers.'
+      : 'Plant more farms — or place a Greenhouse close to the Factory for hydroponic towers that spend no farmland.';
     out.push({
       id: 'countryside-behind',
       kind: 'bottleneck',
       title: 'Plant more farms',
-      message: `The city eats well today, but its fields are about ${wanted} plots behind its appetite. To fix that, plant more farms — or place a Greenhouse close to the Factory for hydroponic towers that spend no farmland.`,
+      message: `The city eats well today, but its fields are about ${wanted} plots behind its appetite. To fix that, ${response}`,
     });
   }
 

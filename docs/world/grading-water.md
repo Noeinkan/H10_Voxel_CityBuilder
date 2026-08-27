@@ -23,6 +23,12 @@
   vorrebbe dire riempire di terra l'acqua che sorvola. Chi scrive una ricetta
   costiera deve quindi tenere sotto quella quota solo cio' che vuole veder
   diventare terra ferma.
+- **Il fondale non e' la base di un landmark costiero.** Le ricette con
+  `waterline` conservano il piano finito della banchina e costruiscono l'opera
+  mascherata fino al fondo; applicare loro l'affondamento dei landmark
+  terrestri lascerebbe fuori dall'acqua soltanto gru e torri. Porto e traghetto
+  si distinguono dai nomi tramite il dato della ricetta, non con un elenco nel
+  Builder.
 - Il **grembiule si ferma sulla battigia**: il suolo pubblico e' suolo, e
   prolungarlo sul bassofondo — che `canPaint` ammette, perche' una banchina ci si
   costruisce — dipingeva un anello di asfalto sul fondale attorno a ogni porto,

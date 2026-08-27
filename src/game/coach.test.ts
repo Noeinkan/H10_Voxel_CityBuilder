@@ -6,6 +6,7 @@ import {
   catalystById,
   createSimState,
   EMPTY_HARVEST,
+  FARM_KIND,
   type SimState,
 } from '../sim';
 import {
@@ -120,6 +121,42 @@ describe('coach — il cibo', () => {
   it('tace quando la citta’ e’ sfamata', () => {
     const state = city({ harvest: fedAt(POPULATION, 1) });
     expect(coachSuggestion(context(state))?.tier).not.toBe('food');
+  });
+
+  it('passa alla progressione dopo che il giocatore ha piazzato la serra', () => {
+    let state = addCatalyst(city({ harvest: fedAt(POPULATION, 0.6) }), {
+      x: 300, y: 0, class: catalystById('greenhouse').class, kind: 'greenhouse',
+      strength: 200, radius: 12,
+    });
+    state = addCatalyst(state, {
+      x: 340, y: 0, class: catalystById('university').class, kind: 'university',
+      strength: 200, radius: 12,
+    });
+    state = addCatalyst(state, {
+      x: 380, y: 0, class: catalystById('transport').class, kind: 'transport',
+      strength: 200, radius: 12,
+    });
+    state = {
+      ...state,
+      trade: { connected: true, links: ['port'], food: 4, materials: 0, funds: 0 },
+    };
+
+    expect(coachSuggestions(context(state)).some((tip) => tip.id === 'coach-food')).toBe(false);
+    expect(coachSuggestion(context(state, { tallestLevel: 7 }))?.id).toBe('coach-skyport');
+  });
+
+  it('non nasconde le fasi successive quando esiste gia’ una torre o il commercio', () => {
+    const farmCounts = [0, 0, 0];
+    farmCounts[FARM_KIND.tower] = 1;
+    const hungry = { harvest: fedAt(POPULATION, 0.6) };
+    const withTower = city({ ...hungry, farmCounts });
+    const withTrade = city({
+      ...hungry,
+      trade: { connected: true, links: ['port'], food: 4, materials: 0, funds: 0 },
+    });
+
+    expect(coachSuggestion(context(withTower))?.tier).not.toBe('food');
+    expect(coachSuggestion(context(withTrade))?.tier).not.toBe('food');
   });
 });
 

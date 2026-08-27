@@ -4,6 +4,7 @@ import {
   catalystById,
   catalystRoleOf,
   districtPairingsOf,
+  FARM_KIND,
   fedShareOf,
   servedFerryLines,
   type Catalyst,
@@ -170,6 +171,19 @@ function foodSuggestion(context: CoachContext): CoachSuggestion | null {
   const population = state.population.stock;
   if (population <= 0) return null;
   if (fedShareOf(state.harvest, population) >= FOOD.insufficientShare) return null;
+
+  // Il coach apre una via, non continua a venderla dopo che il giocatore l'ha
+  // imboccata. Serra, torre e commercio sono le tre risposte strutturali al
+  // cibo: se almeno una esiste, l'eventuale carestia resta alla voce di salute
+  // (`tips.ts`), che sa dire quale anello della risposta non sta funzionando.
+  // Lasciare qui il solo controllo sul raccolto teneva invece questa riga al
+  // primo posto per sempre e nascondeva tutta la progressione successiva.
+  const hasGreenhouse = state.catalysts.some(
+    (catalyst) => catalystRoleOf(catalyst) === 'greenhouse',
+  );
+  const hasTower = (state.farmCounts[FARM_KIND.tower] ?? 0) > 0;
+  const hasTrade = state.trade.links.length > 0;
+  if (hasGreenhouse || hasTower || hasTrade) return null;
 
   const anchor = catalystAnchor(state, 'factory') ?? catalystAnchor(state, 'market');
   return {

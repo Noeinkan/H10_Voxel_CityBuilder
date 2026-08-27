@@ -25,6 +25,17 @@ caricano quando lavori in quella cartella: non ripeterle qui.
 - `docs/PROJECT_MAP.md`: dipendenze e punti di ingresso
 - `PROJECT_INDEX.md`: indice dettagliato file per file
 
+## Project Index prima di cercare
+
+- Prima di esplorare il repository per una modifica, consulta `PROJECT_INDEX.md`
+  per individuare file, responsabilita' ed entry point; `docs/PROJECT_MAP.md`
+  quando servono dipendenze o collocazione delle costanti.
+- Usa `rg`/`glob` dopo l'indice, per confermare chiamanti e stato effettivo del
+  working tree, non come discovery primaria a tentoni.
+- Ogni modifica che aggiunge o sposta responsabilita' deve finire nell'indice:
+  frammento in `docs/pending/` e `npm run docs:merge`, come gia' prescritto in
+  "Budget e pattern da evitare".
+
 ## Comandi
 
 ```bash

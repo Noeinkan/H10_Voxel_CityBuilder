@@ -11,6 +11,22 @@ coincide con il messaggio di commit.
 
 ---
 
+## In corso — Il coach non resta bloccato sul cibo
+
+- **Una risposta alimentare fa avanzare la rotta.** Il coach smette di riproporre la serra quando esistono gia' una serra, una torre idroponica o un collegamento commerciale; gli avvisi di salute distinguono invece una serra gia' piazzata e spiegano come far comparire la prima torre, cosi' le indicazioni su landmark, tetti e citta' in quota possono tornare in primo piano.
+
+## In corso — Crescita landmark senza starvation
+
+- **I landmark maturi prendono posto prima degli upgrade ordinari.** Una citta' con molti edifici promuovibili poteva saturare `maxGrowing` a ogni passata e rimandare per sempre Greenhouse e altri landmark, anche oltre la soglia mostrata dalla scheda; ora il landmark che ha soddisfatto il requisito urbano entra per primo nella coda.
+
+## In corso — Landmark costieri sul piano di banchina
+
+- **Porti non piu' affondati sul fondale.** Le ricette con `waterline` conservano il piano finito della banchina e costruiscono le fondazioni mascherate fino al fondo; i landmark terrestri continuano invece a inserirsi alla quota minima dell'impronta.
+
+## In corso — Project Index come mappa primaria
+
+- **Indice obbligatorio a ogni modifica.** Aggiunta una regola globale che usa `PROJECT_INDEX.md` per orientare il lavoro e ne impone l'aggiornamento nello stesso incremento.
+
 ## In corso — Gate urbano condiviso dagli upgrade
 
 - **Gli upgrade non aggirano piu' l'elezione dell'isolato.** Un edificio ordinario resta entro otto anche crescendo; l'espansione assemblata riusa la stessa decisione gerarchica della nascita e conserva soltanto gli assemblaggi gia' esistenti.

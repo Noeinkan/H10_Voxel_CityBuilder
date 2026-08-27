@@ -1323,6 +1323,56 @@ describe('Builder — landmark dei catalizzatori', () => {
     expect(state.catalysts[0].strength).toBeLessThanOrEqual(255);
   });
 
+  it('il landmark avanza anche quando gli upgrade ordinari saturerebbero la coda', () => {
+    const world = new VoxelWorld();
+    const map = testTerrain({ chunksX: 8, chunksY: 8, height: 12 });
+    const builder = new Builder(world, map, 1337);
+    const definition = catalystById('greenhouse');
+    const centre = 128;
+
+    builder.placeLandmark(centre, centre, 'greenhouse');
+    while (builder.stats.growing > 0 || builder.stats.surfaceQueued > 0) builder.step();
+
+    let state = addCatalyst(createSimState(), {
+      x: centre,
+      y: centre,
+      class: definition.class,
+      kind: 'greenhouse',
+      strength: 255,
+      radius: definition.radius,
+    });
+
+    // Una citta' matura offre abbastanza candidati agli upgrade da occupare
+    // tutti i posti. Se gli upgrade passano per primi, il landmark non arriva
+    // mai alla coda: al giro dopo gli stessi posti vengono riempiti di nuovo.
+    for (let dy = -36; dy <= 36; dy += 12) {
+      for (let dx = -36; dx <= 36; dx += 12) {
+        if (Math.abs(dx) < 12 && Math.abs(dy) < 12) continue;
+        state = addBuilding(state, {
+          x: centre + dx,
+          y: centre + dy,
+          class: BUILDING_CLASS.residential,
+          level: 0,
+        });
+      }
+    }
+    builder.materialize(state.buildings);
+    state = {
+      ...state,
+      tickCount: BUILDER.ticksPerUpgrade,
+      materials: { ...state.materials, stock: 100_000 },
+    };
+
+    expect(builder.registry.countWithinRadius(centre, centre, definition.radius))
+      .toBeGreaterThanOrEqual(LANDMARKS.greenhouse!.stages[1]);
+    expect(landmarkRecord(builder)!.level).toBe(0);
+
+    state = builder.onTick(state);
+
+    expect(landmarkRecord(builder)!.level).toBe(1);
+    expect(state.catalysts[0].strength).toBeGreaterThan(definition.strength);
+  });
+
   it('nessuna ricetta sfora il tetto di chunk sporchi, su nessun verso', () => {
     // Il difetto che questo test blocca si e' gia' presentato una volta, quando
     // l'impronta degli edifici e' raddoppiata: sforare non e' un errore e viene

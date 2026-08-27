@@ -56,15 +56,23 @@ function shelfCoast(water: number): TerrainMap {
   });
 }
 
-function portAt(map: TerrainMap, x: number, y: number): BuildingRecord | null {
+function builtPortAt(
+  map: TerrainMap,
+  x: number,
+  y: number,
+): { world: VoxelWorld; record: BuildingRecord | null } {
   const world = new VoxelWorld();
   const builder = new Builder(world, map, 4242);
   builder.placeLandmark(x, y, 'port');
   while (builder.stats.growing > 0 || builder.stats.surfaceQueued > 0) builder.step();
   for (const record of builder.registry.all) {
-    if (record.landmark === 'port') return record;
+    if (record.landmark === 'port') return { world, record };
   }
-  return null;
+  return { world, record: null };
+}
+
+function portAt(map: TerrainMap, x: number, y: number): BuildingRecord | null {
+  return builtPortAt(map, x, y).record;
 }
 
 /** Gli ormeggi che pretendono acqua sotto di se', com'e' scritto in `routes.ts`. */
@@ -108,6 +116,33 @@ describe('lo scorrimento verso il mare', () => {
 });
 
 describe('un porto costiero', () => {
+  it('resta sul piano di banchina invece di affondare fino al fondale', () => {
+    const map = shelfCoast(LAND - 6);
+    const { world, record } = builtPortAt(map, LAND, ROW);
+    expect(record).not.toBeNull();
+
+    // Il minimo dell'impronta e' il fondale a `DEEP`: usarlo come base lascia
+    // fuori dall'acqua soltanto la cima della capitaneria. La banchina segue il
+    // piano finito, che su questa costa incontra il terreno asciutto a `DRY`.
+    expect(record!.baseZ).toBe(DRY);
+    expect(record!.baseZ).toBeGreaterThan(DEEP);
+
+    // Non e' una soletta sospesa: dove la ricetta poggia sull'oceano, l'opera
+    // scende dal piano fino al fondale. Basta una colonna per bloccare sia il
+    // ritorno all'affondamento sia un ripiego che alzasse la forma senza muro.
+    let supported = 0;
+    const depth = footprintDepth(record!);
+    for (let dy = 0; dy < depth; dy++) {
+      for (let dx = 0; dx < record!.footprint; dx++) {
+        const x = record!.x + dx;
+        const y = record!.y + dy;
+        if (map.biomeAt(x, y) !== BIOME.ocean) continue;
+        if (world.getBlock(x, y, record!.baseZ - 1) !== 0) supported++;
+      }
+    }
+    expect(supported).toBeGreaterThan(0);
+  });
+
   it('scorre fin sopra l acqua vera invece di fermarsi sul bassofondo', () => {
     // Sei colonne di bassofondo: il vincolo di sito dice di si' al primo terreno
     // asciutto, e senza lo scorrimento la darsena resterebbe tutta di qua.

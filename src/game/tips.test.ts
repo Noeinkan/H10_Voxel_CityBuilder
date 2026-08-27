@@ -133,6 +133,17 @@ describe('tips — il consiglio sul cibo nomina il gesto giusto', () => {
     expect(message).toContain('Port');
     expect(message).not.toContain('Greenhouse');
   });
+
+  it('non chiede una seconda serra quando la prima deve ancora produrre una torre', () => {
+    const state = addCatalyst(starving(), {
+      x: 300, y: 0, class: catalystById('greenhouse').class, kind: 'greenhouse',
+      strength: 200, radius: 12,
+    });
+    const message = urgentTip(state)?.message ?? '';
+    expect(message).toContain('already in place');
+    expect(message).toContain('Hydroponic tower');
+    expect(message).not.toContain('place a Greenhouse');
+  });
 });
 
 describe('tips — i colli di bottiglia che nessuna barra mostra', () => {
@@ -157,5 +168,19 @@ describe('tips — i colli di bottiglia che nessuna barra mostra', () => {
       harvest: fedAt(4000, 1),
     });
     expect(idOf(state)).toBe('countryside-behind');
+  });
+
+  it('usa la serra esistente invece di suggerirne un’altra quando la campagna insegue', () => {
+    let state = city({
+      population: { stock: 4000, delta: 10 },
+      harvest: fedAt(4000, 1),
+    });
+    state = addCatalyst(state, {
+      x: 300, y: 0, class: catalystById('greenhouse').class, kind: 'greenhouse',
+      strength: 200, radius: 12,
+    });
+    const message = urgentTip(state)?.message ?? '';
+    expect(message).toContain('existing Greenhouse');
+    expect(message).not.toContain('place a Greenhouse');
   });
 });

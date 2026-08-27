@@ -39,6 +39,7 @@ import { BUILDER, CLASS_PROFILE } from './config';
 import {
   buildWorks,
   groundKindAt,
+  surveyGrade,
   surveyLandmarkGrade,
   type WorksMask,
 } from './siteWorks';
@@ -571,13 +572,12 @@ export class LandmarkDriver {
     if (stamp === null) return false;
     const footing = this.footingAt(spot, kind, recordSeed);
     if (footing === null) return false;
-    const sunk = { ...footing.plan, padZ: footing.plan.footZ };
     if (this.ctx.registry.overlaps(
-      spot.x, spot.y, spot.span.sizeX, sunk.padZ, stamp.sizeZ, spot.span.sizeY, except,
+      spot.x, spot.y, spot.span.sizeX, footing.plan.padZ, stamp.sizeZ, spot.span.sizeY, except,
     )) {
       return false;
     }
-    return fitsChunkBudget(spot.x, spot.y, spot.span.sizeX, spot.span.sizeY, sunk, stamp);
+    return fitsChunkBudget(spot.x, spot.y, spot.span.sizeX, spot.span.sizeY, footing.plan, stamp);
   }
 
   /**
@@ -619,10 +619,23 @@ export class LandmarkDriver {
       ? undefined
       : stampFootprint(finalStamp, LANDMARK.groundBand);
 
-    const plan = surveyLandmarkGrade(
-      this.ctx.terrain, spot.x, spot.y, spot.span.sizeX, spot.span.sizeY, mask,
-    );
-    if (plan === null) return null;
+    const surveyed = recipe.waterline === undefined
+      ? surveyLandmarkGrade(
+        this.ctx.terrain, spot.x, spot.y, spot.span.sizeX, spot.span.sizeY, mask,
+      )
+      : surveyGrade(
+        this.ctx.terrain, spot.x, spot.y, spot.span.sizeX, spot.span.sizeY, mask,
+      );
+    if (surveyed === null) return null;
+
+    // Un landmark terrestre si inserisce nel pendio; uno costiero no. Nel suo
+    // riquadro il minimo e' il fondale sotto i moli, non una quota a cui possa
+    // stare la banchina: deve conservare il piano finito e costruire l'opera che
+    // lo collega al fondo. `waterline` e' la distinzione dichiarata dalla
+    // ricetta, quindi porto e traghetto seguono la stessa regola senza elenchi.
+    const plan = recipe.waterline === undefined
+      ? { ...surveyed, padZ: surveyed.footZ }
+      : surveyed;
     return { plan, mask };
   }
 
@@ -648,25 +661,20 @@ export class LandmarkDriver {
     if (footing === null) return null;
     const { plan, mask } = footing;
 
-    // Come un edificio, il landmark affonda nel pendio invece di riempirlo: la
-    // base scende alla quota piu' bassa dell'impronta, e il podio non solleva
-    // un terrapieno sotto di se'.
-    const sunk = { ...plan, padZ: plan.footZ };
-
-    if (registry.overlaps(origin.x, origin.y, span.sizeX, sunk.padZ, span.sizeZ, span.sizeY)) {
+    if (registry.overlaps(origin.x, origin.y, span.sizeX, plan.padZ, span.sizeZ, span.sizeY)) {
       return null;
     }
-    if (!fitsChunkBudget(origin.x, origin.y, span.sizeX, span.sizeY, sunk, stamp)) {
+    if (!fitsChunkBudget(origin.x, origin.y, span.sizeX, span.sizeY, plan, stamp)) {
       return null;
     }
 
     surface.clearSiteDecor(origin.x, origin.y, span.sizeX, span.sizeY);
-    buildWorks(world, terrain, origin.x, origin.y, span.sizeX, sunk, span.sizeY, mask);
+    buildWorks(world, terrain, origin.x, origin.y, span.sizeX, plan, span.sizeY, mask);
 
     const record = registry.add({
       x: origin.x,
       y: origin.y,
-      baseZ: sunk.padZ,
+      baseZ: plan.padZ,
       footprint: span.sizeX,
       footprintY: span.sizeY,
       height: span.sizeZ,
@@ -679,7 +687,7 @@ export class LandmarkDriver {
     });
 
     growth.enqueueSegments(record, stamp);
-    this.enqueueSlopeCarve(record, sunk.padZ + stamp.sizeZ, mask);
+    this.enqueueSlopeCarve(record, plan.padZ + stamp.sizeZ, mask);
     return record;
   }
 

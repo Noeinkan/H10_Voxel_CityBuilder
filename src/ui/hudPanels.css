@@ -154,7 +154,7 @@
    testata resta ferma in alto mentre il corpo scorre, e per farlo si arrampica
    fuori dal padding come l'intestazione della scheda aiuto — stessi margini
    negativi, stesso sfondo della superficie, quindi niente che possa sfasarsi. */
-.selection-panel { position: fixed; right: var(--hud-gap); top: var(--hud-gap); z-index: 30; display: grid; align-content: start; gap: 0; width: min(var(--panel-w), calc(100vw - var(--hud-gap) * 2)); max-height: calc(100vh - var(--hud-gap) * 2 - var(--game-hud-bottom)); overflow: hidden; box-sizing: border-box; padding: 0; border-radius: var(--radius-lg); pointer-events: auto; }
+.selection-panel { position: fixed; right: var(--hud-gap); top: var(--hud-gap); z-index: 30; display: grid; grid-template-rows: auto minmax(0, 1fr); width: min(var(--panel-w), calc(100vw - var(--hud-gap) * 2)); max-height: calc(100vh - var(--hud-gap) * 2 - var(--game-hud-bottom)); overflow: hidden; box-sizing: border-box; padding: 0; border-radius: var(--radius-lg); pointer-events: auto; }
 .selection-panel[hidden] { display: none; }
 .selection-head { position: sticky; top: 0; z-index: 1; display: flex; align-items: flex-start; justify-content: space-between; gap: var(--space-2); padding: var(--panel-pad) var(--panel-pad) var(--space-2); background: linear-gradient(180deg, var(--hud-cream), var(--hud-cream-deep)); border-bottom: 1px solid var(--hud-line-soft); }
 .selection-heading { display: grid; gap: var(--space-05); min-width: 0; }

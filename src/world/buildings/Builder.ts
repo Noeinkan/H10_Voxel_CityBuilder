@@ -574,8 +574,12 @@ export class Builder {
     // resterebbe in attesa per sempre per una pura conseguenza dell'ordine.
     if (state.tickCount % ARCOLOGY.ticksPerPass === 0) next = this.arcologies.pass(next);
     if (state.tickCount % BUILDER.ticksPerUpgrade === 0) {
-      next = this.upgrades.pass(next);
+      // I landmark hanno gia' soddisfatto una soglia urbana e prendono il
+      // proprio posto prima degli upgrade ordinari. In una citta' matura questi
+      // ultimi riempiono `maxGrowing` a ogni giro: eseguiti per primi potevano
+      // affamare per sempre un landmark anche con decine di edifici nel raggio.
       next = this.landmarks.pass(next);
+      next = this.upgrades.pass(next);
     }
     // La rete in quota non legge la simulazione: una campata dipende da dove
     // stanno i tetti, non da quanto una colonna e' desiderabile. E' anche il

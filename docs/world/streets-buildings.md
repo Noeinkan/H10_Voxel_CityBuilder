@@ -53,12 +53,14 @@
   niente — e la quota finita e' sempre il massimo delle colonne, mai la media:
   livellare verso il basso toglierebbe isola, e un voxel tolto non torna. La
   battigia e il fianco in pendenza sono meta' della terra emersa, e senza opere
-  la citta' li saltava del tutto. **Le strutture affondano invece di riempire**:
-  edifici, landmark e arcologie scendono alla quota piu' bassa dell'impronta
-  (`baseZ = plan.footZ`), sul pendio come sulla battigia, e la sagoma si
-  inserisce nel fianco — niente terrapieno, niente banchina, niente muro di
-  contenimento. La carreggiata segue il terreno senza rialzarlo, ed e' solo il
-  raccordo minimo che unisce due centri lontani.
+  la citta' li saltava del tutto. **Le strutture terrestri affondano invece di
+  riempire**: edifici, landmark e arcologie scendono alla quota piu' bassa
+  dell'impronta (`baseZ = plan.footZ`) e la sagoma si inserisce nel fianco —
+  niente terrapieno o muro di contenimento. Fanno eccezione le ricette con
+  `waterline`: sotto un porto il minimo e' il fondale, quindi porto e traghetto
+  restano sul piano finito della banchina e l'opera scende fino al fondo soltanto
+  dove la maschera poggia. La carreggiata segue il terreno senza rialzarlo, ed e'
+  solo il raccordo minimo che unisce due centri lontani.
 - **Il terreno si paga, non si vieta.** `groundKindOf` classifica e
   `BUILD_WEIGHT` mette un prezzo; l'unico rifiuto rimasto sulla terra emersa e'
   la pendenza oltre `maxTerraceSlope`. La roccia piana **non** e' un rifiuto: lo
