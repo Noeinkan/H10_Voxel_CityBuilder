@@ -60,6 +60,7 @@ import { createSkyBackground } from './engine/SkyBackground';
 import { createPostProcessing } from './engine/PostProcessing';
 import { createSunShadow } from './engine/SunShadow';
 import { SelectionOutline } from './engine/SelectionOutline';
+import { DemolitionOverlay } from './engine/DemolitionOverlay';
 import { resolveTheme, THEMES, type Theme } from './engine/themes';
 import { createVoxelMaterial } from './engine/VoxelMaterial';
 import { GrowthScene } from './game/growthScene';
@@ -72,7 +73,7 @@ import type { ActionFailure, SiteCost } from './game/actions';
 import type { LandmarkSite } from './world/buildings/Builder';
 import { BALANCE } from './sim/balance';
 import { cityVitality } from './sim/vitality';
-import { catalystById, defaultCatalystOfClass, type CatalystId } from './sim/catalysts';
+import { catalystById, defaultCatalystOfClass } from './sim/catalysts';
 import {
   BUILDING_CLASS,
   CLASS_COUNT,
@@ -82,6 +83,7 @@ import {
 } from './sim/classes';
 import { BUILDER } from './world/buildings/config';
 import { typologiesForUses } from './world/buildings/typology';
+import { footprintDepth } from './world/buildings/BuildingRegistry';
 import type { BuildSite } from './sim/nextBuildSites';
 import { isPolicyId } from './sim/policies';
 import './ui/hud.css';
@@ -628,6 +630,7 @@ if (growEnabled) {
       selectedTool = tool;
       preview.hide();
       demolishOutline?.hide();
+      demolishOverlay?.hide();
       demolishDragging = false;
       influenceOverlay?.hideCursor();
       influenceOverlay?.hideCoach();
@@ -668,6 +671,7 @@ if (growEnabled) {
       selectedTool = { kind: 'none' };
       preview.hide();
       demolishOutline?.hide();
+      demolishOverlay?.hide();
       demolishDragging = false;
       influenceOverlay?.hideCursor();
       influenceOverlay?.hideCoach();
@@ -849,12 +853,23 @@ const demolishOutline = terrain !== null && growEnabled
   : null;
 if (demolishOutline !== null) scene.add(demolishOutline.group);
 
+/**
+ * I tappeti colorati della gomma: rosso sugli edifici che cadranno, ambra su
+ * cio' che la ferma. Accanto al riquadro di selezione, e per la stessa ragione —
+ * la gomma e' uno stato suo, non la scelta.
+ */
+const demolishOverlay = terrain !== null && growEnabled ? new DemolitionOverlay() : null;
+if (demolishOverlay !== null) scene.add(demolishOverlay.group);
+
 /** Il trascinamento della gomma: dall'ancora al cursore, in colonne. */
 let demolishDragging = false;
 let demolishX0 = 0;
 let demolishY0 = 0;
 let demolishX1 = 0;
 let demolishY1 = 0;
+/** Punto in pixel dove il pulsante e' stato premuto: distingue clic da striscio. */
+let demolishDownClientX = 0;
+let demolishDownClientY = 0;
 /** Il riquadro gia' misurato, per non rifare il conto a ogni pixel del gesto. */
 let demolishRectKey = '';
 
@@ -920,6 +935,8 @@ if (growEnabled) {
   renderer.domElement.addEventListener('pointerup', onGamePointerUp);
   renderer.domElement.addEventListener('pointerleave', () => {
     preview.hide();
+    demolishOutline?.hide();
+    demolishOverlay?.hide();
     influenceOverlay?.hideCursor();
     gameHud?.updateCursor(0, 0, null);
   });
@@ -1617,12 +1634,13 @@ function onGamePointerMove(event: PointerEvent): void {
   let valid = false;
   if (selectedTool.kind === 'catalyst') {
     const catalyst = catalystById(selectedTool.id ?? defaultCatalystOfClass(selectedTool.class));
-    // Un ruolo che sa appendersi a una facciata va chiesto alla colonna dell'edificio
-    // e non a quella del terreno dietro di lui: e' la stessa distinzione della
-    // mensola, e per la stessa ragione — la heightmap attraversa una torre come
-    // se fosse vetro e si ferma sulla terra dietro.
-    const target = catalystTarget(event.clientX, event.clientY, catalyst.id, cell);
-    const failure = growthScene.catalystFailure(target.x, target.y, catalyst.id);
+    const aloft = (selectedTool.mode ?? 'ground') === 'aloft';
+    // In quota la colonna che conta e' quella dell'edificio, non del terreno
+    // dietro di lui: e' la stessa distinzione della mensola, e per la stessa
+    // ragione — la heightmap attraversa una torre come se fosse vetro e si
+    // ferma sulla terra dietro. A terra vale il suolo, come per ogni altro ruolo.
+    const target = catalystTarget(event.clientX, event.clientY, cell, aloft);
+    const failure = growthScene.catalystFailure(target.x, target.y, catalyst.id, aloft);
     const radius = catalyst.radius;
     const site = growthScene.catalystSiteCost(target.x, target.y, catalyst.id);
     const cost = site === null ? catalyst.cost : site.cost;
@@ -1634,9 +1652,7 @@ function onGamePointerMove(event: PointerEvent): void {
       valid,
       growthScene.simState.reach,
     );
-    const facade = growthScene.catalystUsesFacade(catalyst.id)
-      ? facadeFacingAt(target.x, target.y)
-      : null;
+    const facade = aloft ? facadeFacingAt(target.x, target.y) : null;
     preview.show(
       target.x,
       target.y,
@@ -1659,7 +1675,7 @@ function onGamePointerMove(event: PointerEvent): void {
         // Il piazzamento e' valido comunque: cio' che cambia e' cosa comparira'
         // e cosa costera' alla citta'. Dirlo qui e' il punto — dopo il click e'
         // troppo tardi, ed e' esattamente il difetto muto che questa fase chiude.
-        : landmarkNote(growthScene.catalystSite(target.x, target.y, catalyst.id)),
+        : landmarkNote(growthScene.catalystSite(target.x, target.y, catalyst.id, aloft)),
     });
     return;
   } else if (selectedTool.kind === 'terrace') {
@@ -1763,8 +1779,9 @@ function onGamePointerDown(event: PointerEvent): void {
 
   if (selectedTool.kind === 'catalyst') {
     const role = selectedTool.id ?? defaultCatalystOfClass(selectedTool.class);
-    const target = catalystTarget(event.clientX, event.clientY, role, cell);
-    const result = growthScene.placeCatalyst(target.x, target.y, role);
+    const aloft = (selectedTool.mode ?? 'ground') === 'aloft';
+    const target = catalystTarget(event.clientX, event.clientY, cell, aloft);
+    const result = growthScene.placeCatalyst(target.x, target.y, role, aloft);
     if (!result.success) gameHud?.showFailure(result.reason);
     else {
       gameHud?.clearFeedback();
@@ -1825,6 +1842,8 @@ function onGamePointerDown(event: PointerEvent): void {
     demolishY0 = pointed.y;
     demolishX1 = pointed.x;
     demolishY1 = pointed.y;
+    demolishDownClientX = event.clientX;
+    demolishDownClientY = event.clientY;
     demolishRectKey = '';
     updateDemolishPreview(event.clientX, event.clientY);
     return;
@@ -1855,7 +1874,31 @@ function onGamePointerUp(event: PointerEvent): void {
   if (event.button !== 0 || !demolishDragging) return;
   demolishDragging = false;
   demolishOutline?.hide();
+  demolishOverlay?.hide();
   if (selectedTool.kind !== 'demolish' || growthScene === null || terrain === null) return;
+
+  // Clic o striscio: sotto la soglia e' un gesto puntuale, e la gomma porta via
+  // il solo edificio sotto il cursore — la sua impronta esatta, non una colonna.
+  const moved = Math.abs(event.clientX - demolishDownClientX) +
+    Math.abs(event.clientY - demolishDownClientY);
+  if (moved <= SELECT_CLICK_SLOP) {
+    const pointed = pointedCellAt(event.clientX, event.clientY);
+    if (pointed === null) return;
+    const result = growthScene.demolishAt(pointed.x, pointed.y);
+    if (!result.done) {
+      gameHud?.showFeedback(
+        result.verdict.refusal === 'structure-in-the-way'
+          ? 'Something built to last stands here: it cannot be demolished.'
+          : 'Nothing to demolish here.',
+        'neutral',
+      );
+      return;
+    }
+    gameHud?.showTransientFeedback(
+      `Demolishing ${result.verdict.clears} ${result.verdict.clears === 1 ? 'building' : 'buildings'}.`,
+    );
+    return;
+  }
 
   const x0 = Math.min(demolishX0, demolishX1);
   const x1 = Math.max(demolishX0, demolishX1);
@@ -1900,6 +1943,25 @@ function updateDemolishPreview(clientX: number, clientY: number): void {
     const ground = Math.max(TERRAIN.seaLevel, terrain.map.heightAt(x0, y0));
     demolishOutline?.show({ x0, y0, x1, y1, z0: ground, z: ground });
 
+    // I tappeti sui tetti: rosso per chi cade, ambra per chi resta in mezzo.
+    const preview = growthScene.demolishPreview(x0, y0, sizeX, sizeY);
+    demolishOverlay?.show(
+      preview.doomed.map((record) => ({
+        x: record.x,
+        y: record.y,
+        sizeX: record.footprint,
+        sizeY: footprintDepth(record),
+        z: record.baseZ + record.height,
+      })),
+      preview.protected.map((record) => ({
+        x: record.x,
+        y: record.y,
+        sizeX: record.footprint,
+        sizeY: footprintDepth(record),
+        z: record.baseZ + record.height,
+      })),
+    );
+
     const reason = verdict.refusal === 'structure-in-the-way'
       ? 'Something built to last stands here: it cannot be demolished.'
       : verdict.clears === 0
@@ -1918,19 +1980,18 @@ function updateDemolishPreview(clientX: number, clientY: number): void {
  * Su quale colonna cade un catalizzatore: il terreno, o la facciata che si sta
  * puntando.
  *
- * **Un solo strumento, due strutture.** L'aeroporto e' l'unico ruolo che sa
- * posarsi in quota, e non ha un pulsante suo: puntare un grattacielo *e'* la
- * richiesta di uno scalo di facciata, puntare il prato accanto quella di un campo
- * di volo. Chiedere la colonna giusta e' l'unica cosa che serve perche' la
- * distinzione funzioni, e la decide `src/world/` guardando cosa c'e' sotto.
+ * **Un solo strumento, due strutture, e adesso e' il modo a scegliere.** Il
+ * selettore di posa decide fra suolo e tetto prima del click: a terra conta la
+ * colonna del terreno, in quota quella dell'edificio puntato. Il resto lo decide
+ * `src/world/` guardando cosa c'e' sotto.
  */
 function catalystTarget(
   clientX: number,
   clientY: number,
-  kind: CatalystId,
   fallback: SurfaceCell,
+  aloft: boolean,
 ): SurfaceCell {
-  if (growthScene === null || !growthScene.catalystUsesFacade(kind)) return fallback;
+  if (!aloft) return fallback;
   return pointedCellAt(clientX, clientY) ?? fallback;
 }
 
@@ -2540,6 +2601,22 @@ function onUiKey(event: KeyboardEvent): void {
     setDebugVisible(!debugVisible);
     return;
   }
+  // Ctrl/Cmd+Z annulla l'ultima passata della gomma: prima che i voxel spariscano
+  // del tutto il gesto e' reversibile, ed e' la rete di sicurezza che rende la
+  // demolizione un colpo da poter sbagliare. Sta fuori dal gate del debug come
+  // V ed L — e' gioco, non misura.
+  if ((event.ctrlKey || event.metaKey) && event.code === 'KeyZ') {
+    event.preventDefault();
+    const result = growthScene?.undoDemolition();
+    if (result !== undefined && result.restored > 0) {
+      gameHud?.showTransientFeedback(
+        `Undone · ${result.restored} ${result.restored === 1 ? 'building' : 'buildings'} rebuilt.`,
+      );
+    } else {
+      gameHud?.showFeedback('Nothing to undo.', 'neutral');
+    }
+    return;
+  }
   // Nel campionario Esc molla la scelta: e' lo stesso gesto del gioco, senza
   // nessun pannello da chiudere prima.
   if (event.code === 'Escape' && swatchOverlay !== null && swatchSelection !== null) {
@@ -2574,6 +2651,14 @@ function onUiKey(event: KeyboardEvent): void {
   // guardando si toglie, non si sopporta.
   if (event.code === 'KeyC') {
     setClouds(!cloudsOn);
+    return;
+  }
+  // `X` alterna suolo e facciata per lo strumento in mano: e' un comando di
+  // gioco come `V` e `L`, e fa qualcosa solo quando il ruolo ha una forma in
+  // quota — il selettore del dock appare solo allora, e il tasto segue la stessa
+  // regola. Se non c'e' niente da alternare prosegue verso gli altri handler.
+  if (event.code === 'KeyX' && gameHud?.togglePlacementMode() === true) {
+    event.preventDefault();
     return;
   }
   // Tasti 1..9: gli **strumenti** del dock; con Shift, i temi.

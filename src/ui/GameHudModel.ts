@@ -21,6 +21,7 @@ import {
   type TradeMode,
 } from '../sim';
 import { typologiesForUses } from '../world/buildings/typology';
+import { hasFacadeForm } from '../world/landmarks/config';
 import { pairingLines, stageLines, unlockLines, yieldLine } from './prospects';
 import { SITE } from '../world/sites/config';
 import type { GrowthStats } from '../game/growthScene';
@@ -32,7 +33,7 @@ import type { GameTool } from './GameHudControlsModel';
 import { buildCityOverviewModel, type CityOverviewModel } from './CityOverviewModel';
 
 export { daylightControl, selectionMessage } from './GameHudControlsModel';
-export type { GameTool, HudDaylight } from './GameHudControlsModel';
+export type { GameTool, HudDaylight, PlacementMode } from './GameHudControlsModel';
 export type { HudCommerce, HudFill, HudFlow, HudResource } from './GameHudEconomyModel';
 
 /**
@@ -68,6 +69,14 @@ export interface HudAction {
   readonly site?: string;
   readonly class?: BuildingClass;
   readonly catalystId?: CatalystId;
+  /**
+   * true se il ruolo sa posarsi anche su un tetto oltre che a terra.
+   *
+   * E' il permesso che fa comparire il selettore di modo al piazzamento: solo
+   * chi puo' scegliere fra suolo e facciata ha bisogno del selettore, e solo
+   * mentre lo strumento e' in mano. Gli altri ruoli non lo mostrano mai.
+   */
+  readonly facadeForm?: boolean;
   readonly description?: string;
   readonly group?: CatalystGroup;
   /** Usi favoriti e penalizzati, gia' in etichette leggibili. */
@@ -324,6 +333,7 @@ export function buildGameHudModel(
       class: catalyst.class,
       catalystId: catalyst.id,
       group: catalyst.group,
+      facadeForm: hasFacadeForm(catalyst.id),
       description: catalyst.description,
       favours,
       penalises,

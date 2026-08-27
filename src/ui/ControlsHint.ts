@@ -74,6 +74,29 @@ export const VIEW_HINTS: readonly ViewHint[] = buildViewMenuModel(
 export const VIEW_HINTS_LEAD =
   'Open the Views button in the dock, or press V to cycle. Esc brings the whole city back.';
 
+/**
+ * I tre gesti della gomma, detti in un posto solo.
+ *
+ * La demolizione e' l'unico strumento con un linguaggio suo da imparare — clic
+ * per un edificio, striscio per l'area, Ctrl+Z per tornare indietro — e finora
+ * non era scritto da nessuna parte: il toast lo dice una riga alla volta,
+ * mentre qui si legge tutto insieme.
+ */
+export const DEMOLISH_HINTS: readonly ControlHint[] = [
+  { keys: ['Click'], action: 'Tear down a single building' },
+  { keys: ['Drag'], action: 'Sweep an area of buildings' },
+  { keys: ['Ctrl', 'Z'], action: 'Undo the last sweep while it is still falling' },
+];
+
+/**
+ * La riga che dice cosa significano i colori dell'anteprima.
+ *
+ * Il rosso e l'ambra compaiono solo durante lo striscio, e chi non ha mai visto
+ * la gomma non ha modo di sapere che l'ambra e' un "no" invece di un'evidenza.
+ */
+export const DEMOLISH_HINTS_LEAD =
+  'Pick Demolish in the dock: red roofs fall, amber roofs are built to last and stay.';
+
 export const HELP_STORAGE_KEY = 'h10-cozy-help-seen-v1';
 
 interface HelpStorage {
@@ -132,6 +155,7 @@ export class ControlsHint {
     }
     this.root.appendChild(grid);
     this.root.appendChild(viewSection());
+    this.root.appendChild(demolishSection());
     parent.appendChild(this.root);
     this.root.hidden = hasSeenHelp(storage);
   }
@@ -178,6 +202,41 @@ function viewSection(): HTMLElement {
     row.append(label, gesture);
     section.appendChild(row);
   }
+  return section;
+}
+
+/** Il blocco della gomma, sotto le viste: i tre gesti e il senso dei colori. */
+function demolishSection(): HTMLElement {
+  const section = document.createElement('section');
+  section.className = 'help-views';
+
+  const title = document.createElement('h3');
+  title.className = 'help-section-title';
+  title.textContent = 'Clear the city';
+  const lead = document.createElement('p');
+  lead.className = 'help-section-lead';
+  lead.textContent = DEMOLISH_HINTS_LEAD;
+  section.append(title, lead);
+
+  const grid = document.createElement('div');
+  grid.className = 'help-grid';
+  for (const hint of DEMOLISH_HINTS) {
+    const row = document.createElement('div');
+    row.className = 'help-row';
+    const action = document.createElement('span');
+    action.textContent = hint.action;
+    const keys = document.createElement('span');
+    keys.className = 'help-keys';
+    for (const [index, label] of hint.keys.entries()) {
+      if (index > 0) keys.append('+');
+      const key = document.createElement('kbd');
+      key.textContent = label;
+      keys.appendChild(key);
+    }
+    row.append(action, keys);
+    grid.appendChild(row);
+  }
+  section.appendChild(grid);
   return section;
 }
 

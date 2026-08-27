@@ -167,16 +167,24 @@ export const BALANCE = {
         // Il decadimento resta lineare, quindi la parte che supera davvero la
         // soglia di crescita e' una frazione del raggio: l'ampiezza extra e'
         // cio' che la riporta a coprire l'isolato, non solo il cuore.
-        university: { cost: 360, strength: 200, radius: 73 },
-        monument: { cost: 440, strength: 215, radius: 70 },
-        museum: { cost: 380, strength: 195, radius: 72 },
-        cathedral: { cost: 400, strength: 205, radius: 70 },
-        theatre: { cost: 420, strength: 205, radius: 68 },
-        stadium: { cost: 460, strength: 210, radius: 75 },
+        //
+        // **Il raggio si paga al quadrato, e la sforbiciata e' un budget, non
+        // una rinuncia.** L'influenza si propaga con un Dijkstra su (2r+1)²
+        // celle, il campo ricalcola lo stesso quadrato e l'overlay lo disegna
+        // per intero: ogni cella di raggio in piu' costa quattro volte. I valori
+        // restano i piu' larghi del catalogo — sopra ogni seme di crescita, che
+        // arriva a 55 — ma la differenza sul piu' vicino scende a cio' che basta
+        // per «coronare», non per raddoppiare il costo del piazzamento.
+        university: { cost: 360, strength: 200, radius: 66 },
+        monument: { cost: 440, strength: 215, radius: 63 },
+        museum: { cost: 380, strength: 195, radius: 65 },
+        cathedral: { cost: 400, strength: 205, radius: 63 },
+        theatre: { cost: 420, strength: 205, radius: 61 },
+        stadium: { cost: 460, strength: 210, radius: 68 },
         // Il gemello del monumento sull'acqua: il prezzo da identita' con il
         // vincolo di sito riportato in denaro, come l'aeroporto — un lago o un
         // fronte mare non sono ovunque, e chi li ha se li paga.
-        marina: { cost: 440, strength: 210, radius: 75 },
+        marina: { cost: 440, strength: 210, radius: 68 },
       },
 
       /**

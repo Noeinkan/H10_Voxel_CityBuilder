@@ -1,4 +1,4 @@
-import { removeBuildings, type Building, type SimState } from '../../sim';
+import { addBuilding, removeBuildings, type Building, type SimState } from '../../sim';
 import {
   footprintDepth,
   type BuildingRecord,
@@ -12,7 +12,7 @@ import {
   type ClearanceRefusal,
   type ClearanceRule,
 } from './clearance';
-import { BUILDER } from './config';
+import { BUILDER, typologyById } from './config';
 import { anchorOf } from './growthQueue';
 import { recordStamp } from './recordStamp';
 import type { SpanDriver } from './spanDriver';
@@ -71,6 +71,10 @@ export const OPEN_SITE: ClearanceVerdict = { clears: 0, landmarks: 0, refusal: n
 interface Site {
   readonly box: ClearanceBox;
   readonly doomed: Map<number, BuildingRecord>;
+  /** La fotografia dei condannati al momento dell'apertura: serve all'annullamento. */
+  readonly original: readonly BuildingRecord[];
+  /** Vero se il giocatore puo' annullare questo cantiere: solo la gomma. */
+  readonly undoable: boolean;
   readonly onFinish: () => void;
 }
 
@@ -127,7 +131,7 @@ export class ClearanceSites {
     box: ClearanceBox,
     rule: ClearanceRule,
     onFinish: () => void,
-    options: { readonly fence?: boolean } = {},
+    options: { readonly fence?: boolean; readonly undoable?: boolean } = {},
   ): boolean {
     const records = recordsIn(this.ctx.registry, box);
     const plan = planClearance(
@@ -148,7 +152,7 @@ export class ClearanceSites {
     }
     if (doomed.size === 0) return false;
 
-    this.sites.push({ box, doomed, onFinish });
+    this.sites.push({ box, doomed, original: [...doomed.values()], undoable: options.undoable === true, onFinish });
     // Il riquadro si prenota per intero: la citta' continua a crescere mentre
     // il cantiere demolisce, e senza questa prenotazione gli angoli liberi del
     // riquadro si riempirebbero prima che la struttura arrivi — il preventivo
@@ -159,6 +163,86 @@ export class ClearanceSites {
     // resterebbe per sempre a dire "cantiere" di una cosa che non ci sara'.
     if (options.fence !== false) this.paintFence(box);
     return true;
+  }
+
+  /**
+   * I record dentro il riquadro, divisi fra chi cadrebbe e chi resta in piedi.
+   *
+   * Serve all'anteprima della gomma: il giocatore deve vedere **quali** edifici
+   * stanno per cadere, non solo quanti. `protected` raccoglie cio' che la regola
+   * non tocca — la rete in quota, le arcologie, chi le porta — e che quindi
+   * manda il riquadro in rifiuto se presente.
+   */
+  preview(box: ClearanceBox, rule: ClearanceRule): {
+    readonly doomed: readonly BuildingRecord[];
+    readonly protected: readonly BuildingRecord[];
+  } {
+    const records = recordsIn(this.ctx.registry, box);
+    const plan = planClearance(
+      records.map((record) => clearanceOf(this.ctx.registry, record)),
+      rule,
+    );
+    const doomedIds = new Set(plan.doomed);
+    const doomed: BuildingRecord[] = [];
+    const protectedRecords: BuildingRecord[] = [];
+    for (const record of records) {
+      if (doomedIds.has(record.id)) {
+        doomed.push(record);
+        continue;
+      }
+      // Le campate cadono da sole e non sono un ostacolo: non si mostrano.
+      if (clearanceOf(this.ctx.registry, record).kind === CLEARANCE_KIND.structure) {
+        protectedRecords.push(record);
+      }
+    }
+    return { doomed, protected: protectedRecords };
+  }
+
+  /**
+   * Annulla l'ultimo cantiere della gomma, ricostruendo tutto cio' che stava
+   * portando via.
+   *
+   * **Vale per ogni condannato, gia' rimosso o no.** Chi e' ancora nel registro
+   * — la cancellazione dei suoi voxel e' in corso — si ferma e ricresce; chi era
+   * gia' stato rimosso torna nel registro con la sua identita' e i suoi voxel
+   * ripartono dalla coda di comparsa. Il conto si rifa alla simulazione con
+   * `addBuilding`, una voce per edificio vero: i landmark non sono mai stati
+   * contati, e non lo tornano adesso.
+   */
+  undo(state: SimState): { readonly state: SimState; readonly restored: number } {
+    let index = -1;
+    for (let i = this.sites.length - 1; i >= 0; i--) {
+      if (this.sites[i].undoable) {
+        index = i;
+        break;
+      }
+    }
+    if (index < 0) return { state, restored: 0 };
+
+    const site = this.sites.splice(index, 1)[0];
+    this.ctx.registry.releaseRect(site.box);
+
+    const reinsert: Building[] = [];
+    for (const record of site.original) {
+      const gone = this.ctx.registry.get(record.id) === null;
+      // Prima si ferma la cancellazione in corso, poi si ri-accoda lo stamp
+      // vero: il volume ricresce a budget, com'era comparso.
+      this.ctx.growth.cancel(record.id);
+      this.ctx.growth.enqueue(record.id, anchorOf(record), recordStamp(record));
+
+      if (gone) {
+        this.ctx.registry.restore(record);
+        // Solo gli edifici veri tornano alla simulazione: un landmark non vi e'
+        // mai entrato, e ri-aggiungerlo lo conterebbe come una casa in piu'.
+        if (clearanceOf(this.ctx.registry, record).kind === CLEARANCE_KIND.building) {
+          reinsert.push(undoBuildingOf(record));
+        }
+      }
+    }
+
+    let next = state;
+    for (const building of reinsert) next = addBuilding(next, building);
+    return { state: next, restored: site.original.length };
   }
 
   /**
@@ -306,4 +390,26 @@ export function simBuildingOf(record: BuildingRecord): Building {
   return record.mixed === undefined
     ? { x: record.x, y: record.y, class: record.class }
     : { x: record.x, y: record.y, class: record.class, mixed: record.mixed };
+}
+
+/**
+ * Un record come la simulazione lo aveva **registrato** per intero.
+ *
+ * E' la meta' gemella di `simBuildingOf`, che serve solo a trovare cosa togliere.
+ * Per ri-aggiungere serve la voce esatta: il livello decide la capacita', e la
+ * specializzazione — derivata dalla tipologia costruita, non dal profilo del
+ * luogo — decide se la torre contava anche come produttore di cibo.
+ */
+function undoBuildingOf(record: BuildingRecord): Building {
+  const built = record.typology === undefined
+    ? undefined
+    : typologyById(record.typology)?.specialization;
+  return {
+    x: record.x,
+    y: record.y,
+    class: record.class,
+    level: record.level,
+    ...(record.mixed === undefined ? {} : { mixed: record.mixed }),
+    ...(built === undefined ? {} : { specialization: built }),
+  };
 }

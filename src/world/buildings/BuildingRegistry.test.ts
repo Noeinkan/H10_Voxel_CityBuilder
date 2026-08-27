@@ -91,4 +91,22 @@ describe('BuildingRegistry', () => {
     expect(registry.levelHistogram[0]).toBe(0);
     expect(registry.levelHistogram[1]).toBe(1);
   });
+
+  it('restore reinserisce un record rimosso con lo stesso id', () => {
+    // L'altra meta' dell'annullamento della gomma: un edificio portato via per
+    // intero torna al suo posto, id compreso, e gli indici lo ritrovano.
+    const registry = new BuildingRegistry();
+    const stored = registry.add(record(40, 40, 12, 2));
+
+    expect(registry.remove(stored.id)).toBe(true);
+    expect(registry.get(stored.id)).toBeNull();
+    expect(registry.isOccupied(40, 40)).toBe(false);
+
+    registry.restore(stored);
+
+    expect(registry.get(stored.id)).toBe(stored);
+    expect(registry.isOccupied(40, 40)).toBe(true);
+    expect(registry.count).toBe(1);
+    expect(registry.overlaps(40, 40, 1, 12, 4)).toBe(true);
+  });
 });

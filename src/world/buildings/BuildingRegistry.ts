@@ -1048,6 +1048,19 @@ export class BuildingRegistry implements ReadonlyBuildingRegistry {
     this.records.delete(id);
     return true;
   }
+
+  /**
+   * Reinserisce un record gia' rimosso, conservandone l'id.
+   *
+   * E' l'altra meta' dell'annullamento della gomma: un edificio portato via per
+   * intero torna nel registro con la sua identita' — id compreso — invece di
+   * riceverne una nuova. `nextId` resta piu' avanti, quindi non puo' collidere.
+   */
+  restore(record: BuildingRecord): void {
+    this.records.set(record.id, record);
+    this.index(record);
+    this.tally(record, 1);
+  }
 }
 
 /** Nessun appoggio: un edificio non e' una campata e non ne ha. */

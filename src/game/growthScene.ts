@@ -236,22 +236,22 @@ export class GrowthScene {
     this.builder.step();
   }
 
-  placeCatalyst(x: number, y: number, target: BuildingClass | CatalystId): ActionResult {
-    const failure = this.catalystFailure(x, y, target);
+  placeCatalyst(x: number, y: number, target: BuildingClass | CatalystId, aloft = false): ActionResult {
+    const failure = this.catalystFailure(x, y, target, aloft);
     if (failure !== null) return { success: false, reason: failure };
 
     // Prima di piazzare: dopo, i condannati sono ancora nel registry — restano
     // finche' i loro voxel non spariscono — e la stessa domanda risponderebbe di
     // nuovo lo stesso numero, facendo il doppio del lavoro per dirlo.
-    const clears = this.clearanceAt(x, y, target).clears;
+    const clears = this.clearanceAt(x, y, target, aloft).clears;
 
-    const result = placeCatalyst(this.state, this.map, x, y, target, this.usesFacade(x, y, target));
+    const result = placeCatalyst(this.state, this.map, x, y, target, aloft);
     if (result.success) {
       const placed = result.state.catalysts[result.state.catalysts.length - 1];
       // Il ruolo e non la classe: e' il ruolo a decidere quale struttura
       // compare, e passare `placed.class` — come si faceva finche' il segno era
       // un voxel colorato — perdeva proprio l'informazione che serve.
-      if (placed !== undefined) this.builder.placeLandmark(x, y, catalystRoleOf(placed));
+      if (placed !== undefined) this.builder.placeLandmark(x, y, catalystRoleOf(placed), aloft);
       this.clearanceMemo = null;
     }
 
@@ -260,15 +260,18 @@ export class GrowthScene {
       : `Catalyst placed. Clearing ${clears} ${clears === 1 ? 'building' : 'buildings'} to make room.`);
   }
 
-  catalystFailure(x: number, y: number, target: BuildingClass | CatalystId): ActionFailure | null {
+  catalystFailure(x: number, y: number, target: BuildingClass | CatalystId, aloft = false): ActionFailure | null {
     if (!onboardingAllows(this.state, target)) return 'onboarding-order';
 
-    // La facciata parla per prima quando c'e' un edificio: sotto la colonna c'e' un
-    // edificio, quindi «non e' terreno edificabile» sarebbe la risposta a una
-    // domanda che nessuno ha fatto.
-    const aloft = this.builder.landmarkAloftSite(x, y, roleOf(target));
-    if (aloft.refusal !== null) return ALOFT_FAILURE[aloft.refusal];
-    return catalystFailure(this.state, this.map, x, y, target, aloft.site !== null);
+    // In quota la facciata parla per prima: senza un edificio sotto la colonna non
+    // c'e' niente a cui appendersi, e «non e' terreno edificabile» sarebbe la
+    // risposta a una domanda che nessuno ha fatto.
+    if (aloft) {
+      const site = this.builder.landmarkAloftSite(x, y, roleOf(target));
+      if (site.refusal !== null) return ALOFT_FAILURE[site.refusal];
+      if (site.site === null) return 'needs-building';
+    }
+    return catalystFailure(this.state, this.map, x, y, target, aloft);
   }
 
   /**
@@ -280,10 +283,6 @@ export class GrowthScene {
    */
   catalystUsesFacade(target: BuildingClass | CatalystId): boolean {
     return hasFacadeForm(roleOf(target));
-  }
-
-  private usesFacade(x: number, y: number, target: BuildingClass | CatalystId): boolean {
-    return this.builder.landmarkAloftSite(x, y, roleOf(target)).site !== null;
   }
 
   /** Prezzo pesato dal terreno, per il cartellino sul cursore. */
@@ -301,8 +300,8 @@ export class GrowthScene {
    * cose che il giocatore deve sapere **prima** del click, ed e' l'unico posto
    * dove puo' saperle.
    */
-  catalystSite(x: number, y: number, target: BuildingClass | CatalystId): LandmarkSite {
-    return this.clearanceAt(x, y, target);
+  catalystSite(x: number, y: number, target: BuildingClass | CatalystId, aloft = false): LandmarkSite {
+    return this.clearanceAt(x, y, target, aloft);
   }
 
   /**
@@ -317,13 +316,13 @@ export class GrowthScene {
    * Si invalida a ogni tick e a ogni piazzamento, che sono gli unici due momenti
    * in cui il registry cambia: `step` scrive voxel, non record.
    */
-  private clearanceAt(x: number, y: number, target: BuildingClass | CatalystId): LandmarkSite {
+  private clearanceAt(x: number, y: number, target: BuildingClass | CatalystId, aloft = false): LandmarkSite {
     const role = typeof target === 'number' ? defaultCatalystOfClass(target) : target;
-    const key = `${x},${y},${role}`;
+    const key = `${x},${y},${role},${aloft ? 'a' : 'g'}`;
     if (this.clearanceMemo !== null && this.clearanceMemo.key === key) {
       return this.clearanceMemo.site;
     }
-    const site = this.builder.landmarkClearance(x, y, role);
+    const site = this.builder.landmarkClearance(x, y, role, aloft);
     this.clearanceMemo = { key, site };
     return site;
   }
@@ -429,6 +428,19 @@ export class GrowthScene {
   }
 
   /**
+   * I record che la gomma porterebbe via, e quelli che la fermano.
+   *
+   * Per l'anteprima: il gioco non deve sapere come leggere il registry, gli
+   * basta l'elenco per colorare i condannati e le strutture protette.
+   */
+  demolishPreview(x: number, y: number, sizeX: number, sizeY: number): {
+    readonly doomed: readonly BuildingRecord[];
+    readonly protected: readonly BuildingRecord[];
+  } {
+    return this.builder.demolishPreview(x, y, sizeX, sizeY);
+  }
+
+  /**
    * Demolisce cio' che occupa il riquadro, a budget.
    *
    * Il gioco tiene la gomma in mano: una passata non e' una decisione, e chi
@@ -439,6 +451,44 @@ export class GrowthScene {
     const done = this.builder.demolish(x, y, sizeX, sizeY);
     if (done) this.message = 'Demolition under way.';
     return done;
+  }
+
+  /**
+   * Demolisce il solo edificio sotto la colonna, senza trascinare.
+   *
+   * E' il gesto corto della gomma: un clic su una casa porta via quella casa e
+   * nient'altro. Il bersaglio e' il record piu' alto della colonna che non sia
+   * una campata ne' un impalcato; il riquadro e' la sua impronta esatta.
+   */
+  demolishAt(x: number, y: number): { readonly verdict: ClearanceVerdict; readonly done: boolean } {
+    let target: BuildingRecord | null = null;
+    for (const record of this.registry.at(x, y)) {
+      if (record.span !== undefined || record.aerial !== undefined) continue;
+      if (target === null || record.baseZ + record.height > target.baseZ + target.height) {
+        target = record;
+      }
+    }
+    if (target === null) {
+      return { verdict: { clears: 0, landmarks: 0, refusal: null }, done: false };
+    }
+    const sizeY = footprintDepth(target);
+    const verdict = this.builder.demolishSurvey(target.x, target.y, target.footprint, sizeY);
+    const done = this.builder.demolish(target.x, target.y, target.footprint, sizeY);
+    if (done) this.message = 'Demolition under way.';
+    return { verdict, done };
+  }
+
+  /**
+   * Annulla l'ultima passata della gomma.
+   *
+   * Restituisce il nuovo stato — chi era gia' stato tolto alla simulazione
+   * torna — e quanti condannati sono stati ricostruiti.
+   */
+  undoDemolition(): { readonly restored: number } {
+    const result = this.builder.undoDemolition(this.state);
+    this.state = result.state;
+    if (result.restored > 0) this.message = 'Demolition undone.';
+    return { restored: result.restored };
   }
 
   togglePolicy(id: PolicyId): ActionResult {

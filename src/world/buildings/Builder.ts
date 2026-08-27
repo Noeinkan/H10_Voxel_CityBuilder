@@ -415,8 +415,8 @@ export class Builder {
    * La ricetta, l'orientamento e gli stadi stanno in `landmarkDriver.ts`: qui
    * resta solo la porta, perche' e' il `Builder` che il gioco tiene in mano.
    */
-  placeLandmark(x: number, y: number, kind: CatalystId): void {
-    this.landmarks.place(x, y, kind);
+  placeLandmark(x: number, y: number, kind: CatalystId, aloft?: boolean): void {
+    this.landmarks.place(x, y, kind, aloft);
   }
 
   /** Registra un territorio esterno su cui la crescita puo' aprire un ponte. */
@@ -431,8 +431,8 @@ export class Builder {
    * La porta del cursore. Sta sul `Builder` e non sul driver perche' e' il
    * `Builder` che il gioco tiene in mano, come gia' per `placeLandmark`.
    */
-  landmarkClearance(x: number, y: number, kind: CatalystId): LandmarkSite {
-    return this.landmarks.siteAt(x, y, kind);
+  landmarkClearance(x: number, y: number, kind: CatalystId, aloft?: boolean): LandmarkSite {
+    return this.landmarks.siteAt(x, y, kind, aloft);
   }
 
   /**
@@ -463,7 +463,24 @@ export class Builder {
   }
 
   /**
-   * Apre il cantiere di demolizione sul riquadro, a budget e senza recinto.
+   * I record che la gomma porterebbe via, e quelli che le restano in mezzo.
+   *
+   * La porta dell'anteprima: il giocatore vede **quali** edifici cadranno
+   * (rossi) e quali strutture la fermano (ambra) invece del solo conteggio.
+   */
+  demolishPreview(x: number, y: number, sizeX: number, sizeY: number): {
+    readonly doomed: readonly BuildingRecord[];
+    readonly protected: readonly BuildingRecord[];
+  } {
+    return this.clearance.preview(
+      { x, y, sizeX, sizeY },
+      BALANCE.gameplay.demolition.clearing,
+    );
+  }
+
+  /**
+   * Apre il cantiere di demolizione sul riquadro, a budget, senza recinto e
+   * annullabile.
    *
    * E' lo stesso `ClearanceSites` dei landmark e delle arcologie — stessa coda
    * di comparsa, stesse campate che cadono con i loro appoggi, stessa resa del
@@ -475,8 +492,19 @@ export class Builder {
       { x, y, sizeX, sizeY },
       BALANCE.gameplay.demolition.clearing,
       () => {},
-      { fence: false },
+      { fence: false, undoable: true },
     );
+  }
+
+  /**
+   * Annulla l'ultima passata della gomma, ricostruendo cio' che stava cadendo.
+   *
+   * Restituisce il nuovo stato — gli edifici gia' rimossi tornano alla
+   * simulazione — e quanti condannati sono stati ricostruiti. Zero quando non
+   * c'e' nessun cantiere di demolizione aperto.
+   */
+  undoDemolition(state: SimState): { readonly state: SimState; readonly restored: number } {
+    return this.clearance.undo(state);
   }
 
   /**

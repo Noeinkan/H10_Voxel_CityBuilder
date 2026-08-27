@@ -55,7 +55,9 @@ describe('condizioni della città', () => {
 
     expect(isSelfSufficient(state)).toBe(false);
     expect(cityCondition(state, 0).kind).toBe('crisis');
-    expect(cityCondition(state, 0).title).toBe('Food shortage');
+    // Il titolo porta gia' causa e rimedio, non solo la diagnosi.
+    expect(cityCondition(state, 0).title).toContain('Food shortage');
+    expect(cityCondition(state, 0).title).toContain('Greenhouse');
   });
 
   it('ordina onboarding → crisi → collo di bottiglia → coach → successo', () => {

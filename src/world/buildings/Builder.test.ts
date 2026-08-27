@@ -2032,6 +2032,49 @@ describe('Builder — sventramento', () => {
     expect(builder.demolish(60, 60, 4, 4)).toBe(false);
     expect(builder.stats.clearing).toBe(0);
   });
+
+  it('la gomma si puo annullare subito: i condannati tornano', () => {
+    const { builder, state } = city(30);
+    const spot = clearableSpot(builder);
+    const box = { x: spot.x, y: spot.y, sizeX: spot.footprint, sizeY: footprintDepth(spot) };
+
+    const quote = builder.demolishSurvey(box.x, box.y, box.sizeX, box.sizeY);
+    const before = state.buildings.length;
+    builder.demolish(box.x, box.y, box.sizeX, box.sizeY);
+    expect(builder.stats.clearing).toBe(1);
+
+    // L'annullamento ricostruisce ogni condannato e chiude il cantiere: lo stato
+    // della simulazione non ha perso nessuno, perche' nessuno era ancora caduto.
+    const undone = builder.undoDemolition(state);
+    expect(undone.restored).toBe(quote.clears);
+    expect(builder.stats.clearing).toBe(0);
+    expect(builder.registry.get(spot.id)).not.toBeNull();
+    expect(undone.state.buildings.length).toBe(before);
+  });
+
+  it('a cantiere chiuso non c e piu niente da annullare', () => {
+    const { terrain, builder, state } = city(30);
+    const spot = clearableSpot(builder);
+    const box = { x: spot.x, y: spot.y, sizeX: spot.footprint, sizeY: footprintDepth(spot) };
+
+    builder.demolish(box.x, box.y, box.sizeX, box.sizeY);
+    const after = settle(builder, terrain, state);
+
+    expect(builder.stats.clearing).toBe(0);
+    expect(builder.registry.get(spot.id)).toBeNull();
+    // Il cantiere e' finito: l'annullamento non ha piu' niente da ricostruire.
+    expect(builder.undoDemolition(after).restored).toBe(0);
+  });
+
+  it('il preventivo distingue chi cade da chi resta', () => {
+    const { builder } = city(30);
+    const spot = clearableSpot(builder);
+    const box = { x: spot.x, y: spot.y, sizeX: spot.footprint, sizeY: footprintDepth(spot) };
+
+    const { doomed } = builder.demolishPreview(box.x, box.y, box.sizeX, box.sizeY);
+    expect(doomed.length).toBeGreaterThan(0);
+    expect(doomed.some((record) => record.id === spot.id)).toBe(true);
+  });
 });
 
 function seaward(map: TerrainMap): { x: number; y: number } {

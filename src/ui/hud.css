@@ -686,6 +686,21 @@
 .hud-toast-title { font-weight: 800; }
 .hud-toast-message { color: var(--hud-muted); font-size: var(--text-xs); line-height: 1.4; }
 
+/* Il verso di posa, sopra il toast e solo mentre si piazza un ruolo che ne ha due.
+   Sta accanto all'istruzione di selezione perche' e' l'altra meta' della stessa
+   domanda: cosa posare e come. Il kbd vive qui e non nella targa dei tasti
+   perche' il gesto esiste solo con lo strumento in mano. */
+.placement-mode { position: absolute; left: calc(var(--game-hud-rail-left) + var(--space-6)); bottom: calc(var(--game-hud-bottom) + 52px); z-index: var(--z-toast); display: grid; gap: var(--space-1); padding: var(--space-2); border-radius: var(--radius-md); pointer-events: auto; }
+.placement-mode[hidden] { display: none; }
+.placement-mode-title { color: var(--hud-muted); font-size: var(--text-micro); font-weight: 900; letter-spacing: .1em; text-transform: uppercase; }
+.placement-mode-row { display: flex; gap: var(--space-1); }
+.placement-mode-option { padding: var(--space-1) var(--space-15); border: 1px solid var(--hud-line); border-radius: var(--radius-sm); color: var(--hud-ink); background: var(--hud-raised); font: 800 var(--text-xs)/1.2 var(--hud-font); cursor: pointer; }
+.placement-mode-option:hover { border-color: rgba(63,110,97,.48); background: rgba(255,255,255,.95); }
+.placement-mode-option:focus-visible { outline: 3px solid var(--hud-accent-shape); outline-offset: 1px; }
+.placement-mode-option[aria-pressed="true"] { color: var(--hud-on-accent); background: var(--hud-sage-dark); border-color: var(--hud-sage-dark); }
+.placement-mode-keys { display: flex; align-items: center; gap: var(--space-1); color: var(--hud-muted); font-size: var(--text-xs); }
+.placement-mode kbd { min-width: calc(16 * var(--hud-unit)); padding: var(--space-05) var(--space-1); border: 1px solid var(--hud-line); border-bottom-width: 2px; border-radius: var(--radius-sm); color: var(--hud-ink); background: var(--hud-key); font: 700 var(--text-2xs)/1.35 var(--hud-mono); text-align: center; }
+
 .cursor-card { position: fixed; z-index: var(--z-modal); display: grid; gap: var(--space-05); max-width: calc(250 * var(--hud-unit)); padding: var(--space-2) var(--space-15); border-radius: var(--radius-md); color: var(--hud-on-dark); background: rgba(38, 56, 51, .97); box-shadow: var(--hud-elev-2); font: var(--text-xs)/1.4 var(--hud-font); pointer-events: none; }
 .cursor-card[hidden] { display: none; }
 .cursor-card strong { font-size: var(--text-sm); }

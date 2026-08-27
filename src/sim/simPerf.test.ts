@@ -159,22 +159,25 @@ describe('memoria del campo', () => {
   const terrainMap = testTerrain({ chunksX: MAP_SIDE_CHUNKS, chunksY: MAP_SIDE_CHUNKS });
 
   /**
-   * Per colonna di chunk: un `Uint8Array` per uso, uno di occupazione e un
-   * `Uint16Array` di affollamento. Nessuna struttura sparsa fra le dense,
+   * Per colonna di chunk: un `Uint8Array` per uso, uno di occupazione, un
+   * `Uint16Array` di affollamento, piu' l'indice dei massimi — un byte per uso
+   * ma per **chunk**, non per colonna. Nessuna struttura sparsa fra le dense,
    * nessun oggetto per cella: e' un conto che deve tornare a mano.
    */
-  const perChunk = CELLS_PER_CHUNK * (CLASS_COUNT + 1) + CELLS_PER_CHUNK * 2;
+  const perChunk = CELLS_PER_CHUNK * (CLASS_COUNT + 3) + CLASS_COUNT;
 
   it('resta densa per colonna e limitata dai chunk toccati', () => {
     const state = cityOf256();
 
     expect(state.field.byteLength).toBe(state.field.chunkCount * perChunk);
 
-    // Sette byte per colonna di mondo: quattro usi, l'occupazione e i due
-    // dell'affollamento. **La citta' in quota non e' costata niente qui**, ne'
-    // un indice `z` — che avrebbe moltiplicato per il numero di livelli tutti e
-    // quattro gli usi — ne' il byte per colonna con cui era cominciata.
-    expect(perChunk / CELLS_PER_CHUNK).toBe(CLASS_COUNT + 3);
+    // Sette byte per colonna di mondo — quattro usi, l'occupazione e i due
+    // dell'affollamento — piu' l'indice dei massimi, che e' per chunk e non per
+    // colonna, quindi nel conto per cella quasi non si vede. **La citta' in quota
+    // non e' costata niente qui**, ne' un indice `z` — che avrebbe moltiplicato
+    // per il numero di livelli tutti e quattro gli usi — ne' il byte per colonna
+    // con cui era cominciata.
+    expect(perChunk).toBe(CELLS_PER_CHUNK * (CLASS_COUNT + 3) + CLASS_COUNT);
     expect(state.field.byteLength).toBeLessThan(1_000_000);
   });
 

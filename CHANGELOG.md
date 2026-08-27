@@ -11,6 +11,22 @@ coincide con il messaggio di commit.
 
 ---
 
+## In corso — Gomma piu' leggibile e reversibile
+
+- **La gomma mostra chi cade e chi resta.** Durante lo striscio un tappeto rosso copre il tetto di ogni edificio condannato e uno ambra cio' che la ferma — la rete in quota, le arcologie, chi le porta — invece del solo conteggio: si vede l'area *e* le singole cose che spariranno.
+- **Clic singolo, edificio solo.** Sotto la soglia di movimento il rilascio e' un clic, e la gomma porta via il solo edificio puntato — la sua impronta esatta, non una colonna.
+- **La gomma si annulla.** Ctrl/Cmd+Z ricostruisce l'ultima passata finche' il cantiere e' aperto: i condannati gia' rimossi tornano nel registro e alla simulazione con la loro identita', i voxel ricrescono dalla coda di comparsa.
+
+## In corso — Recupero performance dei raggi dei landmark
+
+- **Il raggio si paga al quadrato, e l'overlay lo pagava due volte.** Il cursore ricalcolava il Dijkstra della portata e ricostruiva le tre geometrie marching-squares a ogni cella attraversata: `InfluenceOverlay` ora tiene una cache delimitata dei campi del cursore, memoizza le geometrie per centro e raggio invece che per identita' dell'oggetto, e decima la velatura a un quad ogni due celle. Solo visivo, nessun effetto sul campo vero.
+- **Il campo tiene un indice dei massimi per chunk.** `DesirabilityField` mantiene il massimo per uso di ogni chunk mentre scrive (mai a lettura), e `nextBuildSites` salta i chunk dove nessun uso supera la propria soglia: la scansione dei candidati torna legata alla parte del campo che puo' candidare davvero, non all'intera area allocata da un landmark a raggio largo. Il conto della memoria per colonna resta denso: l'indice aggiunge un byte per uso per chunk, non per colonna.
+- **Sforbiciata ai raggi del gruppo identita'.** I landmark «coronano» ancora — restano i piu' larghi del catalogo, sopra ogni seme di crescita — ma i raggi scendono da 68–75 a 61–68 per non quadruplicare il costo del piazzamento (Dijkstra, ricalcolo e overlay scalano con il quadrato del raggio).
+
+## In corso — La velatura dell'influenza segue il decadimento
+
+- **La sfera verde del piazzamento legge il campo, non una fascia.** La velatura sotto al contorno scala ora luminosita' e opacita' insieme al decadimento — verde pieno al centro, quasi spenta al bordo — cosi' il gradiente si legge anche con i raggi nuovi dei landmark (fino a 75) e non si confonde piu' con un'area uniforme.
+
 ## In corso — Skyport e mezzi in quota ridisegnati
 
 - **Lo Skyport smette di essere un foglio con i pali.** Il plinto diventa tre strati

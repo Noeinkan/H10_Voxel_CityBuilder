@@ -161,17 +161,20 @@ export class LandmarkDriver {
    * Un ruolo senza ricetta ottiene il solo grembiule, che e' esattamente cio'
    * che tutti e otto avevano prima.
    */
-  place(x: number, y: number, kind: CatalystId): void {
-    // La facciata vince quando c'e': puntare un grattacielo con lo strumento
-    // dell'aeroporto **e'** la richiesta di uno scalo appeso, e ripiegare a
-    // terra costruirebbe un campo di volo dentro l'isolato che si stava
-    // guardando. Chi non voleva la facciata punta il prato accanto.
-    const aloft = this.aloftSiteAt(x, y, kind);
-    if (aloft.site !== null) {
-      this.buildAloft(aloft.site, kind);
-      return;
+  place(x: number, y: number, kind: CatalystId, aloft?: boolean): void {
+    // `aloft` e' il verso scelto dal giocatore, non un indizio dal luogo. Senza
+    // (`undefined`) vale il vecchio patto: la facciata vince quando c'e' —
+    // puntare un grattacielo con lo strumento dell'aeroporto **e'** la richiesta
+    // di uno scalo appeso. Esplicito, `true` appende e basta, `false` scarta la
+    // facciata e costruisce a terra anche se sotto la colonna c'e' un edificio.
+    if (aloft !== false) {
+      const verdict = this.aloftSiteAt(x, y, kind);
+      if (verdict.site !== null) {
+        this.buildAloft(verdict.site, kind);
+        return;
+      }
+      if (verdict.refusal !== null || aloft === true) return;
     }
-    if (aloft.refusal !== null) return;
 
     const built = this.buildStructure(x, y, kind);
     if (built !== null) this.paintApron(built, landmarkOf(kind)!.apron);
@@ -201,12 +204,14 @@ export class LandmarkDriver {
    * cosa ci sta sopra. Dire quante case porta via un riquadro che nessuna opera
    * reggerebbe manderebbe a cercare una sacca bassa dove il problema e' la parete.
    */
-  siteAt(x: number, y: number, kind: CatalystId): LandmarkSite {
+  siteAt(x: number, y: number, kind: CatalystId, aloft?: boolean): LandmarkSite {
     // Su una facciata non c'e' niente da sgomberare: la struttura si posa fuori
     // da cio' che c'e', non al suo posto. Vale anche per la facciata rifiutata — a dirlo e'
     // il rifiuto del piazzamento, non il conto delle demolizioni.
-    const aloft = this.aloftSiteAt(x, y, kind);
-    if (aloft.site !== null || aloft.refusal !== null) return OPEN_SITE;
+    if (aloft !== false) {
+      const verdict = this.aloftSiteAt(x, y, kind);
+      if (verdict.site !== null || verdict.refusal !== null || aloft === true) return OPEN_SITE;
+    }
 
     const spot = this.placementAt(x, y, kind);
     if (spot === null) return OPEN_SITE;

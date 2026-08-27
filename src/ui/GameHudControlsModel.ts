@@ -2,8 +2,17 @@ import { CLASS_LABELS, type BuildingClass, type CatalystId } from '../sim';
 import { DAYLIGHT, DAYLIGHT_MODE, nextDaylightMode, type DaylightMode } from '../engine/daylight';
 import type { HudAction } from './GameHudModel';
 
+/**
+ * Il verso in cui un catalizzatore si posa, quando il ruolo sa fare entrambi.
+ *
+ * Solo i ruoli con una forma di facciata (`hasFacadeForm`) lo usano: `ground`
+ * poggia sul suolo come sempre, `aloft` appende la struttura a un tetto. Per
+ * tutti gli altri il modo non esiste e `ground` e' l'unico verso possibile.
+ */
+export type PlacementMode = 'ground' | 'aloft';
+
 export type GameTool =
-  | { readonly kind: 'catalyst'; readonly class: BuildingClass; readonly id?: CatalystId }
+  | { readonly kind: 'catalyst'; readonly class: BuildingClass; readonly id?: CatalystId; readonly mode?: PlacementMode }
   | { readonly kind: 'expansion' }
   | { readonly kind: 'terrace' }
   | { readonly kind: 'ropeway' }

@@ -134,6 +134,16 @@ export interface FieldChunkView {
   readonly ccy: number;
   /** Un array per uso urbano, 1024 valori ciascuno, indicizzati da `cellIndexOf`. */
   readonly values: readonly Uint8Array[];
+  /**
+   * Desiderabilita' massima per uso urbano in questo chunk, un byte per classe.
+   *
+   * E' l'indice con cui la scansione dei candidati salta un chunk intero quando
+   * nessun suo valore supera la soglia di sito: senza, un landmark a raggio
+   * largo alloca decine di chunk di cui solo la parte centrale puo' candidare, e
+   * ogni passata li scandirebbe tutti. Lo mantiene chi scrive il campo — mai chi
+   * lo legge — cosi' `nextBuildSites` resta una lettura pura.
+   */
+  readonly max: Uint8Array;
   /** 0 se la cella e' libera. */
   readonly occupancy: Uint8Array;
   /**
@@ -206,6 +216,9 @@ class FieldChunk {
   /** Numero di edifici entro il raggio breve, per cella. */
   readonly crowd: Uint16Array;
 
+  /** Massimo desiderabilita' per uso in questo chunk. Vedere `FieldChunkView.max`. */
+  readonly max = new Uint8Array(CLASS_COUNT);
+
   constructor(
     readonly ccx: number,
     readonly ccy: number,
@@ -216,6 +229,25 @@ class FieldChunk {
     this.values = values;
     this.occupancy = new Uint8Array(CELLS_PER_CHUNK);
     this.crowd = new Uint16Array(CELLS_PER_CHUNK);
+  }
+
+  /**
+   * Ricalcola il massimo per uso scandendo i buffer densi del chunk.
+   *
+   * Costa quanto una passata sulle colonne, ma solo dove il campo e' stato
+   * appena scritto: e' l'indice derivato che paga il salto nella scansione dei
+   * candidati, e si mantiene qui perche' nessun altro conosce i buffer.
+   */
+  refreshMax(): void {
+    for (let cls = 0; cls < CLASS_COUNT; cls++) {
+      const values = this.values[cls];
+      let max = 0;
+      for (let i = 0; i < values.length; i++) {
+        const value = values[i];
+        if (value > max) max = value;
+      }
+      this.max[cls] = max;
+    }
   }
 
   /**
@@ -317,7 +349,7 @@ export class DesirabilityField {
     let total = 0;
     for (const chunk of this.map.values()) {
       for (const values of chunk.values) total += values.byteLength;
-      total += chunk.occupancy.byteLength + chunk.crowd.byteLength;
+      total += chunk.occupancy.byteLength + chunk.crowd.byteLength + chunk.max.byteLength;
     }
     return total;
   }
@@ -543,6 +575,7 @@ export class DesirabilityField {
       chunk.occupancy.fill(FREE);
       chunk.levels = null;
       chunk.crowd.fill(0);
+      chunk.max.fill(0);
     }
     this.occupied = 0;
 
@@ -591,6 +624,9 @@ export class DesirabilityField {
 
     for (const chunk of this.map.values()) {
       for (const cls of classes) chunk.values[cls].fill(0);
+      // Le classi azzerate non hanno piu' il loro massimo: il riallineamento qui
+      // copre anche il chunk che nessun ricalcolo sotto torna a toccare.
+      chunk.refreshMax();
     }
 
     for (const catalyst of catalysts) {
@@ -658,6 +694,7 @@ export class DesirabilityField {
     const maxValue = BALANCE.limits.maxDesirability;
 
     let visited = 0;
+    const writtenChunks = new Set<FieldChunk>();
 
     for (let y = rect.minY; y <= rect.maxY; y++) {
       for (let x = rect.minX; x <= rect.maxX; x++) {
@@ -686,12 +723,18 @@ export class DesirabilityField {
           if (value === 0 && existing === null) continue;
           const chunk = existing ?? this.ensureChunk(toChunk(x), toChunk(y));
           chunk.values[group.cls][i] = value;
+          writtenChunks.add(chunk);
         }
       }
     }
 
     this.lastCells = visited;
     this.totalCells += visited;
+
+    // Il massimo per uso si riallinea dopo la scrittura: e' un indice derivato
+    // come il campo stesso, e si ricostruisce qui — mai a lettura — perche'
+    // `nextBuildSites` possa saltare i chunk senza candidati.
+    for (const chunk of writtenChunks) chunk.refreshMax();
   }
 
   /** Somma `delta` al conteggio di affollamento di tutte le celle del rettangolo. */

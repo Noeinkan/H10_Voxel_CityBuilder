@@ -347,9 +347,10 @@ export const TWIN_STEM: ArcologyRecipe = {
     // --- 2 · il mezzanino commerciale --------------------------------------
     [
       // La trave che scavalca: sotto restano settantanove quote di vuoto
-      // passante, ed e' quella la finestra di cielo.
-      box(PART.boom, 5, 7, 10, 6, 100, 6, PALETTE_SLOTS.glassPale, SURFACE_KIND.luminous),
-      box(PART.deck, 5, 7, 10, 6, 106, 1, PALETTE_SLOTS.roofWhite, SURFACE_KIND.roofTech),
+      // passante, ed e' quella la finestra di cielo. Corre da un fronte all'altro
+      // e si aggancia agli steli, cosi' il mezzanino poggia e non sospeso.
+      box(PART.boom, 2, 7, 16, 6, 100, 6, PALETTE_SLOTS.glassPale, SURFACE_KIND.luminous),
+      box(PART.deck, 2, 7, 16, 6, 106, 1, PALETTE_SLOTS.roofWhite, SURFACE_KIND.roofTech),
       box(PART.slab, 8, 8, 4, 4, 107, 8, PALETTE_SLOTS.glass, SURFACE_KIND.luminous, {
         cap: PALETTE_SLOTS.glassPale,
       }),
@@ -357,23 +358,25 @@ export const TWIN_STEM: ArcologyRecipe = {
       box(PART.deck, 7, 0, 6, 6, 106, 1, PALETTE_SLOTS.concretePale, SURFACE_KIND.utility),
     ],
     // --- 3 · i corpi abitati ------------------------------------------------
+    // Ripartono esattamente dove finiscono gli steli (115): una colonna continua,
+    // non un secondo troncone sospeso.
     [
-      box(PART.shell, 2, 3, 3, 3, 130, 72, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.habitat, {
+      box(PART.shell, 2, 3, 3, 3, 116, 86, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.habitat, {
         cap: PALETTE_SLOTS.glassPale,
       }),
-      box(PART.shell, 2, 7, 3, 3, 130, 72, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.habitat, {
+      box(PART.shell, 2, 7, 3, 3, 116, 86, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.habitat, {
         cap: PALETTE_SLOTS.glassPale,
       }),
-      box(PART.shell, 2, 11, 3, 3, 130, 72, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.habitat, {
+      box(PART.shell, 2, 11, 3, 3, 116, 86, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.habitat, {
         cap: PALETTE_SLOTS.glassPale,
       }),
-      box(PART.shell, 15, 3, 3, 3, 130, 72, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.habitat, {
+      box(PART.shell, 15, 3, 3, 3, 116, 86, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.habitat, {
         cap: PALETTE_SLOTS.glassPale,
       }),
-      box(PART.shell, 15, 7, 3, 3, 130, 72, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.habitat, {
+      box(PART.shell, 15, 7, 3, 3, 116, 86, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.habitat, {
         cap: PALETTE_SLOTS.glassPale,
       }),
-      box(PART.shell, 15, 11, 3, 3, 130, 72, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.habitat, {
+      box(PART.shell, 15, 11, 3, 3, 116, 86, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.habitat, {
         cap: PALETTE_SLOTS.glassPale,
       }),
     ],
@@ -382,9 +385,9 @@ export const TWIN_STEM: ArcologyRecipe = {
       // Il secondo scavalco, sopra il primo: e' quello che si vede da
       // inquadratura d'insieme, ed e' anche cio' che chiude le due file di corpi
       // in una struttura sola invece di lasciarli sei torri accostate.
-      box(PART.boom, 5, 8, 10, 4, 202, 5, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.civic),
-      box(PART.deck, 5, 8, 10, 4, 207, 1, PALETTE_SLOTS.roofWhite, SURFACE_KIND.roofTech),
-      box(PART.steps, 6, 8, 8, 4, 208, 6, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.civic, {
+      box(PART.boom, 2, 8, 16, 4, 202, 5, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.civic),
+      box(PART.deck, 2, 8, 16, 4, 207, 1, PALETTE_SLOTS.roofWhite, SURFACE_KIND.roofTech),
+      box(PART.steps, 4, 8, 12, 4, 208, 6, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.civic, {
         step: 1,
         chamfer: 1,
       }),
@@ -494,21 +497,22 @@ export const BRANCHING_CORE: ArcologyRecipe = {
       }),
     ],
     [
-      box(PART.boom, 3, 7, 12, 4, 75, 6, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.civic),
+      box(PART.boom, 2, 7, 14, 4, 75, 6, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.civic),
       box(PART.boom, 7, 3, 4, 12, 81, 6, PALETTE_SLOTS.glassPale, SURFACE_KIND.luminous),
-      box(PART.deck, 3, 7, 12, 4, 87, 1, PALETTE_SLOTS.roofWhite, SURFACE_KIND.roofTech),
+      box(PART.deck, 2, 7, 14, 4, 87, 1, PALETTE_SLOTS.roofWhite, SURFACE_KIND.roofTech),
     ],
     [
-      box(PART.shell, 2, 4, 3, 3, 88, 81, PALETTE_SLOTS.concreteLight, SURFACE_KIND.habitat),
-      box(PART.shell, 7, 4, 3, 3, 88, 81, PALETTE_SLOTS.concreteLight, SURFACE_KIND.habitat),
-      box(PART.shell, 12, 4, 3, 3, 88, 81, PALETTE_SLOTS.concreteLight, SURFACE_KIND.habitat),
-      box(PART.shell, 2, 11, 3, 3, 88, 81, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.habitat),
-      box(PART.shell, 7, 11, 3, 3, 88, 81, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.habitat),
-      box(PART.shell, 12, 11, 3, 3, 88, 81, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.habitat),
+      box(PART.shell, 2, 4, 3, 3, 81, 88, PALETTE_SLOTS.concreteLight, SURFACE_KIND.habitat),
+      box(PART.shell, 7, 4, 3, 3, 81, 88, PALETTE_SLOTS.concreteLight, SURFACE_KIND.habitat),
+      box(PART.shell, 12, 4, 3, 3, 81, 88, PALETTE_SLOTS.concreteLight, SURFACE_KIND.habitat),
+      box(PART.shell, 2, 11, 3, 3, 81, 88, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.habitat),
+      box(PART.shell, 7, 11, 3, 3, 81, 88, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.habitat),
+      box(PART.shell, 12, 11, 3, 3, 81, 88, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.habitat),
     ],
     [
-      box(PART.boom, 3, 7, 12, 4, 170, 5, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.civic),
-      box(PART.boom, 7, 3, 4, 12, 175, 5, PALETTE_SLOTS.glassPale, SURFACE_KIND.luminous),
+      box(PART.boom, 2, 7, 14, 4, 169, 5, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.civic),
+      box(PART.boom, 7, 3, 4, 12, 169, 5, PALETTE_SLOTS.glassPale, SURFACE_KIND.luminous),
+      box(PART.deck, 2, 7, 14, 4, 174, 1, PALETTE_SLOTS.roofWhite, SURFACE_KIND.roofTech),
       box(PART.mast, 4, 8, 2, 2, 175, 71, PALETTE_SLOTS.metalDark, SURFACE_KIND.civic, {
         cap: PALETTE_SLOTS.metalGold,
       }),
@@ -573,12 +577,12 @@ export const SKY_WEAVE: ArcologyRecipe = {
       box(PART.deck, 6, 10, 6, 6, 85, 1, PALETTE_SLOTS.roofWhite, SURFACE_KIND.roofTech),
     ],
     [
-      box(PART.shell, 3, 5, 3, 3, 120, 76, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.habitat),
-      box(PART.shell, 7, 10, 4, 4, 98, 98, PALETTE_SLOTS.concreteLight, SURFACE_KIND.habitat),
-      box(PART.shell, 12, 5, 3, 3, 120, 76, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.habitat),
-      box(PART.shell, 3, 12, 3, 3, 120, 76, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.habitat),
-      box(PART.shell, 7, 1, 4, 4, 98, 98, PALETTE_SLOTS.concreteLight, SURFACE_KIND.habitat),
-      box(PART.shell, 12, 12, 3, 3, 120, 76, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.habitat),
+      box(PART.shell, 3, 5, 3, 3, 115, 81, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.habitat),
+      box(PART.shell, 7, 10, 4, 4, 92, 104, PALETTE_SLOTS.concreteLight, SURFACE_KIND.habitat),
+      box(PART.shell, 12, 5, 3, 3, 115, 81, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.habitat),
+      box(PART.shell, 3, 12, 3, 3, 115, 81, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.habitat),
+      box(PART.shell, 7, 1, 4, 4, 92, 104, PALETTE_SLOTS.concreteLight, SURFACE_KIND.habitat),
+      box(PART.shell, 12, 12, 3, 3, 115, 81, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.habitat),
     ],
     [
       box(PART.boom, 3, 5, 12, 3, 196, 5, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.civic),
@@ -648,20 +652,20 @@ export const SPIRE_RING: ArcologyRecipe = {
       box(PART.shell, 2, 4, 3, 3, 19, 60, PALETTE_SLOTS.glassDeep, SURFACE_KIND.luminous),
     ],
     [
-      box(PART.boom, 5, 7, 8, 4, 80, 5, PALETTE_SLOTS.glassPale, SURFACE_KIND.luminous),
-      box(PART.deck, 5, 7, 8, 4, 85, 1, PALETTE_SLOTS.roofWhite, SURFACE_KIND.roofTech),
+      box(PART.boom, 2, 7, 14, 4, 80, 5, PALETTE_SLOTS.glassPale, SURFACE_KIND.luminous),
+      box(PART.deck, 2, 7, 14, 4, 85, 1, PALETTE_SLOTS.roofWhite, SURFACE_KIND.roofTech),
     ],
     [
-      box(PART.shell, 7, 2, 3, 3, 120, 76, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.habitat),
-      box(PART.shell, 12, 4, 3, 3, 120, 76, PALETTE_SLOTS.concreteLight, SURFACE_KIND.habitat),
-      box(PART.shell, 12, 11, 3, 3, 120, 76, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.habitat),
-      box(PART.shell, 7, 13, 3, 3, 120, 76, PALETTE_SLOTS.concreteLight, SURFACE_KIND.habitat),
-      box(PART.shell, 2, 11, 3, 3, 120, 76, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.habitat),
-      box(PART.shell, 2, 4, 3, 3, 120, 76, PALETTE_SLOTS.concreteLight, SURFACE_KIND.habitat),
+      box(PART.shell, 7, 2, 3, 3, 79, 117, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.habitat),
+      box(PART.shell, 12, 4, 3, 3, 79, 117, PALETTE_SLOTS.concreteLight, SURFACE_KIND.habitat),
+      box(PART.shell, 12, 11, 3, 3, 79, 117, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.habitat),
+      box(PART.shell, 7, 13, 3, 3, 79, 117, PALETTE_SLOTS.concreteLight, SURFACE_KIND.habitat),
+      box(PART.shell, 2, 11, 3, 3, 79, 117, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.habitat),
+      box(PART.shell, 2, 4, 3, 3, 79, 117, PALETTE_SLOTS.concreteLight, SURFACE_KIND.habitat),
     ],
     [
-      box(PART.boom, 5, 7, 8, 4, 196, 5, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.civic),
-      box(PART.deck, 5, 7, 8, 4, 201, 1, PALETTE_SLOTS.roofWhite, SURFACE_KIND.roofTech),
+      box(PART.boom, 2, 7, 14, 4, 196, 5, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.civic),
+      box(PART.deck, 2, 7, 14, 4, 201, 1, PALETTE_SLOTS.roofWhite, SURFACE_KIND.roofTech),
       box(PART.mast, 7, 2, 2, 2, 196, 46, PALETTE_SLOTS.metalDark, SURFACE_KIND.civic, {
         cap: PALETTE_SLOTS.metalGold,
       }),

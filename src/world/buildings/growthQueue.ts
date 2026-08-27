@@ -83,6 +83,22 @@ export class GrowthQueue {
       this.pending.some((entry) => entry.ownerId === id);
   }
 
+  /**
+   * Toglie dalla coda ogni volume del record, in volo o in attesa.
+   *
+   * Serve all'annullamento della gomma: prima si ferma la cancellazione in
+   * corso, poi chi annulla ri-accoda lo stamp vero per farlo ricrescere. I voxel
+   * gia' cancellati non si ripristinano qui — li riscrive la coda nuova.
+   */
+  cancel(id: number): void {
+    for (let i = this.growing.length - 1; i >= 0; i--) {
+      if (this.growing[i].ownerId === id) this.growing.splice(i, 1);
+    }
+    for (let i = this.pending.length - 1; i >= 0; i--) {
+      if (this.pending[i].ownerId === id) this.pending.splice(i, 1);
+    }
+  }
+
   /** I record che stanno comparendo, in coda o in attesa. */
   busyIds(): ReadonlySet<number> {
     const busy = new Set<number>();

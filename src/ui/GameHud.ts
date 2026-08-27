@@ -12,6 +12,7 @@ import {
   selectionMessage,
   type GameHudModel,
   type GameTool,
+  type PlacementMode,
 } from './GameHudModel';
 import type { DaylightMode } from '../engine/daylight';
 import { CityDrawer } from './CityDrawer';
@@ -157,6 +158,10 @@ export class GameHud {
   private levelValue!: HTMLElement;
   private readonly cursor: HTMLElement;
   private readonly help: ControlsHint;
+  /** Selettore del verso di posa (suolo/facciata): compare solo con un ruolo che ha entrambi. */
+  private readonly modePicker: HTMLElement;
+  private readonly groundButton: HTMLButtonElement;
+  private readonly aloftButton: HTMLButtonElement;
   private readonly handlers: GameHudHandlers;
   private readonly decisionCard: HTMLElement;
   private readonly themeButtons = new Map<string, HTMLButtonElement>();
@@ -253,6 +258,11 @@ export class GameHud {
     this.railLeft.appendChild(this.viewBar);
     this.levelRail = this.createLevelRail();
     this.root.appendChild(this.levelRail);
+    const modePicker = this.createModePicker();
+    this.modePicker = modePicker.picker;
+    this.groundButton = modePicker.ground;
+    this.aloftButton = modePicker.aloft;
+    this.root.appendChild(this.modePicker);
     parent.appendChild(this.root);
     this.help = new ControlsHint(this.root);
     this.setTheme(activeThemeId);
@@ -916,6 +926,92 @@ export class GameHud {
 
   private paintSelection(): void {
     this.dock.paintSelection(this.selected);
+    this.paintPlacementMode();
+  }
+
+  /**
+   * Il verso di posa scelto, se il ruolo ne ha due.
+   *
+   * `null` per gli strumenti senza facciata: il selettore resta nascosto, perche'
+   * non c'e' niente da scegliere. Un ruolo con la forma in quota mostra i due
+   * versi e marca quello attivo, cosi' tessera, scorciatoia e puntatore dicono
+   * la stessa cosa.
+   */
+  private placementModeFor(tool: GameTool): boolean {
+    if (tool.kind !== 'catalyst' || tool.id === undefined) return false;
+    const action = this.model.catalysts.find((candidate) => candidate.catalystId === tool.id);
+    return action?.facadeForm === true;
+  }
+
+  private paintPlacementMode(): void {
+    if (this.selected.kind !== 'catalyst' || !this.placementModeFor(this.selected)) {
+      this.modePicker.hidden = true;
+      return;
+    }
+    this.modePicker.hidden = false;
+    const active = this.selected.mode ?? 'ground';
+    this.groundButton.setAttribute('aria-pressed', active === 'ground' ? 'true' : 'false');
+    this.aloftButton.setAttribute('aria-pressed', active === 'aloft' ? 'true' : 'false');
+  }
+
+  /**
+   * Alterna suolo e facciata per lo strumento in mano.
+   *
+   * Torna `false` quando non c'e' niente da alternare, cosi' il tasto che la
+   * chiama puo' cadere su altri handler invece di essere ingoiato: e' la stessa
+   * regola delle cifre nude del dock.
+   */
+  togglePlacementMode(): boolean {
+    if (this.selected.kind !== 'catalyst' || !this.placementModeFor(this.selected)) return false;
+    const current = this.selected.mode ?? 'ground';
+    this.pickTool({ ...this.selected, mode: current === 'ground' ? 'aloft' : 'ground' });
+    return true;
+  }
+
+  private setPlacementMode(mode: PlacementMode): void {
+    if (this.selected.kind !== 'catalyst' || !this.placementModeFor(this.selected)) return;
+    if ((this.selected.mode ?? 'ground') === mode) return;
+    this.pickTool({ ...this.selected, mode });
+  }
+
+  private createModePicker(): {
+    readonly picker: HTMLElement;
+    readonly ground: HTMLButtonElement;
+    readonly aloft: HTMLButtonElement;
+  } {
+    const picker = document.createElement('aside');
+    picker.className = 'placement-mode hud-surface';
+    picker.hidden = true;
+    picker.setAttribute('aria-label', 'Placement direction');
+
+    const title = document.createElement('span');
+    title.className = 'placement-mode-title';
+    title.textContent = 'Placement';
+
+    const ground = document.createElement('button');
+    ground.type = 'button';
+    ground.className = 'placement-mode-option';
+    ground.textContent = 'Ground';
+    ground.addEventListener('click', () => this.setPlacementMode('ground'));
+
+    const aloft = document.createElement('button');
+    aloft.type = 'button';
+    aloft.className = 'placement-mode-option';
+    aloft.textContent = 'Rooftop';
+    aloft.addEventListener('click', () => this.setPlacementMode('aloft'));
+
+    const row = document.createElement('div');
+    row.className = 'placement-mode-row';
+    row.append(ground, aloft);
+
+    const keys = document.createElement('span');
+    keys.className = 'placement-mode-keys';
+    const key = document.createElement('kbd');
+    key.textContent = 'X';
+    keys.append(key, document.createTextNode(' toggles'));
+
+    picker.append(title, row, keys);
+    return { picker, ground, aloft };
   }
 
   private paintToast(): void {

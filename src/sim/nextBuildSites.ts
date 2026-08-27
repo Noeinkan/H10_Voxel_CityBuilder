@@ -167,6 +167,20 @@ export function nextBuildSites(
     // Campo e `TerrainMap` hanno la stessa chunkatura e la stessa disposizione
     // per colonna, quindi un solo indice serve a entrambi.
     const buildable = terrainChunk.buildable;
+
+    // Il massimo per uso, mantenuto da chi scrive il campo, permette di saltare
+    // l'intero chunk quando nessun uso supera la propria soglia. Senza, un
+    // landmark a raggio largo alloca decine di chunk di cui solo il cuore puo'
+    // candidare, e ogni passata scandirebbe a vuoto la periferia del campo.
+    if (
+      chunk.max[BUILDING_CLASS.residential] <= minResidential &&
+      chunk.max[BUILDING_CLASS.commercial] <= minCommercial &&
+      chunk.max[BUILDING_CLASS.industrial] <= minIndustrial &&
+      chunk.max[BUILDING_CLASS.civic] <= minCivic
+    ) {
+      continue;
+    }
+
     const values = chunk.values;
     const residential = values[BUILDING_CLASS.residential];
     const commercial = values[BUILDING_CLASS.commercial];

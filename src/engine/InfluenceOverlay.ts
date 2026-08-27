@@ -35,15 +35,32 @@ import { TERRAIN } from '../world/terrain/config';
  */
 const REACH_STEPS: readonly number[] = [0.25, 0.5, 0.75];
 
+/** Quanti campi di cursore tenere a memoria: abbastanza per i ritorni, non di piu'. */
+const CURSOR_CACHE_MAX = 16;
+
+/**
+ * Passo di campionamento della velatura, in celle.
+ *
+ * Il cursore e' un'anteprima, non il campo vero: la fedelta' per-cella del
+ * gradiente non vale il quadrato intero di un landmark a raggio 75. Un quad ogni
+ * due celle riduce di un quarto i vertici della velatura senza che l'occhio
+ * perda il gradiente, e i quad allargati si accostano senza cuciture.
+ */
+const FILL_STEP = 2;
+
 /**
  * Opacita' della velatura al bordo della portata e al centro.
  *
- * Il minimo non e' zero di proposito: una velatura che sfuma a niente lascia il
- * bordo appeso a una linea da un pixel, che sul terreno chiaro si perde — e' la
- * stessa ragione per cui prima del gradiente qui c'era una fascia piena.
+ * L'intensita' segue il decadimento: il centro e' il verde pieno della portata,
+ * il bordo sfuma quasi a niente. Il minimo non e' zero di proposito — una
+ * velatura che sfuma del tutto lascia il bordo appeso a una linea da un pixel,
+ * che sul terreno chiaro si perde, ed e' la stessa ragione per cui prima del
+ * gradiente qui c'era una fascia piena. Il salto fra minimo e picco e' largo:
+ * con un raggio da landmark (fino a 75) un picco appena sopra il minimo
+ * tornerebbe a leggersi come una fascia uniforme, non come il campo.
  */
-const FILL_MIN = 0.1;
-const FILL_PEAK = 0.44;
+const FILL_MIN = 0.05;
+const FILL_PEAK = 0.6;
 
 /** Un colore per uso urbano, in ordine di `BUILDING_CLASS`. */
 const CLASS_COLORS: readonly number[] = [0x5f8f7f, 0xd8886a, 0xd9b45f, 0xe99a72];
@@ -105,14 +122,19 @@ export class InfluenceOverlay {
   private readonly coach = new Group();
 
   // Il catalizzatore sotto al cursore non e' ancora piazzato, quindi la sua
-  // portata non sta nella cache della simulazione. Una voce sola basta: il
-  // cursore si muove per celle intere, e fermo su una cella non ricalcola.
-  private lastCursor: ReachField | null = null;
+  // portata non sta nella cache della simulazione. I raggi dei landmark sono
+  // larghi (fino a 75) e rifare il Dijkstra a ogni ritorno del cursore su una
+  // cella gia' visitata e' un lusso: qui sta una cache delimitata, separata dal
+  // `ReachCache` della simulazione che resta illimitato.
+  private readonly cursorCache = new Map<string, ReachField>();
   private lastSummary: ReachSummary = { cells: 0, ratio: 0 };
-  // Quale portata e' gia' disegnata. Il puntatore manda eventi molto piu' fitti
-  // delle celle che attraversa: senza questo, ogni pixel di movimento
-  // ricostruirebbe da capo qualche decina di migliaia di triangoli.
-  private drawn: ReachField | null = null;
+  // Quale portata e' gia' disegnata, per centro e raggio e non per identita'
+  // dell'oggetto. Il puntatore manda eventi molto piu' fitti delle celle che
+  // attraversa: senza questo, ogni pixel di movimento ricostruirebbe da capo
+  // qualche decina di migliaia di triangoli. La chiave e' la coordinata perche'
+  // `cursorField` restituisce un `ReachField` nuovo a ogni cella anche quando la
+  // cella e' la stessa di un passaggio precedente.
+  private drawnKey: string | null = null;
   /** I catalizzatori di `refreshCatalysts`, per risolvere l'evidenza del coach. */
   private catalysts: readonly Catalyst[] = [];
   /** Id del suggerimento gia' disegnato, per non ricostruire la geometria. */
@@ -165,8 +187,9 @@ export class InfluenceOverlay {
   }
 
   private showField(field: ReachField, color: number): ReachSummary {
-    if (field !== this.drawn) {
-      this.drawn = field;
+    const key = `${field.cx},${field.cy},${field.radius}`;
+    if (key !== this.drawnKey) {
+      this.drawnKey = key;
       this.cursor.geometry.dispose();
       this.cursor.geometry = contourGeometry(this.map, field, field.radius);
       this.rings.geometry.dispose();
@@ -263,13 +286,15 @@ export class InfluenceOverlay {
   }
 
   private cursorField(x: number, y: number, radius: number, reach: ReachCache): ReachField {
-    const cached = this.lastCursor;
-    if (cached !== null && cached.cx === x && cached.cy === y && cached.radius === radius) {
-      return cached;
-    }
+    const key = `${x},${y},${radius}`;
+    const hit = this.cursorCache.get(key);
+    if (hit !== undefined) return hit;
     const field = computeReach(x, y, radius, reach.cost);
-    this.lastCursor = field;
-    this.lastSummary = coverageOf(field);
+    if (this.cursorCache.size >= CURSOR_CACHE_MAX) {
+      const oldest = this.cursorCache.keys().next().value;
+      if (oldest !== undefined) this.cursorCache.delete(oldest);
+    }
+    this.cursorCache.set(key, field);
     return field;
   }
 }
@@ -313,21 +338,28 @@ function fillGeometry(map: TerrainMap, field: ReachField): BufferGeometry {
   const { cx, cy, radius } = field;
   const positions: number[] = [];
   const colors: number[] = [];
+  const half = FILL_STEP * 0.5;
 
-  for (let y = cy - radius; y <= cy + radius; y++) {
-    for (let x = cx - radius; x <= cx + radius; x++) {
+  for (let y = cy - radius; y <= cy + radius; y += FILL_STEP) {
+    for (let x = cx - radius; x <= cx + radius; x += FILL_STEP) {
       const d = distAt(field, x, y);
       if (d >= radius) continue;
 
       const z = surfaceZ(map, x, y);
-      const alpha = FILL_MIN + (FILL_PEAK - FILL_MIN) * falloff(d / radius);
-      const x0 = x - 0.5;
-      const x1 = x + 0.5;
-      const y0 = y - 0.5;
-      const y1 = y + 0.5;
+      const t = falloff(d / radius);
+      const alpha = FILL_MIN + (FILL_PEAK - FILL_MIN) * t;
+      // L'intensita' del verde segue il decadimento come l'opacita': con il
+      // colore bianco dei vertici la velatura era di un verde uniforme e l'occhio
+      // poteva leggere soltanto l'alpha; scalando anche la luminosita' il
+      // gradiente si vede pure dove il terreno sotto e' scuro.
+      const bright = FILL_MIN + (1 - FILL_MIN) * t;
+      const x0 = x - half;
+      const x1 = x + half;
+      const y0 = y - half;
+      const y1 = y + half;
       positions.push(x0, y0, z, x1, y0, z, x1, y1, z);
       positions.push(x0, y0, z, x1, y1, z, x0, y1, z);
-      for (let vertex = 0; vertex < 6; vertex++) colors.push(1, 1, 1, alpha);
+      for (let vertex = 0; vertex < 6; vertex++) colors.push(bright, bright, bright, alpha);
     }
   }
 
