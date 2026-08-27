@@ -57,6 +57,9 @@ import {
 } from './siteWorks';
 import { EMPTY_STAMP, STAMP_EMPTY, stampFootprint, type VoxelStamp } from './stamp';
 
+/** Verso il mare, per verso della struttura: l'ordine e' quello di `FACING`. */
+const SEAWARD: readonly (readonly [number, number])[] = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+
 /**
  * I monumenti dei catalizzatori: il piazzamento, il grembiule e gli stadi.
  *
@@ -491,21 +494,52 @@ export class LandmarkDriver {
    */
   private waterFormAt(spot: Placement, kind: CatalystId): LandmarkFormId | undefined {
     if (!hasWaterForm(kind)) return undefined;
-    const column = landmarkWaterColumn(kind, spot.facing, spot.x, spot.y);
-    if (column === null) return undefined;
+    const source = this.waterSourceAt(spot, kind);
+    if (source === null) return undefined;
 
-    const waterZ = this.ctx.terrain.waterTopAt(column.x, column.y);
-    const depth = waterZ - this.ctx.terrain.heightAt(column.x, column.y);
+    const depth = source.z - this.ctx.terrain.heightAt(source.x, source.y);
     if (depth <= 0) return undefined;
 
     const waterClass = classifyWater(
-      column.x,
-      column.y,
+      source.x,
+      source.y,
       depth,
       (wx, wy) => this.ctx.terrain.heightAt(wx, wy),
-      waterZ,
+      source.z,
     );
     return waterFormFor(kind, waterClass) ?? undefined;
+  }
+
+  /**
+   * La colonna d'acqua vera che la struttura fronteggia, e la sua quota.
+   *
+   * Per chi non scava e' la `waterline` della ricetta — il piazzamento l'ha gia'
+   * portata sull'acqua. Per chi scava (`basinDepth`) la `waterline` puo' cadere
+   * sulla riva emersa — sul lago la struttura si ritira a ritagliare il bacino
+   * nella terra — e l'acqua vera comincia piu' al largo: qui si scandisce verso
+   * la bocca finche' una colonna e' davvero sommersa. La quota che esce e' il
+   * pelo a cui lo scavo allaga e a cui galleggiano i mezzi.
+   */
+  private waterSourceAt(
+    spot: Placement,
+    kind: CatalystId,
+  ): { x: number; y: number; z: number } | null {
+    const column = landmarkWaterColumn(kind, spot.facing, spot.x, spot.y);
+    if (column === null) return null;
+    const recipe = landmarkOf(kind);
+    if (recipe === null || recipe.waterline === undefined) return null;
+    const [dx, dy] = SEAWARD[spot.facing] ?? SEAWARD[FACING.east];
+    const reach = recipe.span[0] - 1 - recipe.waterline;
+    for (let d = 0; d <= reach; d++) {
+      const cx = column.x + dx * d;
+      const cy = column.y + dy * d;
+      if (!this.ctx.terrain.has(cx, cy)) break;
+      const waterZ = this.ctx.terrain.waterTopAt(cx, cy);
+      if (waterZ > this.ctx.terrain.heightAt(cx, cy)) {
+        return { x: cx, y: cy, z: waterZ };
+      }
+    }
+    return null;
   }
 
   /**
@@ -728,6 +762,11 @@ export class LandmarkDriver {
       facing,
       landmark: kind,
       landmarkForm: form,
+      // Il pelo che lo scavo del bacino allaga e su cui galleggiano i mezzi: sul
+      // mare e' il livello del mare, sul lago quello della conca. Lo conserva il
+      // record perche' chi lo legge dopo — `enqueueBasinDig`, il traffico — non
+      // rifa' il sondaggio, e il terreno da solo non sa quale colonna sia la bocca.
+      waterZ: this.waterSourceAt(spot, kind)?.z,
     });
 
     growth.enqueueSegments(record, stamp);
@@ -766,14 +805,13 @@ export class LandmarkDriver {
     const depth = recipe?.basinDepth;
     if (recipe === null || depth === undefined || mask === undefined) return;
 
-    // Il pelo a cui si scava e' quello della colonna che la ricetta dichiara
-    // d'acqua: il piazzamento l'ha gia' portata sulla battigia, quindi e'
-    // quello giusto — mare o conca — anche se il click era a monte.
-    const column = landmarkWaterColumn(
-      kind, (record.facing ?? FACING.east) as Facing, record.x, record.y, form,
-    );
-    if (column === null) return;
-    const waterZ = this.ctx.terrain.waterTopAt(column.x, column.y);
+    // Il pelo a cui si scava e' quello che il piazzamento ha letto sull'acqua
+    // vera — mare o conca — e ha gia' conservato nel record. Sul lago la bocca
+    // del bacino sta al largo, lontano dalla `waterline`, quindi ricalcolare la
+    // quota da quella colonna darebbe il livello del mare invece di quello della
+    // conca.
+    const waterZ = record.waterZ;
+    if (waterZ === undefined) return;
     const floor = waterZ - depth;
 
     const { terrain, growth } = this.ctx;

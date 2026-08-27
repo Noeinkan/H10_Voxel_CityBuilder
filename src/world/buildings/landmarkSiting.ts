@@ -2,6 +2,7 @@ import type { LandmarkRecipe } from '../landmarks/config';
 import { recipeOrigin, recipeSpan } from '../landmarks/generate';
 import type { WaterSight } from '../sites/siteRules';
 import { FACING, type Facing } from '../streets/streetGrid';
+import { TERRAIN } from '../terrain/config';
 
 /**
  * Dove una struttura si posa davvero, data la colonna cliccata e cosa il terreno
@@ -88,6 +89,17 @@ export function placeRecipe(
  */
 export function seawardDrift(recipe: LandmarkRecipe, coast: WaterSight | null): number {
   if (recipe.waterline === undefined || coast === null) return 0;
+  // **Sul lago il bacino si ritaglia nella terra asciutta.** La marina che scava
+  // (`basinDepth`) davanti a un lago non deve appoggiarsi allo specchio: la sua
+  // bocca — il bordo al largo — si porta sul pelo del lago, e gli slip restano
+  // sulla riva emersa, dove lo scavo li ritaglia come canali. Lo scorrimento e'
+  // percio' all'indietro (negativo), e non ha il tetto dell'ancora: la colonna
+  // cliccata resta comunque dentro l'ingombro, perche' la bocca dista dall'ancora
+  // meno del lato lungo.
+  if (recipe.basinDepth !== undefined && coast.waterZ > TERRAIN.seaLevel) {
+    const mouth = recipe.span[0] - 1 - recipe.anchor[0];
+    return coast.distance - mouth;
+  }
   const drift = coast.distance - (recipe.waterline - recipe.anchor[0]);
   return Math.max(0, Math.min(drift, recipe.anchor[0]));
 }

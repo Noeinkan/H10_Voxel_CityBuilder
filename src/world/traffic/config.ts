@@ -116,6 +116,31 @@ export const TRAFFIC = {
    */
   cargoMinRun: 40,
 
+  /**
+   * Velocita' di uno yacht da diporto che gironzola davanti alla marina.
+   *
+   * Lenta, e piu' lenta della barca da lavoro: lo yacht non deve arrivare da
+   * nessuna parte, deve farsi vedere uscire dal posto barca e rientrare.
+   */
+  yachtSpeed: 2,
+
+  /**
+   * Frazione del periodo che uno yacht resta fermo a ciascun capo del suo giro.
+   *
+   * Il capo di qua e' il posto barca, quello di la' il largo del bacino: senza
+   * sosta il giro legge come un rimbalzo, non come un'uscita e un rientro.
+   */
+  yachtDwell: 0.2,
+
+  /**
+   * Fin dove uno yacht si allontana dal posto barca, in voxel.
+   *
+   * E' il guinzaglio del «non si allontana troppo»: lo yacht esce lungo il
+   * proprio slip e rientra, senza mai perdere la marina. Il tratto vero si
+   * ferma comunque prima, dove finisce l'acqua navigabile.
+   */
+  yachtReach: 10,
+
   // --- Mezzi in aria ------------------------------------------------------
 
   /** Velocita' di un aereo sul circuito, in voxel al secondo. */

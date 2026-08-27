@@ -41,7 +41,11 @@ describe('fronte d’acqua a qualsiasi quota', () => {
     // sedici voxel sopra il livello del mare — ma l'acqua c'e', e la marina la
     // vede a una colonna di distanza.
     expect(seesWater(map, 19, 32, SITE.coastalRadius)).toBe(false);
-    expect(sightAnyWater(map, 19, 32, SITE.coastalRadius)).toEqual({ facing: 0, distance: 1 });
+    expect(sightAnyWater(map, 19, 32, SITE.coastalRadius)).toEqual({
+      facing: 0,
+      distance: 1,
+      waterZ: LAKE_LEVEL,
+    });
   });
 
   it('una colonna asciutta non e’ acqua nemmeno al pelo del lago', () => {

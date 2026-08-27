@@ -76,11 +76,29 @@ describe('la marina sul lago', () => {
     const { world, record } = builtMarinaAt(map, 19, 32);
     expect(record).not.toBeNull();
 
-    // Lo stadio zero e' la promenade: il piano c'e' davvero, non e' la piazzola
-    // di ripiego. Le colonne del lago sotto il fronte sono state riempite fino
-    // al piano — la banchina che la riva ripida non avrebbe mai concesso.
-    expect(world.getBlock(record!.x + 2, record!.y + 6, record!.baseZ)).not.toBe(0);
-    expect(world.getBlock(record!.x + 9, record!.y + 2, LAKE_LEVEL - 1)).not.toBe(0);
+    // La promenade c'e' davvero: il piano a terra sul ciglio della riva, non la
+    // piazzola di ripiego. La struttura si e' ritirata a ritagliarsi il bacino,
+    // e il suo piano finito sta sulla riva emersa, sopra il pelo della conca.
+    expect(world.getBlock(record!.x + 2, record!.y + 6, record!.baseZ)).toBe(GRADING.quayDeck);
+  });
+
+  it('scava i canali nella riva emersa e li allaga al pelo della conca', () => {
+    const map = lakeAt(20);
+    const { world, record } = builtMarinaAt(map, 19, 32);
+    expect(record).not.toBeNull();
+
+    // La colonna del bacino stava quattro voxel sopra il pelo: terra asciutta,
+    // non il fondale del lago. Lo scavo la porta a due sotto e l'acqua la
+    // riempie fino al pelo — il canale, non il mare che capitava di esserci.
+    const basinX = record!.x + 6;
+    const basinY = record!.y + 1;
+    expect(map.heightAt(basinX, basinY)).toBe(LAKE_LEVEL + 4);
+    expect(world.getBlock(basinX, basinY, LAKE_LEVEL - 2)).toBe(WATER_IDS.surface);
+    expect(world.getBlock(basinX, basinY, LAKE_LEVEL - 1)).toBe(WATER_IDS.surface);
+    // La riva sopra il pelo e' stata tolta: profondita' costante, niente sponde
+    // emerse dentro il canale.
+    expect(world.getBlock(basinX, basinY, LAKE_LEVEL)).toBe(0);
+    expect(world.getBlock(basinX, basinY, LAKE_LEVEL + 3)).toBe(0);
   });
 });
 

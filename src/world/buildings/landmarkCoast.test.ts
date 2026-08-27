@@ -84,7 +84,7 @@ function afloatBerths(record: BuildingRecord): readonly { x: number; y: number }
 describe('lo scorrimento verso il mare', () => {
   const port = landmarkOf('port')!;
   const drift = (distance: number): number =>
-    seawardDrift(port, { facing: FACING.west, distance });
+    seawardDrift(port, { facing: FACING.west, distance, waterZ: TERRAIN.seaLevel });
 
   it('porta la linea d acqua della ricetta sulla colonna bagnata', () => {
     // Il porto se l'aspetta due colonne oltre l'ancora: a due non si muove, e da
@@ -110,7 +110,7 @@ describe('lo scorrimento verso il mare', () => {
   it('non muove una ricetta che l acqua non la guarda', () => {
     // Sette ruoli su nove non dichiarano una linea d'acqua, e per loro questa
     // domanda non si pone nemmeno quando il mare c'e'.
-    expect(seawardDrift(landmarkOf('market')!, { facing: FACING.west, distance: 5 })).toBe(0);
+    expect(seawardDrift(landmarkOf('market')!, { facing: FACING.west, distance: 5, waterZ: TERRAIN.seaLevel })).toBe(0);
     expect(seawardDrift(port, null)).toBe(0);
   });
 });

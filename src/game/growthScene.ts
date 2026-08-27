@@ -802,7 +802,10 @@ export class GrowthScene {
         // Il pelo dello specchio davanti alla struttura: sul mare e' il livello
         // del mare, sul lago quello della conca. Gli ormeggi a galla ci posano
         // i mezzi, cosi' uno yacht non resta sospeso a mezz'aria sulla riva.
-        waterZ: column === null ? undefined : this.map.waterTopAt(column.x, column.y),
+        // Il record lo porta gia' per chi scava il bacino; gli altri lo
+        // ricalcolano dalla `waterline`, che il piazzamento ha messo sull'acqua.
+        waterZ: record.waterZ
+          ?? (column === null ? undefined : this.map.waterTopAt(column.x, column.y)),
       });
     }
     return out;

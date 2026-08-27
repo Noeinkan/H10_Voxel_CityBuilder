@@ -35,10 +35,15 @@ const AXES: readonly (readonly [number, number])[] = [[1, 0], [-1, 0], [0, 1], [
 
 const AXIS_FACING: readonly Facing[] = [FACING.east, FACING.west, FACING.north, FACING.south];
 
-/** L'acqua piu' vicina sui quattro assi: da che parte, e a quante colonne. */
+/** L'acqua piu' vicina sui quattro assi: da che parte, a quante colonne, a che quota. */
 export interface WaterSight {
   readonly facing: Facing;
   readonly distance: number;
+  /**
+   * Quota dello specchio trovato: il livello del mare, o quello di un lago in
+   * quota. E' cio' che distingue il mare dal lago senza un secondo sondaggio.
+   */
+  readonly waterZ: number;
 }
 
 /**
@@ -136,7 +141,7 @@ function scanWater(
         ? map.waterTopAt(cx, cy) > map.heightAt(cx, cy)
         : map.heightAt(cx, cy) <= level;
       if (water) {
-        return { facing: AXIS_FACING[axis], distance: d };
+        return { facing: AXIS_FACING[axis], distance: d, waterZ: map.waterTopAt(cx, cy) };
       }
     }
   }

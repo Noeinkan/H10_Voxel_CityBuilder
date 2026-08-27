@@ -62,6 +62,41 @@ describe('planTraffic', () => {
     for (const route of yachts) expect(route.path[0].z).toBe(lakeZ);
   });
 
+  it('gli yacht escono dal posto barca e rientrano, senza allontanarsi', () => {
+    // Il guinzaglio corto: lo yacht gira lungo il proprio slip finche' l'acqua
+    // regge — qui il mare finisce a sedici colonne — e torna, sul pelo della
+    // struttura e non su quello del mare.
+    const lakeZ = TRAFFIC.waterZ + 20;
+    const routes = planTraffic(
+      [structure('marina', 0, 0, { waterZ: lakeZ })],
+      (x) => x < 16,
+    );
+
+    const yachts = routes.filter((route) => route.kind === VEHICLE.yacht);
+    expect(yachts.length).toBeGreaterThan(0);
+    for (const route of yachts) {
+      expect(route.length).toBeGreaterThan(0);
+      expect(route.closed).toBe(false);
+      expect(route.dwell).toBeGreaterThan(0);
+      const far = route.path[route.path.length - 1];
+      expect(far.z).toBe(lakeZ);
+      expect(Math.hypot(far.x - route.path[0].x, far.y - route.path[0].y))
+        .toBeLessThanOrEqual(TRAFFIC.yachtReach);
+    }
+  });
+
+  it('senza acqua davanti lo yacht resta al posto barca', () => {
+    // C'e' acqua sotto il posto barca ma non oltre: il giro non ha un capo
+    // lontano, e lo yacht resta ormeggiato invece di attraversare la riva.
+    const routes = planTraffic(
+      [structure('marina', 0, 0)],
+      (x) => x < 8,
+    );
+    for (const route of routes.filter((route) => route.kind === VEHICLE.yacht)) {
+      expect(route.length).toBe(0);
+    }
+  });
+
   it('senza acqua sotto il posto barca lo yacht non compare', () => {
     // Il bacino scavato nel terreno si comporta come il mare: dove il pelo non
     // copre il fondo, non c'e' barca — che e' il difetto onesto del porto.

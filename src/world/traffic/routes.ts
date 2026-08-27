@@ -131,7 +131,7 @@ export function planTraffic(
           routes.push(moored(VEHICLE.boat, mooring, waterZOf(structure)));
           break;
         case BERTH.yacht:
-          routes.push(moored(VEHICLE.yacht, mooring, waterZOf(structure)));
+          routes.push(yachtDrift(structure, mooring, water));
           break;
         case BERTH.cargo:
           routes.push(cargoRun(structure, mooring, water));
@@ -233,6 +233,41 @@ function ferryCrossing(
     TRAFFIC.ferryDwell,
     a.heading,
     phaseOf(from.id + to.id),
+  );
+}
+
+/**
+ * Lo yacht che esce dal posto barca e ci torna, senza allontanarsi.
+ *
+ * Il posto barca di una marina non e' un capolinea ma un giro breve: lo yacht
+ * esce lungo il proprio slip verso il largo finche' l'acqua regge e rientra,
+ * come `cargoRun` fa uscire la nave ma con il guinzaglio corto di
+ * `TRAFFIC.yachtReach`. Dove non c'e' acqua davanti — il bacino scavato non ha
+ * ancora un'uscita, o l'ormeggio e' finito all'asciutto — resta ormeggiato,
+ * che e' lo stesso difetto onesto della nave senza largo.
+ */
+function yachtDrift(
+  structure: TrafficStructure,
+  mooring: WorldMooring,
+  water: WaterProbe,
+): TrafficRoute {
+  const [dx, dy] = SEAWARD[structure.facing] ?? SEAWARD[FACING.east];
+  let reach = 0;
+  for (let d = 1; d <= TRAFFIC.yachtReach; d++) {
+    if (!water(mooring.x + dx * d, mooring.y + dy * d)) break;
+    reach = d;
+  }
+  if (reach === 0) return moored(VEHICLE.yacht, mooring, waterZOf(structure));
+  return shuttle(
+    VEHICLE.yacht,
+    [
+      { x: mooring.x, y: mooring.y, z: waterZOf(structure) },
+      { x: mooring.x + dx * reach, y: mooring.y + dy * reach, z: waterZOf(structure) },
+    ],
+    TRAFFIC.yachtSpeed,
+    TRAFFIC.yachtDwell,
+    mooring.heading,
+    phaseOf(structure.id + mooring.x + mooring.y),
   );
 }
 

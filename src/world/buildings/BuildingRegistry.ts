@@ -173,6 +173,16 @@ export interface BuildingRecord {
   readonly landmarkForm?: LandmarkFormId;
 
   /**
+   * Quota dello specchio che il landmark fronteggia, in voxel.
+   *
+   * Assente per chi non guarda l'acqua. Sul mare vale il livello del mare, sul
+   * lago quello della conca: chi la legge — lo scavo del bacino, gli ormeggi a
+   * galla — non deve chiedere di nuovo al terreno, che per una marina sul lago
+   * non lo saprebbe dire senza sapere quale colonna sia la bocca del bacino.
+   */
+  readonly waterZ?: number;
+
+  /**
    * Forma dell'arcologia, se questo record e' una megastruttura.
    *
    * **E' la quinta riga della stessa macchina di `landmark`, `span`, `aerial` e

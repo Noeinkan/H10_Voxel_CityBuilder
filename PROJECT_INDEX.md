@@ -379,7 +379,7 @@ lavoro di questo dominio.
 | File | Ruolo | Esporta |
 | --- | --- | --- |
 | [config.ts](src/world/sites/config.ts) | **Ogni** distanza, lato e dislivello dei vincoli di sito | `SITE` |
-| [src/world/sites/siteRules.ts](src/world/sites/siteRules.ts) | Vincoli di sito; `sightWater` per il mare, `sightAnyWater` per l'acqua a qualsiasi quota (laghi); rifiuto `needs-waterfront`. |
+| [src/world/sites/siteRules.ts](src/world/sites/siteRules.ts) | Vincoli di sito; `sightWater` per il mare, `sightAnyWater` per l'acqua a qualsiasi quota (laghi), con la quota dello specchio nel `WaterSight`; rifiuto `needs-waterfront`. |
 
 ```ts
 seesWater(map, x, y, SITE.coastalRadius);              // il mare e' entro il raggio?
@@ -454,7 +454,7 @@ dirigibile, la piazzola dell'eVTOL, la cima della mongolfiera.
 | [recipes/connections.ts](src/world/landmarks/recipes/connections.ts) | Le due ricette nuove del gruppo Connections: torre radio e faro | `RADIO`, `LIGHTHOUSE` |
 | [recipes/growth.ts](src/world/landmarks/recipes/growth.ts) | Le due ricette nuove del gruppo Growth: centrale elettrica e scuola | `POWER`, `SCHOOL` |
 | [recipes/identity.ts](src/world/landmarks/recipes/identity.ts) | Le due ricette nuove del gruppo Identity: teatro e stadio — lo stadio cresce di sedime dal campetto di paese al catino da mondiali | `THEATRE`, `STADIUM` |
-| [src/world/landmarks/recipes/identityMarina.ts](src/world/landmarks/recipes/identityMarina.ts) | La ricetta della marina: promenade, moli a dita e bacino scavato (`waterline`, `lakeQuay`, `basinDepth`). |
+| [src/world/landmarks/recipes/identityMarina.ts](src/world/landmarks/recipes/identityMarina.ts) | La ricetta della marina: promenade, moli a dita e bacino scavato (`waterline`, `lakeQuay`, `basinDepth`); sul lago gli slip diventano canali ritagliati nella riva emersa. |
 | [vocab.ts](src/world/landmarks/vocab.ts) | Scorciatoie condivise fra le ricette: gru di banchina, banchina, bitta, vano d'ingresso, fascia d'insegna e albero | `craneAt`, `quay`, `bollard`, `entrance`, `signBand`, `tree` |
 
 ```ts
@@ -527,10 +527,10 @@ la sosta e' lo stesso conto per tutt'e due.
 
 | File | Ruolo | Esporta |
 | --- | --- | --- |
-| [config.ts](src/world/traffic/config.ts) | **Ogni** velocita', quota, sosta, franco, misura di sagoma, ciminiera e indice di palette dei mezzi | `TRAFFIC`, `VEHICLE`, `VEHICLE_KINDS`, `VehicleKind`, `VehicleFunnel`, `funnelOf` |
+| [config.ts](src/world/traffic/config.ts) | **Ogni** velocita', quota, sosta, franco, misura di sagoma, ciminiera e indice di palette dei mezzi, incluso il giro corto dello yacht (`yachtSpeed`, `yachtDwell`, `yachtReach`) | `TRAFFIC`, `VEHICLE`, `VEHICLE_KINDS`, `VehicleKind`, `VehicleFunnel`, `funnelOf` |
 | [seaLane.ts](src/world/traffic/seaLane.ts) | La rotta fra due punti che resta sull'acqua: griglia grossa, ricerca in ampiezza, tiro di corda | `planSeaLane`, `LanePoint`, `LaneQuery` |
 | [routePath.ts](src/world/traffic/routePath.ts) | Di cosa e' fatta una rotta, e i quattro modi di costruirne una: fermo, pendolo con sosta, giro chiuso, lunghezze cumulate | `TrafficRoute`, `TrafficWaypoint`, `moored`, `shuttle`, `loop`, `measure`, `phaseOf` |
-| [src/world/traffic/routes.ts](src/world/traffic/routes.ts) | Rotte dei mezzi; gli ormeggi a galla posano i mezzi sul pelo della struttura (`waterZ`), yacht nei posti barca. |
+| [src/world/traffic/routes.ts](src/world/traffic/routes.ts) | Rotte dei mezzi; gli ormeggi a galla posano i mezzi sul pelo della struttura (`waterZ`), e gli yacht escono dal posto barca per un giro breve senza allontanarsi. |
 | [skyRoutes.test.ts](src/world/traffic/skyRoutes.test.ts) | L'orbita del dirigibile si alza sopra una torre che sta **accanto** alla rotta, dentro l'ingombro ma fuori dalla linea di centro: il sondaggio a croce la trova invece di sorvolarla | — |
 | [skyRoutes.ts](src/world/traffic/skyRoutes.ts) | Le rotte in quota, e l'unica cosa che le accomuna: **passano sopra la citta' invece che dentro**. Il sondaggio del cielo sporge quanto l'ingombro del mezzo, cosi' la quota scavalca anche la torre accanto alla linea di centro e non solo quella sotto. Circuito di volo, orbita, giro che si posa su una piazzola, corsa di un pallone | `flightCircuit`, `airshipOrbit`, `padCircuit`, `balloonFlight` |
 | [ropewayRoutes.ts](src/world/traffic/ropewayRoutes.ts) | Da una linea di funivia alle sue due cabine, sfasate di mezzo periodo. Qui la rotta e' gia' data: non c'e' niente da cercare | `planRopewayRoutes`, `RopewayLink` |
@@ -690,14 +690,14 @@ le scritture stanno in tre file invece che sparse in sei metodi.
 | [src/world/buildings/crossingDriver.ts](src/world/buildings/crossingDriver.ts) | Driver a budget dei ponti fra settori: cerca appoggi locali, registra una campata lunga per settore e la lega alle torri |
 | [growthPoles.ts](src/world/buildings/growthPoles.ts) | Di chi e' il turno di crescere: il riquadro del polo di questa infornata | `poleRectAt` |
 | [growthQueue.ts](src/world/buildings/growthQueue.ts) | La coda di comparsa e le scritture a budget: un segmento per struttura, la sagoma nuova prima della cancellazione | `GrowthQueue`, `anchorOf` |
-| [src/world/buildings/marinaBasin.test.ts](src/world/buildings/marinaBasin.test.ts) | La marina nasce sulla riva ripida di un lago e scava il bacino nel bassofondo. |
+| [src/world/buildings/marinaBasin.test.ts](src/world/buildings/marinaBasin.test.ts) | La marina nasce sulla riva ripida di un lago e si ritaglia i canali nella riva emersa, allagati al pelo della conca. |
 | [surfaceQueue.ts](src/world/buildings/surfaceQueue.ts) | Il suolo pubblico a budget: carreggiata per isolato, grembiuli, rampe e bonifica del decoro — che si ferma dove il bioma dice acqua | `SurfaceQueue`, `SurfacePaint` |
 | [spanDriver.ts](src/world/buildings/spanDriver.ts) | La rete in quota: ponti, mezzanini e piazze; le piazze cercano tasche libere fra pareti reali invece del centro dell'isolato, e una campata non prende suolo | `SpanDriver` |
 | [aerialDriver.ts](src/world/buildings/aerialDriver.ts) | Mensole, percorsi, gambe e le quote su cui si costruisce. Un impalcato vuoto cade, uno abitato no | `AerialDriver` |
 | [guideDriver.ts](src/world/buildings/guideDriver.ts) | La via da terra: un montante per ogni impalcato abitato che non ce l'ha | `GuideDriver` |
 | [ropewayDriver.ts](src/world/buildings/ropewayDriver.ts) | Le funivie: due torri a registro, e una fune che non e' materia. Il solo driver senza una freccia che entra o che esce | `RopewayDriver`, `RopewayCable`, `RopewayRide` |
-| [src/world/buildings/landmarkDriver.ts](src/world/buildings/landmarkDriver.ts) | Piazzamento dei landmark; verso l'acqua `waterfront`, scavo del bacino (`basinDepth`) con allagamento e muro fino al fondo, e la **crescita del sedime**: l'avanzamento allarga l'impronta sventrando l'anello nuovo con il cantiere di sempre | `ringStrips` |
-| [landmarkSiting.ts](src/world/buildings/landmarkSiting.ts) | Dove una struttura si posa davvero: verso, ingombro e l'angolo gia' portato **incontro all'acqua** — al piazzamento lo stadio zero, per chi cresce di sedime. Puro, ed e' la sola meta' del piazzamento che un test interroga al voxel senza far crescere un'isola | `placeRecipe`, `seawardDrift`, `Placement` |
+| [src/world/buildings/landmarkDriver.ts](src/world/buildings/landmarkDriver.ts) | Piazzamento dei landmark; verso l'acqua `waterfront`, scavo del bacino (`basinDepth`) che sul lago ritaglia i canali nella riva emersa (`waterSourceAt`, `record.waterZ`), e la **crescita del sedime**: l'avanzamento allarga l'impronta sventrando l'anello nuovo con il cantiere di sempre | `ringStrips` |
+| [landmarkSiting.ts](src/world/buildings/landmarkSiting.ts) | Dove una struttura si posa davvero: verso, ingombro e l'angolo gia' portato **incontro all'acqua** — sul lago la bocca del bacino si porta sul pelo e gli slip restano sulla riva da scavare. Puro, ed e' la sola meta' del piazzamento che un test interroga al voxel senza far crescere un'isola | `placeRecipe`, `seawardDrift`, `Placement` |
 | [arcologyDriver.ts](src/world/buildings/arcologyDriver.ts) | La megastruttura: condizione sull'isolato, cantiere, costruzione a stadi, piazzali in quota e dichiarazione degli usi alla simulazione | `ArcologyDriver` |
 | [clearance.ts](src/world/buildings/clearance.ts) | Cosa un landmark puo' togliere di mezzo e cosa lo ferma: edifici fino alla soglia, landmark solo per chi li dichiara, mai la rete in quota | `CLEARANCE_KIND`, `ClearanceKind`, `planClearance`, `ClearanceRecord`, `ClearanceRule`, `ClearancePlan`, `ClearanceRefusal` |
 | [clearanceSite.ts](src/world/buildings/clearanceSite.ts) | Il cantiere di sventramento, condiviso da chi si prende un riquadro: sopralluogo, recinzione, demolizione a passate. La gomma lo apre senza recinto e lo marca annullabile: `undo` ricostruisce ogni condannato, gia' rimosso o no | `ClearanceSites`, `ClearanceBox`, `ClearanceVerdict`, `OPEN_SITE`, `clearanceOf`, `recordsIn`, `simBuildingOf` |
@@ -707,7 +707,7 @@ le scritture stanno in tre file invece che sparse in sei metodi.
 | [siteWorks.ts](src/world/buildings/siteWorks.ts) | Come si presenta il terreno a chi deve costruirci: la lettura per colonna, l'opera per l'impronta e — per i landmark — il piano che affonda nel pendio coprendo la parete, con l'acqua fonda come unico rifiuto | `groundKindAt`, `surveyGrade`, `surveyLandmarkGrade`, `hasUnworkableColumn`, `nearLand`, `isCoastal`, `buildWorks`, `WorksMask` |
 | [hierarchy.ts](src/world/buildings/hierarchy.ts) | Fin dove una colonna puo' salire, e quanto ha gia' speso salendo | `allowedLevel`, `riseOf` |
 | [urbanForm.ts](src/world/buildings/urbanForm.ts) | Il profilo locale della simulazione tradotto in forma costruita | `formOf`, `localLevelBonus`, `localUpgradeDiscount` |
-| [BuildingRegistry.ts](src/world/buildings/BuildingRegistry.ts) | Indice spaziale e record degli edifici; impronte rettangolari, sbalzi che prenotano aria ma non suolo, landmark contati a parte con la forma fisica su `landmarkForm` | `BuildingRegistry`, `BuildingRecord`, `footprintDepth`, `envelopeOf`, `PlanRect` |
+| [BuildingRegistry.ts](src/world/buildings/BuildingRegistry.ts) | Indice spaziale e record degli edifici; impronte rettangolari, sbalzi che prenotano aria ma non suolo, landmark contati a parte con la forma fisica su `landmarkForm` e il pelo dell'acqua su `waterZ` | `BuildingRegistry`, `BuildingRecord`, `footprintDepth`, `envelopeOf`, `PlanRect` |
 | [generate.ts](src/world/buildings/generate.ts) | Monta un edificio: impronta, fasce, coronamento, dettaglio sul tetto. Non disegna - ordina i quattro moduli sotto. Quattro canali casuali indipendenti dal livello — massa, fasce, facciata, tetto — cosi' un upgrade conserva i piani bassi e rifa' solo la cima | `generateBuilding`, `startLevel`, `BuildingRequest` |
 | [bandRect.ts](src/world/buildings/bandRect.ts) | Il rettangolo di una fascia e l'algebra che lo muove: appoggio, rientranze centrate, predicati di pianta | `BandRect`, `supported`, `inside`, `inset`, `shrink`, `shrinkAxis`, `pickInt`, `clamp` |
 | [bandOps.ts](src/world/buildings/bandOps.ts) | L'interprete del repertorio: prova le candidate nell'ordine del profilo e prende la prima che regge | `nextRect`, `applyOp`, `forcedOp` |

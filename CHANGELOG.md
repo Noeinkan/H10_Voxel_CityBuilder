@@ -11,6 +11,12 @@ coincide con il messaggio di commit.
 
 ---
 
+## In corso — La marina si ritaglia i canali nella riva del lago
+
+- **Sul lago la marina scava, non si appoggia.** Finora il bacino scavato approfondiva solo il fondale gia' sommerso della conca; adesso, quando lo specchio davanti alla struttura sta **sopra** il livello del mare, il piazzamento fa scorrere la marina all'indietro finche' la sua bocca cade sul pelo del lago: gli slip fra i moli restano sulla riva emersa e lo scavo li ritaglia come canali a profondita' costante, allagati al pelo della conca. Sul mare non cambia niente — la darsena con i pontili resta quella di prima, perche' li' lo specchio della colonna *e'* il livello del mare.
+- **Il pelo della struttura viaggia nel record.** La quota a cui lo scavo allaga e a cui galleggiano i mezzi non si ricalcola piu' dalla `waterline`, che sul lago cade sulla riva emersa: `waterSourceAt` la scandisce verso la bocca finche' trova l'acqua vera, e `BuildingRecord.waterZ` la conserva per lo scavo e per il traffico.
+- **Gli yacht escono dal posto barca e rientrano.** Gli ormeggi della marina non tengono piu' mezzi fermi: ogni yacht gironzola lungo il proprio slip finche' l'acqua regge — `yachtReach` e' il guinzaglio corto — e torna al posto, con la sosta ai due capi. Dove non c'e' acqua davanti resta ormeggiato.
+
 ## In corso — Le feature mature seguono il tessuto organico
 
 - **Le banchine seguono la costa reale, non il bordo di un isolato.** Un candidato costiero viene centrato sulla prima acqua navigabile e poi usa la stessa ricerca libera degli altri edifici: l'impronta attraversa la battigia senza ricreare anelli quadrati.
