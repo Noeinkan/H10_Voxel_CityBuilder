@@ -8,6 +8,7 @@ import {
   TYPOLOGIES,
 } from '../buildings/config';
 import { dirtyChunkCount } from '../buildings/chunkBudget';
+import { CHUNK, toChunk, toLocal } from '../chunkCoords';
 import { generateBuilding } from '../buildings/generate';
 import { solidCount, trimStampZ, type VoxelStamp } from '../buildings/stamp';
 import { typologyProfile } from '../buildings/typology';
@@ -18,6 +19,82 @@ import { arcologySpan, generateArcology, worldBands, worldLandings } from './gen
 import { fillRatio, skyWindowOf } from './window';
 
 const FACINGS: readonly Facing[] = [FACING.east, FACING.west, FACING.north, FACING.south];
+
+/**
+ * Chunk che un intervallo lungo `count` voxel attraversa, a un certo scostamento.
+ *
+ * L'intervallo `[o, o + count - 1]` cade in `toChunk(o + count - 1) -
+ * toChunk(o) + 1` colonne di chunk. Il conteggio e' periodico di 32 nello
+ * scostamento, quindi provare `o` in `0..31` basta a vedere ogni caso.
+ */
+function columnsOf(count: number, o: number): number {
+  return toChunk(o + count - 1) - toChunk(o) + 1;
+}
+
+/**
+ * Chunk **esterni** toccati da un intervallo: i due che stanno appena fuori,
+ * quando l'intervallo comincia su una cucitura o finisce su una cucitura.
+ *
+ * I bordi interni — un intervallo che attraversa piu' chunk — producono chunk
+ * che stanno gia' dentro `columnsOf`, quindi non aggiungono niente.
+ */
+function edgeSpan(count: number, o: number): number {
+  const left = toLocal(o) === 0 ? 1 : 0;
+  const right = toLocal(o + count - 1) === CHUNK - 1 ? 1 : 0;
+  return left + right;
+}
+
+/**
+ * Chunk sporcati da un delta nel **caso peggiore** di allineamento.
+ *
+ * `dirtyChunkCount` dipende da dove il volume cade rispetto alle cuciture; il
+ * caso favorevole — angolo a `(0,0,0)` — e' quello che il test originale
+ * misurava, e lasciava passare senza vederlo il caso a cavallo di cucitura, che
+ * sporca un piano di chunk in piu'. Qui si prova ogni scostamento in `0..31` su
+ * ciascun asse — tutte le posizioni, per periodicita' — e si prende il massimo.
+ *
+ * La formula e' l'unione dei quattro insiemi che `dirtyChunkCount` costruisce:
+ *
+ *   |Cz| · (|Cx∪Ex|·|Cy| + |Cx|·|Ey∖Cy|) + |Cx|·|Cy|·|Ez∖Cz|
+ *
+ * con `|Cx∪Ex| = |Cx| + |Ex∖Cx|`. La sua correttezza e' inchiodata dal test che
+ * la confronta con la scansione esaustiva della funzione vera.
+ */
+function worstCaseDirtyChunks(sizeX: number, sizeY: number, height: number): number {
+  if (sizeX <= 0 || sizeY <= 0 || height <= 0) return 0;
+  let worst = 0;
+  for (let oy = 0; oy < CHUNK; oy++) {
+    const y0 = columnsOf(sizeY, oy);
+    const ye = edgeSpan(sizeY, oy);
+    for (let ox = 0; ox < CHUNK; ox++) {
+      const x0 = columnsOf(sizeX, ox);
+      const xe = edgeSpan(sizeX, ox);
+      const spanning = (x0 + xe) * y0 + x0 * ye;
+      const plan = x0 * y0;
+      for (let oz = 0; oz < CHUNK; oz++) {
+        const z0 = columnsOf(height, oz);
+        const ze = edgeSpan(height, oz);
+        const count = z0 * spanning + plan * ze;
+        if (count > worst) worst = count;
+      }
+    }
+  }
+  return worst;
+}
+
+/** La stessa domanda, chiesta alla funzione vera su ogni scostamento. */
+function bruteForceDirty(sizeX: number, sizeY: number, height: number): number {
+  let worst = 0;
+  for (let oz = 0; oz < CHUNK; oz++) {
+    for (let oy = 0; oy < CHUNK; oy++) {
+      for (let ox = 0; ox < CHUNK; ox++) {
+        const count = dirtyChunkCount(ox, oy, sizeX, oz, oz + height, sizeY);
+        if (count > worst) worst = count;
+      }
+    }
+  }
+  return worst;
+}
 
 function finalStamp(recipe: ArcologyRecipe, facing: Facing = FACING.east): VoxelStamp {
   return generateArcology(recipe, { stage: maxStageOf(recipe), facing });
@@ -31,9 +108,23 @@ describe('il catalogo delle arcologie', () => {
       // sopra c'e' il lato del segmento, oltre il quale la comparsa si spezza
       // anche in pianta. Fra i due c'e' un numero solo che vada bene per
       // entrambi, ed e' quello che le ricette usano.
-      expect(long).toBeLessThanOrEqual(BUILDER.segmentSide);
-      expect(short).toBeLessThanOrEqual(BUILDER.segmentSide);
+      const [bx, by] = recipe.blocks;
+      if (bx === 1 && by === 1) {
+        expect(long).toBeLessThanOrEqual(BUILDER.segmentSide);
+        expect(short).toBeLessThanOrEqual(BUILDER.segmentSide);
+      }
       expect(Math.min(long, short)).toBeGreaterThan(MAX_FOOTPRINT);
+    }
+  });
+
+  it('le multi-blocco superano il segmento e si spezzano in pianta', () => {
+    for (const recipe of ARCOLOGY_RECIPES) {
+      const [bx, by] = recipe.blocks;
+      if (bx === 1 && by === 1) continue;
+      const [long, short] = recipe.span;
+      // Un ingombro multi-blocco supera `segmentSide` per definizione: e' la
+      // differenza con le ricette da isolato, e la comparsa lo spezza in ritagli.
+      expect(Math.max(long, short)).toBeGreaterThan(BUILDER.segmentSide);
     }
   });
 
@@ -50,6 +141,15 @@ describe('il catalogo delle arcologie', () => {
   it('non riempie il proprio ingombro', () => {
     for (const recipe of ARCOLOGY_RECIPES) {
       expect(fillRatio(finalStamp(recipe)), recipe.kind).toBeLessThanOrEqual(ARCOLOGY.maxFill);
+    }
+  });
+
+  it('riempie il minimo: non e un fuscello', () => {
+    // `maxFill` e' un soffitto senza pavimento: sei guglie 3x3 su un ingombro da
+    // settantadue riempiono l'otto per cento e passano, ma non si leggono come un
+    // edificio. Il pavimento ferma quella ricetta.
+    for (const recipe of ARCOLOGY_RECIPES) {
+      expect(fillRatio(finalStamp(recipe)), recipe.kind).toBeGreaterThanOrEqual(ARCOLOGY.minFill);
     }
   });
 
@@ -133,10 +233,15 @@ describe('generateArcology', () => {
           seed: 3,
         });
 
+        let first = -1;
         for (let i = 0; i < cumulative.voxels.length; i++) {
           const union = delta.voxels[i] !== 0 ? delta.voxels[i] : before.voxels[i];
-          expect(union, `stadio ${stage}, cella ${i}`).toBe(cumulative.voxels[i]);
+          if (union !== cumulative.voxels[i]) {
+            first = i;
+            break;
+          }
         }
+        expect(first, `${recipe.kind} stadio ${stage}`).toBe(-1);
       }
     }
   });
@@ -148,28 +253,50 @@ describe('generateArcology', () => {
     }
   });
 
-  it('nessun ritaglio di nessuno stadio sfora il tetto di chunk sporchi', () => {
+  it('la formula del caso peggiore coincide con la scansione esaustiva', () => {
+    // `worstCaseDirtyChunks` deriva la sua formula a mano: qui la si inchioda
+    // chiedendo la stessa domanda alla funzione vera su ogni scostamento.
+    for (const [sx, sy, h] of [[20, 20, 70], [48, 20, 90], [48, 48, 80]] as const) {
+      expect(worstCaseDirtyChunks(sx, sy, h), `${sx}x${sy}x${h}`).toBe(bruteForceDirty(sx, sy, h));
+    }
+  });
+
+  it('nessun delta di stadio sfora il tetto di chunk nel caso peggiore', () => {
     // E' il difetto che si ripresenta a ogni cambio di scala: sforare non e' un
-    // errore, e' uno scarto silenzioso. Con un inviluppo di quasi duecento
-    // quote, misurarlo sulla sagoma **cumulativa** direbbe di no a ogni
-    // avanzamento: e' il conto qui sotto a dire perche' il delta esiste.
+    // errore, e' uno scarto silenzioso. Il conto e' sul **delta** di ogni stadio
+    // — mai sulla sagoma cumulativa — e nel **caso peggiore** di allineamento,
+    // non sull'angolo favorevole a (0,0): un volume a cavallo di una cucitura
+    // sporca un piano di chunk in piu', ed e' proprio quello che qui si vuole
+    // veder arrivare prima di una ricetta nuova.
     for (const recipe of ARCOLOGY_RECIPES) {
       for (const facing of FACINGS) {
         for (let stage = 0; stage <= maxStageOf(recipe); stage++) {
-          const raw = generateArcology(recipe, {
-            stage,
-            from: stage === 0 ? 0 : stage,
-            facing,
-            seed: 11,
-          });
-          const { z0, stamp } = trimStampZ(raw);
-          const count = dirtyChunkCount(
-            0, 0, stamp.sizeX, z0, z0 + stamp.sizeZ, stamp.sizeY,
-          );
-          expect(count, `${recipe.kind} stadio ${stage}`)
-            .toBeLessThanOrEqual(BUILDER.maxDirtyChunksPerBuilding);
+          const raw = generateArcology(recipe, { stage, from: stage, facing, seed: 11 });
+          const { stamp } = trimStampZ(raw);
+          const count = worstCaseDirtyChunks(stamp.sizeX, stamp.sizeY, stamp.sizeZ);
+          expect(
+            count,
+            `${recipe.kind} stadio ${stage} verso ${facing}: ${count} chunk > tetto ${BUILDER.maxDirtyChunksPerBuilding}`,
+          ).toBeLessThanOrEqual(BUILDER.maxDirtyChunksPerBuilding);
         }
       }
+    }
+  });
+
+  it('nessuna parte esce dall altezza dichiarata della ricetta', () => {
+    // `drawPart` scarta in silenzio cio' che supera la tela: una parte con
+    // `z + height` oltre `recipe.height` non comparirebbe e nessun tipo lo
+    // direbbe. Questo test lo dice.
+    for (const recipe of ARCOLOGY_RECIPES) {
+      recipe.parts.forEach((stageParts, stage) => {
+        stageParts.forEach((part, index) => {
+          const top = part.z + part.height;
+          expect(
+            top,
+            `${recipe.kind} stadio ${stage} parte ${index}: quota ${top} > altezza ${recipe.height}`,
+          ).toBeLessThanOrEqual(recipe.height);
+        });
+      });
     }
   });
 });

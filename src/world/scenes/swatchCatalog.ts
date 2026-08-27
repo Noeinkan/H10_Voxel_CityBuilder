@@ -186,31 +186,37 @@ const ARCOLOGY_LABELS: Readonly<Record<ArcologyKind, string>> = {
   [ARCOLOGY_KIND.branchingCore]: 'Branching Core',
   [ARCOLOGY_KIND.skyWeave]: 'Sky Weave',
   [ARCOLOGY_KIND.spireRing]: 'Spire Ring',
+  [ARCOLOGY_KIND.doubleBar]: 'Double Bar',
+  [ARCOLOGY_KIND.stackPair]: 'Stack Pair',
+  [ARCOLOGY_KIND.quadCluster]: 'Quad Cluster',
+  [ARCOLOGY_KIND.triSpan]: 'Tri Span',
 };
 
 const BASE_EXTENT = baseExtentOf();
-const BUILDING_START_Y = BASE_EXTENT.minY + BASE_EXTENT.sizeY + SWATCH.bandGap;
+const GALLERY_START_Y = BASE_EXTENT.minY + BASE_EXTENT.sizeY + SWATCH.bandGap;
+// Le arcologie aprono il catalogo: sono la megastruttura, il vertice della
+// gerarchia, e stanno in cima alla sequenza delle gallerie invece che in coda.
+const ARCOLOGY_ROWS = arcologyRows();
+const ARCOLOGY_LAYOUT = placeRows(ARCOLOGY_ROWS, GALLERY_START_Y);
+const LINES_START_Y = ARCOLOGY_LAYOUT.y1 + SWATCH.bandGap;
 const LINES_ROWS = evolutionLineRows();
-const LINES_LAYOUT = placeRows(LINES_ROWS, BUILDING_START_Y);
+const LINES_LAYOUT = placeRows(LINES_ROWS, LINES_START_Y);
 const BUILDING_ROWS_Y = LINES_LAYOUT.y1 + SWATCH.bandGap;
 const BUILDING_ROWS = buildingRows();
 const BUILDING_LAYOUT = placeRows(BUILDING_ROWS, BUILDING_ROWS_Y);
 const LANDMARK_START_Y = BUILDING_LAYOUT.y1 + SWATCH.bandGap;
 const LANDMARK_ROWS = landmarkRows();
 const LANDMARK_LAYOUT = placeRows(LANDMARK_ROWS, LANDMARK_START_Y);
-const ARCOLOGY_START_Y = LANDMARK_LAYOUT.y1 + SWATCH.bandGap;
-const ARCOLOGY_ROWS = arcologyRows();
-const ARCOLOGY_LAYOUT = placeRows(ARCOLOGY_ROWS, ARCOLOGY_START_Y);
 
+export const SWATCH_ARCOLOGIES: readonly SwatchCatalogSubject[] = ARCOLOGY_LAYOUT.subjects;
 export const SWATCH_LINES: readonly SwatchCatalogSubject[] = LINES_LAYOUT.subjects;
 export const SWATCH_BUILDINGS: readonly SwatchCatalogSubject[] = BUILDING_LAYOUT.subjects;
 export const SWATCH_LANDMARKS: readonly SwatchCatalogSubject[] = LANDMARK_LAYOUT.subjects;
-export const SWATCH_ARCOLOGIES: readonly SwatchCatalogSubject[] = ARCOLOGY_LAYOUT.subjects;
 export const SWATCH_CATALOG_SUBJECTS: readonly SwatchCatalogSubject[] = [
+  ...SWATCH_ARCOLOGIES,
   ...SWATCH_LINES,
   ...SWATCH_BUILDINGS,
   ...SWATCH_LANDMARKS,
-  ...SWATCH_ARCOLOGIES,
 ];
 
 const BASE_SUBJECTS = baseSubjects();

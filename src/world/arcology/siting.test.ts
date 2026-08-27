@@ -2,10 +2,12 @@ import { describe, expect, it } from 'vitest';
 import { TIER } from '../skyline/tiers';
 import { FACING } from '../streets/streetGrid';
 import { arcologyForBlock } from './catalog';
-import { ARCOLOGY, ARCOLOGY_KIND, ARCOLOGY_RECIPES } from './config';
+import { ARCOLOGY, ARCOLOGY_RECIPES } from './config';
+import { arcologySpan } from './generate';
 import {
   ARCOLOGY_REFUSALS,
   arcologyAnchor,
+  arcologyQuota,
   arcologyReady,
   type ArcologyQuery,
 } from './siting';
@@ -14,6 +16,7 @@ import {
 function ready(over: Partial<ArcologyQuery> = {}): ArcologyQuery {
   return {
     existing: 0,
+    buildings: 0,
     tier: TIER.core,
     blockRect: { x0: 0, y0: 0, x1: 19, y1: 19 },
     spanX: 20,
@@ -24,13 +27,22 @@ function ready(over: Partial<ArcologyQuery> = {}): ArcologyQuery {
   };
 }
 
+describe('arcologyQuota', () => {
+  it('parte da due anche senza edifici, e cresce con la citta', () => {
+    expect(arcologyQuota(0)).toBe(2);
+    expect(arcologyQuota(ARCOLOGY.buildingsPerArcology)).toBe(2);
+    expect(arcologyQuota(ARCOLOGY.buildingsPerArcology * 2 + 1)).toBe(3);
+    expect(arcologyQuota(ARCOLOGY.buildingsPerArcology * 4)).toBe(4);
+  });
+});
+
 describe('arcologyReady', () => {
   it('accetta il centro denso e saturo di un isolato eletto', () => {
     expect(arcologyReady(ready())).toBeNull();
   });
 
-  it('rifiuta quando l isola ne ha gia abbastanza', () => {
-    expect(arcologyReady(ready({ existing: ARCOLOGY.maxPerIsland }))).toBe('enough');
+  it('rifiuta quando la citta ne ha gia quante ne ammette', () => {
+    expect(arcologyReady(ready({ existing: arcologyQuota(0) }))).toBe('enough');
   });
 
   it('rifiuta fuori dal centro: la corona e il tessuto intermedio non ne hanno', () => {
@@ -60,11 +72,11 @@ describe('arcologyReady', () => {
     expect(arcologyReady(ready({ cappedNeighbours: ARCOLOGY.minCapped - 1 }))).toBe('notCapped');
   });
 
-  it('l ordine delle domande e parte della regola: il tetto d isola viene per primo', () => {
+  it('l ordine delle domande e parte della regola: la quota d isola viene per prima', () => {
     // Un'isola piena risponde «enough» anche dove tutto il resto sarebbe
     // sbagliato: e' l'informazione utile, e le altre non cambierebbero niente.
     const hopeless = ready({
-      existing: ARCOLOGY.maxPerIsland,
+      existing: arcologyQuota(0),
       tier: TIER.fringe,
       builtNeighbours: 0,
       cappedNeighbours: 0,
@@ -76,9 +88,8 @@ describe('arcologyReady', () => {
     // Con quella riga in piu' non nasceva **nessuna** arcologia su nessun seed:
     // due terzi degli isolati eletti sono piu' stretti dell'ingombro e il centro
     // e' piccolo, quindi l'intersezione era vuota. La governance dell'eccezione
-    // e' `maxPerIsland`, che e' un numero esatto invece di una probabilita'.
+    // e' la quota — un numero derivato dagli edifici — non una probabilita'.
     expect(ARCOLOGY_REFUSALS).not.toContain('notPeak');
-    expect(ARCOLOGY.maxPerIsland).toBeLessThanOrEqual(2);
   });
 });
 
@@ -90,29 +101,36 @@ describe('arcologyAnchor', () => {
 });
 
 describe('catalogo sul reticolo reale', () => {
-  it('su un isolato da diciotto sceglie una forma che entra', () => {
-    const rect = { x0: 0, y0: 0, x1: 17, y1: 17 };
-    for (let seed = 0; seed < 32; seed++) {
-      const recipe = arcologyForBlock(seed, 0, 0, rect, FACING.east);
-      expect(recipe.kind).not.toBe(ARCOLOGY_KIND.twinStem);
-      expect(recipe.span[0]).toBeLessThanOrEqual(18);
-      expect(recipe.span[1]).toBeLessThanOrEqual(18);
+  it('sceglie una forma il cui ingombro entra nel riquadro restituito', () => {
+    for (let seed = 0; seed < 8; seed++) {
+      for (let kx = 0; kx < 24; kx++) {
+        const pick = arcologyForBlock(seed, kx, 0, FACING.east);
+        const span = arcologySpan(pick.recipe, FACING.east);
+        expect(span.sizeX).toBeLessThanOrEqual(pick.rect.x1 - pick.rect.x0 + 1);
+        expect(span.sizeY).toBeLessThanOrEqual(pick.rect.y1 - pick.rect.y0 + 1);
+      }
+    }
+  });
+
+  it('le multi-blocco dichiarano un cluster e un ingombro oltre l isolato', () => {
+    const multi = ARCOLOGY_RECIPES.filter((r) => r.blocks[0] > 1 || r.blocks[1] > 1);
+    expect(multi.length).toBe(4);
+    for (const recipe of multi) {
+      expect(Math.max(recipe.span[0], recipe.span[1])).toBeGreaterThan(20);
     }
   });
 
   it('sugli isolati larghi rende raggiungibile ogni forma del catalogo', () => {
-    const rect = { x0: 0, y0: 0, x1: 19, y1: 19 };
     const kinds = new Set<string>();
-    for (let kx = 0; kx < 64; kx++) {
-      kinds.add(arcologyForBlock(4242, kx, 0, rect, FACING.east).kind);
+    for (let kx = 0; kx < 256; kx++) {
+      kinds.add(arcologyForBlock(4242, kx, 0, FACING.east).recipe.kind);
     }
     expect(kinds).toEqual(new Set(ARCOLOGY_RECIPES.map((recipe) => recipe.kind)));
   });
 
   it('la scelta resta deterministica', () => {
-    const rect = { x0: 10, y0: 20, x1: 29, y1: 39 };
-    expect(arcologyForBlock(1337, 4, -2, rect, FACING.north)).toBe(
-      arcologyForBlock(1337, 4, -2, rect, FACING.north),
+    expect(arcologyForBlock(1337, 4, -2, FACING.north)).toEqual(
+      arcologyForBlock(1337, 4, -2, FACING.north),
     );
   });
 });

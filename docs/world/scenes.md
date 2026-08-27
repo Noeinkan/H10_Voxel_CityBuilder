@@ -73,3 +73,10 @@
 - **Il pannello ha sei pulsanti** — Matrice, Scala, Edifici, Landmark, Arcologie,
   Tutto — che inquadrano la fascia con `swatchFocusExtent`; si parte da Tutto. La
   scelta sopravvive alla navigazione, il clic nel vuoto e `Esc` la mollano.
+- **A schermo i punti cardinali non sono gli assi del mondo.** La camera isometrica
+  (yaw 45°, `REST_PITCH`) sta a nord-est e guarda verso sud-ovest, quindi a schermo
+  nord (+y) finisce in basso a destra, est (+x) in basso a sinistra, sud (−y) in
+  alto a sinistra e ovest (−x) in alto a destra. In pratica «sinistra» a schermo è
+  est (+x), «destra» è ovest (−x): spostare un soggetto a x=0 (ovest) lo porta a
+  destra dello schermo, non a sinistra. Chi ragiona su «dove sta cosa a schermo»
+  verifichi con `__voxelSwatch(x?, y?)` invece di rifare la derivazione.

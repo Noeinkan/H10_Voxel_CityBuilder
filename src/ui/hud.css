@@ -742,7 +742,7 @@
  * fossero cinque, e che nessuna sapesse delle altre. Adesso e' `--panel-w`, e
  * cambiarla le muove insieme.
  */
-.city-drawer, .policies-drawer, .theme-picker, .view-picker, .help-card {
+.city-drawer, .policies-drawer, .theme-picker, .view-picker, .info-picker, .help-card {
   position: absolute;
   right: var(--hud-gap);
   box-sizing: border-box;
@@ -763,7 +763,7 @@
   overflow: hidden;
 }
 /* I picker di tema e viste salgono dal fondo, alti quanto serve. */
-.theme-picker, .view-picker {
+.theme-picker, .view-picker, .info-picker {
   bottom: var(--game-hud-bottom);
   max-height: min(620px, calc(100vh - var(--hud-gap) * 2 - var(--game-hud-bottom)));
   overflow: auto;
@@ -775,7 +775,7 @@
   max-height: none;
   overflow: auto;
 }
-.city-drawer[hidden], .policies-drawer[hidden], .theme-picker[hidden], .view-picker[hidden], .help-card[hidden] {
+.city-drawer[hidden], .policies-drawer[hidden], .theme-picker[hidden], .view-picker[hidden], .info-picker[hidden], .help-card[hidden] {
   display: block;
   opacity: 0;
   visibility: hidden;
@@ -976,7 +976,7 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .hud-button, .hud-tip, .city-drawer, .policies-drawer, .theme-picker, .view-picker, .help-card { transition: none; }
+  .hud-button, .hud-tip, .city-drawer, .policies-drawer, .theme-picker, .view-picker, .info-picker, .help-card { transition: none; }
   .hud-tip { transform: none; }
   /* Nessun sollevamento e nessuna pulsazione: restano cornice e colore, che
      dicono la stessa cosa senza muoversi. */

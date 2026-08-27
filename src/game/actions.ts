@@ -71,7 +71,16 @@ export type ActionFailure =
    */
   | 'needs-shore'
   | 'needs-crossing'
-  | 'no-room-for-line';
+  | 'no-room-for-line'
+  /**
+   * Il rifiuto del riquadro che gia' ospita un monumento.
+   *
+   * Un landmark non sostituisce un altro landmark: il costruito cede, i
+   * monumenti no. La gomma resta l'unico strumento che li tocca, e chi piazza
+   * deve leggere perche' il posto non cede — non e' «qui no», e' «qui c'e' gia'
+   * un monumento, e quello non cade».
+   */
+  | 'landmark-in-the-way';
 
 export type ActionResult =
   | { readonly success: true; readonly state: SimState }

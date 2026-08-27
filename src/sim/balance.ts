@@ -98,22 +98,28 @@ export const BALANCE = {
       /**
        * Cosa un landmark puo' abbattere per farsi posto.
        *
-       * **Un landmark si pianta anche dentro l'edificato, e demolisce tutto.**
-       * Il riquadro che occupa viene sgomberato di cio' che ci trova — case,
-       * torri, altri monumenti — e la struttura prende il loro posto: il gesto
-       * e' una gomma dichiarata, e leggere la citta' non e' piu' un prerequisito
+       * **Un landmark si pianta anche dentro l'edificato, e demolisce il
+       * costruito.** Il riquadro che occupa viene sgomberato di cio' che ci
+       * trova — case, torri — e la struttura prende il loro posto: il gesto e'
+       * una gomma dichiarata, e leggere la citta' non e' piu' un prerequisito
        * del piazzamento. Il costo non e' in fondi ed e' voluto: con un milione
        * in cassa un prezzo non vincola niente. Sventrare toglie edifici alla
        * simulazione, quindi capacita', quindi soddisfazione — il conto lo
        * presenta `tick` con il `crowdingPenalty` che ha gia'.
        *
+       * **Un monumento non sostituisce un altro monumento.** Il riquadro che ne
+       * contiene uno rifiuta, e il cursore lo segna in rosso: toccare i
+       * monumenti resta un gesto esplicito, ed e' della gomma. Qui
+       * `clearsLandmarks` resta spento, mentre `demolition.clearing` lo tiene
+       * acceso: e' l'unica differenza fra piazzare e demolire.
+       *
        * Il tetto resta aperto perche' la regola vive in `clearance.ts`, che e'
        * la stessa delle arcologie: li' la soglia e' un numero vero, qui vale
-       * tutto il costruito, monumenti compresi.
+       * tutto il costruito.
        */
       clearing: {
         maxLevel: Number.POSITIVE_INFINITY,
-        clearsLandmarks: true,
+        clearsLandmarks: false,
       },
 
       /**
@@ -198,16 +204,16 @@ export const BALANCE = {
        * salta del tutto gli usi che un ruolo non tocca.
        */
       influence: {
-        // Il mercato pende verso il commercio e non verso la casa: porta negozi a
-        // pieno e case appena sotto. Se residenziale e commerciale valessero lo
-        // stesso `1`, il campo saturerebbe su entrambi e il confronto finirebbe
-        // sempre a favore della casa (indice minore), e un quartiere di soli semi
-        // di crescita non produrrebbe mai un negozio come uso primario — lo
-        // vedrebbe solo come secondo uso di una casa-bottega. La casa primaria
-        // resta e nasce dal parco, che la porta a 0,7.
-        market: { residential: 0.85, commercial: 1, industrial: 0, civic: 0.15 },
+        market: { residential: 1, commercial: 1, industrial: 0, civic: 0.15 },
         factory: { residential: -0.2, commercial: 0.2, industrial: 1, civic: 0 },
-        park: { residential: 0.7, commercial: 0.2, industrial: -0.35, civic: 1 },
+        // Il parco spinge la casa, ma non tanto da soffocare il commercio. A 0,7
+        // il mercato (residenziale e commerciale a 1) e il parco sommati facevano
+        // saturare il residenziale a 255 sull'intero centro, e il confronto a
+        // parita' finiva sempre a favore della casa: nessun negozio nasceva mai
+        // come uso primario, solo come secondo uso di una casa-bottega. A 0,55 il
+        // parco corona ancora le case, e il commercio emerge dove il mercato
+        // satura per primo.
+        park: { residential: 0.55, commercial: 0.2, industrial: -0.35, civic: 1 },
         // La serra non accende l'industria: la **converte**. A far nascere i
         // capannoni che poi diventano torri idroponiche e' la fabbrica; qui le
         // case si avvicinano al cibo e i negozi lo vendono.
@@ -936,7 +942,16 @@ export const BALANCE = {
      * desiderabilita' e resta dov'era.
      */
     congestionRadius: 6,
-    /** Punti di desiderabilita' sottratti per ogni edificio nel raggio breve. */
+    /**
+     * Punti di desiderabilita' sottratti per ogni edificio nel raggio breve.
+     *
+     * E' la manopola della **densita' urbana**: e' il solo termine che cresce con
+     * gli edifici gia' posati, quindi decide quanti ne possono stare affiancati
+     * prima che il campo scenda sotto la soglia di sito. Da 6 a 8 il nucleo saturo
+     * ammette circa un quarto di edifici in meno nel raggio breve, e la citta'
+     * resta meno fitta — con meno chunk e meno draw call, cioe' piu' frame — senza
+     * toccare la portata dei catalizzatori.
+     */
     congestionPerBuilding: 6,
     /**
      * Soglia sotto cui una cella non e' candidata, per uso urbano, indicizzata

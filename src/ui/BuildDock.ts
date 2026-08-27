@@ -19,7 +19,7 @@ import { iconButton, labeledButton, markRowColumns, paintAction, tileButton } fr
  */
 
 /** I pannelli che il dock apre. Il dock non li possiede: chiede a chi li tiene. */
-export type DockPanel = 'city' | 'policies' | 'themes' | 'views';
+export type DockPanel = 'city' | 'policies' | 'themes' | 'views' | 'info';
 
 
 /**
@@ -67,6 +67,7 @@ export class BuildDock {
   private readonly policiesToggle: HTMLButtonElement;
   private readonly themeToggle: HTMLButtonElement;
   private readonly viewToggle: HTMLButtonElement;
+  private readonly infoToggle: HTMLButtonElement;
 
   constructor(model: GameHudModel, handlers: BuildDockHandlers) {
     this.root = document.createElement('nav');
@@ -168,6 +169,12 @@ export class BuildDock {
     this.viewToggle = labeledButton('view', 'Views', 'Look inside the city · V', () => handlers.onPanel('views'));
     this.viewToggle.setAttribute('aria-expanded', 'false');
     doors.appendChild(this.viewToggle);
+    // I dati stanno accanto alle viste e rispondono all'altra domanda: quella
+    // guarda dentro la citta', questa la legge colonna per colonna. Il tasto
+    // `I` cicla le viste informative, come `V` cicla quelle di ispezione.
+    this.infoToggle = labeledButton('info', 'Data', 'Read the city by data · I', () => handlers.onPanel('info'));
+    this.infoToggle.setAttribute('aria-expanded', 'false');
+    doors.appendChild(this.infoToggle);
     // Righe flex: qui i figli sono anche le colonne, e il conteggio basta.
     markRowColumns(doors);
     utility.appendChild(doors);
@@ -250,7 +257,7 @@ export class BuildDock {
       ? this.cityToggle
       : panel === 'policies'
         ? this.policiesToggle
-        : panel === 'themes' ? this.themeToggle : this.viewToggle;
+        : panel === 'themes' ? this.themeToggle : panel === 'views' ? this.viewToggle : this.infoToggle;
     button.setAttribute('aria-expanded', open ? 'true' : 'false');
   }
 
@@ -265,5 +272,12 @@ export class BuildDock {
     this.viewToggle.dataset.active = active ? 'true' : 'false';
     this.viewToggle.setAttribute('aria-label', label);
     this.viewToggle.dataset.tooltip = label;
+  }
+
+  /** La vista informativa accesa, sul bottone che la sceglie. */
+  setInfoLabel(label: string, active: boolean): void {
+    this.infoToggle.dataset.active = active ? 'true' : 'false';
+    this.infoToggle.setAttribute('aria-label', label);
+    this.infoToggle.dataset.tooltip = label;
   }
 }

@@ -9,6 +9,8 @@ import {
   LANDMARK,
   LANDMARKS,
   SKYPORT,
+  footprintOf,
+  growsFootprint,
   hasFacadeForm,
   hasWaterForm,
   isFacadeForm,
@@ -18,6 +20,7 @@ import {
   waterFormFor,
   type LandmarkFormId,
   type LandmarkRecipe,
+  type StageFootprint,
 } from './config';
 import { WATER_CLASS } from '../visualBlock';
 import {
@@ -63,11 +66,21 @@ function solidSet(stamp: VoxelStamp): Set<number> {
  * e senza passare dal codice che sta misurando.
  */
 function trunkSet(recipe: LandmarkRecipe, stage: number, facing: Facing): Set<number> {
-  const [long, short] = recipe.span;
+  const growing = growsFootprint(recipe);
+  const footprint = growing
+    ? footprintOf(recipe, stage)
+    : { span: recipe.span, height: recipe.height };
+  const [long, short] = footprint.span;
   const { sizeX, sizeY } = orientedSpan(facing, long, short);
-  const canvas = createCanvas(sizeX, sizeY, recipe.height);
-  for (let s = 0; s <= stage; s++) {
-    for (const part of recipe.parts[s]) drawPart(canvas, orientPart(part, facing, long, short));
+  const canvas = createCanvas(sizeX, sizeY, footprint.height);
+  // Una ricetta a sedime fisso e' cumulativa; una che cresce e' autocontenuta
+  // per stadio, e il tronco di uno stadio e' la sola voce di quello stadio.
+  if (growing) {
+    for (const part of recipe.parts[stage]) drawPart(canvas, orientPart(part, facing, long, short));
+  } else {
+    for (let s = 0; s <= stage; s++) {
+      for (const part of recipe.parts[s]) drawPart(canvas, orientPart(part, facing, long, short));
+    }
   }
 
   const out = new Set<number>();
@@ -160,6 +173,7 @@ describe('catalogo dei landmark', () => {
     // sagoma con il seme del record, e un solo esemplare non cumulativo
     // lascerebbe voxel orfani dello stadio prima.
     for (const recipe of RECIPES) {
+      if (growsFootprint(recipe)) continue;
       for (let v = 0; v < variantsOf(recipe).length; v++) {
         const seed = seedForVariant(recipe, v);
         const name = variantsOf(recipe)[v].name;
@@ -180,6 +194,7 @@ describe('catalogo dei landmark', () => {
     // alla fine: uno stadio che non aggiunge niente sarebbe un tempo morto, e
     // un delta che non copre il precedente una cancellazione mascherata.
     for (const recipe of RECIPES) {
+      if (growsFootprint(recipe)) continue;
       for (let stage = 1; stage <= maxStageOf(recipe); stage++) {
         const before = trunkSet(recipe, stage - 1, FACING.east);
         const after = trunkSet(recipe, stage, FACING.east);
@@ -259,6 +274,47 @@ describe('catalogo dei landmark', () => {
         expect(100 - origin.x, `${recipe.kind} ${facing}`).toBeLessThan(span.sizeX);
         expect(100 - origin.y, `${recipe.kind} ${facing}`).toBeLessThan(span.sizeY);
       }
+    }
+  });
+
+  it('una ricetta che cresce allarga il sedime a ogni stadio, e l ancora resta dentro', () => {
+    for (const recipe of RECIPES) {
+      if (!growsFootprint(recipe)) continue;
+
+      let prev: StageFootprint | null = null;
+      for (let stage = 0; stage <= maxStageOf(recipe); stage++) {
+        const footprint = footprintOf(recipe, stage);
+        const [long, short] = footprint.span;
+        const [ax, ay] = footprint.anchor;
+        expect(ax, `${recipe.kind}/${stage} ax`).toBeGreaterThanOrEqual(0);
+        expect(ay, `${recipe.kind}/${stage} ay`).toBeGreaterThanOrEqual(0);
+        expect(ax, `${recipe.kind}/${stage} ax`).toBeLessThan(long);
+        expect(ay, `${recipe.kind}/${stage} ay`).toBeLessThan(short);
+        // Il sedime cresce in modo monotono: l'ancora si allontana da ogni
+        // bordo, mai si avvicina, e l'area non cala.
+        if (prev !== null) {
+          expect(ax, `${recipe.kind}/${stage} ax cresce`).toBeGreaterThanOrEqual(prev.anchor[0]);
+          expect(ay, `${recipe.kind}/${stage} ay cresce`).toBeGreaterThanOrEqual(prev.anchor[1]);
+          expect(long - ax, `${recipe.kind}/${stage} bordo est`).toBeGreaterThanOrEqual(prev.span[0] - prev.anchor[0]);
+          expect(short - ay, `${recipe.kind}/${stage} bordo nord`).toBeGreaterThanOrEqual(prev.span[1] - prev.anchor[1]);
+          expect(long * short, `${recipe.kind}/${stage} area`).toBeGreaterThan(prev.span[0] * prev.span[1]);
+        }
+
+        // La sagoma dello stadio sta nel proprio sedime ed e' non vuota.
+        const stamp = generateLandmark({ kind: recipe.kind, stage, facing: FACING.east })!;
+        expect(stamp.sizeX, `${recipe.kind}/${stage} sizeX`).toBeLessThanOrEqual(long);
+        expect(stamp.sizeY, `${recipe.kind}/${stage} sizeY`).toBeLessThanOrEqual(short);
+        expect(stamp.sizeZ, `${recipe.kind}/${stage} sizeZ`).toBe(footprint.height);
+        expect(solidCount(stamp), `${recipe.kind}/${stage}`).toBeGreaterThan(0);
+        prev = footprint;
+      }
+
+      // L'ingombro finale e' quello dichiarato, e lo stadio zero e' il piu' piccolo.
+      const first = footprintOf(recipe, 0);
+      const last = footprintOf(recipe, maxStageOf(recipe));
+      expect(last.span, recipe.kind).toEqual(recipe.span);
+      expect(last.height, recipe.kind).toBe(recipe.height);
+      expect(first.span[0], recipe.kind).toBeLessThan(recipe.span[0]);
     }
   });
 

@@ -192,6 +192,47 @@ export interface PartsRecipe {
    * secondo sguardo.
    */
   readonly variants?: readonly LandmarkVariant[];
+
+  /**
+   * Il sedime per stadio, quando la struttura cresce anche in pianta.
+   *
+   * **Assente vale il sedime fisso di sempre.** Una ricetta che non lo
+   * dichiara riserva l'ingombro finale dal primo stadio, e `span`, `height` e
+   * `anchor` restano quelli — il comportamento storico, e quello di ogni
+   * arcologia. Quando c'e', ha una voce per stadio (stessa lunghezza di
+   * `parts`), e `parts[s]` disegna **l'intera sagoma** dello stadio s nel
+   * sedime `growth[s]`.
+   *
+   * **Il sedime cresce davvero, non si riempie.** L'ingombro riservato al
+   * piazzamento e' quello dello stadio zero, e un avanzamento allarga
+   * l'impronta sventrando cio' che il quartiere ha costruito nel frattempo sul
+   * nuovo terreno. L'ancora — la colonna cliccata — resta ferma per tutti gli
+   * stadi, e ogni voce dichiara dove cade dentro il proprio riquadro.
+   *
+   * **Per stadio, non cumulativa.** A differenza del tronco a sedime fisso, qui
+   * `parts[s]` non si somma agli stadi precedenti: li sostituisce, perche' il
+   * sedime cambia e non c'e' un riquadro comune su cui accumulare. L'avanzamento
+   * quindi cancella la sagoma vecchia e scrive quella nuova, invece di coprirla.
+   *
+   * **Il sedime cresce in modo monotono.** Lo stadio n+1 deve contenere lo
+   * stadio n allineato sull'ancora — l'ancora si allontana da ogni bordo, mai si
+   * avvicina — cosi' la struttura cresce verso l'esterno e mai sopra se stessa.
+   *
+   * Una ricetta che cresce e' **terrestre**: niente `waterline`, `basinDepth` o
+   * `lakeQuay`, perche' l'opera si getta di nuovo a ogni avanzamento e il
+   * fronte d'acqua non ha una forma da far crescere.
+   */
+  readonly growth?: readonly StageFootprint[];
+}
+
+/** Il sedime che una ricetta occupa a un certo stadio. */
+export interface StageFootprint {
+  /** Ingombro canonico `[lungo, corto]` a questo stadio. */
+  readonly span: readonly [number, number];
+  /** Quota massima a questo stadio. */
+  readonly height: number;
+  /** Dove cade la colonna cliccata dentro questo riquadro canonico. */
+  readonly anchor: readonly [number, number];
 }
 
 /** La sagoma di un ruolo, piu' cio' che ne fa il monumento di un catalizzatore. */
@@ -1126,110 +1167,192 @@ export const LANDMARKS: Partial<Record<CatalystId, LandmarkRecipe>> = {
 
   // Una linea sospesa con il vuoto sotto. E' anche la prima «campata fra due
   // appoggi» del progetto, e ha appoggi veri: il viadotto poggia sui suoi pylon.
+  //
+  // **Cresce di sedime come lo stadio.** Si parte da una stazioncina con due
+  // piloni e un chiosco, e si arriva alla grand hall con la falda a volta, la
+  // torre dell'orologio e la linea aerea sui montanti. La piattaforma si allunga
+  // a ogni stadio e i pylon ne seguono i capi: ogni stadio dichiara il proprio
+  // sedime in `growth`, e `parts[s]` disegna l'intera sagoma di quello stadio.
+  //
+  // **Le parti non si sovrappongono mai**, stadio per stadio: la crescita del
+  // sedime e' per sostituzione, e una sovrapposizione asimmetrica romperebbe
+  // l'invarianza di rotazione che il test misura su ogni verso.
   transport: {
     kind: 'transport',
-    span: [24, 10],
-    height: 20,
-    anchor: [12, 5],
+    span: [30, 12],
+    height: 22,
+    anchor: [15, 6],
     apron: 4,
     stages: [0, 8, 18, 36],
+    growth: [
+      { span: [16, 8], height: 8, anchor: [8, 4] },
+      { span: [22, 10], height: 14, anchor: [11, 5] },
+      { span: [26, 12], height: 18, anchor: [13, 6] },
+      { span: [30, 12], height: 22, anchor: [15, 6] },
+    ],
     parts: [
       [
-        // Stadio zero: il basamento e l'identita' minima — il piazzale e i due
-        // piloni di testa: una linea sospesa si riconosce dagli appoggi prima
-        // che dall'impalcato.
-        box(PART.deck, 6, 0, 12, 10, 0, 1, PALETTE_SLOTS.asphalt, SURFACE_KIND.utility),
+        // Stadio zero: la stazioncina — il piazzale, due piloni e il chiosco.
+        box(PART.deck, 4, 0, 8, 8, 0, 1, PALETTE_SLOTS.asphalt, SURFACE_KIND.utility),
+        box(PART.mast, 1, 2, 2, 4, 1, 6, PALETTE_SLOTS.concrete, SURFACE_KIND.utility, {
+          cap: PALETTE_SLOTS.stone,
+        }),
+        box(PART.mast, 13, 2, 2, 4, 1, 6, PALETTE_SLOTS.concrete, SURFACE_KIND.utility, {
+          cap: PALETTE_SLOTS.stone,
+        }),
+        box(PART.shell, 5, 2, 6, 4, 1, 4, PALETTE_SLOTS.concrete, SURFACE_KIND.civic, {
+          cap: PALETTE_SLOTS.concretePale,
+        }),
+        box(PART.deck, 5, 2, 6, 4, 5, 1, PALETTE_SLOTS.roofPale, SURFACE_KIND.roofTech),
+      ],
+      [
+        // Stadio uno: la stazione — l'impalcato unisce i piloni e la sala cresce.
+        box(PART.deck, 6, 0, 10, 10, 0, 1, PALETTE_SLOTS.asphalt, SURFACE_KIND.utility),
+        box(PART.mast, 1, 2, 2, 6, 1, 9, PALETTE_SLOTS.concrete, SURFACE_KIND.utility, {
+          cap: PALETTE_SLOTS.stone,
+        }),
+        box(PART.mast, 19, 2, 2, 6, 1, 9, PALETTE_SLOTS.concrete, SURFACE_KIND.utility, {
+          cap: PALETTE_SLOTS.stone,
+        }),
+        box(PART.boom, 0, 2, 22, 6, 10, 2, PALETTE_SLOTS.concrete, SURFACE_KIND.utility, {
+          cap: PALETTE_SLOTS.asphaltDark,
+        }),
+        box(PART.shell, 7, 2, 8, 6, 1, 6, PALETTE_SLOTS.concrete, SURFACE_KIND.civic, {
+          cap: PALETTE_SLOTS.concretePale,
+        }),
+        box(PART.deck, 7, 2, 8, 6, 7, 1, PALETTE_SLOTS.roofPale, SURFACE_KIND.roofTech),
+      ],
+      [
+        // Stadio due: la linea — l'impalcato e le due rotaie che lo percorrono.
+        box(PART.deck, 8, 0, 10, 12, 0, 1, PALETTE_SLOTS.asphalt, SURFACE_KIND.utility),
         box(PART.mast, 1, 3, 3, 4, 1, 10, PALETTE_SLOTS.concrete, SURFACE_KIND.utility, {
           cap: PALETTE_SLOTS.stone,
         }),
-        box(PART.mast, 20, 3, 3, 4, 1, 10, PALETTE_SLOTS.concrete, SURFACE_KIND.utility, {
+        box(PART.mast, 22, 3, 3, 4, 1, 10, PALETTE_SLOTS.concrete, SURFACE_KIND.utility, {
           cap: PALETTE_SLOTS.stone,
         }),
-      ],
-      [
-        // Stadio uno: la massa funzionale — l'impalcato che unisce i piloni e
-        // la stazione che lo serve.
-        box(PART.boom, 0, 3, 24, 4, 11, 2, PALETTE_SLOTS.concrete, SURFACE_KIND.utility, {
+        box(PART.boom, 0, 3, 26, 4, 11, 2, PALETTE_SLOTS.concrete, SURFACE_KIND.utility, {
           cap: PALETTE_SLOTS.asphaltDark,
         }),
-        box(PART.shell, 7, 1, 10, 8, 1, 6, PALETTE_SLOTS.concrete, SURFACE_KIND.civic, {
+        box(PART.shell, 8, 2, 10, 8, 1, 6, PALETTE_SLOTS.concrete, SURFACE_KIND.civic, {
           cap: PALETTE_SLOTS.concretePale,
         }),
-        box(PART.deck, 7, 1, 10, 8, 7, 1, PALETTE_SLOTS.roofPale, SURFACE_KIND.roofTech),
+        box(PART.deck, 8, 2, 10, 8, 7, 1, PALETTE_SLOTS.roofPale, SURFACE_KIND.roofTech),
+        box(PART.boom, 0, 3, 26, 1, 13, 1, PALETTE_SLOTS.metalDark, SURFACE_KIND.utility),
+        box(PART.boom, 0, 6, 26, 1, 13, 1, PALETTE_SLOTS.metalDark, SURFACE_KIND.utility),
       ],
       [
-        // Stadio due: l'attrezzatura — i piloni centrali e le due rotaie, che
-        // fanno dell'impalcato una linea invece che una mensola.
-        box(PART.mast, 7, 3, 3, 4, 1, 10, PALETTE_SLOTS.concrete, SURFACE_KIND.utility, {
+        // Stadio tre: la grand hall — il corpo alto sotto l'impalcato, le rotaie
+        // e la linea aerea sui montanti.
+        box(PART.deck, 10, 0, 10, 12, 0, 1, PALETTE_SLOTS.asphalt, SURFACE_KIND.utility),
+        box(PART.mast, 1, 4, 3, 4, 1, 12, PALETTE_SLOTS.concrete, SURFACE_KIND.utility, {
           cap: PALETTE_SLOTS.stone,
         }),
-        box(PART.mast, 14, 3, 3, 4, 1, 10, PALETTE_SLOTS.concrete, SURFACE_KIND.utility, {
+        box(PART.mast, 26, 4, 3, 4, 1, 12, PALETTE_SLOTS.concrete, SURFACE_KIND.utility, {
           cap: PALETTE_SLOTS.stone,
         }),
-        box(PART.boom, 0, 3, 24, 1, 13, 1, PALETTE_SLOTS.metalDark, SURFACE_KIND.utility),
-        box(PART.boom, 0, 6, 24, 1, 13, 1, PALETTE_SLOTS.metalDark, SURFACE_KIND.utility),
-      ],
-      [
-        // Stadio tre: il coronamento — i montanti della linea aerea e la rampa,
-        // che chiudono la sagoma verso l'alto.
-        box(PART.mast, 3, 4, 1, 1, 14, 4, PALETTE_SLOTS.metalDark, SURFACE_KIND.utility),
-        box(PART.mast, 12, 4, 1, 1, 14, 4, PALETTE_SLOTS.metalDark, SURFACE_KIND.utility),
-        box(PART.mast, 20, 4, 1, 1, 14, 4, PALETTE_SLOTS.metalDark, SURFACE_KIND.utility),
-        box(PART.steps, 17, 0, 5, 2, 1, 9, PALETTE_SLOTS.concrete, SURFACE_KIND.utility, {
-          step: 1,
+        box(PART.boom, 0, 4, 30, 4, 13, 2, PALETTE_SLOTS.concrete, SURFACE_KIND.utility, {
+          cap: PALETTE_SLOTS.asphaltDark,
         }),
+        box(PART.shell, 11, 2, 8, 8, 1, 8, PALETTE_SLOTS.concrete, SURFACE_KIND.civic, {
+          cap: PALETTE_SLOTS.concretePale,
+        }),
+        box(PART.deck, 11, 2, 8, 8, 9, 1, PALETTE_SLOTS.roofPale, SURFACE_KIND.roofTech),
+        box(PART.boom, 0, 4, 30, 1, 15, 1, PALETTE_SLOTS.metalDark, SURFACE_KIND.utility),
+        box(PART.boom, 0, 7, 30, 1, 15, 1, PALETTE_SLOTS.metalDark, SURFACE_KIND.utility),
+        box(PART.mast, 3, 5, 1, 1, 16, 4, PALETTE_SLOTS.metalDark, SURFACE_KIND.utility),
+        box(PART.mast, 14, 5, 1, 1, 16, 4, PALETTE_SLOTS.metalDark, SURFACE_KIND.utility),
+        box(PART.mast, 26, 5, 1, 1, 16, 4, PALETTE_SLOTS.metalDark, SURFACE_KIND.utility),
       ],
     ],
     variants: [
       // Stazione a volta: la falda sulla sala, l'ingresso e l'insegna. E' il
-      // nodo che si comporta da capolinea ferroviario.
+      // nodo che si comporta da capolinea ferroviario. La falda sta sotto
+      // l'impalcato, senza toccarlo.
       {
         name: 'volta',
         parts: [
           [],
-          [box(PART.pitch, 7, 1, 10, 8, 8, 3, PALETTE_SLOTS.roofPale, SURFACE_KIND.roofTech, {
+          [box(PART.pitch, 7, 2, 8, 6, 8, 2, PALETTE_SLOTS.roofPale, SURFACE_KIND.roofTech, {
             step: 1,
             cap: PALETTE_SLOTS.metalBrass,
           })],
-          [entrance(7, 3, 1, 4, 5)],
-          [signBand(7, 2, 1, 6, 6)],
+          [
+            box(PART.pitch, 8, 2, 10, 8, 8, 3, PALETTE_SLOTS.roofPale, SURFACE_KIND.roofTech, {
+              step: 1,
+              cap: PALETTE_SLOTS.metalBrass,
+            }),
+            entrance(8, 3, 1, 4, 5),
+            signBand(8, 2, 1, 6, 7),
+          ],
+          [
+            box(PART.pitch, 11, 2, 8, 8, 10, 3, PALETTE_SLOTS.roofPale, SURFACE_KIND.roofTech, {
+              step: 1,
+              cap: PALETTE_SLOTS.metalBrass,
+            }),
+            entrance(18, 4, 1, 4, 4),
+            signBand(18, 2, 1, 8, 10),
+          ],
         ],
       },
-      // Viadotto elettrificato: tre portali a traliccio sopra l'impalcato. E'
-      // l'unico esemplare che aggiunge struttura *sopra* la linea invece che
-      // accanto, e di taglio allunga la sagoma verso l'alto.
+      // Viadotto elettrificato: portali a traliccio sopra le rotaie. Aggiunge
+      // struttura *sopra* la linea invece che accanto, e di taglio allunga la
+      // sagoma verso l'alto.
       {
         name: 'elettrificato',
         parts: [
           [],
-          [box(PART.truss, 0, 3, 2, 4, 13, 7, PALETTE_SLOTS.metalRust, SURFACE_KIND.industrial, {
+          [box(PART.truss, 0, 3, 2, 6, 14, 4, PALETTE_SLOTS.metalRust, SURFACE_KIND.industrial, {
             step: 2,
             cap: PALETTE_SLOTS.metalBrass,
           })],
-          [box(PART.truss, 11, 3, 2, 4, 13, 7, PALETTE_SLOTS.metalRust, SURFACE_KIND.industrial, {
-            step: 2,
-            cap: PALETTE_SLOTS.metalBrass,
-          })],
-          [box(PART.truss, 22, 3, 2, 4, 13, 7, PALETTE_SLOTS.metalRust, SURFACE_KIND.industrial, {
-            step: 2,
-            cap: PALETTE_SLOTS.metalBrass,
-          })],
+          [
+            box(PART.truss, 0, 3, 2, 6, 14, 4, PALETTE_SLOTS.metalRust, SURFACE_KIND.industrial, {
+              step: 2,
+              cap: PALETTE_SLOTS.metalBrass,
+            }),
+            box(PART.truss, 24, 3, 2, 6, 14, 4, PALETTE_SLOTS.metalRust, SURFACE_KIND.industrial, {
+              step: 2,
+              cap: PALETTE_SLOTS.metalBrass,
+            }),
+          ],
+          [
+            box(PART.truss, 0, 3, 2, 6, 16, 5, PALETTE_SLOTS.metalRust, SURFACE_KIND.industrial, {
+              step: 2,
+              cap: PALETTE_SLOTS.metalBrass,
+            }),
+            box(PART.truss, 14, 3, 2, 6, 16, 5, PALETTE_SLOTS.metalRust, SURFACE_KIND.industrial, {
+              step: 2,
+              cap: PALETTE_SLOTS.metalBrass,
+            }),
+            box(PART.truss, 27, 3, 2, 6, 16, 5, PALETTE_SLOTS.metalRust, SURFACE_KIND.industrial, {
+              step: 2,
+              cap: PALETTE_SLOTS.metalBrass,
+            }),
+          ],
         ],
       },
-      // Capolinea: torre dell'orologio con il quadrante acceso e la pensilina
-      // sulle banchine.
+      // Capolinea: la torre dell'orologio con il quadrante acceso, accanto alla
+      // linea.
       {
         name: 'capolinea',
         parts: [
           [],
-          [box(PART.mast, 17, 6, 3, 3, 1, 16, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.civic, {
+          [box(PART.mast, 19, 7, 2, 2, 1, 10, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.civic, {
             cap: PALETTE_SLOTS.metalGold,
           })],
-          [box(PART.slab, 17, 6, 3, 3, 14, 2, PALETTE_SLOTS.glassPale, SURFACE_KIND.luminous)],
-          [box(PART.pitch, 6, 0, 12, 2, 8, 3, PALETTE_SLOTS.roofPale, SURFACE_KIND.roofTech, {
-            step: 1,
-            cap: PALETTE_SLOTS.metalBrass,
-          })],
+          [
+            box(PART.mast, 22, 8, 2, 2, 1, 12, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.civic, {
+              cap: PALETTE_SLOTS.metalGold,
+            }),
+            box(PART.slab, 22, 8, 2, 2, 13, 2, PALETTE_SLOTS.glassPale, SURFACE_KIND.luminous),
+          ],
+          [
+            box(PART.mast, 26, 8, 2, 2, 1, 16, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.civic, {
+              cap: PALETTE_SLOTS.metalGold,
+            }),
+            box(PART.slab, 26, 8, 2, 2, 17, 2, PALETTE_SLOTS.glassPale, SURFACE_KIND.luminous),
+          ],
         ],
       },
     ],
@@ -1984,6 +2107,27 @@ export function contextualFormsOf(kind: CatalystId): readonly LandmarkFormId[] {
 /** Ultimo stadio raggiungibile da una ricetta. */
 export function maxStageOf(recipe: PartsRecipe): number {
   return recipe.parts.length - 1;
+}
+
+/** true se la ricetta cresce di sedime per stadio invece di riservarlo. */
+export function growsFootprint(recipe: PartsRecipe): boolean {
+  return recipe.growth !== undefined;
+}
+
+/**
+ * Il sedime di una ricetta a un certo stadio.
+ *
+ * Senza `growth` risponde il sedime finale dichiarato — il comportamento di
+ * sempre — e il parametro `stage` non conta. Con `growth`, ritaglia la voce
+ * dello stadio richiesto, in silenzio dentro i limiti.
+ */
+export function footprintOf(recipe: PartsRecipe, stage: number): StageFootprint {
+  const growth = recipe.growth;
+  if (growth === undefined) {
+    return { span: recipe.span, height: recipe.height, anchor: recipe.anchor };
+  }
+  const s = Math.max(0, Math.min(stage, growth.length - 1));
+  return growth[s];
 }
 
 /**

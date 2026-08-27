@@ -65,6 +65,12 @@ export interface CoachSuggestion {
     /** Edifici gia' dentro il raggio, per contare «N in piu'». */
     readonly nearby: number;
   } | null;
+  /**
+   * Dove posare un nuovo catalizzatore («metti qui»), con il raggio del landmark
+   * suggerito. E' il centro da coprire: l'overlay vi traccia l'anello del campo
+   * che il landmark produrrebbe. Assente per i suggerimenti che non piazzano nulla.
+   */
+  readonly place?: { readonly x: number; readonly y: number; readonly radius: number } | null;
 }
 
 export interface CoachLandmark {
@@ -83,6 +89,12 @@ export interface CoachContext {
   readonly state: SimState;
   /** Massimo livello edificato: la cima dello skyline. */
   readonly tallestLevel: number;
+  /**
+   * La colonna piu' densa: dove il centro deve guadagnare un campo per salire.
+   * Null finche' nessuna colonna raggiunge la densita' del nucleo, e in quel
+   * caso lo skyline non e' ancora un problema di catalizzatori ma di costruito.
+   */
+  readonly center: { readonly x: number; readonly y: number } | null;
   readonly hasArcology: boolean;
   /** Cantiere dell'arcologia aperto. */
   readonly clearing: boolean;
@@ -402,16 +414,54 @@ function stageSuggestion(context: CoachContext): CoachSuggestion | null {
 
 // --- Skyline ----------------------------------------------------------------
 
+/**
+ * I landmark che il coach chiede di posare sul centro, dal campo piu' largo al
+ * piu' economico. Il campo largo e' il gesto giusto: un landmark di identita'
+ * copre tutto il nucleo denso con una sola spesa, e il cono regala due livelli
+ * solo dove il campo e' pieno, cioe' a ridosso del landmark.
+ */
+const SKYLINE_CANDIDATES: readonly CatalystId[] = ['university', 'transport', 'market'];
+
+/**
+ * Il campo piu' largo che i fondi coprono, o il piu' economico con il saldo.
+ *
+ * Non e' un elenco di desideri: nomina un solo landmark, come ogni altra riga
+ * del coach. Chi ha fondi sceglie il campo largo, chi no il gesto minimo — un
+ * Market basta ad aprire la fascia core, e l'anello si rafforza poi.
+ */
+function skylinePlan(funds: number): { readonly kind: CatalystId; readonly shortfall: number } {
+  for (const kind of SKYLINE_CANDIDATES) {
+    const cost = catalystById(kind).cost;
+    if (funds >= cost) return { kind, shortfall: 0 };
+  }
+  const cheapest = SKYLINE_CANDIDATES[SKYLINE_CANDIDATES.length - 1];
+  return { kind: cheapest, shortfall: Math.ceil(catalystById(cheapest).cost - funds) };
+}
+
 function skylineSuggestion(context: CoachContext): CoachSuggestion | null {
   if (context.tallestLevel >= SKYLINE.levelCap[TIER.core]) return null;
+  const center = context.center;
+  if (center === null) return null;
+
+  const { state } = context;
+  const coreCap = SKYLINE.levelCap[TIER.core];
+  const plan = skylinePlan(state.funds.stock);
+  const definition = catalystById(plan.kind);
+
+  const spend = plan.shortfall > 0
+    ? `Save ${plan.shortfall} more Funds for a ${definition.label}.`
+    : `Place a ${definition.label} so its ring covers the densest block.`;
+
+  const message = `Your tallest tower is level ${context.tallestLevel}, but the core allows ${coreCap}: the densest block sits outside a strong field, so its towers stay capped in the middle band. ${spend} The step is complete when a tower beside it reaches level ${coreCap}.`;
 
   return {
     id: 'coach-skyline',
     tier: 'skyline',
-    title: 'Overlap fields in the center',
-    message: 'Your tallest tower is below what the core allows — the center can still rise. To fix that, place catalysts so their fields overlap the center: a block only earns the core tier, and its height, where two fields touch.',
+    title: 'Cover the center with a field',
+    message,
     highlight: null,
     grow: null,
+    place: { x: center.x, y: center.y, radius: definition.radius },
   };
 }
 

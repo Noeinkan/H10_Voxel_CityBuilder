@@ -47,13 +47,15 @@ export function placeRecipe(
   y: number,
   coast: WaterSight | null,
 ): Placement {
-  const origin = recipeOrigin(recipe, facing, x, y);
+  // Lo stadio zero: una struttura che cresce di sedime riserva al piazzamento
+  // soltanto l'ingombro iniziale, e l'avanzamento lo allarga sventrando.
+  const origin = recipeOrigin(recipe, facing, x, y, 0);
   const drift = seawardDrift(recipe, coast);
   const [dx, dy] = SEAWARD[facing] ?? SEAWARD[FACING.east];
 
   return {
     facing,
-    span: recipeSpan(recipe, facing),
+    span: recipeSpan(recipe, facing, 0),
     x: origin.x + dx * drift,
     y: origin.y + dy * drift,
   };

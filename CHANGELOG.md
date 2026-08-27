@@ -11,6 +11,32 @@ coincide con il messaggio di commit.
 
 ---
 
+## In corso — Densita' urbana ridotta di un quarto
+
+- **`congestionPerBuilding` sale da 6 a 8.** E' la manopola della densita': il solo termine del campo di desiderabilita' che cresce con gli edifici gia' posati, quindi decide quanti ne possono stare affiancati prima che il campo scenda sotto la soglia di sito. A 8 il nucleo saturo ammette circa un quarto di edifici in meno nel raggio breve: la citta' resta meno fitta, con meno chunk e meno draw call — cioe' piu' frame, senza toccare la portata dei catalizzatori.
+
+## In corso — Il dock sceglie le viste informative
+
+- **Le viste informative si scelgono anche dal dock, non solo con `I`.** Una tessera Data accanto a Views apre un picker con le sei viste — citta' nuda, cibo, materiali, densita', felicita', distretti — con etichette e descrizioni dalla stessa fonte `INFO_VIEWS` dell'overlay. La tessera dice quale vista e' accesa, e il tasto `I` resta la scorciatoia.
+
+## In corso — Il coach dello skyline nomina il landmark e il centro
+
+- **Il suggerimento dello skyline dice cosa e dove, non solo che.** Il tier `skyline` ora nomina un landmark concreto — University, Transit o Market secondo i fondi — e segna con un anello ambra il blocco denso da coprire: un campo forte li' apre la fascia core e il cono regala i due livelli. Prima il testo era un «sovrapponi i campi» senza soggetto ne' luogo.
+
+## In corso — Viste informative a la Cities Skylines
+
+- **Cinque viste informative in-world, ciclate con `I`.** Cibo, materiali, densita' di popolazione, felicita' e distretti si leggono come una heatmap drappeggiata sul terreno, accanto a `InfluenceOverlay`: stessa regola — mesh sopra la scena, mai un voxel riscritto, fuori dalla profondita'. Continua a gradiente scuro→teal→giallo, categorica a tinta piatta con i bordi fra categorie (i distretti si separano, i campi si staccano dal prato).
+- **La generazione si spezza fra i frame.** Una regione 512×512 decimata fa qualche decina di migliaia di quad: il campionamento e la geometria girano a passi dentro un budget, e la heatmap si ricostruisce solo quando la versione del campo cambia — un edificio, un catalizzatore, una policy, un lotto — mai per pan o zoom.
+- **La fonte e' la simulazione, il look sta nel renderer.** Densita' e materiali escono dall'indice di capacita' per colonna derivato dagli edifici (la torre idroponica conta come cibo, non come industria); felicita' e distretti da `urbanFieldAt`, che condivide l'aritmetica di `urbanProfileAt` — un test tiene le due allineate cella per cella. Il cibo e' l'unica vista trasversale: la posizione dei lotti la sa il mondo, e la compone `src/game/infoViews.ts`.
+
+## In corso — Le arcologie aprono il catalogo dello swatch
+
+- **Nel campionario le arcologie stanno in testa, non in coda.** La fascia delle megastrutture si sposta all'inizio della sequenza delle gallerie — prima delle linee evolutive, degli edifici e dei landmark — cosi' il vertice della gerarchia apre il catalogo invece di chiuderlo. Il basamento le segue con lo stesso profilo a gradini.
+
+## In corso — Il parco lascia respirare il commercio
+
+- **`park.residential` scende da 0,7 a 0,55.** Con il mercato a residenziale e commerciale entrambi a 1, il parco a 0,7 faceva saturare il residenziale a 255 su tutto il centro: il confronto a parita' finiva sempre a favore della casa (indice minore), e un quartiere di soli semi di crescita non produceva mai un negozio come uso primario — solo come secondo uso di una casa-bottega. A 0,55 il commercio emerge dove il mercato satura per primo, e le case primarie nascono ancora dal parco.
+
 ## In corso — Sfere dei landmark ancora piu' ampie
 
 - **I raggi del gruppo identita' salgono ancora, a 85-92 celle.** La sfera deve leggersi come un quartiere intero, non come un incrocio: universita' 90, monumento e cattedrale 87, museo 89, teatro 85, stadio e marina 92. Il costo del Dijkstra resta quello di un piazzamento — un gesto del giocatore, non del tick — e un raggio sotto il centinaio era gia' comparso nelle misure del progetto.

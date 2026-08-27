@@ -1,6 +1,6 @@
 import type { ActionFailure } from '../game/actions';
 import type { GrowthStats } from '../game/growthScene';
-import type { PolicyId, TradeMode } from '../sim';
+import { INFO_VIEWS, infoViewSpecOf, type InfoViewKind, type PolicyId, type TradeMode } from '../sim';
 import { BuildDock, type DockPanel } from './BuildDock';
 import { ControlsHint } from './ControlsHint';
 import { applyHudTokens } from './hudTokens';
@@ -56,6 +56,8 @@ export interface GameHudHandlers {
   readonly onSwatch: () => void;
   readonly onView: (mode: InspectMode) => void;
   readonly onLevel: (z: number) => void;
+  /** Sceglie una vista informativa (cibo, materiali, densita', felicita', distretti). */
+  readonly onInfoView: (kind: InfoViewKind) => void;
   readonly onCancelTool: () => void;
   /** Molla l'isolato scelto in Block focus, lasciando accesa la vista. */
   readonly onReleaseBlock: () => void;
@@ -119,6 +121,7 @@ const FAILURE_LABEL: Readonly<Record<ActionFailure, string>> = {
   'needs-shore': 'A ropeway starts on dry land. Point at a shore, not at the water.',
   'needs-crossing': 'There is nothing to cross from here. Find a stretch of water with land on the far side.',
   'no-room-for-line': 'No room for the towers here. Try further along the same shore.',
+  'landmark-in-the-way': 'A landmark already stands here: monuments are not replaced by another landmark.',
 };
 
 /** HUD giocabile: risorse in alto, azioni in basso e pannelli contestuali. */
@@ -134,6 +137,7 @@ export class GameHud {
   private readonly policiesDrawer: PoliciesDrawer;
   private readonly themePicker: HTMLElement;
   private readonly viewPicker: HTMLElement;
+  private readonly infoPicker: HTMLElement;
   private readonly viewBar: HTMLElement;
   private viewBarLabel!: HTMLElement;
   private viewBarGesture!: HTMLElement;
@@ -167,6 +171,7 @@ export class GameHud {
   private readonly themeButtons = new Map<string, HTMLButtonElement>();
   private readonly themeTokens = new Map<string, Readonly<Record<string, string>>>();
   private readonly viewButtons = new Map<InspectMode, HTMLButtonElement>();
+  private readonly infoButtons = new Map<InfoViewKind, HTMLButtonElement>();
   /** La finestra dei tick recenti: e' dell'HUD, non della simulazione. */
   private readonly trend = new ResourceTrend();
   private selected: GameTool = { kind: 'none' };
@@ -254,6 +259,8 @@ export class GameHud {
     this.root.appendChild(this.themePicker);
     this.viewPicker = this.createViewPicker();
     this.root.appendChild(this.viewPicker);
+    this.infoPicker = this.createInfoPicker();
+    this.root.appendChild(this.infoPicker);
     this.viewBar = this.createViewBar();
     this.railLeft.appendChild(this.viewBar);
     this.levelRail = this.createLevelRail();
@@ -421,6 +428,24 @@ export class GameHud {
     this.levelValue.textContent = level;
   }
 
+  /**
+   * La vista informativa attiva, dal modello puro alle superfici che la mostrano.
+   *
+   * Segna il bottone del dock e quello del picker, cosi' tessera e scorciatoia
+   * dicono la stessa cosa: la vista si puo' scegliere da qui, dal picker o dal
+   * tasto `I`, e nessuna delle tre deve restare indietro rispetto alle altre.
+   */
+  setInfoView(kind: InfoViewKind): void {
+    for (const [viewKind, button] of this.infoButtons) {
+      button.setAttribute('aria-pressed', viewKind === kind ? 'true' : 'false');
+    }
+    const active = kind !== 'off';
+    const label = active
+      ? `Reading: ${infoViewSpecOf(kind).label} · I to change`
+      : 'Read the city by data · I';
+    this.dock.setInfoLabel(label, active);
+  }
+
   showFailure(reason: ActionFailure): void {
     this.showFeedback(FAILURE_LABEL[reason], 'error');
   }
@@ -503,7 +528,8 @@ export class GameHud {
     if (panel === 'city') this.toggleCity();
     else if (panel === 'policies') this.togglePolicies();
     else if (panel === 'themes') this.toggleThemes();
-    else this.toggleViews();
+    else if (panel === 'views') this.toggleViews();
+    else this.toggleInfo();
   }
 
   toggleCity(): void {
@@ -517,6 +543,7 @@ export class GameHud {
       this.closePolicies();
       this.closeThemes();
       this.closeViews();
+      this.closeInfo();
       this.help.hide();
     }
   }
@@ -530,6 +557,7 @@ export class GameHud {
       this.closeCity();
       this.closeThemes();
       this.closeViews();
+      this.closeInfo();
       this.help.hide();
     }
   }
@@ -543,6 +571,7 @@ export class GameHud {
       this.closeCity();
       this.closePolicies();
       this.closeViews();
+      this.closeInfo();
       this.help.hide();
     }
   }
@@ -556,6 +585,21 @@ export class GameHud {
       this.closeCity();
       this.closePolicies();
       this.closeThemes();
+      this.closeInfo();
+      this.help.hide();
+    }
+  }
+
+  toggleInfo(): void {
+    const opening = this.infoPicker.hidden;
+    this.infoPicker.hidden = !opening;
+    this.dock.setExpanded('info', opening);
+    if (opening) {
+      this.handlers.onClearSelection();
+      this.closeCity();
+      this.closePolicies();
+      this.closeThemes();
+      this.closeViews();
       this.help.hide();
     }
   }
@@ -566,6 +610,7 @@ export class GameHud {
     this.closePolicies();
     this.closeThemes();
     this.closeViews();
+    this.closeInfo();
     if (opening) this.handlers.onClearSelection();
     this.help.toggle();
   }
@@ -583,6 +628,7 @@ export class GameHud {
     this.closePolicies();
     this.closeThemes();
     this.closeViews();
+    this.closeInfo();
     this.help.hide();
   }
 
@@ -598,6 +644,12 @@ export class GameHud {
   }
 
   handleEscape(): boolean {
+    // Il picker dei dati si chiude per primo quando e' aperto, come gli altri
+    // pannelli: i picker si escludono a vicenda, quindi e' l'unico aperto.
+    if (!this.infoPicker.hidden) {
+      this.closeInfo();
+      return true;
+    }
     switch (resolveEscapeTarget(
       !this.viewPicker.hidden,
       !this.themePicker.hidden,
@@ -740,6 +792,46 @@ export class GameHud {
   }
 
   /**
+   * Le sei viste informative, dalla citta' nuda al dato per colonna.
+   *
+   * Stesse etichette e descrizioni di `INFO_VIEWS` — l'unica fonte, condivisa con
+   * l'overlay in-world e con la legenda — e lo stesso disegno del picker delle
+   * viste: qui si sceglie la heatmap, il tasto `I` la cicla.
+   */
+  private createInfoPicker(): HTMLElement {
+    const picker = document.createElement('aside');
+    picker.className = 'info-picker hud-surface hud-surface--panel';
+    picker.hidden = true;
+    picker.setAttribute('aria-label', 'City data views');
+
+    picker.appendChild(drawerHeader({
+      title: 'Read the city',
+      subtitle: 'A data overlay per block, like an info view.',
+      closeLabel: 'Close data views · Esc',
+      onClose: () => this.closeInfo(),
+    }));
+
+    const list = document.createElement('div');
+    list.className = 'view-list';
+    for (const spec of INFO_VIEWS) {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'view-option';
+      button.setAttribute('aria-pressed', 'false');
+      const label = document.createElement('strong');
+      label.textContent = spec.label;
+      const description = document.createElement('span');
+      description.textContent = spec.description;
+      button.append(label, description);
+      button.addEventListener('click', () => this.handlers.onInfoView(spec.kind));
+      this.infoButtons.set(spec.kind, button);
+      list.appendChild(button);
+    }
+    picker.appendChild(list);
+    return picker;
+  }
+
+  /**
    * La targa della vista attiva, in alto a sinistra.
    *
    * Risponde alle tre domande che restavano senza risposta appena il picker si
@@ -843,6 +935,11 @@ export class GameHud {
   private closeViews(): void {
     this.viewPicker.hidden = true;
     this.dock.setExpanded('views', false);
+  }
+
+  private closeInfo(): void {
+    this.infoPicker.hidden = true;
+    this.dock.setExpanded('info', false);
   }
 
   private closeThemes(): void {

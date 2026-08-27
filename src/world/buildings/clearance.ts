@@ -13,12 +13,14 @@
  * proprieta' del mondo.
  *
  * **Perche' la soglia esiste.** E' la manopola di chi la usa, non di questo
- * file: un landmark la lascia aperta — il giocatore demolisce tutto il
- * costruito e il monumento prende il suo posto — mentre un'arcologia la tiene
- * sul livello massimo degli edifici, perche' una megastruttura non si ferma
- * davanti a una torre ma non deve nemmeno cancellarla senza leggere la citta'.
- * Cio' che *nessuno* dei due puo' toccare e' qui: la citta' in quota, le
- * arcologie e chi le porta, perche' far cadere una rete non e' demolire.
+ * file: un landmark la lascia aperta — il giocatore demolisce il costruito e il
+ * monumento prende il suo posto — mentre un'arcologia la tiene sul livello
+ * massimo degli edifici, perche' una megastruttura non si ferma davanti a una
+ * torre ma non deve nemmeno cancellarla senza leggere la citta'. Cio' che
+ * *nessuno* dei due puo' toccare e' qui: la citta' in quota, le arcologie e chi
+ * le porta, perche' far cadere una rete non e' demolire. E i monumenti stessi
+ * stanno qui, con un rifiuto loro: un landmark non si demolisce piazzandone un
+ * altro, solo la gomma li tocca.
  */
 
 /**
@@ -38,10 +40,10 @@ export const CLEARANCE_KIND = {
   /**
    * Un landmark: cade solo per chi lo dichiara.
    *
-   * Un monumento si demolisce quando **un altro landmark** prende il suo posto
-   * — e' la stessa gomma del costruito — ma non quando un'arcologia si fa
-   * spazio: una megastruttura che cancellasse un monumento senza che il
-   * giocatore l'abbia chiesto sarebbe una demolizione per errore.
+   * La gomma lo demolisce come il resto del costruito — e' lo strumento del
+   * gesto — ma il piazzamento di un monumento no: un landmark non sostituisce un
+   * altro landmark, e nemmeno un'arcologia se lo porta via per farsi spazio. Chi
+   * vuole togliere un monumento deve dirlo esplicitamente.
    */
   landmark: 3,
 } as const;
@@ -54,8 +56,16 @@ export interface ClearanceRecord {
   readonly kind: ClearanceKind;
 }
 
-/** Perche' un riquadro non si puo' sgomberare. */
-export type ClearanceRefusal = 'block-too-tall' | 'structure-in-the-way';
+/**
+ * Perche' un riquadro non si puo' sgomberare.
+ *
+ * `landmark-in-the-way` e' il solo rifiuto che un landmark produce e nessun
+ * altro: una struttura — la citta' in quota, un'arcologia, chi le porta — resta
+ * `structure-in-the-way`, definitiva e condivisa. Un monumento, invece, non
+ * cade nemmeno sotto un altro monumento, e a chi piazza serve saperlo per
+ * non puntare il cursore a caso su cio' che non cederà mai.
+ */
+export type ClearanceRefusal = 'block-too-tall' | 'structure-in-the-way' | 'landmark-in-the-way';
 
 export interface ClearancePlan {
   /** Record da abbattere, in ordine di lettura. Vuoto se il riquadro era gia' libero. */
@@ -70,9 +80,9 @@ export interface ClearanceRule {
   /**
    * true se il riquadro puo' portarsi via anche i landmark che ci trova.
    *
-   * E' la differenza fra il piazzamento di un monumento — che prende il posto
-   * di tutto il costruito, altri monumenti compresi — e la megastruttura, che
-   * sui monumenti si ferma e cerca altrove.
+   * E' la differenza fra la gomma — che demolisce tutto, monumenti compresi —
+   * e chi costruisce: il piazzamento di un monumento si ferma sui monumenti
+   * e cerca altrove, esattamente come la megastruttura.
    */
   readonly clearsLandmarks?: boolean;
 }
@@ -106,7 +116,7 @@ export function planClearance(
         doomed.push(record.id);
         continue;
       }
-      return { doomed: [], refusal: 'structure-in-the-way' };
+      return { doomed: [], refusal: 'landmark-in-the-way' };
     }
     if (record.level > rule.maxLevel) {
       tooTall = true;

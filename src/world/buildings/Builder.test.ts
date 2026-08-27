@@ -1888,9 +1888,9 @@ describe('Builder — sventramento', () => {
     expect(above).toBe(0);
   });
 
-  it('un landmark non e piu una struttura: il preventivo conta anche il monumento che c e', () => {
-    // Prima un monumento rifiutava il riquadro per sempre; ora e' costruito
-    // come il resto, e il preventivo lo conta fra cio' che cadra'.
+  it('un landmark non sostituisce un altro landmark: il preventivo rifiuta il riquadro', () => {
+    // Un monumento non e' piu' demolibile dal piazzamento: il preventivo lo
+    // segna come rifiuto, e il giocatore deve passare dalla gomma.
     const { terrain, builder, state } = city(30);
     const spot = clearableSpot(builder);
 
@@ -1899,15 +1899,15 @@ describe('Builder — sventramento', () => {
     expect(builder.registry.landmarkCount).toBe(1);
 
     // Sulla stessa colonna, con un ruolo diverso per non incappare nella
-    // distanza minima: cio' che trova e' il monumento di prima, che adesso e'
-    // demolibile come ogni altro costruito.
+    // distanza minima: cio' che trova e' il monumento di prima, che adesso
+    // rifiuta invece di essere contato fra chi cadra'.
     const quote = builder.landmarkClearance(spot.x, spot.y, 'university');
-    expect(quote.refusal).toBeNull();
-    expect(quote.clears).toBeGreaterThanOrEqual(1);
+    expect(quote.refusal).toBe('landmark-in-the-way');
+    expect(quote.clears).toBe(0);
   });
 
-  it('un landmark ne sostituisce un altro: il monumento vecchio cade tutto', () => {
-    const { world, terrain, builder, state } = city(30);
+  it('un landmark non ne sostituisce un altro: il monumento vecchio resta', () => {
+    const { terrain, builder, state } = city(30);
     const spot = clearableSpot(builder);
 
     builder.placeLandmark(spot.x, spot.y, 'market');
@@ -1917,28 +1917,13 @@ describe('Builder — sventramento', () => {
     builder.placeLandmark(spot.x, spot.y, 'university');
     settle(builder, terrain, state);
 
-    // Il monumento nuovo ha preso il posto del vecchio: un record solo, e non
-    // e' piu' il mercato.
+    // Il monumento nuovo non ha preso il posto del vecchio: resta il mercato,
+    // e non compare un secondo record.
     expect(builder.registry.landmarkCount).toBe(1);
     const kinds = [...builder.registry.all]
       .filter((record) => record.landmark !== undefined)
       .map((record) => record.landmark);
-    expect(kinds).toEqual(['university']);
-
-    // E del vecchio non resta un voxel: la sagoma rigenerata per la
-    // cancellazione era quella del suo generatore, non una grammatica di fasce.
-    const box = landmarkBox(builder);
-    const landmark = [...builder.registry.all].find((r) => r.landmark !== undefined)!;
-    const top = landmark.baseZ + landmark.height;
-    let above = 0;
-    for (let y = box.y; y < box.y + box.sizeY; y++) {
-      for (let x = box.x; x < box.x + box.sizeX; x++) {
-        for (let z = top; z < top + 40; z++) {
-          if (world.getBlock(x, y, z) !== 0) above++;
-        }
-      }
-    }
-    expect(above).toBe(0);
+    expect(kinds).toEqual(['market']);
   });
 
   it('una torre cade come ogni altra casa: nessuna altezza resta fuori portata', () => {

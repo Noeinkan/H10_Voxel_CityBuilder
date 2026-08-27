@@ -68,6 +68,9 @@ const CLASS_COLORS: readonly number[] = [0x5f8f7f, 0xd8886a, 0xd9b45f, 0xe99a72]
 /** Il colore dedicato al coach: diverso dagli usi urbani e dal cursore. */
 const COACH_GROW_COLOR = 0x3ddc84;
 
+/** Il colore del «metti qui»: distinto dal verde di «fai crescere» e dal cursore. */
+const COACH_PLACE_COLOR = 0xf0b34b;
+
 /** Gli stessi due stati del segnaposto: verde valido, rosso rifiutato. */
 const CURSOR_VALID = 0x2ff08d;
 const CURSOR_INVALID = 0xff5a4a;
@@ -242,6 +245,11 @@ export class InfluenceOverlay {
         this.showSelection(catalyst, reach);
       }
     }
+
+    if (suggestion.place != null) {
+      const { x, y, radius } = suggestion.place;
+      this.drawCoachPlace(this.cursorField(x, y, radius, reach));
+    }
   }
 
   /** Svuota gli artefatti del coach, compresa l'evidenza riusata dal cursore. */
@@ -277,6 +285,29 @@ export class InfluenceOverlay {
     const fill = new Mesh(fillGeometry(this.map, field), coachFillMaterial());
     fill.renderOrder = 18;
     this.coach.add(fill);
+  }
+
+  /**
+   * L'anello del landmark da posare, centrato sul «metti qui» del coach.
+   *
+   * Stessa geometria di `drawCoachGrow` ma con la tinta del piazzamento: mostra
+   * dove va il catalizzatore e quanto terreno il suo campo coprirebbe, senza
+   * pretendere che il landmark esista gia'.
+   */
+  private drawCoachPlace(field: ReachField): void {
+    const contour = new LineSegments(
+      contourGeometry(this.map, field, field.radius),
+      lineMaterial(COACH_PLACE_COLOR, 0.9),
+    );
+    contour.renderOrder = 19;
+    this.coach.add(contour);
+
+    const rings = new LineSegments(
+      ringsGeometry(this.map, field),
+      lineMaterial(COACH_PLACE_COLOR, 0.35),
+    );
+    rings.renderOrder = 19;
+    this.coach.add(rings);
   }
 
   addSector(region: Region): void {

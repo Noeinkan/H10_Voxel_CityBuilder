@@ -22,6 +22,7 @@ import {
   type BuilderStats,
   type LandmarkSite,
 } from '../world/buildings/Builder';
+import type { FarmPlot } from '../world/farms/plotPlan';
 import {
   footprintDepth,
   type BuildingRecord,
@@ -33,6 +34,7 @@ import { landmarkWaterColumn } from '../world/landmarks/generate';
 import { createReachCost } from '../world/reachCost';
 import { StreetNetwork } from '../world/streets/StreetNetwork';
 import type { Facing } from '../world/streets/streetGrid';
+import { SKYLINE } from '../world/skyline/config';
 import { BIOME, WATER_IDS } from '../world/terrain/config';
 import type { Region } from '../world/terrain/region';
 import type { TerrainMap } from '../world/terrain/TerrainMap';
@@ -271,7 +273,17 @@ export class GrowthScene {
       if (site.refusal !== null) return ALOFT_FAILURE[site.refusal];
       if (site.site === null) return 'needs-building';
     }
-    return catalystFailure(this.state, this.map, x, y, target, aloft);
+    const failure = catalystFailure(this.state, this.map, x, y, target, aloft);
+    if (failure !== null) return failure;
+
+    // A terra, un monumento gia' presente rifiuta il riquadro: un landmark non
+    // sostituisce un altro landmark, e il cursore lo deve dire in rosso. E' lo
+    // stesso verdetto che `place()` rileggera' al click, quindi il preventivo e
+    // il gesto restano la stessa domanda.
+    if (!aloft && this.clearanceAt(x, y, target, aloft).refusal === 'landmark-in-the-way') {
+      return 'landmark-in-the-way';
+    }
+    return null;
   }
 
   /**
@@ -533,10 +545,10 @@ export class GrowthScene {
     const everywhere = nextBuildSites(this.state, this.map, depth);
     // L'opera automatica rispetta i monumenti che ci sono gia': la citta' non
     // demolisce da sola cio' che il giocatore ha fatto sorgere — la gomma e'
-    // un gesto, non una decisione. Solo se ogni sito li toccherebbe ripiega
-    // sulla regola piena.
+    // un gesto, non una decisione. Un riquadro che ne ospita uno rifiuta, e
+    // solo se ogni sito li toccherebbe si ripiega sulla regola piena.
     const spares = (x: number, y: number): boolean =>
-      this.builder.landmarkClearance(x, y, grant.kind).landmarks === 0;
+      this.builder.landmarkClearance(x, y, grant.kind).refusal !== 'landmark-in-the-way';
     const site = grantSite(this.state, this.map, grant.kind, preferred, spares)
       ?? grantSite(this.state, this.map, grant.kind, everywhere, spares)
       ?? grantSite(this.state, this.map, grant.kind, preferred)
@@ -845,6 +857,11 @@ export class GrowthScene {
     return this.builder.registry;
   }
 
+  /** I lotti agricoli vivi, per la vista informativa del cibo. */
+  get farmPlots(): readonly FarmPlot[] {
+    return this.builder.farmPlots;
+  }
+
   get stats(): GrowthStats {
     return {
       ready: true,
@@ -923,6 +940,7 @@ export class GrowthScene {
     return {
       state: this.state,
       tallestLevel: this.tallestLevel(),
+      center: this.densestColumn(),
       hasArcology,
       clearing: stats.clearing > 0,
       // La condizione dell'arcologia e' prossima quando il centro ha abbastanza
@@ -987,6 +1005,24 @@ export class GrowthScene {
       if ((levels[level] ?? 0) > 0) return level;
     }
     return 0;
+  }
+
+  /**
+   * La colonna piu' densa: l'ancora del record con piu' edifici nel raggio dello
+   * skyline. Null finche' nessuna raggiunge la densita' del nucleo — prima di
+   * allora il centro e' un problema di costruito, non di catalizzatori.
+   */
+  private densestColumn(): { readonly x: number; readonly y: number } | null {
+    let best: { readonly x: number; readonly y: number } | null = null;
+    let bestCount: number = SKYLINE.edgeCore;
+    for (const record of this.builder.registry.all) {
+      const count = this.builder.registry.countWithinRadius(record.x, record.y, SKYLINE.edgeRadius);
+      if (count > bestCount) {
+        bestCount = count;
+        best = { x: record.x, y: record.y };
+      }
+    }
+    return best;
   }
 
   private apply(result: ActionResult, successMessage: string): ActionResult {

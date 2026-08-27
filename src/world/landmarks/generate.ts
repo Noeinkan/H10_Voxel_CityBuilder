@@ -4,7 +4,9 @@ import type { VoxelStamp } from '../buildings/stamp';
 import { hashCoords } from '../rng';
 import {
   LANDMARK,
+  footprintOf,
   formVariantOf,
+  growsFootprint,
   landmarkOf,
   maxStageOf,
   variantsOf,
@@ -173,24 +175,25 @@ export function variantIndexOf(recipe: PartsRecipe, seed: number): number {
 }
 
 /** Ingombro in pianta e in quota di una ricetta su un verso. */
-export function recipeSpan(recipe: PartsRecipe, facing: Facing): {
+export function recipeSpan(recipe: PartsRecipe, facing: Facing, stage = maxStageOf(recipe)): {
   sizeX: number;
   sizeY: number;
   sizeZ: number;
 } {
-  const [long, short] = recipe.span;
-  return { ...orientedSpan(facing, long, short), sizeZ: recipe.height };
+  const footprint = footprintOf(recipe, stage);
+  const [long, short] = footprint.span;
+  return { ...orientedSpan(facing, long, short), sizeZ: footprint.height };
 }
 
 /** Ingombro in pianta di un ruolo su un verso, o null se non ha una ricetta. */
-export function landmarkSpan(kind: CatalystId, facing: Facing, form?: LandmarkFormId): {
+export function landmarkSpan(kind: CatalystId, facing: Facing, form?: LandmarkFormId, stage?: number): {
   sizeX: number;
   sizeY: number;
   sizeZ: number;
 } | null {
   const recipe = landmarkOf(kind, form);
   if (recipe === null) return null;
-  return recipeSpan(recipe, facing);
+  return recipeSpan(recipe, facing, stage);
 }
 
 /**
@@ -208,10 +211,11 @@ export function landmarkOrigin(
   x: number,
   y: number,
   form?: LandmarkFormId,
+  stage?: number,
 ): { x: number; y: number } | null {
   const recipe = landmarkOf(kind, form);
   if (recipe === null) return null;
-  return recipeOrigin(recipe, facing, x, y);
+  return recipeOrigin(recipe, facing, x, y, stage);
 }
 
 /** Lo stesso conto di `landmarkOrigin`, per chi la ricetta ce l'ha gia' in mano. */
@@ -220,9 +224,11 @@ export function recipeOrigin(
   facing: Facing,
   x: number,
   y: number,
+  stage = maxStageOf(recipe),
 ): { x: number; y: number } {
-  const [long, short] = recipe.span;
-  const [ax, ay] = recipe.anchor;
+  const footprint = footprintOf(recipe, stage);
+  const [long, short] = footprint.span;
+  const [ax, ay] = footprint.anchor;
   // L'ancora e' un punto, cioe' una parte di lato uno: orientarla come una
   // parte evita di riscrivere la stessa rotazione una seconda volta e con un
   // altro segno, che e' il modo classico di far divergere le due.
@@ -306,6 +312,8 @@ export interface RecipeRequest {
  * pezzi mille tick dopo il piazzamento.
  */
 export function generateFromRecipe(recipe: PartsRecipe, request: RecipeRequest): VoxelStamp {
+  if (growsFootprint(recipe)) return generateGrowingRecipe(recipe, request);
+
   const [long, short] = recipe.span;
   const { sizeX, sizeY } = orientedSpan(request.facing, long, short);
   const canvas = createCanvas(sizeX, sizeY, recipe.height);
@@ -338,5 +346,46 @@ export function generateFromRecipe(recipe: PartsRecipe, request: RecipeRequest):
     // sale, e la comparsa a budget scorre l'array lineare senza consultare
     // questo indice.
     bandStarts: [0, recipe.height],
+  };
+}
+
+/**
+ * Lo stamp di una ricetta che cresce di sedime, nel sedime dello stadio chiesto.
+ *
+ * **Autocontenuta per stadio, non cumulativa.** Una ricetta a sedime fisso
+ * aggiunge parti dentro un riquadro che non cambia mai; qui il riquadro cambia a
+ * ogni stadio, quindi `parts[stage]` descrive l'**intera** sagoma a quello stadio
+ * e lo stadio nuovo sostituisce il vecchio. E' per questo che l'avanzamento
+ * sventra e cancella invece di affidarsi a «il nuovo copre il vecchio»: non lo
+ * copre per costruzione, lo rimpiazza.
+ *
+ * Il delta (`from`) non serve: chi accoda un avanzamento chiede lo stadio nuovo,
+ * e le parti degli stadi precedenti non hanno un sedime su cui stare.
+ */
+function generateGrowingRecipe(recipe: PartsRecipe, request: RecipeRequest): VoxelStamp {
+  const stage = Math.min(Math.max(request.stage, 0), maxStageOf(recipe));
+  const target = footprintOf(recipe, stage);
+  const [long, short] = target.span;
+  const { sizeX, sizeY } = orientedSpan(request.facing, long, short);
+  const canvas = createCanvas(sizeX, sizeY, target.height);
+  const variant = variantsOf(recipe)[request.variant ?? variantIndexOf(recipe, request.seed ?? 0)];
+
+  for (const part of recipe.parts[stage]) {
+    drawPart(canvas, orientPart(part, request.facing, long, short));
+  }
+  for (const part of variant.parts[stage] ?? []) {
+    drawPart(canvas, orientPart(part, request.facing, long, short));
+  }
+
+  return {
+    sizeX,
+    sizeY,
+    sizeZ: target.height,
+    anchorX: 0,
+    anchorY: 0,
+    anchorZ: 0,
+    voxels: canvas.voxels,
+    surfaces: canvas.surfaces,
+    bandStarts: [0, target.height],
   };
 }

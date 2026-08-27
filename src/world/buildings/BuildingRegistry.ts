@@ -431,12 +431,12 @@ export interface ReadonlyBuildingRegistry {
   /** Landmark dei catalizzatori: contati a parte, mai fra gli edifici. */
   readonly landmarkCount: number;
   /**
-   * Arcologie esistenti.
-   *
-   * Contate a parte come i landmark, ma per una ragione in piu': e' da qui che
-   * la passata legge il tetto di `ARCOLOGY.maxPerIsland`, invece di tenersi un
-   * contatore proprio che una demolizione potrebbe far divergere.
-   */
+    * Arcologie esistenti.
+    *
+    * Contate a parte come i landmark, ma per una ragione in piu': e' da qui che
+    * la passata legge la quota (`arcologyQuota`), invece di tenersi un
+    * contatore proprio che una demolizione potrebbe far divergere.
+    */
   readonly arcologyCount: number;
   /**
    * Le campate esistenti, in ordine di inserimento.
@@ -619,10 +619,10 @@ export class BuildingRegistry implements ReadonlyBuildingRegistry {
    *
    * Non sono edifici — `count` le esclude come esclude le altre quattro
    * strutture — ma **contengono** edifici, e quelli `classCounts` li conta. E'
-   * l'unico record del progetto per cui le due cose non coincidono, ed e' anche
-   * la ragione per cui questo contatore esiste separato: il tetto di
-   * `ARCOLOGY.maxPerIsland` si legge da qui e non contando a mano nella passata.
-   */
+    * l'unico record del progetto per cui le due cose non coincidono, ed e' anche
+    * la ragione per cui questo contatore esiste separato: la quota di arcologie
+    * (`arcologyQuota`) si legge da qui e non contando a mano nella passata.
+    */
   private arcologies = 0;
 
   private nextId = 1;

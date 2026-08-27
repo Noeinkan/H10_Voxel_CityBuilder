@@ -10,7 +10,14 @@ import { SURFACE_KIND, SURFACE_KIND_NAMES } from '../visualBlock';
 import { VoxelWorld } from '../VoxelWorld';
 import { TYPOLOGIES } from '../buildings/config';
 import { CATALYSTS } from '../../sim/catalysts';
-import { LANDMARKS, contextualFormsOf, maxStageOf, variantsOf } from '../landmarks/config';
+import {
+  LANDMARKS,
+  contextualFormsOf,
+  footprintOf,
+  growsFootprint,
+  maxStageOf,
+  variantsOf,
+} from '../landmarks/config';
 import { ARCOLOGY_RECIPES } from '../arcology/config';
 import { createScene } from './cityScene';
 import {
@@ -552,7 +559,11 @@ describe('swatchScene', () => {
       );
       expect(stages.length, catalyst.id).toBe(maxStageOf(recipe) + 1);
       for (let stage = 0; stage < stages.length; stage++) {
-        expect(stages[stage].stamp.sizeZ).toBe(recipe.height);
+        // Una ricetta a sedime fisso tiene la stessa quota a ogni stadio; una
+        // che cresce alza il tetto stadio per stadio, e la campionaria lo mostra.
+        expect(stages[stage].stamp.sizeZ).toBe(
+          growsFootprint(recipe) ? footprintOf(recipe, stage).height : recipe.height,
+        );
       }
     }
   });
@@ -572,6 +583,16 @@ describe('swatchScene', () => {
       expect(subject.stamp.sizeZ).toBeGreaterThan(100);
       expect(infoValue(subject, 'Seed')).toBe('0');
       expect(infoValue(subject, 'Fronte')).toBe('est');
+    }
+  });
+
+  it('apre il catalogo con le arcologie, in cima alla sequenza delle gallerie', () => {
+    // La megastruttura sta in testa: e' il vertice della gerarchia e compare
+    // prima delle linee evolutive, degli edifici e dei landmark.
+    const arcologiesMinY = Math.min(...SWATCH_ARCOLOGIES.map((subject) => subject.rect.y0));
+    for (const band of [SWATCH_LINES, SWATCH_BUILDINGS, SWATCH_LANDMARKS]) {
+      const bandMinY = Math.min(...band.map((subject) => subject.rect.y0));
+      expect(arcologiesMinY).toBeLessThan(bandMinY);
     }
   });
 

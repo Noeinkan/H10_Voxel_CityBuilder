@@ -65,6 +65,7 @@ function context(state: SimState, overrides: Partial<CoachContext> = {}): CoachC
   return {
     state,
     tallestLevel: 0,
+    center: null,
     hasArcology: false,
     clearing: false,
     arcologyNear: false,
@@ -294,6 +295,48 @@ describe('coach — gli stadi', () => {
       kind: 'market', x: 0, y: 0, stage: 1, nextAt: 32, nearby: 4,
     };
     expect(coachSuggestion(context(stageCity(), { landmarks: [landmark] }))?.tier).not.toBe('stage');
+  });
+});
+
+describe('coach — lo skyline', () => {
+  function skylineCity(funds = 0): SimState {
+    const base = city({
+      funds: { stock: funds, delta: 0 },
+      trade: { connected: true, links: ['port'], food: 4, materials: 0, funds: 0 },
+    });
+    return addCatalyst(base, {
+      x: 300, y: 0, class: catalystById('university').class, kind: 'university',
+      strength: 200, radius: 12,
+    });
+  }
+
+  it('propone il campo largo quando il centro denso resta fuori da ogni campo', () => {
+    const state = skylineCity(catalystById('university').cost);
+    const tip = coachSuggestion(context(state, { tallestLevel: 2, center: { x: 0, y: 0 } }));
+    expect(tip?.id).toBe('coach-skyline');
+    expect(tip?.title).toBe('Cover the center with a field');
+    expect(tip?.message).toContain('University');
+    expect(tip?.message).toContain('densest block');
+    expect(tip?.place).toEqual({ x: 0, y: 0, radius: catalystById('university').radius });
+  });
+
+  it('chiede il gesto minimo e il saldo quando mancano i fondi', () => {
+    const state = skylineCity(0);
+    const tip = coachSuggestion(context(state, { tallestLevel: 2, center: { x: 0, y: 0 } }));
+    expect(tip?.id).toBe('coach-skyline');
+    expect(tip?.message).toContain('Market');
+    expect(tip?.message).toContain('Save');
+  });
+
+  it('tace quando il centro non ha ancora densita', () => {
+    const state = skylineCity(catalystById('university').cost);
+    expect(coachSuggestion(context(state, { tallestLevel: 2 }))).toBeNull();
+  });
+
+  it('tace quando il tetto del core e’ gia’ raggiunto', () => {
+    const state = skylineCity(catalystById('university').cost);
+    const tips = coachSuggestions(context(state, { tallestLevel: 20, center: { x: 0, y: 0 } }));
+    expect(tips.some((tip) => tip.id === 'coach-skyline')).toBe(false);
   });
 });
 

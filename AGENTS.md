@@ -49,6 +49,18 @@ npm run docs:merge
 `strictPort` deve fallire se la porta appartiene ad altro. Non esistono lint
 o formatter configurati: non inventarli.
 
+## Ambiguita' e verifica a schermo
+
+- Un termine spaziale o visivo ambiguo («sinistra», «lato lungo», «in fondo»)
+  si chiarisce subito con una domanda secca, prima di toccare codice: il costo
+  di una risposta sbagliata e' un refactor intero, non un minuto perso.
+- Per «dove sta X a schermo» usa lo strumento empirico, mai la derivazione a
+  mano: `__voxelSwatch(x?, y?)` con `?scene=swatch&debug=1` fa il raycast vero
+  e risponde in secondi. La matematica della camera (cross-product, proiezioni)
+  e' l'ultima spiaggia, non la prima.
+- Se dopo due tentativi stai ancora cercando di stabilire lo stesso fatto senza
+  riuscirci, fermati e chiedi. Niente cicli di derivazioni che non convergono.
+
 ## Verifica proporzionata
 
 - Per TypeScript esegui `npm run typecheck` e il controllo piu' stretto che
@@ -62,6 +74,18 @@ o formatter configurati: non inventarli.
 - Per bundle o worker esegui anche `npm run build`; per percorsi caldi il
   benchmark pertinente. Le tabelle di misura richiedono verifica manuale.
 - Per modifiche visuali verifica `?debug=1`, overlay e budget pertinenti.
+
+## Working tree condiviso
+
+- Prima di iniziare registra con `git status --short` i file gia' sporchi che
+  non appartengono al tuo compito: un rosso che emerge in quei domini non va
+  inseguito ne' riparato, solo segnalato. E' di un altro agente.
+- Se un rosso tocca un file tuo, isolalo: `git stash push -- <i tuoi path>` e
+  una re-run del singolo test. Se resta rosso anche senza le tue modifiche,
+  era gia' rotto e non e' tuo.
+- `test:changed` raccoglie i file modificati da chiunque, non solo dai tuoi
+  incrementi: mescola i rossi altrui con i tuoi, quindi da solo non prova
+  nulla sulla responsabilita'.
 
 ## Convenzioni
 

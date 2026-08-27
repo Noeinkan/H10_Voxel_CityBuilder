@@ -21,7 +21,7 @@ import {
   worldLandings,
   type WorldLanding,
 } from '../arcology/generate';
-import { arcologyAnchor, arcologyReady, type ArcologyRefusal } from '../arcology/siting';
+import { arcologyAnchor, arcologyQuota, arcologyReady, type ArcologyRefusal } from '../arcology/siting';
 import { AERIAL_PART } from '../aerial/config';
 import type { AerialDriver } from './aerialDriver';
 import { isDryLand } from '../grading/grade';
@@ -112,10 +112,34 @@ export class ArcologyDriver {
    */
   pass(state: SimState): SimState {
     let next = this.climb(state);
-    if (this.ctx.registry.arcologyCount >= ARCOLOGY.maxPerIsland) return next;
+    if (this.ctx.registry.arcologyCount >= arcologyQuota(this.totalBuildings(state))) return next;
     if (this.ctx.growth.queued >= BUILDER.maxGrowing) return next;
     next = this.found(next);
     return next;
+  }
+
+  /** Gli edifici della citta': la quota delle arcologie ne e' una funzione. */
+  private totalBuildings(state: SimState): number {
+    return state.buildingCounts.reduce((sum, count) => sum + count, 0);
+  }
+
+  /**
+   * true se nessuna arcologia esistente sta a meno di `ARCOLOGY.minSpacing`
+   * blocchi dal candidato.
+   *
+   * **E' la distribuzione, non un secondo tetto.** La quota dice *quante*
+   * arcologie la citta' ammette; questa dice *dove*: senza, una citta' grande
+   * le metterebbe tutte nello stesso quadrante del centro.
+   */
+  private spacedOut(kx: number, ky: number): boolean {
+    for (const record of this.ctx.registry.all) {
+      if (record.arcology === undefined) continue;
+      const block = this.ctx.streets.blockAt(record.x, record.y);
+      if (Math.max(Math.abs(block.kx - kx), Math.abs(block.ky - ky)) < ARCOLOGY.minSpacing) {
+        return false;
+      }
+    }
+    return true;
   }
 
   /**
@@ -237,6 +261,7 @@ export class ArcologyDriver {
 
     const budget = Math.min(ARCOLOGY.examinedPerPass, records.length);
     const seen = new Set<string>();
+    const buildings = this.totalBuildings(state);
 
     for (let i = 0; i < budget; i++) {
       const record = records[this.cursor % records.length];
@@ -248,17 +273,19 @@ export class ArcologyDriver {
       if (seen.has(key)) continue;
       seen.add(key);
 
-      const rect = this.ctx.streets.blockRect(block);
+      if (!this.spacedOut(block.kx, block.ky)) continue;
+
+      // Il verso si legge sul singolo isolato del record; poi il catalogo puo'
+      // allargare il riquadro al cluster per le ricette multi-blocco.
+      const single = this.ctx.streets.blockRect(block);
+      const singleAnchor = arcologyAnchor(single);
+      const blockSide = Math.min(single.x1 - single.x0 + 1, single.y1 - single.y0 + 1);
+      const facing = this.facingAt(singleAnchor.x, singleAnchor.y, (blockSide >> 1) + 1);
+
+      const pick = arcologyForBlock(this.ctx.seed, block.kx, block.ky, facing);
+      const recipe = pick.recipe;
+      const rect = pick.rect;
       const anchor = arcologyAnchor(rect);
-      const blockSide = Math.min(rect.x1 - rect.x0 + 1, rect.y1 - rect.y0 + 1);
-      const facing = this.facingAt(anchor.x, anchor.y, (blockSide >> 1) + 1);
-      const recipe = arcologyForBlock(
-        this.ctx.seed,
-        block.kx,
-        block.ky,
-        rect,
-        facing,
-      );
       const span = arcologySpan(recipe, facing);
 
       // Il conteggio si legge qui, **prima** dello sventramento, e viaggia fino
@@ -270,6 +297,7 @@ export class ArcologyDriver {
 
       const refusal = arcologyReady({
         existing: this.ctx.registry.arcologyCount,
+        buildings,
         tier: tierAt(skylineQueryAt(this.ctx, anchor.x, anchor.y, state)),
         blockRect: rect,
         spanX: span.sizeX,

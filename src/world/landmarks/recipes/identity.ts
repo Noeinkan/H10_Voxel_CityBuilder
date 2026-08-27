@@ -95,50 +95,86 @@ export const THEATRE: LandmarkRecipe = {
 /**
  * Uno stadio: catino ovale cavo, basso e largo.
  *
- * La tribuna ora e' una gradinata a due ordini smussati — l'anello esterno
- * basso e quello interno che vi sale sopra — e non piu' una sola scatola cava.
- * Il campo verde resta il vuoto al centro, e le torri faro segnano i quattro
- * angoli della folla anche di notte.
+ * **Cresce di sedime, ed e' la prima ricetta a farlo.** Lo stadietto di paese e'
+ * un campetto cinto da un muretto; a ogni stadio l'anello si allarga e sale, il
+ * campo si estende e le torri faro spuntano agli angoli — fino al catino da
+ * mondiali, largo il doppio di quello iniziale. Ogni stadio dichiara il proprio
+ * sedime in `growth`, e `parts[s]` disegna l'intera sagoma di quello stadio.
  */
 export const STADIUM: LandmarkRecipe = {
   kind: 'stadium',
-  span: [20, 16],
-  height: 10,
-  anchor: [10, 8],
+  span: [26, 20],
+  height: 14,
+  anchor: [13, 10],
   apron: 5,
   stages: [0, 8, 18, 34],
+  growth: [
+    { span: [12, 10], height: 5, anchor: [6, 5] },
+    { span: [16, 12], height: 8, anchor: [8, 6] },
+    { span: [20, 16], height: 10, anchor: [10, 8] },
+    { span: [26, 20], height: 14, anchor: [13, 10] },
+  ],
   parts: [
+    // Stadio zero: il campetto del paese, un prato cinto da un muretto.
+    [
+      box(PART.deck, 0, 0, 12, 10, 0, 1, PALETTE_SLOTS.grass, SURFACE_KIND.plain),
+      box(PART.shell, 2, 2, 8, 6, 1, 3, PALETTE_SLOTS.concrete, SURFACE_KIND.civic, {
+        chamfer: 1,
+        cap: PALETTE_SLOTS.concretePale,
+      }),
+    ],
+    // Stadio uno: il campo si allarga e il muretto sale.
+    [
+      box(PART.deck, 0, 0, 16, 12, 0, 1, PALETTE_SLOTS.grass, SURFACE_KIND.plain),
+      box(PART.deck, 6, 4, 4, 4, 0, 1, PALETTE_SLOTS.grassDark, SURFACE_KIND.plain),
+      box(PART.shell, 2, 2, 12, 8, 1, 4, PALETTE_SLOTS.concrete, SURFACE_KIND.civic, {
+        chamfer: 1,
+        cap: PALETTE_SLOTS.concretePale,
+      }),
+    ],
+    // Stadio due: il secondo anello e il colonnato che corona la tribuna.
     [
       box(PART.deck, 0, 0, 20, 16, 0, 1, PALETTE_SLOTS.grass, SURFACE_KIND.plain),
-      box(PART.shell, 2, 2, 16, 12, 1, 3, PALETTE_SLOTS.concrete, SURFACE_KIND.civic, {
-        chamfer: 1,
-        cap: PALETTE_SLOTS.concretePale,
-      }),
-    ],
-    [
       box(PART.deck, 6, 5, 8, 6, 0, 1, PALETTE_SLOTS.grassDark, SURFACE_KIND.plain),
-      box(PART.shell, 4, 4, 12, 8, 4, 3, PALETTE_SLOTS.concrete, SURFACE_KIND.civic, {
+      box(PART.shell, 2, 2, 16, 12, 1, 5, PALETTE_SLOTS.concrete, SURFACE_KIND.civic, {
         chamfer: 1,
         cap: PALETTE_SLOTS.concretePale,
       }),
-    ],
-    [
-      box(PART.colonnade, 2, 2, 16, 12, 7, 2, PALETTE_SLOTS.stone, SURFACE_KIND.civic, {
+      box(PART.colonnade, 2, 2, 16, 12, 6, 2, PALETTE_SLOTS.stone, SURFACE_KIND.civic, {
         step: 3,
         cap: PALETTE_SLOTS.metalGold,
       }),
     ],
+    // Stadio tre: il catino da mondiali, con le quattro torri faro agli angoli.
     [
-      box(PART.mast, 0, 0, 2, 2, 1, 7, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.civic, {
+      box(PART.deck, 0, 0, 26, 20, 0, 1, PALETTE_SLOTS.grass, SURFACE_KIND.plain),
+      box(PART.deck, 9, 7, 8, 6, 0, 1, PALETTE_SLOTS.grassDark, SURFACE_KIND.plain),
+      box(PART.shell, 2, 2, 22, 16, 1, 7, PALETTE_SLOTS.concrete, SURFACE_KIND.civic, {
+        chamfer: 1,
+        cap: PALETTE_SLOTS.concretePale,
+      }),
+      box(PART.colonnade, 2, 2, 22, 16, 8, 2, PALETTE_SLOTS.stone, SURFACE_KIND.civic, {
+        step: 3,
         cap: PALETTE_SLOTS.metalGold,
       }),
-      box(PART.slab, 0, 0, 2, 2, 8, 1, PALETTE_SLOTS.glassPale, SURFACE_KIND.luminous),
-      box(PART.mast, 17, 0, 2, 2, 1, 7, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.civic, {
+      box(PART.mast, 0, 0, 2, 2, 1, 9, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.civic, {
         cap: PALETTE_SLOTS.metalGold,
       }),
-      box(PART.slab, 17, 0, 2, 2, 8, 1, PALETTE_SLOTS.glassPale, SURFACE_KIND.luminous),
-      entrance(17, 7, 1, 2, 3),
-      signBand(17, 4, 1, 3, 3),
+      box(PART.slab, 0, 0, 2, 2, 10, 1, PALETTE_SLOTS.glassPale, SURFACE_KIND.luminous),
+      box(PART.mast, 24, 0, 2, 2, 1, 9, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.civic, {
+        cap: PALETTE_SLOTS.metalGold,
+      }),
+      box(PART.slab, 24, 0, 2, 2, 10, 1, PALETTE_SLOTS.glassPale, SURFACE_KIND.luminous),
+      box(PART.mast, 0, 18, 2, 2, 1, 9, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.civic, {
+        cap: PALETTE_SLOTS.metalGold,
+      }),
+      box(PART.slab, 0, 18, 2, 2, 10, 1, PALETTE_SLOTS.glassPale, SURFACE_KIND.luminous),
+      box(PART.mast, 24, 18, 2, 2, 1, 9, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.civic, {
+        cap: PALETTE_SLOTS.metalGold,
+      }),
+      box(PART.slab, 24, 18, 2, 2, 10, 1, PALETTE_SLOTS.glassPale, SURFACE_KIND.luminous),
+      entrance(23, 9, 1, 2, 3),
+      signBand(23, 6, 1, 3, 3),
     ],
   ],
   variants: [
@@ -147,37 +183,27 @@ export const STADIUM: LandmarkRecipe = {
       parts: [
         [],
         [],
-        [box(PART.slab, 8, 5, 6, 6, 1, 3, PALETTE_SLOTS.concrete, SURFACE_KIND.civic, {
+        [box(PART.slab, 8, 5, 4, 6, 1, 3, PALETTE_SLOTS.concrete, SURFACE_KIND.civic, {
           cap: PALETTE_SLOTS.concretePale,
         })],
-        [],
+        [box(PART.slab, 11, 7, 4, 6, 1, 4, PALETTE_SLOTS.concrete, SURFACE_KIND.civic, {
+          cap: PALETTE_SLOTS.concretePale,
+        })],
       ],
     },
     {
-      name: 'torri faro',
+      name: 'fari',
       parts: [
         [],
         [],
-        // Le torri faro salgono in due tempi: i fusti con il colonnato, i
-        // fari con l'ingresso — cosi' l'esemplare si legge gia' a meta'
-        // crescita e chiude con il suo segnale notturno.
+        [box(PART.mast, 0, 7, 2, 2, 1, 5, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.civic, {
+          cap: PALETTE_SLOTS.glassPale,
+        })],
         [
-          box(PART.mast, 0, 14, 2, 2, 1, 3, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.civic, {
-            cap: PALETTE_SLOTS.glassPale,
-          }),
-          box(PART.mast, 17, 14, 2, 2, 1, 3, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.civic, {
-            cap: PALETTE_SLOTS.glassPale,
-          }),
-        ],
-        [
-          box(PART.mast, 0, 14, 2, 2, 4, 4, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.civic, {
+          box(PART.mast, 0, 9, 2, 2, 1, 7, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.civic, {
             cap: PALETTE_SLOTS.metalGold,
           }),
-          box(PART.slab, 0, 14, 2, 2, 8, 1, PALETTE_SLOTS.glassPale, SURFACE_KIND.luminous),
-          box(PART.mast, 17, 14, 2, 2, 4, 4, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.civic, {
-            cap: PALETTE_SLOTS.metalGold,
-          }),
-          box(PART.slab, 17, 14, 2, 2, 8, 1, PALETTE_SLOTS.glassPale, SURFACE_KIND.luminous),
+          box(PART.slab, 0, 9, 2, 2, 8, 1, PALETTE_SLOTS.glassPale, SURFACE_KIND.luminous),
         ],
       ],
     },
@@ -186,13 +212,14 @@ export const STADIUM: LandmarkRecipe = {
       parts: [
         [],
         [],
-        // Il portico dell'ingresso compare con il colonnato: l'esemplare si
-        // distingue a meta' crescita, e il suo finale e' il portico stesso.
-        [box(PART.colonnade, 8, 2, 4, 2, 1, 4, PALETTE_SLOTS.stone, SURFACE_KIND.civic, {
+        [box(PART.colonnade, 17, 4, 3, 8, 1, 4, PALETTE_SLOTS.stone, SURFACE_KIND.civic, {
           step: 2,
           cap: PALETTE_SLOTS.concreteWhite,
         })],
-        [],
+        [box(PART.colonnade, 23, 5, 3, 10, 1, 5, PALETTE_SLOTS.stone, SURFACE_KIND.civic, {
+          step: 2,
+          cap: PALETTE_SLOTS.concreteWhite,
+        })],
       ],
     },
   ],

@@ -10,6 +10,7 @@ import {
 import { createAtmosphereControl } from './engine/AtmosphereControl';
 import { ChunkRenderer } from './engine/ChunkRenderer';
 import { InfluenceOverlay, type ReachSummary } from './engine/InfluenceOverlay';
+import { InfoViewOverlay } from './engine/InfoViewOverlay';
 import { InspectGuides } from './engine/InspectGuides';
 import { PLACEMENT_FACADES, PLACEMENT_SURFACE, PlacementCursor } from './engine/PlacementCursor';
 import { TrafficView } from './engine/TrafficView';
@@ -68,12 +69,14 @@ import type { CoachSuggestion } from './game/coach';
 import { resolveLaunchMode, resolveSeed, swatchUrl } from './game/launchMode';import { resolveSelection, type Selection } from './game/selection';
 import { pickSolidCell, pickSurfaceCell, type Ray3, type SurfaceCell } from './game/surfacePick';
 import { SimScene, SIM_SITE_COUNT, SIM_TICK_RATE } from './game/simScene';
+import { createInfoSampler } from './game/infoViews';
 import { coastalSectorAt, shapeWithSector, type CoastalSector } from './game/sectors';
 import type { ActionFailure, SiteCost } from './game/actions';
 import type { LandmarkSite } from './world/buildings/Builder';
 import { BALANCE } from './sim/balance';
 import { cityVitality } from './sim/vitality';
 import { catalystById, defaultCatalystOfClass } from './sim/catalysts';
+import { infoViewSpecOf, infoViewVersion, isInfoViewKind, nextInfoView, type InfoViewKind } from './sim/infoViews';
 import {
   BUILDING_CLASS,
   CLASS_COUNT,
@@ -93,6 +96,7 @@ import { daylightControl } from './ui/GameHudModel';
 import { unlockLines } from './ui/prospects';
 import { hudTokens } from './ui/hudTokens';
 import { GrowthOverlay } from './ui/GrowthOverlay';
+import { InfoViewLegend } from './ui/InfoViewLegend';
 import { InspectOverlay, type InspectOverlayFrame } from './ui/InspectOverlay';
 import { SelectionPanel } from './ui/SelectionPanel';
 import { extentOf, type SelectionActionId, type SelectionSectionId } from './ui/SelectionPanelModel';
@@ -151,6 +155,9 @@ const SHADOW_SIZE = 2048;
 
 /** Quota del budget riservata alla generazione della scena. */
 const GENERATION_BUDGET_MS = 1.5;
+
+/** Quota del budget riservata alla heatmap informativa, pari alla generazione. */
+const INFO_OVERLAY_BUDGET_MS = 1.5;
 
 /**
  * Gli stessi due budget finche' la prima isola non e' a terra.
@@ -666,6 +673,7 @@ if (growEnabled) {
       window.open(swatchUrl(daylight.theme.id, daylight.hour), '_blank', 'noopener');
     },
     onView: (mode) => inspect.setMode(mode),
+    onInfoView: (kind) => setInfoView(kind),
     onLevel: (z) => inspect.setSliceZ(z),
     onCancelTool: () => {
       selectedTool = { kind: 'none' };
@@ -705,6 +713,24 @@ scene.add(preview.group);
 
 const influenceOverlay = terrain !== null && growEnabled ? new InfluenceOverlay(terrain.map) : null;
 if (influenceOverlay !== null) scene.add(influenceOverlay.group);
+
+/**
+ * La heatmap informativa in-world (cibo, materiali, densita', felicita',
+ * distretti). Vive accanto a `InfluenceOverlay` e ne segue le regole: mesh
+ * sopra la scena, mai un voxel toccato, geometria ricostruita solo quando la
+ * vista o il campo cambiano.
+ */
+const infoViewOverlay = terrain !== null && growEnabled
+  ? new InfoViewOverlay(terrain.map, terrainRegion)
+  : null;
+if (infoViewOverlay !== null) scene.add(infoViewOverlay.group);
+const infoViewLegend = growEnabled ? new InfoViewLegend(container) : null;
+/** Vista informativa attiva, ciclata con `I`. `off` e' la citta' nuda. */
+let infoViewKind: InfoViewKind = 'off';
+/** Ultima versione del campo sincronizzata sull'overlay, per non ricostruire. */
+let infoViewFieldVersion = '';
+// Lo stato iniziale della tessera Data nel dock: la citta' nuda, nessun dato.
+gameHud?.setInfoView(infoViewKind);
 
 /**
  * I mezzi che si muovono: barche, navi, aerei, dirigibili.
@@ -1202,6 +1228,19 @@ if (debugEnabled) {
     if (growEnabled) {
       debugGlobals['__growStats'] = (): Record<string, unknown> =>
         growthScene === null ? { ready: false } : { ...growthScene.stats };
+      // Stessa fonte dell'overlay informativo: cambia la vista attiva o interroga
+      // una colonna senza muovere il mouse, per uno strumento headless.
+      debugGlobals['__voxelInfo'] = (view?: string, x?: number, y?: number): Record<string, unknown> => {
+        if (view !== undefined) {
+          if (!isInfoViewKind(view)) return { view: infoViewKind, error: `unknown view: ${view}` };
+          setInfoView(view);
+        }
+        if (x !== undefined && y !== undefined && growthScene !== null && infoViewKind !== 'off') {
+          const sampler = createInfoSampler(infoViewKind, growthScene.simState, growthScene.farmPlots);
+          return { view: infoViewKind, x: Math.round(x), y: Math.round(y), value: sampler.sample(Math.round(x), Math.round(y)) };
+        }
+        return { view: infoViewKind };
+      };
     }
 
     // L'espansione qui e' solo una funzione chiamabile: nessun input di gioco la
@@ -1385,6 +1424,7 @@ function onFrame(time: number): void {
 
   updateSim(dt);
   updateGrowth(dt);
+  advanceInfoOverlay();
   daylight.advance(dt);
 
   // La direzione di sguardo serve alla vista prima che alla nebbia: in
@@ -1598,6 +1638,64 @@ function announceInspectView(): void {
 /** Il modello del picker delle viste: stessa fonte per il pannello e per il toast. */
 function viewMenuModel(): ViewMenuModel {
   return buildViewMenuModel(inspect.mode, inspect.sliceZ, inspect.maxZ, inspect.locked);
+}
+
+// --- Viste informative -----------------------------------------------------
+
+/**
+ * Cambia la vista informativa e allinea legenda e overlay.
+ *
+ * L'overlay vero lo sincronizza `advanceInfoOverlay` nel ciclo di frame, quando
+ * sa che la versione del campo e' cambiata: qui si decide solo *quale* vista
+ * accesa e si svuota la memoria della versione, cosi' la heatmap riparte.
+ */
+function setInfoView(kind: InfoViewKind): void {
+  infoViewKind = kind;
+  infoViewFieldVersion = '';
+  infoViewLegend?.setView(kind);
+  gameHud?.setInfoView(kind);
+  if (kind === 'off') infoViewOverlay?.clear();
+}
+
+/**
+ * Il giro delle viste informative da tastiera, `I`.
+ *
+ * Come `V` per le viste di ispezione, e' un comando di gioco: leggere la
+ * propria citta' per dato non e' una misura, quindi sta fuori dal gate del
+ * debug. Il toast nomina cio' che si sta guardando, che da tastiera non ha
+ * un picker aperto a dirlo.
+ */
+function cycleInfoView(): void {
+  const next = nextInfoView(infoViewKind);
+  setInfoView(next);
+  if (next === 'off') {
+    gameHud?.showTransientFeedback('City data overlay off · I to turn back on');
+    return;
+  }
+  const spec = infoViewSpecOf(next);
+  gameHud?.showTransientFeedback(`${spec.label} · ${spec.description}`);
+}
+
+/**
+ * Allinea l'overlay alla vista attiva e al campo, e ne fa avanzare la
+ * costruzione a budget.
+ *
+ * Ricostruisce il campionatore solo quando la versione del campo cambia — un
+ * edificio, un catalizzatore, una policy, un lotto — mai per pan o zoom. Il
+ * campionatore del cibo rastrella i lotti del mondo, quindi si paga solo in
+ * quel momento e non a ogni frame.
+ */
+function advanceInfoOverlay(): void {
+  if (infoViewOverlay === null || infoViewKind === 'off') return;
+  if (growthScene === null) return;
+
+  const version = infoViewVersion(growthScene.simState);
+  if (version !== infoViewFieldVersion) {
+    infoViewFieldVersion = version;
+    const sampler = createInfoSampler(infoViewKind, growthScene.simState, growthScene.farmPlots);
+    infoViewOverlay.setView(sampler, `${infoViewKind}|${version}`);
+  }
+  infoViewOverlay.update(INFO_OVERLAY_BUDGET_MS);
 }
 
 function buildInspectFrame(): InspectOverlayFrame {
@@ -2429,6 +2527,7 @@ function actionFailureLabel(reason: ActionFailure): string {
     'needs-shore': 'Point at dry land: a ropeway starts on a shore.',
     'needs-crossing': 'Nothing to cross from here: find water between two shores.',
     'no-room-for-line': 'No room for the towers here. Try further along the shore.',
+    'landmark-in-the-way': 'A landmark already stands here: monuments are not replaced by another landmark.',
   };
   return labels[reason];
 }
@@ -2651,6 +2750,12 @@ function onUiKey(event: KeyboardEvent): void {
   // guardando si toglie, non si sopporta.
   if (event.code === 'KeyC') {
     setClouds(!cloudsOn);
+    return;
+  }
+  // Le viste informative: un dato alla volta sopra la citta', come `V` per le
+  // viste di ispezione. Leggere la citta' per dato e' gioco, non misura.
+  if (event.code === 'KeyI') {
+    cycleInfoView();
     return;
   }
   // `X` alterna suolo e facciata per lo strumento in mano: e' un comando di

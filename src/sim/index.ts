@@ -119,12 +119,14 @@ export {
   rolesForSpecialization,
   specializationGapsOf,
   specializationOf,
+  urbanFieldAt,
   urbanProfileAt,
   type DistrictId,
   type DistrictPairing,
   type LocalUrbanProfile,
   type Specialization,
   type SpecializationGap,
+  type UrbanField,
   type UrbanMetric,
   type UrbanSources,
 } from './districts';
@@ -184,3 +186,19 @@ export { effectiveCount, tick, tickMany, weightsOf } from './tick';
 export { cityVitality, DEFAULT_VITALITY, type CityVitality } from './vitality';
 export { createScenarioState, scenarioCatalysts, type ScenarioRegion } from './scenario';
 export { writeDesirabilityData } from './debugData';
+export {
+  DISTRICT_CATEGORIES,
+  DISTRICT_ORDER,
+  FOOD_CATEGORIES,
+  INFO_VIEWS,
+  capacityIndex,
+  createSimInfoSampler,
+  infoViewSpecOf,
+  infoViewVersion,
+  isInfoViewKind,
+  nextInfoView,
+  type InfoSampler,
+  type InfoViewKind,
+  type InfoViewMode,
+  type InfoViewSpec,
+} from './infoViews';

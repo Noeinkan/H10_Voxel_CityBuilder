@@ -5,7 +5,7 @@ export type HudIcon =
   | 'residential' | 'production' | 'civic' | 'expansion' | 'terrace' | 'ropeway' | 'policies' | 'city' | 'demolish'
   | 'market' | 'factory' | 'park' | 'greenhouse' | 'power' | 'school' | 'port' | 'ferry' | 'airport' | 'transport' | 'radio' | 'lighthouse'
   | 'university' | 'monument' | 'museum' | 'cathedral' | 'theatre' | 'stadium' | 'marina'
-  | 'pause' | 'play' | 'theme' | 'view' | 'swatch' | 'help' | 'close'
+  | 'pause' | 'play' | 'theme' | 'view' | 'info' | 'swatch' | 'help' | 'close'
   | 'daylight' | 'sun' | 'moon' | 'clouds' | 'cloudsOff';
 
 /*
@@ -105,6 +105,11 @@ const PATHS: Readonly<Record<HudIcon, string>> = {
   // comune — guardare la citta' un livello alla volta. La 7.2 ridisegnera' tutte
   // le icone su due pesi, questa serve a essere riconoscibile intanto.
   view: '<path d="m12 3 9 5-9 5-9-5 9-5Z"/><path d="m4 12.5 8 4.5 8-4.5M4 17l8 4.5 8-4.5"/>',
+  // Tre barre che salgono: e' il gradiente della heatmap — i dati letti per
+  // intensita', che e' esattamente cio' che le viste informative disegnano sulla
+  // citta'. Si distingue da `view` (tre piani di taglio) perche' quella guarda
+  // dentro la citta', questa ne legge il valore colonna per colonna.
+  info: '<path d="M5 15h3v4H5zM10.5 11h3v8h-3zM16 6h3v13h-3z"/>',
   // Una matrice di caselle, che e' letteralmente cio' che si va a vedere: uno
   // slot di palette per colonna, un linguaggio di superficie per riga. Si
   // distingue da `view` — tre piani di taglio — perche' rispondono a due domande

@@ -16,15 +16,25 @@ import { SITE } from '../sites/config';
 import {
   LANDMARK,
   facadeFormOf,
+  footprintOf,
+  growsFootprint,
   hasFacadeForm,
   hasWaterForm,
   landmarkOf,
   maxStageOf,
   waterFormFor,
   type LandmarkFormId,
+  type PartsRecipe,
 } from '../landmarks/config';
 import { planFacadeLandmark } from '../landmarks/facadePlan';
-import { generateLandmark, landmarkSpan, landmarkWaterColumn, stageForBuildings } from '../landmarks/generate';
+import {
+  generateLandmark,
+  landmarkOrigin,
+  landmarkSpan,
+  landmarkWaterColumn,
+  stageForBuildings,
+} from '../landmarks/generate';
+import { orientPart } from '../landmarks/parts';
 import { classifyWater } from '../terrain/waterClass';
 import { WATER_IDS } from '../terrain/config';
 import { SURFACE_KIND } from '../visualBlock';
@@ -130,6 +140,14 @@ export interface AloftVerdict {
 const NOT_ALOFT: AloftVerdict = { site: null, refusal: null };
 
 export class LandmarkDriver {
+  /**
+   * Record che hanno gia' alzato lo stadio e aspettano che lo sventramento del
+   * sedime nuovo finisca. Serve a non riaprire la stessa crescita due volte
+   * mentre il cantiere sgombera: il record non e' nella coda di comparsa, quindi
+   * `growth.isGrowing` da solo non basterebbe.
+   */
+  private readonly pendingGrowth = new Set<number>();
+
   constructor(
     private readonly ctx: BuildContext,
     /**
@@ -397,6 +415,7 @@ export class LandmarkDriver {
       const kind = record.landmark;
       if (kind === undefined) continue;
       if (this.ctx.growth.isGrowing(record.id)) continue;
+      if (this.pendingGrowth.has(record.id)) continue;
 
       const recipe = landmarkOf(kind, record.landmarkForm);
       if (recipe === null || record.level >= maxStageOf(recipe)) continue;
@@ -625,9 +644,14 @@ export class LandmarkDriver {
     const recipe = landmarkOf(kind, form);
     if (recipe === null) return null;
 
+    // La maschera si chiede allo stadio che l'opera deve reggere. Una ricetta
+    // che cresce di sedime riserva solo lo stadio zero: il terreno dei prossimi
+    // stadi si getta a ogni avanzamento, non al piazzamento. Una ricetta a
+    // sedime fisso chiede lo stadio finale, come da sempre.
+    const maskStage = growsFootprint(recipe) ? 0 : maxStageOf(recipe);
     const finalStamp = generateLandmark({
       kind,
-      stage: maxStageOf(recipe),
+      stage: maskStage,
       facing: spot.facing,
       seed: recordSeed,
       form,
@@ -997,6 +1021,10 @@ export class LandmarkDriver {
    * cumulativi dentro un riquadro che non cambia mai, quindi lo stadio nuovo
    * copre sempre il vecchio. E' anche il motivo per cui non serve rivalidare il
    * terreno o l'occupazione — l'ingombro e' lo stesso riservato al piazzamento.
+   *
+   * **Una ricetta che cresce di sedime esce da qui.** Li' il riquadro *cambia*,
+   * quindi l'avanzamento e' uno sventramento del terreno nuovo piu' una posa,
+   * e sta in `growFootprint`.
    */
   private advance(
     state: SimState,
@@ -1006,6 +1034,11 @@ export class LandmarkDriver {
   ): SimState {
     const stage = record.level + 1;
     const facing = (record.facing ?? FACING.east) as Facing;
+    const recipe = landmarkOf(kind, record.landmarkForm);
+    if (recipe !== null && growsFootprint(recipe) && record.aloft !== true) {
+      return this.growFootprint(state, record, kind, recipe, stage, catalystIndex);
+    }
+
     // Lo stesso seme del piazzamento, che il record conserva: un avanzamento
     // deve ritrovare l'esemplare gia' scritto, non sceglierne un altro. E' anche
     // cio' che tiene vero l'invariante su cui poggia tutta questa funzione — lo
@@ -1024,7 +1057,6 @@ export class LandmarkDriver {
     if (replaced === null) return state;
 
     this.ctx.growth.enqueueSegments(replaced, stamp);
-    const recipe = landmarkOf(kind, record.landmarkForm);
     if (record.aloft !== true && recipe?.waterline === undefined) {
       this.enqueueSlopeCarve(replaced, stamp, stampFootprint(stamp, LANDMARK.groundBand));
     }
@@ -1039,6 +1071,208 @@ export class LandmarkDriver {
       catalystIndex,
       base + stage * BALANCE.gameplay.catalyst.stageBonus,
     );
+  }
+
+  /**
+   * Avanza di uno stadio un landmark che cresce di sedime.
+   *
+   * **Il riquadro cambia, quindi niente no-op.** Lo stadio sale subito — solo il
+   * livello, per non riaprire la crescita — e il nuovo terreno si sventra a
+   * strisce con il cantiere di sempre. Quando l'ultima striscia e' sgombera, la
+   * sagoma nuova copre la vecchia e l'impronta del record si allarga.
+   *
+   * **L'ancora resta ferma.** La colonna cliccata si recupera dallo stadio
+   * corrente, e il sedime nuovo le cresce attorno come la ricetta dichiara.
+   */
+  private growFootprint(
+    state: SimState,
+    record: BuildingRecord,
+    kind: CatalystId,
+    recipe: PartsRecipe,
+    stage: number,
+    catalystIndex: number,
+  ): SimState {
+    const facing = (record.facing ?? FACING.east) as Facing;
+    const anchor = this.anchorColumnOf(record, recipe, facing);
+    const newOrigin = landmarkOrigin(kind, facing, anchor.x, anchor.y, record.landmarkForm, stage);
+    const newSpan = landmarkSpan(kind, facing, record.landmarkForm, stage);
+    if (newOrigin === null || newSpan === null) return state;
+
+    const oldBox = {
+      x: record.x,
+      y: record.y,
+      sizeX: record.footprint,
+      sizeY: footprintDepth(record),
+    };
+    const newBox = {
+      x: newOrigin.x,
+      y: newOrigin.y,
+      sizeX: newSpan.sizeX,
+      sizeY: newSpan.sizeY,
+    };
+
+    // La sagoma vecchia si fotografa prima di alzare il livello: e' quella che
+    // l'avanzamento cancella, perche' lo stadio nuovo la sostituisce e non la
+    // copre.
+    const oldStamp = generateLandmark({
+      kind,
+      stage: record.level,
+      facing,
+      seed: record.seed,
+      form: record.landmarkForm,
+    });
+    if (oldStamp === null) return state;
+
+    // Il livello sale subito, ma l'impronta resta quella vecchia: allargarla
+    // prima che il terreno sia sgombero farebbe leggere il landmark come un
+    // ostacolo dentro le strisce da sventrare, e il cantiere rifiuterebbe.
+    const bumped = this.ctx.registry.replace(record.id, { ...record, level: stage });
+    if (bumped === null) return state;
+    this.pendingGrowth.add(record.id);
+
+    const rule = BALANCE.gameplay.catalyst.clearing;
+    const strips = ringStrips(oldBox, newBox);
+    // Ci si ferma davanti a cio' che la regola non sventra — una struttura, un
+    // altro monumento — riportando il livello indietro: meglio uno stadio che
+    // aspetta di una crescita che non rispetta il proprio quartiere.
+    for (const strip of strips) {
+      if (this.clearance.survey(strip, rule).refusal !== null) {
+        this.ctx.registry.replace(record.id, { ...record });
+        this.pendingGrowth.delete(record.id);
+        return state;
+      }
+    }
+
+    let pending = 0;
+    const apply = (): void => {
+      pending--;
+      if (pending === 0) {
+        this.pendingGrowth.delete(record.id);
+        this.applyGrownStage(record.id, kind, stage, facing, oldBox, newBox, newSpan.sizeZ, oldStamp);
+      }
+    };
+    for (const strip of strips) {
+      if (this.clearance.survey(strip, rule).clears === 0) continue;
+      if (this.clearance.start(strip, rule, apply, { fence: false })) pending++;
+    }
+    if (pending === 0) {
+      this.pendingGrowth.delete(record.id);
+      this.applyGrownStage(record.id, kind, stage, facing, oldBox, newBox, newSpan.sizeZ, oldStamp);
+    }
+
+    const base = catalystById(kind).strength;
+    return setCatalystStrength(
+      state,
+      catalystIndex,
+      base + stage * BALANCE.gameplay.catalyst.stageBonus,
+    );
+  }
+
+  /**
+   * Posa la sagoma dello stadio nuovo sul sedime appena sgomberato.
+   *
+   * L'impronta del record si allarga solo ora, a cantiere chiuso: la sagoma
+   * vecchia si cancella e la nuova la sostituisce — il sedime e' cambiato, quindi
+   * non c'e' un "copre il vecchio" a cui affidarsi. Il terreno nuovo si riempie
+   * alla quota di sempre, la montagna che spuntasse dal tetto si scava, e il
+   * grembiule segue l'impronta nuova.
+   */
+  private applyGrownStage(
+    id: number,
+    kind: CatalystId,
+    stage: number,
+    facing: Facing,
+    oldBox: ClearanceBox,
+    newBox: ClearanceBox,
+    newHeight: number,
+    oldStamp: VoxelStamp,
+  ): void {
+    const record = this.ctx.registry.get(id);
+    if (record === null) return;
+    const recipe = landmarkOf(kind, record.landmarkForm);
+    if (recipe === null) return;
+
+    const stamp = generateLandmark({
+      kind,
+      stage,
+      facing,
+      seed: record.seed,
+      form: record.landmarkForm,
+    });
+    if (stamp === null) return;
+
+    const replaced = this.ctx.registry.replace(id, {
+      ...record,
+      x: newBox.x,
+      y: newBox.y,
+      footprint: newBox.sizeX,
+      footprintY: newBox.sizeY,
+      height: newHeight,
+    });
+    if (replaced === null) return;
+
+    // Prima cade la sagoma vecchia, poi compare la nuova: due code per lo stesso
+    // record, ammesse una per volta, che e' il ritmo di ogni demolizione.
+    this.ctx.growth.enqueue(
+      replaced.id,
+      { x: oldBox.x, y: oldBox.y, z: replaced.baseZ },
+      EMPTY_STAMP,
+      oldStamp,
+    );
+
+    const mask = stampFootprint(stamp, LANDMARK.groundBand);
+    this.ctx.surface.clearSiteDecor(replaced.x, replaced.y, replaced.footprint, footprintDepth(replaced));
+    this.fillNewGround(replaced, mask);
+    this.ctx.growth.enqueueSegments(replaced, stamp);
+    this.enqueueSlopeCarve(replaced, stamp, mask);
+    this.paintApron(replaced, recipe.apron);
+  }
+
+  /**
+   * Porta il terreno nuovo alla quota del piano, dove e' piu' basso.
+   *
+   * La struttura affonda alla quota fissata al piazzamento — `baseZ` — quindi
+   * una colonna del sedime nuovo piu' bassa di quella quota lascerebbe la
+   * sagoma a mezz'aria. L'opera si ri-getta sull'intera impronta nuova con la
+   * stessa maschera del corpo: le colonne vecchie sono gia' alla quota giusta, e
+   * la riempie solo il terreno nuovo che ne ha bisogno.
+   */
+  private fillNewGround(record: BuildingRecord, mask: WorksMask | undefined): void {
+    const plan: GradePlan = { works: WORKS.none, padZ: record.baseZ, footZ: record.baseZ, fill: 0 };
+    buildWorks(
+      this.ctx.world,
+      this.ctx.terrain,
+      record.x,
+      record.y,
+      record.footprint,
+      plan,
+      footprintDepth(record),
+      mask,
+    );
+  }
+
+  /**
+   * La colonna cliccata, recuperata dall'angolo minimo del record.
+   *
+   * Il record conserva l'angolo minimo dell'impronta corrente; l'ancora — il
+   * punto fermo di tutta la crescita — si riottiene sommando dove la ricetta
+   * dichiara che cade il click dentro quel riquadro, ruotato sul verso vero.
+   */
+  private anchorColumnOf(
+    record: BuildingRecord,
+    recipe: PartsRecipe,
+    facing: Facing,
+  ): { x: number; y: number } {
+    const footprint = footprintOf(recipe, record.level);
+    const [long, short] = footprint.span;
+    const [ax, ay] = footprint.anchor;
+    const spot = orientPart(
+      { kind: 0, x: ax, y: ay, w: 1, h: 1, z: 0, height: 1, palette: 0, surface: 0 },
+      facing,
+      long,
+      short,
+    );
+    return { x: record.x + spot.x, y: record.y + spot.y };
   }
 }
 
@@ -1091,6 +1325,39 @@ function aerialSupportOf(record: BuildingRecord): AerialSupport {
 /** L'ingombro in pianta di una ricetta, gia' portato sul verso vero. */
 function boxOf(spot: Placement): ClearanceBox {
   return { x: spot.x, y: spot.y, sizeX: spot.span.sizeX, sizeY: spot.span.sizeY };
+}
+
+/**
+ * Le strisce di `newBox` fuori da `oldBox`, come rettangoli disgiunti.
+ *
+ * L'anello che una struttura che cresce deve sventrare non e' un rettangolo, e
+ * il cantiere sgombera un riquadro per volta: lo si spezza in due fasce
+ * orizzontali — sopra e sotto — piu' due verticali nella fascia centrale. L'ordine
+ * non conta, i rettangoli non si toccano.
+ */
+export function ringStrips(oldBox: ClearanceBox, newBox: ClearanceBox): ClearanceBox[] {
+  const ox0 = oldBox.x;
+  const oy0 = oldBox.y;
+  const ox1 = oldBox.x + oldBox.sizeX;
+  const oy1 = oldBox.y + oldBox.sizeY;
+  const nx0 = newBox.x;
+  const ny0 = newBox.y;
+  const nx1 = newBox.x + newBox.sizeX;
+  const ny1 = newBox.y + newBox.sizeY;
+
+  const out: ClearanceBox[] = [];
+  const strip = (x: number, y: number, sizeX: number, sizeY: number): void => {
+    if (sizeX <= 0 || sizeY <= 0) return;
+    out.push({ x, y, sizeX, sizeY });
+  };
+
+  strip(nx0, ny0, nx1 - nx0, oy0 - ny0);
+  strip(nx0, oy1, nx1 - nx0, ny1 - oy1);
+  const top = Math.max(ny0, oy0);
+  const bottom = Math.min(ny1, oy1);
+  strip(nx0, top, ox0 - nx0, bottom - top);
+  strip(ox1, top, nx1 - ox1, bottom - top);
+  return out;
 }
 
 /** Cio' che il terreno concede a un riquadro: il piano, e dove l'opera esiste. */

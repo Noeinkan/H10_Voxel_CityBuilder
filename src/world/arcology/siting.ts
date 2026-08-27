@@ -32,9 +32,10 @@ import { ARCOLOGY } from './config';
  * dei tre insiemi era vuota su ogni seed provato. Tolta la riga, la prima arriva
  * a ottocento tick. Il difetto non era la taratura: `isPeakBlock` e' un tiro
  * ogni sette isolati **su tutta la mappa**, tarato perche' le guglie non
- * diventino un bosco, e non ha niente da dire su una struttura che esiste in due
- * esemplari contati. La governance dell'eccezione e' `maxPerIsland`, che e' un
- * numero esatto invece di una probabilita', piu' la fascia `core` — che e' gia'
+ * diventino un bosco, e non ha niente da dire su una struttura che esiste in un
+ * numero di esemplari **derivato dagli edifici** (vedi `arcologyQuota`). La
+ * governance dell'eccezione e' la quota — un numero derivato invece di una
+ * probabilita' — piu' la fascia `core` — che e' gia'
  * la risposta di `skyline/` alla domanda «dove sta l'altezza».
  */
 
@@ -81,6 +82,8 @@ export interface BlockBounds {
 export interface ArcologyQuery {
   /** Arcologie gia' esistenti. */
   readonly existing: number;
+  /** Edifici totali della citta': decidono la quota (vedi `arcologyQuota`). */
+  readonly buildings: number;
   /** Fascia della gerarchia verticale in questa colonna. */
   readonly tier: SkylineTier;
   readonly blockRect: BlockBounds;
@@ -94,6 +97,19 @@ export interface ArcologyQuery {
 }
 
 /**
+ * Quante arcologie la citta' ammette, dati i suoi edifici.
+ *
+ * **La quota scala con la citta', non e' un tetto.** Un'arcologia e' la risposta
+ * a un quartiere saturo — `minBuilt` edifici entro `radius` — quindi il conto
+ * cresce con gli edifici totali: uno ogni `buildingsPerArcology`, con un minimo
+ * di due perche' un'isola piccola non resti senza vertici. E' la sostituzione del
+ * vecchio `maxPerIsland`: un numero derivato invece di una costante.
+ */
+export function arcologyQuota(buildings: number): number {
+  return Math.max(2, Math.ceil(buildings / ARCOLOGY.buildingsPerArcology));
+}
+
+/**
  * Il primo motivo per cui qui non nasce, o null se nasce.
  *
  * **L'ordine delle domande e' parte della regola**, come in `tierAt`, e non e'
@@ -104,7 +120,7 @@ export interface ArcologyQuery {
  * solo dove tutto il resto e' gia' passato.
  */
 export function arcologyReady(query: ArcologyQuery): ArcologyRefusal | null {
-  if (query.existing >= ARCOLOGY.maxPerIsland) return 'enough';
+  if (query.existing >= arcologyQuota(query.buildings)) return 'enough';
   if (query.tier !== TIER.core) return 'notCore';
 
   const { blockRect } = query;

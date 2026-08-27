@@ -37,6 +37,7 @@ import { GuideDriver } from './guideDriver';
 import { UpgradeDriver } from './upgradeDriver';
 import { FarmDriver } from './farmDriver';
 import { FARMS } from '../farms/config';
+import type { FarmPlot } from '../farms/plotPlan';
 import {
   RopewayDriver,
   type RopewayCable,
@@ -407,6 +408,11 @@ export class Builder {
   /** Sola lettura: nemmeno chi tiene il Builder puo' scrivere nel registry. */
   get registry(): ReadonlyBuildingRegistry {
     return this.registryImpl;
+  }
+
+  /** I lotti agricoli vivi, per la vista informativa del cibo. */
+  get farmPlots(): readonly FarmPlot[] {
+    return [...this.farms.registry.all];
   }
 
   /**
@@ -851,19 +857,18 @@ export class Builder {
       coastal,
       lotRole,
     });
-    // Lo stile e' del quartiere, non dell'edificio: si chiede all'isolato in cui
-    // la colonna cade, e due edifici dello stesso isolato lo ricevono uguale per
-    // costruzione. Non e' un tiro e non e' uno stato — vedi `style.ts`.
-    const style = styleAt(this.worldSeed, this.streets.blockAt(x, y));
-    const drawProfile = styledProfile(typologyProfile(typology), style);
-    const draft = buildStamp({
+    // Lo stamp serve subito per l'impronta, ma il profilo di disegno lo porta
+    // solo come vernice: la sagoma (e quindi `sizeX`) non cambia con lo stile.
+    // Il primo build usa il profilo nudo; lo stile si aggancia dopo, quando
+    // l'impronta ha finito di scorrere e si sa in quale isolato cade davvero.
+    let draft = buildStamp({
       class: cls,
       level,
       seed,
       footprintCap,
       footprintFloor: 1,
       form,
-      profile: drawProfile,
+      profile: typologyProfile(typology),
       shape: typology.shape,
       mixed,
       facing,
@@ -907,6 +912,25 @@ export class Builder {
         y = Math.min(y + slack, Math.max(y, wantedY));
       }
     }
+
+    // Lo stile e' del quartiere, non dell'edificio: si chiede all'isolato in cui
+    // la colonna **cade davvero**, dopo lo scorrimento qui sopra. Due edifici
+    // dello stesso isolato lo ricevono uguale per costruzione — vedi `style.ts`.
+    const style = styleAt(this.worldSeed, this.streets.blockAt(x, y));
+    const drawProfile = styledProfile(typologyProfile(typology), style);
+    // Stesso seme, stessa sagoma: si rigenera solo per portare la vernice giusta.
+    draft = buildStamp({
+      class: cls,
+      level,
+      seed,
+      footprintCap,
+      footprintFloor: 1,
+      form,
+      profile: drawProfile,
+      shape: typology.shape,
+      mixed,
+      facing,
+    }, footprintCap);
 
     // **Il terreno si guarda solo se e' lui a reggere.** Sopra un impalcato il
     // piano c'e' gia', ed e' costruito: non c'e' un'opera da progettare, non

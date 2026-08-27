@@ -10,6 +10,7 @@ import {
 import { AERIAL, AERIAL_PART } from '../aerial/config';
 import { ARCOLOGY, arcologyOf } from '../arcology/config';
 import { worldLandings } from '../arcology/generate';
+import { arcologyQuota } from '../arcology/siting';
 import { stageForBuildings } from '../landmarks/generate';
 import { FACING, type Facing } from '../streets/streetGrid';
 import { VoxelWorld } from '../VoxelWorld';
@@ -101,11 +102,12 @@ describe('ArcologyDriver — sulla citta cresciuta', () => {
     expect(city.builder.stats.arcologies).toBe(arcologies(city.builder).length);
   });
 
-  it('e l eccezione governata: non piu di quante l isola ne ammetta', () => {
+  it('e l eccezione governata: non piu di quante la citta ne ammetta', () => {
     // La condizione — centro denso e saturo — e' vera su *tutto* il nucleo di
-    // una citta' matura. Senza il tetto il centro diventerebbe un secondo
-    // tappeto, piu' in alto: e' il difetto che la 4.6 esiste per non avere.
-    expect(city.builder.registry.arcologyCount).toBeLessThanOrEqual(ARCOLOGY.maxPerIsland);
+    // una citta' matura. Senza la quota il centro diventerebbe un secondo
+    // tappeto, piu' in alto: e' il difetto che la quota esiste per non avere.
+    const buildings = city.state.buildingCounts.reduce((sum, count) => sum + count, 0);
+    expect(city.builder.registry.arcologyCount).toBeLessThanOrEqual(arcologyQuota(buildings));
   });
 
   it('ospita usi diversi su quote diverse, dentro una struttura sola', () => {

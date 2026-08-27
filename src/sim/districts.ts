@@ -174,6 +174,70 @@ export function urbanProfileAt(
 }
 
 /**
+ * Il solo spicchio del profilo locale che una heatmap deve poter leggere per
+ * cella: soddisfazione e distretto.
+ *
+ * E' la parte di `urbanProfileAt` che gli overlay informativi campionano, con la
+ * **stessa aritmetica** e gli stessi coefficienti: non e' una seconda formula,
+ * e un test tiene le due allineate cella per cella (come `lighting.test.ts`
+ * tiene la copia TS e quella GLSL). Gli overlay la preferiscono al profilo pieno
+ * perche' scandiscono migliaia di celle: `urbanProfileAt` calcola anche `uses`,
+ * `specialization`, `charters` e `dominantUse` che qui non servono, e la parte
+ * che serve e' il ciclo per catalizzatore — il solo che costa davvero.
+ */
+export interface UrbanField {
+  /** Soddisfazione in 0..1, lo stesso clamp di `LocalUrbanProfile.satisfaction`. */
+  readonly satisfaction: number;
+  /** Distretto emerso dai ruoli sopra soglia, lo stesso di `LocalUrbanProfile.district`. */
+  readonly district: DistrictId;
+}
+
+export function urbanFieldAt(
+  sources: UrbanSources,
+  x: number,
+  y: number,
+): UrbanField {
+  const { catalysts, policies, charters, reach } = sources;
+  const byRole = new Map<CatalystId, number>();
+  const uses = new Array<number>(CLASS_COUNT).fill(0);
+  let satisfaction = 0;
+
+  for (const source of catalysts) {
+    if (source.radius <= 0) continue;
+    const influence = reachAt(reach.get(source.x, source.y, source.radius), x, y);
+    if (influence <= 0) continue;
+    const id = catalystRoleOf(source);
+    const definition = catalystById(id);
+    byRole.set(id, (byRole.get(id) ?? 0) + influence);
+    satisfaction += definition.effects.satisfaction * influence;
+    for (const cls of ALL_CLASSES) uses[cls] += definition.influence[cls] * influence;
+  }
+
+  for (const id of policies) {
+    const effect = BALANCE.districts.spatialPolicy[id];
+    const carrier = policyCarrier(id, uses, byRole);
+    satisfaction += ('satisfaction' in effect ? effect.satisfaction : 0) * carrier;
+  }
+
+  for (const id of charters) {
+    const charter = charterById(id);
+    const carrier = uses[charter.carrier];
+    const effect = BALANCE.districts.spatialCharter[id];
+    satisfaction += ('satisfaction' in effect ? effect.satisfaction : 0) * carrier;
+  }
+
+  const roles = [...byRole.entries()]
+    .filter(([, influence]) => influence >= BALANCE.districts.overlapThreshold)
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+    .map(([id]) => id);
+  const scale = BALANCE.districts.metricScale;
+  return {
+    satisfaction: clamp01(0.5 + satisfaction / scale),
+    district: districtOf(roles),
+  };
+}
+
+/**
  * Ruoli che devono essere presenti perche' una specializzazione abbia senso.
  *
  * Il catalogo sta qui e le soglie stanno in `balance.ts`, come per le policy:
