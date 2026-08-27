@@ -937,11 +937,13 @@ export const BALANCE = {
      * congestione. Sta anche sul percorso incrementale: aggiungere un edificio
      * ricalcola esattamente il quadrato di Chebyshev di questo raggio.
      *
-     * Raddoppiato con la scala del voxel, per la stessa ragione dei raggi dei
-     * catalizzatori: e' una distanza. `congestionPerBuilding` invece e' punti di
-     * desiderabilita' e resta dov'era.
+     * Da 6 a 8 il raggio spinge l'affollamento su un quadrato piu' largo (da
+     * 169 a 289 celle): gli edifici si danno fastidio a vicenda da piu' lontano,
+     * e la citta' respira anche dove il campo non e' ancora saturo. Il costo del
+     * ricalcolo cresce, ma con meno edifici piazzati per secondo (vedi
+     * `BUILDER.ticksPerBuild`) il lavoro totale scende.
      */
-    congestionRadius: 6,
+    congestionRadius: 8,
     /**
      * Punti di desiderabilita' sottratti per ogni edificio nel raggio breve.
      *
@@ -952,10 +954,15 @@ export const BALANCE = {
      * resta meno fitta — con meno chunk e meno draw call, cioe' piu' frame — senza
      * toccare la portata dei catalizzatori.
      */
-    congestionPerBuilding: 6,
+    congestionPerBuilding: 8,
     /**
      * Soglia sotto cui una cella non e' candidata, per uso urbano, indicizzata
      * come `BUILDING_CLASS`. La desiderabilita' deve superarla, non pareggiarla.
+     *
+     * Resta il gate di edificabilita', non una seconda manopola di densita'. La
+     * rarefazione vive nella congestione 8/8 qui sopra: alzare anche queste
+     * soglie tagliava il campo prima che una citta' lenta potesse maturare
+     * campate, mensole e file, senza che altre infornate potessero recuperarle.
      */
     siteThreshold: [40, 34, 30, 25] as readonly number[],
   },

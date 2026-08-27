@@ -13,8 +13,14 @@ import { generateBuilding } from '../buildings/generate';
 import { solidCount, trimStampZ, type VoxelStamp } from '../buildings/stamp';
 import { typologyProfile } from '../buildings/typology';
 import { maxStageOf } from '../landmarks/config';
+import { PART } from '../landmarks/parts';
 import { FACING, type Facing } from '../streets/streetGrid';
-import { ARCOLOGY, ARCOLOGY_RECIPES, type ArcologyRecipe } from './config';
+import {
+  ARCOLOGY,
+  ARCOLOGY_RECIPES,
+  stageThresholds,
+  type ArcologyRecipe,
+} from './config';
 import { arcologySpan, generateArcology, worldBands, worldLandings } from './generate';
 import { fillRatio, skyWindowOf } from './window';
 
@@ -101,6 +107,67 @@ function finalStamp(recipe: ArcologyRecipe, facing: Facing = FACING.east): Voxel
 }
 
 describe('il catalogo delle arcologie', () => {
+  it('usa le altezze finali e aggiunge stadi per raggiungerle', () => {
+    expect(Object.fromEntries(
+      ARCOLOGY_RECIPES.map((recipe) => [recipe.kind, [recipe.height, recipe.parts.length]]),
+    )).toEqual({
+      twinStem: [320, 6],
+      branchingCore: [320, 6],
+      skyWeave: [320, 6],
+      spireRing: [320, 6],
+      doubleBar: [440, 6],
+      stackPair: [440, 6],
+      quadCluster: [735, 7],
+      triSpan: [440, 6],
+    });
+  });
+
+  it('deriva soglie e numero di stadi dalla stessa forma', () => {
+    for (const recipe of ARCOLOGY_RECIPES) {
+      expect(recipe.stages.length, recipe.kind).toBe(recipe.parts.length);
+      expect(recipe.stages, recipe.kind).toEqual(stageThresholds(recipe.parts.length));
+      expect(recipe.stages.at(-1), recipe.kind).toBe(ARCOLOGY.finalStageNeighbours);
+    }
+  });
+
+  it('nessuna coppia ripete la stessa firma di quote', () => {
+    const seen = new Map<string, string>();
+    for (const recipe of ARCOLOGY_RECIPES) {
+      const signature = [...new Set(recipe.parts.flat().map((part) => part.z))]
+        .sort((a, b) => a - b)
+        .join(',');
+      expect(seen.get(signature), `${recipe.kind} ripete le quote di ${seen.get(signature)}`).toBeUndefined();
+      seen.set(signature, recipe.kind);
+    }
+  });
+
+  it('ogni corpo rientra almeno due volte sui confini di stadio', () => {
+    for (const recipe of ARCOLOGY_RECIPES) {
+      const sections = recipe.parts
+        .map((stage) => Math.max(
+          0,
+          ...stage
+            .filter((part) => part.kind === PART.shell)
+            .map((part) => Math.min(part.w, part.h)),
+        ))
+        .filter((side) => side > 0);
+      let retreats = 0;
+      for (let i = 1; i < sections.length; i++) {
+        if (sections[i] < sections[i - 1]) retreats++;
+      }
+      expect(retreats, recipe.kind).toBeGreaterThanOrEqual(2);
+    }
+  });
+
+  it('le multi-blocco usano shell per i corpi e slab soltanto nel podio', () => {
+    for (const recipe of ARCOLOGY_RECIPES) {
+      if (recipe.blocks[0] === 1 && recipe.blocks[1] === 1) continue;
+      const body = recipe.parts.slice(1).flat();
+      expect(body.some((part) => part.kind === PART.shell), recipe.kind).toBe(true);
+      expect(body.some((part) => part.kind === PART.slab), recipe.kind).toBe(false);
+    }
+  });
+
   it('dichiara un ingombro che sta in un isolato e non chiede ritagli in pianta', () => {
     for (const recipe of ARCOLOGY_RECIPES) {
       const [long, short] = recipe.span;
@@ -212,10 +279,16 @@ describe('generateArcology', () => {
 
       for (let stage = 1; stage <= top; stage++) {
         const next = generateArcology(recipe, { stage, facing: FACING.east, seed: 7 });
+        let erased = -1;
         for (let i = 0; i < previous.voxels.length; i++) {
           if (previous.voxels[i] === 0) continue;
-          expect(next.voxels[i], `stadio ${stage}, cella ${i}`).not.toBe(0);
+          if (next.voxels[i] !== 0) continue;
+          erased = i;
+          break;
         }
+        // Una sola asserzione per stadio: il predicato resta cella per cella,
+        // senza pagare milioni di matcher Vitest sull'inviluppo da 735 quote.
+        expect(erased, `${recipe.kind} stadio ${stage}, cella cancellata ${erased}`).toBe(-1);
         previous = next;
       }
     }

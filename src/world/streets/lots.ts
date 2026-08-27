@@ -27,7 +27,10 @@ export interface LotRequest {
   readonly accepts: (x: number, y: number, footprint: number) => boolean;
   /** Solo le opere costiere richiedono ancora un lotto a contatto col bordo. */
   readonly edgeOnly?: boolean;
-  /** Orientamento fornito dal mondo quando `rect` non rappresenta un isolato. */
+  /**
+   * Orientamento fornito dal mondo. Nella posa libera orienta la facciata;
+   * sulla costa sceglie prima il bordo rivolto all'acqua.
+   */
   readonly facingAt?: (x: number, y: number, footprint: number) => Facing;
 }
 
@@ -148,7 +151,7 @@ function nearestFacing(rect: BlockRect, x: number, y: number, footprint: number)
 
 /** Variante riservata alle opere che devono davvero raggiungere acqua o banchina. */
 function placeAlongEdge(request: LotRequest, footprint: number): Lot | null {
-  for (const facing of edgeOrder(request)) {
+  for (const facing of edgeOrder(request, footprint)) {
     const lot = slideAlongEdge(request, facing, footprint);
     if (lot !== null) return lot;
   }
@@ -156,15 +159,19 @@ function placeAlongEdge(request: LotRequest, footprint: number): Lot | null {
 }
 
 /** I quattro fronti, dal piu' vicino alla colonna proposta al piu' lontano. */
-function edgeOrder(request: LotRequest): readonly Facing[] {
+function edgeOrder(request: LotRequest, footprint: number): readonly Facing[] {
   const { rect, x, y } = request;
+  const preferred = request.facingAt?.(x, y, footprint);
   const ranked = [
     { facing: FACING.east, distance: rect.x1 - x },
     { facing: FACING.west, distance: x - rect.x0 },
     { facing: FACING.north, distance: rect.y1 - y },
     { facing: FACING.south, distance: y - rect.y0 },
   ];
-  ranked.sort((a, b) => a.distance - b.distance || a.facing - b.facing);
+  ranked.sort((a, b) =>
+    Number(b.facing === preferred) - Number(a.facing === preferred) ||
+    a.distance - b.distance ||
+    a.facing - b.facing);
   return ranked.map((entry) => entry.facing);
 }
 

@@ -28,11 +28,17 @@
   Un'arcologia e' quindi *un* record e *N* edifici per la simulazione:
   `registry.count` e `state.buildings.length` non coincidono, e la differenza e'
   esattamente la somma degli `uses`.
-- **Cresce per delta, non per sagoma cumulativa.** L'inviluppo e' alto quasi
-  duecento quote e non entra in `maxDirtyChunksPerBuilding` nemmeno da lontano:
-  ogni stadio accoda il proprio `from = stage`, e `trimStampZ` taglia le quote
-  vuote perche' la stima sul riquadro sia onesta. Senza il taglio una ricetta
-  legittima verrebbe **scartata in silenzio**.
+- **Cresce per delta, non per sagoma cumulativa.** L'inviluppo arriva a 735
+  quote e non potrebbe entrare intero in `maxDirtyChunksPerBuilding`: ogni
+  stadio accoda il proprio `from = stage`, e `trimStampZ` taglia le quote vuote
+  perche' la stima sul riquadro sia onesta. Il tetto di 56 chunk vale per il
+  delta non affettato; l'altezza si ottiene aggiungendo stadi, mai allungandone
+  uno oltre il proprio budget. Senza il taglio una ricetta legittima verrebbe
+  **scartata in silenzio**.
+- **Le soglie dipendono dal numero di stadi, non dalla ricetta.** Il corpo parte
+  a 50 vicini, sotto la condizione di fondazione, e ogni corona arriva a 93:
+  `stageThresholds` interpola gli stadi intermedi su una curva quadratica. Una
+  ricetta piu' articolata non diventa per questo meno probabile da completare.
 - **Il vuoto dentro l'ingombro e' un vincolo di ricetta.** `skyWindowOf` e
   `fillRatio` girano su ogni ricetta a ogni stadio: una finestra aperta non si
   richiude piu', e un'arcologia che riempie il proprio ingombro non compila la

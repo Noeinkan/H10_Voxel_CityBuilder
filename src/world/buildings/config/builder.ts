@@ -31,20 +31,27 @@ export const BUILDER = {
    *
    * A 2 tick l'infornata era ogni cinque di secondo: quindici edifici al
    * secondo, cioe' l'isolato completo prima che si riuscisse a guardarlo
-   * nascere. A 6 il ritmo scende a cinque al secondo — la citta' cresce ancora
-   * di continuo, ma il tempo di posa di un edificio resta visibile e il
+   * nascere. A 6 il ritmo scende a cinque al secondo, e a dieci a due — la
+   * citta' cresce ancora di continuo, ma l'isola si riempie in decine di minuti
+   * invece che in un paio, il tempo di posa di un edificio resta visibile e il
    * giocatore ha spazio per decidere dove mettere il catalizzatore successivo.
+   *
+   * **Il rallentamento e' anche una manopola di frame rate.** Meno edifici per
+   * secondo significa meno chunk da meshare e meno draw call, che e' il costo
+   * che `RenderQuality` non puo' abbattere scalando la risoluzione.
    */
-  ticksPerBuild: 6,
+  ticksPerBuild: 10,
 
   /**
    * Edifici accettati al massimo per infornata.
    *
    * Il ritmo si regola su `ticksPerBuild`, non qui: allargare l'infornata
    * farebbe comparire piu' edifici *nello stesso istante*, che e' proprio la
-   * lettura a scatti che il sovra-prelievo qui sotto esiste per evitare.
+   * lettura a scatti che il sovra-prelievo qui sotto esiste per evitare. Due e
+   * non tre, per la stessa ragione di `ticksPerBuild`: meno volume che appare
+   * insieme, meno chunk sporchi nello stesso frame.
    */
-  sitesPerBuild: 3,
+  sitesPerBuild: 2,
 
   /**
    * Moltiplicatore dei candidati richiesti a `nextBuildSites`.
@@ -166,8 +173,12 @@ export const BUILDER = {
    * dove un capannone di livello massimo prenderebbe sette secondi — terrebbe
    * occupato per tutto quel tempo uno dei dodici posti di `maxGrowing`, e a
    * rallentare sarebbe la passata di upgrade, non l'animazione.
+   *
+   * A sei — tre quarti di otto — la casa impiega poco piu' di un quarto di
+   * secondo e la torre fra i cinque e gli otto: la posa resta proporzionata al
+   * volume, e ogni frame sporca un quarto di chunk in meno.
    */
-  voxelsPerFrame: 8,
+  voxelsPerFrame: 6,
 
   /**
    * Edifici che possono crescere contemporaneamente.
@@ -175,17 +186,20 @@ export const BUILDER = {
    * La coda non e' un limite di memoria ma di frame: ogni edificio in crescita
    * sporca i suoi chunk una volta per fascia, e sporcare cento chunk nello
    * stesso frame e' esattamente il picco che fa cadere il fps sotto la soglia.
+   * Dodici invece di venti dimezza quasi quel picco, e con la cadenza a dieci
+   * tick la coda resta comunque abbastanza profonda da non fermare la crescita.
    */
-  maxGrowing: 20,
+  maxGrowing: 12,
 
   /**
    * Voxel di superficie urbana scritti per frame.
    *
    * Contava celle finche' una cella valeva un voxel. Dalla 4.2 una cella puo'
    * essere un molo alto sei, e il budget deve restare quello che e': un tetto
-   * sul lavoro per frame, non sul numero di colonne toccate.
+   * sul lavoro per frame, non sul numero di colonne toccate. Segue `maxGrowing`
+   * nello stesso taglio: meno superficie per frame, meno rimeshature.
    */
-  surfaceVoxelsPerFrame: 192,
+  surfaceVoxelsPerFrame: 128,
 
   /**
    * Quota sopra il terreno bonificata da tronchi e chiome.

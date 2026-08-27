@@ -9,6 +9,7 @@ import { STRATA_DEPTH } from '../terrain/biomes';
 import { treeSpec, writeTree } from '../terrain/decor';
 import { PALETTE_SLOTS } from '../../engine/paletteSlots';
 import { SURFACE_KIND, type SurfaceKind } from '../visualBlock';
+import { toChunk } from '../chunkCoords';
 import type { VoxelWorld } from '../VoxelWorld';
 import type { SceneGenerator } from './cityScene';
 import {
@@ -87,6 +88,7 @@ class SwatchGenerator implements SceneGenerator {
   constructor(world: VoxelWorld) {
     this.world = world;
     this.reference = composeReference();
+    this.reserveWalkArea();
 
     const extent = swatchExtent();
     const tasks: SwatchTask[] = [];
@@ -145,6 +147,35 @@ class SwatchGenerator implements SceneGenerator {
       case 'subject':
         this.writeSubject(SWATCH_CATALOG_SUBJECTS[task.index]);
         return;
+    }
+  }
+
+  /**
+   * Riserva un bordo vuoto attorno al campionario, cosi' la camera puo' panare
+   * oltre il contenuto.
+   *
+   * Il pan e' clampa all'AABB dei chunk esistenti: senza chunk oltre l'ingombro
+   * il giocatore resterebbe incollato alla griglia. I chunk qui riservati sono
+   * vuoti — `ensureChunk` li alloca azzerati e il mesher li scarta — quindi il
+   * costo e' solo l'AABB, non geometria o mesh.
+   *
+   * Il lato sud-ovest (`minX`, `minY`) usa `walkBackMargin`, il doppio: e' la
+   * direzione di `W`, quella in cui ci si allontana per inquadrare per intero un
+   * soggetto alto come un'arcologia.
+   */
+  private reserveWalkArea(): void {
+    const extent = swatchExtent();
+    const cx0 = toChunk(extent.minX - SWATCH.walkBackMargin);
+    const cx1 = toChunk(extent.minX + extent.sizeX + SWATCH.walkMargin - 1);
+    const cy0 = toChunk(extent.minY - SWATCH.walkBackMargin);
+    const cy1 = toChunk(extent.minY + extent.sizeY + SWATCH.walkMargin - 1);
+
+    // Solo il piano di terra: l'AABB in x/y cresce gia' qui, e il pan clampa su
+    // minX/maxX/minY/maxY mentre la quota torna a `targetHeight`.
+    for (let cy = cy0; cy <= cy1; cy++) {
+      for (let cx = cx0; cx <= cx1; cx++) {
+        this.world.ensureChunk(cx, cy, 0);
+      }
     }
   }
 

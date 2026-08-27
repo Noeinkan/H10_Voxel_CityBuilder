@@ -219,14 +219,22 @@ export const SPANS = {
     minSupports: 3,
 
     /**
-     * Isolati a cui una passata prova a dare una piazza.
+     * Appoggi attorno a cui una passata prova a trovare una piazza.
      *
      * Cercare il cuore libero costa una scansione dell'isolato, che e' la cosa
-     * piu' cara del dominio: due tentativi per passata la tengono a un paio di
-     * migliaia di letture ogni `ticksPerPass` tick, e una piazza per isolato si
-     * costruisce comunque una volta sola.
+     * piu' cara del dominio: quattro tentativi, ciascuno con il tetto di tasche
+     * qui sotto, tengono il lavoro stabile ogni `ticksPerPass` tick.
      */
     attemptsPerPass: 4,
+
+    /**
+     * Tasche reali provate attorno agli appoggi in un singolo tentativo.
+     *
+     * Ogni tasca scandisce al massimo `maxSide` al quadrato colonne. Sedici
+     * conservano abbastanza pareti candidate per trovare i cortili organici,
+     * ma tengono il costo indipendente dal numero di edifici nel quartiere.
+     */
+    pocketsPerAttempt: 16,
 
     /**
      * Lato minimo e massimo del cuore, in voxel.

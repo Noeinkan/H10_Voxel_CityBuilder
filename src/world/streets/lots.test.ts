@@ -94,6 +94,21 @@ describe('placeLot — conserva il luogo proposto', () => {
       lot!.y + lot!.footprint - 1 === RECT.y1,
     ).toBe(true);
   });
+
+  it('sulla costa preferisce il bordo rivolto all acqua', () => {
+    const lot = placeLot({
+      rect: RECT,
+      x: RECT.x0 + 1,
+      y: 24,
+      footprint: 4,
+      edgeOnly: true,
+      facingAt: () => FACING.east,
+      accepts: FREE,
+    });
+
+    expect(lot?.facing).toBe(FACING.east);
+    expect(lot!.x + lot!.footprint - 1).toBe(RECT.x1);
+  });
 });
 
 describe('placeLot — impronta', () => {

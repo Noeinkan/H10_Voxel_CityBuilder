@@ -11,7 +11,7 @@ import {
   type SimState,
 } from '../../sim';
 import { dirtyChunkCount, fitsChunkBudget } from './chunkBudget';
-import { buildStamp, urbanFootprintCap } from './assemble';
+import { buildStamp } from './assemble';
 import { poleRectAt } from './growthPoles';
 import {
   groundKindAt,
@@ -38,6 +38,7 @@ import { UpgradeDriver } from './upgradeDriver';
 import { FarmDriver } from './farmDriver';
 import { FARMS } from '../farms/config';
 import type { FarmPlot } from '../farms/plotPlan';
+import { sightWater } from '../sites/siteRules';
 import {
   RopewayDriver,
   type RopewayCable,
@@ -277,7 +278,6 @@ export class Builder {
    * puo' tornare ad avere lotti: `onTick` svuota questo insieme con `forget`
    * appena un cantiere porta via qualcosa.
    */
-  private readonly fullBlocks = new Set<string>();
 
   /**
    * Siti bocciati in modo definitivo.
@@ -588,7 +588,6 @@ export class Builder {
     this.blacklist.clear();
     // Un isolato dichiarato pieno lo era rispetto al terreno di allora:
     // un'espansione puo' avergli aggiunto colonne edificabili sul fronte.
-    this.fullBlocks.clear();
   }
 
   /**
@@ -781,7 +780,7 @@ export class Builder {
 
     if (request.chooseLot) {
       if (state === null) return null;
-      const lot = this.findLot(request.x, request.y, state);
+      const lot = this.findLot(request.x, request.y);
       if (lot === null) return null;
 
       x = lot.x;
@@ -1282,77 +1281,53 @@ export class Builder {
    * colonne: abbastanza per non fermarsi, troppo poco perche' un edificio nasca
    * dove la desiderabilita' non lo voleva.
    */
-  private findLot(x: number, y: number, state: SimState): Lot | null {
+  private findLot(x: number, y: number): Lot | null {
     const origin = this.streets.blockAt(x, y);
-    // Mercati, moli e case di banchina hanno bisogno del bordo perche' li'
-    // l'accesso coincide con l'opera sull'acqua. Altrove il bordo non plasma il
-    // tessuto: il lotto segue liberamente il candidato del campo.
-    const edgeOnly = isCoastal(this.terrainMap, x, y);
+    // Il rettangolo e' soltanto il limite di costo della ricerca. Comprende
+    // isolati e interassi insieme: nessuno dei suoi bordi e nessuna cella
+    // interna appartiene a un lotto urbanistico. Il primo posto libero viene
+    // scelto per distanza dal candidato, quindi il pieno si addensa come una
+    // macchia attorno al landmark invece di completare quadrati successivi.
+    const radius = BUILDER.blockSearchRadius;
+    const southWest = this.streets.blockRect({
+      kx: origin.kx - radius,
+      ky: origin.ky - radius,
+    });
+    const northEast = this.streets.blockRect({
+      kx: origin.kx + radius,
+      ky: origin.ky + radius,
+    });
 
-    if (!edgeOnly) {
-      // Il rettangolo e' soltanto il limite di costo della ricerca. Comprende
-      // isolati e interassi insieme: nessuno dei suoi bordi e nessuna cella
-      // interna appartiene a un lotto urbanistico. Il primo posto libero viene
-      // scelto per distanza dal candidato, quindi il pieno si addensa come una
-      // macchia attorno al landmark invece di completare quadrati successivi.
-      const radius = BUILDER.blockSearchRadius;
-      const southWest = this.streets.blockRect({
-        kx: origin.kx - radius,
-        ky: origin.ky - radius,
-      });
-      const northEast = this.streets.blockRect({
-        kx: origin.kx + radius,
-        ky: origin.ky + radius,
-      });
-      return placeLot({
-        rect: {
-          x0: southWest.x0,
-          y0: southWest.y0,
-          x1: northEast.x1,
-          y1: northEast.y1,
-        },
-        x,
-        y,
-        footprint: MAX_FOOTPRINT,
-        facingAt: (lx, ly, side) => this.facingTowardNetwork(lx, ly, side),
-        accepts: (lx, ly, side) => this.lotIsFree(lx, ly, side),
-      });
+    // La costa e' un confine vero, l'isolato no. Un candidato che vede il mare
+    // si centra sulla prima acqua navigabile: cosi' l'impronta attraversa la
+    // battigia e genera una banchina senza allinearsi a un quadrato teorico.
+    const coast = isCoastal(this.terrainMap, x, y)
+      ? sightWater(this.terrainMap, x, y, BUILDER.coastalRadius, true)
+      : null;
+    let targetX = x;
+    let targetY = y;
+    if (coast !== null) {
+      if (coast.facing === FACING.east) targetX += coast.distance;
+      else if (coast.facing === FACING.west) targetX -= coast.distance;
+      else if (coast.facing === FACING.north) targetY += coast.distance;
+      else targetY -= coast.distance;
     }
 
-    for (let radius = 0; radius <= BUILDER.blockSearchRadius; radius++) {
-      for (let dy = -radius; dy <= radius; dy++) {
-        for (let dx = -radius; dx <= radius; dx++) {
-          // Solo il bordo dell'anello: l'interno l'hanno gia' visto i raggi
-          // precedenti, e ripassarlo costerebbe una `placeLot` per niente.
-          if (radius > 0 && Math.abs(dx) !== radius && Math.abs(dy) !== radius) continue;
-
-          const block = { kx: origin.kx + dx, ky: origin.ky + dy };
-          const key = this.streets.keyOf(block);
-          if (this.fullBlocks.has(key)) continue;
-
-          const rect = this.streets.blockRect(block);
-          // Il gate si ricalcola sul centro di **questo** isolato. La ricerca
-          // puo' saltare in un vicino, e riusare l'idoneita' dell'origine
-          // trasformerebbe un picco eletto in un permesso per tutto l'anello.
-          const footprint = urbanFootprintCap(
-            rect,
-            (centerX, centerY) => allowedLevel(this.ctx, centerX, centerY, state),
-          );
-          const lot = placeLot({
-            rect,
-            x,
-            y,
-            footprint,
-            edgeOnly: true,
-            accepts: (lx, ly, side) => this.lotIsFree(lx, ly, side),
-          });
-          if (lot !== null) return lot;
-          this.fullBlocks.add(key);
-        }
-      }
-    }
-
-    return null;
+    return placeLot({
+      rect: {
+        x0: southWest.x0,
+        y0: southWest.y0,
+        x1: northEast.x1,
+        y1: northEast.y1,
+      },
+      x: targetX,
+      y: targetY,
+      footprint: MAX_FOOTPRINT,
+      facingAt: coast === null
+        ? (lx, ly, side) => this.facingTowardNetwork(lx, ly, side)
+        : () => coast.facing,
+      accepts: (lx, ly, side) => this.lotIsFree(lx, ly, side),
+    });
   }
 
   /**

@@ -97,10 +97,10 @@ export function floatingBoxes(recipe: ArcologyRecipe): readonly FloatingBox[] {
   return out;
 }
 
-/** Una colonna verticale continua: l'unione delle `shell` sovrapposte in pianta. */
+/** Una colonna verticale continua: l'unione dei corpi sovrapposti in pianta. */
 export interface SlenderColumn {
   readonly height: number;
-  readonly minSide: number;
+  readonly baseMinSide: number;
   readonly slenderness: number;
 }
 
@@ -110,7 +110,10 @@ export interface SlenderColumn {
  * Una colonna e' l'unione delle parti **verticali** — `shell` e `slab` piu' alte
  * che larghe, cioe' i corpi, non il podio ne' le travi — che si sovrappongono in
  * pianta attraverso gli stadi; la snellezza e' l'altezza totale diviso il lato
- * minore della sezione piu' sottile del gruppo.
+ * minore della **sezione di base**, cioe' la sezione piu' larga del gruppo. Le
+ * sezioni superiori possono essere piu' strette: e' il punto della
+ * rastremazione, e misurare la sezione piu' sottile (come faceva questo conto
+ * prima) avrebbe condannato ogni corpo rastremato a leggersi come un palo.
  */
 export function slenderColumns(recipe: ArcologyRecipe): readonly SlenderColumn[] {
   const shells: PlacedPart[] = [];
@@ -150,11 +153,13 @@ export function slenderColumns(recipe: ArcologyRecipe): readonly SlenderColumn[]
   return [...groups.values()].map((group) => {
     const z0 = Math.min(...group.map((shell) => shell.bounds.z0));
     const z1 = Math.max(...group.map((shell) => shell.bounds.z1));
-    const widths = group.map((shell) => shell.bounds.x1 - shell.bounds.x0 + 1);
-    const heights = group.map((shell) => shell.bounds.y1 - shell.bounds.y0 + 1);
-    const minSide = Math.min(...widths, ...heights);
+    const minSides = group.map((shell) => Math.min(
+      shell.bounds.x1 - shell.bounds.x0 + 1,
+      shell.bounds.y1 - shell.bounds.y0 + 1,
+    ));
+    const baseMinSide = Math.max(...minSides);
     const height = z1 - z0 + 1;
-    return { height, minSide, slenderness: height / minSide };
+    return { height, baseMinSide, slenderness: height / baseMinSide };
   });
 }
 

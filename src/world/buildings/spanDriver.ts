@@ -36,7 +36,6 @@ import { STAMP_EMPTY } from './stamp';
  */
 export class SpanDriver {
   /** Isolati che una piazza ce l'hanno gia': si costruisce una volta sola. */
-  private readonly plazaBlocks = new Set<string>();
 
   private cursor = 0;
   private reachValue = 0;
@@ -101,9 +100,9 @@ export class SpanDriver {
     // quindi questa passata la trovava piena e usciva al primo giro, sempre. La
     // coda `pending` esiste proprio per separare quanto lavoro si crea da quanto
     // ne vola insieme.
-    // Gli isolati gia' tentati in questa passata. Senza, il cursore scorre
-    // record che stanno **nello stesso isolato** e i pochi tentativi ammessi si
-    // consumano tutti li', rifacendo la stessa scansione per lo stesso esito.
+    // Gli appoggi gia' tentati in questa passata. Il tessuto non appartiene piu'
+    // a un isolato teorico: il limite resta sui tentativi, non sulle celle della
+    // maglia che per caso contengono i record.
     const tried = new Set<string>();
     const busy = this.ctx.growth.busyIds();
 
@@ -115,7 +114,7 @@ export class SpanDriver {
       // ponte perche' da li' la rete puo' ripartire in piu' direzioni.
       let plan: SpanPlan | null = null;
       if (tried.size < SPANS.plaza.attemptsPerPass) {
-        const key = this.ctx.streets.keyOf(this.ctx.streets.blockAt(record.x, record.y));
+        const key = String(record.id);
         if (!tried.has(key)) {
           const attempt = this.plazaOn(record, network, busy);
           if (attempt !== undefined) {
@@ -128,9 +127,6 @@ export class SpanDriver {
       if (plan === null) continue;
       if (!this.build(plan)) continue;
 
-      if (plan.kind === SPAN_KIND.plaza) {
-        this.plazaBlocks.add(this.ctx.streets.keyOf(this.ctx.streets.blockAt(plan.x, plan.y)));
-      }
       network.add({ supports: plan.supports });
       built++;
     }
@@ -201,40 +197,64 @@ export class SpanDriver {
   }
 
   /**
-   * La piazza che l'isolato di questo edificio puo' reggere.
+   * La piazza che il vuoto attorno a questo edificio puo' reggere.
    *
-   * `undefined` se l'isolato non e' nemmeno da provare — ne ha gia' una, o non
-   * ha abbastanza edifici — e `null` se il tentativo c'e' stato e non regge:
+   * `undefined` se il luogo non e' nemmeno da provare — ha gia' una piazza, o
+   * non ha abbastanza edifici — e `null` se il tentativo c'e' stato e non regge:
    * e' la differenza che tiene il conto dei tentativi onesto, perche' la
    * scansione del cuore e' la cosa piu' cara del dominio.
    *
-   * **Il cuore dell'isolato lo ha chiuso la 4.1 apposta**: gli edifici nascono
-   * sul fronte strada e lasciano libero il centro. E' quel vuoto — «uno spazio
-   * interno riconoscibile e' cio' che le sotto-fasi successive terrazzano e
-   * collegano» — che una piazza copre senza togliere un lotto a nessuno.
+   * Non assume un cortile al centro della maglia. Prova i vuoti che iniziano
+   * subito oltre le pareti reali degli appoggi: se tre edifici delimitano una
+   * tasca, `planPlaza` la allarga fino ai muri; se il tessuto e' aperto, non
+   * inventa un quadrato solo perche' esiste un isolato teorico.
    */
   private plazaOn(
     record: BuildingRecord,
     network: SpanNetwork,
     busy: ReadonlySet<number>,
   ): SpanPlan | null | undefined {
-    const block = this.ctx.streets.blockAt(record.x, record.y);
-    if (this.plazaBlocks.has(this.ctx.streets.keyOf(block))) return undefined;
-
-    const rect = this.ctx.streets.blockRect(block);
-    const midX = (rect.x0 + rect.x1) >> 1;
-    const midY = (rect.y0 + rect.y1) >> 1;
-    const radius = Math.max(rect.x1 - rect.x0, rect.y1 - rect.y0);
+    const radius = SPANS.plaza.maxSide + MAX_FOOTPRINT;
 
     const supports: SpanSupport[] = [];
-    for (const other of this.ctx.registry.withinRadius(midX, midY, radius)) {
+    for (const other of this.ctx.registry.withinRadius(record.x, record.y, radius)) {
+      if (other.span === SPAN_KIND.plaza) return undefined;
       if (!canSupport(other, network, busy)) continue;
       supports.push(supportOf(other));
     }
     if (supports.length < SPANS.plaza.minSupports) return undefined;
 
-    const result = planPlaza({ rect, supports, ...this.probe });
-    return result.ok ? result.plan : null;
+    const side = SPANS.plaza.maxSide;
+    const half = (side - 1) >> 1;
+    const seeds = new Map<string, { readonly x: number; readonly y: number }>();
+    for (const support of supports) {
+      const midX = support.x + ((support.sizeX - 1) >> 1);
+      const midY = support.y + ((support.sizeY - 1) >> 1);
+      const candidates = [
+        { x: support.x - 1, y: midY },
+        { x: support.x + support.sizeX, y: midY },
+        { x: midX, y: support.y - 1 },
+        { x: midX, y: support.y + support.sizeY },
+      ];
+      for (const seed of candidates) seeds.set(`${seed.x},${seed.y}`, seed);
+    }
+
+    let examined = 0;
+    for (const seed of seeds.values()) {
+      const column = this.probe.ground(seed.x, seed.y);
+      if (!column.free || column.pavement) continue;
+      if (examined >= SPANS.plaza.pocketsPerAttempt) break;
+      examined++;
+      const rect = {
+        x0: seed.x - half,
+        y0: seed.y - half,
+        x1: seed.x - half + side - 1,
+        y1: seed.y - half + side - 1,
+      };
+      const result = planPlaza({ rect, supports, ...this.probe });
+      if (result.ok) return result.plan;
+    }
+    return null;
   }
 
   /**

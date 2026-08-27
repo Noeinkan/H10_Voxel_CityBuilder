@@ -1399,11 +1399,10 @@ describe('Builder — landmark dei catalizzatori', () => {
 });
 
 /**
- * Il gate della fase 4.4, verificato invece che dichiarato: gli edifici
- * adiacenti di un fronte devono leggersi come un isolato continuo — stessa
- * quota, stesso corso di base, nessun solco in mezzo — mentre ogni record resta
- * un edificio come prima, con la sua impronta sotto il tetto e la sua
- * cancellazione indipendente.
+ * Il gate della fase 4.4, verificato invece che dichiarato: gli edifici vicini
+ * possono condividere quota e corso di base, ma conservano la posizione scelta
+ * dalla crescita radiale. L'aggregazione unisce la massa senza riscrivere il
+ * tessuto come un nastro sul perimetro di un lotto teorico.
  */
 describe('Builder — isolati terrazzati', () => {
   /** Fianco a gradoni, senza costa: le file si spezzano solo per dislivello. */
@@ -1514,18 +1513,23 @@ describe('Builder — isolati terrazzati', () => {
     }
   });
 
-  it('fra due membri di una fila non resta un solco', () => {
+  it('l aggregazione non riscrive il tessuto come un nastro regolare', () => {
     const built = rows(denseCity().records);
 
     expect(built.length).toBeGreaterThan(0);
+    let organic = false;
     for (const members of built) {
       for (let i = 1; i < members.length; i++) {
         const previous = members[i - 1];
-        // Si toccano esattamente: e' l'accostamento lungo il fronte a chiudere
-        // lo scarto fra lotto prenotato e impronta vera.
-        expect(alongOf(members[i])).toBe(alongOf(previous) + previous.footprint);
+        // L'identita' condivisa non sposta l'edificio: almeno un aggregato della
+        // fixture deve conservare uno scarto diverso dall'accostamento perfetto
+        // che rendeva leggibile il vecchio perimetro quadrato.
+        if (alongOf(members[i]) !== alongOf(previous) + previous.footprint) {
+          organic = true;
+        }
       }
     }
+    expect(organic).toBe(true);
   });
 
   it('a superare il tetto d impronta e la massa, non il record', () => {

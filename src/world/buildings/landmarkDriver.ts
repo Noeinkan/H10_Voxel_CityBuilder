@@ -1144,6 +1144,7 @@ export class LandmarkDriver {
     }
 
     let pending = 0;
+    const doomed = new Set<number>();
     const apply = (): void => {
       pending--;
       if (pending === 0) {
@@ -1153,6 +1154,11 @@ export class LandmarkDriver {
     };
     for (const strip of strips) {
       if (this.clearance.survey(strip, rule).clears === 0) continue;
+      // Un edificio puo' attraversare due strisce all'angolo dell'anello: si
+      // condanna una volta sola, nella prima striscia che lo incontra, altrimenti
+      // due cantieri porterebbero via lo stesso record.
+      if (recordsIn(this.ctx.registry, strip).every((found) => doomed.has(found.id))) continue;
+      for (const found of recordsIn(this.ctx.registry, strip)) doomed.add(found.id);
       if (this.clearance.start(strip, rule, apply, { fence: false })) pending++;
     }
     if (pending === 0) {

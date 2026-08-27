@@ -11,6 +11,28 @@ coincide con il messaggio di commit.
 
 ---
 
+## In corso — Le feature mature seguono il tessuto organico
+
+- **Le banchine seguono la costa reale, non il bordo di un isolato.** Un candidato costiero viene centrato sulla prima acqua navigabile e poi usa la stessa ricerca libera degli altri edifici: l'impronta attraversa la battigia senza ricreare anelli quadrati.
+- **Le piazze nascono nelle tasche fra edifici reali.** Il driver prova i vuoti immediatamente oltre le pareti degli appoggi e costruisce solo con almeno tre sostegni su lati diversi; il centro della maglia non e' piu' un cortile obbligatorio.
+- **Gli aggregati non saldano piu' gli edifici in file regolari.** Quota e corso di base possono essere condivisi, ma la posizione scelta dalla crescita radiale resta invariata, cosi' il lotto teorico non riemerge come nastro visibile.
+- **La ricerca delle piazze ha un tetto stabile.** Ogni appoggio prova al massimo sedici tasche reali, ciascuna non piu' larga del lato massimo della piazza: il costo non cresce con tutti gli edifici del quartiere.
+
+## In corso — Crescita lenta, densita' dinamica e carico smussato
+
+- **Il ritmo di costruzione scende al 40% del precedente.** Ogni infornata accetta due siti ogni dieci tick invece di tre ogni sei: la citta' cresce piu' lentamente senza cambiare l'unita' di maturita' delle fixture, che conta gia' le passate tramite `ticksFor`.
+- **La citta' si rarefa per congestione, non alzando il gate di sito.** Raggio e penalita' per edificio salgono entrambi da 6 a 8; `siteThreshold` resta `[40, 34, 30, 25]`, perche' alzare anche la soglia eliminava campate, mensole e file mature e altre infornate non recuperavano il campo tagliato.
+- **Il lavoro voxel viene distribuito su piu' frame.** I cantieri simultanei scendono da venti a dodici, i voxel di edificio da otto a sei per frame e quelli di superficie da 192 a 128, riducendo i picchi di invalidazione e meshing.
+
+## In corso — Arcologie alte e rastremate
+
+- **Le otto arcologie hanno silhouette e crescita proprie.** Le forme da un isolato salgono a 320 quote, le barre multi-blocco a 440 e `quadCluster` a 735; ogni corpo rientra almeno due volte sui confini di stadio, le quattro ricette multi-blocco usano gusci invece di prismi pieni e le corone di `spireRing` e `quadCluster` rompono la simmetria in diagonale.
+- **La crescita usa un tetto comune, non soglie scritte a mano.** Il primo corpo parte a 50 vicini, ogni ricetta completa la corona a 93 e gli stadi intermedi seguono una curva quadratica; il budget resta 56 chunk nel caso peggiore per singolo delta e la snellezza massima sale a 22, misurata sulla sezione di base.
+
+## In corso — Il sedime dei landmark cresce
+
+- **Lo stadio e il transito crescono di sedime, stadio per stadio.** Una ricetta puo' dichiarare `growth`, un `StageFootprint` per stadio: il piazzamento riserva solo lo stadio zero, e l'avanzamento allarga l'impronta sventrando con il cantiere di sempre cio' che il quartiere ha costruito sull'anello nuovo, con l'ancora — la colonna cliccata — che resta ferma. La sagoma di uno stadio che cresce e' **autocontenuta**, non cumulativa: `generateFromRecipe` la sostituisce invece di sommarla. Lo stadio va dal campetto di paese al catino da mondiali, il transito dalla stazioncina alla grand hall con la falda a volta.
+
 ## In corso — Densita' urbana ridotta di un quarto
 
 - **`congestionPerBuilding` sale da 6 a 8.** E' la manopola della densita': il solo termine del campo di desiderabilita' che cresce con gli edifici gia' posati, quindi decide quanti ne possono stare affiancati prima che il campo scenda sotto la soglia di sito. A 8 il nucleo saturo ammette circa un quarto di edifici in meno nel raggio breve: la citta' resta meno fitta, con meno chunk e meno draw call — cioe' piu' frame, senza toccare la portata dei catalizzatori.

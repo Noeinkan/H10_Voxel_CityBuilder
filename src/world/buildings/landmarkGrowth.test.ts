@@ -182,6 +182,8 @@ describe('un landmark che cresce di sedime', () => {
 
     // Lo sventramento apre un cantiere: la passata che lo miete e' quella dopo,
     // quindi si alterna tick e comparsa finche' non c'e' piu' nulla in volo.
+    state = { ...state, tickCount: BUILDER.ticksPerUpgrade };
+    state = builder.onTick(state);
     let guard = 0;
     while ((builder.stats.growing > 0 || builder.stats.clearing > 0) && guard++ < 5000) {
       state = tick(state, terrain);

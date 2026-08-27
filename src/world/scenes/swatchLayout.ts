@@ -45,6 +45,34 @@ export const SWATCH = {
   /** Bordo di basamento attorno ai soggetti: il piano di lettura, non un margine estetico. */
   plinthMargin: 3,
 
+  /**
+   * Bordo vuoto riservato attorno al campionario, per muoversi liberamente.
+   *
+   * Il pan da tastiera e' vincolato all'AABB dei chunk esistenti piu' un piccolo
+   * margine, e il campionario dichiara un ingombro appena piu' largo del proprio
+   * contenuto: senza un bordo vuoto la camera non riesce ad allontanarsi dalla
+   * griglia. Riservare questi chunk vuoti allarga la superficie su cui ci si
+   * muove senza aggiungere geometria — il mesher li scarta perche' vuoti, e non
+   * entrano ne' nel conteggio dei solidi ne' in quello delle mesh.
+   *
+   * Tre chunk per lato (~96 voxel) raddoppiano all'incirca la superficie
+   * camminabile: e' il respiro che serve a giudicare un provino guardandolo da
+   * fuori invece che standoci sopra.
+   */
+  walkMargin: 96,
+
+  /**
+   * Il bordo sul lato sud-ovest, la direzione in cui muove il tasto `W`.
+   *
+   * `W` allontana l'inquadratura dal campionario, ed e' il passo con cui si
+   * indietreggia per tenere in campo un soggetto per intero. Una megastruttura
+   * alta quanto un'arcologia chiede piu' strada di una cella della matrice:
+   * qui il bordo raddoppia, cosi' si puo' arretrare abbastanza da non farla
+   * uscire dall'inquadratura. Lo consuma `reserveWalkArea`, che lo applica ai
+   * lati `minX` e `minY` — ovest e sud, dove `W` porta a yaw di riposo.
+   */
+  walkBackMargin: 192,
+
   // --- Matrice palette x superficie -----------------------------------------
 
   /**
