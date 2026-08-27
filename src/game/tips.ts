@@ -157,30 +157,30 @@ function foodAdvice(state: SimState): { title: string; message: string } {
       ? 'Keep trade on Prioritize food while it grows.'
       : 'A Port on the coast can cover part of the deficit while it grows.';
     return {
-      title: 'Food shortage: the Greenhouse has no hydroponic tower yet, so overlap its ring with the Factory (or Market) and let industry grow one.',
+      title: 'Food shortage: no tower yet — overlap the Greenhouse with the Factory.',
       message: `People don't have enough food: the Greenhouse is already in place, but no hydroponic tower has formed yet. To fix that, overlap its ring with your Factory (or Market) and let an industrial building inside grow until a Hydroponic tower appears. ${trade} ${recover}`,
     };
   }
   if (!connected && towers <= 0) {
     return {
-      title: 'Food shortage: the fields alone can no longer feed the city, so place a Greenhouse near the Factory or open a Port for imports.',
+      title: 'Food shortage: the fields can\'t feed the city — add a Greenhouse or a Port.',
       message: `People don't have enough food: the fields alone can no longer feed the city — the island runs out of good ground long before it runs out of people. To fix that, place a Greenhouse close to your Factory (or Market): the glass farm turns nearby industry into hydroponic towers. A Port on the coast opens food imports instead. ${recover}`,
     };
   }
   if (connected && towers <= 0) {
     return {
-      title: 'Food shortage: imports alone are not keeping up, so switch trade to Prioritize food or place a Greenhouse.',
+      title: 'Food shortage: imports aren\'t enough — prioritize food or add a Greenhouse.',
       message: `People don't have enough food: imports alone are not keeping up. To fix that, switch trade to Prioritize food, or place a Greenhouse close to your Factory so dense industry grows hydroponic towers. ${recover}`,
     };
   }
   if (!connected) {
     return {
-      title: 'Food shortage: even your towers fall short, so place a Port on the coast for imported food.',
+      title: 'Food shortage: towers fall short — add a Port for imports.',
       message: `People don't have enough food: even your towers fall short. To fix that, place a Port on the coast — imported food arrives as a share of what the city eats, so it keeps scaling with it. ${recover}`,
     };
   }
   return {
-    title: `Food shortage: farms and imports are both behind the city's appetite, so slow the clock and let the countryside catch up.`,
+    title: 'Food shortage: farms and imports lag — slow the clock to catch up.',
     message: `People don't have enough food: farms and imports are both behind the city's appetite. To fix that, slow the clock and let the countryside catch up before growing further. ${recover}`,
   };
 }

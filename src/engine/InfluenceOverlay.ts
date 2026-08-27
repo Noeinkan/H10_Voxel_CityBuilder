@@ -42,7 +42,7 @@ const CURSOR_CACHE_MAX = 16;
  * Passo di campionamento della velatura, in celle.
  *
  * Il cursore e' un'anteprima, non il campo vero: la fedelta' per-cella del
- * gradiente non vale il quadrato intero di un landmark a raggio 75. Un quad ogni
+ * gradiente non vale il quadrato intero di un landmark a raggio 92. Un quad ogni
  * due celle riduce di un quarto i vertici della velatura senza che l'occhio
  * perda il gradiente, e i quad allargati si accostano senza cuciture.
  */
@@ -56,7 +56,7 @@ const FILL_STEP = 2;
  * velatura che sfuma del tutto lascia il bordo appeso a una linea da un pixel,
  * che sul terreno chiaro si perde, ed e' la stessa ragione per cui prima del
  * gradiente qui c'era una fascia piena. Il salto fra minimo e picco e' largo:
- * con un raggio da landmark (fino a 75) un picco appena sopra il minimo
+ * con un raggio da landmark (fino a 92) un picco appena sopra il minimo
  * tornerebbe a leggersi come una fascia uniforme, non come il campo.
  */
 const FILL_MIN = 0.05;
@@ -123,7 +123,7 @@ export class InfluenceOverlay {
 
   // Il catalizzatore sotto al cursore non e' ancora piazzato, quindi la sua
   // portata non sta nella cache della simulazione. I raggi dei landmark sono
-  // larghi (fino a 75) e rifare il Dijkstra a ogni ritorno del cursore su una
+  // larghi (fino a 92) e rifare il Dijkstra a ogni ritorno del cursore su una
   // cella gia' visitata e' un lusso: qui sta una cache delimitata, separata dal
   // `ReachCache` della simulazione che resta illimitato.
   private readonly cursorCache = new Map<string, ReachField>();

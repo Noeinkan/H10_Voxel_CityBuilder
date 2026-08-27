@@ -678,7 +678,7 @@
  * basta a riconoscere lo stato dalla coda dell'occhio — e la spiegazione sta
  * dove c'e' spazio per leggerla.
  */
-.hud-toast[data-kind="condition"] { max-width: min(320px, calc(100vw - var(--game-hud-rail-left) - var(--space-6) - var(--space-4))); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.hud-toast[data-kind="condition"] { max-width: min(440px, calc(100vw - var(--game-hud-rail-left) - var(--space-6) - var(--space-4))); font-size: calc(var(--text-sm) * 1.25); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 /* Tutorial e coach sono l'unica condizione che chiede un gesto: il gesto resta
    sul campo insieme al titolo, in una seconda riga piu' quieta. */
 .hud-toast[data-kind="onboarding"],

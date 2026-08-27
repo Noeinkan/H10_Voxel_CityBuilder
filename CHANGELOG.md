@@ -11,6 +11,14 @@ coincide con il messaggio di commit.
 
 ---
 
+## In corso — Sfere dei landmark ancora piu' ampie
+
+- **I raggi del gruppo identita' salgono ancora, a 85-92 celle.** La sfera deve leggersi come un quartiere intero, non come un incrocio: universita' 90, monumento e cattedrale 87, museo 89, teatro 85, stadio e marina 92. Il costo del Dijkstra resta quello di un piazzamento — un gesto del giocatore, non del tick — e un raggio sotto il centinaio era gia' comparso nelle misure del progetto.
+
+## In corso — L'aiuto spiega la gomma
+
+- **Il pannello di aiuto documenta la gomma.** Una sezione nuova («Clear the city») elenca i tre gesti — clic per un edificio, striscio per l'area, Ctrl+Z per annullare — e dice cosa significano i colori dell'anteprima: il rosso cade, l'ambra e' costruito che resta.
+
 ## In corso — Gomma piu' leggibile e reversibile
 
 - **La gomma mostra chi cade e chi resta.** Durante lo striscio un tappeto rosso copre il tetto di ogni edificio condannato e uno ambra cio' che la ferma — la rete in quota, le arcologie, chi le porta — invece del solo conteggio: si vede l'area *e* le singole cose che spariranno.

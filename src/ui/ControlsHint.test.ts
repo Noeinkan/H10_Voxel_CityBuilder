@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { CONTROL_HINTS, VIEW_HINTS, VIEW_HINTS_LEAD } from './ControlsHint';
+import { CONTROL_HINTS, DEMOLISH_HINTS, DEMOLISH_HINTS_LEAD, VIEW_HINTS, VIEW_HINTS_LEAD } from './ControlsHint';
 import { INSPECT_MODE } from '../engine/inspect';
 import { buildViewMenuModel } from './ViewMenuModel';
 
@@ -81,5 +81,28 @@ describe('VIEW_HINTS', () => {
     expect(VIEW_HINTS_LEAD).toContain('V');
     // Una vista si prova volentieri quando si sa gia' come tornare indietro.
     expect(VIEW_HINTS_LEAD).toContain('Esc');
+  });
+});
+
+describe('DEMOLISH_HINTS', () => {
+  it('documenta i tre gesti della gomma', () => {
+    expect(DEMOLISH_HINTS).toEqual([
+      { keys: ['Click'], action: 'Tear down a single building' },
+      { keys: ['Drag'], action: 'Sweep an area of buildings' },
+      { keys: ['Ctrl', 'Z'], action: 'Undo the last sweep while it is still falling' },
+    ]);
+  });
+
+  it('l annullamento promette il tasto, non solo il gesto', () => {
+    const undo = DEMOLISH_HINTS.find((hint) => hint.keys.includes('Ctrl'));
+    expect(undo?.keys).toEqual(['Ctrl', 'Z']);
+    expect(undo?.action).toContain('Undo');
+  });
+
+  it('dice il senso dei colori dell anteprima', () => {
+    // Rosso e ambra compaiono solo durante lo striscio, e senza questa riga
+    // l'ambra si leggerebbe come un'evidenza invece che come un "no".
+    expect(DEMOLISH_HINTS_LEAD).toContain('red');
+    expect(DEMOLISH_HINTS_LEAD).toContain('amber');
   });
 });

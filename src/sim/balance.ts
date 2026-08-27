@@ -168,23 +168,22 @@ export const BALANCE = {
         // soglia di crescita e' una frazione del raggio: l'ampiezza extra e'
         // cio' che la riporta a coprire l'isolato, non solo il cuore.
         //
-        // **Il raggio si paga al quadrato, e la sforbiciata e' un budget, non
-        // una rinuncia.** L'influenza si propaga con un Dijkstra su (2r+1)²
-        // celle, il campo ricalcola lo stesso quadrato e l'overlay lo disegna
-        // per intero: ogni cella di raggio in piu' costa quattro volte. I valori
-        // restano i piu' larghi del catalogo — sopra ogni seme di crescita, che
-        // arriva a 55 — ma la differenza sul piu' vicino scende a cio' che basta
-        // per «coronare», non per raddoppiare il costo del piazzamento.
-        university: { cost: 360, strength: 200, radius: 66 },
-        monument: { cost: 440, strength: 215, radius: 63 },
-        museum: { cost: 380, strength: 195, radius: 65 },
-        cathedral: { cost: 400, strength: 205, radius: 63 },
-        theatre: { cost: 420, strength: 205, radius: 61 },
-        stadium: { cost: 460, strength: 210, radius: 68 },
+        // **Il raggio si paga al quadrato, ma si paga una volta sola.** Il
+        // Dijkstra e il campo ricalcolano (2r+1)² celle e l'overlay le disegna
+        // per intero, quindi ogni cella di raggio in piu' costa quattro volte;
+        // e' pero' il costo di un piazzamento — un gesto del giocatore, non del
+        // tick — e un raggio sotto il centinaio e' gia' comparso nelle misure
+        // del progetto. La sfera ampia e' una scelta voluta e dichiarata.
+        university: { cost: 360, strength: 200, radius: 90 },
+        monument: { cost: 440, strength: 215, radius: 87 },
+        museum: { cost: 380, strength: 195, radius: 89 },
+        cathedral: { cost: 400, strength: 205, radius: 87 },
+        theatre: { cost: 420, strength: 205, radius: 85 },
+        stadium: { cost: 460, strength: 210, radius: 92 },
         // Il gemello del monumento sull'acqua: il prezzo da identita' con il
         // vincolo di sito riportato in denaro, come l'aeroporto — un lago o un
         // fronte mare non sono ovunque, e chi li ha se li paga.
-        marina: { cost: 440, strength: 210, radius: 68 },
+        marina: { cost: 440, strength: 210, radius: 92 },
       },
 
       /**
@@ -199,7 +198,14 @@ export const BALANCE = {
        * salta del tutto gli usi che un ruolo non tocca.
        */
       influence: {
-        market: { residential: 1, commercial: 1, industrial: 0, civic: 0.15 },
+        // Il mercato pende verso il commercio e non verso la casa: porta negozi a
+        // pieno e case appena sotto. Se residenziale e commerciale valessero lo
+        // stesso `1`, il campo saturerebbe su entrambi e il confronto finirebbe
+        // sempre a favore della casa (indice minore), e un quartiere di soli semi
+        // di crescita non produrrebbe mai un negozio come uso primario — lo
+        // vedrebbe solo come secondo uso di una casa-bottega. La casa primaria
+        // resta e nasce dal parco, che la porta a 0,7.
+        market: { residential: 0.85, commercial: 1, industrial: 0, civic: 0.15 },
         factory: { residential: -0.2, commercial: 0.2, industrial: 1, civic: 0 },
         park: { residential: 0.7, commercial: 0.2, industrial: -0.35, civic: 1 },
         // La serra non accende l'industria: la **converte**. A far nascere i
