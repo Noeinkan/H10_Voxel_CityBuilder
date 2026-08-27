@@ -5,6 +5,7 @@ import {
   minFootprintOf,
   terraceMinRingOf,
 } from '../../scale';
+import { VISUAL_LEVELS } from './visual';
 
 /**
  * Il vocabolario della forma: spessori, trasformazioni di fascia, coronamenti e
@@ -182,16 +183,21 @@ export const GRAMMAR = {
    * Sotto, resta la grammatica di superficie dell'uso: una casa appena costruita
    * non deve sembrare un'insegna, e sono la maggioranza degli edifici — quindi
    * e' anche la voce che tiene basso il conto delle corse di `emitLuminous`.
+   *
+   * **E' la soglia `consolidated` delle cinque visuali**, non un numero suo: le
+   * soglie vivono in `visual.ts`, e qui si riesporta solo la voce che la
+   * grammatica cita.
    */
-  luminousFromLevel: 2,
+  luminousFromLevel: VISUAL_LEVELS.consolidated,
 
   /**
    * Livello da cui la lama luminosa sale su tutta la fascia.
    *
    * Fra le due soglie si accende il solo voxel di sommita': una riga per piano,
    * che a distanza legge come marcapiano illuminato e non come colonna al neon.
+   * Come `luminousFromLevel`, e' la soglia `mature` delle cinque visuali.
    */
-  luminousFullLevel: 4,
+  luminousFullLevel: VISUAL_LEVELS.mature,
 } as const;
 
 /**

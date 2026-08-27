@@ -91,9 +91,14 @@ export const RADIO: LandmarkRecipe = {
       parts: [
         [],
         [],
-        [],
+        // Il faro di servizio sale in due tempi: il fusto con la piattaforma,
+        // la lanterna con l'antenna — cosi' l'esemplare ha gia' una voce a
+        // meta' crescita e un finale suo.
+        [box(PART.mast, 9, 7, 2, 2, 1, 4, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.civic, {
+          cap: PALETTE_SLOTS.glassPale,
+        })],
         [
-          box(PART.mast, 9, 7, 2, 2, 1, 8, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.civic, {
+          box(PART.mast, 9, 7, 2, 2, 5, 4, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.civic, {
             cap: PALETTE_SLOTS.metalGold,
           }),
           box(PART.slab, 9, 7, 2, 2, 9, 2, PALETTE_SLOTS.glassPale, SURFACE_KIND.luminous),
@@ -166,8 +171,12 @@ export const LIGHTHOUSE: LandmarkRecipe = {
       parts: [
         [],
         [],
-        [],
-        [box(PART.mast, 10, 10, 2, 2, 1, 8, PALETTE_SLOTS.metalDark, SURFACE_KIND.industrial, {
+        // Il palo di segnalazione sale in due tempi: il fusto con il secondo
+        // tronco di torre, la testa col ballatoio della lanterna.
+        [box(PART.mast, 10, 10, 2, 2, 1, 4, PALETTE_SLOTS.metalDark, SURFACE_KIND.industrial, {
+          cap: PALETTE_SLOTS.metalBrass,
+        })],
+        [box(PART.mast, 10, 10, 2, 2, 5, 4, PALETTE_SLOTS.metalDark, SURFACE_KIND.industrial, {
           cap: PALETTE_SLOTS.metalBrass,
         })],
       ],
@@ -177,10 +186,12 @@ export const LIGHTHOUSE: LandmarkRecipe = {
       parts: [
         [],
         [],
-        [],
+        // Il pontile compare con il secondo tronco di torre: l'esemplare si
+        // distingue gia' a meta' crescita, e il suo finale e' il molo stesso.
         [box(PART.boom, 5, 10, 4, 2, 1, 2, PALETTE_SLOTS.wood, SURFACE_KIND.habitat, {
           cap: PALETTE_SLOTS.brickLight,
         })],
+        [],
       ],
     },
   ],

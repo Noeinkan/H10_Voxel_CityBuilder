@@ -10,7 +10,7 @@ import {
   type SimState,
 } from '../../sim';
 import { dirtyChunkCount, fitsChunkBudget } from './chunkBudget';
-import { buildStamp } from './assemble';
+import { buildStamp, urbanFootprintCap } from './assemble';
 import { poleRectAt } from './growthPoles';
 import {
   groundKindAt,
@@ -711,7 +711,8 @@ export class Builder {
     let footprintCap = MAX_FOOTPRINT;
 
     if (request.snapToStreet) {
-      const lot = this.findLot(request.x, request.y);
+      if (state === null) return null;
+      const lot = this.findLot(request.x, request.y, state);
       if (lot === null) return null;
 
       x = lot.x;
@@ -1182,7 +1183,7 @@ export class Builder {
    * colonne: abbastanza per non fermarsi, troppo poco perche' un edificio nasca
    * dove la desiderabilita' non lo voleva.
    */
-  private findLot(x: number, y: number): Lot | null {
+  private findLot(x: number, y: number, state: SimState): Lot | null {
     const origin = this.streets.blockAt(x, y);
 
     for (let radius = 0; radius <= BUILDER.blockSearchRadius; radius++) {
@@ -1196,17 +1197,19 @@ export class Builder {
           const key = this.streets.keyOf(block);
           if (this.fullBlocks.has(key)) continue;
 
-          // Il lotto a terra puo' crescere fino alla larghezza libera
-          // dell'isolato: oltre il modulo l'assemblatore scompone l'impronta in
-          // sotto-volumi, quindi il tetto non e' piu' `MAX_FOOTPRINT` ma il lato
-          // dell'isolato. `placeLot` clampa gia' a `min(side, width, height)`.
           const rect = this.streets.blockRect(block);
-          const blockSide = Math.min(rect.x1 - rect.x0 + 1, rect.y1 - rect.y0 + 1);
+          // Il gate si ricalcola sul centro di **questo** isolato. La ricerca
+          // puo' saltare in un vicino, e riusare l'idoneita' dell'origine
+          // trasformerebbe un picco eletto in un permesso per tutto l'anello.
+          const footprint = urbanFootprintCap(
+            rect,
+            (centerX, centerY) => allowedLevel(this.ctx, centerX, centerY, state),
+          );
           const lot = placeLot({
             rect,
             x,
             y,
-            footprint: blockSide,
+            footprint,
             accepts: (lx, ly, side) => this.lotIsFree(lx, ly, side),
           });
           if (lot !== null) return lot;

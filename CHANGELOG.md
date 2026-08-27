@@ -11,6 +11,20 @@ coincide con il messaggio di commit.
 
 ---
 
+## In corso — Restyling evolutivo di edifici e landmark
+
+- **La crescita conserva l'identita' e cambia il volto a soglie fisse.** La generazione usa quattro canali casuali indipendenti dal livello (massa, fasce, facciata, tetto): a parita' di tipologia un upgrade non tocca un voxel dei piani bassi e rifa' solo la cima. Cinque soglie visuali condivise (0, 2, 4, 8, 13) accendono campata, fronte attivo, terrazze attrezzate e coronamento crescente, senza nuovi tipi di superficie ne' slot di palette.
+- **Le tipologie evolvono lungo linee dichiarate, mai all'indietro.** `evolvesFrom` sul catalogo ammette solo i passi previsti — casa-bottega in podio, schiera nelle forme intermedie e poi nelle verticali, fila di negozi nei tessuti bassi e nelle tre cime, scalo industriale fino alla torre idroponica, guglia in lanterna e nelle forme civiche — e un upgrade che non trova un successore lascia l'edificio com'e'.
+- **Il vocabolario maturo arriva in un modulo suo.** `microDetail.ts` aggiunge balconi, corrimani, davanzali, telai d'ingresso, lembi di tenda, passerelle, terminali di condotta, lesene, pinne, vasche e gruppi HVAC: tutto derivato da geometria, superficie e hash di mondo, dentro il tetto di quad esistente — il chunk fitto misura 10 144 quad, il 62% del limite, invariato.
+- **Le diciotto ricette dei landmark raccontano quattro tempi.** Stadio zero: accesso, basamento e identita' minima; stadio uno: la massa funzionale; stadio due: l'attrezzatura caratteristica; stadio tre: coronamento e segnale notturno. Ogni esemplare si distingue entro lo stadio due e chiude con un dettaglio suo; ingombri, ormeggi, linee d'acqua e fondazioni non si muovono.
+- **Il campionario mostra la crescita.** Quattro linee edilizie alle cinque soglie, ogni tipologia alla forma matura, ogni landmark nei quattro stadi e ogni esemplare allo stadio finale.
+
+## In corso — Il coach indica un gesto verificabile
+
+- **Il tutorial resta sul campo per intero.** I tre passi iniziali nominano gruppo, strumento, relazione fra gli anelli e risultato da osservare; titolo e istruzione compaiono insieme nel toast invece di nascondere il gesto nella dashboard.
+- **La citta' decide il consiglio, non il catalogo.** Dopo la fondazione il coach lascia crescere i primi isolati, poi porta al traguardo l'uso urbano piu' indietro con conteggio, catalizzatore, bersaglio e condizione di completamento.
+- **I landmark non sono piu' una lista obbligatoria.** Il coach propone connessioni, campus, stadi e citta' in quota quando sbloccano una conseguenza concreta; un landmark soltanto assente non occupa piu' la voce.
+
 ## In corso — Edifici che sorgono dal terreno senza livellare
 
 - **La fondazione degli edifici non livella piu' il terreno.** `Builder.place` scende con la base alla quota naturale piu' bassa dell'impronta (`baseZ = plan.footZ`) sul pendio come sulla battigia: niente terrapieno, niente banchina e niente cumulo di terra sotto la casa. `buildWorks` esce dal percorso dell'edificio ordinario e resta a landmark, arcologie, upgrade e carreggiata costiera.

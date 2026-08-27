@@ -1,8 +1,10 @@
 import { hashCoords } from '../rng';
 import { STREETS } from '../streets/config';
+import type { BlockRect } from '../streets/streetGrid';
 import { SURFACE_KIND } from '../visualBlock';
 import {
   CLASS_PROFILE,
+  BUILDER,
   DEFAULT_TYPOLOGY_SHAPE,
   GRAMMAR,
   MAX_FOOTPRINT,
@@ -42,6 +44,24 @@ const ASSEMBLE_SALT = 0x53a9_0d6f;
 
 /** Quante forme di layout esistono. L'indice e' un contratto: vedi `layoutCells`. */
 const LAYOUT_COUNT = 5;
+
+/**
+ * Quanto lotto puo' chiedere un isolato alla nascita di un edificio.
+ *
+ * Il lato oltre il modulo non e' una conseguenza della maglia larga: se lo
+ * guadagna solo un picco del core che la gerarchia ha portato fino al massimo.
+ * In quel caso l'assemblatore puo' usare l'intero isolato; ogni altro isolato
+ * continua a produrre moduli ordinari da non piu' di otto voxel.
+ */
+export function urbanFootprintCap(
+  rect: BlockRect,
+  allowedAt: (x: number, y: number) => number,
+): number {
+  const blockSide = Math.min(rect.x1 - rect.x0 + 1, rect.y1 - rect.y0 + 1);
+  const centerX = rect.x0 + ((rect.x1 - rect.x0) >> 1);
+  const centerY = rect.y0 + ((rect.y1 - rect.y0) >> 1);
+  return allowedAt(centerX, centerY) === BUILDER.maxLevel ? blockSide : MAX_FOOTPRINT;
+}
 
 /**
  * Un sotto-volume nella pianta del podio: dove sta e quanto e' largo.

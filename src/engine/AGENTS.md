@@ -77,6 +77,14 @@ leggere `src/world/`, ma il mondo non deve dipendere dall'engine.
   sicuro **solo** perche' nessuno dei due valuta l'altro al caricamento: un
   letterale di modulo che dereferenziasse l'altro lato romperebbe il caricamento e
   non la compilazione.
+- **Il vocabolario degli edifici maturi sta in `microDetail.ts`**, stesso modulo
+  della regola: balconi sopra le terrazze attrezzate, davanzali sotto i fronti
+  attivi, lesene e pinne civiche, passerelle e impianti industriali, vasche e
+  gruppi HVAC sui tetti. Non conosce il livello: reagisce alla superficie e alla
+  geometria che le soglie visuali (`buildings/config/visual.ts`) fanno comparire
+  — la terrazza diventa `roofTech` solo alla soglia di torre, e da li' in poi il
+  dettaglio ci si aggancia da solo. Vale la stessa cautela circolare di
+  `microStreet.ts`, e in sequenza viene dopo i prop storici e prima del retro.
 - **Un prop di tetto parte da `(z + 1) * U`, uno di facciata da `facadeBox`.**
   `openRoof` e `interiorRoof` rispondono sul voxel **solido** del tetto, non
   sull'aria che ci sta sopra: un prisma steso da `z * U` finisce dentro quel pieno

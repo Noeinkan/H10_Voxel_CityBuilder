@@ -4,6 +4,7 @@ import {
   MAX_OVERHANG,
   SCALE,
   arcologySpanOf,
+  bandStepOf,
   coastalRadiusOf,
   levelCapsOf,
   maxDirtyChunksPerBuildingOf,
@@ -30,15 +31,24 @@ import {
 
 const CELL_SIZE = 2;
 
-/** La coppia corrente e una coppia "ordine di grandezza" di prova. */
-const PAIRS = [
+/** La coppia ordinaria corrente e una coppia "ordine di grandezza" di prova. */
+const ORDINARY_PAIRS = [
   { module: SCALE.moduleFootprint, maxLevel: SCALE.maxLevel },
   { module: 24, maxLevel: 40 },
 ] as const;
 
-describe('le due manopole', () => {
-  it('il modulo e la sua meta restano interi e pari', () => {
-    for (const { module } of PAIRS) {
+/** La scala mega corrente e una scala piu' larga di prova. */
+const MEGA_FOOTPRINTS = [SCALE.megaFootprint, 24] as const;
+
+describe('le manopole ordinarie e mega', () => {
+  it('la configurazione corrente separa la casa dalla fase mega', () => {
+    expect(SCALE.moduleFootprint).toBe(8);
+    expect(SCALE.megaFootprint).toBe(16);
+    expect(bandStepOf()).toBe(1);
+  });
+
+  it('il modulo ordinario e la sua meta restano interi e pari', () => {
+    for (const { module } of ORDINARY_PAIRS) {
       expect(module % 2).toBe(0);
       expect(minFootprintOf(module)).toBe(module / 2);
       expect(minBandSideOf(module)).toBe(module / 2);
@@ -48,7 +58,7 @@ describe('le due manopole', () => {
 
 describe('levelCapsOf', () => {
   it('ha una voce per livello, e le fasce sono monotone', () => {
-    for (const { module, maxLevel } of PAIRS) {
+    for (const { module, maxLevel } of ORDINARY_PAIRS) {
       const caps = levelCapsOf(module, maxLevel);
       expect(caps).toHaveLength(maxLevel + 1);
 
@@ -74,44 +84,39 @@ describe('levelCapsOf', () => {
     }
   });
 
-  it('in cima l impronta satura a meta modulo, mai al lato pieno', () => {
-    for (const { module, maxLevel } of PAIRS) {
+  it('in cima l impronta ordinaria satura al lato pieno del modulo', () => {
+    for (const { module, maxLevel } of ORDINARY_PAIRS) {
       const top = levelCapsOf(module, maxLevel)[maxLevel];
-      const mid = module / 2 + module / 4;
-      expect(top.minFootprint).toBe(mid);
-      expect(top.maxFootprint).toBe(mid);
-      expect(top.maxFootprint).toBeLessThan(module);
+      expect(top.minFootprint).toBe(module);
+      expect(top.maxFootprint).toBe(module);
       const below = levelCapsOf(module, maxLevel)[maxLevel - 1];
       expect(top.minBands).toBeGreaterThan(below.minBands);
       expect(top.maxBands).toBeGreaterThan(below.maxBands);
     }
   });
 
-  it('con le manopole di partenza l impronta ordinaria satura a meta modulo', () => {
-    // Il lato pieno del modulo resta agli assemblaggi: con modulo 8 e 12 livelli
-    // il tetto d'impronta satura a 6 (meta modulo) e mai a 8. Le fasce non
-    // cambiano rispetto alla tabella storica.
+  it('con le manopole di partenza riproduce la tabella storica 4–8', () => {
     expect(levelCapsOf(8, 12)).toEqual([
       { minFootprint: 4, maxFootprint: 6, minBands: 1, maxBands: 2 },
       { minFootprint: 4, maxFootprint: 6, minBands: 2, maxBands: 3 },
-      { minFootprint: 4, maxFootprint: 6, minBands: 3, maxBands: 4 },
-      { minFootprint: 6, maxFootprint: 6, minBands: 4, maxBands: 5 },
-      { minFootprint: 6, maxFootprint: 6, minBands: 5, maxBands: 6 },
-      { minFootprint: 6, maxFootprint: 6, minBands: 6, maxBands: 7 },
-      { minFootprint: 6, maxFootprint: 6, minBands: 7, maxBands: 8 },
-      { minFootprint: 6, maxFootprint: 6, minBands: 8, maxBands: 9 },
-      { minFootprint: 6, maxFootprint: 6, minBands: 9, maxBands: 10 },
-      { minFootprint: 6, maxFootprint: 6, minBands: 10, maxBands: 11 },
-      { minFootprint: 6, maxFootprint: 6, minBands: 11, maxBands: 12 },
-      { minFootprint: 6, maxFootprint: 6, minBands: 13, maxBands: 15 },
-      { minFootprint: 6, maxFootprint: 6, minBands: 16, maxBands: 19 },
+      { minFootprint: 4, maxFootprint: 8, minBands: 3, maxBands: 4 },
+      { minFootprint: 6, maxFootprint: 8, minBands: 4, maxBands: 5 },
+      { minFootprint: 6, maxFootprint: 8, minBands: 5, maxBands: 6 },
+      { minFootprint: 6, maxFootprint: 8, minBands: 6, maxBands: 7 },
+      { minFootprint: 8, maxFootprint: 8, minBands: 7, maxBands: 8 },
+      { minFootprint: 8, maxFootprint: 8, minBands: 8, maxBands: 9 },
+      { minFootprint: 8, maxFootprint: 8, minBands: 9, maxBands: 10 },
+      { minFootprint: 8, maxFootprint: 8, minBands: 10, maxBands: 11 },
+      { minFootprint: 8, maxFootprint: 8, minBands: 11, maxBands: 12 },
+      { minFootprint: 8, maxFootprint: 8, minBands: 13, maxBands: 15 },
+      { minFootprint: 8, maxFootprint: 8, minBands: 16, maxBands: 19 },
     ]);
   });
 });
 
 describe('startLevelCdfOf', () => {
   it('ha una voce per livello, non decresce e chiude a uno', () => {
-    for (const { maxLevel } of PAIRS) {
+    for (const { maxLevel } of ORDINARY_PAIRS) {
       const cdf = startLevelCdfOf(maxLevel);
       expect(cdf).toHaveLength(maxLevel + 1);
       for (let i = 1; i < cdf.length; i++) {
@@ -127,7 +132,7 @@ describe('startLevelCdfOf', () => {
 
 describe('skylineCapsOf', () => {
   it('il massimo teorico coincide con il livello massimo', () => {
-    for (const { maxLevel } of PAIRS) {
+    for (const { maxLevel } of ORDINARY_PAIRS) {
       const caps = skylineCapsOf(maxLevel);
       expect(caps.levelCap).toHaveLength(3);
       expect(caps.levelCap[0]).toBeLessThan(caps.levelCap[1]);
@@ -139,19 +144,19 @@ describe('skylineCapsOf', () => {
 
 describe('i vincoli duri in pianta', () => {
   it('l inviluppo massimo resta sotto CHUNK', () => {
-    for (const { module } of PAIRS) {
+    for (const module of MEGA_FOOTPRINTS) {
       expect(module + MAX_OVERHANG).toBeLessThan(CHUNK);
     }
   });
 
   it('l inviluppo massimo sta dentro il lato del segmento', () => {
-    for (const { module } of PAIRS) {
+    for (const module of MEGA_FOOTPRINTS) {
       expect(module + MAX_OVERHANG).toBeLessThanOrEqual(segmentSideOf(module));
     }
   });
 
   it('il segmento sta sopra il modulo e resta pari', () => {
-    for (const { module } of PAIRS) {
+    for (const module of MEGA_FOOTPRINTS) {
       expect(segmentSideOf(module)).toBeGreaterThanOrEqual(module + MAX_OVERHANG);
       expect(segmentSideOf(module) % 2).toBe(0);
     }
@@ -160,7 +165,7 @@ describe('i vincoli duri in pianta', () => {
 
 describe('maxDirtyChunksPerBuildingOf', () => {
   it('cresce con il livello massimo e copre la torre piu alta', () => {
-    for (const { module, maxLevel } of PAIRS) {
+    for (const { module, maxLevel } of ORDINARY_PAIRS) {
       const tower = maxTowerHeightOf(module, maxLevel);
       // Due colonne per asse, i piani della torre piu' i due di bordo.
       const worst = 2 * 2 * (Math.ceil(tower / CHUNK) + 2);
@@ -172,7 +177,7 @@ describe('maxDirtyChunksPerBuildingOf', () => {
 
 describe('streetPitchOf', () => {
   it('l isolato piu stretto regge il modulo piu largo piu due cubi', () => {
-    for (const { module } of PAIRS) {
+    for (const module of MEGA_FOOTPRINTS) {
       const { pitch, jitter } = streetPitchOf(module, CELL_SIZE);
       expect(pitch - 2 * jitter).toBeGreaterThanOrEqual(module + 2 * CELL_SIZE);
       // Lo scostamento resta sotto meta' passo: due assi non si toccano mai.
@@ -186,10 +191,17 @@ describe('streetPitchOf', () => {
 
 describe('coastalRadiusOf e arcologySpanOf', () => {
   it('la costa vede il modulo e l arcologia lo supera', () => {
-    for (const { module } of PAIRS) {
+    for (const module of MEGA_FOOTPRINTS) {
       expect(coastalRadiusOf(module, CELL_SIZE)).toBeGreaterThan(module);
       expect(arcologySpanOf(module)).toBeGreaterThan(module);
       expect(arcologySpanOf(module)).toBeLessThanOrEqual(segmentSideOf(module));
     }
+  });
+
+  it('i default strutturali derivano tutti dalla scala mega', () => {
+    expect(segmentSideOf()).toBe(segmentSideOf(SCALE.megaFootprint));
+    expect(streetPitchOf()).toEqual(streetPitchOf(SCALE.megaFootprint));
+    expect(coastalRadiusOf()).toBe(coastalRadiusOf(SCALE.megaFootprint));
+    expect(arcologySpanOf()).toBe(arcologySpanOf(SCALE.megaFootprint));
   });
 });

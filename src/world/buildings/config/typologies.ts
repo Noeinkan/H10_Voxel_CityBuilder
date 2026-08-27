@@ -157,6 +157,24 @@ export interface TypologyDefinition extends TypologyRequirement {
   readonly shape: TypologyShape;
   /** Cio' che la tipologia sovrascrive del profilo dell'uso. */
   readonly profile: Partial<ClassProfile>;
+  /**
+   * Tipologie da cui questa puo' nascere **per upgrade**, quando il luogo e'
+   * gia' occupato da una di loro.
+   *
+   * Vale solo per la selezione di un upgrade: alla nascita la linea non conta e
+   * ogni riga che il luogo accetta resta selezionabile. Un upgrade adotta una
+   * tipologia diversa solo se la linea lo ammette — la corrente la dichiara —
+   * altrimenti l'edificio mantiene la propria. Le righe di ripiego a priorita'
+   * zero sono punti di partenza e non compaiono mai come esito di un upgrade,
+   * se non per restare se' stesse.
+   *
+   * **Le linee sono un albero e non una rete**, e il test delle linee lo
+   * verifica: niente cicli, niente transizioni laterali o inverse. Una
+   * casa-bottega diventa un podio commerciale e un capannone una torre
+   * idroponica, mai il contrario: la crescita racconta un progresso, non un
+   * giro.
+   */
+  readonly evolvesFrom?: readonly string[];
 }
 
 /** Forma senza vincoli: la grammatica di `generate.ts` lasciata libera. */
@@ -186,6 +204,11 @@ export const TYPOLOGIES: readonly TypologyDefinition[] = [
     label: 'Shophouse',
     use: 0,
     mixed: 1,
+    // La casa-bottega e' un punto di partenza: nessun upgrade la adotta, perche'
+    // la sua linea va solo in avanti — verso il podio commerciale — e mai
+    // all'indietro. La lista vuota dichiara esattamente questo: non un ripiego
+    // per omissione, ma «mai per upgrade».
+    evolvesFrom: [],
     // Nessuna condizione sul luogo: e' *la* forma dell'uso misto, quella che
     // vale ovunque un secondo uso attecchisca. Dove il podio commerciale
     // qualifica — densita' alta e livello alto — vince lui, che ha priorita'
@@ -220,6 +243,10 @@ export const TYPOLOGIES: readonly TypologyDefinition[] = [
     lotRole: LOT_ROLE.corner,
     minDensity: 0.5,
     minLevel: 4,
+    // Culminazione della linea residenziale: vi si arriva dalla casa a schiera
+    // o da una delle forme intermedie, mai da un'altra verticale — due cime non
+    // si scambiano il posto, la crescita racconta un progresso.
+    evolvesFrom: ['terracedHousing', 'gardenHousing', 'rationedBlock', 'stackedTenement', 'courtyardBlock'],
     // Stessa priorita' di `commercialPodium` e **prima di lui nel catalogo**, che
     // e' come si dice «piu' specifico» a parita' di peso: dove il lotto e' un
     // angolo vince il vertice dell'isolato, altrove resta il podio. Sotto le due
@@ -247,6 +274,10 @@ export const TYPOLOGIES: readonly TypologyDefinition[] = [
     mixed: 1,
     minDensity: 0.4,
     minLevel: 2,
+    // Il podio e' la casa-bottega cresciuta: un misto che promuove diventa podio
+    // quando la densita' lo merita, e la linea e' un solo passo — non c'e'
+    // niente fra i due, e non c'e' niente oltre: un podio resta un podio.
+    evolvesFrom: ['shophouse'],
     priority: 5,
     shape: {
       ...DEFAULT_TYPOLOGY_SHAPE,
@@ -272,6 +303,9 @@ export const TYPOLOGIES: readonly TypologyDefinition[] = [
     use: 0,
     minDensity: 0.3,
     minLevel: 2,
+    // Forma intermedia della linea residenziale: nasce dalla casa a schiera e
+    // puo' culminare in una delle quattro verticali.
+    evolvesFrom: ['terracedHousing'],
     priority: 2,
     shape: { ...DEFAULT_TYPOLOGY_SHAPE, courtyard: true, crownKind: CROWN_KIND.flat, minFootprint: 8 },
     profile: {
@@ -288,6 +322,8 @@ export const TYPOLOGIES: readonly TypologyDefinition[] = [
     use: 0,
     minDensity: 0.55,
     minLevel: 4,
+    // Culminazione della linea residenziale: e' l'esito, non un passaggio.
+    evolvesFrom: ['terracedHousing', 'gardenHousing', 'rationedBlock', 'stackedTenement', 'courtyardBlock'],
     priority: 4,
     shape: { ...DEFAULT_TYPOLOGY_SHAPE, chamfer: 1, maxFootprint: 6 },
     profile: {
@@ -303,6 +339,8 @@ export const TYPOLOGIES: readonly TypologyDefinition[] = [
     use: 0,
     minWealth: 0.6,
     minLevel: 6,
+    // Culminazione della linea residenziale, come le altre tre verticali.
+    evolvesFrom: ['terracedHousing', 'gardenHousing', 'rationedBlock', 'stackedTenement', 'courtyardBlock'],
     // Sta **prima** di `skyTerraces` a parita' di priorita', e l'ordine e' la
     // regola: a livello 5 vince il gradone abitato, dal 6 in su il tamburo. E'
     // la sola riga del catalogo la cui pianta non e' un rettangolo.
@@ -341,6 +379,9 @@ export const TYPOLOGIES: readonly TypologyDefinition[] = [
     // Qui e' una soglia, e sopra di essa il quartiere cambia tipologia.
     minWealth: 0.6,
     minLevel: 5,
+    // Culminazione della linea residenziale: e' il gradone abitato a cui arrivano
+    // la casa a schiera e le forme intermedie quando la ricchezza le accompagna.
+    evolvesFrom: ['terracedHousing', 'gardenHousing', 'rationedBlock', 'stackedTenement', 'courtyardBlock'],
     // Sopra `towerBlock`, che a questo livello qualifica quasi sempre: dove c'e'
     // anche la ricchezza, la torre liscia diventa un gradone abitato.
     priority: 5,
@@ -372,6 +413,9 @@ export const TYPOLOGIES: readonly TypologyDefinition[] = [
     use: 0,
     minDensity: 0.6,
     minLevel: 4,
+    // Forma intermedia della linea residenziale: nasce dalla casa a schiera e
+    // puo' culminare nelle quattro verticali.
+    evolvesFrom: ['terracedHousing'],
     // Dopo `skyTerraces`, che ha la stessa priorita': dove c'e' anche la
     // ricchezza vince il gradone: qui resta la densita' senza la ricchezza, che
     // e' il caso da cui nasce la casa impilata invece della terrazza.
@@ -411,6 +455,9 @@ export const TYPOLOGIES: readonly TypologyDefinition[] = [
     label: 'Garden housing',
     use: 0,
     charter: ['communityGardens'],
+    // Forma intermedia della linea residenziale, come le altre concesse dal
+    // luogo: nasce dalla casa a schiera e puo' culminare nelle verticali.
+    evolvesFrom: ['terracedHousing'],
     priority: 6,
     shape: {
       ...DEFAULT_TYPOLOGY_SHAPE,
@@ -440,6 +487,8 @@ export const TYPOLOGIES: readonly TypologyDefinition[] = [
     label: 'Rationed block',
     use: 0,
     charter: ['rationing'],
+    // Forma intermedia della linea residenziale, come sopra.
+    evolvesFrom: ['terracedHousing'],
     priority: 6,
     shape: { ...DEFAULT_TYPOLOGY_SHAPE, crownKind: CROWN_KIND.flat, maxFootprint: 5 },
     profile: {
@@ -474,6 +523,9 @@ export const TYPOLOGIES: readonly TypologyDefinition[] = [
     use: 1,
     roles: ['port'],
     coastal: true,
+    // Tessuto basso della linea commerciale: nasce dalla fila di negozi e puo'
+    // culminare nelle tre verticali.
+    evolvesFrom: ['retailRow'],
     priority: 6,
     shape: { ...DEFAULT_TYPOLOGY_SHAPE, podiumBands: 1, crownKind: CROWN_KIND.flat, minFootprint: 6 },
     profile: {
@@ -493,6 +545,9 @@ export const TYPOLOGIES: readonly TypologyDefinition[] = [
     use: 1,
     specialization: 'office',
     minLevel: 3,
+    // Culminazione verticale della linea commerciale: vi si arriva dalla fila
+    // di negozi o da uno dei tessuti bassi, mai da un'altra verticale.
+    evolvesFrom: ['retailRow', 'marketHall', 'arcadeRow', 'marketArcade', 'terraceArcade', 'harborMarket'],
     priority: 5,
     shape: {
       ...DEFAULT_TYPOLOGY_SHAPE,
@@ -519,6 +574,8 @@ export const TYPOLOGIES: readonly TypologyDefinition[] = [
     use: 1,
     specialization: 'tourism',
     minLevel: 2,
+    // Culminazione verticale della linea commerciale, come `officeTower`.
+    evolvesFrom: ['retailRow', 'marketHall', 'arcadeRow', 'marketArcade', 'terraceArcade', 'harborMarket'],
     priority: 5,
     shape: {
       ...DEFAULT_TYPOLOGY_SHAPE,
@@ -543,6 +600,8 @@ export const TYPOLOGIES: readonly TypologyDefinition[] = [
     label: 'Entertainment hall',
     use: 1,
     specialization: 'entertainment',
+    // Culminazione verticale della linea commerciale, come le altre due.
+    evolvesFrom: ['retailRow', 'marketHall', 'arcadeRow', 'marketArcade', 'terraceArcade', 'harborMarket'],
     priority: 5,
     shape: { ...DEFAULT_TYPOLOGY_SHAPE, crownKind: CROWN_KIND.flat, minFootprint: 6 },
     profile: {
@@ -560,6 +619,8 @@ export const TYPOLOGIES: readonly TypologyDefinition[] = [
     label: 'Market arcade',
     use: 1,
     charter: ['leasedSquare', 'localShops'],
+    // Tessuto basso della linea commerciale, come gli altri concessi dal mandato.
+    evolvesFrom: ['retailRow'],
     priority: 6,
     shape: { ...DEFAULT_TYPOLOGY_SHAPE, podiumBands: 2, minFootprint: 7 },
     profile: {
@@ -582,6 +643,9 @@ export const TYPOLOGIES: readonly TypologyDefinition[] = [
     // e non dove il commercio e' solo fitto.
     minSatisfaction: 0.5,
     minLevel: 3,
+    // Tessuto basso della linea commerciale: nasce dalla fila di negozi e puo'
+    // culminare nelle tre verticali.
+    evolvesFrom: ['retailRow'],
     // Sotto le tre righe di specializzazione, che restano piu' specifiche di
     // "qui si sta bene": un albergo resta un albergo anche in un quartiere felice.
     priority: 4,
@@ -611,6 +675,8 @@ export const TYPOLOGIES: readonly TypologyDefinition[] = [
     label: 'Arcade row',
     use: 1,
     minDensity: 0.45,
+    // Tessuto basso della linea commerciale, come `marketHall`.
+    evolvesFrom: ['retailRow'],
     // Sotto `terraceArcade` (4): dove la gente sta bene il fronte commerciale si
     // porta anche le terrazze sopra, e qui resta il solo portico.
     priority: 3,
@@ -640,6 +706,9 @@ export const TYPOLOGIES: readonly TypologyDefinition[] = [
     id: 'marketHall',
     label: 'Market hall',
     use: 1,
+    // Tessuto basso della linea commerciale: nasce dalla fila di negozi e puo'
+    // culminare nelle tre verticali.
+    evolvesFrom: ['retailRow'],
     // Dove il commercio e' rado, un capannone di mercato con la falda: un tetto
     // piatto su un edificio basso e isolato legge come costruzione non finita.
     maxDensity: 0.45,
@@ -683,6 +752,9 @@ export const TYPOLOGIES: readonly TypologyDefinition[] = [
     label: 'Logistics depot',
     use: 2,
     specialization: 'logistics',
+    // Nasce dallo scalo industriale: il capannone della logistica e' il mestiere
+    // che il cortile prende quando il luogo lo specializza.
+    evolvesFrom: ['industrialYard'],
     priority: 5,
     shape: { ...DEFAULT_TYPOLOGY_SHAPE, crownKind: CROWN_KIND.flat, minFootprint: 8 },
     profile: {
@@ -701,6 +773,8 @@ export const TYPOLOGIES: readonly TypologyDefinition[] = [
     label: 'Production loft',
     use: 2,
     minLevel: 2,
+    // Nasce dallo scalo industriale e culmina nella torre idroponica.
+    evolvesFrom: ['industrialYard'],
     priority: 2,
     shape: { ...DEFAULT_TYPOLOGY_SHAPE, crownKind: CROWN_KIND.flat, minFootprint: 6 },
     profile: { bandHeight: [4, 4], shrinkBias: 0.05, footprintBias: 4 },
@@ -710,6 +784,8 @@ export const TYPOLOGIES: readonly TypologyDefinition[] = [
     label: 'Stripped yard',
     use: 2,
     charter: ['soldReserves'],
+    // Nasce dallo scalo industriale, come gli altri mestieri del cortile.
+    evolvesFrom: ['industrialYard'],
     priority: 6,
     shape: { ...DEFAULT_TYPOLOGY_SHAPE, crownKind: CROWN_KIND.flat, minFootprint: 7 },
     profile: {
@@ -733,6 +809,9 @@ export const TYPOLOGIES: readonly TypologyDefinition[] = [
     // piu' isolato — e comincia a impilarsi.
     minIndustry: 0.5,
     minLevel: 3,
+    // Nasce dallo scalo industriale e culmina nella torre idroponica: e' la
+    // forma impilata che, dove la terra finisce, cede il passo alla serra.
+    evolvesFrom: ['industrialYard'],
     // Sopra `productionLoft` (2), sotto `logisticsDepot` (5): un polo logistico
     // resta un capannone anche in mezzo alle ciminiere.
     priority: 3,
@@ -778,6 +857,9 @@ export const TYPOLOGIES: readonly TypologyDefinition[] = [
     // soglia alta e' cio' che tiene questa tipologia un **premio** invece di un
     // tetto sullo skyline industriale.
     minLevel: 5,
+    // La culminazione dell'intera linea industriale: vi si arriva dallo scalo,
+    // dal loft o dall'officina impilata — la serra e' il tetto, non un passaggio.
+    evolvesFrom: ['industrialYard', 'productionLoft', 'stackedWorks'],
     // Sopra tutte le altre industriali: dove il luogo esprime `farming` la torre
     // vince, o la specializzazione non si vedrebbe mai a schermo.
     priority: 7,
@@ -831,6 +913,9 @@ export const TYPOLOGIES: readonly TypologyDefinition[] = [
     use: 3,
     specialization: 'research',
     minLevel: 2,
+    // La culminazione della linea civica: vi si arriva dalla guglia o dalla
+    // lanterna, quando il luogo specializza.
+    evolvesFrom: ['civicSpire', 'civicLantern'],
     priority: 5,
     shape: { ...DEFAULT_TYPOLOGY_SHAPE, courtyard: true, crownKind: CROWN_KIND.flat, minFootprint: 8 },
     profile: {
@@ -849,6 +934,8 @@ export const TYPOLOGIES: readonly TypologyDefinition[] = [
     use: 3,
     roles: ['monument', 'park'],
     maxDensity: 0.6,
+    // La culminazione della linea civica, come il laboratorio.
+    evolvesFrom: ['civicSpire', 'civicLantern'],
     priority: 4,
     shape: { ...DEFAULT_TYPOLOGY_SHAPE, minFootprint: 6 },
     profile: {
@@ -871,6 +958,9 @@ export const TYPOLOGIES: readonly TypologyDefinition[] = [
     // non c'e' — un catalizzatore piazzato a mano, una fixture di scena. E' cosi'
     // che "coronamenti per livello" resta una riga e non un ramo.
     minLevel: 4,
+    // La guglia cresce nella lanterna: e' il solo passo interno alla linea
+    // civica che non culmini in una forma specializzata.
+    evolvesFrom: ['civicSpire'],
     // Sopra il solo ripiego: `culturalPavilion` (4) e `universityLab` (5) restano
     // piu' specifici, perche' dicono qualcosa del luogo e non dell'edificio.
     priority: 1,

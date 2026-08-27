@@ -10,7 +10,7 @@ import { SURFACE_KIND, SURFACE_KIND_NAMES } from '../visualBlock';
 import { VoxelWorld } from '../VoxelWorld';
 import { TYPOLOGIES } from '../buildings/config';
 import { CATALYSTS } from '../../sim/catalysts';
-import { LANDMARKS, contextualFormsOf, variantsOf } from '../landmarks/config';
+import { LANDMARKS, contextualFormsOf, maxStageOf, variantsOf } from '../landmarks/config';
 import { ARCOLOGY_RECIPES } from '../arcology/config';
 import { createScene } from './cityScene';
 import {
@@ -37,6 +37,9 @@ import {
   SWATCH_CATALOG_SUBJECTS,
   SWATCH_ITEM_GAP,
   SWATCH_LANDMARKS,
+  SWATCH_LINES,
+  SWATCH_LINE_LEVELS,
+  SWATCH_LINE_TYPOLOGIES,
   SWATCH_SUBJECTS,
   swatchExtent,
   swatchSubjectAt,
@@ -491,13 +494,40 @@ describe('swatchScene', () => {
     }
   });
 
-  it('cataloga i landmark da varianti e forme dichiarate, senza conteggi a mano', () => {
-    // Quanti soggetti landmark ci siano lo decide il catalogo: varianti piu'
-    // forme contestuali, per ogni ruolo con una ricetta. Nessun numero scritto.
+  it('porta le quattro linee evolutive alle cinque soglie visuali', () => {
+    // Quattro ripieghi — uno per uso — e le cinque soglie condivise per
+    // ciascuno: e' la galleria che mostra la crescita cambiare il volto di un
+    // edificio a parita' di seme e di regola.
+    expect(SWATCH_LINES.length).toBe(SWATCH_LINE_TYPOLOGIES.length * SWATCH_LINE_LEVELS.length);
+
+    const ids = SWATCH_LINES.map((subject) => subject.id);
+    expect(new Set(ids).size).toBe(ids.length);
+
+    for (const typology of SWATCH_LINE_TYPOLOGIES) {
+      for (const level of SWATCH_LINE_LEVELS) {
+        const subject = SWATCH_LINES.find((entry) => entry.id === `building:line:${typology}:${level}`);
+        expect(subject, `${typology}@${level}`).toBeDefined();
+        expect(infoValue(subject!, 'Livello')).toBe(String(level));
+      }
+    }
+
+    // La linea cresce davvero: a parita' di tipologia il soggetto di skyline e'
+    // piu' alto di quello base, e non per un seme diverso.
+    for (const typology of SWATCH_LINE_TYPOLOGIES) {
+      const base = SWATCH_LINES.find((entry) => entry.id === `building:line:${typology}:0`)!;
+      const skyline = SWATCH_LINES.find((entry) => entry.id === `building:line:${typology}:${SWATCH_LINE_LEVELS[SWATCH_LINE_LEVELS.length - 1]}`)!;
+      expect(skyline.stamp.sizeZ).toBeGreaterThan(base.stamp.sizeZ);
+    }
+  });
+
+  it('cataloga i landmark per stadio, variante e forma, senza conteggi a mano', () => {
+    // Quanti soggetti landmark ci siano lo decide il catalogo: i quattro stadi
+    // di crescita, le varianti e le forme contestuali, per ogni ruolo con una
+    // ricetta. Nessun numero scritto.
     const expected = CATALYSTS.reduce((total, catalyst) => {
       const recipe = LANDMARKS[catalyst.id];
       if (recipe === undefined) return total;
-      return total + variantsOf(recipe).length + contextualFormsOf(catalyst.id).length;
+      return total + maxStageOf(recipe) + 1 + variantsOf(recipe).length + contextualFormsOf(catalyst.id).length;
     }, 0);
     expect(SWATCH_LANDMARKS.length).toBe(expected);
 
@@ -509,6 +539,21 @@ describe('swatchScene', () => {
       expect(subject.stamp.sizeX).toBeGreaterThan(0);
       expect(subject.stamp.sizeZ).toBeGreaterThan(0);
       expect(infoValue(subject, 'Fronte')).toBe('est');
+    }
+
+    // Ogni ruolo mostra i suoi quattro stadi, e lo stadio zero resta il piu'
+    // piccolo: la crescita e' quella che la citta' costruisce, non un'esposizione
+    // di masse gia' finite.
+    for (const catalyst of CATALYSTS) {
+      const recipe = LANDMARKS[catalyst.id];
+      if (recipe === undefined) continue;
+      const stages = SWATCH_LANDMARKS.filter(
+        (subject) => subject.id.startsWith(`landmark:${catalyst.id}:stage:`),
+      );
+      expect(stages.length, catalyst.id).toBe(maxStageOf(recipe) + 1);
+      for (let stage = 0; stage < stages.length; stage++) {
+        expect(stages[stage].stamp.sizeZ).toBe(recipe.height);
+      }
     }
   });
 

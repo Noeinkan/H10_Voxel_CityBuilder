@@ -4,10 +4,14 @@ import {
   assembleBuilding,
   assembleLayoutCells,
   buildStamp,
+  urbanFootprintCap,
 } from './assemble';
-import { GRAMMAR, MAX_FOOTPRINT } from './config';
+import { BUILDER, GRAMMAR, MAX_FOOTPRINT } from './config';
 import { generateBuilding } from './generate';
 import { STAMP_EMPTY, type VoxelStamp } from './stamp';
+import { SKYLINE } from '../skyline/config';
+import { allowedLevelAt, isPeakBlock, type SkylineQuery } from '../skyline/tiers';
+import { StreetNetwork } from '../streets/StreetNetwork';
 
 /**
  * La rete dell'assemblatore: lo stamp fuso e' un solo `VoxelStamp` quadrato di
@@ -21,7 +25,7 @@ import { STAMP_EMPTY, type VoxelStamp } from './stamp';
 const SEEDS = [0, 1, 13, 4242, 15851] as const;
 
 /** Impronte oltre il modulo: dal primo lotto largo fino all'isolato intero. */
-const CAPS = [17, 18, 20, 24, 32, 33, 40] as const;
+const CAPS = [MAX_FOOTPRINT + 1, 10, 12, 16, 24, 32, 40] as const;
 
 function request(cls: BuildingClass, level: number, seed: number) {
   return { class: cls, level, seed };
@@ -123,5 +127,83 @@ describe('buildStamp', () => {
     const stamp = buildStamp(request(ALL_CLASSES[0], 3, 13), cap);
     expect(stamp.sizeX).toBe(cap);
     expect(stamp.sizeY).toBe(cap);
+  });
+});
+
+describe('urbanFootprintCap', () => {
+  const worldSeed = 1337;
+  const streets = new StreetNetwork(worldSeed);
+
+  function core(blockKx: number, blockKy: number, builtNeighbours: number = SKYLINE.edgeCore): SkylineQuery {
+    return {
+      x: 128,
+      y: 128,
+      poles: [{ x: 128, y: 128, radius: 96 }],
+      waterDistance: null,
+      builtNeighbours,
+      seed: worldSeed,
+      blockKx,
+      blockKy,
+    };
+  }
+
+  function neighbouringBlocks(): { peak: [number, number]; plain: [number, number] } {
+    for (let ky = 0; ky < 32; ky++) {
+      for (let kx = 0; kx < 32; kx++) {
+        const here = isPeakBlock(worldSeed, kx, ky);
+        const east = isPeakBlock(worldSeed, kx + 1, ky);
+        if (here !== east) {
+          return here
+            ? { peak: [kx, ky], plain: [kx + 1, ky] }
+            : { peak: [kx + 1, ky], plain: [kx, ky] };
+        }
+      }
+    }
+    throw new Error('nessuna coppia di isolati diversi');
+  }
+
+  function gate(
+    block: readonly [number, number],
+    builtNeighbours: number = SKYLINE.edgeCore,
+  ): { cap: number; blockSide: number } {
+    const rect = streets.blockRect({ kx: block[0], ky: block[1] });
+    const blockSide = Math.min(rect.x1 - rect.x0 + 1, rect.y1 - rect.y0 + 1);
+    const cap = urbanFootprintCap(rect, (x, y) => {
+      const owner = streets.blockAt(x, y);
+      return allowedLevelAt(core(owner.kx, owner.ky, builtNeighbours));
+    });
+    return { cap, blockSide };
+  }
+
+  it('citta iniziale e periferia restano entro il modulo ordinario', () => {
+    const { peak } = neighbouringBlocks();
+    expect(gate(peak, 0).cap).toBe(MAX_FOOTPRINT);
+  });
+
+  it('il core non eletto resta ordinario e solo il picco maturo usa l isolato', () => {
+    const { peak, plain } = neighbouringBlocks();
+    const peakGate = gate(peak);
+    const plainGate = gate(plain);
+
+    expect(plainGate.cap).toBe(MAX_FOOTPRINT);
+    expect(peakGate.cap).toBe(peakGate.blockSide);
+  });
+
+  it('due isolati vicini conservano ciascuno la propria decisione', () => {
+    const { peak, plain } = neighbouringBlocks();
+    const peakGate = gate(peak);
+    expect([peakGate.cap, gate(plain).cap]).toEqual([peakGate.blockSide, MAX_FOOTPRINT]);
+  });
+
+  it('lo stesso stato e seme producono la stessa decisione e lo stesso stamp', () => {
+    const { peak } = neighbouringBlocks();
+    const capA = gate(peak).cap;
+    const capB = gate(peak).cap;
+    const a = buildStamp(request(ALL_CLASSES[0], BUILDER.maxLevel, 4242), capA);
+    const b = buildStamp(request(ALL_CLASSES[0], BUILDER.maxLevel, 4242), capB);
+
+    expect(capB).toBe(capA);
+    expect(Array.from(b.voxels)).toEqual(Array.from(a.voxels));
+    expect(Array.from(b.surfaces)).toEqual(Array.from(a.surfaces));
   });
 });

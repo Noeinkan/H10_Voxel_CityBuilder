@@ -33,18 +33,24 @@ const STEP = bandStepOf();
  * dalle voci che non lo usano: e' la stessa disciplina delle candidate scartate
  * in `nextRect`, e serve alla stessa cosa — due tipologie sullo stesso seme
  * restano confrontabili, perche' la cima sceglie la forma e non la sequenza.
+ *
+ * `bonus` e' il premio delle soglie visuali (torre e skyline): si somma alla
+ * fascia piu' alta di ogni cima, cosi' **ogni** coronamento cresce con il
+ * livello e non solo quelli che pescano il tiro. Vive fuori dal tiro apposta —
+ * e' una quota dichiarata dal livello, non una moneta del canale del tetto.
  */
 export function crownBands(
   kind: CrownKind,
   top: BandRect,
   height: number,
+  bonus = 0,
 ): { bands: readonly { rect: BandRect; height: number }[]; roofProp: boolean } {
   switch (kind) {
     case CROWN_KIND.flat:
       // Non rientra affatto: su un'impronta stretta `shrink` lascerebbe un
       // cappello minuscolo, cioe' proprio la guglia che una tipologia a tetto
       // piano non deve avere. Un capannone finisce largo quanto lui.
-      return { bands: [{ rect: top, height: GRAMMAR.flatCrownHeight }], roofProp: false };
+      return { bands: [{ rect: top, height: GRAMMAR.flatCrownHeight + bonus }], roofProp: false };
     case CROWN_KIND.stepped:
       // Due gradini, il secondo piu' basso: la cima si legge come una scala e
       // non come una punta, ed e' la sola forma che continua verso l'alto il
@@ -52,14 +58,17 @@ export function crownBands(
       return {
         bands: [
           { rect: shrink(top, STEP), height: GRAMMAR.flatCrownHeight },
-          { rect: shrink(shrink(top, STEP), STEP), height: GRAMMAR.flatCrownHeight },
+          { rect: shrink(shrink(top, STEP), STEP), height: GRAMMAR.flatCrownHeight + bonus },
         ],
         roofProp: false,
       };
     case CROWN_KIND.ridge:
       // Rientra su un asse solo, e sul lato lungo resta larga quanto il corpo:
       // e' la copertura di un mercato o di un deposito vista di fianco.
-      return { bands: [{ rect: shrinkAxis(top, STEP), height: GRAMMAR.flatCrownHeight }], roofProp: false };
+      return {
+        bands: [{ rect: shrinkAxis(top, STEP), height: GRAMMAR.flatCrownHeight + bonus }],
+        roofProp: false,
+      };
     case CROWN_KIND.gable: {
       // Tre rientranze di fila sullo stesso asse: `shrinkAxis` sceglie sempre il
       // lato corto, quindi la falda sale sempre verso il colmo lungo — anche
@@ -72,7 +81,7 @@ export function crownBands(
         bands: [
           { rect: first, height: GRAMMAR.flatCrownHeight },
           { rect: second, height: GRAMMAR.flatCrownHeight },
-          { rect: shrinkAxis(second, STEP), height: GRAMMAR.flatCrownHeight },
+          { rect: shrinkAxis(second, STEP), height: GRAMMAR.flatCrownHeight + bonus },
         ],
         roofProp: false,
       };
@@ -82,10 +91,10 @@ export function crownBands(
       // si porta dietro il supplemento: senza, resterebbe un cappello basso e
       // stretto, cioe' il contrario di una torretta.
       return {
-        bands: [{ rect: shrink(shrink(top, STEP), STEP), height: height + GRAMMAR.lanternRise }],
+        bands: [{ rect: shrink(shrink(top, STEP), STEP), height: height + GRAMMAR.lanternRise + bonus }],
         roofProp: true,
       };
     default:
-      return { bands: [{ rect: shrink(top, STEP), height }], roofProp: true };
+      return { bands: [{ rect: shrink(top, STEP), height: height + bonus }], roofProp: true };
   }
 }

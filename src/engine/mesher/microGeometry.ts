@@ -23,6 +23,11 @@ import { MESH_UNITS_PER_VOXEL } from './meshTypes';
 // `LATERAL_FACES` dentro il corpo di un emettitore. Un letterale di modulo che
 // dereferenziasse l'altro lato romperebbe il caricamento, non la compilazione.
 import { appendStreetDetail } from './microStreet';
+// Il vocabolario degli edifici maturi sta in un terzo modulo per la stessa
+// ragione e con la stessa cautela: `appendFacadeDetail` e `appendRoofDetail` si
+// chiamano solo dentro il corpo di `appendMicroGeometry`, e di la' si leggono le
+// costanti di questo file dentro i corpi degli emettitori.
+import { appendFacadeDetail, appendRoofDetail } from './microDetail';
 
 /**
  * Microgeometria architettonica in unita' fisse di 1/16 di voxel.
@@ -1241,10 +1246,19 @@ export function appendMicroGeometry(
 
   // Da qui in giu' sono oggetti, non struttura: se il tetto arriva, cadono loro.
   if (!emitFacadeProps(padded, writer, facadeByFace, origin)) return initial - writer.remainingQuads;
+  // Il vocabolario maturo segue i prop storici: balconi, davanzali, lesene e
+  // pinne sono oggetti quanto le tende, e sotto pressione cadono prima del
+  // retro — ma dopo i prop di sempre, che sono il secondo sguardo di base.
+  if (!appendFacadeDetail(padded, writer, cells, origin)) return initial - writer.remainingQuads;
   const roofs = bySurface[SURFACE_KIND.roofTech];
   if (!emitRoofMasts(padded, writer, roofs, origin)) return initial - writer.remainingQuads;
   if (!emitRoofCrowns(padded, writer, roofs, origin)) return initial - writer.remainingQuads;
   if (!emitTerraceBoxes(padded, writer, roofs, origin)) return initial - writer.remainingQuads;
+  // Le combinazioni di tetto chiudono i prop: vasche e gruppi HVAC sono l'ultima
+  // voce del campionario prima del retro, che resta il primo a cadere.
+  if (!appendRoofDetail(padded, writer, roofs, origin, marks)) {
+    return initial - writer.remainingQuads;
+  }
   // Il dettaglio del retro chiude la sequenza: e' l'ultimo a comparire e il primo
   // a cadere. Vive in `microStreet.ts` — un file suo, perche' questo e' gia'
   // oltre il budget di righe della cartella.

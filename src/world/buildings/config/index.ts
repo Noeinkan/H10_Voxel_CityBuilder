@@ -18,6 +18,7 @@
  * | `grammar.ts` | di che parole e' fatta una forma |
  * | `levels.ts` | quanta massa da' un livello, e come si arriva al successivo |
  * | `classProfile.ts` | che aspetto ha un uso quando il luogo non dice altro |
+ * | `visual.ts` | a quali livelli un edificio cambia volto, a parita' di massa |
  * | `typologies.ts` | quale forma prende un uso in un luogo preciso |
  * | `styles.ts` | di che materia e' fatto un quartiere |
  *
@@ -43,6 +44,8 @@ export type { LevelCaps } from './levels';
 
 export { CLASS_PROFILE } from './classProfile';
 export type { ClassProfile } from './classProfile';
+
+export { SKYLINE_PROP_HEIGHT, VISUAL_CROWN_BONUS, VISUAL_LEVELS, crownBonusOf } from './visual';
 
 export { DEFAULT_TYPOLOGY_SHAPE, TYPOLOGIES, typologyById } from './typologies';
 export type {

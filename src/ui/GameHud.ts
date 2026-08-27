@@ -933,28 +933,29 @@ export class GameHud {
       delete this.toast.dataset.kind;
       return;
     }
-    /*
-     * Della condizione qui resta il **titolo**, non il referto.
-     *
-     * `model.message` porta titolo e spiegazione insieme, ed e' la stessa coppia
-     * che il cassetto Citta' apre in cima alla sua colonna. Stampata qui restava
-     * aperta finche' la crisi durava: tre righe permanenti sopra la citta', che
-     * si leggono una volta e poi diventano arredamento — e nel frattempo coprono
-     * cio' che si sta costruendo. Il titolo basta a riconoscere lo stato con la
-     * coda dell'occhio; il perche' sta dove c'e' spazio per leggerlo, e chi lo
-     * vuole apre il cassetto.
-     *
-     * Il modello non cambia: `message` resta la lettura completa per chi la
-     * vuole intera, ed e' cio' che questo ramo stampava per difetto, non per
-     * scelta.
-     */
     const condition = this.model.condition;
+    /*
+     * Tutorial e coach sono istruzioni: nasconderne il gesto nel cassetto Citta'
+     * lasciava sul campo soltanto «Place a Market» o «Add homes», cioe' proprio
+     * la parte che non spiega come riuscirci. Restano compatti in due pesi —
+     * obiettivo e gesto/verifica — mentre crisi e referti continuano a essere
+     * targhe di una riga: quelli durano e i dettagli hanno gia' una dashboard.
+     */
+    if (condition?.kind === 'onboarding' || condition?.kind === 'coach') {
+      const title = document.createElement('strong');
+      title.className = 'hud-toast-title';
+      title.textContent = condition.title;
+      const message = document.createElement('span');
+      message.className = 'hud-toast-message';
+      message.textContent = condition.message;
+      this.toast.replaceChildren(title, message);
+      this.toast.dataset.tone = condition.tone;
+      this.toast.dataset.kind = condition.kind;
+      return;
+    }
     this.toast.textContent = condition?.title ?? this.model.message;
     this.toast.dataset.tone = condition?.tone ?? 'neutral';
     if (condition === null) delete this.toast.dataset.kind;
-    // Il coach arriva come una condizione di kind `coach`: gli si da' il proprio
-    // dataset perche' lo stile lo distingua dal traguardo e dai colli di
-    // bottiglia, senza doverne cambiare il tono (che resta `objective`).
-    else this.toast.dataset.kind = condition.kind === 'coach' ? 'coach' : 'condition';
+    else this.toast.dataset.kind = 'condition';
   }
 }

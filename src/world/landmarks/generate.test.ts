@@ -175,6 +175,46 @@ describe('catalogo dei landmark', () => {
     }
   });
 
+  it('ogni stadio del tronco racconta un pezzo nuovo: accesso, massa, attrezzatura, corona', () => {
+    // La crescita in quattro tempi deve leggersi **a ogni passo** e non solo
+    // alla fine: uno stadio che non aggiunge niente sarebbe un tempo morto, e
+    // un delta che non copre il precedente una cancellazione mascherata.
+    for (const recipe of RECIPES) {
+      for (let stage = 1; stage <= maxStageOf(recipe); stage++) {
+        const before = trunkSet(recipe, stage - 1, FACING.east);
+        const after = trunkSet(recipe, stage, FACING.east);
+        for (const index of before) {
+          expect(after.has(index), `${recipe.kind} stadio ${stage}`).toBe(true);
+        }
+        expect(after.size, `${recipe.kind} stadio ${stage}`).toBeGreaterThan(before.size);
+      }
+    }
+  });
+
+  it('ogni variante si distingue entro lo stadio due e lascia un dettaglio finale', () => {
+    // La differenza di un esemplare deve essere **esposta** — visibile quando
+    // la struttura e' ancora a meta' crescita, non rivelata all'ultimo stadio
+    // — e deve avere un finale coerente: almeno una voce negli ultimi due
+    // stadi, che e' il posto del coronamento e del segnale.
+    for (const recipe of RECIPES) {
+      const trunkTwo = trunkSet(recipe, 2, FACING.east);
+      for (let v = 0; v < variantsOf(recipe).length; v++) {
+        const variant = variantsOf(recipe)[v];
+        const seed = seedForVariant(recipe, v);
+        const drawnTwo = solidSet(
+          generateLandmark({ kind: recipe.kind, stage: 2, facing: FACING.east, seed })!,
+        );
+        expect(drawnTwo.size, `${recipe.kind}/${variant.name}`).toBeGreaterThan(trunkTwo.size);
+
+        let last = -1;
+        variant.parts.forEach((parts, index) => {
+          if (parts.length > 0) last = index;
+        });
+        expect(last, `${recipe.kind}/${variant.name}`).toBeGreaterThanOrEqual(2);
+      }
+    }
+  });
+
   it('ruotare cambia il verso e non la quantita di struttura', () => {
     for (const recipe of RECIPES) {
       const stage = maxStageOf(recipe);

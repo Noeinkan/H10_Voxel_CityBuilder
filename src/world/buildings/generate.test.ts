@@ -475,9 +475,10 @@ describe('generateBuilding', () => {
   it('tiene pieni i cantonali e buca solo le colonne intermedie', () => {
     // Con tutte le fasce a `keep` l'impronta resta il quadrato pieno a ogni
     // quota: e' la sola configurazione in cui si puo' leggere una facciata senza
-    // prima ricostruire il riquadro della fascia. Il livello sta sotto
-    // `luminousFromLevel` apposta — con l'accento acceso una delle quattro pareti
-    // sarebbe una lama luminosa e non direbbe niente sulla campata.
+    // prima ricostruire il riquadro della fascia. Il livello e' la soglia
+    // `consolidated` — la prima in cui la campata esiste — ma sotto quella della
+    // lama intera: l'accento accende il solo voxel di sommita', che resta fuori
+    // dalle righe lette qui sotto, quindi la campata si misura da sola.
     const base = CLASS_PROFILE[ALL_CLASSES[0]];
     const profile = {
       ...base,
@@ -485,7 +486,7 @@ describe('generateBuilding', () => {
       shrinkOps: [BAND_OP.keep],
       growOps: [BAND_OP.keep],
     };
-    const stamp = generateBuilding({ class: ALL_CLASSES[0], level: 1, seed: 55, profile });
+    const stamp = generateBuilding({ class: ALL_CLASSES[0], level: 2, seed: 55, profile });
     const side = stamp.sizeX;
     const at = (sx: number, sy: number, sz: number): number =>
       stamp.voxels[sx + side * (sy + side * sz)];

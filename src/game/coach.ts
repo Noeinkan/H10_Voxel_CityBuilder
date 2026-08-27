@@ -1,5 +1,6 @@
 import {
-  CATALYSTS,
+  BALANCE,
+  BUILDING_CLASS,
   catalystById,
   catalystRoleOf,
   districtPairingsOf,
@@ -28,8 +29,8 @@ import { TIER } from '../world/skyline/tiers';
  *
  * **Dove sta la differenza con `tips.ts`.** Quella voce parla di *salute*: una
  * crisi in corso, un collo di bottiglia che frena. Il coach parla di *rotta*:
- * cosa costruire dopo, quale combinazione provare, come salire. E' sempre
- * presente, non solo quando qualcosa va storto, ed e' il motivo per cui le
+ * cosa costruire dopo, quale combinazione provare, come salire. Parla soltanto
+ * quando puo' nominare un traguardo osservabile, ed e' il motivo per cui le
  * vecchie opportunita' (`open-trade`, `ferry-needs-a-pair`) e le meccaniche
  * (`overlap`, `the-city-eats-its-farms`, `towers-are-converted-industry`) sono
  * migrate qui invece di restare due voci concorrenti.
@@ -40,8 +41,8 @@ import { TIER } from '../world/skyline/tiers';
  */
 
 export type CoachTier =
-  | 'connections' | 'identity' | 'district' | 'food'
-  | 'stage' | 'skyline' | 'aerial' | 'rooftop' | 'arcology' | 'landmark';
+  | 'food' | 'foundation' | 'development' | 'district' | 'connections'
+  | 'identity' | 'stage' | 'skyline' | 'aerial' | 'rooftop' | 'arcology';
 
 export interface CoachSuggestion {
   /** Stabile: identifica il consiglio, non il momento in cui e' apparso. */
@@ -126,6 +127,11 @@ const STAGE = {
   nearShare: 0.75,
 } as const;
 
+/** Prima di suggerire un'altra spesa, lascia che i tre campi iniziali parlino. */
+const FOUNDATION = {
+  observedBuildings: 6,
+} as const;
+
 /**
  * Tutti i suggerimenti che valgono adesso, dal piu' urgente al meno.
  *
@@ -139,14 +145,15 @@ export function coachSuggestions(context: CoachContext): readonly CoachSuggestio
     if (suggestion !== null) out.push(suggestion);
   };
   push(foodSuggestion(context));
-  push(connectionsSuggestion(context));
-  push(identitySuggestion(context));
+  push(foundationSuggestion(context));
   push(overlapSuggestion(context));
-  push(missingLandmarkSuggestion(context));
+  push(developmentSuggestion(context));
+  push(connectionsSuggestion(context));
   push(stageSuggestion(context));
-  push(skylineSuggestion(context));
+  push(identitySuggestion(context));
   push(rooftopSuggestion(context));
   push(aerialSuggestion(context));
+  push(skylineSuggestion(context));
   push(arcologySuggestion(context));
   return out;
 }
@@ -175,6 +182,83 @@ function foodSuggestion(context: CoachContext): CoachSuggestion | null {
   };
 }
 
+// --- Fondazione -------------------------------------------------------------
+
+/**
+ * La prima lezione dopo i tre click e' osservare la conseguenza, non farne un
+ * quarto. Senza questa pausa il coach chiedeva subito un landmark nuovo mentre
+ * la citta' non aveva ancora costruito un solo isolato: il giocatore imparava a
+ * svuotare la toolbar, non a leggere la simulazione.
+ */
+function foundationSuggestion(context: CoachContext): CoachSuggestion | null {
+  const built = context.state.buildings.length;
+  if (built >= FOUNDATION.observedBuildings) return null;
+  const remaining = FOUNDATION.observedBuildings - built;
+  return {
+    id: 'coach-observe-foundation',
+    tier: 'foundation',
+    title: `Let ${remaining} more ${remaining === 1 ? 'block' : 'blocks'} grow`,
+    message: `Set speed to 4× and do not place another catalyst yet. When the city reaches ${FOUNDATION.observedBuildings} buildings, compare Population, Materials and Funds; the first weak number decides the next move.`,
+    highlight: catalystAnchor(context.state, 'market'),
+    grow: null,
+  };
+}
+
+// --- Sviluppo ---------------------------------------------------------------
+
+interface DevelopmentPlan {
+  readonly kind: CatalystId;
+  readonly partner: CatalystId;
+  readonly noun: string;
+  readonly result: string;
+}
+
+/** Una risposta concreta per ciascuno dei quattro usi, nello stesso ordine contratto. */
+const DEVELOPMENT_PLAN: readonly DevelopmentPlan[] = [
+  { kind: 'school', partner: 'market', noun: 'homes', result: 'adds housing and civic life' },
+  { kind: 'monument', partner: 'market', noun: 'shops', result: 'draws commerce and visitors' },
+  { kind: 'power', partner: 'factory', noun: 'workshops', result: 'strengthens industry' },
+  { kind: 'school', partner: 'park', noun: 'civic uses', result: 'extends the civic district' },
+] as const;
+
+/**
+ * Porta la citta' al prossimo traguardo misurabile, invece di percorrere i
+ * landmark in ordine di catalogo. Il numero citato e' lo stesso che compare nel
+ * traguardo di autosufficienza e include gli usi secondari dei blocchi misti.
+ */
+function developmentSuggestion(context: CoachContext): CoachSuggestion | null {
+  const target = BALANCE.gameplay.success.buildingsPerClass;
+  let chosen = -1;
+  let largestGap = 0;
+  for (let cls = BUILDING_CLASS.residential; cls <= BUILDING_CLASS.civic; cls++) {
+    const count = context.state.buildingCounts[cls] + context.state.mixedCounts[cls];
+    const gap = target - count;
+    if (gap > largestGap) {
+      largestGap = gap;
+      chosen = cls;
+    }
+  }
+  if (chosen < 0) return null;
+
+  const plan = DEVELOPMENT_PLAN[chosen];
+  if (plan === undefined) return null;
+  const count = context.state.buildingCounts[chosen] + context.state.mixedCounts[chosen];
+  const definition = catalystById(plan.kind);
+  const partner = catalystAnchor(context.state, plan.partner);
+  const shortfall = Math.max(0, Math.ceil(definition.cost - context.state.funds.stock));
+  const first = shortfall > 0
+    ? `Save ${shortfall} more Funds for a ${definition.label}.`
+    : `Place a ${definition.label} so its ring overlaps your ${catalystById(plan.partner).label}.`;
+  return {
+    id: `coach-development-${chosen}`,
+    tier: 'development',
+    title: `Add ${plan.noun} · ${count}/${target}`,
+    message: `${first} That overlap ${plan.result}; this step is complete when ${plan.noun} reach ${target}.`,
+    highlight: partner,
+    grow: null,
+  };
+}
+
 // --- Connessioni ------------------------------------------------------------
 
 function connectionsSuggestion(context: CoachContext): CoachSuggestion | null {
@@ -185,7 +269,7 @@ function connectionsSuggestion(context: CoachContext): CoachSuggestion | null {
       id: 'coach-port',
       tier: 'connections',
       title: 'Place a Port',
-      message: 'The island has no way to trade with the world, and you can afford to open one. To fix that, place a Port on the coast: it opens external trade, and imported food scales with what the city eats, so it keeps helping as it grows.',
+      message: 'Choose Connections → Port and aim at a highlighted coastal site. The step is complete when Trade shows a connection; imports can then cover food the island cannot grow.',
       highlight: null,
       grow: null,
     };
@@ -197,7 +281,7 @@ function connectionsSuggestion(context: CoachContext): CoachSuggestion | null {
       id: 'coach-ferry-pair',
       tier: 'connections',
       title: 'Place a second Ferry',
-      message: 'Your Ferry has only one terminal, so no line is open — a pier is not a line. To fix that, place a second Ferry terminal on the opposite coast: the line opens and both sides get happier.',
+      message: 'Place a second Ferry on a different coast, across water from the highlighted terminal. The step is complete when a route and moving ferry appear between them.',
       highlight: catalystAnchor(state, 'ferry'),
       grow: null,
     };
@@ -213,7 +297,7 @@ function connectionsSuggestion(context: CoachContext): CoachSuggestion | null {
       id: 'coach-transport',
       tier: 'connections',
       title: 'Place a Transit',
-      message: 'Your districts are spreading far apart, and nothing ties them together. To fix that, place a Transit close to your busiest quarter: it lifts homes, shops and workshops alike, and asks nothing of the site.',
+      message: 'Place a Transit where its ring covers buildings from two existing districts. It lifts homes, shops and workshops together; watch the shared area become denser.',
       highlight: null,
       grow: null,
     };
@@ -231,12 +315,21 @@ function identitySuggestion(context: CoachContext): CoachSuggestion | null {
   );
   if (hasIdentity) return null;
 
+  const kind = 'university';
+  const definition = catalystById(kind);
+  const pairing = nearestPairing(kind, context.state.catalysts);
+  const shortfall = Math.max(0, Math.ceil(definition.cost - context.state.funds.stock));
+  const first = shortfall > 0
+    ? `Save ${shortfall} more Funds for a ${definition.label}.`
+    : pairing === null
+      ? `Place a ${definition.label} where its ring covers an established district.`
+      : `Place a ${definition.label} beside the highlighted ${catalystById(pairing.role).label}.`;
   return {
       id: 'coach-identity',
       tier: 'identity',
-      title: 'Place a University',
-      message: 'The city has homes, jobs and parks, but no landmark that gives it character. To fix that, place a University close to your Park or Transport: together they open a campus quarter that no growth catalyst builds.',
-    highlight: null,
+      title: 'Open a campus quarter',
+      message: `${first} Their overlapping rings create a campus and unlock research buildings; the step is complete when Research appears in the district view.`,
+    highlight: pairing === null ? null : { x: pairing.x, y: pairing.y },
     grow: null,
   };
 }
@@ -244,8 +337,8 @@ function identitySuggestion(context: CoachContext): CoachSuggestion | null {
 // --- Distretti --------------------------------------------------------------
 
 /**
- * La lezione del sovrapporre: si dice una volta sola, appena c'e' materia, e
- * sta **prima** del catalogo perche' insegna la regola che lo rende utile.
+ * La lezione del sovrapporre: si dice una volta sola, appena c'e' materia. Sta
+ * prima dei nuovi landmark perche' insegna a leggere quelli che ci sono gia'.
  */
 function overlapSuggestion(context: CoachContext): CoachSuggestion | null {
   const { state } = context;
@@ -255,9 +348,9 @@ function overlapSuggestion(context: CoachContext): CoachSuggestion | null {
     return {
       id: 'coach-overlap',
       tier: 'district',
-      title: 'Overlap two fields',
-      message: 'No block hosts two uses yet — nobody zones anything here. Where two influence fields overlap, a block starts hosting two uses at once, a shop under the flats. To fix that, place a catalyst so its field overlaps the Market or Factory.',
-      highlight: null,
+      title: 'Create the first mixed-use block',
+      message: 'Place the next catalyst so its ring overlaps the highlighted Market ring. The step is complete when Mixed-use blocks in City rises above zero.',
+      highlight: catalystAnchor(state, 'market'),
       grow: null,
     };
   }
@@ -278,7 +371,7 @@ function stageSuggestion(context: CoachContext): CoachSuggestion | null {
       id: `coach-stage-${landmark.kind}`,
       tier: 'stage',
       title: `Build ${remaining} more near the ${label}`,
-      message: `Your ${label} is close to its next stage. To fix that, build ${remaining} more ${remaining === 1 ? 'building' : 'buildings'} near it: each stage strengthens its catalyst, so an early monument pays off for the whole game.`,
+      message: `Build inside the highlighted ${label} ring until ${remaining} more ${remaining === 1 ? 'building appears' : 'buildings appear'}. Its next stage then increases the strength of the same field.`,
       highlight: null,
       grow: {
         x: landmark.x,
@@ -389,53 +482,10 @@ function arcologySuggestion(context: CoachContext): CoachSuggestion | null {
   };
 }
 
-// --- Catalogo ---------------------------------------------------------------
-
 /**
- * Il catalogo: ogni landmark che la citta' non ha ancora, con il perche'.
- *
- * E' il cuore della voce: quando nessun tier strategico ha niente da dire, c'e'
- * comunque un landmark da piazzare e un motivo per farlo. Scorre la toolbar in
- * ordine — crescita, connessioni, identita' — e propone il primo che manca.
- * Se quel landmark apre un quartiere con un ruolo gia' piazzato, lo dice:
- * «mettilo accanto a X, insieme fanno Y». Mercato, fabbrica e parco restano
- * fuori perche' il tutorial li ha gia' chiesti.
- */
-function missingLandmarkSuggestion(context: CoachContext): CoachSuggestion | null {
-  const placed = new Set(context.state.catalysts.map((entry) => catalystRoleOf(entry)));
-  for (const definition of CATALYSTS) {
-    if (placed.has(definition.id)) continue;
-
-    const pairing = nearestPairing(definition.id, context.state.catalysts);
-    if (pairing !== null) {
-      return {
-        id: `coach-missing-${definition.id}`,
-        tier: 'landmark',
-        title: `Place a ${definition.label}`,
-        message: `Place a ${definition.label} close to your ${catalystById(pairing.role).label}: together they form a ${pairing.district} quarter. ${definition.description}`,
-        highlight: { x: pairing.x, y: pairing.y },
-        grow: null,
-      };
-    }
-
-    return {
-      id: `coach-missing-${definition.id}`,
-      tier: 'landmark',
-      title: `Place a ${definition.label}`,
-      message: `You haven't placed the ${definition.label} yet. ${definition.description}`,
-      highlight: null,
-      grow: null,
-    };
-  }
-  return null;
-}
-
-/**
- * Il quartiere che questo landmark aprirebbe con un ruolo gia' piazzato, o null.
- *
- * E' la stessa lettura di `districtPairingsOf` che prima stava nel tier
- * distretti: accanto al catalogo arricchisce la tessera mancante con il «dove»
- * invece di nominarla e basta.
+ * Il quartiere che un landmark aprirebbe con un ruolo gia' piazzato, o null.
+ * Serve ai soli suggerimenti che chiedono davvero quella sinergia: non percorre
+ * piu' il catalogo per tenere la voce artificialmente piena.
  */
 function nearestPairing(
   kind: CatalystId,

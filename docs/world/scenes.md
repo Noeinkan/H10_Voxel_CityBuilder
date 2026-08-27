@@ -49,13 +49,17 @@
   la fila davanti nasconde `CELL_HEIGHT - cellPitch / 2` di quella dietro: con
   interasse pari all'altezza sparisce meta' di ogni provino. Un test lo fissa.
 - **La galleria e' un catalogo, non un secondo disegno.** `scenes/swatchCatalog.ts`
-  deriva le fasce in fondo al campionario dagli stamp veri: ogni tipologia di
-  `TYPOLOGIES` a livello `SWATCH_BUILDING_LEVEL`, seme 0 e fronte est, ogni
-  landmark di `LANDMARKS` allo stadio finale — tutte le varianti piu' le forme
-  contestuali di `FORMS`, Skyport compreso — con un seme che produce davvero
-  l'esemplare dichiarato, e ogni arcologia di `ARCOLOGY_RECIPES` allo stadio
-  finale. Ingombri e altezze escono dagli stamp, mai da riquadri copiati a mano,
-  quindi una tipologia, un esemplare o una megastruttura nuovi compaiono da soli.
+  deriva le fasce in fondo al campionario dagli stamp veri: le quattro linee
+  evolutive — un ripiego per uso — alle cinque soglie visuali
+  (`SWATCH_LINE_LEVELS`), ogni tipologia di `TYPOLOGIES` alla forma matura
+  (`SWATCH_BUILDING_LEVEL`), seme 0 e fronte est, ogni landmark di `LANDMARKS`
+  nei suoi quattro stadi — con l'esemplare primo fisso, cosi' la crescita si
+  legge sullo stesso monumento — e allo stadio finale per tutte le varianti piu'
+  le forme contestuali di `FORMS`, Skyport compreso, con un seme che produce
+  davvero l'esemplare dichiarato, e ogni arcologia di `ARCOLOGY_RECIPES` allo
+  stadio finale. Ingombri e altezze escono dagli stamp, mai da riquadri copiati
+  a mano, quindi una tipologia, un esemplare o una megastruttura nuovi compaiono
+  da soli.
 - **Gli otto voxel fra due soggetti sono vuoto, non spazio di nessuno.**
   `SWATCH_ITEM_GAP` separa i riquadri delle gallerie e fa da margine alle
   inquadrature; `swatchSubjectAt` risponde solo dentro un riquadro, cosi' il

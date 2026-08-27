@@ -136,7 +136,7 @@ describe('buildGameHudModel', () => {
 
     expect(model.catalysts[0]?.available).toBe(true);
     expect(model.catalysts[1]).toMatchObject({ available: false });
-    expect(model.catalysts[1]?.reason).toContain('Give your city a home');
+    expect(model.catalysts[1]?.reason).toContain('Place the Market');
   });
 
   it('permette sempre di disattivare una policy già attiva', () => {

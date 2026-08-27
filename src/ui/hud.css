@@ -679,6 +679,12 @@
  * dove c'e' spazio per leggerla.
  */
 .hud-toast[data-kind="condition"] { max-width: min(320px, calc(100vw - var(--game-hud-rail-left) - var(--space-6) - var(--space-4))); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* Tutorial e coach sono l'unica condizione che chiede un gesto: il gesto resta
+   sul campo insieme al titolo, in una seconda riga piu' quieta. */
+.hud-toast[data-kind="onboarding"],
+.hud-toast[data-kind="coach"] { display: grid; gap: var(--space-05); font-weight: 500; }
+.hud-toast-title { font-weight: 800; }
+.hud-toast-message { color: var(--hud-muted); font-size: var(--text-xs); line-height: 1.4; }
 
 .cursor-card { position: fixed; z-index: var(--z-modal); display: grid; gap: var(--space-05); max-width: calc(250 * var(--hud-unit)); padding: var(--space-2) var(--space-15); border-radius: var(--radius-md); color: var(--hud-on-dark); background: rgba(38, 56, 51, .97); box-shadow: var(--hud-elev-2); font: var(--text-xs)/1.4 var(--hud-font); pointer-events: none; }
 .cursor-card[hidden] { display: none; }

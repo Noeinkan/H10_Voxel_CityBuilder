@@ -9,7 +9,10 @@ import {
   LEVEL_CAPS,
   MAX_FOOTPRINT,
   MIN_FOOTPRINT,
+  SKYLINE_PROP_HEIGHT,
   START_LEVEL_CDF,
+  VISUAL_LEVELS,
+  crownBonusOf,
   type BuildingForm,
   type ClassProfile,
   type TypologyShape,
@@ -48,12 +51,30 @@ import type { VoxelStamp } from './stamp';
  * coronamento e giardino pensile. Chi sceglie *quale* tipologia e' `typology.ts`,
  * e sta a monte.
  *
- * **Determinismo.** Tutto il caso esce da un solo PRNG con stato iniziale
- * `hash(class, level, seed)`. Due chiamate con gli stessi argomenti consumano la
- * stessa sequenza nello stesso ordine, quindi producono lo stesso array di byte.
- * `generateDigest.test.ts` fissa il risultato di quella sequenza: e' la rete che
- * si accorge di uno spostamento di codice che consuma un tiro in piu'.
+ * **Determinismo a canali.** Tutto il caso esce da quattro PRNG separati, uno
+ * per domanda — massa, fasce, facciata, tetto — e **nessuno dei quattro dipende
+ * dal livello**: lo stato iniziale e' `hash(seed, cls, sale)` per ciascun canale.
+ * Ne segue l'invariante che rende un upgrade leggibile come crescita: a parita'
+ * di tipologia, la fascia k di un edificio consuma sempre gli stessi tiri del
+ * canale delle fasce, quindi i piani bassi restano identici a ogni livello e a
+ * cambiare sono soltanto i piani nuovi e il coronamento — che pescano i propri
+ * tiri *dopo* quelli delle fasce, cioe' in una posizione della sequenza che
+ * dipende da quante fasce ci sono. Un edificio che promuove conserva il corpo e
+ * rifa' la cima, che e' esattamente il racconto che la crescita deve mostrare.
  */
+
+/**
+ * I sali che separano i quattro canali.
+ *
+ * Servono per la stessa ragione del sale dell'assemblatore: lo stesso seme non
+ * deve rispondere con la stessa moneta a quattro domande diverse, altrimenti
+ * massa e facciata cambierebbero sempre insieme e la citta' mostrerebbe una
+ * regolarita' che nessuno ha scritto.
+ */
+const CHANNEL_MASS = 0x3a1f_9c4d;
+const CHANNEL_BAND = 0x5b77_d2e1;
+const CHANNEL_FACADE = 0x7c33_6ab5;
+const CHANNEL_ROOF = 0x9d44_1f27;
 
 /**
  * Impronta voxel di un edificio.
@@ -164,7 +185,12 @@ export function generateBuilding(request: BuildingRequest): VoxelStamp {
       1,
     ),
   };
-  const random = mulberry32(hashCoords(request.seed, cls, level));
+  // I quattro canali: uno per domanda, e nessuno dipende dal livello. Vedi la
+  // nota sul determinismo a canali in cima al file.
+  const mass = mulberry32(hashCoords(request.seed, cls, CHANNEL_MASS));
+  const band = mulberry32(hashCoords(request.seed, cls, CHANNEL_BAND));
+  const facade = mulberry32(hashCoords(request.seed, cls, CHANNEL_FACADE));
+  const roof = mulberry32(hashCoords(request.seed, cls, CHANNEL_ROOF));
 
   // Il tiro pesca sempre da `MAX_FOOTPRINT` e solo dopo si taglia al tetto.
   // Cosi' la sequenza del PRNG non dipende dal tetto, e rigenerare un edificio
@@ -177,12 +203,12 @@ export function generateBuilding(request: BuildingRequest): VoxelStamp {
     cap,
   );
   const naturalFootprint = clamp(
-    MIN_FOOTPRINT + Math.floor(random() * (MAX_FOOTPRINT - MIN_FOOTPRINT + 1)) + profile.footprintBias,
+    MIN_FOOTPRINT + Math.floor(mass() * (MAX_FOOTPRINT - MIN_FOOTPRINT + 1)) + profile.footprintBias,
     MIN_FOOTPRINT,
     MAX_FOOTPRINT,
   );
   const footprint = clamp(naturalFootprint, minFootprint, cap);
-  const naturalBands = pickInt(random, caps.minBands, caps.maxBands);
+  const naturalBands = pickInt(mass, caps.minBands, caps.maxBands);
   const bands = clamp(
     naturalBands + Math.floor(form.density * BUILDER.localForm.densityBandBias),
     caps.minBands,
@@ -191,7 +217,7 @@ export function generateBuilding(request: BuildingRequest): VoxelStamp {
 
   // L'accento a scala di edificio si decide qui, prima di disegnare: e' un
   // colore di corpo alternativo, non una passata di ritocco alla fine.
-  const accented = random() < BUILDER.accentBuildingChance +
+  const accented = facade() < BUILDER.accentBuildingChance +
     form.wealth * BUILDER.localForm.wealthAccentChance;
   const body = accented ? profile.accent : profile.body;
   // La cornice mantiene il proprio tono anche quando l'accento sale a scala di
@@ -205,7 +231,7 @@ export function generateBuilding(request: BuildingRequest): VoxelStamp {
   // e' la stessa regola del dettaglio sul tetto sotto un coronamento piatto.
   // Cosi' due edifici sullo stesso seme restano confrontabili, e dare una
   // strada a un lotto non ne cambia la sagoma — solo il verso.
-  const rolledFace = pickInt(random, 0, 3);
+  const rolledFace = pickInt(facade, 0, 3);
   const accentFace = request.facing ?? rolledFace;
   const accentId = accented ? profile.body : profile.accent;
 
@@ -241,7 +267,7 @@ export function generateBuilding(request: BuildingRequest): VoxelStamp {
   for (let i = 0; i < bands; i++) {
     if (i > 0) {
       rect = nextRect(
-        random,
+        band,
         rect,
         box,
         profile,
@@ -254,7 +280,7 @@ export function generateBuilding(request: BuildingRequest): VoxelStamp {
     // Le fasce del basamento pescano l'altezza come tutte le altre. Prima erano
     // bloccate al minimo, e un basamento "abitato" senza piani di altezza propria
     // resta un blocco: sono l'altezza e il marcapiano a farne un piano.
-    const rolled = pickInt(random, profile.bandHeight[0], profile.bandHeight[1]);
+    const rolled = pickInt(band, profile.bandHeight[0], profile.bandHeight[1]);
     // Il corso di base di una fila **sostituisce** il tiro della fascia zero, ma
     // non lo salta: la sequenza del PRNG resta quella di prima, quindi entrare in
     // un cluster cambia la quota dell'edificio e non la sua sagoma. E' la stessa
@@ -270,9 +296,15 @@ export function generateBuilding(request: BuildingRequest): VoxelStamp {
   // a distanza legge come un edificio in costruzione. Quante fasce servano e
   // quanto siano alte lo dice `crownRects`, che e' l'unica cosa a cambiare fra
   // un capannone, un gradone e la lanterna di un civico.
+  //
+  // **Il tiro si consuma dopo quelli delle fasce**, e il bonus delle soglie
+  // visuali si somma al tiro invece di sostituirlo: salendo di livello il
+  // coronamento cambia per due ragioni insieme — la sequenza e' scivolata, perche'
+  // le fasce sono di piu', e la soglia ha alzato il premio. La prima e' il
+  // racconto «nuova cima», la seconda «cima da torre».
   const crownStart = rects.length;
-  const crownHeight = pickInt(random, GRAMMAR.crownHeight[0], GRAMMAR.crownHeight[1]);
-  const crown = crownBands(shape.crownKind, rect, crownHeight);
+  const crownHeight = pickInt(roof, GRAMMAR.crownHeight[0], GRAMMAR.crownHeight[1]);
+  const crown = crownBands(shape.crownKind, rect, crownHeight, crownBonusOf(level));
   for (const band of crown.bands) {
     rects.push(band.rect);
     heights.push(band.height);
@@ -284,15 +316,22 @@ export function generateBuilding(request: BuildingRequest): VoxelStamp {
   // consumano comunque, anche sui coronamenti che il dettaglio non lo portano:
   // cosi' la tipologia sceglie la forma e non la sequenza, e due tipologie sullo
   // stesso seme restano confrontabili.
+  //
+  // Alla soglia di skyline il dettaglio c'e' **sempre**, alla sua altezza piena:
+  // e' la riga che chiude la silhouette della citta' cresciuta, e non dipende
+  // dal profilo.
   const propSide = Math.min(GRAMMAR.roofPropSide, crownRect.w, crownRect.h);
   const propRect: BandRect = {
-    x0: crownRect.x0 + Math.floor(random() * (crownRect.w - propSide + 1)),
-    y0: crownRect.y0 + Math.floor(random() * (crownRect.h - propSide + 1)),
+    x0: crownRect.x0 + Math.floor(roof() * (crownRect.w - propSide + 1)),
+    y0: crownRect.y0 + Math.floor(roof() * (crownRect.h - propSide + 1)),
     w: propSide,
     h: propSide,
   };
   rects.push(propRect);
-  heights.push(crown.roofProp ? profile.roofPropHeight : 0);
+  const propHeight = level >= VISUAL_LEVELS.skyline
+    ? Math.max(profile.roofPropHeight, SKYLINE_PROP_HEIGHT)
+    : profile.roofPropHeight;
+  heights.push(crown.roofProp ? propHeight : 0);
 
   const podiumProfile = request.mixed !== undefined && podium > 0
     ? CLASS_PROFILE[request.mixed]

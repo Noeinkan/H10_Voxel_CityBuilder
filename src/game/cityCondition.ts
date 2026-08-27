@@ -39,8 +39,8 @@ export function isSelfSufficient(state: SimState): boolean {
  *
  * **La scala della voce.** Il tutorial per primo, poi la salute — crisi e colli
  * di bottiglia, che sono l'unica cosa rimasta in `tips.ts` — poi il **coach**, la
- * rotta di sviluppo che e' sempre presente finche' la citta' ha qualcosa da
- * diventare, e solo quando il coach tace il traguardo. Un traguardo e' sempre lo
+ * rotta di sviluppo che compare quando esiste un gesto misurabile, e solo quando
+ * il coach tace il traguardo. Un traguardo e' sempre lo
  * stesso e si puo' rileggere quando si vuole; una direzione e' vera adesso e
  * smettera' di esserlo appena il giocatore la segue.
  *
@@ -75,8 +75,7 @@ export function cityCondition(
     return { kind: 'development', tone: 'warning', title: urgent.title, message: urgent.message };
   }
 
-  // Il coach e' la direzione: sempre presente, finche' la citta' ha un prossimo
-  // passo da fare.
+  // Il coach e' la direzione quando sa nominare gesto e verifica.
   if (coach !== null) {
     return { kind: 'coach', tone: 'objective', title: coach.title, message: coach.message };
   }

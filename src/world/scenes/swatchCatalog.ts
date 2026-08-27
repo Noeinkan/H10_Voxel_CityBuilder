@@ -3,6 +3,7 @@ import { CATALYSTS, type CatalystDefinition } from '../../sim/catalysts';
 import { CLASS_NAMES } from '../../sim/classes';
 import {
   TYPOLOGIES,
+  VISUAL_LEVELS,
   typologyById,
   type TypologyDefinition,
   type TypologyShape,
@@ -54,8 +55,38 @@ import {
 /** Vuoto minimo fra due soggetti del campionario. */
 export const SWATCH_ITEM_GAP = 8;
 
-/** Livello comune che rende confrontabili tutte le tipologie. */
-export const SWATCH_BUILDING_LEVEL = 6;
+/**
+ * Livello comune che rende confrontabili tutte le tipologie.
+ *
+ * E' la soglia `mature` delle cinque visuali: il livello a cui la campata e il
+ * fronte attivo esistono, ma le terrazze non sono ancora attrezzate — la forma
+ * matura e' quella che il catalogo promette, non la torre che diventa piu'
+ * avanti.
+ */
+export const SWATCH_BUILDING_LEVEL = VISUAL_LEVELS.mature;
+
+/**
+ * Le quattro linee evolutive del campionario, un ripiego per uso.
+ *
+ * La stessa tipologia si mostra alle cinque soglie visuali — base, consolidata,
+ * matura, torre, skyline — perche' e' li' che si vede la crescita cambiare il
+ * volto di un edificio a parita' di seme e di regola.
+ */
+export const SWATCH_LINE_TYPOLOGIES = [
+  'terracedHousing',
+  'retailRow',
+  'industrialYard',
+  'civicSpire',
+] as const;
+
+/** I livelli della linea evolutiva: le cinque soglie visuali condivise. */
+export const SWATCH_LINE_LEVELS = [
+  VISUAL_LEVELS.base,
+  VISUAL_LEVELS.consolidated,
+  VISUAL_LEVELS.mature,
+  VISUAL_LEVELS.tower,
+  VISUAL_LEVELS.skyline,
+] as const;
 
 export const SWATCH_FOCUS = {
   matrix: 'matrix',
@@ -154,8 +185,11 @@ const ARCOLOGY_LABELS: Readonly<Record<ArcologyKind, string>> = {
 
 const BASE_EXTENT = baseExtentOf();
 const BUILDING_START_Y = BASE_EXTENT.minY + BASE_EXTENT.sizeY + SWATCH.bandGap;
+const LINES_ROWS = evolutionLineRows();
+const LINES_LAYOUT = placeRows(LINES_ROWS, BUILDING_START_Y);
+const BUILDING_ROWS_Y = LINES_LAYOUT.y1 + SWATCH.bandGap;
 const BUILDING_ROWS = buildingRows();
-const BUILDING_LAYOUT = placeRows(BUILDING_ROWS, BUILDING_START_Y);
+const BUILDING_LAYOUT = placeRows(BUILDING_ROWS, BUILDING_ROWS_Y);
 const LANDMARK_START_Y = BUILDING_LAYOUT.y1 + SWATCH.bandGap;
 const LANDMARK_ROWS = landmarkRows();
 const LANDMARK_LAYOUT = placeRows(LANDMARK_ROWS, LANDMARK_START_Y);
@@ -163,10 +197,12 @@ const ARCOLOGY_START_Y = LANDMARK_LAYOUT.y1 + SWATCH.bandGap;
 const ARCOLOGY_ROWS = arcologyRows();
 const ARCOLOGY_LAYOUT = placeRows(ARCOLOGY_ROWS, ARCOLOGY_START_Y);
 
+export const SWATCH_LINES: readonly SwatchCatalogSubject[] = LINES_LAYOUT.subjects;
 export const SWATCH_BUILDINGS: readonly SwatchCatalogSubject[] = BUILDING_LAYOUT.subjects;
 export const SWATCH_LANDMARKS: readonly SwatchCatalogSubject[] = LANDMARK_LAYOUT.subjects;
 export const SWATCH_ARCOLOGIES: readonly SwatchCatalogSubject[] = ARCOLOGY_LAYOUT.subjects;
 export const SWATCH_CATALOG_SUBJECTS: readonly SwatchCatalogSubject[] = [
+  ...SWATCH_LINES,
   ...SWATCH_BUILDINGS,
   ...SWATCH_LANDMARKS,
   ...SWATCH_ARCOLOGIES,
@@ -178,7 +214,7 @@ export const SWATCH_SUBJECTS: readonly SwatchSubject[] = [
   ...SWATCH_CATALOG_SUBJECTS,
 ];
 
-const BUILDING_EXTENT = subjectsExtent(SWATCH_BUILDINGS);
+const BUILDING_EXTENT = subjectsExtent([...SWATCH_LINES, ...SWATCH_BUILDINGS]);
 const LANDMARK_EXTENT = subjectsExtent(SWATCH_LANDMARKS);
 const ARCOLOGY_EXTENT = subjectsExtent(SWATCH_ARCOLOGIES);
 const FULL_EXTENT = completeExtent();
@@ -226,6 +262,42 @@ export function swatchPlinthSpanAt(y: number): { readonly x0: number; readonly x
   return { x0: 0, x1: 0 };
 }
 
+function evolutionLineRows(): readonly (readonly PendingCatalogSubject[])[] {
+  return SWATCH_LINE_TYPOLOGIES.map((id) => {
+    const definition = typologyById(id);
+    if (definition === null) throw new Error(`tipologia di linea assente: ${id}`);
+    return SWATCH_LINE_LEVELS.map((level) => lineSubject(definition, level));
+  });
+}
+
+function lineSubject(definition: TypologyDefinition, level: number): PendingCatalogSubject {
+  const stamp = generateBuilding({
+    class: definition.use,
+    level,
+    seed: 0,
+    profile: typologyProfile(definition),
+    shape: definition.shape,
+    mixed: definition.mixed,
+    facing: FACING.east,
+  });
+  return {
+    id: `building:line:${definition.id}:${level}`,
+    kind: 'building',
+    band: 'buildings',
+    label: `${definition.label} · L${level}`,
+    note: 'la linea evolutiva alle cinque soglie visuali',
+    stamp,
+    info: [
+      { label: 'ID', value: definition.id },
+      { label: 'Uso', value: CLASS_NAMES[definition.use] },
+      { label: 'Livello', value: String(level) },
+      { label: 'Seed', value: '0' },
+      { label: 'Fronte', value: 'est' },
+      { label: 'Forma', value: shapeLabel(definition.shape) },
+    ],
+  };
+}
+
 function buildingRows(): readonly (readonly PendingCatalogSubject[])[] {
   const rows: PendingCatalogSubject[][] = [[], [], [], []];
   for (const definition of TYPOLOGIES) rows[definition.use].push(buildingSubject(definition));
@@ -265,10 +337,45 @@ function landmarkRows(): readonly (readonly PendingCatalogSubject[])[] {
   return CATALYSTS.map((catalyst) => {
     const recipe = LANDMARKS[catalyst.id];
     if (recipe === undefined) return [];
-    const row = variantsOf(recipe).map((variant, index) => landmarkSubject(catalyst, recipe, index, variant.name));
+    const row: PendingCatalogSubject[] = [];
+    // La crescita per stadi viene prima degli esemplari: e' la stessa lettura
+    // che la citta' mostra a schermo — quattro tempi, dall'accesso alla corona.
+    for (let stage = 0; stage <= maxStageOf(recipe); stage++) {
+      row.push(landmarkStageSubject(catalyst, recipe, stage));
+    }
+    for (const [index, variant] of variantsOf(recipe).entries()) {
+      row.push(landmarkSubject(catalyst, recipe, index, variant.name));
+    }
     for (const form of contextualFormsOf(catalyst.id)) row.push(formSubject(catalyst, form));
     return row;
   });
+}
+
+function landmarkStageSubject(
+  catalyst: CatalystDefinition,
+  recipe: LandmarkRecipe,
+  stage: number,
+): PendingCatalogSubject {
+  // L'esemplare e' fissato al primo: la crescita per stadi si legge sullo
+  // stesso monumento, non su quattro monumenti diversi.
+  const seed = seedForVariant(recipe, 0);
+  const stamp = generateFromRecipe(recipe, { stage, facing: FACING.east, seed, variant: 0 });
+  return {
+    id: `landmark:${catalyst.id}:stage:${stage}`,
+    kind: 'landmark',
+    band: 'landmarks',
+    label: `${catalyst.label} · stadio ${stage}`,
+    note: catalyst.description,
+    stamp,
+    info: [
+      { label: 'Ruolo', value: catalyst.id },
+      { label: 'Stadio', value: `${stage} di ${maxStageOf(recipe)}` },
+      { label: 'Seed', value: String(seed) },
+      { label: 'Fronte', value: 'est' },
+      { label: 'Luogo', value: catalyst.site },
+      { label: 'Grembiule', value: `${recipe.apron} voxel` },
+    ],
+  };
 }
 
 function landmarkSubject(

@@ -1,5 +1,5 @@
 import { BUILDING_CLASS, type BuildingClass } from '../../sim';
-import { GRAMMAR } from './config';
+import { GRAMMAR, VISUAL_LEVELS } from './config';
 import { inside, inset, type BandRect } from './bandRect';
 import { inPlan } from '../planMask';
 import { courtyardMinSideOf } from '../scale';
@@ -103,6 +103,17 @@ export function paint(request: PaintRequest): VoxelStamp {
   // marcapiano illuminato invece che come colonna al neon.
   const lit = request.level >= GRAMMAR.luminousFromLevel;
   const litFull = request.level >= GRAMMAR.luminousFullLevel;
+
+  // La campata e' il ritmo che la soglia `consolidated` accende: sotto, la
+  // parete resta piena — un edificio base non ha ancora una facciata da
+  // raccontare, e la campata e' esattamente cio' che la fa comparire.
+  const bays = request.level >= VISUAL_LEVELS.consolidated;
+
+  // Alla soglia di torre le terrazze diventano attrezzate: sotto sono un gradino
+  // verniciato, sopra ricevono il linguaggio del tetto tecnico — parapetto,
+  // cassoni, fioriere — e il mesher reagisce da se', perche' e' la superficie a
+  // cambiare e non c'e' nessun livello da leggere.
+  const equipped = request.level >= VISUAL_LEVELS.tower;
 
   let z = 0;
   for (let b = 0; b < rects.length; b++) {
@@ -255,7 +266,7 @@ export function paint(request: PaintRequest): VoxelStamp {
           // decorazioni accostate. Cede sia all'accento sia alla terrazza: la
           // lama luminosa e' gia' la faccia che racconta il volume, e bucarla
           // le toglierebbe la continuita' che la rende visibile da lontano.
-          const bay = bayRow && !accent && !open && onBay(rect, sx, sy, bandBay);
+          const bay = bays && bayRow && !accent && !open && onBay(rect, sx, sy, bandBay);
           const index = sx + sizeX * (sy + sizeY * sz);
           voxels[index] = planted
             ? (request.garden as number)
@@ -272,13 +283,20 @@ export function paint(request: PaintRequest): VoxelStamp {
               // Il verde non chiede microgeometria: un parapetto in mezzo alle
               // aiuole sarebbe una ringhiera dentro il prato.
               ? SURFACE_KIND.plain
-              : open || isCrown
-                ? SURFACE_KIND.roofTech
-                : sz < GRAMMAR.portalHeight && onPortal(rect, sx, sy, request.accentFace)
-                  ? SURFACE_KIND.portal
-                  : accent
-                    ? SURFACE_KIND.luminous
-                    : bandSurface;
+              : open
+                // L'anello scoperto di una rientranza e' terrazza solo quando la
+                // soglia di torre l'ha attrezzata: prima resta il linguaggio della
+                // parete, un gradino e non un luogo.
+                ? equipped
+                  ? SURFACE_KIND.roofTech
+                  : bandSurface
+                : isCrown
+                  ? SURFACE_KIND.roofTech
+                  : sz < GRAMMAR.portalHeight && onPortal(rect, sx, sy, request.accentFace)
+                    ? SURFACE_KIND.portal
+                    : accent
+                      ? SURFACE_KIND.luminous
+                      : bandSurface;
         }
       }
     }

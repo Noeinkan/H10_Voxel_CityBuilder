@@ -6,7 +6,6 @@ import {
   catalystById,
   createSimState,
   EMPTY_HARVEST,
-  type CatalystId,
   type SimState,
 } from '../sim';
 import {
@@ -42,8 +41,16 @@ function fedAt(population: number, share: number): SimState['harvest'] {
 
 /** Una citta' che funziona: sfamata e con la dispensa piena. */
 function city(overrides: Partial<SimState> = {}): SimState {
+  const buildings = Array.from({ length: 24 }, (_, index) => ({
+    x: index,
+    y: 0,
+    class: BUILDING_CLASS.residential,
+  }));
   return {
     ...founded(),
+    buildings,
+    buildingCounts: [6, 6, 6, 6],
+    mixedCounts: [1, 0, 0, 0],
     population: { stock: POPULATION, delta: 1 },
     harvest: fedAt(POPULATION, 1),
     food: { stock: 500, delta: 1 },
@@ -82,6 +89,13 @@ function stageCity(overrides: Partial<SimState> = {}): SimState {
   });
   return {
     ...state,
+    buildings: Array.from({ length: 24 }, (_, index) => ({
+      x: index,
+      y: 0,
+      class: BUILDING_CLASS.residential,
+    })),
+    buildingCounts: [6, 6, 6, 6],
+    mixedCounts: [1, 0, 0, 0],
     population: { stock: POPULATION, delta: 1 },
     harvest: fedAt(POPULATION, 1),
     food: { stock: 500, delta: 1 },
@@ -164,7 +178,8 @@ describe('coach — l’identita’', () => {
 
 describe('coach — i distretti', () => {
   it('con due catalizzatori e zero usi misti propone di sovrapporre i campi', () => {
-    const state = addCatalyst(city(), {
+    const base = city({ mixedCounts: [0, 0, 0, 0] });
+    const state = addCatalyst(base, {
       x: 300, y: 0, class: catalystById('university').class, kind: 'university',
       strength: 200, radius: 12,
     });
@@ -183,34 +198,37 @@ describe('coach — i distretti', () => {
   });
 });
 
-describe('coach — il catalogo', () => {
-  function extended(ids: readonly CatalystId[]): SimState {
-    let state = city();
-    for (const [index, id] of ids.entries()) {
-      state = addCatalyst(state, {
-        x: 300 + index * 20, y: 0,
-        class: catalystById(id).class, kind: id,
-        strength: 200, radius: 12,
-      });
-    }
-    const mixed = [...state.mixedCounts];
-    mixed[BUILDING_CLASS.residential] = 1;
-    return { ...state, mixedCounts: mixed };
-  }
-
-  it('propone il prossimo landmark mancante con il perche’', () => {
-    const tip = coachSuggestion(context(extended(['university'])));
-    expect(tip?.id).toBe('coach-missing-greenhouse');
-    expect(tip?.title).toBe('Place a Greenhouse');
-    expect(tip?.message).toContain('hydroponic');
+describe('coach — lo sviluppo misurabile', () => {
+  it('aspetta che il giocatore osservi i primi edifici prima di chiedere una spesa', () => {
+    const state = { ...city(), buildings: city().buildings.slice(0, 2) };
+    const tip = coachSuggestion(context(state));
+    expect(tip?.id).toBe('coach-observe-foundation');
+    expect(tip?.message).toContain('4×');
   });
 
-  it('nomina il quartiere quando il landmark mancante fa coppia con un ruolo piazzato', () => {
-    const tip = coachSuggestion(context(extended(['greenhouse', 'power', 'school', 'transport', 'university'])));
-    expect(tip?.id).toBe('coach-missing-port');
-    expect(tip?.message).toContain('harbor');
-    expect(tip?.message).toContain('Market');
+  it('sceglie l’uso piu’ indietro e nomina numero, gesto e verifica', () => {
+    const target = BALANCE.gameplay.success.buildingsPerClass;
+    const state = city({ buildingCounts: [6, 6, 2, 6], funds: { stock: 1_000, delta: 1 } });
+    const tip = coachSuggestion(context(state));
+    expect(tip?.id).toBe(`coach-development-${BUILDING_CLASS.industrial}`);
+    expect(tip?.title).toContain(`2/${target}`);
+    expect(tip?.message).toContain('Power Station');
+    expect(tip?.message).toContain(`reach ${target}`);
     expect(tip?.highlight).not.toBeNull();
+  });
+
+  it('non enumera landmark mancanti quando non c’e’ un obiettivo concreto', () => {
+    const state = addCatalyst(city(), {
+      x: 300, y: 0, class: catalystById('university').class, kind: 'university',
+      strength: 200, radius: 12,
+    });
+    const tip = coachSuggestion(context(state, {
+      tallestLevel: 20,
+      hasArcology: true,
+      hasAloftLandmark: true,
+      aerial: { terraces: 1, routes: 1, lifts: 1, piers: 1, stacked: 1 },
+    }));
+    expect(tip).toBeNull();
   });
 });
 

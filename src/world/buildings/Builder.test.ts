@@ -699,6 +699,14 @@ describe('Builder — allineamento alla rete stradale', () => {
     }
   });
 
+  it('la prima crescita resta composta da edifici ordinari entro otto voxel', () => {
+    const { records } = grow(1337, 5);
+    expect(records.length).toBeGreaterThan(0);
+    for (const record of records) {
+      expect(record.footprint).toBeLessThanOrEqual(MAX_FOOTPRINT);
+    }
+  });
+
   it('la carreggiata viene dipinta sul suolo attorno agli isolati costruiti', () => {
     const { world } = grow(1337, 20);
 

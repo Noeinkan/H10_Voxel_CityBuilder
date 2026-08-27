@@ -350,28 +350,39 @@ export const LANDMARKS: Partial<Record<CatalystId, LandmarkRecipe>> = {
     stages: [0, 6, 16, 32],
     parts: [
       [
-        // La banchina e il braccio di sopravento: il bacino esiste da subito,
-        // ed e' l'acqua che il molo ha appena chiuso su un lato.
+        // Stadio zero: la banchina, il braccio di sopravento e la capitaneria in
+        // punta — l'accesso e l'identita' minima. Il bacino esiste da subito, ed
+        // e' l'acqua che il molo ha appena chiuso su un lato; le bitte dicono
+        // dove ormeggia, e l'ufficio del porto e' la prima verticale.
         quay(0, 0, 12, 12),
         quay(12, 0, 8, 2),
-        box(PART.shell, 1, 1, 7, 5, 1, 8, PALETTE_SLOTS.concrete, SURFACE_KIND.industrial, {
-          cap: PALETTE_SLOTS.concretePale,
+        box(PART.mast, 17, 0, 2, 2, 1, 12, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.civic, {
+          cap: PALETTE_SLOTS.metalGold,
         }),
-        box(PART.deck, 1, 1, 7, 5, 9, 1, PALETTE_SLOTS.roofPale, SURFACE_KIND.roofTech),
         bollard(11, 4),
         bollard(11, 7),
         bollard(13, 1),
         bollard(17, 1),
       ],
       [
-        // Il braccio di sottovento chiude il bacino, e la prima gru porta il
-        // proprio sbraccio sopra l'acqua: e' la sagoma che si legge da lontano.
+        // Stadio uno: la massa funzionale — il magazzino che la banchina serve.
+        box(PART.shell, 1, 1, 7, 5, 1, 8, PALETTE_SLOTS.concrete, SURFACE_KIND.industrial, {
+          cap: PALETTE_SLOTS.concretePale,
+        }),
+        box(PART.deck, 1, 1, 7, 5, 9, 1, PALETTE_SLOTS.roofPale, SURFACE_KIND.roofTech),
+      ],
+      [
+        // Stadio due: l'attrezzatura caratteristica — il braccio di sottovento
+        // chiude il bacino e la prima gru porta lo sbraccio sull'acqua.
         quay(12, 10, 8, 2),
         ...craneAt(3),
         bollard(13, 10),
         bollard(17, 10),
       ],
       [
+        // Stadio tre: il coronamento e il segnale — la seconda gru, i serbatoi
+        // e la vetrata accesa della capitaneria: la sola cosa illuminata di
+        // notte in un ruolo fatto di lamiera.
         ...craneAt(7),
         box(PART.slab, 1, 7, 3, 2, 1, 3, PALETTE_SLOTS.metalRust, SURFACE_KIND.industrial, {
           cap: PALETTE_SLOTS.metalBrass,
@@ -381,13 +392,6 @@ export const LANDMARKS: Partial<Record<CatalystId, LandmarkRecipe>> = {
           cap: PALETTE_SLOTS.concretePale,
         }),
         box(PART.deck, 8, 8, 4, 4, 7, 1, PALETTE_SLOTS.roofPale, SURFACE_KIND.roofTech),
-      ],
-      [
-        // La capitaneria in punta al braccio: la sola verticale sull'acqua, e la
-        // sola cosa accesa di notte in un ruolo fatto di lamiera.
-        box(PART.mast, 17, 0, 2, 2, 1, 12, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.civic, {
-          cap: PALETTE_SLOTS.metalGold,
-        }),
         box(PART.slab, 16, 0, 4, 2, 13, 2, PALETTE_SLOTS.glassPale, SURFACE_KIND.luminous),
         box(PART.deck, 16, 0, 4, 2, 15, 1, PALETTE_SLOTS.roofWhite, SURFACE_KIND.roofTech),
       ],
@@ -486,44 +490,32 @@ export const LANDMARKS: Partial<Record<CatalystId, LandmarkRecipe>> = {
     stages: [0, 5, 14, 28],
     parts: [
       [
-        // Il piazzale a terra e il molo che ne esce: **due sole strisce di
-        // pietra**, e tutto il resto del riquadro resta il mare che c'era. Sono
-        // i due accosti — sopra e sotto il molo — dove le barche di
-        // `world/traffic/` attraccano davvero, alla quota vera del pelo
-        // dell'acqua invece che sei voxel sopra come quando l'ormeggio era
-        // disegnato dentro lo stamp.
+        // Stadio zero: il piazzale a terra e le bitte — l'accesso. Il molo e i
+        // due accosti arrivano con la massa, e sono i vuoti a dire «di qui
+        // passano persone» prima ancora che ci sia una pensilina.
         quay(0, 0, 8, 12),
+        bollard(9, 4),
+        bollard(9, 7),
+      ],
+      [
+        // Stadio uno: la massa funzionale — il molo che esce in mezzo all'acqua
+        // e la stazione marittima che lo serve.
         quay(8, 4, 14, 4),
         box(PART.shell, 1, 3, 6, 6, 1, 6, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.civic, {
           cap: PALETTE_SLOTS.glassPale,
         }),
         box(PART.deck, 1, 3, 6, 6, 7, 1, PALETTE_SLOTS.roofWhite, SURFACE_KIND.roofTech),
-        bollard(9, 4),
-        bollard(9, 7),
       ],
       [
-        // La pensilina sul molo: il vuoto sotto un tetto e' cio' che nessuna
-        // scatola cava sa dare, ed e' la stessa primitiva del mercato.
+        // Stadio due: l'attrezzatura — la pensilina sul molo (il vuoto sotto un
+        // tetto e' cio' che nessuna scatola cava sa dare) e le sale d'attesa,
+        // a terra e in testa al molo.
         box(PART.colonnade, 9, 4, 7, 4, 1, 5, PALETTE_SLOTS.wood, SURFACE_KIND.habitat, {
           step: 3,
           cap: PALETTE_SLOTS.brickLight,
         }),
         bollard(13, 4),
         bollard(13, 7),
-      ],
-      [
-        // Il fanale in punta: da lontano e' quello a separare un molo da una
-        // lingua di terra.
-        box(PART.mast, 20, 5, 2, 2, 1, 12, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.civic, {
-          cap: PALETTE_SLOTS.metalGold,
-        }),
-        box(PART.slab, 20, 5, 2, 2, 13, 2, PALETTE_SLOTS.glassPale, SURFACE_KIND.luminous),
-        bollard(21, 4),
-        bollard(21, 7),
-      ],
-      [
-        // La sala d'attesa in testa al molo e la biglietteria a terra: due
-        // volumi bassi che dicono che di qui passano persone.
         box(PART.shell, 16, 4, 4, 4, 1, 5, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.civic, {
           cap: PALETTE_SLOTS.glassPale,
         }),
@@ -532,6 +524,16 @@ export const LANDMARKS: Partial<Record<CatalystId, LandmarkRecipe>> = {
           cap: PALETTE_SLOTS.glassPale,
         }),
         box(PART.deck, 1, 9, 6, 3, 6, 1, PALETTE_SLOTS.roofWhite, SURFACE_KIND.roofTech),
+      ],
+      [
+        // Stadio tre: il coronamento e il segnale notturno — il fanale in punta,
+        // da lontano e' quello a separare un molo da una lingua di terra.
+        box(PART.mast, 20, 5, 2, 2, 1, 12, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.civic, {
+          cap: PALETTE_SLOTS.metalGold,
+        }),
+        box(PART.slab, 20, 5, 2, 2, 13, 2, PALETTE_SLOTS.glassPale, SURFACE_KIND.luminous),
+        bollard(21, 4),
+        bollard(21, 7),
       ],
     ],
     // Il piazzale a terra e' `x` 0..7 e il molo esce da 8: e' quella la colonna
@@ -618,34 +620,40 @@ export const LANDMARKS: Partial<Record<CatalystId, LandmarkRecipe>> = {
     stages: [0, 8, 20, 40],
     parts: [
       [
+        // Stadio zero: il basamento e l'identita' minima — il piazzale e la
+        // prima ciminiera, che da sola dice «fabbrica» prima che esista il
+        // capannone.
         box(PART.deck, 0, 0, 14, 12, 0, 1, PALETTE_SLOTS.asphaltDark, SURFACE_KIND.utility),
+        box(PART.mast, 10, 1, 3, 3, 1, 18, PALETTE_SLOTS.metalRust, SURFACE_KIND.industrial, {
+          cap: PALETTE_SLOTS.metalDark,
+        }),
+      ],
+      [
+        // Stadio uno: la massa funzionale — il capannone e la seconda ciminiera.
         box(PART.shell, 0, 0, 9, 8, 1, 8, PALETTE_SLOTS.stoneDeep, SURFACE_KIND.industrial, {
           cap: PALETTE_SLOTS.metalDark,
         }),
         box(PART.deck, 0, 0, 9, 8, 9, 1, PALETTE_SLOTS.metalDark, SURFACE_KIND.roofTech),
-      ],
-      [
-        box(PART.mast, 10, 1, 3, 3, 1, 18, PALETTE_SLOTS.metalRust, SURFACE_KIND.industrial, {
-          cap: PALETTE_SLOTS.metalDark,
-        }),
         box(PART.mast, 10, 5, 3, 3, 1, 14, PALETTE_SLOTS.metalRust, SURFACE_KIND.industrial, {
           cap: PALETTE_SLOTS.metalDark,
         }),
       ],
       [
+        // Stadio due: l'attrezzatura — i silos e il nastro che li lega al
+        // capannone: e' la parte che fa leggere il complesso come un impianto.
         box(PART.mast, 0, 9, 3, 3, 1, 10, PALETTE_SLOTS.concrete, SURFACE_KIND.industrial, {
           cap: PALETTE_SLOTS.concretePale,
         }),
         box(PART.mast, 4, 9, 3, 3, 1, 10, PALETTE_SLOTS.concrete, SURFACE_KIND.industrial, {
           cap: PALETTE_SLOTS.concretePale,
         }),
-        // Il nastro trasportatore lega i silos al capannone: e' la parte che fa
-        // leggere il complesso come un impianto e non come tre volumi vicini.
         box(PART.boom, 2, 10, 10, 2, 11, 2, PALETTE_SLOTS.metalDark, SURFACE_KIND.industrial, {
           cap: PALETTE_SLOTS.metalBrass,
         }),
       ],
       [
+        // Stadio tre: il coronamento e il segnale — il terzo silo, il blocco
+        // uffici sopra il capannone e la torcia, l'unica cosa accesa di notte.
         box(PART.mast, 8, 9, 3, 3, 1, 10, PALETTE_SLOTS.concrete, SURFACE_KIND.industrial, {
           cap: PALETTE_SLOTS.concretePale,
         }),
@@ -899,16 +907,20 @@ export const LANDMARKS: Partial<Record<CatalystId, LandmarkRecipe>> = {
     stages: [0, 6, 16, 32],
     parts: [
       [
+        // Stadio zero: il basamento e l'identita' minima — il piano e la
+        // scatola di vetro, che da sola dice «serra» prima di qualunque colmo.
         box(PART.deck, 0, 0, 14, 12, 0, 1, PALETTE_SLOTS.stone, SURFACE_KIND.utility),
         box(PART.shell, 1, 1, 12, 10, 1, 6, PALETTE_SLOTS.glassPale, SURFACE_KIND.industrial, {
           cap: PALETTE_SLOTS.metalBrass,
         }),
+      ],
+      [
+        // Stadio uno: la massa funzionale — il colmo a falda e i due serbatoi:
+        // la serra finita, con l'acqua che la nutre.
         box(PART.pitch, 1, 1, 12, 10, 7, 4, PALETTE_SLOTS.glassPale, SURFACE_KIND.industrial, {
           step: 1,
           cap: PALETTE_SLOTS.metalBrass,
         }),
-      ],
-      [
         box(PART.slab, 0, 0, 3, 3, 1, 6, PALETTE_SLOTS.concrete, SURFACE_KIND.industrial, {
           chamfer: 1,
           cap: PALETTE_SLOTS.concretePale,
@@ -919,6 +931,8 @@ export const LANDMARKS: Partial<Record<CatalystId, LandmarkRecipe>> = {
         }),
       ],
       [
+        // Stadio due: il volume secondario — la casa del custode e le aiole
+        // all'aperto, la coltura che esce dal vetro.
         box(PART.shell, 11, 0, 3, 2, 1, 4, PALETTE_SLOTS.brick, SURFACE_KIND.habitat, {
           cap: PALETTE_SLOTS.roofPale,
         }),
@@ -929,6 +943,8 @@ export const LANDMARKS: Partial<Record<CatalystId, LandmarkRecipe>> = {
         box(PART.slab, 6, 11, 3, 1, 0, 1, PALETTE_SLOTS.grassDark, SURFACE_KIND.plain),
       ],
       [
+        // Stadio tre: l'accesso, l'insegna e il comignolo di servizio — la
+        // serra che lavora anche di notte.
         entrance(1, 4, 1, 2, 4),
         signBand(1, 3, 1, 4, 5),
         box(PART.mast, 5, 5, 2, 2, 11, 3, PALETTE_SLOTS.metalRust, SURFACE_KIND.industrial, {
@@ -948,25 +964,31 @@ export const LANDMARKS: Partial<Record<CatalystId, LandmarkRecipe>> = {
         ],
       },
       // Acquaponica: una vasca alta sul bordo est, il serbatoio di ricircolo.
+      // Cresce in due tempi — il fusto col colmo, la testa con la casa del
+      // custode — cosi' l'esemplare si legge gia' a meta' crescita.
       {
         name: 'acquaponica',
         parts: [
           [],
-          [box(PART.slab, 13, 3, 1, 4, 1, 6, PALETTE_SLOTS.concrete, SURFACE_KIND.industrial, {
+          [box(PART.slab, 13, 3, 1, 4, 1, 3, PALETTE_SLOTS.concrete, SURFACE_KIND.industrial, {
+            cap: PALETTE_SLOTS.concretePale,
+          })],
+          [box(PART.slab, 13, 3, 1, 4, 4, 3, PALETTE_SLOTS.concrete, SURFACE_KIND.industrial, {
             cap: PALETTE_SLOTS.concretePale,
           })],
           [],
-          [],
         ],
       },
-      // Ricerca: un condotto acceso che esce dal colmo, la serra che lavora di notte.
+      // Ricerca: un condotto acceso che esce dal colmo, la serra che lavora di
+      // notte. Sale in due tempi: il tronco con la casa del custode, la testa
+      // accesa con il coronamento.
       {
         name: 'ricerca',
         parts: [
           [],
           [],
-          [],
-          [box(PART.mast, 13, 9, 1, 1, 1, 4, PALETTE_SLOTS.glassPale, SURFACE_KIND.luminous)],
+          [box(PART.mast, 13, 9, 1, 1, 1, 2, PALETTE_SLOTS.metalDark, SURFACE_KIND.industrial)],
+          [box(PART.mast, 13, 9, 1, 1, 3, 2, PALETTE_SLOTS.glassPale, SURFACE_KIND.luminous)],
         ],
       },
     ],
@@ -1117,24 +1139,31 @@ export const LANDMARKS: Partial<Record<CatalystId, LandmarkRecipe>> = {
     stages: [0, 8, 18, 36],
     parts: [
       [
+        // Stadio zero: il basamento e l'identita' minima — il piazzale e i due
+        // piloni di testa: una linea sospesa si riconosce dagli appoggi prima
+        // che dall'impalcato.
         box(PART.deck, 6, 0, 12, 10, 0, 1, PALETTE_SLOTS.asphalt, SURFACE_KIND.utility),
-        box(PART.shell, 7, 1, 10, 8, 1, 6, PALETTE_SLOTS.concrete, SURFACE_KIND.civic, {
-          cap: PALETTE_SLOTS.concretePale,
-        }),
-        box(PART.deck, 7, 1, 10, 8, 7, 1, PALETTE_SLOTS.roofPale, SURFACE_KIND.roofTech),
-      ],
-      [
         box(PART.mast, 1, 3, 3, 4, 1, 10, PALETTE_SLOTS.concrete, SURFACE_KIND.utility, {
           cap: PALETTE_SLOTS.stone,
         }),
         box(PART.mast, 20, 3, 3, 4, 1, 10, PALETTE_SLOTS.concrete, SURFACE_KIND.utility, {
           cap: PALETTE_SLOTS.stone,
         }),
+      ],
+      [
+        // Stadio uno: la massa funzionale — l'impalcato che unisce i piloni e
+        // la stazione che lo serve.
         box(PART.boom, 0, 3, 24, 4, 11, 2, PALETTE_SLOTS.concrete, SURFACE_KIND.utility, {
           cap: PALETTE_SLOTS.asphaltDark,
         }),
+        box(PART.shell, 7, 1, 10, 8, 1, 6, PALETTE_SLOTS.concrete, SURFACE_KIND.civic, {
+          cap: PALETTE_SLOTS.concretePale,
+        }),
+        box(PART.deck, 7, 1, 10, 8, 7, 1, PALETTE_SLOTS.roofPale, SURFACE_KIND.roofTech),
       ],
       [
+        // Stadio due: l'attrezzatura — i piloni centrali e le due rotaie, che
+        // fanno dell'impalcato una linea invece che una mensola.
         box(PART.mast, 7, 3, 3, 4, 1, 10, PALETTE_SLOTS.concrete, SURFACE_KIND.utility, {
           cap: PALETTE_SLOTS.stone,
         }),
@@ -1145,6 +1174,8 @@ export const LANDMARKS: Partial<Record<CatalystId, LandmarkRecipe>> = {
         box(PART.boom, 0, 6, 24, 1, 13, 1, PALETTE_SLOTS.metalDark, SURFACE_KIND.utility),
       ],
       [
+        // Stadio tre: il coronamento — i montanti della linea aerea e la rampa,
+        // che chiudono la sagoma verso l'alto.
         box(PART.mast, 3, 4, 1, 1, 14, 4, PALETTE_SLOTS.metalDark, SURFACE_KIND.utility),
         box(PART.mast, 12, 4, 1, 1, 14, 4, PALETTE_SLOTS.metalDark, SURFACE_KIND.utility),
         box(PART.mast, 20, 4, 1, 1, 14, 4, PALETTE_SLOTS.metalDark, SURFACE_KIND.utility),
@@ -1219,19 +1250,25 @@ export const LANDMARKS: Partial<Record<CatalystId, LandmarkRecipe>> = {
     stages: [0, 8, 20, 40],
     parts: [
       [
+        // Stadio zero: il basamento e l'identita' minima — il piano e l'anello
+        // esterno del quadrilatero: il cortile e' la forma, e la scatola cava
+        // la dichiara da subito.
         box(PART.deck, 0, 0, 12, 12, 0, 1, PALETTE_SLOTS.stone, SURFACE_KIND.utility),
-        // Due anelli concentrici: un'ala spessa un voxel sarebbe un recinto, non
-        // un edificio, e il cortile deve leggersi come *dentro* qualcosa.
+        // Un'ala spessa un voxel sarebbe un recinto, non un edificio: l'anello
+        // esterno sta da solo fino a quando l'interno non lo raddoppia.
         box(PART.shell, 0, 0, 12, 12, 1, 8, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.civic, {
           cap: PALETTE_SLOTS.glassPale,
         }),
+        box(PART.shell, 0, 0, 12, 12, 9, 1, PALETTE_SLOTS.roofWhite, SURFACE_KIND.roofTech),
+      ],
+      [
+        // Stadio uno: la massa funzionale — l'anello interno, il cortile verde
+        // e il portico che lo cinge: l'unica primitiva che produce aria sotto
+        // un pieno, e qui e' l'aria del chiostro.
         box(PART.shell, 1, 1, 10, 10, 1, 8, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.civic, {
           cap: PALETTE_SLOTS.glassPale,
         }),
-        box(PART.shell, 0, 0, 12, 12, 9, 1, PALETTE_SLOTS.roofWhite, SURFACE_KIND.roofTech),
         box(PART.shell, 1, 1, 10, 10, 9, 1, PALETTE_SLOTS.roofWhite, SURFACE_KIND.roofTech),
-      ],
-      [
         box(PART.deck, 2, 2, 8, 8, 0, 1, PALETTE_SLOTS.grassLight, SURFACE_KIND.plain),
         box(PART.colonnade, 2, 2, 8, 8, 1, 5, PALETTE_SLOTS.stone, SURFACE_KIND.civic, {
           step: 2,
@@ -1239,6 +1276,8 @@ export const LANDMARKS: Partial<Record<CatalystId, LandmarkRecipe>> = {
         }),
       ],
       [
+        // Stadio due: la torre — la verticale del quadrante, che fa del
+        // quadrilatero un campus invece che un cortile chiuso.
         box(PART.mast, 9, 4, 3, 4, 1, 13, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.civic, {
           cap: PALETTE_SLOTS.glassPale,
         }),
@@ -1247,6 +1286,8 @@ export const LANDMARKS: Partial<Record<CatalystId, LandmarkRecipe>> = {
         }),
       ],
       [
+        // Stadio tre: il coronamento — il rettorato sull'angolo, che chiude la
+        // silhouette con una cima propria sopra l'anello.
         box(PART.shell, 0, 0, 5, 5, 10, 5, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.civic, {
           cap: PALETTE_SLOTS.glassPale,
         }),
@@ -1421,6 +1462,8 @@ export const LANDMARKS: Partial<Record<CatalystId, LandmarkRecipe>> = {
     stages: [0, 8, 20, 40],
     parts: [
       [
+        // Stadio zero: il basamento e l'identita' minima — il piano e il corpo
+        // del museo, che da solo dichiara il fronte lungo.
         box(PART.deck, 0, 0, 14, 12, 0, 1, PALETTE_SLOTS.stone, SURFACE_KIND.utility),
         box(PART.shell, 1, 1, 12, 10, 1, 5, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.civic, {
           cap: PALETTE_SLOTS.glassPale,
@@ -1428,12 +1471,18 @@ export const LANDMARKS: Partial<Record<CatalystId, LandmarkRecipe>> = {
         box(PART.deck, 1, 1, 12, 10, 6, 1, PALETTE_SLOTS.roofWhite, SURFACE_KIND.roofTech),
       ],
       [
+        // Stadio uno: l'accesso monumentale — il portico a colonne sul fronte,
+        // con l'ingresso e l'insegna: qui si entra, e il portico lo dice.
         box(PART.colonnade, 11, 1, 3, 10, 1, 5, PALETTE_SLOTS.stone, SURFACE_KIND.civic, {
           step: 3,
           cap: PALETTE_SLOTS.concreteWhite,
         }),
+        entrance(12, 5, 1, 2, 4),
+        signBand(12, 4, 1, 4, 3),
       ],
       [
+        // Stadio due: il coronamento — la cupola a gradoni smussati, la firma
+        // del ruolo.
         box(PART.steps, 3, 1, 8, 10, 7, 5, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.civic, {
           step: 1,
           chamfer: 1,
@@ -1441,25 +1490,32 @@ export const LANDMARKS: Partial<Record<CatalystId, LandmarkRecipe>> = {
         }),
       ],
       [
+        // Stadio tre: il segnale notturno — il lanternino acceso in cima alla
+        // cupola, che tiene il museo visibile anche al buio.
         box(PART.mast, 6, 5, 2, 2, 11, 3, PALETTE_SLOTS.glassPale, SURFACE_KIND.luminous, {
           cap: PALETTE_SLOTS.metalGold,
         }),
-        entrance(12, 5, 1, 2, 4),
-        signBand(12, 4, 1, 4, 3),
       ],
     ],
     variants: [
       // Rotonda: la cupola si allarga e si smussa di piu', fino al tamburo.
+      // Cresce in due tempi — prima il tamburo, poi il gradone alto — perche'
+      // ogni esemplare si distingue gia' a meta' crescita e chiude con un
+      // dettaglio suo.
       {
         name: 'rotonda',
         parts: [
           [],
-          [box(PART.steps, 2, 2, 10, 8, 7, 4, PALETTE_SLOTS.stoneWarm, SURFACE_KIND.civic, {
+          [box(PART.steps, 2, 2, 10, 8, 7, 3, PALETTE_SLOTS.stoneWarm, SURFACE_KIND.civic, {
             step: 1,
             chamfer: 2,
             cap: PALETTE_SLOTS.concreteWhite,
           })],
-          [],
+          [box(PART.steps, 2, 2, 10, 8, 10, 2, PALETTE_SLOTS.stoneWarm, SURFACE_KIND.civic, {
+            step: 1,
+            chamfer: 2,
+            cap: PALETTE_SLOTS.metalGold,
+          })],
           [],
         ],
       },
@@ -1477,13 +1533,16 @@ export const LANDMARKS: Partial<Record<CatalystId, LandmarkRecipe>> = {
         ],
       },
       // Facciata: una torre d'angolo che da' al fronte una verticale propria.
+      // La base compare con la cupola, il coronamento dorato la chiude.
       {
         name: 'facciata',
         parts: [
           [],
           [],
-          [],
-          [box(PART.mast, 0, 0, 2, 2, 1, 6, PALETTE_SLOTS.stoneWarm, SURFACE_KIND.civic, {
+          [box(PART.mast, 0, 0, 2, 2, 1, 3, PALETTE_SLOTS.stoneWarm, SURFACE_KIND.civic, {
+            cap: PALETTE_SLOTS.concreteWhite,
+          })],
+          [box(PART.mast, 0, 0, 2, 2, 4, 3, PALETTE_SLOTS.stoneWarm, SURFACE_KIND.civic, {
             cap: PALETTE_SLOTS.metalGold,
           })],
         ],
@@ -1510,6 +1569,8 @@ export const LANDMARKS: Partial<Record<CatalystId, LandmarkRecipe>> = {
     stages: [0, 10, 24, 48],
     parts: [
       [
+        // Stadio zero: il basamento e l'identita' minima — il piano e la navata
+        // a falda, che da sole dicono «chiesa» prima di qualunque torre.
         box(PART.deck, 0, 0, 14, 10, 0, 1, PALETTE_SLOTS.stone, SURFACE_KIND.utility),
         box(PART.pitch, 1, 1, 12, 8, 1, 6, PALETTE_SLOTS.stoneWarm, SURFACE_KIND.civic, {
           step: 1,
@@ -1517,6 +1578,8 @@ export const LANDMARKS: Partial<Record<CatalystId, LandmarkRecipe>> = {
         }),
       ],
       [
+        // Stadio uno: la massa principale — le due torri di facciata, la firma
+        // della doppia verticale che nessun altro ruolo ha.
         box(PART.mast, 1, 1, 2, 2, 1, 14, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.civic, {
           cap: PALETTE_SLOTS.metalGold,
         }),
@@ -1525,17 +1588,21 @@ export const LANDMARKS: Partial<Record<CatalystId, LandmarkRecipe>> = {
         }),
       ],
       [
+        // Stadio due: l'accesso — il portale sul fronte e il rosone, il solo
+        // vuoto del prospetto.
+        entrance(12, 4, 1, 2, 4),
+        box(PART.slab, 12, 4, 1, 2, 5, 2, PALETTE_SLOTS.glassDeep, SURFACE_KIND.civic, {
+          cap: PALETTE_SLOTS.glassPale,
+        }),
+      ],
+      [
+        // Stadio tre: il coronamento — la guglia sulla crociera, che chiude la
+        // silhouette sulla linea del colmo.
         box(PART.mast, 6, 4, 2, 2, 1, 20, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.civic, {
           cap: PALETTE_SLOTS.metalGold,
         }),
         box(PART.steps, 6, 4, 2, 2, 21, 3, PALETTE_SLOTS.metalGold, SURFACE_KIND.roofTech, {
           step: 1,
-        }),
-      ],
-      [
-        entrance(12, 4, 1, 2, 4),
-        box(PART.slab, 12, 4, 1, 2, 5, 2, PALETTE_SLOTS.glassDeep, SURFACE_KIND.civic, {
-          cap: PALETTE_SLOTS.glassPale,
         }),
       ],
     ],
@@ -1570,16 +1637,21 @@ export const LANDMARKS: Partial<Record<CatalystId, LandmarkRecipe>> = {
           [],
         ],
       },
-      // Chiostro: un portico basso che lega la chiesa al suo fianco.
+      // Chiostro: un portico basso che lega la chiesa al suo fianco. Cresce in
+      // due corsi — i pilastri, poi l'architrave — cosi' si legge gia' con la
+      // navata finita e si chiude con la cima propria.
       {
         name: 'chiostro',
         parts: [
           [],
-          [box(PART.colonnade, 1, 8, 4, 2, 1, 4, PALETTE_SLOTS.stone, SURFACE_KIND.civic, {
+          [box(PART.colonnade, 1, 8, 4, 2, 1, 3, PALETTE_SLOTS.stone, SURFACE_KIND.civic, {
             step: 2,
             cap: PALETTE_SLOTS.concreteWhite,
           })],
-          [],
+          [box(PART.colonnade, 1, 8, 4, 2, 4, 1, PALETTE_SLOTS.stone, SURFACE_KIND.civic, {
+            step: 2,
+            cap: PALETTE_SLOTS.concreteWhite,
+          })],
           [],
         ],
       },

@@ -28,7 +28,7 @@ import { CHUNK } from './chunkCoords';
  * conto del budget di chunk).
  */
 
-/** Le tre manopole: l'impronta del modulo ordinario, l'ingombro mega e i livelli. */
+/** Le manopole: impronta ordinaria, scala strutturale mega e livelli. */
 export const SCALE: {
   readonly moduleFootprint: number;
   readonly megaFootprint: number;
@@ -48,13 +48,13 @@ export const SCALE: {
   moduleFootprint: 8,
 
   /**
-   * Ingombro delle megastrutture: arcologie e assemblaggi.
+   * Scala strutturale delle megastrutture.
    *
-   * E' l'asse orizzontale della **fase mega**. Da qui derivano solo le tre cose
-   * che devono *ospitare* la megastruttura — la maglia stradale
-   * (`streetPitchOf`), il lato del segmento di comparsa (`segmentSideOf`) e
-   * l'ingombro dell'arcologia (`arcologySpanOf`) — mai la grammatica
-   * dell'edificio ordinario, che resta legata a `moduleFootprint`.
+   * E' l'asse orizzontale della **fase mega**. Da qui derivano le strutture che
+   * devono ospitarla o riconoscerla — maglia stradale, segmento di comparsa,
+   * raggio costiero e arcologie — mai la grammatica dell'edificio ordinario.
+   * Non e' un tetto per gli assemblaggi urbani: un picco eletto puo' occupare
+   * tutto il lato libero del proprio isolato.
    */
   megaFootprint: 16,
 
@@ -160,11 +160,10 @@ export interface LevelCaps {
 /**
  * La massa di ogni livello, generata dalle manopole.
  *
- * **L'impronta degli edifici ordinari satura a `mid`, mai al lato pieno del
- * modulo**: il lato pieno e' riservato agli assemblaggi su podio (solo oltre il
- * modulo `buildStamp` passa a `assembleBuilding`), quindi un singolo
- * `generateBuilding` non produce mai un 16x16 — quel segnale visivo appartiene
- * alle megastrutture. Le fasce continuano a salire con un'accelerazione in cima
+ * **L'impronta degli edifici ordinari satura al lato pieno del modulo.** La
+ * progressione storica e' `min -> mid -> module`: con il modulo da otto produce
+ * i tetti 4–6, 4–8, 6–8 e 8–8. Solo oltre il modulo `buildStamp` passa
+ * all'assemblatore. Le fasce continuano a salire con un'accelerazione in cima
  * che da' alle torri la loro altezza.
  */
 export function levelCapsOf(
@@ -173,10 +172,9 @@ export function levelCapsOf(
 ): readonly LevelCaps[] {
   const min = module / 2;
   const mid = min + module / 4;
-  // Il lato pieno del modulo resta agli assemblaggi: il tetto d'impronta satura
-  // a `mid` e la minima ci arriva a meta' scala, cosi' i livelli bassi restano
-  // vari ma nessun volume singolo raggiunge il modulo.
-  const minMid = Math.max(1, Math.round(V / 4));
+  const maxFull = Math.max(1, Math.round(V / 6));
+  const minMid = Math.max(maxFull, Math.round(V / 4));
+  const minFull = Math.max(minMid, Math.round(V / 2));
   // Le fasce salgono un livello alla volta fin qui, poi accelerano in cima.
   const linearEnd = Math.max(1, Math.round((V * 5) / 6));
 
@@ -184,8 +182,8 @@ export function levelCapsOf(
   let prevMinBands = 0;
   let prevMaxBands = 0;
   for (let level = 0; level <= V; level++) {
-    const maxFootprint = mid;
-    const minFootprint = level >= minMid ? mid : min;
+    const maxFootprint = level >= maxFull ? module : mid;
+    const minFootprint = level >= minFull ? module : level >= minMid ? mid : min;
     let minBands: number;
     let maxBands: number;
     if (level <= linearEnd) {
@@ -290,7 +288,7 @@ export function streetPitchOf(
  * l'acqua, non sfiorarla.
  */
 export function coastalRadiusOf(
-  module: number = SCALE.moduleFootprint,
+  module: number = SCALE.megaFootprint,
   cellSize = 2,
 ): number {
   return module + 3 * cellSize;

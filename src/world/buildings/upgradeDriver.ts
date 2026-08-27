@@ -142,7 +142,9 @@ export class UpgradeDriver {
     const { world, terrain, streets, registry, growth, surface } = this.ctx;
     // Salendo di livello la colonna puo' meritare una tipologia diversa: una
     // casa-bottega che diventa podio commerciale e' proprio il racconto che
-    // questa fase deve rendere visibile.
+    // questa fase deve rendere visibile. La scelta e' un upgrade, quindi passa
+    // la tipologia corrente: una nuova forma viene adottata solo se la sua
+    // linea evolutiva la dichiara, altrimenti resta questa.
     const nextTypology = selectTypology({
       use: record.class,
       mixed: record.mixed,
@@ -160,9 +162,13 @@ export class UpgradeDriver {
         record.y,
         record.footprint,
       ),
+      from: record.typology,
     });
 
-    const nextForm = formOf(profile);
+    // La forma resta quella con cui l'edificio e' nato, come lo stile e la fila:
+    // ricalcolarla a ogni promozione cambierebbe `shrinkBias` e la sagoma dei
+    // piani bassi, che e' esattamente l'identita' che un upgrade deve conservare.
+    const nextForm = record.form ?? formOf(profile);
 
     // Lo stamp da cancellare e' quello **registrato**, e la ragione per cui non
     // si rigenera qui sta in `recordStamp.ts`: la stessa domanda se la fa anche

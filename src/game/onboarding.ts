@@ -30,17 +30,17 @@ export interface OnboardingState {
 export function onboardingOf(state: SimState): OnboardingState {
   if (!hasRole(state, 'market')) {
     return step('market', '1 · Place the Market',
-      'The island is empty and people have no home yet. To fix that, place the Market on open ground: it draws homes and shops together, and with them your first residents.',
+      'Choose Growth → Market, then click open ground. Its ring is the area where homes and shops can appear; leave room inside it for the first blocks.',
       0);
   }
   if (!hasRole(state, 'factory')) {
-    return step('factory', '2 · Place the Factory',
-      'Homes need jobs and shops need goods, but nothing produces either. To fix that, place the Factory close to the Market: it supplies both.',
+    return step('factory', '2 · Overlap the Factory',
+      'Choose Growth → Factory and place it so its ring crosses the Market ring. Workshops will grow in the shared area and start adding Materials.',
       1);
   }
   if (!hasRole(state, 'park')) {
-    return step('park', '3 · Place the Park',
-      'The city works, but nothing lifts its spirits. To fix that, place the Park so its field overlaps the Market and the Factory: the overlap opens mixed-use blocks and keeps happiness up as the city grows.',
+    return step('park', '3 · Complete the overlap',
+      'Choose Growth → Park and cover part of the Market–Factory overlap. Civic buildings should appear there, while Satisfaction and mixed-use blocks rise.',
       2);
   }
   return {
@@ -48,7 +48,7 @@ export function onboardingOf(state: SimState): OnboardingState {
     expectedClass: null,
     expectedCatalyst: null,
     title: 'Foundation complete',
-    message: 'The foundation is set. To grow into districts, place your next catalyst so its field touches the Market or Factory: overlapping fields open mixed-use blocks and whole quarters.',
+    message: 'Let the first blocks grow before spending again. Use 4× speed and watch Population, Materials and Funds: the coach will point to the first number that falls behind.',
     progress: 3,
   };
 }

@@ -69,10 +69,13 @@ export const THEATRE: LandmarkRecipe = {
       parts: [
         [],
         [],
-        [],
+        // La pensilina arriva con la corona della torre scenica: e' il suo
+        // posto nel racconto — il coronamento si attrezza — e da sola
+        // distingue l'esemplare a meta' crescita.
         [box(PART.shell, 3, 0, 8, 2, 1, 3, PALETTE_SLOTS.roofPale, SURFACE_KIND.roofTech, {
           cap: PALETTE_SLOTS.metalBrass,
         })],
+        [],
       ],
     },
     {
@@ -80,10 +83,10 @@ export const THEATRE: LandmarkRecipe = {
       parts: [
         [],
         [],
-        [],
         [box(PART.boom, 3, 9, 6, 1, 1, 2, PALETTE_SLOTS.concrete, SURFACE_KIND.civic, {
           cap: PALETTE_SLOTS.roofWhite,
         })],
+        [],
       ],
     },
   ],
@@ -155,13 +158,23 @@ export const STADIUM: LandmarkRecipe = {
       parts: [
         [],
         [],
-        [],
+        // Le torri faro salgono in due tempi: i fusti con il colonnato, i
+        // fari con l'ingresso — cosi' l'esemplare si legge gia' a meta'
+        // crescita e chiude con il suo segnale notturno.
         [
-          box(PART.mast, 0, 14, 2, 2, 1, 7, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.civic, {
+          box(PART.mast, 0, 14, 2, 2, 1, 3, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.civic, {
+            cap: PALETTE_SLOTS.glassPale,
+          }),
+          box(PART.mast, 17, 14, 2, 2, 1, 3, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.civic, {
+            cap: PALETTE_SLOTS.glassPale,
+          }),
+        ],
+        [
+          box(PART.mast, 0, 14, 2, 2, 4, 4, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.civic, {
             cap: PALETTE_SLOTS.metalGold,
           }),
           box(PART.slab, 0, 14, 2, 2, 8, 1, PALETTE_SLOTS.glassPale, SURFACE_KIND.luminous),
-          box(PART.mast, 17, 14, 2, 2, 1, 7, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.civic, {
+          box(PART.mast, 17, 14, 2, 2, 4, 4, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.civic, {
             cap: PALETTE_SLOTS.metalGold,
           }),
           box(PART.slab, 17, 14, 2, 2, 8, 1, PALETTE_SLOTS.glassPale, SURFACE_KIND.luminous),
@@ -172,11 +185,13 @@ export const STADIUM: LandmarkRecipe = {
       name: 'ingresso',
       parts: [
         [],
+        [],
+        // Il portico dell'ingresso compare con il colonnato: l'esemplare si
+        // distingue a meta' crescita, e il suo finale e' il portico stesso.
         [box(PART.colonnade, 8, 2, 4, 2, 1, 4, PALETTE_SLOTS.stone, SURFACE_KIND.civic, {
           step: 2,
           cap: PALETTE_SLOTS.concreteWhite,
         })],
-        [],
         [],
       ],
     },

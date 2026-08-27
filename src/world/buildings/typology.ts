@@ -46,6 +46,17 @@ export interface TypologyQuery {
    * maglia stradale c'e' sempre.
    */
   readonly lotRole?: LotRole;
+  /**
+   * Tipologia corrente, quando la selezione decide un **upgrade**.
+   *
+   * Assente alla nascita: li' la linea evolutiva non conta e ogni riga che il
+   * luogo accetta resta selezionabile. Con un upgrade, una riga diversa dalla
+   * corrente viene adottata solo se la sua linea la dichiara
+   * (`evolvesFrom`); le righe di ripiego a priorita' zero sono punti di
+   * partenza e non esiti. La risposta non fallisce mai: se nessun'altra riga
+   * accetta la provenienza, vince la corrente — l'edificio mantiene la propria.
+   */
+  readonly from?: string;
 }
 
 /** Tipologia piu' specifica fra quelle che il luogo accetta. */
@@ -61,6 +72,14 @@ export function selectTypology(query: TypologyQuery): TypologyDefinition {
   }
 
   if (best === null) {
+    // Per un upgrade la risposta resta sempre quella che c'e': nessun'altra riga
+    // accetta la provenienza, e l'edificio mantiene la propria tipologia anche
+    // se le condizioni che la fecero scegliere non reggono piu' — era il senso
+    // di «resta lo stesso edificio».
+    if (query.from !== undefined) {
+      const current = typologyById(query.from);
+      if (current !== null) return current;
+    }
     // Il catalogo garantisce un fallback per uso; se manca e' il catalogo a
     // essere rotto, e va detto qui invece di produrre un edificio senza forma.
     throw new Error(`no fallback typology for use ${query.use}`);
@@ -87,6 +106,17 @@ function accepts(candidate: TypologyDefinition, query: TypologyQuery): boolean {
   if (candidate.minLevel !== undefined && query.level < candidate.minLevel) return false;
   if (candidate.coastal === true && !query.coastal) return false;
   if (candidate.lotRole !== undefined && candidate.lotRole !== query.lotRole) return false;
+
+  // La linea evolutiva vale solo per gli upgrade. La corrente e' sempre
+  // ammessa — restare se' stessi non e' una transizione — e le righe di ripiego
+  // non sono mai l'esito di un upgrade: sono i punti da cui si parte. Fra
+  // l'una e le altre, una riga diversa entra solo se dichiara la provenienza.
+  if (query.from !== undefined && candidate.id !== query.from) {
+    if (candidate.priority === 0) return false;
+    if (candidate.evolvesFrom !== undefined && !candidate.evolvesFrom.includes(query.from)) {
+      return false;
+    }
+  }
 
   const profile = query.profile;
   if (profile === null) {
