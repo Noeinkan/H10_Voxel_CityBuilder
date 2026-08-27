@@ -359,31 +359,53 @@ function planeShape(hull: Hull): void {
 }
 
 /**
- * Dirigibile: involucro a tre conci, pinne e gondola.
+ * Dirigibile: involucro a sigaro in otto conci, pinne a croce e gondola.
  *
- * Resta la sagoma della 4.11 e non e' una dimenticanza: e' l'unico mezzo piu'
- * alto che largo, e i conci rastremati gli danno gia' la firma che alle barche
- * mancava. Se un giorno qualcuno lo rifara', il posto e' questo.
+ * **La sagoma si legge dal ritmo dei conci, non dal loro numero.** Un involucro
+ * di tre scatole era un fuso senza direzione — prua e poppa uguali, come un
+ * pallone steso. Quattro conci che crescono verso il centro e tre che calano
+ * verso la coda danno la rastremazione asimmetrica di un dirigibile vero: il
+ * muso piu' lungo e pieno, la coda che si chiude in fretta sulle pinne. La
+ * gondola esce dal ventre con una fascia vetrata, e i pattini la staccano dal
+ * vuoto.
  */
 function airshipShape(hull: Hull): void {
   const size = TRAFFIC.hull[VEHICLE.airship];
   const half = size.length / 2;
   const axis = size.height / 2 + 0.6;
 
+  // Muso: quattro conci che crescono verso il corpo. Il primo e' il cono di prua,
+  // e da lui in poi ogni concio e' piu' largo e piu' alto del precedente.
+  hull.box(half - 0.3, 0, axis, 0.6, 0.8, 0.8, size.palette);
+  hull.box(half - 1.1, 0, axis, 1.0, 2.0, 2.0, size.palette);
+  hull.box(half - 2.1, 0, axis, 1.2, 3.2, 3.2, size.palette);
+  hull.box(half - 3.3, 0, axis, 1.4, 4.2, 4.2, size.palette);
+  // Corpo cilindrico centrale: la pancia piena del mezzo.
   hull.box(0, 0, axis, size.length * 0.5, size.width, size.height, size.palette);
-  hull.box(size.length * 0.32, 0, axis, size.length * 0.24, size.width * 0.62, size.height * 0.62, size.palette);
-  hull.box(-size.length * 0.32, 0, axis, size.length * 0.24, size.width * 0.62, size.height * 0.62, size.palette);
-  hull.box(-half + 0.6, 0, axis, 0.6, size.width * 1.5, 0.5, TRAFFIC.lightPalette);
-  hull.box(-half + 0.6, 0, axis, 0.6, 0.5, size.height * 1.3, TRAFFIC.lightPalette);
-  hull.box(0, 0, 0.7, size.length * 0.28, size.width * 0.5, 1.4, TRAFFIC.cabinPalette);
-  // Il fanale di muso. Le pinne sono in tinta di livrea e restano spente: dedurre
-  // l'emissione dallo slot le accenderebbe come due tubi al neon, ed e' il motivo
-  // per cui `lamp` e' un campo della scatola invece che una lettura della tinta.
-  hull.lamp(half - 0.5, 0, axis, 0.4, 0.4, 0.4);
+  // Coda: tre conci che calano in fretta verso le pinne.
+  hull.box(-half + 3.0, 0, axis, 2.0, 4.0, 4.0, size.palette);
+  hull.box(-half + 1.6, 0, axis, 1.0, 3.0, 3.0, size.palette);
+  hull.box(-half + 0.5, 0, axis, 0.5, 1.6, 1.6, size.palette);
+
+  // Gondola: corpo, fascia vetrata e pattini. La fascia sporge appena, cosi' la
+  // riga dei vetri gira sui due fianchi con una scatola sola.
+  hull.box(0.6, 0, 0.4, 3.6, 1.8, 1.2, TRAFFIC.housePalette);
+  hull.box(0.6, 0, 1.2, 3.7, 1.86, 0.5, TRAFFIC.cabinPalette);
+  hull.pair(0.6, 0.7, 0.1, 3.0, 0.2, 0.3, TRAFFIC.trimPalette);
+
+  // Pinne di coda: una croce di quattro in tinta di livrea. Restano spente — il
+  // fanale e' un campo della scatola, non una deduzione dallo slot — ed e' il
+  // motivo per cui il test del catalogo le tiene separate dai fanali veri.
+  hull.box(-half + 0.8, 0, axis, 1.4, size.width * 1.4, 0.4, TRAFFIC.lightPalette);
+  hull.box(-half + 0.8, 0, axis, 1.4, 0.4, size.height * 1.4, TRAFFIC.lightPalette);
+
+  // Fanale di prua e di coda: le due luci di navigazione.
+  hull.lamp(half - 0.3, 0, axis, 0.4, 0.4, 0.4);
+  hull.lamp(-half + 0.5, 0, axis, 0.3, 0.3, 0.3);
 }
 
 /**
- * eVTOL: cabina corta, quattro bracci e quattro dischi.
+ * eVTOL: cabina rastremata, quattro bracci e quattro dischi con il mozzo.
  *
  * **E' l'opposto dell'aereo, e deve esserlo.** Quello ha la fusoliera lunga e
  * l'ala a freccia; questo e' piu' largo che lungo e da sopra — l'unico modo in
@@ -391,67 +413,78 @@ function airshipShape(hull: Hull): void {
  * si somigliassero, uno scalo in quota sembrerebbe un aeroporto piccolo invece
  * che un'altra cosa.
  *
- * I pattini sotto la cabina non sono decorazione: sono l'unica parte che dica
- * che questo mezzo **si posa**, ed e' la differenza fra un eVTOL fermo sulla
- * piazzola e uno che le passa sopra.
+ * **Il disco e' una lastra con un mozzo, non un cilindro.** Un cerchio pieno a
+ * distanza isometrica legge come un coperchio; il mozzo scuro al centro e la
+ * lastra sottile attorno sono cio' che dicono «rotore fermo». I pattini sotto la
+ * cabina restano l'unica parte che dichiari che questo mezzo **si posa**.
  */
 function evtolShape(hull: Hull): void {
   const size = TRAFFIC.hull[VEHICLE.evtol];
 
-  // Cabina: corpo, muso che si stringe, coda con la deriva.
-  hull.box(0, 0, 1.0, 3.0, 1.8, 1.4, size.palette);
-  hull.box(1.7, 0, 1.0, 0.8, 1.4, 1.15, size.palette);
-  hull.box(0, 0, 1.1, 3.06, 1.86, 0.46, TRAFFIC.cabinPalette);
-  hull.box(1.8, 0, 1.1, 0.86, 1.46, 0.6, TRAFFIC.cabinPalette);
-  hull.box(-1.9, 0, 1.1, 1.0, 0.9, 0.8, size.palette);
-  hull.box(-2.3, 0, 1.7, 0.28, 0.22, 1.1, TRAFFIC.cabinPalette);
+  // Cabina: corpo che si stringe verso il muso, cupolino vetrato, coda con la
+  // deriva. La fascia dei vetri sporge per girare sui fianchi con una scatola sola.
+  hull.box(0, 0, 1.0, 2.6, 1.6, 1.3, size.palette);
+  hull.box(1.4, 0, 1.05, 0.7, 1.2, 1.0, size.palette);
+  hull.box(0, 0, 1.35, 2.7, 1.7, 0.5, TRAFFIC.cabinPalette);
+  hull.box(1.4, 0, 1.35, 0.8, 1.3, 0.55, TRAFFIC.cabinPalette);
+  hull.box(-1.6, 0, 1.2, 0.9, 0.8, 0.8, size.palette);
+  hull.box(-2.1, 0, 1.9, 0.26, 0.2, 1.0, TRAFFIC.cabinPalette);
 
   // Pattini: due travi e i quattro montanti che le tengono staccate dal ventre.
-  hull.pair(0, 0.85, 0.16, 3.0, 0.24, 0.32, TRAFFIC.trimPalette);
-  hull.pair(0.9, 0.85, 0.6, 0.22, 0.22, 0.6, TRAFFIC.trimPalette);
-  hull.pair(-0.9, 0.85, 0.6, 0.22, 0.22, 0.6, TRAFFIC.trimPalette);
+  hull.pair(0, 0.8, 0.14, 2.8, 0.22, 0.3, TRAFFIC.trimPalette);
+  hull.pair(0.8, 0.8, 0.5, 0.2, 0.2, 0.5, TRAFFIC.trimPalette);
+  hull.pair(-0.8, 0.8, 0.5, 0.2, 0.2, 0.5, TRAFFIC.trimPalette);
 
-  // Bracci, gondole dei motori e dischi. Il disco e' spesso un decimo di voxel:
-  // a distanza isometrica e' proprio quella lastra sottile a leggersi come
-  // un'elica ferma invece che come un cilindro.
-  for (const along of [1.1, -1.1]) {
-    hull.pair(along, 1.5, 1.45, 0.5, 2.4, 0.3, TRAFFIC.trimPalette);
-    hull.pair(along, 2.5, 1.7, 0.8, 0.8, 0.5, TRAFFIC.housePalette);
-    hull.pair(along, 2.5, 2.05, 2.0, 2.0, 0.12, TRAFFIC.deckPalette);
+  // Bracci, gondole dei motori e dischi. Due bracci per lato (prua e poppa), e
+  // in cima a ciascuno il disco con il mozzo: la lastra e' spessa un decimo di
+  // voxel, che e' proprio lo spessore a cui un'elica ferma smette di sembrare un
+  // cilindro.
+  for (const along of [1.2, -1.2]) {
+    hull.pair(along, 1.7, 1.4, 0.4, 2.2, 0.26, TRAFFIC.trimPalette);
+    hull.pair(along, 2.6, 1.6, 0.7, 0.7, 0.42, TRAFFIC.housePalette);
+    hull.pair(along, 2.6, 1.95, 1.9, 1.9, 0.1, TRAFFIC.deckPalette);
+    hull.pair(along, 2.6, 2.02, 0.5, 0.5, 0.14, TRAFFIC.trimPalette);
   }
-  hull.lamp(0, 0, 1.95, 0.34, 0.34, 0.26);
+  hull.lamp(1.8, 0, 1.35, 0.3, 0.3, 0.22);
 }
 
 /**
- * Mongolfiera: navicella, bruciatore e involucro a cinque conci.
+ * Mongolfiera: cesto intrecciato, bruciatore e involucro a sette conci.
  *
  * **L'unica sagoma che sta quasi tutta sopra la propria origine.** Uno scafo
  * pende sotto il ponte; qui il volume e' in cima e l'origine e' il fondo del
  * cesto, cioe' il punto che si appoggia al pilone.
  *
  * I conci alternano due tinte, ed e' l'unico trucco che serve: uno spicchio di
- * pallone e' fatto di teli di colori diversi, e senza quell'alternanza cinque
- * scatole concentriche leggono come una pigna invece che come un involucro.
+ * pallone e' fatto di teli di colori diversi, e senza quell'alternanza sette
+ * scatole concentriche leggono come una pigna invece che come un involucro. Il
+ * cesto porta i montanti verticali — e' intrecciato, non imbullonato — e la
+ * fiamma e' l'unica cosa accesa del mezzo.
  */
 function balloonShape(hull: Hull): void {
   const size = TRAFFIC.hull[VEHICLE.balloon];
 
-  // Navicella: il cesto e il suo bordo. E' la sola parte alla scala di chi ci sta.
-  hull.box(0, 0, 0.7, 1.8, 1.8, 1.4, TRAFFIC.deckPalette);
-  hull.box(0, 0, 1.45, 2.0, 2.0, 0.2, TRAFFIC.trimPalette);
+  // Cesto: corpo intrecciato, bordo e montanti d'angolo. E' la sola parte alla
+  // scala di chi ci sta.
+  hull.box(0, 0, 0.65, 1.6, 1.6, 1.3, TRAFFIC.deckPalette);
+  hull.box(0, 0, 1.35, 1.8, 1.8, 0.18, TRAFFIC.trimPalette);
+  for (const along of [0.7, -0.7]) {
+    hull.pair(along, 0.7, 1.2, 0.14, 0.14, 0.9, TRAFFIC.trimPalette);
+  }
 
   // Montanti e bruciatore: la fiamma e' l'unica cosa accesa del mezzo.
-  hull.pair(0.7, 0.7, 2.1, 0.16, 0.16, 1.3, TRAFFIC.trimPalette);
-  hull.pair(-0.7, 0.7, 2.1, 0.16, 0.16, 1.3, TRAFFIC.trimPalette);
-  hull.lamp(0, 0, 2.7, 0.7, 0.7, 0.5);
+  hull.pair(0.65, 0.65, 1.95, 0.14, 0.14, 1.1, TRAFFIC.trimPalette);
+  hull.pair(-0.65, 0.65, 1.95, 0.14, 0.14, 1.1, TRAFFIC.trimPalette);
+  hull.box(0, 0, 2.9, 0.7, 0.7, 0.4, TRAFFIC.trimPalette);
+  hull.lamp(0, 0, 3.3, 0.6, 0.6, 0.5);
 
-  // Involucro: bocca stretta, pancia larga quanto l'ingombro, calotta.
-  hull.box(0, 0, 3.4, 2.6, 2.6, 1.0, size.palette);
-  hull.box(0, 0, 4.4, 4.6, 4.6, 1.4, TRAFFIC.housePalette);
-  hull.box(0, 0, 5.8, size.width, size.width, 1.6, size.palette);
-  hull.box(0, 0, 7.2, 5.2, 5.2, 1.4, TRAFFIC.housePalette);
-  hull.box(0, 0, 8.4, 3.0, 3.0, 1.0, size.palette);
-  hull.box(0, 0, 9.1, 1.2, 1.2, 0.4, TRAFFIC.trimPalette);
+  // Involucro: bocca stretta, pancia larga quanto l'ingombro, calotta e corona.
+  hull.box(0, 0, 3.7, 2.2, 2.2, 0.9, size.palette);
+  hull.box(0, 0, 4.6, 3.8, 3.8, 1.1, TRAFFIC.housePalette);
+  hull.box(0, 0, 5.7, size.width, size.width, 1.3, size.palette);
+  hull.box(0, 0, 7.0, 4.6, 4.6, 1.0, TRAFFIC.housePalette);
+  hull.box(0, 0, 8.0, 2.6, 2.6, 0.7, size.palette);
+  hull.box(0, 0, 8.6, 1.0, 1.0, 0.4, TRAFFIC.trimPalette);
 }
 
 /**

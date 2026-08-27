@@ -55,6 +55,7 @@ export class BuildDock {
   private readonly expansionButton: HTMLButtonElement;
   private readonly terraceButton: HTMLButtonElement;
   private readonly ropewayButton: HTMLButtonElement;
+  private readonly demolishButton: HTMLButtonElement;
   /**
    * Gli strumenti nell'ordine dei tasti `1`..`9`, cioe' quello a schermo.
    *
@@ -126,6 +127,22 @@ export class BuildDock {
     reachRow.append(this.expansionButton, this.terraceButton, this.ropewayButton);
     reach.append(reachTitle, reachRow);
     this.root.appendChild(reach);
+
+    // La gomma sta da sola, e non fra i catalizzatori ne' fra le tre porte del
+    // Reach: quelli aggiungono qualcosa alla citta', questa la toglie. Una corsia
+    // propria rende il verso del gesto leggibile a colpo d'occhio — l'unico
+    // bottone che non fa crescere la citta'.
+    const clear = document.createElement('div');
+    clear.className = 'dock-group';
+    const clearTitle = document.createElement('span');
+    clearTitle.className = 'dock-group-title';
+    clearTitle.textContent = 'Clear';
+    const clearRow = document.createElement('div');
+    clearRow.className = 'dock-group-row';
+    this.demolishButton = this.addTool(model.demolish, 'demolish', { kind: 'demolish' }, handlers);
+    clearRow.appendChild(this.demolishButton);
+    clear.append(clearTitle, clearRow);
+    this.root.appendChild(clear);
 
     // I bottoni che non costruiscono niente stanno in un blocco loro, in coda.
     // Le tre porte stanno in una **riga**, non incolonnate: tre righe piene in
@@ -211,6 +228,7 @@ export class BuildDock {
     paintAction(this.expansionButton, model.expansion);
     paintAction(this.terraceButton, model.terrace);
     paintAction(this.ropewayButton, model.ropeway);
+    paintAction(this.demolishButton, model.demolish);
   }
 
   /**

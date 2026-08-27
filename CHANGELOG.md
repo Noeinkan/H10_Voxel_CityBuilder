@@ -11,6 +11,39 @@ coincide con il messaggio di commit.
 
 ---
 
+## In corso — Skyport e mezzi in quota ridisegnati
+
+- **Lo Skyport smette di essere un foglio con i pali.** Il plinto diventa tre strati
+  — base scura, piano chiaro, centro piu' pallido — con una cornice che lo legge
+  come soletta costruita; la torre di controllo porta la piazzola luminosa in cima,
+  l'aerostazione una fascia vetrata e un tetto proprio, la piazzola dell'eVTOL un
+  bersaglio d'atterraggio, e un colonnato lungo il fianco libero da' profondita'
+  senza chiudere il lato da cui l'eVTOL scende. Gli ormeggi restano gli stessi:
+  quattro, per tre mestieri.
+- **Dirigibile, eVTOL e mongolfiera cambiano sagoma.** Il dirigibile passa da tre
+  a otto conci — il muso piu' lungo e pieno, la coda che si chiude in fretta sulle
+  pinne a croce — e la gondola esce dal ventre con la fascia vetrata; l'eVTOL guadagna
+  il mozzo scuro sui quattro dischi e la coda con la deriva; la mongolfiera un cesto
+  intrecciato con i montanti d'angolo e un involucro a sette conci alternati. Le
+  misure d'ingombro non cambiano: le sagome restano dentro i limiti del catalogo.
+- **Il sondaggio del cielo non e' piu' una linea.** `TRAFFIC.hullProbe` fa sondare
+  per ogni punto una croce di nove colonne alla distanza dell'ingombro del mezzo, e
+  il massimo decide la quota: un dirigibile largo cinque voxel non sfiora piu' la
+  torre accanto a quella che sta sorvolando, che prima il sondaggio a punto solo
+  non vedeva.
+
+## In corso — Strumento di demolizione
+
+- **La gomma, strumento di demolizione a riquadro.** Un nuovo strumento del dock («Clear») demolisce cio' che si trascina sopra: il clic fissa l'ancora, lo striscio allarga il riquadro — con contorno e conteggio degli edifici sul cursore — e il rilascio apre il cantiere. E' lo stesso `ClearanceSites` dei landmark — demolizione a budget, campate che cadono con i loro appoggi, conto reso alla simulazione — ma senza recinto e senza struttura in arrivo: il riquadro resta prato rasato. Non costa fondi: il prezzo lo presenta `tick` con il `crowdingPenalty` che ha gia'.
+
+## In corso — Sfere d'influenza dei landmark piu' ampie
+
+- **I sette landmark del gruppo identita' arrivano piu' lontano.** Universita', monumento, museo, cattedrale, teatro, stadio e marina salgono di venti celle di raggio (da 48-55 a 68-75), cosi' la loro sfera supera quella dei semi di crescita e «incorona» l'intero isolato invece del solo cuore. Forza, costi e curva di decadimento restano invariati: con il decadimento lineare solo una frazione del raggio nominale supera la soglia di crescita, e il passo fuori strada a `1.25` la accorcia ancora — l'ampiezza in piu' e' cio' che riporta l'influenza a coprire il quartiere anche lontano dalla pavimentazione.
+
+## In corso — Arcologie: tutte a sei guglie
+
+- **Le quattro arcologie salgono tutte a sei guglie.** Twin Stem abbandona i due steli per sei corpi su due fronti; Branching Core lascia i quattro bracci per sei guglie su due file; Sky Weave resta a sei steli sfalsati; e arriva Spire Ring, la quarta ricetta, con sei guglie ad anello attorno a un cavedio attraversato da una trave. Ognuna conserva la finestra di cielo misurata dal test del catalogo, che ora gira su quattro forme invece di tre.
+
 ## In corso — Crescita urbana continua attorno ai landmark
 
 - La posa ordinaria non riempie piu' i quattro perimetri degli isolati: cerca il pieno libero per distanza dal candidato della simulazione anche attraverso la maglia teorica.

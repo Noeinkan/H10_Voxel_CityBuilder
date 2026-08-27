@@ -627,6 +627,8 @@ if (growEnabled) {
       }
       selectedTool = tool;
       preview.hide();
+      demolishOutline?.hide();
+      demolishDragging = false;
       influenceOverlay?.hideCursor();
       influenceOverlay?.hideCoach();
     },
@@ -665,6 +667,8 @@ if (growEnabled) {
     onCancelTool: () => {
       selectedTool = { kind: 'none' };
       preview.hide();
+      demolishOutline?.hide();
+      demolishDragging = false;
       influenceOverlay?.hideCursor();
       influenceOverlay?.hideCoach();
       gameHud?.updateCursor(0, 0, null);
@@ -833,6 +837,28 @@ const selectionOutline = terrain !== null && growEnabled
 if (selectionOutline !== null) scene.add(selectionOutline.group);
 
 /**
+ * Il riquadro che la gomma sta per rasare.
+ *
+ * Riusa il contorno di selezione ma su uno stato diverso — «quale area sto
+ * per demolire» invece di «cosa ho scelto» — e per questo e' un oggetto suo:
+ * la scelta e la gomma possono essere accese insieme, e un solo contorno
+ * non puo' dire due cose diverse.
+ */
+const demolishOutline = terrain !== null && growEnabled
+  ? new SelectionOutline((x, y) => Math.max(TERRAIN.seaLevel, terrain.map.heightAt(x, y)))
+  : null;
+if (demolishOutline !== null) scene.add(demolishOutline.group);
+
+/** Il trascinamento della gomma: dall'ancora al cursore, in colonne. */
+let demolishDragging = false;
+let demolishX0 = 0;
+let demolishY0 = 0;
+let demolishX1 = 0;
+let demolishY1 = 0;
+/** Il riquadro gia' misurato, per non rifare il conto a ogni pixel del gesto. */
+let demolishRectKey = '';
+
+/**
  * Il contorno della scelta nel campionario.
  *
  * Riusa la stessa vista della citta' ma con una quota di suolo piatta: il
@@ -891,6 +917,7 @@ if (terrain !== null) {
 if (growEnabled) {
   renderer.domElement.addEventListener('pointermove', onGamePointerMove, { capture: true });
   renderer.domElement.addEventListener('pointerdown', onGamePointerDown, { capture: true });
+  renderer.domElement.addEventListener('pointerup', onGamePointerUp);
   renderer.domElement.addEventListener('pointerleave', () => {
     preview.hide();
     influenceOverlay?.hideCursor();
@@ -1683,6 +1710,29 @@ function onGamePointerMove(event: PointerEvent): void {
     });
     preview.show(cell.x, cell.y, cell.z, valid);
     return;
+  } else if (selectedTool.kind === 'demolish') {
+    // Un gesto in due tempi: il clic che preme fissa l'ancora, lo striscio
+    // allarga il riquadro e il rilascio demolisce. Finche' il pulsante e' su,
+    // il cursore mostra una cella sola e chiede il gesto.
+    // Si punta cio' che si vede, edifici compresi: demolire una torre cercandone
+    // il piede attraverso la sagoma sarebbe la parallasse di sempre.
+    const pointed = pointedCellAt(event.clientX, event.clientY) ?? cell;
+    influenceOverlay?.hideCursor();
+    if (demolishDragging) {
+      demolishX1 = pointed.x;
+      demolishY1 = pointed.y;
+      updateDemolishPreview(event.clientX, event.clientY);
+    } else {
+      demolishOutline?.hide();
+      gameHud?.updateCursor(event.clientX, event.clientY, {
+        title: 'Demolish',
+        details: 'Press and drag across buildings to tear them down.',
+        valid: true,
+        reason: 'The area is cleared over the next few moments.',
+      });
+    }
+    preview.show(pointed.x, pointed.y, pointed.z, true);
+    return;
   } else {
     const sector = coastalSectorAt(cell.x, cell.y, terrainRegion, BALANCE.gameplay.expansion.size);
     const failure = generator.done
@@ -1765,6 +1815,21 @@ function onGamePointerDown(event: PointerEvent): void {
     return;
   }
 
+  if (selectedTool.kind === 'demolish') {
+    // Il clic fissa l'ancora; la demolizione avviene al rilascio, dopo che lo
+    // striscio ha deciso il riquadro. Niente succede qui: la gomma si vede e
+    // si misura, non si applica a un colpo solo.
+    const pointed = pointedCellAt(event.clientX, event.clientY) ?? cell;
+    demolishDragging = true;
+    demolishX0 = pointed.x;
+    demolishY0 = pointed.y;
+    demolishX1 = pointed.x;
+    demolishY1 = pointed.y;
+    demolishRectKey = '';
+    updateDemolishPreview(event.clientX, event.clientY);
+    return;
+  }
+
   if (!generator.done) {
     gameHud?.showFailure('terrain-loading');
     return;
@@ -1776,6 +1841,77 @@ function onGamePointerDown(event: PointerEvent): void {
     return;
   }
   beginCoastalExpansion(sector);
+}
+
+/**
+ * Il rilascio che demolisce.
+ *
+ * Vive su `pointerup` e non su `pointerdown` perche' e' un gesto in due tempi: il
+ * clic fissa l'ancora, lo striscio allarga il riquadro e solo qui si sa l'area
+ * definitiva. E' lo stesso motivo del clic che sceglie un isolato — fino al
+ * rilascio non si distingue un clic da uno striscio.
+ */
+function onGamePointerUp(event: PointerEvent): void {
+  if (event.button !== 0 || !demolishDragging) return;
+  demolishDragging = false;
+  demolishOutline?.hide();
+  if (selectedTool.kind !== 'demolish' || growthScene === null || terrain === null) return;
+
+  const x0 = Math.min(demolishX0, demolishX1);
+  const x1 = Math.max(demolishX0, demolishX1);
+  const y0 = Math.min(demolishY0, demolishY1);
+  const y1 = Math.max(demolishY0, demolishY1);
+  const sizeX = x1 - x0 + 1;
+  const sizeY = y1 - y0 + 1;
+
+  const verdict = growthScene.demolishSurvey(x0, y0, sizeX, sizeY);
+  if (verdict.clears === 0) {
+    gameHud?.showFeedback('Nothing to demolish there.', 'neutral');
+    return;
+  }
+  growthScene.demolish(x0, y0, sizeX, sizeY);
+  // La gomma resta in mano: una passata non e' una decisione, e chi sbaglia
+  // area fa un secondo colpo, come per la mensola.
+  gameHud?.showTransientFeedback(
+    `Demolishing ${verdict.clears} ${verdict.clears === 1 ? 'building' : 'buildings'}.`,
+  );
+}
+
+/**
+ * Ricalcola il riquadro della gomma: contorno a schermo e conteggio sul cursore.
+ *
+ * Il conto si rifa solo quando il riquadro cambia cella: `surfaceCellAt` torna
+ * una colonna intera, e uno striscio lento fermo sulla stessa colonna non deve
+ * ripagare la lettura del registry a ogni pixel.
+ */
+function updateDemolishPreview(clientX: number, clientY: number): void {
+  if (growthScene === null || terrain === null) return;
+  const x0 = Math.min(demolishX0, demolishX1);
+  const x1 = Math.max(demolishX0, demolishX1);
+  const y0 = Math.min(demolishY0, demolishY1);
+  const y1 = Math.max(demolishY0, demolishY1);
+  const key = `${x0},${y0},${x1},${y1}`;
+
+  if (key !== demolishRectKey) {
+    demolishRectKey = key;
+    const sizeX = x1 - x0 + 1;
+    const sizeY = y1 - y0 + 1;
+    const verdict = growthScene.demolishSurvey(x0, y0, sizeX, sizeY);
+    const ground = Math.max(TERRAIN.seaLevel, terrain.map.heightAt(x0, y0));
+    demolishOutline?.show({ x0, y0, x1, y1, z0: ground, z: ground });
+
+    const reason = verdict.refusal === 'structure-in-the-way'
+      ? 'Something built to last stands here: it cannot be demolished.'
+      : verdict.clears === 0
+        ? 'No buildings in this area.'
+        : `${verdict.clears} ${verdict.clears === 1 ? 'building' : 'buildings'} will fall.`;
+    gameHud?.updateCursor(clientX, clientY, {
+      title: 'Demolish',
+      details: `${sizeX}×${sizeY} area selected`,
+      valid: verdict.clears > 0,
+      reason,
+    });
+  }
 }
 
 /**

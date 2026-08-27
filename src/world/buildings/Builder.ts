@@ -1,5 +1,6 @@
 import {
   addBuilding,
+  BALANCE,
   nextBuildSites,
   setIslandConnections,
   urbanProfileAt,
@@ -29,7 +30,7 @@ import {
 import { ARCOLOGY } from '../arcology/config';
 import type { ArcologyDriverRefusal } from './arcologyDriver';
 import { ArcologyDriver } from './arcologyDriver';
-import { ClearanceSites } from './clearanceSite';
+import { ClearanceSites, type ClearanceVerdict } from './clearanceSite';
 import { SpanDriver } from './spanDriver';
 import { AerialDriver } from './aerialDriver';
 import { GuideDriver } from './guideDriver';
@@ -445,6 +446,37 @@ export class Builder {
    */
   landmarkAloftSite(x: number, y: number, kind: CatalystId): AloftVerdict {
     return this.landmarks.aloftSiteAt(x, y, kind);
+  }
+
+  /**
+   * Cosa la gomma porterebbe via dal riquadro, senza toccare niente.
+   *
+   * La porta del cursore dello strumento di demolizione. E' la stessa domanda
+   * che fa il click — `clearance.survey` con la regola della gomma — quindi il
+   * conteggio che il giocatore legge prima del rilascio e' quello che accade.
+   */
+  demolishSurvey(x: number, y: number, sizeX: number, sizeY: number): ClearanceVerdict {
+    return this.clearance.survey(
+      { x, y, sizeX, sizeY },
+      BALANCE.gameplay.demolition.clearing,
+    );
+  }
+
+  /**
+   * Apre il cantiere di demolizione sul riquadro, a budget e senza recinto.
+   *
+   * E' lo stesso `ClearanceSites` dei landmark e delle arcologie — stessa coda
+   * di comparsa, stesse campate che cadono con i loro appoggi, stessa resa del
+   * conto alla simulazione — ma senza una struttura in arrivo: il riquadro resta
+   * prato rasato, e la prenotazione cade appena l'ultimo condannato sparisce.
+   */
+  demolish(x: number, y: number, sizeX: number, sizeY: number): boolean {
+    return this.clearance.start(
+      { x, y, sizeX, sizeY },
+      BALANCE.gameplay.demolition.clearing,
+      () => {},
+      { fence: false },
+    );
   }
 
   /**

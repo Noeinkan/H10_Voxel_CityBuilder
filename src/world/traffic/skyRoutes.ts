@@ -30,6 +30,20 @@ interface Plan {
 }
 
 /**
+ * Gli scostamenti su cui si sonda l'ingombro del mezzo.
+ *
+ * Una croce di nove punti attorno alla linea di centro: il punto stesso, le
+ * quattro colonne a distanza `hullProbe` e le quattro diagonali. E' il modo di
+ * dire «qui passa un dirigibile largo cinque voxel, non un filo» senza chiedere
+ * al dominio di conoscere le sagome.
+ */
+const PROBE_OFFSETS: readonly (readonly [number, number])[] = [
+  [0, 0],
+  [1, 0], [-1, 0], [0, 1], [0, -1],
+  [1, 1], [1, -1], [-1, 1], [-1, -1],
+];
+
+/**
  * Il circuito di volo attorno a una pista: decollo, salita, giro, finale.
  *
  * E' una spezzata chiusa con la quota dentro, quindi la salita e la discesa sono
@@ -250,6 +264,7 @@ function ceilingOver(
   closed: boolean,
 ): number {
   let top = 0;
+  const pad = TRAFFIC.hullProbe;
   const last = closed ? plan.length : plan.length - 1;
   for (let i = 0; i < last; i++) {
     const from = plan[i];
@@ -258,8 +273,12 @@ function ceilingOver(
     const steps = Math.max(1, Math.ceil(span / TRAFFIC.ceilingStep));
     for (let s = 0; s <= steps; s++) {
       const t = s / steps;
-      const probe = ceiling(from.x + (to.x - from.x) * t, from.y + (to.y - from.y) * t);
-      if (probe > top) top = probe;
+      const px = from.x + (to.x - from.x) * t;
+      const py = from.y + (to.y - from.y) * t;
+      for (const [ox, oy] of PROBE_OFFSETS) {
+        const probe = ceiling(px + ox * pad, py + oy * pad);
+        if (probe > top) top = probe;
+      }
     }
   }
   return top;

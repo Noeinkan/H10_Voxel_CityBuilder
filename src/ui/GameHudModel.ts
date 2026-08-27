@@ -223,6 +223,8 @@ export interface GameHudModel {
   readonly terrace: HudAction;
   /** La funivia: l'altro modo di scavalcare il vuoto, e l'unico sull'acqua. */
   readonly ropeway: HudAction;
+  /** La gomma: demolisce cio' che si trascina sopra. Non costa fondi. */
+  readonly demolish: HudAction;
   readonly policies: readonly HudPolicy[];
   readonly tradeModes: readonly HudTradeMode[];
   readonly tradeConnected: boolean;
@@ -446,6 +448,20 @@ export function buildGameHudModel(
     description: 'Two towers and a cable: crosses water no bridge would span.',
   };
 
+  const demolish: HudAction = {
+    id: 'demolish',
+    label: 'Demolish',
+    cost: 0,
+    available: ready,
+    // La gomma non si sblocca: togliere di mezzo e' l'altra meta' del costruire,
+    // e nasconderla dietro una soglia insegnerebbe a convivere con un errore.
+    locked: false,
+    reason: !ready
+      ? 'The city is getting ready.'
+      : 'Drag across buildings to tear them down.',
+    description: 'Tears down the buildings you drag across. The cost is the city you lose.',
+  };
+
   const activePolicies = stats?.state.policies ?? [];
   const policies = POLICIES.map((policy): HudPolicy => {
     const requirement = BALANCE.gameplay.policy[policy.id];
@@ -505,6 +521,7 @@ export function buildGameHudModel(
     expansion,
     terrace,
     ropeway,
+    demolish,
     policies,
     tradeModes,
     tradeConnected,

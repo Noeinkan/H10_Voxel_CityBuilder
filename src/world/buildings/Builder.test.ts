@@ -1999,6 +1999,39 @@ describe('Builder — sventramento', () => {
     expect(builder.stats.cleared).toBe(0);
     expect(builder.registry.landmarkCount).toBe(1);
   });
+
+  it('la gomma demolisce un riquadro, senza recinto e con il conto alla simulazione', () => {
+    const { terrain, builder, state } = city(30);
+    const spot = clearableSpot(builder);
+
+    const box = { x: spot.x, y: spot.y, sizeX: spot.footprint, sizeY: footprintDepth(spot) };
+    const quote = builder.demolishSurvey(box.x, box.y, box.sizeX, box.sizeY);
+    expect(quote.refusal).toBeNull();
+    expect(quote.clears).toBeGreaterThanOrEqual(1);
+
+    const before = state.buildings.length;
+    expect(builder.demolish(box.x, box.y, box.sizeX, box.sizeY)).toBe(true);
+    expect(builder.stats.clearing).toBe(1);
+    // Niente recinto: la gomma non prenota un cantiere per una struttura che
+    // non arriva, e la coda di superficie resta com'era.
+    expect(builder.stats.surfaceQueued).toBe(0);
+
+    const after = settle(builder, terrain, state);
+    expect(builder.stats.clearing).toBe(0);
+    expect(after.buildings.length).toBeLessThan(before);
+    // L'edificio preso di mira non esiste piu' nel registry.
+    expect(builder.registry.get(spot.id)).toBeNull();
+  });
+
+  it('la gomma su un riquadro vuoto non apre nessun cantiere', () => {
+    const world = new VoxelWorld();
+    const terrain = testTerrain({ chunksX: 4, chunksY: 4, height: 24 });
+    const builder = new Builder(world, terrain, 1337);
+
+    expect(builder.demolishSurvey(60, 60, 4, 4).clears).toBe(0);
+    expect(builder.demolish(60, 60, 4, 4)).toBe(false);
+    expect(builder.stats.clearing).toBe(0);
+  });
 });
 
 function seaward(map: TerrainMap): { x: number; y: number } {

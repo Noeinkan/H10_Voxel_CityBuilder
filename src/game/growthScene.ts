@@ -27,6 +27,7 @@ import {
   type BuildingRecord,
   type ReadonlyBuildingRegistry,
 } from '../world/buildings/BuildingRegistry';
+import type { ClearanceVerdict } from '../world/buildings/clearanceSite';
 import { hasFacadeForm, landmarkOf, maxStageOf } from '../world/landmarks/config';
 import { landmarkWaterColumn } from '../world/landmarks/generate';
 import { createReachCost } from '../world/reachCost';
@@ -420,6 +421,24 @@ export class GrowthScene {
   /** Le funi da disegnare. Riferimento stabile finche' non ne nasce una. */
   ropewayCables(): readonly RopewayCable[] {
     return this.builder.ropewayCables;
+  }
+
+  /** Cosa la gomma porterebbe via dal riquadro, senza toccare niente. */
+  demolishSurvey(x: number, y: number, sizeX: number, sizeY: number): ClearanceVerdict {
+    return this.builder.demolishSurvey(x, y, sizeX, sizeY);
+  }
+
+  /**
+   * Demolisce cio' che occupa il riquadro, a budget.
+   *
+   * Il gioco tiene la gomma in mano: una passata non e' una decisione, e chi
+   * sbaglia area fa un secondo colpo. Il costo non e' in fondi — lo presenta
+   * `tick` con il `crowdingPenalty` che ha gia'.
+   */
+  demolish(x: number, y: number, sizeX: number, sizeY: number): boolean {
+    const done = this.builder.demolish(x, y, sizeX, sizeY);
+    if (done) this.message = 'Demolition under way.';
+    return done;
   }
 
   togglePolicy(id: PolicyId): ActionResult {

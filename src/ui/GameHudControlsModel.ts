@@ -7,6 +7,7 @@ export type GameTool =
   | { readonly kind: 'expansion' }
   | { readonly kind: 'terrace' }
   | { readonly kind: 'ropeway' }
+  | { readonly kind: 'demolish' }
   | { readonly kind: 'none' };
 
 export interface HudDaylight {
@@ -53,6 +54,9 @@ export function selectionMessage(tool: GameTool, catalysts: readonly HudAction[]
   if (tool.kind === 'terrace') return 'Terrace selected · click a tall building · Esc to cancel';
   if (tool.kind === 'ropeway') {
     return 'Ropeway selected · click a shore facing the water · Esc to cancel';
+  }
+  if (tool.kind === 'demolish') {
+    return 'Demolish selected · drag across buildings to tear them down · Esc to cancel';
   }
   return null;
 }

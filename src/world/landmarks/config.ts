@@ -1700,49 +1700,61 @@ export const SKYPORT: LandmarkRecipe = {
   apron: 0,
   stages: [0, 4, 12, 24],
   parts: [
+    // Il plinto: tre strati e un orlo, cosi' la piattaforma legge come una
+    // soletta costruita e non come un foglio appoggiato sul vuoto. La base e'
+    // scura, il piano chiaro, il centro piu' pallido e il bordo una cornice.
     [
-      box(PART.deck, 0, 0, 8, 6, 0, 1, PALETTE_SLOTS.concrete, SURFACE_KIND.utility),
-      box(PART.shell, 0, 0, 8, 6, 1, 1, PALETTE_SLOTS.metalDark, SURFACE_KIND.utility),
-      box(PART.deck, 2, 1, 4, 4, 0, 1, PALETTE_SLOTS.concretePale, SURFACE_KIND.utility),
+      box(PART.deck, 0, 0, 8, 6, 0, 1, PALETTE_SLOTS.asphaltDark, SURFACE_KIND.utility),
+      box(PART.deck, 0, 0, 8, 6, 1, 1, PALETTE_SLOTS.concrete, SURFACE_KIND.utility),
+      box(PART.deck, 1, 1, 6, 4, 1, 1, PALETTE_SLOTS.concretePale, SURFACE_KIND.utility),
+      box(PART.shell, 0, 0, 8, 6, 2, 1, PALETTE_SLOTS.metalDark, SURFACE_KIND.utility),
     ],
     [
-      // Il pilone maggiore: e' la parte che dice il ruolo, e da qui in avanti la
-      // sagoma sul cielo e' quella di un ormeggio e non di un tetto attrezzato.
-      box(PART.mast, 2, 2, 2, 2, 1, 11, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.civic, {
+      // La torre di controllo: e' il pezzo che dice il ruolo, e da qui in avanti
+      // la sagoma sul cielo e' quella di un ormeggio e non di un tetto attrezzato.
+      // La piazzola luminosa in cima la tiene visibile anche di notte.
+      box(PART.mast, 2, 2, 2, 2, 3, 10, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.civic, {
         cap: PALETTE_SLOTS.metalGold,
       }),
-      box(PART.slab, 2, 2, 2, 2, 12, 1, PALETTE_SLOTS.glassPale, SURFACE_KIND.luminous),
-    ],
-    [
-      box(PART.shell, 5, 0, 3, 3, 1, 4, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.civic, {
-        cap: PALETTE_SLOTS.glassPale,
-      }),
-      box(PART.deck, 5, 0, 3, 3, 5, 1, PALETTE_SLOTS.roofWhite, SURFACE_KIND.roofTech),
-      box(PART.mast, 0, 5, 1, 1, 1, 3, PALETTE_SLOTS.glassPale, SURFACE_KIND.luminous),
-      box(PART.mast, 7, 5, 1, 1, 1, 3, PALETTE_SLOTS.glassPale, SURFACE_KIND.luminous),
+      box(PART.slab, 2, 2, 2, 2, 13, 1, PALETTE_SLOTS.glassPale, SURFACE_KIND.luminous),
       // La cima della mongolfiera nell'angolo libero, e nell'**unico** che lo
-      // sia: i due piloni stanno in diagonale al centro, l'aerostazione occupa
-      // il fronte e il colonnato il fianco. Un pallone e' largo sette voxel e
-      // deve potersene andare senza attraversare niente.
-      box(PART.mast, 0, 0, 1, 1, 1, 5, PALETTE_SLOTS.metalDark, SURFACE_KIND.industrial, {
+      // sia: la torre sta al centro, l'aerostazione al fronte, il colonnato al
+      // fianco. Un pallone e' largo sette voxel e deve potersene andare senza
+      // attraversare niente.
+      box(PART.slab, 0, 0, 2, 2, 2, 1, PALETTE_SLOTS.metalBrass, SURFACE_KIND.utility),
+      box(PART.mast, 0, 0, 1, 1, 3, 4, PALETTE_SLOTS.metalDark, SURFACE_KIND.industrial, {
         cap: PALETTE_SLOTS.metalBrass,
       }),
-      box(PART.slab, 0, 0, 2, 2, 0, 1, PALETTE_SLOTS.metalBrass, SURFACE_KIND.utility),
     ],
     [
-      box(PART.mast, 4, 4, 2, 2, 1, 9, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.civic, {
+      // L'aerostazione: un guscio con la fascia vetrata e il tetto chiaro. Non
+      // e' un capannone pieno — il vetro gira sulle pareti e la legge come un
+      // luogo di transito, non come un deposito.
+      box(PART.shell, 5, 0, 3, 3, 2, 3, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.civic, {
+        cap: PALETTE_SLOTS.concretePale,
+      }),
+      box(PART.shell, 5, 0, 3, 3, 3, 1, PALETTE_SLOTS.glassPale, SURFACE_KIND.luminous),
+      box(PART.deck, 5, 0, 3, 3, 5, 1, PALETTE_SLOTS.roofWhite, SURFACE_KIND.roofTech),
+      // Il secondo pilone d'ormeggio: piu' basso della torre, sull'angolo
+      // opposto, cosi' i due dirigibili appesi hanno prue opposte e quote diverse.
+      box(PART.mast, 5, 4, 2, 2, 3, 6, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.civic, {
         cap: PALETTE_SLOTS.metalGold,
       }),
-      box(PART.slab, 4, 4, 2, 2, 10, 1, PALETTE_SLOTS.glassPale, SURFACE_KIND.luminous),
-      box(PART.colonnade, 0, 2, 4, 4, 1, 3, PALETTE_SLOTS.metalDark, SURFACE_KIND.utility, {
-        step: 3,
+    ],
+    [
+      // Il colonnato lungo il fianco libero: da' profondita' alla piattaforma e
+      // fa da soglia fra il piano e il vuoto, senza chiudere il lato da cui
+      // l'eVTOL scende.
+      box(PART.colonnade, 0, 2, 2, 4, 3, 4, PALETTE_SLOTS.metalDark, SURFACE_KIND.utility, {
+        step: 2,
         cap: PALETTE_SLOTS.concretePale,
       }),
       // La piazzola dell'eVTOL **sopra l'aerostazione**, non sul piano: otto
       // colonne di tetto sono tutte impegnate, e l'unico posto libero su uno
       // scalo in quota e' un altro tetto. Sborda di una colonna a ovest, che e'
       // lo sbalzo che la fa leggere come una piazzola invece che come la
-      // copertura del volume sotto.
+      // copertura del volume sotto. Il segno chiaro al centro e' il bersaglio
+      // di atterraggio.
       box(PART.deck, 4, 0, 3, 3, 6, 1, PALETTE_SLOTS.asphaltDark, SURFACE_KIND.utility),
       box(PART.deck, 5, 1, 1, 1, 6, 1, PALETTE_SLOTS.concretePale, SURFACE_KIND.utility),
     ],

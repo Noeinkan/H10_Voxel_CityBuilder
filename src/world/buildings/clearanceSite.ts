@@ -123,7 +123,12 @@ export class ClearanceSites {
    * Le campate che poggiavano su un condannato cadono con lui, ed e' il vincolo
    * che c'era gia': segue o sparisce, mai resta a mezz'aria.
    */
-  start(box: ClearanceBox, rule: ClearanceRule, onFinish: () => void): boolean {
+  start(
+    box: ClearanceBox,
+    rule: ClearanceRule,
+    onFinish: () => void,
+    options: { readonly fence?: boolean } = {},
+  ): boolean {
     const records = recordsIn(this.ctx.registry, box);
     const plan = planClearance(
       records.map((record) => clearanceOf(this.ctx.registry, record)),
@@ -149,7 +154,10 @@ export class ClearanceSites {
     // riquadro si riempirebbero prima che la struttura arrivi — il preventivo
     // prometterebbe un posto che a meta' cantiere non esiste piu'.
     this.ctx.registry.reserveRect({ x: box.x, y: box.y, sizeX: box.sizeX, sizeY: box.sizeY });
-    this.paintFence(box);
+    // La gomma non dipinge il recinto: li' non arriva nessuna struttura a
+    // sostituire il vuoto, e un anello di recinto attorno a un prato rasato
+    // resterebbe per sempre a dire "cantiere" di una cosa che non ci sara'.
+    if (options.fence !== false) this.paintFence(box);
     return true;
   }
 

@@ -2,7 +2,7 @@ import type { CatalystId } from '../sim/catalysts';
 
 export type HudIcon =
   | 'funds' | 'population' | 'food' | 'materials' | 'satisfaction'
-  | 'residential' | 'production' | 'civic' | 'expansion' | 'terrace' | 'ropeway' | 'policies' | 'city'
+  | 'residential' | 'production' | 'civic' | 'expansion' | 'terrace' | 'ropeway' | 'policies' | 'city' | 'demolish'
   | 'market' | 'factory' | 'park' | 'greenhouse' | 'power' | 'school' | 'port' | 'ferry' | 'airport' | 'transport' | 'radio' | 'lighthouse'
   | 'university' | 'monument' | 'museum' | 'cathedral' | 'theatre' | 'stadium' | 'marina'
   | 'pause' | 'play' | 'theme' | 'view' | 'swatch' | 'help' | 'close'
@@ -90,6 +90,10 @@ const PATHS: Readonly<Record<HudIcon, string>> = {
   // pancia e' l'unica cosa che distingua una funivia da un ponte sospeso, ed e'
   // la stessa ragione per cui esiste `ROPEWAY.sagRatio`.
   ropeway: '<path d="M4 21V6M20 21V8M4 6c6 7 10 7 16 2M11 11v2M9 13h4v3H9z"/>',
+  // Un edificio sbarrato in diagonale: e' la gomma, e il tratto dice che la
+  // casa si toglie invece di costruirsi. Si distingue da `residential` — la
+  // stessa sagoma senza sbarra — proprio perche' sono i due versi di un gesto.
+  demolish: '<path d="M3 11V9l1.5-2.5L6 9v2M3 11h3v3M3 11v10h3V14M9 21V5h6v16M15 9h3v12M15 5l3 4M9 5V2M11 2h2M3 4l18 18"/>',
   policies: '<path d="M4 4h16v16H4zM8 9h8M8 13h8M8 17h5"/>',
   // Tre edifici di tre altezze su una linea di terra: la dashboard e' la citta'
   // letta tutta insieme, e uno skyline la dice meglio di una pagina di cifre.

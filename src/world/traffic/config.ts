@@ -162,6 +162,19 @@ export const TRAFFIC = {
    */
   ceilingStep: 6,
 
+  /**
+   * Quanto il sondaggio sporge di lato dalla linea di centro della rotta.
+   *
+   * **La linea non e' il mezzo.** Un dirigibile e' lungo sedici e largo cinque:
+   * alzare la rotta solo dove una colonna cade *esattamente* sotto la spezzata
+   * significa lasciare che la gondola o l'involucro sfiorino la torre accanto a
+   * quella sondata. Per ogni punto si sonda quindi una croce di colonne a questa
+   * distanza, e il massimo delle nove risposte decide la quota. Cinque voxel
+   * coprono l'ingombro piu' largo che vola — l'aereo e il pallone — piu' un
+   * margine.
+   */
+  hullProbe: 5,
+
   /** Semilato del circuito di attesa attorno al campo, in voxel. */
   planeCircuit: 84,
 

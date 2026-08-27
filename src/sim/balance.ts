@@ -161,16 +161,22 @@ export const BALANCE = {
         transport: { cost: 240, strength: 185, radius: 65 },
         radio: { cost: 300, strength: 185, radius: 60 },
         lighthouse: { cost: 240, strength: 175, radius: 40 },
-        university: { cost: 360, strength: 200, radius: 53 },
-        monument: { cost: 440, strength: 215, radius: 50 },
-        museum: { cost: 380, strength: 195, radius: 52 },
-        cathedral: { cost: 400, strength: 205, radius: 50 },
-        theatre: { cost: 420, strength: 205, radius: 48 },
-        stadium: { cost: 460, strength: 210, radius: 55 },
+        // I landmark del gruppo identita' arrivano piu' lontano dei semi di
+        // crescita: devono «incoronare» un quartiere gia' edificato e tenerlo
+        // insieme, e una sfera pari a quella di un mercato non li distingue.
+        // Il decadimento resta lineare, quindi la parte che supera davvero la
+        // soglia di crescita e' una frazione del raggio: l'ampiezza extra e'
+        // cio' che la riporta a coprire l'isolato, non solo il cuore.
+        university: { cost: 360, strength: 200, radius: 73 },
+        monument: { cost: 440, strength: 215, radius: 70 },
+        museum: { cost: 380, strength: 195, radius: 72 },
+        cathedral: { cost: 400, strength: 205, radius: 70 },
+        theatre: { cost: 420, strength: 205, radius: 68 },
+        stadium: { cost: 460, strength: 210, radius: 75 },
         // Il gemello del monumento sull'acqua: il prezzo da identita' con il
         // vincolo di sito riportato in denaro, come l'aeroporto — un lago o un
         // fronte mare non sono ovunque, e chi li ha se li paga.
-        marina: { cost: 440, strength: 210, radius: 55 },
+        marina: { cost: 440, strength: 210, radius: 75 },
       },
 
       /**
@@ -327,6 +333,24 @@ export const BALANCE = {
       cost: 620,
       materials: 120,
       population: 48,
+    },
+
+    /**
+     * La gomma: lo strumento che demolisce cio' che il giocatore sceglie.
+     *
+     * **Non e' il piazzamento di un landmark, e non paga niente.** Il catalizzatore
+     * demolisce per farsi posto e il suo costo e' il monumento che non compare; qui
+     * il gesto e' la demolizione in se', e il conto lo presenta `tick` con il
+     * `crowdingPenalty` che ha gia' — togliere edifici toglie capacita' e
+     * soddisfazione. E' la stessa regola di `catalyst.clearing`, tenuta in un
+     * oggetto proprio perche' sono due manopole distinte: chi alza il tetto di
+     * demolizione del monumento non deve allargare anche la gomma.
+     */
+    demolition: {
+      clearing: {
+        maxLevel: Number.POSITIVE_INFINITY,
+        clearsLandmarks: true,
+      },
     },
 
     /**
