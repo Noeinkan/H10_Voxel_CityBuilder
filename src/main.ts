@@ -64,7 +64,7 @@ import { resolveTheme, THEMES, type Theme } from './engine/themes';
 import { createVoxelMaterial } from './engine/VoxelMaterial';
 import { GrowthScene } from './game/growthScene';
 import type { CoachSuggestion } from './game/coach';
-import { resolveLaunchMode, swatchUrl } from './game/launchMode';import { resolveSelection, type Selection } from './game/selection';
+import { resolveLaunchMode, resolveSeed, swatchUrl } from './game/launchMode';import { resolveSelection, type Selection } from './game/selection';
 import { pickSolidCell, pickSurfaceCell, type Ray3, type SurfaceCell } from './game/surfacePick';
 import { SimScene, SIM_SITE_COUNT, SIM_TICK_RATE } from './game/simScene';
 import { coastalSectorAt, shapeWithSector, type CoastalSector } from './game/sectors';
@@ -197,7 +197,22 @@ const params = new URLSearchParams(window.location.search);
 const { debugEnabled, growEnabled, simEnabled } = resolveLaunchMode(params);
 let debugVisible = debugEnabled;
 const sceneKind = parseSceneKind(params.get('scene'));
-const seed = parseInt(params.get('seed') ?? '1337', 10) || 1337;
+const seed = resolveSeed(params, () => {
+  // Il seed di partenza e' l'unico tiro non deterministico di tutta la
+  // generazione: da qui in poi tutto e' funzione pura del numero sorteggiato.
+  const roll = new Uint32Array(1);
+  crypto.getRandomValues(roll);
+  return roll[0];
+});
+
+// Il seed sorteggiato va riscritto nell'URL: e' il modo in cui il mondo
+// "appare" al giocatore — come il seed di Minecraft — e il ricaricamento
+// riporta la stessa isola invece di sorteggiarne un'altra.
+if (!params.has('seed')) {
+  const url = new URL(window.location.href);
+  url.searchParams.set('seed', String(seed));
+  window.history.replaceState(window.history.state, '', url);
+}
 const worldSize = clampInt(params.get('size'), 512, 32, 4096);
 // L'altezza del mondo deve contenere la torre piu' alta che la scala verticale
 // produce, sopra il rilievo dell'isola. Prima era un 64 fisso: troncava le
@@ -2190,6 +2205,7 @@ function actionFailureLabel(reason: ActionFailure): string {
     'terrain-loading': 'The terrain is still being generated.',
     'not-buildable': 'No earthwork holds here: cliff or deep water.',
     'needs-coast': 'This link has to reach the sea.',
+    'needs-waterfront': 'A Marina needs the sea or a lake.',
     'needs-open-ground': 'Needs a wide, level clearing.',
     'too-close': 'Too close to a catalyst of the same class.',
     'insufficient-funds': 'Not enough funds.',

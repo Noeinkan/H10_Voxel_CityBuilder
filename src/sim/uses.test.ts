@@ -96,7 +96,7 @@ describe('vettore di influenza dei catalizzatori', () => {
     }
   });
 
-  it('divide i diciotto ruoli in tre funzioni di toolbar', () => {
+  it('divide i diciannove ruoli in tre funzioni di toolbar', () => {
     const grouped = CATALYST_GROUPS.flatMap((group) =>
       CATALYSTS.filter((entry) => entry.group === group.id),
     );
@@ -124,11 +124,19 @@ describe('vettore di influenza dei catalizzatori', () => {
   });
 
   it('nessun altro ruolo ha un vincolo di luogo', () => {
-    const constrained = new Set(['port', 'airport', 'ferry', 'lighthouse']);
+    const constrained = new Set(['port', 'airport', 'ferry', 'lighthouse', 'marina']);
     for (const definition of CATALYSTS) {
       if (constrained.has(definition.id)) continue;
       expect({ id: definition.id, site: definition.site }).toEqual({ id: definition.id, site: 'any' });
     }
+  });
+
+  it('la marina accetta l’acqua dolce, il porto no', () => {
+    // `waterfront` e' `coastal` allargato ai laghi: la marina ci costruisce,
+    // il porto — banchina tarata sul mare — no. Sono due etichette diverse
+    // perche' due ruoli hanno due risposte diverse davanti allo stesso lago.
+    expect(catalystById('marina').site).toBe('waterfront');
+    expect(catalystById('port').site).toBe('coastal');
   });
 
   it('ricalcolo incrementale e ricostruzione completa restano indistinguibili', () => {

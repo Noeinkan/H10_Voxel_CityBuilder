@@ -50,6 +50,25 @@ describe('planTraffic', () => {
     for (const route of routes) expect(route.length).toBe(0);
   });
 
+  it('la marina ormeggia yacht sul proprio pelo, non sul livello del mare', () => {
+    // Sul lago il pelo e' quello della conca: un'ormeggiata alla quota del mare
+    // galleggerebbe dentro la collina. La struttura dichiara il suo pelo, e i
+    // posti barca lo usano.
+    const lakeZ = TRAFFIC.waterZ + 20;
+    const routes = planTraffic([structure('marina', 0, 0, { waterZ: lakeZ })], OPEN_SEA);
+
+    const yachts = routes.filter((route) => route.kind === VEHICLE.yacht);
+    expect(yachts.length).toBeGreaterThan(0);
+    for (const route of yachts) expect(route.path[0].z).toBe(lakeZ);
+  });
+
+  it('senza acqua sotto il posto barca lo yacht non compare', () => {
+    // Il bacino scavato nel terreno si comporta come il mare: dove il pelo non
+    // copre il fondo, non c'e' barca — che e' il difetto onesto del porto.
+    const routes = planTraffic([structure('marina', 0, 0)], () => false);
+    expect(routes).toHaveLength(0);
+  });
+
   it('due imbarchi a distanza di linea aprono la traversata', () => {
     const routes = planTraffic(
       [structure('ferry', 0, 0), structure('ferry', 0, 100)],

@@ -6,7 +6,9 @@
  * L'app non ha salvataggio: ogni scatto ricostruisce la citta' da zero — isola
  * dal seed 1337, i tre catalizzatori nell'ordine dell'onboarding, poi crescita
  * a 4x. `seedCity` e' quindi il seeder sintetico che la skill chiede: nessun
- * dato reale entra mai nell'inquadratura.
+ * dato reale entra mai nell'inquadratura. Il seed e' **fissato nei path**
+ * perche' il default dell'app e' ormai casuale, e le coordinate di piazzamento
+ * qui sotto valgono solo sull'isola 1337.
  *
  * `SHOTKIT_BASE_URL` punta a un'istanza gia' avviata altrove (per esempio un
  * worktree pulito, quando l'albero di lavoro e' in mezzo a un refactor).
@@ -227,7 +229,7 @@ export default {
   shots: [
     {
       name: '01-city-overview',
-      path: '/',
+      path: '/?seed=1337',
       timeoutMs: 300000,
       shows:
         'la citta cresciuta sull isola procedurale: strade, isolati e tipologie decise dalla simulazione, barra risorse in alto e dock di costruzione in basso',
@@ -238,7 +240,7 @@ export default {
     },
     {
       name: '02-placement-cursor',
-      path: '/',
+      path: '/?seed=1337',
       timeoutMs: 300000,
       shows:
         'lo strumento di piazzamento attivo: segnaposto 3D sul terreno e cartellino con costo pesato dal sito, raggio di influenza, usi favoriti e tipologie che possono nascerne',
@@ -255,7 +257,7 @@ export default {
     },
     {
       name: '03-event-decision',
-      path: '/',
+      path: '/?seed=1337',
       timeoutMs: 300000,
       shows:
         'una carta evento della simulazione: la citta ha esaurito le scorte e chiede una scelta, con le tre risposte e il loro costo',
@@ -270,7 +272,7 @@ export default {
     },
     {
       name: '04-policies-and-trade',
-      path: '/',
+      path: '/?seed=1337',
       timeoutMs: 300000,
       shows:
         'il cassetto delle politiche: leve attivabili e strategie di scambio, separate dalla dashboard della citta',
@@ -285,7 +287,7 @@ export default {
     },
     {
       name: '05-theme-neon',
-      path: '/?theme=neon',
+      path: '/?seed=1337&theme=neon',
       timeoutMs: 300000,
       shows:
         'lo stesso motore con un tema diverso: 32 colori e parametri di atmosfera scambiati a caldo, nessuna geometria rigenerata, con il selettore dei temi aperto',
@@ -300,7 +302,7 @@ export default {
     },
     {
       name: '06-debug-overlay',
-      path: '/?debug=1&grow=1',
+      path: '/?seed=1337&debug=1&grow=1',
       timeoutMs: 300000,
       shows:
         'l harness di misura: frame budget, draw call, triangoli, stato del mesher e del pool di worker accanto alle statistiche di crescita',
@@ -338,7 +340,7 @@ export default {
     },
     {
       name: '09-selection-card',
-      path: '/',
+      path: '/?seed=1337',
       timeoutMs: 300000,
       shows:
         'la scheda di selezione aperta su un edificio: in cima la carta di cio che serve per crescere, poi struttura, isolato, colonna e voxel impilate nella stessa colonna scorrevole, e il contorno azzurro sull impronta nel mondo',
@@ -370,7 +372,7 @@ export default {
     },
     {
       name: '08-simulation-lab',
-      path: '/?debug=1&sim=1',
+      path: '/?seed=1337&debug=1&sim=1',
       timeoutMs: 300000,
       shows:
         'la scena di simulazione isolata: desiderabilita, candidati di costruzione classificati e leve di politica, senza il gioco attorno',

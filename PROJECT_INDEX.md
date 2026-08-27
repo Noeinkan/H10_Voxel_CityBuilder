@@ -27,15 +27,15 @@ worker. `src/sim/` gira in Node senza DOM né GPU.
 
 | File | Ruolo |
 | --- | --- |
-| [.cursor/rules/project-index-first.mdc](.cursor/rules/project-index-first.mdc) | Regola globale: consulta il Project Index prima della ricerca e sincronizzalo con ogni modifica |
-| [AGENTS.md](AGENTS.md) | Regole operative globali e rimando alle regole locali |
+| [AGENTS.md](AGENTS.md) | Regole operative globali compatte: Project Index come mappa primaria, contratti, budget e verifica proporzionata |
 | [CHANGELOG.md](CHANGELOG.md) | Cosa e' cambiato e quando, per incremento |
 | [index.html](index.html) | Pagina unica, `#app`, monta `src/main.ts` |
 | [LICENSE](LICENSE) | Licenza proprietaria, tutti i diritti riservati: cosa non e' concesso, cosa si', terze parti (in inglese) |
-| [package.json](package.json) | Script npm; dipendenze: `three`, `simplex-noise` |
+| [package.json](package.json) | Script npm, incluso `locate` per interrogare l'indice con output limitato; dipendenze `three` e `simplex-noise` |
 | [ROADMAP.md](ROADMAP.md) | Direzione del prodotto, milestone e gate dei prossimi incrementi |
 | [scripts/docs-merge.mjs](scripts/docs-merge.mjs) | `npm run docs:merge`: fonde i frammenti di `docs/pending/` in indice e changelog, con lucchetto per non pestarsi fra agenti |
 | [scripts/free-port.mjs](scripts/free-port.mjs) | Hook `prestart`/`predev`: libera la porta del dev server terminando le istanze node rimaste |
+| [scripts/project-locate.mjs](scripts/project-locate.mjs) | `npm run locate -- <termine>`: cerca righe nel Project Index, raggruppa per sezione e limita l'output |
 | [shotkit.config.mjs](shotkit.config.mjs) | Ricette di cattura per gli scatti di riferimento in `.shots/` |
 | [tsconfig.json](tsconfig.json) | `strict` + flag extra; `noUncheckedIndexedAccess` off di proposito |
 | [vite.config.ts](vite.config.ts) | Vite + Vitest insieme; worker in formato ES, test in ambiente `node` |
@@ -48,7 +48,7 @@ resto si apre a domanda — è ciò che tiene basso il contesto di partenza.
 
 | File | Ruolo | Caricato |
 | --- | --- | --- |
-| [AGENTS.md](AGENTS.md) | **Fonte unica** di comandi, convenzioni, contratti, budget e definizione di "finito" | sempre |
+| [AGENTS.md](AGENTS.md) | **Fonte unica e compatta** di comandi, convenzioni, contratti, budget e definizione di "finito" | sempre |
 | [CLAUDE.md](CLAUDE.md) | Puntatore: dove stanno le regole e cosa si sbaglia facilmente | sempre |
 | [docs/pending/README.md](docs/pending/README.md) | Formato dei frammenti di indice e changelog, e perché si scrive lì invece che nei due file | a domanda |
 | [docs/world/aerial-city.md](docs/world/aerial-city.md) | Contratti e motivazioni della citta' in quota |
@@ -62,10 +62,10 @@ resto si apre a domanda — è ciò che tiene basso il contesto di partenza.
 | [docs/world/streets-buildings.md](docs/world/streets-buildings.md) | Contratti condivisi da strade, siti ed edifici |
 | [docs/world/terrain.md](docs/world/terrain.md) | Contratti, dimostrazioni e casi limite del terreno |
 | [docs/world/traffic.md](docs/world/traffic.md) | Contratti delle rotte e dei mezzi non voxel |
-| [src/engine/AGENTS.md](src/engine/AGENTS.md) | Renderer, mesher, palette, temi, modello di luce e pass | lavorando in `src/engine/` |
+| [src/engine/AGENTS.md](src/engine/AGENTS.md) | Contratti compatti per renderer, mesher, palette, luce, pass e caricamento iniziale | lavorando in `src/engine/` |
 | [src/world/aerial/AGENTS.md](src/world/aerial/AGENTS.md) | Regole locali e riferimenti per la citta' in quota | lavorando in `src/world/aerial/` |
 | [src/world/AGENTS.md](src/world/AGENTS.md) | Contratti comuni e routing delle regole di `src/world/` | lavorando in `src/world/` |
-| [src/sim/AGENTS.md](src/sim/AGENTS.md) | Simulazione, stato, campo e relazioni di bilanciamento | lavorando in `src/sim/` |
+| [src/sim/AGENTS.md](src/sim/AGENTS.md) | Contratti della simulazione e verifica proporzionata ereditata dalla radice | lavorando in `src/sim/` |
 | [.claude/skills/debug-harness/SKILL.md](.claude/skills/debug-harness/SKILL.md) | Parametri URL, hotkey e hook globali | `/debug-harness` |
 | [docs/PROJECT_MAP.md](docs/PROJECT_MAP.md) | Mappa sintetica di dipendenze, punti di ingresso e flussi | a domanda |
 | [CHANGELOG.md](CHANGELOG.md) | Storia degli incrementi, con i file toccati da ciascuno | a domanda |
@@ -203,7 +203,7 @@ map.columnAt(120, 96); // { height, biome, slope, buildable }
 | [AtmosphereControl.ts](src/engine/AtmosphereControl.ts) | Chi possiede tema, ora e modo del giorno, e li scrive in renderer, composer e materiale | `createAtmosphereControl`, `AtmosphereControl`, `AtmosphereOptions` |
 | [PlacementCursor.ts](src/engine/PlacementCursor.ts) | Segnaposto sotto il puntatore: base, mirino, onda e fascio, sempre sopra la scena | `PlacementCursor` |
 | [TrafficView.ts](src/engine/TrafficView.ts) | I mezzi in movimento, fuori dal volume voxel: geometria condivisa per tipo, colori dalla palette per la luce della faccia, e la mesh unica del pennacchio riscritta per frame | `TrafficView`, `faceShades`, `FACE_CORNERS` |
-| [vehicleHulls.ts](src/engine/vehicleHulls.ts) | La forma dei mezzi in scatole, senza Three: scafi rastremati, fasce di galleggiamento, ali a freccia, ciminiere che chiudono sulla bocca dichiarata | `hullBlocks`, `HullBlock` |
+| [src/engine/vehicleHulls.ts](src/engine/vehicleHulls.ts) | Sagome dei mezzi in scatole; lo yacht da diporto della marina. |
 | [vehicleHulls.test.ts](src/engine/vehicleHulls.test.ts) | Sagoma articolata e simmetrica, ingombro in lunghezza, la fascia sul pelo dell'acqua, e il fumaiolo che chiude esattamente dove il pennacchio nasce | — |
 | [RopewayView.ts](src/engine/RopewayView.ts) | Le funi delle funivie, fuori dal volume voxel: un concio per tratto, riferimento costruito sul verso, geometria ricostruita solo quando nasce una linea | `RopewayView`, `CableLine` |
 | [RopewayView.test.ts](src/engine/RopewayView.test.ts) | Ogni faccia del concio guarda in fuori — una fune avvolta al contrario sparirebbe nel culling, e non lo direbbe nessun tipo —, l'array uguale non ricostruisce niente, la luce non lascia i vertici neri | — |
@@ -308,7 +308,7 @@ avviene a valle, dove il terreno gia' si legge.
 | --- | --- | --- |
 | [config.ts](src/world/streets/config.ts) | **Ogni** passo, scostamento, larghezza e colore della carreggiata | `STREETS` |
 | [streetGrid.ts](src/world/streets/streetGrid.ts) | Griglia deformata: assi, isolati, ruolo di una colonna, versi di affaccio | `STREET_ROLE`, `FACING`, `streetRoleAt`, `isPavement`, `blockAt`, `blockRect`, `blockKey`, `lineStart`, `lineEnd`, `lineWidth`, `isArterial`, `BlockId`, `BlockRect`, `Facing`, `StreetRole` |
-| [lots.ts](src/world/streets/lots.ts) | Da colonna proposta a lotto sul fronte strada; puro, la disponibilita' entra come predicato | `placeLot`, `Lot`, `LotRequest` |
+| [src/world/streets/lots.ts](src/world/streets/lots.ts) | Ricerca pura dell'impronta libera per anelli locali attorno al candidato, continua oltre la maglia; posa sul bordo solo su richiesta esplicita delle opere costiere | `placeLot`, `Lot`, `LotRequest` |
 | [corridor.ts](src/world/streets/corridor.ts) | Il raccordo di un isolato nato staccato: percorso a costo minimo sugli incroci della maglia, il terreno entra come costo di un tratto | `planCorridor`, `nearestBlock`, `blockNeighbours`, `CorridorLeg`, `CorridorRequest`, `Axis` |
 | [StreetNetwork.ts](src/world/streets/StreetNetwork.ts) | Facciata sul seed: ruoli, isolati, anello di carreggiata da dipingere, colonne di un tratto di raccordo | `StreetNetwork`, `PavementCell` |
 
@@ -376,7 +376,7 @@ lavoro di questo dominio.
 | File | Ruolo | Esporta |
 | --- | --- | --- |
 | [config.ts](src/world/sites/config.ts) | **Ogni** distanza, lato e dislivello dei vincoli di sito | `SITE` |
-| [siteRules.ts](src/world/sites/siteRules.ts) | Cerca l'acqua sui quattro assi — battigia o acqua a galla, che non sono la stessa colonna —, ne dice verso e distanza, misura un intorno piano, traduce l'etichetta in un motivo di rifiuto | `sightWater`, `WaterSight`, `seesWater`, `waterDistance`, `waterFacing`, `openGround`, `siteRefusal`, `SiteRefusal` |
+| [src/world/sites/siteRules.ts](src/world/sites/siteRules.ts) | Vincoli di sito; `sightWater` per il mare, `sightAnyWater` per l'acqua a qualsiasi quota (laghi); rifiuto `needs-waterfront`. |
 
 ```ts
 seesWater(map, x, y, SITE.coastalRadius);              // il mare e' entro il raggio?
@@ -443,13 +443,15 @@ dirigibile, la piazzola dell'eVTOL, la cima della mongolfiera.
 
 | File | Ruolo | Esporta |
 | --- | --- | --- |
-| [config.ts](src/world/landmarks/config.ts) | **Ogni** ingombro, quota, soglia di stadio, ormeggio, linea d'acqua e indice di palette, piu' le diciotto ricette con tre esemplari a testa: dodici scritte qui, sei importate da `recipes/` e unite con uno spread. Ogni ricetta racconta i quattro tempi della crescita — accesso e identita', massa, attrezzatura, coronamento e segnale — e ogni esemplare si distingue entro lo stadio due e chiude con un dettaglio suo. Le **forme contestuali** (`FORMS`) affiancano la ricetta a terra: tre di facciata (`skyport`, `sky-park`, `sky-transit`) e tre d'acqua per il porto, scelte dal luogo e non dal seme. Dichiara anche il dislivello massimo della fondazione a terra. Qui vive `PartsRecipe`, il formato che le arcologie condividono | `LANDMARK`, `LANDMARKS`, `SKYPORT`, `BERTH`, `FORMS`, `LandmarkFormId`, `LandmarkForm`, `landmarkOf`, `hasFacadeForm`, `facadeFormOf`, `hasWaterForm`, `waterFormFor`, `formVariantOf`, `contextualFormsOf`, `isFacadeForm`, `maxStageOf`, `variantsOf`, `PartsRecipe`, `LandmarkRecipe`, `LandmarkVariant`, `LandmarkMooring`, `BerthKind` |
+| [src/world/landmarks/berths.ts](src/world/landmarks/berths.ts) | Gli ormeggi (`BERTH`) in un file loro, perche' le ricette di `recipes/` possano leggerli senza il ciclo di import con `config.ts`. |
+| [src/world/landmarks/config.ts](src/world/landmarks/config.ts) | Catalogo ricette e forme (`LANDMARKS`, `FORMS`), tipi di ricetta (`waterline`, `lakeQuay`, `basinDepth`), forme d'acqua della marina. |
 | [facadePlan.ts](src/world/landmarks/facadePlan.ts) | Piano puro dello Skyport di facciata: centra la ricetta fuori dall'ospite, riusa le corse delle terrazze e affida gli appoggi a `planDeck` | `planFacadeLandmark`, `FacadeLandmarkPlan`, `FacadeLandmarkQuery`, `FacadeLandmarkResult`, `FacadeLandmarkRefusal` |
 | [parts.ts](src/world/landmarks/parts.ts) | Le dieci primitive con cui una ricetta si compone, lo smusso della pianta e la rotazione sul verso | `PART`, `Part`, `PartKind`, `box`, `partBounds`, `orientPart`, `orientedSpan`, `createCanvas`, `drawPart`, `LandmarkCanvas` |
 | [generate.ts](src/world/landmarks/generate.ts) | Compone tronco ed esemplare in uno stamp; ingombro, origine, stadio, scelta della variante dal seme (o fissata dalla forma) e ormeggi portati sul verso vero. `landmarkWaterColumn` porta la linea d'acqua di una ricetta sul terreno vero. Il nucleo ricetta-stamp e' condiviso con le arcologie | `generateFromRecipe`, `recipeSpan`, `recipeOrigin`, `generateLandmark`, `landmarkSpan`, `landmarkOrigin`, `landmarkMoorings`, `landmarkWaterColumn`, `stageForBuildings`, `variantIndexOf`, `RecipeRequest`, `LandmarkRequest`, `WorldMooring` |
 | [recipes/connections.ts](src/world/landmarks/recipes/connections.ts) | Le due ricette nuove del gruppo Connections: torre radio e faro | `RADIO`, `LIGHTHOUSE` |
 | [recipes/growth.ts](src/world/landmarks/recipes/growth.ts) | Le due ricette nuove del gruppo Growth: centrale elettrica e scuola | `POWER`, `SCHOOL` |
 | [recipes/identity.ts](src/world/landmarks/recipes/identity.ts) | Le due ricette nuove del gruppo Identity: teatro e stadio | `THEATRE`, `STADIUM` |
+| [src/world/landmarks/recipes/identityMarina.ts](src/world/landmarks/recipes/identityMarina.ts) | La ricetta della marina: promenade, moli a dita e bacino scavato (`waterline`, `lakeQuay`, `basinDepth`). |
 | [vocab.ts](src/world/landmarks/vocab.ts) | Scorciatoie condivise fra le ricette: gru di banchina, banchina, bitta, vano d'ingresso, fascia d'insegna e albero | `craneAt`, `quay`, `bollard`, `entrance`, `signBand`, `tree` |
 
 ```ts
@@ -523,7 +525,7 @@ la sosta e' lo stesso conto per tutt'e due.
 | [config.ts](src/world/traffic/config.ts) | **Ogni** velocita', quota, sosta, franco, misura di sagoma, ciminiera e indice di palette dei mezzi | `TRAFFIC`, `VEHICLE`, `VEHICLE_KINDS`, `VehicleKind`, `VehicleFunnel`, `funnelOf` |
 | [seaLane.ts](src/world/traffic/seaLane.ts) | La rotta fra due punti che resta sull'acqua: griglia grossa, ricerca in ampiezza, tiro di corda | `planSeaLane`, `LanePoint`, `LaneQuery` |
 | [routePath.ts](src/world/traffic/routePath.ts) | Di cosa e' fatta una rotta, e i quattro modi di costruirne una: fermo, pendolo con sosta, giro chiuso, lunghezze cumulate | `TrafficRoute`, `TrafficWaypoint`, `moored`, `shuttle`, `loop`, `measure`, `phaseOf` |
-| [routes.ts](src/world/traffic/routes.ts) | Orchestrazione e cio' che galleggia: traversate, navi che escono dal mondo e ne tornano | `planTraffic`, `TrafficStructure`, `WaterProbe`, `CeilingProbe`, e il rimando a `routePath` |
+| [src/world/traffic/routes.ts](src/world/traffic/routes.ts) | Rotte dei mezzi; gli ormeggi a galla posano i mezzi sul pelo della struttura (`waterZ`), yacht nei posti barca. |
 | [skyRoutes.ts](src/world/traffic/skyRoutes.ts) | Le rotte in quota, e l'unica cosa che le accomuna: **passano sopra la citta' invece che dentro**. Circuito di volo, orbita, giro che si posa su una piazzola, corsa di un pallone | `flightCircuit`, `airshipOrbit`, `padCircuit`, `balloonFlight` |
 | [ropewayRoutes.ts](src/world/traffic/ropewayRoutes.ts) | Da una linea di funivia alle sue due cabine, sfasate di mezzo periodo. Qui la rotta e' gia' data: non c'e' niente da cercare | `planRopewayRoutes`, `RopewayLink` |
 | [poses.ts](src/world/traffic/poses.ts) | Dove sta un mezzo a un certo istante — o `null` se e' **fuori dal mondo**: pendolo con sosta, giro chiuso, beccheggio | `posesAt`, `poseAt`, `VehiclePose` |
@@ -669,7 +671,7 @@ le scritture stanno in tre file invece che sparse in sei metodi.
 | File | Ruolo | Esporta |
 | --- | --- | --- |
 | [assemble.ts](src/world/buildings/assemble.ts) | Gate e assemblatore dei lotti oltre il modulo: solo un picco maturo eletto puo' usare il lato libero dell'isolato; dispatcher unico e deterministico sotto/sopra otto voxel | `urbanFootprintCap`, `assembleBuilding`, `buildStamp`, `assembleLayoutCells`, `AssembleCell` |
-| [Builder.ts](src/world/buildings/Builder.ts) | Orchestratore urbano: rivaluta la gerarchia al centro di ogni isolato candidato e limita ogni lotto non eletto al modulo ordinario | `Builder`, `BuilderStats`, `REJECT_REASONS` |
+| [src/world/buildings/Builder.ts](src/world/buildings/Builder.ts) | Orchestratore urbano: conserva il candidato radiale in uno spazio continuo, orienta verso la rete senza usarla come confine e mantiene la gerarchia verticale del nucleo | `Builder`, `BuilderStats`, `REJECT_REASONS` |
 | [buildContext.ts](src/world/buildings/buildContext.ts) | Cio' che ogni driver ha in mano: mondo, terreno, strade, registry e le due code | `BuildContext` |
 | [config/builder.ts](src/world/buildings/config/builder.ts) | Cadenze, budget per frame, tetti di chunk, aggregazione in fila | `BUILDER`, `CLUSTER`, `BuildingForm`, `DEFAULT_BUILDING_FORM` |
 | [config/classProfile.ts](src/world/buildings/config/classProfile.ts) | Proporzioni e colori di base dei quattro usi urbani | `ClassProfile`, `CLASS_PROFILE` |
@@ -682,12 +684,13 @@ le scritture stanno in tre file invece che sparse in sei metodi.
 | [src/world/buildings/crossingDriver.ts](src/world/buildings/crossingDriver.ts) | Driver a budget dei ponti fra settori: cerca appoggi locali, registra una campata lunga per settore e la lega alle torri |
 | [growthPoles.ts](src/world/buildings/growthPoles.ts) | Di chi e' il turno di crescere: il riquadro del polo di questa infornata | `poleRectAt` |
 | [growthQueue.ts](src/world/buildings/growthQueue.ts) | La coda di comparsa e le scritture a budget: un segmento per struttura, la sagoma nuova prima della cancellazione | `GrowthQueue`, `anchorOf` |
+| [src/world/buildings/marinaBasin.test.ts](src/world/buildings/marinaBasin.test.ts) | La marina nasce sulla riva ripida di un lago e scava il bacino nel bassofondo. |
 | [surfaceQueue.ts](src/world/buildings/surfaceQueue.ts) | Il suolo pubblico a budget: carreggiata per isolato, grembiuli, rampe e bonifica del decoro — che si ferma dove il bioma dice acqua | `SurfaceQueue`, `SurfacePaint` |
 | [spanDriver.ts](src/world/buildings/spanDriver.ts) | La rete in quota: ponti, mezzanini e piazze. Vince chi unisce due componenti; una campata non prende suolo | `SpanDriver` |
 | [aerialDriver.ts](src/world/buildings/aerialDriver.ts) | Mensole, percorsi, gambe e le quote su cui si costruisce. Un impalcato vuoto cade, uno abitato no | `AerialDriver` |
 | [guideDriver.ts](src/world/buildings/guideDriver.ts) | La via da terra: un montante per ogni impalcato abitato che non ce l'ha | `GuideDriver` |
 | [ropewayDriver.ts](src/world/buildings/ropewayDriver.ts) | Le funivie: due torri a registro, e una fune che non e' materia. Il solo driver senza una freccia che entra o che esce | `RopewayDriver`, `RopewayCable`, `RopewayRide` |
-| [landmarkDriver.ts](src/world/buildings/landmarkDriver.ts) | I monumenti dei catalizzatori: piazzamento e fondazione a terra, cantiere di sventramento, forme di facciata appese con piloni e forme d'acqua scelte dalla costa, grembiule e avanzamento di stadio | `LandmarkDriver`, `LandmarkSite`, `AloftSite`, `AloftVerdict` |
+| [src/world/buildings/landmarkDriver.ts](src/world/buildings/landmarkDriver.ts) | Piazzamento dei landmark; verso l'acqua `waterfront`, scavo del bacino (`basinDepth`) con allagamento e muro fino al fondo. |
 | [landmarkSiting.ts](src/world/buildings/landmarkSiting.ts) | Dove una struttura si posa davvero: verso, ingombro e l'angolo gia' portato **incontro all'acqua**. Puro, ed e' la sola meta' del piazzamento che un test interroga al voxel senza far crescere un'isola | `placeRecipe`, `seawardDrift`, `Placement` |
 | [arcologyDriver.ts](src/world/buildings/arcologyDriver.ts) | La megastruttura: condizione sull'isolato, cantiere, costruzione a stadi, piazzali in quota e dichiarazione degli usi alla simulazione | `ArcologyDriver` |
 | [clearance.ts](src/world/buildings/clearance.ts) | Cosa un landmark puo' togliere di mezzo e cosa lo ferma: edifici fino alla soglia, landmark solo per chi li dichiara, mai la rete in quota | `CLEARANCE_KIND`, `ClearanceKind`, `planClearance`, `ClearanceRecord`, `ClearanceRule`, `ClearancePlan`, `ClearanceRefusal` |
@@ -719,7 +722,7 @@ le scritture stanno in tre file invece che sparse in sei metodi.
 | [loop.ts](src/game/loop.ts) | Passo fisso della simulazione con tetto di recupero | `FixedStepLoop` |
 | [growthScene.ts](src/game/growthScene.ts) | Cablaggio esclusivo di `grow=1`: tick, Builder e animazione | `GrowthScene`, `GrowthStats` |
 | [simScene.ts](src/game/simScene.ts) | Cablaggio di `sim=1`: la simulazione che gira sull'isola senza costruirci. Gemello di `growthScene` per la scena di misura | `SimScene`, `SIM_TICK_RATE`, `SIM_SITE_COUNT` |
-| [launchMode.ts](src/game/launchMode.ts) | Risoluzione pura della modalita' iniziale e degli harness URL, e l'indirizzo del campionario letto al contrario | `resolveLaunchMode`, `swatchUrl`, `LaunchMode` |
+| [launchMode.ts](src/game/launchMode.ts) | Risoluzione pura della modalita' iniziale e degli harness URL, il seed di partenza — dichiarato o casuale — e l'indirizzo del campionario letto al contrario | `resolveLaunchMode`, `resolveSeed`, `swatchUrl`, `LaunchMode` |
 | [actions.ts](src/game/actions.ts) | Azioni economiche atomiche: catalizzatori, policy, decisioni, commercio ed espansione | `placeCatalyst`, `catalystFailure`, `catalystSiteCost`, `togglePolicy`, `chooseDecision`, `changeTradeMode`, `buyExpansion`, `expansionFailure`, `SiteCost`, `ActionResult`, `ActionFailure` |
 | [surfacePick.ts](src/game/surfacePick.ts) | Selezione pura della colonna da un raggio 3D: sulla sola heightmap per chi costruisce, sugli edifici compresi per chi guarda | `pickSurfaceCell`, `pickSolidCell`, `Ray3`, `SurfaceCell`, `BuiltTop` |
 | [selection.ts](src/game/selection.ts) | Cosa c'è sotto un punto, con l'isolato come unità di selezione. `BlockProductivity` aggrega capacità residenziale e commerciale, materiali, cibo e costo civico dagli edifici dell'isolato, applicando policy, usi misti, torri agricole e organico cittadino | `resolveSelection`, `Selection`, `SelectionQuery`, `StructureInfo`, `UseInfo`, `BlockInfo`, `BlockProductivity`, `ColumnInfo`, `VoxelInfo` |
@@ -769,6 +772,7 @@ giocabile; gli overlay tecnici si alternano con `F3` o partono aperti con
 
 | File | Copre |
 | --- | --- |
+| [scripts/project-locate.test.ts](scripts/project-locate.test.ts) | Ricerca per ruolo e percorso, normalizzazione, limite risultati e argomenti del comando `locate` |
 | [engine/mesher/microDetail.test.ts](src/engine/mesher/microDetail.test.ts) | Il vocabolario maturo misurato con i contratti del resto del mesher: agganci (balcone solo sulla terrazza, fasce solo sul portale), quote dei prismi, winding di ogni quad nuovo, continuita' del tiro attraverso la cucitura, priorita' sotto il tetto dei quad |
 | [src/engine/VehicleMaterial.test.ts](src/engine/VehicleMaterial.test.ts) | Che gli uniform dei mezzi siano gli stessi oggetti del voxel, non delle copie. |
 | [game/coach.test.ts](src/game/coach.test.ts) | Ogni tier acceso e spento, priorita' fra cibo e connessioni, stadio del landmark vicino e lontano dalla soglia, purezza dello stesso contesto |
@@ -780,7 +784,7 @@ giocabile; gli overlay tecnici si alternano con `F3` o partono aperti con
 | [world/buildings/evolution.test.ts](src/world/buildings/evolution.test.ts) | La crescita come identita': a parita' di tipologia un livello in piu' non tocca i piani bassi; le soglie visuali compaiono solo dove dichiarate; le linee evolutive non hanno cicli, passi inversi o laterali e l'upgrade adotta solo cio' che la linea dichiara |
 | [world/buildings/growthPoles.test.ts](src/world/buildings/growthPoles.test.ts) | Il giro fra i poli: un turno a testa, il riquadro dell'influenza, nessun polo saltato |
 | [world/buildings/landmarkFacade.test.ts](src/world/buildings/landmarkFacade.test.ts) | Dal click sulla torre al record dello Skyport: piattaforma fuori dall'impronta, quota di facciata, ospite e piloni risolvibili |
-| [world/buildings/landmarkFooting.test.ts](src/world/buildings/landmarkFooting.test.ts) | Il landmark sulla montagna: appare dove la cengia non regge l'ingombro, cuce il versante affondando invece di riempire, scava la vetta dentro la sola impronta e lascia l'acqua fonda come unico rifiuto |
+| [world/buildings/landmarkFooting.test.ts](src/world/buildings/landmarkFooting.test.ts) | Il landmark sulla montagna: appare dove la cengia non regge l'ingombro, espone la navata iniziale della cattedrale senza aspettare le guglie future, scava dentro la sola impronta e lascia l'acqua fonda come unico rifiuto |
 | [world/buildings/urbanGate.test.ts](src/world/buildings/urbanGate.test.ts) | Gate urbano attraverso il vero `Builder.findLot`: fase iniziale, core non eletto, picco maturo, ricerca nei vicini, dispatcher, determinismo e upgrade che non aggirano il limite |
 | [src/world/crossings/secondaryBridgePlan.test.ts](src/world/crossings/secondaryBridgePlan.test.ts) | Territori distinti, soglia verticale e acqua reale per il piano del ponte automatico |
 | [world/landmarks/facadePlan.test.ts](src/world/landmarks/facadePlan.test.ts) | Piano di facciata sulle quattro direzioni, quota adattiva, appoggi e rifiuto di un fronte troppo stretto |
@@ -813,7 +817,7 @@ giocabile; gli overlay tecnici si alternano con `F3` o partono aperti con
 | [game/growthScene.test.ts](src/game/growthScene.test.ts) | Ciclo completo tick → costruzione → voxel, ordine del tutorial, usi misti e crescita verticale |
 | [game/actions.test.ts](src/game/actions.test.ts) | Costo del sito con le opere di terra, pagamento una volta sola, requisiti e rifiuti, sito dell'opera concessa |
 | [game/surfacePick.test.ts](src/game/surfacePick.test.ts) | Colonna sotto il raggio, edificabilita', raggi che escono dalla mappa e raggio che si ferma sulla torre invece che sulla terra dietro |
-| [game/launchMode.test.ts](src/game/launchMode.test.ts) | Esperienza completa alla radice e isolamento degli harness URL; il link del campionario porta tema e ora e apre un harness invece di una seconda partita |
+| [game/launchMode.test.ts](src/game/launchMode.test.ts) | Esperienza completa alla radice e isolamento degli harness URL; il seed dichiarato vince su quello sorteggiato, e zero o un valore illeggibile valgono quanto un seed assente; il link del campionario porta tema e ora e apre un harness invece di una seconda partita |
 | [game/onboarding.test.ts](src/game/onboarding.test.ts) | Sequenza e sblocco dei tre passi iniziali |
 | [game/cityCondition.test.ts](src/game/cityCondition.test.ts) | Priorità delle crisi e stabilità richiesta per il successo |
 | [game/sectors.test.ts](src/game/sectors.test.ts) | Identità uniche, terra utile e continuità delle espansioni |
@@ -831,13 +835,13 @@ giocabile; gli overlay tecnici si alternano con `F3` o partono aperti con
 | [engine/xray.test.ts](src/engine/xray.test.ts) | La densita' del velo cresce verso la camera — e' cio' che fa vedere piu' di una parete alla volta — resta sempre sotto il taglio e sfuma sul contorno della sagoma |
 | [ui/ViewMenuModel.test.ts](src/ui/ViewMenuModel.test.ts) | Ordine, etichette e gesti delle viste, targa che dice sempre come si esce, isolato scelto che cambia gesto ma non nome, barra dei livelli solo dove c'e' una quota, strumento che chiude un taglio |
 | [engine/InspectView.test.ts](src/engine/InspectView.test.ts) | La quota della fetta si arma una volta sola e poi non insegue piu' il cursore, ne' si inchioda sul centro dell'inquadratura quando il raggio manca l'isola |
-| [world/streets/lots.test.ts](src/world/streets/lots.test.ts) | Il lotto tocca sempre un fronte, non esce dall'isolato, l'isolato si riempie |
+| [src/world/streets/lots.test.ts](src/world/streets/lots.test.ts) | Centro del candidato, apertura radiale sul libero piu' vicino, riduzione dell'impronta, determinismo e variante costiera sul bordo |
 | [world/streets/corridor.test.ts](src/world/streets/corridor.test.ts) | Il percorso parte da un capo e arriva all'altro senza spezzarsi, non devia dove non serve, gira attorno a cio' che e' dichiarato impraticabile e rinuncia quando non c'e' passaggio; due isolati che si toccano non hanno niente da collegare; la scelta del capo non dipende dall'ordine |
 | [world/buildings/surfaceQueue.test.ts](src/world/buildings/surfaceQueue.test.ts) | Il gate del raccordo: fra due isolati lontani si cammina sull'asfalto senza staccare i piedi — con il controllo negativo che senza raccordo non si arriva — e la strada aggira un canale invece di finirci dentro |
 | [world/grading/grade.test.ts](src/world/grading/grade.test.ts) | Classificazione del terreno, quota del piano finito, tetto strutturale, rampa a pendenza uno |
 | [world/sites/siteRules.test.ts](src/world/sites/siteRules.test.ts) | Ricerca dell'acqua sui quattro assi, intorno piano sotto il tetto proprio, motivi di rifiuto per ruolo |
 | [world/skyline/tiers.test.ts](src/world/skyline/tiers.test.ts) | Le tre fasce e il loro ordine, la costa che vince su tutto, la corona sul bordo dell'edificato, il cono monotono verso il polo, i picchi rari e deterministici, e il massimo teorico che coincide con `BUILDER.maxLevel` |
-| [world/buildings/Builder.test.ts](src/world/buildings/Builder.test.ts) | Candidato → occupazione della simulazione → voxel; allineamento alla rete stradale; opere di terra su isola vera; la banchina non si stacca dalla terra; landmark dei catalizzatori e avanzamento di stadio; isolati terrazzati — quota e basamento condivisi, nessun solco fra i membri, gradoni sul fianco; la rete in quota — appoggi reali, nessun suolo preso, un percorso continuo fra due isolati, nessuna campata orfana; i landmark lineari che compaiono a ritagli; due mandati opposti danno due città diverse; la gerarchia verticale — tre fasce e nessun altopiano, la corona bassa sulla costa, nessun edificio alto scartato in silenzio, la figura che tiene su isole di seed diverso |
+| [src/world/buildings/Builder.test.ts](src/world/buildings/Builder.test.ts) | Crescita dal landmark verso l'esterno, attraversamento degli assi teorici senza lotti visibili, assenza degli anelli quadrati e determinismo |
 | [world/landmarks/generate.test.ts](src/world/landmarks/generate.test.ts) | Ingombro dichiarato, determinismo, stadi cumulativi, invarianza per rotazione, firma verticale e sagome distinte fra tutti i ruoli; gli ormeggi dentro l'ingombro e **sull'acqua** — una barca su una colonna che l'opera riempie finirebbe in mezzo al molo —, la prua che gira con la struttura, e lo scalo in quota come ricetta a se' con i suoi tre mestieri |
 | [world/buildings/landmarkCoast.test.ts](src/world/buildings/landmarkCoast.test.ts) | La banchina va **incontro al mare**: su un bassofondo asciutto largo dieci colonne il porto scorre fin sopra l'acqua vera invece di fermarsi sulla sabbia, guarda il mare aperto e non l'orlo bagnato, non arretra dove il mare comincia subito, e tiene comunque la colonna cliccata dentro il proprio ingombro |
 | [world/buildings/siteWorks.test.ts](src/world/buildings/siteWorks.test.ts) | La maschera dell'opera di terra: il molo esce su acqua che l'ingombro intero rifiuterebbe, il mare resta mare fuori dalla maschera, e il muro segue il bordo della maschera invece di quello del riquadro |

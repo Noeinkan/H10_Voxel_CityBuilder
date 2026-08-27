@@ -615,10 +615,9 @@ describe('Builder — i landmark si spezzano invece di farsi esentare', () => {
 });
 
 /**
- * Il gate della fase 4.1, verificato invece che dichiarato: un edificio nato da
- * un candidato della simulazione deve trovarsi sul fronte strada, con la faccia
- * d'accento e il portale rivolti alla carreggiata, e senza mai occupare la
- * carreggiata stessa.
+ * Il rapporto fra crescita e rete: la strada orienta e collega, ma i suoi
+ * isolati teorici non sono contenitori. Il campo dei landmark deve restare
+ * leggibile nella posizione degli edifici anche attraverso quei confini.
  */
 describe('Builder — allineamento alla rete stradale', () => {
   function grow(seed: number, builds: number): {
@@ -653,49 +652,43 @@ describe('Builder — allineamento alla rete stradale', () => {
     return { world, builder, records: buildingsOf(builder) };
   }
 
-  /** true se la carreggiata sta davvero sul lato verso cui l'edificio affaccia. */
-  function pavementOnFacing(streets: StreetNetwork, record: BuildingRecord): boolean {
-    const side = record.footprint;
-    for (let d = 0; d < side; d++) {
-      switch (record.facing) {
-        case FACING.east:
-          if (streets.isPavement(record.x + side, record.y + d)) return true;
-          break;
-        case FACING.west:
-          if (streets.isPavement(record.x - 1, record.y + d)) return true;
-          break;
-        case FACING.north:
-          if (streets.isPavement(record.x + d, record.y + side)) return true;
-          break;
-        default:
-          if (streets.isPavement(record.x + d, record.y - 1)) return true;
-      }
-    }
-    return false;
-  }
-
-  it('ogni edificio nasce con un fronte sulla carreggiata', () => {
-    const streets = new StreetNetwork(1337);
+  it('la rete continua a orientare gli edifici senza decidere l ordine di crescita', () => {
     const { records } = grow(1337, 20);
 
     expect(records.length).toBeGreaterThan(5);
-    for (const record of records) {
-      expect(record.facing).toBeDefined();
-      expect(pavementOnFacing(streets, record)).toBe(true);
-    }
+    expect(records.every((record) => record.facing !== undefined)).toBe(true);
   });
 
-  it('nessun edificio occupa la carreggiata', () => {
+  it('le prime costruzioni restano piu vicine al landmark delle successive', () => {
+    const records = [...grow(1337, 24).records].sort((a, b) => a.id - b.id);
+    const distance = (record: BuildingRecord): number => {
+      const cx = record.x + (record.footprint - 1) * 0.5;
+      const cy = record.y + (footprintDepth(record) - 1) * 0.5;
+      return Math.hypot(cx - 128, cy - 128);
+    };
+    const mean = (items: readonly BuildingRecord[]): number =>
+      items.reduce((sum, record) => sum + distance(record), 0) / items.length;
+
+    expect(records.length).toBeGreaterThanOrEqual(12);
+    expect(mean(records.slice(0, 6))).toBeLessThan(mean(records.slice(-6)));
+  });
+
+  it('il tessuto attraversa gli assi teorici invece di rivelare i lotti', () => {
     const streets = new StreetNetwork(1337);
     const { records } = grow(1337, 20);
 
+    let crossings = 0;
     for (const record of records) {
+      let crosses = false;
       for (let dy = 0; dy < record.footprint; dy++) {
         for (let dx = 0; dx < record.footprint; dx++) {
-          expect(streets.isPavement(record.x + dx, record.y + dy)).toBe(false);
+          if (streets.isPavement(record.x + dx, record.y + dy)) crosses = true;
         }
       }
+      if (crosses) crossings++;
     }
+
+    expect(crossings).toBeGreaterThan(0);
   });
 
   it('la prima crescita resta composta da edifici ordinari entro otto voxel', () => {
@@ -706,24 +699,22 @@ describe('Builder — allineamento alla rete stradale', () => {
     }
   });
 
-  it('la carreggiata viene dipinta sul suolo attorno agli isolati costruiti', () => {
+  it('il suolo non disegna gli anelli completi della maglia teorica', () => {
     const { world } = grow(1337, 20);
 
-    let minor = 0;
-    let arterial = 0;
+    const streets = new StreetNetwork(1337);
+    let painted = 0;
+    let theoretical = 0;
     for (let y = 0; y < 256; y++) {
       for (let x = 0; x < 256; x++) {
         const block = world.getBlock(x, y, 23);
-        if (block === STREETS.minorPalette) minor++;
-        else if (block === STREETS.arterialPalette) arterial++;
+        if (block === STREETS.minorPalette || block === STREETS.arterialPalette) painted++;
+        if (streets.isPavement(x, y)) theoretical++;
       }
     }
 
-    // Entrambe le gerarchie devono comparire: una citta' con i soli assi
-    // secondari non ha una struttura leggibile, e una con i soli principali
-    // non ha isolati.
-    expect(minor).toBeGreaterThan(0);
-    expect(arterial).toBeGreaterThan(0);
+    expect(theoretical).toBeGreaterThan(0);
+    expect(painted).toBeLessThan(theoretical / 4);
   });
 
   it('a parita di seed la citta e identica', () => {

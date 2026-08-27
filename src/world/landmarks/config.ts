@@ -6,6 +6,7 @@ import { bollard, craneAt, entrance, quay, signBand, tree } from './vocab';
 import { POWER, SCHOOL } from './recipes/growth';
 import { LIGHTHOUSE, RADIO } from './recipes/connections';
 import { STADIUM, THEATRE } from './recipes/identity';
+import { MARINA } from './recipes/identityMarina';
 
 /**
  * Unica fonte di verita' dei numeri e delle forme dei landmark.
@@ -237,42 +238,46 @@ export interface LandmarkRecipe extends PartsRecipe {
    * ruoli su nove e di ogni ricetta da tetto.
    */
   readonly waterline?: number;
+
+  /**
+   * Vero se la ricetta sa costruire sull'**acqua dolce**, oltre che sul mare.
+   *
+   * **E' il permesso che mancava al vincolo di sito.** `'waterfront'` ammette
+   * il click davanti a un lago, ma le opere di terra rifiutano l'acqua di lago
+   * per costruzione — la banchina e' un muro tarato sul mare, e la citta'
+   * normale deve continuare a crescere *intorno* ai laghi. Questa bandiera
+   * scavalca il rifiuto solo per chi la porta: il suo sondaggio misura il lago
+   * contro il proprio pelo, e il piano della banchina sale a quello specchio
+   * piu' il franco invece che alla quota assoluta del mare. Sul mare non cambia
+   * niente — li' lo specchio della colonna *e'* il livello del mare.
+   */
+  readonly lakeQuay?: true;
+
+  /**
+   * Profondita' del bacino che la ricetta scava davanti a se', in voxel sotto
+   * il pelo dell'acqua.
+   *
+   * **E' il permesso di scavare, e vale solo per chi lo dichiara.** Il mondo si
+   * riempie e non si scava, con una sola eccezione storica — il landmark sul
+   * pendio, che scava la montagna sopra il proprio tetto. Questo e' il secondo
+   * scavo, ed e' l'altra meta' del fronte d'acqua: dove la ricetta non poggia
+   * (le colonne fuori dalla maschera dell'opera) il terreno scende fino a
+   * `waterline` meno questa profondita', e l'acqua lo riempie fino al pelo.
+   * Quello che ne esce e' la darsena — il bacino scavato nella riva, non il
+   * mare che capitava di esserci — e il muro di banchina scende a incontrarne
+   * il fondo. Assente vale «la ricetta non scava»: il porto e il traghetto
+   * vivono dell'acqua che il terreno aveva gia'.
+   */
+  readonly basinDepth?: number;
 }
 
-/** Cosa sta fermo in un punto d'ormeggio. */
-export const BERTH = {
-  /** Barca da lavoro: compare appena la struttura esiste. */
-  vessel: 'vessel',
-  /** Accosto di una linea di traghetti, e destinazione della traversata. */
-  ferry: 'ferry',
-  /** Banchina di una nave da carico, che arriva dal largo. */
-  cargo: 'cargo',
-  /** Piazzola di sosta di un aereo. */
-  aircraft: 'aircraft',
-  /** Pilone d'ormeggio di un dirigibile. */
-  airship: 'airship',
-  /**
-   * Piazzola di un eVTOL: non ci sta fermo niente, ci si posa.
-   *
-   * E' il solo ormeggio da cui parte un giro **chiuso** che torna a toccarlo:
-   * un pilone tiene appeso, una piazzola fa scendere. Il `heading` conta piu'
-   * che altrove — decide da che parte arriva l'avvicinamento — e va puntato
-   * verso il lato libero del tetto.
-   */
-  pad: 'pad',
-  /** Pilone di ritenuta di una mongolfiera: il capo di qua della sua corsa. */
-  balloon: 'balloon',
-  /**
-   * Soglia di pista: non ci sta fermo niente.
-   *
-   * Sono i due capi da cui il circuito di volo si costruisce, e stanno qui
-   * perche' sono l'unica cosa che di una pista il traffico deve sapere — dove
-   * comincia, dove finisce, e quindi in che verso si decolla.
-   */
-  runway: 'runway',
-} as const;
-
-export type BerthKind = (typeof BERTH)[keyof typeof BERTH];
+/**
+ * Gli ormeggi, ri-esportati da `berths.ts`: stanno li' perche' le ricette in
+ * `recipes/` devono poterli leggere senza importare valori da questo file, che
+ * le importa a sua volta (vedi la nota in `berths.ts` sul ciclo).
+ */
+import { BERTH, type BerthKind } from './berths';
+export { BERTH, type BerthKind } from './berths';
 
 export interface LandmarkMooring {
   /** Colonna canonica, in voxel dallo spigolo dell'ingombro. */
@@ -1654,6 +1659,7 @@ export const LANDMARKS: Partial<Record<CatalystId, LandmarkRecipe>> = {
   [LIGHTHOUSE.kind]: LIGHTHOUSE,
   [THEATRE.kind]: THEATRE,
   [STADIUM.kind]: STADIUM,
+  [MARINA.kind]: MARINA,
 };
 
 /**
@@ -1870,7 +1876,9 @@ export type LandmarkFormId =
   | 'sky-transit'
   | 'port-bulk'
   | 'port-shipyard'
-  | 'port-passenger';
+  | 'port-passenger'
+  | 'marina-shallows'
+  | 'marina-open';
 
 export interface LandmarkForm {
   readonly kind: CatalystId;
@@ -1890,6 +1898,14 @@ export const FORMS: Readonly<Record<LandmarkFormId, LandmarkForm>> = {
   'port-bulk': { kind: 'port', aloft: false, recipe: LANDMARKS.port!, variant: 0, waterClass: WATER_CLASS.open },
   'port-shipyard': { kind: 'port', aloft: false, recipe: LANDMARKS.port!, variant: 1, waterClass: WATER_CLASS.canal },
   'port-passenger': { kind: 'port', aloft: false, recipe: LANDMARKS.port!, variant: 2, waterClass: WATER_CLASS.shallow },
+  // La marina cambia esemplare con l'acqua, e a scegliere e' la stessa classe
+  // che decide il mestiere del porto: un bassofondo — il lago, la spiaggia
+  // protetta — chiede legno, il mare aperto chiede pietra. Il lago e' sempre
+  // basso (`basinWaterDepth` sta sotto `shallowDepth`), quindi la forma
+  // lacustre non e' mai un tiro di seme: chi costruisce sul lago ottiene il
+  // lungolago di doghe, chi sulla baia aperta il fronte in pietra.
+  'marina-shallows': { kind: 'marina', aloft: false, recipe: LANDMARKS.marina!, variant: 0, waterClass: WATER_CLASS.shallow },
+  'marina-open': { kind: 'marina', aloft: false, recipe: LANDMARKS.marina!, variant: 1, waterClass: WATER_CLASS.open },
 };
 
 /**

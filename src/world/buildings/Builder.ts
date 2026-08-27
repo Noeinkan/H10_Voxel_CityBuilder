@@ -545,7 +545,7 @@ export class Builder {
         // Le coordinate arrivano da una partita gia' giocata: spostarle sul
         // fronte strada sposterebbe edifici che la simulazione conta gia' dove
         // sono, e il salvataggio non tornerebbe piu' uguale a se stesso.
-        snapToStreet: false,
+        chooseLot: false,
       });
     }
   }
@@ -684,7 +684,7 @@ export class Builder {
         mixed: site.mixed === -1 ? undefined : site.mixed,
         animate: true,
         state: next,
-        snapToStreet: true,
+        chooseLot: true,
       });
       if (record === null) continue;
 
@@ -699,12 +699,11 @@ export class Builder {
    * Valida il sito, getta la fondazione, accoda la comparsa. null se il sito
    * non va.
    *
-   * **La colonna proposta e' un'indicazione, non un indirizzo.** Con
-   * `snapToStreet` il candidato della simulazione designa l'isolato, e
-   * l'edificio nasce sul lotto libero del suo perimetro piu' vicino a quella
-   * colonna. E' il passaggio che allinea la citta' alle strade senza chiedere
-   * niente a `src/sim/`, che continua a ragionare per cella e a non sapere che
-   * le strade esistono.
+   * **La colonna proposta resta il centro della ricerca.** Con `chooseLot` il
+   * candidato della simulazione viene adattato a impronta, terreno e occupazione
+   * in uno spazio continuo che attraversa la maglia, ma non viene riscritto come
+   * un indirizzo sul perimetro. E' il passaggio che conserva la crescita radiale
+   * dei landmark senza chiedere a `src/sim/` di conoscere lotti o strade.
    */
   private place(request: PlaceRequest): BuildingRecord | null {
     const { class: cls, mixed, state } = request;
@@ -714,7 +713,7 @@ export class Builder {
     let facing: Facing | undefined;
     let footprintCap = MAX_FOOTPRINT;
 
-    if (request.snapToStreet) {
+    if (request.chooseLot) {
       if (state === null) return null;
       const lot = this.findLot(request.x, request.y, state);
       if (lot === null) return null;
@@ -753,9 +752,9 @@ export class Builder {
       footprintCap = side;
     }
 
-    // Il seme resta quello dell'origine del lotto anche se l'impronta si
-    // accosta al fronte piu' avanti: e' il lotto a essere stabile, non
-    // l'angolo dell'edificio, e il record se lo porta dietro comunque.
+    // Il seme resta quello dell'origine del lotto anche se l'impronta finale si
+    // assesta dentro lo spazio prenotato: e' il lotto a essere stabile, non il
+    // singolo voxel candidato, e il record se lo porta dietro comunque.
     const seed = hashCoords(this.worldSeed, x, y);
     const profile = state === null ? null : urbanProfileAt(state, x, y);
     const form = formOf(profile);
@@ -770,8 +769,11 @@ export class Builder {
     // Dove il lotto cade dentro l'isolato. In quota non c'e' un isolato a cui
     // appartenere — il lotto **e'** l'impalcato — quindi non c'e' nemmeno un
     // angolo, e le righe che lo chiedono restano fuori.
-    const lotRole = onGround
-      ? lotRoleOf(this.streets.blockRect(this.streets.blockAt(x, y)), x, y, footprintCap)
+    const roleRect = this.streets.blockRect(this.streets.blockAt(x, y));
+    const insideRoleRect = x >= roleRect.x0 && y >= roleRect.y0 &&
+      x + footprintCap - 1 <= roleRect.x1 && y + footprintCap - 1 <= roleRect.y1;
+    const lotRole = onGround && insideRoleRect
+      ? lotRoleOf(roleRect, x, y, footprintCap)
       : undefined;
     // **L'angolo cambia forma, non quota**: il ruolo del lotto entra nella scelta
     // della tipologia e non nel livello. Un bonus di livello sull'angolo e' stato
@@ -780,12 +782,13 @@ export class Builder {
     const level = request.level === undefined
       ? Math.min(allowed, startLevel(seed) + localLevelBonus(form))
       : Math.min(BUILDER.maxLevel, Math.max(0, Math.floor(request.level)));
+    const coastal = isCoastal(this.terrainMap, x, y);
     const typology = selectTypology({
       use: cls,
       mixed,
       level,
       profile,
-      coastal: isCoastal(this.terrainMap, x, y),
+      coastal,
       lotRole,
     });
     // Lo stile e' del quartiere, non dell'edificio: si chiede all'isolato in cui
@@ -817,24 +820,32 @@ export class Builder {
     const over = assembled ? 0 : overhangFor(typology.shape, facing);
     const footprint = groundSideOf(draft, over, facing);
 
-    // L'impronta puo' uscire piu' stretta del lotto verificato. La si accosta
-    // al fronte invece di lasciarla al centro: un edificio che non tocca la
-    // carreggiata legge come arretrato a caso, e il quadrato ridotto sta
-    // comunque dentro quello gia' dichiarato libero.
+    // L'impronta puo' uscire piu' stretta del lotto verificato. Nel tessuto
+    // ordinario resta centrata sul punto eletto dal campo; `facing` orienta la
+    // facciata ma non sposta la massa fino alla strada. Solo sulla costa il
+    // bordo e' parte fisica dell'opera e continua quindi a vincolare la posa.
     // Solo chi ha davvero prenotato un lotto largo `footprintCap` puo'
     // scorrere dentro di esso: chi costruisce a coordinate date — una partita
     // salvata — deve restare esattamente dove la simulazione lo conta.
-    if (onGround && request.snapToStreet && facing !== undefined && footprint < footprintCap) {
+    if (onGround && request.chooseLot && facing !== undefined && footprint < footprintCap) {
       const slack = footprintCap - footprint;
-      if (facing === FACING.east) x += slack;
-      else if (facing === FACING.north) y += slack;
+      if (coastal) {
+        // Sulla costa l'accesso e' anche l'opera: arretrare la sagoma toglierebbe
+        // la banchina dall'acqua. Qui resta la posa sul fronte di sempre.
+        if (facing === FACING.east) x += slack;
+        else if (facing === FACING.north) y += slack;
 
-      // ...e lungo il fronte si accosta al vicino, con la stessa logica e per la
-      // stessa ragione: fra due edifici di una fila un solco da un voxel non
-      // legge come separazione, legge come crepa.
-      const along = this.snapAlongFrontage(x, y, footprint, facing, slack);
-      if (facing === FACING.east || facing === FACING.west) y += along;
-      else x += along;
+        const along = this.snapAlongFrontage(x, y, footprint, facing, slack);
+        if (facing === FACING.east || facing === FACING.west) y += along;
+        else x += along;
+      } else {
+        // Il lotto e' una riserva, non un indirizzo: la sagoma piu' stretta si
+        // assesta in entrambe le direzioni verso il centro desiderato.
+        const wantedX = Math.round(request.x - (footprint - 1) * 0.5);
+        const wantedY = Math.round(request.y - (footprint - 1) * 0.5);
+        x = Math.min(x + slack, Math.max(x, wantedX));
+        y = Math.min(y + slack, Math.max(y, wantedY));
+      }
     }
 
     // **Il terreno si guarda solo se e' lui a reggere.** Sopra un impalcato il
@@ -999,7 +1010,7 @@ export class Builder {
    *
    * **In quota l'impalcato porta il proprio riquadro**, e chi chiama ci sposta
    * dentro il lotto. Il suolo non ne ha uno: li' il lotto l'ha gia' risolto la
-   * maglia stradale.
+   * ricerca continua al suolo.
    */
   private pickDeck(x: number, y: number, side: number): BuildDeck {
     const decks = decksAt(this.registryImpl.at(x, y), this.terrainMap.heightAt(x, y));
@@ -1189,6 +1200,40 @@ export class Builder {
    */
   private findLot(x: number, y: number, state: SimState): Lot | null {
     const origin = this.streets.blockAt(x, y);
+    // Mercati, moli e case di banchina hanno bisogno del bordo perche' li'
+    // l'accesso coincide con l'opera sull'acqua. Altrove il bordo non plasma il
+    // tessuto: il lotto segue liberamente il candidato del campo.
+    const edgeOnly = isCoastal(this.terrainMap, x, y);
+
+    if (!edgeOnly) {
+      // Il rettangolo e' soltanto il limite di costo della ricerca. Comprende
+      // isolati e interassi insieme: nessuno dei suoi bordi e nessuna cella
+      // interna appartiene a un lotto urbanistico. Il primo posto libero viene
+      // scelto per distanza dal candidato, quindi il pieno si addensa come una
+      // macchia attorno al landmark invece di completare quadrati successivi.
+      const radius = BUILDER.blockSearchRadius;
+      const southWest = this.streets.blockRect({
+        kx: origin.kx - radius,
+        ky: origin.ky - radius,
+      });
+      const northEast = this.streets.blockRect({
+        kx: origin.kx + radius,
+        ky: origin.ky + radius,
+      });
+      return placeLot({
+        rect: {
+          x0: southWest.x0,
+          y0: southWest.y0,
+          x1: northEast.x1,
+          y1: northEast.y1,
+        },
+        x,
+        y,
+        footprint: MAX_FOOTPRINT,
+        facingAt: (lx, ly, side) => this.facingTowardNetwork(lx, ly, side),
+        accepts: (lx, ly, side) => this.lotIsFree(lx, ly, side),
+      });
+    }
 
     for (let radius = 0; radius <= BUILDER.blockSearchRadius; radius++) {
       for (let dy = -radius; dy <= radius; dy++) {
@@ -1214,6 +1259,7 @@ export class Builder {
             x,
             y,
             footprint,
+            edgeOnly: true,
             accepts: (lx, ly, side) => this.lotIsFree(lx, ly, side),
           });
           if (lot !== null) return lot;
@@ -1223,6 +1269,23 @@ export class Builder {
     }
 
     return null;
+  }
+
+  /**
+   * Orienta la facciata verso l'asse stradale teorico piu' vicino senza usare
+   * quell'asse come confine. Il tessuto puo' attraversarlo; se una strada viene
+   * davvero collegata, `SurfaceQueue` le trovera' un percorso fra i pieni.
+   */
+  private facingTowardNetwork(x: number, y: number, footprint: number): Facing {
+    const touching = this.streets.facingOf(x, y, footprint);
+    if (touching !== null) return touching;
+
+    const centerX = x + Math.floor((footprint - 1) * 0.5);
+    const centerY = y + Math.floor((footprint - 1) * 0.5);
+    const dx = this.streets.nearestLine(0, centerX) - centerX;
+    const dy = this.streets.nearestLine(1, centerY) - centerY;
+    if (Math.abs(dx) <= Math.abs(dy)) return dx >= 0 ? FACING.east : FACING.west;
+    return dy >= 0 ? FACING.north : FACING.south;
   }
 
 
@@ -1237,8 +1300,8 @@ export class Builder {
   /**
    * true se il quadrato e' libero, edificabile e non gia' bocciato.
    *
-   * E' il predicato con cui `placeLot` scorre un fronte, quindi viene chiamato
-   * molte volte per candidato: fa solo letture per colonna — `TerrainMap` e
+   * E' il predicato con cui `placeLot` cerca attorno al candidato, quindi viene
+   * chiamato molte volte: fa solo letture per colonna — `TerrainMap` e
    * registry — e non genera niente. La pendenza **non** si controlla qui: la
    * verifica `surveyGround` a valle, e un lotto bocciato per pendenza finisce
    * nella blacklist, che questa funzione consulta al giro dopo.
@@ -1309,10 +1372,10 @@ interface PlaceRequest {
   /** Senza stato non c'e' profilo locale: le tipologie condizionate restano fuori. */
   readonly state: SimState | null;
   /**
-   * Se true la colonna proposta designa l'isolato e l'edificio nasce sul suo
-   * fronte strada. Chi ha gia' delle coordinate vere — una partita salvata —
-   * lo lascia a false e costruisce esattamente li'.
+   * Se true la colonna proposta viene adattata al lotto libero piu' vicino.
+   * Chi ha gia' delle coordinate vere — una partita salvata — lo lascia a
+   * false e costruisce esattamente li'.
    */
-  readonly snapToStreet: boolean;
+  readonly chooseLot: boolean;
 }
 

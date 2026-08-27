@@ -45,6 +45,7 @@ export type { HudCommerce, HudFill, HudFlow, HudResource } from './GameHudEconom
 const SITE_LABEL: Readonly<Record<CatalystSite, string | undefined>> = {
   any: undefined,
   coastal: 'Waterfront only',
+  waterfront: 'Needs open water: the sea or a lake',
   open: `Needs a ${SITE.openSpan}×${SITE.openSpan} clearing, or a level 7+ facade at least 8 voxels wide`,
 };
 

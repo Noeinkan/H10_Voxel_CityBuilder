@@ -64,6 +64,9 @@ salta del tutto gli usi che un ruolo non tocca.
 
 ## Verifica
 
-- Esegui `npm run typecheck` e `npm test`; per percorsi caldi anche `npm run bench`.
+- Segui la verifica proporzionata di `AGENTS.md` radice: typecheck e il piu'
+  stretto fra test diretti, `test:related` e `test:changed`; la suite intera
+  resta limitata ai casi globali dichiarati dal file radice.
+- Per percorsi caldi esegui anche il benchmark pertinente.
 - Testa purezza, serializzazione, incrementalita' equivalente al rebuild e
   assenza di scritture in `blocks`.

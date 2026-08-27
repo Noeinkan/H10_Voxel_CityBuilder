@@ -23,6 +23,27 @@ export function resolveLaunchMode(params: URLSearchParams): LaunchMode {
 }
 
 /**
+ * Seed della partita: quello dichiarato da `?seed=`, altrimenti uno casuale.
+ *
+ * Il default non e' piu' un numero fisso: ogni partita nasce su un mondo
+ * diverso, come in Minecraft. Il determinismo non e' perso — chi vuole
+ * rivedere un'isola la dichiara nell'URL, e il seed sorteggiato viene
+ * riscritto nella barra degli indirizzi da `main.ts`, quindi il ricaricamento
+ * riporta lo stesso mondo.
+ *
+ * Lo zero non e' un seed valido (restava escluso anche dal vecchio default
+ * con `||`), e un `?seed=` illeggibile vale quanto un seed assente.
+ */
+export function resolveSeed(params: URLSearchParams, randomUint32: () => number): number {
+  const raw = params.get('seed');
+  if (raw !== null) {
+    const parsed = parseInt(raw, 10);
+    if (Number.isFinite(parsed) && parsed !== 0) return parsed;
+  }
+  return randomUint32() >>> 0;
+}
+
+/**
  * L'indirizzo del campionario dei voxel, con addosso il look che si sta guardando.
  *
  * Sta accanto a `resolveLaunchMode` perche' e' la stessa corrispondenza letta al

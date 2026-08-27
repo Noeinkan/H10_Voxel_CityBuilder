@@ -18,7 +18,7 @@ radice `/` avvia isola, crescita e Cozy HUD con gli overlay tecnici nascosti.
 | `level` | `6` | Livello del soggetto del diorama, 0…`BUILDER.maxLevel` |
 | `typology` | — | `<id>` forza la tipologia del soggetto (`officeTower`, `civicLantern`, …) |
 | `mixed` | — | Secondo uso ospitato dal soggetto, per giudicare il podio misto |
-| `seed` | `1337` | Seed della generazione |
+| `seed` | casuale | Seed della generazione. Senza parametro ne viene sorteggiato uno nuovo a ogni partita e **riscritto nella barra degli indirizzi**: ricaricare riporta lo stesso mondo, e dichiararlo a mano lo rivede sempre |
 | `size` | `512` | Lato del mondo in voxel (32…4096) |
 | `height` | `64` | Altezza del mondo in voxel (32…256) |
 | `terrain` | — | `<seed>` sostituisce la scena urbana con un'isola 256×256 |

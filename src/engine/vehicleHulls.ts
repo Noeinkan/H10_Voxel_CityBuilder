@@ -174,6 +174,42 @@ function boatShape(hull: Hull): void {
 }
 
 /**
+ * Yacht da diporto: scafo slanciato, tuga corta, albero da diporto.
+ *
+ * **La firma e' l'assenza di lavoro.** La barca da lavoro porta parabordi,
+ * fanale di via e carico di coperta; questo e' il contrario — fianchi puliti e
+ * una tuga bassa — e a cinque voxel di lunghezza e' proprio cio' che resta a
+ * distinguerlo dal suo gemello da pesca quando due barche stanno ormeggiate
+ * vicine. La prua rastremata e' la stessa in due conci, come sull'altra.
+ */
+function yachtShape(hull: Hull): void {
+  const size = TRAFFIC.hull[VEHICLE.yacht];
+  const deck = size.height - DRAFT;
+
+  // Scafo: corpo, due conci di prua, specchio di poppa.
+  hull.box(-0.25, 0, 0.4, 3.4, 2.0, 2.0, size.palette);
+  hull.box(1.55, 0, 0.475, 0.7, 1.5, 1.85, size.palette);
+  hull.box(2.05, 0, 0.55, 0.35, 0.8, 1.7, size.palette);
+  hull.box(-2.2, 0, 0.5, 0.5, 1.8, 1.8, size.palette);
+  hull.waterline(-0.25, 3.42, 2.0);
+  hull.waterline(1.55, 0.72, 1.5);
+
+  // Coperta e falchetta: il ponte rientra e la falchetta lo borda.
+  hull.box(-0.25, 0, deck + 0.08, 3.9, 1.7, 0.16, TRAFFIC.deckPalette);
+  hull.pair(-0.25, 1.0, deck + 0.22, 4.0, 0.18, 0.4, size.palette);
+
+  // Tuga corta e parabrezza: la fascia di vetri sporge, il tetto chiude scuro.
+  hull.box(-1.35, 0, 2.28, 1.7, 1.6, 1.1, TRAFFIC.housePalette);
+  hull.box(-1.35, 0, 2.6, 1.76, 1.66, 0.4, TRAFFIC.cabinPalette);
+  hull.box(-1.35, 0, 3.02, 1.9, 1.8, 0.12, TRAFFIC.trimPalette);
+
+  // Albero da diporto con il fanale di testa, e il fanale di via a prua.
+  hull.box(0.7, 0, 3.35, 0.14, 0.14, 1.4, TRAFFIC.trimPalette);
+  hull.lamp(0.7, 0, 4.35, 0.24, 0.24, 0.24);
+  hull.lamp(2.3, 0, 1.55, 0.2, 0.2, 0.2);
+}
+
+/**
  * Traghetto di linea: doppia estremita', tuga lunga, plancia alta, ciminiera.
  *
  * Le due estremita' uguali non sono pigrizia della sagoma, sono la cosa che
@@ -487,6 +523,7 @@ function crate(index: number): number {
 
 const SHAPES: Readonly<Record<VehicleKind, (hull: Hull) => void>> = {
   [VEHICLE.boat]: boatShape,
+  [VEHICLE.yacht]: yachtShape,
   [VEHICLE.ferry]: ferryShape,
   [VEHICLE.cargo]: cargoShape,
   [VEHICLE.plane]: planeShape,

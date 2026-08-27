@@ -59,9 +59,8 @@ export type Works = (typeof WORKS)[keyof typeof WORKS];
  * a pendenza zero. Adesso decide la pendenza, come per ogni altro bioma, e la
  * roccia si distingue nel prezzo (`BUILD_WEIGHT`) invece che nel divieto.
  */
-export function groundKindOf(biome: number, slope: number, height: number): GroundKind {
+export function groundKindOf(biome: number, slope: number, height: number, waterTop?: number): GroundKind {
   if (biome === BIOME.ocean) {
-    const depth = TERRAIN.seaLevel - height;
     // **Sott'acqua sopra il livello del mare vuol dire lago**, da quando le
     // conche di `landform.ts` hanno dato a uno specchio la propria quota. E un
     // lago non e' battigia: la banchina e' un muro che scende sul fondale fino a
@@ -69,6 +68,16 @@ export function groundKindOf(biome: number, slope: number, height: number): Grou
     // di un lago in quota quel muro finirebbe una decina di voxel dentro la
     // collina. La citta' gli cresce intorno, che e' anche cio' che si vuole
     // vedere.
+    //
+    // **Chi passa `waterTop` ribalta il giudizio, ed e' il punto.** Con lo
+    // specchio della colonna al posto del livello del mare, un lago diventa
+    // battigia contro il proprio pelo: il fondale e' profondo due voxel e il
+    // muro sale fino alla riva, che e' esattamente la banchina di un
+    // porticciolo. Non e' una deroga globale — chi costruisce sul lago deve
+    // chiederlo, e lo chiede solo la ricetta che lo dichiara (`lakeQuay`) — ma
+    // e' cio' che separa una marina dal semplice divieto.
+    const level = waterTop ?? TERRAIN.seaLevel;
+    const depth = level - height;
     if (depth < 0) return GROUND.refused;
     return depth <= GRADING.maxQuayDepth ? GROUND.shore : GROUND.refused;
   }
@@ -134,6 +143,17 @@ export interface GroundColumn {
   readonly kind: GroundKind;
   /** Quota naturale: numero di voxel pieni, l'ultimo sta a `height - 1`. */
   readonly height: number;
+  /**
+   * Specchio della colonna, dove la colonna e' sommersa e chi progetta l'opera
+   * ha scelto di misurarla contro il proprio pelo invece che contro il mare.
+   *
+   * Assente vale «specchio del mare», che e' il comportamento di sempre: la
+   * banchina sale a `GRADING.quayLevel`, una quota assoluta tarata sulla
+   * spiaggia. Presente — un lago, la marina — il piano sale a quello specchio
+   * piu' il franco, cosi' la banchina incontra la riva del lago come quella del
+   * mare incontra la spiaggia.
+   */
+  readonly waterTop?: number;
 }
 
 export interface GradePlan {
@@ -172,7 +192,9 @@ export function planGrade(columns: readonly GroundColumn[]): GradePlan | null {
     if (column.kind === GROUND.sloped) sloped = true;
 
     const top = column.kind === GROUND.shore
-      ? Math.max(column.height, GRADING.quayLevel)
+      ? Math.max(column.height, column.waterTop === undefined
+        ? GRADING.quayLevel
+        : column.waterTop + GRADING.quayFreeboard)
       : column.height;
     if (top > padZ) padZ = top;
     if (column.height < footZ) footZ = column.height;

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { resolveLaunchMode, swatchUrl } from './launchMode';
+import { resolveLaunchMode, resolveSeed, swatchUrl } from './launchMode';
 
 describe('resolveLaunchMode', () => {
   it('carica alla radice l’esperienza giocabile senza strumenti tecnici', () => {
@@ -50,6 +50,22 @@ describe('resolveLaunchMode', () => {
       growEnabled: false,
       simEnabled: false,
     });
+  });
+});
+
+describe('resolveSeed', () => {
+  it('usa il seed dichiarato nell’URL quando c’e', () => {
+    expect(resolveSeed(new URLSearchParams('seed=1337'), () => 7)).toBe(1337);
+    expect(resolveSeed(new URLSearchParams('seed=-5'), () => 7)).toBe(-5);
+  });
+
+  it('senza seed dichiarato ne sorteggia uno nuovo a ogni partita', () => {
+    expect(resolveSeed(new URLSearchParams(), () => 0xdeadbeef)).toBe(0xdeadbeef);
+  });
+
+  it('un seed illeggibile o zero vale quanto un seed assente', () => {
+    expect(resolveSeed(new URLSearchParams('seed=abc'), () => 42)).toBe(42);
+    expect(resolveSeed(new URLSearchParams('seed=0'), () => 42)).toBe(42);
   });
 });
 

@@ -11,7 +11,7 @@ import { hashCoords } from '../rng';
 import { GRADING } from '../grading/config';
 import { GROUND, WORKS, isDryLand, type GradePlan } from '../grading/grade';
 import { FACING, type Facing } from '../streets/streetGrid';
-import { sightWater, type WaterSight } from '../sites/siteRules';
+import { sightAnyWater, sightWater, type WaterSight } from '../sites/siteRules';
 import { SITE } from '../sites/config';
 import {
   LANDMARK,
@@ -26,6 +26,8 @@ import {
 import { planFacadeLandmark } from '../landmarks/facadePlan';
 import { generateLandmark, landmarkSpan, landmarkWaterColumn, stageForBuildings } from '../landmarks/generate';
 import { classifyWater } from '../terrain/waterClass';
+import { WATER_IDS } from '../terrain/config';
+import { SURFACE_KIND } from '../visualBlock';
 import { AERIAL_FACES, type AerialFace, type AerialSupport } from '../aerial/terracePlan';
 import type { DeckPlan } from '../aerial/deckPlan';
 import { placeRecipe, type Placement } from './landmarkSiting';
@@ -43,7 +45,7 @@ import {
   surveyLandmarkGrade,
   type WorksMask,
 } from './siteWorks';
-import { EMPTY_STAMP, stampFootprint } from './stamp';
+import { EMPTY_STAMP, STAMP_EMPTY, stampFootprint, type VoxelStamp } from './stamp';
 
 /**
  * I monumenti dei catalizzatori: il piazzamento, il grembiule e gli stadi.
@@ -430,12 +432,22 @@ export class LandmarkDriver {
    * fra le due risposte ci sono celle intere.
    */
   private coastAt(x: number, y: number, kind: CatalystId): WaterSight | null {
-    if (catalystById(kind).site !== 'coastal') return null;
+    const site = catalystById(kind).site;
+    if (site !== 'coastal' && site !== 'waterfront') return null;
+    // La marina guarda l'acqua a qualsiasi quota — il lago conta quanto il mare —
+    // e per quello la ricerca usa `sightAnyWater`, che sonda lo specchio della
+    // colonna invece del solo livello del mare.
+    const anyLevel = site === 'waterfront';
     // Il ripiego non e' una formalita': dove non c'e' acqua a galla nemmeno a
     // quattordici colonne, la battigia resta l'unica cosa che dica da che parte
     // guardare — e un molo verso il mare sbagliato e' un molo dentro la collina.
-    return sightWater(this.ctx.terrain, x, y, SITE.shoreReach, true)
-      ?? sightWater(this.ctx.terrain, x, y, SITE.coastalRadius);
+    const near = anyLevel
+      ? sightAnyWater(this.ctx.terrain, x, y, SITE.shoreReach)
+      : sightWater(this.ctx.terrain, x, y, SITE.shoreReach, true);
+    return near
+      ?? (anyLevel
+        ? sightAnyWater(this.ctx.terrain, x, y, SITE.coastalRadius)
+        : sightWater(this.ctx.terrain, x, y, SITE.coastalRadius));
   }
 
   /**
@@ -625,6 +637,9 @@ export class LandmarkDriver {
       )
       : surveyGrade(
         this.ctx.terrain, spot.x, spot.y, spot.span.sizeX, spot.span.sizeY, mask,
+        // Chi dichiara `lakeQuay` chiede di costruire anche sull'acqua dolce: il
+        // sondaggio misura allora le colonne del lago contro il proprio pelo.
+        recipe.lakeQuay === true,
       );
     if (surveyed === null) return null;
 
@@ -687,8 +702,125 @@ export class LandmarkDriver {
     });
 
     growth.enqueueSegments(record, stamp);
-    this.enqueueSlopeCarve(record, plan.padZ + stamp.sizeZ, mask);
+    this.enqueueBasinDig(record, kind, form, mask);
+    if (landmarkOf(kind, form)?.waterline === undefined) {
+      this.enqueueSlopeCarve(record, stamp, mask);
+    }
     return record;
+  }
+
+  /**
+   * Scava il bacino davanti alla struttura e lo allaga fino al pelo.
+   *
+   * **E' la darsena, non il mare che capitava di esserci.** Dove la ricetta non
+   * poggia — le colonne fuori dalla maschera dell'opera, dentro la sola
+   * impronta — il terreno scende a `basinDepth` sotto il pelo dell'acqua della
+   * colonna `waterline`, e l'acqua lo riempie: sul mare il bacino taglia la
+   * spiaggia, sul lago allarga la conca dentro la riva. Il muro di banchina
+   * che `buildWorks` ha gia' costruito scende a incontrarne il fondo, colonna
+   * per colonna e solo sul bordo fra l'opera e l'acqua.
+   *
+   * **Si scava, e solo qui e nella montagna sopra il tetto.** E' la seconda
+   * eccezione al "si riempie e non si scava", e come la prima ha il confine
+   * nell'impronta della struttura e viaggia sulla stessa coda di comparsa: il
+   * terreno sopra il fondo va via con la cancellazione a budget, l'acqua
+   * compare con la scrittura a budget. Chi non dichiara `basinDepth` non passa
+   * di qui: il porto e il traghetto vivono dell'acqua che c'era gia'.
+   */
+  private enqueueBasinDig(
+    record: BuildingRecord,
+    kind: CatalystId,
+    form: LandmarkFormId | undefined,
+    mask: WorksMask | undefined,
+  ): void {
+    const recipe = landmarkOf(kind, form);
+    const depth = recipe?.basinDepth;
+    if (recipe === null || depth === undefined || mask === undefined) return;
+
+    // Il pelo a cui si scava e' quello della colonna che la ricetta dichiara
+    // d'acqua: il piazzamento l'ha gia' portata sulla battigia, quindi e'
+    // quello giusto — mare o conca — anche se il click era a monte.
+    const column = landmarkWaterColumn(
+      kind, (record.facing ?? FACING.east) as Facing, record.x, record.y, form,
+    );
+    if (column === null) return;
+    const waterZ = this.ctx.terrain.waterTopAt(column.x, column.y);
+    const floor = waterZ - depth;
+
+    const { terrain, growth } = this.ctx;
+    const depthY = footprintDepth(record);
+    let top = waterZ;
+    for (let dy = 0; dy < depthY; dy++) {
+      for (let dx = 0; dx < record.footprint; dx++) {
+        const height = terrain.heightAt(record.x + dx, record.y + dy);
+        if (height > top) top = height;
+      }
+    }
+    if (top <= floor) return;
+    const sizeZ = top - floor;
+
+    const voxels = new Uint8Array(record.footprint * depthY * sizeZ);
+    const surfaces = new Uint8Array(record.footprint * depthY * sizeZ);
+    const erased = new Uint8Array(record.footprint * depthY * sizeZ);
+    const at = (dx: number, dy: number, z: number) =>
+      dx + record.footprint * (dy + depthY * (z - floor));
+    const basin = (dx: number, dy: number): boolean =>
+      mask[dy * record.footprint + dx] === 0;
+    const touchesBasin = (dx: number, dy: number): boolean =>
+      basin(dx - 1, dy) || basin(dx + 1, dy) || basin(dx, dy - 1) || basin(dx, dy + 1);
+
+    for (let dy = 0; dy < depthY; dy++) {
+      for (let dx = 0; dx < record.footprint; dx++) {
+        const cx = record.x + dx;
+        const cy = record.y + dy;
+        const height = terrain.heightAt(cx, cy);
+
+        if (basin(dx, dy)) {
+          // Colonna d'acqua: il terreno sopra il fondo scavato va tolto, e
+          // l'acqua lo riempie fino al pelo. Le colonne gia' piu' profonde del
+          // fondo — il mare aperto — restano intatte, con la loro acqua.
+          if (height <= floor) continue;
+          for (let z = floor; z < height; z++) erased[at(dx, dy, z)] = 1;
+          for (let z = floor; z < waterZ; z++) {
+            voxels[at(dx, dy, z)] = WATER_IDS.surface;
+            surfaces[at(dx, dy, z)] = classifyWater(
+              cx, cy, waterZ - floor,
+              (wx, wy) => terrain.heightAt(wx, wy),
+              waterZ,
+            );
+          }
+        } else if (height > floor && touchesBasin(dx, dy)) {
+          // Il muro di banchina scende a incontrare il fondo scavato, sotto il
+          // piede che `buildWorks` gli ha gia' costruito sopra il terreno.
+          for (let z = floor; z < height; z++) {
+            voxels[at(dx, dy, z)] = GRADING.quayWall;
+            surfaces[at(dx, dy, z)] = SURFACE_KIND.utility;
+          }
+        }
+      }
+    }
+
+    growth.enqueue(record.id, { x: record.x, y: record.y, z: floor }, {
+      sizeX: record.footprint,
+      sizeY: depthY,
+      sizeZ,
+      anchorX: 0,
+      anchorY: 0,
+      anchorZ: 0,
+      voxels,
+      surfaces,
+      bandStarts: [0, sizeZ],
+    }, {
+      sizeX: record.footprint,
+      sizeY: depthY,
+      sizeZ,
+      anchorX: 0,
+      anchorY: 0,
+      anchorZ: 0,
+      voxels: erased,
+      surfaces: new Uint8Array(erased.length),
+      bandStarts: [0, sizeZ],
+    });
   }
 
   /**
@@ -698,35 +830,56 @@ export class LandmarkDriver {
    * fianco ripido una parte della struttura resta sotto la montagna: senza
    * questo scavo il pendio attraverserebbe il tetto e la struttura — pur
    * esistendo — leggerebbe come un volume sepolto. La fascia sopra la quota del
-   * tetto viene tolta con la stessa coda di comparsa della struttura, colonna
-   * per colonna e solo dove la maschera dichiara che la ricetta poggia: il
-   * pendio fuori dall'impronta resta dov'e'.
+   * tetto **dello stadio visibile** viene tolta con la stessa coda di comparsa
+   * della struttura, colonna per colonna e solo dove la maschera dichiara che
+   * la ricetta poggia: il pendio fuori dall'impronta resta dov'e'. L'inviluppo
+   * finale non e' un tetto — nella cattedrale, per esempio, riserva le guglie
+   * future 21 voxel sopra la navata iniziale — e usarlo lascerebbe sepolto tutto
+   * cio' che il giocatore ha appena costruito.
    *
    * **Si scava, e solo qui.** Il mondo si riempie e non si scava da nessun'altra
    * parte; questa e' l'unica eccezione, e il suo confine e' l'impronta della
    * struttura — mai il riquadro, mai il grembiule.
    */
-  private enqueueSlopeCarve(record: BuildingRecord, top: number, mask: WorksMask | undefined): void {
-    const { terrain, growth } = this.ctx;
+  private enqueueSlopeCarve(
+    record: BuildingRecord,
+    stamp: VoxelStamp,
+    mask: WorksMask | undefined,
+  ): void {
+    const { world, terrain, growth } = this.ctx;
     const depth = footprintDepth(record);
 
-    let carveHeight = 0;
+    let carveZ = Number.MAX_SAFE_INTEGER;
+    let carveTop = 0;
     for (let dy = 0; dy < depth; dy++) {
       for (let dx = 0; dx < record.footprint; dx++) {
         if (mask !== undefined && mask[dy * record.footprint + dx] === 0) continue;
+        const roof = stampColumnTop(stamp, dx, dy);
+        if (roof === 0) continue;
+        const top = record.baseZ + roof;
         const height = terrain.heightAt(record.x + dx, record.y + dy);
-        if (height - top > carveHeight) carveHeight = height - top;
+        for (let z = top; z < height; z++) {
+          if (world.getBlock(record.x + dx, record.y + dy, z) === STAMP_EMPTY) continue;
+          if (z < carveZ) carveZ = z;
+          if (height > carveTop) carveTop = height;
+          break;
+        }
       }
     }
-    if (carveHeight <= 0) return;
+    if (carveTop <= carveZ) return;
 
+    const carveHeight = carveTop - carveZ;
     const voxels = new Uint8Array(record.footprint * depth * carveHeight);
     for (let dy = 0; dy < depth; dy++) {
       for (let dx = 0; dx < record.footprint; dx++) {
         if (mask !== undefined && mask[dy * record.footprint + dx] === 0) continue;
+        const roof = stampColumnTop(stamp, dx, dy);
+        if (roof === 0) continue;
+        const top = record.baseZ + roof;
         const height = terrain.heightAt(record.x + dx, record.y + dy);
         for (let z = top; z < height; z++) {
-          voxels[dx + record.footprint * (dy + depth * (z - top))] = 1;
+          if (world.getBlock(record.x + dx, record.y + dy, z) === STAMP_EMPTY) continue;
+          voxels[dx + record.footprint * (dy + depth * (z - carveZ))] = 1;
         }
       }
     }
@@ -734,7 +887,7 @@ export class LandmarkDriver {
     // Una sagoma nuova vuota e la fascia da togliere come "precedente": la
     // stessa macchina che demolisce un edificio a budget scava la montagna, e
     // nessun altro percorso di scrittura nasce qui.
-    growth.enqueue(record.id, { x: record.x, y: record.y, z: top }, EMPTY_STAMP, {
+    growth.enqueue(record.id, { x: record.x, y: record.y, z: carveZ }, EMPTY_STAMP, {
       sizeX: record.footprint,
       sizeY: depth,
       sizeZ: carveHeight,
@@ -866,6 +1019,10 @@ export class LandmarkDriver {
     if (replaced === null) return state;
 
     this.ctx.growth.enqueueSegments(replaced, stamp);
+    const recipe = landmarkOf(kind, record.landmarkForm);
+    if (record.aloft !== true && recipe?.waterline === undefined) {
+      this.enqueueSlopeCarve(replaced, stamp, stampFootprint(stamp, LANDMARK.groundBand));
+    }
 
     // Il ritorno alla simulazione e' un numero: il catalizzatore diventa un po'
     // piu' forte, e `src/sim/` non sa perche'. La base si rilegge dal catalogo
@@ -878,6 +1035,15 @@ export class LandmarkDriver {
       base + stage * BALANCE.gameplay.catalyst.stageBonus,
     );
   }
+}
+
+/** Quota locale subito sopra il voxel piu' alto della colonna, o zero se e' vuota. */
+function stampColumnTop(stamp: VoxelStamp, x: number, y: number): number {
+  for (let z = stamp.sizeZ - 1; z >= 0; z--) {
+    const index = x + stamp.sizeX * (y + stamp.sizeY * z);
+    if (stamp.voxels[index] !== STAMP_EMPTY) return z + 1;
+  }
+  return 0;
 }
 
 /**

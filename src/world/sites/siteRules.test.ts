@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { testTerrain } from '../../sim/testTerrain';
 import { TERRAIN } from '../terrain/config';
 import { SITE } from './config';
-import { openGround, seesWater, siteRefusal } from './siteRules';
+import { openGround, seesWater, sightAnyWater, siteRefusal } from './siteRules';
 
 /**
  * Le regole si verificano scrivendo il rilievo a mano, non generando un'isola:
@@ -21,6 +21,44 @@ function coastAt(shoreX: number) {
     heightAt: (x) => (x < shoreX ? WET : DRY),
   });
 }
+
+/** Lago in quota: pelo a `level`, fondo due sotto, riva due sopra. */
+const LAKE_LEVEL = TERRAIN.seaLevel + 16;
+
+function lakeAt(shoreX: number) {
+  return testTerrain({
+    chunksX: 2,
+    chunksY: 2,
+    heightAt: (x) => (x >= shoreX ? LAKE_LEVEL - 2 : LAKE_LEVEL + 4),
+    waterTopAt: (x) => (x >= shoreX ? LAKE_LEVEL : TERRAIN.seaLevel),
+  });
+}
+
+describe('fronte d’acqua a qualsiasi quota', () => {
+  it('vede il lago che il vincolo costiero non vede', () => {
+    const map = lakeAt(20);
+    // La riva asciutta del lago: per il mare non c'e' nessuna costa — il pelo e'
+    // sedici voxel sopra il livello del mare — ma l'acqua c'e', e la marina la
+    // vede a una colonna di distanza.
+    expect(seesWater(map, 19, 32, SITE.coastalRadius)).toBe(false);
+    expect(sightAnyWater(map, 19, 32, SITE.coastalRadius)).toEqual({ facing: 0, distance: 1 });
+  });
+
+  it('una colonna asciutta non e’ acqua nemmeno al pelo del lago', () => {
+    // `waterTop` sull'entroterra vale il livello del mare: chiedere «c'e' acqua
+    // sopra?» non deve confondere la quota dello specchio con un lago lontano.
+    const map = lakeAt(20);
+    expect(sightAnyWater(map, 8, 32, SITE.coastalRadius)).toBeNull();
+  });
+
+  it('il vincolo waterfront ammette il lago e rifiuta l’entroterra', () => {
+    const map = lakeAt(20);
+    expect(siteRefusal(map, 19, 32, 'waterfront')).toBeNull();
+    expect(siteRefusal(map, 8, 32, 'waterfront')).toBe('needs-waterfront');
+    // Il lago non e' il mare: il ruolo costiero classico non lo accetta.
+    expect(siteRefusal(map, 19, 32, 'coastal')).toBe('needs-coast');
+  });
+});
 
 describe('vincolo costiero', () => {
   it('vede il mare entro il raggio e non oltre', () => {

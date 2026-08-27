@@ -74,6 +74,18 @@ export const GRADING = {
   quayLevel: TERRAIN.beachMaxHeight - TERRAIN.cellSize,
 
   /**
+   * Franco della banchina sopra il proprio specchio, in voxel.
+   *
+   * Vale `quayLevel - seaLevel` per costruzione, e serve a chi costruisce su
+   * un'acqua con un pelo **suo** — la banchina lacustre della marina: il piano
+   * finito sale allo specchio della colonna piu' questo franco, che e' la stessa
+   * quota relativa che `quayLevel` da' rispetto al mare. Due voxel restano sopra
+   * il pelo, quanto basta perche' il pontile si legga come tale e non come una
+   * secca.
+   */
+  quayFreeboard: TERRAIN.beachMaxHeight - TERRAIN.cellSize - TERRAIN.seaLevel,
+
+  /**
    * Fondale massimo, sotto il livello del mare, su cui una banchina puo'
    * poggiare.
    *

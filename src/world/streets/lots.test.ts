@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
 import { placeLot, type Lot } from './lots';
-import { STREETS } from './config';
 import { FACING, type BlockRect } from './streetGrid';
 
 /**
@@ -13,46 +12,58 @@ const RECT: BlockRect = { x0: 10, y0: 20, x1: 21, y1: 29 };
 
 const FREE = (): boolean => true;
 
-/** true se il lotto tocca il lato verso cui dichiara di affacciarsi. */
-function hugsItsEdge(lot: Lot, rect: BlockRect): boolean {
-  switch (lot.facing) {
-    case FACING.east:
-      return lot.x + lot.footprint - 1 === rect.x1;
-    case FACING.west:
-      return lot.x === rect.x0;
-    case FACING.north:
-      return lot.y + lot.footprint - 1 === rect.y1;
-    default:
-      return lot.y === rect.y0;
-  }
-}
-
 function insideRect(lot: Lot, rect: BlockRect): boolean {
   return lot.x >= rect.x0 && lot.x + lot.footprint - 1 <= rect.x1 &&
     lot.y >= rect.y0 && lot.y + lot.footprint - 1 <= rect.y1;
 }
 
-describe('placeLot — il lotto sta sul fronte', () => {
-  it('ogni lotto tocca un lato dell isolato e resta dentro il riquadro', () => {
-    for (let y = RECT.y0; y <= RECT.y1; y++) {
-      for (let x = RECT.x0; x <= RECT.x1; x++) {
-        const lot = placeLot({ rect: RECT, x, y, footprint: 4, accepts: FREE });
-        expect(lot).not.toBeNull();
-        expect(insideRect(lot as Lot, RECT)).toBe(true);
-        expect(hugsItsEdge(lot as Lot, RECT)).toBe(true);
-      }
-    }
-  });
+function distance2(lot: Lot, x: number, y: number): number {
+  const dx = lot.x * 2 + lot.footprint - 1 - x * 2;
+  const dy = lot.y * 2 + lot.footprint - 1 - y * 2;
+  return dx * dx + dy * dy;
+}
 
-  it('una colonna del cuore esce comunque su strada', () => {
-    // E' il caso che giustifica l'intera regola: due terzi dei candidati della
-    // simulazione cadono qui, e scartarli fermerebbe la crescita.
+describe('placeLot — conserva il luogo proposto', () => {
+  it('parte dal cuore invece che dai quattro fronti', () => {
     const lot = placeLot({ rect: RECT, x: 15, y: 24, footprint: 4, accepts: FREE });
+
     expect(lot).not.toBeNull();
-    expect(hugsItsEdge(lot as Lot, RECT)).toBe(true);
+    expect(insideRect(lot as Lot, RECT)).toBe(true);
+    const touchesAccess = lot!.x === RECT.x0 || lot!.y === RECT.y0 ||
+      lot!.x + lot!.footprint - 1 === RECT.x1 ||
+      lot!.y + lot!.footprint - 1 === RECT.y1;
+    expect(touchesAccess).toBe(false);
+    expect(distance2(lot!, 15, 24)).toBeLessThanOrEqual(2);
   });
 
-  it('il fronte piu vicino vince', () => {
+  it('sceglie l ancora libera piu vicina al candidato, non la prima del reticolo', () => {
+    const wanted = { x: 17, y: 25 };
+    const lot = placeLot({ ...wanted, rect: RECT, footprint: 3, accepts: FREE });
+    expect(lot).not.toBeNull();
+
+    const first: Lot = { x: RECT.x0, y: RECT.y0, footprint: 3, facing: FACING.east };
+    expect(distance2(lot!, wanted.x, wanted.y)).toBeLessThan(distance2(first, wanted.x, wanted.y));
+  });
+
+  it('quando il centro e occupato si apre radialmente sul posto libero piu vicino', () => {
+    const centre = { x: 15, y: 24 };
+    const first = placeLot({ ...centre, rect: RECT, footprint: 4, accepts: FREE });
+    expect(first).not.toBeNull();
+    const lot = placeLot({
+      ...centre,
+      rect: RECT,
+      footprint: 4,
+      accepts: (x, y) => x !== first!.x || y !== first!.y,
+    });
+
+    expect(lot).not.toBeNull();
+    expect(`${lot!.x},${lot!.y}`).not.toBe(`${first!.x},${first!.y}`);
+    expect(distance2(lot!, centre.x, centre.y))
+      .toBeGreaterThanOrEqual(distance2(first!, centre.x, centre.y));
+    expect(distance2(lot!, centre.x, centre.y)).toBeLessThan(90);
+  });
+
+  it('il lato piu vicino orienta l edificio senza spostarlo fino alla strada', () => {
     const west = placeLot({ rect: RECT, x: RECT.x0, y: 25, footprint: 3, accepts: FREE });
     expect(west?.facing).toBe(FACING.west);
 
@@ -65,6 +76,24 @@ describe('placeLot — il lotto sta sul fronte', () => {
     const north = placeLot({ rect: RECT, x: 16, y: RECT.y1, footprint: 3, accepts: FREE });
     expect(north?.facing).toBe(FACING.north);
   });
+
+  it('limita al bordo soltanto una posa che lo richiede esplicitamente', () => {
+    const lot = placeLot({
+      rect: RECT,
+      x: 15,
+      y: 24,
+      footprint: 4,
+      edgeOnly: true,
+      accepts: FREE,
+    });
+
+    expect(lot).not.toBeNull();
+    expect(
+      lot!.x === RECT.x0 || lot!.y === RECT.y0 ||
+      lot!.x + lot!.footprint - 1 === RECT.x1 ||
+      lot!.y + lot!.footprint - 1 === RECT.y1,
+    ).toBe(true);
+  });
 });
 
 describe('placeLot — impronta', () => {
@@ -75,10 +104,7 @@ describe('placeLot — impronta', () => {
     expect(insideRect(lot as Lot, narrow)).toBe(true);
   });
 
-  it('si stringe solo dopo aver provato tutti e quattro i fronti', () => {
-    // Un solo lotto largo 4 resta libero, in fondo all'ordine di preferenza.
-    // Deve comunque vincere su un lotto largo 3 piu' vicino: e' l'allineamento
-    // a leggersi da lontano, non la dimensione.
+  it('prova tutta la misura larga prima di restringersi', () => {
     const accepts = (x: number, y: number, side: number): boolean =>
       side < 4 ? false : x === RECT.x0 && y === RECT.y0;
     const lot = placeLot({ rect: RECT, x: RECT.x1, y: RECT.y1, footprint: 4, accepts });
@@ -94,7 +120,7 @@ describe('placeLot — isolato pieno', () => {
     expect(lot).toBeNull();
   });
 
-  it('riempie un fronte senza mai riproporre lo stesso lotto', () => {
+  it('riempie l isolato senza mai riproporre lo stesso lotto', () => {
     const taken = new Set<string>();
     const accepts = (x: number, y: number, side: number): boolean => {
       for (let dy = 0; dy < side; dy++) {
@@ -121,7 +147,7 @@ describe('placeLot — isolato pieno', () => {
   });
 });
 
-describe('placeLot — determinismo', () => {
+describe('placeLot — determinismo e posizione', () => {
   it('gli stessi argomenti danno lo stesso lotto', () => {
     for (let i = 0; i < 20; i++) {
       const a = placeLot({ rect: RECT, x: 14, y: 23, footprint: 4, accepts: FREE });
@@ -129,21 +155,10 @@ describe('placeLot — determinismo', () => {
       expect(a).toEqual(b);
     }
   });
-});
 
-describe('placeLot — allineamento al cubo di terreno', () => {
-  it('ogni lotto parte su un multiplo di `align`', () => {
-    // Il terreno cambia quota solo al confine fra due cubi. Un lotto che parte
-    // a meta' cubo si trova sotto l'impronta due quote diverse dove il terreno
-    // e' in realta' piatto, e le opere ci mettono sotto un riempimento che
-    // nessun dislivello vero giustifica.
-    for (let y = RECT.y0; y <= RECT.y1; y++) {
-      for (let x = RECT.x0; x <= RECT.x1; x++) {
-        const lot = placeLot({ rect: RECT, x, y, footprint: 4, accepts: FREE });
-        if (lot === null) continue;
-        expect((lot.x - RECT.x0) % STREETS.align).toBe(0);
-        expect((lot.y - RECT.y0) % STREETS.align).toBe(0);
-      }
-    }
+  it('centra esattamente una misura dispari sulla colonna proposta', () => {
+    const lot = placeLot({ rect: RECT, x: 15, y: 24, footprint: 3, accepts: FREE });
+
+    expect(lot).toMatchObject({ x: 14, y: 23, footprint: 3 });
   });
 });

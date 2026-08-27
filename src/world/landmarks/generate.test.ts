@@ -543,6 +543,29 @@ describe('forme contestuali', () => {
     expect(landmarkOf('port', 'skyport')).toBeNull();
   });
 
+  it('la marina cambia esemplare con la classe dell acqua', () => {
+    // Il lago e' sempre basso — `basinWaterDepth` sta sotto `shallowDepth` —
+    // quindi la forma lacustre non e' mai un tiro di seme: chi costruisce sul
+    // lago ottiene il lungolago di doghe, chi sulla baia aperta il fronte in
+    // pietra. Il canale non ha una forma: li' decide il seme.
+    expect(hasWaterForm('marina')).toBe(true);
+    expect(waterFormFor('marina', WATER_CLASS.shallow)).toBe('marina-shallows');
+    expect(waterFormFor('marina', WATER_CLASS.open)).toBe('marina-open');
+    expect(waterFormFor('marina', WATER_CLASS.canal)).toBeNull();
+    expect(landmarkOf('marina', 'marina-shallows')).toBe(LANDMARKS.marina);
+  });
+
+  it('la marina scava il bacino e tollera l acqua dolce, il porto no', () => {
+    // I due permessi che distinguono la marina dal porto sullo stesso fronte
+    // d'acqua: scavare la darsena e costruire sul lago. Il porto non dichiara
+    // nessuno dei due — la sua banchina e' tarata sul mare, e la sua darsena e'
+    // il mare che c'era.
+    expect(LANDMARKS.marina!.basinDepth).toBeGreaterThan(0);
+    expect(LANDMARKS.marina!.lakeQuay).toBe(true);
+    expect(LANDMARKS.port!.basinDepth).toBeUndefined();
+    expect(LANDMARKS.port!.lakeQuay).toBeUndefined();
+  });
+
   it('una forma di facciata e una ricetta propria, e non prende suolo', () => {
     expect(isFacadeForm('sky-park')).toBe(true);
     expect(isFacadeForm('port-bulk')).toBe(false);

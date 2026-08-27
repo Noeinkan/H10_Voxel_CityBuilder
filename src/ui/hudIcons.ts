@@ -4,7 +4,7 @@ export type HudIcon =
   | 'funds' | 'population' | 'food' | 'materials' | 'satisfaction'
   | 'residential' | 'production' | 'civic' | 'expansion' | 'terrace' | 'ropeway' | 'policies' | 'city'
   | 'market' | 'factory' | 'park' | 'greenhouse' | 'power' | 'school' | 'port' | 'ferry' | 'airport' | 'transport' | 'radio' | 'lighthouse'
-  | 'university' | 'monument' | 'museum' | 'cathedral' | 'theatre' | 'stadium'
+  | 'university' | 'monument' | 'museum' | 'cathedral' | 'theatre' | 'stadium' | 'marina'
   | 'pause' | 'play' | 'theme' | 'view' | 'swatch' | 'help' | 'close'
   | 'daylight' | 'sun' | 'moon' | 'clouds' | 'cloudsOff';
 
@@ -78,6 +78,9 @@ const PATHS: Readonly<Record<HudIcon, string>> = {
   // Due ovali concentrici, bassi e larghi: il catino cavo si legge da sopra
   // prima che di taglio, ed e' l'unica sagoma non verticale del catalogo.
   stadium: '<path d="M3 12c0-4 4-6 9-6s9 2 9 6c0 5-4 8-9 8s-9-3-9-8ZM6 12c0-3 2.5-4.5 6-4.5s6 1.5 6 4.5c0 3.5-2.5 5.5-6 5.5s-6-2-6-5.5Z"/>',
+  // La banchina con due moli a dita e una barca nel bacino: la planimetria della
+  // ricetta, ed e' il vuoto fra i moli a dire "porticciolo" invece che "porto".
+  marina: '<path d="M3 21V9h5v12M8 12h6M8 16h6M14 21v-9h3v9M17 12h4M10.5 18.5l2-3 2 3M10.5 18.5v2M14.5 18.5v2"/>',
   expansion: '<path d="M8 3H3v5M16 3h5v5M8 21H3v-5M16 21h5v-5M3 8l6 6M21 8l-6 6M3 16l6-6M21 16l-6-6"/>',
   // Una torre di taglio con un piano che le esce dal fianco, e la trave sotto:
   // e' la sezione che il generatore disegna davvero, ed e' l'unica cosa che

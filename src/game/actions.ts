@@ -16,7 +16,7 @@ import {
   type SimState,
   type TradeMode,
 } from '../sim';
-import { buildWeightOf, GROUND, groundKindOf, type GroundKind } from '../world/grading/grade';
+import { buildWeightOf, GROUND, groundKindOf, isDryLand, type GroundKind } from '../world/grading/grade';
 import { landmarkOf } from '../world/landmarks/config';
 import { SCALE } from '../world/scale';
 import { siteRefusal } from '../world/sites/siteRules';
@@ -37,6 +37,7 @@ export type ActionFailure =
   | 'terrain-loading'
   | 'not-buildable'
   | 'needs-coast'
+  | 'needs-waterfront'
   | 'needs-open-ground'
   | 'too-close'
   | 'insufficient-funds'
@@ -132,7 +133,21 @@ export function catalystSiteCost(
   const column = map.columnAt(x, y);
   if (column === null) return null;
 
-  const ground = groundKindOf(column.biome, column.slope, column.height);
+  // Chi scava un bacino (`lakeQuay`) legge l'acqua contro il pelo della
+  // colonna e non rifiuta la riva: la sponda di un lago e' una scarpata che
+  // per qualunque altro ruolo resta un fianco da rispettare, ma la marina e'
+  // esattamente il ruolo che la addomestica. Lo stesso giudizio che
+  // `surveyGrade` da' alle opere, cosi' cursore e click dicono la stessa cosa.
+  const lakeQuay = landmarkOf(definition.id)?.lakeQuay === true;
+  let ground = groundKindOf(
+    column.biome,
+    column.slope,
+    column.height,
+    lakeQuay ? map.waterTopAt(x, y) : undefined,
+  );
+  if (lakeQuay && ground === GROUND.refused && isDryLand(column.biome)) {
+    ground = GROUND.sloped;
+  }
   const weight = buildWeightOf(ground);
   const cost = Number.isFinite(weight) ? Math.round(definition.cost * weight) : definition.cost;
   return { ground, weight, cost };

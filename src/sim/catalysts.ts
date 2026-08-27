@@ -1,14 +1,14 @@
 import { BALANCE } from './balance';
 import { ALL_CLASSES, BUILDING_CLASS, CLASS_COUNT, CLASS_NAMES, type BuildingClass } from './classes';
 
-/** I diciotto modi in cui il giocatore puo' orientare la crescita. */
+/** I diciannove modi in cui il giocatore puo' orientare la crescita. */
 export type CatalystId = keyof typeof BALANCE.gameplay.catalyst.roles;
 
 /**
  * Funzione del catalizzatore nella toolbar.
  *
  * Non e' una categoria estetica: risponde alla domanda "cosa sto per fare",
- * che e' l'unica cosa che il giocatore sa prima di aver imparato i diciotto nomi.
+ * che e' l'unica cosa che il giocatore sa prima di aver imparato i diciannove nomi.
  * Crescita fa nascere isolati, connessioni collegano la citta' al resto del
  * mondo e fra i suoi poli, identita' le da' un carattere che resta.
  */
@@ -25,8 +25,14 @@ export type CatalystGroup = 'growth' | 'connections' | 'identity';
  * `'open'` e' il vincolo opposto a `'coastal'`, non la sua assenza: chiede una
  * superficie ampia e gia' quasi piana, che e' cio' che l'entroterra ha di raro.
  * L'assenza di vincolo e' `'any'`.
+ *
+ * `'waterfront'` e' `'coastal'` allargato ai laghi: accetta l'acqua a
+ * **qualsiasi quota**, e non va confuso con `'coastal'`, che resta il solo mare.
+ * Un ruolo che sa costruire sull'acqua dolce — la marina — lo dichiara; il porto
+ * no, e rifiutarlo dopo il piazzamento con un messaggio sul mare che non c'e'
+ * mentirebbe due volte.
  */
-export type CatalystSite = 'any' | 'coastal' | 'open';
+export type CatalystSite = 'any' | 'coastal' | 'open' | 'waterfront';
 
 export interface CatalystEffects {
   readonly density: number;
@@ -91,6 +97,7 @@ export const CATALYSTS: readonly CatalystDefinition[] = [
   catalyst('cathedral', 'Cathedral', 'identity', 'any', 'A place of gathering and quiet that anchors a neighborhood for good.'),
   catalyst('theatre', 'Theatre', 'identity', 'any', 'A stage and hall that bring visitors, commerce and civic pride.'),
   catalyst('stadium', 'Stadium', 'identity', 'any', 'A wide, hollow bowl that packs in crowds and commerce.'),
+  catalyst('marina', 'Marina', 'identity', 'waterfront', 'A yacht harbour of pontoons and slips: settles on a lake or the sea, and draws homes and commerce to the waterfront.'),
 ];
 
 /** Gruppi in ordine di toolbar, con l'etichetta della sezione. */

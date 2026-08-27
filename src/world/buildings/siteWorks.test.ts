@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { testTerrain } from '../../sim/testTerrain';
 import { GRADING } from '../grading/config';
-import { WORKS } from '../grading/grade';
+import { GROUND, WORKS } from '../grading/grade';
+import { TERRAIN } from '../terrain/config';
 import { VoxelWorld } from '../VoxelWorld';
-import { buildWorks, surveyGrade } from './siteWorks';
+import { buildWorks, groundKindAt, surveyGrade } from './siteWorks';
 
 /**
  * La maschera dell'opera di terra.
@@ -50,8 +51,50 @@ describe('surveyGrade — maschera', () => {
   });
 });
 
-describe('buildWorks — maschera', () => {
-  it('riempie il molo e lascia il mare dove non c e struttura', () => {
+/** Lago in quota: fondo a `level - 2`, riva ripida due sopra. */
+const LAKE_LEVEL = TERRAIN.seaLevel + 16;
+
+function lakeShore() {
+  return testTerrain({
+    chunksX: 1,
+    chunksY: 1,
+    heightAt: (x) => (x >= 6 ? LAKE_LEVEL - 2 : LAKE_LEVEL + 4),
+    slopeAt: (x) => (x >= 6 ? 0.1 : 0.6),
+    waterTopAt: (x) => (x >= 6 ? LAKE_LEVEL : TERRAIN.seaLevel),
+  });
+}
+
+describe('surveyGrade — lago', () => {
+  it('con lakeQuay il fondo del lago e’ battigia contro il proprio pelo', () => {
+    const map = lakeShore();
+    expect(groundKindAt(map, 10, 10)).toBe(GROUND.refused);
+    expect(groundKindAt(map, 10, 10, true)).toBe(GROUND.shore);
+  });
+
+  it('con lakeQuay la riva ripida diventa un terrapieno invece di un rifiuto', () => {
+    // La sponda di un lago scende piu' ripida di `maxTerraceSlope`: per ogni
+    // altro ruolo e' un fianco da rispettare — la citta' cresce *intorno* ai
+    // laghi — ma chi scava un bacino la addomestica. Il piano sale al massimo
+    // delle colonne occupate e l'acqua resta acqua.
+    const map = lakeShore();
+    const mask = new Uint8Array(8 * 2);
+    for (let dx = 0; dx < 8; dx++) {
+      mask[dx] = 1;
+      mask[8 + dx] = dx < 6 ? 1 : 0;
+    }
+
+    expect(surveyGrade(map, 0, 0, 8, 2, mask)).toBeNull();
+    const plan = surveyGrade(map, 0, 0, 8, 2, mask, true);
+    expect(plan).not.toBeNull();
+    expect(plan!.works).toBe(WORKS.quay);
+    // Il piano sale sopra il pelo del lago del franco di banchina: la riva (a
+    // +4) sta sotto, il fondale a -2, e il muro li unisce entrambi.
+    expect(plan!.padZ).toBe(LAKE_LEVEL + GRADING.quayFreeboard);
+    expect(plan!.footZ).toBe(LAKE_LEVEL - 2);
+  });
+});
+
+describe('buildWorks — maschera', () => {  it('riempie il molo e lascia il mare dove non c e struttura', () => {
     const world = new VoxelWorld();
     const plan = surveyGrade(SHORE, 6, 0, 8, 4, mole())!;
     buildWorks(world, SHORE, 6, 0, 8, plan, 4, mole());

@@ -11,6 +11,34 @@ coincide con il messaggio di commit.
 
 ---
 
+## In corso — Crescita urbana continua attorno ai landmark
+
+- La posa ordinaria non riempie piu' i quattro perimetri degli isolati: cerca il pieno libero per distanza dal candidato della simulazione anche attraverso la maglia teorica.
+- La densita' nasce dalla successione radiale dei candidati e l'altezza continua a seguire la gerarchia centro-periferia; solo le opere costiere restano vincolate al bordo fisico della banchina.
+
+## In corso — Sky Weave a sei guglie
+
+- **L'arcologia Sky Weave sale con sei steli invece di tre.** La ricetta duplica i tre steli sfalsati allo specchio sull'asse corto — tre in piu', con i rispettivi zoccoli — lasciando intatto il corridoio centrale che il test della finestra di cielo misura: la megastruttura cresce senza chiudere il vuoto che la distingue da una torre grossa.
+
+## In corso — La marina sul lago e il bacino scavato
+
+- **La marina, diciannovesimo ruolo.** Il gruppo identita' ha il suo fronte d'acqua: la marina si piazza sul mare **o sul lago** — vincolo di sito nuovo, `waterfront`, con una ricerca dell'acqua a qualsiasi quota — e la sua ricetta dichiara `lakeQuay`: la banchina si misura contro il pelo della conca e la riva ripida diventa un terrapieno invece di un rifiuto.
+- **Il bacino si scava.** La ricetta dichiara `basinDepth`, e dove non poggia il terreno scende fino a quella profondita' sotto il pelo e l'acqua lo riempie — la darsena, non il mare che capitava di esserci. Il muro di banchina scende a incontrarne il fondo. Seconda eccezione voluta al «si riempie e non si scava», accanto alla montagna sopra il tetto.
+- **Yacht e pelo proprio.** Gli ormeggi della marina tengono yacht (nuova sagoma) e il traffico posa i mezzi a galla sul pelo della struttura: sul lago galleggiano al livello della conca, nel bacino scavato all'acqua scritta — il bioma da solo non basta piu' a dire dove una barca sta.
+
+## In corso — Landmark visibili sul pendio
+
+- **La cattedrale emerge subito dal fianco.** Lo scavo di adattamento segue il tetto realmente occupato da ogni colonna dello stadio visibile, non l'inviluppo finale riservato alle guglie future, cosi' una collina moderata non puo' seppellire tutti i voxel iniziali.
+
+## In corso — Contesto Codex piu' snello
+
+- **Istruzioni caricate ridotte del 67% nei task engine.** `AGENTS.md` radice e dell'engine conservano i contratti come regole compatte; engine e sim ereditano ora la verifica proporzionata senza imporre la suite completa.
+- **Project Index interrogabile senza caricarlo interamente.** `npm run locate -- <termine>` restituisce soltanto le righe pertinenti, raggruppate per sezione e limitate per default a dodici risultati.
+
+## In corso — Seed casuale all'avvio
+
+- **Il mondo di partenza non e' piu' sempre lo stesso.** Senza `?seed=` ne viene sorteggiato uno nuovo a ogni partita, come in Minecraft, e riscritto nella barra degli indirizzi: il ricaricamento riporta lo stesso mondo, e chi vuole rivederlo lo dichiara. Il determinismo resta intatto — generazione e simulazione continuano a essere funzione pura del seed — e gli scatti di riferimento fissano il seed nei path.
+
 ## In corso — Il coach non resta bloccato sul cibo
 
 - **Una risposta alimentare fa avanzare la rotta.** Il coach smette di riproporre la serra quando esistono gia' una serra, una torre idroponica o un collegamento commerciale; gli avvisi di salute distinguono invece una serra gia' piazzata e spiegano come far comparire la prima torre, cosi' le indicazioni su landmark, tetti e citta' in quota possono tornare in primo piano.
@@ -23,9 +51,9 @@ coincide con il messaggio di commit.
 
 - **Porti non piu' affondati sul fondale.** Le ricette con `waterline` conservano il piano finito della banchina e costruiscono le fondazioni mascherate fino al fondo; i landmark terrestri continuano invece a inserirsi alla quota minima dell'impronta.
 
-## In corso — Project Index come mappa primaria
+## In corso — Project Index come istruzione Codex
 
-- **Indice obbligatorio a ogni modifica.** Aggiunta una regola globale che usa `PROJECT_INDEX.md` per orientare il lavoro e ne impone l'aggiornamento nello stesso incremento.
+- **Indice obbligatorio a ogni modifica.** Rafforzata in `AGENTS.md`, caricato da Codex, la regola che usa `PROJECT_INDEX.md` per orientare il lavoro e ne impone l'aggiornamento nello stesso incremento.
 
 ## In corso — Gate urbano condiviso dagli upgrade
 

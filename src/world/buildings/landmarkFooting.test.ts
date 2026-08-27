@@ -7,10 +7,13 @@ import {
 } from '../../sim';
 import { testTerrain } from '../../sim/testTerrain';
 import { GRADING } from '../grading/config';
+import { generateLandmark } from '../landmarks/generate';
+import type { Facing } from '../streets/streetGrid';
 import { TERRAIN } from '../terrain/config';
 import type { TerrainMap } from '../terrain/TerrainMap';
 import { VoxelWorld } from '../VoxelWorld';
 import { Builder } from './Builder';
+import { STAMP_EMPTY } from './stamp';
 
 /**
  * Quello che il cursore promette in montagna.
@@ -240,5 +243,54 @@ describe('lo scavo di adattamento', () => {
     for (let z = top; z < PLATEAU + drop - 1; z++) {
       expect(world.getBlock(SPOT, outsideY, z)).toBe(7);
     }
+  });
+
+  it('espone lo stadio iniziale della cattedrale prima delle guglie future', () => {
+    // La cattedrale riserva un inviluppo alto 28 voxel, ma allo stadio zero la
+    // navata ne occupa soltanto sette. Usare il tetto dell'inviluppo per lo
+    // scavo lascia quindi una collina moderata sopra ogni voxel visibile: il
+    // record esiste, ma a schermo non emerge niente.
+    const drop = 12;
+    const map = terraces(drop);
+    const { world, builder } = filledWorld(map, drop);
+
+    builder.placeLandmark(SPOT, ROW, 'cathedral');
+    settle(builder);
+
+    const record = [...builder.registry.all].find((r) => r.landmark === 'cathedral');
+    expect(record).toBeDefined();
+    const stamp = generateLandmark({
+      kind: 'cathedral',
+      stage: 0,
+      facing: record!.facing! as Facing,
+      seed: record!.seed,
+      form: record!.landmarkForm,
+    });
+    expect(stamp).not.toBeNull();
+
+    let exposedColumns = 0;
+    for (let dy = 0; dy < stamp!.sizeY; dy++) {
+      for (let dx = 0; dx < stamp!.sizeX; dx++) {
+        let roof = 0;
+        for (let z = 0; z < stamp!.sizeZ; z++) {
+          const index = dx + stamp!.sizeX * (dy + stamp!.sizeY * z);
+          if (stamp!.voxels[index] !== STAMP_EMPTY) roof = z + 1;
+        }
+        if (roof === 0) continue;
+
+        const x = record!.x + dx;
+        const y = record!.y + dy;
+        const roofZ = record!.baseZ + roof;
+        const terrainZ = map.heightAt(x, y);
+        if (terrainZ <= roofZ) continue;
+
+        exposedColumns++;
+        for (let z = roofZ; z < terrainZ; z++) {
+          expect({ x, y, z, block: world.getBlock(x, y, z) })
+            .toEqual({ x, y, z, block: 0 });
+        }
+      }
+    }
+    expect(exposedColumns).toBeGreaterThan(0);
   });
 });

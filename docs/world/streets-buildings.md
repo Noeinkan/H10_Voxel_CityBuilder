@@ -19,7 +19,12 @@
   confondono facilmente: `streetGrid.ts` risponde per qualunque colonna del piano,
   ma a schermo esiste solo cio' che `surfaceQueue` ha dipinto. **Niente piu'
   anello perimetrale**: le strade non chiudono il quadrato, e dentro l'isolato gli
-  edifici crescono senza un perimetro d'asfalto. A questo serve `streets/corridor.ts`:
+  edifici crescono attorno alla posizione scelta dal campo, non come quattro
+  facciate continue. Nel tessuto ordinario la ricerca e' continua e attraversa
+  isolati e interassi teorici: il riquadro serve soltanto a limitare il costo
+  della scansione, non esiste come lotto urbanistico visibile. Solo le opere
+  costiere conservano il vincolo del bordo, perche' li' il bordo e' la banchina.
+  A collegare i nuclei serve `streets/corridor.ts`:
   un centro nato lontano dalla rete si tira dietro la strada minima che lo attacca,
   lungo il percorso a costo minimo fra gli incroci della maglia. **Sceglie linee,
   non le inventa** — ogni tratto corre su un asse che il seed dichiara gia' — ed e'
@@ -76,10 +81,12 @@
   I numeri stanno in `sites/config.ts`, e non vanno confusi con
   `BUILDER.coastalRadius`, che decide l'aspetto di una tipologia e non
   l'ammissibilita' di un piazzamento.
-- Il candidato della simulazione designa **un luogo, non un indirizzo**: se il
-  suo isolato e' pieno, `findLot` cerca in quelli attorno. Senza, su un campo
-  saturo la crescita si ferma appena si riempie il primo isolato, perche' la
-  simulazione ripropone all'infinito le stesse colonne.
+- Il candidato della simulazione designa **un luogo, non un indirizzo**:
+  `placeLot` apre anelli locali attorno a quella colonna e prende la prima
+  impronta libera, anche oltre un confine della maglia. `findLot` non riempie un
+  isolato prima di passare al successivo: il pieno cresce come una macchia
+  continua dal landmark. La misura piu' larga si prova per prima, poi si
+  restringe; questo mantiene denso il nucleo senza renderne quadrato il bordo.
 - La **grammatica delle fasce e' una tabella**, `BAND_OP`, e il repertorio — quali
   trasformazioni provare e in che ordine — sta in `ClassProfile`, non nel codice
   di `generate.ts`. E' li' e non in `TypologyShape` perche' `typologyProfile`
@@ -279,8 +286,10 @@
   la maglia stradale c'e' sempre. Un bonus di **livello** sull'angolo e' stato
   provato e tolto: spegneva i montanti della citta' in quota, perche' chi ospita
   un impalcato smette di promuovere e cambiare il livello di nascita degli angoli
-  cambia chi puo' fare da ospite. Per la stessa ragione il **cuore dell'isolato si
-  lascia stare**: `aerial/` lo tiene libero apposta.
+  cambia chi puo' fare da ospite. `aerial/` non riceve piu' un cortile quadrato
+  garantito dalla posa: una piazza nasce soltanto dove il costruito reale lascia
+  una sacca abbastanza larga e trova gli appoggi richiesti. Il vuoto diventa
+  quindi un esito del tessuto, non il negativo obbligatorio di ogni isolato.
 - **Uno sbalzo non prende suolo.** E' il terzo invariante della stessa famiglia,
   dopo quello di `spans/` e quello di `aerial/`, e sostituisce la riga che la
   grammatica dichiarava: non piu' «nessuna fascia esce dall'impronta» ma **nessuna

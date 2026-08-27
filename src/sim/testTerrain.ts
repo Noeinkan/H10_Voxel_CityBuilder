@@ -41,6 +41,15 @@ export interface TestTerrainOptions {
 
   /** Pendenza per colonna, usata solo insieme a `heightAt`. Default: 0,1. */
   readonly slopeAt?: (x: number, y: number) => number;
+
+  /**
+   * Pelo dello specchio sopra la colonna, al posto del livello del mare.
+   *
+   * E' cio' che rende possibile una fixture con un **lago**: le colonne sotto
+   * il proprio pelo diventano oceano come sull'isola vera, e chi sonda l'acqua
+   * a qualsiasi quota le vede. Senza, lo specchio e' il mare ovunque.
+   */
+  readonly waterTopAt?: (x: number, y: number) => number;
 }
 
 export function testTerrain(options: TestTerrainOptions): TerrainMap {
@@ -60,6 +69,7 @@ function blockOf(ccx: number, ccy: number, options: TestTerrainOptions): ColumnB
   const biomes = new Uint8Array(COLUMNS_PER_CHUNK);
   const slopes = new Float32Array(COLUMNS_PER_CHUNK);
   const buildable = new Uint8Array(COLUMNS_PER_CHUNK);
+  const waterTopColumn = new Int16Array(COLUMNS_PER_CHUNK);
   let buildableCount = 0;
   let maxHeight = 0;
 
@@ -74,13 +84,17 @@ function blockOf(ccx: number, ccy: number, options: TestTerrainOptions): ColumnB
 
       const height = options.heightAt === undefined ? flat : options.heightAt(x, y);
       const slope = options.slopeAt === undefined ? 0.1 : options.slopeAt(x, y);
+      const waterTop = options.waterTopAt === undefined
+        ? TERRAIN.seaLevel
+        : options.waterTopAt(x, y);
       const biome = options.heightAt === undefined
         ? BIOME.plain
-        : classifyBiome(height, slope);
+        : classifyBiome(height, slope, waterTop);
 
       heights[i] = height;
       biomes[i] = biome;
       slopes[i] = slope;
+      waterTopColumn[i] = waterTop;
       if (height > maxHeight) maxHeight = height;
 
       const ok = declared !== undefined
@@ -101,8 +115,7 @@ function blockOf(ccx: number, ccy: number, options: TestTerrainOptions): ColumnB
     slopes,
     buildable,
     water: new Uint8Array(COLUMNS_PER_CHUNK),
-    // Fixture piana: nessun lago, quindi lo specchio e' il mare ovunque.
-    waterTop: new Int16Array(COLUMNS_PER_CHUNK).fill(TERRAIN.seaLevel),
+    waterTop: waterTopColumn,
     // Niente erbette e niente sporgenze: la fixture serve alla simulazione, che
     // di cio' che sta sopra il terreno non sa nulla.
     cover: new Uint8Array(COLUMNS_PER_CHUNK),

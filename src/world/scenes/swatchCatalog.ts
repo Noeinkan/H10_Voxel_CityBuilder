@@ -160,6 +160,8 @@ const FORM_LABELS: Readonly<Record<LandmarkFormId, string>> = {
   'port-bulk': 'Bulk',
   'port-shipyard': 'Shipyard',
   'port-passenger': 'Passenger',
+  'marina-shallows': 'Boardwalk',
+  'marina-open': 'Stonefront',
 };
 
 const FORM_NOTES: Readonly<Record<LandmarkFormId, string>> = {
@@ -169,6 +171,8 @@ const FORM_NOTES: Readonly<Record<LandmarkFormId, string>> = {
   'port-bulk': 'Deep-water berth for bulk cargo.',
   'port-shipyard': 'Sheltered basin to launch hulls.',
   'port-passenger': 'Light marina for small craft.',
+  'marina-shallows': 'Wooden piers where the water is shallow: a lake or a sheltered beach.',
+  'marina-open': 'Stone quays where the water is deep and exposed.',
 };
 
 const WATER_LABELS: Readonly<Record<number, string>> = {
@@ -181,6 +185,7 @@ const ARCOLOGY_LABELS: Readonly<Record<ArcologyKind, string>> = {
   [ARCOLOGY_KIND.twinStem]: 'Twin Stem',
   [ARCOLOGY_KIND.branchingCore]: 'Branching Core',
   [ARCOLOGY_KIND.skyWeave]: 'Sky Weave',
+  [ARCOLOGY_KIND.spireRing]: 'Spire Ring',
 };
 
 const BASE_EXTENT = baseExtentOf();

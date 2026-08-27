@@ -167,6 +167,10 @@ export const BALANCE = {
         cathedral: { cost: 400, strength: 205, radius: 50 },
         theatre: { cost: 420, strength: 205, radius: 48 },
         stadium: { cost: 460, strength: 210, radius: 55 },
+        // Il gemello del monumento sull'acqua: il prezzo da identita' con il
+        // vincolo di sito riportato in denaro, come l'aeroporto — un lago o un
+        // fronte mare non sono ovunque, e chi li ha se li paga.
+        marina: { cost: 440, strength: 210, radius: 55 },
       },
 
       /**
@@ -206,6 +210,9 @@ export const BALANCE = {
         cathedral: { residential: 0.5, commercial: 0.25, industrial: -0.15, civic: 1 },
         theatre: { residential: 0.35, commercial: 0.7, industrial: -0.15, civic: 1 },
         stadium: { residential: 0.3, commercial: 1, industrial: -0.05, civic: 0.55 },
+        // Case e negozi sul fronte d'acqua, capannoni lontani: la stessa
+        // direzione del traghetto, ma con la spinta civica del gruppo identita'.
+        marina: { residential: 0.45, commercial: 0.85, industrial: -0.2, civic: 1 },
       },
     },
     policy: {
@@ -373,6 +380,7 @@ export const BALANCE = {
       cathedral: { density: 30, wealth: 35, accessibility: 20, satisfaction: 150, industry: -5 },
       theatre: { density: 55, wealth: 85, accessibility: 40, satisfaction: 130, industry: -5 },
       stadium: { density: 80, wealth: 40, accessibility: 70, satisfaction: 85, industry: 0 },
+      marina: { density: 55, wealth: 60, accessibility: 75, satisfaction: 85, industry: -10 },
     },
     spatialPolicy: {
       denseHousing: { density: 45 },

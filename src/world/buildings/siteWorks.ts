@@ -36,9 +36,20 @@ const QUAY_AXES: readonly (readonly [number, number])[] = [[1, 0], [-1, 0], [0, 
  * oggetto: questa funzione sta nel percorso caldo di `placeLot`, dove le
  * colonne si contano a migliaia per infornata.
  */
-export function groundKindAt(terrain: TerrainMap, x: number, y: number): GroundKind {
+export function groundKindAt(
+  terrain: TerrainMap,
+  x: number,
+  y: number,
+  /** Vero per misurare l'acqua di lago contro il proprio pelo (vedi `groundKindOf`). */
+  lakeQuay = false,
+): GroundKind {
   if (!terrain.has(x, y)) return GROUND.refused;
-  return groundKindOf(terrain.biomeAt(x, y), terrain.slopeAt(x, y), terrain.heightAt(x, y));
+  return groundKindOf(
+    terrain.biomeAt(x, y),
+    terrain.slopeAt(x, y),
+    terrain.heightAt(x, y),
+    lakeQuay ? terrain.waterTopAt(x, y) : undefined,
+  );
 }
 
 /**
@@ -56,14 +67,40 @@ export function surveyGrade(
   w: number,
   h: number = w,
   mask?: WorksMask,
+  /**
+   * Vero per trattare l'acqua di lago come battigia contro il proprio pelo.
+   *
+   * **Lo chiede la ricetta, non chi costruisce.** E' il flag `lakeQuay` di una
+   * ricetta costiera — la marina — che lo porta qui: sul mare il parametro non
+   * cambia nulla, perche' lo specchio della colonna *e'* il livello del mare, e
+   * ogni altra struttura continua a vedere il lago come prima, cioe' rifiutato.
+   */
+  lakeQuay = false,
 ): GradePlan | null {
-  const columns: { kind: GroundKind; height: number }[] = [];
+  const columns: { kind: GroundKind; height: number; waterTop?: number }[] = [];
   for (let dy = 0; dy < h; dy++) {
     for (let dx = 0; dx < w; dx++) {
       if (mask !== undefined && mask[dy * w + dx] === 0) continue;
-      const kind = groundKindAt(terrain, x + dx, y + dy);
+      const cx = x + dx;
+      const cy = y + dy;
+      let kind = groundKindAt(terrain, cx, cy, lakeQuay);
+      // Chi scava un bacino addomestica la riva, scarpata compresa: la sponda
+      // di un lago scende piu' ripida di `maxTerraceSlope` — e' quella la
+      // ragione per cui la citta' le cresce intorno — ma per la marina quella
+      // pendenza non e' un muro da rispettare, e' il dislivello che il
+      // terrapieno della promenade deve colmare. Solo per lei, quindi, la
+      // terra emersa non rifiuta mai: al peggio si paga.
+      if (kind === GROUND.refused && lakeQuay && isDryLand(terrain.biomeAt(cx, cy))) {
+        kind = GROUND.sloped;
+      }
       if (kind === GROUND.refused) return null;
-      columns.push({ kind, height: terrain.heightAt(x + dx, y + dy) });
+      columns.push({
+        kind,
+        height: terrain.heightAt(cx, cy),
+        // Lo specchio serve solo al piano della banchina, che `planGrade`
+        // legge sulle colonne di riva; le altre lo ignorano.
+        waterTop: lakeQuay && kind === GROUND.shore ? terrain.waterTopAt(cx, cy) : undefined,
+      });
     }
   }
   return planGrade(columns);

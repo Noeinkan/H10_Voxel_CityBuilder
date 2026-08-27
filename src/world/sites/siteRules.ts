@@ -21,7 +21,7 @@ import { SITE } from './config';
  */
 
 /** Perche' un ruolo non sta in questa colonna. */
-export type SiteRefusal = 'needs-coast' | 'needs-open-ground';
+export type SiteRefusal = 'needs-coast' | 'needs-open-ground' | 'needs-waterfront';
 
 /**
  * I quattro assi cardinali, per la ricerca dell'acqua.
@@ -82,13 +82,60 @@ export function sightWater(
   afloat = false,
 ): WaterSight | null {
   const level = afloat ? TERRAIN.seaLevel - 1 : TERRAIN.seaLevel;
+  return scanWater(map, x, y, radius, 'sea', level);
+}
+
+/**
+ * L'acqua piu' vicina sui quattro assi **a qualsiasi quota**, o null.
+ *
+ * E' `sightWater` per chi non si accontenta del mare: il criterio non e' una
+ * quota assoluta ma la colonna stessa — e' acqua dove lo specchio della colonna
+ * (`waterTop`) sta sopra il suo terreno, sia esso il mare o il lago che la
+ * contiene. E' l'unico modo in cui un lago in quota, invisibile a `sightWater`,
+ * diventa un fronte su cui una marina puo' affacciarsi.
+ *
+ * **Non ha la variante `afloat`, e non e' un'omissione.** La distinzione fra
+ * battigia e acqua a galla nasce dalla piattaforma di bassofondo **marina**,
+ * asciutta a quota esatta del pelo del mare; sul lago una piattaforma simile non
+ * esiste — la riva e' la scarpata della conca, che legge come terra — quindi qui
+ * «sommersa» e' l'unica domanda che abbia senso porre.
+ */
+export function sightAnyWater(
+  map: TerrainMap,
+  x: number,
+  y: number,
+  radius: number,
+): WaterSight | null {
+  return scanWater(map, x, y, radius, 'any', 0);
+}
+
+/**
+ * Una marcia sola per le due domande che il fronte acqua pone.
+ *
+ * Il ciclo e' condiviso fra `sightWater` e `sightAnyWater` senza chiudere un
+ * predicato per chiamata: questo sta nel percorso caldo — la gerarchia
+ * verticale lo chiama una volta per record in una passata di upgrade, e
+ * `catalystFailure` una volta per `pointermove` — quindi il criterio viaggia
+ * come un modo, non come una funzione da allocare.
+ */
+function scanWater(
+  map: TerrainMap,
+  x: number,
+  y: number,
+  radius: number,
+  mode: 'sea' | 'any',
+  level: number,
+): WaterSight | null {
   for (let d = 1; d <= radius; d++) {
     for (let axis = 0; axis < AXES.length; axis++) {
       const [dx, dy] = AXES[axis];
       const cx = x + dx * d;
       const cy = y + dy * d;
       if (!map.has(cx, cy)) continue;
-      if (map.heightAt(cx, cy) <= level) {
+      const water = mode === 'any'
+        ? map.waterTopAt(cx, cy) > map.heightAt(cx, cy)
+        : map.heightAt(cx, cy) <= level;
+      if (water) {
         return { facing: AXIS_FACING[axis], distance: d };
       }
     }
@@ -174,6 +221,9 @@ export function siteRefusal(
 ): SiteRefusal | null {
   if (rule === 'coastal') {
     return seesWater(map, x, y, SITE.coastalRadius) ? null : 'needs-coast';
+  }
+  if (rule === 'waterfront') {
+    return sightAnyWater(map, x, y, SITE.coastalRadius) !== null ? null : 'needs-waterfront';
   }
   if (rule === 'open') {
     return openGround(map, x, y, SITE.openSpan, SITE.openMaxStep) ? null : 'needs-open-ground';

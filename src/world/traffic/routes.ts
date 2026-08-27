@@ -56,6 +56,16 @@ export interface TrafficStructure {
    * ha scelta una. Decide la ricetta degli ormeggi; assente vale la forma a terra.
    */
   readonly form?: LandmarkFormId;
+
+  /**
+   * Quota dello specchio davanti alla struttura, in voxel.
+   *
+   * Assente vale il livello del mare, che e' il comportamento di sempre: un
+   * porto sul mare non deve dichiararlo. Serve alla marina sul lago — li' il
+   * pelo e' quello della conca, e un'ormeggiata alla quota del mare
+   * galleggerebbe dentro la collina. Lo legge chi posa i mezzi a galla.
+   */
+  readonly waterZ?: number;
 }
 
 /** Cosa serve sapere del mare per tracciare una rotta. */
@@ -75,7 +85,12 @@ export type CeilingProbe = (x: number, y: number) => number;
 const NO_CEILING: CeilingProbe = () => 0;
 
 /** Gli ormeggi che pretendono acqua sotto di se'. */
-const AFLOAT: ReadonlySet<string> = new Set([BERTH.vessel, BERTH.ferry, BERTH.cargo]);
+const AFLOAT: ReadonlySet<string> = new Set([BERTH.vessel, BERTH.yacht, BERTH.ferry, BERTH.cargo]);
+
+/** Il pelo su cui galleggia un mezzo di questa struttura: il suo, o il mare. */
+function waterZOf(structure: TrafficStructure): number {
+  return structure.waterZ ?? TRAFFIC.waterZ;
+}
 
 /**
  * Le rotte che una citta' esprime, in ordine deterministico.
@@ -110,10 +125,13 @@ export function planTraffic(
           // che e' esattamente cio' che il ruolo promette finche' la linea non
           // c'e': la traversata la costruisce il capo con l'indice minore, una
           // volta sola per coppia.
-          if (paired.get(i) === undefined) routes.push(moored(VEHICLE.ferry, mooring));
+          if (paired.get(i) === undefined) routes.push(moored(VEHICLE.ferry, mooring, waterZOf(structure)));
           break;
         case BERTH.vessel:
-          routes.push(moored(VEHICLE.boat, mooring));
+          routes.push(moored(VEHICLE.boat, mooring, waterZOf(structure)));
+          break;
+        case BERTH.yacht:
+          routes.push(moored(VEHICLE.yacht, mooring, waterZOf(structure)));
           break;
         case BERTH.cargo:
           routes.push(cargoRun(structure, mooring, water));
@@ -210,7 +228,7 @@ function ferryCrossing(
 
   return shuttle(
     VEHICLE.ferry,
-    lane.map((point) => ({ x: point.x, y: point.y, z: TRAFFIC.waterZ })),
+    lane.map((point) => ({ x: point.x, y: point.y, z: waterZOf(from) })),
     TRAFFIC.ferrySpeed,
     TRAFFIC.ferryDwell,
     a.heading,
@@ -253,13 +271,13 @@ function cargoRun(
   // Senza un tratto di mare davanti non c'e' nessun fuori da cui arrivare: la
   // nave resta ormeggiata, che e' un difetto visibile e onesto invece di una
   // nave che sparisce a due voxel dal molo.
-  if (reach < TRAFFIC.cargoMinRun) return moored(VEHICLE.cargo, mooring);
+  if (reach < TRAFFIC.cargoMinRun) return moored(VEHICLE.cargo, mooring, waterZOf(structure));
 
   return shuttle(
     VEHICLE.cargo,
     [
-      { x: mooring.x, y: mooring.y, z: TRAFFIC.waterZ },
-      { x: mooring.x + dx * reach, y: mooring.y + dy * reach, z: TRAFFIC.waterZ },
+      { x: mooring.x, y: mooring.y, z: waterZOf(structure) },
+      { x: mooring.x + dx * reach, y: mooring.y + dy * reach, z: waterZOf(structure) },
     ],
     TRAFFIC.cargoSpeed,
     TRAFFIC.cargoDwell,

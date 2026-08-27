@@ -1,226 +1,133 @@
 # H10 Voxel City Builder
 
-Motore voxel a chunk per una citta' isometrica. Integra mondo procedurale,
-greedy meshing in worker, rendering Three.js, simulazione a tick e crescita
-automatica degli edifici. `src/main.ts` compone i moduli e funge da harness di
-debug e misura.
+Motore voxel a chunk per una citta' isometrica: terreno procedurale, greedy
+meshing in worker, rendering Three.js, simulazione a tick e crescita automatica.
+`src/main.ts` e' l'unico composition root e harness di debug/misura.
 
-Questo file e' la fonte unica di comandi, convenzioni e contratti. Le regole di
-`src/engine/`, `src/world/` e `src/sim/` stanno nei rispettivi `AGENTS.md` e si
-caricano quando lavori in quella cartella: non ripeterle qui.
+Questo file contiene soltanto regole globali. Le eccezioni di
+`src/engine/`, `src/world/` e `src/sim/` stanno nei rispettivi
+`AGENTS.md` e si caricano lavorando in quelle cartelle.
 
-## Stack
+## Stack e mappa
 
-- TypeScript 5.9 strict, moduli ES, target ES2022
-- Three.js 0.180; Vite 7; Vitest 3 in ambiente Node
-- Web Worker ES per meshing e terreno; `simplex-noise` per la generazione
-
-## Mappa rapida
-
-- `src/world/`: storage voxel, scene, terreno, strade ed edifici
-- `src/engine/`: meshing, worker, palette, temi, camera e renderer
-- `src/sim/`: stato e simulazione pura per colonna `(x, y)`
-- `src/game/`: ciclo a passo fisso; `src/ui/`: HUD e overlay di debug
-- `src/main.ts`: unico composition root e ciclo di frame
-- `docs/PROJECT_MAP.md`: dipendenze e punti di ingresso
-- `PROJECT_INDEX.md`: indice dettagliato file per file
+- TypeScript 5.9 strict, ES2022; Three.js 0.180; Vite 7; Vitest 3 in Node.
+- `src/world/`: voxel, terreno, strade, edifici; `src/engine/`: meshing e
+  rendering; `src/sim/`: simulazione pura; `src/game/`: ciclo e regole;
+  `src/ui/`: HUD e debug.
+- `docs/PROJECT_MAP.md`: dipendenze, entry point e posizione delle costanti.
+- `PROJECT_INDEX.md`: responsabilita' ed export file per file.
 
 ## Project Index prima di cercare
 
-- Prima di esplorare il repository per una modifica, consulta `PROJECT_INDEX.md`
-  per individuare file, responsabilita' ed entry point; `docs/PROJECT_MAP.md`
-  quando servono dipendenze o collocazione delle costanti.
-- Usa `rg`/`glob` dopo l'indice, per confermare chiamanti e stato effettivo del
-  working tree, non come discovery primaria a tentoni.
-- Ogni modifica che aggiunge o sposta responsabilita' deve finire nell'indice:
-  frammento in `docs/pending/` e `npm run docs:merge`, come gia' prescritto in
-  "Budget e pattern da evitare".
+- Prima di esplorare, interroga `PROJECT_INDEX.md` con
+  `npm run locate -- <termine>`; apri soltanto le righe e i file pertinenti.
+- Usa `rg` dopo l'indice per confermare chiamanti e working tree, non come
+  discovery primaria a tentoni.
+- Ogni modifica a codice, configurazione o struttura aggiorna nello stesso
+  incremento le righe interessate del Project Index.
+- Usa un frammento personale in `docs/pending/` e `npm run docs:merge`;
+  non considerare concluso il lavoro finche' l'indice non descrive il risultato.
 
 ## Comandi
 
 ```bash
 npm install
-npm start            # = npm run dev, ma prima libera la porta 8020
-npm run dev          # http://localhost:8020/?debug=1
-npm run build        # typecheck + build Vite in dist/
+npm start            # dev server su http://localhost:8020/
+npm run dev
+npm run build        # typecheck + bundle
 npm run preview      # http://localhost:8011/
-npm test             # suite intera, solo quando strettamente necessaria
+npm run locate -- <termine>
+npm run test:related -- <file-sorgente>
 npm run test:changed
-npm run test:related
-npm run test:watch
+npm test             # solo nei casi globali indicati sotto
 npm run bench
 npm run typecheck
+npm run docs:merge
 ```
 
-`prestart`/`predev` passano da `scripts/free-port.mjs`, che termina l'istanza
-node rimasta sulla 8020: `strictPort` fa fallire l'avvio invece di scivolare su
-un'altra porta. Se la porta la tiene un programma estraneo, lascia fallire vite.
-
-Non esiste uno script `lint` o un formatter configurato: non inventarne uno.
+`prestart`/`predev` liberano soltanto istanze node rimaste sulla 8020;
+`strictPort` deve fallire se la porta appartiene ad altro. Non esistono lint
+o formatter configurati: non inventarli.
 
 ## Verifica proporzionata
 
-La suite intera e' 134 file e 1482 test: **207 s misurati su questa macchina.**
-Non e' una tassa di consegna e **non si lancia automaticamente a fine lavoro**:
-e' una verifica di ultima istanza, da usare soltanto quando il cerchio stretto
-non copre onestamente il rischio della modifica. Per default usa i test mirati —
-sullo stesso repo, quelli legati a un singolo file sorgente sono 4 file e 8 s.
-
-```bash
-npm run test:changed                             # i test toccati dalle modifiche non committate
-npm run test:related -- src/engine/daylight.ts   # ...quelli legati a file che scegli tu
-npm test -- src/sim                              # una cartella, se sai gia' dove guardare
-```
-
-I primi due non filtrano per nome: risalgono il grafo degli import, quindi un
-test che arriva al file che hai toccato entra anche se sta in un'altra cartella
-— `daylight.ts` ne tira dentro quattro. E' questo che li rende sostituti onesti
-della suite e non scorciatoie.
-
-`test:changed` costa quanto e' larga la tua modifica, ed e' giusto cosi': se hai
-toccato `src/sim/index.ts` o `main.ts` ti ridara' tutti e 134 i file, perche'
-davvero dipendono da li'. Quando succede, non e' il comando che ha sbagliato.
-Quella esecuzione **e' gia' la suite necessaria**: non farle seguire un secondo
-`npm test` soltanto perche' il lavoro e' finito.
-
-La suite intera e' strettamente necessaria solo quando almeno una di queste cose
-e' vera:
-
-- tocchi `mesher.worker.ts`, `terrain.worker.ts` o il loro protocollo, che il
-  grafo degli import non vede;
-- la modifica attraversa piu' domini e `test:changed`/`test:related` non riesce a
-  rappresentarne i consumatori reali;
-- cambi configurazione globale di test, build o runtime condiviso in un modo che
-  puo' alterare test non collegati dagli import;
-- l'utente chiede esplicitamente la suite completa.
-
-Tempo residuo, abitudine o semplice «fine lavoro» non sono motivi sufficienti.
-
-C'e' un secondo motivo per non lanciarla a ogni giro, oltre al tempo: **sotto
-contesa di CPU la suite intera produce falsi fallimenti.** Due run consecutive
-sulla stessa identica working tree hanno dato 3 test rossi con quattro errori di
-timeout la prima, 1482 verdi la seconda. E' la stessa contesa per cui
-`testTimeout` sta a 30 s (vedi il commento in `vite.config.ts`). Un rosso
-comparso dopo una modifica che non c'entra niente merita una seconda run dei
-**soli file falliti** prima di inseguirlo; non ripetere tutta la suite salvo che
-anche il difetto osservato sia globale.
-
-Restano fuori dal grafo i due worker, che si caricano per URL e non per import
-(`mesher.worker.ts`, `terrain.worker.ts`): se tocchi loro o il protocollo dei
-messaggi, il cerchio stretto non se ne accorge e serve la suite.
-
-`npm test` usa il reporter `dot`: una riga per file erano 134 righe di output
-per dire che andava tutto bene. I fallimenti si vedono per esteso come prima.
+- Per TypeScript esegui `npm run typecheck` e il controllo piu' stretto che
+  copre il rischio: test diretto, `test:related` o `test:changed`.
+- Non lanciare automaticamente `npm test`: la suite completa serve soltanto
+  per worker/protocolli invisibili al grafo degli import, modifiche trasversali
+  non rappresentabili dai test mirati, configurazione globale di test/runtime o
+  richiesta esplicita dell'utente.
+- Se una suite sotto contesa fallisce per timeout estranei, ripeti soltanto i
+  file falliti. Non ripetere tutta la suite se il difetto non e' globale.
+- Per bundle o worker esegui anche `npm run build`; per percorsi caldi il
+  benchmark pertinente. Le tabelle di misura richiedono verifica manuale.
+- Per modifiche visuali verifica `?debug=1`, overlay e budget pertinenti.
 
 ## Convenzioni
 
-- Codice, commenti, documentazione e commit in italiano; identificatori in
-  inglese. I commenti spiegano il perche', non il comportamento evidente.
-- Quando l'utente chiede perche' una funzionalita' non si comporta nel modo
-  descritto, interpreta la formulazione come richiesta di correggerla subito,
-  senza chiedere prima conferma. Fanno eccezione solo ambiguita' sostanziali,
-  azioni distruttive o cambiamenti che richiedono nuova autorizzazione.
-- Mantieni lo stile vicino: due spazi, apici singoli, punto e virgola e trailing
-  comma dove gia' usata. Usa `import type` per i soli tipi.
-- Oltre a `strict`: `noImplicitOverride`, `noFallthroughCasesInSwitch`,
-  `noImplicitReturns`, `noUnusedLocals`, `noUnusedParameters`,
-  `verbatimModuleSyntax`.
+- Codice, commenti, documentazione e commit in italiano; identificatori e ogni
+  stringa visibile nel gioco o nel debug in inglese.
+- I commenti spiegano il perche', non il comportamento evidente.
+- Se l'utente chiede perche' una funzione non si comporta come descritto,
+  correggila subito salvo ambiguita', distruzione o nuova autorizzazione.
+- Mantieni lo stile vicino: due spazi, apici singoli, punto e virgola, trailing
+  comma dove usata e `import type` per i soli tipi.
+- Restano attivi `strict`, `noImplicitOverride`,
+  `noFallthroughCasesInSwitch`, `noImplicitReturns`, `noUnusedLocals`,
+  `noUnusedParameters` e `verbatimModuleSyntax`.
 - Test co-locati come `*.test.ts`; benchmark come `*.bench.ts`.
 - Dentro `src/sim/` usa import diretti; da fuori usa `src/sim/index.ts`.
-- Mondo Z-up: `x` est, `y` nord, `z` altezza; coordinate negative valide.
-- Chunk `32x32x32`, chiave `"cx,cy,cz"`; simulazione e terreno sono per colonna.
+- Mondo Z-up: x est, y nord, z altezza; coordinate negative valide.
+- Chunk 32x32x32, chiave `"cx,cy,cz"`; simulazione e terreno per colonna.
 
 ## Contratti da preservare
 
-1. Il renderer legge solo `Chunk.blocks`; `Chunk.data` appartiene alla simulazione.
-2. Solo `setBlock` invalida geometria; `setData` non marca chunk sporchi.
+1. Il renderer legge solo `Chunk.blocks`; `Chunk.data` e' della simulazione.
+2. Solo `setBlock` invalida geometria; `setData` non sporca i chunk.
 3. Non sostituire gli `Uint8Array` di un chunk dopo la costruzione.
-4. Colori solo nelle uniform: le mesh hanno `aPalette` e `aFace`, mai RGB.
-   `aShade` e' un byte geometrico — AO per corner nei due bit bassi (0..3),
-   visibilita' del cielo della faccia nei due alti (0..3) — non un colore.
-   Cambiare palette o tema non deve mai provocare un rebuild di mesh.
-5. La palette ha esattamente 32 slot; riusa gli indici di `paletteSlots.ts`.
-   Per la stessa ragione i tipi di superficie sono **otto e basta**: i tre bit
-   alti di `visualBlock` sono tutti impegnati, e prenderne un quarto
-   toglierebbe un bit alla palette. Le eccezioni sono due sovraccarichi
-   dichiarati, non un nono tipo, e si riconoscono entrambi **prima** di leggere
-   la superficie: su un voxel d'**acqua** quei tre bit portano `WATER_CLASS`
-   invece di un linguaggio di facciata, perche' nessuno dei sette si applica a
-   una lastra d'acqua e il frammento riconosce l'acqua dalla palette; su una
-   **copertura del terreno** (`packCoverMark`) portano il tipo di erbetta, e li'
-   la palette e' 0 — cioe' un byte che `packVisualBlock` non produce mai, quindi
-   uno spazio libero per davvero e non un valore rubato a qualcuno.
+4. Le mesh portano `aPalette`, `aFace` e `aShade`, mai RGB. In
+   `aShade`: AO bit 0-1, cielo bit 2-3, bagliore bit 4-5. Palette o tema non
+   provocano rebuild.
+5. La palette ha 32 slot e le superfici sono otto. Riconosci prima i due
+   sovraccarichi: `WATER_CLASS` sull'acqua e `packCoverMark` sulla copertura.
 6. Mesher e generatore di terreno non importano Three.js.
-7. `src/sim/` non importa da `src/engine/` e non usa DOM o Three.js; non sa
-   niente di come sono fatti gli edifici — la tipologia vive in
-   `src/world/buildings/`.
+7. `src/sim/` non importa engine, DOM o Three.js e non conosce le tipologie
+   degli edifici, che vivono in `src/world/buildings/`.
 8. `tick` resta puro, deterministico e non ricalcola la desiderabilita'.
-9. Il campo ricalcola, non accumula, e solo nel rettangolo toccato.
-10. Gli usi urbani sono **quattro e il loro ordine e' contratto**: residenziale,
-    commerciale, industriale, civico. Ogni tupla indicizzata per uso — soglie di
-    sito, pesi, `CLASS_PROFILE`, colori degli overlay — segue quest'ordine, e
-    cambiarlo significa cambiarle tutte insieme.
-11. Il terreno dipende solo da `(seed, shape, ccx, ccy)`.
+9. Il campo ricalcola, non accumula, e soltanto nel rettangolo toccato.
+10. Gli usi sono quattro e ordinati: residenziale, commerciale, industriale,
+    civico. Ogni tupla indicizzata segue lo stesso ordine.
+11. Il terreno dipende soltanto da `(seed, shape, ccx, ccy)`.
 
-## Dove stanno i numeri
+## Numeri, budget e struttura
 
-Ogni costante di bilanciamento vive in un solo file per dominio: la tabella
-completa dominio -> file sta in [`docs/PROJECT_MAP.md`](docs/PROJECT_MAP.md).
-Se stai per scrivere una soglia, una frequenza o un moltiplicatore altrove,
-quasi sempre e' il posto sbagliato.
-
-## Budget e pattern da evitare
-
-- Lavoro non-render sotto 3 ms per frame (accettazione: 4 ms); generazione 1,5
-  ms. Spezza generazione, upload e ricolore su piu' frame. Ombra e
-  post-processing sono spesa GPU e restano fuori dal budget.
-- **Unica eccezione: la prima scena.** Finche' non esiste, quel budget protegge
-  un frame che non ha niente da proteggere, e misurare a 1,5 ms qualche decimo di
-  secondo di lavoro costa centinaia di frame di attesa. `main.ts` usa allora
-  `LOADING_FRAME_BUDGET_MS` / `LOADING_GENERATION_BUDGET_MS`, sempre sotto il
-  frame a 60 Hz perche' la scena deve comparire scorrendo. La finestra si chiude
-  su `generator.done` e non si riapre: le espansioni avvengono dentro una citta'
-  viva e tornano ai 3 ms.
-- Simulazione a 10 tick/s a passo fisso con recupero limitato: non usare `dt`.
+- Ogni costante di bilanciamento vive nel solo file indicato da
+  `docs/PROJECT_MAP.md`.
+- Lavoro non-render sotto 3 ms per frame (accettazione 4 ms); generazione 1,5
+  ms. Spezza generazione, upload e ricolore fra frame.
+- Solo la prima scena usa `LOADING_FRAME_BUDGET_MS` e
+  `LOADING_GENERATION_BUDGET_MS`; la finestra si chiude su `generator.done`
+  e non si riapre.
+- Simulazione a 10 tick/s con passo fisso e recupero limitato: non usare `dt`.
 - Evita `Date.now()` e `Math.random()` nei percorsi deterministici.
-- Non riattivare `noUncheckedIndexedAccess` senza discuterne (vedi il commento
-  in `tsconfig.json`).
+- Non riattivare `noUncheckedIndexedAccess` senza discuterne.
 - Non modificare `dist/` o `node_modules/`.
-- Se aggiungi file, non scrivere a mano in `PROJECT_INDEX.md` ne' in
-  `CHANGELOG.md`: lascia un frammento in `docs/pending/` e fondilo con
-  `npm run docs:merge` (istruzioni in `docs/pending/README.md`). Il README di
-  modulo invece si aggiorna direttamente.
-- **Oltre ~600 righe un file va spezzato prima di aggiungerci altro.** Non e'
-  estetica: il semaforo fra agenti prende il lock **per path**, e finche' ci
-  scrivi sopra lo rinnovi — un file grande e' un file su cui si lavora a lungo,
-  quindi il possesso dura quanto il lavoro e ogni riga di troppo si paga in
-  attesa di qualcun altro. La linea di taglio e' *lungo
-  cosa si lavora separatamente* — gli shader stanno in `engine/shaders/` perche'
-  scrivere GLSL e scrivere l'handle sono due lavori, non perche' sia piu'
-  elegante — e non lungo l'astrazione migliore sulla carta. Il numero non e'
-  arbitrario: i file che lo superano sono esattamente quelli in cima alla
-  classifica di contesa misurata su `git log --name-only`.
+- Oltre circa 600 righe, spezza il file lungo responsabilita' lavorabili
+  separatamente prima di aggiungere altro.
 
-## Harness di debug
+## Documentazione e debug
 
-Parametri URL, hotkey e hook globali stanno nella skill `debug-harness`
-(`/debug-harness`). Se aggiungi una metrica, falla passare **sia** dall'overlay
-sia dall'hook globale: leggono la stessa fonte.
+- Per file aggiunti o righe indice cambiate usa `docs/pending/` e
+  `npm run docs:merge`; aggiorna direttamente soltanto i README di modulo.
+- Parametri URL, hotkey e hook globali stanno nella skill `debug-harness`.
+  Ogni nuova metrica passa dalla stessa fonte verso overlay e hook globale.
 
 ## Definizione di completamento
 
-1. Aggiungi o aggiorna test per comportamento, contratti e casi limite toccati.
-2. Esegui `npm run typecheck` e il piu' stretto fra `test:related`,
-   `test:changed` o i file/cartelle direttamente coinvolti che copra onestamente
-   la modifica. Esegui `npm test` intero **solo** nei casi strettamente necessari
-   elencati in "Verifica proporzionata", mai per il solo fatto di essere a fine
-   lavoro.
-3. Per bundle o worker esegui anche `npm run build`.
-4. Per percorsi caldi esegui il benchmark pertinente e segnala che le tabelle
-   di misura richiedono verifica manuale.
-5. Per modifiche visuali verifica `?debug=1`, overlay e budget pertinenti.
-6. Scrivi il tuo frammento in `docs/pending/` e lancia `npm run docs:merge`. Se
-   la fusione non passa perche' l'indice e' occupato, consegna lo stesso: il
-   frammento resta li' e lo fonde il prossimo che passa.
+1. Aggiorna test per comportamento, contratti e casi limite toccati.
+2. Esegui typecheck e verifica proporzionata; build/bench/debug solo se richiesti
+   dal tipo di modifica.
+3. Aggiorna il Project Index e il changelog tramite un frammento
+   `docs/pending/`; se il merge e' occupato, consegna lasciando il frammento.
 
 @RTK.md

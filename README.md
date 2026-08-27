@@ -80,7 +80,7 @@ permettono di isolare le scene di verifica.
 | --- | --- | --- |
 | `debug` | — | `1` apre subito overlay e hotkey tecniche; `F3` li alterna a runtime |
 | `scene` | — | Isola una scena `city`, `noise` (caso peggiore), `slab`, `diorama` (un edificio da vicino) o `swatch` (il campionario del vocabolario visuale) |
-| `seed` | `1337` | Seed della generazione |
+| `seed` | casuale | Seed della generazione: senza parametro ne viene sorteggiato uno nuovo a ogni partita e riscritto nell'URL, quindi il ricaricamento riporta lo stesso mondo |
 | `size` | `512` | Lato del mondo in voxel |
 | `height` | `64` | Altezza del mondo in voxel |
 | `terrain` | — | `<seed>` sostituisce la scena urbana con un'isola 512×512 |

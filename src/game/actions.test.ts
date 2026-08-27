@@ -149,6 +149,27 @@ describe('azioni di gioco', () => {
     expect(catalystFailure(state, map, inland, 32, 'market')).toBeNull();
   });
 
+  it('la marina vuole acqua a qualsiasi quota: il lago vale quanto il mare', () => {
+    const LAKE = TERRAIN.seaLevel + 16;
+    const map = testTerrain({
+      chunksX: 2,
+      chunksY: 2,
+      heightAt: (x) => (x >= SHORE_X ? LAKE - 2 : LAKE + 4),
+      slopeAt: (x) => (x >= SHORE_X || x < SHORE_X - 4 ? 0.1 : 0.6),
+      waterTopAt: (x) => (x >= SHORE_X ? LAKE : TERRAIN.seaLevel),
+    });
+    const state = grownCity();
+
+    // La riva ripida del lago: per il porto e' terra che nessuna opera
+    // raddrizza, per la marina e' il posto giusto.
+    expect(catalystFailure(state, map, SHORE_X - 1, 32, 'port')).toBe('not-buildable');
+    expect(catalystFailure(state, map, SHORE_X - 1, 32, 'marina')).toBeNull();
+    // L'entroterra piatto resta chiuso a entrambe, ma per due ragioni diverse:
+    // il porto non vede il mare, la marina non vede nessun specchio.
+    expect(catalystFailure(state, map, SHORE_X - 20, 32, 'port')).toBe('needs-coast');
+    expect(catalystFailure(state, map, SHORE_X - 20, 32, 'marina')).toBe('needs-waterfront');
+  });
+
   it('il monumento grande aspetta una citta edificata, il piccolo no', () => {
     const map = coast();
     const funded = { ...createSimState(), funds: { stock: 2_000, delta: 0 } };

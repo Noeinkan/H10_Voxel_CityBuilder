@@ -291,6 +291,12 @@ export const TRAFFIC = {
   hull: {
     /** Barca da lavoro all'ormeggio in un porto o in una darsena. */
     boat: { length: 7, width: 3, height: 2, palette: PALETTE_SLOTS.metalRust },
+    /**
+     * Yacht da diporto al posto barca di una marina: piu' corto e piu' stretto
+     * della barca da lavoro, ed e' la misura a distinguerlo — una marina piena
+     * di barche da sette voxel leggerebbe come un porto peschereccio.
+     */
+    yacht: { length: 5, width: 2, height: 2, palette: PALETTE_SLOTS.concreteWhite },
     /** Traghetto di linea: doppia estremita', tuga chiara. */
     ferry: { length: 11, width: 4, height: 3, palette: PALETTE_SLOTS.concreteWhite },
     /**
@@ -542,6 +548,7 @@ export function funnelOf(kind: VehicleKind): VehicleFunnel | undefined {
 /** I mezzi che il traffico sa mettere in moto. */
 export const VEHICLE = {
   boat: 'boat',
+  yacht: 'yacht',
   ferry: 'ferry',
   cargo: 'cargo',
   plane: 'plane',
@@ -558,6 +565,7 @@ export type VehicleKind = (typeof VEHICLE)[keyof typeof VEHICLE];
 
 export const VEHICLE_KINDS: readonly VehicleKind[] = [
   VEHICLE.boat,
+  VEHICLE.yacht,
   VEHICLE.ferry,
   VEHICLE.cargo,
   VEHICLE.plane,
@@ -576,6 +584,7 @@ export const VEHICLE_KINDS: readonly VehicleKind[] = [
  */
 export const FLOATING_KINDS: readonly VehicleKind[] = [
   VEHICLE.boat,
+  VEHICLE.yacht,
   VEHICLE.ferry,
   VEHICLE.cargo,
 ];

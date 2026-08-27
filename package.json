@@ -14,10 +14,12 @@
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
     "docs:merge": "node scripts/docs-merge.mjs",
+    "locate": "node scripts/project-locate.mjs",
     "test": "vitest run --reporter=dot",
     "test:changed": "vitest run --reporter=dot --changed",
     "test:related": "vitest related --run --reporter=dot",
     "test:watch": "vitest",
+    "test:locate": "node --test scripts/project-locate.test.ts",
     "bench": "vitest bench --run"
   },
   "dependencies": {

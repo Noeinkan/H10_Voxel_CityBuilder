@@ -28,10 +28,11 @@ import {
   type ReadonlyBuildingRegistry,
 } from '../world/buildings/BuildingRegistry';
 import { hasFacadeForm, landmarkOf, maxStageOf } from '../world/landmarks/config';
+import { landmarkWaterColumn } from '../world/landmarks/generate';
 import { createReachCost } from '../world/reachCost';
 import { StreetNetwork } from '../world/streets/StreetNetwork';
 import type { Facing } from '../world/streets/streetGrid';
-import { BIOME } from '../world/terrain/config';
+import { BIOME, WATER_IDS } from '../world/terrain/config';
 import type { Region } from '../world/terrain/region';
 import type { TerrainMap } from '../world/terrain/TerrainMap';
 import { puffsAt, type SmokePuff } from '../world/traffic/plume';
@@ -187,6 +188,8 @@ export class GrowthScene {
   private clock = 0;
 
   private routes: readonly TrafficRoute[] = [];
+  /** Il mondo voxel, per distinguere l'acqua scavata di un bacino dal bioma. */
+  private world!: VoxelWorld;
   /** Le corse di funivia da cui le cabine di `routes` sono state calcolate. */
   private rides: readonly RopewayRide[] = [];
   /** Firma delle strutture da cui `routes` e' stato calcolato. */
@@ -211,6 +214,7 @@ export class GrowthScene {
       rngState: seed,
       reachCost: createReachCost(map, new StreetNetwork(seed)),
     });
+    this.world = world;
     this.builder = new Builder(world, map, seed, region);
   }
 
@@ -670,17 +674,22 @@ export class GrowthScene {
   }
 
   /**
-   * Acqua navigabile: mare **gia' generato**.
+   * Acqua navigabile: mare **gia' generato**, oppure acqua scritta nel mondo.
    *
    * Il bioma di una colonna che non esiste ancora e' `ocean`, ed e' la risposta
    * giusta per il terreno e quella sbagliata per una barca: una rotta ci
    * passerebbe attraverso e la barca navigherebbe sul vuoto oltre il bordo del
-   * mondo.
+   * mondo. Il bioma pero' non vede il **bacino scavato** — la marina scava
+   * l'acqua dentro una riva che per il terreno resta terra emersa — quindi il
+   * giudizio finale chiede ai voxel: acqua e' dove sotto il pelo della colonna
+   * c'e' un voxel d'acqua vero.
    */
   private isOpenWater(x: number, y: number): boolean {
     const cx = Math.floor(x);
     const cy = Math.floor(y);
-    return this.map.has(cx, cy) && this.map.biomeAt(cx, cy) === BIOME.ocean;
+    if (!this.map.has(cx, cy)) return false;
+    if (this.map.biomeAt(cx, cy) === BIOME.ocean) return true;
+    return this.world.getBlock(cx, cy, this.map.waterTopAt(cx, cy) - 1) === WATER_IDS.surface;
   }
 
   /** I landmark, ridotti a cio' che il traffico deve sapere di loro. */
@@ -691,6 +700,13 @@ export class GrowthScene {
       if (kind === undefined) continue;
       const catalyst = this.catalystOf(record, kind);
       if (catalyst === null) continue;
+      const column = landmarkWaterColumn(
+        kind,
+        (record.facing ?? 0) as Facing,
+        record.x,
+        record.y,
+        record.landmarkForm,
+      );
       out.push({
         id: record.id,
         kind,
@@ -702,6 +718,10 @@ export class GrowthScene {
         facing: (record.facing ?? 0) as Facing,
         z: record.baseZ,
         form: record.landmarkForm,
+        // Il pelo dello specchio davanti alla struttura: sul mare e' il livello
+        // del mare, sul lago quello della conca. Gli ormeggi a galla ci posano
+        // i mezzi, cosi' uno yacht non resta sospeso a mezz'aria sulla riva.
+        waterZ: column === null ? undefined : this.map.waterTopAt(column.x, column.y),
       });
     }
     return out;

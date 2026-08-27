@@ -150,12 +150,14 @@ export const ARCOLOGY = {
 
 /** Le forme che un'arcologia puo' prendere. */
 export const ARCOLOGY_KIND = {
-  /** Due steli, un mezzanino che li unisce, una corona che li richiude. */
+  /** Sei steli su due fronti, un mezzanino che li unisce, una corona che li richiude. */
   twinStem: 'twinStem',
-  /** Un nucleo che si divide in quattro bracci abitati e si ricuce in quota. */
+  /** Un nucleo che si divide in sei guglie su due file e si ricuce in quota. */
   branchingCore: 'branchingCore',
-  /** Tre steli sfalsati attraversati da impalcati su assi e quote diverse. */
+  /** Sei steli sfalsati attraversati da impalcati su assi e quote diverse. */
   skyWeave: 'skyWeave',
+  /** Sei guglie in anello attorno a un vuoto centrale attraversato da una trave. */
+  spireRing: 'spireRing',
 } as const;
 
 export type ArcologyKind = (typeof ARCOLOGY_KIND)[keyof typeof ARCOLOGY_KIND];
@@ -222,14 +224,15 @@ export interface ArcologyRecipe extends PartsRecipe {
 }
 
 /**
- * L'arcologia a due steli.
+ * L'arcologia a sei steli.
  *
  * Cinque stadi, e ognuno e' una frase: **il podio** che si prende l'isolato,
- * **gli steli** che salgono lasciando il vuoto in mezzo, **il mezzanino** che lo
- * scavalca, **i corpi** che continuano a salire piu' stretti, **la corona** che
- * li richiude in alto. Il secondo e il terzo sono la coppia che conta: senza il
- * vuoto dello stadio uno il mezzanino sarebbe un piano qualunque, e senza il
- * mezzanino dello stadio due il vuoto sarebbe lo spazio fra due torri.
+ * **gli steli** — tre per fronte, che salgono lasciando il vuoto in mezzo — **il
+ * mezzanino** che lo scavalca, **i corpi** che continuano a salire piu' stretti,
+ * **la corona** che li richiude in alto. Il secondo e il terzo sono la coppia che
+ * conta: senza il vuoto dello stadio uno il mezzanino sarebbe un piano qualunque,
+ * e senza il mezzanino dello stadio due il vuoto sarebbe lo spazio fra due file
+ * di torri.
  *
  * **L'ingombro e' sedici colonne, e il numero non e' rotondo per caso.** Sotto
  * ci sono gli isolati stretti, che ne misurano quattordici e non la
@@ -309,22 +312,35 @@ export const TWIN_STEM: ArcologyRecipe = {
       box(PART.slab, 7, 0, 6, 6, 21, 4, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.utility),
       box(PART.slab, 7, 14, 6, 6, 21, 4, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.utility),
     ],
-    // --- 1 · i due steli ----------------------------------------------------
+    // --- 1 · i sei steli ----------------------------------------------------
     [
       // Partono da ventuno perche' sotto c'e' il tetto del podio: gli steli
-      // **poggiano** su quel piano invece di attraversarlo.
-      box(PART.shell, 2, 5, 5, 10, 21, 108, PALETTE_SLOTS.concreteLight, SURFACE_KIND.habitat, {
+      // **poggiano** su quel piano invece di attraversarlo. Tre per fronte, e la
+      // coppia di fronti lascia il vuoto centrale che il mezzanino scavalca.
+      box(PART.shell, 2, 3, 3, 3, 21, 95, PALETTE_SLOTS.concreteLight, SURFACE_KIND.habitat, {
         cap: PALETTE_SLOTS.concreteWhite,
       }),
-      box(PART.shell, 13, 5, 5, 10, 21, 108, PALETTE_SLOTS.concreteLight, SURFACE_KIND.habitat, {
+      box(PART.shell, 2, 7, 3, 3, 21, 95, PALETTE_SLOTS.concreteLight, SURFACE_KIND.habitat, {
         cap: PALETTE_SLOTS.concreteWhite,
       }),
-      // I due montanti di servizio, sulle spalle opposte dei due steli: hanno
-      // aria dentro, ed e' l'aria a dire «struttura» prima di qualunque colore.
-      box(PART.truss, 3, 14, 3, 4, 21, 84, PALETTE_SLOTS.metalRust, SURFACE_KIND.utility, {
+      box(PART.shell, 2, 11, 3, 3, 21, 95, PALETTE_SLOTS.concreteLight, SURFACE_KIND.habitat, {
+        cap: PALETTE_SLOTS.concreteWhite,
+      }),
+      box(PART.shell, 15, 3, 3, 3, 21, 95, PALETTE_SLOTS.concreteLight, SURFACE_KIND.habitat, {
+        cap: PALETTE_SLOTS.concreteWhite,
+      }),
+      box(PART.shell, 15, 7, 3, 3, 21, 95, PALETTE_SLOTS.concreteLight, SURFACE_KIND.habitat, {
+        cap: PALETTE_SLOTS.concreteWhite,
+      }),
+      box(PART.shell, 15, 11, 3, 3, 21, 95, PALETTE_SLOTS.concreteLight, SURFACE_KIND.habitat, {
+        cap: PALETTE_SLOTS.concreteWhite,
+      }),
+      // I due montanti di servizio, sulle spalle opposte: hanno aria dentro, ed
+      // e' l'aria a dire «struttura» prima di qualunque colore.
+      box(PART.truss, 4, 14, 3, 4, 21, 84, PALETTE_SLOTS.metalRust, SURFACE_KIND.utility, {
         step: 5,
       }),
-      box(PART.truss, 14, 2, 3, 4, 21, 84, PALETTE_SLOTS.metalRust, SURFACE_KIND.utility, {
+      box(PART.truss, 13, 2, 3, 4, 21, 84, PALETTE_SLOTS.metalRust, SURFACE_KIND.utility, {
         step: 5,
       }),
     ],
@@ -332,8 +348,8 @@ export const TWIN_STEM: ArcologyRecipe = {
     [
       // La trave che scavalca: sotto restano settantanove quote di vuoto
       // passante, ed e' quella la finestra di cielo.
-      box(PART.boom, 7, 7, 6, 6, 100, 6, PALETTE_SLOTS.glassPale, SURFACE_KIND.luminous),
-      box(PART.deck, 7, 7, 6, 6, 106, 1, PALETTE_SLOTS.roofWhite, SURFACE_KIND.roofTech),
+      box(PART.boom, 5, 7, 10, 6, 100, 6, PALETTE_SLOTS.glassPale, SURFACE_KIND.luminous),
+      box(PART.deck, 5, 7, 10, 6, 106, 1, PALETTE_SLOTS.roofWhite, SURFACE_KIND.roofTech),
       box(PART.slab, 8, 8, 4, 4, 107, 8, PALETTE_SLOTS.glass, SURFACE_KIND.luminous, {
         cap: PALETTE_SLOTS.glassPale,
       }),
@@ -342,23 +358,33 @@ export const TWIN_STEM: ArcologyRecipe = {
     ],
     // --- 3 · i corpi abitati ------------------------------------------------
     [
-      box(PART.deck, 2, 5, 5, 10, 129, 1, PALETTE_SLOTS.roofPale, SURFACE_KIND.roofTech),
-      box(PART.deck, 13, 5, 5, 10, 129, 1, PALETTE_SLOTS.roofPale, SURFACE_KIND.roofTech),
-      box(PART.shell, 3, 6, 3, 8, 130, 72, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.habitat, {
+      box(PART.shell, 2, 3, 3, 3, 130, 72, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.habitat, {
         cap: PALETTE_SLOTS.glassPale,
       }),
-      box(PART.shell, 14, 6, 3, 8, 130, 72, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.habitat, {
+      box(PART.shell, 2, 7, 3, 3, 130, 72, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.habitat, {
+        cap: PALETTE_SLOTS.glassPale,
+      }),
+      box(PART.shell, 2, 11, 3, 3, 130, 72, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.habitat, {
+        cap: PALETTE_SLOTS.glassPale,
+      }),
+      box(PART.shell, 15, 3, 3, 3, 130, 72, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.habitat, {
+        cap: PALETTE_SLOTS.glassPale,
+      }),
+      box(PART.shell, 15, 7, 3, 3, 130, 72, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.habitat, {
+        cap: PALETTE_SLOTS.glassPale,
+      }),
+      box(PART.shell, 15, 11, 3, 3, 130, 72, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.habitat, {
         cap: PALETTE_SLOTS.glassPale,
       }),
     ],
     // --- 4 · la corona civica -----------------------------------------------
     [
       // Il secondo scavalco, sopra il primo: e' quello che si vede da
-      // inquadratura d'insieme, ed e' anche cio' che chiude i due corpi in una
-      // struttura sola invece di lasciarli due torri gemelle.
-      box(PART.boom, 6, 8, 8, 4, 202, 5, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.civic),
-      box(PART.deck, 6, 8, 8, 4, 207, 1, PALETTE_SLOTS.roofWhite, SURFACE_KIND.roofTech),
-      box(PART.steps, 7, 8, 6, 4, 208, 6, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.civic, {
+      // inquadratura d'insieme, ed e' anche cio' che chiude le due file di corpi
+      // in una struttura sola invece di lasciarli sei torri accostate.
+      box(PART.boom, 5, 8, 10, 4, 202, 5, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.civic),
+      box(PART.deck, 5, 8, 10, 4, 207, 1, PALETTE_SLOTS.roofWhite, SURFACE_KIND.roofTech),
+      box(PART.steps, 6, 8, 8, 4, 208, 6, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.civic, {
         step: 1,
         chamfer: 1,
       }),
@@ -412,13 +438,13 @@ export const TWIN_STEM: ArcologyRecipe = {
 };
 
 /**
- * Un nucleo che si ramifica in quattro torri.
+ * Un nucleo che si divide in sei guglie su due file.
  *
  * L'ingombro da diciotto colonne e' deliberato: e' la misura degli isolati
  * stretti che il mercato giocabile costruisce davvero, appena sotto la Twin
- * Stem. Il podio porta un solo fusto; due travi ortogonali lo dividono in
- * quattro bracci e la corona li attraversa di nuovo, cosi' la struttura si
- * legge come una biforcazione e non come quattro torri accostate.
+ * Stem. Il podio porta sei steli; due travi ortogonali li attraversano e la
+ * corona li attraversa di nuovo, cosi' la struttura si legge come una coppia di
+ * file sfalsate e non come sei torri accostate.
  */
 export const BRANCHING_CORE: ArcologyRecipe = {
   kind: ARCOLOGY_KIND.branchingCore,
@@ -448,11 +474,23 @@ export const BRANCHING_CORE: ArcologyRecipe = {
       box(PART.slab, 6, 12, 6, 6, 19, 4, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.utility),
     ],
     [
-      box(PART.shell, 7, 7, 4, 4, 19, 62, PALETTE_SLOTS.glassDeep, SURFACE_KIND.luminous, {
+      box(PART.shell, 2, 4, 3, 3, 19, 62, PALETTE_SLOTS.glassDeep, SURFACE_KIND.luminous, {
         cap: PALETTE_SLOTS.glassPale,
       }),
-      box(PART.truss, 6, 6, 6, 6, 19, 50, PALETTE_SLOTS.metalRust, SURFACE_KIND.utility, {
-        step: 5,
+      box(PART.shell, 7, 4, 3, 3, 19, 62, PALETTE_SLOTS.glassDeep, SURFACE_KIND.luminous, {
+        cap: PALETTE_SLOTS.glassPale,
+      }),
+      box(PART.shell, 12, 4, 3, 3, 19, 62, PALETTE_SLOTS.glassDeep, SURFACE_KIND.luminous, {
+        cap: PALETTE_SLOTS.glassPale,
+      }),
+      box(PART.shell, 2, 11, 3, 3, 19, 62, PALETTE_SLOTS.glassDeep, SURFACE_KIND.luminous, {
+        cap: PALETTE_SLOTS.glassPale,
+      }),
+      box(PART.shell, 7, 11, 3, 3, 19, 62, PALETTE_SLOTS.glassDeep, SURFACE_KIND.luminous, {
+        cap: PALETTE_SLOTS.glassPale,
+      }),
+      box(PART.shell, 12, 11, 3, 3, 19, 62, PALETTE_SLOTS.glassDeep, SURFACE_KIND.luminous, {
+        cap: PALETTE_SLOTS.glassPale,
       }),
     ],
     [
@@ -461,10 +499,12 @@ export const BRANCHING_CORE: ArcologyRecipe = {
       box(PART.deck, 3, 7, 12, 4, 87, 1, PALETTE_SLOTS.roofWhite, SURFACE_KIND.roofTech),
     ],
     [
-      box(PART.shell, 3, 7, 3, 4, 88, 81, PALETTE_SLOTS.concreteLight, SURFACE_KIND.habitat),
-      box(PART.shell, 12, 7, 3, 4, 88, 81, PALETTE_SLOTS.concreteLight, SURFACE_KIND.habitat),
-      box(PART.shell, 7, 3, 4, 3, 88, 81, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.habitat),
-      box(PART.shell, 7, 12, 4, 3, 88, 81, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.habitat),
+      box(PART.shell, 2, 4, 3, 3, 88, 81, PALETTE_SLOTS.concreteLight, SURFACE_KIND.habitat),
+      box(PART.shell, 7, 4, 3, 3, 88, 81, PALETTE_SLOTS.concreteLight, SURFACE_KIND.habitat),
+      box(PART.shell, 12, 4, 3, 3, 88, 81, PALETTE_SLOTS.concreteLight, SURFACE_KIND.habitat),
+      box(PART.shell, 2, 11, 3, 3, 88, 81, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.habitat),
+      box(PART.shell, 7, 11, 3, 3, 88, 81, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.habitat),
+      box(PART.shell, 12, 11, 3, 3, 88, 81, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.habitat),
     ],
     [
       box(PART.boom, 3, 7, 12, 4, 170, 5, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.civic),
@@ -491,7 +531,7 @@ export const BRANCHING_CORE: ArcologyRecipe = {
   ],
 };
 
-/** Tre steli sfalsati, cuciti da due traversi che si incrociano in quota. */
+/** Sei steli sfalsati, cuciti da due traversi che si incrociano in quota. */
 export const SKY_WEAVE: ArcologyRecipe = {
   kind: ARCOLOGY_KIND.skyWeave,
   span: [18, 18],
@@ -523,6 +563,9 @@ export const SKY_WEAVE: ArcologyRecipe = {
       box(PART.shell, 2, 4, 4, 5, 19, 96, PALETTE_SLOTS.glassDeep, SURFACE_KIND.luminous),
       box(PART.shell, 7, 9, 4, 5, 19, 73, PALETTE_SLOTS.concreteLight, SURFACE_KIND.habitat),
       box(PART.shell, 12, 4, 4, 5, 19, 96, PALETTE_SLOTS.glassDeep, SURFACE_KIND.luminous),
+      box(PART.shell, 2, 11, 4, 5, 19, 96, PALETTE_SLOTS.glassDeep, SURFACE_KIND.luminous),
+      box(PART.shell, 7, 0, 4, 5, 19, 73, PALETTE_SLOTS.concreteLight, SURFACE_KIND.habitat),
+      box(PART.shell, 12, 11, 4, 5, 19, 96, PALETTE_SLOTS.glassDeep, SURFACE_KIND.luminous),
     ],
     [
       box(PART.boom, 2, 5, 14, 3, 75, 5, PALETTE_SLOTS.glassPale, SURFACE_KIND.luminous),
@@ -533,6 +576,9 @@ export const SKY_WEAVE: ArcologyRecipe = {
       box(PART.shell, 3, 5, 3, 3, 120, 76, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.habitat),
       box(PART.shell, 7, 10, 4, 4, 98, 98, PALETTE_SLOTS.concreteLight, SURFACE_KIND.habitat),
       box(PART.shell, 12, 5, 3, 3, 120, 76, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.habitat),
+      box(PART.shell, 3, 12, 3, 3, 120, 76, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.habitat),
+      box(PART.shell, 7, 1, 4, 4, 98, 98, PALETTE_SLOTS.concreteLight, SURFACE_KIND.habitat),
+      box(PART.shell, 12, 12, 3, 3, 120, 76, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.habitat),
     ],
     [
       box(PART.boom, 3, 5, 12, 3, 196, 5, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.civic),
@@ -559,10 +605,90 @@ export const SKY_WEAVE: ArcologyRecipe = {
   ],
 };
 
+/**
+ * L'anello di sei guglie.
+ *
+ * La forma piu' esplicita sul vuoto: sei steli disposti ad anello intorno a un
+ * cavedio centrale, e una trave che lo attraversa in quota lo trasforma nella
+ * finestra di cielo. Le guglie stanno sui vertici di un esagono — due a nord,
+ * due a sud e una per fianco — e il centro resta aperto per tutta l'altezza,
+ * chiuso soltanto dal traverso della corona.
+ */
+export const SPIRE_RING: ArcologyRecipe = {
+  kind: ARCOLOGY_KIND.spireRing,
+  span: [18, 18],
+  height: 244,
+  anchor: [9, 9],
+  stages: [0, 50, 66, 82, 98],
+  parts: [
+    [
+      box(PART.slab, 0, 0, 18, 18, 0, 13, PALETTE_SLOTS.stoneDeep, SURFACE_KIND.industrial, {
+        chamfer: 2,
+      }),
+      box(PART.deck, 0, 0, 18, 18, 13, 1, PALETTE_SLOTS.concretePale, SURFACE_KIND.utility, {
+        chamfer: 2,
+      }),
+      box(PART.colonnade, 0, 0, 18, 18, 14, 4, PALETTE_SLOTS.metalDark, SURFACE_KIND.utility, {
+        step: 3,
+        chamfer: 2,
+        cap: PALETTE_SLOTS.concretePale,
+      }),
+      box(PART.deck, 0, 0, 18, 18, 18, 1, PALETTE_SLOTS.concretePale, SURFACE_KIND.utility, {
+        chamfer: 2,
+      }),
+      box(PART.slab, 6, 0, 6, 6, 19, 4, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.utility),
+      box(PART.slab, 6, 12, 6, 6, 19, 4, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.utility),
+    ],
+    [
+      box(PART.shell, 7, 2, 3, 3, 19, 60, PALETTE_SLOTS.glassDeep, SURFACE_KIND.luminous),
+      box(PART.shell, 12, 4, 3, 3, 19, 60, PALETTE_SLOTS.glassDeep, SURFACE_KIND.luminous),
+      box(PART.shell, 12, 11, 3, 3, 19, 60, PALETTE_SLOTS.glassDeep, SURFACE_KIND.luminous),
+      box(PART.shell, 7, 13, 3, 3, 19, 60, PALETTE_SLOTS.glassDeep, SURFACE_KIND.luminous),
+      box(PART.shell, 2, 11, 3, 3, 19, 60, PALETTE_SLOTS.glassDeep, SURFACE_KIND.luminous),
+      box(PART.shell, 2, 4, 3, 3, 19, 60, PALETTE_SLOTS.glassDeep, SURFACE_KIND.luminous),
+    ],
+    [
+      box(PART.boom, 5, 7, 8, 4, 80, 5, PALETTE_SLOTS.glassPale, SURFACE_KIND.luminous),
+      box(PART.deck, 5, 7, 8, 4, 85, 1, PALETTE_SLOTS.roofWhite, SURFACE_KIND.roofTech),
+    ],
+    [
+      box(PART.shell, 7, 2, 3, 3, 120, 76, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.habitat),
+      box(PART.shell, 12, 4, 3, 3, 120, 76, PALETTE_SLOTS.concreteLight, SURFACE_KIND.habitat),
+      box(PART.shell, 12, 11, 3, 3, 120, 76, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.habitat),
+      box(PART.shell, 7, 13, 3, 3, 120, 76, PALETTE_SLOTS.concreteLight, SURFACE_KIND.habitat),
+      box(PART.shell, 2, 11, 3, 3, 120, 76, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.habitat),
+      box(PART.shell, 2, 4, 3, 3, 120, 76, PALETTE_SLOTS.concreteLight, SURFACE_KIND.habitat),
+    ],
+    [
+      box(PART.boom, 5, 7, 8, 4, 196, 5, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.civic),
+      box(PART.deck, 5, 7, 8, 4, 201, 1, PALETTE_SLOTS.roofWhite, SURFACE_KIND.roofTech),
+      box(PART.mast, 7, 2, 2, 2, 196, 46, PALETTE_SLOTS.metalDark, SURFACE_KIND.civic, {
+        cap: PALETTE_SLOTS.metalGold,
+      }),
+      box(PART.mast, 7, 13, 2, 2, 196, 46, PALETTE_SLOTS.metalDark, SURFACE_KIND.civic, {
+        cap: PALETTE_SLOTS.metalGold,
+      }),
+      box(PART.slab, 7, 2, 2, 2, 242, 2, PALETTE_SLOTS.glassPale, SURFACE_KIND.luminous),
+      box(PART.slab, 7, 13, 2, 2, 242, 2, PALETTE_SLOTS.glassPale, SURFACE_KIND.luminous),
+    ],
+  ],
+  bands: [
+    { stage: 0, use: BUILDING_CLASS.industrial, x: 4, y: 4, z: 0, label: 'podium' },
+    { stage: 2, use: BUILDING_CLASS.commercial, x: 9, y: 8, z: 80, label: 'crossbar' },
+    { stage: 3, use: BUILDING_CLASS.residential, x: 7, y: 3, z: 120, label: 'spires' },
+    { stage: 4, use: BUILDING_CLASS.civic, x: 9, y: 9, z: 196, label: 'crown' },
+  ],
+  landings: [
+    { stage: 0, x: 6, y: 0, w: 6, h: 6, z: 23 },
+    { stage: 0, x: 6, y: 12, w: 6, h: 6, z: 23 },
+  ],
+};
+
 const ARCOLOGIES: Record<ArcologyKind, ArcologyRecipe> = {
   twinStem: TWIN_STEM,
   branchingCore: BRANCHING_CORE,
   skyWeave: SKY_WEAVE,
+  spireRing: SPIRE_RING,
 };
 
 /** Tutte le ricette, in ordine di catalogo. */

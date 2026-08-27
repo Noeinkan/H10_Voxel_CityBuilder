@@ -100,6 +100,7 @@ const FAILURE_LABEL: Readonly<Record<ActionFailure, string>> = {
   'terrain-loading': 'The terrain is not ready yet.',
   'not-buildable': 'No earthwork holds here: only cliffs and deep water refuse.',
   'needs-coast': 'A Port only works on the waterfront. Move it closer to the sea.',
+  'needs-waterfront': 'A Marina needs open water: move it to the sea or to a lake.',
   'needs-open-ground': 'An Airport needs a wide, level clearing to lay a runway on.',
   'too-close': 'Too close to another catalyst of the same type.',
   'insufficient-funds': 'You do not have enough funds yet.',
