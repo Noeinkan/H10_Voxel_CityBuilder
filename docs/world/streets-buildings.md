@@ -15,21 +15,18 @@
   dislivello vero giustifica.
 - La rete stradale e' una funzione pura di `(seed, x, y)`: niente stato, niente
   da salvare, niente da aggiornare quando arriva un catalizzatore.
-- **La maglia c'e' ovunque, l'asfalto no**, e sono due cose diverse che si
+- **La maglia c'e' ovunque, l'asfalto quasi mai**, e sono due cose diverse che si
   confondono facilmente: `streetGrid.ts` risponde per qualunque colonna del piano,
-  ma a schermo esiste solo cio' che `surfaceQueue` ha dipinto, e si dipinge **per
-  isolato** quando qualcosa lo giustifica. Due isolati contigui risultano
-  collegati da soli — condividono la carreggiata che li separa, angoli compresi —
-  mentre uno nato lontano da tutto sarebbe un rettangolo d'asfalto in mezzo al
-  prato. A questo serve `streets/corridor.ts`: un isolato staccato si tira dietro
-  la strada che lo attacca alla rete, lungo il percorso a costo minimo fra gli
-  incroci della maglia. **Sceglie linee, non le inventa** — ogni tratto corre su
-  un asse che il seed dichiara gia' — ed e' per questo che l'invariante qui sopra
-  resta intatto: cio' che e' stato dipinto e' stato di chi dipinge, non della
-  rete. Il terreno entra come **costo di un tratto** e non come divieto, come la
-  disponibilita' entra in `lots.ts` come predicato: e' quello a far girare la
-  strada attorno a una darsena invece di farla finire sul fondale, ed e' anche
-  cio' che tiene il modulo verificabile in Node senza un'isola.
+  ma a schermo esiste solo cio' che `surfaceQueue` ha dipinto. **Niente piu'
+  anello perimetrale**: le strade non chiudono il quadrato, e dentro l'isolato gli
+  edifici crescono senza un perimetro d'asfalto. A questo serve `streets/corridor.ts`:
+  un centro nato lontano dalla rete si tira dietro la strada minima che lo attacca,
+  lungo il percorso a costo minimo fra gli incroci della maglia. **Sceglie linee,
+  non le inventa** — ogni tratto corre su un asse che il seed dichiara gia' — ed e'
+  per questo che l'invariante qui sopra resta intatto: cio' che e' stato dipinto
+  e' stato di chi dipinge, non della rete. Il terreno entra come **costo di un
+  tratto** e non come divieto: e' quello a far girare la strada attorno all'acqua
+  invece di farla finire sul fondale.
 - Il `Builder` valida terreno e occupazione e costruisce a fasce nel budget;
   la generazione degli stamp resta deterministica.
 - **Il `Builder` orchestra, i driver decidono.** Ogni sottosistema a tick ha un
@@ -56,13 +53,12 @@
   niente — e la quota finita e' sempre il massimo delle colonne, mai la media:
   livellare verso il basso toglierebbe isola, e un voxel tolto non torna. La
   battigia e il fianco in pendenza sono meta' della terra emersa, e senza opere
-  la citta' li saltava del tutto. **L'edificio e' l'eccezione**: non chiede ne'
-  terrapieno ne' banchina sotto di se', affonda invece nel terreno — la base
-  scende alla quota piu' bassa dell'impronta (`Builder.place`, `baseZ =
-  plan.footZ`), sul pendio come sulla battigia, e la sagoma si inserisce nel
-  fianco. A riempire fino al massimo restano landmark e arcologie, che un podio
-  ce l'hanno per costruzione, e la carreggiata costiera, il cui molo e' suolo
-  pubblico.
+  la citta' li saltava del tutto. **Le strutture affondano invece di riempire**:
+  edifici, landmark e arcologie scendono alla quota piu' bassa dell'impronta
+  (`baseZ = plan.footZ`), sul pendio come sulla battigia, e la sagoma si
+  inserisce nel fianco — niente terrapieno, niente banchina, niente muro di
+  contenimento. La carreggiata segue il terreno senza rialzarlo, ed e' solo il
+  raccordo minimo che unisce due centri lontani.
 - **Il terreno si paga, non si vieta.** `groundKindOf` classifica e
   `BUILD_WEIGHT` mette un prezzo; l'unico rifiuto rimasto sulla terra emersa e'
   la pendenza oltre `maxTerraceSlope`. La roccia piana **non** e' un rifiuto: lo

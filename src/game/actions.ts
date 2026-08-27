@@ -189,13 +189,15 @@ export function catalystFailure(
     }
   }
 
-  // Un landmark che supera il modulo corona una citta' gia' edificata: su una
-  // citta' vuota il terrapieno che il piazzamento getta sotto la struttura
+  // Un landmark che supera l'ingombro mega corona una citta' gia' edificata: su
+  // una citta' vuota il terrapieno che il piazzamento getta sotto la struttura
   // sarebbe una mega-piattaforma di terra su niente. I monumenti piccoli — un
   // mercato, una fabbrica — restano liberi, perche' la citta' nasce da loro.
+  // La soglia e' la scala delle megastrutture, non il modulo ordinario: un
+  // mercato largo dodici sta sotto, un porto da venti sta sopra.
   const recipe = landmarkOf(definition.id);
   if (recipe !== null &&
-    Math.max(recipe.span[0], recipe.span[1]) > SCALE.moduleFootprint &&
+    Math.max(recipe.span[0], recipe.span[1]) > SCALE.megaFootprint &&
     state.buildings.length < BALANCE.gameplay.landmark.requiredBuildings) {
     return 'landmark-requires-city';
   }

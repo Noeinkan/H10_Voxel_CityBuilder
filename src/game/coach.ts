@@ -1,9 +1,11 @@
 import {
+  CATALYSTS,
   catalystById,
   catalystRoleOf,
   districtPairingsOf,
   fedShareOf,
   servedFerryLines,
+  type Catalyst,
   type CatalystId,
   type SimState,
 } from '../sim';
@@ -39,7 +41,7 @@ import { TIER } from '../world/skyline/tiers';
 
 export type CoachTier =
   | 'connections' | 'identity' | 'district' | 'food'
-  | 'stage' | 'skyline' | 'aerial' | 'rooftop' | 'arcology';
+  | 'stage' | 'skyline' | 'aerial' | 'rooftop' | 'arcology' | 'landmark';
 
 export interface CoachSuggestion {
   /** Stabile: identifica il consiglio, non il momento in cui e' apparso. */
@@ -139,7 +141,8 @@ export function coachSuggestions(context: CoachContext): readonly CoachSuggestio
   push(foodSuggestion(context));
   push(connectionsSuggestion(context));
   push(identitySuggestion(context));
-  push(districtSuggestion(context));
+  push(overlapSuggestion(context));
+  push(missingLandmarkSuggestion(context));
   push(stageSuggestion(context));
   push(skylineSuggestion(context));
   push(rooftopSuggestion(context));
@@ -163,10 +166,10 @@ function foodSuggestion(context: CoachContext): CoachSuggestion | null {
 
   const anchor = catalystAnchor(state, 'factory') ?? catalystAnchor(state, 'market');
   return {
-    id: 'coach-food',
-    tier: 'food',
-    title: 'Grow food upward',
-    message: 'The city eats more than its ground can grow. Place a Greenhouse beside your Factory or Market: the glass farm turns nearby industry into hydroponic towers — food without spending farmland.',
+      id: 'coach-food',
+      tier: 'food',
+      title: 'Place a Greenhouse',
+      message: 'People don\'t have enough food: the city eats more than its ground can grow. To fix that, place a Greenhouse close to your Factory (or Market): the glass farm turns nearby industry into hydroponic towers — food without spending a plot of farmland.',
     highlight: anchor,
     grow: null,
   };
@@ -181,8 +184,8 @@ function connectionsSuggestion(context: CoachContext): CoachSuggestion | null {
     return {
       id: 'coach-port',
       tier: 'connections',
-      title: 'The world is one Port away',
-      message: 'You can afford a Port. Place it on the coast: it opens external trade, and imported food scales with the city, so it keeps helping as you grow.',
+      title: 'Place a Port',
+      message: 'The island has no way to trade with the world, and you can afford to open one. To fix that, place a Port on the coast: it opens external trade, and imported food scales with what the city eats, so it keeps helping as it grows.',
       highlight: null,
       grow: null,
     };
@@ -194,8 +197,24 @@ function connectionsSuggestion(context: CoachContext): CoachSuggestion | null {
       id: 'coach-ferry-pair',
       tier: 'connections',
       title: 'Place a second Ferry',
-      message: 'A Ferry only pays off in pairs. Place a second Ferry terminal on the opposite coast: the line opens and both sides get happier.',
+      message: 'Your Ferry has only one terminal, so no line is open — a pier is not a line. To fix that, place a second Ferry terminal on the opposite coast: the line opens and both sides get happier.',
       highlight: catalystAnchor(state, 'ferry'),
+      grow: null,
+    };
+  }
+
+  // Il Transit e' il collegamento interno: arriva quando i distretti sono gia'
+  // diversi e nessuno li lega insieme. Soglia di cinque per non rubare la riga
+  // all'identita' e ai distretti — appena finito il tutorial non c'e' ancora
+  // niente da collegare, e «Overlap two fields» insegna di piu'.
+  const hasTransport = state.catalysts.some((entry) => catalystRoleOf(entry) === 'transport');
+  if (state.catalysts.length >= 5 && !hasTransport) {
+    return {
+      id: 'coach-transport',
+      tier: 'connections',
+      title: 'Place a Transit',
+      message: 'Your districts are spreading far apart, and nothing ties them together. To fix that, place a Transit close to your busiest quarter: it lifts homes, shops and workshops alike, and asks nothing of the site.',
+      highlight: null,
       grow: null,
     };
   }
@@ -215,8 +234,8 @@ function identitySuggestion(context: CoachContext): CoachSuggestion | null {
   return {
       id: 'coach-identity',
       tier: 'identity',
-      title: 'Give the city an identity',
-      message: 'Growth and connections are in place, but the city has no character. Place a University beside your Park or Transport: together they open a campus quarter that no growth catalyst builds.',
+      title: 'Place a University',
+      message: 'The city has homes, jobs and parks, but no landmark that gives it character. To fix that, place a University close to your Park or Transport: together they open a campus quarter that no growth catalyst builds.',
     highlight: null,
     grow: null,
   };
@@ -224,7 +243,11 @@ function identitySuggestion(context: CoachContext): CoachSuggestion | null {
 
 // --- Distretti --------------------------------------------------------------
 
-function districtSuggestion(context: CoachContext): CoachSuggestion | null {
+/**
+ * La lezione del sovrapporre: si dice una volta sola, appena c'e' materia, e
+ * sta **prima** del catalogo perche' insegna la regola che lo rende utile.
+ */
+function overlapSuggestion(context: CoachContext): CoachSuggestion | null {
   const { state } = context;
   const mixed = state.mixedCounts.reduce((sum, count) => sum + count, 0);
 
@@ -232,48 +255,12 @@ function districtSuggestion(context: CoachContext): CoachSuggestion | null {
     return {
       id: 'coach-overlap',
       tier: 'district',
-      title: 'Overlap your fields',
-      message: 'Nobody zones anything in this city. Where two influence fields overlap, a block starts hosting two uses at once — a shop under the flats. Place a catalyst so its field overlaps the Market or Factory.',
+      title: 'Overlap two fields',
+      message: 'No block hosts two uses yet — nobody zones anything here. Where two influence fields overlap, a block starts hosting two uses at once, a shop under the flats. To fix that, place a catalyst so its field overlaps the Market or Factory.',
       highlight: null,
       grow: null,
     };
   }
-
-  // Una coppia si propone solo a chi ha gia' imparato a sovrapporre: prima di
-  // aver visto un uso misto, «metti X accanto a Y» e' la stessa lezione con un
-  // nome in piu', e i due consigli si contenderebbero la riga.
-  if (mixed > 0) return pairSuggestion(context);
-  return null;
-}
-
-/**
- * Una coppia di ruoli non ancora provata, proposta come quartiere.
- *
- * Il quartiere nasce dalla *coppia* di due campi sovrapposti: si prende un
- * catalizzatore gia' piazzato e si nomina il partner che gli manca, con la
- * promessa del quartiere che i due insieme aprono.
- */
-function pairSuggestion(context: CoachContext): CoachSuggestion | null {
-  const roles = new Set(context.state.catalysts.map((entry) => catalystRoleOf(entry)));
-  if (roles.size === 0) return null;
-
-  for (const entry of context.state.catalysts) {
-    const role = catalystRoleOf(entry);
-    for (const pairing of districtPairingsOf(role)) {
-      for (const partner of pairing.partners) {
-        if (roles.has(partner)) continue;
-        return {
-          id: `coach-pair-${pairing.district}`,
-          tier: 'district',
-          title: `Open a ${pairing.district} quarter`,
-          message: `Place a ${catalystById(partner).label} beside your ${catalystById(role).label}: together they form a ${pairing.district} quarter, which opens forms no single catalyst builds.`,
-          highlight: { x: entry.x, y: entry.y },
-          grow: null,
-        };
-      }
-    }
-  }
-
   return null;
 }
 
@@ -290,8 +277,8 @@ function stageSuggestion(context: CoachContext): CoachSuggestion | null {
     return {
       id: `coach-stage-${landmark.kind}`,
       tier: 'stage',
-      title: `${label} is almost grown`,
-      message: `Build ${remaining} more ${remaining === 1 ? 'building' : 'buildings'} near your ${label}: each stage strengthens its catalyst.`,
+      title: `Build ${remaining} more near the ${label}`,
+      message: `Your ${label} is close to its next stage. To fix that, build ${remaining} more ${remaining === 1 ? 'building' : 'buildings'} near it: each stage strengthens its catalyst, so an early monument pays off for the whole game.`,
       highlight: null,
       grow: {
         x: landmark.x,
@@ -314,8 +301,8 @@ function skylineSuggestion(context: CoachContext): CoachSuggestion | null {
   return {
     id: 'coach-skyline',
     tier: 'skyline',
-    title: 'Raise the center',
-    message: 'Your tallest tower is below what the core allows. Place catalysts so their fields overlap the center: a block only earns the core tier — and its height — where two fields touch.',
+    title: 'Overlap fields in the center',
+    message: 'Your tallest tower is below what the core allows — the center can still rise. To fix that, place catalysts so their fields overlap the center: a block only earns the core tier, and its height, where two fields touch.',
     highlight: null,
     grow: null,
   };
@@ -330,8 +317,8 @@ function rooftopSuggestion(context: CoachContext): CoachSuggestion | null {
   return {
     id: 'coach-skyport',
     tier: 'rooftop',
-    title: 'Put a port on a rooftop',
-    message: 'A building is tall enough to carry a rooftop structure. Place the Airport on its facade: it becomes a Skyport for airships, eVTOLs and balloons.',
+    title: 'Place the Airport on a roof',
+    message: 'A building is tall enough to carry a rooftop structure, but none has one yet. To fix that, place the Airport on its facade: it becomes a Skyport for airships, eVTOLs and balloons.',
     highlight: null,
     grow: null,
   };
@@ -347,8 +334,8 @@ function aerialSuggestion(context: CoachContext): CoachSuggestion | null {
     return {
       id: 'coach-terrace',
       tier: 'aerial',
-      title: 'Hang a floor off a tower',
-      message: 'Buildings are tall enough to carry a floor above the street. Choose the Terrace and hang it off the facade of a tall building: it is the first piece of the city aloft.',
+      title: 'Place a Terrace',
+      message: 'Your buildings are tall enough to carry a floor above the street, but none do. To fix that, place a Terrace on a tall facade: it is the first piece of the city aloft.',
       highlight: null,
       grow: null,
     };
@@ -357,8 +344,8 @@ function aerialSuggestion(context: CoachContext): CoachSuggestion | null {
     return {
       id: 'coach-aerial-route',
       tier: 'aerial',
-      title: 'Join the terraces',
-      message: 'Your terraces stand alone. Hang another Terrace facing the first: facing terraces weave a walkway between them, and the network crosses whole blocks.',
+      title: 'Place a second Terrace',
+      message: 'Your terraces stand alone — none faces another, so no walkway links them. To fix that, place a second Terrace facing the first: facing terraces weave a walkway between them, and the network crosses whole blocks.',
       highlight: null,
       grow: null,
     };
@@ -367,8 +354,8 @@ function aerialSuggestion(context: CoachContext): CoachSuggestion | null {
     return {
       id: 'coach-lifts',
       tier: 'aerial',
-      title: 'Reach the city above',
-      message: 'The city lives above the street, but nothing climbs to it. Build on your decks: inhabited decks raise lifts that connect the levels to the street.',
+      title: 'Build on your decks',
+      message: 'The city lives above the street, but nothing climbs to it — the decks are unreachable from the ground. To fix that, build on your decks: inhabited decks raise lifts that connect the levels to the street.',
       highlight: null,
       grow: null,
     };
@@ -383,8 +370,8 @@ function arcologySuggestion(context: CoachContext): CoachSuggestion | null {
     return {
       id: 'coach-arcology-site',
       tier: 'arcology',
-      title: 'The arcology site is open',
-      message: 'The center is saturating and a site is being cleared: an arcology is about to rise where the city can no longer grow.',
+      title: 'An arcology is being built',
+      message: 'A site is being cleared in the center: an arcology is about to rise where the city can no longer grow.',
       highlight: null,
       grow: null,
     };
@@ -395,11 +382,74 @@ function arcologySuggestion(context: CoachContext): CoachSuggestion | null {
   return {
     id: 'coach-arcology',
     tier: 'arcology',
-    title: 'The center is about to crown',
-    message: 'The core is dense and its towers have stopped growing: an arcology is about to crown the city. Place more catalysts so their fields overlap the core, and it rises on its own.',
+    title: 'An arcology is about to rise',
+    message: 'The core is dense and its towers have stopped growing — the center is saturating. To fix that, place more catalysts so their fields overlap the core, and the arcology crowns on its own.',
     highlight: null,
     grow: null,
   };
+}
+
+// --- Catalogo ---------------------------------------------------------------
+
+/**
+ * Il catalogo: ogni landmark che la citta' non ha ancora, con il perche'.
+ *
+ * E' il cuore della voce: quando nessun tier strategico ha niente da dire, c'e'
+ * comunque un landmark da piazzare e un motivo per farlo. Scorre la toolbar in
+ * ordine — crescita, connessioni, identita' — e propone il primo che manca.
+ * Se quel landmark apre un quartiere con un ruolo gia' piazzato, lo dice:
+ * «mettilo accanto a X, insieme fanno Y». Mercato, fabbrica e parco restano
+ * fuori perche' il tutorial li ha gia' chiesti.
+ */
+function missingLandmarkSuggestion(context: CoachContext): CoachSuggestion | null {
+  const placed = new Set(context.state.catalysts.map((entry) => catalystRoleOf(entry)));
+  for (const definition of CATALYSTS) {
+    if (placed.has(definition.id)) continue;
+
+    const pairing = nearestPairing(definition.id, context.state.catalysts);
+    if (pairing !== null) {
+      return {
+        id: `coach-missing-${definition.id}`,
+        tier: 'landmark',
+        title: `Place a ${definition.label}`,
+        message: `Place a ${definition.label} close to your ${catalystById(pairing.role).label}: together they form a ${pairing.district} quarter. ${definition.description}`,
+        highlight: { x: pairing.x, y: pairing.y },
+        grow: null,
+      };
+    }
+
+    return {
+      id: `coach-missing-${definition.id}`,
+      tier: 'landmark',
+      title: `Place a ${definition.label}`,
+      message: `You haven't placed the ${definition.label} yet. ${definition.description}`,
+      highlight: null,
+      grow: null,
+    };
+  }
+  return null;
+}
+
+/**
+ * Il quartiere che questo landmark aprirebbe con un ruolo gia' piazzato, o null.
+ *
+ * E' la stessa lettura di `districtPairingsOf` che prima stava nel tier
+ * distretti: accanto al catalogo arricchisce la tessera mancante con il «dove»
+ * invece di nominarla e basta.
+ */
+function nearestPairing(
+  kind: CatalystId,
+  catalysts: readonly Catalyst[],
+): { readonly role: CatalystId; readonly district: string; readonly x: number; readonly y: number } | null {
+  for (const pairing of districtPairingsOf(kind)) {
+    for (const partner of pairing.partners) {
+      const entry = catalysts.find((candidate) => catalystRoleOf(candidate) === partner);
+      if (entry !== undefined) {
+        return { role: partner, district: pairing.district, x: entry.x, y: entry.y };
+      }
+    }
+  }
+  return null;
 }
 
 // --- Raccolta dei fatti -----------------------------------------------------

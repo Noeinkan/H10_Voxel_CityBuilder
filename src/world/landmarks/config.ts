@@ -1599,8 +1599,9 @@ export const LANDMARKS: Partial<Record<CatalystId, LandmarkRecipe>> = {
  * **Non e' una variante e non poteva esserlo.** Un esemplare si sceglie dal
  * seme e condivide ingombro e tronco con gli altri; qui l'ingombro *deve*
  * cambiare, perche' un campo di volo largo ventisei colonne non sta su nessun
- * tetto — `MAX_FOOTPRINT` e' otto. E' una ricetta a se' che il **luogo**
- * seleziona, che e' l'unica cosa in questo dominio a non dipendere dal seme.
+ * tetto — la facciata di un edificio e' larga al massimo sei voxel. E' una
+ * ricetta a se' che il **luogo** seleziona, che e' l'unica cosa in questo
+ * dominio a non dipendere dal seme.
  *
  * Fuori dal catalogo `LANDMARKS`, e non per timidezza: quella tabella promette
  * «una struttura per ruolo» e un test la verifica. Questa e' la seconda forma
@@ -1610,25 +1611,30 @@ export const LANDMARKS: Partial<Record<CatalystId, LandmarkRecipe>> = {
  * Niente pista e niente ali: **in quota non si atterra su una corsa, ci si posa
  * o ci si aggancia**, e i tre modi di farlo sono i tre mezzi che questo scalo
  * mostra. Il dirigibile si appende a un pilone e ci resta; l'eVTOL scende su
- * una piazzola di tre colonne, che e' l'unico modo di *arrivare* davvero su un
- * piattaforma di otto; la mongolfiera si stacca da una cima, prende quota e rientra.
+ * una piazzola di tre colonne, che e' l'unico modo di *arrivare* davvero su una
+ * piattaforma cosi' stretta; la mongolfiera si stacca da una cima, prende quota e rientra.
  * Tre sagome che nessun campo di volo produrrebbe, e nessuna che chieda i
  * ventisei voxel di pista che qui non ci sono.
  */
 export const SKYPORT: LandmarkRecipe = {
   kind: 'airport',
-  span: [8, 8],
+  // **La larghezza segue il tetto d'impronta degli edifici, non il modulo.** Con
+  // `moduleFootprint` a otto un singolo edificio satura a `mid` (sei voxel), mai
+  // al lato pieno: una piattaforma larga otto non troverebbe una facciata che la
+  // regga. Lo sporto resta invece otto, oltre `AERIAL.reach`, cosi' lo scalo
+  // conserva i piloni e la lettura di struttura appesa.
+  span: [8, 6],
   height: 16,
-  anchor: [4, 4],
+  anchor: [4, 3],
   // Nessun grembiule: la cornice di suolo pubblico e' suolo, mentre questa
   // piattaforma sta fuori dalla facciata. Chi la posa salta la mano di vernice.
   apron: 0,
   stages: [0, 4, 12, 24],
   parts: [
     [
-      box(PART.deck, 0, 0, 8, 8, 0, 1, PALETTE_SLOTS.concrete, SURFACE_KIND.utility),
-      box(PART.shell, 0, 0, 8, 8, 1, 1, PALETTE_SLOTS.metalDark, SURFACE_KIND.utility),
-      box(PART.deck, 2, 2, 4, 4, 0, 1, PALETTE_SLOTS.concretePale, SURFACE_KIND.utility),
+      box(PART.deck, 0, 0, 8, 6, 0, 1, PALETTE_SLOTS.concrete, SURFACE_KIND.utility),
+      box(PART.shell, 0, 0, 8, 6, 1, 1, PALETTE_SLOTS.metalDark, SURFACE_KIND.utility),
+      box(PART.deck, 2, 1, 4, 4, 0, 1, PALETTE_SLOTS.concretePale, SURFACE_KIND.utility),
     ],
     [
       // Il pilone maggiore: e' la parte che dice il ruolo, e da qui in avanti la
@@ -1643,8 +1649,8 @@ export const SKYPORT: LandmarkRecipe = {
         cap: PALETTE_SLOTS.glassPale,
       }),
       box(PART.deck, 5, 0, 3, 3, 5, 1, PALETTE_SLOTS.roofWhite, SURFACE_KIND.roofTech),
-      box(PART.mast, 0, 7, 1, 1, 1, 3, PALETTE_SLOTS.glassPale, SURFACE_KIND.luminous),
-      box(PART.mast, 7, 7, 1, 1, 1, 3, PALETTE_SLOTS.glassPale, SURFACE_KIND.luminous),
+      box(PART.mast, 0, 5, 1, 1, 1, 3, PALETTE_SLOTS.glassPale, SURFACE_KIND.luminous),
+      box(PART.mast, 7, 5, 1, 1, 1, 3, PALETTE_SLOTS.glassPale, SURFACE_KIND.luminous),
       // La cima della mongolfiera nell'angolo libero, e nell'**unico** che lo
       // sia: i due piloni stanno in diagonale al centro, l'aerostazione occupa
       // il fronte e il colonnato il fianco. Un pallone e' largo sette voxel e
@@ -1655,11 +1661,11 @@ export const SKYPORT: LandmarkRecipe = {
       box(PART.slab, 0, 0, 2, 2, 0, 1, PALETTE_SLOTS.metalBrass, SURFACE_KIND.utility),
     ],
     [
-      box(PART.mast, 4, 5, 2, 2, 1, 9, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.civic, {
+      box(PART.mast, 4, 4, 2, 2, 1, 9, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.civic, {
         cap: PALETTE_SLOTS.metalGold,
       }),
-      box(PART.slab, 4, 5, 2, 2, 10, 1, PALETTE_SLOTS.glassPale, SURFACE_KIND.luminous),
-      box(PART.colonnade, 0, 3, 4, 4, 1, 3, PALETTE_SLOTS.metalDark, SURFACE_KIND.utility, {
+      box(PART.slab, 4, 4, 2, 2, 10, 1, PALETTE_SLOTS.glassPale, SURFACE_KIND.luminous),
+      box(PART.colonnade, 0, 2, 4, 4, 1, 3, PALETTE_SLOTS.metalDark, SURFACE_KIND.utility, {
         step: 3,
         cap: PALETTE_SLOTS.concretePale,
       }),
@@ -1682,7 +1688,7 @@ export const SKYPORT: LandmarkRecipe = {
   // ed e' anche il verso in cui il pallone si allontana.
   moorings: [
     { x: 2, y: 2, z: 10, berth: BERTH.airship, heading: Math.PI },
-    { x: 5, y: 6, z: 8, berth: BERTH.airship, heading: 0 },
+    { x: 5, y: 4, z: 8, berth: BERTH.airship, heading: 0 },
     { x: 5, y: 1, z: 7, berth: BERTH.pad, heading: 0 },
     { x: 0, y: 0, z: 6, berth: BERTH.balloon, heading: -Math.PI / 2 },
   ],
@@ -1698,28 +1704,29 @@ export const SKYPORT: LandmarkRecipe = {
  */
 export const SKY_PARK: LandmarkRecipe = {
   kind: 'park',
-  span: [8, 8],
+  // Stessa larghezza dello scalo: sei voxel, il tetto d'impronta degli edifici.
+  span: [8, 6],
   height: 12,
-  anchor: [4, 4],
+  anchor: [4, 3],
   apron: 0,
   stages: [0, 3, 8, 14],
   parts: [
     [
-      box(PART.deck, 0, 0, 8, 8, 0, 1, PALETTE_SLOTS.grass, SURFACE_KIND.plain),
+      box(PART.deck, 0, 0, 8, 6, 0, 1, PALETTE_SLOTS.grass, SURFACE_KIND.plain),
       box(PART.deck, 0, 0, 8, 1, 0, 1, PALETTE_SLOTS.stoneWarm, SURFACE_KIND.utility),
-      box(PART.deck, 0, 7, 8, 1, 0, 1, PALETTE_SLOTS.stoneWarm, SURFACE_KIND.utility),
-      box(PART.deck, 0, 1, 1, 6, 0, 1, PALETTE_SLOTS.stoneWarm, SURFACE_KIND.utility),
-      box(PART.deck, 7, 1, 1, 6, 0, 1, PALETTE_SLOTS.stoneWarm, SURFACE_KIND.utility),
+      box(PART.deck, 0, 5, 8, 1, 0, 1, PALETTE_SLOTS.stoneWarm, SURFACE_KIND.utility),
+      box(PART.deck, 0, 1, 1, 4, 0, 1, PALETTE_SLOTS.stoneWarm, SURFACE_KIND.utility),
+      box(PART.deck, 7, 1, 1, 4, 0, 1, PALETTE_SLOTS.stoneWarm, SURFACE_KIND.utility),
     ],
-    [...tree(1, 1), ...tree(4, 1), ...tree(1, 4), ...tree(4, 4)],
+    [...tree(1, 1), ...tree(4, 1), ...tree(1, 3), ...tree(4, 3)],
     [
-      box(PART.colonnade, 2, 2, 4, 4, 1, 4, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.civic, {
+      box(PART.colonnade, 2, 1, 4, 4, 1, 4, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.civic, {
         step: 2,
         cap: PALETTE_SLOTS.stone,
       }),
     ],
     [
-      box(PART.steps, 3, 3, 2, 2, 5, 2, PALETTE_SLOTS.roofWhite, SURFACE_KIND.roofTech, { step: 1 }),
+      box(PART.steps, 3, 2, 2, 2, 5, 2, PALETTE_SLOTS.roofWhite, SURFACE_KIND.roofTech, { step: 1 }),
     ],
   ],
 };
@@ -1734,14 +1741,15 @@ export const SKY_PARK: LandmarkRecipe = {
  */
 export const SKY_TRANSIT: LandmarkRecipe = {
   kind: 'transport',
-  span: [8, 8],
+  // Stessa larghezza delle altre forme in quota: sei voxel di facciata.
+  span: [8, 6],
   height: 16,
-  anchor: [4, 4],
+  anchor: [4, 3],
   apron: 0,
   stages: [0, 4, 10, 18],
   parts: [
     [
-      box(PART.deck, 0, 0, 8, 8, 0, 1, PALETTE_SLOTS.asphalt, SURFACE_KIND.utility),
+      box(PART.deck, 0, 0, 8, 6, 0, 1, PALETTE_SLOTS.asphalt, SURFACE_KIND.utility),
       box(PART.shell, 1, 1, 6, 5, 1, 5, PALETTE_SLOTS.concrete, SURFACE_KIND.civic, {
         cap: PALETTE_SLOTS.concretePale,
       }),
@@ -1766,10 +1774,10 @@ export const SKY_TRANSIT: LandmarkRecipe = {
       box(PART.slab, 2, 1, 1, 5, 6, 1, PALETTE_SLOTS.glassPale, SURFACE_KIND.luminous),
     ],
     [
-      box(PART.mast, 3, 6, 2, 2, 1, 10, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.civic, {
+      box(PART.mast, 3, 4, 2, 2, 1, 10, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.civic, {
         cap: PALETTE_SLOTS.metalGold,
       }),
-      box(PART.slab, 3, 6, 2, 2, 11, 1, PALETTE_SLOTS.glassPale, SURFACE_KIND.luminous),
+      box(PART.slab, 3, 4, 2, 2, 11, 1, PALETTE_SLOTS.glassPale, SURFACE_KIND.luminous),
     ],
   ],
 };

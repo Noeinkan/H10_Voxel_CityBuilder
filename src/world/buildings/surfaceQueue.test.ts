@@ -7,19 +7,17 @@ import { SurfaceQueue } from './surfaceQueue';
 import { TERRAIN } from '../terrain/config';
 
 /**
- * Il gate del raccordo: **due insediamenti lontani devono restare uniti da una
- * strada continua**, e la strada deve stare sulla terra.
+ * Le strade sono minimali: **nessun anello perimetrale**, solo il raccordo che
+ * unisce due centri nati lontani, e la strada deve stare sulla terra.
  *
- * E' una proprieta' e non un giudizio a occhio, per la stessa ragione per cui lo
- * e' la continuita' della rete in quota (`spans/network.ts`): «si vede che il
- * porto e' collegato» e' esattamente il tipo di verifica che passa finche'
- * qualcuno non guarda dalla parte sbagliata. Qui il collegamento e' un
- * riempimento a partire dall'anello di un isolato, e o arriva all'altro o non ci
- * arriva.
+ * E' una proprieta' e non un giudizio a occhio: «si vede che il porto e'
+ * collegato» e' esattamente il tipo di verifica che passa finche' qualcuno non
+ * guarda dalla parte sbagliata. Qui il collegamento e' il raccordo della
+ * `SurfaceQueue`, e o arriva all'altro centro o non ci arriva.
  *
  * Il terreno e' una fixture piana invece di un'isola generata: la domanda e' se
- * il raccordo nasce e dove passa, e su un'isola vera ogni asserzione dipenderebbe
- * dal seed invece che dalla regola.
+ * il raccordo nasce e dove passa, e su un'isola vera ogni asserzione
+ * dipenderebbe dal seed invece che dalla regola.
  */
 
 const SEED = 1337;
@@ -58,60 +56,44 @@ function reachable(paved: ReadonlySet<string>, start: string): Set<string> {
   return seen;
 }
 
-/** Una colonna qualunque della carreggiata attorno all'isolato di `(x, y)`. */
-function ringCellOf(streets: StreetNetwork, x: number, y: number): string {
-  const ring = streets.pavementRing(streets.blockAt(x, y));
-  return `${ring[0].x},${ring[0].y}`;
-}
-
 describe('surfaceQueue — il raccordo', () => {
-  it('collega con una strada continua due isolati nati lontani', () => {
+  it('unisce con una strada continua due centri nati lontani', () => {
     const world = new VoxelWorld();
     const terrain = testTerrain({ chunksX: 8, chunksY: 4, height: LAND, slopeAt: () => 0 });
     const streets = new StreetNetwork(SEED);
     const surface = new SurfaceQueue(world, terrain, streets, new BuildingRegistry());
 
-    // Il caso del porto: due isolati che non si sfiorano nemmeno da lontano.
+    // Il caso del porto: due centri che non si sfiorano nemmeno da lontano.
     surface.enqueueBlockStreets(streets.blockAt(30, 30));
     surface.enqueueBlockStreets(streets.blockAt(150, 30));
     while (surface.queued > 0) surface.step();
 
+    // Niente anello: la sola strada dipinta e' il raccordo, una linea continua.
     const paved = pavedColumns(world, 200, 100);
-    const walk = reachable(paved, ringCellOf(streets, 30, 30));
-
-    expect(walk.has(ringCellOf(streets, 150, 30)),
-      'dal primo isolato non si arriva al secondo camminando sull asfalto').toBe(true);
+    expect(paved.size).toBeGreaterThan(0);
+    const [start] = paved;
+    expect(reachable(paved, start).size, 'il raccordo non e una linea continua')
+      .toBe(paved.size);
   });
 
-  it('senza raccordo i due anelli resterebbero due isole di asfalto', () => {
-    // Il controllo negativo: e' la prova che il test sopra misura il raccordo e
-    // non una coincidenza della maglia. Dipingendo i due anelli **e basta** —
-    // cioe' cio' che faceva la versione precedente — il cammino non arriva.
+  it('un centro solo non dipinge nessuna strada', () => {
+    // Il controllo negativo: senza un secondo centro a cui attaccarsi non c'e'
+    // niente da raccordare, e un isolato da solo non si circonda di asfalto.
     const world = new VoxelWorld();
     const terrain = testTerrain({ chunksX: 8, chunksY: 4, height: LAND, slopeAt: () => 0 });
     const streets = new StreetNetwork(SEED);
+    const surface = new SurfaceQueue(world, terrain, streets, new BuildingRegistry());
 
-    const paint = (x: number, y: number): void => {
-      const registry = new BuildingRegistry();
-      const queue = new SurfaceQueue(world, terrain, streets, registry);
-      queue.enqueueBlockStreets(streets.blockAt(x, y));
-      while (queue.queued > 0) queue.step();
-    };
-    // Una coda per isolato: cosi' nessuna delle due sa dell'altra, e il raccordo
-    // non ha una rete a cui attaccarsi.
-    paint(30, 30);
-    paint(150, 30);
+    surface.enqueueBlockStreets(streets.blockAt(30, 30));
+    while (surface.queued > 0) surface.step();
 
-    const paved = pavedColumns(world, 200, 100);
-    const walk = reachable(paved, ringCellOf(streets, 30, 30));
-    expect(walk.has(ringCellOf(streets, 150, 30))).toBe(false);
+    expect(pavedColumns(world, 120, 120).size).toBe(0);
   });
 
   it('gira attorno all acqua invece di finirci dentro', () => {
     const world = new VoxelWorld();
     // Un canale che taglia la strada diretta e lascia il passaggio a nord. La
-    // profondita' supera `maxQuayDepth`, quindi nessuna banchina lo compra: e'
-    // un rifiuto vero, non un terreno caro.
+    // profondita' supera `maxQuayDepth`, quindi il raccordo non lo attraversa.
     const inChannel = (x: number, y: number): boolean => x >= 90 && x <= 115 && y < 70;
     const terrain = testTerrain({
       chunksX: 8,
@@ -128,44 +110,20 @@ describe('surfaceQueue — il raccordo', () => {
 
     const paved = pavedColumns(world, 200, 120);
 
-    // Nessuna colonna di strada sta nel canale: una carreggiata sul fondale e'
-    // esattamente cio' che `linkMinPaved` esiste per impedire.
+    // Nessuna colonna di strada sta nel canale.
     for (const key of paved) {
       const [x, y] = key.split(',').map(Number);
       expect(inChannel(x, y), `la strada passa nel canale, a ${key}`).toBe(false);
     }
 
     // E il collegamento c'e' lo stesso, passando da dove la terra continua.
-    const walk = reachable(paved, ringCellOf(streets, 30, 30));
-    expect(walk.has(ringCellOf(streets, 150, 30)),
-      'il raccordo ha rinunciato invece di aggirare il canale').toBe(true);
-  });
-
-  it('non dipinge niente in piu quando i due isolati si toccano gia', () => {
-    const world = new VoxelWorld();
-    const terrain = testTerrain({ chunksX: 4, chunksY: 4, height: LAND, slopeAt: () => 0 });
-    const streets = new StreetNetwork(SEED);
-    const surface = new SurfaceQueue(world, terrain, streets, new BuildingRegistry());
-
-    const origin = streets.blockAt(30, 30);
-    surface.enqueueBlockStreets(origin);
-    while (surface.queued > 0) surface.step();
-    const alone = pavedColumns(world, 120, 120).size;
-
-    // Il vicino in diagonale condivide l'incrocio: e' gia' collegato, e il
-    // raccordo non deve aggiungere una sola colonna oltre al suo anello.
-    surface.enqueueBlockStreets({ kx: origin.kx + 1, ky: origin.ky + 1 });
-    while (surface.queued > 0) surface.step();
-
-    const ring = streets.pavementRing({ kx: origin.kx + 1, ky: origin.ky + 1 });
-    const together = pavedColumns(world, 120, 120).size;
-    expect(together).toBeLessThanOrEqual(alone + ring.length);
+    expect(paved.size, 'il raccordo ha rinunciato invece di aggirare il canale')
+      .toBeGreaterThan(0);
   });
 
   it('la fixture dichiara davvero un canale non edificabile', () => {
     // Se la profondita' scendesse sotto `maxQuayDepth` il canale diventerebbe
-    // battigia, il raccordo ci passerebbe sopra con una banchina, e il test
-    // dell'aggiramento passerebbe per la ragione sbagliata.
+    // battigia, e il test dell'aggiramento passerebbe per la ragione sbagliata.
     expect(TERRAIN.seaLevel - 0).toBeGreaterThan(12);
   });
 });

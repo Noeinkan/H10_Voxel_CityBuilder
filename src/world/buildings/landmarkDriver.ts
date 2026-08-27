@@ -589,20 +589,25 @@ export class LandmarkDriver {
     if (footing === null) return null;
     const { plan, mask } = footing;
 
-    if (registry.overlaps(origin.x, origin.y, span.sizeX, plan.padZ, span.sizeZ, span.sizeY)) {
+    // Come un edificio, il landmark affonda nel pendio invece di riempirlo: la
+    // base scende alla quota piu' bassa dell'impronta, e il podio non solleva
+    // un terrapieno sotto di se'.
+    const sunk = { ...plan, padZ: plan.footZ };
+
+    if (registry.overlaps(origin.x, origin.y, span.sizeX, sunk.padZ, span.sizeZ, span.sizeY)) {
       return null;
     }
-    if (!fitsChunkBudget(origin.x, origin.y, span.sizeX, span.sizeY, plan, stamp)) {
+    if (!fitsChunkBudget(origin.x, origin.y, span.sizeX, span.sizeY, sunk, stamp)) {
       return null;
     }
 
     surface.clearSiteDecor(origin.x, origin.y, span.sizeX, span.sizeY);
-    buildWorks(world, terrain, origin.x, origin.y, span.sizeX, plan, span.sizeY, mask);
+    buildWorks(world, terrain, origin.x, origin.y, span.sizeX, sunk, span.sizeY, mask);
 
     const record = registry.add({
       x: origin.x,
       y: origin.y,
-      baseZ: plan.padZ,
+      baseZ: sunk.padZ,
       footprint: span.sizeX,
       footprintY: span.sizeY,
       height: span.sizeZ,

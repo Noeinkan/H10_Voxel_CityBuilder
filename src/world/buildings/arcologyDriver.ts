@@ -419,27 +419,31 @@ export class ArcologyDriver {
 
     const plan = surveyGrade(terrain, origin.x, origin.y, span.sizeX, span.sizeY, mask);
     if (plan === null) return null;
+    // Come un edificio, l'arcologia affonda nel pendio invece di riempirlo: la
+    // base scende alla quota piu' bassa dell'impronta, e il podio non solleva
+    // un terrapieno sotto di se'.
+    const sunk = { ...plan, padZ: plan.footZ };
     if (registry.overlaps(
-      origin.x, origin.y, span.sizeX, plan.padZ, span.sizeZ, span.sizeY,
+      origin.x, origin.y, span.sizeX, sunk.padZ, span.sizeZ, span.sizeY,
     )) {
       return null;
     }
-    if (!fitsChunkBudget(origin.x, origin.y, span.sizeX, span.sizeY, plan, first.stamp)) {
+    if (!fitsChunkBudget(origin.x, origin.y, span.sizeX, span.sizeY, sunk, first.stamp)) {
       return null;
     }
     // **Ogni stadio, non solo il primo.** Il tetto di chunk dipende da dove cade
     // il volume rispetto alle cuciture, quindi una ricetta che ci sta ovunque nel
     // test puo' non starci a questo allineamento — e sforare non e' un errore, e'
     // uno scarto silenzioso mille tick dopo. Meglio non cominciare.
-    if (!this.fitsEveryStage(origin, plan.padZ, recipe, facing, recordSeed)) return null;
+    if (!this.fitsEveryStage(origin, sunk.padZ, recipe, facing, recordSeed)) return null;
 
     surface.clearSiteDecor(origin.x, origin.y, span.sizeX, span.sizeY);
-    buildWorks(world, terrain, origin.x, origin.y, span.sizeX, plan, span.sizeY, mask);
+    buildWorks(world, terrain, origin.x, origin.y, span.sizeX, sunk, span.sizeY, mask);
 
     const record = registry.add({
       x: origin.x,
       y: origin.y,
-      baseZ: plan.padZ,
+      baseZ: sunk.padZ,
       footprint: span.sizeX,
       footprintY: span.sizeY,
       height: span.sizeZ,

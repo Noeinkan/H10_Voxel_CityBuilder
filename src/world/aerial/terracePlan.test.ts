@@ -182,19 +182,19 @@ describe('planTerrace — la mensola', () => {
 
 describe('planTerrace — il balcone e il mensolone', () => {
   /**
-   * Un ospite all'impronta piena del modulo.
+   * Un ospite all'ingombro della megastruttura.
    *
    * **E' l'unico fronte su cui le due fasi divergono**, e il perche' e' in
    * `overhangOf`: lo sporto non supera mai la corsa, quindi su un fronte da otto
-   * il mensolone esce identico al balcone. La regressione si vedeva a schermo
-   * proprio perche' il modulo raddoppiato ha reso comuni i fronti da sedici.
+   * il mensolone esce identico al balcone. Serve un fronte da megastruttura
+   * (`megaFootprint`) perche' il salto di fase abbia una corsa da aprire.
    */
   const WIDE: AerialSupport = {
     id: 9,
     x: 40,
     y: 40,
-    sizeX: SCALE.moduleFootprint,
-    sizeY: SCALE.moduleFootprint,
+    sizeX: SCALE.megaFootprint,
+    sizeY: SCALE.megaFootprint,
     baseZ: 4,
     height: 32,
   };

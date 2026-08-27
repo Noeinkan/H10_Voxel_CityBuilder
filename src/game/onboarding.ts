@@ -29,18 +29,18 @@ export interface OnboardingState {
  */
 export function onboardingOf(state: SimState): OnboardingState {
   if (!hasRole(state, 'market')) {
-    return step('market', '1 · Give your city a home',
-      'Place the Market: it draws in homes and shops together, and with them your first residents.',
+    return step('market', '1 · Place the Market',
+      'The island is empty and people have no home yet. To fix that, place the Market on open ground: it draws homes and shops together, and with them your first residents.',
       0);
   }
   if (!hasRole(state, 'factory')) {
-    return step('factory', '2 · Make growth sustainable',
-      'Now place the Factory. Homes need jobs, food, and goods for the shops to sell.',
+    return step('factory', '2 · Place the Factory',
+      'Homes need jobs and shops need goods, but nothing produces either. To fix that, place the Factory close to the Market: it supplies both.',
       1);
   }
   if (!hasRole(state, 'park')) {
     return step('park', '3 · Place the Park',
-      'Place the Park so its field overlaps the Market and the Factory: the overlap opens mixed-use blocks and keeps happiness up as the population grows.',
+      'The city works, but nothing lifts its spirits. To fix that, place the Park so its field overlaps the Market and the Factory: the overlap opens mixed-use blocks and keeps happiness up as the city grows.',
       2);
   }
   return {
@@ -48,7 +48,7 @@ export function onboardingOf(state: SimState): OnboardingState {
     expectedClass: null,
     expectedCatalyst: null,
     title: 'Foundation complete',
-    message: 'Housing, commerce, industry and civic uses are all in play. Overlap influence fields to shape districts — and mixed-use blocks.',
+    message: 'The foundation is set. To grow into districts, place your next catalyst so its field touches the Market or Factory: overlapping fields open mixed-use blocks and whole quarters.',
     progress: 3,
   };
 }

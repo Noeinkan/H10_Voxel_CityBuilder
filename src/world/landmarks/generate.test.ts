@@ -436,10 +436,11 @@ describe('scalo in quota', () => {
   });
 
   it('sta su una facciata: il fronte non supera l impronta massima di un edificio', () => {
-    // `MAX_FOOTPRINT` e' otto, e una facciata non e' mai piu' larga di cosi': una
-    // ricetta piu' grande sarebbe forma scritta e mai posabile.
-    expect(SKYPORT.span[0]).toBeLessThanOrEqual(8);
-    expect(SKYPORT.span[1]).toBeLessThanOrEqual(8);
+    // La facciata e' larga quanto l'impronta, che in un singolo edificio satura
+    // a `mid` (sei voxel): una forma in quota piu' larga sarebbe mai posabile.
+    // Lo sporto (`span[0]`) resta libero: pende fuori dalla parete, non la
+    // percorre.
+    expect(SKYPORT.span[1]).toBeLessThanOrEqual(6);
   });
 
   it('ogni parte sta dentro l ingombro, e gli stadi sono cumulativi', () => {
@@ -542,8 +543,7 @@ describe('forme contestuali', () => {
   it('una forma di facciata sta dentro l impronta massima di un edificio', () => {
     for (const id of Object.keys(FORMS) as LandmarkFormId[]) {
       if (!isFacadeForm(id)) continue;
-      expect(FORMS[id].recipe.span[0], id).toBeLessThanOrEqual(8);
-      expect(FORMS[id].recipe.span[1], id).toBeLessThanOrEqual(8);
+      expect(FORMS[id].recipe.span[1], id).toBeLessThanOrEqual(6);
     }
   });
 });

@@ -24,8 +24,8 @@ import {
 /** Un fronte di mezzo modulo: la corsa su cui le quattro forme si distinguono. */
 const RUN = 8;
 
-/** Il fronte piu' lungo che un edificio possa offrire: l'impronta del modulo. */
-const MODULE = SCALE.moduleFootprint;
+/** Un fronte da megastruttura: la corsa su cui il mensolone supera il balcone. */
+const MODULE = SCALE.megaFootprint;
 
 /** Una mensola che sporge verso est: la parete e' la colonna a `x - 1`. */
 const EAST: TerraceSide = { axis: 0, outward: 1 };

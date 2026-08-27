@@ -6,6 +6,7 @@ import {
   catalystById,
   createSimState,
   EMPTY_HARVEST,
+  type CatalystId,
   type SimState,
 } from '../sim';
 import {
@@ -128,6 +129,20 @@ describe('coach — le connessioni', () => {
     const state = city({ funds: { stock: 10, delta: 0 } });
     expect(coachSuggestion(context(state))?.id).not.toBe('coach-port');
   });
+
+  it('propone il Transit a una citta’ con piu’ distretti e senza collegamenti', () => {
+    // Cinque catalizzatori (ben oltre il tutorial), fondi sotto il costo del
+    // porto, nessun Transit: il coach chiede il collegamento interno.
+    let state = addCatalyst(city(), {
+      x: 300, y: 0, class: catalystById('university').class, kind: 'university',
+      strength: 200, radius: 12,
+    });
+    state = addCatalyst(state, {
+      x: 340, y: 0, class: catalystById('theatre').class, kind: 'theatre',
+      strength: 200, radius: 12,
+    });
+    expect(coachSuggestion(context(state))?.id).toBe('coach-transport');
+  });
 });
 
 describe('coach — l’identita’', () => {
@@ -158,19 +173,6 @@ describe('coach — i distretti', () => {
     expect(tip?.message).toContain('overlap');
   });
 
-  it('con gli usi misti avviati propone una coppia non ancora provata', () => {
-    const state = addCatalyst(city(), {
-      x: 300, y: 0, class: catalystById('university').class, kind: 'university',
-      strength: 200, radius: 12,
-    });
-    const mixed = [...state.mixedCounts];
-    mixed[BUILDING_CLASS.residential] = 1;
-    const tip = coachSuggestion(context({ ...state, mixedCounts: mixed }));
-    expect(tip?.tier).toBe('district');
-    expect(tip?.id).not.toBe('coach-overlap');
-    expect(tip?.highlight).not.toBeNull();
-  });
-
   it('con un solo catalizzatore non parla di sovrapposizione', () => {
     const state = createSimState();
     const lone = addCatalyst(state, {
@@ -181,13 +183,45 @@ describe('coach — i distretti', () => {
   });
 });
 
+describe('coach — il catalogo', () => {
+  function extended(ids: readonly CatalystId[]): SimState {
+    let state = city();
+    for (const [index, id] of ids.entries()) {
+      state = addCatalyst(state, {
+        x: 300 + index * 20, y: 0,
+        class: catalystById(id).class, kind: id,
+        strength: 200, radius: 12,
+      });
+    }
+    const mixed = [...state.mixedCounts];
+    mixed[BUILDING_CLASS.residential] = 1;
+    return { ...state, mixedCounts: mixed };
+  }
+
+  it('propone il prossimo landmark mancante con il perche’', () => {
+    const tip = coachSuggestion(context(extended(['university'])));
+    expect(tip?.id).toBe('coach-missing-greenhouse');
+    expect(tip?.title).toBe('Place a Greenhouse');
+    expect(tip?.message).toContain('hydroponic');
+  });
+
+  it('nomina il quartiere quando il landmark mancante fa coppia con un ruolo piazzato', () => {
+    const tip = coachSuggestion(context(extended(['greenhouse', 'power', 'school', 'transport', 'university'])));
+    expect(tip?.id).toBe('coach-missing-port');
+    expect(tip?.message).toContain('harbor');
+    expect(tip?.message).toContain('Market');
+    expect(tip?.highlight).not.toBeNull();
+  });
+});
+
 describe('coach — gli stadi', () => {
   it('dice quanto manca a un landmark quasi cresciuto', () => {
     const landmark: CoachLandmark = {
       kind: 'market', x: 0, y: 0, stage: 1, nextAt: 16, nearby: 12,
     };
-    const tip = coachSuggestion(context(stageCity(), { landmarks: [landmark] }));
-    expect(tip?.id).toBe('coach-stage-market');
+    const tips = coachSuggestions(context(stageCity(), { landmarks: [landmark] }));
+    const tip = tips.find((entry) => entry.id === 'coach-stage-market');
+    expect(tip).toBeDefined();
     expect(tip?.message).toContain('4 more');
     expect(tip?.grow?.nextAt).toBe(16);
     expect(tip?.grow?.nearby).toBe(12);

@@ -28,19 +28,35 @@ import { CHUNK } from './chunkCoords';
  * conto del budget di chunk).
  */
 
-/** Le due manopole: l'impronta del modulo e il numero di livelli. */
+/** Le tre manopole: l'impronta del modulo ordinario, l'ingombro mega e i livelli. */
 export const SCALE: {
   readonly moduleFootprint: number;
+  readonly megaFootprint: number;
   readonly maxLevel: number;
 } = {
   /**
    * Impronta massima del singolo modulo a fasce, in voxel.
    *
-   * E' l'asse orizzontale: sotto questo lato un edificio e' un `generateBuilding`;
-   * oltre, e' un assemblaggio di sotto-volumi su un podio condiviso (vedi
-   * `buildings/assemble.ts`). Raddoppia rispetto agli otto di partenza.
+   * E' l'asse orizzontale della **citta' ordinaria**: sotto questo lato un
+   * edificio e' un `generateBuilding`; oltre, e' un assemblaggio di sotto-volumi
+   * su un podio condiviso (vedi `buildings/assemble.ts`). E' tornato a otto: la
+   * grana fine — passo degli scarti a un voxel, impronte 4..8 — e' la grana
+   * giusta per le case. Il raddoppio non vive qui ma in `megaFootprint`, e
+   * questa manopola non deve mai tornare a governare la forma dell'edificio
+   * ordinario.
    */
-  moduleFootprint: 16,
+  moduleFootprint: 8,
+
+  /**
+   * Ingombro delle megastrutture: arcologie e assemblaggi.
+   *
+   * E' l'asse orizzontale della **fase mega**. Da qui derivano solo le tre cose
+   * che devono *ospitare* la megastruttura — la maglia stradale
+   * (`streetPitchOf`), il lato del segmento di comparsa (`segmentSideOf`) e
+   * l'ingombro dell'arcologia (`arcologySpanOf`) — mai la grammatica
+   * dell'edificio ordinario, che resta legata a `moduleFootprint`.
+   */
+  megaFootprint: 16,
 
   /**
    * Livello massimo raggiungibile. E' l'asse verticale: da qui discendono
@@ -120,13 +136,14 @@ export function courtyardMinSideOf(module: number = SCALE.moduleFootprint): numb
 /**
  * Lato oltre il quale uno stamp compare a ritagli invece che in un colpo solo.
  *
- * Deve reggere l'inviluppo massimo (`module + MAX_OVERHANG`) senza costringere
- * un edificio normale a spezzarsi, quindi sta sopra quel lato e resta pari
- * (multiplo di cella). `CHUNK / 2` e' il pavimento: sotto, un ritaglio
- * attraverserebbe piu' di due colonne di chunk per asse.
+ * Deve reggere l'ingombro della megastruttura — l'arcologia entra per intero,
+ * `arcologySpanOf` sta dentro — senza costringere un edificio normale a
+ * spezzarsi, quindi sta sopra quel lato e resta pari (multiplo di cella).
+ * `CHUNK / 2` e' il pavimento: sotto, un ritaglio attraverserebbe piu' di due
+ * colonne di chunk per asse.
  */
 export function segmentSideOf(
-  module: number = SCALE.moduleFootprint,
+  module: number = SCALE.megaFootprint,
   overhang: number = MAX_OVERHANG,
 ): number {
   return Math.max(CHUNK / 2, Math.ceil((module + overhang + 1) / 2) * 2);
@@ -250,15 +267,15 @@ export function maxDirtyChunksPerBuildingOf(
 }
 
 /**
- * Passo e scostamento della maglia stradale, derivati dal modulo.
+ * Passo e scostamento della maglia stradale, derivati dall'ingombro mega.
  *
- * Il vincolo e' che l'isolato piu' stretto — `pitch - 2 * jitter` — regga il
- * modulo piu' largo piu' due cubi di marciapiede. Il passo scala con il modulo,
- * lo scostamento resta circa un quinto del passo (il piu' vicino a meta' che
- * tenga insieme la lettura di griglia).
+ * Il vincolo e' che l'isolato piu' stretto — `pitch - 2 * jitter` — regga la
+ * megastruttura piu' larga piu' due cubi di marciapiede. Il passo scala con
+ * l'ingombro mega, lo scostamento resta circa un quinto del passo (il piu'
+ * vicino a meta' che tenga insieme la lettura di griglia).
  */
 export function streetPitchOf(
-  module: number = SCALE.moduleFootprint,
+  module: number = SCALE.megaFootprint,
   cellSize = 2,
 ): { readonly pitch: number; readonly jitter: number } {
   const pitch = Math.round((module * 2.5) / cellSize) * cellSize;
@@ -280,10 +297,10 @@ export function coastalRadiusOf(
 }
 
 /**
- * Lato dell'arcologia: deve superare il modulo (o non e' una megastruttura) ma
- * stare dentro `segmentSide` (o si spezza in pianta). Le ricette lo usano per
- * dichiarare il proprio ingombro.
+ * Lato dell'arcologia: deve superare il modulo ordinario (o non e' una
+ * megastruttura) ma stare dentro `segmentSide` (o si spezza in pianta). Le
+ * ricette lo usano per dichiarare il proprio ingombro.
  */
-export function arcologySpanOf(module: number = SCALE.moduleFootprint): number {
+export function arcologySpanOf(module: number = SCALE.megaFootprint): number {
   return Math.min(segmentSideOf(module), module + 4);
 }

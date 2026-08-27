@@ -21,7 +21,9 @@ describe('Builder — Skyport di facciata', () => {
     const host = [...builder.registry.all][0];
     expect(host).toBeDefined();
     if (host === undefined) return;
-    expect([host.footprint, footprintDepth(host)]).toEqual([8, 8]);
+    // Un edificio singolo satura a `mid` (sei voxel), e lo scalo in quota e'
+    // largo quanto la facciata che lo regge.
+    expect([host.footprint, footprintDepth(host)]).toEqual([6, 6]);
 
     const verdict = builder.landmarkAloftSite(host.x, host.y, 'airport');
     expect(verdict.refusal).toBeNull();

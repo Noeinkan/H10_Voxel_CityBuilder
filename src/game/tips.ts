@@ -114,7 +114,7 @@ function crisisTips(state: SimState): GameTip[] {
       id: 'budget-deficit',
       kind: 'crisis',
       title: 'Budget deficit',
-      message: 'Services cost more than your income, and only shops pay for them. Place a Market so commerce can grow, or switch on Austerity. No buildings will be lost.',
+      message: 'The city is losing funds every tick: services cost more than the shops earn. To fix that, place a Market so commerce pays for them, or switch on Austerity. No buildings will be lost.',
     });
   }
 
@@ -123,7 +123,7 @@ function crisisTips(state: SimState): GameTip[] {
       id: 'unhappy-city',
       kind: 'crisis',
       title: 'Critical happiness',
-      message: 'The city is overcrowded or underserved. Place a Park to raise civic life and a Market so shops serve people; more housing lowers the crowding that causes it.',
+      message: 'The city is overcrowded or underserved, and satisfaction has hit rock bottom. To fix that, place a Park to raise civic life, a Market so shops serve people, and more housing to lower the crowding that causes it.',
     });
   }
 
@@ -143,15 +143,15 @@ function foodAdvice(state: SimState): string {
   const recover = 'Population declines slowly and can recover.';
 
   if (!connected && towers <= 0) {
-    return `Fields alone can no longer feed the city — the island runs out of good ground long before it runs out of people. Place a Greenhouse beside your Factory (or Market): the glass farm turns nearby industry into hydroponic towers. A Port opens food imports instead. ${recover}`;
+    return `People don't have enough food: the fields alone can no longer feed the city — the island runs out of good ground long before it runs out of people. To fix that, place a Greenhouse close to your Factory (or Market): the glass farm turns nearby industry into hydroponic towers. A Port on the coast opens food imports instead. ${recover}`;
   }
   if (connected && towers <= 0) {
-    return `Imports are not keeping up on their own. Switch trade to Prioritize food, or build upward: a Greenhouse beside your Factory turns dense industry into hydroponic towers. ${recover}`;
+    return `People don't have enough food: imports alone are not keeping up. To fix that, switch trade to Prioritize food, or place a Greenhouse close to your Factory so dense industry grows hydroponic towers. ${recover}`;
   }
   if (!connected) {
-    return `Your towers are not enough on their own. A Port opens food imports, which arrive as a share of what the city eats and so keep scaling with it. ${recover}`;
+    return `People don't have enough food: even your towers fall short. To fix that, place a Port on the coast — imported food arrives as a share of what the city eats, so it keeps scaling with it. ${recover}`;
   }
-  return `Both your farms and your imports are behind the city's appetite. Slow the clock and let the countryside catch up before growing further. ${recover}`;
+  return `People don't have enough food: farms and imports are both behind the city's appetite. To fix that, slow the clock and let the countryside catch up before growing further. ${recover}`;
 }
 
 // --- Colli di bottiglia -----------------------------------------------------
@@ -177,7 +177,7 @@ function bottleneckTips(state: SimState): GameTip[] {
       id: 'short-handed',
       kind: 'bottleneck',
       title: 'Build more homes',
-      message: `Factories, shops and fields share one workforce, and it is only ${percent}% staffed — every one of them is producing that fraction. Build more homes: houses grow around your Market, so place another Market instead of more industry.`,
+      message: `Factories, shops and fields share one workforce, and it is only ${percent}% staffed — every one of them is producing that fraction. To fix that, build more homes: houses grow around your Market, so place another Market instead of more industry.`,
     });
   }
 
@@ -191,7 +191,7 @@ function bottleneckTips(state: SimState): GameTip[] {
       id: 'empty-shelves',
       kind: 'bottleneck',
       title: 'Place a Factory',
-      message: 'Your shops are open with nothing to sell: commerce burns materials, and the warehouse is empty. Place a Factory to stock them — until then the shops earn nothing.',
+      message: 'Your shops are open with nothing to sell: commerce burns materials, and the warehouse is empty. To fix that, place a Factory close to your Market — it stocks the shelves, and until then the shops earn nothing.',
     });
   }
 
@@ -204,7 +204,7 @@ function bottleneckTips(state: SimState): GameTip[] {
       id: 'countryside-behind',
       kind: 'bottleneck',
       title: 'Plant more farms',
-      message: `The city is eating well today, but it has outgrown its fields by about ${wanted} plots. Plant more farms — or place a Greenhouse beside your Factory to grow hydroponic towers without farmland.`,
+      message: `The city eats well today, but its fields are about ${wanted} plots behind its appetite. To fix that, plant more farms — or place a Greenhouse close to the Factory for hydroponic towers that spend no farmland.`,
     });
   }
 

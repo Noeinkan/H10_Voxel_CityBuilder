@@ -172,8 +172,13 @@ export const AERIAL = {
      * una cosa sola: se un'arcologia e' stata fondata. Le mensole gia' posate
      * restano quelle che erano, quindi il salto di scala si legge come una
      * stratificazione della citta' invece che come un ritocco globale.
+     *
+     * **Segue l'ingombro mega, non il modulo ordinario.** E' l'unico sporto del
+     * dominio che parla la lingua delle megastrutture: legarlo al modulo degli
+     * edifici normali lo farebbe tornare a otto, e il mensolone smetterebbe di
+     * essere un pezzo di suolo in quota.
      */
-    megaOverhang: MODULE,
+    megaOverhang: SCALE.megaFootprint,
 
     /**
      * Di quanto la parete d'attacco puo' essere rientrata dal filo dell'impronta.

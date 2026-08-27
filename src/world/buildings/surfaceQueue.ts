@@ -1,8 +1,7 @@
 import { SURFACE_KIND } from '../visualBlock';
 import type { TerrainMap } from '../terrain/TerrainMap';
 import type { VoxelWorld } from '../VoxelWorld';
-import { GRADING } from '../grading/config';
-import { GROUND, isDryLand, rampField } from '../grading/grade';
+import { GROUND, isDryLand } from '../grading/grade';
 import { StreetNetwork, type PavementCell } from '../streets/StreetNetwork';
 import { STREET_ROLE, type BlockId } from '../streets/streetGrid';
 import { STREETS } from '../streets/config';
@@ -117,63 +116,44 @@ export class SurfaceQueue {
   }
 
   /**
-   * Accoda la carreggiata che circonda un isolato, una volta sola.
+   * Registra un isolato nella rete e tira la strada che lo attacca ai centri
+   * distanti, una volta sola.
    *
-   * La strada compare **per isolato** e non per edificio: appena il primo
-   * edificio lo giustifica, l'anello di carreggiata entra in coda tutto
-   * insieme, e la citta' mostra una strada chiusa invece dei monconi che il
-   * vecchio collegamento fra ancore allungava di due celle per infornata. Le
-   * colonne non edificabili — mare, roccia, pendenza — le scarta
-   * `canPaint`, ed e' cosi' che la maglia si ritaglia da sola sulla
-   * forma dell'isola senza che la rete sappia dove finisce la terra.
+   * **Niente piu' anello perimetrale**: le strade non chiudono il quadrato, e
+   * dentro l'isolato gli edifici crescono senza un perimetro d'asfalto. La sola
+   * strada che compare e' il raccordo verso un centro lontano — e' tutto cio'
+   * che la rete deve essere: un collegamento minimo che segue il terreno.
    */
   enqueueBlockStreets(block: BlockId): void {
     const key = this.streets.keyOf(block);
     if (this.paintedBlocks.has(key)) return;
     this.paintedBlocks.set(key, block);
 
-    this.enqueuePavement(this.streets.pavementRing(block));
     this.linkToNetwork(block);
   }
 
   /**
-   * Accoda delle colonne di carreggiata con la quota di progetto che le regge.
+   * Accoda delle colonne di carreggiata: piatte, alla quota del terreno.
    *
-   * Era il corpo di `enqueueBlockStreets`, ed e' uscito da li' quando il raccordo
-   * ha avuto bisogno delle stesse identiche righe su un insieme di colonne che
-   * non e' un anello. Le due cose che fa — la rampa sul riquadro e il colore per
-   * ruolo — non hanno mai avuto niente a che vedere con la forma dell'insieme:
-   * chiedono solo delle colonne di strada e a che quota devono arrivare.
+   * La strada **si adatta al terreno senza scavarlo ne' alzarlo**: niente deck
+   * rialzato, niente muri, niente banchina. L'asfalto si dipinge sulla cella
+   * piu' alta del terreno e basta — la forma minima che una strada puo' avere.
    */
   private enqueuePavement(cells: readonly PavementCell[]): void {
     if (cells.length === 0) return;
-    const grade = this.rampAround(cells);
 
     for (const cell of cells) {
-      // Una banchina e' il bordo costruito della terra: oltre `quayReach` la
-      // carreggiata smette invece di proseguire sul fondale.
+      // Oltre `quayReach` non c'e' terra a cui appoggiarsi: la carreggiata
+      // finisce sulla battigia invece di proseguire sul fondale.
       if (!nearLand(this.terrain, cell.x, cell.y)) continue;
 
       const arterial = cell.role === STREET_ROLE.arterial;
-      const shore = groundKindAt(this.terrain, cell.x, cell.y) === GROUND.shore;
-      const deck = grade.levelAt(cell.x, cell.y);
-      const raised = deck > this.terrain.heightAt(cell.x, cell.y);
       this.enqueue({
         x: cell.x,
         y: cell.y,
-        // Sulla banchina la carreggiata smette di essere asfalto: un molo
-        // asfaltato leggerebbe come una strada finita nell'acqua, che e'
-        // esattamente l'impressione che questa fase deve togliere.
-        palette: shore
-          ? GRADING.quayDeck
-          : arterial ? STREETS.arterialPalette : STREETS.minorPalette,
-        // L'asse principale vince l'incrocio: e' la sua continuita' a rendere
-        // leggibile la gerarchia, e una corsia di svolta dipinta col colore
-        // secondario la spezzerebbe proprio dove si vede di piu'.
+        palette: arterial ? STREETS.arterialPalette : STREETS.minorPalette,
         priority: arterial ? 2 : 1,
-        deck,
-        wall: raised ? (shore ? GRADING.quayWall : GRADING.terraceWall) : undefined,
-        coping: shore ? GRADING.quayCoping : GRADING.terraceCoping,
+        deck: this.terrain.heightAt(cell.x, cell.y),
       });
     }
   }
@@ -375,56 +355,5 @@ export class SurfaceQueue {
   private canPaint(x: number, y: number): boolean {
     return groundKindAt(this.terrain, x, y) !== GROUND.refused &&
       !this.registry.isOccupied(x, y);
-  }
-
-  /**
-   * Quota di progetto di un insieme di colonne di carreggiata.
-   *
-   * La battigia ancora la strada alla quota della banchina; tutto il resto
-   * parte dal terreno. `rampField` alza poi il campo alla pendenza uno, ed e'
-   * quella relazione a produrre la rampa: la carreggiata che scende al molo ci
-   * arriva con un voxel per colonna invece di finirci sopra a picco.
-   *
-   * Il rettangolo e' quello dell'insieme intero — per un anello, interno
-   * dell'isolato compreso: le colonne che non si dipingono servono comunque a
-   * propagare la distanza, e lasciarle fuori spezzerebbe la rampa proprio negli
-   * angoli. Un tratto di raccordo e' una striscia, quindi il suo riquadro e' la
-   * striscia stessa, ed e' anche il motivo per cui la rampa si calcola **per
-   * tratto** invece che sul percorso intero: il riquadro di una L fra due capi
-   * lontani sarebbe il rettangolo che li contiene, cioe' decine di migliaia di
-   * celle per dipingerne qualche centinaio.
-   */
-  private rampAround(ring: readonly PavementCell[]): {
-    levelAt: (x: number, y: number) => number;
-  } {
-    let x0 = Number.MAX_SAFE_INTEGER;
-    let y0 = Number.MAX_SAFE_INTEGER;
-    let x1 = Number.MIN_SAFE_INTEGER;
-    let y1 = Number.MIN_SAFE_INTEGER;
-    for (const cell of ring) {
-      if (cell.x < x0) x0 = cell.x;
-      if (cell.y < y0) y0 = cell.y;
-      if (cell.x > x1) x1 = cell.x;
-      if (cell.y > y1) y1 = cell.y;
-    }
-
-    const width = x1 - x0 + 1;
-    const height = y1 - y0 + 1;
-    const level = new Int32Array(width * height);
-    for (let y = 0; y < height; y++) {
-      for (let x = 0; x < width; x++) {
-        const wx = x0 + x;
-        const wy = y0 + y;
-        const ground = this.terrain.heightAt(wx, wy);
-        level[y * width + x] = groundKindAt(this.terrain, wx, wy) === GROUND.shore
-          ? Math.max(ground, GRADING.quayLevel)
-          : ground;
-      }
-    }
-    rampField(level, width, height);
-
-    return {
-      levelAt: (x: number, y: number): number => level[(y - y0) * width + (x - x0)],
-    };
   }
 }
