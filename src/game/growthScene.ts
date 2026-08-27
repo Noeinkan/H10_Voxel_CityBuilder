@@ -457,8 +457,17 @@ export class GrowthScene {
     const definition = catalystById(grant.kind);
     const depth = BALANCE.decisions.grant.searchDepth;
     const preferred = nextBuildSites(this.state, this.map, depth, { class: definition.class });
-    const site = grantSite(this.state, this.map, grant.kind, preferred)
-      ?? grantSite(this.state, this.map, grant.kind, nextBuildSites(this.state, this.map, depth));
+    const everywhere = nextBuildSites(this.state, this.map, depth);
+    // L'opera automatica rispetta i monumenti che ci sono gia': la citta' non
+    // demolisce da sola cio' che il giocatore ha fatto sorgere — la gomma e'
+    // un gesto, non una decisione. Solo se ogni sito li toccherebbe ripiega
+    // sulla regola piena.
+    const spares = (x: number, y: number): boolean =>
+      this.builder.landmarkClearance(x, y, grant.kind).landmarks === 0;
+    const site = grantSite(this.state, this.map, grant.kind, preferred, spares)
+      ?? grantSite(this.state, this.map, grant.kind, everywhere, spares)
+      ?? grantSite(this.state, this.map, grant.kind, preferred)
+      ?? grantSite(this.state, this.map, grant.kind, everywhere);
     if (site === null) {
       this.message = `The city had no room for the new ${definition.label.toLowerCase()}.`;
       return;

@@ -12,6 +12,12 @@
   quello che si vedeva era una piattaforma rettangolare in mezzo al golfo con
   dentro una pozza piu' alta del mare che la circondava. **La darsena e' il mare
   che c'era**: la ricetta la ottiene non disegnando niente.
+- **L'unico scavo del progetto e' il landmark sul pendio.** Si riempie e non si
+  scava ovunque; l'eccezione sta in `landmarkDriver.enqueueSlopeCarve`, e il suo
+  confine e' l'impronta della struttura: la montagna sopra il tetto viene tolta
+  con la stessa coda di comparsa del monumento, colonna per colonna e solo dove
+  la maschera dichiara che la ricetta poggia. Fuori dall'impronta — parete e
+  grembiule compresi — non si tocca un voxel.
 - `LANDMARK.groundBand` separa cio' che **poggia** da cio' che **sporge**: il
   braccio di una gru passa sopra il bacino a tredici voxel d'altezza, e contarlo
   vorrebbe dire riempire di terra l'acqua che sorvola. Chi scrive una ricetta

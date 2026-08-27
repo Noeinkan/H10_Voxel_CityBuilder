@@ -52,12 +52,21 @@ export interface ClearanceBox {
 export interface ClearanceVerdict {
   /** Edifici che porterebbe via. Zero dove il riquadro e' gia' libero. */
   readonly clears: number;
+  /**
+   * Quanti dei condannati sono **landmark**.
+   *
+   * E' il numero che distingue «demolisco il costruito» da «demolisco un
+   * monumento»: chi piazza a mano accetta entrambi, chi sceglie un posto per
+   * un'opera automatica — la decisione concessa — puo' voler risparmiare i
+   * monumenti e cercare altrove.
+   */
+  readonly landmarks: number;
   /** Perche' non ci si puo' piantare, o null. */
   readonly refusal: ClearanceRefusal | null;
 }
 
 /** Riquadro gia' libero. */
-export const OPEN_SITE: ClearanceVerdict = { clears: 0, refusal: null };
+export const OPEN_SITE: ClearanceVerdict = { clears: 0, landmarks: 0, refusal: null };
 
 interface Site {
   readonly box: ClearanceBox;
@@ -98,7 +107,10 @@ export class ClearanceSites {
       records.map((record) => clearanceOf(this.ctx.registry, record)),
       rule,
     );
-    return { clears: plan.doomed.length, refusal: plan.refusal };
+    const landmarks = records.filter((record) =>
+      clearanceOf(this.ctx.registry, record).kind === CLEARANCE_KIND.landmark &&
+      plan.doomed.includes(record.id)).length;
+    return { clears: plan.doomed.length, landmarks, refusal: plan.refusal };
   }
 
   /**
@@ -132,6 +144,11 @@ export class ClearanceSites {
     if (doomed.size === 0) return false;
 
     this.sites.push({ box, doomed, onFinish });
+    // Il riquadro si prenota per intero: la citta' continua a crescere mentre
+    // il cantiere demolisce, e senza questa prenotazione gli angoli liberi del
+    // riquadro si riempirebbero prima che la struttura arrivi — il preventivo
+    // prometterebbe un posto che a meta' cantiere non esiste piu'.
+    this.ctx.registry.reserveRect({ x: box.x, y: box.y, sizeX: box.sizeX, sizeY: box.sizeY });
     this.paintFence(box);
     return true;
   }
@@ -183,6 +200,10 @@ export class ClearanceSites {
 
       if (site.doomed.size > 0) continue;
       this.sites.splice(i, 1);
+      // La prenotazione cade **prima** della richiamata: la struttura che sta
+      // per comparire deve vedere il proprio posto libero, e da quel momento
+      // il riquadro e' suo.
+      this.ctx.registry.releaseRect(site.box);
       site.onFinish();
     }
 
@@ -218,6 +239,12 @@ export class ClearanceSites {
  * ospita una mensola o porta una gamba **e'** citta' in quota, vista da sotto.
  * Farlo cadere farebbe cadere quello che ci sta sopra, e sarebbe la demolizione
  * a cascata che nessuno di questi domini vuole.
+ *
+ * **Un landmark e' un caso suo.** Non e' una struttura — il piazzamento di un
+ * monumento lo demolisce come il resto del costruito — ma non e' nemmeno un
+ * edificio: un'arcologia non se lo porta via per farsi spazio, perche' nessuno
+ * gliel'ha chiesto. A deciderlo e' la regola del chiamante, non questa
+ * classificazione.
  */
 export function clearanceOf(
   registry: ReadonlyBuildingRegistry,
@@ -225,10 +252,12 @@ export function clearanceOf(
 ): ClearanceRecord {
   const kind = record.span !== undefined
     ? CLEARANCE_KIND.span
-    : record.landmark !== undefined || record.aerial !== undefined ||
-      record.arcology !== undefined || registry.carries(record.id)
-      ? CLEARANCE_KIND.structure
-      : CLEARANCE_KIND.building;
+    : record.landmark !== undefined && record.aloft !== true
+      ? CLEARANCE_KIND.landmark
+      : record.aerial !== undefined || record.arcology !== undefined ||
+        registry.carries(record.id) || record.aloft === true
+        ? CLEARANCE_KIND.structure
+        : CLEARANCE_KIND.building;
   return { id: record.id, level: record.level, kind };
 }
 

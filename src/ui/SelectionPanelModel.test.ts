@@ -12,7 +12,7 @@ import {
   buildSelectionPanelModel,
   defaultSection,
   extentOf,
-  SECTION_TAB_LABELS,
+  SECTION_LABELS,
 } from './SelectionPanelModel';
 
 const PROFILE: LocalUrbanProfile = {
@@ -459,9 +459,9 @@ describe('buildSelectionPanelModel', () => {
   });
 });
 
-describe('SECTION_TAB_LABELS', () => {
+describe('SECTION_LABELS', () => {
   it('dichiara tutte e quattro le unita\' in inglese', () => {
-    expect(SECTION_TAB_LABELS).toEqual({
+    expect(SECTION_LABELS).toEqual({
       structure: 'Structure',
       block: 'Block',
       column: 'Column',
@@ -469,10 +469,122 @@ describe('SECTION_TAB_LABELS', () => {
     });
   });
 
-  it('ogni etichetta e\' una sola parola, adatta a una linguetta', () => {
-    for (const label of Object.values(SECTION_TAB_LABELS)) {
+  it('ogni etichetta e\' una sola parola, adatta a un\'intestazione', () => {
+    for (const label of Object.values(SECTION_LABELS)) {
       expect(label).toMatch(/^[A-Z][a-z]+$/);
     }
+  });
+});
+
+describe('la carta di cio\' che serve per crescere', () => {
+  function cardRows(model: ReturnType<typeof buildSelectionPanelModel>): readonly string[] {
+    const card = model.growth;
+    if (card === null) throw new Error('carta di crescita attesa');
+    return card.rows.map((row) => `${row.label}: ${row.value}`);
+  }
+
+  it('un edificio legge soglia e cassa dalla stessa macchina del driver', () => {
+    const model = buildSelectionPanelModel(selection(structure(
+      { class: BUILDING_CLASS.industrial },
+      { growth: { nextLevel: 4, desirability: 78, threshold: 96, cost: 72, stock: 12 } },
+    )));
+
+    expect(model.growth).not.toBeNull();
+    expect(model.growth!.title).toBe('To grow');
+    expect(model.growth!.summary).toBe('What this building needs to reach level 4.');
+    expect(cardRows(model)).toEqual([
+      'Desirability: 78 of the 96 it needs for Industry',
+      'Materials: 12 in stock · 72 needed for the upgrade',
+    ]);
+  });
+
+  it('una soglia gia\' raggiunta si legge come raggiunta, e senza costo niente cassa', () => {
+    const model = buildSelectionPanelModel(selection(structure(
+      {},
+      { growth: { nextLevel: 4, desirability: 130, threshold: 96, cost: 0, stock: 50 } },
+    )));
+
+    expect(cardRows(model)).toEqual(['Desirability: 130 · the 96 it needs is met']);
+  });
+
+  it('un edificio al tetto del luogo lo dice, e cosi\' chi regge qualcosa', () => {
+    const capped = buildSelectionPanelModel(selection(structure({}, { growth: null })));
+    expect(capped.growth!.summary).toBe('At the highest level this place allows.');
+
+    const carrying = buildSelectionPanelModel(selection(structure({}, { growth: null, carries: true })));
+    expect(carrying.growth!.summary).toContain('cannot grow');
+  });
+
+  it('un landmark dice quanti edifici mancano allo stadio successivo', () => {
+    // Gli stessi numeri del driver: stadio, massimo, vicini e soglia. La riga
+    // vive nella carta in cima, non piu' in fondo alla scheda della struttura.
+    const model = buildSelectionPanelModel(selection(structure(
+      { landmark: 'port', level: 2 },
+      { landmark: { stage: 2, maxStage: 4, nearby: 14, nextAt: 16 } },
+    )));
+
+    expect(model.growth!.summary).toBe('The next stage needs 16 buildings within reach.');
+    expect(cardRows(model)).toContain('Stage: 2/4 · 14/16 buildings nearby');
+    expect(rowsOf(model, 'structure').join(' ')).not.toContain('Stage:');
+  });
+
+  it('un landmark arrivato in cima non ha piu\' una carta', () => {
+    const model = buildSelectionPanelModel(selection(structure(
+      { landmark: 'port', level: 4 },
+      { landmark: { stage: 4, maxStage: 4, nearby: 40, nextAt: null } },
+    )));
+
+    expect(model.growth).toBeNull();
+  });
+
+  it('un terreno nudo elenca gli usi che superano la propria soglia di sito', () => {
+    // Desiderabilita' [180, 90, 20, 40] contro le soglie [40, 34, 30, 25]:
+    // l'industria non le passa e non compare, come in `nextBuildSites`.
+    const model = buildSelectionPanelModel(selection(null));
+
+    expect(cardRows(model)).toEqual([
+      'Housing: 180 · passes the 40 site threshold',
+      'Commerce: 90 · passes the 34 site threshold',
+      'Civic: 40 · passes the 25 site threshold',
+    ]);
+  });
+
+  it('dove nessun uso arriva, la carta nomina il gesto che manca', () => {
+    const picked = selection(null);
+    const quiet = buildSelectionPanelModel({
+      ...picked,
+      column: { ...picked.column, desirability: [10, 10, 10, 10] },
+    });
+    expect(cardRows(quiet)).toEqual([
+      'First building: desirability below every site threshold — a landmark nearby would raise it',
+    ]);
+
+    const lonely = buildSelectionPanelModel({
+      ...picked,
+      column: { ...picked.column, desirability: [10, 10, 10, 10], profile: { ...PROFILE, roles: [] } },
+    });
+    expect(cardRows(lonely)).toEqual([
+      'First building: needs a landmark within reach — desirability comes from catalysts',
+    ]);
+  });
+
+  it('un terreno non edificabile non promette niente', () => {
+    const picked = selection(null);
+    const refused = buildSelectionPanelModel({
+      ...picked,
+      column: { ...picked.column, buildable: false },
+    });
+
+    expect(refused.growth!.summary).toBe('Nothing can grow on this column.');
+    expect(cardRows(refused)).toEqual(['Ground: not buildable']);
+  });
+
+  it('campate e parti in quota non hanno una carta: non crescono', () => {
+    const span = buildSelectionPanelModel(selection(structure({ span: SPAN_KIND.bridge })));
+    expect(span.growth).toBeNull();
+
+    const aerial = buildSelectionPanelModel(selection(structure({ aerial: AERIAL_PART.terrace })));
+    expect(aerial.growth).toBeNull();
   });
 });
 

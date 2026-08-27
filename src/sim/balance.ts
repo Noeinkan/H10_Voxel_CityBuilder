@@ -96,27 +96,24 @@ export const BALANCE = {
       stageBonus: 8,
 
       /**
-       * Fin dove un landmark puo' sventrare per farsi posto.
+       * Cosa un landmark puo' abbattere per farsi posto.
        *
-       * **Un landmark si pianta anche dentro l'edificato**, e il riquadro che
-       * occupa viene sgomberato di cio' che ci trova. Non di tutto pero': oltre
-       * questo livello il piazzamento rifiuta, e il giocatore deve cercare la
-       * sacca bassa dentro il quartiere denso invece di cliccare dove gli pare.
-       * E' cio' che tiene il gesto una lettura della citta' e non una gomma.
+       * **Un landmark si pianta anche dentro l'edificato, e demolisce tutto.**
+       * Il riquadro che occupa viene sgomberato di cio' che ci trova — case,
+       * torri, altri monumenti — e la struttura prende il loro posto: il gesto
+       * e' una gomma dichiarata, e leggere la citta' non e' piu' un prerequisito
+       * del piazzamento. Il costo non e' in fondi ed e' voluto: con un milione
+       * in cassa un prezzo non vincola niente. Sventrare toglie edifici alla
+       * simulazione, quindi capacita', quindi soddisfazione — il conto lo
+       * presenta `tick` con il `crowdingPenalty` che ha gia'.
        *
-       * **Quattro su dodici e' un terzo della scala**, cioe' il tessuto che una
-       * citta' matura ha ancora attorno alle sue torri. Il numero e' l'unica
-       * manopola di questa meccanica e va tarato a schermo: troppo basso, e nel
-       * centro non si sventra piu' niente proprio dove il gesto ha senso;
-       * troppo alto, e un monumento cancella un centro direzionale.
-       *
-       * Il costo non e' in fondi ed e' voluto: con un milione in cassa un
-       * prezzo non vincola niente. Sventrare toglie edifici alla simulazione,
-       * quindi capacita', quindi soddisfazione — il conto lo presenta `tick`
-       * con il `crowdingPenalty` che ha gia'.
+       * Il tetto resta aperto perche' la regola vive in `clearance.ts`, che e'
+       * la stessa delle arcologie: li' la soglia e' un numero vero, qui vale
+       * tutto il costruito, monumenti compresi.
        */
       clearing: {
-        maxLevel: 4,
+        maxLevel: Number.POSITIVE_INFINITY,
+        clearsLandmarks: true,
       },
 
       /**

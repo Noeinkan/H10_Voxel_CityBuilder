@@ -3,7 +3,9 @@ import { buildStamp } from './assemble';
 import { selectTypology, typologyProfile } from './typology';
 import { styleOf, styledProfile } from './style';
 import type { BuildingRecord } from './BuildingRegistry';
-import type { VoxelStamp } from './stamp';
+import { EMPTY_STAMP, type VoxelStamp } from './stamp';
+import { generateLandmark } from '../landmarks/generate';
+import { FACING, type Facing } from '../streets/streetGrid';
 
 /**
  * La sagoma **registrata** di un edificio, rigenerata dal suo record.
@@ -21,12 +23,29 @@ import type { VoxelStamp } from './stamp';
  * adesso — se la sagoma partisse da un'altra quota, la cancellazione bucherebbe
  * lo zoccolo sotto il vicino.
  *
+ * **Un landmark si rigenera con il suo generatore.** Da quando un monumento
+ * puo' essere demolito come un edificio, la sagoma da togliere e' quella che
+ * `generateLandmark` disegna — stadio, verso, esemplare e forma del record —
+ * e non una grammatica di fasce: le due non hanno un voxel in comune, e
+ * sbagliare generatore lascerebbe il monumento per meta' in piedi.
+ *
  * Esiste come modulo suo perche' ha due chiamanti con lo stesso bisogno e due
  * motivi diversi: l'upgrade, che cancella cio' che il livello nuovo non copre,
  * e lo sventramento, che cancella tutto. Scritta due volte, divergerebbe alla
  * prima volta che qualcuno aggiunge un campo al record.
  */
 export function recordStamp(record: BuildingRecord): VoxelStamp {
+  if (record.landmark !== undefined) {
+    const stamp = generateLandmark({
+      kind: record.landmark,
+      stage: record.level,
+      facing: (record.facing ?? FACING.east) as Facing,
+      seed: record.seed,
+      form: record.landmarkForm,
+    });
+    return stamp ?? EMPTY_STAMP;
+  }
+
   const typology = typologyOf(record);
   return buildStamp({
     class: record.class,

@@ -11,7 +11,7 @@ import type { AerialDriver } from './aerialDriver';
 import type { BuildContext } from './buildContext';
 import { dirtyChunkCount } from './chunkBudget';
 import { BUILDER, MAX_FOOTPRINT, typologyById, upgradeThresholdOf } from './config';
-import { buildStamp } from './assemble';
+import { buildStamp, urbanFootprintCap } from './assemble';
 import { groundSideOf } from './generate';
 import { sliceStamps, type VoxelStamp } from './stamp';
 import { anchorOf } from './growthQueue';
@@ -111,7 +111,7 @@ export class UpgradeDriver {
       // successiva le ripropone alla quota nuova. Farlo prima le avrebbe fatte
       // oscillare a ogni edificio che la passata scarta per soglia.
       this.aerial.releaseDecks(record.id);
-      const replaced = this.upgrade(record, nextLevel, profile);
+      const replaced = this.upgrade(record, nextLevel, profile, next);
       if (replaced === null) continue;
       const specialization = nextTypologySpecialization(replaced);
       next = upgradeBuilding(next, {
@@ -138,6 +138,7 @@ export class UpgradeDriver {
     record: BuildingRecord,
     nextLevel: number,
     profile: LocalUrbanProfile,
+    state: SimState,
   ): BuildingRecord | null {
     const { world, terrain, streets, registry, growth, surface } = this.ctx;
     // Salendo di livello la colonna puo' meritare una tipologia diversa: una
@@ -175,19 +176,30 @@ export class UpgradeDriver {
     // lo sventramento, e scritta due volte divergerebbe.
     const old = recordStamp(record);
 
-    // L'allargamento non puo' sfondare l'isolato: la fascia di base riempie
-    // sempre l'impronta, e un voxel in piu' verso est finirebbe in mezzo alla
-    // carreggiata. Un edificio gia' accostato al fronte ha stanza zero e cresce
-    // solo in altezza — che e' anche il motivo per cui i lotti d'angolo
-    // diventano le torri dell'isolato invece di allargarsi sulla strada.
+    // L'allargamento ha due tetti: lo spazio fisico dell'isolato e lo stesso
+    // gate gerarchico della nascita. Senza il secondo, un edificio ordinario
+    // poteva diventare un assemblaggio in un isolato non eletto al primo
+    // upgrade, aggirando interamente `Builder.findLot`.
+    // Un edificio gia' accostato al fronte ha stanza zero e cresce solo in
+    // altezza — che e' anche il motivo per cui i lotti d'angolo diventano le
+    // torri dell'isolato invece di allargarsi sulla strada.
     // La regola vive in `blockForm.ts` da quando la leggono in due: qui per
     // decidere se allargare, alla nascita per scegliere la tipologia d'angolo.
-    const room = blockRoom(
-      this.ctx.streets.blockRect(this.ctx.streets.blockAt(record.x, record.y)),
+    const rect = this.ctx.streets.blockRect(this.ctx.streets.blockAt(record.x, record.y));
+    const blockCap = riseOf(this.ctx, record) > 0
+      ? MAX_FOOTPRINT
+      : urbanFootprintCap(
+        rect,
+        (centerX, centerY) => allowedLevel(this.ctx, centerX, centerY, state),
+      );
+    // Un assemblaggio gia' nato non si restringe se il quartiere cambia: il
+    // gate autorizza l'espansione, non riscrive la storia del record.
+    const room = Math.max(record.footprint, Math.min(blockCap, blockRoom(
+      rect,
       record.x,
       record.y,
       record.footprint,
-    );
+    )));
     // Lo stile e' quello con cui l'edificio e' nato, non quello dell'isolato di
     // adesso: un edificio che promuove resta lo stesso edificio, come restano la
     // sua quota e il suo zoccolo. E' anche cio' che tiene `old` e `stamp`

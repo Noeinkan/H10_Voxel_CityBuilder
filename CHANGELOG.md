@@ -11,6 +11,26 @@ coincide con il messaggio di commit.
 
 ---
 
+## In corso — Gate urbano condiviso dagli upgrade
+
+- **Gli upgrade non aggirano piu' l'elezione dell'isolato.** Un edificio ordinario resta entro otto anche crescendo; l'espansione assemblata riusa la stessa decisione gerarchica della nascita e conserva soltanto gli assemblaggi gia' esistenti.
+
+## In corso — Scala urbana separata dalla fase mega
+
+- **Edifici ordinari di nuovo a grana fine.** Ripristinate la progressione storica delle impronte 4–8 e le trasformazioni a passo singolo; la scala mega da sedici resta dedicata alle strutture che ospitano arcologie e grandi interventi.
+- **Assemblaggi grandi solo nei picchi maturi.** Il Builder valuta separatamente ogni isolato durante la ricerca: il livello massimo eletto puo' usare tutto il lato libero e passare all'assemblatore, ogni altro caso resta entro otto voxel.
+
+## In corso — Scheda di selezione a colonna unica
+
+- **Scheda di selezione senza linguette.** Le quattro unita' — struttura, isolato, colonna, voxel — stanno ora impilate nello stesso pannello e si leggono scorrendo: sono la stessa domanda a quattro ingrandimenti, e le linguette ne nascondevano tre. Cliccare l'intestazione di una carta sposta il contorno in-world su quell'unita'.
+- **Carta di crescita in cima.** Nuova carta «To grow» sopra le sezioni, con gli stessi numeri del driver: per un edificio, soglia di desiderabilita' gia' scontata e costo in materiali del livello successivo; per un landmark, quanti edifici mancano allo stadio successivo; per un terreno nudo, quali usi superano la propria soglia di sito. I dati grezzi arrivano da `resolveSelection`, che ora espone `StructureInfo.growth`.
+- **Tipografia piu' leggibile.** La scheda scala un gradino sopra i token dell'HUD (righe a 13 unita', interlinea 1.5, carta per sezione con etichetta e sommario), e la testata resta ferma mentre il corpo scorre.
+
+## In corso — I landmark demoliscono il costruito e si adattano alla montagna
+
+- **Un landmark prende il posto di tutto il costruito.** Il piazzamento sventra case, torri e altri monumenti senza soglia di altezza — la gomma e' il gesto — e solo la rete in quota resta intoccabile. Le opere automatiche (le decisioni concesse) rispettano i monumenti e cercano altrove; mentre il cantiere demolisce, il riquadro e' prenotato nel registry, cosi' la citta' non ci cresce dentro.
+- **Un landmark si adatta al pendio, dentro la propria impronta.** Niente piu' rifiuti di sito sulla montagna: la struttura affonda alla quota piu' bassa, copre la parete che trova e scava — unica eccezione a «si riempie, non si scava» — la vetta che spunterebbe dal tetto, colonna per colonna e solo dove la ricetta poggia. L'acqua fonda resta l'unico terreno che rifiuta.
+
 ## In corso — Restyling evolutivo di edifici e landmark
 
 - **La crescita conserva l'identita' e cambia il volto a soglie fisse.** La generazione usa quattro canali casuali indipendenti dal livello (massa, fasce, facciata, tetto): a parita' di tipologia un upgrade non tocca un voxel dei piani bassi e rifa' solo la cima. Cinque soglie visuali condivise (0, 2, 4, 8, 13) accendono campata, fronte attivo, terrazze attrezzate e coronamento crescente, senza nuovi tipi di superficie ne' slot di palette.

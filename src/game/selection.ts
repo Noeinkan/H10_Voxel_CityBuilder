@@ -8,6 +8,7 @@ import {
   effectiveCount,
   foodYieldOf,
   catalystRoleOf,
+  upgradeMaterialCost,
   urbanProfileAt,
   weightsOf,
   type BuildingClass,
@@ -24,10 +25,11 @@ import type { StreetNetwork } from '../world/streets/StreetNetwork';
 import type { BlockRect, StreetRole } from '../world/streets/streetGrid';
 import { waterDistance } from '../world/sites/siteRules';
 import { SKYLINE } from '../world/skyline/config';
-import { allowedLevelAt, tierAt, type SkylineQuery, type SkylineTier } from '../world/skyline/tiers';
+import { allowedLevelAt, levelsAboveDeck, tierAt, type SkylineQuery, type SkylineTier } from '../world/skyline/tiers';
 import { buildWeightOf, type GroundKind } from '../world/grading/grade';
 import { groundKindAt, isCoastal } from '../world/buildings/siteWorks';
-import { BUILDER } from '../world/buildings/config';
+import { BUILDER, upgradeThresholdOf } from '../world/buildings/config';
+import { formOf, localUpgradeDiscount } from '../world/buildings/urbanForm';
 import { landmarkOf, maxStageOf } from '../world/landmarks/config';
 import {
   footprintDepth,
@@ -185,6 +187,27 @@ export interface StructureInfo {
   /** Appoggi risolti in record, non solo id. */
   readonly supports: readonly BuildingRecord[];
   /**
+   * Cio' che serve a questo edificio per salire ancora di livello.
+   *
+   * Numeri grezzi, presi dalla **stessa macchina** del driver — soglia gia'
+   * scontata dalle qualita' locali, costo di cassa e scorta — cosi' la scheda
+   * dice esattamente cio' che fa davvero promuovere l'edificio. `undefined`
+   * dove la struttura non cresce di livello: landmark, campate, parti in quota
+   * e arcologie hanno la propria crescita, altrove o mai. `null` dove non c'e'
+   * un livello successivo — il luogo non ne ammette altri.
+   */
+  readonly growth?: {
+    readonly nextLevel: number;
+    /** Desiderabilita' del luogo per l'uso del record, 0..255. */
+    readonly desirability: number;
+    /** Soglia da superare, gia' scontata dalle qualita' locali. */
+    readonly threshold: number;
+    /** Materiali chiesti dalla promozione. */
+    readonly cost: number;
+    /** Scorta cittadina di materiali. */
+    readonly stock: number;
+  } | null;
+  /**
    * Gli usi che questo edificio porta: uno, o due se e' misto.
    *
    * Vuoto su landmark, campate e parti in quota. Non e' una mancanza da riempire
@@ -262,6 +285,10 @@ export function resolveSelection(query: SelectionQuery): Selection | null {
   const skyline = skylineQuery(query, cell.x, cell.y);
   const block = streets.blockAt(cell.x, cell.y);
   const ground = groundKindAt(map, cell.x, cell.y);
+  // Lo stesso clamp del Builder, usato due volte: nel tetto della colonna e
+  // nella crescita della struttura sotto il cursore, che lo scala per la quota
+  // di partenza come fa `hierarchy.ts`.
+  const allowed = Math.min(BUILDER.maxLevel, allowedLevelAt(skyline));
 
   return {
     voxel: voxelAt(query, cell.x, cell.y, voxelZ),
@@ -278,14 +305,14 @@ export function resolveSelection(query: SelectionQuery): Selection | null {
       tier: tierAt(skyline),
       // Lo stesso clamp del Builder: dire al giocatore un tetto che nessun
       // edificio raggiungera' mai sarebbe un numero inventato.
-      allowedLevel: Math.min(BUILDER.maxLevel, allowedLevelAt(skyline)),
+      allowedLevel: allowed,
       desirability: ALL_CLASSES.map((cls) => state.field.valueAt(cell.x, cell.y, cls)),
       crowd: state.field.crowdAt(cell.x, cell.y),
       stack: state.field.stackAt(cell.x, cell.y),
       profile: urbanProfileAt(state, cell.x, cell.y),
       coastal: isCoastal(map, cell.x, cell.y),
     },
-    structure: structureAt(registry, state, cell.x, cell.y, voxelZ),
+    structure: structureAt(registry, state, cell.x, cell.y, voxelZ, column.height, allowed),
     block: blockAt(query, streets.keyOf(block), streets.blockRect(block)),
   };
 }
@@ -329,6 +356,8 @@ function structureAt(
   x: number,
   y: number,
   z: number,
+  groundHeight: number,
+  allowedLevel: number,
 ): StructureInfo | null {
   const record = registry.at(x, y)
     .find((candidate) => candidate.baseZ <= z && z < candidate.baseZ + candidate.height);
@@ -346,6 +375,44 @@ function structureAt(
       .map((id) => registry.get(id))
       .filter((support): support is BuildingRecord => support !== null),
     uses: usesOf(state, record),
+    growth: buildingGrowth(state, record, groundHeight, allowedLevel),
+  };
+}
+
+/**
+ * Cio' che manca a questo edificio per promuovere, con i numeri del driver.
+ *
+ * Lo stesso scarto di `UpgradeDriver.pass`, nello stesso ordine: il tetto del
+ * luogo scala per la quota di partenza (`riseOf`), la soglia si sconta con le
+ * qualita' locali, e a mancare puo' essere la desiderabilita' oppure la cassa.
+ * Solo per chi cresce di livello: gli altri tipi di record hanno la propria
+ * crescita, e un `undefined` qui e' il modo in cui la scheda lo rispetta.
+ */
+function buildingGrowth(
+  state: SimState,
+  record: BuildingRecord,
+  groundHeight: number,
+  allowedLevel: number,
+): StructureInfo['growth'] {
+  if (
+    record.landmark !== undefined
+    || record.span !== undefined
+    || record.aerial !== undefined
+    || record.arcology !== undefined
+  ) return undefined;
+
+  const nextLevel = record.level + 1;
+  const rise = Math.max(0, record.baseZ - groundHeight);
+  if (nextLevel > levelsAboveDeck(allowedLevel, rise)) return null;
+
+  const profile = urbanProfileAt(state, record.x, record.y);
+  const threshold = upgradeThresholdOf(nextLevel) - localUpgradeDiscount(formOf(profile));
+  return {
+    nextLevel,
+    desirability: state.field.valueAt(record.x, record.y, record.class),
+    threshold,
+    cost: upgradeMaterialCost(nextLevel),
+    stock: state.materials.stock,
   };
 }
 

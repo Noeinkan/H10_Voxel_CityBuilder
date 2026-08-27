@@ -3,27 +3,36 @@ import { BUILDING_CLASS } from '../../sim';
 import { testTerrain } from '../../sim/testTerrain';
 import { VoxelWorld } from '../VoxelWorld';
 import { AERIAL_PART } from '../aerial/config';
+import { SCALE } from '../scale';
 import { Builder } from './Builder';
-import { footprintDepth } from './BuildingRegistry';
+import { BuildingRegistry, footprintDepth } from './BuildingRegistry';
+import { BUILDER } from './config';
 
 describe('Builder — Skyport di facciata', () => {
   it('appende lo scalo fuori dalla torre e gli costruisce gli appoggi', () => {
     const world = new VoxelWorld();
     const map = testTerrain({ chunksX: 4, chunksY: 4, height: 12 });
     const builder = new Builder(world, map, 4242);
-    builder.materialize([{
+    // Lo Skyport corrente richiede una facciata mega: la fixture registra
+    // direttamente un ospite largo, senza alterare la grammatica ordinaria per
+    // farle superare il tetto di otto soltanto per questo test.
+    const side = SCALE.megaFootprint;
+    for (let z = 12; z < 108; z++) {
+      for (let y = 40; y < 40 + side; y++) {
+        for (let x = 40; x < 40 + side; x++) world.setBlock(x, y, z, 1);
+      }
+    }
+    const host = (builder.registry as BuildingRegistry).add({
       x: 40,
       y: 40,
+      baseZ: 12,
+      footprint: side,
+      height: 96,
       class: BUILDING_CLASS.residential,
-      level: 8,
-    }]);
-
-    const host = [...builder.registry.all][0];
-    expect(host).toBeDefined();
-    if (host === undefined) return;
-    // Un edificio singolo satura a `mid` (sei voxel), e lo scalo in quota e'
-    // largo quanto la facciata che lo regge.
-    expect([host.footprint, footprintDepth(host)]).toEqual([6, 6]);
+      level: BUILDER.maxLevel,
+      seed: 4242,
+    });
+    expect([host.footprint, footprintDepth(host)]).toEqual([side, side]);
 
     const verdict = builder.landmarkAloftSite(host.x, host.y, 'airport');
     expect(verdict.refusal).toBeNull();

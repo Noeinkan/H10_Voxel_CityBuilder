@@ -148,30 +148,50 @@
 /* La quinta larghezza, e l'unica che aveva le sue regole responsive: adesso segue
    `--panel-w` come i quattro cassetti con cui divide il bordo destro. Il bottone
    di chiusura resta piu' piccolo di quello dei cassetti — questa scheda si chiude
-   anche deselezionando, e la sua croce e' un ripiego, non l'uscita principale. */
-.selection-panel { position: fixed; right: var(--hud-gap); top: var(--hud-gap); z-index: 30; display: grid; align-content: start; gap: var(--space-2); width: min(var(--panel-w), calc(100vw - var(--hud-gap) * 2)); max-height: calc(100vh - var(--hud-gap) * 2 - var(--game-hud-bottom)); overflow-y: auto; box-sizing: border-box; padding: var(--panel-pad); border-radius: var(--radius-lg); pointer-events: auto; }
+   anche deselezionando, e la sua croce e' un ripiego, non l'uscita principale.
+
+   Le sezioni stanno tutte nello stesso pannello e si leggono scorrendo: la
+   testata resta ferma in alto mentre il corpo scorre, e per farlo si arrampica
+   fuori dal padding come l'intestazione della scheda aiuto — stessi margini
+   negativi, stesso sfondo della superficie, quindi niente che possa sfasarsi. */
+.selection-panel { position: fixed; right: var(--hud-gap); top: var(--hud-gap); z-index: 30; display: grid; align-content: start; gap: 0; width: min(var(--panel-w), calc(100vw - var(--hud-gap) * 2)); max-height: calc(100vh - var(--hud-gap) * 2 - var(--game-hud-bottom)); overflow: hidden; box-sizing: border-box; padding: 0; border-radius: var(--radius-lg); pointer-events: auto; }
 .selection-panel[hidden] { display: none; }
-.selection-head { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--space-2); }
+.selection-head { position: sticky; top: 0; z-index: 1; display: flex; align-items: flex-start; justify-content: space-between; gap: var(--space-2); padding: var(--panel-pad) var(--panel-pad) var(--space-2); background: linear-gradient(180deg, var(--hud-cream), var(--hud-cream-deep)); border-bottom: 1px solid var(--hud-line-soft); }
 .selection-heading { display: grid; gap: var(--space-05); min-width: 0; }
-.selection-title { font-size: var(--text-xl); line-height: 1.2; }
-.selection-subtitle { color: var(--hud-muted); font-size: var(--text-xs); line-height: 1.35; }
+/* La scheda e' la lettura piu' lunga dell'interfaccia, e la sua scala tipografica
+   sta un gradino sopra quella del resto dell'HUD: i token bastano a un bottone o
+   a una riga di dock, qui l'occhio si ferma a leggere e dieci pixel erano
+   illeggibili. */
+.selection-title { font-size: calc(18 * var(--hud-unit)); line-height: 1.2; }
+.selection-subtitle { color: var(--hud-muted); font-size: calc(12 * var(--hud-unit)); line-height: 1.45; }
 .selection-close { display: inline-flex; align-items: center; justify-content: center; width: calc(26 * var(--hud-unit)); height: calc(26 * var(--hud-unit)); flex: 0 0 auto; padding: 0; color: var(--hud-muted); background: var(--hud-well); border: 1px solid var(--hud-line-soft); border-radius: var(--radius-sm); cursor: pointer; }
 .selection-close:hover { color: var(--hud-ink); background: var(--hud-accent-soft); }
 .selection-close:focus-visible { outline: 3px solid var(--hud-accent-shape); outline-offset: 2px; }
-.selection-tabs { display: flex; flex-wrap: wrap; gap: var(--space-05); }
-.selection-tab, .drawer-tab { padding: var(--space-1) var(--space-2); color: var(--hud-muted); background: var(--hud-well); border: 1px solid transparent; border-radius: var(--radius-sm); font: 800 var(--text-2xs)/1.35 var(--hud-font); letter-spacing: .07em; text-transform: uppercase; cursor: pointer; }
-.selection-tab[hidden], .drawer-tab[hidden] { display: none; }
-.selection-tab:hover, .drawer-tab:hover { color: var(--hud-ink); }
-.selection-tab:focus-visible, .drawer-tab:focus-visible { outline: 3px solid var(--hud-accent-shape); outline-offset: 1px; }
-.selection-tab[data-active="true"], .drawer-tab[data-active="true"] { color: var(--hud-on-accent); background: var(--hud-sage-dark); border-color: var(--hud-sage-dark); }
-.selection-body[hidden] { display: none; }
-.selection-summary { margin: 0 0 var(--space-15); color: var(--hud-muted); font-size: var(--text-xs); line-height: 1.4; }
+.selection-body { display: grid; gap: var(--space-2); align-content: start; min-height: 0; overflow-y: auto; padding: var(--space-2) var(--panel-pad) var(--panel-pad); }
+
+/* Ogni unita' e' una carta dentro la colonna: il fondo incassato e il bordo
+   leggero dicono dove finisce una lettura e comincia la successiva, che e'
+   quello che prima facevano le linguette — ma senza nascondere le altre. */
+.selection-card { display: grid; gap: var(--space-15); padding: var(--space-2) var(--space-2); border: 1px solid var(--hud-line-soft); border-radius: var(--radius-md); background: var(--hud-well); }
+.selection-card[hidden] { display: none; }
+/* La carta di cio' che serve per crescere sta sopra tutto e si porta un tono
+   d'accento: e' la risposta alla domanda da cui il click nasce, e deve
+   trovarsi senza cercarla. */
+.selection-card--growth { border-color: var(--hud-accent-shape); background: var(--hud-accent-soft); }
+.selection-card-eyebrow { color: var(--hud-sage-dark); font-size: calc(9 * var(--hud-unit)); font-weight: 900; letter-spacing: .1em; text-transform: uppercase; }
+.selection-card-head { display: grid; gap: var(--space-05); width: 100%; padding: 0; border: none; background: none; text-align: left; font: inherit; color: inherit; cursor: pointer; }
+.selection-card-head[data-active="true"] .selection-card-eyebrow { color: var(--hud-ink); }
+.selection-card-title { font-size: calc(14 * var(--hud-unit)); font-weight: 800; line-height: 1.25; }
+.selection-card-head:hover .selection-card-title { text-decoration: underline; text-decoration-color: var(--hud-line); text-underline-offset: 3px; }
+.selection-card-head:focus-visible { outline: 3px solid var(--hud-accent-shape); outline-offset: 2px; border-radius: var(--radius-sm); }
+.selection-card-summary { color: var(--hud-muted); font-size: calc(12 * var(--hud-unit)); line-height: 1.45; }
+.selection-card-summary[hidden] { display: none; }
 /* Cento pixel di pannello in piu' vanno tutti alla colonna dei valori: le
    etichette hanno gia' la loro misura, e quello che sbordava era il valore. */
-.selection-rows { display: grid; grid-template-columns: minmax(calc(96 * var(--hud-unit)), auto) 1fr; gap: var(--space-05) var(--space-2); margin: 0; font-size: var(--text-xs); line-height: 1.4; }
+.selection-rows { display: grid; grid-template-columns: minmax(calc(96 * var(--hud-unit)), auto) 1fr; gap: var(--space-1) var(--space-2); margin: 0; font-size: calc(13 * var(--hud-unit)); line-height: 1.5; }
 .selection-rows dt { color: var(--hud-muted); font-weight: 800; }
 .selection-rows dd { margin: 0; color: var(--hud-ink); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
-.selection-action { display: block; width: 100%; margin-top: var(--space-2); padding: var(--space-15) var(--space-2); color: var(--hud-ink); background: var(--hud-well); border: 1px solid var(--hud-line); border-radius: var(--radius-sm); font: 800 var(--text-2xs)/1.35 var(--hud-font); letter-spacing: .07em; text-transform: uppercase; text-align: center; cursor: pointer; }
+.selection-action { display: block; width: 100%; margin-top: var(--space-05); padding: var(--space-15) var(--space-2); color: var(--hud-ink); background: var(--hud-raised); border: 1px solid var(--hud-line); border-radius: var(--radius-sm); font: 800 calc(11 * var(--hud-unit))/1.35 var(--hud-font); letter-spacing: .07em; text-transform: uppercase; text-align: center; cursor: pointer; }
 .selection-action[hidden] { display: none; }
 .selection-action:hover { color: var(--hud-on-accent); background: var(--hud-sage-dark); border-color: var(--hud-sage-dark); }
 .selection-action:focus-visible { outline: 3px solid var(--hud-accent-shape); outline-offset: 2px; }

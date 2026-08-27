@@ -71,4 +71,29 @@ describe('planClearance', () => {
     expect(plan.doomed).toEqual([6]);
     expect(plan.refusal).toBeNull();
   });
+
+  it('un landmark cade solo per chi lo dichiara: il giocatore si, l arcologia no', () => {
+    const landmark = { id: 9, level: 2, kind: CLEARANCE_KIND.landmark };
+
+    // Il piazzamento di un monumento demolisce il costruito, monumenti
+    // compresi: la gomma e' il gesto.
+    const player = planClearance([landmark], { maxLevel: 4, clearsLandmarks: true });
+    expect(player.doomed).toEqual([9]);
+    expect(player.refusal).toBeNull();
+
+    // La megastruttura no: nessuno gliel'ha chiesto, e il rifiuto e' quello
+    // definitivo delle strutture.
+    const arcology = planClearance([landmark], { maxLevel: 20 });
+    expect(arcology.doomed).toEqual([]);
+    expect(arcology.refusal).toBe('structure-in-the-way');
+  });
+
+  it('senza soglia di altezza cade ogni edificio, qualunque livello abbia', () => {
+    const plan = planClearance([building(1, 3), building(2, 12), building(3, 20)], {
+      maxLevel: Number.POSITIVE_INFINITY,
+    });
+
+    expect(plan.doomed).toEqual([1, 2, 3]);
+    expect(plan.refusal).toBeNull();
+  });
 });

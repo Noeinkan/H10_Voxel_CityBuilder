@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
 import {
-  BALANCE,
   BUILDING_CLASS,
   addBuilding,
   addCatalyst,
@@ -1068,38 +1067,28 @@ describe('Builder — opere di terra', () => {
     return GRADING.quayReach + 1;
   }
 
-  it('dove la struttura non ci sta resta la piazzola, e si livella', () => {
+  it('dove la struttura non ci sta — l acqua fonda — resta la piazzola, e si livella', () => {
     const world = new VoxelWorld();
     const terrain = testTerrain({
       chunksX: 1,
       chunksY: 1,
-      // Sopra `beachMaxHeight`: sotto, `classifyBiome` chiama battigia qualunque
-      // colonna e la pendenza non arriva nemmeno a essere guardata.
-      heightAt: (x) => (x < 16 ? 30 : 30 + GRADING.plazaMinStep),
-      // Una parete dentro l'ingombro del landmark ma fuori dalla piazzola: la
-      // struttura viene rifiutata e resta il ripiego. E' anche la prova che il
-      // rifiuto e' silenzioso e non lascia il catalizzatore senza segno.
-      slopeAt: (x) => (x === 21 ? 0.6 : 0.1),
+      // Acqua fonda da est: dentro l'ingombro del mercato, ma fuori dalla
+      // piazzola. La struttura viene rifiutata e resta il ripiego. E' anche la
+      // prova che il rifiuto e' silenzioso e non lascia il catalizzatore senza
+      // segno.
+      heightAt: (x) => (x < 12 ? 30 : TERRAIN.seaLevel - GRADING.maxQuayDepth - 6),
+      slopeAt: () => 0.1,
     });
     const builder = new Builder(world, terrain, 1337);
 
-    builder.placeLandmark(16, 16, 'market');
+    expect(builder.landmarkClearance(10, 16, 'market').refusal).toBe('no-footing');
+
+    builder.placeLandmark(10, 16, 'market');
     while (builder.stats.surfaceQueued > 0) builder.step();
 
     expect(builder.registry.landmarkCount).toBe(0);
-    expect(world.getBlock(16, 16, 30 + GRADING.plazaMinStep - 1))
+    expect(world.getBlock(10, 16, 29))
       .toBe(CLASS_PROFILE[BUILDING_CLASS.residential].accent);
-
-    const radius = BUILDER.catalystPlazaRadius;
-    const levels = new Set<number>();
-    for (let dy = -radius; dy <= radius; dy++) {
-      for (let dx = -radius; dx <= radius; dx++) {
-        if (Math.abs(dx) + Math.abs(dy) > radius) continue;
-        levels.add(topSolid(world, 16 + dx, 16 + dy));
-      }
-    }
-    // Un piano solo: la piazza e' una piattaforma, non un prato colorato.
-    expect([...levels]).toEqual([30 + GRADING.plazaMinStep - 1]);
   });
 
   it('la rampa non lascia gradini fra due colonne di carreggiata', () => {
@@ -1720,10 +1709,10 @@ describe('Builder — gerarchia verticale', () => {
  * scritti: prima, un catalizzatore piantato in centro si pagava, entrava nella
  * simulazione e non produceva nessuna struttura — nessun record, quindi nessuno
  * stadio, quindi un monumento invisibile per sempre. Non falliva niente: non
- * compariva niente.
+ * compariva niente. Ora il piazzamento demolisce tutto il costruito — case,
+ * torri, altri monumenti — e la struttura prende il suo posto.
  */
 describe('Builder — sventramento', () => {
-  const MAX_CLEARABLE = BALANCE.gameplay.catalyst.clearing.maxLevel;
 
   /** Una citta' cresciuta su terreno piano, con il suo stato. */
   function city(builds: number): {
@@ -1786,8 +1775,9 @@ describe('Builder — sventramento', () => {
    * La prima colonna che apre davvero un cantiere.
    *
    * **Non il centro del catalizzatore**, ed e' il punto della meccanica: il
-   * centro e' fatto di torri, e le torri rifiutano. Il gesto vive nel tessuto
-   * basso attorno, ed e' quello che il giocatore cerca muovendo il cursore.
+   * centro e' fatto di torri, e le torri caddero come le case. Il gesto vive
+   * nel tessuto basso attorno, ed e' quello che il giocatore cerca muovendo il
+   * cursore.
    */
   function clearableSpot(builder: Builder): BuildingRecord {
     const spot = buildingsOf(builder).find((record) => {
@@ -1857,7 +1847,9 @@ describe('Builder — sventramento', () => {
     expect(above).toBe(0);
   });
 
-  it('una struttura non si tocca: un landmark non ne sventra un altro', () => {
+  it('un landmark non e piu una struttura: il preventivo conta anche il monumento che c e', () => {
+    // Prima un monumento rifiutava il riquadro per sempre; ora e' costruito
+    // come il resto, e il preventivo lo conta fra cio' che cadra'.
     const { terrain, builder, state } = city(30);
     const spot = clearableSpot(builder);
 
@@ -1866,40 +1858,76 @@ describe('Builder — sventramento', () => {
     expect(builder.registry.landmarkCount).toBe(1);
 
     // Sulla stessa colonna, con un ruolo diverso per non incappare nella
-    // distanza minima: cio' che trova e' il monumento di prima.
+    // distanza minima: cio' che trova e' il monumento di prima, che adesso e'
+    // demolibile come ogni altro costruito.
     const quote = builder.landmarkClearance(spot.x, spot.y, 'university');
-    expect(quote.refusal).toBe('structure-in-the-way');
-    expect(quote.clears).toBe(0);
+    expect(quote.refusal).toBeNull();
+    expect(quote.clears).toBeGreaterThanOrEqual(1);
   });
 
-  it('una torre oltre soglia ferma il riquadro, e non ne cade nemmeno un pezzo', () => {
+  it('un landmark ne sostituisce un altro: il monumento vecchio cade tutto', () => {
+    const { world, terrain, builder, state } = city(30);
+    const spot = clearableSpot(builder);
+
+    builder.placeLandmark(spot.x, spot.y, 'market');
+    settle(builder, terrain, state);
+    expect(builder.registry.landmarkCount).toBe(1);
+
+    builder.placeLandmark(spot.x, spot.y, 'university');
+    settle(builder, terrain, state);
+
+    // Il monumento nuovo ha preso il posto del vecchio: un record solo, e non
+    // e' piu' il mercato.
+    expect(builder.registry.landmarkCount).toBe(1);
+    const kinds = [...builder.registry.all]
+      .filter((record) => record.landmark !== undefined)
+      .map((record) => record.landmark);
+    expect(kinds).toEqual(['university']);
+
+    // E del vecchio non resta un voxel: la sagoma rigenerata per la
+    // cancellazione era quella del suo generatore, non una grammatica di fasce.
+    const box = landmarkBox(builder);
+    const landmark = [...builder.registry.all].find((r) => r.landmark !== undefined)!;
+    const top = landmark.baseZ + landmark.height;
+    let above = 0;
+    for (let y = box.y; y < box.y + box.sizeY; y++) {
+      for (let x = box.x; x < box.x + box.sizeX; x++) {
+        for (let z = top; z < top + 40; z++) {
+          if (world.getBlock(x, y, z) !== 0) above++;
+        }
+      }
+    }
+    expect(above).toBe(0);
+  });
+
+  it('una torre cade come ogni altra casa: nessuna altezza resta fuori portata', () => {
     const { terrain, builder, state } = city(120);
 
-    // Una colonna che rifiuta **per altezza** e non per altro: e' il caso che
-    // interessa, ed esiste perche' il centro di una citta' matura e' fatto di
-    // torri fuori portata mentre il tessuto attorno non lo e'.
+    // Una colonna che prima rifiutava **per altezza**: il centro di una citta'
+    // matura e' fatto di torri, e il piazzamento le sventra come il tessuto.
     const tall = buildingsOf(builder).find((record) =>
-      record.level > MAX_CLEARABLE &&
-      builder.landmarkClearance(record.x, record.y, 'market').refusal === 'block-too-tall');
-    expect(tall, 'la citta di prova deve avere una torre che rifiuta per altezza').toBeDefined();
+      record.level > 4 &&
+      builder.landmarkClearance(record.x, record.y, 'market').refusal === null);
+    expect(tall, 'la citta di prova deve avere una torre nel riquadro').toBeDefined();
     if (tall === undefined) return;
 
     const before = builder.registry.count;
     builder.placeLandmark(tall.x, tall.y, 'market');
     settle(builder, terrain, state);
 
-    // Nessun cantiere, nessun record perso: il rifiuto e' del riquadro intero,
-    // e sgomberare attorno a una torre che resta in piedi darebbe un buco.
-    expect(builder.stats.cleared).toBe(0);
-    expect(builder.registry.count).toBeGreaterThanOrEqual(before);
-    expect(builder.registry.get(tall.id)).not.toBeNull();
+    // Il cantiere ha portato via la torre con il resto del riquadro, e il
+    // monumento e' al suo posto.
+    expect(builder.stats.cleared).toBeGreaterThan(0);
+    expect(builder.registry.count).toBeLessThan(before);
+    expect(builder.registry.get(tall.id)).toBeNull();
+    expect(builder.registry.landmarkCount).toBe(1);
   });
 
-  it('la soglia lascia sventrabile il tessuto e fuori portata le torri', () => {
-    // **Il gate della fase, misurato invece che dichiarato.** Se la soglia fosse
-    // troppo bassa, in una citta' matura non si aprirebbe un cantiere da nessuna
-    // parte e la meccanica esisterebbe solo sulla carta; se fosse troppo alta,
-    // un monumento cancellerebbe un centro direzionale.
+  it('tutto l edificato e sventrabile, torri comprese', () => {
+    // **Il gate della fase, misurato invece che dichiarato.** Prima la soglia
+    // teneva le torri fuori portata; ora il gesto e' una gomma dichiarata e
+    // nessuna altezza si salva. Il solo rifiuto rimasto sul costruito e' la
+    // rete in quota — una torre che porta una mensola e' struttura, non altezza.
     const { builder } = city(120);
     const all = buildingsOf(builder);
 
@@ -1907,12 +1935,13 @@ describe('Builder — sventramento', () => {
       const quote = builder.landmarkClearance(record.x, record.y, 'market');
       return quote.refusal === null && quote.clears > 0;
     });
-    const towers = all.filter((record) => record.level > MAX_CLEARABLE);
-
     expect(viable.length).toBeGreaterThan(all.length / 8);
+
+    const towers = all.filter((record) => record.level > 4);
     expect(towers.length).toBeGreaterThan(0);
     for (const tower of towers) {
-      expect(builder.landmarkClearance(tower.x, tower.y, 'market').refusal).not.toBeNull();
+      const refusal = builder.landmarkClearance(tower.x, tower.y, 'market').refusal;
+      expect(refusal === null || refusal === 'structure-in-the-way').toBe(true);
     }
   });
 

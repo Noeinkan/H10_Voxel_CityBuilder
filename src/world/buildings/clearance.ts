@@ -12,29 +12,38 @@
  * perche' *quanto* si puo' abbattere e' una taratura di gioco e non una
  * proprieta' del mondo.
  *
- * **Perche' la soglia esiste.** Senza, un monumento cancellerebbe un centro
- * direzionale intero e il piazzamento diventerebbe un gesto senza lettura:
- * clicchi dove ti pare e la citta' si fa da parte. Con la soglia si sventra
- * solo il tessuto minuto, e trovare la sacca bassa dentro il quartiere denso
- * **e'** la giocata. Che poi un edificio basso sia anche un volume dell'ordine
- * di una campata — cioe' cancellabile senza far male al frame — e' il genere di
- * coincidenza che conviene incassare, non su cui conviene poggiare.
+ * **Perche' la soglia esiste.** E' la manopola di chi la usa, non di questo
+ * file: un landmark la lascia aperta — il giocatore demolisce tutto il
+ * costruito e il monumento prende il suo posto — mentre un'arcologia la tiene
+ * sul livello massimo degli edifici, perche' una megastruttura non si ferma
+ * davanti a una torre ma non deve nemmeno cancellarla senza leggere la citta'.
+ * Cio' che *nessuno* dei due puo' toccare e' qui: la citta' in quota, le
+ * arcologie e chi le porta, perche' far cadere una rete non e' demolire.
  */
 
 /**
  * Cosa e' un record, per chi deve decidere se puo' cadere.
  *
- * Tre casi e non i cinque campi del `BuildingRecord`: qui non serve sapere se
- * qualcosa e' una mensola, una gamba o un nodo di percorso — serve sapere che
- * non si tocca.
+ * Quattro casi e non i cinque campi del `BuildingRecord`: qui non serve sapere
+ * se qualcosa e' una mensola, una gamba o un nodo di percorso — serve sapere
+ * se e come si tocca.
  */
 export const CLEARANCE_KIND = {
-  /** Un edificio della citta': cade se e' abbastanza basso. */
+  /** Un edificio della citta': cade secondo la soglia di altezza. */
   building: 0,
-  /** Struttura: un altro landmark, la citta' in quota, chi la porta. Non si tocca. */
+  /** Struttura: la citta' in quota, un'arcologia, chi le porta. Non si tocca. */
   structure: 1,
   /** Una campata: cade da sola, e non e' un ostacolo. */
   span: 2,
+  /**
+   * Un landmark: cade solo per chi lo dichiara.
+   *
+   * Un monumento si demolisce quando **un altro landmark** prende il suo posto
+   * — e' la stessa gomma del costruito — ma non quando un'arcologia si fa
+   * spazio: una megastruttura che cancellasse un monumento senza che il
+   * giocatore l'abbia chiesto sarebbe una demolizione per errore.
+   */
+  landmark: 3,
 } as const;
 
 export type ClearanceKind = (typeof CLEARANCE_KIND)[keyof typeof CLEARANCE_KIND];
@@ -58,6 +67,14 @@ export interface ClearancePlan {
 export interface ClearanceRule {
   /** Livello massimo che si puo' abbattere. Oltre, il riquadro rifiuta. */
   readonly maxLevel: number;
+  /**
+   * true se il riquadro puo' portarsi via anche i landmark che ci trova.
+   *
+   * E' la differenza fra il piazzamento di un monumento — che prende il posto
+   * di tutto il costruito, altri monumenti compresi — e la megastruttura, che
+   * sui monumenti si ferma e cerca altrove.
+   */
+  readonly clearsLandmarks?: boolean;
 }
 
 /**
@@ -82,6 +99,13 @@ export function planClearance(
   for (const record of records) {
     if (record.kind === CLEARANCE_KIND.span) continue;
     if (record.kind === CLEARANCE_KIND.structure) {
+      return { doomed: [], refusal: 'structure-in-the-way' };
+    }
+    if (record.kind === CLEARANCE_KIND.landmark) {
+      if (rule.clearsLandmarks === true) {
+        doomed.push(record.id);
+        continue;
+      }
       return { doomed: [], refusal: 'structure-in-the-way' };
     }
     if (record.level > rule.maxLevel) {

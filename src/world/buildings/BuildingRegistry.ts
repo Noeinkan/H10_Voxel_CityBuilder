@@ -497,6 +497,44 @@ export class BuildingRegistry implements ReadonlyBuildingRegistry {
   private readonly records = new Map<number, BuildingRecord>();
 
   /**
+   * Riquadri prenotati da un cantiere aperto.
+   *
+   * **Non sono record e non ne aggiungono uno**, e il motivo vale la pena
+   * dirlo: il cantiere demolisce a budget, e mentre dura la citta' continua a
+   * crescere — gli angoli del riquadro che i condannati non occupano restano
+   * liberi, e la simulazione ci costruirebbe dentro. La prenotazione dice a
+   * `isOccupied` e a `overlaps` che quelle colonne sono di chi sta per
+   * arrivare, cosi' la struttura trova il posto esattamente come l'ha lasciato
+   * il preventivo. Vale per l'intera colonna — niente voli sopra il cantiere —
+   * ed e' voluto: un impalcato che attraversa un riquadro in demolizione
+   * fermerebbe la costruzione che arriva.
+   */
+  private readonly reservations: PlanRect[] = [];
+
+  /** Prenota il riquadro per chi ci sta costruendo dentro. */
+  reserveRect(rect: PlanRect): void {
+    this.reservations.push(rect);
+  }
+
+  /** Rilascia il riquadro: il cantiere ha finito. */
+  releaseRect(rect: PlanRect): void {
+    const index = this.reservations.findIndex((reserved) =>
+      reserved.x === rect.x && reserved.y === rect.y &&
+      reserved.sizeX === rect.sizeX && reserved.sizeY === rect.sizeY);
+    if (index >= 0) this.reservations.splice(index, 1);
+  }
+
+  private isReserved(x: number, y: number): boolean {
+    for (const rect of this.reservations) {
+      if (x >= rect.x && x < rect.x + rect.sizeX &&
+        y >= rect.y && y < rect.y + rect.sizeY) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /**
    * Id che coprono una colonna. Un'impronta e' al massimo 3x3, quindi un
    * edificio compare in al massimo nove voci: e' cio' che rende il test di
    * sovrapposizione esatto invece che approssimato da un riquadro.
@@ -692,6 +730,7 @@ export class BuildingRegistry implements ReadonlyBuildingRegistry {
   }
 
   isOccupied(x: number, y: number): boolean {
+    if (this.isReserved(x, y)) return true;
     const ids = this.groundColumns.get(`${x},${y}`);
     return ids !== undefined && ids.length > 0;
   }
@@ -800,6 +839,15 @@ export class BuildingRegistry implements ReadonlyBuildingRegistry {
     footprintY: number = footprint,
     except: readonly number[] = EMPTY_IDS,
   ): boolean {
+    // La prenotazione di un cantiere vale sull'intera colonna: chi sta per
+    // costruire qui non deve trovare nel frattempo ne' un volume ne' un volo.
+    for (const rect of this.reservations) {
+      if (x < rect.x + rect.sizeX && rect.x < x + footprint &&
+        y < rect.y + rect.sizeY && rect.y < y + footprintY) {
+        return true;
+      }
+    }
+
     const top = baseZ + height;
     for (let dy = 0; dy < footprintY; dy++) {
       for (let dx = 0; dx < footprint; dx++) {

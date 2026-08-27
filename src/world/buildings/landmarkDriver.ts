@@ -34,10 +34,15 @@ import type { AerialDriver } from './aerialDriver';
 import type { BuildContext } from './buildContext';
 import { fitsChunkBudget } from './chunkBudget';
 import type { ClearanceRefusal } from './clearance';
-import { OPEN_SITE, type ClearanceBox, type ClearanceSites } from './clearanceSite';
+import { OPEN_SITE, recordsIn, type ClearanceBox, type ClearanceSites } from './clearanceSite';
 import { BUILDER, CLASS_PROFILE } from './config';
-import { buildWorks, groundKindAt, surveyGrade, type WorksMask } from './siteWorks';
-import { stampFootprint } from './stamp';
+import {
+  buildWorks,
+  groundKindAt,
+  surveyLandmarkGrade,
+  type WorksMask,
+} from './siteWorks';
+import { EMPTY_STAMP, stampFootprint } from './stamp';
 
 /**
  * I monumenti dei catalizzatori: il piazzamento, il grembiule e gli stadi.
@@ -56,12 +61,10 @@ import { stampFootprint } from './stamp';
  * Perche' la struttura non comparira', pur restando il piazzamento valido.
  *
  * Due motivi vengono dal costruito e li decide `clearance.ts`; il terzo viene
- * dal **terreno**, ed e' quello che mancava: su un fianco di montagna nessuna
- * opera regge un riquadro largo venti colonne, quindi `surveyGrade` rifiuta e
- * non compare ne' la struttura ne' la piazzola di ripiego — `canPaint` scarta a
- * sua volta ogni colonna in parete. Il catalizzatore si pagava, il campo
- * funzionava, e sul terreno non si vedeva **niente**: era l'unico dei tre casi
- * che il cursore non sapeva dire prima del click.
+ * dal **terreno**, ed e' l'unico che resta: l'acqua fonda dentro l'impronta —
+ * la sola cosa che una struttura non puo' ne' coprire ne' scavare. Un fianco
+ * di montagna non rifiuta piu': la struttura affonda, copre la parete dentro
+ * il proprio ingombro e scava la vetta che spunterebbe dal tetto.
  */
 export type LandmarkRefusal = ClearanceRefusal | 'no-footing';
 
@@ -76,12 +79,14 @@ export type LandmarkRefusal = ClearanceRefusal | 'no-footing';
 export interface LandmarkSite {
   /** Edifici che porterebbe via. Zero dove il riquadro e' gia' libero. */
   readonly clears: number;
+  /** Quanti dei condannati sono landmark: vedi `ClearanceVerdict`. */
+  readonly landmarks: number;
   /** Perche' non ci si puo' piantare, o null. */
   readonly refusal: LandmarkRefusal | null;
 }
 
 /** Riquadro che nessuna opera regge: la struttura non ci sta, comunque vada. */
-const NO_FOOTING: LandmarkSite = { clears: 0, refusal: 'no-footing' };
+const NO_FOOTING: LandmarkSite = { clears: 0, landmarks: 0, refusal: 'no-footing' };
 
 /**
  * Cosa impedisce a una struttura di appendersi a una facciata.
@@ -502,14 +507,77 @@ export class LandmarkDriver {
     if (spot === null) return false;
     // **Non si sgombera per niente.** Se il terreno non regge l'opera, la
     // richiamata ricadrebbe comunque sulla piazzola: abbattere prima le case
-    // sarebbe un cantiere aperto per una struttura che non puo' comparire.
-    if (this.footingAt(spot, kind, hashCoords(this.ctx.seed, x, y)) === null) return false;
+    // sarebbe un cantiere aperto per una struttura che non puo' comparire. E
+    // nemmeno si sgombera per una struttura che il volume esterno fermerebbe:
+    // il riquadro puo' essere libero e la sagoma toccare comunque cio' che sta
+    // fuori — un monumento che sborda sull'angolo — quindi la verifica si fa
+    // escludendo i condannati e contando tutti gli altri.
+    const recordSeed = hashCoords(this.ctx.seed, x, y);
+    if (this.footingAt(spot, kind, recordSeed) === null) return false;
+    const box = boxOf(spot);
+    const except = recordsIn(this.ctx.registry, box).map((record) => record.id);
+    if (!this.structureFits(spot, kind, recordSeed, except)) return false;
 
-    return this.clearance.start(boxOf(spot), BALANCE.gameplay.catalyst.clearing, () => {
-      const built = this.buildStructure(x, y, kind);
-      if (built === null) this.paintPlaza(x, y, catalystById(kind).class);
-      else this.paintApron(built, landmarkOf(kind)!.apron);
+    return this.clearance.start(box, BALANCE.gameplay.catalyst.clearing, () => {
+      this.finishClearance(x, y, kind, box);
     });
+  }
+
+  /**
+   * Costruisce la struttura sul riquadro appena sgomberato, o riapre il cantiere.
+   *
+   * **La citta' non aspetta la demolizione.** Gli angoli del riquadro che i
+   * condannati non occupano restano liberi, e la simulazione ci costruisce
+   * mentre il cantiere e' aperto: quando l'ultimo condannato cade, il riquadro
+   * puo' avere gia' un inquilino nuovo. La struttura non si arrende — riapre il
+   * cantiere e riprova — e solo quando la regola rifiuta o il posto non regge
+   * resta la piazzola.
+   */
+  private finishClearance(x: number, y: number, kind: CatalystId, box: ClearanceBox): void {
+    const built = this.buildStructure(x, y, kind);
+    if (built !== null) {
+      this.paintApron(built, landmarkOf(kind)!.apron);
+      return;
+    }
+    if (this.clearance.start(box, BALANCE.gameplay.catalyst.clearing, () => {
+      this.finishClearance(x, y, kind, box);
+    })) {
+      return;
+    }
+    this.paintPlaza(x, y, catalystById(kind).class);
+  }
+
+  /**
+   * true se la struttura entra nel luogo, ignorando i record elencati.
+   *
+   * E' la meta' di `buildStructure` che decide **prima** di scrivere: la
+   * sagoma dello stadio zero, l'opera che la regge e il volume contro il
+   * registry. `except` e' l'elenco di chi e' gia' condannato — il cantiere lo
+   * usera' per verificare che demolire serva davvero.
+   */
+  private structureFits(
+    spot: Placement,
+    kind: CatalystId,
+    recordSeed: number,
+    except: readonly number[],
+  ): boolean {
+    const stamp = generateLandmark({
+      kind,
+      stage: 0,
+      facing: spot.facing,
+      seed: recordSeed,
+      form: this.waterFormAt(spot, kind),
+    });
+    if (stamp === null) return false;
+    const footing = this.footingAt(spot, kind, recordSeed);
+    if (footing === null) return false;
+    const sunk = { ...footing.plan, padZ: footing.plan.footZ };
+    if (this.ctx.registry.overlaps(
+      spot.x, spot.y, spot.span.sizeX, sunk.padZ, stamp.sizeZ, spot.span.sizeY, except,
+    )) {
+      return false;
+    }
+    return fitsChunkBudget(spot.x, spot.y, spot.span.sizeX, spot.span.sizeY, sunk, stamp);
   }
 
   /**
@@ -528,11 +596,12 @@ export class LandmarkDriver {
    * costruisce una volta sola: uno stadio successivo non deve poter scoprire
    * di aver bisogno di terra che nessuno ha gettato.
    *
-   * `surveyGrade` e non il vincolo `nearLand` che ferma la carreggiata: un molo
-   * **deve** poter uscire sull'acqua. Il limite qui e' la ricetta — un ingombro
-   * dichiarato e finito — invece di una regola sul terreno, ed e' la differenza
-   * fra una struttura progettata e una piattaforma che si allarga finche' il
-   * fondale regge.
+   * **Il pendio non e' piu' un rifiuto.** Un landmark copre il proprio ingombro
+   * e scava la montagna che spunterebbe dal tetto, quindi una parete dentro
+   * l'impronta non lo ferma: a fermarlo resta solo l'acqua fonda. E' la regola
+   * che prima produceva il difetto piu' muto del piazzamento — su un fianco il
+   * catalizzatore si pagava, il campo funzionava e a schermo non compariva
+   * niente.
    */
   private footingAt(spot: Placement, kind: CatalystId, recordSeed: number): Footing | null {
     const form = this.waterFormAt(spot, kind);
@@ -550,20 +619,10 @@ export class LandmarkDriver {
       ? undefined
       : stampFootprint(finalStamp, LANDMARK.groundBand);
 
-    const plan = surveyGrade(
+    const plan = surveyLandmarkGrade(
       this.ctx.terrain, spot.x, spot.y, spot.span.sizeX, spot.span.sizeY, mask,
     );
     if (plan === null) return null;
-
-    // Il tetto generale delle opere e' tarato sulla banchina: applicarlo anche
-    // al terrapieno permetterebbe a un landmark largo di prendere piu' gradoni
-    // della montagna e mostrarsi come poche pareti altissime attorno al lago.
-    // Un porto resta sul proprio ramo, perche' li' il salto e' davvero quello
-    // fra piano e fondale e la ricetta ne disegna la forma.
-    if (plan.works === WORKS.terrace &&
-      plan.padZ - plan.footZ > LANDMARK.maxTerraceDrop) {
-      return null;
-    }
     return { plan, mask };
   }
 
@@ -620,7 +679,64 @@ export class LandmarkDriver {
     });
 
     growth.enqueueSegments(record, stamp);
+    this.enqueueSlopeCarve(record, sunk.padZ + stamp.sizeZ, mask);
     return record;
+  }
+
+  /**
+   * Scava la montagna che spunterebbe dal tetto, **dentro la sola impronta**.
+   *
+   * Un landmark affonda alla quota piu' bassa del proprio ingombro, quindi su un
+   * fianco ripido una parte della struttura resta sotto la montagna: senza
+   * questo scavo il pendio attraverserebbe il tetto e la struttura — pur
+   * esistendo — leggerebbe come un volume sepolto. La fascia sopra la quota del
+   * tetto viene tolta con la stessa coda di comparsa della struttura, colonna
+   * per colonna e solo dove la maschera dichiara che la ricetta poggia: il
+   * pendio fuori dall'impronta resta dov'e'.
+   *
+   * **Si scava, e solo qui.** Il mondo si riempie e non si scava da nessun'altra
+   * parte; questa e' l'unica eccezione, e il suo confine e' l'impronta della
+   * struttura — mai il riquadro, mai il grembiule.
+   */
+  private enqueueSlopeCarve(record: BuildingRecord, top: number, mask: WorksMask | undefined): void {
+    const { terrain, growth } = this.ctx;
+    const depth = footprintDepth(record);
+
+    let carveHeight = 0;
+    for (let dy = 0; dy < depth; dy++) {
+      for (let dx = 0; dx < record.footprint; dx++) {
+        if (mask !== undefined && mask[dy * record.footprint + dx] === 0) continue;
+        const height = terrain.heightAt(record.x + dx, record.y + dy);
+        if (height - top > carveHeight) carveHeight = height - top;
+      }
+    }
+    if (carveHeight <= 0) return;
+
+    const voxels = new Uint8Array(record.footprint * depth * carveHeight);
+    for (let dy = 0; dy < depth; dy++) {
+      for (let dx = 0; dx < record.footprint; dx++) {
+        if (mask !== undefined && mask[dy * record.footprint + dx] === 0) continue;
+        const height = terrain.heightAt(record.x + dx, record.y + dy);
+        for (let z = top; z < height; z++) {
+          voxels[dx + record.footprint * (dy + depth * (z - top))] = 1;
+        }
+      }
+    }
+
+    // Una sagoma nuova vuota e la fascia da togliere come "precedente": la
+    // stessa macchina che demolisce un edificio a budget scava la montagna, e
+    // nessun altro percorso di scrittura nasce qui.
+    growth.enqueue(record.id, { x: record.x, y: record.y, z: top }, EMPTY_STAMP, {
+      sizeX: record.footprint,
+      sizeY: depth,
+      sizeZ: carveHeight,
+      anchorX: 0,
+      anchorY: 0,
+      anchorZ: 0,
+      voxels,
+      surfaces: new Uint8Array(voxels.length),
+      bandStarts: [0, carveHeight],
+    });
   }
 
   /**

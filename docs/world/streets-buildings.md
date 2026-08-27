@@ -146,6 +146,24 @@
   generatore disegna lo stamp. `level` e' lo stadio, e i record con `landmark`
   restano fuori dagli istogrammi — la simulazione non li ha mai contati come
   edifici.
+- **Il piazzamento demolisce tutto il costruito, e prende il suo posto.** Case,
+  torri e altri monumenti cadono senza soglia di altezza — la regola della
+  sventramento resta in `clearance.ts`, ma per un landmark il tetto e' aperto
+  (`BALANCE.gameplay.catalyst.clearing.maxLevel` e' infinito). Il solo rifiuto
+  sul costruito e' la **rete**: la citta' in quota, le arcologie e chi le porta
+  non cadono, perche' demolire un ospite farebbe cadere cio' che ci sta sopra.
+  Un'opera **automatica** — la decisione concessa — rispetta i monumenti che
+  trova e cerca altrove: la gomma e' il gesto del giocatore, non una scelta
+  della citta'. Mentre il cantiere demolisce, il riquadro e' **prenotato** nel
+  registry (`reserveRect`): la citta' continua a crescere, ma non dentro il
+  posto che il preventivo ha promesso.
+- **Un landmark adatta il pendio dentro la propria impronta.** La struttura
+  affonda alla quota piu' bassa dell'ingombro — come gli edifici — e in piu'
+  **scava**: la montagna che spunterebbe dal tetto viene tolta, colonna per
+  colonna, solo dove la maschera dichiara che la ricetta poggia. E' l'unica
+  eccezione a «si riempie, non si scava», e il suo confine e' l'impronta: il
+  pendio fuori resta dov'e'. L'unico terreno che rifiuta un landmark e' l'acqua
+  fonda, che non si copre ne' si scava.
 - Lo **stadio di un landmark e' cio' che la citta' gli ha costruito intorno**:
   il numero di record entro il raggio del catalizzatore, non la desiderabilita'.
   Un catalizzatore siede al centro della propria influenza, quindi il campo li'
@@ -242,10 +260,16 @@
   cambio di scala, e non lancia niente.
 - **Lo skyline e' un'eccezione governata.** Il livello massimo esce solo dalla
   somma di fascia, cono verso il polo ed elezione dell'isolato, e i tre coincidono
-  di rado: i picchi sono pochi per costruzione. La proporzione della punta —
-  diciannove a uno — e' dichiarata e non tollerata: `MAX_FOOTPRINT` non puo'
-  salire senza allargare `STREETS.pitch`, perche' l'isolato piu' stretto e' largo
-  quattordici colonne.
+  di rado: i picchi sono pochi per costruzione. La stessa coincidenza e' il gate
+  dell'assemblaggio urbano: nascita e upgrade valutano l'isolato al proprio
+  centro; solo quello ammesso a `BUILDER.maxLevel` puo' chiedere tutto il lato
+  libero, mentre ogni altro lotto resta entro `MAX_FOOTPRINT`.
+- **Le scale orizzontali sono due.** `moduleFootprint = 8` governa la grammatica
+  ordinaria — impronte storiche 4–8, scarti a passo uno, altezza e budget —;
+  `megaFootprint = 16` governa la fase strutturale — maglia stradale,
+  segmentazione, raggio costiero e arcologie. La seconda e' un riferimento, non
+  il tetto dell'assemblatore: un picco eletto puo' estendersi oltre sedici fino
+  allo spazio libero del proprio isolato.
 - **L'angolo dell'isolato cambia forma, non quota.** `blockForm.ts` dichiara il
   ruolo di un lotto — angolo, fronte, cuore — e `lotRole` e' un criterio di
   catalogo come gli altri: un campo, una riga in `accepts`, zero rami. **Non entra

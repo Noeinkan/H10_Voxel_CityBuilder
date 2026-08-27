@@ -33,14 +33,20 @@ describe('GrowthScene', () => {
 
   it('fa emergere usi misti e tipologie diverse da catalizzatori sovrapposti', () => {
     // E' la prova di fase 3 sul percorso vero: nessuno sceglie una zona, nessuno
-    // sceglie una forma. Si piazzano tre catalizzatori sovrapposti e si guarda
-    // cosa la citta' ne fa.
+    // sceglie una forma. Si piazzano tre catalizzatori con i **campi**
+    // sovrapposti e si guarda cosa la citta' ne fa.
+    //
+    // Gli ingombri restano disgiunti, e non e' un dettaglio da sistemare: da
+    // quando il piazzamento demolisce tutto il costruito, due riquadri che si
+    // toccano sono una richiesta di demolizione — il monumento del secondo
+    // sostituisce il primo — e qui si misura la sovrapposizione dei campi, non
+    // la gomma.
     const world = new VoxelWorld();
     const map = testTerrain({ chunksX: 3, chunksY: 3, height: 12 });
     const scene = new GrowthScene(world, map, { minX: 0, minY: 0, sizeX: 96, sizeY: 96 }, 4242);
 
     expect(scene.placeCatalyst(40, 40, 'market').success).toBe(true);
-    expect(scene.placeCatalyst(52, 44, 'factory').success).toBe(true);
+    expect(scene.placeCatalyst(56, 44, 'factory').success).toBe(true);
     expect(scene.placeCatalyst(44, 56, 'park').success).toBe(true);
 
     for (let i = 0; i < 600; i++) scene.advance(0.1);

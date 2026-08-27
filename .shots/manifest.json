@@ -1,5 +1,5 @@
 {
-  "capturedAt": "2026-08-23T16:44:07.517Z",
+  "capturedAt": "2026-08-27T14:35:59.986Z",
   "viewport": {
     "width": 1440,
     "height": 900
@@ -7,12 +7,12 @@
   "scale": 2,
   "shots": [
     {
-      "name": "07-biome-map",
-      "file": ".shots/07-biome-map.png",
-      "url": "http://localhost:8020/?debug=1&terrain=1337",
-      "shows": "l isola ricolorata per bioma (tasto B) con l overlay del terreno: istogramma dei biomi, colonne edificabili e tempo di generazione nel worker",
-      "alt": "Voxel island recoloured into flat biome bands, beside a panel listing the biome histogram and generation timings",
-      "bytes": 4165547,
+      "name": "09-selection-card",
+      "file": ".shots/09-selection-card.png",
+      "url": "http://localhost:8020/",
+      "shows": "la scheda di selezione aperta su un edificio: in cima la carta di cio che serve per crescere, poi struttura, isolato, colonna e voxel impilate nella stessa colonna scorrevole, e il contorno azzurro sull impronta nel mondo",
+      "alt": "Voxel city with a side card describing the clicked building — a growth summary on top, structure, block, column and voxel sections stacked below — and a blue outline around its footprint",
+      "bytes": 3580761,
       "warnings": [],
       "pageErrors": []
     }

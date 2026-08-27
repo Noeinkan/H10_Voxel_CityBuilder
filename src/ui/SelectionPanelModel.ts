@@ -1,4 +1,5 @@
 import {
+  ALL_CLASSES,
   BALANCE,
   BUILDING_CLASS,
   CLASS_LABELS,
@@ -47,12 +48,12 @@ import type {
 export type SelectionSectionId = 'structure' | 'block' | 'column' | 'voxel';
 
 /**
- * Etichetta corta da linguetta: l'intestazione intera («grassland at 21, 25»)
- * non sta su un bottone, e le quattro unita' hanno nomi che sono gia' il loro
- * significato. Vive nel modello perche' e' copia visibile, e va provata in
- * inglese come il resto.
+ * Etichetta corta da intestazione di sezione: l'intestazione intera («grassland
+ * at 21, 25») non sta su un'etichetta, e le quattro unita' hanno nomi che sono
+ * gia' il loro significato. Vive nel modello perche' e' copia visibile, e va
+ * provata in inglese come il resto.
  */
-export const SECTION_TAB_LABELS: Readonly<Record<SelectionSectionId, string>> = {
+export const SECTION_LABELS: Readonly<Record<SelectionSectionId, string>> = {
   structure: 'Structure',
   block: 'Block',
   column: 'Column',
@@ -100,7 +101,28 @@ export interface SelectionPanelModel {
   /** Il soggetto piu' specifico che esiste qui: e' l'intestazione del pannello. */
   readonly title: string;
   readonly summary: string;
+  /**
+   * Cio' che serve perche' qui cresca qualcosa, sempre in cima al pannello.
+   *
+   * `null` dove non c'e' niente di vero da dire: una campata non cresce, e una
+   * carta vuota insegnerebbe a saltarla. E' la stessa scelta di `cityUse: null`
+   * in `selection.ts`, dove il vuoto e' un fatto invece di un numero plausibile.
+   */
+  readonly growth: GrowthCard | null;
   readonly sections: readonly SelectionSection[];
+}
+
+/**
+ * La carta di cio' che manca per crescere.
+ *
+ * Non ha un'azione ne' un'estensione da evidenziare: e' una lettura, e sta
+ * sopra le sezioni perche' risponde alla domanda che chi clicca si sta facendo
+ * — «perche' non cresce di piu'?» — prima ancora di sapere cos'ha cliccato.
+ */
+export interface GrowthCard {
+  readonly title: string;
+  readonly summary: string;
+  readonly rows: readonly SelectionRow[];
 }
 
 /** Il volume che l'evidenziazione in-world deve disegnare, in colonne e quote. */
@@ -213,7 +235,7 @@ export function buildSelectionPanelModel(
 
   const leadId = defaultSection(selection);
   const lead = sections.find((section) => section.id === leadId)!;
-  return { title: lead.title, summary: lead.summary, sections };
+  return { title: lead.title, summary: lead.summary, growth: growthCard(selection), sections };
 }
 
 /**
@@ -489,10 +511,6 @@ function structureHead(info: StructureInfo): StructureHead {
         { label: 'Produces', value: catalyst.description },
         { label: 'Reach', value: `radius ${catalyst.radius} · follows streets and terrain` },
         { label: 'Centre strength', value: `${strength}` },
-        // Quanto manca allo stadio successivo, solo finche' il monumento non e'
-        // arrivato in cima: e' la stessa domanda del coach, e la risposta viene
-        // dagli stessi numeri (`withinRadius` + la soglia della ricetta).
-        ...landmarkStageRow(info),
         { label: 'Favours', value: favours.length === 0 ? 'none' : favours },
         { label: 'Penalises', value: penalises.length === 0 ? 'none' : penalises },
         { label: 'District', value: district },
@@ -563,21 +581,140 @@ function effectSummary(effects: CatalystEffects): string {
   return parts.join(' · ');
 }
 
+// --- La carta di cio' che serve per crescere --------------------------------
+
 /**
- * La riga dello stadio, solo per un landmark che deve ancora crescere.
+ * Cio' che serve perche' qualcosa cresca qui, detto in cima alla scheda.
  *
- * «2/4 · 14/16 buildings nearby»: a che stadio e' il monumento, quanti edifici
- * ha gia' attorno e quanti ne servono per lo stadio successivo. Il numero viene
- * dagli stessi calcoli del driver (`withinRadius` e la soglia della ricetta), e
- * per questo coincide con cio' che fa davvero avanzare la struttura.
+ * Tre soggetti hanno una risposta vera: un edificio promuove su desiderabilita'
+ * e cassa, un landmark avanza di stadio sugli edifici vicini, e un terreno nudo
+ * attecchisce quando un uso supera la propria soglia di sito. Chi non cresce —
+ * campate, parti in quota, arcologie — non ha una carta: il vuoto e' un fatto.
  */
-function landmarkStageRow(info: StructureInfo): readonly SelectionRow[] {
-  const growth = info.landmark;
-  if (growth === undefined || growth.nextAt === null) return [];
-  return [{
-    label: 'Stage',
-    value: `${growth.stage}/${growth.maxStage} · ${growth.nearby}/${growth.nextAt} buildings nearby`,
+function growthCard(selection: Selection): GrowthCard | null {
+  const info = selection.structure;
+  if (info !== null) return structureGrowthCard(info);
+  return groundGrowthCard(selection.column);
+}
+
+function structureGrowthCard(info: StructureInfo): GrowthCard | null {
+  const record = info.record;
+
+  if (record.landmark !== undefined) return landmarkGrowthCard(info);
+
+  if (record.span !== undefined || record.aerial !== undefined || record.arcology !== undefined) {
+    return null;
+  }
+
+  const growth = info.growth;
+  if (growth === undefined) return null;
+
+  // Chi regge qualcosa di abitato non promuove, anche dove il luogo ammetterebbe
+  // altri piani: e' la risposta che il driver da' per primo, e la carta la
+  // ripete dove la domanda nasce.
+  if (info.carries) {
+    return {
+      title: 'To grow',
+      summary: 'It holds up elevated parts — while it does, it cannot grow.',
+      rows: [],
+    };
+  }
+
+  if (growth === null) {
+    return {
+      title: 'To grow',
+      summary: 'At the highest level this place allows.',
+      rows: [],
+    };
+  }
+
+  const rows: SelectionRow[] = [{
+    label: 'Desirability',
+    value: growth.desirability >= growth.threshold
+      ? `${growth.desirability} · the ${growth.threshold} it needs is met`
+      : `${growth.desirability} of the ${growth.threshold} it needs for ${classLabel(record.class)}`,
   }];
+  if (growth.cost > 0) {
+    rows.push({
+      label: 'Materials',
+      value: `${growth.stock} in stock · ${growth.cost} needed for the upgrade`,
+    });
+  }
+  return {
+    title: 'To grow',
+    summary: `What this building needs to reach level ${growth.nextLevel}.`,
+    rows,
+  };
+}
+
+/**
+ * La carta di un landmark, solo finche' ha uno stadio davanti.
+ *
+ * Gli stessi numeri del driver (`withinRadius` + la soglia della ricetta): a che
+ * stadio e' il monumento, quanti edifici ha gia' attorno e quanti ne servono per
+ * lo stadio successivo. E' la stessa riga che prima viveva in fondo alla scheda
+ * del landmark; qui sta sopra, dove la domanda «perche' non cresce?» si fa.
+ */
+function landmarkGrowthCard(info: StructureInfo): GrowthCard | null {
+  const growth = info.landmark;
+  if (growth === undefined || growth.nextAt === null) return null;
+  return {
+    title: 'To grow',
+    summary: `The next stage needs ${growth.nextAt} buildings within reach.`,
+    rows: [{
+      label: 'Stage',
+      value: `${growth.stage}/${growth.maxStage} · ${growth.nearby}/${growth.nextAt} buildings nearby`,
+    }],
+  };
+}
+
+/**
+ * Cosa attecchirebbe su una colonna nuda.
+ *
+ * Un uso prende radice solo sopra la propria soglia di sito, e la soglia vive
+ * in `BALANCE.desirability.siteThreshold` — la stessa tabella di
+ * `nextBuildSites`. Dove nessun uso arriva, la carta dice l'unico gesto che
+ * esiste: un landmark in portata, che e' da dove la desiderabilita' viene.
+ */
+function groundGrowthCard(column: ColumnInfo): GrowthCard {
+  const thresholds = BALANCE.desirability.siteThreshold;
+  const wanted = ALL_CLASSES
+    .map((cls) => ({
+      cls,
+      score: column.desirability[cls] ?? 0,
+      threshold: thresholds[cls] ?? 0,
+    }))
+    .filter((entry) => entry.score > entry.threshold);
+
+  if (!column.buildable) {
+    return {
+      title: 'To grow',
+      summary: 'Nothing can grow on this column.',
+      rows: [{ label: 'Ground', value: 'not buildable' }],
+    };
+  }
+
+  if (wanted.length === 0) {
+    return {
+      title: 'To grow',
+      summary: 'No use wants this place yet.',
+      rows: [{
+        label: 'First building',
+        value: column.profile.roles.length === 0
+          ? 'needs a landmark within reach — desirability comes from catalysts'
+          : 'desirability below every site threshold — a landmark nearby would raise it',
+      }],
+    };
+  }
+
+  return {
+    title: 'To grow',
+    summary: 'What could take root on this column.',
+    rows: wanted.map((entry) => ({
+      label: classLabel(entry.cls),
+      value: `${entry.score} · passes the ${entry.threshold} site threshold`,
+    })),
+  };
 }
 
 // --- Cio' che la simulazione dice di un edificio come questo ------------------

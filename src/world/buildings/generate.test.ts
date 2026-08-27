@@ -258,17 +258,14 @@ describe('generateBuilding', () => {
   });
 
   it('produce uno skyline piu alto del rilievo, con la punta sull assemblaggio', () => {
-    // Il singolo non raggiunge piu' il lato pieno del modulo: satura a meta'
-    // modulo, e la sua altezza (che non dipende dall'impronta) resta il picco
-    // dello skyline. Il 16x16 e oltre — con il giusto rapporto altezza/base —
-    // nasce dal podio di `assembleBuilding`, non dal modulo singolo.
-    const mid = MAX_FOOTPRINT / 2 + MAX_FOOTPRINT / 4;
+    // Il singolo satura al lato pieno del modulo ordinario, cioe' otto voxel;
+    // oltre quel confine la massa nasce dal podio di `assembleBuilding`, non da
+    // una grammatica ordinaria ingrandita.
     let tallest = 0;
     for (let seed = 0; seed < 64; seed++) {
       const single = generateBuilding({ class: ALL_CLASSES[3], level: BUILDER.maxLevel, seed });
       tallest = Math.max(tallest, single.sizeZ);
-      expect(single.sizeX).toBe(mid);
-      expect(single.sizeX).toBeLessThan(MAX_FOOTPRINT);
+      expect(single.sizeX).toBe(MAX_FOOTPRINT);
     }
     for (let seed = 0; seed < 64; seed++) {
       const assembled = assembleBuilding({ class: ALL_CLASSES[3], level: BUILDER.maxLevel, seed }, 20);

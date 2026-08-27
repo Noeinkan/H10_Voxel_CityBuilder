@@ -343,14 +343,21 @@ export function togglePolicy(state: SimState, id: PolicyId): ActionResult {
  * minima dal proprio ruolo va rispettata, altrimenti una decisione poserebbe un
  * mercato dentro un mercato. E' per questo che l'unico rifiuto ammesso e'
  * quello sui fondi.
+ *
+ * `accepts` e' il filtro del chiamante sul **luogo**: chi la posa puo' scartare
+ * un sito prima ancora della convalida — la decisione automatica, per dire,
+ * non demolisce i monumenti che il giocatore ha gia' fatto sorgere, e cerca
+ * altrove. Senza, ogni sito valido resta accettabile.
  */
 export function grantSite(
   state: SimState,
   map: TerrainMap,
   kind: CatalystId,
   sites: readonly { readonly x: number; readonly y: number }[],
+  accepts?: (x: number, y: number) => boolean,
 ): { readonly x: number; readonly y: number } | null {
   for (const site of sites) {
+    if (accepts !== undefined && !accepts(site.x, site.y)) continue;
     const failure = catalystFailure(state, map, site.x, site.y, kind);
     if (failure === null || failure === 'insufficient-funds') return site;
   }

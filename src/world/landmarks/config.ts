@@ -1,6 +1,5 @@
 import type { CatalystId } from '../../sim';
 import { PALETTE_SLOTS } from '../../engine/paletteSlots';
-import { TERRACE } from '../terrain/config';
 import { SURFACE_KIND, WATER_CLASS, type WaterClass } from '../visualBlock';
 import { PART, box, type Part } from './parts';
 import { bollard, craneAt, entrance, quay, signBand, tree } from './vocab';
@@ -79,21 +78,13 @@ export const LANDMARK = {
    */
   variantSalt: 0x5a3c_11d7,
 
-  /**
-   * Dislivello massimo che il terrapieno di un landmark puo' colmare.
-   *
-   * `GRADING.maxWorksStep` non va bene qui: copre la banchina che scende sul
-   * fondale, e su una montagna lascerebbe un riquadro largo dodici colonne
-   * prendere due o tre gradoni insieme. La struttura salirebbe alla quota del
-   * piu' alto e le poche colonne esposte del muro diventerebbero guglie sottili
-   * alte mezzo versante. Un landmark puo' scavalcare **un** ciglio naturale,
-   * non cucire insieme piu' terrazze; l'alzata massima del terreno e' la misura
-   * che dichiara esattamente quel limite.
-   *
-   * La banchina resta fuori da questa soglia: un porto ha davvero bisogno del
-   * tetto strutturale piu' largo per arrivare dal piano al fondale.
-   */
-  maxTerraceDrop: TERRACE.maxStep,
+  // Qui stava `maxTerraceDrop`, il tetto di dislivello che fermava il terrapieno
+  // di un landmark su un fianco di montagna. Non c'e' piu': un landmark non
+  // riempie il pendio — affonda alla quota piu' bassa e scava la montagna che
+  // spunterebbe dal tetto, dentro la sola impronta — quindi il terrapieno che
+  // quel tetto limitava non si costruisce mai, e nessun versante resta fuori
+  // portata. L'unico rifiuto del terreno e' l'acqua fonda, e vive in
+  // `buildings/siteWorks.ts`.
 
   /**
    * Fin dove una parte **poggia** invece di sporgere, in voxel dal piano finito.

@@ -70,6 +70,56 @@ export function surveyGrade(
 }
 
 /**
+ * L'opera che regge un landmark su qualunque pendio, o null se non ce n'e' una.
+ *
+ * **E' la risposta di `surveyGrade` dove quella rifiuterebbe, e non e' una
+ * deroga: e' una domanda diversa.** Un edificio ordinario non copre la parete
+ * che lo precede, quindi la parete dentro la sua impronta lo ferma; un landmark
+ * invece **sostituisce** il terreno del proprio ingombro — affonda alla quota
+ * piu' bassa e la sagoma copre la parete per intero — e in cima scava la
+ * montagna che spunterebbe dal tetto. Cio' che resta fuori dall'impronta, la
+ * parete compresa, non si tocca.
+ *
+ * Il piano che ne esce non costruisce niente: `works` e' sempre `none`, e chi
+ * lo usa sa gia' che la base scende al minimo (`footZ`). Le due quote sono la
+ * sola cosa che conta — dove appoggia la struttura, e fin dove il tetto deve
+ * poter salire.
+ *
+ * **L'unico rifiuto vero e' l'acqua fonda.** Una parete di roccia si copre; un
+ * fondale oltre la banchina no — la struttura ci affonderebbe e il mare
+ * mostrerebbe un buco rettangolare al posto delle colonne coperte.
+ */
+export function surveyLandmarkGrade(
+  terrain: TerrainMap,
+  x: number,
+  y: number,
+  w: number,
+  h: number = w,
+  mask?: WorksMask,
+): GradePlan | null {
+  let footZ = Number.MAX_SAFE_INTEGER;
+  let padZ = 0;
+  let columns = 0;
+
+  for (let dy = 0; dy < h; dy++) {
+    for (let dx = 0; dx < w; dx++) {
+      if (mask !== undefined && mask[dy * w + dx] === 0) continue;
+      columns++;
+      const cx = x + dx;
+      const cy = y + dy;
+      const kind = groundKindAt(terrain, cx, cy);
+      if (kind === GROUND.refused && !isDryLand(terrain.biomeAt(cx, cy))) return null;
+      const height = terrain.heightAt(cx, cy);
+      if (height < footZ) footZ = height;
+      if (height > padZ) padZ = height;
+    }
+  }
+
+  if (columns === 0) return null;
+  return { works: WORKS.none, padZ, footZ, fill: 0 };
+}
+
+/**
  * Quali colonne di un'impronta l'opera deve reggere: `1` si costruisce, `0` no.
  *
  * E' un array `w * h` in ordine di riga, cioe' la stessa disposizione con cui

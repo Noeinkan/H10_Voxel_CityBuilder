@@ -39,8 +39,15 @@ async function frameIsland(page, steps = 8) {
 }
 
 async function pickTool(page, name) {
-  await page.getByRole('button', { name: new RegExp('^' + name, 'i') }).first().click();
+  const tile = page.getByRole('button', { name: new RegExp('^' + name, 'i') }).first();
+  // I costi lievitano col bilancio: un extra (Monument, 440 fondi) puo' essere
+  // ancora inaccessibile quando seedCity passa a piazzarlo. Lo si salta invece
+  // di far fallire lo scatto: la citta' cresce comunque, e il soggetto e'
+  // quello che vale.
+  if ((await tile.count()) === 0 || (await tile.isDisabled())) return false;
+  await tile.click();
   await page.waitForTimeout(250);
+  return true;
 }
 
 async function cursorState(page) {
@@ -73,7 +80,7 @@ async function findLand(page, cx, cy, { allowQuay = false } = {}) {
 }
 
 async function placeCatalyst(page, name, cx, cy, options) {
-  await pickTool(page, name);
+  if (!(await pickTool(page, name))) return false;
   const spot = await findLand(page, cx, cy, options);
   if (spot === null) return false;
   await page.mouse.click(spot.x, spot.y);
@@ -148,7 +155,8 @@ async function mesherIdle(page, timeout = 120000) {
  *
  * Il click a mani vuote apre sempre la scheda — anche sul prato, dove pero'
  * mancano proprio le righe che valgono lo scatto. La spirale cerca quindi la
- * linguetta Structure, non il pannello.
+ * carta Structure, non il pannello: tutte le sezioni stanno impilate nella
+ * stessa colonna, e quella della struttura e' la sola che scompare sul prato.
  */
 async function selectBuilding(page, cx, cy) {
   for (let r = 0; r <= 260; r += 26) {
@@ -161,9 +169,9 @@ async function selectBuilding(page, cx, cy) {
       const picked = await page.evaluate(() => {
         const panel = document.querySelector('.selection-panel');
         if (panel === null || panel.hidden) return null;
-        const tab = [...panel.querySelectorAll('.selection-tab')]
-          .find((button) => button.textContent === 'Structure' && !button.hidden);
-        return tab === undefined ? null : panel.querySelector('.selection-title')?.textContent;
+        const card = [...panel.querySelectorAll('.selection-card')]
+          .find((el) => el.querySelector('.selection-card-eyebrow')?.textContent === 'Structure');
+        return card === undefined ? null : panel.querySelector('.selection-title')?.textContent;
       });
       if (picked !== null) return { x, y, title: picked };
       if (r === 0) break;
@@ -180,6 +188,8 @@ async function seedCity(page, { growMs = 45000, extras = true, answer = true } =
   await placeCatalyst(page, 'Factory', ISLAND.x + 110, ISLAND.y + 45);
   await placeCatalyst(page, 'Park', ISLAND.x - 110, ISLAND.y + 45);
   if (extras) {
+    // Gli extra sono facoltativi anche di fatto: a seconda del bilancio del
+    // tick, University e Monument possono essere ancora inaccessibili.
     await placeCatalyst(page, 'University', ISLAND.x + 30, ISLAND.y - 110);
     await placeCatalyst(page, 'Monument', ISLAND.x - 60, ISLAND.y + 140);
   }
@@ -331,8 +341,8 @@ export default {
       path: '/',
       timeoutMs: 300000,
       shows:
-        'la scheda di selezione aperta su un edificio: tipologia, uso e livello, quattro linguette per struttura, isolato, colonna e voxel, e il contorno azzurro sull impronta nel mondo',
-      alt: 'Voxel city with a side card describing the clicked building — its typology, use and level — and a blue outline around its footprint',
+        'la scheda di selezione aperta su un edificio: in cima la carta di cio che serve per crescere, poi struttura, isolato, colonna e voxel impilate nella stessa colonna scorrevole, e il contorno azzurro sull impronta nel mondo',
+      alt: 'Voxel city with a side card describing the clicked building — a growth summary on top, structure, block, column and voxel sections stacked below — and a blue outline around its footprint',
       async prepare(page) {
         await seedCity(page, { growMs: 60000 });
         // In pausa prima di scegliere: a 4x la citta' continua a crescere
