@@ -47,6 +47,7 @@ function structure(extra: Partial<BuildingRecord> = {}, info: Partial<StructureI
   return {
     record: record(extra),
     catalyst: null,
+    influence: null,
     carries: false,
     spans: [],
     decks: [],
@@ -151,7 +152,7 @@ describe('buildSelectionPanelModel', () => {
     expect(section.summary).not.toContain('level');
     const rows = rowsOf(model, 'structure');
     expect(rows).toContain('Reach: radius 60 · follows streets and terrain');
-    expect(rows.some((row) => row.startsWith('Centre strength:'))).toBe(true);
+    expect(rows).toContain('Influence: Commerce +144 · Industry +206');
     expect(rows.some((row) => row.startsWith('Favours:'))).toBe(true);
     expect(rows.some((row) => row.startsWith('Penalises:'))).toBe(true);
     expect(rows.join(' ')).not.toContain('Use:');
@@ -169,6 +170,18 @@ describe('buildSelectionPanelModel', () => {
     expect(rows).toContain(
       'District: density +30 · wealth +60 · accessibility +135 · satisfaction -20 · industry +85',
     );
+  });
+
+  it('l\'influenza di un landmark legge i valori pesati quando la simulazione li porta', () => {
+    // Quando `influence` c'e', la riga la legge e non la ricalcola: il peso di
+    // policy sta dentro quei numeri, e ricalcolare dal ruolo direbbe un vettore
+    // che il campo non applica davvero.
+    const model = buildSelectionPanelModel(selection(structure(
+      { landmark: 'port', level: 2 },
+      { influence: [0, 150, 200, 0] },
+    )));
+
+    expect(rowsOf(model, 'structure')).toContain('Influence: Commerce +150 · Industry +200');
   });
 
   it('una campata non mostra un uso urbano, benche\' il record ne porti uno', () => {
@@ -486,7 +499,19 @@ describe('la carta di cio\' che serve per crescere', () => {
   it('un edificio legge soglia e cassa dalla stessa macchina del driver', () => {
     const model = buildSelectionPanelModel(selection(structure(
       { class: BUILDING_CLASS.industrial },
-      { growth: { nextLevel: 4, desirability: 78, threshold: 96, cost: 72, stock: 12 } },
+      {
+        growth: {
+          nextLevel: 4,
+          desirability: 78,
+          threshold: 96,
+          baseThreshold: 96,
+          discount: 0,
+          sources: [],
+          congestion: 0,
+          cost: 72,
+          stock: 12,
+        },
+      },
     )));
 
     expect(model.growth).not.toBeNull();
@@ -501,10 +526,100 @@ describe('la carta di cio\' che serve per crescere', () => {
   it('una soglia gia\' raggiunta si legge come raggiunta, e senza costo niente cassa', () => {
     const model = buildSelectionPanelModel(selection(structure(
       {},
-      { growth: { nextLevel: 4, desirability: 130, threshold: 96, cost: 0, stock: 50 } },
+      {
+        growth: {
+          nextLevel: 4,
+          desirability: 130,
+          threshold: 96,
+          baseThreshold: 96,
+          discount: 0,
+          sources: [],
+          congestion: 0,
+          cost: 0,
+          stock: 50,
+        },
+      },
     )));
 
     expect(cardRows(model)).toEqual(['Desirability: 130 · the 96 it needs is met']);
+  });
+
+  it('sotto soglia la carta scompone la desiderabilita\' nelle sue fonti', () => {
+    // «78 of 96» senza la provenienza non dice niente da fare: le righe
+    // aggiuntive sono la risposta, con i segni che il campo applica davvero.
+    const model = buildSelectionPanelModel(selection(structure(
+      {},
+      {
+        growth: {
+          nextLevel: 4,
+          desirability: 78,
+          threshold: 96,
+          baseThreshold: 120,
+          discount: 24,
+          sources: [
+            { label: 'Market', x: 96, y: 84, contribution: 52 },
+            { label: 'Factory', x: 100, y: 92, contribution: 21 },
+            { label: 'Airport', x: 50, y: 50, contribution: -9 },
+          ],
+          congestion: 24,
+          cost: 72,
+          stock: 12,
+        },
+      },
+    )));
+
+    expect(cardRows(model)).toEqual([
+      'Desirability: 78 of the 96 it needs for Housing (base 120, local qualities -24)',
+      'From Market (96, 84): +52',
+      'From Factory (100, 92): +21',
+      'From Airport (50, 50): -9',
+      'Neighbours: -24 · 3 buildings nearby',
+      'Materials: 12 in stock · 72 needed for the upgrade',
+    ]);
+  });
+
+  it('una soglia senza sconto non racconta la sua storia, e i pezzi restano per chi la manca', () => {
+    // Sotto soglia ma senza `discount` la parentesi sparisce: «base 96, local
+    // qualities -0» e' rumore. Sopra soglia le fonti non compaiono: la domanda
+    // «cosa manca» e' gia' chiusa.
+    const below = buildSelectionPanelModel(selection(structure(
+      {},
+      {
+        growth: {
+          nextLevel: 3,
+          desirability: 40,
+          threshold: 96,
+          baseThreshold: 96,
+          discount: 0,
+          sources: [{ label: 'Market', x: 96, y: 84, contribution: 40 }],
+          congestion: 0,
+          cost: 0,
+          stock: 0,
+        },
+      },
+    )));
+    expect(cardRows(below)).toEqual([
+      'Desirability: 40 of the 96 it needs for Housing',
+      'From Market (96, 84): +40',
+    ]);
+
+    const met = buildSelectionPanelModel(selection(structure(
+      {},
+      {
+        growth: {
+          nextLevel: 3,
+          desirability: 130,
+          threshold: 96,
+          baseThreshold: 96,
+          discount: 0,
+          sources: [{ label: 'Market', x: 96, y: 84, contribution: 40 }],
+          congestion: 0,
+          cost: 0,
+          stock: 0,
+        },
+      },
+    )));
+    expect(cardRows(met)).toEqual(['Desirability: 130 · the 96 it needs is met']);
   });
 
   it('un edificio al tetto del luogo lo dice, e cosi\' chi regge qualcosa', () => {
@@ -525,6 +640,9 @@ describe('la carta di cio\' che serve per crescere', () => {
 
     expect(model.growth!.summary).toBe('The next stage needs 16 buildings within reach.');
     expect(cardRows(model)).toContain('Stage: 2/4 · 14/16 buildings nearby');
+    // Cio' che lo stadio compra accanto a cio' che lo paga: senza, contare gli
+    // edifici vicini e' un numero senza prezzo.
+    expect(cardRows(model)).toContain('Next stage: strength +8');
     expect(rowsOf(model, 'structure').join(' ')).not.toContain('Stage:');
   });
 

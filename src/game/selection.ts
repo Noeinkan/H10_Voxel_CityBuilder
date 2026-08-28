@@ -3,11 +3,14 @@ import {
   BALANCE,
   BUILDING_CLASS,
   CLASS_COUNT,
+  DESIRABILITY_WEIGHT_OF_CLASS,
   FARM_KIND,
   catalystById,
+  catalystInfluence,
   effectiveCount,
   foodYieldOf,
   catalystRoleOf,
+  reachAt,
   upgradeMaterialCost,
   urbanProfileAt,
   weightsOf,
@@ -15,6 +18,7 @@ import {
   type Catalyst,
   type LocalUrbanProfile,
   type SimState,
+  type Weights,
 } from '../sim';
 import type { VoxelWorld } from '../world/VoxelWorld';
 import { keyOf, toChunk } from '../world/chunkCoords';
@@ -158,6 +162,22 @@ export interface UseInfo {
 }
 
 /**
+ * Un catalizzatore che versa desiderabilita' in una cella, con quanto.
+ *
+ * Il contributo e' lo stesso addendo che `DesirabilityField` somma:
+ * `strength x influenza x pesoPolicy x falloff`, arrotondato. A firmarlo con
+ * l'etichetta e la posizione e' la scheda, che cosi' puo' rispondere «cosa
+ * alzerebbe questo numero» senza inventare una seconda simulazione.
+ */
+export interface DesirabilitySource {
+  readonly label: string;
+  readonly x: number;
+  readonly y: number;
+  /** Contributo gia' pesato dalla policy e arrotondato; negativo dove il ruolo penalizza. */
+  readonly contribution: number;
+}
+
+/**
  * La struttura puntata, con il suo posto nella rete.
  *
  * Luogo, struttura, e — solo in `uses` — cio' che la simulazione sa dire di un
@@ -169,6 +189,16 @@ export interface StructureInfo {
   readonly record: BuildingRecord;
   /** Catalizzatore rappresentato dal landmark, se questa struttura ne ha uno. */
   readonly catalyst: Catalyst | null;
+  /**
+   * L'influenza al centro per uso urbano, nell'ordine di contratto, gia' pesata
+   * dalle policy attive: `strength x influenza x pesoPolicy`, arrotondata.
+   *
+   * E' la risposta alla domanda «quanto e come muove la crescita attorno»: gli
+   * stessi numeri che il campo applica nella colonna del catalizzatore, prima del
+   * decadimento. `null` dove la struttura non e' un landmark o il suo
+   * catalizzatore non si trova.
+   */
+  readonly influence: readonly number[] | null;
   /**
    * Crescita del landmark, per i soli record con `landmark`: stadio attuale,
    * massimo, edifici vicini e soglia dello stadio successivo. Assente per chi
@@ -202,6 +232,17 @@ export interface StructureInfo {
     readonly desirability: number;
     /** Soglia da superare, gia' scontata dalle qualita' locali. */
     readonly threshold: number;
+    /** Soglia prima dello sconto: due luoghi la chiedono diversa solo per `discount`. */
+    readonly baseThreshold: number;
+    /** Quanto le qualita' locali tagliano la soglia. */
+    readonly discount: number;
+    /**
+     * Chi versa desiderabilita' in questa cella, dal contributo maggiore al
+     * minore. Vuoto dove nessun catalizzatore la raggiunge.
+     */
+    readonly sources: readonly DesirabilitySource[];
+    /** Deduzione di congestione: edifici vicini x `congestionPerBuilding`. */
+    readonly congestion: number;
     /** Materiali chiesti dalla promozione. */
     readonly cost: number;
     /** Scorta cittadina di materiali. */
@@ -367,6 +408,7 @@ function structureAt(
   return {
     record,
     catalyst,
+    influence: landmarkInfluence(state, catalyst, record),
     landmark: landmarkStage(registry, catalyst, record),
     carries: registry.carries(record.id),
     spans: registry.spansOf(record.id),
@@ -406,14 +448,80 @@ function buildingGrowth(
   if (nextLevel > levelsAboveDeck(allowedLevel, rise)) return null;
 
   const profile = urbanProfileAt(state, record.x, record.y);
-  const threshold = upgradeThresholdOf(nextLevel) - localUpgradeDiscount(formOf(profile));
+  const baseThreshold = upgradeThresholdOf(nextLevel);
+  const discount = localUpgradeDiscount(formOf(profile));
   return {
     nextLevel,
     desirability: state.field.valueAt(record.x, record.y, record.class),
-    threshold,
+    threshold: baseThreshold - discount,
+    baseThreshold,
+    discount,
+    sources: desirabilitySources(state, record, weightsOf(state)),
+    // La stessa deduzione del campo, letta dallo stesso contatore: la cella e'
+    // quella dell'ancora del record, non quella cliccata, perche' e' li' che
+    // `valueAt` misura la desiderabilita' che fa promuovere l'edificio.
+    congestion: state.field.crowdAt(record.x, record.y) * BALANCE.desirability.congestionPerBuilding,
     cost: upgradeMaterialCost(nextLevel),
     stock: state.materials.stock,
   };
+}
+
+/**
+ * Chi versa desiderabilita' nella cella dell'edificio, e quanto.
+ *
+ * E' la scomposizione di cio' che `valueAt` ha gia' sommato: stesse ampiezze,
+ * stessa portata geodetica (`state.reach` **e'** la cache del campo), stesso
+ * peso di policy. La somma dei contributi puo' scostarsi di una unita' dal valore
+ * letto perche' il campo arrotonda una volta sola, sul totale: la scheda legge
+ * i pezzi, il confronto resta con il numero vero.
+ */
+function desirabilitySources(
+  state: SimState,
+  record: BuildingRecord,
+  weights: Weights,
+): readonly DesirabilitySource[] {
+  const weight = weights[DESIRABILITY_WEIGHT_OF_CLASS[record.class]];
+
+  const sources: DesirabilitySource[] = [];
+  for (const catalyst of state.catalysts) {
+    if (catalyst.radius <= 0 || catalyst.strength <= 0) continue;
+    const influence = catalystInfluence(catalystRoleOf(catalyst))[record.class];
+    if (influence === 0) continue;
+
+    const reach = reachAt(state.reach.get(catalyst.x, catalyst.y, catalyst.radius), record.x, record.y);
+    if (reach === 0) continue;
+    const contribution = Math.round(catalyst.strength * influence * weight * reach);
+    if (contribution === 0) continue;
+    sources.push({
+      label: catalystById(catalystRoleOf(catalyst)).label,
+      x: catalyst.x,
+      y: catalyst.y,
+      contribution,
+    });
+  }
+  sources.sort((a, b) => b.contribution - a.contribution);
+  return sources;
+}
+
+/**
+ * L'influenza al centro di un landmark, per uso, con le policy attive.
+ *
+ * `null` per chi non e' un landmark o non ha piu' il catalizzatore nello stato:
+ * un vuoto e' un fatto, e la scheda non deve inventare un vettore.
+ */
+function landmarkInfluence(
+  state: SimState,
+  catalyst: Catalyst | null,
+  record: BuildingRecord,
+): readonly number[] | null {
+  const kind = record.landmark;
+  if (kind === undefined || catalyst === null) return null;
+
+  const weights = weightsOf(state);
+  const influence = catalystInfluence(catalystRoleOf(catalyst));
+  return ALL_CLASSES.map((cls) => Math.round(
+    catalyst.strength * influence[cls] * weights[DESIRABILITY_WEIGHT_OF_CLASS[cls]],
+  ));
 }
 
 /**

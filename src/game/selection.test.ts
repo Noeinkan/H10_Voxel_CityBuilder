@@ -303,4 +303,70 @@ describe('resolveSelection', () => {
     expect(picked).not.toBeNull();
     expect(resolveSelection({ ...base, cell: picked! })?.structure?.record.id).toBe(tower.id);
   });
+
+  it('la carta di crescita scompone la desiderabilita\' nelle fonti vere del campo', () => {
+    // Gli stessi addendi che `DesirabilityField` somma: stessa ampiezza, stessa
+    // portata geodetica, stesso peso di policy. La somma dei contributi deve
+    // ricadere sul valore letto, a meno dell'unico arrotondamento del campo.
+    const registry = new BuildingRegistry();
+    registry.add({ ...record(30, 30, 12, 10), class: BUILDING_CLASS.residential });
+    const state = createSimState({
+      catalysts: [
+        { x: 30, y: 30, class: BUILDING_CLASS.residential, kind: 'market' as const, strength: 210, radius: 55 },
+        { x: 34, y: 30, class: BUILDING_CLASS.industrial, kind: 'factory' as const, strength: 205, radius: 50 },
+      ],
+    });
+
+    const picked = resolveSelection({ ...harness({ registry, state }), cell: cell(31, 31, 18) });
+    const growth = picked?.structure?.growth;
+
+    expect(growth).not.toBeNull();
+    expect(growth!.sources).toEqual([
+      { label: 'Market', x: 30, y: 30, contribution: 210 },
+      // A distanza 4 su raggio 50 il decadimento vale 0,92: 205 x -0,2 x 0,92.
+      { label: 'Factory', x: 34, y: 30, contribution: -38 },
+    ]);
+    const sum = growth!.sources.reduce((total, source) => total + source.contribution, 0);
+    expect(Math.abs(sum - growth!.congestion - growth!.desirability))
+      .toBeLessThanOrEqual(growth!.sources.length);
+    // Un edificio ordinario non ha un vettore di influenza: e' roba da landmark.
+    expect(picked?.structure?.influence).toBeNull();
+  });
+
+  it('la congestione della carta e\' quella che il campo sottrae davvero', () => {
+    // `crowd` per cella e' gia' mantenuto dal campo: due case dentro il raggio
+    // breve tolgono due volte `congestionPerBuilding`, come nel ricalcolo vero.
+    const registry = new BuildingRegistry();
+    registry.add({ ...record(30, 30, 12, 10), class: BUILDING_CLASS.residential });
+    const state = withHomes(createSimState(), 2); // case a (30,30) e (32,30)
+
+    const picked = resolveSelection({ ...harness({ registry, state }), cell: cell(31, 31, 18) });
+
+    expect(picked?.structure?.growth?.congestion).toBe(2 * BALANCE.desirability.congestionPerBuilding);
+    // E la desiderabilita' letta la porta gia' dentro: niente catalizzatori, quindi 0 - 16 = 0.
+    expect(picked?.structure?.growth?.desirability).toBe(0);
+  });
+
+  it('l\'influenza di un landmark al centro porta il peso delle policy attive', () => {
+    // Il vettore e' `strength x influenza x pesoPolicy`: con `greenBelt` attiva
+    // il residenziale guadagna il moltiplicatore, e la scheda lo deve leggere,
+    // non ricalcolare dal ruolo nudo.
+    const registry = new BuildingRegistry();
+    registry.add({ ...record(20, 20, 12, 10), landmark: 'ferry' });
+    const state = createSimState({
+      policies: ['greenBelt'],
+      catalysts: [
+        { x: 21, y: 22, class: BUILDING_CLASS.industrial, kind: 'ferry' as const, strength: 180, radius: 58 },
+      ],
+    });
+
+    const picked = resolveSelection({ ...harness({ registry, state }), cell: cell(21, 21, 18) });
+
+    expect(picked?.structure?.influence).toEqual([
+      Math.round(180 * 0.75 * BALANCE.policyMultipliers.greenBelt),
+      180,
+      27,
+      63,
+    ]);
+  });
 });

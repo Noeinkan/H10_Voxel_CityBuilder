@@ -5,6 +5,7 @@ import {
   CLASS_LABELS,
   catalystById,
   type BuildingClass,
+  type CatalystDefinition,
   type CatalystEffects,
 } from '../sim';
 import { PALETTE_SLOT_NAMES } from '../engine/paletteSlots';
@@ -509,8 +510,14 @@ function structureHead(info: StructureInfo): StructureHead {
         // domanda di chi lo clicca, e prima non aveva risposta — la scheda
         // mostrava la portata e non il mestiere.
         { label: 'Produces', value: catalyst.description },
+        {
+          label: 'Influence',
+          // Quanto il landmark versa nel campo per uso, al centro: la domanda
+          // «come influenza la crescita attorno» con i numeri che la simulazione
+          // applica davvero. La forza scalare da sola non diceva verso chi.
+          value: influenceSummary(info, catalyst, strength),
+        },
         { label: 'Reach', value: `radius ${catalyst.radius} · follows streets and terrain` },
-        { label: 'Centre strength', value: `${strength}` },
         { label: 'Favours', value: favours.length === 0 ? 'none' : favours },
         { label: 'Penalises', value: penalises.length === 0 ? 'none' : penalises },
         { label: 'District', value: district },
@@ -581,6 +588,25 @@ function effectSummary(effects: CatalystEffects): string {
   return parts.join(' · ');
 }
 
+/**
+ * L'influenza di un landmark per uso, al centro e con le policy attive.
+ *
+ * `info.influence` porta i valori gia' pesati dalla simulazione; dove manca — il
+ * catalizzatore non e' nello stato, come nei salvataggi vecchi — si ripiega sul
+ * vettore del ruolo per la forza corrente, senza peso di policy. La riga non deve
+ * sparire per un caso che il gioco produce ancora: dire «Market» senza quanto
+ * muova le case accanto e' il difetto che questa riga esiste per chiudere.
+ */
+function influenceSummary(info: StructureInfo, catalyst: CatalystDefinition, strength: number): string {
+  const parts: string[] = [];
+  for (const cls of ALL_CLASSES) {
+    const value = info.influence?.[cls] ?? Math.round(strength * catalyst.influence[cls]);
+    if (value === 0) continue;
+    parts.push(`${classLabel(cls)} ${signed(value)}`);
+  }
+  return parts.join(' · ');
+}
+
 // --- La carta di cio' che serve per crescere --------------------------------
 
 /**
@@ -628,12 +654,33 @@ function structureGrowthCard(info: StructureInfo): GrowthCard | null {
     };
   }
 
+  const met = growth.desirability >= growth.threshold;
   const rows: SelectionRow[] = [{
     label: 'Desirability',
-    value: growth.desirability >= growth.threshold
+    value: met
       ? `${growth.desirability} · the ${growth.threshold} it needs is met`
-      : `${growth.desirability} of the ${growth.threshold} it needs for ${classLabel(record.class)}`,
+      : `${growth.desirability} of the ${growth.threshold} it needs for ${classLabel(record.class)}${thresholdDetail(growth)}`,
   }];
+
+  if (!met) {
+    // Chi versa desiderabilita' in questa cella: «78 of 96» senza la provenienza
+    // non dice niente da fare, ed e' l'unica domanda che la carta esiste per
+    // rispondere. Con la soglia raggiunta la carta torna a una riga sola: la
+    // domanda e' gia' chiusa, e i pezzi ridiventerebbero rumore.
+    for (const source of growth.sources) {
+      rows.push({
+        label: `From ${source.label} (${source.x}, ${source.y})`,
+        value: signed(source.contribution),
+      });
+    }
+    if (growth.congestion > 0) {
+      const neighbours = growth.congestion / BALANCE.desirability.congestionPerBuilding;
+      rows.push({
+        label: 'Neighbours',
+        value: `${signed(-growth.congestion)} · ${amount(neighbours)} building${plural(neighbours)} nearby`,
+      });
+    }
+  }
   if (growth.cost > 0) {
     rows.push({
       label: 'Materials',
@@ -661,10 +708,18 @@ function landmarkGrowthCard(info: StructureInfo): GrowthCard | null {
   return {
     title: 'To grow',
     summary: `The next stage needs ${growth.nextAt} buildings within reach.`,
-    rows: [{
-      label: 'Stage',
-      value: `${growth.stage}/${growth.maxStage} · ${growth.nearby}/${growth.nextAt} buildings nearby`,
-    }],
+    rows: [
+      {
+        label: 'Stage',
+        value: `${growth.stage}/${growth.maxStage} · ${growth.nearby}/${growth.nextAt} buildings nearby`,
+      },
+      {
+        label: 'Next stage',
+        // Cio' che lo stadio compra, accanto a cio' che lo paga: contare gli
+        // edifici vicini senza sapere per cosa e' l'unico numero opaco rimasto.
+        value: `strength +${BALANCE.gameplay.catalyst.stageBonus}`,
+      },
+    ],
   };
 }
 
@@ -827,6 +882,17 @@ function needRow(use: UseInfo): SelectionRow {
 /** Interi senza virgola, il resto a un decimale: `productionYield` vale 2,5. */
 function amount(value: number): string {
   return Number.isInteger(value) ? `${value}` : value.toFixed(1);
+}
+
+/** «+52» o «-24»: il segno esplicito, perche' e' il senso della riga. */
+function signed(value: number): string {
+  return `${value > 0 ? '+' : '-'}${amount(Math.abs(value))}`;
+}
+
+/** « (base 120, local qualities -24)»: perche' la soglia cambia da luogo a luogo. */
+function thresholdDetail(growth: { readonly baseThreshold: number; readonly discount: number }): string {
+  if (growth.discount === 0) return '';
+  return ` (base ${growth.baseThreshold}, local qualities -${growth.discount})`;
 }
 
 // --- Formattazione -----------------------------------------------------------
