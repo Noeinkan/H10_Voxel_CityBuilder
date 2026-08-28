@@ -18,6 +18,8 @@ import { FACING, type Facing } from '../streets/streetGrid';
 import {
   ARCOLOGY,
   ARCOLOGY_RECIPES,
+  BASE_ARCOLOGY_RECIPES,
+  PROFILE_ARCOLOGY_RECIPES,
   stageThresholds,
   type ArcologyRecipe,
 } from './config';
@@ -102,14 +104,37 @@ function bruteForceDirty(sizeX: number, sizeY: number, height: number): number {
   return worst;
 }
 
+/**
+ * Le sagome gia' generate, per chiave di richiesta.
+ *
+ * **Una sagoma di arcologia e' la fixture piu' cara del dominio**: la piu' alta
+ * chiede una tela da 48x48x735, e mezza dozzina di test chiedono esattamente la
+ * stessa. La cache non indebolisce niente perche' nessuno la modifica — chi
+ * verifica il *determinismo* chiama `generateArcology` diretta, ed e' l'unico
+ * posto in cui due generazioni distinte sono il punto.
+ */
+const stamps = new Map<string, VoxelStamp>();
+
+function stampOf(
+  recipe: ArcologyRecipe,
+  options: { stage: number; facing: Facing; from?: number; seed?: number },
+): VoxelStamp {
+  const key = `${recipe.kind}|${options.stage}|${options.facing}|${options.from ?? ''}|${options.seed ?? ''}`;
+  const cached = stamps.get(key);
+  if (cached !== undefined) return cached;
+  const stamp = generateArcology(recipe, options);
+  stamps.set(key, stamp);
+  return stamp;
+}
+
 function finalStamp(recipe: ArcologyRecipe, facing: Facing = FACING.east): VoxelStamp {
-  return generateArcology(recipe, { stage: maxStageOf(recipe), facing });
+  return stampOf(recipe, { stage: maxStageOf(recipe), facing });
 }
 
 describe('il catalogo delle arcologie', () => {
   it('usa le altezze finali e aggiunge stadi per raggiungerle', () => {
     expect(Object.fromEntries(
-      ARCOLOGY_RECIPES.map((recipe) => [recipe.kind, [recipe.height, recipe.parts.length]]),
+      BASE_ARCOLOGY_RECIPES.map((recipe) => [recipe.kind, [recipe.height, recipe.parts.length]]),
     )).toEqual({
       twinStem: [320, 6],
       branchingCore: [320, 6],
@@ -120,6 +145,43 @@ describe('il catalogo delle arcologie', () => {
       quadCluster: [735, 7],
       triSpan: [440, 6],
     });
+  });
+
+  it('aggiunge variazioni dichiarate senza sostituire il catalogo originario', () => {
+    expect(BASE_ARCOLOGY_RECIPES.map((recipe) => recipe.kind)).toEqual([
+      'twinStem',
+      'branchingCore',
+      'skyWeave',
+      'spireRing',
+      'doubleBar',
+      'stackPair',
+      'quadCluster',
+      'triSpan',
+    ]);
+    expect(Object.fromEntries(
+      PROFILE_ARCOLOGY_RECIPES.map((recipe) => [recipe.kind, recipe.variationOf]),
+    )).toEqual({
+      terracedTwin: 'twinStem',
+      splitCrown: 'branchingCore',
+      steppedBar: 'doubleBar',
+      courtCascade: 'quadCluster',
+    });
+    expect(ARCOLOGY_RECIPES).toEqual([
+      ...BASE_ARCOLOGY_RECIPES,
+      ...PROFILE_ARCOLOGY_RECIPES,
+    ]);
+  });
+
+  it('le variazioni terminano corpi dello stesso stadio su quote diverse', () => {
+    for (const recipe of PROFILE_ARCOLOGY_RECIPES) {
+      const staggered = recipe.parts.some((stage) => {
+        const tops = new Set(stage
+          .filter((part) => part.kind === PART.shell)
+          .map((part) => part.z + part.height));
+        return tops.size > 1;
+      });
+      expect(staggered, recipe.kind).toBe(true);
+    }
   });
 
   it('deriva soglie e numero di stadi dalla stessa forma', () => {
@@ -228,7 +290,7 @@ describe('il catalogo delle arcologie', () => {
     for (const recipe of ARCOLOGY_RECIPES) {
       let opened = false;
       for (let stage = 0; stage <= maxStageOf(recipe); stage++) {
-        const stamp = generateArcology(recipe, { stage, facing: FACING.east });
+        const stamp = stampOf(recipe, { stage, facing: FACING.east });
         const window = skyWindowOf(stamp, ARCOLOGY.window);
         if (window !== null) opened = true;
         else expect(opened, `${recipe.kind} richiude la finestra allo stadio ${stage}`).toBe(false);
@@ -297,9 +359,11 @@ describe('generateArcology', () => {
   it('il delta di uno stadio non riscrive quello di prima, e insieme fanno il cumulativo', () => {
     for (const recipe of ARCOLOGY_RECIPES) {
       for (let stage = 1; stage <= maxStageOf(recipe); stage++) {
-        const cumulative = generateArcology(recipe, { stage, facing: FACING.east, seed: 3 });
-        const before = generateArcology(recipe, { stage: stage - 1, facing: FACING.east, seed: 3 });
-        const delta = generateArcology(recipe, {
+        // `before` di uno stadio e' il `cumulative` di quello prima: senza cache
+        // ogni stadio si rigenerava due volte.
+        const cumulative = stampOf(recipe, { stage, facing: FACING.east, seed: 3 });
+        const before = stampOf(recipe, { stage: stage - 1, facing: FACING.east, seed: 3 });
+        const delta = stampOf(recipe, {
           stage,
           from: stage,
           facing: FACING.east,
@@ -446,7 +510,7 @@ describe('le fasce e i piazzali', () => {
   it('il piano di un piazzale e davvero costruito allo stadio che lo apre', () => {
     for (const recipe of ARCOLOGY_RECIPES) {
       for (const landing of recipe.landings) {
-        const stamp = generateArcology(recipe, { stage: landing.stage, facing: FACING.east });
+        const stamp = stampOf(recipe, { stage: landing.stage, facing: FACING.east });
         // Sotto la prima quota libera c'e' il piano su cui si cammina: se non
         // fosse pieno, il piazzale sarebbe un riquadro appeso al niente.
         for (let dy = 0; dy < landing.h; dy++) {

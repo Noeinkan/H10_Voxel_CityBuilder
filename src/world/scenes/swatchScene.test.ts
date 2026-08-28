@@ -55,7 +55,7 @@ import {
 import { cellDetail, countDetail } from './swatchProbe';
 
 /** Genera tutto in una volta: il budget serve solo al frame loop. */
-function generate(budgetMs = Number.POSITIVE_INFINITY): VoxelWorld {
+function buildSwatch(): VoxelWorld {
   const world = new VoxelWorld();
   const scene = createScene(world, {
     kind: 'swatch',
@@ -67,12 +67,27 @@ function generate(budgetMs = Number.POSITIVE_INFINITY): VoxelWorld {
     sizeZ: 64,
   });
   let guard = 0;
-  while (!scene.step(budgetMs)) {
+  while (!scene.step(Number.POSITIVE_INFINITY)) {
     if (++guard > 10_000) throw new Error('generatore che non termina');
   }
   expect(scene.done).toBe(true);
   expect(scene.progress).toBe(1);
   return world;
+}
+
+/**
+ * Il campionario, costruito una volta sola per file.
+ *
+ * **Nessuno di questi test lo modifica**: lo leggono e basta, e la scena e'
+ * deterministica per costruzione — c'e' un test apposta che lo verifica
+ * generandone una seconda a passi. Ricostruirla a ogni `it` voleva dire pagare
+ * dieci volte la scena piu' alta del progetto, dove un'arcologia sola porta
+ * 735 quote per 48 colonne di lato, per rileggere gli stessi voxel.
+ */
+let shared: VoxelWorld | null = null;
+function generate(): VoxelWorld {
+  if (shared === null) shared = buildSwatch();
+  return shared;
 }
 
 /**
@@ -82,10 +97,16 @@ function generate(budgetMs = Number.POSITIVE_INFINITY): VoxelWorld {
  * la griglia, e contarlo farebbe risultare piena anche la colonna dello slot
  * zero, che deve restare un buco.
  */
-function pairsIn(world: VoxelWorld, x0: number, y0: number, x1: number, y1: number): Set<string> {
+function pairsIn(
+  world: VoxelWorld,
+  x0: number,
+  y0: number,
+  x1: number,
+  y1: number,
+  zTop = swatchExtent().sizeZ,
+): Set<string> {
   const found = new Set<string>();
-  const extent = swatchExtent();
-  for (let z = SWATCH.groundZ; z < extent.sizeZ; z++) {
+  for (let z = SWATCH.groundZ; z < zTop; z++) {
     for (let y = y0; y < y1; y++) {
       for (let x = x0; x < x1; x++) {
         const id = world.getBlock(x, y, z);
@@ -97,18 +118,43 @@ function pairsIn(world: VoxelWorld, x0: number, y0: number, x1: number, y1: numb
   return found;
 }
 
-/** Voxel pieni che cadono dentro l'estensione dichiarata. */
-function solidsInExtent(world: VoxelWorld): number {
+/**
+ * Voxel pieni che cadono **fuori** dall'estensione dichiarata.
+ *
+ * **Si percorrono i chunk, che sono sparsi, non il riquadro, che e' denso.** La
+ * domanda e' la stessa di prima — nessuna scrittura fuori dall'estensione — ma
+ * il riquadro dichiarato arriva a 735 quote per via dell'arcologia piu' alta, e
+ * interrogarlo cella per cella costava trentotto secondi: da solo piu' di tutto
+ * il resto del file, oltre il `testTimeout`. Un chunk interamente dentro
+ * l'estensione non si apre nemmeno.
+ */
+function solidsOutsideExtent(world: VoxelWorld): number {
   const extent = swatchExtent();
-  let count = 0;
-  for (let z = 0; z < extent.sizeZ; z++) {
-    for (let y = extent.minY; y < extent.minY + extent.sizeY; y++) {
-      for (let x = extent.minX; x < extent.minX + extent.sizeX; x++) {
-        if (world.getBlock(x, y, z) !== 0) count++;
-      }
+  const maxX = extent.minX + extent.sizeX;
+  const maxY = extent.minY + extent.sizeY;
+  let outside = 0;
+
+  for (const chunk of world.chunks.values()) {
+    const ox = chunk.cx * CHUNK;
+    const oy = chunk.cy * CHUNK;
+    const oz = chunk.cz * CHUNK;
+    const contained = ox >= extent.minX && ox + CHUNK <= maxX &&
+      oy >= extent.minY && oy + CHUNK <= maxY &&
+      oz >= 0 && oz + CHUNK <= extent.sizeZ;
+    if (contained) continue;
+
+    for (let i = 0; i < chunk.blocks.length; i++) {
+      if (chunk.blocks[i] === 0) continue;
+      const x = ox + (i % CHUNK);
+      const y = oy + (((i / CHUNK) | 0) % CHUNK);
+      const z = oz + ((i / (CHUNK * CHUNK)) | 0);
+      if (x < extent.minX || x >= maxX) outside++;
+      else if (y < extent.minY || y >= maxY) outside++;
+      else if (z < 0 || z >= extent.sizeZ) outside++;
     }
   }
-  return count;
+
+  return outside;
 }
 
 /**
@@ -140,11 +186,17 @@ describe('swatchScene', () => {
     // slot nuovo non e' mai stato aggiunto al campionario. Percorre le tabelle e
     // non dei letterali, quindi un trentatreesimo slot o un nono linguaggio
     // farebbero cadere questo controllo prima di arrivare a schermo.
+    // La colonna si ferma a `CELL_HEIGHT`, che e' l'altezza della sagoma: senza
+    // il taglio queste 256 letture salirebbero fino alla quota del soggetto piu'
+    // alto del campionario — un'arcologia — per leggere aria. Che sopra la
+    // sagoma non ci sia altro non e' un'assunzione: lo verifica «scrive nel
+    // mondo esattamente la sagoma che dichiara», qui sotto.
+    const cellTop = SWATCH.groundZ + CELL_HEIGHT;
     const missing: string[] = [];
     for (let row = 0; row < SWATCH_ROWS; row++) {
       for (let col = 1; col < SWATCH_COLUMNS; col++) {
         const rect = matrixCellRect(row, col);
-        const pairs = pairsIn(world, rect.x0, rect.y0, rect.x1, rect.y1);
+        const pairs = pairsIn(world, rect.x0, rect.y0, rect.x1, rect.y1, cellTop);
         if (!pairs.has(`${col}/${row}`)) missing.push(`${col}/${row}`);
       }
     }
@@ -448,7 +500,7 @@ describe('swatchScene', () => {
     // granulare al chunk, quindi direbbe di si' anche a una scrittura sfuggita
     // trenta colonne oltre l'estensione. L'inquadratura di `main.ts` si fida di
     // `swatchExtent()`, e quel che ne esce fuori non lo vedrebbe nessuno.
-    expect(solidsInExtent(world)).toBe(world.solidVoxelCount);
+    expect(solidsOutsideExtent(world)).toBe(0);
 
     for (const chunk of world.chunks.values()) {
       expect(chunk.data.some((value) => value !== 0)).toBe(false);
