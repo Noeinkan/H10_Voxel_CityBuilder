@@ -16,6 +16,7 @@ import {
   type SimStateData,
   type SimState,
 } from './SimState';
+import { EMPTY_SATISFACTION } from './satisfaction';
 import { testTerrain } from './testTerrain';
 import { tickMany } from './tick';
 
@@ -106,6 +107,33 @@ describe('SimState — serializzazione', () => {
     const { staffing: _staffing, ...older } = toSimStateData(populated());
 
     expect(reviveSimState(older as SimStateData).staffing).toBe(1);
+  });
+
+  it('la scomposizione e il fattore di terra sopravvivono al giro in JSON', () => {
+    const source = populated();
+    const state = {
+      ...source,
+      landFactor: 0.5,
+      satisfactionReport: { ...source.satisfactionReport, crowding: 0.4 },
+    };
+
+    const revived = reviveSimState(JSON.parse(JSON.stringify(toSimStateData(state))));
+
+    expect(revived.landFactor).toBe(0.5);
+    expect(revived.satisfactionReport.crowding).toBe(0.4);
+  });
+
+  it('rianima ottimista un salvataggio scritto prima dei referti', () => {
+    const {
+      satisfactionReport: _satisfactionReport,
+      landFactor: _landFactor,
+      ...older
+    } = toSimStateData(populated());
+
+    const revived = reviveSimState(older as SimStateData);
+
+    expect(revived.landFactor).toBe(1);
+    expect(revived.satisfactionReport).toEqual(EMPTY_SATISFACTION);
   });
 
   it('lo stato serializzato non contiene array tipizzati ne’ oggetti opachi', () => {

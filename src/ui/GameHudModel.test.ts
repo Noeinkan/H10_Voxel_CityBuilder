@@ -25,6 +25,7 @@ describe('buildGameHudModel', () => {
     expect(model.catalysts.every((action) => !action.available)).toBe(true);
     expect(model.expansion.available).toBe(false);
     expect(model.policies.every((policy) => !policy.available)).toBe(true);
+    expect(model.needs).toBeNull();
   });
 
   it('spiega separatamente blocchi per fondi e popolazione', () => {
@@ -187,6 +188,24 @@ describe('buildGameHudModel', () => {
     const model = buildGameHudModel(stats(1_250, 12));
     expect(model.resources.find((entry) => entry.id === 'funds')?.fill).toBeUndefined();
     expect(model.resources.find((entry) => entry.id === 'materials')?.fill).toBeUndefined();
+  });
+
+  it('ogni risorsa porta la sua riga perche', () => {
+    // La riga e' il referto in una frase: deve esserci sempre, anche in una
+    // citta' appena avviata, o il rail tornerebbe muto proprio quando il
+    // giocatore impara a leggere il pannello.
+    const model = buildGameHudModel(stats(1_250, 12));
+    for (const resource of model.resources) {
+      expect(resource.hint).toBeDefined();
+      expect((resource.hint ?? '').length).toBeGreaterThan(0);
+    }
+  });
+
+  it('il blocco bisogni cita residenti e prossimo passo del coach', () => {
+    const model = buildGameHudModel(stats(0, 45));
+
+    expect(model.needs?.residents.value).toBe('45 / 120');
+    expect(model.needs?.next).toBeNull();
   });
 
   it('le opere in quota mostrano e verificano anche il costo in materiali', () => {

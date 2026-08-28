@@ -1,5 +1,12 @@
 import { DAYLIGHT_MODE, type DaylightMode } from '../engine/daylight';
-import { daylightControl, type GameHudModel, type HudFlow, type HudResource } from './GameHudModel';
+import { ALL_CLASSES, CLASS_LABELS } from '../sim';
+import {
+  daylightControl,
+  type GameHudModel,
+  type HudFlow,
+  type HudNeeds,
+  type HudResource,
+} from './GameHudModel';
 import type { TrendDirection } from './ResourceTrend';
 import { createHudIcon, type HudIcon } from './hudIcons';
 import { iconButton, markRowColumns, textButton } from './hudWidgets';
@@ -32,6 +39,16 @@ interface ResourceElements {
   readonly spark: SVGPolylineElement;
   readonly ring: SVGCircleElement;
   readonly flows: HTMLElement;
+  readonly hint: HTMLElement;
+}
+
+/** Gli elementi del blocco City needs: un titolo, due contatori, quattro chip. */
+interface NeedsElements {
+  readonly block: HTMLElement;
+  readonly residentsRow: HTMLElement;
+  readonly residents: HTMLElement;
+  readonly classes: HTMLElement[];
+  readonly next: HTMLElement;
 }
 
 /** La freccia di tendenza: e' la sagoma a dire il verso, non il colore. */
@@ -129,6 +146,7 @@ export class ResourceBar {
   readonly root: HTMLElement;
 
   private readonly resources = new Map<HudResource['id'], ResourceElements>();
+  private readonly needs: NeedsElements;
   private readonly pauseButton: HTMLButtonElement;
   private readonly speedButtons = new Map<number, HTMLButtonElement>();
   private readonly daylightButton: HTMLButtonElement;
@@ -148,6 +166,7 @@ export class ResourceBar {
     this.root = document.createElement('header');
     this.root.className = 'resource-bar hud-surface hud-surface--framed';
     for (const resource of model.resources) this.root.appendChild(this.createResource(resource));
+    this.needs = this.createNeeds();
 
     const time = document.createElement('div');
     time.className = 'time-controls';
@@ -239,7 +258,10 @@ export class ResourceBar {
       }
 
       paintFlows(elements.flows, resource.breakdown, resource.status);
+      elements.hint.textContent = resource.hint ?? '';
     }
+
+    this.paintNeeds(model.needs);
 
     this.pauseButton.replaceChildren(createHudIcon(model.paused ? 'play' : 'pause'));
     const pauseLabel = model.paused ? 'Resume simulation' : 'Pause simulation';
@@ -348,7 +370,12 @@ export class ResourceBar {
     const line = svg('polyline');
     spark.appendChild(line);
 
-    item.append(badge, label, value, spark, flows);
+    // La riga «perche'», sempre visibile sotto la sparkline: e' il referto letto
+    // al volo, non una scomposizione — quella resta nel popover.
+    const hint = document.createElement('div');
+    hint.className = 'resource-hint';
+
+    item.append(badge, label, value, spark, hint, flows);
     // Raggiungibile da tastiera: senza, la scomposizione esiste solo per chi usa
     // il mouse, e la domanda che risponde non e' un extra decorativo.
     item.tabIndex = 0;
@@ -360,7 +387,81 @@ export class ResourceBar {
     item.addEventListener('click', (event) => {
       if (event.detail > 0) item.blur();
     });
-    this.resources.set(resource.id, { item, value: number, delta, arrow, spark: line, ring, flows });
+    this.resources.set(resource.id, {
+      item,
+      value: number,
+      delta,
+      arrow,
+      spark: line,
+      ring,
+      flows,
+      hint,
+    });
     return item;
+  }
+
+  /**
+   * Il blocco City needs, in coda alle risorse e prima dei controlli del tempo.
+   *
+   * Nascosto per default: compare alla prima `paintNeeds` con un modello vero,
+   * e torna a sparire durante il tutorial. I contatori si riscrivono in place
+   * come le voci del popover, senza smontare il blocco sotto gli occhi.
+   */
+  private createNeeds(): NeedsElements {
+    const block = document.createElement('div');
+    block.className = 'needs-block';
+    block.hidden = true;
+
+    const title = document.createElement('span');
+    title.className = 'needs-title';
+    title.textContent = 'City needs';
+
+    const residentsRow = document.createElement('div');
+    residentsRow.className = 'needs-row';
+    const residentsLabel = document.createElement('span');
+    residentsLabel.textContent = 'Residents';
+    const residents = document.createElement('strong');
+    residents.className = 'needs-count';
+    residentsRow.append(residentsLabel, residents);
+
+    const classes = document.createElement('div');
+    classes.className = 'needs-classes';
+    const chips = ALL_CLASSES.map((cls) => {
+      const chip = document.createElement('span');
+      chip.className = 'needs-chip';
+      const name = document.createElement('span');
+      name.textContent = CLASS_LABELS[cls];
+      const count = document.createElement('strong');
+      count.className = 'needs-chip-count';
+      chip.append(name, count);
+      classes.appendChild(chip);
+      return chip;
+    });
+
+    const next = document.createElement('div');
+    next.className = 'needs-next';
+    next.hidden = true;
+
+    block.append(title, residentsRow, classes, next);
+    this.root.appendChild(block);
+    return { block, residentsRow, residents, classes: chips, next };
+  }
+
+  /** Il traguardo compatto: contatori in place, e il blocco intero solo se esiste. */
+  private paintNeeds(needs: HudNeeds | null): void {
+    this.needs.block.hidden = needs === null;
+    if (needs === null) return;
+    this.needs.residents.textContent = needs.residents.value;
+    this.needs.residentsRow.dataset.met = needs.residents.met ? 'true' : 'false';
+    needs.classes.forEach((entry, index) => {
+      const chip = this.needs.classes[index];
+      if (chip === undefined) return;
+      chip.dataset.met = entry.met ? 'true' : 'false';
+      const count = chip.querySelector('.needs-chip-count');
+      if (count instanceof HTMLElement) count.textContent = entry.value;
+    });
+    this.needs.next.textContent = needs.next ?? '';
+    this.needs.next.hidden = needs.next === null;
+    this.needs.block.dataset.met = needs.met ? 'true' : 'false';
   }
 }

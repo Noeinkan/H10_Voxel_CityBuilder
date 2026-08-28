@@ -1,12 +1,19 @@
 import {
   BALANCE,
+  BUILDING_CLASS,
   FARM_KIND,
   FARM_LABELS,
+  dominantOutflow,
+  effectiveCount,
+  fedShareOf,
+  missingPlotsOf,
+  weightsOf,
   type FoodReport,
+  type FundsReport,
   type MaterialsReport,
+  type SatisfactionReport,
 } from '../sim';
 import type { GrowthStats } from '../game/growthScene';
-import type { FundsReport } from '../sim/flows';
 import type { ResourceTrend, TrendDirection } from './ResourceTrend';
 
 export interface HudResource {
@@ -21,6 +28,13 @@ export interface HudResource {
   readonly fill?: HudFill;
   readonly breakdown?: readonly HudFlow[];
   readonly status?: string;
+  /**
+   * Il «perche'» in una riga, sempre visibile sotto il valore.
+   *
+   * Diverso da `status`, che resta nel popover: questa e' la risposta corta da
+   * leggere al volo, letta dai referti del tick e mai ricalcolata qui.
+   */
+  readonly hint?: string;
 }
 
 export interface HudFill {
@@ -46,55 +60,166 @@ export interface HudCommerce {
   readonly message: string;
 }
 
+/**
+ * Le soglie di voce delle righe «perche'».
+ *
+ * Calibrano l'HUD, non il bilancio: sono le quote sotto cui un fatto smette di
+ * essere rumore e merita la riga, e vivono qui come le soglie del coach in
+ * `coach.ts` e le voci di `tips.ts`.
+ */
+const HINT = {
+  /** Sotto, la terra che resta frena davvero la crescita. */
+  landLeft: 0.3,
+  /** Sotto, la fame frena la crescita piu' del resto. */
+  starveShare: 0.85,
+  /** Sotto, i negozi servono cosi' poco da pesare sulla felicita'. */
+  shopShare: 0.6,
+} as const;
+
+/**
+ * Le righe «perche'» delle cinque risorse.
+ *
+ * Tutte pure e con parametri stretti, come `missingPlotsOf` accanto al suo
+ * gemello sullo stato: il cablaggio vive in `buildHudResources`, qui sta solo
+ * la voce. Ognuna legge un referto del tick — `flows`, `harvest`,
+ * `materialFlows`, `satisfactionReport` — e non rifa mai il conto.
+ */
+
+/** La voce di spesa che pesa di piu' sui fondi, quando copre le entrate. */
+export function fundsHint(flows: FundsReport): string {
+  const owed = flows.civic + flows.policies + flows.farms;
+  if (owed > 0 && flows.paid < owed) {
+    return `Upkeep short: ${Math.floor((flows.paid / owed) * 100)}% of bills paid`;
+  }
+  const dominant = dominantOutflow(flows);
+  if (dominant === 'civic' && flows.civic > flows.tax) return 'Civic costs > taxes';
+  if (dominant === 'policies' && flows.policies > flows.tax) return 'Policy costs > taxes';
+  if (dominant === 'farms' && flows.farms > flows.tax) return 'Farm upkeep > taxes';
+  return 'Taxes cover the bills';
+}
+
+/** Razioni in corso, o la distanza dal piano di copertura che il driver insegue. */
+export function foodHint(
+  population: number,
+  harvest: FoodReport,
+  farmCounts: readonly number[],
+  staffing: number,
+): string {
+  const fed = fedShareOf(harvest, population);
+  if (fed < 1) return `Rationing: ${Math.round(fed * 100)}% of demand`;
+  const missing = missingPlotsOf(population, farmCounts, staffing);
+  if (missing > 0) return `${missing} ${missing === 1 ? 'field' : 'fields'} under target`;
+  return 'Covered: fields match the city';
+}
+
+/** Il cantiere in attesa prima di tutto: e' il fatto che il giocatore puo' muovere. */
+export function materialsHint(report: MaterialsReport): string {
+  if (report.waitingCost > 0) return `Construction waiting: ${Math.ceil(report.waitingCost)} materials`;
+  if (report.reserve > 0) return `${Math.ceil(report.reserve)} reserved for construction`;
+  return 'Industry covers the city';
+}
+
+/** Il freno piu' forte sulla crescita dei residenti, in ordine di urgenza. */
+export function populationHint(
+  population: number,
+  capacity: number,
+  landFactor: number,
+  fed: number,
+): string {
+  if (capacity <= 0) return 'No homes yet: let buildings grow';
+  if (population >= capacity) return 'Housing full: build homes';
+  if (landFactor < HINT.landLeft) return 'City is running out of land';
+  if (fed < HINT.starveShare) return 'Growth held back: not enough food';
+  return `${Math.ceil(capacity - population)} homes free`;
+}
+
+/** Il peso piu' grande sul bersaglio della felicita', letto dal suo referto. */
+export function satisfactionHint(report: SatisfactionReport, flows: FundsReport): string {
+  if (report.crowding > 0.01) return `Crowding: homes ${Math.round(report.occupancy * 100)}% full`;
+  // `funded` non sta nel referto: e' lo stesso min(civic, paid)/civic del tick,
+  // e `flows` lo porta gia'.
+  const funded = flows.civic > 0 ? Math.min(flows.civic, flows.paid) / flows.civic : 1;
+  if (funded < 1) return 'Civic services underfunded';
+  const service = BALANCE.commerce.satisfactionPerService > 0
+    ? report.retail / BALANCE.commerce.satisfactionPerService
+    : 1;
+  if (service < HINT.shopShare) return `Shops falling behind: service at ${Math.round(service * 100)}%`;
+  return 'City is content';
+}
+
 export function buildHudResources(
   stats: GrowthStats | null,
   trend?: ResourceTrend,
 ): readonly HudResource[] {
   if (stats === null) return emptyResources();
-  const population = stats.state.population.stock;
+  const { state } = stats;
+  const population = state.population.stock;
   return [
     resource(
       'funds',
       'Funds',
-      stats.state.funds.stock,
-      stats.state.funds.delta,
+      state.funds.stock,
+      state.funds.delta,
       trend,
       undefined,
-      fundsBreakdown(stats.state.flows),
+      fundsBreakdown(state.flows),
+      undefined,
+      fundsHint(state.flows),
     ),
-    resource('population', 'Residents', population, stats.state.population.delta, trend),
+    resource(
+      'population',
+      'Residents',
+      population,
+      state.population.delta,
+      trend,
+      undefined,
+      undefined,
+      undefined,
+      populationHint(
+        population,
+        // La stessa capacita' che il tick usa per il bilancio: non un secondo
+        // conto, o la riga prometterebbe case che il tick non vede.
+        effectiveCount(state, BUILDING_CLASS.residential) * weightsOf(state).residentialCapacity,
+        state.landFactor,
+        fedShareOf(state.harvest, population),
+      ),
+    ),
     resource(
       'food',
       'Food',
-      stats.state.food.stock,
-      stats.state.food.delta,
+      state.food.stock,
+      state.food.delta,
       trend,
-      foodReserve(stats.state.food.stock, population),
-      foodBreakdown(stats.state.harvest),
+      foodReserve(state.food.stock, population),
+      foodBreakdown(state.harvest),
+      undefined,
+      foodHint(population, state.harvest, state.farmCounts, state.staffing),
     ),
     resource(
       'materials',
       'Materials',
-      stats.state.materials.stock,
-      stats.state.materials.delta,
+      state.materials.stock,
+      state.materials.delta,
       trend,
       undefined,
-      materialsBreakdown(stats.state.materialFlows),
-      materialsStatus(stats.state.materials.stock, stats.state.materialFlows),
+      materialsBreakdown(state.materialFlows),
+      materialsStatus(state.materials.stock, state.materialFlows),
+      materialsHint(state.materialFlows),
     ),
     {
       id: 'satisfaction',
       label: 'Happiness',
-      value: `${Math.round(stats.state.satisfaction * 100)}%`,
+      value: `${Math.round(state.satisfaction * 100)}%`,
       delta: '',
       tone: 'neutral',
       trend: trend?.direction('satisfaction') ?? 'flat',
       magnitude: trend?.magnitude('satisfaction') ?? 0,
       series: trend?.window('satisfaction') ?? [],
       fill: {
-        value: stats.state.satisfaction,
-        label: `${Math.round(stats.state.satisfaction * 100)}% of the city is content`,
+        value: state.satisfaction,
+        label: `${Math.round(state.satisfaction * 100)}% of the city is content`,
       },
+      hint: satisfactionHint(state.satisfactionReport, state.flows),
     },
   ];
 }
@@ -183,6 +308,7 @@ function resource(
   fill?: HudFill,
   breakdown?: readonly HudFlow[],
   status?: string,
+  hint?: string,
 ): HudResource {
   return {
     id,
@@ -196,6 +322,7 @@ function resource(
     ...(fill === undefined ? {} : { fill }),
     ...(breakdown === undefined || breakdown.length === 0 ? {} : { breakdown }),
     ...(status === undefined ? {} : { status }),
+    ...(hint === undefined ? {} : { hint }),
   };
 }
 

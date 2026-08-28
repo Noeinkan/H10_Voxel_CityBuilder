@@ -31,10 +31,12 @@ import type { ResourceTrend } from './ResourceTrend';
 import { buildHudResources, commerceOf, type HudCommerce, type HudResource } from './GameHudEconomyModel';
 import type { GameTool } from './GameHudControlsModel';
 import { buildCityOverviewModel, type CityOverviewModel } from './CityOverviewModel';
+import { buildHudNeeds, type HudNeeds } from './GameHudNeedsModel';
 
 export { daylightControl, selectionMessage } from './GameHudControlsModel';
 export type { GameTool, HudDaylight, PlacementMode } from './GameHudControlsModel';
 export type { HudCommerce, HudFill, HudFlow, HudResource } from './GameHudEconomyModel';
+export type { HudNeeds } from './GameHudNeedsModel';
 
 /**
  * Il vincolo di sito detto al giocatore, non al codice.
@@ -251,6 +253,8 @@ export interface GameHudModel {
   readonly condition: CityCondition | null;
   /** La rotta suggerita dal coach, gia' calcolata dalla scena di crescita. */
   readonly coach: CoachSuggestion | null;
+  /** Il traguardo di autosufficienza, compatto e persistente; null in tutorial. */
+  readonly needs: HudNeeds | null;
   readonly unlockedSectors: number;
 }
 
@@ -545,6 +549,7 @@ export function buildGameHudModel(
       : `${stats.condition.title} · ${stats.condition.message}`,
     condition: stats?.condition ?? null,
     coach: stats?.coach ?? null,
+    needs: buildHudNeeds(stats),
     unlockedSectors: stats?.unlockedSectors.length ?? 0,
   };
 }

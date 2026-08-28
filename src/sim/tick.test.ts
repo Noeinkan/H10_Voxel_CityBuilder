@@ -11,7 +11,7 @@ import {
   type SimState,
 } from './SimState';
 import { testTerrain } from './testTerrain';
-import { tick, tickMany } from './tick';
+import { effectiveCount, tick, tickMany, weightsOf } from './tick';
 
 /**
  * Configurazione di partenza standard: una citta' gia' avviata, 20 edifici.
@@ -314,6 +314,67 @@ describe('tick — bilancio', () => {
     const onCramped = tickMany(standardCity(), cramped, 60);
 
     expect(onCramped.population.stock).toBeLessThan(onRoomy.population.stock);
+  });
+});
+
+/**
+ * I referti di soddisfazione e terra: il tick li persiste, e chi li legge non
+ * deve rifare il conto.
+ */
+describe('tick — i referti di soddisfazione e terra', () => {
+  it('la quota converge verso il bersaglio del proprio referto', () => {
+    const terrainMap = testTerrain({ chunksX: 4, chunksY: 4 });
+    const state = standardCity();
+
+    const after = tick(state, terrainMap);
+
+    const expected = Math.min(1, Math.max(0,
+      state.satisfaction
+        + (after.satisfactionReport.target - state.satisfaction) * BALANCE.satisfaction.inertia,
+    ));
+    expect(after.satisfaction).toBeCloseTo(expected);
+    expect(after.satisfactionReport.target).toBeGreaterThanOrEqual(0);
+    expect(after.satisfactionReport.target).toBeLessThanOrEqual(1);
+  });
+
+  it('l occupazione del referto e quella del bilancio coincidono', () => {
+    const terrainMap = testTerrain({ chunksX: 4, chunksY: 4 });
+    const state = standardCity();
+    const capacity = effectiveCount(state, BUILDING_CLASS.residential)
+      * weightsOf(state).residentialCapacity;
+
+    const after = tick(state, terrainMap);
+
+    expect(after.satisfactionReport.occupancy).toBeCloseTo(
+      Math.min(BALANCE.satisfaction.maxOccupancy, state.population.stock / capacity),
+    );
+  });
+
+  it('il fattore di terra e la quota di colonne edificabili che resta', () => {
+    const cramped = testTerrain({
+      chunksX: 8,
+      chunksY: 8,
+      buildable: (x, y) => x < 6 && y < 5,
+    });
+    const state = standardCity();
+
+    const after = tick(state, cramped);
+
+    const buildable = Math.max(1, cramped.buildableCount);
+    expect(after.landFactor).toBeCloseTo(
+      Math.min(1, Math.max(0, 1 - (state.buildings.length / buildable) * BALANCE.population.landPressure)),
+    );
+    expect(after.landFactor).toBeGreaterThanOrEqual(0);
+    expect(after.landFactor).toBeLessThanOrEqual(1);
+  });
+
+  it('i referti sopravvivono al giro in JSON', () => {
+    const terrainMap = testTerrain({ chunksX: 4, chunksY: 4 });
+    const after = tickMany(standardCity(), terrainMap, 12);
+
+    const revived = JSON.parse(JSON.stringify(toSimStateData(after)));
+    expect(revived.satisfactionReport).toEqual(after.satisfactionReport);
+    expect(revived.landFactor).toBe(after.landFactor);
   });
 });
 
