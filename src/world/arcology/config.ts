@@ -2,14 +2,19 @@ import type { BuildingClass } from '../../sim';
 import { PALETTE_SLOTS } from '../../engine/paletteSlots';
 import { BUILDER } from '../buildings/config';
 import type { PartsRecipe } from '../landmarks/config';
+import { withFacadeCourses } from './facadeCourses';
+import { createArcologyProfileVariants } from './profileVariants';
 import { createArcologyRecipes } from './recipes';
 
 /**
  * Fonte di verita' delle regole e dei tipi delle arcologie.
  *
- * Le soglie globali restano qui; `recipes.ts` contiene ingombri, quote, fasce,
- * piazzali e palette delle otto forme. La separazione tiene entrambe le
- * responsabilita' sotto il limite lavorabile senza duplicare alcun numero.
+ * Le soglie globali restano qui; `recipes.ts` conserva le otto forme originarie,
+ * `profileVariants.ts` aggiunge sagome derivate senza riscriverle e
+ * `facadeCourses.ts` articola le facciate di entrambe senza toccarne la
+ * geometria. La separazione tiene le responsabilita' sotto il limite lavorabile
+ * e rende esplicito quali forme sono il catalogo storico, quali sono variazioni
+ * e cosa invece e' solo il modo in cui un corpo si legge da fuori.
  *
  * **Perche' esiste questo dominio.** Quando la gerarchia verticale satura, un
  * isolato del centro non ha piu' niente da diventare: `upgradePass` lo salta per
@@ -230,8 +235,8 @@ export function stageThresholds(stages: number): readonly number[] {
   return out;
 }
 
-/** Le forme che un'arcologia puo' prendere. */
-export const ARCOLOGY_KIND = {
+/** Le otto forme originarie, conservate come catalogo stabile. */
+export const BASE_ARCOLOGY_KIND = {
   /** Sei steli su due fronti, un mezzanino che li unisce, una corona che li richiude. */
   twinStem: 'twinStem',
   /** Un nucleo che si divide in sei guglie su due file e si ricuce in quota. */
@@ -248,6 +253,30 @@ export const ARCOLOGY_KIND = {
   quadCluster: 'quadCluster',
   /** Tre isolati in linea: una barra che vale un quartiere intero. */
   triSpan: 'triSpan',
+} as const;
+
+export type BaseArcologyKind =
+  (typeof BASE_ARCOLOGY_KIND)[keyof typeof BASE_ARCOLOGY_KIND];
+
+/** Varianti che articolano il profilo verticale senza sostituire le originali. */
+export const PROFILE_ARCOLOGY_KIND = {
+  /** Twin Stem con due torri che cambiano quota e si ricuciono su terrazze sfalsate. */
+  terracedTwin: 'terracedTwin',
+  /** Branching Core che conserva quattro rami bassi e porta in cima soltanto una coppia. */
+  splitCrown: 'splitCrown',
+  /** Double Bar con i due corpi che avanzano a quote diverse lungo tutta la salita. */
+  steppedBar: 'steppedBar',
+  /** Quad Cluster a quattro torri scalari, con due sole che raggiungono la corona. */
+  courtCascade: 'courtCascade',
+} as const;
+
+export type ProfileArcologyKind =
+  (typeof PROFILE_ARCOLOGY_KIND)[keyof typeof PROFILE_ARCOLOGY_KIND];
+
+/** Tutte le forme selezionabili dal driver. */
+export const ARCOLOGY_KIND = {
+  ...BASE_ARCOLOGY_KIND,
+  ...PROFILE_ARCOLOGY_KIND,
 } as const;
 
 export type ArcologyKind = (typeof ARCOLOGY_KIND)[keyof typeof ARCOLOGY_KIND];
@@ -307,6 +336,8 @@ export interface ArcologyLanding {
 
 export interface ArcologyRecipe extends PartsRecipe {
   readonly kind: ArcologyKind;
+  /** Forma originaria di cui questa ricetta articola il profilo; assente sulle originali. */
+  readonly variationOf?: BaseArcologyKind;
   /**
    * Blocchi di isolato occupati in pianta, `[larghezza, profondita']`.
    *
@@ -324,17 +355,43 @@ export interface ArcologyRecipe extends PartsRecipe {
   readonly landings: readonly ArcologyLanding[];
 }
 
-/** Ricette costruite dopo regole e tipi, senza soglie duplicate nel catalogo. */
-const ARCOLOGIES = createArcologyRecipes(stageThresholds);
+/**
+ * Ricette costruite dopo regole e tipi, senza soglie duplicate nel catalogo.
+ *
+ * `withFacadeCourses` articola i corpi di **entrambi** i cataloghi: la monotonia
+ * di una shell alta e monocroma non e' un difetto delle variazioni, e' come si
+ * scrive un corpo qui. La trasformazione non tocca un voxel — solo palette,
+ * linguaggio di facciata e riga di cornice — quindi le forme restano quelle che
+ * i due cataloghi dichiarano.
+ */
+const BASE_ARCOLOGIES = withFacadeCourses(createArcologyRecipes(stageThresholds));
+const PROFILE_ARCOLOGIES = withFacadeCourses(createArcologyProfileVariants(stageThresholds));
+const ARCOLOGIES: Readonly<Record<ArcologyKind, ArcologyRecipe>> = {
+  ...BASE_ARCOLOGIES,
+  ...PROFILE_ARCOLOGIES,
+};
 
-export const TWIN_STEM = ARCOLOGIES.twinStem;
-export const BRANCHING_CORE = ARCOLOGIES.branchingCore;
-export const SKY_WEAVE = ARCOLOGIES.skyWeave;
-export const SPIRE_RING = ARCOLOGIES.spireRing;
-export const DOUBLE_BAR = ARCOLOGIES.doubleBar;
-export const STACK_PAIR = ARCOLOGIES.stackPair;
-export const QUAD_CLUSTER = ARCOLOGIES.quadCluster;
-export const TRI_SPAN = ARCOLOGIES.triSpan;
+export const TWIN_STEM = BASE_ARCOLOGIES.twinStem;
+export const BRANCHING_CORE = BASE_ARCOLOGIES.branchingCore;
+export const SKY_WEAVE = BASE_ARCOLOGIES.skyWeave;
+export const SPIRE_RING = BASE_ARCOLOGIES.spireRing;
+export const DOUBLE_BAR = BASE_ARCOLOGIES.doubleBar;
+export const STACK_PAIR = BASE_ARCOLOGIES.stackPair;
+export const QUAD_CLUSTER = BASE_ARCOLOGIES.quadCluster;
+export const TRI_SPAN = BASE_ARCOLOGIES.triSpan;
+
+export const TERRACED_TWIN = PROFILE_ARCOLOGIES.terracedTwin;
+export const SPLIT_CROWN = PROFILE_ARCOLOGIES.splitCrown;
+export const STEPPED_BAR = PROFILE_ARCOLOGIES.steppedBar;
+export const COURT_CASCADE = PROFILE_ARCOLOGIES.courtCascade;
+
+/** Le forme originarie, invariate e nello stesso ordine storico. */
+export const BASE_ARCOLOGY_RECIPES: readonly ArcologyRecipe[] =
+  Object.values(BASE_ARCOLOGIES);
+
+/** Le sole variazioni di profilo verticale. */
+export const PROFILE_ARCOLOGY_RECIPES: readonly ArcologyRecipe[] =
+  Object.values(PROFILE_ARCOLOGIES);
 
 /** Tutte le ricette, in ordine di catalogo. */
 export const ARCOLOGY_RECIPES: readonly ArcologyRecipe[] = Object.values(ARCOLOGIES);

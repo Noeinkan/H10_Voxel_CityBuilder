@@ -97,6 +97,43 @@ export function floatingBoxes(recipe: ArcologyRecipe): readonly FloatingBox[] {
   return out;
 }
 
+/**
+ * Le parti con la stessa pianta e contigue in quota tornano un corpo solo.
+ *
+ * Serve perche' un corpo non e' sempre una parte: `facadeCourses.ts` spezza una
+ * shell alta in corsi — stessa pianta, quote consecutive, colori diversi — per
+ * articolarne la facciata, e per la struttura quei corsi sono lo stesso corpo.
+ * Sulle ricette scritte a mano non unisce niente, perche' due corpi diversi non
+ * condividono mai la pianta esatta: e' un annullamento della decorazione, non
+ * una regola nuova sulle forme.
+ */
+function mergeStacked(parts: readonly PlacedPart[]): readonly PlacedPart[] {
+  const columns = new Map<string, PlacedPart[]>();
+  for (const part of parts) {
+    const { x0, x1, y0, y1 } = part.bounds;
+    const key = `${x0},${x1},${y0},${y1}`;
+    const column = columns.get(key) ?? [];
+    column.push(part);
+    columns.set(key, column);
+  }
+
+  const out: PlacedPart[] = [];
+  for (const column of columns.values()) {
+    const sorted = [...column].sort((a, b) => a.bounds.z0 - b.bounds.z0);
+    let run = sorted[0];
+    for (const part of sorted.slice(1)) {
+      if (part.bounds.z0 <= run.bounds.z1 + 1) {
+        run = { ...run, bounds: { ...run.bounds, z1: Math.max(run.bounds.z1, part.bounds.z1) } };
+        continue;
+      }
+      out.push(run);
+      run = part;
+    }
+    out.push(run);
+  }
+  return out;
+}
+
 /** Una colonna verticale continua: l'unione dei corpi sovrapposti in pianta. */
 export interface SlenderColumn {
   readonly height: number;
@@ -116,14 +153,22 @@ export interface SlenderColumn {
  * prima) avrebbe condannato ogni corpo rastremato a leggersi come un palo.
  */
 export function slenderColumns(recipe: ArcologyRecipe): readonly SlenderColumn[] {
-  const shells: PlacedPart[] = [];
+  const bodies: PlacedPart[] = [];
   recipe.parts.forEach((stage, s) => {
     stage.forEach((part, index) => {
-      const vertical = part.kind === PART.shell || part.kind === PART.slab;
-      if (vertical && part.height > Math.min(part.w, part.h)) {
-        shells.push({ stage: s, index, bounds: partBounds(part) });
-      }
+      if (part.kind !== PART.shell && part.kind !== PART.slab) return;
+      bodies.push({ stage: s, index, bounds: partBounds(part) });
     });
+  });
+
+  // Il filtro «piu' alto che largo» distingue i corpi dal podio e dalle travi, e
+  // va chiesto al corpo intero: i corsi di facciata hanno la stessa pianta e si
+  // impilano, quindi presi uno per uno nessuno di loro e' piu' alto che largo e
+  // la sezione di base sparirebbe dal gruppo — la snellezza finirebbe misurata
+  // sulla sola torre che sta sopra.
+  const shells = mergeStacked(bodies).filter((body) => {
+    const { x0, x1, y0, y1, z0, z1 } = body.bounds;
+    return z1 - z0 + 1 > Math.min(x1 - x0 + 1, y1 - y0 + 1);
   });
 
   const parent = shells.map((_, i) => i);
