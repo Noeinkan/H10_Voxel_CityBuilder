@@ -88,14 +88,28 @@ export function nextRect(
   /** Lato dell'impronta, cioe' il riquadro entro cui una fascia grounded resta. */
   core: BandRect,
 ): BandRect {
+  const shrinking = forced === null && random() < profile.shrinkBias;
   const ops = forced !== null
     ? [forced]
-    : random() < profile.shrinkBias ? profile.shrinkOps : profile.growOps;
+    : shrinking ? profile.shrinkOps : profile.growOps;
+  // Il repertorio dell'altro ramo, provato solo quando il proprio non regge e
+  // solo su una fascia su tre: vedi `GRAMMAR.spareBranchChance` e il ripiego in
+  // fondo alla funzione. Il tiro si pesca su ogni fascia libera, e cio' che ne
+  // dipende e' *quale* repertorio si costruisce — come gia' per la scelta del
+  // ramo, che sceglie fra due elenchi di lunghezza diversa. Cio' che non deve
+  // mai dipendere dall'esito di un vincolo geometrico continua a non dipenderne.
+  const sparing = forced === null && random() < GRAMMAR.spareBranchChance;
+  const spare = !sparing
+    ? []
+    : shrinking ? profile.growOps : profile.shrinkOps;
   // La preferenza si pesca, non si decreta: vedi `preferredStart`. Il tiro sta
   // **prima** delle candidate e non dentro il ciclo, cosi' la sequenza del PRNG
   // resta indipendente da quale voce reggera'.
   const start = forced !== null ? 0 : preferredStart(random, ops.length);
   const candidates = ops.map((op) => applyOp(random, op, prev, box.face));
+  // Anche queste si costruiscono sempre, come le altre: chi consuma tiri li
+  // consuma comunque, o la sequenza dipenderebbe da quale candidata ha retto.
+  const spares = spare.map((op) => applyOp(random, op, prev, box.face));
 
   // Sotto la quota franca la fascia resta nell'impronta: uno sbalzo che comincia
   // a un voxel da terra e' un ingombro sul marciapiede, non uno sbalzo.
@@ -104,19 +118,32 @@ export function nextRect(
   const maxX = grounded ? core.x0 + core.w : box.sizeX;
   const maxY = grounded ? core.y0 + core.h : box.sizeY;
 
+  const fits = (candidate: BandRect): boolean => {
+    if (candidate.w < GRAMMAR.minBandSide || candidate.h < GRAMMAR.minBandSide) return false;
+    if (candidate.x0 < minX || candidate.y0 < minY) return false;
+    if (candidate.x0 + candidate.w > maxX || candidate.y0 + candidate.h > maxY) return false;
+    return supported(candidate, prev);
+  };
+
   for (let i = 0; i < candidates.length; i++) {
     // Si riparte in cima dopo l'ultima: la voce pescata e' una preferenza, e chi
     // sta sopra di lei nel repertorio resta il ripiego naturale.
     const candidate = candidates[(start + i) % candidates.length];
-    if (candidate.w < GRAMMAR.minBandSide || candidate.h < GRAMMAR.minBandSide) continue;
-    if (candidate.x0 < minX || candidate.y0 < minY) continue;
-    if (candidate.x0 + candidate.w > maxX || candidate.y0 + candidate.h > maxY) continue;
-    if (!supported(candidate, prev)) continue;
-    return candidate;
+    if (fits(candidate)) return candidate;
   }
 
-  // Nessuna trasformazione regge: la fascia ripete quella sotto. Succede sulle
-  // impronte strette, dove non c'e' spazio per muoversi.
+  // **Il proprio ramo e' esaurito: si prova l'altro.** Non e' una comodita': su
+  // una torre matura il corpo tocca `minBandSide` entro le prime fasce, e da li'
+  // in su *nessuna* rientranza regge — il ramo che rimpicciolisce e' finito
+  // mentre quello che sposta e allarga e' intatto. Senza questo passaggio la
+  // fascia ripeteva quella sotto per tutta la salita, ed era il vero motivo per
+  // cui ogni torre della citta' saliva come una canna identica alle altre.
+  for (const candidate of spares) {
+    if (fits(candidate)) return candidate;
+  }
+
+  // Nemmeno l'altro repertorio regge: la fascia ripete quella sotto. Succede
+  // sulle impronte strette, dove non c'e' spazio per muoversi affatto.
   return prev;
 }
 

@@ -91,6 +91,8 @@ import type { BuildSite } from './sim/nextBuildSites';
 import { isPolicyId } from './sim/policies';
 import './ui/hud.css';
 import { DebugOverlay, type OverlayFrame } from './ui/DebugOverlay';
+import { PerfOverlay, type PerfFrame } from './ui/PerfOverlay';
+import { PerfReport, formatPerfSummary } from './engine/PerfReport';
 import { GameHud, type GameTool } from './ui/GameHud';
 import { daylightControl } from './ui/GameHudModel';
 import { unlockLines } from './ui/prospects';
@@ -203,7 +205,7 @@ const ISLAND_PIVOT = 24;
 const TERRAIN_SIZE = 512;
 
 const params = new URLSearchParams(window.location.search);
-const { debugEnabled, growEnabled, simEnabled } = resolveLaunchMode(params);
+const { debugEnabled, perfEnabled, growEnabled, simEnabled } = resolveLaunchMode(params);
 let debugVisible = debugEnabled;
 const sceneKind = parseSceneKind(params.get('scene'));
 const seed = resolveSeed(params, () => {
@@ -555,6 +557,10 @@ if (diorama !== null) {
 }
 
 const overlay = new DebugOverlay(container);
+// La misura delle prestazioni sta fuori dal gate del debug, come le viste:
+// nasce con ?perf=1 e vive sulla partita vera, senza F3 di mezzo.
+const perfOverlay = perfEnabled ? new PerfOverlay(container) : null;
+const perfReport = perfEnabled ? new PerfReport() : null;
 const terrainOverlay =
   terrain !== null && !simEnabled && !growEnabled
     ? new TerrainOverlay(container, toggleBiomeView)
@@ -1025,7 +1031,7 @@ if (swatchOverlay !== null) {
 
 window.addEventListener('keydown', onUiKey);
 
-if (debugEnabled) {
+if (debugEnabled || perfEnabled) {
   // Hook per misure da console o da strumenti headless: stessa fonte dell'overlay.
   const debugGlobals = globalThis as Record<string, unknown>;
   debugGlobals['__voxelStats'] = (): Record<string, unknown> => {
@@ -1056,8 +1062,20 @@ if (debugEnabled) {
       theme: daylight.theme.id,
       quality: renderQuality.mode,
       pixelRatio: renderer.getPixelRatio(),
+      remeshMs: stats.remeshMs,
+      remeshedChunks: stats.remeshedChunks,
+      remeshApplyMs: stats.remeshApplyMs,
+      remeshDispatchMs: stats.remeshDispatchMs,
+      remeshApplyMaxMs: stats.remeshApplyMaxMs,
+      remeshDispatchMaxMs: stats.remeshDispatchMaxMs,
     };
   };
+}
+
+if (debugEnabled) {
+  // Gli altri hook restano dietro il gate del debug: ?perf=1 misura la scena,
+  // non la comanda.
+  const debugGlobals = globalThis as Record<string, unknown>;
   debugGlobals['__voxelReset'] = (): void => {
     mainMsMax = 0;
     frameTiming.reset();
@@ -1473,8 +1491,18 @@ function onFrame(time: number): void {
   const frameMs = performance.now() - workStart;
   observeQuality(time);
 
+  if (perfReport !== null) {
+    // Un campione a frame: il riepilogo esce quando la finestra si chiude, e
+    // la riga e' gia' pronta da incollare.
+    const summary = perfReport.add(buildPerfFrame(frameMs), time);
+    if (summary !== null) console.info(formatPerfSummary(summary));
+  }
+
   if (overlay !== null && overlay.needsPaint(time)) {
     overlay.update(buildOverlayFrame(mainMs, renderMs, frameMs), time);
+  }
+  if (perfOverlay !== null && perfOverlay.needsPaint(time)) {
+    perfOverlay.update(buildPerfFrame(frameMs), time);
   }
   if (terrainOverlay !== null && terrain !== null && terrainOverlay.needsPaint(time)) {
     terrainOverlay.update(buildTerrainFrame(terrain), time);
@@ -2575,6 +2603,24 @@ function effectStats(): { shadowMs: number; shadowSize: number; effects: string 
   };
 }
 
+/**
+ * I numeri della conversazione sulle prestazioni: overlay e riepilogo console
+ * leggono questo oggetto, la fonte delle metriche remesh resta
+ * `chunkRenderer.stats`.
+ */
+function buildPerfFrame(frameMs: number): PerfFrame {
+  const stats = chunkRenderer.stats;
+  return {
+    fps: frameTiming.snapshot().fps,
+    frameMs,
+    remeshMs: stats.remeshMs,
+    remeshedChunks: stats.remeshedChunks,
+    qualityMode: renderQuality.mode,
+    pixelRatio: renderer.getPixelRatio(),
+    effects: effectStats().effects,
+  };
+}
+
 function buildOverlayFrame(mainMs: number, renderMs: number, frameMs: number): OverlayFrame {
   const stats = chunkRenderer.stats;
   const mesher = chunkRenderer.mesherPool.stats;
@@ -2608,6 +2654,10 @@ function buildOverlayFrame(mainMs: number, renderMs: number, frameMs: number): O
     mesherAvgMs: mesher.avgMs,
     mesherMaxMs: mesher.maxMs,
     mesherPoolSize: mesher.poolSize,
+    remeshApplyMs: stats.remeshApplyMs,
+    remeshDispatchMs: stats.remeshDispatchMs,
+    remeshApplyMaxMs: stats.remeshApplyMaxMs,
+    remeshDispatchMaxMs: stats.remeshDispatchMaxMs,
     generationProgress: generator.done ? 1 : generator.progress,
     scene: terrain === null ? sceneKind : 'terrain',
     seed: terrain === null ? seed : terrainSeed,
@@ -2691,6 +2741,7 @@ function onDebugKey(event: KeyboardEvent): void {
     mainMsMax = 0;
     frameTiming.reset();
     chunkRenderer.mesherPool.resetStats();
+    chunkRenderer.resetRemeshPeaks();
   }
 }
 

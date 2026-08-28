@@ -807,6 +807,11 @@
    occupa lo stesso angolo e serve al giocatore: questo pannello serve a chi
    sviluppa, e cede il posto. */
 .debug-panel--inspect { left: calc(var(--game-hud-rail-left) + var(--space-6)); top: 220px; bottom: auto; }
+/* In alto a destra: il basso-destra e' dei pannelli di scena, e l'angolo alto
+   resta libero in ogni scena — il pannello delle prestazioni convive con
+   qualunque overlay sia acceso. */
+.debug-panel--perf { right: var(--hud-gap); top: var(--hud-gap); bottom: auto; }
+.debug-panel--perf .debug-body { border-top: 0; padding-top: var(--space-15); }
 .debug-range { display: block; width: calc(100% - var(--space-4) - var(--space-1)); margin: 0 var(--space-15) var(--space-2); accent-color: #78c8b4; }
 .debug-summary { padding: var(--space-15) var(--space-15); color: #b9d9d2; cursor: pointer; user-select: none; list-style: none; font: 800 var(--text-xs)/1.4 var(--hud-font); letter-spacing: .04em; white-space: nowrap; }
 .debug-body { margin: 0; padding: var(--space-2) var(--space-15) var(--space-15); border-top: 1px solid rgba(185,217,210,.14); color: inherit; font: inherit; white-space: pre; min-width: 260px; }

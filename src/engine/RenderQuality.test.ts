@@ -102,4 +102,57 @@ describe('RenderQualityController', () => {
       expect(decision.profile).toBe(quality.profile);
     }
   });
+
+  it('su un display a densita 1 degrada gli effetti invece del pixel ratio', () => {
+    // A DPR 1 il pixel ratio e' gia' al minimo: il gating non deve restare
+    // inerte con tutti gli effetti accesi, come succedeva.
+    const quality = new RenderQualityController('auto', 1);
+    expect(quality.pixelRatio).toBe(1);
+    expect(quality.profile).toMatchObject({ shadowSize: 2048, bloom: true });
+
+    quality.observe(slow, 2_000);
+    quality.observe(slow, 4_000);
+    expect(quality.pixelRatio).toBe(1);
+    // Primo gradino: meta' shadow map, effetti di luce ancora accesi.
+    expect(quality.profile).toMatchObject({ shadowSize: 1024, shadowSoftness: 1, bloom: true });
+
+    quality.observe(slow, 10_000);
+    quality.observe(slow, 12_000);
+    expect(quality.profile).toMatchObject({ shadowSize: 0, bloom: false, godRays: false });
+
+    // Al fondo della scala non scende oltre.
+    quality.observe(slow, 18_000);
+    expect(quality.observe(slow, 20_000)).toMatchObject({ changed: false });
+    expect(quality.profile.shadowSize).toBe(0);
+  });
+
+  it('su DPR 1 risale per gradi quando il frame torna stabile', () => {
+    const quality = new RenderQualityController('auto', 1);
+    quality.observe(slow, 2_000);
+    quality.observe(slow, 4_000);
+    quality.observe(slow, 10_000);
+    quality.observe(slow, 12_000);
+    expect(quality.profile.shadowSize).toBe(0);
+
+    quality.observe(stable, 18_000);
+    expect(quality.observe(stable, 30_000)).toMatchObject({ changed: true });
+    expect(quality.profile).toMatchObject({ shadowSize: 1024 });
+    expect(quality.observe(stable, 42_000)).toMatchObject({ changed: true });
+    expect(quality.profile.shadowSize).toBe(2048);
+  });
+
+  it('su display densi il pixel ratio copre la scala e gli effetti restano fermi', () => {
+    const quality = new RenderQualityController('auto', 2);
+    quality.observe(slow, 2_000);
+    quality.observe(slow, 4_000);
+    quality.observe(slow, 10_000);
+    quality.observe(slow, 12_000);
+    expect(quality.pixelRatio).toBe(1);
+
+    // A pixel ratio gia' esaurito la manopola effetti non si muove: la scala
+    // e' gia' al fondo, e un gradino fantasma avvelenerebbe la risalita.
+    quality.observe(slow, 18_000);
+    expect(quality.observe(slow, 20_000)).toMatchObject({ changed: false, effectsLevel: 0 });
+    expect(quality.profile.shadowSize).toBe(0);
+  });
 });

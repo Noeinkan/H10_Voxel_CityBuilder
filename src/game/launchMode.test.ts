@@ -5,6 +5,7 @@ describe('resolveLaunchMode', () => {
   it('carica alla radice l’esperienza giocabile senza strumenti tecnici', () => {
     expect(resolveLaunchMode(new URLSearchParams())).toEqual({
       debugEnabled: false,
+      perfEnabled: false,
       growEnabled: true,
       simEnabled: false,
     });
@@ -13,6 +14,7 @@ describe('resolveLaunchMode', () => {
   it('permette di nascondere gli strumenti senza disattivare il gioco', () => {
     expect(resolveLaunchMode(new URLSearchParams('debug=0'))).toEqual({
       debugEnabled: false,
+      perfEnabled: false,
       growEnabled: true,
       simEnabled: false,
     });
@@ -21,6 +23,7 @@ describe('resolveLaunchMode', () => {
   it('apre gli strumenti tecnici solo quando richiesti esplicitamente', () => {
     expect(resolveLaunchMode(new URLSearchParams('debug=1'))).toEqual({
       debugEnabled: true,
+      perfEnabled: false,
       growEnabled: true,
       simEnabled: false,
     });
@@ -29,6 +32,18 @@ describe('resolveLaunchMode', () => {
   it('preserva la modalita giocabile esplicita senza overlay', () => {
     expect(resolveLaunchMode(new URLSearchParams('grow=1'))).toEqual({
       debugEnabled: false,
+      perfEnabled: false,
+      growEnabled: true,
+      simEnabled: false,
+    });
+  });
+
+  it('accende la misura delle prestazioni senza toccare il resto', () => {
+    // `perf` non e' una scena: alla radice la crescita resta accesa, e con lei
+    // l'esperienza completa che si sta misurando.
+    expect(resolveLaunchMode(new URLSearchParams('perf=1'))).toEqual({
+      debugEnabled: false,
+      perfEnabled: true,
       growEnabled: true,
       simEnabled: false,
     });
@@ -37,16 +52,19 @@ describe('resolveLaunchMode', () => {
   it('non sovrappone la crescita agli harness espliciti', () => {
     expect(resolveLaunchMode(new URLSearchParams('debug=1&sim=1'))).toEqual({
       debugEnabled: true,
+      perfEnabled: false,
       growEnabled: false,
       simEnabled: true,
     });
     expect(resolveLaunchMode(new URLSearchParams('terrain=1337'))).toEqual({
       debugEnabled: false,
+      perfEnabled: false,
       growEnabled: false,
       simEnabled: false,
     });
     expect(resolveLaunchMode(new URLSearchParams('scene=city'))).toEqual({
       debugEnabled: false,
+      perfEnabled: false,
       growEnabled: false,
       simEnabled: false,
     });
@@ -88,6 +106,7 @@ describe('swatchUrl', () => {
     // scheda dove non c'e' nessuna citta' su cui girino.
     expect(resolveLaunchMode(new URLSearchParams(swatchUrl('pastel', 12)))).toEqual({
       debugEnabled: false,
+      perfEnabled: false,
       growEnabled: false,
       simEnabled: false,
     });

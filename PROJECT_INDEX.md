@@ -31,14 +31,14 @@ worker. `src/sim/` gira in Node senza DOM né GPU.
 | [CHANGELOG.md](CHANGELOG.md) | Cosa e' cambiato e quando, per incremento |
 | [index.html](index.html) | Pagina unica, `#app`, monta `src/main.ts` |
 | [LICENSE](LICENSE) | Licenza proprietaria, tutti i diritti riservati: cosa non e' concesso, cosa si', terze parti (in inglese) |
-| [package.json](package.json) | Script npm, incluso `locate` per interrogare l'indice con output limitato; dipendenze `three` e `simplex-noise` |
+| [package.json](package.json) | Script npm a livelli: test normali prima delle sentinelle lente seriali, percorso locale fail-fast, Builder mirato e profilo oltre soglia |
 | [ROADMAP.md](ROADMAP.md) | Direzione del prodotto, milestone e gate dei prossimi incrementi |
 | [scripts/docs-merge.mjs](scripts/docs-merge.mjs) | `npm run docs:merge`: fonde i frammenti di `docs/pending/` in indice e changelog, con lucchetto per non pestarsi fra agenti |
 | [scripts/free-port.mjs](scripts/free-port.mjs) | Hook `prestart`/`predev`: libera la porta del dev server terminando le istanze node rimaste |
 | [scripts/project-locate.mjs](scripts/project-locate.mjs) | `npm run locate -- <termine>`: cerca righe nel Project Index, raggruppa per sezione e limita l'output |
 | [shotkit.config.mjs](shotkit.config.mjs) | Ricette di cattura per gli scatti di riferimento in `.shots/` |
 | [tsconfig.json](tsconfig.json) | `strict` + flag extra; `noUncheckedIndexedAccess` off di proposito |
-| [vite.config.ts](vite.config.ts) | Vite + Vitest insieme; worker in formato ES, test in ambiente `node` |
+| [vite.config.ts](vite.config.ts) | Vite + Vitest insieme; worker ES, ambiente `node` e segnalazione standard dei test oltre un secondo |
 | [src/main.ts](src/main.ts) | Bootstrap, ciclo di frame a budget, input di gioco e hook globali di debug |
 
 ## Documentazione operativa
@@ -89,7 +89,7 @@ resto si apre a domanda — è ciò che tiene basso il contesto di partenza.
 | File | Ruolo | Esporta |
 | --- | --- | --- |
 | [scale.ts](src/world/scale.ts) | Le scale separate della citta': modulo ordinario da otto voxel con progressione 4–8 e passo uno; riferimento strutturale mega per strade, segmenti, costa e arcologie | `SCALE`, `levelCapsOf`, `bandStepOf`, `segmentSideOf`, `streetPitchOf`, `coastalRadiusOf`, `arcologySpanOf` |
-| [scenes/swatchCatalog.ts](src/world/scenes/swatchCatalog.ts) | Catalogo dei soggetti del campionario: le quattro linee evolutive alle cinque soglie visuali, ogni tipologia alla forma matura e ogni landmark nei quattro stadi — varianti e forme contestuali, Skyport compreso — derivati dagli stamp veri, con fasce, riquadri, scheda e inquadrature | `SWATCH_ITEM_GAP`, `SWATCH_BUILDING_LEVEL`, `SWATCH_LINE_TYPOLOGIES`, `SWATCH_LINE_LEVELS`, `SWATCH_LINES`, `SWATCH_FOCUS`, `SWATCH_FOCUSES`, `SWATCH_BUILDINGS`, `SWATCH_LANDMARKS`, `SWATCH_CATALOG_SUBJECTS`, `SWATCH_SUBJECTS`, `swatchExtent`, `swatchFocusExtent`, `swatchSubjectAt`, `swatchPlinthSpanAt`, `SwatchFocus`, `SwatchSubject`, `SwatchCatalogSubject`, `SwatchSubjectKind`, `SwatchInfoRow` |
+| [scenes/swatchCatalog.ts](src/world/scenes/swatchCatalog.ts) | Catalogo dei soggetti del campionario: arcologie matrici e variazioni, quattro linee evolutive, tipologie mature e landmark derivati dagli stamp veri, con fasce, scheda e inquadrature | `SWATCH_ITEM_GAP`, `SWATCH_BUILDING_LEVEL`, `SWATCH_LINE_TYPOLOGIES`, `SWATCH_LINE_LEVELS`, `SWATCH_LINES`, `SWATCH_FOCUS`, `SWATCH_FOCUSES`, `SWATCH_BUILDINGS`, `SWATCH_LANDMARKS`, `SWATCH_CATALOG_SUBJECTS`, `SWATCH_SUBJECTS`, `swatchExtent`, `swatchFocusExtent`, `swatchSubjectAt`, `swatchPlinthSpanAt`, `SwatchFocus`, `SwatchSubject`, `SwatchCatalogSubject`, `SwatchSubjectKind`, `SwatchInfoRow` |
 | [scenes/swatchPick.ts](src/world/scenes/swatchPick.ts) | Traversata DDA del raggio nel volume del campionario: il primo solido visibile, puro e senza mondo | `firstSolidVoxel`, `VoxelRay`, `VoxelHit`, `SwatchBox` |
 | [src/world/traffic/wake.ts](src/world/traffic/wake.ts) | La scia sull'acqua: il pennacchio letto in orizzontale, dalle pose passate. |
 | [VoxelWorld.ts](src/world/VoxelWorld.ts) | Storage sparso a chunk, dirty set, AABB, cache dell'ultimo chunk | `VoxelWorld`, `WorldBounds` |
@@ -171,6 +171,7 @@ map.columnAt(120, 96); // { height, biome, slope, buildable }
 | [src/engine/mesher/aerialSupportDetail.ts](src/engine/mesher/aerialSupportDetail.ts) | Sostegni aerei riduttivi: conserva il 2 x 2 logico, lo sostituisce nel volume di meshing con fusti a 1/16, capitelli dritti o arcuati e lascia pieni i carichi massivi. |
 | [src/engine/mesher/microDetail.ts](src/engine/mesher/microDetail.ts) | Il vocabolario degli edifici maturi, a 1/16 di voxel: balconi con corrimano sopra le terrazze attrezzate, davanzali sotto i fronti attivi, telai d'ingresso, lembi di tenda, passerelle e terminali industriali, lesene e pinne civiche, vasche e gruppi HVAC sui tetti. Non conosce il livello: reagisce alla superficie che le soglie visuali fanno comparire | `appendFacadeDetail`, `appendRoofDetail` |
 | [MesherPool.ts](src/engine/MesherPool.ts) | Pool di worker, job in volo, statistiche del mesher | `MesherPool`, `MesherStats`, `ChunkMeshResult` |
+| [src/engine/PerfReport.ts](src/engine/PerfReport.ts) | Aggregatore dei numeri di frame per il riepilogo da console: ogni 5 s una riga sola con medie, massimi e totali della finestra, pronta da incollare. Puro, testato in node. |
 | [src/engine/shaders/scene.glsl.ts](src/engine/shaders/scene.glsl.ts) | Il GLSL che i materiali di scena condividono: palette, luce, materia, ombra, prospettiva aerea. |
 | [src/engine/shaders/vehicle.glsl.ts](src/engine/shaders/vehicle.glsl.ts) | Il programma dei mezzi: normale che ruota con la sagoma, fasciame, finestrini accesi, fanali. |
 | [src/engine/shaders/wake.glsl.ts](src/engine/shaders/wake.glsl.ts) | Il programma della schiuma: bordo che si spegne e granello sulla cella del mondo. |
@@ -487,7 +488,8 @@ megastruttura non e' il piu' alto: e' quello che scavalca il vuoto. Per questo
 | File | Ruolo | Esporta |
 | --- | --- | --- |
 | [catalog.ts](src/world/arcology/catalog.ts) | Sceglie in modo deterministico la prima ricetta che entra nell'isolato, senza lasciare che la forma da sedici renda irraggiungibili quelle da quattordici | `arcologyForBlock` |
-| [src/world/arcology/config.ts](src/world/arcology/config.ts) | Regole, soglie normalizzate, tipi ed export pubblici delle arcologie; `stageThresholds` deriva la curva quadratica condivisa dal numero di stadi | `ARCOLOGY`, `ARCOLOGY_KIND`, `ARCOLOGY_RECIPES`, `TWIN_STEM`, `BRANCHING_CORE`, `SKY_WEAVE`, `SPIRE_RING`, `DOUBLE_BAR`, `STACK_PAIR`, `QUAD_CLUSTER`, `TRI_SPAN`, `stageThresholds`, `arcologyOf`, `ArcologyRecipe`, `ArcologyKind`, `ArcologyBand`, `ArcologyLanding` |
+| [src/world/arcology/config.ts](src/world/arcology/config.ts) | Regole, soglie normalizzate, tipi e cataloghi pubblici delle arcologie; separa le otto matrici dalle variazioni di profilo e le riunisce per il driver | `ARCOLOGY`, `BASE_ARCOLOGY_KIND`, `PROFILE_ARCOLOGY_KIND`, `ARCOLOGY_KIND`, `BASE_ARCOLOGY_RECIPES`, `PROFILE_ARCOLOGY_RECIPES`, `ARCOLOGY_RECIPES`, `TWIN_STEM`, `BRANCHING_CORE`, `SKY_WEAVE`, `SPIRE_RING`, `DOUBLE_BAR`, `STACK_PAIR`, `QUAD_CLUSTER`, `TRI_SPAN`, `TERRACED_TWIN`, `SPLIT_CROWN`, `STEPPED_BAR`, `COURT_CASCADE`, `stageThresholds`, `arcologyOf`, `ArcologyRecipe`, `ArcologyKind`, `BaseArcologyKind`, `ProfileArcologyKind`, `ArcologyBand`, `ArcologyLanding` |
+| [src/world/arcology/profileVariants.ts](src/world/arcology/profileVariants.ts) | Quattro variazioni aggiuntive delle arcologie storiche: corpi e corone sfalsati, torri che terminano su quote diverse e profili verticali asimmetrici | `createArcologyProfileVariants` |
 | [src/world/arcology/recipes.ts](src/world/arcology/recipes.ts) | Catalogo delle otto sagome alte: corpi shell rastremati, quote distinte, corone e montanti variabili, con `triSpan` limitata a 440 dal lato corto | `createArcologyRecipes` |
 | [siting.ts](src/world/arcology/siting.ts) | Quando la citta' e' pronta a darsene una. Puro e senza mondo: entrano numeri gia' misurati, esce un verdetto | `arcologyReady`, `arcologyAnchor`, `ARCOLOGY_REFUSALS`, `ArcologyQuery`, `ArcologyRefusal`, `BlockBounds` |
 | [src/world/arcology/structure.ts](src/world/arcology/structure.ts) | Predicati strutturali sulle parti: connessione a ogni stadio e snellezza delle colonne misurata sulla sezione di base piu' larga | `partsConnected`, `floatingBoxes`, `slenderColumns`, `maxSlendernessOf`, `FloatingBox`, `SlenderColumn` |
@@ -759,6 +761,7 @@ giocabile; gli overlay tecnici si alternano con `F3` o partono aperti con
 | [hudTokens.ts](src/ui/hudTokens.ts) | I `--hud-*` derivati dal tema attivo: pannello chiaro o scuro dalla luminanza dell'aria, tinta verso il mondo e contrasto AA garantito |
 | [GameHud.ts](src/ui/GameHud.ts) | Composizione dell'HUD: pannelli, decisioni, temi, targa della vista, picker delle viste informative, catena di Escape e feedback contestuale | `GameHud`, `GameHudHandlers` |
 | [InfoViewLegend.ts](src/ui/InfoViewLegend.ts) | La legenda della vista informativa attiva: nome, descrizione e categorie, lette dallo stesso catalogo dell'overlay | `InfoViewLegend` |
+| [src/ui/PerfOverlay.ts](src/ui/PerfOverlay.ts) | Pannello delle prestazioni acceso da `?perf=1`: fps, durata del frame, fetta di remesh, chunk rimeshati e livello di qualita'. Legge la stessa fonte del riepilogo console. |
 | [PoliciesDrawer.ts](src/ui/PoliciesDrawer.ts) | Il cassetto di governo: policy e rotte commerciali, le due cose che si toccano, separate dalla lettura |
 | [ResourceBar.ts](src/ui/ResourceBar.ts) | I dati in cima al rail sinistro: cinque risorse con anello del tetto e popover del bilancio, poi i gruppi Time e Sky |
 | [BuildDock.ts](src/ui/BuildDock.ts) | Il rail di sinistra: le corsie etichettate incolonnate — catalizzatori, Reach, Clear (la gomma) e le porte —, tessere icona-sopra-etichetta con badge di tasto, una colonna sopra i 900px di finestra e due sotto, selezione per indice. Le porte includono la tessera Data, che apre il picker delle viste informative | `DockPanel` |
@@ -782,6 +785,7 @@ giocabile; gli overlay tecnici si alternano con `F3` o partono aperti con
 | --- | --- |
 | [scripts/project-locate.test.ts](scripts/project-locate.test.ts) | Ricerca per ruolo e percorso, normalizzazione, limite risultati e argomenti del comando `locate` |
 | [engine/mesher/microDetail.test.ts](src/engine/mesher/microDetail.test.ts) | Il vocabolario maturo misurato con i contratti del resto del mesher: agganci (balcone solo sulla terrazza, fasce solo sul portale), quote dei prismi, winding di ogni quad nuovo, continuita' del tiro attraverso la cucitura, priorita' sotto il tetto dei quad |
+| [src/engine/PerfReport.test.ts](src/engine/PerfReport.test.ts) | La finestra di riepilogo: media e min/max, somma dei chunk rimeshati, riapertura della finestra successiva, formato su una riga sola. |
 | [src/engine/VehicleMaterial.test.ts](src/engine/VehicleMaterial.test.ts) | Che gli uniform dei mezzi siano gli stessi oggetti del voxel, non delle copie. |
 | [game/coach.test.ts](src/game/coach.test.ts) | Ogni tier acceso e spento, priorita' fra cibo e connessioni, stadio del landmark vicino e lontano dalla soglia, purezza dello stesso contesto |
 | [game/infoViews.test.ts](src/game/infoViews.test.ts) | La vista del cibo rastrella campi, frutteti e torri; la delega alla simulazione |
@@ -792,6 +796,7 @@ giocabile; gli overlay tecnici si alternano con `F3` o partono aperti con
 | [ui/hudWidgets.test.ts](src/ui/hudWidgets.test.ts) | L'elenco che si accorcia per la pastiglia al cursore: i primi nomi, poi quanti ne restano |
 | [world/arcology/connectivity.test.ts](src/world/arcology/connectivity.test.ts) | Ogni stadio resta connesso al suolo e ogni colonna resta sotto la snellezza massima misurata sulla sezione di base |
 | [world/arcology/generate.test.ts](src/world/arcology/generate.test.ts) | Altezze e stadi finali, soglie normalizzate, firme di quota uniche, due ritiri per corpo, shell multi-blocco, fill, finestre, rotazioni, delta cumulativi e tetto di 56 chunk nel caso peggiore |
+| [src/world/buildings/Builder.slow.test.ts](src/world/buildings/Builder.slow.test.ts) | Sentinella end-to-end separata: 2.700 tick su isola vera provano che le torri mature non spariscano per budget di chunk |
 | [src/world/buildings/crossingDriver.test.ts](src/world/buildings/crossingDriver.test.ts) | Integrazione del ponte automatico con registry, coda voxel, occupazione del suolo e guinzaglio degli appoggi |
 | [world/buildings/evolution.test.ts](src/world/buildings/evolution.test.ts) | La crescita come identita': a parita' di tipologia un livello in piu' non tocca i piani bassi; le soglie visuali compaiono solo dove dichiarate; le linee evolutive non hanno cicli, passi inversi o laterali e l'upgrade adotta solo cio' che la linea dichiara |
 | [world/buildings/growthPoles.test.ts](src/world/buildings/growthPoles.test.ts) | Il giro fra i poli: un turno a testa, il riquadro dell'influenza, nessun polo saltato |
@@ -854,7 +859,7 @@ giocabile; gli overlay tecnici si alternano con `F3` o partono aperti con
 | [world/grading/grade.test.ts](src/world/grading/grade.test.ts) | Classificazione del terreno, quota del piano finito, tetto strutturale, rampa a pendenza uno |
 | [world/sites/siteRules.test.ts](src/world/sites/siteRules.test.ts) | Ricerca dell'acqua sui quattro assi, intorno piano sotto il tetto proprio, motivi di rifiuto per ruolo |
 | [world/skyline/tiers.test.ts](src/world/skyline/tiers.test.ts) | Le tre fasce e il loro ordine, la costa che vince su tutto, la corona sul bordo dell'edificato, il cono monotono verso il polo, i picchi rari e deterministici, e il massimo teorico che coincide con `BUILDER.maxLevel` |
-| [src/world/buildings/Builder.test.ts](src/world/buildings/Builder.test.ts) | Crescita radiale senza lotti visibili; gate maturi di campate, mensole, piazze organiche, banchine sulla prima acqua e aggregati che condividono il basamento senza snapping in nastri |
+| [src/world/buildings/Builder.test.ts](src/world/buildings/Builder.test.ts) | Crescita radiale senza lotti visibili; gate rapidi e integrazioni di campate, mensole, piazze organiche, banchine, aggregati e gerarchia |
 | [world/landmarks/generate.test.ts](src/world/landmarks/generate.test.ts) | Ingombro dichiarato, determinismo, stadi cumulativi, invarianza per rotazione, firma verticale e sagome distinte fra tutti i ruoli; gli ormeggi dentro l'ingombro e **sull'acqua** — una barca su una colonna che l'opera riempie finirebbe in mezzo al molo — la prua che gira con la struttura, lo scalo in quota come ricetta a se' con i suoi tre mestieri, e il sedime per stadio che cresce in modo monotono attorno all'ancora |
 | [world/buildings/landmarkCoast.test.ts](src/world/buildings/landmarkCoast.test.ts) | La banchina va **incontro al mare**: su un bassofondo asciutto largo dieci colonne il porto scorre fin sopra l'acqua vera invece di fermarsi sulla sabbia, guarda il mare aperto e non l'orlo bagnato, non arretra dove il mare comincia subito, e tiene comunque la colonna cliccata dentro il proprio ingombro |
 | [world/buildings/siteWorks.test.ts](src/world/buildings/siteWorks.test.ts) | La maschera dell'opera di terra: il molo esce su acqua che l'ingombro intero rifiuterebbe, il mare resta mare fuori dalla maschera, e il muro segue il bordo della maschera invece di quello del riquadro |
@@ -866,7 +871,7 @@ giocabile; gli overlay tecnici si alternano con `F3` o partono aperti con
 | [world/ropeway/generate.test.ts](src/world/ropeway/generate.test.ts) | Zoccolo pieno, banchina calpestabile a `deckDrop` sotto la fune, architrave in mezzeria alla quota della fune, e l'asse che gira il castello senza cambiare l'ingombro |
 | [world/buildings/ropewayDriver.test.ts](src/world/buildings/ropewayDriver.test.ts) | Dal click ai voxel su uno stretto scritto a mano: due torri a registro che non sono edifici, entrambe sull'asciutto, e **nessun voxel fra loro** — la prova che la fune non e' materia |
 | [world/buildings/BuildingRegistry.test.ts](src/world/buildings/BuildingRegistry.test.ts) | Indice spaziale e sostituzione di record |
-| [world/buildings/chunkBudget.test.ts](src/world/buildings/chunkBudget.test.ts) | Il volume dentro un chunk, quello a cavallo di una cucitura, il vicino di bordo contato per eccesso; il tetto misurato sul ritaglio e non sull'ingombro intero |
+| [src/world/buildings/chunkBudget.test.ts](src/world/buildings/chunkBudget.test.ts) | Aritmetica del budget, ritagli e gate rapido esaustivo del massimo volume verticale su tutte le fasi di cucitura |
 | [world/crossings/crossingPlan.test.ts](src/world/crossings/crossingPlan.test.ts) | La scelta del compagno da un click solo, le due rive, il franco di navigazione, il pescaggio delle pile, i motivi di rifiuto uno per uno |
 | [world/crossings/generate.test.ts](src/world/crossings/generate.test.ts) | La carreggiata continua fra i segmenti, la travatura aperta in mezzo e chiusa sopra le pile |
 | [world/spans/spanPlan.test.ts](src/world/spans/spanPlan.test.ts) | Asse, vuoto e fronte comune; l'atterraggio sull'arretramento; i motivi di rifiuto uno per uno; il taglio in segmenti; il mezzanino dentro la fila |
@@ -916,6 +921,7 @@ La radice `/` avvia isola, crescita e Cozy HUD; gli overlay tecnici sono nascost
 | Parametro | Default | Effetto |
 | --- | --- | --- |
 | `debug` | — | `1` apre overlay e hotkey tecniche; `F3` li alterna a runtime |
+| `perf` | — | `1` accende il pannello delle prestazioni e il riepilogo da console ogni 5 s; vale **anche senza** `debug` |
 | `scene` | — | Isola una scena `city`, `noise` (caso peggiore), `slab`, `diorama` o `swatch` |
 | `class`, `level`, `typology`, `mixed` | `commercial`, `6` | Soggetto della scena `diorama` |
 | `seed` | `1337` | Seed della generazione |

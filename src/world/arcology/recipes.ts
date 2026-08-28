@@ -2,7 +2,7 @@ import { BUILDING_CLASS } from '../../sim';
 import { PALETTE_SLOTS } from '../../engine/paletteSlots';
 import { PART, box, type Part } from '../landmarks/parts';
 import { SURFACE_KIND, type SurfaceKind } from '../visualBlock';
-import type { ArcologyKind, ArcologyRecipe } from './config';
+import type { ArcologyRecipe, BaseArcologyKind } from './config';
 
 type ThresholdFactory = (stages: number) => readonly number[];
 
@@ -69,7 +69,7 @@ function shellBody(
 /** Le otto forme alte; i numeri di quota vivono soltanto in questo catalogo. */
 export function createArcologyRecipes(
   thresholds: ThresholdFactory,
-): Record<ArcologyKind, ArcologyRecipe> {
+): Record<BaseArcologyKind, ArcologyRecipe> {
   const twinStem: ArcologyRecipe = {
     kind: 'twinStem',
     blocks: [1, 1],

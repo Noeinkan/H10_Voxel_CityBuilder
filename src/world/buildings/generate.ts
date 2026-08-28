@@ -177,12 +177,15 @@ export function generateBuilding(request: BuildingRequest): VoxelStamp {
     footprintBias: baseProfile.footprintBias + Math.round(
       form.accessibility * BUILDER.localForm.accessibilityFootprintBias,
     ),
+    // Il tetto e' la meta' interessante del clamp: vedi `localForm.maxShrinkBias`.
+    // A uno, un quartiere ricco spegneva `growOps` invece di preferirgli le
+    // terrazze, e la torre saliva con l'unico ramo che le restava.
     shrinkBias: clamp(
       baseProfile.shrinkBias +
         form.satisfaction * BUILDER.localForm.satisfactionTerraceBias +
         form.wealth * BUILDER.localForm.wealthTerraceBias,
       0,
-      1,
+      Math.max(baseProfile.shrinkBias, BUILDER.localForm.maxShrinkBias),
     ),
   };
   // I quattro canali: uno per domanda, e nessuno dipende dal livello. Vedi la

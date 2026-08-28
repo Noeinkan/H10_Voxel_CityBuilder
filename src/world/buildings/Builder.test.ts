@@ -1708,28 +1708,6 @@ describe('Builder — gerarchia verticale', () => {
     expect(coastal).toBeGreaterThan(0);
   });
 
-  it('nessun edificio alto sparisce in silenzio per budget di chunk', () => {
-    // **Il difetto che si ripresenta a ogni cambio di scala.** Sforare il tetto
-    // di chunk sporchi non e' un errore e viene scartato senza che niente lo
-    // dica, e a sparire sono proprio gli edifici che la fase esiste per fare.
-    // Con `maxLevel` a dodici una torre attraversa il doppio dei piani di chunk
-    // di prima: se `maxDirtyChunksPerBuilding` fosse rimasto a ventiquattro,
-    // questo conteggio salirebbe e lo skyline si fermerebbe da solo.
-    //
-    // **Ci vogliono parecchi round**, e non e' una lentezza da limare: la scala
-    // di `upgradeThreshold` e' ripida apposta, e sopra il livello sei a far
-    // salire un edificio non e' piu' la desiderabilita' ma la gerarchia. Su meno
-    // round la citta' non arriva in alto e il test passerebbe vacuamente.
-    const { builder, records } = island(4242, 450);
-    const chunkBudget = REJECT_REASONS.indexOf('chunkBudget');
-
-    expect(builder.stats.rejected[chunkBudget]).toBe(0);
-    // E che ci sia davvero qualcosa di alto da far sparire: oltre la fine della
-    // scala di desiderabilita', cioe' dove decide solo la gerarchia.
-    const tallest = Math.max(...records.map((record) => record.level));
-    expect(tallest).toBeGreaterThan(BUILDER.upgradeThreshold.length - 1);
-  });
-
   it('la gerarchia si vede su isole di forma diversa, non solo sul seed di prova', () => {
     // Il settimo punto della sotto-fase: una figura che esce solo su un seed e'
     // una coincidenza, non una regola.

@@ -7,12 +7,15 @@ description: Parametri URL, hotkey e hook globali dell'harness di debug del voxe
 
 `?debug=1` accende overlay e hotkey tecniche; `F3` le alterna a runtime. La
 radice `/` avvia isola, crescita e Cozy HUD con gli overlay tecnici nascosti.
+`?perf=1` misura la partita vera: pannello in alto a destra e un riepilogo in
+console ogni 5 secondi, senza aprire il gate del debug.
 
 ## Parametri URL
 
 | Parametro | Default | Effetto |
 | --- | --- | --- |
 | `debug` | — | `1` apre overlay e hotkey tecniche |
+| `perf` | — | `1` accende il pannello delle prestazioni (fps, frame ms, remesh ms/frame, chunk rimeshati, livello di qualita') e il riepilogo da console ogni 5 s. Vale **anche senza** `debug`: misura la radice, non un harness. Registra anche `__voxelStats()`. `F3` non lo tocca |
 | `scene` | — | Isola una scena `city`, `noise` (caso peggiore), `slab`, `diorama` o `swatch` |
 | `class` | `commercial` | Uso del soggetto del diorama: `residential`, `commercial`, `industrial`, `civic` |
 | `level` | `6` | Livello del soggetto del diorama, 0…`BUILDER.maxLevel` |
@@ -24,7 +27,7 @@ radice `/` avvia isola, crescita e Cozy HUD con gli overlay tecnici nascosti.
 | `terrain` | — | `<seed>` sostituisce la scena urbana con un'isola 256×256 |
 | `sim` | — | `1` accende la scena di simulazione (implica l'isola, richiede `debug=1`) |
 | `grow` | — | `1` accende la crescita automatica degli edifici |
-| `quality` | — | `performance` toglie le pass aggiuntive e dimezza le draw call |
+| `quality` | — | `high`, `balanced` o `performance` fissano il profilo; `auto` abbassa il pixel ratio e, quando e' gia' al minimo (display DPR 1), scende anche la scala degli effetti con la stessa isteresi |
 | `theme` | — | `<id>` sceglie il tema; vale **anche senza** `debug`, è un look, non una misura |
 | `hour` | — | `<0..24>` fissa l'ora e **ferma** il ciclo giorno/notte; vale anche senza `debug` |
 | `daylight` | `cycle` | `day` o `night` fermano l'orologio sull'ora del modo; è la stessa scelta del bottone nell'HUD e vale anche senza `debug` |
@@ -275,7 +278,7 @@ pixel. Tre cose da sapere prima di stupirsi:
 
 ## Hook globali
 
-Solo con `?debug=1`:
+Solo con `?debug=1` (piu' `__voxelStats()`, che si registra anche con `?perf=1`):
 
 - sempre: `__voxelStats()`, `__voxelReset()`, `__voxelExpand()`,
   `__voxelRebuildAll()`, `__voxelTheme(id?)`, `__voxelSun(azimuth?, elevation?)`, `__voxelHour(h?)`,

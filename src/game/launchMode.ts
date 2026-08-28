@@ -1,5 +1,6 @@
 export interface LaunchMode {
   debugEnabled: boolean;
+  perfEnabled: boolean;
   growEnabled: boolean;
   simEnabled: boolean;
 }
@@ -7,6 +8,10 @@ export interface LaunchMode {
 /**
  * La radice e' l'esperienza completa mostrata all'avvio. I parametri di scena
  * restano espliciti perche' servono come harness isolati nelle verifiche.
+ *
+ * `perf` sta fuori dal gate del debug come le viste: misurare la partita vera
+ * — quella che parte dalla radice — e' il suo scopo, e attivarla non deve
+ * cambiare cio' che si misura.
  */
 export function resolveLaunchMode(params: URLSearchParams): LaunchMode {
   const hasExplicitScene = ['scene', 'terrain', 'sim', 'grow'].some((key) => params.has(key));
@@ -17,6 +22,7 @@ export function resolveLaunchMode(params: URLSearchParams): LaunchMode {
 
   return {
     debugEnabled,
+    perfEnabled: params.get('perf') === '1',
     growEnabled: params.get('grow') === '1' || defaultExperience,
     simEnabled: debugEnabled && params.get('sim') === '1',
   };

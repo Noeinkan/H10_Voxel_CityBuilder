@@ -39,6 +39,11 @@
   a 50 vicini, sotto la condizione di fondazione, e ogni corona arriva a 93:
   `stageThresholds` interpola gli stadi intermedi su una curva quadratica. Una
   ricetta piu' articolata non diventa per questo meno probabile da completare.
+- **Le sagome nuove si sommano alle matrici, non le sostituiscono.** Le otto
+  ricette storiche restano in `BASE_ARCOLOGY_RECIPES`; ogni voce di
+  `PROFILE_ARCOLOGY_RECIPES` dichiara `variationOf` e cambia il profilo con
+  corpi che terminano su quote diverse. Il driver sceglie dall'unione dei due
+  cataloghi, mentre test e campionario possono ancora distinguerli.
 - **Il vuoto dentro l'ingombro e' un vincolo di ricetta.** `skyWindowOf` e
   `fillRatio` girano su ogni ricetta a ogni stadio: una finestra aperta non si
   richiude piu', e un'arcologia che riempie il proprio ingombro non compila la

@@ -190,6 +190,10 @@ const ARCOLOGY_LABELS: Readonly<Record<ArcologyKind, string>> = {
   [ARCOLOGY_KIND.stackPair]: 'Stack Pair',
   [ARCOLOGY_KIND.quadCluster]: 'Quad Cluster',
   [ARCOLOGY_KIND.triSpan]: 'Tri Span',
+  [ARCOLOGY_KIND.terracedTwin]: 'Terraced Twin',
+  [ARCOLOGY_KIND.splitCrown]: 'Split Crown',
+  [ARCOLOGY_KIND.steppedBar]: 'Stepped Bar',
+  [ARCOLOGY_KIND.courtCascade]: 'Court Cascade',
 };
 
 const BASE_EXTENT = baseExtentOf();

@@ -62,6 +62,20 @@ export interface ChunkRendererStats {
   readonly detailQuads: number;
   /** Chunk ancora in aria per la caduta d'ingresso. */
   readonly chunksFalling: number;
+  /**
+   * Tempo speso nell'ultima `update` sul main thread: la fetta di frame che
+   * il remeshing si e' presa. Non include il meshing nei worker.
+   */
+  readonly remeshMs: number;
+  /** Geometrie caricate nell'ultima `update`: i chunk rimeshati in quel frame. */
+  readonly remeshedChunks: number;
+  /** Fetta dell'ultima `update` spesa a preparare e spedire i volumi ai worker. */
+  readonly remeshDispatchMs: number;
+  /** Fetta dell'ultima `update` spesa a caricare le geometrie pronte. */
+  readonly remeshApplyMs: number;
+  /** Picchi delle due fasi dall'ultimo reset: li' si vede lo spike, non nell'ultima riga. */
+  readonly remeshDispatchMaxMs: number;
+  readonly remeshApplyMaxMs: number;
 }
 
 /** Numero massimo di geometrie caricate per frame, oltre al budget di tempo. */
@@ -113,6 +127,12 @@ export class ChunkRenderer {
   private quadTotal = 0;
   private detailQuadTotal = 0;
   private visibleCount = 0;
+  private lastUpdateMs = 0;
+  private lastUploads = 0;
+  private lastDispatchMs = 0;
+  private lastApplyMs = 0;
+  private maxDispatchMs = 0;
+  private maxApplyMs = 0;
 
   /** I soli chunk che stanno scendendo: il frame non tocca gli altri. */
   private readonly falling: ChunkMeshEntry[] = [];
@@ -149,7 +169,19 @@ export class ChunkRenderer {
       quads: this.quadTotal,
       detailQuads: this.detailQuadTotal,
       chunksFalling: this.falling.length,
+      remeshMs: this.lastUpdateMs,
+      remeshedChunks: this.lastUploads,
+      remeshDispatchMs: this.lastDispatchMs,
+      remeshApplyMs: this.lastApplyMs,
+      remeshDispatchMaxMs: this.maxDispatchMs,
+      remeshApplyMaxMs: this.maxApplyMs,
     };
+  }
+
+  /** Azzera i picchi delle fasi di remesh, come `MesherPool.resetStats`. */
+  resetRemeshPeaks(): void {
+    this.maxDispatchMs = 0;
+    this.maxApplyMs = 0;
   }
 
   /** true quando non c'e' piu' nulla da meshare. */
@@ -160,24 +192,48 @@ export class ChunkRenderer {
   /**
    * Raccoglie i chunk sporchi, dispaccia il meshing e carica i risultati pronti
    * senza superare il budget di tempo assegnato.
+   *
+   * Il budget copre **tutte** le fasi, non solo gli upload: prima la
+   * spedizione dei volumi ai worker non guardava l'orologio, e su una coda
+   * lunga di chunk densi poteva prendersi decine di millisecondi da sola.
    */
   update(camera: Camera, budgetMs: number): void {
     const start = performance.now();
+    const canAfford = (): boolean => performance.now() - start < budgetMs;
 
     this.collectDirty();
-    this.rescoreIfNeeded(camera);
 
-    this.dispatch();
+    // Il riordino della coda e' priorita', non correttezza: a budget gia'
+    // consumato si rimanda al frame dopo invece di sforare il tetto.
+    if (canAfford()) this.rescoreIfNeeded(camera);
+
+    let dispatchMs = 0;
+    let t0 = performance.now();
+    this.dispatch(canAfford);
+    dispatchMs += performance.now() - t0;
 
     let uploads = 0;
-    while (uploads < MAX_UPLOADS_PER_FRAME && performance.now() - start < budgetMs) {
+    let applyMs = 0;
+    while (uploads < MAX_UPLOADS_PER_FRAME && canAfford()) {
       const result = this.pool.poll();
       if (result === undefined) break;
+      t0 = performance.now();
       this.applyResult(result);
+      applyMs += performance.now() - t0;
       uploads++;
-      // Un worker si e' liberato: rimettiamolo subito al lavoro.
-      this.dispatch();
+      // Un worker si e' liberato: rimettiamolo subito al lavoro, finche' il
+      // budget regge.
+      t0 = performance.now();
+      this.dispatch(canAfford);
+      dispatchMs += performance.now() - t0;
     }
+
+    this.lastUpdateMs = performance.now() - start;
+    this.lastUploads = uploads;
+    this.lastDispatchMs = dispatchMs;
+    this.lastApplyMs = applyMs;
+    if (dispatchMs > this.maxDispatchMs) this.maxDispatchMs = dispatchMs;
+    if (applyMs > this.maxApplyMs) this.maxApplyMs = applyMs;
   }
 
   /**
@@ -359,8 +415,8 @@ export class ChunkRenderer {
     this.pending.sort((a, b) => b.score - a.score);
   }
 
-  private dispatch(): void {
-    while (this.pool.idleCount > 0 && this.pending.length > 0) {
+  private dispatch(canAfford: () => boolean): void {
+    while (this.pool.idleCount > 0 && this.pending.length > 0 && canAfford()) {
       const item = this.pending.pop();
       if (item === undefined) return;
       const key = item.key;

@@ -11,6 +11,36 @@ coincide con il messaggio di commit.
 
 ---
 
+## In corso — Le torri mature smettono di salire tutte uguali
+
+- **Una fascia il cui ramo e' esaurito prova l'altro, una volta su tre.** Sopra `GRAMMAR.minBandSide` nessuna rientranza regge piu': il corpo di una torre matura toccava il lato minimo entro le prime tre fasce e da li' in su *ripeteva* quella sotto fino al coronamento — misurato, dieci-dodici fasce identiche su quattordici, per ogni seme e per ogni tipologia. Ora, quando il repertorio scelto non ha nessuna candidata che stia in piedi, si prova quello dell'altro ramo: il corpo che non puo' piu' rientrare puo' ancora spostarsi, girare il lato lungo verso l'altra strada o riprendersi un voxel da arretrare piu' su. La frequenza e' una manopola dichiarata (`GRAMMAR.spareBranchChance`): a uno il corpo cambierebbe a ogni piano, che a distanza di gioco e' tremolio e non varieta'.
+- **La spinta locale non puo' piu' chiudere un ramo intero.** Densita', ricchezza e soddisfazione sommavano fino a `+0.34` su `shrinkBias`: una torre a blocco in un quartiere ricco arrivava a 1 tondo, quindi `growOps` — quattro voci su sette — non veniva nemmeno costruito. E' lo stesso difetto che `preferredStart` aveva corretto *dentro* un ramo, ripresentato *fra* i due. `BUILDER.localForm.maxShrinkBias` taglia la sola spinta locale e lascia intatta ogni preferenza dichiarata dal catalogo.
+- **Il ramo che sale di `skyTerraces` non arretra piu' anche lui.** La riga aveva `setback` in testa a *entrambi* i repertori: il tiro sceglieva fra due elenchi che rispondevano la stessa cosa, e il gradone abitato non era una preferenza ma l'unica sagoma che quella tipologia sapesse produrre. Il ramo che sale porta ora un allargamento e i due scarti laterali; le terrazze restano dove stavano, cioe' nel ramo che rientra.
+- **Le cime del catalogo sono diventate una scala.** Misurato sulla catena di promozioni: un lotto residenziale denso adottava `towerBlock` al livello quattro e ci restava per i sedici livelli successivi, perche' nessuna riga lo dichiarava come provenienza; `roundTower` — che chiede il livello sei — non poteva quindi comparire in nessuna partita, e il commercio senza specializzazione si fermava ad `arcadeRow` al livello zero. Ora una cima porta a un'altra quando questa chiede *strettamente di piu'*: torre liscia (densita', livello 4) → gradone abitato (piu' la ricchezza, livello 5) → tamburo (piu' il fronte strada, livello 6). All'indietro non si torna, e il test delle linee continua a vietare cicli e passi laterali.
+- **Il tamburo vuole il fronte strada, e questo mette tre forme sulla stessa via.** Le tre verticali alte qualificano ormai negli stessi luoghi: senza una condizione che le separi, il livello sei le avrebbe portate tutte alla stessa sagoma, cioe' il problema di prima un piano piu' su. Il ruolo del lotto e' l'unico fatto discreto che cambia dentro un isolato — lanterna sull'angolo, tamburo sul fronte, gradone abitato nel cuore — e la maglia stradale lo sa gia'.
+- **Il commercio e l'industria hanno di nuovo un seguito.** `terraceArcade` e' adottata anche dai tessuti bassi (portico, mercato, mercato coperto, mercato del porto) e non piu' dalla sola fila di negozi: dove il quartiere sta bene, un fronte commerciale denso cresce in fronte terrazzato invece di restare quello che era. `stackedWorks` accetta anche il loft di produzione, che sta un livello sotto e non chiede l'impatto industriale.
+- **Le impronte digitali della grammatica sono rigenerate.** Il tiro in piu' per fascia sposta la sequenza: le sagome di livello zero restano identiche — una o due fasce, nessun corpo bloccato — e tutte le altre cambiano. **La citta' gia' costruita in una partita aperta va considerata persa**, come da nota in `generateDigest.test.ts`.
+
+## In corso — Il gating di qualità agisce anche su display a densità 1
+
+- **In `auto` gli effetti hanno una scala loro.** Finora il profilo seguiva i gradini del pixel ratio, e su un display DPR 1 — dove il pixel ratio nasce gia' al minimo — il gating vedeva l'fps sotto soglia senza poter muovere nulla: ombre, bloom e pass piene restavano accese sulle macchine che le pagano di piu'. Ora la manopola effetti scende la scala `PROFILES` (ombra 2048→1024→spenta, poi le pass) quando la risoluzione non puo' piu' scendere, con la stessa isteresi; la risalita passa prima dal pixel ratio.
+- **Il budget del remesh copre tutte le fasi.** La spedizione dei volumi ai worker non guardava l'orologio: su una coda lunga di chunk densi poteva prendersi da sola decine di millisecondi (picco misurato: 127 ms). Ora dispatch e riordino della coda rispettano il tetto di frame come gli upload, e le fasi si leggono separate — apply e dispatch, ultimo frame e picchi — nel pannello RENDER e in `__voxelStats()`.
+
+## In corso — Misura delle prestazioni con ?perf=1
+
+- **La partita vera si misura con `?perf=1`.** Pannello in alto a destra con fps, durata del frame, fetta di remesh sul main thread, chunk rimeshati nel frame e livello di qualita' adattiva; ogni 5 s la console stampa una riga sola con medie, massimi e totali della finestra, pronta da incollare. Fuori dal gate del debug: misura la radice, non un harness, e registra `__voxelStats()` sulle stesse fonti dell'overlay.
+- **Il remeshing dichiara la sua fetta di frame.** `ChunkRendererStats` espone il tempo dell'ultima `update` sul main thread e il numero di geometrie caricate; overlay e hook li leggono dalla stessa fonte, come da regola dell'harness.
+
+## In corso — Variazioni di profilo per le arcologie
+
+- **Quattro sagome aggiuntive senza sostituire le otto esistenti.** `Terraced Twin`, `Split Crown`, `Stepped Bar` e `Court Cascade` derivano esplicitamente dalle rispettive matrici e spezzano i blocchi verticali con torri sfalsate, terrazze intermedie, rami che si arrestano a quote diverse e corone asimmetriche; catalogo, campionario e test distinguono matrici e variazioni.
+
+## In corso — Test Builder a due velocita
+
+- **Gate rapido e sentinella conservata.** Il contratto del budget verticale passa ora da un controllo puro sotto il secondo; la simulazione da 2.700 tick resta disponibile nella suite lenta senza rallentare test correlati e feedback locale.
+- **Comandi ripetibili.** Aggiunti percorsi npm fast, Builder, slow e profile; `related` e `changed` escludono le sole sentinelle lente e conservano varianti `:all` per richiamarle esplicitamente.
+- **Suite completa senza contesa artificiale.** `npm test` chiude prima il gruppo normale e avvia poi le sentinelle lente senza parallelismo fra file, evitando che una citta' matura falsi timeout e tempi degli altri test.
+
 ## In corso — La marina si ritaglia i canali nella riva del lago
 
 - **Sul lago la marina scava, non si appoggia.** Finora il bacino scavato approfondiva solo il fondale gia' sommerso della conca; adesso, quando lo specchio davanti alla struttura sta **sopra** il livello del mare, il piazzamento fa scorrere la marina all'indietro finche' la sua bocca cade sul pelo del lago: gli slip fra i moli restano sulla riva emersa e lo scavo li ritaglia come canali a profondita' costante, allagati al pelo della conca. Sul mare non cambia niente — la darsena con i pontili resta quella di prima, perche' li' lo specchio della colonna *e'* il livello del mare.

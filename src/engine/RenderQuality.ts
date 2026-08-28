@@ -6,9 +6,12 @@ export type QualityReason = 'initial' | 'fixed' | 'stable-up' | 'slow-down' | 'u
 /**
  * Cosa puo' permettersi il frame, oltre al numero di pixel.
  *
- * Non e' uno stato in piu' da far evolvere: si deriva da quanto il controller ha
- * gia' dovuto abbassare il pixel ratio. Una sola macchina a stati, una sola
- * isteresi, e gli effetti seguono la stessa decisione invece di litigarci.
+ * Si deriva da quanto il controller ha gia' dovuto abbassare il pixel ratio,
+ * piu' i gradini di effetti che scattano quando il pixel ratio non puo' piu'
+ * muoversi: su un display a densita' 1 non esistono gradini di risoluzione, e
+ * senza questa seconda manopola il gating resterebbe fermo con tutti gli
+ * effetti accesi proprio sulle macchine che ne hanno piu' bisogno. Una sola
+ * isteresi per le due manopole, cosi' non litigano.
  */
 export interface QualityProfile {
   /** Lato della shadow map; 0 spegne la pass del tutto. */
@@ -49,6 +52,8 @@ export interface QualityDecision {
   readonly changed: boolean;
   readonly reason: QualityReason;
   readonly profile: QualityProfile;
+  /** Gradini della scala PROFILES chiesti dal gating oltre al pixel ratio. */
+  readonly effectsLevel: number;
 }
 
 const EVALUATION_MS = 2_000;
@@ -71,6 +76,16 @@ export class RenderQualityController {
 
   /** Pixel ratio con cui il modo e' partito: il livello 0 degli effetti. */
   private readonly baseline: number;
+
+  /**
+   * Gradini della scala PROFILES chiesti dal gating oltre al pixel ratio.
+   *
+   * Resta a zero finche' il pixel ratio puo' ancora scendere: la risoluzione e'
+   * la manopola piu' economica, e sugli schermi densi copre da sola l'intera
+   * scala. Su un display DPR 1 (baseline e minimo coincidono a 1) e' l'unica
+   * manopola che resta, ed e' quella che accende e spegne gli effetti.
+   */
+  private effectsLevel = 0;
 
   constructor(readonly mode: QualityMode, devicePixelRatio: number) {
     this.maximum = clamp(Math.floor(devicePixelRatio / STEP) * STEP, 1, 2);
@@ -100,11 +115,21 @@ export class RenderQualityController {
     if (slow) {
       this.slowWindows++;
       this.stableSince = null;
-      if (this.slowWindows >= 2 && now >= this.cooldownUntil && this.current > 1) {
-        this.current = Math.max(1, step(this.current - STEP));
-        this.slowWindows = 0;
-        this.cooldownUntil = now + DOWN_COOLDOWN_MS;
-        return this.decide(true, 'slow-down');
+      if (this.slowWindows >= 2 && now >= this.cooldownUntil) {
+        if (this.current > 1) {
+          this.current = Math.max(1, step(this.current - STEP));
+          this.slowWindows = 0;
+          this.cooldownUntil = now + DOWN_COOLDOWN_MS;
+          return this.decide(true, 'slow-down');
+        }
+        // Pixel ratio gia' al minimo: scende la scala degli effetti, se non e'
+        // gia' coperta dai gradini di risoluzione gia' fatti.
+        if (this.effectsLevel < PROFILES.length - 1 - this.pixelLevel) {
+          this.effectsLevel++;
+          this.slowWindows = 0;
+          this.cooldownUntil = now + DOWN_COOLDOWN_MS;
+          return this.decide(true, 'slow-down');
+        }
       }
       return this.unchanged();
     }
@@ -115,11 +140,19 @@ export class RenderQualityController {
       return this.unchanged();
     }
     this.stableSince ??= now;
-    if (now >= this.cooldownUntil && now - this.stableSince >= UP_STABLE_MS && this.current < this.maximum) {
-      this.current = Math.min(this.maximum, step(this.current + STEP));
-      this.stableSince = now;
-      this.cooldownUntil = now + DOWN_COOLDOWN_MS;
-      return this.decide(true, 'stable-up');
+    if (now >= this.cooldownUntil && now - this.stableSince >= UP_STABLE_MS) {
+      if (this.current < this.maximum) {
+        this.current = Math.min(this.maximum, step(this.current + STEP));
+        this.stableSince = now;
+        this.cooldownUntil = now + DOWN_COOLDOWN_MS;
+        return this.decide(true, 'stable-up');
+      }
+      if (this.effectsLevel > 0) {
+        this.effectsLevel--;
+        this.stableSince = now;
+        this.cooldownUntil = now + DOWN_COOLDOWN_MS;
+        return this.decide(true, 'stable-up');
+      }
     }
     return this.unchanged();
   }
@@ -132,9 +165,9 @@ export class RenderQualityController {
   /**
    * Quanti gradini siamo scesi rispetto al punto di partenza del modo.
    *
-   * I modi fissi hanno un livello fisso; in 'auto' il livello segue le stesse
-   * discese che il controller decide per la risoluzione, senza una seconda
-   * isteresi che potrebbe sfasarsi rispetto alla prima.
+   * I modi fissi hanno un livello fisso; in 'auto' il livello somma i gradini
+   * del pixel ratio e quelli degli effetti, con una sola isteresi a guidare
+   * entrambi.
    *
    * Il confronto e' con `baseline` e non con `maximum`: 'auto' parte di proposito
    * a 1.5 anche dove il massimo e' 2, e misurando dal massimo uno schermo ad alta
@@ -145,6 +178,11 @@ export class RenderQualityController {
     if (this.mode === 'high') return 0;
     if (this.mode === 'balanced') return 1;
     if (this.mode === 'performance') return 2;
+    return Math.min(PROFILES.length - 1, this.pixelLevel + this.effectsLevel);
+  }
+
+  /** Gradini della scala gia' coperti dalla discesa del pixel ratio. */
+  private get pixelLevel(): number {
     const steps = Math.round((this.baseline - this.current) / STEP);
     return Math.min(PROFILES.length - 1, Math.max(0, steps));
   }
@@ -156,6 +194,7 @@ export class RenderQualityController {
       changed,
       reason,
       profile: this.profile,
+      effectsLevel: this.effectsLevel,
     };
   }
 

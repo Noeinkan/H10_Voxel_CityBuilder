@@ -277,6 +277,22 @@ export const BUILDER = {
     satisfactionTerraceBias: 0.22,
     wealthTerraceBias: 0.12,
     wealthAccentChance: 0.24,
+
+    /**
+     * Tetto a cui le due spinte qui sopra possono portare `shrinkBias`.
+     *
+     * **Serviva perche' le due spinte sommate chiudevano un ramo intero.** Una
+     * torre a blocco dichiara 0.72 e un quartiere ricco e soddisfatto ne aggiunge
+     * 0.34: il tiro cadeva sotto la soglia *sempre*, quindi `growOps` — quattro
+     * voci su sette — non veniva mai nemmeno costruito. E' lo stesso difetto che
+     * `preferredStart` ha corretto dentro un ramo, ripresentato fra i due rami: un
+     * repertorio che non si pesca mai e' un repertorio che non esiste.
+     *
+     * Nove decimi e non uno: la voce piu' alta del catalogo e' 0.9
+     * (`rationedBlock`), quindi il tetto non tocca nessuna preferenza dichiarata —
+     * taglia solo la spinta locale, che e' cio' che deve fare.
+     */
+    maxShrinkBias: 0.9,
   },
 } as const;
 

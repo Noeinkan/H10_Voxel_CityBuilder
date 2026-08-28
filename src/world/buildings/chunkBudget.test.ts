@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { CHUNK } from '../chunkCoords';
 import { WORKS, type GradePlan } from '../grading/grade';
+import { maxTowerHeightOf } from '../scale';
 import { dirtyChunkCount, fitsChunkBudget } from './chunkBudget';
-import { BUILDER } from './config';
+import { BUILDER, GRAMMAR, MAX_FOOTPRINT } from './config';
 import type { VoxelStamp } from './stamp';
 
 /**
@@ -67,6 +68,36 @@ describe('dirtyChunkCount', () => {
     const first = dirtyChunkCount(12, 20, 6, 10, 40);
     const second = dirtyChunkCount(12, 20, 6, 10, 40);
     expect(first).toBe(second);
+  });
+
+  it('il volume verticale massimo passa su ogni fase di cucitura', () => {
+    // E' il gate rapido del difetto che prima richiedeva una citta da 2.700
+    // tick. Usa l'inviluppo orizzontale massimo e la torre teorica piu' alta:
+    // nessun sito reale puo' sporcare piu' chunk di questo volume.
+    const side = MAX_FOOTPRINT + GRAMMAR.maxOverhang;
+    const height = maxTowerHeightOf();
+    let worst = 0;
+
+    for (let xPhase = 0; xPhase < CHUNK; xPhase++) {
+      for (let yPhase = 0; yPhase < CHUNK; yPhase++) {
+        for (let zPhase = 0; zPhase < CHUNK; zPhase++) {
+          worst = Math.max(
+            worst,
+            dirtyChunkCount(
+              xPhase,
+              yPhase,
+              side,
+              zPhase,
+              zPhase + height,
+              side,
+            ),
+          );
+        }
+      }
+    }
+
+    expect(height).toBeGreaterThan(CHUNK);
+    expect(worst).toBeLessThanOrEqual(BUILDER.maxDirtyChunksPerBuilding);
   });
 });
 

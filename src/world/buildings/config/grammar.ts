@@ -125,6 +125,23 @@ export const GRAMMAR = {
   terraceMinRing: terraceMinRingOf(),
 
   /**
+   * Quante volte, su una fascia il cui ramo e' esaurito, si prova l'altro.
+   *
+   * **E' la manopola contro la canna.** Un corpo che ha toccato `minBandSide` non
+   * ha piu' nessuna rientranza che regga: senza questo passaggio ripete la fascia
+   * sotto fino in cima, ed e' il motivo per cui le torri mature di una citta'
+   * ricca salivano tutte uguali — due arretramenti in basso e poi dodici fasce
+   * identiche.
+   *
+   * A uno il corpo cambia a **ogni piano**: misurato, una torre di livello dodici
+   * passava per otto sagome diverse in quattordici fasce, che a distanza di gioco
+   * non e' varieta' ma tremolio. A un terzo si sposta tre o quattro volte lungo la
+   * salita — abbastanza da distinguere due torri vicine, poco abbastanza da
+   * leggersi ancora come un corpo unico.
+   */
+  spareBranchChance: 0.34,
+
+  /**
    * Voxel di cui l'inviluppo puo' uscire dall'impronta, **verso la strada**.
    *
    * **E' microgeometria e resta fisso.** Due sono un cubo di terreno: il piu'

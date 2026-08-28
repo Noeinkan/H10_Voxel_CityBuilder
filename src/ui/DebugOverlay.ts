@@ -41,6 +41,11 @@ export interface OverlayFrame {
   readonly mesherAvgMs: number;
   readonly mesherMaxMs: number;
   readonly mesherPoolSize: number;
+  /** Fasi del remesh sul main thread: upload e spedizione, ultimo frame e picchi. */
+  readonly remeshApplyMs: number;
+  readonly remeshDispatchMs: number;
+  readonly remeshApplyMaxMs: number;
+  readonly remeshDispatchMaxMs: number;
   readonly generationProgress: number;
   readonly scene: string;
   readonly seed: number;
@@ -137,6 +142,7 @@ export class DebugOverlay {
       `queue      ${frame.queued.toString().padStart(6)} + ${frame.inFlight} in flight`,
       '',
       `mesher     ${frame.mesherLastMs.toFixed(2).padStart(6)} ms   avg ${frame.mesherAvgMs.toFixed(2)}  max ${frame.mesherMaxMs.toFixed(2)}`,
+      `remesh cpu apply ${frame.remeshApplyMs.toFixed(2)}  dispatch ${frame.remeshDispatchMs.toFixed(2)}  max ${frame.remeshApplyMaxMs.toFixed(2)}/${frame.remeshDispatchMaxMs.toFixed(2)}`,
       `worker     ${frame.mesherPoolSize.toString().padStart(6)}`,
       `voxel      ${format(frame.solidVoxels).padStart(6)}`,
       '',
