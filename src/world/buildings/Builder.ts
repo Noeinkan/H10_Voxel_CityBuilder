@@ -37,6 +37,8 @@ import { GuideDriver } from './guideDriver';
 import { UpgradeDriver } from './upgradeDriver';
 import { FarmDriver } from './farmDriver';
 import { FARMS } from '../farms/config';
+import { HarborDriver } from './harborDriver';
+import { HARBOR } from '../harbor/config';
 import type { FarmPlot } from '../farms/plotPlan';
 import { sightWater } from '../sites/siteRules';
 import {
@@ -351,6 +353,7 @@ export class Builder {
   private readonly upgrades: UpgradeDriver;
   private readonly ropeways: RopewayDriver;
   private readonly farms: FarmDriver;
+  private readonly harbors: HarborDriver;
   private readonly arcologies: ArcologyDriver;
 
   constructor(
@@ -399,6 +402,11 @@ export class Builder {
     // non puo' contendere una colonna a nessuno. Legge il registry — per sapere
     // cosa la citta' ha gia' preso — e non ci scrive mai.
     this.farms = new FarmDriver(this.ctx);
+    // Il distretto costiero vive come la campagna: legge il registry — i
+    // record dei landmark e il loro stadio — e non ci scrive mai. Le sue opere
+    // viaggiano sulle code di sempre, e i suoi edifici li fa nascere la
+    // macchina ordinaria del Builder quando glieli chiede in infornata.
+    this.harbors = new HarborDriver(this.ctx);
     // Ultima, e con due frecce che entrano e nessuna che esce: legge la
     // gerarchia della 4.6 per sapere se la citta' qui e' satura, e il cantiere
     // per farsi spazio. Nessuno degli altri driver sa che le arcologie esistono.
@@ -646,6 +654,10 @@ export class Builder {
       next = this.landmarks.pass(next);
       next = this.upgrades.pass(next);
     }
+    // Il distretto costiero segue i landmark, e a cadenza propria: lo stadio
+    // che il quartiere ha appena meritato e' anche l'anello che il fronte si
+    // prende, ma non c'e' fretta — le opere viaggiano sulle code di sempre.
+    if (state.tickCount % HARBOR.ticksPerPass === 0) this.harbors.pass();
     // La rete in quota non legge la simulazione: una campata dipende da dove
     // stanno i tetti, non da quanto una colonna e' desiderabile. E' anche il
     // motivo per cui questa passata non prende ne' restituisce lo stato.
@@ -709,11 +721,33 @@ export class Builder {
    */
   private buildPass(state: SimState): SimState {
     const wanted = BUILDER.sitesPerBuild;
-    const pole = poleRectAt(state.catalysts, this.buildTurn++);
 
-    const turn = pole === null ? null : this.buildRound(state, wanted, pole);
-    const after = turn === null ? state : turn.state;
-    const left = wanted - (turn === null ? 0 : turn.accepted);
+    // **Il distretto costiero viene prima del polo di turno.** E' un rivolo
+    // — un edificio per infornata, al massimo — e senza la precedenza si
+    // perderebbe in fondo alla coda dei siti: il quartiere che il landmark
+    // deve creare resterebbe una promessa mentre la citta' cresce altrove.
+    let next = state;
+    let placed = 0;
+    for (const site of this.harbors.drainSites(HARBOR.sitesPerPass)) {
+      if (placed >= wanted || this.queued >= BUILDER.maxGrowing) break;
+      const record = this.place({
+        x: site.x,
+        y: site.y,
+        class: site.class,
+        animate: true,
+        state: next,
+        chooseLot: true,
+      });
+      if (record === null) continue;
+      next = addBuilding(next, simBuilding(record));
+      placed++;
+    }
+
+    const pole = poleRectAt(next.catalysts, this.buildTurn++);
+
+    const turn = pole === null ? null : this.buildRound(next, wanted - placed, pole);
+    const after = turn === null ? next : turn.state;
+    const left = wanted - placed - (turn === null ? 0 : turn.accepted);
     if (left <= 0) return after;
     return this.buildRound(after, left, undefined).state;
   }

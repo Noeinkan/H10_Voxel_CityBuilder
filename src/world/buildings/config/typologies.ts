@@ -547,6 +547,37 @@ export const TYPOLOGIES: readonly TypologyDefinition[] = [
     },
   },
   {
+    id: 'canalHouse',
+    label: 'Canal house',
+    use: 0,
+    roles: ['marina'],
+    coastal: true,
+    // La casa sul canale: dove la marina scava la riva, il tessuto che ci
+    // cresce attorno e' la schiera bassa con il colmo sul fronte — la voce
+    // dei lungomare costruiti sull'acqua, stretta per farci stare il canale.
+    // **Sopra le torri d'angolo** (5), perche' il distretto deve leggersi dal
+    // suo tessuto: una torre d'angolo sul canale e' la citta' che si allunga,
+    // e qui la voce del posto conta piu' della gerarchia dell'isolato.
+    evolvesFrom: ['terracedHousing'],
+    priority: 6,
+    shape: {
+      ...DEFAULT_TYPOLOGY_SHAPE,
+      crownKind: CROWN_KIND.gable,
+      minFootprint: 4,
+      maxFootprint: 6,
+    },
+    profile: {
+      bandHeight: [4, 5],
+      shrinkBias: 0.3,
+      footprintBias: -2,
+      body: PALETTE_SLOTS.brickLight,
+      bodyAlt: PALETTE_SLOTS.brick,
+      accent: PALETTE_SLOTS.wood,
+      crown: PALETTE_SLOTS.roofPale,
+      plinth: PALETTE_SLOTS.stoneDark,
+    },
+  },
+  {
     id: 'terracedHousing',
     label: 'Terraced housing',
     use: 0,
@@ -654,6 +685,83 @@ export const TYPOLOGIES: readonly TypologyDefinition[] = [
       bodyAlt: PALETTE_SLOTS.brick,
       accent: PALETTE_SLOTS.metalGold,
       crown: PALETTE_SLOTS.metalBrass,
+      plinth: PALETTE_SLOTS.stoneDark,
+    },
+  },
+  {
+    id: 'marinaClub',
+    label: 'Marina club',
+    use: 1,
+    roles: ['marina'],
+    coastal: true,
+    // Il club nautico: la casa bassa col tetto a falda che serve i moli, in
+    // legno e ottone come il pontile che guarda. E' il commercio della marina,
+    // e sta basso per lasciare il primo piano alla vela e non alla torre.
+    evolvesFrom: ['retailRow'],
+    priority: 5,
+    shape: {
+      ...DEFAULT_TYPOLOGY_SHAPE,
+      crownKind: CROWN_KIND.gable,
+      minFootprint: 4,
+      maxFootprint: 8,
+    },
+    profile: {
+      bandHeight: [4, 4],
+      shrinkBias: 0.15,
+      footprintBias: 2,
+      body: PALETTE_SLOTS.wood,
+      bodyAlt: PALETTE_SLOTS.brickLight,
+      accent: PALETTE_SLOTS.metalBrass,
+      crown: PALETTE_SLOTS.roofPale,
+      plinth: PALETTE_SLOTS.stoneDark,
+    },
+  },
+  {
+    id: 'harborOffice',
+    label: 'Harbor office',
+    use: 1,
+    specialization: 'office',
+    roles: ['port'],
+    coastal: true,
+    minLevel: 2,
+    // L'ufficio del porto: il fronte amministrativo del molo, vetro su un
+    // podio di pietra. Nasce dal mercato del porto quando il posto cresce.
+    evolvesFrom: ['harborMarket', 'retailRow'],
+    priority: 5,
+    shape: { ...DEFAULT_TYPOLOGY_SHAPE, podiumBands: 1, chamfer: 1, minFootprint: 5 },
+    profile: {
+      bandHeight: [6, 7],
+      shrinkBias: 0.5,
+      body: PALETTE_SLOTS.glassDeep,
+      bodyAlt: PALETTE_SLOTS.glassDark,
+      accent: PALETTE_SLOTS.glassPale,
+      crown: PALETTE_SLOTS.metalDark,
+      plinth: PALETTE_SLOTS.stoneDark,
+    },
+  },
+  {
+    id: 'pierCafe',
+    label: 'Pier cafe',
+    use: 1,
+    roles: ['ferry'],
+    coastal: true,
+    // Il bar dell'imbarcadero: il chiosco basso che aspetta chi sbarca, il
+    // commercio minimo di un posto il cui mestiere e' passare.
+    evolvesFrom: ['retailRow'],
+    priority: 5,
+    shape: {
+      ...DEFAULT_TYPOLOGY_SHAPE,
+      crownKind: CROWN_KIND.gable,
+      minFootprint: 4,
+      maxFootprint: 6,
+    },
+    profile: {
+      bandHeight: [4, 4],
+      shrinkBias: 0.2,
+      body: PALETTE_SLOTS.wood,
+      bodyAlt: PALETTE_SLOTS.concreteWhite,
+      accent: PALETTE_SLOTS.glassPale,
+      crown: PALETTE_SLOTS.roofWhite,
       plinth: PALETTE_SLOTS.stoneDark,
     },
   },
@@ -814,6 +922,31 @@ export const TYPOLOGIES: readonly TypologyDefinition[] = [
       accent: PALETTE_SLOTS.metalBrass,
       crown: PALETTE_SLOTS.metalDark,
       plinth: PALETTE_SLOTS.asphaltShadow,
+    },
+  },
+  {
+    id: 'containerYard',
+    label: 'Container yard',
+    use: 2,
+    specialization: 'logistics',
+    roles: ['port'],
+    coastal: true,
+    // Il piazzale container: il capannone di logistica vestito di ruggine, con
+    // l'attrezzatura sul tetto. Sul porto vince sul capannone neutro — il ruolo
+    // dice piu' del fondo — e la linea resta quella della logistica.
+    evolvesFrom: ['logisticsDepot', 'strippedYard'],
+    priority: 6,
+    shape: { ...DEFAULT_TYPOLOGY_SHAPE, crownKind: CROWN_KIND.flat, minFootprint: 7 },
+    profile: {
+      bandHeight: [4, 5],
+      shrinkBias: 0,
+      footprintBias: 2,
+      body: PALETTE_SLOTS.metalRust,
+      bodyAlt: PALETTE_SLOTS.metalDark,
+      accent: PALETTE_SLOTS.metalBrass,
+      crown: PALETTE_SLOTS.metalDark,
+      plinth: PALETTE_SLOTS.asphaltShadow,
+      roofPropHeight: 4,
     },
   },
   {
@@ -1027,6 +1160,34 @@ export const TYPOLOGIES: readonly TypologyDefinition[] = [
       growOps: [BAND_OP.grow, BAND_OP.corner, BAND_OP.shear, BAND_OP.jog],
       roofProp: PALETTE_SLOTS.metalGold,
       roofPropHeight: 6,
+    },
+  },
+  {
+    id: 'ferryHouse',
+    label: 'Ferry house',
+    use: 3,
+    roles: ['ferry'],
+    coastal: true,
+    // La casa dell'imbarco: la sala bassa con il colmo lungo, una stazione
+    // d'acqua in miniatura accanto al molo. Il civico del traghetto sta basso
+    // perche' il suo segnale e' la boa e la vela, non il campanile.
+    evolvesFrom: ['civicSpire'],
+    priority: 5,
+    shape: {
+      ...DEFAULT_TYPOLOGY_SHAPE,
+      crownKind: CROWN_KIND.gable,
+      minFootprint: 4,
+      maxFootprint: 8,
+    },
+    profile: {
+      bandHeight: [4, 4],
+      shrinkBias: 0.3,
+      footprintBias: 2,
+      body: PALETTE_SLOTS.brickLight,
+      bodyAlt: PALETTE_SLOTS.concreteWhite,
+      accent: PALETTE_SLOTS.glassPale,
+      crown: PALETTE_SLOTS.roofWhite,
+      plinth: PALETTE_SLOTS.stoneDark,
     },
   },
   {

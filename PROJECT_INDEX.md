@@ -55,6 +55,7 @@ resto si apre a domanda — è ciò che tiene basso il contesto di partenza.
 | [docs/world/arcology.md](docs/world/arcology.md) | Contratti e casi limite delle arcologie |
 | [docs/world/farms.md](docs/world/farms.md) | Contratti della campagna e dei lotti agricoli |
 | [docs/world/grading-water.md](docs/world/grading-water.md) | Contratti delle opere di terra e dell'acqua |
+| [docs/world/harbor.md](docs/world/harbor.md) | Contratti e casi limite del distretto costiero | a domanda |
 | [docs/world/README.md](docs/world/README.md) | Indice dei contratti di design di `src/world/` caricati per dominio |
 | [docs/world/rooftop-landmarks.md](docs/world/rooftop-landmarks.md) | Contratti dei landmark posati sugli edifici |
 | [docs/world/ropeway.md](docs/world/ropeway.md) | Contratti della funivia e della fune non voxel |
@@ -74,6 +75,7 @@ resto si apre a domanda — è ciò che tiene basso il contesto di partenza.
 | [src/world/crossings/AGENTS.md](src/world/crossings/AGENTS.md) | Regole locali e riferimenti per gli attraversamenti | lavorando in `src/world/crossings/` |
 | [src/world/farms/AGENTS.md](src/world/farms/AGENTS.md) | Regole locali e riferimenti per i lotti agricoli | lavorando in `src/world/farms/` |
 | [src/world/grading/AGENTS.md](src/world/grading/AGENTS.md) | Regole locali e riferimenti per le opere di terra | lavorando in `src/world/grading/` |
+| [src/world/harbor/AGENTS.md](src/world/harbor/AGENTS.md) | Regole locali e riferimenti per il distretto costiero | lavorando in `src/world/harbor/` |
 | [src/world/landmarks/AGENTS.md](src/world/landmarks/AGENTS.md) | Routing dei contratti per ricette e piazzamento | lavorando in `src/world/landmarks/` |
 | [src/world/ropeway/AGENTS.md](src/world/ropeway/AGENTS.md) | Regole locali e riferimenti per la funivia | lavorando in `src/world/ropeway/` |
 | [src/world/scenes/AGENTS.md](src/world/scenes/AGENTS.md) | Regole locali e riferimenti per le scene | lavorando in `src/world/scenes/` |
@@ -466,6 +468,21 @@ stageForBuildings(recipe, nearby);          // quanto la citta' intorno ha merit
 generateLandmark({ kind, stage, facing });  // VoxelStamp | null
 ```
 
+## `src/world/harbor/` — il distretto costiero
+
+L'impronta che un landmark costiero lascia sul proprio circondario: l'anello
+che cresce con lo stadio, le opere dell'acqua — insenature e canali scavati
+nella riva, moli guadagnati al mare, frangiflutti staccati — e gli slot di
+settore che la macchina ordinaria del Builder trasforma in edifici con le
+tipologie del posto. Puro: il piano entra come delta di uno stadio e non tocca
+il mondo; lo applica `buildings/harborDriver.ts` sulle code di sempre, e le
+colonne di scavo e colmata sono prenotate al registry contro la crescita.
+
+| File | Ruolo | Esporta |
+| --- | --- | --- |
+| [config.ts](src/world/harbor/config.ts) | **Ogni** anello, misura d'opera, profondita' e cadenza del distretto, per ruolo | `HARBOR`, `HARBOR_ROLES`, `HarborRoleConfig` |
+| [plan.ts](src/world/harbor/plan.ts) | Il piano puro di uno stadio: scavi, sponde, colmate, passeggiata e slot di settore, ruotati sul verso vero con `orientPart` e spezzati in ritagli a budget | `planHarborDistrict`, `HarborPlan`, `HarborDig`, `HarborWall`, `HarborFill`, `SectorSite`, `HarborProbe`, `HarborQuery` |
+
 ## `src/world/arcology/` — la megastruttura
 
 Il «dopo» della gerarchia verticale. Quando la quota ammessa satura, un isolato
@@ -489,10 +506,11 @@ megastruttura non e' il piu' alto: e' quello che scavalca il vuoto. Per questo
 | --- | --- | --- |
 | [catalog.ts](src/world/arcology/catalog.ts) | Sceglie in modo deterministico la prima ricetta che entra nell'isolato, senza lasciare che la forma da sedici renda irraggiungibili quelle da quattordici | `arcologyForBlock` |
 | [src/world/arcology/config.ts](src/world/arcology/config.ts) | Regole, soglie normalizzate, tipi e cataloghi pubblici delle arcologie; separa le otto matrici dalle variazioni di profilo e le riunisce per il driver | `ARCOLOGY`, `BASE_ARCOLOGY_KIND`, `PROFILE_ARCOLOGY_KIND`, `ARCOLOGY_KIND`, `BASE_ARCOLOGY_RECIPES`, `PROFILE_ARCOLOGY_RECIPES`, `ARCOLOGY_RECIPES`, `TWIN_STEM`, `BRANCHING_CORE`, `SKY_WEAVE`, `SPIRE_RING`, `DOUBLE_BAR`, `STACK_PAIR`, `QUAD_CLUSTER`, `TRI_SPAN`, `TERRACED_TWIN`, `SPLIT_CROWN`, `STEPPED_BAR`, `COURT_CASCADE`, `stageThresholds`, `arcologyOf`, `ArcologyRecipe`, `ArcologyKind`, `BaseArcologyKind`, `ProfileArcologyKind`, `ArcologyBand`, `ArcologyLanding` |
+| [world/arcology/connectivity.test.ts](src/world/arcology/connectivity.test.ts) | Ogni stadio resta connesso al suolo e ogni colonna — corpi e pennoni — resta sotto la snellezza massima misurata sulla sezione di base |
 | [src/world/arcology/profileVariants.ts](src/world/arcology/profileVariants.ts) | Quattro variazioni aggiuntive delle arcologie storiche: corpi e corone sfalsati, torri che terminano su quote diverse e profili verticali asimmetrici | `createArcologyProfileVariants` |
-| [src/world/arcology/recipes.ts](src/world/arcology/recipes.ts) | Catalogo delle otto sagome alte: corpi shell rastremati, quote distinte, corone e montanti variabili, con `triSpan` limitata a 440 dal lato corto | `createArcologyRecipes` |
+| [src/world/arcology/recipes.ts](src/world/arcology/recipes.ts) | Catalogo delle otto sagome alte: corpi shell rastremati, quote distinte, corone e guglie a gradoni, con `triSpan` limitata a 440 dal lato corto | `createArcologyRecipes` |
 | [siting.ts](src/world/arcology/siting.ts) | Quando la citta' e' pronta a darsene una. Puro e senza mondo: entrano numeri gia' misurati, esce un verdetto | `arcologyReady`, `arcologyAnchor`, `ARCOLOGY_REFUSALS`, `ArcologyQuery`, `ArcologyRefusal`, `BlockBounds` |
-| [src/world/arcology/structure.ts](src/world/arcology/structure.ts) | Predicati strutturali sulle parti: connessione a ogni stadio e snellezza delle colonne misurata sulla sezione di base piu' larga | `partsConnected`, `floatingBoxes`, `slenderColumns`, `maxSlendernessOf`, `FloatingBox`, `SlenderColumn` |
+| [src/world/arcology/structure.ts](src/world/arcology/structure.ts) | Predicati strutturali sulle parti: connessione a ogni stadio, snellezza delle colonne misurata sulla sezione di base piu' larga e snellezza dei soli pennoni | `partsConnected`, `floatingBoxes`, `slenderColumns`, `maxSlendernessOf`, `mastColumns`, `maxMastSlendernessOf`, `FloatingBox`, `SlenderColumn` |
 | [window.ts](src/world/arcology/window.ts) | La finestra di cielo e il riempimento, come proprieta' verificabili di uno stamp | `skyWindowOf`, `fillRatio`, `SkyWindow`, `SkyWindowRule` |
 | [generate.ts](src/world/arcology/generate.ts) | Ricetta→stamp, ingombro, origine, e le due tabelle di posti portate sul verso vero con la stessa rotazione delle parti | `generateArcology`, `arcologySpan`, `arcologyOrigin`, `worldBands`, `worldLandings`, `WorldBand`, `WorldLanding` |
 
@@ -692,6 +710,8 @@ le scritture stanno in tre file invece che sparse in sei metodi.
 | [src/world/buildings/crossingDriver.ts](src/world/buildings/crossingDriver.ts) | Driver a budget dei ponti fra settori: cerca appoggi locali, registra una campata lunga per settore e la lega alle torri |
 | [growthPoles.ts](src/world/buildings/growthPoles.ts) | Di chi e' il turno di crescere: il riquadro del polo di questa infornata | `poleRectAt` |
 | [growthQueue.ts](src/world/buildings/growthQueue.ts) | La coda di comparsa e le scritture a budget: un segmento per struttura, la sagoma nuova prima della cancellazione | `GrowthQueue`, `anchorOf` |
+| [harborDriver.test.ts](src/world/buildings/harborDriver.test.ts) | Il distretto arriva nel mondo: canale allagato e sponde in muratura sul pelo della conca, frangiflutti col suo cappello, passeggiata che salta gli scavi, e dentro il Builder lo stadio del landmark che trascina il distretto fino alla casa sul canale. |
+| [harborDriver.ts](src/world/buildings/harborDriver.ts) | La passata del distretto costiero: applica il piano di `harbor/plan.ts` sulle code di sempre — scavi e colmate a budget, passeggiata di superficie — prenota le colonne d'acqua al registry e consegna a `buildPass` gli slot di settore, un edificio per infornata | `HarborDriver` |
 | [src/world/buildings/marinaBasin.test.ts](src/world/buildings/marinaBasin.test.ts) | La marina nasce sulla riva ripida di un lago e si ritaglia i canali nella riva emersa, allagati al pelo della conca. |
 | [surfaceQueue.ts](src/world/buildings/surfaceQueue.ts) | Il suolo pubblico a budget: carreggiata per isolato, grembiuli, rampe e bonifica del decoro — che si ferma dove il bioma dice acqua | `SurfaceQueue`, `SurfacePaint` |
 | [spanDriver.ts](src/world/buildings/spanDriver.ts) | La rete in quota: ponti, mezzanini e piazze; le piazze cercano tasche libere fra pareti reali invece del centro dell'isolato, e una campata non prende suolo | `SpanDriver` |

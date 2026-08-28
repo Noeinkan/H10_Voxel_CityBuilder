@@ -11,6 +11,30 @@ coincide con il messaggio di commit.
 
 ---
 
+## In corso — Il distretto costiero dei landmark
+
+- **Il distretto costiero.** Marina, porto e traghetto lasciano un'impronta sul
+  circondario: l'anello cresce con lo stadio del landmark e mai oltre due
+  isolati, con l'insenatura scavata nella riva e allagata al pelo, i canali
+  perpendicolari alla costa con le sponde in muratura, il molo di terra
+  guadagnata al mare e il frangiflutti staccato che chiude lo specchio. Il
+  piano e' puro in `src/world/harbor/`; lo applica `harborDriver.ts` sulle code
+  di sempre, e le colonne di scavo e colmata sono prenotate al registry dal
+  primo pass — l'acqua non e' suolo, e la simulazione non lo sa.
+- **Sei tipologie di settore.** `canalHouse`, `marinaClub` e `pierCafe` per la
+  riva da diporto, `containerYard` e `harborOffice` per il polo logistico,
+  `ferryHouse` per l'imbarco: righe di catalogo gated su ruolo e costa, quindi
+  gli edifici del distretto nascono dalla macchina ordinaria del Builder e
+  portano congestione e capacita' come tutti gli altri — il bonus di settore
+  resta del catalizzatore, che cresce con lo stadio.
+- **Il rivero di crescita.** Un edificio di settore per infornata, davanti al
+  polo di turno: il quartiere che il landmark deve creare non aspetta che la
+  classifica dei candidati ci arrivi da sola.
+
+## In corso — Guglie a gradoni
+
+- **Le cime delle arcologie sono guglie a gradoni, non piu' pennoni.** I montanti unici — 2x2 o 3x3 alti fino a 118 quote — sfuggivano alla rete della snellezza perche' `slenderColumns` misura i soli corpi. Ogni cima ora e' tre tronchi che rientrano (7x7, 5x5, 3x3; 4x4 e 3x3 dove l'armatura e' stretta) alle stesse quote di prima, i pennoni sono misurati con la stessa snellezza dei corpi, e `triSpan` passa da quattro spilli a tre guglie, una per barra.
+
 ## In corso — Le torri mature smettono di salire tutte uguali
 
 - **Una fascia il cui ramo e' esaurito prova l'altro, una volta su tre.** Sopra `GRAMMAR.minBandSide` nessuna rientranza regge piu': il corpo di una torre matura toccava il lato minimo entro le prime tre fasce e da li' in su *ripeteva* quella sotto fino al coronamento — misurato, dieci-dodici fasce identiche su quattordici, per ogni seme e per ogni tipologia. Ora, quando il repertorio scelto non ha nessuna candidata che stia in piedi, si prova quello dell'altro ramo: il corpo che non puo' piu' rientrare puo' ancora spostarsi, girare il lato lungo verso l'altra strada o riprendersi un voxel da arretrare piu' su. La frequenza e' una manopola dichiarata (`GRAMMAR.spareBranchChance`): a uno il corpo cambierebbe a ogni piano, che a distanza di gioco e' tremolio e non varieta'.

@@ -56,6 +56,7 @@ nell'`AGENTS.md` piu' vicino.
 - `crossings/`, `grading/`: attraversamenti, fondazioni e opere di terra.
 - `farms/`: lotti agricoli e decorazione rurale.
 - `landmarks/`: ricette, piazzamento, porti e landmark in quota.
+- `harbor/`: il distretto costiero — anello, canali, colmate e slot di settore.
 - `arcology/`: condizioni, ricette e crescita delle arcologie.
 - `ropeway/`: stazioni, torri e piano della fune.
 - `traffic/`: rotte e pose dei mezzi non voxel.

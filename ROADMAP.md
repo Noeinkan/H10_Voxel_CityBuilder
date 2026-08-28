@@ -2379,6 +2379,48 @@ gioco, il singolo edificio regge anche l'inquadratura ravvicinata, e almeno una
 parte della città sta **sopra** un'altra parte — dalla stessa inquadratura si
 contano due livelli abitati e il vuoto che li separa.
 
+### Fase 4.17 — Il distretto costiero dei landmark
+
+Obiettivo: dare a marina, porto e traghetto un'**impronta sul circondario** —
+non solo la struttura del catalizzatore, ma il mestiere del posto: canali e
+insenature scavati nella riva come una darsena londinese, moli guadagnati al
+mare, frangiflutti che chiudono lo specchio, e gli edifici di settore che ci
+crescono attorno con i loro bonus e malus di sempre.
+
+Vive in un dominio puro nuovo — `src/world/harbor/` — e in un driver
+trasversale, `src/world/buildings/harborDriver.ts`.
+
+**Stato implementazione:** completata. Il gate resta da validare a occhio su
+un'isola vera: i test coprono contenimento, monotonia per stadio, geometria
+delle opere e il percorso end-to-end fino alla tipologia di settore, non la
+leggibilità del fronte a distanza di gioco.
+
+- [x] L'anello del distretto cresce con lo stadio del landmark e ha un tetto: <!-- size: L -->
+  mai più di due isolati, per costruzione.
+- [x] Insenature e canali scavati nella riva emersa e allagati al pelo, con le <!-- size: XL -->
+  sponde in muratura: la seconda eccezione al «si riempie, non si scava»,
+  estesa oltre l'impronta con la stessa coda e lo stesso confine.
+- [x] Moli di terra guadagnata al mare e frangiflutti staccati, dove il fondale <!-- size: L -->
+  regge il muro di banchina; le colonne d'acqua sono prenotate al registry.
+- [x] Sei tipologie di settore gated su ruolo e costa: gli edifici del <!-- size: M -->
+  distretto nascono dalla macchina ordinaria e portano congestione e capacità
+  come tutti gli altri, a un edificio per infornata.
+
+**Vincolo:** nessuna porta nuova verso `src/sim/` — il ritorno resta il
+catalizzatore che cresce con lo stadio; nessuna passata propria — il distretto
+viaggia sulle code di sempre; niente oltre l'anello dichiarato.
+
+**Gate:** una marina al terzo stadio legge come porticciolo scavato nella riva
+con il suo quartiere di case sul canale, e un porto come polo logistico
+riparato, senza overlay né tooltip.
+
+**Resta aperto.** Le colonne scavate non cambiano la `TerrainMap`, quindi la
+portata dell'influenza (`reachCost`) continua a leggere il bioma e non vede i
+canali: è il disallineamento già noto del bacino della marina, esteso al
+distretto. E gli slot di settore sono sul solo lato di terra: il molo
+guadagnato al mare non ospita ancora edifici, perché la simulazione lo dichiara
+oceano.
+
 ## Fase 5 — Persistenza e prodotto browser
 
 Obiettivo: trasformare la demo in un gioco riprendibile e distribuibile.
