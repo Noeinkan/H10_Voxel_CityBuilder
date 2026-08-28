@@ -11,6 +11,15 @@ coincide con il messaggio di commit.
 
 ---
 
+## In corso — Il puntatore sceglie la faccia
+
+- **Piazzamenti in quota: la faccia e' quella sotto il mouse.** In modalita' Rooftop e con la mensola il cursore mostrava e piazzava sempre sul fronte strada, anche puntando il lato opposto della torre. Ora la faccia sotto il puntatore si prova per prima, e se non regge si ricade sul fronte strada; il mirino mostra la faccia su cui il click piazzera' davvero. La passata automatica delle mensole resta sul fronte strada.
+
+## In corso — La carta di crescita dice da dove viene il numero
+
+- **La carta di crescita scompone la desiderabilità.** «78 of 96» senza provenienza non diceva niente da fare: ora un edificio sotto soglia elenca le fonti vere del campo — ogni catalizzatore con il suo contributo firmato (`From Market (96, 84): +52`), la congestione dei vicini, e la soglia con base e sconto delle qualità locali. I numeri sono gli stessi addendi di `DesirabilityField`, letti dalla stessa cache di portata: la scheda descrive, non simula una seconda volta.
+- **Un landmark mostra quanto muove la crescita attorno.** La riga `Influence` sostituisce la forza scalare: il vettore per uso al centro, già pesato dalle policy attive (`Housing +162 · Commerce +180 · ...`), accanto a mestiere, portata, favoriti e quartiere. La carta di crescita del landmark dice anche cosa compra lo stadio successivo (`strength +8`).
+
 ## In corso — Il distretto costiero dei landmark
 
 - **Il distretto costiero.** Marina, porto e traghetto lasciano un'impronta sul

@@ -182,14 +182,16 @@ export class LandmarkDriver {
    * Un ruolo senza ricetta ottiene il solo grembiule, che e' esattamente cio'
    * che tutti e otto avevano prima.
    */
-  place(x: number, y: number, kind: CatalystId, aloft?: boolean): void {
+  place(x: number, y: number, kind: CatalystId, aloft?: boolean, preferred?: AerialFace): void {
     // `aloft` e' il verso scelto dal giocatore, non un indizio dal luogo. Senza
     // (`undefined`) vale il vecchio patto: la facciata vince quando c'e' —
     // puntare un grattacielo con lo strumento dell'aeroporto **e'** la richiesta
     // di uno scalo appeso. Esplicito, `true` appende e basta, `false` scarta la
     // facciata e costruisce a terra anche se sotto la colonna c'e' un edificio.
+    // `preferred` e' la faccia sotto il puntatore: si prova per prima, e solo se
+    // non regge si ricade sul fronte strada.
     if (aloft !== false) {
-      const verdict = this.aloftSiteAt(x, y, kind);
+      const verdict = this.aloftSiteAt(x, y, kind, preferred);
       if (verdict.site !== null) {
         this.buildAloft(verdict.site, kind);
         return;
@@ -225,12 +227,12 @@ export class LandmarkDriver {
    * cosa ci sta sopra. Dire quante case porta via un riquadro che nessuna opera
    * reggerebbe manderebbe a cercare una sacca bassa dove il problema e' la parete.
    */
-  siteAt(x: number, y: number, kind: CatalystId, aloft?: boolean): LandmarkSite {
+  siteAt(x: number, y: number, kind: CatalystId, aloft?: boolean, preferred?: AerialFace): LandmarkSite {
     // Su una facciata non c'e' niente da sgomberare: la struttura si posa fuori
     // da cio' che c'e', non al suo posto. Vale anche per la facciata rifiutata — a dirlo e'
     // il rifiuto del piazzamento, non il conto delle demolizioni.
     if (aloft !== false) {
-      const verdict = this.aloftSiteAt(x, y, kind);
+      const verdict = this.aloftSiteAt(x, y, kind, preferred);
       if (verdict.site !== null || verdict.refusal !== null || aloft === true) return OPEN_SITE;
     }
 
@@ -253,8 +255,11 @@ export class LandmarkDriver {
    * Due null significano «la domanda non si applica»: o il ruolo non ha una
    * forma in quota, o sotto la colonna non c'e' niente a cui appendersi. In
    * entrambi i casi decide la strada di terra.
+   *
+   * `preferred` e' la faccia sotto il puntatore, calcolata da chi tiene il
+   * mouse: si prova per prima, e solo se non regge si ricade sul fronte strada.
    */
-  aloftSiteAt(x: number, y: number, kind: CatalystId): AloftVerdict {
+  aloftSiteAt(x: number, y: number, kind: CatalystId, preferred?: AerialFace): AloftVerdict {
     if (!hasFacadeForm(kind)) return NOT_ALOFT;
 
     const host = this.buildingAt(x, y);
@@ -263,11 +268,21 @@ export class LandmarkDriver {
       return { site: null, refusal: 'facade-too-low' };
     }
 
-    // Come per la terrazza, il fronte strada e' la prima scelta: li' lo sporto
-    // guarda un vuoto vero. Un record senza fronte prova tutti i lati in ordine.
-    const faces: readonly AerialFace[] = host.facing === undefined
+    // La faccia sotto il puntatore si prova per prima: e' il mouse a chiederla,
+    // e sceglierne un'altra mostrerebbe lo scalo sul lato opposto a quello che
+    // si sta indicando. Se non regge — nessuna corsa di parete, o spazio
+    // occupato — si ricade sul fronte strada, che resta la prima scelta della
+    // passata automatica: li' lo sporto guarda un vuoto vero. Un record senza
+    // fronte prova tutti i lati in ordine.
+    const base = host.facing === undefined
       ? AERIAL_FACES
       : [host.facing as AerialFace];
+    // La preferita va in testa anche quando il fronte la contiene gia': un
+    // ospite senza fronte prova tutti i lati, e lasciarla al suo posto
+    // significherebbe riprovare l'est per primo anche puntando il sud.
+    const faces: readonly AerialFace[] = preferred === undefined
+      ? base
+      : [preferred, ...base.filter((face) => face !== preferred)];
     let refusal: AloftRefusal = 'facade-too-narrow';
 
     for (const face of faces) {

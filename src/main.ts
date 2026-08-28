@@ -68,6 +68,8 @@ import { GrowthScene } from './game/growthScene';
 import type { CoachSuggestion } from './game/coach';
 import { resolveLaunchMode, resolveSeed, swatchUrl } from './game/launchMode';import { resolveSelection, type Selection } from './game/selection';
 import { pickSolidCell, pickSurfaceCell, type Ray3, type SurfaceCell } from './game/surfacePick';
+import { pickFacade } from './game/facadePick';
+import type { AerialFace } from './world/aerial/terracePlan';
 import { SimScene, SIM_SITE_COUNT, SIM_TICK_RATE } from './game/simScene';
 import { createInfoSampler } from './game/infoViews';
 import { coastalSectorAt, shapeWithSector, type CoastalSector } from './game/sectors';
@@ -86,7 +88,7 @@ import {
 } from './sim/classes';
 import { BUILDER } from './world/buildings/config';
 import { typologiesForUses } from './world/buildings/typology';
-import { footprintDepth } from './world/buildings/BuildingRegistry';
+import { footprintDepth, type BuildingRecord } from './world/buildings/BuildingRegistry';
 import type { BuildSite } from './sim/nextBuildSites';
 import { isPolicyId } from './sim/policies';
 import './ui/hud.css';
@@ -1766,7 +1768,12 @@ function onGamePointerMove(event: PointerEvent): void {
     // ragione — la heightmap attraversa una torre come se fosse vetro e si
     // ferma sulla terra dietro. A terra vale il suolo, come per ogni altro ruolo.
     const target = catalystTarget(event.clientX, event.clientY, cell, aloft);
-    const failure = growthScene.catalystFailure(target.x, target.y, catalyst.id, aloft);
+    // La faccia sotto il puntatore entra nella domanda: senza, il mirino e il
+    // click cadrebbero sul fronte strada anche puntando il lato opposto della
+    // torre. E' la stessa risposta per il rifiuto e per l'orientamento del
+    // mirino, quindi le due non possono divergere.
+    const preferred = aloft ? facadeUnderPointer(event.clientX, event.clientY, target) ?? undefined : undefined;
+    const failure = growthScene.catalystFailure(target.x, target.y, catalyst.id, aloft, preferred);
     const radius = catalyst.radius;
     const site = growthScene.catalystSiteCost(target.x, target.y, catalyst.id);
     const cost = site === null ? catalyst.cost : site.cost;
@@ -1778,7 +1785,10 @@ function onGamePointerMove(event: PointerEvent): void {
       valid,
       growthScene.simState.reach,
     );
-    const facade = aloft ? facadeFacingAt(target.x, target.y) : null;
+    const facade = aloft
+      ? growthScene.aloftFacingAt(target.x, target.y, catalyst.id, preferred) ??
+        facadeFacingAt(target.x, target.y)
+      : null;
     preview.show(
       target.x,
       target.y,
@@ -1801,7 +1811,7 @@ function onGamePointerMove(event: PointerEvent): void {
         // Il piazzamento e' valido comunque: cio' che cambia e' cosa comparira'
         // e cosa costera' alla citta'. Dirlo qui e' il punto — dopo il click e'
         // troppo tardi, ed e' esattamente il difetto muto che questa fase chiude.
-        : landmarkNote(growthScene.catalystSite(target.x, target.y, catalyst.id, aloft)),
+        : landmarkNote(growthScene.catalystSite(target.x, target.y, catalyst.id, aloft, preferred)),
     });
     return;
   } else if (selectedTool.kind === 'terrace') {
@@ -1810,8 +1820,14 @@ function onGamePointerMove(event: PointerEvent): void {
     // corpo. E' la stessa distinzione che le viste di ispezione hanno gia'
     // dovuto fare — la heightmap attraversa una torre come se fosse vetro.
     const pointed = pointedCellAt(event.clientX, event.clientY) ?? cell;
-    const failure = growthScene.terraceFailure(pointed.x, pointed.y);
-    const facing = facadeFacingAt(pointed.x, pointed.y) ?? 0;
+    // La faccia sotto il puntatore si prova per prima: puntare il retro della
+    // torre appende la mensola li', non sul fronte strada. Dove non regge, il
+    // mondo ricade sul fronte e il mirino mostra quella faccia — la stessa che
+    // il click piazzera'.
+    const preferred = facadeUnderPointer(event.clientX, event.clientY, pointed) ?? undefined;
+    const failure = growthScene.terraceFailure(pointed.x, pointed.y, preferred);
+    const facing = growthScene.terraceFacingAt(pointed.x, pointed.y, preferred) ??
+      facadeFacingAt(pointed.x, pointed.y) ?? 0;
     valid = failure === null;
     influenceOverlay?.hideCursor();
     gameHud?.updateCursor(event.clientX, event.clientY, {
@@ -1907,7 +1923,10 @@ function onGamePointerDown(event: PointerEvent): void {
     const role = selectedTool.id ?? defaultCatalystOfClass(selectedTool.class);
     const aloft = (selectedTool.mode ?? 'ground') === 'aloft';
     const target = catalystTarget(event.clientX, event.clientY, cell, aloft);
-    const result = growthScene.placeCatalyst(target.x, target.y, role, aloft);
+    // La stessa faccia che il mirino ha mostrato: il click non ricalcola da
+    // solo, o piazzerebbe dove non ha detto.
+    const preferred = aloft ? facadeUnderPointer(event.clientX, event.clientY, target) ?? undefined : undefined;
+    const result = growthScene.placeCatalyst(target.x, target.y, role, aloft, preferred);
     if (!result.success) gameHud?.showFailure(result.reason);
     else {
       gameHud?.clearFeedback();
@@ -1926,7 +1945,8 @@ function onGamePointerDown(event: PointerEvent): void {
 
   if (selectedTool.kind === 'terrace') {
     const pointed = pointedCellAt(event.clientX, event.clientY) ?? cell;
-    const result = growthScene.placeTerrace(pointed.x, pointed.y);
+    const preferred = facadeUnderPointer(event.clientX, event.clientY, pointed) ?? undefined;
+    const result = growthScene.placeTerrace(pointed.x, pointed.y, preferred);
     if (!result.success) {
       gameHud?.showFailure(result.reason);
       return;
@@ -2121,14 +2141,50 @@ function catalystTarget(
   return pointedCellAt(clientX, clientY) ?? fallback;
 }
 
-/** Il fronte dell'edificio ordinario puntato; null lascia il mirino sul terreno. */
-function facadeFacingAt(x: number, y: number): number | null {
+/**
+ * L'edificio ordinario sotto la colonna, o null.
+ *
+ * Lo stesso filtro di `buildingAt` nel driver: campate, impalcati e landmark
+ * non hanno una facciata su cui appendersi, e sotto di loro si cerca l'ospite.
+ */
+function facadeHostAt(x: number, y: number): BuildingRecord | null {
   if (growthScene === null) return null;
-  const record = growthScene.registry.at(x, y).find(
+  return growthScene.registry.at(x, y).find(
     (candidate) => candidate.aerial === undefined && candidate.span === undefined &&
       candidate.landmark === undefined && candidate.aloft !== true,
-  );
-  return record === undefined ? null : record.facing ?? 0;
+  ) ?? null;
+}
+
+/** Il fronte dell'edificio ordinario puntato; null lascia il mirino sul terreno. */
+function facadeFacingAt(x: number, y: number): number | null {
+  const record = facadeHostAt(x, y);
+  return record === null ? null : record.facing ?? 0;
+}
+
+/**
+ * La faccia dell'edificio sotto il puntatore, dal raggio e non dal record.
+ *
+ * E' la risposta che mancava: il fronte strada e' una proprieta' dell'edificio,
+ * e puntare il suo retro lo mostrava li' — sulla faccia opposta a quella sotto
+ * il mouse. Qui entra la geometria: il punto d'ingresso del raggio nella
+ * scatola dell'edificio dice da che parte si sta guardando. Null quando non
+ * c'e' un ospite o la faccia non si distingue, e chi chiama ricade sul fronte.
+ */
+function facadeUnderPointer(
+  clientX: number,
+  clientY: number,
+  cell: SurfaceCell,
+): AerialFace | null {
+  const host = facadeHostAt(cell.x, cell.y);
+  if (host === null) return null;
+  return pickFacade(cursorRay(clientX, clientY), {
+    x: host.x,
+    y: host.y,
+    sizeX: host.footprint,
+    sizeY: footprintDepth(host),
+    baseZ: host.baseZ,
+    height: host.height,
+  });
 }
 
 /** Il raggio che parte dal pixel, in coordinate di mondo. */

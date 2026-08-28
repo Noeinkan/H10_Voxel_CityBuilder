@@ -747,6 +747,7 @@ le scritture stanno in tre file invece che sparse in sei metodi.
 | File | Ruolo | Esporta |
 | --- | --- | --- |
 | [coach.ts](src/game/coach.ts) | Il coach di sviluppo: la rotta della voce in nove tier ordinati (cibo, connessioni, identita', distretti, stadi, skyline, tetti, citta' in quota, arcologie). Il tier skyline nomina un landmark concreto e segna il blocco denso da coprire (`place`). Puro, derivato dallo stato e da fatti del mondo gia' misurati | `coachSuggestion`, `coachSuggestions`, `CoachSuggestion`, `CoachContext`, `CoachLandmark`, `CoachTier` |
+| [facadePick.ts](src/game/facadePick.ts) | La faccia di un edificio sotto il puntatore, dal raggio: punto d'ingresso nella scatola e parete piu' vicina, pareggio che non sceglie. Puro, gira in node | `pickFacade`, `FacadeBox` |
 | [infoViews.ts](src/game/infoViews.ts) | Cablaggio delle viste informative: le quattro della simulazione passano da `createSimInfoSampler`, la vista del cibo rastrella i lotti del mondo e le torri idroponiche | `createInfoSampler` |
 | [loop.ts](src/game/loop.ts) | Passo fisso della simulazione con tetto di recupero | `FixedStepLoop` |
 | [growthScene.ts](src/game/growthScene.ts) | Cablaggio esclusivo di `grow=1`: tick, Builder e animazione; espone la gomma (`demolish`, `demolishAt`, `demolishSurvey`, `demolishPreview`, `undoDemolition`) al gioco. Raccoglie anche la colonna piu' densa per il coach dello skyline | `GrowthScene`, `GrowthStats` |
@@ -754,7 +755,7 @@ le scritture stanno in tre file invece che sparse in sei metodi.
 | [launchMode.ts](src/game/launchMode.ts) | Risoluzione pura della modalita' iniziale e degli harness URL, il seed di partenza — dichiarato o casuale — e l'indirizzo del campionario letto al contrario | `resolveLaunchMode`, `resolveSeed`, `swatchUrl`, `LaunchMode` |
 | [actions.ts](src/game/actions.ts) | Azioni economiche atomiche: catalizzatori, policy, decisioni, commercio ed espansione | `placeCatalyst`, `catalystFailure`, `catalystSiteCost`, `togglePolicy`, `chooseDecision`, `changeTradeMode`, `buyExpansion`, `expansionFailure`, `SiteCost`, `ActionResult`, `ActionFailure` |
 | [surfacePick.ts](src/game/surfacePick.ts) | Selezione pura della colonna da un raggio 3D: sulla sola heightmap per chi costruisce, sugli edifici compresi per chi guarda | `pickSurfaceCell`, `pickSolidCell`, `Ray3`, `SurfaceCell`, `BuiltTop` |
-| [selection.ts](src/game/selection.ts) | Cosa c'è sotto un punto, con l'isolato come unità di selezione. `BlockProductivity` aggrega capacità residenziale e commerciale, materiali, cibo e costo civico dagli edifici dell'isolato, applicando policy, usi misti, torri agricole e organico cittadino | `resolveSelection`, `Selection`, `SelectionQuery`, `StructureInfo`, `UseInfo`, `BlockInfo`, `BlockProductivity`, `ColumnInfo`, `VoxelInfo` |
+| [selection.ts](src/game/selection.ts) | Cosa c'è sotto un punto, con l'isolato come unità di selezione. `BlockProductivity` aggrega capacità residenziale e commerciale, materiali, cibo e costo civico dagli edifici dell'isolato, applicando policy, usi misti, torri agricole e organico cittadino. `growth` porta anche la soglia scomposta (base e sconto locale), le fonti della desiderabilità (`DesirabilitySource`, gli stessi addendi del campo) e la congestione; `influence` è il vettore per uso di un landmark al centro, pesato dalle policy | `resolveSelection`, `Selection`, `SelectionQuery`, `StructureInfo`, `DesirabilitySource`, `UseInfo`, `BlockInfo`, `BlockProductivity`, `ColumnInfo`, `VoxelInfo` |
 | [onboarding.ts](src/game/onboarding.ts) | Tutorial derivato dai catalizzatori, senza flag nascosti | `onboardingOf`, `onboardingAllows` |
 | [cityCondition.ts](src/game/cityCondition.ts) | Obiettivo di autosufficienza e crisi con indicazioni di recupero | `cityCondition`, `isSelfSufficient` |
 | [sectors.ts](src/game/sectors.ts) | Identità, region e maschera composta dei settori costieri | `coastalSectorAt`, `shapeWithSector` |
@@ -796,7 +797,7 @@ giocabile; gli overlay tecnici si alternano con `F3` o partono aperti con
 | [SwatchOverlay.ts](src/ui/SwatchOverlay.ts) | Referto del campionario: fascia, riga e colonna sotto il cursore, legenda dell'ordine delle righe |
 | [ViewMenuModel.ts](src/ui/ViewMenuModel.ts) | Il menu delle viste dal lato del giocatore, puro: etichette, gesti, targa della vista attiva con i suoi tasti, gesti e tasti dell'isolato **scelto**, barra dei livelli, regola dello strumento |
 | [SelectionPanel.ts](src/ui/SelectionPanel.ts) | La scheda di selezione dell'isolato: una sola unità, senza linguette per struttura, colonna o voxel, con righe e gesto di isolamento |
-| [src/ui/SelectionPanelModel.ts](src/ui/SelectionPanelModel.ts) | Scheda di selezione: sezioni impilate e carta di crescita, modello puro. |
+| [src/ui/SelectionPanelModel.ts](src/ui/SelectionPanelModel.ts) | Scheda di selezione: sezioni impilate e carta di crescita, modello puro. La carta di un edificio sotto soglia scompone la desiderabilità nelle sue fonti con segno e congestione; un landmark mostra il vettore d'influenza per uso e cosa compra lo stadio successivo |
 | [prospects.ts](src/ui/prospects.ts) | La lingua di cosa un luogo **non** è ancora: le due righe che nominano il quartiere che potrebbe diventare e la forma che ci crescerebbe, più la riga di tooltip di ciò che un ruolo sblocca |
 
 ## Test e bench
@@ -808,6 +809,7 @@ giocabile; gli overlay tecnici si alternano con `F3` o partono aperti con
 | [src/engine/PerfReport.test.ts](src/engine/PerfReport.test.ts) | La finestra di riepilogo: media e min/max, somma dei chunk rimeshati, riapertura della finestra successiva, formato su una riga sola. |
 | [src/engine/VehicleMaterial.test.ts](src/engine/VehicleMaterial.test.ts) | Che gli uniform dei mezzi siano gli stessi oggetti del voxel, non delle copie. |
 | [game/coach.test.ts](src/game/coach.test.ts) | Ogni tier acceso e spento, priorita' fra cibo e connessioni, stadio del landmark vicino e lontano dalla soglia, purezza dello stesso contesto |
+| [game/facadePick.test.ts](src/game/facadePick.test.ts) | Le quattro pareti, il tetto vicino a uno spigolo, il pareggio che non sceglie, i raggi che mancano la scatola |
 | [game/infoViews.test.ts](src/game/infoViews.test.ts) | La vista del cibo rastrella campi, frutteti e torri; la delega alla simulazione |
 | [sim/infoViews.test.ts](src/sim/infoViews.test.ts) | Campionatori puri, capacita' per colonna, allineamento di `urbanFieldAt` con `urbanProfileAt`, versione del campo |
 | [src/sim/islandConnections.test.ts](src/sim/islandConnections.test.ts) | Bonus di soddisfazione e crescita dei collegamenti fra isole, limiti e compatibilita' dei salvataggi |

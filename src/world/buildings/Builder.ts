@@ -83,7 +83,7 @@ import { FACING, type Facing } from '../streets/streetGrid';
 import { SPANS } from '../spans/config';
 import { AERIAL } from '../aerial/config';
 import { decksAt, type BuildDeck } from '../aerial/decks';
-import type { TerraceResult } from '../aerial/terracePlan';
+import type { AerialFace, TerraceResult } from '../aerial/terracePlan';
 import { CROSSINGS } from '../crossings/config';
 import type { Region } from '../terrain/region';
 import { CrossingDriver } from './crossingDriver';
@@ -429,8 +429,14 @@ export class Builder {
    * La ricetta, l'orientamento e gli stadi stanno in `landmarkDriver.ts`: qui
    * resta solo la porta, perche' e' il `Builder` che il gioco tiene in mano.
    */
-  placeLandmark(x: number, y: number, kind: CatalystId, aloft?: boolean): void {
-    this.landmarks.place(x, y, kind, aloft);
+  placeLandmark(
+    x: number,
+    y: number,
+    kind: CatalystId,
+    aloft?: boolean,
+    preferred?: AerialFace,
+  ): void {
+    this.landmarks.place(x, y, kind, aloft, preferred);
   }
 
   /** Registra un territorio esterno su cui la crescita puo' aprire un ponte. */
@@ -445,8 +451,14 @@ export class Builder {
    * La porta del cursore. Sta sul `Builder` e non sul driver perche' e' il
    * `Builder` che il gioco tiene in mano, come gia' per `placeLandmark`.
    */
-  landmarkClearance(x: number, y: number, kind: CatalystId, aloft?: boolean): LandmarkSite {
-    return this.landmarks.siteAt(x, y, kind, aloft);
+  landmarkClearance(
+    x: number,
+    y: number,
+    kind: CatalystId,
+    aloft?: boolean,
+    preferred?: AerialFace,
+  ): LandmarkSite {
+    return this.landmarks.siteAt(x, y, kind, aloft, preferred);
   }
 
   /**
@@ -458,8 +470,8 @@ export class Builder {
    * un edificio sotto la colonna esclude l'altra, ed e' il modo in cui lo stesso
    * strumento produce due strutture senza chiedere una scelta in piu'.
    */
-  landmarkAloftSite(x: number, y: number, kind: CatalystId): AloftVerdict {
-    return this.landmarks.aloftSiteAt(x, y, kind);
+  landmarkAloftSite(x: number, y: number, kind: CatalystId, preferred?: AerialFace): AloftVerdict {
+    return this.landmarks.aloftSiteAt(x, y, kind, preferred);
   }
 
   /**
@@ -527,13 +539,13 @@ export class Builder {
    * La porta del cursore, come `landmarkClearance`: sta sul `Builder` e non sul
    * driver perche' e' il `Builder` che il gioco tiene in mano.
    */
-  terraceSite(x: number, y: number): TerraceResult {
-    return this.aerial.terraceSite(x, y);
+  terraceSite(x: number, y: number, preferred?: AerialFace): TerraceResult {
+    return this.aerial.terraceSite(x, y, preferred);
   }
 
   /** Posa una mensola sull'edificio di questa colonna. La porta del click. */
-  placeTerrace(x: number, y: number): boolean {
-    return this.aerial.placeTerrace(x, y);
+  placeTerrace(x: number, y: number, preferred?: AerialFace): boolean {
+    return this.aerial.placeTerrace(x, y, preferred);
   }
 
   /**

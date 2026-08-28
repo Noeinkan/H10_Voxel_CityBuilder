@@ -321,13 +321,13 @@ export class AerialDriver {
    * un ospite per costruzione — ma del gesto: il giocatore ha cliccato dove non
    * c'e' un edificio a cui appenderla.
    */
-  terraceSite(x: number, y: number): TerraceResult {
+  terraceSite(x: number, y: number, preferred?: AerialFace): TerraceResult {
     const host = this.buildingAt(x, y);
     if (host === null) return { ok: false, refusal: 'noHost' };
     if ((this.terraceCount.get(host.id) ?? 0) >= AERIAL.terrace.maxPerHost) {
       return { ok: false, refusal: 'hostFull' };
     }
-    return this.planTerraceOn(host);
+    return this.planTerraceOn(host, preferred);
   }
 
   /**
@@ -339,8 +339,8 @@ export class AerialDriver {
    * si puo' scoprire solo scrivendo, quindi il cursore puo' dire di si' e il
    * click no — lo stesso patto che vale per un catalizzatore.
    */
-  placeTerrace(x: number, y: number): boolean {
-    const result = this.terraceSite(x, y);
+  placeTerrace(x: number, y: number, preferred?: AerialFace): boolean {
+    const result = this.terraceSite(x, y, preferred);
     return result.ok && this.buildTerrace(result.plan);
   }
 
@@ -421,7 +421,7 @@ export class AerialDriver {
    * finirebbero per accettare due insiemi di luoghi diversi, ed e' esattamente
    * il difetto che `catalystFailure` esiste per non avere.
    */
-  private planTerraceOn(record: BuildingRecord): TerraceResult {
+  private planTerraceOn(record: BuildingRecord, preferred?: AerialFace): TerraceResult {
     // **La mensola sta sul fronte strada, e su nessun altro lato.** Girare fra le
     // quattro facce distribuiva le mensole su tutta la sagoma, ed e' misurato che
     // cosi' la rete non esiste: un percorso fra due mensole rivolte verso il
@@ -434,9 +434,24 @@ export class AerialDriver {
     // Un ospite senza fronte — materializzato da un salvataggio, o nato dove la
     // maglia non arriva — torna a provarle tutte: meglio una mensola orientata
     // come capita che nessuna mensola.
-    const faces: readonly AerialFace[] = record.facing === undefined
+    //
+    // **La faccia sotto il puntatore viene prima del fronte strada**, e solo per
+    // il gesto del giocatore: il mouse chiede *questa* faccia, e appenderla a
+    // un'altra mostrerebbe la mensola sul lato opposto a quello indicato. La
+    // passata automatica non la passa mai, quindi la regola della rete — il
+    // fronte strada — resta quella di sempre per le mensole che la citta' si
+    // costruisce da sola. Una mensola posata a mano su un'altra faccia resta
+    // semplicemente fuori dai percorsi, come ogni mensola che non guarda la
+    // carreggiata.
+    const base: readonly AerialFace[] = record.facing === undefined
       ? AERIAL_FACES
       : [record.facing as AerialFace];
+    // La preferita va in testa anche quando il fronte la contiene gia': un
+    // ospite senza fronte prova tutti i lati, e lasciarla al suo posto
+    // significherebbe appendere la mensola a est anche puntando il sud.
+    const faces: readonly AerialFace[] = preferred === undefined
+      ? base
+      : [preferred, ...base.filter((face) => face !== preferred)];
 
     return planTerrace({
       host: aerialSupportOf(record),

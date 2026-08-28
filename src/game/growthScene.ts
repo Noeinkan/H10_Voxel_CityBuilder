@@ -19,6 +19,7 @@ import type { ScenarioRegion } from '../sim/scenario';
 import {
   Builder,
   type AloftRefusal,
+  type AloftVerdict,
   type BuilderStats,
   type LandmarkSite,
 } from '../world/buildings/Builder';
@@ -63,7 +64,7 @@ import {
   type ActionResult,
   type SiteCost,
 } from './actions';
-import type { TerraceRefusal } from '../world/aerial/terracePlan';
+import type { AerialFace, TerraceRefusal } from '../world/aerial/terracePlan';
 import type { RopewayRefusal } from '../world/ropeway/ropewayPlan';
 import type { RopewayCable, RopewayRide } from '../world/buildings/ropewayDriver';
 import { planRopewayRoutes } from '../world/traffic/ropewayRoutes';
@@ -178,7 +179,13 @@ export class GrowthScene {
   private readonly unlocked = new Set<string>();
   private message = 'Choose a catalyst and place it on the island.';
   private clearanceMemo: { readonly key: string; readonly site: LandmarkSite } | null = null;
-  private terraceMemo: { readonly key: string; readonly refusal: TerraceRefusal | null } | null = null;
+  private terraceMemo: {
+    readonly key: string;
+    readonly refusal: TerraceRefusal | null;
+    /** La faccia del piano, quando il piano c'e': il mirino la chiede. */
+    readonly face: AerialFace | null;
+  } | null = null;
+  private aloftMemo: { readonly key: string; readonly verdict: AloftVerdict } | null = null;
   private ropewayMemo: { readonly key: string; readonly refusal: RopewayRefusal | null } | null = null;
 
   /**
@@ -234,18 +241,25 @@ export class GrowthScene {
       // quello che il cursore sapeva del riquadro sotto di se' e' di un tick fa.
       this.clearanceMemo = null;
       this.terraceMemo = null;
+      this.aloftMemo = null;
     });
     this.builder.step();
   }
 
-  placeCatalyst(x: number, y: number, target: BuildingClass | CatalystId, aloft = false): ActionResult {
-    const failure = this.catalystFailure(x, y, target, aloft);
+  placeCatalyst(
+    x: number,
+    y: number,
+    target: BuildingClass | CatalystId,
+    aloft = false,
+    preferred?: AerialFace,
+  ): ActionResult {
+    const failure = this.catalystFailure(x, y, target, aloft, preferred);
     if (failure !== null) return { success: false, reason: failure };
 
     // Prima di piazzare: dopo, i condannati sono ancora nel registry — restano
     // finche' i loro voxel non spariscono — e la stessa domanda risponderebbe di
     // nuovo lo stesso numero, facendo il doppio del lavoro per dirlo.
-    const clears = this.clearanceAt(x, y, target, aloft).clears;
+    const clears = this.clearanceAt(x, y, target, aloft, preferred).clears;
 
     const result = placeCatalyst(this.state, this.map, x, y, target, aloft);
     if (result.success) {
@@ -253,8 +267,11 @@ export class GrowthScene {
       // Il ruolo e non la classe: e' il ruolo a decidere quale struttura
       // compare, e passare `placed.class` — come si faceva finche' il segno era
       // un voxel colorato — perdeva proprio l'informazione che serve.
-      if (placed !== undefined) this.builder.placeLandmark(x, y, catalystRoleOf(placed), aloft);
+      if (placed !== undefined) {
+        this.builder.placeLandmark(x, y, catalystRoleOf(placed), aloft, preferred);
+      }
       this.clearanceMemo = null;
+      this.aloftMemo = null;
     }
 
     return this.apply(result, clears === 0
@@ -262,14 +279,20 @@ export class GrowthScene {
       : `Catalyst placed. Clearing ${clears} ${clears === 1 ? 'building' : 'buildings'} to make room.`);
   }
 
-  catalystFailure(x: number, y: number, target: BuildingClass | CatalystId, aloft = false): ActionFailure | null {
+  catalystFailure(
+    x: number,
+    y: number,
+    target: BuildingClass | CatalystId,
+    aloft = false,
+    preferred?: AerialFace,
+  ): ActionFailure | null {
     if (!onboardingAllows(this.state, target)) return 'onboarding-order';
 
     // In quota la facciata parla per prima: senza un edificio sotto la colonna non
     // c'e' niente a cui appendersi, e «non e' terreno edificabile» sarebbe la
     // risposta a una domanda che nessuno ha fatto.
     if (aloft) {
-      const site = this.builder.landmarkAloftSite(x, y, roleOf(target));
+      const site = this.aloftSiteAt(x, y, target, preferred);
       if (site.refusal !== null) return ALOFT_FAILURE[site.refusal];
       if (site.site === null) return 'needs-building';
     }
@@ -312,8 +335,32 @@ export class GrowthScene {
    * cose che il giocatore deve sapere **prima** del click, ed e' l'unico posto
    * dove puo' saperle.
    */
-  catalystSite(x: number, y: number, target: BuildingClass | CatalystId, aloft = false): LandmarkSite {
-    return this.clearanceAt(x, y, target, aloft);
+  catalystSite(
+    x: number,
+    y: number,
+    target: BuildingClass | CatalystId,
+    aloft = false,
+    preferred?: AerialFace,
+  ): LandmarkSite {
+    return this.clearanceAt(x, y, target, aloft, preferred);
+  }
+
+  /**
+   * La faccia su cui lo scalo nascerebbe in quota, per orientare il mirino.
+   *
+   * E' la stessa domanda di `catalystFailure` — stesso memo, stessa risposta —
+   * e non un'ipotesi del puntatore: il click passera' la stessa faccia
+   * preferita e otterra' lo stesso verdetto, quindi il mirino mostra sempre la
+   * faccia su cui lo scalo comparira' davvero.
+   */
+  aloftFacingAt(
+    x: number,
+    y: number,
+    target: BuildingClass | CatalystId,
+    preferred?: AerialFace,
+  ): AerialFace | null {
+    const verdict = this.aloftSiteAt(x, y, target, preferred);
+    return verdict.site === null ? null : verdict.site.facing;
   }
 
   /**
@@ -328,15 +375,45 @@ export class GrowthScene {
    * Si invalida a ogni tick e a ogni piazzamento, che sono gli unici due momenti
    * in cui il registry cambia: `step` scrive voxel, non record.
    */
-  private clearanceAt(x: number, y: number, target: BuildingClass | CatalystId, aloft = false): LandmarkSite {
+  private clearanceAt(
+    x: number,
+    y: number,
+    target: BuildingClass | CatalystId,
+    aloft = false,
+    preferred?: AerialFace,
+  ): LandmarkSite {
     const role = typeof target === 'number' ? defaultCatalystOfClass(target) : target;
-    const key = `${x},${y},${role},${aloft ? 'a' : 'g'}`;
+    const key = `${x},${y},${role},${aloft ? 'a' : 'g'},${preferred ?? ''}`;
     if (this.clearanceMemo !== null && this.clearanceMemo.key === key) {
       return this.clearanceMemo.site;
     }
-    const site = this.builder.landmarkClearance(x, y, role, aloft);
+    const site = this.builder.landmarkClearance(x, y, role, aloft, preferred);
     this.clearanceMemo = { key, site };
     return site;
+  }
+
+  /**
+   * Cosa la facciata offre a un ruolo, con una voce di memoria.
+   *
+   * La stessa ragione di `clearanceAt`, ma per una domanda che oggi arriva tre
+   * volte per pointermove — il rifiuto, il sito e la faccia del mirino. Una voce
+   * sola tiene la risposta, e la chiave porta la faccia preferita perche' la
+   * risposta cambia con lei.
+   */
+  private aloftSiteAt(
+    x: number,
+    y: number,
+    target: BuildingClass | CatalystId,
+    preferred?: AerialFace,
+  ): AloftVerdict {
+    const role = roleOf(target);
+    const key = `${x},${y},${role},${preferred ?? ''}`;
+    if (this.aloftMemo !== null && this.aloftMemo.key === key) {
+      return this.aloftMemo.verdict;
+    }
+    const verdict = this.builder.landmarkAloftSite(x, y, role, preferred);
+    this.aloftMemo = { key, verdict };
+    return verdict;
   }
 
   /**
@@ -347,8 +424,19 @@ export class GrowthScene {
    * catalizzatori — cosa dice il luogo, cosa dice il bilancio — nello stesso
    * ordine.
    */
-  terraceFailure(x: number, y: number): ActionFailure | null {
-    return terraceFailure(this.state, this.terraceRefusalAt(x, y));
+  terraceFailure(x: number, y: number, preferred?: AerialFace): ActionFailure | null {
+    return terraceFailure(this.state, this.terraceRefusalAt(x, y, preferred));
+  }
+
+  /**
+   * La faccia su cui la mensola nascerebbe, per orientare il mirino.
+   *
+   * Gemella di `terraceFailure`: la faccia preferita del puntatore entra nel
+   * giudizio, e il mirino mostra quella che il click piazzera' davvero — mai
+   * una faccia e una posa diverse.
+   */
+  terraceFacingAt(x: number, y: number, preferred?: AerialFace): AerialFace | null {
+    return this.terraceSiteAt(x, y, preferred).face;
   }
 
   /**
@@ -359,14 +447,15 @@ export class GrowthScene {
    * passata, i fondi restano dove sono e il messaggio lo dice, invece di
    * addebitare una struttura che non c'e'.
    */
-  placeTerrace(x: number, y: number): ActionResult {
-    const result = placeTerrace(this.state, this.terraceRefusalAt(x, y));
+  placeTerrace(x: number, y: number, preferred?: AerialFace): ActionResult {
+    const result = placeTerrace(this.state, this.terraceRefusalAt(x, y, preferred));
     if (!result.success) return result;
 
-    if (!this.builder.placeTerrace(x, y)) {
+    if (!this.builder.placeTerrace(x, y, preferred)) {
       return { success: false, reason: 'no-room-aloft' };
     }
     this.terraceMemo = null;
+    this.aloftMemo = null;
     return this.apply(result, 'Terrace built: the city gains a floor above the street.');
   }
 
@@ -376,17 +465,30 @@ export class GrowthScene {
    * Vale la stessa ragione di `clearanceAt`: il cursore fa la stessa domanda a
    * ogni `pointermove` e il click cade dove il cursore ha appena chiesto. Si
    * invalida a ogni tick, che e' l'unico momento in cui il registry cambia da
-   * solo, e a ogni posa.
+   * solo, e a ogni posa. La chiave porta la faccia preferita perche' la
+   * risposta — piano e faccia del piano — cambia con lei.
    */
-  private terraceRefusalAt(x: number, y: number): TerraceRefusal | null {
-    const key = `${x},${y}`;
+  private terraceSiteAt(
+    x: number,
+    y: number,
+    preferred?: AerialFace,
+  ): { readonly refusal: TerraceRefusal | null; readonly face: AerialFace | null } {
+    const key = `${x},${y},${preferred ?? ''}`;
     if (this.terraceMemo !== null && this.terraceMemo.key === key) {
-      return this.terraceMemo.refusal;
+      return this.terraceMemo;
     }
-    const site = this.builder.terraceSite(x, y);
-    const refusal = site.ok ? null : site.refusal;
-    this.terraceMemo = { key, refusal };
-    return refusal;
+    const site = this.builder.terraceSite(x, y, preferred);
+    const memo = {
+      key,
+      refusal: site.ok ? null : site.refusal,
+      face: site.ok ? site.plan.face : null,
+    };
+    this.terraceMemo = memo;
+    return memo;
+  }
+
+  private terraceRefusalAt(x: number, y: number, preferred?: AerialFace): TerraceRefusal | null {
+    return this.terraceSiteAt(x, y, preferred).refusal;
   }
 
   /**
