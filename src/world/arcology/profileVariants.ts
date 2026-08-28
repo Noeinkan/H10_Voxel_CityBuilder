@@ -93,10 +93,14 @@ export function createArcologyProfileVariants(
         box(PART.deck, 3, 4, 6, 12, 218, 1, PALETTE_SLOTS.roofWhite, SURFACE_KIND.roofTech),
       ],
       [
-        box(PART.mast, 5, 8, 3, 3, 219, 101, PALETTE_SLOTS.metalDark, SURFACE_KIND.civic, {
+        box(PART.mast, 3, 6, 7, 7, 219, 34, PALETTE_SLOTS.metalDark, SURFACE_KIND.civic),
+        box(PART.mast, 4, 7, 5, 5, 253, 34, PALETTE_SLOTS.metalDark, SURFACE_KIND.civic),
+        box(PART.mast, 5, 8, 3, 3, 287, 33, PALETTE_SLOTS.metalDark, SURFACE_KIND.civic, {
           cap: PALETTE_SLOTS.metalGold,
         }),
-        box(PART.mast, 13, 8, 3, 3, 178, 82, PALETTE_SLOTS.metalDark, SURFACE_KIND.civic, {
+        box(PART.mast, 11, 6, 7, 7, 178, 28, PALETTE_SLOTS.metalDark, SURFACE_KIND.civic),
+        box(PART.mast, 12, 7, 5, 5, 206, 27, PALETTE_SLOTS.metalDark, SURFACE_KIND.civic),
+        box(PART.mast, 13, 8, 3, 3, 233, 27, PALETTE_SLOTS.metalDark, SURFACE_KIND.civic, {
           cap: PALETTE_SLOTS.metalGold,
         }),
       ],
@@ -141,10 +145,14 @@ export function createArcologyProfileVariants(
         box(PART.deck, 3, 4, 14, 4, 265, 1, PALETTE_SLOTS.roofWhite, SURFACE_KIND.roofTech),
       ],
       [
-        box(PART.mast, 4, 4, 3, 3, 266, 54, PALETTE_SLOTS.metalDark, SURFACE_KIND.civic, {
+        box(PART.mast, 2, 2, 7, 7, 266, 18, PALETTE_SLOTS.metalDark, SURFACE_KIND.civic),
+        box(PART.mast, 3, 3, 5, 5, 284, 18, PALETTE_SLOTS.metalDark, SURFACE_KIND.civic),
+        box(PART.mast, 4, 4, 3, 3, 302, 18, PALETTE_SLOTS.metalDark, SURFACE_KIND.civic, {
           cap: PALETTE_SLOTS.metalGold,
         }),
-        box(PART.mast, 13, 4, 3, 3, 266, 42, PALETTE_SLOTS.metalDark, SURFACE_KIND.civic, {
+        box(PART.mast, 11, 2, 7, 7, 266, 14, PALETTE_SLOTS.metalDark, SURFACE_KIND.civic),
+        box(PART.mast, 12, 3, 5, 5, 280, 14, PALETTE_SLOTS.metalDark, SURFACE_KIND.civic),
+        box(PART.mast, 13, 4, 3, 3, 294, 14, PALETTE_SLOTS.metalDark, SURFACE_KIND.civic, {
           cap: PALETTE_SLOTS.metalGold,
         }),
       ],
@@ -191,10 +199,14 @@ export function createArcologyProfileVariants(
         box(PART.deck, 4, 3, 16, 14, 349, 1, PALETTE_SLOTS.roofWhite, SURFACE_KIND.roofTech),
       ],
       [
-        box(PART.mast, 9, 8, 4, 4, 350, 90, PALETTE_SLOTS.metalDark, SURFACE_KIND.civic, {
+        box(PART.mast, 7, 6, 7, 7, 350, 30, PALETTE_SLOTS.metalDark, SURFACE_KIND.civic),
+        box(PART.mast, 8, 7, 5, 5, 380, 30, PALETTE_SLOTS.metalDark, SURFACE_KIND.civic),
+        box(PART.mast, 9, 8, 3, 3, 410, 30, PALETTE_SLOTS.metalDark, SURFACE_KIND.civic, {
           cap: PALETTE_SLOTS.metalGold,
         }),
-        box(PART.mast, 34, 8, 3, 3, 310, 72, PALETTE_SLOTS.metalDark, SURFACE_KIND.civic, {
+        box(PART.mast, 32, 6, 7, 7, 310, 24, PALETTE_SLOTS.metalDark, SURFACE_KIND.civic),
+        box(PART.mast, 33, 7, 5, 5, 334, 24, PALETTE_SLOTS.metalDark, SURFACE_KIND.civic),
+        box(PART.mast, 34, 8, 3, 3, 358, 24, PALETTE_SLOTS.metalDark, SURFACE_KIND.civic, {
           cap: PALETTE_SLOTS.metalGold,
         }),
       ],
@@ -255,10 +267,14 @@ export function createArcologyProfileVariants(
         box(PART.deck, 7, 19, 34, 4, 599, 1, PALETTE_SLOTS.roofWhite, SURFACE_KIND.roofTech),
         box(PART.boom, 37, 19, 4, 22, 600, 16, PALETTE_SLOTS.glassPale, SURFACE_KIND.civic),
         box(PART.deck, 37, 19, 4, 22, 616, 1, PALETTE_SLOTS.roofWhite, SURFACE_KIND.roofTech),
-        box(PART.mast, 10, 19, 4, 4, 600, 100, PALETTE_SLOTS.metalDark, SURFACE_KIND.civic, {
+        box(PART.mast, 8, 17, 7, 7, 600, 34, PALETTE_SLOTS.metalDark, SURFACE_KIND.civic),
+        box(PART.mast, 9, 18, 5, 5, 634, 33, PALETTE_SLOTS.metalDark, SURFACE_KIND.civic),
+        box(PART.mast, 10, 19, 3, 3, 667, 33, PALETTE_SLOTS.metalDark, SURFACE_KIND.civic, {
           cap: PALETTE_SLOTS.metalGold,
         }),
-        box(PART.mast, 37, 33, 3, 3, 617, 118, PALETTE_SLOTS.metalDark, SURFACE_KIND.civic, {
+        box(PART.mast, 35, 31, 7, 7, 617, 40, PALETTE_SLOTS.metalDark, SURFACE_KIND.civic),
+        box(PART.mast, 36, 32, 5, 5, 657, 39, PALETTE_SLOTS.metalDark, SURFACE_KIND.civic),
+        box(PART.mast, 37, 33, 3, 3, 696, 39, PALETTE_SLOTS.metalDark, SURFACE_KIND.civic, {
           cap: PALETTE_SLOTS.metalGold,
         }),
       ],

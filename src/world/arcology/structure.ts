@@ -171,7 +171,17 @@ export function slenderColumns(recipe: ArcologyRecipe): readonly SlenderColumn[]
     return z1 - z0 + 1 > Math.min(x1 - x0 + 1, y1 - y0 + 1);
   });
 
-  const parent = shells.map((_, i) => i);
+  return columnGroupsOf(shells);
+}
+
+/**
+ * Raggruppa le parti per sovrapposizione in pianta e misura ogni colonna.
+ *
+ * E' il conto comune ai corpi e ai pennoni: due gruppi di parti diversi, la
+ * stessa definizione di colonna e di snellezza.
+ */
+function columnGroupsOf(parts: readonly PlacedPart[]): readonly SlenderColumn[] {
+  const parent = parts.map((_, i) => i);
   const find = (i: number): number => {
     while (parent[i] !== i) i = parent[i];
     return i;
@@ -179,28 +189,28 @@ export function slenderColumns(recipe: ArcologyRecipe): readonly SlenderColumn[]
   const union = (i: number, j: number): void => {
     parent[find(i)] = find(j);
   };
-  for (let i = 0; i < shells.length; i++) {
-    for (let j = i + 1; j < shells.length; j++) {
-      const a = shells[i].bounds;
-      const b = shells[j].bounds;
+  for (let i = 0; i < parts.length; i++) {
+    for (let j = i + 1; j < parts.length; j++) {
+      const a = parts[i].bounds;
+      const b = parts[j].bounds;
       if (overlap(a.x0, a.x1, b.x0, b.x1) && overlap(a.y0, a.y1, b.y0, b.y1)) union(i, j);
     }
   }
 
   const groups = new Map<number, PlacedPart[]>();
-  shells.forEach((shell, i) => {
+  parts.forEach((part, i) => {
     const root = find(i);
     const group = groups.get(root) ?? [];
-    group.push(shell);
+    group.push(part);
     groups.set(root, group);
   });
 
   return [...groups.values()].map((group) => {
-    const z0 = Math.min(...group.map((shell) => shell.bounds.z0));
-    const z1 = Math.max(...group.map((shell) => shell.bounds.z1));
-    const minSides = group.map((shell) => Math.min(
-      shell.bounds.x1 - shell.bounds.x0 + 1,
-      shell.bounds.y1 - shell.bounds.y0 + 1,
+    const z0 = Math.min(...group.map((part) => part.bounds.z0));
+    const z1 = Math.max(...group.map((part) => part.bounds.z1));
+    const minSides = group.map((part) => Math.min(
+      part.bounds.x1 - part.bounds.x0 + 1,
+      part.bounds.y1 - part.bounds.y0 + 1,
     ));
     const baseMinSide = Math.max(...minSides);
     const height = z1 - z0 + 1;
@@ -211,4 +221,34 @@ export function slenderColumns(recipe: ArcologyRecipe): readonly SlenderColumn[]
 /** La snellezza peggiore della ricetta. */
 export function maxSlendernessOf(recipe: ArcologyRecipe): number {
   return slenderColumns(recipe).reduce((max, column) => Math.max(max, column.slenderness), 0);
+}
+
+/**
+ * Le colonne dei soli pennoni, misurate con la stessa snellezza dei corpi.
+ *
+ * `slenderColumns` misura `shell` e `slab`: un montante 2x2 alto ottanta quote
+ * passava ogni controllo perche' la rete dei corpi non lo vede. La guglia a
+ * gradoni — tre tronchi che rientrano — e' il rimedio della ricetta, e questo
+ * conto e' cio' che impedisce di ripristinare il palo.
+ */
+export function mastColumns(recipe: ArcologyRecipe): readonly SlenderColumn[] {
+  const masts: PlacedPart[] = [];
+  recipe.parts.forEach((stage, s) => {
+    stage.forEach((part, index) => {
+      if (part.kind !== PART.mast) return;
+      masts.push({ stage: s, index, bounds: partBounds(part) });
+    });
+  });
+
+  const shafts = mergeStacked(masts).filter((body) => {
+    const { x0, x1, y0, y1, z0, z1 } = body.bounds;
+    return z1 - z0 + 1 > Math.min(x1 - x0 + 1, y1 - y0 + 1);
+  });
+
+  return columnGroupsOf(shafts);
+}
+
+/** La snellezza peggiore fra i pennoni della ricetta. */
+export function maxMastSlendernessOf(recipe: ArcologyRecipe): number {
+  return mastColumns(recipe).reduce((max, column) => Math.max(max, column.slenderness), 0);
 }

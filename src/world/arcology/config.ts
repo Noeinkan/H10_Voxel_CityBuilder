@@ -183,6 +183,11 @@ export const ARCOLOGY = {
    * 3x3, non perche' in cima si e' stretta. Ventidue lascia salire un corpo da
    * [1,1] — base larga quanto l'isolato, sezione di base ~20 — fino a ~440
    * quote, che e' il triplo di oggi.
+   *
+   * La stessa soglia misura anche i **pennoni** (`mast`), per conto loro: il
+   * montante unico 3x3 alto ottanta quote era il palo che passava la rete dei
+   * corpi, e il gradone — tre tronchi che rientrano — e' il modo in cui una
+   * cima la ripassa.
    */
   maxSlenderness: 22,
 

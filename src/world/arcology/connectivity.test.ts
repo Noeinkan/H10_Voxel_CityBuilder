@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { ARCOLOGY, ARCOLOGY_RECIPES } from './config';
-import { floatingBoxes, maxSlendernessOf } from './structure';
+import { floatingBoxes, maxMastSlendernessOf, maxSlendernessOf } from './structure';
 
 describe('la struttura delle arcologie', () => {
   it('nessun box e sospeso, a nessuno stadio', () => {
@@ -20,6 +20,15 @@ describe('la struttura delle arcologie', () => {
   it('nessuna colonna verticale supera la snellezza ammessa', () => {
     for (const recipe of ARCOLOGY_RECIPES) {
       expect(maxSlendernessOf(recipe), recipe.kind).toBeLessThanOrEqual(ARCOLOGY.maxSlenderness);
+    }
+  });
+
+  it('nessun pennone e un palo: anche i mast stanno sotto la snellezza ammessa', () => {
+    // `slenderColumns` misura corpi, non pennoni: un montante 2x2 alto ottanta
+    // quote non passa mai da li'. Le cime a gradoni sono il rimedio, e questo
+    // e' il controllo che le tiene.
+    for (const recipe of ARCOLOGY_RECIPES) {
+      expect(maxMastSlendernessOf(recipe), recipe.kind).toBeLessThanOrEqual(ARCOLOGY.maxSlenderness);
     }
   });
 });
