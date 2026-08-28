@@ -114,7 +114,16 @@ describe('catalogo sul reticolo reale', () => {
 
   it('le multi-blocco dichiarano un cluster e un ingombro oltre l isolato', () => {
     const multi = ARCOLOGY_RECIPES.filter((r) => r.blocks[0] > 1 || r.blocks[1] > 1);
-    expect(multi.length).toBe(4);
+    // Elencate per nome: un conteggio direbbe «quante» e resterebbe verde anche
+    // se una variante avesse preso il posto della propria matrice.
+    expect(new Set(multi.map((recipe) => recipe.kind))).toEqual(new Set([
+      'doubleBar',
+      'stackPair',
+      'quadCluster',
+      'triSpan',
+      'steppedBar',
+      'courtCascade',
+    ]));
     for (const recipe of multi) {
       expect(Math.max(recipe.span[0], recipe.span[1])).toBeGreaterThan(20);
     }
