@@ -94,6 +94,14 @@
   ridefinisce il repertorio senza plumbing. Il basamento non e' un caso speciale
   ma `keep` ripetuto, e il corpo sovrapposto e' `stack`, che si esaurisce da se'
   quando il risultato scenderebbe sotto `MIN_FOOTPRINT` — nessun contatore.
+- **Un repertorio che non si pesca mai non esiste**, e la regola vale a due
+  livelli. Dentro un ramo la copre `preferredStart`; **fra** i due rami la
+  coprono `BUILDER.localForm.maxShrinkBias`, che impedisce alla spinta locale di
+  portare `shrinkBias` a uno, e `GRAMMAR.spareBranchChance`, per cui una fascia
+  il cui ramo non ha nessuna candidata in piedi prova l'altro invece di ripetere
+  quella sotto. Senza le due, il corpo di una torre matura toccava `minBandSide`
+  entro le prime tre fasce e da li' saliva identico a se stesso fino alla cima:
+  la varieta' che il repertorio prometteva restava scritta e non si vedeva.
 - La **cima e' una riga di catalogo**, non un ramo: `CROWN_KIND` ha cinque voci e
   i quattro ripieghi per uso ne portano una ciascuno, cosi' "coronamenti per uso"
   resta tabellare. Per livello lo fa `minLevel`, che vale anche senza profilo
