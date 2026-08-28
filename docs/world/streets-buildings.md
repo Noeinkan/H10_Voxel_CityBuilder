@@ -353,6 +353,20 @@
   riga — la regola di scelta in `typology.ts` e' generica e non va toccata, e la
   grammatica in `generate.ts` non sa che le tipologie esistono. Ogni uso chiude
   il catalogo con un ripiego senza condizioni, cosi' la scelta non puo' fallire.
+- **Le linee sono una scala, non un ripiano**, ed e' la meta' che mancava. Una
+  cima puo' portare a un'altra cima quando la seconda chiede *strettamente di
+  piu'* — un livello piu' alto, o una soglia che la prima non poneva — e mai
+  all'indietro: torre liscia (densita', livello 4), gradone abitato (piu' la
+  ricchezza, livello 5), tamburo (piu' il fronte strada, livello 6). Finche' le
+  cime erano terminali vinceva la piu' bassa e congelava il lotto per i sedici
+  livelli successivi: `roundTower` non e' mai comparso in nessuna partita, e il
+  commercio non specializzato si fermava ad `arcadeRow` al livello zero. La
+  varieta' era scritta a catalogo e non si vedeva a schermo.
+- **Le cime che qualificherebbero nello stesso posto si separano sul ruolo del
+  lotto.** E' l'unico fatto discreto che cambia *dentro* un isolato, quindi e'
+  quello che fa comparire tre forme diverse sulla stessa strada — lanterna
+  sull'angolo, tamburo sul fronte, gradone abitato nel cuore — invece di tre
+  forme che si sostituiscono a vicenda su tutta la citta' a ogni livello.
 - **`accepts` e `typologyGapsOf` sono due letture della stessa regola**, e a
   tenerle insieme non c'e' la disciplina di chi le modifica ma il test di
   equivalenza che percorre tutto il catalogo su una griglia di luoghi. Sono due

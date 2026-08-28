@@ -227,9 +227,9 @@ describe('le linee evolutive', () => {
     const kept = selectTypology(query(0, 3, { mixed: 1, density: 0.1, from: 'shophouse' }));
     expect(kept.id).toBe('shophouse');
 
-    // Una torre a blocco e' una culminazione: nessuna linea la adotta da li' in
-    // avanti, quindi resta se' stessa anche dove il luogo preferirebbe altro.
-    const tower = selectTypology(query(0, 7, { density: 0.8, wealth: 0.9, from: 'towerBlock' }));
+    // Una torre a blocco chiede densita' e basta: dove non arriva altro resta
+    // se' stessa, per quanto in alto salga.
+    const tower = selectTypology(query(0, 7, { density: 0.8, from: 'towerBlock' }));
     expect(tower.id).toBe('towerBlock');
 
     // La linea industriale culmina nella torre idroponica: lo scalo la raggiunge
@@ -248,12 +248,46 @@ describe('le linee evolutive', () => {
     expect(lantern.id).toBe('civicLantern');
   });
 
+  it('le cime sono una scala: si sale se il luogo chiede di piu, mai si torna indietro', () => {
+    // Le tre verticali residenziali in fila. Ogni scalino chiede *piu'* del
+    // precedente — la ricchezza, poi il fronte strada e un livello ancora — ed e'
+    // questo a fare del passaggio un progresso invece di uno scambio fra pari.
+    // Densita' sopra la torre liscia e sotto la casa impilata, che a densita'
+    // piena vincerebbe per priorita': la scala che si vuole misurare qui e'
+    // quella delle tre verticali, non la scelta fra i due tessuti densi.
+    const dense = { density: 0.58, lotRole: 0 as LotRole };
+    const rich = { ...dense, wealth: 0.9 };
+    expect(selectTypology(query(0, 4, { ...dense, from: 'terracedHousing' })).id).toBe('towerBlock');
+    expect(selectTypology(query(0, 5, { ...rich, from: 'towerBlock' })).id).toBe('skyTerraces');
+    expect(selectTypology(query(0, 6, { ...rich, from: 'skyTerraces' })).id).toBe('roundTower');
+
+    // Nel cuore dell'isolato il tamburo non qualifica, e il gradone resta: e' la
+    // ragione per cui la stessa strada porta forme diverse allo stesso livello.
+    const inner = selectTypology(query(0, 6, {
+      density: 0.8, wealth: 0.9, lotRole: 2, from: 'skyTerraces',
+    }));
+    expect(inner.id).toBe('skyTerraces');
+
+    // All'indietro non si torna: un tamburo in un luogo che accetterebbe la torre
+    // liscia resta un tamburo, perche' nessuna linea dichiara quella provenienza.
+    expect(selectTypology(query(0, 8, { ...rich, from: 'roundTower' })).id).toBe('roundTower');
+
+    // E il commercio senza specializzazione ha di nuovo un seguito: il portico
+    // denso diventa il fronte terrazzato dove la gente sta bene.
+    const arcade = selectTypology(query(1, 4, {
+      density: 0.6, satisfaction: 0.7, from: 'arcadeRow',
+    }));
+    expect(arcade.id).toBe('terraceArcade');
+  });
+
   it('alla nascita la linea non conta: ogni riga che il luogo accetta resta raggiungibile', () => {
     // Un angolo denso e ricco nasce gia' torre d'angolo: la linea evolutiva
     // vale per gli upgrade, non per chi ancora non esiste.
     const corner = selectTypology(query(0, 6, { density: 0.8, wealth: 0.9, lotRole: 1 }));
     expect(corner.id).toBe('cornerTower');
-    const round = selectTypology(query(0, 7, { density: 0.4, wealth: 0.9 }));
+    // Il tamburo vuole il fronte strada: e' cio' che lo tiene distinto dalle
+    // altre due verticali, che negli stessi luoghi qualificherebbero uguale.
+    const round = selectTypology(query(0, 7, { density: 0.4, wealth: 0.9, lotRole: 0 }));
     expect(round.id).toBe('roundTower');
   });
 });
@@ -299,6 +333,7 @@ function query(use: BuildingClass, level: number, options: {
   readonly mixed?: BuildingClass;
   readonly density?: number;
   readonly wealth?: number;
+  readonly satisfaction?: number;
   readonly industry?: number;
   readonly lotRole?: LotRole;
   readonly specialization?: Specialization;
@@ -319,7 +354,7 @@ function query(use: BuildingClass, level: number, options: {
       density: options.density ?? 0,
       wealth: options.wealth ?? 0,
       accessibility: 0,
-      satisfaction: 0,
+      satisfaction: options.satisfaction ?? 0,
       industry: options.industry ?? 0,
       uses: [0, 0, 0, 0],
     },

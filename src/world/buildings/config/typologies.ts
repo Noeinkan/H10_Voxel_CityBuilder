@@ -173,6 +173,17 @@ export interface TypologyDefinition extends TypologyRequirement {
    * casa-bottega diventa un podio commerciale e un capannone una torre
    * idroponica, mai il contrario: la crescita racconta un progresso, non un
    * giro.
+   *
+   * **Una cima puo' portare a un'altra cima, ma solo in salita**, e la regola
+   * che tiene in piedi la frase e' che la seconda chieda *strettamente di piu'*
+   * della prima: un livello piu' alto, o una soglia che la prima non poneva. La
+   * torre liscia chiede densita' al livello quattro, il gradone abitato ci
+   * aggiunge la ricchezza al cinque e il tamburo il fronte strada al sei —
+   * salire quella scala e' un progresso, e nessuno dei tre passi si puo'
+   * percorrere all'indietro. Senza questo, la cima piu' bassa vinceva per prima e
+   * congelava il lotto per tutti i livelli successivi: era il motivo per cui una
+   * citta' matura era fatta di due sagome e le altre restavano scritte a
+   * catalogo.
    */
   readonly evolvesFrom?: readonly string[];
 }
@@ -322,7 +333,13 @@ export const TYPOLOGIES: readonly TypologyDefinition[] = [
     use: 0,
     minDensity: 0.55,
     minLevel: 4,
-    // Culminazione della linea residenziale: e' l'esito, non un passaggio.
+    // **Il primo scalino verticale, non piu' l'ultimo.** Era dichiarata
+    // culminazione, e con `minLevel` a quattro era la piu' bassa delle quattro:
+    // ogni lotto denso la adottava per primo e ci restava per i sedici livelli
+    // successivi, perche' nessuna riga la dichiarava come provenienza. Le due
+    // verticali che chiedono *piu'* di lei — la ricchezza, e un livello o due in
+    // piu' — ora la elencano, e la torre liscia e' cio' da cui si parte quando il
+    // quartiere e' solo fitto.
     evolvesFrom: ['terracedHousing', 'gardenHousing', 'rationedBlock', 'stackedTenement', 'courtyardBlock'],
     priority: 4,
     shape: { ...DEFAULT_TYPOLOGY_SHAPE, chamfer: 1, maxFootprint: 6 },
@@ -339,8 +356,22 @@ export const TYPOLOGIES: readonly TypologyDefinition[] = [
     use: 0,
     minWealth: 0.6,
     minLevel: 6,
-    // Culminazione della linea residenziale, come le altre tre verticali.
-    evolvesFrom: ['terracedHousing', 'gardenHousing', 'rationedBlock', 'stackedTenement', 'courtyardBlock'],
+    // **Sul fronte strada, e non e' un dettaglio.** Le tre verticali alte
+    // qualificano ormai negli stessi luoghi, e senza una condizione che le
+    // separi il livello sei le porterebbe tutte allo stesso tamburo: l'isolato
+    // tornerebbe fatto di un edificio solo, un piano piu' su. Il ruolo del lotto
+    // e' l'unico fatto discreto che *dentro* un isolato cambia da un lotto
+    // all'altro, quindi e' quello che fa comparire tre forme diverse sulla stessa
+    // strada — lanterna sull'angolo, tamburo sul fronte, gradone abitato nel
+    // cuore. E non costa niente: la maglia stradale il ruolo lo sa gia'.
+    lotRole: LOT_ROLE.frontage,
+    // La cima della linea: ci si arriva dalle forme basse, dalla torre liscia
+    // quando arriva la ricchezza, o dal gradone abitato un livello piu' su. Mai
+    // il contrario — la scala sale e non torna.
+    evolvesFrom: [
+      'terracedHousing', 'gardenHousing', 'rationedBlock', 'stackedTenement', 'courtyardBlock',
+      'towerBlock', 'skyTerraces',
+    ],
     // Sta **prima** di `skyTerraces` a parita' di priorita', e l'ordine e' la
     // regola: a livello 5 vince il gradone abitato, dal 6 in su il tamburo. E'
     // la sola riga del catalogo la cui pianta non e' un rettangolo.
@@ -379,9 +410,15 @@ export const TYPOLOGIES: readonly TypologyDefinition[] = [
     // Qui e' una soglia, e sopra di essa il quartiere cambia tipologia.
     minWealth: 0.6,
     minLevel: 5,
-    // Culminazione della linea residenziale: e' il gradone abitato a cui arrivano
-    // la casa a schiera e le forme intermedie quando la ricchezza le accompagna.
-    evolvesFrom: ['terracedHousing', 'gardenHousing', 'rationedBlock', 'stackedTenement', 'courtyardBlock'],
+    // Il gradone abitato a cui arrivano la casa a schiera e le forme intermedie
+    // quando la ricchezza le accompagna — **e anche la torre liscia**, che sta un
+    // livello sotto e non chiede la ricchezza: un quartiere denso che diventa
+    // ricco vede le sue torri mettere le terrazze, ed e' il passaggio che prima
+    // non poteva succedere.
+    evolvesFrom: [
+      'terracedHousing', 'gardenHousing', 'rationedBlock', 'stackedTenement', 'courtyardBlock',
+      'towerBlock',
+    ],
     // Sopra `towerBlock`, che a questo livello qualifica quasi sempre: dove c'e'
     // anche la ricchezza, la torre liscia diventa un gradone abitato.
     priority: 5,
@@ -398,7 +435,13 @@ export const TYPOLOGIES: readonly TypologyDefinition[] = [
       // rientranza da un voxel, e infatti e' quella che deve produrre terrazze
       // su cui il giardino ci sta davvero.
       shrinkOps: [BAND_OP.setback, BAND_OP.stack, BAND_OP.shrink],
-      growOps: [BAND_OP.setback, BAND_OP.jog, BAND_OP.shrinkOneSide],
+      // **Il ramo che sale non puo' arretrare anche lui.** Con `setback` in testa
+      // qui, entrambi i rami davano lo stesso gesto: il tiro sceglieva fra due
+      // elenchi che rispondevano la stessa cosa, e il gradone non era una
+      // preferenza ma l'unica sagoma che questa riga sapesse produrre. Restano un
+      // allargamento che restituisce spazio da arretrare piu' in su, e i due
+      // scarti laterali che spostano il corpo senza rimpicciolirlo.
+      growOps: [BAND_OP.grow, BAND_OP.jog, BAND_OP.shear],
       body: PALETTE_SLOTS.concreteWhite,
       bodyAlt: PALETTE_SLOTS.concretePale,
       accent: PALETTE_SLOTS.glass,
@@ -643,9 +686,14 @@ export const TYPOLOGIES: readonly TypologyDefinition[] = [
     // e non dove il commercio e' solo fitto.
     minSatisfaction: 0.5,
     minLevel: 3,
-    // Tessuto basso della linea commerciale: nasce dalla fila di negozi e puo'
-    // culminare nelle tre verticali.
-    evolvesFrom: ['retailRow'],
+    // **E' l'unico seguito che il commercio senza specializzazione abbia.** Le
+    // tre verticali chiedono tutte una specializzazione, che la maggior parte
+    // delle colonne non esprime: dichiarando la sola fila di negozi, ogni fronte
+    // nato `arcadeRow` — cioe' quasi tutto il commercio denso — restava quello per
+    // sempre, al livello zero, e questa riga non compariva mai. Ora la adottano
+    // anche i tessuti bassi, che sono cio' da cui il fronte commerciale cresce
+    // quando il quartiere comincia a stare bene.
+    evolvesFrom: ['retailRow', 'arcadeRow', 'marketHall', 'marketArcade', 'harborMarket'],
     // Sotto le tre righe di specializzazione, che restano piu' specifiche di
     // "qui si sta bene": un albergo resta un albergo anche in un quartiere felice.
     priority: 4,
@@ -809,9 +857,11 @@ export const TYPOLOGIES: readonly TypologyDefinition[] = [
     // piu' isolato — e comincia a impilarsi.
     minIndustry: 0.5,
     minLevel: 3,
-    // Nasce dallo scalo industriale e culmina nella torre idroponica: e' la
-    // forma impilata che, dove la terra finisce, cede il passo alla serra.
-    evolvesFrom: ['industrialYard'],
+    // Nasce dallo scalo industriale — e dal loft, che sta un livello sotto e non
+    // chiede l'impatto industriale: senza, un capannone promosso a loft al livello
+    // due non poteva piu' impilarsi, e la linea si spezzava a meta'. Culmina nella
+    // torre idroponica: dove la terra finisce, l'officina cede il passo alla serra.
+    evolvesFrom: ['industrialYard', 'productionLoft'],
     // Sopra `productionLoft` (2), sotto `logisticsDepot` (5): un polo logistico
     // resta un capannone anche in mezzo alle ciminiere.
     priority: 3,
