@@ -92,8 +92,8 @@ export function buildCityOverviewModel(stats: GrowthStats | null): CityOverviewM
       tone: stats.condition.tone,
     },
     goals: [
-      goal('population', 'Residents', state.population.stock, target.population),
-      ...ALL_CLASSES.map((cls) => goal(
+      overviewGoal('population', 'Residents', state.population.stock, target.population),
+      ...ALL_CLASSES.map((cls) => overviewGoal(
         `use-${cls}`,
         CLASS_LABELS[cls],
         state.buildingCounts[cls] + state.mixedCounts[cls],
@@ -181,7 +181,14 @@ export function buildCityOverviewModel(stats: GrowthStats | null): CityOverviewM
   };
 }
 
-function goal(id: string, label: string, current: number, target: number): OverviewGoal {
+/**
+ * Un traguardo numerico, come lo mostra il cassetto Citta'.
+ *
+ * Esportato perche' il blocco City needs della barra risorse cita gli stessi
+ * numeri: condividerli e' cio' che tiene uguali i due posti dove si legge
+ * «quanto manca», invece di due conti che divergono alla prima ritaratura.
+ */
+export function overviewGoal(id: string, label: string, current: number, target: number): OverviewGoal {
   return {
     id,
     label,

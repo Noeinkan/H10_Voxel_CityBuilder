@@ -37,6 +37,7 @@ import {
 import { EMPTY_COMMERCE, type CommerceReport } from './commerce';
 import type { ReachCache, StepCost } from './reach';
 import { NO_FUNDS_FLOW, type FundsReport } from './flows';
+import { EMPTY_SATISFACTION, type SatisfactionReport } from './satisfaction';
 import {
   capacityAtLevel,
   EMPTY_MATERIALS,
@@ -90,6 +91,26 @@ export interface SimStateData {
 
   /** Modificatore di soddisfazione, sempre in [0, 1]. */
   readonly satisfaction: number;
+
+  /**
+   * Decomposizione del bersaglio di soddisfazione dell'ultimo tick.
+   *
+   * Stessa natura di `harvest`, `flows` e `commerce`: derivata dal tick, non
+   * accumulata. Risponde a «perche' la felicita' e' a questo livello», che la
+   * quota sola non sa dire — ed e' la scomposizione che `tick` calcola e che
+   * l'HUD non deve rifare.
+   */
+  readonly satisfactionReport: SatisfactionReport;
+
+  /**
+   * Quanto resta di appetibile l'isola, in [0, 1].
+   *
+   * E' l'unico numero del bilancio che nasce dalla mappa (`buildableCount`, un
+   * contatore del terreno): non sta nello stato perche' e' una lettura O(1) del
+   * mondo, ma frena la crescita a ogni tick — e la quota che il rail deve
+   * alludere (o gridare) si legge da qui.
+   */
+  readonly landFactor: number;
 
   /** Ponti in quota vivi fra citta' primaria e settori secondari. */
   readonly islandConnections: number;
@@ -285,6 +306,8 @@ export function createSimState(options: SimStateOptions = {}): SimState {
     materials: resource(BALANCE.start.materials),
     funds: resource(BALANCE.start.funds),
     satisfaction: BALANCE.start.satisfaction,
+    satisfactionReport: EMPTY_SATISFACTION,
+    landFactor: 1,
     islandConnections: 0,
     buildings: [],
     buildingCounts: new Array<number>(CLASS_COUNT).fill(0),
@@ -675,7 +698,7 @@ export function reviveSimState(data: SimStateData, reachCost?: StepCost): SimSta
     | 'capacityCounts' | 'mixedCapacityCounts' | 'flows' | 'harvest' | 'materialFlows' | 'staffing'
     | 'pendingDecision' | 'decisionHistory' | 'nextDecisionTick' | 'supplyArmed'
     | 'decisionStamp' | 'decisionDismissedUntil'
-    | 'islandConnections'
+    | 'islandConnections' | 'satisfactionReport' | 'landFactor'
   >>;
   const normalised: SimStateData = {
     ...data,
@@ -720,6 +743,12 @@ export function reviveSimState(data: SimStateData, reachCost?: StepCost): SimSta
     // l'emergenza e' proprio la cosa che va chiesta.
     supplyArmed: compatible.supplyArmed ?? true,
     islandConnections: compatible.islandConnections ?? 0,
+    // Un salvataggio piu' vecchio non porta ne' la scomposizione ne' il fattore
+    // di terra: tornano entrambi ottimisti — il solo umore di base, e tutta la
+    // terra ancora appetibile — e il primo tick li riscrive con quelli veri,
+    // come per l'organico.
+    satisfactionReport: compatible.satisfactionReport ?? EMPTY_SATISFACTION,
+    landFactor: compatible.landFactor ?? 1,
   };
   const field = new DesirabilityField(reachCost);
   field.rebuild(normalised.catalysts, normalised.buildings, resolveWeights(normalised.policies));

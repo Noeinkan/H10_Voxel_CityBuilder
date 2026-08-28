@@ -157,6 +157,19 @@ export {
   type FerryLine,
   type FerryTerminal,
 } from './ferry';
+export {
+  dominantOutflow,
+  fundsIn,
+  fundsOut,
+  NO_FUNDS_FLOW,
+  type FundsReport,
+} from './flows';
+export {
+  EMPTY_SATISFACTION,
+  satisfactionReportOf,
+  type SatisfactionInputs,
+  type SatisfactionReport,
+} from './satisfaction';
 export { nextState, unitOf } from './rng';
 export {
   addBuilding,

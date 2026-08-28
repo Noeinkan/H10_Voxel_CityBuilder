@@ -11,6 +11,10 @@ coincide con il messaggio di commit.
 
 ---
 
+## In corso — Trend e perche' nel pannello risorse
+
+- **Trend e perche' nel pannello risorse.** La barra in alto mostra sempre la freccia di tendenza (finestra ~5 s, non l'ultimo tick), la sparkline sotto il valore e una riga di causa per ogni risorsa letta dai referti del tick; in coda ai dati compare il blocco City needs con il traguardo di autosufficienza e il prossimo passo del coach. Il tick ora persiste `satisfactionReport` (scomposizione del bersaglio di soddisfazione) e `landFactor` (quota di terra che resta, unico numero del bilancio nato dalla mappa), entrambi derivati e non accumulati, con fallback al revive come per `staffing`.
+
 ## In corso — Il puntatore sceglie la faccia
 
 - **Piazzamenti in quota: la faccia e' quella sotto il mouse.** In modalita' Rooftop e con la mensola il cursore mostrava e piazzava sempre sul fronte strada, anche puntando il lato opposto della torre. Ora la faccia sotto il puntatore si prova per prima, e se non regge si ricade sul fronte strada; il mirino mostra la faccia su cui il click piazzera' davvero. La passata automatica delle mensole resta sul fronte strada.

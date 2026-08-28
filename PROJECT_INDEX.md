@@ -275,6 +275,7 @@ di crescita. Il `Builder`, esterno al modulo, consuma quei candidati. Dettagli i
 | [infoViews.ts](src/sim/infoViews.ts) | Le viste informative pure: catalogo (cibo, materiali, densita', felicita', distretti), campionatori per cella e indice di capacita' per colonna. Nessun colore, nessun Three: la simulazione risponde ai dati, il look sta nel renderer | `INFO_VIEWS`, `DISTRICT_ORDER`, `DISTRICT_CATEGORIES`, `FOOD_CATEGORIES`, `infoViewSpecOf`, `isInfoViewKind`, `nextInfoView`, `infoViewVersion`, `capacityIndex`, `createSimInfoSampler`, `InfoViewKind`, `InfoViewMode`, `InfoViewSpec`, `InfoSampler` |
 | [src/sim/materials.test.ts](src/sim/materials.test.ts) | Contratti su capacità, spesa, specializzazioni e compatibilità dei salvataggi |
 | [src/sim/materials.ts](src/sim/materials.ts) | Rendiconto dei materiali, capacità economica dei livelli e costi dei cantieri verticali |
+| [satisfaction.ts](src/sim/satisfaction.ts) | Decomposizione del bersaglio di soddisfazione: referto derivato dal tick, gemello di `harvest` | `SatisfactionReport`, `EMPTY_SATISFACTION`, `satisfactionReportOf` |
 | [SimState.ts](src/sim/SimState.ts) | Stato, operazioni del giocatore, serializzazione JSON senza perdita | `createSimState`, `addCatalyst`, `addBuilding`, `addFarm`, `removeFarm`, `setPolicyActive`, `setSelectedClass`, `toSimStateData`, `reviveSimState`, `rebuildField`, `resolveDecision`, `snoozeDecision` |
 | [tick.ts](src/sim/tick.ts) | Il bilancio di un tick, funzione pura | `tick`, `tickMany`, `weightsOf` |
 | [DesirabilityField.ts](src/sim/DesirabilityField.ts) | Campo per uso urbano, `Uint8Array` chunkato 32×32, ricalcolo incrementale e indice dei massimi per chunk mantenuto a scrittura | `DesirabilityField`, `rectAround`, `rectArea`, `Catalyst`, `Building`, `CellRect` |
@@ -773,7 +774,8 @@ giocabile; gli overlay tecnici si alternano con `F3` o partono aperti con
 | [CityOverviewModel.ts](src/ui/CityOverviewModel.ts) | Modello puro della panoramica cittadina: obiettivi di autosufficienza, capacita', organico, bilanci, forma urbana, infrastrutture, scambi, mandati e decisioni recenti |
 | [drawerBits.ts](src/ui/drawerBits.ts) | Mattoni condivisi dei cassetti di destra: intestazione con croce, righe dei fatti e barre dei traguardi |
 | [GameHudControlsModel.ts](src/ui/GameHudControlsModel.ts) | Tipi e testo puro dei controlli dell'HUD: strumento selezionato e ciclo giorno/notte |
-| [GameHudEconomyModel.ts](src/ui/GameHudEconomyModel.ts) | Lettura economica pura dell'HUD: risorse, rendiconti, riserve e ciclo commerciale |
+| [GameHudEconomyModel.ts](src/ui/GameHudEconomyModel.ts) | Lettura economica pura dell'HUD: risorse, rendiconti, riserve, ciclo commerciale e la riga «perche'» di ogni risorsa | `buildHudResources`, `fundsHint`, `foodHint`, `materialsHint`, `populationHint`, `satisfactionHint`, `HudResource` |
+| [GameHudNeedsModel.ts](src/ui/GameHudNeedsModel.ts) | Il traguardo di autosufficienza come blocco compatto della barra: residenti e classi vs `BALANCE.gameplay.success`, prossimo passo del coach | `buildHudNeeds`, `HudNeeds` |
 | [hud.css](src/ui/hud.css) | Token, elevazione a tre livelli, cornice, tessere del dock, stati accessibili e layout responsivo Cozy City |
 | [hudIcons.ts](src/ui/hudIcons.ts) | Icone SVG interne, senza dipendenze o richieste di rete |
 | [hudPanels.css](src/ui/hudPanels.css) | Layout e stati dei pannelli informativi, della selezione e dei picker, separati dal chrome del mondo |
@@ -784,7 +786,7 @@ giocabile; gli overlay tecnici si alternano con `F3` o partono aperti con
 | [InfoViewLegend.ts](src/ui/InfoViewLegend.ts) | La legenda della vista informativa attiva: nome, descrizione e categorie, lette dallo stesso catalogo dell'overlay | `InfoViewLegend` |
 | [src/ui/PerfOverlay.ts](src/ui/PerfOverlay.ts) | Pannello delle prestazioni acceso da `?perf=1`: fps, durata del frame, fetta di remesh, chunk rimeshati e livello di qualita'. Legge la stessa fonte del riepilogo console. |
 | [PoliciesDrawer.ts](src/ui/PoliciesDrawer.ts) | Il cassetto di governo: policy e rotte commerciali, le due cose che si toccano, separate dalla lettura |
-| [ResourceBar.ts](src/ui/ResourceBar.ts) | I dati in cima al rail sinistro: cinque risorse con anello del tetto e popover del bilancio, poi i gruppi Time e Sky |
+| [ResourceBar.ts](src/ui/ResourceBar.ts) | I dati in cima al rail sinistro: cinque risorse con freccia di tendenza, sparkline e riga di causa sempre visibili, popover del bilancio, blocco City needs, poi i gruppi Time e Sky | `ResourceBar` |
 | [BuildDock.ts](src/ui/BuildDock.ts) | Il rail di sinistra: le corsie etichettate incolonnate — catalizzatori, Reach, Clear (la gomma) e le porte —, tessere icona-sopra-etichetta con badge di tasto, una colonna sopra i 900px di finestra e due sotto, selezione per indice. Le porte includono la tessera Data, che apre il picker delle viste informative | `DockPanel` |
 | [ResourceTrend.ts](src/ui/ResourceTrend.ts) | La finestra dei tick recenti per risorsa: direzione, magnitudine e serie per la sparkline. Campionamento ancorato al tick |
 | [GameHudModel.ts](src/ui/GameHudModel.ts) | Composizione del modello HUD: panoramica cittadina, azioni, policy, risorse e disponibilita' |

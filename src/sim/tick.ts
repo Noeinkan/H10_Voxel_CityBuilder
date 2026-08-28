@@ -6,6 +6,7 @@ import { decisionAt } from './decisions';
 import { FARM_KIND, farmUpkeepOf, farmWorkersOf, harvestOf } from './farms';
 import { resolveWeights, type Weights } from './policies';
 import { nextState, unitOf } from './rng';
+import { satisfactionReportOf, type SatisfactionReport } from './satisfaction';
 import type { Resource, SimState } from './SimState';
 import { servedFerryLines } from './ferry';
 import { foodImportShareOf, resolveExternalTrade, tradeLinksOf } from './trade';
@@ -161,16 +162,16 @@ export function tick(state: SimState, terrainMap: TerrainMap): SimState {
 
   // --- Soddisfazione -------------------------------------------------------
 
-  const satisfaction = nextSatisfaction(
-    state.satisfaction,
+  const satisfactionReport = satisfactionReportOf({
     population,
     capacity,
     civic,
     funded,
-    commerce.service,
-    servedFerryLines(state.catalysts),
-    state.islandConnections,
-  );
+    service: commerce.service,
+    ferryLines: servedFerryLines(state.catalysts),
+    islandConnections: state.islandConnections,
+  });
+  const satisfaction = nextSatisfaction(state.satisfaction, satisfactionReport);
 
   // --- Popolazione ---------------------------------------------------------
 
@@ -179,12 +180,13 @@ export function tick(state: SimState, terrainMap: TerrainMap): SimState {
   // sta in `balance.ts`.
   const jitter = (unitOf(rngState) * 2 - 1) * BALANCE.population.migrationJitter;
 
+  const land = landFactor(state.buildings.length, terrainMap);
   const populationStock = finiteStock(
     nextPopulation(population, capacity, {
       fed,
       satisfaction,
       jitter,
-      landFactor: landFactor(state.buildings.length, terrainMap),
+      landFactor: land,
     }),
   );
 
@@ -217,6 +219,14 @@ export function tick(state: SimState, terrainMap: TerrainMap): SimState {
     // chi pianta di stimare il raccolto con la stessa aritmetica del bilancio
     // invece che con l'organico pieno.
     staffing,
+    // Stessa mossa di `flows` e `harvest`, sui due numeri che non erano totali:
+    // la decomposizione del bersaglio di soddisfazione, calcolata in privato da
+    // `nextSatisfaction` e buttata via una riga dopo, e la quota di terra che
+    // resta, nata dalla mappa e buttata via con lei. Chi deve dire **perche'**
+    // la felicita' e' a quel livello, o perche' la crescita rallenta, li legge
+    // da qui invece di rifare il conto.
+    satisfactionReport,
+    landFactor: land,
     population: moved(state.population, populationStock),
     food: moved(state.food, finiteStock(trade.foodStock)),
     materials: moved(state.materials, finiteStock(trade.materialsStock)),
@@ -337,48 +347,14 @@ function nextPopulation(
  * Soddisfazione del tick successivo: si muove di una frazione fissa verso il
  * bersaglio, cosi' non salta da un tick all'altro quando un edificio civico
  * resta senza fondi per un tick solo.
+ *
+ * Il bersaglio arriva gia' scomposto nel referto che il tick ha appena
+ * costruito: la quota converge, e la decomposizione resta in
+ * `state.satisfactionReport` per chi deve dire **perche'** la felicita' e' a
+ * quel livello.
  */
-function nextSatisfaction(
-  current: number,
-  population: number,
-  capacity: number,
-  civic: number,
-  funded: number,
-  service: number,
-  ferryLines: number,
-  islandConnections: number,
-): number {
-  const occupancy =
-    capacity > 0
-      ? Math.min(BALANCE.satisfaction.maxOccupancy, population / capacity)
-      : population > 0
-        ? BALANCE.satisfaction.maxOccupancy
-        : 0;
-
-  const crowding = Math.max(0, occupancy - 1) * BALANCE.satisfaction.crowdingPenalty;
-  // I negozi sono la seconda leva sulla soddisfazione, accanto ai servizi
-  // civici: una citta' servita e' contenta anche senza un municipio ogni due
-  // isolati, ed e' cio' che tiene in piedi una strategia mercantile.
-  const retail = service * BALANCE.commerce.satisfactionPerService;
-  // Una linea di traghetto e' la terza leva, e l'unica che nasce da *dove* si e'
-  // costruito invece che da quanto: due imbarchi lontani valgono, due vicini no.
-  const crossings = ferryLines * BALANCE.satisfaction.perFerryLine;
-  // Un ponte fra isole arriva piu' tardi di un traghetto: pretende due skyline
-  // capaci di reggerlo, e per questo il suo contributo e' un poco piu' alto.
-  const islandBridges = Math.min(
-    BALANCE.satisfaction.maxIslandBridges,
-    islandConnections,
-  ) * BALANCE.satisfaction.perIslandBridge;
-  const target = clamp01(
-    BALANCE.satisfaction.base +
-      funded * civic * BALANCE.satisfaction.perCivic +
-      retail +
-      crossings +
-      islandBridges -
-      crowding,
-  );
-
-  return clamp01(current + (target - current) * BALANCE.satisfaction.inertia);
+function nextSatisfaction(current: number, report: SatisfactionReport): number {
+  return clamp01(current + (report.target - current) * BALANCE.satisfaction.inertia);
 }
 
 /**

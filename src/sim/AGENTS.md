@@ -53,7 +53,11 @@ un edificio sotto `minLevel` in un distretto che esprime `farming` non e' una to
 `state.harvest` e' il referto del raccolto, gemello di `flows` e `commerce`:
 derivato dal tick e non accumulato. Serve a chi mostra **da dove viene** il cibo,
 e va letto invece di rifare il conto — un secondo listino nell'interfaccia
-divergerebbe dal primo alla prima ritaratura.
+divergerebbe dal primo alla prima ritaratura. Vale parola per parola per
+`state.satisfactionReport` e `state.landFactor`: la scomposizione del bersaglio
+di soddisfazione e la quota di terra che resta sono fatti dell'ultimo tick,
+calcolati da `tick` e gettati via una riga dopo; chi li mostra li legge, non li
+ricalcola.
 
 Il **vettore di influenza** di un catalizzatore sta in
 `gameplay.catalyst.influence`, non nella sua definizione: ogni ruolo ha almeno
