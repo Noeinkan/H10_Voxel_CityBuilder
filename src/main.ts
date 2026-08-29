@@ -66,13 +66,33 @@ import { resolveTheme, THEMES, type Theme } from './engine/themes';
 import { createVoxelMaterial } from './engine/VoxelMaterial';
 import { GrowthScene } from './game/growthScene';
 import type { CoachSuggestion } from './game/coach';
-import { resolveLaunchMode, resolveSeed, swatchUrl } from './game/launchMode';import { resolveSelection, type Selection } from './game/selection';
+import { perfToggleUrl, resolveLaunchMode, resolveSeed, swatchUrl } from './game/launchMode';
+import { resolveSelection, type Selection } from './game/selection';
 import { pickSolidCell, pickSurfaceCell, type Ray3, type SurfaceCell } from './game/surfacePick';
 import { pickFacade } from './game/facadePick';
 import type { AerialFace } from './world/aerial/terracePlan';
 import { SimScene, SIM_SITE_COUNT, SIM_TICK_RATE } from './game/simScene';
 import { createInfoSampler } from './game/infoViews';
-import { coastalSectorAt, shapeWithSector, type CoastalSector } from './game/sectors';
+import {
+  coastalSectorAt,
+  coastalSectorById,
+  shapeWithSector,
+  type CoastalSector,
+} from './game/sectors';
+import {
+  AUTO_SLOT,
+  browserStorage,
+  deleteSlot,
+  exportText,
+  importText,
+  listSlots,
+  PENDING_SLOT,
+  readSlot,
+  takeSlot,
+  writeSlot,
+  type SaveStorage,
+} from './game/save/storage';
+import type { SaveGame } from './game/save/format';
 import type { ActionFailure, SiteCost } from './game/actions';
 import type { LandmarkSite } from './world/buildings/Builder';
 import { BALANCE } from './sim/balance';
@@ -210,7 +230,33 @@ const params = new URLSearchParams(window.location.search);
 const { debugEnabled, perfEnabled, growEnabled, simEnabled } = resolveLaunchMode(params);
 let debugVisible = debugEnabled;
 const sceneKind = parseSceneKind(params.get('scene'));
-const seed = resolveSeed(params, () => {
+
+/**
+ * Il salvataggio automatico, letto prima di ogni altra cosa.
+ *
+ * **Deve stare qui in cima** perche' porta il seed, e il seed decide l'isola:
+ * tutto cio' che viene dopo — terreno, streamer, camera — e' funzione sua.
+ * `localStorage` e' sincrono, quindi leggerlo non costa un percorso a promesse
+ * dentro un bootstrap che promesse non ne ha.
+ *
+ * **Un `?seed=` diverso vince.** Chiederne uno esplicito significa «voglio
+ * quell'altro mondo», e caricarci sopra una citta' costruita altrove darebbe
+ * edifici sospesi sul mare. Stessa ragione per `?terrain=`, che sostituisce il
+ * seed dell'isola: li' il salvataggio non si applica affatto.
+ */
+const saveStorage: SaveStorage | null = growEnabled ? browserStorage() : null;
+// Cio' che il giocatore ha appena chiesto di aprire viene prima dell'autosave,
+// e si consuma leggendolo: restasse li', ogni ricaricamento successivo
+// riaprirebbe quella partita invece della propria.
+const savedGame = growEnabled && !params.has('terrain')
+  ? takeSlot(saveStorage, PENDING_SLOT) ?? readSlot(saveStorage, AUTO_SLOT)
+  : null;
+const restoredGame = savedGame !== null &&
+  (!params.has('seed') || params.get('seed') === String(savedGame.seed))
+  ? savedGame
+  : null;
+
+const seed = restoredGame?.seed ?? resolveSeed(params, () => {
   // Il seed di partenza e' l'unico tiro non deterministico di tutta la
   // generazione: da qui in poi tutto e' funzione pura del numero sorteggiato.
   const roll = new Uint32Array(1);
@@ -695,6 +741,15 @@ if (growEnabled) {
     },
     onReleaseBlock: () => inspect.unlockBlock(),
     onClearSelection: () => clearSelection(),
+    onSaveSlot: (slot) => saveToSlot(slot),
+    onLoadSlot: (slot) => openSlot(readSlot(saveStorage, slot), 'That slot is empty.'),
+    onDeleteSlot: (slot) => {
+      deleteSlot(saveStorage, slot);
+      refreshSaveList();
+    },
+    onExportSave: () => exportSave(),
+    onSavesOpened: () => refreshSaveList(),
+    onImportSave: (text) => openSlot(importText(text), 'That file is not a saved game.'),
   }, THEMES.map((candidate) => ({
     id: candidate.id,
     name: candidate.name,
@@ -1300,6 +1355,19 @@ window.addEventListener('resize', () => {
   skyBackground.setAspect(window.innerWidth / Math.max(1, window.innerHeight));
 });
 
+/**
+ * L'ultimo salvataggio, quando la pagina se ne va.
+ *
+ * `pagehide` e non `beforeunload`: il secondo non scatta su mobile e sulle
+ * chiusure di scheda in background, che sono proprio i casi in cui la partita
+ * sparirebbe. `visibilitychange` copre l'altra meta' — la scheda che passa
+ * dietro e che il browser puo' scaricare senza altro preavviso.
+ */
+window.addEventListener('pagehide', () => autosave(performance.now(), true));
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'hidden') autosave(performance.now(), true);
+});
+
 onPaletteChanged((hexColors) => {
   // `palette.json` appartiene al tema natural: gli altri hanno una palette propria.
   if (daylight.theme.id !== 'natural') return;
@@ -1462,7 +1530,13 @@ function onFrame(time: number): void {
   // La finestra di caricamento si chiude su `generator.done`, non su
   // `chunkRenderer.isIdle`: e' la generazione a tenere fermo il gioco, e le
   // ultime mesh possono benissimo salire con i budget di regime.
-  if (loading && generator.done) firstScenePending = false;
+  //
+  // **Per una partita caricata la prima scena comprende i suoi settori.** Erano
+  // terra comprata: senza di loro l'isola non e' quella su cui la citta' e'
+  // stata costruita, e chiudere la finestra al primo `done` li farebbe arrivare
+  // uno alla volta con i budget di regime, con la citta' che compare in fondo.
+  // La finestra resta una sola e continua a non riaprirsi.
+  if (loading && generator.done && sectorsToReplay.length === 0) firstScenePending = false;
 
   const mainMs = performance.now() - workStart;
   if (mainMs > mainMsMax) mainMsMax = mainMs;
@@ -1537,6 +1611,7 @@ function onFrame(time: number): void {
   // desiderabilita', quartiere, livello di un edificio promosso — cambia a dieci
   // tick al secondo, e l'unica parte che costa e' l'aggregato dell'isolato.
   if (selectionPanel !== null && selectionPanel.needsPaint(time)) refreshSelection(time);
+  autosave(time);
 }
 
 /**
@@ -1613,12 +1688,158 @@ function buildSimFrame(scene: SimScene): SimOverlayFrame {
   };
 }
 
+/**
+ * I settori del salvataggio ancora da rigenerare, in ordine di acquisto.
+ *
+ * **L'ordine e' il formato.** Ogni acquisto estende la sagoma dell'isola, e il
+ * settore successivo viene generato leggendo quella estesa: rifarli in un altro
+ * ordine — o tutti insieme con la sagoma finale — darebbe una costa diversa da
+ * quella su cui la citta' salvata e' stata costruita. Si ripercorre la stessa
+ * sequenza che la partita ha percorso, uno streamer per volta.
+ */
+const sectorsToReplay: CoastalSector[] = restoredGame === null ? [] : restoredGame.sectors
+  .map((id) => coastalSectorById(id, terrainRegion, BALANCE.gameplay.expansion.size))
+  .filter((sector): sector is CoastalSector => sector !== null);
+
+/** Gli stessi, tenuti interi: il caricamento della scena li rivuole tutti. */
+const replayedSectors: readonly CoastalSector[] = [...sectorsToReplay];
+
+/**
+ * Rigenera un settore comprato in una partita salvata.
+ *
+ * E' `beginCoastalExpansion` senza il prezzo e senza il messaggio, e soprattutto
+ * senza `expansionInFlight`: quel flag fa piantare alla scena il borgo che il
+ * settore si porta dietro, e qui il borgo e' gia' dentro lo stato salvato.
+ */
+function replaySector(sector: CoastalSector): void {
+  if (terrain === null || islandShape === null) return;
+  islandShape = shapeWithSector(islandShape, sector);
+  generator = new TerrainStreamer(
+    world,
+    terrainSeed,
+    sector.generationRegion,
+    islandShape,
+    terrain.map,
+  );
+  influenceOverlay?.addSector(sector.region);
+}
+
+/**
+ * Ogni quanto la partita si scrive da sola.
+ *
+ * Venti secondi: abbastanza spesso che una scheda chiusa per sbaglio costi al
+ * massimo qualche decina di tick, abbastanza raro che serializzare una citta'
+ * matura non si veda. Il salvataggio d'uscita copre comunque la finestra fra
+ * l'ultimo automatico e la chiusura.
+ */
+const AUTOSAVE_INTERVAL_MS = 20_000;
+
+let autosaveAt = 0;
+let autosavedTick = -1;
+
+/**
+ * Scrive la partita nello slot automatico.
+ *
+ * **Fuori dal ritmo del frame in due modi.** Il tempo lo decide `AUTOSAVE_INTERVAL_MS`,
+ * e il tick gia' salvato ferma il resto: una citta' in pausa non riscrive
+ * ventiquattro volte al minuto lo stesso file. Il costo di una serializzazione
+ * cade quindi su un frame ogni venti secondi, ed e' l'unico posto in cui questo
+ * lavoro puo' stare senza un worker.
+ */
+function autosave(time: number, force = false): void {
+  if (growthScene === null || saveStorage === null) return;
+  if (!force && time - autosaveAt < AUTOSAVE_INTERVAL_MS) return;
+
+  const tickCount = growthScene.simState.tickCount;
+  if (tickCount === autosavedTick) return;
+
+  autosaveAt = time;
+  autosavedTick = tickCount;
+  const result = writeSlot(saveStorage, AUTO_SLOT, growthScene.toSave(terrainSeed, Date.now()));
+  if (!result.ok) {
+    // Un fallimento va **detto**, e detto una volta: continuare a giocare
+    // credendo di essere al sicuro e' peggio di sapere che non lo si e'.
+    growthScene.setMessage(result.reason === 'quota'
+      ? 'Autosave failed: browser storage is full.'
+      : 'Autosave unavailable: browser storage is blocked.');
+  }
+}
+
+/** Rilegge gli slot e li rimanda al cassetto, che non conosce lo storage. */
+function refreshSaveList(): void {
+  gameHud?.setSaves(listSlots(saveStorage));
+}
+
+/** Scrive la partita in uno slot a mano. */
+function saveToSlot(slot: string): void {
+  if (growthScene === null) return;
+  const result = writeSlot(saveStorage, slot, growthScene.toSave(terrainSeed, Date.now()));
+  gameHud?.setSaveNote(result.ok
+    ? 'Saved.'
+    : result.reason === 'quota'
+      ? 'Could not save: browser storage is full.'
+      : 'Could not save: browser storage is blocked.');
+  refreshSaveList();
+}
+
+/**
+ * Apre una partita: la mette nello slot di passaggio e ricarica la pagina.
+ *
+ * **Ricaricare e' la strada corta e anche quella giusta.** Il seed decide
+ * l'isola, l'isola arriva da un worker a blocchi, e camera, overlay e streamer
+ * si costruiscono su quella: rifare tutto a caldo vorrebbe dire un secondo
+ * percorso di costruzione del mondo accanto a quello che gia' parte da zero a
+ * ogni avvio. Il seed va nell'indirizzo perche' e' li' che il bootstrap lo
+ * cerca, e perche' l'URL resta il modo in cui questo mondo si condivide.
+ */
+function openSlot(save: SaveGame | null, missing: string): void {
+  if (save === null) {
+    gameHud?.setSaveNote(missing);
+    return;
+  }
+  const result = writeSlot(saveStorage, PENDING_SLOT, save);
+  if (!result.ok) {
+    gameHud?.setSaveNote('Could not open that game: browser storage is full.');
+    return;
+  }
+  const url = new URL(window.location.href);
+  url.searchParams.set('seed', String(save.seed));
+  window.location.replace(url.toString());
+}
+
+/** Scarica la partita come file JSON. */
+function exportSave(): void {
+  if (growthScene === null) return;
+  const text = exportText(growthScene.toSave(terrainSeed, Date.now()));
+  const url = URL.createObjectURL(new Blob([text], { type: 'application/json' }));
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = `h10-city-${terrainSeed}.json`;
+  link.click();
+  // L'oggetto resta in memoria finche' non lo si revoca, e qui dentro c'e' una
+  // citta' intera: si libera appena il click e' partito.
+  URL.revokeObjectURL(url);
+  gameHud?.setSaveNote('Exported.');
+}
+
 /** Avanza esclusivamente la scena `grow=1`, dopo che l'isola e' completa. */
 function updateGrowth(dt: number): void {
   if (!growEnabled || terrain === null) return;
   if (growthScene === null) {
     if (!generator.done) return;
+    // La terra prima della citta': un edificio salvato su un settore comprato
+    // sta su colonne che l'isola di partenza non ha, e materializzarlo prima
+    // che il terreno arrivi lo pianterebbe sul vuoto.
+    const next = sectorsToReplay.shift();
+    if (next !== undefined) {
+      replaySector(next);
+      return;
+    }
     growthScene = new GrowthScene(world, terrain.map, terrainRegion, terrainSeed);
+    if (restoredGame !== null) {
+      growthScene.restore(restoredGame, replayedSectors);
+      console.info(`[save] game restored: ${restoredGame.records.length} records`);
+    }
     influenceOverlay?.refreshCatalysts(
       growthScene.simState.catalysts,
       growthScene.simState.reach,
@@ -2805,6 +3026,17 @@ function onUiKey(event: KeyboardEvent): void {
   if (event.code === 'F3') {
     event.preventDefault();
     setDebugVisible(!debugVisible);
+    return;
+  }
+  // `F2` sta accanto a `F3` perche' e' l'altra meta' della stessa domanda: quello
+  // mostra gli overlay tecnici, questo accende la misura. Ma `perf` non si
+  // alterna a runtime — ricarica la stessa partita con `?perf=1` addosso, che e'
+  // l'unico modo di misurare una partita nata misurata. Il seed viaggia
+  // nell'indirizzo e l'autosalvataggio scatta su `pagehide`: si torna sulla
+  // stessa isola, con sopra la citta' che si era costruita.
+  if (event.code === 'F2') {
+    event.preventDefault();
+    window.location.assign(perfToggleUrl(window.location.search, !perfEnabled));
     return;
   }
   // Ctrl/Cmd+Z annulla l'ultima passata della gomma: prima che i voxel spariscano

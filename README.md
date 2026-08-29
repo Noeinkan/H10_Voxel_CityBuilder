@@ -535,8 +535,10 @@ rifatte sulla scena vera prima di considerarle valide.
 
 ## Fuori scope in questo prompt
 
-Strade, pathfinding, salvataggio su disco, audio, cittadini simulati
-individualmente, fiumi, grotte, vegetazione, supporto mobile.
+Strade, pathfinding, audio, cittadini simulati individualmente, fiumi, grotte,
+vegetazione, supporto mobile. Il salvataggio è uscito da questo elenco: la
+partita si scrive nel browser e si riapre da sola, e un file JSON la porta
+altrove — ma su disco ci va solo passando da lì.
 
 ## Licenza
 

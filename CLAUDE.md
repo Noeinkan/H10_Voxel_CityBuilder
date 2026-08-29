@@ -48,8 +48,14 @@ non "per contesto".
   niente da salvare né da invalidare quando arriva un catalizzatore: se ti serve
   un ruolo o un isolato, chiedilo, non tenerlo da parte.
 - **Non c'è ancora un gioco completo**: il builder piazza edifici automatici
-  dalle decisioni della simulazione, ma pathfinding, salvataggio e audio non
-  esistono. Non assumere che ci siano.
+  dalle decisioni della simulazione, ma pathfinding e audio non esistono. Non
+  assumere che ci siano.
+- **Il salvataggio c'è, e non serializza ciò che sa ricostruire.** In
+  `src/game/save/` finiscono seed, stato della simulazione e record del registro;
+  terreno, strade e campo di desiderabilità si rifanno al caricamento perché sono
+  funzioni pure. Se aggiungi una struttura che il registro conta, chiediti se
+  `recordStamp` sa ridisegnarla dal solo record: se non lo sa, la cattura la pota
+  insieme a chi ci poggia sopra.
 - **`PROJECT_INDEX.md` e `CHANGELOG.md` non si scrivono a mano.** Aggiungendo un
   file, o chiudendo un incremento, lascia un frammento in `docs/pending/` e
   fondilo con `npm run docs:merge`: sono i due file che tutti aggiornano nello

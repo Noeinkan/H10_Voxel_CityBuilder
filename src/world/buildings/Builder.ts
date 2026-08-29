@@ -71,6 +71,7 @@ import { styleAt, styledProfile } from './style';
 import { lotRoleOf } from './blockForm';
 import { envelopeOf } from './BuildingRegistry';
 import { groundSideOf, overhangFor } from './generate';
+import { recordStamp } from './recordStamp';
 import { GrowthQueue, anchorOf } from './growthQueue';
 import { SurfaceQueue } from './surfaceQueue';
 import {
@@ -79,7 +80,7 @@ import {
 } from '../grading/grade';
 import { StreetNetwork } from '../streets/StreetNetwork';
 import { placeLot, type Lot } from '../streets/lots';
-import { FACING, type Facing } from '../streets/streetGrid';
+import { FACING, type BlockId, type Facing } from '../streets/streetGrid';
 import { SPANS } from '../spans/config';
 import { AERIAL } from '../aerial/config';
 import { decksAt, type BuildDeck } from '../aerial/decks';
@@ -636,6 +637,87 @@ export class Builder {
   }
 
   /**
+   * Rimette in piedi una citta' salvata: i record tornano nel registry e i loro
+   * voxel nel mondo.
+   *
+   * **Non passa da `place`, e non e' una scorciatoia.** `place` decide *dove* si
+   * costruisce — lotto sul fronte strada, opera di terra, fila, sbalzo,
+   * tipologia del luogo — e qui non c'e' niente da decidere: il posto e' quello
+   * che il record dichiara, e ogni scelta rifatta adesso sarebbe una citta'
+   * diversa da quella salvata. Si ridisegna e basta, con `recordStamp`, che e'
+   * la funzione nata per rigenerare una sagoma scritta mille tick fa.
+   *
+   * **Subito, non a comparsa.** Una partita caricata e' gia' costruita: farla
+   * crescere davanti a chi la riapre vorrebbe dire mostrargli un cantiere al
+   * posto della sua citta'. Il costo si paga dentro la finestra di caricamento,
+   * dove il budget per frame e' gia' largo.
+   *
+   * I record arrivano in ordine di id — lo garantisce `readSave` — perche' e'
+   * l'ordine in cui `adopt` ritrova gli appoggi gia' dentro.
+   */
+  restore(records: readonly BuildingRecord[]): void {
+    const blocks = new Map<string, BlockId>();
+
+    for (const record of records) {
+      // Un id gia' preso vuol dire file malformato: si lascia cadere invece di
+      // sovrascrivere, che lascerebbe gli indici pieni del record di prima.
+      if (this.registryImpl.get(record.id) !== null) continue;
+      this.registryImpl.restore(record);
+
+      const stamp = recordStamp(record);
+      if (stamp.sizeZ > 0) {
+        this.growth.writeStamp(anchorOf(record), stamp, 0, stamp.sizeZ, false);
+      }
+
+      // Le strade dell'isolato una volta sola: la coda di superficie le
+      // ridipinge per isolato, e chiederlo per ogni edificio significherebbe
+      // rifare lo stesso isolato una volta per casa che ci sta dentro.
+      const block = this.streets.blockAt(record.x, record.y);
+      blocks.set(`${block.kx},${block.ky}`, block);
+
+      this.countRestored(record);
+    }
+
+    for (const block of blocks.values()) this.surface.enqueueBlockStreets(block);
+
+    // I due driver che tengono un indice proprio oltre al registry lo
+    // ricostruiscono da cio' che e' appena rientrato. Gli altri non ne hanno
+    // bisogno: il distretto costiero riparte da stadio zero e replica gli stadi
+    // del landmark da solo, e la campagna ripianta.
+    //
+    // **Le arcologie per prime**: le loro piazzole sono record in quota, e
+    // nascono qui. Nell'ordine opposto la citta' in quota indicizzerebbe le
+    // colonne prima che quelle piazzole esistano, e sopra un'arcologia caricata
+    // non si potrebbe piu' costruire.
+    this.arcologies.adopt();
+    this.aerial.adopt();
+  }
+
+  /**
+   * Rimette i contatori del Builder al passo con cio' che e' stato adottato.
+   *
+   * Sono statistiche e non stato di gioco, ma nascono a zero a ogni costruttore:
+   * senza questa riga una citta' caricata direbbe «zero edifici costruiti»
+   * nell'overlay, e `nextClusterId` ripartirebbe da uno assegnando a una fila
+   * nuova l'identita' di una che esiste gia'.
+   */
+  private countRestored(record: BuildingRecord): void {
+    this.placedCount++;
+    if (record.supports !== undefined && record.aerial === undefined &&
+      record.span === undefined && record.aloft !== true) {
+      this.stackedCount++;
+    }
+
+    const cluster = record.cluster;
+    if (cluster === undefined) return;
+    if (cluster >= this.nextClusterId) this.nextClusterId = cluster + 1;
+    const size = (this.clusterSizes.get(cluster) ?? 0) + 1;
+    this.clusterSizes.set(cluster, size);
+    if (size === 2) this.clusteredCount += 2;
+    else if (size > 2) this.clusteredCount++;
+  }
+
+  /**
    * Da chiamare dopo ogni tick della simulazione.
    *
    * Restituisce il nuovo stato e ne prende possesso, come ogni operazione che
@@ -1109,6 +1191,16 @@ export class Builder {
       // Zero non si scrive: una fila senza corso di base non deve portarsi
       // dietro un campo che dice "non ne ho uno".
       baseBand: baseBand > 0 ? baseBand : undefined,
+      // **Su cosa poggia, quando non poggia a terra.** Il suolo non e' di
+      // nessuno e non ha un id: `deck.id` vale zero, e il campo non si scrive.
+      // Sopra un impalcato invece l'appoggio ha un record, e senza questa riga
+      // il legame esisteva in un verso solo — l'impalcato sapeva di essere
+      // abitato, l'ospite non sapeva su cosa stesse. E' la stessa informazione
+      // che `span` e `aerial` portano da sempre, e serve a chiunque debba
+      // decidere se questo volume regge da solo: il pannello di selezione lo
+      // mostra, e il salvataggio ci si appoggia per non scrivere un edificio
+      // sospeso in aria senza cio' che lo tiene su.
+      supports: deck.id === 0 ? undefined : [deck.id],
     });
 
     if (request.animate) this.growth.enqueueSegments(record, stamp);
