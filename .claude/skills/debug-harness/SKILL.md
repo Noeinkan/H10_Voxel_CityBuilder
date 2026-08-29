@@ -15,7 +15,7 @@ console ogni 5 secondi, senza aprire il gate del debug.
 | Parametro | Default | Effetto |
 | --- | --- | --- |
 | `debug` | — | `1` apre overlay e hotkey tecniche |
-| `perf` | — | `1` accende il pannello delle prestazioni (fps, frame ms, remesh ms/frame, chunk rimeshati, livello di qualita') e il riepilogo da console ogni 5 s. Vale **anche senza** `debug`: misura la radice, non un harness. Registra anche `__voxelStats()`. `F3` non lo tocca |
+| `perf` | — | `1` accende il pannello delle prestazioni (fps, frame ms, remesh ms/frame, chunk rimeshati, livello di qualita') e il riepilogo da console ogni 5 s. Vale **anche senza** `debug`: misura la radice, non un harness. Registra anche `__voxelStats()`. `F3` non lo tocca, `F2` lo alterna ricaricando la stessa partita |
 | `scene` | — | Isola una scena `city`, `noise` (caso peggiore), `slab`, `diorama` o `swatch` |
 | `class` | `commercial` | Uso del soggetto del diorama: `residential`, `commercial`, `industrial`, `civic` |
 | `level` | `6` | Livello del soggetto del diorama, 0…`BUILDER.maxLevel` |
@@ -203,6 +203,14 @@ cicla le viste, `L` cicla i modi del giorno (ciclo, giorno fisso, notte fissa),
 `1`..`9` scelgono lo **strumento** n-esimo del dock, `Shift`+`1`..`9` scelgono il
 **tema**, `[`/`]` e `PageDown`/`PageUp` muovono la quota della fetta (`Shift` per
 un piano intero). Rispondono anche alla radice, senza `?debug=1`.
+
+`F2` accende e spegne la misura: **ricarica** la stessa partita aggiungendo o
+togliendo `?perf=1`, invece di far comporre l'indirizzo a mano
+(`perfToggleUrl` in `src/game/launchMode.ts`). Ricaricare è il punto e non un
+effetto collaterale: pannello e referto devono misurare una partita nata
+misurata, non una in cui la misura si è innestata a metà. Il seed viaggia
+nell'URL e l'autosalvataggio scatta su `pagehide`, quindi si torna sulla stessa
+isola con sopra la stessa città.
 
 Le cifre nude sono passate dai temi agli strumenti con la fase 7.4, e la ragione
 è la stessa che le aveva tolte dal gate del debug: il dock è la prima superficie

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { resolveLaunchMode, resolveSeed, swatchUrl } from './launchMode';
+import { perfToggleUrl, resolveLaunchMode, resolveSeed, swatchUrl } from './launchMode';
 
 describe('resolveLaunchMode', () => {
   it('carica alla radice l’esperienza giocabile senza strumenti tecnici', () => {
@@ -84,6 +84,51 @@ describe('resolveSeed', () => {
   it('un seed illeggibile o zero vale quanto un seed assente', () => {
     expect(resolveSeed(new URLSearchParams('seed=abc'), () => 42)).toBe(42);
     expect(resolveSeed(new URLSearchParams('seed=0'), () => 42)).toBe(42);
+  });
+});
+
+describe('perfToggleUrl', () => {
+  it('accende la misura senza cambiare la partita che si sta misurando', () => {
+    // Il seed e' la meta' che conta: ricaricare deve riportare la stessa isola,
+    // altrimenti si misura un mondo diverso da quello che ha fatto nascere la
+    // domanda.
+    const params = new URLSearchParams(perfToggleUrl('?seed=1337&theme=neon', true));
+    expect(params.get('perf')).toBe('1');
+    expect(params.get('seed')).toBe('1337');
+    expect(params.get('theme')).toBe('neon');
+  });
+
+  it('spegne la misura e lascia in piedi tutto il resto', () => {
+    const params = new URLSearchParams(perfToggleUrl('?seed=1337&perf=1', false));
+    expect(params.has('perf')).toBe(false);
+    expect(params.get('seed')).toBe('1337');
+  });
+
+  it('senza piu niente da dichiarare torna alla radice', () => {
+    expect(perfToggleUrl('?perf=1', false)).toBe('./');
+  });
+
+  it('riaccende la stessa esperienza, non un harness', () => {
+    // L'andata e il ritorno passano da `resolveLaunchMode`: la crescita e l'HUD
+    // devono restare accesi da entrambe le parti del giro.
+    const on = new URLSearchParams(perfToggleUrl('?seed=1337', true));
+    expect(resolveLaunchMode(on)).toEqual({
+      debugEnabled: false,
+      perfEnabled: true,
+      growEnabled: true,
+      simEnabled: false,
+    });
+    const off = new URLSearchParams(perfToggleUrl(`?${on.toString()}`, false));
+    expect(resolveLaunchMode(off)).toEqual({
+      debugEnabled: false,
+      perfEnabled: false,
+      growEnabled: true,
+      simEnabled: false,
+    });
+  });
+
+  it('non apre il gate del debug per conto suo', () => {
+    expect(new URLSearchParams(perfToggleUrl('?seed=1337', true)).has('debug')).toBe(false);
   });
 });
 

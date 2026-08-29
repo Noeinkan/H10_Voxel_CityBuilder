@@ -50,6 +50,28 @@ export function resolveSeed(params: URLSearchParams, randomUint32: () => number)
 }
 
 /**
+ * La stessa partita, con la misura accesa o spenta.
+ *
+ * Accendere `?perf=1` **ricaricando** non e' un ripiego: pannello e referto
+ * nascono con la pagina, e cio' che devono misurare e' una partita nata
+ * misurata — innestare la misura a meta' corsa vorrebbe dire misurare anche
+ * l'innesto. Il resto dell'indirizzo viaggia con noi, `seed` per primo (quello
+ * che `main.ts` riscrive nella barra), quindi si torna sulla stessa isola; la
+ * citta' che ci sta sopra la riporta l'autosalvataggio, che scatta su
+ * `pagehide` prima che la pagina se ne vada.
+ *
+ * Senza piu' nulla da dichiarare torna `./` invece di un `?` orfano: e' la
+ * radice, ed e' esattamente cio' che si sta chiedendo.
+ */
+export function perfToggleUrl(search: string, enabled: boolean): string {
+  const params = new URLSearchParams(search);
+  if (enabled) params.set('perf', '1');
+  else params.delete('perf');
+  const query = params.toString();
+  return query === '' ? './' : `?${query}`;
+}
+
+/**
  * L'indirizzo del campionario dei voxel, con addosso il look che si sta guardando.
  *
  * Sta accanto a `resolveLaunchMode` perche' e' la stessa corrispondenza letta al
