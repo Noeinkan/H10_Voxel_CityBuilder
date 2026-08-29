@@ -63,23 +63,28 @@ o formatter configurati: non inventarli.
 
 ## Verifica proporzionata
 
-- Il default di ogni incremento e' `npm run typecheck` piu' il controllo piu'
-  stretto che copre il rischio: `npx vitest run <file>` sul test diretto,
-  `test:related -- <sorgenti toccate>` quando il grafo degli import puo' portare
-  altrove. Si parte da li' e si allarga solo se il rischio lo chiede.
+- Il default di ogni incremento e' `npm run typecheck` piu' un batch chirurgico:
+  `npx vitest run <i file che coprono cio' che hai toccato>`. Se non sai quali
+  siano, `test:related -- <sorgenti toccate>` li deduce dal grafo degli import.
+  Costa secondi. Da li' si allarga di un gradino per volta — prima la cartella
+  (`npx vitest run src/world/buildings/`), mai direttamente tutto.
 - **`test:fast` non e' un percorso rapido.** L'unica cosa che esclude e'
   `*.slow.test.ts`, un file su 174: e' la suite intera meno uno, e costa quanto
   `npm test`. Lo stesso vale per `test:fast:all`.
-- Non lanciare automaticamente la suite completa: serve soltanto per
-  worker/protocolli invisibili al grafo degli import, modifiche trasversali
-  non rappresentabili dai test mirati, configurazione globale di test/runtime o
-  richiesta esplicita dell'utente.
-- Prima di una suite completa verifica che non ne stia gia' girando un'altra:
+- **Non lanciare la suite completa di tua iniziativa**, nemmeno per chiudere un
+  incremento. Vitest apre un worker per core: una sola run occupa la macchina
+  per decine di minuti e mette in coda ogni altro agente che ci lavora sopra —
+  con tre attive in parallelo una singola run ha superato i venti minuti senza
+  finire. La suite intera e' un evento coordinato: la chiede l'utente, oppure
+  la proponi e aspetti risposta. Un batch mirato verde piu' `typecheck` pulito
+  e' gia' una consegna valida.
+- Sfuggono ai test mirati solo i due worker caricati per URL, la configurazione
+  globale di test/runtime e i refactor su tipi condivisi. Anche li' la suite si
+  annuncia prima, non si lancia e basta.
+- Prima di qualunque run larga guarda se ne sta gia' girando una:
   `Get-CimInstance Win32_Process -Filter "Name='node.exe'" | Where-Object
-  { $_.CommandLine -match 'vitest' }`. Vitest apre un worker per core, quindi
-  due suite in parallelo non ci mettono il doppio ma molto di piu': con tre
-  attive su questa macchina una singola run ha superato i venti minuti senza
-  finire. Se una gira gia', aspetta la sua fine invece di aggiungere la tua.
+  { $_.CommandLine -match 'vitest' }`. Se c'e', la tua non aggiunge
+  informazione: aggiunge contesa, e i rossi da timeout che ne escono sono falsi.
 - Se una suite sotto contesa fallisce per timeout estranei, ripeti soltanto i
   file falliti. Non ripetere tutta la suite se il difetto non e' globale.
 - Per bundle o worker esegui anche `npm run build`; per percorsi caldi il
