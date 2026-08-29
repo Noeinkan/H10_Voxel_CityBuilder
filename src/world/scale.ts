@@ -61,8 +61,34 @@ export const SCALE: {
   /**
    * Livello massimo raggiungibile. E' l'asse verticale: da qui discendono
    * `LEVEL_CAPS`, `START_LEVEL_CDF`, il tetto dello skyline e il budget di chunk.
+   *
+   * **Ventisei, e la meta' che si vede non e' il picco.** Alzare questa manopola
+   * sposta i tre tetti di `skylineCapsOf` insieme — il centro passa da diciassette
+   * livelli a ventitre', ma la fascia intermedia passa da undici a quindici e la
+   * corona da sei a otto. E' quest'ultima parte a cambiare l'inquadratura
+   * d'insieme: il picco e' raro per costruzione e ne conta poche decine, mentre il
+   * tessuto intermedio e' quasi tutta la citta' e sale di un terzo abbondante.
+   *
+   * Sopra `linearEnd` le fasce accelerano, quindi la torre massima passa da
+   * trentuno fasce a quarantadue — circa 350 voxel invece di 262.
+   *
+   * **L'arcologia non e' piu' un tetto per questa manopola, ed e' una scelta.**
+   * A ventitre' una torre ordinaria supera le quattro ricette da 320 quote
+   * (`twinStem`, `branchingCore`, `skyWeave`, `spireRing`), che il catalogo
+   * dichiarava vertice della gerarchia. Le due cose non sono pero' simmetriche:
+   * un'arcologia e' una ricetta scritta a mano, con quote fisse, mentre un
+   * edificio **si sviluppa** — e se arrivando in fondo alla propria scala supera
+   * la megastruttura accanto, quello e' l'esito della crescita e non un difetto
+   * da tarare. Il vincolo e' stato tolto di proposito; quel che resta verificato
+   * e' che la cima assoluta del catalogo sia ancora un'arcologia.
+   *
+   * Tutto il resto deriva e non va ritoccato a mano: `LEVEL_CAPS`,
+   * `START_LEVEL_CDF`, il budget di chunk e i tetti dello skyline. Anche le rotte
+   * in quota reggono da sole — `TRAFFIC.planeClearance` alza la crociera sopra
+   * cio' che trova sotto, quindi una citta' piu' alta non fa passare un aereo
+   * dentro una torre.
    */
-  maxLevel: 20,
+  maxLevel: 26,
 };
 
 /**
@@ -131,6 +157,49 @@ export function terraceMinRingOf(module: number = SCALE.moduleFootprint): number
  */
 export function courtyardMinSideOf(module: number = SCALE.moduleFootprint): number {
   return module / 2;
+}
+
+/**
+ * Un gradino della scala d'impronta ordinaria: da che livello ammesso, e quanto
+ * lato concede.
+ */
+export interface UrbanFootprintStep {
+  readonly fromLevel: number;
+  readonly side: number;
+}
+
+/**
+ * I tetti d'impronta della citta' ordinaria, fra il modulo e la scala mega.
+ *
+ * **L'assemblaggio urbano era un interruttore, e per questo non si vedeva mai.**
+ * Il lato pieno dell'isolato spettava al solo lotto ammesso a `maxLevel`, cioe'
+ * dove fascia del centro, cono verso il polo ed elezione dell'isolato
+ * coincidono: pochi lotti su un'isola intera. Ogni altro edificio restava dentro
+ * gli otto voxel del modulo, e una citta' matura era percio' fatta di aghi —
+ * alti, ma tutti larghi uguale.
+ *
+ * Qui in mezzo ci sono due gradini, e sono la parte che si legge da lontano: un
+ * lotto della fascia intermedia arriva a meta' strada fra modulo e scala mega, e
+ * uno del centro non eletto alla scala mega intera. **Nessuno dei due prende
+ * l'isolato**, che resta il premio del picco: la gerarchia continua a dire fin
+ * dove si sale, e adesso dice anche quanto ci si allarga salendo.
+ *
+ * Le quote sono frazioni di `V` e non livelli scritti a mano, per la stessa
+ * ragione di `levelCapsOf`: girare la manopola verticale non deve lasciare
+ * indietro un numero che nessuno ricollega piu' a lei.
+ */
+export function urbanFootprintStepsOf(
+  module: number = SCALE.moduleFootprint,
+  mega: number = SCALE.megaFootprint,
+  V: number = SCALE.maxLevel,
+): readonly UrbanFootprintStep[] {
+  // Meta' strada fra i due moduli, arrotondata al cubo di terreno: un lato
+  // dispari darebbe un podio che non si allinea al passo dei lotti.
+  const mid = Math.max(module, module + Math.round((mega - module) / 4) * 2);
+  return [
+    { fromLevel: Math.round(V / 2), side: mid },
+    { fromLevel: Math.round((V * 3) / 4), side: Math.max(mid, mega) },
+  ];
 }
 
 /**

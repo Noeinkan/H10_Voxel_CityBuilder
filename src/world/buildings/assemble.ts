@@ -1,4 +1,5 @@
 import { hashCoords } from '../rng';
+import { urbanFootprintStepsOf } from '../scale';
 import { STREETS } from '../streets/config';
 import type { BlockRect } from '../streets/streetGrid';
 import { SURFACE_KIND } from '../visualBlock';
@@ -45,22 +46,62 @@ const ASSEMBLE_SALT = 0x53a9_0d6f;
 /** Quante forme di layout esistono. L'indice e' un contratto: vedi `layoutCells`. */
 const LAYOUT_COUNT = 5;
 
+/** I gradini d'impronta fra il modulo e l'isolato intero. Vedi `urbanFootprintCap`. */
+const URBAN_FOOTPRINT_STEPS = urbanFootprintStepsOf();
+
 /**
  * Quanto lotto puo' chiedere un isolato alla nascita di un edificio.
  *
- * Il lato oltre il modulo non e' una conseguenza della maglia larga: se lo
- * guadagna solo un picco del core che la gerarchia ha portato fino al massimo.
- * In quel caso l'assemblatore puo' usare l'intero isolato; ogni altro isolato
- * continua a produrre moduli ordinari da non piu' di otto voxel.
+ * **L'isolato intero resta il premio del picco**, e su questo non e' cambiato
+ * niente: solo il lotto che la gerarchia ha portato fino a `BUILDER.maxLevel` —
+ * fascia del centro, cono verso il polo ed elezione dell'isolato tutti insieme —
+ * puo' prendersi tutto il lato libero.
+ *
+ * Cio' che e' cambiato e' che sotto di lui non c'e' piu' il vuoto. Il gate era
+ * un interruttore, e un interruttore che scatta su una coincidenza rara produce
+ * una citta' fatta di aghi: tutto quello che non era picco restava largo otto
+ * voxel per quanto in alto salisse. `urbanFootprintStepsOf` mette due gradini in
+ * mezzo — la fascia intermedia arriva a meta' strada fra modulo e scala mega, il
+ * centro non eletto alla scala mega — e la gerarchia smette di decidere la sola
+ * altezza: adesso dice anche quanto un edificio si allarga salendo.
+ *
+ * **Il confronto e' `>=` e non `===`.** `allowedLevel` clampa gia' a
+ * `BUILDER.maxLevel`, ma un tetto che superi il massimo per un altro chiamante
+ * non deve ricadere in silenzio nel gradino sotto.
+ *
+ * **I gradini guardano il livello raggiunto, il lato libero no**, e la
+ * distinzione e' costata due gate della citta' in quota. Il tetto dell'isolato
+ * dice cosa quel luogo *concederebbe*, non quanto ci si e' costruito: una
+ * colonna diventa `core` appena ha dodici vicini, quindi il suo tetto salta a
+ * ventitre' mentre gli edifici sopra sono ancora al livello uno. Agganciando i
+ * gradini a quel numero, la prima crescita di un quartiere nasceva gia' larga
+ * dodici — i cortili si chiudevano, e con loro le sacche in cui `aerial/` apre
+ * le piazze in quota. Il `level` di chi chiede riporta il gradino a dire quello
+ * che deve dire: **ci si allarga salendo**, non appena il vicinato lo permette.
+ *
+ * L'isolato intero resta invece appeso al solo tetto, come sempre: e' una
+ * proprieta' del luogo — la coincidenza fra fascia, cono ed elezione — e non un
+ * premio che un edificio si guadagna crescendo.
  */
 export function urbanFootprintCap(
   rect: BlockRect,
   allowedAt: (x: number, y: number) => number,
+  level: number = Number.POSITIVE_INFINITY,
 ): number {
   const blockSide = Math.min(rect.x1 - rect.x0 + 1, rect.y1 - rect.y0 + 1);
   const centerX = rect.x0 + ((rect.x1 - rect.x0) >> 1);
   const centerY = rect.y0 + ((rect.y1 - rect.y0) >> 1);
-  return allowedAt(centerX, centerY) === BUILDER.maxLevel ? blockSide : MAX_FOOTPRINT;
+  const allowed = allowedAt(centerX, centerY);
+  if (allowed >= BUILDER.maxLevel) return blockSide;
+
+  const reached = Math.min(allowed, level);
+  let side = MAX_FOOTPRINT;
+  for (const step of URBAN_FOOTPRINT_STEPS) {
+    if (reached >= step.fromLevel) side = step.side;
+  }
+  // Un gradino non puo' comunque sfondare l'isolato: dove la maglia e' stretta
+  // il lato libero resta il vincolo, esattamente come per il picco.
+  return Math.min(side, blockSide);
 }
 
 /**

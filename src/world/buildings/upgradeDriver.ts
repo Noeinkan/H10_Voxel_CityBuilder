@@ -191,6 +191,10 @@ export class UpgradeDriver {
       : urbanFootprintCap(
         rect,
         (centerX, centerY) => allowedLevel(this.ctx, centerX, centerY, state),
+        // Il livello a cui l'edificio sta salendo: i gradini d'impronta lo
+        // guardano, perche' ci si allarga **salendo** e non appena l'isolato
+        // diventerebbe idoneo. Vedi `urbanFootprintCap`.
+        nextLevel,
       );
     // Un assemblaggio gia' nato non si restringe se il quartiere cambia: il
     // gate autorizza l'espansione, non riscrive la storia del record.
