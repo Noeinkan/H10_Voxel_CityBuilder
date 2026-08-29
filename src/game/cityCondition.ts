@@ -93,23 +93,35 @@ export function cityCondition(
   // Un edificio misto conta anche per il suo secondo uso: chiedere quattro
   // quartieri separati quando la citta' ne ha tre e un isolato che ne fa due
   // sarebbe chiedere di disfare proprio cio' che la fase premia.
-  const missing = ALL_CLASSES
+  const target = BALANCE.gameplay.success;
+  const ready = ALL_CLASSES
     .map((cls) => state.buildingCounts[cls] + state.mixedCounts[cls])
-    .filter((count) => count < BALANCE.gameplay.success.buildingsPerClass).length;
-  if (missing > 0) {
+    .filter((count) => count >= target.buildingsPerClass).length;
+  /*
+   * **Il traguardo porta il punteggio, non il proprio nome.**
+   *
+   * «Goal · self-sufficient city» resta a schermo per l'intera partita e non
+   * cambia mai: e' una scritta, non una misura, e la distanza da coprire —
+   * quante classi sono a posto, quanti abitanti mancano — stava tutta nel
+   * messaggio, cioe' nel cassetto che si apre solo se lo si apre. Sono gli
+   * unici due numeri che dicono se l'ultima mossa ha avvicinato o allontanato il
+   * traguardo, e vanno dove si guarda.
+   */
+  if (ready < ALL_CLASSES.length) {
+    const residents = Math.round(state.population.stock);
     return {
       kind: 'development',
       tone: 'objective',
-      title: 'Goal · self-sufficient city',
-      message: `Build at least ${BALANCE.gameplay.success.buildingsPerClass} buildings of each class and reach ${BALANCE.gameplay.success.population} residents.`,
+      title: `Goal · ${ready}/${ALL_CLASSES.length} classes at ${target.buildingsPerClass} buildings, ${residents}/${target.population} residents`,
+      message: `Build at least ${target.buildingsPerClass} buildings of each class and reach ${target.population} residents.`,
     };
   }
 
-  const seconds = Math.ceil((BALANCE.gameplay.success.stableTicks - stableTicks) / 10);
+  const seconds = Math.ceil((target.stableTicks - stableTicks) / 10);
   return {
     kind: 'development',
     tone: 'objective',
-    title: 'Goal · self-sufficient city',
+    title: `Goal · keep food, materials and funds balanced for ${seconds}s`,
     message: `Keep food, materials, and funds balanced for ${seconds} seconds.`,
   };
 }

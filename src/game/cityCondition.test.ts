@@ -90,6 +90,23 @@ describe('condizioni della città', () => {
       BALANCE.gameplay.success.stableTicks,
     ).kind).toBe('success');
   });
+
+  it('il traguardo porta la distanza da coprire, non solo il proprio nome', () => {
+    // «Goal · self-sufficient city» non cambiava mai: restava a schermo per
+    // l'intera partita senza dire se l'ultima mossa avesse avvicinato o
+    // allontanato il traguardo. I due numeri che lo dicono stavano nel
+    // messaggio, cioe' in un cassetto che si apre solo se lo si apre.
+    const target = BALANCE.gameplay.success;
+    const half = { ...completeCity(), population: { stock: 60, delta: 1 }, staffing: 1 };
+    const classes = cityCondition(half, 0).title;
+    expect(classes).toContain(`0/${ALL_CLASSES.length} classes`);
+    expect(classes).toContain(`60/${target.population} residents`);
+
+    // A classi complete resta il conto alla rovescia, che e' l'altra meta' della
+    // stessa domanda: quanto manca.
+    const stable = cityCondition(selfSufficientCity(), target.stableTicks - 100).title;
+    expect(stable).toMatch(/balanced for \d+s$/);
+  });
 });
 
 function completeCity(): SimState {

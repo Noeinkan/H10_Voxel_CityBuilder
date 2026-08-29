@@ -6,11 +6,12 @@ import {
   BUILDING_CLASS,
   catalystById,
   createSimState,
+  EMPTY_COMMERCE,
   EMPTY_HARVEST,
   FARM_KIND,
   type SimState,
 } from '../sim';
-import { tipsFor, urgentTip } from './tips';
+import { tipsFor, urgentTip, type GameTip } from './tips';
 
 const POPULATION = 400;
 
@@ -182,5 +183,68 @@ describe('tips — i colli di bottiglia che nessuna barra mostra', () => {
     const message = urgentTip(state)?.message ?? '';
     expect(message).toContain('existing Greenhouse');
     expect(message).not.toContain('place a Greenhouse');
+  });
+});
+
+/**
+ * **Il titolo e' tutto cio' che il giocatore legge**, e queste sono le due prove
+ * che lo tengono tale. La targa dell'HUD mostra il titolo e nient'altro: il
+ * messaggio sta nel cassetto Citta', che si apre solo se si decide di aprirlo.
+ *
+ * Le prove nascono da due guasti opposti visti sullo stesso schermo — un titolo
+ * cosi' lungo che l'ellissi ne mangiava il rimedio, e cinque cosi' corti da non
+ * dire niente — e li fissano dai due lati: **entra nella targa** e **nomina
+ * qualcosa che si puo' fare**.
+ */
+describe('tips — la targa deve bastare da sola', () => {
+  /** Due righe da ~55 caratteri: quanto `.hud-toast[data-kind="condition"]` concede. */
+  const PLAQUE_BUDGET = 110;
+
+  /** Ogni consiglio che il modulo sa produrre, uno stato per ciascuno. */
+  function everyTip(): readonly GameTip[] {
+    const crowded = city({ population: { stock: 4000, delta: 10 }, harvest: fedAt(4000, 1) });
+    const states: readonly SimState[] = [
+      starving(),
+      starving({ funds: { stock: 12, delta: -5 } }),
+      city({ satisfaction: 0.08 }),
+      city({ staffing: 0.42 }),
+      city({
+        materials: { stock: 0, delta: 0 },
+        commerce: { ...EMPTY_COMMERCE, demand: 40, capacity: 30, served: 0 },
+      }),
+      crowded,
+      addCatalyst(crowded, {
+        x: 300, y: 0, class: catalystById('greenhouse').class, kind: 'greenhouse',
+        strength: 200, radius: 12,
+      }),
+    ];
+    return states.flatMap((state) => tipsFor(state));
+  }
+
+  it('copre ogni consiglio che il modulo sa produrre', () => {
+    // Senza questa riga le due prove sotto passerebbero anche misurando meta'
+    // dei consigli, e sarebbe il modo silenzioso in cui smettono di valere.
+    expect(new Set(everyTip().map((tip) => tip.id))).toEqual(new Set([
+      'food-shortage', 'budget-deficit', 'unhappy-city',
+      'short-handed', 'empty-shelves', 'countryside-behind',
+    ]));
+  });
+
+  it('ogni titolo entra nella targa e separa la causa dal gesto', () => {
+    for (const tip of everyTip()) {
+      expect(tip.title.length, `${tip.id}: «${tip.title}»`).toBeLessThanOrEqual(PLAQUE_BUDGET);
+      // Il trattino o i due punti sono la giuntura fra «cosa succede» e «cosa
+      // fare»: un titolo che non ne ha nessuno sta dicendo una cosa sola.
+      expect(tip.title, tip.id).toMatch(/[—:]/);
+    }
+  });
+
+  it('non chiede mai un gesto che il giocatore non ha', () => {
+    // Case e campi li fa crescere il driver di `src/world/` sul terreno che
+    // trova libero: «Build more homes» e «Plant more farms» erano istruzioni per
+    // un pulsante che non esiste. Il gesto vero e' il catalizzatore.
+    for (const tip of everyTip()) {
+      expect(tip.title, tip.id).not.toMatch(/build (more )?homes|plant (more )?farms/i);
+    }
   });
 });

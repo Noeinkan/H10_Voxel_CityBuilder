@@ -39,6 +39,23 @@ export interface GameTip {
   /** Stabile: identifica il consiglio, non il momento in cui e' apparso. */
   readonly id: string;
   readonly kind: TipKind;
+  /**
+   * **La riga che il giocatore legge davvero**, e quindi l'unica che deve
+   * bastare da sola: la targa in basso a sinistra mostra il titolo e nient'altro
+   * — il messaggio vive nel cassetto Citta', che si apre solo se si decide di
+   * aprirlo.
+   *
+   * Ne segue un contratto in due parti, e le crisi sul cibo erano le sole a
+   * rispettarlo. **Porta la causa misurata**: «Build more homes» non dice quanto
+   * manchi, mentre il 42% di organico che stava sepolto nel messaggio e' proprio
+   * il numero che il giocatore puo' guardare risalire. **E nomina un gesto che
+   * il giocatore puo' fare**: case e campi crescono da soli — li pianta il driver
+   * di `src/world/` — quindi «Build more homes» e «Plant more farms» chiedevano
+   * l'unica cosa che nessun click ottiene. Il gesto vero e' il catalizzatore che
+   * li fa nascere.
+   *
+   * Sta in due righe da ~55 caratteri, che e' quanto la targa concede.
+   */
   readonly title: string;
   /** Cosa sta succedendo **e** il gesto che lo risolve. Mai solo la diagnosi. */
   readonly message: string;
@@ -112,19 +129,26 @@ function crisisTips(state: SimState): GameTip[] {
   }
 
   if (state.funds.stock <= BALANCE.gameplay.crisis.fundsReserve && state.funds.delta < 0) {
+    // La cassa e non il delta: la crisi scatta su un saldo che scende, ma il
+    // delta di un tick puo' arrotondarsi a zero e «losing 0 funds» non e' un
+    // avviso. Quanto resta in cassa e' il numero che si guarda scendere.
+    const left = Math.max(0, Math.round(state.funds.stock));
     out.push({
       id: 'budget-deficit',
       kind: 'crisis',
-      title: 'Budget deficit',
+      title: `Budget deficit: ${left} funds left — place a Market, or switch on Austerity.`,
       message: 'The city is losing funds every tick: services cost more than the shops earn. To fix that, place a Market so commerce pays for them, or switch on Austerity. No buildings will be lost.',
     });
   }
 
   if (state.satisfaction <= BALANCE.gameplay.crisis.satisfaction) {
+    // «Happiness» e la percentuale sono le stesse parole della barra risorse:
+    // un consiglio che ribattezza cio' che sta gia' a schermo si fa cercare.
+    const percent = Math.round(state.satisfaction * 100);
     out.push({
       id: 'unhappy-city',
       kind: 'crisis',
-      title: 'Critical happiness',
+      title: `Happiness ${percent}%: crowded and underserved — place a Park, then a Market.`,
       message: 'The city is overcrowded or underserved, and satisfaction has hit rock bottom. To fix that, place a Park to raise civic life, a Market so shops serve people, and more housing to lower the crowding that causes it.',
     });
   }
@@ -207,7 +231,7 @@ function bottleneckTips(state: SimState): GameTip[] {
     out.push({
       id: 'short-handed',
       kind: 'bottleneck',
-      title: 'Build more homes',
+      title: `Only ${percent}% staffed — place another Market so homes grow.`,
       message: `Factories, shops and fields share one workforce, and it is only ${percent}% staffed — every one of them is producing that fraction. To fix that, build more homes: houses grow around your Market, so place another Market instead of more industry.`,
     });
   }
@@ -221,7 +245,7 @@ function bottleneckTips(state: SimState): GameTip[] {
     out.push({
       id: 'empty-shelves',
       kind: 'bottleneck',
-      title: 'Place a Factory',
+      title: 'Shops have nothing to sell — place a Factory near the Market.',
       message: 'Your shops are open with nothing to sell: commerce burns materials, and the warehouse is empty. To fix that, place a Factory close to your Market — it stocks the shelves, and until then the shops earn nothing.',
     });
   }
@@ -234,13 +258,20 @@ function bottleneckTips(state: SimState): GameTip[] {
     const hasGreenhouse = state.catalysts.some(
       (catalyst) => catalystRoleOf(catalyst) === 'greenhouse',
     );
+    // «Plant more farms» chiedeva l'unico gesto che il giocatore non ha: i lotti
+    // li pianta il driver di `src/world/` sulla terra fertile che trova libera.
+    // Cio' che dipende da chi gioca e' lasciargliela, o togliere del tutto la
+    // domanda di terra con la serra.
+    const gesture = hasGreenhouse
+      ? 'overlap the Greenhouse ring with the Factory.'
+      : 'place a Greenhouse near the Factory.';
     const response = hasGreenhouse
       ? 'Keep open ground inside the existing Greenhouse ring for new plots, or overlap that ring with the Factory so dense industry can become hydroponic towers.'
-      : 'Plant more farms — or place a Greenhouse close to the Factory for hydroponic towers that spend no farmland.';
+      : 'Leave open ground for new plots — or place a Greenhouse close to the Factory for hydroponic towers that spend no farmland.';
     out.push({
       id: 'countryside-behind',
       kind: 'bottleneck',
-      title: 'Plant more farms',
+      title: `Fields are ${wanted} plots behind — ${gesture}`,
       message: `The city eats well today, but its fields are about ${wanted} plots behind its appetite. To fix that, ${response}`,
     });
   }
