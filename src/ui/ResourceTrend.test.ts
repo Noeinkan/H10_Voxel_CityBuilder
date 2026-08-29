@@ -86,4 +86,53 @@ describe('ResourceTrend', () => {
   it('la finestra di default copre circa cinque secondi di gioco', () => {
     expect(TREND_WINDOW).toBe(48);
   });
+
+  describe('rate', () => {
+    it('media il ritmo per tick sulla finestra chiesta', () => {
+      const trend = new ResourceTrend();
+      for (let tick = 0; tick <= 20; tick += 1) trend.sample(tick, [['funds', 100 + tick * 3]]);
+
+      expect(trend.rate('funds', 8)).toBeCloseTo(3, 6);
+    });
+
+    it('divide per i tick e non per i campioni: a 4x ne salta tre su quattro', () => {
+      // E' il caso che rompe una media ingenua: l'HUD ridipinge a cadenza sua,
+      // quindi fra due campioni passano quattro tick. Contarli come uno solo
+      // direbbe il quadruplo del ritmo vero.
+      const trend = new ResourceTrend();
+      for (let tick = 0; tick <= 40; tick += 4) trend.sample(tick, [['funds', 100 + tick * 3]]);
+
+      expect(trend.rate('funds', 8)).toBeCloseTo(3, 6);
+    });
+
+    it('smorza il rumore che il singolo passo porta tutto intero', () => {
+      // Una crescita di 2 per tick con un rimbalzo alternato di ±1.5: l'ultimo
+      // passo dice 0.5 o 3.5, la finestra dice 2.
+      const trend = new ResourceTrend();
+      for (let tick = 0; tick <= 16; tick += 1) {
+        trend.sample(tick, [['population', 50 + tick * 2 + (tick % 2 === 0 ? 0 : 1.5)]]);
+      }
+
+      expect(trend.rate('population', 8)).toBeCloseTo(2, 1);
+    });
+
+    it('legge la serie dal fondo, cosi una iscritta tardi non esce sfasata', () => {
+      const trend = new ResourceTrend();
+      for (let tick = 0; tick <= 10; tick += 1) {
+        const entries: (readonly [string, number])[] = [['funds', tick]];
+        // Il cibo entra a meta' corsa: la sua finestra e' piu' corta di `ticks`.
+        if (tick >= 6) entries.push(['food', 200 + (tick - 6) * 5]);
+        trend.sample(tick, entries);
+      }
+
+      expect(trend.rate('food', 8)).toBeCloseTo(5, 6);
+    });
+
+    it('tace finche la storia non basta', () => {
+      const trend = new ResourceTrend();
+      expect(trend.rate('funds', 8)).toBeNull();
+      trend.sample(0, [['funds', 100]]);
+      expect(trend.rate('funds', 8)).toBeNull();
+    });
+  });
 });

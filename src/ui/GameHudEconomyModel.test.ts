@@ -42,6 +42,23 @@ describe('fundsHint', () => {
     expect(fundsHint(NO_FUNDS_FLOW)).toBe('Taxes cover the bills');
     expect(fundsHint(funds({ tax: 9, civic: 6, paid: 6 }))).toBe('Taxes cover the bills');
   });
+
+  it('aggiunge la scadenza della cassa alla voce che pesa di piu', () => {
+    expect(fundsHint(funds({ tax: 5, civic: 8, policies: 2, farms: 1, paid: 11 }), 23))
+      .toBe('Civic costs > taxes · empty in ~23 ticks');
+  });
+
+  it('smette di rassicurare quando nessuna voce sfonda ma la somma si', () => {
+    // Nessuna spesa supera le tasse da sola, e la cassa cala lo stesso: e' la
+    // somma a non tornare, ed e' quello che la riga deve dire.
+    expect(fundsHint(funds({ tax: 9, civic: 6, paid: 6 }), 1))
+      .toBe('Upkeep outruns income · empty in ~1 tick');
+  });
+
+  it('non prevede una scadenza su una cassa gia finita', () => {
+    expect(fundsHint(funds({ tax: 5, civic: 6, policies: 4, paid: 8 }), 0))
+      .toBe('Upkeep short: 80% of bills paid');
+  });
 });
 
 describe('foodHint', () => {
@@ -70,14 +87,24 @@ describe('foodHint', () => {
 });
 
 describe('materialsHint', () => {
-  it('mette davanti il cantiere in attesa', () => {
-    const report: MaterialsReport = { ...EMPTY_MATERIALS, reserve: 12, waitingCost: 20 };
-    expect(materialsHint(report)).toBe('Construction waiting: 20 materials');
+  const waiting: MaterialsReport = { ...EMPTY_MATERIALS, reserve: 12, waitingCost: 20 };
+
+  it('mette davanti il cantiere in attesa, con quanto manca', () => {
+    expect(materialsHint(waiting, 14)).toBe('Construction waiting: 20 materials · ~14 ticks away');
+    expect(materialsHint(waiting, 1)).toBe('Construction waiting: 20 materials · ~1 tick away');
   });
 
-  it('poi la riserva per i cantieri', () => {
+  it('dice che la scorta e ferma invece di tacere: tacere leggerebbe «presto»', () => {
+    expect(materialsHint(waiting)).toBe('Construction waiting: 20 materials · stock not growing');
+  });
+
+  it('annuncia il cantiere gia pagabile', () => {
+    expect(materialsHint(waiting, 0)).toBe('Construction waiting: 20 materials · starting now');
+  });
+
+  it('sulla riserva dice che nessuno la sta aspettando', () => {
     const report: MaterialsReport = { ...EMPTY_MATERIALS, reserve: 12 };
-    expect(materialsHint(report)).toBe('12 reserved for construction');
+    expect(materialsHint(report)).toBe('12 reserved · nothing waiting on them');
   });
 
   it('altrimenti dichiara che l industria copre la citta', () => {
@@ -104,6 +131,14 @@ describe('populationHint', () => {
 
   it('altrimenti conta le case libere', () => {
     expect(populationHint(10, 24, 1, 1)).toBe('14 homes free');
+  });
+
+  it('dice in quanto si riempiono, quando la stima c e', () => {
+    expect(populationHint(10, 24, 1, 1, 39)).toBe('14 homes free · full in ~39 ticks');
+  });
+
+  it('tace sulla stima quando le case sono gia prese', () => {
+    expect(populationHint(10, 24, 1, 1, 0)).toBe('14 homes free');
   });
 });
 

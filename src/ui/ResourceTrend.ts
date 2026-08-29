@@ -31,6 +31,15 @@ export type TrendDirection = 'up' | 'down' | 'flat';
 export class ResourceTrend {
   private readonly capacity: number;
   private readonly series = new Map<string, number[]>();
+  /**
+   * I tick dei campioni, in parallelo alle serie.
+   *
+   * Serve a `rate`: l'HUD ridipinge a cadenza sua e la simulazione avanza a
+   * velocita' variabile, quindi due campioni consecutivi possono distare un tick
+   * o sei, e contarli come uno solo direbbe il quadruplo a 4x. Uno solo per
+   * tutte le serie, perche' `sample` le riempie insieme.
+   */
+  private readonly ticks: number[] = [];
   /** L'ultimo tick campionato: il secondo passaggio sullo stesso non conta. */
   private lastTick = -1;
 
@@ -48,8 +57,13 @@ export class ResourceTrend {
     if (tick === this.lastTick) return false;
     // Un tick che torna indietro e' una partita nuova, non un passo: la finestra
     // di quella vecchia non descrive piu' niente.
-    if (tick < this.lastTick) this.series.clear();
+    if (tick < this.lastTick) {
+      this.series.clear();
+      this.ticks.length = 0;
+    }
     this.lastTick = tick;
+    this.ticks.push(tick);
+    if (this.ticks.length > this.capacity) this.ticks.shift();
     for (const [id, value] of entries) {
       const window = this.series.get(id) ?? [];
       window.push(value);
@@ -82,6 +96,40 @@ export class ResourceTrend {
   /** Quanto forte, 0..1: satura al 25% di variazione sulla finestra. */
   magnitude(id: string): number {
     return Math.min(1, Math.abs(this.change(id)) * 4);
+  }
+
+  /**
+   * Quanto si muove per tick, mediato sugli ultimi `maxTicks` di gioco.
+   *
+   * **E' il ritmo che una previsione puo' usare, e `delta` non lo e'.** Il
+   * rumore della migrazione entra tutto nell'ultimo passo: una stima costruita
+   * su quello salta di un terzo a ogni tick, e un conto alla rovescia che salta
+   * si smette di guardare — lo stesso difetto che questa finestra risolve gia'
+   * per la freccia.
+   *
+   * L'ampiezza e' in **tick di gioco** e non in campioni, perche' l'HUD ridipinge
+   * a cadenza sua: a 4x fra due campioni passano piu' tick, e dividere per il
+   * numero di campioni gonfierebbe il ritmo di quattro volte.
+   *
+   * `null` quando la storia non basta ancora a dire niente.
+   */
+  rate(id: string, maxTicks: number): number | null {
+    const window = this.series.get(id);
+    if (window === undefined || window.length < 2 || this.ticks.length < 2) return null;
+
+    const lastTick = this.ticks[this.ticks.length - 1] ?? 0;
+    let index = this.ticks.length - 1;
+    while (index > 0 && lastTick - (this.ticks[index - 1] ?? 0) <= maxTicks) index -= 1;
+
+    // L'allineamento e' dal fondo, e il passo indietro si ferma anche alla
+    // storia della serie: una risorsa iscritta piu' tardi ha una finestra piu'
+    // corta di `ticks`, e indicizzarla dall'inizio la leggerebbe sfasata.
+    // Accorciare la finestra e' meglio che tacere — il ritmo c'e', copre solo
+    // meno tempo.
+    const back = Math.min(this.ticks.length - 1 - index, window.length - 1);
+    const elapsed = lastTick - (this.ticks[this.ticks.length - 1 - back] ?? 0);
+    if (elapsed <= 0) return null;
+    return ((window[window.length - 1] ?? 0) - (window[window.length - 1 - back] ?? 0)) / elapsed;
   }
 
   /**

@@ -11,6 +11,41 @@ coincide con il messaggio di commit.
 
 ---
 
+## In corso — L'HUD dice anche quando
+
+- **Le risorse guadagnano una stima, e sta in `src/sim/forecast.ts`.** Le righe
+  «perché» sapevano dire *cosa* si muove e *perché*, non *quando* arriva dove sta
+  andando: una riserva di materiali ferma si leggeva esattamente come una che sta
+  per servire. Le previsioni leggono i delta che il tick ha già misurato invece
+  di riscrivere il bilancio, come `state.harvest` si legge invece di
+  ricalcolarlo; il dominio dà i numeri, `GameHudEconomyModel.ts` li nomina — lo
+  stesso taglio della 7.6 fra le soglie e `prospects.ts`.
+- **Materiali.** Il cantiere in attesa dice fra quanto diventa pagabile
+  (`Construction waiting: 98 materials · ~14 ticks away`), e quando la scorta non
+  cresce lo dice invece di tacere — tacere si legge come «presto». Il ritmo è
+  `materials.delta` **meno** `materialFlows.construction`: i cantieri spendono
+  dopo il tick, in `Builder.onTick`, e la loro spesa non passa per il delta.
+  Senza cantieri in attesa la riserva smette di dichiarare solo il proprio valore
+  e dice che nessuno la sta aspettando.
+- **Fondi.** La voce che pesa di più porta accanto la scadenza della cassa. E
+  quando nessuna singola spesa supera le tasse ma il saldo scende lo stesso, la
+  riga smette di rassicurare: è la somma a non tornare.
+- **Residenti.** Le case libere dicono in quanti tick si riempiono. Il conto non
+  è una divisione: la città riempie una *frazione* dello spazio libero per tick,
+  quindi il residuo decade in geometrica e una stima lineare prometterebbe il
+  pieno in un terzo del tempo vero. La frazione si misura invece di riscriverla,
+  così fame, soddisfazione, terra residua e policy entrano nel conto senza che
+  `forecast.ts` sappia che esistono.
+- **Il ritmo dei residenti si legge sulla finestra, non su `delta`.** Misurato su
+  una città viva, il rumore della migrazione faceva dire alla stessa riga 72,
+  poi 81, poi 61 tick: un conto alla rovescia che salta si smette di guardare —
+  lo stesso difetto che `ResourceTrend` risolve già per la freccia. Da qui
+  `ResourceTrend.rate`, che media su otto tick di gioco; sulla stessa partita la
+  riga scende ora 66 → 60 → 56 → 52 → 49. L'ampiezza è in **tick** e non in
+  campioni: l'HUD ridipinge a cadenza sua, e a 4× fra due campioni ne passano
+  quattro. Fondi e materiali non hanno questo rumore e continuano a leggere il
+  delta: la scadenza della cassa scendeva già 12 → 11 → 10 → 9 senza rimbalzi.
+
 ## In corso — Trend e perche' nel pannello risorse
 
 - **Trend e perche' nel pannello risorse.** La barra in alto mostra sempre la freccia di tendenza (finestra ~5 s, non l'ultimo tick), la sparkline sotto il valore e una riga di causa per ogni risorsa letta dai referti del tick; in coda ai dati compare il blocco City needs con il traguardo di autosufficienza e il prossimo passo del coach. Il tick ora persiste `satisfactionReport` (scomposizione del bersaglio di soddisfazione) e `landFactor` (quota di terra che resta, unico numero del bilancio nato dalla mappa), entrambi derivati e non accumulati, con fallback al revive come per `staffing`.

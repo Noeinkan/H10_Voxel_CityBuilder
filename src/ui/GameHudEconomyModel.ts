@@ -7,6 +7,9 @@ import {
   effectiveCount,
   fedShareOf,
   missingPlotsOf,
+  ticksToAffordConstruction,
+  ticksToEmpty,
+  ticksToFillHousing,
   weightsOf,
   type FoodReport,
   type FundsReport,
@@ -74,6 +77,15 @@ const HINT = {
   starveShare: 0.85,
   /** Sotto, i negozi servono cosi' poco da pesare sulla felicita'. */
   shopShare: 0.6,
+  /**
+   * Su quanti tick mediare il ritmo dei residenti prima di prevederci sopra.
+   *
+   * Il rumore della migrazione vive tutto nell'ultimo passo: sulla stessa citta'
+   * la stima grezza diceva 72, poi 81, poi 61, e un conto alla rovescia che
+   * salta si smette di guardare. Otto tick lo tolgono senza allungare la
+   * finestra al punto da rispondere sulla citta' di prima.
+   */
+  rateTicks: 8,
 } as const;
 
 /**
@@ -85,17 +97,41 @@ const HINT = {
  * `materialFlows`, `satisfactionReport` — e non rifa mai il conto.
  */
 
-/** La voce di spesa che pesa di piu' sui fondi, quando copre le entrate. */
-export function fundsHint(flows: FundsReport): string {
+/**
+ * «~14 ticks»: l'unita' di tempo che il giocatore vede sul contatore, con il
+ * singolare dove serve. Le tre righe che prevedono la compongono ognuna a modo
+ * suo, perche' «fra quanto arriva» e «fra quanto finisce» non sono la stessa
+ * frase.
+ */
+function ticksLabel(ticks: number): string {
+  return `~${ticks} ${ticks === 1 ? 'tick' : 'ticks'}`;
+}
+
+/**
+ * La voce di spesa che pesa di piu' sui fondi, quando copre le entrate, e la
+ * scadenza della cassa quando il saldo scende.
+ *
+ * `emptyIn` e' `null` sia quando i fondi non calano — e allora non c'e' nessuna
+ * scadenza da mostrare — sia quando chi chiama non ne ha una: e' lo stesso
+ * silenzio, ed e' voluto.
+ */
+export function fundsHint(flows: FundsReport, emptyIn: number | null = null): string {
   const owed = flows.civic + flows.policies + flows.farms;
+  // La cassa e' gia' finita: qui una scadenza sarebbe una previsione su un
+  // fatto passato.
   if (owed > 0 && flows.paid < owed) {
     return `Upkeep short: ${Math.floor((flows.paid / owed) * 100)}% of bills paid`;
   }
+  const deadline = emptyIn === null
+    ? ''
+    : emptyIn === 0 ? ' · funds are gone' : ` · empty in ${ticksLabel(emptyIn)}`;
   const dominant = dominantOutflow(flows);
-  if (dominant === 'civic' && flows.civic > flows.tax) return 'Civic costs > taxes';
-  if (dominant === 'policies' && flows.policies > flows.tax) return 'Policy costs > taxes';
-  if (dominant === 'farms' && flows.farms > flows.tax) return 'Farm upkeep > taxes';
-  return 'Taxes cover the bills';
+  if (dominant === 'civic' && flows.civic > flows.tax) return `Civic costs > taxes${deadline}`;
+  if (dominant === 'policies' && flows.policies > flows.tax) return `Policy costs > taxes${deadline}`;
+  if (dominant === 'farms' && flows.farms > flows.tax) return `Farm upkeep > taxes${deadline}`;
+  // Nessuna singola voce supera le tasse e la cassa scende lo stesso: e' la
+  // somma a non tornare, e dirlo e' piu' onesto che rassicurare.
+  return emptyIn === null ? 'Taxes cover the bills' : `Upkeep outruns income${deadline}`;
 }
 
 /** Razioni in corso, o la distanza dal piano di copertura che il driver insegue. */
@@ -112,25 +148,48 @@ export function foodHint(
   return 'Covered: fields match the city';
 }
 
-/** Il cantiere in attesa prima di tutto: e' il fatto che il giocatore puo' muovere. */
-export function materialsHint(report: MaterialsReport): string {
-  if (report.waitingCost > 0) return `Construction waiting: ${Math.ceil(report.waitingCost)} materials`;
-  if (report.reserve > 0) return `${Math.ceil(report.reserve)} reserved for construction`;
+/**
+ * Il cantiere in attesa prima di tutto: e' il fatto che il giocatore puo'
+ * muovere. E accanto **quando** finisce l'attesa, che era la meta' mancante.
+ *
+ * Senza cantieri in attesa la riserva diceva soltanto quanto valeva, e la
+ * domanda che restava era «e quando la useranno?». La risposta e' che nessuno
+ * la sta aspettando: e' un fatto sulla citta', non un dettaglio contabile, ed e'
+ * cio' che distingue una scorta ferma da una che sta per servire.
+ */
+export function materialsHint(report: MaterialsReport, readyIn: number | null = null): string {
+  if (report.waitingCost > 0) {
+    const when = readyIn === null
+      ? 'stock not growing'
+      : readyIn === 0 ? 'starting now' : `${ticksLabel(readyIn)} away`;
+    return `Construction waiting: ${Math.ceil(report.waitingCost)} materials · ${when}`;
+  }
+  if (report.reserve > 0) return `${Math.ceil(report.reserve)} reserved · nothing waiting on them`;
   return 'Industry covers the city';
 }
 
-/** Il freno piu' forte sulla crescita dei residenti, in ordine di urgenza. */
+/**
+ * Il freno piu' forte sulla crescita dei residenti, in ordine di urgenza, e
+ * quanto dura lo spazio che resta quando nessun freno e' stretto.
+ *
+ * `fullIn` arriva gia' calcolato sulla decadenza geometrica dello spazio
+ * libero: dividere qui le case per il delta prometterebbe il pieno in un terzo
+ * del tempo vero. Il conto sta in `src/sim/forecast.ts`.
+ */
 export function populationHint(
   population: number,
   capacity: number,
   landFactor: number,
   fed: number,
+  fullIn: number | null = null,
 ): string {
   if (capacity <= 0) return 'No homes yet: let buildings grow';
   if (population >= capacity) return 'Housing full: build homes';
   if (landFactor < HINT.landLeft) return 'City is running out of land';
   if (fed < HINT.starveShare) return 'Growth held back: not enough food';
-  return `${Math.ceil(capacity - population)} homes free`;
+  const free = Math.ceil(capacity - population);
+  const when = fullIn === null || fullIn === 0 ? '' : ` · full in ${ticksLabel(fullIn)}`;
+  return `${free} homes free${when}`;
 }
 
 /** Il peso piu' grande sul bersaglio della felicita', letto dal suo referto. */
@@ -154,6 +213,12 @@ export function buildHudResources(
   if (stats === null) return emptyResources();
   const { state } = stats;
   const population = state.population.stock;
+  // La stessa capacita' che il tick usa per il bilancio: non un secondo conto,
+  // o la riga prometterebbe case che il tick non vede. Serve a due letture — il
+  // freno e la previsione — e calcolarla una volta e' cio' che le tiene
+  // d'accordo.
+  const capacity = effectiveCount(state, BUILDING_CLASS.residential)
+    * weightsOf(state).residentialCapacity;
   return [
     resource(
       'funds',
@@ -164,7 +229,7 @@ export function buildHudResources(
       undefined,
       fundsBreakdown(state.flows),
       undefined,
-      fundsHint(state.flows),
+      fundsHint(state.flows, ticksToEmpty(state.funds.stock, state.funds.delta)),
     ),
     resource(
       'population',
@@ -177,11 +242,15 @@ export function buildHudResources(
       undefined,
       populationHint(
         population,
-        // La stessa capacita' che il tick usa per il bilancio: non un secondo
-        // conto, o la riga prometterebbe case che il tick non vede.
-        effectiveCount(state, BUILDING_CLASS.residential) * weightsOf(state).residentialCapacity,
+        capacity,
         state.landFactor,
         fedShareOf(state.harvest, population),
+        // Il ritmo arriva dalla finestra e non da `delta`: senza tendenza —
+        // primo tick, o un modello costruito senza — la riga tace sul tempo
+        // invece di dare un numero che salta.
+        trend === undefined
+          ? null
+          : ticksToFillHousing(population, capacity, trend.rate('population', HINT.rateTicks) ?? 0),
       ),
     ),
     resource(
@@ -204,7 +273,7 @@ export function buildHudResources(
       undefined,
       materialsBreakdown(state.materialFlows),
       materialsStatus(state.materials.stock, state.materialFlows),
-      materialsHint(state.materialFlows),
+      materialsHint(state.materialFlows, ticksToAffordConstruction(state)),
     ),
     {
       id: 'satisfaction',
