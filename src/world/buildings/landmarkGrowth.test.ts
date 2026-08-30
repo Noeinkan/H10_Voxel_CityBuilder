@@ -15,6 +15,7 @@ import { FACING, type Facing } from '../streets/streetGrid';
 import { VoxelWorld } from '../VoxelWorld';
 import { Builder } from './Builder';
 import { footprintDepth, type BuildingRecord } from './BuildingRegistry';
+import { recordsIn, type ClearanceBox } from './clearanceSite';
 import { BUILDER } from './config';
 import { ringStrips } from './landmarkDriver';
 
@@ -59,9 +60,9 @@ function settle(builder: Builder): void {
  */
 function materializableRingCell(
   builder: Builder,
-  oldBox: { x: number; y: number; sizeX: number; sizeY: number },
-  newBox: { x: number; y: number; sizeX: number; sizeY: number },
-): { x: number; y: number } {
+  oldBox: ClearanceBox,
+  newBox: ClearanceBox,
+): BuildingRecord {
   for (const strip of ringStrips(oldBox, newBox)) {
     for (let dy = 0; dy < strip.sizeY; dy++) {
       for (let dx = 0; dx < strip.sizeX; dx++) {
@@ -69,11 +70,20 @@ function materializableRingCell(
         const y = strip.y + dy;
         const before = builder.registry.count;
         builder.materialize([{ x, y, class: BUILDING_CLASS.residential }]);
-        if (builder.registry.count > before) return { x, y };
+        if (builder.registry.count === before) continue;
+        for (const record of builder.registry.at(x, y)) {
+          if (record.landmark === undefined) return record;
+        }
       }
     }
   }
   throw new Error('nessuna cella dell anello di crescita e edificabile');
+}
+
+/** Vero se l'impronta del record e quel riquadro condividono almeno una colonna. */
+function overlapsBox(record: BuildingRecord, box: ClearanceBox): boolean {
+  return record.x < box.x + box.sizeX && record.x + record.footprint > box.x &&
+    record.y < box.y + box.sizeY && record.y + footprintDepth(record) > box.y;
 }
 
 /** Edifici sparsi attorno al catalizzatore, sulle celle che la maglia concede. */
@@ -90,6 +100,63 @@ function materializablePositions(builder: Builder, count: number): { x: number; 
     }
   }
   return out;
+}
+
+/** Lo stato con il solo catalizzatore dello stadio, al centro. */
+function stadiumState(): SimState {
+  const definition = catalystById('stadium');
+  return addCatalyst(createSimState(), {
+    x: CENTRE,
+    y: CENTRE,
+    class: definition.class,
+    kind: 'stadium',
+    strength: 255,
+    radius: definition.radius,
+  });
+}
+
+/**
+ * Lo stadio zero con attorno il quartiere che gli fara' alzare lo stadio.
+ *
+ * Una casa dentro l'anello che il sedime uno prendera' — quella che lo
+ * sventramento dovra' togliere — e il vicinato fuori dall'impronta, che conta
+ * per la soglia senza cadere sotto la crescita.
+ */
+function stadiumAboutToGrow(): {
+  readonly builder: Builder;
+  readonly terrain: TerrainMap;
+  readonly newBox: ClearanceBox;
+  readonly ring: BuildingRecord;
+  /** I record in piedi prima dell'avanzamento, per dire dopo chi e' caduto. */
+  readonly standing: Map<number, BuildingRecord>;
+} {
+  const { builder, terrain } = flatBuilder();
+  const recipe = LANDMARKS.stadium!;
+
+  builder.placeLandmark(CENTRE, CENTRE, 'stadium');
+  settle(builder);
+
+  const before = stadiumOf(builder);
+  const facing = (before.facing ?? FACING.east) as Facing;
+  const oldBox = {
+    x: before.x,
+    y: before.y,
+    sizeX: before.footprint,
+    sizeY: footprintDepth(before),
+  };
+  const origin1 = landmarkOrigin('stadium', facing, CENTRE, CENTRE, undefined, 1)!;
+  const span1 = landmarkSpan('stadium', facing, undefined, 1)!;
+  const newBox = { x: origin1.x, y: origin1.y, sizeX: span1.sizeX, sizeY: span1.sizeY };
+
+  const ring = materializableRingCell(builder, oldBox, newBox);
+  const neighbours = materializablePositions(builder, recipe.stages[1]);
+  expect(neighbours).toHaveLength(recipe.stages[1]);
+  const standing = new Map(
+    [...builder.registry.all].map((record) => [record.id, record] as const),
+  );
+  expect(standing.size).toBeGreaterThanOrEqual(recipe.stages[1] + 2);
+
+  return { builder, terrain, newBox, ring, standing };
 }
 
 describe('un landmark che cresce di sedime', () => {
@@ -111,14 +178,7 @@ describe('un landmark che cresce di sedime', () => {
 
     // Edifici attorno al catalizzatore, fuori dall'impronta riservata: fanno
     // scattare lo stadio senza cadere dentro il terreno che crescera'.
-    let state: SimState = addCatalyst(createSimState(), {
-      x: CENTRE,
-      y: CENTRE,
-      class: definition.class,
-      kind: 'stadium',
-      strength: 255,
-      radius: definition.radius,
-    });
+    let state: SimState = stadiumState();
     const ring: { x: number; y: number }[] = [];
     for (let dy = -24; dy <= 24; dy += 8) {
       for (let dx = -24; dx <= 24; dx += 8) {
@@ -153,41 +213,8 @@ describe('un landmark che cresce di sedime', () => {
   });
 
   it('sventra l edificio sul terreno nuovo, e la struttura resta una', () => {
-    const { builder, terrain } = flatBuilder();
-    const definition = catalystById('stadium');
-    const recipe = LANDMARKS.stadium!;
-
-    builder.placeLandmark(CENTRE, CENTRE, 'stadium');
-    settle(builder);
-
-    const before = stadiumOf(builder);
-    const facing = (before.facing ?? FACING.east) as Facing;
-    const oldBox = {
-      x: before.x,
-      y: before.y,
-      sizeX: before.footprint,
-      sizeY: footprintDepth(before),
-    };
-    const origin1 = landmarkOrigin('stadium', facing, CENTRE, CENTRE, undefined, 1)!;
-    const span1 = landmarkSpan('stadium', facing, undefined, 1)!;
-    const newBox = { x: origin1.x, y: origin1.y, sizeX: span1.sizeX, sizeY: span1.sizeY };
-
-    let state: SimState = addCatalyst(createSimState(), {
-      x: CENTRE,
-      y: CENTRE,
-      class: definition.class,
-      kind: 'stadium',
-      strength: 255,
-      radius: definition.radius,
-    });
-
-    // Una casa dentro l'anello che lo stadio uno andra' a occupare, piu' un
-    // vicinato fuori dall'impronta che fa scattare lo stadio.
-    materializableRingCell(builder, oldBox, newBox);
-    const neighbours = materializablePositions(builder, recipe.stages[1]);
-    expect(neighbours).toHaveLength(recipe.stages[1]);
-    const built = builder.registry.count;
-    expect(built).toBeGreaterThanOrEqual(recipe.stages[1] + 1);
+    const { builder, terrain, newBox, ring, standing } = stadiumAboutToGrow();
+    let state = stadiumState();
 
     // Lo sventramento apre un cantiere: la passata che lo miete e' quella dopo,
     // quindi si alterna tick e comparsa finche' non c'e' piu' nulla in volo.
@@ -200,10 +227,46 @@ describe('un landmark che cresce di sedime', () => {
       while (builder.stats.growing > 0) builder.step();
     }
 
-    // L'edificio nell'anello e' caduto, e solo lui: il vicinato resta.
-    expect(builder.stats.cleared).toBe(1);
+    // L'edificio nell'anello e' caduto, e con lui soltanto cio' che stava sul
+    // sedime nuovo: il vicinato fuori dall'impronta e' ancora in piedi.
+    //
+    // **Non si conta quanti ne cadono**, e la differenza non e' cosmetica. La
+    // passata di costruzione gira nello stesso tick dell'avanzamento e prima di
+    // esso: puo' posare un'altra casa proprio sul terreno che lo stadio sta per
+    // prendere, e il cantiere la trova li' un istante dopo. E' il patto che la
+    // crescita dichiara — la citta' non aspetta la demolizione — quindi il conto
+    // dipende da cosa il quartiere stava facendo, non dal sedime. Cio' che deve
+    // restare vero e' **dove** cadono.
+    const fallen = [...standing.values()].filter(
+      (record) => builder.registry.get(record.id) === null,
+    );
+    expect(fallen.map((record) => record.id)).toContain(ring.id);
+    for (const record of fallen) expect(overlapsBox(record, newBox)).toBe(true);
+    // E il sedime nuovo e' rimasto allo stadio: nessuno ci e' cresciuto dentro
+    // mentre il cantiere sgomberava le altre strisce.
+    for (const record of recordsIn(builder.registry, newBox)) {
+      expect(record.landmark).toBe('stadium');
+    }
     expect(stadiumOf(builder).level).toBe(1);
     expect([stadiumOf(builder).footprint, footprintDepth(stadiumOf(builder))])
-      .toEqual([span1.sizeX, span1.sizeY]);
+      .toEqual([newBox.sizeX, newBox.sizeY]);
+  });
+
+  it('tiene prenotato il sedime nuovo finche il cantiere lavora', () => {
+    const { builder, newBox } = stadiumAboutToGrow();
+
+    builder.onTick({ ...stadiumState(), tickCount: BUILDER.ticksPerUpgrade });
+    expect(builder.stats.clearing).toBeGreaterThan(0);
+
+    // **Il cantiere apre solo dove c'e' da abbattere.** Una striscia dell'anello
+    // gia' vuota non ne apre nessuno, quindi senza una prenotazione sul sedime
+    // intero resterebbe edificabile per tutte le passate che servono a
+    // sgomberare le altre — e l'impronta, allargandosi, si troverebbe dentro un
+    // edificio che nessuno ha condannato.
+    for (let dy = 0; dy < newBox.sizeY; dy++) {
+      for (let dx = 0; dx < newBox.sizeX; dx++) {
+        expect(builder.registry.isOccupied(newBox.x + dx, newBox.y + dy)).toBe(true);
+      }
+    }
   });
 });

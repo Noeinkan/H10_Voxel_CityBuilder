@@ -1196,12 +1196,20 @@ export class LandmarkDriver {
       }
     }
 
+    // **Il sedime nuovo si prenota per intero, non striscia per striscia.** Il
+    // cantiere prenota cio' che sgombera, ma una striscia gia' vuota non ne apre
+    // nessuno: resterebbe libera per tutte le passate che servono ad abbattere
+    // le altre, e la citta' ci costruirebbe dentro. Poi l'impronta si allarga —
+    // e `replace` non guarda cosa c'e' sotto — seppellendo un edificio dentro lo
+    // stadio. La prenotazione cade quando la sagoma nuova prende il posto.
+    this.ctx.registry.reserveRect(newBox);
     let pending = 0;
     const doomed = new Set<number>();
     const apply = (): void => {
       pending--;
       if (pending === 0) {
         this.pendingGrowth.delete(record.id);
+        this.ctx.registry.releaseRect(newBox);
         this.applyGrownStage(record.id, kind, stage, facing, oldBox, newBox, newSpan.sizeZ, oldStamp);
       }
     };
@@ -1216,6 +1224,7 @@ export class LandmarkDriver {
     }
     if (pending === 0) {
       this.pendingGrowth.delete(record.id);
+      this.ctx.registry.releaseRect(newBox);
       this.applyGrownStage(record.id, kind, stage, facing, oldBox, newBox, newSpan.sizeZ, oldStamp);
     }
 
