@@ -9,14 +9,16 @@
 .commerce-row strong { color: var(--hud-ink); font-size: var(--text-md); }
 .commerce-note { margin: var(--space-1) 0 0; color: var(--hud-muted); font-size: var(--text-xs); line-height: 1.35; }
 
-.city-drawer .drawer-header, .policies-drawer .drawer-header { margin-bottom: 0; }
+.city-drawer .drawer-header, .policies-drawer .drawer-header,
+.main-menu .drawer-header { margin-bottom: 0; }
 /* La dashboard scorre come una colonna di sezioni; le policy sono corte e si
    appoggiano in alto. Nessuna delle due ha linguette: leggere e' una colonna,
    agire e' un elenco. */
 /* Un solo ritmo fra le sezioni: le due colonne sono la stessa lettura a densita'
    diverse, e mezzo passo di differenza si vedeva passando dall'una all'altra. */
 .city-drawer .drawer-body,
-.policies-drawer .drawer-body { display: grid; gap: var(--space-3); align-content: start; }
+.policies-drawer .drawer-body,
+.menu-section-body { display: grid; gap: var(--space-3); align-content: start; }
 .drawer-body { min-height: 0; overflow-y: auto; }
 .drawer-note { margin: 0 0 var(--space-2); color: var(--hud-muted); font-size: var(--text-xs); line-height: 1.35; }
 .drawer-note[hidden] { display: none; }
@@ -202,4 +204,173 @@
    **contenuto** e non la misura del contenitore. */
 @media (max-width: 760px) {
   .overview-facts { grid-template-columns: 1fr; }
+}
+
+/* --- Salvataggi -------------------------------------------------------------
+ *
+ * Una riga per slot: come si chiama, cosa c'e' dentro, e i gesti. Il riassunto
+ * si taglia invece di allargare il riquadro — una data lunga non deve spostare
+ * la colonna — e i bottoni disabilitati restano visibili, perche' uno slot
+ * vuoto deve dire "vuoto" e non sparire.
+ *
+ * Le righe non sono cambiate quando il cassetto e' diventato una sezione del
+ * menu principale: e' cambiato l'antenato, non il disegno. Da `.save-button` in
+ * poi il resto del menu se ne serve com'e', ed e' il motivo per cui non c'e' un
+ * secondo bottone di testo scritto accanto.
+ */
+.save-slot {
+  display: grid;
+  gap: var(--space-1);
+  padding: var(--space-2);
+  border: 1px solid var(--hud-line);
+  border-radius: var(--radius-md);
+}
+.save-slot-summary {
+  color: var(--hud-muted);
+  font-size: var(--text-xs);
+  line-height: 1.35;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.save-slot-actions, .save-file-row { display: flex; flex-wrap: wrap; gap: var(--space-1); }
+.save-button {
+  flex: 1 1 auto;
+  min-width: 72px;
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid var(--hud-line);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: var(--text-xs);
+  cursor: pointer;
+}
+.save-button:disabled { opacity: 0.45; cursor: default; }
+.save-button:hover:not(:disabled) { border-color: var(--hud-accent-shape); background: var(--hud-well); }
+.save-button:focus-visible { outline: 3px solid var(--hud-accent-shape); outline-offset: 1px; }
+.save-button[aria-pressed="true"] { border-color: var(--hud-sage); background: var(--hud-accent-soft); }
+.save-button .hud-icon { width: var(--icon-sm); height: var(--icon-sm); margin-right: var(--space-1); vertical-align: -2px; }
+
+/* --- Menu principale --------------------------------------------------------
+ *
+ * L'unica modale del gioco, e l'unica superficie con un velo sotto. I cassetti
+ * di destra vivono **accanto** alla citta' e si escludono a vicenda per
+ * convenzione; questo la copre, si prende i clic che sarebbero arrivati alla
+ * canvas, e mentre e' aperto il tempo non passa. Il velo e' quindi la barriera,
+ * non una decorazione: senza `pointer-events: auto` la citta' resterebbe
+ * cliccabile sotto il buio.
+ *
+ * Il colore viene da `--hud-scrim`, che `hudTokens.ts` riscrive a ogni tema:
+ * un nero cablato spegnerebbe i temi notturni in un rettangolo morto. Nessun
+ * `backdrop-filter`: sfocare tutta la finestra a ogni frame e' costo GPU vero
+ * contro il budget, per un effetto che il velo da' gia'.
+ */
+.main-menu-veil {
+  position: absolute;
+  inset: 0;
+  z-index: var(--z-menu);
+  display: grid;
+  place-items: center;
+  padding: var(--hud-gap);
+  box-sizing: border-box;
+  background: var(--hud-scrim);
+  pointer-events: auto;
+  transition: opacity 150ms ease;
+}
+/* `display: grid` batte la regola dell'attributo `hidden`: senza questa riga il
+   velo resterebbe a schermo, nero, per sempre. */
+.main-menu-veil[hidden] { display: none; }
+
+.main-menu {
+  z-index: calc(var(--z-menu) + 1);
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  gap: var(--space-2);
+  width: min(calc(760 * var(--hud-unit)), calc(100vw - var(--hud-gap) * 2));
+  max-height: calc(100vh - var(--hud-gap) * 2);
+  padding: var(--panel-pad);
+  border-radius: var(--radius-lg);
+  box-sizing: border-box;
+}
+
+.main-menu-body { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: var(--space-3); min-height: 0; }
+.main-menu-nav { display: grid; align-content: start; gap: var(--space-1); min-width: calc(150 * var(--hud-unit)); }
+.main-menu-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-15);
+  padding: var(--space-15) var(--space-2);
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  color: var(--hud-ink);
+  background: transparent;
+  font: inherit;
+  font-size: var(--text-md);
+  text-align: left;
+  cursor: pointer;
+}
+.main-menu-item .hud-icon { width: var(--icon-sm); height: var(--icon-sm); flex: 0 0 auto; }
+.main-menu-item:hover { background: var(--hud-well); }
+.main-menu-item:focus-visible { outline: 3px solid var(--hud-accent-shape); outline-offset: 1px; }
+.main-menu-item[aria-pressed="true"] { border-color: var(--hud-sage); background: var(--hud-accent-soft); font-weight: 700; }
+/* Riprendere e' il gesto piu' probabile di tutti, e non apre niente: sta in
+   cima, pieno d'accento, staccato dalle quattro voci da un filo. */
+.main-menu-item--resume {
+  justify-content: center;
+  margin-bottom: var(--space-1);
+  padding-bottom: var(--space-15);
+  border-color: var(--hud-sage);
+  background: var(--hud-sage-dark);
+  color: var(--hud-on-accent);
+  font-weight: 800;
+}
+.main-menu-item--resume:hover { background: var(--hud-sage-dark); border-color: var(--hud-accent-shape); }
+
+.main-menu-pane { display: grid; align-content: start; gap: var(--space-1); min-height: 0; overflow-y: auto; padding-right: var(--space-1); }
+.main-menu-pane .drawer-title { font-size: var(--text-lg); }
+.menu-section-body { margin-top: var(--space-2); }
+/* Come per il velo: `display: grid` batte la regola dell'attributo `hidden`, e
+   senza questa riga le quattro sezioni si impilano tutte nello stesso riquadro. */
+.menu-section-body[hidden] { display: none; }
+.menu-choice-row { display: flex; flex-wrap: wrap; gap: var(--space-1); }
+/* Il campo del seed e' il primo `<input type=text>` del gioco: si veste come i
+   bottoni accanto, o sembrerebbe un pezzo di browser caduto dentro l'HUD. */
+.menu-field {
+  flex: 2 1 calc(140 * var(--hud-unit));
+  min-width: 0;
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid var(--hud-line);
+  border-radius: var(--radius-sm);
+  background: var(--hud-well);
+  color: var(--hud-ink);
+  font: inherit;
+  font-size: var(--text-sm);
+  font-variant-numeric: tabular-nums;
+}
+.menu-field:focus-visible { outline: 3px solid var(--hud-accent-shape); outline-offset: 1px; }
+/* Il secondo colpo e' quello che butta via la citta': il bottone cambia colore
+   prima di cambiare effetto, o la conferma sarebbe solo una parola diversa. */
+.save-button[data-armed="true"] { border-color: var(--hud-danger); color: var(--hud-danger); font-weight: 700; }
+.main-menu .drawer-note[data-blocked="true"] { color: var(--hud-danger); }
+
+.main-menu-foot {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--hud-line-soft);
+  color: var(--hud-muted);
+  font-size: var(--text-xs);
+  font-variant-numeric: tabular-nums;
+}
+
+@media (max-width: 760px) {
+  /* Sotto questa soglia le due colonne non ci stanno: la navigazione diventa una
+     fila sopra il riquadro, che e' come si legge un menu su uno schermo stretto. */
+  .main-menu-body { grid-template-columns: minmax(0, 1fr); }
+  .main-menu-nav { display: flex; flex-wrap: wrap; min-width: 0; }
+  .main-menu-item { flex: 1 1 auto; justify-content: center; }
+  .main-menu-item--resume { flex: 1 1 100%; margin-bottom: 0; }
 }
