@@ -1,3 +1,6 @@
+## indice — Radice
+| [PERFORMANCE.md](PERFORMANCE.md) | Piano prestazioni: dove sta il tempo misurato, le fasi per rientrare nel budget del frame e i contatori con cui si difende |
+
 ## indice — Test e bench
 | [src/world/chunkCoords.test.ts](src/world/chunkCoords.test.ts) | Iniettività di `columnKey` e dominio in cui resta un intero piccolo. |
 
