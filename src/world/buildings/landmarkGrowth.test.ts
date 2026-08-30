@@ -134,7 +134,16 @@ describe('un landmark che cresce di sedime', () => {
     state = tick(state, terrain);
     state = { ...state, tickCount: BUILDER.ticksPerUpgrade };
     state = builder.onTick(state);
-    while (builder.stats.growing > 0 || builder.stats.clearing > 0) builder.step();
+    // Lo sventramento avanza soltanto dentro `onTick`; `step()` muove la
+    // crescita e la superficie, non i cantieri. Aspettare `clearing` a colpi di
+    // `step()` e' un ciclo che non puo' chiudersi, ed e' cosi' che questo file
+    // teneva la suite appesa a tempo indefinito.
+    let guard = 0;
+    while ((builder.stats.growing > 0 || builder.stats.clearing > 0) && guard++ < 5000) {
+      state = tick(state, terrain);
+      state = builder.onTick(state);
+      while (builder.stats.growing > 0) builder.step();
+    }
 
     const stage1 = footprintOf(recipe, 1);
     const record1 = stadiumOf(builder);
