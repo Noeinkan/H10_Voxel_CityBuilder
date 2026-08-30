@@ -88,9 +88,14 @@ export function gameSummary(seed: number, population: number, buildings: number)
 }
 
 /**
- * Chi e' il gioco, in fondo al menu.
+ * Chi e' il gioco, in fondo al menu e al titolo.
+ *
+ * **Firma lo studio, non la persona.** Questa riga e' l'unica cosa del gioco che
+ * nomina qualcuno, la leggono tutti quelli che aprono la pagina, e il nome
+ * proprio dell'autore non ha ragione di stare su uno schermo pubblico: la firma
+ * e' `Noein Solutions`, come sul sito.
  *
  * Nessun numero di versione scritto a mano: sarebbe una seconda fonte accanto a
  * `package.json`, e le due divergerebbero al primo rilascio.
  */
-export const ABOUT_LINE = 'H10 Voxel City Builder · alpha · © 2026 Andrea Aita';
+export const ABOUT_LINE = 'H10 Voxel City Builder · alpha · © 2026 Noein Solutions';

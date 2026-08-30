@@ -9,7 +9,6 @@ import {
   MAIN_MENU_ENTRIES,
   gameSummary,
   menuEntry,
-  slotSummary,
   type MainMenuSection,
 } from './MainMenuModel';
 import { MainMenuNewGame, type NewGameHandlers } from './MainMenuNewGame';
@@ -17,7 +16,11 @@ import { MainMenuSaves, type SaveSectionHandlers } from './MainMenuSaves';
 import { MainMenuSettings, type SettingsHandlers } from './MainMenuSettings';
 
 /**
- * Il menu principale: l'unica superficie che dice «sei fuori dalla partita».
+ * Il menu di pausa: l'unica superficie che dice «sei fuori dalla partita».
+ *
+ * **Non e' piu' la porta d'ingresso.** Quella e' la schermata del titolo, che
+ * vive prima del mondo in `TitleScreen.ts`: qui sotto c'e' sempre una citta'
+ * viva, e ogni voce parla di lei — non di quale cominciare.
  *
  * **E' una modale, e questa e' la differenza che conta.** I cassetti di destra
  * vivono accanto alla citta' e si escludono a vicenda per convenzione; questo
@@ -33,8 +36,6 @@ export interface MainMenuHandlers extends SaveSectionHandlers, SettingsHandlers,
   readonly onResume: () => void;
   /** Chiede l'elenco aggiornato degli slot: il menu non legge lo storage. */
   readonly onSavesOpened: () => void;
-  /** Riapre l'autosalvataggio: e' cio' che la partita non fa piu' da sola. */
-  readonly onContinue: () => void;
 }
 
 /** L'icona accanto a ogni voce della colonna. */
@@ -58,8 +59,6 @@ export class MainMenu {
   private readonly saves: MainMenuSaves;
   private readonly settings: MainMenuSettings;
   private readonly newGame: MainMenuNewGame;
-  private readonly resumeButton: HTMLButtonElement;
-  private readonly continueButton: HTMLButtonElement;
   private readonly closeButton: HTMLButtonElement;
   /**
    * Chi aveva il fuoco prima che il menu si aprisse.
@@ -104,24 +103,12 @@ export class MainMenu {
     nav.setAttribute('aria-label', 'Menu sections');
     // Resume sta in cima e non fra le voci: non apre una sezione, chiude il
     // menu. Metterla nell'elenco prometterebbe un riquadro che non esiste.
-    this.resumeButton = document.createElement('button');
-    this.resumeButton.type = 'button';
-    this.resumeButton.className = 'main-menu-item main-menu-item--resume';
-    this.resumeButton.textContent = 'Resume';
-    this.resumeButton.addEventListener('click', () => handlers.onResume());
-    nav.appendChild(this.resumeButton);
-
-    // Sotto Play e sopra le sezioni, perche' e' la seconda domanda che si fa chi
-    // arriva: non «cosa posso fare», ma «e la citta' di ieri?». Compare solo
-    // all'avvio e solo se c'e' davvero qualcosa da riprendere — in partita
-    // significherebbe buttare via quella in corso per l'autosalvataggio, che e'
-    // un gesto diverso e sta fra gli slot con il suo bottone Load.
-    this.continueButton = document.createElement('button');
-    this.continueButton.type = 'button';
-    this.continueButton.className = 'main-menu-item main-menu-item--continue';
-    this.continueButton.hidden = true;
-    this.continueButton.addEventListener('click', () => handlers.onContinue());
-    nav.appendChild(this.continueButton);
+    const resumeButton = document.createElement('button');
+    resumeButton.type = 'button';
+    resumeButton.className = 'main-menu-item main-menu-item--resume';
+    resumeButton.textContent = 'Resume';
+    resumeButton.addEventListener('click', () => handlers.onResume());
+    nav.appendChild(resumeButton);
 
     for (const entry of MAIN_MENU_ENTRIES) {
       const button = document.createElement('button');
@@ -175,44 +162,20 @@ export class MainMenu {
   /**
    * Apre il menu.
    *
-   * `resumable` distingue le due volte in cui questo pannello compare, che sono
-   * due momenti diversi con le stesse voci: all'avvio non c'e' niente da
-   * riprendere — c'e' un'isola appena nata da giocare, e forse una citta' di
-   * ieri da riaprire — mentre in partita si torna a quello che si stava
-   * facendo. Cambia la parola sul bottone grande e la presenza di Continue,
-   * non la struttura.
+   * Una sola volta e un solo momento, da quando la porta d'ingresso e' il
+   * titolo: qui sotto c'e' sempre una partita in corso, e il bottone grande dice
+   * sempre «Resume». Riaprire l'autosalvataggio non e' piu' un caso a parte —
+   * in partita significherebbe buttare via quella che si sta giocando, ed e' un
+   * gesto che sta fra gli slot, con il suo bottone Load.
    */
-  show(section: MainMenuSection = 'saves', resumable = true): void {
+  show(section: MainMenuSection = 'saves'): void {
     const active = document.activeElement;
     this.returnFocusTo = active instanceof HTMLElement ? active : null;
     this.root.hidden = false;
     this.root.removeAttribute('aria-hidden');
-    this.resumeButton.textContent = resumable ? 'Resume' : 'Play';
-    this.continueButton.hidden = resumable || this.continueButton.dataset['filled'] !== 'true';
     this.subtitle.textContent = menuEntry(section).subtitle;
     this.openSection(section);
     this.closeButton.focus();
-  }
-
-  /**
-   * Cosa c'e' nell'autosalvataggio, per il bottone che lo riapre.
-   *
-   * Il riassunto sta **sul bottone** e non dietro un clic: «Continue» da solo
-   * chiederebbe di fidarsi, e chi ha appena lanciato il gioco non sa se quella
-   * citta' e' di dieci minuti fa o di un mese fa.
-   */
-  setContinue(info: SlotInfo | null): void {
-    this.continueButton.dataset['filled'] = info === null ? 'false' : 'true';
-    if (info === null) {
-      this.continueButton.hidden = true;
-      return;
-    }
-    this.continueButton.replaceChildren();
-    const label = document.createElement('strong');
-    label.textContent = 'Continue';
-    const detail = document.createElement('small');
-    detail.textContent = slotSummary(info);
-    this.continueButton.append(label, detail);
   }
 
   hide(): void {

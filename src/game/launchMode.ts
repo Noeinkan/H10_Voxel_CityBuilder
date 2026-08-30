@@ -43,6 +43,22 @@ export function parseSeedInput(raw: string): number | null {
 }
 
 /**
+ * L'unico tiro non deterministico di tutta la generazione.
+ *
+ * Da qui in poi tutto e' funzione pura del numero sorteggiato, ed e' per questo
+ * che ne esiste **uno**: lo chiama il bootstrap quando nessuno ha dichiarato un
+ * seed, lo chiama il titolo alla voce «Random», e lo chiama il menu di pausa.
+ * Un secondo tiro scritto in una UI sarebbe una seconda definizione di «isola
+ * nuova». Sta qui, accanto a chi legge e scrive i seed, e non nella radice:
+ * `main.ts` e' l'unico modulo che non si puo' importare senza costruire un mondo.
+ */
+export function rollSeed(): number {
+  const roll = new Uint32Array(1);
+  crypto.getRandomValues(roll);
+  return roll[0] >>> 0;
+}
+
+/**
  * Seed della partita: quello dichiarato da `?seed=`, altrimenti uno casuale.
  *
  * Il default non e' piu' un numero fisso: ogni partita nasce su un mondo
@@ -76,11 +92,15 @@ export function resolveSeed(params: URLSearchParams, randomUint32: () => number)
 export const PLAY_PARAM = 'play';
 
 /**
- * Il menu d'ingresso si apre, oppure no.
+ * La schermata del titolo si apre, oppure no.
+ *
+ * La decide `boot.ts` **prima** di caricare il mondo: e' la stessa domanda di
+ * prima — «questo avvio ha gia' una risposta?» — ma adesso conta anche quando,
+ * perche' dal no dipende se l'isola nasce subito o dopo la scelta.
  *
  * Tre casi soli, e nessuno di essi guarda `?seed=`: quel parametro lo riscrive
- * `main.ts` a ogni avvio, quindi legarci la decisione avrebbe fatto comparire il
- * menu solo la primissima volta.
+ * il gioco a ogni avvio, quindi legarci la decisione avrebbe fatto comparire il
+ * titolo solo la primissima volta.
  */
 export function opensEntryMenu(
   params: URLSearchParams,
@@ -96,7 +116,14 @@ export function opensEntryMenu(
 }
 
 /**
- * L'indirizzo di una partita nuova: stesso harness, isola diversa.
+ * L'indirizzo con cui si entra in partita su un'isola: stesso harness, seed
+ * dichiarato, nessuna domanda da rifare.
+ *
+ * E' la porta che usano tutti e tre i modi di iniziare — riprendere, caricare,
+ * generare — perche' dicono la stessa cosa all'avvio successivo: quale isola, e
+ * che la scelta e' gia' stata fatta. Cio' che li distingue succede prima, negli
+ * slot: chi ricomincia cancella l'autosalvataggio, chi carica scrive quello di
+ * transito.
  *
  * Sta qui accanto a `perfToggleUrl` e `swatchUrl` perche' e' la stessa tabella
  * letta al contrario — da intenzione a parametri — e tre copie di quel giro

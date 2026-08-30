@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "author": "Andrea Aita (Noeinkan)",
+  "author": "Noein Solutions",
   "license": "SEE LICENSE IN LICENSE",
   "scripts": {
     "prestart": "node scripts/free-port.mjs",

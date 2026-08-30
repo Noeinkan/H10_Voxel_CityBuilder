@@ -30,6 +30,8 @@
   </head>
   <body>
     <div id="app"></div>
-    <script type="module" src="/src/main.ts"></script>
+    <!-- L'ingresso e' `boot.ts`, non la radice: `main.ts` costruisce un mondo
+         solo a importarlo, e da qui partirebbe prima che il giocatore scelga. -->
+    <script type="module" src="/src/boot.ts"></script>
   </body>
 </html>

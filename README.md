@@ -545,7 +545,7 @@ altrove — ma su disco ci va solo passando da lì.
 
 ## Licenza
 
-Copyright © 2026 Andrea Aita (Noeinkan). Tutti i diritti riservati.
+Copyright © 2026 Noein Solutions. Tutti i diritti riservati.
 
 Questo progetto **non è open source**: il codice è visibile per essere mostrato,
 non per essere riusato. Copie, opere derivate, port, redistribuzione e uso come

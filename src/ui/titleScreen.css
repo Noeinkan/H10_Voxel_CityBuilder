@@ -1,0 +1,298 @@
+/*
+ * Il titolo si veste da solo, e non e' pigrizia: questo foglio si carica **prima**
+ * di `hud.css`, che arriva con `main.ts` insieme al mondo. Ereditare i token
+ * dell'HUD vorrebbe dire tirarsi dietro l'intero bundle del gioco per disegnare
+ * tre bottoni, cioe' rimettere il caricamento davanti alla scelta — che e'
+ * esattamente cio' che questa schermata esiste per togliere.
+ *
+ * I colori sono percio' scritti, non derivati, e sono **cielo e bianco**: quelli
+ * dell'HUD virano al salvia, che qui e' fuori posto — la prima immagine del gioco
+ * e' un mare, e la pagina che lo precede deve sembrare la stessa aria.
+ */
+.title-screen {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  box-sizing: border-box;
+  overflow-y: auto;
+  font-family: ui-rounded, 'Segoe UI', system-ui, sans-serif;
+  color: #1c3347;
+  /* Cielo pieno, non velo: dietro non c'e' ancora niente da lasciar vedere, e
+     una trasparenza mostrerebbe la canvas vuota come se fosse un difetto. */
+  background:
+    radial-gradient(120% 80% at 50% 12%, #f2fafe 0%, rgba(242, 250, 254, 0) 60%),
+    linear-gradient(180deg, #cfe9f7 0%, #a9d5ee 58%, #85bfe0 100%);
+  transition: opacity 420ms ease;
+}
+
+/*
+ * `hidden` deve vincere sulle regole qui sotto.
+ *
+ * Le sottoschermate sono `display: flex`, e una classe batte il `display: none`
+ * del foglio del browser: senza questa riga il titolo mostrava tutti i pannelli
+ * uno sotto l'altro, che e' esattamente il menu confuso da cui si veniva.
+ */
+.title-screen [hidden] {
+  display: none !important;
+}
+
+/* La linea d'orizzonte: il minimo che dice «mare», senza disegnare un'isola che
+   non e' ancora stata generata. */
+.title-screen::after {
+  content: '';
+  position: absolute;
+  inset: auto 0 0 0;
+  height: 22vh;
+  background: linear-gradient(180deg, rgba(120, 180, 212, 0) 0%, rgba(96, 158, 196, .5) 100%);
+  pointer-events: none;
+}
+
+.title-inner {
+  position: relative;
+  z-index: 1;
+  width: min(430px, 92vw);
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 18px;
+}
+
+.title-wordmark {
+  margin: 0;
+  text-align: center;
+  font-size: clamp(28px, 5.2vh, 44px);
+  font-weight: 700;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: #17384f;
+  text-shadow: 0 2px 0 rgba(255, 255, 255, .6);
+}
+
+.title-tagline {
+  margin: -10px 0 0;
+  text-align: center;
+  font-size: 13px;
+  color: #45647b;
+}
+
+.title-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.title-button {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  padding: 12px 16px;
+  border: 1px solid rgba(35, 75, 105, .18);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, .88);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  box-shadow: 0 1px 2px rgba(28, 51, 71, .14), 0 8px 20px rgba(28, 51, 71, .12);
+  transition: transform 120ms ease, background 120ms ease, box-shadow 120ms ease;
+}
+
+.title-button:hover:not(:disabled) {
+  background: #ffffff;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 5px rgba(28, 51, 71, .18), 0 14px 30px rgba(28, 51, 71, .16);
+}
+
+.title-button:active:not(:disabled) {
+  transform: translateY(1px);
+  box-shadow: 0 1px 2px rgba(28, 51, 71, .16);
+}
+
+.title-button:disabled {
+  opacity: .55;
+  cursor: default;
+}
+
+.title-button:focus-visible,
+.title-small:focus-visible,
+.title-field:focus-visible {
+  outline: 2px solid #2f6b91;
+  outline-offset: 2px;
+}
+
+.title-button--primary {
+  background: #3b7ea8;
+  border-color: #2f6b91;
+  color: #ffffff;
+}
+
+.title-button--primary:hover:not(:disabled) {
+  background: #4a8cb5;
+}
+
+.title-label {
+  font-size: 17px;
+  font-weight: 600;
+  letter-spacing: .01em;
+}
+
+.title-detail {
+  font-size: 12px;
+  color: #4a6478;
+}
+
+.title-button--primary .title-detail {
+  color: rgba(255, 255, 255, .86);
+}
+
+/* Le sottoschermate sostituiscono l'elenco invece di aprirsi accanto: una
+   colonna sola resta leggibile su un telefono, e non c'e' mai piu' di una
+   domanda aperta per volta. */
+.title-pane {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.title-pane-title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.title-row {
+  display: flex;
+  gap: 8px;
+}
+
+.title-field {
+  flex: 1;
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid rgba(35, 75, 105, .26);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, .92);
+  color: inherit;
+  font: inherit;
+}
+
+.title-note {
+  margin: 0;
+  font-size: 12px;
+  color: #4a6478;
+}
+
+.title-note[data-warn='true'] {
+  color: #9c5348;
+}
+
+.title-slots {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.title-slot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.title-slot-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.title-slot-name {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.title-slot-summary {
+  font-size: 11px;
+  color: #4a6478;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.title-small {
+  padding: 8px 14px;
+  border: 1px solid rgba(35, 75, 105, .18);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, .88);
+  color: inherit;
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.title-small:hover:not(:disabled) {
+  background: #ffffff;
+}
+
+.title-small:disabled {
+  opacity: .55;
+  cursor: default;
+}
+
+.title-foot {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  font-size: 11px;
+  color: #45647b;
+}
+
+/* Lo stato di attesa: la scelta e' fatta, il mondo si sta generando, e non c'e'
+   piu' niente da premere. */
+.title-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  font-size: 14px;
+  color: #24506e;
+}
+
+.title-spinner {
+  width: 22px;
+  height: 22px;
+  border: 3px solid rgba(47, 107, 145, .25);
+  border-top-color: #2f6b91;
+  border-radius: 50%;
+  animation: title-spin 900ms linear infinite;
+}
+
+@keyframes title-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.title-screen[data-leaving='true'] {
+  opacity: 0;
+  pointer-events: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .title-screen,
+  .title-button {
+    transition: none;
+  }
+
+  .title-spinner {
+    animation-duration: 2400ms;
+  }
+}
