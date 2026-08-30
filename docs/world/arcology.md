@@ -48,6 +48,68 @@
   `fillRatio` girano su ogni ricetta a ogni stadio: una finestra aperta non si
   richiude piu', e un'arcologia che riempie il proprio ingombro non compila la
   suite.
+- **La famiglia interrata e' la stessa macchina scritta al contrario.**
+  `recipe.sunken` la distingue, e la sua presenza *e'* la famiglia — nessuno
+  chiede «di che tipo sei», come nessuno lo chiede a un `BuildingRecord` con
+  `arcology` valorizzato. Le quote locali restano non negative: `z = 0` e' il
+  **fondo del pozzo** e il piano di campagna sta a `sunken.depth`, in cima.
+  A cambiare e' dove il driver posa l'ancora — `baseZ = padZ - depth` invece di
+  `padZ` — ed e' per questo che non serve una coordinata negativa da nessuna
+  parte. Tre misure che contavano dal basso si riferiscono percio' alla cima: la
+  radice della connettivita' (`floatingBoxes` radica sul piano di campagna,
+  perche' un earthscraper *pende* dal suolo invece di appoggiarcisi), il verso
+  degli stadi, e l'opera di terra — che qui **non si getta affatto**, perche' il
+  terreno dell'ingombro se ne va e la lastra della piazza prende il suo posto.
+- **La condizione e' la cresta contro la spalla, e la fascia da sola non
+  bastava.** L'arcologia nasce dove il cono della gerarchia concede tutta
+  l'altezza che sa concedere; l'earthscraper sulla spalla, dove il tetto ha gia'
+  cominciato a scendere. A distinguerle e' `heightBonusAt` — i livelli concessi
+  *oltre* il tetto nudo della fascia — confrontato con `SKYLINE.coneBonus`: sopra
+  si sale, sotto si scava. Le due non possono essere vere insieme, ed e' questo
+  che tiene torri e crateri su isolati diversi senza che il driver arbitri; la
+  gerarchia sceglie la famiglia **prima** della forma, e `arcologyForBlock` pesca
+  da un catalogo o dall'altro, mai dall'unione.
+
+  **La prima versione chiedeva `tier !== core`, e non aveva un solo sito.**
+  Misurata su una citta' cresciuta (seed 4242, 2000 tick), la fascia non
+  distingue niente di utile: quattordici isolati candidati, **quattro `core`,
+  zero `middle`, dieci `fringe`**, e il denso e' tutto nei primi quattro. Non e'
+  un caso — la crescita segue la desiderabilita', che segue i catalizzatori,
+  quindi il tessuto fitto cade dentro la portata di un polo; cio' che resta fuori
+  e' rado, e per giunta costiero, cioe' con il contorno bagnato che un pozzo non
+  accetta. L'intersezione fra «non e' centro» e «ha i vicini che una
+  megastruttura chiede» era vuota. Il bonus di quota lo evita per costruzione,
+  perche' misura **dentro** la fascia: sugli stessi quattro isolati da' tre
+  creste e una spalla, e la spalla e' anche la piu' profonda (28 quote, contorno
+  asciutto). E' il difetto di `isPeakBlock` per la terza volta, e la casella che
+  lo tiene chiuso e' «la condizione interrata ha davvero dei siti sull'isola».
+
+  **Il sito puo' rimandare indietro la scelta.** Un isolato di spalla su cui la
+  roccia non basta — meno di `MIN_SUNKEN_DEPTH`, o l'acqua troppo vicina — torna
+  alla famiglia che sale invece di restare senza megastruttura: la gerarchia
+  propone, il terreno dispone.
+- **Il vuoto ha un invariante suo, e non e' la finestra di cielo.**
+  `skyWindowOf` cerca uno scavalco e pretende con `seeThrough` una linea sgombera
+  da un capo all'altro dell'inviluppo; un pozzo e' cieco su quattro fianchi per
+  costruzione, quindi quella regola lo dichiarerebbe un cavedio — che e'
+  esattamente il caso che `window.ts` esiste per escludere. `shaftOf` misura la
+  domanda giusta: un vuoto **dal piano in giu'**, largo `minColumns` sulla
+  sezione piu' stretta, profondo `minDepth`, che non tocca il bordo
+  dell'inviluppo e da cui almeno una colonna vede il cielo. Le passerelle sulla
+  bocca possono attraversarlo; sigillarlo no.
+- **Le profondita' sono misurate, e la misura ha smentito il progetto.** Il piano
+  di questa famiglia era tarato su `TERRAIN.maxHeight` (80) e prevedeva
+  quarantaquattro, trentasei e ventiquattro quote. L'isola standard e' molto piu'
+  piatta — la maschera radiale schiaccia il rilievo, e su 256x256 la colonna piu'
+  alta sta fra 32 e 36 — quindi due ricette su tre non sarebbero **mai** nate,
+  in silenzio e con la suite verde. E' lo stesso difetto di `isPeakBlock`, ed e'
+  la seconda volta che questo dominio lo incontra: `sunkenSites.test.ts` e'
+  l'allarme che resta. Le tre ricette stanno a sedici, ventidue e ventisei, e la
+  profondita' persa si riguadagna in pianta — dall'inquadratura d'insieme un
+  pozzo si legge per l'area del proprio vuoto, non per quanto scende.
+- **Nessun piazzale, e non e' una casella aperta.** La piazza di un earthscraper
+  *e'* il piano di campagna: ci si arriva camminando, e un attracco in quota
+  sarebbe un capolinea che nessun percorso ha motivo di cercare.
 - **I piazzali sono capi di percorso, e hanno tre requisiti misurati.** Devono
   stare entro `maxNodes * stepPerNode` dal piano finito, essere larghi almeno
   `walkWidth` su **tutti e due** gli assi, e non partire a filo di un piano

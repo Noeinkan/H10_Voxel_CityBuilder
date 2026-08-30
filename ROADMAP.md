@@ -2431,9 +2431,11 @@ storico vieta di demolire e di salire e l'unica direzione libera è il basso.
 Vive dentro `src/world/arcology/` come seconda famiglia dello stesso catalogo, e
 in `src/world/buildings/sunkenDig.ts` per la parte che tocca il mondo.
 
-**Stato implementazione:** la struttura è completa e provata nei suoi test;
-**il piazzamento in partita non è validato**, per due ragioni distinte descritte
-sotto — una precede questa sotto-fase, l'altra è sua.
+**Stato implementazione:** la struttura è completa e provata nei suoi test, e la
+condizione di piazzamento ha ora dei siti misurati sull'isola vera. Resta un
+blocco che **precede** questa sotto-fase e vale per tutte e due le famiglie:
+nessuna arcologia viene fondata, quindi nessun cratere si è ancora visto a
+schermo.
 
 - [x] Tre ricette interrate — piramide a terrazze, corte bassa, cratere su due <!-- size: XL -->
   isolati — scritte al contrario: `z = 0` è il fondo del pozzo, il piano di
@@ -2446,9 +2448,12 @@ sotto — una precede questa sotto-fase, l'altra è sua.
   scendendo insieme alle terrazze.
 - [x] `reopenPit` al caricamento: senza, il file — che non contiene il terreno — <!-- size: M -->
   restituirebbe una struttura murata nella roccia.
-- [ ] **Il piazzamento in partita.** La condizione scelta — «nasce dove la <!-- size: L -->
-  gerarchia non concede altezza», cioè `tier !== core` — non ha siti sull'isola
-  standard. Vedi sotto.
+- [x] **La condizione di piazzamento**, riscritta dopo la misura: non la fascia <!-- size: L -->
+  ma il **bonus di quota** — la torre prende la cresta del cono, il cratere la
+  spalla, e un isolato di spalla senza roccia torna alla famiglia che sale. Vedi
+  sotto.
+- [ ] **Il cratere a schermo.** La condizione ha siti, ma nessuna arcologia — di <!-- size: M -->
+  nessuna famiglia — viene fondata su questa isola: vedi il blocco che precede.
 
 **Due misure, e tutte e due hanno smentito il progetto.**
 
@@ -2459,27 +2464,39 @@ sotto — una precede questa sotto-fase, l'altra è sua.
    **mai** nate, in silenzio e con la suite verde. Le tre ricette stanno ora a
    16, 22 e 26 quote: a 24 passa l'83% dei siti asciutti, a 30 **nessun sito del
    seed 4242**. `sunkenSites.test.ts` è l'allarme che resta.
-2. **La fascia.** Misurata su una città cresciuta (seed 4242, 2400 tick), la
-   distribuzione degli isolati è **39 `core`, 27 `fringe`, 0 `middle`**. Non è
-   un caso: la crescita segue la desiderabilità, che segue i catalizzatori,
-   quindi il tessuto denso cade dentro la portata di un polo (`core`) e ciò che
-   resta fuori è rado (`fringe` per densità, non per quota). Il `fringe` denso
-   esiste solo sulla costa — dove `waterDistance ≤ 8` — ed è esattamente dove un
-   pozzo non si può scavare, perché scende sotto il livello del mare e il
-   contorno asciutto non regge. **`tier !== core` è quindi una condizione quasi
-   vuota**, ed è lo stesso difetto di `isPeakBlock`: la terza volta che questo
-   dominio lo incontra.
+2. **La fascia, e questa era la condizione stessa.** Misurata su una città
+   cresciuta (seed 4242, 2000 tick): quattordici isolati candidati, **4 `core`,
+   0 `middle`, 10 `fringe`**, e di tutti e quattordici **uno solo** ha i
+   sessantaquattro vicini che una megastruttura chiede — un `core`. Non è un
+   caso: la crescita segue la desiderabilità, che segue i catalizzatori, quindi
+   il tessuto denso cade dentro la portata di un polo (`core`) e ciò che resta
+   fuori è rado (`fringe` per densità, non per quota) e per giunta costiero, dove
+   un pozzo non si scava perché il contorno asciutto non regge. **`tier !== core`
+   era quindi una condizione vuota**, ed è lo stesso difetto di `isPeakBlock`: la
+   terza volta che questo dominio lo incontra.
+
+   La condizione è ora `heightBonusAt` contro `SKYLINE.coneBonus` — i livelli
+   concessi *oltre* il tetto nudo della fascia — cioè una misura **dentro** la
+   fascia invece di un'alternativa a essa. Sugli stessi quattro isolati `core` dà
+   **tre creste e una spalla**, e la spalla è anche la più profonda: 28 quote,
+   contorno asciutto, il sito migliore dell'isola. Le due famiglie continuano a
+   non contendersi un isolato, e in più un isolato di spalla su cui la roccia non
+   basta torna alla famiglia che sale invece di restare senza megastruttura.
 
 **Un blocco che precede questa sotto-fase.** Sulla stessa misura, **nessuna
-arcologia nasce più, di nessuna famiglia**: dei 39 isolati `core`, 20 hanno
-densità sufficiente e **tutti e 20 rifiutano con `notCapped`** — cioè
-`cappedNeighbours` è zero ovunque. `ARCOLOGY.minCapped` chiede due vicini che
-abbiano raggiunto la propria quota ammessa, e da quando `SCALE.maxLevel` è salito
-a 26 (con il tetto del centro a 23 fasce) nessun edificio ci arriva più nei tick
-che la crescita impiega a esaurirsi. La taratura dell'arcologia è rimasta a
-quando `maxLevel` era 20. È indipendente dall'earthscraper — il percorso delle
-ricette alte non è cambiato di una riga — e va affrontata prima, o nessuna delle
-due famiglie compare in partita.
+arcologia nasce, di nessuna famiglia**: `cappedNeighbours` è **zero su ogni
+isolato**. `ARCOLOGY.minCapped` chiede due vicini che abbiano raggiunto la
+propria quota ammessa, e su questa città l'edificio più alto sta al **livello 5**
+contro un tetto del centro di 23–25. Non è lentezza: `BUILDER.upgradeThreshold`
+finisce a 198 — la fine dell'alfabeto della desiderabilità — e su questa isola il
+campo non supera quella soglia, quindi dal livello 6 in su non promuove più
+nessuno. `SCALE.maxLevel` a 26 (era 20) ha allargato la forbice, non l'ha creata.
+Il conto era pensato per arrivare anche dall'altra strada — un ospite di un
+impalcato abitato è saturo sotto il tetto — e nemmeno quella dà più niente qui.
+È indipendente dall'earthscraper: il percorso delle ricette alte non è cambiato
+di una riga, e le caselle rosse di `arcologyDriver.test.ts` sono le stesse di
+prima di questa sotto-fase. Va affrontata come taratura di `src/world/buildings/`
+e `src/sim/` insieme, non spostando `minCapped` finché non torna verde.
 
 **Vincolo:** valgono i vincoli trasversali della fase 4. In più: lo scavo non
 esce mai dall'impronta, viaggia sulla coda di comparsa come le altre due

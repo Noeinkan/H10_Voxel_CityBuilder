@@ -8,13 +8,18 @@ import {
   type SimState,
 } from '../../sim';
 import { AERIAL, AERIAL_PART } from '../aerial/config';
-import { ARCOLOGY, arcologyOf } from '../arcology/config';
+import { ARCOLOGY, MIN_SUNKEN_DEPTH, SUNKEN, arcologyOf } from '../arcology/config';
+import { surveySunkenSite } from '../arcology/depth';
 import { worldLandings } from '../arcology/generate';
 import { arcologyQuota } from '../arcology/siting';
 import { stageForBuildings } from '../landmarks/generate';
-import { FACING, type Facing } from '../streets/streetGrid';
+import { waterDistance } from '../sites/siteRules';
+import { SKYLINE } from '../skyline/config';
+import { heightBonusAt } from '../skyline/tiers';
+import { FACING, blockAt, blockRect, type Facing } from '../streets/streetGrid';
 import { VoxelWorld } from '../VoxelWorld';
 import { generateIsland } from '../terrain/IslandGenerator';
+import type { TerrainMap } from '../terrain/TerrainMap';
 import { Builder } from './Builder';
 import { footprintDepth, type BuildingRecord } from './BuildingRegistry';
 
@@ -37,6 +42,10 @@ import { footprintDepth, type BuildingRecord } from './BuildingRegistry';
 interface City {
   readonly builder: Builder;
   readonly state: SimState;
+  /** Serve a chi deve guardare i voxel invece del registro: lo scavo si vede li'. */
+  readonly world: VoxelWorld;
+  /** Serve a rifare le domande che il driver fa a un isolato: quota e roccia. */
+  readonly map: TerrainMap;
 }
 
 let city: City;
@@ -78,11 +87,21 @@ function grow(): City {
     while (builder.stats.growing > 0) builder.step();
   }
   expect(state.materials.stock).toBeLessThan(100_000 - BALANCE.materials.arcologyCost);
-  return { builder, state };
+  return { builder, state, world, map };
 }
 
 function arcologies(builder: Builder): readonly BuildingRecord[] {
   return [...builder.registry.all].filter((record) => record.arcology !== undefined);
+}
+
+/** Le sole megastrutture che salgono. */
+function towers(builder: Builder): readonly BuildingRecord[] {
+  return arcologies(builder).filter((r) => arcologyOf(r.arcology!).sunken === undefined);
+}
+
+/** Le sole megastrutture che scavano. */
+function pits(builder: Builder): readonly BuildingRecord[] {
+  return arcologies(builder).filter((r) => arcologyOf(r.arcology!).sunken !== undefined);
 }
 
 beforeAll(() => {
@@ -145,14 +164,23 @@ describe('ArcologyDriver — sulla citta cresciuta', () => {
 
   it('e il vertice anche nei voxel: nessun edificio le arriva in cima', () => {
     let tallest = 0;
+    let lowest = Number.MAX_SAFE_INTEGER;
     for (const record of city.builder.registry.all) {
       if (record.arcology !== undefined) continue;
       if (record.span !== undefined || record.aerial !== undefined) continue;
       tallest = Math.max(tallest, record.baseZ + record.height);
+      lowest = Math.min(lowest, record.baseZ);
     }
 
-    for (const record of arcologies(city.builder)) {
+    for (const record of towers(city.builder)) {
       expect(record.baseZ + record.height, `arcologia ${record.id}`).toBeGreaterThan(tallest);
+    }
+    // **L'earthscraper e' il vertice dall'altra parte**, e chiedergli la stessa
+    // cosa sarebbe stato l'errore piu' facile di questa famiglia: la sua cima
+    // sta al piano di campagna per costruzione, quindi ogni casa la supera. Cio'
+    // che nessun altro fa e' scendere sotto il suolo su cui tutti poggiano.
+    for (const record of pits(city.builder)) {
+      expect(record.baseZ, `earthscraper ${record.id}`).toBeLessThan(lowest);
     }
   });
 
@@ -231,10 +259,16 @@ describe('ArcologyDriver — innestata nella rete in quota', () => {
     // dentro non verrebbe nemmeno esaminato, e la casella sarebbe chiusa da
     // codice che non gira mai.
     const indexed = new Set(city.builder.registry.decks.map((deck) => deck.id));
-    for (const record of arcologies(city.builder)) {
+    // Solo le megastrutture che salgono: la piazza di un earthscraper *e'* il
+    // piano di campagna, ci si arriva camminando, e un attracco in quota sarebbe
+    // un capolinea che nessun percorso ha motivo di cercare.
+    for (const record of towers(city.builder)) {
       const pads = landingsOf(city.builder, record);
       expect(pads.length).toBeGreaterThan(0);
       for (const pad of pads) expect(indexed.has(pad.id)).toBe(true);
+    }
+    for (const record of pits(city.builder)) {
+      expect(landingsOf(city.builder, record).length, `earthscraper ${record.id}`).toBe(0);
     }
   });
 
@@ -248,7 +282,7 @@ describe('ArcologyDriver — innestata nella rete in quota', () => {
     // non che il percorso esista, che dipende anche da cosa c'e' intorno.
     const reach = AERIAL.route.maxNodes * AERIAL.route.stepPerNode;
 
-    for (const record of arcologies(city.builder)) {
+    for (const record of towers(city.builder)) {
       const pads = landingsOf(city.builder, record);
       const lowest = Math.min(...pads.map((pad) => pad.baseZ + pad.height - 1));
 
@@ -263,6 +297,145 @@ describe('ArcologyDriver — innestata nella rete in quota', () => {
         // toccare terra».
         expect(pad.baseZ).toBeGreaterThan(record.baseZ);
       }
+    }
+  });
+});
+
+/**
+ * Gli isolati candidati della citta' cresciuta, con le sole misure che decidono
+ * la famiglia: il bonus di quota della gerarchia e la roccia che il sito offre.
+ *
+ * Rifa' le domande del driver invece di chiedergliele, perche' `found` risponde
+ * con un rifiuto solo — il primo — e qui serve sapere *quanti* isolati la
+ * condizione interrata potrebbe prendere, non perche' l'ultimo non l'ha presa.
+ */
+function candidateBlocks(): readonly {
+  readonly key: string;
+  readonly heightBonus: number;
+  readonly built: number;
+  readonly depth: number;
+  readonly dryRim: boolean;
+}[] {
+  const { builder, state, map } = city;
+  const seed = 4242;
+  const poles = state.reach.polesOf(state.catalysts);
+  const seen = new Set<string>();
+  const out: {
+    key: string; heightBonus: number; built: number; depth: number; dryRim: boolean;
+  }[] = [];
+
+  for (const record of builder.registry.all) {
+    if (record.arcology !== undefined || record.aerial !== undefined) continue;
+    const block = blockAt(seed, record.x, record.y);
+    const key = `${block.kx},${block.ky}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+
+    const rect = blockRect(seed, block);
+    const ax = rect.x0 + ((rect.x1 - rect.x0) >> 1);
+    const ay = rect.y0 + ((rect.y1 - rect.y0) >> 1);
+    const site = surveySunkenSite(map, rect.x0, rect.y0, 20, 20);
+    out.push({
+      key,
+      heightBonus: heightBonusAt({
+        x: ax,
+        y: ay,
+        poles,
+        waterDistance: waterDistance(map, ax, ay, SKYLINE.coastNear),
+        builtNeighbours: builder.registry.countWithinRadius(ax, ay, SKYLINE.edgeRadius),
+        seed,
+        blockKx: block.kx,
+        blockKy: block.ky,
+      }),
+      built: builder.registry.countWithinRadius(ax, ay, ARCOLOGY.radius),
+      depth: site.depth,
+      dryRim: site.dryRim,
+    });
+  }
+  return out;
+}
+
+describe('ArcologyDriver — l earthscraper', () => {
+  it('la condizione interrata ha davvero dei siti sull isola', () => {
+    // **E' il test che questa famiglia esiste per avere**, ed e' gia' stato
+    // rosso: la condizione originale — «nasce dove la gerarchia non concede
+    // altezza», cioe' `tier !== core` — non aveva **nessun** sito, perche' il
+    // tessuto denso di una citta' cresciuta e' tutto `core` e cio' che sta fuori
+    // e' rado e costiero. E' il difetto di `isPeakBlock` per la terza volta, e
+    // l'unico modo di accorgersene e' guardare gli isolati veri.
+    //
+    // Si misura il **sito** e non la nascita, di proposito: fondare passa anche
+    // da `cappedNeighbours`, che questa isola non soddisfa piu' da quando
+    // `SCALE.maxLevel` e' salito a 26 e ha spostato il tetto del centro a
+    // ventitre' fasce (vedi la 4.18 in ROADMAP). Quel blocco vale per **tutte e
+    // due** le famiglie ed e' di un altro dominio; questa casella difende cio'
+    // che e' di questo — che un isolato da scavare esista.
+    const blocks = candidateBlocks();
+    const diggable = blocks.filter((b) =>
+      b.heightBonus < SKYLINE.coneBonus && b.dryRim && b.depth >= MIN_SUNKEN_DEPTH);
+    expect(
+      diggable.length,
+      `isolati: ${blocks.map((b) => `${b.key} bonus=${b.heightBonus} d=${b.depth}`).join(' ')}`,
+    ).toBeGreaterThan(0);
+  });
+
+  it('e non se li prende tutti: la cresta resta a chi sale', () => {
+    // L'altra meta' della stessa riga. Una condizione che prendesse ogni isolato
+    // denso avrebbe cancellato la famiglia che sale invece di affiancarla, e
+    // sarebbe passata inosservata quanto la prima: il catalogo alto sarebbe
+    // rimasto verde, e in partita non ci sarebbe stata piu' una torre.
+    const blocks = candidateBlocks();
+    const crest = blocks.filter((b) =>
+      b.heightBonus >= SKYLINE.coneBonus && b.built >= ARCOLOGY.minBuilt);
+    expect(crest.length).toBeGreaterThan(0);
+  });
+
+  it('le due famiglie non si contendono un isolato', () => {
+    // La simmetria e' il contenuto della famiglia: la cresta del cono sceglie la
+    // torre, la spalla sceglie il cratere, e le due condizioni non possono
+    // essere vere insieme. La conseguenza osservabile e' questa — nessun isolato
+    // porta una struttura di entrambe le famiglie — e se un giorno le due
+    // condizioni si sovrapponessero sarebbe la prima cosa a rompersi.
+    const blockKey = (record: BuildingRecord) => {
+      const anchor = { x: record.x + (record.footprint >> 1), y: record.y + (footprintDepth(record) >> 1) };
+      return `${anchor.x >> 5},${anchor.y >> 5}`;
+    };
+    const towerBlocks = new Set(towers(city.builder).map(blockKey));
+    for (const record of pits(city.builder)) {
+      expect(towerBlocks.has(blockKey(record)), `earthscraper ${record.id}`).toBe(false);
+    }
+  });
+
+  it('apre un pozzo vero nei voxel, aperto fino al cielo', () => {
+    // **La sola prova che lo scavo e' avvenuto.** Il registro direbbe di si'
+    // anche se la coda avesse cancellato zero voxel: qui si guarda il mondo, e
+    // si chiede che la colonna centrale del pozzo sia vuota dal fondo fino sopra
+    // il piano di campagna — cioe' che ci si veda dentro dall'alto.
+    for (const record of pits(city.builder)) {
+      const recipe = arcologyOf(record.arcology!);
+      const depth = recipe.sunken!.depth;
+      const cx = record.x + (record.footprint >> 1);
+      const cy = record.y + (footprintDepth(record) >> 1);
+
+      let empty = 0;
+      for (let z = record.baseZ + 1; z < record.baseZ + depth; z++) {
+        if (city.world.getBlock(cx, cy, z) === 0) empty++;
+      }
+      // Non tutte: il fondo porta il giardino e la bocca porta le passerelle.
+      // Ma la gran parte della colonna centrale deve essere aria, o il pozzo e'
+      // rimasto pieno di roccia.
+      expect(empty, `earthscraper ${record.id} a ${cx},${cy}`)
+        .toBeGreaterThan(depth - SUNKEN.headroom);
+    }
+  });
+
+  it('scende sotto il livello del mare senza bagnarsi', () => {
+    // Il fondo va sotto `seaLevel` per costruzione — e' l'unico modo di trovare
+    // ventidue quote su un'isola alta trentaquattro — quindi la roccia attorno
+    // e' tutto cio' che tiene il pozzo asciutto. `SUNKEN.floorZ` e' il pavimento
+    // che gli impedisce di arrivare al fondale.
+    for (const record of pits(city.builder)) {
+      expect(record.baseZ, `earthscraper ${record.id}`).toBeGreaterThanOrEqual(SUNKEN.floorZ);
     }
   });
 });
