@@ -155,7 +155,11 @@ describe('azioni di gioco', () => {
       chunksX: 2,
       chunksY: 2,
       heightAt: (x) => (x >= SHORE_X ? LAKE - 2 : LAKE + 4),
-      slopeAt: (x) => (x >= SHORE_X || x < SHORE_X - 4 ? 0.1 : 0.6),
+      // La scarpata si dichiara rispetto alla soglia e non con un numero suo:
+      // scritta `0.6` diceva "ripida" solo finche' `maxTerraceSlope` valeva
+      // `0.46`, e una ritaratura la trasformava in silenzio in un pendio
+      // qualunque — cioe' il test smetteva di verificare la deroga della marina.
+      slopeAt: (x) => (x >= SHORE_X || x < SHORE_X - 4 ? 0.1 : GRADING.maxTerraceSlope + 0.1),
       waterTopAt: (x) => (x >= SHORE_X ? LAKE : TERRAIN.seaLevel),
     });
     const state = grownCity();

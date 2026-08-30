@@ -57,8 +57,24 @@ export const GRADING = {
    * Da quando la roccia si paga invece di essere rifiutata per bioma, questo e'
    * l'unico rifiuto che resta sulla terra emersa: vale per ogni bioma, e una
    * mesa piana lo passa esattamente come la passa un prato.
+   *
+   * **Il doppio di `buildableMaxSlope`, e non un numero suo.** Il terrapieno
+   * esiste per prendere cio' che il terreno non regge da solo: dire che arriva
+   * al doppio della pendenza edificabile e' la sola formulazione che leghi la
+   * soglia all'opera invece che al paesaggio. Valeva `0.46` — appena un terzo
+   * sopra l'edificabile — e su questo terreno rifiutava dal 3% al 9% della
+   * terra emersa a seconda del seed, concentrato esattamente dove il giocatore
+   * clicca: il raccordo fra pianoro e pianura. Le opere di terra sono il
+   * gioco, non l'eccezione, quindi il rifiuto torna a essere l'eccezione:
+   * misurato sugli stessi tre seed, ora sta sotto lo 0,1%, e cio' che resta e'
+   * la parete vera — il campo continuo non passa `0.72` nemmeno sul fianco piu'
+   * ripido.
+   *
+   * Il tetto strutturale non e' mai stato lui: sotto un'impronta da sei celle
+   * il muro piu' alto che questo terreno sappia produrre e' di dieci voxel,
+   * meno della meta' di `maxWorksStep`, con o senza questa soglia.
    */
-  maxTerraceSlope: 0.46,
+  maxTerraceSlope: TERRAIN.buildableMaxSlope * 2,
 
   /**
    * Quota del piano di una banchina.

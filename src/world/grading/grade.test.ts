@@ -51,6 +51,16 @@ describe('groundKindOf — cosa serve per costruire', () => {
     expect(groundKindOf(BIOME.hill, TERRAIN.buildableMaxSlope, 22)).toBe(GROUND.sloped);
     expect(groundKindOf(BIOME.hill, GRADING.maxTerraceSlope, 22)).toBe(GROUND.refused);
   });
+
+  it('un fianco a una volta e mezza l edificabile si terrazza, non si rifiuta', () => {
+    // La banda fra "non piano" e "parete" e' il gioco, non un margine: quando
+    // il rifiuto stava a `0.46` prendeva dal 3% al 9% della terra emersa a
+    // seconda del seed, tutto sul raccordo fra pianoro e pianura, cioe' dove si
+    // costruisce. Questo campione sta in mezzo alla banda e deve restare un
+    // terrapieno anche dopo una ritaratura.
+    expect(groundKindOf(BIOME.hill, TERRAIN.buildableMaxSlope * 1.5, 22)).toBe(GROUND.sloped);
+    expect(groundKindOf(BIOME.rock, TERRAIN.buildableMaxSlope * 1.5, 52)).toBe(GROUND.rock);
+  });
 });
 
 describe('planGrade — il piano finito', () => {
