@@ -1,5 +1,4 @@
 import { Color, SRGBColorSpace } from 'three';
-import paletteJson from './palette.json';
 import { PALETTE_SIZE } from './paletteSlots';
 
 /**
@@ -40,8 +39,13 @@ export function toPaletteArray(hexColors: readonly string[]): Float32Array {
   return out;
 }
 
-/** I colori grezzi come stanno nel file, per validazione e per la UI di debug. */
-export const paletteHex: readonly string[] = paletteJson;
+/**
+ * I colori grezzi come stanno nel file, per validazione e per la UI di debug.
+ *
+ * Vivono in `paletteHex.ts` e qui si riespongono soltanto: leggerli non deve
+ * costare l'import di Three, che questo modulo fa per convertirli.
+ */
+export { paletteHex } from './paletteHex';
 
 /** true se la stringa e' un colore esadecimale nella forma attesa dal loader. */
 export function isValidHexColor(value: string): boolean {
@@ -63,10 +67,13 @@ export function onPaletteChanged(listener: PaletteListener): () => void {
 }
 
 if (import.meta.hot) {
-  // Questo modulo importa palette.json direttamente, quindi puo' accettarne
-  // l'aggiornamento e riscrivere l'uniform senza rigenerare una sola mesh.
-  import.meta.hot.accept('./palette.json', (updated) => {
-    const next: unknown = updated?.default;
+  // Si accetta `paletteHex.ts` e non piu' `palette.json`: il file JSON non e'
+  // piu' una dipendenza di questo modulo — ci sta in mezzo quello — e accettare
+  // qualcosa che non si importa vorrebbe dire un aggiornamento a caldo che non
+  // scatta mai. La catena e' la stessa: il JSON cambia, il modulo dei colori
+  // grezzi si ricarica, e qui si riscrive l'uniform senza rigenerare una mesh.
+  import.meta.hot.accept('./paletteHex', (updated) => {
+    const next: unknown = (updated as { paletteHex?: unknown } | undefined)?.paletteHex;
     if (!Array.isArray(next)) return;
     const hexColors = next as string[];
     for (const listener of listeners) listener(hexColors);

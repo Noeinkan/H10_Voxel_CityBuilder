@@ -65,19 +65,21 @@ import { createPostProcessing } from './engine/PostProcessing';
 import { createSunShadow } from './engine/SunShadow';
 import { SelectionOutline } from './engine/SelectionOutline';
 import { DemolitionOverlay } from './engine/DemolitionOverlay';
-import { resolveTheme, THEMES, type Theme } from './engine/themes';
+import { resolveTheme, themeSwatches, THEMES, type Theme } from './engine/themes';
 import { createVoxelMaterial } from './engine/VoxelMaterial';
 import { GrowthScene } from './game/growthScene';
 import type { CoachSuggestion } from './game/coach';
 import {
+  lookUrl,
   newGameUrl,
-  opensEntryMenu,
   perfToggleUrl,
   PLAY_PARAM,
   resolveLaunchMode,
   resolveSeed,
+  rollSeed,
   swatchUrl,
 } from './game/launchMode';
+import { signalWorldReady } from './game/worldReady';
 import { resolveSelection, type Selection } from './game/selection';
 import { pickSolidCell, pickSurfaceCell, type Ray3, type SurfaceCell } from './game/surfacePick';
 import { pickFacade } from './game/facadePick';
@@ -284,30 +286,7 @@ const restoredGame = savedGame !== null &&
   ? savedGame
   : null;
 
-/**
- * L'unico tiro non deterministico di tutta la generazione.
- *
- * Da qui in poi tutto e' funzione pura del numero sorteggiato, ed e' per questo
- * che ne esiste **uno**: lo chiama il bootstrap quando nessuno ha dichiarato un
- * seed, e lo chiama il menu quando si preme «Random». Un secondo tiro scritto
- * nella UI sarebbe una seconda definizione di «isola nuova».
- */
-function rollSeed(): number {
-  const roll = new Uint32Array(1);
-  crypto.getRandomValues(roll);
-  return roll[0];
-}
-
 const seed = restoredGame?.seed ?? resolveSeed(params, rollSeed);
-
-/**
- * Il menu e' la porta d'ingresso: si apre a ogni avvio della partita.
- *
- * Si salta solo dove la domanda ha gia' una risposta — uno slot appena aperto,
- * o un ricaricamento che il gioco stesso ha chiesto con `?play=1`.
- */
-const entryMenu = opensEntryMenu(params, { debugEnabled, perfEnabled, growEnabled, simEnabled },
-  restoredGame !== null);
 
 // Il seed sorteggiato va riscritto nell'URL: e' il modo in cui il mondo
 // "appare" al giocatore — come il seed di Minecraft — e il ricaricamento
@@ -510,6 +489,7 @@ const streetView = new StreetView(
   new StreetCameraController(window.innerWidth, window.innerHeight, {
     voxelSize: VOXEL_SIZE,
     far: Math.hypot(worldSize, worldSize, worldHeight),
+    onLockChange: (locked) => syncStreetHint(locked),
   }),
   VOXEL_SIZE,
 );
@@ -603,6 +583,25 @@ function setClouds(on: boolean): void {
   gameHud?.setClouds(on);
   gameHud?.showTransientFeedback(`Clouds · ${on ? 'on' : 'off'}`);
   console.info(`[clouds] ${on ? 'on' : 'off'}`);
+  rememberLook();
+}
+
+/**
+ * Il look in vigore va nella barra degli indirizzi, come il seed.
+ *
+ * Non e' cosmesi dell'URL: `?theme=`, `?daylight=` e `?clouds=` sono i tre
+ * parametri da cui **questo** avvio ha preso il suo cielo, e la schermata del
+ * titolo legge di li' cosa mostrare. Senza questa riga, chi cambia tema
+ * giocando e poi ricarica ritroverebbe sul titolo il cielo di tre partite fa,
+ * con le pastiglie accese sulla scelta sbagliata.
+ */
+function rememberLook(): void {
+  const url = lookUrl(window.location.search, {
+    theme: daylight.theme.id,
+    daylight: daylight.mode,
+    clouds: cloudsOn,
+  });
+  window.history.replaceState(window.history.state, '', url);
 }
 
 // La scena di terreno arriva da un worker, quindi non e' pronta a costruttore:
@@ -807,11 +806,15 @@ if (growEnabled) {
       },
     onPause: (paused) => growthScene?.setPaused(paused),
     onSpeed: (speed) => growthScene?.setSpeed(speed),
-    onDaylight: (mode) => daylight.setMode(mode),
+    onDaylight: (mode) => {
+      daylight.setMode(mode);
+      rememberLook();
+    },
     onClouds: (on) => setClouds(on),
     onTheme: (id) => {
       const index = THEMES.findIndex((candidate) => candidate.id === id);
       if (index >= 0) daylight.cycleTheme(index);
+      rememberLook();
     },
     // Una scheda nuova, non questa: il campionario e' una scena diversa e
     // rigenerarla qui vorrebbe dire buttare la partita, che non ha salvataggio.
@@ -845,20 +848,15 @@ if (growEnabled) {
     onImportSave: (text) => openSlot(importText(text), 'That file is not a saved game.'),
     onNewGame: (chosen) => startNewGame(chosen),
     onRollSeed: () => rollSeed(),
-    // «Continue» e' un caricamento come gli altri, e passa dalla stessa porta:
-    // l'autosalvataggio non ha una strada sua perche' non e' un caso speciale,
-    // e' solo lo slot che il gioco riscrive da solo.
-    onContinue: () => openSlot(readSlot(saveStorage, AUTO_SLOT), 'There is no autosave yet.'),
   }, THEMES.map((candidate) => ({
     id: candidate.id,
     name: candidate.name,
-    swatches: [
-      candidate.atmosphere.background,
-      candidate.colors[5] ?? candidate.atmosphere.fog.color,
-      candidate.colors[12] ?? candidate.atmosphere.fog.color,
-    ],
-    // La derivazione sta qui e non nell'HUD per la stessa ragione delle
-    // pastiglie qui sopra: legge l'atmosfera, e l'HUD non conosce l'engine.
+    // Le tre pastiglie arrivano dalla tabella dei temi e non da qui: le disegna
+    // anche la schermata del titolo, che l'engine non lo carica affatto, e due
+    // derivazioni dello stesso campione divergerebbero al primo tema nuovo.
+    swatches: themeSwatches(candidate),
+    // La derivazione dei token invece resta qui, per la stessa ragione delle
+    // pastiglie di prima: legge l'atmosfera, e l'HUD non conosce l'engine.
     tokens: hudTokens(candidate),
   })), daylight.theme.id);
   // Il bottone nasce sul ciclo: se l'URL ha chiesto altro, va detto subito o la
@@ -866,14 +864,9 @@ if (growEnabled) {
   // partenza sono spente mentre la barra le dipinge accese.
   gameHud.setDaylight(daylight.mode);
   gameHud.setClouds(cloudsOn);
-  if (entryMenu) {
-    // L'isola nasce **dietro** il velo: il generatore gira nel ciclo di frame
-    // prima della crescita, e solo quest'ultima riceve lo zero. Quando si preme
-    // Play il mondo e' gia' li', invece di far aspettare davanti a un menu che
-    // non sta caricando niente.
-    refreshSaveList();
-    gameHud.openMenuAtStart(listSlots(saveStorage).find((slot) => slot.slot === AUTO_SLOT) ?? null);
-  }
+  // Qui non si apre piu' niente all'avvio: la porta d'ingresso e' `boot.ts`, e
+  // quando questo modulo viene importato la scelta e' gia' stata fatta. Il menu
+  // che resta e' quello di pausa, che si apre con Esc su una partita viva.
 }
 
 const picker = new Raycaster();
@@ -1117,12 +1110,22 @@ const inspect = createInspectView({
 });
 
 if (terrain !== null) {
+  // Le viste d'ispezione sono spente a terra — entrare le chiude — ma i loro
+  // listener restano appesi: senza la guardia, il puntatore sotto lock (che una
+  // posizione non ce l'ha) le rimetterebbe a inseguire una cella qualsiasi.
   renderer.domElement.addEventListener('pointermove', (event: PointerEvent) => {
+    if (streetView.active) return;
     inspect.onPointerMove(event.clientX, event.clientY);
   });
   renderer.domElement.addEventListener('pointerleave', () => inspect.onPointerLeave());
-  renderer.domElement.addEventListener('pointerdown', (event) => inspect.onPointerDown(event));
-  renderer.domElement.addEventListener('pointerup', (event) => inspect.onPointerUp(event));
+  renderer.domElement.addEventListener('pointerdown', (event) => {
+    if (streetView.active) return;
+    inspect.onPointerDown(event);
+  });
+  renderer.domElement.addEventListener('pointerup', (event) => {
+    if (streetView.active) return;
+    inspect.onPointerUp(event);
+  });
 }
 
 if (growEnabled) {
@@ -1638,9 +1641,13 @@ function onFrame(time: number): void {
 
   camera.update(dt);
   preview.update(dt);
-  // Il respiro del contorno di selezione: una scrittura di opacita' a frame,
-  // nessuna ricostruzione di geometria.
+  // Il tempo dei contorni: qualche scrittura di uniform a frame, nessuna
+  // ricostruzione di geometria. Lo vogliono tutti e tre, non solo la scelta —
+  // la cometa che percorre la fascia vive in un `uTime`, e un contorno che non
+  // avanza mai se la ritrova ferma sul primo campione.
   selectionOutline?.update(dt);
+  demolishOutline?.update(dt);
+  swatchOutline?.update(dt);
 
   // Finche' la prima scena non c'e', il frame non deve proteggere niente:
   // conviene spendere di piu' per frame e finire in una manciata di frame.
@@ -1694,7 +1701,12 @@ function onFrame(time: number): void {
   // stata costruita, e chiudere la finestra al primo `done` li farebbe arrivare
   // uno alla volta con i budget di regime, con la citta' che compare in fondo.
   // La finestra resta una sola e continua a non riaprirsi.
-  if (loading && generator.done && sectorsToReplay.length === 0) firstScenePending = false;
+  if (loading && generator.done && sectorsToReplay.length === 0) {
+    firstScenePending = false;
+    // La schermata del titolo aspetta questo istante per togliersi: e' l'unico
+    // in cui «il mondo c'e'» e' vero, e non un frame in cui il mare e' ancora vuoto.
+    signalWorldReady();
+  }
 
   const mainMs = performance.now() - workStart;
   if (mainMs > mainMsMax) mainMsMax = mainMs;
@@ -2152,6 +2164,7 @@ function buildInspectFrame(): InspectOverlayFrame {
 }
 
 function onGamePointerMove(event: PointerEvent): void {
+  if (streetView.active) return;
   if (selectedTool.kind === 'none' || growthScene === null || terrain === null) {
     preview.hide();
     syncSelectionInfluence(resolvePickedSelection());
@@ -2320,6 +2333,7 @@ function onGamePointerMove(event: PointerEvent): void {
 }
 
 function onGamePointerDown(event: PointerEvent): void {
+  if (streetView.active) return;
   if (event.button !== 0 || selectedTool.kind === 'none') return;
   event.preventDefault();
   event.stopImmediatePropagation();
@@ -2428,6 +2442,7 @@ function onGamePointerDown(event: PointerEvent): void {
  * rilascio non si distingue un clic da uno striscio.
  */
 function onGamePointerUp(event: PointerEvent): void {
+  if (streetView.active) return;
   if (event.button !== 0 || !demolishDragging) return;
   demolishDragging = false;
   demolishOutline?.hide();
@@ -2857,8 +2872,28 @@ function exitStreetView(): void {
  * adattivo continua a sorvegliare e a scendere se il frame non tiene: qui si
  * sposta il punto di partenza dell'isteresi, non la si scavalca.
  */
+/**
+ * La targa che resta a schermo quando tutto il resto e' sparito.
+ *
+ * Dice due cose diverse a seconda che lo sguardo sia agganciato o no, e la
+ * seconda e' quella che conta: perso il lock — `Esc`, un alt-tab — muovere il
+ * mouse non fa piu' niente, e senza una riga che dica «clicca» sembrerebbe che
+ * la vista si sia rotta.
+ */
+function syncStreetHint(locked: boolean): void {
+  if (!streetView.active) return;
+  gameHud?.setStreetView(
+    true,
+    locked
+      ? 'Move to look · wheel to zoom · F levels the horizon · Esc to leave'
+      : 'Click to look around · Esc to leave',
+  );
+}
+
 function syncStreetView(): void {
   post.setCamera(streetView.view);
+  gameHud?.setStreetView(streetView.active, null);
+  if (streetView.active) syncStreetHint(streetView.controller.looking);
   const quality = streetView.active
     ? renderQuality.enterBoost(performance.now())
     : renderQuality.exitBoost(performance.now());
@@ -2872,9 +2907,9 @@ function syncStreetView(): void {
   // Dopo il pixel ratio, perche' la dimensione della shadow map dipende dal modo
   // e il profilo puo' essere appena cambiato con lui.
   applyQualityProfile(quality.changed ? quality.profile : qualityProfile);
-  gameHud?.showTransientFeedback(
-    streetView.active ? 'Street view · drag to look, wheel to zoom, Esc to leave.' : 'Back to the city.',
-  );
+  // A terra il toast e' nascosto insieme al resto dell'HUD: a dire come si esce
+  // c'e' la targa. Il messaggio serve solo a chi e' appena risalito.
+  if (!streetView.active) gameHud?.showTransientFeedback('Back to the city.');
 }
 
 /**
@@ -2889,6 +2924,11 @@ function syncStreetView(): void {
 function onSelectPointerUp(event: PointerEvent): void {
   if (!selectPointerDown || event.button !== 0) return;
   selectPointerDown = false;
+  // A terra il clic ha un mestiere solo: riagganciare lo sguardo dopo un `Esc`
+  // o un cambio di finestra. Sotto pointer lock il puntatore non ha nemmeno una
+  // posizione da cui scegliere qualcosa, e senza questa riga il primo clic per
+  // riprendere a guardare aprirebbe la scheda di un edificio a caso.
+  if (streetView.active) return;
   if (selectedTool.kind !== 'none') return;
   const moved = Math.abs(event.clientX - selectPointerX) + Math.abs(event.clientY - selectPointerY);
   if (moved > SELECT_CLICK_SLOP) return;
@@ -3424,6 +3464,7 @@ function onUiKey(event: KeyboardEvent): void {
   // non misura. `H` resta la manopola fine dell'harness, di un'ora alla volta.
   if (event.code === 'KeyL') {
     daylight.setMode(nextDaylightMode(daylight.mode));
+    rememberLook();
     return;
   }
   // E per la stessa ragione le nuvole: un banco davanti alla torre che si sta
@@ -3472,6 +3513,7 @@ function onUiKey(event: KeyboardEvent): void {
     if (index >= 0) {
       if (event.shiftKey || sceneKind === 'swatch') {
         daylight.cycleTheme(index);
+        rememberLook();
         return;
       }
       // Solo se quel posto esiste ed e' disponibile: un `7` che non seleziona

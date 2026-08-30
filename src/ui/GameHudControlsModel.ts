@@ -1,6 +1,10 @@
 import { CLASS_LABELS, type BuildingClass, type CatalystId } from '../sim';
-import { DAYLIGHT, DAYLIGHT_MODE, nextDaylightMode, type DaylightMode } from '../engine/daylight';
 import type { HudAction } from './GameHudModel';
+
+// Il cielo vive in un file suo perche' lo legge anche il titolo, che non deve
+// caricare `src/sim` per scrivere «Auto». Qui si riespone per chi lo cercava.
+export { daylightControl } from './daylightControl';
+export type { HudDaylight } from './daylightControl';
 
 /**
  * Il verso in cui un catalizzatore si posa, quando il ruolo sa fare entrambi.
@@ -18,37 +22,6 @@ export type GameTool =
   | { readonly kind: 'ropeway' }
   | { readonly kind: 'demolish' }
   | { readonly kind: 'none' };
-
-export interface HudDaylight {
-  readonly mode: DaylightMode;
-  readonly label: string;
-  readonly tooltip: string;
-  readonly next: DaylightMode;
-  readonly frozen: boolean;
-}
-
-const DAYLIGHT_LABEL: Readonly<Record<DaylightMode, string>> = {
-  [DAYLIGHT_MODE.cycle]: 'Auto',
-  [DAYLIGHT_MODE.day]: 'Day',
-  [DAYLIGHT_MODE.night]: 'Night',
-};
-
-const DAYLIGHT_NOTE: Readonly<Record<DaylightMode, string>> = {
-  [DAYLIGHT_MODE.cycle]: `the clock runs, a full day takes ${Math.round(DAYLIGHT.daySeconds / 60)} minutes`,
-  [DAYLIGHT_MODE.day]: 'the sun stays up',
-  [DAYLIGHT_MODE.night]: 'the city stays lit',
-};
-
-export function daylightControl(mode: DaylightMode): HudDaylight {
-  const next = nextDaylightMode(mode);
-  return {
-    mode,
-    label: DAYLIGHT_LABEL[mode],
-    tooltip: `Daylight: ${DAYLIGHT_LABEL[mode]} — ${DAYLIGHT_NOTE[mode]}. Click for ${DAYLIGHT_LABEL[next]}, or press L.`,
-    next,
-    frozen: mode !== DAYLIGHT_MODE.cycle,
-  };
-}
 
 export function selectionMessage(tool: GameTool, catalysts: readonly HudAction[]): string | null {
   if (tool.kind === 'catalyst') {

@@ -21,12 +21,31 @@
   overflow-y: auto;
   font-family: ui-rounded, 'Segoe UI', system-ui, sans-serif;
   color: #1c3347;
-  /* Cielo pieno, non velo: dietro non c'e' ancora niente da lasciar vedere, e
-     una trasparenza mostrerebbe la canvas vuota come se fosse un difetto. */
+  /*
+   * Cielo pieno, non velo: dietro non c'e' ancora niente da lasciar vedere, e
+   * una trasparenza mostrerebbe la canvas vuota come se fosse un difetto.
+   *
+   * **E' un cielo, quindi si muove.** Quattro strati che scorrono a velocita' e
+   * direzioni diverse su un ciclo di due minuti: nessuno dei quattro cambia
+   * tinta — restano tutti nel blu e nel bianco — ma la loro somma si', e il
+   * risultato e' un'aria che respira invece di una figurina. La deriva e' lenta
+   * di proposito: se la si vede muovere, distrae da cio' che c'e' da scegliere.
+   */
   background:
-    radial-gradient(120% 80% at 50% 12%, #f2fafe 0%, rgba(242, 250, 254, 0) 60%),
-    linear-gradient(180deg, #cfe9f7 0%, #a9d5ee 58%, #85bfe0 100%);
+    radial-gradient(60% 45% at 22% 18%, rgba(255, 255, 255, .85) 0%, rgba(255, 255, 255, 0) 70%),
+    radial-gradient(55% 40% at 78% 28%, rgba(150, 205, 255, .5) 0%, rgba(150, 205, 255, 0) 70%),
+    radial-gradient(70% 50% at 50% 88%, rgba(120, 205, 220, .38) 0%, rgba(120, 205, 220, 0) 70%),
+    linear-gradient(180deg, #dff0fb 0%, #bcdff2 26%, #9ccbeb 52%, #c3e3f5 74%, #8fc4e4 100%);
+  background-size: 140% 140%, 150% 150%, 160% 160%, 100% 260%;
+  background-position: 0% 0%, 100% 0%, 50% 100%, 50% 0%;
+  animation: title-sky 128s ease-in-out infinite alternate;
   transition: opacity 420ms ease;
+}
+
+@keyframes title-sky {
+  to {
+    background-position: 70% 40%, 20% 60%, 20% 30%, 50% 100%;
+  }
 }
 
 /*
@@ -226,6 +245,100 @@
   white-space: nowrap;
 }
 
+/* Il titoletto di un gruppo dentro una sottoschermata: Look, Sky, e i tre
+   blocchi dei comandi. */
+.title-group {
+  margin: 6px 0 0;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: #45647b;
+}
+
+.title-theme-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.title-theme {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid rgba(35, 75, 105, .18);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, .88);
+  color: inherit;
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.title-theme:hover {
+  background: #ffffff;
+}
+
+/* La scelta in corso si vede dal bordo, non da un segno di spunta: il bottone
+   e' gia' un campione di colore, e una spunta ci cadrebbe sopra. */
+.title-theme[aria-pressed='true'],
+.title-small[aria-pressed='true'] {
+  border-color: #2f6b91;
+  box-shadow: inset 0 0 0 1px #2f6b91;
+  background: #ffffff;
+}
+
+.title-swatches {
+  display: flex;
+  flex: none;
+  border-radius: 5px;
+  overflow: hidden;
+  box-shadow: 0 0 0 1px rgba(35, 75, 105, .16);
+}
+
+.title-swatches span {
+  width: 12px;
+  height: 18px;
+}
+
+/* I comandi: tasti a sinistra, cosa fanno a destra. */
+.title-hints {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 6px 12px;
+  margin: 0;
+  font-size: 12px;
+}
+
+.title-hints dt {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+}
+
+.title-hints dd {
+  margin: 0;
+  color: #45647b;
+}
+
+/* Le viste hanno un nome, non un tasto: il termine si legge come tale. */
+.title-hints--views dt {
+  font-weight: 600;
+}
+
+.title-hints kbd {
+  padding: 2px 6px;
+  border: 1px solid rgba(35, 75, 105, .22);
+  border-bottom-width: 2px;
+  border-radius: 6px;
+  background: #ffffff;
+  font-family: inherit;
+  font-size: 11px;
+  white-space: nowrap;
+}
+
 .title-small {
   padding: 8px 14px;
   border: 1px solid rgba(35, 75, 105, .18);
@@ -239,6 +352,12 @@
 
 .title-small:hover:not(:disabled) {
   background: #ffffff;
+}
+
+/* Le file che si dividono lo spazio: i tre modi del cielo, l'interruttore delle
+   nuvole. Larghi uguali, perche' sono scelte pari fra loro. */
+.title-small--wide {
+  flex: 1;
 }
 
 .title-small:disabled {
@@ -290,6 +409,12 @@
   .title-screen,
   .title-button {
     transition: none;
+  }
+
+  /* Il cielo si ferma: chi ha chiesto meno movimento non vuole un fondo che
+     deriva sotto il testo che sta leggendo. */
+  .title-screen {
+    animation: none;
   }
 
   .title-spinner {

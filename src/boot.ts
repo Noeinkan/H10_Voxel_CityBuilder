@@ -1,4 +1,12 @@
-import { newGameUrl, opensEntryMenu, resolveLaunchMode, rollSeed } from './game/launchMode';
+import {
+  lookUrl,
+  newGameUrl,
+  opensEntryMenu,
+  resolveLaunchMode,
+  resolveLook,
+  rollSeed,
+  type LookChoice,
+} from './game/launchMode';
 import {
   AUTO_SLOT,
   PENDING_SLOT,
@@ -48,6 +56,12 @@ const restored = pending !== null
  */
 const READY_TIMEOUT_MS = 12_000;
 
+/**
+ * Come nascera' il mondo: parte da cio' che l'indirizzo dichiara, e le
+ * impostazioni del titolo lo riscrivono li' invece di tenerlo in un posto loro.
+ */
+let look: LookChoice = resolveLook(params);
+
 if (opensEntryMenu(params, mode, restored)) openTitle();
 else void import('./main');
 
@@ -84,7 +98,13 @@ function openTitle(): void {
       void enter(screen, save.seed, 'Loading your city…');
     },
     onRoll: rollSeed,
-  }, { autosave, slots });
+    // Il look va nell'indirizzo subito, non solo entrando: cosi' sopravvive a un
+    // ricaricamento anche a chi ha cambiato cielo e poi ci ha ripensato.
+    onLook: (next) => {
+      look = next;
+      window.history.replaceState(window.history.state, '', lookUrl(window.location.search, next));
+    },
+  }, { autosave, slots, look });
   document.body.appendChild(screen.root);
   screen.focus();
 }
@@ -99,7 +119,11 @@ function openTitle(): void {
  */
 async function enter(screen: TitleScreen, seed: number, message?: string): Promise<void> {
   screen.startLoading(message);
-  window.history.replaceState(window.history.state, '', newGameUrl(window.location.search, seed));
+  window.history.replaceState(
+    window.history.state,
+    '',
+    newGameUrl(window.location.search, seed, look),
+  );
   await import('./main');
   await whenWorldReady(READY_TIMEOUT_MS);
   await screen.fadeOut();

@@ -1,5 +1,8 @@
+import type { LookChoice } from '../game/launchMode';
 import type { SlotInfo } from '../game/save/storage';
 import { ABOUT_LINE, slotLabel, slotSummary } from './MainMenuModel';
+import { titleHelpPane } from './TitleHelp';
+import { TitleSettings } from './TitleSettings';
 import {
   TITLE_LOADING,
   TITLE_NAME,
@@ -31,6 +34,8 @@ export interface TitleScreenView {
   readonly autosave: SlotInfo | null;
   /** Gli slot pieni, automatico compreso: sono le citta' riapribili. */
   readonly slots: readonly SlotInfo[];
+  /** Tema, cielo e nuvole in vigore: quelli dichiarati dall'indirizzo. */
+  readonly look: LookChoice;
 }
 
 export interface TitleScreenHandlers {
@@ -39,6 +44,14 @@ export interface TitleScreenHandlers {
   readonly onLoad: (slot: string) => void;
   /** Il seed sorteggiato da chi possiede l'unico tiro del gioco. */
   readonly onRoll: () => number;
+  /**
+   * Tema, cielo o nuvole sono cambiati.
+   *
+   * Il titolo non li applica: qui non c'e' ancora niente da illuminare. Li
+   * rimanda a chi tiene l'indirizzo, che e' il posto da cui la radice li
+   * leggera' quando il mondo nascera'.
+   */
+  readonly onLook: (look: LookChoice) => void;
 }
 
 /** Quanto dura la dissolvenza; deve restare uguale alla transizione nel CSS. */
@@ -97,8 +110,14 @@ export class TitleScreen {
     this.createButton = newPane.querySelector('[data-role="create"]') as HTMLButtonElement;
     const loadPane = this.buildLoadPane();
     this.loadNote = loadPane.querySelector('[data-role="load-note"]') as HTMLElement;
+    const settingsPane = new TitleSettings(view.look, (look) => handlers.onLook(look)).root;
+    settingsPane.appendChild(this.backButton());
+    const helpPane = titleHelpPane();
+    helpPane.appendChild(this.backButton());
     this.panes.set('new', newPane);
     this.panes.set('load', loadPane);
+    this.panes.set('settings', settingsPane);
+    this.panes.set('help', helpPane);
 
     const foot = document.createElement('div');
     foot.className = 'title-foot';
@@ -106,7 +125,9 @@ export class TitleScreen {
     about.textContent = ABOUT_LINE;
     foot.appendChild(about);
 
-    this.inner.append(wordmark, tagline, this.stack, newPane, loadPane, foot);
+    this.inner.append(wordmark, tagline, this.stack);
+    for (const [, pane] of this.panes) this.inner.appendChild(pane);
+    this.inner.appendChild(foot);
     this.openPane('root');
     this.paintSeed();
   }
@@ -172,7 +193,7 @@ export class TitleScreen {
       this.handlers.onContinue();
       return;
     }
-    this.openPane(id === 'new' ? 'new' : 'load');
+    this.openPane(id);
   }
 
   /**
