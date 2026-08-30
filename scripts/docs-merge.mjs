@@ -1,6 +1,11 @@
 #!/usr/bin/env node
 /**
- * Fonde i frammenti di `docs/pending/` in PROJECT_INDEX.md e CHANGELOG.md.
+ * Fonde i frammenti di `docs/pending/` nel Project Index e in CHANGELOG.md.
+ *
+ * L'indice e' spezzato per area: la radice `PROJECT_INDEX.md` piu' le schede di
+ * `docs/index/`. Un frammento dichiara la sezione, non il file — la sezione sta
+ * in una scheda sola, e questa la cerca in tutte. Scrive soltanto cio' che ha
+ * toccato.
  *
  * Esiste perche' quei due file sono il punto in cui il lavoro parallelo si
  * serializza: li aggiorna chiunque, e sempre nello stesso istante — a fine
@@ -31,6 +36,7 @@ import { fileURLToPath } from 'node:url';
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const PENDING = join(ROOT, 'docs', 'pending');
 const INDEX = join(ROOT, 'PROJECT_INDEX.md');
+const CARDS = join(ROOT, 'docs', 'index');
 const CHANGELOG = join(ROOT, 'CHANGELOG.md');
 
 /** Due fusioni insieme si sovrascriverebbero a vicenda: la mutua esclusione la
@@ -97,7 +103,7 @@ function trimBlank(lines) {
 }
 
 /** Divide un frammento nei suoi blocchi `## ...`. */
-function parseFragment(text) {
+export function parseFragment(text) {
   const blocks = [];
   let current = null;
   for (const line of text.split(/\r?\n/)) {
@@ -112,17 +118,23 @@ function parseFragment(text) {
   return blocks;
 }
 
+/** Dove comincia una sezione, di secondo o terzo livello: `src/engine/mesher/`
+ *  e' un `###` dentro `src/engine/`, e un frammento ha il diritto di puntarci. */
+function sectionStart(lines, chiave) {
+  return lines.findIndex((line) => /^#{2,3}\s/.test(line) && sectionKey(line.replace(/^#+\s/, '')) === chiave);
+}
+
 /** Inserisce le righe nella tabella della sezione, in ordine alfabetico. Una
  *  riga gia' presente per lo stesso path viene sostituita, non duplicata: cosi'
  *  rilanciare la fusione non moltiplica niente. */
-function mergeIndex(lines, sezione, righe, nome) {
+export function mergeIndex(lines, sezione, righe, nome) {
   const chiave = sectionKey(sezione);
-  const start = lines.findIndex((line) => line.startsWith('## ') && sectionKey(line.slice(3)) === chiave);
-  if (start < 0) throw new Error('sezione "' + sezione + '" non trovata in PROJECT_INDEX.md (frammento ' + nome + ')');
+  const start = sectionStart(lines, chiave);
+  if (start < 0) throw new Error('sezione "' + sezione + '" non trovata (frammento ' + nome + ')');
 
   let end = lines.length;
   for (let i = start + 1; i < lines.length; i++) {
-    if (lines[i].startsWith('## ')) { end = i; break; }
+    if (/^#{1,6}\s/.test(lines[i])) { end = i; break; }
   }
   const separatore = lines.slice(start, end).findIndex((line) => /^\|\s*-{3,}/.test(line));
   if (separatore < 0) throw new Error('nessuna tabella nella sezione "' + sezione + '" (frammento ' + nome + ')');
@@ -150,7 +162,7 @@ function mergeIndex(lines, sezione, righe, nome) {
  * questa distinzione le voci di un incremento finirebbero sotto il titolo di
  * un altro, che con piu' agenti in volo e' la norma, non l'eccezione.
  */
-function mergeChangelog(lines, voci, nome, titolo) {
+export function mergeChangelog(lines, voci, nome, titolo) {
   const start = lines.findIndex((line) => line.startsWith('## '));
   if (start < 0) throw new Error('nessuna sezione aperta in CHANGELOG.md (frammento ' + nome + ')');
 
@@ -183,9 +195,13 @@ function main() {
   }
 
   return withMutex(() => {
-    const docIndice = readDoc(INDEX);
+    // L'indice e' spezzato per area: la sezione dichiarata dal frammento dice
+    // da sola in quale scheda finisce, quindi chi scrive non deve saperlo.
+    const schede = existsSync(CARDS)
+      ? readdirSync(CARDS).filter((name) => name.endsWith('.md')).sort().map((name) => join(CARDS, name))
+      : [];
+    const indici = [INDEX, ...schede].map((file) => ({ file, ...readDoc(file), sporco: false }));
     const docChangelog = readDoc(CHANGELOG);
-    let indice = docIndice.lines;
     let changelog = docChangelog.lines;
     const fatti = [];
 
@@ -199,7 +215,16 @@ function main() {
         const utili = blocco.lines.filter((line) => line.trim());
         if (indiceHead) {
           const righe = utili.filter((line) => line.startsWith('|') && !/^\|\s*-{3,}/.test(line));
-          if (righe.length) indice = mergeIndex(indice, indiceHead[1], righe, nome);
+          if (righe.length) {
+            const chiave = sectionKey(indiceHead[1]);
+            const doc = indici.find((d) => sectionStart(d.lines, chiave) >= 0);
+            if (!doc) {
+              throw new Error('sezione "' + indiceHead[1] + '" non trovata (frammento ' + nome + '): cercata in '
+                + indici.map((d) => d.file.slice(ROOT.length + 1).replace(/\\/g, '/')).join(', '));
+            }
+            doc.lines = mergeIndex(doc.lines, indiceHead[1], righe, nome);
+            doc.sporco = true;
+          }
           continue;
         }
         const changelogHead = /^changelog\s*(?:[—-]\s*(.+))?$/i.exec(blocco.heading);
@@ -213,18 +238,24 @@ function main() {
       fatti.push({ nome, file });
     }
 
-    writeFileSync(INDEX, indice.join(docIndice.eol));
+    // Solo cio' che e' cambiato: riscrivere una scheda intatta e' un diff
+    // inutile, e con piu' agenti in volo un diff e' un avviso di rilettura.
+    for (const doc of indici) if (doc.sporco) writeFileSync(doc.file, doc.lines.join(doc.eol));
     writeFileSync(CHANGELOG, changelog.join(docChangelog.eol));
     for (const { file } of fatti) rmSync(file, { force: true });
-    console.log('Fusi: ' + fatti.map((f) => f.nome).join(', ') + '.');
+    const toccati = indici.filter((d) => d.sporco).map((d) => d.file.slice(ROOT.length + 1).replace(/\\/g, '/'));
+    console.log('Fusi: ' + fatti.map((f) => f.nome).join(', ') + '.'
+      + (toccati.length ? ' Indice aggiornato in: ' + toccati.join(', ') + '.' : ''));
     return 0;
   });
 }
 
-try {
-  process.exit(main());
-} catch (err) {
-  console.error('Fusione non riuscita: ' + err.message);
-  console.error('Niente e\' stato scritto e i frammenti restano dove sono.');
-  process.exit(1);
+if (resolve(process.argv[1] ?? '') === fileURLToPath(import.meta.url)) {
+  try {
+    process.exit(main());
+  } catch (err) {
+    console.error('Fusione non riuscita: ' + err.message);
+    console.error('Niente e\' stato scritto e i frammenti restano dove sono.');
+    process.exit(1);
+  }
 }
