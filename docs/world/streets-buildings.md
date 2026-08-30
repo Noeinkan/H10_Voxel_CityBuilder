@@ -41,6 +41,12 @@
   `step`), la nascita di un edificio sul lotto e le statistiche. Una passata nuova
   è un file nuovo più due righe nel costruttore, non un metodo in più su una
   classe che le ha già tutte.
+- **La regola vale anche per ciò che non è una passata.** Due domande che il
+  `Builder` faceva a se stesso hanno uno stato proprio, e quindi un file proprio:
+  `lotSearch.ts` — dove c'è posto, con i memo della ricerca e i siti bocciati —
+  e `frontage.ts` — chi hai accanto, e a quale fila appartieni. Il criterio è lo
+  stesso del `BuildContext`: se una parte del ciclo tiene una memoria che nessun
+  altro legge, quella memoria e le sue domande stanno insieme, fuori.
 - **Un voxel di edificio entra nel mondo da tre posti e basta**: `growthQueue`
   (i volumi, a budget), `surfaceQueue` (il suolo pubblico, a budget) e
   `siteWorks.buildWorks` (la fondazione, subito). È la forma stretta

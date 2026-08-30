@@ -19,7 +19,7 @@ import { Builder } from './Builder';
 import type { BuildingRegistry, ReadonlyBuildingRegistry } from './BuildingRegistry';
 import { BUILDER, MAX_FOOTPRINT } from './config';
 
-/** Il confine di fase letto attraverso il vero percorso `Builder.findLot`. */
+/** Il confine di fase letto attraverso il vero percorso `LotSearch.findLot`. */
 describe('Builder — gate degli assemblaggi urbani', () => {
   const seed = 1337;
 
@@ -60,7 +60,7 @@ describe('Builder — gate degli assemblaggi urbani', () => {
     const centerY = rect.y0 + ((rect.y1 - rect.y0) >> 1);
     const internals = builder as unknown as {
       ctx: { registry: ReadonlyBuildingRegistry };
-      findLot(x: number, y: number, state: SimState): Lot | null;
+      lots: { findLot(x: number, y: number): Lot | null };
     };
 
     if (mature) {
@@ -90,7 +90,7 @@ describe('Builder — gate degli assemblaggi urbani', () => {
       rect,
       centerX,
       centerY,
-      findLot: internals.findLot.bind(builder),
+      findLot: internals.lots.findLot.bind(internals.lots),
     };
   }
 

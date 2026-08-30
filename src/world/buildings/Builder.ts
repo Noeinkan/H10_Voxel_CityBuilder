@@ -15,10 +15,8 @@ import { dirtyChunkCount, fitsChunkBudget } from './chunkBudget';
 import { buildStamp } from './assemble';
 import { poleRectAt } from './growthPoles';
 import {
-  groundKindAt,
   hasUnworkableColumn,
   isCoastal,
-  nearLand,
   surveyGrade,
 } from './siteWorks';
 import type { BuildContext } from './buildContext';
@@ -42,7 +40,6 @@ import { FARMS } from '../farms/config';
 import { HarborDriver } from './harborDriver';
 import { HARBOR } from '../harbor/config';
 import type { FarmPlot } from '../farms/plotPlan';
-import { sightWater } from '../sites/siteRules';
 import {
   RopewayDriver,
   type RopewayCable,
@@ -61,12 +58,10 @@ import {
 } from './BuildingRegistry';
 import {
   BUILDER,
-  CLUSTER,
   MAX_FOOTPRINT,
   MIN_FOOTPRINT,
   typologyById,
 } from './config';
-import { planCluster, type ClusterTerms } from './cluster';
 import { startLevel } from './generate';
 import { selectTypology, typologyProfile } from './typology';
 import { styleAt, styledProfile } from './style';
@@ -75,18 +70,13 @@ import { envelopeOf } from './BuildingRegistry';
 import { groundSideOf, overhangFor } from './generate';
 import { recordStamp } from './recordStamp';
 import { GrowthQueue, anchorOf } from './growthQueue';
-import { BlockMemo, LotMemo } from './lotMemo';
+import { LotSearch } from './lotSearch';
+import { Frontage } from './frontage';
 import { SurfaceQueue } from './surfaceQueue';
-import {
-  GROUND,
-  type GradePlan,
-} from '../grading/grade';
 import { StreetNetwork } from '../streets/StreetNetwork';
-import { placeLot, type Lot } from '../streets/lots';
 import { FACING, type BlockId, type Facing } from '../streets/streetGrid';
 import { SPANS } from '../spans/config';
 import { AERIAL } from '../aerial/config';
-import { decksAt, type BuildDeck } from '../aerial/decks';
 import type { AerialFace, TerraceResult } from '../aerial/terracePlan';
 import { CROSSINGS } from '../crossings/config';
 import type { Region } from '../terrain/region';
@@ -282,38 +272,17 @@ export class Builder {
   private readonly surface: SurfaceQueue;
 
   /**
-   * Siti bocciati in modo definitivo.
+   * Dove c'e' posto: la ricerca del lotto con i suoi memo e i siti bocciati.
    *
-   * Ogni motivo di scarto e' permanente finche' il luogo non cambia: la
-   * pendenza di una colonna non cambia e un'impronta non si sposta. Riproporre
-   * un sito bocciato significherebbe rifare lo stesso calcolo con lo stesso
-   * esito a ogni infornata.
-   *
-   * **La demolizione e' arrivata**, e con lei il caso che questo commento
-   * aspettava: quando un cantiere di landmark porta via degli edifici, `onTick`
-   * svuota l'insieme con `forget`, perche' una colonna bocciata perche' occupata
-   * adesso puo' essere libera.
+   * Sta in `lotSearch.ts` perche' ha uno stato tutto suo che nessun'altra parte
+   * del ciclo legge, e perche' e' l'unica porta di «questa colonna e' libera?»:
+   * tre memorie con tre scadenze diverse divergerebbero se si potesse
+   * consultarne una senza le altre.
    */
-  private readonly blacklist = new Set<number>();
+  private readonly lots: LotSearch;
 
-  /**
-   * Cio' che l'infornata in corso ha gia' scoperto cercando lotti.
-   *
-   * Non e' stato di gioco e non sopravvive a `buildPass`: il perche' — e perche'
-   * questa e' la sola forma in cui il memo e' esatto — sta in `lotMemo.ts`.
-   */
-  private readonly lotMemo = new LotMemo();
-
-  /**
-   * Isolati senza piu' un lotto libero, da un'infornata all'altra.
-   *
-   * E' l'altra meta' della stessa ricerca — il rettangolo esaurito invece della
-   * colonna bocciata — e vive piu' a lungo perche' il fatto che ricorda vale piu'
-   * a lungo. La sua invalidazione e' `freedomEpoch`, che sale ogni volta che il
-   * mondo rende di nuovo libera una colonna: `findLot` gliela mostra prima di
-   * ogni ricerca, e il memo cade tutto quando cambia.
-   */
-  private readonly blockMemo = new BlockMemo();
+  /** Il fronte strada: chi ha accanto un lotto, e a quale fila appartiene. */
+  private readonly frontage: Frontage;
 
   private readonly rejectedCounts = new Array<number>(REJECT_REASONS.length).fill(0);
 
@@ -327,28 +296,6 @@ export class Builder {
   private buildTurn = 0;
 
   private placedCount = 0;
-
-  /**
-   * Prossima identita' di fila da assegnare.
-   *
-   * Un contatore e non un hash della posizione: l'identita' di una fila non e' un
-   * luogo — la fila cresce, si accosta e si spezza — ed e' l'unica cosa del
-   * cluster che non serve a rigenerare niente. Chi entra adotta quella del
-   * vicino, quindi questo sale solo quando una fila nuova si apre davvero.
-   */
-  private nextClusterId = 1;
-
-  /**
-   * Membri per fila, e quanti stanno in una fila di almeno due.
-   *
-   * Serve alla sola statistica, e si tiene incrementale invece di ricavarlo dai
-   * record a domanda: contare le file scandendo la citta' sarebbe l'unica cosa
-   * nel ciclo il cui costo cresce con il numero di edifici, cioe' esattamente
-   * quello che il gate della 4.4 chiede di non fare.
-   */
-  private readonly clusterSizes = new Map<number, number>();
-  private clusteredCount = 0;
-
 
   /** Edifici che poggiano su un impalcato in quota invece che sul terreno. */
   private stackedCount = 0;
@@ -401,6 +348,11 @@ export class Builder {
     // dirlo due volte alla simulazione.
     this.clearance = new ClearanceSites(this.ctx, this.spans);
     this.aerial = new AerialDriver(this.ctx, this.spans);
+    // La ricerca del lotto viene dopo la citta' in quota perche' le chiede due
+    // cose sole — se sopra una colonna presa corre una soletta, e quante ne sono
+    // nate — e nient'altro: la freccia va in un verso solo.
+    this.lots = new LotSearch(this.ctx, this.aerial);
+    this.frontage = new Frontage(this.ctx);
     this.landmarks = new LandmarkDriver(this.ctx, this.clearance, this.aerial);
     // La guida viene dopo la citta' in quota e le chiede due cose: come vede il
     // luogo, e quali impalcati qualcuno abita. La freccia va in un verso solo —
@@ -603,9 +555,9 @@ export class Builder {
       upgraded: this.upgrades.count,
       growing: this.growth.queued,
       rejected: this.rejectedCounts,
-      blacklisted: this.blacklist.size,
+      blacklisted: this.lots.blacklisted,
       surfaceQueued: this.surface.queued,
-      clustered: this.clusteredCount,
+      clustered: this.frontage.clustered,
       spans: this.registryImpl.spanCount,
       spanReach: this.spans.reach(),
       terraces: this.aerial.terraces,
@@ -625,20 +577,7 @@ export class Builder {
 
   /** Svuota i siti bocciati. Serve solo se qualcosa rende di nuovo libero il terreno. */
   forget(): void {
-    this.blacklist.clear();
-    // Un isolato dichiarato pieno lo era rispetto al terreno di allora:
-    // un'espansione puo' avergli aggiunto colonne edificabili sul fronte.
-    // L'epoca lo direbbe gia' per i tre modi che il mondo conosce, ma questa e'
-    // la porta dichiarata di «il terreno e' di nuovo libero», e chi la apre da
-    // fuori non e' tenuto ad aver alzato un contatore.
-    this.blockMemo.clear();
-    //
-    // Il memo dei lotti non ne avrebbe bisogno — nasce e muore dentro
-    // `buildPass`, e qui non ci si arriva mai da li' dentro — ma svuotarlo costa
-    // due `clear` su insiemi vuoti e toglie di mezzo la sola domanda che chi
-    // legge si farebbe: «e se un giorno qualcuno chiamasse `forget` a meta'
-    // infornata?».
-    this.lotMemo.reset();
+    this.lots.forget();
   }
 
   /**
@@ -735,8 +674,8 @@ export class Builder {
    *
    * Sono statistiche e non stato di gioco, ma nascono a zero a ogni costruttore:
    * senza questa riga una citta' caricata direbbe «zero edifici costruiti»
-   * nell'overlay, e `nextClusterId` ripartirebbe da uno assegnando a una fila
-   * nuova l'identita' di una che esiste gia'.
+   * nell'overlay, e le identita' di fila ripartirebbero da uno — il perche' sta
+   * in `Frontage.adopt`.
    */
   private countRestored(record: BuildingRecord): void {
     this.placedCount++;
@@ -747,11 +686,7 @@ export class Builder {
 
     const cluster = record.cluster;
     if (cluster === undefined) return;
-    if (cluster >= this.nextClusterId) this.nextClusterId = cluster + 1;
-    const size = (this.clusterSizes.get(cluster) ?? 0) + 1;
-    this.clusterSizes.set(cluster, size);
-    if (size === 2) this.clusteredCount += 2;
-    else if (size > 2) this.clusteredCount++;
+    this.frontage.adopt(cluster);
   }
 
   /**
@@ -852,11 +787,9 @@ export class Builder {
    */
   private buildPass(state: SimState): SimState {
     const wanted = BUILDER.sitesPerBuild;
-    // **Il memo comincia qui e finisce con l'infornata.** Fra un giro e l'altro
-    // un cantiere puo' aver chiuso, una prenotazione caduta, un impalcato
-    // nascere: tre modi in cui una colonna bocciata torna libera, e nessuno dei
-    // tre accade da questa riga fino alla fine del metodo.
-    this.lotMemo.reset();
+    // Da qui alla fine del metodo niente rende libera una colonna che era presa:
+    // e' la finestra in cui il memo della ricerca e' esatto.
+    this.lots.beginPass();
 
     // **Il distretto costiero viene prima del polo di turno.** E' un rivolo
     // — un edificio per infornata, al massimo — e senza la precedenza si
@@ -950,7 +883,7 @@ export class Builder {
 
     if (request.chooseLot) {
       if (state === null) return null;
-      const lot = this.findLot(request.x, request.y);
+      const lot = this.lots.findLot(request.x, request.y);
       if (lot === null) return null;
 
       x = lot.x;
@@ -964,14 +897,14 @@ export class Builder {
     }
 
     const key = columnKey(x, y);
-    if (this.blacklist.has(key)) return null;
+    if (this.lots.isBanned(key)) return null;
 
     // **Su quale piano.** Il suolo finche' e' libero — ed e' il caso di ogni
     // edificio finche' nessuno ha costruito niente in quota, quindi il percorso
     // di sempre resta quello di sempre — altrimenti l'impalcato piu' basso che
     // passa di qui. E' questa riga a togliere a «edificabile» il suo essere un
     // bit per colonna, e non una struttura nel campo della simulazione.
-    const deck = this.pickDeck(x, y, footprintCap);
+    const deck = this.lots.pickDeck(x, y, footprintCap);
     const onGround = deck.kind === 'ground';
 
     // **In quota il lotto e' l'impalcato.** Non si passa da `findLot`, che
@@ -1069,7 +1002,7 @@ export class Builder {
         if (facing === FACING.east) x += slack;
         else if (facing === FACING.north) y += slack;
 
-        const along = this.snapAlongFrontage(x, y, footprint, facing, slack);
+        const along = this.frontage.snap(x, y, footprint, facing, slack);
         if (facing === FACING.east || facing === FACING.west) y += along;
         else x += along;
       } else {
@@ -1117,7 +1050,7 @@ export class Builder {
     // solo al terreno sotto di se' e comincia a rispondere anche al vicino.
     const terms = plan === null
       ? null
-      : this.joinCluster(x, y, footprint, facing, plan, form.density);
+      : this.frontage.join(x, y, footprint, facing, plan, form.density);
     const baseBand = terms?.base ?? 0;
 
     // Con un corso di base condiviso lo stamp si rigenera: cambia l'altezza
@@ -1259,384 +1192,20 @@ export class Builder {
     return record;
   }
 
-  // --- Quote edificabili -----------------------------------------------------
-
-  /**
-   * Su quale piano poggia un'impronta larga `side` con l'angolo qui.
-   *
-   * Il suolo per primo, e finche' e' libero non si guarda oltre: e' cio' che
-   * tiene identica la citta' di prima, dove in quota non c'e' niente e questa
-   * funzione risponde alla prima riga. Solo su una colonna gia' presa si sale, e
-   * si prende **l'impalcato piu' basso** che abbia il volume sopra di se' libero:
-   * riempire il secondo livello prima del terzo e' la stessa regola con cui la
-   * citta' riempie il suolo prima di alzarsi.
-   *
-   * **In quota l'impalcato porta il proprio riquadro**, e chi chiama ci sposta
-   * dentro il lotto. Il suolo non ne ha uno: li' il lotto l'ha gia' risolto la
-   * ricerca continua al suolo.
-   */
-  private pickDeck(x: number, y: number, side: number): BuildDeck {
-    const decks = decksAt(this.registryImpl.at(x, y), this.terrainMap.heightAt(x, y));
-
-    for (const deck of decks) {
-      if (deck.kind === 'ground') {
-        if (!this.groundTaken(x, y, side)) return deck;
-        continue;
-      }
-      // Una cella sola sopra il piano: se e' libera lo e' anche il resto, perche'
-      // qualunque volume in quota parte da li'. La collisione vera la fa
-      // `overlaps` sull'impronta e sull'altezza definitive.
-      if (!this.registryImpl.overlaps(x, y, 1, deck.z, 1)) return deck;
-    }
-    // Nessun piano libero: torna il suolo, e il rifiuto arriva da `overlaps` con
-    // il motivo giusto invece che da qui con un ramo in piu'.
-    return decks[0];
-  }
-
-  /** true se un edificio prende il suolo di una qualunque colonna dell'impronta. */
-  private groundTaken(x: number, y: number, side: number): boolean {
-    for (let dy = 0; dy < side; dy++) {
-      for (let dx = 0; dx < side; dx++) {
-        if (this.registryImpl.isOccupied(x + dx, y + dy)) return true;
-      }
-    }
-    return false;
-  }
-
-  // --- Aggregazione ----------------------------------------------------------
-
-  /**
-   * Di quanto l'impronta scorre lungo il fronte per accostarsi a un vicino.
-   *
-   * E' la mossa gemella dello scorrimento verso la carreggiata, e nasce dallo
-   * stesso scarto: il lotto e' prenotato largo `footprintCap`, l'impronta puo'
-   * uscire piu' stretta, e quello che avanza oggi resta prato in mezzo a una
-   * fila. Si guarda in giu' fino a `CLUSTER.maxSnap` e in su fino allo scarto
-   * disponibile, e vince il vicino piu' vicino; a parita' il basso, per fissare
-   * l'ordine.
-   *
-   * **Il compromesso, dichiarato.** Accostarsi puo' portare l'impronta fuori dal
-   * passo di `STREETS.align`, che esiste per non far cadere un edificio a meta'
-   * di un cubo di terreno. Dove la citta' e' densa il terreno e' quasi sempre
-   * piatto e non costa niente — `planGrade` non chiede opere quando le colonne
-   * stanno alla stessa quota; dove e' mosso costa un cubo di riempimento in piu',
-   * ed e' meno di quanto costi un solco da un voxel in mezzo a due case in fila.
-   */
-  private snapAlongFrontage(
-    x: number,
-    y: number,
-    footprint: number,
-    facing: Facing,
-    slack: number,
-  ): number {
-    const alongY = facing === FACING.east || facing === FACING.west;
-    const occupied = (offset: number): boolean =>
-      this.frontageOccupied(x, y, footprint, alongY, offset);
-
-    // Scendere esce dal lotto prenotato, quindi il riquadro dell'isolato torna a
-    // essere il limite: senza, accostarsi a un vicino porterebbe l'impronta in
-    // mezzo alla carreggiata, che e' esattamente cio' che la 4.1 ha tolto.
-    // Salire e' gia' dentro lo scarto del lotto, e non ha bisogno di un tetto.
-    const rect = this.streets.blockRect(this.streets.blockAt(x, y));
-    const room = alongY ? y - rect.y0 : x - rect.x0;
-    const down = Math.min(CLUSTER.maxSnap, Math.max(0, room));
-
-    for (let step = 0; step <= Math.max(down, slack); step++) {
-      // Il lato basso per primo: e' l'ordine totale che rende la scelta
-      // indipendente da quale vicino il registry ha registrato prima.
-      if (step <= down && occupied(-step - 1)) return -step;
-      if (step <= slack && occupied(footprint + step)) return step;
-    }
-    return 0;
-  }
-
-  /**
-   * true se un edificio copre la colonna a `offset` lungo il fronte.
-   *
-   * Guarda l'intera sezione dell'impronta e non la sola colonna d'angolo: due
-   * edifici in fila condividono il fronte ma non per forza tutta la profondita',
-   * e cercare il vicino su una colonna sola lo mancherebbe proprio dove le due
-   * impronte sono di misura diversa.
-   */
-  private frontageOccupied(
-    x: number,
-    y: number,
-    footprint: number,
-    alongY: boolean,
-    offset: number,
-  ): boolean {
-    for (let d = 0; d < footprint; d++) {
-      const cx = alongY ? x + d : x + offset;
-      const cy = alongY ? y + offset : y + d;
-      if (this.registryImpl.isOccupied(cx, cy)) return true;
-    }
-    return false;
-  }
-
-  /**
-   * Termini della fila a cui questo lotto appartiene, e conteggio dei membri.
-   *
-   * La regola sta in `cluster.ts` ed e' pura: qui c'e' solo la raccolta dei
-   * vicini, che e' l'unica parte che ha bisogno del registry. I due lati del
-   * fronte si guardano sempre nello stesso ordine — prima il basso — perche'
-   * senza un ordine totale la fila scelta dipenderebbe da quale record il
-   * registry ha indicizzato prima.
-   */
-  private joinCluster(
-    x: number,
-    y: number,
-    footprint: number,
-    facing: Facing | undefined,
-    plan: GradePlan,
-    density: number,
-  ): ClusterTerms {
-    const neighbours = facing === undefined
-      ? EMPTY_TERMS
-      : this.frontageTerms(x, y, footprint, facing);
-
-    const terms = planCluster({
-      own: plan,
-      density,
-      neighbours,
-      nextId: this.nextClusterId,
-    });
-    if (terms.id === this.nextClusterId) this.nextClusterId++;
-
-    const size = (this.clusterSizes.get(terms.id) ?? 0) + 1;
-    this.clusterSizes.set(terms.id, size);
-    // Il secondo membro porta in conto anche il primo: prima di lui la fila era
-    // un edificio solo, e un edificio solo non e' una fila.
-    if (size === 2) this.clusteredCount += 2;
-    else if (size > 2) this.clusteredCount++;
-
-    return terms;
-  }
-
-  /** I termini dei vicini di fronte, dal lato basso a quello alto. */
-  private frontageTerms(
-    x: number,
-    y: number,
-    footprint: number,
-    facing: Facing,
-  ): readonly ClusterTerms[] {
-    const alongY = facing === FACING.east || facing === FACING.west;
-    const out: ClusterTerms[] = [];
-
-    for (const offset of [-1, footprint]) {
-      for (let d = 0; d < footprint; d++) {
-        const cx = alongY ? x + d : x + offset;
-        const cy = alongY ? y + offset : y + d;
-        for (const other of this.registryImpl.at(cx, cy)) {
-          // Un landmark non entra in fila: ha un altro generatore, cresce di
-          // stadio e non di livello, e adottarne la quota darebbe a un isolato
-          // il piano di un molo. Un vicino orientato altrove nemmeno — due file
-          // che si incontrano su un angolo restano due file.
-          if (other.landmark !== undefined) continue;
-          if (other.facing !== facing) continue;
-          if (other.cluster === undefined) continue;
-          if (out.some((terms) => terms.id === other.cluster)) continue;
-          out.push({ id: other.cluster, deck: other.baseZ, base: other.baseBand ?? 0 });
-        }
-      }
-    }
-
-    return out;
-  }
-
-  /**
-   * Lotto libero piu' vicino alla colonna proposta, anche fuori dal suo isolato.
-   *
-   * **Perche' non basta il proprio isolato.** I candidati della simulazione
-   * arrivano ordinati per punteggio, e su un campo saturo — dove interi
-   * quartieri toccano il massimo — a decidere e' il criterio di parita', cioe'
-   * `x` e poi `y`. Il risultato e' che la simulazione ripropone all'infinito lo
-   * stesso pugno di colonne nell'angolo minimo dell'area satura. Finche' quel
-   * primo isolato aveva posto la citta' cresceva; appena si riempiva, ogni
-   * infornata successiva ricadeva su un isolato gia' dichiarato pieno e la
-   * crescita si fermava del tutto — quattordici edifici su un'isola intera.
-   *
-   * La colonna proposta designa quindi **un luogo, non un isolato**: se il suo
-   * e' pieno si cerca in quelli attorno, dal piu' vicino al piu' lontano. Lo
-   * scarto resta limitato dal raggio in isolati, cioe' da poche decine di
-   * colonne: abbastanza per non fermarsi, troppo poco perche' un edificio nasca
-   * dove la desiderabilita' non lo voleva.
-   */
-  private findLot(x: number, y: number): Lot | null {
-    // **Il memo si allinea qui e non a inizio infornata.** Costa tre letture di
-    // contatore per ricerca — nulla, di fronte alle diecimila colonne che evita —
-    // e in cambio nessun chiamante futuro puo' dimenticarsene: la memoria si
-    // aggiorna dove la si usa.
-    this.blockMemo.observe(this.freedomEpoch());
-    const origin = this.streets.blockAt(x, y);
-    // Il rettangolo e' soltanto il limite di costo della ricerca. Comprende
-    // isolati e interassi insieme: nessuno dei suoi bordi e nessuna cella
-    // interna appartiene a un lotto urbanistico. Il primo posto libero viene
-    // scelto per distanza dal candidato, quindi il pieno si addensa come una
-    // macchia attorno al landmark invece di completare quadrati successivi.
-    const radius = BUILDER.blockSearchRadius;
-    const southWest = this.streets.blockRect({
-      kx: origin.kx - radius,
-      ky: origin.ky - radius,
-    });
-    const northEast = this.streets.blockRect({
-      kx: origin.kx + radius,
-      ky: origin.ky + radius,
-    });
-
-    // La costa e' un confine vero, l'isolato no. Un candidato che vede il mare
-    // si centra sulla prima acqua navigabile: cosi' l'impronta attraversa la
-    // battigia e genera una banchina senza allinearsi a un quadrato teorico.
-    const coast = isCoastal(this.terrainMap, x, y)
-      ? sightWater(this.terrainMap, x, y, BUILDER.coastalRadius, true)
-      : null;
-    let targetX = x;
-    let targetY = y;
-    if (coast !== null) {
-      if (coast.facing === FACING.east) targetX += coast.distance;
-      else if (coast.facing === FACING.west) targetX -= coast.distance;
-      else if (coast.facing === FACING.north) targetY += coast.distance;
-      else targetY -= coast.distance;
-    }
-
-    return placeLot({
-      rect: {
-        x0: southWest.x0,
-        y0: southWest.y0,
-        x1: northEast.x1,
-        y1: northEast.y1,
-      },
-      x: targetX,
-      y: targetY,
-      footprint: MAX_FOOTPRINT,
-      facingAt: coast === null
-        ? (lx, ly, side) => this.facingTowardNetwork(lx, ly, side)
-        : () => coast.facing,
-      accepts: (lx, ly, side) => this.lotIsFree(lx, ly, side),
-      // Il rettangolo dipende dal solo isolato d'origine, e la scansione lo
-      // percorre tutto: due candidati dello stesso isolato fanno la stessa
-      // domanda in un altro ordine. Il secondo la salta, e da adesso anche il
-      // primo dell'infornata dopo — finche' l'epoca non cambia.
-      exhausted: (side) => this.blockMemo.isExhausted(origin.kx, origin.ky, side),
-      onExhausted: (side) => this.blockMemo.exhaust(origin.kx, origin.ky, side),
-    });
-  }
-
-  /**
-   * Quante volte il mondo ha reso di nuovo libera una colonna.
-   *
-   * Somma di tre contatori monotoni, uno per ciascun modo in cui `lotIsFree` puo'
-   * cambiare idea su una colonna che aveva bocciato: il registry che rilascia una
-   * prenotazione o toglie un record, un impalcato che nasce sopra un suolo preso,
-   * un chunk di terreno che arriva dove non c'era isola. Non dice **cosa** e'
-   * cambiato, e non serve: chi la legge butta via tutto quello che sapeva.
-   *
-   * Sono tre e non uno perche' ciascuno sta accanto alla domanda che invalida —
-   * `isOccupied`, `hasDeck`, il terreno — e un quarto modo di liberare suolo
-   * dovra' portarsi il proprio contatore, non aggiungere un gancio qui.
-   */
-  private freedomEpoch(): number {
-    return this.registryImpl.vacated + this.aerial.decksOpened + this.terrainMap.chunkCount;
-  }
-
-  /**
-   * Orienta la facciata verso l'asse stradale teorico piu' vicino senza usare
-   * quell'asse come confine. Il tessuto puo' attraversarlo; se una strada viene
-   * davvero collegata, `SurfaceQueue` le trovera' un percorso fra i pieni.
-   */
-  private facingTowardNetwork(x: number, y: number, footprint: number): Facing {
-    const touching = this.streets.facingOf(x, y, footprint);
-    if (touching !== null) return touching;
-
-    const centerX = x + Math.floor((footprint - 1) * 0.5);
-    const centerY = y + Math.floor((footprint - 1) * 0.5);
-    const dx = this.streets.nearestLine(0, centerX) - centerX;
-    const dy = this.streets.nearestLine(1, centerY) - centerY;
-    if (Math.abs(dx) <= Math.abs(dy)) return dx >= 0 ? FACING.east : FACING.west;
-    return dy >= 0 ? FACING.north : FACING.south;
-  }
-
-
-
-
-  // --- Scrittura -------------------------------------------------------------
-
-  // --- Superficie urbana ----------------------------------------------------
-
-  /** Tipologia registrata di un edificio, o quella di ripiego del suo uso. */
-
-  /**
-   * true se il quadrato e' libero, edificabile e non gia' bocciato.
-   *
-   * E' il predicato con cui `placeLot` cerca attorno al candidato, quindi viene
-   * chiamato molte volte: fa solo letture per colonna — `TerrainMap` e
-   * registry — e non genera niente. La pendenza **non** si controlla qui: la
-   * verifica `surveyGround` a valle, e un lotto bocciato per pendenza finisce
-   * nella blacklist, che questa funzione consulta al giro dopo.
-   */
-  private lotIsFree(x: number, y: number, footprint: number): boolean {
-    for (let dy = 0; dy < footprint; dy++) {
-      for (let dx = 0; dx < footprint; dx++) {
-        const cx = x + dx;
-        const cy = y + dy;
-        const key = columnKey(cx, cy);
-        // **Il memo per primo.** Dal secondo candidato dell'infornata in poi e'
-        // quasi sempre lui a rispondere, e costa una lettura di `Set` al posto
-        // delle quattro domande qui sotto.
-        if (this.lotMemo.refuses(key)) return false;
-        if (!this.columnIsFree(cx, cy, key)) {
-          this.lotMemo.refuse(key);
-          return false;
-        }
-      }
-    }
-    return true;
-  }
-
-  /**
-   * Le quattro ragioni per cui una singola colonna non regge un lotto.
-   *
-   * Sta a parte perche' e' la risposta che il memo tiene: dividere la domanda
-   * per colonna dalla domanda per quadrato e' cio' che rende memorizzabile la
-   * prima senza toccare la seconda.
-   */
-  private columnIsFree(x: number, y: number, key: number): boolean {
-    // Letture senza allocazione: `columnAt` costruirebbe un oggetto e
-    // `at` un array di record per ogni colonna, e qui le colonne si
-    // contano a migliaia per infornata.
-    // **Il suolo preso non chiude piu' la colonna per sempre.** Se sopra
-    // corre una soletta il lotto esiste ancora, una quota piu' su: e' la
-    // seconda delle tre assunzioni di colonna che la 4.9 rompe. La domanda
-    // in piu' si paga solo su questo ramo — cioe' sulle sole colonne gia'
-    // costruite — quindi una citta' senza piattaforme costa quello di prima.
-    if (this.registryImpl.isOccupied(x, y) && !this.aerial.hasDeck(x, y)) return false;
-    // Dalla 4.2 la battigia e il fianco in pendenza sono lotti come gli
-    // altri: costano un'opera, non un rifiuto. Restano fuori solo la roccia
-    // e l'acqua troppo profonda per una banchina.
-    if (groundKindAt(this.terrainMap, x, y) === GROUND.refused) return false;
-    // E l'acqua che una banchina reggerebbe ma che nessuno vorrebbe
-    // edificata: un lotto al largo poggia su un pad isolato in mezzo al
-    // mare, che e' lo stesso difetto dell'anello di carreggiata.
-    if (!nearLand(this.terrainMap, x, y)) return false;
-    return !this.blacklist.has(key);
-  }
-
   /**
    * Conta uno scarto, e di norma lo rende definitivo.
    *
    * `permanent` a false esiste per una sola situazione, ed e' la 4.9: un
    * candidato in quota che non entra dice qualcosa sulla **soletta**, non sulla
-   * colonna. Blacklistarla toglierebbe per sempre un lotto a terra per via di un
+   * colonna. Bocciarla toglierebbe per sempre un lotto a terra per via di un
    * ingombro che sta trenta voxel piu' su.
    */
   private reject(key: number, reason: RejectReason, permanent = true): null {
-    if (permanent) this.blacklist.add(key);
+    if (permanent) this.lots.ban(key);
     this.rejectedCounts[REJECT_REASONS.indexOf(reason)]++;
     return null;
   }
 }
-
-/** Nessun vicino: chi costruisce a coordinate date non ha un fronte da guardare. */
-const EMPTY_TERMS: readonly ClusterTerms[] = [];
 
 /** Cosa un giro d'infornata lascia: lo stato nuovo e quanto ha speso del budget. */
 interface BuildRound {
