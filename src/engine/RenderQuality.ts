@@ -1,7 +1,7 @@
 import type { FrameTimingSnapshot } from './FrameTiming';
 
 export type QualityMode = 'auto' | 'high' | 'balanced' | 'performance';
-export type QualityReason = 'initial' | 'fixed' | 'stable-up' | 'slow-down' | 'unchanged';
+export type QualityReason = 'initial' | 'fixed' | 'stable-up' | 'slow-down' | 'unchanged' | 'boost';
 
 /**
  * Cosa puo' permettersi il frame, oltre al numero di pixel.
@@ -56,6 +56,28 @@ export interface QualityDecision {
   readonly effectsLevel: number;
 }
 
+/**
+ * Tetto del pixel ratio quando la vista e' **ferma**.
+ *
+ * Sopra la densita' dello schermo si sta disegnando piu' grande di quanto si
+ * mostri, e il composer rimpicciolisce: e' supersampling, ed e' l'unica manopola
+ * che tocchi davvero gli spigoli dei voxel. Fuori di qui il tetto e' la densita'
+ * del monitor (`maximum`), il che vuol dire che su un display 1x non c'e' **nessun**
+ * margine da giocare — ed e' esattamente il caso in cui questa vista ne ha piu'
+ * bisogno.
+ *
+ * Due e non di piu', e il numero si limita da solo dove serve: su un display 1x
+ * sono quattro volte i pixel, cioe' un 2x2 pieno; su un 2x e' la risoluzione
+ * nativa, cioe' nessun costo in piu' e nessun guadagno — perche' li' lo schermo
+ * il supersampling lo sta gia' facendo per conto suo.
+ *
+ * Si puo' spendere perche' in questa vista la camera non si muove: la coda di
+ * remesh si ordina una volta e poi mai piu', nessun chunk nuovo entra nel
+ * frustum, e la scatola dell'ombra si stringe attorno all'occhio invece di
+ * coprire mezza isola. E' budget che si libera, non che si prende in prestito.
+ */
+const BOOST_MAXIMUM = 2;
+
 const EVALUATION_MS = 2_000;
 const DOWN_COOLDOWN_MS = 5_000;
 const UP_STABLE_MS = 10_000;
@@ -87,10 +109,75 @@ export class RenderQualityController {
    */
   private effectsLevel = 0;
 
+  /**
+   * Cosa c'era prima del boost, da rimettere all'uscita. `null` quando non si e'
+   * dentro una vista ferma.
+   *
+   * Si cattura e si restituisce invece di ricalcolare, per la stessa ragione per
+   * cui la camera fa `captureState`/`restoreState`: quel livello non era un
+   * default, era una **misura**, e ricavarlo di nuovo vorrebbe dire far
+   * ricominciare da capo dieci secondi di isteresi a chi e' appena risalito.
+   */
+  private beforeBoost: { current: number; effectsLevel: number } | null = null;
+
   constructor(readonly mode: QualityMode, devicePixelRatio: number) {
     this.maximum = clamp(Math.floor(devicePixelRatio / STEP) * STEP, 1, 2);
     this.current = ratioForMode(mode, this.maximum);
     this.baseline = this.current;
+  }
+
+  get boosted(): boolean {
+    return this.beforeBoost !== null;
+  }
+
+  /**
+   * Alza l'asticella per una vista ferma.
+   *
+   * Non scavalca l'isteresi, la fa **ricominciare** da un punto piu' alto: da qui
+   * in avanti `observe` continua a guardare i tempi di frame e a scendere se non
+   * tengono, esattamente come prima. E' l'unica forma che questa cosa poteva
+   * prendere senza rompere il contratto del file — la qualita' si deriva dalla
+   * misura, e non da chi sta guardando.
+   *
+   * Nei modi fissi il pixel ratio sale ma la scala degli effetti resta dov'e': a
+   * sceglierla e' stato il giocatore con `?quality=`, e un modo di vista non e'
+   * un buon motivo per disfare una scelta esplicita.
+   */
+  enterBoost(now: number): QualityDecision {
+    if (this.beforeBoost === null) {
+      this.beforeBoost = { current: this.current, effectsLevel: this.effectsLevel };
+    }
+    this.current = BOOST_MAXIMUM;
+    this.effectsLevel = 0;
+    this.restartHysteresis(now);
+    return this.decide(true, 'boost');
+  }
+
+  /** Rimette esattamente il livello che la misura aveva raggiunto prima. */
+  exitBoost(now: number): QualityDecision {
+    const before = this.beforeBoost;
+    if (before === null) return this.unchanged();
+    this.beforeBoost = null;
+    this.current = before.current;
+    this.effectsLevel = before.effectsLevel;
+    this.restartHysteresis(now);
+    return this.decide(true, 'boost');
+  }
+
+  /**
+   * Riparte a misurare da adesso.
+   *
+   * Senza, i campioni raccolti prima del cambio deciderebbero per la vista nuova:
+   * il primo `observe` dopo una salita vedrebbe una finestra piena di fotogrammi
+   * misurati a meta' risoluzione e la dichiarerebbe stabile, quello dopo una
+   * discesa vedrebbe i fotogrammi cari del supersampling e scenderebbe di un
+   * gradino che non serve piu'.
+   */
+  private restartHysteresis(now: number): void {
+    this.lastEvaluation = now;
+    this.cooldownUntil = now + DOWN_COOLDOWN_MS;
+    this.stableSince = null;
+    this.slowWindows = 0;
   }
 
   get pixelRatio(): number {

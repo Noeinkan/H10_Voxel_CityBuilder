@@ -96,6 +96,75 @@ describe('RenderQualityController', () => {
     expect(quality.profile.shadowSize).toBe(2048);
   });
 
+  it('la vista ferma sale sopra la densita’ dello schermo, cioe’ supersampling', () => {
+    // A DPR 1 il tetto normale e' 1: senza il boost non ci sarebbe **nessun**
+    // margine da giocare proprio sulla macchina che ne ha piu' bisogno.
+    const quality = new RenderQualityController('auto', 1);
+    expect(quality.pixelRatio).toBe(1);
+
+    const boosted = quality.enterBoost(0);
+    expect(boosted).toMatchObject({ changed: true, reason: 'boost', pixelRatio: 2 });
+    expect(quality.boosted).toBe(true);
+    // Con il pixel ratio sopra la linea di partenza il profilo torna al gradino
+    // pieno da solo: si deriva dallo stato, non e' un secondo interruttore.
+    expect(boosted.profile).toMatchObject({ shadowSize: 2048, bloom: true, bloomScale: 1 });
+  });
+
+  it('all’uscita rimette il livello che la misura aveva raggiunto, non il default', () => {
+    // Quel livello era una misura e non un default: ricavarlo di nuovo vorrebbe
+    // dire far ricominciare dieci secondi di isteresi a chi e' appena risalito.
+    const quality = new RenderQualityController('auto', 2);
+    quality.observe(slow, 2_000);
+    quality.observe(slow, 4_000);
+    expect(quality.pixelRatio).toBe(1.25);
+    const degraded = quality.profile;
+
+    quality.enterBoost(10_000);
+    expect(quality.pixelRatio).toBe(2);
+
+    expect(quality.exitBoost(20_000)).toMatchObject({ changed: true, pixelRatio: 1.25 });
+    expect(quality.boosted).toBe(false);
+    expect(quality.profile).toEqual(degraded);
+  });
+
+  it('il boost sposta il punto di partenza dell’isteresi, non la scavalca', () => {
+    // E' il contratto del file: la qualita' si deriva dalla misura, e non da chi
+    // sta guardando. Se il frame non tiene, da terra si scende come altrove.
+    const quality = new RenderQualityController('auto', 2);
+    quality.enterBoost(0);
+    expect(quality.pixelRatio).toBe(2);
+
+    // Il cooldown appena riavviato protegge la prima finestra, poi si scende.
+    quality.observe(slow, 4_000);
+    quality.observe(slow, 8_000);
+    quality.observe(slow, 10_000);
+    expect(quality.pixelRatio).toBeLessThan(2);
+  });
+
+  it('un modo fisso alza la risoluzione ma non disfa la scelta del giocatore', () => {
+    // `?quality=performance` e' una scelta esplicita: un modo di vista non e' un
+    // buon motivo per riaccendere pass che qualcuno ha chiesto di spegnere.
+    const quality = new RenderQualityController('performance', 1);
+    const boosted = quality.enterBoost(0);
+    expect(boosted.pixelRatio).toBe(2);
+    expect(boosted.profile).toMatchObject({ shadowSize: 0, bloom: false, godRays: false });
+  });
+
+  it('un secondo ingresso non si sovrascrive lo stato da restituire', () => {
+    const quality = new RenderQualityController('auto', 2);
+    quality.observe(slow, 2_000);
+    quality.observe(slow, 4_000);
+    quality.enterBoost(10_000);
+    quality.enterBoost(11_000);
+    expect(quality.exitBoost(20_000).pixelRatio).toBe(1.25);
+  });
+
+  it('uscire senza essere entrati non cambia niente', () => {
+    const quality = new RenderQualityController('auto', 2);
+    expect(quality.exitBoost(0)).toMatchObject({ changed: false });
+    expect(quality.pixelRatio).toBe(1.5);
+  });
+
   it('ogni decisione porta con se’ il profilo corrente', () => {
     const quality = new RenderQualityController('auto', 2);
     for (const decision of [quality.initial(), quality.observe(stable, 100)]) {

@@ -206,6 +206,14 @@ const godRaysShader = {
  * si staglia sul cielo o su un'altra quota. Il Sobel sulla profondita' marca
  * esattamente quei profili e nient'altro — e' il contorno "cartoon" senza linee
  * interne.
+ *
+ * **Il valore su cui gira il Sobel dev'essere lineare, e in ortografica lo era
+ * gia'.** Quella riga sopra era vera per la sola proiezione parallela: da terra
+ * la profondita' nel buffer e' iperbolica, i valori si accalcano verso uno, e
+ * con la stessa soglia il contorno diventa un alone nero sul primo metro e
+ * nient'altro oltre una decina di voxel. Si linearizza prima, e i due piani
+ * arrivano da fuori — questa pass disegna un quad e non ha una camera di scena a
+ * cui chiederli.
  */
 const outlineShader = {
   name: 'Outline',
@@ -215,6 +223,9 @@ const outlineShader = {
     uTexel: { value: new Vector2() },
     uStrength: { value: 0 },
     uEdgeThreshold: { value: 0.04 },
+    uNear: { value: 0.1 },
+    uFar: { value: 1000 },
+    uPerspective: { value: 0 },
   },
   vertexShader: fullscreenVertex,
   fragmentShader: /* glsl */ `
@@ -223,10 +234,25 @@ const outlineShader = {
     uniform vec2 uTexel;
     uniform float uStrength;
     uniform float uEdgeThreshold;
+    uniform float uNear;
+    uniform float uFar;
+    uniform float uPerspective;
     varying vec2 vUv;
 
+    /**
+     * La profondita' normalizzata su far, lineare in entrambe le proiezioni.
+     *
+     * In ortografica il buffer e' gia' lineare e il valore passa di li' intatto,
+     * quindi il contorno che c'era prima resta identico. In prospettiva si
+     * inverte la curva del buffer: senza, il gradiente collassa a zero da un
+     * lato e esplode dall'altro, e non e' una questione di taratura della soglia
+     * — non esiste una soglia che vada bene a due metri e a duecento.
+     */
     float depthAt(vec2 uv) {
-      return texture2D(tDepth, uv).r;
+      float d = texture2D(tDepth, uv).r;
+      float ndc = d * 2.0 - 1.0;
+      float linear = (2.0 * uNear * uFar) / (uFar + uNear - ndc * (uFar - uNear));
+      return mix(d, linear / uFar, uPerspective);
     }
 
     void main() {
@@ -305,6 +331,17 @@ export interface PostProcessingHandle {
    * shader come la'. `facing` spegne i raggi quando il sole e' dietro la camera.
    */
   setSunScreen(x: number, y: number, facing: boolean): void;
+  /**
+   * Cambia la camera con cui si disegna la scena.
+   *
+   * `RenderPass.camera` e' un campo pubblico che la pass rilegge a ogni
+   * fotogramma, quindi scendere a terra e' un'assegnazione e non la ricostruzione
+   * del composer — che vorrebbe dire ricompilare ogni pass e ricreare i due
+   * render target, per una scelta che il giocatore puo' fare e disfare a ogni
+   * secondo. Nessun'altra pass conosce la camera: il contorno legge una texture
+   * di profondita' e i raggi del sole una posizione a schermo.
+   */
+  setCamera(camera: Camera): void;
   render(): void;
   dispose(): void;
 }
@@ -359,6 +396,21 @@ export function createPostProcessing(
   let qualityGodRays = true;
   let qualityOutline = true;
   let bloomScale = 1;
+
+  /**
+   * I due piani e il tipo di proiezione, per il solo contorno.
+   *
+   * Il contorno legge una texture di profondita' e non la camera: e' l'unica pass
+   * a schermo pieno che abbia bisogno di sapere qualcosa di lei, e glielo si
+   * passa a mano invece di darle la camera intera, che non saprebbe cosa farsene.
+   */
+  const applyCameraPlanes = (next: Camera): void => {
+    const planes = next as unknown as { near?: number; far?: number; isPerspectiveCamera?: boolean };
+    outlinePass.uniforms['uPerspective'].value = planes.isPerspectiveCamera === true ? 1 : 0;
+    outlinePass.uniforms['uNear'].value = planes.near ?? 0.1;
+    outlinePass.uniforms['uFar'].value = planes.far ?? 1000;
+  };
+  applyCameraPlanes(camera);
 
   const syncEnabled = (): void => {
     bloomPass.enabled = themeBloom && qualityBloom;
@@ -449,6 +501,11 @@ export function createPostProcessing(
     setSunScreen(x: number, y: number, facing: boolean): void {
       godRaysPass.uniforms['uSunScreen'].value.set(x * 0.5 + 0.5, y * 0.5 + 0.5);
       godRaysPass.uniforms['uSunFacing'].value = facing ? 1 : 0;
+    },
+
+    setCamera(next: Camera): void {
+      renderPass.camera = next;
+      applyCameraPlanes(next);
     },
 
     render(): void {

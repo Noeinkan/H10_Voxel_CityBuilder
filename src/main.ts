@@ -30,6 +30,9 @@ import {
 } from './engine/inspect';
 import { createInspectView } from './engine/InspectView';
 import { IsoCameraController } from './engine/IsoCameraController';
+import { StreetCameraController } from './engine/street/StreetCameraController';
+import { StreetView } from './engine/street/StreetView';
+import { eyePoint, eyeRefusal } from './engine/street/streetEye';
 import {
   DAYLIGHT,
   DAYLIGHT_MODE,
@@ -154,6 +157,7 @@ import { CELL_HEIGHT, SWATCH } from './world/scenes/swatchLayout';
 import {
   SWATCH_FOCUS,
   SWATCH_FOCUSES,
+  SWATCH_ITEM_GAP,
   swatchExtent,
   swatchFocusExtent,
   swatchSubjectAt,
@@ -491,6 +495,25 @@ const camera = new IsoCameraController(world, window.innerWidth, window.innerHei
 });
 camera.attach(renderer.domElement);
 
+/**
+ * La vista da terra, spenta finche' non la si chiede.
+ *
+ * Il piano lontano e' la **diagonale del mondo** e non una distanza di disegno
+ * scelta a mano: la nebbia dei temi e' cosi' rada che il velo si chiude dopo
+ * migliaia di voxel, quindi tagliare prima mostrerebbe il taglio invece di
+ * nasconderlo. A limitare il costo c'e' il campo visivo, piu' il culling per
+ * chunk che gira gia' sul frustum della camera.
+ */
+const streetView = new StreetView(
+  camera,
+  renderer.domElement,
+  new StreetCameraController(window.innerWidth, window.innerHeight, {
+    voxelSize: VOXEL_SIZE,
+    far: Math.hypot(worldSize, worldSize, worldHeight),
+  }),
+  VOXEL_SIZE,
+);
+
 // Il composer ha bisogno di scena e camera, quindi nasce qui; e `applyTheme`
 // ne imposta bloom e tilt, percio' la prima applicazione del tema viene dopo.
 const post = createPostProcessing(renderer, scene, camera.camera);
@@ -510,10 +533,22 @@ let qualityProfile = renderQuality.profile;
 
 function applyQualityProfile(profile: QualityProfile): void {
   qualityProfile = profile;
-  if (profile.shadowSize > 0) sunShadow.setSize(profile.shadowSize);
+  // A terra la shadow map raddoppia il lato, e non e' generosita': la scatola su
+  // cui si adatta e' passata da mezza isola a 192 voxel, quindi la stessa mappa
+  // copre un'area venti volte piu' piccola e la pass disegna **meno** mesh di
+  // prima. Il texel scende sotto il ventesimo di voxel, che e' la scala a cui
+  // un'ombra si legge come appoggiata a terra invece che disegnata sopra.
+  if (profile.shadowSize > 0) {
+    sunShadow.setSize(streetView.active ? Math.min(4096, profile.shadowSize * 2) : profile.shadowSize);
+  }
   post.setQuality({
     bloom: profile.bloom,
-    tilt: profile.tilt,
+    // Il tilt-shift e' una banda di fuoco orizzontale a schermo, non una
+    // profondita' di campo: dice «modellino», ed e' scelto cosi' proprio perche'
+    // l'ortografica non ha convergenza. Da terra sfoca il cielo e il selciato e
+    // mette a fuoco la fascia di mezzo, cioe' l'esatto contrario di quello che
+    // una vista a occhio d'uomo significa.
+    tilt: profile.tilt && !streetView.active,
     grade: profile.grade,
     godRays: profile.godRays,
     outline: profile.outline,
@@ -618,6 +653,8 @@ if (diorama !== null) {
 } else if (sceneKind === 'swatch') {
   // Si parte da «Tutto», l'estensione intera: la prima immagine e' il
   // campionario completo, poi i pulsanti del pannello inquadrano una fascia.
+  // Non passa da `frameSwatchFocus` perche' quello scrive `swatchFocus`, che qui
+  // e' ancora nella sua zona morta: la fascia iniziale e' gia' il suo valore.
   const e = swatchFocusExtent(SWATCH_FOCUS.all);
   camera.frameRegion(
     e.minX + e.sizeX / 2,
@@ -625,6 +662,7 @@ if (diorama !== null) {
     e.sizeX,
     e.sizeY,
     e.sizeZ,
+    (SWATCH.groundZ + e.sizeZ) / 2,
   );
 } else if (terrain === null) {
   camera.frameRegion(worldSize / 2, worldSize / 2, worldSize / 2, worldSize / 2, worldHeight);
@@ -683,6 +721,17 @@ let swatchFocus: SwatchFocus = SWATCH_FOCUS.all;
 let swatchPointerDown = false;
 let swatchPointerX = 0;
 let swatchPointerY = 0;
+/**
+ * Quando e' arrivato il clic precedente, per riconoscere il doppio.
+ *
+ * Il doppio clic si conta qui e non su `dblclick`: `CameraInput` annulla il
+ * `pointerdown` per tenersi il trascinamento, e da li' in poi quali eventi
+ * composti il browser continui a sintetizzare non e' piu' una garanzia su cui
+ * appoggiare l'unico gesto che inquadra un soggetto.
+ */
+let swatchLastClickMs = Number.NEGATIVE_INFINITY;
+/** Finestra del doppio clic: il default di Windows, che e' quello che si ha nelle dita. */
+const SWATCH_DOUBLE_CLICK_MS = 500;
 
 /**
  * Le due scene che possono girare sopra l'isola.
@@ -1124,6 +1173,41 @@ if (selectionPanel !== null && terrain !== null) {
   renderer.domElement.addEventListener('pointerup', onSelectPointerUp);
 }
 
+/**
+ * Lo strumento che scende a terra: si arma, poi si clicca dove ci si vuole
+ * mettere.
+ *
+ * Sono due tempi come in Block focus, e per la stessa ragione: puntare non e'
+ * scegliere. Armato, il prossimo clic posa l'occhio; disarmato, il clic torna a
+ * scegliere un edificio. Senza i due tempi ogni clic sulla citta' sarebbe una
+ * discesa, e non ci sarebbe piu' modo di aprire la scheda di un isolato.
+ */
+let streetArmed = false;
+let streetPointerDown = false;
+let streetPointerX = 0;
+let streetPointerY = 0;
+
+if (terrain !== null) {
+  // Registrato per primo fra i `pointerup` di gioco: armato, la discesa si
+  // prende il clic e la selezione non deve nemmeno provarci.
+  renderer.domElement.addEventListener('pointerdown', (event: PointerEvent) => {
+    streetPointerDown = event.button === 0;
+    streetPointerX = event.clientX;
+    streetPointerY = event.clientY;
+  });
+  renderer.domElement.addEventListener('pointerup', (event: PointerEvent) => {
+    if (!streetPointerDown || event.button !== 0) return;
+    streetPointerDown = false;
+    if (!streetArmed) return;
+    // Stessa soglia del clic che sceglie: il tasto sinistro e' gia' un pan, e
+    // fino al rilascio non si sa se il gesto fosse un clic o una rotazione.
+    const moved = Math.abs(event.clientX - streetPointerX)
+      + Math.abs(event.clientY - streetPointerY);
+    if (moved > SELECT_CLICK_SLOP) return;
+    placeStreetEye(event.clientX, event.clientY);
+  });
+}
+
 if (swatchOverlay !== null) {
   renderer.domElement.addEventListener('pointermove', (event: PointerEvent) => {
     const pick = swatchPickAt(event.clientX, event.clientY);
@@ -1408,6 +1492,7 @@ renderer.setAnimationLoop(onFrame);
 window.addEventListener('resize', () => {
   renderer.setSize(window.innerWidth, window.innerHeight);
   camera.setViewport(window.innerWidth, window.innerHeight);
+  streetView.setViewport(window.innerWidth, window.innerHeight);
   post.setSize(window.innerWidth, window.innerHeight, renderQuality.pixelRatio);
   syncResolution();
   skyBackground.setAspect(window.innerWidth / Math.max(1, window.innerHeight));
@@ -1521,7 +1606,11 @@ function drawShadowPass(): void {
 
   sunShadow.setEnabled(true);
   const start = performance.now();
-  sunShadow.fit(chunkRenderer.visibleBounds, sunWorld);
+  // A terra il volume dei chunk visibili e' un corridoio lungo quanto l'isola, e
+  // il texel dell'ombra vale `max(spanX, spanY) / size`: senza restringerlo
+  // attorno all'occhio l'ombra diventa poltiglia. Di sopra e' lo stesso oggetto
+  // di prima, quindi passare di qui non costa niente.
+  sunShadow.fit(streetView.shadowBounds(chunkRenderer.visibleBounds), sunWorld);
   sunShadow.begin(renderer);
   const drawn = chunkRenderer.renderShadow(renderer, sunShadow.camera, sunShadow.depthMaterial);
   sunShadow.end(renderer, performance.now() - start, drawn);
@@ -1580,17 +1669,21 @@ function onFrame(time: number): void {
   advanceInfoOverlay();
   daylight.advance(dt);
 
+  // La camera del fotogramma, chiesta **una volta**: da qui in giu' nessuno deve
+  // piu' sapere se si sta guardando la citta' dall'alto o da una sua strada.
+  const view = streetView.view;
+
   // La direzione di sguardo serve alla vista prima che alla nebbia: in
   // ortografica e' un vettore solo, e ce lo dividiamo.
-  camera.camera.getWorldDirection(viewDirection);
+  view.getWorldDirection(viewDirection);
   inspect.apply([viewDirection.x, viewDirection.y, viewDirection.z]);
 
   const elapsed = performance.now() - workStart;
-  chunkRenderer.update(camera.camera, Math.max(0.5, frameBudget - elapsed));
+  chunkRenderer.update(view, Math.max(0.5, frameBudget - elapsed));
   // Fra `update` e `cull`: un chunk nato adesso deve gia' scendere in questo
   // frame, e il culling deve leggere gli AABB appena spostati.
   if (introActive) stepIntro(time / 1000);
-  chunkRenderer.cull(camera.camera);
+  chunkRenderer.cull(view);
 
   // La finestra di caricamento si chiude su `generator.done`, non su
   // `chunkRenderer.isIdle`: e' la generazione a tenere fermo il gioco, e le
@@ -1613,7 +1706,7 @@ function onFrame(time: number): void {
   // Il sole in spazio vista da' la sua posizione a schermo. Con una camera
   // ortografica un punto all'infinito non si proietta, quindi si usa la
   // direzione: la componente xy dice dove sta, la z se e' davanti o dietro.
-  sunView.copy(sunWorld).transformDirection(camera.camera.matrixWorldInverse);
+  sunView.copy(sunWorld).transformDirection(view.matrixWorldInverse);
   skyBackground.setSunScreen(sunView.x * 1.35, sunView.y * 1.35, sunView.z < 0);
   // Stessa posizione a schermo del disco: i raggi del sole irradiano da li'.
   post.setSunScreen(sunView.x * 1.35, sunView.y * 1.35, sunView.z < 0);
@@ -1621,10 +1714,7 @@ function onFrame(time: number): void {
   // Dalla NDC al mondo, per il solo strato di nuvole: il fondo e' un quad in
   // NDC e senza questa non saprebbe a che punto del piano corrisponde un pixel.
   // Due moltiplicazioni di matrici per frame, non per pixel.
-  skyInvViewProj.multiplyMatrices(
-    camera.camera.matrixWorld,
-    camera.camera.projectionMatrixInverse,
-  );
+  skyInvViewProj.multiplyMatrices(view.matrixWorld, view.projectionMatrixInverse);
   skyBackground.setCamera(skyInvViewProj, viewDirection.x, viewDirection.y, viewDirection.z);
   post.render();
   const renderMs = performance.now() - renderStart;
@@ -2515,7 +2605,10 @@ function cursorRay(clientX: number, clientY: number): Ray3 {
     ((clientX - rect.left) / rect.width) * 2 - 1,
     -((clientY - rect.top) / rect.height) * 2 + 1,
   );
-  picker.setFromCamera(pointer, camera.camera);
+  // `setFromCamera` sa gia' distinguere le due proiezioni: da terra il raggio
+  // parte dall'occhio e diverge, di sopra parte dal piano vicino ed e' parallelo.
+  // E' cio' che fa funzionare lo stesso `pointedCellAt` da entrambe le viste.
+  picker.setFromCamera(pointer, streetView.view);
   const origin = picker.ray.origin;
   const direction = picker.ray.direction;
   return {
@@ -2570,7 +2663,16 @@ function swatchPickAt(
   };
 }
 
-/** Inquadra una fascia del campionario, con un margine che non appartiene agli oggetti. */
+/**
+ * Inquadra una fascia del campionario, con un margine che non appartiene agli
+ * oggetti.
+ *
+ * Il perno va a **meta' dell'altezza della fascia**, non sul basamento: le
+ * arcologie arrivano a settecentotrentasette voxel, e con il centro
+ * dell'inquadratura a terra la loro punta restava fuori campo perfino premendo
+ * il pulsante che dovrebbe mostrarle. Sotto, l'altezza spesa sul vuoto era
+ * altrettanta.
+ */
 function frameSwatchFocus(focus: SwatchFocus): void {
   swatchFocus = focus;
   const e = swatchFocusExtent(focus);
@@ -2580,6 +2682,27 @@ function frameSwatchFocus(focus: SwatchFocus): void {
     e.sizeX,
     e.sizeY,
     e.sizeZ,
+    (SWATCH.groundZ + e.sizeZ) / 2,
+  );
+}
+
+/**
+ * Inquadra un solo soggetto, dal basamento alla punta.
+ *
+ * E' l'unico modo di guardare da vicino una megastruttura: la fascia intera
+ * mette quindici arcologie una accanto all'altra, e avvicinarsi con la rotella
+ * taglia proprio la cima, perche' lo zoom stringe attorno al centro
+ * dell'inquadratura. Qui il soggetto **e'** l'inquadratura.
+ */
+function frameSwatchSubject(subject: SwatchSubject): void {
+  const margin = SWATCH_ITEM_GAP * 2;
+  camera.frameRegion(
+    (subject.rect.x0 + subject.rect.x1) / 2,
+    (subject.rect.y0 + subject.rect.y1) / 2,
+    subject.rect.x1 - subject.rect.x0 + margin,
+    subject.rect.y1 - subject.rect.y0 + margin,
+    subject.z1 - subject.z0,
+    (subject.z0 + subject.z1) / 2,
   );
 }
 
@@ -2606,7 +2729,13 @@ function refreshSwatchOutline(): void {
   });
 }
 
-/** Il rilascio che sceglie, con la stessa soglia anti-pan del clic di gioco. */
+/**
+ * Il rilascio che sceglie, con la stessa soglia anti-pan del clic di gioco.
+ *
+ * Il secondo clic ravvicinato sullo **stesso** soggetto inquadra: il primo ha
+ * gia' il suo mestiere — riempire la scheda del referto — e prendersi anche
+ * l'inquadratura vorrebbe dire strattonare la camera a chi stava solo leggendo.
+ */
 function onSwatchPointerUp(event: PointerEvent): void {
   if (!swatchPointerDown || event.button !== 0) return;
   swatchPointerDown = false;
@@ -2614,9 +2743,15 @@ function onSwatchPointerUp(event: PointerEvent): void {
   if (moved > SELECT_CLICK_SLOP) return;
 
   const pick = swatchPickAt(event.clientX, event.clientY);
-  swatchSelection = pick?.subject ?? null;
+  const subject = pick?.subject ?? null;
+  const doubled = subject !== null
+    && subject === swatchSelection
+    && performance.now() - swatchLastClickMs <= SWATCH_DOUBLE_CLICK_MS;
+  swatchLastClickMs = performance.now();
+  swatchSelection = subject;
   swatchVoxel = pick?.voxel ?? null;
   refreshSwatchOutline();
+  if (doubled) frameSwatchSubject(subject);
 }
 
 /**
@@ -2651,6 +2786,94 @@ function pointedCellAt(clientX: number, clientY: number): SurfaceCell | null {
     // La citta' non ha un tetto noto come la heightmap: il suo estremo e' quello
     // che il mondo ha davvero raggiunto, piu' un voxel per non tagliare l'ultimo.
     world.bounds.empty ? TERRAIN.maxHeight + 1 : world.bounds.maxZ + 1,
+  );
+}
+
+/**
+ * Arma o disarma la discesa, e da terra la annulla.
+ *
+ * Un tasto solo per tre stati perche' sono la stessa domanda — «voglio guardare
+ * da terra?» — e tre tasti per una domanda sola sarebbero tre cose da ricordare.
+ */
+function toggleStreetView(): void {
+  if (streetView.active) {
+    exitStreetView();
+    return;
+  }
+  streetArmed = !streetArmed;
+  gameHud?.showTransientFeedback(
+    streetArmed ? 'Street view · click where to stand.' : 'Street view cancelled.',
+  );
+}
+
+/** Posa l'occhio sul punto puntato, se ci si puo' stare. */
+function placeStreetEye(clientX: number, clientY: number): void {
+  const map = terrain?.map;
+  if (map === undefined) return;
+  const cell = pointedCellAt(clientX, clientY);
+  const refusal = eyeRefusal(cell, (x, y) => map.waterTopAt(x, y));
+  if (refusal !== null || cell === null) {
+    gameHud?.showFeedback(
+      refusal === 'underwater' ? 'Nowhere to stand: that is water.' : 'Nothing to stand on there.',
+      'neutral',
+    );
+    return;
+  }
+
+  streetArmed = false;
+  // Le viste d'ispezione reggono la **stessa** camera e ne catturano lo stato per
+  // restituirlo: lasciarne una aperta vorrebbe dire due proprietari della stessa
+  // inquadratura, e chi esce per ultimo rimette quella sbagliata. Per lo stesso
+  // motivo un taglio non sopravvive alla discesa — da terra si guarderebbe
+  // dentro una citta' a cui manca meta' del volume.
+  inspect.setMode(INSPECT_MODE.off);
+
+  const [x, y, z] = eyePoint(cell);
+  streetView.enter(x, y, z);
+  syncStreetView();
+}
+
+/** Risale, e restituisce l'inquadratura esattamente com'era. */
+function exitStreetView(): void {
+  streetArmed = false;
+  if (!streetView.active) return;
+  streetView.exit();
+  syncStreetView();
+}
+
+/**
+ * Le conseguenze del cambio di modo, in un posto solo.
+ *
+ * Nessuna appartiene a `StreetView`, che sa solo quale camera sta disegnando: il
+ * composer disegna con la camera che gli si dice, e quanto si puo' spendere per
+ * fotogramma lo decide `RenderQuality` guardando i tempi.
+ *
+ * **La vista ferma vale una resa migliore, e non e' un regalo.** Da terra la
+ * camera non si muove: la coda di remesh si ordina una volta e poi mai, nessun
+ * chunk nuovo entra nel frustum, e la scatola dell'ombra si stringe attorno
+ * all'occhio invece di coprire mezza isola — la pass d'ombra ne esce piu' leggera
+ * di prima. Quel margine si spende dove si vede, cioe' sopra la densita' dello
+ * schermo, che e' l'unica manopola che tocchi gli spigoli dei voxel. Il controllo
+ * adattivo continua a sorvegliare e a scendere se il frame non tiene: qui si
+ * sposta il punto di partenza dell'isteresi, non la si scavalca.
+ */
+function syncStreetView(): void {
+  post.setCamera(streetView.view);
+  const quality = streetView.active
+    ? renderQuality.enterBoost(performance.now())
+    : renderQuality.exitBoost(performance.now());
+  if (quality.changed) {
+    renderer.setPixelRatio(quality.pixelRatio);
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    post.setSize(window.innerWidth, window.innerHeight, quality.pixelRatio);
+    syncResolution();
+    frameTiming.reset();
+  }
+  // Dopo il pixel ratio, perche' la dimensione della shadow map dipende dal modo
+  // e il profilo puo' essere appena cambiato con lui.
+  applyQualityProfile(quality.changed ? quality.profile : qualityProfile);
+  gameHud?.showTransientFeedback(
+    streetView.active ? 'Street view · drag to look, wheel to zoom, Esc to leave.' : 'Back to the city.',
   );
 }
 
@@ -3140,11 +3363,24 @@ function onUiKey(event: KeyboardEvent): void {
     return;
   }
   // Nel campionario Esc molla la scelta: e' lo stesso gesto del gioco, senza
-  // nessun pannello da chiudere prima.
+  // nessun pannello da chiudere prima. E rimette la fascia da cui si era partiti,
+  // perche' dopo un doppio clic la scelta e' anche l'inquadratura: mollarla senza
+  // tornare indietro lascerebbe la camera addosso a un soggetto che non e' piu'
+  // scelto.
   if (event.code === 'Escape' && swatchOverlay !== null && swatchSelection !== null) {
     event.preventDefault();
     swatchSelection = null;
     refreshSwatchOutline();
+    frameSwatchFocus(swatchFocus);
+    return;
+  }
+  // `Escape` a due gradini, come in Block focus: prima molla lo strumento armato,
+  // poi risale. Sta **sopra** `handleEscape` perche' altrimenti uscire da terra
+  // aprirebbe il menu principale, che e' l'ultima cosa che chiede chi sta
+  // guardando una strada.
+  if (event.code === 'Escape' && (streetArmed || streetView.active)) {
+    event.preventDefault();
+    exitStreetView();
     return;
   }
   // La catena di Escape sta **sopra** tutto il resto del router, e non solo
@@ -3194,6 +3430,15 @@ function onUiKey(event: KeyboardEvent): void {
   // guardando si toglie, non si sopporta.
   if (event.code === 'KeyC') {
     setClouds(!cloudsOn);
+    return;
+  }
+  // La discesa a terra sta fuori dal gate del debug come `V` e `L`: guardare la
+  // propria citta' dal ciglio di una sua strada e' gioco. `O` perche' tutte le
+  // lettere con un nesso — `G` per ground, `S` per street — sono gia' prese
+  // dall'harness, e prendersele qui le spegnerebbe **in silenzio**: un tasto di
+  // gioco sta sopra il gate e vince sempre su quello tecnico.
+  if (event.code === 'KeyO') {
+    toggleStreetView();
     return;
   }
   // Le viste informative: un dato alla volta sopra la citta', come `V` per le
