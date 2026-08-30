@@ -89,6 +89,22 @@ export class AerialDriver {
   private readonly deckColumns = new Set<string>();
 
   /**
+   * Quante colonne hanno ricevuto un piano in quota, da sempre.
+   *
+   * E' il gemello di `BuildingRegistry.vacated` per la seconda meta' della stessa
+   * domanda: `lotIsFree` dichiara libera una colonna occupata se sopra le passa un
+   * impalcato, quindi un impalcato che nasce **libera** suolo agli occhi della
+   * ricerca dei lotti. Non scende quando un impalcato cade — quella e' la
+   * direzione sicura, una colonna che smette di avere un piano sopra torna
+   * occupata e nessuna memoria di rifiuto ne resta sbagliata.
+   */
+  private decksOpenedCount = 0;
+
+  get decksOpened(): number {
+    return this.decksOpenedCount;
+  }
+
+  /**
    * Come si presenta il luogo alle regole della citta' in quota.
    *
    * Riusa `solid` della sonda delle campate — e' la stessa domanda al mondo — e
@@ -153,6 +169,12 @@ export class AerialDriver {
     return this.deckColumns.has(`${x},${y}`);
   }
 
+  /** Un piano in quota su questa colonna: la sola porta che alza `decksOpened`. */
+  private openDeckColumn(x: number, y: number): void {
+    this.deckColumns.add(`${x},${y}`);
+    this.decksOpenedCount++;
+  }
+
   /**
    * Ricostruisce i propri indici da un registry appena caricato.
    *
@@ -174,7 +196,7 @@ export class AerialDriver {
         const depth = footprintDepth(record);
         for (let dy = 0; dy < depth; dy++) {
           for (let dx = 0; dx < record.footprint; dx++) {
-            this.deckColumns.add(`${record.x + dx},${record.y + dy}`);
+            this.openDeckColumn(record.x + dx, record.y + dy);
           }
         }
       }
@@ -744,7 +766,7 @@ export class AerialDriver {
     if (!isBuildable(part)) return;
     for (let dy = 0; dy < rect.sizeY; dy++) {
       for (let dx = 0; dx < rect.sizeX; dx++) {
-        this.deckColumns.add(`${rect.x + dx},${rect.y + dy}`);
+        this.openDeckColumn(rect.x + dx, rect.y + dy);
       }
     }
   }

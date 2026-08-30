@@ -1,12 +1,10 @@
 import { PALETTE_SLOT_NAMES } from '../../engine/paletteSlots';
 import { CATALYSTS, type CatalystDefinition } from '../../sim/catalysts';
-import { CLASS_NAMES } from '../../sim/classes';
 import {
   TYPOLOGIES,
   VISUAL_LEVELS,
   typologyById,
   type TypologyDefinition,
-  type TypologyShape,
 } from '../buildings/config';
 import { generateBuilding } from '../buildings/generate';
 import type { VoxelStamp } from '../buildings/stamp';
@@ -23,23 +21,31 @@ import {
   type PartsRecipe,
 } from '../landmarks/config';
 import { generateFromRecipe, variantIndexOf } from '../landmarks/generate';
-import {
-  ARCOLOGY_KIND,
-  ARCOLOGY_RECIPES,
-  type ArcologyKind,
-  type ArcologyRecipe,
-} from '../arcology/config';
+import { ARCOLOGY_RECIPES, type ArcologyRecipe } from '../arcology/config';
 import { generateArcology } from '../arcology/generate';
 import { FACING } from '../streets/streetGrid';
 import { BIOME_NAMES, TERRAIN } from '../terrain/config';
 import { treeSpec, treeTop } from '../terrain/decor';
 import { TREE_SHAPES } from '../terrain/flora';
-import { SURFACE_KIND_NAMES, WATER_CLASS } from '../visualBlock';
+import { SURFACE_KIND_NAMES } from '../visualBlock';
+import {
+  ARCOLOGY_LABELS,
+  FORM_LABELS,
+  FORM_NOTES,
+  WATER_LABELS,
+  evolutionLabel,
+  footprintLabel,
+  levelLabel,
+  requirementLabel,
+  shapeLabel,
+  useLabel,
+} from './swatchLabels';
 import {
   CELL_HEIGHT,
   SCALE_ITEMS,
   SCALE_ORIGIN_Y,
   SWATCH,
+  SWATCH_BASE_REAR,
   SWATCH_COLUMNS,
   SWATCH_PILLARS,
   SWATCH_ROWS,
@@ -51,6 +57,7 @@ import {
   type SwatchExtent,
   type SwatchRect,
 } from './swatchLayout';
+import { clearanceBehind, clearanceBeside } from './swatchOcclusion';
 
 /** Vuoto minimo fra due soggetti del campionario. */
 export const SWATCH_ITEM_GAP = 8;
@@ -153,75 +160,37 @@ interface PendingCatalogSubject {
   readonly stamp: VoxelStamp;
 }
 
-const FORM_LABELS: Readonly<Record<LandmarkFormId, string>> = {
-  skyport: 'Skyport',
-  'sky-park': 'Sky Park',
-  'sky-transit': 'Sky Transit',
-  'port-bulk': 'Bulk',
-  'port-shipyard': 'Shipyard',
-  'port-passenger': 'Passenger',
-  'marina-shallows': 'Boardwalk',
-  'marina-open': 'Stonefront',
-};
-
-const FORM_NOTES: Readonly<Record<LandmarkFormId, string>> = {
-  skyport: 'Rooftop hub for airships, eVTOL and balloons.',
-  'sky-park': 'A garden laid over a rooftop.',
-  'sky-transit': 'A head station lifting the line onto a roof.',
-  'port-bulk': 'Deep-water berth for bulk cargo.',
-  'port-shipyard': 'Sheltered basin to launch hulls.',
-  'port-passenger': 'Light marina for small craft.',
-  'marina-shallows': 'Wooden piers where the water is shallow: a lake or a sheltered beach.',
-  'marina-open': 'Stone quays where the water is deep and exposed.',
-};
-
-const WATER_LABELS: Readonly<Record<number, string>> = {
-  [WATER_CLASS.open]: 'open water',
-  [WATER_CLASS.canal]: 'sheltered canal',
-  [WATER_CLASS.shallow]: 'shallows',
-};
-
-const ARCOLOGY_LABELS: Readonly<Record<ArcologyKind, string>> = {
-  [ARCOLOGY_KIND.twinStem]: 'Twin Stem',
-  [ARCOLOGY_KIND.branchingCore]: 'Branching Core',
-  [ARCOLOGY_KIND.skyWeave]: 'Sky Weave',
-  [ARCOLOGY_KIND.spireRing]: 'Spire Ring',
-  [ARCOLOGY_KIND.doubleBar]: 'Double Bar',
-  [ARCOLOGY_KIND.stackPair]: 'Stack Pair',
-  [ARCOLOGY_KIND.quadCluster]: 'Quad Cluster',
-  [ARCOLOGY_KIND.triSpan]: 'Tri Span',
-  [ARCOLOGY_KIND.terracedTwin]: 'Terraced Twin',
-  [ARCOLOGY_KIND.splitCrown]: 'Split Crown',
-  [ARCOLOGY_KIND.steppedBar]: 'Stepped Bar',
-  [ARCOLOGY_KIND.courtCascade]: 'Court Cascade',
-  // Le interrate compaiono nel campionario come volumi pieni, senza il terreno
-  // in cui vivono: e' il modo giusto per guardarne la sagoma — un imbuto a
-  // terrazze — che in partita si vede solo per la bocca.
-  [ARCOLOGY_KIND.invertedPyramid]: 'Inverted Pyramid',
-  [ARCOLOGY_KIND.sunkenCourt]: 'Sunken Court',
-  [ARCOLOGY_KIND.craterRing]: 'Crater Ring',
-};
-
 const BASE_EXTENT = baseExtentOf();
-const GALLERY_START_Y = BASE_EXTENT.minY + BASE_EXTENT.sizeY + SWATCH.bandGap;
-// Le arcologie aprono il catalogo: sono la megastruttura, il vertice della
-// gerarchia, e stanno in cima alla sequenza delle gallerie invece che in coda.
-const ARCOLOGY_ROWS = arcologyRows();
-const ARCOLOGY_LAYOUT = placeRows(ARCOLOGY_ROWS, GALLERY_START_Y);
-const LINES_START_Y = ARCOLOGY_LAYOUT.y1 + SWATCH.bandGap;
-const LINES_ROWS = evolutionLineRows();
-const LINES_LAYOUT = placeRows(LINES_ROWS, LINES_START_Y);
-const BUILDING_ROWS_Y = LINES_LAYOUT.y1 + SWATCH.bandGap;
-const BUILDING_ROWS = buildingRows();
-const BUILDING_LAYOUT = placeRows(BUILDING_ROWS, BUILDING_ROWS_Y);
-const LANDMARK_START_Y = BUILDING_LAYOUT.y1 + SWATCH.bandGap;
-const LANDMARK_ROWS = landmarkRows();
-const LANDMARK_LAYOUT = placeRows(LANDMARK_ROWS, LANDMARK_START_Y);
 
-export const SWATCH_ARCOLOGIES: readonly SwatchCatalogSubject[] = ARCOLOGY_LAYOUT.subjects;
-export const SWATCH_LINES: readonly SwatchCatalogSubject[] = LINES_LAYOUT.subjects;
-export const SWATCH_BUILDINGS: readonly SwatchCatalogSubject[] = BUILDING_LAYOUT.subjects;
-export const SWATCH_LANDMARKS: readonly SwatchCatalogSubject[] = LANDMARK_LAYOUT.subjects;
+/**
+ * Le quattro gallerie stanno **dietro** la base, lungo le y negative.
+ *
+ * La camera guarda da `(+x, +y)`: lungo +y ci si avvicina, e chi sta davanti
+ * copre chi sta dietro. Le megastrutture arrivano a settecento voxel, e
+ * qualunque cosa messa oltre loro sparirebbe — e' esattamente cio' che
+ * succedeva alla matrice e alla fascia di scala, sepolte dalla fila delle
+ * arcologie. Percio' l'ordine e' quello delle quote decrescenti: le arcologie
+ * in fondo, dove salgono nel cielo vuoto, poi le linee evolutive, gli edifici,
+ * i landmark, e davanti a tutti la base.
+ *
+ * Sono anche l'ordine di lettura di sempre — arcologie, linee, edifici,
+ * landmark — perche' leggere il campionario vuol dire percorrerlo lungo +y,
+ * cioe' venire verso di se': la sequenza si costruisce all'indietro e si legge
+ * in avanti.
+ */
+const GALLERY_BANDS = stackBehind(
+  [landmarkRows(), buildingRows(), evolutionLineRows(), arcologyRows()],
+  SWATCH_BASE_REAR.y,
+  SWATCH_BASE_REAR.top,
+);
+
+export const SWATCH_LANDMARKS: readonly SwatchCatalogSubject[] = GALLERY_BANDS[0].subjects;
+export const SWATCH_BUILDINGS: readonly SwatchCatalogSubject[] = GALLERY_BANDS[1].subjects;
+export const SWATCH_LINES: readonly SwatchCatalogSubject[] = GALLERY_BANDS[2].subjects;
+export const SWATCH_ARCOLOGIES: readonly SwatchCatalogSubject[] = GALLERY_BANDS[3].subjects;
+
+/** I ripiani di tutte le gallerie, in un elenco solo: li percorre il generatore. */
+const GALLERY_PLINTHS: readonly PlinthStrip[] = GALLERY_BANDS.flatMap((band) => band.strips);
 export const SWATCH_CATALOG_SUBJECTS: readonly SwatchCatalogSubject[] = [
   ...SWATCH_ARCOLOGIES,
   ...SWATCH_LINES,
@@ -267,18 +236,20 @@ export function swatchSubjectAt(x: number, y: number): SwatchSubject | null {
   return null;
 }
 
-/** Basamento delle nuove fasce; un tratto vuoto produce una riga senza scritture. */
+/**
+ * Basamento delle gallerie: **un ripiano per riga**, non uno per fascia.
+ *
+ * Da quando il distacco fra due righe e' quanto ne chiede l'occlusione, dentro
+ * una galleria ci sono vuoti larghi come un edificio intero: un basamento
+ * continuo li avrebbe riempiti di grigio, e la fascia si sarebbe letta come un
+ * piazzale invece che come una sequenza di ripiani. Resta il principio di
+ * sempre — il piano di lettura e' largo quanto cio' che ci sta sopra — applicato
+ * una riga alla volta.
+ */
 export function swatchPlinthSpanAt(y: number): { readonly x0: number; readonly x1: number } {
-  const baseY1 = BASE_EXTENT.minY + BASE_EXTENT.sizeY;
-  if (y < baseY1) return basePlinthSpanAt(y);
-  if (y >= BUILDING_EXTENT.minY && y < BUILDING_EXTENT.minY + BUILDING_EXTENT.sizeY) {
-    return bandPlinth(BUILDING_EXTENT);
-  }
-  if (y >= LANDMARK_EXTENT.minY && y < LANDMARK_EXTENT.minY + LANDMARK_EXTENT.sizeY) {
-    return bandPlinth(LANDMARK_EXTENT);
-  }
-  if (y >= ARCOLOGY_EXTENT.minY && y < ARCOLOGY_EXTENT.minY + ARCOLOGY_EXTENT.sizeY) {
-    return bandPlinth(ARCOLOGY_EXTENT);
+  if (y >= BASE_EXTENT.minY) return basePlinthSpanAt(y);
+  for (const strip of GALLERY_PLINTHS) {
+    if (y >= strip.y0 && y < strip.y1) return { x0: strip.x0, x1: strip.x1 };
   }
   return { x0: 0, x1: 0 };
 }
@@ -306,15 +277,15 @@ function lineSubject(definition: TypologyDefinition, level: number): PendingCata
     kind: 'building',
     band: 'buildings',
     label: `${definition.label} · L${level}`,
-    note: 'la linea evolutiva alle cinque soglie visuali',
+    note: 'The growth line at the five visual thresholds.',
     stamp,
     info: [
       { label: 'ID', value: definition.id },
-      { label: 'Uso', value: CLASS_NAMES[definition.use] },
-      { label: 'Livello', value: String(level) },
+      { label: 'Use', value: useLabel(definition) },
+      { label: 'Level', value: levelLabel(level) },
       { label: 'Seed', value: '0' },
-      { label: 'Fronte', value: 'est' },
-      { label: 'Forma', value: shapeLabel(definition.shape) },
+      { label: 'Facing', value: 'east' },
+      { label: 'Shape', value: shapeLabel(definition.shape) },
     ],
   };
 }
@@ -340,16 +311,21 @@ function buildingSubject(definition: TypologyDefinition): PendingCatalogSubject 
     kind: 'building',
     band: 'buildings',
     label: definition.label,
-    note: definition.id,
+    // La nota portava l'id, che adesso e' una riga della scheda: qui sta invece
+    // cio' che la sagoma non dice — perche' questa riga esiste nel catalogo.
+    note: null,
     stamp,
     info: [
       { label: 'ID', value: definition.id },
-      { label: 'Uso', value: CLASS_NAMES[definition.use] },
-      { label: 'Livello', value: String(SWATCH_BUILDING_LEVEL) },
+      { label: 'Use', value: useLabel(definition) },
+      { label: 'Level', value: levelLabel(SWATCH_BUILDING_LEVEL) },
       { label: 'Seed', value: '0' },
-      { label: 'Fronte', value: 'est' },
-      { label: 'Forma', value: shapeLabel(definition.shape) },
-      { label: 'Condizioni', value: requirementLabel(definition) },
+      { label: 'Facing', value: 'east' },
+      { label: 'Shape', value: shapeLabel(definition.shape) },
+      { label: 'Lot side', value: footprintLabel(definition.shape) },
+      { label: 'Requires', value: requirementLabel(definition) },
+      { label: 'Grows from', value: evolutionLabel(definition) },
+      { label: 'Priority', value: String(definition.priority) },
     ],
   };
 }
@@ -385,16 +361,16 @@ function landmarkStageSubject(
     id: `landmark:${catalyst.id}:stage:${stage}`,
     kind: 'landmark',
     band: 'landmarks',
-    label: `${catalyst.label} · stadio ${stage}`,
+    label: `${catalyst.label} · stage ${stage}`,
     note: catalyst.description,
     stamp,
     info: [
-      { label: 'Ruolo', value: catalyst.id },
-      { label: 'Stadio', value: `${stage} di ${maxStageOf(recipe)}` },
+      { label: 'Role', value: catalyst.id },
+      { label: 'Stage', value: `${stage} of ${maxStageOf(recipe)}` },
       { label: 'Seed', value: String(seed) },
-      { label: 'Fronte', value: 'est' },
-      { label: 'Luogo', value: catalyst.site },
-      { label: 'Grembiule', value: `${recipe.apron} voxel` },
+      { label: 'Facing', value: 'east' },
+      { label: 'Site', value: catalyst.site },
+      { label: 'Apron', value: `${recipe.apron} voxel` },
     ],
   };
 }
@@ -444,15 +420,15 @@ function landmarkInfo(
 ): readonly SwatchInfoRow[] {
   const place = form === undefined
     ? catalyst.site
-    : isFacadeForm(form) ? 'in quota' : WATER_LABELS[FORMS[form].waterClass!];
+    : isFacadeForm(form) ? 'above ground' : WATER_LABELS[FORMS[form].waterClass!];
   return [
-    { label: 'Ruolo', value: catalyst.id },
-    { label: 'Variante', value: variant },
-    { label: 'Stadio', value: `${stage} di ${maxStageOf(recipe)}` },
+    { label: 'Role', value: catalyst.id },
+    { label: 'Variant', value: variant },
+    { label: 'Stage', value: `${stage} of ${maxStageOf(recipe)}` },
     { label: 'Seed', value: String(seed) },
-    { label: 'Fronte', value: 'est' },
-    { label: 'Luogo', value: place },
-    { label: 'Grembiule', value: `${'apron' in recipe ? recipe.apron : 0} voxel` },
+    { label: 'Facing', value: 'east' },
+    { label: 'Site', value: place },
+    { label: 'Apron', value: `${'apron' in recipe ? recipe.apron : 0} voxel` },
   ];
 }
 
@@ -479,50 +455,92 @@ function arcologySubject(recipe: ArcologyRecipe): PendingCatalogSubject {
     kind: 'arcology',
     band: 'arcologies',
     label: ARCOLOGY_LABELS[recipe.kind],
-    note: 'la megastruttura: quattro usi su quote diverse dentro un solo volume',
+    note: 'The megastructure: four uses at different heights inside one volume.',
     stamp,
     info: [
-      { label: 'Forma', value: recipe.kind },
-      { label: 'Stadio', value: `${stage} di ${maxStageOf(recipe)}` },
+      { label: 'Form', value: recipe.kind },
+      { label: 'Stage', value: `${stage} of ${maxStageOf(recipe)}` },
       { label: 'Seed', value: '0' },
-      { label: 'Fronte', value: 'est' },
-      { label: 'Fasce', value: recipe.bands.map((band) => band.label).join(' · ') },
+      { label: 'Facing', value: 'east' },
+      { label: 'Bands', value: recipe.bands.map((band) => band.label).join(' · ') },
     ],
   };
 }
 
-function shapeLabel(shape: TypologyShape): string {
-  const tags = [`corona ${shape.crownKind}`];
-  if (shape.podiumBands > 0) tags.push(`podio ${shape.podiumBands}`);
-  if (shape.courtyard) tags.push('corte');
-  if (shape.roofGarden) tags.push('giardino pensile');
-  if (shape.arcade) tags.push('portico');
-  if (shape.chamfer > 0) tags.push(`smusso ${shape.chamfer}`);
-  if (shape.overhang > 0) tags.push(`sbalzo ${shape.overhang}`);
-  return tags.join(' · ');
+/** Un ripiano: il tratto di y di una riga, e quanto e' larga in x. */
+interface PlinthStrip {
+  readonly y0: number;
+  readonly y1: number;
+  readonly x0: number;
+  readonly x1: number;
 }
 
-function requirementLabel(definition: TypologyDefinition): string {
-  const terms: string[] = [];
-  if (definition.mixed !== undefined) terms.push(`misto ${CLASS_NAMES[definition.mixed]}`);
-  if (definition.specialization !== undefined) terms.push(definition.specialization);
-  if (definition.lotRole !== undefined) terms.push(`lotto ${definition.lotRole}`);
-  if (definition.coastal === true) terms.push('costa');
-  if (definition.minLevel !== undefined) terms.push(`livello ≥ ${definition.minLevel}`);
-  if (definition.districts !== undefined) terms.push(`distretti ${definition.districts.join(', ')}`);
-  return terms.length === 0 ? 'ripiego del catalogo' : terms.join(' · ');
+/** Una galleria piazzata: i suoi soggetti, i suoi ripiani, e quanto occlude. */
+interface BandLayout {
+  readonly subjects: readonly SwatchCatalogSubject[];
+  readonly strips: readonly PlinthStrip[];
+  /** Profondita' complessiva, dal bordo posteriore della prima riga a quello anteriore dell'ultima. */
+  readonly depth: number;
+  /** Quota della riga piu' arretrata: e' lei a coprire cio' che le sta dietro. */
+  readonly rearTop: number;
 }
 
-function placeRows(
-  rows: readonly (readonly PendingCatalogSubject[])[],
-  y0: number,
-): { readonly subjects: readonly SwatchCatalogSubject[]; readonly y1: number } {
+/** Vuoto fra due fasce: quello dichiarato, o quanto ne chiede chi sta davanti. */
+function bandGapFor(frontTop: number): number {
+  return Math.max(SWATCH.bandGap, clearanceBehind(frontTop));
+}
+
+/**
+ * Accoda le gallerie all'indietro, ciascuna dietro la precedente.
+ *
+ * Il vuoto non e' una costante: e' la quota della **riga piu' arretrata** di
+ * cio' che sta davanti, cioe' la sola cosa che possa coprire la fascia che si
+ * sta piazzando. Una galleria che cresce in altezza allarga da se' il proprio
+ * scostamento, invece di finire dietro un muro.
+ */
+function stackBehind(
+  bands: readonly (readonly (readonly PendingCatalogSubject[])[])[],
+  frontY: number,
+  frontTop: number,
+): readonly BandLayout[] {
+  const placed: BandLayout[] = [];
+  let y = frontY;
+  let top = frontTop;
+  for (const rows of bands) {
+    const band = placeRows(rows);
+    const y0 = y - bandGapFor(top) - band.depth;
+    placed.push(translateBand(band, y0));
+    y = y0;
+    top = band.rearTop;
+  }
+  return placed;
+}
+
+/**
+ * Le righe di una galleria a partire da `y = 0`, poi tradotte da chi le accoda.
+ *
+ * **Due distacchi, due regole diverse, e nessuna delle due e' un gusto.** In y
+ * fra due righe serve la quota di quella davanti, o la fila davanti taglia le
+ * gambe a quella dietro. In x fra due vicini serve invece la **profondita'** del
+ * soggetto a x maggiore: li' l'altezza non conta affatto, ed e' il motivo per
+ * cui quindici megastrutture da settecento voxel si separano spendendo poche
+ * decine di voxel di fila invece di centinaia. Il conto sta in
+ * `swatchOcclusion.ts`.
+ */
+function placeRows(rows: readonly (readonly PendingCatalogSubject[])[]): BandLayout {
+  const filled = rows.filter((row) => row.length > 0);
   const subjects: SwatchCatalogSubject[] = [];
-  let y = y0;
-  for (const row of rows) {
+  const strips: PlinthStrip[] = [];
+  const margin = SWATCH.plinthMargin;
+  let y = 0;
+  let rearTop = 0;
+
+  for (let index = 0; index < filled.length; index++) {
+    const row = filled[index];
     let x = 0;
     let depth = 0;
     for (const pending of row) {
+      if (x > 0) x += Math.max(SWATCH_ITEM_GAP, clearanceBeside(pending.stamp.sizeY));
       const rect = { x0: x, y0: y, x1: x + pending.stamp.sizeX, y1: y + pending.stamp.sizeY };
       subjects.push({
         ...pending,
@@ -532,12 +550,34 @@ function placeRows(
         z0: SWATCH.groundZ,
         z1: SWATCH.groundZ + pending.stamp.sizeZ,
       });
-      x = rect.x1 + SWATCH_ITEM_GAP;
+      x = rect.x1;
       depth = Math.max(depth, pending.stamp.sizeY);
     }
-    y += depth + SWATCH_ITEM_GAP;
+
+    strips.push({ y0: y - margin, y1: y + depth + margin, x0: -margin, x1: x + margin });
+    if (index === 0) rearTop = rowTop(row);
+    y += depth;
+    const next = filled[index + 1];
+    if (next !== undefined) y += bandGapFor(rowTop(next));
   }
-  return { subjects, y1: Math.max(y0, y - SWATCH_ITEM_GAP) };
+
+  return { subjects, strips, depth: y, rearTop };
+}
+
+/** Quota a cui arriva la riga, basamento compreso. */
+function rowTop(row: readonly PendingCatalogSubject[]): number {
+  return row.reduce((top, pending) => Math.max(top, SWATCH.groundZ + pending.stamp.sizeZ), 0);
+}
+
+function translateBand(band: BandLayout, y0: number): BandLayout {
+  return {
+    ...band,
+    subjects: band.subjects.map((subject) => ({
+      ...subject,
+      rect: { ...subject.rect, y0: subject.rect.y0 + y0, y1: subject.rect.y1 + y0 },
+    })),
+    strips: band.strips.map((strip) => ({ ...strip, y0: strip.y0 + y0, y1: strip.y1 + y0 })),
+  };
 }
 
 function baseSubjects(): readonly SwatchSubject[] {
@@ -560,7 +600,7 @@ function baseSubjects(): readonly SwatchSubject[] {
         stamp: null,
         info: [
           { label: 'Slot', value: `${PALETTE_SLOT_NAMES[col]} (${col})` },
-          { label: 'Superficie', value: `${SURFACE_KIND_NAMES[row]} (${row})` },
+          { label: 'Surface', value: `${SURFACE_KIND_NAMES[row]} (${row})` },
         ],
       });
     }
@@ -581,7 +621,7 @@ function baseSubjects(): readonly SwatchSubject[] {
       z0: SWATCH.groundZ,
       z1: SWATCH.groundZ + SWATCH.pillarHeight,
       stamp: null,
-      info: [{ label: 'Indice', value: String(index) }],
+      info: [{ label: 'Index', value: String(index) }],
     });
   }
 
@@ -602,8 +642,8 @@ function baseSubjects(): readonly SwatchSubject[] {
       z1: SWATCH.groundZ + scaleHeight(item),
       stamp: null,
       info: [
-        { label: 'Tipo', value: item.kind },
-        ...(item.kind === 'tree' ? [{ label: 'Specie', value: String(item.species) }] : []),
+        { label: 'Kind', value: item.kind },
+        ...(item.kind === 'tree' ? [{ label: 'Species', value: String(item.species) }] : []),
       ],
     });
   }
@@ -668,12 +708,6 @@ function padded(extent: SwatchExtent, margin: number): SwatchExtent {
   };
 }
 
-function bandPlinth(extent: SwatchExtent): { readonly x0: number; readonly x1: number } {
-  return {
-    x0: extent.minX - SWATCH.plinthMargin,
-    x1: extent.minX + extent.sizeX + SWATCH.plinthMargin,
-  };
-}
 
 // Tiene il riferimento di scala agganciato allo stesso catalogo: se l'id
 // sparisse, il problema deve emergere al caricamento del campionario.

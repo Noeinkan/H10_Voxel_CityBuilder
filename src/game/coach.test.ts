@@ -9,6 +9,11 @@ import {
   FARM_KIND,
   type SimState,
 } from '../sim';
+import { ARCOLOGY } from '../world/arcology/config';
+import { arcologyStanding, type ArcologyProspect } from '../world/arcology/prospect';
+import { arcologyQuota } from '../world/arcology/siting';
+import { SKYLINE } from '../world/skyline/config';
+import { TIER } from '../world/skyline/tiers';
 import {
   coachSuggestion,
   coachSuggestions,
@@ -66,9 +71,8 @@ function context(state: SimState, overrides: Partial<CoachContext> = {}): CoachC
     state,
     tallestLevel: 0,
     center: null,
-    hasArcology: false,
     clearing: false,
-    arcologyNear: false,
+    arcology: arcologyStanding(0, 0, null),
     hasAloftLandmark: false,
     aerial: { terraces: 0, routes: 0, lifts: 0, piers: 0, stacked: 0 },
     spans: 0,
@@ -262,7 +266,6 @@ describe('coach — lo sviluppo misurabile', () => {
     });
     const tip = coachSuggestion(context(state, {
       tallestLevel: 20,
-      hasArcology: true,
       hasAloftLandmark: true,
       aerial: { terraces: 1, routes: 1, lifts: 1, piers: 1, stacked: 1 },
     }));
@@ -334,9 +337,112 @@ describe('coach — lo skyline', () => {
   });
 
   it('tace quando il tetto del core e’ gia’ raggiunto', () => {
+    // La quota si **chiede** invece di scriverla: con `20` a mano il test si e'
+    // fatto rosso da solo quando la scala verticale e' salita, dicendo che il
+    // coach era rotto mentre a essere vecchio era il numero qui dentro.
     const state = skylineCity(catalystById('university').cost);
-    const tips = coachSuggestions(context(state, { tallestLevel: 20, center: { x: 0, y: 0 } }));
+    const tips = coachSuggestions(context(state, {
+      tallestLevel: SKYLINE.levelCap[TIER.core],
+      center: { x: 0, y: 0 },
+    }));
     expect(tips.some((tip) => tip.id === 'coach-skyline')).toBe(false);
+  });
+});
+
+describe('coach — l’arcologia', () => {
+  /** Un candidato del centro a cui manca solo che i vicini finiscano di salire. */
+  function candidate(gaps: ArcologyProspect['gaps']): ArcologyProspect {
+    return { x: 40, y: 24, kind: 'twinStem', gaps };
+  }
+
+  const SATURATING = candidate([
+    { refusal: 'notCapped', have: 1, need: ARCOLOGY.minCapped },
+  ]);
+
+  it('dice quanti vicini mancano, e indica l’isolato invece del centro generico', () => {
+    const tip = coachSuggestion(context(stageCity(), {
+      arcology: arcologyStanding(200, 0, SATURATING),
+    }));
+    expect(tip?.id).toBe('coach-arcology');
+    expect(tip?.title).toContain(`1/${ARCOLOGY.minCapped}`);
+    expect(tip?.place).toEqual({ x: 40, y: 24, radius: ARCOLOGY.radius });
+  });
+
+  /**
+   * **E' la regressione che questa riga esiste per fermare.** La famiglia stava
+   * in fondo all'elenco e la voce ne mostra una sola: `skylineSuggestion` e' vera
+   * per quasi tutta la partita — la torre piu' alta resta sotto il tetto del
+   * centro — quindi il consiglio sull'arcologia non e' mai arrivato a schermo, e
+   * la meccanica non aveva voce. Non basta che esista: deve poter passare avanti.
+   */
+  it('passa davanti allo skyline quando la megastruttura e’ il passo successivo', () => {
+    const ctx = context(stageCity(), {
+      tallestLevel: 2,
+      center: { x: 0, y: 0 },
+      arcology: arcologyStanding(200, 0, SATURATING),
+    });
+    // Lo skyline avrebbe parlato: la torre piu' alta e' al livello 2.
+    expect(coachSuggestions(ctx).some((tip) => tip.id === 'coach-skyline')).toBe(true);
+    expect(coachSuggestion(ctx)?.id).toBe('coach-arcology');
+  });
+
+  it('tace finche’ il quartiere attorno al candidato non c’e’', () => {
+    // «Fai crescere il centro» lo dice meglio lo skyline, con un gesto piu'
+    // vicino: qui sarebbe una seconda riga che ripete la prima.
+    for (const gaps of [
+      [{ refusal: 'thin' as const, have: 12, need: ARCOLOGY.minBuilt }],
+      [{ refusal: 'blockTooSmall' as const, have: 15, need: 20 }],
+      [{ refusal: 'tooShallow' as const }],
+    ]) {
+      const tip = coachSuggestion(context(stageCity(), {
+        arcology: arcologyStanding(200, 0, candidate(gaps)),
+      }));
+      expect(tip?.tier, gaps[0].refusal).not.toBe('arcology');
+    }
+  });
+
+  it('a condizione soddisfatta resta il magazzino, e lo dice con il saldo', () => {
+    const cost = BALANCE.materials.arcologyCost;
+    const poor = stageCity({ materials: { stock: cost - 60, delta: 0 } });
+    const tip = coachSuggestion(context(poor, {
+      arcology: arcologyStanding(200, 0, candidate([])),
+    }));
+    expect(tip?.id).toBe('coach-arcology-materials');
+    expect(tip?.title).toContain('60');
+    expect(tip?.message).toContain(`${cost} Materials`);
+  });
+
+  it('con la condizione vera e il magazzino pieno non ha piu’ niente da dire', () => {
+    const rich = stageCity({ materials: { stock: 10_000, delta: 0 } });
+    const tips = coachSuggestions(context(rich, {
+      arcology: arcologyStanding(200, 0, candidate([])),
+    }));
+    expect(tips.some((tip) => tip.tier === 'arcology')).toBe(false);
+  });
+
+  it('a quota piena nomina il traguardo invece del divieto', () => {
+    // La quota e' derivata dagli edifici: «non se ne puo' avere un'altra» e' un
+    // numero che sale da solo, ed e' l'unica riga di questo tier che premia la
+    // crescita ordinaria invece di chiederle di fermarsi.
+    const standing = arcologyStanding(250, arcologyQuota(250), null);
+    const tip = coachSuggestion(context(stageCity(), { arcology: standing }));
+    expect(tip?.id).toBe('coach-arcology-quota');
+    expect(tip?.title).toContain(`250/${standing.nextQuotaAt}`);
+  });
+
+  it('ma tace finche’ quel traguardo e’ lontano', () => {
+    const tip = coachSuggestion(context(stageCity(), {
+      arcology: arcologyStanding(10, arcologyQuota(10), null),
+    }));
+    expect(tip?.tier).not.toBe('arcology');
+  });
+
+  it('il cantiere aperto passa davanti a tutto il resto della famiglia', () => {
+    const tip = coachSuggestion(context(stageCity(), {
+      clearing: true,
+      arcology: arcologyStanding(250, arcologyQuota(250), null),
+    }));
+    expect(tip?.id).toBe('coach-arcology-site');
   });
 });
 

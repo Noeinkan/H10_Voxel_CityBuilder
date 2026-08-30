@@ -1,5 +1,3 @@
-import { SKYLINE } from '../skyline/config';
-import { TIER, type SkylineTier } from '../skyline/tiers';
 import { ARCOLOGY } from './config';
 
 /**
@@ -25,6 +23,19 @@ import { ARCOLOGY } from './config';
  * quartiere che stava ancora crescendo per conto suo, e gli toglierebbe il
  * posto invece di dargli un seguito.
  *
+ * **Ne' la fascia entra piu' nella condizione, e la misura ha smentito anche
+ * quella.** `tier !== core` sembrava la governance giusta — la 4.6 dice gia'
+ * dove sta l'altezza — e su seed 4242 con cinque poli produce sette isolati
+ * `core` contigui, che sommati a `minSpacing: 2` lasciavano passare **due**
+ * candidati su tutta l'isola, e una sola arcologia fondata. Tre regole scritte
+ * per distribuire si stavano moltiplicando in un tetto.
+ *
+ * A decidere *dove* resta la **densita' costruita**, che e' una misura del luogo
+ * invece che un'etichetta: un isolato di periferia con quaranta edifici entro
+ * ventiquattro colonne e' un quartiere, e un isolato `core` senza non lo e'. E'
+ * anche la sola delle tre che non puo' diventare vuota per come il giocatore
+ * dispone i poli — il difetto che questo dominio ha gia' incontrato tre volte.
+ *
  * **`isPeakBlock` qui non entra, e la misura ha smentito il progetto.** Sembrava
  * ovvio chiedere che l'arcologia stesse su uno degli isolati che la 4.6 elegge a
  * picco — dove la gerarchia concentra gia' l'altezza — e con quella riga in piu'
@@ -44,16 +55,6 @@ import { ARCOLOGY } from './config';
 export const ARCOLOGY_REFUSALS = [
   /** L'isola ne ha gia' quante ne ammette. */
   'enough',
-  /** Non e' il centro: la fascia non e' quella che la gerarchia chiama `core`. */
-  'notCore',
-  /**
-   * Qui si sale: la gerarchia concentra altezza, quindi non si scava.
-   *
-   * E' la cresta del cono, e vale per la sola famiglia interrata. Insieme a
-   * `notCore` tiene torri e crateri su isolati diversi: la torre prende la
-   * cresta, il cratere la spalla.
-   */
-  'tooHigh',
   /**
    * La roccia sotto non basta, o l'acqua arriva troppo vicino al bordo.
    *
@@ -101,19 +102,6 @@ export interface ArcologyQuery {
   readonly existing: number;
   /** Edifici totali della citta': decidono la quota (vedi `arcologyQuota`). */
   readonly buildings: number;
-  /** Fascia della gerarchia verticale in questa colonna. */
-  readonly tier: SkylineTier;
-  /**
-   * Livelli concessi **oltre** il tetto nudo della fascia: cono piu' elezione.
-   *
-   * E' la misura che separa la **cresta** dalla **spalla** dentro la stessa
-   * fascia, e per la famiglia interrata e' la domanda principale (vedi
-   * `earthscraperReady`). La fascia da sola non basta piu': misurata, dice
-   * `core` su tutto il tessuto denso e `fringe` su tutto il resto, quindi non
-   * distingue niente dentro il centro — che e' l'unico posto dove una
-   * megastruttura ha i vicini che le servono.
-   */
-  readonly heightBonus: number;
   readonly blockRect: BlockBounds;
   /** Ingombro in pianta della ricetta, gia' portato sul verso vero. */
   readonly spanX: number;
@@ -149,7 +137,6 @@ export function arcologyQuota(buildings: number): number {
  */
 export function arcologyReady(query: ArcologyQuery): ArcologyRefusal | null {
   if (query.existing >= arcologyQuota(query.buildings)) return 'enough';
-  if (query.tier !== TIER.core) return 'notCore';
   return commonRefusal(query);
 }
 
@@ -208,7 +195,6 @@ export interface SunkenQuery extends ArcologyQuery {
  */
 export function earthscraperReady(query: SunkenQuery): ArcologyRefusal | null {
   if (query.existing >= arcologyQuota(query.buildings)) return 'enough';
-  if (query.heightBonus >= SKYLINE.coneBonus) return 'tooHigh';
   if (!query.dryRim || query.availableDepth < query.requiredDepth) return 'tooShallow';
   return commonRefusal(query);
 }

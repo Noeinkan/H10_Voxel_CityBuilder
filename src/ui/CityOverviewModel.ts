@@ -11,6 +11,8 @@ import {
 } from '../sim';
 import type { GrowthStats } from '../game/growthScene';
 import type { CityConditionTone } from '../game/cityCondition';
+import type { ArcologyStanding } from '../world/arcology/prospect';
+import { arcologyLines, arcologyReward } from './prospects';
 
 export interface OverviewGoal {
   readonly id: string;
@@ -40,6 +42,22 @@ export interface OverviewDecision {
   readonly summary: string;
 }
 
+/**
+ * La megastruttura come una scala, invece che come un contatore.
+ *
+ * **Prima era una riga sola, `Arcologies: 0`**, e zero e' il valore normale per
+ * quasi tutta la partita: da solo non distingue «la citta' ci sta arrivando» da
+ * «non ci arrivera' mai», che e' l'unica cosa che il giocatore volesse sapere.
+ * La quota e' un traguardo con una barra come gli altri; le lacune sono cosa
+ * manca; la ricompensa e' cosa si guadagna, che finora non era scritto da
+ * nessuna parte.
+ */
+export interface OverviewArcology {
+  readonly goal: OverviewGoal;
+  readonly gaps: readonly OverviewFact[];
+  readonly reward: string;
+}
+
 export interface OverviewTrade {
   readonly connected: boolean;
   readonly links: readonly string[];
@@ -59,6 +77,7 @@ export interface CityOverviewModel {
   readonly economy: readonly OverviewFact[];
   readonly shape: readonly OverviewFact[];
   readonly infrastructure: readonly OverviewFact[];
+  readonly arcology: OverviewArcology;
   readonly mandates: readonly OverviewMandate[];
   readonly history: readonly OverviewDecision[];
   readonly trade: OverviewTrade;
@@ -157,8 +176,8 @@ export function buildCityOverviewModel(stats: GrowthStats | null): CityOverviewM
           `${stats.builder.stacked} stacked · ${stats.builder.lifts} lifts`,
       },
       { label: 'Ropeways', value: format(stats.builder.ropeways) },
-      { label: 'Arcologies', value: format(stats.builder.arcologies) },
     ],
+    arcology: arcologySection(stats.builder.arcology),
     mandates: state.charters.map((id) => {
       const charter = charterById(id);
       return {
@@ -197,6 +216,27 @@ export function overviewGoal(id: string, label: string, current: number, target:
     value: `${format(current)} / ${format(target)}`,
     progress: target <= 0 ? 1 : Math.min(1, Math.max(0, current / target)),
     met: current >= target,
+  };
+}
+
+/**
+ * La sezione della megastruttura: quota, cosa manca, cosa si guadagna.
+ *
+ * **Le parole non stanno qui.** `arcologyLines` e `arcologyReward` vivono in
+ * `prospects.ts` insieme al resto della lingua di «cosa manca», perche' le
+ * stesse righe servono anche alla scheda dell'isolato: scritte due volte
+ * divergerebbero alla prima ritaratura, ed e' la ragione per cui quel file
+ * esiste. Qui si sceglie soltanto quale forma dare a ciascuna.
+ */
+function arcologySection(standing: ArcologyStanding): OverviewArcology {
+  return {
+    goal: overviewGoal('arcologies', 'Arcologies', standing.existing, standing.allowed),
+    gaps: arcologyLines(standing).map((line) => ({
+      label: line.label,
+      value: line.value,
+      tone: 'neutral' as const,
+    })),
+    reward: arcologyReward(standing),
   };
 }
 

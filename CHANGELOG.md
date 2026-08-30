@@ -11,6 +11,110 @@ coincide con il messaggio di commit.
 
 ---
 
+## In corso — Le opere di terra prendono il pendio
+
+- **`maxTerraceSlope` sale al doppio di `buildableMaxSlope`.** Valeva `0.46`,
+  appena un terzo sopra la pendenza edificabile, e su terra emersa rifiutava dal
+  3% al 9% delle colonne a seconda del seed — concentrato sul raccordo fra
+  pianoro e pianura, cioe' dove il giocatore clicca. Il cartellino «No earthwork
+  holds here» compariva su fianchi che un terrapieno regge benissimo. Ora la
+  soglia e' `TERRAIN.buildableMaxSlope * 2` (`0.68`): misurato sugli stessi tre
+  seed, il rifiuto su terra emersa scende sotto lo 0,1%, e cio' che resta e' la
+  parete vera — il campo continuo non passa `0.72` nemmeno sul fianco piu'
+  ripido. Il tetto strutturale non cambia e non e' mai stato lui a decidere:
+  sotto un'impronta da sei celle il muro piu' alto che questo terreno sappia
+  produrre e' di dieci voxel, meno della meta' di `maxWorksStep`.
+- **Le scarpate delle fixture si dichiarano rispetto alla soglia.** La riva del
+  lago in `actions.test.ts` era scritta `0.6`: diceva «ripida» solo finche' la
+  soglia valeva `0.46`, e la ritaratura l'avrebbe trasformata in silenzio in un
+  pendio qualunque, svuotando la deroga della marina invece di verificarla.
+
+## In corso — Impostazioni e comandi sul titolo
+
+- **Settings e Help tornano, ma prima del mondo.** La schermata del titolo passa
+  da tre voci a cinque: tema, cielo e nuvole si scelgono **prima** che l'isola
+  nasca, e i comandi si leggono prima di aver sbagliato il primo gesto. Nessuna
+  delle due tocca l'engine — la scelta finisce in `?theme=`, `?daylight=` e
+  `?clouds=`, i tre parametri che la radice legge da sempre all'avvio, quindi il
+  mondo nasce gia' con il cielo giusto invece di cambiarlo al primo frame.
+- **`THEMES` non importa piu' Three.** I colori grezzi si spostano in
+  `paletteHex.ts`: `palette.ts` importava Three per convertirli in spazio
+  lineare, e chi voleva solo leggere un colore si tirava dietro il renderer.
+  Stessa ragione per `daylightControl`, estratto in un file suo perche' viveva
+  accanto ai nomi delle classi di edificio e trascinava `src/sim`. Il chunk
+  d'ingresso resta a 42 kB, e prima della scelta non arriva ne' Three, ne' la
+  simulazione, ne' i worker.
+- **Il look viaggia con l'indirizzo, come il seed.** `rememberLook` lo riscrive
+  quando cambia in partita — dal menu, da `L`, da `C`, da Shift+cifra — cosi' al
+  ricaricamento il titolo mostra il cielo con cui si stava giocando invece di
+  quello di tre partite fa. `themeSwatches` diventa l'unica derivazione delle
+  pastiglie di un tema: la leggono il menu di pausa e il titolo.
+- **Il cielo del titolo respira.** Quattro strati di gradiente scorrono su un
+  ciclo di due minuti, tutti dentro il blu e il bianco: nessuno cambia tinta, ma
+  la loro somma si'. La deriva e' lenta di proposito — se la si vede muovere,
+  distrae da cio' che c'e' da scegliere — e si ferma con
+  `prefers-reduced-motion`.
+
+## In corso — La firma del gioco
+
+- **Firma lo studio, non la persona.** `ABOUT_LINE` — l'unica riga del gioco che
+  nomina qualcuno, e la leggono tutti quelli che aprono la pagina — dice ora
+  `© 2026 Noein Solutions`. Stessa sostituzione in `LICENSE`, `README.md`,
+  `PRODUCT.md` e nel campo `author` di `package.json`: il nome proprio
+  dell'autore non ha ragione di stare su una superficie pubblica.
+- **La selezione smette di sembrare un rettangolo di debug.** Il riquadro
+  magenta a tinta unita era piatto per costruzione: opacita' costante da bordo a
+  bordo e spigoli netti non leggono come luce, leggono come nastro appoggiato sui
+  tetti — e il problema non era il colore, era il profilo. Ora ogni parte della
+  figura e' la stessa fascia dipinta da uno shader suo: un filo stretto quasi
+  bianco che dice dove passa il bordo, un alone largo nel magenta a caduta
+  cubica, e un filo scuro all'estremita' esterna che e' l'unica cosa che tiene il
+  contorno leggibile sull'erba chiara. Il nucleo esce sopra 1 e finisce nel
+  bloom, quindi l'alone morbido non costa un pass in piu'.
+- **Squadre fuori dall'impronta, e una cometa al posto del lampeggio.** Quattro
+  squadre scostate in fuori inquadrano la cosa scelta invece di raddoppiare
+  l'opacita' della fascia, e sono l'unica parte ferma della figura: quando
+  l'occhio ci torna trova un ancoraggio. Il battito d'opacita' e' diventato una
+  cometa che percorre il perimetro — nel percorrerlo lo descrive, che e' piu' di
+  quanto un lampeggio abbia mai detto — e sui montanti sale, cosi' l'altezza si
+  racconta da sola. Non c'e' piu' nessuna `Line` nel contorno: in WebGL una linea
+  e' larga un pixel e non ha profilo, quindi non puo' essere ne' luce ne' ombra.
+
+## In corso — La citta' si guarda da terra
+
+- **Il mouse gira la testa senza premere niente.** Tenere premuto per guardarsi
+  attorno e' il gesto di chi rigira un modellino, non di chi sta in piedi in una
+  strada, ed e' anche il motivo per cui la parentela con `CameraInput` — che
+  dichiarando `orbitMode` regalava il drag-per-guardare — non aveva piu' niente
+  da dare: cambiato il gesto, e' cambiato l'oggetto. Il muoversi-e-basta ha pero'
+  un prezzo che una pagina web non puo' ignorare, il puntatore che arriva al
+  bordo dello schermo e la rotazione che si ferma a meta' giro; la risposta e' il
+  **pointer lock**, che e' anche l'unica che fa sparire il cursore. Il lock si
+  chiede dentro il clic che posa l'occhio, perche' e' li' che c'e' il gesto
+  dell'utente che il browser pretende.
+- **Perdere il puntatore non fa uscire dalla vista.** `Esc` lo rilascia — lo fa il
+  browser, e non c'e' modo di intercettarlo prima — e cosi' un cambio di finestra.
+  Uscire li' vorrebbe dire buttare fuori chi ha solo alt-tabbato: la vista resta,
+  la testa si ferma, e un clic riprende. E' anche il secondo gradino della catena
+  di `Esc` che il gioco usa gia' altrove, dove il primo molla qualcosa e il
+  secondo chiude.
+- **Non si seleziona e non si costruisce.** Le viste d'ispezione, il piazzamento
+  degli strumenti, il clic che apre la scheda di un edificio: tutti spenti finche'
+  si guarda da terra. Non e' prudenza — sotto lock il puntatore non ha nemmeno una
+  posizione da cui scegliere qualcosa, e senza le guardie il clic che serve a
+  riprendere lo sguardo aprirebbe la scheda di un edificio a caso.
+- **L'interfaccia si toglie di mezzo.** A terra non c'e' niente da comandare, e
+  ogni pannello a schermo e' una cosa che non risponde. Resta una targa sola, che
+  dice come si esce: un'uscita che non si vede, da una vista che non ha nemmeno un
+  cursore, e' una trappola. Si spegne con una classe e non con `hidden` sulla
+  sezione, cosi' cassetti aperti e strumento in mano si ritrovano com'erano al
+  ritorno invece di essere un secondo stato da tenere allineato al primo.
+- **Il verso verticale e' l'opposto dell'orbita.** `CameraInput` passa il
+  verticale con il segno dei pixel perche' girando attorno a un soggetto si tira
+  il soggetto: verso il basso vuol dire salirgli sopra. Una testa non gira attorno
+  a niente, e la stessa regola diventa il contrario di quello che la mano si
+  aspetta. Mouse in basso, si guarda in basso.
+
 ## In corso — La schermata del titolo, e il mondo che nasce dopo la scelta
 
 - **L'isola non si genera piu' dietro il menu.** `index.html` monta ora

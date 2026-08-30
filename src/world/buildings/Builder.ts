@@ -29,6 +29,7 @@ import {
   type LandmarkSite,
 } from './landmarkDriver';
 import { ARCOLOGY } from '../arcology/config';
+import type { ArcologyStanding } from '../arcology/prospect';
 import type { ArcologyDriverRefusal } from './arcologyDriver';
 import { ArcologyDriver } from './arcologyDriver';
 import { ClearanceSites, type ClearanceVerdict } from './clearanceSite';
@@ -74,6 +75,7 @@ import { envelopeOf } from './BuildingRegistry';
 import { groundSideOf, overhangFor } from './generate';
 import { recordStamp } from './recordStamp';
 import { GrowthQueue, anchorOf } from './growthQueue';
+import { BlockMemo, LotMemo } from './lotMemo';
 import { SurfaceQueue } from './surfaceQueue';
 import {
   GROUND,
@@ -252,6 +254,15 @@ export interface BuilderStats {
    */
   readonly arcologyRefusal: ArcologyDriverRefusal | null;
   /**
+   * Lo stesso rifiuto **con i numeri dentro**, piu' la quota che la citta' ammette.
+   *
+   * `arcologyRefusal` risponde a chi guarda l'overlay — «la condizione e'
+   * insoddisfacibile?» — e per quella domanda un enum basta. Al giocatore serve
+   * l'altra, «ci stiamo arrivando?», e `notCapped` non distingue `1/2` da `0/2`:
+   * sono due partite diverse, e finora l'interfaccia non aveva modo di dirlo.
+   */
+  readonly arcology: ArcologyStanding;
+  /**
    * Lo sventramento in due numeri: cantieri aperti adesso, edifici gia' portati
    * via in tutta la partita.
    *
@@ -271,19 +282,6 @@ export class Builder {
   private readonly surface: SurfaceQueue;
 
   /**
-   * Isolati senza piu' un lotto libero sul fronte strada.
-   *
-   * Vale la stessa ragione della blacklist dei siti: ricercare un lotto sul
-   * perimetro di un isolato pieno a ogni infornata significherebbe riscorrerlo
-   * per sempre. Un candidato che cade qui dentro viene scartato prima ancora di
-   * generare uno stamp.
-   *
-   * **Non e' piu' per sempre.** Da quando un landmark sventra, un isolato pieno
-   * puo' tornare ad avere lotti: `onTick` svuota questo insieme con `forget`
-   * appena un cantiere porta via qualcosa.
-   */
-
-  /**
    * Siti bocciati in modo definitivo.
    *
    * Ogni motivo di scarto e' permanente finche' il luogo non cambia: la
@@ -297,6 +295,25 @@ export class Builder {
    * adesso puo' essere libera.
    */
   private readonly blacklist = new Set<number>();
+
+  /**
+   * Cio' che l'infornata in corso ha gia' scoperto cercando lotti.
+   *
+   * Non e' stato di gioco e non sopravvive a `buildPass`: il perche' — e perche'
+   * questa e' la sola forma in cui il memo e' esatto — sta in `lotMemo.ts`.
+   */
+  private readonly lotMemo = new LotMemo();
+
+  /**
+   * Isolati senza piu' un lotto libero, da un'infornata all'altra.
+   *
+   * E' l'altra meta' della stessa ricerca — il rettangolo esaurito invece della
+   * colonna bocciata — e vive piu' a lungo perche' il fatto che ricorda vale piu'
+   * a lungo. La sua invalidazione e' `freedomEpoch`, che sale ogni volta che il
+   * mondo rende di nuovo libera una colonna: `findLot` gliela mostra prima di
+   * ogni ricerca, e il memo cade tutto quando cambia.
+   */
+  private readonly blockMemo = new BlockMemo();
 
   private readonly rejectedCounts = new Array<number>(REJECT_REASONS.length).fill(0);
 
@@ -599,6 +616,7 @@ export class Builder {
       farmPlots: this.farms.count,
       arcologies: this.arcologies.count,
       arcologyRefusal: this.arcologies.refusal,
+      arcology: this.arcologies.standing,
       stacked: this.stackedCount,
       clearing: this.clearance.open,
       cleared: this.clearance.cleared,
@@ -610,6 +628,17 @@ export class Builder {
     this.blacklist.clear();
     // Un isolato dichiarato pieno lo era rispetto al terreno di allora:
     // un'espansione puo' avergli aggiunto colonne edificabili sul fronte.
+    // L'epoca lo direbbe gia' per i tre modi che il mondo conosce, ma questa e'
+    // la porta dichiarata di «il terreno e' di nuovo libero», e chi la apre da
+    // fuori non e' tenuto ad aver alzato un contatore.
+    this.blockMemo.clear();
+    //
+    // Il memo dei lotti non ne avrebbe bisogno — nasce e muore dentro
+    // `buildPass`, e qui non ci si arriva mai da li' dentro — ma svuotarlo costa
+    // due `clear` su insiemi vuoti e toglie di mezzo la sola domanda che chi
+    // legge si farebbe: «e se un giorno qualcuno chiamasse `forget` a meta'
+    // infornata?».
+    this.lotMemo.reset();
   }
 
   /**
@@ -823,6 +852,11 @@ export class Builder {
    */
   private buildPass(state: SimState): SimState {
     const wanted = BUILDER.sitesPerBuild;
+    // **Il memo comincia qui e finisce con l'infornata.** Fra un giro e l'altro
+    // un cantiere puo' aver chiuso, una prenotazione caduta, un impalcato
+    // nascere: tre modi in cui una colonna bocciata torna libera, e nessuno dei
+    // tre accade da questa riga fino alla fine del metodo.
+    this.lotMemo.reset();
 
     // **Il distretto costiero viene prima del polo di turno.** E' un rivolo
     // — un edificio per infornata, al massimo — e senza la precedenza si
@@ -1428,6 +1462,11 @@ export class Builder {
    * dove la desiderabilita' non lo voleva.
    */
   private findLot(x: number, y: number): Lot | null {
+    // **Il memo si allinea qui e non a inizio infornata.** Costa tre letture di
+    // contatore per ricerca — nulla, di fronte alle diecimila colonne che evita —
+    // e in cambio nessun chiamante futuro puo' dimenticarsene: la memoria si
+    // aggiorna dove la si usa.
+    this.blockMemo.observe(this.freedomEpoch());
     const origin = this.streets.blockAt(x, y);
     // Il rettangolo e' soltanto il limite di costo della ricerca. Comprende
     // isolati e interassi insieme: nessuno dei suoi bordi e nessuna cella
@@ -1473,7 +1512,30 @@ export class Builder {
         ? (lx, ly, side) => this.facingTowardNetwork(lx, ly, side)
         : () => coast.facing,
       accepts: (lx, ly, side) => this.lotIsFree(lx, ly, side),
+      // Il rettangolo dipende dal solo isolato d'origine, e la scansione lo
+      // percorre tutto: due candidati dello stesso isolato fanno la stessa
+      // domanda in un altro ordine. Il secondo la salta, e da adesso anche il
+      // primo dell'infornata dopo — finche' l'epoca non cambia.
+      exhausted: (side) => this.blockMemo.isExhausted(origin.kx, origin.ky, side),
+      onExhausted: (side) => this.blockMemo.exhaust(origin.kx, origin.ky, side),
     });
+  }
+
+  /**
+   * Quante volte il mondo ha reso di nuovo libera una colonna.
+   *
+   * Somma di tre contatori monotoni, uno per ciascun modo in cui `lotIsFree` puo'
+   * cambiare idea su una colonna che aveva bocciato: il registry che rilascia una
+   * prenotazione o toglie un record, un impalcato che nasce sopra un suolo preso,
+   * un chunk di terreno che arriva dove non c'era isola. Non dice **cosa** e'
+   * cambiato, e non serve: chi la legge butta via tutto quello che sapeva.
+   *
+   * Sono tre e non uno perche' ciascuno sta accanto alla domanda che invalida —
+   * `isOccupied`, `hasDeck`, il terreno — e un quarto modo di liberare suolo
+   * dovra' portarsi il proprio contatore, non aggiungere un gancio qui.
+   */
+  private freedomEpoch(): number {
+    return this.registryImpl.vacated + this.aerial.decksOpened + this.terrainMap.chunkCount;
   }
 
   /**
@@ -1516,29 +1578,46 @@ export class Builder {
       for (let dx = 0; dx < footprint; dx++) {
         const cx = x + dx;
         const cy = y + dy;
-        // Letture senza allocazione: `columnAt` costruirebbe un oggetto e
-        // `at` un array di record per ogni colonna, e qui le colonne si
-        // contano a migliaia per infornata.
-        // **Il suolo preso non chiude piu' la colonna per sempre.** Se sopra
-        // corre una soletta il lotto esiste ancora, una quota piu' su: e' la
-        // seconda delle tre assunzioni di colonna che la 4.9 rompe. La domanda
-        // in piu' si paga solo su questo ramo — cioe' sulle sole colonne gia'
-        // costruite — quindi una citta' senza piattaforme costa quello di prima.
-        if (this.registryImpl.isOccupied(cx, cy) && !this.aerial.hasDeck(cx, cy)) {
+        const key = columnKey(cx, cy);
+        // **Il memo per primo.** Dal secondo candidato dell'infornata in poi e'
+        // quasi sempre lui a rispondere, e costa una lettura di `Set` al posto
+        // delle quattro domande qui sotto.
+        if (this.lotMemo.refuses(key)) return false;
+        if (!this.columnIsFree(cx, cy, key)) {
+          this.lotMemo.refuse(key);
           return false;
         }
-        // Dalla 4.2 la battigia e il fianco in pendenza sono lotti come gli
-        // altri: costano un'opera, non un rifiuto. Restano fuori solo la roccia
-        // e l'acqua troppo profonda per una banchina.
-        if (groundKindAt(this.terrainMap, cx, cy) === GROUND.refused) return false;
-        // E l'acqua che una banchina reggerebbe ma che nessuno vorrebbe
-        // edificata: un lotto al largo poggia su un pad isolato in mezzo al
-        // mare, che e' lo stesso difetto dell'anello di carreggiata.
-        if (!nearLand(this.terrainMap, cx, cy)) return false;
-        if (this.blacklist.has(columnKey(cx, cy))) return false;
       }
     }
     return true;
+  }
+
+  /**
+   * Le quattro ragioni per cui una singola colonna non regge un lotto.
+   *
+   * Sta a parte perche' e' la risposta che il memo tiene: dividere la domanda
+   * per colonna dalla domanda per quadrato e' cio' che rende memorizzabile la
+   * prima senza toccare la seconda.
+   */
+  private columnIsFree(x: number, y: number, key: number): boolean {
+    // Letture senza allocazione: `columnAt` costruirebbe un oggetto e
+    // `at` un array di record per ogni colonna, e qui le colonne si
+    // contano a migliaia per infornata.
+    // **Il suolo preso non chiude piu' la colonna per sempre.** Se sopra
+    // corre una soletta il lotto esiste ancora, una quota piu' su: e' la
+    // seconda delle tre assunzioni di colonna che la 4.9 rompe. La domanda
+    // in piu' si paga solo su questo ramo — cioe' sulle sole colonne gia'
+    // costruite — quindi una citta' senza piattaforme costa quello di prima.
+    if (this.registryImpl.isOccupied(x, y) && !this.aerial.hasDeck(x, y)) return false;
+    // Dalla 4.2 la battigia e il fianco in pendenza sono lotti come gli
+    // altri: costano un'opera, non un rifiuto. Restano fuori solo la roccia
+    // e l'acqua troppo profonda per una banchina.
+    if (groundKindAt(this.terrainMap, x, y) === GROUND.refused) return false;
+    // E l'acqua che una banchina reggerebbe ma che nessuno vorrebbe
+    // edificata: un lotto al largo poggia su un pad isolato in mezzo al
+    // mare, che e' lo stesso difetto dell'anello di carreggiata.
+    if (!nearLand(this.terrainMap, x, y)) return false;
+    return !this.blacklist.has(key);
   }
 
   /**

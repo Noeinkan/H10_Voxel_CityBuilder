@@ -1,6 +1,4 @@
 import { describe, expect, it } from 'vitest';
-import { SKYLINE } from '../skyline/config';
-import { TIER } from '../skyline/tiers';
 import { FACING } from '../streets/streetGrid';
 import { arcologyForBlock } from './catalog';
 import {
@@ -25,8 +23,6 @@ function ready(over: Partial<ArcologyQuery> = {}): ArcologyQuery {
   return {
     existing: 0,
     buildings: 0,
-    tier: TIER.core,
-    heightBonus: SKYLINE.coneBonus,
     blockRect: { x0: 0, y0: 0, x1: 19, y1: 19 },
     spanX: 20,
     spanY: 20,
@@ -37,15 +33,17 @@ function ready(over: Partial<ArcologyQuery> = {}): ArcologyQuery {
 }
 
 /**
- * Lo stesso centro, sulla **spalla** del cono: dove si scava invece di salire.
+ * Lo stesso quartiere, con la roccia sotto: dove si scava invece di salire.
  *
- * Resta `core`, e non e' un dettaglio della fixture: e' li' che la famiglia
- * interrata vive, perche' e' l'unica fascia che offra i vicini che una
- * megastruttura chiede.
+ * **Non e' piu' un luogo diverso.** La spalla del cono opponeva le due famiglie
+ * e la misura l'ha svuotata — cinque poli sovrapposti riempiono il cono su tutto
+ * il nucleo, quindi non restava una sola spalla e la famiglia interrata non
+ * nasceva mai. Ora le due condizioni si distinguono per la **roccia**, e sullo
+ * stesso isolato possono essere vere entrambe.
  */
 function digReady(over: Partial<SunkenQuery> = {}): SunkenQuery {
   return {
-    ...ready({ heightBonus: SKYLINE.coneBonus - 1 }),
+    ...ready(),
     availableDepth: 26,
     requiredDepth: 22,
     dryRim: true,
@@ -71,9 +69,17 @@ describe('arcologyReady', () => {
     expect(arcologyReady(ready({ existing: arcologyQuota(0) }))).toBe('enough');
   });
 
-  it('rifiuta fuori dal centro: la corona e il tessuto intermedio non ne hanno', () => {
-    expect(arcologyReady(ready({ tier: TIER.fringe }))).toBe('notCore');
-    expect(arcologyReady(ready({ tier: TIER.middle }))).toBe('notCore');
+  /**
+   * **La fascia e' uscita dalla condizione, ed e' una misura.** Su seed 4242 con
+   * cinque poli il nucleo `core` e' un blocco contiguo di sette isolati: sommato
+   * a `minSpacing`, `tier !== core` lasciava passare due candidati su tutta
+   * l'isola e ne nasceva una. A dire «qui c'e' un quartiere» resta la densita'
+   * costruita, che e' una misura del luogo invece di un'etichetta — ed e' anche
+   * la sola delle tre che non puo' svuotarsi per come il giocatore mette i poli.
+   */
+  it('non chiede piu una fascia: a decidere dove e la citta costruita', () => {
+    expect(ARCOLOGY_REFUSALS).not.toContain('notCore');
+    expect(arcologyReady(ready({ builtNeighbours: ARCOLOGY.minBuilt }))).toBeNull();
   });
 
   it('rifiuta l isolato che non contiene l ingombro, su tutti e due gli assi', () => {
@@ -103,7 +109,6 @@ describe('arcologyReady', () => {
     // sbagliato: e' l'informazione utile, e le altre non cambierebbero niente.
     const hopeless = ready({
       existing: arcologyQuota(0),
-      tier: TIER.fringe,
       builtNeighbours: 0,
       cappedNeighbours: 0,
     });
@@ -127,26 +132,22 @@ describe('arcologyAnchor', () => {
 });
 
 describe('earthscraperReady', () => {
-  it('accetta la spalla del cono, densa e satura, con roccia a sufficienza', () => {
+  it('accetta il quartiere denso e saturo con roccia a sufficienza', () => {
     expect(earthscraperReady(digReady())).toBeNull();
-    expect(earthscraperReady(digReady({ heightBonus: 0 }))).toBeNull();
   });
 
-  it('rifiuta la cresta: li la gerarchia concentra altezza, quindi si sale', () => {
-    // **E' la coppia di righe che tiene torri e crateri su isolati diversi**,
-    // senza che il driver debba arbitrare: sullo stesso isolato le due
-    // condizioni non possono essere vere insieme.
-    expect(earthscraperReady(digReady({ heightBonus: SKYLINE.coneBonus }))).toBe('tooHigh');
-    expect(arcologyReady(ready({ heightBonus: SKYLINE.coneBonus }))).toBeNull();
-  });
-
-  it('non chiede una fascia propria, e la misura ha smentito il progetto', () => {
-    // La prima versione chiedeva `tier !== core`, e non aveva siti: il tessuto
-    // denso di una citta' cresciuta e' **tutto** `core`, e cio' che sta fuori e'
-    // rado e costiero, cioe' senza vicini e non scavabile. Il centro resta
-    // percio' ammesso, ed e' il bonus di quota a distinguere dentro di esso.
-    expect(earthscraperReady(digReady({ tier: TIER.core }))).toBeNull();
-    expect(earthscraperReady(digReady({ tier: TIER.fringe }))).toBeNull();
+  /**
+   * **Le due famiglie non si escludono piu', ed e' misurato.** Il veto della
+   * cresta doveva tenerle su isolati diversi; cinque poli sovrapposti riempiono
+   * pero' il cono su tutto il nucleo, quindi *ogni* candidato era cresta e la
+   * famiglia interrata non ha mai avuto un sito in partita. Ora sullo stesso
+   * isolato entrambe possono essere vere, e a scegliere e' il driver con un tiro
+   * deterministico — la roccia apre la possibilita', l'isolato decide.
+   */
+  it('sullo stesso isolato le due condizioni possono essere vere insieme', () => {
+    expect(ARCOLOGY_REFUSALS).not.toContain('tooHigh');
+    expect(earthscraperReady(digReady())).toBeNull();
+    expect(arcologyReady(ready())).toBeNull();
   });
 
   it('rifiuta dove la roccia non basta', () => {
@@ -172,10 +173,10 @@ describe('earthscraperReady', () => {
       .toBe('blockTooSmall');
   });
 
-  it('l ordine delle domande e parte della regola: la quota viene prima della cresta', () => {
+  it('l ordine delle domande e parte della regola: la quota viene prima di tutto', () => {
     expect(earthscraperReady(digReady({
       existing: arcologyQuota(0),
-      heightBonus: SKYLINE.coneBonus,
+      availableDepth: 0,
     }))).toBe('enough');
     // E la profondita' viene prima delle due misure care sul registry: chi
     // interroga venti isolati in fila non deve pagarle dove la roccia gia' manca.

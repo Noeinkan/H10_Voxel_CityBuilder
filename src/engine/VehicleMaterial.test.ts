@@ -96,9 +96,13 @@ describe('createVehicleMaterial', () => {
     // Le stesse due funzioni che chiama il fragment del voxel, non una seconda
     // copia della stessa matematica.
     expect(vehicle.fragmentShader).toContain('aerialVeil(');
-    expect(vehicle.fragmentShader).toContain('aerialTint()');
+    expect(vehicle.fragmentShader).toContain('aerialTint(');
     expect(vehicle.fragmentShader).toContain('faceAmbient(');
     expect(vehicle.fragmentShader).toContain('sampleShadow(');
+    // E lo stesso raggio per pixel: e' quello che tiene una nave **dentro** il
+    // paesaggio invece che appiccicata sopra. Con la direzione per fotogramma,
+    // da terra lo scafo prenderebbe un velo diverso dalla costa dietro di lui.
+    expect(vehicle.fragmentShader).toContain('viewRay(vWorldPosition)');
     // Nessun tone mapping: si scrive HDR lineare e ci pensa OutputPass.
     expect(vehicle.fragmentShader).not.toContain('toneMapping');
   });

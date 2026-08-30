@@ -2535,6 +2535,18 @@ una soglia da abbassare:
    roccia, contorno asciutto, che è anche il sito migliore dell'isola. La
    condizione per bonus di quota regge, ma dipende da come il giocatore mette i
    poli in un modo che vale la pena dichiarare.
+3. **Il magazzino, e non più la desiderabilità, è il tetto vero dell'altezza.**
+   Rimisurato con otto poli del listino e 6000 tick, ma **senza** riempire il
+   magazzino come fa la fixture: il campo satura lo stesso a 255 e la soglia
+   effettiva arriva a 293, quindi la parte qui sopra regge; le torri però si
+   fermano al livello **10** invece che al 26, e `cappedNeighbours` torna a zero.
+   A fare da tetto è `upgradeMaterialCost` — `2·(livello−6)²`, da 32 a 578 unità
+   per singola promozione — contro una quota ammessa di 23 nel `core` e decine di
+   torri che competono per lo stesso magazzino. Non cambia la diagnosi di sopra,
+   la completa: con il campo saturo l'arcologia arriva, ma quanto ci mette lo
+   decide l'industria. La forbice fra ciò che la gerarchia concede e ciò che
+   l'economia paga è la taratura che resta, e `minCapped` continua a non essere
+   il numero da spostare.
 
 **Vincolo:** valgono i vincoli trasversali della fase 4. In più: lo scavo non
 esce mai dall'impronta, viaggia sulla coda di comparsa come le altre due

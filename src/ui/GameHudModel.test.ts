@@ -8,6 +8,7 @@ import { createSimState } from '../sim/SimState';
 import { EMPTY_HARVEST, type FoodReport } from '../sim/farms';
 import type { PolicyId } from '../sim/policies';
 import { DAYLIGHT, DAYLIGHT_MODE } from '../engine/daylight';
+import { arcologyStanding } from '../world/arcology/prospect';
 import {
   buildGameHudModel,
   daylightControl,
@@ -495,6 +496,7 @@ function stats(
       farmPlots: 0,
       arcologies: 0,
       arcologyRefusal: null,
+      arcology: arcologyStanding(0, 0, null),
     },
     state,
     paused: false,

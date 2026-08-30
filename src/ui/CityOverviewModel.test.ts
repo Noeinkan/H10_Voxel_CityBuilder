@@ -3,6 +3,9 @@ import { cityCondition } from '../game/cityCondition';
 import type { GrowthStats } from '../game/growthScene';
 import { onboardingOf } from '../game/onboarding';
 import { createSimState } from '../sim';
+import { ARCOLOGY } from '../world/arcology/config';
+import { arcologyStanding } from '../world/arcology/prospect';
+import { arcologyQuota } from '../world/arcology/siting';
 import { buildCityOverviewModel } from './CityOverviewModel';
 
 describe('buildCityOverviewModel', () => {
@@ -44,6 +47,40 @@ describe('buildCityOverviewModel', () => {
     });
     expect(model?.mandates[0]).toMatchObject({ label: 'Local shops', family: 'Investment' });
     expect(model?.history).toEqual([{ tick: 42, summary: 'Kept the square open.' }]);
+  });
+
+  /**
+   * **Era `Arcologies: 0`, e zero non significa niente**: e' il valore normale
+   * per quasi tutta la partita, quindi da solo non distingue «ci sta arrivando»
+   * da «non ci arrivera' mai». La quota e' un traguardo con la sua barra, come
+   * gli altri, e le lacune dicono quanto manca.
+   */
+  it('porta la megastruttura come una scala invece che come un contatore', () => {
+    const model = buildCityOverviewModel(stats());
+
+    expect(model?.arcology.goal).toMatchObject({ label: 'Arcologies', current: 1, target: 2 });
+    expect(model?.arcology.gaps).toEqual([
+      { label: 'Buildings in range', value: `41 of ${ARCOLOGY.minBuilt}`, tone: 'neutral' },
+      { label: 'Towers topped out', value: `0 of ${ARCOLOGY.minCapped}`, tone: 'neutral' },
+    ]);
+    // La ricompensa: cosa si guadagna, prima che nasca. Deriva dal catalogo.
+    expect(model?.arcology.reward).toContain('housing');
+    expect(model?.arcology.reward).toContain('each on its own level');
+    // Il vecchio contatore non e' rimasto anche fra i fatti: due posti che
+    // dicono lo stesso numero sono due posti che possono divergere.
+    expect(model?.infrastructure.map((fact) => fact.label)).not.toContain('Arcologies');
+  });
+
+  it('a quota piena il traguardo diventa il numero di edifici che apre la prossima', () => {
+    const full = stats();
+    const standing = arcologyStanding(250, arcologyQuota(250), null);
+    const model = buildCityOverviewModel({
+      ...full,
+      builder: { ...full.builder, arcology: standing },
+    });
+    expect(model?.arcology.gaps).toEqual([
+      { label: 'Next one at', value: `250 of ${standing.nextQuotaAt} buildings`, tone: 'neutral' },
+    ]);
   });
 });
 
@@ -106,6 +143,15 @@ function stats(): GrowthStats {
       farmPlots: 4,
       arcologies: 1,
       arcologyRefusal: null,
+      arcology: arcologyStanding(5, 1, {
+        x: 40,
+        y: 24,
+        kind: 'twinStem',
+        gaps: [
+          { refusal: 'thin', have: 41, need: ARCOLOGY.minBuilt },
+          { refusal: 'notCapped', have: 0, need: ARCOLOGY.minCapped },
+        ],
+      }),
     },
     state,
     paused: false,

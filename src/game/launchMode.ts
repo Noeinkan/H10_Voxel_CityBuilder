@@ -1,3 +1,6 @@
+import { resolveDaylightMode, type DaylightMode } from '../engine/daylight';
+import { resolveTheme } from '../engine/themes';
+
 export interface LaunchMode {
   debugEnabled: boolean;
   perfEnabled: boolean;
@@ -133,10 +136,57 @@ export function opensEntryMenu(
  * con un tema dichiarato, vuole una citta' nuova nelle stesse condizioni: e' la
  * scena a cambiare, non l'harness attorno.
  */
-export function newGameUrl(search: string, seed: number): string {
+export function newGameUrl(search: string, seed: number, look?: LookChoice): string {
   const params = new URLSearchParams(search);
   params.set('seed', String(seed));
   params.set(PLAY_PARAM, '1');
+  if (look !== undefined) applyLook(params, look);
+  return `?${params.toString()}`;
+}
+
+/**
+ * Come si guarda la citta': tema, cielo e nuvole.
+ *
+ * **Sono gia' tre parametri d'indirizzo** — `?theme=`, `?daylight=`, `?clouds=`
+ * — che la radice legge da sempre all'avvio. La schermata del titolo non ha
+ * quindi bisogno di uno storage suo per farli valere: li scrive nell'URL prima
+ * di caricare il mondo, che nasce gia' con il cielo giusto invece di cambiarlo
+ * al primo frame. E restando scritti, la scelta sopravvive al ricaricamento.
+ */
+export interface LookChoice {
+  readonly theme: string;
+  readonly daylight: DaylightMode;
+  readonly clouds: boolean;
+}
+
+/** Scrive il look sui parametri, con `clouds` che sparisce invece di dire «no». */
+export function applyLook(params: URLSearchParams, look: LookChoice): void {
+  params.set('theme', look.theme);
+  params.set('daylight', look.daylight);
+  if (look.clouds) params.set('clouds', '1');
+  else params.delete('clouds');
+}
+
+/** Il look dichiarato dall'indirizzo, con i default del gioco al posto dei buchi. */
+export function resolveLook(params: URLSearchParams): LookChoice {
+  return {
+    theme: resolveTheme(params.get('theme')).id,
+    daylight: resolveDaylightMode(params.get('daylight')),
+    clouds: params.get('clouds') === '1',
+  };
+}
+
+/**
+ * Lo stesso indirizzo con il look aggiornato, per la partita gia' in corso.
+ *
+ * La radice lo riscrive quando il giocatore cambia tema o cielo dal menu di
+ * pausa: e' lo stesso gesto con cui il seed finisce nella barra, e serve a che
+ * il titolo, al ricaricamento, mostri il cielo con cui si stava giocando invece
+ * di quello di tre partite fa.
+ */
+export function lookUrl(search: string, look: LookChoice): string {
+  const params = new URLSearchParams(search);
+  applyLook(params, look);
   return `?${params.toString()}`;
 }
 

@@ -2,6 +2,7 @@ import { PALETTE_SIZE, PALETTE_SLOT_NAMES } from '../../engine/paletteSlots';
 import { BIOME_NAMES, TERRAIN } from '../terrain/config';
 import { TREE_SHAPES } from '../terrain/flora';
 import { SURFACE_KIND_NAMES, WATER_CLASS } from '../visualBlock';
+import { clearanceBehind } from './swatchOcclusion';
 
 /**
  * Dove sta ogni cosa nel campionario dei voxel, e con quali numeri.
@@ -78,24 +79,28 @@ export const SWATCH = {
   /**
    * Interasse fra due celle della matrice.
    *
-   * **Non e' spaziatura a gusto: e' l'occlusione.** A `REST_PITCH`, cioe'
-   * l'isometrica vera `atan(1/√2)`, un voxel di quota si proietta in alto per
-   * `cos(pitch)` e un voxel di profondita' per `sin(pitch)/√2`. Il rapporto e'
-   * esattamente due, quindi di un provino alto `h` la fila davanti ne nasconde
-   * `h - cellPitch/2`. Con interasse pari all'altezza sparisce **meta'** di ogni
-   * provino, ed e' cosi' che una griglia di prismi distinti si legge come una
-   * massa unica.
+   * **Non e' spaziatura a gusto: e' l'occlusione**, e il conto sta in
+   * `swatchOcclusion.ts`: la fila davanti ne nasconde `CELL_HEIGHT` meno il
+   * vuoto libero, cioe' meno `cellPitch - CELL_FOOTPRINT`. Con interasse pari
+   * all'impronta sparirebbe il provino intero, ed e' cosi' che una griglia di
+   * prismi distinti si legge come una massa unica.
    *
-   * A dieci contro un'altezza di nove ne restano nascosti quattro, e sopra il
-   * quarto c'e' `CELL_LEDGE`: tutto cio' che la microgeometria produce sta piu'
-   * in alto. Alzarlo ancora costa in fretta, perche' `frameRegion` inquadra
-   * sulla diagonale e la larghezza dell'inquadratura cresce con `sizeX + sizeY`:
-   * ogni voxel di interasse si paga trentuno volte in x e sette in y. E' anche
-   * il vincolo che tiene l'impronta a sette: `cellPitch` deve restarle sopra.
+   * A dodici contro un'altezza di nove e un'impronta di sette ne restano
+   * nascosti quattro, e sopra il quarto c'e' `CELL_LEDGE`: tutto cio' che la
+   * microgeometria produce sta piu' in alto. **Questa e' l'unica fascia del
+   * campionario che accetta di nascondere qualcosa**, perche' le sue duecento
+   * celle hanno tutte la stessa sagoma e sotto quel filo non c'e' niente da
+   * distinguere; le gallerie, dove ogni soggetto e' diverso, si scoprono per
+   * intero.
+   *
+   * Alzarlo ancora costa in fretta, perche' `frameRegion` inquadra sulla
+   * diagonale e la larghezza dell'inquadratura cresce con `sizeX + sizeY`: ogni
+   * voxel di interasse si paga trentuno volte in x e sette in y. E' anche il
+   * vincolo che tiene l'impronta a sette: `cellPitch` deve restarle sopra.
    */
-  cellPitch: 10,
+  cellPitch: 12,
 
-  /** Distacco fra una fascia e la successiva, lungo +y. */
+  /** Vuoto minimo fra una fascia e la successiva; l'occlusione puo' chiederne di piu'. */
   bandGap: 10,
 
   // --- Stratigrafia ---------------------------------------------------------
@@ -249,8 +254,8 @@ export const CELL_HEIGHT = CELL_PARTS.reduce(
  * E' la sommita' dello sbalzo, cioe' il filo da cui in su sta tutto quello che
  * la microgeometria produce. Sotto c'e' il podio, e li' l'occlusione della fila
  * davanti e' accettabile; sopra no, o meta' del vocabolario si vedrebbe solo
- * ruotando la camera. Lo consuma il test dell'interasse, che e' dove il conto
- * dell'occlusione sta scritto per esteso.
+ * ruotando la camera. Lo consuma il test dell'interasse, che lo confronta con
+ * `hiddenBehind`: il conto sta in `swatchOcclusion.ts`.
  */
 export const CELL_LEDGE = CELL_PARTS[1].z0 + CELL_PARTS[1].levels;
 
@@ -320,11 +325,6 @@ const MATRIX_DEPTH = bandSpan(SWATCH_ROWS, CELL_FOOTPRINT, SWATCH.cellPitch);
 const BIOME_WIDTH = bandSpan(BIOME_NAMES.length, SWATCH.pillarSide, SWATCH.pillarPitch);
 const WATER_WIDTH = bandSpan(SWATCH_WATERS.length, SWATCH.pillarSide, SWATCH.pillarPitch);
 const STRATA_WIDTH = BIOME_WIDTH + SWATCH.waterGap + WATER_WIDTH;
-
-/** Origine in y di ogni fascia. Si susseguono lungo +y a partire da zero. */
-const MATRIX_Y = 0;
-const STRATA_Y = MATRIX_Y + MATRIX_DEPTH + SWATCH.bandGap;
-const SCALE_Y = STRATA_Y + SWATCH.pillarSide + SWATCH.bandGap;
 
 /** Un soggetto della fascia di scala, con il posto che si prende. */
 export interface ScaleItem {
@@ -399,6 +399,41 @@ export const SCALE_ITEMS: readonly ScaleItem[] = RAW_SCALE_ITEMS.map((item) => (
 }));
 const SCALE_DEPTH = SCALE_ITEMS.reduce((deepest, item) => Math.max(deepest, item.depth), 0);
 
+/** Quota a cui arriva ogni fascia, basamento compreso: e' cio' che occlude. */
+const SCALE_TOP = SWATCH.groundZ + SWATCH.referenceHeight;
+const STRATA_TOP = SWATCH.groundZ + SWATCH.pillarHeight;
+const MATRIX_TOP = SWATCH.groundZ + CELL_HEIGHT;
+
+/** Vuoto fra due fasce: quello dichiarato, o quanto ne chiede chi sta davanti. */
+function bandGapFor(frontTop: number): number {
+  return Math.max(SWATCH.bandGap, clearanceBehind(frontTop));
+}
+
+/**
+ * Origine in y delle tre fasce, **dalla piu' alta alla piu' bassa**.
+ *
+ * L'ordine non e' quello di lettura ed e' deliberato: la camera guarda da
+ * `(+x, +y)`, quindi lungo +y ci si avvicina, e chi sta davanti copre chi sta
+ * dietro per la propria quota meno il vuoto che li separa. Con la scala in coda
+ * — com'era — l'edificio di riferimento, alto trentotto, seppelliva le ultime
+ * file della matrice e i pilastri; capovolto, ogni fascia scopre per intero
+ * quella dietro e il vuoto lo dice `swatchOcclusion.ts` invece di un numero
+ * scelto a occhio.
+ */
+const SCALE_Y = 0;
+const STRATA_Y = SCALE_Y + SCALE_DEPTH + bandGapFor(STRATA_TOP);
+const MATRIX_Y = STRATA_Y + SWATCH.pillarSide + bandGapFor(MATRIX_TOP);
+const BASE_END_Y = MATRIX_Y + MATRIX_DEPTH;
+
+/**
+ * La fascia piu' arretrata della base: dove comincia e fin dove sale.
+ *
+ * La legge `swatchCatalog.ts`, che accoda le gallerie **dietro** la base: per
+ * sapere di quanto scostarsi le serve sapere cosa si trovera' davanti, e questo
+ * e' il solo posto in cui quel dato esiste.
+ */
+export const SWATCH_BASE_REAR = { y: SCALE_Y, top: SCALE_TOP } as const;
+
 /** Estensione dell'intero campionario, basamento compreso. */
 export interface SwatchExtent {
   readonly minX: number;
@@ -419,14 +454,10 @@ export function swatchExtent(): SwatchExtent {
   const margin = SWATCH.plinthMargin;
   return {
     minX: -margin,
-    minY: -margin,
+    minY: SCALE_Y - margin,
     sizeX: Math.max(MATRIX_WIDTH, STRATA_WIDTH, SCALE_WIDTH) + margin * 2,
-    sizeY: SCALE_Y + SCALE_DEPTH + margin * 2,
-    sizeZ: SWATCH.groundZ + Math.max(
-      CELL_HEIGHT,
-      SWATCH.pillarHeight,
-      SWATCH.referenceHeight,
-    ),
+    sizeY: BASE_END_Y - SCALE_Y + margin * 2,
+    sizeZ: Math.max(MATRIX_TOP, STRATA_TOP, SCALE_TOP),
   };
 }
 
@@ -436,16 +467,23 @@ export function swatchExtent(): SwatchExtent {
  * **Il piano di lettura e' largo quanto cio' che ci sta sopra**, e non quanto il
  * rettangolo che contiene tutto: la matrice e' larga il triplo delle altre due
  * fasce, e un basamento rettangolare lascerebbe due terzi di grigio vuoto sotto
- * la stratigrafia e la scala. Il profilo a gradini dichiara le tre fasce da se',
- * senza etichette che in-world non ci sono.
+ * la stratigrafia e la scala. Ogni fascia ha percio' il suo ripiano, e il vuoto
+ * fra due ripiani resta vuoto: da quando i distacchi li detta l'occlusione sono
+ * larghi quanto una fascia intera, e riempirli avrebbe voluto dire un deserto
+ * grigio al posto di uno stacco.
  */
 export function plinthSpanAt(y: number): { readonly x0: number; readonly x1: number } {
   const margin = SWATCH.plinthMargin;
-  if (y < MATRIX_Y + MATRIX_DEPTH) return { x0: -margin, x1: MATRIX_WIDTH + margin };
-  if (y < SCALE_Y - SWATCH.bandGap) {
+  if (y >= SCALE_Y - margin && y < SCALE_Y + SCALE_DEPTH + margin) {
+    return { x0: SCALE_X0 - margin, x1: SCALE_X0 + SCALE_WIDTH + margin };
+  }
+  if (y >= STRATA_Y - margin && y < STRATA_Y + SWATCH.pillarSide + margin) {
     return { x0: STRATA_X0 - margin, x1: STRATA_X0 + STRATA_WIDTH + margin };
   }
-  return { x0: SCALE_X0 - margin, x1: SCALE_X0 + SCALE_WIDTH + margin };
+  if (y >= MATRIX_Y - margin && y < MATRIX_Y + MATRIX_DEPTH + margin) {
+    return { x0: -margin, x1: MATRIX_WIDTH + margin };
+  }
+  return { x0: 0, x1: 0 };
 }
 
 /**
@@ -503,11 +541,11 @@ export function swatchCellAt(x: number, y: number): SwatchCell | null {
   if (x < extent.minX || y < extent.minY) return null;
   if (x >= extent.minX + extent.sizeX || y >= extent.minY + extent.sizeY) return null;
 
-  if (y < MATRIX_Y + MATRIX_DEPTH) return matrixCellAt(x, y);
+  if (y < SCALE_Y + SCALE_DEPTH) return scaleItemAt(x);
   if (y < STRATA_Y) return null;
   if (y < STRATA_Y + SWATCH.pillarSide) return pillarAt(x);
-  if (y < SCALE_Y) return null;
-  return scaleItemAt(x);
+  if (y < MATRIX_Y) return null;
+  return matrixCellAt(x, y);
 }
 
 function matrixCellAt(x: number, y: number): SwatchCell | null {
@@ -535,12 +573,12 @@ function matrixCellAt(x: number, y: number): SwatchCell | null {
  * quello che sta facendo lo specchio.
  */
 function matrixNote(col: number, row: number): string | null {
-  if (col === 0) return 'slot 0 e\' il vuoto: nessun voxel da scrivere';
+  if (col === 0) return 'slot 0 is the void: no voxel to write';
   if (!WATER_SLOTS.includes(col)) return null;
   const water = SWATCH_WATERS.find((candidate) => candidate.kind === row);
   return water === undefined
-    ? 'acqua: i tre bit portano WATER_CLASS, non la facciata'
-    : `acqua: qui i tre bit dicono «${water.name}», non la facciata`;
+    ? 'water: the three bits carry WATER_CLASS, not the facade'
+    : `water: here the three bits say «${water.name}», not the facade`;
 }
 
 function pillarAt(x: number): SwatchCell | null {
@@ -549,7 +587,7 @@ function pillarAt(x: number): SwatchCell | null {
     if (x < rect.x0 || x >= rect.x0 + SWATCH.pillarPitch) continue;
     const biomes = BIOME_NAMES.length;
     const label = index < biomes
-      ? `${BIOME_NAMES[index]} · superficie / sottosuolo / fondo`
+      ? `${BIOME_NAMES[index]} · surface / subsoil / bedrock`
       : `water ${SWATCH_WATERS[index - biomes].name}`;
     return {
       band: SWATCH_BAND.strata,
@@ -557,8 +595,8 @@ function pillarAt(x: number): SwatchCell | null {
       col: -1,
       label,
       note: index < biomes
-        ? `ogni strato e\' alto un multiplo di ${TERRAIN.cellSize} voxel`
-        : 'la classe viaggia nei tre bit del voxel d\'acqua',
+        ? `every layer is a multiple of ${TERRAIN.cellSize} voxel tall`
+        : 'the class travels in the three bits of the water voxel',
     };
   }
   return null;
@@ -573,7 +611,7 @@ function scaleItemAt(x: number): SwatchCell | null {
       col: -1,
       label: item.label,
       note: item.kind === 'cells'
-        ? `il cubo di terreno e\' ${TERRAIN.cellSize} voxel: il contenuto no`
+        ? `the terrain cube is ${TERRAIN.cellSize} voxel: what fills it is not`
         : null,
     };
   }

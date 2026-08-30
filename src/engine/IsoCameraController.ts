@@ -120,6 +120,18 @@ export class IsoCameraController implements CameraCommands {
   private pitch = REST_PITCH;
 
   /**
+   * Quota del perno: dove sta il centro dell'inquadratura, in unita' di mondo.
+   *
+   * Parte da `targetHeight` e li' resta finche' qualcuno non inquadra una
+   * regione dichiarandone il centro verticale. Non e' un dettaglio di
+   * `frameRegion`: `clampTarget` riporta la z del target qui a ogni pan, quindi
+   * senza un campo che la ricordi la prima freccia premuta rimetterebbe
+   * l'inquadratura sul piano di terra — e su una torre di settecento voxel
+   * vorrebbe dire riperderne la punta un istante dopo averla trovata.
+   */
+  private pivotZ: number;
+
+  /**
    * true mentre si studia un soggetto invece della citta'.
    *
    * Non e' «si sta orbitando»: l'orbita e' un gesto e vale anche sulla citta'.
@@ -166,6 +178,7 @@ export class IsoCameraController implements CameraCommands {
     this.world = world;
     this.voxelSize = options.voxelSize ?? 1;
     this.targetHeight = (options.targetHeight ?? 0) * this.voxelSize;
+    this.pivotZ = this.targetHeight;
 
     this.aspect = viewportWidth / Math.max(1, viewportHeight);
     this.viewportHeight = Math.max(1, viewportHeight);
@@ -200,11 +213,28 @@ export class IsoCameraController implements CameraCommands {
   /**
    * Inquadra una regione data, in voxel. Non dipende dall'AABB corrente, quindi
    * si puo' chiamare prima che la scena sia generata.
+   *
+   * `centreZ` e' la quota **a meta'** di cio' che si inquadra, e serve a chi
+   * mostra qualcosa di alto: senza, il perno resta sul piano di terra e
+   * l'inquadratura spende meta' schermo sotto il basamento mentre la cima esce
+   * di sopra. Sul campionario erano centotrentacinque voxel di torre fuori campo
+   * — la punta delle arcologie non si vedeva da **nessuna** inquadratura, e
+   * l'altezza dichiarata di `frameRegion` era gia' quella giusta: mancava solo
+   * il centro su cui appoggiarla.
    */
-  frameRegion(centreX: number, centreY: number, spanX: number, spanY: number, spanZ: number): void {
-    // In orbita la quota del perno l'ha gia' scelta chi ha chiamato `setTarget`:
-    // riportarla a terra qui inquadrerebbe la base di una torre invece della torre.
-    const z = this.orbiting ? this.target.z : this.targetHeight;
+  frameRegion(
+    centreX: number,
+    centreY: number,
+    spanX: number,
+    spanY: number,
+    spanZ: number,
+    centreZ?: number,
+  ): void {
+    // Senza un centro dichiarato la quota resta quella di prima: in orbita l'ha
+    // scelta chi ha chiamato `setTarget`, altrove e' il perno corrente.
+    // Riportarla a terra qui inquadrerebbe la base di una torre invece della torre.
+    if (centreZ !== undefined) this.pivotZ = centreZ * this.voxelSize;
+    const z = this.orbiting && centreZ === undefined ? this.target.z : this.pivotZ;
     this.target.set(centreX * this.voxelSize, centreY * this.voxelSize, z);
 
     // Estensione a schermo della proiezione: le due direzioni di terra
@@ -444,6 +474,9 @@ export class IsoCameraController implements CameraCommands {
     this.yaw = state.yaw;
     this.pitch = state.pitch;
     this.target.set(state.target[0], state.target[1], state.target[2]);
+    // Anche la quota: un'inquadratura rimessa deve reggere il primo pan, e il
+    // perno e' proprio la parte che `clampTarget` riscrive.
+    this.pivotZ = state.target[2];
     this.viewHeight = state.viewHeight;
     this.camera.zoom = state.zoom;
 
@@ -533,9 +566,9 @@ export class IsoCameraController implements CameraCommands {
    *
    * Inverte la stessa proiezione di `panScreen`: dal pixel si passa alle unita'
    * di mondo a schermo, poi alla base (destra schermo, azimut) del piano. E' la
-   * quota `targetHeight` che conta, non l'altezza vera del terreno: la camera
-   * pana gia' su quel piano, e restare coerenti evita che rotazione e
-   * trascinamento litighino su dove sia "sotto al mouse".
+   * quota del perno che conta, non l'altezza vera del terreno: la camera pana
+   * gia' su quel piano, e restare coerenti evita che rotazione e trascinamento
+   * litighino su dove sia "sotto al mouse".
    */
   private groundUnderPointer(out: Vector3): boolean {
     const element = this.element;
@@ -552,7 +585,7 @@ export class IsoCameraController implements CameraCommands {
     out.set(
       this.target.x + dxScreen * -sin + dyScreen * -cos * this.azimuthToScreen,
       this.target.y + dxScreen * cos + dyScreen * -sin * this.azimuthToScreen,
-      this.targetHeight,
+      this.pivotZ,
     );
     return true;
   }
@@ -572,7 +605,7 @@ export class IsoCameraController implements CameraCommands {
     const sin = Math.sin(delta);
     const dx = this.pivotOffset.x;
     const dy = this.pivotOffset.y;
-    this.target.set(this.pivot.x + dx * cos - dy * sin, this.pivot.y + dx * sin + dy * cos, this.targetHeight);
+    this.target.set(this.pivot.x + dx * cos - dy * sin, this.pivot.y + dx * sin + dy * cos, this.pivotZ);
     this.clampTarget();
   }
 
@@ -586,7 +619,7 @@ export class IsoCameraController implements CameraCommands {
     const margin = PAN_MARGIN * this.voxelSize;
     this.target.x = MathUtils.clamp(this.target.x, b.minX * this.voxelSize - margin, b.maxX * this.voxelSize + margin);
     this.target.y = MathUtils.clamp(this.target.y, b.minY * this.voxelSize - margin, b.maxY * this.voxelSize + margin);
-    this.target.z = this.targetHeight;
+    this.target.z = this.pivotZ;
   }
 
   /** Ricalcola raggio del mondo, piani near/far e limiti di pan. */

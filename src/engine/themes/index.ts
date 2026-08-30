@@ -30,4 +30,20 @@ export function resolveTheme(id: string | null): Theme {
   return natural;
 }
 
+/**
+ * Le tre pastiglie che raccontano un tema in un bottone.
+ *
+ * Cielo, un colore di mezzo e uno caldo: bastano a distinguere sette temi in un
+ * colpo d'occhio, e la derivazione sta **qui** perche' la leggono in due — il
+ * menu di pausa attraverso `main.ts` e la schermata del titolo, che l'engine non
+ * lo carica affatto. Due copie divergerebbero al primo tema nuovo.
+ */
+export function themeSwatches(theme: Theme): readonly string[] {
+  return [
+    theme.atmosphere.background,
+    theme.colors[5] ?? theme.atmosphere.fog.color,
+    theme.colors[12] ?? theme.atmosphere.fog.color,
+  ];
+}
+
 export type { Atmosphere, Theme } from './theme';

@@ -32,6 +32,18 @@ export interface LotRequest {
    * sulla costa sceglie prima il bordo rivolto all'acqua.
    */
   readonly facingAt?: (x: number, y: number, footprint: number) => Facing;
+  /**
+   * true se chi chiama sa gia' che questo lato non sta da nessuna parte nel
+   * rettangolo.
+   *
+   * **La purezza resta qui.** Il modulo non tiene memoria: la memoria e' di chi
+   * conosce il mondo e sa quando smette di valere, e queste due funzioni sono la
+   * sola cosa che gli si chiede. Chi non ne ha una le lascia fuori e la ricerca
+   * e' quella di sempre.
+   */
+  readonly exhausted?: (footprint: number) => boolean;
+  /** Notifica che una scansione completa di questo lato non ha trovato niente. */
+  readonly onExhausted?: (footprint: number) => void;
 }
 
 export interface Lot {
@@ -57,10 +69,18 @@ export function placeLot(request: LotRequest): Lot | null {
   const largest = Math.min(request.footprint, width, height);
 
   for (let footprint = largest; footprint >= 1; footprint--) {
+    if (request.exhausted?.(footprint) === true) continue;
     const lot = request.edgeOnly
       ? placeAlongEdge(request, footprint)
       : placeAroundCandidate(request, footprint);
     if (lot !== null) return lot;
+    // **Solo la ricerca radiale percorre il rettangolo per intero**, e il punto
+    // eletto ne cambia soltanto l'ordine: il suo "niente" vale per la
+    // superficie, non per il candidato. La ricerca lungo il bordo salta invece
+    // di `align` in `align` su un fronte per volta, e il suo "niente" e' un
+    // fatto di quella passeggiata: dirlo al chiamante lo farebbe rinunciare a
+    // celle mai provate.
+    if (request.edgeOnly !== true) request.onExhausted?.(footprint);
   }
 
   return null;

@@ -9,6 +9,7 @@ import {
   Vector3,
 } from 'three';
 import { cloudDeckHelpers, cloudDeckUniforms } from './shaders/cloudDeck.glsl';
+import { skyGradientHelpers } from './shaders/skyGradient.glsl';
 import type { Atmosphere } from './themes/theme';
 
 /**
@@ -98,14 +99,34 @@ float fbm(vec2 p) {
   return sum;
 }
 ${cloudDeckHelpers}
+${skyGradientHelpers}
+
+/**
+ * Il raggio di vista di questo pixel, dal fondo che non ha una posizione di mondo.
+ *
+ * Si ricava dall'uInvViewProj che c'era gia' per lo strato di nuvole: due punti
+ * sulla stessa retta, uno sul piano vicino e uno sul lontano, e la loro
+ * differenza e' la direzione. Con i raggi paralleli e' la stessa per tutti i
+ * pixel — e infatti prima bastava l'uniform — e quando convergono e' cio' che fa
+ * esistere l'orizzonte.
+ *
+ * Niente apici inversi qui dentro: questo shader e' un template literal, e uno
+ * solo rompe il bundle.
+ */
+vec3 pixelRay(vec2 ndc) {
+  vec4 near = uInvViewProj * vec4(ndc, -1.0, 1.0);
+  vec4 far = uInvViewProj * vec4(ndc, 1.0, 1.0);
+  return normalize(far.xyz / far.w - near.xyz / near.w);
+}
 
 void main() {
-  // Il gradiente segue l'altezza di schermo, con la stessa curva con cui la
-  // nebbia di VoxelMaterial tinge verso il cielo: sono due implementazioni
-  // della stessa mappatura, e divergendo cucirebbero una riga proprio
-  // all'orizzonte, dove il fondo e la geometria lontana si toccano.
+  // Il gradiente e' la **stessa funzione** che usa la nebbia di VoxelMaterial:
+  // si toccano proprio all'orizzonte, dove il fondo e la geometria lontana
+  // confinano, e due copie che divergono ci cucirebbero una riga. Vive in
+  // skyGradient.glsl.ts.
   float screenY = vNdc.y * 0.5 + 0.5;
-  vec3 color = mix(uSkyHorizon, uSkyTop, smoothstep(0.0, 1.0, screenY));
+  vec3 rayDir = pixelRay(vNdc);
+  vec3 color = mix(uSkyHorizon, uSkyTop, skyGradientT(rayDir, screenY));
 
   // Le nuvole si schiacciano verso l'orizzonte: e' cio' che da' profondita' a
   // un cielo che non ha prospettiva.
@@ -134,11 +155,13 @@ void main() {
   // di attraversamento sia calcolato sullo stesso piano di mondo.
   if (uCloudAmount > 0.0) {
     // Il punto sul piano vicino della camera: da li' cloudSkyTrace scende lungo
-    // la direzione di vista fino alla lastra. Con una camera ortografica i raggi
-    // sono paralleli, quindi la direzione e' una sola per tutto il fotogramma.
+    // il raggio fino alla lastra. Con i raggi paralleli pixelRay restituisce la
+    // stessa direzione per tutti i pixel — cioe' uViewDirection, che infatti
+    // prima bastava da sola; da terra e' per pixel, ed e' quello che fa incurvare
+    // il banco verso l'orizzonte invece di scorrerlo piatto.
     vec4 nearPoint = uInvViewProj * vec4(vNdc, -1.0, 1.0);
     vec3 origin = nearPoint.xyz / nearPoint.w;
-    vec2 cloud = cloudSkyTrace(origin, uViewDirection, uTime);
+    vec2 cloud = cloudSkyTrace(origin, rayDir, uTime);
 
     if (cloudHatch(gl_FragCoord.xy) < cloud.x) {
       // Il fondo non ha una nebbia da cui prendere la tinta: senza una propria,

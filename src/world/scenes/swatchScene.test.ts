@@ -52,6 +52,7 @@ import {
   swatchSubjectAt,
   type SwatchSubject,
 } from './swatchCatalog';
+import { clearanceBeside, hiddenBehind } from './swatchOcclusion';
 import { cellDetail, countDetail } from './swatchProbe';
 
 /** Genera tutto in una volta: il budget serve solo al frame loop. */
@@ -410,12 +411,13 @@ describe('swatchScene', () => {
   });
 
   it('tiene l\'interasse sopra l\'occlusione della fila davanti', () => {
-    // In isometrica vera un voxel di quota si proietta in alto esattamente il
-    // doppio di un voxel di profondita': la fila davanti ne nasconde percio'
-    // `CELL_HEIGHT - cellPitch / 2`. Con interasse pari all'altezza sparirebbe
-    // meta' di ogni provino, ed e' il difetto che si vedeva a schermo prima che
-    // questo controllo esistesse.
-    const hidden = CELL_HEIGHT - SWATCH.cellPitch / 2;
+    // Il conto sta in `swatchOcclusion.ts`, e questa riga esiste per non
+    // rifarlo a mano: la vecchia versione lo faceva, con `CELL_HEIGHT -
+    // cellPitch / 2`, e sbagliava per difetto — confrontava due file alla stessa
+    // x invece che sulla stessa colonna di pixel, e dichiarava quattro voxel
+    // nascosti dove ce n'erano sei. La griglia era occlusa oltre il filo dello
+    // sbalzo mentre il test diceva di no.
+    const hidden = hiddenBehind(CELL_HEIGHT, SWATCH.cellPitch - CELL_FOOTPRINT);
 
     // Sotto il filo dello sbalzo puo' anche sparire: li' c'e' il podio. Da quel
     // filo in su — mensole, parapetti, fioriere, cortile, pinnacoli — dev'essere
@@ -676,13 +678,50 @@ describe('swatchScene', () => {
       }
     }
 
-    // I primi due edifici stanno in fila: il vuoto fra loro e' esattamente il
-    // minimo, e quel vuoto non appartiene a nessuno dei due.
+    // I primi due edifici stanno in fila, e il vuoto fra loro non e' il minimo
+    // dichiarato ma quello che serve a non sovrapporsi di fianco: la proiezione
+    // isometrica sposta il vicino a x maggiore verso sinistra della propria
+    // profondita', e con un vuoto piu' stretto gli finirebbe addosso. Quel vuoto
+    // non appartiene comunque a nessuno dei due.
     const first = SWATCH_BUILDINGS[0];
     const second = SWATCH_BUILDINGS[1];
-    expect(second.rect.x0).toBe(first.rect.x1 + SWATCH_ITEM_GAP);
+    expect(second.rect.x0).toBe(
+      first.rect.x1 + Math.max(SWATCH_ITEM_GAP, clearanceBeside(second.rect.y1 - second.rect.y0)),
+    );
     expect(swatchSubjectAt(first.rect.x1, first.rect.y0)).toBeNull();
     expect(swatchSubjectAt(first.rect.x0, first.rect.y0)?.id).toBe(first.id);
+  });
+
+  it('non lascia che un soggetto ne copra un altro', () => {
+    // **E' l'invariante per cui il campionario esiste.** Un soggetto coperto a
+    // meta' non si puo' giudicare, e prima che questa riga esistesse la fila
+    // delle arcologie — settecento voxel — seppelliva la matrice e la fascia di
+    // scala, mentre dentro ogni galleria una riga ne nascondeva quaranta voxel
+    // di quella dietro.
+    //
+    // Si guardano tutte le coppie che si sovrappongono in x, che sono le sole a
+    // potersi coprire: due soggetti disgiunti in x finiscono su colonne di pixel
+    // diverse, e li' l'altezza non conta. Il conto e' quello di
+    // `swatchOcclusion.ts`, e la matrice e' l'unica eccezione ammessa —
+    // dichiarata da `CELL_LEDGE`, verificata dal test dell'interasse.
+    const subjects = SWATCH_SUBJECTS;
+
+    const worst = { hidden: 0, front: '', behind: '' };
+    for (const behind of subjects) {
+      for (const front of subjects) {
+        if (front === behind || front.rect.y0 < behind.rect.y1) continue;
+        if (front.kind === 'matrix' && behind.kind === 'matrix') continue;
+        if (front.rect.x1 <= behind.rect.x0 || behind.rect.x1 <= front.rect.x0) continue;
+        const hidden = hiddenBehind(front.z1, front.rect.y0 - behind.rect.y1);
+        if (hidden > worst.hidden) {
+          worst.hidden = hidden;
+          worst.front = front.id;
+          worst.behind = behind.id;
+        }
+      }
+    }
+
+    expect(worst).toEqual({ hidden: 0, front: '', behind: '' });
   });
 
   it('l\'estensione dichiarata contiene ogni soggetto, e le gallerie sono scritte', () => {

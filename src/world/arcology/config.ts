@@ -66,23 +66,39 @@ export const ARCOLOGY = {
   /**
    * Edifici per cui la citta' si guadagna un'arcologia in piu'.
    *
-   * **La quota scala con la citta', non e' un tetto fisso.** L'arcologia e' la
-   * risposta a un quartiere saturo — `minBuilt` edifici entro `radius` — quindi
-   * il numero di arcologie ammesse cresce con gli edifici totali: uno ogni due
-   * quartieri saturi (`minBuilt * 2`). Il minimo di due resta per non lasciare
-   * senza vertice un'isola piccola (vedi `arcologyQuota` in `siting.ts`).
+   * **La quota scala con la citta' e non deve essere lei a fermarla.** Misurato
+   * su seed 4242 con cinque poli: la citta' matura occupa **quattordici
+   * isolati**, di cui sette `core`, e la quota valeva tre mentre ne nasceva una.
+   * Non stava limitando niente — a limitare erano la spaziatura e la densita' —
+   * quindi tenerla stretta significava solo avere un tetto pronto a mordere piu'
+   * tardi, quando l'isola avesse finalmente avuto i siti.
+   *
+   * A trentadue una citta' da duecentosettanta edifici ne ammette otto, cioe'
+   * piu' isolati di quanti l'isola ne offra: la quota resta il **traguardo** che
+   * la voce nomina («altri N edifici e ne apri un'altra») senza piu' essere un
+   * limite. Il minimo di due resta per non lasciare senza vertice un'isola
+   * piccola (vedi `arcologyQuota` in `siting.ts`).
    */
-  buildingsPerArcology: 128,
+  buildingsPerArcology: 32,
 
   /**
    * Blocchi di distanza minima fra un'arcologia e la successiva.
    *
-   * **E' la spaziatura, non un secondo tetto.** La quota dice *quante*; questa
-   * dice *dove*: senza, una citta' da mille edifici metterebbe le sue otto
-   * arcologie tutte nello stesso quadrante del centro. A due blocchi restano
-   * distribuite, e l'economia dei materiali continua a dettarne il ritmo.
+   * **Doveva distribuirle e le stava contando, ed e' misurato.** L'intenzione
+   * era che una citta' da mille edifici non mettesse le sue otto arcologie nello
+   * stesso quadrante. Su questa isola pero' il nucleo `core` e' un blocco
+   * **contiguo di sette isolati** — (1,3)(2,2)(2,3)(2,4)(3,2)(3,3)(3,4) — e a due
+   * blocchi il rifiuto scatta gia' fra due isolati **adiacenti**: fondata la
+   * prima, un impacchettamento greedy ne fa stare **due** su sette. La regola
+   * pensata come distribuzione era, di fatto, il tetto piu' stretto dei tre.
+   *
+   * A uno resta solo il rifiuto banale — due arcologie sullo stesso isolato —
+   * che il cursore gia' esclude per conto suo. La costante resta perche' la
+   * domanda «quanto lontane» tornera' vera su un'isola con piu' centri; a
+   * decidere *dove*, oggi, sono la fascia e la densita' costruita, che sono
+   * misure del luogo invece che di un reticolo.
    */
-  minSpacing: 2,
+  minSpacing: 1,
 
   /**
    * Raggio entro cui si contano gli edifici, per la condizione e per gli stadi.
@@ -94,8 +110,18 @@ export const ARCOLOGY = {
    */
   radius: 24,
 
-  /** Edifici entro il raggio sotto i quali qui non c'e' abbastanza citta'. */
-  minBuilt: 64,
+  /**
+   * Edifici entro il raggio sotto i quali qui non c'e' abbastanza citta'.
+   *
+   * **Sessantaquattro erano tarati su una citta' che questa isola non fa.** Il
+   * raggio e' ventiquattro colonne di Chebyshev, cioe' poco piu' di due isolati
+   * per lato, e su una citta' matura da quattordici isolati il candidato
+   * migliore oscillava fra 52 e 61: `thin` era il rifiuto piu' frequente dopo la
+   * fascia, e non perche' il quartiere non ci fosse. Quaranta e' ancora un
+   * quartiere intero — non nasce accanto a tre case — e lascia passare i nuclei
+   * che l'isola produce davvero.
+   */
+  minBuilt: 40,
 
   /**
    * Vicini che non possono piu' crescere: al tetto o inchiodati dalla citta' in quota.

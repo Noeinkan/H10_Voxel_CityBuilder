@@ -162,6 +162,71 @@ describe('placeLot — isolato pieno', () => {
   });
 });
 
+/**
+ * I due agganci con cui chi chiama puo' ricordarsi cos'e' gia' andato a vuoto.
+ *
+ * Restano fuori dal modulo perche' qui non c'e' niente che sappia quando una
+ * memoria smette di valere: `placeLot` e' puro, e la scadenza e' un fatto del
+ * mondo. Quello che si verifica qui e' solo il contratto — quando la scansione
+ * dichiara un lato esaurito, e che dichiararlo la salti davvero.
+ */
+describe('placeLot — memoria di chi chiama', () => {
+  it('dichiara esaurito il lato percorso invano, e non quello che ha trovato posto', () => {
+    const exhausted: number[] = [];
+    const lot = placeLot({
+      rect: RECT,
+      x: 15,
+      y: 24,
+      footprint: 4,
+      // Solo il lato due sta da qualche parte: il quattro e il tre si
+      // percorrono per intero senza trovare niente.
+      accepts: (_x, _y, side) => side === 2,
+      onExhausted: (side) => exhausted.push(side),
+    });
+
+    expect(lot?.footprint).toBe(2);
+    expect(exhausted).toEqual([4, 3]);
+  });
+
+  it('un lato gia dichiarato esaurito non viene piu percorso', () => {
+    const tried: number[] = [];
+    const lot = placeLot({
+      rect: RECT,
+      x: 15,
+      y: 24,
+      footprint: 4,
+      accepts: (_x, _y, side) => {
+        tried.push(side);
+        return side === 2;
+      },
+      exhausted: (side) => side > 2,
+    });
+
+    expect(lot?.footprint).toBe(2);
+    // Nessuna prova sui lati saltati: e' l'intero senso dell'aggancio.
+    expect(tried.every((side) => side === 2)).toBe(true);
+  });
+
+  it('la ricerca lungo il bordo non dichiara mai esaurito niente', () => {
+    // Salta di `align` in `align` su un fronte per volta: il suo "niente" e' un
+    // fatto di quella passeggiata, non della superficie. Dirlo al chiamante gli
+    // farebbe saltare celle mai provate.
+    const exhausted: number[] = [];
+    const lot = placeLot({
+      rect: RECT,
+      x: 15,
+      y: 24,
+      footprint: 4,
+      edgeOnly: true,
+      accepts: () => false,
+      onExhausted: (side) => exhausted.push(side),
+    });
+
+    expect(lot).toBeNull();
+    expect(exhausted).toEqual([]);
+  });
+});
+
 describe('placeLot — determinismo e posizione', () => {
   it('gli stessi argomenti danno lo stesso lotto', () => {
     for (let i = 0; i < 20; i++) {

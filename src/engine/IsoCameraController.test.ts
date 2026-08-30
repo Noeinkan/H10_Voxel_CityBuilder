@@ -189,6 +189,58 @@ describe('orbita sulla citta’', () => {
   });
 });
 
+describe('inquadratura di un soggetto alto', () => {
+  afterEach(() => {
+    delete (globalThis as Record<string, unknown>).window;
+  });
+
+  /** Una megastruttura del campionario: settecento voxel su un'impronta di quaranta. */
+  const TOWER = { span: 40, height: 700 };
+  const TIP = new Vector3(0, 0, TOWER.height);
+
+  function onTheTower(): IsoCameraController {
+    withFakeWindow();
+    const world = new VoxelWorld();
+    // Un mondo non vuoto: senza AABB `clampTarget` esce subito e il pan non
+    // proverebbe proprio la cosa che qui interessa.
+    world.setBlock(0, 0, 0, 1);
+    world.setBlock(TOWER.span, TOWER.span, TOWER.height, 1);
+    return new IsoCameraController(world, WIDTH, HEIGHT, { targetHeight: 6 });
+  }
+
+  it('senza un centro dichiarato la punta resta fuori dallo schermo', () => {
+    // Il difetto che il centro verticale risolve: l'altezza dichiarata era gia'
+    // quella giusta, ma meta' inquadratura finiva sotto il basamento.
+    const controller = onTheTower();
+    controller.frameRegion(0, 0, TOWER.span, TOWER.span, TOWER.height);
+
+    expect(pixelOf(controller.camera, TIP).y).toBeLessThan(0);
+  });
+
+  it('con il centro a meta’ altezza la punta e la base stanno insieme', () => {
+    const controller = onTheTower();
+    controller.frameRegion(0, 0, TOWER.span, TOWER.span, TOWER.height, TOWER.height / 2);
+
+    const tip = pixelOf(controller.camera, TIP);
+    const foot = pixelOf(controller.camera, new Vector3(0, 0, 0));
+    expect(tip.y).toBeGreaterThan(0);
+    expect(foot.y).toBeLessThan(HEIGHT);
+  });
+
+  it('il pan non riporta l’inquadratura sul piano di terra', () => {
+    // Il perno alzato deve sopravvivere al primo tasto premuto: rimetterlo a
+    // terra vorrebbe dire riperdere la punta un istante dopo averla trovata.
+    const controller = onTheTower();
+    controller.frameRegion(0, 0, TOWER.span, TOWER.span, TOWER.height, TOWER.height / 2);
+    const z = controller.targetPosition.z;
+
+    controller.panByPixels(30, 0);
+
+    expect(controller.targetPosition.z).toBeCloseTo(z, 9);
+    expect(pixelOf(controller.camera, TIP).y).toBeGreaterThan(0);
+  });
+});
+
 describe('orbita attorno a un soggetto', () => {
   afterEach(() => {
     delete (globalThis as Record<string, unknown>).window;

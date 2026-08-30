@@ -20,6 +20,28 @@
   consumato la possibilita' di promuoverlo. Questa e' la mezza riga che rende la
   fase quello che dice di essere: la megastruttura arriva dove la citta' non ha
   piu' niente da diventare, non dove e' semplicemente densa.
+- **La condizione si racconta, e non si ricalcola.** `arcologyReady` restituisce
+  il **primo** motivo e si ferma: e' cio' che serve a una passata che scarta un
+  isolato, e non basta a chi vuole sapere se la citta' ci sta arrivando —
+  `notCapped` non distingue «uno su due» da «zero su due», che sono due partite
+  diverse. `prospect.ts` raccoglie percio' **tutte** le condizioni mancanti con
+  `have`/`need`, leggendo le stesse soglie di `ARCOLOGY`; il driver le misura
+  sullo stesso oggetto che sta per passare al predicato — quindi senza una
+  scansione in piu' — e le espone su `Builder.stats.arcology`, da cui arrivano al
+  coach, al cassetto Citta' e alla scheda dell'isolato. Un test lega la prima
+  lacuna al rifiuto nelle due direzioni: due misure per la stessa domanda
+  divergono alla prima ritaratura, ed e' gia' successo con i due raggi di
+  `isCoastal`.
+- **Cosa ferma davvero la condizione, misurato.** Seed 4242, otto catalizzatori
+  del listino, 6000 tick: il campo satura a **255** e la soglia effettiva arriva
+  a **293** contro i 198 di `BUILDER.upgradeThreshold`, quindi la desiderabilita'
+  non e' piu' il tappo. Con il magazzino illimitato le torri raggiungono il
+  livello 26 e **un'arcologia nasce**; con l'economia vera si fermano al livello
+  **10** e `cappedNeighbours` resta zero. A tenere chiusa la condizione e'
+  `upgradeMaterialCost` — `2·(livello−6)²`, da 32 a 578 unita' per singola
+  promozione — contro una quota ammessa di 23 nel `core`. E' una taratura fra
+  `src/world/buildings/` e `src/sim/`, non un numero di questo dominio: **non si
+  abbassa `minCapped` per farla passare.**
 - **Gli usi arrivano alla simulazione uno per fascia, su colonne distinte.**
   `record.uses` e' l'elenco di cio' che `addBuilding` ha **accettato**, in ordine
   di stadio: `tally` conta quelle voci invece della `class` del record, ed e'

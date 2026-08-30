@@ -48,13 +48,14 @@ import {
  * e l'edificio da `generateBuilding`. Se campionario e citta' mostrassero due
  * vocabolari diversi, il campionario non servirebbe a giudicare la citta'.
  *
- * Tre fasce lungo +y, su un basamento continuo: la matrice palette x superficie,
- * la stratigrafia di ogni bioma piu' i tre specchi d'acqua, e la fascia di scala
- * fra cella di terreno, albero ed edificio. Piu' in la' lungo +y seguono le due
- * gallerie del catalogo — tutte le tipologie edilizie e tutti i landmark — che
- * `swatchCatalog.ts` deriva dagli stamp reali. Dove stanno le prime tre lo dice
- * `swatchLayout.ts`, dove stanno le gallerie `swatchCatalog.ts`; qui si scrive
- * soltanto.
+ * Sette fasce lungo +y, ognuna sul proprio ripiano e ordinate per quota
+ * decrescente, perche' lungo +y ci si avvicina alla camera e chi sta davanti
+ * copre chi sta dietro. In fondo le megastrutture, poi le linee evolutive, gli
+ * edifici, i landmark; davanti la base — la fascia di scala, la stratigrafia di
+ * ogni bioma con i tre specchi d'acqua, e la matrice palette x superficie. Dove
+ * stanno le ultime tre lo dice `swatchLayout.ts`, dove stanno le gallerie
+ * `swatchCatalog.ts`, quanto devono distanziarsi `swatchOcclusion.ts`; qui si
+ * scrive soltanto.
  */
 
 /** Righe di basamento scritte per passo: e' l'unita' di lavoro piu' grossa. */
@@ -154,10 +155,15 @@ class SwatchGenerator implements SceneGenerator {
    * Riserva un bordo vuoto attorno al campionario, cosi' la camera puo' panare
    * oltre il contenuto.
    *
-   * Il pan e' clampa all'AABB dei chunk esistenti: senza chunk oltre l'ingombro
-   * il giocatore resterebbe incollato alla griglia. I chunk qui riservati sono
-   * vuoti — `ensureChunk` li alloca azzerati e il mesher li scarta — quindi il
-   * costo e' solo l'AABB, non geometria o mesh.
+   * Il pan clampa all'AABB dei chunk esistenti: senza chunk oltre l'ingombro il
+   * giocatore resterebbe incollato alla griglia.
+   *
+   * **Bastano i quattro angoli**, e non e' un'astuzia: `growBounds` allarga una
+   * scatola, quindi l'AABB dipende solo dai chunk estremi e riempire l'interno
+   * non aggiunge un voxel di liberta'. La differenza si vede da quando le fasce
+   * si sono distanziate per non coprirsi: il rettangolo pieno sarebbe passato da
+   * ottocento chunk vuoti a duemila, sessantaquattro kilobyte l'uno — centoventi
+   * megabyte per non dire niente all'AABB che quattro chunk non dicano gia'.
    *
    * Il lato sud-ovest (`minX`, `minY`) usa `walkBackMargin`, il doppio: e' la
    * direzione di `W`, quella in cui ci si allontana per inquadrare per intero un
@@ -172,10 +178,8 @@ class SwatchGenerator implements SceneGenerator {
 
     // Solo il piano di terra: l'AABB in x/y cresce gia' qui, e il pan clampa su
     // minX/maxX/minY/maxY mentre la quota torna a `targetHeight`.
-    for (let cy = cy0; cy <= cy1; cy++) {
-      for (let cx = cx0; cx <= cx1; cx++) {
-        this.world.ensureChunk(cx, cy, 0);
-      }
+    for (const cy of [cy0, cy1]) {
+      for (const cx of [cx0, cx1]) this.world.ensureChunk(cx, cy, 0);
     }
   }
 

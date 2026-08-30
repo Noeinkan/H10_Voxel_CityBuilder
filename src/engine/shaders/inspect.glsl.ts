@@ -84,8 +84,12 @@ float inspectDensity(vec3 p, out float ghost) {
     // incontro il volume che si sta guardando? Se si', gli sto davanti — e gli
     // sto davanti *a lui*, non a un semipiano che gli passa vicino. E' il test a
     // lastre di lensHit() in xray.ts, riga per riga.
-    vec3 ta = (uInspectLensMin.xyz - p) / uViewDirection;
-    vec3 tb = (uInspectLensMax - p) / uViewDirection;
+    // Il raggio di questo punto, non quello del fotogramma: da terra i raggi
+    // divergono, e una lastra attraversata lungo la direzione media invece che
+    // lungo il proprio raggio spalmerebbe la lente di traverso al soggetto.
+    vec3 lensRay = viewRay(p);
+    vec3 ta = (uInspectLensMin.xyz - p) / lensRay;
+    vec3 tb = (uInspectLensMax - p) / lensRay;
     vec3 tNear = min(ta, tb);
     vec3 tFar = max(ta, tb);
     float enter = max(max(tNear.x, tNear.y), tNear.z);

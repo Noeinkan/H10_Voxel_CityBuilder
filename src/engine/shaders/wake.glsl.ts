@@ -65,7 +65,8 @@ void main() {
   vec3 up = vec3(0.0, 0.0, 1.0);
   vec3 foam = uPalette[${TRAFFIC.wake.palette}] * (faceAmbient(up, 1.0) + uSunColor * faceDirect(up));
 
-  vec3 aerial = mix(foam, aerialTint(), aerialVeil(vWorldPosition.z, vFogDepth));
+  vec3 vray = viewRay(vWorldPosition);
+  vec3 aerial = mix(foam, aerialTint(vray), aerialVeil(vWorldPosition, vFogDepth));
   gl_FragColor = vec4(aerial, alpha);
 }
 `;

@@ -521,6 +521,23 @@ export class BuildingRegistry implements ReadonlyBuildingRegistry {
    */
   private readonly reservations: PlanRect[] = [];
 
+  /**
+   * Quante volte questo registro ha **liberato** suolo.
+   *
+   * Sale a ogni prenotazione rilasciata e a ogni record tolto, e non scende mai:
+   * e' l'unico verso che interessa a chi tiene una memoria di cio' che era
+   * occupato. Chi la tiene — il `BlockMemo` della ricerca dei lotti — non ha
+   * bisogno di sapere *cosa* si e' liberato, solo che qualcosa lo ha fatto, e un
+   * contatore monotono e' la forma piu' piccola di quella domanda. Sta qui e non
+   * nel `Builder` perche' e' questo oggetto a rispondere `isOccupied`: la
+   * memoria e il fatto che invalida devono stare nella stessa casa.
+   */
+  private vacatedCount = 0;
+
+  get vacated(): number {
+    return this.vacatedCount;
+  }
+
   /** Prenota il riquadro per chi ci sta costruendo dentro. */
   reserveRect(rect: PlanRect): void {
     this.reservations.push(rect);
@@ -531,7 +548,10 @@ export class BuildingRegistry implements ReadonlyBuildingRegistry {
     const index = this.reservations.findIndex((reserved) =>
       reserved.x === rect.x && reserved.y === rect.y &&
       reserved.sizeX === rect.sizeX && reserved.sizeY === rect.sizeY);
-    if (index >= 0) this.reservations.splice(index, 1);
+    if (index >= 0) {
+      this.reservations.splice(index, 1);
+      this.vacatedCount++;
+    }
   }
 
   private isReserved(x: number, y: number): boolean {
@@ -1056,6 +1076,7 @@ export class BuildingRegistry implements ReadonlyBuildingRegistry {
     this.unindex(record);
     this.tally(record, -1);
     this.records.delete(id);
+    this.vacatedCount++;
     return true;
   }
 

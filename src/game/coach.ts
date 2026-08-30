@@ -13,8 +13,10 @@ import {
 } from '../sim';
 import { LANDMARK } from '../world/landmarks/config';
 import { AERIAL } from '../world/aerial/config';
+import type { ArcologyStanding } from '../world/arcology/prospect';
 import { SKYLINE } from '../world/skyline/config';
 import { TIER } from '../world/skyline/tiers';
+import { arcologySuggestion } from './coachArcology';
 
 /**
  * Il coach: la direzione di sviluppo che la voce suggerisce una volta che la
@@ -95,14 +97,18 @@ export interface CoachContext {
    * caso lo skyline non e' ancora un problema di catalizzatori ma di costruito.
    */
   readonly center: { readonly x: number; readonly y: number } | null;
-  readonly hasArcology: boolean;
   /** Cantiere dell'arcologia aperto. */
   readonly clearing: boolean;
   /**
-   * true quando il centro ha abbastanza costruito ma non ancora saturo: la
-   * condizione dell'arcologia e' prossima e il coach la annuncia.
+   * Quota, candidato e lacune della megastruttura, gia' misurate dal driver.
+   *
+   * **Sostituisce un booleano che nascondeva otto casi.** `arcologyNear`
+   * codificava il solo `notCapped`, quindi il coach taceva su ogni altro motivo
+   * — magazzino vuoto, isola gia' piena, isolato stretto — e su quell'unico caso
+   * diceva `notCapped` senza distinguere «uno su due» da «zero su due», che sono
+   * due partite diverse.
    */
-  readonly arcologyNear: boolean;
+  readonly arcology: ArcologyStanding;
   /** true se esiste gia' un landmark in quota (Skyport, giardino o transito da tetto). */
   readonly hasAloftLandmark: boolean;
   readonly aerial: {
@@ -145,6 +151,7 @@ const FOUNDATION = {
   observedBuildings: 6,
 } as const;
 
+
 /**
  * Tutti i suggerimenti che valgono adesso, dal piu' urgente al meno.
  *
@@ -166,8 +173,17 @@ export function coachSuggestions(context: CoachContext): readonly CoachSuggestio
   push(identitySuggestion(context));
   push(rooftopSuggestion(context));
   push(aerialSuggestion(context));
-  push(skylineSuggestion(context));
+  // **L'arcologia sta prima dello skyline, e tace fin quando non e' davvero il
+  // passo successivo.** Stava in fondo, e la voce mostra una riga sola: siccome
+  // `skylineSuggestion` e' vera per tutta la partita — la torre piu' alta resta
+  // sotto il tetto del centro fino a partita inoltrata — la riga della
+  // megastruttura non e' mai arrivata in testa, e la meccanica non aveva voce.
+  // Il silenzio se lo tiene `arcologySuggestion`, che parla solo quando il
+  // quartiere attorno al candidato c'e' gia': prima di allora «fai crescere il
+  // centro» e' esattamente cio' che lo skyline dice meglio, e i numeri della
+  // scala si leggono nel cassetto Citta' e nella scheda dell'isolato.
   push(arcologySuggestion(context));
+  push(skylineSuggestion(context));
   return out;
 }
 
@@ -518,32 +534,6 @@ function aerialSuggestion(context: CoachContext): CoachSuggestion | null {
     };
   }
   return null;
-}
-
-// --- Arcologie --------------------------------------------------------------
-
-function arcologySuggestion(context: CoachContext): CoachSuggestion | null {
-  if (context.clearing) {
-    return {
-      id: 'coach-arcology-site',
-      tier: 'arcology',
-      title: 'An arcology is being built',
-      message: 'A site is being cleared in the center: an arcology is about to rise where the city can no longer grow.',
-      highlight: null,
-      grow: null,
-    };
-  }
-  if (context.hasArcology) return null;
-  if (!context.arcologyNear) return null;
-
-  return {
-    id: 'coach-arcology',
-    tier: 'arcology',
-    title: 'An arcology is about to rise',
-    message: 'The core is dense and its towers have stopped growing — the center is saturating. To fix that, place more catalysts so their fields overlap the core, and the arcology crowns on its own.',
-    highlight: null,
-    grow: null,
-  };
 }
 
 /**

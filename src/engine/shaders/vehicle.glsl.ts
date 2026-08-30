@@ -166,14 +166,19 @@ void main() {
   vec3 light = faceAmbient(n, 1.0) + uSunColor * faceDirect(n) * shadow;
 
   vec3 shaded = detailed * light + emission * uEmissiveStrength;
-  vec3 aerial = mix(shaded, aerialTint(), aerialVeil(vWorldPosition.z, vFogDepth));
+  // Lo stesso raggio per pixel del voxel: una nave deve stare **dentro** il
+  // paesaggio, e sono queste formule condivise a tenercela. Se qui restasse la
+  // direzione per fotogramma, da terra lo scafo prenderebbe un velo diverso
+  // dalla costa che gli sta dietro.
+  vec3 vray = viewRay(vWorldPosition);
+  vec3 aerial = mix(shaded, aerialTint(vray), aerialVeil(vWorldPosition, vFogDepth));
 
   // Il banco di nuvole si compone dopo la nebbia e per sovrapposizione ordinata,
   // come sul voxel: sta fra la camera e il frammento, quindi copre invece di
   // mescolarsi. Il pixel e' o nuvola o aereo, mai una media dei due.
-  vec2 cloud = cloudTrace(vWorldPosition, uViewDirection, uTime);
+  vec2 cloud = cloudTrace(vWorldPosition, vray, uTime);
   if (cloudHatch(gl_FragCoord.xy) < cloud.x) {
-    aerial = mix(aerialTint(), uCloudTint, uCloudTintBlend) * cloudShade(cloud.y);
+    aerial = mix(aerialTint(vray), uCloudTint, uCloudTintBlend) * cloudShade(cloud.y);
   }
 
   gl_FragColor = vec4(aerial, 1.0);

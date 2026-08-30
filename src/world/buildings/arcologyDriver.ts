@@ -18,6 +18,14 @@ import {
 import { arcologyForBlock, type ArcologyFamily } from '../arcology/catalog';
 import { surveySunkenSite } from '../arcology/depth';
 import {
+  arcologyGaps,
+  arcologyStanding,
+  compareProspects,
+  sunkenGaps,
+  type ArcologyProspect,
+  type ArcologyStanding,
+} from '../arcology/prospect';
+import {
   arcologyOrigin,
   arcologySpan,
   generateArcology,
@@ -36,8 +44,6 @@ import { AERIAL_PART } from '../aerial/config';
 import type { AerialDriver } from './aerialDriver';
 import { isDryLand } from '../grading/grade';
 import { hashCoords } from '../rng';
-import { SKYLINE } from '../skyline/config';
-import { heightBonusAt, tierAt } from '../skyline/tiers';
 import { FACING, type Facing } from '../streets/streetGrid';
 import { maxStageOf } from '../landmarks/config';
 import { stageForBuildings } from '../landmarks/generate';
@@ -46,7 +52,7 @@ import type { BuildContext } from './buildContext';
 import { dirtyChunkCount, fitsChunkBudget } from './chunkBudget';
 import type { ClearanceBox, ClearanceSites } from './clearanceSite';
 import { BUILDER } from './config';
-import { allowedLevel, riseOf, skylineQueryAt } from './hierarchy';
+import { allowedLevel, riseOf } from './hierarchy';
 import { buildWorks, surveyGrade } from './siteWorks';
 import { EMPTY_STAMP, sliceStamps, stampFootprint, trimStampZ, type VoxelStamp } from './stamp';
 import { sunkenDigStamp } from './sunkenDig';
@@ -93,6 +99,43 @@ export class ArcologyDriver {
    */
   private lastRefusal: ArcologyDriverRefusal | null = null;
 
+  /**
+   * Il candidato piu' avanti fra quelli che l'ultima passata ha guardato.
+   *
+   * **E' `lastRefusal` con i numeri dentro, e serve a un lettore diverso.** Il
+   * rifiuto risponde alla domanda dell'overlay — «la condizione e'
+   * insoddisfacibile?» — e per quella un enum basta. Al giocatore serve l'altra:
+   * «ci stiamo arrivando?», che `notCapped` non distingue da `notCapped`, mentre
+   * `1/2` e `0/2` sono due partite diverse.
+   *
+   * **Non costa una scansione in piu'.** Le due misure care — `builtNeighbours`
+   * e `cappedNeighbours` — la passata le calcola gia' per ogni candidato che
+   * arriva al predicato, ed e' esattamente li' che le lacune si raccolgono: si
+   * riusa l'oggetto che sta per essere passato ad `arcologyReady`.
+   */
+  private lastProspect: ArcologyProspect | null = null;
+
+  /**
+   * Il migliore visto **in questa passata**, per non farlo peggiorare a meta'.
+   *
+   * Senza, il primo candidato del cursore sostituirebbe il migliore di un attimo
+   * prima solo per essere arrivato dopo, e la riga della voce oscillerebbe fra
+   * due isolati vicini a ogni giro. Con, una passata che non guarda niente
+   * lascia in piedi l'ultima osservazione vera — che e' la stessa semantica di
+   * `lastRefusal`, e va tenuta uguale apposta.
+   */
+  private passProspect: ArcologyProspect | null = null;
+
+  /**
+   * Quota e candidato dell'ultima passata, gia' pronti per l'interfaccia.
+   *
+   * Si tiene invece di ricavarlo su richiesta perche' `Builder.stats` e' un
+   * getter senza stato, e la quota e' una funzione degli edifici: chiederglielo
+   * a ogni ridisegno dell'HUD — a 150 ms — vorrebbe dire passare lo `SimState`
+   * fin qui per un numero che cambia ogni venti tick.
+   */
+  private lastStanding: ArcologyStanding = arcologyStanding(0, 0, null);
+
   constructor(
     private readonly ctx: BuildContext,
     private readonly clearance: ClearanceSites,
@@ -114,6 +157,14 @@ export class ArcologyDriver {
     return this.lastRefusal;
   }
 
+  get prospect(): ArcologyProspect | null {
+    return this.lastProspect;
+  }
+
+  get standing(): ArcologyStanding {
+    return this.lastStanding;
+  }
+
   /**
    * Una passata: prima si sale, poi si fonda.
    *
@@ -123,8 +174,28 @@ export class ArcologyDriver {
    * avendone diritto. Salire e' anche la cosa che il giocatore vede piu' spesso.
    */
   pass(state: SimState): SimState {
+    const next = this.walk(state);
+    // **Il referto si chiude qui e non dentro `walk`**, che ha tre uscite: e' il
+    // solo punto in cui si e' certi di passare comunque, e la quota va letta
+    // sullo stato **dopo**, perche' `declare` puo' averne cambiato i conteggi.
+    this.lastStanding = arcologyStanding(
+      this.totalBuildings(next),
+      this.ctx.registry.arcologyCount,
+      this.lastProspect,
+    );
+    return next;
+  }
+
+  private walk(state: SimState): SimState {
     let next = this.climb(state);
-    if (this.ctx.registry.arcologyCount >= arcologyQuota(this.totalBuildings(state))) return next;
+    if (this.ctx.registry.arcologyCount >= arcologyQuota(this.totalBuildings(state))) {
+      // **La quota piena non lascia la passata senza referto.** Qui non si guarda
+      // nessun isolato, quindi non c'e' un candidato da raccontare; ma e' anche
+      // il momento in cui l'unico numero che sale da solo — quanti edifici
+      // aprono la prossima — e' anche l'unico che vale la pena dire.
+      this.lastProspect = null;
+      return next;
+    }
     if (this.ctx.growth.queued >= BUILDER.maxGrowing) return next;
     next = this.found(next);
     return next;
@@ -152,6 +223,23 @@ export class ArcologyDriver {
       }
     }
     return true;
+  }
+
+  /**
+   * Su questo isolato si scava, se la roccia lo permette.
+   *
+   * **Un tiro sull'indice dell'isolato, non una regola della gerarchia**, per la
+   * ragione misurata accanto alla scelta della famiglia: ogni criterio legato al
+   * cono si e' rivelato vuoto o pieno a seconda di come il giocatore dispone i
+   * poli, e una famiglia che compare o sparisce per quello non e' una scelta di
+   * progetto. Il sale e' quello della forma, spostato di un bit: due domande
+   * diverse sullo stesso isolato non devono ricevere lo stesso tiro.
+   *
+   * Deterministico per costruzione — nessuno stato, nessun ordine di visita —
+   * come tutto il resto di questo dominio.
+   */
+  private digsHere(kx: number, ky: number): boolean {
+    return (hashCoords(this.ctx.seed ^ (ARCOLOGY.kindSalt >>> 1), kx, ky) & 1) === 1;
   }
 
   /**
@@ -271,6 +359,7 @@ export class ArcologyDriver {
     const records = [...this.ctx.registry.all];
     if (records.length === 0) return state;
 
+    this.passProspect = null;
     const budget = Math.min(ARCOLOGY.examinedPerPass, records.length);
     const seen = new Set<string>();
     const buildings = this.totalBuildings(state);
@@ -294,43 +383,42 @@ export class ArcologyDriver {
       const blockSide = Math.min(single.x1 - single.x0 + 1, single.y1 - single.y0 + 1);
       const facing = this.facingAt(singleAnchor.x, singleAnchor.y, (blockSide >> 1) + 1);
 
-      // **La gerarchia sceglie la famiglia prima della forma.** Sulla cresta del
-      // cono si sale, sulla spalla si scava: pescare dall'unione dei due
-      // cataloghi avrebbe messo un cratere sul picco e una torre dove l'altezza
-      // e' negata una volta su tre, che e' la megastruttura che ignora la
-      // ragione per cui esiste.
+      // **La roccia apre la possibilita', l'isolato sceglie fra le due.**
       //
-      // **La fascia da sola non bastava, ed e' misurato**: su una citta'
-      // cresciuta dice `core` su tutto il tessuto denso e `fringe` su tutto il
-      // resto, quindi `tier !== core` non selezionava nessun isolato che avesse
-      // anche i vicini. Il bonus di quota distingue *dentro* la fascia, che e'
-      // dove la distinzione serve (vedi `earthscraperReady`).
-      const query = skylineQueryAt(this.ctx, singleAnchor.x, singleAnchor.y, state);
-      const tier = tierAt(query);
-      const heightBonus = heightBonusAt(query);
-
-      // La profondita' entra nella **scelta** della famiglia, non solo nel
-      // rifiuto: un isolato di spalla su cui il pozzo non sta torna alla
-      // famiglia che sale invece di restare senza megastruttura. Si misura sul
-      // singolo isolato, che e' una stima prudente — il riquadro del cluster e'
-      // piu' grande e il suo massimo non puo' che salire, quindi al peggio si
-      // scarta una ricetta che sarebbe entrata. Quella vera la rimisura
-      // `earthscraperReady` sull'impronta effettiva.
-      const probe = heightBonus < SKYLINE.coneBonus
-        ? surveySunkenSite(
-          this.ctx.terrain,
-          single.x0,
-          single.y0,
-          single.x1 - single.x0 + 1,
-          single.y1 - single.y0 + 1,
-        )
-        : null;
-      const family: ArcologyFamily =
-        probe !== null && probe.dryRim && probe.depth >= MIN_SUNKEN_DEPTH ? 'sunken' : 'tall';
+      // Prima decideva la gerarchia — cresta si sale, spalla si scava — ed era
+      // una regola leggibile che la misura ha svuotata: cinque poli sovrapposti,
+      // cioe' quello che un giocatore mette davvero in un centro, riempiono il
+      // cono su **tutto** il nucleo, quindi ogni isolato candidato risultava
+      // cresta e la famiglia interrata non ha mai avuto un sito. Un'intera meta'
+      // del catalogo esisteva solo nei test.
+      //
+      // Ora la domanda e' una sola e riguarda il luogo: **c'e' roccia asciutta
+      // abbastanza per un pozzo?** Se non c'e', si sale, come sempre. Se c'e',
+      // le due famiglie sono entrambe legittime su quell'isolato e a decidere e'
+      // un tiro deterministico sul suo indice — lo stesso mestiere di
+      // `kindSalt`, che sceglie gia' la forma: cosi' su un'isola con piu' centri
+      // torri e crateri convivono invece di escludersi, e la variete' non
+      // dipende piu' da come il giocatore ha disposto i poli.
+      //
+      // La profondita' si misura sul singolo isolato, che e' una stima prudente
+      // — il riquadro del cluster e' piu' grande e il suo massimo non puo' che
+      // salire, quindi al peggio si scarta una ricetta che sarebbe entrata.
+      // Quella vera la rimisura `earthscraperReady` sull'impronta effettiva.
+      const probe = surveySunkenSite(
+        this.ctx.terrain,
+        single.x0,
+        single.y0,
+        single.x1 - single.x0 + 1,
+        single.y1 - single.y0 + 1,
+      );
+      const canDig = probe.dryRim && probe.depth >= MIN_SUNKEN_DEPTH;
+      const family: ArcologyFamily = canDig && this.digsHere(block.kx, block.ky)
+        ? 'sunken'
+        : 'tall';
 
       const pick = arcologyForBlock(
         this.ctx.seed, block.kx, block.ky, facing, family,
-        family === 'sunken' ? probe?.depth : undefined,
+        family === 'sunken' ? probe.depth : undefined,
       );
       const recipe = pick.recipe;
       const rect = pick.rect;
@@ -348,8 +436,6 @@ export class ArcologyDriver {
       const common = {
         existing: this.ctx.registry.arcologyCount,
         buildings,
-        tier,
-        heightBonus,
         blockRect: rect,
         spanX: span.sizeX,
         spanY: span.sizeY,
@@ -361,14 +447,26 @@ export class ArcologyDriver {
       const site = family === 'sunken'
         ? surveySunkenSite(this.ctx.terrain, origin.x, origin.y, span.sizeX, span.sizeY)
         : null;
-      const refusal = site === null
-        ? arcologyReady(common)
-        : earthscraperReady({
-          ...common,
-          availableDepth: site.depth,
-          requiredDepth: sunkenDepthOf(recipe),
-          dryRim: site.dryRim,
-        });
+      const dig = site === null ? null : {
+        ...common,
+        availableDepth: site.depth,
+        requiredDepth: sunkenDepthOf(recipe),
+        dryRim: site.dryRim,
+      };
+
+      // **Le lacune si raccolgono dallo stesso oggetto del predicato**, e un
+      // giro prima di leggerne il verdetto: e' la riga che garantisce che il
+      // referto e il rifiuto non possano parlare di due misure diverse. Non
+      // costa niente — `builtNeighbours` e `cappedNeighbours` sono gia' in
+      // `common`, ed erano l'unica parte cara.
+      this.consider({
+        x: anchor.x,
+        y: anchor.y,
+        kind: recipe.kind,
+        gaps: dig === null ? arcologyGaps(common) : sunkenGaps(dig),
+      });
+
+      const refusal = dig === null ? arcologyReady(common) : earthscraperReady(dig);
       if (refusal !== null) {
         // L'ultimo vince, e va bene cosi': il cursore scorre isolati vicini fra
         // loro, che sono nella stessa fascia e allo stesso stadio di crescita.
@@ -428,6 +526,22 @@ export class ArcologyDriver {
     }
 
     return state;
+  }
+
+  /**
+   * Tiene il candidato se e' piu' avanti di quelli gia' visti in questa passata.
+   *
+   * Il cursore scorre isolati vicini fra loro, quindi il primo che capita non e'
+   * il piu' rappresentativo: per il **rifiuto** vince l'ultimo — sono tutti nella
+   * stessa fascia e allo stesso stadio, quindi e' indifferente — ma per il
+   * referto no, perche' e' quello che la voce indichera' al giocatore.
+   */
+  private consider(candidate: ArcologyProspect): void {
+    if (this.passProspect !== null && compareProspects(candidate, this.passProspect) >= 0) {
+      return;
+    }
+    this.passProspect = candidate;
+    this.lastProspect = candidate;
   }
 
   /**

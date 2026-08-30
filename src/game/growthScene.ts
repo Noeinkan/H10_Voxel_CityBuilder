@@ -1119,17 +1119,16 @@ export class GrowthScene {
    */
   private buildCoachContext(): CoachContext {
     const stats = this.builder.stats;
-    const hasArcology = stats.arcologies > 0;
     const scanned = this.scanLandmarks();
     return {
       state: this.state,
       tallestLevel: this.tallestLevel(),
       center: this.densestColumn(),
-      hasArcology,
       clearing: stats.clearing > 0,
-      // La condizione dell'arcologia e' prossima quando il centro ha abbastanza
-      // costruito ma non ancora saturo: e' il rifiuto `notCapped` del driver.
-      arcologyNear: !hasArcology && stats.arcologyRefusal === 'notCapped',
+      // Quota, candidato e lacune arrivano gia' misurati dalla passata: qui non
+      // si ricalcola niente, o la voce prometterebbe una condizione che il
+      // driver poi valuta diversamente.
+      arcology: stats.arcology,
       hasAloftLandmark: scanned.hasAloftLandmark,
       aerial: {
         terraces: stats.terraces,

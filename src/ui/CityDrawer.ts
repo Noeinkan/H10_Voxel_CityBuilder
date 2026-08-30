@@ -101,6 +101,7 @@ export class CityDrawer {
       overviewSection('Trade', tradeRows(overview.trade)),
       overviewSection('City shape', factRows(overview.shape)),
       overviewSection('Infrastructure', factRows(overview.infrastructure)),
+      overviewSection('Arcologies', arcologyRows(overview.arcology)),
       overviewSection('History', historyRows(overview)),
     );
 
@@ -215,6 +216,25 @@ function tradeRows(trade: OverviewTrade): HTMLElement {
   const wrap = document.createElement('div');
   wrap.append(facts, note('Build a Port or an Airport to unlock external trade.'));
   return wrap;
+}
+
+/**
+ * La megastruttura: quanto ne ammette la citta', cosa manca, cosa porta.
+ *
+ * **La barra della quota sta in cima e la ricompensa in fondo**, e in mezzo cio'
+ * che manca: e' l'ordine in cui si legge una scala — dove sono, cosa devo fare,
+ * perche' dovrei. La nota chiude il malinteso che la meccanica si porta dietro
+ * da sempre: non c'e' un bottone, e non e' una dimenticanza.
+ */
+function arcologyRows(arcology: CityOverviewModel['arcology']): HTMLElement {
+  const panel = document.createElement('div');
+  panel.append(goalRows([arcology.goal]));
+  if (arcology.gaps.length > 0) panel.appendChild(factRows(arcology.gaps));
+  panel.appendChild(note(
+    `No tool places one: it rises on its own where a quarter has nothing left to ` +
+    `become. It carries ${arcology.reward}.`,
+  ));
+  return panel;
 }
 
 /** Mandati e decisioni: la memoria della citta', in fondo alla colonna. */

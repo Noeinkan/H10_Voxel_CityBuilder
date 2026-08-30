@@ -1,4 +1,6 @@
-import { paletteHex } from '../palette';
+// Dalla sorgente senza Three, non da `palette.ts`: e' cio' che rende la tabella
+// dei temi importabile dal titolo, che si disegna prima che il mondo esista.
+import { paletteHex } from '../paletteHex';
 import type { Theme } from './theme';
 
 /**

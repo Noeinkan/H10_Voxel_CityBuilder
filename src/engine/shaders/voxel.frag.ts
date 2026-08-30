@@ -253,6 +253,13 @@ ${inspect ? inspectGhostSurface : ''}
     }
   }
 
+  // Il raggio di vista di questo frammento, calcolato una volta e passato a tutti
+  // e cinque i posti che prima leggevano uViewDirection. Con i raggi paralleli
+  // e' ancora quello del fotogramma; da terra e' per pixel, ed e' la differenza
+  // fra un bordo che si accende dove la faccia scorcia davvero e uno che si
+  // accende su meta' schermo.
+  vec3 vray = viewRay(vWorldPosition);
+
   float shadow = sampleShadow(vWorldPosition, n);
 
   // Ambiente emisferico piu' sole avvolgente. L'ambiente non e' moltiplicato per
@@ -283,7 +290,7 @@ ${inspect ? inspectGhostSurface : ''}
   // per una faccia visibile i due sono quasi opposti, quindi il prodotto e'
   // negativo e max(0, -dot) cresce avvicinandosi al profilo. E' la meta' GLSL
   // di rimFactor in lighting.ts, e non richiede attributi ne' pass nuove.
-  float rimFacing = max(0.0, -dot(n, uViewDirection));
+  float rimFacing = max(0.0, -dot(n, vray));
   float rim = pow(1.0 - rimFacing, uRimPower);
   shaded += uRimColor * rim * uRimStrength;
 
@@ -322,7 +329,7 @@ ${inspect ? inspectGlow : ''}
     // Riflesso del sole. La normale e' +Z e la vista e' una sola direzione:
     // riflettere costa un dot e una pow, e non c'e' niente da campionare. E' la
     // firma del mare aperto — il canale la spegne, il bassofondo la smorza.
-    vec3 mirrored = reflect(uViewDirection, vec3(0.0, 0.0, 1.0));
+    vec3 mirrored = reflect(vray, vec3(0.0, 0.0, 1.0));
     float glint = pow(max(0.0, dot(mirrored, uSunDirection)), 24.0);
     float glintAmount = canal ? 0.0 : shallow ? 0.35 : 1.0;
     shaded += uSunColor * glint * uWaterGlitter * glintAmount * (0.6 + 0.4 * shimmer);
@@ -340,8 +347,8 @@ ${inspect ? inspectGlow : ''}
   // del frammento, cosi' la distanza vi si scioglie. L'integrale in quota, il
   // velo e il gradiente stanno in scene.glsl.ts, che e' anche il modo in cui i
   // mezzi si sfumano esattamente come la costa dietro di loro.
-  float fogVeil = aerialVeil(vWorldPosition.z, vFogDepth);
-  vec3 fogTint = aerialTint();
+  float fogVeil = aerialVeil(vWorldPosition, vFogDepth);
+  vec3 fogTint = aerialTint(vray);
 
 ${inspect ? inspectMelt : ''}
   vec3 aerial = mix(shaded, fogTint, fogVeil);
@@ -361,7 +368,7 @@ ${inspect ? inspectMelt : ''}
   // La faccia colpita scurisce la tinta: e' cio' che fa leggere la lastra come
   // spessa invece che larga, perche' di un prisma si vede la sommita' **e** il
   // fianco, e con lo stesso colore sarebbero una macchia sola.
-  vec2 cloud = cloudTrace(vWorldPosition, uViewDirection, uTime);
+  vec2 cloud = cloudTrace(vWorldPosition, vray, uTime);
   if (cloudHatch(gl_FragCoord.xy) < cloud.x) {
     aerial = mix(fogTint, uCloudTint, uCloudTintBlend) * cloudShade(cloud.y);
   }

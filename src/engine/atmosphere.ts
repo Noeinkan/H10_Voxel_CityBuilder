@@ -19,9 +19,15 @@
  * valutata sul solo frammento — cio' che si faceva prima — quei due volumi erano
  * indistinguibili, e la nebbia separava le distanze e basta.
  *
- * L'integrale e' in forma chiusa perche' la camera e' ortografica: tutti i raggi
- * di vista sono paralleli, quindi la quota lungo il segmento e' lineare e la media
- * di un esponenziale su un segmento e' un rapporto di due esponenziali.
+ * L'integrale e' in forma chiusa perche' **la quota e' lineare lungo il segmento**,
+ * cosa vera di qualunque raggio dritto: la media di un esponenziale su un segmento
+ * e' un rapporto di due esponenziali. Quello che l'ortografica comprava era un'altra
+ * cosa, ed e' bene non confonderle — con i raggi tutti paralleli il segmento si
+ * descrive con **un solo vettore per fotogramma**, e la sua lunghezza e' la
+ * profondita' in spazio vista. Da terra i raggi convergono nell'occhio: il
+ * segmento va dall'occhio al frammento, la sua lunghezza e' la distanza vera, e
+ * `viewDirZ` diventa una quantita' per pixel. Le formule qui sotto non se ne
+ * accorgono, perche' `viewDirZ` e `depth` sono gia' argomenti e non ipotesi.
  *
  * **Il profilo non e' troncato sotto `heightBase`.** Sarebbe l'integrale a tratti,
  * con il suo punto di attraversamento; non ne vale il prezzo. Con le altezze di
@@ -82,6 +88,36 @@ export const FOG_FLAT_EPSILON = 1e-4;
 export const FOG_LIFT_SHARPNESS = 4;
 
 /**
+ * Entro quanto cammino il velo di quota si accende, in unita' di mondo.
+ *
+ * Il velo non dipende dalla distanza — e' il suo scopo, sopravvivere allo zoom
+ * ravvicinato — ma quel «non dipende» era scritto per una camera parcheggiata a
+ * centinaia di unita' dalla scena, dove nessun frammento visibile e' mai vicino.
+ * Con l'occhio dentro la citta' la stessa riga dipinge di lattiginoso il muro a
+ * due voxel dal naso, e con `altitudeLift` intorno a 0,1 e' un decimo di velo su
+ * tutto lo schermo.
+ *
+ * Ventiquattro unita' sono la larghezza di una carreggiata piu' i suoi fronti:
+ * dentro quel raggio il velo sale da zero al suo valore, oltre non cambia niente.
+ * **Sotto ortografica e' un no-op per costruzione**, perche' li' la profondita'
+ * del frammento piu' vicino e' comunque nell'ordine delle centinaia — ed e'
+ * questo che permette di applicarlo senza un interruttore di modo.
+ */
+export const FOG_LIFT_NEAR = 24;
+
+/**
+ * Quanto in fretta il gradiente del cielo percorre l'elevazione del raggio.
+ *
+ * Serve solo quando i raggi convergono, cioe' quando il gradiente smette di
+ * seguire l'altezza di schermo e comincia a seguire l'orizzonte vero. A uno il
+ * cielo userebbe tutta la sua escursione fra il nadir e lo zenit, e guardando
+ * l'orizzonte si vedrebbe solo la meta' bassa della scala; a 1,6 satura intorno
+ * ai quaranta gradi di elevazione, che e' quanto sta in campo con un obiettivo
+ * da cinquanta.
+ */
+export const SKY_ELEVATION_GAIN = 1.6;
+
+/**
  * Media di `exp(-heightFalloff * (z - heightBase))` sul segmento fra due quote.
  *
  * E' il solo pezzo di matematica della nebbia: moltiplicata per densita' e
@@ -124,10 +160,37 @@ export function fogAmount(depth: number, height: number, viewDirZ: number, fog: 
  *
  * Non dipende dalla distanza, quindi sopravvive allo zoom ravvicinato dove
  * l'integrale e' quasi zero. Serve a questo e a nient'altro.
+ *
+ * `pathLength` non lo rende dipendente dalla distanza: lo **accende**. Vedi
+ * `FOG_LIFT_NEAR` per il perche' — in breve, «non dipende dalla distanza» era
+ * scritto quando nessun frammento visibile poteva essere vicino, e da terra
+ * possono esserlo tutti.
  */
-export function fogAltitudeLift(height: number, fog: FogModel): number {
+export function fogAltitudeLift(height: number, fog: FogModel, pathLength: number): number {
   const above = Math.max(0, height - fog.heightBase);
-  return fog.altitudeLift * Math.exp(-FOG_LIFT_SHARPNESS * fog.heightFalloff * above);
+  const near = smoothstep01(pathLength / FOG_LIFT_NEAR);
+  return fog.altitudeLift * Math.exp(-FOG_LIFT_SHARPNESS * fog.heightFalloff * above) * near;
+}
+
+/**
+ * Dove sta il gradiente del cielo per questo raggio, in 0..1.
+ *
+ * Una funzione sola per il fondo procedurale e per la nebbia, perche' si toccano
+ * proprio all'orizzonte e due copie che divergono ci cuciono una riga. Con i
+ * raggi paralleli e' l'**altezza di schermo**, e non e' una scorciatoia: tutti i
+ * raggi hanno la stessa elevazione, quindi un gradiente su di essa darebbe una
+ * tinta piatta. Quando convergono e' l'elevazione vera, ed e' li' che l'orizzonte
+ * compare.
+ */
+export function skyGradientT(rayDirZ: number, screenY: number, converging: boolean): number {
+  if (!converging) return smoothstep01(screenY);
+  const elevation = clamp01(rayDirZ * SKY_ELEVATION_GAIN * 0.5 + 0.5);
+  return smoothstep01(elevation);
+}
+
+function smoothstep01(t: number): number {
+  const x = clamp01(t);
+  return x * x * (3 - 2 * x);
 }
 
 /**
@@ -138,7 +201,7 @@ export function fogAltitudeLift(height: number, fog: FogModel): number {
  */
 export function fogVeil(depth: number, height: number, viewDirZ: number, fog: FogModel): number {
   const amount = fogAmount(depth, height, viewDirZ, fog);
-  const lift = fogAltitudeLift(height, fog);
+  const lift = fogAltitudeLift(height, fog, depth);
   return 1 - (1 - amount) * (1 - clamp01(lift));
 }
 

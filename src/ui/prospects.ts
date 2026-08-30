@@ -1,5 +1,6 @@
 import {
   BUILDING_CLASS,
+  CLASS_LABELS,
   catalystById,
   districtPairingsOf,
   dominantUse,
@@ -11,6 +12,12 @@ import {
 import { bestProspectOf, type TypologyGap } from '../world/buildings/typology';
 import { unlocksFor } from '../world/buildings/unlocks';
 import { landmarkOf } from '../world/landmarks/config';
+import {
+  ARCOLOGY_PROMISE,
+  arcologyUses,
+  type ArcologyGap,
+  type ArcologyStanding,
+} from '../world/arcology/prospect';
 import type { ColumnInfo } from '../game/selection';
 import type { SelectionRow } from './SelectionPanelModel';
 
@@ -236,4 +243,99 @@ export function prospectRows(column: ColumnInfo): readonly SelectionRow[] {
   }
 
   return rows;
+}
+
+/**
+ * Una condizione della megastruttura, come la si legge.
+ *
+ * **Neutra di proposito**, cioe' ne' `SelectionRow` ne' `OverviewFact`: le stesse
+ * righe servono al cassetto Citta' e alla scheda dell'isolato, che hanno due
+ * tipi diversi, e duplicare le parole in due file e' il modo sicuro di farle
+ * divergere alla prima ritaratura — che e' esattamente cio' che questo file
+ * esiste per evitare fra il tooltip e la scheda.
+ */
+export interface ArcologyLine {
+  readonly label: string;
+  readonly value: string;
+}
+
+/** L'etichetta di una lacuna: cosa manca, non perche' no. */
+const ARCOLOGY_LABELS: Readonly<Record<ArcologyGap['refusal'], string>> = {
+  enough: 'Next one at',
+  tooShallow: 'Bedrock',
+  blockTooSmall: 'Block size',
+  thin: 'Buildings in range',
+  notCapped: 'Towers topped out',
+  // Non escono mai da `arcologyGaps` — li produce il driver sul luogo, non il
+  // predicato — ma il tipo li elenca, e un ramo che manca sarebbe un `undefined`
+  // stampato a schermo invece di un errore di compilazione.
+  blocked: 'Site',
+  site: 'Site',
+};
+
+/**
+ * Il valore di una lacuna: `have` e `need` dove misurano, una frase dove no.
+ *
+ * Le domande booleane non prendono `0 of 1`, per la ragione gia' scritta accanto
+ * ad `ArcologyGap`: un rapporto che non si muove mai insegna a saltare la riga.
+ */
+function arcologyValue(gap: ArcologyGap): string {
+  if (gap.have !== undefined && gap.need !== undefined) {
+    return `${gap.have} of ${gap.need}`;
+  }
+  switch (gap.refusal) {
+    case 'tooShallow':
+      return 'water reaches too close to dig';
+    default:
+      return 'the site refuses';
+  }
+}
+
+/**
+ * Cosa manca alla prossima megastruttura, riga per riga.
+ *
+ * Vuoto dove non c'e' niente di vero da dire — nessun candidato osservato —
+ * invece di una riga che dice «non ancora» per l'intera partita: e' la stessa
+ * scelta di `prospectRows`, dove il vuoto e' un fatto.
+ */
+export function arcologyLines(standing: ArcologyStanding): readonly ArcologyLine[] {
+  if (standing.existing >= standing.allowed) {
+    return [{
+      label: ARCOLOGY_LABELS.enough,
+      value: `${standing.buildings} of ${standing.nextQuotaAt} buildings`,
+    }];
+  }
+  const prospect = standing.prospect;
+  if (prospect === null) return [];
+  return prospect.gaps.map((gap) => ({
+    label: ARCOLOGY_LABELS[gap.refusal],
+    value: arcologyValue(gap),
+  }));
+}
+
+/**
+ * Cosa si guadagna quando arriva, in una riga.
+ *
+ * **E' l'anello che mancava**: la scala diceva quanto lavoro restava senza mai
+ * dire per che cosa. Gli usi arrivano dal catalogo — dalla ricetta del candidato
+ * se ce n'e' uno, dalla piu' ricca altrimenti — quindi la promessa non puo'
+ * scollarsi da cio' che la struttura poi ospita davvero.
+ */
+export function arcologyReward(standing: ArcologyStanding): string {
+  const kind = standing.prospect?.kind;
+  const uses = kind === undefined ? ARCOLOGY_PROMISE.uses : arcologyUses(kind);
+  const names = conjoin(uses.map((use) => CLASS_LABELS[use].toLowerCase()));
+  return `${names} in one structure, each on its own level`;
+}
+
+/**
+ * «a, b and c»: l'elenco per intero, non troncato come `nameList`.
+ *
+ * Gli usi sono quattro per contratto e si nominano tutti: qui la coda «and 1
+ * more» di `nameList` nasconderebbe proprio la quarta quota, cioe' la meta' del
+ * motivo per cui una megastruttura non e' una torre grossa.
+ */
+function conjoin(names: readonly string[]): string {
+  if (names.length <= 1) return names[0] ?? '';
+  return `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
 }

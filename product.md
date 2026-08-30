@@ -137,7 +137,7 @@ continuo in quota fra due isolati diversi. Il dettaglio, con i suoi gate, sta in
 
 ## Disponibilità e licenza
 
-Copyright © 2026 Andrea Aita (Noeinkan). Tutti i diritti riservati.
+Copyright © 2026 Noein Solutions. Tutti i diritti riservati.
 
 Il progetto **non è open source**: il codice è visibile per essere mostrato, non
 per essere riusato. Provarlo in locale sì; copie, opere derivate, port,

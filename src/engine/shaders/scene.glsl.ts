@@ -1,5 +1,6 @@
 import { PALETTE_SIZE } from '../palette';
-import { FOG_FLAT_EPSILON, FOG_LIFT_SHARPNESS } from '../atmosphere';
+import { FOG_FLAT_EPSILON, FOG_LIFT_NEAR, FOG_LIFT_SHARPNESS } from '../atmosphere';
+import { skyGradientHelpers } from './skyGradient.glsl';
 
 /**
  * Cio' che i materiali di scena condividono, in GLSL.
@@ -84,6 +85,24 @@ float hash31(vec3 p) {
   return fract((p.x + p.y) * p.z);
 }
 
+${skyGradientHelpers}
+
+/**
+ * Il raggio di vista di **questo** frammento.
+ *
+ * Con i raggi paralleli e' quello del fotogramma, gia' pronto nell'uniform;
+ * quando convergono va dall'occhio al punto, ed e' una quantita' per pixel. Il
+ * mix sceglie e la normalize chiude: con isOrthographic a 1 il risultato e'
+ * uViewDirection normalizzato, cioe' se stesso, e la vista che c'era prima non
+ * si accorge di niente.
+ *
+ * Niente apici inversi in questi commenti: il fragment shader e' composto in un
+ * template literal, e uno solo rompe il **bundle** invece del rendering.
+ */
+vec3 viewRay(vec3 world) {
+  return normalize(mix(world - cameraPosition, uViewDirection, isOrthographic ? 1.0 : 0.0));
+}
+
 /**
  * Quanta prospettiva aerea sta fra la camera e questo punto, 0..1.
  *
@@ -91,41 +110,65 @@ float hash31(vec3 p) {
  * raggio**, non valutata sul frammento: e' cio' che separa le quote invece delle
  * sole distanze, perche' il raggio che arriva in cima a una torre ha attraversato
  * aria rarefatta e quello che arriva in strada no. L'integrale e' in forma chiusa
- * perche' la camera e' ortografica.
+ * perche' la quota e' lineare lungo il segmento, cosa vera di qualunque raggio
+ * dritto.
+ *
+ * Cio' che cambia fra le due proiezioni e' solo **come si descrive il segmento**.
+ * Con i raggi paralleli la lunghezza e' la profondita' in spazio vista e la
+ * direzione e' una per fotogramma; convergendo, il segmento va dall'occhio al
+ * frammento, quindi la lunghezza e' la distanza vera e la direzione e' per pixel.
+ * Due rami e la formula che segue non se ne accorge — ed e' anche il motivo per
+ * cui la vista isometrica resta identica per costruzione: con isOrthographic a
+ * 1 si prendono esattamente le due quantita' di prima.
  *
  * Il secondo termine e' il velo di quota, la parte dichiaratamente non fisica:
  * non dipende dalla distanza, quindi sopravvive allo zoom ravvicinato dove
  * l'integrale e' quasi zero, e decade piu' in fretta della nebbia o velerebbe
- * anche i tetti. I due si compongono per **trasmittanza** e non per somma: due
- * veli in fila non superano l'opacita' piena.
+ * anche i tetti. Si **accende** pero' lungo i primi voxel di cammino: da terra
+ * l'occhio sta dentro lo strato, e senza la rampa il muro a due voxel dal naso
+ * uscirebbe lattiginoso quanto l'orizzonte. Sotto ortografica la rampa e' un
+ * no-op, perche' li' la camera e' parcheggiata a centinaia di unita'.
+ *
+ * I due si compongono per **trasmittanza** e non per somma: due veli in fila non
+ * superano l'opacita' piena.
  */
-float aerialVeil(float height, float depth) {
-  float entry = uFogHeightFalloff * (height - uViewDirection.z * depth - uFogHeightBase);
-  float leave = uFogHeightFalloff * (height - uFogHeightBase);
+float aerialVeil(vec3 world, float depth) {
+  vec3 toEye = world - cameraPosition;
+  float span3 = length(toEye);
+  float path = isOrthographic ? depth : span3;
+  float dirZ = isOrthographic ? uViewDirection.z : toEye.z / max(span3, 1e-6);
+
+  float entry = uFogHeightFalloff * (world.z - dirZ * path - uFogHeightBase);
+  float leave = uFogHeightFalloff * (world.z - uFogHeightBase);
   float span = leave - entry;
   // Raggio quasi orizzontale: il rapporto degenera in 0/0 e vale il suo limite.
   float shape = abs(span) < ${FOG_FLAT_EPSILON.toFixed(6)}
     ? exp(-entry)
     : (exp(-entry) - exp(-leave)) / span;
-  float amount = 1.0 - exp(-uFogDensity * depth * shape);
+  float amount = 1.0 - exp(-uFogDensity * path * shape);
   float lift = uFogAltitudeLift *
-    exp(-${FOG_LIFT_SHARPNESS.toFixed(1)} * uFogHeightFalloff * max(0.0, height - uFogHeightBase));
+    exp(-${FOG_LIFT_SHARPNESS.toFixed(1)} * uFogHeightFalloff * max(0.0, world.z - uFogHeightBase)) *
+    smoothstep(0.0, ${FOG_LIFT_NEAR.toFixed(1)}, path);
   return 1.0 - (1.0 - clamp(amount, 0.0, 1.0)) * (1.0 - clamp(lift, 0.0, 1.0));
 }
 
 /**
- * La tinta in cui la distanza si scioglie, alla quota di schermo del frammento.
+ * La tinta in cui la distanza si scioglie, lungo il raggio del frammento.
  *
- * Il gradiente e la **stessa curva** di SkyBackground: erano due
- * implementazioni della stessa mappatura, e divergendo cucivano una riga proprio
- * all'orizzonte, dove il cielo e la nebbia si toccano. Se ne tocchi una tocca
- * anche l'altra.
+ * Il gradiente e' la **stessa funzione** di SkyBackground e non piu' una seconda
+ * copia con un avvertimento sopra: si toccano proprio all'orizzonte, dove il
+ * cielo e la nebbia confinano, e due implementazioni che divergono ci cuciono
+ * una riga. Vive in skyGradient.glsl.ts.
+ *
+ * Anche l'alone verso il sole passa al raggio per pixel: con una direzione sola
+ * per fotogramma, da terra, tutto lo schermo si accenderebbe o niente — mentre
+ * cio' che si vuole vedere e' l'aria che si scalda **dalla parte del sole**.
  */
-vec3 aerialTint() {
-  float screenY = smoothstep(0.0, 1.0, clamp(gl_FragCoord.y / max(1.0, uResolution.y), 0.0, 1.0));
-  vec3 skyTint = mix(uSkyHorizonColor, uSkyTopColor, screenY);
+vec3 aerialTint(vec3 rayDir) {
+  float t = skyGradientT(rayDir, gl_FragCoord.y / max(1.0, uResolution.y));
+  vec3 skyTint = mix(uSkyHorizonColor, uSkyTopColor, t);
   vec3 tint = mix(uFogColor, skyTint, uFogSkyBlend);
-  float towardSun = max(0.0, dot(uViewDirection, uSunDirection));
+  float towardSun = max(0.0, dot(rayDir, uSunDirection));
   return mix(tint, uSunColor, pow(towardSun, 4.0) * uFogSunTint);
 }
 
