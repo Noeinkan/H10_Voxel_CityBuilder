@@ -1,15 +1,6 @@
 import { MathUtils, PerspectiveCamera, Vector3 } from 'three';
-import { CameraInput, type CameraCommands } from '../CameraInput';
-import {
-  FOV_STEP,
-  MAX_FOV,
-  MAX_PITCH,
-  MIN_FOV,
-  MIN_PITCH,
-  REST_FOV,
-  STREET_NEAR,
-  YAW_STEP,
-} from './streetEye';
+import { StreetLook, type StreetLookCommands } from './StreetLook';
+import { FOV_STEP, MAX_FOV, MAX_PITCH, MIN_FOV, MIN_PITCH, REST_FOV, STREET_NEAR } from './streetEye';
 
 /**
  * La camera all'altezza degli occhi: prospettica, ferma, con la sola testa libera.
@@ -25,12 +16,12 @@ import {
  * gradi, nessun target da vincolare all'AABB. Non e' una manovra, e' un'altra
  * camera con i vestiti della prima.
  *
- * **Cio' che invece si riusa per intero e' l'input**, e non e' un risparmio ma la
- * cosa giusta: `CameraInput` sceglie fra girare e panare guardando
- * `commands.orbitMode`, e dichiarandolo `true` il trascinamento gira su ogni
- * tasto e `panByPixels` non viene mai chiamato. E' la stessa frase che quel file
- * scrive per lo studio di un soggetto — «li' non c'e' un pan da cui distinguerlo»
- * — e a terra non c'e' nemmeno.
+ * Anche l'input e' suo, e per un po' non lo e' stato: dichiarando `orbitMode`
+ * questa camera otteneva gratis il drag-per-guardare di `CameraInput`. Ma tenere
+ * premuto per guardarsi attorno e' il gesto di chi rigira un modellino, non di
+ * chi sta in piedi in una strada. Cambiato il gesto — il mouse gira la testa
+ * senza premere niente — quella parentela non aveva piu' niente da dare, e il
+ * come sta in `StreetLook`.
  *
  * Dove si possa stare non lo decide questo file: lo decide `streetEye.ts`, che e'
  * puro e non conosce Three. Qui c'e' solo come la camera guarda.
@@ -49,13 +40,21 @@ export interface StreetCameraOptions {
    * campo visivo, piu' il culling per chunk che gira gia' sul frustum.
    */
   readonly far?: number;
+  /**
+   * Avvisa quando lo sguardo si aggancia o si sgancia dal puntatore.
+   *
+   * Serve a chi disegna: perso il lock — `Esc`, un alt-tab — la testa si ferma e
+   * il giocatore va avvisato che un clic la riprende, altrimenti muove il mouse
+   * e non succede niente.
+   */
+  readonly onLockChange?: (locked: boolean) => void;
 }
 
-export class StreetCameraController implements CameraCommands {
+export class StreetCameraController implements StreetLookCommands {
   readonly camera: PerspectiveCamera;
 
   private readonly voxelSize: number;
-  private readonly input = new CameraInput(this);
+  private readonly input: StreetLook;
 
   /** Il punto d'occhio, in coordinate di mondo. Lo sposta solo `setEye`. */
   private readonly eye = new Vector3();
@@ -67,6 +66,7 @@ export class StreetCameraController implements CameraCommands {
 
   constructor(viewportWidth: number, viewportHeight: number, options: StreetCameraOptions = {}) {
     this.voxelSize = options.voxelSize ?? 1;
+    this.input = new StreetLook(this, options.onLockChange ?? (() => {}));
     const aspect = viewportWidth / Math.max(1, viewportHeight);
 
     this.camera = new PerspectiveCamera(
@@ -108,12 +108,9 @@ export class StreetCameraController implements CameraCommands {
     this.applyTransform();
   }
 
-  /**
-   * Sempre `true`, ed e' l'unica riga che serve perche' `CameraInput` faccia la
-   * cosa giusta: ogni tasto del mouse gira, nessuno pana.
-   */
-  get orbitMode(): boolean {
-    return true;
+  /** Vero mentre il puntatore e' agganciato e il mouse sta girando la testa. */
+  get looking(): boolean {
+    return this.input.locked;
   }
 
   /**
@@ -128,14 +125,14 @@ export class StreetCameraController implements CameraCommands {
    * che di la' l'orizzonte era vietato e qui e' il punto di partenza.
    *
    * **Il verso verticale e' opposto a quello dell'orbita, e non per svista.**
-   * `CameraInput` passa `dPitch` con il segno dei pixel perche' girando attorno
-   * a un soggetto si tira il *soggetto*: tirando verso il basso ci si aspetta di
-   * salire sopra di lui. Qui non si gira attorno a niente — si muove una testa —
-   * e la stessa regola diventa il contrario di quello che la mano si aspetta:
-   * trascinando in basso si guarda **in basso**. Non e' una preferenza sui gusti
-   * di chi gioca, e' che i due gesti hanno due oggetti diversi.
+   * `CameraInput` passa il verticale con il segno dei pixel perche' girando
+   * attorno a un soggetto si tira il *soggetto*: verso il basso vuol dire
+   * salirgli sopra. Qui non si gira attorno a niente — si muove una testa — e la
+   * stessa regola diventa il contrario di quello che la mano si aspetta: mouse
+   * in basso, si guarda **in basso**. Non e' un gusto, e' che i due gesti hanno
+   * due oggetti diversi.
    */
-  orbitBy(dYaw: number, dPitch: number): void {
+  look(dYaw: number, dPitch: number): void {
     // La sensibilita' segue il campo visivo perche' cio' che si percepisce non
     // sono i gradi girati ma i **pixel** percorsi dalla scena: a campo stretto
     // lo stesso angolo spazza piu' schermo, e senza la correzione mirare col
@@ -149,17 +146,6 @@ export class StreetCameraController implements CameraCommands {
   }
 
   /**
-   * `Q`/`E`: un passo di rotazione fisso.
-   *
-   * Non c'e' nessuna griglia di scatti a cui agganciarsi — quella teneva la
-   * citta' sulle sue diagonali, e da terra non significa niente — quindi e' un
-   * passo e basta, come lo e' in orbita.
-   */
-  rotate(direction: number): void {
-    this.orbitBy((direction > 0 ? 1 : -1) * YAW_STEP, 0);
-  }
-
-  /**
    * La rotella cambia il **campo visivo**, non la posizione.
    *
    * Non e' lo zoom dell'ortografica travestito: li' si stringe l'inquadratura
@@ -167,7 +153,7 @@ export class StreetCameraController implements CameraCommands {
    * e' l'effetto teleobiettivo, e a campo molto stretto si torna a vedere la
    * citta' come la vedeva la camera da cui si e' appena scesi.
    */
-  zoomBy(steps: number): void {
+  zoomFov(steps: number): void {
     const next = this.camera.fov * Math.pow(FOV_STEP, -steps);
     this.camera.fov = MathUtils.clamp(next, MIN_FOV, MAX_FOV);
     this.camera.updateProjectionMatrix();
@@ -182,27 +168,10 @@ export class StreetCameraController implements CameraCommands {
    * di `Esc`, non di questo tasto: `F` a terra deve poter raddrizzare senza
    * buttare via il punto in cui ci si e' messi.
    */
-  frameAll(): void {
+  levelHorizon(): void {
     this.pitch = 0;
     this.applyTransform();
   }
-
-  /**
-   * Irraggiungibile finche' `orbitMode` e' `true`, ed e' per questo che c'e': la
-   * firma di `CameraCommands` la pretende, e un corpo vuoto senza spiegazione
-   * sembrerebbe una dimenticanza invece di una conseguenza.
-   */
-  panByPixels(): void {}
-
-  /**
-   * Il punto di terra sotto al cursore serviva a ruotare attorno a cio' che si
-   * guarda; qui non si ruota attorno a niente e non c'e' un piano di terra su
-   * cui invertire la proiezione. Il cursore lo legge chi posa l'occhio, e lo
-   * legge dagli eventi, non da qui.
-   */
-  setHover(): void {}
-
-  clearHover(): void {}
 
   get fov(): number {
     return this.camera.fov;

@@ -82,13 +82,6 @@ export interface GameHudHandlers {
   /** Butta via la partita e ne apre una su un'altra isola. */
   readonly onNewGame: (seed: number) => void;
   /**
-   * Riapre l'autosalvataggio dal menu d'ingresso.
-   *
-   * Non riparte piu' da solo: la porta d'ingresso e' il menu, e riprendere e'
-   * una delle cose che si scelgono li' dentro invece di succedere e basta.
-   */
-  readonly onContinue: () => void;
-  /**
    * Un seed sorteggiato.
    *
    * Il tiro sta nella radice e non qui: e' l'unico non deterministico del gioco
@@ -162,6 +155,9 @@ export class GameHud {
   private readonly bar: ResourceBar;
   private readonly dock: BuildDock;
   private readonly toast: HTMLElement;
+  /** La sola cosa che resta a schermo mentre si guarda da terra. */
+  private readonly streetBar: HTMLElement;
+  private readonly streetBarHint: HTMLElement;
   /** Il contenitore del lato comandi: dock sopra, targa della vista in fondo. */
   private readonly railLeft: HTMLElement;
   private readonly cityDrawer: CityDrawer;
@@ -238,6 +234,19 @@ export class GameHud {
       onClouds: (on) => handlers.onClouds(on),
     });
 
+    this.streetBar = document.createElement('aside');
+    this.streetBar.className = 'street-bar hud-surface';
+    this.streetBar.hidden = true;
+    this.streetBar.setAttribute('aria-label', 'Street view');
+    this.streetBar.setAttribute('aria-live', 'polite');
+    const streetEyebrow = document.createElement('span');
+    streetEyebrow.className = 'street-bar-eyebrow';
+    streetEyebrow.textContent = 'Street view';
+    this.streetBarHint = document.createElement('p');
+    this.streetBarHint.className = 'street-bar-hint';
+    this.streetBar.append(streetEyebrow, this.streetBarHint);
+    this.root.appendChild(this.streetBar);
+
     this.toast = document.createElement('div');
     this.toast.className = 'hud-toast';
     this.toast.setAttribute('role', 'status');
@@ -296,7 +305,6 @@ export class GameHud {
       onSwatch: () => handlers.onSwatch(),
       onStart: (seed) => handlers.onNewGame(seed),
       onRoll: () => handlers.onRollSeed(),
-      onContinue: () => handlers.onContinue(),
       onResume: () => this.closeMenu(),
     }, themes);
     this.root.appendChild(this.mainMenu.root);
@@ -629,21 +637,6 @@ export class GameHud {
     else this.openMenu();
   }
 
-  /**
-   * Il menu come porta d'ingresso, all'avvio.
-   *
-   * Si apre su *New game* e non sui salvataggi: qui non si sta gestendo una
-   * partita, si sta scegliendo quale giocare, e l'isola che sta nascendo dietro
-   * il velo e' gia' la risposta piu' probabile — il seed sta scritto al piede e
-   * il bottone grande dice **Play**. Chi vuole la citta' di ieri ha Continue
-   * sopra le sezioni, con dentro quanto era grande e quando l'ha lasciata.
-   */
-  openMenuAtStart(autosave: SlotInfo | null): void {
-    this.mainMenu.setContinue(autosave);
-    this.dock.setExpanded('menu', true);
-    this.mainMenu.show('new', false);
-  }
-
   /** L'elenco degli slot, gia' letto da chi tiene lo storage. */
   setSaves(slots: readonly SlotInfo[]): void {
     this.mainMenu.setSaves(slots);
@@ -747,6 +740,27 @@ export class GameHud {
    */
   setSelectionOpen(open: boolean): void {
     this.selectionOpen = open;
+  }
+
+  /**
+   * L'interfaccia si toglie di mezzo, e resta una riga sola.
+   *
+   * A terra non c'e' niente da comandare — non si costruisce, non si sceglie, non
+   * si legge un bilancio — e ogni pannello a schermo e' una cosa che non
+   * risponde: quella e' una vista, non un modo di gioco con altri strumenti.
+   * Sparisce tutto tranne una targa che dice come si esce, perche' un'uscita che
+   * non si vede, da una vista che non ha nemmeno un cursore, e' una trappola.
+   *
+   * Non si spegne la sezione intera con `hidden`: i pannelli tengono uno stato —
+   * quale cassetto era aperto, quale strumento in mano — e distruggerlo per poi
+   * rimetterlo sarebbe un secondo posto da tenere allineato al primo. Basta una
+   * classe, e cio' che c'era torna dov'era.
+   */
+  setStreetView(active: boolean, hint: string | null): void {
+    this.root.classList.toggle('game-hud--street', active);
+    this.streetBar.hidden = !active;
+    if (active) this.dismissPanels();
+    if (hint !== null) this.streetBarHint.textContent = hint;
   }
 
   handleEscape(): boolean {
