@@ -208,6 +208,10 @@ describe('catalogo sul reticolo reale', () => {
       'triSpan',
       'steppedBar',
       'courtCascade',
+      // La famiglia interrata e' **tutta** multi-blocco: la sua scala sta in
+      // pianta perche' in verticale il tetto lo mette la roccia, non la ricetta.
+      'invertedPyramid',
+      'sunkenCourt',
       'craterRing',
     ]));
     for (const recipe of multi) {

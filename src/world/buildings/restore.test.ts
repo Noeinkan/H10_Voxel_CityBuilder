@@ -137,8 +137,11 @@ describe('caricamento di un earthscraper', () => {
   function loadPit(): { world: VoxelWorld; record: BuildingRecord } {
     const world = new VoxelWorld();
     const terrain = testTerrain({ chunksX: 8, chunksY: 8, height: TERRAIN_HEIGHT });
-    for (let y = 20; y < 80; y++) {
-      for (let x = 20; x < 80; x++) world.fillColumn(x, y, 0, TERRAIN_HEIGHT, ROCK);
+    // La roccia deve debordare dall'impronta, che da quando la corte e'
+    // multi-blocco copre 48 colonne per lato: senza il margine i controlli «fuori
+    // dall'impronta» leggerebbero il vuoto invece del terreno intatto.
+    for (let y = 20; y < 100; y++) {
+      for (let x = 20; x < 100; x++) world.fillColumn(x, y, 0, TERRAIN_HEIGHT, ROCK);
     }
 
     const loaded = new Builder(world, terrain, SEED);
@@ -151,8 +154,8 @@ describe('caricamento di un earthscraper', () => {
   it('riapre il pozzo: la colonna centrale torna vuota fino al cielo', () => {
     const { world, record } = loadPit();
     // Il centro dell'ingombro cade nel vuoto piu' profondo della corte.
-    const cx = record.x + 10;
-    const cy = record.y + 10;
+    const cx = record.x + 24;
+    const cy = record.y + 24;
 
     for (let z = BASE_Z + 1; z < TERRAIN_HEIGHT; z++) {
       expect(world.getBlock(cx, cy, z), `roccia rimasta a ${cx},${cy},${z}`).toBe(0);
@@ -175,8 +178,9 @@ describe('caricamento di un earthscraper', () => {
     // stesso confine delle prime due: l'impronta della struttura, mai oltre.
     const { world, record } = loadPit();
     for (let z = BASE_Z; z < TERRAIN_HEIGHT; z++) {
-      expect(world.getBlock(record.x - 1, record.y + 10, z), `fuori a ovest, z=${z}`).not.toBe(0);
-      expect(world.getBlock(record.x + 20, record.y + 10, z), `fuori a est, z=${z}`).not.toBe(0);
+      const east = record.x + record.footprint;
+      expect(world.getBlock(record.x - 1, record.y + 24, z), `fuori a ovest, z=${z}`).not.toBe(0);
+      expect(world.getBlock(east, record.y + 24, z), `fuori a est, z=${z}`).not.toBe(0);
     }
   });
 
