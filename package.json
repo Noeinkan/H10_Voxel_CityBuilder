@@ -27,6 +27,7 @@
     "test:related:all": "vitest related --run --reporter=dot",
     "test:watch": "vitest",
     "test:locate": "node --test scripts/project-locate.test.ts",
+    "test:docs": "node --test scripts/project-locate.test.ts scripts/docs-merge.test.ts",
     "bench": "vitest bench --run"
   },
   "dependencies": {

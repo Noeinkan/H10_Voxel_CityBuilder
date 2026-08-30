@@ -15,14 +15,17 @@ Questo file contiene soltanto regole globali. Le eccezioni di
   rendering; `src/sim/`: simulazione pura; `src/game/`: ciclo e regole;
   `src/ui/`: HUD e debug.
 - `docs/PROJECT_MAP.md`: dipendenze, entry point e posizione delle costanti.
-- `PROJECT_INDEX.md`: responsabilita' ed export file per file.
+- `PROJECT_INDEX.md`: radice del Project Index — dipendenze, file di radice,
+  documentazione, instradamento. Le righe file per file stanno nelle schede di
+  `docs/index/`, una per area; `npm run locate` le cerca tutte insieme.
 
 ## Project Index prima di cercare
 
-- Prima di esplorare, interroga `PROJECT_INDEX.md` con
+- Prima di esplorare, interroga il Project Index con
   `npm run locate -- <termine>`; apri soltanto le righe e i file pertinenti.
-  **Non aprirlo per intero**: sono trentamila token per una risposta che
-  `locate` da' in dieci righe.
+  **Non leggere le schede a tappeto**: `locate` cerca su radice e schede
+  insieme e risponde in dieci righe. Se devi proprio leggere, leggi la sola
+  scheda dell'area.
 - Usa `rg` dopo l'indice per confermare chiamanti e working tree, non come
   discovery primaria a tentoni.
 - Ogni modifica a codice di produzione, configurazione o struttura aggiorna
@@ -47,6 +50,7 @@ npm test             # solo nei casi globali indicati sotto
 npm run bench
 npm run typecheck
 npm run docs:merge
+npm run test:docs      # locate e fusione dei frammenti, in `node --test`
 ```
 
 `prestart`/`predev` liberano soltanto istanze node rimaste sulla 8020;

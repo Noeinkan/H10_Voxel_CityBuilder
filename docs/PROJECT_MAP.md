@@ -1,6 +1,8 @@
 # Mappa del progetto
 
-Riferimento rapido. Per l'elenco file per file vedi
+Riferimento rapido. Per l'elenco file per file interroga il Project Index con
+`npm run locate -- <termine>` — le righe stanno nelle schede di
+[`docs/index/`](index/), instradate da
 [`PROJECT_INDEX.md`](../PROJECT_INDEX.md); per criteri e misure vedi
 [`README.md`](../README.md) e [`src/sim/README.md`](../src/sim/README.md).
 

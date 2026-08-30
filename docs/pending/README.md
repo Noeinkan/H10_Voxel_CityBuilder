@@ -1,6 +1,6 @@
 # Frammenti di documentazione in attesa
 
-Qui si scrive quello che andrebbe in `PROJECT_INDEX.md` e in `CHANGELOG.md`,
+Qui si scrive quello che andrebbe nel Project Index e in `CHANGELOG.md`,
 **un file per agente**, e `npm run docs:merge` lo fonde al posto giusto.
 
 Non è burocrazia: quei due file li aggiorna chiunque, e sempre nello stesso
@@ -23,11 +23,13 @@ suffisso.
 - **Titolo della voce.** Cos'è cambiato e perché.
 ```
 
-- La sezione dopo `## indice —` è il titolo della sezione di `PROJECT_INDEX.md`
-  in cui la riga deve finire, esattamente com'è scritto lì (`Radice`,
-  `Documentazione operativa`, `` `src/engine/` ``). Le righe entrano in ordine
-  alfabetico; una riga già presente per lo stesso path viene sostituita, non
-  duplicata.
+- La sezione dopo `## indice —` è il titolo della sezione in cui la riga deve
+  finire, esattamente com'è scritto lì (`Radice`, `Documentazione operativa`,
+  `` `src/engine/` ``, `` `src/engine/mesher/` ``). **Non dichiari il file**:
+  l'indice è spezzato in schede — `PROJECT_INDEX.md` più `docs/index/` — e la
+  fusione cerca la sezione in tutte, scrive la scheda che l'ha e ti dice quale.
+  Le righe entrano in ordine alfabetico; una riga già presente per lo stesso
+  path viene sostituita, non duplicata.
 - **Un `*.test.ts` o un `*.bench.ts` non ha una riga d'indice.** Il file di test
   sta accanto a quello che copre e `npm run test:related` lo trova dal grafo
   degli import: una riga in più non aggiunge un posto dove guardare, aggiunge

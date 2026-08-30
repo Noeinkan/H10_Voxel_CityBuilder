@@ -28,8 +28,9 @@ Le tre regole che, se restano fuori, costano più della lettura:
    suite intera è un evento coordinato: la chiede l'utente, o la proponi e
    aspetti. `test:fast` non è una scorciatoia: esclude un file su 189.
 2. **`npm run locate -- <termine>` prima di esplorare**, `rg` dopo per
-   confermare i chiamanti. `PROJECT_INDEX.md` aperto per intero è trentamila
-   token per una risposta da dieci righe.
+   confermare i chiamanti: cerca sulla radice del Project Index e su tutte le
+   schede di `docs/index/` insieme, e dice da quale viene ogni riga. Se proprio
+   devi leggere, leggi **una** scheda, non tutte.
 3. **Prosa in italiano, identificatori e stringhe a schermo in inglese.**
 
 Il resto si carica quando serve, e questo è deliberato:
@@ -38,9 +39,9 @@ Il resto si carica quando serve, e questo è deliberato:
 | --- | --- |
 | Lavori in una cartella di `src/` | `src/engine/AGENTS.md`, `src/world/AGENTS.md`, `src/sim/AGENTS.md` |
 | Ti serve overlay, hotkey o un parametro URL | skill `/debug-harness` |
-| Cerchi *dove sta* un file o un export | `npm run locate -- <termine>` su [PROJECT_INDEX.md](PROJECT_INDEX.md) |
+| Cerchi *dove sta* un file o un export | `npm run locate -- <termine>`; le righe stanno in [docs/index/](docs/index/), instradate da [PROJECT_INDEX.md](PROJECT_INDEX.md) |
 | Cerchi *perché* una scelta è stata fatta | [README.md](README.md), [src/sim/README.md](src/sim/README.md) |
-| Cerchi *cosa* è cambiato e quando | [CHANGELOG.md](CHANGELOG.md) |
+| Cerchi *cosa* è cambiato e quando | [CHANGELOG.md](CHANGELOG.md) per gli ultimi tredici incrementi; prima di quelli, cerca il titolo in [docs/changelog/README.md](docs/changelog/README.md) |
 | Cerchi dove va il progetto | [ROADMAP.md](ROADMAP.md) |
 
 Nessuno di questi è caricato all'avvio. Aprili quando il compito lo richiede,
@@ -70,10 +71,11 @@ non "per contesto".
   funzioni pure. Se aggiungi una struttura che il registro conta, chiediti se
   `recordStamp` sa ridisegnarla dal solo record: se non lo sa, la cattura la pota
   insieme a chi ci poggia sopra.
-- **`PROJECT_INDEX.md` e `CHANGELOG.md` non si scrivono a mano.** Aggiungendo un
+- **Il Project Index e `CHANGELOG.md` non si scrivono a mano.** Aggiungendo un
   file di produzione, o chiudendo un incremento, lascia un frammento in
-  `docs/pending/` e fondilo con `npm run docs:merge`: sono i due file che tutti
-  aggiornano nello stesso istante, ed erano quasi un terzo dei rifiuti del
+  `docs/pending/` e fondilo con `npm run docs:merge`: dichiari la sezione, e la
+  fusione trova da sé la scheda di `docs/index/` in cui vive. Sono i file che
+  tutti aggiornano nello stesso istante, ed erano quasi un terzo dei rifiuti del
   semaforo. **Un `*.test.ts` non ha riga d'indice**: sta accanto a ciò che copre
   e lo trova `test:related`. Il README di sezione invece, se è una superficie
   pubblica, si aggiorna direttamente.
