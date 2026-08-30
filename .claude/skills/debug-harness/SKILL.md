@@ -34,6 +34,7 @@ console ogni 5 secondi, senza aprire il gate del debug.
 | `inspect` | — | `xray`, `slice`, `section`, `block`: apre una vista di ispezione. Vale **anche senza** `debug` — è così che uno strumento di cattura inquadra una sezione senza overlay |
 | `slice` | — | `<z>` fissa la quota della fetta; senza, segue il suolo che si sta guardando |
 | `intro` | `1` | `0` toglie la caduta d'ingresso: la prima isola compare senza scendere dal cielo. Vale **anche senza** `debug`, serve a confrontare e a catturare uno scatto pulito |
+| `play` | — | `1` salta il **menu d'ingresso** e riapre l'autosalvataggio: è il permesso di entrare dritti in partita. Si consuma all'avvio — `main.ts` lo toglie dalla barra degli indirizzi — quindi vale per quel caricamento soltanto. Lo mettono da soli `newGameUrl` e `perfToggleUrl`; **chi automatizza il browser lo vuole quasi sempre** |
 
 ## Ciclo giorno/notte
 
@@ -203,6 +204,38 @@ cicla le viste, `L` cicla i modi del giorno (ciclo, giorno fisso, notte fissa),
 `1`..`9` scelgono lo **strumento** n-esimo del dock, `Shift`+`1`..`9` scelgono il
 **tema**, `[`/`]` e `PageDown`/`PageUp` muovono la quota della fetta (`Shift` per
 un piano intero). Rispondono anche alla radice, senza `?debug=1`.
+
+## Il menu d'ingresso
+
+**La partita non riparte da sola.** Ogni caricamento della radice si apre sul
+menu principale, sopra un'isola nuova che intanto nasce dietro il velo: `npm
+start` è un inizio, non il ritorno alla città di ieri. Il bottone grande dice
+*Play* e apre quell'isola; *Continue* — che compare solo qui, e solo se c'è
+qualcosa da riprendere — riapre l'autosalvataggio, con dentro scritto quando è
+stato lasciato e quanto era grande.
+
+L'autosalvataggio quindi **non si legge più all'avvio**: lo si apre da lì, e
+passa dallo slot di transito come qualunque altro caricamento. Il seed continua
+a essere riscritto nella barra degli indirizzi, ma non è più ciò che decide se
+il menu compaia: quello lo scrive `main.ts` a ogni avvio, e legarci la decisione
+avrebbe mostrato il menu solo la primissima volta.
+
+`?play=1` è l'unica scorciatoia, e vale per un caricamento solo: entra dritto in
+partita e riapre l'autosalvataggio. Se lo mettono da soli `newGameUrl` e
+`perfToggleUrl` è per la stessa ragione — sono ricaricamenti che il gioco fa
+dopo una scelta appena presa, e rimostrare il menu sopra il risultato sarebbe
+chiedere due volte la stessa cosa. La regola sta in `opensEntryMenu`
+(`src/game/launchMode.ts`), pura e testata in `node`.
+
+`Esc` è una catena sola, e adesso finisce **aprendo** invece di non fare niente:
+posa lo strumento, chiude i pannelli, chiude la scheda di selezione, molla
+l'isolato, spegne la vista, e a mani vuote apre il **menu principale**. Il menu
+è una modale con un velo sopra tutto (`--z-menu`), e finché è aperto la
+simulazione riceve `dt = 0`: nessun tick passa, nessun autosalvataggio scatta, e
+il resto del router dei tasti si ferma. Non è la pausa del giocatore — quella
+finisce nel salvataggio, questa no. **Chi automatizza il browser deve saperlo**:
+un `Esc` di parcheggio a mani vuote lascia la città ferma finché il menu non
+viene richiuso (vedi `parkPointer` in `shotkit.config.mjs`).
 
 `F2` accende e spegne la misura: **ricarica** la stessa partita aggiungendo o
 togliendo `?perf=1`, invece di far comporre l'indirizzo a mano

@@ -89,11 +89,13 @@ permettono di isolare le scene di verifica.
 | `grow` | `1` alla radice | `1` avvia esplicitamente l'MVP giocabile |
 | `inspect` | — | `xray`, `slice`, `section`, `block`: apre una vista, anche senza `debug` |
 | `slice` | — | Quota della fetta; senza, segue il suolo che si sta guardando |
+| `play` | — | `1` salta il menu d'ingresso e riapre l'autosalvataggio; si consuma all'avvio e vale per quel caricamento soltanto |
 
 Tasti: `Q`/`E` ruota di 90° attorno al punto di terra sotto al mouse, rotella
 zoom, drag destro o `WASD` pan, `F` inquadra tutto, `V` cicla le viste,
 `[`/`]` (o `PageDown`/`PageUp`) muovono la quota della fetta — `Shift` per un
-piano intero — `Esc` annulla lo strumento e `F3` alterna il pannello tecnico.
+piano intero — `Esc` annulla lo strumento, chiude i pannelli, esce dalla vista e
+infine apre il menu principale, e `F3` alterna il pannello tecnico.
 Con il debug visibile, `G` aggiunge 64 chunk, `R` fa il rebuild, `C` azzera i
 picchi, `B` colora le colonne per bioma (solo in scena terreno). In scena
 simulazione: `T` un tick, `P` avvia o ferma il passo automatico, `M` cicla l'uso
@@ -256,7 +258,8 @@ una draw call per chunk.
 
 ```bash
 npm start
-# apri http://localhost:8020/ e leggi l'overlay:
+# apri http://localhost:8020/?play=1&debug=1 — `play=1` salta il menu d'ingresso,
+# che sopra una misura fermerebbe proprio i tick da contare. Poi leggi l'overlay:
 #  - attendi che "coda" arrivi a 0 + 0, poi premi C per azzerare i picchi
 #  - "draw call" e "main ... max" sono i due numeri dei criteri
 #  - premi G e guarda fps e main durante l'aggiunta dei 64 chunk

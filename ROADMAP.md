@@ -2421,20 +2421,130 @@ distretto. E gli slot di settore sono sul solo lato di terra: il molo
 guadagnato al mare non ospita ancora edifici, perché la simulazione lo dichiara
 oceano.
 
+### Fase 4.18 — L'earthscraper: la megastruttura che scava
+
+Obiettivo: dare alla città il gesto opposto all'arcologia — una megastruttura che
+**scende** invece di salire, sul modello dell'*Earthscraper* di BNKR Arquitectura
+(Città del Messico, 2009): la piramide invertita sotto lo Zócalo, dove il centro
+storico vieta di demolire e di salire e l'unica direzione libera è il basso.
+
+Vive dentro `src/world/arcology/` come seconda famiglia dello stesso catalogo, e
+in `src/world/buildings/sunkenDig.ts` per la parte che tocca il mondo.
+
+**Stato implementazione:** la struttura è completa e provata nei suoi test;
+**il piazzamento in partita non è validato**, per due ragioni distinte descritte
+sotto — una precede questa sotto-fase, l'altra è sua.
+
+- [x] Tre ricette interrate — piramide a terrazze, corte bassa, cratere su due <!-- size: XL -->
+  isolati — scritte al contrario: `z = 0` è il fondo del pozzo, il piano di
+  campagna sta in cima, e a spostare tutto è l'ancora (`baseZ = padZ - depth`).
+  Nessuna coordinata negativa da nessuna parte.
+- [x] `shaftOf`: l'invariante del vuoto, speculare alla finestra di cielo. Un <!-- size: M -->
+  pozzo si guarda *dentro*, una finestra *attraverso*.
+- [x] Lo scavo come terza eccezione al «si riempie, non si scava»: stesso <!-- size: L -->
+  confine, stessa coda, e l'imbuto scritto come ricetta di parti perché rientri
+  scendendo insieme alle terrazze.
+- [x] `reopenPit` al caricamento: senza, il file — che non contiene il terreno — <!-- size: M -->
+  restituirebbe una struttura murata nella roccia.
+- [ ] **Il piazzamento in partita.** La condizione scelta — «nasce dove la <!-- size: L -->
+  gerarchia non concede altezza», cioè `tier !== core` — non ha siti sull'isola
+  standard. Vedi sotto.
+
+**Due misure, e tutte e due hanno smentito il progetto.**
+
+1. **La profondità.** Il piano era tarato su `TERRAIN.maxHeight`, che vale 80, e
+   prevedeva ricette da 44, 36 e 24 quote. Misurata su tre seed, l'isola standard
+   è molto più piatta — la maschera radiale schiaccia il rilievo, e su 256×256 la
+   colonna più alta sta fra 32 e 36 — quindi due ricette su tre non sarebbero
+   **mai** nate, in silenzio e con la suite verde. Le tre ricette stanno ora a
+   16, 22 e 26 quote: a 24 passa l'83% dei siti asciutti, a 30 **nessun sito del
+   seed 4242**. `sunkenSites.test.ts` è l'allarme che resta.
+2. **La fascia.** Misurata su una città cresciuta (seed 4242, 2400 tick), la
+   distribuzione degli isolati è **39 `core`, 27 `fringe`, 0 `middle`**. Non è
+   un caso: la crescita segue la desiderabilità, che segue i catalizzatori,
+   quindi il tessuto denso cade dentro la portata di un polo (`core`) e ciò che
+   resta fuori è rado (`fringe` per densità, non per quota). Il `fringe` denso
+   esiste solo sulla costa — dove `waterDistance ≤ 8` — ed è esattamente dove un
+   pozzo non si può scavare, perché scende sotto il livello del mare e il
+   contorno asciutto non regge. **`tier !== core` è quindi una condizione quasi
+   vuota**, ed è lo stesso difetto di `isPeakBlock`: la terza volta che questo
+   dominio lo incontra.
+
+**Un blocco che precede questa sotto-fase.** Sulla stessa misura, **nessuna
+arcologia nasce più, di nessuna famiglia**: dei 39 isolati `core`, 20 hanno
+densità sufficiente e **tutti e 20 rifiutano con `notCapped`** — cioè
+`cappedNeighbours` è zero ovunque. `ARCOLOGY.minCapped` chiede due vicini che
+abbiano raggiunto la propria quota ammessa, e da quando `SCALE.maxLevel` è salito
+a 26 (con il tetto del centro a 23 fasce) nessun edificio ci arriva più nei tick
+che la crescita impiega a esaurirsi. La taratura dell'arcologia è rimasta a
+quando `maxLevel` era 20. È indipendente dall'earthscraper — il percorso delle
+ricette alte non è cambiato di una riga — e va affrontata prima, o nessuna delle
+due famiglie compare in partita.
+
+**Vincolo:** valgono i vincoli trasversali della fase 4. In più: lo scavo non
+esce mai dall'impronta, viaggia sulla coda di comparsa come le altre due
+eccezioni, e non tocca la `TerrainMap` — che continua a dichiarare la quota
+naturale, con il disallineamento già noto dei canali del distretto costiero.
+
+**Gate:** sull'isola esiste almeno un cratere abitato che si legge da
+inquadratura d'insieme come un pezzo di città che manca, con usi diversi su
+quote diverse sotto il piano di campagna; salvare e ricaricare lo restituisce
+identico. La seconda metà del gate è verificata; la prima aspetta il
+piazzamento.
+
+**Riferimenti.**
+
+- [The Earthscraper](https://www.bunkerarquitectura.com/) di BNKR Arquitectura,
+  2009: 775 000 m² e sessantacinque piani sotto lo Zócalo, piramide invertita con
+  un vuoto centrale che porta luce e aria a ogni quota e un pavimento di vetro
+  che lascia la piazza alle sue manifestazioni. È il progetto che dà il nome alla
+  famiglia, e la sua motivazione è la nostra: dove non si può demolire né salire,
+  si scende.
+- [Underground buildings](https://www.designforminc.com/post/are-underground-buildings-in-our-future):
+  la rassegna che il committente ha indicato — stabilità termica, sicurezza, e i
+  vincoli veri (umidità, radon, terreni adatti) che qui restano fuori dal modello.
+
 ## Fase 5 — Persistenza e prodotto browser
 
 Obiettivo: trasformare la demo in un gioco riprendibile e distribuibile.
 
-- [ ] Salvare seed, simulazione, catalizzatori, policy, settori e registro edifici in <!-- size: XL -->
+**Stato implementazione:** le prime tre voci sono fatte, e con loro il gate. Le
+altre tre restano.
+
+- [x] Salvare seed, simulazione, catalizzatori, policy, settori e registro edifici in <!-- size: XL -->
   un formato versionato; ricostruire terreno e campo invece di serializzare buffer derivati.
-- [ ] Aggiungere autosave locale, slot manuali, esportazione e importazione JSON. <!-- size: L -->
+- [x] Aggiungere autosave locale, slot manuali, esportazione e importazione JSON. <!-- size: L -->
+- [x] Menu principale in modale — riprendi, salvataggi, partita nuova con seed, <!-- size: M -->
+  impostazioni, aiuto e riepilogo della partita — aperto dal dock, da `Esc` a
+  mani vuote e **a ogni avvio**, che ferma la città finché resta a schermo. La
+  partita non riparte da sola: si sceglie *Play* su un'isola nuova o *Continue*
+  sull'autosalvataggio.
 - [ ] Separare UI di gioco e diagnostica; rendere accessibili controlli, colori e testi. <!-- size: L -->
 - [ ] Adattare layout e input a schermi più piccoli, mantenendo desktop come target principale. <!-- size: M -->
-- [ ] Aggiungere menu iniziale, scelta del seed, difficoltà e riepilogo della partita. <!-- size: M -->
 - [ ] Preparare deploy statico, telemetria opt-in degli errori e gestione delle versioni dei salvataggi. <!-- size: M -->
 
-**Gate:** ricaricare o aggiornare il browser non perde la partita e una build
-statica può essere pubblicata senza strumenti di sviluppo.
+**Gate:** ricaricare o aggiornare il browser non perde la partita — la si
+ritrova sotto *Continue* nel menu d'ingresso invece che riaperta d'ufficio — e
+una build statica può essere pubblicata senza strumenti di sviluppo.
+
+**Resta aperto: la difficoltà.** La voce del menu la nominava insieme al seed, e
+il seed c'è: si digita, si sorteggia, e la partita nuova riparte su quell'isola.
+Una scelta di difficoltà invece non ha niente dietro — nessuna manopola di
+`BALANCE` è ancora dichiarata come tale — e un selettore che non cambia niente
+sarebbe peggio della sua assenza. Torna quando esiste il parametro, non prima.
+
+**Resta aperto: la rete in quota non torna voxel per voxel.** Campate,
+impalcati, gambe, ascensori e stazioni di funivia si cancellano con
+`clearVolume` — un parallelepipedo — invece di rigenerare la sagoma, quindi il
+loro generatore vuole un piano (`SpanPlan`, `DeckPlan`) che il record non porta.
+Restano fuori dal file, e con loro cade chi ci poggiava sopra: la potatura segue
+`supports`, perché un edificio senza il suo impalcato resterebbe sospeso in aria.
+Dopo il caricamento è la passata della rete in quota a riproporre campate e
+mensole sui tetti tornati, che è il mestiere per cui esiste — ma una città molto
+intrecciata si riapre più semplice di com'era, e ci rimette qualche minuto a
+tornare com'era. Chiuderlo vuol dire un campo nuovo sul record per il legame
+gamba-impalcato, e uno `stampOf` per famiglia; il posto è `recordStamp.ts`, che
+già lo fa per edifici, landmark e arcologie.
 
 ## Fase 6 — Ottimizzazione e scala
 
@@ -2647,7 +2757,7 @@ isolato, cosa dovrebbe cambiare perché ci nasca una forma che ancora non c'è.
 - [x] Costi continuativi e conseguenze visibili per le sei policy esistenti. <!-- size: M -->
 - [x] Commerciale autonomo e primo edificio residenziale-commerciale a uso misto. <!-- size: L -->
 - [x] Primo sistema di strade procedurali usato come scheletro della crescita (fase 4.1). <!-- size: XL -->
-- [ ] Salvataggio locale minimo del ciclo completo. <!-- size: L -->
+- [x] Salvataggio locale minimo del ciclo completo. <!-- size: L -->
 - [ ] Playtest di 30 minuti con budget e criteri automatici registrati. <!-- size: M -->
 - [x] Passata visiva su indicatori e strumenti: **fasi 7.1, 7.3 e 7.4 fatte**. <!-- size: L -->
   Barra risorse e dock si leggono a colpo d'occhio, e l'HUD cambia con il tema
@@ -2685,10 +2795,11 @@ qui comincia a espandersi su se stessa.
 **Sull'ordine rispetto ad Alpha 0.2.** Le due milestone non competono per gli
 stessi file — la spina dorsale vive in `src/world/`, salvataggio e passata visiva
 in `src/game/` e `src/ui/` — quindi l'ordine fra loro è una scelta e non un
-vincolo tecnico. Una cosa però lo è: la fase 5 serializza il **registro degli
-edifici**, e la 4.9 gli aggiunge piattaforme e quote. Salvare prima significa
-versionare il formato due volte; salvare dopo significa giocare più a lungo senza
-salvataggio. Va deciso, non lasciato all'inerzia.
+vincolo tecnico. Una cosa però lo era: la fase 5 serializza il **registro degli
+edifici**, e la 4.9 gli aggiunge piattaforme e quote. Salvare prima significava
+versionare il formato due volte; salvare dopo, giocare più a lungo senza
+salvataggio. **Deciso dai fatti:** la 4.x si è chiusa per intera prima, quindi il
+record aveva già i suoi campi verticali e il formato nasce a versione uno.
 
 Alpha 0.3 è completa quando dalla stessa inquadratura si contano due livelli
 abitati sovrapposti e si segue un percorso continuo in quota fra due isolati
