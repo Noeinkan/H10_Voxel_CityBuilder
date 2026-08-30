@@ -11,6 +11,281 @@ coincide con il messaggio di commit.
 
 ---
 
+## In corso — La schermata del titolo, e il mondo che nasce dopo la scelta
+
+- **L'isola non si genera piu' dietro il menu.** `index.html` monta ora
+  `src/boot.ts`, che e' l'unico modulo dell'ingresso: `main.ts` costruisce un
+  mondo al solo essere importato — renderer, worker, prima passata del
+  generatore — e finche' era lui l'entry point del bundle l'isola cresceva
+  mentre il giocatore stava ancora scegliendo. L'import e' diventato dinamico e
+  sta dentro il gesto che dice «vai»: prima della scelta la pagina non chiede
+  ne' Three, ne' i worker, ne' il chunk del gioco (13 kB contro 1,26 MB).
+- **Una pagina sola, tre voci.** `TitleScreen.ts` sostituisce il menu
+  d'ingresso a due colonne: titolo, Continue con dentro quando e quanto grande
+  era la citta', l'isola nuova con il suo seed e l'elenco dei salvataggi.
+  Le sottoschermate sostituiscono l'elenco invece di aprirsi accanto, cosi' non
+  c'e' mai piu' di una domanda aperta per volta.
+- **Il velo se ne va sul segnale del mondo, non sul primo frame.**
+  `signalWorldReady` parte dove si chiude la finestra di caricamento — l'unico
+  istante in cui «il mondo c'e'» e' vero — e l'attesa ha un tetto di dodici
+  secondi perche' un segnale che non arriva non lasci una pagina morta.
+- **Il menu di pausa torna a essere solo quello.** Spariscono `openMenuAtStart`,
+  il bottone Continue e il ramo `resumable` di `MainMenu`: sotto quel velo c'e'
+  sempre una partita viva, e riaprire l'autosalvataggio sta fra gli slot con il
+  suo bottone Load. Il tiro del seed si sposta in `launchMode.ts` (`rollSeed`),
+  che e' l'unico posto importabile senza costruire un mondo.
+
+## In corso — Prestazioni: il tick dentro il frame
+
+- **Il memo dei lotti (fase 1.1).** `findLot` girava fino a ventisette volte per
+  infornata sullo stesso rettangolo di venticinque isolati, e in un nucleo saturo
+  lo percorreva tutto ogni volta. `LotMemo` tiene, per la sola durata di
+  `buildPass`, le colonne gia' bocciate. Misurato su isola vera (seme
+  `2555647721`, 351 edifici, ultime quaranta infornate): mediana da **5.481 ms a
+  140 ms**, caso peggiore da **10.185 ms a 200 ms**. La citta' generata e'
+  identica, e adesso c'e' un test che lo dice.
+- **Perche' non serve invalidarlo.** I tre modi in cui una colonna bocciata torna
+  libera — un cantiere che chiude, una prenotazione che cade, un impalcato che
+  nasce — accadono tutti fuori da `buildPass`. Il memo nasce e muore prima, ed e'
+  la ragione per cui e' esatto invece che approssimato.
+- **`placeLot` resta puro.** La memoria entra come due funzioni (`exhausted`,
+  `onExhausted`), come gia' la disponibilita' entrava come predicato: il modulo
+  non sa quando una memoria scade, e non deve saperlo. La ricerca lungo il bordo
+  non dichiara mai un lato esaurito, perche' salta di `align` in `align` invece di
+  percorrere la superficie.
+- **L'impronta digitale della citta'.** Sorella di quella della grammatica un
+  piano piu' su: `generateDigest` fissa la sagoma di un edificio a parita' di
+  seme, `cityDigest` fissa quali edifici nascono e dove. Serve a rendere un numero
+  la promessa «non cambia la citta' generata», che ogni intervento su `findLot`
+  fa e nessuno finora poteva verificare.
+- **Il memo degli isolati sopravvive all'infornata (fase 1.2).** Il rettangolo
+  esaurito — «per questo isolato d'origine e questo lato non c'e' posto da
+  nessuna parte» — c'era gia' dalla 1.1, ma veniva buttato via a ogni infornata
+  insieme alle colonne bocciate. E' un fatto che vale piu' a lungo: `placeLot`
+  percorre tutto il rettangolo e il candidato ne cambia soltanto l'ordine. E'
+  uscito da `LotMemo` ed e' diventato `BlockMemo`, che dura finche' il mondo non
+  libera del suolo. Misurato A/B nello stesso processo su isola vera (seme
+  `2555647721`, 351 edifici, 300 infornate, quattro esecuzioni alternate): nelle
+  quaranta infornate a saturazione la mediana della passata scende **da 145 a
+  9,1 ms** e il caso peggiore **da 210 a 14,3 ms**; le colonne lette per ricerca
+  passano da 7.099 a 2.202. La citta' generata e' identica, e `cityDigest` non
+  si e' mosso.
+- **L'invalidazione e' un'epoca, non tre ganci.** `Builder.freedomEpoch` somma
+  tre contatori monotoni, uno per ciascun modo in cui una colonna bocciata torna
+  libera: `BuildingRegistry.vacated` (prenotazione rilasciata, record tolto),
+  `AerialDriver.decksOpened` (un impalcato che nasce sopra un suolo preso, che
+  `lotIsFree` conta come libero) e `TerrainMap.chunkCount` (terra che arriva dove
+  non c'era isola). `findLot` la mostra al memo prima di ogni ricerca; se e'
+  cambiata il memo cade tutto, perche' inseguire *quale* rettangolo sia cambiato
+  costerebbe piu' della passeggiata che risparmia. Ogni contatore sta accanto
+  alla domanda che invalida e non nel `Builder`: un quarto modo di liberare suolo
+  dovra' portarsi il proprio.
+- **Quello che non ha fatto.** Il caso peggiore non e' sceso con la mediana:
+  resta una passata da 190–250 ms, ed e' sempre la prima dopo un cambio d'epoca.
+  Il costo medio e' abbattuto, quello massimo e' ancora senza tetto — e il tetto
+  e' la fase 2 del piano, non un'altra taratura di questo memo.
+
+## In corso — Le arcologie fioriscono
+
+- **Tre tappi impilati, e la quota non era nessuno dei tre.** Misurato su seed
+  4242 con cinque poli: la città matura occupa **quattordici isolati**, di cui
+  sette `core` e sette `fringe`. La quota ne ammetteva tre e ne nasceva **una**.
+  A contarle erano `tier !== core` — che taglia a sette — e soprattutto
+  `ARCOLOGY.minSpacing: 2`, che rifiuta due megastrutture su isolati
+  **adiacenti**: i sette `core` sono un blocco contiguo, quindi un
+  impacchettamento greedy ne fa stare due. Una regola scritta per *distribuire*
+  era diventata il tetto più stretto.
+- **La fascia esce dalla condizione, la densità resta.** `arcologyReady` non
+  chiede più `core`: a dire «qui c'è un quartiere» è `minBuilt`, che è una misura
+  del luogo invece di un'etichetta, ed è anche la sola delle tre che non può
+  svuotarsi per come il giocatore dispone i poli — il difetto che questo dominio
+  aveva già incontrato con `isPeakBlock` e con `tier !== core` per l'earthscraper.
+  `minSpacing` scende a 1, `minBuilt` da 64 a 40 — su un raggio di ventiquattro
+  colonne il candidato migliore oscillava fra 52 e 61 — e
+  `buildingsPerArcology` da 128 a 32, così la quota resta il **traguardo** che la
+  voce nomina senza tornare a essere un limite.
+- **Le due famiglie non si escludono più: la roccia apre, l'isolato sceglie.**
+  Il veto `tooHigh` teneva i crateri sulla spalla del cono e le torri sulla
+  cresta. Misurato: cinque poli sovrapposti riempiono il cono su **tutto** il
+  nucleo, quindi ogni candidato risultava cresta e la famiglia interrata non ha
+  mai avuto un sito in partita — metà del catalogo esisteva solo nei test. Ora la
+  domanda è se sotto c'è roccia asciutta abbastanza; dove c'è, a scegliere fra
+  salire e scavare è un tiro deterministico sull'indice dell'isolato, con lo
+  stesso sale che sceglie già la forma.
+- **Esito, misurato sulla stessa isola.** Da **una** arcologia a **quattro**, da
+  una forma a **tre** (`doubleBar`, `triSpan`, `invertedPyramid`), e per la prima
+  volta un earthscraper accanto alle torri. Il rifiuto che resta è `thin`, cioè
+  la densità costruita: la megastruttura arriva dove c'è un quartiere, che è la
+  condizione che la fase voleva. `ARCOLOGY_REFUSALS` perde `notCore` e `tooHigh`.
+
+## In corso — La citta' si guarda da terra
+
+- **Una camera all'altezza degli occhi.** `O` arma lo strumento, un clic posa
+  l'occhio sul punto puntato, il trascinamento gira la testa e la rotella cambia
+  il campo visivo; `Esc` risale e restituisce l'inquadratura identica. L'occhio
+  non cammina: e' una vista fissa, e il punto lo si sceglie di nuovo uscendo e
+  rientrando. Su un tetto ci si sale — a decidere e' la quota colpita dal raggio,
+  non la colonna di terreno — e l'acqua si rifiuta, perche' la heightmap li'
+  risponde con il fondale.
+- **E' un secondo controller, non un modo del primo.** `IsoCameraController` da'
+  la prova di quando una manovra e' tale: «proiezione, zoom, near e far sono lo
+  stesso codice». Qui fallisce su ogni riga, e su una in particolare —
+  l'inclinazione deve **attraversare lo zero**, che e' esattamente il valore che
+  la' e' vietato perche' `1 / sin(pitch)` esplode nel pan sul piano di terra.
+  L'input invece si riusa per intero: `CameraInput` sceglie fra girare e panare
+  guardando `orbitMode`, e a terra non c'e' un pan da cui distinguere il gesto.
+- **La nebbia integra il segmento giusto.** L'integrale era in forma chiusa
+  «perche' la camera e' ortografica», ed era la ragione sbagliata: lo e' perche'
+  la quota e' lineare lungo il segmento, cosa vera di qualunque raggio dritto.
+  Cio' che l'ortografica comprava era descrivere il segmento con **un vettore per
+  fotogramma**. Ora il raggio si ricava per frammento da `cameraPosition`, e a
+  dire quale dei due casi vale e' `isOrthographic`, un uniform che Three scrive da
+  se' a ogni draw: nessuna uniform nuova, nessuna scrittura per frame, e la vista
+  isometrica identica per costruzione.
+- **Il velo di quota si accende sul cammino.** Non dipende dalla distanza — e' il
+  suo scopo — ma quel «non dipende» era scritto per una camera parcheggiata a
+  centinaia di unita', dove nessun frammento visibile e' vicino. Con l'occhio
+  dentro la citta' dipingeva di lattiginoso il muro a due voxel dal naso. Ora sale
+  da zero entro `FOG_LIFT_NEAR`, che sotto ortografica e' un no-op per costruzione.
+- **Il cielo ha un orizzonte.** Il gradiente seguiva l'altezza di schermo, ed era
+  giusto finche' i raggi erano paralleli: tutti hanno la stessa elevazione, quindi
+  un cielo «fisico» avrebbe dato una tinta piatta. Quando convergono segue
+  l'elevazione vera. Le due copie della curva — quella del fondo e quella della
+  nebbia — sono diventate **una funzione sola** in `skyGradient.glsl.ts`, che e' la
+  forma forte della regola che i due file si scambiavano per commento. Con lo
+  stesso raggio per pixel il banco di nuvole smette di scorrere piatto e si
+  incurva verso l'orizzonte.
+- **L'ombra si stringe attorno all'occhio.** La shadow map si adatta all'AABB dei
+  chunk visibili, e da terra quell'AABB e' un corridoio lungo quanto l'isola: il
+  texel valeva un quarto di voxel. Ora si interseca con una scatola di 96 voxel di
+  raggio attorno all'occhio — puo' solo rimpicciolire, quindi i chunk ancora in
+  aria durante la caduta d'ingresso restano esclusi come prima — e la pass
+  disegna **meno** mesh di quante ne disegnava.
+- **La vista ferma vale una resa migliore.** Da terra la camera non si muove: la
+  coda di remesh si ordina una volta e poi mai, nessun chunk nuovo entra nel
+  frustum, e l'ombra costa meno di prima. Quel margine si spende sopra la densita'
+  dello schermo — supersampling, l'unica manopola che tocchi gli spigoli dei
+  voxel, e su un display 1x l'unica disponibile perche' li' il tetto normale e'
+  gia' raggiunto. Il tetto e' due, e si limita da solo: su un 1x sono quattro
+  volte i pixel, su un 2x e' la risoluzione nativa. `RenderQuality` continua a
+  sorvegliare i tempi e a scendere se non tengono — il boost sposta il punto di
+  partenza dell'isteresi, non la scavalca — e un modo fisso alza la risoluzione
+  senza disfare la scala di effetti che il giocatore ha scelto con `?quality=`.
+  All'uscita si rimette il livello che la misura aveva raggiunto, non il default.
+- **Il contorno si linearizza.** Il Sobel girava sulla profondita' grezza, e
+  funzionava perche' in ortografica quella e' gia' lineare. In prospettiva i
+  valori si accalcano verso uno: alone nero sul primo metro, niente oltre una
+  decina di voxel. Non e' una soglia da ritarare — non ne esiste una che vada bene
+  a due metri e a duecento — quindi si inverte la curva del buffer prima del
+  filtro. Il tilt-shift invece si spegne: e' una banda di fuoco che dice
+  «modellino», ed e' scelta cosi' proprio perche' l'ortografica non ha convergenza.
+
+## In corso — Il campionario non si copre piu'
+
+- **Le fasce si ordinano per quota decrescente, non per lettura.** La camera
+  guarda da `(+x, +y)`: lungo +y ci si avvicina, e chi sta davanti copre chi sta
+  dietro. Le quindici arcologie — fino a settecentotrentasette voxel —
+  seppellivano la matrice e la fascia di scala, che stavano oltre loro. Ora le
+  gallerie stanno dietro la base, in y negative e dalla piu' alta alla piu'
+  bassa: le megastrutture in fondo, dove salgono nel cielo vuoto.
+- **Il conto dell'occlusione sta in `swatchOcclusion.ts`, e prima sbagliava.** La
+  formula che viveva nel commento dell'interasse della matrice, `CELL_HEIGHT -
+  cellPitch / 2`, confrontava due file alla stessa x invece che sulla stessa
+  colonna di pixel: dichiarava quattro voxel nascosti dove ce n'erano sei, e la
+  griglia era occlusa oltre il filo dello sbalzo mentre il test diceva di no.
+  Il vuoto che serve e' **la quota di chi sta davanti**, non la sua meta';
+  `cellPitch` sale percio' da dieci a dodici.
+- **Due regole, due assi.** In y il distacco fra due file e' la quota della fila
+  davanti; in x il vuoto fra due vicini e' la **profondita'** del soggetto a x
+  maggiore, perche' li' l'altezza non entra affatto. E' il motivo per cui
+  quindici megastrutture si separano spendendo poche decine di voxel di fila
+  invece di centinaia di profondita'.
+- **Un ripiano per riga invece di uno per fascia.** Con distacchi larghi come un
+  edificio, un basamento continuo sarebbe stato un piazzale grigio: resta il
+  principio di sempre — il piano di lettura e' largo quanto cio' che ci sta
+  sopra — applicato una riga alla volta.
+- **La riserva di pan e' quattro chunk, non un rettangolo pieno.** `growBounds`
+  allarga una scatola, quindi l'AABB dipende solo dai chunk estremi: riempire
+  l'interno non aggiungeva un voxel di liberta' alla camera e sarebbe costato
+  centoventi megabyte di chunk vuoti sul campionario riflusso.
+- **Un test nuovo tiene l'invariante**: nessun soggetto ne copre un altro, su
+  tutte le coppie, con la sola eccezione dichiarata della matrice — dove sotto
+  `CELL_LEDGE` c'e' il podio e non c'e' niente da distinguere.
+
+## In corso — La scala dell'arcologia si vede
+
+- **Da un rifiuto a una misura.** Il driver produceva un enum — `notCapped` — che
+  non distingue «uno su due» da «zero su due», cioè due partite diverse. Il nuovo
+  `src/world/arcology/prospect.ts` raccoglie *tutte* le condizioni mancanti con
+  `have`/`need` leggendo le stesse soglie di `siting.ts`, e un test verifica in
+  entrambe le direzioni che la prima lacuna sia esattamente il rifiuto del
+  predicato: due misure per la stessa domanda divergerebbero alla prima
+  ritaratura, come già successo con i due raggi di `isCoastal`. La raccolta non
+  costa una scansione in più — riusa l'oggetto che sta per andare ad
+  `arcologyReady`, dove `builtNeighbours` e `cappedNeighbours` sono già misurati.
+- **Il consiglio sull'arcologia adesso arriva a schermo.** Stava in fondo
+  all'elenco del coach, che ne mostra una riga sola, e `skylineSuggestion` — vera
+  per quasi tutta la partita — lo copriva sempre: la meccanica esisteva e non
+  aveva voce. Ora precede lo skyline e tace finché il quartiere attorno al
+  candidato non c'è, così le lacune lontane restano a chi le dice meglio. Un test
+  verifica che possa passare davanti.
+- **Il cassetto Città mostra una scala invece di un contatore.** `Arcologies: 0`
+  è il valore normale per quasi tutta la partita e da solo non dice niente: al suo
+  posto la quota come traguardo con la barra, le lacune riga per riga, e la
+  **ricompensa** — quali usi la struttura ospiterà, derivata dal catalogo e non
+  scritta a mano. Le parole vivono in `src/ui/prospects.ts` accanto al resto della
+  lingua di «cosa manca», perché le stesse righe serviranno alla scheda
+  dell'isolato.
+- **Misurato, e la diagnosi in ROADMAP 4.18 è vecchia.** Su seed 4242, otto
+  catalizzatori del listino e 6000 tick: il campo di desiderabilità **satura a
+  255** e la soglia effettiva arriva a 293 contro i 198 di
+  `BUILDER.upgradeThreshold`, quindi la desiderabilità **non** è più il tappo che
+  la roadmap descriveva. Con il magazzino illimitato le torri arrivano al livello
+  26 e **un'arcologia nasce**; con l'economia vera si fermano al **livello 10** e
+  `cappedNeighbours` resta 0. Il collo di bottiglia è quindi
+  `upgradeMaterialCost` — `2·(livello−6)²`, cioè da 32 a 578 unità per singola
+  promozione — contro un tetto di fascia `core` di 23. Il messaggio del coach
+  nomina ora quella causa e non più la desiderabilità.
+
+## In corso — La punta delle arcologie
+
+- **`frameRegion` accetta il centro verticale della regione.** Il perno stava sul
+  piano di terra a inquadratura qualunque: meta' schermo finiva sotto il
+  basamento e la cima usciva di sopra. Sul campionario erano centotrentacinque
+  voxel di arcologia fuori campo perfino premendo il pulsante «Arcologies», e la
+  fascia arriva a 737 voxel. L'altezza dichiarata era gia' quella giusta:
+  mancava il centro su cui appoggiarla.
+- **La quota del perno sopravvive al pan.** `clampTarget` riportava la z del
+  target a `targetHeight` a ogni spostamento, quindi la prima freccia premuta
+  rimetteva l'inquadratura a terra. Adesso il perno ha una quota sua, che
+  `frameRegion` e `restoreState` scrivono e il pan rispetta.
+- **Doppio clic sul campionario: inquadra il soggetto.** Dal basamento alla
+  punta, con il perno a meta' altezza. La fascia intera mette quindici arcologie
+  in fila, e avvicinarsi con la rotella tagliava proprio la cima; `Esc` molla la
+  scelta e rimette la fascia da cui si era partiti.
+
+## In corso — La scheda del campionario
+
+- **Il referto del campionario diventa una scheda.** Il pannello di
+  `?scene=swatch` scriveva un blocco preformattato con le etichette allineate a
+  `padEnd`: reggeva quattro righe, non le dieci di un edificio, dove le frasi
+  lunghe — condizioni, linea di crescita, forma — andavano a capo sotto la
+  colonna delle etichette. Ora sono coppie in una griglia di due colonne, divise
+  in sezioni (soggetto, scelta, voxel, istruzioni), con il nome del soggetto in
+  testa e il genere accanto.
+- **Le condizioni di una tipologia si leggono per intero.** La riga «Requires»
+  mostrava cinque campi su quindici: una riga concessa da un mandato o da una
+  soglia di ricchezza compariva come se non chiedesse niente, e il campionario è
+  il posto in cui si va a chiedere *perché* quella forma non nasce mai. La
+  scheda di un edificio porta anche lato del lotto, linea di crescita
+  (`Grows from`) e priorità, e il livello dice quale soglia visuale ha
+  raggiunto.
+- **Tutto il testo a schermo del campionario è in inglese**, come la convenzione
+  chiede: fasce, etichette delle righe, note della matrice e della stratigrafia.
+- **`SwatchOverlayModel` separa la scheda dalla vista** e la porta sotto test in
+  Node; le parole del catalogo stanno in `swatchLabels.ts`, fuori da
+  `swatchCatalog.ts`, che decide i soggetti e non come si leggono.
+
 ## In corso — La partita si sceglie, non riparte da sola
 
 - **Il menu e' la porta d'ingresso, a ogni caricamento.** `npm start` non
