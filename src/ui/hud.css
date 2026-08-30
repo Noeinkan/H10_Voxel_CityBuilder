@@ -866,6 +866,29 @@
 .debug-sites { margin: var(--space-15) var(--space-15) 0; color: inherit; font: inherit; }
 
 /*
+ * La scheda del campionario, e perche' non e' un referto come gli altri.
+ *
+ * Gli overlay tecnici scrivono testo preformattato: righe corte, allineate a
+ * mano, larghe quanto la piu' lunga. La scheda di un edificio porta invece
+ * frasi — condizioni, linea di crescita, forma — e allineate a `padEnd`
+ * andavano a capo sotto la colonna delle etichette, che e' il punto in cui una
+ * scheda smette di essere leggibile. Due colonne di griglia con una larghezza
+ * massima dichiarata risolvono le due cose insieme: l'etichetta non si perde, e
+ * il pannello non insegue la riga piu' lunga fino a coprire la scena.
+ */
+.swatch-body { white-space: normal; min-width: calc(232 * var(--hud-unit)); max-width: calc(300 * var(--hud-unit)); }
+.swatch-section + .swatch-section { margin-top: var(--space-15); padding-top: var(--space-15); border-top: 1px solid rgba(185,217,210,.14); }
+.swatch-title { display: flex; align-items: baseline; flex-wrap: wrap; gap: var(--space-1); }
+.swatch-title__name { color: #eaf6f2; font: 800 var(--text-sm)/1.3 var(--hud-font); }
+.swatch-title__name--empty { color: #86a7a1; font-weight: 500; font-style: italic; }
+.swatch-kind { padding: 0 var(--space-1); border-radius: var(--radius-sm); color: #9ed8c8; background: rgba(120,200,180,.14); font-size: var(--text-2xs); letter-spacing: .04em; text-transform: uppercase; }
+.swatch-note { margin-top: var(--space-05); color: #9dbdb6; }
+.swatch-rows { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: var(--space-05) var(--space-15); margin: var(--space-1) 0 0; }
+.swatch-rows dt { color: #8fb3ac; }
+.swatch-rows dd { margin: 0; color: #dcebe6; overflow-wrap: anywhere; }
+.swatch-hints { color: #7d9c96; }
+
+/*
  * I gradini di densita' del rail, e perche' non sono piu' delle media query.
  *
  * Su un rail il vincolo cambia asse: non e' piu' la larghezza a finire, e'

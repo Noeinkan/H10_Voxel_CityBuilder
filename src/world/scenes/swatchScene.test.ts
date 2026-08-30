@@ -530,7 +530,7 @@ describe('swatchScene', () => {
     expect(swatchCellAt(0, extent.minY + extent.sizeY)).toBeNull();
 
     // Le due colonne d'acqua devono dirlo: li' i tre bit non sono una facciata.
-    expect(swatchCellAt(matrixCellRect(0, 24).x0, matrixCellRect(0, 24).y0)?.note).toContain('acqua');
+    expect(swatchCellAt(matrixCellRect(0, 24).x0, matrixCellRect(0, 24).y0)?.note).toContain('water');
   });
 
   it('cataloga ogni tipologia una volta sola, derivata dal catalogo', () => {
@@ -547,10 +547,18 @@ describe('swatchScene', () => {
       expect(subject.stamp.sizeX).toBeGreaterThan(0);
       expect(subject.stamp.sizeZ).toBeGreaterThan(0);
       // Livello, seme e fronte uniformi: e' cio' che li rende confrontabili.
-      expect(infoValue(subject, 'Livello')).toBe(String(SWATCH_BUILDING_LEVEL));
+      expect(infoValue(subject, 'Level')).toContain(String(SWATCH_BUILDING_LEVEL));
       expect(infoValue(subject, 'Seed')).toBe('0');
-      expect(infoValue(subject, 'Fronte')).toBe('est');
+      expect(infoValue(subject, 'Facing')).toBe('east');
+      // La scheda dichiara le condizioni della riga: e' la domanda per cui si
+      // apre il campionario davanti a una tipologia che in partita non nasce mai.
+      expect(infoValue(subject, 'Requires'), subject.id).toBeTruthy();
     }
+
+    // Ogni campo del requisito ha una parola: un mandato non deve sparire dalla
+    // scheda come se la riga non chiedesse niente.
+    const charterOnly = SWATCH_BUILDINGS.find((subject) => subject.id === 'building:gardenHousing');
+    expect(infoValue(charterOnly!, 'Requires')).toContain('communityGardens');
   });
 
   it('porta le quattro linee evolutive alle cinque soglie visuali', () => {
@@ -566,7 +574,7 @@ describe('swatchScene', () => {
       for (const level of SWATCH_LINE_LEVELS) {
         const subject = SWATCH_LINES.find((entry) => entry.id === `building:line:${typology}:${level}`);
         expect(subject, `${typology}@${level}`).toBeDefined();
-        expect(infoValue(subject!, 'Livello')).toBe(String(level));
+        expect(infoValue(subject!, 'Level')).toContain(String(level));
       }
     }
 
@@ -597,7 +605,7 @@ describe('swatchScene', () => {
       expect(subject.kind).toBe('landmark');
       expect(subject.stamp.sizeX).toBeGreaterThan(0);
       expect(subject.stamp.sizeZ).toBeGreaterThan(0);
-      expect(infoValue(subject, 'Fronte')).toBe('est');
+      expect(infoValue(subject, 'Facing')).toBe('east');
     }
 
     // Ogni ruolo mostra i suoi quattro stadi, e lo stadio zero resta il piu'
@@ -641,7 +649,7 @@ describe('swatchScene', () => {
       expect(subject.stamp.sizeZ, subject.id)
         .toBeGreaterThan(isSunken ? 16 : 100);
       expect(infoValue(subject, 'Seed')).toBe('0');
-      expect(infoValue(subject, 'Fronte')).toBe('est');
+      expect(infoValue(subject, 'Facing')).toBe('east');
     }
   });
 

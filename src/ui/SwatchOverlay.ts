@@ -1,11 +1,13 @@
+import { SWATCH_FOCUSES, type SwatchFocus } from '../world/scenes/swatchCatalog';
 import {
-  SWATCH_FOCUSES,
-  type SwatchFocus,
-  type SwatchSubject,
-} from '../world/scenes/swatchCatalog';
-import type { SwatchDetail } from '../world/scenes/swatchProbe';
-import { PALETTE_SLOT_NAMES } from '../engine/paletteSlots';
-import { SURFACE_KIND_NAMES } from '../world/visualBlock';
+  SWATCH_FOCUS_LABELS,
+  swatchCard,
+  type SwatchCard,
+  type SwatchCardRow,
+  type SwatchOverlayFrame,
+} from './SwatchOverlayModel';
+
+export type { SwatchOverlayFrame, SwatchVoxel } from './SwatchOverlayModel';
 
 /**
  * Referto e navigazione del campionario.
@@ -16,56 +18,18 @@ import { SURFACE_KIND_NAMES } from '../world/visualBlock';
  * cinque pulsanti che inquadrano una fascia e la scheda del soggetto sotto il
  * cursore — nome, uso o ruolo, variante, livello o stadio, ingombro e altezza —
  * piu' il referto del voxel davvero colpito.
+ *
+ * **Questo file e' soltanto la vista.** Cosa la scheda dica lo decide
+ * `SwatchOverlayModel`, che gira anche in Node: qui restano gli elementi da
+ * appendere e il ritmo con cui si riscrivono.
  */
-
-/** Il voxel colpito dal raggio, con il suo referto di palette e superficie. */
-export interface SwatchVoxel {
-  readonly x: number;
-  readonly y: number;
-  readonly z: number;
-  /** Slot di palette del voxel. */
-  readonly palette: number;
-  /** Indice del linguaggio di superficie del voxel. */
-  readonly surface: number;
-}
-
-export interface SwatchOverlayFrame {
-  /** Fascia inquadrata dai pulsanti. */
-  readonly focus: SwatchFocus;
-  /** Soggetto sotto il cursore, o la scelta persistente quando il cursore e' fuori. */
-  readonly subject: SwatchSubject | null;
-  /** Scelta persistente: sopravvive alla navigazione fra le fasce. */
-  readonly selection: SwatchSubject | null;
-  /** Il voxel davvero colpito, o null se il cursore non tocca nulla. */
-  readonly voxel: SwatchVoxel | null;
-  /** Prismi e quad della cella di matrice, o null fuori dalla matrice. */
-  readonly detail: SwatchDetail | null;
-}
-
-const FOCUS_LABELS: Readonly<Record<SwatchFocus, string>> = {
-  matrix: 'Matrice',
-  scale: 'Scala',
-  buildings: 'Edifici',
-  landmarks: 'Landmark',
-  arcologies: 'Arcologie',
-  all: 'Tutto',
-};
-
-const KIND_LABELS: Readonly<Record<SwatchSubject['kind'], string>> = {
-  matrix: 'matrice',
-  strata: 'stratigrafia',
-  scale: 'scala',
-  building: 'edificio',
-  landmark: 'landmark',
-  arcology: 'arcologia',
-};
 
 const REFRESH_MS = 200;
 
 export class SwatchOverlay {
   private readonly root: HTMLDetailsElement;
   private readonly summary: HTMLElement;
-  private readonly body: HTMLPreElement;
+  private readonly body: HTMLElement;
   private readonly buttons = new Map<SwatchFocus, HTMLButtonElement>();
   private lastPaint = 0;
 
@@ -76,7 +40,7 @@ export class SwatchOverlay {
 
     this.summary = document.createElement('summary');
     this.summary.className = 'debug-summary';
-    this.summary.textContent = '▾ SWATCH · Tutto';
+    this.summary.textContent = '▾ SWATCH · All';
     this.root.appendChild(this.summary);
 
     const actions = document.createElement('div');
@@ -85,15 +49,15 @@ export class SwatchOverlay {
       const button = document.createElement('button');
       button.type = 'button';
       button.className = 'debug-button';
-      button.textContent = FOCUS_LABELS[focus];
+      button.textContent = SWATCH_FOCUS_LABELS[focus];
       button.addEventListener('click', () => onFocus(focus));
       this.buttons.set(focus, button);
       actions.appendChild(button);
     }
     this.root.appendChild(actions);
 
-    this.body = document.createElement('pre');
-    this.body.className = 'debug-body';
+    this.body = document.createElement('div');
+    this.body.className = 'debug-body swatch-body';
     this.root.appendChild(this.body);
     parent.appendChild(this.root);
   }
@@ -108,33 +72,14 @@ export class SwatchOverlay {
 
   update(frame: SwatchOverlayFrame, now: number): void {
     this.lastPaint = now;
-    const subject = frame.subject;
-    const voxel = frame.voxel;
+    const card = swatchCard(frame);
 
     for (const [focus, button] of this.buttons) setActive(button, focus === frame.focus);
-    this.summary.textContent = `${this.root.open ? '▾' : '▸'} SWATCH · ${FOCUS_LABELS[frame.focus]}`;
+    this.summary.textContent = `${this.root.open ? '▾' : '▸'} SWATCH · ${card.focusLabel}`;
 
-    const voxelLine = voxel === null
-      ? 'voxel      —'
-      : `voxel      ${voxel.x}, ${voxel.y}, ${voxel.z} · slot ${voxel.palette} (${PALETTE_SLOT_NAMES[voxel.palette]}) · ${SURFACE_KIND_NAMES[voxel.surface]} (${voxel.surface})`;
-
-    this.body.textContent = [
-      `fascia     ${FOCUS_LABELS[frame.focus]}`,
-      `sotto      ${subject?.label ?? '—'}`,
-      subject === null ? '' : `           ${KIND_LABELS[subject.kind]}${subject.note === null ? '' : ` · ${subject.note}`}`,
-      ...(subject === null ? [] : subject.info.map((row) => rowLine(row.label, row.value))),
-      subject === null ? '' : `           ${subject.rect.x1 - subject.rect.x0} × ${subject.rect.y1 - subject.rect.y0} voxel · altezza ${subject.z1 - subject.z0}`,
-      frame.selection === null
-        ? ''
-        : `scelto     ${frame.selection.label}${frame.selection === subject ? '' : '  (Esc per mollare)'}`,
-      voxelLine,
-      frame.detail === null ? '' : `dettaglio  ${frame.detail.prisms} prismi · ${frame.detail.quads} quad`,
-      '',
-      '1..9 tema   L giorno/notte   F3 strumenti tecnici (H ±1h)',
-      'clic sceglie · Esc molla',
-    ]
-      .filter((line) => line !== '')
-      .join('\n');
+    // Cinque volte al secondo su una ventina di elementi: ricostruire costa meno
+    // che riconciliare, e fra due schede non c'e' niente da conservare.
+    this.body.replaceChildren(...sections(card));
   }
 
   dispose(): void {
@@ -142,9 +87,85 @@ export class SwatchOverlay {
   }
 }
 
-/** Riga di scheda allineata: etichetta a sinistra, valore a capo con rientro. */
-function rowLine(label: string, value: string): string {
-  return `           ${label.padEnd(10)} ${value}`;
+/** Le sezioni della scheda; a schermo le separa una sola riga sottile. */
+function sections(card: SwatchCard): readonly HTMLElement[] {
+  const head = section();
+  head.appendChild(titleLine(card));
+  if (card.note !== null) head.appendChild(text('swatch-note', card.note));
+  if (card.rows.length > 0) head.appendChild(rowList(card.rows));
+
+  const out: HTMLElement[] = [head];
+
+  if (card.pinned !== null) {
+    const pinned = section();
+    pinned.appendChild(rowList([{ label: 'Pinned', value: card.pinned }]));
+    out.push(pinned);
+  }
+
+  const voxel = section();
+  voxel.appendChild(rowList(card.voxelRows));
+  out.push(voxel);
+
+  const hints = section();
+  hints.classList.add('swatch-hints');
+  for (const hint of card.hints) hints.appendChild(text('swatch-hint', hint));
+  out.push(hints);
+
+  return out;
+}
+
+function section(): HTMLElement {
+  const element = document.createElement('div');
+  element.className = 'swatch-section';
+  return element;
+}
+
+/** Nome del soggetto e, accanto, il genere che spiega le sue righe. */
+function titleLine(card: SwatchCard): HTMLElement {
+  const line = document.createElement('div');
+  line.className = 'swatch-title';
+
+  const name = document.createElement('span');
+  name.className = 'swatch-title__name';
+  if (card.kind === null) name.classList.add('swatch-title__name--empty');
+  name.textContent = card.title;
+  line.appendChild(name);
+
+  if (card.kind !== null) {
+    const kind = document.createElement('span');
+    kind.className = 'swatch-kind';
+    kind.textContent = card.kind;
+    line.appendChild(kind);
+  }
+  return line;
+}
+
+/**
+ * Etichette e valori in due colonne.
+ *
+ * Un `<dl>` e non una tabella: sono coppie, non una griglia di dati. La griglia
+ * CSS fa il resto, e un valore lungo va a capo sotto se stesso invece che sotto
+ * la colonna delle etichette — il difetto per cui il referto allineato a
+ * `padEnd` non reggeva la scheda di un edificio.
+ */
+function rowList(rows: readonly SwatchCardRow[]): HTMLElement {
+  const list = document.createElement('dl');
+  list.className = 'swatch-rows';
+  for (const row of rows) {
+    const label = document.createElement('dt');
+    label.textContent = row.label;
+    const value = document.createElement('dd');
+    value.textContent = row.value;
+    list.append(label, value);
+  }
+  return list;
+}
+
+function text(className: string, content: string): HTMLElement {
+  const element = document.createElement('div');
+  element.className = className;
+  element.textContent = content;
+  return element;
 }
 
 /** Stesso stato attivo dei pulsanti di `InspectOverlay`: un solo linguaggio. */
