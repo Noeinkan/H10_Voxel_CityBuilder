@@ -2452,8 +2452,11 @@ schermo.
   ma il **bonus di quota** — la torre prende la cresta del cono, il cratere la
   spalla, e un isolato di spalla senza roccia torna alla famiglia che sale. Vedi
   sotto.
-- [ ] **Il cratere a schermo.** La condizione ha siti, ma nessuna arcologia — di <!-- size: M -->
-  nessuna famiglia — viene fondata su questa isola: vedi il blocco che precede.
+- [ ] **Il cratere a schermo.** La condizione ha siti *e* la città ora fonda <!-- size: M -->
+  megastrutture, ma quella che nasce è una torre: `ARCOLOGY.minSpacing` è 2 e il
+  nucleo di questa isola è largo due isolati per due, quindi la prima struttura —
+  che prende la cresta, perché il cursore ci arriva prima — esclude da sola tutti
+  gli altri isolati `core`, spalla compresa. Vedi sotto.
 
 **Due misure, e tutte e due hanno smentito il progetto.**
 
@@ -2483,20 +2486,55 @@ schermo.
    non contendersi un isolato, e in più un isolato di spalla su cui la roccia non
    basta torna alla famiglia che sale invece di restare senza megastruttura.
 
-**Un blocco che precede questa sotto-fase.** Sulla stessa misura, **nessuna
-arcologia nasce, di nessuna famiglia**: `cappedNeighbours` è **zero su ogni
-isolato**. `ARCOLOGY.minCapped` chiede due vicini che abbiano raggiunto la
-propria quota ammessa, e su questa città l'edificio più alto sta al **livello 5**
-contro un tetto del centro di 23–25. Non è lentezza: `BUILDER.upgradeThreshold`
-finisce a 198 — la fine dell'alfabeto della desiderabilità — e su questa isola il
-campo non supera quella soglia, quindi dal livello 6 in su non promuove più
-nessuno. `SCALE.maxLevel` a 26 (era 20) ha allargato la forbice, non l'ha creata.
-Il conto era pensato per arrivare anche dall'altra strada — un ospite di un
-impalcato abitato è saturo sotto il tetto — e nemmeno quella dà più niente qui.
-È indipendente dall'earthscraper: il percorso delle ricette alte non è cambiato
-di una riga, e le caselle rosse di `arcologyDriver.test.ts` sono le stesse di
-prima di questa sotto-fase. Va affrontata come taratura di `src/world/buildings/`
-e `src/sim/` insieme, non spostando `minCapped` finché non torna verde.
+**Il blocco che sembrava precedere questa sotto-fase, e non c'era.** La misura da
+cui era nato — «nessuna arcologia, di nessuna famiglia; `cappedNeighbours` zero
+su ogni isolato» — era vera, ma la diagnosi era sbagliata due volte, e rimisurare
+l'ha smentita.
+
+Non è `BUILDER.upgradeThreshold` che si ferma a 198: su quella fixture il campo
+di desiderabilità ha massimo **174 su tutta l'isola**, e lo stallo non è al
+livello 6, è **totale**. Dopo circa ottocento tick il miglior margine di
+promozione fra tutti i trecento edifici è **−8, e su un livello 0 → 1** (soglia
+50); gli upgrade si fermano a 181 e non ne parte più uno. Zero edifici fermati
+dalla gerarchia, trecentoventi dalla soglia. A mangiarsi il campo è la
+congestione — `valore = Σ catalizzatori − 8 × edifici entro Chebyshev 8` — cioè
+la crescita stessa: duecentodieci di ampiezza al centro del mercato meno
+cinquantasei di sette vicini. **Con un polo solo non esiste una colonna
+dell'isola dove la somma stia davanti alla congestione che quella crescita
+produce**, e senza promozioni nessun vicino raggiunge mai la propria quota
+ammessa.
+
+E infatti il meccanismo non aveva niente di rotto. Stessa isola, stesso seed,
+cinque poli di crescita sovrapposti — cioè quello che un giocatore mette davvero
+in un centro: il campo satura a **255**, gli upgrade sono **millecinquecento**,
+gli edifici arrivano al **livello 26**, e a fare da tetto torna la gerarchia, che
+è il suo mestiere. La prima arcologia si fonda intorno al **tick 1600** e sventra
+undici edifici. `cappedNeighbours` non ha mai rifiutato niente: ogni rifiuto
+prima della fondazione è `thin` o `notCore` — «non c'è ancora abbastanza città».
+
+**Era la fixture, non la taratura.** `arcologyDriver.test.ts` cresceva la città
+con un mercato solo, quindi le sue quattro caselle rosse dicevano una cosa vera
+di quella fixture e falsa del gioco. La fixture usa ora cinque poli e duemila
+tick, e il file è verde. `minCapped` non è stato toccato, e non andava toccato.
+
+**Cosa resta aperto, e questa volta è misurato.** Due cose, e nessuna delle due è
+una soglia da abbassare:
+
+1. **`ARCOLOGY.minSpacing: 2` ne ammette una sola.** I quattro isolati `core` di
+   questa isola sono adiacenti (2,2 / 2,3 / 3,2 / 3,3): fondata la prima —
+   `spireRing`, una torre — le altre tre sono a distanza 1 e la spaziatura le
+   esclude tutte. La quota dice tre, la geometria dice una. È per questo che il
+   cratere non si vede: non perché la spalla non ci sia, ma perché la torre gliela
+   porta via.
+2. **Un polo largo cancella la spalla.** I landmark del gruppo identità hanno
+   raggio 85–92 contro i 45–65 di un seme di crescita: uno solo al centro tiene
+   `poleReach` sopra tre quarti su tutto il nucleo, il cono è pieno ovunque e
+   **ogni** isolato `core` diventa cresta. Con una `university` al centro la
+   famiglia interrata torna senza siti; con i soli semi di crescita l'isola dà
+   tre creste e una spalla — l'isolato 3,3, bonus 1, 65 vicini, 28 quote di
+   roccia, contorno asciutto, che è anche il sito migliore dell'isola. La
+   condizione per bonus di quota regge, ma dipende da come il giocatore mette i
+   poli in un modo che vale la pena dichiarare.
 
 **Vincolo:** valgono i vincoli trasversali della fase 4. In più: lo scavo non
 esce mai dall'impronta, viaggia sulla coda di comparsa come le altre due

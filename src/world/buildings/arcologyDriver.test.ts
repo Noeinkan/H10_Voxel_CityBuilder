@@ -1,10 +1,11 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import {
   BALANCE,
-  BUILDING_CLASS,
   addCatalyst,
+  catalystById,
   createSimState,
   tick,
+  type CatalystId,
   type SimState,
 } from '../../sim';
 import { AERIAL, AERIAL_PART } from '../aerial/config';
@@ -50,13 +51,52 @@ interface City {
 
 let city: City;
 
+const STOCK = 1_000_000;
+
+/**
+ * I poli che accendono la citta' della fixture.
+ *
+ * **Uno solo non bastava, ed e' misurato.** Con il solo mercato al centro il
+ * campo di desiderabilita' non supera **174 su tutta l'isola**: la congestione —
+ * otto punti per edificio nel raggio breve — se lo mangia man mano che la citta'
+ * arriva, e dopo circa ottocento tick il miglior margine di promozione di tutti
+ * i trecento edifici e' **negativo, e su un livello 0 -> 1**. La citta' si
+ * congelava a livello cinque, quindi nessun vicino raggiungeva mai la propria
+ * quota ammessa e `cappedNeighbours` restava zero ovunque: non nasceva
+ * un'arcologia di nessuna famiglia, e le caselle di questo file erano rosse per
+ * una fixture sottodimensionata, non per un difetto del driver.
+ *
+ * Cinque poli sovrapposti sono cio' che un giocatore mette davvero in un centro,
+ * e portano il campo a saturazione: gli edifici arrivano al tetto della fascia
+ * `core`, i vicini diventano `capped` e la prima arcologia si fonda intorno al
+ * tick 1600. Forza e portata restano quelle del catalogo giocabile — una
+ * megastruttura raggiungibile solo da una fixture a forza 255 esisterebbe nei
+ * test e non in partita.
+ *
+ * **Sono cinque poli di crescita, e nessuno del gruppo identita'.** Anche questo
+ * e' misurato, e dice qualcosa sulla regola e non solo sulla fixture: i landmark
+ * di identita' hanno raggio 85-92 contro i 45-65 di un seme di crescita, e uno
+ * solo al centro tiene `poleReach` sopra tre quarti su **tutto** il nucleo. Il
+ * cono e' allora pieno ovunque, ogni isolato `core` e' cresta, e la famiglia
+ * interrata resta senza siti — la spalla e' l'isolato del centro che il cono
+ * non raggiunge piu' per intero, e un polo largo non gliene lascia nessuno. Con
+ * i soli semi di crescita l'isola da' tre creste e una spalla (l'isolato 3,3:
+ * bonus 1, 65 vicini, 28 quote di roccia, contorno asciutto), che e' la
+ * configurazione su cui le due famiglie si distinguono davvero.
+ */
+const POLES: readonly { readonly kind: CatalystId; readonly x: number; readonly y: number }[] = [
+  { kind: 'market', x: 128, y: 128 },
+  { kind: 'park', x: 118, y: 128 },
+  { kind: 'school', x: 138, y: 128 },
+  { kind: 'transport', x: 128, y: 118 },
+  { kind: 'greenhouse', x: 128, y: 138 },
+];
+
 /**
  * Una citta' matura su un'isola intera.
  *
- * Il mercato usa esattamente forza e portata del catalogo giocabile: una
- * megastruttura raggiungibile solo dalla fixture a forza 255 esisterebbe nei
- * test ma non in partita. Serve comunque un'isola intera, perche' la fascia
- * `core` di `skyline/` la ritaglia dalla citta' costruita, non dalla mappa.
+ * Serve un'isola intera, perche' la fascia `core` di `skyline/` la ritaglia
+ * dalla citta' costruita, non dalla mappa.
  */
 function grow(): City {
   const world = new VoxelWorld();
@@ -64,29 +104,35 @@ function grow(): City {
   const { map } = generateIsland(world, seed, { minX: 0, minY: 0, sizeX: 256, sizeY: 256 });
   const builder = new Builder(world, map, seed);
 
-  let state = {
+  let state: SimState = {
     ...createSimState(),
     // Questa suite misura struttura, rete e dichiarazione degli usi. La filiera
     // che accumula la scorta ha test propri: qui il magazzino largo impedisce ai
-    // normali grattacieli di consumare la fixture prima del megaprogetto.
-    materials: { stock: 100_000, delta: 0 },
+    // normali grattacieli di consumare la fixture prima del megaprogetto — e con
+    // il centro saturo ne promuove piu' di millecinquecento, che sul vecchio
+    // magazzino da centomila avrebbero affamato il megaprogetto da soli.
+    materials: { stock: STOCK, delta: 0 },
   };
-  state = addCatalyst(state, {
-    x: 128,
-    y: 128,
-    class: BUILDING_CLASS.residential,
-    strength: BALANCE.gameplay.catalyst.roles.market.strength,
-    radius: BALANCE.gameplay.catalyst.roles.market.radius,
-  });
+  for (const pole of POLES) {
+    const definition = catalystById(pole.kind);
+    state = addCatalyst(state, {
+      x: pole.x,
+      y: pole.y,
+      class: definition.class,
+      kind: pole.kind,
+      strength: definition.strength,
+      radius: definition.radius,
+    });
+  }
 
-  for (let i = 0; i < 1600; i++) {
+  for (let i = 0; i < 2000; i++) {
     state = tick(state, map);
     state = builder.onTick(state);
     // La comparsa e' a budget: senza svuotare la coda la citta' resterebbe a
     // registro e non nel mondo, e le sonde sui voxel leggerebbero aria.
     while (builder.stats.growing > 0) builder.step();
   }
-  expect(state.materials.stock).toBeLessThan(100_000 - BALANCE.materials.arcologyCost);
+  expect(state.materials.stock).toBeLessThan(STOCK - BALANCE.materials.arcologyCost);
   return { builder, state, world, map };
 }
 
@@ -364,12 +410,11 @@ describe('ArcologyDriver — l earthscraper', () => {
     // e' rado e costiero. E' il difetto di `isPeakBlock` per la terza volta, e
     // l'unico modo di accorgersene e' guardare gli isolati veri.
     //
-    // Si misura il **sito** e non la nascita, di proposito: fondare passa anche
-    // da `cappedNeighbours`, che questa isola non soddisfa piu' da quando
-    // `SCALE.maxLevel` e' salito a 26 e ha spostato il tetto del centro a
-    // ventitre' fasce (vedi la 4.18 in ROADMAP). Quel blocco vale per **tutte e
-    // due** le famiglie ed e' di un altro dominio; questa casella difende cio'
-    // che e' di questo — che un isolato da scavare esista.
+    // Si misura il **sito** e non la nascita, di proposito: quale famiglia
+    // nasca dipende anche da quale isolato il cursore incontra per primo e dalla
+    // spaziatura fra megastrutture, che sono decisioni del driver. Questa casella
+    // difende cio' che e' della famiglia — che un isolato da scavare esista — e
+    // resta vera anche nel giro in cui a fondarsi e' una torre.
     const blocks = candidateBlocks();
     const diggable = blocks.filter((b) =>
       b.heightBonus < SKYLINE.coneBonus && b.dryRim && b.depth >= MIN_SUNKEN_DEPTH);
