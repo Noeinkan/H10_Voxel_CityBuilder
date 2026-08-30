@@ -9,10 +9,13 @@ import {
 } from '../../sim';
 import {
   ARCOLOGY,
+  SUNKEN,
   arcologyOf,
+  sunkenDepthOf,
   type ArcologyRecipe,
 } from '../arcology/config';
-import { arcologyForBlock } from '../arcology/catalog';
+import { arcologyForBlock, type ArcologyFamily } from '../arcology/catalog';
+import { surveySunkenSite } from '../arcology/depth';
 import {
   arcologyOrigin,
   arcologySpan,
@@ -21,12 +24,18 @@ import {
   worldLandings,
   type WorldLanding,
 } from '../arcology/generate';
-import { arcologyAnchor, arcologyQuota, arcologyReady, type ArcologyRefusal } from '../arcology/siting';
+import {
+  arcologyAnchor,
+  arcologyQuota,
+  arcologyReady,
+  earthscraperReady,
+  type ArcologyRefusal,
+} from '../arcology/siting';
 import { AERIAL_PART } from '../aerial/config';
 import type { AerialDriver } from './aerialDriver';
 import { isDryLand } from '../grading/grade';
 import { hashCoords } from '../rng';
-import { tierAt } from '../skyline/tiers';
+import { TIER, tierAt } from '../skyline/tiers';
 import { FACING, type Facing } from '../streets/streetGrid';
 import { maxStageOf } from '../landmarks/config';
 import { stageForBuildings } from '../landmarks/generate';
@@ -37,7 +46,8 @@ import type { ClearanceBox, ClearanceSites } from './clearanceSite';
 import { BUILDER } from './config';
 import { allowedLevel, riseOf, skylineQueryAt } from './hierarchy';
 import { buildWorks, surveyGrade } from './siteWorks';
-import { stampFootprint, trimStampZ } from './stamp';
+import { EMPTY_STAMP, sliceStamps, stampFootprint, trimStampZ, type VoxelStamp } from './stamp';
+import { sunkenDigStamp } from './sunkenDig';
 
 /**
  * Le megastrutture: dove nascono, come salgono, cosa dichiarano alla citta'.
@@ -282,11 +292,37 @@ export class ArcologyDriver {
       const blockSide = Math.min(single.x1 - single.x0 + 1, single.y1 - single.y0 + 1);
       const facing = this.facingAt(singleAnchor.x, singleAnchor.y, (blockSide >> 1) + 1);
 
-      const pick = arcologyForBlock(this.ctx.seed, block.kx, block.ky, facing);
+      // **La fascia sceglie la famiglia prima della forma.** Dove la gerarchia
+      // concede altezza si sale, dove non la concede si scava: pescare
+      // dall'unione dei due cataloghi avrebbe messo un cratere nel centro denso
+      // e una torre nella corona bassa una volta su tre, che e' la
+      // megastruttura che ignora la ragione per cui esiste.
+      const tier = tierAt(skylineQueryAt(this.ctx, singleAnchor.x, singleAnchor.y, state));
+      const family: ArcologyFamily = tier === TIER.core ? 'tall' : 'sunken';
+
+      // La profondita' entra nella **scelta** della forma, non solo nel rifiuto.
+      // Si misura sul singolo isolato, che e' una stima prudente: il riquadro
+      // del cluster e' piu' grande e il suo massimo non puo' che salire, quindi
+      // al peggio si scarta una ricetta che sarebbe entrata. Quella vera la
+      // rimisura `earthscraperReady` sull'impronta effettiva.
+      const probe = family === 'sunken'
+        ? surveySunkenSite(
+          this.ctx.terrain,
+          single.x0,
+          single.y0,
+          single.x1 - single.x0 + 1,
+          single.y1 - single.y0 + 1,
+        )
+        : null;
+
+      const pick = arcologyForBlock(
+        this.ctx.seed, block.kx, block.ky, facing, family, probe?.depth,
+      );
       const recipe = pick.recipe;
       const rect = pick.rect;
       const anchor = arcologyAnchor(rect);
       const span = arcologySpan(recipe, facing);
+      const origin = arcologyOrigin(recipe, facing, anchor.x, anchor.y);
 
       // Il conteggio si legge qui, **prima** dello sventramento, e viaggia fino
       // a `build` per essere congelato su `foundedNeighbours`: e' la stessa
@@ -295,16 +331,29 @@ export class ArcologyDriver {
         anchor.x, anchor.y, ARCOLOGY.radius,
       );
 
-      const refusal = arcologyReady({
+      const common = {
         existing: this.ctx.registry.arcologyCount,
         buildings,
-        tier: tierAt(skylineQueryAt(this.ctx, anchor.x, anchor.y, state)),
+        tier,
         blockRect: rect,
         spanX: span.sizeX,
         spanY: span.sizeY,
         builtNeighbours,
         cappedNeighbours: this.cappedAround(anchor.x, anchor.y, state),
-      });
+      };
+      // Sull'impronta vera, non sulla stima: il contorno asciutto di un cluster
+      // da due isolati non e' quello del primo.
+      const site = family === 'sunken'
+        ? surveySunkenSite(this.ctx.terrain, origin.x, origin.y, span.sizeX, span.sizeY)
+        : null;
+      const refusal = site === null
+        ? arcologyReady(common)
+        : earthscraperReady({
+          ...common,
+          availableDepth: site.depth,
+          requiredDepth: sunkenDepthOf(recipe),
+          dryRim: site.dryRim,
+        });
       if (refusal !== null) {
         // L'ultimo vince, e va bene cosi': il cursore scorre isolati vicini fra
         // loro, che sono nella stessa fascia e allo stesso stadio di crescita.
@@ -322,7 +371,6 @@ export class ArcologyDriver {
         return deferConstruction(state, BALANCE.materials.arcologyCost);
       }
 
-      const origin = arcologyOrigin(recipe, facing, anchor.x, anchor.y);
       const box: ClearanceBox = {
         x: origin.x,
         y: origin.y,
@@ -432,6 +480,9 @@ export class ArcologyDriver {
     facing: Facing,
     foundedNeighbours: number,
   ): BuildingRecord | null {
+    if (recipe.sunken !== undefined) {
+      return this.buildSunken(x, y, recipe, facing, foundedNeighbours);
+    }
     const { world, terrain, registry, growth, surface, seed } = this.ctx;
     const span = arcologySpan(recipe, facing);
     const origin = arcologyOrigin(recipe, facing, x, y);
@@ -494,6 +545,156 @@ export class ArcologyDriver {
     return record;
   }
 
+  /**
+   * Apre il pozzo e accoda lo stadio zero. null se il luogo non lo regge.
+   *
+   * **L'opera di terra non passa di qui, ed e' la differenza vera con `build`.**
+   * Un'arcologia che sale poggia sul terreno e ha bisogno che qualcuno glielo
+   * porti a quota; qui il terreno dentro l'ingombro **se ne va**, e la lastra
+   * della piazza — l'anello di sommita' della ricetta — e' cio' che prende il
+   * suo posto. Chiamare `buildWorks` avrebbe riempito fino a `padZ` proprio le
+   * colonne che lo scavo apre un istante dopo, cioe' avrebbe pagato due volte
+   * per il risultato di prima.
+   *
+   * **Prima il pozzo, poi la struttura**, e non e' un dettaglio di comparsa:
+   * `admitPending` ammette una voce per struttura in ordine di arrivo, quindi
+   * accodare lo scavo per primo garantisce che il cratere si apra e solo dopo
+   * gli anelli comincino a comparirci dentro. L'ordine opposto avrebbe scritto
+   * la struttura dentro la roccia — invisibile — per poi far sparire il terreno
+   * tutto insieme alla fine.
+   */
+  private buildSunken(
+    x: number,
+    y: number,
+    recipe: ArcologyRecipe,
+    facing: Facing,
+    foundedNeighbours: number,
+  ): BuildingRecord | null {
+    const { terrain, registry, growth, surface, seed } = this.ctx;
+    const depth = sunkenDepthOf(recipe);
+    const span = arcologySpan(recipe, facing);
+    const origin = arcologyOrigin(recipe, facing, x, y);
+    const recordSeed = hashCoords(seed, x, y);
+
+    // Rimisurato qui e non ereditato da `found`: fra la condizione e questa
+    // chiamata puo' esserci stato un cantiere lungo mille tick, e il terreno di
+    // un'altra struttura puo' essere cambiato nel frattempo.
+    const site = surveySunkenSite(terrain, origin.x, origin.y, span.sizeX, span.sizeY);
+    if (!site.dryRim || site.depth < depth) return null;
+
+    // La piazza sta al piano finito; `z = 0` dello stamp sta `depth` piu' sotto.
+    const baseZ = site.padZ - depth;
+    if (baseZ < SUNKEN.floorZ) return null;
+
+    const first = trimStampZ(generateArcology(recipe, { stage: 0, facing, seed: recordSeed }));
+    const dig = sunkenDigStamp(recipe, facing, origin.x, origin.y, baseZ, terrain);
+
+    if (registry.overlaps(
+      origin.x, origin.y, span.sizeX, baseZ, span.sizeZ, span.sizeY,
+    )) {
+      return null;
+    }
+    if (!this.fitsEveryStage(origin, baseZ, recipe, facing, recordSeed)) return null;
+    if (!this.fitsDig(origin, baseZ, dig)) return null;
+
+    surface.clearSiteDecor(origin.x, origin.y, span.sizeX, span.sizeY);
+
+    const record = registry.add({
+      x: origin.x,
+      y: origin.y,
+      baseZ,
+      footprint: span.sizeX,
+      footprintY: span.sizeY,
+      height: span.sizeZ,
+      class: BUILDING_CLASS.civic,
+      level: 0,
+      seed: recordSeed,
+      facing,
+      arcology: recipe.kind,
+      foundedNeighbours,
+      uses: [],
+    });
+
+    this.enqueueDig(record, dig);
+    growth.enqueueSegments(record, first.stamp, first.z0);
+    this.paintApron(record);
+    surface.enqueueBlockStreets(this.ctx.streets.blockAt(x, y));
+    return record;
+  }
+
+  /**
+   * Accoda lo scavo a segmenti, con la stessa macchina che demolisce.
+   *
+   * `EMPTY_STAMP` come sagoma nuova e la roccia come «precedente»: la coda non
+   * scrive niente e cancella tutto, a budget e senza un secondo percorso di
+   * scrittura. E' la forma che `enqueueSlopeCarve` ha stabilito, con in piu' il
+   * taglio a segmenti — un cratere multi-blocco e' largo quarantotto voxel, e
+   * una voce sola sforerebbe il tetto di chunk sporchi che `enqueueSegments`
+   * rispetta per costruzione.
+   */
+  private enqueueDig(record: BuildingRecord, dig: VoxelStamp): void {
+    if (dig.sizeZ === 0) return;
+    for (const slice of sliceStamps(dig, BUILDER.segmentSide)) {
+      this.ctx.growth.enqueue(record.id, {
+        x: record.x + slice.offsetX,
+        y: record.y + slice.offsetY,
+        z: record.baseZ,
+      }, EMPTY_STAMP, slice.stamp);
+    }
+  }
+
+  /**
+   * Riapre il pozzo di un'arcologia caricata. No-op su tutto il resto.
+   *
+   * **Senza questa riga il salvataggio perde la famiglia intera, e in
+   * silenzio.** `Builder.restore` ridisegna gli stamp e nient'altro: terreno e
+   * strade si rifanno dal seme perche' sono funzioni pure, quindi la roccia
+   * torna dov'era e la struttura resta murata dentro — visibile solo con una
+   * vista di sezione, e indistinguibile da un salvataggio corrotto.
+   *
+   * Si chiama **prima** di scrivere la sagoma, non dopo: lo scavo cancella tutto
+   * cio' che trova nell'imbuto, e girato dopo porterebbe via la struttura appena
+   * ridisegnata.
+   */
+  reopenPit(record: BuildingRecord): void {
+    const kind = record.arcology;
+    if (kind === undefined) return;
+    const recipe = arcologyOf(kind);
+    if (recipe.sunken === undefined) return;
+
+    const facing = (record.facing ?? FACING.east) as Facing;
+    const dig = sunkenDigStamp(
+      recipe, facing, record.x, record.y, record.baseZ, this.ctx.terrain,
+    );
+    if (dig.sizeZ === 0) return;
+    // A budget non serve: il caricamento scrive gia' tutte le sagome di colpo,
+    // ed e' lo stesso momento in cui la citta' intera ricompare.
+    this.ctx.growth.writeStamp(
+      { x: record.x, y: record.y, z: record.baseZ }, dig, 0, dig.sizeZ, true,
+    );
+  }
+
+  /** true se lo scavo, a questo allineamento, sta nel tetto di chunk sporchi. */
+  private fitsDig(
+    origin: { x: number; y: number },
+    baseZ: number,
+    dig: VoxelStamp,
+  ): boolean {
+    if (dig.sizeZ === 0) return true;
+    for (const slice of sliceStamps(dig, BUILDER.segmentSide)) {
+      const count = dirtyChunkCount(
+        origin.x + slice.offsetX,
+        origin.y + slice.offsetY,
+        slice.stamp.sizeX,
+        baseZ,
+        baseZ + slice.stamp.sizeZ,
+        slice.stamp.sizeY,
+      );
+      if (count > BUILDER.maxDirtyChunksPerBuilding) return false;
+    }
+    return true;
+  }
+
   /** true se ogni stadio, a questo allineamento, sta nel tetto di chunk sporchi. */
   private fitsEveryStage(
     origin: { x: number; y: number },
@@ -547,6 +748,28 @@ export class ArcologyDriver {
     }
   }
 
+  /**
+   * Riapre le piazzole di un'arcologia caricata.
+   *
+   * Una piazzola non e' voxel: e' un record di un voxel d'altezza che dichiara
+   * «qui sopra si costruisce», e i suoi voxel sono quelli dell'arcologia stessa,
+   * che `recordStamp` ha gia' ridisegnato. Non entra nel salvataggio — e' una
+   * parte in quota come le altre — ma a differenza di una campata si ricava
+   * interamente dalla ricetta e dallo stadio, quindi si rimette dov'era invece
+   * di aspettare il prossimo avanzamento. Senza, un'arcologia caricata perde i
+   * propri appoggi e la citta' smette di poterci salire sopra.
+   */
+  adopt(): void {
+    for (const record of [...this.ctx.registry.all]) {
+      if (record.arcology === undefined) continue;
+      const recipe = arcologyOf(record.arcology);
+      const facing = (record.facing ?? FACING.east) as Facing;
+      for (let stage = 0; stage <= record.level; stage++) {
+        this.openLandings(record, recipe, stage, facing);
+      }
+    }
+  }
+
   private commitLanding(host: BuildingRecord, landing: WorldLanding): void {
     this.ctx.registry.add({
       x: landing.x,
@@ -575,8 +798,23 @@ export class ArcologyDriver {
   private paintApron(record: BuildingRecord): void {
     const margin = ARCOLOGY.apron;
     const depth = footprintDepth(record);
+    // **Su un pozzo il grembiule si ferma al bordo dell'ingombro.** La coda di
+    // superficie dipinge a `heightAt - 1`, cioe' alla quota che il terreno
+    // *aveva*: sopra una colonna scavata quel voxel non c'e' piu', e il
+    // calpestio ci resterebbe sospeso in mezzo al vuoto — un coperchio d'asfalto
+    // sulla bocca del cratere. E' lo stesso difetto che la passeggiata del
+    // distretto costiero evita scartando le colonne gia' scavate, e qui la
+    // lastra della piazza la posa gia' la ricetta.
+    const sunken = record.arcology !== undefined &&
+      arcologyOf(record.arcology).sunken !== undefined;
+
     for (let py = record.y - margin; py < record.y + depth + margin; py++) {
       for (let px = record.x - margin; px < record.x + record.footprint + margin; px++) {
+        if (sunken &&
+          px >= record.x && px < record.x + record.footprint &&
+          py >= record.y && py < record.y + depth) {
+          continue;
+        }
         if (!isDryLand(this.ctx.terrain.biomeAt(px, py))) continue;
         this.ctx.surface.enqueue({ x: px, y: py, palette: ARCOLOGY.apronPalette, priority: 1 });
       }
