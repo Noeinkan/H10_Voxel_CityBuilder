@@ -25,8 +25,13 @@ suffisso.
 
 - La sezione dopo `## indice —` è il titolo della sezione di `PROJECT_INDEX.md`
   in cui la riga deve finire, esattamente com'è scritto lì (`Radice`,
-  `Test e bench`, `` `src/engine/` ``). Le righe entrano in ordine alfabetico;
-  una riga già presente per lo stesso path viene sostituita, non duplicata.
+  `Documentazione operativa`, `` `src/engine/` ``). Le righe entrano in ordine
+  alfabetico; una riga già presente per lo stesso path viene sostituita, non
+  duplicata.
+- **Un `*.test.ts` o un `*.bench.ts` non ha una riga d'indice.** Il file di test
+  sta accanto a quello che copre e `npm run test:related` lo trova dal grafo
+  degli import: una riga in più non aggiunge un posto dove guardare, aggiunge
+  una fusione da fare e un rifiuto del semaforo da aspettare.
 - Il blocco `## changelog` finisce in coda all'incremento in corso. Se il tuo è
   un incremento diverso, dagli un titolo (`## changelog — Il tuo titolo`): apre
   una sezione nuova in cima invece di infilare le voci sotto il titolo di un

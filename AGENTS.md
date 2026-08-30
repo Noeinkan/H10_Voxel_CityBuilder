@@ -21,10 +21,14 @@ Questo file contiene soltanto regole globali. Le eccezioni di
 
 - Prima di esplorare, interroga `PROJECT_INDEX.md` con
   `npm run locate -- <termine>`; apri soltanto le righe e i file pertinenti.
+  **Non aprirlo per intero**: sono trentamila token per una risposta che
+  `locate` da' in dieci righe.
 - Usa `rg` dopo l'indice per confermare chiamanti e working tree, non come
   discovery primaria a tentoni.
-- Ogni modifica a codice, configurazione o struttura aggiorna nello stesso
-  incremento le righe interessate del Project Index.
+- Ogni modifica a codice di produzione, configurazione o struttura aggiorna
+  nello stesso incremento le righe interessate del Project Index. I `*.test.ts`
+  e i `*.bench.ts` **non** sono indicizzati: si trovano co-locati e con
+  `test:related`.
 - Usa un frammento personale in `docs/pending/` e `npm run docs:merge`;
   non considerare concluso il lavoro finche' l'indice non descrive il risultato.
 
@@ -69,7 +73,7 @@ o formatter configurati: non inventarli.
   Costa secondi. Da li' si allarga di un gradino per volta — prima la cartella
   (`npx vitest run src/world/buildings/`), mai direttamente tutto.
 - **`test:fast` non e' un percorso rapido.** L'unica cosa che esclude e'
-  `*.slow.test.ts`, un file su 174: e' la suite intera meno uno, e costa quanto
+  `*.slow.test.ts`, un file su 189: e' la suite intera meno uno, e costa quanto
   `npm test`. Lo stesso vale per `test:fast:all`.
 - **Non lanciare la suite completa di tua iniziativa**, nemmeno per chiudere un
   incremento. Vitest apre un worker per core: una sola run occupa la macchina

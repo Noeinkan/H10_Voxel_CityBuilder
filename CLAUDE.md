@@ -14,8 +14,23 @@ Three.js + Vite. Strati indipendenti che non si conoscono fra loro:
 ## Dove stanno le regole
 
 **Comandi, convenzioni, contratti da preservare, budget e definizione di
-"finito" stanno in [AGENTS.md](AGENTS.md)**, che si carica insieme a questo file.
-Non cercarli qui e non duplicarli: se una regola vale sempre, il suo posto è lì.
+"finito" stanno in [AGENTS.md](AGENTS.md)**, e non cercarli qui: se una regola
+vale sempre, il suo posto è lì. Ma **AGENTS.md non arriva da solo in contesto** —
+questo file sì —: aprilo prima della prima scrittura, non a valle di un dubbio.
+
+Le tre regole che, se restano fuori, costano più della lettura:
+
+1. **Non lanciare la suite completa di tua iniziativa**, nemmeno per chiudere.
+   Vitest apre un worker per core e mette in coda ogni altro agente sul repo:
+   con tre run in parallelo una sola ha superato i venti minuti senza finire. Il
+   default è `npm run typecheck` più `npx vitest run <i file che coprono ciò che
+   hai toccato>`, o `test:related -- <sorgenti>` se non sai quali siano. La
+   suite intera è un evento coordinato: la chiede l'utente, o la proponi e
+   aspetti. `test:fast` non è una scorciatoia: esclude un file su 189.
+2. **`npm run locate -- <termine>` prima di esplorare**, `rg` dopo per
+   confermare i chiamanti. `PROJECT_INDEX.md` aperto per intero è trentamila
+   token per una risposta da dieci righe.
+3. **Prosa in italiano, identificatori e stringhe a schermo in inglese.**
 
 Il resto si carica quando serve, e questo è deliberato:
 
@@ -23,7 +38,7 @@ Il resto si carica quando serve, e questo è deliberato:
 | --- | --- |
 | Lavori in una cartella di `src/` | `src/engine/AGENTS.md`, `src/world/AGENTS.md`, `src/sim/AGENTS.md` |
 | Ti serve overlay, hotkey o un parametro URL | skill `/debug-harness` |
-| Cerchi *dove sta* un file o un export | [PROJECT_INDEX.md](PROJECT_INDEX.md) |
+| Cerchi *dove sta* un file o un export | `npm run locate -- <termine>` su [PROJECT_INDEX.md](PROJECT_INDEX.md) |
 | Cerchi *perché* una scelta è stata fatta | [README.md](README.md), [src/sim/README.md](src/sim/README.md) |
 | Cerchi *cosa* è cambiato e quando | [CHANGELOG.md](CHANGELOG.md) |
 | Cerchi dove va il progetto | [ROADMAP.md](ROADMAP.md) |
@@ -33,9 +48,8 @@ non "per contesto".
 
 ## Cose che si sbagliano facilmente
 
-- **Prosa in italiano, identificatori in inglese.** Vale per commenti,
-  documentazione e messaggi di commit. I commenti esistenti spiegano *perché*,
-  non *cosa*: segui lo stesso registro.
+- **I commenti esistenti spiegano *perché*, non *cosa***: segui lo stesso
+  registro, in italiano come loro.
 - **Le tabelle di misura in `README.md` e `src/sim/README.md` sono verificate a
   mano su questa macchina.** Se tocchi il percorso caldo, dillo invece di
   aggiornare i numeri a occhio.
@@ -57,10 +71,12 @@ non "per contesto".
   `recordStamp` sa ridisegnarla dal solo record: se non lo sa, la cattura la pota
   insieme a chi ci poggia sopra.
 - **`PROJECT_INDEX.md` e `CHANGELOG.md` non si scrivono a mano.** Aggiungendo un
-  file, o chiudendo un incremento, lascia un frammento in `docs/pending/` e
-  fondilo con `npm run docs:merge`: sono i due file che tutti aggiornano nello
-  stesso istante, ed erano quasi un terzo dei rifiuti del semaforo. Il README di
-  sezione invece, se è una superficie pubblica, si aggiorna direttamente.
+  file di produzione, o chiudendo un incremento, lascia un frammento in
+  `docs/pending/` e fondilo con `npm run docs:merge`: sono i due file che tutti
+  aggiornano nello stesso istante, ed erano quasi un terzo dei rifiuti del
+  semaforo. **Un `*.test.ts` non ha riga d'indice**: sta accanto a ciò che copre
+  e lo trova `test:related`. Il README di sezione invece, se è una superficie
+  pubblica, si aggiorna direttamente.
 
 ## Compattazione
 
