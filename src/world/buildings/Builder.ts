@@ -10,6 +10,7 @@ import {
   type CellRect,
   type SimState,
 } from '../../sim';
+import { columnKey } from '../chunkCoords';
 import { dirtyChunkCount, fitsChunkBudget } from './chunkBudget';
 import { buildStamp } from './assemble';
 import { poleRectAt } from './growthPoles';
@@ -295,7 +296,7 @@ export class Builder {
    * svuota l'insieme con `forget`, perche' una colonna bocciata perche' occupata
    * adesso puo' essere libera.
    */
-  private readonly blacklist = new Set<string>();
+  private readonly blacklist = new Set<number>();
 
   private readonly rejectedCounts = new Array<number>(REJECT_REASONS.length).fill(0);
 
@@ -664,6 +665,13 @@ export class Builder {
       if (this.registryImpl.get(record.id) !== null) continue;
       this.registryImpl.restore(record);
 
+      // **Il pozzo prima della sagoma.** Un earthscraper vive in un vuoto che il
+      // file non contiene — terreno e strade si rifanno dal seme — quindi al
+      // caricamento la roccia e' tornata dov'era. Riaprirlo dopo aver scritto la
+      // struttura la porterebbe via insieme al terreno: lo scavo cancella tutto
+      // cio' che trova nell'imbuto. Su ogni altro record e' un `return` immediato.
+      this.arcologies.reopenPit(record);
+
       const stamp = recordStamp(record);
       if (stamp.sizeZ > 0) {
         this.growth.writeStamp(anchorOf(record), stamp, 0, stamp.sizeZ, false);
@@ -921,7 +929,7 @@ export class Builder {
       facing = this.streets.facingOf(request.x, request.y, 1) ?? undefined;
     }
 
-    const key = `${x},${y}`;
+    const key = columnKey(x, y);
     if (this.blacklist.has(key)) return null;
 
     // **Su quale piano.** Il suolo finche' e' libero — ed e' il caso di ogni
@@ -1527,7 +1535,7 @@ export class Builder {
         // edificata: un lotto al largo poggia su un pad isolato in mezzo al
         // mare, che e' lo stesso difetto dell'anello di carreggiata.
         if (!nearLand(this.terrainMap, cx, cy)) return false;
-        if (this.blacklist.has(`${cx},${cy}`)) return false;
+        if (this.blacklist.has(columnKey(cx, cy))) return false;
       }
     }
     return true;
@@ -1541,7 +1549,7 @@ export class Builder {
    * colonna. Blacklistarla toglierebbe per sempre un lotto a terra per via di un
    * ingombro che sta trenta voxel piu' su.
    */
-  private reject(key: string, reason: RejectReason, permanent = true): null {
+  private reject(key: number, reason: RejectReason, permanent = true): null {
     if (permanent) this.blacklist.add(key);
     this.rejectedCounts[REJECT_REASONS.indexOf(reason)]++;
     return null;
