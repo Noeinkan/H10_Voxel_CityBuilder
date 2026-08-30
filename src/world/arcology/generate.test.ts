@@ -201,10 +201,16 @@ describe('il catalogo delle arcologie', () => {
       // esattamente profondita' piu' fuori terra.
       expect(recipe.height, recipe.kind).toBe(recipe.sunken!.depth + SUNKEN.headroom);
     }
-    // Una sola ricetta poco profonda non basta: e' quella che entra ovunque, e
-    // senza almeno una il catalogo perderebbe i siti bassi per intero.
-    const shallowest = Math.min(...SUNKEN_ARCOLOGY_RECIPES.map((r) => r.sunken!.depth));
-    expect(shallowest).toBeLessThanOrEqual(16);
+    // Una sola ricetta poco profonda non basta: e' quella che entra dove le
+    // altre non stanno, e senza almeno una lo scorrimento di `arcologyForBlock`
+    // non avrebbe dove finire. **Lo scarto fra la piu' bassa e la piu' fonda e' la
+    // misura vera**, non una quota assoluta: tre ricette che chiedono la stessa
+    // roccia sono una ricetta sola con tre sagome, e il numero assoluto lo
+    // verifica `sunkenSites.test.ts` contro l'isola vera invece che a memoria.
+    const depths = SUNKEN_ARCOLOGY_RECIPES.map((r) => r.sunken!.depth);
+    const shallowest = Math.min(...depths);
+    const deepest = Math.max(...depths);
+    expect(shallowest).toBeLessThan(deepest - 8);
   });
 
   it('lo scavo contiene la struttura: nessun anello resta murato nella roccia', () => {

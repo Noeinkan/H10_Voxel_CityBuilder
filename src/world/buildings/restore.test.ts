@@ -98,11 +98,19 @@ describe('caricamento di un earthscraper', () => {
    * che fonda un earthscraper chiede un quartiere maturo e mille tick, e qui il
    * soggetto e' `reopenPit`, non `found`.
    */
-  const TERRAIN_HEIGHT = 24;
   /** Un indice di palette qualunque: allo scavo interessa solo «diverso da zero». */
   const ROCK = 3;
   const recipe = SUNKEN_COURT;
   const DEPTH = recipe.sunken!.depth;
+  /**
+   * Il terreno della fixture segue la ricetta invece di essere scritto a mano.
+   *
+   * Era ventiquattro, cioe' meno dello scavo della corte da quando il catalogo
+   * segue l'isola vera: `baseZ` finiva sotto zero e il test cercava roccia a
+   * quote che non esistono. Otto quote di margine sotto il fondo tengono
+   * l'ancora sopra `SUNKEN.floorZ` senza dipendere da un numero da aggiornare.
+   */
+  const TERRAIN_HEIGHT = DEPTH + 8;
   const BASE_Z = TERRAIN_HEIGHT - DEPTH;
 
   function pitRecord(): BuildingRecord {
@@ -138,10 +146,10 @@ describe('caricamento di un earthscraper', () => {
     const world = new VoxelWorld();
     const terrain = testTerrain({ chunksX: 8, chunksY: 8, height: TERRAIN_HEIGHT });
     // La roccia deve debordare dall'impronta, che da quando la corte e'
-    // multi-blocco copre 48 colonne per lato: senza il margine i controlli «fuori
+    // multi-blocco copre 64 colonne per lato: senza il margine i controlli «fuori
     // dall'impronta» leggerebbero il vuoto invece del terreno intatto.
-    for (let y = 20; y < 100; y++) {
-      for (let x = 20; x < 100; x++) world.fillColumn(x, y, 0, TERRAIN_HEIGHT, ROCK);
+    for (let y = 20; y < 120; y++) {
+      for (let x = 20; x < 120; x++) world.fillColumn(x, y, 0, TERRAIN_HEIGHT, ROCK);
     }
 
     const loaded = new Builder(world, terrain, SEED);
@@ -154,8 +162,8 @@ describe('caricamento di un earthscraper', () => {
   it('riapre il pozzo: la colonna centrale torna vuota fino al cielo', () => {
     const { world, record } = loadPit();
     // Il centro dell'ingombro cade nel vuoto piu' profondo della corte.
-    const cx = record.x + 24;
-    const cy = record.y + 24;
+    const cx = record.x + 32;
+    const cy = record.y + 32;
 
     for (let z = BASE_Z + 1; z < TERRAIN_HEIGHT; z++) {
       expect(world.getBlock(cx, cy, z), `roccia rimasta a ${cx},${cy},${z}`).toBe(0);
@@ -179,8 +187,8 @@ describe('caricamento di un earthscraper', () => {
     const { world, record } = loadPit();
     for (let z = BASE_Z; z < TERRAIN_HEIGHT; z++) {
       const east = record.x + record.footprint;
-      expect(world.getBlock(record.x - 1, record.y + 24, z), `fuori a ovest, z=${z}`).not.toBe(0);
-      expect(world.getBlock(east, record.y + 24, z), `fuori a est, z=${z}`).not.toBe(0);
+      expect(world.getBlock(record.x - 1, record.y + 32, z), `fuori a ovest, z=${z}`).not.toBe(0);
+      expect(world.getBlock(east, record.y + 32, z), `fuori a est, z=${z}`).not.toBe(0);
     }
   });
 

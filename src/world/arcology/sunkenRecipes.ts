@@ -23,25 +23,27 @@ import type { ArcologyRecipe, SunkenArcologyKind } from './config';
  * progressivo, che e' tutta la forma di una piramide invertita, non si sarebbe
  * visto.
  *
- * **Le profondita' sono misurate.** Vedi `SUNKEN` in `config.ts`: l'isola
- * standard offre ventiquattro quote di scavo quasi ovunque, ventotto in un
- * terzo dei siti e trenta in nessun sito di un seed su tre. Le tre ricette
- * stanno a sedici, ventidue e ventisei apposta — una che entra sempre, una
- * ordinaria, e una che si guadagna.
+ * **Le tre ricette erano tarate su un'isola che il gioco non genera.** Il
+ * catalogo precedente stava a 20x20 di sedime e sedici-ventisei quote di scavo
+ * perche' quei numeri erano stati misurati su una region da **256**, che e' la
+ * fixture dei test; `TERRAIN_SIZE` in `main.ts` vale **512**, e il rilievo non e'
+ * indipendente dal lato — `maxReliefSlope` lo limita a `0,3 * raggio`, quindi su
+ * 512 e' il **doppio**. Rimisurato con `surveySunkenSite` su tre seed dell'isola
+ * vera: il picco sta a 52-60 quote invece che a 32-36, e le finestre con il
+ * contorno asciutto sono ~800 a 48x48, ~610 a 64x64, ~270 a 96x96 e ~50-95 a
+ * 128x128 (a 160 sono zero su tutti e tre). La profondita' mediana di quelle
+ * finestre e' 40-56 quote, non 20.
  *
- * **E percio' la scala di questa famiglia sta tutta in pianta.** Il tetto di
- * profondita' e' della roccia e non della ricetta: ventotto quote sono meno di
- * un decimo della torre piu' bassa del catalogo alto, e nessuna taratura le fa
- * diventare una megastruttura in verticale. Le tre ricette erano nate su un
- * isolato singolo — venti voxel di fronte, come una piramide da giardino accanto
- * a torri da trecentoventi — e a schermo si leggevano per quello che erano in
- * pianta, non per quanto scendevano. Adesso sono tutte **multi-blocco**: la
- * corte e la piramide prendono un quadrato di quattro isolati (48x48, quasi sei
- * volte l'impronta di prima), il cratere ne prende sei in linea (72x48), che e'
- * l'impronta piu' larga dell'intero catalogo — la voragine deve valere piu'
- * isolati della torre che le sta accanto, o non e' una voragine. Il costo lo
- * paga il piazzamento, che ora chiede un cluster asciutto e sgomberabile: e' il
- * prezzo giusto per una struttura che vale un quartiere.
+ * Le tre ricette stanno percio' a **64x64 x 32**, **96x96 x 40** e **128x64 x
+ * 46**: una che entra quasi ovunque, una ordinaria, una che si guadagna. E' da
+ * tre a nove volte il sedime di prima e il doppio dello scavo, e resta tutto
+ * dentro il misurato — chi vuole andare oltre non deve alzare questi numeri, deve
+ * guardare `SUNKEN.maxDepth` e la riga di `TERRAIN` che decide il rilievo.
+ *
+ * **Le fixture da 256 restano legittime, ma non sono l'isola.** Un numero
+ * misurato li' e portato qui torna falso senza che nessuno se ne accorga: e' il
+ * modo in cui questa famiglia e' nata piccola. `sunkenSites.test.ts` misura ora
+ * la region vera, ed e' l'allarme che tiene il catalogo agganciato al terreno.
  */
 
 type ThresholdFactory = (stages: number) => readonly number[];
@@ -52,9 +54,11 @@ type ThresholdFactory = (stages: number) => readonly number[];
  * E' `shellBody` di `recipes.ts` con lo spessore portato a parametro invece che
  * fissato a due: li' le due pelli servono a non far scendere sotto il
  * riempimento minimo un corpo alto e sottile, qui lo spessore **e' la forma** —
- * il solaio della terrazza, largo quanto la fascia abitata. Sotto `3` di lato
- * interno la shell degenera e il ciclo si ferma da solo, che e' anche cio' che
- * chiude l'anello piu' profondo in un blocco pieno.
+ * il solaio della terrazza, largo quanto la fascia abitata, e cresce con
+ * l'impronta: su una bocca da novantasei voxel una fascia abitata spessa quattro
+ * sarebbe un filo di balcone attorno a un buco. Sotto `3` di lato interno la
+ * shell degenera e il ciclo si ferma da solo, che e' anche cio' che chiude
+ * l'anello piu' profondo in un blocco pieno.
  */
 function ring(
   x: number,
@@ -84,35 +88,42 @@ export function createSunkenRecipes(
   /**
    * L'Earthscraper: quattro terrazze che rientrano scendendo attorno a un pozzo.
    *
-   * Ventidue quote di scavo piu' sei sopra il piano, su un quadrato di quattro
-   * isolati. Il rientro va 32 -> 24 -> 16 -> 8 di vuoto libero: la sezione piu'
-   * stretta e' 8x8, cioe' sessantaquattro colonne, quattro volte il minimo che
-   * `SUNKEN.shaft` chiede perche' un vuoto conti come pozzo. **Il margine e'
-   * l'obiettivo, non un avanzo**: sul singolo isolato la sezione profonda era
-   * esattamente sedici colonne — il minimo — e un pozzo largo quanto il minimo
-   * si legge come un cavedio nell'istante in cui lo si guarda da lontano.
+   * Quaranta quote di scavo piu' sei sopra il piano, su un quadrato di sedici
+   * isolati. Il rientro va 72 -> 52 -> 34 -> 15 di vuoto libero: la sezione piu'
+   * stretta e' 15x15, cioe' duecentoventicinque colonne, quattordici volte il
+   * minimo che `SUNKEN.shaft` chiede perche' un vuoto conti come pozzo. **Il
+   * margine e' l'obiettivo, non un avanzo**: sul singolo isolato la sezione
+   * profonda era esattamente sedici colonne — il minimo — e un pozzo largo quanto
+   * il minimo si legge come un cavedio nell'istante in cui lo si guarda da
+   * lontano.
    *
-   * **Le due passerelle stanno fuori dall'asse del pozzo**, a `y = 12` e a
-   * `x = 33`, e non e' una scelta di composizione: la sezione profonda occupa
-   * `20..27` su tutti e due gli assi, e una passerella in mezzeria l'avrebbe
-   * coperta per tre quarti — il pozzo sarebbe rimasto aperto sulla carta e cieco
-   * a schermo.
+   * **Il giardino sul fondo sale allo stadio tre, e non e' composizione.** Uno
+   * stadio si accoda come **delta**, e `dirtyChunkCount` conta i piani di chunk
+   * che quel delta attraversa: con la lastra del fondo insieme alle passerelle in
+   * cima, l'ultimo stadio andava da `z = 0` a `z = 45` e sforava
+   * `maxDirtyChunksPerBuilding` — cioe' non sarebbe stato scritto affatto, in
+   * silenzio. Nessuno stadio deve tenere insieme il fondo e la cima.
+   *
+   * **Le due passerelle stanno fuori dall'asse del pozzo**, a `y = 24` e a
+   * `x = 69`: la sezione profonda occupa `40..54` su tutti e due gli assi, e una
+   * passerella in mezzeria l'avrebbe coperta per tre quarti — il pozzo sarebbe
+   * rimasto aperto sulla carta e cieco a schermo.
    */
   const invertedPyramid: ArcologyRecipe = {
     kind: 'invertedPyramid',
-    blocks: [2, 2],
-    span: [48, 48],
-    height: 28,
-    anchor: [24, 24],
+    blocks: [4, 4],
+    span: [96, 96],
+    height: 46,
+    anchor: [48, 48],
     stages: thresholds(5),
     sunken: {
-      depth: 22,
+      depth: 40,
       // L'imbuto: quattro tronchi che rientrano, il piu' largo alla bocca.
       dig: [
-        box(PART.slab, 16, 16, 16, 16, 0, 5, PALETTE_SLOTS.concrete, SURFACE_KIND.utility),
-        box(PART.slab, 11, 11, 26, 26, 5, 5, PALETTE_SLOTS.concrete, SURFACE_KIND.utility),
-        box(PART.slab, 5, 5, 38, 38, 10, 5, PALETTE_SLOTS.concrete, SURFACE_KIND.utility),
-        box(PART.slab, 0, 0, 48, 48, 15, 7, PALETTE_SLOTS.concrete, SURFACE_KIND.utility),
+        box(PART.slab, 33, 33, 30, 30, 0, 10, PALETTE_SLOTS.concrete, SURFACE_KIND.utility),
+        box(PART.slab, 22, 22, 52, 52, 10, 10, PALETTE_SLOTS.concrete, SURFACE_KIND.utility),
+        box(PART.slab, 11, 11, 74, 74, 20, 10, PALETTE_SLOTS.concrete, SURFACE_KIND.utility),
+        box(PART.slab, 0, 0, 96, 96, 30, 10, PALETTE_SLOTS.concrete, SURFACE_KIND.utility),
       ],
     },
     parts: [
@@ -120,30 +131,29 @@ export function createSunkenRecipes(
         // La corona a filo di strada: il corpo, il selciato della piazza e il
         // parapetto che ne dichiara il bordo. E' cio' che si vede per primo, e
         // per un lungo tratto l'unica cosa costruita.
-        ...ring(0, 0, 48, 48, 15, 6, 8, PALETTE_SLOTS.concrete, SURFACE_KIND.habitat),
-        ...ring(0, 0, 48, 48, 21, 1, 8, PALETTE_SLOTS.concretePale, SURFACE_KIND.utility),
-        ...ring(0, 0, 48, 48, 22, 2, 1, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.utility),
+        ...ring(0, 0, 96, 96, 30, 9, 12, PALETTE_SLOTS.concrete, SURFACE_KIND.habitat),
+        ...ring(0, 0, 96, 96, 39, 1, 12, PALETTE_SLOTS.concretePale, SURFACE_KIND.utility),
+        ...ring(0, 0, 96, 96, 40, 2, 1, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.utility),
       ],
-      // Lo spessore cresce con l'impronta: e' il solaio della terrazza, e su una
-      // bocca da quarantotto voxel una fascia abitata spessa quattro sarebbe un
-      // filo di balcone attorno a un buco.
-      ring(5, 5, 38, 38, 10, 5, 7, PALETTE_SLOTS.glassDeep, SURFACE_KIND.habitat),
+      ring(11, 11, 74, 74, 20, 10, 11, PALETTE_SLOTS.glassDeep, SURFACE_KIND.habitat),
       // Da qui in giu' il cielo geometrico non arriva piu' (`SKY_PROBE` e'
       // sedici): le fasce basse sono `luminous`, che emette a ogni ora, e sono
       // l'unica cosa che si legge guardando dentro il pozzo a mezzogiorno.
-      ring(11, 11, 26, 26, 5, 5, 5, PALETTE_SLOTS.concreteLight, SURFACE_KIND.luminous),
-      ring(16, 16, 16, 16, 1, 4, 4, PALETTE_SLOTS.glassDeep, SURFACE_KIND.luminous),
+      ring(22, 22, 52, 52, 10, 10, 9, PALETTE_SLOTS.concreteLight, SURFACE_KIND.luminous),
       [
-        box(PART.slab, 16, 16, 16, 16, 0, 1, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.civic),
-        box(PART.boom, 0, 12, 48, 2, 24, 2, PALETTE_SLOTS.metalDark, SURFACE_KIND.civic),
-        box(PART.boom, 33, 0, 2, 48, 26, 2, PALETTE_SLOTS.metalDark, SURFACE_KIND.civic),
+        ...ring(33, 33, 30, 30, 1, 9, 7, PALETTE_SLOTS.glassDeep, SURFACE_KIND.luminous),
+        box(PART.slab, 33, 33, 30, 30, 0, 1, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.civic),
+      ],
+      [
+        box(PART.boom, 0, 24, 96, 2, 42, 2, PALETTE_SLOTS.metalDark, SURFACE_KIND.civic),
+        box(PART.boom, 69, 0, 2, 96, 44, 2, PALETTE_SLOTS.metalDark, SURFACE_KIND.civic),
       ],
     ],
     bands: [
-      { stage: 0, use: BUILDING_CLASS.commercial, x: 2, y: 2, z: 21, label: 'plaza' },
-      { stage: 1, use: BUILDING_CLASS.residential, x: 41, y: 41, z: 10, label: 'upperTerraces' },
-      { stage: 2, use: BUILDING_CLASS.civic, x: 13, y: 34, z: 5, label: 'lowerTerraces' },
-      { stage: 3, use: BUILDING_CLASS.industrial, x: 17, y: 29, z: 1, label: 'core' },
+      { stage: 0, use: BUILDING_CLASS.commercial, x: 3, y: 3, z: 39, label: 'plaza' },
+      { stage: 1, use: BUILDING_CLASS.residential, x: 79, y: 79, z: 20, label: 'upperTerraces' },
+      { stage: 2, use: BUILDING_CLASS.civic, x: 25, y: 68, z: 10, label: 'lowerTerraces' },
+      { stage: 3, use: BUILDING_CLASS.industrial, x: 35, y: 57, z: 1, label: 'core' },
     ],
     // **Nessun piazzale, e non e' una casella lasciata aperta.** Un'arcologia
     // alta ha bisogno di un attracco perche' il suo ingresso sta a ottanta
@@ -154,118 +164,121 @@ export function createSunkenRecipes(
   };
 
   /**
-   * La corte bassa: sedici quote, e il fondo e' un giardino.
+   * La corte bassa: trentadue quote, e il fondo e' un giardino.
    *
-   * **Esiste per entrare dove la piramide non entra**, e la differenza e' tutta
-   * nella roccia, non nell'impronta. Ventidue quote di scavo chiedono una
-   * colonna a ventisei, che due terzi dei siti asciutti hanno; sedici ne
-   * chiedono venti, che hanno tutti. Senza questa riga un isolato buono sarebbe
-   * stato perso per la sola forma sorteggiata, ed e' lo stesso motivo per cui
-   * `arcologyForBlock` scorre in avanti invece di rinunciare. Il quadrato di
-   * quattro isolati ce l'hanno tutte e due: rimpicciolire *questa* per farla
-   * entrare piu' spesso avrebbe barattato la scala con una frequenza che la
-   * profondita' gia' le regala.
+   * **Esiste per entrare dove la piramide non entra**, e la differenza sta sia
+   * nella roccia sia nel sedime: quaranta quote su un quadrato da novantasei le
+   * offrono ~270 finestre dell'isola, trentadue su uno da sessantaquattro ne
+   * hanno ~610. E' la ricetta che salva l'isolato buono quando la forma
+   * sorteggiata non ci sta, ed e' lo stesso motivo per cui `arcologyForBlock`
+   * scorre in avanti invece di rinunciare.
    */
   const sunkenCourt: ArcologyRecipe = {
     kind: 'sunkenCourt',
-    blocks: [2, 2],
-    span: [48, 48],
-    height: 22,
-    anchor: [24, 24],
+    blocks: [3, 3],
+    span: [64, 64],
+    height: 38,
+    anchor: [32, 32],
     stages: thresholds(4),
     sunken: {
-      depth: 16,
+      depth: 32,
       dig: [
-        box(PART.slab, 12, 12, 24, 24, 0, 5, PALETTE_SLOTS.concrete, SURFACE_KIND.utility),
-        box(PART.slab, 7, 7, 34, 34, 5, 5, PALETTE_SLOTS.concrete, SURFACE_KIND.utility),
-        box(PART.slab, 0, 0, 48, 48, 10, 6, PALETTE_SLOTS.concrete, SURFACE_KIND.utility),
+        box(PART.slab, 20, 20, 24, 24, 0, 10, PALETTE_SLOTS.concrete, SURFACE_KIND.utility),
+        box(PART.slab, 10, 10, 44, 44, 10, 12, PALETTE_SLOTS.concrete, SURFACE_KIND.utility),
+        box(PART.slab, 0, 0, 64, 64, 22, 10, PALETTE_SLOTS.concrete, SURFACE_KIND.utility),
       ],
     },
     parts: [
       [
-        ...ring(0, 0, 48, 48, 10, 5, 8, PALETTE_SLOTS.stoneDeep, SURFACE_KIND.habitat),
-        ...ring(0, 0, 48, 48, 15, 1, 8, PALETTE_SLOTS.concretePale, SURFACE_KIND.utility),
-        ...ring(0, 0, 48, 48, 16, 2, 1, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.utility),
+        ...ring(0, 0, 64, 64, 22, 9, 10, PALETTE_SLOTS.stoneDeep, SURFACE_KIND.habitat),
+        ...ring(0, 0, 64, 64, 31, 1, 10, PALETTE_SLOTS.concretePale, SURFACE_KIND.utility),
+        ...ring(0, 0, 64, 64, 32, 2, 1, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.utility),
       ],
-      ring(7, 7, 34, 34, 5, 5, 7, PALETTE_SLOTS.glassDeep, SURFACE_KIND.habitat),
-      ring(12, 12, 24, 24, 1, 4, 6, PALETTE_SLOTS.concreteLight, SURFACE_KIND.luminous),
+      ring(10, 10, 44, 44, 10, 12, 9, PALETTE_SLOTS.glassDeep, SURFACE_KIND.habitat),
+      ring(20, 20, 24, 24, 1, 9, 6, PALETTE_SLOTS.concreteLight, SURFACE_KIND.luminous),
       [
         // Il giardino sul fondo: e' il pezzo che rende la corte una corte, e sta
         // in uno stadio suo perche' e' anche l'ultimo che una citta' modesta
-        // riesce a costruire. Ventiquattro voxel di lato: un giardino, non
-        // un'aiuola in fondo a un pozzo.
-        box(PART.slab, 12, 12, 24, 24, 0, 1, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.civic),
-        box(PART.boom, 0, 10, 48, 2, 18, 2, PALETTE_SLOTS.metalDark, SURFACE_KIND.civic),
-        box(PART.boom, 35, 0, 2, 48, 20, 2, PALETTE_SLOTS.metalDark, SURFACE_KIND.civic),
+        // riesce a costruire. Qui il delta sta dentro il tetto di chunk anche con
+        // le passerelle — l'inviluppo e' trentotto quote, non quarantasei.
+        box(PART.slab, 20, 20, 24, 24, 0, 1, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.civic),
+        box(PART.boom, 0, 14, 64, 2, 34, 2, PALETTE_SLOTS.metalDark, SURFACE_KIND.civic),
+        box(PART.boom, 47, 0, 2, 64, 36, 2, PALETTE_SLOTS.metalDark, SURFACE_KIND.civic),
       ],
     ],
     bands: [
-      { stage: 0, use: BUILDING_CLASS.commercial, x: 2, y: 45, z: 15, label: 'plaza' },
-      { stage: 1, use: BUILDING_CLASS.residential, x: 9, y: 9, z: 5, label: 'court' },
-      { stage: 2, use: BUILDING_CLASS.civic, x: 33, y: 14, z: 1, label: 'garden' },
+      { stage: 0, use: BUILDING_CLASS.commercial, x: 2, y: 61, z: 31, label: 'plaza' },
+      { stage: 1, use: BUILDING_CLASS.residential, x: 12, y: 12, z: 10, label: 'court' },
+      { stage: 2, use: BUILDING_CLASS.civic, x: 41, y: 22, z: 1, label: 'garden' },
     ],
     landings: [],
   };
 
   /**
-   * La voragine su sei isolati: ventisei quote, e un vuoto che si vede da lontano.
+   * La voragine su quindici isolati: quarantasei quote, e un vuoto che si vede
+   * da lontano.
    *
    * **La profondita' persa si riguadagna in pianta**, ed e' qui che la famiglia
-   * lo dimostra: settantadue voxel per quarantotto, cioe' l'impronta piu' larga
-   * di tutto il catalogo — piu' del `quadCluster`, che e' la torre piu' grande
-   * che l'isola sappia produrre. Dall'inquadratura d'insieme conta l'area del
-   * vuoto, non quanto scende: un pozzo stretto e profondo si legge come un pozzo
-   * di ventilazione, uno largo come un pezzo di citta' che manca. A due isolati
-   * la bocca ne valeva uno solo, e accanto a una torre da quattrocentoquaranta
-   * quote quel «pezzo di citta' che manca» era una buca.
+   * lo dimostra: centoventotto voxel per sessantaquattro, cioe' l'impronta piu'
+   * larga di tutto il catalogo — il doppio del `quadCluster`, che e' la torre piu'
+   * grande che l'isola sappia produrre. Dall'inquadratura d'insieme conta l'area
+   * del vuoto, non quanto scende: un pozzo stretto e profondo si legge come un
+   * pozzo di ventilazione, uno largo come un pezzo di citta' che manca.
    *
    * **E' anche quella che si guadagna piu' di tutte**, e le due cose sono la
-   * stessa: ventisei quote di roccia le ha un terzo dei siti, e un cluster da sei
-   * isolati asciutti e sgomberabili meno ancora. Il catalogo scorre in avanti
-   * quando non entra, quindi il costo di questa scala e' che il cratere sia raro
-   * — non che l'isolato resti senza megastruttura.
+   * stessa: quarantasei quote di roccia sotto un sedime cosi' largo si trovano in
+   * poche decine di posti per isola, e il cluster va anche sgomberato. Il catalogo
+   * scorre in avanti quando non entra, quindi il costo di questa scala e' che il
+   * cratere sia raro — non che l'isolato resti senza megastruttura.
+   *
+   * **`128 x 64` e non `128 x 96`**: il tetto non e' il terreno ma
+   * `maxDirtyChunksPerBuilding`. A novantasei di profondita' il delta dello
+   * stadio piu' basso sfora di otto chunk nel caso peggiore di allineamento —
+   * cioe' la struttura verrebbe scartata dal budget, in silenzio, su una
+   * cucitura su quattro.
    */
   const craterRing: ArcologyRecipe = {
     kind: 'craterRing',
-    blocks: [3, 2],
-    span: [72, 48],
-    height: 32,
-    anchor: [36, 24],
+    blocks: [5, 3],
+    span: [128, 64],
+    height: 52,
+    anchor: [64, 32],
     stages: thresholds(5),
     sunken: {
-      depth: 26,
+      depth: 46,
       dig: [
-        box(PART.slab, 21, 14, 30, 20, 0, 7, PALETTE_SLOTS.concrete, SURFACE_KIND.utility),
-        box(PART.slab, 13, 9, 46, 30, 7, 6, PALETTE_SLOTS.concrete, SURFACE_KIND.utility),
-        box(PART.slab, 6, 4, 60, 40, 13, 6, PALETTE_SLOTS.concrete, SURFACE_KIND.utility),
-        box(PART.slab, 0, 0, 72, 48, 19, 7, PALETTE_SLOTS.concrete, SURFACE_KIND.utility),
+        box(PART.slab, 44, 22, 40, 20, 0, 11, PALETTE_SLOTS.concrete, SURFACE_KIND.utility),
+        box(PART.slab, 28, 14, 72, 36, 11, 12, PALETTE_SLOTS.concrete, SURFACE_KIND.utility),
+        box(PART.slab, 14, 7, 100, 50, 23, 12, PALETTE_SLOTS.concrete, SURFACE_KIND.utility),
+        box(PART.slab, 0, 0, 128, 64, 35, 11, PALETTE_SLOTS.concrete, SURFACE_KIND.utility),
       ],
     },
     parts: [
       [
-        ...ring(0, 0, 72, 48, 19, 6, 8, PALETTE_SLOTS.concrete, SURFACE_KIND.habitat),
-        ...ring(0, 0, 72, 48, 25, 1, 8, PALETTE_SLOTS.concretePale, SURFACE_KIND.utility),
-        ...ring(0, 0, 72, 48, 26, 2, 1, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.utility),
+        ...ring(0, 0, 128, 64, 35, 10, 10, PALETTE_SLOTS.concrete, SURFACE_KIND.habitat),
+        ...ring(0, 0, 128, 64, 45, 1, 10, PALETTE_SLOTS.concretePale, SURFACE_KIND.utility),
+        ...ring(0, 0, 128, 64, 46, 2, 1, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.utility),
       ],
-      ring(6, 4, 60, 40, 13, 6, 6, PALETTE_SLOTS.glassDeep, SURFACE_KIND.habitat),
-      ring(13, 9, 46, 30, 7, 6, 6, PALETTE_SLOTS.concreteLight, SURFACE_KIND.luminous),
-      ring(21, 14, 30, 20, 1, 6, 5, PALETTE_SLOTS.glassDeep, SURFACE_KIND.luminous),
+      ring(14, 7, 100, 50, 23, 12, 8, PALETTE_SLOTS.glassDeep, SURFACE_KIND.habitat),
+      ring(28, 14, 72, 36, 11, 12, 8, PALETTE_SLOTS.concreteLight, SURFACE_KIND.luminous),
       [
-        box(PART.slab, 21, 14, 30, 20, 0, 1, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.civic),
-        // Una passerella attraversa la bocca e due la scavalcano di traverso.
-        // Misurato con `shaftOf`: delle 1344 colonne del pozzo ne restano 1144
-        // aperte fino al cielo, cioe' le tre campate si vedono *sopra* il vuoto
-        // invece di chiuderlo.
-        box(PART.boom, 0, 20, 72, 2, 28, 2, PALETTE_SLOTS.metalDark, SURFACE_KIND.civic),
-        box(PART.boom, 15, 0, 2, 48, 30, 2, PALETTE_SLOTS.metalDark, SURFACE_KIND.civic),
-        box(PART.boom, 55, 0, 2, 48, 30, 2, PALETTE_SLOTS.metalDark, SURFACE_KIND.civic),
+        ...ring(44, 22, 40, 20, 1, 10, 6, PALETTE_SLOTS.glassDeep, SURFACE_KIND.luminous),
+        box(PART.slab, 44, 22, 40, 20, 0, 1, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.civic),
+      ],
+      [
+        // Una passerella attraversa la bocca e due la scavalcano di traverso: il
+        // pozzo resta aperto sulla gran parte delle proprie colonne, cioe' le tre
+        // campate si vedono *sopra* il vuoto invece di chiuderlo.
+        box(PART.boom, 0, 28, 128, 2, 48, 2, PALETTE_SLOTS.metalDark, SURFACE_KIND.civic),
+        box(PART.boom, 26, 0, 2, 64, 50, 2, PALETTE_SLOTS.metalDark, SURFACE_KIND.civic),
+        box(PART.boom, 100, 0, 2, 64, 50, 2, PALETTE_SLOTS.metalDark, SURFACE_KIND.civic),
       ],
     ],
     bands: [
-      { stage: 0, use: BUILDING_CLASS.commercial, x: 2, y: 2, z: 25, label: 'plaza' },
-      { stage: 1, use: BUILDING_CLASS.residential, x: 63, y: 37, z: 13, label: 'upperTerraces' },
-      { stage: 2, use: BUILDING_CLASS.civic, x: 15, y: 35, z: 7, label: 'lowerTerraces' },
-      { stage: 3, use: BUILDING_CLASS.industrial, x: 23, y: 16, z: 1, label: 'core' },
+      { stage: 0, use: BUILDING_CLASS.commercial, x: 3, y: 3, z: 45, label: 'plaza' },
+      { stage: 1, use: BUILDING_CLASS.residential, x: 109, y: 45, z: 23, label: 'upperTerraces' },
+      { stage: 2, use: BUILDING_CLASS.civic, x: 31, y: 17, z: 11, label: 'lowerTerraces' },
+      { stage: 3, use: BUILDING_CLASS.industrial, x: 46, y: 24, z: 1, label: 'core' },
     ],
     landings: [],
   };

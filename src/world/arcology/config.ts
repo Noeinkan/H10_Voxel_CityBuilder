@@ -256,20 +256,41 @@ export const ARCOLOGY = {
  * non si puo' demolire e non si puo' salire, quindi l'unica direzione libera e'
  * il basso.
  *
- * **I numeri di profondita' sono misurati, non scelti.** L'isola standard e'
- * molto piu' piatta di quanto `TERRAIN.maxHeight` faccia pensare: la maschera
- * radiale schiaccia il rilievo, e su 256x256 la colonna piu' alta sta a 32-36,
- * non a 76. Misurato su tre seed, un ingombro 20x20 tutto asciutto offre 24
- * quote di scavo nell'83% dei siti, 26 in due terzi, 28 in un terzo — e **30 in
- * nessun sito del seed 4242**. Una ricetta piu' profonda di `maxDepth` non
- * verrebbe scartata: non nascerebbe mai, in silenzio, che e' lo stesso difetto
- * che `isPeakBlock` aveva prodotto sulle arcologie.
+ * **I numeri di profondita' sono misurati, e la misura era stata fatta
+ * sull'isola sbagliata.** La maschera radiale schiaccia il rilievo, ma di quanto
+ * dipende dal **lato della region**: `TERRAIN.maxReliefSlope` lo limita a
+ * `0,3 * raggio`, quindi la fixture da 256 dei test ha meta' del rilievo
+ * dell'isola vera, che `TERRAIN_SIZE` in `main.ts` fissa a **512**. Su 256 la
+ * colonna piu' alta sta a 32-36 e un ingombro asciutto offriva 24-28 quote di
+ * scavo; su 512 il picco sta a **52-60** e la profondita' mediana di una finestra
+ * asciutta e' 40-56. Il primo catalogo interrato era tarato sul numero piccolo,
+ * e ne e' uscita una famiglia grande la meta' di quanto il terreno permettesse.
  *
- * **La profondita' persa si riguadagna in pianta.** Un pozzo profondo ventisei
+ * Una ricetta piu' profonda di `maxDepth` non verrebbe scartata: non nascerebbe
+ * mai, in silenzio, che e' lo stesso difetto che `isPeakBlock` aveva prodotto
+ * sulle arcologie. E una tarata su una fixture piu' piatta del mondo vero e' lo
+ * stesso difetto con il segno opposto.
+ *
+ * **La profondita' persa si riguadagna in pianta.** Un pozzo profondo quaranta
  * quote e' meno alto di una torre della fascia intermedia, e non e' un problema:
  * dall'inquadratura isometrica una megastruttura interrata si legge per l'area
- * del proprio vuoto, non per quanto scende. E' il motivo per cui la ricetta piu'
- * grande e' multi-blocco.
+ * del proprio vuoto, non per quanto scende. E' il motivo per cui le ricette sono
+ * tutte multi-blocco.
+ *
+ * **E il sedime ha due tetti, uno di terreno e uno di budget.** Scansione di
+ * `surveySunkenSite` sull'isola vera (512), tre seed, contando le finestre con il
+ * contorno asciutto: ~800 a 48x48, ~610 a 64x64, ~270 a 96x96, 50-95 a 128x128 e
+ * **zero** a 160x160 — li' le lame d'acqua interne spezzano l'isola. Il secondo
+ * tetto arriva prima ed e' `BUILDER.maxDirtyChunksPerBuilding`: un delta di
+ * stadio su un sedime da 128x96 sfora nel caso peggiore di allineamento, cioe'
+ * verrebbe scartato in silenzio. Le ricette stanno percio' fra 64x64 e 128x64.
+ *
+ * **Sopra i quarantotto voxel di lato la profondita' smette quasi di variare.**
+ * La stessa scansione: la mediana delle finestre asciutte sale con il lato — 40
+ * a 48x48, 42-48 a 64x64, 46-54 a 96x96 — perche' `padZ` e' un **massimo**
+ * sull'impronta, e una finestra larga cattura sempre la colonna piu' alta della
+ * zona. Ne segue che una ricetta larga tanto vale che scavi fondo, e che l'unica
+ * che serva piu' bassa e' quella che deve entrare anche dove le altre non stanno.
  */
 export const SUNKEN = {
   /**
@@ -285,11 +306,13 @@ export const SUNKEN = {
   /**
    * Profondita' oltre la quale nessuna ricetta puo' spingersi.
    *
-   * Il tetto della misura, non un gusto: a 30 quote il seed 4242 non offre un
-   * solo sito. Chi scrive una ricetta piu' profonda trova un test che glielo
-   * dice invece di una famiglia che non compare in partita.
+   * Il tetto della misura, non un gusto: sull'isola vera — region 512, tre seed —
+   * la finestra asciutta piu' fonda offre 48-56 quote a seconda del seed, e
+   * quarantotto e' il minimo dei tre, cioe' l'unico numero che vale su ogni
+   * isola. Chi scrive una ricetta piu' profonda trova un test che glielo dice
+   * invece di una famiglia che non compare in partita.
    */
-  maxDepth: 28,
+  maxDepth: 48,
 
   /**
    * Quote che la struttura tiene **sopra** il piano finito.

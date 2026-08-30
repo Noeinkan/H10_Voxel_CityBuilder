@@ -54,6 +54,33 @@ let city: City;
 const STOCK = 1_000_000;
 
 /**
+ * Il lato della region, e **non e' una scelta della fixture**.
+ *
+ * Era 256, meta' di `TERRAIN_SIZE` in `main.ts`, e la meta' non e' una versione
+ * in scala: `TERRAIN.maxReliefSlope` limita il rilievo a `0,3 * raggio`, quindi
+ * l'isola piccola e' alta la meta' di quella vera (picco 32-36 contro 52-60).
+ * Tutta la famiglia interrata era stata tarata li' dentro, e ne era uscita
+ * grande la meta' di quanto il terreno permettesse. Il terreno della fixture
+ * dev'essere quello del gioco, o le misure che se ne ricavano valgono per un
+ * mondo che nessuno gioca.
+ */
+const ISLAND_SIDE = 512;
+
+/**
+ * Dove si accende la citta', e **non e' il centro della region**.
+ *
+ * Sull'isola vera il centro geometrico e' la **vetta**: quota 48, e appena 387
+ * colonne edificabili su 1089 campionate nel raggio di un polo, contro le 695 del
+ * miglior pianoro. Piantandoci i cinque poli la citta' cresce meta' di quella che
+ * cresceva sulla fixture piccola, e nessuna megastruttura arriva mai — il che
+ * dice qualcosa sulla regola e non solo sulla fixture: una vetta non e' un centro
+ * urbano, ed e' giusto che la citta' non ci nasca. Il pianoro qui sotto e' quello
+ * misurato con `isBuildable` sul seed di questa fixture.
+ */
+const CENTRE_X = 160;
+const CENTRE_Y = 320;
+
+/**
  * I poli che accendono la citta' della fixture.
  *
  * **Uno solo non bastava, ed e' misurato.** Con il solo mercato al centro il
@@ -85,11 +112,11 @@ const STOCK = 1_000_000;
  * configurazione su cui le due famiglie si distinguono davvero.
  */
 const POLES: readonly { readonly kind: CatalystId; readonly x: number; readonly y: number }[] = [
-  { kind: 'market', x: 128, y: 128 },
-  { kind: 'park', x: 118, y: 128 },
-  { kind: 'school', x: 138, y: 128 },
-  { kind: 'transport', x: 128, y: 118 },
-  { kind: 'greenhouse', x: 128, y: 138 },
+  { kind: 'market', x: CENTRE_X, y: CENTRE_Y },
+  { kind: 'park', x: CENTRE_X - 10, y: CENTRE_Y },
+  { kind: 'school', x: CENTRE_X + 10, y: CENTRE_Y },
+  { kind: 'transport', x: CENTRE_X, y: CENTRE_Y - 10 },
+  { kind: 'greenhouse', x: CENTRE_X, y: CENTRE_Y + 10 },
 ];
 
 /**
@@ -101,7 +128,9 @@ const POLES: readonly { readonly kind: CatalystId; readonly x: number; readonly 
 function grow(): City {
   const world = new VoxelWorld();
   const seed = 4242;
-  const { map } = generateIsland(world, seed, { minX: 0, minY: 0, sizeX: 256, sizeY: 256 });
+  const { map } = generateIsland(world, seed, {
+    minX: 0, minY: 0, sizeX: ISLAND_SIDE, sizeY: ISLAND_SIDE,
+  });
   const builder = new Builder(world, map, seed);
 
   let state: SimState = {

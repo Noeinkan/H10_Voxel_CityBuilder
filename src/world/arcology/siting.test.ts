@@ -243,12 +243,16 @@ describe('catalogo sul reticolo reale', () => {
   });
 
   it('salta le ricette piu profonde di quanta roccia il sito offra', () => {
-    // Lo stesso scorrimento in avanti che gia' salta le forme troppo larghe.
-    // Con sedici quote disponibili resta soltanto la corte, che e' la ragione
-    // per cui il catalogo interrato ne ha una bassa.
+    // Lo stesso scorrimento in avanti che gia' salta le forme troppo larghe. La
+    // quota di prova e' quella della ricetta meno esigente — derivata, non
+    // scritta: con solo quella roccia disponibile deve restare soltanto lei, che
+    // e' la ragione per cui il catalogo interrato ne ha una bassa.
+    const shallowest = Math.min(
+      ...SUNKEN_ARCOLOGY_RECIPES.map((recipe) => recipe.sunken!.depth),
+    );
     for (let kx = 0; kx < 64; kx++) {
-      const pick = arcologyForBlock(4242, kx, 0, FACING.east, 'sunken', 16);
-      expect(pick.recipe.sunken!.depth, pick.recipe.kind).toBeLessThanOrEqual(16);
+      const pick = arcologyForBlock(4242, kx, 0, FACING.east, 'sunken', shallowest);
+      expect(pick.recipe.sunken!.depth, pick.recipe.kind).toBeLessThanOrEqual(shallowest);
     }
   });
 
