@@ -194,6 +194,12 @@ const ARCOLOGY_LABELS: Readonly<Record<ArcologyKind, string>> = {
   [ARCOLOGY_KIND.splitCrown]: 'Split Crown',
   [ARCOLOGY_KIND.steppedBar]: 'Stepped Bar',
   [ARCOLOGY_KIND.courtCascade]: 'Court Cascade',
+  // Le interrate compaiono nel campionario come volumi pieni, senza il terreno
+  // in cui vivono: e' il modo giusto per guardarne la sagoma — un imbuto a
+  // terrazze — che in partita si vede solo per la bocca.
+  [ARCOLOGY_KIND.invertedPyramid]: 'Inverted Pyramid',
+  [ARCOLOGY_KIND.sunkenCourt]: 'Sunken Court',
+  [ARCOLOGY_KIND.craterRing]: 'Crater Ring',
 };
 
 const BASE_EXTENT = baseExtentOf();
@@ -458,8 +464,10 @@ function seedForVariant(recipe: PartsRecipe, wanted: number): number {
 }
 
 function arcologyRows(): readonly (readonly PendingCatalogSubject[])[] {
-  // Le tre megastrutture in fila: sono larghe poche decine di voxel ma alte
-  // quasi duecento, quindi una riga sola basta a tenerle leggibili.
+  // Le megastrutture in fila, in una riga sola. Le interrate ci stanno accanto
+  // alle alte come volumi pieni, senza il terreno in cui vivono: e' il solo modo
+  // di guardarne la sagoma — un imbuto a terrazze — che in partita si vede
+  // soltanto per la bocca.
   return [ARCOLOGY_RECIPES.map((recipe) => arcologySubject(recipe))];
 }
 

@@ -422,7 +422,7 @@ avere una coordinata verticale (invariante 7).
 | File | Ruolo | Esporta |
 | --- | --- | --- |
 | [config.ts](src/world/skyline/config.ts) | **Ogni** tetto di fascia, bonus, raggio e cadenza dei picchi | `SKYLINE` |
-| [tiers.ts](src/world/skyline/tiers.ts) | Le tre fasce, il cono verso il polo e l'elezione dell'isolato con il picco | `TIER`, `tierAt`, `allowedLevelAt`, `poleReach`, `isPeakBlock`, `SkylineTier`, `SkylineQuery`, `Pole` |
+| [tiers.ts](src/world/skyline/tiers.ts) | Le tre fasce, il cono verso il polo, l'elezione dell'isolato con il picco e il bonus di quota che distingue la cresta dalla spalla | `TIER`, `tierAt`, `allowedLevelAt`, `heightBonusAt`, `poleReach`, `isPeakBlock`, `SkylineTier`, `SkylineQuery`, `Pole` |
 
 ```ts
 tierAt(query);          // fringe | middle | core
@@ -513,7 +513,7 @@ megastruttura non e' il piu' alto: e' quello che scavalca il vuoto. Per questo
 | File | Ruolo | Esporta |
 | --- | --- | --- |
 | [catalog.ts](src/world/arcology/catalog.ts) | Sceglie in modo deterministico la prima ricetta che entra nell'isolato, senza lasciare che la forma da sedici renda irraggiungibili quelle da quattordici | `arcologyForBlock` |
-| [src/world/arcology/config.ts](src/world/arcology/config.ts) | Regole, soglie normalizzate, tipi e cataloghi pubblici delle arcologie; separa le otto matrici dalle variazioni di profilo e le riunisce per il driver | `ARCOLOGY`, `BASE_ARCOLOGY_KIND`, `PROFILE_ARCOLOGY_KIND`, `ARCOLOGY_KIND`, `BASE_ARCOLOGY_RECIPES`, `PROFILE_ARCOLOGY_RECIPES`, `ARCOLOGY_RECIPES`, `TWIN_STEM`, `BRANCHING_CORE`, `SKY_WEAVE`, `SPIRE_RING`, `DOUBLE_BAR`, `STACK_PAIR`, `QUAD_CLUSTER`, `TRI_SPAN`, `TERRACED_TWIN`, `SPLIT_CROWN`, `STEPPED_BAR`, `COURT_CASCADE`, `stageThresholds`, `arcologyOf`, `ArcologyRecipe`, `ArcologyKind`, `BaseArcologyKind`, `ProfileArcologyKind`, `ArcologyBand`, `ArcologyLanding` |
+| [src/world/arcology/config.ts](src/world/arcology/config.ts) | Regole, soglie normalizzate, tipi e cataloghi pubblici delle arcologie; separa le otto matrici dalle variazioni di profilo e dalla famiglia interrata, e le riunisce per il driver | `ARCOLOGY`, `SUNKEN`, `BASE_ARCOLOGY_KIND`, `PROFILE_ARCOLOGY_KIND`, `SUNKEN_ARCOLOGY_KIND`, `ARCOLOGY_KIND`, `BASE_ARCOLOGY_RECIPES`, `PROFILE_ARCOLOGY_RECIPES`, `SUNKEN_ARCOLOGY_RECIPES`, `TALL_ARCOLOGY_RECIPES`, `ARCOLOGY_RECIPES`, `MIN_SUNKEN_DEPTH`, `TWIN_STEM`, `BRANCHING_CORE`, `SKY_WEAVE`, `SPIRE_RING`, `DOUBLE_BAR`, `STACK_PAIR`, `QUAD_CLUSTER`, `TRI_SPAN`, `TERRACED_TWIN`, `SPLIT_CROWN`, `STEPPED_BAR`, `COURT_CASCADE`, `INVERTED_PYRAMID`, `SUNKEN_COURT`, `CRATER_RING`, `stageThresholds`, `arcologyOf`, `sunkenDepthOf`, `ArcologyRecipe`, `ArcologyKind`, `BaseArcologyKind`, `ProfileArcologyKind`, `SunkenArcologyKind`, `SunkenShape`, `ArcologyBand`, `ArcologyLanding` |
 | [world/arcology/connectivity.test.ts](src/world/arcology/connectivity.test.ts) | Ogni stadio resta connesso al suolo e ogni colonna — corpi e pennoni — resta sotto la snellezza massima misurata sulla sezione di base |
 | [src/world/arcology/depth.ts](src/world/arcology/depth.ts) | Quanta roccia un luogo offre e se il contorno tiene l'acqua fuori. Puro: entrano quote e biomi gia' letti, esce un verdetto | `surveySunkenSite`, `SunkenSite`, `DepthProbe` |
 | [src/world/arcology/profileVariants.ts](src/world/arcology/profileVariants.ts) | Quattro variazioni aggiuntive delle arcologie storiche: corpi e corone sfalsati, torri che terminano su quote diverse e profili verticali asimmetrici | `createArcologyProfileVariants` |

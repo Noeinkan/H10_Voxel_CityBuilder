@@ -85,6 +85,76 @@ function densityChunk(): Uint8Array {
   return padded;
 }
 
+/**
+ * Un **isolato** fitto: molti edifici piccoli, non pochi grandi.
+ *
+ * **E' il caso che il tetto dei quad sorveglia davvero, e `densityChunk` non lo
+ * e'.** Quattro corpi da 14 x 14 hanno sedici facce in tutto e quattro tetti; un
+ * isolato vero di trentasei edifici da 4 x 4 ne ha centoquarantaquattro e
+ * trentasei, cioe' quasi dieci volte gli **agganci** — che e' cio' su cui il
+ * dettaglio si paga, visto che nessun emettitore costa per voxel. La misura del
+ * README (13 890 quad su un chunk a 42 edifici) e' quella, e senza una fixture
+ * che la riproduca aggiungere un emettitore significa aggiungerlo alla cieca.
+ *
+ * Il suolo `plain` a quota zero non e' arredamento: senza, ogni edificio ha aria
+ * sotto e si fascia il piede con un intradosso che nel mondo non esiste.
+ */
+function blockChunk(): Uint8Array {
+  const padded = volume();
+  for (let y = 0; y < CHUNK; y++) {
+    for (let x = 0; x < CHUNK; x++) {
+      setLocal(padded, x, y, 0, packVisualBlock(PALETTE_SLOTS.stone, SURFACE_KIND.plain));
+    }
+  }
+
+  // Sei per sei impronte da quattro, con un voxel di stacco: e' il passo che
+  // tiene le facciate esposte. Senza lo stacco gli edifici si toccano, le facce
+  // interne spariscono e la misura direbbe meta' del vero.
+  const uses = [SURFACE_KIND.habitat, SURFACE_KIND.habitat, SURFACE_KIND.civic, SURFACE_KIND.industrial];
+  let index = 0;
+  for (let gy = 0; gy < 4; gy++) {
+    for (let gx = 0; gx < 5; gx++, index++) {
+      const ox = 1 + gx * 6;
+      const oy = 1 + gy * 6;
+      // Dalla casa alla torre: e' la varieta' di quote che fa comparire insieme
+      // i dettagli agganciati al suolo e quelli agganciati al coronamento. Il
+      // grosso resta basso e una su sei sale, che e' la distribuzione che
+      // `levelCapsOf` produce — un'impronta da quattro non regge una torre da
+      // ventisei, e un isolato di soli aghi misurerebbe un caso che non esiste.
+      const top = index % 6 === 0 ? 22 : 6 + ((index * 5) % 11);
+      const use = uses[index % uses.length];
+      // **Un ingresso per edificio, non uno per lato.** `paint.ts` chiama
+      // `onPortal` con `request.accentFace`, cioe' con una faccia sola: un
+      // edificio vero ha una porta sul fronte principale e tre pareti cieche.
+      // Darne quattro moltiplica per quattro l'aggancio su cui si appende tutto
+      // cio' che riguarda l'attacco a terra, e la misura direbbe una bugia
+      // proprio sulla voce che si sta pesando.
+      const accentFace = index % 4;
+      for (let z = 1; z <= top; z++) {
+        const body = z === top
+          ? SURFACE_KIND.roofTech
+          : z % 6 === 0 ? SURFACE_KIND.luminous : use;
+        const palette = z % 6 === 0 ? PALETTE_SLOTS.glassPale : PALETTE_SLOTS.concrete;
+        for (let y = oy; y < oy + 4; y++) {
+          for (let x = ox; x < ox + 4; x++) {
+            const doorway = z <= 3 && (
+              accentFace === 0 ? x === ox + 3 && y === oy + 2 :
+              accentFace === 1 ? x === ox && y === oy + 2 :
+              accentFace === 2 ? y === oy + 3 && x === ox + 2 :
+              y === oy && x === ox + 2
+            );
+            setLocal(padded, x, y, z, packVisualBlock(
+              doorway ? PALETTE_SLOTS.stone : palette,
+              doorway ? SURFACE_KIND.portal : body,
+            ));
+          }
+        }
+      }
+    }
+  }
+  return padded;
+}
+
 describe('microgeometria 1/16', () => {
   it('conserva il greedy pass in un Int16 esatto e ammette coordinate negative', () => {
     const padded = volume();
@@ -392,6 +462,17 @@ describe('microgeometria 1/16', () => {
   it('su un chunk fitto di edifici veri il tetto non tronca, e si vede quanto margine resta', () => {
     const mesh = greedyMesh(densityChunk());
     console.info(`[misura] dettaglio su chunk fitto: ${mesh.detailQuadCount} quad`);
+    expect(mesh.detailQuadCount).toBeLessThan(MAX_DETAIL_QUADS_PER_CHUNK);
+  });
+
+  it('su un isolato fitto di edifici piccoli il tetto non tronca', () => {
+    // **La misura che decide se un emettitore nuovo ci sta.** Il caso denso non
+    // e' il volume piu' pieno ma quello con piu' **agganci**: molte facciate
+    // corte, molti tetti, molti ingressi. Se questo numero arriva al tetto, a
+    // sparire non e' un dettaglio ma la coda della sequenza — industrial e civic
+    // a meta' chunk — e si vede.
+    const mesh = greedyMesh(blockChunk());
+    console.info(`[misura] isolato fitto: ${mesh.detailQuadCount} quad`);
     expect(mesh.detailQuadCount).toBeLessThan(MAX_DETAIL_QUADS_PER_CHUNK);
   });
 });

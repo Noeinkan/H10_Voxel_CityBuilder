@@ -59,7 +59,10 @@ function placed(recipe: ArcologyRecipe, stage: number): readonly PlacedPart[] {
   return out;
 }
 
-function floatingAt(parts: readonly PlacedPart[]): readonly PlacedPart[] {
+function floatingAt(
+  parts: readonly PlacedPart[],
+  restsOn: (bounds: PartBounds) => boolean,
+): readonly PlacedPart[] {
   const parent = parts.map((_, i) => i);
   const find = (i: number): number => {
     while (parent[i] !== i) i = parent[i];
@@ -73,11 +76,28 @@ function floatingAt(parts: readonly PlacedPart[]): readonly PlacedPart[] {
       if (partsConnected(parts[i].bounds, parts[j].bounds)) union(i, j);
     }
   }
-  // Il suolo e' la parte che nasce a quota zero: e' li' che la struttura poggia.
-  const ground = parts.findIndex((part) => part.bounds.z0 === 0);
+  const ground = parts.findIndex((part) => restsOn(part.bounds));
   if (ground < 0) return [];
   const root = find(ground);
   return parts.filter((part) => find(parts.indexOf(part)) !== root);
+}
+
+/**
+ * Dove una ricetta poggia, cioe' da dove si misura la sospensione.
+ *
+ * **Per una struttura che sale e' la quota zero dello stamp; per una interrata
+ * e' il piano di campagna**, che sta in cima. Non e' un dettaglio di
+ * implementazione: un earthscraper *pende* dal suolo, non ci si appoggia sopra,
+ * e la sua parte piu' bassa — il giardino sul fondo del pozzo — e' l'ultima ad
+ * arrivare. Cercare la radice a `z0 === 0` avrebbe dichiarato sospesa tutta la
+ * struttura fino all'ultimo stadio, o — peggio — non avrebbe trovato nessuna
+ * radice ai primi stadi e sarebbe passata in silenzio senza verificare niente.
+ */
+function restsOnOf(recipe: ArcologyRecipe): (bounds: PartBounds) => boolean {
+  const sunken = recipe.sunken;
+  if (sunken === undefined) return (bounds) => bounds.z0 === 0;
+  const plane = sunken.depth - 1;
+  return (bounds) => bounds.z0 <= plane && bounds.z1 >= plane;
 }
 
 /**
@@ -89,8 +109,9 @@ function floatingAt(parts: readonly PlacedPart[]): readonly PlacedPart[] {
  */
 export function floatingBoxes(recipe: ArcologyRecipe): readonly FloatingBox[] {
   const out: FloatingBox[] = [];
+  const restsOn = restsOnOf(recipe);
   for (let stage = 0; stage < recipe.parts.length; stage++) {
-    for (const part of floatingAt(placed(recipe, stage))) {
+    for (const part of floatingAt(placed(recipe, stage), restsOn)) {
       out.push({ stage: part.stage, index: part.index });
     }
   }

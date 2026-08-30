@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { perfToggleUrl, resolveLaunchMode, resolveSeed, swatchUrl } from './launchMode';
+import {
+  newGameUrl,
+  opensEntryMenu,
+  parseSeedInput,
+  perfToggleUrl,
+  resolveLaunchMode,
+  resolveSeed,
+  swatchUrl,
+} from './launchMode';
 
 describe('resolveLaunchMode', () => {
   it('carica alla radice l’esperienza giocabile senza strumenti tecnici', () => {
@@ -87,6 +95,85 @@ describe('resolveSeed', () => {
   });
 });
 
+describe('parseSeedInput', () => {
+  it('accetta un numero, anche negativo, e ignora gli spazi attorno', () => {
+    expect(parseSeedInput('1337')).toBe(1337);
+    expect(parseSeedInput('  42 ')).toBe(42);
+    expect(parseSeedInput('-7')).toBe(-7);
+  });
+
+  it('rifiuta lo zero, il vuoto e cio che non e un numero', () => {
+    // Lo zero non e' un seed: `resolveSeed` lo escludeva gia', e il campo del
+    // menu deve dire di no nello stesso momento invece di far partire una
+    // partita su un'isola sorteggiata che nessuno ha chiesto.
+    expect(parseSeedInput('0')).toBeNull();
+    expect(parseSeedInput('')).toBeNull();
+    expect(parseSeedInput('   ')).toBeNull();
+    expect(parseSeedInput('abc')).toBeNull();
+  });
+
+  it('si ferma dove il numero finisce, come faceva gia l’indirizzo', () => {
+    // La tolleranza di `parseInt` era gia' quella del vecchio `?seed=`: qui si
+    // fissa invece di scoprirla al primo incolla storto.
+    expect(parseSeedInput('12abc')).toBe(12);
+  });
+});
+
+describe('newGameUrl', () => {
+  it('cambia isola e lascia in piedi l’harness attorno', () => {
+    const params = new URLSearchParams(newGameUrl('?seed=1337&perf=1&theme=neon', 99));
+    expect(params.get('seed')).toBe('99');
+    expect(params.get('perf')).toBe('1');
+    expect(params.get('theme')).toBe('neon');
+  });
+
+  it('dichiara il seed anche quando l’indirizzo non ne aveva', () => {
+    expect(new URLSearchParams(newGameUrl('', 42)).get('seed')).toBe('42');
+  });
+
+  it('riapre la stessa esperienza giocabile', () => {
+    expect(resolveLaunchMode(new URLSearchParams(newGameUrl('?seed=1', 2)))).toEqual({
+      debugEnabled: false,
+      perfEnabled: false,
+      growEnabled: true,
+      simEnabled: false,
+    });
+  });
+
+  it('entra in partita invece di rimostrare il menu che l’ha chiesta', () => {
+    const params = new URLSearchParams(newGameUrl('', 42));
+    expect(params.get('play')).toBe('1');
+    expect(opensEntryMenu(params, resolveLaunchMode(params), false)).toBe(false);
+  });
+});
+
+describe('opensEntryMenu', () => {
+  const play = resolveLaunchMode(new URLSearchParams());
+
+  it('si apre a ogni avvio della partita, seed dichiarato compreso', () => {
+    // Il seed nell'indirizzo non e' una scelta: lo riscrive `main.ts` a ogni
+    // avvio, e legarci la decisione avrebbe mostrato il menu solo la prima volta.
+    expect(opensEntryMenu(new URLSearchParams(), play, false)).toBe(true);
+    expect(opensEntryMenu(new URLSearchParams('seed=1337'), play, false)).toBe(true);
+    expect(opensEntryMenu(new URLSearchParams('debug=1'), play, false)).toBe(true);
+  });
+
+  it('non si apre sopra una scelta gia fatta', () => {
+    // Uno slot appena aperto risponde gia' alla domanda che il menu porrebbe.
+    expect(opensEntryMenu(new URLSearchParams('seed=1337'), play, true)).toBe(false);
+    expect(opensEntryMenu(new URLSearchParams('play=1'), play, false)).toBe(false);
+  });
+
+  it('non esiste fuori dalla partita', () => {
+    // Campionario, diorama e isola nuda sono harness: non hanno un HUD, quindi
+    // non hanno nemmeno una porta d'ingresso da mostrare.
+    const swatch = new URLSearchParams(swatchUrl('neon', 12));
+    expect(opensEntryMenu(swatch, resolveLaunchMode(swatch), false)).toBe(false);
+    const terrain = new URLSearchParams('terrain=1337');
+    expect(opensEntryMenu(terrain, resolveLaunchMode(terrain), false)).toBe(false);
+  });
+});
+
 describe('perfToggleUrl', () => {
   it('accende la misura senza cambiare la partita che si sta misurando', () => {
     // Il seed e' la meta' che conta: ricaricare deve riportare la stessa isola,
@@ -104,8 +191,13 @@ describe('perfToggleUrl', () => {
     expect(params.get('seed')).toBe('1337');
   });
 
-  it('senza piu niente da dichiarare torna alla radice', () => {
-    expect(perfToggleUrl('?perf=1', false)).toBe('./');
+  it('torna in partita senza passare dal menu, e con la citta addosso', () => {
+    // Il menu d'ingresso fermerebbe proprio i tick che il pannello deve contare,
+    // e senza l'autosalvataggio `F2` misurerebbe un'isola vuota.
+    for (const enabled of [true, false]) {
+      const params = new URLSearchParams(perfToggleUrl('?seed=1337&perf=1', enabled));
+      expect(params.get('play')).toBe('1');
+    }
   });
 
   it('riaccende la stessa esperienza, non un harness', () => {

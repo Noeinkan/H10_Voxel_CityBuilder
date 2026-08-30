@@ -156,6 +156,10 @@
   --z-modal: 600;
   --z-toast: 700;
   --z-tip: 800;
+  /* Il menu principale e' l'unica cosa che sta sopra i tooltip: e' un modo, non
+     un pannello, e sotto il suo velo non deve restare acceso niente — ne' la
+     carta decisione (`--z-modal + 1`) ne' un toast rimasto a mezz'aria. */
+  --z-menu: 900;
   /*
    * Il corridoio verticale e' della citta', non dell'interfaccia.
    *
@@ -707,8 +711,17 @@
  * copriva la citta' e il pannello di debug sotto. Qui resta il titolo — quanto
  * basta a riconoscere lo stato dalla coda dell'occhio — e la spiegazione sta
  * dove c'e' spazio per leggerla.
+ *
+ * **La targa pero' e' alta due righe, non una.** Nasceva su una riga sola con
+ * l'ellissi, e quel taglio contraddiceva l'altra meta' della decisione: i titoli
+ * di crisi di `game/tips.ts` sono frasi intere *proprio perche'* il messaggio
+ * non si vede, e portano causa e rimedio insieme. A 440px l'ellissi cadeva
+ * sempre dopo la causa — «Food shortage: no tower yet — overlap the Greenhouse
+ * with the ...» — cioe' mangiava esattamente la meta' che dice cosa fare. Due
+ * righe le contengono tutte, e restano un tetto: la targa non puo' ricrescere in
+ * paragrafo.
  */
-.hud-toast[data-kind="condition"] { max-width: min(440px, calc(100vw - var(--game-hud-rail-left) - var(--space-6) - var(--space-4))); font-size: calc(var(--text-sm) * 1.25); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.hud-toast[data-kind="condition"] { max-width: min(440px, calc(100vw - var(--game-hud-rail-left) - var(--space-6) - var(--space-4))); font-size: calc(var(--text-sm) * 1.25); display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden; }
 /* Tutorial e coach sono l'unica condizione che chiede un gesto: il gesto resta
    sul campo insieme al titolo, in una seconda riga piu' quieta. */
 .hud-toast[data-kind="onboarding"],
@@ -1011,7 +1024,7 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .hud-button, .hud-tip, .city-drawer, .policies-drawer, .theme-picker, .view-picker, .info-picker, .help-card { transition: none; }
+  .hud-button, .hud-tip, .city-drawer, .policies-drawer, .theme-picker, .view-picker, .info-picker, .help-card, .main-menu-veil, .main-menu { transition: none; }
   .hud-tip { transform: none; }
   /* Nessun sollevamento e nessuna pulsazione: restano cornice e colore, che
      dicono la stessa cosa senza muoversi. */

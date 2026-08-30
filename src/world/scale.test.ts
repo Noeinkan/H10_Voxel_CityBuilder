@@ -15,6 +15,7 @@ import {
   skylineCapsOf,
   startLevelCdfOf,
   streetPitchOf,
+  urbanFootprintStepsOf,
 } from './scale';
 
 /**
@@ -110,6 +111,39 @@ describe('levelCapsOf', () => {
       { minFootprint: 8, maxFootprint: 8, minBands: 11, maxBands: 12 },
       { minFootprint: 8, maxFootprint: 8, minBands: 13, maxBands: 15 },
       { minFootprint: 8, maxFootprint: 8, minBands: 16, maxBands: 19 },
+    ]);
+  });
+});
+
+describe('urbanFootprintStepsOf', () => {
+  it('sale dal modulo alla scala mega, senza mai raggiungere l isolato', () => {
+    for (const { module, maxLevel } of ORDINARY_PAIRS) {
+      for (const mega of MEGA_FOOTPRINTS) {
+        const steps = urbanFootprintStepsOf(module, mega, maxLevel);
+        expect(steps.length).toBeGreaterThan(0);
+
+        let prevLevel = 0;
+        let prevSide = module;
+        for (const step of steps) {
+          // Le quote salgono con il livello e restano dentro la scala.
+          expect(step.fromLevel).toBeGreaterThan(prevLevel);
+          expect(step.fromLevel).toBeLessThan(maxLevel);
+          expect(step.side).toBeGreaterThanOrEqual(prevSide);
+          expect(step.side % 2).toBe(0);
+          prevLevel = step.fromLevel;
+          prevSide = step.side;
+        }
+        // L'ultimo gradino si ferma alla scala mega: il lato pieno dell'isolato
+        // resta il premio del picco, e non lo concede nessun gradino.
+        expect(prevSide).toBe(Math.max(module, mega));
+      }
+    }
+  });
+
+  it('con le manopole correnti mette un solo gradino in mezzo', () => {
+    expect(urbanFootprintStepsOf()).toEqual([
+      { fromLevel: 13, side: 12 },
+      { fromLevel: 20, side: 16 },
     ]);
   });
 });

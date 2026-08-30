@@ -18,7 +18,7 @@ import {
   maxStageOf,
   variantsOf,
 } from '../landmarks/config';
-import { ARCOLOGY_RECIPES } from '../arcology/config';
+import { ARCOLOGY_RECIPES, SUNKEN_ARCOLOGY_RECIPES } from '../arcology/config';
 import { createScene } from './cityScene';
 import {
   CELL_FOOTPRINT,
@@ -621,18 +621,25 @@ describe('swatchScene', () => {
   });
 
   it('cataloga le arcologie dallo stesso catalogo delle megastrutture', () => {
-    // Le tre megastrutture vengono da `ARCOLOGY_RECIPES`, senza conteggi a mano:
-    // una ricetta nuova comparirebbe qui da sola. Il tratto che le distingue
-    // dagli altri soggetti e' l'altezza: quasi duecento voxel.
+    // Le megastrutture vengono da `ARCOLOGY_RECIPES`, senza conteggi a mano:
+    // una ricetta nuova comparirebbe qui da sola.
     expect(SWATCH_ARCOLOGIES.length).toBe(ARCOLOGY_RECIPES.length);
 
     const ids = SWATCH_ARCOLOGIES.map((subject) => subject.id);
     expect(new Set(ids).size).toBe(ids.length);
 
+    const sunken = new Set(SUNKEN_ARCOLOGY_RECIPES.map((recipe) => recipe.kind as string));
     for (const subject of SWATCH_ARCOLOGIES) {
       expect(subject.kind).toBe('arcology');
       expect(subject.stamp.sizeX).toBeGreaterThan(0);
-      expect(subject.stamp.sizeZ).toBeGreaterThan(100);
+      // **Il tratto che le distingue non e' piu' l'altezza, ed e' il punto
+      // dell'earthscraper.** Una megastruttura che sale supera i cento voxel;
+      // una che scava ne ha meno di quaranta e la sua scala sta nell'area del
+      // vuoto, non nella quota. Chiedere l'altezza a entrambe avrebbe voluto
+      // dire scrivere la seconda come la prima.
+      const isSunken = sunken.has(subject.id.replace('arcology:', ''));
+      expect(subject.stamp.sizeZ, subject.id)
+        .toBeGreaterThan(isSunken ? 16 : 100);
       expect(infoValue(subject, 'Seed')).toBe('0');
       expect(infoValue(subject, 'Fronte')).toBe('est');
     }

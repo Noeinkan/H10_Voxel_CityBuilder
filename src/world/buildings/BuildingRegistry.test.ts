@@ -109,4 +109,19 @@ describe('BuildingRegistry', () => {
     expect(registry.count).toBe(1);
     expect(registry.overlaps(40, 40, 1, 12, 4)).toBe(true);
   });
+
+  it('restore porta nextId oltre gli id reinseriti', () => {
+    // E' il caso del caricamento: un registro appena costruito riparte da uno,
+    // e senza questo cio' che la citta' costruisce dopo prenderebbe l'id di un
+    // edificio caricato — che e' esattamente cio' che `supports` cita.
+    const registry = new BuildingRegistry();
+    registry.restore({ ...record(4, 4, 12), id: 40 });
+    registry.restore({ ...record(6, 6, 12), id: 12 });
+
+    const fresh = registry.add(record(8, 8, 12));
+
+    expect(fresh.id).toBe(41);
+    expect(registry.get(40)).not.toBeNull();
+    expect(registry.get(12)).not.toBeNull();
+  });
 });

@@ -11,7 +11,7 @@ import type { SpanKind } from '../spans/config';
 import type { RopewayPart } from '../ropeway/config';
 import type { LandmarkFormId } from '../landmarks/config';
 import { isBuildable, takesGround, type AerialPart } from '../aerial/config';
-import { toChunk } from '../chunkCoords';
+import { columnKey, toChunk } from '../chunkCoords';
 
 /**
  * Unica fonte di verita' su cosa esiste.
@@ -549,7 +549,7 @@ export class BuildingRegistry implements ReadonlyBuildingRegistry {
    * edificio compare in al massimo nove voci: e' cio' che rende il test di
    * sovrapposizione esatto invece che approssimato da un riquadro.
    */
-  private readonly columns = new Map<string, number[]>();
+  private readonly columns = new Map<number, number[]>();
 
   /**
    * Le sole colonne di cui qualcuno **prende il suolo**.
@@ -561,7 +561,7 @@ export class BuildingRegistry implements ReadonlyBuildingRegistry {
    * esattamente quello che costava prima, e un ponte non toglie un lotto a
    * nessuno.
    */
-  private readonly groundColumns = new Map<string, number[]>();
+  private readonly groundColumns = new Map<number, number[]>();
 
   /** Le campate, per poterle scorrere senza scandire la citta'. */
   private readonly spanIds = new Set<number>();
@@ -596,7 +596,7 @@ export class BuildingRegistry implements ReadonlyBuildingRegistry {
    * record della citta', e con duemila edifici e' esattamente la scansione che
    * non ci si puo' permettere in un ciclo.
    */
-  private readonly buckets = new Map<string, number[]>();
+  private readonly buckets = new Map<number, number[]>();
 
   private readonly classCounts = new Array<number>(CLASS_COUNT).fill(0);
   private readonly mixedCounts = new Array<number>(CLASS_COUNT).fill(0);
@@ -734,14 +734,14 @@ export class BuildingRegistry implements ReadonlyBuildingRegistry {
   }
 
   at(x: number, y: number): readonly BuildingRecord[] {
-    const ids = this.columns.get(`${x},${y}`);
+    const ids = this.columns.get(columnKey(x, y));
     if (ids === undefined) return EMPTY;
     return ids.map((id) => this.records.get(id)).filter(isRecord);
   }
 
   isOccupied(x: number, y: number): boolean {
     if (this.isReserved(x, y)) return true;
-    const ids = this.groundColumns.get(`${x},${y}`);
+    const ids = this.groundColumns.get(columnKey(x, y));
     return ids !== undefined && ids.length > 0;
   }
 
@@ -815,7 +815,7 @@ export class BuildingRegistry implements ReadonlyBuildingRegistry {
 
     for (let ccy = minCcy; ccy <= maxCcy; ccy++) {
       for (let ccx = minCc; ccx <= maxCc; ccx++) {
-        const ids = this.buckets.get(`${ccx},${ccy}`);
+        const ids = this.buckets.get(columnKey(ccx, ccy));
         if (ids === undefined) continue;
         for (const id of ids) {
           const record = this.records.get(id);
@@ -861,7 +861,7 @@ export class BuildingRegistry implements ReadonlyBuildingRegistry {
     const top = baseZ + height;
     for (let dy = 0; dy < footprintY; dy++) {
       for (let dx = 0; dx < footprint; dx++) {
-        const ids = this.columns.get(`${x + dx},${y + dy}`);
+        const ids = this.columns.get(columnKey(x + dx, y + dy));
         if (ids === undefined) continue;
         for (const id of ids) {
           if (except.includes(id)) continue;
@@ -925,17 +925,17 @@ export class BuildingRegistry implements ReadonlyBuildingRegistry {
       for (let dx = 0; dx < env.sizeX; dx++) {
         const cx = env.x + dx;
         const cy = env.y + dy;
-        push(this.columns, `${cx},${cy}`, record.id);
+        push(this.columns, columnKey(cx, cy), record.id);
         // Il suolo e' l'impronta, non l'inviluppo: sotto lo sbalzo non c'e'
         // niente che poggi.
         if (onGround &&
           cx >= record.x && cx < record.x + record.footprint &&
           cy >= record.y && cy < record.y + depth) {
-          push(this.groundColumns, `${cx},${cy}`, record.id);
+          push(this.groundColumns, columnKey(cx, cy), record.id);
         }
       }
     }
-    push(this.buckets, `${toChunk(record.x)},${toChunk(record.y)}`, record.id);
+    push(this.buckets, columnKey(toChunk(record.x), toChunk(record.y)), record.id);
 
     if (record.span !== undefined) {
       this.spanIds.add(record.id);
@@ -967,12 +967,12 @@ export class BuildingRegistry implements ReadonlyBuildingRegistry {
     const env = envelopeOf(record);
     for (let dy = 0; dy < env.sizeY; dy++) {
       for (let dx = 0; dx < env.sizeX; dx++) {
-        const key = `${env.x + dx},${env.y + dy}`;
+        const key = columnKey(env.x + dx, env.y + dy);
         drop(this.columns, key, record.id);
         drop(this.groundColumns, key, record.id);
       }
     }
-    drop(this.buckets, `${toChunk(record.x)},${toChunk(record.y)}`, record.id);
+    drop(this.buckets, columnKey(toChunk(record.x), toChunk(record.y)), record.id);
 
     if (record.span !== undefined) {
       this.spanIds.delete(record.id);
@@ -1060,16 +1060,29 @@ export class BuildingRegistry implements ReadonlyBuildingRegistry {
   }
 
   /**
-   * Reinserisce un record gia' rimosso, conservandone l'id.
+   * Reinserisce un record conservandone l'id.
    *
-   * E' l'altra meta' dell'annullamento della gomma: un edificio portato via per
-   * intero torna nel registro con la sua identita' — id compreso — invece di
-   * riceverne una nuova. `nextId` resta piu' avanti, quindi non puo' collidere.
+   * Ha **due chiamanti con lo stesso bisogno**. L'annullamento della gomma: un
+   * edificio portato via per intero torna nel registro con la sua identita' — id
+   * compreso — invece di riceverne una nuova. E il caricamento di una partita,
+   * che rimette dentro un registro vuoto record nati in un'altra sessione.
+   *
+   * L'id non e' un dettaglio contabile: `supports` cita gli id, e riassegnarli
+   * spezzerebbe ogni guinzaglio fra cio' che regge e cio' che e' retto. Per la
+   * stessa ragione i record vanno reinseriti in ordine crescente — un appoggio
+   * esiste sempre prima di cio' che regge, quindi in quell'ordine ogni citazione
+   * trova gia' il proprio record.
+   *
+   * **`nextId` sale**, e serve al secondo chiamante: nell'annullamento e' gia'
+   * piu' avanti e questa riga non fa niente, ma un registro appena costruito
+   * riparte da uno e assegnerebbe a cio' che la citta' costruisce da qui in poi
+   * l'id di qualcosa che esiste gia'.
    */
   restore(record: BuildingRecord): void {
     this.records.set(record.id, record);
     this.index(record);
     this.tally(record, 1);
+    if (record.id >= this.nextId) this.nextId = record.id + 1;
   }
 }
 

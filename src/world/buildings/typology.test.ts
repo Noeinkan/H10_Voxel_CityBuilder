@@ -305,25 +305,26 @@ describe('selectTypology', () => {
 
   it('sale di tipologia quando la densita e il livello salgono', () => {
     const profile = profileOf(['market', 'transport', 'monument']);
-    const low = selectTypology({
+    const at = (level: number): string => selectTypology({
       use: BUILDING_CLASS.residential,
       mixed: BUILDING_CLASS.commercial,
-      level: 0,
+      level,
       profile,
       coastal: false,
-    });
-    const high = selectTypology({
-      use: BUILDING_CLASS.residential,
-      mixed: BUILDING_CLASS.commercial,
-      level: BUILDER.maxLevel,
-      profile,
-      coastal: false,
-    });
+    }).id;
 
     // Una casa-bottega che diventa podio commerciale con abitazioni sopra: e' il
-    // racconto che la crescita deve rendere visibile senza spiegarlo.
-    expect(low.id).toBe('shophouse');
-    expect(high.id).toBe('commercialPodium');
+    // racconto che la crescita deve rendere visibile senza spiegarlo, ed e' cio'
+    // che il misto produce per tutta la meta' bassa della scala.
+    expect(at(0)).toBe('shophouse');
+    expect(at(8)).toBe('commercialPodium');
+
+    // **In cima il racconto finisce, e deve finire.** Il podio e' una tipologia
+    // di media altezza: con il tetto verticale a ventisei, tenerlo fino in fondo
+    // significava un grattacielo che dichiara di essere un basamento con le case
+    // sopra. Dal livello dodici, dove ricchezza e densita' ci sono entrambe,
+    // vince la guglia — che non chiede l'uso ospitato e vale su tutte le linee.
+    expect(at(BUILDER.maxLevel)).toBe('spireResidence');
   });
 
   it('elenca tipologie plausibili per il tooltip di piazzamento', () => {

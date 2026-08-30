@@ -7,6 +7,7 @@ import {
   defaultCatalystOfClass,
   decisionOption,
   nextBuildSites,
+  reviveSimState,
   tick,
   type BuildingClass,
   type CatalystId,
@@ -69,6 +70,8 @@ import type { RopewayRefusal } from '../world/ropeway/ropewayPlan';
 import type { RopewayCable, RopewayRide } from '../world/buildings/ropewayDriver';
 import { planRopewayRoutes } from '../world/traffic/ropewayRoutes';
 import { cityCondition, isSelfSufficient, type CityCondition } from './cityCondition';
+import { captureSave } from './save/capture';
+import type { SaveGame } from './save/format';
 import { onboardingAllows, onboardingOf, type OnboardingState } from './onboarding';
 import {
   coachSuggestion,
@@ -125,6 +128,16 @@ function sameCoachLine(
   if (next.kind === 'coach') return held.coachId === (suggestion?.id ?? null);
   return held.condition.title === next.title;
 }
+/**
+ * Un settore comprato, per quel poco che la crescita deve saperne: come si
+ * chiama e che rettangolo occupa. A ricavarlo dall'identificatore e' il
+ * chiamante, che l'isola ce l'ha in mano.
+ */
+export interface SectorRegion {
+  readonly id: string;
+  readonly region: Region;
+}
+
 export interface GrowthStats {
   readonly ready: true;
   readonly tick: number;
@@ -214,7 +227,7 @@ export class GrowthScene {
     world: VoxelWorld,
     private readonly map: TerrainMap,
     region: ScenarioRegion,
-    seed: number,
+    private readonly seed: number,
   ) {
     // Il costo di attraversamento entra qui e da nessun'altra parte: e' cio' che
     // rende geodetica l'influenza dei catalizzatori invece che in linea retta.
@@ -226,6 +239,72 @@ export class GrowthScene {
     });
     this.world = world;
     this.builder = new Builder(world, map, seed, region);
+  }
+
+  /**
+   * Rimette la scena come il salvataggio l'ha lasciata.
+   *
+   * **Il campo si ricostruisce, non si carica**, ed e' la stessa ragione per cui
+   * non sta nel file: `reviveSimState` lo rifa' da catalizzatori, edifici e
+   * policy ottenendo lo stesso contenuto byte per byte. Il costo di
+   * attraversamento va ripassato qui come nel costruttore — e' l'unico ingresso
+   * del campo che non stia nei dati salvati, e ometterlo darebbe la stessa
+   * citta' su un'isola piatta.
+   *
+   * **I settori arrivano gia' risolti in regioni**, perche' e' il chiamante ad
+   * avere in mano l'isola: qui si sa cosa se ne fa la crescita, non come si
+   * ricava un rettangolo da un identificatore.
+   *
+   * Niente `pendingSectors`: il borgo che il settore si porta dietro e' un
+   * catalizzatore, ed e' gia' dentro lo stato salvato. Rimetterlo in coda ne
+   * pianterebbe un secondo a ogni caricamento.
+   */
+  restore(save: SaveGame, sectors: readonly SectorRegion[]): void {
+    // Il seme e' quello della **scena**, non quello scritto nel file: il mondo e'
+    // gia' stato generato da questo, e il Builder ci e' stato costruito sopra.
+    // Se i due divergessero, l'influenza leggerebbe strade che non esistono —
+    // e chi carica ha gia' fatto in modo che coincidano.
+    this.state = reviveSimState(save.sim, createReachCost(this.map, new StreetNetwork(this.seed)));
+    this.builder.restore(save.records);
+
+    for (const sector of sectors) {
+      this.unlocked.add(sector.id);
+      this.builder.registerSecondaryRegion(sector.id, sector.region);
+    }
+
+    this.paused = save.scene.paused;
+    this.speed = save.scene.speed;
+    this.clock = save.scene.clock;
+    this.healthyTicks = save.scene.healthyTicks;
+    // Le rotte si ricalcolano da sole al primo `trafficPoses`, ma la firma
+    // tenuta da prima direbbe che le strutture non sono cambiate: da un mondo
+    // vuoto a una citta' intera e' il caso in cui quella cache va invalidata.
+    this.routeKey = '';
+    this.routeStamp = -1;
+    this.message = 'Game loaded.';
+  }
+
+  /**
+   * La partita in un oggetto salvabile.
+   *
+   * L'ordine di `unlocked` e' quello di acquisto — un `Set` conserva l'ordine di
+   * inserimento — ed e' l'ordine con cui il caricamento deve rigenerare la
+   * costa: ogni settore estende la sagoma su cui il successivo viene generato.
+   */
+  toSave(seed: number, savedAt: number): SaveGame {
+    return captureSave({
+      seed,
+      state: this.state,
+      records: this.builder.registry.all,
+      sectors: [...this.unlocked],
+      scene: {
+        paused: this.paused,
+        speed: this.speed,
+        clock: this.clock,
+        healthyTicks: this.healthyTicks,
+      },
+      savedAt,
+    });
   }
 
   advance(dt: number): void {

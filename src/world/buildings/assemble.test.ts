@@ -9,6 +9,7 @@ import {
 import { BUILDER, GRAMMAR, MAX_FOOTPRINT } from './config';
 import { generateBuilding } from './generate';
 import { STAMP_EMPTY, type VoxelStamp } from './stamp';
+import { SCALE, urbanFootprintStepsOf } from '../scale';
 import { SKYLINE } from '../skyline/config';
 import { allowedLevelAt, isPeakBlock, type SkylineQuery } from '../skyline/tiers';
 import { StreetNetwork } from '../streets/StreetNetwork';
@@ -175,24 +176,44 @@ describe('urbanFootprintCap', () => {
     return { cap, blockSide };
   }
 
+  /** Il lato del gradino piu' basso: meta' strada fra modulo e scala mega. */
+  const FIRST_STEP = urbanFootprintStepsOf()[0].side;
+
   it('citta iniziale e periferia restano entro il modulo ordinario', () => {
     const { peak } = neighbouringBlocks();
+    // Nessun vicino: la colonna e' bordo dell'edificato, e sul bordo non si apre
+    // nessun gradino — nemmeno dentro un isolato eletto.
     expect(gate(peak, 0).cap).toBe(MAX_FOOTPRINT);
   });
 
-  it('il core non eletto resta ordinario e solo il picco maturo usa l isolato', () => {
+  it('la fascia intermedia apre il primo gradino e si ferma prima della scala mega', () => {
+    const { plain } = neighbouringBlocks();
+    const middle = gate(plain, SKYLINE.edgeMiddle);
+
+    expect(middle.cap).toBe(Math.min(FIRST_STEP, middle.blockSide));
+    expect(middle.cap).toBeGreaterThan(MAX_FOOTPRINT);
+    expect(middle.cap).toBeLessThan(SCALE.megaFootprint);
+  });
+
+  it('il core non eletto arriva alla scala mega, e solo il picco usa l isolato', () => {
     const { peak, plain } = neighbouringBlocks();
     const peakGate = gate(peak);
     const plainGate = gate(plain);
 
-    expect(plainGate.cap).toBe(MAX_FOOTPRINT);
+    // Il centro non eletto si allarga, ma non fino all'isolato: quello resta il
+    // premio della coincidenza fra fascia, cono ed elezione.
+    expect(plainGate.cap).toBe(Math.min(SCALE.megaFootprint, plainGate.blockSide));
+    expect(plainGate.cap).toBeGreaterThan(FIRST_STEP);
     expect(peakGate.cap).toBe(peakGate.blockSide);
+    expect(peakGate.cap).toBeGreaterThan(plainGate.cap);
   });
 
   it('due isolati vicini conservano ciascuno la propria decisione', () => {
     const { peak, plain } = neighbouringBlocks();
     const peakGate = gate(peak);
-    expect([peakGate.cap, gate(plain).cap]).toEqual([peakGate.blockSide, MAX_FOOTPRINT]);
+    const plainGate = gate(plain);
+    expect([peakGate.cap, plainGate.cap])
+      .toEqual([peakGate.blockSide, Math.min(SCALE.megaFootprint, plainGate.blockSide)]);
   });
 
   it('lo stesso stato e seme producono la stessa decisione e lo stesso stamp', () => {

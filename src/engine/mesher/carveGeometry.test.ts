@@ -8,6 +8,14 @@ import {
 import { packVisualBlock, SURFACE_KIND } from '../../world/visualBlock';
 import { PALETTE_SLOTS } from '../paletteSlots';
 import { appendCarveDetail } from './carveGeometry';
+import {
+  CARVE_DEPTH,
+  CARVE_KIND,
+  CARVE_KIND_COUNT,
+  CARVE_MARK_COUNT,
+  packCarveMark,
+  type CarveKind,
+} from './carveMarks';
 import { MAX_CARVE_QUADS_PER_CHUNK, planCarves } from './carvePlan';
 import { greedyMesh, SHADE_AO_MASK } from './greedyMesher';
 import {
@@ -239,6 +247,99 @@ describe('microgeometria riduttiva', () => {
     expect(far).toBeLessThan(here * 2);
   });
 
+  it('ogni ricetta ha una riga in ogni tabella che la indicizza', () => {
+    // **Il difetto che questo test toglie di mezzo non fallisce, mente.** Le
+    // tabelle del gruppo sono cinque e vivono in tre file; una ricetta nuova che
+    // ne dimentichi una legge `undefined`, lo somma a una coordinata e disegna un
+    // prisma a `NaN` — che il writer accetta e nessuno vede. Qui si controllano
+    // le due che stanno in un modulo foglia, piu' il secchiello del piano.
+    expect(CARVE_DEPTH.length).toBe(CARVE_KIND_COUNT);
+    expect(CARVE_MARK_COUNT).toBe(CARVE_KIND_COUNT * 8);
+
+    const marks = new Uint8Array(PADDED_VOL);
+    const padded = everyRecipe();
+    const plan = planCarves(padded, marks, [0, 0, 0], collectSurfaceCells(padded));
+    expect(plan.byMark.length).toBe(CARVE_MARK_COUNT);
+    // Il marchio piu' alto possibile deve avere una casella: e' il letterale a
+    // 64 che reggeva fino alla settima ricetta e alla nona esplodeva su `.push`.
+    expect(plan.byMark[packCarveMark((CARVE_KIND_COUNT - 1) as CarveKind, 7)]).toBeDefined();
+  });
+
+  it('nessuna ricetta si spegne in silenzio sulla fixture di riferimento', () => {
+    // Il gemello del pavimento per linguaggio della scena campionario: obbliga
+    // `everyRecipe` a restare onesta man mano che il catalogo cresce. Una ricetta
+    // che non scatta piu' — per un aggancio cambiato sotto, o per un ordine di
+    // rivendicazione che gliela toglie — sparisce dal disegno senza rompere
+    // niente, ed e' esattamente cio' che nessun altro test qui vedrebbe.
+    const marks = new Uint8Array(PADDED_VOL);
+    const padded = everyRecipe();
+    const plan = planCarves(padded, marks, [0, 0, 0], collectSurfaceCells(padded));
+
+    for (let kind = 1; kind < CARVE_KIND_COUNT; kind++) {
+      const claimed = plan.byMark.some((cells, mark) => mark >>> 3 === kind && cells.length > 0);
+      expect({ kind, scattata: claimed }).toEqual({ kind, scattata: true });
+    }
+  });
+
+  it('lo zoccolo non spezza il rettangolo del greedy pass', () => {
+    // **Il principio che rende sostenibili le ricette di bordo.** Scavare in
+    // mezzo a una parete taglia il rettangolo greedy in quattro — e' il prezzo
+    // che la nicchia paga, ed e' per questo che il suo tiro sta a 0,02. Scavare
+    // sulla **riga di base** lo accorcia soltanto: la faccia sopra resta un
+    // rettangolo solo. Se questo numero cominciasse a crescere, lo zoccolo
+    // starebbe costando due volte, in dettaglio e in geometria di base.
+    const bare = volume();
+    const grounded = volume();
+    for (let y = 8; y < 20; y++) {
+      for (let z = 0; z < 12; z++) {
+        const wall = packVisualBlock(PALETTE_SLOTS.concrete, SURFACE_KIND.habitat);
+        setLocal(bare, 10, y, z, wall);
+        setLocal(grounded, 10, y, z, wall);
+      }
+      setLocal(grounded, 10, y, -1, packVisualBlock(PALETTE_SLOTS.stone, SURFACE_KIND.plain));
+    }
+
+    const without = greedyMesh(bare);
+    const with_ = greedyMesh(grounded);
+    const baseWithout = without.quadCount - without.detailQuadCount;
+    const baseWith = with_.quadCount - with_.detailQuadCount;
+
+    // Il suolo aggiunge le sue facce, quindi il confronto e' sulla sola parete:
+    // il conto di base non deve crescere **piu'** di quanto il suolo stesso
+    // porta, e le facce del suolo sono meno di quelle che una parete bucata
+    // costerebbe. Il modo diretto: lo zoccolo e' scattato, e la parete sopra e'
+    // ancora una corsa sola.
+    expect(with_.detailQuadCount).toBeGreaterThan(without.detailQuadCount);
+    expect(baseWith - baseWithout).toBeLessThan(12);
+  });
+
+  it('la feritoia non legge fuori dal volume paddato', () => {
+    // Un capannone che arriva in cima al chunk. Senza la guardia `inPadded`,
+    // `paddedIdx` indicizza oltre l'array: non esplode, risponde con la cella di
+    // un'altra riga, e il difetto compare solo sui chunk alti. Due passate
+    // identiche sono la prova che nessuna lettura pesca fuori dal buffer, dove il
+    // contenuto non e' definito.
+    const padded = volume();
+    for (let y = 8; y < 16; y++) {
+      for (let z = CHUNK - 6; z < CHUNK; z++) {
+        setLocal(padded, 10, y, z, packVisualBlock(PALETTE_SLOTS.metalRust, SURFACE_KIND.industrial));
+      }
+    }
+
+    const first = carveQuads(padded, [0, 0, 0]).drawn;
+    expect(carveQuads(padded, [0, 0, 0]).drawn).toBe(first);
+
+    // E la riga in cima non e' sotto nessun ciglio: la feritoia sta dove sopra
+    // c'e' ancora lamiera, non dove finisce l'edificio.
+    const marks = new Uint8Array(PADDED_VOL);
+    const plan = planCarves(padded, marks, [0, 0, 0], collectSurfaceCells(padded));
+    const vents = plan.byMark.reduce<number[]>(
+      (all, cells, mark) => (mark >>> 3 === CARVE_KIND.vent ? [...all, ...cells] : all),
+      [],
+    );
+    expect(vents.every((cell) => cell >>> 10 < CHUNK - 1)).toBe(true);
+  });
+
   it('misura il gruppo su un chunk fitto', () => {
     const { planned, drawn } = carveQuads(everyRecipe(), [0, 0, 0]);
     console.info(`[misura] scavo su chunk fitto: ${drawn} quad disegnati, ${planned} prenotati`);
@@ -268,13 +369,29 @@ function corner(
  */
 function everyRecipe(): Uint8Array {
   const padded = volume();
+  // Il suolo sta nella corsia di padding sotto il chunk, che e' dove sta nel
+  // mondo: l'edificio comincia a quota zero e cio' su cui poggia appartiene al
+  // chunk di sotto. E' l'aggancio dello zoccolo, e senza non scatterebbe mai.
+  for (let y = 0; y < CHUNK; y++) {
+    for (let x = 0; x < CHUNK; x++) {
+      setLocal(padded, x, y, -1, packVisualBlock(PALETTE_SLOTS.stone, SURFACE_KIND.plain));
+    }
+  }
   for (const [ox, oy] of [[1, 1], [17, 1], [1, 17], [17, 17]]) {
+    // Un corpo industriale fra i quattro: la feritoia si aggancia al ciglio di
+    // una parete di lamiera, e senza nessun corpo la porta il test del winding
+    // non vedrebbe mai la sua forma.
+    const use = ox === 17 && oy === 17 ? SURFACE_KIND.industrial : SURFACE_KIND.habitat;
     for (let z = 0; z < CHUNK - 1; z++) {
+      // La fascia d'accento salta la quota zero: li' c'e' l'attacco a terra, e
+      // una fascia luminosa a filo del suolo si prenderebbe la riga che lo
+      // zoccolo rivendica — nel mondo il generatore ci mette lo zoccolo, non
+      // una vetrina interrata.
       const band = z === CHUNK - 2
         ? SURFACE_KIND.roofTech
-        : z % 6 === 0
+        : z > 0 && z % 6 === 0
           ? SURFACE_KIND.luminous
-          : SURFACE_KIND.habitat;
+          : use;
       // Lo sbalzo: sopra la quota otto il corpo cresce di una cella in x, quindi
       // il piano sotto si ritrova coperto ed e' li' che nasce la loggia.
       const grown = z >= 8 ? 1 : 0;

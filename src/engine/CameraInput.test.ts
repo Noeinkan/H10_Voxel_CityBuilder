@@ -1,5 +1,11 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { CameraInput, isOrbitButton, isPanButton, type CameraCommands } from './CameraInput';
+import {
+  CameraInput,
+  isOrbitButton,
+  isPanButton,
+  isTypingTarget,
+  type CameraCommands,
+} from './CameraInput';
 
 describe('tasti del mouse', () => {
   it('pana con sinistro e destro', () => {
@@ -185,5 +191,37 @@ describe('tastiera', () => {
     const { input, dispatchKey } = attached();
     dispatchKey('keydown', { code: 'KeyQ' });
     expect(input.keys.size).toBe(0);
+  });
+
+  it('un tasto scritto in un campo non muove la citta', () => {
+    // I listener stanno su `window` e prendevano ogni tasto: scrivere un seed
+    // nel menu avrebbe panoramizzato con `WASD` e girato con `Q`.
+    const { input, calls, dispatchKey } = attached();
+
+    dispatchKey('keydown', { code: 'KeyQ', target: { tagName: 'INPUT' } });
+    dispatchKey('keydown', { code: 'KeyW', target: { tagName: 'TEXTAREA' } });
+    dispatchKey('keydown', { code: 'KeyE', target: { isContentEditable: true } });
+
+    expect(calls).toEqual([]);
+    expect(input.keys.size).toBe(0);
+  });
+});
+
+describe('isTypingTarget', () => {
+  it('riconosce i campi che si prendono i tasti', () => {
+    expect(isTypingTarget({ tagName: 'INPUT' } as unknown as EventTarget)).toBe(true);
+    expect(isTypingTarget({ tagName: 'textarea' } as unknown as EventTarget)).toBe(true);
+    expect(isTypingTarget({ tagName: 'SELECT' } as unknown as EventTarget)).toBe(true);
+    expect(isTypingTarget({ isContentEditable: true } as unknown as EventTarget)).toBe(true);
+  });
+
+  it('lascia passare tutto il resto, bersaglio assente compreso', () => {
+    // In `node` l'evento arriva senza `target`, e la guardia deve rispondere
+    // «no» invece di rompersi: `instanceof HTMLInputElement` sarebbe un
+    // ReferenceError, non un falso.
+    expect(isTypingTarget(null)).toBe(false);
+    expect(isTypingTarget(undefined)).toBe(false);
+    expect(isTypingTarget({ tagName: 'CANVAS' } as unknown as EventTarget)).toBe(false);
+    expect(isTypingTarget({} as unknown as EventTarget)).toBe(false);
   });
 });

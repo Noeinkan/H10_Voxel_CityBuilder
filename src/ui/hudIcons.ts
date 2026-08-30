@@ -5,7 +5,7 @@ export type HudIcon =
   | 'residential' | 'production' | 'civic' | 'expansion' | 'terrace' | 'ropeway' | 'policies' | 'city' | 'demolish'
   | 'market' | 'factory' | 'park' | 'greenhouse' | 'power' | 'school' | 'port' | 'ferry' | 'airport' | 'transport' | 'radio' | 'lighthouse'
   | 'university' | 'monument' | 'museum' | 'cathedral' | 'theatre' | 'stadium' | 'marina'
-  | 'pause' | 'play' | 'theme' | 'view' | 'info' | 'swatch' | 'help' | 'close'
+  | 'pause' | 'play' | 'theme' | 'view' | 'info' | 'swatch' | 'menu' | 'save' | 'help' | 'close'
   | 'daylight' | 'sun' | 'moon' | 'clouds' | 'cloudsOff';
 
 /*
@@ -115,6 +115,15 @@ const PATHS: Readonly<Record<HudIcon, string>> = {
   // distingue da `view` — tre piani di taglio — perche' rispondono a due domande
   // diverse: quella guarda dentro la citta', questa guarda di cosa e' fatta.
   swatch: '<path d="M4 4h16v16H4z"/><path d="M4 9.3h16M4 14.7h16M9.3 4v16M14.7 4v16"/>',
+  // Le tre righe: la sagoma che vuol dire «menu» ovunque, e che nel dock si
+  // distingue da tutto il resto proprio perche' non disegna niente della citta'.
+  // E' la porta che si apre anche con `Esc`.
+  menu: '<path d="M4 7h16M4 12h16M4 17h16"/>',
+  // Il dischetto, con l'angolo tagliato, l'etichetta in alto e lo sportello in
+  // basso: e' la sagoma che vuol dire «salva» da quarant'anni, e non c'e'
+  // niente da guadagnare a inventarne un'altra. Squadrata come le altre. Dal
+  // menu principale in poi non sta piu' nel dock: nomina la sua sezione.
+  save: '<path d="M4 4h12l4 4v12H4zM8 4v5h7V4M7 20v-6h10v6"/>',
   help: '<circle cx="12" cy="12" r="9"/><path d="M9.5 9a2.7 2.7 0 1 1 4.2 2.3c-1 .6-1.7 1.1-1.7 2.2M12 17h.01"/>',
   close: '<path d="M6 6l12 12M18 6 6 18"/>',
   // Le tre del ciclo si leggono in fila: un sole sopra la linea dell'orizzonte

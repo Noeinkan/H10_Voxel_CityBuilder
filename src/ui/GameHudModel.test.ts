@@ -256,7 +256,24 @@ describe('buildGameHudModel', () => {
     expect(resolveEscapeTarget(false, false, false, true, { kind: 'expansion' }, view)).toBe('help');
     expect(resolveEscapeTarget(false, false, false, false, { kind: 'expansion' }, view)).toBe('tool');
     expect(resolveEscapeTarget(false, false, false, false, { kind: 'none' }, view)).toBe('view');
-    expect(resolveEscapeTarget(false, false, false, false, { kind: 'none' }, false)).toBe('none');
+    expect(resolveEscapeTarget(false, false, false, false, { kind: 'none' }, false)).toBe('menu');
+  });
+
+  it('a riposo Escape apre il menu, e solo a riposo', () => {
+    // L'ultimo anello inverte il senso di tutti gli altri: non chiude, apre.
+    // Perche' ci si arrivi non deve esserci piu' niente da annullare — un
+    // pannello aperto, uno strumento in mano o una vista accesa se lo prendono
+    // prima, ed e' quello che rende il menu una porta e non un incidente.
+    const empty = { kind: 'none' } as const;
+    expect(resolveEscapeTarget(false, false, false, false, empty, false)).toBe('menu');
+    expect(resolveEscapeTarget(true, false, false, false, empty, false)).toBe('views');
+    expect(resolveEscapeTarget(false, true, false, false, empty, false)).toBe('themes');
+    expect(resolveEscapeTarget(false, false, true, false, empty, false)).toBe('policies');
+    expect(resolveEscapeTarget(false, false, false, true, empty, false)).toBe('help');
+    expect(resolveEscapeTarget(false, false, false, false, { kind: 'terrace' }, false)).toBe('tool');
+    expect(resolveEscapeTarget(false, false, false, false, empty, false, false, true)).toBe('selection');
+    expect(resolveEscapeTarget(false, false, false, false, empty, true, true)).toBe('lock');
+    expect(resolveEscapeTarget(false, false, false, false, empty, true)).toBe('view');
   });
 
   it('Escape esce dalla vista, ma per ultimo', () => {

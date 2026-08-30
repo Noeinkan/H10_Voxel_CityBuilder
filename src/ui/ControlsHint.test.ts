@@ -17,8 +17,16 @@ describe('CONTROL_HINTS', () => {
       { keys: ['Shift', '1..9'], action: 'Switch the visual theme' },
       { keys: ['V'], action: 'Cycle the views below' },
       { keys: ['L'], action: 'Hold the day, hold the night, or let the clock run' },
-      { keys: ['Esc'], action: 'Cancel the tool, close the card, then leave the view' },
+      { keys: ['Esc'], action: 'Cancel the tool, close the card, leave the view, then open the menu' },
     ]);
+  });
+
+  it('promette anche l’ultimo passo, che apre invece di chiudere', () => {
+    // A mani vuote Escape non faceva niente, e nessuna riga lo diceva perche'
+    // non c'era niente da dire. Adesso e' la porta del menu, ed e' il solo modo
+    // di scoprirlo senza premerlo a caso.
+    const escape = CONTROL_HINTS.find((hint) => hint.keys.includes('Esc'));
+    expect(escape?.action).toContain('menu');
   });
 
   it('il click a mani vuote e’ un comando, e va detto', () => {

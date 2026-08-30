@@ -28,6 +28,12 @@ import { appendStreetDetail } from './microStreet';
 // chiamano solo dentro il corpo di `appendMicroGeometry`, e di la' si leggono le
 // costanti di questo file dentro i corpi degli emettitori.
 import { appendFacadeDetail, appendRoofDetail } from './microDetail';
+// Il filo del tetto e l'attacco a terra stanno in due moduli loro, con la stessa
+// regola e la stessa cautela dei due sopra: le loro `append*` si chiamano solo
+// dentro il corpo di `appendMicroGeometry`, e di la' si leggono le costanti di
+// questo file dentro i corpi degli emettitori.
+import { appendCrownEdges, appendCrownProps } from './microCrown';
+import { appendThresholdDetail } from './microThreshold';
 
 /**
  * Microgeometria architettonica in unita' fisse di 1/16 di voxel.
@@ -1225,6 +1231,8 @@ export function appendMicroGeometry(
     return initial - writer.remainingQuads;
   }
 
+  const roofs = bySurface[SURFACE_KIND.roofTech];
+
   // Coda della struttura: finiali e fasce di sbalzo valgono su tutte e due le
   // facciate d'uso costruite, quindi si pagano due liste a testa. Stanno qui e
   // non piu' in alto perche' fra la struttura sono le prime a poter cadere: una
@@ -1244,16 +1252,29 @@ export function appendMicroGeometry(
     }
   }
 
+  // Il filo del tetto e l'attacco a terra chiudono la struttura, e stanno
+  // **sopra** le tende apposta: sono la silhouette di un edificio — dove finisce
+  // contro il cielo e dove comincia sul marciapiede — non un oggetto posato
+  // sopra. Una citta' senza tende resta leggibile; una fatta di parallelepipedi
+  // con un bordino no. Su un chunk saturo spingono in basso i prop storici, e a
+  // cadere per primo resta comunque il retro.
+  if (!appendCrownEdges(padded, writer, roofs)) return initial - writer.remainingQuads;
+  if (!appendThresholdDetail(padded, writer, cells, marks)) return initial - writer.remainingQuads;
+
   // Da qui in giu' sono oggetti, non struttura: se il tetto arriva, cadono loro.
   if (!emitFacadeProps(padded, writer, facadeByFace, origin)) return initial - writer.remainingQuads;
   // Il vocabolario maturo segue i prop storici: balconi, davanzali, lesene e
   // pinne sono oggetti quanto le tende, e sotto pressione cadono prima del
   // retro — ma dopo i prop di sempre, che sono il secondo sguardo di base.
   if (!appendFacadeDetail(padded, writer, cells, origin)) return initial - writer.remainingQuads;
-  const roofs = bySurface[SURFACE_KIND.roofTech];
   if (!emitRoofMasts(padded, writer, roofs, origin)) return initial - writer.remainingQuads;
   if (!emitRoofCrowns(padded, writer, roofs, origin)) return initial - writer.remainingQuads;
   if (!emitTerraceBoxes(padded, writer, roofs, origin)) return initial - writer.remainingQuads;
+  // Il coronamento che dice l'uso vale piu' di una vasca d'acqua generica, quindi
+  // sotto pressione cade la vasca: `appendCrownProps` sta prima di `appendRoofDetail`.
+  if (!appendCrownProps(padded, writer, roofs, origin, marks)) {
+    return initial - writer.remainingQuads;
+  }
   // Le combinazioni di tetto chiudono i prop: vasche e gruppi HVAC sono l'ultima
   // voce del campionario prima del retro, che resta il primo a cadere.
   if (!appendRoofDetail(padded, writer, roofs, origin, marks)) {

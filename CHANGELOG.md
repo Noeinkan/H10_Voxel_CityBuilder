@@ -11,6 +11,413 @@ coincide con il messaggio di commit.
 
 ---
 
+## In corso — La partita si sceglie, non riparte da sola
+
+- **Il menu e' la porta d'ingresso, a ogni caricamento.** `npm start` non
+  riporta piu' la citta' di ieri: si apre il menu principale sopra un'isola nuova
+  che intanto nasce dietro il velo, e si sceglie. *Play* apre quell'isola,
+  *Continue* riapre l'autosalvataggio — e lo dice, con la data, gli abitanti e
+  gli edifici scritti sul bottone, perche' «Continue» da solo chiederebbe di
+  fidarsi a chi ha appena lanciato il gioco.
+- **L'autosalvataggio non si legge piu' all'avvio.** Non e' andato perso: non
+  viene piu' aperto senza chiederlo, e passa dallo slot di transito come
+  qualunque altro caricamento. Era l'unica cosa che rendeva impossibile
+  cominciare — ogni avvio ereditava la partita precedente, e per averne una nuova
+  bisognava cancellare a mano il salvataggio.
+- **Il seed non decide se il menu compaia.** Sembrava il candidato ovvio — «se
+  l'indirizzo dichiara un mondo, entra e basta» — ma `?seed=` lo riscrive
+  `main.ts` a **ogni** avvio, quindi il menu sarebbe comparso solo la primissima
+  volta e mai piu'. La decisione vive in `opensEntryMenu`, pura e testata in
+  `node`, e guarda altre due cose: uno slot appena aperto, che e' gia' la
+  risposta alla domanda, e `?play=1`.
+- **`?play=1`: la scelta e' gia' fatta.** Salta il menu **e** riapre
+  l'autosalvataggio, perche' sono la stessa frase — «riprendi come stavi» — e
+  separarle avrebbe dato un `F2` che misura un'isola vuota invece della citta'
+  che si stava guardando. Se lo mettono da soli `newGameUrl` e `perfToggleUrl`,
+  che sono ricaricamenti nati da una scelta appena presa; si **consuma**
+  all'avvio, tolto dalla barra degli indirizzi insieme al seed che ci viene
+  scritto, quindi un ricaricamento a mano riporta il menu.
+- **`perfToggleUrl` non torna piu' a `./`.** Portando sempre `play=1` la query
+  non e' mai vuota, e il ramo che restituiva la radice nuda non ha piu' un caso
+  che lo raggiunga.
+- **L'harness degli scatti dichiara `play=1` su ogni indirizzo di gioco.** Senza,
+  ogni scatto sarebbe partito da un velo sopra un'isola ferma: il menu blocca i
+  tick, ed e' esattamente cio' che `grow()` sta aspettando.
+- **La famiglia interrata nasce sulla spalla del cono, non fuori dal centro.** La
+  condizione originale — «l'earthscraper nasce dove la gerarchia non concede
+  altezza», cioè `tier !== core` — non aveva **un solo sito** sull'isola
+  standard: misurata su una città cresciuta (seed 4242, 2000 tick) la
+  distribuzione degli isolati candidati è 4 `core`, 0 `middle`, 10 `fringe`, e di
+  tutti e quattordici uno solo ha i vicini che una megastruttura chiede. Il
+  tessuto denso cade dentro la portata di un polo per costruzione, e ciò che
+  resta fuori è rado e costiero, cioè non scavabile. A distinguere le due
+  famiglie è ora `heightBonusAt` — i livelli concessi *oltre* il tetto nudo della
+  fascia — contro `SKYLINE.coneBonus`: la torre prende la cresta del cono, il
+  cratere la spalla. Sugli stessi quattro isolati dà tre creste e una spalla, e
+  la spalla è il sito più profondo dell'isola. Un isolato di spalla su cui la
+  roccia non basta torna alla famiglia che sale invece di restare senza
+  megastruttura.
+
+## In corso — La chiave di colonna diventa un intero
+
+- **Le mappe per colonna del registro non allocano più una stringa a
+  interrogazione.** `columns`, `groundColumns`, `buckets` e la blacklist dei siti
+  del `Builder` erano indicizzate da `` `${x},${y}` ``: una stringa nuova per
+  ogni lettura, e le letture sono più di un milione ogni sessanta tick perché
+  `lotIsFree` scandisce il riquadro di ricerca colonna per colonna. `columnKey`
+  in `chunkCoords.ts` le impacchetta in un intero — quindici bit per asse più il
+  bias, quindi dentro l'intero piccolo di V8 — e la sola lettura misura 2,5 volte
+  più veloce sulla stessa città matura. Il dominio è ±16384 colonne per lato,
+  contro le 384 dell'isola più grande, ed è fissato da un test perché una chiave
+  numerica che collide non dà un errore: dà un edificio dentro un altro.
+
+## In corso — L'earthscraper: la megastruttura che scava
+
+- **Una seconda famiglia di arcologie, che scende invece di salire.** Sul modello
+  dell'*Earthscraper* di BNKR Arquitectura — la piramide invertita sotto lo
+  Zocalo di Citta' del Messico, dove il centro storico vieta di demolire e di
+  salire — `src/world/arcology/` guadagna tre ricette interrate: una piramide a
+  terrazze attorno a un pozzo di luce, una corte bassa e larga, e un cratere su
+  due isolati. E' la stessa macchina di sempre — `PartsRecipe`,
+  `generateFromRecipe`, `BuildingRecord`, stadi, fasce — con tre cose ribaltate:
+  il verso della crescita, la condizione che la fa nascere, e il vincolo di forma
+  che la distingue da un volume qualsiasi.
+- **Le quote negative non servono, e non ce ne sono.** Per una ricetta interrata
+  `z = 0` e' il fondo del pozzo e il piano di campagna sta a `sunken.depth`, in
+  cima: a cambiare e' soltanto dove il driver posa l'ancora — `baseZ = padZ -
+  depth` invece di `padZ`. E' la ragione per cui questa famiglia costa cosi'
+  poco. Tre misure che contavano dal basso si riferiscono ora alla cima, e la
+  piu' istruttiva e' la connettivita': un earthscraper **pende** dal suolo invece
+  di appoggiarcisi, quindi `floatingBoxes` radica sul piano di campagna. Con la
+  radice a `z0 === 0` la struttura sarebbe risultata sospesa fino all'ultimo
+  stadio — o, peggio, non avrebbe avuto radice ai primi stadi e il controllo
+  sarebbe passato senza verificare niente.
+- **La condizione e' `notCore` allo specchio.** L'arcologia nasce dove la citta'
+  ha esaurito la quota che le era concessa; l'earthscraper dove quella quota non
+  le e' mai stata concessa. Le due non sono mai vere insieme, ed e' questo — non
+  un arbitrato del driver — a tenere torri e crateri su isolati diversi: la
+  fascia sceglie la **famiglia** prima della forma, e `arcologyForBlock` pesca da
+  un catalogo o dall'altro, mai dall'unione.
+- **Il vuoto ha un invariante suo.** `skyWindowOf` cerca uno scavalco e pretende
+  una linea sgombera da un capo all'altro dell'inviluppo; un pozzo e' cieco su
+  quattro fianchi per costruzione, quindi quella regola lo dichiarerebbe un
+  cavedio — il caso che `window.ts` esiste per escludere. Le passerelle sulla
+  bocca non bastavano a salvarlo, ed e' stato l'errore piu' istruttivo del
+  lavoro. `shaftOf` misura la domanda giusta: una finestra di cielo si guarda
+  *attraverso*, un pozzo si guarda *dentro*.
+- **Le profondita' sono misurate, e la misura ha riscritto il catalogo.** Il
+  piano era tarato su `TERRAIN.maxHeight` (80) e prevedeva quarantaquattro,
+  trentasei e ventiquattro quote. L'isola standard e' molto piu' piatta — la
+  maschera radiale schiaccia il rilievo, e su 256x256 la colonna piu' alta sta
+  fra 32 e 36 — quindi due ricette su tre non sarebbero **mai** nate, in silenzio
+  e con la suite pura verde. E' lo stesso difetto di `isPeakBlock`, ed e' la
+  seconda volta che questo dominio lo incontra. Le tre ricette stanno a sedici,
+  ventidue e ventisei, misurate su tre seed: a ventiquattro quote passa l'83% dei
+  siti asciutti, a trenta **nessun sito del seed 4242**.
+- **Lo scavo e' la terza eccezione a «si riempie e non si scava».** Ha lo stesso
+  confine delle prime due — l'impronta della struttura — e viaggia sulla stessa
+  coda: `EMPTY_STAMP` come sagoma nuova e la roccia come «precedente», che e' la
+  forma stabilita da `enqueueSlopeCarve`. E' pero' la sola in cui **lo scavo e'
+  la struttura**: senza il vuoto non resta una versione ridotta dell'opera, non
+  resta niente. Anche l'imbuto e' una ricetta di parti, non un parallelepipedo,
+  cosi' rientra scendendo insieme alle terrazze e ruota con lo stesso
+  `orientPart`.
+- **Prima il pozzo, poi la struttura.** `admitPending` ammette una voce per
+  struttura in ordine di arrivo, quindi accodare lo scavo per primo garantisce
+  che il cratere si apra e solo dopo gli anelli comincino a comparirci dentro.
+  L'ordine opposto avrebbe scritto la struttura dentro la roccia — invisibile —
+  per poi far sparire il terreno tutto insieme alla fine.
+- **Il salvataggio e' il punto in cui questa famiglia poteva rompersi in
+  silenzio.** `Builder.restore` ridisegna gli stamp e nient'altro: terreno e
+  strade si rifanno dal seme, quindi un pozzo caricato ritroverebbe la roccia
+  dentro e la struttura murata — indistinguibile da un file corrotto.
+  `reopenPit` gira **prima** di `writeStamp`, perche' dopo lo scavo porterebbe
+  via la struttura appena ridisegnata, ed e' una funzione pura di dati che il
+  record porta o che il seme rigenera.
+
+## In corso — Un menu principale, e `Esc` che lo apre
+
+- **Il dischetto dei salvataggi diventa la porta di un menu vero.** Al posto del
+  cassetto c'e' una modale centrata sopra un velo — Riprendi, Salvataggi, Nuova
+  partita, Impostazioni, Aiuto — con al piede il riepilogo della partita in corso
+  (seed, abitanti, edifici) e la riga di identita'. I salvataggi non sono spariti:
+  sono una delle sue sezioni, ed e' quella su cui il menu si apre.
+- **`Esc` smette di non fare niente.** La catena e' rimasta una sola e nella
+  stessa funzione pura, ma il suo ultimo anello **inverte il senso** di tutti gli
+  altri: `'none'` e' diventato `'menu'`, e a mani vuote — nessuno strumento,
+  nessun pannello, nessuna vista — apre. Il menu *aperto* invece sta fuori dalla
+  catena, in un ramo prima di essa: e' un modo e non un pannello, e dentro la
+  catena avrebbe perso contro lo strumento in mano, cioe' proprio nel caso in cui
+  deve vincere.
+- **Il menu ferma la citta' senza toccare la pausa del giocatore.** Quella finisce
+  dentro il salvataggio (`scene.paused`) e accende il bottone della barra: salvare
+  dal menu avrebbe prodotto una partita che si riapre in pausa senza che nessuno
+  l'abbia chiesta. Il tempo si ferma dove si distribuisce — in `onFrame` la
+  simulazione riceve `dt = 0` — e la materializzazione dei voxel gia' decisi
+  continua a scorrere, esattamente come nella pausa vera.
+- **Partita nuova, con il seed che si sceglie.** Vuoto significa sorteggio, e il
+  tiro e' quello della radice: `crypto.getRandomValues` era gia' l'unico non
+  deterministico del gioco, e la UI lo chiede invece di inventarne un secondo.
+  L'autosalvataggio va cancellato e non solo scavalcato — il bootstrap lo riapre
+  quando il `?seed=` coincide — ma cancellarlo non basta: `pagehide` ne forza uno
+  mentre la pagina se ne va, e lo riscriverebbe subito dopo. Da qui la bandiera
+  che chiude l'autosave per chi sta uscendo, e la conferma in due passi che dice
+  cosa si perde e cosa resta.
+- **Scrivere in un campo non muove piu' la camera.** `CameraInput` ascolta
+  `window` e infilava **ogni** tasto nell'insieme del pan: il campo del seed
+  sarebbe stato il primo `<input>` di testo del gioco, e digitarci dentro avrebbe
+  panoramizzato con `WASD` e girato la citta' con `Q` ed `E`. La guardia e'
+  duck-typed e non `instanceof HTMLInputElement`, perche' quel nome in `node` non
+  esiste e il confronto sarebbe un `ReferenceError` invece di un no. Toglie anche
+  un difetto vivo: le frecce sulla barra dei livelli muovevano cursore **e**
+  inquadratura.
+- **Il velo e' un token, non un nero.** `--hud-scrim` esce da `hudTokens` come le
+  ombre, dalla stessa aria portata al buio: un `rgba(0,0,0,.5)` cablato sarebbe
+  stato l'unico colore fisso dell'HUD e avrebbe spento i temi notturni in un
+  rettangolo morto. Nessun `backdrop-filter` a tutto schermo: costo GPU vero
+  contro il budget, per un effetto che il velo da' gia'. Il menu sale sopra i
+  tooltip con un piolo nuovo (`--z-menu`), cosi' che sotto non resti acceso
+  niente — nemmeno una carta decisione in attesa.
+- **Una porta sola per l'aiuto.** `ControlsHint` espone le proprie sezioni, e le
+  disegnano sia la card di primo avvio sia il menu: due disegnatori dello stesso
+  testo sarebbero divergiti al primo comando nuovo.
+- **`parkPointer` dell'harness degli scatti chiude il menu che ha appena aperto.**
+  Premeva `Esc` prima di ogni foto, e a mani vuote adesso quell'`Esc` apre la
+  modale: senza la chiusura esplicita — un secondo `Esc` non basta, alterna — le
+  citta' degli scatti sarebbero rimaste vuote, perche' durante l'attesa di
+  `grow()` non sarebbe passato un tick.
+
+## In corso — La suite tornava a non finire mai
+
+- **Un ciclo che non poteva chiudersi teneva ferma l'intera suite.** In
+  `landmarkGrowth.test.ts` la crescita del sedime aspettava la fine dello
+  sventramento a colpi di `builder.step()`, senza guardia. Ma `step()` muove
+  soltanto la coda di crescita e quella di superficie: i cantieri avanzano
+  dentro `onTick`, via `clearance.pass`. Con `clearing` a uno il ciclo non aveva
+  modo di scendere, e girava per sempre. Adesso alterna `tick` e `onTick` come
+  gia' faceva il test gemello sotto, con la stessa guardia a 5000 giri.
+- **Il costo era l'intera suite, non un file.** `npm test`, `test:fast` e
+  `test:fast:all` incontrano tutti quel file: ogni run che partiva non tornava
+  piu'. Una era rimasta appesa **diciotto ore** come processo orfano, e le altre
+  finivano uccise da chi si stancava di aspettare — da cui l'idea che la suite
+  fosse «lenta». Non lo era: `vitest run --exclude src/**/*.slow.test.ts` chiude
+  in **68,6 s** su macchina scarica.
+- **Il metodo per ritrovarlo, se ricapita.** Sweep a dimezzamento con tetto di
+  tempo duro e `taskkill /T /F` su chi lo sfora — per cartella di `src/`, poi
+  per sottocartella, poi per file. Tre giri, pochi minuti, e senza `/T` il figlio
+  vitest sopravvive e diventa lo zombie successivo. Aspettare una run che non
+  finira' mai e' l'unica mossa che non porta informazione.
+
+## In corso — Il sedime che uno stadio si prende crescendo
+
+- **Il conto delle demolizioni non era un fatto del sedime.** `landmarkGrowth`
+  si aspettava che l'avanzamento portasse via **un** edificio, quello che il
+  test aveva piantato nell'anello — e l'asserzione non era mai stata eseguita,
+  perche' il file teneva la suite appesa prima di arrivarci. La passata di
+  costruzione gira nello stesso tick dell'avanzamento e **prima** di esso: puo'
+  posare un'altra casa proprio sul terreno che lo stadio sta per prendere, e il
+  cantiere la trova li' un istante dopo. Nella misura era una `grandstand` a
+  `127,134`, nata e caduta nel giro di due passate. Non e' una regressione: e'
+  il patto che la crescita dichiara — «la citta' non aspetta la demolizione».
+  L'asserzione dice adesso **dove** cadono invece di quanti — il caduto sta nel
+  sedime nuovo, il vicinato fuori dall'impronta resta in piedi — perche' un
+  numero li' dentro sarebbe tornato rosso al primo cambio di desiderabilita'.
+- **Una striscia dell'anello gia' vuota restava edificabile.** `growFootprint`
+  apre un cantiere solo dove c'e' da abbattere, e il cantiere prenota cio' che
+  sgombera: le strisce vuote non erano di nessuno per tutte le passate che
+  servivano a sgomberare le altre. La citta' ci costruiva dentro, poi l'impronta
+  si allargava — e `replace` non guarda cosa c'e' sotto — seppellendo un
+  edificio dentro lo stadio. Adesso il sedime nuovo e' prenotato per intero
+  finche' il cantiere lavora, e la prenotazione cade quando la sagoma nuova
+  prende il posto.
+
+## In corso — Micro-elementi architettonici: il primo lotto
+
+- **Il ramo riduttivo passa da sei ricette a otto, e il byte smette di essere una
+  trappola.** `plinth` arretra di due sedicesimi la prima riga di facciata sopra
+  cio' su cui l'edificio poggia: in isometrica e' l'unica cosa che stacca un
+  volume dal suolo, e con le sole sporgenze non si puo' dire — una fascia
+  aggiunta a terra fa una cornice, non un'ombra. `vent` incide la riga sotto il
+  ciglio di un capannone, dove `emitWalkways` posa gia' la passerella. Entrambe
+  sono ricette di parete a cella piena, quindi `emitWallCarves` le disegna senza
+  un ramo nuovo. Con loro spariscono due letterali: `CARVE_KIND_COUNT` e
+  `CARVE_MARK_COUNT` sostituiscono il `64` di `byMark`, che reggeva **fino alla
+  settima ricetta** e alla nona sarebbe diventato un `undefined.push`.
+- **Il mesher impara che edificio ha sotto un tetto.** `roofTech` e' un cappello
+  che non porta l'uso di cio' che copre, ed e' la ragione per cui tutti i tetti
+  della citta' erano identici. `facadeUnder` scende quattro celle lungo la stessa
+  colonna, attraversa cio' che non e' un uso e si ferma nel vuoto: quattro letture
+  in cambio di tre linguaggi di coronamento. Il filo del tetto diventa gronda
+  sopra l'abitato, cornicione sopra il civico, gocciolatoio di lamiera sopra
+  l'industria — e sta **sotto e fuori** dove il parapetto sta sopra e dentro, un
+  sedicesimo sotto la linea del tetto perche' complanare si contenderebbe lo z.
+  Di notte lo stesso segnale accende una lanterna sul civico, lascia spenta una
+  ciminiera sull'industria e posa un lucernario sull'abitato: lo skyline si legge
+  al buio, quando la palette delle facciate non si vede.
+- **Il tessuto basso smette di essere un parallelepipedo.** Il vocabolario maturo
+  di `microDetail.ts` si accende alle soglie alte, e una casa di sei livelli non
+  aveva niente contro il cielo: il comignolo si aggancia all'**angolo** di tetto,
+  che era l'unico vicinato libero — `emitFinials` vuole zero vicini, antenne e
+  vasche ne vogliono quattro.
+- **Il fronte commerciale prende un attacco a terra.** Il commerciale riusa
+  `SURFACE_KIND.habitat` e non e' una superficie leggibile: si legge la posizione,
+  cioe' la colonna del portale. Il gradino compare al piede dell'ingresso — e
+  solo dove c'e' un marciapiede sotto, altrimenti resterebbe sospeso — e il
+  cassonetto insegna corre acceso sulla riga subito sopra la porta, a `v 1..6`,
+  sotto la frangia della tenda. Non duplica `emitSigns`, che e' la bandiera
+  ortogonale: le due insieme fanno un negozio, una sola e' un cartello.
+- **Due moduli nuovi, e nessun invariante toccato.** `microCrown.ts` e
+  `microThreshold.ts` seguono la regola gia' applicata a `microStreet` e
+  `microDetail` — una responsabilita' nuova, un file nuovo — e `microGeometry.ts`
+  cresce di sette righe. Nessun `SurfaceKind` nuovo, nessuno slot di palette
+  nuovo, nessun metadato per edificio: tutto esce da geometria, superficie e hash
+  di mondo. Filo del tetto e attacco a terra entrano nella sequenza **con la
+  struttura**, sopra le tende, perche' sono la silhouette e non un oggetto; i
+  prop di coronamento entrano prima delle vasche d'acqua, perche' un tetto che
+  dice l'uso vale piu' di un cassone generico.
+- **Misurato, non stimato, su questa macchina.** Su un isolato fitto — venti
+  edifici da quattro, la fixture `blockChunk` nuova — il dettaglio passa da
+  **10 785 a 12 010 quad** su un tetto di 16 384, cioe' dal 66% al 73%: filo del
+  tetto 400, attacco a terra 150, prop 65, scavi 630. Sul chunk fitto storico da
+  10 144 a 10 549; sul picco della scena campionario da 11 960 a **12 614**. In
+  tempo, sul bench `edifici sci-fi`: **13,16 ms contro 13,69**, cioe' +0,53 ms e
+  +4% — metà scavi e metà additivi, contro i +2,0 ms che l'intero gruppo di scavo
+  era costato a suo tempo. Il tetto dei quad **non si e' mosso**.
+- **La fixture di misura vale piu' del lotto che misura.** `densityChunk` ha
+  quattro corpi da 14x14, cioe' sedici facciate: un isolato vero ne ha dieci
+  volte tante, e il dettaglio si paga sugli **agganci**, non sui voxel. La prima
+  stesura di `blockChunk` dava a ogni edificio quattro ingressi, uno per lato, e
+  faceva sembrare il lotto tre volte piu' caro di quanto e': `paint.ts` chiama
+  `onPortal` con `request.accentFace`, cioe' con **una faccia sola**. Chi
+  aggiunge un emettitore agganciato al portale rilegga quella riga prima di
+  fidarsi di un numero.
+
+## In corso — Città più alta, più larga, più varia
+
+- **Il tetto verticale sale a ventisei.** `SCALE.maxLevel` era venti, e alzarlo
+  muove i tre tetti di `skylineCapsOf` insieme: il centro passa da diciassette
+  livelli a ventitré, la fascia intermedia da undici a quindici, la corona da sei
+  a otto. È la seconda parte quella che cambia l'inquadratura d'insieme — il picco
+  è raro per costruzione, il tessuto intermedio è quasi tutta la città. Sopra
+  `linearEnd` le fasce accelerano, quindi la torre massima passa da trentuno fasce
+  a quarantadue, circa 350 voxel invece di 262. Budget di chunk, distribuzione del
+  livello iniziale e quota di crociera dei voli derivano già da lì e non hanno
+  avuto bisogno di ritocchi.
+- **L'arcologia non è più il tetto dell'edificio ordinario.** Il catalogo
+  pretendeva che *ogni* ricetta superasse la torre più alta, e a ventisei livelli
+  quel vincolo fermava la scala verticale a ventidue per via delle quattro ricette
+  da 320 quote. È stato tolto: un'arcologia è una ricetta scritta a mano con quote
+  fisse, un edificio si sviluppa, e se alla fine della propria scala la raggiunge,
+  l'avviluppa o la supera, quello è l'esito della crescita. Il test resta e
+  difende le due misure che fanno di un'arcologia una megastruttura — in pianta
+  nessuna ricetta scende al modulo ordinario, e la cima assoluta del catalogo è
+  ancora la sua.
+- **Il tetto d'impronta diventa una scala.** Il lato pieno dell'isolato spettava
+  al solo lotto ammesso a `maxLevel` — fascia del centro, cono verso il polo ed
+  elezione dell'isolato tutti insieme — e ogni altro edificio restava largo otto
+  voxel per quanto salisse: una città matura era fatta di aghi. `urbanFootprintStepsOf`
+  mette due gradini in mezzo (fascia intermedia a dodici, centro non eletto a
+  sedici), derivati dalle manopole invece che scritti a mano. L'isolato intero
+  resta il premio del picco: nessun gradino ci arriva.
+- **Diciassette tipologie nuove, e quattro linee che non finiscono più a metà
+  scala.** Il catalogo passa da trenta a quarantasette righe. Residenziale: la
+  stecca (`slabBlock`) copre la densità fra il portico e la torre, la guglia
+  (`spireResidence`) è lo scalino sopra le tre verticali — che si fermavano al
+  livello sei e da lì salivano venti livelli con la stessa sagoma — più il fronte
+  del faro e le case della sagra. Commerciale: la galleria coperta per il centro
+  dense senza specializzazione, la torre di finanza sopra l'ufficio, la gradinata
+  dello stadio, il magazzino doganale. Industriale: la centrale con le ciminiere,
+  la serra a terra, lo scalo merci della pista e la fonderia, che è la prima
+  industriale non specializzata ad arrivare alle fasce alte. Civico — il gruppo
+  più povero, cinque righe — ne guadagna cinque: capitolo, quadrilatero,
+  ripetitore, padiglione della sagra e la corona civica sopra la lanterna.
+- **Sette ruoli e tre mandati smettono di essere invisibili.** Faro, stadio,
+  centrale, serra, aeroporto, scuola, cattedrale e radio non producevano nessuna
+  forma propria: piazzarli dava lo stesso tessuto di ovunque. Lo stesso valeva
+  per `foodFair`, `importedSupply` e `festivalGrounds`, gli ultimi tre mandati
+  senza una riga di catalogo. Ora ogni decisione del giocatore si vede a schermo.
+
+## In corso — La targa della condizione dice di nuovo qualcosa
+
+- **La targa è alta due righe, e smette di tagliare il rimedio.**
+  `.hud-toast[data-kind="condition"]` stava su una riga sola con l'ellissi,
+  mentre i titoli di crisi di `game/tips.ts` sono frasi intere *proprio perché*
+  il messaggio non si vede: portano causa e rimedio insieme. Due decisioni
+  ragionevoli separatamente, e insieme garantivano il taglio peggiore — a 440px
+  l'ellissi cadeva sempre dopo la causa, cioè mangiava la metà che dice cosa
+  fare («Food shortage: no tower yet — overlap the Greenhouse with the ...»). Il
+  clamp a due righe le contiene tutte e resta un tetto: la targa non può
+  ricrescere in paragrafo, che era la ragione della riga sola.
+- **Sette titoli smettono di essere un'etichetta.** Erano il guasto opposto e
+  sullo stesso schermo: «Build more homes», «Place a Factory», «Plant more
+  farms», «Budget deficit», «Critical happiness» e un «Goal · self-sufficient
+  city» che non cambiava mai per l'intera partita. Entravano nella targa e non
+  dicevano niente, perché la misura che li rendeva utili — il 42% di organico, i
+  lotti mancanti, la felicità, le classi a posto, gli abitanti — stava nel
+  messaggio, cioè nel cassetto Città che si apre solo se lo si apre. Ora la
+  misura è nel titolo, dove si guarda.
+- **Due consigli chiedevano l'unico gesto che il giocatore non ha.** Case e campi
+  crescono da soli: i lotti li pianta il driver di `src/world/` sul terreno
+  fertile che trova libero, e le case nascono intorno al Market. «Build more
+  homes» e «Plant more farms» erano istruzioni per un pulsante che non esiste —
+  esattamente l'errore che il commento in testa a `tips.ts` esiste per vietare.
+  Il gesto vero è il catalizzatore che li fa nascere, e adesso è quello che il
+  titolo nomina.
+- **Il contratto della targa ha due prove.** `tips.test.ts` verifica che ogni
+  titolo entri nel budget di due righe, che separi la causa dal gesto, e che
+  nessuno torni a chiedere case o campi; una terza prova enumera gli id coperti,
+  perché senza di quella le prime due passerebbero anche misurando metà dei
+  consigli.
+
+## In corso — Scheda di prodotto
+
+- **`product.md`.** Una pagina orientata al pubblico e non allo sviluppo: il
+  posizionamento, il gesto centrale (si orientano le condizioni, non si posano
+  edifici), i segmenti a cui parla e chi invece non e' il pubblico. Sta alla
+  radice perche' e' la porta d'ingresso di chi arriva senza contesto tecnico,
+  mentre `README.md` resta la scheda del motore e `ROADMAP.md` la direzione.
+
+## In corso — La partita si salva e si riapre
+
+- **Un formato versionato, e cio' che non ci entra.** `src/game/save/` porta
+  seed, stato della simulazione e record del registro in un file JSON. Non ci
+  entrano terreno, rete stradale e campo di desiderabilità: sono funzioni pure
+  del seed e dello stato, e il caricamento li rifà identici invece di leggerli.
+  I settori costieri viaggiano come identificatori **in ordine di acquisto**, che
+  è l'ordine in cui la costa va rigenerata: ogni acquisto estende la sagoma su
+  cui il successivo viene generato, e rifarli insieme darebbe un'altra riva.
+- **Autosave ogni venti secondi, tre slot a mano, export e import.** Il gioco
+  riscrive da solo lo slot automatico e all'uscita della scheda (`pagehide` e
+  `visibilitychange`, non `beforeunload`, che su mobile non scatta). Ricaricare
+  riapre la partita: il seed del salvataggio vince, a meno che l'URL non ne
+  chieda esplicitamente un altro — chiederne uno diverso significa volere
+  quell'altro mondo, e caricarci sopra una città costruita altrove darebbe
+  edifici sospesi sul mare.
+- **Caricare passa da un ricaricamento, ed è deliberato.** Il seed decide
+  l'isola, l'isola arriva da un worker a blocchi, e camera, overlay e streamer si
+  costruiscono su quella: rifare tutto a caldo vorrebbe dire un secondo percorso
+  di costruzione del mondo, con i suoi modi di divergere, accanto a uno che già
+  parte da zero a ogni avvio. Lo slot di passaggio è come la scelta arriva
+  dall'altra parte del ricaricamento.
+- **`registry.restore` guadagna un secondo chiamante e la riga che gli mancava.**
+  Reinserire un record conservandone l'id serviva all'annullamento della gomma;
+  ora serve anche al caricamento, che parte da un registro vuoto — quindi
+  `nextId` sale oltre l'id reinserito, o la città costruita dopo prenderebbe
+  l'identità di un edificio caricato. `Builder.restore` adotta in ordine di id e
+  ridisegna con `recordStamp`, che impara a rigenerare anche un'arcologia.
+- **Un edificio in quota dichiara su cosa poggia.** Il legame esisteva in un
+  verso solo: l'impalcato sapeva di essere abitato, l'ospite non sapeva su cosa
+  stesse. Ora il record porta `supports` anche quando è una casa su una mensola —
+  il pannello di selezione lo mostra, e il salvataggio ci si appoggia per non
+  scrivere un volume sospeso senza ciò che lo tiene su.
+- **Quello che il salvataggio non riporta, e perché.** Campate, impalcati,
+  gambe, ascensori e stazioni di funivia si cancellano con `clearVolume` invece
+  di rigenerare la sagoma, quindi il loro generatore vuole un piano che il record
+  non porta: restano fuori dal file, e con loro chi ci poggiava sopra. Dopo il
+  caricamento è la passata della rete in quota a riproporli sui tetti tornati.
+  Le piazzole di un'arcologia fanno eccezione — si ricavano dalla ricetta e dallo
+  stadio, quindi `ArcologyDriver.adopt` le riapre dov'erano.
+
 ## In corso — L'HUD dice anche quando
 
 - **Le risorse guadagnano una stima, e sta in `src/sim/forecast.ts`.** Le righe

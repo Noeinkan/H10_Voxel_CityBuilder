@@ -32,10 +32,12 @@ export const CONTROL_HINTS: readonly ControlHint[] = [
   // Il tasto **e'** la risposta a «non torna mai giorno»: dice che l'ora e' una
   // cosa che si decide, e non solo qualcosa che capita mentre si guarda.
   { keys: ['L'], action: 'Hold the day, hold the night, or let the clock run' },
-  // Una riga sola per i tre usi, nell'ordine in cui Escape li prova: posa lo
+  // Una riga sola per i quattro usi, nell'ordine in cui Escape li prova: posa lo
   // strumento, chiude la scheda, esce dalla vista. Righe separate direbbero che
-  // sono tre tasti, e chi legge non saprebbe quale effetto aspettarsi.
-  { keys: ['Esc'], action: 'Cancel the tool, close the card, then leave the view' },
+  // sono quattro tasti, e chi legge non saprebbe quale effetto aspettarsi.
+  // L'ultimo passo e' l'unico che **apre** invece di chiudere: a mani vuote non
+  // c'e' piu' niente da annullare, e il tasto smette di non fare nulla.
+  { keys: ['Esc'], action: 'Cancel the tool, close the card, leave the view, then open the menu' },
 ];
 
 /** Una vista nella card: come si chiama e come si punta. */
@@ -135,27 +137,7 @@ export class ControlsHint {
     header.append(copy, close);
     this.root.appendChild(header);
 
-    const grid = document.createElement('div');
-    grid.className = 'help-grid';
-    for (const hint of CONTROL_HINTS) {
-      const row = document.createElement('div');
-      row.className = 'help-row';
-      const action = document.createElement('span');
-      action.textContent = hint.action;
-      const keys = document.createElement('span');
-      keys.className = 'help-keys';
-      for (const [index, label] of hint.keys.entries()) {
-        if (index > 0) keys.append('/');
-        const key = document.createElement('kbd');
-        key.textContent = label;
-        keys.appendChild(key);
-      }
-      row.append(action, keys);
-      grid.appendChild(row);
-    }
-    this.root.appendChild(grid);
-    this.root.appendChild(viewSection());
-    this.root.appendChild(demolishSection());
+    for (const section of helpSections()) this.root.appendChild(section);
     parent.appendChild(this.root);
     this.root.hidden = hasSeenHelp(storage);
   }
@@ -177,6 +159,41 @@ export class ControlsHint {
     if (this.isOpen) this.hide(true);
     else this.show();
   }
+}
+
+/**
+ * Il corpo dell'aiuto: comandi, viste, gomma.
+ *
+ * Lo disegnano in due — la card di primo avvio e la sezione Help del menu
+ * principale — e per questo sta in una funzione invece che dentro il
+ * costruttore. Due disegnatori dello stesso testo divergono al primo comando
+ * nuovo, e il giocatore leggerebbe due elenchi diversi a seconda della porta.
+ */
+export function helpSections(): readonly HTMLElement[] {
+  return [hintGrid(CONTROL_HINTS, '/'), viewSection(), demolishSection()];
+}
+
+/** Le righe «azione a sinistra, tasti a destra», in griglia. */
+function hintGrid(hints: readonly ControlHint[], separator: string): HTMLElement {
+  const grid = document.createElement('div');
+  grid.className = 'help-grid';
+  for (const hint of hints) {
+    const row = document.createElement('div');
+    row.className = 'help-row';
+    const action = document.createElement('span');
+    action.textContent = hint.action;
+    const keys = document.createElement('span');
+    keys.className = 'help-keys';
+    for (const [index, label] of hint.keys.entries()) {
+      if (index > 0) keys.append(separator);
+      const key = document.createElement('kbd');
+      key.textContent = label;
+      keys.appendChild(key);
+    }
+    row.append(action, keys);
+    grid.appendChild(row);
+  }
+  return grid;
 }
 
 /** Il blocco delle viste, sotto i comandi della camera. */
@@ -217,26 +234,9 @@ function demolishSection(): HTMLElement {
   lead.className = 'help-section-lead';
   lead.textContent = DEMOLISH_HINTS_LEAD;
   section.append(title, lead);
-
-  const grid = document.createElement('div');
-  grid.className = 'help-grid';
-  for (const hint of DEMOLISH_HINTS) {
-    const row = document.createElement('div');
-    row.className = 'help-row';
-    const action = document.createElement('span');
-    action.textContent = hint.action;
-    const keys = document.createElement('span');
-    keys.className = 'help-keys';
-    for (const [index, label] of hint.keys.entries()) {
-      if (index > 0) keys.append('+');
-      const key = document.createElement('kbd');
-      key.textContent = label;
-      keys.appendChild(key);
-    }
-    row.append(action, keys);
-    grid.appendChild(row);
-  }
-  section.appendChild(grid);
+  // `+` e non `/`: `Ctrl` e `Z` si premono insieme, mentre in alto le
+  // alternative sono una **o** l'altra.
+  section.appendChild(hintGrid(DEMOLISH_HINTS, '+'));
   return section;
 }
 

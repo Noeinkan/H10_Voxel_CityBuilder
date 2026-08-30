@@ -257,7 +257,10 @@ export const TYPOLOGIES: readonly TypologyDefinition[] = [
     // Culminazione della linea residenziale: vi si arriva dalla casa a schiera
     // o da una delle forme intermedie, mai da un'altra verticale — due cime non
     // si scambiano il posto, la crescita racconta un progresso.
-    evolvesFrom: ['terracedHousing', 'gardenHousing', 'rationedBlock', 'stackedTenement', 'courtyardBlock'],
+    evolvesFrom: [
+      'terracedHousing', 'gardenHousing', 'rationedBlock', 'stackedTenement', 'courtyardBlock',
+      'slabBlock',
+    ],
     // Stessa priorita' di `commercialPodium` e **prima di lui nel catalogo**, che
     // e' come si dice «piu' specifico» a parita' di peso: dove il lotto e' un
     // angolo vince il vertice dell'isolato, altrove resta il podio. Sotto le due
@@ -340,7 +343,10 @@ export const TYPOLOGIES: readonly TypologyDefinition[] = [
     // verticali che chiedono *piu'* di lei — la ricchezza, e un livello o due in
     // piu' — ora la elencano, e la torre liscia e' cio' da cui si parte quando il
     // quartiere e' solo fitto.
-    evolvesFrom: ['terracedHousing', 'gardenHousing', 'rationedBlock', 'stackedTenement', 'courtyardBlock'],
+    evolvesFrom: [
+      'terracedHousing', 'gardenHousing', 'rationedBlock', 'stackedTenement', 'courtyardBlock',
+      'slabBlock',
+    ],
     priority: 4,
     shape: { ...DEFAULT_TYPOLOGY_SHAPE, chamfer: 1, maxFootprint: 6 },
     profile: {
@@ -370,7 +376,7 @@ export const TYPOLOGIES: readonly TypologyDefinition[] = [
     // il contrario — la scala sale e non torna.
     evolvesFrom: [
       'terracedHousing', 'gardenHousing', 'rationedBlock', 'stackedTenement', 'courtyardBlock',
-      'towerBlock', 'skyTerraces',
+      'slabBlock', 'towerBlock', 'skyTerraces',
     ],
     // Sta **prima** di `skyTerraces` a parita' di priorita', e l'ordine e' la
     // regola: a livello 5 vince il gradone abitato, dal 6 in su il tamburo. E'
@@ -417,7 +423,7 @@ export const TYPOLOGIES: readonly TypologyDefinition[] = [
     // non poteva succedere.
     evolvesFrom: [
       'terracedHousing', 'gardenHousing', 'rationedBlock', 'stackedTenement', 'courtyardBlock',
-      'towerBlock',
+      'slabBlock', 'towerBlock',
     ],
     // Sopra `towerBlock`, che a questo livello qualifica quasi sempre: dove c'e'
     // anche la ricchezza, la torre liscia diventa un gradone abitato.
@@ -490,9 +496,53 @@ export const TYPOLOGIES: readonly TypologyDefinition[] = [
       roofPropHeight: 0,
     },
   },
-  // Le due righe concesse dai mandati stanno in fondo all'uso e a priorita' 6:
+  {
+    id: 'slabBlock',
+    label: 'Slab block',
+    use: 0,
+    minDensity: 0.45,
+    minLevel: 3,
+    // La stecca: il tessuto denso che si **allunga** invece di salire, e l'unica
+    // forma residenziale che chieda l'impronta piena. Nasce dalla casa a schiera
+    // o dall'isolato a corte, e resta una forma intermedia — le quattro
+    // verticali la dichiarano fra le proprie provenienze.
+    evolvesFrom: ['terracedHousing', 'courtyardBlock'],
+    // Stessa priorita' di `towerBlock` e **dopo di lui**, che a parita' vince: la
+    // torre liscia chiede densita' 0.55, qui ne bastano 0.45. Fra le due soglie
+    // il quartiere e' fitto ma non ancora da torre, ed e' esattamente il posto in
+    // cui una citta' vera mette le stecche invece dei grattacieli.
+    priority: 4,
+    shape: {
+      ...DEFAULT_TYPOLOGY_SHAPE,
+      crownKind: CROWN_KIND.ridge,
+      minFootprint: 8,
+      // Il corpo lungo che sporge sulla via: una stecca affacciata e' fatta
+      // cosi', e lo sbalzo e' il solo modo che la grammatica ha di dirlo.
+      overhang: 2,
+    },
+    profile: {
+      bandHeight: [5, 6],
+      shrinkBias: 0.12,
+      footprintBias: 3,
+      // Quasi nessuna rientranza e un repertorio che sposta invece di
+      // rimpicciolire: il corpo sale a sezione costante, che e' cio' che
+      // distingue una stecca da una piramide.
+      shrinkOps: [BAND_OP.shrinkOneSide, BAND_OP.jog],
+      growOps: [BAND_OP.keep, BAND_OP.jut, BAND_OP.corner],
+      body: PALETTE_SLOTS.concreteLight,
+      bodyAlt: PALETTE_SLOTS.concrete,
+      accent: PALETTE_SLOTS.glassPale,
+      crown: PALETTE_SLOTS.asphaltDark,
+      plinth: PALETTE_SLOTS.stone,
+      terrace: PALETTE_SLOTS.concreteLight,
+      roofPropHeight: 0,
+    },
+  },
+  // Le righe concesse dai mandati stanno in fondo all'uso e a priorita' 6:
   // una decisione del giocatore e' l'affermazione piu' forte sulla forma di un
   // quartiere, e vince su cio' che le soglie locali avrebbero scelto da sole.
+  // Sotto di loro, alla stessa priorita' ma piu' avanti nel catalogo, stanno le
+  // righe che il luogo concede da solo e che nessuna decisione contraddice.
   {
     id: 'gardenHousing',
     label: 'Garden housing',
@@ -547,6 +597,45 @@ export const TYPOLOGIES: readonly TypologyDefinition[] = [
     },
   },
   {
+    id: 'fairStreetHomes',
+    label: 'Fair street homes',
+    use: 0,
+    charter: ['foodFair'],
+    // Il mandato si chiama "sagra di quartiere" e prometteva case piu' felici e
+    // piu' camminabili: qui quella frase diventa un volume. Il portico al piano
+    // terra e' la strada che continua sotto le case — il posto in cui la fiera
+    // si tiene — e il verde in cima e' l'orto che la accompagna.
+    //
+    // E' l'unica riga residenziale che porti **insieme** portico, giardino
+    // pensile e colmo: tre interruttori della stessa forma, che da soli fanno una
+    // silhouette che nessun'altra riga del catalogo sa produrre.
+    evolvesFrom: ['terracedHousing'],
+    priority: 6,
+    shape: {
+      ...DEFAULT_TYPOLOGY_SHAPE,
+      arcade: true,
+      podiumBands: 1,
+      crownKind: CROWN_KIND.gable,
+      roofGarden: true,
+      minFootprint: 6,
+      overhang: 2,
+    },
+    profile: {
+      bandHeight: [4, 5],
+      shrinkBias: 0.2,
+      footprintBias: 2,
+      growOps: [BAND_OP.jut, BAND_OP.keep, BAND_OP.jog],
+      body: PALETTE_SLOTS.brickLight,
+      bodyAlt: PALETTE_SLOTS.stoneWarm,
+      accent: PALETTE_SLOTS.metalBrass,
+      crown: PALETTE_SLOTS.roofPale,
+      plinth: PALETTE_SLOTS.stone,
+      terrace: PALETTE_SLOTS.wood,
+      garden: PALETTE_SLOTS.grassLight,
+      roofPropHeight: 0,
+    },
+  },
+  {
     id: 'canalHouse',
     label: 'Canal house',
     use: 0,
@@ -575,6 +664,95 @@ export const TYPOLOGIES: readonly TypologyDefinition[] = [
       accent: PALETTE_SLOTS.wood,
       crown: PALETTE_SLOTS.roofPale,
       plinth: PALETTE_SLOTS.stoneDark,
+    },
+  },
+  {
+    id: 'beaconTerrace',
+    label: 'Beacon terrace',
+    use: 0,
+    roles: ['lighthouse'],
+    coastal: true,
+    // Il fronte del faro: **l'unica residenza costiera che sale invece di
+    // stendersi.** La marina produce la schiera bassa sul canale e il traghetto
+    // la sala col colmo; dove c'e' un faro la citta' guarda il largo, e ci si
+    // affaccia da sopra. La lanterna in cima ripete a scala di quartiere il
+    // segnale che sta sul capo, e non e' un ornamento: e' cio' che rende
+    // riconoscibile il distretto da inquadratura d'insieme.
+    evolvesFrom: ['terracedHousing', 'canalHouse'],
+    priority: 6,
+    shape: {
+      ...DEFAULT_TYPOLOGY_SHAPE,
+      crownKind: CROWN_KIND.lantern,
+      chamfer: 1,
+      minFootprint: 5,
+      maxFootprint: 7,
+    },
+    profile: {
+      bandHeight: [5, 7],
+      shrinkBias: 0.62,
+      footprintBias: -1,
+      shrinkOps: [BAND_OP.stack, BAND_OP.setback, BAND_OP.shrink],
+      growOps: [BAND_OP.grow, BAND_OP.jog, BAND_OP.shear],
+      body: PALETTE_SLOTS.concreteWhite,
+      bodyAlt: PALETTE_SLOTS.brickLight,
+      accent: PALETTE_SLOTS.glassPale,
+      crown: PALETTE_SLOTS.roofWhite,
+      plinth: PALETTE_SLOTS.stone,
+      roofProp: PALETTE_SLOTS.metalGold,
+      roofPropHeight: 6,
+    },
+  },
+  {
+    id: 'spireResidence',
+    label: 'Spire residence',
+    use: 0,
+    minWealth: 0.7,
+    minDensity: 0.6,
+    minLevel: 12,
+    // **La cima sopra le cime, e il pezzo che alla scala nuova mancava.** Le tre
+    // verticali si separano sul ruolo del lotto e si fermano al livello sei:
+    // con il tetto verticale a ventisei, un isolato ricco e fitto continuava a
+    // salire per venti livelli portandosi dietro la sagoma con cui era arrivato.
+    // Questa riga chiede tutto quello che chiedono loro e in piu' il doppio del
+    // livello, ed e' quindi uno scalino vero e non uno scambio fra pari.
+    //
+    // **Non chiede il ruolo del lotto**, e stavolta e' giusto cosi': a dodici
+    // livelli un isolato non ha piu' un angolo e un cuore da distinguere, ha una
+    // guglia e quello che le sta attorno — e le tre righe che il ruolo lo
+    // chiedono restano a governare i livelli in cui l'isolato si legge ancora.
+    evolvesFrom: [
+      'terracedHousing', 'courtyardBlock', 'slabBlock', 'stackedTenement',
+      'towerBlock', 'skyTerraces', 'roundTower', 'cornerTower',
+    ],
+    // Ultima del proprio uso a parita' di priorita': dove un mandato o un faro
+    // hanno gia' detto la loro vince chi viene prima, e una decisione del
+    // giocatore resta l'affermazione piu' forte sulla forma di un quartiere.
+    priority: 6,
+    shape: {
+      ...DEFAULT_TYPOLOGY_SHAPE,
+      crownKind: CROWN_KIND.taper,
+      chamfer: 2,
+      minFootprint: 6,
+      maxFootprint: 7,
+    },
+    profile: {
+      // Le fasce piu' alte del catalogo residenziale: a quaranta piani il piano
+      // e' l'unita' con cui si legge l'altezza, e sette voxel sono la soglia
+      // sotto la quale a distanza di gioco i marcapiani si impastano.
+      bandHeight: [7, 8],
+      shrinkBias: 0.86,
+      shrinkOps: [BAND_OP.stack, BAND_OP.setback, BAND_OP.shrink],
+      // Il ramo che sale non arretra: restano le due voci che *spostano* il
+      // corpo e quella che lo fa ruotare, ed e' cio' che tiene una guglia da
+      // quaranta fasce una pila sfalsata invece di una canna.
+      growOps: [BAND_OP.corner, BAND_OP.shear, BAND_OP.jog],
+      body: PALETTE_SLOTS.glassPale,
+      bodyAlt: PALETTE_SLOTS.glassDeep,
+      accent: PALETTE_SLOTS.glass,
+      crown: PALETTE_SLOTS.metalDark,
+      plinth: PALETTE_SLOTS.stone,
+      roofProp: PALETTE_SLOTS.metalGold,
+      roofPropHeight: 6,
     },
   },
   {
@@ -621,7 +799,10 @@ export const TYPOLOGIES: readonly TypologyDefinition[] = [
     minLevel: 3,
     // Culminazione verticale della linea commerciale: vi si arriva dalla fila
     // di negozi o da uno dei tessuti bassi, mai da un'altra verticale.
-    evolvesFrom: ['retailRow', 'marketHall', 'arcadeRow', 'marketArcade', 'terraceArcade', 'harborMarket'],
+    evolvesFrom: [
+      'retailRow', 'marketHall', 'arcadeRow', 'marketArcade', 'terraceArcade', 'harborMarket',
+      'galleria',
+    ],
     priority: 5,
     shape: {
       ...DEFAULT_TYPOLOGY_SHAPE,
@@ -643,13 +824,59 @@ export const TYPOLOGIES: readonly TypologyDefinition[] = [
     },
   },
   {
+    id: 'financeSpire',
+    label: 'Finance spire',
+    use: 1,
+    specialization: 'office',
+    minWealth: 0.6,
+    minLevel: 10,
+    // **La torre d'ufficio aveva un tetto e non un seguito.** `officeTower`
+    // chiede il livello tre e da li' in su restava se' stessa: a ventisei livelli
+    // il centro direzionale di una citta' matura era una fila di volumi identici
+    // alti il doppio. Questa riga e' lo scalino sopra, e chiede strettamente di
+    // piu' — la ricchezza, che la torre non pone, e sette livelli in piu'.
+    //
+    // Il podio e' quello che la torre ha gia'; cio' che cambia sopra e' il
+    // corpo, che qui **si sovrappone** invece di rastremarsi: `stack` in testa
+    // produce la pila di volumi delle torri direzionali vere, dove `officeTower`
+    // dava una piramide sola.
+    evolvesFrom: ['retailRow', 'arcadeRow', 'terraceArcade', 'galleria', 'officeTower'],
+    // Sopra le tre righe di specializzazione (5): dove il denaro c'e' davvero,
+    // l'ufficio smette di essere un edificio e diventa un indirizzo.
+    priority: 6,
+    shape: {
+      ...DEFAULT_TYPOLOGY_SHAPE,
+      podiumBands: 2,
+      chamfer: 1,
+      crownKind: CROWN_KIND.stepped,
+      minFootprint: 7,
+    },
+    profile: {
+      bandHeight: [7, 8],
+      shrinkBias: 0.82,
+      shrinkOps: [BAND_OP.stack, BAND_OP.setback, BAND_OP.shrink],
+      growOps: [BAND_OP.corner, BAND_OP.shear, BAND_OP.grow],
+      body: PALETTE_SLOTS.glassDark,
+      bodyAlt: PALETTE_SLOTS.glassDeep,
+      accent: PALETTE_SLOTS.glassPale,
+      crown: PALETTE_SLOTS.metalGold,
+      plinth: PALETTE_SLOTS.stoneDeep,
+      terrace: PALETTE_SLOTS.stone,
+      roofProp: PALETTE_SLOTS.metalGold,
+      roofPropHeight: 6,
+    },
+  },
+  {
     id: 'hotel',
     label: 'Hotel',
     use: 1,
     specialization: 'tourism',
     minLevel: 2,
     // Culminazione verticale della linea commerciale, come `officeTower`.
-    evolvesFrom: ['retailRow', 'marketHall', 'arcadeRow', 'marketArcade', 'terraceArcade', 'harborMarket'],
+    evolvesFrom: [
+      'retailRow', 'marketHall', 'arcadeRow', 'marketArcade', 'terraceArcade', 'harborMarket',
+      'galleria',
+    ],
     priority: 5,
     shape: {
       ...DEFAULT_TYPOLOGY_SHAPE,
@@ -675,7 +902,10 @@ export const TYPOLOGIES: readonly TypologyDefinition[] = [
     use: 1,
     specialization: 'entertainment',
     // Culminazione verticale della linea commerciale, come le altre due.
-    evolvesFrom: ['retailRow', 'marketHall', 'arcadeRow', 'marketArcade', 'terraceArcade', 'harborMarket'],
+    evolvesFrom: [
+      'retailRow', 'marketHall', 'arcadeRow', 'marketArcade', 'terraceArcade', 'harborMarket',
+      'galleria',
+    ],
     priority: 5,
     shape: { ...DEFAULT_TYPOLOGY_SHAPE, crownKind: CROWN_KIND.flat, minFootprint: 6 },
     profile: {
@@ -686,6 +916,45 @@ export const TYPOLOGIES: readonly TypologyDefinition[] = [
       accent: PALETTE_SLOTS.metalGold,
       crown: PALETTE_SLOTS.metalBrass,
       plinth: PALETTE_SLOTS.stoneDark,
+    },
+  },
+  {
+    id: 'grandstand',
+    label: 'Grandstand',
+    use: 1,
+    roles: ['stadium'],
+    // La gradinata: il fronte commerciale che uno stadio si tira dietro — bar,
+    // botteghini e tribune sotto lo stesso colmo lungo. E' **larga e bassa** per
+    // la stessa ragione per cui il club nautico lo e': accanto a una struttura
+    // che occupa un isolato intero, una torre le ruberebbe la scala.
+    //
+    // Sopra `entertainmentHall`, che il ruolo esprime quasi sempre: dove c'e' lo
+    // stadio la sala per spettacoli non e' sbagliata, ma la tribuna e' piu'
+    // precisa — e il ruolo dice del luogo piu' di quanto la specializzazione
+    // dica dell'edificio.
+    evolvesFrom: ['retailRow', 'marketHall', 'arcadeRow'],
+    priority: 6,
+    shape: {
+      ...DEFAULT_TYPOLOGY_SHAPE,
+      arcade: true,
+      podiumBands: 2,
+      crownKind: CROWN_KIND.ridge,
+      chamfer: 2,
+      minFootprint: 8,
+    },
+    profile: {
+      bandHeight: [5, 6],
+      shrinkBias: 0.05,
+      footprintBias: 4,
+      shrinkOps: [BAND_OP.shrinkOneSide, BAND_OP.jog],
+      growOps: [BAND_OP.keep, BAND_OP.grow, BAND_OP.jog],
+      body: PALETTE_SLOTS.concrete,
+      bodyAlt: PALETTE_SLOTS.concreteLight,
+      accent: PALETTE_SLOTS.metalGold,
+      crown: PALETTE_SLOTS.metalDark,
+      plinth: PALETTE_SLOTS.stoneDeep,
+      terrace: PALETTE_SLOTS.asphalt,
+      roofPropHeight: 0,
     },
   },
   {
@@ -786,6 +1055,44 @@ export const TYPOLOGIES: readonly TypologyDefinition[] = [
     },
   },
   {
+    id: 'bondedWarehouse',
+    label: 'Bonded warehouse',
+    use: 1,
+    charter: ['importedSupply'],
+    // Il mandato dice «i quartieri nutriti dal commercio si arricchiscono e
+    // l'industria si dirada»: questa e' la forma che quella frase prende in
+    // pianta. Il magazzino doganale e' commercio che *immagazzina* — un corpo
+    // cieco su un podio, con la gru sul tetto — e prende il posto che
+    // l'industria ha lasciato.
+    //
+    // E' l'unica riga commerciale che porti la corazza di lamiera invece di un
+    // fronte: a distanza di gioco un quartiere a rifornimento importato si
+    // riconosce dal materiale prima che dalla sagoma.
+    evolvesFrom: ['retailRow', 'marketHall', 'harborMarket'],
+    priority: 6,
+    shape: {
+      ...DEFAULT_TYPOLOGY_SHAPE,
+      podiumBands: 2,
+      crownKind: CROWN_KIND.flat,
+      minFootprint: 8,
+    },
+    profile: {
+      bandHeight: [6, 7],
+      shrinkBias: 0.1,
+      footprintBias: 4,
+      shrinkOps: [BAND_OP.shrinkOneSide, BAND_OP.jog],
+      growOps: [BAND_OP.keep, BAND_OP.corner, BAND_OP.grow],
+      body: PALETTE_SLOTS.metalDark,
+      bodyAlt: PALETTE_SLOTS.stoneDeep,
+      accent: PALETTE_SLOTS.metalBrass,
+      crown: PALETTE_SLOTS.asphaltDark,
+      plinth: PALETTE_SLOTS.asphaltShadow,
+      terrace: PALETTE_SLOTS.asphalt,
+      roofProp: PALETTE_SLOTS.metalRust,
+      roofPropHeight: 6,
+    },
+  },
+  {
     id: 'terraceArcade',
     label: 'Terrace arcade',
     use: 1,
@@ -824,6 +1131,49 @@ export const TYPOLOGIES: readonly TypologyDefinition[] = [
       crown: PALETTE_SLOTS.roofPale,
       plinth: PALETTE_SLOTS.stoneDark,
       terrace: PALETTE_SLOTS.wood,
+    },
+  },
+  {
+    id: 'galleria',
+    label: 'Galleria',
+    use: 1,
+    minDensity: 0.55,
+    minLevel: 5,
+    // La galleria coperta: il commercio che a densita' alta smette di essere una
+    // fila di fronti e diventa **un edificio solo con la strada dentro**. La
+    // corte e' quella strada — la grammatica la svuota gia' — e il portico sul
+    // fronte e' il suo ingresso.
+    //
+    // E' il tessuto denso che mancava alla linea commerciale: sotto c'e' il
+    // portico (`arcadeRow`, densita' 0.45) e sopra ci sono le tre verticali, che
+    // pero' chiedono tutte una specializzazione. Fra i due un centro affollato
+    // ma generico non aveva nessuna forma propria.
+    evolvesFrom: ['retailRow', 'arcadeRow', 'marketHall', 'marketArcade'],
+    // Stessa priorita' di `terraceArcade` e **dopo di lui**: dove la gente sta
+    // bene il fronte si porta le terrazze sopra, qui resta la densita' nuda.
+    priority: 4,
+    shape: {
+      ...DEFAULT_TYPOLOGY_SHAPE,
+      arcade: true,
+      courtyard: true,
+      podiumBands: 2,
+      crownKind: CROWN_KIND.stepped,
+      minFootprint: 8,
+      overhang: 2,
+    },
+    profile: {
+      bandHeight: [6, 7],
+      shrinkBias: 0.4,
+      footprintBias: 4,
+      shrinkOps: [BAND_OP.setback, BAND_OP.shrink, BAND_OP.shrinkOneSide],
+      growOps: [BAND_OP.jut, BAND_OP.keep, BAND_OP.grow],
+      body: PALETTE_SLOTS.stone,
+      bodyAlt: PALETTE_SLOTS.glassPale,
+      accent: PALETTE_SLOTS.glass,
+      crown: PALETTE_SLOTS.metalBrass,
+      plinth: PALETTE_SLOTS.stoneDeep,
+      terrace: PALETTE_SLOTS.stoneWarm,
+      roofPropHeight: 0,
     },
   },
   {
@@ -950,6 +1300,112 @@ export const TYPOLOGIES: readonly TypologyDefinition[] = [
     },
   },
   {
+    id: 'powerWorks',
+    label: 'Power works',
+    use: 2,
+    roles: ['power'],
+    // **La sola cosa alta che l'industria sapeva costruire era una torre di
+    // serre.** Il resto della linea si stende: capannoni, piazzali, officine
+    // impilate che arrivano a poche fasce. Una centrale no — e' fatta di sala
+    // macchine e ciminiere, cioe' di un corpo basso e larghissimo da cui esce
+    // qualcosa di molto piu' alto di tutto il quartiere.
+    //
+    // Il dettaglio verticale e' il piu' alto del catalogo, e non e' un vezzo: e'
+    // l'unica riga in cui il pennone *e'* l'edificio, e a distanza di gioco e'
+    // quello a dire dove sta la centrale.
+    evolvesFrom: ['industrialYard', 'productionLoft'],
+    priority: 6,
+    shape: {
+      ...DEFAULT_TYPOLOGY_SHAPE,
+      podiumBands: 2,
+      crownKind: CROWN_KIND.ridge,
+      minFootprint: 8,
+    },
+    profile: {
+      bandHeight: [6, 8],
+      shrinkBias: 0.3,
+      footprintBias: 4,
+      shrinkOps: [BAND_OP.stack, BAND_OP.shrinkOneSide],
+      growOps: [BAND_OP.keep, BAND_OP.corner, BAND_OP.jog],
+      body: PALETTE_SLOTS.concrete,
+      bodyAlt: PALETTE_SLOTS.metalDark,
+      accent: PALETTE_SLOTS.metalRust,
+      crown: PALETTE_SLOTS.asphaltDark,
+      plinth: PALETTE_SLOTS.asphaltShadow,
+      terrace: PALETTE_SLOTS.asphalt,
+      roofProp: PALETTE_SLOTS.metalRust,
+      roofPropHeight: 8,
+    },
+  },
+  {
+    id: 'glasshouseRow',
+    label: 'Glasshouse row',
+    use: 2,
+    roles: ['greenhouse'],
+    // La serra a terra, che e' l'altra meta' di quello che il ruolo racconta: la
+    // torre idroponica e' cio' in cui il cibo si trasforma quando il suolo
+    // finisce, questa e' cio' che c'e' finche' il suolo c'e'. Sta bassa e larga
+    // sotto un colmo di vetro — la forma che una serra ha davvero — e chiede il
+    // solo ruolo, non la specializzazione: si vede appena il catalizzatore
+    // atterra, invece che venti livelli dopo.
+    evolvesFrom: ['industrialYard'],
+    // Sotto `containerYard` e `powerWorks` (6): dove il porto o la centrale
+    // qualificano, la serra cede — sono ruoli piu' esigenti sul luogo.
+    priority: 5,
+    shape: {
+      ...DEFAULT_TYPOLOGY_SHAPE,
+      crownKind: CROWN_KIND.gable,
+      chamfer: 1,
+      minFootprint: 8,
+      roofGarden: true,
+    },
+    profile: {
+      bandHeight: [4, 4],
+      shrinkBias: 0,
+      footprintBias: 4,
+      body: PALETTE_SLOTS.glassPale,
+      bodyAlt: PALETTE_SLOTS.concreteWhite,
+      accent: PALETTE_SLOTS.grassLight,
+      crown: PALETTE_SLOTS.glassPale,
+      plinth: PALETTE_SLOTS.stone,
+      garden: PALETTE_SLOTS.grassLight,
+      terrace: PALETTE_SLOTS.grass,
+      roofPropHeight: 0,
+    },
+  },
+  {
+    id: 'freightHall',
+    label: 'Freight hall',
+    use: 2,
+    roles: ['airport'],
+    // Lo scalo merci della pista: capannoni lunghi sotto un colmo unico, la
+    // stessa cosa che il porto ha in `containerYard` ma per la via dell'aria.
+    // E' l'unico esito industriale che l'aeroporto avesse — finora un ruolo che
+    // costa un pianoro intero non cambiava di un voxel il tessuto attorno.
+    evolvesFrom: ['industrialYard', 'logisticsDepot', 'productionLoft'],
+    priority: 6,
+    shape: {
+      ...DEFAULT_TYPOLOGY_SHAPE,
+      crownKind: CROWN_KIND.ridge,
+      minFootprint: 8,
+      chamfer: 2,
+    },
+    profile: {
+      bandHeight: [5, 6],
+      shrinkBias: 0.05,
+      footprintBias: 4,
+      shrinkOps: [BAND_OP.shrinkOneSide, BAND_OP.jog],
+      growOps: [BAND_OP.keep, BAND_OP.grow, BAND_OP.corner],
+      body: PALETTE_SLOTS.concreteLight,
+      bodyAlt: PALETTE_SLOTS.metalDark,
+      accent: PALETTE_SLOTS.metalBrass,
+      crown: PALETTE_SLOTS.metalDark,
+      plinth: PALETTE_SLOTS.asphaltDark,
+      terrace: PALETTE_SLOTS.asphalt,
+      roofPropHeight: 4,
+    },
+  },
+  {
     id: 'productionLoft',
     label: 'Production loft',
     use: 2,
@@ -1014,6 +1470,48 @@ export const TYPOLOGIES: readonly TypologyDefinition[] = [
     },
   },
   {
+    id: 'castingHall',
+    label: 'Casting hall',
+    use: 2,
+    minIndustry: 0.65,
+    minLevel: 8,
+    // **L'officina impilata era il tetto dell'industria non specializzata**, e
+    // lo era al livello tre: da li' in su un distretto industriale maturo
+    // continuava a salire con la sagoma di un capannone messo sopra un altro.
+    // La fonderia chiede strettamente di piu' — impatto industriale piu' alto e
+    // cinque livelli in piu' — e in cambio sale davvero: e' l'unica riga
+    // industriale non specializzata che arrivi alle fasce alte.
+    //
+    // Il colmo lungo resta, perche' resta un capannone: cio' che cambia e' che
+    // adesso e' un capannone di sei piani con i camini sopra.
+    evolvesFrom: ['industrialYard', 'productionLoft', 'stackedWorks'],
+    // Sopra `stackedWorks` (3), sotto `logisticsDepot` (5): un polo logistico
+    // resta un capannone anche in mezzo alle ciminiere, come sempre.
+    priority: 4,
+    shape: {
+      ...DEFAULT_TYPOLOGY_SHAPE,
+      podiumBands: 1,
+      crownKind: CROWN_KIND.ridge,
+      chamfer: 1,
+      minFootprint: 8,
+    },
+    profile: {
+      bandHeight: [6, 8],
+      shrinkBias: 0.55,
+      footprintBias: 3,
+      shrinkOps: [BAND_OP.stack, BAND_OP.setback, BAND_OP.shrinkOneSide],
+      growOps: [BAND_OP.corner, BAND_OP.shear, BAND_OP.jog],
+      body: PALETTE_SLOTS.brickDark,
+      bodyAlt: PALETTE_SLOTS.stoneDeep,
+      accent: PALETTE_SLOTS.metalRust,
+      crown: PALETTE_SLOTS.metalDark,
+      plinth: PALETTE_SLOTS.asphaltShadow,
+      terrace: PALETTE_SLOTS.asphalt,
+      roofProp: PALETTE_SLOTS.metalRust,
+      roofPropHeight: 8,
+    },
+  },
+  {
     id: 'hydroponicTower',
     label: 'Hydroponic tower',
     use: 2,
@@ -1042,7 +1540,7 @@ export const TYPOLOGIES: readonly TypologyDefinition[] = [
     minLevel: 5,
     // La culminazione dell'intera linea industriale: vi si arriva dallo scalo,
     // dal loft o dall'officina impilata — la serra e' il tetto, non un passaggio.
-    evolvesFrom: ['industrialYard', 'productionLoft', 'stackedWorks'],
+    evolvesFrom: ['industrialYard', 'productionLoft', 'stackedWorks', 'castingHall', 'glasshouseRow'],
     // Sopra tutte le altre industriali: dove il luogo esprime `farming` la torre
     // vince, o la specializzazione non si vedrebbe mai a schermo.
     priority: 7,
@@ -1098,7 +1596,7 @@ export const TYPOLOGIES: readonly TypologyDefinition[] = [
     minLevel: 2,
     // La culminazione della linea civica: vi si arriva dalla guglia o dalla
     // lanterna, quando il luogo specializza.
-    evolvesFrom: ['civicSpire', 'civicLantern'],
+    evolvesFrom: ['civicSpire', 'civicLantern', 'civicCrown'],
     priority: 5,
     shape: { ...DEFAULT_TYPOLOGY_SHAPE, courtyard: true, crownKind: CROWN_KIND.flat, minFootprint: 8 },
     profile: {
@@ -1118,7 +1616,7 @@ export const TYPOLOGIES: readonly TypologyDefinition[] = [
     roles: ['monument', 'park'],
     maxDensity: 0.6,
     // La culminazione della linea civica, come il laboratorio.
-    evolvesFrom: ['civicSpire', 'civicLantern'],
+    evolvesFrom: ['civicSpire', 'civicLantern', 'civicCrown'],
     priority: 4,
     shape: { ...DEFAULT_TYPOLOGY_SHAPE, minFootprint: 6 },
     profile: {
@@ -1130,6 +1628,152 @@ export const TYPOLOGIES: readonly TypologyDefinition[] = [
       crown: PALETTE_SLOTS.roofWhite,
       plinth: PALETTE_SLOTS.stone,
       roofProp: PALETTE_SLOTS.metalGold,
+    },
+  },
+  {
+    id: 'chapterHall',
+    label: 'Chapter hall',
+    use: 3,
+    roles: ['cathedral'],
+    // Il capitolo attorno alla cattedrale: la sala di pietra col colmo lungo che
+    // chiude il sagrato. La cattedrale costa un isolato e finora non lasciava
+    // dietro di se' **nessuna** forma propria — il tessuto civico attorno era la
+    // stessa guglia che nasce ovunque.
+    //
+    // Sta bassa e larga di proposito: accanto a un monumento che sale, il civico
+    // che gli cresce intorno deve fare da basamento e non da concorrente.
+    evolvesFrom: ['civicSpire', 'civicLantern'],
+    priority: 5,
+    shape: {
+      ...DEFAULT_TYPOLOGY_SHAPE,
+      arcade: true,
+      courtyard: true,
+      crownKind: CROWN_KIND.gable,
+      minFootprint: 8,
+    },
+    profile: {
+      bandHeight: [6, 7],
+      shrinkBias: 0.06,
+      footprintBias: 4,
+      shrinkOps: [BAND_OP.shrinkOneSide, BAND_OP.jog],
+      growOps: [BAND_OP.keep, BAND_OP.grow, BAND_OP.jog],
+      body: PALETTE_SLOTS.stoneWarm,
+      bodyAlt: PALETTE_SLOTS.stone,
+      accent: PALETTE_SLOTS.metalGold,
+      crown: PALETTE_SLOTS.roofPale,
+      plinth: PALETTE_SLOTS.stoneDeep,
+      terrace: PALETTE_SLOTS.stone,
+      roofPropHeight: 0,
+    },
+  },
+  {
+    id: 'campusQuad',
+    label: 'Campus quad',
+    use: 3,
+    roles: ['school', 'university'],
+    // Il quadrilatero: aule attorno a una corte, la forma che scuole e atenei
+    // hanno da otto secoli. `universityLab` ne e' la versione specializzata e
+    // chiede `research`, cioe' un distretto maturo; questo basta il ruolo, e
+    // quindi compare **appena la scuola atterra** invece che venti livelli dopo.
+    //
+    // La scuola era uno dei tre passi del tutorial e non produceva niente di
+    // riconoscibile: piazzarla dava una guglia civica uguale a tutte le altre.
+    evolvesFrom: ['civicSpire', 'civicLantern'],
+    // Sotto `universityLab` (5): dove la ricerca c'e' davvero, il laboratorio
+    // resta piu' specifico del cortile.
+    priority: 4,
+    shape: {
+      ...DEFAULT_TYPOLOGY_SHAPE,
+      arcade: true,
+      courtyard: true,
+      crownKind: CROWN_KIND.flat,
+      chamfer: 1,
+      minFootprint: 8,
+      roofGarden: true,
+    },
+    profile: {
+      bandHeight: [5, 6],
+      shrinkBias: 0.08,
+      footprintBias: 4,
+      body: PALETTE_SLOTS.brickLight,
+      bodyAlt: PALETTE_SLOTS.stoneWarm,
+      accent: PALETTE_SLOTS.glassPale,
+      crown: PALETTE_SLOTS.roofPale,
+      plinth: PALETTE_SLOTS.stone,
+      terrace: PALETTE_SLOTS.stoneWarm,
+      garden: PALETTE_SLOTS.grass,
+      roofPropHeight: 0,
+    },
+  },
+  {
+    id: 'broadcastTower',
+    label: 'Broadcast tower',
+    use: 3,
+    roles: ['radio'],
+    // Il ripetitore: un fusto stretto e altissimo con l'antenna in cima. E' la
+    // sagoma piu' lontana da tutto il resto del catalogo — nessun'altra riga
+    // scende sotto le cinque colonne di lato — e serve proprio a quello: da
+    // inquadratura d'insieme, un ago fra le torri dice dove passa la rete.
+    evolvesFrom: ['civicSpire', 'civicLantern'],
+    priority: 5,
+    shape: {
+      ...DEFAULT_TYPOLOGY_SHAPE,
+      podiumBands: 2,
+      crownKind: CROWN_KIND.taper,
+      chamfer: 1,
+      minFootprint: 4,
+      maxFootprint: 5,
+    },
+    profile: {
+      bandHeight: [7, 8],
+      shrinkBias: 0.9,
+      footprintBias: -4,
+      shrinkOps: [BAND_OP.shrink, BAND_OP.shrinkOneSide, BAND_OP.stack],
+      growOps: [BAND_OP.jog, BAND_OP.shear, BAND_OP.keep],
+      body: PALETTE_SLOTS.concrete,
+      bodyAlt: PALETTE_SLOTS.metalDark,
+      accent: PALETTE_SLOTS.metalRust,
+      crown: PALETTE_SLOTS.metalDark,
+      plinth: PALETTE_SLOTS.stoneDark,
+      roofProp: PALETTE_SLOTS.metalRust,
+      roofPropHeight: 8,
+    },
+  },
+  {
+    id: 'festivalHall',
+    label: 'Festival hall',
+    use: 3,
+    charter: ['festivalGrounds'],
+    // Il mandato dice «gli isolati civici diventano piu' vivaci e piu' densi»:
+    // qui quella frase e' un padiglione con il portico su tutti i fronti e la
+    // terrazza praticabile sopra. E' il quarto mandato senza una forma propria a
+    // riceverne una, e chiude l'elenco: da qui in avanti ogni decisione del
+    // giocatore si vede a schermo.
+    evolvesFrom: ['civicSpire', 'civicLantern'],
+    priority: 6,
+    shape: {
+      ...DEFAULT_TYPOLOGY_SHAPE,
+      arcade: true,
+      podiumBands: 2,
+      crownKind: CROWN_KIND.stepped,
+      roofGarden: true,
+      minFootprint: 8,
+      overhang: 2,
+    },
+    profile: {
+      bandHeight: [5, 7],
+      shrinkBias: 0.72,
+      footprintBias: 4,
+      shrinkOps: [BAND_OP.setback, BAND_OP.stack, BAND_OP.shrink],
+      growOps: [BAND_OP.jut, BAND_OP.grow, BAND_OP.jog],
+      body: PALETTE_SLOTS.concreteWhite,
+      bodyAlt: PALETTE_SLOTS.brickLight,
+      accent: PALETTE_SLOTS.metalGold,
+      crown: PALETTE_SLOTS.roofWhite,
+      plinth: PALETTE_SLOTS.stoneWarm,
+      terrace: PALETTE_SLOTS.wood,
+      garden: PALETTE_SLOTS.grassLight,
+      roofPropHeight: 0,
     },
   },
   {
@@ -1158,6 +1802,47 @@ export const TYPOLOGIES: readonly TypologyDefinition[] = [
       shrinkBias: 0.68,
       shrinkOps: [BAND_OP.stack, BAND_OP.shrink, BAND_OP.setback],
       growOps: [BAND_OP.grow, BAND_OP.corner, BAND_OP.shear, BAND_OP.jog],
+      roofProp: PALETTE_SLOTS.metalGold,
+      roofPropHeight: 6,
+    },
+  },
+  {
+    id: 'civicCrown',
+    label: 'Civic crown',
+    use: 3,
+    minLevel: 12,
+    // **La lanterna era la cima civica, e stava al livello quattro.** Con il
+    // tetto verticale a ventisei, ogni civico alto della citta' era la stessa
+    // lanterna con venti fasce in piu' sotto: la scala dava massa e non un altro
+    // volto. Questa riga e' lo scalino sopra, e chiede tre volte il livello.
+    //
+    // Come la lanterna, l'unica condizione e' il livello — che non e' una
+    // condizione *sul luogo* — quindi vale anche dove il profilo non c'e': un
+    // catalizzatore piazzato a mano, una fixture di scena. E' cosi' che
+    // «coronamenti per livello» resta una riga di tabella e non un ramo.
+    evolvesFrom: ['civicSpire', 'civicLantern'],
+    // Sopra la lanterna (1), sotto tutto cio' che dice qualcosa del **luogo**:
+    // un ateneo, un capitolo o un padiglione restano piu' specifici di «questo
+    // edificio e' salito molto».
+    priority: 3,
+    shape: {
+      ...DEFAULT_TYPOLOGY_SHAPE,
+      podiumBands: 2,
+      crownKind: CROWN_KIND.lantern,
+      chamfer: 2,
+      minFootprint: 7,
+    },
+    profile: {
+      bandHeight: [7, 8],
+      shrinkBias: 0.88,
+      shrinkOps: [BAND_OP.stack, BAND_OP.setback, BAND_OP.shrink],
+      growOps: [BAND_OP.corner, BAND_OP.shear, BAND_OP.jog],
+      body: PALETTE_SLOTS.concreteWhite,
+      bodyAlt: PALETTE_SLOTS.glassPale,
+      accent: PALETTE_SLOTS.glass,
+      crown: PALETTE_SLOTS.roofWhite,
+      plinth: PALETTE_SLOTS.stoneDeep,
+      terrace: PALETTE_SLOTS.concreteLight,
       roofProp: PALETTE_SLOTS.metalGold,
       roofPropHeight: 6,
     },

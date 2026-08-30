@@ -2,6 +2,7 @@ import { CHUNK, FACE_NEIGHBOUR_OFFSETS, FACE_PZ } from '../../world/chunkCoords'
 import { blockSurface, SURFACE_KIND } from '../../world/visualBlock';
 import {
   CARVE_KIND,
+  CARVE_MARK_COUNT,
   carveIndex,
   packCarveMark,
   type CarveKind,
@@ -64,7 +65,7 @@ export const MAX_CARVE_QUADS_PER_CHUNK = 6144;
  * `MAX_CARVE_QUADS_PER_CHUNK` verrebbe esaurito da una fascia luminosa lunga
  * quattordici celle che di quad ne emette cinque in tutto.
  */
-const CARVE_COST: readonly number[] = [0, 5, 5, 10, 9, 5, 5];
+const CARVE_COST: readonly number[] = [0, 5, 5, 10, 9, 5, 5, 5, 5];
 
 /** Quanto costa proseguire una corsa gia' aperta. */
 const CONTINUE_COST = 1;
@@ -96,7 +97,8 @@ export interface CarvePlan {
    * celle che non la riguardano. Diviso qui, dove le celle si stanno gia'
    * visitando, ogni passata vede solo le proprie.
    *
-   * L'indice e' il byte della maschera, quindi bastano `ricette x 8` caselle.
+   * L'indice e' il byte della maschera, quindi bastano `CARVE_MARK_COUNT`
+   * caselle — `ricette x 8`, derivate e non scritte a mano.
    */
   readonly byMark: number[][];
   /** Quad prenotati. Mai oltre `MAX_CARVE_QUADS_PER_CHUNK`. */
@@ -111,7 +113,7 @@ export interface CarvePlan {
  */
 const plan: CarvePlan = {
   cells: [],
-  byMark: Array.from({ length: 64 }, () => [] as number[]),
+  byMark: Array.from({ length: CARVE_MARK_COUNT }, () => [] as number[]),
   quads: 0,
   origin: [0, 0, 0],
 };
@@ -136,6 +138,41 @@ function inPadded(c: number): boolean {
 function roofOnBothAxes(padded: Uint8Array, x: number, y: number, z: number): boolean {
   const alongX = openRoof(padded, x - 1, y, z) || openRoof(padded, x + 1, y, z);
   return alongX && (openRoof(padded, x, y - 1, z) || openRoof(padded, x, y + 1, z));
+}
+
+/**
+ * true se sotto questa cella c'e' cio' su cui l'edificio poggia.
+ *
+ * «Poggia» vuol dire un voxel pieno e `plain`: terreno, fondazione, banchina.
+ * Mai un'altra facciata d'uso — quella e' la fascia sotto, e li' lo zoccolo
+ * comparirebbe a mezza altezza. Il molo sull'acqua rientra apposta: `WATER_CLASS`
+ * porta `open` negli stessi bit, e uno stacco d'ombra sul filo dell'acqua e'
+ * esattamente il bordo di banchina che quel luogo vuole.
+ *
+ * La guardia su `z` non e' pignoleria: sull'anello di padding vale -1, e `z - 1`
+ * uscirebbe dal volume senza che `paddedIdx` se ne accorga.
+ */
+function onGround(padded: Uint8Array, x: number, y: number, z: number): boolean {
+  if (z < 0) return false;
+  const below = blockAt(padded, x, y, z - 1);
+  return below !== 0 && blockSurface(below) === SURFACE_KIND.plain;
+}
+
+/**
+ * true se questa cella e' la riga **sotto il ciglio** di una parete industriale:
+ * sopra c'e' ancora lamiera, due sopra no.
+ *
+ * **Si legge sulla stessa colonna, non sul vicino laterale**, ed e' una scelta di
+ * sicurezza oltre che di costo: sull'anello di padding una faccia di bordo
+ * spingerebbe la lettura fuori dal volume, dove `paddedIdx` non si accorge di
+ * niente e `blockAt` risponde con la cella di un'altra riga.
+ */
+function underEave(padded: Uint8Array, x: number, y: number, z: number): boolean {
+  if (!inPadded(z + 2)) return false;
+  const above = blockAt(padded, x, y, z + 1);
+  if (above === 0 || blockSurface(above) !== SURFACE_KIND.industrial) return false;
+  const over = blockAt(padded, x, y, z + 2);
+  return over === 0 || blockSurface(over) !== SURFACE_KIND.industrial;
 }
 
 /**
@@ -221,6 +258,20 @@ export function carveKindFor(
   if (inPadded(ax) && inPadded(ay) && inPadded(z + 1) &&
     blockAt(padded, ax, ay, z + 1) !== 0) {
     return CARVE_KIND.loggia;
+  }
+
+  // Lo zoccolo: la prima riga sopra cio' su cui l'edificio poggia arretra di due
+  // sedicesimi. **In isometrica e' l'unica cosa che stacca un edificio dal
+  // suolo** — senza, la facciata e il terreno sono due campiture che si toccano —
+  // e con le sole sporgenze non si puo' dire: una fascia aggiunta a terra fa una
+  // cornice, non un'ombra. E' geometria, quindi precede i dadi.
+  if (onGround(padded, x, y, z)) return CARVE_KIND.plinth;
+
+  // La feritoia industriale sotto il ciglio, che e' la riga dove `emitWalkways`
+  // posa gia' la passerella: la fessura sotto le da' la scala meccanica che un
+  // muro di lamiera continuo non ha.
+  if (surface === SURFACE_KIND.industrial && underEave(padded, x, y, z)) {
+    return CARVE_KIND.vent;
   }
 
   // **I dadi prima di `frontage`, ed e' una scelta di costo come in `emitAwnings`.**

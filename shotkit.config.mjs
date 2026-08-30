@@ -109,9 +109,19 @@ async function answerDecision(page) {
  *
  * `escape` va spento dopo aver aperto un pannello: `Esc` non annulla solo lo
  * strumento, chiude anche il cassetto appena aperto.
+ *
+ * A mani vuote `Esc` **apre il menu principale**, che mette la citta' in pausa:
+ * senza richiuderlo, `grow()` aspetterebbe secondi durante i quali non passa un
+ * tick, e le citta' negli scatti resterebbero vuote. Un secondo `Esc` non
+ * basta — alterna, quindi lo riaprirebbe a turno — e la chiusura va chiesta
+ * esplicitamente, che e' anche l'unico gesto idempotente.
  */
 async function parkPointer(page, { escape = true } = {}) {
   if (escape) await page.keyboard.press('Escape');
+  await page.evaluate(() => {
+    const veil = document.querySelector('.main-menu-veil');
+    if (veil !== null && !veil.hidden) veil.querySelector('.drawer-close')?.click();
+  });
   await page.evaluate(() => document.activeElement?.blur?.());
   await page.mouse.move(1418, 460);
   await page.waitForTimeout(400);
@@ -226,10 +236,13 @@ export default {
     });
   },
 
+  // `play=1` su ogni indirizzo di gioco: dalla porta d'ingresso in poi il menu
+  // si apre a **ogni** caricamento, e finche' e' aperto la citta' e' ferma.
+  // Senza, ogni scatto partirebbe da un velo sopra un'isola che non cresce.
   shots: [
     {
       name: '01-city-overview',
-      path: '/?seed=1337',
+      path: '/?play=1&seed=1337',
       timeoutMs: 300000,
       shows:
         'la citta cresciuta sull isola procedurale: strade, isolati e tipologie decise dalla simulazione, barra risorse in alto e dock di costruzione in basso',
@@ -240,7 +253,7 @@ export default {
     },
     {
       name: '02-placement-cursor',
-      path: '/?seed=1337',
+      path: '/?play=1&seed=1337',
       timeoutMs: 300000,
       shows:
         'lo strumento di piazzamento attivo: segnaposto 3D sul terreno e cartellino con costo pesato dal sito, raggio di influenza, usi favoriti e tipologie che possono nascerne',
@@ -257,7 +270,7 @@ export default {
     },
     {
       name: '03-event-decision',
-      path: '/?seed=1337',
+      path: '/?play=1&seed=1337',
       timeoutMs: 300000,
       shows:
         'una carta evento della simulazione: la citta ha esaurito le scorte e chiede una scelta, con le tre risposte e il loro costo',
@@ -272,7 +285,7 @@ export default {
     },
     {
       name: '04-policies-and-trade',
-      path: '/?seed=1337',
+      path: '/?play=1&seed=1337',
       timeoutMs: 300000,
       shows:
         'il cassetto delle politiche: leve attivabili e strategie di scambio, separate dalla dashboard della citta',
@@ -287,7 +300,7 @@ export default {
     },
     {
       name: '05-theme-neon',
-      path: '/?seed=1337&theme=neon',
+      path: '/?play=1&seed=1337&theme=neon',
       timeoutMs: 300000,
       shows:
         'lo stesso motore con un tema diverso: 32 colori e parametri di atmosfera scambiati a caldo, nessuna geometria rigenerata, con il selettore dei temi aperto',
@@ -302,7 +315,7 @@ export default {
     },
     {
       name: '06-debug-overlay',
-      path: '/?seed=1337&debug=1&grow=1',
+      path: '/?play=1&seed=1337&debug=1&grow=1',
       timeoutMs: 300000,
       shows:
         'l harness di misura: frame budget, draw call, triangoli, stato del mesher e del pool di worker accanto alle statistiche di crescita',
@@ -340,7 +353,7 @@ export default {
     },
     {
       name: '09-selection-card',
-      path: '/?seed=1337',
+      path: '/?play=1&seed=1337',
       timeoutMs: 300000,
       shows:
         'la scheda di selezione aperta su un edificio: in cima la carta di cio che serve per crescere, poi struttura, isolato, colonna e voxel impilate nella stessa colonna scorrevole, e il contorno azzurro sull impronta nel mondo',
@@ -372,7 +385,7 @@ export default {
     },
     {
       name: '08-simulation-lab',
-      path: '/?seed=1337&debug=1&sim=1',
+      path: '/?play=1&seed=1337&debug=1&sim=1',
       timeoutMs: 300000,
       shows:
         'la scena di simulazione isolata: desiderabilita, candidati di costruzione classificati e leve di politica, senza il gioco attorno',

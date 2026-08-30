@@ -8,6 +8,7 @@ import {
 } from '../../sim';
 import { testTerrain } from '../../sim/testTerrain';
 import { VoxelWorld } from '../VoxelWorld';
+import { SCALE } from '../scale';
 import { SKYLINE } from '../skyline/config';
 import { isPeakBlock } from '../skyline/tiers';
 import { StreetNetwork } from '../streets/StreetNetwork';
@@ -168,7 +169,7 @@ describe('Builder — gate degli assemblaggi urbani', () => {
     expect(Array.from(stampB.surfaces)).toEqual(Array.from(stampA.surfaces));
   });
 
-  it('gli upgrade non trasformano un isolato ordinario in un assemblaggio', () => {
+  it('gli upgrade allargano per gradini, e l isolato intero resta al picco', () => {
     const world = new VoxelWorld();
     const terrain = testTerrain({ chunksX: 8, chunksY: 8, height: 24 });
     const builder = new Builder(world, terrain, seed);
@@ -194,7 +195,17 @@ describe('Builder — gate degli assemblaggi urbani', () => {
     for (const record of ordinary) {
       if (record.footprint <= MAX_FOOTPRINT) continue;
       const block = streets.blockAt(record.x, record.y);
-      expect(isPeakBlock(seed, block.kx, block.ky)).toBe(true);
+      const rect = streets.blockRect(block);
+      const side = Math.min(rect.x1 - rect.x0 + 1, rect.y1 - rect.y0 + 1);
+
+      // **Oltre il modulo si va per gradini, non per interruttore.** Un isolato
+      // ordinario puo' arrivare alla scala mega quando la gerarchia lo ammette;
+      // il lato libero dell'isolato resta invece il premio del picco, ed e'
+      // quello l'invariante che questo test difende.
+      if (record.footprint > SCALE.megaFootprint) {
+        expect(isPeakBlock(seed, block.kx, block.ky)).toBe(true);
+      }
+      expect(record.footprint).toBeLessThanOrEqual(side);
     }
   });
 });

@@ -17,6 +17,8 @@ import {
 import type { DaylightMode } from '../engine/daylight';
 import { CityDrawer } from './CityDrawer';
 import { PoliciesDrawer } from './PoliciesDrawer';
+import { MainMenu } from './MainMenu';
+import type { SlotInfo } from '../game/save/storage';
 import { drawerHeader } from './drawerBits';
 import { ResourceBar } from './ResourceBar';
 import { ResourceTrend } from './ResourceTrend';
@@ -64,6 +66,35 @@ export interface GameHudHandlers {
   /** Chiude la scheda di selezione. Il pannello vive fuori dall'HUD; la catena
    *  di Escape no, perche' e' una sola e sta qui. */
   readonly onClearSelection: () => void;
+  /**
+   * I gesti della sezione salvataggi del menu.
+   *
+   * L'HUD non tocca ne' lo storage ne' la partita: chiede, e chi ha in mano la
+   * scena risponde ridandogli l'elenco degli slot con `setSaves`.
+   */
+  readonly onSaveSlot: (slot: string) => void;
+  readonly onLoadSlot: (slot: string) => void;
+  readonly onDeleteSlot: (slot: string) => void;
+  readonly onExportSave: () => void;
+  readonly onImportSave: (text: string) => void;
+  /** Chiede l'elenco aggiornato degli slot: l'HUD non legge lo storage. */
+  readonly onSavesOpened: () => void;
+  /** Butta via la partita e ne apre una su un'altra isola. */
+  readonly onNewGame: (seed: number) => void;
+  /**
+   * Riapre l'autosalvataggio dal menu d'ingresso.
+   *
+   * Non riparte piu' da solo: la porta d'ingresso e' il menu, e riprendere e'
+   * una delle cose che si scelgono li' dentro invece di succedere e basta.
+   */
+  readonly onContinue: () => void;
+  /**
+   * Un seed sorteggiato.
+   *
+   * Il tiro sta nella radice e non qui: e' l'unico non deterministico del gioco
+   * e ne esiste uno solo, quello del bootstrap.
+   */
+  readonly onRollSeed: () => number;
 }
 
 export interface ThemeChoice {
@@ -135,6 +166,8 @@ export class GameHud {
   private readonly railLeft: HTMLElement;
   private readonly cityDrawer: CityDrawer;
   private readonly policiesDrawer: PoliciesDrawer;
+  /** Il menu principale: una modale sopra tutto, non un cassetto di destra. */
+  private readonly mainMenu: MainMenu;
   private readonly themePicker: HTMLElement;
   private readonly viewPicker: HTMLElement;
   private readonly infoPicker: HTMLElement;
@@ -250,6 +283,23 @@ export class GameHud {
       onClose: () => this.closePolicies(),
     });
     this.root.appendChild(this.policiesDrawer.root);
+    this.mainMenu = new MainMenu({
+      onSave: (slot) => handlers.onSaveSlot(slot),
+      onLoad: (slot) => handlers.onLoadSlot(slot),
+      onDelete: (slot) => handlers.onDeleteSlot(slot),
+      onExport: () => handlers.onExportSave(),
+      onImport: (text) => handlers.onImportSave(text),
+      onSavesOpened: () => handlers.onSavesOpened(),
+      onTheme: (id) => handlers.onTheme(id),
+      onDaylight: (mode) => handlers.onDaylight(mode),
+      onClouds: (on) => handlers.onClouds(on),
+      onSwatch: () => handlers.onSwatch(),
+      onStart: (seed) => handlers.onNewGame(seed),
+      onRoll: () => handlers.onRollSeed(),
+      onContinue: () => handlers.onContinue(),
+      onResume: () => this.closeMenu(),
+    }, themes);
+    this.root.appendChild(this.mainMenu.root);
     this.decisionCard = document.createElement('aside');
     this.decisionCard.className = 'decision-card hud-surface hud-surface--modal';
     this.decisionCard.hidden = true;
@@ -375,14 +425,20 @@ export class GameHud {
     // L'HUD cambia con il mondo, invece di restare crema sotto un cielo al neon.
     const tokens = this.themeTokens.get(id);
     if (tokens !== undefined) applyHudTokens(tokens);
+    // Il picker del dock e le impostazioni del menu mostrano la stessa scelta:
+    // dipingerne una sola vorrebbe dire due superfici che si contraddicono su
+    // quale tema sia in vigore.
+    this.mainMenu.setTheme(id);
   }
 
   setClouds(on: boolean): void {
     this.bar.setClouds(on);
+    this.mainMenu.setClouds(on);
   }
 
   setDaylight(mode: DaylightMode): void {
     this.bar.setDaylight(mode);
+    this.mainMenu.setDaylight(mode);
   }
 
   /**
@@ -527,6 +583,7 @@ export class GameHud {
   private togglePanel(panel: DockPanel): void {
     if (panel === 'city') this.toggleCity();
     else if (panel === 'policies') this.togglePolicies();
+    else if (panel === 'menu') this.toggleMenu();
     else if (panel === 'themes') this.toggleThemes();
     else if (panel === 'views') this.toggleViews();
     else this.toggleInfo();
@@ -560,6 +617,52 @@ export class GameHud {
       this.closeInfo();
       this.help.hide();
     }
+  }
+
+  /** Il menu e' aperto: lo legge il ciclo di frame, che gli ferma il tempo. */
+  get menuOpen(): boolean {
+    return this.mainMenu.open;
+  }
+
+  toggleMenu(): void {
+    if (this.mainMenu.open) this.closeMenu();
+    else this.openMenu();
+  }
+
+  /**
+   * Il menu come porta d'ingresso, all'avvio.
+   *
+   * Si apre su *New game* e non sui salvataggi: qui non si sta gestendo una
+   * partita, si sta scegliendo quale giocare, e l'isola che sta nascendo dietro
+   * il velo e' gia' la risposta piu' probabile — il seed sta scritto al piede e
+   * il bottone grande dice **Play**. Chi vuole la citta' di ieri ha Continue
+   * sopra le sezioni, con dentro quanto era grande e quando l'ha lasciata.
+   */
+  openMenuAtStart(autosave: SlotInfo | null): void {
+    this.mainMenu.setContinue(autosave);
+    this.dock.setExpanded('menu', true);
+    this.mainMenu.show('new', false);
+  }
+
+  /** L'elenco degli slot, gia' letto da chi tiene lo storage. */
+  setSaves(slots: readonly SlotInfo[]): void {
+    this.mainMenu.setSaves(slots);
+  }
+
+  /** Una riga di esito nella sezione salvataggi: serve soprattutto ai fallimenti. */
+  setSaveNote(text: string): void {
+    this.mainMenu.setSaveNote(text);
+  }
+
+  /**
+   * La partita in corso al piede del menu: seed, abitanti, edifici.
+   *
+   * Il seed non e' dell'HUD — lo tiene la radice — e arriva insieme all'elenco
+   * degli slot, che e' l'unico momento in cui serve. Finche' il menu e' aperto
+   * la citta' e' ferma, quindi la riga non puo' invecchiare sotto gli occhi.
+   */
+  setSummary(seed: number, population: number, buildings: number): void {
+    this.mainMenu.setSummary(seed, population, buildings);
   }
 
   toggleThemes(): void {
@@ -622,6 +725,9 @@ export class GameHud {
    * picker condividono quella striscia, e due pannelli sovrapposti non si
    * leggono. La scheda vive fuori dall'HUD, quindi chi la apre non puo' toccare
    * questi cassetti direttamente — passa di qui.
+   *
+   * Il menu principale resta fuori: e' una modale sopra tutto, e la scheda di
+   * selezione — l'unica che chiami questo metodo — sotto il velo non si apre.
    */
   dismissPanels(): void {
     this.closeCity();
@@ -644,6 +750,14 @@ export class GameHud {
   }
 
   handleEscape(): boolean {
+    // Il menu si chiude prima di tutto, e sta **fuori** dalla catena: e' una
+    // modale, cioe' un modo e non un pannello aperto sopra il gioco. Dentro la
+    // catena perderebbe contro lo strumento in mano — che aprire il menu non
+    // posa — e `Esc` non riuscirebbe a chiudere l'unica cosa a schermo.
+    if (this.mainMenu.open) {
+      this.closeMenu();
+      return true;
+    }
     // Il picker dei dati si chiude per primo quando e' aperto, come gli altri
     // pannelli: i picker si escludono a vicenda, quindi e' l'unico aperto.
     if (!this.infoPicker.hidden) {
@@ -653,6 +767,8 @@ export class GameHud {
     switch (resolveEscapeTarget(
       !this.viewPicker.hidden,
       !this.themePicker.hidden,
+      // I due cassetti condividono la stessa voce della catena: stanno sulla
+      // stessa striscia, si escludono a vicenda, e chiuderli e' lo stesso gesto.
       !this.cityDrawer.hidden || !this.policiesDrawer.hidden,
       this.help.isOpen,
       this.selected,
@@ -693,8 +809,12 @@ export class GameHud {
       case 'view':
         this.handlers.onView(INSPECT_MODE.off);
         return true;
-      case 'none':
-        return false;
+      // La catena esaurita **apre** invece di chiudere: a mani vuote non c'e'
+      // piu' niente da annullare, ed e' il solo momento in cui `Esc` puo'
+      // significare «esci dalla partita» senza rubare il colpo a nient'altro.
+      case 'menu':
+        this.openMenu();
+        return true;
     }
   }
 
@@ -925,6 +1045,30 @@ export class GameHud {
   private closeCity(): void {
     this.cityDrawer.hidden = true;
     this.dock.setExpanded('city', false);
+  }
+
+  private openMenu(): void {
+    // La scheda di selezione non e' un cassetto e non vive dentro l'HUD: sta su
+    // `container`, sorella di `.game-hud`, con uno z-index suo. Niente di quello
+    // che sta qui dentro puo' coprirla, velo compreso — chiuderla e' l'unico
+    // modo, e questa riga non e' pulizia opzionale.
+    this.handlers.onClearSelection();
+    this.closeCity();
+    this.closePolicies();
+    this.closeThemes();
+    this.closeViews();
+    this.closeInfo();
+    this.help.hide();
+    // La scheda al cursore resterebbe congelata sopra il velo: il `pointermove`
+    // che la toglie non arriva piu' alla canvas.
+    this.cursor.hidden = true;
+    this.mainMenu.show();
+    this.dock.setExpanded('menu', true);
+  }
+
+  private closeMenu(): void {
+    this.mainMenu.hide();
+    this.dock.setExpanded('menu', false);
   }
 
   private closePolicies(): void {

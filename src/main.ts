@@ -66,7 +66,15 @@ import { resolveTheme, THEMES, type Theme } from './engine/themes';
 import { createVoxelMaterial } from './engine/VoxelMaterial';
 import { GrowthScene } from './game/growthScene';
 import type { CoachSuggestion } from './game/coach';
-import { perfToggleUrl, resolveLaunchMode, resolveSeed, swatchUrl } from './game/launchMode';
+import {
+  newGameUrl,
+  opensEntryMenu,
+  perfToggleUrl,
+  PLAY_PARAM,
+  resolveLaunchMode,
+  resolveSeed,
+  swatchUrl,
+} from './game/launchMode';
 import { resolveSelection, type Selection } from './game/selection';
 import { pickSolidCell, pickSurfaceCell, type Ray3, type SurfaceCell } from './game/surfacePick';
 import { pickFacade } from './game/facadePick';
@@ -245,31 +253,67 @@ const sceneKind = parseSceneKind(params.get('scene'));
  * seed dell'isola: li' il salvataggio non si applica affatto.
  */
 const saveStorage: SaveStorage | null = growEnabled ? browserStorage() : null;
+/**
+ * L'autosalvataggio **non riparte da solo**, e il menu e' il perche'.
+ *
+ * Finche' la partita si riapriva da se', ogni avvio riportava la citta' di
+ * ieri: `npm start` non era mai un inizio. Adesso la porta d'ingresso e' il
+ * menu, e l'autosalvataggio e' una delle cose che si possono scegliere li'
+ * dentro — «Continue», che passa dallo slot di transito come qualunque altro
+ * caricamento. Non e' andato perso: non viene piu' aperto senza chiederlo.
+ *
+ * `?play=1` e' l'eccezione, ed e' la stessa che salta il menu: i ricaricamenti
+ * che il gioco fa da se' — aprire uno slot, iniziare, misurare con `F2` —
+ * nascono da una scelta appena presa e devono ritrovare la citta' dov'era.
+ */
+const directPlay = params.get(PLAY_PARAM) === '1';
 // Cio' che il giocatore ha appena chiesto di aprire viene prima dell'autosave,
-// e si consuma leggendolo: restasse li', ogni ricaricamento successivo
-// riaprirebbe quella partita invece della propria.
-const savedGame = growEnabled && !params.has('terrain')
-  ? takeSlot(saveStorage, PENDING_SLOT) ?? readSlot(saveStorage, AUTO_SLOT)
+// e si consuma leggendolo **sempre**: restasse li', ogni ricaricamento
+// successivo riaprirebbe quella partita invece della propria.
+const pendingGame = growEnabled && !params.has('terrain')
+  ? takeSlot(saveStorage, PENDING_SLOT)
   : null;
+const savedGame = pendingGame
+  ?? (growEnabled && !params.has('terrain') && directPlay ? readSlot(saveStorage, AUTO_SLOT) : null);
 const restoredGame = savedGame !== null &&
   (!params.has('seed') || params.get('seed') === String(savedGame.seed))
   ? savedGame
   : null;
 
-const seed = restoredGame?.seed ?? resolveSeed(params, () => {
-  // Il seed di partenza e' l'unico tiro non deterministico di tutta la
-  // generazione: da qui in poi tutto e' funzione pura del numero sorteggiato.
+/**
+ * L'unico tiro non deterministico di tutta la generazione.
+ *
+ * Da qui in poi tutto e' funzione pura del numero sorteggiato, ed e' per questo
+ * che ne esiste **uno**: lo chiama il bootstrap quando nessuno ha dichiarato un
+ * seed, e lo chiama il menu quando si preme «Random». Un secondo tiro scritto
+ * nella UI sarebbe una seconda definizione di «isola nuova».
+ */
+function rollSeed(): number {
   const roll = new Uint32Array(1);
   crypto.getRandomValues(roll);
   return roll[0];
-});
+}
+
+const seed = restoredGame?.seed ?? resolveSeed(params, rollSeed);
+
+/**
+ * Il menu e' la porta d'ingresso: si apre a ogni avvio della partita.
+ *
+ * Si salta solo dove la domanda ha gia' una risposta — uno slot appena aperto,
+ * o un ricaricamento che il gioco stesso ha chiesto con `?play=1`.
+ */
+const entryMenu = opensEntryMenu(params, { debugEnabled, perfEnabled, growEnabled, simEnabled },
+  restoredGame !== null);
 
 // Il seed sorteggiato va riscritto nell'URL: e' il modo in cui il mondo
 // "appare" al giocatore — come il seed di Minecraft — e il ricaricamento
-// riporta la stessa isola invece di sorteggiarne un'altra.
-if (!params.has('seed')) {
+// riporta la stessa isola invece di sorteggiarne un'altra. `play` invece si
+// **consuma**: e' il permesso di saltare il menu per questo avvio soltanto, e
+// lasciarlo in coda lo farebbe valere anche per il ricaricamento dopo.
+if (!params.has('seed') || directPlay) {
   const url = new URL(window.location.href);
   url.searchParams.set('seed', String(seed));
+  url.searchParams.delete(PLAY_PARAM);
   window.history.replaceState(window.history.state, '', url);
 }
 const worldSize = clampInt(params.get('size'), 512, 32, 4096);
@@ -750,6 +794,12 @@ if (growEnabled) {
     onExportSave: () => exportSave(),
     onSavesOpened: () => refreshSaveList(),
     onImportSave: (text) => openSlot(importText(text), 'That file is not a saved game.'),
+    onNewGame: (chosen) => startNewGame(chosen),
+    onRollSeed: () => rollSeed(),
+    // «Continue» e' un caricamento come gli altri, e passa dalla stessa porta:
+    // l'autosalvataggio non ha una strada sua perche' non e' un caso speciale,
+    // e' solo lo slot che il gioco riscrive da solo.
+    onContinue: () => openSlot(readSlot(saveStorage, AUTO_SLOT), 'There is no autosave yet.'),
   }, THEMES.map((candidate) => ({
     id: candidate.id,
     name: candidate.name,
@@ -767,6 +817,14 @@ if (growEnabled) {
   // partenza sono spente mentre la barra le dipinge accese.
   gameHud.setDaylight(daylight.mode);
   gameHud.setClouds(cloudsOn);
+  if (entryMenu) {
+    // L'isola nasce **dietro** il velo: il generatore gira nel ciclo di frame
+    // prima della crescita, e solo quest'ultima riceve lo zero. Quando si preme
+    // Play il mondo e' gia' li', invece di far aspettare davanti a un menu che
+    // non sta caricando niente.
+    refreshSaveList();
+    gameHud.openMenuAtStart(listSlots(saveStorage).find((slot) => slot.slot === AUTO_SLOT) ?? null);
+  }
 }
 
 const picker = new Raycaster();
@@ -1510,8 +1568,15 @@ function onFrame(time: number): void {
     biomeView.step(GENERATION_BUDGET_MS);
   }
 
-  updateSim(dt);
-  updateGrowth(dt);
+  // Il menu principale ferma la citta' senza toccare la pausa del giocatore:
+  // quella finisce dentro il salvataggio e accende il bottone della barra, e
+  // salvare dal menu produrrebbe una partita che si riapre in pausa senza che
+  // nessuno l'abbia chiesto. Un `dt` di zero non muove ne' clock ne' tick, e
+  // lascia comunque scorrere la materializzazione dei voxel gia' decisi —
+  // esattamente cio' che fa la pausa vera.
+  const cityDt = gameHud?.menuOpen === true ? 0 : dt;
+  updateSim(cityDt);
+  updateGrowth(cityDt);
   advanceInfoOverlay();
   daylight.advance(dt);
 
@@ -1736,6 +1801,17 @@ const AUTOSAVE_INTERVAL_MS = 20_000;
 
 let autosaveAt = 0;
 let autosavedTick = -1;
+/**
+ * La partita in corso e' stata rinnegata: non si salva piu'.
+ *
+ * `startNewGame` cancella l'autosalvataggio e poi ricarica, ma andarsene fa
+ * scattare `pagehide`, che **forza** un autosave: senza questa bandiera la
+ * citta' appena buttata via si riscriverebbe da sola nello slot, e il
+ * bootstrap successivo la ritroverebbe li' — proprio quando il seed scelto a
+ * mano coincide con quello di prima, che e' il caso peggiore perche' e' anche
+ * l'unico in cui l'isola sembra giusta e la citta' sopra e' quella vecchia.
+ */
+let leavingForNewGame = false;
 
 /**
  * Scrive la partita nello slot automatico.
@@ -1747,6 +1823,7 @@ let autosavedTick = -1;
  * lavoro puo' stare senza un worker.
  */
 function autosave(time: number, force = false): void {
+  if (leavingForNewGame) return;
   if (growthScene === null || saveStorage === null) return;
   if (!force && time - autosaveAt < AUTOSAVE_INTERVAL_MS) return;
 
@@ -1765,9 +1842,32 @@ function autosave(time: number, force = false): void {
   }
 }
 
-/** Rilegge gli slot e li rimanda al cassetto, che non conosce lo storage. */
+/** Rilegge gli slot e li rimanda al menu, che non conosce lo storage. */
 function refreshSaveList(): void {
   gameHud?.setSaves(listSlots(saveStorage));
+  // Insieme all'elenco va anche cosa si sta per salvare: il seed lo tiene la
+  // radice, e il menu ferma il tempo — quindi la riga non puo' invecchiare
+  // mentre la si guarda.
+  // Zero e zero prima che la scena esista: e' l'isola vergine del menu
+  // d'ingresso, e non e' un valore mancante da nascondere.
+  const stats = growthScene?.stats;
+  gameHud?.setSummary(terrainSeed, stats?.state.population.stock ?? 0, stats?.buildings ?? 0);
+}
+
+/**
+ * Butta via la partita in corso e ne apre una su un'altra isola.
+ *
+ * **L'autosalvataggio va cancellato, non solo scavalcato.** Il bootstrap lo
+ * riapre quando il `?seed=` coincide, quindi chi digita a mano il seed della
+ * partita in corso si ritroverebbe la vecchia citta' su un'isola che sembra
+ * nuova. Lo slot di passaggio se ne va con lui: era la partita che qualcuno
+ * aveva chiesto di aprire, e adesso non la vuole piu' nessuno.
+ */
+function startNewGame(chosen: number): void {
+  leavingForNewGame = true;
+  deleteSlot(saveStorage, PENDING_SLOT);
+  deleteSlot(saveStorage, AUTO_SLOT);
+  window.location.replace(newGameUrl(window.location.search, chosen));
 }
 
 /** Scrive la partita in uno slot a mano. */
@@ -3039,6 +3139,23 @@ function onUiKey(event: KeyboardEvent): void {
     window.location.assign(perfToggleUrl(window.location.search, !perfEnabled));
     return;
   }
+  // Nel campionario Esc molla la scelta: e' lo stesso gesto del gioco, senza
+  // nessun pannello da chiudere prima.
+  if (event.code === 'Escape' && swatchOverlay !== null && swatchSelection !== null) {
+    event.preventDefault();
+    swatchSelection = null;
+    refreshSwatchOutline();
+    return;
+  }
+  // La catena di Escape sta **sopra** tutto il resto del router, e non solo
+  // sopra le scorciatoie di gioco: e' il tasto che apre e chiude il menu, e
+  // sotto il menu nessun altro comando deve valere. Con la modale aperta il
+  // router si ferma qui.
+  if (event.code === 'Escape' && gameHud?.handleEscape() === true) {
+    event.preventDefault();
+    return;
+  }
+  if (gameHud?.menuOpen === true) return;
   // Ctrl/Cmd+Z annulla l'ultima passata della gomma: prima che i voxel spariscano
   // del tutto il gesto e' reversibile, ed e' la rete di sicurezza che rende la
   // demolizione un colpo da poter sbagliare. Sta fuori dal gate del debug come
@@ -3053,18 +3170,6 @@ function onUiKey(event: KeyboardEvent): void {
     } else {
       gameHud?.showFeedback('Nothing to undo.', 'neutral');
     }
-    return;
-  }
-  // Nel campionario Esc molla la scelta: e' lo stesso gesto del gioco, senza
-  // nessun pannello da chiudere prima.
-  if (event.code === 'Escape' && swatchOverlay !== null && swatchSelection !== null) {
-    event.preventDefault();
-    swatchSelection = null;
-    refreshSwatchOutline();
-    return;
-  }
-  if (event.code === 'Escape' && gameHud?.handleEscape()) {
-    event.preventDefault();
     return;
   }
   // La barra dei livelli e' un `<input type=range>`: con il fuoco sopra, il

@@ -187,6 +187,24 @@ export function allowedLevelAt(query: SkylineQuery): number {
 }
 
 /**
+ * Livelli che la gerarchia concede **oltre** il tetto nudo della propria fascia.
+ *
+ * E' il cono piu' l'elezione, letti come un numero solo: zero significa «qui la
+ * colonna ha esattamente cio' che la fascia ammette a tutti», e il massimo
+ * significa «qui la gerarchia concentra l'altezza». Serve a chi deve distinguere
+ * la **cresta** dalla **spalla** dentro la stessa fascia — le due famiglie di
+ * megastruttura lo fanno — e sta qui perche' e' una domanda sulla gerarchia, come
+ * `isPeakBlock`, non sul dominio che la interroga.
+ *
+ * Non e' clampato a `BUILDER.maxLevel` per la stessa ragione di `allowedLevelAt`:
+ * il tetto assoluto non appartiene a questo dominio, e applicarlo qui
+ * cancellerebbe proprio la differenza fra cresta e spalla nelle citta' alte.
+ */
+export function heightBonusAt(query: SkylineQuery): number {
+  return allowedLevelAt(query) - SKYLINE.levelCap[tierAt(query)];
+}
+
+/**
  * Livelli che restano a chi parte `rise` voxel sopra il terreno.
  *
  * **Il tetto e' sulla quota finale, non sul volume costruito.** Una gerarchia

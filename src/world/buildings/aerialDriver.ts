@@ -154,6 +154,43 @@ export class AerialDriver {
   }
 
   /**
+   * Ricostruisce i propri indici da un registry appena caricato.
+   *
+   * Sono gli unici due che questo driver tiene **oltre** al registry, e nascono
+   * vuoti a ogni costruttore: senza questa chiamata, dopo un caricamento una
+   * colonna con un impalcato sopra risulterebbe libera in quota e la crescita ci
+   * costruirebbe attraverso.
+   *
+   * **`deckPiers` resta fuori, e va detto.** Quella mappa lega un impalcato alle
+   * proprie gambe, e il legame non sta nei record: la gamba dichiara in
+   * `supports` l'edificio su cui poggia, non l'impalcato che regge — e scrivercelo
+   * invertirebbe il verso che `carried` e `blocksUpgrade` leggono. Finche' gli
+   * impalcati non entrano nel salvataggio la mappa e' vuota comunque; quando ci
+   * entreranno servira' un campo nuovo sul record, non una deduzione geometrica.
+   */
+  adopt(): void {
+    for (const record of this.ctx.registry.all) {
+      if (record.aerial !== undefined && isBuildable(record.aerial)) {
+        const depth = footprintDepth(record);
+        for (let dy = 0; dy < depth; dy++) {
+          for (let dx = 0; dx < record.footprint; dx++) {
+            this.deckColumns.add(`${record.x + dx},${record.y + dy}`);
+          }
+        }
+      }
+
+      // Un impalcato con qualcuno sopra non cade piu', ed e' l'ospite a dirlo:
+      // e' la stessa riga che `Builder.place` esegue al piazzamento, riletta da
+      // cio' che l'ospite si porta dietro nel salvataggio.
+      for (const support of record.supports ?? []) {
+        if (this.ctx.registry.get(support)?.aerial !== undefined) {
+          this.inhabitedDecks.add(support);
+        }
+      }
+    }
+  }
+
+  /**
    * Segna un impalcato come abitato: da adesso non cade piu'.
    *
    * Togliere l'ospite a un impalcato su cui qualcuno ha gia' costruito sarebbe

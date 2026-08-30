@@ -150,6 +150,7 @@ export class CameraInput {
   };
 
   private readonly onKeyDown = (event: KeyboardEvent): void => {
+    if (isTypingTarget(event.target)) return;
     if (event.code === 'KeyQ') {
       this.commands.rotate(-1);
       return;
@@ -172,6 +173,26 @@ export class CameraInput {
 
 function preventDefault(event: Event): void {
   event.preventDefault();
+}
+
+/**
+ * Un campo a fuoco si prende i tasti, e la camera non li vede.
+ *
+ * I listener stanno su `window` e finora prendevano **ogni** `event.code`:
+ * scrivere un seed nel menu avrebbe panoramizzato la citta' con `WASD` e la
+ * avrebbe girata con `Q` ed `E`. Vale anche per la barra dei livelli, che e' un
+ * `<input type=range>`: le frecce muovevano il cursore **e** l'inquadratura.
+ *
+ * Niente `instanceof HTMLInputElement`: questo file gira anche in `node`, dove
+ * quel nome non esiste e il confronto sarebbe un `ReferenceError` invece di un
+ * no. Si guarda la forma, che e' l'unica cosa che c'e' da entrambe le parti.
+ */
+export function isTypingTarget(target: EventTarget | null | undefined): boolean {
+  if (target === null || target === undefined) return false;
+  const element = target as { tagName?: unknown; isContentEditable?: unknown };
+  if (element.isContentEditable === true) return true;
+  const tag = typeof element.tagName === 'string' ? element.tagName.toUpperCase() : '';
+  return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT';
 }
 
 /**

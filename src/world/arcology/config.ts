@@ -2,9 +2,12 @@ import type { BuildingClass } from '../../sim';
 import { PALETTE_SLOTS } from '../../engine/paletteSlots';
 import { BUILDER } from '../buildings/config';
 import type { PartsRecipe } from '../landmarks/config';
+import type { Part } from '../landmarks/parts';
+import { TERRAIN } from '../terrain/config';
 import { withFacadeCourses } from './facadeCourses';
 import { createArcologyProfileVariants } from './profileVariants';
 import { createArcologyRecipes } from './recipes';
+import { createSunkenRecipes } from './sunkenRecipes';
 
 /**
  * Fonte di verita' delle regole e dei tipi delle arcologie.
@@ -217,6 +220,88 @@ export const ARCOLOGY = {
 } as const;
 
 /**
+ * L'earthscraper: le regole della famiglia che scende invece di salire.
+ *
+ * **E' l'anti-grattacielo, e la condizione lo dice al contrario.** L'arcologia
+ * nasce nel `core` dove la citta' ha saturato la quota ammessa; questa nasce
+ * dove quella quota non e' mai stata concessa — fuori dal `core`, cioe' nella
+ * fascia dove `SKYLINE.levelCap` tiene basso il tessuto. E' la motivazione vera
+ * del progetto da cui prende il nome: nel centro storico di Citta' del Messico
+ * non si puo' demolire e non si puo' salire, quindi l'unica direzione libera e'
+ * il basso.
+ *
+ * **I numeri di profondita' sono misurati, non scelti.** L'isola standard e'
+ * molto piu' piatta di quanto `TERRAIN.maxHeight` faccia pensare: la maschera
+ * radiale schiaccia il rilievo, e su 256x256 la colonna piu' alta sta a 32-36,
+ * non a 76. Misurato su tre seed, un ingombro 20x20 tutto asciutto offre 24
+ * quote di scavo nell'83% dei siti, 26 in due terzi, 28 in un terzo — e **30 in
+ * nessun sito del seed 4242**. Una ricetta piu' profonda di `maxDepth` non
+ * verrebbe scartata: non nascerebbe mai, in silenzio, che e' lo stesso difetto
+ * che `isPeakBlock` aveva prodotto sulle arcologie.
+ *
+ * **La profondita' persa si riguadagna in pianta.** Un pozzo profondo ventisei
+ * quote e' meno alto di una torre della fascia intermedia, e non e' un problema:
+ * dall'inquadratura isometrica una megastruttura interrata si legge per l'area
+ * del proprio vuoto, non per quanto scende. E' il motivo per cui la ricetta piu'
+ * grande e' multi-blocco.
+ */
+export const SUNKEN = {
+  /**
+   * Quota sotto cui il fondo di un pozzo non scende mai.
+   *
+   * E' `TERRAIN.oceanFloor`, e non e' un numero preso a prestito: sotto quella
+   * quota una colonna di terra confina con il fondale, e un pozzo che ci
+   * arrivasse aprirebbe una finestra sul mare dal fianco dell'isola. Sopra, la
+   * roccia che resta e' quella che fa da fondo.
+   */
+  floorZ: TERRAIN.oceanFloor,
+
+  /**
+   * Profondita' oltre la quale nessuna ricetta puo' spingersi.
+   *
+   * Il tetto della misura, non un gusto: a 30 quote il seed 4242 non offre un
+   * solo sito. Chi scrive una ricetta piu' profonda trova un test che glielo
+   * dice invece di una famiglia che non compare in partita.
+   */
+  maxDepth: 28,
+
+  /**
+   * Quote che la struttura tiene **sopra** il piano finito.
+   *
+   * Servono due cose insieme: i parapetti e le passerelle che scavalcano la
+   * bocca — cioe' l'unica parte dell'earthscraper che si vede da lontano — e
+   * l'inviluppo che `registry.overlaps` riserva sopra la piazza, senza il quale
+   * un edificio ordinario ci nascerebbe in mezzo.
+   */
+  headroom: 6,
+
+  /**
+   * Colonne asciutte che devono circondare l'ingombro.
+   *
+   * Il pozzo scende sotto il livello del mare, e la roccia che lo separa
+   * dall'acqua e' tutto cio' che lo tiene asciutto. `isDryLand` sul bioma, non
+   * il confronto fra quota e specchio: e' la stessa distinzione che
+   * `clearDecorColumn` aveva sbagliato.
+   */
+  dryRim: 3,
+
+  /**
+   * Cosa deve essere un pozzo per contare come tale.
+   *
+   * Specchio di `ARCOLOGY.window`, e con lo stesso mestiere: escludere i vuoti
+   * che una ricetta ha comunque. Un cavedio fra due corpi e' profondo e stretto;
+   * un pozzo e' largo abbastanza da vedercisi dentro dall'inquadratura
+   * d'insieme, ed e' quella la sola ragione per cui questa famiglia esiste.
+   */
+  shaft: {
+    /** Colonne del riquadro vuoto, misurate sulla sezione piu' stretta. */
+    minColumns: 16,
+    /** Quote vuote consecutive sotto il piano finito. */
+    minDepth: 12,
+  },
+} as const;
+
+/**
  * Le soglie di stadio di una ricetta, derivate dal numero di stadi.
  *
  * **Mai scritte a mano per ricetta.** Il primo stadio (dopo il podio) sta a
@@ -278,10 +363,24 @@ export const PROFILE_ARCOLOGY_KIND = {
 export type ProfileArcologyKind =
   (typeof PROFILE_ARCOLOGY_KIND)[keyof typeof PROFILE_ARCOLOGY_KIND];
 
+/** Le forme interrate: scendono invece di salire. */
+export const SUNKEN_ARCOLOGY_KIND = {
+  /** L'Earthscraper: piramide invertita a terrazze attorno a un pozzo di luce. */
+  invertedPyramid: 'invertedPyramid',
+  /** Corte bassa e larga, per il terreno che non regge la piramide. */
+  sunkenCourt: 'sunkenCourt',
+  /** Due isolati in linea attorno a una voragine passante: si legge da lontano. */
+  craterRing: 'craterRing',
+} as const;
+
+export type SunkenArcologyKind =
+  (typeof SUNKEN_ARCOLOGY_KIND)[keyof typeof SUNKEN_ARCOLOGY_KIND];
+
 /** Tutte le forme selezionabili dal driver. */
 export const ARCOLOGY_KIND = {
   ...BASE_ARCOLOGY_KIND,
   ...PROFILE_ARCOLOGY_KIND,
+  ...SUNKEN_ARCOLOGY_KIND,
 } as const;
 
 export type ArcologyKind = (typeof ARCOLOGY_KIND)[keyof typeof ARCOLOGY_KIND];
@@ -339,10 +438,44 @@ export interface ArcologyLanding {
   readonly z: number;
 }
 
+/**
+ * Lo scavo di una ricetta interrata: quanto scende, e che vuoto apre.
+ *
+ * **Lo scavo e' una ricetta di parti, non un parallelepipedo.** Un pozzo a
+ * pareti verticali si scriverebbe con due numeri, ma non e' quello che una
+ * piramide invertita e': il vuoto rientra scendendo, e lo scavo deve rientrare
+ * con lui — altrimenti sotto la prima terrazza si aprirebbe una scatola vuota
+ * larga quanto la bocca, con la struttura appesa ai fianchi. Le parti si
+ * disegnano con lo stesso `drawPart` e ruotano con lo stesso `orientPart` di
+ * tutto il resto: `dig` e' un elenco di scatole in coordinate canoniche, dove
+ * `z = 0` e' il fondo del pozzo come per le parti della struttura.
+ *
+ * **Il fondo dello stamp e' il fondo dello scavo.** Le quote locali restano
+ * quindi non negative, e a cambiare e' soltanto dove il driver posa l'ancora:
+ * `baseZ = padZ - depth` invece di `padZ`. Non serve una coordinata negativa da
+ * nessuna parte, ed e' il motivo per cui questa famiglia costa cosi' poco.
+ */
+export interface SunkenShape {
+  /** Quote fra il fondo del pozzo e il piano finito. */
+  readonly depth: number;
+  /** Le scatole del vuoto da aprire, in coordinate canoniche della ricetta. */
+  readonly dig: readonly Part[];
+}
+
 export interface ArcologyRecipe extends PartsRecipe {
   readonly kind: ArcologyKind;
   /** Forma originaria di cui questa ricetta articola il profilo; assente sulle originali. */
   readonly variationOf?: BaseArcologyKind;
+  /**
+   * Presente solo sulle ricette interrate, e le distingue da tutte le altre.
+   *
+   * Chi la legge non deve chiedere «di che famiglia sei»: la presenza del campo
+   * **e'** la famiglia, come `arcology` su un `BuildingRecord` e' cio' che lo
+   * distingue da un edificio. Le tre misure che contano dal basso — la radice
+   * della connettivita', la maschera di cio' che poggia, il verso degli stadi —
+   * si riferiscono alla cima quando questo campo c'e'.
+   */
+  readonly sunken?: SunkenShape;
   /**
    * Blocchi di isolato occupati in pianta, `[larghezza, profondita']`.
    *
@@ -371,9 +504,16 @@ export interface ArcologyRecipe extends PartsRecipe {
  */
 const BASE_ARCOLOGIES = withFacadeCourses(createArcologyRecipes(stageThresholds));
 const PROFILE_ARCOLOGIES = withFacadeCourses(createArcologyProfileVariants(stageThresholds));
+// **Le interrate non passano da `withFacadeCourses`**: quella trasformazione
+// spezza una shell alta in corsi di facciata per articolarne il fronte, e qui
+// non ci sono fronti alti da articolare — ci sono terrazze, che portano gia'
+// una palette per quota. Applicarla comunque avrebbe spezzato ogni anello in
+// corsi da un voxel senza cambiare un solo colore visibile.
+const SUNKEN_ARCOLOGIES = createSunkenRecipes(stageThresholds);
 const ARCOLOGIES: Readonly<Record<ArcologyKind, ArcologyRecipe>> = {
   ...BASE_ARCOLOGIES,
   ...PROFILE_ARCOLOGIES,
+  ...SUNKEN_ARCOLOGIES,
 };
 
 export const TWIN_STEM = BASE_ARCOLOGIES.twinStem;
@@ -390,6 +530,10 @@ export const SPLIT_CROWN = PROFILE_ARCOLOGIES.splitCrown;
 export const STEPPED_BAR = PROFILE_ARCOLOGIES.steppedBar;
 export const COURT_CASCADE = PROFILE_ARCOLOGIES.courtCascade;
 
+export const INVERTED_PYRAMID = SUNKEN_ARCOLOGIES.invertedPyramid;
+export const SUNKEN_COURT = SUNKEN_ARCOLOGIES.sunkenCourt;
+export const CRATER_RING = SUNKEN_ARCOLOGIES.craterRing;
+
 /** Le forme originarie, invariate e nello stesso ordine storico. */
 export const BASE_ARCOLOGY_RECIPES: readonly ArcologyRecipe[] =
   Object.values(BASE_ARCOLOGIES);
@@ -398,9 +542,45 @@ export const BASE_ARCOLOGY_RECIPES: readonly ArcologyRecipe[] =
 export const PROFILE_ARCOLOGY_RECIPES: readonly ArcologyRecipe[] =
   Object.values(PROFILE_ARCOLOGIES);
 
+/**
+ * Le sole forme interrate.
+ *
+ * **Il driver sceglie per famiglia, non dall'unione**, ed e' la riga che
+ * impedisce a un cratere di nascere nel centro denso e a una torre di nascere
+ * dove la gerarchia non concede altezza. `ARCOLOGY_RECIPES` resta l'unione
+ * perche' test e campionario devono continuare a vedere tutto il catalogo.
+ */
+export const SUNKEN_ARCOLOGY_RECIPES: readonly ArcologyRecipe[] =
+  Object.values(SUNKEN_ARCOLOGIES);
+
+/** Le forme che salgono: le originarie piu' le variazioni di profilo. */
+export const TALL_ARCOLOGY_RECIPES: readonly ArcologyRecipe[] = [
+  ...BASE_ARCOLOGY_RECIPES,
+  ...PROFILE_ARCOLOGY_RECIPES,
+];
+
 /** Tutte le ricette, in ordine di catalogo. */
 export const ARCOLOGY_RECIPES: readonly ArcologyRecipe[] = Object.values(ARCOLOGIES);
 
 export function arcologyOf(kind: ArcologyKind): ArcologyRecipe {
   return ARCOLOGIES[kind];
 }
+
+/** La profondita' di scavo di una ricetta, o zero se sale. */
+export function sunkenDepthOf(recipe: ArcologyRecipe): number {
+  return recipe.sunken?.depth ?? 0;
+}
+
+/**
+ * La profondita' che chiede la ricetta interrata meno esigente.
+ *
+ * **Serve a scegliere la famiglia prima della forma.** Il driver decide se
+ * scavare guardando la roccia, e senza questo numero dovrebbe scegliere una
+ * ricetta per scoprire che nessuna ci sta — cioe' condannare l'isolato a restare
+ * senza megastruttura invece di lasciarlo alla famiglia che sale. Derivato dal
+ * catalogo e non scritto a mano, cosi' aggiungere una forma piu' bassa allarga
+ * la famiglia da sola.
+ */
+export const MIN_SUNKEN_DEPTH: number = Math.min(
+  ...SUNKEN_ARCOLOGY_RECIPES.map(sunkenDepthOf),
+);

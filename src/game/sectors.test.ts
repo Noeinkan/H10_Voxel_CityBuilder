@@ -3,7 +3,7 @@ import { TERRAIN } from '../world/terrain/config';
 import { classifyBiome, isBuildable } from '../world/terrain/biomes';
 import { HeightField } from '../world/terrain/heightField';
 import { shapeFromRegion } from '../world/terrain/region';
-import { coastalSectorAt, shapeWithSector } from './sectors';
+import { coastalSectorAt, coastalSectorById, shapeWithSector } from './sectors';
 
 // Isola e settore alla scala vera: 512 di lato, 128 di settore come
 // `BALANCE.gameplay.expansion.size`. Su una base piu' piccola il tetto di
@@ -18,6 +18,22 @@ describe('settori costieri', () => {
     expect(coastalSectorAt(500, 180, BASE, SECTOR).id).toBe('east-1');
     expect(coastalSectorAt(360, 4, BASE, SECTOR).id).toBe('south-2');
     expect(coastalSectorAt(2, 440, BASE, SECTOR).id).toBe('west-3');
+  });
+
+  it('ricava dall\'identificatore lo stesso settore che la cella dava', () => {
+    // E' la lettura al contrario che serve al caricamento: un salvataggio porta
+    // il nome, e la geometria deve tornare identica a quella comprata.
+    for (const [x, y] of [[40, 500], [500, 180], [360, 4], [2, 440]]) {
+      const fromCell = coastalSectorAt(x, y, BASE, SECTOR);
+      expect(coastalSectorById(fromCell.id, BASE, SECTOR)).toEqual(fromCell);
+    }
+  });
+
+  it('rifiuta un identificatore che non nomina un settore di questa isola', () => {
+    expect(coastalSectorById('up-0', BASE, SECTOR)).toBeNull();
+    expect(coastalSectorById('north', BASE, SECTOR)).toBeNull();
+    expect(coastalSectorById('north-9', BASE, SECTOR)).toBeNull();
+    expect(coastalSectorById('north--1', BASE, SECTOR)).toBeNull();
   });
 
   it('aggiunge terra utile fuori dal bordo con raccordo continuo', () => {

@@ -277,16 +277,45 @@
   cambio di scala, e non lancia niente.
 - **Lo skyline e' un'eccezione governata.** Il livello massimo esce solo dalla
   somma di fascia, cono verso il polo ed elezione dell'isolato, e i tre coincidono
-  di rado: i picchi sono pochi per costruzione. La stessa coincidenza e' il gate
-  dell'assemblaggio urbano: nascita e upgrade valutano l'isolato al proprio
-  centro; solo quello ammesso a `BUILDER.maxLevel` puo' chiedere tutto il lato
-  libero, mentre ogni altro lotto resta entro `MAX_FOOTPRINT`.
+  di rado: i picchi sono pochi per costruzione. La stessa coincidenza governa
+  l'assemblaggio urbano: nascita e upgrade valutano l'isolato al proprio centro,
+  e solo quello ammesso a `BUILDER.maxLevel` puo' chiedere tutto il lato libero.
+- **Il tetto d'impronta e' una scala, non un interruttore**, ed e' lo stesso
+  difetto delle linee evolutive ripresentato in pianta. Finche' il lato pieno
+  dell'isolato spettava al solo picco, *tutto il resto* della citta' restava
+  entro `MAX_FOOTPRINT` per quanto in alto salisse: una citta' matura era fatta
+  di aghi, alti e larghi tutti uguali. `urbanFootprintStepsOf` mette due gradini
+  in mezzo — la fascia intermedia arriva a meta' strada fra modulo e scala mega,
+  il centro non eletto alla scala mega intera — e le quote sono frazioni di
+  `maxLevel`, non livelli scritti a mano, per la stessa ragione di `LEVEL_CAPS`.
+  L'isolato intero resta il premio del picco: nessun gradino ci arriva, e la
+  gerarchia continua a dire fin dove si sale — adesso dice anche quanto ci si
+  allarga salendo.
 - **Le scale orizzontali sono due.** `moduleFootprint = 8` governa la grammatica
   ordinaria — impronte storiche 4–8, scarti a passo uno, altezza e budget —;
   `megaFootprint = 16` governa la fase strutturale — maglia stradale,
   segmentazione, raggio costiero e arcologie. La seconda e' un riferimento, non
   il tetto dell'assemblatore: un picco eletto puo' estendersi oltre sedici fino
-  allo spazio libero del proprio isolato.
+  allo spazio libero del proprio isolato, ed e' anche l'ultimo gradino che la
+  scala d'impronta concede a chi picco non e'.
+- **`maxLevel` non alza solo il picco**, e la meta' che si vede e' l'altra:
+  `skylineCapsOf` muove i tre tetti insieme, quindi portandolo a ventisei il
+  centro passa da diciassette livelli a ventitre', la fascia intermedia da undici
+  a quindici e la corona da sei a otto. Sopra `linearEnd` le fasce accelerano e
+  la torre massima passa da trentuno fasce a quarantadue — circa 350 voxel invece
+  di 262. Budget di chunk, distribuzione del livello iniziale e quota di crociera
+  dei voli derivano di la' e non si ritoccano a mano.
+- **L'arcologia non e' piu' il tetto dell'edificio ordinario**, e il vincolo e'
+  stato tolto di proposito. Il catalogo dichiarava che ogni ricetta dovesse
+  superare la torre piu' alta; a ventisei livelli una torre supera le quattro
+  ricette da 320 quote (`twinStem`, `branchingCore`, `skyWeave`, `spireRing`). Le
+  due cose non sono pero' simmetriche: un'arcologia e' una ricetta scritta a
+  mano, con quote fisse, mentre un edificio **si sviluppa** — e se arrivando in
+  fondo alla propria scala si fonde con la megastruttura accanto o la supera,
+  quello e' l'esito della crescita, non un numero da tarare. Cio' che resta
+  verificato in `arcology/` sono le due misure che fanno di un'arcologia una
+  megastruttura: in pianta nessuna ricetta scende al modulo ordinario, e la cima
+  assoluta del catalogo e' ancora la sua.
 - **L'angolo dell'isolato cambia forma, non quota.** `blockForm.ts` dichiara il
   ruolo di un lotto — angolo, fronte, cuore — e `lotRole` e' un criterio di
   catalogo come gli altri: un campo, una riga in `accepts`, zero rami. **Non entra

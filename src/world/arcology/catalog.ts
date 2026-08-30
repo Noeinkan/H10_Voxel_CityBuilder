@@ -1,6 +1,12 @@
 import { hashCoords } from '../rng';
 import { blockRect, FACING, type Facing } from '../streets/streetGrid';
-import { ARCOLOGY, ARCOLOGY_RECIPES, type ArcologyRecipe } from './config';
+import {
+  ARCOLOGY,
+  SUNKEN_ARCOLOGY_RECIPES,
+  TALL_ARCOLOGY_RECIPES,
+  sunkenDepthOf,
+  type ArcologyRecipe,
+} from './config';
 import { arcologySpan } from './generate';
 import type { BlockBounds } from './siting';
 
@@ -53,17 +59,45 @@ function orientedBlocks(recipe: ArcologyRecipe, facing: Facing): [number, number
   return facing === FACING.east || facing === FACING.west ? [bx, by] : [by, bx];
 }
 
+/**
+ * Le due famiglie del catalogo: quella che sale e quella che scende.
+ *
+ * **Si sceglie prima della forma, e la sceglie la fascia.** Un cratere nel
+ * centro denso e una torre dove la gerarchia non concede altezza sarebbero
+ * entrambi la stessa cosa sbagliata — la megastruttura che ignora la ragione per
+ * cui esiste. Pescare dall'unione dei cataloghi lo avrebbe reso possibile una
+ * volta su tre.
+ */
+export type ArcologyFamily = 'tall' | 'sunken';
+
+function familyOf(family: ArcologyFamily): readonly ArcologyRecipe[] {
+  return family === 'sunken' ? SUNKEN_ARCOLOGY_RECIPES : TALL_ARCOLOGY_RECIPES;
+}
+
 export function arcologyForBlock(
   seed: number,
   blockKx: number,
   blockKy: number,
   facing: Facing,
+  family: ArcologyFamily = 'tall',
+  /**
+   * Quote scavabili nel sito. Una ricetta che ne chiede di piu' viene saltata.
+   *
+   * **E' lo stesso scorrimento che gia' salta le ricette troppo larghe**, e per
+   * lo stesso motivo: la Twin Stem da sedici non deve rendere irraggiungibile
+   * una Branching Core da quattordici, e la piramide da ventidue non deve
+   * rendere irraggiungibile la corte da sedici. Su un'isola dove due terzi dei
+   * siti reggono ventidue quote e tutti ne reggono sedici, senza questa riga un
+   * isolato buono si perderebbe per la sola forma sorteggiata.
+   */
+  availableDepth = Number.MAX_SAFE_INTEGER,
 ): ArcologyPick {
-  const start = hashCoords((seed ^ ARCOLOGY.kindSalt) >>> 0, blockKx, blockKy) %
-    ARCOLOGY_RECIPES.length;
+  const catalog = familyOf(family);
+  const start = hashCoords((seed ^ ARCOLOGY.kindSalt) >>> 0, blockKx, blockKy) % catalog.length;
 
-  for (let offset = 0; offset < ARCOLOGY_RECIPES.length; offset++) {
-    const recipe = ARCOLOGY_RECIPES[(start + offset) % ARCOLOGY_RECIPES.length];
+  for (let offset = 0; offset < catalog.length; offset++) {
+    const recipe = catalog[(start + offset) % catalog.length];
+    if (sunkenDepthOf(recipe) > availableDepth) continue;
     const [bx, by] = orientedBlocks(recipe, facing);
     const rect = clusterRectOf(seed, blockKx, blockKy, bx, by);
     const width = rect.x1 - rect.x0 + 1;
@@ -72,9 +106,9 @@ export function arcologyForBlock(
     if (span.sizeX <= width && span.sizeY <= depth) return { recipe, rect };
   }
 
-  // Il predicato di sito produrra' `blockTooSmall`; restituire una ricetta
-  // mantiene una sola via di rifiuto invece di inventarne una qui.
-  const recipe = ARCOLOGY_RECIPES[start];
+  // Il predicato di sito produrra' `blockTooSmall` o `tooShallow`; restituire
+  // una ricetta mantiene una sola via di rifiuto invece di inventarne una qui.
+  const recipe = catalog[start];
   const [bx, by] = orientedBlocks(recipe, facing);
   return { recipe, rect: clusterRectOf(seed, blockKx, blockKy, bx, by) };
 }

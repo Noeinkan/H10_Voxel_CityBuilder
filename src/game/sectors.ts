@@ -33,6 +33,38 @@ export function shapeWithSector(shape: IslandShape, sector: CoastalSector): Isla
   return withCoastalExtension(shape, sector.generationRegion, sector.id);
 }
 
+/**
+ * Il settore dietro un identificatore, per chi ha solo quello.
+ *
+ * E' la lettura al contrario di `coastalSectorAt`: quella parte da una cella
+ * che il giocatore ha cliccato, questa da un `<lato>-<indice>` che un
+ * salvataggio si e' portato dietro. La geometria e' la stessa funzione — un
+ * settore resta funzione pura di lato, indice e isola di partenza, quindi non
+ * c'e' niente da salvare oltre al nome.
+ *
+ * Torna `null` su un identificatore che non nomina un settore di questa isola:
+ * un file scritto per un mondo piu' grande, o modificato a mano.
+ */
+export function coastalSectorById(id: string, base: BaseRegion, size: number): CoastalSector | null {
+  const split = id.lastIndexOf('-');
+  if (split <= 0) return null;
+
+  const side = id.slice(0, split);
+  if (side !== 'north' && side !== 'east' && side !== 'south' && side !== 'west') return null;
+
+  const index = Number(id.slice(split + 1));
+  if (!Number.isInteger(index) || index < 0) return null;
+
+  const span = side === 'north' || side === 'south' ? base.sizeX : base.sizeY;
+  if (index > Math.ceil(span / size) - 1) return null;
+
+  const origin = side === 'north' || side === 'south' ? base.minX : base.minY;
+  // Si ricostruisce passando dalla stessa `sector()` invece di ripeterne la
+  // geometria: una coordinata dentro la fascia dell'indice ci ricade sopra, e
+  // due tabelle di rettangoli divergerebbero al primo che qualcuno tocca.
+  return sector(side, origin + index * size, base, size);
+}
+
 function sector(side: SectorSide, coordinate: number, base: BaseRegion, size: number): CoastalSector {
   const span = side === 'north' || side === 'south' ? base.sizeX : base.sizeY;
   const origin = side === 'north' || side === 'south' ? base.minX : base.minY;

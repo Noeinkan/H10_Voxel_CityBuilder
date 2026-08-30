@@ -17,6 +17,13 @@ export {
   type MaterialsReport,
 } from './materials';
 export {
+  materialRate,
+  ticksToAffordConstruction,
+  ticksToEmpty,
+  ticksToFillHousing,
+  ticksToReach,
+} from './forecast';
+export {
   ALL_CLASSES,
   BUILDING_CLASS,
   CLASS_LABELS,

@@ -19,7 +19,7 @@ import { iconButton, labeledButton, markRowColumns, paintAction, tileButton } fr
  */
 
 /** I pannelli che il dock apre. Il dock non li possiede: chiede a chi li tiene. */
-export type DockPanel = 'city' | 'policies' | 'themes' | 'views' | 'info';
+export type DockPanel = 'city' | 'policies' | 'menu' | 'themes' | 'views' | 'info';
 
 
 /**
@@ -63,11 +63,16 @@ export class BuildDock {
    * possono divergere: se il dock cambia ordine, cambiano insieme.
    */
   private readonly tools: { readonly tool: GameTool; readonly button: HTMLButtonElement }[] = [];
-  private readonly cityToggle: HTMLButtonElement;
-  private readonly policiesToggle: HTMLButtonElement;
   private readonly themeToggle: HTMLButtonElement;
   private readonly viewToggle: HTMLButtonElement;
   private readonly infoToggle: HTMLButtonElement;
+  /**
+   * Il bottone di ogni pannello, per nome.
+   *
+   * Era un ternario a sei rami dentro `setExpanded`, e cresceva di un ramo per
+   * ogni pannello nuovo. La tabella si costruisce una volta e non cresce.
+   */
+  private readonly toggles: Record<DockPanel, HTMLButtonElement>;
 
   constructor(model: GameHudModel, handlers: BuildDockHandlers) {
     this.root = document.createElement('nav');
@@ -158,12 +163,12 @@ export class BuildDock {
     // le policy, e nessuno dei due deve scorrere l'elenco dell'altro.
     const doors = document.createElement('div');
     doors.className = 'dock-utility-row';
-    this.cityToggle = labeledButton('city', 'City', 'Open the city dashboard', () => handlers.onPanel('city'));
-    this.cityToggle.setAttribute('aria-expanded', 'false');
-    doors.appendChild(this.cityToggle);
-    this.policiesToggle = labeledButton('policies', 'Policies', 'Open policies and trade', () => handlers.onPanel('policies'));
-    this.policiesToggle.setAttribute('aria-expanded', 'false');
-    doors.appendChild(this.policiesToggle);
+    const cityToggle = labeledButton('city', 'City', 'Open the city dashboard', () => handlers.onPanel('city'));
+    cityToggle.setAttribute('aria-expanded', 'false');
+    doors.appendChild(cityToggle);
+    const policiesToggle = labeledButton('policies', 'Policies', 'Open policies and trade', () => handlers.onPanel('policies'));
+    policiesToggle.setAttribute('aria-expanded', 'false');
+    doors.appendChild(policiesToggle);
     // Le viste stanno dopo le due porte perche' e' li' che passa il confine: da
     // qui in poi i bottoni non cambiano la citta', cambiano come la si guarda.
     this.viewToggle = labeledButton('view', 'Views', 'Look inside the city · V', () => handlers.onPanel('views'));
@@ -190,17 +195,35 @@ export class BuildDock {
     // suonino i trentadue slot, ed e' li' che il bottone serve.
     //
     // Apre una scheda a parte, e il tooltip lo dice prima del clic: la scena e'
-    // un'altra e ricaricare qui vorrebbe dire perdere la partita, che non e'
-    // salvabile. Nessun `aria-expanded` — non apre un pannello, se ne va.
+    // un'altra. Da quando la partita si salva da sola questo non costa piu' la
+    // citta' — l'autosave e' di venti secondi prima — ma resta un andarsene, non
+    // un pannello: nessun `aria-expanded`.
     icons.appendChild(iconButton(
       'swatch',
       'Voxel swatches: every palette slot and surface, in a new tab',
       () => handlers.onSwatch(),
     ));
+    // Accanto al campionario e prima dell'aiuto: e' l'altra cosa che si fa
+    // **alla partita** invece che dentro la partita. Era il dischetto dei
+    // salvataggi, ed era una porta sola su una stanza sola: adesso e' il menu
+    // principale, e i salvataggi sono una delle sue sezioni. Il tooltip nomina
+    // anche `Esc`, che e' l'altro modo di arrivarci ed e' quello che si usera'.
+    const menuToggle = iconButton('menu', 'Main menu · Esc', () => handlers.onPanel('menu'));
+    menuToggle.setAttribute('aria-expanded', 'false');
+    icons.appendChild(menuToggle);
     icons.appendChild(iconButton('help', 'Open help', () => handlers.onHelp()));
     markRowColumns(icons);
     utility.appendChild(icons);
     this.root.appendChild(utility);
+
+    this.toggles = {
+      city: cityToggle,
+      policies: policiesToggle,
+      menu: menuToggle,
+      themes: this.themeToggle,
+      views: this.viewToggle,
+      info: this.infoToggle,
+    };
   }
 
   /**
@@ -253,12 +276,7 @@ export class BuildDock {
   }
 
   setExpanded(panel: DockPanel, open: boolean): void {
-    const button = panel === 'city'
-      ? this.cityToggle
-      : panel === 'policies'
-        ? this.policiesToggle
-        : panel === 'themes' ? this.themeToggle : panel === 'views' ? this.viewToggle : this.infoToggle;
-    button.setAttribute('aria-expanded', open ? 'true' : 'false');
+    this.toggles[panel].setAttribute('aria-expanded', open ? 'true' : 'false');
   }
 
   /** Il tema in vigore, sul bottone che lo cambia. */

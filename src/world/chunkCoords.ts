@@ -77,6 +77,33 @@ export function keyOf(cx: number, cy: number, cz: number): string {
   return `${cx},${cy},${cz}`;
 }
 
+/**
+ * Colonne rappresentabili da `columnKey` per lato dell'origine.
+ *
+ * Quindicimila e passa colonne in ogni direzione, cioe' un mondo di
+ * trentaduemila per lato: l'isola piu' grande che il gioco genera ne misura
+ * trecentottantaquattro, e un settore costiero la estende di poche decine. Il
+ * margine e' di due ordini di grandezza, e serve solo a dire fin dove la chiave
+ * resta iniettiva.
+ */
+const COLUMN_BIAS = 1 << 14;
+
+/**
+ * Chiave numerica di una colonna `(x, y)`.
+ *
+ * **Esiste per il percorso caldo di `placeLot`**, dove le colonne si contano a
+ * centinaia di migliaia per infornata: una chiave `` `${x},${y}` `` allocava una
+ * stringa per interrogazione, e il costo non era la concatenazione ma la
+ * spazzatura che lasciava dietro. Un intero non alloca niente.
+ *
+ * Resta dentro i trentun bit dell'intero piccolo di V8 — quindici per asse piu'
+ * il bias — perche' un numero che li superi tornerebbe a essere un oggetto sul
+ * mucchio, cioe' il problema di partenza scritto in un altro modo.
+ */
+export function columnKey(x: number, y: number): number {
+  return ((x + COLUMN_BIAS) << 15) | (y + COLUMN_BIAS);
+}
+
 /** Le sei direzioni di faccia, nell'ordine usato dagli attributi di vertice. */
 export const FACE_PX = 0;
 export const FACE_NX = 1;

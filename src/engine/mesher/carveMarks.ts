@@ -36,9 +36,36 @@ export const CARVE_KIND = {
   stairwell: 5,
   /** Il vassoio: il calpestio della terrazza scende sotto il filo del parapetto. */
   tray: 6,
+  /** Lo zoccolo: la prima riga di facciata sopra il suolo arretra, e fa ombra. */
+  plinth: 7,
+  /** La feritoia: la riga sotto il ciglio di un capannone rientra in una fessura. */
+  vent: 8,
 } as const;
 
 export type CarveKind = (typeof CARVE_KIND)[keyof typeof CARVE_KIND];
+
+/**
+ * Quante ricette esistono, `none` compresa.
+ *
+ * **Serve perche' le tabelle di questo gruppo sono cinque e vivono in tre file**
+ * — profondita' e arretramento qui, carica in `carvePlan.ts`, materiale e ordine
+ * di disegno in `carveGeometry.ts` — e una ricetta nuova che ne dimentichi una
+ * non fallisce: legge `undefined`, lo somma a una coordinata e disegna un prisma
+ * a `NaN` che nessuno vede. Un test lo confronta con la lunghezza di ognuna.
+ *
+ * Il byte ne ammette trentuno oltre lo zero: la ricetta sta nei bit 3-7.
+ */
+export const CARVE_KIND_COUNT = Object.keys(CARVE_KIND).length;
+
+/**
+ * Caselle del secchiello per marchio di `CarvePlan`: `ricette x 8 facce`.
+ *
+ * Era un letterale a 64, che regge esattamente fino alla settima ricetta —
+ * `packCarveMark(7, 7)` vale 63 — e alla nona diventa un accesso fuori array su
+ * cui `.push` esplode. Derivarlo toglie di mezzo la trappola invece di spostarla
+ * di due ricette.
+ */
+export const CARVE_MARK_COUNT = CARVE_KIND_COUNT * 8;
 
 /**
  * Profondita' del vano in sedicesimi, per ricetta.
@@ -48,7 +75,7 @@ export type CarveKind = (typeof CARVE_KIND)[keyof typeof CARVE_KIND];
  * volume mancante — che e' cio' che il portico della grammatica fa gia', a
  * granularita' di voxel intero e con il volume tolto per davvero.
  */
-export const CARVE_DEPTH: readonly number[] = [0, 3, 2, 4, 5, 6, 2];
+export const CARVE_DEPTH: readonly number[] = [0, 3, 2, 4, 5, 6, 2, 2, 3];
 
 /**
  * Di quanto la ricetta arretra il piano di facciata **per intero**.
@@ -59,7 +86,7 @@ export const CARVE_DEPTH: readonly number[] = [0, 3, 2, 4, 5, 6, 2];
  * `microGeometry.ts` chiede a questo modulo, ed e' il motivo per cui la tabella
  * sta qui e non insieme alle ricette.
  */
-const PLANE_INSET: readonly number[] = [0, 3, 2, 4, 0, 6, 0];
+const PLANE_INSET: readonly number[] = [0, 3, 2, 4, 0, 6, 0, 2, 3];
 
 /** Il byte da scrivere nella maschera. `face` e' un `FACE_*` di `chunkCoords`. */
 export function packCarveMark(kind: CarveKind, face: number): number {

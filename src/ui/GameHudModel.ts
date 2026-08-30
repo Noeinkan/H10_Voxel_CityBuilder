@@ -267,7 +267,7 @@ export type EscapeTarget =
   | 'selection'
   | 'lock'
   | 'view'
-  | 'none';
+  | 'menu';
 
 /** Mantiene stabili i bottoni durante il gesto pointerdown/click. */
 export function decisionNeedsRepaint(
@@ -572,6 +572,16 @@ export function buildGameHudModel(
  * Ultima e non prima: con uno strumento in mano il toast promette gia' "Esc to
  * cancel", e mangiare quel colpo per spegnere una vista tradirebbe la promessa
  * scritta a schermo. Prima si posa lo strumento, poi si esce.
+ *
+ * **L'ultimo membro inverte il senso di tutti gli altri**: `'menu'` non chiude
+ * niente, apre. La catena esaurita non e' piu' un `'none'` che si butta via —
+ * che era il modo in cui `Esc` a mani vuote non faceva nulla — ma la sola
+ * condizione in cui il menu principale puo' comparire. Nessun anello lo apre a
+ * meta': o non c'e' piu' niente da annullare, o si annulla quello.
+ *
+ * Il menu **aperto** invece non e' qui e non deve esserlo: chiuderlo batte ogni
+ * altra voce, strumento in mano compreso, e un modale e' un modo e non un
+ * anello. Quel ramo sta prima della catena, in `GameHud.handleEscape`.
  */
 export function resolveEscapeTarget(
   viewsOpen: boolean,
@@ -599,7 +609,7 @@ export function resolveEscapeTarget(
   // vuole quasi sempre tornare a scegliere, non spegnere la lente e ritrovarsi la
   // citta' intera. Un secondo colpo fa comunque il resto.
   if (blockLocked) return 'lock';
-  return viewActive ? 'view' : 'none';
+  return viewActive ? 'view' : 'menu';
 }
 
 function capitalize(value: string): string {

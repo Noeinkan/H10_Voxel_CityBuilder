@@ -9,6 +9,7 @@ import {
 } from '../../sim';
 import {
   ARCOLOGY,
+  MIN_SUNKEN_DEPTH,
   SUNKEN,
   arcologyOf,
   sunkenDepthOf,
@@ -35,7 +36,8 @@ import { AERIAL_PART } from '../aerial/config';
 import type { AerialDriver } from './aerialDriver';
 import { isDryLand } from '../grading/grade';
 import { hashCoords } from '../rng';
-import { TIER, tierAt } from '../skyline/tiers';
+import { SKYLINE } from '../skyline/config';
+import { heightBonusAt, tierAt } from '../skyline/tiers';
 import { FACING, type Facing } from '../streets/streetGrid';
 import { maxStageOf } from '../landmarks/config';
 import { stageForBuildings } from '../landmarks/generate';
@@ -292,20 +294,29 @@ export class ArcologyDriver {
       const blockSide = Math.min(single.x1 - single.x0 + 1, single.y1 - single.y0 + 1);
       const facing = this.facingAt(singleAnchor.x, singleAnchor.y, (blockSide >> 1) + 1);
 
-      // **La fascia sceglie la famiglia prima della forma.** Dove la gerarchia
-      // concede altezza si sale, dove non la concede si scava: pescare
-      // dall'unione dei due cataloghi avrebbe messo un cratere nel centro denso
-      // e una torre nella corona bassa una volta su tre, che e' la
-      // megastruttura che ignora la ragione per cui esiste.
-      const tier = tierAt(skylineQueryAt(this.ctx, singleAnchor.x, singleAnchor.y, state));
-      const family: ArcologyFamily = tier === TIER.core ? 'tall' : 'sunken';
+      // **La gerarchia sceglie la famiglia prima della forma.** Sulla cresta del
+      // cono si sale, sulla spalla si scava: pescare dall'unione dei due
+      // cataloghi avrebbe messo un cratere sul picco e una torre dove l'altezza
+      // e' negata una volta su tre, che e' la megastruttura che ignora la
+      // ragione per cui esiste.
+      //
+      // **La fascia da sola non bastava, ed e' misurato**: su una citta'
+      // cresciuta dice `core` su tutto il tessuto denso e `fringe` su tutto il
+      // resto, quindi `tier !== core` non selezionava nessun isolato che avesse
+      // anche i vicini. Il bonus di quota distingue *dentro* la fascia, che e'
+      // dove la distinzione serve (vedi `earthscraperReady`).
+      const query = skylineQueryAt(this.ctx, singleAnchor.x, singleAnchor.y, state);
+      const tier = tierAt(query);
+      const heightBonus = heightBonusAt(query);
 
-      // La profondita' entra nella **scelta** della forma, non solo nel rifiuto.
-      // Si misura sul singolo isolato, che e' una stima prudente: il riquadro
-      // del cluster e' piu' grande e il suo massimo non puo' che salire, quindi
-      // al peggio si scarta una ricetta che sarebbe entrata. Quella vera la
-      // rimisura `earthscraperReady` sull'impronta effettiva.
-      const probe = family === 'sunken'
+      // La profondita' entra nella **scelta** della famiglia, non solo nel
+      // rifiuto: un isolato di spalla su cui il pozzo non sta torna alla
+      // famiglia che sale invece di restare senza megastruttura. Si misura sul
+      // singolo isolato, che e' una stima prudente — il riquadro del cluster e'
+      // piu' grande e il suo massimo non puo' che salire, quindi al peggio si
+      // scarta una ricetta che sarebbe entrata. Quella vera la rimisura
+      // `earthscraperReady` sull'impronta effettiva.
+      const probe = heightBonus < SKYLINE.coneBonus
         ? surveySunkenSite(
           this.ctx.terrain,
           single.x0,
@@ -314,9 +325,12 @@ export class ArcologyDriver {
           single.y1 - single.y0 + 1,
         )
         : null;
+      const family: ArcologyFamily =
+        probe !== null && probe.dryRim && probe.depth >= MIN_SUNKEN_DEPTH ? 'sunken' : 'tall';
 
       const pick = arcologyForBlock(
-        this.ctx.seed, block.kx, block.ky, facing, family, probe?.depth,
+        this.ctx.seed, block.kx, block.ky, facing, family,
+        family === 'sunken' ? probe?.depth : undefined,
       );
       const recipe = pick.recipe;
       const rect = pick.rect;
@@ -335,6 +349,7 @@ export class ArcologyDriver {
         existing: this.ctx.registry.arcologyCount,
         buildings,
         tier,
+        heightBonus,
         blockRect: rect,
         spanX: span.sizeX,
         spanY: span.sizeY,

@@ -5,6 +5,8 @@ import { styleOf, styledProfile } from './style';
 import type { BuildingRecord } from './BuildingRegistry';
 import { EMPTY_STAMP, type VoxelStamp } from './stamp';
 import { generateLandmark } from '../landmarks/generate';
+import { generateArcology } from '../arcology/generate';
+import { arcologyOf } from '../arcology/config';
 import { FACING, type Facing } from '../streets/streetGrid';
 
 /**
@@ -44,6 +46,20 @@ export function recordStamp(record: BuildingRecord): VoxelStamp {
       form: record.landmarkForm,
     });
     return stamp ?? EMPTY_STAMP;
+  }
+
+  // **Un'arcologia si rigenera con il suo, come un landmark.** Senza `from` la
+  // sagoma e' cumulativa — tutti gli stadi fino a quello raggiunto — quindi
+  // ancora esattamente a `baseZ`, che e' la convenzione delle altre due righe.
+  // Con `from` sarebbe il solo delta dell'ultimo stadio, cioe' il pezzo che
+  // l'avanzamento aggiunge: cancellare quello lascerebbe in piedi tutto il
+  // resto della struttura.
+  if (record.arcology !== undefined) {
+    return generateArcology(arcologyOf(record.arcology), {
+      stage: record.level,
+      facing: (record.facing ?? FACING.east) as Facing,
+      seed: record.seed,
+    });
   }
 
   const typology = typologyOf(record);

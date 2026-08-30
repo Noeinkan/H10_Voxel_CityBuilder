@@ -126,6 +126,14 @@ const CARVE_MATERIAL: readonly CarveMaterial[] = [
   { side: PALETTE_SLOTS.concreteLight, back: PALETTE_SLOTS.concrete, backSurface: SURFACE_KIND.plain },
   { side: PALETTE_SLOTS.metalDark, back: PALETTE_SLOTS.concrete, backSurface: SURFACE_KIND.plain },
   { side: PALETTE_SLOTS.stoneWarm, back: PALETTE_SLOTS.stoneWarm, backSurface: SURFACE_KIND.utility },
+  // Lo zoccolo: pietra scura sul fondo e sulle spalle. Il rivestimento qui conta
+  // meno del solito — a due sedicesimi si vede l'ombra, non il materiale — ma
+  // usare la stessa tinta della parete farebbe leggere il rientro come un
+  // difetto di stampa invece che come un basamento.
+  { side: PALETTE_SLOTS.stoneDark, back: PALETTE_SLOTS.stoneDeep, backSurface: SURFACE_KIND.plain },
+  // La feritoia: lamiera scura attorno, ruggine in fondo. `utility` e non un
+  // linguaggio acceso, perche' e' una presa d'aria e non una finestra.
+  { side: PALETTE_SLOTS.metalDark, back: PALETTE_SLOTS.metalRust, backSurface: SURFACE_KIND.utility },
 ];
 
 /** AO delle spalle e AO del fondo. Vedi la nota in testa al modulo. */
@@ -138,6 +146,8 @@ const WALL_KINDS: readonly CarveKind[] = [
   CARVE_KIND.glazing,
   CARVE_KIND.loggia,
   CARVE_KIND.stairwell,
+  CARVE_KIND.plinth,
+  CARVE_KIND.vent,
 ];
 
 /**

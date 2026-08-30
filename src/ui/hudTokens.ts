@@ -190,6 +190,11 @@ export function hudTokens(theme: Theme): Readonly<Record<string, string>> {
     '--hud-elev-1': `0 1px 2px ${rgba(shade, 0.2)}, 0 8px 20px ${rgba(shade, 0.14)}`,
     '--hud-elev-2': `0 2px 5px ${rgba(shade, 0.22)}, 0 16px 34px ${rgba(shade, 0.2)}`,
     '--hud-elev-3': `0 3px 8px ${rgba(shade, 0.26)}, 0 28px 60px ${rgba(shade, 0.28)}`,
+
+    // Il velo della modale: la stessa aria portata al buio delle ombre. Un nero
+    // fisso sarebbe l'unico colore cablato dell'HUD, e spegnerebbe i temi
+    // notturni in un rettangolo morto grande come la finestra.
+    '--hud-scrim': rgba(shade, 0.55),
   };
 }
 

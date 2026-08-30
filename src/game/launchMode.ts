@@ -29,6 +29,20 @@ export function resolveLaunchMode(params: URLSearchParams): LaunchMode {
 }
 
 /**
+ * Cosa conta come seed, in un posto solo.
+ *
+ * La stessa domanda arriva da due parti — l'indirizzo all'avvio e il campo di
+ * testo del menu — e due risposte scritte separatamente divergerebbero al primo
+ * caso limite. Lo zero non e' valido (restava escluso anche dal vecchio default
+ * con `||`), il vuoto e l'illeggibile valgono quanto un seed assente, e i
+ * negativi passano: `-5` e' un mondo come un altro.
+ */
+export function parseSeedInput(raw: string): number | null {
+  const parsed = parseInt(raw.trim(), 10);
+  return Number.isFinite(parsed) && parsed !== 0 ? parsed : null;
+}
+
+/**
  * Seed della partita: quello dichiarato da `?seed=`, altrimenti uno casuale.
  *
  * Il default non e' piu' un numero fisso: ogni partita nasce su un mondo
@@ -36,17 +50,67 @@ export function resolveLaunchMode(params: URLSearchParams): LaunchMode {
  * rivedere un'isola la dichiara nell'URL, e il seed sorteggiato viene
  * riscritto nella barra degli indirizzi da `main.ts`, quindi il ricaricamento
  * riporta lo stesso mondo.
- *
- * Lo zero non e' un seed valido (restava escluso anche dal vecchio default
- * con `||`), e un `?seed=` illeggibile vale quanto un seed assente.
  */
 export function resolveSeed(params: URLSearchParams, randomUint32: () => number): number {
   const raw = params.get('seed');
-  if (raw !== null) {
-    const parsed = parseInt(raw, 10);
-    if (Number.isFinite(parsed) && parsed !== 0) return parsed;
-  }
-  return randomUint32() >>> 0;
+  const declared = raw === null ? null : parseSeedInput(raw);
+  return declared ?? randomUint32() >>> 0;
+}
+
+/**
+ * `?play=1`: la scelta e' gia' fatta, si entra in partita senza passare dal menu.
+ *
+ * Il menu d'ingresso si apre a **ogni** caricamento, ed e' il punto: nessuna
+ * citta' riparte da sola. Ma i ricaricamenti che il gioco fa da se' — aprire uno
+ * slot, iniziare una partita nuova, accendere la misura con `F2` — nascono da
+ * una scelta appena presa, e rimostrare il menu sopra il risultato sarebbe
+ * chiedere due volte la stessa cosa.
+ *
+ * Vale anche per l'altra meta': con `play=1` l'autosalvataggio si riapre, senza
+ * no. Sono la stessa frase — «riprendi come stavi» — e separarle darebbe un
+ * `F2` che misura un'isola vuota invece della citta' che si stava guardando.
+ *
+ * Si consuma all'avvio: `main.ts` lo toglie dalla barra degli indirizzi insieme
+ * al seed che ci scrive, quindi un ricaricamento a mano riporta il menu.
+ */
+export const PLAY_PARAM = 'play';
+
+/**
+ * Il menu d'ingresso si apre, oppure no.
+ *
+ * Tre casi soli, e nessuno di essi guarda `?seed=`: quel parametro lo riscrive
+ * `main.ts` a ogni avvio, quindi legarci la decisione avrebbe fatto comparire il
+ * menu solo la primissima volta.
+ */
+export function opensEntryMenu(
+  params: URLSearchParams,
+  mode: LaunchMode,
+  restored: boolean,
+): boolean {
+  // Fuori dalla partita non c'e' menu da aprire: il campionario, il diorama e
+  // l'isola nuda sono harness, e nessuno di loro ha un HUD.
+  if (!mode.growEnabled) return false;
+  if (params.get(PLAY_PARAM) === '1') return false;
+  // Uno slot appena aperto e' gia' la risposta alla domanda che il menu farebbe.
+  return !restored;
+}
+
+/**
+ * L'indirizzo di una partita nuova: stesso harness, isola diversa.
+ *
+ * Sta qui accanto a `perfToggleUrl` e `swatchUrl` perche' e' la stessa tabella
+ * letta al contrario — da intenzione a parametri — e tre copie di quel giro
+ * divergerebbero al primo parametro nuovo.
+ *
+ * **Il resto dell'indirizzo resta.** Chi sta misurando con `?perf=1`, o guarda
+ * con un tema dichiarato, vuole una citta' nuova nelle stesse condizioni: e' la
+ * scena a cambiare, non l'harness attorno.
+ */
+export function newGameUrl(search: string, seed: number): string {
+  const params = new URLSearchParams(search);
+  params.set('seed', String(seed));
+  params.set(PLAY_PARAM, '1');
+  return `?${params.toString()}`;
 }
 
 /**
@@ -60,15 +124,17 @@ export function resolveSeed(params: URLSearchParams, randomUint32: () => number)
  * citta' che ci sta sopra la riporta l'autosalvataggio, che scatta su
  * `pagehide` prima che la pagina se ne vada.
  *
- * Senza piu' nulla da dichiarare torna `./` invece di un `?` orfano: e' la
- * radice, ed e' esattamente cio' che si sta chiedendo.
+ * Porta `play=1` perche' non e' un avvio, e' un ritorno: il menu d'ingresso
+ * davanti a una partita che si sta misurando fermerebbe proprio i tick che il
+ * pannello deve contare, e l'autosalvataggio e' cio' che rimette la citta' dove
+ * era. Senza, `F2` misurerebbe un'isola vuota.
  */
 export function perfToggleUrl(search: string, enabled: boolean): string {
   const params = new URLSearchParams(search);
   if (enabled) params.set('perf', '1');
   else params.delete('perf');
-  const query = params.toString();
-  return query === '' ? './' : `?${query}`;
+  params.set(PLAY_PARAM, '1');
+  return `?${params.toString()}`;
 }
 
 /**

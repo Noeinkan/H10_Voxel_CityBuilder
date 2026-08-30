@@ -90,6 +90,18 @@ describe('hudTokens', () => {
     expect(surfaces.size).toBe(THEMES.length);
   });
 
+  it('ogni tema porta il velo della modale, e nessuno lo cabla di nero', () => {
+    // Il menu principale copre la citta' con `--hud-scrim`: un `rgba(0,0,0,.5)`
+    // scritto nel CSS sarebbe l'unico colore fisso dell'HUD, e sui temi
+    // notturni diventerebbe un rettangolo morto invece di un velo.
+    for (const theme of THEMES) {
+      const scrim = hudTokens(theme)['--hud-scrim'] ?? '';
+      expect(scrim, theme.id).toMatch(/^rgba\(/);
+    }
+    const scrims = new Set(THEMES.map((theme) => hudTokens(theme)['--hud-scrim']));
+    expect(scrims.size).toBe(THEMES.length);
+  });
+
   it('towardContrast lascia stare un colore che gia si legge', () => {
     expect(towardContrast('#000000', '#ffffff', 4.5)).toBe('#000000');
   });

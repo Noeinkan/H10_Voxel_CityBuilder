@@ -1,3 +1,4 @@
+import { SKYLINE } from '../skyline/config';
 import { TIER, type SkylineTier } from '../skyline/tiers';
 import { ARCOLOGY } from './config';
 
@@ -45,6 +46,22 @@ export const ARCOLOGY_REFUSALS = [
   'enough',
   /** Non e' il centro: la fascia non e' quella che la gerarchia chiama `core`. */
   'notCore',
+  /**
+   * Qui si sale: la gerarchia concentra altezza, quindi non si scava.
+   *
+   * E' la cresta del cono, e vale per la sola famiglia interrata. Insieme a
+   * `notCore` tiene torri e crateri su isolati diversi: la torre prende la
+   * cresta, il cratere la spalla.
+   */
+  'tooHigh',
+  /**
+   * La roccia sotto non basta, o l'acqua arriva troppo vicino al bordo.
+   *
+   * Misurato, non stimato: l'isola standard e' molto piu' piatta di quanto
+   * `TERRAIN.maxHeight` faccia pensare, e questo rifiuto e' quello che scatta
+   * piu' spesso sulla famiglia interrata.
+   */
+  'tooShallow',
   /** L'isolato non contiene l'ingombro. */
   'blockTooSmall',
   /** Non c'e' abbastanza citta' costruita qui attorno. */
@@ -86,6 +103,17 @@ export interface ArcologyQuery {
   readonly buildings: number;
   /** Fascia della gerarchia verticale in questa colonna. */
   readonly tier: SkylineTier;
+  /**
+   * Livelli concessi **oltre** il tetto nudo della fascia: cono piu' elezione.
+   *
+   * E' la misura che separa la **cresta** dalla **spalla** dentro la stessa
+   * fascia, e per la famiglia interrata e' la domanda principale (vedi
+   * `earthscraperReady`). La fascia da sola non basta piu': misurata, dice
+   * `core` su tutto il tessuto denso e `fringe` su tutto il resto, quindi non
+   * distingue niente dentro il centro — che e' l'unico posto dove una
+   * megastruttura ha i vicini che le servono.
+   */
+  readonly heightBonus: number;
   readonly blockRect: BlockBounds;
   /** Ingombro in pianta della ricetta, gia' portato sul verso vero. */
   readonly spanX: number;
@@ -122,7 +150,18 @@ export function arcologyQuota(buildings: number): number {
 export function arcologyReady(query: ArcologyQuery): ArcologyRefusal | null {
   if (query.existing >= arcologyQuota(query.buildings)) return 'enough';
   if (query.tier !== TIER.core) return 'notCore';
+  return commonRefusal(query);
+}
 
+/**
+ * Le domande che le due famiglie fanno nello stesso modo.
+ *
+ * Sono quattro su cinque, e sono anche le due misure care: stanno in fondo
+ * perche' chi chiede in fila su venti isolati le paga solo dove tutto il resto
+ * e' gia' passato. Estrarle e' l'unico modo di essere sicuri che un giorno la
+ * quota o la densita' non cambino per la torre e non per il cratere.
+ */
+function commonRefusal(query: ArcologyQuery): ArcologyRefusal | null {
   const { blockRect } = query;
   if (blockRect.x1 - blockRect.x0 + 1 < query.spanX) return 'blockTooSmall';
   if (blockRect.y1 - blockRect.y0 + 1 < query.spanY) return 'blockTooSmall';
@@ -130,6 +169,48 @@ export function arcologyReady(query: ArcologyQuery): ArcologyRefusal | null {
   if (query.builtNeighbours < ARCOLOGY.minBuilt) return 'thin';
   if (query.cappedNeighbours < ARCOLOGY.minCapped) return 'notCapped';
   return null;
+}
+
+/** Quanta roccia il sito offre, e quanta la ricetta ne chiede. */
+export interface SunkenQuery extends ArcologyQuery {
+  /** Quote scavabili sotto il piano finito, gia' misurate. */
+  readonly availableDepth: number;
+  /** Quote che la ricetta scelta pretende. */
+  readonly requiredDepth: number;
+  /** Falso se una colonna bagnata arriva troppo vicino all'ingombro. */
+  readonly dryRim: boolean;
+}
+
+/**
+ * Il primo motivo per cui qui non si scava, o null se si scava.
+ *
+ * **E' `arcologyReady` con la prima domanda rovesciata**, e la simmetria e' il
+ * contenuto della famiglia: l'arcologia arriva sulla **cresta** della gerarchia,
+ * dove il cono concede tutta l'altezza che sa concedere; l'earthscraper sulla
+ * **spalla**, dove il tetto ha gia' cominciato a scendere e salire non e' piu' la
+ * risposta. E' la lettura letterale del progetto da cui prende il nome: non la
+ * periferia, ma il centro denso in cui l'altezza e' negata.
+ *
+ * **La prima versione chiedeva `tier !== core`, ed era quasi vuota.** Misurata su
+ * una citta' cresciuta, la fascia non distingue niente di utile: il tessuto denso
+ * cade tutto dentro la portata di un polo — quindi `core` — e cio' che resta
+ * fuori e' rado, cioe' `fringe` per densita' e non per quota, oltre a essere
+ * costiero e percio' non scavabile. L'intersezione fra «non e' centro» e «ha i
+ * vicini che una megastruttura chiede» era vuota su ogni seed provato: lo stesso
+ * difetto di `isPeakBlock`, la terza volta che questo dominio lo incontra. Il
+ * bonus di quota lo evita per costruzione, perche' e' una misura **dentro** la
+ * fascia e non un'alternativa a essa.
+ *
+ * La densita' resta la stessa richiesta di sempre: un cratere in mezzo al prato
+ * sarebbe una cava, non un pezzo di citta'. Anche `cappedNeighbours` resta —
+ * scavare e' la risposta a un quartiere che ha smesso di crescere, esattamente
+ * come salire.
+ */
+export function earthscraperReady(query: SunkenQuery): ArcologyRefusal | null {
+  if (query.existing >= arcologyQuota(query.buildings)) return 'enough';
+  if (query.heightBonus >= SKYLINE.coneBonus) return 'tooHigh';
+  if (!query.dryRim || query.availableDepth < query.requiredDepth) return 'tooShallow';
+  return commonRefusal(query);
 }
 
 /**
