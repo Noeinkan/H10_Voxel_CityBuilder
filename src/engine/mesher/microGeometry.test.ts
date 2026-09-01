@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { CHUNK, PADDED_VOL, paddedIdx } from '../../world/chunkCoords';
 import { packVisualBlock, SURFACE_KIND, type SurfaceKind } from '../../world/visualBlock';
+import { LANDMARKS, maxStageOf } from '../../world/landmarks/config';
+import { generateLandmark } from '../../world/landmarks/generate';
+import type { VoxelStamp } from '../../world/buildings/stamp';
+import { FACING } from '../../world/streets/streetGrid';
 import { PALETTE_SLOTS } from '../paletteSlots';
 import { greedyMesh } from './greedyMesher';
 import { MAX_DETAIL_QUADS_PER_CHUNK } from './microGeometry';
@@ -79,6 +83,72 @@ function densityChunk(): Uint8Array {
             doorway ? SURFACE_KIND.portal : body,
           ));
         }
+      }
+    }
+  }
+  return padded;
+}
+
+/**
+ * Il chunk piu' pieno che il catalogo dei landmark sappia produrre.
+ *
+ * **Non e' una fixture disegnata a mano, e non deve esserlo.** Le altre due
+ * riproducono cio' che la grammatica *produrrebbe*; questa prende le sagome
+ * vere dal catalogo e ne ritaglia la finestra 32x32x32 con piu' voxel pieni,
+ * cosi' non puo' divergere dalle ricette che sta misurando. Quando una ricetta
+ * cresce — o ne arriva una nuova — la misura cresce con lei senza che nessuno
+ * se ne ricordi, ed e' l'unica forma di questa prova che sopravviva a un
+ * revamp: nominare la ricetta piu' grossa di oggi vuol dire smettere di
+ * misurare il caso peggiore il giorno in cui qualcun altro la supera.
+ *
+ * Il verso e' uno solo: `orientPart` ruota le parti senza cambiarne il conto,
+ * quindi la finestra piu' piena e' la stessa da qualunque parte la si guardi.
+ */
+function landmarkChunk(): Uint8Array {
+  let worst: { stamp: VoxelStamp; x: number; y: number; z: number; filled: number } | null = null;
+
+  for (const recipe of Object.values(LANDMARKS)) {
+    if (recipe === undefined) continue;
+    const stamp = generateLandmark({
+      kind: recipe.kind,
+      stage: maxStageOf(recipe),
+      facing: FACING.east,
+    })!;
+    const at = (x: number, y: number, z: number): number =>
+      stamp.voxels[x + stamp.sizeX * (y + stamp.sizeY * z)];
+
+    // Passo di mezzo chunk: il passo fine costerebbe secondi su diciannove
+    // ricette e sposterebbe il conto di pochi quad.
+    const step = CHUNK / 2;
+    for (let z = 0; z < Math.max(1, stamp.sizeZ - CHUNK + 1); z += step) {
+      for (let y = 0; y < Math.max(1, stamp.sizeY - CHUNK + 1); y += step) {
+        for (let x = 0; x < Math.max(1, stamp.sizeX - CHUNK + 1); x += step) {
+          let filled = 0;
+          for (let dz = 0; dz < CHUNK && z + dz < stamp.sizeZ; dz++) {
+            for (let dy = 0; dy < CHUNK && y + dy < stamp.sizeY; dy++) {
+              for (let dx = 0; dx < CHUNK && x + dx < stamp.sizeX; dx++) {
+                if (at(x + dx, y + dy, z + dz) !== 0) filled++;
+              }
+            }
+          }
+          if (worst === null || filled > worst.filled) worst = { stamp, x, y, z, filled };
+        }
+      }
+    }
+  }
+
+  const { stamp, x, y, z } = worst!;
+  const padded = volume();
+  for (let dz = 0; dz < CHUNK && z + dz < stamp.sizeZ; dz++) {
+    for (let dy = 0; dy < CHUNK && y + dy < stamp.sizeY; dy++) {
+      for (let dx = 0; dx < CHUNK && x + dx < stamp.sizeX; dx++) {
+        const index = (x + dx) + stamp.sizeX * ((y + dy) + stamp.sizeY * (z + dz));
+        const palette = stamp.voxels[index];
+        if (palette === 0) continue;
+        setLocal(padded, dx, dy, dz, packVisualBlock(
+          palette,
+          stamp.surfaces[index] as SurfaceKind,
+        ));
       }
     }
   }
@@ -462,6 +532,18 @@ describe('microgeometria 1/16', () => {
   it('su un chunk fitto di edifici veri il tetto non tronca, e si vede quanto margine resta', () => {
     const mesh = greedyMesh(densityChunk());
     console.info(`[misura] dettaglio su chunk fitto: ${mesh.detailQuadCount} quad`);
+    expect(mesh.detailQuadCount).toBeLessThan(MAX_DETAIL_QUADS_PER_CHUNK);
+  });
+
+  it('sul chunk piu fitto che il catalogo dei landmark produce il tetto non tronca', () => {
+    // **E' il caso peggiore che il revamp dei landmark ha introdotto.** Le due
+    // fixture qui sopra sono citta' ordinaria: molti volumi con la grammatica a
+    // fasce. Una megastruttura civica e' un'altra cosa — un chunk solo puo'
+    // essere *tutto* facciata `civic` con cornici marcapiano, traforo e portale,
+    // cioe' tre agganci per cella dove un edificio normale ne ha uno ogni sei
+    // quote. Se il dettaglio va troncato da qualche parte, e' qui.
+    const mesh = greedyMesh(landmarkChunk());
+    console.info(`[misura] chunk di landmark: ${mesh.detailQuadCount} quad`);
     expect(mesh.detailQuadCount).toBeLessThan(MAX_DETAIL_QUADS_PER_CHUNK);
   });
 
