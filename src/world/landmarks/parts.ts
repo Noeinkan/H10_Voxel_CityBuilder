@@ -1,6 +1,16 @@
 import { FACING, type Facing } from '../streets/streetGrid';
 import { inPlan, onPlanEdge } from '../planMask';
 import type { SurfaceKind } from '../visualBlock';
+import { put, type LandmarkCanvas } from './canvas';
+import {
+  drawArch,
+  drawButtress,
+  drawDome,
+  drawSpire,
+  drawTracery,
+} from './ornaments';
+
+export { createCanvas, type LandmarkCanvas } from './canvas';
 
 /**
  * Il vocabolario con cui si descrive un landmark.
@@ -55,6 +65,21 @@ export const PART = {
   truss: 8,
   /** Falda a due spioventi lungo l'asse maggiore: tetti a capanna, pensiline. */
   pitch: 9,
+
+  // Le cinque ornate. Disegnate in `ornaments.ts`, per la ragione scritta li':
+  // non aggiungono un mestiere, aggiungono ornamento, e chi legge il vocabolario
+  // minimo non deve scorrerle.
+
+  /** Muro con un'apertura arcuata passante: portali, archi di trionfo, porte urbiche. */
+  arch: 10,
+  /** Cupola a profilo convesso, con oculo facoltativo: musei, rotonde, tiburi. */
+  dome: 11,
+  /** Due contrafforti rampanti che si appoggiano al centro: navate, absidi. */
+  buttress: 12,
+  /** Guglia rastremata fino alla punta, con collarini: campanili, obelischi, pinnacoli. */
+  spire: 13,
+  /** Parete traforata a montanti e traversi: rosoni, gradinate, fusti gotici. */
+  tracery: 14,
 } as const;
 
 export type PartKind = (typeof PART)[keyof typeof PART];
@@ -83,7 +108,9 @@ export interface Part {
    * `colonnade`: passo dei pilastri. `steps`: rientranza di ogni gradone.
    * `hull`: colonne di rastremazione a ciascun capo. `truss`: passo dei
    * correnti. `pitch`: quanto sale la falda per ogni colonna verso il colmo.
-   * Ignorato dalle altre.
+   * `arch`: semiluce dell'apertura. `dome`: raggio dell'oculo, in unita'
+   * doppie. `buttress`: larghezza del piedritto. `spire`: passo dei collarini.
+   * `tracery`: passo di montanti e traversi. Ignorato dalle altre.
    */
   readonly step?: number;
 
@@ -112,6 +139,30 @@ export interface Part {
    * l'unica cosa che distingua un prisma progettato da un blocco.
    */
   readonly cap?: number;
+
+  /**
+   * Cornici marcapiano: una fascia sporgente ogni `step` quote.
+   *
+   * **E' un campo e non una primitiva, per la ragione dello smusso.** `cap` da'
+   * la scala a un volume una volta sola, in cima; questo gliela da' per tutta
+   * l'altezza, ed e' la differenza fra una ciminiera e un campanile disegnati
+   * con la stessa scatola. Sui volumi alti — e questo dominio ne avra' molti —
+   * e' l'ornamento che rende di piu' per riga scritta, ed e' il vocabolario che
+   * l'art deco ha ricavato dalla stessa costrizione: se il volume deve salire,
+   * gli si da' un ritmo orizzontale.
+   *
+   * **La cornice e' il riquadro dichiarato, e il corpo rientra.** Farla sporgere
+   * *oltre* `w` e `h` renderebbe `partBounds` una bugia, e il test che verifica
+   * che una ricetta stia nel proprio `span` smetterebbe di misurare qualcosa.
+   * Cosi' invece l'ingombro resta quello scritto e a rientrare e' il pieno fra
+   * una cornice e l'altra — che dall'esterno e' la stessa immagine.
+   *
+   * Vale sui prismi (`slab`, `shell`, `mast`, `boom`, `deck`); le altre voci lo
+   * ignorano. `depth` oltre meta' del lato piu' corto viene troncato: sotto
+   * quella soglia il corpo si chiuderebbe e resterebbero le sole cornici a
+   * mezz'aria.
+   */
+  readonly cornice?: { readonly step: number; readonly depth: number };
 }
 
 /**
@@ -132,7 +183,7 @@ export function box(
   height: number,
   palette: number,
   surface: Part['surface'],
-  extra: Partial<Pick<Part, 'step' | 'cap' | 'chamfer'>> = {},
+  extra: Partial<Pick<Part, 'step' | 'cap' | 'chamfer' | 'cornice'>> = {},
 ): Part {
   return { kind, x, y, w, h, z, height, palette, surface, ...extra };
 }
@@ -199,26 +250,6 @@ export function orientedSpan(facing: Facing, long: number, short: number): {
     : { sizeX: short, sizeY: long };
 }
 
-/** La tela su cui le parti scrivono. Non conosce il mondo ne' le coordinate vere. */
-export interface LandmarkCanvas {
-  readonly sizeX: number;
-  readonly sizeY: number;
-  readonly sizeZ: number;
-  readonly voxels: Uint8Array;
-  readonly surfaces: Uint8Array;
-}
-
-export function createCanvas(sizeX: number, sizeY: number, sizeZ: number): LandmarkCanvas {
-  const length = sizeX * sizeY * sizeZ;
-  return {
-    sizeX,
-    sizeY,
-    sizeZ,
-    voxels: new Uint8Array(length),
-    surfaces: new Uint8Array(length),
-  };
-}
-
 /**
  * Disegna una parte gia' orientata.
  *
@@ -241,6 +272,16 @@ export function drawPart(canvas: LandmarkCanvas, part: Part): void {
       return drawTruss(canvas, part);
     case PART.pitch:
       return drawPitch(canvas, part);
+    case PART.arch:
+      return drawArch(canvas, part);
+    case PART.dome:
+      return drawDome(canvas, part);
+    case PART.buttress:
+      return drawButtress(canvas, part);
+    case PART.spire:
+      return drawSpire(canvas, part);
+    case PART.tracery:
+      return drawTracery(canvas, part);
     default:
       // `slab`, `mast`, `boom` e `deck` sono lo stesso prisma pieno: a
       // distinguerli sono le proporzioni che la ricetta gli da', non il codice
@@ -254,15 +295,31 @@ export function drawPart(canvas: LandmarkCanvas, part: Part): void {
 function drawPrism(canvas: LandmarkCanvas, part: Part, hollow: boolean): void {
   const chamfer = part.chamfer ?? 0;
   const top = part.z + part.height - 1;
+  // La cornice e' il riquadro dichiarato: a rientrare e' il pieno fra una fascia
+  // e l'altra. Il troncamento tiene il corpo largo almeno un voxel — sotto,
+  // resterebbero le sole cornici a mezz'aria.
+  const cornice = part.cornice;
+  const recess = cornice === undefined
+    ? 0
+    : Math.max(0, Math.min(cornice.depth, Math.floor((Math.min(part.w, part.h) - 1) / 2)));
+  const pitch = Math.max(2, cornice?.step ?? 2);
+
   for (let z = part.z; z <= top; z++) {
     const palette = z === top && part.cap !== undefined ? part.cap : part.palette;
-    for (let ly = 0; ly < part.h; ly++) {
-      for (let lx = 0; lx < part.w; lx++) {
+    // Fascia sporgente alla base, in cima e a ogni passo: senza quella in cima
+    // il volume finirebbe con il corpo rientrato, che legge come un troncamento.
+    const band = recess === 0 || (z - part.z) % pitch === 0 || z === top;
+    const inset = band ? 0 : recess;
+    const w = part.w - inset * 2;
+    const h = part.h - inset * 2;
+
+    for (let ly = 0; ly < h; ly++) {
+      for (let lx = 0; lx < w; lx++) {
         const keep = hollow
-          ? onPlanEdge(lx, ly, part.w, part.h, chamfer)
-          : inPlan(lx, ly, part.w, part.h, chamfer);
+          ? onPlanEdge(lx, ly, w, h, chamfer)
+          : inPlan(lx, ly, w, h, chamfer);
         if (!keep) continue;
-        put(canvas, part.x + lx, part.y + ly, z, palette, part.surface);
+        put(canvas, part.x + inset + lx, part.y + inset + ly, z, palette, part.surface);
       }
     }
   }
@@ -453,19 +510,4 @@ function drawHull(canvas: LandmarkCanvas, part: Part): void {
       }
     }
   }
-}
-
-function put(
-  canvas: LandmarkCanvas,
-  x: number,
-  y: number,
-  z: number,
-  palette: number,
-  surface: SurfaceKind,
-): void {
-  if (x < 0 || y < 0 || z < 0) return;
-  if (x >= canvas.sizeX || y >= canvas.sizeY || z >= canvas.sizeZ) return;
-  const index = x + canvas.sizeX * (y + canvas.sizeY * z);
-  canvas.voxels[index] = palette;
-  canvas.surfaces[index] = surface;
 }
