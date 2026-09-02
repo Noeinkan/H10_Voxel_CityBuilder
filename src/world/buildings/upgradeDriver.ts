@@ -17,6 +17,7 @@ import { sliceStamps, type VoxelStamp } from './stamp';
 import { anchorOf } from './growthQueue';
 import { allowedLevel, riseOf } from './hierarchy';
 import { recordStamp } from './recordStamp';
+import { traitsOf } from './structureKind';
 import { buildWorks, isCoastal, surveyGrade } from './siteWorks';
 import type { SpanDriver } from './spanDriver';
 import { selectTypology, typologyProfile } from './typology';
@@ -65,19 +66,13 @@ export class UpgradeDriver {
       const record = records[this.cursor % records.length];
       this.cursor++;
       if (this.ctx.growth.isGrowing(record.id)) continue;
-      // Un landmark cresce di stadio, non di livello, e su un altro segnale:
-      // la passata dei landmark se ne occupa con la propria soglia e il proprio
-      // generatore.
-      if (record.landmark !== undefined) continue;
-      // Una campata non ha un livello: e' l'edificio che la regge a cambiare, e
-      // quando cambia lei cade con lui.
-      if (record.span !== undefined) continue;
-      // E la citta' in quota non ha un livello affatto: mensole, tratti, nodi e
-      // gambe sono struttura, e non promuovono.
-      if (record.aerial !== undefined) continue;
-      // E un'arcologia cresce di stadio dentro un inviluppo che non cambia mai:
-      // promuoverla vorrebbe dire rigenerarla come edificio, che non e'.
-      if (record.arcology !== undefined) continue;
+      // **Chi non promuove lo dice la tabella dei tratti**, e le quattro ragioni
+      // che stavano qui sotto forma di quattro `if` stanno adesso accanto alla
+      // riga che le riguarda in `structureKind.ts`: un landmark e un'arcologia
+      // crescono di stadio e non di livello, una campata non ha un livello
+      // perche' e' l'edificio che la regge a cambiare, e la citta' in quota non
+      // ne ha affatto — mensole, tratti, nodi e gambe sono struttura.
+      if (!traitsOf(record).promotes) continue;
       // **Chi regge qualcosa di abitato non cresce.** E' una domanda sola e sta
       // qui in alto perche' risponde di no senza leggere niente; il *togliere* —
       // che e' un atto — sta in fondo, quando la promozione e' decisa.

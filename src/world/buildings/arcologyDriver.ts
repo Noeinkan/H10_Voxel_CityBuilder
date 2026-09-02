@@ -56,6 +56,7 @@ import { allowedLevel, riseOf } from './hierarchy';
 import { buildWorks, surveyGrade } from './siteWorks';
 import { EMPTY_STAMP, sliceStamps, stampFootprint, trimStampZ, type VoxelStamp } from './stamp';
 import { sunkenDigStamp } from './sunkenDig';
+import { STRUCTURE_KIND, structureKindOf, traitsOf } from './structureKind';
 
 /**
  * Le megastrutture: dove nascono, come salgono, cosa dichiarano alla citta'.
@@ -367,7 +368,12 @@ export class ArcologyDriver {
     for (let i = 0; i < budget; i++) {
       const record = records[this.cursor % records.length];
       this.cursor++;
-      if (record.arcology !== undefined || record.aerial !== undefined) continue;
+      // **Un insieme suo, e resta esplicito.** Nessuna colonna della tabella dei
+      // tratti risponde a questa domanda: qui basta che il seme dell'isolato non
+      // sia gia' un'arcologia ne' una parte in quota. Monumenti e campate non
+      // sono mai stati esclusi, e non e' questo il posto per deciderlo.
+      const kind = structureKindOf(record);
+      if (kind === STRUCTURE_KIND.arcology || kind === STRUCTURE_KIND.aerial) continue;
 
       const block = this.ctx.streets.blockAt(record.x, record.y);
       const key = `${block.kx},${block.ky}`;
@@ -579,10 +585,10 @@ export class ArcologyDriver {
   private cappedAround(x: number, y: number, state: SimState): number {
     let capped = 0;
     for (const record of this.ctx.registry.withinRadius(x, y, ARCOLOGY.radius)) {
-      if (record.landmark !== undefined || record.span !== undefined ||
-        record.aerial !== undefined || record.arcology !== undefined) {
-        continue;
-      }
+      // Conta chi e' arrivato al proprio tetto, quindi guarda esattamente chi un
+      // tetto ce l'ha: le stesse quattro esclusioni della passata di upgrade,
+      // che e' la colonna `promotes`.
+      if (!traitsOf(record).promotes) continue;
       const cap = allowedLevel(this.ctx, record.x, record.y, state, riseOf(this.ctx, record));
       if (record.level >= Math.min(cap, BUILDER.maxLevel) ||
         this.aerial.blocksUpgrade(record.id)) {

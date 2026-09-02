@@ -6,6 +6,7 @@ import {
   type SimState,
 } from '../../sim';
 import type { BuildingRecord } from '../../world/buildings/BuildingRegistry';
+import { traitsOf } from '../../world/buildings/structureKind';
 import { SAVE_VERSION, type SaveGame, type SaveScene } from './format';
 
 /**
@@ -111,31 +112,31 @@ function prune(sorted: readonly BuildingRecord[]): ReadonlySet<number> {
 
 /** true se nessun generatore sa ridisegnare questo record dal record e basta. */
 function unrenderable(record: BuildingRecord): boolean {
-  return record.span !== undefined ||
-    record.aerial !== undefined ||
-    record.ropeway !== undefined;
+  return !traitsOf(record).rebuildableFromRecord;
 }
 
 /**
  * L'edificio che la simulazione ha contato per questo record, se ne ha contato
  * uno.
  *
- * E' la stessa tabella di `tally` in `BuildingRegistry`, letta al contrario, e
- * l'unica cosa da tenere allineata se un giorno nasce una sesta struttura.
+ * E' la stessa tabella di `tally` in `BuildingRegistry`, letta al contrario.
  * L'abbinamento di `removeBuildings` e' per cella e uso, quindi bastano tre
  * campi.
  *
+ * **Le cinque righe che stavano qui sono diventate la colonna
+ * `capturedAsBuilding`** di `world/buildings/structureKind.ts`, ed e' li' che va
+ * decisa una struttura nuova: la frase che stava in questo commento — «l'unica
+ * cosa da tenere allineata se un giorno nasce una sesta struttura» — non era
+ * piu' vera da un pezzo, perche' la stessa domanda era scritta a mano in
+ * diciannove file.
+ *
  * **L'arcologia non passa mai di qui** perche' non puo' essere potata: e'
- * fondata a terra e non ha `supports`. Se un giorno ne avesse, la sua riga qui
- * non basterebbe — la simulazione la conta una volta per fascia, su colonne che
- * solo `worldBands` sa dire — ed e' meglio che il caso resti scoperto e visibile
- * che coperto male.
+ * fondata a terra e non ha `supports`. Se un giorno ne avesse, la sua casella
+ * nella tabella non basterebbe — la simulazione la conta una volta per fascia,
+ * su colonne che solo `worldBands` sa dire — ed e' meglio che il caso resti
+ * scoperto e visibile che coperto male.
  */
 function countedBuilding(record: BuildingRecord): Building | null {
-  if (record.landmark !== undefined) return null;
-  if (record.span !== undefined) return null;
-  if (record.aerial !== undefined) return null;
-  if (record.ropeway !== undefined) return null;
-  if (record.arcology !== undefined) return null;
+  if (!traitsOf(record).capturedAsBuilding) return null;
   return { x: record.x, y: record.y, class: record.class };
 }

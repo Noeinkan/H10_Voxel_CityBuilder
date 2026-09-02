@@ -20,6 +20,7 @@ import { anchorOf } from './growthQueue';
 import { groundKindAt } from './siteWorks';
 import type { SpanDriver } from './spanDriver';
 import { STAMP_EMPTY } from './stamp';
+import { isGroundStructure, traitsOf } from './structureKind';
 
 /**
  * La citta' in quota: mensole, percorsi, gambe e i piani su cui si costruisce.
@@ -546,8 +547,7 @@ export class AerialDriver {
   /** L'edificio vero che occupa il suolo di questa colonna, se ce n'e' uno. */
   private buildingAt(x: number, y: number): BuildingRecord | null {
     for (const record of this.ctx.registry.at(x, y)) {
-      if (record.aerial !== undefined || record.span !== undefined) continue;
-      if (record.landmark !== undefined) continue;
+      if (!isGroundStructure(record)) continue;
       return record;
     }
     return null;
@@ -800,8 +800,7 @@ export class AerialDriver {
  * dove sta anche la misura che ha escluso la regola piu' ovvia.
  */
 function settled(record: BuildingRecord): boolean {
-  if (record.aerial !== undefined || record.span !== undefined) return false;
-  if (record.landmark !== undefined || record.arcology !== undefined) return false;
+  if (!traitsOf(record).hostsAerial) return false;
   return record.level >= AERIAL.minHostLevel;
 }
 

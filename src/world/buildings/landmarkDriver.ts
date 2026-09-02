@@ -56,6 +56,7 @@ import {
   type WorksMask,
 } from './siteWorks';
 import { EMPTY_STAMP, STAMP_EMPTY, stampFootprint, type VoxelStamp } from './stamp';
+import { isGroundStructure } from './structureKind';
 
 /** Verso il mare, per verso della struttura: l'ordine e' quello di `FACING`. */
 const SEAWARD: readonly (readonly [number, number])[] = [[1, 0], [-1, 0], [0, 1], [0, -1]];
@@ -336,8 +337,7 @@ export class LandmarkDriver {
   /** L'edificio ordinario sotto la colonna, anche se un impalcato lo attraversa. */
   private buildingAt(x: number, y: number): BuildingRecord | null {
     for (const record of this.ctx.registry.at(x, y)) {
-      if (record.aerial !== undefined || record.span !== undefined ||
-        record.landmark !== undefined || record.aloft === true) continue;
+      if (!isGroundStructure(record)) continue;
       return record;
     }
     return null;

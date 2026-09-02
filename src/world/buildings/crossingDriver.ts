@@ -18,6 +18,7 @@ import { hashCoords } from '../rng';
 import type { Region } from '../terrain/region';
 import { BIOME } from '../terrain/config';
 import { STAMP_EMPTY } from './stamp';
+import { traitsOf } from './structureKind';
 
 interface SecondaryRegion {
   readonly id: string;
@@ -182,9 +183,10 @@ function inside(region: Region, record: Pick<BuildingRecord, 'x' | 'y'>): boolea
 
 function canAnchor(record: BuildingRecord, busy: ReadonlySet<number>): boolean {
   if (busy.has(record.id)) return false;
-  if (record.landmark !== undefined || record.span !== undefined ||
-    record.aerial !== undefined || record.aloft === true ||
-    record.arcology !== undefined || record.ropeway !== undefined) return false;
+  // La lista di sei esclusioni che stava qui e' la colonna `hostsCrossing`: un
+  // ponte fra settori si ancora solo a un edificio ordinario, ed e' la piu'
+  // stretta delle tre domande sull'appoggio.
+  if (!traitsOf(record).hostsCrossing) return false;
   return record.height >= CROSSINGS.minSkyRise + CROSSINGS.skyDeckDrop + 1;
 }
 

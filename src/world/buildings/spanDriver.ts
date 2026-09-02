@@ -17,6 +17,7 @@ import type { BuildContext } from './buildContext';
 import { dirtyChunkCount } from './chunkBudget';
 import { MAX_FOOTPRINT } from './config';
 import { STAMP_EMPTY } from './stamp';
+import { traitsOf } from './structureKind';
 
 /**
  * La rete in quota: ponti, mezzanini e piazze fra i tetti.
@@ -391,8 +392,11 @@ function canSupport(
   busy: ReadonlySet<number>,
 ): boolean {
   // Una campata non regge una campata, e un landmark cresce di stadio: la sua
-  // sagoma cambia sotto i piedi di chi ci si appoggiasse.
-  if (record.span !== undefined || record.landmark !== undefined) return false;
+  // sagoma cambia sotto i piedi di chi ci si appoggiasse. La colonna `hostsSpan`
+  // di `structureKind.ts` dice per quali tipi vale — comprese le due risposte
+  // che sorprendono, la citta' in quota e la torre di funivia, che questa regola
+  // non ha mai escluso.
+  if (!traitsOf(record).hostsSpan) return false;
   if (busy.has(record.id)) return false;
   return network.degreeOf(record.id) < SPANS.maxPerSupport;
 }

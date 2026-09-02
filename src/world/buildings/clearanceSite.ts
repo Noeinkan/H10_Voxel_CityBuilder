@@ -8,6 +8,7 @@ import type { BuildContext } from './buildContext';
 import {
   CLEARANCE_KIND,
   planClearance,
+  type ClearanceKind,
   type ClearanceRecord,
   type ClearanceRefusal,
   type ClearanceRule,
@@ -17,6 +18,7 @@ import { anchorOf } from './growthQueue';
 import { recordStamp } from './recordStamp';
 import type { SpanDriver } from './spanDriver';
 import { EMPTY_STAMP } from './stamp';
+import { STRUCTURE_KIND, structureKindOf } from './structureKind';
 
 /**
  * Il cantiere: come una struttura grossa si fa spazio dentro la citta' costruita.
@@ -342,15 +344,44 @@ export function clearanceOf(
   registry: ReadonlyBuildingRegistry,
   record: BuildingRecord,
 ): ClearanceRecord {
-  const kind = record.span !== undefined
-    ? CLEARANCE_KIND.span
-    : record.landmark !== undefined && record.aloft !== true
-      ? CLEARANCE_KIND.landmark
-      : record.aerial !== undefined || record.arcology !== undefined ||
-        registry.carries(record.id) || record.aloft === true
-        ? CLEARANCE_KIND.structure
-        : CLEARANCE_KIND.building;
-  return { id: record.id, level: record.level, kind };
+  return { id: record.id, level: record.level, kind: clearanceKindOf(registry, record) };
+}
+
+/**
+ * La traduzione dai sette tipi ai quattro casi dello sventramento.
+ *
+ * **Uno `switch` esaustivo e non una catena di ternari**: `ClearanceKind` sceglie
+ * *cosa fare*, non risponde si' o no, quindi non e' una colonna della tabella dei
+ * tratti — ed e' il compilatore, qui, a impedire che una struttura nuova finisca
+ * per sbaglio nel ramo di ripiego. Prima ci finiva: il ramo finale diceva
+ * `building`, e una funivia — che non e' un edificio — cadeva li' dentro senza
+ * che nessuno l'avesse deciso. Adesso quella riga si vede.
+ */
+function clearanceKindOf(
+  registry: ReadonlyBuildingRegistry,
+  record: BuildingRecord,
+): ClearanceKind {
+  switch (structureKindOf(record)) {
+    case STRUCTURE_KIND.span:
+      return CLEARANCE_KIND.span;
+    case STRUCTURE_KIND.landmark:
+      return CLEARANCE_KIND.landmark;
+    case STRUCTURE_KIND.rooftopLandmark:
+    case STRUCTURE_KIND.aerial:
+    case STRUCTURE_KIND.arcology:
+      return CLEARANCE_KIND.structure;
+    case STRUCTURE_KIND.plain:
+    case STRUCTURE_KIND.ropeway:
+      // **Chi porta qualcosa e' struttura anche se e' un edificio.** E' l'unica
+      // parte della classificazione che non dipende dal tipo ma dalla citta'
+      // intorno, e resta qui perche' e' qui che serve: gli altri cinque casi
+      // hanno gia' risposto.
+      //
+      // La funivia sta accanto all'edificio per conservare il comportamento: il
+      // ramo di ripiego di prima la mandava li' dentro, e la soglia di altezza
+      // la tratta come tale.
+      return registry.carries(record.id) ? CLEARANCE_KIND.structure : CLEARANCE_KIND.building;
+  }
 }
 
 /**
