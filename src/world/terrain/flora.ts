@@ -36,6 +36,15 @@ export interface TreeShape {
   /** Altezza del tronco come `[minimo, alternative]`: una estrazione del PRNG. */
   readonly trunk: readonly [number, number];
   /**
+   * Tinta del tronco. Assente vuol dire legno, che e' quasi sempre la risposta.
+   *
+   * Esiste per la betulla, e la betulla esiste per questo: a distanza isometrica
+   * di un albero si vedono la sagoma e due o tre voxel di fusto, e una corteccia
+   * chiara e' l'unica differenza di specie che si legge anche **dentro** un bosco
+   * fitto — dove le chiome si toccano e la silhouette non si distingue piu'.
+   */
+  readonly bark?: number;
+  /**
    * Di quanti livelli la chioma scende ad avvolgere il tronco.
    *
    * Deve restare minore di `trunk[0]`, altrimenti la chioma comincerebbe sotto
@@ -57,6 +66,10 @@ export const TREE_SPECIES = {
   shrub: 4,
   scrub: 5,
   fruit: 6,
+  birch: 7,
+  palm: 8,
+  cypress: 9,
+  snag: 10,
 } as const;
 
 /**
@@ -203,6 +216,81 @@ export const TREE_SHAPES: readonly TreeShape[] = [
       { radius: 1, cut: 2, tone: 2 },
     ],
   },
+  // Betulla: fusto chiaro e chioma rada. E' l'unica specie che si distingue per
+  // il **tronco** invece che per la sagoma, ed e' il motivo per cui sta in
+  // catalogo: dentro un bosco fitto le chiome si toccano e la silhouette non si
+  // legge piu', mentre una fila di fusti chiari si vede da qualunque distanza.
+  // La chioma e' apposta piu' magra di quella della latifoglia — meno voxel
+  // sopra, piu' fusto in vista.
+  {
+    trunk: [11, 4],
+    sink: 5,
+    bark: PALETTE_SLOTS.concretePale,
+    tones: [PALETTE_SLOTS.grass, PALETTE_SLOTS.grassLight, PALETTE_SLOTS.grassPale],
+    canopy: [
+      { radius: 2, cut: 3, tone: 0 },
+      { radius: 3, cut: 4, tone: 0 },
+      { radius: 3, cut: 5, tone: 1 },
+      { radius: 3, cut: 4, tone: 1 },
+      { radius: 2, cut: 3, tone: 2 },
+      { radius: 2, cut: 2, tone: 2 },
+      { radius: 1, cut: 2, tone: 2 },
+    ],
+  },
+  // Palma: la sola specie della spiaggia, e la sola con la chioma **in cima** al
+  // tronco invece che calata sopra. `sink` a uno e' esattamente questo: sotto le
+  // fronde non c'e' fogliame ma tredici voxel di fusto nudo, cioe' la
+  // proporzione che rende una palma riconoscibile prima ancora del colore.
+  //
+  // Le fronde sono rombi (`cut` uguale al raggio): a raggio quattro un rombo ha
+  // le punte sui quattro assi e il vuoto negli angoli, che al mesher esce come
+  // foglie che si aprono invece di una chioma piena.
+  {
+    trunk: [13, 5],
+    sink: 1,
+    tones: [PALETTE_SLOTS.grassDark, PALETTE_SLOTS.grass, PALETTE_SLOTS.grassLight],
+    canopy: [
+      { radius: 4, cut: 4, tone: 0 },
+      { radius: 4, cut: 6, tone: 1 },
+      { radius: 2, cut: 3, tone: 2 },
+    ],
+  },
+  // Cipresso: una colonna. Non e' un albero in piu', e' l'unica **verticale**
+  // del catalogo — raggio due su nove livelli di chioma — e serve dove il
+  // paesaggio e' orizzontale per costruzione: in pianura, dove le terrazze non
+  // ci sono e tutto quello che si vede sono chiome larghe alte uguale.
+  {
+    trunk: [7, 3],
+    sink: 5,
+    tones: [PALETTE_SLOTS.grassDark, PALETTE_SLOTS.grassDark, PALETTE_SLOTS.grass],
+    canopy: [
+      { radius: 1, cut: 2, tone: 0 },
+      { radius: 2, cut: 2, tone: 0 },
+      { radius: 2, cut: 3, tone: 0 },
+      { radius: 2, cut: 3, tone: 1 },
+      { radius: 2, cut: 2, tone: 1 },
+      { radius: 1, cut: 2, tone: 1 },
+      { radius: 1, cut: 2, tone: 2 },
+      { radius: 1, cut: 1, tone: 2 },
+      { radius: 0, cut: 0, tone: 2 },
+    ],
+  },
+  // Albero morto: tronco e quattro monconi, e nessuna foglia. E' la specie che
+  // racconta la quota meglio di una tinta — sopra il limite del bosco cio' che
+  // resta in piedi e' legno secco — e costa pochissimo: la stessa chioma di
+  // sempre con i raggi a uno e due e le tinte del legno, che l'erosione del
+  // bordo riduce a rami storti.
+  {
+    trunk: [9, 5],
+    sink: 3,
+    tones: [PALETTE_SLOTS.wood, PALETTE_SLOTS.stoneDark, PALETTE_SLOTS.wood],
+    canopy: [
+      { radius: 2, cut: 2, tone: 0 },
+      { radius: 1, cut: 1, tone: 0 },
+      { radius: 2, cut: 2, tone: 1 },
+      { radius: 1, cut: 1, tone: 0 },
+    ],
+  },
 ];
 
 /** Una specie e quanto pesa nell'estrazione del proprio bioma. */
@@ -228,6 +316,13 @@ export interface BiomeFlora {
 /**
  * Chi cresce dove, in ordine di `BIOME`.
  *
+ * **Nemmeno la spiaggia lo e' piu'.** Restava spoglia perche' e' il terreno su
+ * cui la citta' arriva per prima, ma un albero non e' un ostacolo — non entra
+ * nell'edificabilita', e chi costruisce gli scrive sopra. Quello che si perdeva
+ * era invece l'unica fascia che si vede da **ogni** inquadratura, visto che
+ * circonda l'isola: una frangia rada di palme, e la costa smette di essere una
+ * riga di sabbia.
+ *
  * **La roccia non e' piu' nuda.** Era l'unico bioma emerso senza niente sopra, e
  * quella scelta veniva da quando la roccia era anche l'unico terreno vietato
  * alla citta': un posto dove non succede niente. Ora ci cresce quel che cresce
@@ -240,15 +335,24 @@ export interface BiomeFlora {
 export const FLORA: readonly BiomeFlora[] = [
   // ocean — sott'acqua
   { density: 0, species: [] },
-  // beach — la sabbia resta sabbia; ci passa la citta'
-  { density: 0, species: [] },
-  // plain — chiome larghe e sottobosco
+  // beach — una frangia di palme, non una macchia
   {
-    density: 0.2,
+    density: 0.12,
+    species: [
+      { species: TREE_SPECIES.palm, weight: 7 },
+      { species: TREE_SPECIES.scrub, weight: 2 },
+      { species: TREE_SPECIES.shrub, weight: 1 },
+    ],
+  },
+  // plain — chiome larghe, sottobosco e qualche verticale
+  {
+    density: 0.22,
     species: [
       { species: TREE_SPECIES.broadleaf, weight: 5 },
       { species: TREE_SPECIES.autumn, weight: 3 },
       { species: TREE_SPECIES.shrub, weight: 3 },
+      { species: TREE_SPECIES.birch, weight: 3 },
+      { species: TREE_SPECIES.cypress, weight: 2 },
     ],
   },
   // forest — il bosco misto: e' la fascia piu' fitta dell'isola
@@ -257,8 +361,10 @@ export const FLORA: readonly BiomeFlora[] = [
     species: [
       { species: TREE_SPECIES.conifer, weight: 4 },
       { species: TREE_SPECIES.broadleaf, weight: 4 },
-      { species: TREE_SPECIES.autumn, weight: 1 },
+      { species: TREE_SPECIES.birch, weight: 3 },
       { species: TREE_SPECIES.shrub, weight: 2 },
+      { species: TREE_SPECIES.autumn, weight: 1 },
+      { species: TREE_SPECIES.snag, weight: 1 },
     ],
   },
   // hill — comincia la salita: gli abeti prendono il posto delle chiome tonde
@@ -269,6 +375,8 @@ export const FLORA: readonly BiomeFlora[] = [
       { species: TREE_SPECIES.conifer, weight: 3 },
       { species: TREE_SPECIES.shrub, weight: 2 },
       { species: TREE_SPECIES.scrub, weight: 2 },
+      { species: TREE_SPECIES.birch, weight: 2 },
+      { species: TREE_SPECIES.snag, weight: 1 },
     ],
   },
   // rock — sopra il limite del bosco
@@ -277,6 +385,7 @@ export const FLORA: readonly BiomeFlora[] = [
     species: [
       { species: TREE_SPECIES.scrub, weight: 6 },
       { species: TREE_SPECIES.pine, weight: 2 },
+      { species: TREE_SPECIES.snag, weight: 2 },
       { species: TREE_SPECIES.shrub, weight: 1 },
     ],
   },

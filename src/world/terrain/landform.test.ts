@@ -6,6 +6,7 @@ import {
   capForRadius,
   domeFalloff,
   lakeLevelAt,
+  liftSummit,
   moundRise,
   planBasins,
   planLobes,
@@ -17,13 +18,66 @@ import { outlineOf, outlineRatio, SHAPE_WARP_LIPSCHITZ } from './outline';
 import { shapeFromRegion } from './region';
 
 const SHAPE = shapeFromRegion({ minX: 0, minY: 0, sizeX: 512, sizeY: 512 });
-const RELIEF = TERRAIN.maxHeight - TERRAIN.oceanFloor;
+/**
+ * Lo stesso rilievo che `HeightField` calcola, e non `maxHeight - oceanFloor`:
+ * da quando il tetto assoluto deve contenere anche l'espansione della vetta, i
+ * due numeri hanno smesso di coincidere, e qui serve quello vero — e' il fattore
+ * con cui una frazione di rilievo diventa una pendenza in voxel per voxel.
+ */
+const RELIEF = Math.min(
+  TERRAIN.maxHeight - TERRAIN.oceanFloor,
+  Math.min(SHAPE.radiusX, SHAPE.radiusY) * TERRAIN.maxReliefSlope,
+);
 const SEEDS = [1337, 7, 42, 99991, 2024, 65535, 314159, 8675309];
 
 /** Pendenza massima di una cupola di raggio `radius` alta `amount` di rilievo. */
 function domeSlope(amount: number, radius: number): number {
   return (Math.PI / 2) * amount * RELIEF / radius;
 }
+
+describe('landform — carattere della vetta', () => {
+  it('sotto il ginocchio non tocca niente, comunque sia il carattere', () => {
+    for (const lift of [-0.16, 0, 0.2, 0.36]) {
+      for (let e = 0; e <= TERRAIN.summitKnee; e += 0.02) {
+        expect(liftSummit(e, lift), `lift ${lift}, e ${e}`).toBeCloseTo(e, 10);
+      }
+    }
+  });
+
+  it('espande verso l’alto, comprime verso il basso, e resta monotona', () => {
+    for (const lift of [-0.16, -0.05, 0.2, 0.36]) {
+      let previous = -1;
+      for (let e = 0; e <= 1; e += 0.01) {
+        const value = liftSummit(e, lift);
+        expect(value, `lift ${lift}, e ${e}`).toBeGreaterThan(previous);
+        previous = value;
+        // Il passo del ciclo non cade mai esattamente sul ginocchio, e appena
+        // sopra la differenza e' sotto l'errore di arrotondamento: il verso si
+        // guarda dove c'e' qualcosa da guardare.
+        if (e <= TERRAIN.summitKnee + 0.005) continue;
+        // Il verso e' quello che il segno promette: un carattere alpino alza la
+        // fascia alta, uno dolce la abbassa. Niente di questo tocca la costa.
+        if (lift > 0) expect(value).toBeGreaterThan(e);
+        else expect(value).toBeLessThan(e);
+      }
+    }
+  });
+
+  /**
+   * Il conto che tiene in piedi il resto: la fascia alta si irripidisce
+   * esattamente di `1 + lift`, e nessun'altra. E' quello che permette di dire
+   * dove va a finire il margine di Lipschitz senza rimisurare l'isola intera.
+   */
+  it('il fattore di pendenza vale 1 + lift, e solo sopra il ginocchio', () => {
+    const lift = 0.36;
+    const step = 1e-4;
+    const slopeAt = (e: number): number => (liftSummit(e + step, lift) - liftSummit(e, lift)) / step;
+    expect(slopeAt(0.1)).toBeCloseTo(1, 6);
+    expect(slopeAt(TERRAIN.summitKnee - 0.05)).toBeCloseTo(1, 6);
+    expect(slopeAt(TERRAIN.summitKnee + 0.05)).toBeCloseTo(1 + lift, 6);
+    expect(slopeAt(0.95)).toBeCloseTo(1 + lift, 6);
+  });
+});
 
 describe('landform — cadute', () => {
   it('la cupola vale 1 al centro, 0 dal bordo in poi, e scende sempre', () => {

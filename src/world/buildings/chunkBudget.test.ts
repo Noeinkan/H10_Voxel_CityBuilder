@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { CHUNK } from '../chunkCoords';
 import { WORKS, type GradePlan } from '../grading/grade';
+import { LANDMARKS, maxStageOf } from '../landmarks/config';
+import { generateLandmark } from '../landmarks/generate';
 import { maxTowerHeightOf } from '../scale';
+import { FACING } from '../streets/streetGrid';
 import { dirtyChunkCount, fitsChunkBudget } from './chunkBudget';
 import { BUILDER, GRAMMAR, MAX_FOOTPRINT } from './config';
 import type { VoxelStamp } from './stamp';
@@ -121,6 +124,40 @@ describe('fitsChunkBudget', () => {
     // attraversa bastano da soli a superare `maxDirtyChunksPerBuilding`.
     const deep = plan(0, CHUNK * 8);
     expect(fitsChunkBudget(0, 0, CHUNK * 2, CHUNK * 2, deep, block(4, 4, 4))).toBe(false);
+  });
+
+  it('ogni landmark del catalogo passa, su ogni verso e su ogni cucitura', () => {
+    // **E' la rete del dominio dei landmark, e sta qui perche' il tetto e' di
+    // questo file.** Da quando le ricette crescono di sedime, la piu' grossa
+    // occupa quarantaquattro voxel per ventotto e ottanta di quota, e la piu'
+    // alta arriva a centotrenta: due isolati e mezzo, contro il passo di venti
+    // della maglia stradale. Passano per i **ritagli**, non per generosita' del
+    // tetto — misurate tutte insieme sforerebbero — quindi la prova va fatta con
+    // la fondazione vera sotto, che invece si getta in un colpo solo.
+    //
+    // Scorre il catalogo intero invece della sola ricetta piu' grossa: quale sia
+    // la piu' grossa cambia a ogni revamp, e una prova che nomina una ricetta
+    // smette di misurare il caso peggiore appena qualcun altro la supera.
+    for (const recipe of Object.values(LANDMARKS)) {
+      if (recipe === undefined) continue;
+      const stage = maxStageOf(recipe);
+      for (const facing of [FACING.east, FACING.north] as const) {
+        const stamp = generateLandmark({ kind: recipe.kind, stage, facing })!;
+        // Ogni scostamento possibile da una cucitura di chunk: il conto peggiore
+        // non e' all'origine, e' dove l'ingombro attraversa piu' confini.
+        for (let offset = 0; offset < CHUNK; offset++) {
+          const fits = fitsChunkBudget(
+            offset,
+            offset,
+            stamp.sizeX,
+            stamp.sizeY,
+            plan(offset, offset + 4),
+            stamp,
+          );
+          expect(fits, `${recipe.kind} ${facing} @${offset}`).toBe(true);
+        }
+      }
+    }
   });
 
   it('il tetto e quello dichiarato in config, non un numero scritto qui', () => {

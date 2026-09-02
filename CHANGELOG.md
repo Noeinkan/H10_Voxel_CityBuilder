@@ -16,6 +16,141 @@ Qui stanno **i tredici incrementi più recenti**; i precedenti sono archiviati i
 
 ---
 
+## In corso — Revamp dei landmark: piu' ornati, piu' grandi, piu' stadi
+
+- **Teatro, stadio e stazione crescono di sedime su sei stadi.** Il teatro va da
+  14x10x14 a 34x22x44, lo stadio da 12x10x5 a 52x40x32 — la ricetta piu' larga
+  del catalogo — e la stazione da 16x8x8 a 52x24x46. Lo stadio zero resta
+  piccolo come oggi in tutte e tre: la megastruttura arriva quando il quartiere
+  attorno c'e' gia'.
+- **Le pile del viadotto sono archi, e non e' ornamento.** Una linea lunga
+  cinquantadue voxel attraversa due carreggiate: con le pile piene sarebbe un
+  muro che taglia il quartiere in due. Lo stesso vale per le quattro porte dello
+  stadio, una per asse, e per il portale davanti al portico del teatro. E' la
+  primitiva che rende ammissibili gli ingombri nuovi, non quella che li decora.
+- **L'anello dello stadio si legge in tre fasce.** Arcata a terra, gradinate
+  piene, parapetto traforato: e' il modo in cui un anfiteatro vero da' scala a un
+  volume basso e larghissimo, e usa `colonnade` e `tracery` per quello per cui
+  esistono — vuoto sotto un pieno, e aria *dentro* il muro.
+- **La stazione e' uscita da `logistics.ts`.** Delle quattro forme lineari e'
+  l'unica che sospende invece di appoggiare, ed e' diventata la piu' lunga del
+  catalogo: lasciarla li' avrebbe portato quel file oltre le mille righe proprio
+  mentre molo, traghetto e pista aspettano lo stesso trattamento.
+- **Cinque esemplari sui ruoli grossi invece di tre.** Teatro, stadio e stazione
+  ne hanno cinque: due teatri sulla stessa isola non devono somigliarsi, e la
+  garanzia di leggibilita' resta strutturale — il tronco si disegna sempre, la
+  variante si aggiunge sopra.
+- **Il tetto di quad non si e' mosso.** Il chunk piu' pieno che il catalogo
+  produce misura 8 360 quad su 16 384, lo stesso di prima dei tre revamp: uno
+  stadio e' un anello cavo, e la finestra piu' densa resta quella della
+  cattedrale. La regola misurata sul prototipo ha retto — cornici sulle sole
+  torri, mai sugli scafi lunghi.
+
+## In corso — Orografia con un carattere, e una flora che fa macchia
+
+- **Un'isola ha un carattere, e sono due numeri estratti dal seed.** Fino a qui
+  ogni isola aveva lo stesso impasto — stessa miscela di rumore, stessa
+  proporzione fra piede e vetta — e a cambiare era soltanto dove cadevano le
+  creste: misurate, le vette stavano tutte fra 52 e 69 voxel su un tetto di 80.
+  `TERRAIN.crestMix` e `TERRAIN.summitLift` escono ora da un flusso loro e
+  dicono *che tipo* di isola e' questa. Su quarantotto seed le vette vanno da 54
+  a 75 e la roccia dal 10 al 29 per cento della terra emersa: una e' una collina
+  boscosa, l'altra e' alpina.
+- **I crinali vengono dal rumore ripiegato, e non costano gradiente.** Il simplex
+  e' liscio in ogni direzione e sommato in ottave da' dune; `0,5 - |n|` ha il
+  massimo lungo la curva in cui il rumore cambia segno, cioe' su una **linea**, e
+  da li' escono crinali continui con i loro contrafforti. Il ripiegamento resta a
+  mezza ampiezza apposta: cosi' conserva il modulo del gradiente, mentre la forma
+  canonica `1 - 2|n|` lo raddoppia — provata, portava il dislivello peggiore fra
+  due colonne da 0,69 a 0,94, fuori dal criterio di continuita' che tiene in
+  piedi il terreno a celle. Si paga in altezza, e l'altezza la ridà l'espansione
+  della vetta.
+- **`summitLift` alza la montagna senza toccare la citta'.** Moltiplica per
+  `1 + lift` la sola distanza da `summitKnee`, che a rilievo 76,8 cade dove la
+  pianura finisce: costa, pianura e fascia edificabile restano identiche, e il
+  fattore di pendenza vale `1 + lift` esatti e solo lassu'. L'intervallo
+  attraversa lo zero perche' la varieta' deve venire dalla varianza e non da un
+  paesaggio medio piu' alto — un seed puo' anche prendersi un'isola dolce, e la
+  compressione non costa pendenza perche' ne toglie.
+- **`maxHeight` ha cambiato mestiere.** Valeva il rilievo dell'isola, ed era la
+  stessa cosa detta due volte: adesso il rilievo lo detta il raggio via
+  `maxReliefSlope`, e il tetto assoluto e' soltanto quello che deve contenere
+  l'espansione piu' alta. La disuguaglianza fra le costanti la verifica un test,
+  perche' se cade non lancia niente — la cima si appiattisce dentro `cellGrid`, e
+  quello e' il difetto piu' difficile da vedere di tutti.
+- **La frequenza di base e' scesa a 1/440 per comprare il margine speso.** Il
+  gradiente del fbm e' proporzionale alla frequenza: allungare la lunghezza
+  d'onda di un settimo restituisce un settimo del budget di Lipschitz, e quel
+  settimo fa la differenza fra un'isola dolce e una alpina invece di increspare
+  un versante. Misurato su quarantotto seed, il dislivello peggiore fra due
+  colonne e' **sceso** da 0,79 a 0,76 nonostante l'espansione della vetta.
+- **Quattro specie nuove, e una di loro sta sulla spiaggia.** Betulla — l'unica
+  che si distingue per il **tronco** invece che per la sagoma, ed e' l'unica
+  differenza di specie che si legge dentro un bosco fitto, dove le chiome si
+  toccano e la silhouette sparisce —, palma, cipresso e albero morto. La spiaggia
+  ha smesso di essere spoglia: un albero non toglie edificabilita' a nessuno, e
+  la frangia costiera e' l'unica fascia dell'isola che si vede da ogni
+  inquadratura. `TreeShape.bark` e' il campo che rende possibile la prima.
+- **Il bosco cresce a macchie, non a sale e pepe.** Due alberi su tre prendono la
+  specie del proprio boschetto — un riquadro di sei celle, con una specie estratta
+  dagli stessi pesi del bioma — e il terzo resta il suo, che e' cio' che sfuma il
+  bordo fra due macchie invece di lasciarlo rettilineo. Non aggiunge specie dove
+  non crescerebbero: ne cambia solo la disposizione.
+- **`treeTopIn`: il ritaglio di un albero non e' un riquadro.** Il livello di
+  chioma piu' largo non e' quello piu' alto — una palma ha le fronde a raggio
+  quattro e la punta a raggio due — quindi un albero che sfiora il blocco con la
+  sola base ci scrive fin dove arriva la base, e il chunk allocato per la punta
+  restava vuoto. La quota si ottiene ridisegnando l'albero verso un sink che
+  conta: le estrazioni di pendenza e di erosione vengono dalla posizione e non da
+  chi chiama, quindi il conto e' quello vero e non un maggiorante.
+
+## In corso — Revamp dei landmark: piu' ornati, piu' grandi, piu' stadi
+
+- **Cinque primitive ornate e un modificatore.** `arch`, `dome`, `buttress`,
+  `spire` e `tracery` portano il vocabolario da dieci a quindici voci, e
+  `Part.cornice` aggiunge le fasce marcapiano come campo invece che come
+  sedicesima voce — la stessa mossa dello smusso. Ognuna dipende dalla posizione
+  solo attraverso una funzione simmetrica, che e' cio' che le tiene invarianti
+  alla rotazione: `orientPart` ruota una parte scambiando i lati senza
+  ridisegnarla.
+- **Il portale e' il permesso, non l'ornamento.** Sopra i ventotto voxel una
+  struttura sta a cavallo di una carreggiata — il passo della maglia stradale e'
+  venti — e `arch` e' cio' che sotto lascia un passaggio invece di un muro. E'
+  la primitiva che rende ammissibili gli ingombri nuovi.
+- **`config.ts` si e' spezzato prima di crescere.** Le dodici ricette storiche
+  sono passate in `recipes/`, raggruppate per mestiere, a parita' di voxel: il
+  file era a 2 146 righe e il revamp lo avrebbe raddoppiato.
+- **Cattedrale e monumento crescono di sedime su sei stadi.** La cattedrale va
+  da 14x10x28 a 44x28x80, il monumento da 12x12x26 a 32x32x130. Lo stadio zero
+  resta piccolo come oggi — e' cio' che protegge la sovrapposizione fra due
+  catalizzatori, dove nascono gli usi misti — e la megastruttura arriva quando
+  il quartiere attorno c'e' gia'.
+- **Dove sta l'ornamento l'ha deciso la misura.** Cornici su tutti gli scafi e
+  contrafforti con il linguaggio civico portavano il chunk piu' pieno a
+  **16 380 quad di dettaglio contro un tetto di 16 384**. Le cornici stanno ora
+  sulle sole torri — il perimetro e' il moltiplicatore: ventiquattro celle su
+  una torre 7x7, sessantotto su una navata lunga ventotto — e i contrafforti
+  sono `plain`, che e' anche cio' che sono in una cattedrale vera. Il catalogo
+  intero misura 8 360, sotto perfino l'isolato fitto di citta' ordinaria.
+- **Le due reti scorrono il catalogo, non una ricetta scelta a mano.**
+  `fitsChunkBudget` si prova su ogni ricetta, ogni verso e ogni scostamento di
+  cucitura; `landmarkChunk` in `microGeometry.test.ts` ritaglia la finestra piu'
+  piena fra tutte le sagome vere. Nominare la ricetta piu' grossa di oggi vuol
+  dire smettere di misurare il caso peggiore il giorno in cui qualcun altro la
+  supera.
+
+## In corso — Ricerca del lotto e fronte strada fuori dal Builder
+
+- **`Builder.ts` scende da 1544 a 1148 righe.** La ricerca del lotto — memo
+  d'infornata, rettangoli esauriti, siti bocciati, scelta dell'impalcato — vive
+  in `lotSearch.ts`, e l'aggregazione sul fronte strada in `frontage.ts`. Il
+  `Builder` resta quello che la documentazione dichiarava: il ciclo, la nascita
+  di un edificio sul lotto e le statistiche. Nessun cambio di comportamento: i
+  metodi sono gli stessi, con le stesse dipendenze prese dal `BuildContext`.
+- **La citta' in quota entra nella ricerca da due sole domande.** `LotSearch`
+  riceve un `DeckProbe` — `hasDeck` e `decksOpened` — invece dell'`AerialDriver`
+  intero: la freccia fra i due resta in un verso solo e dichiarata nel tipo.
+
 ## In corso — L'indice si spezza per area e il changelog si archivia
 
 - **`PROJECT_INDEX.md` diventa una radice sottile piu' sei schede.** Restavano

@@ -138,6 +138,41 @@ export function domeFalloff(ratio: number): number {
 }
 
 /**
+ * Espande la fascia alta dell'elevazione, lasciando ferma quella bassa.
+ *
+ * Il rilievo disponibile e' lo stesso per ogni seed, ma la quota che un'isola
+ * raggiunge davvero dipende da quanto in alto arriva la somma di rumore,
+ * maschera e rilievi: misurata su otto seed, fra 52 e 69 voxel su un tetto di
+ * 80. Le isole si somigliavano percio' proprio dove dovrebbero distinguersi di
+ * piu' — la vetta — e la ragione non era il seed ma il fatto che nessun numero
+ * dicesse *quanto* alta e' questa isola.
+ *
+ * La trasformazione e' la piu' semplice che faccia solo questo: sopra il
+ * ginocchio la distanza dal ginocchio si moltiplica per `1 + lift`, sotto non
+ * cambia niente. Ne segue che il fattore di pendenza vale `1 + lift` **esatti**
+ * e solo lassu' — la costa, la pianura e la fascia edificabile non lo pagano — e
+ * che la mappa e' monotona per ogni `lift > -1`, senza il ginocchio a rovescio
+ * che una curva richiudibile sul tetto porterebbe con se'.
+ *
+ * **Il `lift` puo' essere negativo, ed e' meta' del punto.** Espandendo soltanto,
+ * la varieta' si otterrebbe alzando tutte le isole e alzandone alcune di piu':
+ * il paesaggio medio cambierebbe insieme alla sua varianza. Comprimendo, un seed
+ * puo' anche prendersi un'isola dolce — versanti lunghi, vetta arrotondata —
+ * senza che nessun altro numero si muova, e la compressione non costa pendenza
+ * perche' ne toglie.
+ *
+ * **Il tetto lo paga `TERRAIN.maxHeight`, non un clamp.** L'espansione porta
+ * l'elevazione oltre 1, e appiattirla la' significherebbe una vetta rasata
+ * proprio dove il terreno dovrebbe essere piu' mosso: il tetto assoluto e'
+ * dichiarato invece abbastanza alto da contenerla, e `heightField.test.ts`
+ * verifica che il conto torni per il rilievo e il `lift` massimi.
+ */
+export function liftSummit(elevation: number, lift: number): number {
+  if (lift === 0 || elevation <= TERRAIN.summitKnee) return elevation;
+  return TERRAIN.summitKnee + (1 + lift) * (elevation - TERRAIN.summitKnee);
+}
+
+/**
  * Il profilo di una conca: la quota che il terreno deve avere a `ratio`, fra il
  * fondo e il bordo.
  *

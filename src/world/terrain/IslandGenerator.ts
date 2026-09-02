@@ -17,7 +17,7 @@ import {
   DECOR_RECORD_SIZE,
   type ColumnBlock,
 } from './columnBlock';
-import { treeAt, treeOrigin, treeSpec, treeTop, writeTree } from './decor';
+import { treeAt, treeOrigin, treeSpec, treeTopIn, writeTree } from './decor';
 import { BIOME, BIOME_STRATA, TERRAIN, TREE_DECOR, WATER_IDS } from './config';
 import { COVER, coverAt } from './groundcover';
 import { HeightField } from './heightField';
@@ -277,7 +277,9 @@ export function generateColumnBlock(field: HeightField, ccx: number, ccy: number
   const ledges = collectLedges(field, cells, baseX, baseY);
   for (let i = 0; i < decor.length; i += DECOR_RECORD_SIZE) {
     const tree = treeSpec(decor[i], decor[i + 1], decor[i + 2], decor[i + 3]);
-    maxHeight = Math.max(maxHeight, treeTop(tree, decor[i + 4]));
+    // I record sono gia' in coordinate locali: il rettangolo del blocco parte
+    // da zero, e l'altezza da allocare e' quella che l'albero tocca **qui**.
+    maxHeight = Math.max(maxHeight, treeTopIn(tree, decor[i + 4], 0, 0, CHUNK, CHUNK));
   }
   for (let i = 0; i < ledges.length; i += LEDGE_RECORD_SIZE) {
     maxHeight = Math.max(maxHeight, ledgeTop(ledges[i + 3]));
@@ -349,10 +351,10 @@ function collectDecor(
       // specie non sono tutte larghe uguali, e un cespuglio di raggio due a
       // quattro colonne dal bordo sta tutto di la'. Tenerne il record vorrebbe
       // dire allocare chunk per una chioma che questo blocco non scrive.
-      if (
-        x + tree.canopyRadius < baseX || x - tree.canopyRadius >= baseX + CHUNK
-        || y + tree.canopyRadius < baseY || y - tree.canopyRadius >= baseY + CHUNK
-      ) {
+      // Il conto e' per livello e non sull'ingombro: il livello piu' largo non
+      // e' quello piu' alto, e un albero che sfiora il blocco con la sola base
+      // non ci porta dentro la propria punta.
+      if (treeTopIn(tree, cells.heights[g], baseX, baseY, baseX + CHUNK, baseY + CHUNK) === 0) {
         continue;
       }
 

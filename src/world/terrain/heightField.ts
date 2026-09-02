@@ -3,6 +3,7 @@ import { hashCoords, mulberry32 } from '../rng';
 import { TERRAIN } from './config';
 import {
   lakeLevelAt,
+  liftSummit,
   moundRise,
   planBasins,
   planLobes,
@@ -31,7 +32,9 @@ import type { IslandShape } from './region';
  * 2. il **rumore** riempie quel volume di grana, ed e' l'unica parte isotropa;
  * 3. i **rilievi** alzano qualche fianco verso il tetto, cosi' la vetta non e'
  *    per forza al centro;
- * 4. le **conche** livellano qualche sito verso un fondo sotto il pelo
+ * 4. il **carattere** dell'isola espande la fascia alta, e decide quanto questo
+ *    seed sia alpino invece che dolce;
+ * 5. le **conche** livellano qualche sito verso un fondo sotto il pelo
  *    dell'acqua, ed e' li' che compaiono gli specchi interni.
  *
  * I primi due erano tutto quello che c'era, e da soli danno una cupola: il
@@ -52,6 +55,18 @@ export class HeightField {
   /** I due rumori che deformano il raggio della maschera. Indipendenti dalle ottave. */
   private readonly warp: NoiseFunction2D;
   private readonly warpDetail: NoiseFunction2D;
+
+  /**
+   * Il **carattere** di questa isola: quanto rumore a creste entra nella
+   * miscela, e quanto si espande la fascia alta.
+   *
+   * Sono due numeri per isola, non due campi: dichiarano che *tipo* di isola e'
+   * questa, non cosa succede in un punto. Escono da un flusso loro
+   * (`TERRAIN.profileSalt`) perche' aggiungerne un terzo non debba rifare il
+   * rumore di ogni seed.
+   */
+  private readonly crestMix: number;
+  private readonly summitLift: number;
 
   /** La sagoma dichiarata, derivata una volta sola da `(seed, shape)`. */
   private readonly lobes: readonly Lobe[];
@@ -96,6 +111,10 @@ export class HeightField {
       mulberry32(hashCoords(seed, TERRAIN.octaves + 1, TERRAIN.warpDetailSalt)),
     );
 
+    const profile = mulberry32(hashCoords(seed, TERRAIN.profileSalt, 0));
+    this.crestMix = TERRAIN.crestMix[0] + profile() * TERRAIN.crestMix[1];
+    this.summitLift = TERRAIN.summitLift[0] + profile() * TERRAIN.summitLift[1];
+
     // L'ordine e' una dipendenza, non una preferenza: i lobi definiscono la
     // maschera, i rilievi si appoggiano alla maschera, e le conche si cercano un
     // sito **guardando** il campo che i primi due hanno gia' prodotto. Le
@@ -112,11 +131,41 @@ export class HeightField {
     let sum = 0;
     for (let i = 0; i < this.noises.length; i++) {
       const f = this.frequencies[i];
-      sum += this.weights[i] * this.noises[i](x * f, y * f);
+      sum += this.weights[i] * this.crested(this.noises[i](x * f, y * f));
     }
     // fbm sta in [-1, 1] perche' i pesi sono normalizzati; il clamp copre solo
     // gli estremi teorici che il simplex non raggiunge mai davvero.
     return clamp01(0.5 + 0.5 * sum);
+  }
+
+  /**
+   * Miscela un'ottava con la propria versione a creste.
+   *
+   * `-|n|` e' lo stesso rumore ripiegato sullo zero: dove il simplex attraversa
+   * lo zero il ripiegamento lascia un massimo a spigolo, e quello spigolo e' una
+   * **linea** e non un punto — un crinale, con i suoi contrafforti. E' l'unica
+   * struttura allungata che il rumore sa produrre da solo: le colline tonde del
+   * fbm sono isotrope per costruzione, e nessuna somma di ottave isotrope da' un
+   * versante.
+   *
+   * **Il ripiegamento non e' riportato a piena ampiezza, ed e' quello che lo
+   * rende gratis.** La forma canonica `1 - 2|n|` riempie di nuovo `[-1, 1]`, ma
+   * quel fattore due raddoppia il gradiente: misurato, portava il dislivello
+   * peggiore fra due colonne da 0,69 a 0,94, cioe' oltre il criterio di
+   * continuita' che tiene in piedi il terreno a celle. Lasciato a mezza ampiezza,
+   * il valore assoluto conserva il modulo del gradiente **esattamente**, quindi
+   * la miscela costa zero comunque sia pesata: il crinale si paga in altezza — e
+   * l'altezza la ridanno `domeBias` e `summitLift`, che si pagano dove il budget
+   * c'e'.
+   *
+   * Il termine e' ricentrato su `crestBias`: il valore assoluto ha media
+   * positiva, e senza sottrarla la miscela alzerebbe l'isola intera — costa
+   * compresa — invece di cambiarne la forma.
+   */
+  private crested(n: number): number {
+    if (this.crestMix <= 0) return n;
+    const crest = 0.5 - Math.abs(n) - TERRAIN.crestBias;
+    return n + this.crestMix * (crest - n);
   }
 
   /**
@@ -220,7 +269,10 @@ export class HeightField {
     const relief = TERRAIN.domeBias + (1 - TERRAIN.domeBias) * this.noiseAt(x, y);
     const base = relief * this.maskAt(x, y);
     const rise = moundRise(this.mounds, x, y);
-    return base + rise * (1 - base);
+    // L'espansione della vetta e' l'ultimo passo del rilievo e il primo che le
+    // conche vedono: `planBasins` interroga questo campo, e un lago va cercato
+    // sull'isola che ci sara' davvero, non su quella prima del carattere.
+    return liftSummit(base + rise * (1 - base), this.summitLift);
   }
 
   /** Rilievo normalizzato in [0, 1], conche comprese. */

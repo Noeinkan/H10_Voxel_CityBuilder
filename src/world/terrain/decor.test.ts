@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest';
+import { PALETTE_SLOTS } from '../../engine/paletteSlots';
 import { VoxelWorld } from '../VoxelWorld';
 import { BIOME, TREE_DECOR } from './config';
-import { treeAt, treeSpec, treeTop, TREELESS_BIOMES, writeTree } from './decor';
-import { FLORA, TREE_SHAPES } from './flora';
+import { treeAt, treeSpec, treeTop, treeTopIn, TREELESS_BIOMES, writeTree } from './decor';
+import { FLORA, TREE_SHAPES, TREE_SPECIES } from './flora';
 import { generateIsland, type Region } from './IslandGenerator';
 import { shapeFromRegion } from './region';
 
@@ -67,6 +68,62 @@ describe('decorazioni degli alberi', () => {
     expect([...plain].some((species) => !rock.has(species))).toBe(true);
   });
 
+  /**
+   * I boschetti: la proprieta' che distingue un bosco da una manciata di alberi
+   * sorteggiati uno per uno. Non e' «tutti uguali dentro il riquadro» — un albero
+   * su tre resta il suo — ma due alberi dello stesso riquadro devono condividere
+   * la specie molto piu' spesso di due alberi presi a caso nel bioma.
+   */
+  it('gli alberi vicini fanno macchia, non sale e pepe', () => {
+    const speciesAt = (cellX: number, cellY: number): number | null => {
+      const tree = treeAt(SEED, cellX, cellY, 34, BIOME.forest, 0.1);
+      return tree === null ? null : tree.species;
+    };
+
+    let sameStand = 0;
+    let standPairs = 0;
+    let sameFar = 0;
+    let farPairs = 0;
+    for (let cellY = 0; cellY < 40; cellY++) {
+      for (let cellX = 0; cellX < 40; cellX++) {
+        const here = speciesAt(cellX, cellY);
+        if (here === null) continue;
+
+        const near = speciesAt(cellX + 1, cellY);
+        // Solo dentro lo stesso riquadro: a cavallo di un bordo la coppia
+        // racconta il contrario di quello che si sta misurando.
+        const sameStandCell =
+          Math.floor(cellX / TREE_DECOR.standCells) === Math.floor((cellX + 1) / TREE_DECOR.standCells);
+        if (near !== null && sameStandCell) {
+          standPairs++;
+          if (near === here) sameStand++;
+        }
+
+        const far = speciesAt(cellX + 3 * TREE_DECOR.standCells, cellY);
+        if (far !== null) {
+          farPairs++;
+          if (far === here) sameFar++;
+        }
+      }
+    }
+
+    expect(standPairs).toBeGreaterThan(40);
+    expect(farPairs).toBeGreaterThan(40);
+    expect(sameStand / standPairs).toBeGreaterThan((sameFar / farPairs) * 1.6);
+  });
+
+  it('la spiaggia ha la sua frangia, e sono quasi tutte palme', () => {
+    const species = new Map<number, number>();
+    for (let cell = 0; cell < 600; cell++) {
+      const tree = treeAt(SEED, cell, cell * 3, 20, BIOME.beach, 0.05);
+      if (tree === null) continue;
+      species.set(tree.species, (species.get(tree.species) ?? 0) + 1);
+    }
+    const total = [...species.values()].reduce((sum, n) => sum + n, 0);
+    expect(total).toBeGreaterThan(20);
+    expect((species.get(TREE_SPECIES.palm) ?? 0) / total).toBeGreaterThan(0.5);
+  });
+
   it('mantiene chiome distinte nella griglia delle celle', () => {
     const trees = [];
     for (let y = -8; y <= 8; y++) {
@@ -122,6 +179,55 @@ describe('profili delle specie', () => {
       expect(shape.sink).toBeLessThan(shape.trunk[0]);
       expect(shape.trunk[1]).toBeGreaterThanOrEqual(1);
       for (const level of shape.canopy) expect(shape.tones[level.tone]).toBeGreaterThan(0);
+    }
+  });
+
+  /**
+   * `treeTopIn` e' quello che alloca i chunk, e la sua unica ragione di esistere
+   * e' che il livello **piu' largo** di una chioma non e' quello piu' alto: una
+   * palma sfiorata dal blocco con le sole fronde ci scrive fin dove le fronde
+   * arrivano, non fin dove arriva la punta. Deve percio' valere il voxel piu' alto
+   * che `writeTree` scrive davvero dentro quel rettangolo — non un maggiorante,
+   * o resta un chunk vuoto ogni volta che la punta non ce la fa.
+   */
+  it('treeTopIn e’ il voxel piu’ alto che l’albero scrive nel rettangolo', () => {
+    const groundZ = 16;
+    for (let species = 0; species < TREE_SHAPES.length; species++) {
+      const shape = TREE_SHAPES[species];
+      const tree = treeSpec(16, 16, species, shape.trunk[0]);
+      // Il bordo scorre attraverso l'albero: fuori del tutto, di taglio sulla
+      // chioma, e infine tutto dentro.
+      for (const edge of [10, 13, 15, 16, 17, 19, 24]) {
+        const world = new VoxelWorld();
+        writeTree(world, tree, groundZ, edge, 0, 64, 64);
+
+        let highest = 0;
+        for (let z = 0; z < 96; z++) {
+          for (let y = 0; y < 64; y++) {
+            for (let x = edge; x < 64; x++) {
+              if (world.getBlock(x, y, z) !== 0) highest = Math.max(highest, z + 1);
+            }
+          }
+        }
+        expect(treeTopIn(tree, groundZ, edge, 0, 64, 64), `specie ${species}, bordo ${edge}`)
+          .toBe(highest);
+      }
+    }
+  });
+
+  it('la corteccia della betulla non e’ legno, e le altre si', () => {
+    const groundZ = 8;
+    const barkOf = (species: number): number => {
+      const world = new VoxelWorld();
+      const tree = treeSpec(16, 16, species, TREE_SHAPES[species].trunk[0]);
+      writeTree(world, tree, groundZ, 0, 0, 32, 32);
+      return world.getBlock(16, 16, groundZ);
+    };
+
+    expect(barkOf(TREE_SPECIES.birch)).toBe(TREE_SHAPES[TREE_SPECIES.birch].bark);
+    expect(barkOf(TREE_SPECIES.birch)).not.toBe(barkOf(TREE_SPECIES.broadleaf));
+    for (const species of [TREE_SPECIES.broadleaf, TREE_SPECIES.conifer, TREE_SPECIES.palm]) {
+      expect(barkOf(species), `specie ${species}`).toBe(PALETTE_SLOTS.wood);
     }
   });
 

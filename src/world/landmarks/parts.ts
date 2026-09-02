@@ -161,6 +161,19 @@ export interface Part {
    * ignorano. `depth` oltre meta' del lato piu' corto viene troncato: sotto
    * quella soglia il corpo si chiuderebbe e resterebbero le sole cornici a
    * mezz'aria.
+   *
+   * **Si mette sulle torri, non sulle navate, e la ragione e' misurata.** Una
+   * cornice serra la parete: ogni fascia apre un davanzale e un intradosso su
+   * **tutto** il perimetro, e sono facce esposte, cioe' esattamente cio' su cui
+   * il dettaglio si paga. Sul chunk piu' pieno della cattedrale — la fixture
+   * `cathedralChunk` di `engine/mesher/microGeometry.test.ts` — le cornici sui
+   * due scafi lunghi da sole valevano **9 400 quad su 14 700**, portando il
+   * chunk a quattro quad dal tetto; tolte da li' e lasciate sulle torri, lo
+   * stesso chunk ne misura 5 296. Il perimetro e' il moltiplicatore: su una
+   * torre 7x7 una fascia costa ventiquattro celle, su una navata lunga
+   * ventotto ne costa sessantotto, e le fasce sono tante quante l'altezza
+   * diviso il passo. Un fianco lungo il ritmo se lo prende dai contrafforti,
+   * che costano una volta sola.
    */
   readonly cornice?: { readonly step: number; readonly depth: number };
 }

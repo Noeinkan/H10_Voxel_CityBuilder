@@ -1,8 +1,8 @@
 import { PALETTE_SLOTS } from '../../engine/paletteSlots';
 import type { VoxelWorld } from '../VoxelWorld';
-import { hashCoords, mulberry32 } from '../rng';
+import { hashCoords, mulberry32, unitAt } from '../rng';
 import { BIOME, TERRAIN, TREE_DECOR } from './config';
-import { FLORA, pickSpecies, TREE_SHAPES } from './flora';
+import { FLORA, pickSpecies, TREE_SHAPES, type BiomeFlora } from './flora';
 
 /**
  * Raggio di ingombro di ogni specie, dedotto dal suo profilo una volta sola.
@@ -67,13 +67,50 @@ export function treeAt(
   const x = cellX * TREE_DECOR.cellSize + treeJitter(random);
   const y = cellY * TREE_DECOR.cellSize + treeJitter(random);
   // La specie esce dai pesi del bioma, non dal catalogo intero: e' la sola
-  // differenza fra una montagna e una pianura piu' rada. Resta **una** sola
-  // estrazione, o `treeOrigin` leggerebbe il flusso sfasato.
-  const species = pickSpecies(flora, random());
+  // differenza fra una montagna e una pianura piu' rada. Le estrazioni stanno
+  // **dopo** i due jitter, o `treeOrigin` leggerebbe il flusso sfasato.
+  const species = standSpecies(seed, cellX, cellY, flora, random);
   const shape = TREE_SHAPES[species];
   const trunkHeight = shape.trunk[0] + Math.floor(random() * shape.trunk[1]);
 
   return treeSpec(x, y, species, trunkHeight);
+}
+
+/**
+ * La specie di questo albero: quella del **boschetto** in cui cade, oppure la
+ * sua.
+ *
+ * Estraendo per cella, ogni albero e' indipendente dai vicini: sui pesi della
+ * foresta esce un pixel di conifera, uno di latifoglia e uno di betulla, e a
+ * distanza isometrica quello non e' un bosco misto ma un rumore verde. Un bosco
+ * vero ha delle **macchie** — un versante di abeti, una fascia di betulle lungo
+ * un impluvio — perche' un albero cresce dove ha seminato quello accanto.
+ *
+ * Il boschetto e' un riquadro di `standCells` celle con una specie sua, estratta
+ * dagli stessi pesi del bioma: non aggiunge specie dove non crescerebbero, ne
+ * cambia solo la disposizione. E non le impone a tutti — `standShare` lascia
+ * fuori un albero su tre, ed e' quello che sfuma il bordo fra due macchie invece
+ * di lasciare una linea retta lunga un riquadro.
+ *
+ * Le due estrazioni si fanno **sempre** tutte e due, comunque vada la scelta:
+ * il flusso del PRNG deve avanzare uguale, o l'altezza del tronco dipenderebbe
+ * da quale ramo e' stato preso.
+ */
+function standSpecies(
+  seed: number,
+  cellX: number,
+  cellY: number,
+  flora: BiomeFlora,
+  random: () => number,
+): number {
+  const own = pickSpecies(flora, random());
+  const alone = random() >= TREE_DECOR.standShare;
+  if (alone) return own;
+  // `unitAt` e non un PRNG: e' una sola frazione per riquadro, e la chiusura di
+  // `mulberry32` costerebbe piu' del valore che se ne tira.
+  const patchX = Math.floor(cellX / TREE_DECOR.standCells);
+  const patchY = Math.floor(cellY / TREE_DECOR.standCells);
+  return pickSpecies(flora, unitAt(seed ^ TREE_DECOR.standSalt, patchX, patchY));
 }
 
 /**
@@ -96,6 +133,44 @@ export function treeTop(tree: TreeSpec, groundZ: number): number {
     groundZ + tree.trunkHeight,
     canopyBaseZ(shape, groundZ, tree.trunkHeight) + shape.canopy.length,
   );
+}
+
+/**
+ * La quota che l'albero raggiunge **dentro** un rettangolo, oppure 0 se non lo
+ * tocca affatto.
+ *
+ * Serve a chi alloca i chunk, e la differenza da `treeTop` non e' un dettaglio:
+ * l'ingombro di una specie e' il raggio del suo livello **piu' largo**, ma quel
+ * livello non e' quasi mai quello piu' alto. Una palma ha le fronde a raggio
+ * quattro in basso e la punta a raggio due; un albero che la sfiora con le sole
+ * fronde intersecava percio' il blocco secondo l'ingombro, ma ci scriveva
+ * soltanto fin dove le fronde arrivano — e il chunk allocato per la punta
+ * restava vuoto. E' il difetto che il contratto chiama «ritagliare i record, non
+ * solo scriverli», e con le chiome a punta stretta smette di essere teorico.
+ *
+ * **Non e' un maggiorante: e' il conto esatto**, e lo e' perche' rifa' il
+ * disegno invece di stimarlo. Un livello pende (`TREE_DECOR.maxLean`) e il suo
+ * bordo viene mangiato a caso (`TREE_DECOR.edgeErosion`): un riquadro dedotto dai
+ * raggi dichiarati direbbe che la punta tocca il blocco anche quando pende
+ * dall'altra parte, e allocherebbe il chunk lo stesso. Ridisegnando, le
+ * estrazioni sono le stesse di `writeTree` — vengono dalla posizione dell'albero,
+ * non da chi chiama — quindi la quota che ne esce e' quella che verra' scritta
+ * davvero. Costa un disegno in piu' per albero, e un blocco ne ha una decina.
+ */
+export function treeTopIn(
+  tree: TreeSpec,
+  groundZ: number,
+  minX: number,
+  minY: number,
+  maxX: number,
+  maxY: number,
+): number {
+  let top = 0;
+  drawTree(tree, groundZ, (x, y, z) => {
+    if (x < minX || x >= maxX || y < minY || y >= maxY) return;
+    if (z + 1 > top) top = z + 1;
+  });
+  return top;
 }
 
 /** Quota del primo livello di chioma: da qui in su si impila il profilo. */
@@ -158,13 +233,14 @@ export function drawTree(tree: TreeSpec, groundZ: number, put: TreeSink): void {
   // due voxel su una chioma larga nove leggono come un pilastro, e comunque il
   // tronco si vede solo sotto la chioma, dove la parte che conta e' l'ombra che
   // proietta, non la sua sezione.
+  const shape = TREE_SHAPES[tree.species];
+  const bark = shape.bark ?? PALETTE_SLOTS.wood;
   for (let z = groundZ; z < groundZ + tree.trunkHeight; z++) {
-    put(tree.x, tree.y, z, PALETTE_SLOTS.wood);
+    put(tree.x, tree.y, z, bark);
   }
 
   // La chioma passa sopra la cima del tronco e la copre: e' voluto, quei voxel
   // sono interni e non si vedono, e costa meno che ritagliarli.
-  const shape = TREE_SHAPES[tree.species];
   const baseZ = canopyBaseZ(shape, groundZ, tree.trunkHeight);
 
   // Un PRNG per albero, derivato dalla posizione e non conservato nel record
@@ -234,10 +310,10 @@ function pickLean(random: () => number, lean: number): number {
 /**
  * I biomi che devono restare spogli, esposti per test e documentazione.
  *
- * **La roccia non c'e' piu'.** Era spoglia da quando era anche l'unico terreno
- * vietato alla citta', cioe' un posto dove non succedeva niente; da quando la
- * roccia si paga invece di essere rifiutata, l'unica ragione per tenerla nuda
- * era l'inerzia. Restano l'acqua, dove non cresce niente, e la spiaggia, che e'
- * il terreno su cui la citta' arriva per prima.
+ * **Ne e' rimasto uno solo, ed e' quello sott'acqua.** La roccia era spoglia da
+ * quando era anche l'unico terreno vietato alla citta'; la spiaggia perche' e'
+ * il terreno su cui la citta' arriva per prima — ma un albero non toglie
+ * edificabilita' a nessuno, e la frangia costiera e' l'unica fascia dell'isola
+ * che si vede da ogni inquadratura.
  */
-export const TREELESS_BIOMES: readonly number[] = [BIOME.ocean, BIOME.beach];
+export const TREELESS_BIOMES: readonly number[] = [BIOME.ocean];

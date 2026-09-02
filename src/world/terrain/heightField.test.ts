@@ -8,8 +8,17 @@ import { shapeFromRegion, withCoastalExtension } from './region';
 const ISLAND = { minX: 0, minY: 0, sizeX: 512, sizeY: 512 };
 const SHAPE = shapeFromRegion(ISLAND);
 
-/** Otto seed sparsi: la calibrazione deve reggere per un seed qualunque. */
-const SEEDS = [1337, 7, 42, 99991, 2024, 65535, 314159, 8675309];
+/**
+ * Seed sparsi: la calibrazione deve reggere per un seed qualunque.
+ *
+ * Gli ultimi tre non sono sparsi affatto — sono i **casi estremi del carattere**,
+ * trovati scandendone qualche decina. Il 1 pesca insieme la miscela a creste piu'
+ * alta e quasi tutta l'espansione della vetta, cioe' il seed piu' ripido che il
+ * generatore sa produrre; il 30 ha la vetta piu' alta; il 20 sta in mezzo con
+ * entrambi i numeri alti. Senza di loro il criterio di continuita' verrebbe
+ * verificato solo su isole di carattere medio, ed e' esattamente dove non serve.
+ */
+const SEEDS = [1337, 7, 42, 99991, 2024, 65535, 314159, 8675309, 1, 20, 30];
 
 /** Campiona il campo su `[-1, size]^2` e restituisce il reticolo paddato. */
 function sampleGrid(field: HeightField, size: number): Float64Array {
@@ -240,6 +249,80 @@ describe('HeightField — regolarita’', () => {
     }
     expect(Math.min(...sectors)).toBeGreaterThan(0);
     expect(Math.max(...sectors) / Math.min(...sectors)).toBeGreaterThan(1.15);
+  });
+
+  /**
+   * L'espansione della vetta porta l'elevazione **sopra** 1, e non c'e' nessun
+   * clamp a fermarla: a tenere le colonne sotto il tetto assoluto e' questa
+   * disuguaglianza fra costanti, e nient'altro. Se cade, il generatore non
+   * lancia niente — il terreno si appiattisce in cima dentro `cellGrid`, che e'
+   * il difetto piu' difficile da vedere di tutti.
+   */
+  it('il tetto assoluto contiene l’espansione piu’ alta', () => {
+    const relief = Math.min(
+      TERRAIN.maxHeight - TERRAIN.oceanFloor,
+      Math.min(SHAPE.radiusX, SHAPE.radiusY) * TERRAIN.maxReliefSlope,
+    );
+    const maxLift = TERRAIN.summitLift[0] + TERRAIN.summitLift[1];
+    const knee = TERRAIN.summitKnee;
+    const topElevation = knee + (1 + maxLift) * (1 - knee);
+    expect(TERRAIN.oceanFloor + relief * topElevation).toBeLessThanOrEqual(TERRAIN.maxHeight);
+  });
+
+  /**
+   * La miscela a creste sostituisce un rumore a media nulla con uno a media
+   * positiva, e la costante che lo ricentra e' **misurata**: se scivola, l'isola
+   * si alza o si abbassa tutta insieme — e il primo posto in cui si vedrebbe e'
+   * la costa, che e' anche l'ultimo in cui la si guarda.
+   */
+  it('la miscela a creste resta centrata su mezzo', () => {
+    // **La media si prende su tutti i seed, non su uno.** L'ottava di base ha
+    // una lunghezza d'onda di 440 voxel e l'isola ne misura 512: su una finestra
+    // larga poco piu' di un'onda la media campionaria vaga di qualche punto
+    // percentuale per conto suo, e un seed solo direbbe piu' cosa gli e' capitato
+    // sotto che se la costante e' giusta. Sull'insieme quella deriva si cancella,
+    // e resta lo scarto sistematico — l'unico che `crestBias` puo' introdurre.
+    let total = 0;
+    let samples = 0;
+    for (const seed of SEEDS) {
+      const field = new HeightField(seed, SHAPE);
+      let sum = 0;
+      let count = 0;
+      for (let y = 0; y < 512; y += 3) {
+        for (let x = 0; x < 512; x += 3) {
+          sum += field.noiseAt(x, y);
+          count++;
+        }
+      }
+      total += sum;
+      samples += count;
+      expect(Math.abs(sum / count - 0.5), `seed ${seed}`).toBeLessThan(0.09);
+    }
+    expect(Math.abs(total / samples - 0.5)).toBeLessThan(0.02);
+  });
+
+  /**
+   * Il punto di `summitLift`: due isole non hanno la stessa vetta. Prima, il
+   * rilievo era lo stesso per tutti i seed e la quota raggiunta dipendeva solo da
+   * dove cadevano le creste — una lotteria stretta, che dava a ogni isola piu' o
+   * meno la stessa montagna.
+   */
+  it('due seed danno due montagne di altezza diversa', () => {
+    const peakOf = (seed: number): number => {
+      const field = new HeightField(seed, SHAPE);
+      let peak = 0;
+      for (let y = 0; y < 512; y += 2) {
+        for (let x = 0; x < 512; x += 2) peak = Math.max(peak, field.heightAt(x, y));
+      }
+      return peak;
+    };
+
+    // Il 30 espande la vetta quasi al massimo, il 1337 la comprime: sono i due
+    // estremi del carattere, non due seed qualunque.
+    const alpine = peakOf(30);
+    const gentle = peakOf(1337);
+    expect(alpine - gentle).toBeGreaterThan(14);
+    expect(gentle).toBeGreaterThanOrEqual(TERRAIN.rockMinHeight);
   });
 
   it('la quota massima dell’isola arriva in fascia rocciosa, per ogni seed', () => {

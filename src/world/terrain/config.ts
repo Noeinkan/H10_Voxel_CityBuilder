@@ -87,8 +87,19 @@ export const TERRAIN = {
   /** Quanto lontano si cerca la sponda opposta prima di rinunciare al canale. */
   canalReach: 7,
 
-  /** Tetto duro dell'altezza di colonna. Nessuna colonna supera questa quota. */
-  maxHeight: 80,
+  /**
+   * Tetto duro dell'altezza di colonna. Nessuna colonna supera questa quota.
+   *
+   * **Non e' piu' il rilievo dell'isola, ed e' un cambio di ruolo.** Fino a
+   * `summitLift` il rilievo valeva `maxHeight - oceanFloor` e i due numeri erano
+   * la stessa cosa detta due volte; da quando la fascia alta si espande per
+   * seed, il rilievo lo detta il raggio (`maxReliefSlope`) e questo e' soltanto
+   * il tetto che deve contenere l'espansione piu' alta — `heightField.test.ts`
+   * verifica il conto. Serve al picking, all'inquadratura e all'allocazione dei
+   * chunk: quanto ci arrivi sotto non costa niente, perche' i chunk si allocano
+   * sull'altezza vera della colonna.
+   */
+  maxHeight: 100,
 
   /** Altezza a cui la maschera radiale schiaccia il bordo della region. */
   oceanFloor: 4,
@@ -102,10 +113,10 @@ export const TERRAIN = {
    * varrebbe solo per il lato 256 su cui e' stata fatta, e su una region piu'
    * piccola cadrebbero sia il criterio di continuita' sia l'edificabilita'.
    *
-   * A raggio 256 il tetto vale 76,8 e morde appena: il rilievo resta
-   * `maxHeight - oceanFloor`, cioe' 76. Sotto, l'isola si abbassa in proporzione
-   * — che e' anche il comportamento giusto, un isolotto non ha una vetta da 80
-   * voxel.
+   * A raggio 256 il tetto vale 76,8, ed e' **lui** a decidere: da quando
+   * `maxHeight` deve contenere anche l'espansione della vetta, il rilievo di
+   * riferimento e' sempre questo. Sotto, l'isola si abbassa in proporzione — che
+   * e' anche il comportamento giusto, un isolotto non ha una vetta da 80 voxel.
    */
   maxReliefSlope: 0.3,
 
@@ -138,9 +149,18 @@ export const TERRAIN = {
    * lunghezza d'onda di quarantotto. Quel quarto e' passato a `LANDFORM`, dove
    * gli stessi voxel di dislivello fanno una collina o la sponda di un lago
    * invece di grana che la quantizzazione a celle cancella comunque.
+   *
+   * **La frequenza di base e' scesa da 1/384 per comprare margine**, ed e' lo
+   * stesso scambio di allora fatto un'altra volta: il gradiente del fbm e'
+   * proporzionale alla frequenza, quindi allungare la lunghezza d'onda di un
+   * settimo restituisce un settimo del budget di Lipschitz. Quel settimo lo
+   * spende `summitLift`, dove gli stessi voxel fanno la differenza fra un'isola
+   * dolce e una alpina invece di increspare un versante. Misurato su
+   * trentadue seed, il dislivello peggiore fra due colonne e' sceso da 0,79 a
+   * 0,76 **nonostante** l'espansione della vetta.
    */
   octaves: 3,
-  baseFrequency: 1 / 384,
+  baseFrequency: 1 / 440,
   lacunarity: 2,
   persistence: 0.5,
 
@@ -154,6 +174,102 @@ export const TERRAIN = {
 
   /** Sale del seed per ottava: tiene le ottave indipendenti fra loro. */
   noiseSalt: 0x5eed_1a1d,
+
+  // --- Carattere dell'isola -----------------------------------------------
+  //
+  // Due numeri estratti una volta per seed, da un flusso loro (`profileSalt`):
+  // sono cio' che distingue un'isola *dolce* da una *alpina*, e non solo un
+  // seed dall'altro. Prima di loro ogni isola aveva lo stesso impasto — stessa
+  // miscela di rumore, stessa proporzione fra piede e vetta — e a cambiare era
+  // soltanto dove cadevano le creste.
+
+  /**
+   * Sale del carattere. E' un flusso separato per la ragione di
+   * `LANDFORM.shapeWarpSalt`: pescandolo da quello delle ottave, aggiungere un
+   * numero qui rifarebbe il rumore di ogni isola invece di darle un carattere.
+   */
+  profileSalt: 0x0c_1a_57_e5,
+
+  /**
+   * Quanto rumore **a creste** entra nella miscela, `[minimo, ampiezza]`.
+   *
+   * Il simplex e' liscio in ogni direzione: sommato in ottave da' colline
+   * tonde, che e' il motivo per cui un fbm puro legge come dune e non come una
+   * montagna. La versione a creste — `1 - 2|n|` — ha un massimo *a spigolo*
+   * lungo la curva in cui il rumore cambia segno: da li' escono crinali continui
+   * con i loro contrafforti, cioe' la struttura che l'orografia vera ha e il
+   * rumore isotropo non puo' avere.
+   *
+   * **Non costa gradiente**, e la ragione sta in `HeightField.crested`: il
+   * ripiegamento resta a mezza ampiezza invece di essere riportato a `[-1, 1]`,
+   * quindi conserva il modulo del gradiente del rumore da cui viene. Riportarlo
+   * a piena ampiezza costava il fattore due: misurato, il dislivello peggiore fra
+   * due colonne passava da 0,69 a 0,94, cioe' oltre il criterio di continuita'.
+   * Si paga percio' in **altezza** — un'isola tutta creste e' piu' bassa di una
+   * tutta cupole — ed e' `summitLift` a ridargliela, dove il budget c'e'.
+   *
+   * Il minimo non e' zero perche' un'isola senza un crinale non e' un'isola con
+   * un carattere diverso, e' l'isola di prima; il massimo sta sotto la meta'
+   * perche' oltre quella il fbm smette di dare la grana e restano solo lame.
+   */
+  crestMix: [0.18, 0.3],
+
+  /**
+   * Media di `0,5 - |n|` su un'ottava di simplex, sottratta perche' la miscela
+   * non alzi l'isola.
+   *
+   * Il rumore ha media nulla, il suo valore assoluto no: vale in media 0,378,
+   * quindi il termine a creste vale in media 0,122 — e mescolarlo senza
+   * ricentrarlo alzerebbe tutta l'elevazione, costa compresa, cioe' terra
+   * attaccata al bordo della region. E' una costante **misurata**, non dedotta, e
+   * `heightField.test.ts` verifica che la miscela resti centrata su mezzo per
+   * ogni peso.
+   */
+  crestBias: 0.1222,
+
+  /**
+   * Espansione della fascia alta, `[minimo, ampiezza]`.
+   *
+   * E' il numero che risponde a «perche' due isole hanno la stessa vetta». Il
+   * rilievo massimo e' lo stesso per tutti i seed — lo detta il raggio via
+   * `maxReliefSlope` — e la quota che l'isola raggiunge davvero dipende solo da
+   * quanto in alto arriva la somma di rumore e maschera, cioe' da dove cadono le
+   * creste: un'estrazione, non una scelta.
+   *
+   * La distanza dal ginocchio viene percio' moltiplicata per `1 + lift`: sotto
+   * non cambia **niente** — costa, pianura ed edificabilita' restano quelle — e
+   * la vetta sale di tanto quanto il seed le concede. Un'isola gia' alta ci
+   * guadagna piu' di una bassa, che e' il verso giusto: la differenza fra le due
+   * si allarga invece di essere spalmata, ed e' quella differenza il punto.
+   *
+   * **L'intervallo attraversa lo zero**, e non per simmetria: espandendo
+   * soltanto si alzerebbero tutte le isole, e la varieta' verrebbe da un
+   * paesaggio medio diverso invece che dalla varianza. Con un estremo negativo un
+   * seed puo' anche prendersi un'isola dolce, e la vetta piu' bassa che ne esce
+   * resta sopra `rockMinHeight` — il che e' verificato, non sperato.
+   *
+   * Il massimo lo detta `maxHeight`, non il gusto: il rilievo piu' alto che il
+   * raggio concede, espanso di `1 + lift * (1 - summitKnee)`, deve restare sotto
+   * il tetto assoluto senza bisogno di un clamp.
+   */
+  summitLift: [-0.16, 0.52],
+
+  /**
+   * Quota normalizzata da cui l'espansione comincia, in frazione di rilievo.
+   *
+   * A rilievo 76,8 cade intorno ai 30 voxel, cioe' dove la pianura finisce e
+   * comincia la foresta: la montagna sale da li', ed e' anche il verso giusto —
+   * il piede di un rilievo vero non e' una linea alla quota della roccia, e'
+   * tutto il versante. Piu' in alto il ginocchio lascerebbe alla vetta una fascia
+   * troppo corta perche' l'espansione si veda: misurato, a 0,55 valeva sei voxel
+   * di guadagno contro i quindici di qui.
+   *
+   * **La citta' resta sotto.** La spiaggia arriva a 24 voxel e la pianura poco
+   * oltre: la fascia dove `buildableMaxSlope` decide qualcosa sta quasi tutta
+   * sotto il ginocchio, e le colonne che l'espansione irripidisce sono quelle che
+   * la pendenza escludeva gia'.
+   */
+  summitKnee: 0.34,
 
   /**
    * Deformazione del raggio della maschera radiale.
@@ -952,6 +1068,28 @@ export const TREE_DECOR = {
    * invece di essere un solido di rotazione perfetto.
    */
   maxLean: 1,
+
+  /**
+   * Lato del boschetto, in celle di decorazione.
+   *
+   * Sei celle sono settantadue voxel, cioe' la scala di un versante e non di un
+   * isolato: piu' piccolo, la macchia si legge come una chiazza; piu' grande,
+   * meta' bioma prende una specie sola e la varieta' che il catalogo dichiara
+   * sparisce dall'inquadratura.
+   */
+  standCells: 6,
+
+  /**
+   * Quanti alberi seguono la specie del proprio boschetto.
+   *
+   * Due su tre. Il terzo tiene il bordo fra due macchie sfumato invece che
+   * rettilineo — il riquadro e' quadrato, e senza questo si vedrebbe — e rimette
+   * dentro il bosco misto che i pesi del bioma dichiarano.
+   */
+  standShare: 0.66,
+
+  /** Sale del boschetto: la macchia non deve seguire la griglia degli alberi. */
+  standSalt: 0x5ca_c1a1,
 } as const;
 
 /**
@@ -974,3 +1112,4 @@ export const BIOME_DEBUG_IDS: readonly number[] = [
   PALETTE_SLOTS.metalRust, //     hill   — arancio
   PALETTE_SLOTS.concretePale, //  rock   — grigio chiaro
 ];
+
