@@ -1,5 +1,3 @@
-import { BUILDING_CLASS } from '../../sim';
-import { hashCoords } from '../rng';
 import { SPANS, SPAN_KIND, type SpanKind } from '../spans/config';
 import { generateSpan } from '../spans/generate';
 import { planPlaza } from '../spans/plazaPlan';
@@ -14,9 +12,9 @@ import {
 } from '../spans/spanPlan';
 import { footprintDepth, type BuildingRecord } from './BuildingRegistry';
 import type { BuildContext } from './buildContext';
-import { dirtyChunkCount } from './chunkBudget';
 import { MAX_FOOTPRINT } from './config';
-import { STAMP_EMPTY } from './stamp';
+import { placeStructure } from './placeStructure';
+import { worldProbe } from './worldProbe';
 import { traitsOf } from './structureKind';
 
 /**
@@ -53,15 +51,16 @@ export class SpanDriver {
   private readonly probe: SpanProbe;
 
   constructor(private readonly ctx: BuildContext) {
+    const world = worldProbe(ctx);
     this.probe = {
       ground: (x, y) => ({
-        height: ctx.terrain.heightAt(x, y),
-        pavement: ctx.streets.isPavement(x, y),
+        height: world.heightAt(x, y),
+        pavement: world.isPavement(x, y),
         // «Il suolo e' preso»: le campate non ci entrano, ed e' l'invariante che
         // permette a un ponte di scavalcare una carreggiata senza toglierla.
-        free: !ctx.registry.isOccupied(x, y),
+        free: world.isFree(x, y),
       }),
-      solid: (x, y, z) => ctx.world.getBlock(x, y, z) !== STAMP_EMPTY,
+      solid: world.isSolid,
     };
   }
 
@@ -302,50 +301,34 @@ export class SpanDriver {
    * scrittura: e' tutto il senso di averli spezzati.
    */
   private build(plan: SpanPlan): boolean {
-    const baseZ = spanBaseZ(plan.deckZ);
-    // Gli appoggi sono esclusi: l'impalcato atterra dove i corpi si affacciano
-    // davvero, quindi sporge sopra le loro fasce basse. Toccare cio' a cui si e'
-    // attaccati non e' una collisione — `boxIsClear` ha gia' verificato che li'
-    // dentro non ci sia niente di solido.
-    if (this.ctx.registry.overlaps(
-      plan.x, plan.y, plan.sizeX, baseZ, SPAN_HEIGHT, plan.sizeY, plan.supports,
-    )) {
-      return false;
-    }
-
-    for (const segment of plan.segments) {
-      const count = dirtyChunkCount(
-        segment.x, segment.y, segment.sizeX, baseZ, baseZ + SPAN_HEIGHT, segment.sizeY,
-      );
-      if (count > SPANS.maxDirtyChunks) return false;
-    }
-
-    const record = this.ctx.registry.add({
-      x: plan.x,
-      y: plan.y,
-      baseZ,
-      footprint: plan.sizeX,
-      footprintY: plan.sizeY,
-      height: SPAN_HEIGHT,
-      // Una campata non ha un uso urbano: `tally` la salta come salta i landmark,
-      // e questo campo non entra in nessun istogramma. Civico e' il meno
-      // arbitrario dei quattro — un passaggio pubblico e' spazio pubblico — ma
-      // resta inerte per costruzione.
-      class: BUILDING_CLASS.civic,
-      level: 0,
-      seed: hashCoords(this.ctx.seed, plan.x, plan.y),
-      span: plan.kind,
-      supports: plan.supports,
-    });
-
-    for (const segment of plan.segments) {
-      this.ctx.growth.enqueue(
-        record.id,
-        { x: segment.x, y: segment.y, z: baseZ },
-        generateSpan(plan, segment),
-      );
-    }
-    return true;
+    return placeStructure(this.ctx, {
+      record: {
+        x: plan.x,
+        y: plan.y,
+        baseZ: spanBaseZ(plan.deckZ),
+        footprint: plan.sizeX,
+        footprintY: plan.sizeY,
+        height: SPAN_HEIGHT,
+        // `class` e `level` restano ai default: una campata non ha un uso urbano
+        // — `tally` la salta come salta i landmark, e il campo non entra in
+        // nessun istogramma — e non ha un livello.
+        span: plan.kind,
+        supports: plan.supports,
+      },
+      maxDirtyChunks: SPANS.maxDirtyChunks,
+      // Gli appoggi sono esclusi: l'impalcato atterra dove i corpi si affacciano
+      // davvero, quindi sporge sopra le loro fasce basse. Toccare cio' a cui si
+      // e' attaccati non e' una collisione — `boxIsClear` ha gia' verificato che
+      // li' dentro non ci sia niente di solido.
+      exempt: plan.supports,
+      segments: plan.segments.map((segment) => ({
+        x: segment.x,
+        y: segment.y,
+        sizeX: segment.sizeX,
+        sizeY: segment.sizeY,
+        stamp: () => generateSpan(plan, segment),
+      })),
+    }) !== null;
   }
 
   /** Cancella i voxel di una campata e la toglie dal registry. */

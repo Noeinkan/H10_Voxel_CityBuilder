@@ -1,6 +1,3 @@
-import { BUILDING_CLASS } from '../../sim';
-import { GROUND, isDryLand } from '../grading/grade';
-import { hashCoords } from '../rng';
 import { ROPEWAY, ROPEWAY_PART } from '../ropeway/config';
 import { generateStation } from '../ropeway/generate';
 import {
@@ -11,9 +8,13 @@ import {
   type RopewayResult,
 } from '../ropeway/ropewayPlan';
 import type { BuildContext } from './buildContext';
-import { dirtyChunkCount } from './chunkBudget';
-import { anchorOf } from './growthQueue';
-import { groundKindAt } from './siteWorks';
+import {
+  structureFits,
+  wholeFootprint,
+  writeStructure,
+  type StructureSpec,
+} from './placeStructure';
+import { worldProbe } from './worldProbe';
 
 /**
  * Le funivie: due torri, e fra loro niente.
@@ -56,17 +57,15 @@ export class RopewayDriver {
   private rideList: readonly RopewayRide[] = [];
 
   constructor(private readonly ctx: BuildContext) {
+    // Le quattro letture della fune, prese dalla sonda canonica invece che
+    // riscritte: `top` e' la stessa di `AerialProbe.ground`, e la fune la usa
+    // per la stessa cosa — sapere cosa deve scavalcare.
+    const world = worldProbe(ctx);
     this.probe = {
-      // La prima quota libera sopra **tutto**: il terreno o il tetto di chi ci
-      // sta sopra. E' la stessa lettura di `AerialProbe.ground`, e la fune la
-      // usa per la stessa cosa — sapere cosa deve scavalcare.
-      top: (x, y) => Math.max(ctx.terrain.heightAt(x, y), ctx.registry.supportAt(x, y).z),
-      // **Il bioma e non la quota**: una colonna piu' alta del mare puo' essere
-      // un fondale appena generato, e una piu' bassa una conca asciutta. E' la
-      // stessa ragione per cui `clearDecorColumn` guarda `isDryLand`.
-      land: (x, y) => ctx.terrain.has(x, y) && isDryLand(ctx.terrain.biomeAt(x, y)),
-      firm: (x, y) => groundKindAt(ctx.terrain, x, y) !== GROUND.refused,
-      free: (x, y) => !ctx.registry.isOccupied(x, y),
+      top: world.topAt,
+      land: world.isDryLand,
+      firm: world.isFirm,
+      free: world.isFree,
     };
   }
 
@@ -109,41 +108,21 @@ export class RopewayDriver {
   }
 
   private build(plan: RopewayPlan): boolean {
-    for (const station of plan.stations) {
-      const top = station.baseZ + station.height;
-      const count = dirtyChunkCount(
-        station.x, station.y, ROPEWAY.stationSide, station.baseZ, top, ROPEWAY.stationSide,
-      );
-      if (count > ROPEWAY.maxDirtyChunks) return false;
-      if (this.ctx.registry.overlaps(
-        station.x, station.y, ROPEWAY.stationSide, station.baseZ, station.height, ROPEWAY.stationSide,
-      )) {
-        return false;
-      }
+    // **Tutte le torri verificate prima che ne sia scritta una.** La seconda che
+    // non entra deve fermare anche la prima, quindi qui i due tempi restano due:
+    // `structureFits` su tutte, poi `writeStructure` su tutte.
+    const specs = plan.stations.map((station) => specOf(station, plan.axis));
+    for (const spec of specs) {
+      if (!structureFits(this.ctx, spec)) return false;
     }
 
     // **Le due torri prima della fune.** L'id della linea e' quello della prima:
     // un identificatore proprio sarebbe un secondo contatore da tenere allineato
     // a un registro che gia' ne ha uno.
     let lineId = 0;
-    for (const station of plan.stations) {
-      const record = this.ctx.registry.add({
-        x: station.x,
-        y: station.y,
-        baseZ: station.baseZ,
-        footprint: ROPEWAY.stationSide,
-        footprintY: ROPEWAY.stationSide,
-        height: station.height,
-        // Come per una campata o un impalcato: `tally` lo salta, e questo campo
-        // non entra in nessun istogramma. Civico e' il meno arbitrario dei
-        // quattro — una stazione e' spazio pubblico — ma resta inerte.
-        class: BUILDING_CLASS.civic,
-        level: 0,
-        seed: hashCoords(this.ctx.seed, station.x, station.y),
-        ropeway: ROPEWAY_PART.station,
-      });
+    for (const spec of specs) {
+      const record = writeStructure(this.ctx, spec);
       if (lineId === 0) lineId = record.id;
-      this.ctx.growth.enqueue(record.id, anchorOf(record), generateStation(station, plan.axis));
     }
 
     // Array nuovi e non `push`: e' il cambio di identita' a dire alla vista che
@@ -152,6 +131,28 @@ export class RopewayDriver {
     this.rideList = [...this.rideList, { id: lineId, path: rideOf(plan.cable) }];
     return true;
   }
+}
+
+/** Una torre come la vede il protocollo di piazzamento. */
+function specOf(station: RopewayPlan['stations'][number], axis: RopewayPlan['axis']): StructureSpec {
+  const record = {
+    x: station.x,
+    y: station.y,
+    baseZ: station.baseZ,
+    footprint: ROPEWAY.stationSide,
+    footprintY: ROPEWAY.stationSide,
+    height: station.height,
+    // `class` e `level` non ci sono, e il default di `placeStructure` li mette a
+    // civico e zero: come per una campata o un impalcato, `tally` la salta e
+    // questo campo non entra in nessun istogramma. Civico e' il meno arbitrario
+    // dei quattro — una stazione e' spazio pubblico — ma resta inerte.
+    ropeway: ROPEWAY_PART.station,
+  };
+  return {
+    record,
+    maxDirtyChunks: ROPEWAY.maxDirtyChunks,
+    segments: wholeFootprint(record, () => generateStation(station, axis)),
+  };
 }
 
 /**

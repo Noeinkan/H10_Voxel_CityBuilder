@@ -1,4 +1,3 @@
-import { BUILDING_CLASS } from '../../sim';
 import { CROSSINGS } from '../crossings/config';
 import { generateCrossing } from '../crossings/generate';
 import {
@@ -9,15 +8,13 @@ import {
   type CrossingTower,
 } from '../crossings/crossingPlan';
 import { chooseSecondaryBridge } from '../crossings/secondaryBridgePlan';
-import { dirtyChunkCount } from './chunkBudget';
 import { footprintDepth, type BuildingRecord } from './BuildingRegistry';
 import type { BuildContext } from './buildContext';
 import { MAX_FOOTPRINT } from './config';
 import { SPAN_KIND } from '../spans/config';
-import { hashCoords } from '../rng';
 import type { Region } from '../terrain/region';
-import { BIOME } from '../terrain/config';
-import { STAMP_EMPTY } from './stamp';
+import { placeStructure } from './placeStructure';
+import { worldProbe } from './worldProbe';
 import { traitsOf } from './structureKind';
 
 interface SecondaryRegion {
@@ -43,11 +40,14 @@ export class CrossingDriver {
     private readonly ctx: BuildContext,
     private readonly primary: Region | null,
   ) {
+    // `isAboveSea` e non `isDryLand`: un ponte fra settori scavalca anche un
+    // fiume, e questa regola non ha mai chiesto di piu'.
+    const world = worldProbe(ctx);
     this.probe = {
-      ground: (x, y) => ctx.terrain.heightAt(x, y),
-      land: (x, y) => ctx.terrain.biomeAt(x, y) !== BIOME.ocean,
-      occupied: (x, y) => ctx.registry.isOccupied(x, y),
-      solid: (x, y, z) => ctx.world.getBlock(x, y, z) !== STAMP_EMPTY,
+      ground: world.heightAt,
+      land: world.isAboveSea,
+      occupied: (x, y) => !world.isFree(x, y),
+      solid: world.isSolid,
     };
   }
 
@@ -127,52 +127,28 @@ export class CrossingDriver {
   }
 
   private build(plan: CrossingPlan): BuildingRecord | null {
-    const baseZ = crossingBaseZ(plan.deckZ);
-    if (this.ctx.registry.overlaps(
-      plan.x,
-      plan.y,
-      plan.sizeX,
-      baseZ,
-      CROSSING_HEIGHT,
-      plan.sizeY,
-      plan.supports,
-    )) return null;
-
-    for (const segment of plan.segments) {
-      const dirty = dirtyChunkCount(
-        segment.x,
-        segment.y,
-        segment.sizeX,
-        baseZ,
-        baseZ + CROSSING_HEIGHT,
-        segment.sizeY,
-      );
-      if (dirty > CROSSINGS.automatic.maxDirtyChunks) return null;
-    }
-
-    const record = this.ctx.registry.add({
-      x: plan.x,
-      y: plan.y,
-      baseZ,
-      footprint: plan.sizeX,
-      footprintY: plan.sizeY,
-      height: CROSSING_HEIGHT,
-      class: BUILDING_CLASS.civic,
-      level: 0,
-      seed: hashCoords(this.ctx.seed, plan.x, plan.y),
-      // Per il registry e' una campata: non prende suolo e segue i due appoggi.
-      span: SPAN_KIND.bridge,
-      supports: plan.supports,
+    return placeStructure(this.ctx, {
+      record: {
+        x: plan.x,
+        y: plan.y,
+        baseZ: crossingBaseZ(plan.deckZ),
+        footprint: plan.sizeX,
+        footprintY: plan.sizeY,
+        height: CROSSING_HEIGHT,
+        // Per il registry e' una campata: non prende suolo e segue i due appoggi.
+        span: SPAN_KIND.bridge,
+        supports: plan.supports,
+      },
+      maxDirtyChunks: CROSSINGS.automatic.maxDirtyChunks,
+      exempt: plan.supports,
+      segments: plan.segments.map((segment) => ({
+        x: segment.x,
+        y: segment.y,
+        sizeX: segment.sizeX,
+        sizeY: segment.sizeY,
+        stamp: () => generateCrossing(plan, segment),
+      })),
     });
-
-    for (const segment of plan.segments) {
-      this.ctx.growth.enqueue(
-        record.id,
-        { x: segment.x, y: segment.y, z: baseZ },
-        generateCrossing(plan, segment),
-      );
-    }
-    return record;
   }
 }
 

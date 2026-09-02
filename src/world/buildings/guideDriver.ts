@@ -1,13 +1,10 @@
-import { BUILDING_CLASS } from '../../sim';
-import { hashCoords } from '../rng';
 import { AERIAL, AERIAL_PART } from '../aerial/config';
 import type { AerialProbe } from '../aerial/deckPlan';
 import { generateLift } from '../aerial/generate';
 import { planLift } from '../aerial/guideway';
 import type { BuildingRecord } from './BuildingRegistry';
 import type { BuildContext } from './buildContext';
-import { dirtyChunkCount } from './chunkBudget';
-import { anchorOf } from './growthQueue';
+import { placeStructure, wholeFootprint } from './placeStructure';
 
 /**
  * La passata della guida: da un impalcato abitato scende una via a terra.
@@ -127,39 +124,31 @@ export class GuideDriver {
 
     const plan = result.plan;
     const side = AERIAL.guide.side;
-    // Lo stesso tetto delle altre strutture in quota, e sul pezzo che si scrive:
-    // un montante e' un pezzo solo, quindi qui la misura e' anche la struttura.
-    if (dirtyChunkCount(plan.x, plan.y, side, plan.baseZ, plan.baseZ + plan.height, side) >
-        AERIAL.maxDirtyChunks) {
-      return false;
-    }
-    // L'impalcato servito e' eccettuato: il montante gli sale addosso fino a
-    // toccarlo, ed e' attaccato a lui, non in conflitto con lui.
-    if (this.ctx.registry.overlaps(
-      plan.x, plan.y, side, plan.baseZ, plan.height, side, [deck.id],
-    )) {
-      return false;
-    }
-
-    const record = this.ctx.registry.add({
+    const structure = {
       x: plan.x,
       y: plan.y,
       baseZ: plan.baseZ,
       footprint: side,
       footprintY: side,
       height: plan.height,
-      // Come per una campata e per un impalcato: `tally` lo salta, e questo campo
-      // non entra in nessun istogramma.
-      class: BUILDING_CLASS.civic,
-      level: 0,
-      seed: hashCoords(this.ctx.seed, plan.x, plan.y),
       aerial: AERIAL_PART.lift,
       // Il guinzaglio tira da tutte e due le parti: l'impalcato serve da testata
       // in cima, e cio' su cui il piede poggia non puo' piu' cambiare sagoma.
       supports: plan.carrier === 0 ? [deck.id] : [deck.id, plan.carrier],
-    });
+    };
 
-    this.ctx.growth.enqueue(record.id, anchorOf(record), generateLift(plan));
+    const record = placeStructure(this.ctx, {
+      record: structure,
+      // Lo stesso tetto delle altre strutture in quota, e sul pezzo che si
+      // scrive: un montante e' un pezzo solo, quindi la misura e' la struttura.
+      maxDirtyChunks: AERIAL.maxDirtyChunks,
+      // L'impalcato servito e' eccettuato: il montante gli sale addosso fino a
+      // toccarlo, ed e' attaccato a lui, non in conflitto con lui.
+      exempt: [deck.id],
+      segments: wholeFootprint(structure, () => generateLift(plan)),
+    });
+    if (record === null) return false;
+
     this.served.add(deck.id);
     this.built++;
     return true;
