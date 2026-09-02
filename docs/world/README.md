@@ -14,6 +14,7 @@ il contesto segue il lavoro effettivo senza perdere la memoria progettuale.
 - [Citta' in quota](aerial-city.md)
 - [Opere di terra e acqua](grading-water.md)
 - [Landmark su un tetto](rooftop-landmarks.md)
+- [Revamp dei landmark: le ricette che restano](landmarks-revamp.md)
 - [Distretto costiero](harbor.md)
 - [Arcologie](arcology.md)
 - [Funivia](ropeway.md)
