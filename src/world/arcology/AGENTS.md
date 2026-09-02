@@ -17,4 +17,6 @@ Quando tocchi registry, occupazione o crescita condivisa, leggi anche
   `tier !== core` non aveva un solo sito. Vale per ogni condizione nuova di
   questo dominio: misurala sugli isolati veri prima di scriverla.
 - Le profondita' di scavo si **misurano** prima di scriverle: l'isola vera arriva
-  a 34 quote, non alle 80 di `TERRAIN.maxHeight`. Guarda `sunkenSites.test.ts`.
+  a 34 quote, non al tetto di `TERRAIN.maxHeight` — che da quando la vetta si
+  espande per seed non e' nemmeno piu' il rilievo, ma solo il tetto che deve
+  contenerla. Guarda `sunkenSites.test.ts`.

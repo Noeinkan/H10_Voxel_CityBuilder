@@ -403,8 +403,10 @@ taratura attuale vale per un'isola di lato **512**; cambiarlo significa muovere
 insieme le quote assolute e le frequenze del rumore, non solo `TERRAIN_SIZE`.
 
 Due tetti duri stanno nello stesso file: `warpAmount` sopra ~0,26 attaccherebbe
-terra al bordo della region, e alzare `baseFrequency` o `maxHeight` consuma il
-margine di Lipschitz.
+terra al bordo della region, e alzare `baseFrequency`, `maxReliefSlope` o
+`summitLift` consuma il margine di Lipschitz. `maxHeight` invece non e' piu' il
+rilievo — quello lo detta il raggio — ma il tetto che deve contenere
+l'espansione della vetta piu' alta.
 
 ### Misure
 

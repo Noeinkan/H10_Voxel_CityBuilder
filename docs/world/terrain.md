@@ -39,8 +39,13 @@
   due blocchi che si dividono lo stesso albero ne ricavano la stessa sequenza.
 - Generatore e worker non importano Three.js o `src/engine/`.
 - Due tetti duri in `terrain/config.ts`: `warpAmount` piu' `warpDetail` sopra
-  ~0,26 attacca terra al bordo della region; alzare `baseFrequency` o
-  `maxHeight` consuma il margine di Lipschitz. **L'invariante e' in celle e in
+  ~0,26 attacca terra al bordo della region; alzare `baseFrequency`,
+  `maxReliefSlope` o `summitLift` consuma il margine di Lipschitz. **`maxHeight`
+  non e' piu' il rilievo**: il rilievo lo detta il raggio, e quel numero e'
+  soltanto il tetto che deve contenere l'espansione della vetta piu' alta —
+  `heightField.test.ts` verifica la disuguaglianza fra le costanti, perche' se
+  cade non lancia niente e la cima si appiattisce dentro `cellGrid`.
+  **L'invariante e' in celle e in
   alzate**: due celle adiacenti si posano su scale di `terrace.ts` che stanno
   entrambe entro `TERRACE.maxStep` sotto la quota vera, quindi non differiscono
   di piu' di **un'alzata** anche quando le due scale non sono la stessa, e dentro
@@ -98,6 +103,14 @@
   cucitura: tenerne il record alza `maxHeight` e fa allocare un chunk che quel
   blocco non riempira' mai. Il difetto si vede solo da un test —
   «non alloca chunk verticali che resterebbero vuoti» — e non lancia niente.
+  Per un albero il ritaglio e' `treeTopIn`, e **non e' un riquadro**: il livello
+  di chioma piu' largo non e' quello piu' alto — una palma ha le fronde a raggio
+  quattro e la punta a raggio due — quindi un albero che sfiora il blocco con la
+  sola base ci scrive fin dove arriva la base. La quota si ottiene ridisegnando
+  l'albero verso un sink che conta: le estrazioni di pendenza e di erosione
+  vengono dalla posizione, non da chi chiama, quindi il conto e' quello vero e
+  non un maggiorante. Un blocco ha una decina di alberi: il disegno in piu' non
+  si sente.
 - **La copertura del terreno e' un byte per colonna, non un oggetto.** Erbette,
   fiori e sassi si decidono con un hash (`unitAt`, che non alloca la chiusura di
   `mulberry32`) e si scrivono dentro il ciclo che riempie la colonna: non hanno
@@ -121,6 +134,21 @@
   `(seed, shape)` e **ignora le `extensions`**: un settore costiero comprato a
   partita in corso non deve spostare niente altrove, o le colonne gia' generate
   non si raccorderebbero piu' con quelle nuove.
+- **Un'isola ha un carattere, e sono due numeri estratti dal seed.**
+  `crestMix` dice quanto rumore **a creste** entra nella miscela — `0,5 - |n|`,
+  il simplex ripiegato sullo zero, che ha il massimo lungo una *linea* e non in
+  un punto: da li' escono i crinali con i loro contrafforti, cioe' l'unica
+  struttura allungata che un rumore isotropo non sa dare. Il ripiegamento resta a
+  **mezza ampiezza** apposta: cosi' conserva il modulo del gradiente e non costa
+  niente al budget di Lipschitz, mentre la forma canonica `1 - 2|n|` lo
+  raddoppierebbe (misurato: dislivello peggiore da 0,69 a 0,94, cioe' fuori
+  criterio). Si paga in altezza, e l'altezza la ridà `summitLift`, che moltiplica
+  per `1 + lift` la sola distanza dal ginocchio `summitKnee`: sotto — costa,
+  pianura, fascia edificabile — non cambia niente, sopra la vetta sale o si
+  arrotonda. L'intervallo attraversa lo zero perche' la varieta' deve venire
+  dalla **varianza** e non da un paesaggio medio piu' alto; misurato su
+  quarantotto seed, le vette vanno da 54 a 75 voxel e la roccia dal 10 al 29 per
+  cento della terra emersa.
 - **La forma in pianta di un elemento sta in `terrain/outline.ts`, e si spegne
   sul bordo.** Rilievi e conche sono ellissi orientate con il raggio deformato da
   poche armoniche: senza, il bordo di un lago e' una circonferenza esatta, e lo
@@ -172,6 +200,16 @@
   tocchi. La citta' cresce li', e un dirupo in mezzo a un isolato sarebbe un
   dispetto. Dentro la conca di un lago la scala resta fine per la sua ragione:
   una vasca ha il bordo che ha.
+- **La flora sta in `terrain/flora.ts`, e cresce a macchie.** La specie non esce
+  da un'estrazione per cella: due alberi su tre prendono quella del proprio
+  **boschetto** — un riquadro di `TREE_DECOR.standCells` celle, con una specie
+  estratta dagli stessi pesi del bioma — e il terzo resta il suo, che e' cio' che
+  sfuma il bordo fra due macchie invece di lasciarlo rettilineo. Senza, sui pesi
+  della foresta esce un pixel di conifera, uno di latifoglia e uno di betulla:
+  non un bosco misto ma rumore verde. La macchia non aggiunge specie dove non
+  crescerebbero, ne cambia solo la disposizione. **La spiaggia non e' piu'
+  spoglia**: un albero non toglie edificabilita' a nessuno, e la frangia costiera
+  e' l'unica fascia dell'isola che si vede da ogni inquadratura.
 - **Un albero scrive solo dove c'e' aria.** Il terreno del blocco e' gia' scritto
   quando parte la decorazione, quindi la chioma nata su una cella bassa viene
   ritagliata dalla parete della cella accanto invece di mangiarla. Vale per il

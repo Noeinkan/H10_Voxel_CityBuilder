@@ -120,7 +120,8 @@
   dell'inviluppo e da cui almeno una colonna vede il cielo. Le passerelle sulla
   bocca possono attraversarlo; sigillarlo no.
 - **Le profondita' sono misurate, e la misura ha smentito il progetto.** Il piano
-  di questa famiglia era tarato su `TERRAIN.maxHeight` (80) e prevedeva
+  di questa famiglia era tarato sul tetto di `TERRAIN.maxHeight`, che allora
+  valeva 80, e prevedeva
   quarantaquattro, trentasei e ventiquattro quote. L'isola standard e' molto piu'
   piatta — la maschera radiale schiaccia il rilievo, e su 256x256 la colonna piu'
   alta sta fra 32 e 36 — quindi due ricette su tre non sarebbero **mai** nate,
