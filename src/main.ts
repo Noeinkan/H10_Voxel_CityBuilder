@@ -2359,8 +2359,10 @@ function onGamePointerDown(event: PointerEvent): void {
         growthScene.simState.catalysts,
         growthScene.simState.reach,
       );
-      selectedTool = { kind: 'none' };
-      gameHud?.setTool(selectedTool);
+      // Lo strumento resta in mano, come la mensola: chi ha scelto un landmark
+      // dal dock quasi mai ne posa uno solo, e tornare a ripescare la stessa
+      // tessera dopo ogni colpo era il giro in piu' che si notava. Il toast lo
+      // promette gia' — «Esc to cancel» — e resta l'unico modo di posarlo.
       preview.hide();
       influenceOverlay?.hideCursor();
       gameHud?.updateCursor(0, 0, null);
@@ -2378,8 +2380,8 @@ function onGamePointerDown(event: PointerEvent): void {
     }
     gameHud?.clearFeedback();
     // Lo strumento resta in mano: una mensola sola non fa un piano di citta', e
-    // chi ne vuole una fila la posa un edificio dopo l'altro. E' il contrario
-    // del catalizzatore, che si piazza una volta e cambia un quartiere.
+    // chi ne vuole una fila la posa un edificio dopo l'altro. Come per il
+    // catalizzatore, e al contrario della funivia.
     preview.hide();
     gameHud?.updateCursor(0, 0, null);
     return;
@@ -2392,10 +2394,10 @@ function onGamePointerDown(event: PointerEvent): void {
       return;
     }
     gameHud?.clearFeedback();
-    // Lo strumento si posa dopo l'uso, come il catalizzatore e al contrario
-    // della mensola: una funivia costa quanto una scelta di partita, e
-    // lasciarla in mano vorrebbe dire tirarne una seconda per un click di
-    // troppo.
+    // Lo strumento si posa dopo l'uso, come il settore costiero e al contrario
+    // della mensola e del catalizzatore: una funivia costa quanto una scelta di
+    // partita, e lasciarla in mano vorrebbe dire tirarne una seconda per un
+    // click di troppo.
     selectedTool = { kind: 'none' };
     gameHud?.setTool(selectedTool);
     preview.hide();
