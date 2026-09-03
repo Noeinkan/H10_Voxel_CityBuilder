@@ -33,7 +33,17 @@ export interface TreeCanopyLevel {
 
 /** Profilo completo di una specie: tronco piu' chioma impilata dal basso. */
 export interface TreeShape {
-  /** Altezza del tronco come `[minimo, alternative]`: una estrazione del PRNG. */
+  /**
+   * Altezza del tronco come `[minimo, alternative]`: una estrazione del PRNG.
+   *
+   * **Non e' questo il numero che si vede**: la chioma ne ricopre gli ultimi
+   * `sink` voxel, quindi cio' che resta nudo — e che decide la proporzione
+   * dell'albero — e' `trunk - sink`. Tenerlo entro la **larghezza** della chioma
+   * e' la regola che evita il lecca-lecca: il fusto e' un voxel di sezione e a
+   * distanza isometrica non ha ne' corteccia ne' rami, per cui un fusto piu'
+   * lungo della chioma larga non legge come un albero alto ma come un palo con
+   * qualcosa appoggiato sopra.
+   */
   readonly trunk: readonly [number, number];
   /**
    * Tinta del tronco. Assente vuol dire legno, che e' quasi sempre la risposta.
@@ -87,8 +97,8 @@ export const TREE_SHAPES: readonly TreeShape[] = [
   // e con quattro raggi disponibili invece di due i gradoni sono davvero
   // gradoni, non tre scalini contati.
   {
-    trunk: [9, 4],
-    sink: 6,
+    trunk: [7, 3],
+    sink: 5,
     tones: [PALETTE_SLOTS.grassDark, PALETTE_SLOTS.grass, PALETTE_SLOTS.grassLight],
     canopy: [
       { radius: 4, cut: 4, tone: 0 },
@@ -109,7 +119,7 @@ export const TREE_SHAPES: readonly TreeShape[] = [
   // sta a `cut: 7` su raggio 4, cioe' quasi il quadrato pieno: e' la sola via
   // per una sfera, perche' il rombo a quella scala legge come un ottaedro.
   {
-    trunk: [8, 5],
+    trunk: [6, 4],
     sink: 4,
     tones: [PALETTE_SLOTS.grassDark, PALETTE_SLOTS.grass, PALETTE_SLOTS.grassLight],
     canopy: [
@@ -127,7 +137,7 @@ export const TREE_SHAPES: readonly TreeShape[] = [
   },
   // Autunnale: stessa scala della latifoglia ma piu' schiacciata, e in caldo.
   {
-    trunk: [8, 4],
+    trunk: [6, 3],
     sink: 4,
     tones: [PALETTE_SLOTS.metalRust, PALETTE_SLOTS.brickLight, PALETTE_SLOTS.metalBrass],
     canopy: [
@@ -147,8 +157,8 @@ export const TREE_SHAPES: readonly TreeShape[] = [
   // guglia su un fianco terrazzato legge come una scala che sale, una chioma
   // tonda come un giardino appoggiato la' sopra.
   {
-    trunk: [11, 5],
-    sink: 7,
+    trunk: [8, 4],
+    sink: 6,
     tones: [PALETTE_SLOTS.grassDark, PALETTE_SLOTS.grassDark, PALETTE_SLOTS.grass],
     canopy: [
       { radius: 3, cut: 3, tone: 0 },
@@ -223,8 +233,8 @@ export const TREE_SHAPES: readonly TreeShape[] = [
   // La chioma e' apposta piu' magra di quella della latifoglia — meno voxel
   // sopra, piu' fusto in vista.
   {
-    trunk: [11, 4],
-    sink: 5,
+    trunk: [8, 3],
+    sink: 4,
     bark: PALETTE_SLOTS.concretePale,
     tones: [PALETTE_SLOTS.grass, PALETTE_SLOTS.grassLight, PALETTE_SLOTS.grassPale],
     canopy: [
@@ -239,14 +249,21 @@ export const TREE_SHAPES: readonly TreeShape[] = [
   },
   // Palma: la sola specie della spiaggia, e la sola con la chioma **in cima** al
   // tronco invece che calata sopra. `sink` a uno e' esattamente questo: sotto le
-  // fronde non c'e' fogliame ma tredici voxel di fusto nudo, cioe' la
-  // proporzione che rende una palma riconoscibile prima ancora del colore.
+  // fronde non c'e' fogliame ma il fusto nudo, cioe' la proporzione che rende
+  // una palma riconoscibile prima ancora del colore.
+  //
+  // Il fusto e' pero' lungo **quanto la chioma e' larga**, non il doppio. Con un
+  // tronco da tredici voxel sotto tre livelli di fronde la silhouette non era una
+  // palma ma un palo con una bandiera in cima: da un'inquadratura isometrica il
+  // fusto e' un voxel di sezione, quindi tutto quel che se ne legge e' la
+  // distanza fra la sabbia e le foglie, e quella distanza pesa piu' della forma
+  // delle fronde.
   //
   // Le fronde sono rombi (`cut` uguale al raggio): a raggio quattro un rombo ha
   // le punte sui quattro assi e il vuoto negli angoli, che al mesher esce come
   // foglie che si aprono invece di una chioma piena.
   {
-    trunk: [13, 5],
+    trunk: [8, 4],
     sink: 1,
     tones: [PALETTE_SLOTS.grassDark, PALETTE_SLOTS.grass, PALETTE_SLOTS.grassLight],
     canopy: [
@@ -281,7 +298,7 @@ export const TREE_SHAPES: readonly TreeShape[] = [
   // sempre con i raggi a uno e due e le tinte del legno, che l'erosione del
   // bordo riduce a rami storti.
   {
-    trunk: [9, 5],
+    trunk: [6, 4],
     sink: 3,
     tones: [PALETTE_SLOTS.wood, PALETTE_SLOTS.stoneDark, PALETTE_SLOTS.wood],
     canopy: [
