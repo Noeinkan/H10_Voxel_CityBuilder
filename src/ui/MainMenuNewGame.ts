@@ -1,5 +1,5 @@
 import { parseSeedInput } from '../game/launchMode';
-import { sectionTitle } from './drawerBits';
+import { titleNote, titleRow, titleSection, titleSmall } from './titleBits';
 
 /**
  * La sezione della partita nuova: un numero, e una conferma.
@@ -26,26 +26,22 @@ export class MainMenuNewGame {
 
   private readonly field: HTMLInputElement;
   private readonly start: HTMLButtonElement;
+  private readonly startLabel: HTMLElement;
   private readonly confirm: HTMLElement;
   private readonly hint: HTMLElement;
   /** Il primo colpo arma, il secondo parte: la sezione ricorda solo questo. */
   private arming = false;
 
   constructor(private readonly handlers: NewGameHandlers) {
-    this.root = document.createElement('div');
-    this.root.className = 'menu-section-body';
+    // Nessun titoletto «Seed» e nessuna riga che ripeta cos'e' un seed: la
+    // sottoschermata che ospita questa sezione lo dice gia' in testa, e due
+    // frasi quasi uguali una sotto l'altra si leggono come un errore.
+    this.root = titleSection();
 
-    this.root.appendChild(sectionTitle('Seed'));
-    const note = document.createElement('p');
-    note.className = 'drawer-note';
-    note.textContent = 'The same seed always grows the same island. Leave it empty for a new one.';
-    this.root.appendChild(note);
-
-    const row = document.createElement('div');
-    row.className = 'menu-choice-row';
+    const row = titleRow();
     this.field = document.createElement('input');
     this.field.type = 'text';
-    this.field.className = 'menu-field';
+    this.field.className = 'title-field';
     this.field.inputMode = 'numeric';
     this.field.placeholder = 'Random';
     this.field.setAttribute('aria-label', 'Seed for the new island');
@@ -57,11 +53,7 @@ export class MainMenuNewGame {
     });
     row.appendChild(this.field);
 
-    const roll = document.createElement('button');
-    roll.type = 'button';
-    roll.className = 'save-button';
-    roll.textContent = 'Random';
-    roll.addEventListener('click', () => {
+    const roll = titleSmall('Random', () => {
       this.field.value = String(handlers.onRoll());
       this.arming = false;
       this.paint();
@@ -69,25 +61,23 @@ export class MainMenuNewGame {
     row.appendChild(roll);
     this.root.appendChild(row);
 
-    this.hint = document.createElement('p');
-    this.hint.className = 'drawer-note';
+    this.hint = titleNote();
     this.root.appendChild(this.hint);
 
-    this.confirm = document.createElement('p');
-    this.confirm.className = 'drawer-note';
-    this.confirm.dataset['blocked'] = 'true';
-    this.confirm.textContent =
-      'This replaces the autosave with a brand new island. Your three manual slots stay.';
+    this.confirm = titleNote(
+      'This replaces the autosave with a brand new island. Your three manual slots stay.',
+    );
+    this.confirm.dataset['warn'] = 'true';
     this.root.appendChild(this.confirm);
 
-    const actions = document.createElement('div');
-    actions.className = 'menu-choice-row';
     this.start = document.createElement('button');
     this.start.type = 'button';
-    this.start.className = 'save-button';
+    this.start.className = 'title-button title-button--primary';
+    this.startLabel = document.createElement('span');
+    this.startLabel.className = 'title-label';
+    this.start.appendChild(this.startLabel);
     this.start.addEventListener('click', () => this.press());
-    actions.appendChild(this.start);
-    this.root.appendChild(actions);
+    this.root.appendChild(this.start);
 
     this.paint();
   }
@@ -122,7 +112,7 @@ export class MainMenuNewGame {
     const seed = typed === '' ? null : parseSeedInput(typed);
     const invalid = typed !== '' && seed === null;
     this.start.disabled = invalid;
-    this.start.textContent = this.arming ? 'Confirm: start over' : 'Start new city';
+    this.startLabel.textContent = this.arming ? 'Confirm: start over' : 'Start new city';
     this.start.dataset['armed'] = this.arming ? 'true' : 'false';
     this.confirm.hidden = !this.arming;
     this.hint.textContent = invalid

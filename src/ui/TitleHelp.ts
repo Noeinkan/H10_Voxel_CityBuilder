@@ -6,6 +6,7 @@ import {
   VIEW_HINTS_LEAD,
   type ControlHint,
 } from './ControlsHint';
+import { titleGroup, titleNote } from './titleBits';
 
 /**
  * I comandi sul titolo: si leggono **prima** di aver sbagliato il primo gesto.
@@ -43,13 +44,7 @@ export function titleHelpPane(): HTMLElement {
 /** Un titoletto con la riga che dice a cosa serve il gruppo. */
 function group(label: string, lead: string): HTMLElement {
   const wrap = document.createElement('div');
-  const title = document.createElement('h3');
-  title.className = 'title-group';
-  title.textContent = label;
-  const note = document.createElement('p');
-  note.className = 'title-note';
-  note.textContent = lead;
-  wrap.append(title, note);
+  wrap.append(titleGroup(label), titleNote(lead));
   return wrap;
 }
 

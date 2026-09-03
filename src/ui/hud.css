@@ -1047,7 +1047,7 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .hud-button, .hud-tip, .city-drawer, .policies-drawer, .theme-picker, .view-picker, .info-picker, .help-card, .main-menu-veil, .main-menu { transition: none; }
+  .hud-button, .hud-tip, .city-drawer, .policies-drawer, .theme-picker, .view-picker, .info-picker, .help-card, .main-menu-veil { transition: none; }
   .hud-tip { transform: none; }
   /* Nessun sollevamento e nessuna pulsazione: restano cornice e colore, che
      dicono la stessa cosa senza muoversi. */
