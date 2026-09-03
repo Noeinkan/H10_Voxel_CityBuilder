@@ -44,28 +44,46 @@ import type { Atmosphere, Water } from './themes/theme';
  * e' tutto cio' che serve a raccontare l'ora a chi guarda una citta' isometrica.
  */
 export const DAYLIGHT = {
-  sunrise: 6,
-  sunset: 19,
+  /**
+   * L'arco del sole, da alba a tramonto.
+   *
+   * **Sedici ore, e la notte e' cio' che ne avanza.** La durata del buio non e'
+   * dichiarata da nessuna parte — non puo' esserlo, visto che la notte discende
+   * dall'altezza del sole — quindi l'unico modo di accorciarla senza aprire una
+   * seconda tabella e' allargare l'arco. Con le tredici ore di prima il buio
+   * pieno teneva **piu' di meta'** del giro: sei minuti reali su dodici passati
+   * a guardare una citta' che si legge per sole luci accese, ed era troppo
+   * anche per chi la notte l'aveva chiesta. Cosi' ne tiene meno di un terzo.
+   */
+  sunrise: 5,
+  sunset: 21,
   /**
    * Le due ore su cui il giocatore puo' fermare l'orologio.
    *
-   * Non sono mezzogiorno e mezzanotte: `dayHour` e' l'ora con cui i temi sono
-   * stati disegnati — il sole sta ancora sopra la soglia in cui il tetto e' la
-   * faccia piu' chiara — e `nightHour` e' notte piena con la citta' accesa,
-   * mentre a mezzanotte in punto non c'e' niente di piu' da vedere.
+   * `dayHour` e' mezzogiorno solare, che e' l'ora con cui i temi sono stati
+   * disegnati: `withHour` a quell'ora restituisce l'atmosfera del tema tale e
+   * quale, ed e' anche il punto piu' alto della soglia in cui il tetto resta la
+   * faccia piu' chiara.
+   *
+   * `nightHour` sta nell'**ultimo terzo** della notte e non a meta'. Chi la
+   * sceglie vuole la citta' accesa, e a quell'ora la ha; ma chi poi rimette il
+   * ciclo si ritrova l'alba a due ore di gioco invece di mezza notte da
+   * attraversare — che era il modo in cui il ritorno ad Auto sembrava non aver
+   * fatto niente.
    */
   dayHour: 13,
-  nightHour: 22,
+  nightHour: 2,
   /**
    * Secondi reali di un giorno di gioco.
    *
-   * Dodici minuti: abbastanza lenti perche' un'ora di gioco duri mezzo minuto e
-   * la luce non strobi, abbastanza veloci perche' chi guarda la citta' per una
-   * partita veda sia il mezzogiorno sia la notte senza chiederlo. Sta qui e non
-   * in `main.ts` perche' l'HUD lo dice al giocatore, e due copie di questo
-   * numero vorrebbero dire una promessa e una durata diverse.
+   * Sei minuti: un'ora di gioco dura un quarto di minuto, il sole si sposta di
+   * un sesto di grado fra due riscritture dell'atmosfera — nessuno strobo — e
+   * chi guarda la propria citta' vede passare un tramonto senza doverlo
+   * chiedere al bottone. Sta qui e non in `main.ts` perche' l'HUD lo dice al
+   * giocatore, e due copie di questo numero vorrebbero dire una promessa e una
+   * durata diverse.
    */
-  daySeconds: 720,
+  daySeconds: 360,
   /** Ampiezza dello spazzamento dell'azimut, in gradi, da alba a tramonto. */
   azimuthSweep: 180,
   /** Sotto questa elevazione e' notte piena; sopra la seconda e' giorno pieno. */

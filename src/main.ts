@@ -9,7 +9,7 @@ import {
 } from 'three';
 import { createAtmosphereControl } from './engine/AtmosphereControl';
 import { ChunkRenderer } from './engine/ChunkRenderer';
-import { InfluenceOverlay, type ReachSummary } from './engine/InfluenceOverlay';
+import { InfluenceOverlay } from './engine/InfluenceOverlay';
 import { InfoViewOverlay } from './engine/InfoViewOverlay';
 import { InspectGuides } from './engine/InspectGuides';
 import { PLACEMENT_FACADES, PLACEMENT_SURFACE, PlacementCursor } from './engine/PlacementCursor';
@@ -67,11 +67,18 @@ import { SelectionOutline } from './engine/SelectionOutline';
 import { DemolitionOverlay } from './engine/DemolitionOverlay';
 import { resolveTheme, themeSwatches, THEMES, type Theme } from './engine/themes';
 import { createVoxelMaterial } from './engine/VoxelMaterial';
+import {
+  actionFailureLabel,
+  classLabel,
+  groundNote,
+  landmarkNote,
+  reachNote,
+} from './boot/actionLabels';
+import { createSaveSlots } from './boot/saveSlots';
 import { GrowthScene } from './game/growthScene';
 import type { CoachSuggestion } from './game/coach';
 import {
   lookUrl,
-  newGameUrl,
   perfToggleUrl,
   PLAY_PARAM,
   resolveLaunchMode,
@@ -96,18 +103,12 @@ import {
   AUTO_SLOT,
   browserStorage,
   deleteSlot,
-  exportText,
   importText,
-  listSlots,
   PENDING_SLOT,
   readSlot,
   takeSlot,
-  writeSlot,
   type SaveStorage,
 } from './game/save/storage';
-import type { SaveGame } from './game/save/format';
-import type { ActionFailure, SiteCost } from './game/actions';
-import type { LandmarkSite } from './world/buildings/Builder';
 import { BALANCE } from './sim/balance';
 import { cityVitality } from './sim/vitality';
 import { catalystById, defaultCatalystOfClass } from './sim/catalysts';
@@ -115,7 +116,6 @@ import { infoViewSpecOf, infoViewVersion, isInfoViewKind, nextInfoView, type Inf
 import {
   BUILDING_CLASS,
   CLASS_COUNT,
-  CLASS_LABELS,
   CLASS_NAMES,
   type BuildingClass,
 } from './sim/classes';
@@ -147,7 +147,6 @@ import {
   type ViewMenuModel,
 } from './ui/ViewMenuModel';
 import { CHUNK } from './world/chunkCoords';
-import { GROUND, type GroundKind } from './world/grading/grade';
 import { createScene, type SceneGenerator, type SceneKind } from './world/scenes/cityScene';
 import {
   createDioramaScene,
@@ -762,6 +761,15 @@ let selectedTool: GameTool = { kind: 'none' };
 let gameHud: GameHud | null = null;
 /** Id del suggerimento del coach gia' disegnato in-world, per non ridisegnarlo. */
 let paintedCoachId: string | null = null;
+// Scena e HUD arrivano come funzioni: entrambi nascono dopo questa riga, e una
+// copia presa adesso resterebbe `null` per sempre.
+const { autosave, refreshSaveList, startNewGame, saveToSlot, openSlot, exportSave } =
+  createSaveSlots({
+    storage: saveStorage,
+    seed: terrainSeed,
+    scene: () => growthScene,
+    hud: () => gameHud,
+  });
 if (growEnabled) {
   gameHud = new GameHud(container, {
     onTool: (tool) => {
@@ -1891,139 +1899,6 @@ function replaySector(sector: CoastalSector): void {
   influenceOverlay?.addSector(sector.region);
 }
 
-/**
- * Ogni quanto la partita si scrive da sola.
- *
- * Venti secondi: abbastanza spesso che una scheda chiusa per sbaglio costi al
- * massimo qualche decina di tick, abbastanza raro che serializzare una citta'
- * matura non si veda. Il salvataggio d'uscita copre comunque la finestra fra
- * l'ultimo automatico e la chiusura.
- */
-const AUTOSAVE_INTERVAL_MS = 20_000;
-
-let autosaveAt = 0;
-let autosavedTick = -1;
-/**
- * La partita in corso e' stata rinnegata: non si salva piu'.
- *
- * `startNewGame` cancella l'autosalvataggio e poi ricarica, ma andarsene fa
- * scattare `pagehide`, che **forza** un autosave: senza questa bandiera la
- * citta' appena buttata via si riscriverebbe da sola nello slot, e il
- * bootstrap successivo la ritroverebbe li' — proprio quando il seed scelto a
- * mano coincide con quello di prima, che e' il caso peggiore perche' e' anche
- * l'unico in cui l'isola sembra giusta e la citta' sopra e' quella vecchia.
- */
-let leavingForNewGame = false;
-
-/**
- * Scrive la partita nello slot automatico.
- *
- * **Fuori dal ritmo del frame in due modi.** Il tempo lo decide `AUTOSAVE_INTERVAL_MS`,
- * e il tick gia' salvato ferma il resto: una citta' in pausa non riscrive
- * ventiquattro volte al minuto lo stesso file. Il costo di una serializzazione
- * cade quindi su un frame ogni venti secondi, ed e' l'unico posto in cui questo
- * lavoro puo' stare senza un worker.
- */
-function autosave(time: number, force = false): void {
-  if (leavingForNewGame) return;
-  if (growthScene === null || saveStorage === null) return;
-  if (!force && time - autosaveAt < AUTOSAVE_INTERVAL_MS) return;
-
-  const tickCount = growthScene.simState.tickCount;
-  if (tickCount === autosavedTick) return;
-
-  autosaveAt = time;
-  autosavedTick = tickCount;
-  const result = writeSlot(saveStorage, AUTO_SLOT, growthScene.toSave(terrainSeed, Date.now()));
-  if (!result.ok) {
-    // Un fallimento va **detto**, e detto una volta: continuare a giocare
-    // credendo di essere al sicuro e' peggio di sapere che non lo si e'.
-    growthScene.setMessage(result.reason === 'quota'
-      ? 'Autosave failed: browser storage is full.'
-      : 'Autosave unavailable: browser storage is blocked.');
-  }
-}
-
-/** Rilegge gli slot e li rimanda al menu, che non conosce lo storage. */
-function refreshSaveList(): void {
-  gameHud?.setSaves(listSlots(saveStorage));
-  // Insieme all'elenco va anche cosa si sta per salvare: il seed lo tiene la
-  // radice, e il menu ferma il tempo — quindi la riga non puo' invecchiare
-  // mentre la si guarda.
-  // Zero e zero prima che la scena esista: e' l'isola vergine del menu
-  // d'ingresso, e non e' un valore mancante da nascondere.
-  const stats = growthScene?.stats;
-  gameHud?.setSummary(terrainSeed, stats?.state.population.stock ?? 0, stats?.buildings ?? 0);
-}
-
-/**
- * Butta via la partita in corso e ne apre una su un'altra isola.
- *
- * **L'autosalvataggio va cancellato, non solo scavalcato.** Il bootstrap lo
- * riapre quando il `?seed=` coincide, quindi chi digita a mano il seed della
- * partita in corso si ritroverebbe la vecchia citta' su un'isola che sembra
- * nuova. Lo slot di passaggio se ne va con lui: era la partita che qualcuno
- * aveva chiesto di aprire, e adesso non la vuole piu' nessuno.
- */
-function startNewGame(chosen: number): void {
-  leavingForNewGame = true;
-  deleteSlot(saveStorage, PENDING_SLOT);
-  deleteSlot(saveStorage, AUTO_SLOT);
-  window.location.replace(newGameUrl(window.location.search, chosen));
-}
-
-/** Scrive la partita in uno slot a mano. */
-function saveToSlot(slot: string): void {
-  if (growthScene === null) return;
-  const result = writeSlot(saveStorage, slot, growthScene.toSave(terrainSeed, Date.now()));
-  gameHud?.setSaveNote(result.ok
-    ? 'Saved.'
-    : result.reason === 'quota'
-      ? 'Could not save: browser storage is full.'
-      : 'Could not save: browser storage is blocked.');
-  refreshSaveList();
-}
-
-/**
- * Apre una partita: la mette nello slot di passaggio e ricarica la pagina.
- *
- * **Ricaricare e' la strada corta e anche quella giusta.** Il seed decide
- * l'isola, l'isola arriva da un worker a blocchi, e camera, overlay e streamer
- * si costruiscono su quella: rifare tutto a caldo vorrebbe dire un secondo
- * percorso di costruzione del mondo accanto a quello che gia' parte da zero a
- * ogni avvio. Il seed va nell'indirizzo perche' e' li' che il bootstrap lo
- * cerca, e perche' l'URL resta il modo in cui questo mondo si condivide.
- */
-function openSlot(save: SaveGame | null, missing: string): void {
-  if (save === null) {
-    gameHud?.setSaveNote(missing);
-    return;
-  }
-  const result = writeSlot(saveStorage, PENDING_SLOT, save);
-  if (!result.ok) {
-    gameHud?.setSaveNote('Could not open that game: browser storage is full.');
-    return;
-  }
-  const url = new URL(window.location.href);
-  url.searchParams.set('seed', String(save.seed));
-  window.location.replace(url.toString());
-}
-
-/** Scarica la partita come file JSON. */
-function exportSave(): void {
-  if (growthScene === null) return;
-  const text = exportText(growthScene.toSave(terrainSeed, Date.now()));
-  const url = URL.createObjectURL(new Blob([text], { type: 'application/json' }));
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = `h10-city-${terrainSeed}.json`;
-  link.click();
-  // L'oggetto resta in memoria finche' non lo si revoca, e qui dentro c'e' una
-  // citta' intera: si libera appena il click e' partito.
-  URL.revokeObjectURL(url);
-  gameHud?.setSaveNote('Exported.');
-}
-
 /** Avanza esclusivamente la scena `grow=1`, dopo che l'isola e' completa. */
 function updateGrowth(dt: number): void {
   if (!growEnabled || terrain === null) return;
@@ -3096,112 +2971,6 @@ function beginCoastalExpansion(sector: CoastalSector): void {
   gameHud?.updateCursor(0, 0, null);
 }
 
-function classLabel(cls: BuildingClass): string {
-  return CLASS_LABELS[cls] ?? 'urban';
-}
-
-const GROUND_LABELS: Readonly<Record<GroundKind, string>> = {
-  [GROUND.flat]: 'flat ground',
-  [GROUND.sloped]: 'terraced slope',
-  [GROUND.shore]: 'quay',
-  [GROUND.rock]: 'rock',
-  [GROUND.refused]: 'unworkable',
-};
-
-/**
- * Il perche' del sovrapprezzo, accanto al prezzo.
- *
- * Su terreno di listino non compare nulla: un `×1` accanto a ogni cartellino
- * insegnerebbe a ignorare la riga proprio dove invece cambia.
- */
-function groundNote(site: SiteCost | null): string {
-  if (site === null || site.ground === GROUND.flat) return '';
-  if (site.ground === GROUND.refused) return ` · ${GROUND_LABELS[site.ground]}`;
-  return ` · ${GROUND_LABELS[site.ground]} ×${site.weight}`;
-}
-
-/**
- * Cosa il raggio nominale non dice: quanto terreno tocca davvero **da qui**.
- *
- * Da quando la portata e' geodetica il raggio e' un budget di cammino, e due
- * siti a dieci celle di distanza possono coprire il doppio l'uno dell'altro
- * perche' uno guarda l'entroterra e l'altro il mare. Il conto delle celle da
- * solo non si legge — nessuno sa se tremila siano tante — ma due siti a
- * confronto si', ed e' esattamente cio' che il giocatore sta facendo mentre
- * muove il cursore. La percentuale in coda compare solo dove il sito e'
- * tagliato: dirla sempre la ridurrebbe a rumore di fondo.
- */
-function reachNote(radius: number, coverage: ReachSummary | undefined): string {
-  if (coverage === undefined) return `reach ${radius}`;
-  const cells = `${coverage.cells.toLocaleString('en-US')} cells`;
-  if (coverage.ratio >= 0.85) return `reach ${radius} · ${cells}`;
-  return `reach ${radius} · ${cells} (${Math.round((1 - coverage.ratio) * 100)}% blocked)`;
-}
-
-/**
- * Cosa succedera' al riquadro del landmark, detto sul cursore.
- *
- * Sono tutte posizioni **valide**: il catalizzatore si piazza e il suo campo
- * funziona in ogni caso. La riga cambia solo cio' che il giocatore non potrebbe
- * dedurre — se il monumento comparira', e quante case costa.
- */
-function landmarkNote(site: LandmarkSite): string {
-  // **Il terreno per primo**, come nella regola che lo decide: dire quante case
-  // porta via un riquadro che nessuna opera reggerebbe manderebbe a cercare una
-  // sacca bassa dove il problema e' la parete. Ed e' il solo dei tre casi in cui
-  // non compare nemmeno la piazzola — `canPaint` scarta le colonne in parete —
-  // quindi la riga promette meno delle altre due, di proposito.
-  if (site.refusal === 'no-footing') {
-    return 'Valid position, but nothing can be built on this slope: the catalyst works, the landmark will not appear. Try flatter ground.';
-  }
-  if (site.refusal === 'structure-in-the-way') {
-    return 'Valid position. Something built to last stands here: only the plaza will appear.';
-  }
-  if (site.refusal === 'block-too-tall') {
-    return 'Valid position, but too tall to clear: only the plaza will appear. Try a lower pocket.';
-  }
-  if (site.clears === 0) return 'Valid position.';
-  const what = site.clears === 1 ? 'building' : 'buildings';
-  return `Valid position. Clears ${site.clears} ${what} to make room.`;
-}
-
-function actionFailureLabel(reason: ActionFailure): string {
-  const labels: Readonly<Record<ActionFailure, string>> = {
-    'terrain-loading': 'The terrain is still being generated.',
-    'not-buildable': 'No earthwork holds here: cliff or deep water.',
-    'needs-coast': 'This link has to reach the sea.',
-    'needs-waterfront': 'A Marina needs the sea or a lake.',
-    'needs-open-ground': 'Needs a wide, level clearing.',
-    'too-close': 'Too close to a catalyst of the same class.',
-    'insufficient-funds': 'Not enough funds.',
-    'insufficient-materials': 'Not enough materials. Grow industry first.',
-    // Senza un numero: tre azioni con tre soglie diverse passano di qui — il
-    // settore, la mensola, le policy — e citare quella dell'espansione era
-    // gia' sbagliato per le policy. La cifra esatta sta nel tooltip di ciascuna
-    // azione, che la prende dal proprio listino.
-    'population-required': 'The city needs more residents for this.',
-    'landmark-requires-city': 'This monument crowns an established city. Build more first.',
-    'already-active': 'This action is already active.',
-    'already-unlocked': 'This sector is already unlocked.',
-    'onboarding-order': 'Complete the current tutorial step first.',
-    'policy-incompatible': 'This policy conflicts with one that is already active.',
-    'decision-option-invalid': 'This decision option is no longer available.',
-    // Mensola e Skyport condividono gli stessi gesti: cercare un edificio,
-    // cercarne uno piu' alto, cercare un'altra facciata.
-    'needs-building': 'Point at a building facade.',
-    'building-too-short': 'This building is too low to carry the structure.',
-    'no-room-aloft': 'No room on this facade.',
-    // I tre della funivia dicono tre gesti diversi, come quelli della mensola:
-    // andare sulla costa, cercare un braccio di mare, spostarsi lungo la stessa
-    // riva. Il terzo e' quello che capita di piu' su un lungomare costruito.
-    'needs-shore': 'Point at dry land: a ropeway starts on a shore.',
-    'needs-crossing': 'Nothing to cross from here: find water between two shores.',
-    'no-room-for-line': 'No room for the towers here. Try further along the shore.',
-    'landmark-in-the-way': 'A landmark already stands here: monuments are not replaced by another landmark.',
-  };
-  return labels[reason];
-}
-
 function buildTerrainFrame(streamer: TerrainStreamer): TerrainOverlayFrame {
   return {
     fps: frameTiming.snapshot().fps,
@@ -3360,7 +3129,7 @@ function onDebugKey(event: KeyboardEvent): void {
   }
   if (event.code === 'KeyH') {
     // Un'ora avanti, indietro con Shift. Scorrere l'orologio a mano e' l'unico
-    // modo di giudicare un look notturno senza aspettare dodici minuti.
+    // modo di giudicare un look notturno senza aspettare il giro del ciclo.
     daylight.setHour(daylight.hour + (event.shiftKey ? -1 : 1));
     console.info(`[daylight] ${daylight.hour.toFixed(2)}h`);
     return;
@@ -3465,13 +3234,20 @@ function onUiKey(event: KeyboardEvent): void {
   // `V`: scegliere se guardare la propria citta' di giorno o di notte e' gioco,
   // non misura. `H` resta la manopola fine dell'harness, di un'ora alla volta.
   if (event.code === 'KeyL') {
+    // La ripetizione del tasto tenuto giu' arriva a trenta hertz: senza questa
+    // guardia una pressione un filo lunga girava i tre modi decine di volte e
+    // il cielo finiva dove capitava — il difetto per cui il tasto «non
+    // funzionava». Un interruttore si preme, non si tiene.
+    if (event.repeat) return;
     daylight.setMode(nextDaylightMode(daylight.mode));
     rememberLook();
     return;
   }
   // E per la stessa ragione le nuvole: un banco davanti alla torre che si sta
-  // guardando si toglie, non si sopporta.
+  // guardando si toglie, non si sopporta. Stessa guardia sulla ripetizione: e'
+  // l'altro interruttore della fila.
   if (event.code === 'KeyC') {
+    if (event.repeat) return;
     setClouds(!cloudsOn);
     return;
   }
