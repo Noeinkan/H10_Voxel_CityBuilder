@@ -35,7 +35,7 @@ import { STRUCTURE_KIND, structureKindOf } from '../world/buildings/structureKin
 import { hasFacadeForm, landmarkOf, maxStageOf } from '../world/landmarks/config';
 import { landmarkWaterColumn } from '../world/landmarks/generate';
 import { createReachCost } from '../world/reachCost';
-import { StreetNetwork } from '../world/streets/StreetNetwork';
+import type { RoadNetwork } from '../world/roads/RoadNetwork';
 import type { Facing } from '../world/streets/streetGrid';
 import { SKYLINE } from '../world/skyline/config';
 import { BIOME, WATER_IDS } from '../world/terrain/config';
@@ -228,18 +228,21 @@ export class GrowthScene {
     world: VoxelWorld,
     private readonly map: TerrainMap,
     region: ScenarioRegion,
-    private readonly seed: number,
+    // Non piu' un campo: il seme serviva a ricostruire la maglia catastale per
+    // il costo di portata, e quel costo adesso legge il tracciato del Builder.
+    seed: number,
   ) {
-    // Il costo di attraversamento entra qui e da nessun'altra parte: e' cio' che
-    // rende geodetica l'influenza dei catalizzatori invece che in linea retta.
-    // Senza, la simulazione ricadrebbe sulla Chebyshev di sempre, che su
-    // un'isola di canali e terrazze prometteva citta' dall'altra parte del mare.
+    this.world = world;
+    // **Il Builder prima dello stato**, perche' il tracciato e' suo. Il costo di
+    // attraversamento entra qui e da nessun'altra parte: e' cio' che rende
+    // geodetica l'influenza dei catalizzatori invece che in linea retta. Senza,
+    // la simulazione ricadrebbe sulla Chebyshev di sempre, che su un'isola di
+    // canali e terrazze prometteva citta' dall'altra parte del mare.
+    this.builder = new Builder(world, map, seed, region);
     this.state = createSimState({
       rngState: seed,
-      reachCost: createReachCost(map, new StreetNetwork(seed)),
+      reachCost: createReachCost(map, () => this.builder.roads),
     });
-    this.world = world;
-    this.builder = new Builder(world, map, seed, region);
   }
 
   /**
@@ -261,11 +264,12 @@ export class GrowthScene {
    * pianterebbe un secondo a ogni caricamento.
    */
   restore(save: SaveGame, sectors: readonly SectorRegion[]): void {
-    // Il seme e' quello della **scena**, non quello scritto nel file: il mondo e'
-    // gia' stato generato da questo, e il Builder ci e' stato costruito sopra.
-    // Se i due divergessero, l'influenza leggerebbe strade che non esistono —
-    // e chi carica ha gia' fatto in modo che coincidano.
-    this.state = reviveSimState(save.sim, createReachCost(this.map, new StreetNetwork(this.seed)));
+    // **Il tracciato non sta nel file e non deve starci.** Si rifa' da
+    // catalizzatori e terreno, che sono entrambi nel salvataggio — i primi come
+    // dati, il secondo come seme —, quindi al primo tick dopo il caricamento la
+    // rete torna quella di prima. E' la stessa regola del campo qui sopra: cio'
+    // che un generatore sa ridisegnare non si serializza.
+    this.state = reviveSimState(save.sim, createReachCost(this.map, () => this.builder.roads));
     this.builder.restore(save.records);
 
     for (const sector of sectors) {
@@ -1051,6 +1055,11 @@ export class GrowthScene {
 
   get registry(): ReadonlyBuildingRegistry {
     return this.builder.registry;
+  }
+
+  /** Il tracciato stradale, per gli overlay e per chi misura la forma urbana. */
+  get roads(): RoadNetwork {
+    return this.builder.roads;
   }
 
   /** I lotti agricoli vivi, per la vista informativa del cibo. */

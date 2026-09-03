@@ -1,5 +1,7 @@
 import { DEFAULT_BUILDING_FORM, typologyById, type TypologyDefinition } from './config';
 import { buildStamp } from './assemble';
+import { withArch } from './archStamp';
+import { partedStamp } from './multiStamp';
 import { selectTypology, typologyProfile } from './typology';
 import { styleOf, styledProfile } from './style';
 import type { BuildingRecord } from './BuildingRegistry';
@@ -63,7 +65,7 @@ export function recordStamp(record: BuildingRecord): VoxelStamp {
   }
 
   const typology = typologyOf(record);
-  return buildStamp({
+  const body = buildStamp({
     class: record.class,
     level: record.level,
     seed: record.seed,
@@ -80,6 +82,19 @@ export function recordStamp(record: BuildingRecord): VoxelStamp {
     facing: record.facing,
     baseBandHeight: record.baseBand,
   }, record.footprint);
+  // **Un edificio con piu' sedimi si compone su una tela, non si allarga.** La
+  // sua sagoma copre due lotti e la strada in mezzo, e il braccio ci si dipinge
+  // sopra alla fine: farlo crescere due volte — una per il secondo corpo, una
+  // per l'arco — lo sposterebbe rispetto alla propria ancora.
+  if (record.parts !== undefined && record.parts.length > 0) {
+    return partedStamp(record, body);
+  }
+  // **Il braccio si aggiunge dopo il corpo, anche qui.** E' la stessa ragione
+  // per cui `archStamp` esiste come chirurgia invece che come ramo del
+  // generatore: senza l'arco la sagoma deve restare *esattamente* quella di
+  // prima, o cancellare un edificio che l'arco non ce l'ha lascerebbe voxel
+  // orfani ovunque nella citta'.
+  return record.arch === undefined ? body : withArch(body, record, record.arch);
 }
 
 /** Tipologia registrata di un edificio, o quella di ripiego del suo uso. */

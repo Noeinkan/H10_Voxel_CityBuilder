@@ -16,6 +16,268 @@ Qui stanno **i tredici incrementi più recenti**; i precedenti sono archiviati i
 
 ---
 
+## In corso — Strade organiche al posto del reticolo
+
+- **Il reticolo quadrato non si dipinge piu', e al suo posto c'e' un tracciato.**
+  `streets/` resta il **catasto** — funzione pura di `(seed, x, y)`, invisibile,
+  ed e' l'unita' con cui si lottizza — mentre `src/world/roads/` e' la **strada**
+  che si vede. Erano lo stesso oggetto, ed e' per questo che a schermo compariva
+  una maglia ortogonale: la citta' mostrava il proprio catasto.
+- **La forma la decide il rilievo, non un rumore.** `traceRoad` cerca il cammino
+  a costo minimo su otto vicini con il dislivello come costo del passo: salire
+  costa quattro volte una colonna piana e oltre `maxRise` non si sale affatto,
+  quindi fra due punti separati da un pendio il minimo non e' la retta ma la
+  diagonale che taglia il pendio — cioe' una curva di livello, e un tornante dove
+  il pendio e' troppo ripido per essere tagliato in un colpo.
+- **Le strade portano al centro perche' il centro e' la radice.** L'albero cresce
+  dal polo piu' forte e ogni altro polo si attacca alla **prima carreggiata che
+  incontra**, non al polo piu' vicino: attaccarsi a un polo darebbe raggi che si
+  incrociano senza toccarsi, attaccarsi alla rete da' un raccordo che confluisce.
+- **Il rango non si dichiara, si misura.** Ogni tratto porta il proprio carico —
+  quanti poli ci passano sopra per arrivare al centro — e la larghezza esce da
+  li'. Nessuna tabella dice quale sia l'autostrada: e' l'autostrada perche' ci
+  passa tutta la citta', e un catalizzatore piantato dall'altra parte dell'isola
+  la sposta da solo. Tre ranghi sottili — vicolo da un voxel, strada da due,
+  viale da tre — piu' il tronco da sei: il salto e' brusco di proposito, perche'
+  una gerarchia che cresce di un voxel per rango non si legge affatto.
+- **I viadotti non si progettano, si riconoscono.** Le corse di colonne che non
+  reggono una carreggiata appoggiata — una baia, un quartiere fitto — diventano
+  campate se sono abbastanza lunghe: spalle a terra, impalcato piano sopra il
+  franco, e una pila ogni otto colonne. Sotto la soglia il tratto resta a terra,
+  perche' un viadotto da due campate legge come un errore di posa.
+- **L'influenza segue le strade che esistono davvero.** `createReachCost` leggeva
+  `StreetNetwork.isPavement`, cioe' il catasto: una funzione del solo seed, vera
+  su tutto il piano e — da quando l'anello perimetrale non si dipinge — del tutto
+  invisibile. La desiderabilita' correva quindi lungo carreggiate fantasma, e la
+  citta' si allargava in un disco. Adesso la sorgente e' il tracciato: le stesse
+  colonne che si vedono, e nient'altro.
+- **Il tessuto cerca il fronte strada, e non e' un rifiuto.** `placeLot` percorre
+  il rettangolo due volte: la prima accetta solo gli ancoraggi con un affaccio,
+  la seconda non guarda piu' nessuno. Le case si addensano lungo la carreggiata e
+  si diradano allontanandosene, senza vuoti netti e senza che una colonna lontana
+  diventi inedificabile. La fascia di affaccio e' un indice dilatato una volta
+  per rete e non una misura per ancoraggio: misurarla costava sedici milioni di
+  letture per lotto, e la batteria del `Builder` passava da 57 a 460 secondi.
+- **I capillari sono l'unica parte della rete che cresca con la citta'.** Un
+  edificio che nasce oltre `frontageReach` dalla carreggiata si tira dietro un
+  vicolo da un voxel fino alla prima strada che incontra, e lo fa nell'istante in
+  cui nasce: cosi' il lotto successivo trova gia' un affaccio. Senza, il tracciato
+  resterebbe la manciata di tratti fra i catalizzatori e il tessuto non avrebbe su
+  cosa affacciarsi.
+
+## In corso — Il record multi-rettangolo: un edificio, due sedimi
+
+- **Cade «un edificio, un rettangolo».** `BuildingRecord.parts` elenca gli
+  *altri* sedimi di un record, e `plotOf` li restituisce separati: `index` e
+  `unindex` scandiscono quelli invece dell'inviluppo unico. Prendere il riquadro
+  che li contiene sarebbe stata una riga in meno e una strada in meno — sotto un
+  edificio non ci passerebbe piu' niente. `boundsOf` esiste per chi ha bisogno di
+  *un* rettangolo — il conto dei chunk, la tela della sagoma — e non dice cosa il
+  record prenota.
+- **Il produttore e' la fusione che attraversa la strada**, ed e' il pezzo che
+  chiude l'arco cominciato con la campata. Due edifici che si sono trovati con un
+  arco hanno gia' la quota comune e la parete d'imposta: la fusione li rende un
+  record solo, il lotto del dirimpettaio diventa un sedime del sopravvissuto, e
+  il mezzo braccio diventa la campata intera. Il vuoto in mezzo resta vuoto e
+  resta suolo pubblico.
+- **Senza produttore sarebbe stato codice morto**, ed e' la lezione che
+  l'incremento della campata aveva appena insegnato: una regola puo' essere
+  giusta e insieme irraggiungibile, e le due cose si distinguono solo facendo
+  girare la citta'.
+- **I sedimi in piu' non conservano l'edificio che c'era.** Il secondo corpo si
+  disegna con un sotto-seme del sopravvissuto, al suo livello e con la sua
+  tipologia: e' lui che si e' allungato fin la'. E' anche l'unica lettura che non
+  chiede altro stato — un rettangolo basta, e il record non si porta dietro seme,
+  livello e stile di un edificio che non esiste piu'.
+- **Il rinfianco si specchia quando l'arco non incontra nessuno.** `mate` a zero
+  dice che il braccio va a finire su un secondo sedime dello stesso record:
+  l'arco e' intero e non piu' mezzo, quindi la spalla si allarga a tutti e due i
+  capi. Con un dirimpettaio la seconda meta' la disegna lui, ed e' proprio quel
+  raccordo a farne una campata.
+- **Il salvataggio non ha una versione nuova**: `parts` e' un elenco di rettangoli
+  e viaggia con il record come ogni altro campo, e `recordStamp` sa ridisegnare
+  la sagoma intera — che e' l'unica condizione che la cattura pone.
+
+## In corso — La fusione: due edifici diventano uno
+
+- **Quando lo spazio libero finisce, ci si prende il vicino.** La scala
+  d'impronta allarga un edificio finche' l'isolato ha prato; da li' in poi la
+  promozione poteva solo salire, e nel centro denso — dove il prato non c'e' mai
+  — non cambiava piu' niente. La fusione e' il gradino successivo: un edificio
+  arrivato al primo scalino d'impronta assorbe un vicino piu' basso e ne prende
+  il lotto.
+- **Nessuna geometria nuova.** `assembleBuilding` sapeva gia' disegnare *un*
+  record come piu' masse su un podio condiviso, con il vuoto in mezzo dipinto a
+  terrazza: la citta' ha sempre avuto l'edificio che si separa e si ritrova, e a
+  mancare era soltanto l'evento che due lotti diventino quel lotto. Questo
+  incremento aggiunge l'evento.
+- **Non c'e' una seconda demolizione.** La fusione apre i cantieri di
+  `ClearanceSites` — la stessa macchina del monumento che si fa posto, del
+  declino e della gomma — e aspetta: a smontare i voxel a budget, a togliere i
+  record e a dirlo alla simulazione e' quella. Un cantiere per assorbito, sul suo
+  inviluppo: uno solo sul quadrato intero condannerebbe anche il candidato,
+  perche' `planClearance` non conosce eccezioni ed e' giusto che non ne conosca.
+- **La fusione si compie nella passata, non nel callback del cantiere**, ed e'
+  una questione di chi possiede lo stato: il record fuso deve dichiarare alla
+  simulazione gli usi ereditati, e `clearance.pass` non e' il posto in cui
+  restituire un `SimState`. Il cantiere segnala di aver finito, e la passata
+  successiva raccoglie.
+- **Un edificio in meno non e' un abitante in meno.** Il sopravvissuto porta in
+  `uses` anche l'uso di chi ha assorbito, e `tally` lo conta — la riga che
+  esisteva per le fasce di un'arcologia vale ora anche per un record ordinario.
+  Senza, fondere due torri avrebbe dimezzato la capacita' di quell'isolato: una
+  regressione di bilancio travestita da forma urbana.
+- **La soglia e' derivata, non scelta.** `FUSION.minLevel` e' il primo gradino di
+  `urbanFootprintStepsOf`: sotto, il lato che la fusione chiederebbe coincide con
+  quello che l'edificio ha gia' e la regola direbbe `noRoom` a chiunque. Una
+  soglia piu' bassa non sarebbe piu' permissiva, sarebbe una promessa che il
+  gradino successivo smentisce.
+- **Il tetto e' la scala mega, e nemmeno quello e' un gusto.** Una promozione che
+  si allarga compare a ritagli e non ha niente da cancellare; una fusione deve
+  cancellare — dove c'era una torre l'assemblaggio ha una corte — quindi si ferma
+  dove sagoma e cancellazione stanno ancora insieme nel budget di chunk di una
+  struttura. L'isolato intero resta il premio del picco, e ci si arriva
+  promuovendo.
+- **Non si scavalca un gradino della fila.** Un assemblaggio poggia su un podio
+  solo: due lotti a due quote diverse darebbero un podio che ne copre uno e ne
+  sotterra l'altro. E' lo stesso rifiuto che `cluster.ts` chiama gradino, letto
+  un piano piu' in la'. E chi ha gettato un arco non fonde, per lo stesso motivo
+  per cui non si allarga.
+
+## In corso — La campata dell'edificio
+
+- **Un edificio puo' allungarsi fino a toccare il dirimpettaio.** Non e' una
+  campata di `spans/` — quella e' un record proprio, dipinto come
+  infrastruttura, che *cade* quando i suoi appoggi cambiano sagoma. Questa e'
+  massa dei due edifici: stesso record, stessa vernice, stesso livello, e cresce
+  con loro. A schermo la differenza si legge senza spiegazioni — un ponte
+  attraversa, un arco continua.
+- **Nessuno entra nelle colonne dell'altro.** Il vuoto si divide in due e ogni
+  edificio si sporge per meta': `overlaps` continua a confrontare due riquadri
+  disgiunti e nessun invariante del registry viene toccato. E' la ragione per cui
+  l'arco puo' esistere senza il record multi-rettangolo, che resta un'altra cosa.
+- **`envelopeOf` conta la crescita per faccia.** Lo sbalzo e il braccio possono
+  stare su due facce diverse: sulla stessa vince il maggiore, su facce diverse
+  crescono tutti e due, e l'inviluppo resta un rettangolo. La riga «uno sbalzo
+  non prende suolo» vale identica per il braccio — il record entra in `columns`
+  sull'inviluppo e in `groundColumns` sulla sola impronta, quindi sotto l'arco la
+  carreggiata si dipinge ancora.
+- **L'arco e' un fatto del vuoto, non della maglia stradale**, e questa e' la
+  meta' della regola che ha dovuto cedere alla misura. Il primo taglio chiedeva i
+  due fronti opposti (`a.facing` contro `b.facing`): su una citta' cresciuta
+  quarantacinque coppie affacciate su quarantanove cadevano li', perche' in
+  questo tessuto `facing` e' la strada *piu' vicina* e due corpi che si guardano
+  stanno spesso su due assi diversi. Chi apre la coppia guarda il proprio fronte,
+  il secondo riceve la faccia opposta per costruzione. Con la regola rilasciata,
+  sei coppie su quarantanove diventano un arco.
+- **La larghezza la detta la parete, non l'impronta**, ed e' la stessa lezione di
+  `highestLanding` per le campate: un corpo e' piramidale, e alla quota di una
+  torre il fronte e' largo la meta' del sedime. Si rientra di un voxel per volta
+  fino al primo tratto continuo utile, e si scende di fascia finche' il muro c'e'
+  — provare solo la quota piu' alta rendeva la campata rara due volte.
+- **La quota e' della coppia, non dei due**: `planArch` la sceglie una volta e la
+  scrive identica sui due record, quindi una promozione non puo' far scivolare
+  mezza campata. Chi ha gettato un arco sale ma **non si allarga**: allargando
+  l'impronta la parete d'imposta si sposterebbe e il braccio di fronte punterebbe
+  al vuoto. In altezza invece non rinuncia a niente.
+- **Il braccio si aggiunge dopo il corpo, mai dentro il generatore.** Entrando in
+  `generateBuilding` consumerebbe tiri dei quattro canali, e la stessa coppia
+  `(seme, livello)` darebbe due corpi diversi a seconda che l'arco ci sia o no:
+  un edificio che getta una campata cambierebbe anche i piani bassi. La sagoma
+  senza arco resta esattamente quella di prima, e la citta' gia' costruita non se
+  ne accorge.
+
+## In corso — Le viste informative accese davvero
+
+- **Scegliere una vista accendeva la legenda e nient'altro: nessuno chiamava
+  `setVisible` sull'overlay.** Il `visible` di `InfoViewOverlay` e' anche il gate
+  del budget di costruzione: a false, `update` esce alla prima riga, la heatmap
+  non campiona mai e il gruppo resta nascosto. Il metodo esisteva dal primo
+  giorno e non aveva un solo chiamante in `src/`. Ora `setInfoView` lo guida
+  dalla vista attiva, che e' l'unico posto che sa se c'e' qualcosa da vedere.
+- **Anche accesa, «Materials» restava vuota: la decimazione pungeva l'angolo
+  della cella.** La heatmap tiene i quad sotto trentamila, che su un'isola
+  512x512 vuol dire un passo di tre; un valore che vive su colonne esatte — una
+  fabbrica, un lotto — sparisce otto volte su nove. Su una citta' con cinque
+  industrie la vista era vuota per costruzione. `InfoViewSpec` dichiara ora
+  `sparse`, e chi lo e' viene cercato su tutta l'impronta: il massimo se
+  continuo, la prima categoria reale se categorico. Misurato su cinque colonne
+  industriali sparse, da zero quad a cinque; su 478 case, tutte e 478.
+  Non era derivabile dai campi che c'erano: `districts` e `food` sono entrambe
+  categoriche e normalizzate, ma la prima e' un campo e la seconda no.
+- **Il frame che chiudeva la costruzione stava a 6,9 ms, e nessuno l'aveva mai
+  visto perche' non ci arrivava.** Non era la geometria — quella e' a budget —
+  ma `Float32BufferAttribute` su tre `number[]` da oltre un milione di elementi
+  boxati. Il conto dei quad si sa appena il campionamento finisce, quindi i
+  buffer si allocano esatti una volta e l'attributo li adotta con
+  `BufferAttribute` su una `subarray`, senza copiarli. Frame peggiore
+  dell'apertura: 6,88 ms -> 1,51 ms sulla vista dei servizi, 3,70 -> 2,55 su
+  quella dei distretti, con gli stessi quad al termine (27.346 e 13.952).
+
+## In corso — I tratti sul record, dal lato di chi clicca
+
+- **Gli ultimi punti che leggevano i marker a mano erano nella scheda, non nei
+  driver.** La migrazione si era fermata a `world/buildings/` e a
+  `save/capture.ts`; restavano `selection.ts`, `growthScene.ts`,
+  `SelectionPanelModel.ts`, `selectionVerdict.ts` e il `facadeHostAt` di
+  `main.ts` — cioè tutto il lato che risponde a un click. Adesso passano da
+  `structureKindOf`, `traitsOf` e `isGroundStructure` come gli altri: sei tipi
+  scritti a mano in cinque file in meno.
+- **Una colonna nuova, `hasUrbanUse`, perché le tre domande sul «conta come
+  edificio» non sono la stessa.** `capturedAsBuilding` chiede cosa il
+  salvataggio sa scrivere come riga sola e dice di no all'arcologia;
+  `BuildingRegistry.tally` conta cosa la simulazione registra e dice di no alla
+  torre di funivia; la scheda e l'aggregato dell'isolato dicono di sì a
+  entrambe, perché leggono la `class` che il record porta comunque. Fonderle in
+  una colonna avrebbe cambiato tre comportamenti per fare ordine in uno.
+- **`tally` è uno `switch` esaustivo, e per averlo ha dovuto chiederlo.** Una
+  catena di sei `if` sui marker era il punto più denso rimasto in
+  `BuildingRegistry`; tradotta in `switch`, però, un tipo nuovo ci sarebbe
+  scivolato fuori in silenzio, perché la funzione non restituisce niente e
+  `noImplicitReturns` non la guarda. Il ramo `default` che asserisce `never` è
+  la stessa rete che `clearanceKindOf` ha gratis.
+- **Tre dispatch hanno smesso di essere catene di `if`.** Le quattro voci
+  dell'isolato (`blockRoleOf`), il verdetto di crescita e l'intestazione della
+  scheda scelgono *cosa fare* e non rispondono sì o no: sono `switch` sui sette
+  tipi, non colonne della tabella. L'intestazione del monumento è uscita in
+  `landmarkHead` per stare dentro un ramo.
+- **Le caselle strane restano strane, e adesso sono due.** La torre di una
+  funivia promuove come un edificio civico (`promotes`) e porta un uso urbano
+  (`hasUrbanUse`) perché nessuno dei sei punti l'ha mai esclusa. Sono le due
+  metà della stessa decisione, e il giorno che si corregge cadono insieme.
+
+## In corso — Il fronte del declino si può spegnere
+
+- **La banda fra le due soglie rientra invece di restare ferma.** `decayPressure`
+  saliva sotto `decay.strainCoverage` e scendeva sopra `decay.recoveryCoverage`,
+  ma fra le due non si muoveva: un accumulatore che non perde mai è un fermo, non
+  un fronte. Una città risalita al 105% restava armata per sempre — `buildPass`
+  non fondava più niente — e l'unica uscita, il 110%, non era scritta da nessuna
+  parte. Adesso la banda restituisce con lo stesso passo con cui ha preso
+  (`decay.pressureEase`), e posare il servizio che porta oltre il rientro resta
+  tre volte più rapido: il gesto che risolve si distingue da quello che tiene
+  soltanto la linea.
+- **L'isteresi si sposta dall'ingresso all'uscita, in `decay.pressureCeiling`.**
+  Far perdere la banda da sola avrebbe riaperto il difetto che la banda difendeva:
+  un allarme che si spegne al primo tick sopra soglia si riaccende al tick dopo.
+  La pressione ora sale **oltre** il punto in cui il fronte si arma, fino a due, e
+  quell'eccesso è il debito da restituire prima che l'allarme si spenga — la forma
+  di un trigger di Schmitt, due livelli sull'uscita invece di una zona morta
+  sull'ingresso. Una città trascurata a lungo satura, e ci mette a rientrare gli
+  stessi tre minuti che ci ha messo ad armarsi.
+- **`isDistressPossible` separa le due conseguenze che l'avviso confondeva.** Un
+  fronte armato ferma sempre la crescita, ma porta via edifici solo quando la
+  quota cittadina scende sotto `decay.distressCoverage`, cioè sotto il 40% di
+  copertura: è aritmetica del pavimento, non taratura. «Blocks are emptying» detto
+  a una città al 105% raccontava una perdita che non stava avvenendo, accanto a un
+  numero che smentiva la frase.
+- **I consigli dicono quanto serve, non solo quanto c'è.** Sopra il 40% la crisi
+  è `growth-halted` e nomina il bersaglio («services at 105%, need 110%»);
+  `services-falling-behind` smette di dire «and falling» a una città che sta
+  guarendo e le lascia `services-recovering`, in coda ai colli di bottiglia perché
+  una notizia buona non deve scavalcare un problema vero sulla riga sola della
+  targa.
+
 ## In corso — I pannelli informativi diventano grafici
 
 - **La scheda di selezione si apre su un verdetto, non su un elenco.** Ventidue righe `etichetta: valore` tutte con lo stesso peso, e ogni valore una frase intera, chiedevano di finire la riga per sapere se un edificio andasse bene. Ora in cima c'è la risposta corta con un tono — «Cannot grow», «Needs desirability», «Ready to grow» — la barra della soglia con le sue fonti, e i ruoli da piazzare attorno; le misure di ogni sezione sono barre, e la carta d'identità sta ripiegata dietro «Details». La prosa non sparisce: è il `title` della barra che commentava.

@@ -47,6 +47,19 @@ export interface InfoViewSpec {
    * di cui il massimo della regione non si conosce a priori.
    */
   readonly normalized: boolean;
+  /**
+   * true se il valore vive su **colonne esatte** — un edificio, un lotto — e non
+   * su un campo continuo in pianta.
+   *
+   * La heatmap decima, e una fabbrica sola su una colonna sola sparisce se la
+   * cella punge il proprio angolo: chi e' sparso si campiona sull'intera
+   * impronta della cella. Con cinque industrie su un'isola da 512x512 e un passo
+   * di tre, pungere l'angolo dava una vista vuota nove volte su dieci.
+   *
+   * Non e' derivabile dagli altri due campi: `districts` e `food` sono entrambe
+   * categoriche e normalizzate, ma la prima e' un campo e la seconda no.
+   */
+  readonly sparse: boolean;
 }
 
 /** L'ordine canonico dei distretti: e' anche l'indice di categoria. */
@@ -86,6 +99,7 @@ export const INFO_VIEWS: readonly InfoViewSpec[] = [
     mode: 'continuous',
     categories: [],
     normalized: true,
+    sparse: false,
   },
   {
     kind: 'food',
@@ -94,6 +108,7 @@ export const INFO_VIEWS: readonly InfoViewSpec[] = [
     mode: 'categorical',
     categories: FOOD_CATEGORIES,
     normalized: true,
+    sparse: true,
   },
   {
     kind: 'materials',
@@ -102,6 +117,7 @@ export const INFO_VIEWS: readonly InfoViewSpec[] = [
     mode: 'continuous',
     categories: [],
     normalized: false,
+    sparse: true,
   },
   {
     kind: 'density',
@@ -110,6 +126,7 @@ export const INFO_VIEWS: readonly InfoViewSpec[] = [
     mode: 'continuous',
     categories: [],
     normalized: false,
+    sparse: true,
   },
   {
     kind: 'coverage',
@@ -118,6 +135,7 @@ export const INFO_VIEWS: readonly InfoViewSpec[] = [
     mode: 'continuous',
     categories: [],
     normalized: true,
+    sparse: false,
   },
   {
     kind: 'happiness',
@@ -126,6 +144,7 @@ export const INFO_VIEWS: readonly InfoViewSpec[] = [
     mode: 'continuous',
     categories: [],
     normalized: true,
+    sparse: false,
   },
   {
     kind: 'districts',
@@ -134,6 +153,7 @@ export const INFO_VIEWS: readonly InfoViewSpec[] = [
     mode: 'categorical',
     categories: DISTRICT_CATEGORIES,
     normalized: true,
+    sparse: false,
   },
 ];
 
@@ -163,6 +183,8 @@ export interface InfoSampler {
   readonly kind: InfoViewKind;
   readonly mode: InfoViewMode;
   readonly normalized: boolean;
+  /** Vedi `InfoViewSpec.sparse`: dice al renderer se puo' decimare pungendo. */
+  readonly sparse: boolean;
   readonly categories: readonly string[];
   sample(x: number, y: number): number;
 }
@@ -235,6 +257,7 @@ export function createSimInfoSampler(kind: InfoViewKind, state: SimState): InfoS
       kind,
       mode: spec.mode,
       normalized: spec.normalized,
+      sparse: spec.sparse,
       categories: spec.categories,
       sample(x: number, y: number): number {
         return index.map.get(`${x},${y}`)?.[pick] ?? 0;
@@ -251,6 +274,7 @@ export function createSimInfoSampler(kind: InfoViewKind, state: SimState): InfoS
       kind,
       mode: spec.mode,
       normalized: spec.normalized,
+      sparse: spec.sparse,
       categories: spec.categories,
       sample(x: number, y: number): number {
         return coverageAt(field, report, x, y);
@@ -263,6 +287,7 @@ export function createSimInfoSampler(kind: InfoViewKind, state: SimState): InfoS
       kind,
       mode: spec.mode,
       normalized: spec.normalized,
+      sparse: spec.sparse,
       categories: spec.categories,
       sample(x: number, y: number): number {
         return urbanFieldAt(state, x, y).satisfaction;
@@ -275,6 +300,7 @@ export function createSimInfoSampler(kind: InfoViewKind, state: SimState): InfoS
       kind,
       mode: spec.mode,
       normalized: spec.normalized,
+      sparse: spec.sparse,
       categories: spec.categories,
       sample(x: number, y: number): number {
         return DISTRICT_ORDER.indexOf(urbanFieldAt(state, x, y).district);

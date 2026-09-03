@@ -100,6 +100,7 @@ domanda: è ciò che tiene basso il contesto di partenza.
 | [src/world/grading/AGENTS.md](src/world/grading/AGENTS.md) | Regole locali e riferimenti per le opere di terra | lavorando in `src/world/grading/` |
 | [src/world/harbor/AGENTS.md](src/world/harbor/AGENTS.md) | Regole locali e riferimenti per il distretto costiero | lavorando in `src/world/harbor/` |
 | [src/world/landmarks/AGENTS.md](src/world/landmarks/AGENTS.md) | Routing dei contratti per ricette e piazzamento | lavorando in `src/world/landmarks/` |
+| [src/world/roads/AGENTS.md](src/world/roads/AGENTS.md) | Regole locali del tracciato organico | lavorando in `src/world/roads/` |
 | [src/world/ropeway/AGENTS.md](src/world/ropeway/AGENTS.md) | Regole locali e riferimenti per la funivia | lavorando in `src/world/ropeway/` |
 | [src/world/scenes/AGENTS.md](src/world/scenes/AGENTS.md) | Regole locali e riferimenti per le scene | lavorando in `src/world/scenes/` |
 | [src/world/sites/AGENTS.md](src/world/sites/AGENTS.md) | Regole locali e riferimenti per i vincoli di sito | lavorando in `src/world/sites/` |

@@ -134,6 +134,27 @@ export interface BuildingRecord {
    */
   readonly arch?: BuildingArch;
 
+  /**
+   * Gli **altri** sedimi di questo record, oltre a quello di `x/y/footprint`.
+   *
+   * **E' la riga che toglie «un edificio, un rettangolo».** Fino a qui un record
+   * occupava un riquadro solo, e tutto cio' che sta a valle — `columns`,
+   * `overlaps`, la fondazione, la cancellazione — lo dava per scontato. Un
+   * edificio che ha assorbito il dirimpettaio non e' un rettangolo: sono due
+   * sedimi con in mezzo la carreggiata, che **resta carreggiata**.
+   *
+   * **Non e' l'inviluppo che si allarga.** Prendere il riquadro che li contiene
+   * tutti e due sarebbe stato piu' semplice e sbagliato: prenoterebbe la strada
+   * in mezzo, e sotto un edificio non ci passa piu' niente — ne' un ponte, ne'
+   * una mensola, ne' l'asfalto. `plotOf` restituisce percio' i sedimi *veri*, e
+   * `index` li scandisce uno per uno.
+   *
+   * Assente su quasi tutta la citta', e non e' un caso da gestire: `plotOf` di
+   * un record senza questo campo e' il suo inviluppo, cioe' esattamente il
+   * ciclo di prima.
+   */
+  readonly parts?: readonly PlanRect[];
+
   readonly district?: DistrictId;
   readonly specialization?: Specialization | null;
   /**
@@ -239,6 +260,12 @@ export interface BuildingRecord {
    * chiama `addBuilding` una volta per voce dello stesso array: e' cosi' che
    * `countsByClass` resta esattamente uguale a `state.buildingCounts` anche con
    * una struttura che vale quattro edifici. Un solo posto da tenere allineato.
+   *
+   * **Non e' piu' solo delle arcologie.** Un edificio che ne ha assorbito un
+   * altro fondendosi porta qui l'uso di chi si e' preso: due record diventano
+   * uno, e senza questo elenco la citta' perderebbe un edificio dall'istogramma
+   * mentre la simulazione ne conta ancora due. Il primo elemento e' sempre
+   * l'uso proprio del record, cosi' chi conta non deve sommare due sorgenti.
    */
   readonly uses?: readonly BuildingClass[];
 
@@ -346,7 +373,8 @@ export interface EnvelopeSource {
   readonly footprintY?: number;
   readonly overhang?: number;
   readonly facing?: number;
-  readonly arch?: { readonly reach: number };
+  readonly arch?: { readonly reach: number; readonly face: number };
+  readonly parts?: readonly PlanRect[];
 }
 
 /** Riquadro in pianta, estremi esclusi in alto. */
@@ -371,29 +399,79 @@ export interface PlanRect {
  * collidere, e con loro cadrebbe l'aggregazione in fila — che e' precisamente il
  * modo in cui questa citta' fa gli isolati.
  *
- * **Un braccio esce dalla stessa parte, e per questo non aggiunge un caso.**
- * L'arco che un edificio getta verso il dirimpettaio va anche lui verso
- * `facing`: il piu' lungo dei due decide di quanto l'inviluppo cresce, e lo
- * `switch` sotto resta quello di prima. Se fossero due direzioni diverse
- * l'inviluppo non sarebbe piu' un rettangolo, ed e' esattamente la trasformazione
- * che il record multi-rettangolo esiste per fare — non questa.
+ * **Un braccio puo' uscire da un'altra parte, e per questo la crescita si conta
+ * per faccia.** L'arco che un edificio getta verso il dirimpettaio va dove sta
+ * il vuoto, che non e' sempre il proprio fronte strada: in questa maglia due
+ * corpi che si affacciano sullo stesso vuoto appartengono spesso a due assi
+ * diversi. Sulla stessa faccia i due crescono al massimo dell'uno e dell'altro;
+ * su facce diverse crescono tutti e due, e l'inviluppo resta un rettangolo — il
+ * record multi-rettangolo e' un'altra cosa, e non serve qui.
+ *
+ * Resta vero cio' che conta: **la crescita e' solo dove il vuoto c'e' gia'**.
+ * Un braccio nasce unicamente dentro uno stacco di due-dieci voxel che nessuno
+ * occupa, quindi l'inviluppo non puo' andare a cadere sul vicino di fila — che
+ * e' l'incidente contro cui l'asimmetria dello sbalzo era stata scritta.
  */
 export function envelopeOf(record: EnvelopeSource): PlanRect {
   const depth = footprintDepth(record);
-  const over = Math.max(record.overhang ?? 0, record.arch?.reach ?? 0);
-  if (over <= 0 || record.facing === undefined) {
-    return { x: record.x, y: record.y, sizeX: record.footprint, sizeY: depth };
+  // Una casella per faccia, negli indici di `facing`: 0 e 1 sull'asse x, 2 e 3
+  // sull'asse y. E' il modo in cui «al massimo» e «tutti e due» diventano la
+  // stessa aritmetica invece di due rami.
+  const grown = [0, 0, 0, 0];
+  const over = record.overhang ?? 0;
+  if (over > 0 && record.facing !== undefined) grown[record.facing] = over;
+  const arch = record.arch;
+  if (arch !== undefined && arch.reach > 0) {
+    grown[arch.face] = Math.max(grown[arch.face], arch.reach);
   }
-  switch (record.facing) {
-    case 0:
-      return { x: record.x, y: record.y, sizeX: record.footprint + over, sizeY: depth };
-    case 1:
-      return { x: record.x - over, y: record.y, sizeX: record.footprint + over, sizeY: depth };
-    case 2:
-      return { x: record.x, y: record.y, sizeX: record.footprint, sizeY: depth + over };
-    default:
-      return { x: record.x, y: record.y - over, sizeX: record.footprint, sizeY: depth + over };
+  return {
+    x: record.x - grown[1],
+    y: record.y - grown[3],
+    sizeX: record.footprint + grown[0] + grown[1],
+    sizeY: depth + grown[2] + grown[3],
+  };
+}
+
+/**
+ * Tutti i sedimi che un record prenota: l'inviluppo, piu' gli altri se li ha.
+ *
+ * **E' il ciclo di `index` reso plurale, e su quasi tutta la citta' e' quello di
+ * prima**: senza `parts` l'elenco ha una voce sola e la scansione e' identica.
+ * Chi ne ha piu' d'uno e' l'edificio che ha assorbito il dirimpettaio, e per lui
+ * la differenza e' tutta: i suoi due sedimi entrano negli indici *separati*,
+ * quindi la carreggiata in mezzo resta libera e continua a dipingersi. Prendere
+ * il riquadro che li contiene sarebbe stato una riga in meno e una strada in
+ * meno.
+ */
+export function plotOf(record: EnvelopeSource): readonly PlanRect[] {
+  const base = envelopeOf(record);
+  return record.parts === undefined || record.parts.length === 0
+    ? [base]
+    : [base, ...record.parts];
+}
+
+/**
+ * Il riquadro che contiene tutti i sedimi di un record.
+ *
+ * **Non e' cio' che il record prenota**, ed e' importante non confonderlo con
+ * `plotOf`: qui dentro c'e' anche la strada. Serve a chi ha bisogno di *un*
+ * rettangolo e non di un'occupazione — il conto dei chunk sporchi, la tela su
+ * cui la sagoma si compone — cioe' a chi misura un ingombro, mai a chi decide
+ * chi puo' costruire dove.
+ */
+export function boundsOf(record: EnvelopeSource): PlanRect {
+  const rects = plotOf(record);
+  let x0 = rects[0].x;
+  let y0 = rects[0].y;
+  let x1 = x0 + rects[0].sizeX;
+  let y1 = y0 + rects[0].sizeY;
+  for (const rect of rects) {
+    x0 = Math.min(x0, rect.x);
+    y0 = Math.min(y0, rect.y);
+    x1 = Math.max(x1, rect.x + rect.sizeX);
+    y1 = Math.max(y1, rect.y + rect.sizeY);
   }
+  return { x: x0, y: y0, sizeX: x1 - x0, sizeY: y1 - y0 };
 }
 
 /**
@@ -957,26 +1035,28 @@ export class BuildingRegistry implements ReadonlyBuildingRegistry {
    * ne' il lotto.
    */
   private index(record: BuildingRecord): void {
-    const depth = footprintDepth(record);
     const onGround = takesGroundOf(record);
-    const env = envelopeOf(record);
 
     // **Un ciclo solo con un test dentro, mai due cicli.** Due cicli sullo stesso
     // record — uno per l'inviluppo e uno per l'impronta — divergerebbero al primo
     // che qualcuno tocca, e la divergenza sarebbe una colonna indicizzata in
     // `columns` e non in `groundColumns` (o peggio il contrario) che nessun test
     // guarda direttamente.
-    for (let dy = 0; dy < env.sizeY; dy++) {
-      for (let dx = 0; dx < env.sizeX; dx++) {
-        const cx = env.x + dx;
-        const cy = env.y + dy;
-        push(this.columns, columnKey(cx, cy), record.id);
-        // Il suolo e' l'impronta, non l'inviluppo: sotto lo sbalzo non c'e'
-        // niente che poggi.
-        if (onGround &&
-          cx >= record.x && cx < record.x + record.footprint &&
-          cy >= record.y && cy < record.y + depth) {
-          push(this.groundColumns, columnKey(cx, cy), record.id);
+    //
+    // I sedimi sono **plurali** da quando un edificio puo' aver assorbito il
+    // dirimpettaio, e su tutto il resto della citta' l'elenco ne ha uno solo:
+    // vedi `plotOf`.
+    for (const plot of plotOf(record)) {
+      for (let dy = 0; dy < plot.sizeY; dy++) {
+        for (let dx = 0; dx < plot.sizeX; dx++) {
+          const cx = plot.x + dx;
+          const cy = plot.y + dy;
+          push(this.columns, columnKey(cx, cy), record.id);
+          // Il suolo e' l'impronta, non l'inviluppo: sotto lo sbalzo non c'e'
+          // niente che poggi.
+          if (onGround && groundColumnOf(record, cx, cy)) {
+            push(this.groundColumns, columnKey(cx, cy), record.id);
+          }
         }
       }
     }
@@ -1004,17 +1084,18 @@ export class BuildingRegistry implements ReadonlyBuildingRegistry {
 
   /** L'inverso esatto di `index`. */
   private unindex(record: BuildingRecord): void {
-    // Scandisce l'**inviluppo** come `index`, ed e' l'unica cosa che conta qui:
+    // Scandisce gli stessi sedimi di `index`, ed e' l'unica cosa che conta qui:
     // togliere dalla sola impronta lascerebbe l'id dello sbalzo dentro `columns`
     // per sempre, e quelle colonne resterebbero occupate da un edificio che non
     // esiste piu'. `drop` su una chiave che non c'e' non fa niente, quindi lo
     // stesso ciclo serve anche a `groundColumns`.
-    const env = envelopeOf(record);
-    for (let dy = 0; dy < env.sizeY; dy++) {
-      for (let dx = 0; dx < env.sizeX; dx++) {
-        const key = columnKey(env.x + dx, env.y + dy);
-        drop(this.columns, key, record.id);
-        drop(this.groundColumns, key, record.id);
+    for (const plot of plotOf(record)) {
+      for (let dy = 0; dy < plot.sizeY; dy++) {
+        for (let dx = 0; dx < plot.sizeX; dx++) {
+          const key = columnKey(plot.x + dx, plot.y + dy);
+          drop(this.columns, key, record.id);
+          drop(this.groundColumns, key, record.id);
+        }
       }
     }
     drop(this.buckets, columnKey(toChunk(record.x), toChunk(record.y)), record.id);
@@ -1089,8 +1170,21 @@ export class BuildingRegistry implements ReadonlyBuildingRegistry {
         for (const use of record.uses ?? EMPTY_USES) this.classCounts[use] += delta;
         return;
 
+      // **Un edificio fuso conta una volta per uso ereditato**, ed e' la stessa
+      // riga dell'arcologia qui sopra letta per un record ordinario. Assorbendo
+      // un vicino il registry passa da due record a uno, e senza questo la
+      // citta' perderebbe un edificio dall'istogramma mentre la simulazione ne
+      // conta ancora due — la divergenza esatta che i rami di questa tabella
+      // esistono per evitare. `uses` porta l'uso proprio in prima posizione,
+      // quindi c'e' un solo conto e non due sommati.
+      //
+      // `mixed`, il livello e la tipologia restano **per record**: un
+      // assemblaggio ha una sagoma sola, un livello solo e una tipologia sola,
+      // e contarli per uso direbbe che quella riga di catalogo e' stata scritta
+      // due volte.
       case STRUCTURE_KIND.plain:
-        this.classCounts[record.class] += delta;
+        if (record.uses === undefined) this.classCounts[record.class] += delta;
+        else for (const use of record.uses) this.classCounts[use] += delta;
         if (record.mixed !== undefined) this.mixedCounts[record.mixed] += delta;
         this.levelCounts[record.level] = (this.levelCounts[record.level] ?? 0) + delta;
         if (record.typology !== undefined) {
@@ -1154,6 +1248,32 @@ const EMPTY_IDS: readonly number[] = [];
 
 /** Nessun uso dichiarato: solo un'arcologia ne ha. */
 const EMPTY_USES: readonly BuildingClass[] = [];
+
+/** Nessun secondo sedime: quasi tutta la citta'. */
+const EMPTY_PARTS: readonly PlanRect[] = [];
+
+/**
+ * true se quella colonna e' **suolo** del record, e non aria che si e' prenotato.
+ *
+ * Separa cio' che poggia da cio' che sporge, ed e' la stessa distinzione che
+ * `envelopeOf` fa in pianta: dentro l'impronta e dentro ogni altro sedime si
+ * poggia, sotto uno sbalzo o sotto un braccio no. Un `parts` e' un sedime a
+ * tutti gli effetti — l'edificio ci sta sopra — quindi entra intero.
+ */
+function groundColumnOf(record: BuildingRecord, cx: number, cy: number): boolean {
+  const depth = footprintDepth(record);
+  if (cx >= record.x && cx < record.x + record.footprint &&
+    cy >= record.y && cy < record.y + depth) {
+    return true;
+  }
+  for (const part of record.parts ?? EMPTY_PARTS) {
+    if (cx >= part.x && cx < part.x + part.sizeX &&
+      cy >= part.y && cy < part.y + part.sizeY) {
+      return true;
+    }
+  }
+  return false;
+}
 
 /**
  * true se il record occupa il suolo delle proprie colonne.

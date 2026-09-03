@@ -1020,7 +1020,10 @@ una soglia da abbassare:
    cratere non si vede: non perché la spalla non ci sia, ma perché la torre gliela
    porta via.
 2. **Un polo largo cancella la spalla.** I landmark del gruppo identità hanno
-   raggio 85–92 contro i 45–65 di un seme di crescita: uno solo al centro tiene
+   raggio 85–92 contro i 45–65 di un seme di crescita — il listino ha poi preso
+   un quarto in più su tutti e diciannove i ruoli (106–115 contro 56–81), quindi
+   il divario resta e il rilievo qui sotto vale a maggior ragione, ma i numeri
+   misurati sono quelli di prima: uno solo al centro tiene
    `poleReach` sopra tre quarti su tutto il nucleo, il cono è pieno ovunque e
    **ogni** isolato `core` diventa cresta. Con una `university` al centro la
    famiglia interrata torna senza siti; con i soli semi di crescita l'isola dà

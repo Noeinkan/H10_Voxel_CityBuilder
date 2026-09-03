@@ -19,6 +19,8 @@
  * | `levels.ts` | quanta massa da' un livello, e come si arriva al successivo |
  * | `classProfile.ts` | che aspetto ha un uso quando il luogo non dice altro |
  * | `visual.ts` | a quali livelli un edificio cambia volto, a parita' di massa |
+ * | `arch.ts` | quando due fronti si toccano, e con che sagoma |
+ * | `fusion.ts` | quando due edifici smettono di essere due |
  * | `typologies.ts` | quale forma prende un uso in un luogo preciso |
  * | `styles.ts` | di che materia e' fatto un quartiere |
  *
@@ -46,6 +48,10 @@ export { CLASS_PROFILE } from './classProfile';
 export type { ClassProfile } from './classProfile';
 
 export { SKYLINE_PROP_HEIGHT, VISUAL_CROWN_BONUS, VISUAL_LEVELS, crownBonusOf } from './visual';
+
+export { ARCH } from './arch';
+
+export { FUSION } from './fusion';
 
 export { DEFAULT_TYPOLOGY_SHAPE, TYPOLOGIES, typologyById } from './typologies';
 export type {

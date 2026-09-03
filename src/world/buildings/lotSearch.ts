@@ -67,6 +67,15 @@ export class LotSearch {
   constructor(
     private readonly ctx: BuildContext,
     private readonly decks: DeckProbe,
+    /**
+     * Se un'impronta ancorata qui vede la carreggiata.
+     *
+     * Entra come funzione e non come rete per la stessa ragione di `decks`: la
+     * ricerca deve sapere una cosa sola, e chi gliela risponde non e' affar suo.
+     * E' anche cio' che tiene questo file indifferente a *quale* rete stradale
+     * ci sia sotto — la maglia catastale o il tracciato organico.
+     */
+    private readonly roadside: (x: number, y: number, footprint: number) => boolean,
   ) {}
 
   /** Siti bocciati in modo definitivo, per la statistica del `Builder`. */
@@ -229,6 +238,11 @@ export class LotSearch {
         ? (lx, ly, side) => this.facingTowardNetwork(lx, ly, side)
         : () => coast.facing,
       accepts: (lx, ly, side) => this.lotIsFree(lx, ly, side),
+      // **Solo il tessuto ordinario cerca l'affaccio.** Un'opera costiera passa
+      // da `edgeOnly` e ha gia' un fronte suo — la banchina — e chiederle anche
+      // la strada la sposterebbe via dall'acqua, che e' l'unica cosa per cui e'
+      // li'.
+      onFrontage: (lx, ly, side) => this.roadside(lx, ly, side),
       // Il rettangolo dipende dal solo isolato d'origine, e la scansione lo
       // percorre tutto: due candidati dello stesso isolato fanno la stessa
       // domanda in un altro ordine. Il secondo la salta, e da adesso anche il

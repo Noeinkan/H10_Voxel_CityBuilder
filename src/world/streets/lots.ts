@@ -28,6 +28,21 @@ export interface LotRequest {
   /** Solo le opere costiere richiedono ancora un lotto a contatto col bordo. */
   readonly edgeOnly?: boolean;
   /**
+   * true se un'impronta ancorata qui ha un affaccio su strada.
+   *
+   * **E' una preferenza, non un filtro**, ed e' tutta la differenza fra una
+   * citta' che segue le strade e una citta' fatta a nastri con dei vuoti in
+   * mezzo. La ricerca percorre il rettangolo due volte: la prima accetta solo
+   * gli ancoraggi che rispondono true, la seconda non guarda piu' nessuno. Il
+   * risultato e' che il tessuto si addensa lungo la carreggiata e si dirada
+   * allontanandosene — senza che nessuno disegni il confine, e senza che una
+   * colonna lontana diventi inedificabile.
+   *
+   * Chi non ce l'ha la lascia fuori, e la ricerca e' quella di sempre: la
+   * strada non e' un concetto di questo modulo, e non deve diventarlo.
+   */
+  readonly onFrontage?: (x: number, y: number, footprint: number) => boolean;
+  /**
    * Orientamento fornito dal mondo. Nella posa libera orienta la facciata;
    * sulla costa sceglie prima il bordo rivolto all'acqua.
    */
@@ -114,10 +129,40 @@ function placeAroundCandidate(request: LotRequest, footprint: number): Lot | nul
   // Chebyshev: a saturazione e' questa differenza a separare una macchia urbana
   // da un altro isolato gigante. La lista dipende da tre interi piccoli e viene
   // riusata fra tutti i candidati della stessa scala.
-  for (const offset of radialOffsets(reach, centerDx, centerDy)) {
+  const offsets = radialOffsets(reach, centerDx, centerDy);
+
+  // Due passate sulla stessa lista invece di due liste: la prima chiede anche
+  // l'affaccio, la seconda si accontenta. Chi non ha un `onFrontage` fa solo la
+  // seconda, ed e' la ricerca di sempre — nessun costo per chi non la usa.
+  const frontage = request.onFrontage;
+  if (frontage !== undefined) {
+    const found = scan(request, offsets, preferredX, preferredY, maxX, maxY, footprint, frontage);
+    if (found !== null) return found;
+  }
+  return scan(request, offsets, preferredX, preferredY, maxX, maxY, footprint, null);
+}
+
+/** Una passata sugli scostamenti, con o senza il filtro dell'affaccio. */
+function scan(
+  request: LotRequest,
+  offsets: readonly Offset[],
+  preferredX: number,
+  preferredY: number,
+  maxX: number,
+  maxY: number,
+  footprint: number,
+  frontage: ((x: number, y: number, footprint: number) => boolean) | null,
+): Lot | null {
+  const { rect } = request;
+  for (const offset of offsets) {
     const candidate = { x: preferredX + offset.x, y: preferredY + offset.y };
     if (candidate.x < rect.x0 || candidate.x > maxX ||
       candidate.y < rect.y0 || candidate.y > maxY) continue;
+    // L'affaccio si chiede **prima** dell'occupazione: e' una lettura su un
+    // indice in memoria, mentre `accepts` interroga terreno e registry per ogni
+    // colonna dell'impronta. Invertirli farebbe pagare la sonda cara su ogni
+    // ancoraggio che il filtro scarta comunque.
+    if (frontage !== null && !frontage(candidate.x, candidate.y, footprint)) continue;
     if (!request.accepts(candidate.x, candidate.y, footprint)) continue;
     return {
       x: candidate.x,

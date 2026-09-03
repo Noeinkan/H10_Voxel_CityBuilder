@@ -52,6 +52,7 @@ export function createInfoSampler(
       kind,
       mode: spec.mode,
       normalized: spec.normalized,
+      sparse: spec.sparse,
       categories: spec.categories,
       sample(x: number, y: number): number {
         return cells.get(`${x},${y}`) ?? -1;

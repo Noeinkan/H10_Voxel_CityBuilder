@@ -12,6 +12,7 @@ import type { BuildContext } from './buildContext';
 import { dirtyChunkCount } from './chunkBudget';
 import { BUILDER, MAX_FOOTPRINT, typologyById, upgradeThresholdOf } from './config';
 import { buildStamp, urbanFootprintCap } from './assemble';
+import { withArch } from './archStamp';
 import { groundSideOf } from './generate';
 import { sliceStamps, type VoxelStamp } from './stamp';
 import { anchorOf } from './growthQueue';
@@ -185,12 +186,20 @@ export class UpgradeDriver {
       );
     // Un assemblaggio gia' nato non si restringe se il quartiere cambia: il
     // gate autorizza l'espansione, non riscrive la storia del record.
-    const room = Math.max(record.footprint, Math.min(blockCap, blockRoom(
+    const grown = Math.max(record.footprint, Math.min(blockCap, blockRoom(
       rect,
       record.x,
       record.y,
       record.footprint,
     )));
+    // **Chi ha gettato un arco sale ma non si allarga**, ed e' il guinzaglio
+    // piu' leggero della famiglia. Un braccio nasce da una parete a una quota
+    // concordata con il dirimpettaio: allargando l'impronta quella parete si
+    // sposta, il braccio resterebbe attaccato al vuoto e la meta' di fronte
+    // continuerebbe a puntare dove non c'e' piu' niente. In altezza invece non
+    // cambia niente — le fasce basse sono identiche a ogni livello — quindi la
+    // rinuncia e' esattamente quella che serve e non una di piu'.
+    const room = record.arch === undefined ? grown : record.footprint;
     // Lo stile e' quello con cui l'edificio e' nato, non quello dell'isolato di
     // adesso: un edificio che promuove resta lo stesso edificio, come restano la
     // sua quota e il suo zoccolo. E' anche cio' che tiene `old` e `stamp`
@@ -244,18 +253,27 @@ export class UpgradeDriver {
       side = groundSideOf(stamp, overhang, record.facing);
     }
 
+    // **Il braccio si riscrive con il corpo, e non e' un di piu'.** `old` e' la
+    // sagoma registrata, che l'arco ce l'ha: accodare un volume nuovo senza
+    // braccio farebbe cancellare l'arco alla passata di erosione, che toglie
+    // dalla sagoma vecchia tutto cio' che la nuova non copre.
+    const written = record.arch === undefined
+      ? stamp
+      : withArch(stamp, record, record.arch);
+
     // L'impronta di suolo della sagoma nuova: e' quella che va nel record, e da
     // cui l'inviluppo si ricava.
     const env = envelopeOf({
       x: record.x, y: record.y, footprint: side, overhang, facing: record.facing,
+      arch: record.arch,
     });
 
     // Un assemblaggio supera `segmentSide` in pianta e compare a ritagli: il tetto
     // di chunk va verificato per ritaglio, come alla nascita. Un singolo modulo
     // resta sul conto intero di sempre.
     const overBudget = side > MAX_FOOTPRINT
-      ? this.stampExceedsBudget(record, stamp)
-      : dirtyChunkCount(env.x, env.y, env.sizeX, record.baseZ, record.baseZ + stamp.sizeZ,
+      ? this.stampExceedsBudget(record, written)
+      : dirtyChunkCount(env.x, env.y, env.sizeX, record.baseZ, record.baseZ + written.sizeZ,
         env.sizeY) > BUILDER.maxDirtyChunksPerBuilding;
     if (overBudget) return null;
 
@@ -272,7 +290,7 @@ export class UpgradeDriver {
     // `reseat` **scrive** — le mensole che la sagoma nuova non regge piu' cadono
     // qui — quindi tutto cio' che sa dire di no senza leggere sta sopra.
     const anchor = anchorOf(record);
-    if (!this.aerial.reseat(record.id, anchor, old, stamp)) return null;
+    if (!this.aerial.reseat(record.id, anchor, old, written)) return null;
 
     // La sagoma su cui le sue campate poggiavano sta per cambiare: cadono con
     // lei, e la passata successiva le ripropone alla quota nuova. E' il vincolo
@@ -283,7 +301,7 @@ export class UpgradeDriver {
     // cresce in altezza vince su un ponte che gli passa davanti.
     this.spans.dropIntersecting(
       env.x, env.y, env.sizeX, env.sizeY,
-      record.baseZ, record.baseZ + stamp.sizeZ,
+      record.baseZ, record.baseZ + written.sizeZ,
     );
 
     // Il decoro si bonifica sotto l'**impronta**: sotto lo sbalzo non c'e' niente
@@ -306,6 +324,9 @@ export class UpgradeDriver {
       typology: nextTypology.id,
       style: record.style,
       overhang: overhang > 0 ? overhang : undefined,
+      // Il braccio viaggia con il record come la fila e il corso di base: e' un
+      // patto con il dirimpettaio, e una promozione non lo rinegozia.
+      arch: record.arch,
       district: profile.district,
       specialization: profile.specialization,
       facing: record.facing,
@@ -337,9 +358,15 @@ export class UpgradeDriver {
       // Un assemblaggio compare a ritagli; la sagoma vecchia e' tutta coperta
       // dalla nuova (stesso seme, stessa impronta, piu' alta), quindi non c'e'
       // niente da cancellare oltre ai ritagli che si scrivono.
+      //
+      // **E il braccio non si riscrive**, per la stessa ragione: senza
+      // cancellazione i suoi voxel restano quelli che sono, e il ritaglio non
+      // deve nemmeno portarseli dietro. E' anche il ramo in cui non potrebbe:
+      // `enqueueSegments` ancora i ritagli all'angolo del record, e un braccio
+      // sulle facce 1 o 3 sposta l'ancora della sagoma.
       growth.enqueueSegments(replaced, stamp);
     } else {
-      growth.enqueue(replaced.id, anchorOf(replaced), stamp, old);
+      growth.enqueue(replaced.id, anchorOf(replaced), written, old);
     }
     this.upgraded++;
     return replaced;
