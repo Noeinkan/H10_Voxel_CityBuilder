@@ -3,6 +3,7 @@ import { hashCoords } from '../rng';
 import { GROUND } from '../grading/grade';
 import { AERIAL, AERIAL_PART, isBuildable, type AerialPart } from '../aerial/config';
 import type { AerialColumn, AerialProbe, DeckPlan, Pier } from '../aerial/deckPlan';
+import { holdFits, type DeckHold, type SolidAt } from '../aerial/deckHold';
 import {
   AERIAL_FACES,
   planTerrace,
@@ -19,7 +20,7 @@ import { dirtyChunkCount } from './chunkBudget';
 import { anchorOf } from './growthQueue';
 import { groundKindAt } from './siteWorks';
 import type { SpanDriver } from './spanDriver';
-import { STAMP_EMPTY } from './stamp';
+import { stampSolidAt, STAMP_EMPTY, type VoxelAnchor, type VoxelStamp } from './stamp';
 import { isGroundStructure, traitsOf } from './structureKind';
 
 /**
@@ -187,7 +188,7 @@ export class AerialDriver {
    * **`deckPiers` resta fuori, e va detto.** Quella mappa lega un impalcato alle
    * proprie gambe, e il legame non sta nei record: la gamba dichiara in
    * `supports` l'edificio su cui poggia, non l'impalcato che regge — e scrivercelo
-   * invertirebbe il verso che `carried` e `blocksUpgrade` leggono. Finche' gli
+   * invertirebbe il verso che `carried` e `reseat` leggono. Finche' gli
    * impalcati non entrano nel salvataggio la mappa e' vuota comunque; quando ci
    * entreranno servira' un campo nuovo sul record, non una deduzione geometrica.
    */
@@ -224,19 +225,69 @@ export class AerialDriver {
   }
 
   /**
-   * true se cio' che questo edificio porta gli impedisce di promuovere.
+   * true se questo edificio porta qualcosa che non cadra' da solo.
    *
-   * Un impalcato **abitato** lo ferma, e cosi' un tratto di percorso o un nodo:
-   * quelli non cadono mai. Una mensola vuota no — `releaseDecks` la fa cadere
-   * quando la promozione e' decisa, e la passata successiva la ripropone alla
-   * quota nuova. Fermare l'ospite in tutti i casi era la lettura semplice, ed e'
-   * misurato che non funziona: la fascia alta della gerarchia scendeva da
-   * quaranta edifici a diciannove, perche' una mensola arriva presto e da quel
-   * momento la torre non sale piu'.
+   * Un impalcato **abitato** rientra qui, e cosi' un tratto di percorso, un nodo
+   * o una piattaforma di landmark: quelli non cadono mai. Una mensola vuota no —
+   * `releaseDecks` la fa cadere quando la promozione e' decisa, e la passata
+   * successiva la ripropone alla quota nuova.
+   *
+   * **Non e' piu' la risposta a «puo' promuovere?», ed e' il punto della 4.11.**
+   * Quella e' una domanda sulla parete e la pone `reseat`, con la sagoma nuova
+   * in mano. Questa resta come proxy dove serve solo sapere se un edificio ha
+   * smesso di muoversi — `arcologyDriver.cappedAround` — perche' li' si conta un
+   * quartiere che si e' assestato e chi porta qualcosa promuove comunque di rado.
    */
-  blocksUpgrade(hostId: number): boolean {
+  carriesPinned(hostId: number): boolean {
     return this.ctx.registry.decksOf(hostId).some((deck) =>
       this.pinned(deck.id) || deck.aerial !== AERIAL_PART.terrace);
+  }
+
+  /**
+   * Rimette cio' che un edificio porta sulla sagoma che sta per prendere, e dice
+   * se la promozione si puo' fare.
+   *
+   * **Fermare l'ospite in tutti i casi era la lettura semplice, ed e' misurato
+   * che non funziona**: la fascia alta della gerarchia scendeva da quaranta
+   * edifici a diciannove, perche' una mensola arriva presto e da quel momento la
+   * torre non sale piu'. Il primo rimedio fu far cadere le mensole vuote; ma
+   * restavano fuori quelle abitate e le tre forme di facciata — Skyport, Sky Park
+   * e Sky Transit — che invece **non cadono**, e un solo Skyport bastava a
+   * congelare la torre migliore dell'isolato per sempre.
+   *
+   * **La domanda e' una sola per tutti, e la pone `holdFits`**: la parete a cui
+   * questo e' appeso c'e' ancora, alla sua quota, nella sagoma nuova? Chi risponde
+   * di si' **resta dov'e'** — ed e' la meta' che conta piu' della prima, perche'
+   * far cadere una mensola a ogni livello dell'ospite non congelava la torre ma
+   * rendeva la citta' in quota inabitabile: nessun impalcato viveva abbastanza
+   * per meritarsi un lotto sopra o un montante che lo raggiungesse. Chi risponde
+   * di no cade se e' una mensola vuota, e ferma la promozione se e' qualunque
+   * altra cosa: toglierla sarebbe una demolizione.
+   *
+   * **Tutta la convalida prima di qualunque scrittura**, come per un percorso: un
+   * ospite che cominciasse a scrollarsi di dosso le mensole per poi scoprire di
+   * non potersi promuovere le avrebbe perse per niente.
+   */
+  reseat(hostId: number, anchor: VoxelAnchor, was: VoxelStamp, now: VoxelStamp): boolean {
+    const decks = this.ctx.registry.decksOf(hostId);
+    if (decks.length === 0) return true;
+
+    const before: SolidAt = (x, y, z) => stampSolidAt(was, anchor, x, y, z);
+    const after: SolidAt = (x, y, z) => stampSolidAt(now, anchor, x, y, z);
+
+    const falling: BuildingRecord[] = [];
+    for (const deck of decks) {
+      // Senza un verso non c'e' una parete da guardare: e' il caso della gamba
+      // concentrica all'ospite su cui poggia. Chi non si sa misurare vale come
+      // chi non ci sta piu'.
+      const hold = holdOf(deck, this.openSideOf(deck));
+      if (hold !== null && holdFits(hold, before, after) === null) continue;
+      if (deck.aerial !== AERIAL_PART.terrace || this.pinned(deck.id)) return false;
+      falling.push(deck);
+    }
+
+    for (const deck of falling) this.dropDeck(deck);
+    return true;
   }
 
   /**
@@ -792,12 +843,37 @@ export class AerialDriver {
 }
 
 /**
+ * Un impalcato ridotto all'appiglio che la promozione del suo ospite guardera'.
+ *
+ * `null` dove il verso non si sa dire: due centri coincidenti sono una gamba
+ * piantata sul tetto dell'ospite, non qualcosa appeso al suo fianco.
+ */
+function holdOf(
+  deck: BuildingRecord,
+  side: { readonly axis: 0 | 1; readonly sign: number } | null,
+): DeckHold | null {
+  if (side === null || side.sign === 0) return null;
+  return {
+    rect: { x: deck.x, y: deck.y, sizeX: deck.footprint, sizeY: footprintDepth(deck) },
+    // Un impalcato in quota ha la travatura sotto il piano, quindi il piano e'
+    // la sua ultima quota; una piattaforma di landmark porta la ricetta sopra il
+    // piano, e li' il piano e' la prima. Vedi `DeckHold.z`.
+    z: deck.aerial === undefined ? deck.baseZ : deck.baseZ + deck.height - 1,
+    baseZ: deck.baseZ,
+    height: deck.height,
+    axis: side.axis,
+    sign: side.sign > 0 ? 1 : -1,
+  };
+}
+
+/**
  * true se questo edificio puo' portare qualcosa in quota.
  *
- * **Chi regge non cresce**, quindi ospitare e' una rinuncia e non un premio:
- * la passata di upgrade salta chi porta, e quell'edificio si ferma dov'e'. La
- * soglia di livello e' il prezzo che si accetta di pagare — vedi `minHostLevel`,
- * dove sta anche la misura che ha escluso la regola piu' ovvia.
+ * **Ospitare resta una rinuncia**, anche da quando chi regge puo' crescere: la
+ * promozione di un ospite passa da una verifica che puo' rifiutarla, quindi una
+ * torre con una mensola abitata sale piu' piano di una libera. La soglia di
+ * livello e' il prezzo che si accetta di pagare — vedi `minHostLevel`, dove sta
+ * anche la misura che ha escluso la regola piu' ovvia.
  */
 function settled(record: BuildingRecord): boolean {
   if (!traitsOf(record).hostsAerial) return false;

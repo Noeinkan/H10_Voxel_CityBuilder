@@ -97,6 +97,30 @@ export function anchoredVoxel(
   };
 }
 
+/**
+ * true se lo stamp, ancorato li', occupera' quella colonna del mondo.
+ *
+ * E' l'inverso esatto di `anchoredVoxel`, e serve a interrogare una sagoma
+ * **prima che sia scritta**: la promozione deve sapere cosa il volume nuovo
+ * occupera' mentre puo' ancora rinunciare. Fuori dai propri lati la risposta e'
+ * `false` — uno stamp non dice niente di cio' che gli sta intorno — ed e' quella
+ * la risposta giusta qui: cio' che il volume non copre, non lo tocca.
+ */
+export function stampSolidAt(
+  stamp: VoxelStamp,
+  anchor: VoxelAnchor,
+  x: number,
+  y: number,
+  z: number,
+): boolean {
+  const sx = x - anchor.x + stamp.anchorX;
+  const sy = y - anchor.y + stamp.anchorY;
+  const sz = z - anchor.z + stamp.anchorZ;
+  if (sx < 0 || sy < 0 || sz < 0) return false;
+  if (sx >= stamp.sizeX || sy >= stamp.sizeY || sz >= stamp.sizeZ) return false;
+  return stamp.voxels[stampIndex(stamp, sx, sy, sz)] !== STAMP_EMPTY;
+}
+
 /** Numero di fasce dello stamp. */
 export function bandCount(stamp: VoxelStamp): number {
   return stamp.bandStarts.length - 1;

@@ -590,8 +590,14 @@ export class ArcologyDriver {
       // che e' la colonna `promotes`.
       if (!traitsOf(record).promotes) continue;
       const cap = allowedLevel(this.ctx, record.x, record.y, state, riseOf(this.ctx, record));
+      // **Chi porta qualcosa conta come fermo, pur potendo crescere.** Dalla 4.11
+      // la promozione di un ospite non e' piu' vietata ma verificata sulla sagoma
+      // nuova, e la verifica vera costa un `buildStamp`: qui si misura se un
+      // quartiere si e' assestato, e un edificio che porta una mensola abitata o
+      // uno Skyport sale abbastanza di rado da essere la stessa risposta a molto
+      // meno. La domanda esatta la pone `UpgradeDriver.holdsSurvive`.
       if (record.level >= Math.min(cap, BUILDER.maxLevel) ||
-        this.aerial.blocksUpgrade(record.id)) {
+        this.aerial.carriesPinned(record.id)) {
         capped++;
       }
     }

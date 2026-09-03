@@ -27,11 +27,37 @@
   non ha gambe e una profonda se le conta da sola. Una gamba **si sposta per
   trovare un tetto** prima di piantarsi nel prato: e' cio' che tiene i cuori
   d'isolato liberi per la piazza della 4.5.
-- **Chi regge non cresce.** Il guinzaglio di un impalcato tira al contrario di
-  quello di una campata: `upgradePass` salta chi porta. Ospitare e' quindi una
-  rinuncia, e la soglia che la governa e' `AERIAL.minHostLevel` — dove sta anche
-  la misura per cui la regola piu' ovvia («aspetta che abbia finito di crescere»)
-  non funziona su una citta' che cresce.
+- **Chi regge cresce, se la parete regge ancora.** Il guinzaglio di un impalcato
+  tira al contrario di quello di una campata, ma non e' un divieto: e' una
+  verifica. `upgradePass` saltava chiunque portasse qualcosa, e la regola era piu'
+  severa della geometria — i quattro canali casuali di `buildings/generate.ts`
+  non dipendono dal livello, quindi a parita' di tipologia e impronta **i piani
+  bassi sono identici a ogni livello** e il muro a cui l'impalcato e' appeso e'
+  quasi sempre ancora li'. Un solo Skyport bastava a congelare per sempre la
+  torre migliore dell'isolato. La domanda giusta la pone `holdFits` sulla sagoma
+  nuova — il volume del piano resta aria, nessuna colonna di muro e' sparita — e
+  si puo' porre soltanto dentro `upgrade()`, dove quella sagoma esiste: costa un
+  `buildStamp` speso per un rifiuto, e lo spende solo chi porta qualcosa.
+  Ospitare resta una rinuncia, perche' una promozione puo' essere rifiutata; la
+  soglia che la governa e' `AERIAL.minHostLevel` — dove sta anche la misura per
+  cui la regola piu' ovvia («aspetta che abbia finito di crescere») non funziona
+  su una citta' che cresce.
+- **Cio' che ci sta ancora non cade, e conta piu' del resto.** `releaseDecks`
+  faceva cadere ogni mensola vuota a ogni promozione dell'ospite, e con l'ospite
+  fermo era un compromesso innocuo; con gli ospiti che crescono avrebbe reso
+  questo dominio **inabitabile** — nessun impalcato vivrebbe abbastanza per
+  meritarsi un lotto sopra o un montante che lo raggiunga, e la meta' del gate
+  che dice «si abita sopra la citta'» tornerebbe a zero. `reseat` fa cadere
+  soltanto cio' che la sagoma nuova non regge piu', e rifiuta la promozione
+  quando a non starci e' qualcosa che non puo' cadere: tutta la convalida prima
+  di qualunque scrittura, come per un percorso.
+- **La parete si misura per differenza, non con una soglia.** Quanto muro
+  servisse lo ha deciso chi ha appeso l'impalcato — `terraceRect` prende la corsa,
+  `facadeRect` si centra sull'intera facciata e ne lascia libero qualche capo —
+  quindi ricavare qui un minimo vorrebbe dire inventare un terzo numero che
+  nessuna delle due regole conosce. Si chiede invece che nessuna colonna di muro
+  presente prima sia sparita: e' la stessa domanda per tutte le forme, e non ha
+  niente da tarare.
 - **Il livello si risolve dove si risolve il lotto.** `TerrainMap` resta una
   quota e un bit per colonna; `decksAt` legge dal registry, e in quota **il lotto
   e' l'impalcato** — niente `findLot`, niente opere di terra, niente fila.

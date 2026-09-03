@@ -73,10 +73,6 @@ export class UpgradeDriver {
       // perche' e' l'edificio che la regge a cambiare, e la citta' in quota non
       // ne ha affatto — mensole, tratti, nodi e gambe sono struttura.
       if (!traitsOf(record).promotes) continue;
-      // **Chi regge qualcosa di abitato non cresce.** E' una domanda sola e sta
-      // qui in alto perche' risponde di no senza leggere niente; il *togliere* —
-      // che e' un atto — sta in fondo, quando la promozione e' decisa.
-      if (this.aerial.blocksUpgrade(record.id)) continue;
       if (record.level >= BUILDER.maxLevel) continue;
 
       const nextLevel = record.level + 1;
@@ -102,10 +98,6 @@ export class UpgradeDriver {
         continue;
       }
 
-      // La promozione e' decisa: **ora** le mensole vuote cadono, e la passata
-      // successiva le ripropone alla quota nuova. Farlo prima le avrebbe fatte
-      // oscillare a ogni edificio che la passata scarta per soglia.
-      this.aerial.releaseDecks(record.id);
       const replaced = this.upgrade(record, nextLevel, profile, next);
       if (replaced === null) continue;
       const specialization = nextTypologySpecialization(replaced);
@@ -266,6 +258,21 @@ export class UpgradeDriver {
       : dirtyChunkCount(env.x, env.y, env.sizeX, record.baseZ, record.baseZ + stamp.sizeZ,
         env.sizeY) > BUILDER.maxDirtyChunksPerBuilding;
     if (overBudget) return null;
+
+    // **Chi regge cresce, se la parete regge ancora.** La domanda che stava a
+    // monte della passata — «questo edificio porta qualcosa?» — si poteva fare
+    // senza leggere niente, ed e' per questo che stava li'; ma rispondeva di no
+    // anche a una torre che sarebbe salita benissimo, perche' i piani bassi sono
+    // identici a ogni livello e il muro a cui l'impalcato e' appeso e' quasi
+    // sempre ancora li'. La domanda giusta e' geometrica, quindi si puo' porre
+    // soltanto qui, dove la sagoma nuova esiste: costa un `buildStamp` speso per
+    // un rifiuto, e lo spende soltanto chi porta qualcosa.
+    //
+    // E' anche l'ultimo punto in cui questa promozione puo' ancora rinunciare:
+    // `reseat` **scrive** — le mensole che la sagoma nuova non regge piu' cadono
+    // qui — quindi tutto cio' che sa dire di no senza leggere sta sopra.
+    const anchor = anchorOf(record);
+    if (!this.aerial.reseat(record.id, anchor, old, stamp)) return null;
 
     // La sagoma su cui le sue campate poggiavano sta per cambiare: cadono con
     // lei, e la passata successiva le ripropone alla quota nuova. E' il vincolo
