@@ -40,6 +40,7 @@ import {
   type BuildingRecord,
   type ReadonlyBuildingRegistry,
 } from '../world/buildings/BuildingRegistry';
+import { STRUCTURE_KIND, structureKindOf, traitsOf } from '../world/buildings/structureKind';
 import type { SurfaceCell } from './surfacePick';
 
 /**
@@ -436,12 +437,7 @@ function buildingGrowth(
   groundHeight: number,
   allowedLevel: number,
 ): StructureInfo['growth'] {
-  if (
-    record.landmark !== undefined
-    || record.span !== undefined
-    || record.aerial !== undefined
-    || record.arcology !== undefined
-  ) return undefined;
+  if (!traitsOf(record).promotes) return undefined;
 
   const nextLevel = record.level + 1;
   const rise = Math.max(0, record.baseZ - groundHeight);
@@ -558,15 +554,13 @@ function landmarkStage(
 /**
  * Gli usi che un record porta, con cio' che la simulazione dice di ciascuno.
  *
- * Il ramo d'uscita e' lo stesso di `blockAt`, e non e' una coincidenza: landmark,
- * campate e parti in quota non sono edifici e il tick non li ha mai contati. Il
- * campo `class` c'e' anche su di loro, e leggerlo qui produrrebbe un rendimento
+ * Il ramo d'uscita e' lo stesso di `blockAt`, e non e' una coincidenza: e' la
+ * stessa casella della tabella dei tratti. Il campo `class` c'e' anche su un
+ * landmark, una campata e un impalcato, e leggerlo qui produrrebbe un rendimento
  * per un viadotto.
  */
 function usesOf(state: SimState, record: BuildingRecord): readonly UseInfo[] {
-  if (record.landmark !== undefined || record.span !== undefined || record.aerial !== undefined) {
-    return [];
-  }
+  if (!traitsOf(record).hasUrbanUse) return [];
 
   const weights = weightsOf(state);
   // Indicizzato per costante e non per posizione: l'ordine di `BUILDING_CLASS` e'
@@ -629,6 +623,44 @@ function cityUseOf(state: SimState, cls: BuildingClass, perBuilding: number): nu
   return null;
 }
 
+/** Le quattro voci in cui l'aggregato dell'isolato divide cio' che trova. */
+const BLOCK_ROLE = {
+  landmark: 'landmark',
+  structure: 'structure',
+  building: 'building',
+  arcology: 'arcology',
+} as const;
+
+type BlockRole = (typeof BLOCK_ROLE)[keyof typeof BLOCK_ROLE];
+
+/**
+ * La traduzione dai sette tipi alle quattro voci dell'isolato.
+ *
+ * **Uno `switch` esaustivo e non una catena di tratti**, per la stessa ragione di
+ * `clearanceKindOf`: qui si sceglie *in quale contatore finisce* un record, non
+ * si risponde si' o no, quindi il compilatore deve fermare chi aggiunge una
+ * struttura senza dire dove va. L'arcologia ha una voce sua perche' il suo
+ * rendimento esce da `uses` e non da `class`.
+ */
+function blockRoleOf(record: BuildingRecord): BlockRole {
+  switch (structureKindOf(record)) {
+    case STRUCTURE_KIND.landmark:
+    case STRUCTURE_KIND.rooftopLandmark:
+      return BLOCK_ROLE.landmark;
+    case STRUCTURE_KIND.span:
+    case STRUCTURE_KIND.aerial:
+      return BLOCK_ROLE.structure;
+    case STRUCTURE_KIND.arcology:
+      return BLOCK_ROLE.arcology;
+    // La torre di una funivia sta con l'edificio ordinario, ed e' cosi' da
+    // sempre: nessuno dei rami sopra l'ha mai esclusa. E' la stessa casella
+    // `hasUrbanUse` che `usesOf` legge due funzioni piu' su.
+    case STRUCTURE_KIND.plain:
+    case STRUCTURE_KIND.ropeway:
+      return BLOCK_ROLE.building;
+  }
+}
+
 /**
  * L'aggregato dell'isolato.
  *
@@ -655,28 +687,31 @@ function blockAt(query: SelectionQuery, key: string, rect: BlockRect): BlockInfo
     if (record.x + record.footprint - 1 < rect.x0 || record.x > rect.x1) continue;
     if (record.y + footprintDepth(record) - 1 < rect.y0 || record.y > rect.y1) continue;
 
-    if (record.landmark !== undefined) {
-      landmarks++;
-      continue;
-    }
-    // Campate e parti in quota non sono edifici e la simulazione non le ha mai
-    // contate: sommarle qui farebbe divergere questa scheda dall'HUD.
-    if (record.span !== undefined || record.aerial !== undefined) {
-      structures++;
-      continue;
-    }
-    buildings++;
-    byClass[record.class]++;
-    if (record.arcology !== undefined) {
-      // Un'arcologia e' un record ma la simulazione la conta una volta per
-      // fascia abitata: `uses` e' la stessa fonte che usa il driver.
-      for (const use of record.uses ?? []) effectiveByClass[use]++;
-    } else {
-      effectiveByClass[record.class]++;
-      if (record.mixed !== undefined && record.mixed !== record.class) {
-        effectiveByClass[record.mixed] += BALANCE.mixedUse.secondaryShare;
-      }
-      if (record.specialization === 'farming') farmTowers++;
+    switch (blockRoleOf(record)) {
+      case BLOCK_ROLE.landmark:
+        landmarks++;
+        continue;
+      // Campate e parti in quota non sono edifici e la simulazione non le ha mai
+      // contate: sommarle qui farebbe divergere questa scheda dall'HUD.
+      case BLOCK_ROLE.structure:
+        structures++;
+        continue;
+      case BLOCK_ROLE.arcology:
+        buildings++;
+        byClass[record.class]++;
+        // Un'arcologia e' un record ma la simulazione la conta una volta per
+        // fascia abitata: `uses` e' la stessa fonte che usa il driver.
+        for (const use of record.uses ?? []) effectiveByClass[use]++;
+        break;
+      case BLOCK_ROLE.building:
+        buildings++;
+        byClass[record.class]++;
+        effectiveByClass[record.class]++;
+        if (record.mixed !== undefined && record.mixed !== record.class) {
+          effectiveByClass[record.mixed] += BALANCE.mixedUse.secondaryShare;
+        }
+        if (record.specialization === 'farming') farmTowers++;
+        break;
     }
     if (record.level > maxLevel) maxLevel = record.level;
   }

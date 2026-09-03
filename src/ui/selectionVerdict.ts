@@ -1,5 +1,6 @@
 import { ALL_CLASSES, BALANCE, catalystById, type CatalystId } from '../sim';
 import { GROUND } from '../world/grading/grade';
+import { STRUCTURE_KIND, structureKindOf } from '../world/buildings/structureKind';
 import { breakdownOf, type Breakdown, type Contribution, type Verdict } from './meters';
 import { classLabel, GROUND_LABELS } from './selectionLabels';
 import { closestUse, siteAdvice, type SiteAdvice } from './siteAdvice';
@@ -31,18 +32,24 @@ const NOTHING: Omit<GrowthPlan, 'verdict'> = { breakdown: null, advice: null };
 export function growthPlan(selection: Selection): GrowthPlan {
   const info = selection.structure;
   if (info === null) return groundPlan(selection.column);
-  const landmark = info.record.landmark;
-  if (landmark !== undefined) return landmarkPlan(info, landmark);
-  if (info.record.span !== undefined) {
-    return { verdict: still('Elevated link', 'A span carries the city across; it never grows.'), ...NOTHING };
+  switch (structureKindOf(info.record)) {
+    case STRUCTURE_KIND.landmark:
+    case STRUCTURE_KIND.rooftopLandmark:
+      // Il campo c'e' per definizione del tipo: e' quello che lo decide.
+      return landmarkPlan(info, info.record.landmark!);
+    case STRUCTURE_KIND.span:
+      return { verdict: still('Elevated link', 'A span carries the city across; it never grows.'), ...NOTHING };
+    case STRUCTURE_KIND.aerial:
+      return { verdict: still('Elevated part', 'A deck, a walk or a lift: it is built whole and stays as it is.'), ...NOTHING };
+    case STRUCTURE_KIND.arcology:
+      return { verdict: still('Arcology', 'A megastructure is already everything a quarter could become.'), ...NOTHING };
+    // La torre di una funivia passa di qui perche' e' sempre passata di qui: il
+    // ramo finale non l'ha mai esclusa, e `buildingPlan` legge la stessa casella
+    // `promotes` che le dice di si'.
+    case STRUCTURE_KIND.plain:
+    case STRUCTURE_KIND.ropeway:
+      return buildingPlan(info, selection.column);
   }
-  if (info.record.aerial !== undefined) {
-    return { verdict: still('Elevated part', 'A deck, a walk or a lift: it is built whole and stays as it is.'), ...NOTHING };
-  }
-  if (info.record.arcology !== undefined) {
-    return { verdict: still('Arcology', 'A megastructure is already everything a quarter could become.'), ...NOTHING };
-  }
-  return buildingPlan(info, selection.column);
 }
 
 /**

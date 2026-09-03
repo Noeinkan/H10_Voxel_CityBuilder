@@ -31,6 +31,7 @@ import {
   type ReadonlyBuildingRegistry,
 } from '../world/buildings/BuildingRegistry';
 import type { ClearanceVerdict } from '../world/buildings/clearanceSite';
+import { STRUCTURE_KIND, structureKindOf } from '../world/buildings/structureKind';
 import { hasFacadeForm, landmarkOf, maxStageOf } from '../world/landmarks/config';
 import { landmarkWaterColumn } from '../world/landmarks/generate';
 import { createReachCost } from '../world/reachCost';
@@ -662,7 +663,12 @@ export class GrowthScene {
   demolishAt(x: number, y: number): { readonly verdict: ClearanceVerdict; readonly done: boolean } {
     let target: BuildingRecord | null = null;
     for (const record of this.registry.at(x, y)) {
-      if (record.span !== undefined || record.aerial !== undefined) continue;
+      // Non e' un tratto: campate e impalcati sono le due cose che *attraversano*
+      // la colonna, e la gomma corta cerca cio' che ci sta dentro. Un landmark,
+      // un'arcologia e una torre di funivia restano bersagli, come sono sempre
+      // stati.
+      const kind = structureKindOf(record);
+      if (kind === STRUCTURE_KIND.span || kind === STRUCTURE_KIND.aerial) continue;
       if (target === null || record.baseZ + record.height > target.baseZ + target.height) {
         target = record;
       }
@@ -1009,7 +1015,7 @@ export class GrowthScene {
     record: BuildingRecord,
     kind: CatalystId,
   ): { readonly x: number; readonly y: number } | null {
-    const host = record.aloft === true
+    const host = structureKindOf(record) === STRUCTURE_KIND.rooftopLandmark
       ? this.builder.registry.get(record.supports?.[0] ?? 0)
       : null;
     const anchor = host ?? record;
@@ -1168,7 +1174,7 @@ export class GrowthScene {
     for (const record of this.builder.registry.all) {
       const kind = record.landmark;
       if (kind === undefined) continue;
-      if (record.aloft === true) hasAloftLandmark = true;
+      if (structureKindOf(record) === STRUCTURE_KIND.rooftopLandmark) hasAloftLandmark = true;
 
       const recipe = landmarkOf(kind, record.landmarkForm);
       if (recipe === null || record.level >= maxStageOf(recipe)) continue;

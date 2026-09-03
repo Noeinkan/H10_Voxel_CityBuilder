@@ -121,6 +121,21 @@ export interface StructureTraits {
   readonly hostsAerial: boolean;
   /** Puo' fare da torre a un ponte fra settori — `crossingDriver.canAnchor`. */
   readonly hostsCrossing: boolean;
+  /**
+   * Porta un **uso urbano**: una `class` che la scheda e l'aggregato dell'isolato
+   * leggono come edificio invece che come struttura.
+   *
+   * **Non e' `capturedAsBuilding` e non e' cio' che conta `tally`**, e le tre
+   * domande non coincidono per ragioni diverse: la cattura non sa scrivere
+   * un'arcologia come riga sola, il registro non conta le torri di una funivia.
+   * Qui ci sono tutte e due. E' la domanda dei tre punti che guardano un record
+   * dal lato di chi ci clicca sopra — `selection.usesOf`, `selection.blockAt`,
+   * `SelectionPanelModel.isBuilding` — e nessuno dei tre ha mai escluso una
+   * torre: prende suolo, ha una classe, e la scheda le mostra il livello come a
+   * una casa. Preservato, e imparentato con la casella `promotes` della stessa
+   * riga.
+   */
+  readonly hasUrbanUse: boolean;
   /** `recordStamp` sa ridisegnarlo dal solo record, quindi il salvataggio non lo pota. */
   readonly rebuildableFromRecord: boolean;
   /**
@@ -149,6 +164,7 @@ export const STRUCTURE_TRAITS: Record<StructureKind, StructureTraits> = {
     hostsSpan: true,
     hostsAerial: true,
     hostsCrossing: true,
+    hasUrbanUse: true,
     rebuildableFromRecord: true,
     capturedAsBuilding: true,
   },
@@ -161,6 +177,9 @@ export const STRUCTURE_TRAITS: Record<StructureKind, StructureTraits> = {
     hostsSpan: false,
     hostsAerial: false,
     hostsCrossing: false,
+    // Occupa spazio ma non e' un edificio: la `class` che il record porta non e'
+    // mai stata letta come rendimento, ne' dalla scheda ne' dall'isolato.
+    hasUrbanUse: false,
     rebuildableFromRecord: true,
     // Occupa spazio ma non e' un edificio: `addBuilding` non lo ha mai visto.
     capturedAsBuilding: false,
@@ -171,6 +190,7 @@ export const STRUCTURE_TRAITS: Record<StructureKind, StructureTraits> = {
     hostsSpan: false,
     hostsAerial: false,
     hostsCrossing: false,
+    hasUrbanUse: false,
     rebuildableFromRecord: true,
     capturedAsBuilding: false,
   },
@@ -182,6 +202,7 @@ export const STRUCTURE_TRAITS: Record<StructureKind, StructureTraits> = {
     hostsSpan: false,
     hostsAerial: false,
     hostsCrossing: false,
+    hasUrbanUse: false,
     // `recordStamp` non conosce le campate: la cattura le pota e il caricamento
     // le rifa'.
     rebuildableFromRecord: false,
@@ -197,6 +218,7 @@ export const STRUCTURE_TRAITS: Record<StructureKind, StructureTraits> = {
     hostsSpan: true,
     hostsAerial: false,
     hostsCrossing: false,
+    hasUrbanUse: false,
     rebuildableFromRecord: false,
     capturedAsBuilding: false,
   },
@@ -208,6 +230,9 @@ export const STRUCTURE_TRAITS: Record<StructureKind, StructureTraits> = {
     hostsSpan: true,
     hostsAerial: false,
     hostsCrossing: false,
+    // La scheda e l'isolato la contano fra gli edifici, ma leggono `uses` invece
+    // di `class`: e' un edificio per uso, e gli usi sono piu' di uno.
+    hasUrbanUse: true,
     rebuildableFromRecord: true,
     // **L'unica struttura che `addBuilding` vede davvero**, e la vede una volta
     // per fascia. La cattura pero' non la restituisce come edificio singolo —
@@ -228,6 +253,13 @@ export const STRUCTURE_TRAITS: Record<StructureKind, StructureTraits> = {
     hostsSpan: true,
     hostsAerial: true,
     hostsCrossing: false,
+    // **Preservato, e parente stretto della casella `promotes` qui sopra.**
+    // Nessuno dei tre punti dal lato del giocatore ha mai escluso una torre: la
+    // scheda le mostra il livello, l'isolato la somma agli edifici e il suo
+    // rendimento esce dalla `class` che il record porta comunque. Il giorno che
+    // `promotes` si corregge, questa casella e' l'altra meta' della stessa
+    // decisione.
+    hasUrbanUse: true,
     rebuildableFromRecord: false,
     capturedAsBuilding: false,
   },

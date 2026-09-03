@@ -122,6 +122,7 @@ import {
 import { BUILDER } from './world/buildings/config';
 import { typologiesForUses } from './world/buildings/typology';
 import { footprintDepth, type BuildingRecord } from './world/buildings/BuildingRegistry';
+import { isGroundStructure } from './world/buildings/structureKind';
 import type { BuildSite } from './sim/nextBuildSites';
 import { isPolicyId } from './sim/policies';
 import './ui/hud.css';
@@ -1982,6 +1983,10 @@ function setInfoView(kind: InfoViewKind): void {
   infoViewFieldVersion = '';
   infoViewLegend?.setView(kind);
   gameHud?.setInfoView(kind);
+  // La visibilita' e' anche il gate del budget di costruzione: senza questa riga
+  // `update` esce subito, la heatmap non campiona mai e scegliere una vista
+  // accendeva solo la legenda. Va prima di `clear`, che spegne il gruppo da se'.
+  infoViewOverlay?.setVisible(kind !== 'off');
   if (kind === 'off') infoViewOverlay?.clear();
 }
 
@@ -2447,15 +2452,13 @@ function catalystTarget(
 /**
  * L'edificio ordinario sotto la colonna, o null.
  *
- * Lo stesso filtro di `buildingAt` nel driver: campate, impalcati e landmark
- * non hanno una facciata su cui appendersi, e sotto di loro si cerca l'ospite.
+ * Lo stesso filtro di `buildingAt` nel driver, e adesso alla lettera lo stesso
+ * predicato: campate, impalcati e landmark non hanno una facciata su cui
+ * appendersi, e sotto di loro si cerca l'ospite.
  */
 function facadeHostAt(x: number, y: number): BuildingRecord | null {
   if (growthScene === null) return null;
-  return growthScene.registry.at(x, y).find(
-    (candidate) => candidate.aerial === undefined && candidate.span === undefined &&
-      candidate.landmark === undefined && candidate.aloft !== true,
-  ) ?? null;
+  return growthScene.registry.at(x, y).find(isGroundStructure) ?? null;
 }
 
 /** Il fronte dell'edificio ordinario puntato; null lascia il mirino sul terreno. */

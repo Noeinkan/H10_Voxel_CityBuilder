@@ -4,12 +4,14 @@ import {
   CLASS_LABELS,
   catalystById,
   type CatalystDefinition,
+  type CatalystId,
 } from '../sim';
 import { BIOME_NAMES } from '../world/terrain/config';
 import { takesGround } from '../world/aerial/config';
 import { landmarkOf, maxStageOf } from '../world/landmarks/config';
 import { typologyOf } from '../world/buildings/recordStamp';
 import { footprintDepth, type BuildingRecord } from '../world/buildings/BuildingRegistry';
+import { STRUCTURE_KIND, structureKindOf, traitsOf } from '../world/buildings/structureKind';
 import { prospectRows } from './prospects';
 import { signed, type Breakdown, type Contribution, type Meter, type Verdict } from './meters';
 import {
@@ -394,7 +396,7 @@ function voxelSection(voxel: VoxelInfo): SelectionSection {
   };
 }
 
-// --- Il ramo che distingue le quattro cose che un record puo' essere ---------
+// --- Il ramo che distingue le quattro intestazioni possibili ----------------
 
 interface StructureHead {
   readonly title: string;
@@ -404,66 +406,82 @@ interface StructureHead {
 
 function structureHead(info: StructureInfo): StructureHead {
   const record = info.record;
-  if (record.landmark !== undefined) {
-    const recipe = landmarkOf(record.landmark, record.landmarkForm);
-    // Per un landmark `level` **e'** lo stadio: la stessa macchina lo fa
-    // avanzare, ma chiamarlo livello direbbe che compete con l'altezza degli
-    // edifici, e non e' cosi'.
-    const stage = recipe === null
-      ? `stage ${record.level}`
-      : `stage ${record.level} of ${maxStageOf(recipe)}`;
-    const catalyst = catalystById(record.landmark);
-    const strength = info.catalyst?.strength
-      ?? catalyst.strength + record.level * BALANCE.gameplay.catalyst.stageBonus;
-    const favours = catalyst.favours.map((cls) => CLASS_LABELS[cls]).join(', ');
-    const penalises = catalyst.penalises.map((cls) => CLASS_LABELS[cls]).join(', ');
-    return {
-      title: catalyst.label,
-      summary: catalyst.description,
-      rows: [
-        {
-          label: 'Influence',
-          // Quanto il landmark versa nel campo per uso, al centro: la domanda
-          // «come influenza la crescita attorno» con i numeri che la simulazione
-          // applica davvero. La forza scalare da sola non diceva verso chi.
-          value: influenceSummary(info, catalyst, strength),
-        },
-        { label: 'Reach', value: `radius ${catalyst.radius} · follows streets and terrain` },
-        { label: 'Stage', value: stage },
-        { label: 'Favours', value: favours.length === 0 ? 'none' : favours },
-        { label: 'Penalises', value: penalises.length === 0 ? 'none' : penalises },
-        { label: 'District', value: effectSummary(catalyst.effects) },
-      ],
-    };
-  }
+  switch (structureKindOf(record)) {
+    // I marker si rileggono qui e non si narrano: il tipo li ha gia' decisi, e
+    // il `!` dice che il campo che *definisce* quel tipo non puo' mancare.
+    case STRUCTURE_KIND.landmark:
+    case STRUCTURE_KIND.rooftopLandmark:
+      return landmarkHead(info, record.landmark!);
 
-  if (record.span !== undefined) {
-    return {
-      title: SPAN_LABELS[record.span],
-      // Nessun uso urbano, benche' il record ne porti uno: una campata non e'
-      // un edificio, non prende suolo e la simulazione non l'ha mai contata.
-      summary: 'Elevated link · takes no ground.',
-      rows: [],
-    };
-  }
+    case STRUCTURE_KIND.span:
+      return {
+        title: SPAN_LABELS[record.span!],
+        // Nessun uso urbano, benche' il record ne porti uno: una campata non e'
+        // un edificio, non prende suolo e la simulazione non l'ha mai contata.
+        summary: 'Elevated link · takes no ground.',
+        rows: [],
+      };
 
-  if (record.aerial !== undefined) {
-    return {
-      title: AERIAL_LABELS[record.aerial],
-      summary: takesGround(record.aerial)
-        ? 'Elevated city · stands on the ground.'
-        : 'Elevated city · hangs above the ground.',
-      rows: [],
-    };
-  }
+    case STRUCTURE_KIND.aerial:
+      return {
+        title: AERIAL_LABELS[record.aerial!],
+        summary: takesGround(record.aerial!)
+          ? 'Elevated city · stands on the ground.'
+          : 'Elevated city · hangs above the ground.',
+        rows: [],
+      };
 
-  const uses = record.mixed === undefined
-    ? classLabel(record.class)
-    : `${classLabel(record.class)} over ${classLabel(record.mixed)}`;
-  // Nessuna riga `Use`: l'intestazione la dice gia', e una scheda che ripete se
-  // stessa insegna a saltarne le righe. Il livello torna piu' sotto accanto al
-  // tetto del luogo, dove smette di essere un numero e diventa una domanda.
-  return { title: typologyOf(record).label, summary: `${uses} · level ${record.level}.`, rows: [] };
+    // Arcologia e torre di funivia hanno sempre preso l'intestazione
+    // dell'edificio ordinario: il ramo di ripiego di prima le comprendeva
+    // entrambe, e `typologyOf` sa gia' rispondere per tutte e tre.
+    case STRUCTURE_KIND.plain:
+    case STRUCTURE_KIND.arcology:
+    case STRUCTURE_KIND.ropeway: {
+      const uses = record.mixed === undefined
+        ? classLabel(record.class)
+        : `${classLabel(record.class)} over ${classLabel(record.mixed)}`;
+      // Nessuna riga `Use`: l'intestazione la dice gia', e una scheda che ripete
+      // se stessa insegna a saltarne le righe. Il livello torna piu' sotto
+      // accanto al tetto del luogo, dove smette di essere un numero e diventa
+      // una domanda.
+      return { title: typologyOf(record).label, summary: `${uses} · level ${record.level}.`, rows: [] };
+    }
+  }
+}
+
+/** L'intestazione di un monumento, a terra o su un tetto: e' la stessa. */
+function landmarkHead(info: StructureInfo, kind: CatalystId): StructureHead {
+  const record = info.record;
+  const recipe = landmarkOf(kind, record.landmarkForm);
+  // Per un landmark `level` **e'** lo stadio: la stessa macchina lo fa
+  // avanzare, ma chiamarlo livello direbbe che compete con l'altezza degli
+  // edifici, e non e' cosi'.
+  const stage = recipe === null
+    ? `stage ${record.level}`
+    : `stage ${record.level} of ${maxStageOf(recipe)}`;
+  const catalyst = catalystById(kind);
+  const strength = info.catalyst?.strength
+    ?? catalyst.strength + record.level * BALANCE.gameplay.catalyst.stageBonus;
+  const favours = catalyst.favours.map((cls) => CLASS_LABELS[cls]).join(', ');
+  const penalises = catalyst.penalises.map((cls) => CLASS_LABELS[cls]).join(', ');
+  return {
+    title: catalyst.label,
+    summary: catalyst.description,
+    rows: [
+      {
+        label: 'Influence',
+        // Quanto il landmark versa nel campo per uso, al centro: la domanda
+        // «come influenza la crescita attorno» con i numeri che la simulazione
+        // applica davvero. La forza scalare da sola non diceva verso chi.
+        value: influenceSummary(info, catalyst, strength),
+      },
+      { label: 'Reach', value: `radius ${catalyst.radius} · follows streets and terrain` },
+      { label: 'Stage', value: stage },
+      { label: 'Favours', value: favours.length === 0 ? 'none' : favours },
+      { label: 'Penalises', value: penalises.length === 0 ? 'none' : penalises },
+      { label: 'District', value: effectSummary(catalyst.effects) },
+    ],
+  };
 }
 
 const GROWING_ROW: SelectionRow = {
@@ -471,11 +489,16 @@ const GROWING_ROW: SelectionRow = {
   value: 'changes its shape, not its yield: the city counts buildings, not floors',
 };
 
-/** true dove il record e' un edificio e non una delle altre tre cose. */
+/**
+ * true dove la riga `Level` ha un senso: un record con un uso urbano.
+ *
+ * E' la stessa casella che `selection.usesOf` legge per decidere se il record
+ * porta un rendimento — se un uso c'e', anche il tetto del luogo e' una domanda
+ * sensata — e comprende quindi anche l'arcologia e la torre di funivia, che il
+ * controllo scritto a mano non aveva mai escluso.
+ */
 function isBuilding(record: BuildingRecord): boolean {
-  return record.landmark === undefined
-    && record.span === undefined
-    && record.aerial === undefined;
+  return traitsOf(record).hasUrbanUse;
 }
 
 /**

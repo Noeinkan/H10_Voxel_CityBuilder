@@ -203,14 +203,34 @@ in un'altra sessione. Fra 1 e 2, **la 1 viene prima**: il protocollo di
 piazzamento vorra' chiedere «questo record e' un appoggio valido?», e con i
 tratti gia' in piedi la risposta esiste.
 
-1. Leva 1, censimento dei 60 punti e tabella dei tratti.
-2. Leva 1, migrazione di `world/buildings/` (11 file).
-3. Leva 1, migrazione di `game/` e `ui/`; `save/capture.ts` per ultimo e da solo.
-4. Leva 2, `placeStructure` + `worldProbe` sui sette driver semplici.
-5. Leva 3, dieta (ROADMAP, poi `main.ts`).
-6. Leva 4, misura di Serena e decisione.
+1. ~~Leva 1, censimento dei 60 punti e tabella dei tratti.~~ **Fatto**:
+   `structureKind.ts`, sette tipi e sette colonne.
+2. ~~Leva 1, migrazione di `world/buildings/`.~~ **Fatto**, con due code
+   raccolte dopo: `BuildingRegistry.tally` e `save/capture.ts`.
+3. ~~Leva 1, migrazione di `game/` e `ui/`.~~ **Fatto**: `selection.ts`,
+   `growthScene.ts`, `SelectionPanelModel.ts`, `selectionVerdict.ts` e il
+   `facadeHostAt` di `main.ts`, piu' la colonna `hasUrbanUse`.
+4. ~~Leva 2, `placeStructure` + `worldProbe`.~~ **Fatto sui quattro driver
+   semplici** — campate, ponti fra settori, guide, funivia. Landmark, arcologie
+   e citta' in quota restano fuori per scelta: hanno varianti di piazzamento
+   proprie, e farcele entrare riporterebbe le eccezioni dentro il protocollo.
+5. Leva 3, dieta. **ROADMAP fatta e misurata; `main.ts` solo dove era sicuro**
+   — il resto e' un incremento di progettazione, non una potatura (vedi sopra).
+6. Leva 4, misura di Serena e decisione. **Non iniziata.**
 
 Ogni passo e' consegnabile e reversibile da solo.
+
+### Cosa resta di leggibile nei marker
+
+Dopo il passo 3 i punti che nominano ancora un campo marker sono di tre specie,
+e **due su tre vanno lasciate stare**: la lettura del *carico* (`record.arcology`
+per la ricetta, `record.landmark` per il catalizzatore), che non e' una domanda
+sul tipo; e cio' che la tabella non poteva dire, cioe' `takesGroundOf` e gli
+indici di `BuildingRegistry.index`, che dipendono dalla *parte* in quota e non
+dal tipo. La terza specie — classificazioni scritte a mano che sopravvivono in
+`Builder.ts`, `frontage.ts`, `guideDriver.ts`, `harborDriver.ts`,
+`ropewayDriver.ts` — e' vera coda del passo 2, ed e' piccola: una decina di
+righe, nessuna in un dispatch.
 
 ## Verifica
 

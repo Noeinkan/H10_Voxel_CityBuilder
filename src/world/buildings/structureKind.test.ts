@@ -69,6 +69,19 @@ describe('STRUCTURE_TRAITS', () => {
     }
   });
 
+  it('porta un uso urbano cio\' che la scheda conta fra gli edifici', () => {
+    expect(traitsOf({}).hasUrbanUse).toBe(true);
+    // Un'arcologia ci sta pur avendo piu' usi, e una torre di funivia pur non
+    // essendo un edificio per nessun'altra riga della tabella: sono i due punti
+    // in cui questa colonna diverge da `capturedAsBuilding` e da cio' che
+    // `BuildingRegistry.tally` conta, ed e' il motivo per cui e' una colonna sua.
+    expect(traitsOf({ arcology: 'slab' }).hasUrbanUse).toBe(true);
+    expect(traitsOf({ ropeway: 'station' }).hasUrbanUse).toBe(true);
+    for (const marker of [{ landmark: 'x' }, { landmark: 'x', aloft: true }, { span: 0 }, { aerial: 0 }]) {
+      expect(traitsOf(marker).hasUrbanUse).toBe(false);
+    }
+  });
+
   it('la cattura restituisce come edificio solo cio\' che la simulazione conta a colonna', () => {
     expect(traitsOf({}).capturedAsBuilding).toBe(true);
     // L'arcologia e' l'eccezione che il commento della tabella spiega: contata

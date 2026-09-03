@@ -6,12 +6,14 @@ import {
   type Specialization,
 } from '../../sim';
 import type { BuildingForm } from './config';
+import type { BuildingArch } from './archPlan';
 import type { ArcologyKind } from '../arcology/config';
 import type { SpanKind } from '../spans/config';
 import type { RopewayPart } from '../ropeway/config';
 import type { LandmarkFormId } from '../landmarks/config';
 import { isBuildable, takesGround, type AerialPart } from '../aerial/config';
 import { columnKey, toChunk } from '../chunkCoords';
+import { STRUCTURE_KIND, structureKindOf } from './structureKind';
 
 /**
  * Unica fonte di verita' su cosa esiste.
@@ -116,6 +118,21 @@ export interface BuildingRecord {
    * dice «non sporgo».
    */
   readonly overhang?: number;
+
+  /**
+   * Il braccio che questo edificio getta verso il dirimpettaio, se ne ha uno.
+   *
+   * **E' massa dell'edificio, non una struttura appoggiata**, ed e' l'unica
+   * cosa che lo separa da una campata di `spans/`: nessun record in piu',
+   * nessun appoggio, nessun guinzaglio: cresce e cade con chi lo porta, e
+   * `recordStamp` lo ridisegna insieme al corpo. Verso `facing` e da nessun'altra
+   * parte, come lo sbalzo — `envelopeOf` legge il solo `reach` e non deve sapere
+   * altro.
+   *
+   * Sta nel record per la ragione di sempre: e' meta' di cio' che serve a
+   * rigenerare la sagoma per cancellarla.
+   */
+  readonly arch?: BuildingArch;
 
   readonly district?: DistrictId;
   readonly specialization?: Specialization | null;
@@ -329,6 +346,7 @@ export interface EnvelopeSource {
   readonly footprintY?: number;
   readonly overhang?: number;
   readonly facing?: number;
+  readonly arch?: { readonly reach: number };
 }
 
 /** Riquadro in pianta, estremi esclusi in alto. */
@@ -352,10 +370,17 @@ export interface PlanRect {
  * due edifici accostati di restare accostati. Un inviluppo simmetrico li farebbe
  * collidere, e con loro cadrebbe l'aggregazione in fila — che e' precisamente il
  * modo in cui questa citta' fa gli isolati.
+ *
+ * **Un braccio esce dalla stessa parte, e per questo non aggiunge un caso.**
+ * L'arco che un edificio getta verso il dirimpettaio va anche lui verso
+ * `facing`: il piu' lungo dei due decide di quanto l'inviluppo cresce, e lo
+ * `switch` sotto resta quello di prima. Se fossero due direzioni diverse
+ * l'inviluppo non sarebbe piu' un rettangolo, ed e' esattamente la trasformazione
+ * che il record multi-rettangolo esiste per fare — non questa.
  */
 export function envelopeOf(record: EnvelopeSource): PlanRect {
   const depth = footprintDepth(record);
-  const over = record.overhang ?? 0;
+  const over = Math.max(record.overhang ?? 0, record.arch?.reach ?? 0);
   if (over <= 0 || record.facing === undefined) {
     return { x: record.x, y: record.y, sizeX: record.footprint, sizeY: depth };
   }
@@ -1019,52 +1044,69 @@ export class BuildingRegistry implements ReadonlyBuildingRegistry {
    * dimenticarne uno dei tre.
    */
   private tally(record: BuildingRecord, delta: number): void {
-    // Un landmark occupa spazio ma non e' un edificio: la simulazione non lo ha
-    // mai registrato con `addBuilding`, e contarlo qui farebbe divergere gli
-    // istogrammi dell'HUD dai conteggi su cui il bilancio ragiona.
-    if (record.landmark !== undefined) {
-      this.landmarks += delta;
-      return;
-    }
-    // Vale identico per una campata, che non e' nemmeno appoggiata al suolo:
-    // il suo conto lo tiene `spanIds`, ed e' `index` a riempirlo.
-    if (record.span !== undefined) return;
-    // E per la citta' in quota, in tutte e quattro le sue parti: una gamba
-    // prende suolo come un edificio ma non e' un edificio, e nessuna delle
-    // quattro e' mai passata da `addBuilding`.
-    if (record.aerial !== undefined) {
-      this.aerialParts += delta;
-      return;
-    }
-    // E per le torri di una funivia, con la stessa ragione di sempre: prendono
-    // suolo, ma nessuna delle due e' mai passata da `addBuilding`.
-    if (record.ropeway !== undefined) {
-      this.ropewayParts += delta;
-      return;
-    }
-    // **Un'arcologia conta una volta per fascia, non una volta.** E' l'unica
-    // struttura che `addBuilding` vede davvero, e la vede quattro volte — una per
-    // uso, su quattro colonne distinte del suo ingombro. Contarla come un record
-    // solo, o non contarla affatto come le altre quattro strutture, farebbe
-    // divergere gli istogrammi dell'HUD dai conteggi su cui il bilancio ragiona:
-    // e' la stessa divergenza che le righe qui sopra esistono per evitare, presa
-    // dal lato opposto.
-    //
-    // `level` e' lo stadio, quindi resta fuori dall'istogramma dei livelli, come
-    // per un landmark.
-    if (record.arcology !== undefined) {
-      this.arcologies += delta;
-      for (const use of record.uses ?? EMPTY_USES) this.classCounts[use] += delta;
-      return;
-    }
+    const kind = structureKindOf(record);
+    switch (kind) {
+      // Un landmark occupa spazio ma non e' un edificio: la simulazione non lo
+      // ha mai registrato con `addBuilding`, e contarlo qui farebbe divergere
+      // gli istogrammi dell'HUD dai conteggi su cui il bilancio ragiona. Quello
+      // su un tetto sta nello stesso contatore: e' lo stesso monumento, e chi
+      // legge `landmarks` non ha mai distinto le due fondazioni.
+      case STRUCTURE_KIND.landmark:
+      case STRUCTURE_KIND.rooftopLandmark:
+        this.landmarks += delta;
+        return;
 
-    this.classCounts[record.class] += delta;
-    if (record.mixed !== undefined) this.mixedCounts[record.mixed] += delta;
-    this.levelCounts[record.level] = (this.levelCounts[record.level] ?? 0) + delta;
-    if (record.typology !== undefined) {
-      const next = (this.typologyCounts.get(record.typology) ?? 0) + delta;
-      if (next <= 0) this.typologyCounts.delete(record.typology);
-      else this.typologyCounts.set(record.typology, next);
+      // Vale identico per una campata, che non e' nemmeno appoggiata al suolo:
+      // il suo conto lo tiene `spanIds`, ed e' `index` a riempirlo.
+      case STRUCTURE_KIND.span:
+        return;
+
+      // E per la citta' in quota, in tutte e quattro le sue parti: una gamba
+      // prende suolo come un edificio ma non e' un edificio, e nessuna delle
+      // quattro e' mai passata da `addBuilding`.
+      case STRUCTURE_KIND.aerial:
+        this.aerialParts += delta;
+        return;
+
+      // E per le torri di una funivia, con la stessa ragione di sempre: prendono
+      // suolo, ma nessuna delle due e' mai passata da `addBuilding`.
+      case STRUCTURE_KIND.ropeway:
+        this.ropewayParts += delta;
+        return;
+
+      // **Un'arcologia conta una volta per fascia, non una volta.** E' l'unica
+      // struttura che `addBuilding` vede davvero, e la vede quattro volte — una
+      // per uso, su quattro colonne distinte del suo ingombro. Contarla come un
+      // record solo, o non contarla affatto come le altre quattro strutture,
+      // farebbe divergere gli istogrammi dell'HUD dai conteggi su cui il
+      // bilancio ragiona: e' la stessa divergenza che i rami qui sopra esistono
+      // per evitare, presa dal lato opposto.
+      //
+      // `level` e' lo stadio, quindi resta fuori dall'istogramma dei livelli,
+      // come per un landmark.
+      case STRUCTURE_KIND.arcology:
+        this.arcologies += delta;
+        for (const use of record.uses ?? EMPTY_USES) this.classCounts[use] += delta;
+        return;
+
+      case STRUCTURE_KIND.plain:
+        this.classCounts[record.class] += delta;
+        if (record.mixed !== undefined) this.mixedCounts[record.mixed] += delta;
+        this.levelCounts[record.level] = (this.levelCounts[record.level] ?? 0) + delta;
+        if (record.typology !== undefined) {
+          const next = (this.typologyCounts.get(record.typology) ?? 0) + delta;
+          if (next <= 0) this.typologyCounts.delete(record.typology);
+          else this.typologyCounts.set(record.typology, next);
+        }
+        return;
+
+      default:
+        // **La rete che `clearanceKindOf` ha gratis, qui va chiesta.** Uno
+        // `switch` dentro una funzione che non restituisce niente lascerebbe un
+        // tipo nuovo scivolare fuori senza toccare nessun contatore, ed e'
+        // esattamente il silenzio che questo modulo esiste per togliere: `never`
+        // fa fallire la compilazione finche' il ramo non c'e'.
+        kind satisfies never;
     }
   }
 
