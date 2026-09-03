@@ -1126,10 +1126,19 @@ export const TYPOLOGIES: readonly TypologyDefinition[] = [
       shrinkOps: [BAND_OP.setback, BAND_OP.shrinkOneSide, BAND_OP.shrink],
       growOps: [BAND_OP.keep, BAND_OP.jog, BAND_OP.grow],
       body: PALETTE_SLOTS.stone,
-      bodyAlt: PALETTE_SLOTS.stoneWarm,
+      // **La cornice era `stoneWarm`, e a distanza di gioco non c'era.** Fra
+      // #e8d9a8 e #d0b878 corre un sesto di luminanza sullo stesso tono caldo:
+      // marcapiano e campate erano nei voxel ma il fronte leggeva come una
+      // colonna piena, ed e' questa la tipologia terminale del commercio, cioe'
+      // la piu' numerosa di una citta' matura. `stoneDark` sta nella stessa
+      // famiglia di pietra ma un terzo piu' in basso, che e' lo stacco con cui
+      // gia' funzionano `brick`/`brickLight` e `glassDeep`/`glassPale`.
+      bodyAlt: PALETTE_SLOTS.stoneDark,
       accent: PALETTE_SLOTS.metalGold,
       crown: PALETTE_SLOTS.roofPale,
-      plinth: PALETTE_SLOTS.stoneDark,
+      // Scende di un gradino per non confondersi con la cornice appena
+      // scurita: la scala di pietra resta di tre toni, non di due.
+      plinth: PALETTE_SLOTS.stoneDeep,
       terrace: PALETTE_SLOTS.wood,
     },
   },

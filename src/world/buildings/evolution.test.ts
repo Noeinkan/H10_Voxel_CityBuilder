@@ -160,6 +160,36 @@ describe('le soglie visuali', () => {
     expect(propHeight(at13)).toBe(6);
     expect(propHeight(at13)).toBeGreaterThanOrEqual(profile.roofPropHeight);
   });
+
+  it('alla soglia skyline anche le cime che negano il dettaglio lo portano', () => {
+    // Le quattro cime che rispondono `roofProp: false` sono quelle del tessuto
+    // piu' numeroso — `stepped` e' la cima del commercio, `flat` quella
+    // dell'industria — e sotto la soglia devono continuare a negarlo: e' li'
+    // che «tetto piano» vuol dire capannone. Sopra, e' il livello a decidere, e
+    // senza questo la promessa di `SKYLINE_PROP_HEIGHT` restava lettera morta
+    // proprio dove la citta' e' fatta di torri uguali.
+    const propHeight = (stamp: VoxelStamp): number =>
+      stamp.sizeZ - stamp.bandStarts[stamp.bandStarts.length - 2];
+
+    for (const crownKind of [CROWN_KIND.stepped, CROWN_KIND.flat]) {
+      const shape = { ...DEFAULT_TYPOLOGY_SHAPE, crownKind };
+      const below = generateBuilding({
+        class: BUILDING_CLASS.commercial,
+        level: VISUAL_LEVELS.skyline - 1,
+        seed: 7,
+        shape,
+      });
+      const at = generateBuilding({
+        class: BUILDING_CLASS.commercial,
+        level: VISUAL_LEVELS.skyline,
+        seed: 7,
+        shape,
+      });
+
+      expect(propHeight(below), `${crownKind} sotto la soglia`).toBe(0);
+      expect(propHeight(at), `${crownKind} alla soglia`).toBeGreaterThanOrEqual(6);
+    }
+  });
 });
 
 describe('le linee evolutive', () => {

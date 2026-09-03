@@ -178,7 +178,11 @@ export const STYLES: readonly StyleDefinition[] = [
     label: 'Stone court',
     palette: {
       body: PALETTE_SLOTS.stone,
-      bodyAlt: PALETTE_SLOTS.stoneWarm,
+      // Stessa correzione fatta su `terraceArcade`, e per la stessa ragione:
+      // lo stile si applica **dopo** la tipologia, quindi era questa riga a
+      // rimettere la coppia piatta su sette quartieri di pietra su otto. Le due
+      // dovevano cambiare insieme o non cambiava niente.
+      bodyAlt: PALETTE_SLOTS.stoneDark,
       plinth: PALETTE_SLOTS.stoneDeep,
       crown: PALETTE_SLOTS.roofWhite,
     },

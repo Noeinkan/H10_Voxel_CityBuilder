@@ -331,10 +331,18 @@ export function generateBuilding(request: BuildingRequest): VoxelStamp {
     h: propSide,
   };
   rects.push(propRect);
-  const propHeight = level >= VISUAL_LEVELS.skyline
+  // **La soglia scavalca la cima, e per questo la riga sopra dice «sempre».**
+  // Il dettaglio era condizionato al solo `crown.roofProp`, che quattro cime su
+  // cinque negano: `stepped` e' la cima del commercio e `flat` quella
+  // dell'industria, cioe' proprio le classi piu' numerose, e la promessa non si
+  // e' mai avverata per loro — una citta' matura chiudeva decine di torri
+  // identiche con lo stesso taglio netto. Sotto la soglia decide ancora la cima,
+  // che e' il verso giusto: e' li' che «tetto piano» significa capannone.
+  const atSkyline = level >= VISUAL_LEVELS.skyline;
+  const propHeight = atSkyline
     ? Math.max(profile.roofPropHeight, SKYLINE_PROP_HEIGHT)
     : profile.roofPropHeight;
-  heights.push(crown.roofProp ? propHeight : 0);
+  heights.push(crown.roofProp || atSkyline ? propHeight : 0);
 
   const podiumProfile = request.mixed !== undefined && podium > 0
     ? CLASS_PROFILE[request.mixed]
