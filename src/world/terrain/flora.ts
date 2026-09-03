@@ -79,7 +79,6 @@ export const TREE_SPECIES = {
   birch: 7,
   palm: 8,
   cypress: 9,
-  snag: 10,
 } as const;
 
 /**
@@ -292,22 +291,6 @@ export const TREE_SHAPES: readonly TreeShape[] = [
       { radius: 0, cut: 0, tone: 2 },
     ],
   },
-  // Albero morto: tronco e quattro monconi, e nessuna foglia. E' la specie che
-  // racconta la quota meglio di una tinta — sopra il limite del bosco cio' che
-  // resta in piedi e' legno secco — e costa pochissimo: la stessa chioma di
-  // sempre con i raggi a uno e due e le tinte del legno, che l'erosione del
-  // bordo riduce a rami storti.
-  {
-    trunk: [6, 4],
-    sink: 3,
-    tones: [PALETTE_SLOTS.wood, PALETTE_SLOTS.stoneDark, PALETTE_SLOTS.wood],
-    canopy: [
-      { radius: 2, cut: 2, tone: 0 },
-      { radius: 1, cut: 1, tone: 0 },
-      { radius: 2, cut: 2, tone: 1 },
-      { radius: 1, cut: 1, tone: 0 },
-    ],
-  },
 ];
 
 /** Una specie e quanto pesa nell'estrazione del proprio bioma. */
@@ -381,7 +364,6 @@ export const FLORA: readonly BiomeFlora[] = [
       { species: TREE_SPECIES.birch, weight: 3 },
       { species: TREE_SPECIES.shrub, weight: 2 },
       { species: TREE_SPECIES.autumn, weight: 1 },
-      { species: TREE_SPECIES.snag, weight: 1 },
     ],
   },
   // hill — comincia la salita: gli abeti prendono il posto delle chiome tonde
@@ -393,7 +375,6 @@ export const FLORA: readonly BiomeFlora[] = [
       { species: TREE_SPECIES.shrub, weight: 2 },
       { species: TREE_SPECIES.scrub, weight: 2 },
       { species: TREE_SPECIES.birch, weight: 2 },
-      { species: TREE_SPECIES.snag, weight: 1 },
     ],
   },
   // rock — sopra il limite del bosco
@@ -402,7 +383,6 @@ export const FLORA: readonly BiomeFlora[] = [
     species: [
       { species: TREE_SPECIES.scrub, weight: 6 },
       { species: TREE_SPECIES.pine, weight: 2 },
-      { species: TREE_SPECIES.snag, weight: 2 },
       { species: TREE_SPECIES.shrub, weight: 1 },
     ],
   },
