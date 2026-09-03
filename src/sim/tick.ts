@@ -2,6 +2,8 @@ import type { TerrainMap } from '../world/terrain/TerrainMap';
 import { BALANCE } from './balance';
 import { BUILDING_CLASS, type BuildingClass } from './classes';
 import { resolveCommerce } from './commerce';
+import { coverageReportOf, servicesOf } from './coverage';
+import { nextDecayPressure } from './decay';
 import { decisionAt } from './decisions';
 import { FARM_KIND, farmUpkeepOf, farmWorkersOf, harvestOf } from './farms';
 import { resolveWeights, type Weights } from './policies';
@@ -210,6 +212,25 @@ export function tick(state: SimState, terrainMap: TerrainMap): SimState {
     : 1;
   const supplyArmed = state.supplyArmed || foodCoverage >= BALANCE.decisions.recoveryCoverage;
 
+  // --- Copertura dei servizi e fronte del declino --------------------------
+  //
+  // Il fronte sta qui per lo stesso motivo di quello alimentare: la copertura e'
+  // un fatto di **questo** tick, e un fronte che si muovesse nel ramo che lo
+  // legge non sarebbe un fronte. Ed e' l'unico posto in cui il declino puo'
+  // guardare l'orologio — `urbanProfileAt` e' una funzione spaziale, e farle
+  // leggere il tempo darebbe edifici diversi a seconda di quando la si guarda.
+  //
+  // Fra le due soglie la pressione **non si muove**: la banda morta e' cio' che
+  // impedisce a una citta' che oscilla intorno al pareggio di accendere e
+  // spegnere l'allarme a ogni edificio nuovo.
+  const coverageReport = coverageReportOf({
+    population,
+    civic,
+    funded,
+    services: servicesOf(state.catalysts),
+  });
+  const decayPressure = nextDecayPressure(state.decayPressure, coverageReport.ratio);
+
   const next: SimState = {
     ...state,
     tickCount: state.tickCount + 1,
@@ -226,6 +247,8 @@ export function tick(state: SimState, terrainMap: TerrainMap): SimState {
     // la felicita' e' a quel livello, o perche' la crescita rallenta, li legge
     // da qui invece di rifare il conto.
     satisfactionReport,
+    coverageReport,
+    decayPressure,
     landFactor: land,
     population: moved(state.population, populationStock),
     food: moved(state.food, finiteStock(trade.foodStock)),

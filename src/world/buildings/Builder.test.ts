@@ -72,6 +72,24 @@ function ticksFor(builds: number): number {
   return builds * BUILDER.ticksPerBuild;
 }
 
+/**
+ * Un tick che tiene disarmato il **fronte del declino**.
+ *
+ * Le citta' di prova di questo file crescono per centinaia di infornate attorno
+ * a un solo catalizzatore residenziale, senza un servizio in vista: sotto le
+ * regole della 8.2 quella e' una citta' che smette di fondare e comincia a
+ * perdere isolati, ed e' la risposta giusta — ma qui si provano campate,
+ * mensole, opere di terra e sventramenti, che con la copertura non c'entrano
+ * niente. Azzerare il fronte e' il modo esplicito di dire che questo file non
+ * prova il declino; a provarlo e' `decayDriver.test.ts`.
+ *
+ * `tick` lo ricalcola a ogni giro, quindi va rimesso a zero a ogni giro: un
+ * valore iniziale non basterebbe.
+ */
+function tickHeld(state: SimState, terrain: TerrainMap): SimState {
+  return { ...tick(state, terrain), decayPressure: 0 };
+}
+
 describe('Builder', () => {
   it('trasforma un candidato della simulazione in voxel e occupazione', () => {
     const world = new VoxelWorld();
@@ -176,7 +194,7 @@ describe('Builder — la rete in quota', () => {
     });
 
     for (let i = 0; i < ticksFor(builds); i++) {
-      state = tick(state, terrain);
+      state = tickHeld(state, terrain);
       state = builder.onTick(state);
       while (builder.stats.growing > 0) builder.step();
     }
@@ -387,7 +405,7 @@ describe('Builder — la citta in quota', () => {
     });
 
     for (let i = 0; i < ticksFor(builds); i++) {
-      state = tick(state, terrain);
+      state = tickHeld(state, terrain);
       state = builder.onTick(state);
       while (builder.stats.growing > 0) builder.step();
     }
@@ -643,7 +661,7 @@ describe('Builder — allineamento alla rete stradale', () => {
     });
 
     for (let i = 0; i < ticksFor(builds); i++) {
-      state = tick(state, terrain);
+      state = tickHeld(state, terrain);
       state = builder.onTick(state);
       while (builder.stats.growing > 0) builder.step();
     }
@@ -748,7 +766,7 @@ describe('Builder — i mandati arrivano fino ai voxel', () => {
     });
 
     for (let i = 0; i < ticksFor(builds); i++) {
-      state = tick(state, terrain);
+      state = tickHeld(state, terrain);
       state = builder.onTick(state);
       while (builder.stats.growing > 0) builder.step();
     }
@@ -844,7 +862,7 @@ describe('Builder — opere di terra', () => {
     });
 
     for (let i = 0; i < ticksFor(builds); i++) {
-      state = tick(state, terrain);
+      state = tickHeld(state, terrain);
       state = builder.onTick(state);
       while (builder.stats.growing > 0) builder.step();
     }
@@ -886,7 +904,7 @@ describe('Builder — opere di terra', () => {
     });
 
     for (let i = 0; i < ticksFor(30); i++) {
-      state = tick(state, map);
+      state = tickHeld(state, map);
       state = builder.onTick(state);
       while (builder.stats.growing > 0) builder.step();
     }
@@ -1301,7 +1319,7 @@ describe('Builder — landmark dei catalizzatori', () => {
     expect(before).toBe(0);
 
     for (let i = 0; i < ticksFor(60); i++) {
-      state = tick(state, map);
+      state = tickHeld(state, map);
       state = builder.onTick(state);
       while (builder.stats.growing > 0) builder.step();
     }
@@ -1442,7 +1460,7 @@ describe('Builder — isolati terrazzati', () => {
     }
 
     for (let i = 0; i < ticksFor(builds); i++) {
-      state = tick(state, terrain);
+      state = tickHeld(state, terrain);
       state = builder.onTick(state);
       while (builder.stats.growing > 0) builder.step();
     }
@@ -1658,7 +1676,7 @@ describe('Builder — gerarchia verticale', () => {
     });
 
     for (let i = 0; i < ticksFor(builds); i++) {
-      state = tick(state, map);
+      state = tickHeld(state, map);
       state = builder.onTick(state);
       while (builder.stats.growing > 0) builder.step();
     }
@@ -1757,7 +1775,7 @@ describe('Builder — sventramento', () => {
     });
 
     for (let i = 0; i < ticksFor(builds); i++) {
-      state = tick(state, terrain);
+      state = tickHeld(state, terrain);
       state = builder.onTick(state);
       while (builder.stats.growing > 0) builder.step();
     }
@@ -1775,7 +1793,7 @@ describe('Builder — sventramento', () => {
   ): SimState {
     let next = state;
     for (let i = 0; i < rounds && builder.stats.clearing > 0; i++) {
-      next = tick(next, terrain);
+      next = tickHeld(next, terrain);
       next = builder.onTick(next);
       while (builder.stats.growing > 0) builder.step();
     }

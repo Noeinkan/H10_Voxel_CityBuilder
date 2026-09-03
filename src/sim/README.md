@@ -304,14 +304,54 @@ residui di congestione o di occupazione. Un test la verifica in entrambi i versi
 
 La simulazione **non demolisce da sola**: questa è la porta da cui il costruttore
 dichiara che qualcosa non c'è più, come `addBuilding` è quella da cui dichiara che
-qualcosa è stato eretto. Chi la chiama oggi è il cantiere di un landmark, ma qui
-non c'è niente che sappia cosa sia un landmark (invariante 7).
+qualcosa è stato eretto. La chiamano il cantiere di un landmark, la gomma del
+giocatore e — da qui — l'abbandono, ma qui non c'è niente che sappia cosa sia un
+landmark (invariante 7): il declino **propone** e chi ha il registro in mano
+decide.
 
 **Non c'è una penalità scritta apposta, ed è deliberato.** Meno edifici
 residenziali vuol dire meno `capacity`, quindi un'occupazione sopra uno, quindi il
 `crowdingPenalty` che il bilancio applica già; meno civico e meno commercio
 abbassano soddisfazione e servizio per la stessa strada. Il costo di uno
 sventramento è il bilancio che c'era.
+
+## Copertura dei servizi e declino
+
+`coverageAt` risponde quanto una colonna è **servita**, fra zero e uno, sommando
+due metà di natura diversa. Una quota **cittadina**, uguale su tutta la mappa,
+che viene dai servizi posati — pesati per la loro influenza civica, la stessa
+colonna della tabella con cui il campo dipinge — più gli edifici civici cresciuti
+attorno, pesati per la quota di manutenzione che i fondi coprono. E una quota
+**locale**, che è il piano civico del campo diviso per `coverage.localFull`,
+quindi con decadimento geodetico: lungo le strade arriva lontano, dietro una
+collina no.
+
+**Perché il pavimento è a metà.** A uno, la città si curerebbe da sé e le azioni
+del giocatore tornerebbero a essere solo acceleratori. A zero, un quartiere
+lontano da ogni servizio cadrebbe a zero e il declino diventerebbe una spirale.
+Con `cityShare` a metà il pavimento tiene in piedi la città mentre nessuno
+guarda, e a chiudere il divario è solo chi posa un servizio.
+
+**Perché un servizio posato vale otto edifici civici.** È misurato, non tarato a
+occhio: sotto un catalizzatore residenziale forte gli edifici civici **non
+nascono affatto**, perché `nextBuildSites` dà la cella all'uso che ci prende il
+punteggio più alto e il residenziale satura per primo. Una copertura che
+dipendesse solo da loro varrebbe zero in ogni partita.
+
+Il **fronte**, `decayPressure`, è l'unica parte che ha una memoria: sale in `tick`
+sotto `decay.strainCoverage`, scende sopra `decay.recoveryCoverage`, e fra le due
+non si muove. La banda morta è ciò che impedisce a una città che oscilla intorno
+al pareggio di accendere e spegnere l'allarme a ogni edificio nuovo — la stessa
+lezione di `supplyArmed`, con la differenza che qui il fronte è un numero perché
+il declino deve essere *lento*: tre minuti di scoperto continuo prima che il primo
+edificio se ne vada.
+
+`nextDecaySites` dice **chi** sta in un posto che non lo regge più, camminando
+`state.buildings` da un cursore: è lo speculare di `UpgradeDriver`, non di
+`nextBuildSites`, perché fondare deve cercare celle vuote mentre gli edifici sono
+già un elenco. Risponde sempre, anche a pressione zero — la lista è l'avviso prima
+di essere l'ordine — e non sa cosa non si abbandona: a filtrare landmark,
+arcologie e chi regge un impalcato è chi ha il registro del mondo.
 
 ## Bilancio di un tick
 

@@ -973,13 +973,32 @@ export const BALANCE = {
     /**
      * Servizi che ogni abitante pretende.
      *
-     * Con `demandPerResident` a un centesimo, cento abitanti chiedono un
-     * edificio civico finanziato. E' la scala su cui la domanda **cresce con la
-     * citta'**, ed e' cio' che trasforma i servizi da bonus in manutenzione: una
-     * rete che bastava a mille abitanti non basta piu' a duemila senza che nulla
-     * si sia rotto.
+     * Duecentocinquanta abitanti per unita' di servizio. E' la scala su cui la
+     * domanda **cresce con la citta'**, ed e' cio' che trasforma i servizi da
+     * bonus in manutenzione: una rete che bastava a duemila abitanti non basta
+     * piu' a quattromila senza che nulla si sia rotto.
+     *
+     * Tarata su una misura e non a occhio: una citta' con un mercato, un parco e
+     * una scuola arriva a seimila abitanti con una decina di edifici civici
+     * cresciuti attorno, e a quel punto sta appena sopra il pareggio. Il terzo
+     * servizio e' la mossa che le serve, non un lusso.
      */
-    demandPerResident: 0.01,
+    demandPerResident: 0.004,
+
+    /**
+     * Quanto vale un'unita' di influenza civica posata.
+     *
+     * **Un catalizzatore civico e' il servizio**, e gli edifici civici che
+     * crescono attorno sono il contorno: otto contro uno e' quel rapporto. Nel
+     * gioco che questo modello imita e' l'edificio che il giocatore posa a
+     * coprire la citta', e qui vale lo stesso — con la differenza che il peso
+     * non e' dichiarato due volte, perche' esce dalla riga `influence` con cui
+     * il campo dipinge gia'.
+     *
+     * Un parco copre percio' duemila abitanti da solo; un mercato, che di civico
+     * porta un settimo, ne copre trecento.
+     */
+    perService: 8,
 
     /**
      * Quanto della copertura piena puo' arrivare dalla sola quota cittadina.
@@ -1033,13 +1052,18 @@ export const BALANCE = {
     /**
      * Quanto sale la pressione per tick sotto `strainCoverage`.
      *
-     * Un seicentesimo: **un minuto intero** di scoperto continuo a dieci tick al
-     * secondo prima che il primo edificio se ne vada. Non e' generosita', e' la
-     * differenza fra una conseguenza e un agguato — il giocatore deve poter
-     * vedere la vista di copertura, capire dov'e' il buco e posarci un servizio
-     * mentre l'allarme e' gia' acceso e non e' ancora successo niente.
+     * Un millottocentesimo: **tre minuti** di scoperto continuo a dieci tick al
+     * secondo prima che il primo edificio se ne vada, e a 4x poco meno di uno.
+     * Non e' generosita', e' la differenza fra una conseguenza e un agguato — il
+     * giocatore deve poter aprire la vista di copertura, capire dov'e' il buco e
+     * posarci un servizio mentre l'allarme e' gia' acceso e non e' ancora
+     * successo niente.
+     *
+     * E' anche la manopola con cui si decide *quanto* declino un giocatore
+     * distratto merita: alzarla non rende il gioco piu' difficile, lo rende piu'
+     * sorprendente, che e' un'altra cosa.
      */
-    pressureRise: 1 / 600,
+    pressureRise: 1 / 1800,
 
     /**
      * Quanto scende la pressione per tick sopra `recoveryCoverage`.
@@ -1048,7 +1072,7 @@ export const BALANCE = {
      * il gesto giusto non si distingue da quello inutile. E' anche cio' che
      * rende il declino **reversibile** invece che soltanto lento.
      */
-    pressureRelief: 1 / 200,
+    pressureRelief: 1 / 600,
 
     /**
      * Copertura sotto la quale un edificio e' in difficolta'.

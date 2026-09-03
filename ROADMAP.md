@@ -1,5 +1,9 @@
 # Roadmap — H10 Voxel City Builder
 
+Le fasi chiuse tengono qui il loro elenco e lasciano il ragionamento a una
+scheda per fase in [docs/roadmap/](docs/roadmap/): perché una cosa è stata
+fatta così si legge lì, cosa resta da fare si legge qui.
+
 ### Visione
 
 Una città-isola automatica, enorme ma leggibile come una miniatura voxel. Il
@@ -110,40 +114,7 @@ riconoscibilmente diversi.
 Obiettivo: far dipendere il luogo ammesso per un catalizzatore dal ruolo che ha,
 e aggiungere la connessione aerea come alternativa non costiera al porto.
 
-**Stato implementazione:** completata. Il gate resta da validare a occhio su
-un'isola vera: i test coprono le regole e i motivi di rifiuto, non la
-leggibilità del cursore mentre lo si muove. Le due sezioni che seguono
-descrivono la situazione *prima* del lavoro; cosa è cambiato sta in fondo.
-
-**Perché la fase 2 si riapre.** Il porto è stato chiuso come «primo collegamento
-dell'isola al mondo», ma non ha mai avuto una regola sull'acqua:
-`catalystFailure` in `src/game/actions.ts` convalida tutti i ruoli con la stessa
-riga, `if (!column.buildable)`, e `BUILDABLE_BIOMES` in
-`world/terrain/config.ts` esclude `beach`. Le due regole si sommano nel
-risultato opposto a quello previsto — il porto si piazza in cima a una collina e
-viene rifiutato sulla battigia, che è l'unica fascia dove avrebbe senso. Il
-tooltip intanto promette *«concentrates industry and trade on the coast»*, cioè
-annuncia un vincolo che il codice non ha, e a `tick.ts` basta che un porto
-esista in un punto qualsiasi della mappa perché il commercio esterno si sblocchi.
-
-Non è un difetto isolato: è la stessa asimmetria che la 4.2 ha già risolto per i
-lotti. Lì «il terreno non è già piano e asciutto» ha smesso di essere un motivo
-di rifiuto, perché la banchina costruisce il piano che manca; i catalizzatori
-sono rimasti indietro sul singolo bit `column.buildable`, e continuano a
-rifiutare proprio le colonne che il mondo saprebbe già preparare.
-
-**Metà è già arrivata, e da un'altra strada.** Il bit se n'è andato prima del
-vincolo di ruolo, perché produceva un rifiuto che nessuno riusciva a leggere:
-una mesa piana e larga respinta mentre il prato accanto accettava, per la sola
-quota. `catalystFailure` ora chiede a `groundKindOf` e paga il terreno con
-`BUILD_WEIGHT` — prato 1, terrapieno 1,4, banchina 1,8, roccia 2,2 — e rifiuta
-solo ciò che nessuna opera raddrizza: pareti oltre `maxTerraceSlope` e acqua
-oltre `maxQuayDepth`. La battigia è quindi ammessa **a tutti** i ruoli, non ai
-soli ruoli costieri: è il prezzo, non il permesso, a distinguerla. Il vincolo di
-ruolo resta da fare, e ora è l'unica cosa che manca perché il porto stia sulla
-costa. La tabella `BUILDABLE_BIOMES` non è stata toccata: la crescita automatica
-sceglie ancora i suoi siti con il bit, quindi il peso non ha spostato l'equilibrio
-della città che cresce da sola.
+*Chiusa. Il ragionamento e l'esito stanno in [docs/roadmap/fase-2.1.md](docs/roadmap/fase-2.1.md).*
 
 - [x] Dare a `CatalystDefinition` un vincolo di sito esplicito e valutarlo in <!-- size: M -->
   `catalystFailure`, al posto dell'unico bit di edificabilità valido per tutti.
@@ -161,84 +132,12 @@ della città che cresce da sola.
 - [x] Portare i nuovi motivi di rifiuto sul cursore con lo stesso trattamento <!-- size: S -->
   degli altri, così che il vincolo si legga prima del click e non dopo.
 
-**Vincolo:** la simulazione non impara la geografia. Il vincolo di sito vive fra
-`src/game/` e `src/world/`, come già il lotto e l'isolato; `src/sim/` continua a
-ragionare per cella e a non sapere dove sia la costa (invariante 7). Un ruolo
-nuovo tocca `balance.ts`, quindi le tabelle di misura verificate a mano vanno
-rimisurate e non aggiornate a occhio.
-
-**Gate:** ogni catalizzatore è rifiutato dove il suo ruolo non ha senso e
-accettato dove ce l'ha, con il motivo visibile prima del click; porto e
-aeroporto restano due scelte con conseguenze diverse e non due prezzi per lo
-stesso sblocco.
-
-**Come è stato risolto.** Il vincolo si è diviso in due metà che non si toccano:
-la definizione del catalizzatore porta un'**etichetta** — `'coastal'`, `'open'`,
-`'any'` — e non sa cosa significhi, mentre a tradurla sul terreno è il nuovo
-dominio `src/world/sites/`. È la stessa mossa della 4.1, dove il candidato ha
-smesso di essere un indirizzo ed è diventato un isolato: `src/sim/` dichiara
-cosa un ruolo pretende e continua a non sapere dove sia la costa (invariante 7).
-Il campo su `CatalystDefinition` è una stringa e non un numero, quindi non tocca
-il contratto «i coefficienti stanno solo in `balance.ts`».
-
-`sites/` è un dominio a sé e non un'appendice di `grading/`, perché le due
-rispondono a domande diverse: quella lì è «cosa serve costruire perché regga», e
-la sua risposta è un prezzo; questa è «questo ruolo ci sta», e la sua risposta è
-un no che nessuna opera compra. Tenerle separate è ciò che permette al porto di
-pretendere la costa **senza** che la battigia torni vietata agli altri sette
-ruoli — che è esattamente l'errore che la 4.2 aveva appena finito di correggere.
-`BUILDABLE_BIOMES` non è stata toccata: la crescita automatica sceglie ancora i
-suoi siti con il bit, e l'equilibrio della città che cresce da sola non si è
-mosso.
-
-**Una ricerca sola, due raggi.** `Builder.isCoastal` esisteva già, privata, e
-faceva la stessa marcia sui quattro assi che serviva al porto: è stata estratta
-in `seesWater` e ora ha due chiamanti con due numeri diversi. Non sono lo stesso
-numero travestito — `BUILDER.coastalRadius: 14` decide se un mercato *sembra* un
-mercato sul porto, ed è generoso per costruzione; `SITE.coastalRadius: 6` decide
-se un piazzamento è ammesso, e chiede il fronte mare. Il vincolo opposto riusa
-`planGrade` sul quadrato di lato `SITE.openSpan`, con un tetto proprio di quattro
-voxel: `GRADING.maxWorksStep` è tarato sulla banchina che scende sul fondale e
-qui direbbe di sì a un terreno che nessuno chiamerebbe piano.
-
-**Il commercio ha smesso di essere un interruttore.** `connected` diceva solo
-«esiste un porto da qualche parte», quindi il secondo collegamento non avrebbe
-aggiunto niente e l'aeroporto sarebbe stato un porto più caro. Ora ogni
-collegamento porta la propria capacità e le capacità si sommano: il porto muove
-volume, l'aeroporto muove valore — importa cibo in fretta perché non aspetta una
-stiva piena, non spedisce materiali sfusi, e su quel poco spunta un prezzo
-migliore. Resta uno scambio aggregato O(1) per tick. Nel passaggio è emerso un
-difetto vero: l'HUD ricalcolava il flag con `catalyst.kind === 'port'` e ignorava
-i catalizzatori senza `kind` — i salvataggi dell'MVP e le fixture di scena — così
-che diceva «nessun porto» mentre il commercio girava. Ora tick e HUD chiedono
-alla stessa `tradeLinksOf`.
-
-**Costo e misure.** `catalystFailure` gira a ogni `pointermove`, e con
-l'aeroporto in mano passa da una a `openSpan²` letture di colonna: sono letture
-di `Int16Array` già in memoria, fuori dal ciclo di frame della simulazione, e
-solo mentre quello strumento è selezionato. `tradeLinksOf` è lineare nel numero
-di catalizzatori, che sono unità. Un ruolo nuovo tocca `balance.ts`: **le tabelle
-di misura in `README.md` e `src/sim/README.md` vanno rimisurate a mano**, e non
-sono state aggiornate qui.
-
-**Resta aperto.** Il vincolo di sito riguarda solo ciò che il giocatore piazza:
-la crescita automatica non ha ruoli e quindi non ha luoghi ammessi. L'aeroporto
-non ha un `DistrictId` proprio — entra nei ruoli logistici e si distingue per
-influenza, effetti e commercio, non per un quartiere che porta il suo nome.
-
 ### Fase 2.2 — Le decisioni lasciano un segno
 
 Obiettivo: rendere visibile nella struttura della città quale alternativa il
 giocatore ha scelto.
 
-**Stato implementazione:** completata. Il gate resta da validare con due partite
-a confronto sullo stesso seed.
-
-**Perché la fase 2 si riapre di nuovo.** Alle policy la fase 2 aveva chiesto «una
-conseguenza spaziale osservabile»; alle decisioni no, e infatti non ce l'avevano.
-`resolveDecision` spostava cibo, materiali, fondi e soddisfazione e finiva lì:
-scegliere «Community gardens» invece di «Ration supplies» era indistinguibile a
-schermo, contro il principio guida di questa roadmap.
+*Chiusa. Il ragionamento e l'esito stanno in [docs/roadmap/fase-2.2.md](docs/roadmap/fase-2.2.md).*
 
 - [x] Dare a ogni alternativa un **mandato**: un vettore spaziale della stessa <!-- size: L -->
   forma di `spatialPolicy`, che entra in `urbanProfileAt` e piega forma e
@@ -253,45 +152,13 @@ schermo, contro il principio guida di questa roadmap.
 - [x] Dire nel modale quale segno lascia ogni alternativa, come già fanno le <!-- size: S -->
   policy.
 
-**Perché lo slot e non la scadenza.** `urbanProfileAt` è una funzione spaziale e
-il `Builder` la chiama a ogni piazzamento e a ogni promozione. Un mandato che
-scade le farebbe leggere `tickCount`, e lo stesso stato produrrebbe edifici
-diversi a seconda di quando lo si guarda — il contrario del contratto di
-determinismo. Con lo slot il tetto è strutturale: tre vettori attivi al massimo,
-e la città porta l'ultima scelta di ogni famiglia invece della somma di tutte. Il
-modello è il *Book of Laws* di Frostpunk, dove i rami sono permanenti e
-mutuamente esclusivi.
-
-**Perché la tipologia e non solo il vettore.** Le fasce sono
-`naturalBands + Math.floor(form.density * 2)` e poi vengono clampate ai limiti
-del livello: un vettore che sposta la densità di 0,3 vale mezza fascia, che
-`Math.floor` mangia. Una riga di catalogo concessa da un mandato cambia invece
-podio, corte, coronamento, impronta minima e tutti i colori del profilo, e si
-vede a colpo d'occhio.
-
-**Costo e misure.** `urbanProfileAt` guadagna un ciclo su al massimo tre mandati,
-sullo stesso percorso dei catalizzatori che già scorre. `tick` non è toccato: i
-mandati non entrano in `resolveWeights` e risolvere una decisione non ricostruisce
-il campo di desiderabilità. **Le tabelle di misura in `README.md` e
-`src/sim/README.md` vanno rimisurate a mano** e non sono state aggiornate qui.
-
-**Resta aperto.** Il mandato agisce solo su ciò che nasce o viene promosso dopo:
-il tessuto già costruito non viene ridisegnato, quindi su una città matura la
-differenza si accumula invece di comparire subito. L'opera concessa sceglie il
-sito da sé — il giocatore non la posa — e se nessun candidato passa la convalida
-la decisione resta valida senza opera.
-
-**Gate:** due partite sullo stesso seed che divergono solo nelle decisioni
-producono skyline riconoscibilmente diversi.
-
 ## Fase 3 — Usi urbani e tipologie ibride
 
 Obiettivo: ampliare la varietà economica e architettonica senza introdurre
 zoning manuale; il giocatore continua a orientare una crescita automatica
 attraverso catalizzatori con effetti locali leggibili.
 
-**Stato implementazione:** completata. Il gate resta da validare con un playtest
-che confronti una città mercantile e una industriale a occhio, senza overlay.
+*Chiusa. Il ragionamento e l'esito stanno in [docs/roadmap/fase-3.md](docs/roadmap/fase-3.md).*
 
 - [x] Separare uso urbano, catalizzatore e forma architettonica: gli usi fondamentali <!-- size: L -->
   diventano residenziale, commerciale, industriale e civico, mentre uffici,
@@ -316,49 +183,13 @@ che confronti una città mercantile e una industriale a occhio, senza overlay.
 - [x] Conservare determinismo, campi densi e costo limitato per colonna; misurare <!-- size: M -->
   memoria e tempo di selezione dei siti dopo l'estensione degli usi.
 
-**Gate:** mercato e industria producono cicli economici distinguibili, gli
-edifici misti emergono da sovrapposizioni comprensibili e almeno sei tipologie
-sono riconoscibili per forma e funzione senza selezionare manualmente una zona.
-
-**Come è stato risolto.** L'uso urbano è un indice denso in `src/sim/classes.ts`
-e i quattro usi sono in ordine di contratto; un catalizzatore non ha più una
-classe ma un vettore di influenza in `balance.ts`, che può anche essere negativo
-— una fabbrica sottrae dal residenziale, e il clamp a zero del campo bastava già
-a reggerlo. Il commercio interno vive in `src/sim/commerce.ts` e compete con
-l'industria per la stessa forza lavoro e gli stessi materiali: è quella
-competizione, non due bilanci separati, a rendere distinguibili i due cicli. La
-tipologia è un catalogo di quindici righe in `world/buildings/config/typologies.ts` con la
-sola regola di scelta in `typology.ts`, e piega la grammatica esistente con tre
-interruttori — podio, corte, coronamento piatto — invece di introdurre modelli
-disegnati a mano. La selezione dei siti è rimasta al suo costo perché il secondo
-uso si cerca solo sui siti che entrano davvero in lista.
-
 ### Fase 3.1 — Il cibo ha un luogo
 
 Obiettivo: dare al cibo dei produttori che si vedano sulla mappa e che costino
 **terra**, così che la crescita della città diventi una pressione alimentare
 invece di un numero che sale.
 
-**Stato implementazione:** completata. Il gate resta da validare a schermo: i
-test coprono le regole — il verso dei solchi, il ritiro di un lotto, la
-raggiungibilità della torre — non la leggibilità della campagna mentre la si
-sorvola.
-
-**Perché la fase 3 si riapre.** La fase 3 ha separato uso urbano, catalizzatore e
-tipologia, ma il cibo è rimasto un termine dell'industria:
-
-```ts
-const foodProduced = industrial * BALANCE.food.perProduction * staffing;
-const materialsProduced = industrial * weights.productionYield * staffing;
-```
-
-La stessa fabbrica produceva cibo e materiali dallo stesso organico. Ne
-seguivano tre difetti, e il terzo è quello che conta: non si poteva **indicare**
-da dove viene il cibo; non esisteva competizione per il suolo, perché la capacità
-alimentare cresceva con la densità invece che contro; e l'unico modo di restare
-senza cibo era non costruire abbastanza industria — mai «non c'è più terra».
-L'unica cosa agricola del gioco, il mandato `communityGardens`, era decorazione
-più un regalo una tantum.
+*Chiusa. Il ragionamento e l'esito stanno in [docs/roadmap/fase-3.1.md](docs/roadmap/fase-3.1.md).*
 
 - [x] Staccare il cibo dal termine industriale e dargli tre produttori con un <!-- size: L -->
   listino in case sfamate; ridichiarare il pareggio 1:1 come prodotto derivato
@@ -377,44 +208,6 @@ più un regalo una tantum.
   fasce luminose come luci di crescita, e un vero scambio fra materiali e cibo.
 - [x] HUD: il cibo mostra da dove viene invece di un `±0`; `communityGardens` <!-- size: M -->
   smette di essere decorazione.
-
-**Gate:** si può indicare a schermo da dove viene il cibo; una città che si
-allarga sui propri campi vede la dispensa stringersi senza che nulla di scritto
-glielo dica; e quando il suolo finisce la risposta è salire.
-
-**Come è stato risolto.** Il listino di `BALANCE.farms` è in edifici residenziali
-sfamati — un campo due, un frutteto uno, una torre sei — e il cibo per tick lo fa
-`FOOD_PER_HOUSE`, che è `residentialCapacity * food.perResident`: cambiare la
-capacità di una casa muove il listino da solo, e il pareggio non si rompe più per
-distrazione. I campi non sono record del `BuildingRegistry` ma di un registro
-loro, perché non appartengono a nessuno dei due indici di collisione — in uno
-impedirebbero di costruirci sopra, nell'altro perfino di passarci una strada.
-Entrano nel mondo dalla coda della superficie e non da uno stamp, perché un
-marcatore di copertura *è* palette 0 e uno stamp non sa esprimerlo. Il terreno
-non si ridipinge: a leggere come campo è la regolarità dei solchi, non il colore
-del suolo — misurato a 5120 quad per chunk arato contro un tetto di 16384.
-
-Il frutteto è invece volume, quindi passa dalla coda della crescita come un
-edificio, e ne eredita budget e cancellazione senza aggiungere un quarto posto da
-cui i voxel entrano nel mondo. Il disegno di un albero è rimasto scritto una
-volta sola: `drawTree` è il corpo di `writeTree` senza la destinazione. La specie
-da frutto non compare in `FLORA` — non nasce da sola — ed è per questo che può
-avere una sagoma potata; a dire «coltivato» è il reticolo contro il jitter del
-bosco vero.
-
-La torre idroponica è **una riga di catalogo** e nient'altro: l'accento verde a
-livello alto esce `luminous` dalla grammatica che c'era già, quindi le fasce di
-coltura si accendono di notte senza un materiale, uno slot o un emettitore in
-più. A dire alla simulazione che è una torre è la **tipologia costruita** e non la
-specializzazione del luogo: in un distretto che esprime `farming` un edificio
-sotto `minLevel` prende comunque una forma normale, e contarlo come torre lo
-farebbe produrre cibo senza esserlo.
-
-L'HUD legge un referto del tick (`state.harvest`) invece di rifare il conto:
-duplicare il listino nell'interfaccia sarebbe il modo sicuro di far divergere le
-righe dal numero che le sta sopra. E `communityGardens` ha smesso di essere
-decorazione — abbassa la soglia di ciò che diventa frutteto, quindi il mandato si
-vede nella campagna oltre che negli isolati.
 
 ## Fase 4 — Forma urbana procedurale
 
@@ -520,9 +313,7 @@ cambio di una forma più bella:
 Obiettivo: una rete di strade deterministica che esista *prima* degli edifici e
 ne orienti la crescita.
 
-**Stato implementazione:** completata. Il gate resta da validare a occhio su
-un'isola vera: i test coprono allineamento, determinismo e carreggiata sgombra,
-non la leggibilità.
+*Chiusa. Il ragionamento e l'esito stanno in [docs/roadmap/fase-4.1.md](docs/roadmap/fase-4.1.md).*
 
 - [x] Generare la rete da terreno, costa e catalizzatori: assi principali fra i <!-- size: XL -->
   poli, maglia secondaria negli intervalli, densità che segue il campo di
@@ -536,66 +327,11 @@ non la leggibilità.
 - [x] Chiudere gli isolati: uno spazio interno riconoscibile è ciò che le <!-- size: M -->
   sotto-fasi successive terrazzano e collegano.
 
-**Gate:** gli edifici si allineano a strade leggibili senza sovrapposizioni né
-lotti irraggiungibili; la rete è identica a parità di seed e non aggiunge lavoro
-non budgetato al ciclo di frame.
-
-**Come è stato risolto.** La rete vive in `src/world/streets/` ed è una
-**funzione pura di `(seed, x, y)`**: non ha stato, non si salva, non si aggiorna
-quando arriva un catalizzatore, e interrogarla non costa memoria. È una griglia
-a passo variabile — lo scostamento di ogni asse è un hash del suo indice, non
-una passeggiata cumulativa, così l'asse millesimo si calcola senza conoscere i
-primi novecentonovantanove. Un tracciato vero (L-system, minimi percorsi fra
-poli) sarebbe dipeso dall'ordine di crescita e avrebbe richiesto proprio le
-strutture che la fase 5 dovrà poi serializzare.
-
-Il candidato della simulazione **designa un isolato, non un indirizzo**:
-`placeLot` lo risolve nel lotto libero più vicino sul perimetro di
-quell'isolato. Era la scelta obbligata — due terzi dei candidati cadono nel
-cuore degli isolati, e scartarli avrebbe fermato la crescita invece di
-allinearla. `src/sim/` non è stato toccato: continua a ragionare per cella e non
-sa che le strade esistono, coerentemente con l'invariante 7. L'orientamento
-riusa `accentFace`, quindi accento e portale guardano la carreggiata **senza un
-attributo di vertice in più**; il tiro del PRNG si consuma comunque, così dare
-una strada a un lotto ne cambia il verso e non la sagoma.
-
-Due cose che il lavoro ha fatto emergere, entrambe corrette e coperte da test:
-l'`upgrade` allargava l'impronta senza conoscere l'isolato e spingeva gli
-edifici dentro la carreggiata — ora il lato è limitato dalla stanza residua, e
-un lotto già accostato al fronte cresce solo in altezza, che è anche il motivo
-per cui gli angoli diventano le torri dell'isolato. E lo scorrimento che accosta
-l'impronta al fronte non deve valere per `materialize`, o una partita salvata
-tornerebbe con gli edifici spostati.
-
-**Costo.** `onTick` nel caso peggiore sintetico (256×256 colonne tutte
-edificabili, quattro catalizzatori a raggio 60) misura **8,8 ms**, contro gli
-**8,5 ms** della stessa misura prima di questa fase — a parità di costo la
-città cresce a più del doppio della velocità. Di quegli 8,8 ms, **5,7 sono
-`nextBuildSites`**, che scandisce l'intero campo allocato ed era già così: è
-il vero sforamento del budget, è preesistente, e va affrontato nella fase 6, non
-qui. La ricerca del lotto costa ~3,1 ms e ci è arrivata togliendo due
-allocazioni per colonna dal percorso caldo (`columnAt` costruiva un oggetto,
-`registry.at` un array); da lì il nuovo `isOccupied`. Le carreggiate passano
-dalla coda di superficie esistente, quindi non aggiungono lavoro non budgetato
-al frame. I due worker in bundle restano 5,77 kB e 8,64 kB: la rete non li tocca.
-
-**Resta aperto.** Gli assi principali sono periodici, non tracciati fra i poli:
-la gerarchia esce dalla griglia e i catalizzatori la influenzano solo di riflesso
-— le strade compaiono dove la città cresce, e la città cresce dove il campo è
-alto. Legare l'asse principale al polo richiede un tracciato con stato, e ha
-senso affrontarlo insieme alle rampe della 4.2, quando la rete dovrà comunque
-smettere di essere puramente periodica per aggirare i dislivelli.
-
 ### Fase 4.2 — Dislivelli e costa come forma urbana
 
 Obiettivo: far reagire la città al terreno invece di appiattirlo.
 
-Dipende da 4.1: è la rete a incontrare per prima le pendenze, e una strada che
-attraversa un dislivello o si ferma o lo risolve.
-
-**Stato implementazione:** completata. Il gate resta da validare a occhio su
-un'isola vera: i test coprono le opere, il vincolo di riempimento e la
-continuità delle rampe, non la leggibilità.
+*Chiusa. Il ragionamento e l'esito stanno in [docs/roadmap/fase-4.2.md](docs/roadmap/fase-4.2.md).*
 
 - [x] Risolvere le pendenze della rete con rampe, scalinate e tratti incassati, <!-- size: L -->
   al posto dell'attuale scarto secco per `tooSteep`.
@@ -607,114 +343,12 @@ continuità delle rampe, non la leggibilità.
 - [x] Rivedere `maxTerrainStep` e la blacklist dei siti: con le rampe una <!-- size: M -->
   pendenza smette di essere un rifiuto definitivo.
 
-**Vincolo:** la fondazione continua a riempire, mai a scavare. Un muro di
-contenimento aggiunge volume, non toglie isola.
-
-**Gate:** su un'isola con rilievo marcato pendenze e linea di costa risultano
-progettate; nessun sito viene più perso per una pendenza che una rampa
-risolverebbe.
-
-**La premessa della fase era in parte sbagliata, e vale la pena scriverlo.**
-Misurando l'isola prima di toccarla — seed 1337, 256×256 — il dislivello fra due
-colonne adiacenti risulta **sempre 0 o 1, mai di più**: è il vincolo di Lipschitz
-che la taratura del rumore garantisce, e significa che *sull'isola non esistono
-strapiombi*. Di conseguenza `tooSteep` non è mai scattato una volta — il
-dislivello massimo sotto un'impronta 4×4 edificabile è 2, contro i 3 che quel
-tetto ammetteva — e non c'erano tratti da incassare né gradini da scalinare.
-Rampe e scalinate progettate contro quel nemico sarebbero state codice morto.
-
-Il rifiuto che costava davvero era un altro, e molto più grande: delle 20 721
-colonne di terra emersa **solo 10 489 erano `buildable`**, cioè la metà esatta.
-Le altre erano 5 388 colonne di battigia rifiutate dal bioma — l'intero anello
-costiero — e 2 994 rifiutate per una pendenza fra 0,34 e 0,52, che è un fianco
-dolce, non una parete. La fase è stata reindirizzata su quelle.
-
-**Come è stato risolto.** La domanda è cambiata da "questa colonna è già piana?"
-a "**cosa serve costruire perché lo diventi?**". La risposta vive in
-`src/world/grading/`, è pura, e ha tre valori: niente, un terrapieno con il suo
-muro di contenimento, una banchina che porta il piano sopra la battigia. La
-quota finita è sempre il **massimo** delle colonne toccate, mai la media: è la
-forma che prende il vincolo "si riempie, non si scava", e un test la verifica su
-tutta la mappa dopo una crescita vera, colonna per colonna.
-
-Le quattro cose che dovevano salire — la fondazione di un lotto, la carreggiata
-che lo raggiunge, il molo, la piazza di un catalizzatore — sono diventate **la
-stessa operazione con quote diverse** invece di quattro sottosistemi: la coda di
-superficie, che prima portava solo un colore, ora porta anche una quota di
-progetto e il muro che la regge. La rampa è la relazione 1-Lipschitz di
-`rampField`: due passate lineari che alzano il campo di quote finché nessuna
-colonna di carreggiata dista più di un voxel dalla vicina.
-
-`maxTerrainStep` non è stato rivisto ma **rimosso**: diceva "quanto dislivello
-sopporto prima di rinunciare", e la domanda ora è "quanto muro sono disposto a
-costruire". Al suo posto `GRADING.maxWorksStep`, tarato sul caso peggiore vero,
-che è la banchina che scende sul fondale e non il terrapieno. I motivi di
-rifiuto scendono da cinque a quattro: `notBuildable` e `belowSea` dicevano
-entrambi "il terreno non è già piano e asciutto", che ha smesso di essere un
-motivo.
-
-**Un difetto della 4.1 che solo l'isola vera ha rivelato.** Con la crescita
-misurata su terreno reale invece che sulla fixture piana, la città si fermava a
-**quattordici edifici** e non cresceva più. La causa: `nextBuildSites` ordina i
-candidati per punteggio e, su un campo saturo — dove interi quartieri toccano il
-massimo — a decidere resta il criterio di parità, cioè `x` e poi `y`. La
-simulazione riproponeva quindi all'infinito lo stesso pugno di colonne
-nell'angolo minimo dell'area satura; appena il loro isolato si riempiva, ogni
-infornata successiva ricadeva su un isolato già dichiarato pieno. La colonna
-proposta designa ora **un luogo, non un isolato**: se il suo è pieno, `findLot`
-cerca in quelli attorno fino a `blockSearchRadius`. Stessa isola, stessi tick:
-da 14 a 276 edifici.
-
-**Costo.** Misurato con un A/B vero: un worktree sul commit precedente
-(`62798d5`, strade senza opere) e l'albero di lavoro, stesso script e stessa
-macchina, esecuzioni alternate per annullare la deriva. 256×256 colonne tutte
-edificabili, quattro catalizzatori a raggio 60, 300 tick.
-
-| | mediana per tick | p95 | edifici |
-| --- | --- | --- | --- |
-| prima della 4.2 | 2,31 / 2,50 / 2,71 ms | 4,92 / 5,22 / 5,47 ms | **152** |
-| con la 4.2 | 2,51 / 2,69 / 2,94 ms | 3,74 / 4,92 / 5,98 ms | **450** |
-
-Gli intervalli si sovrappongono: **il costo per tick è indistinguibile dal
-rumore**, mentre gli edifici sono tre volte tanti — e quel conteggio è
-deterministico, non una misura. Non perché le opere siano gratis, ma perché la
-correzione di `findLot` ha tolto il tappo che fermava la crescita, e il lavoro
-in più si distribuisce su un risultato tre volte più grande.
-
-La mediana sta dentro i 3 ms di `FRAME_BUDGET_MS`; il p95 no, e i tick cari
-restano quelli in cui `nextBuildSites` scandisce l'intero campo allocato — è
-preesistente, è il vero sforamento del budget, e appartiene alla fase 6. Il
-massimo su singolo frame non è riportato di proposito: su questa macchina, con
-un'altra sessione che compilava in parallelo, oscillava fra 8 e 32 ms su
-entrambi i lati dell'A/B e non misurava il codice.
-
-Il budget di superficie conta ora **voxel e non celle**, perché una cella di
-molo può costarne sei e contarla per una lascerebbe passare sei volte il lavoro
-previsto proprio dove il terreno è più mosso.
-
-**Resta aperto.** Gli assi principali continuano a essere periodici e non
-tracciati fra i poli: le rampe hanno reso la rete capace di *salire*, non di
-*deviare*, e legare un asse a un polo richiede ancora un tracciato con stato.
-Il molo si spinge fino a `maxQuayDepth` sotto il livello del mare e non oltre,
-quindi non esistono ancora approdi in acqua profonda né strutture su palafitta:
-sono volume pieno dal fondale in su, che è la sola forma compatibile con "si
-riempie, non si scava". Il piazzamento manuale dei catalizzatori non è più indietro: `catalystFailure`
-è passato dal bit `buildable` a `groundKindOf`, quindi giocatore e crescita
-automatica rifiutano le stesse colonne. Il vincolo *di ruolo* — il porto sulla
-costa, l'aeroporto sul piano — è arrivato con la 2.1, ed è stato una regola in
-più e non una regola diversa.
-
 ### Fase 4.3 — Grammatica verticale degli edifici
 
 Obiettivo: ampliare il vocabolario di `generate.ts` senza introdurre modelli
 disegnati a mano.
 
-Indipendente da 4.1 e 4.2: è lavoro sullo stamp, verificabile in Node senza
-mondo e senza terreno. Può procedere in parallelo.
-
-**Stato implementazione:** completata. Il gate resta da validare a occhio su
-un'isola vera: i test coprono determinismo, cime distinguibili, terrazze e
-soglie luminose, non la leggibilità a distanza di gioco.
+*Chiusa. Il ragionamento e l'esito stanno in [docs/roadmap/fase-4.3.md](docs/roadmap/fase-4.3.md).*
 
 - [x] Aggiungere basamenti abitati, corpi sovrapposti e arretramenti come <!-- size: L -->
   trasformazioni della regola di fascia, non come casi speciali.
@@ -727,97 +361,11 @@ soglie luminose, non la leggibilità a distanza di gioco.
 - [x] Estendere il catalogo delle tipologie con le forme che i nuovi interruttori <!-- size: M -->
   rendono possibili, restando righe di tabella: la regola di scelta non si tocca.
 
-**Gate:** a parità di seed le silhouette restano deterministiche e distinguibili
-per uso; nessuno slot di palette e nessun tipo di superficie in più.
-
-**Come è stato risolto.** Le trasformazioni sono diventate una **tabella**,
-`BAND_OP`, e quali voci un edificio prova — e in che ordine — arriva dal profilo,
-non dal codice. È la mossa che ha tolto di mezzo l'ultimo caso speciale rimasto
-nella grammatica: il basamento non è più un ramo del ciclo delle fasce ma `keep`
-ripetuto, e l'arretramento netto sopra di esso è `shrink`, cioè due voci della
-stessa tabella da cui pesca tutto il resto. Il repertorio vive in `ClassProfile`
-e non in `TypologyShape`, e non è un dettaglio: `typologyProfile` fonde già
-profilo dell'uso e profilo della tipologia, quindi una riga di catalogo può
-ridefinire il repertorio **senza una riga di plumbing in più**.
-
-Le due operazioni nuove sono `setback` — due voxel su un lato, cioè un cubo di
-terreno, la più piccola rientranza in cui ci si sta — e `stack`, che rientra di
-due per lato e ricentra. Il corpo sovrapposto non ha un contatore che lo limiti a
-una volta: `stack` si rifiuta di produrre un risultato sotto `MIN_FOOTPRINT`,
-quindi su una torre da otto scatta una volta sola e poi la geometria lo esaurisce
-da sé. Nessuna delle due può sfuggire a `supported`, perché entrambe restano
-dentro il rettangolo precedente.
-
-**Il coronamento era un booleano e dava due sole cime a tutta la città.** Ora è
-`CROWN_KIND` con cinque voci — `taper`, `flat`, `stepped`, `ridge`, `lantern` —
-e `paint` ha smesso di riconoscere il coronamento per posizione: `crownStart` ha
-sostituito `rects.length - 2`, che assumeva esattamente una fascia e impediva un
-cappello a gradoni. La distinzione **per uso** non è un ramo nel generatore: sono
-i quattro ripieghi del catalogo, uno per uso, a portarsi la propria cima. Quella
-**per livello** è `minLevel` sulle righe nuove, criterio che `accepts` già
-valutava — e che funziona anche senza profilo locale, perché `demandsPlace` non
-lo elenca.
-
-**La terrazza non è una fascia in più.** È la sommità di una fascia dove quella
-sopra non arriva: un anello che la grammatica produce da sempre e che finora
-restava verniciato come una parete. Chiedere `roofTech` per quell'anello gli fa
-arrivare il parapetto da `emitRoofTech`, che già emette dove un tetto confina con
-l'aria — la terrazza si arreda **senza toccare il mesher** e senza un tipo di
-superficie nuovo. Vale sul solo corpo: il coronamento è già tetto, e trattarne la
-sommità come una rientranza avrebbe pavimentato la copertura di ogni edificio a
-tetto piatto, che non è una terrazza ma il tetto di prima ridipinto.
-
-**Due difetti che solo i test hanno rivelato.** Il primo era preesistente e la
-4.3 lo ha reso visibile: una catena di rientranze portava la cima a **un voxel**,
-e sopra un voxel tutti i coronamenti si assomigliano. Ora `GRAMMAR.minBandSide`
-è un pavimento nello stesso filtro che già scartava le candidate fuori riquadro —
-il coronamento può assottigliarsi oltre, perché è il suo mestiere, il corpo no.
-Il secondo era il commento che spiega il bagliore nello shader: `VoxelMaterial`
-compone il fragment shader in un template literal, e un backtick dentro un
-commento GLSL rompe il bundle e non il rendering.
-
-**Costo, misurato.** A/B vero sullo stesso script — sedici edifici veri di
-livello 4, quattro usi, impacchettati in un chunk — con l'albero di lavoro e con
-lo stesso albero senza le modifiche di questa fase:
-
-| | quad base | quad di dettaglio | totale |
-| --- | --- | --- | --- |
-| prima della 4.3 | 2 156 | **6 810** | 8 966 |
-| con la 4.3 | 1 805 | **5 015** | 6 820 |
-
-I quad di dettaglio **calano del 26%**, contro il rischio opposto che la fase
-portava: il margine sotto `MAX_DETAIL_QUADS_PER_CHUNK` cresce invece di
-consumarsi. Non è fortuna in due parti. La soglia luminosa toglie l'accento agli
-edifici bassi, che sono la maggioranza, e ogni faccia spenta è una corsa di
-`emitLuminous` in meno; e la terrazza è quasi neutra per costruzione, perché le
-celle che passano a `roofTech` sono le stesse che prima ricevevano una mensola da
-`emitHabitat` — una corsa al posto di una corsa. `generateBuilding` resta fuori
-dal ciclo di frame: gira al piazzamento e all'upgrade. **Le tabelle di misura in
-`README.md` e `src/sim/README.md` vanno rimisurate a mano**, e non sono state
-aggiornate qui.
-
-**Resta aperto.** Tutte le silhouette sono cambiate, ed è previsto: aggiungere
-una voce al repertorio cambia il passo del PRNG per ogni edificio. Non c'è
-persistenza da invalidare — la fase 5 non è iniziata — e il `Builder` rigenera lo
-stamp da cancellare dal *record*, quindi entro una sessione la coerenza regge. La
-grammatica non è più **per edificio singolo**: la 4.4 le ha dato un corso di base
-condiviso, e sopra di esso l'arretramento cade alla stessa quota su tutta una
-fila — ma resta un corso *di base*, e due arretramenti più in alto continuano a
-non sapere l'uno dell'altro. Gli accenti luminosi non sanno ancora niente
-dell'occupazione: si accendono per livello e non per quanta gente ci abita, che è
-la 4.8.
-
 ### Fase 4.4 — Isolati terrazzati e cluster verticali
 
 Obiettivo: far crescere gli edifici per aggregazione, non solo per livello.
 
-Dipende da 4.1 — l'isolato è definito dalle strade — e da 4.3, che fornisce la
-grammatica per esprimerlo.
-
-**Stato implementazione:** completata. Il gate resta da validare a occhio su
-un'isola vera: i test coprono quota e basamento condivisi, la contiguità delle
-impronte, i gradoni sul fianco e la rigenerabilità, non la leggibilità di un
-distretto denso a distanza di gioco.
+*Chiusa. Il ragionamento e l'esito stanno in [docs/roadmap/fase-4.4.md](docs/roadmap/fase-4.4.md).*
 
 - [x] Permettere a edifici adiacenti dello stesso isolato di crescere insieme, <!-- size: XL -->
   condividendo basamento e quota.
@@ -828,121 +376,12 @@ distretto denso a distanza di gioco.
 - [x] Conservare la rigenerabilità: un cluster deve poter essere ricostruito dal <!-- size: M -->
   proprio record per essere cancellato, come oggi un edificio singolo.
 
-**Vincolo:** un cluster resta un insieme di record, non un nuovo tipo di zona. La
-simulazione continua a contare gli edifici come li conta oggi.
-
-**Gate:** i distretti densi si leggono come isolati continui e terrazzati invece
-che come volumi isolati vicini; il costo della crescita resta indipendente dal
-numero totale di edifici.
-
-**Come è stato risolto.** Un cluster è **due numeri su un record**, e non
-un'entità: `baseZ` era già la quota del piano, quindi ai record servivano solo
-`cluster` — con chi — e `baseBand`, l'altezza del corso di base condiviso. Da lì
-segue tutto il resto senza una riga di plumbing: collisione, budget di chunk e
-cancellazione restano quelli di un edificio solo, perché il basamento condiviso
-sta **dentro** lo stamp di ciascun membro invece che in una struttura che gli
-sopravvive. È la stessa mossa della 2.1 e della 4.2 — la regola vive in un
-dominio puro, `buildings/cluster.ts`, dove entrano un `GradePlan` e i termini dei
-vicini ed esce una terna; `src/sim/` continua a contare un edificio per record e
-a non sapere che gli isolati esistono (invariante 7).
-
-**Il rifiuto è il gradino, non un fallimento.** Un lotto entra in una fila solo
-se non deve *scendere* per allinearsi — vale anche qui «si riempie, non si
-scava» — e se il riempimento resta dentro `CLUSTER.maxJoinFill`. Chi non entra
-apre una fila propria alla propria quota, ed è così che su un fianco l'isolato
-terrazzato esce dalla regola invece di essere disegnato da qualcuno.
-`GRADING.maxWorksStep` non poteva fare quel lavoro: è tarato sulla banchina che
-scende sul fondale, e con ventiquattro voxel avrebbe messo nella stessa fila due
-lotti separati da mezzo versante — un muro, non un isolato.
-
-**A superare il tetto d'impronta è la massa, non il record.** «4×4» erano quattro
-cubi di terreno, cioè l'attuale `MAX_FOOTPRINT` di otto voxel; a scavalcarlo è la
-fila contigua, mentre ogni record resta sotto. Alzare il tetto del singolo record
-era l'alternativa da non prendere: è lo stesso cambio di scala che il commento di
-`maxDirtyChunksPerBuilding` racconta essere già andato storto una volta, facendo
-sparire in silenzio proprio gli edifici alti. Quello che si è dovuto rivedere è
-altro — la contiguità è diventata deliberata (l'impronta si accosta al vicino
-lungo il fronte, come già si accostava alla carreggiata), e il riempimento che un
-membro paga per allinearsi ha un tetto proprio, che è ciò che tiene la fila
-dentro il budget di chunk.
-
-**Il corso di base è un campo, non un ramo.** `generateBuilding` guadagna
-`baseBandHeight`, che sostituisce l'altezza della **sola** fascia zero — dopo il
-tiro, che si consuma comunque. La sequenza del PRNG resta quella, quindi entrare
-in una fila cambia la quota di un edificio e non la sua sagoma: è la stessa
-regola del verso d'accento della 4.1. Sopra lo zoccolo condiviso l'arretramento
-che `forcedOp` già produceva cade alla stessa altezza su tutta la fila, e da lì
-viene la cornice terrazzata continua — senza una voce nuova nella grammatica,
-senza toccare `supported` e senza toccare il mesher (invariante 6).
-
-**Il basamento si guadagna, la quota no.** La fila condivide sempre il piano —
-due edifici accostati a quote diverse leggono come un errore a qualunque densità
-— mentre il corso di base compare solo sopra `CLUSTER.minDensity`. La soglia è
-misurata e non stimata: un catalizzatore solo, anche a forza massima, porta la
-densità locale a **0,30** e non oltre, mentre tre campi sovrapposti la portano a
-**0,37** di mediana. A 0,35 lo zoccolo è quindi il linguaggio di un centro vero e
-non di una casa sparsa, e resta coerente con le soglie che il catalogo delle
-tipologie già usa (`courtyardBlock` 0,3, `commercialPodium` 0,4).
-
-**Costo, misurato.** Su 256×256 colonne, quattro catalizzatori a raggio 60 e 300
-tick: `onTick` ha mediana **0,022–0,025 ms** e p95 **3,0–3,5 ms**, con 372
-edifici di cui **344 in fila**. La mediana è bassa perché la maggior parte dei
-tick non costruisce — `ticksPerBuild` era 2 alla misura e `ticksPerUpgrade` 10 — e sono i tick
-di infornata a stare nel p95. La sola spesa che la fase aggiunge al piazzamento è
-la seconda generazione dello stamp dove la fila ha un basamento: `generateBuilding`
-costa **27 µs** per chiamata e il campo in più non la cambia (27,1 contro 27,7 µs
-su ventimila chiamate), quindi al massimo ~0,08 ms su un tick di infornata da
-tre siti. Nulla entra nel ciclo di frame: `step` e `stepSurface` non sono
-toccati. **Non è un A/B contro il commit precedente**, e di proposito: gli stessi
-file portano in parallelo il lavoro sui landmark, e un A/B avrebbe attribuito
-alla 4.4 anche quello. **Le tabelle di misura in `README.md` e
-`src/sim/README.md` vanno rimisurate a mano**, e non sono state aggiornate qui.
-
-**Resta aperto.** Il basamento condivide **geometria e quota, non colore**: ogni
-membro porta la propria palette, e una fila di usi diversi legge come un isolato
-di unità diverse su un unico zoccolo — che è una scelta, ma è una scelta. Un
-membro non sporge mai sul tetto del vicino: la fascia resta dentro l'impronta del
-proprio record, e costruire *sopra* un altro edificio è 4.5 per le campate e 4.9
-per il resto. L'aggregazione agisce solo su ciò che nasce dopo, quindi su una
-città già matura la differenza si accumula invece di comparire. Due membri
-accostati murano ciascuno il proprio lato della fondazione condivisa: sono facce
-che il greedy meshing non emette, quindi non si vedono e non costano quad, ma
-sono voxel scritti due volte. E i landmark restano fuori dalle file — hanno un
-altro generatore e crescono di stadio, e adottarne la quota darebbe a un isolato
-il piano di un molo.
-
 ### Fase 4.5 — Rete urbana in quota
 
 Obiettivo: continuare la rete sopra il piano stradale, fino a che il livello alto
 sia percorribile quanto quello basso.
 
-Dipende da 4.1 per la topologia e da 4.4 per avere qualcosa da collegare in
-quota. **È la prima della spina dorsale**, e non per anzianità: la campata è la
-prima struttura del progetto che non poggia a terra, e finché non esiste, «quota»
-resta un numero dentro uno stamp invece che un posto dove si arriva.
-
-**Cos'è una campata, detto dal lato del codice.** Un edificio è un
-`BuildingRecord` ancorato al terreno; un ponte no — ha due appoggi che non sono
-suoi, non occupa il suolo che scavalca, e la sua ragione di esistere è
-un'altra struttura. Le due strade sono farne un record con un flag, come la 4.12
-ha fatto con i landmark, oppure un dominio a sé. Va tentata prima quella del
-record: eredita occupazione, budget di chunk e comparsa a budget senza aggiungere
-una passata, e l'unico ramo nuovo è quale generatore disegna lo stamp. Cambia
-però un'assunzione che i landmark non toccavano — `baseZ` smette di venire dal
-terreno — ed è esattamente l'assunzione che la 4.9 dovrà rompere comunque.
-
-**Il vuoto sotto è il contenuto, non lo sfondo.** Un ponte fra due torri legge
-come ponte solo se sotto si vede il salto: è la stessa lezione della finestra di
-cielo dell'arcologia (4.14). Da qui due conseguenze di forma — la campata deve
-essere **abbastanza larga da essere abitata** e non un filo teso, e la struttura
-che la regge (piloni, travature, tiranti, impalcature) va **mostrata** invece che
-nascosta. Un impalcato che sembra galleggiare toglie proprio l'informazione per
-cui esiste.
-
-**Stato implementazione:** completata. Il gate è verificato dai test — appoggi
-reali, suolo libero, continuità fra isolati, nessuna orfana — tranne la
-leggibilità alle normali distanze di gioco, che resta da guardare a occhio con le
-viste della 4.11.
+*Chiusa. Il ragionamento e l'esito stanno in [docs/roadmap/fase-4.5.md](docs/roadmap/fase-4.5.md).*
 
 - [x] Introdurre una struttura che non è un edificio: una campata fra due <!-- size: L -->
   appoggi, senza colonna propria e senza occupazione del suolo.
@@ -965,153 +404,12 @@ viste della 4.11.
   sporchi, e farle comparire a budget come le altre strutture. Vale anche per le
   forme lineari dei landmark, che la 4.12 ha lasciato aperte qui.
 
-**Vincolo:** nessuna campata senza appoggi reali, e nessun appoggio che sia solo
-un numero — se l'edificio che la sostiene cambia livello o sagoma, la campata
-segue o sparisce, mai resta a mezz'aria. Il mesher non si tocca (invariante 6):
-un ponte è fatto degli stessi voxel di una torre, e se una forma chiede una
-passata propria è la forma a essere sbagliata.
-
-**Gate:** ponti e percorsi in quota sono leggibili alle normali distanze di
-gioco, poggiano sempre su appoggi reali, esiste almeno un percorso continuo fra
-due isolati diversi che non passa dal suolo, e nessuna campata resta orfana
-quando l'edificio che la sosteneva cambia livello.
-
-**Come è stato risolto.** Una campata è **un record con un flag**, come il
-roadmap chiedeva di tentare per prima cosa: `span` dice quale generatore disegna
-lo stamp, `supports` con chi. Da lì eredita collisione, budget di chunk, comparsa
-a budget ed esclusione dagli istogrammi senza una passata in più. L'unica cosa
-davvero nuova è l'invariante del dominio — **una campata non prende suolo** — e
-si è pagata sdoppiando l'indice per colonna del registry: `columns` con tutti i
-record, che regge `overlaps`, e `groundColumns` con i soli record che poggiano
-davvero, che è quello che legge `isOccupied`. Nessun chiamante è cambiato, e
-`isOccupied` è rimasta O(1) senza allocazione. Sotto un ponte la carreggiata si
-dipinge ancora, il lotto si costruisce ancora, e se un edificio cresce attraverso
-la campata a cedere è la campata.
-
-**Il difetto che ha riscritto la regola: gli edifici sono piramidali.** La prima
-versione cercava l'appoggio al filo dell'impronta e non ne trovava **mai** — zero
-campate su 6 911 coppie. Il profilo di una torre lo dice: 6×6 fino a quattro
-voxel sopra la base, 4×4 per i quattro successivi, e da lì in su una guglia. Al
-bordo dell'impronta la parete esiste solo dentro la fascia zero, cioè sotto
-qualunque franco che una strada possa chiedere. `highestLanding` cerca quindi la
-parete **rientrando** verso il centro, e la campata che ne esce è più lunga del
-vuoto e sporge sopra le fasce basse dei propri appoggi — che è esattamente come
-atterra una passerella vera, sull'arretramento e non sul basamento. Da qui
-l'`except` su `overlaps`: toccare ciò a cui si è attaccati non è una collisione.
-Il volume dev'essere comunque tutto aria, o cancellare la campata bucherebbe
-l'edificio.
-
-**La rete è un albero, e il gate è una conseguenza.** Fra due campate possibili
-vince quella che **unisce due componenti separate**; chi chiuderebbe un ciclo non
-si costruisce, perché fra due posti già raggiungibili un secondo percorso aggiunge
-ingombro e non raggiungibilità. `spans/network.ts` tiene sia la decisione sia la
-verifica: se «connesso» fosse definito in due posti, divergerebbero al primo
-refactor e il test smetterebbe di misurare la regola. Il grafo si **ricostruisce**
-a ogni passata invece di aggiornarsi — un union-find non sa disfare un'unione, e
-qui le campate spariscono davvero.
-
-**La piazza è un nodo, non un ponte largo.** Vive sul cuore che la 4.1 aveva
-chiuso apposta, ed è retta da tre o più edifici su lati diversi: è quello a farne
-uno snodo, perché le campate ci arrivano da direzioni diverse. Anche lei ha dovuto
-imparare ad allargarsi fino ai muri veri — il cuore è il vuoto *al suolo*, e in
-quota gli edifici che lo delimitano si sono già arretrati.
-
-**Il debito della 4.12, chiuso.** `LANDMARK.maxDirtyChunks: 48` era un tetto
-alzato apposta per i moli e le piste, e il suo stesso commento diceva che una
-ricetta troppo grossa «andrà spezzata in segmenti — non esentata». Ora `Growing`
-porta un'**ancora** invece di un record, `sliceStamps` ritaglia ciò che supera
-`BUILDER.segmentSide`, e la coda `pending` ne fa comparire uno per volta per
-struttura: accodarli tutti insieme non avrebbe ridotto niente, perché i chunk si
-sporcano man mano che le scritture atterrano. Il tetto dei landmark non esiste
-più: rispettano quello di ogni altra struttura. Il test che verifica tutte le
-ricette su ogni verso e sedici offset — scritto dalla 4.12 — passava con
-quarantotto e passa ancora senza, che è la prova che l'eccezione era diventata
-inutile invece di essere nascosta.
-
-**Costo e misure.** Su 256×256 colonne, un catalizzatore a raggio 96 e 420 tick,
-con 395 edifici e 15 campate: i tick su cui gira `spanPass` (uno su venti) hanno
-mediana **3,9 ms**, p95 6,8 ms; tutti gli altri restano a mediana 0,001 ms e p95
-2,9 ms. Le piazze valgono circa mezzo millisecondo di quei 3,9; il resto è
-l'enumerazione delle coppie. Va detto per intero: **quel tick supera i 3 ms di
-`FRAME_BUDGET_MS`**, e sta nell'ordine del massimo che quel ciclo già tocca —
-16,8 ms, che è `nextBuildSites` mentre scandisce il campo allocato, preesistente e
-di competenza della fase 6. Niente entra nel ciclo di frame: `step` e
-`stepSurface` non sono toccati, e il worker del mesher resta 8,64 kB in bundle.
-**Le tabelle di misura in `README.md` e `src/sim/README.md` vanno rimisurate a
-mano**, e non sono state aggiornate qui.
-
-**Resta aperto.** La rete sta **bassa**, e non per scelta: il franco è due cubi di
-terreno sotto le travi perché l'unica fascia larga abbastanza da reggere un
-impalcato sta fra il quarto e l'ottavo voxel sopra il suolo. Con un franco più
-generoso il pavimento saliva sopra quella fascia e non passava più nessuna coppia
-— non ponti più alti, zero ponti. **La 4.6 doveva liberare la quota e non ci è
-riuscita**: alzare il tetto verticale ha reso alte le torri del centro, ma la
-stessa fase ha anche abbassato la periferia, quindi le coppie di appoggi alti
-sono diventate più rare. Misurato sulla città di prova: franco a due cubi undici
-campate, a tre o quattro cubi quattro. Il debito passa alla 4.9, dove un
-impalcato con appoggi propri non deve aspettare che due torri diventino alte
-nello stesso punto. Le piazze sono
-poche — una o due per città matura — per la stessa ragione: chiedono un cuore
-d'isolato fra sei e sedici colonne con il perimetro costruito su almeno due lati.
-I mezzanini esistono nella regola e non compaiono ancora sull'isola di prova:
-pretendono due membri della **stessa** fila affacciati su un cortile senza
-carreggiata, e la 4.4 accosta i membri di una fila invece di lasciarli affacciati.
-Una campata che perde l'appoggio **sparisce e viene riproposta** dalla passata
-dopo: è il «segue» del vincolo, ma passa da una cancellazione visibile e non da
-uno spostamento. E i cicli non si costruiscono mai, quindi la rete resta un
-albero: nessun anello, e da un capo all'altro c'è un percorso solo.
-
 ### Fase 4.6 — Gerarchia verticale della città
 
 Obiettivo: una silhouette d'insieme leggibile, non edifici alti sparsi — e la
 regola che decide **fin dove una colonna può salire**, che oggi non esiste.
 
-Dipende da 4.3 e 4.4 per le forme locali: la calibrazione globale ha senso solo
-quando c'è qualcosa da calibrare. **È la seconda della spina dorsale**, ed è
-anche il punto in cui si rompono i tre tetti che fermano la città a mezz'aria:
-la ragione per cui questa sotto-fase pesa più di quanto il suo elenco lasciasse
-credere.
-
-**I tre tetti, in ordine di quanto ingannano.**
-
-1. **`BUILDER.maxLevel: 6`**, con `LEVEL_CAPS` fermo a otto fasce: una torre
-   arriva a una sessantina di voxel. È l'unico che si vede e l'unico che si alza
-   cambiando un numero — ed è per questo che è una trappola.
-2. **`upgradeThreshold` finisce a 198 su un campo che satura a 255.**
-   `DesirabilityField` è un `Uint8Array` clampato in `0..255`; con
-   `localUpgrade.maxDiscount` a 38 lo spazio residuo vale sì e no un livello.
-   Non è una taratura stretta: è la fine dell'alfabeto. Oltre quel punto la
-   desiderabilità non *distingue* più due colonne del centro, e alzare
-   `maxLevel` non darebbe uno skyline ma l'altopiano che il commento di
-   `START_LEVEL_CDF` dichiara di voler evitare — tutto il nucleo saturo che sale
-   insieme, che a colpo d'occhio non si legge come una città.
-3. **`maxDirtyChunksPerBuilding: 24`** è tarato sulla torre di livello 6, e il
-   suo stesso commento racconta cosa è già successo una volta quando l'impronta
-   è raddoppiata: sono spariti esattamente gli edifici alti, «senza che niente
-   lo dicesse», perché sforare non è un errore e viene scartato in silenzio. Un
-   edificio tre volte più alto attraversa tre volte i piani di chunk.
-
-Sotto ce ne sono altri tre che non fermano la crescita ma la fanno leggere male,
-e vanno rimisurati insieme: il terreno ha `TERRAIN.maxHeight: 80` con
-`seaLevel: 16`, quindi il rilievo è tarato per stare sotto la città e non
-accanto; `SunShadow.fit` adatta il frustum al raggio dell'AABB **visibile**,
-perciò salire allarga il volume illuminato e abbassa la densità di texel
-dell'ombra a parità di `SHADOW_SIZE`; la nebbia di quota ha `heightBase` fra 6 e
-12 e `heightFalloff` intorno a 0,02, cioè è tarata su una città alta trenta
-voxel e a quota cento ha già finito di decadere.
-
-**La regola.** L'altezza smette di essere una funzione della sola desiderabilità
-e diventa una **quota ammessa per colonna**, derivata da distanza dai poli, dal
-mare e dal bordo dell'edificato. La desiderabilità continua a decidere *se* un
-edificio promuove; la gerarchia decide *fin dove*. Sono due domande diverse, e
-per questo due dati diversi — è la stessa separazione che la 4.2 ha fatto fra
-«cosa regge il terreno» e la 2.1 fra «dove ha senso questo ruolo», ed è ciò che
-permette di alzare il tetto senza spostare un coefficiente di `balance.ts`.
-
-**Stato implementazione:** completata. Il gate è verificato dai test — tre fasce
-popolate, nessun livello che raccolga la città intera, nessun edificio alto
-scartato in silenzio, e la stessa figura su tre seed — tranne la leggibilità a
-UI nascosta, che resta da guardare a occhio.
+*Chiusa. Il ragionamento e l'esito stanno in [docs/roadmap/fase-4.6.md](docs/roadmap/fase-4.6.md).*
 
 - [x] Derivare una stratificazione — costa e periferia basse e porose, fasce <!-- size: L -->
   intermedie terrazzate, centro denso — da distanza dai poli e dal mare.
@@ -1131,129 +429,12 @@ UI nascosta, che resta da guardare a occhio.
 - [x] Verificare che la gerarchia resti visibile su isole di forma diversa, non <!-- size: S -->
   solo sul seed di riferimento.
 
-**Vincolo:** la simulazione non impara la verticale (invariante 7). La quota
-ammessa è un dato del mondo — sta dove stanno strade, opere e vincoli di sito —
-e `src/sim/` continua a non avere una coordinata z. Un indice `z` nel campo di
-desiderabilità moltiplicherebbe per il numero di livelli tutta la memoria densa:
-è l'alternativa da non prendere, e la 4.9 lo dice già per il suo motivo.
-
-**Gate:** da inquadratura d'insieme si riconoscono almeno tre fasce di altezza e
-il centro, senza overlay; alzare il livello massimo non fa sparire nessun
-edificio e non produce un altopiano.
-
-**Riferimento.** La progressione dei city builder classici lega l'altezza a uno
-stato globale della città — densità alta che pretende popolazione regionale,
-valore del suolo e trasporto, e la regola «non si costruisce in alto finché si
-può costruire in larghezza» — ed è documentata per
-[SimCity 4](https://simcity.fandom.com/wiki/Density). Qui la scarsità di suolo
-non diventa una meccanica: è la controprova che il tetto verticale va derivato
-da uno stato d'insieme, e non dalla singola cella.
-
-**Come è stato risolto.** La quota ammessa vive in `src/world/skyline/`, che è un
-dominio a sé e non un'appendice di `buildings/`, per la stessa ragione per cui
-`sites/` non è finito dentro `grading/`: quello lì dice *come è fatto* un
-edificio, questo *fin dove* una colonna può salire. Puro e senza stato come la
-rete stradale — entrano distanza dai poli, dal mare e dal bordo dell'edificato,
-esce un tetto — quindi non si salva, non si invalida quando arriva un
-catalizzatore, e si verifica in `node` senza mondo e senza terreno. `src/sim/`
-non ha guadagnato una coordinata verticale (invariante 7), e nessun coefficiente
-di `balance.ts` è stato toccato.
-
-**Le due domande stanno affiancate, e l'ordine conta.** In `upgradePass` la
-gerarchia risponde per prima, perché dice di no più spesso e non costa un profilo
-locale; la desiderabilità decide dopo. È la separazione che la fase esisteva per
-fare: `DesirabilityField` è un `Uint8Array` clampato a 255 e l'ultima soglia sta
-a 198 — 198 è la **fine dell'alfabeto**, non una taratura stretta. `upgradeThreshold`
-non è quindi stato allungato: si legge con `upgradeThresholdOf`, che ripete
-l'ultima voce, e sopra quel punto a decidere è la fascia.
-
-**Lo skyline è la somma di tre condizioni che raramente coincidono.** Fascia
-(`3 / 6 / 9`), più un cono di due livelli verso il polo, più un livello a un
-isolato ogni sette eletto da un hash del suo indice: il massimo esce solo dove i
-tre si sommano, ed è per questo che i picchi sono pochi **per costruzione** e non
-per fortuna. Un test verifica che quella somma valga esattamente
-`BUILDER.maxLevel`: se `SKYLINE` concedesse di più, il clamp del Builder
-mangerebbe la differenza in silenzio e il livello massimo finirebbe anche a chi
-non se l'è guadagnato. La corona attorno all'edificato non è disegnata da
-nessuno — cade fuori dalla regola, perché in periferia i vicini costruiti sono
-pochi per definizione.
-
-**I tre tetti, rotti insieme, più due che nessuno aveva contato.** `maxLevel` da
-6 a 12; `LEVEL_CAPS` da sette a tredici voci, con le prime sette **intatte**,
-perché sono la città bassa che già esiste e cambiarle avrebbe rifatto la sagoma
-della maggioranza degli edifici per una fase che parla dei pochi alti;
-`maxDirtyChunksPerBuilding` da 24 a 40, che è aritmetica — `edgeChunks` aggiunge
-una colonna di chunk solo quando l'impronta non ne attraversa già due, quindi le
-colonne effettive restano due per asse e il caso peggiore è `2 × 2 × 7 = 28`. I
-due non previsti: `GRAMMAR.minBandSide` da 2 a 4, senza il quale una catena di
-rientranze riduce a un palo i due terzi superiori di una torre da diciannove
-fasce; e `START_LEVEL_CDF`, che era lungo `maxLevel + 1` **per caso** — con
-`maxLevel` alzato, `startLevel` leggeva `undefined`, il confronto era falso a
-ogni giro e ogni edificio sarebbe nato al livello massimo. Un difetto che non
-lancia niente e si vede solo guardando la città; ora un test verifica la
-lunghezza di entrambe le tabelle indicizzate per livello.
-
-**La punta è una matita, ed è dichiarato.** Il contratto di proporzione passa da
-dieci a uno a diciannove a uno, e il test lo dice invece di tacerlo. Non c'è
-un'altra forma disponibile: `MAX_FOOTPRINT` è otto voxel e non può salire senza
-allargare `STREETS.pitch`, perché l'isolato più stretto è largo quattordici
-colonne — cambiare la scala della maglia stradale è un'altra fase. A dare massa
-alle torri, qui e ora, è l'aggregazione della 4.4.
-
-**Costo e misure.** Su isola vera 256×256, un polo a raggio 96, 500 tick, 334
-edifici. I tick di upgrade hanno mediana **9,4 ms** e p95 16,7 ms; tutti gli
-altri stanno a mediana ~0 e p95 11,4 ms.
-
-| | mediana del tick di upgrade |
-| --- | --- |
-| con la gerarchia | **9,4 ms** |
-| con la gerarchia spenta | 9,5 ms |
-| con il tetto riportato a sei | 10,7 ms |
-
-Le tre righe dicono la stessa cosa: **il costo è della passata di upgrade, non di
-questa fase**. Quel tick supera i 3 ms di `FRAME_BUDGET_MS` ed è preesistente,
-come già lo è `nextBuildSites`; appartiene alla fase 6. Non è un A/B contro il
-commit precedente, e di proposito: gli stessi file portano in parallelo un altro
-lavoro, e un A/B avrebbe attribuito alla 4.6 anche quello.
-
-Ci è voluto un giro di ottimizzazione per arrivarci: la prima versione portava il
-tick di upgrade a 17,2 ms. Le due voci erano `withinRadius(...).length`, che
-costruiva un array di qualche centinaio di record per leggerne la lunghezza — da
-cui `countWithinRadius` e la scansione condivisa — e `waterDistance`, che
-chiedeva `columnAt` e allocava un oggetto per colonna. Nessuna delle due era
-microtaratura: insieme valevano metà della passata.
-
-L'ombra **non** è stata ritarata, e il conto dice perché: `SunShadow.fit` adatta
-il frustum al raggio dell'AABB visibile, che è la diagonale di una scatola larga
-420 voxel e alta 200 invece di 80 — da 601 a 626, cioè il quattro per cento. A
-dominare è l'estensione orizzontale, e la densità di texel non si muove.
-
-**Le tabelle di misura in `README.md` e `src/sim/README.md` vanno rimisurate a
-mano**, e non sono state aggiornate qui.
-
-**Resta aperto.** Il franco delle campate **non è stato liberato**, ed era il
-debito che la 4.5 aveva lasciato proprio qui: misurato, alzarlo da due a tre cubi
-di terreno costa i due terzi delle campate (da undici a quattro). La ragione è
-che questa stessa fase alza il centro e **abbassa la periferia**, quindi le
-coppie di appoggi alti sono diventate più rare e non più comuni; il debito passa
-alla 4.9, dove un impalcato con appoggi propri non deve aspettare che due torri
-diventino alte nello stesso punto. La città arriva in alto **lentamente**: la
-scala di `upgradeThreshold` è ripida e sopra il livello sei a far salire un
-edificio è solo la gerarchia — sul seed di prova il primo livello 7 compare
-attorno al quattrocentesimo tick, e il primo livello 11 attorno al
-seicentesimo. La gerarchia legge il costruito e non l'ha ancora imparato a
-dimenticare: se un giorno arriverà la demolizione, la fascia di una colonna dovrà
-poter scendere. E l'altezza resta un attributo del singolo record: il secondo
-livello percorribile è la 4.9, non questa.
-
 ### Fase 4.7 — Atmosfera e separazione delle quote
 
 Obiettivo: rendere leggibile la profondità verticale con la luce, non con la
 geometria.
 
-Nessuna dipendenza da altre fasi. **Non** è però vissuta interamente in
-`src/engine/`, come questa riga prometteva: due delle quattro voci hanno dovuto
-toccare `src/world/`, e il perché è sotto.
+*Chiusa. Il ragionamento e l'esito stanno in [docs/roadmap/fase-4.7.md](docs/roadmap/fase-4.7.md).*
 
 - [x] Usare nebbia e prospettiva aerea per separare le quote, non solo le <!-- size: M -->
   distanze.
@@ -1263,68 +444,13 @@ toccare `src/world/`, e il perché è sotto.
 - [x] Aggiornare i temi esistenti alla nuova gerarchia, restando nel materiale <!-- size: M -->
   condiviso.
 
-**Vincolo:** nessuna texture, nessun PBR, nessun materiale aggiuntivo. Un tema
-resta un insieme di uniform, e cambiare tema non deve ricompilare un programma.
-
-**Gate:** a UI nascosta le quote si distinguono anche dove i volumi si
-sovrappongono, e le draw call non crescono.
-
-**L'engine non aveva i dati, e non poteva averli.** La fase era annunciata come
-interamente sua, e su due voci non lo era: il frammento non ha nessun segnale di
-profondità dell'acqua — il mesher ne emette la sola faccia superiore, a quota
-costante e con un unico slot, tanto che `waterDeep` non è mai visibile — e non
-ha nessun modo di sapere che cosa gli sta sopra, perché l'AO per vertice ha
-raggio un voxel e un impalcato ne sta quattro più su. Entrambe le informazioni
-esistono altrove e sono gratis lì dove stanno: la profondità vale `seaLevel -
-top` al momento della scrittura, e la copertura è un sondaggio verticale nel
-volume che il mesher ha già in mano. Il lavoro è stato portare quei due dati
-fino al frammento **senza allargare nessun formato**: la classe d'acqua entra
-nei tre bit di superficie, che su un voxel d'acqua non significano niente
-altrimenti, e la visibilità del cielo nei due bit alti del byte che già portava
-l'AO. Nessun tipo di superficie in più, nessuno slot di palette in più, nessun
-attributo di vertice in più.
-
-**Il gate delle draw call ha deciso l'architettura, non l'ha solo verificata.**
-L'alternativa per l'occlusione era una pass di profondità dall'alto, sul modello
-di `SunShadow`: portata illimitata e zero modifiche al mesher, ma una pass in
-più. Cuocerla nel mesher costa invece **zero per frame** e funziona anche a
-`?quality=performance`, dove l'ombra del sole non viene nemmeno calcolata — che
-è precisamente il caso in cui un sotto-ponte aveva più bisogno di essere
-raccontato. Il prezzo è una passata a costo fisso nel percorso caldo: **+0,35 ms
-per chunk** sulla scena di accettazione, da 2,09 a 2,44.
-
-**Quello che il canale non è, ancora.** Non ci sono fiumi né laghi: l'acqua è
-solo il mare attorno all'isola, quindi la classe `canal` si accende su bracci e
-insenature strette e non su canali urbani. La regola è pronta per il giorno in
-cui il terreno ne produrrà.
-
-**Il velo di quota è dichiaratamente non fisico**, ed è l'unico pezzo di questa
-fase che lo sia. Serve a zoom ravvicinato, dove l'integrale lungo il raggio è
-quasi zero e la nebbia non separerebbe niente: senza, il gate reggeva solo alla
-distanza di default.
-
-**Le tabelle di misura in `README.md` e `src/sim/README.md` vanno rimisurate a
-mano**, e non sono state aggiornate qui.
-
 ### Fase 4.8 — Dettaglio d'artista e vita notturna
 
 Obiettivo: portare il singolo edificio alla densità della voxel art curata —
 sporgenze, insegne, verde, finestre accese — restando dentro il materiale
 condiviso e il tetto di quad della microgeometria.
 
-Dipende da 4.3 per gli agganci: un dettaglio si appende a una rientranza, a un
-coronamento o a un fronte, e finché la grammatica non li produce non c'è dove
-metterlo. La parte di luce è indipendente, vive in `src/engine/` e può procedere
-in parallelo.
-
-**Perché non è già coperta da 4.3 e 4.7.** La microgeometria in
-`src/engine/mesher/microGeometry.ts` e i sette linguaggi di superficie oltre a
-`plain` in `VoxelMaterial.ts` fanno già la *facciata*: pannelli, portali, fasce
-luminose, sfiati, circuiti di tetto. Quello che manca è l'**oggetto** — la tenda,
-il condizionatore, l'insegna a bandiera, la pianta sul balcone — e la luce che
-*esce* dall'edificio: oggi `emission` illumina il proprio pixel e alimenta il
-bloom, non schiarisce il muro di fronte. Nebbia, acqua e prospettiva aerea
-restano invece competenza della 4.7.
+*Chiusa. Il ragionamento e l'esito stanno in [docs/roadmap/fase-4.8.md](docs/roadmap/fase-4.8.md).*
 
 - [x] Costruire una libreria di prop sub-voxel — tende, insegne, condizionatori, <!-- size: XL -->
   antenne, cavi, cassoni, fioriere — emessi dalla stessa `emitRuns` degli altri
@@ -1346,59 +472,6 @@ restano invece competenza della 4.7.
   inquadrato da vicino, per giudicare il dettaglio senza aspettare che la città
   cresca. Stessa ossatura del campionario della 4.10 — una scena a budget che
   compone soggetti scelti — quindi la seconda costa poco se la prima esiste già.
-
-**Vincolo:** il tetto di quad della microgeometria non si alza per fare posto ai
-prop. Un prop entra togliendo densità altrove o fondendo meglio le corse, e la
-priorità di troncamento resta quella che c'è — a cadere sono le ultime voci,
-mai una classe a caso. Nessun tipo di superficie e nessuno slot di palette in
-più (invarianti 4 e 5): un'insegna è un prisma con una palette esistente e il
-linguaggio `luminous`, non un materiale nuovo.
-
-**Gate:** un edificio inquadrato da vicino regge lo sguardo senza mostrare
-facciate piatte ripetute; di notte la città si legge per luci accese e non per
-sola silhouette; il costo per chunk edificato resta dentro il tetto misurato
-oggi e le draw call non crescono.
-
-**Il costo per chunk ha deciso l'architettura, non l'ha solo verificata.** I
-prop scritti nel modo ovvio — un emettitore per giunzione, ognuno con la sua
-passata sulle celle di quel tipo di superficie — costavano **+2,2 ms per
-chunk**, misurati A/B nello stesso processo. Sono scesi a **+0,3 ms** con due
-cambi che non si vedono a schermo: le celle di facciata si indicizzano una volta
-sola **per faccia esposta** — quelle interne di un edificio pieno sono i due
-terzi e nessun prop potrà mai usarle — e quella scansione legge i quattro vicini
-con gli indici invece che con la tabella degli offset. La stessa lezione è
-tornata sul bagliore notturno: scritto in modo diretto costava +1,35 ms, e la
-sola differenza è una moltiplicazione per cella tolta dal ciclo. In questo
-mesher il costo non sta quasi mai nella geometria che si produce, ma in quante
-volte si tocca una cella che non produrrà niente.
-
-**Il tetto di quad ha tenuto**, e senza alzarlo: sulla fixture `densityChunk`
-si passa da 3 320 quad di sola struttura a 4 355 con prop e verde, un trenta per
-cento. La voce che pesava era l'unica che pesca su tutta la parete invece che su
-una giunzione, e sta a 0,012 e non a 0,09 — dove da sola valeva più di tutto il
-dettaglio strutturale del chunk. Il verde è quasi gratis perché non aggiunge
-prismi: fioriera e cassone sono la stessa forma con due slot di palette, e un
-rampicante è una corsa sola per colonna.
-
-**Due limiti dichiarati, che passano alla fase dopo.** La tinta della luce che
-esce è del **tema** e non dell'emettitore — un'insegna rossa e una cyan
-schiariscono il muro con lo stesso ambra — perché portare la tinta costerebbe
-bit che non ci sono. E l'accensione è una lettura **per città e per uso**, mai
-per singolo edificio: il fragment non sa a quale edificio appartenga un voxel,
-quindi un quartiere vuoto in mezzo a una città piena non si spegne da solo. È lo
-stesso muro contro cui batte la 4.9 dal lato opposto — quando l'edificio avrà
-un'identità che il rendering può leggere, entrambi cadranno insieme.
-
-**Il ciclo giorno/notte rompe di proposito un invariante dei temi.** A sole
-radente una parete illuminata supera il tetto, che è il caso da cui
-`SunLight.elevation` mette in guardia: sotto i quaranta gradi circa il diorama
-smette di leggersi «dall'alto». Non si corregge — l'alternativa misurata sarebbe
-raddoppiare l'ambiente di cielo, che slava la scena invece di salvarla. Quello
-che il ciclo garantisce, a ogni ora, è che il tetto non sia mai la faccia più
-scura.
-
-**Le tabelle di misura in `README.md` e `src/sim/README.md` vanno rimisurate a
-mano**, e non sono state aggiornate qui.
 
 ### Fase 4.9 — Quote abitate e città sospesa
 
@@ -1552,23 +625,7 @@ Obiettivo: poter guardare tutto il vocabolario visuale in una sola inquadratura
 — ogni slot di palette per ogni linguaggio di superficie, la stratigrafia di ogni
 bioma, e il confronto di scala fra cella di terreno, albero ed edificio.
 
-Nessuna dipendenza. Non è nella spina dorsale ma la accompagna: è l'altro
-strumento della coppia aperta dalla 4.11 — questo guarda il vocabolario, quella
-guarda la città costruita — e le sotto-fasi verticali ne portano di forme nuove
-da giudicare. Serve inoltre già adesso alla scala a celle del terreno. Vive in
-`src/world/scenes/`, quindi non tocca né la crescita né la simulazione.
-
-**Perché serve.** Oggi le uniche scene sono `city`, `noise` e `slab`, nate per
-misurare il mesher: l'unico modo di vedere uno slot di palette o un linguaggio di
-superficie è trovarlo per caso dentro un edificio generato, e l'unico modo di
-giudicare la scala relativa di una chioma è aspettare che l'isola ne produca una
-accanto a un edificio. Una scelta di look si fa affiancando le cose, e non c'è un
-posto dove affiancarle.
-
-**Stato implementazione:** completata. Il gate resta da validare a schermo: i
-test coprono la presenza di ogni combinazione, gli strati, la scala e
-l'estensione dichiarata, non la leggibilità della griglia in una inquadratura né
-il riconoscimento di uno slot morto a colpo d'occhio.
+*Chiusa. Il ragionamento e l'esito stanno in [docs/roadmap/fase-4.10.md](docs/roadmap/fase-4.10.md).*
 
 - [x] Aggiungere una `SceneKind` `swatch` su `?scene=swatch`, generata a passi con <!-- size: M -->
   budget come le altre.
@@ -1588,167 +645,12 @@ il riconoscimento di uno slot morto a colpo d'occhio.
   le combinazioni: è il modo per accorgersi che uno slot nuovo non è mai stato
   aggiunto al campionario.
 
-**Vincolo:** è una scena come le altre, non un percorso di rendering dedicato.
-Nessuna geometria speciale, nessun materiale, nessuno slot di palette e nessun
-tipo di superficie in più: il campionario mostra quello che esiste, e se una
-combinazione si vede male il difetto sta altrove.
-
-**Gate:** da `?scene=swatch` si leggono in una sola inquadratura tutte le
-combinazioni palette × superficie, gli strati di ogni bioma e il rapporto di
-scala fra cella, albero ed edificio; passare da un tema all'altro rilegge il
-campionario senza rigenerare la scena, e un tema con uno slot morto si riconosce
-a colpo d'occhio.
-
-**Come è stato risolto.** Il campionario si è diviso in due metà come la 4.11:
-`scenes/swatchLayout.ts` dice **dove sta cosa** ed è puro, `scenes/swatchScene.ts`
-scrive e basta. Non è ordine per estetica — la geometria ha tre consumatori
-diversi (il generatore, l'inquadratura di `main.ts`, il referto sotto il cursore)
-e due letture della stessa griglia divergerebbero al primo ritocco. È la stessa
-separazione di `inspect.ts` rispetto a `InspectView.ts`.
-
-**Le dimensioni si ricavano dalle tabelle, mai da un letterale.** Le colonne sono
-`PALETTE_SIZE`, le righe sono quante ne ha `SURFACE_KIND`, gli alberi sono
-quanti ne ha `TREE_SHAPES`, i pilastri quanti sono i biomi: uno slot o una specie
-in più allargano il campionario da sé, invece di restarne fuori. È la forma
-forte della casella «accorgersi che uno slot nuovo non è mai stato aggiunto» —
-non può succedere, e il test presidia la scrittura invece della tabella. La
-proprietà si è già ripagata: quando il catalogo della flora è cresciuto, la
-fascia di scala si è allargata da sola.
-
-**Il provino non è un prisma, ed è un vincolo del mesher e non un gusto.** La
-prima versione lo era, e a schermo si vedeva: 248 scatole quasi identiche, con il
-dettaglio ridotto a una riga in cima. Misurando `appendMicroGeometry` su un
-provino solo si è visto che non era un'impressione — su un prisma isolato con la
-sommità piatta tre famiglie di emettitori non scattano **affatto**, perché
-nessuna delle loro condizioni geometriche esiste su una scatola: `emitSoffits`
-vuole un intradosso con aria sotto, `emitTerraceBoxes` una sommità scoperta che
-ha ancora volume di fianco, `emitFinials` una cella senza vicini in piano. Il
-campionario mostrava quindi un vocabolario **più povero di quello vero**, che è
-il difetto peggiore possibile per uno strumento che esiste per giudicare il
-vocabolario.
-
-`CELL_TIERS` porta la sagoma minima che le produce tutte — podio rientrato,
-sbalzo a filo, arretramento, guglia isolata — e in più ogni gradone spezza le
-corse verticali, così montanti, traversi, architravi, mensole e parapetti si
-moltiplicano invece di comparire una volta sola in cima. Misurato: da 21 a 55
-prismi di dettaglio per `habitat`, da 25 a 77 per `civic` e `industrial`, da 16 a
-64 per `luminous`, da 4 a 22 per `roofTech`. La sagoma è **identica in tutte e
-248 le celle**, ed è il punto: se variasse anche la forma, due celle vicine non
-sarebbero più confrontabili e l'unica variabile smetterebbe di essere
-palette × superficie.
-
-**L'interasse è governato dall'occlusione, e la relazione è esatta.** A
-`REST_PITCH`, cioè l'isometrica vera `atan(1/√2)`, un voxel di quota si proietta
-in alto per `cos(pitch)` e un voxel di profondità per `sin(pitch)/√2`: il
-rapporto è esattamente due, quindi la fila davanti nasconde
-`CELL_HEIGHT - cellPitch / 2` di quella dietro. Con interasse pari all'altezza —
-sei e sei, la prima versione — spariva **metà** di ogni provino, ed è così che
-una griglia di prismi distinti si legge come una massa unica. A dieci contro
-sette resta nascosto il podio e nient'altro. Alzarlo ancora costa in fretta,
-perché `frameRegion` inquadra sulla diagonale: ogni voxel di interasse si paga
-trentuno volte in x e sette in y, e la griglia rimpicciolisce per tutti. Un test
-tiene insieme i due numeri, così non si può ritoccarne uno solo.
-
-**Il basamento è largo quanto la fascia che regge.** Da quando l'interasse segue
-l'occlusione la matrice è larga il triplo della stratigrafia e della scala: un
-basamento rettangolare lasciava due terzi di grigio vuoto in un angolo, che a
-schermo si legge come una scena non finita. Il profilo a gradini dichiara le tre
-fasce da sé, che è anche l'unica etichetta possibile in una scena senza scritte.
-
-**Due righe restano piatte, e va detto invece che corretto.** `plain` non è un
-linguaggio, e `utility` è escluso dalla raccolta del mesher perché è metallo
-strutturale la cui forma arriva dalla mesh: sul campionario si distinguono per
-tinta e non per rilievo. Vale il vincolo della sotto-fase — se una combinazione
-si vede male, il difetto sta altrove.
-
-**La colonna zero è un buco, e non un voxel nero.** `packVisualBlock` restituisce
-zero per palette zero: non c'è niente da scrivere, ed è esattamente ciò che
-l'indice zero significa. Le combinazioni vere sono trentuno per otto.
-
-**L'acqua era l'unico pezzo di vocabolario che la matrice non poteva mostrare.**
-Sulle colonne `water` e `waterDeep` il fragment riconosce l'acqua dalla palette
-**prima** di leggere i tre bit, quindi lì il linguaggio di facciata non arriva
-mai a esprimersi e quello che si vede è `WATER_CLASS` (contratto 5). Da qui i tre
-pilastri d'acqua accanto ai sei biomi: sono il solo posto in cui un tema con uno
-specchio morto si riconosce. Il referto sotto il cursore lo dice, perché
-altrimenti si attribuirebbe alla superficie quello che sta facendo la palette.
-
-**La stratigrafia non è ridisegnata.** I tagli sono quelli di `writeBlockColumns`
-letti da `STRATA_DEPTH`, e gli alberi passano da `writeTree`: se campionario e
-isola mostrassero due vocabolari diversi, il campionario non servirebbe a
-giudicare l'isola. È la stessa regola del diorama.
-
-**Un difetto che solo il test ha rivelato.** «Non scrivere fuori dall'estensione
-dichiarata» sembrava un confronto con `world.bounds`, e non lo è: l'AABB del
-mondo è granulare al chunk e avrebbe accettato in silenzio una scrittura trenta
-colonne oltre il bordo — proprio quelle che l'inquadratura taglierebbe senza
-dirlo. Il test conta i voxel dentro l'estensione e li confronta con il totale,
-che è esatto.
-
-**Costo.** 82 560 celle in 49 chunk, contro i milioni di un'isola: la generazione
-finisce in pochi passi dentro `GENERATION_BUDGET_MS` e `main` resta sotto un
-millisecondo. Il chunk peggiore porta nove provini, cioè meno di 4 200 quad di
-dettaglio contro i 16 384 di `MAX_DETAIL_QUADS_PER_CHUNK`: non tronca. Il
-campionario non entra nel ciclo di frame di una città e non tocca né mesher né
-simulazione, quindi **le tabelle di misura di `README.md` e `src/sim/README.md`
-non vanno rimisurate**.
-
-**Resta aperto.** Il campionario mostra il vocabolario, non le regole che lo
-compongono: quali superfici una tipologia usi davvero resta una domanda per
-`?scene=diorama`. Due prop non possono comparirci **per costruzione**: tende e
-insegne chiedono un `portal` sotto la stessa faccia, e un provino di una
-superficie sola non può averlo senza mentire sulla riga a cui appartiene. Non ci
-sono etichette in-world — il nome di ciò che si guarda vive nell'overlay, e fuori
-da `?debug=1` il campionario è muto.
-
 ### Fase 4.11 — Vedere dentro la città
 
 Obiettivo: poter guardare **come un pezzo di città è fatto dentro** — quote,
 incastri, cosa poggia su cosa — invece di poterne guardare solo la buccia.
 
-Nessuna dipendenza. Vive in `src/engine/` e nell'harness, non tocca né la
-crescita né la simulazione, e va **prima** delle sotto-fasi che sovrappongono
-volumi: 4.4, 4.5 e 4.9 costruiscono esattamente ciò che oggi non si potrebbe
-verificare a occhio.
-
-**Stato implementazione:** completata. Il gate è stato verificato a schermo su
-una città di ~490 edifici, seed 1337: le quattro viste sono in fondo alla
-sezione, insieme a cosa il lavoro ha fatto emergere.
-
-**Perché adesso.** La città è già abbastanza densa da essere opaca. Da
-inquadratura di gioco un isolato interno è un volume dietro altri volumi, e
-l'unico modo di controllare che due edifici si incastrino come previsto è
-aspettare che ne cresca uno in periferia, dove non c'è niente davanti. Gli
-strumenti che esistono guardano altro — `BiomeView` ricolora le colonne,
-`InfluenceOverlay` disegna cerchi sopra la scena, `SimOverlay` mostra il campo in
-2D — e nessuno risponde alla domanda «cosa c'è dietro questa facciata».
-
-**Il difetto strutturale, che decide l'ordine dei lavori.** Il greedy meshing
-emette solo le facce a contatto con l'aria: **dentro un edificio non c'è
-geometria**, e il materiale unico è `FrontSide` con `transparent: false`. Ne
-segue che un piano di taglio, da solo, non apre un edificio — lo attraversa.
-Dove le facce vicine spariscono si vede il *retro* di quelle lontane, che è
-back-face e viene scartato: cioè si vede il cielo. È il problema che i thread di
-three.js chiamano *closing up clipped planes*, e va risolto o aggirato, mai
-ignorato.
-
-Da lì le due famiglie, e il loro ordine:
-
-- **Velare**, che non toglie niente. Un retino ordinato su `gl_FragCoord` con
-  `discard` rende poroso l'occlusore senza aprirlo: si legge la sagoma davanti
-  *e* il tessuto dietro. Costa due uniform sul materiale che c'è già, non chiede
-  ordinamento perché non è alpha blending, e `transparent` resta `false`.
-- **Tagliare**, che va tappato. La faccia di sezione si dipinge dalle back-face
-  della stessa geometria — gli stamp sono volumi pieni, quindi il guscio è
-  chiuso e le back-face ci sono — leggendo `gl_FrontFacing` nel fragment. Chiede
-  però `DoubleSide`, che in three.js entra nella chiave di programma e non è
-  solo stato del renderer: entrare in sezione compila una variante, **una
-  volta**. Accettabile per uno strumento su hotkey, e l'invariante che conta —
-  cambiare tema non ricompila niente — resta intatto.
-
-Il velo viene per primo perché copre tre modi su quattro e non ha capping da
-risolvere. Un effetto collaterale gradito: dove la tipologia ha una corte, la
-sezione mostra un vuoto vero e non un pieno tagliato.
+*Chiusa. Il ragionamento e l'esito stanno in [docs/roadmap/fase-4.11.md](docs/roadmap/fase-4.11.md).*
 
 - [x] Aggiungere al materiale unico un **velo a retino** governato da uniform: <!-- size: L -->
   un predicato di quota, uno di rettangolo, la forza del retino, e `discard` sul
@@ -1779,128 +681,12 @@ sezione mostra un vuoto vero e non un pieno tagliato.
 - [x] Estendere `VoxelMaterial.test.ts` ai nuovi uniform: è il test che si <!-- size: S -->
   accorge di un uniform dichiarato nel GLSL e mai scritto, o del contrario.
 
-**Vincolo:** è uno strumento dell'harness, non una modalità di gioco. Sta
-accanto a `F3` e al tasto `B` con il suo parametro URL; se un giorno diventerà
-un'azione del giocatore, a darle icona, stato e comportamento sui sette temi
-sarà la fase 7. Il mesher non si tocca (invariante 6): una vista che chiedesse
-di rimeshare per essere disegnata sarebbe la vista sbagliata.
-
-> **Questo vincolo è caduto con la fase 4.13**, e vale la pena dire perché si
-> era sbagliato: guardare dentro la propria città non è una verifica tecnica, è
-> il modo in cui una città densa si gode. Il giorno dopo averle viste
-> funzionare, le viste erano già una funzione di gioco chiusa dietro `?debug=1`.
-> Il resto della sezione resta com'era scritto: è il registro di cosa è successo
-> allora, non una descrizione dello stato attuale.
-
-**Gate:** su una città matura si legge come un isolato si incastra su più quote —
-velato, a fette e in sezione — senza console, senza rigenerare la scena, e senza
-che il frame esca dal budget mentre una vista è attiva.
-
-**Come è stato risolto.** Nel materiale non è entrato il concetto di «modo».
-Sono entrati **due predicati geometrici e una sola azione**: un semipiano, un
-rettangolo con la propria polarità, e la densità di un retino ordinato su
-`gl_FragCoord` con `discard`. I quattro modi sono quattro riempimenti diversi di
-quelle uniform, e vivono in `src/engine/inspect.ts` — puro, senza Three e senza
-DOM, verificato in `node` come `lighting.ts`. È la stessa separazione della 2.1
-fra etichetta e terreno: la vista dichiara cosa vuole nascondere, il materiale
-sa solo nasconderlo.
-
-**Velare e tagliare sono la stessa manopola.** A densità 1 il retino scarta ogni
-pixel, cioè taglia; sotto, lascia passare il tessuto dietro. Non servono due
-percorsi, e `transparent` resta `false` perché il retino non è alpha blending —
-niente ordinamento, niente da ripensare quando arriveranno le campate della 4.5.
-Solo il taglio chiede il tappo, e il tappo è `DoubleSide` più `gl_FrontFacing`
-sulla stessa geometria: la sezione verticale, misurata a schermo, non lascia
-vedere il cielo attraverso un volume tagliato. Quello che si vede dentro è un
-**guscio vuoto**, e non è un difetto: il mesher non emette facce interne, e i
-riferimenti citati qui sotto hanno esattamente lo stesso aspetto.
-
-**Il `discard` non lo paga chi non lo usa.** Un `discard` raggiungibile nel
-sorgente può costare l'early-Z su tutta la scena, e queste sono viste
-dell'harness. Il blocco entra nel fragment **alla prima attivazione**: una
-ricompilazione per sessione, mai spontanea, e da lì in poi spegnere una vista
-significa riscrivere il payload neutro. L'invariante che conta — cambiare tema
-non ricompila niente — è sorvegliato dal test che già c'era, esteso a entrambe
-le varianti del sorgente.
-
-**Due cose le ha trovate solo lo schermo.** La prima: il semipiano dei raggi X,
-da solo, non apre una finestra — **dissolve mezza città**, perché in ortografica
-tutto ciò che sta davanti alla colonna è metà dell'inquadratura. Il rettangolo,
-che serviva all'isolato, è diventato il secondo predicato di tutti: i due si
-intersecano, e la polarità decide se a nascondersi è il dentro (la finestra dei
-raggi X) o il fuori (l'isolato). La seconda: la fetta a una quota assoluta
-partiva **dentro la collina** — il nucleo della città sta a una quarantina di
-voxel sul mare — e il primo colpo d'occhio era l'interno della terra. Finché la
-quota non viene scelta, la fetta segue il suolo che si sta guardando; al primo
-tasto o al primo trascinamento diventa assoluta.
-
-**Le ombre.** La shadow map non sa del taglio, quindi il piano appena scoperto
-resterebbe all'ombra dei piani che si sono nascosti — ed è proprio la lettura che
-la fetta esiste per dare. Finché un taglio è attivo le ombre proiettate si
-spengono; sole e ambiente restano, quindi le facce continuano a distinguersi e il
-risultato legge come un disegno tecnico invece che come una scena piatta.
-
-**Costo e misure.** La colonna a fuoco si risolve **una volta per frame** e non a
-ogni `pointermove`: il costo non dipende da quanto si muove il mouse, e la vista
-segue anche la rotazione della camera. Su una città di ~490 edifici, `mainMs`
-resta sotto il millisecondo con ogni modo attivo, dentro `FRAME_BUDGET_MS`.
-Geometria, chunk con mesh e voxel solidi sono **identici bit a bit** con ogni
-vista accesa e dopo un cambio di tema: il mesher non è stato toccato (invariante
-6) e il suo worker resta 8,64 kB. Le draw call in un modo che taglia scendono da
-398 a 116, ma non è merito del taglio: è la pass d'ombra che non gira. Nessuna
-tabella di misura di `README.md` o `src/sim/README.md` è stata aggiornata, perché
-questa fase non entra né nel mesher né nella simulazione.
-
-**Resta aperto.** Il volume nascosto **continua a proiettare ombra**: nel taglio
-si spengono tutte, che è la risposta a costo zero; far sì che solo il volume
-nascosto smetta di proiettare vuole lo stesso predicato nel materiale di
-profondità di `SunShadow`, cioè un secondo shader da tenere allineato a mano. Il
-velo non distingue terreno da edificio — il mesher non porta quell'informazione,
-e chiedergliela sarebbe la vista sbagliata — quindi i raggi X aprono anche il
-suolo davanti alla colonna. E le viste restano dell'harness: niente icona, niente
-stato sui sette temi, niente comportamento da giocatore. Se un giorno
-l'ispezione diventerà un'azione del gioco, sarà la fase 7 a darle una pelle.
-
-**Riferimenti.**
-
-- [Going Medieval — view between layers/floors](https://steamcommunity.com/app/1029780/discussions/0/4361250086034818336/)
-  e la [guida al costruito verticale di Timberborn](https://timberborn.org/articles/vertical-building-stacking-guide):
-  la fetta a quota vista dal lato di chi la usa, difetti compresi.
-- [Isometric visibility problem](https://www.gamedev.net/forums/topic/664146-isometric-visibility-problem/)
-  e [Reducing occlusions in oblique views](https://image-ppubs.uspto.gov/dirsearch-public/print/downloadPdf/8253736):
-  la tassonomia completa — velare, ritagliare, mostrare silhouette, spostare la
-  camera — e il motivo per cui velare è l'opzione che perde meno informazione.
-- [Clipping planes on ShaderMaterial](https://discourse.threejs.org/t/clipping-planes-on-shadermaterial/10155)
-  e [Closing up clipped planes using shaders](https://discourse.threejs.org/t/closing-up-clipped-planes-using-shaders/18030):
-  perché un `ShaderMaterial` non eredita il clipping gratis, e come si tappa il
-  taglio.
-- [Camera Tool in Cities: Skylines II](https://steamcommunity.com/app/949230/discussions/0/3937895474112407245/):
-  la strada opposta — entrare fisicamente negli edifici invece di renderli
-  porosi. Non è la nostra, perché la camera qui è ortografica e vincolata, ma
-  spiega cosa i giocatori cercano quando la città diventa opaca.
-
 ### Fase 4.12 — I catalizzatori diventano strutture
 
 Obiettivo: dare a ognuno degli otto ruoli una struttura voxel propria, che
 **cresce per stadi insieme al quartiere che ha generato**.
 
-Nessuna dipendenza forte. Vive in `src/world/` e riusa la macchina di crescita
-degli edifici invece di aggiungerne una.
-
-**Stato implementazione:** completata. Il gate resta da validare a occhio su
-un'isola vera: i test coprono ingombri, determinismo, stadi cumulativi,
-invarianza per rotazione e budget di chunk, non la leggibilità a distanza di
-gioco.
-
-**Perché la fase si è aperta.** Un giocatore ha guardato il porto e ha detto che
-faceva schifo, e aveva ragione due volte. Primo: **il porto non esisteva**.
-Quello che si vedeva sull'acqua era la carreggiata dell'isolato costiero —
-`groundKindOf` chiama `shore` ogni colonna d'acqua entro `maxQuayDepth`, quindi
-`rampAround` portava l'intero anello di strada a `quayLevel` e ne costruiva il
-muro fino al fondale. Secondo: tutti e otto i ruoli condividevano lo stesso rombo
-di asfalto di raggio quattro, e si distinguevano per il colore di **un voxel** al
-centro. La fase 3 aveva chiuso «catalizzatori con ruolo distinto» sul piano della
-simulazione e mai su quello della forma.
+*Chiusa. Il ragionamento e l'esito stanno in [docs/roadmap/fase-4.12.md](docs/roadmap/fase-4.12.md).*
 
 - [x] Fermare la banchina al bordo costruito della terra (`GRADING.quayReach`): <!-- size: S -->
   `maxQuayDepth` dice fin dove il fondale regge, non fin dove ha senso arrivare.
@@ -1911,95 +697,12 @@ simulazione e mai su quello della forma.
 - [x] Restituire alla simulazione un effetto lieve, da una porta che esiste già. <!-- size: S -->
 - [x] Ammettere impronte rettangolari, per le forme lineari per natura. <!-- size: M -->
 
-**Vincolo:** un landmark non è un tipo nuovo di cosa. È un `BuildingRecord` con
-un campo in più, e tutto ciò che lo governa — occupazione, collisione, budget di
-chunk, comparsa a budget, avanzamento — è la macchina degli edifici. Se una forma
-chiede una passata propria, è la forma a essere sbagliata.
-
-**Gate:** i sette ruoli si riconoscono dalla sagoma senza overlay e senza
-tooltip; il porto legge come porto e non come piattaforma; la crescita resta
-dentro i budget con più landmark in comparsa insieme.
-
-**Come è stato risolto.** L'idea portante è che **la macchina esisteva già**.
-`upgradePass` percorre i record a cursore, verifica un tetto, rigenera vecchia e
-nuova sagoma, sostituisce il record e accoda la comparsa a budget; `upgrade`
-limita l'allargamento con `blockRoom`, `fitsWider`, `dirtyChunkCount` e
-`surveyGrade`. Un landmark è quindi un record con `landmark: CatalystId`, e
-l'unico ramo nuovo in tutto il Builder è quale generatore disegna lo stamp.
-Nessuna passata in più, nessun secondo indice, nessuno stato nuovo.
-
-**Cosa fa avanzare uno stadio, e perché non la desiderabilità.** Un catalizzatore
-siede al centro della propria influenza: il campo lì è quasi sempre saturo,
-quindi un landmark che leggesse `field.valueAt` salterebbe tutti gli stadi al
-primo tick. Lo stadio conta invece i record entro il raggio del catalizzatore —
-ciò che la città ha davvero costruito. È il modello dei
-[monumenti di Anno 1800](https://anno1800.fandom.com/wiki/Monuments), una
-costruzione a fasi che corona una città *già edificata*
-([devblog](https://www.anno-union.com/devblog-welcome-to-the-world-fair/)), detto
-con il solo dato che il Builder possiede. Non serve stato: è una funzione pura
-del contenuto del registry, ed è monotona perché nessuno demolisce.
-
-**Gli stadi sono cumulativi dentro un ingombro che non cambia mai**, riservato
-per intero al piazzamento. Due garanzie invece di due controlli: un landmark non
-può restare bloccato a metà perché nel frattempo è cresciuto un edificio accanto,
-e la sagoma dello stadio precedente non ha mai niente da cancellare.
-
-**Due difetti trovati dai test.** I pilastri di `colonnade` contavano il passo da
-un capo solo, quindi su un lato non multiplo del passo la ricetta smetteva di
-essere invariante per rotazione — e si vedeva come un conto di voxel diverso a
-seconda del verso, dove due parti si sovrappongono. E le prime ricette erano
-larghe sedici voxel, quasi un isolato: seppellivano la sovrapposizione fra due
-catalizzatori, cioè esattamente il punto dove nascono gli usi misti. A dirlo è
-stato un test di fase 3 già in suite, che è il modo migliore in cui poteva
-saltare fuori.
-
-**Costo e misure.** `generateLandmark` gira al piazzamento e a ogni avanzamento
-di stadio, cioè unità di volte per partita, e `landmarkPass` scorre i soli record
-con `landmark` una volta ogni `ticksPerUpgrade`. `stageBonus` entra in
-`balance.ts`: **le tabelle di misura in `README.md` e `src/sim/README.md` vanno
-rimisurate a mano**, e non sono state aggiornate qui.
-
-**Resta aperto.** Le forme lineari sono limitate da `LANDMARK.maxDirtyChunks` e
-non ancora spezzate in segmenti: una pista davvero lunga — o un viadotto che
-attraversi mezzo isolato — chiede la segmentazione della 4.5, e va fatta lì.
-Il landmark non partecipa ancora alla città in quota: il suo impalcato è un
-volume del registry come gli altri, quindi la 4.9 potrebbe già costruirci sopra,
-ma nessuno gliel'ha ancora chiesto. E la ricetta non varia con il seme: la forma
-è una funzione di `(ruolo, stadio, verso)`, scelta perché il giocatore deve
-riconoscere il ruolo dalla sagoma e non imparare otto sagome moltiplicate per i
-semi — se un giorno si vorrà varietà, andrà aggiunta senza toccare quel patto.
-
 ### Fase 4.13 — Le viste diventano un gesto di gioco
 
 Obiettivo: mettere le quattro viste della 4.11 **in mano al giocatore**, invece
 di lasciarle dietro `?debug=1`.
 
-Dipende dalla 4.11, di cui non riscrive niente. Vive in `src/ui/` e in
-`src/main.ts`.
-
-**Stato implementazione:** completata. Verificata a schermo alla radice, senza
-`?debug=1`, su una città di ~2.000 residenti.
-
-**Perché il vincolo della 4.11 era sbagliato.** Lo diceva la 4.11 stessa: «se un
-giorno diventerà un'azione del giocatore, sarà la fase 7 a darle una pelle». Quel
-giorno è stato il giorno dopo. Guardare dentro la propria città non è una
-verifica tecnica — è **il modo in cui una città densa si gode**, ed è la risposta
-alla stessa domanda che aveva aperto la 4.11, posta però da chi ci gioca invece
-che da chi la costruisce. Il motore non aveva bisogno di niente: mancavano il
-comando e tre regole.
-
-Le tre regole, che sono il contenuto vero della fase:
-
-- **Il fuoco si aggancia.** Seguendo il cursore un frame alla volta, bastava
-  portare il mouse sul dock — o vedersi aprire una carta evento — per far saltare
-  la vista a metà città. È il difetto che rendeva le viste inusabili da
-  giocatore, e non si vedeva finché le si guidava da console.
-- **Prendere uno strumento chiude un taglio.** Sotto Levels o Cutaway il terreno
-  vero è nascosto: si piazzerebbe alla cieca. Le viste a velo sopravvivono,
-  perché lì il suolo si legge ancora sotto il retino.
-- **La quota si ri-arma** tornando alla città intera, o una fetta riaperta
-  ripartirebbe da una quota scelta mezz'ora prima, nel frattempo finita
-  sottoterra.
+*Chiusa. Il ragionamento e l'esito stanno in [docs/roadmap/fase-4.13.md](docs/roadmap/fase-4.13.md).*
 
 - [x] Un comando nel dock — pulsante *Views* fra Policies e il tema — con un
   picker che elenca le cinque viste e, per ognuna, **cosa si va a vedere**: chi
@@ -2018,102 +721,6 @@ Le tre regole, che sono il contenuto vero della fase:
   vivono in `src/ui/ViewMenuModel.ts`, puro e testato in `node`.
 - [x] Le viste finiscono nella card di aiuto, che è dove il giocatore scopre che
   esistono.
-
-**Vincolo:** il motore della 4.11 non si tocca — nessuna uniform nuova, nessun
-modo nuovo, nessuna ricompilazione in più. La variante col `discard` continua a
-entrare alla prima attivazione: chi non apre mai una vista non la paga, e resta
-la scelta giusta anche ora che è una funzione di gioco. La vista è una **lente
-sul rendering, non uno stato della città**: `src/sim/` e `src/game/` non sanno
-che esiste, non si salva, e al ricaricamento si riparte da Normal.
-
-**Gate:** un giocatore che non ha mai aperto la console scende di un piano nella
-propria città, taglia su una strada e isola un quartiere senza uscire dal gioco,
-e senza che una vista attiva gli faccia perdere il punto che stava guardando.
-
-**Cosa ha trovato lo schermo.** Che i raggi X hanno una finestra di
-`INSPECT.xraySpan` colonne di **mondo**: a tutta inquadratura sono una trentina
-di pixel, e la vista sembra non fare niente. Da vicino — dove serve — apre
-esattamente ciò che sta davanti. Non è un difetto da correggere con un numero più
-grande: un raggio X che scala con lo zoom dissolverebbe mezza città appena ci si
-allontana, che è il difetto che la 4.11 aveva già trovato e chiuso. Va detto
-nella riga della vista, non allargato.
-
-**Cosa ha trovato il giocatore, il giorno dopo.** Che una vista che non dice dove
-è puntata non è una vista, è un difetto di rendering. Il comando c'era, il motore
-funzionava, e da fuori si vedeva «una specie di trasparenza ad area quadrata che
-non si capisce cosa sia» — parole di chi ci giocava. Le tre cause, tutte fuori
-dal motore:
-
-- **Il fuoco era invisibile.** Tre viste su quattro si agganciano alla colonna
-  sotto il cursore e nulla a schermo lo diceva: gli unici numeri che lo
-  raccontavano stavano in `InspectOverlay`, dietro `F3`. Ci vogliono delle
-  **guide** — `src/engine/InspectGuides.ts`, contorno del riquadro, carreggiata
-  della sezione, mirino sulla colonna — disegnate dalle uniform già composte, così
-  che la linea non possa divergere dal retino.
-- **Il bordo era un gradino.** Il predicato del rettangolo cominciava su una riga
-  di voxel allineata agli assi, e quel confine netto legge come un artefatto.
-  `INSPECT.feather` lo sfuma moltiplicando la densità che c'era già: nessun
-  colore nei vertici, nessun mesher, e inerte dove il rettangolo è aperto.
-- **Le righe dicevano il risultato e mai il gesto.** «See through whatever stands
-  in front of what you are looking at» non dice *muovi il mouse sopra*. Da qui
-  `ViewOption.gesture`, che entra nel picker, nel toast di `V` e nella card di
-  aiuto — dove la 4.13 aveva lasciato la sola riga «V · Look inside the city»,
-  che non nomina nessuna delle quattro viste. Ci finisce anche la larghezza della
-  finestra dei raggi X, che la riga sopra prometteva di dire e non diceva.
-
-E due difetti veri, non solo di leggibilità: la **barra dei livelli compariva in
-Cutaway**, dove `sliceZ` non entra nelle uniform, quindi si trascinava a vuoto —
-`modeCuts` rispondeva a due domande diverse, e ora `modeHasLevel` risponde alla
-seconda; e **`[`/`]` funzionavano in ogni modo**, senza effetto visibile ma
-*armando* la quota, così che una fetta aperta dopo ripartisse da un numero
-assoluto invece che dal suolo davanti. Fuori da Levels adesso aprono Levels, e il
-ri-armo scatta uscendo da Levels e non solo tornando alla città intera.
-
-**Cosa ha trovato il giocatore, il giorno dopo ancora.** Che le guide dicevano
-*dove* è puntata la lente, e niente altro: «non c'è una maniera ovvia per uscire
-da questa view e ritornare al gioco normale». Aveva ragione, e il difetto non era
-il rendering ma la durata delle superfici. Il picker si chiude appena si sceglie,
-il toast dura due secondi, la card di aiuto va aperta: **tutto ciò che spiega una
-vista muore prima della vista stessa**, e resta una città retinata senza nome,
-senza tasti e senza uscita.
-
-Da qui la **targa** (`ViewBarModel`), l'unica superficie che sopravvive al gesto
-che l'ha aperta: nome, gesto, i tasti che valgono *lì dentro* e due bottoni —
-cambiare vista, uscirne. E `Escape` che finalmente esce, dopo i pannelli e dopo
-lo strumento. Che non lo facesse era scritto e argomentato in
-`resolveEscapeTarget` — una vista non è un pannello aperto sopra il gioco — ma
-l'argomento vale solo finché esiste un'altra via d'uscita ovvia: c'erano `V`
-premuto cinque volte e il picker, e nessuna delle due era scritta da nessuna
-parte. Un tasto di annullamento che si rifiuta di annullare l'unica cosa
-evidentemente in corso non protegge niente.
-
-**Resta aperto.** Le ombre nel taglio si spengono ancora tutte, e ora che è una
-vista di gioco l'appiattimento si nota di più: la risposta giusta resta il
-predicato nel materiale di profondità di `SunShadow`, cioè un secondo shader da
-tenere allineato a mano. Nessuna icona ridisegnata e nessuno stato sui sette
-temi: quella è la fase 7, e l'icona aggiunta qui è una sagoma coerente, non un
-progetto grafico.
-
-E soprattutto: **il velo continua a non distinguere terreno da edificio.** I
-raggi X aprono anche il suolo davanti alla colonna, e siccome il mesher non
-emette facce interne, dentro la finestra si legge un guscio vuoto sopra un buco
-nel terreno. Le guide dicono adesso *dove* si sta guardando, il che rende la
-vista usabile, ma non tolgono il buco. Tenere il suolo più pieno degli edifici
-vuole un'informazione che il mesher non porta — e chiedergliela sarebbe la vista
-sbagliata (invariante 6): la strada praticabile è un secondo predicato di quota,
-e va decisa prima di scriverla.
-
-**Chiuso, e la strada era quella.** Il predicato di quota è il **pavimento** che
-viaggia con la lente: sotto la base del soggetto non si vela mai. Nessun bit nuovo
-nel mesher, nessuna distinzione fra materiali — una quota, che è geometria e la
-sa già chi ha scelto il soggetto. Nello stesso passaggio è caduta anche la
-finestra di 64 colonne, e non allargandola: la lente è un test **raggio/volume**,
-cioè «questo frammento copre ciò che sto guardando?», e la sua finestra è la
-sagoma del soggetto per costruzione, a ogni zoom e da ogni angolo. La terza gamba
-era il puntamento — `pickSurfaceCell` non conosce gli edifici e si fermava sulla
-terra *dietro* la torre, a tante colonne quanto la torre è alta — e ora chi
-guarda usa `pickSolidCell` mentre chi piazza continua a usare la heightmap.
-Restano aperte le ombre nel taglio.
 
 ### Fase 4.14 — Arcologie e megastrutture
 
@@ -2254,31 +861,7 @@ l'altro con il vuoto in mezzo — invece che come un tappeto di torri.
 Obiettivo: rendere Block focus capace di rispondere alla domanda che non sapeva
 ancora affrontare — **com'è fatto** un isolato — senza aggiungere una sesta vista.
 
-Dipende dalla 4.11 per il motore delle viste e dalla 4.13 per le superfici che le
-spiegano. Vive in `src/engine/` (`inspect.ts`, `IsoCameraController.ts`), in
-`src/ui/` e in `src/main.ts`.
-
-**Stato implementazione:** completata.
-
-**Perché adesso.** Il gate della fase 4 chiede che «il singolo edificio regga
-anche l'inquadratura ravvicinata», e non c'era modo di produrne una: la camera
-aveva quattro angoli e un'inclinazione sola, e Block focus perdeva il soggetto al
-primo movimento del mouse. Le due mancanze erano la stessa — nessun modo di
-guardare **una** cosa — e si chiudono insieme.
-
-Le tre regole, che sono il contenuto vero della fase:
-
-- **Puntare e scegliere sono due tempi.** Il velo al 68% risponde a «come si
-  connette» e resta esattamente com'era; il clic porta la densità a `cut` e
-  risponde a «com'è fatto». Stessa geometria, stesso rettangolo, un numero
-  diverso: per questo non è un modo in più nel ciclo di `V`.
-- **Ciò che si sceglie smette di inseguire.** Con un isolato scelto
-  `applyInspect` non rilegge il puntatore. Era il difetto che rendeva la vista
-  inutilizzabile per studiare, ed è lo stesso della 4.13 portato un passo avanti:
-  lì il fuoco si agganciava, qui si ferma del tutto.
-- **La camera si restituisce.** L'inquadratura la muove lo strumento, non il
-  giocatore: uscendo torna identica — yaw, scatto, inclinazione, perno, altezza e
-  zoom.
+*Chiusa. Il ragionamento e l'esito stanno in [docs/roadmap/fase-4.15.md](docs/roadmap/fase-4.15.md).*
 
 - [x] Sotto-stato bloccato di Block focus: `locked` in `InspectState`, densità
   `veil` → `cut`, riquadro congelato. <!-- size: S -->
@@ -2291,59 +874,12 @@ Le tre regole, che sono il contenuto vero della fase:
   dello strumento che sblocca invece di chiudere. <!-- size: S -->
 - [x] Targa che cambia gesto e tasti senza cambiare il nome della vista. <!-- size: S -->
 
-**Vincolo:** nessuna uniform nuova e nessun modo nuovo. La vista resta una lente
-sul rendering e non uno stato della città (vincolo della 4.13): `src/sim/` e
-`src/game/` continuano a non sapere che esiste, non si salva, e al ricaricamento
-si riparte da Normal — l'isolato scelto compreso.
-
-**Perché l'inclinazione si ferma a 12° e 82°.** Non è un gusto. Sotto,
-`1 / sin(pitch)` — la correzione che fa seguire il cursore al trascinamento —
-esplode, e con lei il pan e l'inversione schermo→terra. Sopra, `camera.lookAt`
-degenera perché la direzione di vista diventa parallela a `up`: è lo stesso
-scoglio che `SunShadow` aggira con un `up` di ripiego.
-
-**Resta aperto.** Le ombre proiettate **si spengono ancora** mentre si studia, ed
-è la stessa cosa lasciata aperta da 4.11 e 4.13: il predicato dell'ispezione vive
-nel materiale di scena e non in quello di profondità, quindi il volume tolto
-continuerebbe a proiettare ombra sul modellino. Qui il costo si sente più che
-altrove — un oggetto isolato senza ombra propria legge piatto — e la risposta
-resta il predicato nel `depthMaterial` di `SunShadow`, cioè un secondo shader da
-tenere allineato a mano.
-
-Inoltre: il **cielo è un quad in spazio schermo** (scelta motivata in
-`SkyBackground.ts`), quindi abbassando l'inclinazione il gradiente non segue
-l'orizzonte; e la **nebbia sopravvive allo zoom** per costruzione (`fogLift`),
-quindi un isolato guardato da molto vicino può uscire lattiginoso — si tara sul
-tema, non sullo shader. Nessuna delle due è un difetto di questa fase, ma
-entrambe si notano solo da qui in poi.
-
-**Riferimenti**
-- [Camera Tool di Cities: Skylines II](https://skylines.paradoxwikis.com/Camera_Tool):
-  già citato in 4.11 come «la strada opposta, perché la camera qui è ortografica e
-  vincolata». Resta ortografica: l'orbita è un modo circoscritto a un soggetto, e
-  la città non ci finisce mai dentro.
-- Il **modellino** come metafora: Tiny Glade e i diorami di Townscaper mostrano
-  che un oggetto staccato dal contesto si legge per silhouette e ombra propria —
-  ed è esattamente l'ombra che qui manca ancora.
-
 ### Fase 4.16 — Tipologie, stili, sbalzi e dettaglio del retro
 
 Obiettivo: togliere alla città la ripetizione — due quartieri lontani si
 somigliavano, e un edificio era un prisma pulito da ogni lato.
 
-Dipende dalla 4.3 per la grammatica delle fasce, dalla 4.4 per l'aggregazione in
-fila e dalla 4.9 per il precedente dell'aggetto. Vive quasi tutta in
-`src/world/buildings/`, con una coda in `src/engine/mesher/`.
-
-**Stato implementazione:** completata. Il gate resta da validare a occhio su
-un'isola vera: i test coprono determinismo, coerenza d'isolato, invarianti dello
-sbalzo e budget, non la leggibilità a distanza di gioco.
-
-**Il vincolo che ha deciso metà della fase.** I 32 slot sono famiglie di
-*materia* e il loro colore lo scrive il tema, che è globale: un isolato rosa
-accanto a uno azzurro vorrebbe slot nuovi, cioè l'invariante 4. Uno stile può
-quindi dire *di che cosa* è fatto un quartiere, non che colore ha — e a distanza
-di gioco dice la stessa cosa, in tutti e sette i temi invece che in uno.
+*Chiusa. Il ragionamento e l'esito stanno in [docs/roadmap/fase-4.16.md](docs/roadmap/fase-4.16.md).*
 
 - [x] Spezzare `generate.ts` nei suoi quattro moduli e fissare le impronte <!-- size: M -->
   digitali della grammatica **prima** di muovere una riga.
@@ -2357,28 +893,6 @@ di gioco dice la stessa cosa, in tutti e sette i temi invece che in uno.
   d'angolo come riga invece che come conseguenza non detta.
 - [x] Il dettaglio del retro in un modulo suo: calate, scale esterne, pergole. <!-- size: M -->
 
-**Vincolo:** nessuno slot di palette e nessun tipo di superficie in più
-(invarianti 4 e 5); `maxDirtyChunksPerBuilding` si ricalcola e non si stima; le
-misure di quad e di tempo si rilevano a mano su questa macchina.
-
-**Gate:** da inquadratura d'insieme due isolati si distinguono per **materia**
-prima che per funzione, e la distinzione regge cambiando tema con `1`..`9`; da
-vicino un edificio ha almeno un aggetto, un portico o uno smusso che ne rompe il
-prisma, e il retro non è più liscio come il fronte.
-
-**Resta aperto.** La passata di promozione non interroga `overlaps` per il volume
-nuovo, quindi una torre a terra può crescere fin dentro un edificio nato su un
-impalcato in quota. È preesistente e non lo introduce lo sbalzo; correggerlo
-significa fermare la crescita verticale sotto ogni impalcato, cioè una decisione
-di gioco. Da valutare insieme alla 4.9.
-
-**Gate della fase 4:** con la UI nascosta, la città comunica crescita verticale,
-connessioni fra livelli e struttura economica attraverso volumi e silhouette;
-ponti, terrazze e percorsi in quota restano leggibili alle normali distanze di
-gioco, il singolo edificio regge anche l'inquadratura ravvicinata, e almeno una
-parte della città sta **sopra** un'altra parte — dalla stessa inquadratura si
-contano due livelli abitati e il vuoto che li separa.
-
 ### Fase 4.17 — Il distretto costiero dei landmark
 
 Obiettivo: dare a marina, porto e traghetto un'**impronta sul circondario** —
@@ -2387,13 +901,7 @@ insenature scavati nella riva come una darsena londinese, moli guadagnati al
 mare, frangiflutti che chiudono lo specchio, e gli edifici di settore che ci
 crescono attorno con i loro bonus e malus di sempre.
 
-Vive in un dominio puro nuovo — `src/world/harbor/` — e in un driver
-trasversale, `src/world/buildings/harborDriver.ts`.
-
-**Stato implementazione:** completata. Il gate resta da validare a occhio su
-un'isola vera: i test coprono contenimento, monotonia per stadio, geometria
-delle opere e il percorso end-to-end fino alla tipologia di settore, non la
-leggibilità del fronte a distanza di gioco.
+*Chiusa. Il ragionamento e l'esito stanno in [docs/roadmap/fase-4.17.md](docs/roadmap/fase-4.17.md).*
 
 - [x] L'anello del distretto cresce con lo stadio del landmark e ha un tetto: <!-- size: L -->
   mai più di due isolati, per costruzione.
@@ -2405,21 +913,6 @@ leggibilità del fronte a distanza di gioco.
 - [x] Sei tipologie di settore gated su ruolo e costa: gli edifici del <!-- size: M -->
   distretto nascono dalla macchina ordinaria e portano congestione e capacità
   come tutti gli altri, a un edificio per infornata.
-
-**Vincolo:** nessuna porta nuova verso `src/sim/` — il ritorno resta il
-catalizzatore che cresce con lo stadio; nessuna passata propria — il distretto
-viaggia sulle code di sempre; niente oltre l'anello dichiarato.
-
-**Gate:** una marina al terzo stadio legge come porticciolo scavato nella riva
-con il suo quartiere di case sul canale, e un porto come polo logistico
-riparato, senza overlay né tooltip.
-
-**Resta aperto.** Le colonne scavate non cambiano la `TerrainMap`, quindi la
-portata dell'influenza (`reachCost`) continua a leggere il bioma e non vede i
-canali: è il disallineamento già noto del bacino della marina, esteso al
-distretto. E gli slot di settore sono sul solo lato di terra: il molo
-guadagnato al mare non ospita ancora edifici, perché la simulazione lo dichiara
-oceano.
 
 ### Fase 4.18 — L'earthscraper: la megastruttura che scava
 
@@ -2774,16 +1267,7 @@ animazione compare nel profilo del frame.
 
 ### Fase 7.6 — Leggibilità delle cause
 
-Le altre cinque sottofasi lavorano sulla leggibilità dello **stato**: cosa c'è
-adesso, dove sta andando, cosa si può premere. Questa lavora sulla leggibilità
-della **causa**, che è un difetto diverso e più grave: il giocatore vedeva i due
-capi della catena — piazzo un catalizzatore, compare un edificio — e mai il
-mezzo. Diciotto soglie in `specializationOf`, più i cancelli di ogni riga del
-catalogo delle tipologie, non comparivano in nessuna superficie del gioco.
-
-Il principio è quello che la 7.4 aveva già trovato per i bottoni e mai applicato
-altrove: **dove il gioco nomina un esito, nomina accanto la condizione
-vincolante** — la più lontana, non la prima.
+*Chiusa. Il ragionamento e l'esito stanno in [docs/roadmap/fase-7.6.md](docs/roadmap/fase-7.6.md).*
 
 - [x] Ogni regola che rifiuta sa dire perché: `specializationGapsOf` derivata da <!-- size: M -->
   `balance.ts`, `typologyGapsOf` speculare a `accepts`. Il dominio dice *cosa
@@ -2795,16 +1279,6 @@ vincolante** — la più lontana, non la prima.
   confermeranno: le tipologie dietro una specializzazione passano da `May build`
   a `Unlocks`, con la condizione accanto.
 
-**Stato implementazione:** completata. **Il gate resta da validare a schermo:** i
-test coprono le regole — che il requisito riportato sia quello vincolante, che
-chiuderlo basti davvero a ottenere la specializzazione, che le due letture di
-`accepts` non divergano — non se un giocatore che non ha letto il codice
-*capisca*, cliccando in giro, come si arriva a una torre idroponica. Quello si
-misura con qualcuno davanti allo schermo, non con `npm test`.
-
-**Gate:** un giocatore che non ha mai visto il codice sa dire, cliccando su un
-isolato, cosa dovrebbe cambiare perché ci nasca una forma che ancora non c'è.
-
 ### Riferimenti
 
 - [Game UI Database — Anno 1800](https://www.gameuidatabase.com/gameData.php?id=1118) e
@@ -2815,6 +1289,217 @@ isolato, cosa dovrebbe cambiare perché ci nasca una forma che ancora non c'è.
 - [Isometric City Builder Art: Modular Buildings, Layout & Lighting](https://sunstrikestudios.com/en/blog/isometric-city-builder-art/): l'UI condivide il linguaggio di forma del mondo.
 - [9-Slice Scaling Explained](https://generalistprogrammer.com/tutorials/nine-slice-scaling-explained) e [MDN `border-image`](https://developer.mozilla.org/en-US/docs/Web/CSS/border-image): la tecnica di 7.1.
 - [The Art of Designing Intuitive User Interfaces in Cozy Games](https://sdlccorp.com/post/the-art-of-designing-intuitive-user-interfaces-in-cozy-games/): iconografia al posto del testo.
+
+## Fase 8 — La città si può perdere
+
+Obiettivo: che esista una mossa che **evita una perdita**, e che la perdita si
+veda nel punto in cui è avvenuta.
+
+La diagnosi è che la città può solo crescere. La simulazione è profonda — due
+catene economiche che si contendono le stesse braccia, cibo che costa terra,
+materiali che finanziano l'altezza — ma niente di tutto questo può peggiorare in
+un punto che si possa indicare: quando le cose vanno male va male un numero nella
+barra in alto, e nessun isolato si spegne. Ne segue il difetto che si sente
+giocando: le azioni del giocatore **accelerano**, non **salvano**.
+
+Due tracce dicevano che il buco era esattamente questo. `removeBuildings`
+esisteva ed era verificato inverso esatto di `addBuilding`, con **un solo
+chiamante** — il cantiere di un landmark che sventra per farsi posto — e la
+parola «abbandono» non compariva in nessun file del repository. `cityVitality`
+calcolava già lo sfitto, `1 - homes`, e serviva ad **accendere le finestre**: un
+numero globale che decora, dove servirebbe un fatto locale che minaccia.
+
+È ortogonale alla spina dorsale verticale: 4.9 e 4.14 restano aperte e nessuna
+delle voci qui sotto le tocca o le rimanda.
+
+**Vincoli trasversali**, oltre a quelli della fase 4:
+
+- **`src/sim/` non impara la geografia** (invariante 7). La simulazione propone e
+  non demolisce: la porta resta `removeBuildings`, chiamata da fuori.
+- **Il campo non guadagna un quinto piano** (contratto 10). `CLASS_COUNT` resta
+  4; la copertura si deriva dal piano civico che c'è già.
+- **`urbanProfileAt` non legge il tempo.** È una funzione spaziale: se leggesse
+  `tickCount`, lo stesso stato produrrebbe edifici diversi a seconda di quando lo
+  si guarda. Il fronte del declino entra in `tick`, che il tempo lo legge già.
+- **Il pareggio non è il bersaglio.** La 3.1 ha già imparato che puntare al
+  pareggio secco lascia una città senza margine: ogni soglia qui sotto sta sopra
+  il punto in cui la condizione si spegne, o l'allarme si riarma sulla propria
+  risposta.
+
+### Fase 8.1 — Il declino ha un luogo
+
+Obiettivo: un edificio che sta in un posto diventato invivibile se ne va, e si
+vede quale.
+
+- [x] `nextDecaySites`, **speculare a `UpgradeDriver` e non a `nextBuildSites`**: <!-- size: L -->
+  cammina `state.buildings` a cursore invece di scandire il campo allocato, e il
+  costo di una passata non cresce con la città. Vive in `src/sim/decay.ts`, non
+  rimuove niente, e non sa dove sia la costa.
+- [x] Il **fronte**, `decayPressure`: un numero in `SimState` che sale sotto una <!-- size: M -->
+  soglia e scende sopra un'altra, con una banda morta in mezzo. Tre minuti di
+  scoperto continuo prima che si armi, e un rientro tre volte più rapido.
+- [x] `DecayDriver` in `src/world/buildings/`, che apre un cantiere di sgombero e <!-- size: M -->
+  se ne va: a smontare a budget, togliere il record e dirlo alla simulazione è
+  `ClearanceSites`, come per il monumento e per la gomma. Un solo edificio per
+  passata, e non per risparmiare — un isolato che sparisce tutto insieme non si
+  legge come una conseguenza.
+- [x] **Una città in affanno smette di fondare prima di cominciare a perdere.** È <!-- size: S -->
+  una riga in `buildPass`, ed è il fronte anti-oscillazione: togliere un edificio
+  *alza* la desiderabilità dei vicini di otto punti — con lui se ne va la sua
+  congestione — quindi senza, la colonna appena liberata sarebbe la prima
+  candidata dell'infornata dopo.
+- [x] La perdita nell'HUD: una crisi che nomina la copertura misurata e il gesto <!-- size: S -->
+  che la risolve, più un collo di bottiglia mentre il fronte si carica — l'avviso
+  prima della perdita.
+
+**La scelta di progetto che tiene in piedi il resto: il degrado è una proprietà
+del posto, non dell'edificio.** L'alternativa ovvia — un contatore di sofferenza
+su ogni `Building` — non fa salire `SAVE_VERSION`, che un default lo copre, ma
+costa comunque sei punti di scrittura, una tabella di default e soprattutto
+l'invariante «inverso byte per byte» da ri-verificare nei due versi. Chiedendo
+invece «chi sta in un posto che non lo regge più» la risposta è derivata dallo
+stato a ogni tick, come `flows` e come il referto del raccolto: nessun campo
+nuovo e nessun modo che il contatore e la realtà divergano.
+
+**Resta fuori di proposito: la rovina.** Un edificio che si spegne, si annerisce
+e resta lì qualche decina di tick prima di sparire è più leggibile di uno che
+svanisce, e la grammatica saprebbe già farlo. Ma quello **è** uno stato per
+edificio, con tutto il conto scritto sopra: va fatto dopo, sapendolo, e non
+infilato qui perché sembra un dettaglio grafico.
+
+**Stato implementazione:** completata. **Il gate resta da validare a schermo:** i
+test coprono le regole — che a fronte disarmato non si perda niente, che a fronte
+armato stato e registro restino d'accordo, che il catalizzatore sopravviva al
+quartiere che gli muore intorno — non se un giocatore *capisca*, guardando, che
+cosa ha smesso di fare.
+
+**Gate:** una città lasciata senza servizi perde edifici in un punto che il
+giocatore può indicare, e riprendersi è possibile; il campo dopo un abbandono è
+identico a quello di una città che quell'edificio non l'aveva mai costruito.
+
+### Fase 8.2 — I servizi devono stare al passo
+
+Obiettivo: che almeno un catalizzatore smetta di essere un bonus e diventi una
+manutenzione.
+
+I diciannove ruoli erano tutti facoltativi: aggiungevano desiderabilità, e non
+averli significava crescere più piano. Nessuno era necessario, quindi la toolbar
+era un menu di acceleratori.
+
+- [x] **La copertura ha due metà**, ed è il modello che Cities Skylines ha <!-- size: L -->
+  spedito: una quota **cittadina**, uguale ovunque, che fa da pavimento; e una
+  quota **locale**, letta dal piano civico del campo — quindi con decadimento
+  geodetico, lungo le strade, come le vie pubbliche di Anno 1800.
+- [x] La quota cittadina somma i **servizi posati**, pesati per la loro influenza <!-- size: M -->
+  civica, e gli **edifici civici cresciuti** attorno, pesati per la quota di
+  manutenzione che i fondi coprono. Otto a uno fra le due, e non a occhio: è
+  misurato che sotto un catalizzatore residenziale forte gli edifici civici **non
+  nascono affatto** — `nextBuildSites` dà la cella all'uso col punteggio più alto,
+  e il residenziale satura per primo — quindi una copertura che dipendesse solo da
+  loro varrebbe zero in ogni partita.
+- [x] Lo scoperto entra nel declino come unico motivo, e la domanda **cresce con <!-- size: M -->
+  la popolazione**: una rete che bastava a duemila abitanti non basta più a
+  quattromila senza che nulla si sia rotto.
+- [x] Vista informativa `Services`, settima del giro `I`: continua, già <!-- size: M -->
+  normalizzata, con la chiave della heatmap che porta la quota cittadina
+  arrotondata al centesimo perché non si rifaccia sessanta volte al secondo.
+
+**Perché il pavimento è a metà e non a zero né a uno.** A uno, il civico
+automatico curerebbe la città senza che il giocatore tocchi niente, e saremmo
+tornati a guardarla crescere. A zero, un quartiere lontano da ogni catalizzatore
+cadrebbe a zero e il declino diventerebbe una spirale — il difetto per cui
+SimCity 4 è famoso, dove un edificio abbandonato **peggiora** il vicinato. Qui la
+spirale non può accadere nemmeno volendola: `removeBuildings` fa `bumpCrowd(-1)`,
+quindi un abbandono *restituisce* otto punti di desiderabilità ai vicini.
+
+**Nessuna memoria in più.** La quota cittadina è un numero solo per tutta la
+mappa e la quota locale è `values[civic]`, che c'era già: la copertura di una
+colonna costa una `valueAt` e due moltiplicazioni, e i byte per colonna restano
+sette.
+
+**Stato implementazione:** completata, con la taratura confermata su misura e non
+a occhio. Una città con un mercato e nient'altro cade sotto il quinto di
+copertura e arretra; con un parco tiene il doppio del tempo; con parco e scuola
+cresce fino a novemila abitanti e duecentoquaranta edifici prima che il fronte
+cominci a caricarsi — e a quel punto il terzo servizio è la mossa che le serve.
+`coverage.cityShare` a metà, `decay.distressCoverage` a un quinto — la stessa
+soglia di dilapidazione di SimCity 4 — e le due soglie del fronte a 0,85 e 1,1.
+
+**Gate:** una città che cresce senza che il giocatore aggiunga servizi si ferma e
+poi arretra; la stessa città con i servizi al passo continua. Le due partite
+partono dallo stesso seed.
+
+### Fase 8.3 — La congestione diventa geografia
+
+Obiettivo: che densificare abbia un prezzo spaziale, senza simulare un veicolo.
+
+[reach.ts](src/sim/reach.ts) calcola già distanze **geodetiche** con costi di
+attraversamento per cella, letti da `world/reachCost.ts`, e una strada costa meno
+del tessuto. Basta far salire il costo delle celle di carreggiata con la densità
+costruita accanto: un quartiere che si infittisce diventa **lontano** da tutto, i
+campi che lo raggiungevano si accorciano, la crescita si ferma — finché non
+arriva un catalizzatore di trasporto. È il ciclo del traffico di Cities Skylines
+senza un veicolo e senza pathfinding, e non collide con `src/world/traffic/`, che
+è un'altra cosa: lì barche e aerei sono pose in funzione del tempo.
+
+- [ ] Termine di densità costruita in `reachCost`, mantenendo il vincolo che **un <!-- size: L -->
+  passo non costa mai meno di 1**: la geodetica resta almeno la Chebyshev e la
+  forma non esce dal quadrato che il campo ricalcola.
+- [ ] Invalidare la cache geodetica **a scaglioni**, non a ogni edificio: il <!-- size: M -->
+  precedente è già nel repo — `GrowthScene` rifà le rotte ogni sessantaquattro
+  edifici, ed è lo stesso segnale.
+- [ ] Misurare l'A/B come la 4.2 — worktree sul commit precedente, esecuzioni <!-- size: M -->
+  alternate — perché qui si tocca il percorso caldo del campo.
+
+**Il costo vero è l'invalidazione, non il termine.** La distanza geodetica si
+calcola una volta per catalizzatore e sta in cache; un costo che cambia con la
+città rende stale ogni catalizzatore di quell'area. È la ragione per cui questa
+sotto-fase viene terza: senza gli scaglioni, `setPolicyActive` e la modifica di un
+catalizzatore — già a 8,6 e 0,42 ms — si moltiplicano per gli edifici costruiti.
+
+**Gate:** un quartiere denso senza trasporto rallenta in modo osservabile, e un
+catalizzatore di trasporto lo rimette in moto; i budget della fase 6 reggono con
+la misura A/B in mano, non a occhio.
+
+### Fase 8.4 — Il ritmo
+
+Obiettivo: che una scorta abbia senso.
+
+Dalla 3.1 il cibo ha un posto sulla mappa e un listino in case sfamate. Manca il
+motivo per averne più del necessario: `food.targetCoverage` punta a un margine
+fisso, e una città in pareggio resta in pareggio per sempre.
+
+- [ ] Moltiplicatore stagionale sulla resa dei tre produttori, dentro `tick`. <!-- size: M -->
+- [ ] Verificare che il fronte dell'emergenza alimentare non oscilli con la <!-- size: M -->
+  stagione: l'inverno non deve poter dichiarare una carestia che la primavera
+  risolve da sola, o l'allarme torna a essere rumore.
+- [ ] Stagione visibile nel mondo, riusando i sette temi di `src/engine/themes/`. <!-- size: L -->
+
+**Il vincolo che non si negozia:** la stagione entra in `tick` e **non** in
+`urbanProfileAt` — la stessa ragione per cui i mandati sono slot e non scadenze.
+
+**Gate:** una partita ha un ciclo riconoscibile in cui accumulare e uno in cui
+consumare, e la scorta è la differenza fra le due.
+
+### Cosa questa fase non propone, e perché
+
+- **Traffico con agenti.** Contraddice «la rete stradale è una funzione pura del
+  seed»: veicoli con una destinazione vogliono stato da serializzare, e la fase 5
+  ha appena chiuso il salvataggio proprio non serializzando ciò che sa
+  ricostruire. E il p95 del tick è già sopra i 3 ms di `FRAME_BUDGET_MS`.
+- **Zoning manuale cella per cella.** È contro la visione, e la fase 2 ha fatto il
+  lavoro opposto: i distretti emergono dalla sovrapposizione dei campi.
+- **Disastri casuali.** Nessun `Math.random()` globale, e soprattutto un disastro
+  che il giocatore non poteva prevedere non insegna niente. Il declino qui è
+  sempre la conseguenza leggibile di una copertura che non c'è.
+
+### Riferimenti
+
+- [Cities: Skylines — Services](https://skylines.paradoxwikis.com/Services) e [la discussione che separa raggio e copertura](https://steamcommunity.com/app/255710/discussions/0/1638661595041890888/): la copertura è cittadina, il raggio è un bonus locale.
+- [Cities: Skylines II — City Services](https://www.paradoxinteractive.com/games/cities-skylines-ii/features/city-services-districts-policies): lo stesso schema, dichiarato.
+- [SimCity 4 — Zots](https://simcity.fandom.com/wiki/Zots) e [Residential dilapidation, why?](https://community.simtropolis.com/forums/topic/757769-residential-dilapidation-why/): l'avviso prima della perdita, e la soglia di dilapidazione a un quinto.
+- [Anno 1800 — Public buildings](https://anno1800.fandom.com/wiki/Public_buildings): l'influenza che si propaga lungo le strade, e la qualità della strada che ne cambia la portata.
+- [Manor Lords — Approval](https://wiki.hoodedhorse.com/Manor_Lords/Approval): fattori recenti più una memoria che sfuma — il precedente per due soglie invece di una.
 
 ## Prossimo milestone consigliato — Alpha 0.2
 

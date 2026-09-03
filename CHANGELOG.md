@@ -16,6 +16,282 @@ Qui stanno **i tredici incrementi più recenti**; i precedenti sono archiviati i
 
 ---
 
+## In corso — I pannelli informativi diventano grafici
+
+- **La scheda di selezione si apre su un verdetto, non su un elenco.** Ventidue righe `etichetta: valore` tutte con lo stesso peso, e ogni valore una frase intera, chiedevano di finire la riga per sapere se un edificio andasse bene. Ora in cima c'è la risposta corta con un tono — «Cannot grow», «Needs desirability», «Ready to grow» — la barra della soglia con le sue fonti, e i ruoli da piazzare attorno; le misure di ogni sezione sono barre, e la carta d'identità sta ripiegata dietro «Details». La prosa non sparisce: è il `title` della barra che commentava.
+- **`siteAdvice` risponde a «cosa piazzo qui attorno», che la scheda non aveva mai risposto.** Diceva quanto mancava e da chi veniva ciò che c'era, e lì si fermava: restavano un numero e diciannove tessere, e l'unico modo di scegliere era spendere. Nessuno stato nuovo — la resa al centro è `strength × influence[cls]`, la stessa aritmetica che un landmark già posato mostra — più il filtro di sito, perché consigliare un porto all'interno manderebbe a spendere per un rifiuto.
+- **La domanda della colonna è quattro barre contro le soglie di sito.** La riga `Demand: Housing 180 · Commerce 90 · …` era la più densa della scheda e l'unica che pretendeva quattro soglie a memoria per essere letta; resta fra i dettagli per chi confronta due colonne.
+- **Il cassetto Città guadagna «What the city needs», in cima ai traguardi.** Capacità ed economia erano otto riquadri di testo con la stessa aria, e «73% fed» accanto a «4 hosted uses» chiedeva di sapere in anticipo quale fosse un'emergenza. Sette barre in ordine di gravità — cibo, organico, case, umore, i due saldi, uso misto — con gli stessi nodi della scheda, perché due vocabolari grafici divergono.
+- **La scheda si è divisa in cinque file.** Era 958 righe prima di guadagnare tutto questo: le tabelle dei nomi sono uscite in `selectionLabels.ts`, le barre in `selectionMeters.ts`, il verdetto in `selectionVerdict.ts`, il vocabolario condiviso in `meters.ts` e `meterBits.ts`.
+
+## In corso — Chi regge cresce, se la parete regge ancora
+
+- **La promozione non e' piu' vietata a chi porta qualcosa: e' verificata.**
+  `blocksUpgrade` fermava per sempre l'ospite di un impalcato abitato, di un
+  tratto di percorso o di una delle tre forme di facciata — Skyport, Sky Park,
+  Sky Transit — e bastava un solo scalo per congelare la torre migliore
+  dell'isolato. La regola era piu' severa della geometria: i quattro canali
+  casuali di `generate.ts` non dipendono dal livello, quindi a parita' di
+  tipologia e impronta i piani bassi sono identici a ogni livello e il muro a cui
+  l'impalcato e' appeso e' quasi sempre ancora li'. Adesso la domanda e'
+  geometrica e la pone `holdFits` sulla sagoma nuova, dentro `upgrade()` dove
+  quella sagoma esiste: costa un `buildStamp` speso per un rifiuto, e lo spende
+  soltanto chi porta qualcosa.
+- **Chi ci sta ancora resta dov'e', e conta piu' del resto.** `releaseDecks`
+  faceva cadere ogni mensola vuota a ogni promozione dell'ospite; con gli ospiti
+  che adesso crescono, quella regola avrebbe reso la citta' in quota inabitabile
+  — nessun impalcato sarebbe vissuto abbastanza per meritarsi un lotto sopra o un
+  montante che lo raggiungesse. `AerialDriver.reseat` fa cadere soltanto cio' che
+  la sagoma nuova non regge piu', e rifiuta la promozione quando a non starci e'
+  qualcosa che non puo' cadere. Tutta la convalida prima di qualunque scrittura,
+  come per un percorso.
+- **La parete si misura per differenza, non con una soglia.** Quanto muro
+  servisse lo ha deciso chi ha appeso l'impalcato — una mensola prende tutta la
+  corsa, una piattaforma di facciata si centra sull'intera facciata e ne lascia
+  libero qualche capo — quindi `holdFits` chiede soltanto che nessuna colonna di
+  muro presente prima sia sparita. Nessun numero nuovo da tarare.
+
+## In corso — La citta' si puo' perdere
+
+- **Il declino ha un luogo.** Fino a qui la citta' poteva solo crescere:
+  `removeBuildings` esisteva ed era verificato inverso esatto di `addBuilding`,
+  ma aveva un solo chiamante — il cantiere che sventra per un landmark — e la
+  parola «abbandono» non compariva da nessuna parte. Adesso un edificio che sta
+  in un posto che non lo regge piu' se ne va, e si vede quale.
+- **La copertura ha due meta', ed e' il modello di Cities Skylines.** Una quota
+  **cittadina**, uguale ovunque, che fa da pavimento e viene dai servizi posati
+  piu' dagli edifici civici cresciuti attorno; e una quota **locale**, letta dal
+  piano civico del campo — quindi con decadimento geodetico, lungo le strade,
+  come le vie pubbliche di Anno. Nessuna delle due basta da sola: il pavimento
+  tiene la citta' in piedi mentre nessuno guarda, a chiudere il divario e' solo
+  chi posa un servizio. E' anche il motivo per cui qui la spirale di SimCity 4
+  non puo' accadere.
+- **Il servizio posato pesa otto volte l'edificio civico cresciuto, e non e' una
+  taratura a occhio: e' misurato.** Sotto un catalizzatore residenziale forte gli
+  edifici civici **non nascono affatto** — `nextBuildSites` da' la cella all'uso
+  che ci prende il punteggio piu' alto, e il residenziale satura per primo — per
+  cui una copertura che dipendesse solo da loro varrebbe zero in ogni partita. Il
+  peso di ciascun catalizzatore esce dalla riga `influence` con cui il campo
+  dipinge gia': un parco vale uno, un mercato un settimo, una centrale zero, e
+  non c'e' una seconda tabella che possa divergere dalla prima.
+- **Nessun campo nuovo per cella, nessun piano nuovo nel campo.** La quota
+  cittadina e' un numero solo per tutta la mappa, la quota locale e'
+  `values[civic]` che c'era gia'. Il contratto dei quattro usi resta intatto, e
+  la memoria per colonna non cambia di un byte.
+- **`nextDecaySites` cammina a cursore e non scandisce il campo.** E' lo
+  speculare di `UpgradeDriver`, non di `nextBuildSites`: fondare deve cercare
+  celle vuote e paga sedici millisecondi per farlo, mentre gli edifici sono gia'
+  un elenco. Il costo di una passata di declino non cresce con la citta'.
+- **Il fronte e' un numero, perche' il declino dev'essere lento.**
+  `decayPressure` sale sotto `decay.strainCoverage` e scende sopra
+  `decay.recoveryCoverage`, e fra le due non si muove: tre minuti di scoperto
+  continuo prima che si armi, e un rientro tre volte piu' rapido. Sta
+  nello stato — caricare una partita in crisi e ritrovarla serena sarebbe la
+  bugia che l'emergenza alimentare gia' non racconta — e non fa salire la
+  versione del salvataggio, perche' ha un default.
+- **Una citta' in affanno smette di fondare prima di cominciare a perdere.** E'
+  una riga in `buildPass`, e senza di lei l'abbandono sarebbe churn: togliere un
+  edificio *alza* la desiderabilita' dei vicini di otto punti, perche' con lui se
+  ne va la sua congestione, quindi la colonna appena liberata sarebbe la prima
+  candidata dell'infornata dopo.
+- **L'abbandono passa dal cantiere di sgombero, non da un percorso suo.**
+  `ClearanceSites` accodava gia' sagoma vuota e sagoma da cancellare, smontava a
+  budget di voxel per frame e chiudeva con `clearVolume`, `registry.remove` e
+  `removeBuildings`. Un secondo percorso di rimozione sarebbe divergente dal
+  primo al primo caso limite, e li' i casi limite — una campata che poggiava, due
+  cantieri sovrapposti — sono la parte difficile.
+- **Un monumento sopravvive al quartiere che gli muore intorno.** La regola
+  `gameplay.abandonment.clearing` e' la piu' timida delle tre: la gomma porta via
+  tutto perche' e' un gesto, qui non sceglie nessuno, e far sparire un
+  catalizzatore toglierebbe al giocatore la leva proprio quando gli serve.
+- **Due voci nuove e una vista.** Un collo di bottiglia mentre il fronte si
+  carica — l'avviso prima della perdita — e una crisi quando e' armato, con la
+  copertura misurata nel titolo e il gesto accanto. La vista informativa
+  `Services` mostra dov'e' il buco: e' continua, gia' normalizzata, e la chiave
+  della heatmap porta la quota cittadina arrotondata al centesimo perche' non si
+  rifaccia sessanta volte al secondo.
+
+## In corso — La funivia ha la precedenza sul tessuto urbano
+
+- **Una piazzola sgombera il lungomare invece di rifiutare la linea.** Le due
+  rive che si guardano sono anche le prime che la città costruisce, quindi
+  pretendere cinque colonne vergini rifiutava la funivia proprio dove serviva:
+  su una riva costruita fino in fondo il click non produceva niente, e su una
+  costruita a metà spingeva la stazione un isolato dentro. `RopewayProbe` ha
+  ora `clearable` accanto a `free`, e `seekPad` fa **due passate**: la prima
+  cerca la piazzola vergine e arretra come sempre — se un posto libero c'è
+  entro `maxSetback` vince lui, e non cade niente —, la seconda riparte dalla
+  riva accettando di demolire. Il cantiere è quello di `clearanceSite.ts`, lo
+  stesso dei monumenti e delle arcologie, con la sua regola in
+  `BALANCE.gameplay.ropeway.clearing`: tetto aperto, `clearsLandmarks` spento.
+  Un monumento non cade sotto una stazione, e nemmeno un'altra funivia — la
+  fune non è un record, quindi abbattere una torre lascerebbe un cavo appeso al
+  nulla.
+- **La torre poggia sul terreno, non sui tetti che sta demolendo.** Il piano
+  legge ora `ground` oltre a `top`: dentro un'impronta che il cantiere sgombera
+  la quota di appoggio e il franco della fune si misurano sul terreno nudo.
+  Con il solo `top` una piazzola interamente coperta dal costruito avrebbe
+  piantato la stazione sui tetti, e la fune sarebbe salita a scavalcare una
+  torre che stava cadendo — un `tooTall` proprio dove la città è alta.
+- **`placeRopeway` risponde con tre casi invece di un booleano.** `'raised'` è
+  la linea che c'è, `'clearing'` quella decisa e prenotata mentre il lungomare
+  cade, `null` il posto che non ne regge nessuna. Dire «Ropeway open» mentre
+  due isolati stanno ancora sparendo manderebbe il giocatore a cercare due
+  torri che non esistono; l'HUD ha ora il suo secondo messaggio. Entrambi i
+  riquadri si prenotano all'apertura, anche quello già sgombero: la città
+  continua a crescere mentre il cantiere demolisce, e una linea con una torre
+  sola non è una linea.
+- **Fra due linee valide vince prima quella che non demolisce, poi la più
+  corta.** Con quattro direzioni da provare, preferire sempre la più corta
+  avrebbe fatto pagare al giocatore con due case un accorciamento che non ha
+  chiesto: la precedenza sul tessuto urbano è il permesso di passare dove
+  altrimenti non si passa, non un invito a demolire.
+
+## In corso — Le torri mature smettono di essere tutte uguali
+
+- **Alla soglia di skyline il dettaglio sul tetto c'è davvero.** `generate.ts`
+  dichiarava da sempre che oltre `VISUAL_LEVELS.skyline` il pennone c'è
+  «sempre», ma lo condizionava a `crown.roofProp`, che quattro cime su cinque
+  negano: `stepped` è la cima del commercio e `flat` quella dell'industria,
+  cioè le classi più numerose di una città matura. Il risultato era che
+  `SKYLINE_PROP_HEIGHT` non si vedeva proprio dove serviva, e decine di torri
+  finivano con lo stesso taglio netto. Ora sotto la soglia decide ancora la
+  cima — è lì che «tetto piano» significa capannone — e sopra decide il
+  livello. Un `productionLoft` al massimo guadagna il suo prisma di lamiera,
+  un `terraceArcade` il suo pennone d'ottone.
+- **La pietra ha di nuovo tre toni invece di due.** `terraceArcade` — la
+  tipologia terminale del commercio, cioè la più numerosa — accostava `stone`
+  (#e8d9a8) e `stoneWarm` (#d0b878) come corpo e cornice: un sesto di
+  luminanza sullo stesso tono caldo, che a distanza isometrica cancella
+  marcapiano e campate e lascia una colonna piena. La cornice scende a
+  `stoneDark` e lo zoccolo a `stoneDeep`. La stessa coppia piatta stava in
+  `stoneCourt`, e siccome lo stile si applica **dopo** la tipologia era quella
+  riga a rimetterla su ogni quartiere di pietra: le due dovevano cambiare
+  insieme o non cambiava niente.
+
+## In corso — La dieta del contesto: la roadmap si legge a domanda
+
+- **`ROADMAP.md` da 181 a 86 kB, e la dashboard non se ne accorge.** Il file
+  singolo piu' caro della repo era per nove decimi prosa: 191 righe di attivita'
+  pesavano 18 kB su 181. Le venti fasi **chiuse** lasciano in radice
+  intestazione, obiettivo, elenco e un rimando; obiettivo esteso, vincoli, gate,
+  «come e' stato risolto» e riferimenti passano a una scheda per fase in
+  [docs/roadmap/](../docs/roadmap/). Le fasi ancora aperte restano intere dove
+  sono: quella prosa e' materiale di lavoro, non storia.
+- **Le attivita' non si spostano, ed e' il vincolo che ha deciso la forma.**
+  repo-radar legge **solo** il file di radice e riconosce un task dal suo testo:
+  portarne 166 in una scheda avrebbe fatto dire alla dashboard che il progetto e'
+  al 20% invece che all'87%, e avrebbe perso il cycle time di ognuno. Con i
+  checkbox fermi in radice l'anteprima e' identica riga per riga — 191 task,
+  `pctByCount` 86,9%, `pctByWeight` 84,9% — e `verify.mjs` conferma zero sezioni
+  e zero righe perse.
+- **Una scheda solo dove c'e' qualcosa da spostare.** Sotto i mille caratteri di
+  prosa la sezione e' gia' quasi soltanto il suo elenco, e una scheda costerebbe
+  in rimandi quanto il testo che sposta: cinque fasi restano quindi intere in
+  radice pur essendo chiuse.
+- **`src/main.ts`: due blocchi fuori, e la ragione per cui gli altri no.** Le
+  etichette del cursore erano funzioni pure in mezzo al cablaggio e ora stanno in
+  `src/shell/actionLabels.ts` — con la tabella dei rifiuti a livello di modulo
+  invece che ricostruita a ogni movimento del puntatore, che e' un percorso
+  caldo. Il salvataggio possedeva tre variabili che nessun altro toccava, e in
+  `src/shell/saveSlots.ts` diventa un oggetto che se le tiene; scena e HUD
+  arrivano come funzioni, perche' nascono dopo. Il resto del file non e' stato
+  toccato di proposito: e' una chiusura sola su quarantasette variabili mutabili
+  condivise, e spostarne un pezzo vuol dire **decidere di chi e' quello stato** —
+  un incremento di progettazione, non una potatura, per giunta su codice che
+  nessun test copre.
+
+## In corso — Il menu di pausa si veste come il titolo
+
+- **La stessa colonna, sopra la citta' sfocata.** Il menu `Esc` era un pannello largo a due colonne con la navigazione a sinistra; adesso e' la colonna del titolo — marchio, bottoni grandi con la riga che dice cosa succede premendoli, sottoschermate che sostituiscono l'elenco — perche' le due superfici pongono la stessa domanda e due disegni diversi si imparano due volte. Cambia solo il fondo: al posto del cielo c'e' la citta' vera, sfocata dal velo, perche' non si e' usciti dal gioco, si e' messo in pausa.
+- **`titleScreen.css` veste due superfici.** Il cielo animato e la linea d'orizzonte sono passati in `.title-screen--sky`, cosi' che `.title-inner` galleggi anche su un velo; la colonna in partita e' `.title-inner--pause`, piu' larga e con lo scorrimento suo. Le regole del vecchio pannello — `.save-slot`, `.save-button`, `.menu-field`, la navigazione e il piede — sono uscite da `hudPanels.css`.
+- **Il velo sfoca invece di coprire.** `backdrop-filter` era escluso dal costo GPU per frame; sotto il menu quel costo non esiste, perche' `main.ts` passa `dt = 0` finche' e' aperto. Lo scrim scende al 42% dove la sfocatura c'e', e resta pieno dove non c'e'.
+- **`Esc` dentro il menu torna all'elenco.** Da una sottoschermata si va indietro, non fuori: chiudere tutto al primo colpo costringeva a riaprire il menu per correggere un tema scelto male. Il secondo colpo chiude.
+- **L'elenco degli slot si rilegge aprendo, non entrando nella sezione.** Adesso la riga sotto «Saves» conta le citta' salvate e quella sotto «Resume» dice cosa si sta per lasciare: nessuna delle due puo' aspettare un clic. Resta una lettura sola per apertura, come prima.
+
+## In corso — Skyline notturno invece di retino
+
+- **La torre non e' piu' accesa allo stesso modo per tutta la sua altezza.**
+  `NIGHT_WINDOWS.storey` divide la facciata in blocchi di quattro piani: uno su
+  tre resta spento del tutto, gli altri sono smorzati fra il 45 e il 100 per
+  cento. Un edificio si svuota per piani contigui, non a finestre sparse lungo
+  l'altezza, e da lontano quella e' la prima cosa che si vede — la massa scura
+  fra due fasce accese e' piu' estesa delle fasce. Il fattore sta fra 0 e 1,
+  quindi le invarianti gia' scritte sulla quota della torre restano valide
+  blocco per blocco senza riverificarle.
+- **Ritarati i numeri che la grana verticale ha spostato.** `peakShare` sale da
+  0.38 a 0.46 perche' adesso e' la punta di un blocco e non della facciata
+  intera; `towerBias.low` scende da 0.3 a 0.12 perche' una torre quasi spenta e'
+  un elemento del disegno e non un difetto. In media la citta' piena accende una
+  quota di 0.20 invece di 0.38: circa la meta' delle finestre di prima, e piu'
+  forti — `gain.night` passa da 1.5 a 1.7.
+- **Le colonne di servizio non sono piu' la firma dello skyline.** Alla forza di
+  una finestra, il vano scala acceso a ogni piano ripeteva la stessa riga
+  verticale continua su ogni torre della citta'. Ora vale `coreDim` 0.4, ed e'
+  l'economia a dire quante colonne, come per tutto il resto.
+- **Bianco d'ufficio piu' bianco, ambra di casa piu' ambra.** Il freddo tira al
+  vetro per il 22 per cento invece che per il 35 — un ciano ripetuto su mezza
+  citta' legge come tinta del materiale, non come lampada — una minoranza di
+  finestre calde arriva fino all'oro, e il carattere cromatico e' anche della
+  torre e non solo della finestra, cosi' due palazzi affiancati non hanno lo
+  stesso bianco. `officeShare` scende da 0.42 a 0.36: la luce di un ufficio e'
+  compatta e la stessa quantita' concentrata pesa piu' di quanta ne sia sparsa.
+
+## In corso — Il landmark resta in mano
+
+- **Posare un landmark non riconsegna lo strumento.** Il catalizzatore scelto dal
+  dock resta selezionato dopo un piazzamento riuscito, come già facevano la
+  mensola e la gomma: chi ne posa uno quasi mai ne posa uno solo, e tornare a
+  ripescare la stessa tessera dopo ogni colpo era un giro in più a ogni landmark.
+  A posarlo resta `Esc`, che è quanto il toast prometteva già da prima
+  («Esc to cancel»). La funivia e il settore costiero continuano a cadere dopo
+  l'uso: costano quanto una scelta di partita, e un click di troppo ne
+  tirerebbe una seconda.
+
+## In corso — I tratti sul record
+
+- **Un solo lettore dei campi marker.** `structureKind.ts` risponde alla domanda
+  «che tipo di struttura è questo record?», che era scritta a mano una sessantina
+  di volte in diciannove file, ognuna con il proprio sottoinsieme di
+  `landmark / span / aerial / arcology / ropeway / aloft`. I sette tipi — l'ottavo
+  non c'è: un monumento sul tetto è un tipo suo, non un landmark con un campo in
+  più — hanno una riga in `STRUCTURE_TRAITS`, e una struttura nuova va decisa lì
+  invece che cercata in giro.
+- **Tabella per le domande da sì o no, `switch` esaustivo per le scelte.**
+  `promotes`, `hostsSpan`, `hostsAerial`, `hostsCrossing`, `groundStructure`,
+  `rebuildableFromRecord` e `capturedAsBuilding` sono colonne; la traduzione ai
+  quattro casi dello sventramento è uno `switch` in `clearanceSite.ts`. In tutti
+  e due i casi è il compilatore a fermare chi aggiunge un tipo senza decidere,
+  invece della disciplina di chi ricorda i diciannove file.
+- **Le caselle riproducono il comportamento di prima, comprese quelle strane.**
+  Una torre di funivia promuove come un edificio civico e può reggere una
+  campata, perché nessuna delle due regole l'ha mai esclusa; una campata si
+  appoggia alla città in quota per lo stesso motivo. Sono rimaste come stavano,
+  con il commento che dice da dove vengono: ora si vedono, e correggerle è un
+  incremento suo.
+- **La quaterna di piazzamento detta una volta.** `placeStructure.ts` raccoglie
+  ciò che i driver ripetevano con quattro nomi diversi: misurare i chunk che si
+  sporcherebbero, chiedere al registry se il posto è libero, scrivere il record,
+  accodare i voxel. `structureFits` e `writeStructure` restano separate perché la
+  funivia ne ha bisogno: due torri si verificano entrambe **prima** che ne sia
+  scritta una, e verificare-e-scrivere due volte non è la stessa cosa. `class`,
+  `level` e `seed` hanno un default, che era identico in tutti e quattro i punti.
+- **La sagoma si genera solo dopo le verifiche.** Il segmento porta una funzione
+  e non uno stamp già fatto: i driver la costruivano dopo aver superato budget e
+  collisione, e uno stamp pronto avrebbe fatto pagare una generazione a ogni
+  struttura rifiutata.
+- **Le letture sul mondo hanno un nome solo.** `worldProbe.ts` tiene `heightAt`,
+  `topAt`, `isDryLand`, `isAboveSea`, `isFirm`, `isFree`, `isPavement` e
+  `isSolid`; le sonde di dominio — `RopewayProbe`, `SpanProbe`, `CrossingProbe` —
+  restano dove sono, perché sono ciò che tiene le regole pure e testabili senza
+  un registry, e i driver le compongono da lì. Le due domande sulla terra restano
+  due: la funivia vuole terra asciutta, il ponte fra settori solo che non sia
+  oceano, e non lo hanno mai chiesto nello stesso modo.
+- **Fuori restano i tre driver grandi.** Landmark, arcologie e città in quota
+  hanno varianti di piazzamento proprie — opere di terra, pozzi, gambe contate a
+  parte — e farceli entrare vorrebbe dire riportare le loro eccezioni dentro il
+  protocollo.
+
 ## In corso — Revamp dei landmark: piu' ornati, piu' grandi, piu' stadi
 
 - **Teatro, stadio e stazione crescono di sedime su sei stadi.** Il teatro va da

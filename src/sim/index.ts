@@ -92,6 +92,21 @@ export {
   type FarmKind,
   type FoodReport,
 } from './farms';
+export {
+  coverageAt,
+  coverageReportOf,
+  EMPTY_COVERAGE,
+  servicesOf,
+  type CoverageInputs,
+  type CoverageReport,
+} from './coverage';
+export {
+  isDecayArmed,
+  nextDecayPressure,
+  nextDecaySites,
+  type DecayScan,
+  type DecaySite,
+} from './decay';
 export { nextBuildSites, type BuildSite, type BuildSiteQuery } from './nextBuildSites';
 export {
   computeReach,
