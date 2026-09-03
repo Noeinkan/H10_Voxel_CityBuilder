@@ -160,6 +160,17 @@ ${inspect ? inspectGhostSurface : ''}
             fract(towerHash * 7.31)),
         0.0, 1.0);
 
+      // La grana verticale. Un edificio non si svuota a finestre sparse lungo
+      // l'altezza ma per blocchi di piani contigui, e da lontano e' la prima
+      // cosa che si vede: la massa scura fra due fasce accese e' piu' estesa
+      // delle fasce. Il fattore sta fra 0 e 1 — toglie luce e non ne aggiunge —
+      // ed e' cosi' che le invarianti sulla quota della torre restano valide
+      // blocco per blocco senza riverificarle. Il perche' sta in nightWindows.ts.
+      float storeyBlock = floor(cell.z / ${NIGHT_WINDOWS.storey.block.toFixed(1)});
+      float blockHash = hash21(tower * 2.11 + vec2(storeyBlock, 91.3));
+      share *= step(${NIGHT_WINDOWS.storey.darkShare.toFixed(2)}, blockHash) *
+        mix(${NIGHT_WINDOWS.storey.dimmest.toFixed(2)}, 1.0, fract(blockHash * 5.17));
+
       // Le due soglie dell'ufficio si dividono la stessa quota: quella del piano
       // e' la quota diviso il riempimento, quella della finestra il riempimento.
       // Cambia **come** la luce si distribuisce, non quanta ce n'e'.
@@ -173,9 +184,14 @@ ${inspect ? inspectGhostSurface : ''}
         floorLit * step(${(1 - NIGHT_WINDOWS.floorFill).toFixed(2)}, variation),
         office);
       // Vani scala e ascensori: la colonna accesa a ogni piano che tiene insieme
-      // una facciata altrimenti a macchie.
-      lit = max(lit, step(${(1 - NIGHT_WINDOWS.coreShare).toFixed(2)},
-        hash21(cell.xy * 0.73 + 11.7)));
+      // una facciata altrimenti a macchie. E' l'unica luce che ignora la grana
+      // verticale — un vano scala e' acceso anche al piano vuoto — e proprio per
+      // questo va tenuta fioca: alla forza di una finestra era la stessa riga
+      // continua su ogni torre della citta'. Quante colonne siano lo dice
+      // comunque l'economia, come per tutto il resto.
+      lit = max(lit, ${NIGHT_WINDOWS.coreDim.toFixed(2)} *
+        step(1.0 - ${NIGHT_WINDOWS.coreShare.toFixed(3)} * uLitHomes,
+          hash21(cell.xy * 0.73 + 11.7)));
       lit *= pane;
 
       // Ambra di casa e bianco d'ufficio. Sono slot di palette e non costanti,
@@ -184,14 +200,28 @@ ${inspect ? inspectGhostSurface : ''}
       // impedisce che una torre sia tutta di un colore, che e' la seconda causa
       // di piattezza dopo il «tutte accese».
       float tone = hash21(floor(uv) + vec2(41.7, 8.3));
-      vec3 windowLight = mix(
-        mix(uPalette[${PALETTE_SLOTS.concreteWhite}], uPalette[${PALETTE_SLOTS.glassPale}], 0.35),
-        uPalette[${PALETTE_SLOTS.metalBrass}],
-        clamp(mix(0.86, 0.24, office) + tone - 0.5, 0.0, 1.0));
+      // Il bianco freddo tira meno al vetro di prima: al 35 per cento di
+      // glassPale ogni ufficio era ciano, e un ciano ripetuto su mezza citta'
+      // legge come tinta del materiale invece che come lampada.
+      vec3 cool = mix(uPalette[${PALETTE_SLOTS.concreteWhite}], uPalette[${PALETTE_SLOTS.glassPale}], 0.22);
+      // Una minoranza di finestre calde va oltre l'ambra fino all'oro: sono i
+      // punti che a distanza si staccano dal tessuto, e senza il gradino la coda
+      // calda si fermerebbe tutta sullo stesso tono.
+      vec3 warm = mix(uPalette[${PALETTE_SLOTS.metalBrass}], uPalette[${PALETTE_SLOTS.metalGold}],
+        step(0.88, tone));
+      // Il carattere cromatico e' anche della torre e non solo della finestra:
+      // due palazzi di uffici affiancati non hanno la stessa lampada, e senza
+      // questo termine avrebbero esattamente lo stesso bianco. Decorrelato dalla
+      // polarizzazione con un altro fract, o le torri piu' calde sarebbero
+      // sempre le piu' buie.
+      float towerTone = fract(towerHash * 3.71);
+      float warmth = clamp(mix(0.92, 0.22, office) + (tone - 0.5) * 1.1 + (towerTone - 0.5) * 0.55,
+        0.0, 1.0);
+      vec3 windowLight = mix(cool, warm, warmth);
       // Poche finestre molto accese valgono piu' di tante uguali: e' la coda
       // lunga che fa scintillare una facciata invece di velarla.
       float hot = fract(tone * 6.71);
-      float strength = mix(0.55, 1.25, hot) + step(0.97, hot) * 1.4;
+      float strength = mix(0.4, 1.35, hot) + step(0.97, hot) * 1.5;
 
       detailed = mix(detailed, uPalette[${PALETTE_SLOTS.glassDeep}] * 0.62, pane * 0.72);
       detailed *= 1.0 - panelEdge * 0.16;

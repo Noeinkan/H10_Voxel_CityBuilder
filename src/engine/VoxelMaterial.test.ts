@@ -221,6 +221,10 @@ describe('createVoxelMaterial', () => {
     expect(source).toContain(NIGHT_WINDOWS.floorFill.toFixed(2));
     expect(source).toContain(NIGHT_WINDOWS.towerBias.high.toFixed(2));
     expect(source).toContain(NIGHT_WINDOWS.gain.night.toFixed(2));
+    expect(source).toContain(`cell.z / ${NIGHT_WINDOWS.storey.block.toFixed(1)}`);
+    expect(source).toContain(NIGHT_WINDOWS.storey.darkShare.toFixed(2));
+    expect(source).toContain(NIGHT_WINDOWS.storey.dimmest.toFixed(2));
+    expect(source).toContain(NIGHT_WINDOWS.coreShare.toFixed(3));
     // Quante finestre si accendono resta una lettura dell'economia, non dell'ora.
     expect(source).toContain('pow(uLitHomes');
   });
