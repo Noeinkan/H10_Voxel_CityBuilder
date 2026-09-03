@@ -23,11 +23,17 @@ describe('buildCityOverviewModel', () => {
     // Un uso secondario conta davvero verso l'obiettivo: e' lo stesso conteggio
     // con cui la simulazione decide se la citta' e' autosufficiente.
     expect(model?.goals.find((goal) => goal.label === 'Commerce')?.current).toBe(2);
-    expect(model?.capacity).toContainEqual(expect.objectContaining({
+    // I bisogni sono barre e non riquadri di testo: il tono dice a colpo
+    // d'occhio quale delle sette e' l'emergenza, e `ratio` la lunghezza.
+    expect(model?.needs).toContainEqual(expect.objectContaining({
+      id: 'workforce',
       label: 'Workforce',
       value: '75% staffed',
-      tone: 'warning',
+      ratio: 0.75,
+      tone: 'watch',
     }));
+    // Un saldo non ha un tetto contro cui misurarsi: niente barra, solo il tono.
+    expect(model?.needs.find((entry) => entry.id === 'funds-balance')?.ratio).toBeNull();
     expect(model?.shape).toContainEqual({ label: 'Height bands', value: 'L0 2 · L3 1' });
     expect(model?.infrastructure).toContainEqual({
       label: 'Elevated links',
@@ -140,6 +146,7 @@ function stats(): GrowthStats {
       ropeways: 1,
       clearing: 0,
       cleared: 0,
+      abandoned: 0,
       farmPlots: 4,
       arcologies: 1,
       arcologyRefusal: null,

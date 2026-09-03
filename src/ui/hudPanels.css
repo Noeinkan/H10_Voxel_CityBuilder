@@ -261,3 +261,114 @@
 /* `display: grid` batte la regola dell'attributo `hidden`: senza questa riga il
    velo resterebbe a schermo, nero, per sempre. */
 .main-menu-veil[hidden] { display: none; }
+
+/* --- Misure grafiche: barre, verdetti, composizioni, consigli ---------------
+
+   Il vocabolario che la scheda di selezione e il cassetto Citta' condividono.
+   I toni sono quattro e vivono qui una volta sola: `good` e `bad` dicono come
+   sta una cosa, `watch` dice guardala, `plain` che non c'e' niente da dire. Le
+   tinte arrivano tutte dai token del tema — un colore cablato spegnerebbe i
+   temi notturni esattamente dove il colpo d'occhio deve funzionare. */
+.selection-panel, .city-drawer, .policies-drawer {
+  --tone-good: var(--hud-positive);
+  --tone-watch: var(--hud-gesture);
+  --tone-bad: var(--hud-danger);
+  --tone-plain: var(--hud-muted);
+  --use-residential: var(--hud-sage-dark);
+  --use-commercial: var(--hud-gesture);
+  --use-industrial: var(--hud-gold);
+  --use-civic: var(--hud-accent-shape);
+}
+
+.panel-verdict { display: grid; gap: var(--space-05); padding: var(--space-2); border-left: 3px solid var(--tone-plain); border-radius: var(--radius-md); background: var(--hud-well); }
+.panel-verdict[data-tone="good"] { border-left-color: var(--tone-good); }
+.panel-verdict[data-tone="watch"] { border-left-color: var(--tone-watch); }
+.panel-verdict[data-tone="bad"] { border-left-color: var(--tone-bad); }
+.panel-verdict-headline { color: var(--tone-plain); font-size: calc(13 * var(--hud-unit)); font-weight: 900; letter-spacing: .08em; text-transform: uppercase; }
+.panel-verdict[data-tone="good"] .panel-verdict-headline { color: var(--tone-good); }
+.panel-verdict[data-tone="watch"] .panel-verdict-headline { color: var(--tone-watch); }
+.panel-verdict[data-tone="bad"] .panel-verdict-headline { color: var(--tone-bad); }
+.panel-verdict-detail { color: var(--hud-ink); font-size: calc(12 * var(--hud-unit)); line-height: 1.45; }
+
+/* Etichetta e valore sulla prima riga, la barra sotto a tutta larghezza:
+   l'icona occupa la prima colonna solo dove c'e', e la barra la scavalca. */
+.meter-list { display: grid; gap: var(--space-15); }
+.meter { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: var(--space-05) var(--space-15); }
+.meter .hud-icon { width: calc(14 * var(--hud-unit)); height: calc(14 * var(--hud-unit)); color: var(--hud-muted); }
+.meter-label { grid-column: 2; color: var(--hud-muted); font-size: calc(12 * var(--hud-unit)); font-weight: 800; }
+.meter-value { grid-column: 3; color: var(--hud-ink); font-size: calc(12 * var(--hud-unit)); font-variant-numeric: tabular-nums; }
+.meter-track { grid-column: 1 / -1; height: 5px; overflow: hidden; border-radius: var(--radius-pill); background: var(--hud-line-soft); }
+.meter-fill { display: block; height: 100%; border-radius: inherit; background: var(--tone-plain); }
+.meter[data-tone="good"] .meter-fill { background: var(--tone-good); }
+.meter[data-tone="watch"] .meter-fill { background: var(--tone-watch); }
+.meter[data-tone="bad"] .meter-fill { background: var(--tone-bad); }
+.meter[data-tone="good"] .meter-value { color: var(--tone-good); }
+.meter[data-tone="bad"] .meter-value { color: var(--tone-bad); }
+
+.breakdown { display: grid; gap: var(--space-1); }
+.breakdown-head { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-2); color: var(--hud-muted); font-size: calc(12 * var(--hud-unit)); font-weight: 800; }
+.breakdown-head strong { color: var(--hud-ink); font-size: calc(13 * var(--hud-unit)); font-variant-numeric: tabular-nums; }
+.breakdown > .meter-track { height: 7px; }
+.breakdown > .meter-track .meter-fill { background: var(--tone-watch); }
+.breakdown[data-met="true"] > .meter-track .meter-fill { background: var(--tone-good); }
+.breakdown-parts { display: grid; gap: var(--space-05); margin: var(--space-05) 0 0; padding: 0; list-style: none; }
+.breakdown-part { display: grid; grid-template-columns: minmax(0, 1fr) calc(48 * var(--hud-unit)) auto; align-items: center; gap: var(--space-15); color: var(--hud-muted); font-size: calc(11 * var(--hud-unit)); }
+.part-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.part-track { height: 4px; overflow: hidden; border-radius: var(--radius-pill); background: var(--hud-line-soft); }
+.part-fill { display: block; height: 100%; border-radius: inherit; background: var(--tone-good); }
+.breakdown-part[data-negative="true"] .part-fill { background: var(--tone-bad); }
+.part-value { color: var(--tone-good); font-variant-numeric: tabular-nums; }
+.breakdown-part[data-negative="true"] .part-value { color: var(--tone-bad); }
+
+/* Una barra sola divisa in usi: e' una composizione, non un confronto, quindi
+   i segmenti stanno affiancati e le quote sono sul totale. */
+.mix { display: grid; gap: var(--space-1); }
+.mix-bar { display: flex; height: 7px; overflow: hidden; border-radius: var(--radius-pill); background: var(--hud-line-soft); }
+.mix-slice { display: block; height: 100%; background: var(--tone-plain); }
+.mix-slice[data-use="residential"] { background: var(--use-residential); }
+.mix-slice[data-use="commercial"] { background: var(--use-commercial); }
+.mix-slice[data-use="industrial"] { background: var(--use-industrial); }
+.mix-slice[data-use="civic"] { background: var(--use-civic); }
+.mix-legend { display: flex; flex-wrap: wrap; gap: var(--space-05) var(--space-2); color: var(--hud-muted); font-size: calc(11 * var(--hud-unit)); }
+.mix-key { display: inline-flex; align-items: center; gap: var(--space-05); }
+.mix-key::before { content: ""; width: calc(8 * var(--hud-unit)); height: calc(8 * var(--hud-unit)); border-radius: 2px; background: var(--tone-plain); }
+.mix-key[data-use="residential"]::before { background: var(--use-residential); }
+.mix-key[data-use="commercial"]::before { background: var(--use-commercial); }
+.mix-key[data-use="industrial"]::before { background: var(--use-industrial); }
+.mix-key[data-use="civic"]::before { background: var(--use-civic); }
+
+.advice { display: grid; gap: var(--space-1); padding: var(--space-2); border: 1px dashed var(--hud-accent-shape); border-radius: var(--radius-md); background: var(--hud-accent-soft); }
+.advice-title { margin: 0; color: var(--hud-ink); font-size: calc(11 * var(--hud-unit)); font-weight: 900; letter-spacing: .08em; text-transform: uppercase; }
+.advice-note { color: var(--hud-muted); font-size: calc(10 * var(--hud-unit)); line-height: 1.35; }
+.advice-list { display: grid; gap: var(--space-1); margin: var(--space-05) 0 0; padding: 0; list-style: none; }
+.advice-option { display: grid; grid-template-columns: auto minmax(0, 1fr) calc(52 * var(--hud-unit)) auto auto; align-items: center; gap: var(--space-15); color: var(--hud-ink); font-size: calc(12 * var(--hud-unit)); }
+.advice-option .hud-icon { width: calc(15 * var(--hud-unit)); height: calc(15 * var(--hud-unit)); color: var(--hud-sage-dark); }
+.advice-name { overflow: hidden; font-weight: 800; text-overflow: ellipsis; white-space: nowrap; }
+.advice-track { height: 5px; overflow: hidden; border-radius: var(--radius-pill); background: var(--hud-line-soft); }
+.advice-fill { display: block; height: 100%; border-radius: inherit; background: var(--hud-sage-dark); }
+.advice-gain { color: var(--hud-muted); font-size: calc(11 * var(--hud-unit)); font-variant-numeric: tabular-nums; }
+/* Chi chiude il divario da solo e' un consiglio diverso da chi lo accorcia. */
+.advice-option[data-enough="true"] .advice-gain { color: var(--tone-good); font-weight: 800; }
+.advice-cost { color: var(--hud-muted); font-size: calc(11 * var(--hud-unit)); font-variant-numeric: tabular-nums; }
+.advice-cost::before { content: "¤ "; }
+/* Un ruolo che c'e' gia' in portata resta nell'elenco ma si spegne: toglierlo
+   farebbe sparire proprio il nome che il giocatore ha appena letto fra le fonti
+   della sua desiderabilita', e il consiglio sembrerebbe ignorare cio' che c'e'. */
+.advice-option[data-present="true"] { opacity: .62; }
+.advice-option[data-present="true"] .advice-name::after { content: " · here"; color: var(--hud-muted); font-weight: 700; }
+
+.selection-lead { display: grid; gap: var(--space-2); padding: var(--space-2); border: 1px solid var(--hud-accent-shape); border-radius: var(--radius-md); background: var(--hud-cream-deep); }
+.selection-meters[hidden], .selection-mix[hidden] { display: none; }
+/* I dettagli sono la carta d'identita': si consultano una volta e non si
+   sorvegliano, quindi nascono chiusi e non rubano spazio alle barre. */
+.selection-details { padding-top: var(--space-1); border-top: 1px solid var(--hud-line-soft); }
+.selection-details[hidden] { display: none; }
+.selection-details > summary { color: var(--hud-muted); font-size: calc(10 * var(--hud-unit)); font-weight: 900; letter-spacing: .1em; text-transform: uppercase; cursor: pointer; list-style: none; }
+.selection-details > summary::-webkit-details-marker { display: none; }
+.selection-details > summary::after { content: " \25B8"; }
+.selection-details[open] > summary::after { content: " \25BE"; }
+.selection-details > summary:focus-visible { outline: 3px solid var(--hud-accent-shape); outline-offset: 2px; border-radius: var(--radius-sm); }
+.selection-details .selection-rows { margin-top: var(--space-1); font-size: calc(12 * var(--hud-unit)); }
+
+/* Il cassetto Citta' usa le stesse barre della scheda, con l'aria del drawer. */
+.city-needs { display: grid; gap: var(--space-15); }

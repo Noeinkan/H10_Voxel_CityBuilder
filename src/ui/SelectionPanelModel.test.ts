@@ -128,6 +128,18 @@ function rowsOf(model: ReturnType<typeof buildSelectionPanelModel>, id: string):
   return section === undefined ? [] : section.rows.map((row) => `${row.label}: ${row.value}`);
 }
 
+/** Le barre di una sezione, appiattite come le righe: «etichetta: valore». */
+function metersOf(model: ReturnType<typeof buildSelectionPanelModel>, id: string): readonly string[] {
+  const section = model.sections.find((entry) => entry.id === id);
+  return section === undefined ? [] : section.meters.map((entry) => `${entry.label}: ${entry.value}`);
+}
+
+/** I `hint` delle barre: la prosa che prima era il valore della riga. */
+function hintsOf(model: ReturnType<typeof buildSelectionPanelModel>, id: string): string {
+  const section = model.sections.find((entry) => entry.id === id);
+  return section === undefined ? '' : section.meters.map((entry) => entry.hint).join(' | ');
+}
+
 function sectionOf(model: ReturnType<typeof buildSelectionPanelModel>, id: string) {
   const section = model.sections.find((entry) => entry.id === id);
   if (section === undefined) throw new Error(`sezione ${id} attesa`);
@@ -148,9 +160,12 @@ describe('buildSelectionPanelModel', () => {
 
     expect(model.title).toBe('Port');
     expect(section.title).toBe('Port');
-    expect(section.summary).toContain('stage 2');
-    expect(section.summary).not.toContain('level');
     const rows = rowsOf(model, 'structure');
+    // Lo stadio massimo lo decide la ricetta e non questo file: scriverlo qui
+    // renderebbe rosso il test alla prima parte aggiunta a un molo, senza che
+    // niente si sia rotto.
+    expect(rows.some((row) => /^Stage: stage 2 of \d+$/.test(row))).toBe(true);
+    expect(rows.join(' ')).not.toContain('Level:');
     expect(rows).toContain('Reach: radius 60 · follows streets and terrain');
     expect(rows).toContain('Influence: Commerce +144 · Industry +206');
     expect(rows.some((row) => row.startsWith('Favours:'))).toBe(true);
@@ -158,16 +173,14 @@ describe('buildSelectionPanelModel', () => {
     expect(rows.join(' ')).not.toContain('Use:');
   });
 
-  it('un landmark dice cosa produce, non solo quanto copre', () => {
+  it('un landmark dice cosa produce prima di quanto copre', () => {
     // La portata e la forza dicono *dove* agisce un catalizzatore; il mestiere —
     // aprire il commercio, attirare negozi — e' la domanda di chi lo clicca, e
-    // prima non aveva risposta.
+    // sta nel sommario perche' e' la prima cosa che si legge sotto il nome.
     const model = buildSelectionPanelModel(selection(structure({ landmark: 'port', level: 2 })));
-    const rows = rowsOf(model, 'structure');
 
-    expect(rows.some((row) => row.startsWith('Produces:'))).toBe(true);
-    expect(rows.join(' ')).toContain('external trade');
-    expect(rows).toContain(
+    expect(sectionOf(model, 'structure').summary).toContain('external trade');
+    expect(rowsOf(model, 'structure')).toContain(
       'District: density +30 · wealth +60 · accessibility +135 · satisfaction -20 · industry +85',
     );
   });
@@ -289,11 +302,21 @@ describe('buildSelectionPanelModel', () => {
 
   it('l\'isolato mostra le capacita\' e i flussi che gli appartengono', () => {
     const model = buildSelectionPanelModel(selection(structure()));
-    const rows = rowsOf(model, 'block');
 
     expect(sectionOf(model, 'block').title).toBe('Block 2,3');
-    expect(rows).toContain('Housing capacity: 72 residents');
-    expect(rows).toContain('Commerce capacity: 24 customers a tick');
+    expect(metersOf(model, 'block')).toContain('Housing: 72 residents');
+    expect(metersOf(model, 'block')).toContain('Commerce: 24 customers a tick');
+  });
+
+  it('la composizione di un isolato e\' una barra sola divisa per uso', () => {
+    // Le quote stanno sul totale e non sul massimo: e' una composizione, e i
+    // segmenti si affiancano dentro la stessa barra.
+    const model = buildSelectionPanelModel(selection(structure()));
+    const mix = sectionOf(model, 'block').mix;
+
+    expect(mix.map((part) => `${part.label} ${part.value}`)).toEqual(['Housing 3', 'Commerce 1']);
+    expect(mix.reduce((sum, part) => sum + part.share, 0)).toBeCloseTo(1, 9);
+    expect(mix.map((part) => part.key)).toEqual(['residential', 'commercial']);
   });
 
   it('i flussi produttivi dichiarano l\'organico cittadino che li limita', () => {
@@ -314,70 +337,74 @@ describe('buildSelectionPanelModel', () => {
         },
       },
     });
-    const rows = rowsOf(model, 'block');
+    const meters = metersOf(model, 'block');
 
-    expect(rows).toContain('Materials: 1.3 of 2.5 a tick');
-    expect(rows).toContain('Food: 6 of 12 a tick');
-    expect(rows).toContain('Civic upkeep: 2 funds a tick');
-    expect(rows).toContain('Workforce: 50% staffed citywide');
+    expect(meters).toContain('Materials: 1.3 of 2.5 a tick');
+    expect(meters).toContain('Food: 6 of 12 a tick');
+    expect(meters).toContain('Upkeep: 2 funds a tick');
+    expect(meters).toContain('Workers: 50% staffed');
+    expect(hintsOf(model, 'block')).toContain('workforce is spread thin');
   });
 
-  it('un uso dice cosa rende il tipo, quanti ne ha la citta\' e quanto ne usa', () => {
+  it('un uso e\' una barra, e la prosa che la commentava vive nel suo suggerimento', () => {
     // Tre fatti che si restringono, e nessuno dei tre e' di questo edificio: la
-    // scheda descrive un edificio *come* questo, non questo.
+    // scheda descrive un edificio *come* questo, non questo. La barra risponde
+    // prima della parola; la parola resta per chi la vuole.
     const model = buildSelectionPanelModel(selection(structure({}, { uses: [use()] })));
 
-    expect(rowsOf(model, 'structure'))
-      .toContain('Housing: room for 24 residents · one of 37 · 82% used citywide');
+    expect(metersOf(model, 'structure')).toContain('Homes: 82% occupied');
+    expect(hintsOf(model, 'structure')).toContain('Room for 24 residents · one of 37 in the city');
+    expect(hintsOf(model, 'structure')).toContain('18% of homes in the city stand empty');
   });
 
   it('ogni uso dichiara cio\' che gli manca per rendere al pieno', () => {
     // L'ingresso, non il rendimento: una casa vuole residenti, una fabbrica
     // braccia, un servizio fondi. La cifra e' della citta', come il resto.
-    const homes = buildSelectionPanelModel(selection(structure({}, { uses: [use()] })));
-    expect(rowsOf(homes, 'structure')).toContain('Needs: residents — 18% of homes in the city are empty');
-
     const factory = buildSelectionPanelModel(selection(structure(
       { class: BUILDING_CLASS.industrial },
       { uses: [use({ cls: BUILDING_CLASS.industrial, cityUse: null, staffing: 0.5 })] },
     )));
-    expect(rowsOf(factory, 'structure')).toContain('Needs: workers — the city workforce is 50% staffed');
+    expect(metersOf(factory, 'structure')).toContain('Workers: 50% staffed');
+    expect(hintsOf(factory, 'structure')).toContain('sharing too few workers citywide');
 
     const shop = buildSelectionPanelModel(selection(structure(
       { class: BUILDING_CLASS.commercial },
       { uses: [use({ cls: BUILDING_CLASS.commercial, cityUse: 0.74, staffing: 1 })] },
     )));
-    expect(rowsOf(shop, 'structure'))
-      .toContain('Needs: workers — the city workforce is fully staffed · 26% of shops in the city stand idle');
+    expect(metersOf(shop, 'structure')).toEqual(['Shops: 74% busy', 'Workers: 100% staffed']);
+    expect(hintsOf(shop, 'structure')).toContain('26% of shops in the city stand idle');
 
     const civic = buildSelectionPanelModel(selection(structure(
       { class: BUILDING_CLASS.civic },
       { uses: [use({ cls: BUILDING_CLASS.civic, cityUse: null })] },
     )));
-    expect(rowsOf(civic, 'structure'))
-      .toContain('Needs: funds — its upkeep is paid from the treasury each tick');
+    // Un servizio non pesca dall'organico: nessuna barra dell'organico accanto.
+    expect(metersOf(civic, 'structure')).toEqual(['Upkeep: 24 funds a tick']);
+    expect(hintsOf(civic, 'structure')).toContain('Paid from the treasury each tick');
   });
 
-  it('una casa piena non chiede piu\' residenti', () => {
-    const model = buildSelectionPanelModel(selection(structure(
-      {},
-      { uses: [use({ cityUse: 1 })] },
-    )));
+  it('una casa piena non chiede piu\' residenti, e una strapiena lo dice', () => {
+    const full = buildSelectionPanelModel(selection(structure({}, { uses: [use({ cityUse: 1 })] })));
+    expect(hintsOf(full, 'structure')).toContain('Every home in the city is occupied');
 
-    expect(rowsOf(model, 'structure'))
-      .toContain('Needs: residents — every home in the city is occupied');
+    // Oltre il pieno non e' un successo: sono residenti senza una casa, ed e' la
+    // penalita' di sovraffollamento che la soddisfazione applica davvero.
+    const crowded = buildSelectionPanelModel(selection(structure({}, { uses: [use({ cityUse: 1.12 })] })));
+    expect(sectionOf(crowded, 'structure').meters[0]?.tone).toBe('bad');
+    expect(hintsOf(crowded, 'structure')).toContain('12% more residents than the city has homes for');
   });
 
-  it('la percentuale e\' della citta\', e senza un dato non si inventa', () => {
-    // L'industria non ha una quota d'uso che il tick conservi: la riga si ferma
-    // dove finiscono i fatti invece di riempirsi di un numero plausibile.
+  it('senza un dato non si inventa una percentuale', () => {
+    // L'industria non ha una quota d'uso che il tick conservi: la barra segue
+    // l'organico, che e' il numero vero, invece di riempirsi di uno plausibile.
     const model = buildSelectionPanelModel(selection(structure(
       { class: BUILDING_CLASS.industrial },
       { uses: [use({ cls: BUILDING_CLASS.industrial, perBuilding: 2.5, count: 9, cityUse: null })] },
     )));
 
-    expect(rowsOf(model, 'structure')).toContain('Industry: yields 2.5 materials a tick · one of 9');
-    expect(rowsOf(model, 'structure').join(' ')).not.toContain('citywide');
+    expect(metersOf(model, 'structure')).toContain('Workshops: 2.5 materials a tick');
+    expect(hintsOf(model, 'structure')).toContain('one of 9 in the city');
+    expect(hintsOf(model, 'structure')).not.toContain('%');
   });
 
   it('dice che crescere non cambia il rendimento, accanto al livello che lo chiede', () => {
@@ -388,6 +415,9 @@ describe('buildSelectionPanelModel', () => {
 
     expect(rows).toContain('Level: 6 · the highest this place allows');
     expect(rows.join(' ')).toContain('counts buildings, not floors');
+    // Fra i dettagli e non fra le barre: e' una regola del bilancio, non una
+    // quantita' da sorvegliare.
+    expect(metersOf(model, 'structure').join(' ')).not.toContain('counts buildings');
     // E dove non c'e' un rendimento non c'e' niente da spiegare.
     const span = buildSelectionPanelModel(selection(structure({ span: SPAN_KIND.bridge })));
     expect(rowsOf(span, 'structure').join(' ')).not.toContain('counts buildings');
@@ -403,17 +433,17 @@ describe('buildSelectionPanelModel', () => {
         ],
       },
     )));
-    const rows = rowsOf(model, 'structure');
-
-    expect(rows).toContain('Commerce: serves 24 customers a tick · one of 14 · 74% used citywide');
-    expect(rows).toContain('Housing (hosted): room for 12 residents · one of 37 · 82% used citywide');
+    expect(metersOf(model, 'structure'))
+      .toEqual(['Shops: 74% busy', 'Homes: 82% occupied', 'Workers: 50% staffed']);
+    expect(hintsOf(model, 'structure')).toContain('Serves 24 customers a tick · one of 14 in the city');
+    expect(hintsOf(model, 'structure')).toContain('Room for 12 residents · one of 37 in the city');
   });
 
   it('un landmark non porta nessun rendimento, perche\' il tick non l\'ha mai contato', () => {
     const model = buildSelectionPanelModel(selection(structure({ landmark: 'port', level: 2 })));
 
+    expect(sectionOf(model, 'structure').meters).toEqual([]);
     expect(rowsOf(model, 'structure').join(' ')).not.toContain('room for');
-    expect(rowsOf(model, 'structure').join(' ')).not.toContain('one of');
   });
 
   it('solo l\'isolato offre un gesto, e le altre sezioni nessuno', () => {
@@ -466,9 +496,13 @@ describe('buildSelectionPanelModel', () => {
       },
     });
 
-    expect(actionOf(buildSelectionPanelModel(empty), 'block')).toBe('isolate-block');
-    expect(rowsOf(buildSelectionPanelModel(empty), 'block'))
-      .toContain('Productivity: no active buildings');
+    const model = buildSelectionPanelModel(empty);
+    expect(actionOf(model, 'block')).toBe('isolate-block');
+    // Niente barre e niente composizione: il vuoto e' un fatto, e una barra a
+    // zero insegnerebbe a guardare dove non c'e' niente da guardare.
+    expect(sectionOf(model, 'block').meters).toEqual([]);
+    expect(sectionOf(model, 'block').mix).toEqual([]);
+    expect(sectionOf(model, 'block').summary).toBe('Nothing has grown here yet.');
   });
 });
 
@@ -489,11 +523,11 @@ describe('SECTION_LABELS', () => {
   });
 });
 
-describe('la carta di cio\' che serve per crescere', () => {
-  function cardRows(model: ReturnType<typeof buildSelectionPanelModel>): readonly string[] {
-    const card = model.growth;
-    if (card === null) throw new Error('carta di crescita attesa');
-    return card.rows.map((row) => `${row.label}: ${row.value}`);
+describe('il verdetto, la barra e il consiglio', () => {
+  function partsOf(model: ReturnType<typeof buildSelectionPanelModel>): readonly string[] {
+    const breakdown = model.breakdown;
+    if (breakdown === null) throw new Error('barra composta attesa');
+    return breakdown.parts.map((part) => `${part.label}: ${part.value}`);
   }
 
   it('un edificio legge soglia e cassa dalla stessa macchina del driver', () => {
@@ -514,13 +548,37 @@ describe('la carta di cio\' che serve per crescere', () => {
       },
     )));
 
-    expect(model.growth).not.toBeNull();
-    expect(model.growth!.title).toBe('To grow');
-    expect(model.growth!.summary).toBe('What this building needs to reach level 4.');
-    expect(cardRows(model)).toEqual([
-      'Desirability: 78 of the 96 it needs for Industry',
-      'Materials: 12 in stock · 72 needed for the upgrade',
-    ]);
+    expect(model.verdict.tone).toBe('watch');
+    expect(model.verdict.headline).toBe('Needs desirability');
+    expect(model.verdict.detail).toBe('78 of the 96 that level 4 asks for Industry.');
+    expect(model.breakdown).toMatchObject({ label: 'Desirability', value: 78, target: 96, met: false });
+    // La desiderabilita' viene prima della cassa perche' viene prima nel driver:
+    // dire «mancano materiali» a un edificio che non promuoverebbe comunque
+    // manderebbe il giocatore a risolvere il problema sbagliato.
+    expect(model.verdict.detail).not.toContain('materials');
+  });
+
+  it('con la soglia raggiunta e la cassa vuota, il verdetto passa ai materiali', () => {
+    const model = buildSelectionPanelModel(selection(structure(
+      {},
+      {
+        growth: {
+          nextLevel: 4,
+          desirability: 130,
+          threshold: 96,
+          baseThreshold: 96,
+          discount: 0,
+          sources: [],
+          congestion: 0,
+          cost: 72,
+          stock: 12,
+        },
+      },
+    )));
+
+    expect(model.verdict.headline).toBe('Waiting on materials');
+    expect(model.verdict.detail).toBe('Level 4 costs 72 materials, and the city holds 12.');
+    expect(model.advice).toBeNull();
   });
 
   it('una soglia gia\' raggiunta si legge come raggiunta, e senza costo niente cassa', () => {
@@ -541,10 +599,12 @@ describe('la carta di cio\' che serve per crescere', () => {
       },
     )));
 
-    expect(cardRows(model)).toEqual(['Desirability: 130 · the 96 it needs is met']);
+    expect(model.verdict.tone).toBe('good');
+    expect(model.verdict.headline).toBe('Ready to grow');
+    expect(model.breakdown).toMatchObject({ value: 130, target: 96, met: true, parts: [] });
   });
 
-  it('sotto soglia la carta scompone la desiderabilita\' nelle sue fonti', () => {
+  it('sotto soglia la barra scompone la desiderabilita\' nelle sue fonti', () => {
     // «78 of 96» senza la provenienza non dice niente da fare: le righe
     // aggiuntive sono la risposta, con i segni che il campo applica davvero.
     const model = buildSelectionPanelModel(selection(structure(
@@ -568,14 +628,51 @@ describe('la carta di cio\' che serve per crescere', () => {
       },
     )));
 
-    expect(cardRows(model)).toEqual([
-      'Desirability: 78 of the 96 it needs for Housing (base 120, local qualities -24)',
-      'From Market (96, 84): +52',
-      'From Factory (100, 92): +21',
-      'From Airport (50, 50): -9',
-      'Neighbours: -24 · 3 buildings nearby',
-      'Materials: 12 in stock · 72 needed for the upgrade',
+    expect(model.verdict.detail)
+      .toBe('78 of the 96 that level 4 asks for Housing (base 120, local qualities -24).');
+    expect(partsOf(model)).toEqual([
+      'Market (96, 84): 52',
+      'Factory (100, 92): 21',
+      'Airport (50, 50): -9',
+      '3 buildings nearby: -24',
     ]);
+    // Le quote stanno sul massimo assoluto e non sul totale: con una voce
+    // negativa il totale sarebbe piu' piccolo della sua parte piu' grande, e la
+    // barra piu' lunga uscirebbe dal blocco.
+    expect(model.breakdown!.parts[0]?.share).toBe(1);
+    expect(model.breakdown!.parts[3]?.negative).toBe(true);
+  });
+
+  it('il consiglio nomina i ruoli che alzerebbero l\'uso in difetto', () => {
+    // La domanda che la scheda non sapeva rispondere: diceva quanto mancava e da
+    // chi veniva cio' che c'era, e li' si fermava.
+    const model = buildSelectionPanelModel(selection(structure(
+      {},
+      {
+        growth: {
+          nextLevel: 4,
+          desirability: 78,
+          threshold: 96,
+          baseThreshold: 96,
+          discount: 0,
+          sources: [{ label: 'Market', x: 96, y: 84, contribution: 78 }],
+          congestion: 0,
+          cost: 0,
+          stock: 0,
+        },
+      },
+    )));
+
+    const advice = model.advice;
+    expect(advice).not.toBeNull();
+    expect(advice!.label).toBe('Housing');
+    expect(advice!.missing).toBe(18);
+    expect(advice!.options.length).toBeLessThanOrEqual(3);
+    expect(advice!.options.every((option) => option.gain > 0)).toBe(true);
+    // Il ruolo che sta gia' in portata resta nell'elenco ma si dichiara: e' il
+    // nome che il giocatore ha appena letto fra le fonti, due righe piu' su.
+    const market = advice!.options.find((option) => option.id === 'market');
+    if (market !== undefined) expect(market.present).toBe(true);
   });
 
   it('una soglia senza sconto non racconta la sua storia, e i pezzi restano per chi la manca', () => {
@@ -598,10 +695,8 @@ describe('la carta di cio\' che serve per crescere', () => {
         },
       },
     )));
-    expect(cardRows(below)).toEqual([
-      'Desirability: 40 of the 96 it needs for Housing',
-      'From Market (96, 84): +40',
-    ]);
+    expect(below.verdict.detail).toBe('40 of the 96 that level 3 asks for Housing.');
+    expect(partsOf(below)).toEqual(['Market (96, 84): 40']);
 
     const met = buildSelectionPanelModel(selection(structure(
       {},
@@ -619,71 +714,112 @@ describe('la carta di cio\' che serve per crescere', () => {
         },
       },
     )));
-    expect(cardRows(met)).toEqual(['Desirability: 130 · the 96 it needs is met']);
+    expect(met.verdict.headline).toBe('Ready to grow');
+    expect(met.breakdown!.parts).toEqual([]);
   });
 
   it('un edificio al tetto del luogo lo dice, e cosi\' chi regge qualcosa', () => {
     const capped = buildSelectionPanelModel(selection(structure({}, { growth: null })));
-    expect(capped.growth!.summary).toBe('At the highest level this place allows.');
+    expect(capped.verdict).toMatchObject({
+      tone: 'good',
+      headline: 'Fully grown',
+      detail: 'At the highest level this place allows.',
+    });
 
+    // Chi regge non promuove **anche se** avrebbe soglia e materiali: la
+    // portanza si chiede prima, o la scheda prometterebbe una crescita che non
+    // arrivera'.
     const carrying = buildSelectionPanelModel(selection(structure({}, { growth: null, carries: true })));
-    expect(carrying.growth!.summary).toContain('cannot grow');
+    expect(carrying.verdict).toMatchObject({ tone: 'bad', headline: 'Cannot grow' });
+    expect(carrying.verdict.detail).toContain('holds up elevated parts');
   });
 
   it('un landmark dice quanti edifici mancano allo stadio successivo', () => {
-    // Gli stessi numeri del driver: stadio, massimo, vicini e soglia. La riga
-    // vive nella carta in cima, non piu' in fondo alla scheda della struttura.
+    // Gli stessi numeri del driver: stadio, massimo, vicini e soglia — e nessun
+    // consiglio, perche' cio' che gli manca sono edifici, e gli edifici non si
+    // piazzano.
     const model = buildSelectionPanelModel(selection(structure(
       { landmark: 'port', level: 2 },
       { landmark: { stage: 2, maxStage: 4, nearby: 14, nextAt: 16 } },
     )));
 
-    expect(model.growth!.summary).toBe('The next stage needs 16 buildings within reach.');
-    expect(cardRows(model)).toContain('Stage: 2/4 · 14/16 buildings nearby');
-    // Cio' che lo stadio compra accanto a cio' che lo paga: senza, contare gli
-    // edifici vicini e' un numero senza prezzo.
-    expect(cardRows(model)).toContain('Next stage: strength +8');
-    expect(rowsOf(model, 'structure').join(' ')).not.toContain('Stage:');
+    expect(model.verdict.headline).toBe('Stage 2 of 4');
+    expect(model.verdict.detail).toBe('The next stage needs 16 buildings within reach, and buys 8 more strength.');
+    expect(model.breakdown).toMatchObject({
+      label: 'Buildings within reach',
+      value: 14,
+      target: 16,
+      met: false,
+    });
+    expect(model.advice).toBeNull();
   });
 
-  it('un landmark arrivato in cima non ha piu\' una carta', () => {
+  it('un landmark arrivato in cima non ha piu\' una barra', () => {
     const model = buildSelectionPanelModel(selection(structure(
       { landmark: 'port', level: 4 },
       { landmark: { stage: 4, maxStage: 4, nearby: 40, nextAt: null } },
     )));
 
-    expect(model.growth).toBeNull();
+    expect(model.verdict).toMatchObject({ tone: 'plain', headline: 'Port · full stage' });
+    expect(model.breakdown).toBeNull();
   });
 
-  it('un terreno nudo elenca gli usi che superano la propria soglia di sito', () => {
+  it('un terreno nudo nomina gli usi che superano la propria soglia di sito', () => {
     // Desiderabilita' [180, 90, 20, 40] contro le soglie [40, 34, 30, 25]:
     // l'industria non le passa e non compare, come in `nextBuildSites`.
     const model = buildSelectionPanelModel(selection(null));
 
-    expect(cardRows(model)).toEqual([
-      'Housing: 180 · passes the 40 site threshold',
-      'Commerce: 90 · passes the 34 site threshold',
-      'Civic: 40 · passes the 25 site threshold',
-    ]);
+    expect(model.verdict).toMatchObject({ tone: 'good', headline: 'Ready to build' });
+    expect(model.verdict.detail).toBe('Housing, Commerce, Civic would take root here as the city reaches it.');
+    expect(model.advice).toBeNull();
   });
 
-  it('dove nessun uso arriva, la carta nomina il gesto che manca', () => {
+  it('le quattro barre della colonna dicono chi supera la propria soglia', () => {
+    // Sostituiscono la riga `Demand`, l'unica della scheda che pretendeva di
+    // conoscere a memoria quattro soglie diverse per essere letta.
+    const model = buildSelectionPanelModel(selection(null));
+
+    expect(metersOf(model, 'column'))
+      .toEqual(['Housing: 180 / 40', 'Commerce: 90 / 34', 'Industry: 20 / 30', 'Civic: 40 / 25']);
+    expect(sectionOf(model, 'column').meters.map((entry) => entry.tone))
+      .toEqual(['good', 'good', 'watch', 'good']);
+    // I numeri esatti restano fra i dettagli, per chi confronta due colonne.
+    expect(rowsOf(model, 'column')).toContain('Demand: Housing 180 · Commerce 90 · Industry 20 · Civic 40');
+  });
+
+  it('dove nessun uso arriva, il consiglio nomina i ruoli da piazzare', () => {
     const picked = selection(null);
     const quiet = buildSelectionPanelModel({
       ...picked,
       column: { ...picked.column, desirability: [10, 10, 10, 10] },
     });
-    expect(cardRows(quiet)).toEqual([
-      'First building: desirability below every site threshold — a landmark nearby would raise it',
-    ]);
+    // Il consiglio si calcola sull'uso che manca **di meno**: e' l'unico che un
+    // catalizzatore solo puo' davvero portare sopra soglia.
+    expect(quiet.verdict.headline).toBe('No use wants this yet');
+    expect(quiet.verdict.detail).toBe('Civic is the closest, and still 15 short.');
+    expect(quiet.advice!.label).toBe('Civic');
+    expect(quiet.advice!.options.every((option) => option.gain > 0)).toBe(true);
 
     const lonely = buildSelectionPanelModel({
       ...picked,
       column: { ...picked.column, desirability: [10, 10, 10, 10], profile: { ...PROFILE, roles: [] } },
     });
-    expect(cardRows(lonely)).toEqual([
-      'First building: needs a landmark within reach — desirability comes from catalysts',
-    ]);
+    expect(lonely.verdict.detail).toBe('Nothing is within reach: desirability only comes from catalysts.');
+  });
+
+  it('un ruolo che il sito rifiuta non viene mai consigliato', () => {
+    // Consigliare un porto all'interno e' peggio di non consigliare niente:
+    // manderebbe il giocatore a spendere per un rifiuto.
+    const picked = selection(null);
+    const inland = buildSelectionPanelModel({
+      ...picked,
+      column: { ...picked.column, desirability: [10, 10, 10, 10], coastal: false },
+    });
+
+    const ids = inland.advice!.options.map((option) => option.id);
+    expect(ids).not.toContain('port');
+    expect(ids).not.toContain('marina');
+    expect(ids).not.toContain('lighthouse');
   });
 
   it('un terreno non edificabile non promette niente', () => {
@@ -693,16 +829,19 @@ describe('la carta di cio\' che serve per crescere', () => {
       column: { ...picked.column, buildable: false },
     });
 
-    expect(refused.growth!.summary).toBe('Nothing can grow on this column.');
-    expect(cardRows(refused)).toEqual(['Ground: not buildable']);
+    expect(refused.verdict).toMatchObject({ tone: 'bad', headline: 'Nothing can grow' });
+    expect(refused.breakdown).toBeNull();
+    expect(refused.advice).toBeNull();
   });
 
-  it('campate e parti in quota non hanno una carta: non crescono', () => {
+  it('campate e parti in quota non hanno una barra: non crescono', () => {
     const span = buildSelectionPanelModel(selection(structure({ span: SPAN_KIND.bridge })));
-    expect(span.growth).toBeNull();
+    expect(span.verdict).toMatchObject({ tone: 'plain', headline: 'Elevated link' });
+    expect(span.breakdown).toBeNull();
 
     const aerial = buildSelectionPanelModel(selection(structure({ aerial: AERIAL_PART.terrace })));
-    expect(aerial.growth).toBeNull();
+    expect(aerial.verdict).toMatchObject({ tone: 'plain', headline: 'Elevated part' });
+    expect(aerial.breakdown).toBeNull();
   });
 });
 
