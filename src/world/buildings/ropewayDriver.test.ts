@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { BUILDING_CLASS, addBuilding, createSimState } from '../../sim';
 import { testTerrain } from '../../sim/testTerrain';
 import { ROPEWAY, ROPEWAY_PART } from '../ropeway/config';
 import { TERRAIN } from '../terrain/config';
@@ -34,7 +35,7 @@ function strait(): { world: VoxelWorld; builder: Builder } {
 /** Posa una linea e la fa comparire tutta. */
 function tie(): { world: VoxelWorld; builder: Builder } {
   const city = strait();
-  expect(city.builder.placeRopeway(CLICK.x, CLICK.y)).toBe(true);
+  expect(city.builder.placeRopeway(CLICK.x, CLICK.y)).toBe('raised');
   while (city.builder.stats.growing > 0) city.builder.step();
   return city;
 }
@@ -134,7 +135,80 @@ describe('RopewayDriver', () => {
 
   it('un click in mezzo all acqua non tira niente', () => {
     const { builder } = strait();
-    expect(builder.placeRopeway(WATER_FROM + 10, CLICK.y)).toBe(false);
+    expect(builder.placeRopeway(WATER_FROM + 10, CLICK.y)).toBeNull();
     expect(builder.ropewayCables).toHaveLength(0);
+  });
+});
+
+/**
+ * La riva di qua larga esattamente quanto una piazzola: cinque colonne, e oltre
+ * c'e' oceano.
+ *
+ * **Serve a togliere l'arretramento di mezzo.** Su una riva profonda la stazione
+ * si sposta un isolato dentro e non demolisce niente — che e' il comportamento
+ * giusto e quello che il piano prova gia' — quindi qui non si misurerebbe nulla.
+ * Con una sola piazzola possibile resta un bivio solo: sgomberare, o rifiutare.
+ */
+const NARROW_SHORE = 91;
+
+function narrowStrait(): { world: VoxelWorld; builder: Builder } {
+  const world = new VoxelWorld();
+  const terrain = testTerrain({
+    chunksX: 8,
+    chunksY: 4,
+    heightAt: (x) =>
+      (x >= NARROW_SHORE && x < WATER_FROM) || x >= WATER_TO ? LAND_TOP : 4,
+  });
+  return { world, builder: new Builder(world, terrain, 1337) };
+}
+
+describe('RopewayDriver — la precedenza sul tessuto urbano', () => {
+  const NARROW_CLICK = { x: 93, y: 64 };
+
+  it('sgombera il lungomare invece di rifiutare la linea', () => {
+    const { builder } = narrowStrait();
+    let state = addBuilding(createSimState(), {
+      x: 92,
+      y: 63,
+      class: BUILDING_CLASS.residential,
+      level: 4,
+    });
+    builder.materialize(state.buildings);
+    expect(builder.registry.count).toBe(1);
+    expect(builder.registry.isOccupied(NARROW_CLICK.x, NARROW_CLICK.y)).toBe(true);
+
+    // Il click e' accolto, ma la linea non c'e' ancora: prima cade il lungomare.
+    expect(builder.placeRopeway(NARROW_CLICK.x, NARROW_CLICK.y)).toBe('clearing');
+    expect(builder.ropewayCables).toHaveLength(0);
+
+    for (let i = 0; i < 200 && builder.ropewayCables.length === 0; i++) {
+      state = builder.onTick(state);
+      while (builder.stats.growing > 0) builder.step();
+    }
+
+    expect(builder.ropewayCables).toHaveLength(1);
+    const towers = [...builder.registry.all].filter((r) => r.ropeway !== undefined);
+    expect(towers).toHaveLength(2);
+    // La casa e' caduta davvero, e la torre poggia sul terreno dov'era: non sul
+    // tetto che il cantiere stava portando via.
+    expect(builder.registry.count).toBe(0);
+    const near = towers.find((tower) => tower.x < WATER_FROM)!;
+    expect(near.baseZ).toBe(LAND_TOP);
+  });
+
+  it('finche il cantiere e aperto nessuno costruisce nelle due piazzole', () => {
+    const { builder } = narrowStrait();
+    const state = addBuilding(createSimState(), {
+      x: 92,
+      y: 63,
+      class: BUILDING_CLASS.residential,
+      level: 4,
+    });
+    builder.materialize(state.buildings);
+    builder.placeRopeway(NARROW_CLICK.x, NARROW_CLICK.y);
+
+    // La piazzola di la' e' libera e non ha un cantiere suo: senza prenotazione
+    // la citta' ci crescerebbe dentro, e la linea nascerebbe con una torre sola.
+    expect(builder.registry.isOccupied(WATER_TO + 2, NARROW_CLICK.y)).toBe(true);
   });
 });

@@ -37,12 +37,40 @@ export interface RopewayProbe {
    * significherebbe farla passare dentro un edificio che il terreno non vede.
    */
   readonly top: (x: number, y: number) => number;
+  /**
+   * Quota del terreno nudo, senza cio' che ci sta sopra.
+   *
+   * E' l'altra meta' di `top`, e serve a una domanda sola: **su cosa poggerebbe
+   * la torre se l'edificio che c'e' adesso non ci fosse**. Con il solo `top` una
+   * piazzola interamente coperta dal costruito prenderebbe come piano il tetto
+   * piu' basso, e la stazione nascerebbe sui tetti di case che il cantiere sta
+   * demolendo.
+   */
+  readonly ground: (x: number, y: number) => number;
   /** true se la colonna e' terra emersa. Sott'acqua e' false, sempre. */
   readonly land: (x: number, y: number) => boolean;
   /** true se il terreno di quella colonna regge una fondazione. */
   readonly firm: (x: number, y: number) => boolean;
   /** true se nessuno prende gia' il suolo di quella colonna. */
   readonly free: (x: number, y: number) => boolean;
+  /**
+   * true se cio' che prende il suolo di questa colonna **puo' cadere** per far
+   * posto a una torre. Su una colonna gia' libera e' true.
+   *
+   * **La traversata ha la precedenza sul tessuto urbano.** Una linea si tira fra
+   * due rive che si guardano, e su una citta' cresciuta quelle rive sono
+   * costruite: pretendere due piazzole vergini significava rifiutare la funivia
+   * proprio dove serviva, o spingerla mezzo isolato dentro. La citta' ricresce
+   * attorno alle torri, e un lungomare che ricresce vale piu' di una linea che
+   * non parte.
+   *
+   * Cio' che **non** cade e' il monumento, ed e' l'unica eccezione: un landmark
+   * non si demolisce costruendoci sopra. Chi implementa il predicato ci mette
+   * dentro anche cio' che il proprio dominio non deve toccare — un'altra
+   * funivia, un cantiere gia' aperto — perche' qui la regola non ha un registry
+   * per saperlo.
+   */
+  readonly clearable: (x: number, y: number) => boolean;
 }
 
 export interface RopewayQuery extends RopewayProbe {
@@ -69,7 +97,12 @@ export const ROPEWAY_REFUSALS = [
   'tooShort',
   /** L'altra riva e' oltre il tetto, o non c'e' affatto. */
   'tooLong',
-  /** Una delle due stazioni non trova cinque colonne di terreno buono e libero. */
+  /**
+   * Una delle due stazioni non trova cinque colonne di terreno buono.
+   *
+   * «Buono» vuol dire asciutto, saldo e **libero o sgomberabile**: il costruito
+   * ordinario non ferma piu' una linea, un monumento si'.
+   */
   'noPad',
   /** Per scavalcare cio' che sta in mezzo servirebbe una torre fuori scala. */
   'tooTall',
@@ -127,6 +160,15 @@ export interface RopewayPlan {
   readonly cable: readonly CablePoint[];
   /** Distanza fra i due ancoraggi, in voxel. */
   readonly length: number;
+  /**
+   * Colonne occupate che le due piazzole si porteranno via. **Zero e' il caso
+   * normale**, e chi scrive la linea puo' allora posarla senza aprire cantieri.
+   *
+   * Sono colonne e non edifici: la regola e' pura e non ha un registry per
+   * contare i record: le serve solo a preferire, fra due linee valide, quella
+   * che demolisce meno.
+   */
+  readonly taken: number;
 }
 
 export type RopewayResult =
@@ -159,6 +201,13 @@ const STATION_HALF = (ROPEWAY.stationSide - 1) / 2;
  * La linea piu' corta e non la piu' spettacolare: fra due tentativi validi
  * quello corto e' anche quello che il giocatore stava guardando, ed e' la stessa
  * scelta di `chooseCrossing`.
+ *
+ * **Ma prima di corta, la linea si vuole a mani pulite.** Da quando una piazzola
+ * puo' sgomberare il costruito, fra quattro direzioni ce n'e' spesso una che non
+ * demolisce niente e una piu' corta che rade un isolato: preferire sempre la
+ * seconda farebbe pagare al giocatore, con due case, un accorciamento che non ha
+ * chiesto. La precedenza sul tessuto urbano e' il permesso di passare dove
+ * altrimenti non si passa, non un invito a demolire.
  */
 export function chooseRopeway(query: RopewayQuery): RopewayResult {
   if (!query.land(query.x, query.y)) return refuse('notAshore');
@@ -172,10 +221,16 @@ export function chooseRopeway(query: RopewayQuery): RopewayResult {
       worst = deepest(worst, attempt.refusal);
       continue;
     }
-    if (best === null || attempt.plan.length < best.length) best = attempt.plan;
+    if (best === null || better(attempt.plan, best)) best = attempt.plan;
   }
 
   return best === null ? refuse(worst) : { ok: true, plan: best };
+}
+
+/** true se `candidate` batte `standing`: prima cosa demolisce, poi quanto e' lunga. */
+function better(candidate: RopewayPlan, standing: RopewayPlan): boolean {
+  if (candidate.taken !== standing.taken) return candidate.taken < standing.taken;
+  return candidate.length < standing.length;
 }
 
 /**
@@ -225,7 +280,7 @@ function planLine(query: RopewayQuery, dx: number, dy: number): RopewayResult {
   // 5. La quota della fune: la piu' bassa che tenga il franco **ovunque**, con
   //    la pancia gia' scontata. Calcolarla prima della freccia darebbe una linea
   //    che passa alta alle torri e striscia in mezzo alla campata.
-  const cableZ = liftCable(query, axis, alongAt, cross, anchorA, anchorB);
+  const cableZ = liftCable(query, axis, alongAt, cross, padA, padB);
   if (cableZ - padA.baseZ > ROPEWAY.maxStationRise) return refuse('tooTall');
   if (cableZ - padB.baseZ > ROPEWAY.maxStationRise) return refuse('tooTall');
 
@@ -239,6 +294,15 @@ function planLine(query: RopewayQuery, dx: number, dy: number): RopewayResult {
  * battigia rifiuterebbe la funivia proprio dove la citta' c'e', e chiedere al
  * giocatore di cliccare esattamente sulla prima colonna libera sarebbe
  * pretendere la precisione che uno strumento a un click esiste per togliere.
+ *
+ * **Due passate e non una, ed e' tutta la differenza.** La prima cerca una
+ * piazzola vergine e arretra fino a `maxSetback` come ha sempre fatto: se il
+ * lungomare finisce entro un isolato, la linea nasce senza che cada niente. Solo
+ * quando *nessuna* posizione e' libera si riparte dalla riva accettando di
+ * sgomberare, e allora la stazione torna a stare dove serve — sull'acqua — invece
+ * di non esistere. Fare una passata sola con lo sgombero gia' concesso
+ * demolirebbe il primo isolato ogni volta, avendo il secondo libero due colonne
+ * piu' in la'.
  */
 function seekPad(
   query: RopewayQuery,
@@ -248,10 +312,12 @@ function seekPad(
   from: number,
   inward: number,
 ): Footing | null {
-  for (let back = 0; back <= ROPEWAY.maxSetback; back++) {
-    const at = from + inward * back;
-    const baseZ = surveyPad(query, axis, alongAt, cross, at);
-    if (baseZ !== null) return { at, baseZ };
+  for (const demolish of [false, true]) {
+    for (let back = 0; back <= ROPEWAY.maxSetback; back++) {
+      const at = from + inward * back;
+      const pad = surveyPad(query, axis, alongAt, cross, at, demolish);
+      if (pad !== null) return { at, ...pad };
+    }
   }
   return null;
 }
@@ -263,25 +329,35 @@ function surveyPad(
   alongAt: (d: number) => number,
   cross: number,
   centre: number,
-): number | null {
-  return footing(query, axis, alongAt, cross, centre, STATION_HALF);
+  demolish: boolean,
+): Pad | null {
+  return footing(query, axis, alongAt, cross, centre, STATION_HALF, demolish);
+}
+
+/** Cosa una piazzola offre: il piano su cui poggia, e cosa deve togliersi di mezzo. */
+interface Pad {
+  readonly baseZ: number;
+  /** Colonne occupate da sgomberare. Zero su una piazzola vergine. */
+  readonly taken: number;
 }
 
 /** Un appoggio prima di diventare un volume: dove cade e su cosa poggia. */
-interface Footing {
+interface Footing extends Pad {
   readonly at: number;
-  readonly baseZ: number;
 }
 
 /**
  * Il terreno sotto un quadrato di lato `2 * half + 1`, o null se non lo regge.
  *
  * Una sola regola per la piazzola e per il pilone: sono lo stesso controllo su
- * due piante diverse — asciutto, saldo, libero — e tenerne due copie vorrebbe
- * dire che un giorno un pilone finisce in acqua e una stazione no.
+ * due piante diverse — asciutto, saldo, e libero o sgomberabile — e tenerne due
+ * copie vorrebbe dire che un giorno un pilone finisce in acqua e una stazione no.
  *
  * Si prende la quota **piu' bassa** delle colonne: cosi' su un terreno che sale
- * la torre resta sepolta da un lato invece di restare sospesa dall'altro.
+ * la torre resta sepolta da un lato invece di restare sospesa dall'altro. Una
+ * colonna che verra' sgomberata entra nel minimo con il **terreno**, non con il
+ * tetto che sta per sparire: e' l'unico posto in cui le due letture del luogo
+ * divergono, e sbagliarlo pianterebbe la torre sulle case che sta demolendo.
  */
 function footing(
   query: RopewayQuery,
@@ -290,18 +366,25 @@ function footing(
   cross: number,
   centre: number,
   half: number,
-): number | null {
+  demolish: boolean,
+): Pad | null {
   let baseZ = Number.POSITIVE_INFINITY;
+  let taken = 0;
   for (let i = -half; i <= half; i++) {
     for (let w = -half; w <= half; w++) {
       const [cx, cy] = point(axis, alongAt(centre + i), cross + w);
       if (!query.land(cx, cy)) return null;
       if (!query.firm(cx, cy)) return null;
-      if (!query.free(cx, cy)) return null;
-      baseZ = Math.min(baseZ, query.top(cx, cy));
+      if (query.free(cx, cy)) {
+        baseZ = Math.min(baseZ, query.top(cx, cy));
+        continue;
+      }
+      if (!demolish || !query.clearable(cx, cy)) return null;
+      taken++;
+      baseZ = Math.min(baseZ, query.ground(cx, cy));
     }
   }
-  return Number.isFinite(baseZ) ? baseZ : null;
+  return Number.isFinite(baseZ) ? { baseZ, taken } : null;
 }
 
 /**
@@ -312,19 +395,34 @@ function footing(
  * freccia entra dentro il massimo e non dopo: sommarla alla fine alzerebbe anche
  * gli appoggi, dove la fune non pende affatto, e la linea partirebbe da due
  * torri piu' alte del necessario.
+ *
+ * **Sotto le due piazzole si guarda il terreno, non i tetti.** Cio' che sta
+ * dentro un'impronta che il cantiere sgombera non c'e' piu' quando la cabina
+ * parte, e tenerne conto alzerebbe la fune — quindi le torri — per scavalcare
+ * una torre che si sta abbattendo: proprio dove la citta' e' alta, la linea si
+ * rifiuterebbe da sola con un `tooTall`.
  */
 function liftCable(
   query: RopewayQuery,
   axis: 0 | 1,
   alongAt: (d: number) => number,
   cross: number,
-  from: number,
-  to: number,
+  padA: Footing,
+  padB: Footing,
 ): number {
+  const from = padA.at;
+  const to = padB.at;
+  /** true dove la colonna sta dentro l'impronta di una delle due stazioni. */
+  const inPad = (d: number): boolean =>
+    Math.abs(d - from) <= STATION_HALF || Math.abs(d - to) <= STATION_HALF;
+  /** La sommita' che la fune deve scavalcare **dopo** lo sgombero. */
+  const level = (d: number, cx: number, cy: number): number =>
+    inPad(d) && !query.free(cx, cy) ? query.ground(cx, cy) : query.top(cx, cy);
+
   // La torre minima: una funivia che parte da terra non e' una funivia.
   let needed = Math.max(
-    query.top(...point(axis, alongAt(from), cross)),
-    query.top(...point(axis, alongAt(to), cross)),
+    level(from, ...point(axis, alongAt(from), cross)),
+    level(to, ...point(axis, alongAt(to), cross)),
   ) + ROPEWAY.minStationRise;
 
   for (let d = from; d <= to; d++) {
@@ -336,7 +434,7 @@ function liftCable(
       const [cx, cy] = point(axis, alongAt(d), cross + w);
       if (query.land(cx, cy)) {
         overWater = false;
-        obstacle = Math.max(obstacle, query.top(cx, cy) + ROPEWAY.cabinClearance);
+        obstacle = Math.max(obstacle, level(d, cx, cy) + ROPEWAY.cabinClearance);
       }
     }
     const floor = overWater
@@ -407,5 +505,6 @@ function assemble(
     stations: forward ? [first, second] : [second, first],
     cable,
     length: padB.at - padA.at,
+    taken: padA.taken + padB.taken,
   };
 }

@@ -26,6 +26,29 @@
   cresciuta e' costruito: pretendere la piazzola sulla battigia rifiuterebbe la
   funivia proprio dove la citta' c'e'. `seekPad` cammina all'indietro fino a
   `maxSetback` e prende la prima buona, che e' anche la piu' vicina all'acqua.
+- **E se arretrando non trova niente, sgombera.** La traversata ha la precedenza
+  sul tessuto urbano: le due rive che si guardano sono anche le prime che la
+  citta' costruisce, e una riva costruita fino in fondo rifiutava il click. Da
+  qui le **due passate** di `seekPad` — prima il suolo vergine, poi lo sgombero
+  — e l'ordine conta: con una passata sola la linea raderebbe la battigia
+  avendo il posto libero due colonne piu' in la'. Il cantiere e' quello di
+  `clearanceSite.ts` e la sua regola sta in `BALANCE.gameplay.ropeway.clearing`.
+  Non cadono i **monumenti** — `clearsLandmarks` e' spento, e toccarli resta un
+  gesto della gomma — ne' le **altre funivie**: la fune non e' un record, quindi
+  abbattere una torre lascerebbe un cavo appeso al nulla, e la classificazione
+  di `clearance.ts`, che una stazione la legge come un edificio, non ha modo di
+  saperlo. A dirlo e' il predicato `clearable` del driver.
+- **Dentro una piazzola che sgombera si legge il terreno, non i tetti.** E'
+  l'unico posto in cui `ground` e `top` divergono, e vale sia per la quota di
+  appoggio sia per il franco della fune: quei tetti non ci sono piu' quando la
+  cabina parte, e tenerne conto pianterebbe la torre sulle case che sta
+  demolendo e alzerebbe la fune fino a un `tooTall` proprio dove la citta' e'
+  alta.
+- **Una torre puo' nascere attaccata a un edificio, e non serve un margine.** Il
+  controllo della piazzola guarda le sole cinque per cinque colonne che la
+  stazione occupa: nulla chiede un anello libero attorno, e chiederlo
+  rifiuterebbe di nuovo la linea proprio nel tessuto denso per cui lo sgombero
+  esiste.
 - **Il franco si misura sulla prima quota libera, non sul terreno.** `top` dice
   la sommita' di cio' che c'e' — un prato, un bosco, un tetto — e la freccia
   entra *dentro* il massimo invece di essere sommata alla fine: sommarla dopo

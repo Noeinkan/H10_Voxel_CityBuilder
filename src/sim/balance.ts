@@ -353,6 +353,26 @@ export const BALANCE = {
       cost: 620,
       materials: 120,
       population: 48,
+
+      /**
+       * Cosa le due piazzole si portano via per esistere.
+       *
+       * **La traversata ha la precedenza sul tessuto urbano**, ed e' la stessa
+       * manopola di `catalyst.clearing` tenuta in un oggetto proprio per la
+       * stessa ragione: sono due gesti distinti, e chi alza il tetto dell'uno
+       * non deve alzare anche quello dell'altro. Le due rive che si guardano
+       * sono anche le prime che la citta' costruisce, quindi pretendere suolo
+       * vergine rifiutava la funivia proprio dove serviva; il lungomare
+       * ricresce attorno alle torri, e vale piu' di una linea che non parte.
+       *
+       * Il tetto e' aperto come per il monumento — sotto una stazione cade
+       * anche una torre — mentre `clearsLandmarks` resta spento: un monumento
+       * non si demolisce costruendoci sopra, e solo la gomma lo tocca.
+       */
+      clearing: {
+        maxLevel: Number.POSITIVE_INFINITY,
+        clearsLandmarks: false,
+      },
     },
 
     /**
@@ -370,6 +390,24 @@ export const BALANCE = {
       clearing: {
         maxLevel: Number.POSITIVE_INFINITY,
         clearsLandmarks: true,
+      },
+    },
+
+    /**
+     * L'abbandono: cio' che se ne va quando il posto non lo regge piu'.
+     *
+     * **Terza manopola accanto alle altre due, e la piu' timida.** La gomma porta
+     * via tutto perche' e' un gesto del giocatore; il monumento risparmia i
+     * monumenti perche' cerca un posto; qui non c'e' nessuno che sceglie, quindi
+     * la regola deve rifiutare tutto cio' che il giocatore ha voluto — un
+     * monumento sopravvive al quartiere che gli e' morto intorno, ed e' giusto
+     * cosi': un catalizzatore che sparisse da solo toglierebbe al giocatore la
+     * leva proprio nel momento in cui gli serve.
+     */
+    abandonment: {
+      clearing: {
+        maxLevel: Number.POSITIVE_INFINITY,
+        clearsLandmarks: false,
       },
     },
 
@@ -927,6 +965,101 @@ export const BALANCE = {
 
     /** Un settore produce un ponte; il tetto difende salvataggi non affidabili. */
     maxIslandBridges: 8,
+  },
+
+  // --- Copertura dei servizi ----------------------------------------------
+
+  coverage: {
+    /**
+     * Servizi che ogni abitante pretende.
+     *
+     * Con `demandPerResident` a un centesimo, cento abitanti chiedono un
+     * edificio civico finanziato. E' la scala su cui la domanda **cresce con la
+     * citta'**, ed e' cio' che trasforma i servizi da bonus in manutenzione: una
+     * rete che bastava a mille abitanti non basta piu' a duemila senza che nulla
+     * si sia rotto.
+     */
+    demandPerResident: 0.01,
+
+    /**
+     * Quanto della copertura piena puo' arrivare dalla sola quota cittadina.
+     *
+     * **Meta', e non tutta**, ed e' la scelta di progetto dell'intera fase. Con
+     * uno, gli edifici civici che crescono da soli curerebbero la citta' senza
+     * che il giocatore tocchi niente, e saremmo tornati a guardarla crescere.
+     * Con zero, un quartiere lontano da ogni catalizzatore cadrebbe a zero e il
+     * declino diventerebbe una spirale — il difetto che SimCity 4 e' famoso per
+     * avere. Il pavimento a meta' tiene la citta' in piedi mentre nessuno
+     * guarda; a chiudere il divario e' solo chi posa un servizio.
+     */
+    cityShare: 0.5,
+
+    /**
+     * Desiderabilita' civica alla quale una colonna si considera servita del
+     * tutto dai catalizzatori.
+     *
+     * Sta sotto il massimo del campo (255) perche' quel valore lo raggiunge solo
+     * il cuore di un raggio, e pretenderlo vorrebbe dire una copertura piena
+     * larga tre colonne. A centoventi ci arriva un ruolo a influenza civica
+     * piena entro circa meta' del proprio raggio, che e' il pezzo di citta' che
+     * un servizio dovrebbe davvero coprire.
+     */
+    localFull: 120,
+  },
+
+  // --- Declino ------------------------------------------------------------
+
+  decay: {
+    /**
+     * Copertura sotto la quale la citta' comincia ad accumulare affanno.
+     *
+     * Stessa forma delle due soglie del cibo, e per la stessa ragione: una sola
+     * soglia riaprirebbe e chiuderebbe il fronte a ogni oscillazione. Fra questa
+     * e `recoveryCoverage` c'e' una banda morta in cui la pressione non si muove
+     * ne' in un verso ne' nell'altro.
+     */
+    strainCoverage: 0.85,
+
+    /**
+     * Copertura oltre la quale l'affanno rientra.
+     *
+     * **Sopra il pareggio e non al pareggio**, che e' la lezione gia' pagata
+     * dall'emergenza alimentare: a copertura esatta ogni edificio nuovo
+     * riaprirebbe il fronte, perche' la domanda cresce con la popolazione e la
+     * popolazione cresce da sola.
+     */
+    recoveryCoverage: 1.1,
+
+    /**
+     * Quanto sale la pressione per tick sotto `strainCoverage`.
+     *
+     * Un seicentesimo: **un minuto intero** di scoperto continuo a dieci tick al
+     * secondo prima che il primo edificio se ne vada. Non e' generosita', e' la
+     * differenza fra una conseguenza e un agguato — il giocatore deve poter
+     * vedere la vista di copertura, capire dov'e' il buco e posarci un servizio
+     * mentre l'allarme e' gia' acceso e non e' ancora successo niente.
+     */
+    pressureRise: 1 / 600,
+
+    /**
+     * Quanto scende la pressione per tick sopra `recoveryCoverage`.
+     *
+     * Tre volte piu' veloce della salita: chi ha risolto deve vederlo subito, o
+     * il gesto giusto non si distingue da quello inutile. E' anche cio' che
+     * rende il declino **reversibile** invece che soltanto lento.
+     */
+    pressureRelief: 1 / 200,
+
+    /**
+     * Copertura sotto la quale un edificio e' in difficolta'.
+     *
+     * Un quinto, come la soglia di dilapidazione di SimCity 4: sotto di essa il
+     * posto non regge piu' chi ci sta. Non e' la stessa cosa della pressione —
+     * quella dice **se** la citta' e' in affanno, questa **chi** ne paga il
+     * prezzo — e servono entrambe: senza la prima si perderebbero edifici anche
+     * in una citta' sana che ha un angolo scoperto.
+     */
+    distressCoverage: 0.2,
   },
 
   // --- Campo di desiderabilita' -------------------------------------------

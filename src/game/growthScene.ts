@@ -591,11 +591,17 @@ export class GrowthScene {
     const result = placeRopeway(this.state, this.ropewayRefusalAt(x, y));
     if (!result.success) return result;
 
-    if (!this.builder.placeRopeway(x, y)) {
+    const placed = this.builder.placeRopeway(x, y);
+    if (placed === null) {
       return { success: false, reason: 'no-room-for-line' };
     }
     this.ropewayMemo = null;
-    return this.apply(result, 'Ropeway open: the crossing no longer needs the ground.');
+    // Due messaggi perche' sono due fatti diversi: la linea c'e', oppure il
+    // lungomare sta cadendo per farle posto. Dire il primo mentre vale il
+    // secondo manderebbe il giocatore a cercare due torri che non ci sono.
+    return this.apply(result, placed === 'clearing'
+      ? 'Ropeway sited: the shore is being cleared for its towers.'
+      : 'Ropeway open: the crossing no longer needs the ground.');
   }
 
   /** La stessa memoria di `terraceRefusalAt`, e per la stessa ragione. */

@@ -17,9 +17,16 @@ function strait(from: number, to: number, top: (x: number) => number = () => SHO
   const wet = (x: number): boolean => x >= from && x <= to;
   return {
     top: (x) => (wet(x) ? SEA_FLOOR : top(x)),
+    // Su uno stretto vuoto le due letture coincidono: e' il costruito a
+    // separarle, e qui non ce n'e'.
+    ground: (x) => (wet(x) ? SEA_FLOOR : top(x)),
     land: (x) => !wet(x),
     firm: () => true,
     free: () => true,
+    // Il default e' «niente cade»: cosi' ogni prova che non parla di sgombero
+    // misura la regola di prima, e la precedenza sul tessuto urbano si accende
+    // una fixture per volta.
+    clearable: () => false,
   };
 }
 
@@ -146,9 +153,11 @@ describe('chooseRopeway — i rifiuti', () => {
   it('senza acqua da scavalcare non e questo lo strumento', () => {
     const dry: RopewayProbe = {
       top: () => SHORE_TOP,
+      ground: () => SHORE_TOP,
       land: () => true,
       firm: () => true,
       free: () => true,
+      clearable: () => false,
     };
     expect(refusalOf(chooseRopeway({ ...dry, ...CLICK }))).toBe('dryGap');
   });
@@ -169,7 +178,9 @@ describe('chooseRopeway — i rifiuti', () => {
     expect(refusalOf(chooseRopeway({ ...soft, ...CLICK }))).toBe('noPad');
   });
 
-  it('una piazzola occupata da un edificio non e una piazzola', () => {
+  it('una piazzola occupata da cio che non puo cadere non e una piazzola', () => {
+    // Un monumento sul lungomare, o il riquadro prenotato da un altro cantiere:
+    // il suolo e' preso e resta preso, e di qua non si parte.
     const busy: RopewayProbe = { ...WIDE, free: () => false };
     expect(refusalOf(chooseRopeway({ ...busy, ...CLICK }))).toBe('noPad');
   });
@@ -179,6 +190,59 @@ describe('chooseRopeway — i rifiuti', () => {
     // `maxStationRise` sopra le due rive: quel luogo vuole un altro strumento.
     const peak = strait(30, 69, (x) => (x >= 70 && x <= 78 ? SHORE_TOP + ROPEWAY.maxStationRise : SHORE_TOP));
     expect(refusalOf(chooseRopeway({ ...peak, x: 20, y: 100 }))).toBe('tooTall');
+  });
+});
+
+describe('chooseRopeway — la precedenza sul tessuto urbano', () => {
+  /** Lo stesso stretto, con il costruito che pero' puo' cadere. */
+  function razable(base: RopewayProbe, free: (x: number) => boolean): RopewayProbe {
+    return { ...base, free: (x) => free(x), clearable: () => true };
+  }
+
+  it('un lungomare interamente costruito non ferma piu la linea', () => {
+    // E' il caso che rifiutava: due rive che si guardano sono anche le due che
+    // la citta' costruisce per prime, e senza sgombero la funivia non nasceva
+    // proprio dove serviva.
+    const built = plan(chooseRopeway({ ...razable(WIDE, () => false), ...CLICK }));
+
+    const [a, b] = built.stations;
+    expect(a.anchorX).toBe(27);
+    expect(b.anchorX).toBe(72);
+    // Cinque per cinque, due volte: le colonne che il cantiere porta via.
+    expect(built.taken).toBe(2 * ROPEWAY.stationSide * ROPEWAY.stationSide);
+  });
+
+  it('preferisce arretrare su suolo libero invece di demolire', () => {
+    // Il lungomare e' costruito per dieci colonne **e** sgomberabile: la prima
+    // passata trova comunque la piazzola vergine un isolato dentro, ed e'
+    // quella che vince. Senza le due passate la linea raderebbe la battigia
+    // avendo il posto libero due colonne piu' in la'.
+    const shore = builtShore(30, 69, 10);
+    const built = plan(chooseRopeway({
+      ...razable(shore, (x) => shore.free(x, 0)),
+      ...CLICK,
+    }));
+
+    const [a, b] = built.stations;
+    expect(a.anchorX).toBe(17);
+    expect(b.anchorX).toBe(82);
+    expect(built.taken).toBe(0);
+  });
+
+  it('la torre poggia sul terreno, non sui tetti che sta demolendo', () => {
+    // Trenta voxel di citta' sopra la riva. Leggendo `top` la stazione
+    // nascerebbe sui tetti e la fune salirebbe a scavalcarli: due errori dallo
+    // stesso posto, perche' quei tetti non ci sono piu' quando la cabina parte.
+    const ROOF = SHORE_TOP + 30;
+    const razed: RopewayProbe = {
+      ...razable(WIDE, () => false),
+      top: (x) => (x >= 30 && x <= 69 ? SEA_FLOOR : ROOF),
+    };
+    const built = plan(chooseRopeway({ ...razed, ...CLICK }));
+    const flat = plan(chooseRopeway({ ...WIDE, ...CLICK }));
+
+    for (const station of built.stations) expect(station.baseZ).toBe(SHORE_TOP);
+    expect(built.cableZ).toBe(flat.cableZ);
   });
 });
 
@@ -205,9 +269,11 @@ describe('chooseRopeway — il rilievo', () => {
     // Acqua sia a est sia a nord, ma la sponda di la' e' piu' vicina a est.
     const probe: RopewayProbe = {
       top: (x, y) => (wet(x, y) ? SEA_FLOOR : SHORE_TOP),
+      ground: (x, y) => (wet(x, y) ? SEA_FLOOR : SHORE_TOP),
       land: (x, y) => !wet(x, y),
       firm: () => true,
       free: () => true,
+      clearable: () => false,
     };
     function wet(x: number, y: number): boolean {
       return (x >= 30 && x <= 69) || (y >= 110 && y <= 189);
