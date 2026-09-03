@@ -129,7 +129,7 @@ export class TitleScreen {
     for (const [, pane] of this.panes) this.inner.appendChild(pane);
     this.inner.appendChild(foot);
     this.openPane('root');
-    this.paintSeed();
+    this.fillSeed();
   }
 
   /** Il fuoco al bottone che ci si aspetta di premere: si gioca da tastiera. */
@@ -212,7 +212,7 @@ export class TitleScreen {
     title.textContent = 'New island';
     const note = document.createElement('p');
     note.className = 'title-note';
-    note.textContent = 'The same seed always grows the same island. Leave it empty for a new one.';
+    note.textContent = 'The same seed always grows the same island. Change it, or roll another one.';
 
     const row = document.createElement('div');
     row.className = 'title-row';
@@ -322,6 +322,22 @@ export class TitleScreen {
     this.handlers.onCreate(seed ?? this.handlers.onRoll());
   }
 
+  /**
+   * Il campo arriva gia' pieno di un seed tirato.
+   *
+   * Un campo vuoto chiede un numero proprio a chi non ne ha uno in mente, ed e'
+   * il caso normale dell'isola nuova: il seed sorteggiato e' la risposta giusta
+   * gia' scritta, e resta un testo che si sovrascrive. Il vuoto continua a
+   * valere — cancellarlo vuol dire «tirane un altro al via» — ma non e' piu' lo
+   * stato d'ingresso, e rientrando nella sottoschermata si ritrova pieno.
+   */
+  private fillSeed(): void {
+    if (this.seedField.value.trim() === '') {
+      this.seedField.value = String(this.handlers.onRoll());
+    }
+    this.paintSeed();
+  }
+
   private paintSeed(): void {
     const { invalid, note } = seedNote(this.seedField.value);
     this.createButton.disabled = invalid;
@@ -331,7 +347,12 @@ export class TitleScreen {
   private openPane(pane: TitlePane): void {
     this.stack.hidden = pane !== 'root';
     for (const [id, element] of this.panes) element.hidden = id !== pane;
-    if (pane === 'new') this.seedField.focus();
-    else if (pane === 'root') this.primaryButton?.focus();
+    if (pane === 'new') {
+      this.fillSeed();
+      this.seedField.focus();
+      // Il seed pieno e' selezionato: chi ne ha uno suo lo scrive sopra senza
+      // dover prima cancellare quello proposto.
+      this.seedField.select();
+    } else if (pane === 'root') this.primaryButton?.focus();
   }
 }
