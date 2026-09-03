@@ -105,9 +105,17 @@ describe('coverageAt — le due meta’', () => {
   });
 
   it('cala con la distanza, perche’ legge il piano civico del campo', () => {
+    // **Le distanze sono frazioni del raggio, non colonne.** `localFull` tiene la
+    // copertura piena entro `radius * (1 - localFull/strength)` — per una scuola
+    // circa il 38% del raggio — e dentro quel pianoro il calo non si vede
+    // affatto: due campioni a colonna fissa cadono dalla stessa parte del bordo
+    // appena il listino dei ruoli si muove, e il test smette di misurare il
+    // decadimento per misurare dove era il bordo il giorno che l'hanno scritto.
     const state = withSchool();
-    const at = (d: number) => coverageAt(state.field, EMPTY_COVERAGE, 100 + d, 100);
-    expect(at(0)).toBeGreaterThan(at(20));
-    expect(at(20)).toBeGreaterThan(at(40));
+    const radius = BALANCE.gameplay.catalyst.roles.school.radius;
+    const at = (share: number) =>
+      coverageAt(state.field, EMPTY_COVERAGE, 100 + Math.round(radius * share), 100);
+    expect(at(0.5)).toBeGreaterThan(at(0.7));
+    expect(at(0.7)).toBeGreaterThan(at(0.9));
   });
 });
