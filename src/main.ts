@@ -73,8 +73,8 @@ import {
   groundNote,
   landmarkNote,
   reachNote,
-} from './boot/actionLabels';
-import { createSaveSlots } from './boot/saveSlots';
+} from './shell/actionLabels';
+import { createSaveSlots } from './shell/saveSlots';
 import { GrowthScene } from './game/growthScene';
 import type { CoachSuggestion } from './game/coach';
 import {

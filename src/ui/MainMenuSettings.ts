@@ -1,8 +1,8 @@
 import { DAYLIGHT_MODES, type DaylightMode } from '../engine/daylight';
-import { sectionTitle } from './drawerBits';
 import { daylightControl } from './GameHudControlsModel';
 import type { ThemeChoice } from './GameHud';
 import { createHudIcon } from './hudIcons';
+import { titleGroup, titleNote, titleRow, titleSection, titleSmall } from './titleBits';
 
 /**
  * La sezione delle impostazioni: come si guarda la citta', e che tempo fa sopra.
@@ -36,16 +36,15 @@ export class MainMenuSettings {
   private readonly cloudsButton: HTMLButtonElement;
 
   constructor(themes: readonly ThemeChoice[], handlers: SettingsHandlers) {
-    this.root = document.createElement('div');
-    this.root.className = 'menu-section-body';
+    this.root = titleSection();
 
-    this.root.appendChild(sectionTitle('Look'));
+    this.root.appendChild(titleGroup('Look'));
     const grid = document.createElement('div');
-    grid.className = 'theme-grid';
+    grid.className = 'title-theme-grid';
     for (const theme of themes) {
       const button = document.createElement('button');
       button.type = 'button';
-      button.className = 'theme-option';
+      button.className = 'title-theme';
       button.dataset.themeName = theme.name;
       button.setAttribute('aria-label', `Use ${theme.name} theme`);
       button.setAttribute('aria-pressed', 'false');
@@ -55,7 +54,7 @@ export class MainMenuSettings {
       button.addEventListener('click', () => handlers.onTheme(theme.id));
 
       const preview = document.createElement('span');
-      preview.className = 'theme-swatches';
+      preview.className = 'title-swatches';
       preview.setAttribute('aria-hidden', 'true');
       for (const color of theme.swatches) {
         const swatch = document.createElement('span');
@@ -70,50 +69,38 @@ export class MainMenuSettings {
     }
     this.root.appendChild(grid);
 
-    this.root.appendChild(sectionTitle('Sky'));
-    const sky = document.createElement('div');
-    sky.className = 'menu-choice-row';
+    this.root.appendChild(titleGroup('Sky'));
+    const sky = titleRow();
     for (const mode of DAYLIGHT_MODES) {
       const control = daylightControl(mode);
-      const button = document.createElement('button');
-      button.type = 'button';
-      button.className = 'save-button';
-      button.textContent = control.label;
+      const button = titleSmall(control.label, () => handlers.onDaylight(mode));
+      button.classList.add('title-small--wide');
       button.title = control.tooltip;
       button.setAttribute('aria-pressed', 'false');
-      button.addEventListener('click', () => handlers.onDaylight(mode));
       this.daylightButtons.set(mode, button);
       sky.appendChild(button);
     }
     this.root.appendChild(sky);
 
-    const clouds = document.createElement('div');
-    clouds.className = 'menu-choice-row';
-    this.cloudsButton = document.createElement('button');
-    this.cloudsButton.type = 'button';
-    this.cloudsButton.className = 'save-button';
-    this.cloudsButton.textContent = 'Clouds';
-    this.cloudsButton.setAttribute('aria-pressed', 'false');
-    this.cloudsButton.addEventListener('click', () => {
+    const clouds = titleRow();
+    this.cloudsButton = titleSmall('Clouds', () => {
       handlers.onClouds(this.cloudsButton.getAttribute('aria-pressed') !== 'true');
     });
+    this.cloudsButton.classList.add('title-small--wide');
+    this.cloudsButton.setAttribute('aria-pressed', 'false');
     clouds.appendChild(this.cloudsButton);
     this.root.appendChild(clouds);
 
-    this.root.appendChild(sectionTitle('Tools'));
-    const note = document.createElement('p');
-    note.className = 'drawer-note';
-    note.textContent = 'F3 opens the technical overlays; F2 reloads the same city with the frame meter on.';
-    this.root.appendChild(note);
+    this.root.appendChild(titleGroup('Tools'));
+    this.root.appendChild(titleNote(
+      'F3 opens the technical overlays; F2 reloads the same city with the frame meter on.',
+    ));
 
-    const tools = document.createElement('div');
-    tools.className = 'menu-choice-row';
-    const swatch = document.createElement('button');
-    swatch.type = 'button';
-    swatch.className = 'save-button';
-    swatch.append(createHudIcon('swatch'), document.createTextNode('Voxel swatches'));
+    const tools = titleRow();
+    const swatch = titleSmall('Voxel swatches', () => handlers.onSwatch());
+    swatch.classList.add('title-small--wide');
+    swatch.prepend(createHudIcon('swatch'));
     swatch.title = 'Every palette slot and surface, in a new tab';
-    swatch.addEventListener('click', () => handlers.onSwatch());
     tools.appendChild(swatch);
     this.root.appendChild(tools);
   }

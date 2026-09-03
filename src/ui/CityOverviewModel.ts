@@ -13,6 +13,8 @@ import type { GrowthStats } from '../game/growthScene';
 import type { CityConditionTone } from '../game/cityCondition';
 import type { ArcologyStanding } from '../world/arcology/prospect';
 import { arcologyLines, arcologyReward } from './prospects';
+import { meter, toneForFill, toneForLoad, type Meter } from './meters';
+import type { HudIcon } from './hudIcons';
 
 export interface OverviewGoal {
   readonly id: string;
@@ -73,8 +75,16 @@ export interface CityOverviewModel {
     readonly tone: CityConditionTone;
   };
   readonly goals: readonly OverviewGoal[];
-  readonly capacity: readonly OverviewFact[];
-  readonly economy: readonly OverviewFact[];
+  /**
+   * Di cosa la citta' ha bisogno adesso, come barre invece che come schede.
+   *
+   * Ha preso il posto di `capacity` ed `economy`, che erano otto riquadri di
+   * testo con la stessa aria: fondamentali e dettagli si leggevano uguale, e
+   * «73% fed» accanto a «4 hosted uses» chiedeva di sapere in anticipo quale
+   * delle due fosse un'emergenza. Le stesse barre della scheda di selezione, per
+   * la ragione per cui `meterBits.ts` esiste: due vocabolari grafici divergono.
+   */
+  readonly needs: readonly Meter[];
   readonly shape: readonly OverviewFact[];
   readonly infrastructure: readonly OverviewFact[];
   readonly arcology: OverviewArcology;
@@ -119,44 +129,65 @@ export function buildCityOverviewModel(stats: GrowthStats | null): CityOverviewM
         target.buildingsPerClass,
       )),
     ],
-    capacity: [
-      {
-        label: 'Housing capacity',
-        value: `${format(housingCapacity)} residents`,
-        note: housingCapacity === 0
-          ? 'No residential capacity yet.'
-          : `${Math.round(occupancy * 100)}% occupied`,
-        tone: occupancy > 1 ? 'warning' : 'neutral',
-      },
-      {
+    // L'ordine e' quello in cui una citta' muore: prima si smette di mangiare,
+    // poi mancano le braccia, poi le case, poi l'umore, e solo alla fine i due
+    // saldi. Un elenco ordinato per tema — capacita' da una parte, economia
+    // dall'altra — chiedeva di sapere in anticipo quale meta' guardare.
+    needs: [
+      meter({
+        id: 'food',
+        icon: 'food',
+        label: 'Food',
+        value: `${Math.round(foodCoverage * 100)}% fed`,
+        ratio: foodCoverage,
+        tone: toneForFill(foodCoverage, 0.999),
+        hint: foodCoverage >= 1
+          ? 'Current demand is fully covered.'
+          : 'Some residents went unfed this tick, and unfed residents leave.',
+      }),
+      meter({
+        id: 'workforce',
+        icon: 'population',
         label: 'Workforce',
         value: `${Math.round(state.staffing * 100)}% staffed`,
-        note: state.staffing < 0.995
+        ratio: state.staffing,
+        tone: toneForFill(state.staffing, 0.995),
+        hint: state.staffing < 0.995
           ? 'Industry, shops and farms are sharing too few workers.'
           : 'Productive buildings have the workers they need.',
-        tone: state.staffing < 0.995 ? 'warning' : 'positive',
-      },
-      {
+      }),
+      meter({
+        id: 'homes',
+        icon: 'residential',
+        label: 'Homes',
+        value: housingCapacity === 0
+          ? 'none yet'
+          : `${Math.round(occupancy * 100)}% of ${format(housingCapacity)}`,
+        ratio: housingCapacity === 0 ? 0 : occupancy,
+        tone: housingCapacity === 0 ? 'bad' : toneForLoad(occupancy),
+        hint: housingCapacity === 0
+          ? 'No residential capacity yet.'
+          : `Room for ${format(housingCapacity)} residents citywide.`,
+      }),
+      meter({
+        id: 'happiness',
+        icon: 'satisfaction',
+        label: 'Happiness',
+        value: `${Math.round(state.satisfaction * 100)}% / ${Math.round(target.satisfaction * 100)}%`,
+        ratio: target.satisfaction <= 0 ? 1 : state.satisfaction / target.satisfaction,
+        tone: state.satisfaction >= target.satisfaction ? 'good' : 'watch',
+        hint: 'Civic services, shops within reach, ferries and bridges lift it; crowding lowers it.',
+      }),
+      balanceMeter('funds', 'funds', 'Funds', state.funds.delta),
+      balanceMeter('materials', 'materials', 'Materials', state.materials.delta),
+      meter({
+        id: 'mixed',
+        icon: 'city',
         label: 'Mixed use',
         value: `${mixed} hosted use${mixed === 1 ? '' : 's'}`,
-        note: 'Secondary uses count toward the city goal.',
-        tone: 'neutral',
-      },
-    ],
-    economy: [
-      {
-        label: 'Food coverage',
-        value: `${Math.round(foodCoverage * 100)}% fed`,
-        note: foodCoverage >= 1 ? 'Current demand is fully covered.' : 'Some residents went unfed this tick.',
-        tone: foodCoverage >= 1 ? 'positive' : 'warning',
-      },
-      balanceFact('Funds balance', state.funds.delta),
-      balanceFact('Materials balance', state.materials.delta),
-      {
-        label: 'Happiness',
-        value: `${Math.round(state.satisfaction * 100)}% / ${Math.round(target.satisfaction * 100)}% goal`,
-        tone: state.satisfaction >= target.satisfaction ? 'positive' : 'warning',
-      },
+        tone: 'plain',
+        hint: 'Secondary uses inside mixed blocks; they count toward the city goal.',
+      }),
     ],
     shape: [
       { label: 'Buildings', value: format(stats.buildings) },
@@ -240,13 +271,23 @@ function arcologySection(standing: ArcologyStanding): OverviewArcology {
   };
 }
 
-function balanceFact(label: string, delta: number): OverviewFact {
-  return {
+/**
+ * Un saldo per tick, senza barra.
+ *
+ * Un delta non ha un tetto contro cui misurarsi: la barra direbbe una lunghezza
+ * che non si confronta con niente, ed e' esattamente il caso per cui `ratio`
+ * ammette `null`. Resta il tono, che e' l'unica cosa che serve sapere a colpo
+ * d'occhio — se sta entrando o uscendo.
+ */
+function balanceMeter(id: string, icon: HudIcon, label: string, delta: number): Meter {
+  return meter({
+    id: `${id}-balance`,
+    icon,
     label,
     value: `${delta > 0 ? '+' : ''}${delta.toFixed(1)} / tick`,
-    note: delta >= 0 ? 'Meets the self-sufficiency goal.' : 'Must return to zero or better.',
-    tone: delta >= 0 ? 'positive' : 'warning',
-  };
+    tone: delta >= 0 ? 'good' : 'bad',
+    hint: delta >= 0 ? 'Meets the self-sufficiency goal.' : 'Must return to zero or better.',
+  });
 }
 
 function familyLabel(family: string): string {

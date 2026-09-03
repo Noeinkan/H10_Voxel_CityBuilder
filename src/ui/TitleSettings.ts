@@ -2,6 +2,7 @@ import { DAYLIGHT_MODES, type DaylightMode } from '../engine/daylight';
 import { THEMES, themeSwatches } from '../engine/themes';
 import type { LookChoice } from '../game/launchMode';
 import { daylightControl } from './daylightControl';
+import { titleGroup } from './titleBits';
 
 /**
  * Le impostazioni sul titolo: come nascera' il mondo, deciso prima che nasca.
@@ -38,7 +39,7 @@ export class TitleSettings {
     note.textContent = 'The island is born with these. You can change them again while playing.';
     this.root.append(title, note);
 
-    this.root.appendChild(paneLabel('Look'));
+    this.root.appendChild(titleGroup('Look'));
     const grid = document.createElement('div');
     grid.className = 'title-theme-grid';
     for (const theme of THEMES) {
@@ -64,7 +65,7 @@ export class TitleSettings {
     }
     this.root.appendChild(grid);
 
-    this.root.appendChild(paneLabel('Sky'));
+    this.root.appendChild(titleGroup('Sky'));
     const sky = document.createElement('div');
     sky.className = 'title-row';
     for (const mode of DAYLIGHT_MODES) {
@@ -110,12 +111,4 @@ export class TitleSettings {
     }
     this.cloudsButton.setAttribute('aria-pressed', this.look.clouds ? 'true' : 'false');
   }
-}
-
-/** Il titolino di un gruppo dentro una sottoschermata. */
-function paneLabel(text: string): HTMLElement {
-  const label = document.createElement('h3');
-  label.className = 'title-group';
-  label.textContent = text;
-  return label;
 }

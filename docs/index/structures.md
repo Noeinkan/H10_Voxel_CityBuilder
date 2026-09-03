@@ -35,12 +35,15 @@ le scritture stanno in tre file invece che sparse in sei metodi.
 | [config/typologies.ts](src/world/buildings/config/typologies.ts) | Catalogo delle tipologie: forma piu' condizioni, per uso; `evolvesFrom` dichiara le linee evolutive — chi puo' diventare cosa per upgrade | `TypologyShape`, `TypologyDefinition`, `DEFAULT_TYPOLOGY_SHAPE`, `TYPOLOGIES`, `TypologyId`, `typologyById` |
 | [config/visual.ts](src/world/buildings/config/visual.ts) | Le cinque soglie visuali condivise — base, consolidato, maturo, torre, skyline — e il premio di coronamento che cresce con loro: e' quando un edificio cambia volto, a parita' di massa | `VISUAL_LEVELS`, `VISUAL_CROWN_BONUS`, `SKYLINE_PROP_HEIGHT`, `crownBonusOf` |
 | [src/world/buildings/crossingDriver.ts](src/world/buildings/crossingDriver.ts) | Driver a budget dei ponti fra settori: cerca appoggi locali, registra una campata lunga per settore e la lega alle torri |
+| [src/world/buildings/decayDriver.ts](src/world/buildings/decayDriver.ts) | Apre i cantieri dell'abbandono quando il fronte e' armato. Speculare a `upgradeDriver`, e passa da `ClearanceSites` come ogni rimozione. |
 | [frontage.ts](src/world/buildings/frontage.ts) | Il fronte strada di un lotto: lo scorrimento che accosta l'impronta al vicino, la raccolta dei termini di fila dal registry e i contatori dell'aggregazione | `Frontage` |
 | [growthPoles.ts](src/world/buildings/growthPoles.ts) | Di chi e' il turno di crescere: il riquadro del polo di questa infornata | `poleRectAt` |
 | [growthQueue.ts](src/world/buildings/growthQueue.ts) | La coda di comparsa e le scritture a budget: un segmento per struttura, la sagoma nuova prima della cancellazione | `GrowthQueue`, `anchorOf` |
 | [harborDriver.ts](src/world/buildings/harborDriver.ts) | La passata del distretto costiero: applica il piano di `harbor/plan.ts` sulle code di sempre — scavi e colmate a budget, passeggiata di superficie — prenota le colonne d'acqua al registry e consegna a `buildPass` gli slot di settore, un edificio per infornata | `HarborDriver` |
 | [lotMemo.ts](src/world/buildings/lotMemo.ts) | Le due memorie della ricerca dei lotti: le colonne bocciate, che vivono quanto `buildPass`, e i rettangoli esauriti, che sopravvivono alle infornate finche' il mondo non libera del suolo | `LotMemo`, `BlockMemo` |
 | [lotSearch.ts](src/world/buildings/lotSearch.ts) | Dove c'e' posto per un edificio, in pianta e in quota: la ricerca del lotto oltre il proprio isolato, la scelta dell'impalcato, e le tre memorie con cui si risponde a «questa colonna e' libera?» — il memo d'infornata, i rettangoli esauriti e i siti bocciati per sempre | `LotSearch`, `DeckProbe` |
+| [src/world/buildings/placeStructure.ts](src/world/buildings/placeStructure.ts) | Il protocollo di piazzamento: budget di chunk, collisione, record, coda. I due tempi per chi posa più pezzi insieme. |
+| [src/world/buildings/structureKind.ts](src/world/buildings/structureKind.ts) | Che cosa è un record: l'unico posto che legge i campi marker, la tabella dei tratti e i predicati con nome. |
 | [src/world/buildings/sunkenDig.ts](src/world/buildings/sunkenDig.ts) | La terza eccezione allo scavo: l'imbuto di un earthscraper come stamp di cancellazione, intersecato con la roccia che c'e' davvero. Funzione pura del record, ed e' cio' che permette di riaprire il pozzo al caricamento | `sunkenDigStamp`, `DigProbe` |
 | [surfaceQueue.ts](src/world/buildings/surfaceQueue.ts) | Il suolo pubblico a budget: carreggiata per isolato, grembiuli, rampe e bonifica del decoro — che si ferma dove il bioma dice acqua | `SurfaceQueue`, `SurfacePaint` |
 | [spanDriver.ts](src/world/buildings/spanDriver.ts) | La rete in quota: ponti, mezzanini e piazze; le piazze cercano tasche libere fra pareti reali invece del centro dell'isolato, e una campata non prende suolo | `SpanDriver` |
@@ -69,7 +72,8 @@ le scritture stanno in tre file invece che sparse in sei metodi.
 | [unlocks.ts](src/world/buildings/unlocks.ts) | Cosa un ruolo sblocca: le specializzazioni che apre e le forme che ci nascono dentro, derivate dai due cataloghi | `unlocksFor`, `RoleUnlock` |
 | [style.ts](src/world/buildings/style.ts) | Di che materia è fatto un quartiere: funzione pura di `(seed, isolato)`, nessuno stato | `styleAt`, `styledProfile`, `styleOf` |
 | [blockForm.ts](src/world/buildings/blockForm.ts) | Dove cade un lotto dentro il proprio isolato — angolo, fronte, cuore — e quanto spazio ha per allargarsi. Puro | `lotRoleOf`, `blockRoom` |
-| [stamp.ts](src/world/buildings/stamp.ts) | Volume voxel, ancora 3D e conversione in coordinate mondo | `VoxelStamp`, `VoxelAnchor`, `anchoredVoxel`, `STAMP_EMPTY` |
+| [stamp.ts](src/world/buildings/stamp.ts) | Volume voxel, ancora 3D e conversione in coordinate mondo, nei due versi: `stampSolidAt` interroga una sagoma **prima** che sia scritta | `VoxelStamp`, `VoxelAnchor`, `anchoredVoxel`, `stampSolidAt`, `STAMP_EMPTY` |
+| [src/world/buildings/worldProbe.ts](src/world/buildings/worldProbe.ts) | Le letture canoniche sul mondo con cui i driver compongono le proprie sonde di dominio. |
 
 ## `src/world/arcology/` — la megastruttura
 

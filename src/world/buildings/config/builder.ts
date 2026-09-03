@@ -75,6 +75,31 @@ export const BUILDER = {
    */
   upgradesPerPass: 64,
 
+  /** Tick fra una passata di declino e la successiva. */
+  ticksPerDecay: 10,
+
+  /**
+   * Record esaminati in una passata di declino.
+   *
+   * Lo stesso numero della promozione, e per la stessa ragione: e' una finestra
+   * a cursore sul costruito, non una classifica di tutta la citta'. Chi sta
+   * peggio ricompare finche' resta scoperto, quindi la finestra non gli
+   * impedisce di essere raggiunto — gli impedisce solo di esserlo *subito*, che
+   * e' esattamente il ritmo che il declino deve avere.
+   */
+  decaysPerPass: 64,
+
+  /**
+   * Edifici abbandonati al massimo per passata.
+   *
+   * Uno. **Non e' una manopola di prestazione**: un cantiere di sgombero costa
+   * poco e la coda di comparsa lo assorbirebbe volentieri. E' una manopola di
+   * leggibilita' — un isolato intero che sparisce nello stesso secondo non si
+   * legge come una conseguenza, si legge come un guasto, e il giocatore non
+   * saprebbe quale dei suoi ultimi gesti guardare.
+   */
+  abandonPerPass: 1,
+
   /**
    * Isolati di raggio entro cui cercare un lotto quando il proprio e' pieno.
    *

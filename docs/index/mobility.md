@@ -24,6 +24,7 @@ c'e' una griglia di livelli, e per la stessa ragione qui non esiste `align`.
 | File | Ruolo | Esporta |
 | --- | --- | --- |
 | [config.ts](src/world/aerial/config.ts) | **Ogni** sporto, luce, franco, cadenza e indice di palette | `AERIAL`, `AERIAL_PART`, `AerialPart`, `DECK_HEIGHT`, `takesGround`, `isBuildable` |
+| [deckHold.ts](src/world/aerial/deckHold.ts) | L'appiglio di un impalcato: se la sagoma nuova del suo ospite lo regge ancora, misurata per differenza fra le due sagome | `holdFits`, `HOLD_REFUSALS`, `DeckHold`, `HoldRefusal`, `SolidAt` |
 | [deckPlan.ts](src/world/aerial/deckPlan.ts) | Il primitivo: dato un riquadro e una quota, dove servono le gambe | `planDeck`, `deckBaseZ`, `tileDeck`, `surveyFooting`, `rectsOverlap`, `DECK_REFUSALS`, `DeckPlan`, `DeckQuery`, `DeckRect`, `DeckRefusal`, `AerialColumn`, `AerialProbe`, `Pier` |
 | [terracePlan.ts](src/world/aerial/terracePlan.ts) | L'aggetto: da un edificio e un fronte al riquadro che sporge | `planTerrace`, `faceRuns`, `wallRect`, `faceAxis`, `faceOutward`, `AERIAL_FACE`, `AERIAL_FACES`, `TerracePlan`, `TerraceQuery`, `AerialSupport`, `FaceRun` |
 | [terraceForm.ts](src/world/aerial/terraceForm.ts) | La forma di una mensola: pianta fra quattro varianti e angoli esterni smussati | `terraceShape`, `overhangOf`, `terraceSide`, `terraceEdge`, `chamfered`, `cornerCutOf`, `TerraceShape`, `TerraceSide` |

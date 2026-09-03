@@ -1,4 +1,5 @@
 import { BUILDING_CLASS } from './classes';
+import { coverageAt } from './coverage';
 import { urbanFieldAt, type DistrictId } from './districts';
 import { capacityAtLevel } from './materials';
 import type { SimState } from './SimState';
@@ -22,12 +23,13 @@ import type { SimState } from './SimState';
 /** Il modo di una vista: una scala continua o un insieme di categorie. */
 export type InfoViewMode = 'continuous' | 'categorical';
 
-/** Le sei viste, nell'ordine in cui si ciclano con il tasto `I`. */
+/** Le sette viste, nell'ordine in cui si ciclano con il tasto `I`. */
 export type InfoViewKind =
   | 'off'
   | 'food'
   | 'materials'
   | 'density'
+  | 'coverage'
   | 'happiness'
   | 'districts';
 
@@ -110,6 +112,14 @@ export const INFO_VIEWS: readonly InfoViewSpec[] = [
     normalized: false,
   },
   {
+    kind: 'coverage',
+    label: 'Services',
+    description: 'How well each block is served, between the city-wide baseline and the landmarks nearby.',
+    mode: 'continuous',
+    categories: [],
+    normalized: true,
+  },
+  {
     kind: 'happiness',
     label: 'Happiness',
     description: 'How satisfied each block is, from the landmarks, policies and charters around it.',
@@ -171,6 +181,11 @@ export function infoViewVersion(state: SimState): string {
     state.policies.join('+'),
     state.farmCounts.join(','),
     state.field.totalRecomputedCells,
+    // La copertura ha una meta' che il campo non vede: la quota cittadina, che
+    // si muove con la popolazione a ogni tick. Entra **arrotondata al
+    // centesimo**, o la heatmap si rifarebbe sessanta volte al secondo per uno
+    // spostamento che nessuno distingue a schermo.
+    state.coverageReport.base.toFixed(2),
   ].join('|');
 }
 
@@ -223,6 +238,22 @@ export function createSimInfoSampler(kind: InfoViewKind, state: SimState): InfoS
       categories: spec.categories,
       sample(x: number, y: number): number {
         return index.map.get(`${x},${y}`)?.[pick] ?? 0;
+      },
+    };
+  }
+
+  if (kind === 'coverage') {
+    // Il referto si legge **una volta**: la quota cittadina e' la stessa per
+    // ogni colonna della mappa, e questa vista ne campiona migliaia.
+    const report = state.coverageReport;
+    const field = state.field;
+    return {
+      kind,
+      mode: spec.mode,
+      normalized: spec.normalized,
+      categories: spec.categories,
+      sample(x: number, y: number): number {
+        return coverageAt(field, report, x, y);
       },
     };
   }

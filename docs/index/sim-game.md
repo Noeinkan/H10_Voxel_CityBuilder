@@ -16,6 +16,8 @@ di crescita. Il `Builder`, esterno al modulo, consuma quei candidati. Dettagli i
 
 | File | Ruolo | Esporta |
 | --- | --- | --- |
+| [src/sim/coverage.ts](src/sim/coverage.ts) | Copertura dei servizi per colonna: quota cittadina dal civico cresciuto piu' quota locale dal piano civico del campo. |
+| [src/sim/decay.ts](src/sim/decay.ts) | Il declino: chi sta in un posto che non lo regge piu' (`nextDecaySites`) e il fronte che decide quando (`nextDecayPressure`). |
 | [forecast.ts](src/sim/forecast.ts) | Quanti tick mancano: stime lette dai delta che il tick ha già misurato, mai da una seconda copia della formula. `null` significa «al ritmo di adesso non ci arriva» | `ticksToReach`, `ticksToEmpty`, `materialRate`, `ticksToAffordConstruction`, `ticksToFillHousing` |
 | [index.ts](src/sim/index.ts) | Barrel: superficie pubblica per chi sta fuori dalla cartella | tutto il resto |
 | [balance.ts](src/sim/balance.ts) | Coefficienti, soglie e moltiplicatori in `BALANCE`; la densita' urbana e' regolata dalla congestione 8/8, mentre `siteThreshold` resta il solo gate di edificabilita' | `BALANCE` |

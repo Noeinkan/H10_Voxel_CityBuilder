@@ -1,10 +1,11 @@
 import { createHudIcon } from './hudIcons';
+import { adviceCard, breakdownBlock, meterList, mixBar, verdictCard } from './meterBits';
 import {
   buildSelectionPanelModel,
   defaultSection,
   SECTION_LABELS,
-  type GrowthCard,
   type SelectionActionId,
+  type SelectionPanelModel,
   type SelectionSection,
   type SelectionSectionId,
 } from './SelectionPanelModel';
@@ -23,9 +24,15 @@ import type { Selection } from '../game/selection';
  * isolato, colonna, voxel — si legge gia' tutta nello stesso pannello,
  * scorrendo: sono la stessa domanda a quattro ingrandimenti, e nascondere tre
  * risposte per farne vedere una costringeva a ricordare dove si era arrivati.
- * In cima sta la carta di cio' che serve per crescere, che e' la domanda da cui
- * il click nasce. Cliccare l'intestazione di una sezione sposta il contorno
- * in-world su quell'unita', che prima facevano le linguette.
+ * Cliccare l'intestazione di una sezione sposta il contorno in-world su
+ * quell'unita', che prima facevano le linguette.
+ *
+ * **In cima non c'e' piu' una carta come le altre, ma un verdetto.** La scheda
+ * si apre su cosa sta succedendo qui, con un tono e una riga sola; sotto la
+ * barra che lo giustifica e i ruoli da piazzare attorno per chiuderlo. Le
+ * misure di ogni sezione sono barre, e la carta d'identita' — impronta, quota,
+ * fila, appoggi — sta ripiegata dietro «Details», perche' e' la parte che si
+ * consulta una volta e non si sorveglia.
  *
  * Non ha test, come il resto del DOM del progetto: cosa mostrare lo decide
  * `SelectionPanelModel`, che e' puro ed e' li' che le prove stanno.
@@ -52,19 +59,13 @@ export interface SelectionPanelHandlers {
 interface SectionView {
   readonly root: HTMLElement;
   readonly heading: HTMLButtonElement;
-  readonly eyebrow: HTMLElement;
   readonly title: HTMLElement;
   readonly summary: HTMLElement;
+  readonly meters: HTMLElement;
+  readonly mix: HTMLElement;
+  readonly details: HTMLDetailsElement;
   readonly rows: HTMLElement;
   readonly action: HTMLButtonElement;
-}
-
-interface GrowthView {
-  readonly root: HTMLElement;
-  readonly eyebrow: HTMLElement;
-  readonly title: HTMLElement;
-  readonly summary: HTMLElement;
-  readonly rows: HTMLElement;
 }
 
 export class SelectionPanel {
@@ -72,7 +73,8 @@ export class SelectionPanel {
   private readonly title = document.createElement('strong');
   private readonly subtitle = document.createElement('span');
   private readonly body = document.createElement('div');
-  private readonly growth: GrowthView;
+  /** Verdetto, barra e consigli: si riscrivono interi, non hanno bottoni dentro. */
+  private readonly lead = document.createElement('div');
   private readonly views = new Map<SelectionSectionId, SectionView>();
   private focusedSection: SelectionSectionId = 'block';
 
@@ -102,13 +104,15 @@ export class SelectionPanel {
     head.append(heading, close);
 
     this.body.className = 'selection-body';
-    this.growth = this.createGrowthView();
-    this.body.appendChild(this.growth.root);
+    this.lead.className = 'selection-lead';
+    this.body.appendChild(this.lead);
 
     // Le quattro sezioni nascono tutte qui e restano gli stessi nodi per tutta
     // la vita del pannello: l'insieme non cambia mai (la struttura c'e' o no),
     // e ricrearle a ogni riscrittura perderebbe il click sotto il dito — il
-    // difetto per cui il dock non puo' ricostruire i propri bottoni.
+    // difetto per cui il dock non puo' ricostruire i propri bottoni. Vale anche
+    // per il `<details>`: ricrearlo richiuderebbe i dettagli che il giocatore
+    // ha appena aperto, sei volte al secondo.
     for (const id of SECTION_IDS) {
       const view = this.createSectionView(id);
       this.views.set(id, view);
@@ -161,19 +165,18 @@ export class SelectionPanel {
     const model = buildSelectionPanelModel(selection, isolatedBlock);
     this.title.textContent = model.title;
     this.subtitle.textContent = model.summary;
-    this.paintGrowth(model.growth);
+    this.paintLead(model);
     for (const id of SECTION_IDS) {
       const section = model.sections.find((candidate) => candidate.id === id);
       this.paintSectionView(this.views.get(id)!, section, model.summary);
     }
   }
 
-  private paintGrowth(card: GrowthCard | null): void {
-    this.growth.root.hidden = card === null;
-    if (card === null) return;
-    this.growth.title.textContent = card.title;
-    this.growth.summary.textContent = card.summary;
-    paintRows(this.growth.rows, card.rows);
+  private paintLead(model: SelectionPanelModel): void {
+    const blocks: HTMLElement[] = [verdictCard(model.verdict)];
+    if (model.breakdown !== null) blocks.push(breakdownBlock(model.breakdown));
+    if (model.advice !== null) blocks.push(adviceCard(model.advice));
+    this.lead.replaceChildren(...blocks);
   }
 
   private paintSectionView(view: SectionView, section: SelectionSection | undefined, leadSummary: string): void {
@@ -185,6 +188,13 @@ export class SelectionPanel {
     // valgono la scheda, e insegnava a saltare la prima riga di ogni sezione.
     view.summary.textContent = section.summary;
     view.summary.hidden = section.summary === leadSummary;
+
+    view.meters.replaceChildren(meterList(section.meters));
+    view.meters.hidden = section.meters.length === 0;
+    view.mix.replaceChildren(mixBar(section.mix));
+    view.mix.hidden = section.mix.length === 0;
+
+    view.details.hidden = section.rows.length === 0;
     paintRows(view.rows, section.rows);
 
     const action = section.action;
@@ -196,7 +206,7 @@ export class SelectionPanel {
     view.action.textContent = action.label;
     // Il perche' sta nel `title` e non sotto l'etichetta: e' una riga che serve la
     // prima volta e poi mai piu', e stampata fissa mangerebbe lo spazio delle
-    // righe che sono il motivo per cui la scheda esiste.
+    // barre che sono il motivo per cui la scheda esiste.
     view.action.title = action.hint;
     view.action.dataset['action'] = action.id;
   }
@@ -216,7 +226,7 @@ export class SelectionPanel {
     root.className = 'selection-card';
 
     // Il bottone nasce con la sezione e resta lo stesso nodo per tutta la vita
-    // del pannello, a differenza delle righe che si ricostruiscono a ogni
+    // del pannello, a differenza delle barre che si ricostruiscono a ogni
     // riscrittura: un nodo ricreato sotto il dito perderebbe il click fra
     // `pointerdown` e `click`, ed e' esattamente il difetto per cui il dock non
     // puo' ricostruire i propri.
@@ -238,8 +248,18 @@ export class SelectionPanel {
     summary.className = 'selection-card-summary';
     heading.append(eyebrow, title, summary);
 
+    const meters = document.createElement('div');
+    meters.className = 'selection-meters';
+    const mix = document.createElement('div');
+    mix.className = 'selection-mix';
+
+    const details = document.createElement('details');
+    details.className = 'selection-details';
+    const summaryLine = document.createElement('summary');
+    summaryLine.textContent = 'Details';
     const rows = document.createElement('dl');
     rows.className = 'selection-rows';
+    details.append(summaryLine, rows);
 
     const action = document.createElement('button');
     action.type = 'button';
@@ -250,33 +270,13 @@ export class SelectionPanel {
       if (chosen !== undefined) this.handlers.onAction(chosen as SelectionActionId);
     });
 
-    root.append(heading, rows, action);
-    return { root, heading, eyebrow, title, summary, rows, action };
-  }
-
-  private createGrowthView(): GrowthView {
-    const root = document.createElement('section');
-    root.className = 'selection-card selection-card--growth';
-    root.setAttribute('aria-label', 'Growth');
-
-    const eyebrow = document.createElement('span');
-    eyebrow.className = 'selection-card-eyebrow';
-    eyebrow.textContent = 'Growth';
-
-    const title = document.createElement('strong');
-    title.className = 'selection-card-title';
-    const summary = document.createElement('span');
-    summary.className = 'selection-card-summary';
-    const rows = document.createElement('dl');
-    rows.className = 'selection-rows';
-
-    root.append(eyebrow, title, summary, rows);
-    return { root, eyebrow, title, summary, rows };
+    root.append(heading, meters, mix, details, action);
+    return { root, heading, title, summary, meters, mix, details, rows, action };
   }
 }
 
 /**
- * Riscrive le righe di una carta o di una sezione.
+ * Riscrive le righe ripiegate di una sezione.
  *
  * Ricostruisce i nodi invece di aggiornarli in posto perche' il numero di righe
  * cambia con cio' che c'e' — una fila, un appoggio, l'acqua sopra la colonna — e

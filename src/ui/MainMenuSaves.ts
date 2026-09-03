@@ -1,6 +1,6 @@
 import { AUTO_SLOT, MANUAL_SLOTS, type SlotInfo } from '../game/save/storage';
-import { sectionTitle } from './drawerBits';
 import { EMPTY_SLOT_SUMMARY, slotLabel, slotSummary } from './MainMenuModel';
+import { titleGroup, titleNote, titleRow, titleSection, titleSmall } from './titleBits';
 
 /**
  * La sezione dei salvataggi: quattro slot, e le due porte verso un file.
@@ -37,39 +37,37 @@ export class MainMenuSaves {
   readonly root: HTMLElement;
 
   private readonly rows = new Map<string, SlotRow>();
-  private readonly note = document.createElement('p');
+  private readonly note = titleNote(
+    'A JSON file carries the whole city: seed, simulation and every building.',
+  );
   private readonly fileInput: HTMLInputElement;
   private latest: readonly SlotInfo[] = [];
 
   constructor(private readonly handlers: SaveSectionHandlers) {
-    this.root = document.createElement('div');
-    this.root.className = 'menu-section-body';
+    this.root = titleSection();
 
-    this.root.appendChild(sectionTitle('Autosave'));
+    this.root.appendChild(titleGroup('Autosave'));
     this.root.appendChild(this.createRow(AUTO_SLOT, false).root);
 
-    this.root.appendChild(sectionTitle('Slots'));
+    this.root.appendChild(titleGroup('Slots'));
     for (const slot of MANUAL_SLOTS) {
       this.root.appendChild(this.createRow(slot, true).root);
     }
 
-    this.root.appendChild(sectionTitle('File'));
-    this.note.className = 'drawer-note';
-    this.note.textContent = 'A JSON file carries the whole city: seed, simulation and every building.';
+    this.root.appendChild(titleGroup('File'));
     this.root.appendChild(this.note);
 
-    const fileRow = document.createElement('div');
-    fileRow.className = 'save-file-row';
-    fileRow.appendChild(this.textButton('Export JSON', () => handlers.onExport()));
+    const fileRow = titleRow();
+    fileRow.appendChild(this.wideButton('Export JSON', () => handlers.onExport()));
 
     // L'input sta nascosto e lo apre il bottone: un `<input type="file">` nudo
-    // non si puo' vestire come il resto dell'HUD, e il gesto e' comunque il suo.
+    // non si puo' vestire come il resto della colonna, e il gesto e' comunque il suo.
     this.fileInput = document.createElement('input');
     this.fileInput.type = 'file';
     this.fileInput.accept = 'application/json,.json';
     this.fileInput.hidden = true;
     this.fileInput.addEventListener('change', () => this.readChosenFile());
-    fileRow.appendChild(this.textButton('Import JSON', () => this.fileInput.click()));
+    fileRow.appendChild(this.wideButton('Import JSON', () => this.fileInput.click()));
     fileRow.appendChild(this.fileInput);
     this.root.appendChild(fileRow);
   }
@@ -97,34 +95,36 @@ export class MainMenuSaves {
 
   private createRow(slot: string, manual: boolean): SlotRow {
     const root = document.createElement('div');
-    root.className = 'save-slot';
+    root.className = 'title-slot';
 
-    const name = document.createElement('strong');
+    const text = document.createElement('div');
+    text.className = 'title-slot-text';
+    const name = document.createElement('span');
+    name.className = 'title-slot-name';
     name.textContent = slotLabel(slot);
     const summary = document.createElement('span');
-    summary.className = 'save-slot-summary';
+    summary.className = 'title-slot-summary';
     summary.textContent = EMPTY_SLOT_SUMMARY;
+    text.append(name, summary);
 
     const actions = document.createElement('div');
-    actions.className = 'save-slot-actions';
-    if (manual) actions.appendChild(this.textButton('Save', () => this.handlers.onSave(slot)));
-    const load = this.textButton('Load', () => this.handlers.onLoad(slot));
+    actions.className = 'title-slot-actions';
+    if (manual) actions.appendChild(titleSmall('Save', () => this.handlers.onSave(slot)));
+    const load = titleSmall('Load', () => this.handlers.onLoad(slot));
     actions.appendChild(load);
-    const remove = this.textButton('Delete', () => this.handlers.onDelete(slot));
+    const remove = titleSmall('Delete', () => this.handlers.onDelete(slot));
     actions.appendChild(remove);
 
-    root.append(name, summary, actions);
+    root.append(text, actions);
     const row: SlotRow = { root, summary, load, remove };
     this.rows.set(slot, row);
     return row;
   }
 
-  private textButton(label: string, onClick: () => void): HTMLButtonElement {
-    const button = document.createElement('button');
-    button.type = 'button';
-    button.className = 'save-button';
-    button.textContent = label;
-    button.addEventListener('click', onClick);
+  /** I due gesti sul file si dividono la riga: sono scelte pari fra loro. */
+  private wideButton(label: string, onClick: () => void): HTMLButtonElement {
+    const button = titleSmall(label, onClick);
+    button.classList.add('title-small--wide');
     return button;
   }
 

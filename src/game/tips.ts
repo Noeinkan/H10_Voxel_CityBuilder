@@ -5,6 +5,7 @@ import {
   effectiveCount,
   FARM_KIND,
   fedShareOf,
+  isDecayArmed,
   missingPlotsFor,
   type SimState,
 } from '../sim';
@@ -116,6 +117,20 @@ function crisisTips(state: SimState): GameTip[] {
   const out: GameTip[] = [];
   const population = state.population.stock;
 
+  // **Per prima, ed e' l'unica crisi che porta via qualcosa che non torna.**
+  // Le altre tre descrivono una citta' che sta male; questa una citta' che sta
+  // gia' perdendo pezzi, e il giocatore deve poterla distinguere a colpo
+  // d'occhio dalle altre.
+  if (isDecayArmed(state)) {
+    const percent = Math.round(state.coverageReport.ratio * 100);
+    out.push({
+      id: 'blocks-abandoned',
+      kind: 'crisis',
+      title: `Blocks are emptying: services cover ${percent}% — place a School or a Park.`,
+      message: `The city has outgrown its services: they cover only ${percent}% of what its residents need, and the worst-served blocks are being abandoned one at a time. To fix that, place a School or a Park where the Services view shows the gap. Growth resumes on its own once coverage recovers, and nothing else is lost in the meantime.`,
+    });
+  }
+
   if (population > 0 &&
     state.food.stock <= BALANCE.gameplay.crisis.foodReserve &&
     fedShareOf(state.harvest, population) < 1) {
@@ -213,6 +228,21 @@ function foodAdvice(state: SimState): { title: string; message: string } {
 
 function bottleneckTips(state: SimState): GameTip[] {
   const out: GameTip[] = [];
+
+  // **L'avviso prima della perdita**, ed e' il pezzo che rende il declino una
+  // conseguenza invece che un agguato: il fronte impiega un minuto buono a
+  // caricarsi, e per tutto quel tempo qui c'e' scritto cosa sta per succedere e
+  // cosa lo evita. Sopra zero e sotto uno: armato non e' piu' un collo di
+  // bottiglia, e' la crisi che parla al posto suo.
+  if (state.decayPressure > 0 && !isDecayArmed(state)) {
+    const percent = Math.round(state.coverageReport.ratio * 100);
+    out.push({
+      id: 'services-falling-behind',
+      kind: 'bottleneck',
+      title: `Services cover ${percent}% and falling — place a School or a Park.`,
+      message: `The city is growing faster than its services: they cover only ${percent}% of what its residents need. Switch to the Services view to see where the gap is, and place a School or a Park there. Left alone, the worst-served blocks will start emptying.`,
+    });
+  }
 
   // **L'unico bacino di lavoro**, ed e' la cosa che nessuna barra mostra: sotto
   // organico *tutto* rende meno insieme — le fabbriche, i negozi e il raccolto —

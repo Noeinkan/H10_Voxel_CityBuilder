@@ -8,6 +8,15 @@
  * I colori sono percio' scritti, non derivati, e sono **cielo e bianco**: quelli
  * dell'HUD virano al salvia, che qui e' fuori posto — la prima immagine del gioco
  * e' un mare, e la pagina che lo precede deve sembrare la stessa aria.
+ *
+ * **Le superfici vestite sono due, e il fondo e' l'unica differenza.** Da qui in
+ * poi c'e' anche il menu di pausa: stessa colonna, stessi bottoni grandi con la
+ * riga sotto, stesse sottoschermate — perche' pongono la stessa domanda, e chi
+ * torna dal gioco al menu non deve reimparare dove stanno le cose. Il cielo pero'
+ * e' solo del titolo (`.title-screen--sky`): in partita dietro c'e' gia' una
+ * citta', e coprirla con un fondo dipinto direbbe che si e' usciti dal gioco
+ * invece che messo in pausa. Percio' il fondo sta in un modificatore, non nella
+ * classe: `.title-inner` non sa su cosa galleggia.
  */
 .title-screen {
   position: fixed;
@@ -19,18 +28,21 @@
   padding: 24px;
   box-sizing: border-box;
   overflow-y: auto;
-  font-family: ui-rounded, 'Segoe UI', system-ui, sans-serif;
-  color: #1c3347;
-  /*
-   * Cielo pieno, non velo: dietro non c'e' ancora niente da lasciar vedere, e
-   * una trasparenza mostrerebbe la canvas vuota come se fosse un difetto.
-   *
-   * **E' un cielo, quindi si muove.** Quattro strati che scorrono a velocita' e
-   * direzioni diverse su un ciclo di due minuti: nessuno dei quattro cambia
-   * tinta — restano tutti nel blu e nel bianco — ma la loro somma si', e il
-   * risultato e' un'aria che respira invece di una figurina. La deriva e' lenta
-   * di proposito: se la si vede muovere, distrae da cio' che c'e' da scegliere.
-   */
+  transition: opacity 420ms ease;
+}
+
+/*
+ * Cielo pieno, non velo: prima della scelta dietro non c'e' ancora niente da
+ * lasciar vedere, e una trasparenza mostrerebbe la canvas vuota come se fosse un
+ * difetto.
+ *
+ * **E' un cielo, quindi si muove.** Quattro strati che scorrono a velocita' e
+ * direzioni diverse su un ciclo di due minuti: nessuno dei quattro cambia tinta
+ * — restano tutti nel blu e nel bianco — ma la loro somma si', e il risultato e'
+ * un'aria che respira invece di una figurina. La deriva e' lenta di proposito: se
+ * la si vede muovere, distrae da cio' che c'e' da scegliere.
+ */
+.title-screen--sky {
   background:
     radial-gradient(60% 45% at 22% 18%, rgba(255, 255, 255, .85) 0%, rgba(255, 255, 255, 0) 70%),
     radial-gradient(55% 40% at 78% 28%, rgba(150, 205, 255, .5) 0%, rgba(150, 205, 255, 0) 70%),
@@ -39,7 +51,6 @@
   background-size: 140% 140%, 150% 150%, 160% 160%, 100% 260%;
   background-position: 0% 0%, 100% 0%, 50% 100%, 50% 0%;
   animation: title-sky 128s ease-in-out infinite alternate;
-  transition: opacity 420ms ease;
 }
 
 @keyframes title-sky {
@@ -54,14 +65,17 @@
  * Le sottoschermate sono `display: flex`, e una classe batte il `display: none`
  * del foglio del browser: senza questa riga il titolo mostrava tutti i pannelli
  * uno sotto l'altro, che e' esattamente il menu confuso da cui si veniva.
+ *
+ * La colonna e' l'ancora, non lo schermo: cosi' vale anche dentro il menu di
+ * pausa, dove sopra `.title-inner` non c'e' un `.title-screen` ma il velo.
  */
-.title-screen [hidden] {
+.title-inner [hidden] {
   display: none !important;
 }
 
 /* La linea d'orizzonte: il minimo che dice «mare», senza disegnare un'isola che
-   non e' ancora stata generata. */
-.title-screen::after {
+   non e' ancora stata generata. Appartiene al cielo, non alla pagina. */
+.title-screen--sky::after {
   content: '';
   position: absolute;
   inset: auto 0 0 0;
@@ -78,6 +92,24 @@
   flex-direction: column;
   align-items: stretch;
   gap: 18px;
+  font-family: ui-rounded, 'Segoe UI', system-ui, sans-serif;
+  color: #1c3347;
+}
+
+/*
+ * La colonna in partita.
+ *
+ * Piu' larga di quella del titolo perche' porta di piu': quattro slot con tre
+ * gesti ciascuno, non tre voci. E scorre da sola invece di far scorrere lo
+ * schermo — sotto c'e' una citta' ferma, e vederla scivolare via mentre si cerca
+ * uno slot direbbe che il menu e' una pagina, non una pausa.
+ */
+.title-inner--pause {
+  width: min(480px, 92vw);
+  max-height: 100%;
+  overflow-y: auto;
+  padding: 2px;
+  pointer-events: auto;
 }
 
 .title-wordmark {
@@ -223,6 +255,7 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex-wrap: wrap;
   gap: 10px;
 }
 
@@ -243,6 +276,28 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* Salva, carica, cancella: tre gesti sulla stessa riga, e restano insieme quando
+   la riga va a capo. Sul titolo ce n'e' uno solo e questa regola non si vede. */
+.title-slot-actions {
+  display: flex;
+  flex: none;
+  gap: 6px;
+}
+
+/*
+ * In partita lo slot e' una tessera, non una riga.
+ *
+ * Sul titolo le righe poggiano su un cielo tinta unita e si leggono nude; qui
+ * sotto c'e' una citta' sfocata, che e' un fondo mosso: senza un piano bianco
+ * sotto, la data di salvataggio cade sopra un tetto e sparisce.
+ */
+.title-inner--pause .title-slot {
+  padding: 10px 12px;
+  border: 1px solid rgba(35, 75, 105, .16);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, .72);
 }
 
 /* Il titoletto di un gruppo dentro una sottoschermata: Look, Sky, e i tre
@@ -365,6 +420,38 @@
   cursor: default;
 }
 
+/* L'icona dentro un bottone piccolo: `hud.css` la fa grande quanto quelle del
+   rail, e li' dentro sborderebbe sopra la parola che le sta accanto. */
+.title-small .hud-icon {
+  width: 14px;
+  height: 14px;
+  margin-right: 6px;
+  vertical-align: -2px;
+}
+
+/*
+ * Il secondo colpo e' quello che butta via la citta'.
+ *
+ * Il bottone cambia colore prima di cambiare effetto: una conferma che e' solo
+ * una parola diversa sullo stesso bottone verde si preme due volte di seguito
+ * senza accorgersene.
+ */
+.title-button--primary[data-armed='true'] {
+  background: #a8564a;
+  border-color: #8f4438;
+}
+
+.title-button--primary[data-armed='true']:hover:not(:disabled) {
+  background: #b96354;
+}
+
+/* Il corpo di una sezione: una colonna sola, come tutto il resto della pagina. */
+.title-section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
 .title-foot {
   display: flex;
   flex-direction: column;
@@ -413,7 +500,7 @@
 
   /* Il cielo si ferma: chi ha chiesto meno movimento non vuole un fondo che
      deriva sotto il testo che sta leggendo. */
-  .title-screen {
+  .title-screen--sky {
     animation: none;
   }
 

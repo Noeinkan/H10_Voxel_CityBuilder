@@ -37,6 +37,7 @@ import {
 import { EMPTY_COMMERCE, type CommerceReport } from './commerce';
 import type { ReachCache, StepCost } from './reach';
 import { NO_FUNDS_FLOW, type FundsReport } from './flows';
+import { EMPTY_COVERAGE, type CoverageReport } from './coverage';
 import { EMPTY_SATISFACTION, type SatisfactionReport } from './satisfaction';
 import {
   capacityAtLevel,
@@ -255,6 +256,35 @@ export interface SimStateData {
    */
   readonly supplyArmed: boolean;
 
+  /**
+   * La copertura di servizi dell'ultimo tick, scomposta.
+   *
+   * Gemella di `satisfactionReport`: derivata dal tick, non accumulata. Sta qui
+   * e non si ricalcola a valle perche' la quota cittadina e' la stessa per ogni
+   * colonna della mappa, e una heatmap ne campiona migliaia.
+   */
+  readonly coverageReport: CoverageReport;
+
+  /**
+   * Quanto la citta' e' in affanno sui servizi, in [0, 1].
+   *
+   * **E' il fronte del declino**, e ha la stessa forma di `supplyArmed` con una
+   * differenza sola: qui il fronte e' un numero invece che un bit, perche' il
+   * declino deve essere *lento*. Sale in `tick` finche' la copertura resta sotto
+   * `decay.strainCoverage`, scende sopra `decay.recoveryCoverage`, e fra le due
+   * non si muove — la banda morta e' cio' che impedisce a una citta' al pareggio
+   * di accendere e spegnere l'allarme a ogni oscillazione.
+   *
+   * A uno il fronte e' **armato**: da li' in poi la citta' smette di fondare e
+   * comincia a perdere edifici. Non esiste un secondo campo a dirlo, perche' due
+   * campi che si ricavano l'uno dall'altro divergono al primo refactor.
+   *
+   * Vive nello stato e non nel driver perche' e' un fatto del gioco che va
+   * salvato: caricare una partita in crisi e ritrovarla serena sarebbe la stessa
+   * bugia di un'emergenza alimentare che il salvataggio dimentica.
+   */
+  readonly decayPressure: number;
+
   /** Classe di cui la scena di debug disegna la heatmap e scrive `VoxelWorld.data`. */
   readonly selectedClass: BuildingClass;
 }
@@ -331,6 +361,8 @@ export function createSimState(options: SimStateOptions = {}): SimState {
     decisionStamp: -1,
     decisionDismissedUntil: 0,
     supplyArmed: true,
+    coverageReport: EMPTY_COVERAGE,
+    decayPressure: 0,
     selectedClass: options.selectedClass ?? BUILDING_CLASS.residential,
   };
 
@@ -699,6 +731,7 @@ export function reviveSimState(data: SimStateData, reachCost?: StepCost): SimSta
     | 'pendingDecision' | 'decisionHistory' | 'nextDecisionTick' | 'supplyArmed'
     | 'decisionStamp' | 'decisionDismissedUntil'
     | 'islandConnections' | 'satisfactionReport' | 'landFactor'
+    | 'coverageReport' | 'decayPressure'
   >>;
   const normalised: SimStateData = {
     ...data,
@@ -749,6 +782,14 @@ export function reviveSimState(data: SimStateData, reachCost?: StepCost): SimSta
     // come per l'organico.
     satisfactionReport: compatible.satisfactionReport ?? EMPTY_SATISFACTION,
     landFactor: compatible.landFactor ?? 1,
+    // La copertura segue la stessa regola della soddisfazione: un salvataggio
+    // che non la porta torna ottimista e il primo tick la riscrive. Il **fronte**
+    // invece torna a zero, che non e' la stessa scelta di `supplyArmed`: li'
+    // tornare armati significa poter chiedere aiuto, qui significherebbe
+    // demolire, e una partita caricata non deve poter perdere un edificio prima
+    // che il primo tick abbia guardato la citta'.
+    coverageReport: compatible.coverageReport ?? EMPTY_COVERAGE,
+    decayPressure: compatible.decayPressure ?? 0,
   };
   const field = new DesirabilityField(reachCost);
   field.rebuild(normalised.catalysts, normalised.buildings, resolveWeights(normalised.policies));

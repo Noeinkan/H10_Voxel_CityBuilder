@@ -74,7 +74,10 @@ export class TitleScreen {
     private readonly view: TitleScreenView,
   ) {
     this.root = document.createElement('div');
-    this.root.className = 'title-screen';
+    // Il cielo e' un modificatore da quando il menu di pausa riusa la stessa
+    // colonna: li' dietro c'e' la citta' sfocata, e un fondo dipinto sopra
+    // direbbe che si e' usciti dal gioco invece che messo in pausa.
+    this.root.className = 'title-screen title-screen--sky';
     this.root.setAttribute('role', 'dialog');
     this.root.setAttribute('aria-modal', 'true');
     this.root.setAttribute('aria-label', TITLE_NAME);

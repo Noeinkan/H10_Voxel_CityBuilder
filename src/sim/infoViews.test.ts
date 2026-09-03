@@ -26,7 +26,7 @@ describe('infoViews — catalogo', () => {
       kind = nextInfoView(kind);
       seen.push(kind);
     }
-    expect(seen).toEqual(['food', 'materials', 'density', 'happiness', 'districts']);
+    expect(seen).toEqual(['food', 'materials', 'density', 'coverage', 'happiness', 'districts']);
     expect(nextInfoView('districts')).toBe('off');
   });
 
@@ -41,6 +41,11 @@ describe('infoViews — catalogo', () => {
     expect(INFO_VIEWS.find((spec) => spec.kind === 'happiness')?.normalized).toBe(true);
     expect(INFO_VIEWS.find((spec) => spec.kind === 'density')?.normalized).toBe(false);
     expect(INFO_VIEWS.find((spec) => spec.kind === 'materials')?.normalized).toBe(false);
+    // La copertura e' un rapporto, quindi non va rinormalizzata sul massimo
+    // della regione: se lo fosse, una citta' scoperta uniformemente si
+    // ridipingerebbe tutta verde e la vista direbbe il contrario del vero.
+    expect(INFO_VIEWS.find((spec) => spec.kind === 'coverage')?.normalized).toBe(true);
+    expect(INFO_VIEWS.find((spec) => spec.kind === 'coverage')?.mode).toBe('continuous');
   });
 });
 
@@ -75,6 +80,16 @@ describe('infoViews — campionatori della simulazione', () => {
     const sampler = createSimInfoSampler('density', state);
     expect(sampler.sample(7, 8)).toBeGreaterThan(0);
     expect(sampler.sample(9, 9)).toBe(0);
+  });
+
+  it('la copertura cala allontanandosi dal servizio, e resta in [0, 1]', () => {
+    const state = seeded();
+    const sampler = createSimInfoSampler('coverage', state);
+    const near = sampler.sample(50, 40);
+    const far = sampler.sample(200, 200);
+    expect(near).toBeGreaterThan(far);
+    expect(near).toBeLessThanOrEqual(1);
+    expect(far).toBeGreaterThanOrEqual(0);
   });
 
   it('materiali legge la capacita’ industriale, non la residenziale', () => {

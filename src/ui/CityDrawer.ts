@@ -2,6 +2,8 @@ import type { CityOverviewModel, OverviewTrade } from './CityOverviewModel';
 import { decisionMark, type GameHudModel, type HudCommerce } from './GameHudModel';
 import type { CharterId, CityDecision } from '../sim';
 import { drawerHeader, factRows, goalRows, note, overviewSection, sectionTitle } from './drawerBits';
+import { meterList } from './meterBits';
+import type { Meter } from './meters';
 
 /**
  * La dashboard della citta': lettura della condizione e delle scelte.
@@ -92,9 +94,11 @@ export class CityDrawer {
     if (pending !== null) sections.push(this.pendingSection(pending, activeCharter));
     sections.push(
       condition,
+      // I bisogni **prima** dei traguardi: un traguardo dice dove si vuole
+      // arrivare, un bisogno se ci si arrivera'. Chi apre la dashboard mentre
+      // qualcosa va storto sta cercando il secondo, e trovava il primo.
+      overviewSection('What the city needs', needsPanel(overview.needs)),
       overviewSection('Goals', goalRows(overview.goals)),
-      overviewSection('Capacity', factRows(overview.capacity)),
-      overviewSection('Economy', factRows(overview.economy)),
     );
     if (commerce !== null) sections.push(overviewSection('Commerce', commerceRows(commerce)));
     sections.push(
@@ -152,6 +156,19 @@ export class CityDrawer {
     section.appendChild(options);
     return section;
   }
+}
+
+/**
+ * I bisogni della citta' come barre, con l'aria del cassetto attorno.
+ *
+ * Gli stessi nodi della scheda di selezione — `meterList` sta in `meterBits.ts`
+ * per questo — dentro un contenitore che li spazia come il resto della colonna.
+ */
+function needsPanel(needs: readonly Meter[]): HTMLElement {
+  const panel = document.createElement('div');
+  panel.className = 'city-needs';
+  panel.appendChild(meterList(needs));
+  return panel;
 }
 
 /**

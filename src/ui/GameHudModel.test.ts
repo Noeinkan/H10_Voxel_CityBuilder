@@ -493,6 +493,7 @@ function stats(
       ropeways: 0,
       clearing: 0,
       cleared: 0,
+      abandoned: 0,
       farmPlots: 0,
       arcologies: 0,
       arcologyRefusal: null,

@@ -1,37 +1,48 @@
 import {
   ALL_CLASSES,
   BALANCE,
-  BUILDING_CLASS,
   CLASS_LABELS,
   catalystById,
-  type BuildingClass,
   type CatalystDefinition,
-  type CatalystEffects,
 } from '../sim';
-import { PALETTE_SLOT_NAMES } from '../engine/paletteSlots';
-import { SURFACE_KIND_NAMES, WATER_CLASS, type SurfaceKind } from '../world/visualBlock';
 import { BIOME_NAMES } from '../world/terrain/config';
-import { GROUND, type GroundKind } from '../world/grading/grade';
-import { STREET_ROLE, type StreetRole } from '../world/streets/streetGrid';
-import { TIER, type SkylineTier } from '../world/skyline/tiers';
-import { AERIAL_PART, takesGround, type AerialPart } from '../world/aerial/config';
-import { SPAN_KIND, type SpanKind } from '../world/spans/config';
+import { takesGround } from '../world/aerial/config';
 import { landmarkOf, maxStageOf } from '../world/landmarks/config';
 import { typologyOf } from '../world/buildings/recordStamp';
 import { footprintDepth, type BuildingRecord } from '../world/buildings/BuildingRegistry';
 import { prospectRows } from './prospects';
+import { signed, type Breakdown, type Contribution, type Meter, type Verdict } from './meters';
+import {
+  AERIAL_LABELS,
+  capitalise,
+  classLabel,
+  demandValue,
+  districtLabel,
+  effectSummary,
+  GROUND_LABELS,
+  paletteLabel,
+  plural,
+  profileLabel,
+  ROLE_LABELS,
+  siteValue,
+  SPAN_LABELS,
+  surfaceLabel,
+  TIER_LABELS,
+} from './selectionLabels';
+import { blockMeters, blockMix, demandMeters, useMeters } from './selectionMeters';
+import { growthPlan } from './selectionVerdict';
+import type { SiteAdvice } from './siteAdvice';
 import type {
   BlockInfo,
   ColumnInfo,
   Selection,
   StructureInfo,
-  UseInfo,
   VoxelInfo,
 } from '../game/selection';
 
 /**
- * La scheda di selezione dal lato del giocatore: quattro sezioni di righe, e il
- * gesto che ognuna offre.
+ * La scheda di selezione dal lato del giocatore: un verdetto, delle barre, e i
+ * dettagli sotto.
  *
  * Puro e testabile in `node` come `GameHudModel`, e per la stessa ragione: qui
  * vive **cosa** si legge e cosa si puo' fare, e sbagliarlo si vede solo
@@ -44,6 +55,15 @@ import type {
  * significa niente. Scrivere «Housing» su un viadotto sarebbe gia' brutto; peggio
  * e' che landmark, campate e parti in quota **non entrano** nei conteggi del
  * registry, quindi chiamarli edifici direbbe un numero che l'HUD non conferma.
+ *
+ * **Cio' che una sezione dice ora sta in tre posti e non piu' in uno.** Le
+ * misure vanno in `meters` e si disegnano come barre; le frasi che le
+ * commentavano sono diventate il loro `hint`; nelle `rows` resta la
+ * carta d'identita' — misure fisse, appartenenze, appoggi — che nessuna barra
+ * descriverebbe meglio di due parole, e che il pannello tiene ripiegata. Le
+ * tabelle dei nomi sono uscite in `selectionLabels.ts`, il verdetto in
+ * `selectionVerdict.ts` e le barre in `selectionMeters.ts`: il file era gia'
+ * oltre il budget di `AGENTS.md` prima di guadagnare tutto questo.
  */
 
 export type SelectionSectionId = 'structure' | 'block' | 'column' | 'voxel';
@@ -93,6 +113,11 @@ export interface SelectionSection {
   readonly title: string;
   /** Una riga sola che dice cos'e' questa cosa, prima delle misure. */
   readonly summary: string;
+  /** Le quantita' come barre. Vuoto dove non ce ne sono di confrontabili. */
+  readonly meters: readonly Meter[];
+  /** Di cosa e' fatta questa unita', come una barra sola divisa in usi. */
+  readonly mix: readonly Contribution[];
+  /** La carta d'identita': cio' che il pannello tiene ripiegato. */
   readonly rows: readonly SelectionRow[];
   /** Il gesto che questa sezione offre, `null` dove non ce n'e' uno. */
   readonly action: SelectionAction | null;
@@ -102,28 +127,11 @@ export interface SelectionPanelModel {
   /** Il soggetto piu' specifico che esiste qui: e' l'intestazione del pannello. */
   readonly title: string;
   readonly summary: string;
-  /**
-   * Cio' che serve perche' qui cresca qualcosa, sempre in cima al pannello.
-   *
-   * `null` dove non c'e' niente di vero da dire: una campata non cresce, e una
-   * carta vuota insegnerebbe a saltarla. E' la stessa scelta di `cityUse: null`
-   * in `selection.ts`, dove il vuoto e' un fatto invece di un numero plausibile.
-   */
-  readonly growth: GrowthCard | null;
+  /** La risposta corta, sempre in cima: cosa sta succedendo in questo punto. */
+  readonly verdict: Verdict;
+  readonly breakdown: Breakdown | null;
+  readonly advice: SiteAdvice | null;
   readonly sections: readonly SelectionSection[];
-}
-
-/**
- * La carta di cio' che manca per crescere.
- *
- * Non ha un'azione ne' un'estensione da evidenziare: e' una lettura, e sta
- * sopra le sezioni perche' risponde alla domanda che chi clicca si sta facendo
- * — «perche' non cresce di piu'?» — prima ancora di sapere cos'ha cliccato.
- */
-export interface GrowthCard {
-  readonly title: string;
-  readonly summary: string;
-  readonly rows: readonly SelectionRow[];
 }
 
 /** Il volume che l'evidenziazione in-world deve disegnare, in colonne e quote. */
@@ -144,54 +152,6 @@ export interface SelectionExtent {
   /** Quota a cui finisce. Uguale a `z0` dove la cosa e' piatta. */
   readonly z: number;
 }
-
-const GROUND_LABELS: Readonly<Record<GroundKind, string>> = {
-  [GROUND.flat]: 'flat ground',
-  [GROUND.sloped]: 'terraced slope',
-  [GROUND.shore]: 'quay',
-  [GROUND.rock]: 'rock',
-  [GROUND.refused]: 'unworkable',
-};
-
-const ROLE_LABELS: Readonly<Record<StreetRole, string>> = {
-  [STREET_ROLE.arterial]: 'arterial road',
-  [STREET_ROLE.minor]: 'minor road',
-  [STREET_ROLE.frontage]: 'street frontage',
-  [STREET_ROLE.interior]: 'block interior',
-};
-
-const TIER_LABELS: Readonly<Record<SkylineTier, string>> = {
-  [TIER.fringe]: 'fringe',
-  [TIER.middle]: 'middle',
-  [TIER.core]: 'core',
-};
-
-const SPAN_LABELS: Readonly<Record<SpanKind, string>> = {
-  [SPAN_KIND.bridge]: 'Skybridge',
-  [SPAN_KIND.mezzanine]: 'Mezzanine',
-  [SPAN_KIND.plaza]: 'Elevated plaza',
-};
-
-const AERIAL_LABELS: Readonly<Record<AerialPart, string>> = {
-  [AERIAL_PART.terrace]: 'Terrace',
-  [AERIAL_PART.walk]: 'Walkway',
-  [AERIAL_PART.node]: 'Junction deck',
-  [AERIAL_PART.pier]: 'Pier',
-  [AERIAL_PART.lift]: 'Lift shaft',
-};
-
-/**
- * Le tre classi dello specchio d'acqua.
- *
- * Vivono qui e non accanto a `WATER_CLASS` perche' li' sono un sovraccarico dei
- * bit di superficie e non un'enumerazione con nomi propri: sull'acqua quei tre
- * bit smettono di dire come e' fatta una facciata e dicono che specchio e'.
- */
-const WATER_LABELS: Readonly<Record<number, string>> = {
-  [WATER_CLASS.open]: 'open water',
-  [WATER_CLASS.shallow]: 'shallows',
-  [WATER_CLASS.canal]: 'canal',
-};
 
 /**
  * Le due meta' del viaggio dentro un isolato, come bottone.
@@ -236,7 +196,15 @@ export function buildSelectionPanelModel(
 
   const leadId = defaultSection(selection);
   const lead = sections.find((section) => section.id === leadId)!;
-  return { title: lead.title, summary: lead.summary, growth: growthCard(selection), sections };
+  const plan = growthPlan(selection);
+  return {
+    title: lead.title,
+    summary: lead.summary,
+    verdict: plan.verdict,
+    breakdown: plan.breakdown,
+    advice: plan.advice,
+    sections,
+  };
 }
 
 /**
@@ -311,14 +279,11 @@ function structureSection(selection: Selection): SelectionSection {
     });
   }
 
-  // Subito **sotto** il livello, e non in fondo alla scheda. Le due righe si
-  // leggono insieme o si contraddicono: «Level 6 of 6» accanto a «room for 24
-  // residents» chiede da sola perche' quel palazzo sia cresciuto, e la riga che
-  // risponde deve stare dove la domanda nasce.
-  for (const use of info.uses) {
-    rows.push(useRow(use));
-    rows.push(needRow(use));
-  }
+  // Fra i dettagli, e non piu' fra le misure: «Level 6 of 6» sopra un rendimento
+  // fisso si legge come una contraddizione — se e' cresciuto fino in cima,
+  // perche' ospita quanto la casa accanto? Non e' un difetto ma la forma del
+  // bilancio, il tick conta **edifici** e non piani, e dirlo resta l'unica
+  // alternativa a lasciare che il giocatore concluda che un numero sia rotto.
   if (info.uses.length > 0) rows.push(GROWING_ROW);
 
   if (record.district !== undefined) {
@@ -340,7 +305,15 @@ function structureSection(selection: Selection): SelectionSection {
   // ritaglia un **rettangolo di isolato**, che e' l'unita' che la rete stradale
   // sa delimitare. Un bottone che promettesse la sola torre mostrerebbe l'isolato
   // e basta, cioe' una promessa che la geometria non puo' mantenere.
-  return { id: 'structure', title: head.title, summary: head.summary, rows, action: null };
+  return {
+    id: 'structure',
+    title: head.title,
+    summary: head.summary,
+    meters: useMeters(info.uses),
+    mix: [],
+    rows,
+    action: null,
+  };
 }
 
 function blockSection(block: BlockInfo, isolatedBlock: string | null): SelectionSection {
@@ -349,85 +322,21 @@ function blockSection(block: BlockInfo, isolatedBlock: string | null): Selection
     { label: 'This column', value: ROLE_LABELS[block.role] },
     { label: 'Buildings', value: `${block.buildings}` },
   ];
-
-  const mix = CLASS_LABELS
-    .map((label, cls) => ({ label, count: block.byClass[cls] }))
-    .filter((entry) => entry.count > 0)
-    .map((entry) => `${entry.count} ${entry.label.toLowerCase()}`);
-  if (mix.length > 0) rows.push({ label: 'Mix', value: mix.join(', ') });
   if (block.buildings > 0) rows.push({ label: 'Tallest', value: `level ${block.maxLevel}` });
   if (block.landmarks > 0) rows.push({ label: 'Landmarks', value: `${block.landmarks}` });
-  if (block.structures > 0) {
-    rows.push({ label: 'Elevated parts', value: `${block.structures}` });
-  }
-  rows.push(...productivityRows(block));
+  if (block.structures > 0) rows.push({ label: 'Elevated parts', value: `${block.structures}` });
 
   return {
     id: 'block',
     title: `Block ${block.key}`,
     summary: block.buildings === 0 ? 'Nothing has grown here yet.' : 'The city block this column belongs to.',
+    meters: blockMeters(block),
+    mix: blockMix(block),
     rows,
     // Anche su un isolato vuoto: li' la domanda «cosa ci sta» e' proprio quella
     // che si fa chi lo trova vuoto, e il terreno da solo e' gia' una risposta.
     action: isolatedBlock === block.key ? RELEASE_BLOCK : ISOLATE_BLOCK,
   };
-}
-
-/**
- * Il bilancio attribuibile a questo isolato, senza spacciare per locale cio' che
- * resta cittadino: l'organico e' percio' dichiarato esplicitamente citywide.
- */
-function productivityRows(block: BlockInfo): readonly SelectionRow[] {
-  const { productivity } = block;
-  const rows: SelectionRow[] = [];
-  if (productivity.housingCapacity > 0) {
-    rows.push({ label: 'Housing capacity', value: `${amount(productivity.housingCapacity)} residents` });
-  }
-  if (productivity.commerceCapacity > 0) {
-    rows.push({
-      label: 'Commerce capacity',
-      value: `${amount(productivity.commerceCapacity)} customers a tick`,
-    });
-  }
-  if (productivity.materialsCapacityPerTick > 0) {
-    rows.push({
-      label: 'Materials',
-      value: productiveFlow(
-        productivity.materialsPerTick,
-        productivity.materialsCapacityPerTick,
-      ),
-    });
-  }
-  if (productivity.foodCapacityPerTick > 0) {
-    rows.push({
-      label: 'Food',
-      value: productiveFlow(productivity.foodPerTick, productivity.foodCapacityPerTick),
-    });
-  }
-  if (productivity.civicUpkeepPerTick > 0) {
-    rows.push({
-      label: 'Civic upkeep',
-      value: `${amount(productivity.civicUpkeepPerTick)} funds a tick`,
-    });
-  }
-
-  if (rows.length === 0) return [{ label: 'Productivity', value: 'no active buildings' }];
-  if (
-    productivity.commerceCapacity > 0
-    || productivity.materialsCapacityPerTick > 0
-    || productivity.foodCapacityPerTick > 0
-  ) {
-    rows.push({
-      label: 'Workforce',
-      value: `${Math.round(productivity.staffing * 100)}% staffed citywide`,
-    });
-  }
-  return rows;
-}
-
-function productiveFlow(current: number, capacity: number): string {
-  if (current === capacity) return `${amount(current)} a tick`;
-  return `${amount(current)} of ${amount(capacity)} a tick`;
 }
 
 function columnSection(column: ColumnInfo): SelectionSection {
@@ -437,6 +346,9 @@ function columnSection(column: ColumnInfo): SelectionSection {
     { label: 'Slope', value: column.slope.toFixed(2) },
     { label: 'Site', value: siteValue(column) },
     { label: 'Skyline', value: `${TIER_LABELS[column.tier]} · up to level ${column.allowedLevel}` },
+    // Le stesse quattro cifre delle barre qui sopra, su una riga sola: le barre
+    // dicono chi supera la propria soglia, questa riga i numeri esatti da
+    // confrontare fra due colonne. Sta fra i dettagli proprio per questo.
     { label: 'Demand', value: demandValue(column) },
     { label: 'District now', value: profileLabel(column) },
     // Subito **sotto** il quartiere di adesso, dove la domanda nasce: leggere
@@ -458,6 +370,8 @@ function columnSection(column: ColumnInfo): SelectionSection {
     id: 'column',
     title: `${capitalise(BIOME_NAMES[column.biome] ?? 'ground')} at ${column.x}, ${column.y}`,
     summary: `${GROUND_LABELS[column.ground]}, ${column.buildable ? 'buildable' : 'not buildable'}.`,
+    meters: demandMeters(column),
+    mix: [],
     rows,
     action: null,
   };
@@ -468,6 +382,8 @@ function voxelSection(voxel: VoxelInfo): SelectionSection {
     id: 'voxel',
     title: voxel.palette === 0 ? 'Empty voxel' : capitalise(paletteLabel(voxel.palette)),
     summary: 'The single cube the cursor landed on.',
+    meters: [],
+    mix: [],
     rows: [
       { label: 'Position', value: `${voxel.x}, ${voxel.y}, ${voxel.z}` },
       { label: 'Material', value: `${paletteLabel(voxel.palette)} (slot ${voxel.palette})` },
@@ -501,15 +417,10 @@ function structureHead(info: StructureInfo): StructureHead {
       ?? catalyst.strength + record.level * BALANCE.gameplay.catalyst.stageBonus;
     const favours = catalyst.favours.map((cls) => CLASS_LABELS[cls]).join(', ');
     const penalises = catalyst.penalises.map((cls) => CLASS_LABELS[cls]).join(', ');
-    const district = effectSummary(catalyst.effects);
     return {
       title: catalyst.label,
-      summary: `Landmark · ${stage}.`,
+      summary: catalyst.description,
       rows: [
-        // La prima riga dice cosa **fa** il landmark, non com'e' fatto: e' la
-        // domanda di chi lo clicca, e prima non aveva risposta — la scheda
-        // mostrava la portata e non il mestiere.
-        { label: 'Produces', value: catalyst.description },
         {
           label: 'Influence',
           // Quanto il landmark versa nel campo per uso, al centro: la domanda
@@ -518,9 +429,10 @@ function structureHead(info: StructureInfo): StructureHead {
           value: influenceSummary(info, catalyst, strength),
         },
         { label: 'Reach', value: `radius ${catalyst.radius} · follows streets and terrain` },
+        { label: 'Stage', value: stage },
         { label: 'Favours', value: favours.length === 0 ? 'none' : favours },
         { label: 'Penalises', value: penalises.length === 0 ? 'none' : penalises },
-        { label: 'District', value: district },
+        { label: 'District', value: effectSummary(catalyst.effects) },
       ],
     };
   }
@@ -554,38 +466,16 @@ function structureHead(info: StructureInfo): StructureHead {
   return { title: typologyOf(record).label, summary: `${uses} · level ${record.level}.`, rows: [] };
 }
 
+const GROWING_ROW: SelectionRow = {
+  label: 'Growing',
+  value: 'changes its shape, not its yield: the city counts buildings, not floors',
+};
+
 /** true dove il record e' un edificio e non una delle altre tre cose. */
 function isBuilding(record: BuildingRecord): boolean {
   return record.landmark === undefined
     && record.span === undefined
     && record.aerial === undefined;
-}
-
-/**
- * Le cinque metriche che un catalizzatore versa nel profilo del quartiere.
- *
- * L'ordine e' fisso perche' e' un elenco da leggere, non una mappa da cercare:
- * chi confronta due landmark vuole trovare `wealth` nello stesso posto tutte le
- * volte. Un valore a zero non compare — il ruolo non tocca quella metrica, e
- * stamparlo farebbe credere che «0» sia una scelta invece di un'assenza.
- */
-const EFFECT_LABELS: readonly { readonly key: keyof CatalystEffects; readonly label: string }[] = [
-  { key: 'density', label: 'density' },
-  { key: 'wealth', label: 'wealth' },
-  { key: 'accessibility', label: 'accessibility' },
-  { key: 'satisfaction', label: 'satisfaction' },
-  { key: 'industry', label: 'industry' },
-];
-
-/** «wealth +105 · accessibility +135»: cio' che il landmark versa nel quartiere. */
-function effectSummary(effects: CatalystEffects): string {
-  const parts: string[] = [];
-  for (const { key, label } of EFFECT_LABELS) {
-    const value = effects[key];
-    if (value === 0) continue;
-    parts.push(`${label} ${value > 0 ? '+' : '-'}${Math.abs(value)}`);
-  }
-  return parts.join(' · ');
 }
 
 /**
@@ -607,320 +497,6 @@ function influenceSummary(info: StructureInfo, catalyst: CatalystDefinition, str
   return parts.join(' · ');
 }
 
-// --- La carta di cio' che serve per crescere --------------------------------
-
-/**
- * Cio' che serve perche' qualcosa cresca qui, detto in cima alla scheda.
- *
- * Tre soggetti hanno una risposta vera: un edificio promuove su desiderabilita'
- * e cassa, un landmark avanza di stadio sugli edifici vicini, e un terreno nudo
- * attecchisce quando un uso supera la propria soglia di sito. Chi non cresce —
- * campate, parti in quota, arcologie — non ha una carta: il vuoto e' un fatto.
- */
-function growthCard(selection: Selection): GrowthCard | null {
-  const info = selection.structure;
-  if (info !== null) return structureGrowthCard(info);
-  return groundGrowthCard(selection.column);
-}
-
-function structureGrowthCard(info: StructureInfo): GrowthCard | null {
-  const record = info.record;
-
-  if (record.landmark !== undefined) return landmarkGrowthCard(info);
-
-  if (record.span !== undefined || record.aerial !== undefined || record.arcology !== undefined) {
-    return null;
-  }
-
-  const growth = info.growth;
-  if (growth === undefined) return null;
-
-  // Chi regge qualcosa di abitato non promuove, anche dove il luogo ammetterebbe
-  // altri piani: e' la risposta che il driver da' per primo, e la carta la
-  // ripete dove la domanda nasce.
-  if (info.carries) {
-    return {
-      title: 'To grow',
-      summary: 'It holds up elevated parts — while it does, it cannot grow.',
-      rows: [],
-    };
-  }
-
-  if (growth === null) {
-    return {
-      title: 'To grow',
-      summary: 'At the highest level this place allows.',
-      rows: [],
-    };
-  }
-
-  const met = growth.desirability >= growth.threshold;
-  const rows: SelectionRow[] = [{
-    label: 'Desirability',
-    value: met
-      ? `${growth.desirability} · the ${growth.threshold} it needs is met`
-      : `${growth.desirability} of the ${growth.threshold} it needs for ${classLabel(record.class)}${thresholdDetail(growth)}`,
-  }];
-
-  if (!met) {
-    // Chi versa desiderabilita' in questa cella: «78 of 96» senza la provenienza
-    // non dice niente da fare, ed e' l'unica domanda che la carta esiste per
-    // rispondere. Con la soglia raggiunta la carta torna a una riga sola: la
-    // domanda e' gia' chiusa, e i pezzi ridiventerebbero rumore.
-    for (const source of growth.sources) {
-      rows.push({
-        label: `From ${source.label} (${source.x}, ${source.y})`,
-        value: signed(source.contribution),
-      });
-    }
-    if (growth.congestion > 0) {
-      const neighbours = growth.congestion / BALANCE.desirability.congestionPerBuilding;
-      rows.push({
-        label: 'Neighbours',
-        value: `${signed(-growth.congestion)} · ${amount(neighbours)} building${plural(neighbours)} nearby`,
-      });
-    }
-  }
-  if (growth.cost > 0) {
-    rows.push({
-      label: 'Materials',
-      value: `${growth.stock} in stock · ${growth.cost} needed for the upgrade`,
-    });
-  }
-  return {
-    title: 'To grow',
-    summary: `What this building needs to reach level ${growth.nextLevel}.`,
-    rows,
-  };
-}
-
-/**
- * La carta di un landmark, solo finche' ha uno stadio davanti.
- *
- * Gli stessi numeri del driver (`withinRadius` + la soglia della ricetta): a che
- * stadio e' il monumento, quanti edifici ha gia' attorno e quanti ne servono per
- * lo stadio successivo. E' la stessa riga che prima viveva in fondo alla scheda
- * del landmark; qui sta sopra, dove la domanda «perche' non cresce?» si fa.
- */
-function landmarkGrowthCard(info: StructureInfo): GrowthCard | null {
-  const growth = info.landmark;
-  if (growth === undefined || growth.nextAt === null) return null;
-  return {
-    title: 'To grow',
-    summary: `The next stage needs ${growth.nextAt} buildings within reach.`,
-    rows: [
-      {
-        label: 'Stage',
-        value: `${growth.stage}/${growth.maxStage} · ${growth.nearby}/${growth.nextAt} buildings nearby`,
-      },
-      {
-        label: 'Next stage',
-        // Cio' che lo stadio compra, accanto a cio' che lo paga: contare gli
-        // edifici vicini senza sapere per cosa e' l'unico numero opaco rimasto.
-        value: `strength +${BALANCE.gameplay.catalyst.stageBonus}`,
-      },
-    ],
-  };
-}
-
-/**
- * Cosa attecchirebbe su una colonna nuda.
- *
- * Un uso prende radice solo sopra la propria soglia di sito, e la soglia vive
- * in `BALANCE.desirability.siteThreshold` — la stessa tabella di
- * `nextBuildSites`. Dove nessun uso arriva, la carta dice l'unico gesto che
- * esiste: un landmark in portata, che e' da dove la desiderabilita' viene.
- */
-function groundGrowthCard(column: ColumnInfo): GrowthCard {
-  const thresholds = BALANCE.desirability.siteThreshold;
-  const wanted = ALL_CLASSES
-    .map((cls) => ({
-      cls,
-      score: column.desirability[cls] ?? 0,
-      threshold: thresholds[cls] ?? 0,
-    }))
-    .filter((entry) => entry.score > entry.threshold);
-
-  if (!column.buildable) {
-    return {
-      title: 'To grow',
-      summary: 'Nothing can grow on this column.',
-      rows: [{ label: 'Ground', value: 'not buildable' }],
-    };
-  }
-
-  if (wanted.length === 0) {
-    return {
-      title: 'To grow',
-      summary: 'No use wants this place yet.',
-      rows: [{
-        label: 'First building',
-        value: column.profile.roles.length === 0
-          ? 'needs a landmark within reach — desirability comes from catalysts'
-          : 'desirability below every site threshold — a landmark nearby would raise it',
-      }],
-    };
-  }
-
-  return {
-    title: 'To grow',
-    summary: 'What could take root on this column.',
-    rows: wanted.map((entry) => ({
-      label: classLabel(entry.cls),
-      value: `${entry.score} · passes the ${entry.threshold} site threshold`,
-    })),
-  };
-}
-
-// --- Cio' che la simulazione dice di un edificio come questo ------------------
-
-/**
- * L'unita' di misura di ogni uso, che e' diversa per tutti e quattro.
- *
- * Sta qui e non in `selection.ts` per la stessa ragione per cui ci stanno i nomi
- * dei biomi: quello strato risponde **quanto**, questo **di cosa**. Il verbo non
- * e' decorazione — «room for» dice una capienza, «serves» e «yields» un flusso
- * per tick, «costs» un flusso che esce invece di entrare — e leggere 2 al posto
- * sbagliato farebbe sembrare un edificio civico una fonte di reddito.
- */
-const YIELD_PHRASE: Readonly<Record<BuildingClass, (amount: string) => string>> = {
-  [BUILDING_CLASS.residential]: (n) => `room for ${n} residents`,
-  [BUILDING_CLASS.commercial]: (n) => `serves ${n} customers a tick`,
-  [BUILDING_CLASS.industrial]: (n) => `yields ${n} materials a tick`,
-  [BUILDING_CLASS.civic]: (n) => `costs ${n} funds a tick`,
-};
-
-/**
- * La riga che chiude la domanda che le due sopra aprono.
- *
- * «Level 6 of 6» e un rendimento fisso, uno sotto l'altro, si leggono come una
- * contraddizione — se e' cresciuto fino in cima, perche' ospita quanto la casa
- * accanto? Non e' un difetto della scheda ma la forma del bilancio: il tick conta
- * **edifici**, non piani, e il livello governa la sagoma e la tipologia. Dirlo e'
- * l'unica alternativa a lasciare che il giocatore concluda che uno dei due numeri
- * sia rotto.
- */
-const GROWING_ROW: SelectionRow = {
-  label: 'Growing',
-  value: 'changes its shape, not its yield: the city counts buildings, not floors',
-};
-
-/**
- * Un uso in una riga: cosa rende, quanti ne ha la citta', e quanto ne usa.
- *
- * Le tre parti sono tre cose diverse e l'ordine e' quello in cui si restringono:
- * la prima e' del **tipo**, la seconda del **parco costruito**, la terza della
- * **citta'**. Nessuna delle tre e' di questo edificio, e la scheda non lo
- * suggerisce mai — «citywide» e' li' per quello, ed e' l'unica parola della riga
- * che non si puo' togliere.
- */
-function useRow(use: UseInfo): SelectionRow {
-  const phrase = YIELD_PHRASE[use.cls];
-  const parts = [phrase === undefined ? amount(use.perBuilding) : phrase(amount(use.perBuilding))];
-  parts.push(use.count === 1 ? 'the only one in the city' : `one of ${use.count}`);
-  if (use.cityUse !== null) parts.push(`${Math.round(use.cityUse * 100)}% used citywide`);
-
-  return {
-    // «hosted» e non «secondary»: dice gia' che quel rendimento e' una quota, che
-    // e' l'unica cosa che distingue questa riga da quella di un edificio intero.
-    label: use.secondary ? `${classLabel(use.cls)} (hosted)` : classLabel(use.cls),
-    value: parts.join(' · '),
-  };
-}
-
-/**
- * Cio' che manca a un edificio di questo uso per rendere al pieno.
- *
- * Non e' un secondo rendimento: e' l'**ingresso** che il tipo consuma, ed e' la
- * risposta alla domanda che chi clicca un edificio si sta facendo — «perche' non
- * rende di piu'?». Le case vogliono residenti, negozi e fabbriche vogliono
- * braccia (l'organico cittadino, condiviso con la campagna), i servizi vogliono
- * fondi. Come il resto della scheda, la cifra e' della **citta'**, non di questo
- * esemplare: la simulazione non conserva niente di piu' specifico.
- */
-const NEED_PHRASE: Readonly<Record<BuildingClass, (use: UseInfo) => string>> = {
-  [BUILDING_CLASS.residential]: (use) => {
-    if (use.cityUse === null) return 'residents to move in';
-    const occupied = Math.round(use.cityUse * 100);
-    return occupied >= 100
-      ? 'residents — every home in the city is occupied'
-      : `residents — ${100 - occupied}% of homes in the city are empty`;
-  },
-  [BUILDING_CLASS.commercial]: commercialPhrase,
-  [BUILDING_CLASS.industrial]: (use) => staffingPhrase('workers', use.staffing),
-  [BUILDING_CLASS.civic]: () => 'funds — its upkeep is paid from the treasury each tick',
-};
-
-function staffingPhrase(who: string, staffing: number): string {
-  const staffed = Math.round(staffing * 100);
-  return staffed >= 100
-    ? `${who} — the city workforce is fully staffed`
-    : `${who} — the city workforce is ${staffed}% staffed`;
-}
-
-/**
- * Il commercio ha due ingressi: le braccia dell'organico, condiviso con
- * industria e campagna, e i clienti che la popolazione porta. Dire solo il
- * primo farebbe leggere «non manca niente» a un negozio pieno di commessi e
- * vuoto di gente, quindi l'occupazione dice anche il secondo.
- */
-function commercialPhrase(use: UseInfo): string {
-  const parts = [staffingPhrase('workers', use.staffing)];
-  if (use.cityUse !== null) {
-    const busy = Math.round(use.cityUse * 100);
-    parts.push(busy >= 100
-      ? 'every shop in the city is busy'
-      : `${100 - busy}% of shops in the city stand idle`);
-  }
-  return parts.join(' · ');
-}
-
-function needRow(use: UseInfo): SelectionRow {
-  return { label: 'Needs', value: NEED_PHRASE[use.cls](use) };
-}
-
-/** Interi senza virgola, il resto a un decimale: `productionYield` vale 2,5. */
-function amount(value: number): string {
-  return Number.isInteger(value) ? `${value}` : value.toFixed(1);
-}
-
-/** «+52» o «-24»: il segno esplicito, perche' e' il senso della riga. */
-function signed(value: number): string {
-  return `${value > 0 ? '+' : '-'}${amount(Math.abs(value))}`;
-}
-
-/** « (base 120, local qualities -24)»: perche' la soglia cambia da luogo a luogo. */
-function thresholdDetail(growth: { readonly baseThreshold: number; readonly discount: number }): string {
-  if (growth.discount === 0) return '';
-  return ` (base ${growth.baseThreshold}, local qualities -${growth.discount})`;
-}
-
-// --- Formattazione -----------------------------------------------------------
-
-function siteValue(column: ColumnInfo): string {
-  const ground = GROUND_LABELS[column.ground];
-  if (column.ground === GROUND.refused) return `${ground}, nothing can be built`;
-  if (column.ground === GROUND.flat) return ground;
-  return `${ground}, costs ×${column.buildWeight}`;
-}
-
-function demandValue(column: ColumnInfo): string {
-  return CLASS_LABELS
-    .map((label, cls) => `${label} ${column.desirability[cls]}`)
-    .join(' · ');
-}
-
-function profileLabel(column: ColumnInfo): string {
-  const { district, specialization } = column.profile;
-  return specialization === null ? district : `${district} · ${specialization}`;
-}
-
-function districtLabel(record: BuildingRecord): string {
-  const district = record.district ?? 'outskirts';
-  const specialization = record.specialization ?? null;
-  return specialization === null ? district : `${district} · ${specialization}`;
-}
-
 /** Cosa questa struttura tiene su. `null` dove non tiene niente. */
 function holdings(info: StructureInfo): string | null {
   const parts: string[] = [];
@@ -931,27 +507,4 @@ function holdings(info: StructureInfo): string | null {
   // un dettaglio di rete. Un edificio che ospita un impalcato non promuove piu',
   // e senza dirlo la sua altezza ferma legge come un difetto.
   return `${parts.join(' and ')} · cannot grow while it does`;
-}
-
-function surfaceLabel(voxel: VoxelInfo): string {
-  if (voxel.water) return WATER_LABELS[voxel.surface] ?? 'water';
-  return SURFACE_KIND_NAMES[voxel.surface as SurfaceKind] ?? 'plain';
-}
-
-function paletteLabel(palette: number): string {
-  const name = PALETTE_SLOT_NAMES[palette];
-  if (name === undefined) return 'empty';
-  return name.replace(/([a-z])([A-Z])/g, '$1 $2').toLowerCase();
-}
-
-function classLabel(cls: BuildingClass): string {
-  return CLASS_LABELS[cls] ?? 'urban';
-}
-
-function capitalise(value: string): string {
-  return value.length === 0 ? value : value[0].toUpperCase() + value.slice(1);
-}
-
-function plural(count: number): string {
-  return count === 1 ? '' : 's';
 }

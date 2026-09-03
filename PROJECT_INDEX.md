@@ -46,12 +46,14 @@ worker. `src/sim/` gira in Node senza DOM né GPU.
 | [package.json](package.json) | Script npm a livelli: test normali prima delle sentinelle lente seriali, percorso locale fail-fast, Builder mirato e profilo oltre soglia |
 | [PERFORMANCE.md](PERFORMANCE.md) | Piano prestazioni: dove sta il tempo misurato, le fasi per rientrare nel budget del frame e i contatori con cui si difende |
 | [product.md](product.md) | Scheda di prodotto per il marketing: cos'e', cosa fa il giocatore, cosa lo distingue, a chi serve e stato dichiarato dell'alpha |
-| [ROADMAP.md](ROADMAP.md) | Direzione del prodotto, milestone e gate dei prossimi incrementi |
+| [ROADMAP.md](ROADMAP.md) | Direzione del prodotto, milestone e gate: le fasi aperte per intero, quelle chiuse ridotte al loro elenco con il ragionamento in `docs/roadmap/` |
 | [scripts/docs-merge.mjs](scripts/docs-merge.mjs) | `npm run docs:merge`: fonde i frammenti di `docs/pending/` nel changelog e nella scheda d'indice che ha la sezione dichiarata, con lucchetto per non pestarsi fra agenti |
 | [scripts/free-port.mjs](scripts/free-port.mjs) | Hook `prestart`/`predev`: libera la porta del dev server terminando le istanze node rimaste |
 | [scripts/project-locate.mjs](scripts/project-locate.mjs) | `npm run locate -- <termine>`: cerca righe su radice e schede del Project Index insieme, raggruppa per scheda e sezione e limita l'output |
 | [shotkit.config.mjs](shotkit.config.mjs) | Ricette di cattura per gli scatti di riferimento in `.shots/` |
 | [src/boot.ts](src/boot.ts) | Ingresso della pagina: decide fra titolo e partita, tiene lo storage degli slot, riscrive il seed nell'indirizzo e carica `main.ts` con un import dinamico soltanto dopo la scelta |
+| [src/shell/actionLabels.ts](src/shell/actionLabels.ts) | Le righe che il cursore mostra prima di un click e i motivi di un rifiuto: funzioni pure, senza scena ne' HUD |
+| [src/shell/saveSlots.ts](src/shell/saveSlots.ts) | Il ritmo del salvataggio visto dalla radice: automatico a intervallo, slot a mano, apertura che passa da un ricaricamento |
 | [tsconfig.json](tsconfig.json) | `strict` + flag extra; `noUncheckedIndexedAccess` off di proposito |
 | [vite.config.ts](vite.config.ts) | Vite + Vitest insieme; worker ES, ambiente `node` e segnalazione standard dei test oltre un secondo |
 | [src/main.ts](src/main.ts) | Bootstrap, ciclo di frame a budget, input di gioco e hook globali di debug |
@@ -70,11 +72,13 @@ domanda: è ciò che tiene basso il contesto di partenza.
 | [docs/engine/microgeometry.md](docs/engine/microgeometry.md) | Il catalogo delle micro-ricette architettoniche, additive e riduttive: aggancio, asse di corsa, materiale, box in sedicesimi e costo in quad, per residenziale, commerciale, industriale e civico. Cosa e' gia' implementato e cosa resta a catalogo |
 | [docs/index/](docs/index/) | Le schede del Project Index, una per area: le righe file per file di `src/`, con `npm run locate` che le cerca tutte insieme | a domanda |
 | [docs/pending/README.md](docs/pending/README.md) | Formato dei frammenti di indice e changelog, e perché si scrive lì invece che nei due file | a domanda |
+| [docs/roadmap/](docs/roadmap/) | Il ragionamento delle fasi chiuse, una scheda per fase, piu' l'indice in `docs/roadmap/README.md`. Le attivita' restano in `ROADMAP.md` | a domanda |
 | [docs/world/aerial-city.md](docs/world/aerial-city.md) | Contratti e motivazioni della citta' in quota |
 | [docs/world/arcology.md](docs/world/arcology.md) | Contratti e casi limite delle arcologie |
 | [docs/world/farms.md](docs/world/farms.md) | Contratti della campagna e dei lotti agricoli |
 | [docs/world/grading-water.md](docs/world/grading-water.md) | Contratti delle opere di terra e dell'acqua |
 | [docs/world/harbor.md](docs/world/harbor.md) | Contratti e casi limite del distretto costiero | a domanda |
+| [docs/world/landmarks-revamp.md](docs/world/landmarks-revamp.md) | Guida alle ricette di landmark ancora da rifare: chi puo' crescere di sedime e chi no, la scala proposta ruolo per ruolo, i vincoli che i test impongono | a domanda |
 | [docs/world/README.md](docs/world/README.md) | Indice dei contratti di design di `src/world/` caricati per dominio |
 | [docs/world/rooftop-landmarks.md](docs/world/rooftop-landmarks.md) | Contratti dei landmark posati sugli edifici |
 | [docs/world/ropeway.md](docs/world/ropeway.md) | Contratti della funivia e della fune non voxel |

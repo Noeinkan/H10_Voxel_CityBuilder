@@ -1,6 +1,7 @@
 import {
   addBuilding,
   BALANCE,
+  isDecayArmed,
   nextBuildSites,
   setIslandConnections,
   urbanProfileAt,
@@ -35,6 +36,7 @@ import { SpanDriver } from './spanDriver';
 import { AerialDriver } from './aerialDriver';
 import { GuideDriver } from './guideDriver';
 import { UpgradeDriver } from './upgradeDriver';
+import { DecayDriver } from './decayDriver';
 import { FarmDriver } from './farmDriver';
 import { FARMS } from '../farms/config';
 import { HarborDriver } from './harborDriver';
@@ -43,6 +45,7 @@ import type { FarmPlot } from '../farms/plotPlan';
 import {
   RopewayDriver,
   type RopewayCable,
+  type RopewayPlacement,
   type RopewayRide,
 } from './ropewayDriver';
 import type { RopewayResult } from '../ropeway/ropewayPlan';
@@ -264,6 +267,17 @@ export interface BuilderStats {
    */
   readonly clearing: number;
   readonly cleared: number;
+
+  /**
+   * Edifici che il declino ha portato via da inizio partita.
+   *
+   * **Non e' `cleared`**, ed e' la distinzione che serve: quello conta tutto
+   * cio' che un cantiere ha sgomberato — un monumento che si fa posto, la gomma
+   * del giocatore — cioe' demolizioni *volute*. Questo conta solo quelle che
+   * nessuno ha voluto, ed e' l'unico numero da cui l'HUD puo' dire che la citta'
+   * sta arretrando invece che cambiando.
+   */
+  readonly abandoned: number;
 }
 
 export class Builder {
@@ -317,6 +331,7 @@ export class Builder {
   private readonly aerial: AerialDriver;
   private readonly guides: GuideDriver;
   private readonly upgrades: UpgradeDriver;
+  private readonly decay: DecayDriver;
   private readonly ropeways: RopewayDriver;
   private readonly farms: FarmDriver;
   private readonly harbors: HarborDriver;
@@ -363,11 +378,16 @@ export class Builder {
       (deckId) => this.aerial.isInhabited(deckId),
     );
     this.upgrades = new UpgradeDriver(this.ctx, this.spans, this.aerial);
-    // La funivia non chiede niente a nessuno degli altri, e nessuno chiede
-    // niente a lei: due torri a terra e una fune che non e' materia non hanno
-    // modo di entrare in conflitto con una campata o con una mensola. E' l'unico
-    // driver senza una freccia che entra o che esce.
-    this.ropeways = new RopewayDriver(this.ctx);
+    // Il declino non chiede niente agli altri driver: gli bastano il registry —
+    // per sapere chi e' un edificio ordinario e chi porta qualcosa in quota — e
+    // il cantiere di sgombero, che e' l'unico percorso di rimozione che esista.
+    this.decay = new DecayDriver(this.ctx, this.clearance);
+    // La funivia non chiede niente a nessuno degli altri driver: due torri a
+    // terra e una fune che non e' materia non hanno modo di entrare in
+    // conflitto con una campata o con una mensola. Le serve pero' il cantiere,
+    // perche' le due rive che si guardano sono anche le prime che la citta'
+    // costruisce, e una piazzola deve poter sgomberare il lungomare.
+    this.ropeways = new RopewayDriver(this.ctx, this.clearance);
     // Nemmeno la campagna chiede niente agli altri driver, e per una ragione
     // strutturale: un lotto agricolo non entra negli indici di collisione, quindi
     // non puo' contendere una colonna a nessuno. Legge il registry — per sapere
@@ -529,8 +549,14 @@ export class Builder {
     return this.ropeways.siteAt(x, y);
   }
 
-  /** Tira una funivia dalla colonna cliccata. La porta del click. */
-  placeRopeway(x: number, y: number): boolean {
+  /**
+   * Tira una funivia dalla colonna cliccata. La porta del click.
+   *
+   * `'clearing'` non e' un mezzo si': la linea e' decisa e i due riquadri sono
+   * prenotati: mancano solo i voxel del lungomare che il cantiere sta portando
+   * via.
+   */
+  placeRopeway(x: number, y: number): RopewayPlacement {
     return this.ropeways.place(x, y);
   }
 
@@ -572,6 +598,7 @@ export class Builder {
       stacked: this.stackedCount,
       clearing: this.clearance.open,
       cleared: this.clearance.cleared,
+      abandoned: this.decay.count,
     };
   }
 
@@ -706,6 +733,14 @@ export class Builder {
     // arrivera' la demolizione, questo insieme andra' svuotato con `forget`».
     // Un sito bocciato lo era rispetto a una colonna che adesso e' libera.
     if (this.clearance.cleared !== clearedBefore) this.forget();
+    // **Il declino prima della crescita, e non e' l'ordine di comodo.** Una
+    // colonna appena liberata torna candidata subito — e' vuota, ed e' anche
+    // appena diventata piu' desiderabile, perche' l'edificio che se n'e' andato
+    // portava via la propria congestione. Con l'ordine opposto la citta'
+    // ricostruirebbe nel punto in cui ha appena rinunciato, un tick dopo l'altro.
+    // A impedirlo davvero e' il fronte dentro `buildPass`; questo ordine e' la
+    // seconda meta' della stessa risposta.
+    if (state.tickCount % BUILDER.ticksPerDecay === 0) this.decay.pass(next);
     if (state.tickCount % BUILDER.ticksPerBuild === 0) next = this.buildPass(next);
     // Il megaprogetto maturo prenota il magazzino prima degli upgrade ordinari.
     // Altrimenti una passata da sessantaquattro torri spenderebbe fino all'ultima
@@ -786,6 +821,14 @@ export class Builder {
    * tarato su `ticksPerBuild`.
    */
   private buildPass(state: SimState): SimState {
+    // **Una citta' che non serve quello che ha non fonda altro.** E' il fronte
+    // del declino letto dall'altro lato: prima la crescita si ferma, poi la
+    // citta' arretra, e si riparte solo quando la copertura rientra. Senza
+    // questa riga l'abbandono sarebbe churn — la stessa colonna liberata e
+    // ricostruita a ogni infornata, perche' togliere un edificio *alza* la
+    // desiderabilita' dei vicini invece di abbassarla.
+    if (isDecayArmed(state)) return state;
+
     const wanted = BUILDER.sitesPerBuild;
     // Da qui alla fine del metodo niente rende libera una colonna che era presa:
     // e' la finestra in cui il memo della ricerca e' esatto.

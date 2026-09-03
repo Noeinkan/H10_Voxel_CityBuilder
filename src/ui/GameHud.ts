@@ -648,7 +648,7 @@ export class GameHud {
   }
 
   /**
-   * La partita in corso al piede del menu: seed, abitanti, edifici.
+   * La partita in corso sotto «Resume»: seed, abitanti, edifici.
    *
    * Il seed non e' dell'HUD — lo tiene la radice — e arriva insieme all'elenco
    * degli slot, che e' l'unico momento in cui serve. Finche' il menu e' aperto
@@ -769,6 +769,9 @@ export class GameHud {
     // catena perderebbe contro lo strumento in mano — che aprire il menu non
     // posa — e `Esc` non riuscirebbe a chiudere l'unica cosa a schermo.
     if (this.mainMenu.open) {
+      // Dentro il menu il primo colpo torna all'elenco, come sul titolo: da una
+      // sottoschermata si va indietro, non fuori. Se e' gia' l'elenco, chiude.
+      if (this.mainMenu.escape()) return true;
       this.closeMenu();
       return true;
     }
