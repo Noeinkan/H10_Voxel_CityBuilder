@@ -1858,7 +1858,13 @@ describe('Builder — sventramento', () => {
   });
 
   it('cadono solo i condannati, e i loro voxel spariscono davvero', () => {
-    const { world, terrain, builder, state } = city(30);
+    // Una citta' piu' matura delle altre di questo blocco, e non e' un capriccio:
+    // da quando il tessuto cerca il fronte strada, la crescita si allarga a mano
+    // a mano che i capillari raggiungono la periferia invece di sparpagliarsi
+    // subito. A trenta infornate non c'e' ancora niente a quaranta colonne dal
+    // punto scelto, e la precondizione qui sotto — «esiste qualcuno lontano dal
+    // riquadro» — passerebbe vacuamente.
+    const { world, terrain, builder, state } = city(60);
     const spot = clearableSpot(builder);
 
     const outside = buildingsOf(builder)

@@ -13,14 +13,27 @@
   edificio a meta' cubo si troverebbe sotto l'impronta due quote diverse dove il
   terreno e' piatto, e le opere gli metterebbero sotto un riempimento che nessun
   dislivello vero giustifica.
-- La rete stradale e' una funzione pura di `(seed, x, y)`: niente stato, niente
-  da salvare, niente da aggiornare quando arriva un catalizzatore.
+- **Il catasto e la strada sono due cose, e stanno in due cartelle.**
+  `streets/` e' il **catasto**: una funzione pura di `(seed, x, y)` — niente
+  stato, niente da salvare, niente da aggiornare quando arriva un catalizzatore —
+  e serve a lottizzare, perche' `blockAt` e `blockRect` sono l'unita' di terreno
+  che mezzo progetto legge. **Non si dipinge**: disegnarla vorrebbe dire mostrare
+  a schermo un reticolo ortogonale, cioe' far vedere alla citta' il proprio
+  catasto. `roads/` e' la **strada** che si vede: un albero di cammini a costo
+  minimo derivato da `(seed, terreno, catalizzatori)`, con uno stato, che si
+  ricostruisce al caricamento e non entra nella cattura. Chi cerca «dov'e' la
+  carreggiata» chiede a `roads/`; chi cerca «di chi e' questa terra» chiede a
+  `streets/`. Confonderle e' l'errore che questa riga esiste per impedire.
 - **La maglia c'e' ovunque, l'asfalto quasi mai**, e sono due cose diverse che si
   confondono facilmente: `streetGrid.ts` risponde per qualunque colonna del piano,
-  ma a schermo esiste solo cio' che `surfaceQueue` ha dipinto. **Niente piu'
-  anello perimetrale**: le strade non chiudono il quadrato, e dentro l'isolato gli
+  ma a schermo esiste solo cio' che `surfaceQueue` ha dipinto. **Niente anello
+  perimetrale**: le strade non chiudono il quadrato, e dentro l'isolato gli
   edifici crescono attorno alla posizione scelta dal campo, non come quattro
-  facciate continue. Nel tessuto ordinario la ricerca e' continua e attraversa
+  facciate continue. **Il fronte strada e' pero' una preferenza vera**:
+  `placeLot` percorre il rettangolo due volte, la prima accettando solo gli
+  ancoraggi che vedono una carreggiata tracciata, e ripiega senza filtro solo se
+  quella passata non trova niente. Il tessuto si addensa lungo le strade e si
+  dirada allontanandosene, senza che una colonna lontana diventi inedificabile. Nel tessuto ordinario la ricerca e' continua e attraversa
   isolati e interassi teorici: il riquadro serve soltanto a limitare il costo
   della scansione, non esiste come lotto urbanistico visibile. Solo le opere
   costiere conservano il vincolo del bordo, perche' li' il bordo e' la banchina.

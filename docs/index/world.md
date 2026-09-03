@@ -109,6 +109,26 @@ const block = streets.blockAt(96, 96);
 placeLot({ rect: streets.blockRect(block), x: 96, y: 96, footprint: 4, accepts });
 ```
 
+## `src/world/roads/` — il tracciato organico
+
+La strada che si **vede**: un albero di cammini a costo minimo cresciuto dal polo
+piu' forte, largo dove ci passa piu' citta' e sottile dove ne passa poca. E' il
+gemello opposto di `streets/` — quella e' il catasto, pura e invisibile; questo
+e' il tracciato, derivato da `(seed, terreno, catalizzatori)` e con uno stato.
+Si ricostruisce al caricamento e non entra nel salvataggio.
+
+I quattro moduli sotto `RoadNetwork` sono puri e ricevono sonde: si verificano in
+Node senza terreno, senza mondo e senza registry.
+
+| File | Ruolo | Esporta |
+| --- | --- | --- |
+| [config.ts](src/world/roads/config.ts) | **Ogni** larghezza, costo, soglia e rango del tracciato | `ROADS`, `ROAD_RANK`, `RoadRank`, `ALL_ROAD_RANKS` |
+| [src/world/roads/network.ts](src/world/roads/network.ts) | L'albero cresciuto dal polo piu' forte: ogni polo si attacca alla prima carreggiata che incontra, e il rango di un tratto e' il suo carico — quanti poli ci passano per arrivare al centro | `planRoads`, `normalisePoles`, `rankOf`, `RoadPole`, `RoadNode`, `RoadPlan`, `EMPTY_PLAN` |
+| [src/world/roads/RoadNetwork.ts](src/world/roads/RoadNetwork.ts) | Il tracciato tenuto e interrogato: sonde sul terreno, ricostruzione quando i poli cambiano, capillari verso la citta' nuova, e la fascia di fronte strada gia' dilatata | `RoadNetwork` |
+| [src/world/roads/stroke.ts](src/world/roads/stroke.ts) | Dalla linea d'asse al nastro: la larghezza per rango, il rango piu' alto che vince l'incrocio, e la pila che non si allarga con l'impalcato | `strokeRoads`, `strokeViaduct`, `StrokeInput`, `RoadSurface`, `ViaductSurface` |
+| [src/world/roads/trace.ts](src/world/roads/trace.ts) | Il cammino a costo minimo su cui tutto poggia: otto vicini, dislivello come costo del passo — da cui i tornanti — e arrivo a un punto o diffuso sulla rete | `traceRoad`, `boundsAround`, `unionBounds`, `RoadProbe`, `TraceRequest`, `TraceBounds`, `TraceStep`, `Trace` |
+| [src/world/roads/viaduct.ts](src/world/roads/viaduct.ts) | Dove la strada lascia il suolo: le corse che non toccano terra diventano campate con spalle, impalcato piano e pile a passo fisso | `planViaducts`, `ViaductProbe`, `ViaductColumn`, `ViaductRun` |
+
 ## `src/world/grading/` — opere di terra
 
 Cosa serve **costruire** perche' un pezzo di terreno regga un piano: un

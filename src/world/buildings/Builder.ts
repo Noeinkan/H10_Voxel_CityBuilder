@@ -7,6 +7,7 @@ import {
   urbanProfileAt,
   type Building,
   type BuildingClass,
+  type BuildSite,
   type CatalystId,
   type CellRect,
   type SimState,
@@ -36,6 +37,8 @@ import { SpanDriver } from './spanDriver';
 import { AerialDriver } from './aerialDriver';
 import { GuideDriver } from './guideDriver';
 import { UpgradeDriver } from './upgradeDriver';
+import { ArchDriver } from './archDriver';
+import { FusionDriver } from './fusionDriver';
 import { DecayDriver } from './decayDriver';
 import { FarmDriver } from './farmDriver';
 import { FARMS } from '../farms/config';
@@ -60,7 +63,9 @@ import {
   type ReadonlyBuildingRegistry,
 } from './BuildingRegistry';
 import {
+  ARCH,
   BUILDER,
+  FUSION,
   MAX_FOOTPRINT,
   MIN_FOOTPRINT,
   typologyById,
@@ -76,6 +81,9 @@ import { GrowthQueue, anchorOf } from './growthQueue';
 import { LotSearch } from './lotSearch';
 import { Frontage } from './frontage';
 import { SurfaceQueue } from './surfaceQueue';
+import { RoadDriver } from './roadDriver';
+import { ROADS } from '../roads/config';
+import type { RoadNetwork } from '../roads/RoadNetwork';
 import { StreetNetwork } from '../streets/StreetNetwork';
 import { FACING, type BlockId, type Facing } from '../streets/streetGrid';
 import { SPANS } from '../spans/config';
@@ -331,11 +339,14 @@ export class Builder {
   private readonly aerial: AerialDriver;
   private readonly guides: GuideDriver;
   private readonly upgrades: UpgradeDriver;
+  private readonly arches: ArchDriver;
+  private readonly fusions: FusionDriver;
   private readonly decay: DecayDriver;
   private readonly ropeways: RopewayDriver;
   private readonly farms: FarmDriver;
   private readonly harbors: HarborDriver;
   private readonly arcologies: ArcologyDriver;
+  private readonly roadNetwork: RoadDriver;
 
   constructor(
     world: VoxelWorld,
@@ -357,6 +368,10 @@ export class Builder {
     };
     this.spans = new SpanDriver(this.ctx);
     this.crossings = new CrossingDriver(this.ctx, primaryRegion);
+    // Il tracciato non ha bisogno di nessun altro driver e nessun altro driver
+    // ha bisogno di lui: legge terreno e occupazione, e scrive solo sulla coda
+    // di superficie. E' anche il motivo per cui puo' stare qui in cima.
+    this.roadNetwork = new RoadDriver(this.ctx);
     // Il cantiere ha bisogno delle campate prima di se stesso: sventrando fa
     // cadere quelle che poggiavano su cio' che abbatte. Ed e' **uno solo** per
     // Builder: due liste di cantieri potrebbero condannare lo stesso record e
@@ -366,7 +381,11 @@ export class Builder {
     // La ricerca del lotto viene dopo la citta' in quota perche' le chiede due
     // cose sole — se sopra una colonna presa corre una soletta, e quante ne sono
     // nate — e nient'altro: la freccia va in un verso solo.
-    this.lots = new LotSearch(this.ctx, this.aerial);
+    this.lots = new LotSearch(
+      this.ctx,
+      this.aerial,
+      (x, y, side) => this.roadNetwork.network.touchesRoad(x, y, side),
+    );
     this.frontage = new Frontage(this.ctx);
     this.landmarks = new LandmarkDriver(this.ctx, this.clearance, this.aerial);
     // La guida viene dopo la citta' in quota e le chiede due cose: come vede il
@@ -378,6 +397,16 @@ export class Builder {
       (deckId) => this.aerial.isInhabited(deckId),
     );
     this.upgrades = new UpgradeDriver(this.ctx, this.spans, this.aerial);
+    // La campata dell'edificio non chiede niente agli altri driver, ed e' la
+    // conseguenza di cosa e': un braccio e' massa di due record che esistono
+    // gia', quindi non ha appoggi da registrare ne' una rete da tenere. Le basta
+    // il registry per sapere che il volume fuori dall'impronta e' aria.
+    this.arches = new ArchDriver(this.ctx);
+    // La fusione chiede le due cose che servono a togliere di mezzo un vicino
+    // senza scriversi una seconda demolizione: il cantiere di sgombero, che e'
+    // l'unico percorso di rimozione del progetto, e le campate, che cadono
+    // davanti a un volume che cresce come gia' cadono davanti a una promozione.
+    this.fusions = new FusionDriver(this.ctx, this.clearance, this.spans);
     // Il declino non chiede niente agli altri driver: gli bastano il registry —
     // per sapere chi e' un edificio ordinario e chi porta qualcosa in quota — e
     // il cantiere di sgombero, che e' l'unico percorso di rimozione che esista.
@@ -724,6 +753,12 @@ export class Builder {
    */
   onTick(state: SimState): SimState {
     let next = state;
+    // **Il tracciato prima di tutto**, e non e' l'ordine di comodo: i candidati
+    // di questo tick si ordinano per distanza dalla carreggiata, e con l'ordine
+    // opposto un catalizzatore appena piantato farebbe nascere il proprio primo
+    // quartiere sulla rete di prima. Non fa quasi mai niente — `update`
+    // confronta una firma — ed e' per questo che puo' stare in cima.
+    this.roadNetwork.onTick(state.catalysts);
     // **Prima si sgombera, poi si costruisce.** Un cantiere che chiude libera
     // colonne che l'infornata di questo tick puo' gia' usare, e il contrario
     // farebbe aspettare un tick intero a ogni edificio dietro a un landmark.
@@ -755,6 +790,12 @@ export class Builder {
       next = this.landmarks.pass(next);
       next = this.upgrades.pass(next);
     }
+    // **La fusione dopo la promozione, e non e' l'ordine di comodo.** Il lato
+    // che l'isolato concede dipende dal livello raggiunto: valutata prima,
+    // leggerebbe il gradino d'impronta di un tick fa e proporrebbe di prendersi
+    // il vicino a un edificio che questo stesso tick avrebbe allargato da solo,
+    // sul prato, senza portare via niente a nessuno.
+    if (state.tickCount % FUSION.ticksPerPass === 0) next = this.fusions.pass(next);
     // Il distretto costiero segue i landmark, e a cadenza propria: lo stadio
     // che il quartiere ha appena meritato e' anche l'anello che il fronte si
     // prende, ma non c'e' fretta — le opere viaggiano sulle code di sempre.
@@ -762,6 +803,13 @@ export class Builder {
     // La rete in quota non legge la simulazione: una campata dipende da dove
     // stanno i tetti, non da quanto una colonna e' desiderabile. E' anche il
     // motivo per cui questa passata non prende ne' restituisce lo stato.
+    // **Prima l'arco, poi il ponte.** Le due passate guardano lo stesso vuoto e
+    // la prima che arriva se lo prende: dando la precedenza alla campata di
+    // `spans/`, un ponte occuperebbe la quota di fascia su cui i due corpi si
+    // sarebbero incontrati e l'arco non nascerebbe mai. L'ordine opposto non ha
+    // il difetto speculare — un arco esiste solo dove le due fasce coincidono,
+    // che e' raro, e ovunque non coincidano il ponte trova il vuoto libero.
+    if (state.tickCount % ARCH.ticksPerPass === 0) this.arches.pass();
     if (state.tickCount % SPANS.ticksPerPass === 0) this.spans.pass();
     // Il ponte lungo viene dopo le campate locali: prima una citta' costruisce
     // la propria rete, poi uno skyline maturo puo' scavalcare il mare.
@@ -876,10 +924,12 @@ export class Builder {
     wanted: number,
     within: CellRect | undefined,
   ): BuildRound {
-    const sites = nextBuildSites(state, this.terrainMap, wanted * BUILDER.candidateOverfetch, {
-      headroomAt: this.aerial.headroomAt,
-      within,
-    });
+    const sites = this.byFrontage(
+      nextBuildSites(state, this.terrainMap, wanted * BUILDER.candidateOverfetch, {
+        headroomAt: this.aerial.headroomAt,
+        within,
+      }),
+    );
 
     let next = state;
     let accepted = 0;
@@ -904,6 +954,39 @@ export class Builder {
     }
 
     return { state: next, accepted };
+  }
+
+  /**
+   * Gli stessi candidati, chi sta sulla strada per primo.
+   *
+   * **Una preferenza e non un rifiuto**, ed e' la differenza che si vede: un
+   * gate scarterebbe ogni colonna lontana dalla carreggiata e la citta'
+   * nascerebbe a nastri con dei vuoti netti in mezzo, che e' un difetto quanto
+   * il tappeto di prima. Riordinando, la stessa infornata prende prima cio' che
+   * ha un affaccio e ripiega sul resto quando il fronte e' pieno: il tessuto si
+   * addensa lungo le strade e si dirada allontanandosene, senza che nessuno
+   * disegni il confine.
+   *
+   * L'ordinamento e' stabile e la distanza e' tagliata a `frontageReach`, quindi
+   * fra due candidati ugualmente lontani decide ancora la desiderabilita': la
+   * classifica della simulazione resta quella, e questo e' un criterio in piu' a
+   * monte, non uno al posto suo.
+   */
+  private byFrontage(sites: readonly BuildSite[]): readonly BuildSite[] {
+    const roads = this.roadNetwork.network;
+    if (!roads.hasAnyRoad) return sites;
+
+    const ranked = sites.map((site) => ({
+      site,
+      distance: roads.distanceToRoad(site.x, site.y, ROADS.frontageReach),
+    }));
+    ranked.sort((a, b) => a.distance - b.distance);
+    return ranked.map((entry) => entry.site);
+  }
+
+  /** Il tracciato: dove passano le strade, per chi deve saperlo da fuori. */
+  get roads(): RoadNetwork {
+    return this.roadNetwork.network;
   }
 
   /**
@@ -1224,6 +1307,11 @@ export class Builder {
     if (request.animate) this.growth.enqueueSegments(record, stamp);
     else this.growth.writeStamp(anchorOf(record), stamp, 0, stamp.sizeZ, false);
     this.surface.enqueueBlockStreets(this.streets.blockAt(x, y));
+    // Il capillare si tira **adesso**, non alla passata dopo: cosi' il lotto
+    // successivo trova gia' una carreggiata su cui affacciarsi, ed e' quella
+    // catena — costruisci, collega, affacciati — a far crescere il tessuto lungo
+    // le strade invece che attorno a loro.
+    this.roadNetwork.connect(x, y);
     this.placedCount++;
     if (plan === null) {
       this.stackedCount++;
