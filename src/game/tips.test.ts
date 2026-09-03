@@ -5,6 +5,7 @@ import {
   BALANCE,
   BUILDING_CLASS,
   catalystById,
+  coverageReportOf,
   createSimState,
   EMPTY_COMMERCE,
   EMPTY_HARVEST,
@@ -105,6 +106,71 @@ describe('tips — cosa la citta’ ha da dire', () => {
         expect(['crisis', 'bottleneck']).toContain(tip.kind);
       }
     }
+  });
+});
+
+describe('tips — il fronte del declino dice la verita’ sul proprio numero', () => {
+  /**
+   * Una citta' con quel rapporto di copertura e quel fronte.
+   *
+   * Il referto viene da `coverageReportOf` e non scritto a mano: `base` e' cio'
+   * su cui si decide se qualcuno se ne va davvero, e un letterale lo farebbe
+   * divergere dall'aritmetica che il tick usa.
+   */
+  function covered(ratio: number, decayPressure: number): SimState {
+    const demand = POPULATION * BALANCE.coverage.demandPerResident;
+    return city({
+      decayPressure,
+      coverageReport: coverageReportOf({
+        population: POPULATION,
+        civic: 0,
+        funded: 1,
+        services: (ratio * demand) / BALANCE.coverage.perService,
+      }),
+    });
+  }
+
+  // Il difetto che si vedeva a schermo: «Blocks are emptying: services cover
+  // 105%» diceva due cose false insieme — non si stava svuotando niente, e il
+  // numero smentiva la frase che lo accompagnava.
+  it('sopra il pareggio non dice che gli isolati si svuotano', () => {
+    const tip = urgentTip(covered(1.05, 1));
+    expect(tip?.id).toBe('growth-halted');
+    expect(tip?.title).not.toContain('emptying');
+    expect(tip?.message).toContain('No blocks are being lost');
+  });
+
+  it('e dice quale numero serve per ripartire, non solo quello che c’e’', () => {
+    const target = `${Math.round(BALANCE.decay.recoveryCoverage * 100)}%`;
+    const tip = urgentTip(covered(1.05, 1));
+    expect(tip?.title).toContain('105%');
+    expect(tip?.title).toContain(target);
+  });
+
+  it('quando gli isolati si svuotano davvero, lo dice ancora', () => {
+    const tip = urgentTip(covered(0.1, 1));
+    expect(tip?.id).toBe('blocks-abandoned');
+    expect(tip?.title).toContain('emptying');
+  });
+
+  it('un fronte che si carica allarma; uno che rientra da’ il riscontro', () => {
+    expect(tipsFor(covered(0.5, 0.4)).map((tip) => tip.id))
+      .toContain('services-falling-behind');
+    expect(tipsFor(covered(1.05, 0.4)).map((tip) => tip.id))
+      .toContain('services-recovering');
+  });
+
+  // Una notizia buona non deve prendersi la riga sola della targa: il consiglio
+  // piu' urgente resta il problema vero.
+  it('il riscontro non scavalca un collo di bottiglia vero', () => {
+    const state = covered(1.05, 0.4);
+    expect(idOf({ ...state, staffing: 0.2 })).toBe('short-handed');
+  });
+
+  it('a fronte scarico non dice niente del declino', () => {
+    const ids = tipsFor(covered(1.05, 0)).map((tip) => tip.id);
+    expect(ids).not.toContain('services-recovering');
+    expect(ids).not.toContain('growth-halted');
   });
 });
 

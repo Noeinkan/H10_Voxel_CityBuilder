@@ -6,6 +6,7 @@ import {
   FARM_KIND,
   fedShareOf,
   isDecayArmed,
+  isDistressPossible,
   missingPlotsFor,
   type SimState,
 } from '../sim';
@@ -123,12 +124,27 @@ function crisisTips(state: SimState): GameTip[] {
   // d'occhio dalle altre.
   if (isDecayArmed(state)) {
     const percent = Math.round(state.coverageReport.ratio * 100);
-    out.push({
-      id: 'blocks-abandoned',
-      kind: 'crisis',
-      title: `Blocks are emptying: services cover ${percent}% — place a School or a Park.`,
-      message: `The city has outgrown its services: they cover only ${percent}% of what its residents need, and the worst-served blocks are being abandoned one at a time. To fix that, place a School or a Park where the Services view shows the gap. Growth resumes on its own once coverage recovers, and nothing else is lost in the meantime.`,
-    });
+    const target = Math.round(BALANCE.decay.recoveryCoverage * 100);
+    // **Due conseguenze diverse, e l'avviso ne dichiarava una sola.** Il fronte
+    // armato ferma sempre la crescita; porta via edifici solo se la quota
+    // cittadina e' scesa tanto da lasciare colonne sotto la soglia di
+    // difficolta', che sopra il 40% di copertura non succede mai — lo dice
+    // `isDistressPossible`, che quella soglia la legge invece di riderivarla.
+    // Dire «gli isolati si stanno svuotando» a una citta' al 105% e' cio' che
+    // rendeva l'avviso incomprensibile: il numero smentiva la frase.
+    out.push(isDistressPossible(state.coverageReport)
+      ? {
+        id: 'blocks-abandoned',
+        kind: 'crisis',
+        title: `Blocks are emptying: services cover ${percent}% — place a School or a Park.`,
+        message: `The city has outgrown its services: they cover only ${percent}% of what its residents need, and the worst-served blocks are being abandoned one at a time. To fix that, place a School or a Park where the Services view shows the gap. Growth stays paused until coverage climbs back over ${target}%, and the further past it you go the sooner the front clears.`,
+      }
+      : {
+        id: 'growth-halted',
+        kind: 'crisis',
+        title: `Growth is paused: services at ${percent}%, need ${target}% — place a School.`,
+        message: `Services fell behind, so the city has stopped founding anything new. They cover ${percent}% of what its residents need, and the front clears once they hold above ${target}% — about a minute at that level, three times longer if you only hold the line below it. Place a School or a Park where the Services view shows the gap. No blocks are being lost in the meantime.`,
+      });
   }
 
   if (population > 0 &&
@@ -230,18 +246,36 @@ function bottleneckTips(state: SimState): GameTip[] {
   const out: GameTip[] = [];
 
   // **L'avviso prima della perdita**, ed e' il pezzo che rende il declino una
-  // conseguenza invece che un agguato: il fronte impiega un minuto buono a
+  // conseguenza invece che un agguato: il fronte impiega tre minuti a
   // caricarsi, e per tutto quel tempo qui c'e' scritto cosa sta per succedere e
   // cosa lo evita. Sopra zero e sotto uno: armato non e' piu' un collo di
   // bottiglia, e' la crisi che parla al posto suo.
+  //
+  // **Due versi, perche' la pressione ora rientra anche nella banda.** Sotto la
+  // soglia di affanno il fronte si sta caricando e la riga deve allarmare; sopra
+  // si sta scaricando, e «and falling» detto a una citta' che sta guarendo
+  // cancellava l'unico riscontro del gesto appena fatto. Il riscontro va in coda
+  // e non qui: e' una notizia buona, e una notizia buona non deve scavalcare un
+  // collo di bottiglia vero sulla riga sola che la targa concede.
+  let recovering: GameTip | null = null;
   if (state.decayPressure > 0 && !isDecayArmed(state)) {
     const percent = Math.round(state.coverageReport.ratio * 100);
-    out.push({
-      id: 'services-falling-behind',
-      kind: 'bottleneck',
-      title: `Services cover ${percent}% and falling — place a School or a Park.`,
-      message: `The city is growing faster than its services: they cover only ${percent}% of what its residents need. Switch to the Services view to see where the gap is, and place a School or a Park there. Left alone, the worst-served blocks will start emptying.`,
-    });
+    if (state.coverageReport.ratio < BALANCE.decay.strainCoverage) {
+      out.push({
+        id: 'services-falling-behind',
+        kind: 'bottleneck',
+        title: `Services cover ${percent}% and falling — place a School or a Park.`,
+        message: `The city is growing faster than its services: they cover only ${percent}% of what its residents need. Switch to the Services view to see where the gap is, and place a School or a Park there. Left alone, growth stops before the worst-served blocks start emptying.`,
+      });
+    } else {
+      const target = Math.round(BALANCE.decay.recoveryCoverage * 100);
+      recovering = {
+        id: 'services-recovering',
+        kind: 'bottleneck',
+        title: `Services back to ${percent}% — the strain is easing off.`,
+        message: `Services have caught up to ${percent}% of what residents need, and the strain that had built up is draining away. Keep them above ${target}% and it clears three times faster; let them fall back under ${Math.round(BALANCE.decay.strainCoverage * 100)}% and it starts building again.`,
+      };
+    }
   }
 
   // **L'unico bacino di lavoro**, ed e' la cosa che nessuna barra mostra: sotto
@@ -305,6 +339,8 @@ function bottleneckTips(state: SimState): GameTip[] {
       message: `The city eats well today, but its fields are about ${wanted} plots behind its appetite. To fix that, ${response}`,
     });
   }
+
+  if (recovering !== null) out.push(recovering);
 
   return out;
 }

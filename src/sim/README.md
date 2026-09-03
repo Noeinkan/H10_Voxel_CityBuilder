@@ -122,11 +122,24 @@ termini relativi.
 
 **Il raggio è quindi un budget di cammino, non una distanza in linea d'aria.**
 Fuori strada un passo costa `reach.land`, quindi nel tessuto un raggio `r`
-arriva a circa `r / land` celle; i raggi dei ruoli sono tarati su questo, e sono
-stati alzati di un quarto — l'inverso esatto di `land = 1.25` — per far coprire
-alla città lontano dalle strade quanto copriva quando la distanza era in linea
-retta. Lungo la pavimentazione invece il budget si spende a costo pieno, e quel
-quarto in più resta tutto: è lì che la portata guadagna, non nel tessuto.
+arriva a circa `r / land` celle; i raggi dei ruoli sono tarati su questo. Il
+primo quarto che hanno preso era proprio quella conversione — l'inverso esatto
+di `land = 1.25` — per far coprire alla città lontano dalle strade quanto
+copriva quando la distanza era in linea retta. Lungo la pavimentazione invece il
+budget si spende a costo pieno, e quel quarto in più resta tutto: è lì che la
+portata guadagna, non nel tessuto.
+
+Il **secondo** quarto non è una conversione ma una scelta di forma urbana: sopra
+la soglia di sito un mercato teneva una trentina di colonne di raggio nel
+tessuto su un'isola larga 512 — non copriva nemmeno il proprio settore
+d'espansione, che ha il mezzo lato a 64 — e la città cresceva a macchie che non
+si toccavano. È lo stesso quarto per tutti e diciannove i ruoli,
+quindi la gerarchia fra loro non cambia, e porta il gruppo identità oltre il
+centinaio (85–92 → 106–115). Ha però un effetto che il bordo non racconta: il
+decadimento è lineare in `dist / radius`, perciò un raggio più largo a intensità
+ferma **alza il campo in ogni cella che stava già dentro**, e il pianoro dove
+due sfere si sovrappongono satura a 255 su un'area più ampia. Se la gerarchia
+degli usi si appiattisce nel nucleo, la manopola è `influence`, non il raggio.
 
 **Un catalizzatore parla a più usi.** L'influenza è un vettore, non una classe:
 un mercato somma su residenziale e commerciale insieme, una fabbrica somma
@@ -338,13 +351,32 @@ nascono affatto**, perché `nextBuildSites` dà la cella all'uso che ci prende i
 punteggio più alto e il residenziale satura per primo. Una copertura che
 dipendesse solo da loro varrebbe zero in ogni partita.
 
-Il **fronte**, `decayPressure`, è l'unica parte che ha una memoria: sale in `tick`
-sotto `decay.strainCoverage`, scende sopra `decay.recoveryCoverage`, e fra le due
-non si muove. La banda morta è ciò che impedisce a una città che oscilla intorno
-al pareggio di accendere e spegnere l'allarme a ogni edificio nuovo — la stessa
-lezione di `supplyArmed`, con la differenza che qui il fronte è un numero perché
-il declino deve essere *lento*: tre minuti di scoperto continuo prima che il primo
-edificio se ne vada.
+Il **fronte**, `decayPressure`, è l'unica parte che ha una memoria, e ha **tre**
+andature: sale in `tick` sotto `decay.strainCoverage`, rientra in fretta sopra
+`decay.recoveryCoverage`, e fra le due rientra piano. Il declino deve essere
+*lento* — tre minuti di scoperto continuo prima che il primo edificio se ne vada —
+ed è la lentezza dell'accumulo, non una banda ferma, a impedire che una città che
+oscilla intorno al pareggio accenda e spenga l'allarme a ogni edificio nuovo.
+
+**Fra le due soglie la pressione restava ferma, ed era un fermo e non un fronte.**
+Una città risalita al 105% non poteva più rientrare: il 110% era l'unica uscita,
+niente glielo diceva, e nel frattempo `buildPass` non fondava più niente. Adesso
+la banda restituisce con lo stesso passo con cui ha preso (`pressureEase`), e
+posare il servizio che porta oltre `recoveryCoverage` resta tre volte più rapido:
+il gesto che risolve si distingue da quello che tiene soltanto la linea.
+
+L'isteresi che serviva davvero vive in `decay.pressureCeiling`: la pressione sale
+**oltre** il punto in cui il fronte si arma, e quell'eccesso è il debito da
+restituire prima che l'allarme si spenga. È la forma di un trigger di Schmitt —
+due livelli sull'*uscita*, non una zona morta sull'*ingresso* — e a differenza
+della banda congelata non ha uno stato da cui non si esce.
+
+`isDistressPossible` risponde alla domanda che l'avviso sbagliava: un fronte
+armato ferma **sempre** la crescita, ma porta via edifici solo se la quota
+cittadina è scesa sotto `decay.distressCoverage`, cioè sotto il 40% di copertura.
+Sopra, il pavimento tiene ogni colonna e non si svuota niente — dirlo lo stesso
+era la metà falsa di un avviso che il giocatore leggeva accanto a un numero che
+lo smentiva.
 
 `nextDecaySites` dice **chi** sta in un posto che non lo regge più, camminando
 `state.buildings` da un cursore: è lo speculare di `UpgradeDriver`, non di
@@ -485,9 +517,11 @@ Con `?debug=1&sim=1` sono esposti `__simStats()`, `__simTick(n)`, `__simSites(n)
 > catalizzatori sono raddoppiati per conversione di unità (`radius: 22 → 44` e
 > simili) e `congestionRadius` con loro: un raggio doppio è **quattro volte** le
 > celle toccate, e le due righe di modifica del campo qui sotto sono
-> proporzionali a quel numero. Anche l'isola è passata da 256 a 512 di lato. I
-> valori sono quelli di prima del cambio: vanno rifatti con `npm run bench` su
-> questa macchina prima di essere citati.
+> proporzionali a quel numero. Anche l'isola è passata da 256 a 512 di lato, e
+> il listino dei ruoli ha poi preso un secondo quarto (gruppo identità 85–92 →
+> 106–115, cioè 225² celle per modifica dove le misure viste si fermavano a
+> 193²). I valori sono quelli di prima dei cambi: vanno rifatti con
+> `npm run bench` su questa macchina prima di essere citati.
 
 `npm run bench`, isola 256×256 con 50 catalizzatori e 400 edifici, Node 22.
 

@@ -102,6 +102,7 @@ export {
 } from './coverage';
 export {
   isDecayArmed,
+  isDistressPossible,
   nextDecayPressure,
   nextDecaySites,
   type DecayScan,

@@ -2,7 +2,12 @@ import { describe, expect, it } from 'vitest';
 import { BALANCE } from './balance';
 import { BUILDING_CLASS } from './classes';
 import { coverageReportOf } from './coverage';
-import { isDecayArmed, nextDecayPressure, nextDecaySites } from './decay';
+import {
+  isDecayArmed,
+  isDistressPossible,
+  nextDecayPressure,
+  nextDecaySites,
+} from './decay';
 import { addBuilding, addCatalyst, createSimState, type SimState } from './SimState';
 
 const STRAIN = BALANCE.decay.strainCoverage;
@@ -26,13 +31,13 @@ describe('nextDecayPressure — il fronte', () => {
     expect(nextDecayPressure(0.5, RECOVERY + 0.01)).toBeLessThan(0.5);
   });
 
-  it('nella banda morta non si muove: e’ il fronte, non una soglia', () => {
+  it('nella banda rientra piano invece di restare fermo', () => {
     const between = (STRAIN + RECOVERY) / 2;
-    expect(nextDecayPressure(0.5, between)).toBe(0.5);
+    expect(nextDecayPressure(0.5, between)).toBeLessThan(0.5);
   });
 
-  it('il pareggio esatto sta nella banda: una citta’ al limite non arma niente', () => {
-    expect(nextDecayPressure(0.5, 1)).toBe(0.5);
+  it('il pareggio esatto rientra: coprire tutto non puo’ lasciare il fronte carico', () => {
+    expect(nextDecayPressure(0.5, 1)).toBeLessThan(0.5);
   });
 
   it('rientra piu’ in fretta di quanto sia salito: il gesto giusto si vede', () => {
@@ -41,12 +46,52 @@ describe('nextDecayPressure — il fronte', () => {
     expect(0.5 - relieved).toBeGreaterThan(risen - 0.5);
   });
 
-  it('resta in [0, 1] comunque lo si spinga', () => {
+  it('posare il servizio rientra piu’ in fretta che tenere la linea', () => {
+    const inBand = 0.5 - nextDecayPressure(0.5, (STRAIN + RECOVERY) / 2);
+    const beyond = 0.5 - nextDecayPressure(0.5, RECOVERY);
+    expect(beyond).toBeGreaterThan(inBand);
+  });
+
+  it('resta in [0, pressureCeiling] comunque lo si spinga', () => {
     let pressure = 0;
-    for (let i = 0; i < 5000; i++) pressure = nextDecayPressure(pressure, 0);
-    expect(pressure).toBe(1);
-    for (let i = 0; i < 5000; i++) pressure = nextDecayPressure(pressure, 2);
+    for (let i = 0; i < 10_000; i++) pressure = nextDecayPressure(pressure, 0);
+    expect(pressure).toBe(BALANCE.decay.pressureCeiling);
+    for (let i = 0; i < 10_000; i++) pressure = nextDecayPressure(pressure, 2);
     expect(pressure).toBe(0);
+  });
+
+  it('il tetto sta sopra l’armamento: e’ li’ che vive l’isteresi', () => {
+    expect(BALANCE.decay.pressureCeiling).toBeGreaterThan(1);
+  });
+
+  // **La trappola che questa forma esiste per non avere.** Con la banda
+  // congelata un fronte armato non rientrava piu' sotto `recoveryCoverage`: la
+  // citta' risalita al 105% restava ferma per sempre, con la crescita bloccata e
+  // un avviso che le chiedeva di coprire il 105% di quello che gia' copriva.
+  it('un fronte armato rientra anche restando dentro la banda', () => {
+    let state: SimState = {
+      ...createSimState(),
+      decayPressure: BALANCE.decay.pressureCeiling,
+    };
+    const held = (STRAIN + RECOVERY) / 2;
+    let ticks = 0;
+    while (isDecayArmed(state) && ticks < 100_000) {
+      state = { ...state, decayPressure: nextDecayPressure(state.decayPressure, held) };
+      ticks++;
+    }
+    expect(isDecayArmed(state)).toBe(false);
+    // Rientra, ma non subito: tenere la linea costa il tempo che c'e' voluto a
+    // perderla, ed e' cio' che tiene il rientro distinguibile dal gesto giusto.
+    expect(ticks).toBeGreaterThanOrEqual(600);
+  });
+
+  // Il difetto opposto, ed e' quello per cui non basta far perdere la banda:
+  // un allarme che si spegne al primo tick sopra soglia si riaccende al tick
+  // dopo, e il giocatore vede lampeggiare invece di leggere.
+  it('non lampeggia: un tick solo sopra la soglia non disarma un fronte carico', () => {
+    const saturated = BALANCE.decay.pressureCeiling;
+    const eased = nextDecayPressure(saturated, RECOVERY + 1);
+    expect(isDecayArmed({ ...createSimState(), decayPressure: eased })).toBe(true);
   });
 
   it('minuti di scoperto continuo prima che il fronte si armi', () => {
@@ -128,5 +173,45 @@ describe('nextDecaySites — chi e’ in difficolta’', () => {
 
   it('una citta’ senza edifici non ha niente da dire', () => {
     expect(nextDecaySites(createSimState(), 10, 0).sites).toEqual([]);
+  });
+});
+
+describe('isDistressPossible — se il fronte armato puo’ portare via qualcosa', () => {
+  /**
+   * Un referto con quel rapporto esatto, dagli stessi ingressi del tick.
+   *
+   * Mille abitanti chiedono `1000 * demandPerResident`, e un'unita' di servizio
+   * ne vale `perService`: il numero di servizi che pareggia esce da li' e non da
+   * una costante scritta a mano, o il giorno che il listino cambia questi test
+   * misurerebbero un rapporto diverso da quello che dicono.
+   */
+  function at(ratio: number) {
+    const demand = 1000 * BALANCE.coverage.demandPerResident;
+    const services = (ratio * demand) / BALANCE.coverage.perService;
+    return coverageReportOf({ population: 1000, civic: 0, funded: 1, services });
+  }
+
+  it('sopra il pareggio non se ne va nessuno: il pavimento cittadino li tiene', () => {
+    expect(isDistressPossible(at(1.05))).toBe(false);
+  });
+
+  it('nemmeno a meta’ copertura, ed e’ aritmetica: il pavimento sta sopra la soglia', () => {
+    expect(isDistressPossible(at(0.5))).toBe(false);
+  });
+
+  it('una citta’ quasi scoperta li perde davvero', () => {
+    expect(isDistressPossible(at(0.1))).toBe(true);
+  });
+
+  // La riga che lega le due meta': sotto questo rapporto il pavimento scende
+  // sotto la soglia di difficolta', e non un tick prima.
+  it('la soglia e’ il rapporto fra difficolta’ e quota cittadina', () => {
+    const edge = BALANCE.decay.distressCoverage / BALANCE.coverage.cityShare;
+    expect(isDistressPossible(at(edge - 0.01))).toBe(true);
+    expect(isDistressPossible(at(edge + 0.01))).toBe(false);
+  });
+
+  it('una citta’ che non e’ partita non ha nessuno da perdere', () => {
+    expect(isDistressPossible(createSimState().coverageReport)).toBe(false);
   });
 });

@@ -220,9 +220,11 @@ export function tick(state: SimState, terrainMap: TerrainMap): SimState {
   // guardare l'orologio — `urbanProfileAt` e' una funzione spaziale, e farle
   // leggere il tempo darebbe edifici diversi a seconda di quando la si guarda.
   //
-  // Fra le due soglie la pressione **non si muove**: la banda morta e' cio' che
-  // impedisce a una citta' che oscilla intorno al pareggio di accendere e
-  // spegnere l'allarme a ogni edificio nuovo.
+  // Fra le due soglie la pressione rientra **piano** invece che restare ferma:
+  // a impedire che una citta' in oscillazione intorno al pareggio accenda e
+  // spenga l'allarme a ogni edificio nuovo bastano la lentezza dell'accumulo e
+  // il tetto sopra l'armamento, mentre una banda congelata era un fermo da cui
+  // non si usciva piu'.
   const coverageReport = coverageReportOf({
     population,
     civic,

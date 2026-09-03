@@ -1,6 +1,6 @@
 import { BALANCE } from './balance';
 import type { BuildingClass } from './classes';
-import { coverageAt } from './coverage';
+import { coverageAt, type CoverageReport } from './coverage';
 import type { SimState } from './SimState';
 
 /**
@@ -86,24 +86,36 @@ export function nextDecaySites(state: SimState, scan: number, cursor: number): D
 /**
  * Il fronte del declino, avanzato di un tick.
  *
- * Sale sotto `strainCoverage`, scende sopra `recoveryCoverage`, e **fra le due
- * non si muove**. La banda morta e' il fronte: con una soglia sola, una citta'
- * che oscilla intorno al pareggio — e ogni citta' che cresce ci oscilla, perche'
- * la domanda sale con la popolazione e la popolazione sale da sola — accenderebbe
- * e spegnerebbe l'allarme a ogni edificio nuovo.
+ * **Tre andature e non due**, perche' un accumulatore che smette di perdere non
+ * e' un fronte, e' un fermo. Sale sotto `strainCoverage`, rientra in fretta sopra
+ * `recoveryCoverage`, e nella banda in mezzo rientra piano: la banda **rallenta**
+ * il rientro, non lo vieta.
  *
- * Il rientro e' tre volte piu' rapido della salita: chi ha posato il servizio
- * giusto deve vederlo subito, o il gesto che risolve non si distingue da quello
- * che non serve a niente.
+ * Prima lo vietava, ed e' il difetto che si vedeva giocando: una citta' risalita
+ * al 105% restava armata per sempre, perche' il 110% era l'unica uscita, niente
+ * glielo diceva, e nel frattempo `buildPass` non fondava piu' niente. La banda
+ * morta doveva impedire a una citta' che oscilla intorno al pareggio di accendere
+ * e spegnere l'allarme a ogni edificio nuovo; a impedirlo bastava — e basta — la
+ * lentezza dell'accumulo, tre minuti da un capo all'altro.
+ *
+ * **L'isteresi vera sta altrove**, ed e' `pressureCeiling`: la pressione continua
+ * a salire oltre il punto in cui il fronte si arma, e quell'eccesso e' il debito
+ * da restituire prima che l'allarme si spenga. E' la stessa forma di un trigger
+ * di Schmitt — due livelli sull'**uscita**, non una zona morta sull'ingresso — e
+ * a differenza della banda congelata non ha uno stato da cui non si esce.
+ *
+ * Il rientro pieno e' tre volte piu' rapido di quello della banda: chi ha posato
+ * il servizio giusto deve vederlo subito, o il gesto che risolve non si distingue
+ * da quello che si limita a tenere la linea.
  */
 export function nextDecayPressure(pressure: number, coverage: number): number {
   if (coverage < BALANCE.decay.strainCoverage) {
-    return clamp01(pressure + BALANCE.decay.pressureRise);
+    return clamp(pressure + BALANCE.decay.pressureRise);
   }
   if (coverage >= BALANCE.decay.recoveryCoverage) {
-    return clamp01(pressure - BALANCE.decay.pressureRelief);
+    return clamp(pressure - BALANCE.decay.pressureRelief);
   }
-  return clamp01(pressure);
+  return clamp(pressure - BALANCE.decay.pressureEase);
 }
 
 /**
@@ -111,10 +123,30 @@ export function nextDecayPressure(pressure: number, coverage: number): number {
  * comincia a perdere quello che ha.
  *
  * E' una domanda e non un campo dello stato: due numeri che si ricavano l'uno
- * dall'altro divergono al primo refactor.
+ * dall'altro divergono al primo refactor. Uno e' la soglia di armamento, non il
+ * tetto della pressione — sopra ci sta `pressureCeiling`, ed e' li' che vive
+ * l'isteresi che tiene l'allarme fermo mentre la copertura balla.
  */
 export function isDecayArmed(state: SimState): boolean {
   return state.decayPressure >= 1;
+}
+
+/**
+ * Se il fronte, armato, puo' davvero portare via qualcosa.
+ *
+ * **Quasi sempre non puo', ed e' aritmetica e non taratura.** La quota cittadina
+ * e' il pavimento di ogni colonna — `coverageAt` non scende mai sotto
+ * `report.base` — quindi finche' il pavimento sta sopra `distressCoverage`
+ * nessun edificio e' in difficolta', dovunque si trovi. Sotto quel punto il
+ * fronte armato ferma la crescita e basta, che e' una conseguenza vera ma non
+ * quella che l'avviso raccontava.
+ *
+ * Serve a chi parla al giocatore, ed e' l'unica ragione per cui esiste: dire
+ * «gli isolati si stanno svuotando» a una citta' in cui non se ne sta svuotando
+ * nessuno costa piu' di un numero sbagliato, perche' a quella frase si crede.
+ */
+export function isDistressPossible(report: CoverageReport): boolean {
+  return report.base < BALANCE.decay.distressCoverage;
 }
 
 function compareSites(a: DecaySite, b: DecaySite): number {
@@ -124,7 +156,10 @@ function compareSites(a: DecaySite, b: DecaySite): number {
   return a.class - b.class;
 }
 
-function clamp01(value: number): number {
+/** In [0, `pressureCeiling`]: il tetto sta sopra l'armamento, non su di esso. */
+function clamp(value: number): number {
   if (!Number.isFinite(value)) return 0;
-  return value < 0 ? 0 : value > 1 ? 1 : value;
+  if (value < 0) return 0;
+  const ceiling = BALANCE.decay.pressureCeiling;
+  return value > ceiling ? ceiling : value;
 }

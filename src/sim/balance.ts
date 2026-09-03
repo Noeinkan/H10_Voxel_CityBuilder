@@ -128,45 +128,62 @@ export const BALANCE = {
        * **Il raggio e' un budget di cammino, non una distanza in linea d'aria.**
        * Da quando la portata e' geodetica un passo fuori strada costa
        * `BALANCE.reach.land`, quindi nel tessuto un raggio `r` arriva a circa
-       * `r / land` celle. I valori qui sono stati alzati di un quarto — l'inverso
-       * esatto di `land = 1.25` — perche' la citta' lontano dalle strade
-       * coprisse quanto copriva prima: e' una conversione di unita', come il
-       * raddoppio che l'aveva preceduta quando il voxel di contenuto si e'
-       * dimezzato.
+       * `r / land` celle.
        *
-       * Cio' che **non** e' conversione, ed e' il senso della meccanica: lungo la
-       * pavimentazione il budget si spende a costo pieno, quindi il quarto in
-       * piu' resta tutto. Un mercato su un'arteria arriva davvero a 55 celle
-       * lungo la strada, tagliando gli isolati si ferma sui 44 di prima, e
-       * dietro un braccio di mare non arriva affatto.
+       * **Questi valori hanno preso due quarti, e non sono la stessa cosa.** Il
+       * primo era una conversione di unita' — l'inverso esatto di `land = 1.25`,
+       * perche' la citta' lontano dalle strade coprisse quanto copriva quando la
+       * distanza era in linea retta, come il raddoppio che l'aveva preceduta
+       * quando il voxel di contenuto si e' dimezzato. Il secondo **no**: e' una
+       * scelta di forma urbana. Sopra la soglia di sito un mercato teneva una
+       * trentina di colonne di raggio nel tessuto — `55 * (1 - 40/210) / 1.25` —
+       * su un'isola larga 512, cioe' non copriva nemmeno il proprio settore
+       * d'espansione, che ha il mezzo lato a 64: la citta' cresceva a macchie che
+       * non si toccavano. Il quarto e' lo stesso per tutti e diciannove i ruoli,
+       * quindi la gerarchia fra loro — un faro corto, uno stadio lungo — resta
+       * quella.
+       *
+       * **Un raggio piu' largo non e' solo piu' lontano: e' anche piu' alto.**
+       * Il decadimento e' lineare in `dist / radius`, quindi allargarlo a
+       * intensita' ferma non sposta il bordo e basta — alza il campo in **ogni**
+       * cella che stava dentro. Al centro non cambia niente, li' vale `strength`
+       * per costruzione; ma il pianoro dove due sfere si sovrappongono sale, e
+       * satura a 255 su un'area piu' larga. E' il difetto che la nota del parco
+       * qui sotto racconta gia' una volta: se la gerarchia degli usi si
+       * appiattisce nel nucleo, la manopola e' `influence`, non questi raggi.
+       *
+       * Lungo la pavimentazione invece il budget si spende a costo pieno, quindi
+       * il quarto resta tutto: un mercato su un'arteria arriva a 69 celle,
+       * tagliando gli isolati si ferma sulle 55 di prima, e dietro un braccio di
+       * mare non arriva affatto.
        *
        * `cost` e `strength` **non** si toccano: il primo e' denaro, il secondo
        * un'ampiezza di campo. Nessuno dei due e' una distanza.
        */
       roles: {
-        market: { cost: 120, strength: 210, radius: 55 },
-        factory: { cost: 150, strength: 205, radius: 50 },
-        park: { cost: 200, strength: 195, radius: 45 },
+        market: { cost: 120, strength: 210, radius: 69 },
+        factory: { cost: 150, strength: 205, radius: 62 },
+        park: { cost: 200, strength: 195, radius: 56 },
         // La crescita che sfama: una serra produce cibo e riconverte l'industria
         // vicina in torri idroponiche. Costa come la fabbrica perche' e' il suo
         // gemello sull'altra risorsa — li' i materiali, qui il pasto.
-        greenhouse: { cost: 180, strength: 200, radius: 48 },
-        power: { cost: 200, strength: 200, radius: 48 },
-        school: { cost: 260, strength: 195, radius: 50 },
-        port: { cost: 320, strength: 190, radius: 60 },
+        greenhouse: { cost: 180, strength: 200, radius: 60 },
+        power: { cost: 200, strength: 200, radius: 60 },
+        school: { cost: 260, strength: 195, radius: 62 },
+        port: { cost: 320, strength: 190, radius: 75 },
         // Costa meno del porto perche' promette meno: il porto apre il commercio
         // con il mondo, il traghetto collega due punti dell'isola fra loro. E'
         // il collegamento *interno*, ed e' l'unico che serva a qualcosa su una
         // sponda dove non c'e' ancora niente da esportare.
-        ferry: { cost: 260, strength: 180, radius: 58 },
+        ferry: { cost: 260, strength: 180, radius: 72 },
         // Costa piu' del porto perche' non chiede la costa: il fronte mare e'
         // un anello e finisce, mentre una superficie ampia si trova ovunque a
         // patto di cercarla. La differenza di prezzo e' il vincolo di sito
         // riportato in denaro.
-        airport: { cost: 420, strength: 185, radius: 63 },
-        transport: { cost: 240, strength: 185, radius: 65 },
-        radio: { cost: 300, strength: 185, radius: 60 },
-        lighthouse: { cost: 240, strength: 175, radius: 40 },
+        airport: { cost: 420, strength: 185, radius: 79 },
+        transport: { cost: 240, strength: 185, radius: 81 },
+        radio: { cost: 300, strength: 185, radius: 75 },
+        lighthouse: { cost: 240, strength: 175, radius: 50 },
         // I landmark del gruppo identita' arrivano piu' lontano dei semi di
         // crescita: devono «incoronare» un quartiere gia' edificato e tenerlo
         // insieme, e una sfera pari a quella di un mercato non li distingue.
@@ -178,18 +195,21 @@ export const BALANCE = {
         // Dijkstra e il campo ricalcolano (2r+1)² celle e l'overlay le disegna
         // per intero, quindi ogni cella di raggio in piu' costa quattro volte;
         // e' pero' il costo di un piazzamento — un gesto del giocatore, non del
-        // tick — e un raggio sotto il centinaio e' gia' comparso nelle misure
-        // del progetto. La sfera ampia e' una scelta voluta e dichiarata.
-        university: { cost: 360, strength: 200, radius: 90 },
-        monument: { cost: 440, strength: 215, radius: 87 },
-        museum: { cost: 380, strength: 195, radius: 89 },
-        cathedral: { cost: 400, strength: 205, radius: 87 },
-        theatre: { cost: 420, strength: 205, radius: 85 },
-        stadium: { cost: 460, strength: 210, radius: 92 },
+        // tick. Con il quarto in piu' questo gruppo passa il centinaio, e con
+        // esso il raggio 96 che le misure del progetto hanno visto: una
+        // `university` ricalcola 225² celle contro le 193² di allora, un terzo
+        // di lavoro in piu'. **Non e' rimisurato**, ed e' l'unico numero di
+        // questa tabella per cui il quarto costa qualcosa oltre al bilanciamento.
+        university: { cost: 360, strength: 200, radius: 112 },
+        monument: { cost: 440, strength: 215, radius: 109 },
+        museum: { cost: 380, strength: 195, radius: 111 },
+        cathedral: { cost: 400, strength: 205, radius: 109 },
+        theatre: { cost: 420, strength: 205, radius: 106 },
+        stadium: { cost: 460, strength: 210, radius: 115 },
         // Il gemello del monumento sull'acqua: il prezzo da identita' con il
         // vincolo di sito riportato in denaro, come l'aeroporto — un lago o un
         // fronte mare non sono ovunque, e chi li ha se li paga.
-        marina: { cost: 440, strength: 210, radius: 92 },
+        marina: { cost: 440, strength: 210, radius: 115 },
       },
 
       /**
@@ -1073,6 +1093,39 @@ export const BALANCE = {
      * rende il declino **reversibile** invece che soltanto lento.
      */
     pressureRelief: 1 / 600,
+
+    /**
+     * Quanto scende la pressione per tick **dentro** la banda, fra le due soglie.
+     *
+     * Lo stesso passo della salita, e non e' una coincidenza da togliere: la
+     * banda restituisce esattamente cio' che ha preso, quindi rimettersi sopra
+     * `strainCoverage` e tenere la linea costa il tempo che c'e' voluto a
+     * perderla. Posare il servizio che porta oltre `recoveryCoverage` resta tre
+     * volte piu' rapido, ed e' cio' che distingue il gesto che risolve da quello
+     * che si limita a non peggiorare.
+     *
+     * **Prima qui la pressione non si muoveva affatto, e quello era il difetto.**
+     * Un accumulatore che non perde mai non e' un fronte, e' un fermo: una citta'
+     * risalita al 105% restava armata per sempre — crescita bloccata — con un
+     * avviso che le chiedeva di coprire il 105% di quello che gia' copriva.
+     */
+    pressureEase: 1 / 1800,
+
+    /**
+     * Quanto la pressione puo' salire **oltre** il punto in cui il fronte si arma.
+     *
+     * E' qui che vive l'isteresi, ed e' il posto giusto per metterla: un allarme
+     * che si accende a uno e si spegne al primo tick sotto uno si riaccende al
+     * tick dopo, ed e' il difetto classico del comparatore senza retroazione.
+     * L'eccesso sopra uno e' il debito da restituire prima che l'allarme si
+     * spenga, e nessuna oscillazione della copertura lo attraversa in un tick.
+     *
+     * **Due, cioe' quanto ci ha messo ad armarsi.** Una citta' trascurata a lungo
+     * satura qui, e con `pressureEase` impiega a rientrare gli stessi tre minuti
+     * che ha impiegato ad accumularsi — sessanta secondi se il giocatore posa il
+     * servizio invece di limitarsi a tenere la linea.
+     */
+    pressureCeiling: 2,
 
     /**
      * Copertura sotto la quale un edificio e' in difficolta'.
