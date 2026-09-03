@@ -47,6 +47,23 @@ describe('infoViews — catalogo', () => {
     expect(INFO_VIEWS.find((spec) => spec.kind === 'coverage')?.normalized).toBe(true);
     expect(INFO_VIEWS.find((spec) => spec.kind === 'coverage')?.mode).toBe('continuous');
   });
+
+  it('sparse distingue cio’ che sta su una colonna da cio’ che e’ un campo', () => {
+    // La heatmap decima: cio' che vive su colonne esatte va cercato su tutta
+    // l'impronta della cella, o cinque industrie su un'isola sparivano.
+    for (const kind of ['food', 'materials', 'density'] as const) {
+      expect(INFO_VIEWS.find((spec) => spec.kind === kind)?.sparse).toBe(true);
+    }
+    // Questi tre interpolano fra colonne vicine: pungere l'angolo basta.
+    for (const kind of ['coverage', 'happiness', 'districts'] as const) {
+      expect(INFO_VIEWS.find((spec) => spec.kind === kind)?.sparse).toBe(false);
+    }
+  });
+
+  it('il campionatore riporta il flag della sua vista, non uno suo', () => {
+    expect(createSimInfoSampler('materials', createSimState()).sparse).toBe(true);
+    expect(createSimInfoSampler('districts', seeded()).sparse).toBe(false);
+  });
 });
 
 describe('infoViews — capacita’ per colonna', () => {

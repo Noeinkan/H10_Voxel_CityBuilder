@@ -1,7 +1,7 @@
 import {
+  BufferAttribute,
   BufferGeometry,
   DoubleSide,
-  Float32BufferAttribute,
   Group,
   LineBasicMaterial,
   LineSegments,
@@ -132,10 +132,23 @@ export class InfoViewOverlay {
   private cursor = 0;
   private samples = new Float32Array(0);
   private maxValue = 1;
-  /** Vertici accumulati fra i frame della fase di costruzione. */
-  private positions: number[] = [];
-  private colors: number[] = [];
-  private boundaries: number[] = [];
+  /**
+   * Vertici accumulati fra i frame della fase di costruzione, in buffer
+   * dimensionati **prima** di scriverli.
+   *
+   * Erano tre `number[]` con `push`, e la resa era un frame da 6,9 ms su una
+   * vista a campo: non la costruzione, che sta a budget, ma la conversione
+   * finale di oltre un milione di numeri boxati in `Float32Array`. Il conto dei
+   * quad si sa appena il campionamento finisce, quindi si allocano esatti una
+   * volta e l'attributo li adotta senza copiarli.
+   */
+  private positions = new Float32Array(0);
+  private colors = new Float32Array(0);
+  private boundaries = new Float32Array(0);
+  /** Quanti float sono stati scritti in ciascun buffer. */
+  private positionCount = 0;
+  private colorCount = 0;
+  private boundaryCount = 0;
 
   constructor(
     private readonly map: TerrainMap,
@@ -174,9 +187,7 @@ export class InfoViewOverlay {
     this.maxValue = sampler.normalized ? 1 : 0;
     this.cursor = 0;
     this.phase = 'sampling';
-    this.positions = [];
-    this.colors = [];
-    this.boundaries = [];
+    this.releaseBuffers();
     // La geometria della vista precedente non deve restare a schermo sotto il
     // nome nuovo: si svuota subito, e la costruzione a passi la riempie.
     this.fill.geometry.dispose();
@@ -191,9 +202,7 @@ export class InfoViewOverlay {
     this.sampler = null;
     this.key = '';
     this.phase = 'done';
-    this.positions = [];
-    this.colors = [];
-    this.boundaries = [];
+    this.releaseBuffers();
     this.group.visible = false;
     this.fill.geometry.dispose();
     this.fill.geometry = new BufferGeometry();
@@ -227,6 +236,33 @@ export class InfoViewOverlay {
     return this.originY + Math.floor(i / this.cols) * this.step;
   }
 
+  /**
+   * Il campione di una cella decimata.
+   *
+   * Un campo continuo in pianta — copertura, felicita', distretti — si legge
+   * nell'angolo e basta: fra due colonne vicine cambia di un'inezia. Un valore
+   * che vive su colonne esatte no: una fabbrica sola dentro una cella 3x3
+   * sparisce nove volte su dieci se si punge l'angolo, ed e' cosi' che la vista
+   * dei materiali risultava vuota su una citta' che ne aveva. Chi si dichiara
+   * `sparse` viene cercato su tutta l'impronta — il massimo se continuo, la
+   * prima categoria reale se categorico — al prezzo di `step * step` letture su
+   * mappa, che sono l'unica cosa che quei campionatori fanno.
+   */
+  private sampleCell(sampler: InfoSampler, x: number, y: number): number {
+    if (!sampler.sparse || this.step === 1) return sampler.sample(x, y);
+    const continuous = sampler.mode === 'continuous';
+    let best = continuous ? 0 : -1;
+    for (let dy = 0; dy < this.step; dy++) {
+      for (let dx = 0; dx < this.step; dx++) {
+        const value = sampler.sample(x + dx, y + dy);
+        if (!continuous) {
+          if (value >= 0) return value;
+        } else if (value > best) best = value;
+      }
+    }
+    return best;
+  }
+
   /** Passa le celle in rassegna raccogliendo i campioni, a budget. */
   private sampleStep(start: number, budgetMs: number): void {
     const sampler = this.sampler;
@@ -236,7 +272,7 @@ export class InfoViewOverlay {
     while (this.cursor < this.total) {
       const x = this.cellWorldX(this.cursor);
       const y = this.cellWorldY(this.cursor);
-      const value = sampler.sample(x, y);
+      const value = this.sampleCell(sampler, x, y);
       this.samples[this.cursor] = value;
       if (sampler.mode === 'continuous' && !sampler.normalized && value > max) max = value;
       this.cursor++;
@@ -245,7 +281,41 @@ export class InfoViewOverlay {
 
     this.maxValue = max;
     this.cursor = 0;
+    this.allocateBuffers(sampler);
     this.phase = 'building';
+  }
+
+  /** Restituisce i buffer di costruzione: una vista spenta non tiene megabyte. */
+  private releaseBuffers(): void {
+    this.positions = new Float32Array(0);
+    this.colors = new Float32Array(0);
+    this.boundaries = new Float32Array(0);
+    this.positionCount = 0;
+    this.colorCount = 0;
+    this.boundaryCount = 0;
+  }
+
+  /**
+   * Dimensiona i buffer sul numero di quad che i campioni produrranno.
+   *
+   * Il conto e' esatto — sono le stesse due condizioni di `buildStep` — quindi
+   * la costruzione non ricontrolla mai la capacita'. I bordi invece hanno solo
+   * un tetto: al massimo due segmenti per cella categorica, e la coda inutile
+   * resta fuori dall'attributo perche' `commitBuild` taglia sui float scritti.
+   */
+  private allocateBuffers(sampler: InfoSampler): void {
+    const continuous = sampler.mode === 'continuous';
+    let quads = 0;
+    for (let i = 0; i < this.total; i++) {
+      const value = this.samples[i];
+      if (continuous ? value !== 0 : value >= 0) quads++;
+    }
+    this.positions = new Float32Array(quads * 18);
+    this.colors = new Float32Array(quads * 24);
+    this.boundaries = new Float32Array(continuous ? 0 : quads * 12);
+    this.positionCount = 0;
+    this.colorCount = 0;
+    this.boundaryCount = 0;
   }
 
   /** Passa i campioni in geometria — quad e bordi — a budget. */
@@ -253,9 +323,6 @@ export class InfoViewOverlay {
     const sampler = this.sampler;
     if (sampler === null) return;
 
-    const positions = this.positions;
-    const colors = this.colors;
-    const edges = this.boundaries;
     const step = this.step;
 
     while (this.cursor < this.total) {
@@ -267,12 +334,12 @@ export class InfoViewOverlay {
       if (sampler.mode === 'continuous') {
         if (value !== 0) {
           const t = sampler.normalized ? value : value / this.maxValue;
-          this.pushQuad(positions, colors, x, y, step, ramp(t), FILL_ALPHA_MIN + (FILL_ALPHA_PEAK - FILL_ALPHA_MIN) * t);
+          this.pushQuad(x, y, step, ramp(t), FILL_ALPHA_MIN + (FILL_ALPHA_PEAK - FILL_ALPHA_MIN) * t);
         }
       } else if (value >= 0) {
         const palette = paletteOf(sampler.kind);
-        this.pushQuad(positions, colors, x, y, step, palette[Math.min(palette.length - 1, value)] ?? [1, 1, 1], CATEGORY_ALPHA);
-        this.pushEdges(edges, i, value);
+        this.pushQuad(x, y, step, palette[Math.min(palette.length - 1, value)] ?? [1, 1, 1], CATEGORY_ALPHA);
+        this.pushEdges(i, value);
       }
 
       this.cursor++;
@@ -283,25 +350,28 @@ export class InfoViewOverlay {
     this.phase = 'done';
   }
 
-  private pushQuad(
-    positions: number[],
-    colors: number[],
-    x: number,
-    y: number,
-    step: number,
-    rgb: Rgb,
-    alpha: number,
-  ): void {
+  private pushQuad(x: number, y: number, step: number, rgb: Rgb, alpha: number): void {
     const z = surfaceZ(this.map, x + step * 0.5, y + step * 0.5);
     const x0 = x;
     const x1 = x + step;
     const y0 = y;
     const y1 = y + step;
-    positions.push(x0, y0, z, x1, y0, z, x1, y1, z);
-    positions.push(x0, y0, z, x1, y1, z, x0, y1, z);
+    const positions = this.positions;
+    let p = this.positionCount;
+    positions[p++] = x0; positions[p++] = y0; positions[p++] = z;
+    positions[p++] = x1; positions[p++] = y0; positions[p++] = z;
+    positions[p++] = x1; positions[p++] = y1; positions[p++] = z;
+    positions[p++] = x0; positions[p++] = y0; positions[p++] = z;
+    positions[p++] = x1; positions[p++] = y1; positions[p++] = z;
+    positions[p++] = x0; positions[p++] = y1; positions[p++] = z;
+    this.positionCount = p;
+
+    const colors = this.colors;
+    let c = this.colorCount;
     for (let vertex = 0; vertex < 6; vertex++) {
-      colors.push(rgb[0], rgb[1], rgb[2], alpha);
+      colors[c++] = rgb[0]; colors[c++] = rgb[1]; colors[c++] = rgb[2]; colors[c++] = alpha;
     }
+    this.colorCount = c;
   }
 
   /**
@@ -309,41 +379,52 @@ export class InfoViewOverlay {
    * a destra o sotto differisce, e almeno una delle due e' reale. Cosi' i
    * distretti si separano fra loro e i campi si staccano dal prato vuoto.
    */
-  private pushEdges(edges: number[], i: number, category: number): void {
+  private pushEdges(i: number, category: number): void {
     const col = i % this.cols;
     const row = Math.floor(i / this.cols);
     const x = this.cellWorldX(i);
     const y = this.cellWorldY(i);
     const step = this.step;
+    const edges = this.boundaries;
+    let e = this.boundaryCount;
 
     if (col + 1 < this.cols) {
       const right = this.samples[i + 1];
       if (right !== category && (right >= 0 || category >= 0)) {
         const z = surfaceZ(this.map, x + step, y + step * 0.5);
-        edges.push(x + step, y, z, x + step, y + step, z);
+        edges[e++] = x + step; edges[e++] = y; edges[e++] = z;
+        edges[e++] = x + step; edges[e++] = y + step; edges[e++] = z;
       }
     }
     if (row + 1 < this.rows) {
       const below = this.samples[i + this.cols];
       if (below !== category && (below >= 0 || category >= 0)) {
         const z = surfaceZ(this.map, x + step * 0.5, y + step);
-        edges.push(x, y + step, z, x + step, y + step, z);
+        edges[e++] = x; edges[e++] = y + step; edges[e++] = z;
+        edges[e++] = x + step; edges[e++] = y + step; edges[e++] = z;
       }
     }
+    this.boundaryCount = e;
   }
 
-  /** Accumula i vertici raccolti in geometrie nuove, una volta a costruzione finita. */
+  /**
+   * Adotta i vertici raccolti in geometrie nuove, una volta a costruzione finita.
+   *
+   * `BufferAttribute` su una `subarray` e non `Float32BufferAttribute`: il
+   * secondo rifa' sempre `new Float32Array(...)`, e su una vista a campo quella
+   * copia era l'unico frame fuori budget di tutta l'apertura.
+   */
   private commitBuild(): void {
-    if (this.positions.length > 0) {
+    if (this.positionCount > 0) {
       const geometry = new BufferGeometry();
-      geometry.setAttribute('position', new Float32BufferAttribute(this.positions, 3));
-      geometry.setAttribute('color', new Float32BufferAttribute(this.colors, 4));
+      geometry.setAttribute('position', new BufferAttribute(this.positions.subarray(0, this.positionCount), 3));
+      geometry.setAttribute('color', new BufferAttribute(this.colors.subarray(0, this.colorCount), 4));
       this.fill.geometry.dispose();
       this.fill.geometry = geometry;
     }
-    if (this.boundaries.length > 0) {
+    if (this.boundaryCount > 0) {
       const geometry = new BufferGeometry();
-      geometry.setAttribute('position', new Float32BufferAttribute(this.boundaries, 3));
+      geometry.setAttribute('position', new BufferAttribute(this.boundaries.subarray(0, this.boundaryCount), 3));
       this.edges.geometry.dispose();
       this.edges.geometry = geometry;
     }
