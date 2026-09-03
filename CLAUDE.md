@@ -42,7 +42,7 @@ Il resto si carica quando serve, e questo è deliberato:
 | Cerchi *dove sta* un file o un export | `npm run locate -- <termine>`; le righe stanno in [docs/index/](docs/index/), instradate da [PROJECT_INDEX.md](PROJECT_INDEX.md) |
 | Cerchi *perché* una scelta è stata fatta | [README.md](README.md), [src/sim/README.md](src/sim/README.md) |
 | Cerchi *cosa* è cambiato e quando | [CHANGELOG.md](CHANGELOG.md) per gli ultimi tredici incrementi; prima di quelli, cerca il titolo in [docs/changelog/README.md](docs/changelog/README.md) |
-| Cerchi dove va il progetto | [ROADMAP.md](ROADMAP.md) |
+| Cerchi dove va il progetto | [ROADMAP.md](ROADMAP.md); il ragionamento delle fasi chiuse sta una scheda per fase in [docs/roadmap/](docs/roadmap/) |
 
 Nessuno di questi è caricato all'avvio. Aprili quando il compito lo richiede,
 non "per contesto".
