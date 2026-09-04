@@ -240,6 +240,40 @@ describe('selectTypology', () => {
     expect(built.id).toBe('hydroponicTower');
   });
 
+  it('la schiera moderna e’ raggiungibile: un quartiere benestante e largo la esprime', () => {
+    // Stessa ragione della torre idroponica: e' la sola riga del catalogo che
+    // ponga un **tetto** invece di un minimo, quindi e' anche la sola che si
+    // possa rendere irraggiungibile alzando una soglia altrove senza che nessun
+    // altro test se ne accorga. Il museo e' il catalizzatore con il rapporto
+    // ricchezza/densita' piu' alto del catalogo: e' il posto che questa riga
+    // descrive — denaro senza folla — e prima di lei non produceva niente di
+    // proprio.
+    const profile = profileOf(['museum']);
+    expect(profile.wealth).toBeGreaterThanOrEqual(0.4);
+    expect(profile.density).toBeLessThanOrEqual(0.45);
+
+    const built = selectTypology({
+      use: BUILDING_CLASS.residential,
+      level: 4,
+      profile,
+      coastal: false,
+    });
+    expect(built.id).toBe('modernRow');
+  });
+
+  it('la schiera moderna cede dove la citta si infittisce', () => {
+    // Il tetto di densita' e' la meta' che la distingue dalle altre forme basse:
+    // sopra di esso il posto ha smesso di essere periferia, e a rispondere
+    // devono tornare la stecca e le verticali.
+    const dense = selectTypology({
+      use: BUILDING_CLASS.residential,
+      level: 4,
+      profile: profileOf(['market', 'transport', 'museum']),
+      coastal: false,
+    });
+    expect(dense.id).not.toBe('modernRow');
+  });
+
   it('sotto il proprio livello la torre cede a una fabbrica normale', () => {
     // La specializzazione non basta: finche' la citta' non e' salita, li' ci sta
     // una fabbrica. E' cio' che impedisce alla torre di comparire in periferia.

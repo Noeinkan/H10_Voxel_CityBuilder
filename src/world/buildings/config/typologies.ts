@@ -43,6 +43,16 @@ export interface TypologyShape {
    * Il bordo resta comunque terrazza — ci si affaccia, e il parapetto lo dice —
    * ma il cuore dell'anello diventa verde. Non e' una fascia in piu' ne' un
    * volume: e' lo stesso voxel di sommita', con un altro slot.
+   *
+   * **Lo dichiarano quasi tutte le righe residenziali e commerciali, ed e' una
+   * regola e non un caso.** Un tetto abitato e' piantato: e' cosi' che si legge
+   * un quartiere denso visto dall'alto, dove la copertura e' meta' di cio' che
+   * si vede e un catalogo di lastre nude la rende una scacchiera. Restano
+   * scoperte l'industria, il civico, e le due righe che un tetto abitabile non
+   * ce l'hanno — il magazzino doganale e la gradinata. Da quando
+   * `microGarden.ts` esiste, quel verde non e' piu' una campitura ma
+   * un'aiuola con fioriere e alberi, quindi la riga costa geometria: chi la
+   * aggiunge a una tipologia nuova guardi il conto dei quad, non solo il colore.
    */
   readonly roofGarden: boolean;
   /**
@@ -227,6 +237,7 @@ export const TYPOLOGIES: readonly TypologyDefinition[] = [
     priority: 3,
     shape: {
       ...DEFAULT_TYPOLOGY_SHAPE,
+      roofGarden: true,
       podiumBands: 1,
       crownKind: CROWN_KIND.flat,
       maxFootprint: 6,
@@ -259,7 +270,7 @@ export const TYPOLOGIES: readonly TypologyDefinition[] = [
     // si scambiano il posto, la crescita racconta un progresso.
     evolvesFrom: [
       'terracedHousing', 'gardenHousing', 'rationedBlock', 'stackedTenement', 'courtyardBlock',
-      'slabBlock',
+      'slabBlock', 'modernRow',
     ],
     // Stessa priorita' di `commercialPodium` e **prima di lui nel catalogo**, che
     // e' come si dice «piu' specifico» a parita' di peso: dove il lotto e' un
@@ -268,6 +279,7 @@ export const TYPOLOGIES: readonly TypologyDefinition[] = [
     priority: 5,
     shape: {
       ...DEFAULT_TYPOLOGY_SHAPE,
+      roofGarden: true,
       crownKind: CROWN_KIND.lantern,
       // Lo smusso su un angolo non e' decorazione: e' il taglio che gli edifici
       // veri hanno proprio li', dove due fronti si incontrano su un incrocio.
@@ -295,6 +307,7 @@ export const TYPOLOGIES: readonly TypologyDefinition[] = [
     priority: 5,
     shape: {
       ...DEFAULT_TYPOLOGY_SHAPE,
+      roofGarden: true,
       podiumBands: 2,
       minFootprint: 6,
       // Podio pieno sulla strada e piani che sporgono sopra: e' la sezione piu'
@@ -321,7 +334,7 @@ export const TYPOLOGIES: readonly TypologyDefinition[] = [
     // puo' culminare in una delle quattro verticali.
     evolvesFrom: ['terracedHousing'],
     priority: 2,
-    shape: { ...DEFAULT_TYPOLOGY_SHAPE, courtyard: true, crownKind: CROWN_KIND.flat, minFootprint: 8 },
+    shape: { ...DEFAULT_TYPOLOGY_SHAPE, roofGarden: true, courtyard: true, crownKind: CROWN_KIND.flat, minFootprint: 8 },
     profile: {
       bandHeight: [4, 6],
       shrinkBias: 0.08,
@@ -345,10 +358,10 @@ export const TYPOLOGIES: readonly TypologyDefinition[] = [
     // quartiere e' solo fitto.
     evolvesFrom: [
       'terracedHousing', 'gardenHousing', 'rationedBlock', 'stackedTenement', 'courtyardBlock',
-      'slabBlock',
+      'slabBlock', 'modernRow',
     ],
     priority: 4,
-    shape: { ...DEFAULT_TYPOLOGY_SHAPE, chamfer: 1, maxFootprint: 6 },
+    shape: { ...DEFAULT_TYPOLOGY_SHAPE, roofGarden: true, chamfer: 1, maxFootprint: 6 },
     profile: {
       bandHeight: [6, 8],
       shrinkBias: 0.72,
@@ -376,7 +389,7 @@ export const TYPOLOGIES: readonly TypologyDefinition[] = [
     // il contrario — la scala sale e non torna.
     evolvesFrom: [
       'terracedHousing', 'gardenHousing', 'rationedBlock', 'stackedTenement', 'courtyardBlock',
-      'slabBlock', 'towerBlock', 'skyTerraces',
+      'slabBlock', 'modernRow', 'towerBlock', 'skyTerraces',
     ],
     // Sta **prima** di `skyTerraces` a parita' di priorita', e l'ordine e' la
     // regola: a livello 5 vince il gradone abitato, dal 6 in su il tamburo. E'
@@ -392,6 +405,7 @@ export const TYPOLOGIES: readonly TypologyDefinition[] = [
     priority: 5,
     shape: {
       ...DEFAULT_TYPOLOGY_SHAPE,
+      roofGarden: true,
       chamfer: 2,
       crownKind: CROWN_KIND.lantern,
       minFootprint: 8,
@@ -423,7 +437,7 @@ export const TYPOLOGIES: readonly TypologyDefinition[] = [
     // non poteva succedere.
     evolvesFrom: [
       'terracedHousing', 'gardenHousing', 'rationedBlock', 'stackedTenement', 'courtyardBlock',
-      'slabBlock', 'towerBlock',
+      'slabBlock', 'modernRow', 'towerBlock',
     ],
     // Sopra `towerBlock`, che a questo livello qualifica quasi sempre: dove c'e'
     // anche la ricchezza, la torre liscia diventa un gradone abitato.
@@ -471,6 +485,7 @@ export const TYPOLOGIES: readonly TypologyDefinition[] = [
     priority: 5,
     shape: {
       ...DEFAULT_TYPOLOGY_SHAPE,
+      roofGarden: true,
       crownKind: CROWN_KIND.flat,
       maxFootprint: 6,
       // La riga che porta lo sbalzo in citta'. E' anche quella giusta: la casa
@@ -506,7 +521,11 @@ export const TYPOLOGIES: readonly TypologyDefinition[] = [
     // forma residenziale che chieda l'impronta piena. Nasce dalla casa a schiera
     // o dall'isolato a corte, e resta una forma intermedia — le quattro
     // verticali la dichiarano fra le proprie provenienze.
-    evolvesFrom: ['terracedHousing', 'courtyardBlock'],
+    // La schiera nuova e' fra le provenienze: quando la densita' scavalla il suo
+    // tetto, il posto ha smesso di essere periferia e la stecca e' cio' che
+    // subentra — senza questa voce quelle case resterebbero se' stesse per
+    // sempre, perche' un upgrade adotta solo cio' che la linea dichiara.
+    evolvesFrom: ['terracedHousing', 'courtyardBlock', 'modernRow'],
     // Stessa priorita' di `towerBlock` e **dopo di lui**, che a parita' vince: la
     // torre liscia chiede densita' 0.55, qui ne bastano 0.45. Fra le due soglie
     // il quartiere e' fitto ma non ancora da torre, ed e' esattamente il posto in
@@ -514,6 +533,7 @@ export const TYPOLOGIES: readonly TypologyDefinition[] = [
     priority: 4,
     shape: {
       ...DEFAULT_TYPOLOGY_SHAPE,
+      roofGarden: true,
       crownKind: CROWN_KIND.ridge,
       minFootprint: 8,
       // Il corpo lungo che sporge sulla via: una stecca affacciata e' fatta
@@ -535,6 +555,98 @@ export const TYPOLOGIES: readonly TypologyDefinition[] = [
       crown: PALETTE_SLOTS.asphaltDark,
       plinth: PALETTE_SLOTS.stone,
       terrace: PALETTE_SLOTS.concreteLight,
+      roofPropHeight: 0,
+    },
+  },
+  {
+    id: 'modernRow',
+    label: 'Modern row',
+    use: 0,
+    minWealth: 0.4,
+    /**
+     * **L'unica riga residenziale con un tetto di densita', e il tetto e' la
+     * riga.** La schiera di nuova costruzione e' cio' che si fa dove il suolo
+     * c'e' ancora: sopra questa soglia il quartiere e' gia' diventato stecca o
+     * torre, e una casa con un davanti non e' piu' la forma che il posto chiede.
+     * Sotto, e con un po' di ricchezza, e' esattamente la forma che chiede.
+     *
+     * Insieme, il minimo di ricchezza e il tetto di densita' descrivono un
+     * luogo che nessun'altra riga del catalogo nominava: fino a qui il denaro
+     * senza la folla non produceva niente di proprio — cadeva sul ripiego — e la
+     * periferia benestante usciva con la stessa casa a schiera smussata della
+     * campagna.
+     */
+    maxDensity: 0.45,
+    // Dalla soglia in cui la campata compare (`VISUAL_LEVELS.consolidated`): una
+    // schiera moderna si riconosce dal ritmo delle aperture prima che dal
+    // volume, e sotto quella quota la facciata e' ancora una parete piena — cioe'
+    // la riga non avrebbe niente da mostrare che il ripiego non mostri gia'.
+    minLevel: 2,
+    // Forma intermedia come le altre concesse dal luogo: nasce dalla casa a
+    // schiera e le quattro verticali la dichiarano fra le proprie provenienze,
+    // cosi' una periferia che si infittisce continua a salire invece di restare
+    // bassa per sempre.
+    evolvesFrom: ['terracedHousing'],
+    // Stessa priorita' della stecca e **dopo di lei nel catalogo**, che a parita'
+    // vince: fra 0.45 e 0.55 di densita' il tessuto e' gia' fitto e li' ci sta la
+    // stecca. Le tre verticali (5) restano sopra, e la sequenza si legge come una
+    // scala — la schiera nuova e' dove si comincia, non dove si arriva.
+    priority: 4,
+    shape: {
+      ...DEFAULT_TYPOLOGY_SHAPE,
+      // Lo **spigolo vivo**, che nel residenziale e' quasi una rarita': la casa a
+      // schiera da cui questa nasce smussa di due e ne esce un ottagono, e le
+      // verticali smussano di uno. Qui lo smusso resta a zero — il default — e
+      // non e' una dimenticanza: il volume netto, con i quattro spigoli interi,
+      // e' meta' di cio' che distingue una costruzione recente da una vecchia.
+      crownKind: CROWN_KIND.flat,
+      // Il piano terra pieno sotto i piani che sporgono: e' il fronte con la
+      // rimessa e l'ingresso arretrato, e insieme a `overhang` fa l'ombra sotto
+      // il corpo aggettante che regge da sola la lettura del fronte.
+      podiumBands: 1,
+      overhang: 2,
+      // Fronte largo e non profondo, come una schiera: sotto cinque non ci sta
+      // il portale fra i due cantonali, sopra sette il corpo smette di leggersi
+      // come una casa e diventa un isolato.
+      minFootprint: 5,
+      maxFootprint: 7,
+      // **Niente giardino pensile, e vale la pena dirlo** dato che quasi tutte
+      // le righe residenziali ora lo portano: qui la copertura e' un piano
+      // praticabile duro, non un'aiuola. E' la terrazza attrezzata a raccontarlo
+      // dalla soglia di torre, e costa i quad che ha gia'.
+    },
+    profile: {
+      // Piani bassi e tutti uguali: un interpiano da quattro o cinque e' cio'
+      // che tiene tre livelli dentro l'altezza in cui la casa a schiera ne mette
+      // due, ed e' la proporzione che si vede nelle schiere vere.
+      bandHeight: [4, 5],
+      // Quasi nessuna rientranza, per la stessa ragione della stecca: il corpo
+      // sale a sezione costante. Cio' che lo muove non e' la rastremazione ma lo
+      // scarto laterale, che a distanza di gioco produce la fila sfalsata invece
+      // della piramide.
+      shrinkBias: 0.14,
+      footprintBias: 1,
+      shrinkOps: [BAND_OP.shrinkOneSide, BAND_OP.jog],
+      // `jut` in testa: e' la riga che deve sporgere sulla via, e il piano che
+      // aggetta sopra l'ingresso e' la firma della schiera contemporanea.
+      growOps: [BAND_OP.jut, BAND_OP.keep, BAND_OP.shear],
+      // Grana fitta come il commercio, e non per imitarlo: due voxel di passo
+      // danno la campata stretta e verticale — la finestra alta quanto il piano —
+      // dove il passo residenziale da tre da' la loggia larga della terrazza.
+      bayPeriod: 2,
+      body: PALETTE_SLOTS.concreteWhite,
+      // Il tono piu' scuro della palette sul voxel di sommita' di ogni fascia:
+      // e' il serramento continuo, il pannello, la lama d'ombra sotto lo sbalzo.
+      // **Sopravvive solo nei quartieri che non dipingono il tessuto** — lo stile
+      // si applica dopo — ed e' il motivo per cui `panelRender` e `sandBrick`
+      // esistono: portano la stessa coppia a scala di quartiere.
+      bodyAlt: PALETTE_SLOTS.asphaltShadow,
+      accent: PALETTE_SLOTS.glassPale,
+      crown: PALETTE_SLOTS.asphaltShadow,
+      plinth: PALETTE_SLOTS.asphaltDark,
+      terrace: PALETTE_SLOTS.concreteLight,
+      // Nessun pennone su una casa: la cima e' un parapetto, e il coronamento
+      // piatto la chiude da solo.
       roofPropHeight: 0,
     },
   },
@@ -583,7 +695,7 @@ export const TYPOLOGIES: readonly TypologyDefinition[] = [
     // Forma intermedia della linea residenziale, come sopra.
     evolvesFrom: ['terracedHousing'],
     priority: 6,
-    shape: { ...DEFAULT_TYPOLOGY_SHAPE, crownKind: CROWN_KIND.flat, maxFootprint: 5 },
+    shape: { ...DEFAULT_TYPOLOGY_SHAPE, roofGarden: true, crownKind: CROWN_KIND.flat, maxFootprint: 5 },
     profile: {
       bandHeight: [6, 8],
       shrinkBias: 0.9,
@@ -651,6 +763,7 @@ export const TYPOLOGIES: readonly TypologyDefinition[] = [
     priority: 6,
     shape: {
       ...DEFAULT_TYPOLOGY_SHAPE,
+      roofGarden: true,
       crownKind: CROWN_KIND.gable,
       minFootprint: 4,
       maxFootprint: 6,
@@ -682,6 +795,7 @@ export const TYPOLOGIES: readonly TypologyDefinition[] = [
     priority: 6,
     shape: {
       ...DEFAULT_TYPOLOGY_SHAPE,
+      roofGarden: true,
       crownKind: CROWN_KIND.lantern,
       chamfer: 1,
       minFootprint: 5,
@@ -721,7 +835,7 @@ export const TYPOLOGIES: readonly TypologyDefinition[] = [
     // guglia e quello che le sta attorno — e le tre righe che il ruolo lo
     // chiedono restano a governare i livelli in cui l'isolato si legge ancora.
     evolvesFrom: [
-      'terracedHousing', 'courtyardBlock', 'slabBlock', 'stackedTenement',
+      'terracedHousing', 'courtyardBlock', 'slabBlock', 'stackedTenement', 'modernRow',
       'towerBlock', 'skyTerraces', 'roundTower', 'cornerTower',
     ],
     // Ultima del proprio uso a parita' di priorita': dove un mandato o un faro
@@ -730,6 +844,7 @@ export const TYPOLOGIES: readonly TypologyDefinition[] = [
     priority: 6,
     shape: {
       ...DEFAULT_TYPOLOGY_SHAPE,
+      roofGarden: true,
       crownKind: CROWN_KIND.taper,
       chamfer: 2,
       minFootprint: 6,
@@ -760,7 +875,7 @@ export const TYPOLOGIES: readonly TypologyDefinition[] = [
     label: 'Terraced housing',
     use: 0,
     priority: 0,
-    shape: { ...DEFAULT_TYPOLOGY_SHAPE, chamfer: 2 },
+    shape: { ...DEFAULT_TYPOLOGY_SHAPE, roofGarden: true, chamfer: 2 },
     profile: {
       shrinkBias: 0.48,
       shrinkOps: [BAND_OP.setback, BAND_OP.stack, BAND_OP.shrinkOneSide, BAND_OP.shrink],
@@ -779,7 +894,7 @@ export const TYPOLOGIES: readonly TypologyDefinition[] = [
     // culminare nelle tre verticali.
     evolvesFrom: ['retailRow'],
     priority: 6,
-    shape: { ...DEFAULT_TYPOLOGY_SHAPE, podiumBands: 1, crownKind: CROWN_KIND.flat, minFootprint: 6 },
+    shape: { ...DEFAULT_TYPOLOGY_SHAPE, roofGarden: true, podiumBands: 1, crownKind: CROWN_KIND.flat, minFootprint: 6 },
     profile: {
       bandHeight: [4, 4],
       shrinkBias: 0.08,
@@ -806,6 +921,7 @@ export const TYPOLOGIES: readonly TypologyDefinition[] = [
     priority: 5,
     shape: {
       ...DEFAULT_TYPOLOGY_SHAPE,
+      roofGarden: true,
       podiumBands: 1,
       chamfer: 1,
       minFootprint: 6,
@@ -846,6 +962,7 @@ export const TYPOLOGIES: readonly TypologyDefinition[] = [
     priority: 6,
     shape: {
       ...DEFAULT_TYPOLOGY_SHAPE,
+      roofGarden: true,
       podiumBands: 2,
       chamfer: 1,
       crownKind: CROWN_KIND.stepped,
@@ -880,6 +997,7 @@ export const TYPOLOGIES: readonly TypologyDefinition[] = [
     priority: 5,
     shape: {
       ...DEFAULT_TYPOLOGY_SHAPE,
+      roofGarden: true,
       podiumBands: 1,
       arcade: true,
       minFootprint: 6,
@@ -907,7 +1025,7 @@ export const TYPOLOGIES: readonly TypologyDefinition[] = [
       'galleria',
     ],
     priority: 5,
-    shape: { ...DEFAULT_TYPOLOGY_SHAPE, crownKind: CROWN_KIND.flat, minFootprint: 6 },
+    shape: { ...DEFAULT_TYPOLOGY_SHAPE, roofGarden: true, crownKind: CROWN_KIND.flat, minFootprint: 6 },
     profile: {
       bandHeight: [6, 8],
       shrinkBias: 0.18,
@@ -970,6 +1088,7 @@ export const TYPOLOGIES: readonly TypologyDefinition[] = [
     priority: 5,
     shape: {
       ...DEFAULT_TYPOLOGY_SHAPE,
+      roofGarden: true,
       crownKind: CROWN_KIND.gable,
       minFootprint: 4,
       maxFootprint: 8,
@@ -997,7 +1116,7 @@ export const TYPOLOGIES: readonly TypologyDefinition[] = [
     // podio di pietra. Nasce dal mercato del porto quando il posto cresce.
     evolvesFrom: ['harborMarket', 'retailRow'],
     priority: 5,
-    shape: { ...DEFAULT_TYPOLOGY_SHAPE, podiumBands: 1, chamfer: 1, minFootprint: 5 },
+    shape: { ...DEFAULT_TYPOLOGY_SHAPE, roofGarden: true, podiumBands: 1, chamfer: 1, minFootprint: 5 },
     profile: {
       bandHeight: [6, 7],
       shrinkBias: 0.5,
@@ -1020,6 +1139,7 @@ export const TYPOLOGIES: readonly TypologyDefinition[] = [
     priority: 5,
     shape: {
       ...DEFAULT_TYPOLOGY_SHAPE,
+      roofGarden: true,
       crownKind: CROWN_KIND.gable,
       minFootprint: 4,
       maxFootprint: 6,
@@ -1042,7 +1162,7 @@ export const TYPOLOGIES: readonly TypologyDefinition[] = [
     // Tessuto basso della linea commerciale, come gli altri concessi dal mandato.
     evolvesFrom: ['retailRow'],
     priority: 6,
-    shape: { ...DEFAULT_TYPOLOGY_SHAPE, podiumBands: 2, minFootprint: 7 },
+    shape: { ...DEFAULT_TYPOLOGY_SHAPE, roofGarden: true, podiumBands: 2, minFootprint: 7 },
     profile: {
       bandHeight: [4, 5],
       shrinkBias: 0.3,
@@ -1163,6 +1283,7 @@ export const TYPOLOGIES: readonly TypologyDefinition[] = [
     priority: 4,
     shape: {
       ...DEFAULT_TYPOLOGY_SHAPE,
+      roofGarden: true,
       arcade: true,
       courtyard: true,
       podiumBands: 2,
@@ -1197,6 +1318,7 @@ export const TYPOLOGIES: readonly TypologyDefinition[] = [
     priority: 3,
     shape: {
       ...DEFAULT_TYPOLOGY_SHAPE,
+      roofGarden: true,
       arcade: true,
       podiumBands: 1,
       crownKind: CROWN_KIND.flat,
@@ -1228,7 +1350,7 @@ export const TYPOLOGIES: readonly TypologyDefinition[] = [
     // piatto su un edificio basso e isolato legge come costruzione non finita.
     maxDensity: 0.45,
     priority: 2,
-    shape: { ...DEFAULT_TYPOLOGY_SHAPE, crownKind: CROWN_KIND.gable, minFootprint: 7 },
+    shape: { ...DEFAULT_TYPOLOGY_SHAPE, roofGarden: true, crownKind: CROWN_KIND.gable, minFootprint: 7 },
     profile: {
       bandHeight: [5, 6],
       shrinkBias: 0,
@@ -1248,6 +1370,7 @@ export const TYPOLOGIES: readonly TypologyDefinition[] = [
     priority: 0,
     shape: {
       ...DEFAULT_TYPOLOGY_SHAPE,
+      roofGarden: true,
       crownKind: CROWN_KIND.flat,
       arcade: true,
       courtyard: true,

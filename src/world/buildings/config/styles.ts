@@ -105,7 +105,7 @@ export interface StyleDefinition {
 /**
  * Il catalogo degli stili.
  *
- * Otto righe, e la prima non dipinge niente: senza un ripiego neutro ogni
+ * Dieci righe, e la prima non dipinge niente: senza un ripiego neutro ogni
  * isolato dell'isola sarebbe caratterizzato, e un tessuto che non tace mai non
  * fa risaltare niente. E' la stessa ragione per cui ogni uso chiude il catalogo
  * delle tipologie con una riga senza condizioni.
@@ -171,6 +171,44 @@ export const STYLES: readonly StyleDefinition[] = [
       bodyAlt: PALETTE_SLOTS.metalDark,
       plinth: PALETTE_SLOTS.asphaltShadow,
       crown: PALETTE_SLOTS.metalDark,
+    },
+  },
+  {
+    id: 'panelRender',
+    label: 'Panel render',
+    // Intonaco chiaro e pannello scuro: il quartiere di costruzione recente.
+    //
+    // **Condivide il corpo con `whitewash` e non e' un doppione**, perche' uno
+    // stile e' la *coppia* corpo-cornice e non il solo corpo: li' la cornice e'
+    // intonaco su intonaco — mezzo gradino di luminanza, cioe' un volume liscio
+    // — e qui e' il tono piu' scuro della palette. E' la stessa distanza che
+    // `terraceArcade` ha dovuto mettere fra `stone` e `stoneDark` per farsi
+    // vedere, portata sull'unica famiglia che ancora non ce l'aveva.
+    //
+    // Il marcapiano scuro su fondo chiaro e' cio' che a distanza di gioco
+    // legge come «serramento continuo» invece che come cornicione: e' il segno
+    // dell'edilizia contemporanea, e non costa un voxel in piu' di quella
+    // vecchia — cambia quale slot va sul voxel di sommita' della fascia.
+    palette: {
+      body: PALETTE_SLOTS.concreteWhite,
+      bodyAlt: PALETTE_SLOTS.asphaltShadow,
+      plinth: PALETTE_SLOTS.asphaltDark,
+      crown: PALETTE_SLOTS.asphaltShadow,
+    },
+  },
+  {
+    id: 'sandBrick',
+    label: 'Sand brick',
+    // Il mattone chiaro con gli stessi serramenti scuri: e' `brickTown` detto
+    // dall'altro capo del secolo. La famiglia della pietra calda porta il tono
+    // sabbia che il mattone rosso non ha — `brick` e' #e0603f, cioe' un
+    // laterizio d'epoca — e accostata a una cornice scura da' il fronte in
+    // mattoni a vista dei quartieri nuovi invece della cortina ottocentesca.
+    palette: {
+      body: PALETTE_SLOTS.stoneWarm,
+      bodyAlt: PALETTE_SLOTS.asphaltShadow,
+      plinth: PALETTE_SLOTS.stoneDeep,
+      crown: PALETTE_SLOTS.asphaltShadow,
     },
   },
   {
