@@ -163,21 +163,36 @@ quel file e riconosce un task dal testo: spostarle avrebbe dichiarato il progett
 al 20% invece che all'87% e perso il cycle time di ognuna. `verify.mjs` conferma
 zero sezioni e zero righe perse, e l'anteprima della dashboard e' identica.
 
-**`src/main.ts` e' fatto solo dove era sicuro**, 3616 → 3392 righe: le etichette
-del cursore (pure) e il salvataggio (unico blocco che possiede uno stato suo)
-stanno in `src/shell/`. La cartella non si chiama `boot/` perche' `src/boot.ts`
-esiste gia' e i due si leggerebbero come lo stesso posto.
+**`src/main.ts` e' fatto**, 3440 → 1849 righe. Il primo giro aveva tolto solo
+cio' che era sicuro — le etichette del cursore (pure) e il salvataggio (unico
+blocco con uno stato suo) — e aveva lasciato il resto perche' non era una
+potatura ma un incremento di progettazione: quelle righe erano **una chiusura
+sola su quarantasette `let` di modulo condivisi**, e estrarne un gruppo significa
+*decidere di chi e' quello stato*, non spostare righe.
 
-**Il resto del file non e' una potatura, e' un incremento di progettazione.**
-Quei 3392 righe sono **una chiusura sola su quarantasette `let` di modulo
-condivisi**: `selectedTool` lo scrivono i gestori del puntatore e lo leggono la
-selezione, il coach e l'HUD; `growthScene`, `gameHud`, `generator` cambiano dopo
-che l'isola e' pronta. Estrarre input, selezione, vista strada o campionario
-significa **decidere di chi e' quello stato** e dargli un proprietario esplicito
-— non spostare righe. Su codice che nessun test copre, con `typecheck` e `build`
-come sole reti, e' un lavoro da concordare e da fare per intero, non a fette.
-Ordine di grandezza: ~1 800 righe su quattro moduli, e i primi due gruppi
-(input+strumenti, ciclo di frame) sono i due terzi.
+La decisione e' stata presa gruppo per gruppo, e sono dieci moduli in
+`src/shell/`, ognuno proprietario del proprio stato: `pointerPick` (il raycaster
+e le tre domande sul mondo), `placementTools` (`selectedTool` e cio' che il
+puntatore ne fa), `demolishGesture` (la gomma, unico strumento in due tempi),
+`selectionScene` (la cella scelta, la scheda, il contorno, il coach),
+`streetEye` (la discesa a terra), `swatchScene` (il campionario),
+`infoViewScene`, `entryDrop`, `frameStats`, `debugHooks`. In radice restano il
+montaggio, il ciclo di frame a budget, il gating di qualita' e il router della
+tastiera — cioe' cio' che un composition root deve fare.
+
+Due vincoli hanno guidato la forma. **Cio' che nasce dopo arriva come funzione**
+(`inspect`, `hud`, `map`, `registry`, `generator`), perche' l'ordine di
+costruzione e' reale: la discesa a terra esiste prima delle viste d'ispezione
+perche' il gating di qualita' la interroga gia'. E **l'ordine di registrazione
+dei listener e' rimasto identico**, perche' e' un contratto: il primo che si
+prende il clic lo toglie a tutti quelli dopo.
+
+Verificato con `typecheck`, `build` e una sonda headless su Chromium: quindici
+hook globali registrati, isola generata, `V` e `I` che ciclano le viste, uno
+strumento preso dal dock, la scheda che si apre a un clic, la targa della vista
+da terra, `__voxelDrop()` che rimanda in cielo 113 chunk. Nessun errore di
+pagina. Il campionario provato a parte: soggetto sotto il cursore, scelta, `Esc`
+che la molla e rimette l'inquadratura.
 
 ---
 
@@ -193,6 +208,52 @@ Due punti da verificare prima di tenerlo: che il TypeScript LSP regga 520 file
 senza tempi di avvio assurdi, e che non entri in conflitto con `npm run locate`,
 che risponde gia' bene alla domanda «dove sta». **Se la misura non mostra un
 guadagno chiaro, si scarta** — e' una dipendenza esterna, non e' gratis.
+
+### Misurato, e scartato
+
+**I due punti da verificare passano tutti e due.** Il TypeScript LSP indicizza
+602 file in 27 secondi comprese l'installazione via `uvx` e la generazione del
+progetto, e il server MCP si alza in 7,5 secondi: nessun tempo assurdo. E il
+conflitto con `locate` non c'e', perche' i due non rispondono alla stessa
+domanda — `npm run locate -- structureKindOf` dice «Nessuna voce trovata nel
+Project Index», ed e' corretto: l'indice ha una riga per **file**, e un simbolo
+non e' un file. Erano le due obiezioni previste, e cadono entrambe.
+
+**A bocciarlo e' il conto, misurato parlando MCP al server su tre domande
+vere.**
+
+| Domanda | Serena | Percorso attuale |
+| --- | --- | --- |
+| Dove sta `structureKindOf`, e com'e' fatto | 693 byte, 1,2 s | `rg` piu' una `Read` mirata, ~1 860 byte |
+| Chi chiama `structureKindOf` | 13 654 byte, 6,6 s | `rg -n`, 2 829 byte |
+| Cosa c'e' dentro `main.ts` | 3 414 byte, 0,7 s | 6 839 byte a `grep` dei simboli, 75 076 a leggerlo intero |
+
+Vince due domande su tre — e la terza, «chi lo chiama», la perde di quasi cinque
+volte, perche' `find_referencing_symbols` restituisce il codice attorno a ogni
+chiamante mentre `rg` restituisce la riga.
+
+**Il costo fisso e' quello che chiude il discorso: 26 173 byte di schemi degli
+strumenti, cioe' ~6 500 token in *ogni* richiesta di *ogni* sessione**, ventuno
+strumenti di cui tredici sono di scrittura o di memoria e non c'entrano con la
+lettura a simbolo. Il risparmio per interrogazione sta fra i 300 e gli 850
+token: servono dalle otto alle venti interrogazioni per sessione solo per
+rientrare, e una sessione tipica ne fa molte meno. Ridotto ai sei strumenti di
+lettura resterebbero 10 849 byte (~2 700 token), che rientrano in tre o quattro
+interrogazioni: e' l'unica configurazione in cui varrebbe la pena riaprirlo.
+
+**E c'e' un motivo che non e' di token.** L'hook del semaforo intercetta
+`Write|Edit|MultiEdit|NotebookEdit|Bash|PowerShell` — **non** gli strumenti MCP.
+I sette strumenti di scrittura di Serena (`replace_symbol_body`,
+`insert_after_symbol`, `rename_symbol`, `replace_in_files`, `safe_delete_symbol`
+e gli altri) scriverebbero su disco senza passare dal lucchetto, in una repo su
+cui lavorano piu' agenti in parallelo e il cui intero protocollo di
+coordinamento poggia su quell'hook. Una configurazione di sola lettura non ha
+questo problema, ma va imposta, non sperata.
+
+**Esito: scartato**, come il piano prevedeva per il caso «guadagno non chiaro».
+Gli artefatti della prova (`.serena/`, 35 MB) sono stati rimossi. Se un giorno
+si riapre, si riapre con i soli strumenti di lettura e con l'hook del semaforo
+esteso agli strumenti MCP — in quest'ordine.
 
 ---
 
@@ -214,9 +275,12 @@ tratti gia' in piedi la risposta esiste.
    semplici** — campate, ponti fra settori, guide, funivia. Landmark, arcologie
    e citta' in quota restano fuori per scelta: hanno varianti di piazzamento
    proprie, e farcele entrare riporterebbe le eccezioni dentro il protocollo.
-5. Leva 3, dieta. **ROADMAP fatta e misurata; `main.ts` solo dove era sicuro**
-   — il resto e' un incremento di progettazione, non una potatura (vedi sopra).
-6. Leva 4, misura di Serena e decisione. **Non iniziata.**
+5. ~~Leva 3, dieta.~~ **Fatta**: ROADMAP misurata, `main.ts` 3440 → 1849 righe
+   su dieci moduli di `src/shell/`, ognuno proprietario del proprio stato.
+6. ~~Leva 4, misura di Serena e decisione.~~ **Misurata e scartata**: i due
+   punti da verificare passano, a bocciarla e' il costo fisso di ~6 500 token
+   per richiesta e il fatto che i suoi strumenti di scrittura scavalcherebbero
+   il semaforo (vedi sopra).
 
 Ogni passo e' consegnabile e reversibile da solo.
 
@@ -227,10 +291,22 @@ e **due su tre vanno lasciate stare**: la lettura del *carico* (`record.arcology
 per la ricetta, `record.landmark` per il catalizzatore), che non e' una domanda
 sul tipo; e cio' che la tabella non poteva dire, cioe' `takesGroundOf` e gli
 indici di `BuildingRegistry.index`, che dipendono dalla *parte* in quota e non
-dal tipo. La terza specie — classificazioni scritte a mano che sopravvivono in
-`Builder.ts`, `frontage.ts`, `guideDriver.ts`, `harborDriver.ts`,
-`ropewayDriver.ts` — e' vera coda del passo 2, ed e' piccola: una decina di
-righe, nessuna in un dispatch.
+dal tipo. La terza specie — classificazioni scritte a mano — era vera coda del passo 2, ed
+e' **chiusa**: `guideDriver`, `ropewayDriver` e `frontage` passano ora per tre
+predicati nuovi di `structureKind.ts` (`isSpan`, `isRopewayTower`,
+`isLandmark`). Non sono diventati colonne della tabella, e il commento di ognuno
+dice perche': sono domande sul **tipo**, non tratti. `harborDriver` non era coda
+affatto — quel `record.landmark` e' la lettura del *carico*, cioe' la ricetta, e
+resta dov'e'.
+
+**La coda ha fatto emergere un rosso silenzioso.** `Builder.countRestored`
+riconosceva un edificio impilato con un elenco di marker che escludeva quota,
+campate e monumenti sul tetto ma **lasciava passare arcologie e monumenti a
+terra**, che portano `supports` per un'altra ragione: una citta' caricata diceva
+uno `stacked` che la stessa citta', costruita, non avrebbe mai detto. Adesso la
+domanda e' `isPlainBuilding`, che e' esattamente cio' che conta il percorso
+vivo. E' un conteggio da overlay, non stato di gioco, ma e' la prova che
+l'elenco scritto a mano nascondeva la divergenza invece di dirla.
 
 ## Verifica
 
