@@ -27,17 +27,27 @@ Qui stanno **i tredici incrementi più recenti**; i precedenti sono archiviati i
 
 ## In corso — Residenza contemporanea
 
-- **La schiera moderna, dove il denaro non porta la folla.** `modernRow` è la
-  prima riga residenziale con un **tetto** di densità invece di un minimo:
-  ricchezza sopra 0.4, densità sotto 0.45, dal livello in cui la campata
-  compare. Descrive un luogo che il catalogo non nominava — la periferia
-  benestante — e che fino a ieri cadeva sul ripiego, cioè usciva con la stessa
-  casa a schiera smussata della campagna. Volume netto senza smusso, coronamento
-  piatto, piano terra pieno sotto i piani che sporgono, campata stretta a passo
-  due: il repertorio sposta il corpo invece di rastremarlo, e la fila esce
-  sfalsata invece che a piramide. Le quattro verticali e la stecca la
+- **Il luogo che il catalogo non nominava: denaro senza folla.** `modernRow`,
+  `modernCorner` e `modernCourt` sono le prime righe residenziali con un
+  **tetto** di densità invece di un minimo: ricchezza sopra 0.4, densità sotto
+  0.45, dal livello in cui la campata compare. La periferia benestante fino a
+  ieri cadeva sul ripiego, cioè usciva con la stessa casa a schiera smussata
+  della campagna. Volume netto senza smusso, coronamento piatto e campata
+  stretta a passo due: il repertorio sposta il corpo invece di rastremarlo, e la
+  fila esce sfalsata invece che a piramide. Le quattro verticali e la stecca le
   dichiarano fra le proprie provenienze, così un quartiere che si infittisce
   continua a salire.
+- **Tre righe e non una, perché una sola riga è venti case uguali.** Ricchezza,
+  densità e livello sono costanti dentro un isolato: una tipologia per quel
+  luogo la stampa identica su ogni lotto. Le tre si separano sul **ruolo del
+  lotto**, che è l'unico fatto discreto che dentro un isolato cambia — la stessa
+  mossa già fatta in alto per le tre verticali, portata alla scala bassa. Il
+  fronte porta la schiera con lo sbalzo sopra l'ingresso; l'angolo il volume
+  sovrapposto (`stack` in testa, cima a gradoni, interpiano più alto) che chiude
+  la testata, e lo prende un livello più tardi, così in un quartiere giovane si
+  vedono le teste ancora basse e i fronti già moderni; il cuore la casa larga e
+  bassa col tetto piantato, senza sbalzo perché sotto non c'è un marciapiede ma
+  il vicino.
 - **Due tessuti nuovi per la materia che mancava: il pannello scuro.**
   `panelRender` (intonaco chiaro) e `sandBrick` (mattone sabbia) portano
   entrambi la cornice sul tono più scuro della palette. Gli otto stili
@@ -47,7 +57,9 @@ Qui stanno **i tredici incrementi più recenti**; i precedenti sono archiviati i
   come cornicione. È la correzione già fatta una volta su `terraceArcade`,
   portata a scala di quartiere — e serve, perché lo stile si applica **dopo**
   la tipologia e sarebbe altrimenti il quartiere a cancellare la coppia
-  chiaro-scuro di `modernRow` in sette casi su otto.
+  chiaro-scuro delle tre righe contemporanee in otto casi su dieci. La forma
+  resta comunque loro: dove il tessuto è di mattoni o di pietra, la schiera
+  moderna esce di mattoni e continua a leggersi come recente dal volume.
 
 ## In corso — Il verso che mancava ai materiali
 
