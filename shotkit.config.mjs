@@ -43,11 +43,12 @@ async function enterGame(page) {
   await primary.waitFor({ state: 'visible', timeout: 240000 });
   await primary.click();
   // La condizione e' il **dock**, non la sparizione del velo: l'HUD esiste nel
-  // DOM anche dietro la schermata del titolo — `terrainReady` la attraversa
-  // senza accorgersene, ed e' cosi' che uno scatto poteva crescere una citta'
-  // per ottanta secondi e fotografare il menu senza un solo avviso. Misurato
-  // con `shotkit probe --until .hud-dock`: senza clic non compare mai.
-  await page.locator('.hud-dock').first().waitFor({ state: 'visible', timeout: 180000 });
+  // DOM anche dietro la schermata del titolo, quindi `terrainReady` la
+  // attraversa senza accorgersene — ed e' cosi' che uno scatto poteva crescere
+  // una citta' per ottanta secondi e fotografare il menu senza un solo avviso.
+  // La classe e' `build-dock` (`BuildDock.ts`), non `hud-dock`: un selettore
+  // inventato qui non fallisce, aspetta e basta.
+  await page.locator('.build-dock').first().waitFor({ state: 'visible', timeout: 180000 });
   await page.waitForTimeout(1200);
 }
 
@@ -428,7 +429,7 @@ export default {
     },
     {
       name: '10-road-network',
-      path: '/?seed=1337&hour=13',
+      path: '/?seed=1337&hour=13&intro=0',
       timeoutMs: 720000,
       settleMs: 3000,
       shows:
@@ -442,7 +443,7 @@ export default {
     },
     {
       name: '11-road-hierarchy',
-      path: '/?seed=1337&hour=13',
+      path: '/?seed=1337&hour=13&intro=0',
       timeoutMs: 720000,
       settleMs: 3000,
       shows:
