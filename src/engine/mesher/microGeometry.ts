@@ -34,6 +34,11 @@ import { appendFacadeDetail, appendRoofDetail } from './microDetail';
 // questo file dentro i corpi degli emettitori.
 import { appendCrownEdges, appendCrownProps } from './microCrown';
 import { appendThresholdDetail } from './microThreshold';
+// Il verde di copertura e' il quarto modulo, e l'unico che chiude il cerchio
+// anche **fuori** da `appendMicroGeometry`: `collectSurfaceCells` chiama
+// `isRoofGarden` per raccogliere le sue celle. Resta la stessa cautela — e' una
+// chiamata dentro il corpo di una funzione, non un letterale di modulo.
+import { appendGardenDetail, isRoofGarden } from './microGarden';
 
 /**
  * Microgeometria architettonica in unita' fisse di 1/16 di voxel.
@@ -209,18 +214,37 @@ function encodeCell(x: number, y: number, z: number): number {
 export interface SurfaceCells {
   readonly bySurface: number[][];
   readonly facadeByFace: number[][];
+  /**
+   * Le celle di giardino pensile, che per superficie sono `plain`.
+   *
+   * E' l'unica lista che non nasce da un linguaggio di superficie, e la ragione
+   * sta in `microGarden.ts`: il verde di copertura resta `plain` per scelta —
+   * non deve prendersi il parapetto del tetto tecnico — quindi il ramo che
+   * scarta il `plain` e' il solo posto in cui puo' essere raccolto senza una
+   * seconda scansione del volume.
+   */
+  readonly gardens: number[];
 }
 
 export function collectSurfaceCells(padded: Uint8Array): SurfaceCells {
   const bySurface = Array.from({ length: 8 }, () => [] as number[]);
   const facadeByFace = Array.from({ length: LATERAL_FACES.length }, () => [] as number[]);
+  const gardens: number[] = [];
   for (let z = 0; z < CHUNK; z++) {
     for (let y = 0; y < CHUNK; y++) {
       for (let x = 0; x < CHUNK; x++) {
         const block = blockAt(padded, x, y, z);
         if (block === 0) continue;
         const surface = blockSurface(block);
-        if (surface === SURFACE_KIND.plain || surface === SURFACE_KIND.utility) continue;
+        if (surface === SURFACE_KIND.plain || surface === SURFACE_KIND.utility) {
+          // Il giardino pensile passa di qui, ed e' l'unico `plain` che porta
+          // qualcosa: raccoglierlo nel ramo che gia' lo scarta costa il
+          // predicato e non una scansione. Vedi `microGarden.ts`.
+          if (surface === SURFACE_KIND.plain && isRoofGarden(padded, x, y, z)) {
+            gardens.push(encodeCell(x, y, z));
+          }
+          continue;
+        }
         const cell = encodeCell(x, y, z);
         bySurface[surface].push(cell);
         // L'acqua porta `WATER_CLASS` in questi stessi bit, e bassofondo e
@@ -243,7 +267,7 @@ export function collectSurfaceCells(padded: Uint8Array): SurfaceCells {
       }
     }
   }
-  return { bySurface, facadeByFace };
+  return { bySurface, facadeByFace, gardens };
 }
 
 export function blockAt(padded: Uint8Array, x: number, y: number, z: number): number {
@@ -1273,6 +1297,14 @@ export function appendMicroGeometry(
   // Il coronamento che dice l'uso vale piu' di una vasca d'acqua generica, quindi
   // sotto pressione cade la vasca: `appendCrownProps` sta prima di `appendRoofDetail`.
   if (!appendCrownProps(padded, writer, roofs, origin, marks)) {
+    return initial - writer.remainingQuads;
+  }
+  // Il verde di copertura sta **prima** delle vasche, con lo stesso argomento
+  // con cui il coronamento sta prima di loro: da una camera isometrica il tetto
+  // e' meta' di cio' che si vede, e un giardino piantato lo racconta piu' di un
+  // serbatoio. Vive in `microGarden.ts`, e la sua lista di celle non e' una
+  // superficie.
+  if (!appendGardenDetail(padded, writer, cells.gardens, roofs, origin, marks)) {
     return initial - writer.remainingQuads;
   }
   // Le combinazioni di tetto chiudono i prop: vasche e gruppi HVAC sono l'ultima

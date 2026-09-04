@@ -113,6 +113,28 @@ export const ROADS = {
   landCost: 2,
 
   /**
+   * Quanto costa un passo in diagonale rispetto a uno in asse.
+   *
+   * **La radice di due, cioe' la lunghezza vera del passo.** Contando la
+   * diagonale quanto l'asse — come fa ogni ricerca a otto vicini scritta senza
+   * pensarci — si dichiara che spostarsi di 1,41 colonne costa quanto spostarsi
+   * di una: la diagonale diventa la mossa piu' conveniente del grafo, e ogni
+   * cammino minimo la usa fino a esaurirla prima di raddrizzarsi. Il risultato
+   * e' la spezzata a due tratti — una riga a quarantacinque gradi e una in asse —
+   * che si vedeva a schermo, e non la si toglie con nessuna quantita' di
+   * rumore: e' la metrica a dire che quella forma non ha alternative allo
+   * stesso prezzo.
+   *
+   * Con il fattore giusto il costo di un cammino torna proporzionale alla sua
+   * **lunghezza**, tutte le direzioni costano il vero, e il minimo diventa una
+   * geodetica del campo di costo: una curva, che e' cio' che si voleva.
+   *
+   * L'euristica di `traceRoad` resta ammissibile perche' cresce: il passo piu'
+   * economico continua a valere `flatCost`, che e' il numero su cui e' tarata.
+   */
+  diagonalCost: Math.SQRT2,
+
+  /**
    * Costo aggiunto per ogni voxel di dislivello fra due colonne consecutive.
    *
    * **E' l'unico numero che produce i tornanti**, ed e' anche l'unico che rende
@@ -149,14 +171,89 @@ export const ROADS = {
    * Costo di attraversare l'acqua a nuoto d'uccello, cioe' in viadotto.
    *
    * Non e' `Infinity` — un ponte esiste — ma e' il numero che decide quando ne
-   * vale la pena: a venti, un braccio di mare di dieci colonne costa quanto
-   * duecento colonne di terra, quindi il tracciato gira sempre attorno a una
-   * baia e scavalca solo cio' che non si puo' aggirare.
+   * vale la pena. La regola e' `larghezza x waterCost` contro
+   * `giro x landCost`: a otto, una strozzatura di dieci colonne si scavalca pur
+   * di risparmiare una trentina di colonne di giro, e una baia larga si continua
+   * a costeggiare perche' il giro costa comunque meno dell'attraversamento.
+   *
+   * **A venti — il numero con cui questo e' nato — non si scavalcava niente**, e
+   * misurato e' letteralmente niente: su un'isola vera da 384 con
+   * millequattrocento colonne di lago, cinque poli agli estremi e mille colonne
+   * di carreggiata, le campate erano zero. Il viadotto esisteva solo per il polo
+   * irraggiungibile a piedi, che su un'isola sola non capita mai: tutto il ramo
+   * era codice non percorso.
    */
-  waterCost: 20,
+  waterCost: 8,
 
   /** Costo di una colonna di roccia o di ciglio: si passa, ma il giro si sente. */
   steepCost: 4,
+
+  /**
+   * Costo aggiunto per unita' di pendenza della colonna.
+   *
+   * **I quattro costi qui sopra sono a gradini, e a gradini si va dritti.** Su
+   * un pianoro dove ogni colonna costa lo stesso esistono migliaia di cammini
+   * dello stesso prezzo, e A\* ne sceglie uno qualunque: quello che esce e' la
+   * diagonale canonica, cioe' una riga a quarantacinque gradi lunga mezza isola.
+   * Non e' un difetto della ricerca ma dell'assenza di preferenza — se il piano
+   * e' piatto, ogni curva costa quanto la retta.
+   *
+   * La pendenza e' l'unico campo continuo che il terreno ha gia', e usarla
+   * rompe i pareggi **dove il terreno vuole che si rompano**: fra due passi
+   * uguali vince quello che sta piu' in piano, e il cammino segue la curva di
+   * livello invece di attraversarla. E' la stessa cosa che fa `risePerVoxel`,
+   * ma sul posto invece che sul salto — quello vieta di salire, questo
+   * suggerisce da che parte girare prima ancora che ci sia da salire.
+   *
+   * A otto, un fianco a mezza pendenza costa quanto due colonne di terra
+   * vergine: abbastanza da spostare il tracciato di qualche colonna, non tanto
+   * da fargli fare il giro dell'isola.
+   */
+  slopeCost: 8,
+
+  /**
+   * Ampiezza del campo di divagazione, in costo.
+   *
+   * La pendenza non basta da sola: **una piana e' piana davvero**, e li' i
+   * pareggi restano. Questo e' un campo liscio, funzione di `(seed, x, y)` e di
+   * nient'altro, che aggiunge fra zero e questo numero al costo di ogni colonna
+   * di terra. Non e' rumore per fare rumore: e' cio' che sta al posto di tutto
+   * quello che il terreno non modella — un fosso, un filare, un pezzo di terra
+   * che non si e' potuto comprare — e che nelle citta' vere e' la ragione per
+   * cui una strada di pianura non e' comunque dritta.
+   *
+   * **Il tetto e' il salto fra due gradini del terreno**, cioe' `steepCost`
+   * meno `landCost`. Sopra, una piana sfortunata costerebbe piu' di un ciglio e
+   * la strada preferirebbe la parete: la divagazione avrebbe smesso di piegare
+   * il tracciato e avrebbe cominciato a riscrivere la graduatoria del terreno,
+   * che e' un'altra cosa e non e' cio' che serve. A due pareggia e non batte.
+   *
+   * (La pendenza invece quel tetto lo puo' superare, ed e' voluto: `isBuildable`
+   * e' una soglia sulla pendenza stessa, quindi due colonne quasi identiche
+   * finiscono su gradini diversi. Che un fianco ripido ma edificabile costi piu'
+   * di una roccia piana e' il termine continuo che corregge la soglia, non un
+   * riordino arbitrario.)
+   */
+  wanderCost: 2,
+
+  /**
+   * Lato del reticolo su cui il campo di divagazione e' campionato, in colonne.
+   *
+   * E' la **lunghezza d'onda della curva**, ed e' il numero che decide se il
+   * risultato legge come una strada o come un errore. Sotto le poche colonne il
+   * tracciato tremerebbe a ogni passo — una linea seghettata, non una curva.
+   *
+   * **Ma il rischio vero e' dal lato corto, non da quello lungo**, ed e' meno
+   * ovvio: un cammino teso fra due punti si piega solo se trova un *dislivello
+   * di costo trasversale* alla propria direzione. Con la cella corta, spostarsi
+   * di sei colonne di lato resta dentro la stessa cella — il campo li' vale
+   * quasi lo stesso, non c'e' niente da guadagnare, e il cammino resta la
+   * diagonale di prima per quanto si alzi l'ampiezza. Misurato a dodici: la rete
+   * si accorciava della meta' ma le diagonali restavano righe. Serve una cella
+   * dell'ordine della *lunghezza di un ramo*, cosi' che una deviazione di poche
+   * colonne cada in un valore davvero diverso.
+   */
+  wanderCell: 32,
 
   // --- Viadotti ------------------------------------------------------------
 
@@ -243,6 +340,18 @@ export const ROADS = {
    *
    * Un isolato piu' lontano di cosi' dalla rete non e' periferia: e' un altro
    * insediamento, e ci arrivera' il ramo di un polo, non un vicolo.
+   *
+   * **Quattro volte il fronte strada, e non di piu'.** A novantasei — la misura
+   * con cui questo e' nato — un capillare era piu' lungo di un ramo dell'albero:
+   * una casa isolata a settanta colonne se ne tirava dietro settanta di vicolo,
+   * e su un'isola vera la somma dei vicoli superava l'intera rete dei poli.
+   * Misurato: mille colonne di carreggiata di cui piu' della meta' capillari,
+   * righe dritte da un capo all'altro della mappa, e la fascia di fronte strada
+   * dilatata su **tutta** l'isola — a quel punto ogni ancoraggio risulta
+   * affacciato e la preferenza che doveva addensare il tessuto non discrimina
+   * piu' niente. Il vicolo e' un passo carraio: se non basta, l'isolato e'
+   * semplicemente nel posto sbagliato, ed e' la ricerca del lotto a doverlo
+   * sapere.
    */
-  laneReach: 96,
+  laneReach: 24,
 } as const;

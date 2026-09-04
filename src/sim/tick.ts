@@ -284,6 +284,7 @@ export function tick(state: SimState, terrainMap: TerrainMap): SimState {
       upkeep: materialUpkeepPaid,
       retail: commerce.goods,
       exported: trade.materials,
+      imported: trade.materialsIn,
       construction: 0,
       reserve: materialReserve,
       waitingCost: 0,
@@ -293,6 +294,7 @@ export function tick(state: SimState, terrainMap: TerrainMap): SimState {
       links: trade.links,
       food: trade.food,
       materials: trade.materials,
+      materialsIn: trade.materialsIn,
       funds: trade.funds,
     },
   };

@@ -206,7 +206,12 @@ export function traceRoad(request: TraceRequest): Trace | null {
       const rise = Math.abs(probe.levelAt(wx, wy) - level);
       if (rise > ROADS.maxRise) continue;
 
-      const step = ground + rise * ROADS.risePerVoxel;
+      // Un passo in diagonale copre piu' terreno di uno in asse, e deve costare
+      // in proporzione: senza, la diagonale e' la mossa piu' conveniente che
+      // esista e ogni cammino la satura finche' puo'. E' da li' che venivano le
+      // righe a quarantacinque gradi lunghe mezza isola.
+      const step = ground * (dx !== 0 && dy !== 0 ? ROADS.diagonalCost : 1)
+        + rise * ROADS.risePerVoxel;
       const candidate = best[current] + step;
       if (candidate >= best[next]) continue;
 

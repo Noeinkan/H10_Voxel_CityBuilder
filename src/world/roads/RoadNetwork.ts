@@ -4,6 +4,7 @@ import type { TerrainMap } from '../terrain/TerrainMap';
 import { ROADS, ROAD_RANK, type RoadRank } from './config';
 import { EMPTY_PLAN, planRoads, type RoadPlan, type RoadPole } from './network';
 import { strokeRoads, strokeViaduct, type RoadSurface, type ViaductSurface } from './stroke';
+import { terrainPenalty } from './terrainCost';
 import { planViaducts } from './viaduct';
 import { boundsAround, traceRoad, type RoadProbe, type TraceBounds } from './trace';
 
@@ -56,6 +57,14 @@ export class RoadNetwork {
      * `buildings/`, che invece importa lui.
      */
     private readonly occupied: (x: number, y: number) => boolean,
+    /**
+     * Il seme del mondo, che qui serve solo al campo di divagazione.
+     *
+     * E' cio' che rende il tracciato ricostruibile: due partite sullo stesso
+     * seme piegano le strade nello stesso modo, e il salvataggio continua a non
+     * dover serializzare niente.
+     */
+    private readonly seed: number = 0,
   ) {}
 
   /** Le colonne di carreggiata a terra, larghezza gia' applicata. */
@@ -266,11 +275,14 @@ export class RoadNetwork {
       },
       costAt: (x, y) => {
         if (!this.terrain.has(x, y)) return Number.POSITIVE_INFINITY;
+        // L'acqua non prende il termine continuo: sotto c'e' una campata, e una
+        // campata che serpeggia e' un difetto di posa, non una strada organica.
         if (this.terrain.biomeAt(x, y) === BIOME.ocean) return ROADS.waterCost;
-        if (this.kindOf(x, y) === GROUND.refused) return ROADS.steepCost;
-        if (this.occupied(x, y)) return ROADS.builtCost;
-        if (!this.terrain.isBuildable(x, y)) return ROADS.steepCost;
-        return ROADS.landCost;
+        const shape = terrainPenalty(this.seed, x, y, this.terrain.slopeAt(x, y));
+        if (this.kindOf(x, y) === GROUND.refused) return ROADS.steepCost + shape;
+        if (this.occupied(x, y)) return ROADS.builtCost + shape;
+        if (!this.terrain.isBuildable(x, y)) return ROADS.steepCost + shape;
+        return ROADS.landCost + shape;
       },
     };
   }

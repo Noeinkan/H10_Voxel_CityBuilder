@@ -46,7 +46,7 @@ describe('traceRoad — il cammino minimo sul terreno', () => {
     expect(contiguous(trace?.steps ?? [])).toBe(true);
   });
 
-  it('la diagonale costa come la retta: otto vicini, non quattro', () => {
+  it('la diagonale esiste: otto vicini, non quattro', () => {
     const trace = traceRoad({
       fromX: 0, fromY: 0,
       to: { x: 10, y: 10 },
@@ -56,7 +56,41 @@ describe('traceRoad — il cammino minimo sul terreno', () => {
 
     // Undici colonne e non ventuno: senza i passi diagonali il tracciato
     // disegnerebbe le L di una maglia quadrata, che e' cio' da cui si scappa.
+    // Esistere pero' non vuol dire essere gratis — vedi il test qui sotto.
     expect(trace?.steps).toHaveLength(11);
+  });
+
+  it('un passo in diagonale costa la sua lunghezza, non uno', () => {
+    // **La ragione per cui il tracciato non e' una riga a quarantacinque gradi.**
+    // Contando la diagonale quanto l'asse, spostarsi di 1,41 colonne costerebbe
+    // quanto spostarsene una: la diagonale diventerebbe la mossa piu' economica
+    // del grafo e ogni cammino la userebbe fino a esaurirla prima di
+    // raddrizzarsi. E' la spezzata a due tratti che si vedeva a schermo, e non
+    // la si toglie con nessun rumore — e' la metrica a dire che non c'e' niente
+    // di meglio allo stesso prezzo.
+    //
+    // Due cammini di dieci passi sullo stesso terreno: uno in asse, uno tutto in
+    // diagonale. Il secondo copre 14,1 colonne invece di 10, e il conto lo dice.
+    const straight = traceRoad({
+      fromX: 0, fromY: 0,
+      to: { x: 10, y: 0 },
+      bounds: boundsAround(0, 0, 10, 0, 2),
+      probe: FLAT,
+    });
+    const diagonal = traceRoad({
+      fromX: 0, fromY: 0,
+      to: { x: 10, y: 10 },
+      bounds: boundsAround(0, 0, 10, 10, 2),
+      probe: FLAT,
+    });
+
+    expect(straight?.cost).toBeCloseTo(10 * ROADS.landCost, 10);
+    expect(diagonal?.cost).toBeCloseTo(10 * ROADS.landCost * ROADS.diagonalCost, 10);
+    // Cioe': il costo e' proporzionale alla **lunghezza** del cammino, non al
+    // numero di passi. E' questo che rende il minimo una geodetica del campo di
+    // costo — una curva — invece della spezzata piu' dritta fra le tante che
+    // costavano identico.
+    expect(diagonal!.cost / straight!.cost).toBeCloseTo(Math.SQRT2, 10);
   });
 
   it('gira attorno a un ostacolo caro invece di attraversarlo', () => {

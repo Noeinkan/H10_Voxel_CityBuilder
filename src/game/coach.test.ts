@@ -143,7 +143,7 @@ describe('coach — il cibo', () => {
     });
     state = {
       ...state,
-      trade: { connected: true, links: ['port'], food: 4, materials: 0, funds: 0 },
+      trade: { connected: true, links: ['port'], food: 4, materials: 0, materialsIn: 0, funds: 0 },
     };
 
     expect(coachSuggestions(context(state)).some((tip) => tip.id === 'coach-food')).toBe(false);
@@ -157,7 +157,7 @@ describe('coach — il cibo', () => {
     const withTower = city({ ...hungry, farmCounts });
     const withTrade = city({
       ...hungry,
-      trade: { connected: true, links: ['port'], food: 4, materials: 0, funds: 0 },
+      trade: { connected: true, links: ['port'], food: 4, materials: 0, materialsIn: 0, funds: 0 },
     });
 
     expect(coachSuggestion(context(withTower))?.tier).not.toBe('food');
@@ -305,7 +305,7 @@ describe('coach — lo skyline', () => {
   function skylineCity(funds = 0): SimState {
     const base = city({
       funds: { stock: funds, delta: 0 },
-      trade: { connected: true, links: ['port'], food: 4, materials: 0, funds: 0 },
+      trade: { connected: true, links: ['port'], food: 4, materials: 0, materialsIn: 0, funds: 0 },
     });
     return addCatalyst(base, {
       x: 300, y: 0, class: catalystById('university').class, kind: 'university',

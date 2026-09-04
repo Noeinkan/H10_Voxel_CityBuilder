@@ -107,13 +107,36 @@ function buildRun(
   const tail = to;
   if (head < 0 || tail >= path.length) return null;
 
-  let level = Math.max(path[head].level, path[tail].level);
   let rank = path[head].rank;
   for (let i = from; i < to; i++) {
+    if (path[i].rank > rank) rank = path[i].rank;
+  }
+
+  // **Il franco si misura sotto tutto l'impalcato, non sotto la sua linea
+  // d'asse.** La campata verra' allargata a `rankWidth[rank]` da `stroke.ts`, e
+  // le colonne di bordo scavalcano roba che l'asse non tocca: misurando solo in
+  // mezzo, un ponte che passa di fianco a uno scoglio finiva con quattro voxel
+  // di franco invece di sei — visto su un canale vero, non dedotto.
+  //
+  // **Ma solo cio' che non regge**, ed e' la condizione che tiene in piedi il
+  // conto: la terra a fianco della corsa e' la riva su cui il ponte sta
+  // atterrando, e pretendere il franco anche sopra di lei alzerebbe l'impalcato
+  // per scavalcare la propria spalla. A quello ci pensa gia' la quota delle due
+  // spalle, che e' il primo termine del massimo.
+  const width = ROADS.rankWidth[rank];
+  const back = (width - 1) >> 1;
+  let level = Math.max(path[head].level, path[tail].level);
+  for (let i = from; i < to; i++) {
     const node = path[i];
-    const needed = probe.clearanceAt(node.x, node.y) + ROADS.viaductClearance;
-    if (needed > level) level = needed;
-    if (node.rank > rank) rank = node.rank;
+    for (let dy = 0; dy < width; dy++) {
+      for (let dx = 0; dx < width; dx++) {
+        const bx = node.x - back + dx;
+        const by = node.y - back + dy;
+        if (probe.carries(bx, by)) continue;
+        const needed = probe.clearanceAt(bx, by) + ROADS.viaductClearance;
+        if (needed > level) level = needed;
+      }
+    }
   }
 
   const columns: ViaductColumn[] = [];

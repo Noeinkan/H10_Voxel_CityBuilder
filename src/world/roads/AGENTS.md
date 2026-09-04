@@ -24,7 +24,19 @@ sapere prima di toccare qualcosa qui.
 - **Nessun costo scende sotto `flatCost`.** L'euristica di `traceRoad` lo usa
   come costo minimo di un passo: sotto, A\* smette di essere ammissibile e il
   cammino trovato non e' piu' il minimo. E' lo stesso vincolo di
-  `BALANCE.reach.pavement` in `src/sim/`.
+  `BALANCE.reach.pavement` in `src/sim/`. Il termine continuo di
+  `terrainCost.ts` si **somma** apposta: se sottraesse, romperebbe l'invariante
+  in silenzio.
+- **La forma organica non viene dal rilievo da sola.** Su un terreno a gradini —
+  e i costi di `config.ts` sono a gradini — fra due punti ci sono migliaia di
+  cammini che costano identico, e la ricerca ne restituisce uno qualunque:
+  quello che esce e' sempre la diagonale canonica. Due cose lo impediscono, e
+  vanno tenute entrambe: `diagonalCost`, che fa costare un passo quanto e' lungo
+  (senza, la diagonale e' la mossa piu' economica del grafo e ogni cammino la
+  satura), e il campo continuo di `terrainCost.ts`, che da' una risposta
+  migliore delle altre dove il terreno non ne ha. Alzare l'ampiezza della
+  divagazione senza alzarne la **lunghezza d'onda** non serve a niente:
+  spostarsi di lato dentro la stessa cella non guadagna nulla, ed e' misurato.
 - **La rete si ricostruisce, non si salva.** Poli e terreno stanno gia' nel
   salvataggio — i primi come catalizzatori, il secondo come seme — quindi il
   tracciato si rifa' identico al caricamento. Non aggiungerlo alla cattura.

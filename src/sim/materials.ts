@@ -8,6 +8,15 @@ export interface MaterialsReport {
   readonly upkeep: number;
   readonly retail: number;
   readonly exported: number;
+  /**
+   * Materiali comprati fuori, positivi.
+   *
+   * Voce a se' e non un `produced` gonfiato: l'industria e il molo rispondono a
+   * due domande diverse — «la citta' sa farsi le sue travi?» e «se le sta
+   * comprando?» — e sommarli avrebbe fatto sembrare sana la citta' che sta solo
+   * spendendo. E' anche la sola voce in entrata che il giocatore accende a mano.
+   */
+  readonly imported: number;
   /** Materiali spesi dai cantieri fra questo tick e il successivo. */
   readonly construction: number;
   /** Scorta che negozi ed export lasciano ai cantieri. */
@@ -21,6 +30,7 @@ export const EMPTY_MATERIALS: MaterialsReport = {
   upkeep: 0,
   retail: 0,
   exported: 0,
+  imported: 0,
   construction: 0,
   reserve: 0,
   waitingCost: 0,

@@ -653,6 +653,52 @@ export const BALANCE = {
     importFoodPrice: 0.45,
     exportMaterialsPerTick: 5,
     exportMaterialPrice: 1.1,
+
+    /**
+     * Quanti materiali il canale sa portare **dentro** in un tick.
+     *
+     * Speculare a `exportMaterialsPerTick`, e assoluta come quella per la stessa
+     * ragione per cui la portata del cibo non lo e': li' il vincolo che scala e'
+     * la domanda alimentare, qui e' il **bersaglio** — `importMaterialTarget`
+     * conta gli edifici — mentre questo resta la sezione del tubo. Un canale che
+     * scalasse anche lui renderebbe il rifornimento indipendente dalla taglia
+     * della citta', che e' esattamente cio' che non deve essere.
+     *
+     * Vale quanto l'export e non di piu': il collegamento e' lo stesso molo, e un
+     * rubinetto in entrata piu' largo di quello in uscita farebbe della modalita'
+     * una scorciatoia invece di un verso.
+     */
+    importMaterialsPerTick: 5,
+
+    /**
+     * Prezzo di un materiale comprato fuori.
+     *
+     * **Sta sopra il miglior prezzo d'esportazione, e deve starci.** L'export
+     * spunta `exportMaterialPrice` moltiplicato per il profilo del collegamento,
+     * e il migliore e' l'aeroporto a 1,2: il massimo ottenibile e' quindi 1,32.
+     * A un prezzo d'acquisto piu' basso, alternare le due modalita' a mano
+     * fabbricherebbe fondi dal nulla — non lo impedisce l'esclusivita' fra le
+     * modalita', che vale dentro un tick e non fra due.
+     *
+     * Il margine oltre 1,32 e' la ragione per cui comprare non sostituisce
+     * produrre: chi importa materiali per sempre paga il 45% in piu' di quanto li
+     * rivenderebbe, e quella perdita e' il costo di non avere abbastanza
+     * industria.
+     */
+    importMaterialPrice: 1.6,
+
+    /**
+     * Scorta per edificio a cui punta il canale in entrata.
+     *
+     * Tre volte `materials.reservePerBuilding`, e non la riserva stessa: quella
+     * e' il cuscinetto che negozi ed export non possono toccare, cioe' il minimo
+     * sotto cui la citta' non deve scendere. Il bersaglio dell'import e' l'altra
+     * cosa — quanto serve avere in cassa perche' un **cantiere** parta — e un
+     * cantiere di arcologia da solo ne chiede 200. Puntare alla sola riserva
+     * avrebbe riempito il cuscinetto e lasciato il cantiere fermo, cioe' non
+     * avrebbe risolto niente di cio' per cui questa modalita' esiste.
+     */
+    importMaterialTarget: 6,
     /**
      * Cosa porta ciascun collegamento con l'esterno.
      *
@@ -671,10 +717,35 @@ export const BALANCE = {
       airport: { food: 1.6, materials: 0.25, price: 1.2 },
     },
     focusedMultiplier: 1.75,
+
+    /**
+     * Cosa fa ciascuna modalita' dei due canali, per verso.
+     *
+     * `materials` moltiplica **l'uscita** e `materialsIn` **l'entrata**: sono due
+     * campi e non uno firmato perche' il segno non basterebbe a dire che una
+     * modalita' spegne un verso invece di invertirlo, e perche' `materials` ha
+     * gia' dei lettori — l'HUD legge `MaterialsReport.exported` — che non devono
+     * imparare a interpretare un numero negativo.
+     *
+     * **Nessuna modalita' accende i due versi insieme**, e non e' un caso: il
+     * prezzo d'acquisto sta sopra quello di vendita, quindi comprare e rivendere
+     * nello stesso tick sarebbe soltanto un modo lento di bruciare fondi. Chi
+     * legge `resolveExternalTrade` puo' contarci.
+     */
     modeMultiplier: {
-      balanced: { food: 1, materials: 1 },
-      foodImports: { food: 1.75, materials: 0.5 },
-      materialExports: { food: 0.5, materials: 1.75 },
+      balanced: { food: 1, materials: 1, materialsIn: 0 },
+      foodImports: { food: 1.75, materials: 0.5, materialsIn: 0 },
+      materialExports: { food: 0.5, materials: 1.75, materialsIn: 0 },
+      /**
+       * Il verso che mancava: il molo scarica materiali invece di caricarli.
+       *
+       * **Il cibo scende a meta' come nelle altre modalita' focalizzate**, ed e'
+       * la stessa rinuncia: un canale solo, e sceglierne l'uso e' la decisione.
+       * Ma qui la rinuncia morde due volte, perche' i fondi che pagano i
+       * materiali sono gli stessi che pagherebbero il cibo — `resolveExternalTrade`
+       * serve prima la dispensa, apposta.
+       */
+      materialImports: { food: 0.5, materials: 0, materialsIn: 1.75 },
     },
   },
 

@@ -16,6 +16,91 @@ Qui stanno **i tredici incrementi più recenti**; i precedenti sono archiviati i
 
 ---
 
+## In corso — Il quartiere denso: vetrine e terrazze
+
+- **Il piano terra del commercio e' una vetrina, non un muro con una porta.** `onPortal` apriva **un** modulo d'ingresso al centro del lato principale — la risposta giusta per un portone, sbagliata per un isolato commerciale, che la strada ce l'ha vetrata da un cantonale all'altro. `PaintRequest.shopfront` apre il fronte attivo su tutta la parete su strada della fascia zero, sopra lo zoccolo; il portone resta dov'era e scende fino al marciapiede, che e' l'unica cosa che lo distingue dalla vetrina quando sono lo stesso linguaggio di superficie. La riga la accende il commercio, **anche quando sta sotto qualcos'altro**: un podio commerciale con le case sopra e' la riga piu' comune del catalogo ed e' proprio il caso in cui la strada e' vetrata e i piani alti no.
+- **Non e' solo pittura.** `frontage` nel mesher cerca un portale **sotto** una faccia per decidere se quella faccia guarda la via: con la vetrina continua tende, lembi e telai d'ingresso smettono di essere un accento sopra la porta e diventano la pensilina di tutto il fronte, mentre calate e scale esterne si spostano sul retro da sole.
+- **Il commercio non produceva una terrazza, ed era una voce mancante nel repertorio.** Arretrava solo con `shrink`, che toglie un passo **per lato**: la pianta si stringe quanto con un `setback`, ma l'anello scoperto che resta e' largo un passo e `terraceMinRing` lo scarta apposta — a distanza di gioco e' un gradino, non un luogo. Misurato su ventiquattro torri di livello dodici: **zero** celle di terrazza contro le 222 del residenziale. Con `setback` in testa a `shrinkOps` e `shrinkBias` da 0,24 a 0,40 sono **442**.
+- **Alzare `shrinkBias` sul residenziale non produce piu' terrazze**, ed e' stato misurato prima di non farlo: a 0,46 il conto passa da 222 a 224. Il collo di bottiglia non e' la frequenza del ramo che rimpicciolisce ma `minBandSide`, che il corpo residenziale tocca entro le prime fasce. Il numero resta 0,38 e la nota sta accanto a lui, cosi' il prossimo che ci prova legge la misura invece di rifarla.
+- **I tetti abitati sono la regola su residenziale e commercio.** `roofGarden` lo dichiaravano otto righe di catalogo su cinquantatre: da un quartiere denso visto dall'alto usciva una scacchiera di lastre nude con qualche macchia verde. Ora lo dichiarano quasi tutte le righe dei due usi abitati; restano scoperte l'industria, il civico, e le due che un tetto abitabile non ce l'hanno — il magazzino doganale e la gradinata.
+- **La piscina sta con il giardino e non con gli impianti.** `microGarden.ts` prende anche le vasche sulle terrazze pavimentate: un serbatoio e un condizionatore dicono che lassu' c'e' una macchina, una vasca dice che lassu' si sta. Lo specchio esce con `WATER_CLASS.canal`, o il fragment gli darebbe la risposta di default — onda lunga e riflesso del sole, cioe' mare aperto — su dieci sedicesimi di lato.
+
+## In corso — Residenza contemporanea
+
+- **La schiera moderna, dove il denaro non porta la folla.** `modernRow` è la
+  prima riga residenziale con un **tetto** di densità invece di un minimo:
+  ricchezza sopra 0.4, densità sotto 0.45, dal livello in cui la campata
+  compare. Descrive un luogo che il catalogo non nominava — la periferia
+  benestante — e che fino a ieri cadeva sul ripiego, cioè usciva con la stessa
+  casa a schiera smussata della campagna. Volume netto senza smusso, coronamento
+  piatto, piano terra pieno sotto i piani che sporgono, campata stretta a passo
+  due: il repertorio sposta il corpo invece di rastremarlo, e la fila esce
+  sfalsata invece che a piramide. Le quattro verticali e la stecca la
+  dichiarano fra le proprie provenienze, così un quartiere che si infittisce
+  continua a salire.
+- **Due tessuti nuovi per la materia che mancava: il pannello scuro.**
+  `panelRender` (intonaco chiaro) e `sandBrick` (mattone sabbia) portano
+  entrambi la cornice sul tono più scuro della palette. Gli otto stili
+  esistenti accostavano sempre due toni della stessa famiglia sul voxel di
+  sommità della fascia, e a distanza di gioco quel marcapiano non si vedeva:
+  con lo stacco, la stessa fascia legge come serramento continuo invece che
+  come cornicione. È la correzione già fatta una volta su `terraceArcade`,
+  portata a scala di quartiere — e serve, perché lo stile si applica **dopo**
+  la tipologia e sarebbe altrimenti il quartiere a cancellare la coppia
+  chiaro-scuro di `modernRow` in sette casi su otto.
+
+## In corso — Il verso che mancava ai materiali
+
+- **`materialImports`, la quarta modalità commerciale.** Il molo scaricava cibo e
+  caricava materiali, e basta: la risorsa che ferma i cantieri era anche l'unica
+  senza un canale in entrata. Il conto delle leve non tornava — sette sul cibo
+  (serra, porto, aeroporto, priorità commerciale, due carte, un mandato), due e
+  mezzo sui materiali, di cui una che compare quando decide la simulazione — e
+  `materialFlows.waitingCost` era l'unico posto in cui l'HUD dichiarava un
+  problema senza offrire un gesto. Adesso il gesto c'è, e si gira dallo stesso
+  pannello delle altre tre.
+- **Comprare costa più di rivendere, di proposito.** `importMaterialPrice` (1,6)
+  sta sopra il miglior ricavo d'esportazione (1,32, l'aeroporto): il margine
+  rende l'acquisto una perdita consapevole e chiude l'arbitraggio che nascerebbe
+  alternando le modalità a mano — i due versi si escludono dentro un tick, non
+  fra due, ed è un contratto verificato su tutte le modalità.
+- **La dispensa ha la precedenza sui fondi del cantiere.** I due canali attingono
+  alla stessa cassa e `resolveExternalTrade` serve prima il cibo: una città che
+  compra travi mentre smette di mangiare perde gli abitanti che il cantiere
+  serviva. A fondi scarsi le travi prendono solo il residuo, e se non ne resta
+  il canale non parte affatto.
+- **Il bersaglio è `importMaterialTarget` per edificio, non la riserva.** Sei
+  contro due: la riserva è il cuscinetto sotto cui non scendere, mentre un
+  cantiere di arcologia da solo ne chiede 200. Puntare al cuscinetto avrebbe
+  lasciato fermo esattamente il cantiere per cui la modalità esiste.
+- **`TradeReport.materialsIn` e `MaterialsReport.imported` sono campi propri**, non
+  il segno di `materials` né un `produced` gonfiato. Il primo perché `exported`
+  ha già dei lettori che non devono imparare un verso; il secondo perché
+  «la città sa farsi le sue travi?» e «se le sta comprando?» sono due domande
+  diverse, e sommarle farebbe sembrare sana la città che sta solo spendendo.
+  L'HUD mostra `Imports` fra le entrate dei materiali, e il cassetto Città
+  scambia l'etichetta della riga invece di tenerne due, una delle quali sempre
+  a zero.
+- **I salvataggi anteriori tornano coerenti**: `reviveSimState` riempie
+  `materialFlows` per spread su `EMPTY_MATERIALS`, come già faceva per `trade`,
+  invece di lasciare `undefined` dentro un campo dichiarato obbligatorio.
+
+## In corso — Strade organiche: la verifica sull'isola vera
+
+- **Il tracciato si e' guardato su un'isola generata, non su una fixture piatta.** Una sonda `vite-node` fa crescere una citta' su terreno vero e stampa la rete in ASCII: e' li' che si sono visti i tre difetti che nessun test poteva mostrare, perche' erano tutti proprieta' della *forma*.
+- **La diagonale ora costa la sua lunghezza.** Contata quanto un passo in asse — come fa ogni ricerca a otto vicini scritta senza pensarci — la diagonale era la mossa piu' economica del grafo, e ogni cammino la saturava prima di raddrizzarsi: a schermo, righe a quarantacinque gradi lunghe mezza isola. Con `diagonalCost` il costo torna proporzionale alla lunghezza e il minimo diventa una geodetica del campo di costo.
+- **Un termine continuo sotto il costo del terreno.** Pendenza piu' un campo di divagazione liscio, in `terrainCost.ts`: i quattro costi a gradini lasciavano migliaia di cammini dello stesso prezzo, e senza una risposta migliore delle altre tanto valeva la piu' dritta. La divagazione resta sotto il salto fra due gradini, cosi' piega il tracciato senza riordinare il terreno.
+- **Il capillare e' tornato un passo carraio.** `laneReach` da 96 a 24: una casa isolata si tirava dietro settanta colonne di vicolo, e la somma dei vicoli superava l'intera rete dei poli — con la fascia di fronte strada dilatata su tutta l'isola, il che rendeva la preferenza per l'affaccio incapace di discriminare. Misurato: 1011 colonne di carreggiata contro 531, e il tessuto affacciato torna una misura vera.
+- **I viadotti esistono davvero.** Erano zero in ogni misura, comprese quelle su un'isola generata: a `waterCost` 20 nessun braccio di mare valeva un ponte, e l'intero ramo era codice non percorso. Ora una strozzatura si scavalca e una baia larga si costeggia, e `RoadNetwork.test.ts` verifica le due cose su un canale con le rive in pendenza.
+- **Il franco di una campata si misura sotto tutto l'impalcato.** Misurandolo sulla sola linea d'asse, le colonne di bordo — che l'allargamento aggiunge — passavano a quattro voxel da uno scoglio invece di sei. Ora il riquadro e' quello vero, ma conta solo cio' che non regge: la terra di fianco e' la riva su cui il ponte atterra, e pretendere il franco anche sopra di lei alzerebbe l'impalcato per scavalcare la propria spalla.
+
+## In corso — Il verde di copertura diventa un luogo
+
+- **I giardini pensili smettono di essere macchie piatte.** `paint.ts` tingeva di verde il cuore di una terrazza e lo lasciava `SURFACE_KIND.plain`; `collectSurfaceCells` scarta il `plain`, quindi nessun emettitore vedeva quelle celle e dall'alto un giardino era una campitura alla stessa quota del tetto. Il nuovo `microGarden.ts` ci posa il suo vocabolario: fioriera di bordo lungo il ciglio dell'aiuola, chiome con fusto, cespugli fra l'una e l'altra.
+- **Nessun linguaggio di superficie nuovo e nessuna scansione in piu'** (invarianti 4 e 5). Un giardino si riconosce da cio' che gia' lo descrive — uno slot d'erba, l'aria sopra, e **un costruito sotto**: e' l'ultima condizione a distinguerlo da ogni prateria dell'isola, che e' erba e `plain` esattamente come lui. Le celle le raccoglie `collectSurfaceCells` nel ramo in cui gia' scartava il `plain`, e `SurfaceCells` porta la lista accanto a quelle per superficie.
+- **L'albero si aggancia al pieno attorno, non al verde attorno.** Chiedere il verde su tutti e quattro i lati — la regola di `interiorRoof` sul tetto tecnico — dava **zero chiome su ogni tipologia del catalogo**: il giardino di un edificio vero e' quasi sempre l'anello di una rientranza, largo uno o due voxel, e un anello non ha un interno. La chioma vive dentro la propria cella, quindi le serve solo di non stare sul filo del vuoto. Misurato su ventiquattro edifici `gardenHousing`: 488 celle piantate, 59 chiome.
+- **Sta prima delle vasche nella sequenza dei prop**, con lo stesso argomento con cui il coronamento sta prima di loro: da una camera isometrica il tetto e' meta' di cio' che si vede, e un giardino piantato lo racconta piu' di un serbatoio.
+
 ## In corso — Strade organiche al posto del reticolo
 
 - **Il reticolo quadrato non si dipinge piu', e al suo posto c'e' un tracciato.**

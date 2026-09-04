@@ -24,6 +24,16 @@ export interface TradeReport {
   readonly food: number;
   /** Quantita' esportata: positiva. */
   readonly materials: number;
+  /**
+   * Quantita' di materiali **importata**: positiva, e zero in ogni modalita' che
+   * non sia `materialImports`.
+   *
+   * E' un campo suo e non il segno di `materials` perche' quello e' letto come
+   * «esportato» da `MaterialsReport.exported` e dall'HUD: cambiargli il dominio
+   * avrebbe chiesto a ogni lettore di imparare un verso, e il primo che non
+   * l'avesse imparato avrebbe mostrato un export dove c'era un acquisto.
+   */
+  readonly materialsIn: number;
   /** Saldo di fondi del solo commercio. */
   readonly funds: number;
 }
@@ -38,6 +48,11 @@ export const TRADE_MODES: readonly { readonly id: TradeMode; readonly label: str
   { id: 'balanced', label: 'Balanced trade', description: 'Imports food reserves and exports surplus materials.' },
   { id: 'foodImports', label: 'Prioritize food', description: 'Buys more food and keeps a larger material reserve.' },
   { id: 'materialExports', label: 'Prioritize exports', description: 'Sells more materials while accepting a smaller food reserve.' },
+  {
+    id: 'materialImports',
+    label: 'Buy materials',
+    description: 'Buys materials to restart stalled construction, at a price above what exports fetch.',
+  },
 ];
 
 export const EMPTY_TRADE: TradeReport = {
@@ -45,6 +60,7 @@ export const EMPTY_TRADE: TradeReport = {
   links: [],
   food: 0,
   materials: 0,
+  materialsIn: 0,
   funds: 0,
 };
 
@@ -151,16 +167,31 @@ export function resolveExternalTrade(inputs: {
     ? BALANCE.trade.exportMaterialPrice
     : BALANCE.trade.exportMaterialPrice * (priceWeighted / materialsCapacity);
   const exportIncome = materialsExported * exportPrice;
-  const fundsDelta = exportIncome - importCost;
+
+  // Il verso opposto, e i fondi che gli restano sono quelli che il cibo non ha
+  // gia' speso: la dispensa ha la precedenza sul cantiere perche' una citta' che
+  // compra travi mentre smette di mangiare perde gli abitanti che le
+  // costruirebbero. E' l'unico ordine che le due voci possono avere.
+  const materialGoal = inputs.buildings * BALANCE.trade.importMaterialTarget;
+  const materialsWanted = Math.max(0, materialGoal - inputs.materials);
+  const materialsByRate = BALANCE.trade.importMaterialsPerTick *
+    multipliers.materialsIn * materialsCapacity;
+  const fundsAfterFood = Math.max(0, inputs.funds - importCost);
+  const materialsByFunds = fundsAfterFood / BALANCE.trade.importMaterialPrice;
+  const materialsImported = Math.min(materialsWanted, materialsByRate, materialsByFunds);
+  const materialsCost = materialsImported * BALANCE.trade.importMaterialPrice;
+
+  const fundsDelta = exportIncome - importCost - materialsCost;
 
   return {
     connected: true,
     links: inputs.links,
     food: foodImported,
     materials: materialsExported,
+    materialsIn: materialsImported,
     funds: fundsDelta,
     foodStock: inputs.food + foodImported,
-    materialsStock: inputs.materials - materialsExported,
+    materialsStock: inputs.materials - materialsExported + materialsImported,
     fundsStock: inputs.funds + fundsDelta,
   };
 }
