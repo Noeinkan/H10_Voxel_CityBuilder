@@ -1,8 +1,14 @@
 # Piano — Giocabilità: manutenzione, declino e ritmo
 
-Proposta di **fase 8** per [ROADMAP.md](ROADMAP.md), scritta a parte perché non è
-ancora concordata. È ortogonale alla spina dorsale verticale: 4.9 e 4.14 restano
-aperte e nessuna delle due voci qui sotto le tocca o le rimanda.
+Proposta di **fase 8** per [ROADMAP.md](ROADMAP.md), scritta a parte quando non
+era ancora concordata. È ortogonale alla spina dorsale verticale: 4.9 e 4.14
+restano aperte e nessuna delle voci qui sotto le tocca o le rimanda.
+
+> **La fase è stata accettata e vive in [ROADMAP.md](ROADMAP.md#L1296).** 8.1,
+> 8.2 e 8.4 sono chiuse; resta aperta la 8.3. Questo file è il piano **come è
+> stato scritto**, non come è stato costruito: dove le due versioni divergono —
+> e divergono, perché scrivere il codice ha corretto il piano in più punti — la
+> roadmap è quella giusta. Le caselle qui sotto dicono solo cosa è stato fatto.
 
 ## La diagnosi
 
@@ -66,17 +72,23 @@ deve lasciare la città giocabile anche se le successive non arrivano mai.
 Obiettivo: un edificio che sta in un posto diventato invivibile se ne va, e si
 vede quale.
 
-- [ ] Aggiungere `nextDecaySites`, **speculare a `nextBuildSites`**: prende lo <!-- size: L -->
+*Chiusa.* In costruzione `nextDecaySites` è risultato speculare a `UpgradeDriver`
+e non a `nextBuildSites` — cammina `state.buildings` a cursore invece di scandire
+il campo — e il fronte è diventato `decayPressure`, un numero in `SimState` con
+due soglie e una banda morta. La versione costruita sta in
+[ROADMAP.md](ROADMAP.md#L1332).
+
+- [x] Aggiungere `nextDecaySites`, **speculare a `nextBuildSites`**: prende lo <!-- size: L -->
   stato e restituisce gli edifici che il posto non regge più, ordinati dal
   peggiore. Vive in `src/sim/`, non rimuove niente, e non ha bisogno di sapere
   dove sia la costa.
-- [ ] Far consumare la lista al driver in `src/game/`, che chiama <!-- size: M -->
+- [x] Far consumare la lista al driver in `src/game/`, che chiama <!-- size: M -->
   `removeBuildings` e `clearVolume` **a passi dentro il budget di frame**, come
   già fa la crescita: uno sventramento non deve poter sporcare mezza isola in un
   tick.
-- [ ] Dare all'abbandono un **fronte**, come l'emergenza alimentare: una colonna <!-- size: M -->
+- [x] Dare all'abbandono un **fronte**, come l'emergenza alimentare: una colonna <!-- size: M -->
   liberata non deve poter essere ricostruita e riabbandonata a ogni tick.
-- [ ] Portare la perdita nell'HUD e nelle cause (7.6): «tre isolati abbandonati» <!-- size: S -->
+- [x] Portare la perdita nell'HUD e nelle cause (7.6): «tre isolati abbandonati» <!-- size: S -->
   con il perché accanto, non un contatore che scende.
 
 **La scelta di progetto che tiene in piedi il resto: il degrado è una proprietà
@@ -111,19 +123,28 @@ identico a quello di una città che quell'edificio non l'aveva mai costruito.
 Obiettivo: che almeno un catalizzatore smetta di essere un bonus e diventi una
 manutenzione.
 
+*Chiusa.* **La domanda aperta qui sotto è stata decisa, e la risposta non è
+quella consigliata:** la copertura ha due metà, una quota cittadina uguale
+ovunque che fa da pavimento e una quota locale letta dal piano civico. Il motivo
+sta nel fatto tecnico che il paragrafo in fondo già annunciava — sotto un
+catalizzatore residenziale forte gli edifici civici non nascono affatto — più uno
+trovato costruendo: a pavimento zero un quartiere lontano da ogni servizio cade a
+zero e il declino diventa una spirale. Il conto per esteso sta in
+[ROADMAP.md](ROADMAP.md#L1383).
+
 Oggi gli otto ruoli sono tutti facoltativi: aggiungono desiderabilità, e non
 averli significa crescere più piano. Nessuno è necessario, quindi la toolbar è
 un menu di acceleratori.
 
-- [ ] Dare al residenziale una **domanda di copertura** che cresce con la <!-- size: L -->
+- [x] Dare al residenziale una **domanda di copertura** che cresce con la <!-- size: L -->
   popolazione, e leggere la copertura dal **piano civico del campo che esiste
   già**: coperto vuol dire desiderabilità civica sopra soglia su quella colonna.
   Zero memoria in più, nessun piano nuovo per chunk.
-- [ ] Far entrare lo scoperto in `nextDecaySites` come primo motivo di declino, e <!-- size: M -->
+- [x] Far entrare lo scoperto in `nextDecaySites` come primo motivo di declino, e <!-- size: M -->
   nella soddisfazione come penalità locale prima di arrivare all'abbandono.
-- [ ] Mostrare la copertura come vista di ispezione, riusando le cinque che <!-- size: M -->
+- [x] Mostrare la copertura come vista di ispezione, riusando le cinque che <!-- size: M -->
   4.11 e 4.13 hanno già messo in mano al giocatore.
-- [ ] Tarare il listino in `balance.ts` e **rimisurare a mano** le tabelle di <!-- size: M -->
+- [x] Tarare il listino in `balance.ts` e **rimisurare a mano** le tabelle di <!-- size: M -->
   `README.md` e `src/sim/README.md`: si tocca `balance.ts`, quindi non si
   aggiornano a occhio.
 
@@ -183,17 +204,25 @@ la misura A/B in mano, non a occhio.
 
 Obiettivo: che una scorta abbia senso.
 
+*Chiusa.* Il moltiplicatore è un **seno** e non quattro gradini — media annua
+esattamente uno, così chi pianta continua a dimensionare la campagna su un numero
+onesto — e l'ampiezza è tarata contro `food.targetCoverage` invece che a occhio.
+Il fronte dell'emergenza ha avuto bisogno di due correzioni e non di una: misura
+la campagna all'anno medio, **e** pretende un deficit strutturale prima di
+dichiarare una carestia. Il conto sta in [ROADMAP.md](ROADMAP.md#L1467) e il
+ragionamento in [src/sim/README.md](src/sim/README.md).
+
 Dalla 3.1 il cibo ha un posto sulla mappa e un listino in case sfamate. Manca il
 motivo per averne più del necessario: `food.targetCoverage` punta a un margine
 fisso, e una città in pareggio resta in pareggio per sempre. Una resa stagionale
 dà alla partita un tempo — si accumula quando si può, si sopravvive quando non si
 può — ed è la cosa che manca a una città che sale sempre.
 
-- [ ] Moltiplicatore stagionale sulla resa dei tre produttori, dentro `tick`. <!-- size: M -->
-- [ ] Verificare che il fronte dell'emergenza alimentare non oscilli con la <!-- size: M -->
+- [x] Moltiplicatore stagionale sulla resa dei tre produttori, dentro `tick`. <!-- size: M -->
+- [x] Verificare che il fronte dell'emergenza alimentare non oscilli con la <!-- size: M -->
   stagione: l'inverno non deve poter dichiarare una carestia che la primavera
   risolve da sola, o l'allarme torna a essere rumore.
-- [ ] Stagione visibile nel mondo, riusando i sette temi di `src/engine/themes/`. <!-- size: L -->
+- [x] Stagione visibile nel mondo, riusando i sette temi di `src/engine/themes/`. <!-- size: L -->
 
 **Il vincolo che non si negozia:** la stagione entra in `tick` e **non** in
 `urbanProfileAt`. La prima legge già `tickCount`; la seconda è spaziale, e farle
@@ -223,7 +252,11 @@ per evitarla è una punizione, la leva senza la perdita è il gioco di adesso. 8
 e 8.4 sono indipendenti fra loro e possono seguire in qualsiasi ordine; se c'è da
 sceglierne una, 8.4 costa meno e si vede di più.
 
-**Da fare prima di aprire un file:** decidere la domanda aperta della 8.2 (da
-dove viene la copertura), e fondere questa fase in `ROADMAP.md` — che è un file
-che tutti aggiornano nello stesso istante, quindi vale la regola del frammento in
-`docs/pending/` più `npm run docs:merge`.
+*L'ordine è stato seguito: 8.1 e 8.2 insieme, poi 8.4. Resta la 8.3, che è la più
+cara delle due perché tocca il percorso caldo del campo e chiede la misura A/B su
+worktree.*
+
+**Da fare prima di aprire un file — fatto.** La domanda aperta della 8.2 è stata
+decisa (copertura in due metà, non solo dai catalizzatori) e la fase è in
+`ROADMAP.md`, fusa con il frammento in `docs/pending/` più `npm run docs:merge`
+come vuole la regola per i file che tutti aggiornano nello stesso istante.
