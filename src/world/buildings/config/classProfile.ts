@@ -99,6 +99,13 @@ export const CLASS_PROFILE: readonly ClassProfile[] = [
   // residenziale — moduli terrazzati e scafi chiari, massa di fondo della citta'.
   {
     bandHeight: [4, 6],
+    // **Alzarlo non produce piu' terrazze, ed e' stato misurato.** A 0,46 le
+    // celle di terrazza su ventiquattro torri di livello dodici passano da 222 a
+    // 224: il collo di bottiglia non e' la frequenza del ramo che rimpicciolisce
+    // ma `minBandSide`, che il corpo residenziale tocca entro le prime fasce —
+    // da li' in su nessuna rientranza regge e il ripiego passa al ramo che
+    // sposta. Chi vuole piu' gradoni qui alzi l'impronta o il minimo di fascia,
+    // non questo numero.
     shrinkBias: 0.38,
     // Arretra profondo quando lo spazio c'e': e' l'uso che deve produrre le
     // terrazze abitabili, ed e' anche quello che ne ha piu' bisogno per non
@@ -122,8 +129,17 @@ export const CLASS_PROFILE: readonly ClassProfile[] = [
   // commerciale — fronti caldi e bassi, insegne d'ottone, tetti larghi.
   {
     bandHeight: [4, 6],
-    shrinkBias: 0.24,
-    shrinkOps: [BAND_OP.shrink, BAND_OP.shrinkOneSide, BAND_OP.jog],
+    shrinkBias: 0.40,
+    // **`setback` entra in testa, e prima non c'era affatto: e' la riga che da'
+    // al commercio le sue terrazze.** Arretrava solo con `shrink`, che toglie un
+    // passo **per lato**: la pianta si stringe quanto con un `setback`, ma
+    // l'anello scoperto che resta e' largo un passo, e `terraceMinRing` lo
+    // scarta apposta — a distanza di gioco e' un gradino, non un luogo dove si
+    // sta. Ne seguiva che un isolato commerciale non produceva **una** terrazza
+    // per quanto salisse: misurato su ventiquattro torri di livello dodici, zero
+    // celle di terrazza contro le 222 del residenziale. Con `setback` in testa e
+    // il ramo pescato piu' spesso sono 442.
+    shrinkOps: [BAND_OP.setback, BAND_OP.shrink, BAND_OP.shrinkOneSide, BAND_OP.jog],
     growOps: [BAND_OP.jog, BAND_OP.grow, BAND_OP.keep],
     footprintBias: 2,
     // Grana fitta: un fronte in mattoni alterna pieno e vuoto a ogni colonna, ed

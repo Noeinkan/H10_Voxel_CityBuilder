@@ -239,6 +239,70 @@ describe('generateBuilding', () => {
     })).toBeNull();
   });
 
+  it('una torre alta arretra a gradoni, in tutti e due gli usi abitati', () => {
+    // **La terrazza si conta dove `paint` l'ha scritta, non sulla sagoma.** Il
+    // salto di pianta non basta a distinguerle: `shrink` toglie un passo **per
+    // lato**, quindi restringe la larghezza esattamente quanto un `setback` da
+    // due passi su un lato solo, e i due lasciano anelli larghi uno e due. E'
+    // l'anello che `terraceMinRing` misura, ed e' la differenza fra un gradino e
+    // un luogo. La coppia che identifica una terrazza e' `roofTech` piu' lo slot
+    // `terrace` del profilo: il coronamento e' `roofTech` anche lui, ma porta il
+    // proprio colore.
+    const terraces = (cls: BuildingClass): number => {
+      const slot = CLASS_PROFILE[cls].terrace;
+      let total = 0;
+      for (let seed = 0; seed < 24; seed++) {
+        const stamp = generateBuilding({ class: cls, level: 12, seed: seed * 7919 + 13 });
+        for (let i = 0; i < stamp.voxels.length; i++) {
+          if (stamp.surfaces[i] === SURFACE_KIND.roofTech && stamp.voxels[i] === slot) total++;
+        }
+      }
+      return total;
+    };
+
+    // Ventiquattro torri di livello dodici per uso. La soglia e' bassa apposta:
+    // dice «questo uso le terrazze le fa», non quante — il numero esatto e' una
+    // taratura di `shrinkBias`, e fissarlo qui vorrebbe dire riscrivere il test
+    // a ogni ritocco del profilo.
+    const home = terraces(0);
+    const shop = terraces(1);
+    console.info(`[misura] celle di terrazza su 24 torri di livello 12: ${home} residenziali, ${shop} commerciali`);
+    expect(home, 'terrazze residenziali').toBeGreaterThan(100);
+    expect(shop, 'terrazze commerciali').toBeGreaterThan(100);
+  });
+
+  it('il commercio su strada apre la vetrina, la casa apre una porta sola', () => {
+    // **La differenza si misura in lunghezza, non in presenza.** Tutti e due i
+    // fronti hanno del `portal` a piano terra: uno ne ha un modulo — il portone
+    // centrato che `onPortal` ha sempre aperto — l'altro ce l'ha da un cantonale
+    // all'altro. Contare le celle e' l'unico modo di distinguerli, e il conto
+    // deve **crescere con il fronte**: una vetrina che restasse di un modulo su
+    // un isolato da dodici sarebbe la porta di prima con un nome nuovo.
+    const of = (cls: BuildingClass, footprint: number): number => {
+      const stamp = generateBuilding({
+        class: cls,
+        level: 4,
+        seed: 4242,
+        facing: 0,
+        footprintFloor: footprint,
+        footprintCap: footprint,
+      });
+      return countSurface(stamp, SURFACE_KIND.portal);
+    };
+
+    const home = of(0, 12);
+    const shop = of(1, 12);
+    expect(home).toBeGreaterThan(0);
+    expect(shop).toBeGreaterThan(home * 2);
+    expect(of(1, 12)).toBeGreaterThan(of(1, 6));
+
+    // Senza fronte strada il verso d'accento verrebbe dal tiro, e la vetrina
+    // finirebbe una volta su quattro contro il cuore dell'isolato: li' resta il
+    // portone e basta.
+    const blind = generateBuilding({ class: 1, level: 4, seed: 4242, footprintFloor: 12, footprintCap: 12 });
+    expect(countSurface(blind, SURFACE_KIND.portal)).toBeLessThan(shop);
+  });
+
   it('ha un unico dettaglio di tetto coerente con la classe', () => {
     let checked = 0;
     for (const { stamp, cls } of everyStamp(12)) {

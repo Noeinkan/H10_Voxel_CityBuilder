@@ -79,6 +79,24 @@ export interface PaintRequest {
   readonly chamfer: number;
   /** Il piano terra sul fronte d'accento e' un portico invece di una parete. */
   readonly arcade: boolean;
+  /**
+   * Il piano terra su strada e' una vetrina continua, non un muro con una porta.
+   *
+   * **Cambia quanto lungo e' il fronte attivo, non cosa c'e' sopra.** `onPortal`
+   * apre **un** modulo d'ingresso al centro del lato principale, che e' la
+   * risposta giusta per un portone: un isolato commerciale invece ha la strada
+   * vetrata da un cantonale all'altro, ed e' quella riga continua a dire
+   * «negozi» da lontano, prima di qualunque insegna. I due convivono — la porta
+   * resta dov'era, e scende fino al marciapiede mentre la vetrina poggia sullo
+   * zoccolo.
+   *
+   * Non e' solo pittura: da qui passa `frontage` nel mesher, che cerca un
+   * portale **sotto** una faccia per decidere se quella faccia guarda la via.
+   * Con la vetrina continua tende, lembi e telai d'ingresso smettono di essere
+   * un accento sopra la porta e diventano la pensilina di tutto il fronte,
+   * mentre calate e scale esterne si spostano sul retro da sole.
+   */
+  readonly shopfront: boolean;
   /** Fasce di base che appartengono al podio, gia' limitate a `bands - 1`. */
   readonly podium: number;
   readonly podiumBody: number | null;
@@ -200,6 +218,14 @@ export function paint(request: PaintRequest): VoxelStamp {
         sz >= z + GRAMMAR.spandrelHeight &&
         sz >= GRAMMAR.portalHeight;
 
+      // La vetrina poggia sullo zoccolo invece di scendere fino al marciapiede:
+      // e' la battuta bassa che ogni negozio ha, e senza di lei il vetro
+      // toccherebbe il terreno proprio dove il terreno e' irregolare. Il portone
+      // no — quello scende, ed e' l'unica cosa che distingue una porta da una
+      // vetrina quando sono lo stesso linguaggio di superficie.
+      const shopRow = request.shopfront && b === 0 &&
+        sz >= GRAMMAR.plinthHeight && sz < GRAMMAR.portalHeight;
+
       for (let sy = rect.y0; sy < rect.y0 + rect.h; sy++) {
         for (let sx = rect.x0; sx < rect.x0 + rect.w; sx++) {
           if (hollow &&
@@ -292,7 +318,10 @@ export function paint(request: PaintRequest): VoxelStamp {
                   : bandSurface
                 : isCrown
                   ? SURFACE_KIND.roofTech
-                  : sz < GRAMMAR.portalHeight && onPortal(rect, sx, sy, request.accentFace)
+                  : sz < GRAMMAR.portalHeight && (
+                    onPortal(rect, sx, sy, request.accentFace) ||
+                    (shopRow && onShopfront(rect, sx, sy, request.accentFace))
+                  )
                     ? SURFACE_KIND.portal
                     : accent
                       ? SURFACE_KIND.luminous
@@ -371,6 +400,23 @@ function onBay(rect: BandRect, sx: number, sy: number, period: number): boolean 
   // nessuno dei due e' parete, e il confronto li toglie di mezzo insieme.
   if (facingX === facingY) return false;
   return (facingX ? sy : sx) % period !== 0;
+}
+
+/**
+ * La vetrina: tutta la parete su strada, meno i due cantonali.
+ *
+ * **I cantonali restano pieni per la stessa ragione della campata**, e non e'
+ * una scelta estetica: e' dove due fronti si incontrano e dove
+ * `emitCornerPosts` appoggia il pilastrino, quindi bucarli metterebbe una
+ * vetrina dentro un pilastro. Sotto i quattro voxel di fronte fra i due
+ * cantonali non resta niente, e la vetrina semplicemente non si apre — come il
+ * portico sotto `arcadeMinSide`.
+ */
+function onShopfront(rect: BandRect, sx: number, sy: number, face: number): boolean {
+  if (!onAccentFace(rect, sx, sy, face)) return false;
+  const cornerX = sx === rect.x0 || sx === rect.x0 + rect.w - 1;
+  const cornerY = sy === rect.y0 || sy === rect.y0 + rect.h - 1;
+  return !(cornerX && cornerY);
 }
 
 /** Un solo modulo d'ingresso, centrato sul lato principale e mai su un angolo. */

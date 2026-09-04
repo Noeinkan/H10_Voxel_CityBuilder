@@ -1,4 +1,4 @@
-import type { BuildingClass } from '../../sim';
+import { BUILDING_CLASS, type BuildingClass } from '../../sim';
 import { hashCoords, mulberry32 } from '../rng';
 import {
   BUILDER,
@@ -374,6 +374,14 @@ export function generateBuilding(request: BuildingRequest): VoxelStamp {
     // si scrivono i voxel.
     chamfer: clamp(shape.chamfer, 0, GRAMMAR.maxChamfer),
     arcade: shape.arcade,
+    // **La vetrina la fa il commercio, e la fa anche quando sta sotto qualcos'
+    // altro.** Un isolato misto e' la riga piu' comune del catalogo — case sopra
+    // un podio commerciale — ed e' proprio quello il caso in cui la strada e'
+    // vetrata e i piani alti no. Senza fronte strada non si apre affatto: il
+    // verso d'accento verrebbe dal tiro, e la vetrina finirebbe una volta su
+    // quattro contro il cuore dell'isolato.
+    shopfront: request.facing !== undefined &&
+      (cls === BUILDING_CLASS.commercial || request.mixed === BUILDING_CLASS.commercial),
     podium,
     podiumBody: podiumProfile?.body ?? null,
     podiumAlt: podiumProfile?.bodyAlt ?? null,
