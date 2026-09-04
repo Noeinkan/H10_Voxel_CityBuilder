@@ -1,0 +1,222 @@
+/*
+ * Le due porte verso chi fa il gioco, vestite.
+ *
+ * Sta accanto a `titleScreen.css` e ne riusa i mattoni — `.title-pane`,
+ * `.title-small`, `.title-field` — invece di rifarli: il pannello del feedback
+ * e' una sottoschermata come «Settings», e due disegni diversi per la stessa
+ * cosa si imparano due volte. Qui c'e' solo cio' che li' non esiste.
+ *
+ * **Il sostegno e' l'unica cosa calda in una pagina di cielo**, ed e' deliberato:
+ * tutto il resto del menu e' blu e bianco, quindi l'ambra si vede senza dover
+ * gridare — nessun bordo piu' spesso, nessuna maiuscola. Un invito, non un
+ * comando: `text-transform: none` lo tiene un gesto e non una voce di chrome.
+ */
+.community-foot {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  margin-top: 2px;
+}
+
+.community-link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 26px;
+  padding: 4px 11px;
+  border: 1px solid rgba(35, 75, 105, .22);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, .78);
+  color: #2c5570;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  text-decoration: none;
+  text-transform: none;
+  cursor: pointer;
+  transition: background 120ms ease, color 120ms ease, border-color 120ms ease;
+}
+
+.community-link:hover {
+  background: #ffffff;
+  border-color: rgba(35, 75, 105, .4);
+}
+
+.community-link:focus-visible {
+  outline: 2px solid #2f6b91;
+  outline-offset: 2px;
+}
+
+/* Il fondo e' pieno, non velato: il piede galleggia sul cielo e non sulla
+   colonna, e un'ambra al venti per cento su quel blu vira al grigio — cioe'
+   smette di essere l'unica cosa calda della pagina, che era tutto il punto. */
+.community-link--support {
+  border-color: rgba(176, 104, 38, .55);
+  background: #f7dcc0;
+  color: #8a4c14;
+}
+
+/* Riempito al passaggio: il testo diventa bianco perche' l'ambra piena non
+   regge piu' il bruno del riposo. */
+.community-link--support:hover {
+  border-color: #96500f;
+  background: #b4611f;
+  color: #ffffff;
+}
+
+/* Il dito non ha la precisione del puntatore, e queste due sono le uniche cose
+   piccole in fondo a una colonna di bottoni grandi. */
+@media (pointer: coarse) {
+  .community-link {
+    min-height: 44px;
+    padding: 0 16px;
+  }
+}
+
+/*
+ * La fisarmonica delle categorie.
+ *
+ * Aprire una voce sceglie la categoria **e** dice cosa serve scrivere: una
+ * tendina sceglierebbe altrettanto bene e non insegnerebbe niente, e la domanda
+ * «cosa ti aspettavi invece» va posta accanto al riquadro, non in un muro di
+ * istruzioni sopra.
+ */
+.feedback-kinds {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.feedback-kind {
+  padding: 7px 10px;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.feedback-kind:hover {
+  background: rgba(255, 255, 255, .7);
+}
+
+.feedback-kind[aria-expanded='true'] {
+  border-color: rgba(35, 75, 105, .26);
+  background: #ffffff;
+  font-weight: 600;
+}
+
+.feedback-kind:focus-visible {
+  outline: 2px solid #2f6b91;
+  outline-offset: 2px;
+}
+
+.feedback-hint {
+  margin: 0 0 4px;
+  padding: 0 10px;
+  font-size: 12px;
+}
+
+.feedback-message {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 10px 12px;
+  border: 1px solid rgba(35, 75, 105, .24);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, .92);
+  color: inherit;
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.45;
+  resize: vertical;
+}
+
+.feedback-message:focus-visible {
+  outline: 2px solid #2f6b91;
+  outline-offset: 2px;
+}
+
+.feedback-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: #3a5c74;
+  cursor: pointer;
+}
+
+.feedback-disclose {
+  font-size: 12px;
+  color: #45647b;
+}
+
+.feedback-disclose summary {
+  cursor: pointer;
+}
+
+/* Etichetta stretta, valore che si prende il resto: sono fatti da scorrere con
+   l'occhio, non prosa da leggere. */
+.feedback-context {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 2px 10px;
+  margin-top: 6px;
+}
+
+.feedback-context-row {
+  display: contents;
+}
+
+.feedback-context-row span:first-child {
+  font-weight: 600;
+}
+
+.feedback-context-row span:last-child {
+  overflow-wrap: anywhere;
+}
+
+.feedback-status {
+  margin: 0;
+  font-size: 12px;
+  color: #7a4a12;
+}
+
+.feedback-status:empty {
+  display: none;
+}
+
+/*
+ * La via che resta quando il client di posta non c'e'.
+ *
+ * Non e' un dettaglio nascosto per pulizia: e' aperto d'ufficio appena si preme
+ * «Send», perche' da li' in poi e' l'unica cosa a schermo che la nota possieda
+ * ancora. Il testo scorre invece di allargare la colonna.
+ */
+.feedback-copy {
+  font-size: 12px;
+  color: #45647b;
+}
+
+.feedback-copy summary {
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+
+.feedback-preview {
+  max-height: 190px;
+  margin: 8px 0;
+  padding: 8px 10px;
+  overflow: auto;
+  border: 1px solid rgba(35, 75, 105, .2);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, .92);
+  color: #1c3347;
+  font-family: ui-monospace, 'Cascadia Mono', Consolas, monospace;
+  font-size: 11px;
+  line-height: 1.4;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}

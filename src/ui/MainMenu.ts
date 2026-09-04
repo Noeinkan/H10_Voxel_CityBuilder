@@ -1,6 +1,8 @@
 import type { SlotInfo } from '../game/save/storage';
 import type { DaylightMode } from '../engine/daylight';
 import type { ThemeChoice } from './GameHud';
+import { SUPPORT_LABEL, SUPPORT_TITLE, SUPPORT_URL } from './community';
+import { FeedbackPane } from './FeedbackPane';
 import {
   ABOUT_LINE,
   MAIN_MENU_ENTRIES,
@@ -47,11 +49,28 @@ export interface MainMenuHandlers extends SaveSectionHandlers, SettingsHandlers,
   readonly onSavesOpened: () => void;
 }
 
-/** Cosa si sta guardando: l'elenco, o una delle quattro sottoschermate. */
-type MenuPane = 'root' | MainMenuSection;
+/**
+ * Cosa si sta guardando: l'elenco, o una delle sottoschermate.
+ *
+ * Il feedback e' una sottoschermata ma **non** una voce dell'elenco: si apre dal
+ * piede, accanto alla firma, che e' il posto dove si va a cercare chi ha fatto
+ * il gioco. Fra le quattro voci starebbe come una quinta cosa da fare in
+ * partita, che non e'.
+ */
+type MenuPane = 'root' | MainMenuSection | 'feedback';
 
 /** Cosa dice la riga sotto «Resume» finche' nessuno ha mandato il riassunto. */
 const RESUME_DETAIL = 'Back to the city.';
+
+/**
+ * Cosa il `Tab` puo' raggiungere dentro la colonna.
+ *
+ * Elenca ogni tipo di comando che ci vive davvero — il piede ha un
+ * collegamento, il feedback un riquadro di testo e due `summary` — perche' e'
+ * la stessa lista che tiene il fuoco dentro la modale: cio' che non e' qui,
+ * `Tab` lo salta o lo porta fuori, sotto il velo.
+ */
+const FOCUSABLE = 'button, input, textarea, summary, a[href]';
 
 export class MainMenu {
   /** Il velo. La colonna sta dentro: chi apre appende questo e basta. */
@@ -59,14 +78,24 @@ export class MainMenu {
 
   private readonly column: HTMLElement;
   private readonly stack: HTMLElement;
-  private readonly panes = new Map<MainMenuSection, HTMLElement>();
+  private readonly panes = new Map<Exclude<MenuPane, 'root'>, HTMLElement>();
   private readonly resumeButton: HTMLButtonElement;
   private readonly resumeDetail: HTMLElement;
   private readonly savesDetail: HTMLElement;
   private readonly saves: MainMenuSaves;
   private readonly settings: MainMenuSettings;
   private readonly newGame: MainMenuNewGame;
+  private readonly feedback: FeedbackPane;
   private pane: MenuPane = 'root';
+  /**
+   * L'ultimo riassunto ricevuto, per il contesto che la nota si porta dietro.
+   *
+   * Il menu non conosce la partita: la riga gliela manda `main.ts` a ogni
+   * apertura, e questa e' la stessa che si legge sotto «Resume». Finche' non
+   * arriva non c'e' niente di vero da allegare, e dirlo e' meglio che allegare
+   * uno zero.
+   */
+  private citySummary = 'not reported yet';
   /**
    * Chi aveva il fuoco prima che il menu si aprisse.
    *
@@ -135,11 +164,15 @@ export class MainMenu {
     help.appendChild(titleSmall('Back', () => this.openPane('root')));
     this.panes.set('help', help);
 
+    this.feedback = new FeedbackPane({ onCity: () => this.citySummary });
+    this.feedback.root.appendChild(titleSmall('Back', () => this.openPane('root')));
+    this.panes.set('feedback', this.feedback.root);
+
     const foot = document.createElement('div');
     foot.className = 'title-foot';
     const about = document.createElement('span');
     about.textContent = ABOUT_LINE;
-    foot.appendChild(about);
+    foot.append(about, this.communityRow());
 
     this.column.append(wordmark, tagline, this.stack);
     for (const [, pane] of this.panes) this.column.appendChild(pane);
@@ -221,7 +254,44 @@ export class MainMenu {
 
   /** Cosa si sta per lasciare, sotto «Resume»: seed, abitanti, edifici. */
   setSummary(seed: number, population: number, buildings: number): void {
-    this.resumeDetail.textContent = gameSummary(seed, population, buildings);
+    this.citySummary = gameSummary(seed, population, buildings);
+    this.resumeDetail.textContent = this.citySummary;
+  }
+
+  /**
+   * Le due porte verso chi fa il gioco, in fondo alla colonna.
+   *
+   * Stanno sotto la firma e non fra le voci: nessuna delle due riguarda la
+   * citta' aperta, e chi le cerca le cerca dove c'e' scritto chi l'ha fatta.
+   *
+   * **Il sostegno e' un collegamento, non un bottone**, e va su Ko-fi in una
+   * scheda nuova: qui dentro non passa nessun pagamento e non c'e' niente da
+   * configurare. L'etichetta la decide `community.ts`, che spiega anche perche'
+   * non puo' dire «Donate».
+   */
+  private communityRow(): HTMLElement {
+    const row = document.createElement('div');
+    row.className = 'community-foot';
+
+    const support = document.createElement('a');
+    support.className = 'community-link community-link--support';
+    support.href = SUPPORT_URL;
+    support.target = '_blank';
+    // Senza questo la pagina aperta puo' toccare quella che l'ha aperta.
+    support.rel = 'noopener noreferrer';
+    support.textContent = SUPPORT_LABEL;
+    support.title = SUPPORT_TITLE;
+    support.setAttribute('aria-label', SUPPORT_TITLE);
+
+    const feedback = document.createElement('button');
+    feedback.type = 'button';
+    feedback.className = 'community-link';
+    feedback.textContent = 'Feedback';
+    feedback.title = 'Tell the maker what you think';
+    feedback.addEventListener('click', () => this.openPane('feedback'));
+
+    row.append(support, feedback);
+    return row;
   }
 
   /** Un bottone dell'elenco: la parola sopra, cosa succede premendola sotto. */
@@ -259,11 +329,14 @@ export class MainMenu {
       this.resumeButton.focus();
       return;
     }
+    // Il contesto allegato alla nota dichiara valori correnti: si rileggono
+    // aprendo, non costruendo il pannello una volta per tutte.
+    if (pane === 'feedback') this.feedback.open();
     // Il primo gesto **attivo** della sottoschermata: uno slot vuoto ha i suoi
     // bottoni spenti, e mettere il fuoco li' lo perderebbe fuori dalla modale.
     const body = this.panes.get(pane);
     if (body === undefined) return;
-    const controls = [...body.querySelectorAll<HTMLElement>('button, input')];
+    const controls = [...body.querySelectorAll<HTMLElement>(FOCUSABLE)];
     controls.find((element) => !(element as HTMLButtonElement).disabled)?.focus();
   }
 
@@ -282,7 +355,7 @@ export class MainMenu {
    */
   private trapTab(event: KeyboardEvent): void {
     if (event.key !== 'Tab') return;
-    const focusable = [...this.column.querySelectorAll<HTMLElement>('button, input')]
+    const focusable = [...this.column.querySelectorAll<HTMLElement>(FOCUSABLE)]
       .filter((element) => !element.hidden && element.offsetParent !== null
         && !(element as HTMLButtonElement).disabled);
     if (focusable.length === 0) return;
