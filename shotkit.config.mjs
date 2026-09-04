@@ -205,6 +205,15 @@ async function openDebugPanels(page) {
 
 /** Il pool di mesher lavora in coda: senza aspettarlo si fotografa un mondo a meta'. */
 async function mesherIdle(page, timeout = 120000) {
+  // `__voxelStats` esiste solo sotto `?debug=1` o `?perf=1`: senza, la
+  // `waitForFunction` non e' falsa, e' cieca — aspetta il timeout intero e fa
+  // fallire uno scatto che stava andando bene. Su una partita normale si ripiega
+  // su un'attesa fissa, che e' tutto cio' che si puo' onestamente fare.
+  const measurable = await page.evaluate(() => typeof globalThis.__voxelStats === 'function');
+  if (!measurable) {
+    await page.waitForTimeout(8000);
+    return;
+  }
   await page.waitForFunction(
     () => {
       const stats = globalThis.__voxelStats?.();
