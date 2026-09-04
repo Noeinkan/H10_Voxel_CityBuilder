@@ -35,10 +35,15 @@ const ISLAND = { x: 720, y: 430 };
  */
 async function enterGame(page) {
   const primary = page.locator('.title-screen .title-button--primary').first();
-  await primary.waitFor({ state: 'visible', timeout: 180000 });
+  // Il bottone compare quando l'elenco dei salvataggi e' letto: misurato, una
+  // cinquantina di secondi. E sparire gli costa altrettanto — la schermata si
+  // toglie di mezzo (`root.remove()`) solo a mondo pronto, non al clic — quindi
+  // qui i minuti sono tre e non uno: a sessanta secondi lo scatto falliva
+  // mentre l'isola stava ancora nascendo.
+  await primary.waitFor({ state: 'visible', timeout: 240000 });
   await primary.click();
-  await page.waitForSelector('.title-screen', { state: 'hidden', timeout: 60000 });
-  await page.waitForTimeout(800);
+  await page.waitForSelector('.title-screen', { state: 'hidden', timeout: 180000 });
+  await page.waitForTimeout(1200);
 }
 
 /** Il terreno arriva da un worker: le risorse restano "—" finche' non ha finito. */
@@ -412,7 +417,7 @@ export default {
     {
       name: '10-road-network',
       path: '/?seed=1337&hour=13',
-      timeoutMs: 420000,
+      timeoutMs: 720000,
       settleMs: 3000,
       shows:
         'il tracciato stradale che la citta si e data: un tronco largo che entra nel centro, i viali che lo alimentano e i vicoli da un voxel fra le case, con il percorso deciso dal rilievo invece che da un reticolo',
@@ -426,7 +431,7 @@ export default {
     {
       name: '11-road-hierarchy',
       path: '/?seed=1337&hour=13',
-      timeoutMs: 420000,
+      timeoutMs: 720000,
       settleMs: 3000,
       shows:
         'la gerarchia da vicino: le quattro larghezze di carreggiata a confronto e il salto di tinta del tronco, con gli edifici affacciati sul fronte strada',
