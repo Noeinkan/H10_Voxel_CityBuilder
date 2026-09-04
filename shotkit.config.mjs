@@ -33,8 +33,8 @@ const ISLAND = { x: 720, y: 430 };
  * Il bottone grande e' `Play` a mani vuote e `Continue` quando c'e' qualcosa da
  * riprendere: si clicca quello, senza sapere quale dei due sia.
  */
-async function enterGame(page) {
-  const primary = page.locator('.title-screen .title-button--primary').first();
+async function enterGame(page, seed = '1337') {
+  const primary = page.locator('.title-screen .title-button--primary:visible').first();
   // Il bottone compare quando l'elenco dei salvataggi e' letto: misurato, una
   // cinquantina di secondi. E sparire gli costa altrettanto — la schermata si
   // toglie di mezzo (`root.remove()`) solo a mondo pronto, non al clic — quindi
@@ -42,6 +42,19 @@ async function enterGame(page) {
   // mentre l'isola stava ancora nascendo.
   await primary.waitFor({ state: 'visible', timeout: 240000 });
   await primary.click();
+  await page.waitForTimeout(800);
+
+  // **`Play` non avvia niente: apre il pannello «New island».** Il bottone vero
+  // e' `Create island`, e il campo accanto vuole il seed — lasciato vuoto ne
+  // sorteggia uno, e due scatti dello stesso set mostrerebbero due mondi
+  // diversi. Con un salvataggio il bottone grande e' invece `Continue` e il
+  // pannello non compare: il ramo va tenuto, non ci si arriva sempre.
+  const create = page.locator('.title-screen [data-role="create"]:visible').first();
+  if ((await create.count()) > 0) {
+    const field = page.locator('.title-screen .title-field:visible').first();
+    if ((await field.count()) > 0) await field.fill(seed);
+    await create.click();
+  }
   // La condizione e' il **dock**, non la sparizione del velo: l'HUD esiste nel
   // DOM anche dietro la schermata del titolo, quindi `terrainReady` la
   // attraversa senza accorgersene — ed e' cosi' che uno scatto poteva crescere
@@ -49,6 +62,11 @@ async function enterGame(page) {
   // La classe e' `build-dock` (`BuildDock.ts`), non `hud-dock`: un selettore
   // inventato qui non fallisce, aspetta e basta.
   await page.locator('.build-dock').first().waitFor({ state: 'visible', timeout: 180000 });
+  // `Create island` ricarica componendo il proprio indirizzo, e per strada
+  // perde i parametri messi qui: `hour=` non sopravvive. L'ora si ferma quindi
+  // dal gioco — `L` cicla ciclo → giorno fisso — o due scatti dello stesso
+  // soggetto arriverebbero con due luci diverse.
+  await page.keyboard.press('KeyL');
   await page.waitForTimeout(1200);
 }
 
@@ -429,7 +447,7 @@ export default {
     },
     {
       name: '10-road-network',
-      path: '/?seed=1337&hour=13&intro=0',
+      path: '/?seed=1337&intro=0',
       timeoutMs: 720000,
       settleMs: 3000,
       shows:
@@ -443,7 +461,7 @@ export default {
     },
     {
       name: '11-road-hierarchy',
-      path: '/?seed=1337&hour=13&intro=0',
+      path: '/?seed=1337&intro=0',
       timeoutMs: 720000,
       settleMs: 3000,
       shows:
