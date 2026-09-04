@@ -65,6 +65,7 @@ export interface OverviewTrade {
   readonly links: readonly string[];
   readonly food: number;
   readonly materials: number;
+  readonly materialsIn: number;
   readonly funds: number;
 }
 
@@ -226,6 +227,7 @@ export function buildCityOverviewModel(stats: GrowthStats | null): CityOverviewM
       links: state.trade.links.map((id) => catalystById(id).label),
       food: state.trade.food,
       materials: state.trade.materials,
+      materialsIn: state.trade.materialsIn,
       funds: state.trade.funds,
     },
   };

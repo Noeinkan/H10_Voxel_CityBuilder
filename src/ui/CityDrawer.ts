@@ -222,7 +222,12 @@ function tradeRows(trade: OverviewTrade): HTMLElement {
   const facts = factRows([
     { label: 'Connections', value: links },
     { label: 'Food imported', value: `${trade.food.toFixed(1)} / tick` },
-    { label: 'Materials exported', value: `${trade.materials.toFixed(1)} / tick` },
+    // Una riga sola e non due: i due versi si escludono per costruzione, e una
+    // voce ferma a zero accanto a quella viva farebbe sembrare rotto il canale
+    // che sta lavorando.
+    trade.materialsIn > 0
+      ? { label: 'Materials bought', value: `${trade.materialsIn.toFixed(1)} / tick` }
+      : { label: 'Materials exported', value: `${trade.materials.toFixed(1)} / tick` },
     {
       label: 'Trade balance',
       value: `${trade.funds > 0 ? '+' : ''}${trade.funds.toFixed(1)} funds / tick`,

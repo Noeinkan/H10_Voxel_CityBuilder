@@ -45,7 +45,7 @@ nextBuildSites(state, terrainMap, 10);           // [{ x, y, class, mixed, score
 | [materials.ts](materials.ts) | Flussi dei materiali, capacità dei livelli e curva dei costi verticali |
 | [decisions.ts](decisions.ts) | Decisioni periodiche e alternative deterministiche |
 | [charters.ts](charters.ts) | Mandati lasciati dalle decisioni: uno slot per famiglia, permanenti |
-| [trade.ts](trade.ts) | Commercio esterno O(1) sbloccato dal porto |
+| [trade.ts](trade.ts) | Commercio esterno O(1) sbloccato dal porto: cibo e materiali, nei due versi |
 | [nextBuildSites.ts](nextBuildSites.ts) | I candidati, ordinati, filtrati e con l'eventuale secondo uso |
 | [rng.ts](rng.ts) | `mulberry32` in forma pura, stato dentro `SimState` |
 | [scenario.ts](scenario.ts) | Fixture della scena di debug: catalizzatori e nucleo iniziali |
@@ -488,6 +488,37 @@ Stessa forma per la dotazione dell'emergenza, che si conta in `decisions.reliefT
 — **tick di respiro** sulla spesa vera. Una quantità non dice quanto tempo compra:
 cento tick di consumo, misurati a schermo, sono dieci secondi, e in dieci secondi
 non si pianta niente.
+
+### I materiali hanno un verso in entrata, e prima non l'avevano
+
+Il molo scaricava cibo e caricava materiali, e basta. Il conto delle **leve** però
+non tornava: sul cibo il giocatore ne aveva sette — serra, porto, aeroporto,
+priorità commerciale, due carte, un mandato — e sui materiali due e mezzo, di cui
+una che compare quando decide la simulazione. La risorsa con meno leve era anche
+la sola che **ferma i cantieri**: `materialFlows.waitingCost` nomina il blocco
+nell'HUD, e finché il verso non è esistito quella riga era l'unico posto in cui
+l'interfaccia dichiarava un problema senza offrire un gesto.
+
+La modalità `materialImports` è quel gesto, ed è costruita per non essere una
+scorciatoia:
+
+- **si paga più di quanto renda rivendere.** `importMaterialPrice` (1,6) sta sopra
+  il miglior ricavo d'esportazione (1,1 × 1,2 dell'aeroporto = 1,32). Il margine
+  serve due volte: rende comprare una perdita consapevole, e chiude l'arbitraggio
+  che nascerebbe alternando le modalità a mano — si escludono dentro un tick, non
+  fra due;
+- **il cibo ha la precedenza sui fondi.** I due canali attingono alla stessa cassa
+  e `resolveExternalTrade` serve prima la dispensa: una città che compra travi
+  mentre smette di mangiare perde gli abitanti che il cantiere serviva;
+- **punta a `importMaterialTarget` per edificio** (sei, tre volte la riserva) e non
+  alla riserva stessa: quella è il cuscinetto sotto cui non scendere, mentre un
+  cantiere di arcologia da solo ne chiede 200. Riempire il cuscinetto avrebbe
+  lasciato fermo esattamente il cantiere per cui la modalità esiste.
+
+`TradeReport.materialsIn` è un campo suo e non il segno di `materials`: quello lo
+legge `MaterialsReport.exported`, e cambiargli dominio avrebbe chiesto a ogni
+lettore di imparare un verso — col primo che non l'avesse imparato a mostrare un
+export dove c'era un acquisto.
 
 ## Scena di debug
 

@@ -186,7 +186,7 @@ describe('tips — il consiglio sul cibo nomina il gesto giusto', () => {
 
   it('a chi il porto ce l’ha gia’ non lo ripropone', () => {
     const state = starving({
-      trade: { connected: true, links: ['port'], food: 4, materials: 0, funds: 0 },
+      trade: { connected: true, links: ['port'], food: 4, materials: 0, materialsIn: 0, funds: 0 },
     });
     const message = urgentTip(state)?.message ?? '';
     expect(message).toContain('Prioritize food');

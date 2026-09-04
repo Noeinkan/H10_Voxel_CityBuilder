@@ -2,8 +2,9 @@ import { describe, expect, it } from 'vitest';
 import { addCatalyst, createSimState, setTradeMode } from './SimState';
 import { tick } from './tick';
 import { testTerrain } from './testTerrain';
-import { foodImportShareOf, resolveExternalTrade, tradeLinksOf } from './trade';
+import { TRADE_MODES, foodImportShareOf, resolveExternalTrade, tradeLinksOf } from './trade';
 import { BUILDING_CLASS } from './classes';
+import { BALANCE } from './balance';
 
 describe('commercio esterno', () => {
   it('resta chiuso senza porto e si attiva con il porto', () => {
@@ -121,6 +122,91 @@ describe('collegamenti con l’esterno', () => {
     expect(foodImportShareOf(['port', 'airport'], 'foodImports')).toBeLessThan(1);
     expect(foodImportShareOf(['port'], 'balanced')).toBeGreaterThan(0);
     expect(foodImportShareOf([], 'foodImports')).toBe(0);
+  });
+
+  it('compra materiali solo nella modalita che lo chiede', () => {
+    // Il verso che mancava: prima dei materiali si poteva soltanto uscire, e una
+    // citta' con i cantieri fermi non aveva nessun gesto da fare.
+    const empty = { ...common, links: ['port'], materials: 0 } as const;
+    const buying = resolveExternalTrade({ ...empty, mode: 'materialImports' });
+
+    expect(buying.materialsIn).toBeGreaterThan(0);
+    expect(buying.materialsStock).toBeGreaterThan(empty.materials);
+    expect(buying.funds).toBeLessThan(0);
+
+    for (const mode of ['balanced', 'foodImports', 'materialExports'] as const) {
+      expect(resolveExternalTrade({ ...empty, mode }).materialsIn).toBe(0);
+    }
+    expect(resolveExternalTrade({ ...empty, mode: 'materialImports', links: [] }).materialsIn).toBe(0);
+  });
+
+  it('nessuna modalita apre i due versi insieme', () => {
+    // E' il contratto su cui poggia la riga sola del cassetto Citta': se una
+    // modalita' comprasse e vendesse nello stesso tick, quella riga mostrerebbe
+    // meta' della verita'.
+    for (const mode of TRADE_MODES) {
+      const both = resolveExternalTrade({
+        ...common,
+        mode: mode.id,
+        links: ['port', 'airport'],
+        materials: 1,
+        funds: 1_000_000,
+      });
+      expect(Math.min(both.materials, both.materialsIn)).toBe(0);
+    }
+  });
+
+  it('si ferma al bersaglio invece di riempire all’infinito', () => {
+    const goal = common.buildings * BALANCE.trade.importMaterialTarget;
+    const full = resolveExternalTrade({
+      ...common,
+      mode: 'materialImports',
+      links: ['port'],
+      materials: goal,
+    });
+    // Un tick solo non copre tutto il bersaglio: e' la portata a limitare, non
+    // il traguardo. Sopra il traguardo invece il canale si chiude del tutto.
+    const empty = resolveExternalTrade({
+      ...common, mode: 'materialImports', links: ['port'], materials: 0,
+    });
+
+    expect(full.materialsIn).toBe(0);
+    expect(empty.materialsIn).toBeLessThan(goal);
+    expect(empty.materialsIn).toBeGreaterThan(0);
+  });
+
+  it('la dispensa ha la precedenza sui fondi che il cantiere vorrebbe', () => {
+    // L'ordine e' quello giusto perche' una citta' che smette di mangiare perde
+    // gli abitanti che il cantiere serviva. Si vede in due modi: a fondi scarsi
+    // il cibo compra quanto la sua portata gli concede comunque, e le travi si
+    // accontentano di cio' che avanza.
+    const starving = {
+      ...common, mode: 'materialImports', links: ['port'], materials: 0, food: 0,
+    } as const;
+    const rich = resolveExternalTrade({ ...starving, funds: 1_000_000 });
+    const scarce = resolveExternalTrade({ ...starving, funds: 1 });
+
+    expect(scarce.food).toBe(rich.food);
+    expect(scarce.materialsIn).toBeLessThan(rich.materialsIn);
+    expect(scarce.materialsIn * BALANCE.trade.importMaterialPrice)
+      .toBeLessThanOrEqual(1 - scarce.food * BALANCE.trade.importFoodPrice + 1e-9);
+    expect(scarce.fundsStock).toBeGreaterThanOrEqual(0);
+
+    // Quando i fondi non bastano nemmeno alla dispensa, il canale dei materiali
+    // non parte affatto: e' il residuo a comandare, non una quota riservata.
+    const broke = resolveExternalTrade({ ...starving, funds: 0.1 });
+    expect(broke.food).toBeGreaterThan(0);
+    expect(broke.materialsIn).toBe(0);
+  });
+
+  /**
+   * Le due modalita' si escludono dentro un tick, non fra due: senza questo
+   * margine, alternarle a mano fabbricherebbe fondi dal nulla.
+   */
+  it('comprare costa piu di quanto rendere rivendendo', () => {
+    const bestExport = BALANCE.trade.exportMaterialPrice *
+      Math.max(...Object.values(BALANCE.trade.link).map((profile) => profile.price));
+    expect(BALANCE.trade.importMaterialPrice).toBeGreaterThan(bestExport);
   });
 
   it('legge il ruolo e non il campo kind, in ordine di catalogo', () => {

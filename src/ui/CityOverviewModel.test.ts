@@ -49,6 +49,7 @@ describe('buildCityOverviewModel', () => {
       links: ['Port'],
       food: 3.5,
       materials: 2,
+      materialsIn: 0,
       funds: -1.25,
     });
     expect(model?.mandates[0]).toMatchObject({ label: 'Local shops', family: 'Investment' });
@@ -108,6 +109,7 @@ function stats(): GrowthStats {
       links: ['port'] as const,
       food: 3.5,
       materials: 2,
+      materialsIn: 0,
       funds: -1.25,
     },
     charters: ['localShops'] as const,

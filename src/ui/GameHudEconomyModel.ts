@@ -351,6 +351,10 @@ function foodBreakdown(harvest: FoodReport): readonly HudFlow[] {
 function materialsBreakdown(report: MaterialsReport): readonly HudFlow[] {
   const rows: readonly HudFlow[] = [
     { label: 'Industry', amount: report.produced, direction: 'in' },
+    // Sopra le uscite e sotto l'industria, come `Imports` nel cibo: le due
+    // sorgenti stanno vicine perche' la domanda che l'HUD deve far rispondere e'
+    // «quanta di questa roba me la sto comprando».
+    { label: 'Imports', amount: report.imported, direction: 'in' },
     { label: 'Building upkeep', amount: report.upkeep, direction: 'out' },
     { label: 'Shops', amount: report.retail, direction: 'out' },
     { label: 'Exports', amount: report.exported, direction: 'out' },

@@ -750,7 +750,13 @@ export function reviveSimState(data: SimStateData, reachCost?: StepCost): SimSta
     // parola per parola anche per il referto del raccolto.
     flows: compatible.flows ?? NO_FUNDS_FLOW,
     harvest: compatible.harvest ?? EMPTY_HARVEST,
-    materialFlows: compatible.materialFlows ?? EMPTY_MATERIALS,
+    // Lo spread e non il solo `??`, per la stessa ragione di `trade` qui sotto:
+    // un salvataggio anteriore all'acquisto di materiali porta un referto senza
+    // `imported`, e senza il riempimento quel campo tornerebbe `undefined`
+    // dentro un tipo che lo dichiara obbligatorio.
+    materialFlows: compatible.materialFlows === undefined
+      ? EMPTY_MATERIALS
+      : { ...EMPTY_MATERIALS, ...compatible.materialFlows },
     // Idem per l'organico: un salvataggio che non lo porta torna ottimista, che
     // e' come si comportava il driver prima che questo numero esistesse, e il
     // primo tick lo riscrive con quello vero.

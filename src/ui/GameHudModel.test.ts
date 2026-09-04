@@ -231,6 +231,7 @@ describe('buildGameHudModel', () => {
         upkeep: 1,
         retail: 2,
         exported: 0,
+        imported: 0,
         construction: 5,
         reserve: 12,
         waitingCost: 20,
@@ -247,6 +248,29 @@ describe('buildGameHudModel', () => {
     ]);
     expect(materials?.status).toContain('20 materials required');
     expect(materials?.status).toContain('13 still missing');
+  });
+
+  it('mostra il molo accanto all industria quando la citta compra materiali', () => {
+    // La voce sta fra le entrate e sopra le uscite: chi guarda deve poter
+    // rispondere a «quanta di questa roba me la sto comprando» senza sottrarre.
+    const base = stats(1_250, 12);
+    const state = {
+      ...base.state,
+      materials: { stock: 40, delta: 6 },
+      materialFlows: {
+        produced: 5, upkeep: 1, retail: 2, exported: 0, imported: 8,
+        construction: 0, reserve: 12, waitingCost: 0,
+      },
+    };
+    const materials = buildGameHudModel({ ...base, state }).resources
+      .find((entry) => entry.id === 'materials');
+
+    expect(materials?.breakdown).toEqual([
+      { label: 'Industry', amount: 5, direction: 'in' },
+      { label: 'Imports', amount: 8, direction: 'in' },
+      { label: 'Building upkeep', amount: 1, direction: 'out' },
+      { label: 'Shops', amount: 2, direction: 'out' },
+    ]);
   });
 
   it('assegna a Escape la superficie aperta con priorità corretta', () => {
