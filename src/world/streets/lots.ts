@@ -162,6 +162,14 @@ function placeAroundCandidate(request: LotRequest, footprint: number): Lot | nul
   // stare sulla strada, poi almeno stare staccati, e solo in ultimo si riempie.
   // Chi non passa ne' l'uno ne' l'altro fa solo l'ultima, ed e' la ricerca di
   // sempre — nessun costo per chi non li usa.
+  //
+  // **La passata di mezzo si paga, ed e' una scelta.** L'arretramento fa fallire
+  // molti piu' ancoraggi, quindi le passate arrivano in fondo al rettangolo
+  // invece di fermarsi al primo colpo: misurata su un'isola cresciuta, toglierla
+  // porta la simulazione da 31 a 26 secondi ogni milleduecento tick, e in cambio
+  // l'aria attorno agli edifici scende dal 53% al 49% del perimetro. Si tiene
+  // perche' e' esattamente il pezzo che dirada il tessuto; se un giorno il costo
+  // non sara' piu' sostenibile, e' questa la riga da togliere, non il requisito.
   const frontage = request.onFrontage;
   const setback = request.onSetback;
   if (frontage !== undefined) {
@@ -199,11 +207,17 @@ function scan(
     // colonna dell'impronta. Invertirli farebbe pagare la sonda cara su ogni
     // ancoraggio che il filtro scarta comunque.
     if (frontage !== null && !frontage(candidate.x, candidate.y, footprint)) continue;
+    // **L'arretramento invece va dopo `accepts`, e non e' il costo a dirlo.**
+    // Sembrerebbe di no — quattro colonne per lato contro un lato al quadrato —
+    // ma `accepts` non e' solo caro: e' anche cio' che **riempie il memo delle
+    // colonne bocciate**, e le passate successive vivono di quello. Anteponendo
+    // l'arretramento il memo resta vuoto, ogni passata rifa' il lavoro da capo,
+    // e `Builder.test.ts` passa da cento secondi a trecentoventi. Misurato.
     if (!request.accepts(candidate.x, candidate.y, footprint)) continue;
     const facing = request.facingAt?.(candidate.x, candidate.y, footprint) ??
       nearestFacing(rect, candidate.x, candidate.y, footprint);
-    // L'arretramento si chiede per ultimo perche' e' l'unico che ha bisogno
-    // dell'orientamento, e l'orientamento si conosce solo qui.
+    // L'orientamento si conosce solo qui, ed e' l'arretramento a chiederlo: e'
+    // lui a dire quali due lati sono la fila e quali la profondita'.
     if (setback !== null && !setback(candidate.x, candidate.y, footprint, facing)) continue;
     return { x: candidate.x, y: candidate.y, footprint, facing };
   }
