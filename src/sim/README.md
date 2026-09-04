@@ -155,6 +155,56 @@ catalizzatore dia esattamente lo stesso campo di non averlo mai aggiunto, e per
 cui percorso incrementale e ricostruzione completa siano indistinguibili — cosa
 che i test verificano cella per cella.
 
+### Adesso le congestioni sono due, e fanno due mestieri diversi
+
+Nella formula qui sopra `congestione` è un **termine sottrattivo sul valore**:
+gli edifici entro `congestionRadius` abbassano la desiderabilità della cella in
+cui stanno. Dice «vivere in mezzo a tanti edifici piace meno», e non ha mai
+saputo niente di distanze.
+
+Dalla 8.3 ce n'è una seconda, e sta altrove: il carico di
+[../world/congestion.ts](../world/congestion.ts) è un **termine additivo sul
+costo di attraversamento**. Dice «attraversare tanti edifici richiede più
+cammino», e agisce sul `dist` della riga sopra invece che sul risultato. Le due
+non si sommano e non si annullano: la prima toglie valore *qui*, la seconda
+allontana *tutto il resto*. Se una città densa smette di crescere, la domanda da
+farsi è quale delle due l'ha fermata — la heatmap risponde alla prima, la portata
+di un catalizzatore alla seconda.
+
+**Perché due invece di una più forte.** Alzare `congestionPerBuilding` avrebbe
+reso il centro sgradito, non lontano: la desiderabilità sarebbe scesa dove gli
+edifici stanno, e ovunque intorno sarebbe rimasta quella di prima. Il prezzo
+della densità che mancava non è sul posto, è sulla **distanza** — un quartiere
+che si infittisce deve diventare scomodo da raggiungere, non brutto in cui stare
+— e quella cosa il campo non poteva dirla senza toccare il cammino.
+
+**Il termine si somma al costo, e non lo sostituisce.** Nessun passo scende
+sotto 1, quindi il vincolo del paragrafo precedente regge da solo e la forma non
+esce dal quadrato che il campo ricalcola; e la carreggiata resta la via più
+corta anche dentro l'ingorgo, perché paga lo stesso supplemento del tessuto
+partendo da meno. Caricare la sola carreggiata — che sarebbe stato il modello
+del traffico più fedele — era stato provato e non funziona: il tessuto costa
+1,25, quindi l'influenza avrebbe aggirato l'isolato per un quarto di cella per
+passo. Un ingorgo che si aggira non è un ingorgo.
+
+**Il costo vero è l'invalidazione, non il termine.** Rifare il carico dal
+registry sono 0,19 ms; rifare il campo che ne dipende sono 52 ms sulla città del
+benchmark e 90 su un'isola cresciuta — il doppio di un `setPolicyActive`, e non
+c'è percorso incrementale perché un costo che cambia rende stale *ogni* portata
+già calcolata. Per questo `GrowthScene` lo rifà a scaglioni di sessantaquattro
+edifici e non a ogni comparsa, e per questo `CongestionMap.rebuild` dichiara se
+il carico si è mosso davvero: su 1.200 tick di partita sono quattro
+ricostruzioni in tutto.
+
+**Cosa cambia in una partita.** Braccio di controllo — il carico si calcola e il
+campo si rifà con la stessa cadenza, ma il costo non lo legge — contro braccio
+ingorgato, stesso seme e 1.200 tick: il volume costruito nel centro scende da
+22,2k a 14,9k voxel, il livello medio degli edifici del centro da 1,37 a 1,16, e
+gli edifici totali *salgono* da 154 a 177. La città si allarga invece di
+impilarsi, che è il prezzo che si voleva mettere. Un catalizzatore di transito
+piantato a metà corsa riporta il carico mediano da 0,32 a 0,10 e il livello medio
+del centro a 1,57.
+
 ## Policy
 
 Una policy è un moltiplicatore nominato su un peso della simulazione. Lo stato

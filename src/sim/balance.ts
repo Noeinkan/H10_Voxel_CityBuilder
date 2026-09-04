@@ -1316,6 +1316,71 @@ export const BALANCE = {
     steep: 2.5,
     /** Acqua: invalicabile. Dietro a un braccio di mare non c'e' citta'. */
     water: Infinity,
+
+    /**
+     * Quanto il costruito allontana da se' cio' che lo attraversa.
+     *
+     * E' il ciclo del traffico senza un veicolo e senza ricerca di percorso: un
+     * quartiere che si infittisce diventa **lontano**, i campi dei catalizzatori
+     * che lo raggiungevano si accorciano, la desiderabilita' cala e la crescita
+     * si ferma. Densificare ha cosi' un prezzo spaziale, che e' l'unica cosa che
+     * mancava perche' costruire in alto fosse una scelta invece che un premio.
+     *
+     * **Il termine si somma, non sostituisce.** Nessun costo scende, quindi il
+     * pavimento a 1 di `reach.ts` regge da solo e la portata non esce mai dal
+     * quadrato che il campo ricalcola. E la strada resta la via piu' corta anche
+     * dentro l'ingorgo: `pavement + jam` sta comunque sotto `land + jam`.
+     */
+    congestion: {
+      /**
+       * Lato della tessera su cui si conta il costruito, in celle.
+       *
+       * E' la grana dell'ingorgo, e non e' un dettaglio di implementazione: piu'
+       * fine, e una villetta renderebbe lontana la propria colonna; piu' grossa,
+       * e mezzo quartiere risponderebbe per l'altro mezzo. Otto celle e' l'ordine
+       * di grandezza di un isolato.
+       */
+      tile: 8,
+      /**
+       * Voxel costruiti per cella a cui la tessera e' satura.
+       *
+       * Misurato su una citta' cresciuta: un quartiere di villette sta sotto i
+       * cinque, un centro di torri passa i quaranta. A venti, un isolato denso
+       * paga quasi tutto `jam` e una periferia quasi niente.
+       */
+      saturation: 20,
+      /**
+       * Costo aggiunto a una cella satura, in celle.
+       *
+       * Una carreggiata ingorgata arriva cosi' a 2,5, cioe' quanto un ciglio: la
+       * citta' densa non e' invalicabile, e' *lontana*. Sopra questo valore i
+       * catalizzatori del centro smetterebbero di raggiungere il proprio isolato.
+       */
+      jam: 1.5,
+      /**
+       * Quanto un ruolo di trasporto scioglie l'ingorgo attorno a se', 0..1.
+       *
+       * A `1` la sua cella centrale torna scorrevole come un campo. I ruoli che
+       * non compaiono qui non alleggeriscono niente: un mercato porta gente, non
+       * la muove. Le chiavi sono `CatalystId`, ma restano stringhe perche'
+       * `catalysts.ts` legge questo file e non il contrario.
+       */
+      transitRelief: {
+        transport: 1,
+        airport: 0.8,
+        port: 0.6,
+        ferry: 0.6,
+      } as Readonly<Record<string, number>>,
+      /** Sollievo di una stazione di funivia: una linea in quota scavalca l'ingorgo. */
+      ropewayRelief: 0.7,
+      /**
+       * Raggio del sollievo, in multipli del raggio del catalizzatore.
+       *
+       * Piu' largo della sua influenza perche' una stazione si raggiunge da piu'
+       * lontano di quanto piaccia: ci si arriva a piedi da fuori quartiere.
+       */
+      reliefReach: 1.5,
+    },
   },
 
   // --- Limiti duri ---------------------------------------------------------

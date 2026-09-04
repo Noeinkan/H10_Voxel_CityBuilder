@@ -7,6 +7,7 @@ import {
   defaultCatalystOfClass,
   decisionOption,
   nextBuildSites,
+  rebuildField,
   reviveSimState,
   tick,
   type BuildingClass,
@@ -34,6 +35,7 @@ import type { ClearanceVerdict } from '../world/buildings/clearanceSite';
 import { STRUCTURE_KIND, structureKindOf } from '../world/buildings/structureKind';
 import { hasFacadeForm, landmarkOf, maxStageOf } from '../world/landmarks/config';
 import { landmarkWaterColumn } from '../world/landmarks/generate';
+import { CongestionMap, transitSourcesOf } from '../world/congestion';
 import { createReachCost } from '../world/reachCost';
 import type { RoadNetwork } from '../world/roads/RoadNetwork';
 import type { Facing } from '../world/streets/streetGrid';
@@ -221,6 +223,18 @@ export class GrowthScene {
   /** Conto grossolano che dice se valga la pena ricostruire quella firma. */
   private routeStamp = -1;
 
+  /**
+   * Quanto la citta' costruita allontana da se' l'influenza dei catalizzatori.
+   *
+   * Vive qui e non nella simulazione per la stessa ragione del costo di
+   * attraversamento: nasce dal registry del Builder, e `src/sim/` non deve
+   * conoscere la geografia. Lo stato ne vede solo il risultato, attraverso la
+   * `StepCost` che gli e' stata data alla nascita.
+   */
+  private readonly congestion = new CongestionMap();
+  /** Firma della citta' da cui il carico e' stato calcolato. Vedi `syncCongestion`. */
+  private congestionStamp = -1;
+
   /** Settori comprati e non ancora seminati: aspettano che il terreno arrivi. */
   private readonly pendingSectors: Region[] = [];
 
@@ -241,7 +255,7 @@ export class GrowthScene {
     this.builder = new Builder(world, map, seed, region);
     this.state = createSimState({
       rngState: seed,
-      reachCost: createReachCost(map, () => this.builder.roads),
+      reachCost: createReachCost(map, () => this.builder.roads, () => this.congestion),
     });
   }
 
@@ -269,8 +283,19 @@ export class GrowthScene {
     // dati, il secondo come seme —, quindi al primo tick dopo il caricamento la
     // rete torna quella di prima. E' la stessa regola del campo qui sopra: cio'
     // che un generatore sa ridisegnare non si serializza.
-    this.state = reviveSimState(save.sim, createReachCost(this.map, () => this.builder.roads));
+    this.congestion.clear();
+    this.congestionStamp = -1;
+    this.state = reviveSimState(
+      save.sim,
+      createReachCost(this.map, () => this.builder.roads, () => this.congestion),
+    );
     this.builder.restore(save.records);
+    // **Dopo `builder.restore`, e non prima.** Il carico si legge dal registry,
+    // che fino a un attimo fa era vuoto: calcolarlo prima darebbe una citta'
+    // senza ingorghi, cioe' un campo diverso da quello che il salvataggio
+    // descriveva. Costa una seconda ricostruzione del campo, ed e' il prezzo di
+    // un caricamento, non di un frame.
+    this.syncCongestion();
 
     for (const sector of sectors) {
       this.unlocked.add(sector.id);
@@ -328,6 +353,57 @@ export class GrowthScene {
       this.aloftMemo = null;
     });
     this.builder.step();
+    // **Fuori dal passo fisso, e dopo `lastTickMs`.** Rifare il campo e' cio' che
+    // costa in tutta la 8.3, e metterlo dentro il tick lo farebbe pesare su un
+    // budget da 3 ms che non e' suo: e' una passata rara, come la ricerca delle
+    // rotte qui accanto, e va misurata come tale. Una volta per frame al
+    // massimo, anche quando la velocita' e' a tre e i tick sono cinque.
+    this.syncCongestion();
+  }
+
+  /**
+   * Rimette in pari il carico della citta', e con esso il campo.
+   *
+   * **A scaglioni, non a ogni edificio.** Il termine di densita' costa quasi
+   * niente da leggere; a costare e' cio' che il suo cambiamento porta con se': un
+   * carico nuovo rende stale ogni portata gia' calcolata, quindi ogni
+   * catalizzatore va rifatto da capo. Farlo per ogni villetta significherebbe
+   * pagare un `setPolicyActive` — 8,6 ms — a ogni comparsa, cioe' moltiplicare
+   * il costo del campo per il numero di edifici costruiti. Sessantaquattro e' lo
+   * scaglione che `syncTraffic` usa gia' per lo stesso motivo, ed e' molto meno
+   * di quanto serva a cambiare la sagoma di un quartiere.
+   *
+   * **Le promozioni contano quanto le comparse**, ed e' il punto della fase: un
+   * upgrade non muove `registry.count`, ma raddoppia il volume costruito sulla
+   * stessa impronta. Uno scaglione che guardasse solo le comparse non vedrebbe
+   * mai densificare — cioe' proprio la cosa a cui questa fase da' un prezzo.
+   *
+   * **I catalizzatori invece entrano interi, senza scaglione.** Sono un gesto del
+   * giocatore, sono unita' e non migliaia, e il sollievo di una stazione deve
+   * vedersi al click: aspettare altri sessantatre edifici per far ripartire un
+   * quartiere sarebbe la stessa risposta muta che l'ingorgo esiste per togliere.
+   */
+  private syncCongestion(): void {
+    const built = (this.builder.registry.count + this.builder.stats.upgraded) >> 6;
+    const rides = this.builder.ropewayRides;
+    const stamp = built * 1_048_576 + this.state.catalysts.length * 1024 + rides.length;
+    if (stamp === this.congestionStamp) return;
+    this.congestionStamp = stamp;
+
+    const moved = this.congestion.rebuild(
+      this.builder.registry.all,
+      transitSourcesOf(this.state.catalysts, rides),
+    );
+    // **La firma dice "guarda", il carico dice "rifai".** Rifare il carico costa
+    // un quinto di millisecondo, rifare il campo che ne dipende ne costa fra i
+    // cinquanta e i novanta — il doppio di `setPolicyActive`, misurato — quindi
+    // la firma serve solo a evitare di guardare, e a decidere e' la differenza
+    // vera. Quindici ruoli su diciannove non alleviano niente, e un edificio in
+    // periferia non satura nessuna tessera: quei casi non pagano.
+    if (!moved) return;
+    // Il carico e' cambiato sotto le portate: e' la stessa situazione dell'isola
+    // che si allarga, e la risposta e' quella che c'e' gia'.
+    rebuildField(this.state);
   }
 
   placeCatalyst(

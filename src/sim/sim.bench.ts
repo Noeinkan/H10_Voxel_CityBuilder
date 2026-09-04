@@ -8,6 +8,7 @@ import {
   addCatalyst,
   addFarm,
   createSimState,
+  rebuildField,
   setCatalystStrength,
   setPolicyActive,
   type SimState,
@@ -115,5 +116,14 @@ describe('simulazione, mappa 256x256', () => {
   let toggling = city;
   bench('setPolicyActive su un peso di desiderabilita (ricostruisce una classe)', () => {
     toggling = setPolicyActive(toggling, 'greenBelt', toggling.policies.length === 0);
+  });
+
+  // **Il prezzo di uno scaglione della 8.3.** Quando il carico costruito cambia,
+  // il costo di attraversamento cambia sotto ogni portata gia' calcolata e non
+  // c'e' percorso incrementale: si butta la cache geodetica e si rilegge tutto.
+  // E' il motivo per cui `GrowthScene` lo chiama ogni sessantaquattro edifici e
+  // non a ogni comparsa, e il termine di riferimento e' la riga qui sopra.
+  bench('rebuildField (il costo di uno scaglione di congestione)', () => {
+    rebuildField(city);
   });
 });

@@ -43,6 +43,26 @@ nell'`AGENTS.md` piu' vicino.
   indicato dal file radice: non duplicare numeri nei consumatori.
 - Distingui sempre modello logico, occupazione voxel e vista: non trasformare in
   voxel traffico, funi o altro contenuto dichiarato non materiale.
+- **L'ingorgo di `congestion.ts` si somma al costo di attraversamento, non lo
+  sostituisce.** Da qui seguono le due cose che reggono il campo: nessun passo
+  scende sotto 1, quindi la portata non esce dal quadrato che `DesirabilityField`
+  ricalcola; e la carreggiata resta la via piu' corta anche dentro l'ingorgo,
+  perche' paga lo stesso supplemento del tessuto partendo da meno. Un costo che
+  *sostituisse* romperebbe entrambe insieme.
+- **Il carico si legge in `O(1)` o non si legge.** `createReachCost` viene
+  chiamata una volta per vicino visitato dentro Dijkstra: contare i record attorno
+  a una colonna a ogni domanda sarebbe il costo dominante del campo. Per questo il
+  carico sta su tessere in una `Map`, e per questo si ricostruisce a scaglioni.
+- **Rifare il carico costa un quinto di millisecondo, rifare il campo che ne
+  dipende ne costa cinquanta o novanta.** Chi chiama `CongestionMap.rebuild` deve
+  guardarne il valore di ritorno: dice se qualcosa si e' mosso davvero, ed e' cio'
+  che separa «la citta' si e' infittita» da «e' comparsa una villetta in
+  periferia». Chiamare `rebuildField` senza averlo chiesto moltiplica il costo del
+  campo per il numero di edifici costruiti.
+- **Il sollievo del trasporto legge le posizioni, mai le portate.** Un sollievo
+  che leggesse il campo di un catalizzatore dipenderebbe dal costo di
+  attraversamento che questo modulo produce, e la ricorsione sarebbe chiusa: in
+  `transitSourcesOf` la distanza e' in linea d'aria, e resta un fatto sui dati.
 - Per il riferimento completo e l'indice dei domini usa
   [`docs/world/README.md`](../../docs/world/README.md).
 

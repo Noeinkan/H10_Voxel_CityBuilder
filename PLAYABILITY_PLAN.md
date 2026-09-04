@@ -4,8 +4,8 @@ Proposta di **fase 8** per [ROADMAP.md](ROADMAP.md), scritta a parte quando non
 era ancora concordata. È ortogonale alla spina dorsale verticale: 4.9 e 4.14
 restano aperte e nessuna delle voci qui sotto le tocca o le rimanda.
 
-> **La fase è stata accettata e vive in [ROADMAP.md](ROADMAP.md#L1296).** 8.1,
-> 8.2 e 8.4 sono chiuse; resta aperta la 8.3. Questo file è il piano **come è
+> **La fase è stata accettata e vive in [ROADMAP.md](ROADMAP.md#L1296).** Tutte
+> e quattro le sotto-fasi sono chiuse. Questo file è il piano **come è
 > stato scritto**, non come è stato costruito: dove le due versioni divergono —
 > e divergono, perché scrivere il codice ha corretto il piano in più punti — la
 > roadmap è quella giusta. Le caselle qui sotto dicono solo cosa è stato fatto.
@@ -167,6 +167,18 @@ partono dallo stesso seed.
 Obiettivo: che densificare abbia un prezzo spaziale, senza simulare un solo
 veicolo.
 
+*Chiusa.* Il termine si **somma** al costo del suolo invece di stare sulla sola
+carreggiata come questa pagina proponeva: caricare le sole strade era stato
+provato, e il tessuto a 1,25 le fa aggirare per un quarto di cella per passo — un
+ingorgo che si aggira non è un ingorgo. Il carico sta su tessere da otto celle in
+`src/world/congestion.ts`, e lo scaglione conta le **promozioni** insieme alle
+comparse, perché un upgrade non muove `registry.count`. L'A/B non è su due
+worktree ma a bracci alternati nello stesso processo, per una ragione trovata
+misurando: su una città cresciuta il percorso incrementale e la ricostruzione non
+danno lo stesso campo, quindi due worktree avrebbero misurato due cose insieme. Il
+conto sta in [ROADMAP.md](ROADMAP.md#L1435) e il ragionamento in
+[src/sim/README.md](src/sim/README.md).
+
 [reach.ts](src/sim/reach.ts) calcola già distanze **geodetiche** con costi di
 attraversamento per cella, letti da `world/reachCost.ts` — l'unico posto da cui
 terreno e strade si vedono insieme — e una strada costa meno del tessuto. Basta
@@ -180,13 +192,13 @@ Non collide con `src/world/traffic/`, che è un'altra cosa: lì barche e aerei s
 **pose in funzione del tempo** per il colpo d'occhio, e non sanno niente di
 carichi.
 
-- [ ] Aggiungere a `reachCost` un termine di densità costruita, mantenendo il <!-- size: L -->
+- [x] Aggiungere a `reachCost` un termine di densità costruita, mantenendo il <!-- size: L -->
   vincolo che **un passo non costa mai meno di 1**: la geodetica resta almeno la
   Chebyshev e la forma non esce dal quadrato che il campo ricalcola.
-- [ ] Invalidare la cache geodetica **a scaglioni**, non a ogni edificio: il <!-- size: M -->
+- [x] Invalidare la cache geodetica **a scaglioni**, non a ogni edificio: il <!-- size: M -->
   precedente è già nel repo — `GrowthScene` rifà le rotte ogni sessantaquattro
   edifici, ed è lo stesso segnale.
-- [ ] Misurare l'A/B come ha fatto la 4.2 — worktree sul commit precedente, <!-- size: M -->
+- [x] Misurare l'A/B come ha fatto la 4.2 — worktree sul commit precedente, <!-- size: M -->
   esecuzioni alternate — perché qui si tocca il percorso caldo del campo.
 
 **Il costo vero è l'invalidazione, non il termine.** La distanza geodetica si
@@ -209,7 +221,7 @@ esattamente uno, così chi pianta continua a dimensionare la campagna su un nume
 onesto — e l'ampiezza è tarata contro `food.targetCoverage` invece che a occhio.
 Il fronte dell'emergenza ha avuto bisogno di due correzioni e non di una: misura
 la campagna all'anno medio, **e** pretende un deficit strutturale prima di
-dichiarare una carestia. Il conto sta in [ROADMAP.md](ROADMAP.md#L1467) e il
+dichiarare una carestia. Il conto sta in [ROADMAP.md](ROADMAP.md#L1502) e il
 ragionamento in [src/sim/README.md](src/sim/README.md).
 
 Dalla 3.1 il cibo ha un posto sulla mappa e un listino in case sfamate. Manca il
@@ -252,9 +264,8 @@ per evitarla è una punizione, la leva senza la perdita è il gioco di adesso. 8
 e 8.4 sono indipendenti fra loro e possono seguire in qualsiasi ordine; se c'è da
 sceglierne una, 8.4 costa meno e si vede di più.
 
-*L'ordine è stato seguito: 8.1 e 8.2 insieme, poi 8.4. Resta la 8.3, che è la più
-cara delle due perché tocca il percorso caldo del campo e chiede la misura A/B su
-worktree.*
+*L'ordine è stato seguito: 8.1 e 8.2 insieme, poi 8.4, infine la 8.3 — la più
+cara, perché tocca il percorso caldo del campo. La fase è chiusa per intero.*
 
 **Da fare prima di aprire un file — fatto.** La domanda aperta della 8.2 è stata
 decisa (copertura in due metà, non solo dai catalizzatori) e la fase è in
