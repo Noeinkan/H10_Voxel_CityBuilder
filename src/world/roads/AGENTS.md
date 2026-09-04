@@ -37,6 +37,20 @@ sapere prima di toccare qualcosa qui.
   migliore delle altre dove il terreno non ne ha. Alzare l'ampiezza della
   divagazione senza alzarne la **lunghezza d'onda** non serve a niente:
   spostarsi di lato dentro la stessa cella non guadagna nulla, ed e' misurato.
+- **La carreggiata e' suolo preso, e il divieto vale nei due versi.**
+  `SurfaceQueue.canPaint` non asfalta una colonna occupata; simmetricamente
+  `LotSearch.columnIsFree` e `UpgradeDriver.fitsWider` non prendono una colonna
+  che il tracciato tiene. Tenere un solo verso e' peggio che non averne nessuno:
+  la strada resta nei dati e sparisce dallo schermo, senza lasciare neanche il
+  vuoto da cui vederla — erano 499 colonne su 821, misurate. Un percorso nuovo
+  che posi volume a terra deve chiedere `carries`, e chi memorizza quella
+  risposta deve leggere `RoadNetwork.revision`: una strada che si sposta libera
+  il suolo che teneva.
+- **Un capillare parte da fuori l'edificio, e da terra asciutta.** L'ancora di un
+  lotto sta dentro l'impronta, quindi un vicolo che parta di li' nasce gia'
+  sepolto; e sulla battigia la sonda prende come piano il pelo dell'acqua, quindi
+  il vicolo si posa alla quota del mare mentre la colonna accanto resta il
+  fondale. Le due cose insieme stanno in `roadDriver.doorstep`.
 - **La rete si ricostruisce, non si salva.** Poli e terreno stanno gia' nel
   salvataggio — i primi come catalizzatori, il secondo come seme — quindi il
   tracciato si rifa' identico al caricamento. Non aggiungerlo alla cattura.

@@ -1,5 +1,5 @@
 {
-  "capturedAt": "2026-09-04T15:08:53.627Z",
+  "capturedAt": "2026-09-04T16:42:30.583Z",
   "viewport": {
     "width": 1440,
     "height": 900
@@ -12,8 +12,8 @@
       "url": "http://localhost:8021/?seed=1337&intro=0",
       "shows": "la gerarchia da vicino: le quattro larghezze di carreggiata a confronto e il salto di tinta del tronco, con gli edifici affacciati sul fronte strada",
       "alt": "Close view of a voxel city block showing a wide dark road, medium streets and one-voxel lanes with buildings fronting them",
-      "bytes": 4401905,
-      "ms": 114931,
+      "bytes": 3800351,
+      "ms": 117804,
       "warnings": [],
       "pageErrors": []
     }

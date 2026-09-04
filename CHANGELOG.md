@@ -16,6 +16,111 @@ Qui stanno **i tredici incrementi più recenti**; i precedenti sono archiviati i
 
 ---
 
+## In corso — La congestione diventa geografia
+
+- **Densificare ha un prezzo spaziale, e nessun veicolo lo trasporta.** La
+  distanza dei catalizzatori è geodetica dalla 4.2, quindi mancava una cosa sola
+  perché il traffico esistesse come *forma* invece che come simulazione:
+  `src/world/congestion.ts` conta il volume costruito per tessera da otto celle
+  e `createReachCost` lo somma al costo di attraversamento. Un quartiere che si
+  infittisce diventa **lontano**, i campi che lo raggiungevano si accorciano, la
+  desiderabilità cala e la crescita si sposta altrove. È il ciclo del traffico di
+  Cities Skylines senza un veicolo e senza ricerca di percorso — e non collide
+  con `src/world/traffic/`, dove barche e aerei restano pose in funzione del
+  tempo.
+- **Il termine si somma, e da lì seguono le due cose che tengono in piedi il
+  resto.** Nessun costo scende, quindi il pavimento a 1 di `reach.ts` regge da
+  solo e la portata non esce mai dal quadrato che il campo ricalcola; e la
+  carreggiata resta la via più corta anche dentro l'ingorgo, perché paga lo
+  stesso supplemento del tessuto partendo da meno. Caricare la sola carreggiata
+  — la lettera del piano — era stato provato e non funziona: il tessuto costa
+  1,25, quindi l'influenza avrebbe aggirato l'isolato per un quarto di cella e il
+  quartiere denso non sarebbe mai diventato lontano.
+- **La misura, su una città cresciuta di 1.200 tick.** Braccio di controllo — il
+  carico si calcola e il campo si rifà con la stessa cadenza, ma il costo non lo
+  legge — contro braccio ingorgato: il volume costruito nel centro scende da
+  22,2k a 14,9k voxel (−33%), il livello medio degli edifici del centro da 1,37 a
+  1,16, il volume di tutta la città da 101k a 90k. Gli edifici invece salgono da
+  154 a 177: **la città si allarga invece di impilarsi**, che è esattamente il
+  prezzo che si voleva mettere. Un catalizzatore di transito piantato a metà
+  corsa riporta il carico mediano da 0,32 a 0,10, il livello medio del centro a
+  1,57 e il volume a 100k: il quartiere riparte, e si vede in due minuti di
+  partita.
+- **Il costo vero era l'invalidazione, e infatti costa tutto lei.** Rifare il
+  carico dal registry sono 0,19 ms; rifare il campo che ne dipende sono 52 ms
+  sulla città del benchmark e 90 su un'isola cresciuta, cioè il doppio di un
+  `setPolicyActive`. `GrowthScene.syncCongestion` lo chiama quindi a scaglioni di
+  sessantaquattro edifici — lo stesso segnale con cui `syncTraffic` rifà le rotte
+  — contando le **promozioni** insieme alle comparse, perché un upgrade non muove
+  `registry.count` ma raddoppia il volume sulla stessa impronta.
+- **La firma dice «guarda», il carico dice «rifai».** `CongestionMap.rebuild`
+  restituisce se il carico si è mosso oltre un centesimo di cella, e solo allora
+  il campo si rifà. Su diciannove ruoli quindici non alleggeriscono niente e un
+  edificio in periferia non satura nessuna tessera: quei casi costano il quinto
+  di millisecondo e si fermano lì. Su 1.200 tick di partita sono quattro
+  ricostruzioni in tutto.
+- **I catalizzatori entrano senza scaglione.** Sono un gesto del giocatore e sono
+  unità, non migliaia: il sollievo di una stazione deve vedersi al click, e
+  aspettare altri sessantatré edifici sarebbe la stessa risposta muta che
+  l'ingorgo esiste per togliere. Alleggeriscono transito, aeroporto, porto e
+  traghetto, più i due capi di ogni funivia — la fune no, perché una linea che
+  alleggerisse tutto ciò che scavalca renderebbe scorrevole proprio il centro che
+  ha attraversato senza fermarsi.
+
+## In corso — Il suolo pubblico e l'arretramento del tessuto
+
+- **La carreggiata è suolo preso, come un edificio.** `SurfaceQueue.canPaint` si
+  rifiutava già di asfaltare una colonna occupata, ma nessuno impediva il gesto
+  opposto: la ricerca del lotto chiedeva l'affaccio come *preferenza* e non
+  guardava mai se la strada fosse proprio lì sotto. Su un'isola cresciuta —
+  256×256, seme 1337, 1200 tick — **499 colonne di carreggiata su 821 finivano
+  sotto un edificio**, cioè non venivano mai dipinte: la strada esisteva nei dati
+  e non a schermo. È l'intera spiegazione del «non si vedono strade». Adesso
+  `LotSearch.columnIsFree` la boccia, e l'affaccio resta quello che era — una
+  preferenza sul *dove*, non un divieto sul *sopra*.
+- **Una strada che si sposta libera il suolo che teneva.** È il quarto modo, dopo
+  il registry, l'impalcato e il terreno, e si è portato il proprio contatore come
+  `freedomEpoch` chiedeva: `RoadNetwork.revision` sale a ogni ripianificazione e
+  a ogni capillare nuovo. Senza, un isolato dichiarato pieno restava pieno
+  rispetto a un tracciato che non passava più di lì.
+- **Il tessuto lascia un cortile: `BUILDER.backSetback`.** Due colonne d'aria
+  davanti e dietro, **i fianchi no** — ed è quella asimmetria la regola. Due case
+  che condividono il muro di fianco fanno un fronte continuo sulla strada, che è
+  ciò che `Frontage.snap` cerca apposta; le stesse due case saldate sul retro
+  fanno sparire il cortile, e con lui l'unico vuoto da cui la strada dietro si
+  vedrebbe. L'orientamento è ciò che dice quali due lati sono la fila e quali la
+  profondità, quindi la domanda arriva **dopo** `facingAt`: `placeLot` ha ora una
+  terza passata, e ognuna rinuncia a un requisito — affaccio più arretramento,
+  poi il solo arretramento, poi niente. Un requisito che non sapesse rinunciare
+  fermerebbe la crescita appena l'area satura.
+- **Il capillare parte dal portone, non dall'ancora del lotto.** L'ancora sta
+  *dentro* l'edificio: le prime colonne del vicolo cadevano sotto la casa che le
+  aveva chieste, e lì non si asfalta più. Erano 311 vicoli su 639. Sulla battigia
+  si torna all'ancora, e non è un dettaglio: la sonda del tracciato prende come
+  piano il pelo dell'acqua, quindi un vicolo che parta dal bassofondo si posa
+  alla quota del mare mentre la colonna accanto resta il fondale — un salto da
+  sedici voxel fra due colonne contigue di carreggiata, che un test già copriva.
+- **Allargarsi è costruire.** `UpgradeDriver.fitsWider` guardava i vicini e non
+  la strada: era la porta di servizio da cui un edificio finiva in mezzo alla
+  carreggiata che la ricerca del lotto gli aveva vietato. Guarda solo le colonne
+  **nuove** — un edificio nato prima del tracciato può averne una sotto di sé, e
+  leggergliela come un divieto lo condannerebbe a non promuovere mai.
+- **`ROADS.builtCost` da 6 a 12.** Il commento diceva «quanto sei colonne libere»
+  e ne valeva tre, perché `landCost` è 2: la deviazione doveva restare sotto le
+  tre colonne per convenire, e non conviene quasi mai. Il numero ha senso adesso
+  e non prima — su un tessuto saldato non c'era nessun varco da trovare. Misurato
+  sulla stessa isola: carreggiata sepolta e tempo di simulazione vanno insieme, a
+  sei 42% in 28 s, a dodici 34% in 31 s, a venti 29% in 42 s.
+- **Il risultato, sulla stessa isola.** Aria attorno agli edifici dal 42% al 53%
+  del perimetro, contatto muro contro muro dal 57% al 39% — e il contatto *in
+  profondità*, quello che chiude i cortili, giù del 45%. Colonne di carreggiata
+  visibili da 322 a 751.
+- **`cityDigest` è stata rigenerata, e le partite salvate non tornano più
+  uguali.** Era il caso dichiarato: `findLot` elegge altre colonne, ed è
+  esattamente ciò che quell'impronta esiste per rendere visibile. Nello stesso
+  intervallo si è mosso anche il repertorio delle tipologie, che la firma legge:
+  il valore nuovo tiene dentro tutte e due le cause.
+
 ## In corso — Sostegno e feedback nel menu principale
 
 - **Una pillola «Support» e una «Feedback» nel piede del menu principale.** Stanno sotto la firma e non fra le voci: nessuna delle due riguarda la citta' aperta, e chi le cerca le cerca dove c'e' scritto chi l'ha fatta. Il sostegno e' un semplice collegamento a Ko-fi in una scheda nuova — nessun pagamento passa dal gioco.

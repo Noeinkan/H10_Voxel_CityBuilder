@@ -34,3 +34,28 @@ riscriverli:
   entrare o cadere insieme usa `structureFits` su tutti e poi `writeStructure`.
   Le letture sul mondo con cui si compone una sonda di dominio stanno in
   `worldProbe.ts`.
+
+## Il tessuto e il suolo pubblico
+
+- **Chi costruisce a terra non prende la carreggiata.** Sono due porte —
+  `LotSearch.columnIsFree` per un lotto nuovo, `UpgradeDriver.fitsWider` per
+  un'impronta che si allarga — e una terza le romperebbe in silenzio: la strada
+  resterebbe nei dati e sparirebbe dallo schermo, perché `SurfaceQueue.canPaint`
+  non asfalta una colonna occupata. Il resto dell'invariante, contatore di
+  invalidazione compreso, sta in [`../roads/AGENTS.md`](../roads/AGENTS.md).
+- **L'affaccio e l'arretramento sono due domande, non due distanze.**
+  `onFrontage` chiede se il lotto *vede* la strada e ordina i candidati;
+  `onSetback` chiede se lascia aria **sui soli lati che non sono la sua fila**, e
+  ha bisogno dell'orientamento per sapere quali siano. Accostarsi di fianco fa un
+  fronte continuo ed è voluto — `Frontage.snap` lo cerca apposta; saldarsi sul
+  retro chiude il cortile, e con lui l'unico vuoto da cui si vede la strada
+  dietro.
+- **Nessuno dei due può diventare un divieto.** `placeLot` li chiede in passate
+  successive e rinuncia nell'ultima: dove l'area è satura si costruisce lo
+  stesso. Un requisito che non sapesse rinunciare ferma la città appena il primo
+  rettangolo si riempie — è già successo, ed erano quattordici edifici su
+  un'isola intera.
+- **Cambiare la posa muove `cityDigest`.** È il caso dichiarato di quel test: si
+  rigenera l'impronta e si scrive nel changelog che le partite salvate non
+  tornano più uguali. Se invece cade dopo una modifica che si dichiarava neutra,
+  ha torto la modifica.

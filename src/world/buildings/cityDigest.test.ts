@@ -21,11 +21,18 @@ import { BUILDER } from './config';
  * la promessa «non cambia la citta' generata». Finche' quella promessa non e' un
  * numero, e' un'opinione.
  *
- * Calcolata su questo codice, con il memo dei lotti della fase 1.1 gia' dentro e
- * identica a quella di prima del memo. Se cade dopo un cambiamento che si
- * dichiarava neutro, ha torto il cambiamento; se cade dopo uno dichiarato — il
- * raggio di ricerca che si stringe, per dirne uno — si rigenera e si dice nel
- * CHANGELOG che le partite salvate non tornano piu' uguali.
+ * Calcolata su questo codice. Se cade dopo un cambiamento che si dichiarava
+ * neutro, ha torto il cambiamento; se cade dopo uno dichiarato — il raggio di
+ * ricerca che si stringe, per dirne uno — si rigenera e si dice nel CHANGELOG
+ * che le partite salvate non tornano piu' uguali.
+ *
+ * **Rigenerata con l'arretramento del tessuto.** Il valore di prima
+ * (`e99c7ba7`) reggeva una citta' che si saldava su tutti e quattro i lati e
+ * costruiva sopra la carreggiata; da `BUILDER.backSetback` e dal divieto di
+ * prendere suolo pubblico, `findLot` elegge altre colonne — che e' proprio il
+ * caso che questa impronta esiste per rendere visibile. Nello stesso intervallo
+ * si e' mosso anche il repertorio delle tipologie, e la firma porta
+ * `record.typology`: l'impronta nuova tiene dentro tutte e due le cause.
  */
 
 /**
@@ -110,7 +117,7 @@ describe('impronta digitale della citta', () => {
     // Se il nucleo non si satura la ricerca del lotto non fallisce mai, e
     // l'impronta smette di coprire proprio il caso che deve difendere.
     expect(placed).toBeGreaterThan(100);
-    expect(cityDigest(records)).toBe('e99c7ba7');
+    expect(cityDigest(records)).toBe('15ab8462');
   }, 120_000);
 
   it('l hash distingue due citta diverse', () => {

@@ -1445,24 +1445,59 @@ arriva un catalizzatore di trasporto. È il ciclo del traffico di Cities Skyline
 senza un veicolo e senza pathfinding, e non collide con `src/world/traffic/`, che
 è un'altra cosa: lì barche e aerei sono pose in funzione del tempo.
 
-- [ ] Termine di densità costruita in `reachCost`, mantenendo il vincolo che **un <!-- size: L -->
+- [x] Termine di densità costruita in `reachCost`, mantenendo il vincolo che **un <!-- size: L -->
   passo non costa mai meno di 1**: la geodetica resta almeno la Chebyshev e la
-  forma non esce dal quadrato che il campo ricalcola.
-- [ ] Invalidare la cache geodetica **a scaglioni**, non a ogni edificio: il <!-- size: M -->
+  forma non esce dal quadrato che il campo ricalcola. Il carico sta su tessere da
+  otto celle in `src/world/congestion.ts` — il costo di un passo si chiede una
+  volta per vicino visitato dentro Dijkstra, quindi doveva costare una ricerca in
+  una `Map` — e si **somma** al costo del suolo invece di sostituirlo, che è ciò
+  che tiene in piedi sia il pavimento a 1 sia il vantaggio relativo della strada.
+- [x] Invalidare la cache geodetica **a scaglioni**, non a ogni edificio: il <!-- size: M -->
   precedente è già nel repo — `GrowthScene` rifà le rotte ogni sessantaquattro
-  edifici, ed è lo stesso segnale.
-- [ ] Misurare l'A/B come la 4.2 — worktree sul commit precedente, esecuzioni <!-- size: M -->
-  alternate — perché qui si tocca il percorso caldo del campo.
+  edifici, ed è lo stesso segnale. Le **promozioni** contano insieme alle
+  comparse, perché un upgrade non muove `registry.count` ma raddoppia il volume
+  sulla stessa impronta: uno scaglione cieco alle promozioni non vedrebbe mai
+  densificare, cioè proprio la cosa a cui questa fase dà un prezzo.
+- [x] Misurare l'A/B come la 4.2 — **nello stesso processo e a bracci alternati**, <!-- size: M -->
+  non su due worktree — perché qui si tocca il percorso caldo del campo. Il
+  worktree è stato lasciato per una ragione trovata misurando: su una città
+  cresciuta il percorso incrementale e la ricostruzione **non danno lo stesso
+  campo** (7.548 celle su 65.536, scarto fino a 64), quindi un braccio senza
+  scaglioni avrebbe misurato la congestione e quella deriva insieme. Il controllo
+  rende il termine *muto* invece di spegnerlo: il carico si calcola e il campo si
+  rifà con la stessa cadenza, e a cambiare è solo ciò che il costo legge.
 
-**Il costo vero è l'invalidazione, non il termine.** La distanza geodetica si
-calcola una volta per catalizzatore e sta in cache; un costo che cambia con la
-città rende stale ogni catalizzatore di quell'area. È la ragione per cui questa
-sotto-fase viene terza: senza gli scaglioni, `setPolicyActive` e la modifica di un
-catalizzatore — già a 8,6 e 0,42 ms — si moltiplicano per gli edifici costruiti.
+**Il costo vero è l'invalidazione, non il termine**, e la misura lo conferma:
+rifare il carico dal registry sono 0,19 ms, rifare il campo che ne dipende sono
+52 ms sulla città del benchmark e 90 su un'isola cresciuta — il doppio di un
+`setPolicyActive`. Da qui la seconda metà, che il piano non chiedeva:
+`CongestionMap.rebuild` dichiara **se il carico si è mosso davvero**, e solo
+allora si paga. Quindici ruoli su diciannove non alleggeriscono niente e un
+edificio in periferia non satura nessuna tessera; su 1.200 tick di partita restano
+quattro ricostruzioni in tutto.
 
-**Gate:** un quartiere denso senza trasporto rallenta in modo osservabile, e un
-catalizzatore di trasporto lo rimette in moto; i budget della fase 6 reggono con
-la misura A/B in mano, non a occhio.
+**Gate: passato, e misurato invece che guardato.** Stesso seme, 1.200 tick,
+controllo muto contro braccio ingorgato: il volume costruito nel centro scende da
+22,2k a 14,9k voxel (−33%), il livello medio degli edifici del centro da 1,37 a
+1,16, il volume di tutta la città da 101k a 90k — mentre gli edifici *salgono* da
+154 a 177. La città si allarga invece di impilarsi. Un catalizzatore di transito
+piantato a metà corsa riporta il carico mediano da 0,32 a 0,10, il livello medio
+del centro a 1,57 e il volume a 100k: il quartiere riparte, e si vede in due
+minuti di partita.
+
+**Stato implementazione.** `src/world/congestion.ts` (nuovo) con
+`src/world/congestion.test.ts`; `createReachCost` prende un terzo argomento e
+`src/world/reachCost.test.ts` prova l'invariante del passo ≥ 1 e il vantaggio
+della carreggiata a ogni carico; `BALANCE.reach.congestion` porta grana,
+saturazione, supplemento e la tabella del sollievo; `GrowthScene.syncCongestion`
+tiene lo scaglione e la ricostruzione; una riga di benchmark in `sim.bench.ts`
+misura `rebuildField`, che è il prezzo di uno scaglione.
+
+**Quello che il piano prometteva e non è stato fatto così.** Caricare la sola
+carreggiata: il tessuto costa 1,25, quindi l'influenza avrebbe aggirato l'isolato
+per un quarto di cella per passo e il quartiere denso non sarebbe mai diventato
+lontano. Il supplemento va su suolo e carreggiata insieme, e la strada resta la
+via più corta perché parte da meno.
 
 ### Fase 8.4 — Il ritmo
 

@@ -1,4 +1,5 @@
 import { BALANCE, type StepCost } from '../sim';
+import type { CongestionLookup } from './congestion';
 import { BIOME } from './terrain/config';
 import type { TerrainMap } from './terrain/TerrainMap';
 
@@ -31,6 +32,19 @@ import type { TerrainMap } from './terrain/TerrainMap';
  * deve entrare in terra che non esiste. Quando l'isola si allarga, il costo
  * cambia sotto le portate gia' calcolate, e a rimetterle in pari e'
  * `rebuildField`.
+ *
+ * **La citta' costruita e' il terzo ingrediente, e si somma agli altri due.**
+ * Il carico di `congestion.ts` non sostituisce il costo del suolo: lo alza. Da
+ * qui seguono le due cose che tengono in piedi il resto — nessun passo scende
+ * sotto 1, quindi la portata non esce dal quadrato che il campo ricalcola; e la
+ * carreggiata resta la via piu' corta anche dentro l'ingorgo, perche' paga lo
+ * stesso supplemento del tessuto partendo da meno.
+ *
+ * Sarebbe stato piu' fedele al modello del traffico caricare solo la
+ * carreggiata, ed e' stato provato: il tessuto attorno costa 1,25, quindi
+ * l'influenza avrebbe semplicemente scavalcato l'isolato pagando un quarto di
+ * cella in piu' e il quartiere denso non sarebbe mai diventato lontano. Un
+ * ingorgo che si aggira non e' un ingorgo.
  */
 
 /**
@@ -46,14 +60,25 @@ export interface RoadLookup {
   readonly hasRoad: (x: number, y: number) => boolean;
 }
 
-export function createReachCost(map: TerrainMap, roads: () => RoadLookup | null): StepCost {
-  const { pavement, land, steep, water } = BALANCE.reach;
+export function createReachCost(
+  map: TerrainMap,
+  roads: () => RoadLookup | null,
+  // Come il tracciato, e per la stessa ragione: il carico nasce dal registry del
+  // Builder, che esiste dopo lo stato della simulazione. Il default a `null`
+  // tiene in piedi i chiamanti che non hanno una citta' sotto — i test e le
+  // fixture — e da' esattamente il costo di prima della 8.3.
+  congestion: () => CongestionLookup | null = () => null,
+): StepCost {
+  const { pavement, land, steep, water, congestion: jam } = BALANCE.reach;
 
   return (x, y) => {
     if (map.biomeAt(x, y) === BIOME.ocean) return water;
-    if (roads()?.hasRoad(x, y) === true) return pavement;
-    if (map.isBuildable(x, y)) return land;
-    // Roccia e cigli: ci si passa, ma il giro si sente.
-    return steep;
+    const base = roads()?.hasRoad(x, y) === true
+      ? pavement
+      // Roccia e cigli: ci si passa, ma il giro si sente.
+      : map.isBuildable(x, y) ? land : steep;
+
+    const load = congestion()?.at(x, y) ?? 0;
+    return load > 0 ? base + jam.jam * load : base;
   };
 }
