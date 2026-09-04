@@ -8,6 +8,7 @@ import {
   isDecayArmed,
   isDistressPossible,
   missingPlotsFor,
+  nearestTowerProspect,
   type SimState,
 } from '../sim';
 
@@ -211,6 +212,16 @@ function foodAdvice(state: SimState): { title: string; message: string } {
     const trade = connected
       ? 'Keep trade on Prioritize food while it grows.'
       : 'A Port on the coast can cover part of the deficit while it grows.';
+    // La soglia che manca davvero, quando c'e' un candidato da misurare. Senza,
+    // resta il gesto generico: e' il caso in cui l'anello non tocca nessuna
+    // industria, e allora l'unica cosa vera da dire e' proprio di sovrapporlo.
+    const near = towerProgress(state);
+    if (near !== null) {
+      return {
+        title: `Food shortage: no tower yet — the best block is at ${near.have}% ${near.metric}, towers need ${near.need}%.`,
+        message: `People don't have enough food: the Greenhouse is already in place, and the closest industrial block inside its ring is at ${near.have}% ${near.metric} — a Hydroponic tower needs ${near.need}%. To fix that, ${near.gesture} ${trade} ${recover}`,
+      };
+    }
     return {
       title: 'Food shortage: no tower yet — overlap the Greenhouse with the Factory.',
       message: `People don't have enough food: the Greenhouse is already in place, but no hydroponic tower has formed yet. To fix that, overlap its ring with your Factory (or Market) and let an industrial building inside grow until a Hydroponic tower appears. ${trade} ${recover}`,
@@ -237,6 +248,42 @@ function foodAdvice(state: SimState): { title: string; message: string } {
   return {
     title: 'Food shortage: farms and imports lag — slow the clock to catch up.',
     message: `People don't have enough food: farms and imports are both behind the city's appetite. To fix that, slow the clock and let the countryside catch up before growing further. ${recover}`,
+  };
+}
+
+/**
+ * La soglia vincolante della prossima torre, tradotta in numeri e in un gesto.
+ *
+ * **Il gesto viene dalla metrica, ed e' la ragione per cui questa riga vale piu'
+ * del consiglio generico.** «Fai crescere l'isolato» non e' un gesto: e' cio' che
+ * il giocatore stava gia' aspettando. Le due soglie di `farming` chiedono pero'
+ * cose diverse — densita' e industria — e ciascuna ha la sua mossa, che e' la
+ * sola informazione capace di distinguere l'attesa utile da quella inutile.
+ *
+ * Il gap di **ruolo** torna `null` invece di una riga sua: li' non manca una
+ * soglia, manca che l'anello arrivi, e a dirlo c'e' gia' il messaggio generico
+ * con le parole giuste. Due frasi per lo stesso fatto sarebbero due da tenere
+ * allineate.
+ *
+ * **Le metriche del profilo urbano stanno in [0, 1], e vanno a schermo in
+ * percentuale.** Arrotondarle com'erano dava «0 of 0 density» — due zeri al
+ * posto di 31% e 40% — cioe' una riga peggiore di quella generica che sostituiva.
+ */
+function towerProgress(state: SimState): {
+  readonly have: number;
+  readonly need: number;
+  readonly metric: string;
+  readonly gesture: string;
+} | null {
+  const prospect = nearestTowerProspect(state);
+  if (prospect === null || prospect.gap.metric === null) return null;
+  return {
+    have: Math.round(prospect.gap.have * 100),
+    need: Math.round(prospect.gap.need * 100),
+    metric: prospect.gap.metric,
+    gesture: prospect.gap.metric === 'industry'
+      ? 'place another Factory inside that ring.'
+      : 'place a Market beside it so the block grows denser.',
   };
 }
 

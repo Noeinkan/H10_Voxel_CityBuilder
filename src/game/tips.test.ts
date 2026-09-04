@@ -211,6 +211,39 @@ describe('tips — il consiglio sul cibo nomina il gesto giusto', () => {
     expect(message).toContain('Hydroponic tower');
     expect(message).not.toContain('place a Greenhouse');
   });
+
+  /**
+   * La riga che il consiglio generico non sapeva dire. «Sovrapponi l'anello alla
+   * fabbrica» e' vero anche quando l'anello e' gia' sovrapposto: da li' in poi il
+   * giocatore aspetta senza sapere se sta aspettando qualcosa che arrivera'.
+   */
+  it('con un industriale nell’anello dice quale soglia manca e di quanto', () => {
+    // La serra addosso all'industriale che `city()` costruisce a (1, 20).
+    const state = addCatalyst(starving(), {
+      x: 1, y: 20, class: catalystById('greenhouse').class, kind: 'greenhouse',
+      strength: 200, radius: 40,
+    });
+    const tip = urgentTip(state);
+    const title = tip?.title ?? '';
+    const message = tip?.message ?? '';
+
+    expect(title).toContain('best block');
+    // I due numeri della soglia vincolante, non una frase qualitativa.
+    const shown = title.match(/at (\d+)% (density|industry), towers need (\d+)%/);
+    expect(shown).not.toBeNull();
+    expect(message).toContain('Hydroponic tower needs');
+    // E un gesto, che e' la regola del modulo: la metrica ne sceglie uno.
+    expect(message).toMatch(/place a(nother)? (Factory|Market)/);
+
+    // Le metriche del profilo stanno in [0, 1]: arrotondarle senza scalarle
+    // dava «0 of 0», due zeri al posto di 31% e 40%. La riga vale solo se i due
+    // numeri sono numeri, e il secondo dev'essere piu' alto del primo — sotto
+    // soglia e' la ragione per cui la torre non c'e' ancora.
+    const have = Number(shown?.[1]);
+    const need = Number(shown?.[3]);
+    expect(have).toBeGreaterThan(0);
+    expect(need).toBeGreaterThan(have);
+  });
 });
 
 describe('tips — i colli di bottiglia che nessuna barra mostra', () => {

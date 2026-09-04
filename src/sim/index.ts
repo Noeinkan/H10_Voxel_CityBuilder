@@ -136,9 +136,14 @@ export {
 } from './policies';
 export { policyConflict } from './policies';
 export {
+  nearestTowerProspect,
+  type TowerProspect,
+} from './towerProspect';
+export {
   ALL_SPECIALIZATIONS,
   districtPairingsOf,
   dominantUse,
+  gapRatio,
   rolesForSpecialization,
   specializationGapsOf,
   specializationOf,
@@ -193,6 +198,15 @@ export {
   type SatisfactionInputs,
   type SatisfactionReport,
 } from './satisfaction';
+export {
+  harvestFactorAt,
+  SEASON,
+  SEASON_COUNT,
+  SEASON_NAMES,
+  seasonAt,
+  yearPhaseAt,
+  type Season,
+} from './seasons';
 export { nextState, unitOf } from './rng';
 export {
   addBuilding,

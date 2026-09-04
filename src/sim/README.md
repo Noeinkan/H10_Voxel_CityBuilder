@@ -39,6 +39,7 @@ nextBuildSites(state, terrainMap, 10);           // [{ x, y, class, mixed, score
 | [DesirabilityField.ts](DesirabilityField.ts) | Campo per uso, `Uint8Array` chunkato 32×32, ricalcolo incrementale |
 | [policies.ts](policies.ts) | Catalogo delle policy e risoluzione dei pesi |
 | [districts.ts](districts.ts) | Profilo locale, distretti e specializzazioni emergenti dalla sovrapposizione; `specializationGapsOf` legge la stessa regola all'indietro e dice cosa manca |
+| [towerProspect.ts](towerProspect.ts) | Quale edificio industriale è più vicino a diventare torre idroponica, e quale soglia gli manca |
 | [commerce.ts](commerce.ts) | Il ciclo commerciale interno: domanda, organico, merce, ricavi |
 | [farms.ts](farms.ts) | I tre produttori di cibo, il listino in case sfamate e il referto del raccolto |
 | [flows.ts](flows.ts) | Da dove vengono i fondi di un tick e dove vanno: referto derivato, non un accumulo |
@@ -519,6 +520,44 @@ scorciatoia:
 legge `MaterialsReport.exported`, e cambiargli dominio avrebbe chiesto a ogni
 lettore di imparare un verso — col primo che non l'avesse imparato a mostrare un
 export dove c'era un acquisto.
+
+### La torre si può misurare, non solo aspettare
+
+La torre idroponica è la leva principale del cibo tardivo ed è anche l'unica che
+il giocatore **non piazza**: nasce se un edificio industriale dentro il raggio di
+una serra — o di una fabbrica, o di un campus — supera insieme le due soglie di
+`farming`. Fino a qui l'unica cosa che l'interfaccia sapeva dire era il gesto
+generico, «sovrapponi l'anello alla fabbrica», che resta vero anche quando
+l'anello è già sovrapposto: da lì in poi il giocatore aspettava senza sapere se
+stava aspettando qualcosa che sarebbe arrivato.
+
+`nearestTowerProspect` in [towerProspect.ts](towerProspect.ts) sceglie il luogo
+di cui parlare — gli edifici industriali, i soli da cui una torre possa nascere —
+e `specializationGapsOf` dice cosa gli manca. Il tip lo traduce in una riga con
+due numeri e **un gesto scelto dalla metrica**: sotto densità si piazza un
+mercato accanto, sotto industria un'altra fabbrica nell'anello. È la differenza
+fra sapere di stare aspettando e sapere cosa si sta aspettando.
+
+Tre scelte che non si leggono dal codice:
+
+- **il silenzio ha due cause e una sola lettura.** Torna `null` sia dove non c'è
+  candidato, sia dove un candidato **qualifica già**: nel secondo caso la torre
+  arriva alla prossima promozione e un consiglio sarebbe rumore. Chi legge le
+  tratta uguale — nessun consiglio da dare — e non spiega l'assenza;
+- **il filtro geometrico prima del profilo.** Chi chiama gira a ogni tick e
+  `urbanProfileAt` costa un giro su tutti i catalizzatori. Il cerchio euclideo è
+  più largo della portata vera, che segue le strade, ed è proprio ciò che serve a
+  un filtro: scarta solo chi è fuori di sicuro, e la verità la dice il profilo;
+- **`gapRatio` è esportata da `districts.ts` invece di essere riscritta.** Lì
+  ordina le specializzazioni di un luogo, qui i luoghi per la stessa
+  specializzazione: due domande sullo stesso metro, e due copie sarebbero
+  divergute alla prima ritaratura.
+
+**Le metriche del profilo stanno in [0, 1] e vanno a schermo in percentuale.** È
+il difetto che la sonda ha trovato e i test no: arrotondarle com'erano dava «0 of
+0 density», due zeri al posto di 31% e 40% — una riga peggiore di quella generica
+che sostituiva. Il test ora lega i due numeri a essere numeri, e il secondo a
+stare sopra il primo.
 
 ## Scena di debug
 
