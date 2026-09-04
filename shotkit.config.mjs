@@ -19,6 +19,28 @@ const BASE_URL = process.env.SHOTKIT_BASE_URL || 'http://localhost:8020';
 /** Centro dell'isola nella viewport dopo `frameIsland`. */
 const ISLAND = { x: 720, y: 430 };
 
+/**
+ * Attraversa la schermata del titolo.
+ *
+ * **`?play=1` non la salta piu'.** Il parametro esiste ancora e la
+ * documentazione dell'harness lo descrive come la scorciatoia di chi automatizza
+ * il browser, ma misurato con `shotkit probe` la porta d'ingresso resta su
+ * schermo — `title-screen title-screen--sky` a 2, 4 e 6 secondi — e il resto di
+ * `prepare` gira dietro un velo. Nessun errore, nessun avviso: la scena cresce
+ * davvero, l'autosalvataggio si riempie, e lo scatto finale inquadra il menu.
+ * E' il caso da manuale del difetto che l'audit non vede.
+ *
+ * Il bottone grande e' `Play` a mani vuote e `Continue` quando c'e' qualcosa da
+ * riprendere: si clicca quello, senza sapere quale dei due sia.
+ */
+async function enterGame(page) {
+  const primary = page.locator('.title-screen .title-button--primary').first();
+  await primary.waitFor({ state: 'visible', timeout: 180000 });
+  await primary.click();
+  await page.waitForSelector('.title-screen', { state: 'hidden', timeout: 60000 });
+  await page.waitForTimeout(800);
+}
+
 /** Il terreno arriva da un worker: le risorse restano "—" finche' non ha finito. */
 async function terrainReady(page) {
   await page.waitForFunction(
@@ -119,8 +141,11 @@ async function answerDecision(page) {
 async function parkPointer(page, { escape = true } = {}) {
   if (escape) await page.keyboard.press('Escape');
   await page.evaluate(() => {
+    // Il menu di pausa non e' un cassetto e non ha `.drawer-close`: e' vestito
+    // come la schermata del titolo, quindi si chiude dal suo bottone grande —
+    // `Resume`, l'unico `title-button--primary` che ha.
     const veil = document.querySelector('.main-menu-veil');
-    if (veil !== null && !veil.hidden) veil.querySelector('.drawer-close')?.click();
+    if (veil !== null && !veil.hidden) veil.querySelector('.title-button--primary')?.click();
   });
   await page.evaluate(() => document.activeElement?.blur?.());
   await page.mouse.move(1418, 460);
@@ -194,6 +219,7 @@ async function selectBuilding(page, cx, cy) {
 
 /** Isola generata, catalizzatori piazzati, crescita avviata. */
 async function seedCity(page, { growMs = 45000, extras = true, answer = true } = {}) {
+  await enterGame(page);
   await terrainReady(page);
   await frameIsland(page);
   await placeCatalyst(page, 'Market', ISLAND.x - 20, ISLAND.y - 10);
@@ -380,6 +406,43 @@ export default {
         }
         await page.waitForTimeout(1500);
         // Niente `Escape`: adesso chiuderebbe proprio la scheda da fotografare.
+        await parkPointer(page, { escape: false });
+      },
+    },
+    {
+      name: '10-road-network',
+      path: '/?seed=1337&hour=13',
+      timeoutMs: 420000,
+      settleMs: 3000,
+      shows:
+        'il tracciato stradale che la citta si e data: un tronco largo che entra nel centro, i viali che lo alimentano e i vicoli da un voxel fra le case, con il percorso deciso dal rilievo invece che da un reticolo',
+      alt: 'Voxel city seen from above with a dark wide artery running into the centre, narrower streets branching off it and thin lanes between the blocks',
+      async prepare(page) {
+        await seedCity(page, { growMs: 75000 });
+        await mesherIdle(page);
+        await parkPointer(page);
+      },
+    },
+    {
+      name: '11-road-hierarchy',
+      path: '/?seed=1337&hour=13',
+      timeoutMs: 420000,
+      settleMs: 3000,
+      shows:
+        'la gerarchia da vicino: le quattro larghezze di carreggiata a confronto e il salto di tinta del tronco, con gli edifici affacciati sul fronte strada',
+      alt: 'Close view of a voxel city block showing a wide dark road, medium streets and one-voxel lanes with buildings fronting them',
+      async prepare(page) {
+        await seedCity(page, { growMs: 75000 });
+        await mesherIdle(page);
+        // In pausa: a 4x la citta continua a crescere mentre la camera scende,
+        // e un rimescolamento a meta zoom sposta proprio cio che si inquadra.
+        await page.getByRole('button', { name: /Pause simulation/i }).click();
+        await page.mouse.move(ISLAND.x, ISLAND.y);
+        for (let i = 0; i < 9; i++) {
+          await page.mouse.wheel(0, -500);
+          await page.waitForTimeout(150);
+        }
+        await mesherIdle(page);
         await parkPointer(page, { escape: false });
       },
     },
