@@ -153,7 +153,14 @@ describe('resolveSelection', () => {
       class: BUILDING_CLASS.industrial,
       specialization: 'farming',
     });
-    const state = { ...createSimState(), staffing: 0.5 };
+    // A meta' primavera la resa stagionale vale l'anno medio: cosi' il numero
+    // che il pannello mostra si confronta con il listino senza doverlo dividere
+    // per il mese. Che la stagione lo sposti davvero lo verifica `tick.test.ts`.
+    const state = {
+      ...createSimState(),
+      staffing: 0.5,
+      tickCount: BALANCE.seasons.yearTicks / 8,
+    };
 
     const picked = resolveSelection({ ...harness({ registry, streets, state }), cell: cell(40, 40, 12) });
     const productivity = picked?.block.productivity;

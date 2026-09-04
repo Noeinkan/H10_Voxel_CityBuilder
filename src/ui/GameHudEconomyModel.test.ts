@@ -62,9 +62,17 @@ describe('fundsHint', () => {
 });
 
 describe('foodHint', () => {
+  /**
+   * A meta' primavera la resa vale esattamente l'anno medio, quindi la riga non
+   * porta la coda della stagione: e' il momento in cui il resto della frase si
+   * legge da solo. Che la stagione compaia quando c'e' lo verifica il caso in
+   * fondo.
+   */
+  const NEUTRAL = BALANCE.seasons.yearTicks / 8;
+
   it('annuncia le razioni quando la domanda non e servita tutta', () => {
     // Domanda 100 × 0.05 = 5, mangiato 3: il 60% della domanda.
-    expect(foodHint(100, { ...EMPTY_HARVEST, eaten: 3 }, [0, 0, 0], 1))
+    expect(foodHint(100, { ...EMPTY_HARVEST, eaten: 3 }, [0, 0, 0], 1, NEUTRAL))
       .toBe('Rationing: 60% of demand');
   });
 
@@ -72,16 +80,34 @@ describe('foodHint', () => {
     // Domanda 40 × 0.05 = 2, tutta servita; il piano a 1.15 chiede 2.3, e un
     // campo sfama 2.4: ne manca uno.
     const fedHarvest: FoodReport = { ...EMPTY_HARVEST, eaten: 2 };
-    expect(foodHint(40, fedHarvest, [0, 0, 0], 1)).toBe('1 field under target');
+    expect(foodHint(40, fedHarvest, [0, 0, 0], 1, NEUTRAL)).toBe('1 field under target');
 
     // Domanda 80 × 0.05 = 4, tutta servita; il piano chiede 4.6: due campi.
-    expect(foodHint(80, { ...EMPTY_HARVEST, eaten: 4 }, [0, 0, 0], 1))
+    expect(foodHint(80, { ...EMPTY_HARVEST, eaten: 4 }, [0, 0, 0], 1, NEUTRAL))
       .toBe('2 fields under target');
   });
 
   it('dichiara la copertura quando i campi bastano al piano', () => {
     // Tre campi rendono 3 × 2.4 = 7.2, sopra il piano di 4.6.
-    expect(foodHint(80, { ...EMPTY_HARVEST, eaten: 4 }, [3, 0, 0], 1))
+    expect(foodHint(80, { ...EMPTY_HARVEST, eaten: 4 }, [3, 0, 0], 1, NEUTRAL))
+      .toBe('Covered: fields match the city');
+  });
+
+  /**
+   * La stagione va detta **anche** a citta' sfamata: senza, l'unico modo di
+   * accorgersi che la dispensa sta calando sarebbe guardarla scendere per un
+   * minuto, e una scorta che non si vede non e' una mossa.
+   */
+  it('nomina la stagione quando sposta la resa, e tace quando non la sposta', () => {
+    const year = BALANCE.seasons.yearTicks;
+    const covered: FoodReport = { ...EMPTY_HARVEST, eaten: 4 };
+
+    expect(foodHint(80, covered, [3, 0, 0], 1, Math.round(year * 0.875)))
+      .toBe('Covered: fields match the city · Winter yield −35%');
+    expect(foodHint(80, covered, [3, 0, 0], 1, Math.round(year * 0.375)))
+      .toBe('Covered: fields match the city · Summer yield +35%');
+    // A meta' autunno la curva passa per l'anno medio: niente da nominare.
+    expect(foodHint(80, covered, [3, 0, 0], 1, Math.round(year * 0.625)))
       .toBe('Covered: fields match the city');
   });
 });

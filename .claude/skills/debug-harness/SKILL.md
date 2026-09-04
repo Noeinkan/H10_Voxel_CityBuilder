@@ -31,6 +31,7 @@ console ogni 5 secondi, senza aprire il gate del debug.
 | `theme` | — | `<id>` sceglie il tema; vale **anche senza** `debug`, è un look, non una misura |
 | `hour` | — | `<0..24>` fissa l'ora e **ferma** il ciclo giorno/notte; vale anche senza `debug` |
 | `daylight` | `cycle` | `day` o `night` fermano l'orologio sull'ora del modo; è la stessa scelta del bottone nell'HUD e vale anche senza `debug` |
+| `season` | — | `<0..1>` inchioda la fase dell'anno e la sottrae alla simulazione: `0` primavera, `0.375` estate, `0.625` autunno, `0.875` inverno. Vale anche senza `debug`, ed è un look come `theme` e `hour` |
 | `inspect` | — | `xray`, `slice`, `section`, `block`: apre una vista di ispezione. Vale **anche senza** `debug` — è così che uno strumento di cattura inquadra una sezione senza overlay |
 | `slice` | — | `<z>` fissa la quota della fetta; senza, segue il suolo che si sta guardando |
 | `intro` | `1` | `0` toglie la caduta d'ingresso: la prima isola compare senza scendere dal cielo. Vale **anche senza** `debug`, serve a confrontare e a catturare uno scatto pulito |
@@ -38,9 +39,10 @@ console ogni 5 secondi, senza aprire il gate del debug.
 
 ## Ciclo giorno/notte
 
-L'ora avanza da sola: un giorno di gioco dura **dodici minuti reali**, e parte
-dalle 13, l'ora con cui i temi sono stati disegnati. `H` la sposta di un'ora
-avanti, `Shift+H` indietro; `?hour=21.5` la fissa e ferma il ciclo.
+L'ora avanza da sola: un giorno di gioco dura **sei minuti reali**
+(`DAYLIGHT.daySeconds`, 360), e parte dalle 13, l'ora con cui i temi sono stati
+disegnati. `H` la sposta di un'ora avanti, `Shift+H` indietro; `?hour=21.5` la
+fissa e ferma il ciclo.
 
 **L'orologio si può anche fermare, ed è una funzione di gioco.** Tre modi —
 `cycle`, `day`, `night` — dal bottone accanto alla velocità nell'HUD, dal tasto
@@ -73,6 +75,35 @@ Tre cose da sapere:
 `__voxelHour()` legge tutto e scrive di entrambi i lati: un numero è un'ora
 (`__voxelHour(21.5)`), una stringa è un modo (`__voxelHour('night')`). Riporta
 `hour`, `mode`, `pinned` e la fase del giorno.
+
+## L'anno
+
+**Una seconda lancetta, e conta tick invece che secondi.** Un anno dura 3600
+tick (`BALANCE.seasons.yearTicks`), cioè lo stesso tempo reale di un giro del
+sole a velocità 1 — ma si ferma in pausa e accelera con la velocità della
+simulazione, mentre il sole no. La fase esce da `yearPhaseAt(tickCount)` e da lì
+scendono **entrambe** le cose che la stagione muove: il moltiplicatore del
+raccolto in `src/sim/seasons.ts` e il colore in `src/engine/season.ts`. Sono la
+stessa fase apposta: un prato che ingiallisse in un mese diverso da quello in cui
+i campi rendono meno sarebbe decorazione.
+
+`?season=<0..1>` inchioda l'anno come `?hour=` fa con l'ora — **0** inizio
+primavera, **0,375** pieno dell'estate, **0,625** pieno dell'autunno, **0,875**
+pieno dell'inverno. Serve a guardare un inverno senza aspettare i quattro minuti
+che la partita ci mette ad arrivarci, e a catturare i sette temi nella stessa
+stagione.
+
+`__voxelSeason(phase?)` fa lo stesso da console: un numero inchioda la fase,
+`null` la restituisce alla simulazione, nessun argomento legge e basta. Riporta
+`phase`, `pinned`, il nome della stagione, `harvestFactor` e i tre umori
+(`growth`, `gold`, `frost`) — ed è il modo di verificare che colore e resa stiano
+nello stesso mese: se un giorno divergessero, si vedrebbe qui prima che a
+schermo.
+
+**A metà estate la stagione non fa niente, ed è voluto.** `withSeason` e
+`seasonColors` restituiscono il tema per identità: il verde scritto in un tema
+*è* il suo verde d'estate. Se stai guardando `?season=0.375` e non vedi
+differenze rispetto a prima, è il comportamento giusto — prova `0.875`.
 
 ## La scena `diorama`
 
@@ -323,7 +354,7 @@ Solo con `?debug=1` (piu' `__voxelStats()`, che si registra anche con `?perf=1`)
 
 - sempre: `__voxelStats()`, `__voxelReset()`, `__voxelExpand()`,
   `__voxelRebuildAll()`, `__voxelTheme(id?)`, `__voxelSun(azimuth?, elevation?)`, `__voxelHour(h?)`,
-  `__voxelInspect(mode?, z?)`, `__voxelDrop()`
+  `__voxelSeason(phase?)`, `__voxelInspect(mode?, z?)`, `__voxelDrop()`
 - con `scene=swatch`: `__voxelSwatch(x?, y?)` — senza argomenti dice cosa indica
   il cursore, con una colonna interroga il campionario senza toccare il mouse.
   Restituisce `{ extent, cell, detail }`, e `detail` è il conteggio dei prismi:

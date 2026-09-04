@@ -75,6 +75,19 @@ leggere `src/world/`; il mondo non dipende mai dall'engine.
 - `DaylightMode` usa `cycle`, `day` e `night`; le modalita' fisse sono ore
   reali definite in `DAYLIGHT`. `applyTheme` e `applyAtmosphere` restano
   separate.
+- `season.ts` sta a `daylight.ts` come la stagione sta all'ora: `withSeason` e
+  `seasonColors` piegano prato, rimbalzo dal terreno, nebbia e orizzonte, e
+  lasciano stare sole, esposizione, tone mapping e materia. **A meta' estate
+  tornano il tema per identita'**: il verde scritto in un tema e' il suo verde
+  d'estate, ed e' cio' che tiene i temi sette invece di ventotto.
+- La stagione si applica **prima** dell'ora, e le due non commutano: la notte
+  spegne il rimbalzo, e spegnerne uno gia' ingiallito non e' come ingiallirne
+  uno gia' spento. Chi ha bisogno della palette in vigore legge
+  `AtmosphereControl.look`, non `theme`: quello e' l'identita' del tema.
+- La fase dell'anno arriva da `src/sim/seasons.ts` (`yearPhaseAt(tickCount)`) e
+  da nessun'altra parte: e' la stessa da cui esce il moltiplicatore del
+  raccolto, quindi il prato non puo' ingiallire in un mese diverso da quello in
+  cui i campi rendono meno.
 
 ## Pass e ispezione
 

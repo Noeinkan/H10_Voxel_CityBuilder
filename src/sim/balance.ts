@@ -928,6 +928,45 @@ export const BALANCE = {
     targetCoverage: 1.15,
   },
 
+  // --- L'anno --------------------------------------------------------------
+
+  seasons: {
+    /**
+     * Quanto dura un anno, in tick.
+     *
+     * **Tremilaseicento e' un giro del sole a velocita' uno**: `SIM_TICK_RATE`
+     * vale dieci, quindi sono trecentosessanta secondi, che e' esattamente
+     * `DAYLIGHT.daySeconds`. Le due lancette non si sincronizzano — l'anno conta
+     * tick e si ferma in pausa, il sole conta secondi e no — ma partono dallo
+     * stesso passo, e questo basta a evitare l'unica cosa davvero illeggibile:
+     * un inverno che comincia e finisce dentro la stessa notte.
+     *
+     * A misura di partita sono quattro anni in venticinque minuti, cioe' quattro
+     * volte «accumula» e quattro volte «consuma». Meno, e il ritmo non si
+     * riconoscerebbe; molti di piu', e ogni stagione sarebbe piu' corta della
+     * dotazione che l'emergenza alimentare regala (`decisions.reliefTicks`),
+     * che e' il punto in cui una risposta smette di essere una risposta.
+     */
+    yearTicks: 3600,
+
+    /**
+     * Di quanto la resa si scosta da uno, in piu' d'estate e in meno d'inverno.
+     *
+     * **Tarata contro `food.targetCoverage`, non a occhio.** Una campagna
+     * dimensionata dal piano — il quindici per cento sopra il pareggio, che e'
+     * il bersaglio a cui punta `missingPlotsOf` — deve poter attraversare
+     * l'inverno con la sola scorta accumulata prima, o la stagione non sarebbe
+     * un ritmo ma una carestia annuale che nessuna mossa evita. A trentacinque
+     * centesimi il conto torna con margine, ed e' verificato in
+     * `seasons.test.ts` integrando l'anno tick per tick.
+     *
+     * Sotto due decimi l'inverno non si sentirebbe: la dispensa oscillerebbe
+     * senza mai avvicinarsi al fondo, e una scorta tornerebbe a essere un numero
+     * che non si guarda.
+     */
+    yieldAmplitude: 0.35,
+  },
+
   /**
    * I produttori di cibo, in ordine di `FARM_KIND`.
    *

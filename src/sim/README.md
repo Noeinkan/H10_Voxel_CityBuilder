@@ -476,6 +476,60 @@ I materiali che scendono del 7% non sono un effetto collaterale: sono **il**
 prezzo, e va pagato in braccia perché il bacino è uno solo. Una città che non
 mangia però non è una città che produce poco, è una città che muore.
 
+### Il margine aveva un cuscino, ora ha un mestiere
+
+Il 15% sopra il pareggio della sezione precedente risolveva un guasto — la
+dispensa a zero per costruzione — ma lasciava aperta la domanda che gli stava
+sotto: **perché mai una città dovrebbe volere più cibo del necessario?** Con una
+resa costante non c'è nessuna risposta. Il piano punta a un margine fisso, la
+scorta si accumula fino a dove la popolazione la raggiunge, e da lì in poi è un
+numero che non si guarda.
+
+La resa stagionale (`src/sim/seasons.ts`) è la risposta: si accumula quando si
+può, si consuma quando non si può, e la scorta è la differenza fra le due. Il
+moltiplicatore è un **seno** attorno a uno, non quattro gradini, e le due
+proprietà che ne discendono sono il motivo della scelta:
+
+- **La media sull'anno vale esattamente uno.** `missingPlotsOf` non riceve il
+  fattore e continua a dimensionare la campagna sulla resa nominale: se la media
+  fosse diversa da uno pianterebbe sistematicamente troppo o troppo poco, per
+  sempre, e nessuno se ne accorgerebbe guardando il listino.
+- **Non c'è un tick in cui il raccolto salti.** Fra due gradini il cibo cambierebbe
+  del 50% da un tick al successivo, e a schermo si legge come un guasto, non come
+  una stagione.
+
+L'ampiezza — `seasons.yieldAmplitude`, 0,35 — è tarata **contro** il piano: una
+campagna dimensionata come `food.targetCoverage` la vuole deve attraversare
+l'inverno con la sola scorta accumulata prima. `seasons.test.ts` lo verifica
+integrando l'anno tick per tick, e la dispensa tocca il fondo senza andarci
+sotto. Se non reggesse, la stagione non sarebbe un ritmo ma una carestia annuale
+che nessuna mossa evita — cioè il difetto della fase 8 rifatto al contrario.
+
+Misurato con una sonda su due anni, 480 abitanti fermi e dodici campi (copertura
+1,2, cioè appena sopra il piano):
+
+| | primavera | estate | autunno | inverno |
+| --- | --- | --- | --- | --- |
+| moltiplicatore della resa | 0,75 → 1,09 | 1,25 → 1,34 | 1,25 → 0,91 | 0,75 → 0,66 |
+| dispensa a fine stagione | 1 988 | 13 385 | 21 782 | 17 878 |
+
+Il massimo cade a cavallo fra autunno e inverno e il minimo a inizio primavera:
+è il ritmo che il gate chiede, e si vede senza contare i tick. La dispensa cresce
+comunque di anno in anno perché questa città non cresce; in partita quel surplus
+lo assorbe la popolazione, che è la ragione per cui il piano punta sopra il
+pareggio invece che al pareggio.
+
+**Il fronte dell'emergenza, però, non deve sentire la stagione.** `foodCoverage`
+si misura sul raccolto all'**anno medio** e non su quello di oggi: la resa scende
+sotto il pareggio ogni inverno per costruzione, quindi un fronte che leggesse la
+resa corrente si disarmerebbe e riarmerebbe una volta l'anno senza che nessuno
+abbia fatto niente — l'allarme tornerebbe a essere rumore, che è esattamente ciò
+contro cui `recoveryCoverage` era stato scritto. Per lo stesso motivo la carestia
+si dichiara solo se `foodDeficitOf` è positivo, cioè se c'è qualcosa da
+risolvere: senza quella metà, una città appena cresciuta oltre i propri campi
+avrebbe aperto la stessa scelta ogni dicembre, e la primavera l'avrebbe chiusa da
+sola.
+
 ### Il commercio esterno è una quota, non una quantità
 
 `trade.importFoodShare` dice quanta della **spesa** un collegamento copre in un

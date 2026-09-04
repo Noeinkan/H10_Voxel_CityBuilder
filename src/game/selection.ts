@@ -9,6 +9,7 @@ import {
   catalystInfluence,
   effectiveCount,
   foodYieldOf,
+  harvestFactorAt,
   catalystRoleOf,
   reachAt,
   upgradeMaterialCost,
@@ -741,7 +742,16 @@ function blockAt(query: SelectionQuery, key: string, rect: BlockRect): BlockInfo
       materialsCapacityPerTick,
       materialsPerTick: materialsCapacityPerTick * query.state.staffing,
       foodCapacityPerTick,
-      foodPerTick: foodYieldOf(localFarms, query.state.staffing),
+      // La capacita' resta la resa dell'anno medio — e' un tetto, e un tetto che
+      // si muove con le stagioni non e' un riferimento — mentre questo e' quello
+      // che il tick mette davvero in dispensa, stagione compresa. La differenza
+      // fra i due e' braccia piu' mese, ed e' esattamente cio' che il pannello
+      // deve poter far vedere.
+      foodPerTick: foodYieldOf(
+        localFarms,
+        query.state.staffing,
+        harvestFactorAt(query.state.tickCount),
+      ),
       civicUpkeepPerTick: (effectiveByClass[BUILDING_CLASS.civic] ?? 0) * weights.civicUpkeep,
       staffing: query.state.staffing,
     },

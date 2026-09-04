@@ -59,6 +59,21 @@ di soddisfazione e la quota di terra che resta sono fatti dell'ultimo tick,
 calcolati da `tick` e gettati via una riga dopo; chi li mostra li legge, non li
 ricalcola.
 
+**La stagione entra da un punto solo, e chi pianta non la vede.**
+`harvestFactorAt(tickCount)` moltiplica il raccolto dentro `tick`, e `harvestOf`
+lo prende come **terzo** parametro separato da `staffing`: i due rispondono a due
+domande diverse — quanta gente ci e' andata, e quanto c'era da raccogliere — e
+sommarli in un numero solo renderebbe illeggibile il referto. `foodDeficitOf` e
+`missingPlotsOf` non lo passano **apposta**: chi dimensiona la campagna ragiona
+sull'anno medio, o pianterebbe d'inverno e smetterebbe d'estate. Per la stessa
+ragione il fronte dell'emergenza (`foodCoverage`, in `tick`) legge `foodYieldOf`
+senza fattore: la resa scende sotto il pareggio ogni inverno per costruzione, e
+un fronte che la seguisse si riarmerebbe una volta l'anno da solo.
+
+E non entra in `urbanProfileAt`, che e' **spaziale**: se leggesse il tempo, lo
+stesso stato darebbe edifici diversi a seconda di quando lo si guarda. E' la
+stessa ragione per cui i mandati sono slot e non scadenze.
+
 Il **vettore di influenza** di un catalizzatore sta in
 `gameplay.catalyst.influence`, non nella sua definizione: ogni ruolo ha almeno
 un uso a `1` esatto, ed e' quello a tenere in piedi l'invariante "al centro il

@@ -6,7 +6,10 @@ import {
   dominantOutflow,
   effectiveCount,
   fedShareOf,
+  harvestFactorAt,
   missingPlotsOf,
+  SEASON_NAMES,
+  seasonAt,
   ticksToAffordConstruction,
   ticksToEmpty,
   ticksToFillHousing,
@@ -134,18 +137,50 @@ export function fundsHint(flows: FundsReport, emptyIn: number | null = null): st
   return emptyIn === null ? 'Taxes cover the bills' : `Upkeep outruns income${deadline}`;
 }
 
-/** Razioni in corso, o la distanza dal piano di copertura che il driver insegue. */
+/**
+ * Razioni in corso, o la distanza dal piano di copertura che il driver insegue.
+ * E accanto la stagione, quando c'e' da dirla.
+ *
+ * **La stagione va detta anche a citta' sfamata**, ed e' la meta' meno ovvia:
+ * senza, l'unico modo di accorgersi che la dispensa sta calando sarebbe
+ * guardarla scendere per un minuto. Con la resa stagionale una scorta e' una
+ * mossa, e una mossa che non si vede non e' una mossa.
+ */
 export function foodHint(
   population: number,
   harvest: FoodReport,
   farmCounts: readonly number[],
   staffing: number,
+  // Obbligatorio e senza default: zero non e' un momento neutro dell'anno — e'
+  // il primo giorno di primavera, che viene subito dopo l'inverno e ne porta
+  // ancora un quarto di resa in meno. Un default qui direbbe una stagione a chi
+  // non ne ha chiesta nessuna.
+  tickCount: number,
 ): string {
+  const season = seasonNote(tickCount);
   const fed = fedShareOf(harvest, population);
-  if (fed < 1) return `Rationing: ${Math.round(fed * 100)}% of demand`;
+  if (fed < 1) return `Rationing: ${Math.round(fed * 100)}% of demand${season}`;
   const missing = missingPlotsOf(population, farmCounts, staffing);
-  if (missing > 0) return `${missing} ${missing === 1 ? 'field' : 'fields'} under target`;
-  return 'Covered: fields match the city';
+  if (missing > 0) {
+    return `${missing} ${missing === 1 ? 'field' : 'fields'} under target${season}`;
+  }
+  return `Covered: fields match the city${season}`;
+}
+
+/**
+ * «· Winter yield −31%», o niente quando la stagione non sposta niente.
+ *
+ * La soglia non e' una manopola di gusto: fra meta' primavera e meta' estate la
+ * resa passa per l'anno medio, e una riga che dicesse «+2%» sarebbe rumore in
+ * un posto dove il giocatore cerca una causa. Si tace finche' non c'e' una
+ * causa da nominare.
+ */
+function seasonNote(tickCount: number): string {
+  const factor = harvestFactorAt(tickCount);
+  const shift = Math.round((factor - 1) * 100);
+  if (Math.abs(shift) < 5) return '';
+  const name = SEASON_NAMES[seasonAt(tickCount)] ?? '';
+  return ` · ${name} yield ${shift > 0 ? '+' : '−'}${Math.abs(shift)}%`;
 }
 
 /**
@@ -262,7 +297,7 @@ export function buildHudResources(
       foodReserve(state.food.stock, population),
       foodBreakdown(state.harvest),
       undefined,
-      foodHint(population, state.harvest, state.farmCounts, state.staffing),
+      foodHint(population, state.harvest, state.farmCounts, state.staffing, state.tickCount),
     ),
     resource(
       'materials',

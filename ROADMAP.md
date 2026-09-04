@@ -1468,18 +1468,43 @@ la misura A/B in mano, non a occhio.
 
 Obiettivo: che una scorta abbia senso.
 
-Dalla 3.1 il cibo ha un posto sulla mappa e un listino in case sfamate. Manca il
-motivo per averne più del necessario: `food.targetCoverage` punta a un margine
-fisso, e una città in pareggio resta in pareggio per sempre.
+Dalla 3.1 il cibo ha un posto sulla mappa e un listino in case sfamate. Mancava
+il motivo per averne più del necessario: `food.targetCoverage` punta a un margine
+fisso, e una città in pareggio restava in pareggio per sempre.
 
-- [ ] Moltiplicatore stagionale sulla resa dei tre produttori, dentro `tick`. <!-- size: M -->
-- [ ] Verificare che il fronte dell'emergenza alimentare non oscilli con la <!-- size: M -->
-  stagione: l'inverno non deve poter dichiarare una carestia che la primavera
-  risolve da sola, o l'allarme torna a essere rumore.
-- [ ] Stagione visibile nel mondo, riusando i sette temi di `src/engine/themes/`. <!-- size: L -->
+- [x] Moltiplicatore stagionale sulla resa dei tre produttori, dentro `tick`. <!-- size: M -->
+  Un **seno** e non quattro gradini, in `src/sim/seasons.ts`: la media sull'anno
+  vale esattamente uno — quindi `missingPlotsOf` continua a dimensionare la
+  campagna senza sapere che mese sia — e non c'è un tick in cui il raccolto
+  salti, che a schermo sarebbe un guasto e non una stagione.
+- [x] Il fronte dell'emergenza alimentare misura la campagna **all'anno medio**, <!-- size: M -->
+  non il raccolto di oggi: la resa scende sotto il pareggio ogni inverno per
+  costruzione, e un fronte che la leggesse si disarmerebbe e riarmerebbe una
+  volta l'anno senza che nessuno abbia fatto niente. Alla carestia si aggiunge
+  una metà strutturale — `foodDeficitOf` positivo — così l'inverno non può
+  dichiarare quello che la primavera risolve da sola.
+- [x] Stagione visibile nel mondo, riusando i sette temi. `src/engine/season.ts` <!-- size: L -->
+  è a `daylight.ts` quello che la stagione è all'ora: entra una fase, esce lo
+  stesso tema piegato — quattro slot di prato nella palette, più rimbalzo dal
+  terreno, nebbia e orizzonte. Nessuna geometria, e a metà estate le due
+  funzioni tornano il tema per identità.
 
 **Il vincolo che non si negozia:** la stagione entra in `tick` e **non** in
 `urbanProfileAt` — la stessa ragione per cui i mandati sono slot e non scadenze.
+
+**L'ampiezza è tarata contro il piano, non a occhio.** A 0,35 una campagna
+dimensionata come `food.targetCoverage` la vuole attraversa l'inverno con la sola
+scorta accumulata prima, e la dispensa tocca il fondo senza andarci sotto:
+`seasons.test.ts` lo verifica integrando l'anno tick per tick. È il numero che
+separa un ritmo da una carestia annuale che nessuna mossa evita — e il secondo
+sarebbe stato il difetto della fase 8 rifatto al contrario.
+
+**Stato implementazione:** completata. **Il gate resta da validare a schermo:** i
+test coprono le regole — media annua a uno, fronte che non oscilla, scorta che
+regge l'inverno, temi che tornano sé stessi d'estate — non se una partita si
+*senta* divisa in un tratto in cui si accumula e uno in cui si consuma.
+`?season=<0..1>` e `__voxelSeason(phase)` esistono per guardarla senza aspettare
+i quattro minuti dell'anno.
 
 **Gate:** una partita ha un ciclo riconoscibile in cui accumulare e uno in cui
 consumare, e la scorta è la differenza fra le due.
