@@ -42,7 +42,12 @@ async function enterGame(page) {
   // mentre l'isola stava ancora nascendo.
   await primary.waitFor({ state: 'visible', timeout: 240000 });
   await primary.click();
-  await page.waitForSelector('.title-screen', { state: 'hidden', timeout: 180000 });
+  // La condizione e' il **dock**, non la sparizione del velo: l'HUD esiste nel
+  // DOM anche dietro la schermata del titolo — `terrainReady` la attraversa
+  // senza accorgersene, ed e' cosi' che uno scatto poteva crescere una citta'
+  // per ottanta secondi e fotografare il menu senza un solo avviso. Misurato
+  // con `shotkit probe --until .hud-dock`: senza clic non compare mai.
+  await page.locator('.hud-dock').first().waitFor({ state: 'visible', timeout: 180000 });
   await page.waitForTimeout(1200);
 }
 
@@ -261,6 +266,13 @@ export default {
     await context.addInitScript(() => {
       try {
         localStorage.setItem('h10-cozy-help-seen-v1', '1');
+        // I salvataggi di una corsa precedente vanno via: il bottone grande
+        // deve essere `Play` e non `Continue`, o ogni scatto ripartirebbe da
+        // una citta' cresciuta chissa' quando — e da un formato che nel
+        // frattempo puo' essere cambiato sotto i piedi.
+        for (const key of Object.keys(localStorage)) {
+          if (key.startsWith('h10.save.')) localStorage.removeItem(key);
+        }
       } catch {
         /* storage disabilitato: l'aiuto resta chiudibile a mano */
       }
