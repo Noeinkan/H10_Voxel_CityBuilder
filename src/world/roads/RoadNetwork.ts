@@ -46,6 +46,21 @@ export class RoadNetwork {
    */
   private frontage = new Set<string>();
   private signature = '';
+  /**
+   * Quante volte il tracciato e' cambiato.
+   *
+   * Serve a chi tiene una memoria su «questa colonna e' libera?»: una strada che
+   * si sposta **libera** il suolo che teneva, ed e' il quarto modo di liberarlo
+   * dopo il registry, l'impalcato e il terreno. Sale sia quando la rete si rifa'
+   * per intero sia quando un capillare aggiunge colonne, perche' entrambi
+   * cambiano la risposta.
+   */
+  private revisions = 0;
+
+  /** Il contatore di invalidazione per chi memorizza cosa la strada tiene. */
+  get revision(): number {
+    return this.revisions;
+  }
 
   constructor(
     private readonly terrain: TerrainMap,
@@ -181,6 +196,7 @@ export class RoadNetwork {
       .join(';');
     if (signature === this.signature) return false;
     this.signature = signature;
+    this.revisions++;
 
     if (poles.length === 0) {
       this.plan = EMPTY_PLAN;
@@ -252,6 +268,7 @@ export class RoadNetwork {
     }
     this.painted = [...this.painted, ...fresh];
     this.widenFrontage(fresh);
+    if (fresh.length > 0) this.revisions++;
     return fresh;
   }
 

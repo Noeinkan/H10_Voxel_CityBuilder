@@ -45,6 +45,16 @@ export class UpgradeDriver {
     private readonly ctx: BuildContext,
     private readonly spans: SpanDriver,
     private readonly aerial: AerialDriver,
+    /**
+     * true se la carreggiata tiene la colonna.
+     *
+     * Entra come funzione e non come rete per la stessa ragione di sempre: la
+     * promozione deve sapere una cosa sola. Serve perche' **allargarsi e'
+     * costruire**, e chi costruisce non prende suolo pubblico: senza,
+     * l'espansione in pianta era la porta di servizio da cui un edificio finiva
+     * in mezzo alla strada che la ricerca del lotto gli aveva vietato.
+     */
+    private readonly carriesRoad: (x: number, y: number) => boolean,
   ) {}
 
   get count(): number {
@@ -419,7 +429,16 @@ export class UpgradeDriver {
     });
     for (let dy = 0; dy < env.sizeY; dy++) {
       for (let dx = 0; dx < env.sizeX; dx++) {
-        for (const other of this.ctx.registry.at(env.x + dx, env.y + dy)) {
+        const cx = env.x + dx;
+        const cy = env.y + dy;
+        // **La strada si guarda solo sulle colonne nuove.** Un edificio nato
+        // prima del tracciato puo' averne una sotto di se', e leggergliela come
+        // un divieto lo condannerebbe a non promuovere mai per una colpa che non
+        // e' sua e che nessuno puo' piu' togliergli.
+        const wasMine = cx >= record.x && cx < record.x + record.footprint &&
+          cy >= record.y && cy < record.y + record.footprint;
+        if (!wasMine && this.carriesRoad(cx, cy)) return false;
+        for (const other of this.ctx.registry.at(cx, cy)) {
           if (other.id === record.id) continue;
           if (other.baseZ < record.baseZ + height &&
             record.baseZ < other.baseZ + other.height) {

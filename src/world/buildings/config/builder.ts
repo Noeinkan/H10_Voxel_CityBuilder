@@ -235,6 +235,31 @@ export const BUILDER = {
    */
   decorClearanceHeight: 20,
 
+  /**
+   * Colonne di aria che un lotto tiene davanti e dietro, sui lati che non sono
+   * la sua fila.
+   *
+   * **E' il numero che separa un isolato da una massa.** Senza, il tessuto si
+   * saldava su tutti e quattro i lati: misurato su un'isola cresciuta, il 57%
+   * delle colonne di perimetro confinava con un altro edificio e il 99% degli
+   * edifici aveva almeno un vicino a contatto. Metà di quel contatto era in
+   * profondita', cioe' due file affacciate su strade opposte che si toccavano
+   * sul retro — ed e' quella meta' che seppellisce la strada, perche' toglie
+   * l'unico vuoto da cui la si vedrebbe.
+   *
+   * Un cubo di terreno, come `CLUSTER.maxSnap` e per la ragione opposta: quel
+   * numero chiude i solchi da un voxel perche' a distanza di gioco leggono come
+   * una crepa e non come una separazione, e questo per la stessa misura apre un
+   * vuoto che invece si legge. Uno solo ricadrebbe esattamente nella crepa che
+   * l'altro numero esiste per togliere.
+   *
+   * **Non e' un divieto**: `placeLot` lo chiede nelle prime due passate e
+   * rinuncia nella terza. Dove l'area e' satura si costruisce lo stesso, ed e'
+   * corretto — e' cosi' che un centro diventa continuo mentre la periferia
+   * resta fatta di case staccate.
+   */
+  backSetback: TERRAIN.cellSize,
+
   /** Raggio Manhattan della piazzola che identifica un catalizzatore. */
   catalystPlazaRadius: 4,
 

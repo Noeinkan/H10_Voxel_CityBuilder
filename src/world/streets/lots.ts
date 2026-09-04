@@ -43,6 +43,31 @@ export interface LotRequest {
    */
   readonly onFrontage?: (x: number, y: number, footprint: number) => boolean;
   /**
+   * true se il lotto lascia aria sui fronti che non sono la sua fila.
+   *
+   * **E' l'altra meta' di `onFrontage`, e serve la stessa forma urbana da un
+   * altro lato.** L'affaccio dice *verso dove* il tessuto si addensa; questo
+   * dice *dove deve smettere*: due file affacciate su strade opposte devono
+   * lasciarsi un cortile in mezzo invece di saldarsi in un blocco pieno. Senza,
+   * un isolato cresce fino a diventare una massa unica in cui la strada — che
+   * pure c'e' — non si legge piu'.
+   *
+   * Arriva **dopo** `facingAt` perche' e' l'orientamento a dire quali due lati
+   * sono la fila e quali due la profondita': lo stesso quadrato in due file
+   * perpendicolari ha due arretramenti diversi.
+   *
+   * Come l'affaccio, e' una preferenza con rinuncia e non un divieto: la
+   * passata che lo chiede viene prima, e se il rettangolo non ha piu' niente da
+   * offrire si costruisce lo stesso. Un requisito che non sapesse rinunciare
+   * fermerebbe la citta' appena l'area satura, ed e' gia' successo.
+   */
+  readonly onSetback?: (
+    x: number,
+    y: number,
+    footprint: number,
+    facing: Facing,
+  ) => boolean;
+  /**
    * Orientamento fornito dal mondo. Nella posa libera orienta la facciata;
    * sulla costa sceglie prima il bordo rivolto all'acqua.
    */
@@ -131,15 +156,25 @@ function placeAroundCandidate(request: LotRequest, footprint: number): Lot | nul
   // riusata fra tutti i candidati della stessa scala.
   const offsets = radialOffsets(reach, centerDx, centerDy);
 
-  // Due passate sulla stessa lista invece di due liste: la prima chiede anche
-  // l'affaccio, la seconda si accontenta. Chi non ha un `onFrontage` fa solo la
-  // seconda, ed e' la ricerca di sempre — nessun costo per chi non la usa.
+  // Piu' passate sulla stessa lista invece di piu' liste, e ognuna rinuncia a un
+  // requisito: prima l'affaccio **e** l'arretramento, poi il solo arretramento,
+  // infine niente. L'ordine e' quello con cui una citta' cede: si preferisce
+  // stare sulla strada, poi almeno stare staccati, e solo in ultimo si riempie.
+  // Chi non passa ne' l'uno ne' l'altro fa solo l'ultima, ed e' la ricerca di
+  // sempre — nessun costo per chi non li usa.
   const frontage = request.onFrontage;
+  const setback = request.onSetback;
   if (frontage !== undefined) {
-    const found = scan(request, offsets, preferredX, preferredY, maxX, maxY, footprint, frontage);
+    const found = scan(request, offsets, preferredX, preferredY, maxX, maxY, footprint,
+      frontage, setback ?? null);
     if (found !== null) return found;
   }
-  return scan(request, offsets, preferredX, preferredY, maxX, maxY, footprint, null);
+  if (setback !== undefined) {
+    const found = scan(request, offsets, preferredX, preferredY, maxX, maxY, footprint,
+      null, setback);
+    if (found !== null) return found;
+  }
+  return scan(request, offsets, preferredX, preferredY, maxX, maxY, footprint, null, null);
 }
 
 /** Una passata sugli scostamenti, con o senza il filtro dell'affaccio. */
@@ -152,6 +187,7 @@ function scan(
   maxY: number,
   footprint: number,
   frontage: ((x: number, y: number, footprint: number) => boolean) | null,
+  setback: ((x: number, y: number, footprint: number, facing: Facing) => boolean) | null,
 ): Lot | null {
   const { rect } = request;
   for (const offset of offsets) {
@@ -164,13 +200,12 @@ function scan(
     // ancoraggio che il filtro scarta comunque.
     if (frontage !== null && !frontage(candidate.x, candidate.y, footprint)) continue;
     if (!request.accepts(candidate.x, candidate.y, footprint)) continue;
-    return {
-      x: candidate.x,
-      y: candidate.y,
-      footprint,
-      facing: request.facingAt?.(candidate.x, candidate.y, footprint) ??
-        nearestFacing(rect, candidate.x, candidate.y, footprint),
-    };
+    const facing = request.facingAt?.(candidate.x, candidate.y, footprint) ??
+      nearestFacing(rect, candidate.x, candidate.y, footprint);
+    // L'arretramento si chiede per ultimo perche' e' l'unico che ha bisogno
+    // dell'orientamento, e l'orientamento si conosce solo qui.
+    if (setback !== null && !setback(candidate.x, candidate.y, footprint, facing)) continue;
+    return { x: candidate.x, y: candidate.y, footprint, facing };
   }
   return null;
 }

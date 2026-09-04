@@ -381,11 +381,9 @@ export class Builder {
     // La ricerca del lotto viene dopo la citta' in quota perche' le chiede due
     // cose sole — se sopra una colonna presa corre una soletta, e quante ne sono
     // nate — e nient'altro: la freccia va in un verso solo.
-    this.lots = new LotSearch(
-      this.ctx,
-      this.aerial,
-      (x, y, side) => this.roadNetwork.network.touchesRoad(x, y, side),
-    );
+    // Il driver *e'* la sonda del tracciato: passa lui e non `network`, cosi'
+    // la ricerca vede le tre domande che le servono e non la rete intera.
+    this.lots = new LotSearch(this.ctx, this.aerial, this.roadNetwork);
     this.frontage = new Frontage(this.ctx);
     this.landmarks = new LandmarkDriver(this.ctx, this.clearance, this.aerial);
     // La guida viene dopo la citta' in quota e le chiede due cose: come vede il
@@ -396,7 +394,12 @@ export class Builder {
       this.aerial.siteProbe,
       (deckId) => this.aerial.isInhabited(deckId),
     );
-    this.upgrades = new UpgradeDriver(this.ctx, this.spans, this.aerial);
+    this.upgrades = new UpgradeDriver(
+      this.ctx,
+      this.spans,
+      this.aerial,
+      (x, y) => this.roadNetwork.carries(x, y),
+    );
     // La campata dell'edificio non chiede niente agli altri driver, ed e' la
     // conseguenza di cosa e': un braccio e' massa di due record che esistono
     // gia', quindi non ha appoggi da registrare ne' una rete da tenere. Le basta
@@ -1311,7 +1314,7 @@ export class Builder {
     // successivo trova gia' una carreggiata su cui affacciarsi, ed e' quella
     // catena — costruisci, collega, affacciati — a far crescere il tessuto lungo
     // le strade invece che attorno a loro.
-    this.roadNetwork.connect(x, y);
+    this.roadNetwork.connect(x, y, footprint, facing);
     this.placedCount++;
     if (plan === null) {
       this.stackedCount++;

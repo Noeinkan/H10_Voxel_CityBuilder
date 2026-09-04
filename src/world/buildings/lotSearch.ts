@@ -68,14 +68,15 @@ export class LotSearch {
     private readonly ctx: BuildContext,
     private readonly decks: DeckProbe,
     /**
-     * Se un'impronta ancorata qui vede la carreggiata.
+     * Cosa la ricerca chiede al tracciato: l'affaccio, il suolo che tiene, e
+     * quando ha cambiato idea.
      *
-     * Entra come funzione e non come rete per la stessa ragione di `decks`: la
-     * ricerca deve sapere una cosa sola, e chi gliela risponde non e' affar suo.
-     * E' anche cio' che tiene questo file indifferente a *quale* rete stradale
-     * ci sia sotto — la maglia catastale o il tracciato organico.
+     * Entra come sonda e non come rete per la stessa ragione di `decks`: la
+     * ricerca deve sapere tre cose, e chi gliele risponde non e' affar suo. E'
+     * anche cio' che tiene questo file indifferente a *quale* rete stradale ci
+     * sia sotto — la maglia catastale o il tracciato organico.
      */
-    private readonly roadside: (x: number, y: number, footprint: number) => boolean,
+    private readonly roads: RoadsideProbe,
   ) {}
 
   /** Siti bocciati in modo definitivo, per la statistica del `Builder`. */
@@ -242,7 +243,11 @@ export class LotSearch {
       // da `edgeOnly` e ha gia' un fronte suo — la banchina — e chiederle anche
       // la strada la sposterebbe via dall'acqua, che e' l'unica cosa per cui e'
       // li'.
-      onFrontage: (lx, ly, side) => this.roadside(lx, ly, side),
+      onFrontage: (lx, ly, side) => this.roads.frontage(lx, ly, side),
+      // Un'opera costiera non passa di qui — `edgeOnly` ha una ricerca sua — e
+      // non deve: la banchina *e'* il suo fronte, e chiederle un cortile sul
+      // retro la spingerebbe via dall'acqua.
+      onSetback: (lx, ly, side, facing) => this.hasSetback(lx, ly, side, facing),
       // Il rettangolo dipende dal solo isolato d'origine, e la scansione lo
       // percorre tutto: due candidati dello stesso isolato fanno la stessa
       // domanda in un altro ordine. Il secondo la salta, e da adesso anche il
@@ -261,12 +266,19 @@ export class LotSearch {
    * un chunk di terreno che arriva dove non c'era isola. Non dice **cosa** e'
    * cambiato, e non serve: chi la legge butta via tutto quello che sapeva.
    *
-   * Sono tre e non uno perche' ciascuno sta accanto alla domanda che invalida —
-   * `isOccupied`, `hasDeck`, il terreno — e un quarto modo di liberare suolo
-   * dovra' portarsi il proprio contatore, non aggiungere un gancio qui.
+   * Sono quattro e non uno perche' ciascuno sta accanto alla domanda che
+   * invalida — `isOccupied`, `hasDeck`, il terreno, la carreggiata — e un quinto
+   * modo di liberare suolo dovra' portarsi il proprio contatore, non aggiungere
+   * un gancio qui.
+   *
+   * Il quarto e' arrivato con il suolo pubblico riservato: da quando `carries`
+   * boccia una colonna, una strada che si sposta la libera, e senza il suo
+   * contatore l'isolato resterebbe dichiarato pieno rispetto a un tracciato che
+   * non passa piu' di li'.
    */
   private freedomEpoch(): number {
-    return this.ctx.registry.vacated + this.decks.decksOpened + this.ctx.terrain.chunkCount;
+    return this.ctx.registry.vacated + this.decks.decksOpened +
+      this.ctx.terrain.chunkCount + this.roads.revision;
   }
 
   /**
@@ -285,6 +297,42 @@ export class LotSearch {
     const dy = streets.nearestLine(1, centerY) - centerY;
     if (Math.abs(dx) <= Math.abs(dy)) return dx >= 0 ? FACING.east : FACING.west;
     return dy >= 0 ? FACING.north : FACING.south;
+  }
+
+  /**
+   * true se il lotto lascia `BUILDER.backSetback` colonne d'aria davanti e
+   * dietro. I fianchi non si guardano, ed e' il punto.
+   *
+   * **Accostarsi lungo la fila e' forma urbana; saldarsi in profondita' e' una
+   * massa.** Due case che condividono il muro di fianco fanno un fronte
+   * continuo sulla strada — e' cio' che `Frontage.snap` cerca apposta. Le stesse
+   * due case saldate sul retro fanno sparire il cortile, e con lui l'unico vuoto
+   * da cui la strada dietro si vedrebbe. La regola quindi non conta i vicini:
+   * guarda **quali** lati, e l'orientamento e' cio' che glielo dice.
+   *
+   * Guarda l'occupazione e non la carreggiata: una strada davanti al portone e'
+   * esattamente cio' che si vuole, e chiederle di stare piu' in la' arretrerebbe
+   * il tessuto dalla via invece di allargare il cortile.
+   */
+  private hasSetback(x: number, y: number, footprint: number, facing: Facing): boolean {
+    // Il fronte guarda est o ovest: la fila corre lungo y, e la profondita' e' x.
+    const alongY = facing === FACING.east || facing === FACING.west;
+    const registry = this.ctx.registry;
+
+    for (let step = 1; step <= BUILDER.backSetback; step++) {
+      const back = -step;
+      const front = footprint - 1 + step;
+      for (let d = 0; d < footprint; d++) {
+        if (alongY) {
+          if (registry.isOccupied(x + back, y + d)) return false;
+          if (registry.isOccupied(x + front, y + d)) return false;
+        } else {
+          if (registry.isOccupied(x + d, y + back)) return false;
+          if (registry.isOccupied(x + d, y + front)) return false;
+        }
+      }
+    }
+    return true;
   }
 
   /**
@@ -316,13 +364,22 @@ export class LotSearch {
   }
 
   /**
-   * Le quattro ragioni per cui una singola colonna non regge un lotto.
+   * Le cinque ragioni per cui una singola colonna non regge un lotto.
    *
    * Sta a parte perche' e' la risposta che il memo tiene: dividere la domanda
    * per colonna dalla domanda per quadrato e' cio' che rende memorizzabile la
    * prima senza toccare la seconda.
    */
   private columnIsFree(x: number, y: number, key: number): boolean {
+    // **La carreggiata e' suolo preso, esattamente come un edificio.**
+    // `SurfaceQueue.canPaint` gia' si rifiutava di asfaltare una colonna
+    // occupata, ma nessuno impediva il gesto opposto: su un'isola cresciuta,
+    // quattrocentonovantanove colonne di carreggiata su ottocentoventuno
+    // finivano sotto un edificio. La strada c'era nei dati, non a schermo — ed
+    // e' l'intero motivo per cui la citta' si leggeva come una massa unica
+    // invece che come isolati. L'affaccio qui sopra resta una preferenza sul
+    // *dove*; questo e' un divieto sul *sopra*, e le due cose non si sostituiscono.
+    if (this.roads.carries(x, y)) return false;
     // Letture senza allocazione: `columnAt` costruirebbe un oggetto e
     // `at` un array di record per ogni colonna, e qui le colonne si
     // contano a migliaia per infornata.
@@ -354,6 +411,23 @@ export class LotSearch {
 export interface DeckProbe {
   /** true se una soletta passa sopra questa colonna. */
   hasDeck(x: number, y: number): boolean;
-  /** Quante solette sono nate finora: e' meta' dell'epoca di invalidazione. */
+  /** Quante solette sono nate finora: e' un quarto dell'epoca di invalidazione. */
   readonly decksOpened: number;
+}
+
+/**
+ * Cio' che la ricerca chiede al tracciato, e nient'altro.
+ *
+ * Le due domande non sono la stessa vista da due distanze. `frontage` chiede se
+ * il lotto **vede** la strada e ordina i candidati; `carries` chiede se la
+ * strada **e' li'**, e boccia. Un lotto sul fronte risponde true alla prima e
+ * false alla seconda: e' esattamente la posizione che si vuole.
+ */
+export interface RoadsideProbe {
+  /** true se un'impronta ancorata qui ha un affaccio su strada. */
+  frontage(x: number, y: number, footprint: number): boolean;
+  /** true se la carreggiata — o un impalcato — tiene questa colonna. */
+  carries(x: number, y: number): boolean;
+  /** Quante volte il tracciato e' cambiato: e' un quarto dell'epoca. */
+  readonly revision: number;
 }

@@ -161,11 +161,30 @@ export const ROADS = {
    *
    * **Passabile e non vietata**, ed e' la stessa scelta di `legCost` in
    * `surfaceQueue`: una strada che giri attorno alla citta' invece di
-   * attraversarla e' il contrario di cio' che una strada fa. Cara pero' quanto
-   * sei colonne libere, cosi' fra due percorsi simili vince quello che non
-   * sventra niente.
+   * attraversarla e' il contrario di cio' che una strada fa.
+   *
+   * **Sei diceva «quanto sei colonne libere» e ne valeva tre**, perche'
+   * `landCost` e' due e non uno: la deviazione doveva restare sotto le tre
+   * colonne per convenire, e non conviene quasi mai. Il risultato si misurava —
+   * quasi meta' delle colonne di strada finiva sotto un edificio, e li' non si
+   * asfalta: la strada c'era nei dati e non a schermo, che e' il difetto peggiore
+   * dei due perche' non lascia neanche il vuoto da cui vederla.
+   *
+   * Dodici sono sei colonne libere, cioe' il numero che il commento vecchio
+   * *diceva* di essere. Ha senso **adesso** e non prima: da quando il tessuto
+   * lascia un arretramento (`BUILDER.backSetback`), fra le file c'e' davvero un
+   * varco in cui infilarsi. Su un tessuto saldato non c'era niente da trovare, e
+   * alzare questo numero avrebbe solo allungato il giro.
+   *
+   * **Piu' su non conviene.** Misurato sulla stessa isola — 256x256, seme 1337,
+   * milleduecento tick — la carreggiata sotto un edificio e il tempo di
+   * simulazione vanno insieme: a sei 42% in 28 s, a dodici 34% in 31 s, a venti
+   * 29% in 42 s. L'ultimo passo compra cinque punti percentuali con mezzo tempo
+   * in piu', perche' la ricerca esplora molto di piu' prima di arrendersi a un
+   * varco — e li perde comunque dove il tessuto e' pieno sul serio, cioe'
+   * attorno ai catalizzatori, che sono l'unico posto in cui **deve** passare.
    */
-  builtCost: 6,
+  builtCost: 12,
 
   /**
    * Costo di attraversare l'acqua a nuoto d'uccello, cioe' in viadotto.
