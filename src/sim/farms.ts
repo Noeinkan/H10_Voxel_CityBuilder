@@ -69,19 +69,34 @@ export function isFarmKind(value: number): value is FarmKind {
  * serve al bilancio e all'HUD: quest'ultimo mostra da dove viene il cibo, e un
  * secondo conto scritto nell'interfaccia divergerebbe dal numero che gli sta
  * sopra alla prima ritaratura del listino.
+ *
+ * **La stagione e' un fattore a parte, e non va sommata a `staffing`.** I due
+ * moltiplicano lo stesso numero ma rispondono a domande diverse — quanta gente
+ * c'e' andata, e quanto c'era da raccogliere — e chi legge il referto deve poter
+ * sapere quale dei due manca. Assente vale uno, ed e' il verso giusto in cui
+ * sbagliare: chi **pianta** ragiona sull'anno medio, non sul mese che fa.
  */
-export function harvestOf(farmCounts: readonly number[], staffing: number): readonly number[] {
+export function harvestOf(
+  farmCounts: readonly number[],
+  staffing: number,
+  yieldFactor = 1,
+): readonly number[] {
   const out = new Array<number>(FARM_COUNT).fill(0);
+  const scale = FOOD_PER_HOUSE * staffing * Math.max(0, yieldFactor);
   for (const kind of ALL_FARM_KINDS) {
-    out[kind] = (farmCounts[kind] ?? 0) * BALANCE.farms[kind].houses * FOOD_PER_HOUSE * staffing;
+    out[kind] = (farmCounts[kind] ?? 0) * BALANCE.farms[kind].houses * scale;
   }
   return out;
 }
 
 /** Cibo prodotto in un tick, in tutto. E' la somma di `harvestOf`, non un secondo conto. */
-export function foodYieldOf(farmCounts: readonly number[], staffing: number): number {
+export function foodYieldOf(
+  farmCounts: readonly number[],
+  staffing: number,
+  yieldFactor = 1,
+): number {
   let total = 0;
-  for (const yielded of harvestOf(farmCounts, staffing)) total += yielded;
+  for (const yielded of harvestOf(farmCounts, staffing, yieldFactor)) total += yielded;
   return total;
 }
 

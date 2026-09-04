@@ -240,14 +240,14 @@ describe('selectTypology', () => {
     expect(built.id).toBe('hydroponicTower');
   });
 
-  it('la schiera moderna e’ raggiungibile: un quartiere benestante e largo la esprime', () => {
-    // Stessa ragione della torre idroponica: e' la sola riga del catalogo che
-    // ponga un **tetto** invece di un minimo, quindi e' anche la sola che si
-    // possa rendere irraggiungibile alzando una soglia altrove senza che nessun
-    // altro test se ne accorga. Il museo e' il catalizzatore con il rapporto
-    // ricchezza/densita' piu' alto del catalogo: e' il posto che questa riga
-    // descrive — denaro senza folla — e prima di lei non produceva niente di
-    // proprio.
+  it('la famiglia contemporanea e’ raggiungibile: un quartiere benestante e largo la esprime', () => {
+    // Stessa ragione della torre idroponica: sono le sole righe del catalogo che
+    // pongano un **tetto** invece di un minimo, quindi anche le sole che si
+    // possano rendere irraggiungibili alzando una soglia altrove senza che
+    // nessun altro test se ne accorga. Il museo e' il catalizzatore con il
+    // rapporto ricchezza/densita' piu' alto del catalogo: e' il posto che queste
+    // righe descrivono — denaro senza folla — e prima di loro non produceva
+    // niente di proprio.
     const profile = profileOf(['museum']);
     expect(profile.wealth).toBeGreaterThanOrEqual(0.4);
     expect(profile.density).toBeLessThanOrEqual(0.45);
@@ -257,21 +257,59 @@ describe('selectTypology', () => {
       level: 4,
       profile,
       coastal: false,
+      lotRole: LOT_ROLE.frontage,
     });
     expect(built.id).toBe('modernRow');
   });
 
-  it('la schiera moderna cede dove la citta si infittisce', () => {
-    // Il tetto di densita' e' la meta' che la distingue dalle altre forme basse:
-    // sopra di esso il posto ha smesso di essere periferia, e a rispondere
-    // devono tornare la stecca e le verticali.
-    const dense = selectTypology({
+  it('sulla stessa strada da tre forme diverse, non venti case uguali', () => {
+    // **E' la proprieta' per cui la famiglia e' tre righe e non una.** Ricchezza,
+    // densita' e livello sono costanti dentro un isolato: una riga sola per quel
+    // luogo significa la stessa sagoma su ogni lotto. Il ruolo del lotto e'
+    // l'unico fatto discreto che dentro un isolato cambia, ed e' quindi l'unica
+    // leva che possa far comparire forme diverse sulla stessa via.
+    const profile = profileOf(['museum']);
+    const at = (lotRole: LotRole): string => selectTypology({
       use: BUILDING_CLASS.residential,
       level: 4,
-      profile: profileOf(['market', 'transport', 'museum']),
+      profile,
       coastal: false,
-    });
-    expect(dense.id).not.toBe('modernRow');
+      lotRole,
+    }).id;
+
+    expect(at(LOT_ROLE.frontage)).toBe('modernRow');
+    expect(at(LOT_ROLE.corner)).toBe('modernCorner');
+    expect(at(LOT_ROLE.interior)).toBe('modernCourt');
+  });
+
+  it('le tre forme contemporanee sono tre silhouette, non tre tinte', () => {
+    // Tre righe che scegliessero lo stesso volume sarebbero una riga sola con
+    // tre nomi: la variazione deve stare nella sagoma, dove si vede da lontano,
+    // e non nei soli slot di colore.
+    const shapes = new Set<string>();
+    for (const id of ['modernRow', 'modernCorner', 'modernCourt']) {
+      const stamp = build(BUILDING_CLASS.residential, 6, 4242, id);
+      shapes.add(`${stamp.sizeX}x${stamp.sizeZ}:${solidCount(stamp)}`);
+    }
+    expect(shapes.size).toBe(3);
+  });
+
+  it('la famiglia contemporanea cede dove la citta si infittisce', () => {
+    // Il tetto di densita' e' la meta' che la distingue dalle altre forme basse:
+    // sopra di esso il posto ha smesso di essere periferia, e a rispondere
+    // devono tornare la stecca e le verticali. Vale per tutte e tre insieme,
+    // perche' e' la soglia che condividono.
+    const dense = profileOf(['market', 'transport', 'museum']);
+    for (const lotRole of [LOT_ROLE.frontage, LOT_ROLE.corner, LOT_ROLE.interior]) {
+      const chosen = selectTypology({
+        use: BUILDING_CLASS.residential,
+        level: 4,
+        profile: dense,
+        coastal: false,
+        lotRole,
+      });
+      expect(chosen.id, `ruolo ${lotRole}`).not.toMatch(/^modern/);
+    }
   });
 
   it('sotto il proprio livello la torre cede a una fabbrica normale', () => {

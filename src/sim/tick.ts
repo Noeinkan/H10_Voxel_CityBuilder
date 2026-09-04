@@ -5,10 +5,11 @@ import { resolveCommerce } from './commerce';
 import { coverageReportOf, servicesOf } from './coverage';
 import { nextDecayPressure } from './decay';
 import { decisionAt } from './decisions';
-import { FARM_KIND, farmUpkeepOf, farmWorkersOf, harvestOf } from './farms';
+import { FARM_KIND, farmUpkeepOf, farmWorkersOf, foodYieldOf, harvestOf } from './farms';
 import { resolveWeights, type Weights } from './policies';
 import { nextState, unitOf } from './rng';
 import { satisfactionReportOf, type SatisfactionReport } from './satisfaction';
+import { harvestFactorAt } from './seasons';
 import type { Resource, SimState } from './SimState';
 import { servedFerryLines } from './ferry';
 import { foodImportShareOf, resolveExternalTrade, tradeLinksOf } from './trade';
@@ -94,9 +95,17 @@ export function tick(state: SimState, terrainMap: TerrainMap): SimState {
   const workersAvailable = population * BALANCE.work.workforceShare;
   const staffing = workersNeeded > 0 ? Math.min(1, workersAvailable / workersNeeded) : 0;
 
+  // La stagione entra **qui** e in nessun altro punto della crescita: `tick` e'
+  // l'unico posto che legge gia' l'orologio, e `urbanProfileAt` non deve
+  // impararlo — lo stesso stato darebbe edifici diversi a seconda di quando lo
+  // si guarda. Chi pianta continua a ragionare sull'anno medio: `missingPlotsOf`
+  // non passa il fattore, quindi la campagna si dimensiona una volta invece di
+  // inseguire il mese che fa.
+  const seasonYield = harvestFactorAt(state.tickCount);
+
   // La scomposizione e non il totale: la stessa aritmetica serve al bilancio e
   // al referto che l'HUD mostra, e due conti separati divergerebbero.
-  const grown = harvestOf(farmCounts, staffing);
+  const grown = harvestOf(farmCounts, staffing, seasonYield);
   let foodProduced = 0;
   for (const yielded of grown) foodProduced += yielded;
   const materialsProduced = materialIndustry * weights.productionYield * staffing;
@@ -207,8 +216,15 @@ export function tick(state: SimState, terrainMap: TerrainMap): SimState {
   // dispensa — quindi una dotazione non la gonfia — e resta alta anche quando i
   // fondi finiscono, che e' proprio il momento in cui l'emergenza deve poter
   // tornare a suonare.
+  //
+  // E si guarda la campagna **all'anno medio**, non il raccolto di oggi: la resa
+  // stagionale scende sotto il pareggio ogni inverno per costruzione, e un fronte
+  // che la leggesse si disarmerebbe e riarmerebbe una volta l'anno senza che
+  // nessuno abbia fatto niente — l'allarme tornerebbe a essere rumore, che e'
+  // esattamente cio' contro cui `recoveryCoverage` era stato scritto.
+  const annualYield = foodYieldOf(farmCounts, staffing);
   const foodCoverage = foodDemand > 0
-    ? foodProduced / foodDemand + foodImportShareOf(trade.links, state.tradeMode)
+    ? annualYield / foodDemand + foodImportShareOf(trade.links, state.tradeMode)
     : 1;
   const supplyArmed = state.supplyArmed || foodCoverage >= BALANCE.decisions.recoveryCoverage;
 

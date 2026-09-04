@@ -1,5 +1,5 @@
 {
-  "capturedAt": "2026-08-30T21:00:55.063Z",
+  "capturedAt": "2026-09-04T15:08:53.627Z",
   "viewport": {
     "width": 1440,
     "height": 900
@@ -7,10 +7,15 @@
   "scale": 2,
   "shots": [
     {
-      "name": "09-selection-card",
-      "url": "http://localhost:8020/?play=1&seed=1337",
-      "ms": 27416,
-      "error": "locator.click: Target page, context or browser has been closed"
+      "name": "11-road-hierarchy",
+      "file": ".shots/11-road-hierarchy.png",
+      "url": "http://localhost:8021/?seed=1337&intro=0",
+      "shows": "la gerarchia da vicino: le quattro larghezze di carreggiata a confronto e il salto di tinta del tronco, con gli edifici affacciati sul fronte strada",
+      "alt": "Close view of a voxel city block showing a wide dark road, medium streets and one-voxel lanes with buildings fronting them",
+      "bytes": 4401905,
+      "ms": 114931,
+      "warnings": [],
+      "pageErrors": []
     }
   ]
 }

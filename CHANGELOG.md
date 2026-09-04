@@ -16,6 +16,107 @@ Qui stanno **i tredici incrementi più recenti**; i precedenti sono archiviati i
 
 ---
 
+## In corso — Sostegno e feedback nel menu principale
+
+- **Una pillola «Support» e una «Feedback» nel piede del menu principale.** Stanno sotto la firma e non fra le voci: nessuna delle due riguarda la citta' aperta, e chi le cerca le cerca dove c'e' scritto chi l'ha fatta. Il sostegno e' un semplice collegamento a Ko-fi in una scheda nuova — nessun pagamento passa dal gioco.
+- **L'etichetta del sostegno non puo' dire «Donate», ed e' un vincolo di piattaforma.** Ko-fi riserva quella parola, e «Donation» e «Charity», alle non profit registrate e verificate, e segnala a posteriori chi le usa senza esserlo. `community.ts` lo scrive accanto alla costante e un test lo tiene vero su etichetta e titolo insieme.
+- **La nota di feedback e' una sottoschermata del menu, non una seconda modale.** Il menu ha gia' il suo velo, la sua trappola del `Tab` e il suo `Esc` che torna all'elenco: vestendosi da pannello come «Settings» eredita tutto senza aggiungere un modo. La lista dei comandi raggiungibili dal `Tab` si e' allargata a riquadri di testo, `summary` e collegamenti, che prima nella colonna non esistevano.
+- **Il pannello da cui si copia la nota non e' un ripiego.** La consegna e' un `mailto:`, cioe' un passaggio di consegne a un programma che potrebbe non esserci: e' l'unico gesto del gioco il cui fallimento e' invisibile — chi scrive vede un bottone che non ha fatto niente, e noi vediamo un silenzio identico a «nessuno aveva niente da dire». La nota composta resta percio' sempre a schermo accanto all'indirizzo, e l'esito dice «should be opening», mai «sent»: nessuno qui ha visto partire niente.
+- **Il contesto allegato dichiara quattro fatti e mostra i valori veri.** Edizione, la partita in una riga con il seed, la finestra e il browser: niente nomi utente, niente percorsi, niente dal `localStorage`. La spunta si toglie, e allora la sezione non si scrive proprio; un test blocca il quinto campo che entrasse senza passare dalla dichiarazione a schermo.
+
+## In corso — Il ritmo: un anno che si vede e si sente
+
+- **La resa ha una stagione, e la stagione è una funzione del tick.**
+  `src/sim/seasons.ts` legge `tickCount` e non tiene niente: fase dell'anno,
+  stagione e moltiplicatore del raccolto discendono tutti da lì, quindi non c'è
+  campo nuovo da salvare né modo che si sfasino fra loro. Un anno dura 3600 tick,
+  cioè lo stesso tempo reale di un giro del sole a velocità 1: le due lancette
+  non si sincronizzano — l'anno si ferma in pausa, il sole no — ma partono dallo
+  stesso passo, ed è quanto basta perché un inverno non cominci e finisca dentro
+  la stessa notte.
+- **È un seno e non quattro gradini, e le due proprietà che ne discendono sono
+  il punto.** La media sull'anno vale esattamente uno, quindi `missingPlotsOf`
+  continua a dimensionare la campagna su un numero onesto senza sapere che mese
+  sia; e non esiste un tick in cui il raccolto salti, che a schermo si leggerebbe
+  come un guasto invece che come una stagione. Il picco sta a metà estate e il
+  minimo a metà inverno, con primavera e autunno a valere uno al loro centro.
+- **L'ampiezza è tarata contro il piano, non a occhio.** A 0,35 una campagna
+  dimensionata come `food.targetCoverage` la vuole attraversa l'inverno con la
+  sola scorta accumulata prima: `seasons.test.ts` lo verifica integrando l'anno
+  tick per tick, e la scorta tocca il fondo senza andarci sotto. È ciò che rende
+  la stagione un ritmo invece che una carestia annuale che nessuna mossa evita.
+- **Il fronte dell'emergenza alimentare guarda la campagna, non il mese.**
+  `foodCoverage` si misura ora sul raccolto **all'anno medio**: un fronte che
+  leggesse la resa di oggi si disarmerebbe e riarmerebbe una volta l'anno senza
+  che nessuno avesse fatto niente, e l'allarme sarebbe tornato a essere rumore —
+  esattamente ciò contro cui `recoveryCoverage` era stato scritto.
+- **E la carestia si dichiara solo se c'è qualcosa da risolvere.** Alla
+  condizione dell'emergenza si aggiunge una metà strutturale: `foodDeficitOf`
+  positivo, cioè la campagna non basta all'anno medio. Senza, una città appena
+  cresciuta oltre i propri campi avrebbe aperto la stessa scelta ogni dicembre, e
+  la primavera l'avrebbe chiusa da sola.
+- **Il prato ingiallisce e imbianca riusando i sette temi.**
+  `src/engine/season.ts` è a `daylight.ts` quello che la stagione è all'ora:
+  entra una fase, esce lo stesso tema piegato. Tocca i quattro slot di prato
+  della palette e tre cose nell'atmosfera — il rimbalzo dal terreno, che *è* il
+  prato visto da sotto, più nebbia e orizzonte. Nessuna geometria: i vertici
+  portano l'indice di palette, non il colore. Il verde scritto in un tema è il
+  suo verde d'estate, e a metà estate le due funzioni restituiscono il tema per
+  identità — così i temi restano sette e non ventotto.
+- **Rigoglio, oro e brina sono la stessa fase letta con tre sfasature.** Non tre
+  tabelle che possono divergere: l'oro sale mentre il rigoglio scende, ed è ciò
+  che rende ottobre diverso sia da settembre sia da novembre senza che nessuno lo
+  debba scrivere.
+- **`AtmosphereControl` possiede l'anno accanto all'ora**, con un passo minimo
+  proprio: una stagione costa anche trentadue colori riscritti, e a sessanta
+  hertz sarebbe la stessa palette per un giallo che non si distingue. Il `look` —
+  il tema come si vede adesso — è nuovo e pubblico, perché pioggia e traffico
+  leggevano `theme.colors` e avrebbero dipinto la città di un altro mese.
+- **`?season=<0..1>` e `__voxelSeason(phase)`**, come `?hour=` fa con l'ora:
+  servono a guardare un inverno senza aspettare i quattro minuti che la partita
+  ci mette ad arrivarci, e a catturare i sette temi nella stessa stagione. L'hook
+  torna anche il moltiplicatore del raccolto, che è il modo di verificare che
+  colore e resa stiano nello stesso mese.
+- **L'HUD nomina la stagione quando sposta la resa, e tace quando non la
+  sposta.** Anche a città sfamata: senza, l'unico modo di accorgersi che la
+  dispensa sta calando sarebbe guardarla scendere per un minuto, e una scorta che
+  non si vede non è una mossa. Il pannello di ispezione fa la stessa distinzione
+  su un isolato — la capacità resta la resa dell'anno medio, il valore corrente
+  porta braccia e mese.
+
+## In corso — La torre si può misurare, non solo aspettare
+
+- **`nearestTowerProspect`, il luogo di cui parlare.** La torre idroponica è la
+  leva principale del cibo tardivo e l'unica che il giocatore non piazza: nasce
+  se un edificio industriale dentro il raggio di una serra supera insieme le due
+  soglie di `farming`. `specializationGapsOf` sapeva già dire cosa manca **a un
+  luogo**; il pezzo mancante era scegliere il luogo, e sono gli edifici
+  industriali, i soli da cui una torre possa nascere.
+- **Il tip dice due numeri e un gesto, invece del gesto generico.** «Sovrapponi
+  l'anello alla fabbrica» resta vero anche quando l'anello è già sovrapposto, e
+  da lì in poi il giocatore aspettava senza sapere se stava aspettando qualcosa
+  che sarebbe arrivato. Ora legge «the best block is at 31% density, towers need
+  40%», e il gesto lo sceglie la metrica: sotto densità un mercato accanto, sotto
+  industria un'altra fabbrica nell'anello.
+- **Il silenzio ha due cause e una sola lettura.** `null` sia dove non c'è
+  candidato, sia dove un candidato qualifica già — lì la torre arriva alla
+  prossima promozione e un consiglio sarebbe rumore. Il gap di **ruolo** invece
+  ricade sul messaggio generico, che per quel caso ha già le parole giuste: due
+  frasi per lo stesso fatto sarebbero due da tenere allineate.
+- **Filtro geometrico prima del profilo.** Chi chiama gira a ogni tick e
+  `urbanProfileAt` costa un giro su tutti i catalizzatori. Il cerchio euclideo è
+  più largo della portata vera, che segue le strade, ed è ciò che serve a un
+  filtro: scarta solo chi è fuori di sicuro, e la verità la dice il profilo.
+- **`gapRatio` esportata da `districts.ts` invece di riscritta.** Lì ordina le
+  specializzazioni di un luogo, qui i luoghi per la stessa specializzazione: due
+  domande sullo stesso metro, e due copie sarebbero divergute alla prima
+  ritaratura.
+- **Le metriche del profilo stanno in [0, 1], e a schermo vanno in percentuale.**
+  Difetto trovato dalla sonda e non dai test: arrotondarle com'erano dava «0 of 0
+  density», due zeri al posto di 31% e 40% — una riga peggiore di quella generica
+  che sostituiva. Il test ora lega i due numeri a essere numeri e il secondo a
+  stare sopra il primo.
+
 ## In corso — Il quartiere denso: vetrine e terrazze
 
 - **Il piano terra del commercio e' una vetrina, non un muro con una porta.** `onPortal` apriva **un** modulo d'ingresso al centro del lato principale — la risposta giusta per un portone, sbagliata per un isolato commerciale, che la strada ce l'ha vetrata da un cantonale all'altro. `PaintRequest.shopfront` apre il fronte attivo su tutta la parete su strada della fascia zero, sopra lo zoccolo; il portone resta dov'era e scende fino al marciapiede, che e' l'unica cosa che lo distingue dalla vetrina quando sono lo stesso linguaggio di superficie. La riga la accende il commercio, **anche quando sta sotto qualcos'altro**: un podio commerciale con le case sopra e' la riga piu' comune del catalogo ed e' proprio il caso in cui la strada e' vetrata e i piani alti no.

@@ -124,10 +124,15 @@ describe('il segno che una decisione lascia sulla citta', () => {
     const recovered = tickMany({ ...first, farmCounts: [2, 0, 0] }, map, 1);
     expect(recovered.supplyArmed).toBe(true);
 
+    // E la ricaduta dev'essere **strutturale**: la citta' e' cresciuta oltre la
+    // propria campagna, che con due campi non la copre piu'. Un raccolto magro e
+    // basta non riapre l'emergenza — con la resa stagionale sarebbe un inverno,
+    // e un inverno la primavera lo risolve da sola.
+    const outgrown = { ...recovered, population: { stock: 480, delta: 0 } };
     const hungryAgain = pending({
-      ...recovered,
+      ...outgrown,
       tickCount: first.nextDecisionTick,
-      harvest: fedHarvest(recovered.population.stock, 0.5),
+      harvest: fedHarvest(outgrown.population.stock, 0.5),
     });
     expect(hungryAgain.pendingDecision?.family).toBe('supply');
 
@@ -171,6 +176,29 @@ describe('l emergenza alimentare', () => {
     };
 
     expect(decisionAt(balanced, 0)?.family).not.toBe('supply');
+  });
+
+  /**
+   * L'altra meta' della stessa regola, ed e' la fase 8.4 che la chiede: con la
+   * resa stagionale una citta' ben servita smette di mangiare ogni inverno, e un
+   * allarme che scattasse li' sarebbe un appuntamento annuale che nessuna mossa
+   * evita — cioe' rumore, esattamente cio' che `supplyArmed` era nato per
+   * togliere. Si dichiara emergenza quando la **campagna** non basta, non quando
+   * fa freddo.
+   */
+  it('non scatta per un inverno che la primavera risolve da sola', () => {
+    const winter = {
+      ...establishedCity(),
+      // Il raccolto di oggi non copre i pasti: e' la meta' della condizione che
+      // resta vera. Ma la campagna basta all'anno medio, e questa non lo e'.
+      harvest: fedHarvest(48, 0.5),
+      farmCounts: [4, 0, 0],
+      staffing: 1,
+    };
+    expect(decisionAt(winter, 0)?.family).not.toBe('supply');
+
+    // La stessa citta' senza campagna la apre: e' la sola differenza fra i due.
+    expect(decisionAt({ ...winter, farmCounts: [0, 0, 0] }, 0)?.family).toBe('supply');
   });
 
   it('non si ripresenta finche non e rientrata', () => {

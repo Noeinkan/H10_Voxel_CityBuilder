@@ -270,7 +270,7 @@ export const TYPOLOGIES: readonly TypologyDefinition[] = [
     // si scambiano il posto, la crescita racconta un progresso.
     evolvesFrom: [
       'terracedHousing', 'gardenHousing', 'rationedBlock', 'stackedTenement', 'courtyardBlock',
-      'slabBlock', 'modernRow',
+      'slabBlock', 'modernRow', 'modernCorner', 'modernCourt',
     ],
     // Stessa priorita' di `commercialPodium` e **prima di lui nel catalogo**, che
     // e' come si dice «piu' specifico» a parita' di peso: dove il lotto e' un
@@ -358,7 +358,7 @@ export const TYPOLOGIES: readonly TypologyDefinition[] = [
     // quartiere e' solo fitto.
     evolvesFrom: [
       'terracedHousing', 'gardenHousing', 'rationedBlock', 'stackedTenement', 'courtyardBlock',
-      'slabBlock', 'modernRow',
+      'slabBlock', 'modernRow', 'modernCorner', 'modernCourt',
     ],
     priority: 4,
     shape: { ...DEFAULT_TYPOLOGY_SHAPE, roofGarden: true, chamfer: 1, maxFootprint: 6 },
@@ -389,7 +389,8 @@ export const TYPOLOGIES: readonly TypologyDefinition[] = [
     // il contrario — la scala sale e non torna.
     evolvesFrom: [
       'terracedHousing', 'gardenHousing', 'rationedBlock', 'stackedTenement', 'courtyardBlock',
-      'slabBlock', 'modernRow', 'towerBlock', 'skyTerraces',
+      'slabBlock', 'modernRow', 'modernCorner', 'modernCourt',
+      'towerBlock', 'skyTerraces',
     ],
     // Sta **prima** di `skyTerraces` a parita' di priorita', e l'ordine e' la
     // regola: a livello 5 vince il gradone abitato, dal 6 in su il tamburo. E'
@@ -437,7 +438,8 @@ export const TYPOLOGIES: readonly TypologyDefinition[] = [
     // non poteva succedere.
     evolvesFrom: [
       'terracedHousing', 'gardenHousing', 'rationedBlock', 'stackedTenement', 'courtyardBlock',
-      'slabBlock', 'modernRow', 'towerBlock',
+      'slabBlock', 'modernRow', 'modernCorner', 'modernCourt',
+      'towerBlock',
     ],
     // Sopra `towerBlock`, che a questo livello qualifica quasi sempre: dove c'e'
     // anche la ricchezza, la torre liscia diventa un gradone abitato.
@@ -525,7 +527,9 @@ export const TYPOLOGIES: readonly TypologyDefinition[] = [
     // tetto, il posto ha smesso di essere periferia e la stecca e' cio' che
     // subentra — senza questa voce quelle case resterebbero se' stesse per
     // sempre, perche' un upgrade adotta solo cio' che la linea dichiara.
-    evolvesFrom: ['terracedHousing', 'courtyardBlock', 'modernRow'],
+    evolvesFrom: [
+      'terracedHousing', 'courtyardBlock', 'modernRow', 'modernCorner', 'modernCourt',
+    ],
     // Stessa priorita' di `towerBlock` e **dopo di lui**, che a parita' vince: la
     // torre liscia chiede densita' 0.55, qui ne bastano 0.45. Fra le due soglie
     // il quartiere e' fitto ma non ancora da torre, ed e' esattamente il posto in
@@ -558,25 +562,42 @@ export const TYPOLOGIES: readonly TypologyDefinition[] = [
       roofPropHeight: 0,
     },
   },
+  // --- la famiglia contemporanea: tre forme, un luogo solo ------------------
+  //
+  // **Le tre righe che seguono chiedono lo stesso luogo e si separano sul ruolo
+  // del lotto**, ed e' l'unico modo che il catalogo ha di far comparire forme
+  // diverse *sulla stessa strada*. Tutto il resto — ricchezza, densita',
+  // livello, distretto — varia da un quartiere all'altro ma e' costante dentro
+  // un isolato: una sola riga per quel luogo significa venti case identiche in
+  // fila, che e' il difetto che la periferia benestante aveva gia' e che una
+  // riga sola avrebbe solo ridipinto.
+  //
+  // E' la stessa mossa gia' fatta in alto per le tre verticali — lanterna
+  // sull'angolo, tamburo sul fronte, gradone abitato nel cuore — portata alla
+  // scala bassa: il fronte porta la schiera con lo sbalzo, l'angolo il volume
+  // sovrapposto che chiude la testata, il cuore la casa larga col tetto
+  // piantato. Le tre silhouette non si confondono, e il quartiere si legge come
+  // un pezzo di citta' progettato invece che come un timbro ripetuto.
+  //
+  // Il luogo che condividono e' **denaro senza folla**: la periferia benestante,
+  // che nessuna riga del catalogo nominava — cadeva sul ripiego, e usciva con la
+  // stessa casa a schiera smussata della campagna. Sopra il tetto di densita' il
+  // posto e' gia' diventato stecca o torre, e queste tre lasciano il campo.
   {
     id: 'modernRow',
     label: 'Modern row',
     use: 0,
     minWealth: 0.4,
     /**
-     * **L'unica riga residenziale con un tetto di densita', e il tetto e' la
-     * riga.** La schiera di nuova costruzione e' cio' che si fa dove il suolo
-     * c'e' ancora: sopra questa soglia il quartiere e' gia' diventato stecca o
-     * torre, e una casa con un davanti non e' piu' la forma che il posto chiede.
-     * Sotto, e con un po' di ricchezza, e' esattamente la forma che chiede.
-     *
-     * Insieme, il minimo di ricchezza e il tetto di densita' descrivono un
-     * luogo che nessun'altra riga del catalogo nominava: fino a qui il denaro
-     * senza la folla non produceva niente di proprio — cadeva sul ripiego — e la
-     * periferia benestante usciva con la stessa casa a schiera smussata della
-     * campagna.
+     * **Il tetto di densita' e' la riga**, ed e' l'unico del catalogo: ogni
+     * altra soglia e' un minimo. La schiera di nuova costruzione e' cio' che si
+     * fa dove il suolo c'e' ancora, e sopra questa quota una casa con un davanti
+     * non e' piu' la forma che il posto chiede.
      */
     maxDensity: 0.45,
+    // Il fronte strada: e' la sola delle tre che abbia una via su cui sporgere,
+    // e lo sbalzo sopra l'ingresso e' meta' di cio' che la rende riconoscibile.
+    lotRole: LOT_ROLE.frontage,
     // Dalla soglia in cui la campata compare (`VISUAL_LEVELS.consolidated`): una
     // schiera moderna si riconosce dal ritmo delle aperture prima che dal
     // volume, e sotto quella quota la facciata e' ancora una parete piena — cioe'
@@ -647,6 +668,107 @@ export const TYPOLOGIES: readonly TypologyDefinition[] = [
       terrace: PALETTE_SLOTS.concreteLight,
       // Nessun pennone su una casa: la cima e' un parapetto, e il coronamento
       // piatto la chiude da solo.
+      roofPropHeight: 0,
+    },
+  },
+  {
+    id: 'modernCorner',
+    label: 'Modern corner',
+    use: 0,
+    minWealth: 0.4,
+    maxDensity: 0.45,
+    lotRole: LOT_ROLE.corner,
+    // **Un livello sopra la schiera, e la differenza e' voluta.** All'angolo il
+    // volume sovrapposto ha senso solo quando c'e' abbastanza altezza per
+    // leggerlo come due corpi invece che come un cappello: sotto, il lotto resta
+    // alla forma di partenza, e in un quartiere giovane si vedono le teste
+    // ancora basse e i fronti gia' moderni. E' variazione che arriva dal tempo
+    // invece che dallo spazio, e non costa una riga in piu'.
+    minLevel: 3,
+    evolvesFrom: ['terracedHousing', 'modernRow'],
+    priority: 4,
+    shape: {
+      ...DEFAULT_TYPOLOGY_SHAPE,
+      // La cima a gradoni e' cio' che chiude la testata: due rientranze in
+      // sequenza sopra un corpo netto danno la scatola arretrata dell'ultimo
+      // piano, che sull'angolo si vede da entrambi i fronti. `flat` la
+      // renderebbe indistinguibile dalla schiera vista di sbieco.
+      crownKind: CROWN_KIND.stepped,
+      podiumBands: 1,
+      overhang: 2,
+      // Piu' stretta della schiera: la testata di una fila e' il pezzo che sale,
+      // non quello che si allarga.
+      minFootprint: 5,
+      maxFootprint: 6,
+    },
+    profile: {
+      // Interpiano piu' alto della schiera: e' l'altro modo — oltre alla cima —
+      // in cui la testata dichiara di essere l'edificio principale della fila.
+      bandHeight: [5, 6],
+      // A meta' scala: il corpo arretra abbastanza spesso da produrre i due
+      // volumi sovrapposti, e abbastanza di rado da non diventare una piramide.
+      shrinkBias: 0.5,
+      footprintBias: -1,
+      // `stack` in testa: il corpo **riparte** piu' stretto e ricentrato invece
+      // di assottigliarsi, ed e' esattamente la scatola scura posata sul
+      // basamento chiaro. Nessun'altra riga bassa del residenziale lo pesca.
+      shrinkOps: [BAND_OP.stack, BAND_OP.setback, BAND_OP.shrinkOneSide],
+      growOps: [BAND_OP.jut, BAND_OP.shear, BAND_OP.keep],
+      bayPeriod: 2,
+      body: PALETTE_SLOTS.concreteWhite,
+      bodyAlt: PALETTE_SLOTS.asphaltShadow,
+      accent: PALETTE_SLOTS.glassPale,
+      crown: PALETTE_SLOTS.asphaltShadow,
+      plinth: PALETTE_SLOTS.asphaltDark,
+      terrace: PALETTE_SLOTS.concreteLight,
+      roofPropHeight: 0,
+    },
+  },
+  {
+    id: 'modernCourt',
+    label: 'Modern court',
+    use: 0,
+    minWealth: 0.4,
+    maxDensity: 0.45,
+    lotRole: LOT_ROLE.interior,
+    minLevel: 2,
+    evolvesFrom: ['terracedHousing', 'modernRow'],
+    priority: 4,
+    shape: {
+      ...DEFAULT_TYPOLOGY_SHAPE,
+      crownKind: CROWN_KIND.flat,
+      // **Nel cuore dell'isolato il tetto e' cio' che si vede**, e da lassu' non
+      // c'e' un fronte a raccontare niente: e' la sola delle tre a piantarlo.
+      // La casa larga e bassa con la copertura verde e' anche il contrappunto
+      // giusto alle due che salgono — un isolato tutto verticale non ha respiro.
+      roofGarden: true,
+      // Larga: senza una via da fronteggiare, la casa interna si allarga invece
+      // di allungarsi sul filo. E' il lato minimo piu' grande delle tre.
+      minFootprint: 7,
+      // **Nessuno sbalzo, e non e' una svista**: sotto non c'e' un marciapiede
+      // ma il vicino, e la grammatica sporge solo verso `facing` — che un lotto
+      // interno non ha. Dichiararlo direbbe una cosa che non puo' succedere.
+    },
+    profile: {
+      // I piani piu' bassi delle tre e tutti uguali: e' una casa, non un corpo
+      // di fabbrica, e a due o tre livelli l'altezza la fa il numero di piani.
+      bandHeight: [4, 4],
+      // Quasi nessuna rientranza: il volume resta netto fino alla copertura, che
+      // e' il piano su cui il giardino deve poterci stare davvero.
+      shrinkBias: 0.06,
+      footprintBias: 3,
+      shrinkOps: [BAND_OP.shrinkOneSide, BAND_OP.jog],
+      growOps: [BAND_OP.keep, BAND_OP.grow, BAND_OP.jog],
+      // Il passo largo del residenziale, e qui e' quello giusto: la vetrata del
+      // soggiorno che guarda il giardino, non la finestra stretta del fronte.
+      bayPeriod: 3,
+      body: PALETTE_SLOTS.concreteWhite,
+      bodyAlt: PALETTE_SLOTS.asphaltShadow,
+      accent: PALETTE_SLOTS.glassPale,
+      crown: PALETTE_SLOTS.asphaltShadow,
+      plinth: PALETTE_SLOTS.asphaltDark,
+      terrace: PALETTE_SLOTS.wood,
+      garden: PALETTE_SLOTS.grassLight,
       roofPropHeight: 0,
     },
   },
@@ -835,7 +957,8 @@ export const TYPOLOGIES: readonly TypologyDefinition[] = [
     // guglia e quello che le sta attorno — e le tre righe che il ruolo lo
     // chiedono restano a governare i livelli in cui l'isolato si legge ancora.
     evolvesFrom: [
-      'terracedHousing', 'courtyardBlock', 'slabBlock', 'stackedTenement', 'modernRow',
+      'terracedHousing', 'courtyardBlock', 'slabBlock', 'stackedTenement',
+      'modernRow', 'modernCorner', 'modernCourt',
       'towerBlock', 'skyTerraces', 'roundTower', 'cornerTower',
     ],
     // Ultima del proprio uso a parita' di priorita': dove un mandato o un faro

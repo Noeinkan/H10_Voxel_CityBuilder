@@ -255,8 +255,15 @@ describe('tick — bilancio', () => {
 
     // Popolazione esattamente a capacita': la domanda e' al suo massimo, e con
     // l'organico pieno il raccolto deve pareggiarla esattamente.
+    //
+    // A meta' primavera, perche' il listino e' una resa **all'anno medio** e la
+    // stagione la scosta in entrambi i versi: il centro di primavera e' uno dei
+    // due istanti in cui il moltiplicatore vale esattamente uno, quindi qui il
+    // pareggio si legge secco. Che la media annua valga uno lo verifica
+    // `seasons.test.ts`; questo test guarda il listino.
     state = {
       ...state,
+      tickCount: BALANCE.seasons.yearTicks / 8,
       population: { stock: houses * BALANCE.weights.residentialCapacity, delta: 0 },
     };
 
@@ -432,5 +439,39 @@ describe('tick — il fronte dell’emergenza', () => {
     });
 
     expect(tick(withAirport, terrainMap).supplyArmed).toBe(true);
+  });
+
+  /**
+   * Il fronte guarda la campagna, non il mese che fa.
+   *
+   * E' il vincolo che la 8.4 non negozia: la resa stagionale scende sotto il
+   * pareggio ogni inverno per costruzione, quindi un fronte che leggesse il
+   * raccolto di oggi si disarmerebbe e riarmerebbe una volta l'anno senza che
+   * nessuno abbia fatto niente — e la carestia tornerebbe a essere un
+   * appuntamento invece che una conseguenza.
+   */
+  it('si riarma in inverno come in estate: legge la campagna, non la stagione', () => {
+    const provisioned: SimState = { ...starving(), farmCounts: [40, 0, 0] };
+    const year = BALANCE.seasons.yearTicks;
+
+    for (const phase of [0, 0.125, 0.375, 0.625, 0.875]) {
+      const moment = { ...provisioned, tickCount: Math.round(year * phase) };
+      expect(tick(moment, terrainMap).supplyArmed, `fase ${phase}`).toBe(true);
+    }
+  });
+
+  /** E la resa, quella si', deve sentire la stagione: e' l'altra meta'. */
+  it('la stessa citta raccoglie di piu in estate che in inverno', () => {
+    const provisioned: SimState = { ...starving(), farmCounts: [40, 0, 0] };
+    const year = BALANCE.seasons.yearTicks;
+
+    const summer = tick({ ...provisioned, tickCount: Math.round(year * 0.375) }, terrainMap);
+    const winter = tick({ ...provisioned, tickCount: Math.round(year * 0.875) }, terrainMap);
+
+    const grownIn = (state: SimState) => state.harvest.grown.reduce((sum, v) => sum + v, 0);
+    expect(grownIn(summer)).toBeGreaterThan(grownIn(winter));
+    // E i due si scostano dall'anno medio dello stesso tanto, nei due versi.
+    const spring = tick({ ...provisioned, tickCount: Math.round(year * 0.125) }, terrainMap);
+    expect(grownIn(summer) - grownIn(spring)).toBeCloseTo(grownIn(spring) - grownIn(winter), 6);
   });
 });

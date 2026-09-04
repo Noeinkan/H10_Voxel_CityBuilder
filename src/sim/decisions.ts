@@ -2,7 +2,7 @@ import { BALANCE } from './balance';
 import type { CatalystId } from './catalysts';
 import { charterOfFamily, type CharterFamily, type CharterId } from './charters';
 import { BUILDING_CLASS } from './classes';
-import { fedShareOf, type FoodReport } from './farms';
+import { fedShareOf, foodDeficitOf, type FoodReport } from './farms';
 
 export interface DecisionEffect {
   readonly food?: number;
@@ -78,6 +78,18 @@ export interface DecisionStateView {
   /** Falso finche' un'emergenza alimentare gia' risolta non e' rientrata. */
   readonly supplyArmed: boolean;
   /**
+   * Lotti e torri della citta', e quante braccia ci vanno davvero.
+   *
+   * **Servono a distinguere una carestia da un inverno.** Con la resa
+   * stagionale, una citta' che ha appena superato la propria campagna smette di
+   * mangiare a dicembre e ricomincia a marzo: il referto del raccolto lo dice, e
+   * da solo farebbe aprire un'emergenza che la primavera risolve senza che
+   * nessuno abbia fatto niente. Da qui si chiede l'altra meta' — se la campagna
+   * basti **all'anno medio** — e le due insieme sono la condizione.
+   */
+  readonly farmCounts: readonly number[];
+  readonly staffing: number;
+  /**
    * Mandati attivi: servono a dire se un'alternativa rinnova o solleva un
    * mandato gia' in piedi, invece di ripetere sempre la stessa scelta.
    */
@@ -142,7 +154,13 @@ export function decisionAt(state: DecisionStateView, nextDecisionTick: number): 
   // resta in dispensa: le due coincidono solo in una citta' che ha una scorta,
   // e questa simulazione non ne costruisce nessuna. Il fronte lo tiene
   // `supplyArmed`, che `tick` ricarica quando la citta' torna a mangiare.
-  if (population > 0 && state.supplyArmed
+  // La seconda meta' della condizione e' **strutturale**, e senza di essa la
+  // resa stagionale renderebbe l'emergenza un appuntamento invernale: qui si
+  // chiede se la campagna basti all'anno medio, cioe' se ci sia qualcosa da
+  // risolvere. `foodDeficitOf` non passa il fattore di stagione apposta.
+  const shortCountryside =
+    foodDeficitOf(population, state.farmCounts, state.staffing) > 0;
+  if (population > 0 && state.supplyArmed && shortCountryside
     && fedShareOf(state.harvest, population) < BALANCE.decisions.hungerThreshold) {
     return {
       id: `food-${state.tickCount}`,

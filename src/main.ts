@@ -60,6 +60,7 @@ import {
   spawnOverChunk,
   type RainColumn,
 } from './engine/dropRain';
+import { seasonMood } from './engine/season';
 import { createSkyBackground } from './engine/SkyBackground';
 import { createPostProcessing } from './engine/PostProcessing';
 import { createSunShadow } from './engine/SunShadow';
@@ -110,6 +111,7 @@ import {
   type SaveStorage,
 } from './game/save/storage';
 import { BALANCE } from './sim/balance';
+import { harvestFactorAt, SEASON_NAMES, seasonAt, yearPhaseAt } from './sim/seasons';
 import { cityVitality } from './sim/vitality';
 import { catalystById, defaultCatalystOfClass } from './sim/catalysts';
 import { infoViewSpecOf, infoViewVersion, isInfoViewKind, nextInfoView, type InfoViewKind } from './sim/infoViews';
@@ -420,6 +422,17 @@ const initialHour = hourPinned
   // la prima immagine e' quella con cui i temi sono stati disegnati.
   : modeHour(initialMode) ?? DAYLIGHT.dayHour;
 
+/**
+ * `?season=<0..1>` inchioda l'anno a una fase, come `?hour=` fa con l'ora.
+ *
+ * Zero e' l'inizio della primavera, 0,375 il pieno dell'estate, 0,875 il pieno
+ * dell'inverno. Serve a guardare un inverno senza aspettare i quattro minuti che
+ * la partita ci mette ad arrivarci — e a catturare i sette temi nella stessa
+ * stagione, che a occhio non si sistema.
+ */
+const seasonPinned = params.get('season') !== null;
+const initialSeason = seasonPinned ? Number(params.get('season')) : 0;
+
 /** Stesso ritmo dell'HUD: l'occupazione cambia un tick alla volta, non un frame. */
 const VITALITY_REFRESH_MS = 150;
 let vitalityAt = 0;
@@ -554,6 +567,8 @@ const daylight = createAtmosphereControl({
   theme: initialTheme,
   mode: initialMode,
   hour: initialHour,
+  season: initialSeason,
+  seasonPinned,
   pinned: hourPinned,
   onTheme: (next) => gameHud?.setTheme(next.id),
   onMode: (mode) => {
@@ -990,7 +1005,7 @@ chunkRenderer.onChunkBorn = (cx, cy, cz, bornAt): void => {
 };
 // Una volta sola e non per frame: la comparsa dura qualche secondo, e in quel
 // tratto il sole si sposta di un decimo di grado.
-dropRainView.setLighting(daylight.theme.colors, withHour(daylight.theme.atmosphere, daylight.hour));
+dropRainView.setLighting(daylight.look.colors, withHour(daylight.look.atmosphere, daylight.hour));
 if (introActive) chunkRenderer.armDrop(performance.now() / 1000, introFall);
 
 /**
@@ -1317,7 +1332,9 @@ if (debugEnabled) {
   // Sposta il sole senza ricaricare: serve ad autorare i temi guardando il
   // risultato invece che immaginandolo. Non persiste, il tema resta la fonte.
   debugGlobals['__voxelSun'] = (azimuth?: number, elevation?: number): Record<string, unknown> => {
-    const atmosphere = daylight.theme.atmosphere;
+    // Il look e non il tema: qui si riscrive l'atmosfera nel materiale, e
+    // ripartire da quella del tema riporterebbe i prati d'estate a gennaio.
+    const atmosphere = daylight.look.atmosphere;
     const sun = atmosphere.sun;
     const next = {
       ...sun,
@@ -1355,6 +1372,29 @@ if (debugEnabled) {
       sunIntensity: atmosphere.sun.intensity,
       emissiveStrength: atmosphere.emissiveStrength,
       dayLengthSeconds: DAYLIGHT.daySeconds,
+    };
+  };
+  /**
+   * L'anno, dallo stesso lato da cui si guarda l'ora.
+   *
+   * Un numero inchioda la fase — 0 primavera, 0,375 estate, 0,625 autunno, 0,875
+   * inverno — e `null` la restituisce alla simulazione. Torna anche il
+   * moltiplicatore del raccolto, che e' il modo per verificare che il colore e la
+   * resa stiano nello stesso mese: sono la stessa fase, e se un giorno
+   * divergessero si vedrebbe qui prima che a schermo.
+   */
+  debugGlobals['__voxelSeason'] = (phase?: number | null): Record<string, unknown> => {
+    if (phase !== undefined) daylight.pinSeason(phase);
+    const current = daylight.season;
+    const tick = growthScene?.simState.tickCount ?? 0;
+    return {
+      phase: current,
+      pinned: daylight.seasonPinned,
+      season: SEASON_NAMES[seasonAt(Math.round(current * BALANCE.seasons.yearTicks))],
+      harvestFactor: harvestFactorAt(Math.round(current * BALANCE.seasons.yearTicks)),
+      mood: seasonMood(current),
+      simTick: tick,
+      yearTicks: BALANCE.seasons.yearTicks,
     };
   };
   // Stessa fonte del pannello: due letture separate divergerebbero al primo
@@ -1575,9 +1615,9 @@ function updateTraffic(time: number): void {
   ropewayView?.setLines(growthScene.ropewayCables());
   if (time - trafficLitAt < VITALITY_REFRESH_MS) return;
   trafficLitAt = time;
-  const atmosphere = withHour(daylight.theme.atmosphere, daylight.hour);
-  trafficView.setLighting(daylight.theme.colors, atmosphere);
-  ropewayView?.setLighting(daylight.theme.colors, atmosphere);
+  const atmosphere = withHour(daylight.look.atmosphere, daylight.hour);
+  trafficView.setLighting(daylight.look.colors, atmosphere);
+  ropewayView?.setLighting(daylight.look.colors, atmosphere);
 }
 
 /**
@@ -1684,6 +1724,11 @@ function onFrame(time: number): void {
   updateGrowth(cityDt);
   advanceInfoOverlay();
   daylight.advance(dt);
+  // L'anno lo tiene la simulazione, non il renderer: `yearPhaseAt` e' la stessa
+  // funzione da cui esce il moltiplicatore del raccolto, quindi il prato non
+  // puo' ingiallire in un mese diverso da quello in cui i campi rendono meno.
+  // Senza citta' non c'e' anno, e la fase resta quella di partenza.
+  if (growthScene !== null) daylight.setSeason(yearPhaseAt(growthScene.simState.tickCount));
 
   // La camera del fotogramma, chiesta **una volta**: da qui in giu' nessuno deve
   // piu' sapere se si sta guardando la citta' dall'alto o da una sua strada.

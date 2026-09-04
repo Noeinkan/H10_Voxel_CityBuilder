@@ -410,8 +410,15 @@ function bindingGapOf(profile: LocalUrbanProfile, id: Specialization): Specializ
   return worst;
 }
 
-/** Quanto di un requisito c'e' gia', in [0, 1]. Zero dove manca il ruolo. */
-function gapRatio(gap: SpecializationGap): number {
+/**
+ * Quanto di un requisito c'e' gia', in [0, 1]. Zero dove manca il ruolo.
+ *
+ * Esportata perche' «quanto sei vicino» dev'essere **una** formula: qui ordina
+ * le specializzazioni di un luogo, e in `towerProspect.ts` ordina i luoghi per
+ * la stessa specializzazione. Sono due domande diverse sullo stesso metro, e
+ * riscriverlo di la' avrebbe fatto divergere i due ordini alla prima ritaratura.
+ */
+export function gapRatio(gap: SpecializationGap): number {
   if (gap.need <= 0) return 1;
   return Math.min(1, Math.max(0, gap.have / gap.need));
 }
