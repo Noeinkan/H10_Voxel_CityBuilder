@@ -24,7 +24,7 @@ export class RoadDriver {
   private readonly roads: RoadNetwork;
 
   constructor(private readonly ctx: BuildContext) {
-    this.roads = new RoadNetwork(ctx.terrain, (x, y) => ctx.registry.isOccupied(x, y));
+    this.roads = new RoadNetwork(ctx.terrain, (x, y) => ctx.registry.isOccupied(x, y), ctx.seed);
   }
 
   /** La rete, per chi deve sapere dov'e' la strada: il Builder che ordina i siti. */
