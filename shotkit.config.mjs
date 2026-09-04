@@ -12,6 +12,22 @@
  *
  * `SHOTKIT_BASE_URL` punta a un'istanza gia' avviata altrove (per esempio un
  * worktree pulito, quando l'albero di lavoro e' in mezzo a un refactor).
+ *
+ * **Con altri agenti che scrivono in `src/`, il server di sviluppo non va
+ * usato.** Ogni salvataggio altrui fa ricaricare la pagina per HMR, e una
+ * ricarica riporta l'app alla schermata del titolo: lo scatto viene, non da'
+ * nessun errore, e mostra il menu sopra una citta' che era cresciuta davvero.
+ * E' successo, ed e' costato cinque corse a capirlo — la diagnosi che sembrava
+ * ovvia (il selettore, il timeout, il clic) era sempre sbagliata. Il rimedio e'
+ * servire una build statica, che non ha HMR:
+ *
+ *     npx vite build
+ *     npx vite preview --port 8021 --strictPort
+ *     $env:SHOTKIT_BASE_URL='http://localhost:8021'
+ *     node C:/Personal_utilities/screenshot-kit/shotkit.mjs --only <shot> --gpu
+ *
+ * (senza `--serve`: il server c'e' gia'). Con l'albero fermo, `--serve` va
+ * benissimo e resta il default.
  */
 
 const BASE_URL = process.env.SHOTKIT_BASE_URL || 'http://localhost:8020';
