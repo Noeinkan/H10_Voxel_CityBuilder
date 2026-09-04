@@ -619,6 +619,11 @@ contigue e complanari, quindi il mezzanino continuo esiste già come geometria e
 non come collegamento dichiarato. Riconoscerlo — un percorso che *attraversa* una
 mensola invece di esserne bloccato — è il punto da cui riprendere.
 
+La 4.14 lo ha poi confermato dall'altro lato, e con dei numeri: rifacendo a mano
+il giro di `routePass` su **ogni** compagno di un piazzale d'arcologia — non solo
+sul migliore — nessuna delle trentaquattro coppie regge, e il colmo dei corridoi
+misurati sta fra 161 e 238 quote. Il dettaglio sta in fondo alla 4.14.
+
 ### Fase 4.10 — Campionario dei voxel
 
 Obiettivo: poter guardare tutto il vocabolario visuale in una sola inquadratura
@@ -828,6 +833,107 @@ una supposizione, e la correzione tocca la geometria della ricetta (piazzali a
 filo su più fronti, con gli steli spostati per liberare gli angoli del podio) o
 `routePlan`. Fino ad allora l'arcologia è raggiungibile solo dalla propria scala
 interna, cioè è ancora un monumento.
+
+**La correzione ipotizzata qui sopra è stata misurata, e non funziona.** Stessa
+fixture — seed 4242, cinque poli, 2000 tick, un'arcologia `terracedTwin` a
+94,332 con i due piazzali a quota 40 — sonda che rifà a mano il giro di
+`routePass` su ogni compagno invece che sul solo migliore. Il piazzale a ovest ha
+**zero** compagni ammissibili, quello a est ne ha trentaquattro e nessuno regge
+(27 `tooSteep`, 6 `blocked`, 1 `onStreet`).
+
+1. **Non è la geometria della ricetta.** Sessantaquattro varianti di piazzale —
+   quattro fronti, larghezze da 6 a 20, quote locali da 23 a 90 — per quattro
+   sporgenze fuori dall'ingombro (0, 4, 8, 12 voxel): **zero percorsi**, in tutte
+   e duecentocinquantasei le combinazioni. Piazzali a filo su più fronti e steli
+   spostati non avrebbero cambiato niente.
+2. **Non sono le manopole del planner.** `stepPerNode` da 8 a 24, `maxWidth` da 8
+   a 20, `maxNodes` da 4 a 8, in tutte le combinazioni: zero percorsi. Il
+   `tooSteep` si converte in `blocked`, e si ferma lì.
+3. **Il muro vero è in due pezzi, e il secondo non ha una taratura.** Su quasi
+   ogni coppia il fronte comune è **negativo** — i due capi sono sfalsati di
+   lato — quindi si finisce sempre sulla zeta, che assorbe un solo pianerottolo
+   per capo (8 quote) mentre gli impalcati di una città matura stanno fra 29 e
+   192. Le poche coppie che passano l'altezza muoiono su `blocked`: il colmo del
+   corridoio misurato sta fra 161 e 238 quote, cioè la corsia attraversa le torri
+   del centro, e quattro pianerottoli non le scavalcano. Non è un caso
+   dell'arcologia: su **tutta** la città cresciuta, con 156 impalcati, i percorsi
+   sono **uno**.
+4. **La campata non è la strada alternativa, e per due ragioni distinte.**
+   `planSpan` rifiuta **tutti e ventidue** i vicini dell'arcologia con `level`,
+   perché su un `BuildingRecord` il campo `level` significa due cose e
+   `SPANS.rules[*].minLevel` legge come livello di crescita quello che per una
+   megastruttura è uno **stadio**: un inviluppo di trecentoventi quote allo
+   stadio zero risulta la casupola che quel prefiltro esiste per escludere. È lo
+   stesso rifiuto che tiene fuori ogni impalcato — livello 0 per costruzione — ed
+   è quindi la ragione vera per cui «nessuna delle venti campate tocca una
+   mensola», che la 4.9 attribuiva alla forma di `planSpan`. Neutralizzato il
+   prefiltro a mano, però, i vicini arrivano al vaglio geometrico e muoiono su
+   `groundTaken` e `notFacing`: una campata **non scavalca un edificio per
+   progetto**, e l'anello sventrato attorno alla megastruttura mette i vicini
+   oltre `maxGap`. Portare `maxGap` a 20, 28 e 36 non produce una sola campata.
+
+**Dove va spostata la casella.** Non è lavoro di questa sotto-fase: l'arcologia è
+il caso più visibile di una rete che non si forma. Su tutta la città cresciuta —
+centocinquantasei impalcati — i percorsi sono **uno**, e le componenti del grafo
+sono **ottantasei**, la più larga da sei record.
+
+**Seconda campagna di misura, e ha smentito anche le proprie ipotesi.** Rifacendo
+`planRoute` su millequattrocentotrentotto coppie di impalcati — le dieci più
+vicine per ciascuno, non il solo compagno che la passata sceglie — passa **una
+coppia**. Il profilo dei rifiuti dice dove muoiono, e ogni riga qui sotto è una
+manopola girata e rimisurata:
+
+| Rifiuto | Coppie | Cosa significa |
+| --- | --- | --- |
+| `noLanding` | 722 | un capo è più stretto di `walkWidth` sull'asse d'uscita |
+| `badSeparation` | 288 | i due capi sono più vicini di `minSeparation` |
+| `tooSteep` | 221 | la zeta assorbe un pianerottolo per capo, otto quote |
+| `blocked` | 112 | il corridoio attraversa dei corpi |
+
+Quattro tentativi di sbloccarla, tutti misurati e tutti ripristinati:
+
+1. **Il compagno scelto davanti invece che vicino.** `routePartner` prendeva il
+   più vicino, quasi sempre in diagonale, e la diagonale obbliga alla zeta.
+   Preferire chi ha un fronte comune largo quanto la passerella — cioè chi
+   ammette il tratto dritto, l'unica forma che sa salire — non cambia niente:
+   su ottantasei coppie proposte, **due** hanno quel fronte. Non c'è niente da
+   preferire.
+2. **La salita della zeta.** `stepPerNode` da 8 a 24 e `maxNodes` da 4 a 8:
+   `tooSteep` scende da 221 a 121 e `blocked` sale da 112 a 206. Le coppie che
+   passano restano tre su millequattrocento.
+3. **La mensola profonda quanto la passerella.** `AERIAL.terrace.minOverhang` da
+   3 a 4, cioè togliere alla radice i 722 `noLanding`. Cambia la città intera —
+   record da 390 a 334, campate da 13 a **6** — e i percorsi restano **due**.
+4. **La contiguità dichiarata**, che era l'ipotesi della 4.9: «le mensole di uno
+   stesso fronte sono contigue e complanari, quindi il mezzanino continuo esiste
+   già come geometria». Misurato su tutte le coppie di impalcati: quelle che si
+   toccano **e** stanno sullo stesso piano calpestabile sono **zero**. La
+   premessa è falsa, e con lei la correzione che ne discendeva.
+
+**Cosa resta vero, e non è una taratura.** `planRoute` costruisce tre polilinee
+fisse fra due capi scelti per vicinanza, e in un centro cresciuto quasi nessuna
+coppia di impalcati soddisfa insieme le tre condizioni che una polilinea chiede:
+allineati entro otto di lato, entro un pianerottolo di quota, con il corridoio
+sgombro. Il rifiuto dominante si sposta da una manopola all'altra e il totale
+resta zero, che è la firma di un problema di **forma** e non di soglia. Chiuderlo
+vuol dire una di queste tre, e sono decisioni di progetto:
+
+- dare ai percorsi una ricerca vera invece delle tre forme (il progetto la
+  esclude per scelta: «questo progetto non ha un pathfinding e qui non serve»);
+- far nascere le mensole in **coppie affacciate** invece che una per ospite —
+  cioè decidere il capolinea prima dell'aggetto, che è il rovescio di come
+  `terracePass` lavora oggi;
+- dare all'arcologia un collegamento suo, come già si dà il cantiere, i piazzali
+  e la cornice: una campata di scala mega, che a differenza di quella ordinaria
+  scavalca il costruito invece di pretendere il suolo libero (`groundTaken` è il
+  rifiuto che nega le sole quattro coppie geometricamente plausibili).
+
+Nel frattempo resta un difetto vero e indipendente, misurato qui e non
+corretto: `SPANS.rules[*].minLevel` legge come livello di crescita quello che per
+un'arcologia è uno **stadio** e per un impalcato non è niente, quindi squalifica
+come «casupola» un inviluppo di trecentoventi quote. Correggerlo da solo porta le
+campate da 14 a 13 e non ne fa atterrare nessuna su un impalcato: va fatto
+insieme al pezzo che lo rende visibile, non prima.
 
 **Vincolo:** valgono i vincoli trasversali della fase, e in particolare i tre che
 qui si è più tentati di negoziare — nessun tipo di superficie in più (invariante
