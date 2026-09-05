@@ -5,6 +5,7 @@ import { planLift } from '../aerial/guideway';
 import type { BuildingRecord } from './BuildingRegistry';
 import type { BuildContext } from './buildContext';
 import { placeStructure, wholeFootprint } from './placeStructure';
+import { isSpan } from './structureKind';
 
 /**
  * La passata della guida: da un impalcato abitato scende una via a terra.
@@ -93,7 +94,7 @@ export class GuideDriver {
         let z = 0;
         let id = 0;
         for (const record of this.ctx.registry.at(x, y)) {
-          if (record.span !== undefined || record.baseZ >= ceiling) continue;
+          if (isSpan(record) || record.baseZ >= ceiling) continue;
           const above = record.baseZ + record.height;
           if (above > z) {
             z = above;

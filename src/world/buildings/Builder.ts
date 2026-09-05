@@ -78,6 +78,7 @@ import { envelopeOf } from './BuildingRegistry';
 import { groundSideOf, overhangFor } from './generate';
 import { recordStamp } from './recordStamp';
 import { GrowthQueue, anchorOf } from './growthQueue';
+import { isPlainBuilding } from './structureKind';
 import { LotSearch } from './lotSearch';
 import { Frontage } from './frontage';
 import { SurfaceQueue } from './surfaceQueue';
@@ -738,8 +739,15 @@ export class Builder {
    */
   private countRestored(record: BuildingRecord): void {
     this.placedCount++;
-    if (record.supports !== undefined && record.aerial === undefined &&
-      record.span === undefined && record.aloft !== true) {
+    // **Un edificio ordinario appoggiato a un impalcato**, che e' esattamente
+    // cio' che conta il percorso vivo: li' `stackedCount` sale nel solo ramo in
+    // cui il Builder posa una casa sopra un piano in quota. L'elenco di marker
+    // che stava qui ne escludeva tre — quota, campate, monumenti sul tetto — e
+    // lasciava passare l'arcologia e il monumento a terra, che portano
+    // `supports` per un'altra ragione e che il percorso vivo non ha mai
+    // contato: una citta' caricata diceva un numero che la stessa citta',
+    // costruita, non avrebbe mai detto.
+    if (record.supports !== undefined && isPlainBuilding(record)) {
       this.stackedCount++;
     }
 

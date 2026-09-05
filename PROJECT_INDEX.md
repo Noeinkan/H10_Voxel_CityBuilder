@@ -53,10 +53,20 @@ worker. `src/sim/` gira in Node senza DOM né GPU.
 | [shotkit.config.mjs](shotkit.config.mjs) | Ricette di cattura per gli scatti di riferimento in `.shots/` |
 | [src/boot.ts](src/boot.ts) | Ingresso della pagina: decide fra titolo e partita, tiene lo storage degli slot, riscrive il seed nell'indirizzo e carica `main.ts` con un import dinamico soltanto dopo la scelta |
 | [src/shell/actionLabels.ts](src/shell/actionLabels.ts) | Le righe che il cursore mostra prima di un click e i motivi di un rifiuto: funzioni pure, senza scena ne' HUD |
+| [src/shell/debugHooks.ts](src/shell/debugHooks.ts) | Gli hook globali dell'harness — `__voxelStats`, `__simTick`, `__terrainExpand` e gli altri — registrati in un posto solo e sempre sulla stessa fonte dell'overlay |
+| [src/shell/demolishGesture.ts](src/shell/demolishGesture.ts) | La gomma, unico strumento in due tempi: ancora, striscio e rilascio, con il riquadro a terra e i tappeti sui tetti |
+| [src/shell/entryDrop.ts](src/shell/entryDrop.ts) | La comparsa della prima isola: i chunk che scendono dal cielo, la pioggia di cubetti e la quota di partenza letta dal frustum |
+| [src/shell/frameStats.ts](src/shell/frameStats.ts) | Le letture di misura per overlay, riepilogo console e hook globali: traduzioni, non decisioni |
+| [src/shell/infoViewScene.ts](src/shell/infoViewScene.ts) | La vista informativa accesa sopra la citta': quale, e chi ricostruisce la heatmap quando il campo cambia |
+| [src/shell/placementTools.ts](src/shell/placementTools.ts) | Lo strumento in mano e cio' che il puntatore ne fa: mirino, rifiuti, posa di catalizzatori, mensole, funivie e settori |
+| [src/shell/pointerPick.ts](src/shell/pointerPick.ts) | Dal pixel alla colonna: raggio del cursore, terra su cui si costruisce e cosa si sta indicando, con un raycaster solo |
 | [src/shell/saveSlots.ts](src/shell/saveSlots.ts) | Il ritmo del salvataggio visto dalla radice: automatico a intervallo, slot a mano, apertura che passa da un ricaricamento |
+| [src/shell/selectionScene.ts](src/shell/selectionScene.ts) | Cio' che il giocatore ha scelto: scheda, contorno in-world, campo del landmark e artefatto del coach, che scrivono la stessa superficie |
+| [src/shell/streetEye.ts](src/shell/streetEye.ts) | La discesa a terra: armarla, posare l'occhio, risalire, e le conseguenze del cambio di modo su qualita' e post-processing |
+| [src/shell/swatchScene.ts](src/shell/swatchScene.ts) | Il campionario di `?scene=swatch`: soggetto sotto il cursore, scelta persistente, referto del voxel e inquadratura delle fasce |
 | [tsconfig.json](tsconfig.json) | `strict` + flag extra; `noUncheckedIndexedAccess` off di proposito |
 | [vite.config.ts](vite.config.ts) | Vite + Vitest insieme; worker ES, ambiente `node` e segnalazione standard dei test oltre un secondo |
-| [src/main.ts](src/main.ts) | Bootstrap, ciclo di frame a budget, input di gioco e hook globali di debug |
+| [src/main.ts](src/main.ts) | Composition root e ciclo di frame a budget: monta gli strati, li cabla fra loro e non possiede piu' input, scelta ne' misura |
 
 ## Documentazione operativa
 

@@ -287,3 +287,40 @@ export function isPlainBuilding(record: StructureMarkers): boolean {
 export function isGroundStructure(record: StructureMarkers): boolean {
   return STRUCTURE_TRAITS[structureKindOf(record)].groundStructure;
 }
+
+/**
+ * true se il record e' una campata.
+ *
+ * **Non e' un tratto**, ed e' giusto che non lo sia: `guideDriver` non chiede
+ * «questa cosa regge qualcosa», chiede «questa cosa e' una campata», perche' una
+ * campata non ha un sotto — misurarne il tetto per sapere da dove parte un
+ * montante darebbe la quota di un ponte invece del piano che lo sostiene. Una
+ * domanda sul tipo si risponde con il tipo.
+ */
+export function isSpan(record: StructureMarkers): boolean {
+  return structureKindOf(record) === STRUCTURE_KIND.span;
+}
+
+/**
+ * true se il record e' la torre di una funivia.
+ *
+ * Anche questa e' una domanda sul tipo e non un tratto: la fune **non e' un
+ * record**, quindi lo sgombero non puo' dedurre dal registro che abbattendo la
+ * torre resterebbe un cavo appeso al nulla. Lo sa solo chi riconosce la torre.
+ */
+export function isRopewayTower(record: StructureMarkers): boolean {
+  return structureKindOf(record) === STRUCTURE_KIND.ropeway;
+}
+
+/**
+ * true se il record e' un monumento, a terra o su un tetto.
+ *
+ * La fila di facciate lo salta perche' ha un altro generatore e cresce di stadio
+ * invece che di livello. Sarebbe comodo scriverlo `!promotes`, e sarebbe
+ * sbagliato: quel tratto e' falso anche per campate, quota e arcologie, e
+ * toglierebbe dalla fila vicini che oggi ci entrano.
+ */
+export function isLandmark(record: StructureMarkers): boolean {
+  const kind = structureKindOf(record);
+  return kind === STRUCTURE_KIND.landmark || kind === STRUCTURE_KIND.rooftopLandmark;
+}

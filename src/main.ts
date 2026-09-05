@@ -1,26 +1,15 @@
-import {
-  Matrix4,
-  Raycaster,
-  Scene,
-  SRGBColorSpace,
-  Vector2,
-  Vector3,
-  WebGLRenderer,
-} from 'three';
+import { Matrix4, Scene, SRGBColorSpace, Vector2, Vector3, WebGLRenderer } from 'three';
 import { createAtmosphereControl } from './engine/AtmosphereControl';
 import { ChunkRenderer } from './engine/ChunkRenderer';
 import { InfluenceOverlay } from './engine/InfluenceOverlay';
 import { InfoViewOverlay } from './engine/InfoViewOverlay';
 import { InspectGuides } from './engine/InspectGuides';
-import { PLACEMENT_FACADES, PLACEMENT_SURFACE, PlacementCursor } from './engine/PlacementCursor';
 import { TrafficView } from './engine/TrafficView';
 import { RopewayView } from './engine/RopewayView';
 import { FrameTiming } from './engine/FrameTiming';
 import {
   INSPECT,
   INSPECT_MODE,
-  INSPECT_MODES,
-  INSPECT_NAMES,
   clampSliceZ,
   cycleInspectMode,
   isCut,
@@ -30,13 +19,8 @@ import {
 } from './engine/inspect';
 import { createInspectView } from './engine/InspectView';
 import { IsoCameraController } from './engine/IsoCameraController';
-import { StreetCameraController } from './engine/street/StreetCameraController';
-import { StreetView } from './engine/street/StreetView';
-import { eyePoint, eyeRefusal } from './engine/street/streetEye';
 import {
   DAYLIGHT,
-  DAYLIGHT_MODE,
-  dayPhase,
   modeHour,
   nextDaylightMode,
   normaliseHour,
@@ -44,40 +28,28 @@ import {
   withHour,
   type DaylightMode,
 } from './engine/daylight';
-import { faceLuminance } from './engine/lighting';
 import { onPaletteChanged } from './engine/palette';
 import {
   RenderQualityController,
   parseQualityMode,
   type QualityProfile,
 } from './engine/RenderQuality';
-import { DropRainView } from './engine/DropRainView';
-import { fallHeightFor } from './engine/introDrop';
-import {
-  advanceRain,
-  clearRain,
-  createRain,
-  spawnOverChunk,
-  type RainColumn,
-} from './engine/dropRain';
-import { seasonMood } from './engine/season';
 import { createSkyBackground } from './engine/SkyBackground';
 import { createPostProcessing } from './engine/PostProcessing';
 import { createSunShadow } from './engine/SunShadow';
-import { SelectionOutline } from './engine/SelectionOutline';
-import { DemolitionOverlay } from './engine/DemolitionOverlay';
 import { resolveTheme, themeSwatches, THEMES, type Theme } from './engine/themes';
 import { createVoxelMaterial } from './engine/VoxelMaterial';
-import {
-  actionFailureLabel,
-  classLabel,
-  groundNote,
-  landmarkNote,
-  reachNote,
-} from './shell/actionLabels';
+import { installDebugHooks } from './shell/debugHooks';
+import { createEntryDrop } from './shell/entryDrop';
+import { createFrameStats } from './shell/frameStats';
+import { createInfoViewScene } from './shell/infoViewScene';
+import { createPlacementTools } from './shell/placementTools';
+import { createPointerPick } from './shell/pointerPick';
 import { createSaveSlots } from './shell/saveSlots';
+import { createSelectionScene } from './shell/selectionScene';
+import { createStreetEye } from './shell/streetEye';
+import { createSwatchScene, SWATCH_PIVOT } from './shell/swatchScene';
 import { GrowthScene } from './game/growthScene';
-import type { CoachSuggestion } from './game/coach';
 import {
   lookUrl,
   perfToggleUrl,
@@ -88,18 +60,8 @@ import {
   swatchUrl,
 } from './game/launchMode';
 import { signalWorldReady } from './game/worldReady';
-import { resolveSelection, type Selection } from './game/selection';
-import { pickSolidCell, pickSurfaceCell, type Ray3, type SurfaceCell } from './game/surfacePick';
-import { pickFacade } from './game/facadePick';
-import type { AerialFace } from './world/aerial/terracePlan';
-import { SimScene, SIM_SITE_COUNT, SIM_TICK_RATE } from './game/simScene';
-import { createInfoSampler } from './game/infoViews';
-import {
-  coastalSectorAt,
-  coastalSectorById,
-  shapeWithSector,
-  type CoastalSector,
-} from './game/sectors';
+import { SimScene, SIM_TICK_RATE } from './game/simScene';
+import { coastalSectorById, shapeWithSector, type CoastalSector } from './game/sectors';
 import {
   AUTO_SLOT,
   browserStorage,
@@ -111,44 +73,24 @@ import {
   type SaveStorage,
 } from './game/save/storage';
 import { BALANCE } from './sim/balance';
-import { harvestFactorAt, SEASON_NAMES, seasonAt, yearPhaseAt } from './sim/seasons';
+import { yearPhaseAt } from './sim/seasons';
 import { cityVitality } from './sim/vitality';
-import { catalystById, defaultCatalystOfClass } from './sim/catalysts';
-import { infoViewSpecOf, infoViewVersion, isInfoViewKind, nextInfoView, type InfoViewKind } from './sim/infoViews';
-import {
-  BUILDING_CLASS,
-  CLASS_COUNT,
-  CLASS_NAMES,
-  type BuildingClass,
-} from './sim/classes';
+import { BUILDING_CLASS, CLASS_COUNT, type BuildingClass } from './sim/classes';
 import { BUILDER } from './world/buildings/config';
-import { typologiesForUses } from './world/buildings/typology';
-import { footprintDepth, type BuildingRecord } from './world/buildings/BuildingRegistry';
-import { isGroundStructure } from './world/buildings/structureKind';
-import type { BuildSite } from './sim/nextBuildSites';
-import { isPolicyId } from './sim/policies';
 import './ui/hud.css';
-import { DebugOverlay, type OverlayFrame } from './ui/DebugOverlay';
-import { PerfOverlay, type PerfFrame } from './ui/PerfOverlay';
+import { DebugOverlay } from './ui/DebugOverlay';
+import { PerfOverlay } from './ui/PerfOverlay';
 import { PerfReport, formatPerfSummary } from './engine/PerfReport';
-import { GameHud, type GameTool } from './ui/GameHud';
+import { GameHud } from './ui/GameHud';
 import { daylightControl } from './ui/GameHudModel';
-import { unlockLines } from './ui/prospects';
 import { hudTokens } from './ui/hudTokens';
 import { GrowthOverlay } from './ui/GrowthOverlay';
 import { InfoViewLegend } from './ui/InfoViewLegend';
 import { InspectOverlay, type InspectOverlayFrame } from './ui/InspectOverlay';
-import { SelectionPanel } from './ui/SelectionPanel';
-import { extentOf, type SelectionActionId, type SelectionSectionId } from './ui/SelectionPanelModel';
 import { SimOverlay, type SimOverlayFrame } from './ui/SimOverlay';
-import { SwatchOverlay, type SwatchOverlayFrame, type SwatchVoxel } from './ui/SwatchOverlay';
-import { TerrainOverlay, type TerrainOverlayFrame } from './ui/TerrainOverlay';
-import {
-  buildViewMenuModel,
-  viewAfterToolPicked,
-  viewLabel,
-  type ViewMenuModel,
-} from './ui/ViewMenuModel';
+import { SwatchOverlay } from './ui/SwatchOverlay';
+import { TerrainOverlay } from './ui/TerrainOverlay';
+import { buildViewMenuModel, type ViewMenuModel } from './ui/ViewMenuModel';
 import { CHUNK } from './world/chunkCoords';
 import { createScene, type SceneGenerator, type SceneKind } from './world/scenes/cityScene';
 import {
@@ -157,24 +99,10 @@ import {
   parseBuildingUse,
   type DioramaScene,
 } from './world/scenes/dioramaScene';
-import { CELL_HEIGHT, SWATCH } from './world/scenes/swatchLayout';
-import {
-  SWATCH_FOCUS,
-  SWATCH_FOCUSES,
-  SWATCH_ITEM_GAP,
-  swatchExtent,
-  swatchFocusExtent,
-  swatchSubjectAt,
-  type SwatchFocus,
-  type SwatchSubject,
-} from './world/scenes/swatchCatalog';
-import { cellDetail, type SwatchDetail } from './world/scenes/swatchProbe';
-import { firstSolidVoxel } from './world/scenes/swatchPick';
 import { StreetNetwork } from './world/streets/StreetNetwork';
 import { TERRAIN } from './world/terrain/config';
 import { maxTowerHeightOf } from './world/scale';
 import { BiomeView } from './world/terrain/BiomeView';
-import { expandIsland } from './world/terrain/IslandGenerator';
 import { TerrainStreamer } from './world/terrain/TerrainStreamer';
 import type { IslandShape } from './world/terrain/region';
 import { VoxelWorld } from './world/VoxelWorld';
@@ -482,30 +410,10 @@ const camera = new IsoCameraController(world, window.innerWidth, window.innerHei
   targetHeight: diorama !== null
     ? diorama.subject.z + diorama.subject.sizeZ / 2
     : sceneKind === 'swatch'
-      ? SWATCH.groundZ + CELL_HEIGHT / 2
+      ? SWATCH_PIVOT
       : ISLAND_PIVOT,
 });
 camera.attach(renderer.domElement);
-
-/**
- * La vista da terra, spenta finche' non la si chiede.
- *
- * Il piano lontano e' la **diagonale del mondo** e non una distanza di disegno
- * scelta a mano: la nebbia dei temi e' cosi' rada che il velo si chiude dopo
- * migliaia di voxel, quindi tagliare prima mostrerebbe il taglio invece di
- * nasconderlo. A limitare il costo c'e' il campo visivo, piu' il culling per
- * chunk che gira gia' sul frustum della camera.
- */
-const streetView = new StreetView(
-  camera,
-  renderer.domElement,
-  new StreetCameraController(window.innerWidth, window.innerHeight, {
-    voxelSize: VOXEL_SIZE,
-    far: Math.hypot(worldSize, worldSize, worldHeight),
-    onLockChange: (locked) => syncStreetHint(locked),
-  }),
-  VOXEL_SIZE,
-);
 
 // Il composer ha bisogno di scena e camera, quindi nasce qui; e `applyTheme`
 // ne imposta bloom e tilt, percio' la prima applicazione del tema viene dopo.
@@ -515,6 +423,10 @@ const post = createPostProcessing(renderer, scene, camera.camera);
 // volta per frame il conteggio torna a essere il totale vero: scena, ombra e post.
 renderer.info.autoReset = false;
 post.setSize(window.innerWidth, window.innerHeight, renderQuality.pixelRatio);
+
+// Nasce qui e non accanto al ciclo di frame perche' la discesa a terra la
+// azzera gia' al primo cambio di modo: e' il piu' vecchio dei consumatori.
+const frameTiming = new FrameTiming(600);
 
 /**
  * Profilo di effetti in vigore. Lo decide `RenderQuality`, che lo fa scendere
@@ -548,6 +460,55 @@ function applyQualityProfile(profile: QualityProfile): void {
     bloomScale: profile.bloomScale,
   });
 }
+
+/**
+ * La vista da terra, spenta finche' non la si chiede.
+ *
+ * Nasce prima delle viste d'ispezione e prima del terreno perche' il gating di
+ * qualita' la interroga gia': quanto si puo' spendere per fotogramma dipende da
+ * dove si sta guardando. Cio' che le serve e non c'e' ancora — le viste, la
+ * mappa, l'HUD — arriva come funzione.
+ */
+const street = createStreetEye({
+  camera,
+  element: renderer.domElement,
+  renderer,
+  post,
+  renderQuality,
+  frameTiming,
+  inspect: () => inspect,
+  hud: () => gameHud,
+  map: () => terrain?.map ?? null,
+  pointedCellAt: (clientX, clientY) => pick.pointedCellAt(clientX, clientY),
+  syncResolution,
+  applyQuality: applyQualityProfile,
+  quality: () => qualityProfile,
+  voxelSize: VOXEL_SIZE,
+  width: window.innerWidth,
+  height: window.innerHeight,
+  far: Math.hypot(worldSize, worldSize, worldHeight),
+});
+const streetView = street.streetView;
+
+/** Le tre domande che ogni gesto del mouse fa al mondo, con un raycaster solo. */
+const pick = createPointerPick({
+  element: renderer.domElement,
+  view: () => streetView.view,
+  world,
+  map: () => terrain?.map ?? null,
+  registry: () => growthScene?.registry,
+});
+
+/** Il campionario vive solo in `?scene=swatch`: fuori di li' non nasce affatto. */
+const swatch = sceneKind === 'swatch'
+  ? createSwatchScene({
+      element: renderer.domElement,
+      world,
+      camera,
+      cursorRay: (clientX, clientY) => pick.cursorRay(clientX, clientY),
+    })
+  : null;
+if (swatch !== null) scene.add(swatch.group);
 
 applyQualityProfile(renderQuality.profile);
 
@@ -664,20 +625,10 @@ if (diorama !== null) {
   const s = diorama.subject;
   const span = Math.max(s.sizeX, s.sizeY) * 1.25;
   camera.frameRegion(s.x + s.sizeX / 2, s.y + s.sizeY / 2, span, span, s.sizeZ);
-} else if (sceneKind === 'swatch') {
+} else if (swatch !== null) {
   // Si parte da «Tutto», l'estensione intera: la prima immagine e' il
   // campionario completo, poi i pulsanti del pannello inquadrano una fascia.
-  // Non passa da `frameSwatchFocus` perche' quello scrive `swatchFocus`, che qui
-  // e' ancora nella sua zona morta: la fascia iniziale e' gia' il suo valore.
-  const e = swatchFocusExtent(SWATCH_FOCUS.all);
-  camera.frameRegion(
-    e.minX + e.sizeX / 2,
-    e.minY + e.sizeY / 2,
-    e.sizeX,
-    e.sizeY,
-    e.sizeZ,
-    (SWATCH.groundZ + e.sizeZ) / 2,
-  );
+  swatch.frameInitial();
 } else if (terrain === null) {
   camera.frameRegion(worldSize / 2, worldSize / 2, worldSize / 2, worldSize / 2, worldHeight);
 } else if (growEnabled) {
@@ -709,9 +660,9 @@ const terrainOverlay =
   terrain !== null && !simEnabled && !growEnabled
     ? new TerrainOverlay(container, toggleBiomeView)
     : null;
-const swatchOverlay = sceneKind === 'swatch'
-  ? new SwatchOverlay(container, (focus) => frameSwatchFocus(focus))
-  : null;
+const swatchOverlay = swatch === null
+  ? null
+  : new SwatchOverlay(container, (focus) => swatch.frameFocus(focus));
 overlay.setVisible(debugVisible);
 terrainOverlay?.setVisible(debugVisible);
 // Il referto del campionario **non** e' un overlay tecnico, ed e' l'unico che
@@ -722,30 +673,6 @@ terrainOverlay?.setVisible(debugVisible);
 // un gate di misura significava mandarlo su una pagina che non si puo' leggere.
 swatchOverlay?.setVisible(true);
 let terrainApplyMs = 0;
-
-/** Soggetto del campionario sotto il cursore; lo leggono overlay e hook globale. */
-let swatchSubject: SwatchSubject | null = null;
-/** Soggetto scelto con un clic: sopravvive alla navigazione fra le fasce. */
-let swatchSelection: SwatchSubject | null = null;
-/** Il voxel davvero colpito dal raggio, con il referto per la scheda. */
-let swatchVoxel: SwatchVoxel | null = null;
-/** Fascia inquadrata dai pulsanti; si parte da «Tutto». */
-let swatchFocus: SwatchFocus = SWATCH_FOCUS.all;
-/** Braccio anti-pan: sotto questa soglia il rilascio e' un clic, non una rotazione. */
-let swatchPointerDown = false;
-let swatchPointerX = 0;
-let swatchPointerY = 0;
-/**
- * Quando e' arrivato il clic precedente, per riconoscere il doppio.
- *
- * Il doppio clic si conta qui e non su `dblclick`: `CameraInput` annulla il
- * `pointerdown` per tenersi il trascinamento, e da li' in poi quali eventi
- * composti il browser continui a sintetizzare non e' piu' una garanzia su cui
- * appoggiare l'unico gesto che inquadra un soggetto.
- */
-let swatchLastClickMs = Number.NEGATIVE_INFINITY;
-/** Finestra del doppio clic: il default di Windows, che e' quello che si ha nelle dita. */
-const SWATCH_DOUBLE_CLICK_MS = 500;
 
 /**
  * Le due scene che possono girare sopra l'isola.
@@ -773,10 +700,7 @@ const inspectOverlay = new InspectOverlay(container, {
 simOverlay?.setVisible(debugVisible);
 growthOverlay?.setVisible(debugVisible);
 inspectOverlay.setVisible(debugVisible);
-let selectedTool: GameTool = { kind: 'none' };
 let gameHud: GameHud | null = null;
-/** Id del suggerimento del coach gia' disegnato in-world, per non ridisegnarlo. */
-let paintedCoachId: string | null = null;
 // Scena e HUD arrivano come funzioni: entrambi nascono dopo questa riga, e una
 // copia presa adesso resterebbe `null` per sempre.
 const { autosave, refreshSaveList, startNewGame, saveToSlot, openSlot, exportSave } =
@@ -788,30 +712,7 @@ const { autosave, refreshSaveList, startNewGame, saveToSlot, openSlot, exportSav
   });
 if (growEnabled) {
   gameHud = new GameHud(container, {
-    onTool: (tool) => {
-      // Con la citta' tagliata il terreno vero sotto il cursore e' nascosto: si
-      // piazzerebbe alla cieca, in un punto che non si vede. Le viste a velo
-      // sopravvivono, perche' li' il suolo si legge ancora sotto il retino.
-      const kept = viewAfterToolPicked(inspect.mode);
-      if (kept !== inspect.mode) {
-        const closed = viewLabel(inspect.mode);
-        inspect.setMode(kept);
-        gameHud?.setSelectionNote(`${closed} closed so you can see the ground`);
-      } else if (inspect.locked) {
-        // Stesso motivo, un gradino piu' in basso: un isolato scelto **taglia**,
-        // quindi il terreno attorno non c'e' piu' e si costruirebbe alla cieca.
-        // Basta mollarlo, senza spegnere anche la vista: quella vela e si legge.
-        inspect.unlockBlock();
-        gameHud?.setSelectionNote('Block released so you can see the ground');
-      }
-      selectedTool = tool;
-      preview.hide();
-      demolishOutline?.hide();
-      demolishOverlay?.hide();
-      demolishDragging = false;
-      influenceOverlay?.hideCursor();
-      influenceOverlay?.hideCoach();
-    },
+    onTool: (tool) => tools?.pickTool(tool),
       onPolicy: (id) => {
         const result = growthScene?.togglePolicy(id);
         if (result !== undefined && !result.success) gameHud?.showFailure(result.reason);
@@ -847,20 +748,11 @@ if (growEnabled) {
       window.open(swatchUrl(daylight.theme.id, daylight.hour), '_blank', 'noopener');
     },
     onView: (mode) => inspect.setMode(mode),
-    onInfoView: (kind) => setInfoView(kind),
+    onInfoView: (kind) => infoViews?.setView(kind),
     onLevel: (z) => inspect.setSliceZ(z),
-    onCancelTool: () => {
-      selectedTool = { kind: 'none' };
-      preview.hide();
-      demolishOutline?.hide();
-      demolishOverlay?.hide();
-      demolishDragging = false;
-      influenceOverlay?.hideCursor();
-      influenceOverlay?.hideCoach();
-      gameHud?.updateCursor(0, 0, null);
-    },
+    onCancelTool: () => tools?.cancel(),
     onReleaseBlock: () => inspect.unlockBlock(),
-    onClearSelection: () => clearSelection(),
+    onClearSelection: () => selection?.clear(),
     onSaveSlot: (slot) => saveToSlot(slot),
     onLoadSlot: (slot) => openSlot(readSlot(saveStorage, slot), 'That slot is empty.'),
     onDeleteSlot: (slot) => {
@@ -893,13 +785,34 @@ if (growEnabled) {
   // che resta e' quello di pausa, che si apre con Esc su una partita viva.
 }
 
-const picker = new Raycaster();
-const pointer = new Vector2();
-const preview = new PlacementCursor();
-scene.add(preview.group);
-
 const influenceOverlay = terrain !== null && growEnabled ? new InfluenceOverlay(terrain.map) : null;
 if (influenceOverlay !== null) scene.add(influenceOverlay.group);
+
+/**
+ * Lo strumento in mano, con i suoi tre segnaposto in-world.
+ *
+ * Nasce con la citta' e non con la scena: senza `grow=1` non c'e' niente da
+ * piazzare, e il cursore di posa sarebbe un gruppo vuoto appeso alla scena.
+ */
+const tools = growEnabled
+  ? createPlacementTools({
+      element: renderer.domElement,
+      map: () => terrain?.map ?? null,
+      scene: () => growthScene,
+      hud: () => gameHud,
+      inspect: () => inspect,
+      influence: influenceOverlay,
+      region: terrainRegion,
+      surfaceCellAt: (clientX, clientY) => pick.surfaceCellAt(clientX, clientY),
+      pointedCellAt: (clientX, clientY) => pick.pointedCellAt(clientX, clientY),
+      cursorRay: (clientX, clientY) => pick.cursorRay(clientX, clientY),
+      streetActive: () => streetView.active,
+      generationDone: () => generator.done,
+      onIdleMove: () => selection?.syncInfluence(),
+      onExpansion: (sector) => beginCoastalExpansion(sector),
+    })
+  : null;
+if (tools !== null) for (const group of tools.groups) scene.add(group);
 
 /**
  * La heatmap informativa in-world (cibo, materiali, densita', felicita',
@@ -912,12 +825,17 @@ const infoViewOverlay = terrain !== null && growEnabled
   : null;
 if (infoViewOverlay !== null) scene.add(infoViewOverlay.group);
 const infoViewLegend = growEnabled ? new InfoViewLegend(container) : null;
-/** Vista informativa attiva, ciclata con `I`. `off` e' la citta' nuda. */
-let infoViewKind: InfoViewKind = 'off';
-/** Ultima versione del campo sincronizzata sull'overlay, per non ricostruire. */
-let infoViewFieldVersion = '';
+const infoViews = growEnabled
+  ? createInfoViewScene({
+      overlay: infoViewOverlay,
+      legend: infoViewLegend,
+      hud: () => gameHud,
+      scene: () => growthScene,
+      budgetMs: INFO_OVERLAY_BUDGET_MS,
+    })
+  : null;
 // Lo stato iniziale della tessera Data nel dock: la citta' nuda, nessun dato.
-gameHud?.setInfoView(infoViewKind);
+if (infoViews !== null) gameHud?.setInfoView(infoViews.kind);
 
 /**
  * I mezzi che si muovono: barche, navi, aerei, dirigibili.
@@ -950,87 +868,19 @@ const ropewayView = terrain !== null && growEnabled ? new RopewayView() : null;
 if (ropewayView !== null) scene.add(ropewayView.group);
 
 /**
- * La comparsa della prima isola: i pezzi scendono dal cielo, con una pioggia di
- * cubetti davanti a loro.
- *
- * A cadere e' il **chunk** e non il voxel — a valle del greedy mesher il cubo
- * singolo non esiste piu' — quindi la caduta vive dentro `ChunkRenderer`, che le
- * mesh le possiede gia'. I cubetti sono invece cubetti veri, sopra la scena come
- * i mezzi: nel volume voxel non entra niente di tutto questo.
+ * La comparsa della prima isola. Nasce **dopo** l'inquadratura: la quota di
+ * partenza dei pezzi si ricava dal frustum, che `frameRegion` ha appena scritto.
  */
-const dropRainView = new DropRainView();
-scene.add(dropRainView.group);
-const dropRain = createRain();
-/** Vero finche' la comparsa d'ingresso ha ancora qualcosa da animare. */
-let introActive = introEnabled;
-
-/**
- * Dove si posa un cubetto e di che colore e'.
- *
- * La `TerrainMap` adotta un blocco appena arriva dal worker, quindi la colonna e'
- * interrogabile prima ancora che i suoi voxel siano scritti; la tinta la da'
- * invece il voxel vero, cosi' un cubetto che cade sulla roccia non e' verde.
- * `heights` e `waterTop` sono estremi **esclusivi**: la superficie e' il voxel
- * sotto, e un lago o il mare la portano piu' in alto del terreno.
- */
-function rainProbe(x: number, y: number): RainColumn | null {
-  if (terrain === null) return null;
-  const column = terrain.map.columnAt(x, y);
-  if (column === null) return null;
-
-  const surfaceZ = Math.max(column.height, terrain.map.waterTopAt(x, y)) - 1;
-  const palette = world.getBlock(x, y, surfaceZ);
-  if (palette === 0) return null;
-  return { z: surfaceZ, palette };
-}
-
-/**
- * Da quanto in alto partono i pezzi, in voxel.
- *
- * Non e' una costante: «dal cielo» vuol dire **da fuori schermo**, e quanto sia
- * lontano il bordo alto dipende da zoom e inclinazione. L'altezza visibile esce
- * dal frustum ortografico, che e' l'unico posto in cui quel numero esiste
- * davvero.
- */
-function introFallHeight(): number {
-  const view = camera.camera;
-  return fallHeightFor((view.top - view.bottom) / view.zoom, camera.pitchDegrees);
-}
-
-/** Fissata all'apertura della finestra: durante il caricamento la camera sta ferma. */
-let introFall = introFallHeight();
-
-chunkRenderer.onChunkBorn = (cx, cy, cz, bornAt): void => {
-  spawnOverChunk(dropRain, cx, cy, cz, bornAt, introFall, rainProbe);
-};
-// Una volta sola e non per frame: la comparsa dura qualche secondo, e in quel
-// tratto il sole si sposta di un decimo di grado.
-dropRainView.setLighting(daylight.look.colors, withHour(daylight.look.atmosphere, daylight.hour));
-if (introActive) chunkRenderer.armDrop(performance.now() / 1000, introFall);
-
-/**
- * Un frame della comparsa d'ingresso.
- *
- * `stepDrop` sta fra `update` e `cull`, per le ragioni scritte li'.
- *
- * **La finestra non si chiude su `generator.done`**, e questa e' la parte che si
- * sbaglia per prima: quando l'ultimo blocco e' scritto restano in coda centinaia
- * di chunk da meshare, e disarmando li' comparirebbero di colpo — cioe' proprio
- * il pop che la caduta esiste per togliere. Si chiude quando non c'e' piu' niente
- * da meshare, e l'effetto finisce quando anche l'ultimo pezzo e' atterrato e
- * l'ultimo cubetto e' sparito.
- */
-function stepIntro(seconds: number): void {
-  if (generator.done && chunkRenderer.isIdle) chunkRenderer.disarmDrop();
-  const flying = chunkRenderer.stepDrop(seconds);
-  advanceRain(dropRain, seconds);
-  dropRainView.draw(dropRain.cubes);
-
-  if (!chunkRenderer.dropIsArmed && !flying && dropRain.cubes.length === 0) {
-    introActive = false;
-    dropRainView.hide();
-  }
-}
+const entryDrop = createEntryDrop({
+  chunkRenderer,
+  world,
+  camera,
+  daylight,
+  map: () => terrain?.map ?? null,
+  generationDone: () => generator.done,
+  enabled: introEnabled,
+});
+scene.add(entryDrop.group);
 
 /**
  * Le linee che dicono dove e' puntata la vista.
@@ -1040,63 +890,6 @@ function stepIntro(seconds: number): void {
  */
 const inspectGuides = terrain !== null ? new InspectGuides(terrain.map, terrainRegion) : null;
 if (inspectGuides !== null) scene.add(inspectGuides.group);
-
-/**
- * Il contorno di cio' che il giocatore ha scelto.
- *
- * Separato dalle guide di ispezione perche' risponde a un'altra domanda — «cosa
- * ho scelto» invece di «dov'e' puntata la lente» — e le due possono essere accese
- * insieme su due cose diverse.
- */
-const selectionOutline = terrain !== null && growEnabled
-  ? new SelectionOutline((x, y) => Math.max(TERRAIN.seaLevel, terrain.map.heightAt(x, y)))
-  : null;
-if (selectionOutline !== null) scene.add(selectionOutline.group);
-
-/**
- * Il riquadro che la gomma sta per rasare.
- *
- * Riusa il contorno di selezione ma su uno stato diverso — «quale area sto
- * per demolire» invece di «cosa ho scelto» — e per questo e' un oggetto suo:
- * la scelta e la gomma possono essere accese insieme, e un solo contorno
- * non puo' dire due cose diverse.
- */
-const demolishOutline = terrain !== null && growEnabled
-  ? new SelectionOutline((x, y) => Math.max(TERRAIN.seaLevel, terrain.map.heightAt(x, y)))
-  : null;
-if (demolishOutline !== null) scene.add(demolishOutline.group);
-
-/**
- * I tappeti colorati della gomma: rosso sugli edifici che cadranno, ambra su
- * cio' che la ferma. Accanto al riquadro di selezione, e per la stessa ragione —
- * la gomma e' uno stato suo, non la scelta.
- */
-const demolishOverlay = terrain !== null && growEnabled ? new DemolitionOverlay() : null;
-if (demolishOverlay !== null) scene.add(demolishOverlay.group);
-
-/** Il trascinamento della gomma: dall'ancora al cursore, in colonne. */
-let demolishDragging = false;
-let demolishX0 = 0;
-let demolishY0 = 0;
-let demolishX1 = 0;
-let demolishY1 = 0;
-/** Punto in pixel dove il pulsante e' stato premuto: distingue clic da striscio. */
-let demolishDownClientX = 0;
-let demolishDownClientY = 0;
-/** Il riquadro gia' misurato, per non rifare il conto a ogni pixel del gesto. */
-let demolishRectKey = '';
-
-/**
- * Il contorno della scelta nel campionario.
- *
- * Riusa la stessa vista della citta' ma con una quota di suolo piatta: il
- * basamento del campionario e' uniforme, quindi `heightAt` risponde sempre
- * `SWATCH.groundZ`. Il riquadro del soggetto scelto arriva da `swatchSubjectAt`.
- */
-const swatchOutline = sceneKind === 'swatch'
-  ? new SelectionOutline(() => SWATCH.groundZ)
-  : null;
-if (swatchOutline !== null) scene.add(swatchOutline.group);
 
 /**
  * La rete stradale vista dall'harness.
@@ -1123,8 +916,8 @@ const inspect = createInspectView({
   streets,
   map: () => terrain?.map ?? null,
   registry: () => growthScene?.registry,
-  pointedCellAt: (clientX, clientY) => pointedCellAt(clientX, clientY),
-  toolActive: () => selectedTool.kind !== 'none',
+  pointedCellAt: (clientX, clientY) => pick.pointedCellAt(clientX, clientY),
+  toolActive: () => tools !== null && tools.tool.kind !== 'none',
   mode: initialInspectMode,
   sliceZ: initialSliceZ,
   sliceFromUrl: sliceZFromUrl,
@@ -1152,383 +945,116 @@ if (terrain !== null) {
   });
 }
 
-if (growEnabled) {
-  renderer.domElement.addEventListener('pointermove', onGamePointerMove, { capture: true });
-  renderer.domElement.addEventListener('pointerdown', onGamePointerDown, { capture: true });
-  renderer.domElement.addEventListener('pointerup', onGamePointerUp);
-  renderer.domElement.addEventListener('pointerleave', () => {
-    preview.hide();
-    demolishOutline?.hide();
-    demolishOverlay?.hide();
-    influenceOverlay?.hideCursor();
-    gameHud?.updateCursor(0, 0, null);
-  });
-}
-
 /**
- * La scheda di cio' che il giocatore ha scelto, e il gesto che la apre.
+ * La scheda di cio' che il giocatore ha scelto.
  *
- * Il click si risolve su `pointerup` e non su `pointerdown`, con una soglia in
- * pixel: `isPanButton` accetta anche il tasto sinistro e `camera.attach` e' il
- * primo listener registrato, quindi ogni click **e' gia'** l'inizio di un pan, e
- * fino al rilascio non si sa se il gesto fosse un clic o una rotazione. E' lo
- * stesso motivo — e lo stesso numero — del clic che sceglie un isolato in Block
- * focus.
+ * Nasce dopo le viste d'ispezione perche' le comanda: il pulsante «studia
+ * l'isolato» aggancia un modo, e agganciarlo prima che il modo esista non
+ * vorrebbe dire niente.
  */
-const SELECT_CLICK_SLOP = 6;
-
-const selectionPanel = growEnabled
-  ? new SelectionPanel(container, {
-    onSection: (section) => paintSelectionOutline(section),
-    onAction: (action) => runSelectionAction(action),
-    onClose: () => clearSelection(),
-  })
+const selection = growEnabled
+  ? createSelectionScene({
+      container,
+      element: renderer.domElement,
+      world,
+      map: () => terrain?.map ?? null,
+      streets,
+      seed: terrainSeed,
+      scene: () => growthScene,
+      hud: () => gameHud,
+      inspect,
+      influence: influenceOverlay,
+      pointedCellAt: (clientX, clientY) => pick.pointedCellAt(clientX, clientY),
+      streetActive: () => streetView.active,
+      toolActive: () => tools !== null && tools.tool.kind !== 'none',
+    })
   : null;
-
-/** La cella scelta, non la selezione risolta: quest'ultima invecchia a ogni tick. */
-let selectedCell: SurfaceCell | null = null;
-let selectPointerDown = false;
-let selectPointerX = 0;
-let selectPointerY = 0;
-
-if (selectionPanel !== null && terrain !== null) {
-  renderer.domElement.addEventListener('pointerdown', (event: PointerEvent) => {
-    selectPointerDown = event.button === 0;
-    selectPointerX = event.clientX;
-    selectPointerY = event.clientY;
-  });
-  renderer.domElement.addEventListener('pointerup', onSelectPointerUp);
-}
+if (selection !== null) scene.add(selection.group);
 
 /**
- * Lo strumento che scende a terra: si arma, poi si clicca dove ci si vuole
- * mettere.
- *
- * Sono due tempi come in Block focus, e per la stessa ragione: puntare non e'
- * scegliere. Armato, il prossimo clic posa l'occhio; disarmato, il clic torna a
- * scegliere un edificio. Senza i due tempi ogni clic sulla citta' sarebbe una
- * discesa, e non ci sarebbe piu' modo di aprire la scheda di un isolato.
+ * **L'ordine di registrazione e' il contratto.** Il puntatore attraversa gli
+ * strati in questa sequenza, e il primo che si prende il clic lo toglie a tutti
+ * quelli dopo: gli strumenti annullano la propagazione quando piazzano, la
+ * scheda si difende dalla soglia anti-pan, la discesa a terra guarda se e'
+ * armata. Spostare una di queste righe cambia chi risponde al mouse.
  */
-let streetArmed = false;
-let streetPointerDown = false;
-let streetPointerX = 0;
-let streetPointerY = 0;
-
-if (terrain !== null) {
-  // Registrato per primo fra i `pointerup` di gioco: armato, la discesa si
-  // prende il clic e la selezione non deve nemmeno provarci.
-  renderer.domElement.addEventListener('pointerdown', (event: PointerEvent) => {
-    streetPointerDown = event.button === 0;
-    streetPointerX = event.clientX;
-    streetPointerY = event.clientY;
-  });
-  renderer.domElement.addEventListener('pointerup', (event: PointerEvent) => {
-    if (!streetPointerDown || event.button !== 0) return;
-    streetPointerDown = false;
-    if (!streetArmed) return;
-    // Stessa soglia del clic che sceglie: il tasto sinistro e' gia' un pan, e
-    // fino al rilascio non si sa se il gesto fosse un clic o una rotazione.
-    const moved = Math.abs(event.clientX - streetPointerX)
-      + Math.abs(event.clientY - streetPointerY);
-    if (moved > SELECT_CLICK_SLOP) return;
-    placeStreetEye(event.clientX, event.clientY);
-  });
-}
-
-if (swatchOverlay !== null) {
-  renderer.domElement.addEventListener('pointermove', (event: PointerEvent) => {
-    const pick = swatchPickAt(event.clientX, event.clientY);
-    swatchSubject = pick?.subject ?? null;
-    swatchVoxel = pick?.voxel ?? null;
-    refreshSwatchOutline();
-  });
-  renderer.domElement.addEventListener('pointerleave', () => {
-    swatchSubject = null;
-    swatchVoxel = null;
-    refreshSwatchOutline();
-  });
-  renderer.domElement.addEventListener('pointerdown', (event: PointerEvent) => {
-    swatchPointerDown = event.button === 0;
-    swatchPointerX = event.clientX;
-    swatchPointerY = event.clientY;
-  });
-  renderer.domElement.addEventListener('pointerup', onSwatchPointerUp);
-}
+tools?.attach();
+selection?.attach();
+if (terrain !== null) street.attach();
+swatch?.attach();
 
 window.addEventListener('keydown', onUiKey);
 
-if (debugEnabled || perfEnabled) {
-  // Hook per misure da console o da strumenti headless: stessa fonte dell'overlay.
-  const debugGlobals = globalThis as Record<string, unknown>;
-  debugGlobals['__voxelStats'] = (): Record<string, unknown> => {
-    const timing = frameTiming.snapshot();
-    const stats = chunkRenderer.stats;
-    const mesher = chunkRenderer.mesherPool.stats;
-    return {
-      fps: timing.fps,
-      fpsLow: timing.fpsLow,
-      frameP95Ms: timing.p95Ms,
-      frameP99Ms: timing.p99Ms,
-      jankRatio: timing.jankRatio,
-      mainMsMax,
-      ...effectStats(),
-      drawCalls: renderer.info.render.calls,
-      triangles: renderer.info.render.triangles,
-      geometryBytes: stats.geometryBytes,
-      chunksAllocated: stats.chunksAllocated,
-      chunksWithMesh: stats.chunksWithMesh,
-      chunksVisible: stats.chunksVisible,
-      chunksFalling: stats.chunksFalling,
-      queued: stats.queued,
-      inFlight: stats.inFlight,
-      solidVoxels: world.solidVoxelCount,
-      mesherAvgMs: mesher.avgMs,
-      mesherMaxMs: mesher.maxMs,
-      generationDone: generator.done,
-      theme: daylight.theme.id,
-      quality: renderQuality.mode,
-      pixelRatio: renderer.getPixelRatio(),
-      remeshMs: stats.remeshMs,
-      remeshedChunks: stats.remeshedChunks,
-      remeshApplyMs: stats.remeshApplyMs,
-      remeshDispatchMs: stats.remeshDispatchMs,
-      remeshApplyMaxMs: stats.remeshApplyMaxMs,
-      remeshDispatchMaxMs: stats.remeshDispatchMaxMs,
-    };
-  };
-}
+/** Le letture di misura: overlay, riepilogo console e hook globali, una fonte sola. */
+const frameStats = createFrameStats({
+  renderer,
+  chunkRenderer,
+  frameTiming,
+  world,
+  camera,
+  sunShadow,
+  daylight,
+  renderQuality,
+  quality: () => qualityProfile,
+  generator: () => generator,
+  biomeView,
+  terrainApplyMs: () => terrainApplyMs,
+  terrain,
+  sceneKind,
+  seed,
+  terrainSeed,
+  terrainSize: TERRAIN_SIZE,
+});
 
-if (debugEnabled) {
-  // Gli altri hook restano dietro il gate del debug: ?perf=1 misura la scena,
-  // non la comanda.
-  const debugGlobals = globalThis as Record<string, unknown>;
-  debugGlobals['__voxelReset'] = (): void => {
-    mainMsMax = 0;
-    frameTiming.reset();
-    chunkRenderer.mesherPool.resetStats();
-  };
-  debugGlobals['__voxelExpand'] = (): void => expandWorld();
-  // Rimanda in cielo quello che c'e' gia': i numeri di `introDrop` e `dropRain`
-  // si tarano guardandoli, e ricaricare la pagina rigenererebbe anche l'isola.
-  debugGlobals['__voxelDrop'] = (): Record<string, unknown> => {
-    clearRain(dropRain);
-    // Rileggendo l'inquadratura: se nel frattempo si e' zoomato, la quota di
-    // partenza che era fuori schermo non lo sarebbe piu'.
-    introFall = introFallHeight();
-    chunkRenderer.replayDrop(performance.now() / 1000, introFall);
-    introActive = true;
-    return { fall: introFall, chunks: chunkRenderer.stats.chunksFalling };
-  };
-  debugGlobals['__voxelRebuildAll'] = (): void => world.markAllDirty();
-  debugGlobals['__voxelTheme'] = (id?: string): Record<string, unknown> => {
-    if (id !== undefined) {
-      const found = THEMES.findIndex((candidate) => candidate.id === id);
-      if (found < 0) console.warn(`[theme] unknown id: ${id}`);
-      else daylight.cycleTheme(found);
-    }
-    const current = daylight.theme;
-    return { id: current.id, name: current.name, available: THEMES.map((t) => t.id) };
-  };
-  // Sposta il sole senza ricaricare: serve ad autorare i temi guardando il
-  // risultato invece che immaginandolo. Non persiste, il tema resta la fonte.
-  debugGlobals['__voxelSun'] = (azimuth?: number, elevation?: number): Record<string, unknown> => {
-    // Il look e non il tema: qui si riscrive l'atmosfera nel materiale, e
-    // ripartire da quella del tema riporterebbe i prati d'estate a gennaio.
-    const atmosphere = daylight.look.atmosphere;
-    const sun = atmosphere.sun;
-    const next = {
-      ...sun,
-      azimuth: azimuth ?? sun.azimuth,
-      elevation: elevation ?? sun.elevation,
-    };
-    paletteHandle.setAtmosphere({ ...atmosphere, sun: next });
-    return {
-      azimuth: next.azimuth,
-      elevation: next.elevation,
-      faceLuminance: faceLuminance({ ...atmosphere, sun: next }),
-      // Dove il cielo disegna il sole: xy in NDC, `facing` false se sta dietro
-      // la camera e quindi resta solo l'alone.
-      screen: { x: sunView.x * 1.35, y: sunView.y * 1.35, facing: sunView.z < 0 },
-    };
-  };
-  // L'orologio. Convive con `__voxelSun`, che resta l'override manuale per
-  // autorare un tema: quello scrive una posizione e basta, questo la ricava
-  // dall'ora e continua a ricavarla finche' il ciclo cammina.
-  debugGlobals['__voxelHour'] = (next?: number | string): Record<string, unknown> => {
-    // Un numero e' un'ora, una stringa e' un modo: sono la stessa manopola vista
-    // da due lati, e due hook separati vorrebbero dire ricordarsi quale chiama
-    // quale mentre si guarda una notte che non passa.
-    if (typeof next === 'number') daylight.setHour(next);
-    else if (typeof next === 'string') daylight.setMode(resolveDaylightMode(next));
-    const hour = daylight.hour;
-    const atmosphere = withHour(daylight.theme.atmosphere, hour);
-    return {
-      hour,
-      mode: daylight.mode,
-      pinned: daylight.pinned,
-      day: dayPhase(hour, daylight.theme.atmosphere.sun.elevation),
-      azimuth: atmosphere.sun.azimuth,
-      elevation: atmosphere.sun.elevation,
-      sunIntensity: atmosphere.sun.intensity,
-      emissiveStrength: atmosphere.emissiveStrength,
-      dayLengthSeconds: DAYLIGHT.daySeconds,
-    };
-  };
-  /**
-   * L'anno, dallo stesso lato da cui si guarda l'ora.
-   *
-   * Un numero inchioda la fase — 0 primavera, 0,375 estate, 0,625 autunno, 0,875
-   * inverno — e `null` la restituisce alla simulazione. Torna anche il
-   * moltiplicatore del raccolto, che e' il modo per verificare che il colore e la
-   * resa stiano nello stesso mese: sono la stessa fase, e se un giorno
-   * divergessero si vedrebbe qui prima che a schermo.
-   */
-  debugGlobals['__voxelSeason'] = (phase?: number | null): Record<string, unknown> => {
-    if (phase !== undefined) daylight.pinSeason(phase);
-    const current = daylight.season;
-    const tick = growthScene?.simState.tickCount ?? 0;
-    return {
-      phase: current,
-      pinned: daylight.seasonPinned,
-      season: SEASON_NAMES[seasonAt(Math.round(current * BALANCE.seasons.yearTicks))],
-      harvestFactor: harvestFactorAt(Math.round(current * BALANCE.seasons.yearTicks)),
-      mood: seasonMood(current),
-      simTick: tick,
-      yearTicks: BALANCE.seasons.yearTicks,
-    };
-  };
-  // Stessa fonte del pannello: due letture separate divergerebbero al primo
-  // refactor, ed e' la regola dell'harness.
-  debugGlobals['__voxelInspect'] = (mode?: string, z?: number): Record<string, unknown> => {
-    if (mode !== undefined) inspect.setMode(parseInspectMode(mode));
-    if (z !== undefined) inspect.setSliceZ(z);
-    const frame = buildInspectFrame();
-    return {
-      ...frame,
-      mode: INSPECT_NAMES[frame.mode],
-      available: INSPECT_MODES.map((candidate) => INSPECT_NAMES[candidate]),
-    };
-  };
+installDebugHooks({
+  debugEnabled,
+  perfEnabled,
+  simEnabled,
+  growEnabled,
+  renderer,
+  chunkRenderer,
+  frameTiming,
+  world,
+  paletteHandle,
+  daylight,
+  renderQuality,
+  inspect,
+  stats: frameStats,
+  mainMsMax: () => mainMsMax,
+  resetPeaks,
+  generator: () => generator,
+  inspectFrame: buildInspectFrame,
+  sunView,
+  expandWorld,
+  entryDrop,
+  swatch,
+  infoViews,
+  terrain,
+  terrainSeed,
+  terrainSize: TERRAIN_SIZE,
+  terrainApplyMs: () => terrainApplyMs,
+  biomeView,
+  toggleBiomeView,
+  simScene: () => simScene,
+  growthScene: () => growthScene,
+});
 
-  if (swatchOverlay !== null) {
-    // Con `x` e `y` interroga una colonna qualsiasi del campionario senza
-    // muovere il mouse: e' cosi' che uno strumento headless verifica che un
-    // soggetto ci sia. Senza argomenti riporta cio' che il cursore indica; le
-    // fasce disponibili escono dalla stessa fonte del pannello.
-    debugGlobals['__voxelSwatch'] = (x?: number, y?: number): Record<string, unknown> => {
-      const frame = buildSwatchFrame();
-      const subject = x === undefined || y === undefined
-        ? frame.subject
-        : swatchSubjectAt(x, y);
-      return {
-        extent: swatchExtent(),
-        subject,
-        selection: frame.selection,
-        voxel: frame.voxel,
-        detail: detailOf(subject),
-        focus: frame.focus,
-        focuses: SWATCH_FOCUSES,
-      };
-    };
-  }
 
-  if (terrain !== null) {
-    debugGlobals['__terrainStats'] = (): Record<string, unknown> => ({
-      seed: terrainSeed,
-      size: TERRAIN_SIZE,
-      workerMs: terrain.generationMs,
-      applyMs: terrainApplyMs,
-      blocksApplied: terrain.blocksApplied,
-      blocksTotal: terrain.blocksTotal,
-      columns: terrain.map.columnCount,
-      buildableColumns: terrain.buildableColumns,
-      biomeHistogram: Array.from(terrain.map.biomeHistogram()),
-      biomeView: biomeView?.enabled ?? false,
-      done: terrain.done,
-    });
-    debugGlobals['__terrainBiomeView'] = (): void => toggleBiomeView();
-
-    if (simEnabled) {
-      // Stessa fonte dell'overlay, per misurare la simulazione da console o da
-      // uno strumento headless senza passare dai pulsanti.
-      debugGlobals['__simStats'] = (): Record<string, unknown> => {
-        if (simScene === null) return { ready: false };
-        const state = simScene.simState;
-        return {
-          ready: true,
-          tick: state.tickCount,
-          auto: simScene.autoEnabled,
-          tickMs: simScene.tickMs,
-          population: state.population,
-          food: state.food,
-          materials: state.materials,
-          funds: state.funds,
-          satisfaction: state.satisfaction,
-          buildingCounts: state.buildingCounts,
-          mixedCounts: state.mixedCounts,
-          // I produttori di cibo passano **sia** di qui sia dall'overlay, come
-          // ogni metrica: leggono la stessa fonte, e una delle due che manca e'
-          // il modo in cui una diagnosi diventa impossibile da riprodurre.
-          farmCounts: state.farmCounts,
-          harvest: state.harvest,
-          commerce: state.commerce,
-          catalysts: state.catalysts.length,
-          policies: state.policies,
-          selectedClass: CLASS_NAMES[state.selectedClass],
-          fieldChunks: state.field.chunkCount,
-          recomputedCells: state.field.totalRecomputedCells,
-          dataCells: simScene.dataCells,
-        };
-      };
-      debugGlobals['__simTick'] = (count = 1): number => {
-        simScene?.step(Math.max(1, Math.floor(count)));
-        return simScene?.simState.tickCount ?? 0;
-      };
-      debugGlobals['__simSites'] = (count = SIM_SITE_COUNT): readonly BuildSite[] =>
-        simScene?.sitesAt(count) ?? [];
-      debugGlobals['__simClass'] = (cls: number): void => {
-        if (cls >= 0 && cls < CLASS_COUNT) simScene?.selectClass(cls as BuildingClass);
-      };
-      debugGlobals['__simPolicy'] = (id: string): void => {
-        if (isPolicyId(id)) simScene?.togglePolicy(id);
-      };
-    }
-
-    if (growEnabled) {
-      debugGlobals['__growStats'] = (): Record<string, unknown> =>
-        growthScene === null ? { ready: false } : { ...growthScene.stats };
-      // Stessa fonte dell'overlay informativo: cambia la vista attiva o interroga
-      // una colonna senza muovere il mouse, per uno strumento headless.
-      debugGlobals['__voxelInfo'] = (view?: string, x?: number, y?: number): Record<string, unknown> => {
-        if (view !== undefined) {
-          if (!isInfoViewKind(view)) return { view: infoViewKind, error: `unknown view: ${view}` };
-          setInfoView(view);
-        }
-        if (x !== undefined && y !== undefined && growthScene !== null && infoViewKind !== 'off') {
-          const sampler = createInfoSampler(infoViewKind, growthScene.simState, growthScene.farmPlots);
-          return { view: infoViewKind, x: Math.round(x), y: Math.round(y), value: sampler.sample(Math.round(x), Math.round(y)) };
-        }
-        return { view: infoViewKind };
-      };
-    }
-
-    // L'espansione qui e' solo una funzione chiamabile: nessun input di gioco la
-    // attiva. Aggiunge la striscia a nord riusando seed e maschera dell'isola,
-    // quindi la costa continua invece di ricominciare.
-    debugGlobals['__terrainExpand'] = (): Record<string, unknown> => {
-      const result = expandIsland(
-        world,
-        terrainSeed,
-        { minX: 0, minY: TERRAIN_SIZE, sizeX: TERRAIN_SIZE, sizeY: CHUNK * 2 },
-        { map: terrain.map },
-      );
-      return { blocks: result.blocks, voxels: result.voxelsWritten, ms: result.generationMs };
-    };
-  }
-}
-
-const frameTiming = new FrameTiming(600);
 let mainMsMax = 0;
+
+/**
+ * Azzera i picchi e riapre la finestra di misura.
+ *
+ * Serve a misurare il regime e non lo startup, ed e' lo stesso gesto per il
+ * tasto `C` e per `__voxelReset()`: due azzeramenti diversi darebbero due
+ * regimi diversi a seconda di come li si e' chiesti.
+ */
+function resetPeaks(): void {
+  mainMsMax = 0;
+  frameTiming.reset();
+  chunkRenderer.mesherPool.resetStats();
+}
+
 /** Vero finche' la scena si sta ancora popolando: vedi `observeQuality`. */
 let generating = true;
 /**
@@ -1689,14 +1215,13 @@ function onFrame(time: number): void {
   renderer.info.reset();
 
   camera.update(dt);
-  preview.update(dt);
-  // Il tempo dei contorni: qualche scrittura di uniform a frame, nessuna
-  // ricostruzione di geometria. Lo vogliono tutti e tre, non solo la scelta —
-  // la cometa che percorre la fascia vive in un `uTime`, e un contorno che non
+  // Il tempo dei segnaposto: qualche scrittura di uniform a frame, nessuna
+  // ricostruzione di geometria. Lo vogliono tutti, non solo la scelta — la
+  // cometa che percorre la fascia vive in un `uTime`, e un contorno che non
   // avanza mai se la ritrova ferma sul primo campione.
-  selectionOutline?.update(dt);
-  demolishOutline?.update(dt);
-  swatchOutline?.update(dt);
+  tools?.update(dt);
+  selection?.update(dt);
+  swatch?.update(dt);
 
   // Finche' la prima scena non c'e', il frame non deve proteggere niente:
   // conviene spendere di piu' per frame e finire in una manciata di frame.
@@ -1722,7 +1247,7 @@ function onFrame(time: number): void {
   const cityDt = gameHud?.menuOpen === true ? 0 : dt;
   updateSim(cityDt);
   updateGrowth(cityDt);
-  advanceInfoOverlay();
+  infoViews?.advance();
   daylight.advance(dt);
   // L'anno lo tiene la simulazione, non il renderer: `yearPhaseAt` e' la stessa
   // funzione da cui esce il moltiplicatore del raccolto, quindi il prato non
@@ -1743,7 +1268,7 @@ function onFrame(time: number): void {
   chunkRenderer.update(view, Math.max(0.5, frameBudget - elapsed));
   // Fra `update` e `cull`: un chunk nato adesso deve gia' scendere in questo
   // frame, e il culling deve leggere gli AABB appena spostati.
-  if (introActive) stepIntro(time / 1000);
+  if (entryDrop.active) entryDrop.step(time / 1000);
   chunkRenderer.cull(view);
 
   // La finestra di caricamento si chiude su `generator.done`, non su
@@ -1791,18 +1316,18 @@ function onFrame(time: number): void {
   if (perfReport !== null) {
     // Un campione a frame: il riepilogo esce quando la finestra si chiude, e
     // la riga e' gia' pronta da incollare.
-    const summary = perfReport.add(buildPerfFrame(frameMs), time);
+    const summary = perfReport.add(frameStats.perf(frameMs), time);
     if (summary !== null) console.info(formatPerfSummary(summary));
   }
 
   if (overlay !== null && overlay.needsPaint(time)) {
-    overlay.update(buildOverlayFrame(mainMs, renderMs, frameMs), time);
+    overlay.update(frameStats.overlay(mainMs, mainMsMax, renderMs, frameMs), time);
   }
   if (perfOverlay !== null && perfOverlay.needsPaint(time)) {
-    perfOverlay.update(buildPerfFrame(frameMs), time);
+    perfOverlay.update(frameStats.perf(frameMs), time);
   }
   if (terrainOverlay !== null && terrain !== null && terrainOverlay.needsPaint(time)) {
-    terrainOverlay.update(buildTerrainFrame(terrain), time);
+    terrainOverlay.update(frameStats.terrain(terrain), time);
   }
   if (simOverlay !== null && simScene !== null && simOverlay.needsPaint(time)) {
     simOverlay.update(buildSimFrame(simScene), time);
@@ -1810,8 +1335,8 @@ function onFrame(time: number): void {
   if (growthOverlay !== null && growthOverlay.needsPaint(time)) {
     growthOverlay.update(growthScene?.stats ?? null, time);
   }
-  if (swatchOverlay !== null && swatchOverlay.needsPaint(time)) {
-    swatchOverlay.update(buildSwatchFrame(), time);
+  if (swatchOverlay !== null && swatch !== null && swatchOverlay.needsPaint(time)) {
+    swatchOverlay.update(swatch.frame(), time);
   }
   updateVitality(time);
   updateTraffic(time);
@@ -1826,12 +1351,12 @@ function onFrame(time: number): void {
     // scritta nelle uniform per il frame corrente, e il pannello non deve
     // ridisegnarsi sessanta volte al secondo per dirlo.
     gameHud.setView(viewMenuModel());
-    syncCoachArtifact(growthScene.stats.coach);
+    selection?.syncCoach(growthScene.stats.coach);
   }
   // Stessa cadenza, e per lo stesso motivo: cio' che la scheda racconta —
   // desiderabilita', quartiere, livello di un edificio promosso — cambia a dieci
   // tick al secondo, e l'unica parte che costa e' l'aggregato dell'isolato.
-  if (selectionPanel !== null && selectionPanel.needsPaint(time)) refreshSelection(time);
+  selection?.tick(time);
   autosave(time);
 }
 
@@ -2014,68 +1539,6 @@ function viewMenuModel(): ViewMenuModel {
   return buildViewMenuModel(inspect.mode, inspect.sliceZ, inspect.maxZ, inspect.locked);
 }
 
-// --- Viste informative -----------------------------------------------------
-
-/**
- * Cambia la vista informativa e allinea legenda e overlay.
- *
- * L'overlay vero lo sincronizza `advanceInfoOverlay` nel ciclo di frame, quando
- * sa che la versione del campo e' cambiata: qui si decide solo *quale* vista
- * accesa e si svuota la memoria della versione, cosi' la heatmap riparte.
- */
-function setInfoView(kind: InfoViewKind): void {
-  infoViewKind = kind;
-  infoViewFieldVersion = '';
-  infoViewLegend?.setView(kind);
-  gameHud?.setInfoView(kind);
-  // La visibilita' e' anche il gate del budget di costruzione: senza questa riga
-  // `update` esce subito, la heatmap non campiona mai e scegliere una vista
-  // accendeva solo la legenda. Va prima di `clear`, che spegne il gruppo da se'.
-  infoViewOverlay?.setVisible(kind !== 'off');
-  if (kind === 'off') infoViewOverlay?.clear();
-}
-
-/**
- * Il giro delle viste informative da tastiera, `I`.
- *
- * Come `V` per le viste di ispezione, e' un comando di gioco: leggere la
- * propria citta' per dato non e' una misura, quindi sta fuori dal gate del
- * debug. Il toast nomina cio' che si sta guardando, che da tastiera non ha
- * un picker aperto a dirlo.
- */
-function cycleInfoView(): void {
-  const next = nextInfoView(infoViewKind);
-  setInfoView(next);
-  if (next === 'off') {
-    gameHud?.showTransientFeedback('City data overlay off · I to turn back on');
-    return;
-  }
-  const spec = infoViewSpecOf(next);
-  gameHud?.showTransientFeedback(`${spec.label} · ${spec.description}`);
-}
-
-/**
- * Allinea l'overlay alla vista attiva e al campo, e ne fa avanzare la
- * costruzione a budget.
- *
- * Ricostruisce il campionatore solo quando la versione del campo cambia — un
- * edificio, un catalizzatore, una policy, un lotto — mai per pan o zoom. Il
- * campionatore del cibo rastrella i lotti del mondo, quindi si paga solo in
- * quel momento e non a ogni frame.
- */
-function advanceInfoOverlay(): void {
-  if (infoViewOverlay === null || infoViewKind === 'off') return;
-  if (growthScene === null) return;
-
-  const version = infoViewVersion(growthScene.simState);
-  if (version !== infoViewFieldVersion) {
-    infoViewFieldVersion = version;
-    const sampler = createInfoSampler(infoViewKind, growthScene.simState, growthScene.farmPlots);
-    infoViewOverlay.setView(sampler, `${infoViewKind}|${version}`);
-  }
-  infoViewOverlay.update(INFO_OVERLAY_BUDGET_MS);
-}
-
 function buildInspectFrame(): InspectOverlayFrame {
   return {
     mode: inspect.mode,
@@ -2086,917 +1549,6 @@ function buildInspectFrame(): InspectOverlayFrame {
     veil: inspect.payload.veil,
     shadowsOff: isCut(inspect.payload),
   };
-}
-
-function onGamePointerMove(event: PointerEvent): void {
-  if (streetView.active) return;
-  if (selectedTool.kind === 'none' || growthScene === null || terrain === null) {
-    preview.hide();
-    syncSelectionInfluence(resolvePickedSelection());
-    gameHud?.updateCursor(0, 0, null);
-    return;
-  }
-  const cell = surfaceCellAt(event.clientX, event.clientY);
-  if (cell === null) {
-    preview.hide();
-    influenceOverlay?.hideCursor();
-    gameHud?.updateCursor(event.clientX, event.clientY, {
-      title: 'No surface',
-      details: 'Move the cursor over the island.',
-      valid: false,
-      reason: 'No selectable column.',
-    });
-    return;
-  }
-  let valid = false;
-  if (selectedTool.kind === 'catalyst') {
-    const catalyst = catalystById(selectedTool.id ?? defaultCatalystOfClass(selectedTool.class));
-    const aloft = (selectedTool.mode ?? 'ground') === 'aloft';
-    // In quota la colonna che conta e' quella dell'edificio, non del terreno
-    // dietro di lui: e' la stessa distinzione della mensola, e per la stessa
-    // ragione — la heightmap attraversa una torre come se fosse vetro e si
-    // ferma sulla terra dietro. A terra vale il suolo, come per ogni altro ruolo.
-    const target = catalystTarget(event.clientX, event.clientY, cell, aloft);
-    // La faccia sotto il puntatore entra nella domanda: senza, il mirino e il
-    // click cadrebbero sul fronte strada anche puntando il lato opposto della
-    // torre. E' la stessa risposta per il rifiuto e per l'orientamento del
-    // mirino, quindi le due non possono divergere.
-    const preferred = aloft ? facadeUnderPointer(event.clientX, event.clientY, target) ?? undefined : undefined;
-    const failure = growthScene.catalystFailure(target.x, target.y, catalyst.id, aloft, preferred);
-    const radius = catalyst.radius;
-    const site = growthScene.catalystSiteCost(target.x, target.y, catalyst.id);
-    const cost = site === null ? catalyst.cost : site.cost;
-    valid = failure === null;
-    const coverage = influenceOverlay?.showCursor(
-      target.x,
-      target.y,
-      radius,
-      valid,
-      growthScene.simState.reach,
-    );
-    const facade = aloft
-      ? growthScene.aloftFacingAt(target.x, target.y, catalyst.id, preferred) ??
-        facadeFacingAt(target.x, target.y)
-      : null;
-    preview.show(
-      target.x,
-      target.y,
-      target.hitZ,
-      valid,
-      facade === null
-        ? PLACEMENT_SURFACE.horizontal
-        : PLACEMENT_FACADES[facade] ?? PLACEMENT_SURFACE.east,
-    );
-    gameHud?.updateCursor(event.clientX, event.clientY, {
-      title: catalyst.label,
-      details: `${cost} funds${groundNote(site)} · ${reachNote(radius, coverage)} · mainly ${classLabel(catalyst.class)}`,
-      favours: catalyst.favours.map(classLabel),
-      penalises: catalyst.penalises.map(classLabel),
-      typologies: typologiesForUses(catalyst.favours),
-      unlocks: unlockLines(catalyst.id),
-      valid,
-      reason: failure !== null
-        ? actionFailureLabel(failure)
-        // Il piazzamento e' valido comunque: cio' che cambia e' cosa comparira'
-        // e cosa costera' alla citta'. Dirlo qui e' il punto — dopo il click e'
-        // troppo tardi, ed e' esattamente il difetto muto che questa fase chiude.
-        : landmarkNote(growthScene.catalystSite(target.x, target.y, catalyst.id, aloft, preferred)),
-    });
-    return;
-  } else if (selectedTool.kind === 'terrace') {
-    // La colonna che conta e' quella dell'**edificio**, non quella del terreno
-    // dietro di lui: una mensola si appende a un corpo, e chi la posa punta il
-    // corpo. E' la stessa distinzione che le viste di ispezione hanno gia'
-    // dovuto fare — la heightmap attraversa una torre come se fosse vetro.
-    const pointed = pointedCellAt(event.clientX, event.clientY) ?? cell;
-    // La faccia sotto il puntatore si prova per prima: puntare il retro della
-    // torre appende la mensola li', non sul fronte strada. Dove non regge, il
-    // mondo ricade sul fronte e il mirino mostra quella faccia — la stessa che
-    // il click piazzera'.
-    const preferred = facadeUnderPointer(event.clientX, event.clientY, pointed) ?? undefined;
-    const failure = growthScene.terraceFailure(pointed.x, pointed.y, preferred);
-    const facing = growthScene.terraceFacingAt(pointed.x, pointed.y, preferred) ??
-      facadeFacingAt(pointed.x, pointed.y) ?? 0;
-    valid = failure === null;
-    influenceOverlay?.hideCursor();
-    gameHud?.updateCursor(event.clientX, event.clientY, {
-      title: 'Terrace',
-      details: `${BALANCE.gameplay.terrace.cost} funds · a floor above the street`,
-      valid,
-      reason: failure === null
-        ? 'This facade can carry a floor. The building stops growing once it does.'
-        : actionFailureLabel(failure),
-    });
-    // **Il mirino va alla quota del puntatore, non a quella della colonna.** In
-    // isometrica la z e' tutta verticale sullo schermo: disegnato a `z`, sotto
-    // una torre di quaranta voxel finiva trecento pixel piu' in basso, in mezzo
-    // agli edifici davanti, e sembrava puntare un altro isolato. Era il motivo
-    // per cui una mensola si posava a tentativi.
-    preview.show(
-      pointed.x,
-      pointed.y,
-      pointed.hitZ,
-      valid,
-      PLACEMENT_FACADES[facing] ?? PLACEMENT_SURFACE.east,
-    );
-    return;
-  } else if (selectedTool.kind === 'ropeway') {
-    // La colonna del **terreno**, non quella dell'edificio: una funivia parte da
-    // una riva, e la riva e' suolo. E' l'opposto della mensola, ed e' la ragione
-    // per cui qui non si passa da `pointedCellAt`.
-    const failure = growthScene.ropewayFailure(cell.x, cell.y);
-    valid = failure === null;
-    influenceOverlay?.hideCursor();
-    gameHud?.updateCursor(event.clientX, event.clientY, {
-      title: 'Ropeway',
-      details: `${BALANCE.gameplay.ropeway.cost} funds · a crossing that takes no ground`,
-      valid,
-      reason: failure === null
-        ? 'Two towers and a cable: the water below stops counting.'
-        : actionFailureLabel(failure),
-    });
-    preview.show(cell.x, cell.y, cell.z, valid);
-    return;
-  } else if (selectedTool.kind === 'demolish') {
-    // Un gesto in due tempi: il clic che preme fissa l'ancora, lo striscio
-    // allarga il riquadro e il rilascio demolisce. Finche' il pulsante e' su,
-    // il cursore mostra una cella sola e chiede il gesto.
-    // Si punta cio' che si vede, edifici compresi: demolire una torre cercandone
-    // il piede attraverso la sagoma sarebbe la parallasse di sempre.
-    const pointed = pointedCellAt(event.clientX, event.clientY) ?? cell;
-    influenceOverlay?.hideCursor();
-    if (demolishDragging) {
-      demolishX1 = pointed.x;
-      demolishY1 = pointed.y;
-      updateDemolishPreview(event.clientX, event.clientY);
-    } else {
-      demolishOutline?.hide();
-      gameHud?.updateCursor(event.clientX, event.clientY, {
-        title: 'Demolish',
-        details: 'Press and drag across buildings to tear them down.',
-        valid: true,
-        reason: 'The area is cleared over the next few moments.',
-      });
-    }
-    preview.show(pointed.x, pointed.y, pointed.z, true);
-    return;
-  } else {
-    const sector = coastalSectorAt(cell.x, cell.y, terrainRegion, BALANCE.gameplay.expansion.size);
-    const failure = generator.done
-      ? growthScene.expansionFailure(sector.id)
-      : 'terrain-loading';
-    valid = failure === null;
-    influenceOverlay?.hideCursor();
-    gameHud?.updateCursor(event.clientX, event.clientY, {
-      title: `Sector ${sector.id}`,
-      details: `${BALANCE.gameplay.expansion.cost} funds · ${sector.region.sizeX}×${sector.region.sizeY} voxels`,
-      valid,
-      reason: failure === null ? 'New buildable land connected to the coast.' : actionFailureLabel(failure),
-    });
-  }
-  preview.show(cell.x, cell.y, cell.z, valid);
-}
-
-function onGamePointerDown(event: PointerEvent): void {
-  if (streetView.active) return;
-  if (event.button !== 0 || selectedTool.kind === 'none') return;
-  event.preventDefault();
-  event.stopImmediatePropagation();
-  if (growthScene === null || terrain === null) return;
-  const cell = surfaceCellAt(event.clientX, event.clientY);
-  if (cell === null) {
-    gameHud?.showPickingFailure();
-    return;
-  }
-
-  if (selectedTool.kind === 'catalyst') {
-    const role = selectedTool.id ?? defaultCatalystOfClass(selectedTool.class);
-    const aloft = (selectedTool.mode ?? 'ground') === 'aloft';
-    const target = catalystTarget(event.clientX, event.clientY, cell, aloft);
-    // La stessa faccia che il mirino ha mostrato: il click non ricalcola da
-    // solo, o piazzerebbe dove non ha detto.
-    const preferred = aloft ? facadeUnderPointer(event.clientX, event.clientY, target) ?? undefined : undefined;
-    const result = growthScene.placeCatalyst(target.x, target.y, role, aloft, preferred);
-    if (!result.success) gameHud?.showFailure(result.reason);
-    else {
-      gameHud?.clearFeedback();
-      influenceOverlay?.refreshCatalysts(
-        growthScene.simState.catalysts,
-        growthScene.simState.reach,
-      );
-      // Lo strumento resta in mano, come la mensola: chi ha scelto un landmark
-      // dal dock quasi mai ne posa uno solo, e tornare a ripescare la stessa
-      // tessera dopo ogni colpo era il giro in piu' che si notava. Il toast lo
-      // promette gia' — «Esc to cancel» — e resta l'unico modo di posarlo.
-      preview.hide();
-      influenceOverlay?.hideCursor();
-      gameHud?.updateCursor(0, 0, null);
-    }
-    return;
-  }
-
-  if (selectedTool.kind === 'terrace') {
-    const pointed = pointedCellAt(event.clientX, event.clientY) ?? cell;
-    const preferred = facadeUnderPointer(event.clientX, event.clientY, pointed) ?? undefined;
-    const result = growthScene.placeTerrace(pointed.x, pointed.y, preferred);
-    if (!result.success) {
-      gameHud?.showFailure(result.reason);
-      return;
-    }
-    gameHud?.clearFeedback();
-    // Lo strumento resta in mano: una mensola sola non fa un piano di citta', e
-    // chi ne vuole una fila la posa un edificio dopo l'altro. Come per il
-    // catalizzatore, e al contrario della funivia.
-    preview.hide();
-    gameHud?.updateCursor(0, 0, null);
-    return;
-  }
-
-  if (selectedTool.kind === 'ropeway') {
-    const result = growthScene.placeRopeway(cell.x, cell.y);
-    if (!result.success) {
-      gameHud?.showFailure(result.reason);
-      return;
-    }
-    gameHud?.clearFeedback();
-    // Lo strumento si posa dopo l'uso, come il settore costiero e al contrario
-    // della mensola e del catalizzatore: una funivia costa quanto una scelta di
-    // partita, e lasciarla in mano vorrebbe dire tirarne una seconda per un
-    // click di troppo.
-    selectedTool = { kind: 'none' };
-    gameHud?.setTool(selectedTool);
-    preview.hide();
-    gameHud?.updateCursor(0, 0, null);
-    return;
-  }
-
-  if (selectedTool.kind === 'demolish') {
-    // Il clic fissa l'ancora; la demolizione avviene al rilascio, dopo che lo
-    // striscio ha deciso il riquadro. Niente succede qui: la gomma si vede e
-    // si misura, non si applica a un colpo solo.
-    const pointed = pointedCellAt(event.clientX, event.clientY) ?? cell;
-    demolishDragging = true;
-    demolishX0 = pointed.x;
-    demolishY0 = pointed.y;
-    demolishX1 = pointed.x;
-    demolishY1 = pointed.y;
-    demolishDownClientX = event.clientX;
-    demolishDownClientY = event.clientY;
-    demolishRectKey = '';
-    updateDemolishPreview(event.clientX, event.clientY);
-    return;
-  }
-
-  if (!generator.done) {
-    gameHud?.showFailure('terrain-loading');
-    return;
-  }
-  const sector = coastalSectorAt(cell.x, cell.y, terrainRegion, BALANCE.gameplay.expansion.size);
-  const paid = growthScene.buyExpansion(sector.id, sector.region);
-  if (!paid.success) {
-    gameHud?.showFailure(paid.reason);
-    return;
-  }
-  beginCoastalExpansion(sector);
-}
-
-/**
- * Il rilascio che demolisce.
- *
- * Vive su `pointerup` e non su `pointerdown` perche' e' un gesto in due tempi: il
- * clic fissa l'ancora, lo striscio allarga il riquadro e solo qui si sa l'area
- * definitiva. E' lo stesso motivo del clic che sceglie un isolato — fino al
- * rilascio non si distingue un clic da uno striscio.
- */
-function onGamePointerUp(event: PointerEvent): void {
-  if (streetView.active) return;
-  if (event.button !== 0 || !demolishDragging) return;
-  demolishDragging = false;
-  demolishOutline?.hide();
-  demolishOverlay?.hide();
-  if (selectedTool.kind !== 'demolish' || growthScene === null || terrain === null) return;
-
-  // Clic o striscio: sotto la soglia e' un gesto puntuale, e la gomma porta via
-  // il solo edificio sotto il cursore — la sua impronta esatta, non una colonna.
-  const moved = Math.abs(event.clientX - demolishDownClientX) +
-    Math.abs(event.clientY - demolishDownClientY);
-  if (moved <= SELECT_CLICK_SLOP) {
-    const pointed = pointedCellAt(event.clientX, event.clientY);
-    if (pointed === null) return;
-    const result = growthScene.demolishAt(pointed.x, pointed.y);
-    if (!result.done) {
-      gameHud?.showFeedback(
-        result.verdict.refusal === 'structure-in-the-way'
-          ? 'Something built to last stands here: it cannot be demolished.'
-          : 'Nothing to demolish here.',
-        'neutral',
-      );
-      return;
-    }
-    gameHud?.showTransientFeedback(
-      `Demolishing ${result.verdict.clears} ${result.verdict.clears === 1 ? 'building' : 'buildings'}.`,
-    );
-    return;
-  }
-
-  const x0 = Math.min(demolishX0, demolishX1);
-  const x1 = Math.max(demolishX0, demolishX1);
-  const y0 = Math.min(demolishY0, demolishY1);
-  const y1 = Math.max(demolishY0, demolishY1);
-  const sizeX = x1 - x0 + 1;
-  const sizeY = y1 - y0 + 1;
-
-  const verdict = growthScene.demolishSurvey(x0, y0, sizeX, sizeY);
-  if (verdict.clears === 0) {
-    gameHud?.showFeedback('Nothing to demolish there.', 'neutral');
-    return;
-  }
-  growthScene.demolish(x0, y0, sizeX, sizeY);
-  // La gomma resta in mano: una passata non e' una decisione, e chi sbaglia
-  // area fa un secondo colpo, come per la mensola.
-  gameHud?.showTransientFeedback(
-    `Demolishing ${verdict.clears} ${verdict.clears === 1 ? 'building' : 'buildings'}.`,
-  );
-}
-
-/**
- * Ricalcola il riquadro della gomma: contorno a schermo e conteggio sul cursore.
- *
- * Il conto si rifa solo quando il riquadro cambia cella: `surfaceCellAt` torna
- * una colonna intera, e uno striscio lento fermo sulla stessa colonna non deve
- * ripagare la lettura del registry a ogni pixel.
- */
-function updateDemolishPreview(clientX: number, clientY: number): void {
-  if (growthScene === null || terrain === null) return;
-  const x0 = Math.min(demolishX0, demolishX1);
-  const x1 = Math.max(demolishX0, demolishX1);
-  const y0 = Math.min(demolishY0, demolishY1);
-  const y1 = Math.max(demolishY0, demolishY1);
-  const key = `${x0},${y0},${x1},${y1}`;
-
-  if (key !== demolishRectKey) {
-    demolishRectKey = key;
-    const sizeX = x1 - x0 + 1;
-    const sizeY = y1 - y0 + 1;
-    const verdict = growthScene.demolishSurvey(x0, y0, sizeX, sizeY);
-    const ground = Math.max(TERRAIN.seaLevel, terrain.map.heightAt(x0, y0));
-    demolishOutline?.show({ x0, y0, x1, y1, z0: ground, z: ground });
-
-    // I tappeti sui tetti: rosso per chi cade, ambra per chi resta in mezzo.
-    const preview = growthScene.demolishPreview(x0, y0, sizeX, sizeY);
-    demolishOverlay?.show(
-      preview.doomed.map((record) => ({
-        x: record.x,
-        y: record.y,
-        sizeX: record.footprint,
-        sizeY: footprintDepth(record),
-        z: record.baseZ + record.height,
-      })),
-      preview.protected.map((record) => ({
-        x: record.x,
-        y: record.y,
-        sizeX: record.footprint,
-        sizeY: footprintDepth(record),
-        z: record.baseZ + record.height,
-      })),
-    );
-
-    const reason = verdict.refusal === 'structure-in-the-way'
-      ? 'Something built to last stands here: it cannot be demolished.'
-      : verdict.clears === 0
-        ? 'No buildings in this area.'
-        : `${verdict.clears} ${verdict.clears === 1 ? 'building' : 'buildings'} will fall.`;
-    gameHud?.updateCursor(clientX, clientY, {
-      title: 'Demolish',
-      details: `${sizeX}×${sizeY} area selected`,
-      valid: verdict.clears > 0,
-      reason,
-    });
-  }
-}
-
-/**
- * Su quale colonna cade un catalizzatore: il terreno, o la facciata che si sta
- * puntando.
- *
- * **Un solo strumento, due strutture, e adesso e' il modo a scegliere.** Il
- * selettore di posa decide fra suolo e tetto prima del click: a terra conta la
- * colonna del terreno, in quota quella dell'edificio puntato. Il resto lo decide
- * `src/world/` guardando cosa c'e' sotto.
- */
-function catalystTarget(
-  clientX: number,
-  clientY: number,
-  fallback: SurfaceCell,
-  aloft: boolean,
-): SurfaceCell {
-  if (!aloft) return fallback;
-  return pointedCellAt(clientX, clientY) ?? fallback;
-}
-
-/**
- * L'edificio ordinario sotto la colonna, o null.
- *
- * Lo stesso filtro di `buildingAt` nel driver, e adesso alla lettera lo stesso
- * predicato: campate, impalcati e landmark non hanno una facciata su cui
- * appendersi, e sotto di loro si cerca l'ospite.
- */
-function facadeHostAt(x: number, y: number): BuildingRecord | null {
-  if (growthScene === null) return null;
-  return growthScene.registry.at(x, y).find(isGroundStructure) ?? null;
-}
-
-/** Il fronte dell'edificio ordinario puntato; null lascia il mirino sul terreno. */
-function facadeFacingAt(x: number, y: number): number | null {
-  const record = facadeHostAt(x, y);
-  return record === null ? null : record.facing ?? 0;
-}
-
-/**
- * La faccia dell'edificio sotto il puntatore, dal raggio e non dal record.
- *
- * E' la risposta che mancava: il fronte strada e' una proprieta' dell'edificio,
- * e puntare il suo retro lo mostrava li' — sulla faccia opposta a quella sotto
- * il mouse. Qui entra la geometria: il punto d'ingresso del raggio nella
- * scatola dell'edificio dice da che parte si sta guardando. Null quando non
- * c'e' un ospite o la faccia non si distingue, e chi chiama ricade sul fronte.
- */
-function facadeUnderPointer(
-  clientX: number,
-  clientY: number,
-  cell: SurfaceCell,
-): AerialFace | null {
-  const host = facadeHostAt(cell.x, cell.y);
-  if (host === null) return null;
-  return pickFacade(cursorRay(clientX, clientY), {
-    x: host.x,
-    y: host.y,
-    sizeX: host.footprint,
-    sizeY: footprintDepth(host),
-    baseZ: host.baseZ,
-    height: host.height,
-  });
-}
-
-/** Il raggio che parte dal pixel, in coordinate di mondo. */
-function cursorRay(clientX: number, clientY: number): Ray3 {
-  const rect = renderer.domElement.getBoundingClientRect();
-  pointer.set(
-    ((clientX - rect.left) / rect.width) * 2 - 1,
-    -((clientY - rect.top) / rect.height) * 2 + 1,
-  );
-  // `setFromCamera` sa gia' distinguere le due proiezioni: da terra il raggio
-  // parte dall'occhio e diverge, di sopra parte dal piano vicino ed e' parallelo.
-  // E' cio' che fa funzionare lo stesso `pointedCellAt` da entrambe le viste.
-  picker.setFromCamera(pointer, streetView.view);
-  const origin = picker.ray.origin;
-  const direction = picker.ray.direction;
-  return {
-    origin: [origin.x, origin.y, origin.z],
-    direction: [direction.x, direction.y, direction.z],
-  };
-}
-
-/**
- * Quale soggetto del campionario sta sotto il cursore, e su quale voxel esatto.
- *
- * Una sola traversata di raggio per entrambe le risposte: il voxel colpito dice
- * *dove* si e' puntato, il soggetto si ricava dalla colonna di quel voxel. Il
- * vuoto fra due soggetti non appartiene a nessuno — il basamento sotto il vuoto
- * si attraversa ma `swatchSubjectAt` non lo assegna a nulla.
- */
-function swatchPickAt(
-  clientX: number,
-  clientY: number,
-): { readonly subject: SwatchSubject | null; readonly voxel: SwatchVoxel | null } | null {
-  const ray = cursorRay(clientX, clientY);
-  const extent = swatchExtent();
-  const hit = firstSolidVoxel(
-    {
-      ox: ray.origin[0],
-      oy: ray.origin[1],
-      oz: ray.origin[2],
-      dx: ray.direction[0],
-      dy: ray.direction[1],
-      dz: ray.direction[2],
-    },
-    {
-      minX: extent.minX,
-      minY: extent.minY,
-      minZ: 0,
-      maxX: extent.minX + extent.sizeX,
-      maxY: extent.minY + extent.sizeY,
-      maxZ: extent.sizeZ,
-    },
-    (x, y, z) => world.getBlock(x, y, z) !== 0,
-  );
-  if (hit === null) return null;
-  return {
-    subject: swatchSubjectAt(hit.x, hit.y),
-    voxel: {
-      x: hit.x,
-      y: hit.y,
-      z: hit.z,
-      palette: world.getBlock(hit.x, hit.y, hit.z),
-      surface: world.getSurfaceKind(hit.x, hit.y, hit.z),
-    },
-  };
-}
-
-/**
- * Inquadra una fascia del campionario, con un margine che non appartiene agli
- * oggetti.
- *
- * Il perno va a **meta' dell'altezza della fascia**, non sul basamento: le
- * arcologie arrivano a settecentotrentasette voxel, e con il centro
- * dell'inquadratura a terra la loro punta restava fuori campo perfino premendo
- * il pulsante che dovrebbe mostrarle. Sotto, l'altezza spesa sul vuoto era
- * altrettanta.
- */
-function frameSwatchFocus(focus: SwatchFocus): void {
-  swatchFocus = focus;
-  const e = swatchFocusExtent(focus);
-  camera.frameRegion(
-    e.minX + e.sizeX / 2,
-    e.minY + e.sizeY / 2,
-    e.sizeX,
-    e.sizeY,
-    e.sizeZ,
-    (SWATCH.groundZ + e.sizeZ) / 2,
-  );
-}
-
-/**
- * Inquadra un solo soggetto, dal basamento alla punta.
- *
- * E' l'unico modo di guardare da vicino una megastruttura: la fascia intera
- * mette quindici arcologie una accanto all'altra, e avvicinarsi con la rotella
- * taglia proprio la cima, perche' lo zoom stringe attorno al centro
- * dell'inquadratura. Qui il soggetto **e'** l'inquadratura.
- */
-function frameSwatchSubject(subject: SwatchSubject): void {
-  const margin = SWATCH_ITEM_GAP * 2;
-  camera.frameRegion(
-    (subject.rect.x0 + subject.rect.x1) / 2,
-    (subject.rect.y0 + subject.rect.y1) / 2,
-    subject.rect.x1 - subject.rect.x0 + margin,
-    subject.rect.y1 - subject.rect.y0 + margin,
-    subject.z1 - subject.z0,
-    (subject.z0 + subject.z1) / 2,
-  );
-}
-
-/**
- * Il contorno segue la scelta persistente; senza, l'eventuale hover.
- *
- * Una scelta sopravvive alla navigazione fra le fasce e al cursore che se ne va:
- * il contorno continua a dire cosa si sta guardando finche' non si deseleziona.
- */
-function refreshSwatchOutline(): void {
-  if (swatchOutline === null) return;
-  const subject = swatchSelection ?? swatchSubject;
-  if (subject === null) {
-    swatchOutline.hide();
-    return;
-  }
-  swatchOutline.show({
-    x0: subject.rect.x0,
-    y0: subject.rect.y0,
-    x1: subject.rect.x1 - 1,
-    y1: subject.rect.y1 - 1,
-    z0: SWATCH.groundZ,
-    z: subject.z1,
-  });
-}
-
-/**
- * Il rilascio che sceglie, con la stessa soglia anti-pan del clic di gioco.
- *
- * Il secondo clic ravvicinato sullo **stesso** soggetto inquadra: il primo ha
- * gia' il suo mestiere — riempire la scheda del referto — e prendersi anche
- * l'inquadratura vorrebbe dire strattonare la camera a chi stava solo leggendo.
- */
-function onSwatchPointerUp(event: PointerEvent): void {
-  if (!swatchPointerDown || event.button !== 0) return;
-  swatchPointerDown = false;
-  const moved = Math.abs(event.clientX - swatchPointerX) + Math.abs(event.clientY - swatchPointerY);
-  if (moved > SELECT_CLICK_SLOP) return;
-
-  const pick = swatchPickAt(event.clientX, event.clientY);
-  const subject = pick?.subject ?? null;
-  const doubled = subject !== null
-    && subject === swatchSelection
-    && performance.now() - swatchLastClickMs <= SWATCH_DOUBLE_CLICK_MS;
-  swatchLastClickMs = performance.now();
-  swatchSelection = subject;
-  swatchVoxel = pick?.voxel ?? null;
-  refreshSwatchOutline();
-  if (doubled) frameSwatchSubject(subject);
-}
-
-/**
- * Su quale **terra** cade il cursore. E' la domanda di chi piazza qualcosa.
- *
- * Gli edifici non contano apposta: si costruisce sul suolo, e fermarsi su un
- * tetto darebbe una colonna dove non si puo' costruire niente.
- */
-function surfaceCellAt(clientX: number, clientY: number): SurfaceCell | null {
-  if (terrain === null) return null;
-  return pickSurfaceCell(cursorRay(clientX, clientY), terrain.map);
-}
-
-/**
- * **Cosa** sta indicando il cursore, edifici compresi. E' la domanda di chi
- * guarda, ed e' un'altra.
- *
- * Le viste usavano la prima, e non poteva funzionare: la heightmap attraversa
- * una torre come se fosse vetro e si ferma sulla terra dietro, che a
- * quarantacinque gradi sta a tante colonne quanto la torre e' alta. Puntare un
- * grattacielo apriva quindi la lente su un altro isolato — ed era la meta' del
- * motivo per cui i raggi X sembravano velare a caso.
- */
-function pointedCellAt(clientX: number, clientY: number): SurfaceCell | null {
-  if (terrain === null) return null;
-  const registry = growthScene?.registry;
-  if (registry === undefined) return surfaceCellAt(clientX, clientY);
-  return pickSolidCell(
-    cursorRay(clientX, clientY),
-    terrain.map,
-    (x, y) => registry.topOf(x, y),
-    // La citta' non ha un tetto noto come la heightmap: il suo estremo e' quello
-    // che il mondo ha davvero raggiunto, piu' un voxel per non tagliare l'ultimo.
-    world.bounds.empty ? TERRAIN.maxHeight + 1 : world.bounds.maxZ + 1,
-  );
-}
-
-/**
- * Arma o disarma la discesa, e da terra la annulla.
- *
- * Un tasto solo per tre stati perche' sono la stessa domanda — «voglio guardare
- * da terra?» — e tre tasti per una domanda sola sarebbero tre cose da ricordare.
- */
-function toggleStreetView(): void {
-  if (streetView.active) {
-    exitStreetView();
-    return;
-  }
-  streetArmed = !streetArmed;
-  gameHud?.showTransientFeedback(
-    streetArmed ? 'Street view · click where to stand.' : 'Street view cancelled.',
-  );
-}
-
-/** Posa l'occhio sul punto puntato, se ci si puo' stare. */
-function placeStreetEye(clientX: number, clientY: number): void {
-  const map = terrain?.map;
-  if (map === undefined) return;
-  const cell = pointedCellAt(clientX, clientY);
-  const refusal = eyeRefusal(cell, (x, y) => map.waterTopAt(x, y));
-  if (refusal !== null || cell === null) {
-    gameHud?.showFeedback(
-      refusal === 'underwater' ? 'Nowhere to stand: that is water.' : 'Nothing to stand on there.',
-      'neutral',
-    );
-    return;
-  }
-
-  streetArmed = false;
-  // Le viste d'ispezione reggono la **stessa** camera e ne catturano lo stato per
-  // restituirlo: lasciarne una aperta vorrebbe dire due proprietari della stessa
-  // inquadratura, e chi esce per ultimo rimette quella sbagliata. Per lo stesso
-  // motivo un taglio non sopravvive alla discesa — da terra si guarderebbe
-  // dentro una citta' a cui manca meta' del volume.
-  inspect.setMode(INSPECT_MODE.off);
-
-  const [x, y, z] = eyePoint(cell);
-  streetView.enter(x, y, z);
-  syncStreetView();
-}
-
-/** Risale, e restituisce l'inquadratura esattamente com'era. */
-function exitStreetView(): void {
-  streetArmed = false;
-  if (!streetView.active) return;
-  streetView.exit();
-  syncStreetView();
-}
-
-/**
- * Le conseguenze del cambio di modo, in un posto solo.
- *
- * Nessuna appartiene a `StreetView`, che sa solo quale camera sta disegnando: il
- * composer disegna con la camera che gli si dice, e quanto si puo' spendere per
- * fotogramma lo decide `RenderQuality` guardando i tempi.
- *
- * **La vista ferma vale una resa migliore, e non e' un regalo.** Da terra la
- * camera non si muove: la coda di remesh si ordina una volta e poi mai, nessun
- * chunk nuovo entra nel frustum, e la scatola dell'ombra si stringe attorno
- * all'occhio invece di coprire mezza isola — la pass d'ombra ne esce piu' leggera
- * di prima. Quel margine si spende dove si vede, cioe' sopra la densita' dello
- * schermo, che e' l'unica manopola che tocchi gli spigoli dei voxel. Il controllo
- * adattivo continua a sorvegliare e a scendere se il frame non tiene: qui si
- * sposta il punto di partenza dell'isteresi, non la si scavalca.
- */
-/**
- * La targa che resta a schermo quando tutto il resto e' sparito.
- *
- * Dice due cose diverse a seconda che lo sguardo sia agganciato o no, e la
- * seconda e' quella che conta: perso il lock — `Esc`, un alt-tab — muovere il
- * mouse non fa piu' niente, e senza una riga che dica «clicca» sembrerebbe che
- * la vista si sia rotta.
- */
-function syncStreetHint(locked: boolean): void {
-  if (!streetView.active) return;
-  gameHud?.setStreetView(
-    true,
-    locked
-      ? 'Move to look · wheel to zoom · F levels the horizon · Esc to leave'
-      : 'Click to look around · Esc to leave',
-  );
-}
-
-function syncStreetView(): void {
-  post.setCamera(streetView.view);
-  gameHud?.setStreetView(streetView.active, null);
-  if (streetView.active) syncStreetHint(streetView.controller.looking);
-  const quality = streetView.active
-    ? renderQuality.enterBoost(performance.now())
-    : renderQuality.exitBoost(performance.now());
-  if (quality.changed) {
-    renderer.setPixelRatio(quality.pixelRatio);
-    renderer.setSize(window.innerWidth, window.innerHeight);
-    post.setSize(window.innerWidth, window.innerHeight, quality.pixelRatio);
-    syncResolution();
-    frameTiming.reset();
-  }
-  // Dopo il pixel ratio, perche' la dimensione della shadow map dipende dal modo
-  // e il profilo puo' essere appena cambiato con lui.
-  applyQualityProfile(quality.changed ? quality.profile : qualityProfile);
-  // A terra il toast e' nascosto insieme al resto dell'HUD: a dire come si esce
-  // c'e' la targa. Il messaggio serve solo a chi e' appena risalito.
-  if (!streetView.active) gameHud?.showTransientFeedback('Back to the city.');
-}
-
-/**
- * Il clic che sceglie, e quello che non ha scelto niente.
- *
- * Le tre guardie sono quelle del clic di studio, e nessuna e' di troppo: il
- * tasto sinistro pana, uno strumento in mano sta piazzando — e il suo
- * `stopImmediatePropagation` non protegge questo listener, perche' sta su
- * `pointerdown` e gli eventi qui partono in ordine di registrazione — e un
- * trascinamento non e' un clic.
- */
-function onSelectPointerUp(event: PointerEvent): void {
-  if (!selectPointerDown || event.button !== 0) return;
-  selectPointerDown = false;
-  // A terra il clic ha un mestiere solo: riagganciare lo sguardo dopo un `Esc`
-  // o un cambio di finestra. Sotto pointer lock il puntatore non ha nemmeno una
-  // posizione da cui scegliere qualcosa, e senza questa riga il primo clic per
-  // riprendere a guardare aprirebbe la scheda di un edificio a caso.
-  if (streetView.active) return;
-  if (selectedTool.kind !== 'none') return;
-  const moved = Math.abs(event.clientX - selectPointerX) + Math.abs(event.clientY - selectPointerY);
-  if (moved > SELECT_CLICK_SLOP) return;
-
-  // Su cio' che si vede, non sul terreno: cliccando una torre si sceglie la
-  // torre, e non la terra che le sta dietro a tante colonne quanto e' alta.
-  const cell = pointedCellAt(event.clientX, event.clientY);
-  if (cell === null) {
-    clearSelection();
-    return;
-  }
-  selectedCell = cell;
-  const picked = resolvePickedSelection();
-  if (picked === null) {
-    clearSelection();
-    return;
-  }
-  // La scheda si apre sul bordo destro, dove stanno anche i cassetti: chiuderli
-  // prima che compaia e' cio' che la tiene leggibile invece di sovrapposta.
-  gameHud?.dismissPanels();
-  selectionPanel?.show(picked, performance.now(), isolatedBlockKey());
-  syncSelectionInfluence(picked);
-  gameHud?.setSelectionOpen(true);
-}
-
-/**
- * Il gesto della scheda, tradotto in vista e camera.
- *
- * Sta qui e non nel pannello perche' e' il punto in cui i due strati si toccano:
- * la scheda sa cosa il giocatore ha scelto, la vista sa come si guarda, e nessuno
- * dei due importa l'altro.
- *
- * L'andata e' in due mosse e l'ordine non e' libero: `lockBlock` si rifiuta se il
- * modo non e' gia' Block focus, perche' agganciare un isolato che nessuna vista
- * sta ritagliando muoverebbe la camera senza che a schermo cambi niente.
- *
- * Il ritorno spegne la vista invece di mollare e basta. Mollare lascerebbe acceso
- * il velo che insegue il cursore — utile a chi era entrato dal picker per
- * scegliere un isolato, ma qui il giocatore non ha mai chiesto una vista: ha
- * chiesto *questo* isolato, e uscendone si aspetta la sua citta'. `setMode` molla
- * comunque, e restituisce l'inquadratura di partenza.
- */
-function runSelectionAction(action: SelectionActionId): void {
-  if (action === 'release-block') {
-    inspect.setMode(INSPECT_MODE.off);
-    return;
-  }
-  if (selectedCell === null) return;
-  inspect.setMode(INSPECT_MODE.block);
-  // La cella scelta e non la colonna sotto il cursore: si isola l'isolato che la
-  // scheda sta descrivendo, e il mouse nel frattempo puo' essere ovunque — sul
-  // bottone, per esempio, che sta sopra un'altra parte della citta'.
-  inspect.lockBlock(selectedCell);
-}
-
-/** L'isolato che la vista sta studiando, se ce n'e' uno: la scheda ne fa un interruttore. */
-function isolatedBlockKey(): string | null {
-  return inspect.locked ? inspect.blockKey : null;
-}
-
-/** La pila sotto la cella scelta, oppure `null` se non c'e' piu' niente da dire. */
-function resolvePickedSelection(): Selection | null {
-  if (selectedCell === null || terrain === null || streets === null) return null;
-  const registry = growthScene?.registry;
-  const state = growthScene?.simState;
-  if (registry === undefined || state === undefined) return null;
-  return resolveSelection({
-    cell: selectedCell,
-    world,
-    map: terrain.map,
-    registry,
-    streets,
-    state,
-    seed: terrainSeed,
-  });
-}
-
-/**
- * Riscrive la scheda con i dati di adesso.
- *
- * Gira alla cadenza dell'HUD e non per frame: la citta' cambia a dieci tick al
- * secondo, e la sola parte che costa — l'aggregato dell'isolato — non ha ragione
- * di girare sessanta volte per dire lo stesso numero.
- */
-function refreshSelection(now: number): void {
-  const picked = resolvePickedSelection();
-  if (picked === null) {
-    clearSelection();
-    return;
-  }
-  selectionPanel?.update(picked, now, isolatedBlockKey());
-  syncSelectionInfluence(picked);
-  if (selectionPanel !== null) paintSelectionOutline(selectionPanel.section);
-}
-
-function paintSelectionOutline(section: SelectionSectionId): void {
-  const picked = resolvePickedSelection();
-  if (picked === null) {
-    selectionOutline?.hide();
-    return;
-  }
-  const extent = extentOf(picked, section);
-  selectionOutline?.show(extent);
-}
-
-function clearSelection(): void {
-  selectedCell = null;
-  selectionPanel?.close();
-  selectionOutline?.hide();
-  influenceOverlay?.hideCursor();
-  gameHud?.setSelectionOpen(false);
-}
-
-/** Il campo completo compare solo quando il click ha scelto un vero landmark. */
-function syncSelectionInfluence(picked: Selection | null): void {
-  const catalyst = picked?.structure?.catalyst;
-  if (catalyst === undefined || catalyst === null || growthScene === null) {
-    influenceOverlay?.hideCursor();
-    return;
-  }
-  influenceOverlay?.showSelection(catalyst, growthScene.simState.reach);
-}
-
-/**
- * Porta in-world l'artefatto del coach, alla cadenza dell'HUD.
- *
- * **Il cursore di piazzamento ha precedenza.** Quando uno strumento e' in mano
- * il coach si nasconde — l'evidenza della portata appartiene a cio' che si sta
- * per posare — e ricompare appena lo si molla. Si disegna solo al cambio di
- * suggerimento, non a ogni refresh.
- */
-function syncCoachArtifact(coach: CoachSuggestion | null): void {
-  if (selectedTool.kind !== 'none' || coach === null ||
-    growthScene === null || influenceOverlay === null) {
-    if (paintedCoachId !== null) {
-      paintedCoachId = null;
-      influenceOverlay?.hideCoach();
-    }
-    return;
-  }
-  if (coach.id === paintedCoachId) return;
-  paintedCoachId = coach.id;
-  influenceOverlay.showCoach(coach, growthScene.simState.reach);
 }
 
 function beginCoastalExpansion(sector: CoastalSector): void {
@@ -3012,151 +1564,14 @@ function beginCoastalExpansion(sector: CoastalSector): void {
   expansionInFlight = sector;
   influenceOverlay?.addSector(sector.region);
   growthScene.setMessage('Generating the new coastal sector…');
-  selectedTool = { kind: 'none' };
-  gameHud?.setTool(selectedTool);
-  preview.hide();
-  influenceOverlay?.hideCursor();
-  gameHud?.updateCursor(0, 0, null);
-}
-
-function buildTerrainFrame(streamer: TerrainStreamer): TerrainOverlayFrame {
-  return {
-    fps: frameTiming.snapshot().fps,
-    generationMs: streamer.generationMs,
-    applyMs: terrainApplyMs,
-    blocksApplied: streamer.blocksApplied,
-    blocksTotal: streamer.blocksTotal,
-    columns: streamer.map.columnCount,
-    buildableColumns: streamer.buildableColumns,
-    histogram: Array.from(streamer.map.biomeHistogram()),
-    biomeView: biomeView?.enabled ?? false,
-    seed: terrainSeed,
-    regionSize: TERRAIN_SIZE,
-  };
+  // Lo strumento si posa dopo l'uso: la terra e' comprata, e un secondo click
+  // sul settore accanto sarebbe una spesa che nessuno ha chiesto.
+  tools?.releaseTool();
 }
 
 function toggleBiomeView(): void {
   if (biomeView === null) return;
   biomeView.toggle();
-}
-
-/**
- * Metriche della pass d'ombra e del post-processing.
- *
- * Esiste per essere chiamata da entrambe le superfici di misura, overlay e
- * hook di console: una metrica si aggiunge qui una volta sola.
- */
-function effectStats(): { shadowMs: number; shadowSize: number; effects: string } {
-  const shadow = sunShadow.stats;
-  const parts: string[] = [];
-  if (shadow.enabled) parts.push('shadow');
-  if (qualityProfile.bloom) parts.push('bloom');
-  if (qualityProfile.tilt) parts.push('tilt');
-  if (qualityProfile.grade) parts.push('grade');
-  if (qualityProfile.godRays) parts.push('rays');
-  if (qualityProfile.outline) parts.push('outline');
-  return {
-    shadowMs: shadow.lastPassMs,
-    shadowSize: shadow.enabled ? shadow.size : 0,
-    effects: parts.length === 0 ? 'none' : parts.join('+'),
-  };
-}
-
-/**
- * I numeri della conversazione sulle prestazioni: overlay e riepilogo console
- * leggono questo oggetto, la fonte delle metriche remesh resta
- * `chunkRenderer.stats`.
- */
-function buildPerfFrame(frameMs: number): PerfFrame {
-  const stats = chunkRenderer.stats;
-  return {
-    fps: frameTiming.snapshot().fps,
-    frameMs,
-    remeshMs: stats.remeshMs,
-    remeshedChunks: stats.remeshedChunks,
-    qualityMode: renderQuality.mode,
-    pixelRatio: renderer.getPixelRatio(),
-    effects: effectStats().effects,
-  };
-}
-
-function buildOverlayFrame(mainMs: number, renderMs: number, frameMs: number): OverlayFrame {
-  const stats = chunkRenderer.stats;
-  const mesher = chunkRenderer.mesherPool.stats;
-  const timing = frameTiming.snapshot();
-
-  return {
-    fps: timing.fps,
-    fpsLow: timing.fpsLow,
-    frameP95Ms: timing.p95Ms,
-    frameP99Ms: timing.p99Ms,
-    jankRatio: timing.jankRatio,
-    frameMs,
-    mainMs,
-    mainMsMax,
-    renderMs,
-    ...effectStats(),
-    drawCalls: renderer.info.render.calls,
-    triangles: renderer.info.render.triangles,
-    geometryBytes: stats.geometryBytes,
-    chunksAllocated: stats.chunksAllocated,
-    chunksNonEmpty: stats.chunksNonEmpty,
-    chunksWithMesh: stats.chunksWithMesh,
-    chunksVisible: stats.chunksVisible,
-    chunksFalling: stats.chunksFalling,
-    queued: stats.queued,
-    inFlight: stats.inFlight,
-    quads: stats.quads,
-    detailQuads: stats.detailQuads,
-    solidVoxels: world.solidVoxelCount,
-    mesherLastMs: mesher.lastMs,
-    mesherAvgMs: mesher.avgMs,
-    mesherMaxMs: mesher.maxMs,
-    mesherPoolSize: mesher.poolSize,
-    remeshApplyMs: stats.remeshApplyMs,
-    remeshDispatchMs: stats.remeshDispatchMs,
-    remeshApplyMaxMs: stats.remeshApplyMaxMs,
-    remeshDispatchMaxMs: stats.remeshDispatchMaxMs,
-    generationProgress: generator.done ? 1 : generator.progress,
-    scene: terrain === null ? sceneKind : 'terrain',
-    seed: terrain === null ? seed : terrainSeed,
-    theme: daylight.theme.name,
-    hour: daylight.hour,
-    // Fermo e' fermo, che sia il modo scelto dal giocatore o un `?hour=`: al
-    // pannello serve sapere che l'orologio non cammina, non da quale delle due
-    // strade e' arrivato. Il modo lo dice comunque, subito accanto.
-    hourMode: daylight.mode,
-    hourPinned: daylight.pinned || daylight.mode !== DAYLIGHT_MODE.cycle,
-    quality: renderQuality.mode,
-    pixelRatio: renderer.getPixelRatio(),
-    zoom: camera.zoom,
-    yawDegrees: camera.yawDegrees,
-    pitchDegrees: camera.pitchDegrees,
-  };
-}
-
-/** L'unica lettura del campionario: la consumano overlay e `__voxelSwatch()`. */
-function buildSwatchFrame(): SwatchOverlayFrame {
-  const subject = swatchSubject ?? swatchSelection;
-  return {
-    focus: swatchFocus,
-    subject,
-    selection: swatchSelection,
-    voxel: swatchVoxel,
-    detail: detailOf(subject),
-  };
-}
-
-/**
- * Prismi di dettaglio della cella indicata, o null fuori dalla matrice.
- *
- * Solo la matrice: stratigrafia, scala e gallerie non sono provini della stessa
- * sagoma, e un conteggio li' risponderebbe a una domanda che nessuno ha fatto.
- * `cellDetail` memoizza, quindi ripassare sulla stessa cella non rimisura.
- */
-function detailOf(subject: SwatchSubject | null): SwatchDetail | null {
-  if (subject === null || subject.kind !== 'matrix') return null;
-  return cellDetail(subject.row, subject.col);
 }
 
 function onDebugKey(event: KeyboardEvent): void {
@@ -3197,9 +1612,7 @@ function onDebugKey(event: KeyboardEvent): void {
   }
   if (event.code === 'KeyC') {
     // Azzera i picchi: serve per misurare il regime, non lo startup.
-    mainMsMax = 0;
-    frameTiming.reset();
-    chunkRenderer.mesherPool.resetStats();
+    resetPeaks();
     chunkRenderer.resetRemeshPeaks();
   }
 }
@@ -3226,20 +1639,16 @@ function onUiKey(event: KeyboardEvent): void {
   // perche' dopo un doppio clic la scelta e' anche l'inquadratura: mollarla senza
   // tornare indietro lascerebbe la camera addosso a un soggetto che non e' piu'
   // scelto.
-  if (event.code === 'Escape' && swatchOverlay !== null && swatchSelection !== null) {
+  if (event.code === 'Escape' && swatch?.releaseSelection() === true) {
     event.preventDefault();
-    swatchSelection = null;
-    refreshSwatchOutline();
-    frameSwatchFocus(swatchFocus);
     return;
   }
   // `Escape` a due gradini, come in Block focus: prima molla lo strumento armato,
   // poi risale. Sta **sopra** `handleEscape` perche' altrimenti uscire da terra
   // aprirebbe il menu principale, che e' l'ultima cosa che chiede chi sta
   // guardando una strada.
-  if (event.code === 'Escape' && (streetArmed || streetView.active)) {
+  if (event.code === 'Escape' && street.escape()) {
     event.preventDefault();
-    exitStreetView();
     return;
   }
   // La catena di Escape sta **sopra** tutto il resto del router, e non solo
@@ -3305,13 +1714,13 @@ function onUiKey(event: KeyboardEvent): void {
   // dall'harness, e prendersele qui le spegnerebbe **in silenzio**: un tasto di
   // gioco sta sopra il gate e vince sempre su quello tecnico.
   if (event.code === 'KeyO') {
-    toggleStreetView();
+    street.toggle();
     return;
   }
   // Le viste informative: un dato alla volta sopra la citta', come `V` per le
   // viste di ispezione. Leggere la citta' per dato e' gioco, non misura.
   if (event.code === 'KeyI') {
-    cycleInfoView();
+    infoViews?.cycle();
     return;
   }
   // `X` alterna suolo e facciata per lo strumento in mano: e' un comando di

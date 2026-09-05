@@ -19,6 +19,7 @@ import {
   type StructureSpec,
 } from './placeStructure';
 import { worldProbe } from './worldProbe';
+import { isRopewayTower } from './structureKind';
 
 /**
  * Le funivie: due torri, e fra loro niente.
@@ -170,7 +171,7 @@ export class RopewayDriver {
     const { registry } = this.ctx;
     const records = registry.at(x, y);
     if (records.length === 0) return !registry.isOccupied(x, y);
-    if (records.some((record) => record.ropeway !== undefined)) return false;
+    if (records.some(isRopewayTower)) return false;
     return planClearance(
       records.map((record) => clearanceOf(registry, record)),
       CLEARING,
@@ -295,7 +296,7 @@ function boxOf(station: RopewayPlan['stations'][number]): ClearanceBox {
 
 /** true se nel riquadro c'e' un pezzo di un'altra linea: vedi `clearableAt`. */
 function holdsRopeway(registry: ReadonlyBuildingRegistry, box: ClearanceBox): boolean {
-  return recordsIn(registry, box).some((record) => record.ropeway !== undefined);
+  return recordsIn(registry, box).some(isRopewayTower);
 }
 
 /** Una torre come la vede il protocollo di piazzamento. */

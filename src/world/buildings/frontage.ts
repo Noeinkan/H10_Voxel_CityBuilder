@@ -3,6 +3,7 @@ import { planCluster, type ClusterTerms } from './cluster';
 import { FACING, type Facing } from '../streets/streetGrid';
 import type { GradePlan } from '../grading/grade';
 import type { BuildContext } from './buildContext';
+import { isLandmark } from './structureKind';
 
 /**
  * Il fronte strada di un lotto: chi ha accanto, e a quale fila appartiene.
@@ -177,7 +178,7 @@ export class Frontage {
           // stadio e non di livello, e adottarne la quota darebbe a un isolato
           // il piano di un molo. Un vicino orientato altrove nemmeno — due file
           // che si incontrano su un angolo restano due file.
-          if (other.landmark !== undefined) continue;
+          if (isLandmark(other)) continue;
           if (other.facing !== facing) continue;
           if (other.cluster === undefined) continue;
           if (out.some((terms) => terms.id === other.cluster)) continue;

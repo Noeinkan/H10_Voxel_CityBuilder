@@ -16,6 +16,39 @@ Qui stanno **i tredici incrementi più recenti**; i precedenti sono archiviati i
 
 ---
 
+## In corso — Radice: dare un proprietario allo stato condiviso
+
+- **`main.ts` da 3440 a 1849 righe, e non e' una potatura.** Il file era una
+  chiusura sola su quarantasette `let` di modulo: `selectedTool` lo scrivevano il
+  dock, `Esc`, una cifra sulla tastiera e ogni posa riuscita, e lo leggevano la
+  scheda, il coach e le viste d'ispezione. Ogni gruppo coeso e' diventato un
+  modulo di `src/shell/` che **possiede** il proprio stato e lo espone come
+  domanda: dieci moduli nuovi, nessun `let` di modulo rimasto sull'input, sulla
+  scelta o sulla misura. In radice restano il montaggio, il ciclo di frame, il
+  gating di qualita' e il router della tastiera.
+- **Cio' che nasce dopo arriva come funzione.** La discesa a terra esiste prima
+  delle viste d'ispezione perche' il gating di qualita' la interroga gia', e le
+  viste esistono solo dopo il terreno: `inspect`, `hud`, `map`, `registry` e
+  `generator` passano come `() => ...` invece che come riferimenti, che e' la
+  stessa convenzione di `saveSlots.ts`.
+- **L'ordine di registrazione dei listener e' rimasto il contratto che era.**
+  Strumenti, scheda, discesa e campionario si agganciano al canvas nella stessa
+  sequenza di prima, e adesso c'e' scritto perche': il primo che si prende il
+  clic lo toglie a tutti quelli dopo.
+- **Un rosso silenzioso trovato spostando: il conteggio degli edifici
+  impilati.** `Builder.countRestored` riconosceva un edificio appoggiato a un
+  impalcato con un elenco di marker scritto a mano che escludeva quota, campate e
+  monumenti sul tetto — ma lasciava passare arcologie e monumenti a terra, che
+  portano `supports` per un'altra ragione. Una citta' caricata diceva quindi un
+  `stacked` che la stessa citta', costruita, non avrebbe mai detto. Adesso la
+  domanda e' `isPlainBuilding`, che e' esattamente cio' che conta il percorso
+  vivo.
+- **Chiusa la coda delle classificazioni a mano.** Le ultime letture dirette dei
+  campi marker fuori da `structureKind.ts` — `guideDriver`, `ropewayDriver`,
+  `frontage` — passano per tre predicati nuovi (`isSpan`, `isRopewayTower`,
+  `isLandmark`). Sono domande sul **tipo** e non tratti, e il commento di ognuno
+  dice perche' non potevano diventare una colonna della tabella.
+
 ## In corso — La congestione diventa geografia
 
 - **Densificare ha un prezzo spaziale, e nessun veicolo lo trasporta.** La
