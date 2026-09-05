@@ -711,6 +711,7 @@ export default {
         // da `01-city-overview`: `Q` gira attorno al punto di terra sotto al
         // mouse, quindi il cursore va rimesso sull'isola prima o la rotazione
         // prende il centro dell'inquadratura e la citta' esce di campo.
+        await stillCity(page);
         await page.mouse.move(ISLAND.x, ISLAND.y);
         await page.keyboard.press('KeyQ');
         await page.waitForTimeout(1500);
@@ -849,7 +850,14 @@ export default {
         await pickInspectView(page, 'Cutaway');
         // Il taglio segue l'isolato **puntato**: senza tornare sulla citta'
         // resterebbe dove il cursore era rimasto, cioe' sul picker.
-        await page.mouse.move(ISLAND.x, ISLAND.y);
+        //
+        // E si punta **oltre** il centro, non il centro. Il taglio toglie tutto
+        // cio' che sta davanti al piano, e quel che resta scoperto e' il tappo
+        // dalle back-face, cioe' una campitura grigia: puntando al centro di una
+        // citta' da ottomila residenti il grigio si prendeva due quinti del
+        // fotogramma. Piu' in la' il piano cade oltre il grosso del tessuto, e
+        // davanti resta la citta' aperta invece del tappo.
+        await page.mouse.move(ISLAND.x, ISLAND.y - 130);
         await page.waitForTimeout(2500);
       },
     },
