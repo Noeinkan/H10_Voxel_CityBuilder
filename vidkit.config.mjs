@@ -122,6 +122,19 @@ async function pickTool(page, name) {
   return true;
 }
 
+/**
+ * I fondi come numero. La prima `.resource-value` legge «13,491▲ +9.7»: il
+ * saldo e' solo il gruppo iniziale, e togliere tutto cio' che non e' cifra
+ * incollerebbe anche la tendenza (1349197), che cresce sempre e non farebbe mai
+ * scattare il controllo.
+ */
+async function funds(page) {
+  const text = await page.evaluate(
+    () => document.querySelector('.resource-value')?.textContent ?? '',
+  );
+  return Number((/[\d,]+/.exec(text)?.[0] ?? '').replace(/,/g, '')) || 0;
+}
+
 async function cursorState(page) {
   return page.evaluate(() => {
     const card = document.querySelector('.cursor-card');
@@ -253,6 +266,11 @@ async function selectionDump(page) {
   });
 }
 
+/** Vero solo se sotto il cursore c'e' una struttura, non l'isolato che la ospita. */
+function isStructure(dump) {
+  return dump !== null && dump.eyebrows.includes('Structure') && !/^Block\b/.test(dump.title);
+}
+
 async function findBuilding(page, cx, cy) {
   for (let r = 0; r <= 260; r += 26) {
     for (let a = 0; a < 360; a += 30) {
@@ -262,7 +280,13 @@ async function findBuilding(page, cx, cy) {
       await page.mouse.click(x, y);
       await page.waitForTimeout(180);
       const dump = await selectionDump(page);
-      const picked = dump !== null && dump.eyebrows.includes('Structure') ? dump.title : null;
+      // **La sezione «Structure» c'e' anche sull'asfalto**, e dice «nothing can
+      // grow — the ground refuses every use»: cercandola e basta, la spirale
+      // accettava il primo clic al centro dell'isola, che cadeva su una strada,
+      // e la clip che spiega gli edifici spiegava il vuoto. Il segnale vero e'
+      // il **titolo**: con una struttura sotto e' il suo nome (`Terrace`), senza
+      // ripiega sull'isolato (`Block 6,6`).
+      const picked = isStructure(dump) ? dump.title : null;
       if (picked !== null) {
         // La scheda si richiude dal suo bottone dichiarato, non dal primo
         // `button` che capita: il pannello ne ha molti, e il primo e' un'azione
@@ -416,20 +440,26 @@ export default {
         await page.waitForTimeout(900);
         await v.caption('The card weighs the site: cost, reach, and what can grow here');
         await v.beat(2200);
+        const before = await funds(page);
         await page.mouse.click(spot.x, spot.y);
         await page.waitForTimeout(700);
-        // Il cartellino sparisce quando lo strumento si posa: se e' ancora li',
-        // il sito si e' occupato mentre la carta era in campo. Un secondo
-        // tentativo davanti all'obiettivo e' meglio di una scena che si chiude
-        // senza aver piazzato niente.
-        if ((await cursorState(page)) !== null) {
+        // **I fondi sono l'unica prova onesta.** Il cartellino non si aggiorna
+        // sul clic ma sul movimento del puntatore, quindi «carta sparita» subito
+        // dopo un clic fermo non vuol dire «strumento posato»: e' esattamente
+        // cosi' che una presa si e' chiusa dichiarando un piazzamento che non
+        // c'era stato. Il costo speso, invece, non mente.
+        if ((await funds(page)) >= before) {
           const retry = await findLand(page, ISLAND.x + 40, ISLAND.y - 140);
           if (retry !== null) {
             await page.mouse.click(retry.x, retry.y);
             await page.waitForTimeout(700);
           }
         }
-        console.log('    [02] strumento posato:', (await cursorState(page)) === null);
+        console.log('    [02] fondi', before, '->', await funds(page));
+        // Il puntatore si toglie di mezzo prima della didascalia: il segnaposto
+        // e il cartellino coprono proprio l'edificio appena posato.
+        await page.mouse.move(spot.x - 220, spot.y + 190, { steps: 18 });
+        await page.waitForTimeout(600);
         // La citta' riparte: la frase sotto dev'essere vera mentre la si legge,
         // e l'orologio era fermo dalla prepare per proteggere il sito.
         await page.getByRole('button', { name: /Resume simulation/i }).click();
@@ -522,7 +552,7 @@ export default {
         // scena che spiega il vuoto.
         let dump = await selectionDump(page);
         console.log('    [04] al primo clic:', JSON.stringify(dump));
-        if (dump === null || !dump.eyebrows.includes('Structure')) {
+        if (!isStructure(dump)) {
           const again = await findBuilding(page, spot.x, spot.y);
           if (again !== null) {
             await page.mouse.click(again.x, again.y);
