@@ -14,6 +14,7 @@ import {
 } from '../aerial/terracePlan';
 import { planRoute, type RouteEnd, type RoutePlan } from '../aerial/routePlan';
 import { generateDeck, generatePier } from '../aerial/generate';
+import { FACING, STREET_ROLE } from '../streets/streetGrid';
 import { footprintDepth, type BuildingRecord } from './BuildingRegistry';
 import type { BuildContext } from './buildContext';
 import { dirtyChunkCount } from './chunkBudget';
@@ -568,9 +569,60 @@ export class AerialDriver {
       host: aerialSupportOf(record),
       faces,
       maxOverhang: this.terraceOverhang(),
+      minOverhang: this.terraceDepth(record),
       ground: this.probe.ground,
       solid: this.probe.solid,
     });
+  }
+
+  /**
+   * Lo sporto minimo: quello di un balcone, o quello di un capolinea.
+   *
+   * **E' la meta' della rete che riguarda le stazioni, ed e' l'unica riga di
+   * questo dominio che guarda *quale* strada.** Un percorso corre lungo la
+   * carreggiata e atterra sul **fianco** della mensola: li' la misura utile e' lo
+   * sporto, non la corsa, e uno sporto piu' stretto del passaggio non ha dove
+   * farlo posare. Misurato su una citta' cresciuta: 468 coppie di mensole su
+   * 2177 morivano tutte con quella causa sola — capo profondo tre, passaggio
+   * largo quattro — e sono esattamente quelle il cui corridoio avrebbe seguito
+   * la maglia stradale.
+   *
+   * **Solo sugli assi principali**, e la restrizione e' la regola, non una
+   * prudenza. Un asse secondario e' largo due voxel: una mensola profonda
+   * quattro lo attraversa tutto e va a sbattere nel fronte di fronte. Portando
+   * la profondita' a quattro **dappertutto**, la stessa fixture perde trentotto
+   * edifici e quarantaquattro mensole per guadagnare due percorsi. Un asse
+   * principale e' largo quanto un passaggio (`STREETS.arterialWidth`, quattro),
+   * e li' la profondita' non toglie niente a nessuno: e' la sola larghezza di
+   * carreggiata che una linea possa seguire, ed e' per questo che la rete in
+   * quota nasce sopra le arterie e non sopra il reticolo intero.
+   */
+  private terraceDepth(record: BuildingRecord): number | undefined {
+    return this.frontsArterial(record) ? AERIAL.route.walkWidth : undefined;
+  }
+
+  /** true se davanti al fronte di questo edificio passa un asse principale. */
+  private frontsArterial(record: BuildingRecord): boolean {
+    const { facing } = record;
+    if (facing === undefined) return false;
+    const depth = footprintDepth(record);
+    const alongY = facing === FACING.east || facing === FACING.west;
+    const wall = facing === FACING.east
+      ? record.x + record.footprint
+      : facing === FACING.west
+        ? record.x - 1
+        : facing === FACING.north
+          ? record.y + depth
+          : record.y - 1;
+    const span = alongY ? depth : record.footprint;
+    const base = alongY ? record.y : record.x;
+    for (let d = 0; d < span; d++) {
+      const role = alongY
+        ? this.ctx.streets.roleAt(wall, base + d)
+        : this.ctx.streets.roleAt(base + d, wall);
+      if (role === STREET_ROLE.arterial) return true;
+    }
+    return false;
   }
 
   /**

@@ -664,7 +664,73 @@ ordine di quanto costano:
 3. **Il lotto all'ombra si ricorda di essere all'ombra**: finché `occupied` non
    lascia traccia, ogni struttura in quota che attraversi il tessuto costa alla
    crescita una scansione per infornata, per sempre. È il difetto che rende
-   pericolosa *qualunque* rete in quota fitta, non solo questa.
+   pericolosa *qualunque* rete in quota fitta, non solo questa. Il rifiuto è
+   definitivo per un lotto **a terra** (`reject(..., plan !== null)`), e non lo è
+   per un candidato **in quota**: sono quelli, le quattromila scansioni.
+
+**La prima uscita è stata misurata fino in fondo, e si ferma.** Rifacendo il giro
+di `planRoute` su **tutte** le coppie di mensole ammissibili di una città
+cresciuta — 2 177 con la taratura di controllo — e non sulla sola migliore che
+`routePartner` sceglie, si vede dove ciascuna muore e quanto del suo corridoio
+corre davvero sopra l'asfalto:
+
+- **`noLanding` 468, e tutte con la stessa causa: un capo profondo tre.** È il
+  difetto più netto trovato in questa casella, ed è un errore di un voxel:
+  `AERIAL.terrace.minOverhang` valeva tre e `AERIAL.route.walkWidth` vale quattro.
+  Un tratto che corre **lungo** la strada atterra sul *fianco* della mensola, dove
+  la misura utile è lo sporto e non la corsa — e metà delle mensole di una città
+  era perciò esclusa dalla rete prima di qualunque verifica geometrica. Sono
+  esattamente le coppie il cui corridoio avrebbe seguito la maglia stradale.
+- **`tooSteep` 827, e non è il tetto di salita che si crede.** Duecentodiciassette
+  di quelle coppie hanno meno di sedici quote di dislivello, cioè due
+  pianerottoli su quattro: a rifiutarle è la **zeta**, che assorbe un solo salto
+  per angolo. `climbProfile` ha già il parametro `reserved` scritto e documentato
+  per questo caso — «una zeta ne spende due negli angoli» — e **nessuno lo passa**.
+- **`blocked` 353**, ed è il muro vero. Portando lo sporto minimo a quattro
+  dappertutto, i primi due rifiuti spariscono (`noLanding` e `badSeparation` vanno
+  a zero, i percorsi passano da 1 a 3) ma la città paga trentotto edifici e
+  quarantaquattro mensole: su una carreggiata secondaria, larga due, una mensola
+  profonda quattro l'attraversa tutta e va a sbattere nel fronte di fronte.
+
+Resta allora la sola forma per cui il corridoio potrebbe essere libero per
+costruzione: **l'asse principale, largo quattro come un passaggio**. Misurato lì,
+il verdetto è netto. Delle 267 coppie il cui corridoio corre sopra un'arteria,
+**nessuna regge**; e chiedendo al luogo la domanda più semplice possibile — non il
+percorso intero ma **un solo tratto piano, largo quanto il passaggio, appeso ai
+due capi** — passano **17 su 267**, tutte lunghe fra sei e venti colonne, cioè
+salti brevi e non linee. Delle diciassette, otto muoiono comunque su `blocked`
+perché il pianerottolo che il loro dislivello richiede è largo sei e non ci sta
+nella luce che hanno.
+
+**Il corridoio sopra la strada non è libero nemmeno sopra un'arteria**, e la
+ragione è il tessuto stesso: alla quota delle mensole, sopra la carreggiata, ci
+sono le *altre* mensole dello stesso fronte, profonde quanto quella da cui si
+parte. È il terzo accertamento indipendente dello stesso fatto, dopo la ricerca di
+percorso e il braccio con la regola del lotto — e chiude la prima uscita: seguire
+la maglia stradale non basta, perché a occupare la maglia è la rete stessa.
+
+Ne resta però **la metà che riguarda le stazioni, ed è stata costruita**: lo
+sporto minimo è un parametro (`TerraceQuery.minOverhang`, come `maxOverhang` lo è
+per la fase delle megastrutture), e `AerialDriver.terraceDepth` chiede la
+profondità da capolinea — `AERIAL.route.walkWidth` — **solo dove davanti c'è un
+asse principale**, cioè dove la carreggiata è larga abbastanza da portare una
+linea e la profondità non toglie niente a nessuno. Misurato: la città resta quella
+di prima (399 edifici, 156 mensole contro 153, una campata in meno per tre), e
+settantadue mensole di viale nascono profonde quanto il passaggio che un giorno ci
+atterrerà. Non produce percorsi da sola, e non è quello il suo mestiere: è la
+soglia che smette di escludere metà delle mensole dalla rete.
+
+Restano quindi due uscite, e la seconda è ora la sola con una speranza: **le
+mensole nascono a coppie affacciate**, cioè il capolinea si decide *prima*
+dell'aggetto. È la sola che risolve la causa vera invece di aggirarla — se la
+mensola nasce perché un percorso la vuole, non è più l'ostacolo di quel percorso.
+
+> **Il gate «si abita sopra la città» è rosso, e non da adesso.** Su
+> `Builder.test.ts` («la citta in quota») `stacked`, `routes` e `lifts` sono a
+> zero, e su `arcologyDriver.test.ts` cade «ospita usi diversi su quote diverse».
+> Verificato a bracci alternati: cadono **identici** con e senza la soglia di
+> capolinea qui sopra, quindi il rosso è anteriore. Le mensole ci sono ancora
+> (`terraces` passa); a mancare è chi ci sale e chi ci costruisce sopra.
 
 ### Fase 4.10 — Campionario dei voxel
 
