@@ -222,6 +222,21 @@ async function grow(page, ms, { answer = true } = {}) {
 }
 
 /**
+ * Ferma la citta' e sgombra il campo prima di inquadrare un pannello.
+ *
+ * Una carta evento arriva quando arriva, e in mezzo minuto a 4x ne arriva quasi
+ * sempre una: il selettore dei temi e il cassetto delle politiche se la sono
+ * ritrovata sopra, in alto a destra, in scatti il cui soggetto era un altro.
+ * Rispondere non basta da solo — a simulazione viva ne nasce un'altra mentre si
+ * apre il pannello — quindi prima si mette in pausa e poi si risponde.
+ */
+async function stillCity(page) {
+  await page.getByRole('button', { name: /Pause simulation/i }).click();
+  await answerDecision(page);
+  await page.waitForTimeout(500);
+}
+
+/**
  * I pannelli di debug sono `<details>` e nascono chiusi: la riga di riepilogo
  * da sola non mostra nulla di cio' che l'harness misura davvero.
  */
@@ -352,8 +367,8 @@ async function pickInspectView(page, label) {
  * Si legge da `textContent` e non da `innerText` apposta: quella riga sta dentro
  * un `<details>` chiuso, e a schermo non c'e'.
  */
-async function findRoadSpot(page, cx, cy) {
-  for (let r = 0; r <= 300; r += 22) {
+async function findRoadSpot(page, cx, cy, { maxRadius = 300 } = {}) {
+  for (let r = 0; r <= maxRadius; r += 22) {
     for (let a = 0; a < 360; a += 20) {
       const x = Math.round(cx + r * Math.cos((a * Math.PI) / 180));
       const y = Math.round(cy + r * Math.sin((a * Math.PI) / 180) * 0.6);
@@ -363,6 +378,15 @@ async function findRoadSpot(page, cx, cy) {
       const road = await page.evaluate(() => {
         const panel = document.querySelector('.selection-panel');
         if (panel === null || panel.hidden) return false;
+        // **Il ruolo e' dell'isolato, la carreggiata e' della colonna.** Un
+        // isolato «arterial road» contiene anche le case che vi si affacciano:
+        // chiedere il solo ruolo faceva posare l'occhio su un tetto, tre voxel
+        // sopra la gronda, e lo scatto veniva due terzi di cielo. La colonna
+        // giusta e' quella che **non** ha una struttura sopra.
+        const structure = [...panel.querySelectorAll('.selection-card')].some(
+          (card) => card.querySelector('.selection-card-eyebrow')?.textContent === 'Structure',
+        );
+        if (structure) return false;
         return /arterial road|minor road/.test(panel.textContent ?? '');
       });
       if (road) return { x, y };
@@ -521,6 +545,7 @@ export default {
       alt: 'Placement marker on a voxel city with a card listing cost, influence radius and the building typologies the site can grow',
       async prepare(page) {
         await seedCity(page, { growMs: 45000 });
+        await stillCity(page);
         await pickTool(page, 'Port');
         const spot = await findLand(page, ISLAND.x + 150, ISLAND.y + 120, { allowQuay: true });
         if (spot !== null) {
@@ -534,8 +559,8 @@ export default {
       path: '/?play=1&seed=1337&season=0.375',
       timeoutMs: 300000,
       shows:
-        'una carta evento della simulazione: la citta ha esaurito le scorte e chiede una scelta, con le tre risposte e il loro costo',
-      alt: 'A decision card asking how to respond to a food shortage, with three options, over the voxel city',
+        'una carta evento della simulazione: la citta chiede dove dirigere il prossimo investimento, con le tre risposte e cio che ognuna fa al tessuto, piu il rinvio',
+      alt: 'A decision card asking where to direct the city investment, with three options and what each does, over the voxel city',
       async prepare(page) {
         // Nessuna risposta automatica: la carta arriva quando le scorte non
         // coprono piu' i residenti, quindi serve una citta' gia' popolosa — e
@@ -554,6 +579,7 @@ export default {
       alt: 'Side drawer with city policies and trade strategies open over the city',
       async prepare(page) {
         await seedCity(page, { growMs: 45000 });
+        await stillCity(page);
         await parkPointer(page);
         await page.getByRole('button', { name: /^Policies/i }).click();
         await page.waitForSelector('.policies-drawer:not([hidden])', { timeout: 15000 });
@@ -569,6 +595,7 @@ export default {
       alt: 'The same voxel city rendered in a neon night palette, next to the theme picker listing the available looks',
       async prepare(page) {
         await seedCity(page, { growMs: 45000 });
+        await stillCity(page);
         await parkPointer(page);
         await page.getByRole('button', { name: /Change visual theme/i }).click();
         await page.waitForSelector('.theme-picker:not([hidden])', { timeout: 15000 });
@@ -654,7 +681,13 @@ export default {
         'il tracciato stradale che la citta si e data: un tronco largo che entra nel centro, i viali che lo alimentano e i vicoli da un voxel fra le case, con il percorso deciso dal rilievo invece che da un reticolo',
       alt: 'Voxel city seen from above with a dark wide artery running into the centre, narrower streets branching off it and thin lanes between the blocks',
       async prepare(page) {
-        await seedCity(page, { growMs: 75000 });
+        // **Senza extra, e non e' per risparmiare tempo.** Il porto apre il
+        // commercio esterno, e da li' in poi la citta' esplode: nove migliaia di
+        // residenti su quest'isola vogliono dire tessuto saldato da costa a
+        // costa, e la carreggiata sparisce sotto i tetti proprio nello scatto
+        // che esiste per mostrarla. Con i soli catalizzatori di base la citta'
+        // resta media e il tracciato si legge.
+        await seedCity(page, { growMs: 75000, extras: false });
         await mesherIdle(page);
         await parkPointer(page);
       },
@@ -668,7 +701,9 @@ export default {
         'la gerarchia da vicino: le quattro larghezze di carreggiata a confronto e il salto di tinta del tronco, con gli edifici affacciati sul fronte strada',
       alt: 'Close view of a voxel city block showing a wide dark road, medium streets and one-voxel lanes with buildings fronting them',
       async prepare(page) {
-        await seedCity(page, { growMs: 75000 });
+        // Stessa ragione di `10-road-network`: la gerarchia si vede solo dove la
+        // carreggiata e' ancora scoperta.
+        await seedCity(page, { growMs: 75000, extras: false });
         await mesherIdle(page);
         // In pausa: a 4x la citta continua a crescere mentre la camera scende,
         // e un rimescolamento a meta zoom sposta proprio cio che si inquadra.
@@ -752,13 +787,16 @@ export default {
           await page.waitForTimeout(150);
         }
         await page.waitForTimeout(1200);
-        // **Non al centro: sul bordo vicino alla camera.** Lo yaw di partenza a
-        // terra e' quello dell'isometrica (`setEye(x, y, z, yaw)`), quindi si
-        // guarda sempre verso il fondo dell'inquadratura. In mezzo alla citta'
-        // quella direzione e' il muro dell'isolato accanto, e il fotogramma
-        // diventa due campiture piatte — successo due volte. Posando l'occhio
-        // sotto il centro si guarda **dentro** la citta' invece che contro.
-        const spot = await findRoadSpot(page, ISLAND.x, ISLAND.y + 170);
+        // **Non al centro: sul margine della citta', dalla parte della camera.**
+        // Lo yaw a terra e' quello dell'isometrica (`setEye(x, y, z, yaw)`) e
+        // non si puo' scegliere: si guarda sempre verso il fondo
+        // dell'inquadratura. In mezzo al tessuto quella direzione e' il muro
+        // dell'isolato accanto — provato due volte, e il fotogramma viene due
+        // campiture piatte, poi una facciata e due terzi di cielo. Dal bordo
+        // meridionale si guarda invece **dentro** la citta', con il tessuto che
+        // sale davanti all'occhio.
+        const spot = (await findRoadSpot(page, ISLAND.x - 40, ISLAND.y + 300, { maxRadius: 150 }))
+          ?? (await findRoadSpot(page, ISLAND.x, ISLAND.y + 170));
         if (spot === null) throw new Error('nessuna carreggiata sotto la spirale di click');
         if (!(await descendToStreet(page, spot.x, spot.y))) {
           throw new Error('la discesa a terra ha rifiutato la carreggiata trovata');
@@ -822,6 +860,7 @@ export default {
       alt: 'Side drawer with the city dashboard: population, use mix, needs per class and open goals',
       async prepare(page) {
         await seedCity(page, { growMs: 60000 });
+        await stillCity(page);
         await parkPointer(page);
         await page.getByRole('button', { name: /^City/i }).click();
         await page.waitForSelector('.city-drawer:not([hidden])', { timeout: 15000 });
