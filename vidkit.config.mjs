@@ -84,10 +84,31 @@ async function frameIsland(page, steps = 8) {
   await page.waitForTimeout(1500);
 }
 
-/** Ferma l'orologio: due riprese dello stesso soggetto con due luci diverse non si montano. */
-async function pinDaylight(page) {
-  await page.keyboard.press('KeyL');
-  await page.waitForTimeout(1000);
+/**
+ * Modo del giorno in vigore: `Auto`, `Day` o `Night`.
+ *
+ * Il bottone lo dichiara nel proprio `aria-label` (`daylightControl`), ed e'
+ * l'unico modo onesto di saperlo: `L` **cicla**, quindi contare le pressioni
+ * presuppone di sapere da dove si parte. Contandole, la scena dei temi faceva
+ * ciclo → giorno → notte → **ciclo** e finiva con l'orologio ripartito, sopra
+ * una citta' che nel frattempo era diventata nera.
+ */
+async function daylightMode(page) {
+  const label = await page
+    .locator('[aria-label^="Daylight:"]')
+    .first()
+    .getAttribute('aria-label');
+  return /^Daylight: (\w+)/.exec(label ?? '')?.[1] ?? 'Auto';
+}
+
+/** Porta l'orologio sul modo voluto premendo `L`, e si ferma quando ci e' arrivato. */
+async function setDaylight(page, want, press = (p) => p.keyboard.press('KeyL')) {
+  for (let i = 0; i < 3; i++) {
+    if ((await daylightMode(page)) === want) return true;
+    await press(page);
+    await page.waitForTimeout(900);
+  }
+  return (await daylightMode(page)) === want;
 }
 
 async function pickTool(page, name) {
@@ -220,6 +241,18 @@ async function mesherIdle(page, timeout = 120000) {
  * spirale **fuori camera** e poi ripetere un clic solo davanti all'obiettivo e'
  * la differenza fra una selezione e venti clic a vuoto in campo.
  */
+/** Titolo e sezioni della scheda di selezione, o `null` se non e' aperta. */
+async function selectionDump(page) {
+  return page.evaluate(() => {
+    const panel = document.querySelector('.selection-panel');
+    if (panel === null || panel.hidden) return null;
+    return {
+      title: panel.querySelector('.selection-title')?.textContent ?? '',
+      eyebrows: [...panel.querySelectorAll('.selection-card-eyebrow')].map((el) => el.textContent),
+    };
+  });
+}
+
 async function findBuilding(page, cx, cy) {
   for (let r = 0; r <= 260; r += 26) {
     for (let a = 0; a < 360; a += 30) {
@@ -228,14 +261,8 @@ async function findBuilding(page, cx, cy) {
       if (x < 60 || x > 1080 || y < 130 || y > 790) continue;
       await page.mouse.click(x, y);
       await page.waitForTimeout(180);
-      const picked = await page.evaluate(() => {
-        const panel = document.querySelector('.selection-panel');
-        if (panel === null || panel.hidden) return null;
-        const card = [...panel.querySelectorAll('.selection-card')].find(
-          (el) => el.querySelector('.selection-card-eyebrow')?.textContent === 'Structure',
-        );
-        return card === undefined ? null : (panel.querySelector('.selection-title')?.textContent ?? '');
-      });
+      const dump = await selectionDump(page);
+      const picked = dump !== null && dump.eyebrows.includes('Structure') ? dump.title : null;
       if (picked !== null) {
         // La scheda si richiude dal suo bottone dichiarato, non dal primo
         // `button` che capita: il pannello ne ha molti, e il primo e' un'azione
@@ -255,7 +282,10 @@ async function seedCity(page, { growMs = 40000, extras = true, answer = true } =
   await enterGame(page);
   await terrainReady(page);
   await frameIsland(page);
-  await pinDaylight(page);
+  // Orologio fermo sul giorno: il sole avanza da solo (un giorno di gioco dura
+  // sei minuti reali) e due scene riprese a minuti di distanza arriverebbero con
+  // due luci diverse.
+  await setDaylight(page, 'Day');
   await placeCatalyst(page, 'Market', ISLAND.x - 20, ISLAND.y - 10);
   await placeCatalyst(page, 'Factory', ISLAND.x + 110, ISLAND.y + 45);
   await placeCatalyst(page, 'Park', ISLAND.x - 110, ISLAND.y + 45);
@@ -363,12 +393,14 @@ export default {
         'il piazzamento: si sceglie uno strumento dal dock, il segnaposto 3D segue il terreno e il cartellino pesa il sito — costo, raggio di influenza, tipologie che possono nascerne',
       async prepare(page) {
         await seedCity(page, { growMs: 30000 });
-        // **A 1×, o il sito scelto non sopravvive alla ripresa.** Fra il momento
-        // in cui `findLand` valida un punto e il clic passano i quattro secondi
-        // in cui la carta resta in campo a farsi leggere: a 4× la simulazione ci
-        // costruisce sopra, il clic viene rifiutato e la clip finisce con lo
-        // strumento ancora in mano. E' successo, e non lascia un errore.
-        await setSpeed(page, 1);
+        // **In pausa, e 1× non basta.** Fra il momento in cui `findLand` valida
+        // un punto e il clic passano quattro secondi e mezzo: `v.caption` blocca
+        // per tutta la sua durata, e la carta deve restare in campo a farsi
+        // leggere. In quel tempo la simulazione costruisce sul sito scelto — la
+        // sonda ha visto le celle occupate passare dal 44% al 49% in poco piu'
+        // di un secondo — il clic viene rifiutato, e la clip finisce con lo
+        // strumento ancora in mano. Nessun errore, nessun avviso.
+        await page.getByRole('button', { name: /Pause simulation/i }).click();
         await parkPointer(page, { escape: false });
       },
       async act(page, v) {
@@ -397,8 +429,13 @@ export default {
             await page.waitForTimeout(700);
           }
         }
+        console.log('    [02] strumento posato:', (await cursorState(page)) === null);
+        // La citta' riparte: la frase sotto dev'essere vera mentre la si legge,
+        // e l'orologio era fermo dalla prepare per proteggere il sito.
+        await page.getByRole('button', { name: /Resume simulation/i }).click();
+        await parkPointer(page, { escape: false });
         await v.caption('Placed — the neighbourhood starts to want things');
-        await v.beat(2400);
+        await v.beat(3000);
       },
     },
 
@@ -465,16 +502,35 @@ export default {
         await mesherIdle(page);
         const picked = await findBuilding(page, ISLAND.x, ISLAND.y);
         if (picked === null) throw new Error('nessuna struttura sotto la spirale di clic');
+        console.log('    [04] trovato in prepare:', JSON.stringify(picked));
         this.spot = picked;
         await parkPointer(page, { escape: false });
       },
       async act(page, v) {
         const spot = this.spot ?? ISLAND;
+        console.log('    [04] atteso:', JSON.stringify(spot));
         await v.caption('Click any building');
         await page.mouse.move(spot.x, spot.y, { steps: 22 });
         await page.waitForTimeout(400);
         await page.mouse.click(spot.x, spot.y);
         await v.wait('.selection-panel:not([hidden])');
+        // **Verifica, non fiducia.** Un clic a mani vuote apre la scheda anche
+        // sull'asfalto, e li' mancano proprio le righe che valgono la clip: la
+        // presa precedente si e' chiusa su «nothing can grow — the ground
+        // refuses every use» senza un errore. Se sotto non c'e' una struttura si
+        // ricerca e si riclicca: qualche clic in campo e' meno peggio di una
+        // scena che spiega il vuoto.
+        let dump = await selectionDump(page);
+        console.log('    [04] al primo clic:', JSON.stringify(dump));
+        if (dump === null || !dump.eyebrows.includes('Structure')) {
+          const again = await findBuilding(page, spot.x, spot.y);
+          if (again !== null) {
+            await page.mouse.click(again.x, again.y);
+            await page.waitForTimeout(500);
+            dump = await selectionDump(page);
+          }
+          console.log('    [04] dopo il recupero:', JSON.stringify(dump));
+        }
         await v.beat(2600);
         await v.caption('What it is, what it needs to grow, and the ground it stands on');
         await v.scrollBy(320);
@@ -501,15 +557,26 @@ export default {
         // Il tema si chiama **Night Neon**, non «Neon»: l'etichetta e'
         // `Use ${theme.name} theme` e il nome vive in `src/engine/themes/neon.ts`.
         await v.click('Use Night Neon theme');
-        await v.beat(2600);
+        await v.beat(2400);
         await page.keyboard.press('Escape');
         await parkPointer(page, { escape: false });
-        // `L` cicla ciclo → giorno fisso → notte fissa: due pressioni dal ciclo
-        // arrivano alla notte, che e' l'ora in cui `neon` si legge davvero.
-        await v.press('KeyL');
-        await v.press('KeyL');
+        // **Ci si avvicina prima di spegnere la luce.** A pieno campo la notte
+        // neon e' quasi nera: le finestre accese sono un pixel l'una e la presa
+        // precedente si chiudeva su sei riquadri di buio. Da vicino gli
+        // emissivi sono il soggetto invece di un dettaglio perso.
+        await page.mouse.move(ISLAND.x, ISLAND.y);
+        for (let i = 0; i < 5; i++) {
+          await page.mouse.wheel(0, -500);
+          await page.waitForTimeout(180);
+        }
+        await parkPointer(page, { escape: false });
+        await v.beat(1200);
+        // Non si contano le pressioni: `L` cicla, e `seedCity` ne ha gia' spesa
+        // una per fermare il sole sul giorno.
+        const night = await setDaylight(page, 'Night', (p) => v.press('KeyL'));
+        console.log('    [05] notte raggiunta:', night, '·', await daylightMode(page));
         await v.caption('Night is a real hour, not a filter — light, fog, water and emissives follow');
-        await v.beat(3200);
+        await v.beat(3400);
       },
     },
   ],
