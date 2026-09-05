@@ -624,6 +624,48 @@ il giro di `routePass` su **ogni** compagno di un piazzale d'arcologia — non s
 sul migliore — nessuna delle trentaquattro coppie regge, e il colmo dei corridoi
 misurati sta fra 161 e 238 quote. Il dettaglio sta in fondo alla 4.14.
 
+**La ricerca di percorso è stata scritta, provata e ritirata**, ed è il terzo
+tentativo che questa casella ha visto. Un A\* deterministico sui pianerottoli —
+puro come il resto di `aerial/`, con lo scorrimento del nodo che `placeHubs` ha
+già, un tetto di espansioni e un rettangolo di ricerca — trova davvero ciò che le
+tre forme non sanno fare: nove test in ambiente `node` lo mostrano aggirare una
+torre e salire un dislivello che la zeta non assorbe. Su una città cresciuta,
+misurato a bracci alternati nello stesso processo e con lo stesso seme, il
+risultato è però questo:
+
+- **con la ricerca libera**: i percorsi passano da 1 a 16, e la città **crolla** —
+  gli edifici posati scendono da 399 a 75, i rifiuti `occupied` salgono da 301 a
+  3.980. La causa è una regola che esisteva già e che nessuno vedeva: un edificio
+  il cui volume incontra qualcosa **sopra** di sé è rifiutato con `occupied` e di
+  proposito **non finisce in blacklist** («la colonna resta buona al suolo»).
+  Con un percorso solo non si nota; con sedici, ogni colonna alla loro ombra
+  torna candidata a ogni infornata e non diventa mai niente. Le colonne
+  ombreggiate erano circa quattromila, cioè esattamente quel numero.
+- **con la regola che lo vieta** — un tratto non si stende sopra un lotto ancora
+  costruibile, né per intero né per più di metà del proprio riquadro — la città
+  resta identica al controllo, **e i percorsi tornano a essere uno**. Il pathfinder
+  non trova più niente.
+
+I due bracci insieme dicono una cosa sola, e non è una taratura: **in una città
+matura non esiste un corridoio libero alla quota delle mensole**, se non sopra la
+carreggiata. E la carreggiata secondaria è larga due, mentre una passerella è
+larga quattro e un pianerottolo è sei per sei: la rete, così com'è
+dimensionata, non entra nella città che dovrebbe servire. Le tre uscite, in
+ordine di quanto costano:
+
+1. **La rete segue la maglia stradale** invece di un reticolo proprio: i tratti
+   corrono sopra la carreggiata e i pianerottoli si posano sui tetti che la
+   fiancheggiano, che è come funziona uno skyway vero. È la sola forma per cui il
+   corridoio è libero **per costruzione**, e sposta il problema da «cercare un
+   varco» a «seguire una strada».
+2. **Le mensole nascono a coppie affacciate** invece che una per ospite: si
+   decide il capolinea prima dell'aggetto, e il tratto dritto entra senza che
+   nessuna soglia cambi.
+3. **Il lotto all'ombra si ricorda di essere all'ombra**: finché `occupied` non
+   lascia traccia, ogni struttura in quota che attraversi il tessuto costa alla
+   crescita una scansione per infornata, per sempre. È il difetto che rende
+   pericolosa *qualunque* rete in quota fitta, non solo questa.
+
 ### Fase 4.10 — Campionario dei voxel
 
 Obiettivo: poter guardare tutto il vocabolario visuale in una sola inquadratura
