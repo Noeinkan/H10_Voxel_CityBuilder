@@ -367,9 +367,9 @@ async function pickInspectView(page, label) {
  * Si legge da `textContent` e non da `innerText` apposta: quella riga sta dentro
  * un `<details>` chiuso, e a schermo non c'e'.
  */
-async function findRoadSpot(page, cx, cy, { maxRadius = 300 } = {}) {
-  for (let r = 0; r <= maxRadius; r += 22) {
-    for (let a = 0; a < 360; a += 20) {
+async function findRoadSpot(page, cx, cy, { maxRadius = 300, step = 22, arc = 20 } = {}) {
+  for (let r = 0; r <= maxRadius; r += step) {
+    for (let a = 0; a < 360; a += arc) {
       const x = Math.round(cx + r * Math.cos((a * Math.PI) / 180));
       const y = Math.round(cy + r * Math.sin((a * Math.PI) / 180) * 0.6);
       if (x < 120 || x > 1080 || y < 180 || y > 740) continue;
@@ -546,8 +546,14 @@ export default {
       async prepare(page) {
         await seedCity(page, { growMs: 45000 });
         await stillCity(page);
-        await pickTool(page, 'Port');
-        const spot = await findLand(page, ISLAND.x + 150, ISLAND.y + 120, { allowQuay: true });
+        // **Transit e non piu' Port.** Da quando `seedCity` piazza gia' un porto
+        // sulla costa, il secondo cartellino veniva rosso — «This link has to
+        // reach the sea» — e uno scatto che esiste per mostrare un piazzamento
+        // valido finiva col mostrare un rifiuto. Il transito e' anche cio' che il
+        // coach chiede in quel punto della partita, quindi il cartellino esce
+        // pieno: costo, portata, usi favoriti e tipologie che ne possono nascere.
+        await pickTool(page, 'Transit');
+        const spot = await findLand(page, ISLAND.x + 60, ISLAND.y + 90);
         if (spot !== null) {
           await page.mouse.move(spot.x, spot.y);
           await page.waitForTimeout(800);
@@ -681,13 +687,14 @@ export default {
         'il tracciato stradale che la citta si e data: un tronco largo che entra nel centro, i viali che lo alimentano e i vicoli da un voxel fra le case, con il percorso deciso dal rilievo invece che da un reticolo',
       alt: 'Voxel city seen from above with a dark wide artery running into the centre, narrower streets branching off it and thin lanes between the blocks',
       async prepare(page) {
-        // **Senza extra, e non e' per risparmiare tempo.** Il porto apre il
-        // commercio esterno, e da li' in poi la citta' esplode: nove migliaia di
-        // residenti su quest'isola vogliono dire tessuto saldato da costa a
-        // costa, e la carreggiata sparisce sotto i tetti proprio nello scatto
-        // che esiste per mostrarla. Con i soli catalizzatori di base la citta'
-        // resta media e il tracciato si legge.
-        await seedCity(page, { growMs: 75000, extras: false });
+        // **Meno crescita, e non e' per risparmiare tempo.** Il porto apre il
+        // commercio esterno e da li' la citta' esplode: a 75 s sono novemila
+        // residenti e tessuto saldato da costa a costa, con la carreggiata
+        // sparita sotto i tetti proprio nello scatto che esiste per mostrarla.
+        // Togliere gli extra la rimpicciolisce ma toglie anche il porto, e
+        // allora torna la carestia in rosso sotto la citta': la via di mezzo e'
+        // tenerli e fermarsi prima.
+        await seedCity(page, { growMs: 40000 });
         await mesherIdle(page);
         await parkPointer(page);
       },
@@ -703,7 +710,7 @@ export default {
       async prepare(page) {
         // Stessa ragione di `10-road-network`: la gerarchia si vede solo dove la
         // carreggiata e' ancora scoperta.
-        await seedCity(page, { growMs: 75000, extras: false });
+        await seedCity(page, { growMs: 40000 });
         await mesherIdle(page);
         // In pausa: a 4x la citta continua a crescere mentre la camera scende,
         // e un rimescolamento a meta zoom sposta proprio cio che si inquadra.
@@ -775,18 +782,26 @@ export default {
         'la discesa a terra: la stessa citta dal ciglio di una sua strada, in prospettiva invece che in assonometria, con la targa che dice come si risale',
       alt: 'First-person view from a street inside the voxel city, buildings rising on both sides',
       async prepare(page) {
-        await seedCity(page, { growMs: 60000 });
+        // **Senza extra, come i due scatti della strada.** Con il porto la citta'
+        // arriva a novemila residenti e il tessuto si salda: la spirale non trova
+        // piu' **nessuna** colonna di carreggiata scoperta — provato, e lo scatto
+        // e' fallito proprio cosi'. E un occhio posato dove non c'e' strada non
+        // avrebbe comunque una via da guardare.
+        await seedCity(page, { growMs: 60000, extras: false });
         await page.getByRole('button', { name: /Pause simulation/i }).click();
         await answerDecision(page);
         await parkPointer(page);
-        // Da vicino, ma non troppo: a pieno campo una colonna e' un pixel e la
-        // spirale non distingue la carreggiata dal tetto che le sta accanto.
+        // **Molto da vicino, o la spirale non trova mai la strada.** Un vicolo e'
+        // largo un voxel: a mezzo campo sono due pixel, e ogni clic della spirale
+        // cadeva su un edificio — la ricerca falliva del tutto, due volte. Sette
+        // scatti di rotella portano la carreggiata a una decina di pixel, e il
+        // passo della spirale scende di conseguenza.
         await page.mouse.move(ISLAND.x, ISLAND.y);
-        for (let i = 0; i < 4; i++) {
+        for (let i = 0; i < 7; i++) {
           await page.mouse.wheel(0, -500);
           await page.waitForTimeout(150);
         }
-        await page.waitForTimeout(1200);
+        await page.waitForTimeout(1500);
         // **Non al centro: sul margine della citta', dalla parte della camera.**
         // Lo yaw a terra e' quello dell'isometrica (`setEye(x, y, z, yaw)`) e
         // non si puo' scegliere: si guarda sempre verso il fondo
@@ -795,8 +810,12 @@ export default {
         // campiture piatte, poi una facciata e due terzi di cielo. Dal bordo
         // meridionale si guarda invece **dentro** la citta', con il tessuto che
         // sale davanti all'occhio.
-        const spot = (await findRoadSpot(page, ISLAND.x - 40, ISLAND.y + 300, { maxRadius: 150 }))
-          ?? (await findRoadSpot(page, ISLAND.x, ISLAND.y + 170));
+        // Il raggio resta corto apposta: a passo 12 e arco 15 una spirale da 200
+        // sono quattrocento clic, cioe' due minuti, e con la seconda origine lo
+        // scatto sfonderebbe il proprio `timeoutMs`.
+        const fine = { maxRadius: 150, step: 12, arc: 15 };
+        const spot = (await findRoadSpot(page, ISLAND.x, ISLAND.y + 220, fine))
+          ?? (await findRoadSpot(page, ISLAND.x, ISLAND.y, fine));
         if (spot === null) throw new Error('nessuna carreggiata sotto la spirale di click');
         if (!(await descendToStreet(page, spot.x, spot.y))) {
           throw new Error('la discesa a terra ha rifiutato la carreggiata trovata');
