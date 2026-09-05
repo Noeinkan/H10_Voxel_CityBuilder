@@ -46,8 +46,8 @@ const ISLAND = { x: 720, y: 430 };
  * affatto. Aspettare `.title-button--primary` dove non comparira' mai e' quattro
  * minuti di timeout, ed e' cosi' che l'intero set si e' fermato al primo scatto.
  *
- * Il ramo del titolo resta perche' un indirizzo senza `play=1` — `10-road-network`
- * e `11-road-hierarchy` — ci passa ancora. Li' il bottone grande e' `Play` a mani
+ * Il ramo del titolo resta perche' un indirizzo senza `play=1` — `10-city-turned`
+ * e `11-fabric-close` — ci passa ancora. Li' il bottone grande e' `Play` a mani
  * vuote e `Continue` quando c'e' qualcosa da riprendere: si clicca quello, senza
  * sapere quale dei due sia.
  */
@@ -679,13 +679,13 @@ export default {
       },
     },
     {
-      name: '10-road-network',
+      name: '10-city-turned',
       path: '/?seed=1337&intro=0&season=0.375',
       timeoutMs: 720000,
       settleMs: 3000,
       shows:
-        'il tracciato stradale che la citta si e data: un tronco largo che entra nel centro, i viali che lo alimentano e i vicoli da un voxel fra le case, con il percorso deciso dal rilievo invece che da un reticolo',
-      alt: 'Voxel city seen from above with a dark wide artery running into the centre, narrower streets branching off it and thin lanes between the blocks',
+        'la citta matura vista da un altro quarto: la camera gira di novanta gradi e la griglia isometrica si riaggancia, con il tessuto arrivato alla costa, i terrazzamenti coltivati e il porto che alimenta il commercio',
+      alt: 'The mature voxel city seen from a different quarter after a ninety degree camera turn, farmed terraces on the slopes and the port on the coast',
       async prepare(page) {
         // **Meno crescita, e non e' per risparmiare tempo.** Il porto apre il
         // commercio esterno e da li' la citta' esplode: a 75 s sono novemila
@@ -696,17 +696,36 @@ export default {
         // tenerli e fermarsi prima.
         await seedCity(page, { growMs: 40000 });
         await mesherIdle(page);
+        // **Questo scatto non mostra piu' il tracciato stradale, e la ragione
+        // merita di restare scritta.** A citta' cresciuta la carreggiata e' un
+        // filo fra i tetti, quindi la promessa vecchia — «un tronco largo che
+        // entra nel centro, i viali, i vicoli da un voxel» — nel fotogramma non
+        // c'era. Scoprirla con la vista `Levels` sembrava la mossa giusta e non
+        // lo e': un taglio mostra un **guscio vuoto**, perche' il mesher non
+        // emette facce interne e il tappo dalle back-face e' una campitura
+        // grigia uniforme. Sta scritto in `src/engine/AGENTS.md`, e provato due
+        // volte costa tre minuti. Il tracciato, se serve, si guarda da terra o
+        // in `?scene=city` prima che il tessuto lo copra.
+        //
+        // Resta il quarto di giro, che e' cio' che tiene questo scatto distinto
+        // da `01-city-overview`: `Q` gira attorno al punto di terra sotto al
+        // mouse, quindi il cursore va rimesso sull'isola prima o la rotazione
+        // prende il centro dell'inquadratura e la citta' esce di campo.
+        await page.mouse.move(ISLAND.x, ISLAND.y);
+        await page.keyboard.press('KeyQ');
+        await page.waitForTimeout(1500);
+        await mesherIdle(page);
         await parkPointer(page);
       },
     },
     {
-      name: '11-road-hierarchy',
+      name: '11-fabric-close',
       path: '/?seed=1337&intro=0&season=0.375',
       timeoutMs: 720000,
       settleMs: 3000,
       shows:
-        'la gerarchia da vicino: le quattro larghezze di carreggiata a confronto e il salto di tinta del tronco, con gli edifici affacciati sul fronte strada',
-      alt: 'Close view of a voxel city block showing a wide dark road, medium streets and one-voxel lanes with buildings fronting them',
+        'il tessuto da vicino: le fasce di altezza che la simulazione ha deciso isolato per isolato, i tetti verdi sui podi e le strade che passano fra gli isolati con gli edifici affacciati sul fronte',
+      alt: 'Close view of the dense voxel city: towers and low blocks side by side, green roofs on the podiums, streets running between the blocks',
       async prepare(page) {
         // Stessa ragione di `10-road-network`: la gerarchia si vede solo dove la
         // carreggiata e' ancora scoperta.
@@ -773,63 +792,27 @@ export default {
         await parkPointer(page, { escape: false });
       },
     },
-    {
-      name: '13-street-eye',
-      path: '/?play=1&seed=1337&season=0.375',
-      timeoutMs: 360000,
-      settleMs: 3000,
-      shows:
-        'la discesa a terra: la stessa citta dal ciglio di una sua strada, in prospettiva invece che in assonometria, con la targa che dice come si risale',
-      alt: 'First-person view from a street inside the voxel city, buildings rising on both sides',
-      async prepare(page) {
-        // **Senza extra, come i due scatti della strada.** Con il porto la citta'
-        // arriva a novemila residenti e il tessuto si salda: la spirale non trova
-        // piu' **nessuna** colonna di carreggiata scoperta — provato, e lo scatto
-        // e' fallito proprio cosi'. E un occhio posato dove non c'e' strada non
-        // avrebbe comunque una via da guardare.
-        await seedCity(page, { growMs: 60000, extras: false });
-        await page.getByRole('button', { name: /Pause simulation/i }).click();
-        await answerDecision(page);
-        await parkPointer(page);
-        // **Molto da vicino, o la spirale non trova mai la strada.** Un vicolo e'
-        // largo un voxel: a mezzo campo sono due pixel, e ogni clic della spirale
-        // cadeva su un edificio — la ricerca falliva del tutto, due volte. Sette
-        // scatti di rotella portano la carreggiata a una decina di pixel, e il
-        // passo della spirale scende di conseguenza.
-        await page.mouse.move(ISLAND.x, ISLAND.y);
-        for (let i = 0; i < 7; i++) {
-          await page.mouse.wheel(0, -500);
-          await page.waitForTimeout(150);
-        }
-        await page.waitForTimeout(1500);
-        // **Non al centro: sul margine della citta', dalla parte della camera.**
-        // Lo yaw a terra e' quello dell'isometrica (`setEye(x, y, z, yaw)`) e
-        // non si puo' scegliere: si guarda sempre verso il fondo
-        // dell'inquadratura. In mezzo al tessuto quella direzione e' il muro
-        // dell'isolato accanto — provato due volte, e il fotogramma viene due
-        // campiture piatte, poi una facciata e due terzi di cielo. Dal bordo
-        // meridionale si guarda invece **dentro** la citta', con il tessuto che
-        // sale davanti all'occhio.
-        // Il raggio resta corto apposta: a passo 12 e arco 15 una spirale da 200
-        // sono quattrocento clic, cioe' due minuti, e con la seconda origine lo
-        // scatto sfonderebbe il proprio `timeoutMs`.
-        const fine = { maxRadius: 150, step: 12, arc: 15 };
-        const spot = (await findRoadSpot(page, ISLAND.x, ISLAND.y + 220, fine))
-          ?? (await findRoadSpot(page, ISLAND.x, ISLAND.y, fine));
-        if (spot === null) throw new Error('nessuna carreggiata sotto la spirale di click');
-        if (!(await descendToStreet(page, spot.x, spot.y))) {
-          throw new Error('la discesa a terra ha rifiutato la carreggiata trovata');
-        }
-        // `F` a terra raddrizza l'orizzonte: la targa lo dice, e senza il piano
-        // dell'immagine resta inclinato di quanto lo era l'isometrica.
-        await page.keyboard.press('KeyF');
-        await page.waitForTimeout(1200);
-        // Niente `Escape`: da terra risalirebbe. Il puntatore si sposta e basta —
-        // la rotazione vuole il pointer lock, che un clic solo non prende.
-        await page.mouse.move(1418, 460);
-        await page.waitForTimeout(600);
-      },
-    },
+    // **La discesa a terra non e' in elenco, e non perche' sia rotta.**
+    // `O` piu' un clic funziona, `findRoadSpot` e `descendToStreet` qui sopra
+    // sono il pezzo che regge; quello che non regge e' inquadrarla alla cieca, e
+    // il perche' vale piu' dello scatto:
+    //
+    // - **lo yaw a terra non si sceglie.** `setEye(x, y, z, yaw)` eredita quello
+    //   dell'isometrica, e a terra si guarda quindi sempre verso il fondo
+    //   dell'inquadratura. In mezzo al tessuto quella direzione e' il muro
+    //   dell'isolato accanto: due tentativi, due fotogrammi di campiture piatte,
+    //   poi una facciata e due terzi di cielo. Girarsi vuole il pointer lock, che
+    //   un clic sintetico non prende;
+    // - **la colonna di carreggiata quasi non si becca.** Il ruolo che la scheda
+    //   scrive (`arterial road`, `minor road`) e' dell'**isolato**, che contiene
+    //   anche le case affacciate: chiedere il solo ruolo faceva posare l'occhio
+    //   su un tetto. Chiedere in piu' una colonna senza `Structure` e' corretto e
+    //   non trova nulla — un vicolo e' largo un voxel, e nemmeno a sette scatti
+    //   di rotella con spirale a passo 12 la spirale ci e' cascata sopra.
+    //
+    // Un essere umano sceglie il punto in un secondo. Se questo scatto serve, si
+    // fa a mano, o si aggiunge al gioco un modo di posare l'occhio guardando
+    // lungo la strada invece che di traverso.
     {
       name: '14-winter',
       path: '/?play=1&seed=1337&season=0.875',
