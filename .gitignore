@@ -22,8 +22,9 @@ Thumbs.db
 Desktop.ini
 $RECYCLE.BIN/
 
-# Screenshot del kit (generati, non di progetto)
+# Screenshot e video del kit (generati, non di progetto)
 .shots/
+.videos/
 
 # Stato locale di Kilo (piani, sessioni)
 .kilo/
