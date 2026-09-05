@@ -237,11 +237,11 @@ async function findBuilding(page, cx, cy) {
         return card === undefined ? null : (panel.querySelector('.selection-title')?.textContent ?? '');
       });
       if (picked !== null) {
-        // La scheda si richiude: il clic che la riapre e' quello che si filma.
-        await page.evaluate(() => {
-          document.querySelector('.selection-panel .drawer-close, .selection-panel button')?.click();
-        });
-        await page.waitForTimeout(200);
+        // La scheda si richiude dal suo bottone dichiarato, non dal primo
+        // `button` che capita: il pannello ne ha molti, e il primo e' un'azione
+        // sull'edificio. Il clic che la **riapre** e' quello che si filma.
+        await page.getByRole('button', { name: 'Clear selection' }).first().click();
+        await page.waitForTimeout(250);
         return { x, y, title: picked };
       }
       if (r === 0) break;
@@ -260,7 +260,9 @@ async function seedCity(page, { growMs = 40000, extras = true, answer = true } =
   await placeCatalyst(page, 'Factory', ISLAND.x + 110, ISLAND.y + 45);
   await placeCatalyst(page, 'Park', ISLAND.x - 110, ISLAND.y + 45);
   if (extras) {
-    await placeCatalyst(page, 'University', ISLAND.x + 30, ISLAND.y - 110);
+    // La serra non e' decorativa: senza, la citta' sfora le scorte e ogni clip
+    // si porta dietro la fascia rossa «Food shortage» dall'inizio alla fine.
+    await placeCatalyst(page, 'Greenhouse', ISLAND.x + 150, ISLAND.y - 60);
     await placeCatalyst(page, 'Monument', ISLAND.x - 60, ISLAND.y + 140);
   }
   await grow(page, growMs, { answer });
@@ -361,23 +363,40 @@ export default {
         'il piazzamento: si sceglie uno strumento dal dock, il segnaposto 3D segue il terreno e il cartellino pesa il sito — costo, raggio di influenza, tipologie che possono nascerne',
       async prepare(page) {
         await seedCity(page, { growMs: 30000 });
+        // **A 1×, o il sito scelto non sopravvive alla ripresa.** Fra il momento
+        // in cui `findLand` valida un punto e il clic passano i quattro secondi
+        // in cui la carta resta in campo a farsi leggere: a 4× la simulazione ci
+        // costruisce sopra, il clic viene rifiutato e la clip finisce con lo
+        // strumento ancora in mano. E' successo, e non lascia un errore.
+        await setSpeed(page, 1);
+        await parkPointer(page, { escape: false });
       },
       async act(page, v) {
-        await v.click('University');
         await v.caption('Pick a catalyst from the dock');
+        await v.click('University');
         // Il punto si cerca fuori camera: la spirale di `findLand` sarebbe venti
         // scatti del puntatore prima di trovare terra buona.
-        const spot = (await findLand(page, ISLAND.x + 40, ISLAND.y - 140)) ?? {
-          x: ISLAND.x,
-          y: ISLAND.y,
-        };
-        await page.mouse.move(spot.x - 130, spot.y + 90);
+        const spot = await findLand(page, ISLAND.x + 40, ISLAND.y - 140);
+        if (spot === null) throw new Error('nessun sito valido per il catalizzatore');
+        await page.mouse.move(spot.x - 140, spot.y + 100);
         await page.waitForTimeout(300);
         await page.mouse.move(spot.x, spot.y, { steps: 24 });
         await page.waitForTimeout(900);
         await v.caption('The card weighs the site: cost, reach, and what can grow here');
         await v.beat(2200);
         await page.mouse.click(spot.x, spot.y);
+        await page.waitForTimeout(700);
+        // Il cartellino sparisce quando lo strumento si posa: se e' ancora li',
+        // il sito si e' occupato mentre la carta era in campo. Un secondo
+        // tentativo davanti all'obiettivo e' meglio di una scena che si chiude
+        // senza aver piazzato niente.
+        if ((await cursorState(page)) !== null) {
+          const retry = await findLand(page, ISLAND.x + 40, ISLAND.y - 140);
+          if (retry !== null) {
+            await page.mouse.click(retry.x, retry.y);
+            await page.waitForTimeout(700);
+          }
+        }
         await v.caption('Placed — the neighbourhood starts to want things');
         await v.beat(2400);
       },
@@ -430,18 +449,23 @@ export default {
         await page.getByRole('button', { name: /Pause simulation/i }).click();
         await answerDecision(page);
         await page.waitForTimeout(400);
-        const picked = await findBuilding(page, ISLAND.x, ISLAND.y);
-        if (picked === null) throw new Error('nessuna struttura sotto la spirale di clic');
-        this.spot = picked;
-        // Lo zoom **non** tocca la selezione, e serve: a pieno campo un edificio
-        // e' sei colonne su un'isola da mille. La rotella va mandata sulla
-        // canvas — sopra un pannello la prende lui e la camera non si muove.
-        await page.mouse.move(picked.x, picked.y);
+        // **Prima la camera, poi la ricerca.** Cercare un edificio e *poi*
+        // avvicinare la camera sposta il mondo sotto le coordinate trovate: il
+        // clic in campo cadeva su un isolato vuoto e la scheda si apriva su
+        // «nothing can grow — the ground refuses every use». Nessun errore,
+        // nessun avviso, e la clip che spiega il gioco spiegava il vuoto.
+        // A pieno campo lo zoom serve comunque: un edificio e' sei colonne su
+        // un'isola da mille. La rotella va mandata **sulla canvas** — sopra un
+        // pannello la prende lui e la camera non si muove.
+        await page.mouse.move(ISLAND.x, ISLAND.y);
         for (let i = 0; i < 6; i++) {
           await page.mouse.wheel(0, -500);
           await page.waitForTimeout(150);
         }
         await mesherIdle(page);
+        const picked = await findBuilding(page, ISLAND.x, ISLAND.y);
+        if (picked === null) throw new Error('nessuna struttura sotto la spirale di clic');
+        this.spot = picked;
         await parkPointer(page, { escape: false });
       },
       async act(page, v) {
@@ -474,7 +498,9 @@ export default {
         await v.click('Change visual theme');
         await v.wait('.theme-picker:not([hidden])');
         await v.caption('Seven palettes, swapped without rebuilding a single chunk');
-        await v.click('Use Neon theme');
+        // Il tema si chiama **Night Neon**, non «Neon»: l'etichetta e'
+        // `Use ${theme.name} theme` e il nome vive in `src/engine/themes/neon.ts`.
+        await v.click('Use Night Neon theme');
         await v.beat(2600);
         await page.keyboard.press('Escape');
         await parkPointer(page, { escape: false });
