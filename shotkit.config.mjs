@@ -338,6 +338,41 @@ async function pickInspectView(page, label) {
 }
 
 /**
+ * Cerca una **carreggiata** sotto il cursore, e la trova dalla scheda di
+ * selezione.
+ *
+ * Serve alla discesa a terra, e la ragione e' che l'occhio si posa dove gli si
+ * dice: puntando un edificio si finisce dentro il muro, e il fotogramma diventa
+ * due campiture piatte. Non c'e' pero' nessun cartellino che dica «qui c'e' una
+ * strada» — `.cursor-card` esiste solo con uno strumento in mano, e dice del
+ * piazzamento, non del suolo. Lo dice invece la scheda: `SelectionPanelModel`
+ * scrive `This column` con il ruolo stradale dell'isolato
+ * (`arterial road`, `minor road`, `street frontage`, `block interior`).
+ *
+ * Si legge da `textContent` e non da `innerText` apposta: quella riga sta dentro
+ * un `<details>` chiuso, e a schermo non c'e'.
+ */
+async function findRoadSpot(page, cx, cy) {
+  for (let r = 0; r <= 300; r += 22) {
+    for (let a = 0; a < 360; a += 20) {
+      const x = Math.round(cx + r * Math.cos((a * Math.PI) / 180));
+      const y = Math.round(cy + r * Math.sin((a * Math.PI) / 180) * 0.6);
+      if (x < 120 || x > 1080 || y < 180 || y > 740) continue;
+      await page.mouse.click(x, y);
+      await page.waitForTimeout(140);
+      const road = await page.evaluate(() => {
+        const panel = document.querySelector('.selection-panel');
+        if (panel === null || panel.hidden) return false;
+        return /arterial road|minor road/.test(panel.textContent ?? '');
+      });
+      if (road) return { x, y };
+      if (r === 0) break;
+    }
+  }
+  return null;
+}
+
+/**
  * Scende a terra: `O` arma la discesa, il clic sceglie dove stare.
  *
  * `O` si preme **una volta sola**. Un rifiuto — acqua sotto il cursore, niente
@@ -346,30 +381,26 @@ async function pickInspectView(page, label) {
  * conferma e' la targa di strada: `.street-bar` esce da `hidden` solo a occhio
  * posato.
  */
-async function descendToStreet(page, cx, cy) {
+async function descendToStreet(page, x, y) {
   await page.keyboard.press('KeyO');
   await page.waitForTimeout(400);
-  for (let r = 0; r <= 260; r += 32) {
-    for (let a = 0; a < 360; a += 40) {
-      const x = Math.round(cx + r * Math.cos((a * Math.PI) / 180));
-      const y = Math.round(cy + r * Math.sin((a * Math.PI) / 180) * 0.6);
-      if (x < 120 || x > 1100 || y < 170 || y > 750) continue;
-      await page.mouse.click(x, y);
-      await page.waitForTimeout(900);
-      const down = await page.evaluate(() => {
-        const bar = document.querySelector('.street-bar');
-        return bar !== null && !bar.hidden;
-      });
-      // La discesa cambia profilo di qualita' e rifa' la shadow map: il primo
-      // frame a terra e' piu' scuro di quello dopo.
-      if (down) {
-        await page.waitForTimeout(2500);
-        return { x, y };
-      }
-      if (r === 0) break;
-    }
-  }
-  return null;
+  await page.mouse.click(x, y);
+  await page.waitForTimeout(1200);
+  const down = await page.evaluate(() => {
+    const bar = document.querySelector('.street-bar');
+    return bar !== null && !bar.hidden;
+  });
+  if (!down) return false;
+  // La scheda di selezione **non** se ne va da sola: `setStreetView` chiama
+  // `dismissPanels`, che e' roba di `GameHud`, e la scheda ha una radice sua.
+  await page.evaluate(() => {
+    const panel = document.querySelector('.selection-panel');
+    if (panel !== null && !panel.hidden) panel.querySelector('.selection-close')?.click();
+  });
+  // La discesa cambia profilo di qualita' e rifa' la shadow map al doppio della
+  // risoluzione: il primo frame a terra e' piu' scuro di quello dopo.
+  await page.waitForTimeout(2500);
+  return true;
 }
 
 /** Isola generata, catalizzatori piazzati, crescita avviata. */
@@ -380,26 +411,40 @@ async function seedCity(
   await enterGame(page, { freezeClock });
   await terrainReady(page);
   await frameIsland(page);
+  // **L'ordine e' il bilancio, non il gusto.** Si parte con 1.200 fondi, e tre
+  // catalizzatori li consumano: qualunque cosa stia al quarto posto trova la
+  // propria tessera disabilitata e `pickTool` la salta in silenzio. E' cosi' che
+  // la serra non e' mai entrata in nessuno scatto, e ogni fotogramma portava
+  // «Food shortage: the fields can't feed the city» in rosso sotto la citta'
+  // insieme a «Growth held back: not enough food» in cima.
+  //
+  // Il cibo va quindi **prima** dell'industria, e il resto entra dopo un tratto
+  // di crescita che ha rifatto cassa.
   await placeCatalyst(page, 'Market', ISLAND.x - 20, ISLAND.y - 10);
+  // La serra si toglie **solo** per lo scatto della carta evento: la carestia e'
+  // la decisione che arriva prima e piu' spesso, e una citta' sfamata puo'
+  // passare il minuto di crescita senza chiedere niente.
+  if (greenhouse) await placeCatalyst(page, 'Greenhouse', ISLAND.x - 150, ISLAND.y - 90);
+  const warmMs = Math.min(20000, Math.round(growMs / 3));
+  await grow(page, Math.round(warmMs / 2), { answer });
   await placeCatalyst(page, 'Factory', ISLAND.x + 110, ISLAND.y + 45);
   await placeCatalyst(page, 'Park', ISLAND.x - 110, ISLAND.y + 45);
-  // **La serra sta fra i primi e non fra gli extra: il freno vero e' il cibo.**
-  // Senza, la corsa si ferma sotto il centinaio di residenti con «Growth held
-  // back: not enough food» in cima all'HUD — e il fotogramma mostra un'isola
-  // quasi vuota qualunque sia il soggetto dello scatto.
-  //
-  // La si toglie **solo** per lo scatto della carta evento: la carestia e' la
-  // decisione che arriva prima e piu' spesso, e una citta' sfamata puo' passare
-  // il minuto di crescita senza chiedere niente.
-  if (greenhouse) await placeCatalyst(page, 'Greenhouse', ISLAND.x - 150, ISLAND.y - 90);
-  // Un primo tratto di crescita prima degli extra: i costi lievitano col
-  // bilancio, ma il bilancio di partenza sono 1.200 fondi — quattro catalizzatori
-  // li consumano, e University e Monument sarebbero disabilitati al primo giro.
-  const warmMs = Math.min(20000, Math.round(growMs / 3));
-  await grow(page, warmMs, { answer });
+  await grow(page, Math.round(warmMs / 2), { answer });
   if (extras) {
     // Gli extra restano facoltativi anche di fatto: a seconda del bilancio del
     // tick, uno di questi puo' essere ancora inaccessibile e `pickTool` lo salta.
+    // La seconda serra per prima, perche' una sola non basta a centoventi
+    // residenti — e la carestia e' un blemish in ogni scatto, non solo in quello
+    // che guarda le risorse.
+    if (greenhouse) await placeCatalyst(page, 'Greenhouse', ISLAND.x + 60, ISLAND.y + 170);
+    // Il porto e' il rimedio che il gioco stesso suggerisce nella scheda City —
+    // «A Port on the coast can cover part of the deficit» — e in piu' apre il
+    // commercio esterno, cioe' riempie la sezione Trade che senza dice soltanto
+    // «Build a Port or an Airport to unlock external trade». Vuole la banchina,
+    // che `findLand` scarta di default.
+    if (greenhouse) {
+      await placeCatalyst(page, 'Port', ISLAND.x + 280, ISLAND.y + 110, { allowQuay: true });
+    }
     await placeCatalyst(page, 'School', ISLAND.x + 150, ISLAND.y - 60);
     await placeCatalyst(page, 'University', ISLAND.x + 30, ISLAND.y - 110);
     await placeCatalyst(page, 'Monument', ISLAND.x - 60, ISLAND.y + 140);
@@ -442,13 +487,23 @@ export default {
     });
   },
 
-  // `play=1` su ogni indirizzo di gioco: dalla porta d'ingresso in poi il menu
-  // si apre a **ogni** caricamento, e finche' e' aperto la citta' e' ferma.
-  // Senza, ogni scatto partirebbe da un velo sopra un'isola che non cresce.
+  // `play=1` su ogni indirizzo di gioco: senza, ogni caricamento si apre sul
+  // menu d'ingresso, e finche' e' aperto la citta' e' ferma. Con, `boot.ts`
+  // importa la radice e basta — la schermata del titolo non nasce nemmeno.
+  //
+  // **`season=0.375` su ogni indirizzo, ed e' la riga che tiene insieme il
+  // set.** L'anno e' la seconda lancetta: dura 3600 tick e corre con la velocita'
+  // della simulazione, quindi un minuto a 4x ci arriva dentro. Lasciata libera,
+  // ogni scatto atterra nel mese che gli capita — misurato, `12-info-view` era
+  // finito a «Winter yield −29%» con il prato sbiancato dalla brina, accanto a
+  // scatti d'estate della stessa isola. A 0,375 e' pieno di estate, cioe' il tema
+  // per identita': il verde scritto in un tema **e'** il suo verde d'estate, e
+  // `withSeason` in quel punto non piega niente. L'unico a chiedere altro e'
+  // `14-winter`, che l'inverno lo mostra apposta.
   shots: [
     {
       name: '01-city-overview',
-      path: '/?play=1&seed=1337',
+      path: '/?play=1&seed=1337&season=0.375',
       timeoutMs: 300000,
       shows:
         'la citta cresciuta sull isola procedurale: strade, isolati e tipologie decise dalla simulazione, barra risorse in alto e dock di costruzione in basso',
@@ -459,7 +514,7 @@ export default {
     },
     {
       name: '02-placement-cursor',
-      path: '/?play=1&seed=1337',
+      path: '/?play=1&seed=1337&season=0.375',
       timeoutMs: 300000,
       shows:
         'lo strumento di piazzamento attivo: segnaposto 3D sul terreno e cartellino con costo pesato dal sito, raggio di influenza, usi favoriti e tipologie che possono nascerne',
@@ -476,7 +531,7 @@ export default {
     },
     {
       name: '03-event-decision',
-      path: '/?play=1&seed=1337',
+      path: '/?play=1&seed=1337&season=0.375',
       timeoutMs: 300000,
       shows:
         'una carta evento della simulazione: la citta ha esaurito le scorte e chiede una scelta, con le tre risposte e il loro costo',
@@ -492,7 +547,7 @@ export default {
     },
     {
       name: '04-policies-and-trade',
-      path: '/?play=1&seed=1337',
+      path: '/?play=1&seed=1337&season=0.375',
       timeoutMs: 300000,
       shows:
         'il cassetto delle politiche: leve attivabili e strategie di scambio, separate dalla dashboard della citta',
@@ -507,7 +562,7 @@ export default {
     },
     {
       name: '05-theme-neon',
-      path: '/?play=1&seed=1337&theme=neon',
+      path: '/?play=1&seed=1337&theme=neon&season=0.375',
       timeoutMs: 300000,
       shows:
         'lo stesso motore con un tema diverso: 32 colori e parametri di atmosfera scambiati a caldo, nessuna geometria rigenerata, con il selettore dei temi aperto',
@@ -522,7 +577,7 @@ export default {
     },
     {
       name: '06-debug-overlay',
-      path: '/?play=1&seed=1337&debug=1&grow=1',
+      path: '/?play=1&seed=1337&debug=1&grow=1&season=0.375',
       timeoutMs: 300000,
       shows:
         'l harness di misura: frame budget, draw call, triangoli, stato del mesher e del pool di worker accanto alle statistiche di crescita',
@@ -534,7 +589,7 @@ export default {
     },
     {
       name: '07-biome-map',
-      path: '/?debug=1&terrain=1337',
+      path: '/?debug=1&terrain=1337&season=0.375',
       timeoutMs: 300000,
       settleMs: 4000,
       shows:
@@ -560,7 +615,7 @@ export default {
     },
     {
       name: '09-selection-card',
-      path: '/?play=1&seed=1337',
+      path: '/?play=1&seed=1337&season=0.375',
       timeoutMs: 300000,
       shows:
         'la scheda di selezione aperta su un edificio: in cima la carta di cio che serve per crescere, poi struttura, isolato, colonna e voxel impilate nella stessa colonna scorrevole, e il contorno azzurro sull impronta nel mondo',
@@ -592,7 +647,7 @@ export default {
     },
     {
       name: '10-road-network',
-      path: '/?seed=1337&intro=0',
+      path: '/?seed=1337&intro=0&season=0.375',
       timeoutMs: 720000,
       settleMs: 3000,
       shows:
@@ -606,7 +661,7 @@ export default {
     },
     {
       name: '11-road-hierarchy',
-      path: '/?seed=1337&intro=0',
+      path: '/?seed=1337&intro=0&season=0.375',
       timeoutMs: 720000,
       settleMs: 3000,
       shows:
@@ -629,7 +684,7 @@ export default {
     },
     {
       name: '08-simulation-lab',
-      path: '/?play=1&seed=1337&debug=1&sim=1',
+      path: '/?play=1&seed=1337&debug=1&sim=1&season=0.375',
       timeoutMs: 300000,
       shows:
         'la scena di simulazione isolata: desiderabilita, candidati di costruzione classificati e leve di politica, senza il gioco attorno',
@@ -647,12 +702,12 @@ export default {
     },
     {
       name: '12-info-view',
-      path: '/?play=1&seed=1337',
+      path: '/?play=1&seed=1337&season=0.375',
       timeoutMs: 360000,
       settleMs: 3000,
       shows:
-        'una vista informativa accesa sopra la citta: ogni isolato tinto dal distretto a cui appartiene, con la legenda delle fasce e il dock che dice cosa si sta leggendo',
-      alt: 'Voxel city with a data overlay colouring each block by the district it belongs to, and a legend naming the bands',
+        'una vista informativa accesa sopra la citta: la densita di popolazione dipinta isolato per isolato, con la legenda delle fasce e il dock che dice cosa si sta leggendo',
+      alt: 'Voxel city with a data overlay colouring each block by how densely it is populated, and a legend naming the bands',
       async prepare(page) {
         await seedCity(page, { growMs: 75000 });
         // In pausa: la heatmap si rifa' solo quando il campo cambia, e a 4x
@@ -668,13 +723,17 @@ export default {
           await page.waitForTimeout(150);
         }
         await page.waitForTimeout(1200);
-        await pickInfoView(page, 'Districts');
+        // `Districts` era la scelta di prima e non regge lo scatto: i quartieri
+        // nascono dove le influenze dei landmark si sovrappongono, e su questa
+        // isola sono due macchie su una citta' altrimenti bianca. `Population`
+        // ha un valore per ogni isolato, quindi la heatmap copre davvero.
+        await pickInfoView(page, 'Population');
         await parkPointer(page, { escape: false });
       },
     },
     {
       name: '13-street-eye',
-      path: '/?play=1&seed=1337',
+      path: '/?play=1&seed=1337&season=0.375',
       timeoutMs: 360000,
       settleMs: 3000,
       shows:
@@ -685,16 +744,29 @@ export default {
         await page.getByRole('button', { name: /Pause simulation/i }).click();
         await answerDecision(page);
         await parkPointer(page);
-        // Da vicino: a pieno campo il raggio prende un tetto, e l'occhio finisce
-        // su una terrazza invece che sul marciapiede.
+        // Da vicino, ma non troppo: a pieno campo una colonna e' un pixel e la
+        // spirale non distingue la carreggiata dal tetto che le sta accanto.
         await page.mouse.move(ISLAND.x, ISLAND.y);
-        for (let i = 0; i < 5; i++) {
+        for (let i = 0; i < 4; i++) {
           await page.mouse.wheel(0, -500);
           await page.waitForTimeout(150);
         }
         await page.waitForTimeout(1200);
-        const eye = await descendToStreet(page, ISLAND.x, ISLAND.y);
-        if (eye === null) throw new Error('nessun punto dove posare l occhio');
+        // **Non al centro: sul bordo vicino alla camera.** Lo yaw di partenza a
+        // terra e' quello dell'isometrica (`setEye(x, y, z, yaw)`), quindi si
+        // guarda sempre verso il fondo dell'inquadratura. In mezzo alla citta'
+        // quella direzione e' il muro dell'isolato accanto, e il fotogramma
+        // diventa due campiture piatte — successo due volte. Posando l'occhio
+        // sotto il centro si guarda **dentro** la citta' invece che contro.
+        const spot = await findRoadSpot(page, ISLAND.x, ISLAND.y + 170);
+        if (spot === null) throw new Error('nessuna carreggiata sotto la spirale di click');
+        if (!(await descendToStreet(page, spot.x, spot.y))) {
+          throw new Error('la discesa a terra ha rifiutato la carreggiata trovata');
+        }
+        // `F` a terra raddrizza l'orizzonte: la targa lo dice, e senza il piano
+        // dell'immagine resta inclinato di quanto lo era l'isometrica.
+        await page.keyboard.press('KeyF');
+        await page.waitForTimeout(1200);
         // Niente `Escape`: da terra risalirebbe. Il puntatore si sposta e basta —
         // la rotazione vuole il pointer lock, che un clic solo non prende.
         await page.mouse.move(1418, 460);
@@ -717,7 +789,7 @@ export default {
     },
     {
       name: '15-cutaway',
-      path: '/?play=1&seed=1337',
+      path: '/?play=1&seed=1337&season=0.375',
       timeoutMs: 360000,
       settleMs: 3000,
       shows:
@@ -743,7 +815,7 @@ export default {
     },
     {
       name: '16-city-dashboard',
-      path: '/?play=1&seed=1337',
+      path: '/?play=1&seed=1337&season=0.375',
       timeoutMs: 360000,
       shows:
         'il cruscotto della citta: popolazione e mix degli usi, i bisogni per classe, gli obiettivi in corso e i mandati aperti, cioe il referto che la simulazione scrive su se stessa',
@@ -804,7 +876,7 @@ export default {
     },
     {
       name: '18-night-city',
-      path: '/?play=1&seed=1337&daylight=night',
+      path: '/?play=1&seed=1337&daylight=night&season=0.375',
       timeoutMs: 360000,
       settleMs: 3000,
       shows:
