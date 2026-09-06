@@ -70,6 +70,17 @@ export interface TerraceQuery extends AerialProbe {
    * misura come tutte le altre, e la regola non cambia forma per saperla.
    */
   readonly maxOverhang?: number;
+  /**
+   * Quanto deve sporgere come minimo. Assente vale il balcone (`minOverhang`).
+   *
+   * **E' la rete, e passa di qui per la stessa ragione della fase.** Una mensola
+   * profonda meno di un passaggio non puo' fare da capolinea a un percorso che
+   * corre lungo la strada: il tratto le atterrerebbe sul fianco, e li' la misura
+   * utile e' lo sporto. A sapere se davanti c'e' una carreggiata larga
+   * abbastanza da portare una linea e' solo chi guarda le strade, che non e'
+   * questo file.
+   */
+  readonly minOverhang?: number;
 }
 
 export interface TerracePlan {
@@ -102,7 +113,13 @@ export function planTerrace(query: TerraceQuery): TerraceResult {
       // Ospite, faccia e quota: le tre cose che non cambiano piu' una volta che
       // la mensola e' li'. La forma e' allora una funzione del posto, come la
       // rete stradale lo e' del seme.
-      const rect = terraceRect(face, run, hashCoords(host.id, face, run.z), query.maxOverhang);
+      const rect = terraceRect(
+        face,
+        run,
+        hashCoords(host.id, face, run.z),
+        query.maxOverhang,
+        query.minOverhang,
+      );
       const result = planDeck({
         rect,
         deckZ: run.z,
@@ -323,10 +340,11 @@ function terraceRect(
   run: FaceRun,
   seed: number,
   maxOverhang?: number,
+  minOverhang?: number,
 ): DeckRect {
   const axis = faceAxis(face);
   const outward = faceOutward(face);
-  const shape = terraceShape(run.to - run.from + 1, seed, maxOverhang);
+  const shape = terraceShape(run.to - run.from + 1, seed, maxOverhang, minOverhang);
   const start = outward > 0 ? run.wall + 1 : run.wall - shape.overhang;
   const from = run.from + shape.shift;
 

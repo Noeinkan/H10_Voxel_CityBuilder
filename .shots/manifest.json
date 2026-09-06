@@ -1,5 +1,5 @@
 {
-  "capturedAt": "2026-09-04T16:42:30.583Z",
+  "capturedAt": "2026-09-06T22:39:34.302Z",
   "viewport": {
     "width": 1440,
     "height": 900
@@ -7,13 +7,189 @@
   "scale": 2,
   "shots": [
     {
-      "name": "11-road-hierarchy",
-      "file": ".shots/11-road-hierarchy.png",
-      "url": "http://localhost:8021/?seed=1337&intro=0",
-      "shows": "la gerarchia da vicino: le quattro larghezze di carreggiata a confronto e il salto di tinta del tronco, con gli edifici affacciati sul fronte strada",
-      "alt": "Close view of a voxel city block showing a wide dark road, medium streets and one-voxel lanes with buildings fronting them",
-      "bytes": 3800351,
-      "ms": 117804,
+      "name": "01-city-overview",
+      "file": ".shots/01-city-overview.png",
+      "url": "http://localhost:8021/?play=1&seed=1337&season=0.375",
+      "shows": "la citta cresciuta sull isola procedurale: strade, isolati e tipologie decise dalla simulazione, barra risorse in alto e dock di costruzione in basso",
+      "alt": "Isometric view of a voxel city on a terraced green island, dense blocks and streets at the centre, trees along the coast",
+      "bytes": 4967605,
+      "ms": 95115,
+      "warnings": [],
+      "pageErrors": []
+    },
+    {
+      "name": "02-placement-cursor",
+      "file": ".shots/02-placement-cursor.png",
+      "url": "http://localhost:8021/?play=1&seed=1337&season=0.375",
+      "shows": "lo strumento di piazzamento attivo: segnaposto 3D sul terreno e cartellino con costo pesato dal sito, raggio di influenza, usi favoriti e tipologie che possono nascerne",
+      "alt": "Placement marker on a voxel city with a card listing cost, influence radius and the building typologies the site can grow",
+      "bytes": 4893073,
+      "ms": 82687,
+      "warnings": [],
+      "pageErrors": []
+    },
+    {
+      "name": "03-event-decision",
+      "file": ".shots/03-event-decision.png",
+      "url": "http://localhost:8021/?play=1&seed=1337&season=0.375",
+      "shows": "una carta evento della simulazione: la citta chiede dove dirigere il prossimo investimento, con le tre risposte e cio che ognuna fa al tessuto, piu il rinvio",
+      "alt": "A decision card asking where to direct the city investment, with three options and what each does, over the voxel city",
+      "bytes": 4486255,
+      "ms": 80905,
+      "warnings": [],
+      "pageErrors": []
+    },
+    {
+      "name": "04-policies-and-trade",
+      "file": ".shots/04-policies-and-trade.png",
+      "url": "http://localhost:8021/?play=1&seed=1337&season=0.375",
+      "shows": "il cassetto delle politiche: leve attivabili e strategie di scambio, separate dalla dashboard della citta",
+      "alt": "Side drawer with city policies and trade strategies open over the city",
+      "bytes": 4189468,
+      "ms": 82495,
+      "warnings": [],
+      "pageErrors": []
+    },
+    {
+      "name": "05-theme-neon",
+      "file": ".shots/05-theme-neon.png",
+      "url": "http://localhost:8021/?play=1&seed=1337&theme=neon&season=0.375",
+      "shows": "lo stesso motore con un tema diverso: 32 colori e parametri di atmosfera scambiati a caldo, nessuna geometria rigenerata, con il selettore dei temi aperto",
+      "alt": "The same voxel city rendered in a neon night palette, next to the theme picker listing the available looks",
+      "bytes": 3849722,
+      "ms": 122221512,
+      "warnings": [],
+      "pageErrors": []
+    },
+    {
+      "name": "06-debug-overlay",
+      "file": ".shots/06-debug-overlay.png",
+      "url": "http://localhost:8021/?play=1&seed=1337&debug=1&grow=1&season=0.375",
+      "shows": "l harness di misura: frame budget, draw call, triangoli, stato del mesher e del pool di worker accanto alle statistiche di crescita",
+      "alt": "The voxel city with technical overlays showing frame timings, draw calls, chunk counts and growth statistics",
+      "bytes": 3576654,
+      "ms": 87057,
+      "warnings": [],
+      "pageErrors": []
+    },
+    {
+      "name": "07-biome-map",
+      "file": ".shots/07-biome-map.png",
+      "url": "http://localhost:8021/?debug=1&terrain=1337&season=0.375",
+      "shows": "l isola ricolorata per bioma (tasto B) con l overlay del terreno: istogramma dei biomi, colonne edificabili e tempo di generazione nel worker",
+      "alt": "Voxel island recoloured into flat biome bands, beside a panel listing the biome histogram and generation timings",
+      "bytes": 3822175,
+      "ms": 14837,
+      "warnings": [],
+      "pageErrors": []
+    },
+    {
+      "name": "09-selection-card",
+      "file": ".shots/09-selection-card.png",
+      "url": "http://localhost:8021/?play=1&seed=1337&season=0.375",
+      "shows": "la scheda di selezione aperta su un edificio: in cima la carta di cio che serve per crescere, poi struttura, isolato, colonna e voxel impilate nella stessa colonna scorrevole, e il contorno azzurro sull impronta nel mondo",
+      "alt": "Voxel city with a side card describing the clicked building — a growth summary on top, structure, block, column and voxel sections stacked below — and a blue outline around its footprint",
+      "bytes": 3894914,
+      "ms": 113568,
+      "warnings": [],
+      "pageErrors": []
+    },
+    {
+      "name": "10-city-turned",
+      "file": ".shots/10-city-turned.png",
+      "url": "http://localhost:8021/?seed=1337&intro=0&season=0.375",
+      "shows": "la citta matura vista da un altro quarto: la camera gira di novanta gradi e la griglia isometrica si riaggancia, con il tessuto arrivato alla costa, i terrazzamenti coltivati e il porto che alimenta il commercio",
+      "alt": "The mature voxel city seen from a different quarter after a ninety degree camera turn, farmed terraces on the slopes and the port on the coast",
+      "bytes": 5067325,
+      "ms": 110144,
+      "warnings": [],
+      "pageErrors": []
+    },
+    {
+      "name": "11-fabric-close",
+      "file": ".shots/11-fabric-close.png",
+      "url": "http://localhost:8021/?seed=1337&intro=0&season=0.375",
+      "shows": "il tessuto da vicino: le fasce di altezza che la simulazione ha deciso isolato per isolato, i tetti verdi sui podi e le strade che passano fra gli isolati con gli edifici affacciati sul fronte",
+      "alt": "Close view of the dense voxel city: towers and low blocks side by side, green roofs on the podiums, streets running between the blocks",
+      "bytes": 4121481,
+      "ms": 124182,
+      "warnings": [],
+      "pageErrors": []
+    },
+    {
+      "name": "08-simulation-lab",
+      "file": ".shots/08-simulation-lab.png",
+      "url": "http://localhost:8021/?play=1&seed=1337&debug=1&sim=1&season=0.375",
+      "shows": "la scena di simulazione isolata: desiderabilita, candidati di costruzione classificati e leve di politica, senza il gioco attorno",
+      "alt": "Simulation panel with desirability figures, ranked candidate build sites and policy toggles above the island",
+      "bytes": 4135893,
+      "ms": 32815,
+      "warnings": [],
+      "pageErrors": []
+    },
+    {
+      "name": "12-info-view",
+      "file": ".shots/12-info-view.png",
+      "url": "http://localhost:8021/?play=1&seed=1337&season=0.375",
+      "shows": "una vista informativa accesa sopra la citta: la densita di popolazione dipinta isolato per isolato, con la legenda delle fasce e il dock che dice cosa si sta leggendo",
+      "alt": "Voxel city with a data overlay colouring each block by how densely it is populated, and a legend naming the bands",
+      "bytes": 4400931,
+      "ms": 145516,
+      "warnings": [],
+      "pageErrors": []
+    },
+    {
+      "name": "14-winter",
+      "file": ".shots/14-winter.png",
+      "url": "http://localhost:8021/?play=1&seed=1337&season=0.875",
+      "shows": "la stessa isola nel pieno dell inverno: prato, rimbalzo del terreno, nebbia e orizzonte piegati dalla fase dell anno, e l HUD che nomina la stagione quando sposta il raccolto",
+      "alt": "The voxel city under a winter palette, pale frosted ground and cold horizon",
+      "bytes": 4432452,
+      "ms": 118757,
+      "warnings": [],
+      "pageErrors": []
+    },
+    {
+      "name": "15-cutaway",
+      "file": ".shots/15-cutaway.png",
+      "url": "http://localhost:8021/?play=1&seed=1337&season=0.375",
+      "shows": "una vista d ispezione: il taglio cade sulla strada piu vicina all isolato puntato e apre la citta in sezione, con la targa che nomina il modo e il gesto per cambiarlo",
+      "alt": "The voxel city cut open along a street, showing the inside of the blocks, with a panel naming the view",
+      "bytes": 3687742,
+      "ms": 124998,
+      "warnings": [],
+      "pageErrors": []
+    },
+    {
+      "name": "16-city-dashboard",
+      "file": ".shots/16-city-dashboard.png",
+      "url": "http://localhost:8021/?play=1&seed=1337&season=0.375",
+      "shows": "il cruscotto della citta: popolazione e mix degli usi, i bisogni per classe, gli obiettivi in corso e i mandati aperti, cioe il referto che la simulazione scrive su se stessa",
+      "alt": "Side drawer with the city dashboard: population, use mix, needs per class and open goals",
+      "bytes": 4150607,
+      "ms": 118517,
+      "warnings": [],
+      "pageErrors": []
+    },
+    {
+      "name": "17-form-catalogue",
+      "file": ".shots/17-form-catalogue.png",
+      "url": "http://localhost:8021/?scene=swatch",
+      "shows": "il campionario delle forme: la fascia delle arcologie schierata su un basamento, con il pannello che nomina cio che sta sotto il cursore e conta i prismi di dettaglio",
+      "alt": "A row of arcology forms lined up on a plinth, beside a panel naming the band and counting its detail prisms",
+      "bytes": 1845135,
+      "ms": 29594,
+      "warnings": [],
+      "pageErrors": []
+    },
+    {
+      "name": "18-night-city",
+      "file": ".shots/18-night-city.png",
+      "url": "http://localhost:8021/?play=1&seed=1337&daylight=night&season=0.375",
+      "shows": "la citta di notte con il tema di casa: finestre e insegne accese dagli emissivi, il mare che riflette il cielo notturno e nessun pannello aperto",
+      "alt": "The voxel city at night, lit windows and signs, the sea reflecting a dark sky",
+      "bytes": 3158040,
+      "ms": 99049,
       "warnings": [],
       "pageErrors": []
     }

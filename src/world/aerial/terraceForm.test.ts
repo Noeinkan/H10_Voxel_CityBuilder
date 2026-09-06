@@ -65,6 +65,28 @@ describe('terraceShape — la pianta', () => {
     expect(overhangOf(40)).toBe(AERIAL.terrace.maxOverhang);
     // Il tetto e' un parametro, e chi ha visto sorgere un'arcologia passa il suo.
     expect(overhangOf(40, AERIAL.terrace.megaOverhang)).toBe(AERIAL.terrace.megaOverhang);
+    // E il pavimento lo e' per la rete: chi vede una carreggiata larga abbastanza
+    // chiede un capolinea invece di un balcone.
+    expect(overhangOf(3, AERIAL.terrace.maxOverhang, AERIAL.route.walkWidth))
+      .toBe(AERIAL.route.walkWidth);
+  });
+
+  it('il pavimento e cio che separa il balcone dal capolinea', () => {
+    // **E' il difetto scritto come test.** Sulla corsa piu' corta le forme
+    // schiacciano fino a `minOverhang`, che sta un voxel sotto la larghezza di un
+    // tratto: una mensola cosi' non puo' fare da capo a un percorso che le corre
+    // di fianco. Su una citta' cresciuta erano 468 coppie su 2177, tutte con
+    // quella causa sola.
+    const run = AERIAL.terrace.minRun;
+    const depth = (min?: number): number => Math.min(
+      ...AERIAL.terrace.forms.map(
+        (_, seed) => terraceShape(run, seed, AERIAL.terrace.maxOverhang, min).overhang,
+      ),
+    );
+
+    expect(depth()).toBe(AERIAL.terrace.minOverhang);
+    expect(depth()).toBeLessThan(AERIAL.route.walkWidth);
+    expect(depth(AERIAL.route.walkWidth)).toBeGreaterThanOrEqual(AERIAL.route.walkWidth);
   });
 
   it('il tetto della fase e cio che separa il balcone dal mensolone', () => {

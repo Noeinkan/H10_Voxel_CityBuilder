@@ -235,3 +235,33 @@ describe('planTerrace — il balcone e il mensolone', () => {
     }
   });
 });
+
+describe('planTerrace — il capolinea', () => {
+  /** Lo sporto che questo fronte porta, con il pavimento dato. */
+  function depthOf(minOverhang?: number): number {
+    const result = planTerrace({
+      host: HOST,
+      faces: [AERIAL_FACE.east],
+      minOverhang,
+      ...city(),
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error(result.refusal);
+    return result.plan.deck.rect.sizeX;
+  }
+
+  it('chi deve reggere un percorso non e piu stretto del percorso', () => {
+    // **E' il difetto scritto come test.** Un tratto che corre lungo la strada
+    // atterra sul *fianco* della mensola, e li' la misura utile e' lo sporto: con
+    // lo sporto ordinario, un capo profondo tre non ha dove far posare un
+    // passaggio largo quattro. Misurato su una citta' cresciuta, 468 coppie di
+    // mensole su 2177 morivano tutte con quella causa sola.
+    expect(depthOf(AERIAL.route.walkWidth)).toBeGreaterThanOrEqual(AERIAL.route.walkWidth);
+  });
+
+  it('e resta una richiesta, non il nuovo minimo di tutti', () => {
+    // Il balcone ordinario non si muove: sulla carreggiata secondaria, larga due,
+    // una mensola profonda quanto un passaggio l'attraversa tutta.
+    expect(depthOf()).toBeGreaterThanOrEqual(AERIAL.terrace.minOverhang);
+  });
+});

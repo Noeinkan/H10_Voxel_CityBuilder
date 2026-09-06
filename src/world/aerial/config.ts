@@ -8,6 +8,30 @@ const MODULE = SCALE.moduleFootprint;
 const NODE_SIDE = minFootprintOf();
 
 /**
+ * La larghezza di un passaggio in quota: due filari di parapetto e due di
+ * passaggio.
+ *
+ * **E' un numero solo perche' e' un fatto solo, e leggerlo in piu' posti e' il
+ * punto.** Un percorso e' largo cosi'; una mensola che gli faccia da capolinea
+ * non puo' essere piu' stretta di lui, ne' in lunghezza — e' `terrace.minRun` —
+ * ne' in profondita', perche' un tratto che corre **lungo** la strada le atterra
+ * sul fianco, e li' la misura utile e' lo sporto. Finche' i due numeri erano
+ * indipendenti quel legame non si vedeva, e lo sporto minimo stava un voxel piu'
+ * in basso: su una citta' cresciuta, 468 coppie di mensole su 2177 morivano
+ * tutte con la stessa causa — capo profondo tre, passaggio largo quattro — ed
+ * erano esattamente quelle il cui corridoio avrebbe seguito la carreggiata.
+ *
+ * Il minimo **globale** resta pero' tre, e non e' una svista: su un asse
+ * secondario largo due, una mensola profonda quattro attraversa la carreggiata
+ * intera e va a sbattere nel fronte di fronte. Misurato: portandolo a quattro
+ * dappertutto la citta' perde trentotto edifici e quarantaquattro mensole per
+ * guadagnare due percorsi. Chi chiede la profondita' da capolinea e'
+ * `AerialDriver`, e la chiede solo dove la carreggiata e' larga abbastanza da
+ * portare una linea.
+ */
+const WALK_WIDTH = 4;
+
+/**
  * Unica fonte di verita' dei numeri della citta' in quota.
  *
  * Vale la stessa regola di `terrain/config.ts`, `streets/config.ts`,
@@ -132,14 +156,17 @@ export const AERIAL = {
      * di un ponte — «due filari di parapetto e due di passaggio, che e' un
      * passaggio vero». Sotto, l'attacco e' piu' stretto della cosa che regge.
      */
-    minRun: 4,
+    minRun: WALK_WIDTH,
 
     /**
      * Sporto minimo e massimo, in voxel.
      *
      * Il minimo e' tre, ed e' la domanda di `GRAMMAR.terraceMinRing` posta qui:
      * sotto, la pavimentazione mentirebbe e il parapetto sarebbe un bordo che
-     * nessuno legge come praticabile.
+     * nessuno legge come praticabile. **E' il minimo di un balcone, non quello
+     * di un capolinea**: chi vuole che un percorso ci atterri sopra di fianco
+     * chiede `WALK_WIDTH`, e lo chiede solo dove la carreggiata e' larga
+     * abbastanza da portarne uno — vedi `AerialDriver.terraceDepth`.
      *
      * **Il massimo e' microgeometria, e resta fisso.** Era `MODULE`, e con il
      * raddoppio del modulo e' passato da otto a sedici: la forma «loggia» su un
@@ -298,7 +325,7 @@ export const AERIAL = {
   /** La rete: percorsi lunghi con gambe proprie, fra edifici di isolati diversi. */
   route: {
     /** Larghezza di un tratto: la stessa del ponte, e per la stessa misura. */
-    walkWidth: 4,
+    walkWidth: WALK_WIDTH,
 
     /**
      * Larghezza fino a cui un tratto si allarga invece di piegare.

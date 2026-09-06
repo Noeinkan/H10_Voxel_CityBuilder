@@ -16,6 +16,28 @@ Qui stanno **i tredici incrementi più recenti**; i precedenti sono archiviati i
 
 ---
 
+## In corso — La mensola di viale è profonda quanto il passaggio che ci atterrerà
+
+- **Lo sporto minimo di una mensola è un parametro, e sul viale vale la
+  larghezza di un passaggio.** `TerraceQuery.minOverhang` sta accanto a
+  `maxOverhang` per la stessa ragione — la regola pura non sa cosa ci sia davanti
+  all'ospite — e `AerialDriver.terraceDepth` chiede `AERIAL.route.walkWidth` solo
+  dove il fronte guarda un **asse principale**. Un percorso che corre lungo la
+  strada atterra sul *fianco* della mensola, dove la misura utile è lo sporto e
+  non la corsa: con lo sporto minimo a tre e il passaggio largo quattro, metà
+  delle mensole di una città era esclusa dalla rete prima di qualunque verifica
+  geometrica — misurato, 468 coppie su 2 177, tutte con quella causa sola.
+- **Solo sugli assi principali, e la restrizione è la regola.** Una carreggiata
+  secondaria è larga due: una mensola profonda quattro l'attraversa tutta e va a
+  sbattere nel fronte di fronte. Portando il minimo a quattro dappertutto la
+  stessa fixture perde trentotto edifici e quarantaquattro mensole per guadagnare
+  due percorsi; chiedendolo solo sui viali, la città resta quella di prima (399
+  edifici, 156 mensole contro 153) e settantadue mensole di viale nascono
+  profonde quanto un passaggio.
+- **`terrace.minRun` legge `WALK_WIDTH` invece di ripetere quattro.** È la stessa
+  misura per la stessa ragione, già scritta nel commento: adesso è anche lo
+  stesso numero.
+
 ## In corso — Radice: dare un proprietario allo stato condiviso
 
 - **`main.ts` da 3440 a 1849 righe, e non e' una potatura.** Il file era una

@@ -65,6 +65,7 @@ worker. `src/sim/` gira in Node senza DOM né GPU.
 | [src/shell/streetEye.ts](src/shell/streetEye.ts) | La discesa a terra: armarla, posare l'occhio, risalire, e le conseguenze del cambio di modo su qualita' e post-processing |
 | [src/shell/swatchScene.ts](src/shell/swatchScene.ts) | Il campionario di `?scene=swatch`: soggetto sotto il cursore, scelta persistente, referto del voxel e inquadratura delle fasce |
 | [tsconfig.json](tsconfig.json) | `strict` + flag extra; `noUncheckedIndexedAccess` off di proposito |
+| [vidkit.config.mjs](vidkit.config.mjs) | Scene del video dimostrativo in `.videos/`: cinque clip dal seed alla notte |
 | [vite.config.ts](vite.config.ts) | Vite + Vitest insieme; worker ES, ambiente `node` e segnalazione standard dei test oltre un secondo |
 | [src/main.ts](src/main.ts) | Composition root e ciclo di frame a budget: monta gli strati, li cabla fra loro e non possiede piu' input, scelta ne' misura |
 

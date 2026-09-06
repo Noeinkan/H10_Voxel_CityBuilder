@@ -60,9 +60,19 @@ export interface TerraceShape {
  * ordinario e' quello del balcone; chi ha visto sorgere un'arcologia passa
  * `AERIAL.terrace.megaOverhang` e ottiene il mensolone. La funzione resta pura:
  * entra un numero, esce un numero, e la fase la conosce solo chi chiama.
+ *
+ * **Il pavimento e' un parametro per la stessa ragione, e la ragione e' la
+ * rete.** Un balcone qualunque parte da `minOverhang`; una mensola che debba
+ * fare da capolinea a un percorso non puo' essere piu' stretta del percorso —
+ * un tratto che corre lungo la strada le atterra sul fianco — e chi lo sa e'
+ * solo chi guarda la carreggiata davanti all'ospite.
  */
-export function overhangOf(run: number, max: number = AERIAL.terrace.maxOverhang): number {
-  return Math.min(max, Math.max(AERIAL.terrace.minOverhang, run));
+export function overhangOf(
+  run: number,
+  max: number = AERIAL.terrace.maxOverhang,
+  min: number = AERIAL.terrace.minOverhang,
+): number {
+  return Math.min(max, Math.max(min, run));
 }
 
 /**
@@ -77,16 +87,13 @@ export function terraceShape(
   run: number,
   seed: number,
   max: number = AERIAL.terrace.maxOverhang,
+  min: number = AERIAL.terrace.minOverhang,
 ): TerraceShape {
   const { forms, minRun } = AERIAL.terrace;
   const form = forms[seed % forms.length];
 
   const length = clamp(Math.round(run * form.run), Math.min(run, minRun), run);
-  const overhang = clamp(
-    Math.round(overhangOf(run, max) * form.depth),
-    AERIAL.terrace.minOverhang,
-    max,
-  );
+  const overhang = clamp(Math.round(overhangOf(run, max, min) * form.depth), min, max);
   return { length, overhang, shift: Math.round((run - length) * form.align) };
 }
 
