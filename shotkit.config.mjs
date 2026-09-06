@@ -728,13 +728,16 @@ export default {
         'il tessuto da vicino: le fasce di altezza che la simulazione ha deciso isolato per isolato, i tetti verdi sui podi e le strade che passano fra gli isolati con gli edifici affacciati sul fronte',
       alt: 'Close view of the dense voxel city: towers and low blocks side by side, green roofs on the podiums, streets running between the blocks',
       async prepare(page) {
-        // Stessa ragione di `10-road-network`: la gerarchia si vede solo dove la
-        // carreggiata e' ancora scoperta.
+        // Stessa crescita corta di `10-city-turned`: piu' avanti il tessuto si
+        // salda e le strade fra gli isolati spariscono sotto i tetti.
         await seedCity(page, { growMs: 40000 });
         await mesherIdle(page);
         // In pausa: a 4x la citta continua a crescere mentre la camera scende,
         // e un rimescolamento a meta zoom sposta proprio cio che si inquadra.
-        await page.getByRole('button', { name: /Pause simulation/i }).click();
+        // `stillCity` e non il solo bottone: la pausa ferma la citta' ma non
+        // toglie la carta evento gia' aperta, e una si e' presa l'angolo in alto
+        // a destra di questo scatto.
+        await stillCity(page);
         await page.mouse.move(ISLAND.x, ISLAND.y);
         for (let i = 0; i < 9; i++) {
           await page.mouse.wheel(0, -500);
@@ -842,7 +845,12 @@ export default {
         await answerDecision(page);
         await parkPointer(page);
         await page.mouse.move(ISLAND.x, ISLAND.y);
-        for (let i = 0; i < 4; i++) {
+        // Sei scatti e non quattro: quanto piu' la citta' riempie il fotogramma,
+        // tanto meno spazio resta al tappo grigio che il taglio scopre davanti a
+        // se'. La sua grandezza dipende da quanto e' cresciuta la citta', che a
+        // orologio da parete non e' identica fra due corse: allargare il soggetto
+        // e' l'unica leva che non dipende da quella varianza.
+        for (let i = 0; i < 6; i++) {
           await page.mouse.wheel(0, -500);
           await page.waitForTimeout(150);
         }
