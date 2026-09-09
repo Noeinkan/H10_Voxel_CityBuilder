@@ -3,10 +3,11 @@ import { groundKindAt, isCoastal, nearLand } from './siteWorks';
 import { sightWater } from '../sites/siteRules';
 import { GROUND } from '../grading/grade';
 import { BlockMemo, LotMemo } from './lotMemo';
-import { BUILDER, MAX_FOOTPRINT } from './config';
+import { BUILDER, MAX_FOOTPRINT, MIN_FOOTPRINT } from './config';
 import { placeLot, type Lot } from '../streets/lots';
 import { FACING, type Facing } from '../streets/streetGrid';
 import { decksAt, type BuildDeck } from '../aerial/decks';
+import { deckLot } from '../aerial/deckLot';
 import type { BuildContext } from './buildContext';
 
 /**
@@ -128,44 +129,104 @@ export class LotSearch {
   }
 
   /**
-   * Su quale piano appoggia un'impronta di lato `side`.
+   * Il suolo di questa colonna, come piano su cui appoggiare.
    *
-   * Il suolo finche' e' libero — ed e' il caso di ogni edificio finche' nessuno
-   * ha costruito niente in quota — altrimenti si prende **l'impalcato piu'
-   * basso** che abbia il volume sopra di se' libero: riempire il secondo livello
-   * prima del terzo e' la stessa regola con cui la citta' riempie il suolo prima
-   * di alzarsi.
-   *
-   * **In quota l'impalcato porta il proprio riquadro**, e chi chiama ci sposta
-   * dentro il lotto. Il suolo non ne ha uno: li' il lotto l'ha gia' risolto la
-   * ricerca continua al suolo.
+   * **Era la porta della quota, e non lo e' piu'.** Finche' il piano si sceglieva
+   * qui — cioe' *dopo* la ricerca del lotto — un lotto a terra il cui quadrato
+   * comprendesse una colonna gia' costruita ripiegava sull'impalcato che ci
+   * passava sopra, ci centrava l'impronta e la vedeva rifiutare dalla collisione
+   * con l'ospite. Il rifiuto in quota non e' definitivo di proposito, quindi la
+   * stessa colonna tornava a ogni infornata: misurato, **tremilasessantotto
+   * rifiuti `occupied` su tremilacentotre**, e una citta' che scendeva da
+   * quattrocentoventi edifici a centosessantanove. La quota si risolve ora dove
+   * la roadmap dice che deve, cioe' sulla colonna che la simulazione propone
+   * (`pickAerialLot`), e questa resta la risposta di sempre per il suolo.
    */
-  pickDeck(x: number, y: number, side: number): BuildDeck {
-    const decks = decksAt(this.ctx.registry.at(x, y), this.ctx.terrain.heightAt(x, y));
-
-    for (const deck of decks) {
-      if (deck.kind === 'ground') {
-        if (!this.groundTaken(x, y, side)) return deck;
-        continue;
-      }
-      // Una cella sola sopra il piano: se e' libera lo e' anche il resto, perche'
-      // qualunque volume in quota parte da li'. La collisione vera la fa
-      // `overlaps` sull'impronta e sull'altezza definitive.
-      if (!this.ctx.registry.overlaps(x, y, 1, deck.z, 1)) return deck;
-    }
-    // Nessun piano libero: torna il suolo, e il rifiuto arriva da `overlaps` con
-    // il motivo giusto invece che da qui con un ramo in piu'.
-    return decks[0];
+  groundDeck(x: number, y: number): BuildDeck {
+    return decksAt([], this.ctx.terrain.heightAt(x, y))[0];
   }
 
-  /** true se un edificio prende il suolo di una qualunque colonna dell'impronta. */
-  private groundTaken(x: number, y: number, side: number): boolean {
-    for (let dy = 0; dy < side; dy++) {
-      for (let dx = 0; dx < side; dx++) {
-        if (this.ctx.registry.isOccupied(x + dx, y + dy)) return true;
-      }
+  /**
+   * Il lotto in quota su questa colonna, o `null` se non ce n'e' uno.
+   *
+   * **E' la riga che il dominio dichiarava e che non era mai stata scritta**:
+   * «in quota il lotto e' l'impalcato — niente `findLot`, niente opere di terra,
+   * niente fila». Finora il piano si sceglieva **dopo** la ricerca a terra, e
+   * quella ricerca boccia la carreggiata come suolo preso: misurato su una citta'
+   * di quattrocentoventi edifici, trentanove mensole su quarantacinque abbastanza
+   * larghe erano escluse per il solo fatto di sporgere sopra l'asfalto — cioe'
+   * per la ragione esatta per cui la fase le mette li'. Un impalcato venti voxel
+   * piu' su non ha niente a che vedere con la strada che ha sotto.
+   *
+   * **Si prova solo dove il suolo e' gia' speso**, ed e' la stessa regola con cui
+   * `pickDeck` preferisce il piano piu' basso: la citta' riempie il suolo prima
+   * di alzarsi, e una partita che non arriva mai in quota resta identica a quella
+   * di oggi. La prima domanda e' una lettura di `Set`, quindi su un'isola senza
+   * impalcati questo metodo costa quanto costava non averlo.
+   *
+   * Il riquadro che torna non e' quello dell'impalcato ma il quadrato libero che
+   * ci sta dentro: la parete a cui la mensola e' appesa sta nel riquadro, e
+   * un'impronta centrata ci finiva sopra. Vedi `deckLot`.
+   */
+  pickAerialLot(x: number, y: number): BuildDeck | null {
+    if (!this.decks.hasDeck(x, y)) return null;
+    // Il suolo viene prima: finche' questa colonna offre ancora un lotto a terra,
+    // e' li' che la citta' deve costruire. **Non e' `columnIsFree`**, che la
+    // deroga della quota rende gia' vera qui: quella dice «questa colonna e'
+    // ancora un lotto», questa dice «a terra non ce n'e' piu' uno», ed e' la
+    // seconda a decidere se si sale.
+    if (this.groundIsOpen(x, y)) return null;
+
+    for (const deck of decksAt(this.ctx.registry.at(x, y), this.ctx.terrain.heightAt(x, y))) {
+      if (deck.kind === 'ground' || deck.rect === undefined) continue;
+      const lot = deckLot({
+        rect: deck.rect,
+        free: (cx, cy) => !this.ctx.registry.overlaps(cx, cy, 1, deck.z, 1),
+        minSide: MIN_FOOTPRINT,
+        maxSide: MAX_FOOTPRINT,
+      });
+      if (lot !== null) return { ...deck, rect: lot };
     }
-    return false;
+    return null;
+  }
+
+  /**
+   * Verso dove guarda un edificio nato su questo impalcato.
+   *
+   * **In quota non c'e' una carreggiata a cui accostarsi, ma un fronte c'e'
+   * lo stesso**: e' la direzione in cui l'impalcato sporge, cioe' quella che dal
+   * proprio ospite porta al vuoto. E' anche l'unica lettura che dia lo stesso
+   * risultato per una mensola e per un pianerottolo — il secondo non ha un
+   * ospite, e li' il fronte torna a essere quello della maglia sotto, che a
+   * quella quota e' l'unica cosa da cui orientarsi.
+   */
+  aerialFacing(deckId: number): Facing | undefined {
+    const deck = this.ctx.registry.get(deckId);
+    if (deck === null) return undefined;
+    const hostId = deck.supports?.[0];
+    const host = hostId === undefined ? null : this.ctx.registry.get(hostId);
+    if (host === null) return this.ctx.streets.facingOf(deck.x, deck.y, deck.footprint) ?? undefined;
+
+    const dx = (2 * deck.x + deck.footprint) - (2 * host.x + host.footprint);
+    const dy = (2 * deck.y + (deck.footprintY ?? deck.footprint)) -
+      (2 * host.y + (host.footprintY ?? host.footprint));
+    if (dx === 0 && dy === 0) return undefined;
+    if (Math.abs(dx) >= Math.abs(dy)) return dx > 0 ? FACING.east : FACING.west;
+    return dy > 0 ? FACING.north : FACING.south;
+  }
+
+  /**
+   * true se il **suolo** di questa colonna e' ancora buono per un edificio.
+   *
+   * Sono le due sole ragioni per cui un suolo si spende — c'e' gia' sopra
+   * qualcosa, oppure ci passa la carreggiata — e non ce n'e' una terza: il
+   * terreno rifiutato e l'acqua al largo restano fuori da `columnIsFree`, dove
+   * parlano del *terreno*, mentre un impalcato venti voxel piu' su non ha niente
+   * a che vedere con cosa ha sotto. E' esattamente cio' che permette a una
+   * mensola sopra un canale o sopra un viale di essere un lotto.
+   */
+  private groundIsOpen(x: number, y: number): boolean {
+    return !this.roads.carries(x, y) && !this.ctx.registry.isOccupied(x, y);
   }
 
   /**
@@ -258,27 +319,26 @@ export class LotSearch {
   }
 
   /**
-   * Quante volte il mondo ha reso di nuovo libera una colonna.
+   * Quante volte il mondo ha reso di nuovo libero un **suolo**.
    *
    * Somma di tre contatori monotoni, uno per ciascun modo in cui `lotIsFree` puo'
    * cambiare idea su una colonna che aveva bocciato: il registry che rilascia una
-   * prenotazione o toglie un record, un impalcato che nasce sopra un suolo preso,
-   * un chunk di terreno che arriva dove non c'era isola. Non dice **cosa** e'
-   * cambiato, e non serve: chi la legge butta via tutto quello che sapeva.
+   * prenotazione o toglie un record, un chunk di terreno che arriva dove non
+   * c'era isola, una strada che si sposta. Non dice **cosa** e' cambiato, e non
+   * serve: chi la legge butta via tutto quello che sapeva.
    *
-   * Sono quattro e non uno perche' ciascuno sta accanto alla domanda che
-   * invalida — `isOccupied`, `hasDeck`, il terreno, la carreggiata — e un quinto
-   * modo di liberare suolo dovra' portarsi il proprio contatore, non aggiungere
-   * un gancio qui.
+   * Sono tre e non uno perche' ciascuno sta accanto alla domanda che invalida —
+   * `isOccupied`, il terreno, la carreggiata — e un quarto modo di liberare suolo
+   * dovra' portarsi il proprio contatore, non aggiungere un gancio qui.
    *
-   * Il quarto e' arrivato con il suolo pubblico riservato: da quando `carries`
-   * boccia una colonna, una strada che si sposta la libera, e senza il suo
-   * contatore l'isolato resterebbe dichiarato pieno rispetto a un tracciato che
-   * non passa piu' di li'.
+   * **Ce n'era un quarto, ed era l'impalcato che nasce.** Valeva finche' un
+   * impalcato rendeva di nuovo candidabile il suolo che copriva; da quando il
+   * lotto in quota si risolve per conto suo (`pickAerialLot`), un impalcato non
+   * cambia niente di cio' che questo memo ricorda, e tenerlo qui buttava via
+   * l'intera memoria degli isolati a ogni mensola.
    */
   private freedomEpoch(): number {
-    return this.ctx.registry.vacated + this.decks.decksOpened +
-      this.ctx.terrain.chunkCount + this.roads.revision;
+    return this.ctx.registry.vacated + this.ctx.terrain.chunkCount + this.roads.revision;
   }
 
   /**
@@ -383,12 +443,14 @@ export class LotSearch {
     // Letture senza allocazione: `columnAt` costruirebbe un oggetto e
     // `at` un array di record per ogni colonna, e qui le colonne si
     // contano a migliaia per infornata.
-    // **Il suolo preso non chiude piu' la colonna per sempre.** Se sopra
-    // corre una soletta il lotto esiste ancora, una quota piu' su: e' la
-    // seconda delle tre assunzioni di colonna che la 4.9 rompe. La domanda
-    // in piu' si paga solo su questo ramo — cioe' sulle sole colonne gia'
-    // costruite — quindi una citta' senza piattaforme costa quello di prima.
-    if (this.ctx.registry.isOccupied(x, y) && !this.decks.hasDeck(x, y)) return false;
+    // **Questa e' la domanda sul suolo, e la quota non la deroga.** Ci fu una
+    // deroga — «se sopra corre una soletta il lotto esiste ancora, una quota
+    // piu' su» — e la lettura era giusta ma il posto sbagliato: qui si cerca
+    // un'impronta *a terra*, e lasciar passare una colonna costruita significava
+    // consegnare a `place` un quadrato che il suolo non regge. Il lotto in quota
+    // si risolve dove la roadmap dice, cioe' sulla colonna che la simulazione
+    // propone: vedi `pickAerialLot`.
+    if (this.ctx.registry.isOccupied(x, y)) return false;
     // Dalla 4.2 la battigia e il fianco in pendenza sono lotti come gli
     // altri: costano un'opera, non un rifiuto. Restano fuori solo la roccia
     // e l'acqua troppo profonda per una banchina.
@@ -411,8 +473,6 @@ export class LotSearch {
 export interface DeckProbe {
   /** true se una soletta passa sopra questa colonna. */
   hasDeck(x: number, y: number): boolean;
-  /** Quante solette sono nate finora: e' un quarto dell'epoca di invalidazione. */
-  readonly decksOpened: number;
 }
 
 /**

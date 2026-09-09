@@ -24,6 +24,14 @@ import type { SpanDriver } from './spanDriver';
 import { stampSolidAt, STAMP_EMPTY, type VoxelAnchor, type VoxelStamp } from './stamp';
 import { isGroundStructure, traitsOf } from './structureKind';
 
+/** SONDA TEMPORANEA — da togliere. */
+export const ROUTE_PROBE: {
+  examined: number; noPartner: number; paired: number; planned: number; noFit: number;
+  refusals: Record<string, number>;
+} = {
+  examined: 0, noPartner: 0, paired: 0, planned: 0, noFit: 0, refusals: {},
+};
+
 /**
  * La citta' in quota: mensole, percorsi, gambe e i piani su cui si costruisce.
  *
@@ -92,22 +100,6 @@ export class AerialDriver {
   private readonly deckColumns = new Set<string>();
 
   /**
-   * Quante colonne hanno ricevuto un piano in quota, da sempre.
-   *
-   * E' il gemello di `BuildingRegistry.vacated` per la seconda meta' della stessa
-   * domanda: `lotIsFree` dichiara libera una colonna occupata se sopra le passa un
-   * impalcato, quindi un impalcato che nasce **libera** suolo agli occhi della
-   * ricerca dei lotti. Non scende quando un impalcato cade — quella e' la
-   * direzione sicura, una colonna che smette di avere un piano sopra torna
-   * occupata e nessuna memoria di rifiuto ne resta sbagliata.
-   */
-  private decksOpenedCount = 0;
-
-  get decksOpened(): number {
-    return this.decksOpenedCount;
-  }
-
-  /**
    * Come si presenta il luogo alle regole della citta' in quota.
    *
    * Riusa `solid` della sonda delle campate — e' la stessa domanda al mondo — e
@@ -126,12 +118,20 @@ export class AerialDriver {
       ground: (x, y): AerialColumn => {
         const support = ctx.registry.supportAt(x, y);
         const height = ctx.terrain.heightAt(x, y);
+        // **La battigia non regge una gamba, ed e' l'unica differenza fra
+        // «edificabile» e «appoggiabile».** Un lotto sul bassofondo si paga
+        // un'opera — la banchina lo dichiara e la costruisce — mentre una gamba
+        // non fa opere di terra: si pianta dov'e'. Ammettere `shore` significava
+        // piantarla in mare, e le gambe finivano oltre `GRADING.quayReach` dalla
+        // terra emersa, cioe' esattamente le piattaforme al largo che il gate
+        // della 4.2 esiste per escludere.
+        const kind = groundKindAt(ctx.terrain, x, y);
         return {
           height,
           top: Math.max(height, support.z),
           pavement: ctx.streets.isPavement(x, y),
           free: !ctx.registry.isOccupied(x, y),
-          firm: groundKindAt(ctx.terrain, x, y) !== GROUND.refused,
+          firm: kind !== GROUND.refused && kind !== GROUND.shore,
           carrier: support.z > height ? support.id : 0,
         };
       },
@@ -172,10 +172,9 @@ export class AerialDriver {
     return this.deckColumns.has(`${x},${y}`);
   }
 
-  /** Un piano in quota su questa colonna: la sola porta che alza `decksOpened`. */
+  /** Un piano in quota su questa colonna. */
   private openDeckColumn(x: number, y: number): void {
     this.deckColumns.add(`${x},${y}`);
-    this.decksOpenedCount++;
   }
 
   /**
@@ -400,10 +399,15 @@ export class AerialDriver {
     for (let i = 0; i < budget && built < AERIAL.route.perPass; i++) {
       const record = decks[this.routeCursor % decks.length];
       this.routeCursor++;
+      ROUTE_PROBE.examined++;
       if ((this.routeCount.get(record.id) ?? 0) >= AERIAL.route.maxPerHost) continue;
 
       const partner = this.routePartner(record);
-      if (partner === null) continue;
+      if (partner === null) {
+        ROUTE_PROBE.noPartner++;
+        continue;
+      }
+      ROUTE_PROBE.paired++;
 
       const result = planRoute({
         a: routeEndOf(record, this.openSideOf(record)),
@@ -415,8 +419,15 @@ export class AerialDriver {
       // cambiano, e riprovarla a ogni passata sarebbe il costo piu' alto del
       // dominio speso per sentirsi dire di no.
       this.routePairs.add(pairKey(record.id, partner.id));
-      if (!result.ok) continue;
-      if (!this.buildRoute(result.plan)) continue;
+      if (!result.ok) {
+        ROUTE_PROBE.refusals[result.refusal] = (ROUTE_PROBE.refusals[result.refusal] ?? 0) + 1;
+        continue;
+      }
+      ROUTE_PROBE.planned++;
+      if (!this.buildRoute(result.plan)) {
+        ROUTE_PROBE.noFit++;
+        continue;
+      }
       built++;
     }
   }
@@ -565,14 +576,32 @@ export class AerialDriver {
       ? base
       : [preferred, ...base.filter((face) => face !== preferred)];
 
-    return planTerrace({
-      host: aerialSupportOf(record),
-      faces,
-      maxOverhang: this.terraceOverhang(),
-      minOverhang: this.terraceDepth(record),
-      ground: this.probe.ground,
-      solid: this.probe.solid,
-    });
+    // **Prima l'aggetto che regge un lotto, poi quello di sempre.** Un balcone
+    // profondo tre non e' un lotto per nessuno — le sue colonne cadono dentro
+    // l'impronta dell'ospite, che il registry occupa per intera — e finche' la
+    // passata chiedeva solo quello, «si abita sopra la citta'» restava a zero.
+    // La scala e' un ripiego e non un aumento: dove sette voxel non ci stanno la
+    // mensola nasce come e' sempre nata, quindi non se ne perde nessuna. Vedi
+    // `AERIAL.terrace.habitableOverhang`.
+    const maxOverhang = this.terraceOverhang();
+    const floor = this.terraceDepth(record);
+    const wanted = Math.min(AERIAL.terrace.habitableOverhang, maxOverhang);
+    let result: TerraceResult = { ok: false, refusal: 'noRun' };
+
+    for (const minOverhang of floor !== undefined && floor >= wanted
+      ? [floor]
+      : [wanted, floor]) {
+      result = planTerrace({
+        host: aerialSupportOf(record),
+        faces,
+        maxOverhang,
+        minOverhang,
+        ground: this.probe.ground,
+        solid: this.probe.solid,
+      });
+      if (result.ok) return result;
+    }
+    return result;
   }
 
   /**
@@ -675,10 +704,24 @@ export class AerialDriver {
   /**
    * La mensola compagna migliore per questa, o `null`.
    *
-   * La piu' vicina fra quelle abbastanza lontane: sotto `minSeparation` il
-   * collegamento lo fa gia' una campata, meglio e senza gambe. A parita' vince
-   * l'id piu' basso, cosi' la scelta non dipende dall'ordine con cui il registry
-   * restituisce i vicini.
+   * **Prima chi sta di fronte, poi chi sta di fianco**, e la distinzione e' il
+   * pezzo che mancava alla rete. `facesToward` teneva fuori solo chi stava
+   * *dietro* — «una mensola si lascia anche di fianco, e sono i due lati che
+   * rendono possibile una rete invece di una manciata di coppie allineate» — ma
+   * misurato e' il contrario: due mensole dello stesso fronte hanno in mezzo la
+   * carreggiata **per il lungo**, cioe' tutte le altre mensole di quel fronte,
+   * profonde quanto loro. Su cinquecentodiciotto coppie provate,
+   * duecentodiciotto morivano `blocked` — ed e' il terzo accertamento dello
+   * stesso fatto, dopo la ricerca di percorso e la regola del lotto.
+   *
+   * Di fronte invece il corridoio attraversa la strada nel verso corto, dove non
+   * c'e' niente da scavalcare. Il fianco resta come ripiego e non come divieto:
+   * dove un dirimpettaio non c'e', una coppia allineata e' meglio di niente.
+   *
+   * A parita' di rango vince la piu' vicina fra quelle abbastanza lontane —
+   * sotto `minSeparation` il collegamento lo fa gia' una campata, meglio e senza
+   * gambe — e a parita' di distanza l'id piu' basso, cosi' la scelta non dipende
+   * dall'ordine con cui il registry restituisce i vicini.
    */
   private routePartner(record: BuildingRecord): BuildingRecord | null {
     let best: BuildingRecord | null = null;
@@ -703,6 +746,7 @@ export class AerialDriver {
       const distance = gapBetween(record, other);
       if (distance < AERIAL.route.minSeparation) continue;
       if (distance > AERIAL.route.maxSeparation) continue;
+
       if (distance < bestDistance ||
         (distance === bestDistance && best !== null && other.id < best.id)) {
         best = other;
@@ -802,25 +846,29 @@ export class AerialDriver {
       const count = dirtyChunkCount(
         segment.x, segment.y, segment.sizeX, deck.baseZ, top, segment.sizeY,
       );
-      if (count > AERIAL.maxDirtyChunks) return false;
+      if (count > AERIAL.maxDirtyChunks) { ROUTE_PROBE.refusals.fitSegmentBudget =
+        (ROUTE_PROBE.refusals.fitSegmentBudget ?? 0) + 1; return false; }
     }
     for (const pier of deck.piers) {
       const count = dirtyChunkCount(
         pier.x, pier.y, AERIAL.pierSide,
         pier.baseZ, pier.baseZ + pier.height, AERIAL.pierSide,
       );
-      if (count > AERIAL.maxDirtyChunks) return false;
+      if (count > AERIAL.maxDirtyChunks) { ROUTE_PROBE.refusals.fitPierBudget =
+        (ROUTE_PROBE.refusals.fitPierBudget ?? 0) + 1; return false; }
     }
 
     if (this.ctx.registry.overlaps(
       rect.x, rect.y, rect.sizeX, deck.baseZ, deck.height, rect.sizeY, except,
     )) {
+      ROUTE_PROBE.refusals.fitDeckOverlap = (ROUTE_PROBE.refusals.fitDeckOverlap ?? 0) + 1;
       return false;
     }
     for (const pier of deck.piers) {
       if (this.ctx.registry.overlaps(
         pier.x, pier.y, AERIAL.pierSide, pier.baseZ, pier.height, AERIAL.pierSide, except,
       )) {
+        ROUTE_PROBE.refusals.fitPierOverlap = (ROUTE_PROBE.refusals.fitPierOverlap ?? 0) + 1;
         return false;
       }
     }
@@ -963,6 +1011,12 @@ function pairKey(a: number, b: number): string {
  * due lati che rendono possibile una rete invece di una manciata di coppie
  * allineate. Chiede solo che non stia dall'altra parte dell'ospite, dove un
  * percorso comincerebbe dentro un muro.
+ *
+ * **Preferire il dirimpettaio e' stato provato, ed e' un pareggio.** Ordinare i
+ * compagni per «di fronte» prima che «di fianco» non cambia una coppia sulla
+ * citta' di prova: con `minSeparation` a sei il compagno piu' vicino sta gia'
+ * dall'altra parte della carreggiata, quindi la distanza dice gia' quel che
+ * direbbe il rango.
  */
 function facesToward(
   open: { axis: 0 | 1; sign: number } | null,
