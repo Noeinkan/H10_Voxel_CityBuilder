@@ -23,6 +23,7 @@ qui non compaiono sono quelle ancora aperte, che restano intere in radice.
 | Fase 4.6 — Gerarchia verticale della città | 7 | [fase-4.6.md](fase-4.6.md) |
 | Fase 4.7 — Atmosfera e separazione delle quote | 4 | [fase-4.7.md](fase-4.7.md) |
 | Fase 4.8 — Dettaglio d'artista e vita notturna | 7 | [fase-4.8.md](fase-4.8.md) |
+| Fase 4.9 — Quote abitate e città sospesa | 11 | [fase-4.9.md](fase-4.9.md) |
 | Fase 4.10 — Campionario dei voxel | 6 | [fase-4.10.md](fase-4.10.md) |
 | Fase 4.11 — Vedere dentro la città | 8 | [fase-4.11.md](fase-4.11.md) |
 | Fase 4.12 — I catalizzatori diventano strutture | 5 | [fase-4.12.md](fase-4.12.md) |
