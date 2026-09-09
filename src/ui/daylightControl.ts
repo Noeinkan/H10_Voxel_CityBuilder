@@ -33,13 +33,21 @@ const DAYLIGHT_NOTE: Readonly<Record<DaylightMode, string>> = {
   [DAYLIGHT_MODE.night]: 'the city stays lit',
 };
 
+/**
+ * **Il tooltip descrive il proprio modo, non il prossimo clic.**
+ *
+ * Diceva «Click for Night» perche' le tre parole vivevano su un bottone solo
+ * che ciclava, e l'unico modo di sapere cosa c'era dopo era leggerlo li'. Ora
+ * ogni modo ha il suo bottone in ogni superficie: un'etichetta che annuncia il
+ * prossimo mentirebbe su cosa fa quello che si sta per premere. Il giro resta
+ * al tasto `L`, ed e' `next` a servirlo.
+ */
 export function daylightControl(mode: DaylightMode): HudDaylight {
-  const next = nextDaylightMode(mode);
   return {
     mode,
     label: DAYLIGHT_LABEL[mode],
-    tooltip: `Daylight: ${DAYLIGHT_LABEL[mode]} — ${DAYLIGHT_NOTE[mode]}. Click for ${DAYLIGHT_LABEL[next]}, or press L.`,
-    next,
+    tooltip: `Daylight: ${DAYLIGHT_LABEL[mode]} — ${DAYLIGHT_NOTE[mode]}. Press L to cycle.`,
+    next: nextDaylightMode(mode),
     frozen: mode !== DAYLIGHT_MODE.cycle,
   };
 }

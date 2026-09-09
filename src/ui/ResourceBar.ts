@@ -1,4 +1,4 @@
-import { DAYLIGHT_MODE, type DaylightMode } from '../engine/daylight';
+import { DAYLIGHT_MODE, DAYLIGHT_MODES, type DaylightMode } from '../engine/daylight';
 import { ALL_CLASSES, CLASS_LABELS } from '../sim';
 import {
   daylightControl,
@@ -23,12 +23,6 @@ import { iconButton, markRowColumns, textButton } from './hudWidgets';
 
 const RESOURCE_ICON: Readonly<Record<HudResource['id'], HudIcon>> = {
   funds: 'funds', population: 'population', food: 'food', materials: 'materials', satisfaction: 'satisfaction',
-};
-
-const DAYLIGHT_ICON: Readonly<Record<DaylightMode, HudIcon>> = {
-  [DAYLIGHT_MODE.cycle]: 'daylight',
-  [DAYLIGHT_MODE.day]: 'sun',
-  [DAYLIGHT_MODE.night]: 'moon',
 };
 
 interface ResourceElements {
@@ -149,8 +143,7 @@ export class ResourceBar {
   private readonly needs: NeedsElements;
   private readonly pauseButton: HTMLButtonElement;
   private readonly speedButtons = new Map<number, HTMLButtonElement>();
-  private readonly daylightButton: HTMLButtonElement;
-  private daylightMode: DaylightMode = DAYLIGHT_MODE.cycle;
+  private readonly daylightButtons = new Map<DaylightMode, HTMLButtonElement>();
   private readonly cloudsButton: HTMLButtonElement;
   private clouds = true;
   /**
@@ -204,10 +197,20 @@ export class ResourceBar {
     // Il ciclo del giorno sta col cielo perche' e' la stessa domanda — che cielo
     // c'e' mentre guardo — e perche' e' li' che si guarda quando la citta' e'
     // buia e non si sa se tornera' giorno.
-    this.daylightButton = iconButton('daylight', 'Daylight', () =>
-      handlers.onDaylight(daylightControl(this.daylightMode).next));
-    this.daylightButton.classList.add('hud-button--small');
-    skyRow.appendChild(this.daylightButton);
+    //
+    // **Un bottone per modo, come le velocita' qui sopra**, e non piu' uno solo
+    // che cicla. Il ciclo mostrava lo stato con l'icona, ma non c'era modo di
+    // *scegliere*: per arrivare alla notte dal giorno si passava per il giro,
+    // e quali fossero i tre modi lo diceva solo il tooltip, uno alla volta. Le
+    // tre parole erano gia' scritte — il menu di pausa e il titolo le mostrano
+    // da sempre — e mancavano proprio dove si sta guardando il cielo.
+    for (const mode of DAYLIGHT_MODES) {
+      const control = daylightControl(mode);
+      const button = textButton(control.label, control.tooltip, () => handlers.onDaylight(mode));
+      button.classList.add('hud-button--small');
+      this.daylightButtons.set(mode, button);
+      skyRow.appendChild(button);
+    }
     this.setDaylight(DAYLIGHT_MODE.cycle);
 
     // Le nuvole stanno accanto al ciclo perche' sono la stessa domanda, e sono
@@ -276,20 +279,20 @@ export class ResourceBar {
   }
 
   /**
-   * Il modo del ciclo, dal modello puro al bottone.
+   * Il modo del cielo, dal modello puro ai tre bottoni.
    *
-   * L'icona **e'** lo stato: sole con l'orizzonte per il giro, sole pieno per il
-   * giorno fermo, falce per la notte ferma. Un bottone che cicla e mostra sempre
-   * la stessa icona costringe a leggere il tooltip per sapere dove si e'.
+   * **Acceso e' quello in cui si sta**, esattamente come per le velocita': la
+   * fila dice insieme dove si e' e dove si puo' andare, che era la meta'
+   * mancante quando il bottone era uno solo. Lo stato arriva sempre da fuori —
+   * anche il tasto `L` e il menu di pausa passano di qui — quindi la barra non
+   * ha un modo suo da ricordare.
    */
   setDaylight(mode: DaylightMode): void {
-    this.daylightMode = mode;
-    const control = daylightControl(mode);
-    this.daylightButton.replaceChildren(createHudIcon(DAYLIGHT_ICON[mode]));
-    this.daylightButton.setAttribute('aria-label', control.tooltip);
-    this.daylightButton.dataset.tooltip = control.tooltip;
-    this.daylightButton.dataset.active = control.frozen ? 'true' : 'false';
-    this.daylightButton.setAttribute('aria-pressed', control.frozen ? 'true' : 'false');
+    for (const [candidate, button] of this.daylightButtons) {
+      const active = candidate === mode;
+      button.dataset.active = active ? 'true' : 'false';
+      button.setAttribute('aria-pressed', active ? 'true' : 'false');
+    }
   }
 
   /**

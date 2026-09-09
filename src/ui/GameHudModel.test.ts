@@ -380,15 +380,19 @@ describe('buildGameHudModel', () => {
 });
 
 describe('daylightControl', () => {
-  it('nomina lo stato, dice cosa fa e annuncia il prossimo clic', () => {
+  it('nomina lo stato e dice cosa fa, senza annunciare il prossimo clic', () => {
     const auto = daylightControl(DAYLIGHT_MODE.cycle);
     expect(auto.label).toBe('Auto');
     expect(auto.frozen).toBe(false);
     // Chi guarda un tramonto vuole sapere quanto dura, non che «e' automatico».
     expect(auto.tooltip).toContain(`${Math.round(DAYLIGHT.daySeconds / 60)} minutes`);
-    // Un bottone che cicla deve dire dove porta, o si scopre solo premendolo.
+    // Ogni modo ha il suo bottone: un tooltip che annuncia il prossimo
+    // mentirebbe su cosa fa quello che si sta per premere.
+    expect(auto.tooltip).toContain('Auto');
+    expect(auto.tooltip).not.toContain('Night');
+    // `next` resta perche' il giro e' passato al tasto L, non perche' cicli un
+    // bottone: e' l'unico posto in cui l'ordine dei tre modi e' scritto.
     expect(auto.next).toBe(DAYLIGHT_MODE.day);
-    expect(auto.tooltip).toContain('Day');
   });
 
   it('i due modi fissi si dichiarano fermi', () => {

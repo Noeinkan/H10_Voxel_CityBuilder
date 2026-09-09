@@ -775,9 +775,9 @@ if (growEnabled) {
     // pastiglie di prima: legge l'atmosfera, e l'HUD non conosce l'engine.
     tokens: hudTokens(candidate),
   })), daylight.theme.id);
-  // Il bottone nasce sul ciclo: se l'URL ha chiesto altro, va detto subito o la
-  // prima cosa che il giocatore legge e' falsa. Lo stesso per le nuvole, che di
-  // partenza sono spente mentre la barra le dipinge accese.
+  // La fila del cielo nasce accesa sul ciclo: se l'URL ha chiesto altro, va
+  // detto subito o la prima cosa che il giocatore legge e' falsa. Lo stesso per
+  // le nuvole, che di partenza sono spente mentre la barra le dipinge accese.
   gameHud.setDaylight(daylight.mode);
   gameHud.setClouds(cloudsOn);
   // Qui non si apre piu' niente all'avvio: la porta d'ingresso e' `boot.ts`, e
