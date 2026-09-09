@@ -81,6 +81,7 @@ import './ui/hud.css';
 import { DebugOverlay } from './ui/DebugOverlay';
 import { PerfOverlay } from './ui/PerfOverlay';
 import { PerfReport, formatPerfSummary } from './engine/PerfReport';
+import { cityClock } from './ui/cityClock';
 import { GameHud } from './ui/GameHud';
 import { daylightControl } from './ui/GameHudModel';
 import { hudTokens } from './ui/hudTokens';
@@ -1248,7 +1249,12 @@ function onFrame(time: number): void {
   updateSim(cityDt);
   updateGrowth(cityDt);
   infoViews?.advance();
-  daylight.advance(dt);
+  // Il sole scorre sull'orologio della citta' e non su quello della macchina.
+  // Riceveva `dt` grezzo, quindi ignorava sia la pausa sia i tre bottoni della
+  // velocita': a 4× il giorno durava sempre sei minuti, e a simulazione ferma
+  // il sole continuava a scendere. Senza citta' — il diorama del titolo — non
+  // c'e' niente che detti il passo, e resta il tempo reale.
+  daylight.advance(cityDt * (growthScene?.timeScale ?? 1));
   // L'anno lo tiene la simulazione, non il renderer: `yearPhaseAt` e' la stessa
   // funzione da cui esce il moltiplicatore del raccolto, quindi il prato non
   // puo' ingiallire in un mese diverso da quello in cui i campi rendono meno.
@@ -1351,6 +1357,11 @@ function onFrame(time: number): void {
     // scritta nelle uniform per il frame corrente, e il pannello non deve
     // ridisegnarsi sessanta volte al secondo per dirlo.
     gameHud.setView(viewMenuModel());
+    // L'anno dalla simulazione, l'ora dal sole: sono le due lancette che la
+    // barra mette in fila, e questo e' l'unico punto che le vede entrambe. A
+    // 150 ms un quarto d'ora di citta' non si perde nemmeno a 4×, dove ne passa
+    // uno ogni ~0,9 secondi.
+    gameHud.setClock(cityClock(growthScene.simState.tickCount, daylight.hour));
     selection?.syncCoach(growthScene.stats.coach);
   }
   // Stessa cadenza, e per lo stesso motivo: cio' che la scheda racconta —

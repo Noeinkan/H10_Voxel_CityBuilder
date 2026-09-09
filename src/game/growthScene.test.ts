@@ -197,4 +197,24 @@ describe('GrowthScene', () => {
     scene.advance(0.1);
     expect(scene.stats.tick).toBe(2);
   });
+
+  /**
+   * Il sole scorre su questo numero, non sul tempo della macchina: e' cio' che
+   * rende visibili i tre bottoni della velocita', che prima non muovevano
+   * nulla di guardabile su una citta' appena fondata.
+   */
+  it('dichiara quanto corre il proprio orologio, pausa compresa', () => {
+    const world = new VoxelWorld();
+    const map = testTerrain({ chunksX: 1, chunksY: 1, height: 12 });
+    const scene = new GrowthScene(world, map, { minX: 0, minY: 0, sizeX: 32, sizeY: 32 }, 9);
+
+    expect(scene.timeScale).toBe(1);
+    scene.setSpeed(4);
+    expect(scene.timeScale).toBe(4);
+    scene.setPaused(true);
+    expect(scene.timeScale).toBe(0);
+    // La velocita' sopravvive alla pausa: riprendendo si torna dove si era.
+    scene.setPaused(false);
+    expect(scene.timeScale).toBe(4);
+  });
 });

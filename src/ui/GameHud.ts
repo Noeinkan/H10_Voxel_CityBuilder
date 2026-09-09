@@ -449,6 +449,11 @@ export class GameHud {
     this.mainMenu.setDaylight(mode);
   }
 
+  /** L'ora della citta': solo la barra la mostra, il menu non ha un orologio. */
+  setClock(label: string): void {
+    this.bar.setClock(label);
+  }
+
   /**
    * La vista attiva, dal modello puro alle superfici che la mostrano.
    *

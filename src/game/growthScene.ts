@@ -1117,6 +1117,21 @@ export class GrowthScene {
     this.speed = speed === 2 || speed === 4 ? speed : 1;
   }
 
+  /**
+   * Quanto corre l'orologio della citta' adesso: zero in pausa, altrimenti la
+   * velocita' scelta.
+   *
+   * Esiste perche' il **sole** deve poterlo chiedere. Avanzava sul tempo reale
+   * del fotogramma, quindi ignorava sia la pausa sia i tre bottoni: a 4× il
+   * giorno durava sempre sei minuti e in pausa il sole continuava a muoversi,
+   * e l'orologio piu' visibile della scena era l'unico sordo ai comandi del
+   * tempo. Un getter e non `stats`, che costruisce un oggetto intero: questo lo
+   * si chiede a ogni fotogramma.
+   */
+  get timeScale(): number {
+    return this.paused ? 0 : this.speed;
+  }
+
   setMessage(message: string): void {
     this.message = message;
   }

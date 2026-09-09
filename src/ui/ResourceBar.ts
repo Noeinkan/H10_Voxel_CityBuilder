@@ -143,6 +143,7 @@ export class ResourceBar {
   private readonly needs: NeedsElements;
   private readonly pauseButton: HTMLButtonElement;
   private readonly speedButtons = new Map<number, HTMLButtonElement>();
+  private readonly clock: HTMLElement;
   private readonly daylightButtons = new Map<DaylightMode, HTMLButtonElement>();
   private readonly cloudsButton: HTMLButtonElement;
   private clouds = true;
@@ -184,7 +185,12 @@ export class ResourceBar {
       simRow.appendChild(button);
     }
     markRowColumns(simRow);
-    simGroup.append(simLabel, simRow);
+    // L'ora sotto i bottoni che la governano, e non accanto: la riga e' larga
+    // poco piu' di trecento pixel e ha gia' quattro celle: infilarne una quinta
+    // avrebbe stretto i bottoni per fare posto a cio' che li spiega.
+    this.clock = document.createElement('span');
+    this.clock.className = 'time-clock';
+    simGroup.append(simLabel, simRow, this.clock);
     time.appendChild(simGroup);
 
     const skyGroup = document.createElement('div');
@@ -276,6 +282,17 @@ export class ResourceBar {
       button.dataset.active = active ? 'true' : 'false';
       button.setAttribute('aria-pressed', active ? 'true' : 'false');
     }
+  }
+
+  /**
+   * L'ora della citta', sotto i bottoni che la governano.
+   *
+   * Arriva da fuori come il modo del cielo, e per la stessa ragione: l'anno lo
+   * conta la simulazione, l'ora e' dove sta il sole, e la barra non conosce
+   * nessuno dei due. Chi le mette insieme e' `cityClock`, che e' puro e testato.
+   */
+  setClock(label: string): void {
+    this.clock.textContent = label;
   }
 
   /**
