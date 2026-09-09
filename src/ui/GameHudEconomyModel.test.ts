@@ -4,6 +4,7 @@ import {
   EMPTY_MATERIALS,
   EMPTY_SATISFACTION,
   NO_FUNDS_FLOW,
+  tickAtPhase,
   type FundsReport,
   type FoodReport,
   type MaterialsReport,
@@ -68,7 +69,7 @@ describe('foodHint', () => {
    * legge da solo. Che la stagione compaia quando c'e' lo verifica il caso in
    * fondo.
    */
-  const NEUTRAL = BALANCE.seasons.yearTicks / 8;
+  const NEUTRAL = tickAtPhase(0.125);
 
   it('annuncia le razioni quando la domanda non e servita tutta', () => {
     // Domanda 100 × 0.05 = 5, mangiato 3: il 60% della domanda.
@@ -99,15 +100,14 @@ describe('foodHint', () => {
    * minuto, e una scorta che non si vede non e' una mossa.
    */
   it('nomina la stagione quando sposta la resa, e tace quando non la sposta', () => {
-    const year = BALANCE.seasons.yearTicks;
     const covered: FoodReport = { ...EMPTY_HARVEST, eaten: 4 };
 
-    expect(foodHint(80, covered, [3, 0, 0], 1, Math.round(year * 0.875)))
+    expect(foodHint(80, covered, [3, 0, 0], 1, Math.round(tickAtPhase(0.875))))
       .toBe('Covered: fields match the city · Winter yield −35%');
-    expect(foodHint(80, covered, [3, 0, 0], 1, Math.round(year * 0.375)))
+    expect(foodHint(80, covered, [3, 0, 0], 1, Math.round(tickAtPhase(0.375))))
       .toBe('Covered: fields match the city · Summer yield +35%');
     // A meta' autunno la curva passa per l'anno medio: niente da nominare.
-    expect(foodHint(80, covered, [3, 0, 0], 1, Math.round(year * 0.625)))
+    expect(foodHint(80, covered, [3, 0, 0], 1, Math.round(tickAtPhase(0.625))))
       .toBe('Covered: fields match the city');
   });
 });

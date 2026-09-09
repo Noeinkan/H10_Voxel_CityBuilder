@@ -6,6 +6,7 @@ import {
   addBuilding,
   createSimState,
   foodYieldOf,
+  tickAtPhase,
   type SimState,
 } from '../sim';
 import { testTerrain } from '../sim/testTerrain';
@@ -159,7 +160,7 @@ describe('resolveSelection', () => {
     const state = {
       ...createSimState(),
       staffing: 0.5,
-      tickCount: BALANCE.seasons.yearTicks / 8,
+      tickCount: tickAtPhase(0.125),
     };
 
     const picked = resolveSelection({ ...harness({ registry, streets, state }), cell: cell(40, 40, 12) });

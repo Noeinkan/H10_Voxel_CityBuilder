@@ -1,15 +1,33 @@
 import { describe, expect, it } from 'vitest';
 import { BALANCE } from './balance';
-import { harvestFactorAt, SEASON, SEASON_NAMES, seasonAt, yearPhaseAt } from './seasons';
+import {
+  harvestFactorAt,
+  SEASON,
+  SEASON_NAMES,
+  seasonAt,
+  tickAtPhase as tickAt,
+  YEAR_START_PHASE,
+  yearPhaseAt,
+} from './seasons';
 
 const YEAR = BALANCE.seasons.yearTicks;
 
 describe('yearPhaseAt', () => {
   it('parte da zero e torna da capo dopo un anno', () => {
-    expect(yearPhaseAt(0)).toBe(0);
-    expect(yearPhaseAt(YEAR)).toBe(0);
-    expect(yearPhaseAt(YEAR * 7)).toBe(0);
-    expect(yearPhaseAt(YEAR / 2)).toBeCloseTo(0.5, 12);
+    expect(yearPhaseAt(tickAt(0))).toBe(0);
+    expect(yearPhaseAt(tickAt(0) + YEAR)).toBe(0);
+    expect(yearPhaseAt(tickAt(0) + YEAR * 7)).toBe(0);
+    expect(yearPhaseAt(tickAt(0.5))).toBeCloseTo(0.5, 12);
+  });
+
+  /**
+   * E' il motivo per cui il calendario e' sfasato: a meta' estate ne' l'oro ne'
+   * la brina toccano il prato, quindi la citta' nasce sul verde che il tema
+   * dichiara invece che sotto il residuo dell'inverno.
+   */
+  it('fa nascere la citta a meta estate', () => {
+    expect(yearPhaseAt(0)).toBeCloseTo(YEAR_START_PHASE, 12);
+    expect(seasonAt(0)).toBe(SEASON.summer);
   });
 
   it('resta in [0, 1) anche prima dell inizio della partita', () => {
@@ -23,12 +41,12 @@ describe('yearPhaseAt', () => {
 
 describe('seasonAt', () => {
   it('divide l anno in quattro quarti uguali, nell ordine dichiarato', () => {
-    expect(seasonAt(0)).toBe(SEASON.spring);
-    expect(seasonAt(YEAR * 0.3)).toBe(SEASON.summer);
-    expect(seasonAt(YEAR * 0.55)).toBe(SEASON.autumn);
-    expect(seasonAt(YEAR * 0.8)).toBe(SEASON.winter);
-    expect(seasonAt(YEAR - 1)).toBe(SEASON.winter);
-    expect(seasonAt(YEAR)).toBe(SEASON.spring);
+    expect(seasonAt(tickAt(0))).toBe(SEASON.spring);
+    expect(seasonAt(tickAt(0.3))).toBe(SEASON.summer);
+    expect(seasonAt(tickAt(0.55))).toBe(SEASON.autumn);
+    expect(seasonAt(tickAt(0.8))).toBe(SEASON.winter);
+    expect(seasonAt(tickAt(0) - 1)).toBe(SEASON.winter);
+    expect(seasonAt(tickAt(0) + YEAR)).toBe(SEASON.spring);
   });
 
   it('ha un nome per ogni indice, senza buchi', () => {
@@ -53,12 +71,12 @@ describe('harvestFactorAt', () => {
 
   it('ha il picco a meta estate e il minimo a meta inverno', () => {
     const amplitude = BALANCE.seasons.yieldAmplitude;
-    expect(harvestFactorAt(YEAR * 0.375)).toBeCloseTo(1 + amplitude, 6);
-    expect(harvestFactorAt(YEAR * 0.875)).toBeCloseTo(1 - amplitude, 6);
+    expect(harvestFactorAt(tickAt(0.375))).toBeCloseTo(1 + amplitude, 6);
+    expect(harvestFactorAt(tickAt(0.875))).toBeCloseTo(1 - amplitude, 6);
     // Primavera e autunno valgono uno al loro centro: sono le due meta' in cui
     // la citta' cambia verso, non due stagioni con un segno proprio.
-    expect(harvestFactorAt(YEAR * 0.125)).toBeCloseTo(1, 6);
-    expect(harvestFactorAt(YEAR * 0.625)).toBeCloseTo(1, 6);
+    expect(harvestFactorAt(tickAt(0.125))).toBeCloseTo(1, 6);
+    expect(harvestFactorAt(tickAt(0.625))).toBeCloseTo(1, 6);
   });
 
   /**
@@ -97,8 +115,13 @@ describe('il ritmo contro il piano', () => {
     // dove una scorta comincia a esistere: prima di quello non c'e' niente da
     // mettere da parte, e una dispensa vuota in quel tratto e' cio' che
     // `start.food` copre — la citta' nasce con seicento unita' e zero abitanti.
-    let start = 0;
-    while (start < YEAR && coverage * harvestFactorAt(start) < 1) start++;
+    // Si cerca a partire da meta' inverno, che e' il minimo della resa e quindi
+    // l'unico istante in cui il deficit e' certo: partire dal tick zero non
+    // servirebbe piu' — da quando il calendario e' sfasato quello e' il picco,
+    // la disuguaglianza e' gia' soddisfatta e la ricerca si fermerebbe subito,
+    // su un punto che non e' l'inizio di nessuna scorta.
+    let start = tickAt(0.875);
+    while (start < tickAt(0.875) + YEAR && coverage * harvestFactorAt(start) < 1) start++;
 
     // Domanda unitaria per tick: quello che conta e' il rapporto, non la scala.
     let stock = 0;

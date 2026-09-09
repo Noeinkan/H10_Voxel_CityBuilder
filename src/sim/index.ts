@@ -204,6 +204,8 @@ export {
   SEASON_COUNT,
   SEASON_NAMES,
   seasonAt,
+  tickAtPhase,
+  YEAR_START_PHASE,
   yearPhaseAt,
   type Season,
 } from './seasons';

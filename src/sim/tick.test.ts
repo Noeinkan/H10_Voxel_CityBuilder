@@ -10,6 +10,7 @@ import {
   toSimStateData,
   type SimState,
 } from './SimState';
+import { tickAtPhase } from './seasons';
 import { testTerrain } from './testTerrain';
 import { effectiveCount, tick, tickMany, weightsOf } from './tick';
 
@@ -263,7 +264,7 @@ describe('tick — bilancio', () => {
     // `seasons.test.ts`; questo test guarda il listino.
     state = {
       ...state,
-      tickCount: BALANCE.seasons.yearTicks / 8,
+      tickCount: tickAtPhase(0.125),
       population: { stock: houses * BALANCE.weights.residentialCapacity, delta: 0 },
     };
 
@@ -452,10 +453,9 @@ describe('tick — il fronte dell’emergenza', () => {
    */
   it('si riarma in inverno come in estate: legge la campagna, non la stagione', () => {
     const provisioned: SimState = { ...starving(), farmCounts: [40, 0, 0] };
-    const year = BALANCE.seasons.yearTicks;
 
     for (const phase of [0, 0.125, 0.375, 0.625, 0.875]) {
-      const moment = { ...provisioned, tickCount: Math.round(year * phase) };
+      const moment = { ...provisioned, tickCount: tickAtPhase(phase) };
       expect(tick(moment, terrainMap).supplyArmed, `fase ${phase}`).toBe(true);
     }
   });
@@ -463,15 +463,14 @@ describe('tick — il fronte dell’emergenza', () => {
   /** E la resa, quella si', deve sentire la stagione: e' l'altra meta'. */
   it('la stessa citta raccoglie di piu in estate che in inverno', () => {
     const provisioned: SimState = { ...starving(), farmCounts: [40, 0, 0] };
-    const year = BALANCE.seasons.yearTicks;
 
-    const summer = tick({ ...provisioned, tickCount: Math.round(year * 0.375) }, terrainMap);
-    const winter = tick({ ...provisioned, tickCount: Math.round(year * 0.875) }, terrainMap);
+    const summer = tick({ ...provisioned, tickCount: tickAtPhase(0.375) }, terrainMap);
+    const winter = tick({ ...provisioned, tickCount: tickAtPhase(0.875) }, terrainMap);
 
     const grownIn = (state: SimState) => state.harvest.grown.reduce((sum, v) => sum + v, 0);
     expect(grownIn(summer)).toBeGreaterThan(grownIn(winter));
     // E i due si scostano dall'anno medio dello stesso tanto, nei due versi.
-    const spring = tick({ ...provisioned, tickCount: Math.round(year * 0.125) }, terrainMap);
+    const spring = tick({ ...provisioned, tickCount: tickAtPhase(0.125) }, terrainMap);
     expect(grownIn(summer) - grownIn(spring)).toBeCloseTo(grownIn(spring) - grownIn(winter), 6);
   });
 });

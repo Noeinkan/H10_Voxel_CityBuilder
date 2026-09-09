@@ -25,7 +25,7 @@ import { BALANCE } from './balance';
  * onesto — e non ha un istante in cui il bilancio cambia di scatto.
  */
 
-/** Le quattro stagioni, come indici densi. Zero e' l'inizio della partita. */
+/** Le quattro stagioni, come indici densi. Zero e' la primavera, l'inizio del calendario. */
 export const SEASON = {
   spring: 0,
   summer: 1,
@@ -41,21 +41,67 @@ export const SEASON_NAMES: readonly string[] = ['Spring', 'Summer', 'Autumn', 'W
 export const SEASON_COUNT = SEASON_NAMES.length;
 
 /**
- * Dove sta l'anno, in [0, 1). Zero e' il primo giorno di primavera.
+ * Dove sta l'anno quando la citta' nasce, in [0, 1).
+ *
+ * **A meta' estate, e non il primo giorno di primavera.** Le tre curve del
+ * colore — rigoglio, oro e brina, in `src/engine/season.ts` — si spengono al
+ * *centro* delle stagioni e non ai loro confini: e' cio' che fa sfumare ottobre
+ * in novembre invece di farlo scattare, ma vuol dire anche che il primo giorno
+ * di primavera porta ancora il settanta per cento della brina dell'inverno
+ * appena chiuso. La citta' nasceva sotto un prato slavato di grigio, che non e'
+ * il verde dichiarato dal tema. Meta' estate e' l'unico istante dell'anno in
+ * cui ne' l'oro ne' la brina toccano il prato.
+ *
+ * **Sposta il calendario, non l'orologio.** `tickCount` resta l'eta' vera della
+ * citta': un salvataggio non ha niente in piu' da scrivere, e nessun altro
+ * sistema si accorge che l'anno e' girato sotto di lui.
+ */
+export const YEAR_START_PHASE = 0.375;
+
+/**
+ * Dove sta l'anno, in [0, 1). Zero e' il primo giorno di primavera, e il tick
+ * zero della partita cade a `YEAR_START_PHASE`.
  *
  * E' l'unica lettura del tempo che l'anno fa: stagione e resa discendono
  * entrambe da qui, quindi non possono raccontare due momenti diversi.
  */
 export function yearPhaseAt(tickCount: number): number {
   const year = BALANCE.seasons.yearTicks;
-  if (!(year > 0) || !Number.isFinite(tickCount)) return 0;
-  const phase = (tickCount % year) / year;
+  if (!(year > 0) || !Number.isFinite(tickCount)) return YEAR_START_PHASE;
+  const phase = ((tickCount % year) / year + YEAR_START_PHASE) % 1;
   return phase < 0 ? phase + 1 : phase;
+}
+
+/**
+ * Il tick in cui l'anno sta a questa fase: l'inverso di `yearPhaseAt`.
+ *
+ * Serve a chi deve **nominare** un istante dell'anno invece di leggerlo — meta'
+ * estate, il primo giorno d'inverno. Senza, ogni chiamante rifarebbe a mano
+ * l'aritmetica attorno a `YEAR_START_PHASE`, e allo spostamento successivo del
+ * calendario sbaglierebbero tutti insieme: e' esattamente cio' che la costante
+ * esiste per impedire.
+ */
+export function tickAtPhase(phase: number): number {
+  const year = BALANCE.seasons.yearTicks;
+  if (!(year > 0) || !Number.isFinite(phase)) return 0;
+  return year * ((((phase - YEAR_START_PHASE) % 1) + 1) % 1);
 }
 
 /** In che stagione sta la citta'. E' `yearPhaseAt` diviso in quattro, e nient'altro. */
 export function seasonAt(tickCount: number): Season {
-  const index = Math.floor(yearPhaseAt(tickCount) * SEASON_COUNT);
+  return seasonOfPhase(yearPhaseAt(tickCount));
+}
+
+/**
+ * La stessa divisione in quarti, ma partendo da una fase gia' in mano.
+ *
+ * Serve a chi ha la fase e non il tick — l'harness la puo' inchiodare a un
+ * valore che nessun tick produce. Ricavare il tick all'indietro, moltiplicando
+ * la fase per la lunghezza dell'anno, sembrava equivalente e non lo e' piu':
+ * calendario e orologio non partono piu' insieme.
+ */
+export function seasonOfPhase(phase: number): Season {
+  const index = Math.floor(phase * SEASON_COUNT);
   return Math.min(SEASON_COUNT - 1, Math.max(0, index)) as Season;
 }
 
@@ -74,6 +120,11 @@ export function seasonAt(tickCount: number): Season {
  * referto della HUD — che deve poter dire quale dei due manca.
  */
 export function harvestFactorAt(tickCount: number): number {
-  const phase = yearPhaseAt(tickCount) - 1 / (SEASON_COUNT * 2);
-  return 1 + BALANCE.seasons.yieldAmplitude * Math.sin(2 * Math.PI * phase);
+  return harvestFactorOfPhase(yearPhaseAt(tickCount));
+}
+
+/** La stessa resa da una fase gia' in mano, per la ragione di `seasonOfPhase`. */
+export function harvestFactorOfPhase(phase: number): number {
+  const shifted = phase - 1 / (SEASON_COUNT * 2);
+  return 1 + BALANCE.seasons.yieldAmplitude * Math.sin(2 * Math.PI * shifted);
 }
