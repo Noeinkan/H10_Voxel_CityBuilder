@@ -16,6 +16,59 @@ Qui stanno **i tredici incrementi più recenti**; i precedenti sono archiviati i
 
 ---
 
+## In corso — Il colore alla nascita della città
+
+- **La città nasce a metà estate, non il primo giorno di primavera.** Le tre
+  curve di `src/engine/season.ts` si spengono al *centro* delle stagioni e non ai
+  loro confini — è ciò che le fa sfumare l'una nell'altra invece di farle
+  scattare — quindi il tick zero portava ancora il 71% della brina invernale: il
+  prato d'apertura era `#80b87c` invece di `#58b04a`, con la nebbia più fitta di
+  un terzo e l'orizzonte smorzato. `YEAR_START_PHASE` sposta il calendario e non
+  l'orologio: `tickCount` resta l'età vera della città e i salvataggi non hanno
+  niente in più da scrivere.
+- **`tickAtPhase` è l'inverso di `yearPhaseAt`.** Serve a chi deve *nominare* un
+  istante dell'anno invece di leggerlo. Senza, ogni chiamante rifarebbe a mano
+  l'aritmetica attorno allo sfasamento e al prossimo spostamento sbaglierebbero
+  tutti insieme — che è il difetto che la costante esiste per impedire.
+  `seasonOfPhase` e `harvestFactorOfPhase` sono la stessa esigenza dal lato
+  della lettura: l'harness inchioda una fase che nessun tick produce, e
+  moltiplicarla per la lunghezza dell'anno ora restituisce un'altra stagione.
+- **La prospettiva aerea di `natural` torna alla taratura di prima del modello
+  di nebbia**: `density` da 0.0003 a 0.00018, `heightFalloff` da 0.005 a 0.010 e
+  `altitudeLift` a zero. Il modello resta — la nebbia si integra ancora lungo il
+  raggio e le quote si separano ancora — ma quella taratura slavava il diorama,
+  che è l'unica cosa che il tema di default è venuto a mostrare. Sull'isola vista
+  da lontano il velo passa dal 15-21% al 2-3,5%.
+- **La riga Sky dell'HUD ha un bottone per modo, come le velocità qui sopra.**
+  Auto, Day e Night erano un bottone solo che ciclava: l'icona diceva dove si
+  era, ma non c'era modo di *scegliere* — dal giorno alla notte si passava per
+  il giro — e quali fossero i tre modi lo si scopriva un tooltip alla volta. Le
+  tre parole erano già scritte in `daylightControl` e già mostrate dal menu di
+  pausa e dalla schermata del titolo: mancavano proprio dove si sta guardando il
+  cielo. Il tasto `L` continua a ciclare, ed è ora l'unico a farlo.
+- **Il tooltip del cielo descrive il proprio modo e non il prossimo clic.**
+  Diceva «Click for Night» perché viveva su un bottone che ciclava; su tre
+  bottoni distinti mentirebbe su cosa fa quello che si sta per premere. `next`
+  resta, perché è quello che serve al tasto `L`.
+- **Il sole scorre sull'orologio della città, non su quello della macchina.**
+  `daylight.advance` riceveva il tempo reale del fotogramma, quindi ignorava sia
+  la pausa sia i tre bottoni della velocità: a 4× il giorno durava sempre sei
+  minuti e a simulazione ferma il sole continuava a scendere. Ora riceve il
+  tempo già scalato da `GrowthScene.timeScale` — zero in pausa, altrimenti la
+  velocità scelta — e senza città, cioè nel diorama del titolo, resta il tempo
+  reale perché non c'è niente che detti il passo.
+- **La riga TIME dell'HUD mostra l'ora della città.** I bottoni 1×, 2× e 4×
+  funzionavano ed erano coperti da un test, ma niente a schermo lo dimostrava:
+  non c'era né orologio né contatore, e su una città appena fondata, dove ancora
+  non cresce nulla, le tre velocità producono la stessa immagine ferma. Un
+  comando di cui non si vede l'effetto è indistinguibile da un comando rotto.
+- **Dice «Year» e non «Day», e non è un ripiego.** `yearTicks` vale 3600, cioè
+  360 secondi a velocità uno, che è esattamente `DAYLIGHT.daySeconds`: in questa
+  città un anno è un giro del sole, e la scelta è documentata in `balance.ts`.
+  Un «Day 3» accanto a un HUD che nomina le stagioni racconterebbe due
+  calendari. Il passo è di un quarto d'ora perché un minuto di città dura un
+  quarto di secondo, e mostrarli tutti darebbe uno sfarfallio invece di un'ora.
+
 ## In corso — La mensola di viale è profonda quanto il passaggio che ci atterrerà
 
 - **Lo sporto minimo di una mensola è un parametro, e sul viale vale la

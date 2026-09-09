@@ -340,6 +340,13 @@ export class UpgradeDriver {
       district: profile.district,
       specialization: profile.specialization,
       facing: record.facing,
+      // **Su cosa poggia non cambia perche' e' cresciuto.** Un edificio in quota
+      // che promuovesse perdendo `supports` diventerebbe un volume sospeso senza
+      // niente sotto: `registry.carries` smetterebbe di vedere il proprio
+      // inquilino e l'impalcato tornerebbe libero di cadere, e il salvataggio
+      // riscriverebbe una casa in aria. Non si vedeva perche' finora in quota non
+      // ci costruiva nessuno.
+      supports: record.supports,
       // La fila non si rinegozia a ogni livello: un membro che promuove resta lo
       // stesso membro, con la stessa quota e lo stesso zoccolo. Ricalcolarli qui
       // spezzerebbe la continuita' della fila proprio mentre cresce.

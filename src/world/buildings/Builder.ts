@@ -1018,30 +1018,44 @@ export class Builder {
     let facing: Facing | undefined;
     let footprintCap = MAX_FOOTPRINT;
 
-    if (request.chooseLot) {
-      if (state === null) return null;
-      const lot = this.lots.findLot(request.x, request.y);
-      if (lot === null) return null;
+    // **Il lotto in quota si risolve qui, prima della ricerca a terra.** La
+    // colonna che la simulazione propone porta gia' la propria risposta — il
+    // campo l'ha eletta perche' le restavano quote da spendere — e mandarla
+    // comunque per `findLot` significava chiederle di superare le regole del
+    // *suolo*: prima fra tutte «la carreggiata e' suolo preso», che boccia
+    // esattamente le mensole del fronte strada, cioe' quelle che la fase ci mette
+    // apposta. Su una citta' di quattrocentoventi edifici erano trentanove su
+    // quarantacinque, e `stacked` restava a zero.
+    const aerial = request.chooseLot && state !== null
+      ? this.lots.pickAerialLot(x, y)
+      : null;
 
-      x = lot.x;
-      y = lot.y;
-      facing = lot.facing;
-      footprintCap = lot.footprint;
+    if (aerial !== null) {
+      // Il fronte esiste anche in quota: e' il verso in cui l'impalcato sporge.
+      facing = this.lots.aerialFacing(aerial.id);
     } else {
-      // Senza lotto l'orientamento si legge comunque dalla rete, quando
-      // l'ancora tocca gia' una carreggiata: al portale serve solo quello.
-      facing = this.streets.facingOf(request.x, request.y, 1) ?? undefined;
-    }
+      if (request.chooseLot) {
+        if (state === null) return null;
+        const lot = this.lots.findLot(request.x, request.y);
+        if (lot === null) return null;
 
-    const key = columnKey(x, y);
-    if (this.lots.isBanned(key)) return null;
+        x = lot.x;
+        y = lot.y;
+        facing = lot.facing;
+        footprintCap = lot.footprint;
+      } else {
+        // Senza lotto l'orientamento si legge comunque dalla rete, quando
+        // l'ancora tocca gia' una carreggiata: al portale serve solo quello.
+        facing = this.streets.facingOf(request.x, request.y, 1) ?? undefined;
+      }
+    }
 
     // **Su quale piano.** Il suolo finche' e' libero — ed e' il caso di ogni
     // edificio finche' nessuno ha costruito niente in quota, quindi il percorso
     // di sempre resta quello di sempre — altrimenti l'impalcato piu' basso che
     // passa di qui. E' questa riga a togliere a «edificabile» il suo essere un
     // bit per colonna, e non una struttura nel campo della simulazione.
-    const deck = this.lots.pickDeck(x, y, footprintCap);
+    const deck = aerial ?? this.lots.groundDeck(x, y);
     const onGround = deck.kind === 'ground';
 
     // **In quota il lotto e' l'impalcato.** Non si passa da `findLot`, che
@@ -1056,6 +1070,12 @@ export class Builder {
       y = deck.rect.y + ((deck.rect.sizeY - side) >> 1);
       footprintCap = side;
     }
+
+    // **Il sito bocciato si guarda sull'impronta finale**, non sulla colonna da
+    // cui la ricerca e' partita: in quota il lotto si sposta dentro il riquadro
+    // dell'impalcato, e la colonna d'origine non e' quella su cui si costruisce.
+    const key = columnKey(x, y);
+    if (this.lots.isBanned(key)) return null;
 
     // Il seme resta quello dell'origine del lotto anche se l'impronta finale si
     // assesta dentro lo spazio prenotato: e' il lotto a essere stabile, non il

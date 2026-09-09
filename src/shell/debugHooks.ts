@@ -18,7 +18,7 @@ import { CLASS_COUNT, CLASS_NAMES, type BuildingClass } from '../sim/classes';
 import { isInfoViewKind } from '../sim/infoViews';
 import type { BuildSite } from '../sim/nextBuildSites';
 import { isPolicyId } from '../sim/policies';
-import { harvestFactorAt, SEASON_NAMES, seasonAt } from '../sim/seasons';
+import { harvestFactorOfPhase, SEASON_NAMES, seasonOfPhase } from '../sim/seasons';
 import type { InspectOverlayFrame } from '../ui/InspectOverlay';
 import { CHUNK } from '../world/chunkCoords';
 import type { SceneGenerator } from '../world/scenes/cityScene';
@@ -210,8 +210,11 @@ export function installDebugHooks(deps: DebugHooksDeps): void {
     return {
       phase: current,
       pinned: daylight.seasonPinned,
-      season: SEASON_NAMES[seasonAt(Math.round(current * BALANCE.seasons.yearTicks))],
-      harvestFactor: harvestFactorAt(Math.round(current * BALANCE.seasons.yearTicks)),
+      // Dalla fase e non da un tick ricavato all'indietro: da quando la partita
+      // comincia a `YEAR_START_PHASE`, moltiplicare la fase per la lunghezza
+      // dell'anno restituisce un tick che sta in un'altra stagione.
+      season: SEASON_NAMES[seasonOfPhase(current)],
+      harvestFactor: harvestFactorOfPhase(current),
       mood: seasonMood(current),
       simTick: tick,
       yearTicks: BALANCE.seasons.yearTicks,

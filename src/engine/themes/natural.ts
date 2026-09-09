@@ -26,13 +26,19 @@ export const natural: Theme = {
     aoStrength: 0.55,
     skyOcclusion: 0.5,
     colorJitter: 0.2,
+    // I tre numeri della prospettiva aerea sono tornati a quelli che il tema
+    // aveva prima del modello di nebbia: quel modello e' rimasto — la nebbia si
+    // integra ancora lungo il raggio, e le quote si separano ancora — ma la
+    // taratura di allora slavava il diorama, che e' l'unica cosa che questo tema
+    // e' venuto a mostrare. `altitudeLift` a zero perche' e' l'unico dei tre che
+    // non svanisce con la distanza: era un decimo di velo su tutto, sempre.
     fog: {
       color: '#cfe9f7',
-      density: 0.0003,
+      density: 0.00018,
       skyBlend: 0.55,
       heightBase: 24,
-      heightFalloff: 0.005,
-      altitudeLift: 0.1,
+      heightFalloff: 0.010,
+      altitudeLift: 0,
       sunTint: 0.3,
     },
     sky: {

@@ -44,7 +44,14 @@ export interface AerialColumn {
   readonly pavement: boolean;
   /** true se nessun edificio prende il suolo di questa colonna. */
   readonly free: boolean;
-  /** true se il terreno regge un appoggio: nessuna opera lo rifiuta. */
+  /**
+   * true se il terreno regge un appoggio **cosi' com'e'**.
+   *
+   * Non e' «ci si costruisce»: un lotto sul bassofondo si paga una banchina e
+   * quella lo rende edificabile, ma una gamba non fa opere di terra — si pianta
+   * dove sta. Chi risponde tiene fuori sia cio' che nessuna opera salva sia cio'
+   * che solo un'opera salverebbe.
+   */
   readonly firm: boolean;
   /**
    * Id del record su cui `top` poggia, o 0 se e' terreno nudo.

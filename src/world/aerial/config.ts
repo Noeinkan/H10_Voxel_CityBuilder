@@ -32,6 +32,16 @@ const NODE_SIDE = minFootprintOf();
 const WALK_WIDTH = 4;
 
 /**
+ * Di quanto la parete d'attacco di una mensola puo' stare dentro il filo.
+ *
+ * E' un numero solo perche' e' un fatto solo: dice quanto della mensola cade
+ * ancora dentro l'impronta dell'ospite, e quindi anche quanto sporto serve
+ * perche' oltre il filo ne avanzi abbastanza da farci un lotto
+ * (`terrace.habitableOverhang`). Il perche' del valore sta su `terrace.maxRecess`.
+ */
+const TERRACE_RECESS = 3;
+
+/**
  * Unica fonte di verita' dei numeri della citta' in quota.
  *
  * Vale la stessa regola di `terrain/config.ts`, `streets/config.ts`,
@@ -187,6 +197,31 @@ export const AERIAL = {
     maxOverhang: 8,
 
     /**
+     * Lo sporto sotto cui una mensola **non e' un lotto**.
+     *
+     * **E' il numero che fa esistere la meta' abitata del gate**, e non e' una
+     * taratura: e' aritmetica. Il registry occupa l'intero riquadro dell'ospite
+     * per tutta la sua altezza — la sagoma vera e' piu' magra, ma la collisione
+     * legge il record — quindi le colonne di una mensola che cadono **dentro**
+     * l'impronta non sono un lotto per nessuno. Restano quelle oltre il filo, e
+     * il muro puo' essere rientrato fino a `maxRecess`: perche' avanzi
+     * l'impronta minima di un edificio servono `minFootprintOf() + maxRecess`
+     * voxel di sporto.
+     *
+     * Misurato senza: ottantanove mensole, quarantacinque abbastanza larghe, e
+     * **dieci** con un quadrato libero da quattro — cioe' `stacked` a zero per
+     * quasi tutta la partita.
+     *
+     * **Si chiede per primo e si ripiega**, ed e' cio' che lo rende gratis: dove
+     * sette voxel di aggetto non ci stanno — su una carreggiata secondaria larga
+     * due li attraverserebbe tutti — `planTerrace` rifiuta e la passata riprova
+     * con il balcone di sempre. La citta' non perde una mensola per guadagnarne
+     * una abitabile; ne guadagna dove c'era posto. Vedi
+     * `AerialDriver.planTerraceOn`.
+     */
+    habitableOverhang: NODE_SIDE + TERRACE_RECESS,
+
+    /**
      * Lo sporto del **mensolone**, cioe' quello della fase delle megastrutture.
      *
      * **E' l'unico numero di questo dominio che ha due valori, e non e' una
@@ -220,7 +255,7 @@ export const AERIAL = {
      * poche colonne sono la terrazza che la grammatica produce gia', e l'aggetto
      * la continua verso fuori invece di ricominciarla accanto.
      */
-    maxRecess: 3,
+    maxRecess: TERRACE_RECESS,
 
     /**
      * Quote su cui si prova a posare, dalla piu' alta in giu'.

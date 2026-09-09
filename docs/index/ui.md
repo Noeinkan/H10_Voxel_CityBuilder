@@ -16,6 +16,7 @@ giocabile; gli overlay tecnici si alternano con `F3` o partono aperti con
 
 | File | Ruolo |
 | --- | --- |
+| [cityClock.ts](src/ui/cityClock.ts) | L'ora della città in una riga: anno dal tick, ora dal sole, passo di un quarto d'ora perché a sei minuti per giorno i minuti sfarfallerebbero. Dice «Year» e non «Day» perché un anno **è** un giro del sole | `cityYear`, `clockTime`, `cityClock` |
 | [CityDrawer.ts](src/ui/CityDrawer.ts) | Dashboard di sola lettura: condizione, bisogni della città come barre, traguardi, commercio, scambi, forma, infrastrutture e storia in una colonna, senza interruttori |
 | [CityOverviewModel.ts](src/ui/CityOverviewModel.ts) | Modello puro della panoramica cittadina: obiettivi di autosufficienza, i sette bisogni come misure con tono e barra, forma urbana, infrastrutture, scambi, mandati e decisioni recenti |
 | [community.css](src/ui/community.css) | Il vestito delle due porte verso chi fa il gioco: le pillole del piede — l'ambra piena del sostegno, unica cosa calda in una pagina di cielo — e il pannello del feedback, che riusa i mattoni di `titleScreen.css` invece di rifarli |
@@ -43,7 +44,7 @@ giocabile; gli overlay tecnici si alternano con `F3` o partono aperti con
 | [meters.ts](src/ui/meters.ts) | Vocabolario grafico puro condiviso da scheda e cassetto: i quattro toni, `Meter` con quota e suggerimento, `Contribution`, `Breakdown` sul massimo assoluto, `Verdict`, e i formattatori di numero |
 | [src/ui/PerfOverlay.ts](src/ui/PerfOverlay.ts) | Pannello delle prestazioni acceso da `?perf=1`: fps, durata del frame, fetta di remesh, chunk rimeshati e livello di qualita'. Legge la stessa fonte del riepilogo console. |
 | [PoliciesDrawer.ts](src/ui/PoliciesDrawer.ts) | Il cassetto di governo: policy e rotte commerciali, le due cose che si toccano, separate dalla lettura |
-| [ResourceBar.ts](src/ui/ResourceBar.ts) | I dati in cima al rail sinistro: cinque risorse con freccia di tendenza, sparkline e riga di causa sempre visibili, popover del bilancio, blocco City needs, poi i gruppi Time e Sky | `ResourceBar` |
+| [ResourceBar.ts](src/ui/ResourceBar.ts) | I dati in cima al rail sinistro: cinque risorse con freccia di tendenza, sparkline e riga di causa sempre visibili, popover del bilancio, blocco City needs, poi i gruppi Time — con l'ora della città sotto i bottoni — e Sky | `ResourceBar` |
 | [BuildDock.ts](src/ui/BuildDock.ts) | Il rail di sinistra: le corsie etichettate incolonnate — catalizzatori, Reach, Clear (la gomma) e le porte —, tessere icona-sopra-etichetta con badge di tasto, una colonna sopra i 900px di finestra e due sotto, selezione per indice. Le porte includono la tessera Data, che apre il picker delle viste informative; fra le icone c'e' quella dei salvataggi | `DockPanel` |
 | [ResourceTrend.ts](src/ui/ResourceTrend.ts) | La finestra dei tick recenti per risorsa: direzione, magnitudine, serie per la sparkline e il ritmo per tick su cui si prevede. Campionamento ancorato al tick, e `rate` divide per i tick trascorsi e non per i campioni |
 | [GameHudModel.ts](src/ui/GameHudModel.ts) | Composizione del modello HUD: panoramica cittadina, azioni, policy, risorse e disponibilita' |
