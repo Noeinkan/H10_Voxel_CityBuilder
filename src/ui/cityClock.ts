@@ -1,4 +1,5 @@
 import { BALANCE } from '../sim/balance';
+import { SEASON_NAMES, seasonAt } from '../sim/seasons';
 
 /**
  * L'ora della citta', in una riga sola.
@@ -10,12 +11,17 @@ import { BALANCE } from '../sim/balance';
  * ancora non cresce niente, le tre velocita' producono la stessa immagine ferma.
  * Un comando di cui non si vede l'effetto e' indistinguibile da un comando rotto.
  *
- * **Dice l'anno e non il giorno**, e non e' un'approssimazione: `yearTicks` vale
- * tremilaseicento, cioe' trecentosessanta secondi a velocita' uno, che e'
- * esattamente `DAYLIGHT.daySeconds`. In questa citta' un anno **e'** un giro del
- * sole — la scelta e' documentata in `src/sim/balance.ts` e serve a impedire un
- * inverno che comincia e finisce dentro la stessa notte. Scrivere «Day 3»
- * accanto a un HUD che nomina le stagioni racconterebbe due calendari diversi.
+ * **Dice l'anno e la stagione, non il giorno**, e non e' un'approssimazione: in
+ * questa citta' e' la **stagione** a durare quanto un giro del sole — un anno ne
+ * conta quattro, la scelta e' documentata in `src/sim/balance.ts` e serve a
+ * impedire un inverno che comincia e finisce dentro lo stesso pomeriggio. Un
+ * «Day 3» racconterebbe un calendario che qui non esiste.
+ *
+ * **La stagione sta nella riga perche' senza si perderebbe la data.** Con quattro
+ * giri di sole per anno, «Year 1 · 14:20» tornerebbe identico quattro volte, e
+ * l'unico numero che si muove — l'ora — direbbe soltanto a che punto del giorno
+ * si e'. Le tre parti scorrono a tre ritmi diversi, ed e' cio' che rende la riga
+ * un orologio invece che un contatore.
  *
  * **Le due lancette vengono da due posti diversi, ed e' voluto.** L'anno conta
  * tick e vive nella simulazione; l'ora e' la posizione del sole e vive nel
@@ -66,5 +72,6 @@ const CLOCK_STEP_MINUTES = 15;
 export function cityClock(tickCount: number, hour: number): string {
   const step = CLOCK_STEP_MINUTES / 60;
   const stepped = Number.isFinite(hour) ? Math.floor(hour / step) * step : hour;
-  return `Year ${cityYear(tickCount)} · ${clockTime(stepped)}`;
+  const season = SEASON_NAMES[seasonAt(tickCount)] ?? '';
+  return `Year ${cityYear(tickCount)} · ${season} · ${clockTime(stepped)}`;
 }

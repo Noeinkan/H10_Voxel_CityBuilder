@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { BALANCE } from '../sim/balance';
 import { DAYLIGHT } from '../engine/daylight';
 import { SIM_TICK_RATE } from '../game/simScene';
+import { SEASON_COUNT } from '../sim/seasons';
 import { cityClock, cityYear, clockTime } from './cityClock';
 
 const YEAR = BALANCE.seasons.yearTicks;
@@ -44,9 +45,13 @@ describe('clockTime', () => {
 });
 
 describe('cityClock', () => {
-  it('mette insieme le due lancette', () => {
-    expect(cityClock(0, 8)).toBe('Year 1 · 08:00');
-    expect(cityClock(YEAR * 2, 18.25)).toBe('Year 3 · 18:15');
+  it('mette insieme le tre lancette', () => {
+    // Il tick zero cade a meta' estate: e' `YEAR_START_PHASE`, e la ragione sta
+    // in `src/sim/seasons.ts` — la citta' non deve nascere sotto la brina.
+    expect(cityClock(0, 8)).toBe('Year 1 · Summer · 08:00');
+    expect(cityClock(YEAR * 2, 18.25)).toBe('Year 3 · Summer · 18:15');
+    // Un quarto d'anno piu' avanti e' un'altra stagione, con l'anno fermo.
+    expect(cityClock(YEAR / 4, 6)).toBe('Year 1 · Autumn · 06:00');
   });
 
   /**
@@ -55,17 +60,24 @@ describe('cityClock', () => {
    * che il tempo scorre — che e' l'unica ragione per cui questa riga esiste.
    */
   it('si muove a quarti d ora, non a minuti', () => {
-    expect(cityClock(0, 9.6)).toBe('Year 1 · 09:30');
-    expect(cityClock(0, 9.99)).toBe('Year 1 · 09:45');
-    expect(cityClock(0, 10)).toBe('Year 1 · 10:00');
+    expect(cityClock(0, 9.6)).toBe('Year 1 · Summer · 09:30');
+    expect(cityClock(0, 9.99)).toBe('Year 1 · Summer · 09:45');
+    expect(cityClock(0, 10)).toBe('Year 1 · Summer · 10:00');
   });
 
   /**
-   * Il contratto che rende onesta la riga: un anno **e'** un giro del sole, e se
-   * i due numeri si separassero l'HUD mostrerebbe un anno che avanza mentre il
-   * sole sta fermo, o il contrario. La ragione della scelta sta in `balance.ts`.
+   * Il contratto che rende onesta la riga: una **stagione** dura esattamente un
+   * giro del sole. Se i due numeri si separassero, ci sarebbe una stagione che
+   * si apre e si chiude senza che il sole abbia fatto il giro — o un giorno che
+   * ne attraversa due — e la data smetterebbe di stare accanto all'ora. La
+   * ragione della scelta, e il prezzo che ha, stanno in `balance.ts`.
    */
-  it('un anno dura esattamente un giro del sole', () => {
-    expect(YEAR / SIM_TICK_RATE).toBeCloseTo(DAYLIGHT.daySeconds, 6);
+  it('una stagione dura esattamente un giro del sole', () => {
+    expect(YEAR / SEASON_COUNT / SIM_TICK_RATE).toBeCloseTo(DAYLIGHT.daySeconds, 6);
+  });
+
+  /** E il minimo dichiarato: cinque minuti veri di stagione a velocita' uno. */
+  it('una stagione non scende sotto i cinque minuti', () => {
+    expect(YEAR / SEASON_COUNT / SIM_TICK_RATE).toBeGreaterThanOrEqual(5 * 60);
   });
 });

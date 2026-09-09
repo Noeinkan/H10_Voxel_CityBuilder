@@ -934,20 +934,31 @@ export const BALANCE = {
     /**
      * Quanto dura un anno, in tick.
      *
-     * **Tremilaseicento e' un giro del sole a velocita' uno**: `SIM_TICK_RATE`
-     * vale dieci, quindi sono trecentosessanta secondi, che e' esattamente
-     * `DAYLIGHT.daySeconds`. Le due lancette non si sincronizzano — l'anno conta
-     * tick e si ferma in pausa, il sole conta secondi e no — ma partono dallo
-     * stesso passo, e questo basta a evitare l'unica cosa davvero illeggibile:
-     * un inverno che comincia e finisce dentro la stessa notte.
+     * **Una stagione dura quanto un giro del sole.** `SIM_TICK_RATE` vale dieci,
+     * quindi l'anno sono millequattrocentoquaranta secondi a velocita' uno e la
+     * stagione trecentosessanta, che e' esattamente `DAYLIGHT.daySeconds`: ogni
+     * stagione ha il suo giorno e la sua notte, e non ce n'e' una che passi
+     * senza che il sole abbia fatto il giro.
      *
-     * A misura di partita sono quattro anni in venticinque minuti, cioe' quattro
-     * volte «accumula» e quattro volte «consuma». Meno, e il ritmo non si
-     * riconoscerebbe; molti di piu', e ogni stagione sarebbe piu' corta della
-     * dotazione che l'emergenza alimentare regala (`decisions.reliefTicks`),
-     * che e' il punto in cui una risposta smette di essere una risposta.
+     * **Era un quarto di questo, e l'incastro stava un piano piu' su**: era
+     * l'*anno* a coincidere con la giornata, quindi le stagioni duravano novanta
+     * secondi e se ne vedevano passare quattro dentro lo stesso pomeriggio —
+     * proprio la cosa illeggibile che quel numero doveva impedire. I bottoni
+     * della velocita' peggioravano il difetto invece di aiutarlo, perche' l'anno
+     * conta tick e accelerava con loro mentre il sole, allora, contava secondi
+     * veri e non accelerava affatto.
+     *
+     * **Il prezzo e' la partita piu' lunga**, e va detto: a velocita' uno un anno
+     * intero chiede ventiquattro minuti, cioe' una volta «accumula» e una volta
+     * «consuma» dove prima erano quattro. E' anche il motivo per cui i tre
+     * bottoni esistono — a 4× l'anno sta in sei minuti — e da quando il sole
+     * segue la velocita' accelerare non slega piu' le due lancette.
+     *
+     * Il limite dal basso resta `decisions.reliefTicks`: una stagione piu' corta
+     * della dotazione che l'emergenza alimentare regala e' il punto in cui una
+     * risposta smette di essere una risposta. Qui la stagione ne vale sei.
      */
-    yearTicks: 3600,
+    yearTicks: 14400,
 
     /**
      * Di quanto la resa si scosta da uno, in piu' d'estate e in meno d'inverno.
