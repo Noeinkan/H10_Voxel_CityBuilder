@@ -85,9 +85,12 @@ export class GrowthOverlay {
       // nessuno ci costruisce sopra, `lifts` a zero che ci si abita e non ci si
       // arriva — tre difetti diversi, e da qui si distinguono senza aprire una
       // console.
+      // `z` chiude la riga con la quota abitata piu' bassa: e' dove il motore
+      // posa il fondo del vuoto, quindi a zero le nuvole basse non ci sono e a
+      // schermo non c'e' niente sotto la citta' in quota.
       `aerial       ${stats.builder.terraces} terraces  ${stats.builder.routes} routes  ` +
         `${stats.builder.piers} piers  ${stats.builder.stacked} stacked  ` +
-        `${stats.builder.lifts} lifts`,
+        `${stats.builder.lifts} lifts  z ${stats.builder.stackedZ}`,
       // Non e' un gate come la riga sopra — una funivia la tira il giocatore, e
       // zero vuol dire soltanto che non ne ha volute — ma sta qui perche' e'
       // l'altro modo in cui la citta' scavalca il vuoto, e senza questa riga non

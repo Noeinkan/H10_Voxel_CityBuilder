@@ -235,6 +235,11 @@ export function createSkyBackground(atmosphere: Atmosphere): SkyBackgroundHandle
       uTime: { value: 0 },
 
       uCloudHeight: { value: 0 },
+      // Il fondo del vuoto non si disegna sul cielo — sta sotto la citta', e
+      // dietro un pixel di cielo non c'e' nessuna citta' — ma l'uniform va
+      // dichiarato lo stesso: gli elenchi dei due programmi sono lo stesso
+      // elenco, e uno attivo senza valore e' una riga di avviso a ogni frame.
+      uCloudFloorHeight: { value: 0 },
       uCloudThickness: { value: 1 },
       uCloudAmount: { value: 0 },
       uCloudCoverage: { value: 0 },

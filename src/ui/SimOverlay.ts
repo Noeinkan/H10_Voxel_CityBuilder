@@ -292,7 +292,7 @@ function builderLines(stats: BuilderStats | null): readonly string[] {
     `rejected     ${stats.blacklisted.toString().padStart(6)} blocked${rejected.length === 0 ? '' : `  ${rejected.join('  ')}`}`,
     `clustered    ${stats.clustered.toString().padStart(6)} in row`,
     `spans        ${stats.spans.toString().padStart(6)} aloft   ${stats.spanReach} blocks reached`,
-    `aerial       ${stats.terraces.toString().padStart(6)} terraces  ${stats.routes} routes  ${stats.piers} piers  ${stats.stacked} stacked  ${stats.lifts} lifts`,
+    `aerial       ${stats.terraces.toString().padStart(6)} terraces  ${stats.routes} routes  ${stats.piers} piers  ${stats.stacked} stacked  ${stats.lifts} lifts  z ${stats.stackedZ}`,
     `ropeways     ${stats.ropeways.toString().padStart(6)} lines`,
     // Il numero che deve **scendere** mentre la citta' cresce: se sale per
     // sempre, nessun lotto si ritira e la citta' non si mangia piu' la propria

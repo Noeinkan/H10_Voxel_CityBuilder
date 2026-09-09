@@ -517,6 +517,7 @@ function stats(
       routes: 0,
       piers: 0,
       stacked: 0,
+      stackedZ: 0,
       lifts: 0,
       ropeways: 0,
       clearing: 0,

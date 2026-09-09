@@ -70,6 +70,16 @@ export interface VoxelMaterialHandle {
    */
   setClouds(on: boolean): void;
   /**
+   * Quota del banco basso, o 0 per spegnerlo.
+   *
+   * **La detta il mondo, non il tema**, ed e' l'unico numero dello strato che lo
+   * fa: dove sta il fondo del vuoto dipende da dove si abita in quota. Chi lo
+   * scrive lo ricava con `cloudFloorHeight`, alla cadenza dell'HUD come le
+   * finestre accese — il piano abitato piu' basso si muove di rado, e non ha
+   * niente da guadagnare a essere riscritto sessanta volte al secondo.
+   */
+  setCloudFloor(height: number): void;
+  /**
    * Quante finestre sono accese e quanto sono accese le insegne, 0..1.
    *
    * Sono due numeri e non una struttura perche' e' tutto cio' che il fragment
@@ -211,6 +221,9 @@ export function createVoxelMaterial(hexColors: readonly string[], voxelSize: num
       uResolution: { value: resolution },
 
       uCloudHeight: { value: 0 },
+      // Il fondo non lo dichiara il tema ma il mondo, e finche' nessuno abita in
+      // quota resta zero: e' il ramo che il fragment salta per primo.
+      uCloudFloorHeight: { value: 0 },
       uCloudThickness: { value: 1 },
       // Zero: lo strato non esiste finche' un tema non lo dichiara, e il
       // fragment esce dal ramo sul primo confronto.
@@ -360,6 +373,9 @@ export function createVoxelMaterial(hexColors: readonly string[], voxelSize: num
       // Un uniform a zero, non un programma diverso: spegnere le nuvole non deve
       // ricompilare niente, come non lo fa spegnere le ombre.
       material.uniforms['uCloudAmount'].value = on ? deckAmount : 0;
+    },
+    setCloudFloor(height: number): void {
+      material.uniforms['uCloudFloorHeight'].value = Math.max(0, height);
     },
     setVitality(homes: number, commerce: number): void {
       material.uniforms['uLitHomes'].value = homes;

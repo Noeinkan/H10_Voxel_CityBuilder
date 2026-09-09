@@ -398,6 +398,17 @@ ${inspect ? inspectMelt : ''}
   // La faccia colpita scurisce la tinta: e' cio' che fa leggere la lastra come
   // spessa invece che larga, perche' di un prisma si vede la sommita' **e** il
   // fianco, e con lo stesso colore sarebbero una macchia sola.
+  // **Due lastre, e il fondo si prova per primo.** Quella alta e' il soffitto del
+  // tema, questa e' il fondo del vuoto sotto la citta' in quota: sono lo stesso
+  // banco a due quote. Si compongono nell'ordine in cui il raggio le incontra —
+  // prima la piu' alta, che sta piu' vicino alla camera — quindi il soffitto
+  // scrive per ultimo e vince dove ci sono tutte e due. Con un fondo spento
+  // (uCloudFloorHeight a zero, cioe' ogni partita che in quota non ci va) la
+  // prima riga esce prima del ciclo sulle fette e non costa niente.
+  vec2 floorCloud = cloudFloorTrace(vWorldPosition, vray, uTime);
+  if (cloudHatch(gl_FragCoord.xy) < floorCloud.x) {
+    aerial = mix(fogTint, uCloudTint, uCloudTintBlend) * cloudShade(floorCloud.y);
+  }
   vec2 cloud = cloudTrace(vWorldPosition, vray, uTime);
   if (cloudHatch(gl_FragCoord.xy) < cloud.x) {
     aerial = mix(fogTint, uCloudTint, uCloudTintBlend) * cloudShade(cloud.y);

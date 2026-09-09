@@ -16,7 +16,7 @@ giocabile; gli overlay tecnici si alternano con `F3` o partono aperti con
 
 | File | Ruolo |
 | --- | --- |
-| [cityClock.ts](src/ui/cityClock.ts) | L'ora della città in una riga: anno dal tick, ora dal sole, passo di un quarto d'ora perché a sei minuti per giorno i minuti sfarfallerebbero. Dice «Year» e non «Day» perché un anno **è** un giro del sole | `cityYear`, `clockTime`, `cityClock` |
+| [cityClock.ts](src/ui/cityClock.ts) | L'ora della città in una riga: anno e stagione dal tick, ora dal sole, passo di un quarto d'ora perché a sei minuti per giorno i minuti sfarfallerebbero. Dice «Year» e la stagione, non «Day», perché qui è la **stagione** a durare un giro del sole | `cityYear`, `clockTime`, `cityClock` |
 | [CityDrawer.ts](src/ui/CityDrawer.ts) | Dashboard di sola lettura: condizione, bisogni della città come barre, traguardi, commercio, scambi, forma, infrastrutture e storia in una colonna, senza interruttori |
 | [CityOverviewModel.ts](src/ui/CityOverviewModel.ts) | Modello puro della panoramica cittadina: obiettivi di autosufficienza, i sette bisogni come misure con tono e barra, forma urbana, infrastrutture, scambi, mandati e decisioni recenti |
 | [community.css](src/ui/community.css) | Il vestito delle due porte verso chi fa il gioco: le pillole del piede — l'ambra piena del sostegno, unica cosa calda in una pagina di cielo — e il pannello del feedback, che riusa i mattoni di `titleScreen.css` invece di rifarli |

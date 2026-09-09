@@ -551,6 +551,52 @@ describe('Builder — la citta in quota', () => {
     }
   });
 
+  it('la quota abitata piu bassa e un fatto, non una stima', () => {
+    // **E' il solo numero che il mondo manda al motore**, e ci posa sotto il
+    // fondo del vuoto: se dicesse una quota piu' alta di quella vera, il banco
+    // di nuvole basso velerebbe la casa invece del vuoto sotto di lei.
+    const { builder } = aerialCity();
+    const decks = builder.registry.decks;
+    const stacked = buildingsOf(builder).filter((record) =>
+      decks.some((deck) => record.baseZ === deck.baseZ + deck.height));
+
+    expect(stacked.length).toBeGreaterThan(0);
+    expect(builder.stats.stackedZ).toBe(Math.min(...stacked.map((r) => r.baseZ)));
+  });
+
+  it('una colonna a un livello solo costa quanto costava', () => {
+    // **Il vincolo della fase, verificato invece che dichiarato.** Le quote oltre
+    // la prima stanno in una mappa sparsa e non in un buffer dimensionato sul
+    // tetto del formato, quindi una citta' tutta al suolo non paga niente per la
+    // possibilita' di salire: il campo non alloca la mappa, il mondo non ha una
+    // quota da annunciare, e il fragment del fondo esce sul primo confronto.
+    const world = new VoxelWorld();
+    const terrain = testTerrain({ chunksX: 2, chunksY: 2, height: 12 });
+    const builder = new Builder(world, terrain, 1337);
+    let state = addCatalyst(createSimState(), {
+      x: 24,
+      y: 24,
+      class: BUILDING_CLASS.residential,
+      strength: 255,
+      radius: 20,
+    });
+    for (let i = 0; i < ticksFor(4); i++) {
+      state = tickHeld(state, terrain);
+      state = builder.onTick(state);
+      while (builder.stats.growing > 0) builder.step();
+    }
+
+    expect(builder.stats.placed).toBeGreaterThan(0);
+    expect(builder.stats.terraces).toBe(0);
+    expect(builder.stats.stacked).toBe(0);
+    // Nessuna quota da annunciare al motore, quindi nessun banco basso: il
+    // fragment esce sul primo confronto e il fondo del vuoto non costa niente.
+    expect(builder.stats.stackedZ).toBe(0);
+    // E il campo non alloca la mappa sparsa delle quote: e' li' che si vedrebbe
+    // un costo dimensionato sul tetto invece che sui livelli presenti.
+    expect(state.field.stackedColumns).toBe(0);
+  });
+
   it('a parita di seed la citta in quota e identica', () => {
     const shapeOf = (builder: Builder): string =>
       [...builder.registry.all]

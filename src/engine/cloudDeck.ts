@@ -156,6 +156,39 @@ export function cloudBase(deck: CloudDeckModel): number {
 }
 
 /**
+ * Voxel fra la sommita' del banco basso e il piano abitato piu' basso.
+ *
+ * Due cubi: abbastanza perche' da una mensola si veda il banco **sotto di se'**
+ * e non addosso, troppo pochi perche' fra i due ci stia un piano di edificio. E'
+ * la stessa misura con cui `AERIAL.clearance` tiene un impalcato staccato da cio'
+ * che ha sotto, e per la stessa ragione — un franco che si legge.
+ */
+export const CLOUD_FLOOR_GAP = 4;
+
+/**
+ * La quota del **banco basso**, dato il piano abitato piu' basso della citta'.
+ *
+ * **E' il fondo del vuoto, e non e' un secondo tempo atmosferico.** Lo strato
+ * alto di un tema sta dove arrivano le cime: e' un soffitto, e da una quota
+ * abitata guardando in giu' non c'e' niente — misurato, i tre temi lo mettono
+ * fra 106 e 133 mentre le mensole di una citta' di prova stanno fra 35 e 60.
+ * Questo e' lo **stesso** banco posato un piano piu' sotto, con gli stessi
+ * numeri di grana, copertura e tinta: cio' che cambia e' dove sta, e per questo
+ * non c'e' un secondo look da tarare su sette temi.
+ *
+ * `0` quando nessuno abita in quota, ed e' il vincolo della fase detto qui: una
+ * partita che non ci arriva mai resta identica a quella di oggi, e il fragment
+ * esce dal ramo sul primo confronto.
+ */
+export function cloudFloorHeight(inhabitedZ: number, deck: CloudDeckModel): number {
+  if (inhabitedZ <= 0) return 0;
+  const height = inhabitedZ - CLOUD_FLOOR_GAP - thicknessOf(deck) / 2;
+  // Un banco che finisse sotto il livello del suolo non velerebbe niente e
+  // costerebbe comunque un attraversamento: meglio dichiararlo spento.
+  return height <= 0 ? 0 : height;
+}
+
+/**
  * Quota della fetta `index`, dalla sommita' verso il basso.
  *
  * Le fette stanno al **centro** del loro strato e non ai bordi: campionare sui

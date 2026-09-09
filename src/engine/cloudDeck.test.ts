@@ -2,9 +2,11 @@ import { describe, expect, it } from 'vitest';
 import {
   CLOUD_GRAZING_EPSILON,
   CLOUD_MIN_DENSITY,
+  CLOUD_FLOOR_GAP,
   CLOUD_SIDE_SHADE,
   CLOUD_SLICES,
   cloudBase,
+  cloudFloorHeight,
   cloudCell,
   cloudCovers,
   cloudCrossing,
@@ -63,6 +65,58 @@ function densestAlongRow(y: number): { x: number; density: number } {
   }
   return best;
 }
+
+/**
+ * Il banco basso: lo stesso strato posato sotto la citta' in quota.
+ *
+ * **E' il fondo del vuoto**, cioe' la meta' di look della 4.9. Lo strato del
+ * tema sta dove arrivano le cime — misurato, fra 106 e 133 nei tre temi — mentre
+ * le mensole abitate di una citta' di prova stanno fra 35 e 60: era un soffitto
+ * cinquanta voxel piu' su, e da una quota alta guardando in giu' non c'era
+ * niente. Qui si verifica la sola cosa che cambia fra i due banchi, cioe' dove
+ * stanno.
+ */
+describe('il banco basso', () => {
+  it('sta sotto il piano abitato, e non lo tocca', () => {
+    const height = cloudFloorHeight(60, DECK);
+    const floor = { ...DECK, height };
+
+    // La sommita' resta sotto il piano abitato: chi ci sta sopra vede il banco
+    // **sotto di se'**, non addosso.
+    expect(cloudTop(floor)).toBeLessThan(60);
+    expect(cloudTop(floor)).toBe(60 - CLOUD_FLOOR_GAP);
+  });
+
+  it('e spento dove non si abita in quota, e non costa niente', () => {
+    // E' il vincolo della fase detto in un numero: una partita che in quota non
+    // ci arriva mai deve restare identica a quella di oggi, e a zero il fragment
+    // esce prima del ciclo sulle fette.
+    expect(cloudFloorHeight(0, DECK)).toBe(0);
+    expect(cloudFloorHeight(-5, DECK)).toBe(0);
+  });
+
+  it('non si posa sotto il suolo: li non velerebbe niente e costerebbe uguale', () => {
+    // Un piano abitato bassissimo — una mensola a pochi cubi dal marciapiede —
+    // lascerebbe il banco sotto lo zero: meglio dichiararlo spento che pagarne
+    // l'attraversamento per non vederlo.
+    expect(cloudFloorHeight(CLOUD_FLOOR_GAP, DECK)).toBe(0);
+  });
+
+  it('e lo stesso strato, non un secondo tempo atmosferico', () => {
+    // **Grana, copertura e deriva restano quelle del tema**: cambia la quota e
+    // basta, ed e' per questo che non c'e' un secondo look da tarare su sette
+    // temi. Si verifica dove la differenza si vedrebbe — la cella di rumore, che
+    // dipende dal solo punto del piano: sopra la stessa colonna i due banchi
+    // portano la stessa nuvola.
+    const floor = { ...DECK, height: cloudFloorHeight(60, DECK) };
+    for (let x = 0; x < 900; x += DECK.cellSize) {
+      expect(cloudCell(x, 300, 0, floor)).toBe(cloudCell(x, 300, 0, DECK));
+    }
+
+    // E si muove con lo stesso vento: la deriva e' un parametro del tema.
+    expect(cloudCell(120, 300, 40, floor)).toBe(cloudCell(120, 300, 40, DECK));
+  });
+});
 
 describe('la lastra', () => {
   it('ha una sommita\' e una base attorno alla propria quota', () => {

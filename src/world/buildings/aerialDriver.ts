@@ -24,14 +24,6 @@ import type { SpanDriver } from './spanDriver';
 import { stampSolidAt, STAMP_EMPTY, type VoxelAnchor, type VoxelStamp } from './stamp';
 import { isGroundStructure, traitsOf } from './structureKind';
 
-/** SONDA TEMPORANEA — da togliere. */
-export const ROUTE_PROBE: {
-  examined: number; noPartner: number; paired: number; planned: number; noFit: number;
-  refusals: Record<string, number>;
-} = {
-  examined: 0, noPartner: 0, paired: 0, planned: 0, noFit: 0, refusals: {},
-};
-
 /**
  * La citta' in quota: mensole, percorsi, gambe e i piani su cui si costruisce.
  *
@@ -165,6 +157,30 @@ export class AerialDriver {
   /** true se qualcuno ha costruito su questo impalcato. */
   isInhabited(deckId: number): boolean {
     return this.inhabitedDecks.has(deckId);
+  }
+
+  /**
+   * La quota del piano abitato piu' basso sopra la citta', o zero se non ce n'e'.
+   *
+   * **E' la sola cosa che questo dominio dice al motore**, ed e' la meta' di look
+   * della fase: sotto quel piano ci va il fondo del vuoto, cioe' il banco di
+   * nuvole basso senza il quale una quota alta non si legge come alta. Il piu'
+   * basso e non la media perche' il fondo deve stare **sotto tutti**: sopra il
+   * piu' basso velerebbe la casa invece del vuoto.
+   *
+   * Si scorre l'insieme degli abitati invece di tenere un minimo aggiornato: sono
+   * unita', e un minimo tenuto a mano andrebbe ricalcolato ogni volta che un
+   * impalcato cade — cioe' esattamente il caso in cui sbaglierebbe in silenzio.
+   */
+  get inhabitedFloor(): number {
+    let lowest = 0;
+    for (const id of this.inhabitedDecks) {
+      const deck = this.ctx.registry.get(id);
+      if (deck === null) continue;
+      const z = deck.baseZ + deck.height;
+      if (lowest === 0 || z < lowest) lowest = z;
+    }
+    return lowest;
   }
 
   /** true se su questa colonna corre un piano oltre al suolo. */
@@ -399,15 +415,10 @@ export class AerialDriver {
     for (let i = 0; i < budget && built < AERIAL.route.perPass; i++) {
       const record = decks[this.routeCursor % decks.length];
       this.routeCursor++;
-      ROUTE_PROBE.examined++;
       if ((this.routeCount.get(record.id) ?? 0) >= AERIAL.route.maxPerHost) continue;
 
       const partner = this.routePartner(record);
-      if (partner === null) {
-        ROUTE_PROBE.noPartner++;
-        continue;
-      }
-      ROUTE_PROBE.paired++;
+      if (partner === null) continue;
 
       const result = planRoute({
         a: routeEndOf(record, this.openSideOf(record)),
@@ -419,15 +430,8 @@ export class AerialDriver {
       // cambiano, e riprovarla a ogni passata sarebbe il costo piu' alto del
       // dominio speso per sentirsi dire di no.
       this.routePairs.add(pairKey(record.id, partner.id));
-      if (!result.ok) {
-        ROUTE_PROBE.refusals[result.refusal] = (ROUTE_PROBE.refusals[result.refusal] ?? 0) + 1;
-        continue;
-      }
-      ROUTE_PROBE.planned++;
-      if (!this.buildRoute(result.plan)) {
-        ROUTE_PROBE.noFit++;
-        continue;
-      }
+      if (!result.ok) continue;
+      if (!this.buildRoute(result.plan)) continue;
       built++;
     }
   }
@@ -846,29 +850,25 @@ export class AerialDriver {
       const count = dirtyChunkCount(
         segment.x, segment.y, segment.sizeX, deck.baseZ, top, segment.sizeY,
       );
-      if (count > AERIAL.maxDirtyChunks) { ROUTE_PROBE.refusals.fitSegmentBudget =
-        (ROUTE_PROBE.refusals.fitSegmentBudget ?? 0) + 1; return false; }
+      if (count > AERIAL.maxDirtyChunks) return false;
     }
     for (const pier of deck.piers) {
       const count = dirtyChunkCount(
         pier.x, pier.y, AERIAL.pierSide,
         pier.baseZ, pier.baseZ + pier.height, AERIAL.pierSide,
       );
-      if (count > AERIAL.maxDirtyChunks) { ROUTE_PROBE.refusals.fitPierBudget =
-        (ROUTE_PROBE.refusals.fitPierBudget ?? 0) + 1; return false; }
+      if (count > AERIAL.maxDirtyChunks) return false;
     }
 
     if (this.ctx.registry.overlaps(
       rect.x, rect.y, rect.sizeX, deck.baseZ, deck.height, rect.sizeY, except,
     )) {
-      ROUTE_PROBE.refusals.fitDeckOverlap = (ROUTE_PROBE.refusals.fitDeckOverlap ?? 0) + 1;
       return false;
     }
     for (const pier of deck.piers) {
       if (this.ctx.registry.overlaps(
         pier.x, pier.y, AERIAL.pierSide, pier.baseZ, pier.height, AERIAL.pierSide, except,
       )) {
-        ROUTE_PROBE.refusals.fitPierOverlap = (ROUTE_PROBE.refusals.fitPierOverlap ?? 0) + 1;
         return false;
       }
     }

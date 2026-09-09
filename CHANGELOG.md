@@ -16,6 +16,48 @@ Qui stanno **i tredici incrementi più recenti**; i precedenti sono archiviati i
 
 ---
 
+## In corso — Si abita davvero sopra la citta'
+
+- **Il lotto in quota si risolve dove la roadmap dice che deve.** Il dominio
+  dichiarava «in quota il lotto **e'** l'impalcato — niente `findLot`», e la
+  riga non era mai stata scritta: il piano si sceglieva *dopo* la ricerca a
+  terra, che boccia la carreggiata come suolo preso — cioe' bocciava proprio le
+  mensole del fronte strada, quelle che la fase ci mette apposta. Misurato su una
+  citta' di quattrocentoventi edifici: ottantanove mensole, quarantacinque
+  abbastanza larghe, trentanove escluse per la sola strada sotto, e `stacked` a
+  zero. Ora `LotSearch.pickAerialLot` risolve la quota sulla colonna che la
+  simulazione propone, e la ricerca a terra torna a parlare del solo suolo.
+- **La mensola nasce abbastanza profonda da essere un lotto, o non cambia
+  niente.** Il registry occupa l'intero riquadro dell'ospite per tutta la sua
+  altezza, quindi le colonne di un balcone che cadono dentro l'impronta non sono
+  un lotto per nessuno: restano quelle oltre il filo, e il muro puo' essere
+  rientrato fino a `maxRecess`. `AERIAL.terrace.habitableOverhang` chiede
+  `minFootprintOf() + maxRecess` voxel — **e si ripiega**: dove sette voxel non
+  ci stanno, la mensola nasce come e' sempre nata. La citta' resta quella di
+  prima (420 edifici, `occupied` da 32 a 25) e in piu' si abita in quota.
+- **Il gate della 4.9 e' verde.** Sulla citta' di prova `stacked`, `routes` e
+  `lifts` erano tutti a zero; ora valgono 3, 2 e 1, con 51 gambe che prima non
+  esistevano — e con loro passa anche la stratificazione dell'arcologia, che
+  cadeva perche' la citta' non arrivava abbastanza matura.
+- **La promozione non perde piu' cio' su cui poggia.** `upgradeDriver` ricostruiva
+  il record senza `supports`: un edificio in quota che cresceva diventava un
+  volume sospeso, `registry.carries` smetteva di vedere il proprio inquilino e
+  l'impalcato tornava libero di cadere. Non si vedeva perche' in quota non ci
+  costruiva nessuno.
+- **Una gamba non si pianta nel bassofondo.** `firm` ammetteva la battigia, che
+  regge solo *con* una banchina — e una gamba non fa opere di terra: finivano in
+  mare oltre `GRADING.quayReach`, cioe' le piattaforme al largo che il gate della
+  4.2 esiste per escludere.
+- **Il fondo del vuoto.** Lo strato di nuvole del tema sta dove arrivano le cime
+  — fra 106 e 133 nei tre temi — mentre le mensole abitate stanno fra 35 e 60:
+  era un soffitto, e da una quota alta guardando in giu' non c'era niente. Lo
+  stesso banco si posa ora anche **sotto** la citta' in quota
+  (`cloudFloorHeight`, `uCloudFloorHeight`), con la stessa grana e la stessa
+  tinta: nessun secondo look da tarare su sette temi. La quota la detta il mondo
+  — `BuilderStats.stackedZ`, il piano abitato piu' basso — e a zero il fragment
+  esce prima del ciclo sulle fette, quindi una partita che in quota non ci arriva
+  mai resta identica a quella di oggi.
+
 ## In corso — Il colore alla nascita della città
 
 - **La città nasce a metà estate, non il primo giorno di primavera.** Le tre
@@ -68,6 +110,23 @@ Qui stanno **i tredici incrementi più recenti**; i precedenti sono archiviati i
   Un «Day 3» accanto a un HUD che nomina le stagioni racconterebbe due
   calendari. Il passo è di un quarto d'ora perché un minuto di città dura un
   quarto di secondo, e mostrarli tutti darebbe uno sfarfallio invece di un'ora.
+- **Una stagione dura sei minuti veri, non novanta secondi.** `yearTicks` passa
+  da 3600 a 14400. L'incastro con il sole non si rompe, si sposta di un piano:
+  era l'*anno* a coincidere con la giornata — quindi le quattro stagioni si
+  vedevano passare dentro lo stesso pomeriggio, proprio la cosa illeggibile che
+  quel numero doveva impedire — e ora è la **stagione** a valere esattamente
+  `DAYLIGHT.daySeconds`. Ogni stagione ha il suo giorno e la sua notte. Il
+  vincolo dal basso resta `decisions.reliefTicks`: la dotazione dell'emergenza
+  ci sta dentro sei volte, dove prima erano una e mezza.
+- **Il prezzo è la partita più lunga, e va detto:** a velocità uno un anno
+  intero chiede ventiquattro minuti, cioè una volta «accumula» e una volta
+  «consuma» dove prima erano quattro. È anche il motivo per cui i tre bottoni
+  della velocità esistono — a 4× l'anno sta in sei minuti — e da quando il sole
+  segue la velocità, accelerare non slega più le due lancette.
+- **L'orologio dell'HUD dice anche la stagione**: `Year 1 · Summer · 14:15`. Con
+  quattro giri di sole per anno, «Year 1 · 14:20» tornerebbe identico quattro
+  volte e la riga avrebbe perso la data. Le tre parti scorrono a tre ritmi
+  diversi, ed è ciò che la rende un orologio invece di un contatore.
 
 ## In corso — La mensola di viale è profonda quanto il passaggio che ci atterrerà
 

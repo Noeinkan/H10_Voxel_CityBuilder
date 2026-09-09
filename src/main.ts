@@ -39,6 +39,7 @@ import { createPostProcessing } from './engine/PostProcessing';
 import { createSunShadow } from './engine/SunShadow';
 import { resolveTheme, themeSwatches, THEMES, type Theme } from './engine/themes';
 import { createVoxelMaterial } from './engine/VoxelMaterial';
+import { cloudFloorHeight } from './engine/cloudDeck';
 import { installDebugHooks } from './shell/debugHooks';
 import { createEntryDrop } from './shell/entryDrop';
 import { createFrameStats } from './shell/frameStats';
@@ -1111,6 +1112,16 @@ function updateVitality(time: number): void {
   vitalityAt = time;
   const vitality = cityVitality(growthScene.stats.state);
   paletteHandle.setVitality(vitality.homes, vitality.commerce);
+
+  // **Il fondo del vuoto sta qui perche' e' la stessa cadenza e la stessa
+  // domanda**: un fatto del mondo che diventa un uniform, senza toccare un
+  // voxel. La quota abitata piu' bassa si muove quando nasce un lotto in quota,
+  // cioe' di rado; il tema che non ha nuvole non ha nemmeno un fondo, e allora
+  // resta zero — che nel fragment e' il ramo che esce subito.
+  const deck = daylight.theme.atmosphere.cloudDeck;
+  paletteHandle.setCloudFloor(deck === undefined
+    ? 0
+    : cloudFloorHeight(growthScene.stats.builder.stackedZ, deck));
 }
 
 /**

@@ -144,6 +144,7 @@ function stats(): GrowthStats {
       routes: 2,
       piers: 1,
       stacked: 3,
+      stackedZ: 42,
       lifts: 1,
       ropeways: 1,
       clearing: 0,

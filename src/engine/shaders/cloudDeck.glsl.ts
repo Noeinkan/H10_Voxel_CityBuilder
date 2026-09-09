@@ -38,6 +38,14 @@ import { INSPECT } from '../inspect';
  */
 export const cloudDeckUniforms = /* glsl */ `
 uniform float uCloudHeight;
+/**
+ * Quota del banco basso, o 0 se non ce n'e' uno.
+ *
+ * La detta il **mondo** e non il tema, ed e' l'unico numero di questo strato che
+ * lo fa: dove sta il fondo dipende da dove si abita in quota, che il tema non
+ * puo' sapere. Vedi cloudFloorHeight in cloudDeck.ts.
+ */
+uniform float uCloudFloorHeight;
 uniform float uCloudThickness;
 uniform float uCloudAmount;
 uniform float uCloudCoverage;
@@ -120,10 +128,10 @@ float cloudHatch(vec2 fragment) {
  * Delle fette attraversate si tiene la piu' fitta — il banco e' pieno, non un
  * accumulo di veli — ma la faccia e' quella della **prima** colpita dall'alto.
  */
-vec2 cloudTrace(vec3 world, vec3 viewDir, float time) {
+vec2 cloudBand(vec3 world, vec3 viewDir, float time, float height) {
   if (uCloudAmount <= 0.0) return vec2(0.0);
   float thickness = max(uCloudThickness, 0.001);
-  float top = uCloudHeight + thickness * 0.5;
+  float top = height + thickness * 0.5;
   if (world.z >= top) return vec2(0.0);
 
   float gap = thickness / ${CLOUD_SLICES.toFixed(1)};
@@ -137,6 +145,34 @@ vec2 cloudTrace(vec3 world, vec3 viewDir, float time) {
     best = max(best, value);
   }
   return vec2(uCloudAmount * best, face);
+}
+
+vec2 cloudTrace(vec3 world, vec3 viewDir, float time) {
+  return cloudBand(world, viewDir, time, uCloudHeight);
+}
+
+/**
+ * Il **banco basso**: lo stesso strato posato sotto la citta' in quota.
+ *
+ * E' il fondo del vuoto. Lo strato del tema sta dove arrivano le cime, cioe' e'
+ * un soffitto: da una mensola abitata, guardando in giu', non c'era niente — e
+ * senza niente sotto una quota alta non si legge come alta. Questo e' lo stesso
+ * banco, con la stessa grana e la stessa tinta, alla quota che il mondo detta
+ * (cloudFloorHeight): il tessuto ordinario si intravede attraverso la rigatura
+ * invece di stare li' nitido.
+ *
+ * **Solo sui frammenti, mai sul fondo.** Un raggio che non incontra niente
+ * attraverserebbe anche questa lastra e la dipingerebbe sul cielo, che sta
+ * dall'altra parte: il fondo del vuoto esiste dove c'e' un vuoto da riempire, e
+ * il vuoto lo fanno i livelli sotto. E' anche cio' che tiene la lastra bassa
+ * fuori dall'orizzonte, dove sarebbe una banda che taglia l'inquadratura.
+ *
+ * A zero e' spento, ed e' il caso di ogni partita che in quota non ci va: il
+ * confronto esce prima del ciclo sulle fette, che e' cio' che costa.
+ */
+vec2 cloudFloorTrace(vec3 world, vec3 viewDir, float time) {
+  if (uCloudFloorHeight <= 0.0) return vec2(0.0);
+  return cloudBand(world, viewDir, time, uCloudFloorHeight);
 }
 
 /**

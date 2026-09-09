@@ -217,6 +217,15 @@ export interface BuilderStats {
   readonly routes: number;
   readonly piers: number;
   readonly stacked: number;
+  /**
+   * La quota abitata piu' bassa **sopra** la citta', o zero se non ci abita
+   * nessuno.
+   *
+   * Non e' una statistica come le altre cinque: e' l'unico numero che il mondo
+   * manda al motore, ed e' li' che il fondo del vuoto si posa — le nuvole basse
+   * stanno appena sotto questo piano, o non ci sono. Vedi `cloudFloorHeight`.
+   */
+  readonly stackedZ: number;
   readonly lifts: number;
   /**
    * Quante funivie il giocatore ha tirato.
@@ -629,6 +638,7 @@ export class Builder {
       arcologyRefusal: this.arcologies.refusal,
       arcology: this.arcologies.standing,
       stacked: this.stackedCount,
+      stackedZ: this.aerial.inhabitedFloor,
       clearing: this.clearance.open,
       cleared: this.clearance.cleared,
       abandoned: this.decay.count,

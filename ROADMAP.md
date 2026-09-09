@@ -479,40 +479,7 @@ Obiettivo: smettere di costruire *sul* terreno e cominciare a costruire *sopra
 la città* — piattaforme abitate, edifici che poggiano su altri edifici, mobilità
 in quota e vuoto sotto, nella direzione di Cloudpunk.
 
-È la terza della spina dorsale e la più grossa: dipende da 4.4 per gli isolati
-terrazzati, da 4.5 per le campate e da 4.6 per il tetto, e viene dopo di loro
-perché è **l'unica sotto-fase che tocca l'assunzione di colonna**. Dopo di lei
-resta solo la 4.14, che non aggiunge un meccanismo ma un'opera. Il look al neon
-che accompagna queste immagini è 4.7 e 4.8; qui c'è solo la struttura che regge.
-
-**Com'è fatta davvero una città a livelli.** Nivalis, in Cloudpunk, non ha
-edifici sospesi: ha **cinque piani di città**, e le piattaforme che sembrano
-galleggiare poggiano sopra altri edifici. La parte bassa è deliberatamente
-strutturale — volumi grossi di cemento, poche finestre — perché è la fondazione
-di quello che sta sopra, e le guglie stanno solo negli ultimi livelli. È il
-vincolo qui sotto detto dal lato del look, ed è anche un'istruzione per la 4.6:
-il basso non va riempito di torri ma di podi, e la gerarchia deve saper dire
-«qui bassa e massiccia» con la stessa precisione con cui dice «qui alta».
-Una megacittà fatta di torri alte ovunque non legge come alta — legge come
-piatta, solo più in su.
-
-**Cosa c'è già e cosa manca davvero.** Il mondo è pronto più di quanto sembri:
-`BuildingRegistry.overlaps` considera *non* sovrapposti due volumi sulla stessa
-colonna con intervalli di quota disgiunti — è esattamente la condizione che
-permette a un edificio di poggiare sul tetto di un altro — e `topOf` esiste già
-come punto d'ancoraggio per chi costruisce sopra qualcosa. A fermare tutto è il
-piano sopra: `TerrainMap` tiene **una** altezza e **un** bit `buildable` per
-colonna, e `nextBuildSites` scarta la colonna che il registry dice occupata.
-Finché "edificabile" è un bit per `(x, y)`, un secondo livello non può essere
-scelto, per quanto il mondo saprebbe costruirlo.
-
-**La via già battuta.** In 4.1 il candidato ha smesso di essere un indirizzo ed è
-diventato un isolato, con `placeLot` a risolvere il lotto: `src/sim/` non ha
-dovuto sapere che le strade esistono. Qui serve la stessa mossa in verticale — la
-simulazione designa una colonna, il mondo sceglie **la quota** — e la
-simulazione continua a non avere una coordinata verticale (invariante 7). È
-l'alternativa da preferire a un indice `z` nel campo di desiderabilità, che
-moltiplicherebbe per il numero di livelli tutta la memoria densa.
+*Chiusa. Il ragionamento e l'esito stanno in [docs/roadmap/fase-4.9.md](docs/roadmap/fase-4.9.md).*
 
 - [x] Introdurre la mensola come suolo artificiale: una struttura con appoggi <!-- size: XL -->
   propri che porta una superficie edificabile a quota, trattata dal registry come
@@ -543,9 +510,9 @@ moltiplicherebbe per il numero di livelli tutta la memoria densa.
 - [x] Aggiungere mobilità in quota come struttura di scena — monorotaia, <!-- size: L -->
   sopraelevata, ascensori d'isolato — appoggiata alla rete di 4.5 e ai suoi
   appoggi reali.
-- [ ] Dare un fondo al vuoto: nuvole, foschia e livelli inferiori intravisti, così <!-- size: M -->
+- [x] Dare un fondo al vuoto: nuvole, foschia e livelli inferiori intravisti, così <!-- size: M -->
   che una quota alta si legga come alta anche quando il suolo non si vede più.
-- [ ] Far dipendere il costo per colonna dai livelli *presenti* e non da un tetto <!-- size: M -->
+- [x] Far dipendere il costo per colonna dai livelli *presenti* e non da un tetto <!-- size: M -->
   teorico: una colonna a un livello solo deve costare quanto costa oggi.
 
 **Vincolo:** l'isola resta il suolo di partenza e non viene sostituita — la
@@ -557,180 +524,27 @@ anche qui la regola di 4.5, una campata orfana è un bug e non uno stile.
 si muove fra i livelli; determinismo e budget reggono con due livelli sovrapposti
 come con uno, e il suolo originale resta ricostruibile dal seed.
 
-**Come è stato risolto.** Il gate è passato: sulla città di prova si abita sopra
-la città **e** ci si muove fra i livelli, verificato da test sulla stessa fixture
-cresciuta e non a occhio. Quattro caselle su sei sono chiuse; le due che restano
-sono di look e di costo, e non toccano il gate.
+**Come è stato risolto.** Il gate è verde, e verificato sulla stessa fixture
+cresciuta invece che a occhio: `stacked`, `routes` e `lifts` erano tutti a zero e
+valgono ora 3, 2 e 1, con 51 gambe che prima non esistevano — e la città resta
+quella di prima, 420 edifici con i rifiuti `occupied` scesi da 32 a 25. La causa
+era una riga che il dominio dichiarava e che non era mai stata scritta: in quota
+il lotto **è** l'impalcato, e si risolve sulla colonna che la simulazione propone
+invece di passare per la ricerca a terra, che boccia la carreggiata — cioè
+proprio le mensole del fronte strada.
 
-**Il verso della scansione, non il planner.** Il planner dei percorsi funzionava
-già. A mancare erano i luoghi, e la causa stava in una riga: `faceRuns` cercava
-la corsa di parete **dall'alto in giù**, quindi ogni ospite si prendeva la fascia
-più alta che reggesse e due vicini di livello diverso finivano a quote
-lontanissime. Invertito il verso, la prima corsa utile è la sommità del basamento
-— che la 4.4 rende condivisa da tutta la fila — e i vicini diventano complanari
-**per costruzione**, senza nessuna griglia imposta da fuori. Alla mensola si è poi
-tolto il giro fra le quattro facce: sta sul solo fronte strada, perché è lì che il
-corridoio di un percorso corre sopra la carreggiata invece che sopra i corpi degli
-edifici.
+**I percorsi esistono e sono pochi**, e va detto senza abbellirlo: due su una
+città matura. Quattro misure indipendenti dicono la stessa cosa — alla quota
+delle mensole un corridoio libero non c'è, e dei cinque corridoi affacciati che
+passano tutte le soglie quattro hanno in mezzo un edificio, non una mensola. La
+forma che resta da provare non è una taratura: la mensola dirimpettaia deve
+nascere perché un percorso la vuole.
 
-**Metà della città non arretra affatto.** È il difetto che solo la misura ha
-rivelato: impronte piccole e corpi che salgono a prisma dentro il corso di base
-condiviso non hanno **nessuna** sommità di fascia nella finestra utile, e
-centoquarantasette ospiti su quattrocento non offrivano una sola corsa. Dove non
-c'è una fascia da continuare la mensola si attacca ora alla facciata piena, come
-un balcone: le mensole di una città matura passano da trentanove a cinquantatré,
-e le coppie con gli atterraggi allineati da due a settantacinque.
-
-**Il colmo era un pavimento, e andava fatto tetto.** `crestOf` costringeva ogni
-percorso a passare sopra ogni tetto sotto il proprio corridoio: delle
-ottantasette coppie che la passata prova davvero, quarantotto morivano lì. Ora la
-corsa parte dalla quota dei due capi e si alza di un pianerottolo per volta
-finché il luogo la accetta — il colmo resta, come tetto della ricerca. La **piega
-a zeta** torna con la correzione che la roadmap chiedeva, `crestOf` sui riquadri
-veri dei pezzi invece che sul corridoio della corsa, e i rifiuti per sfalsamento
-scendono da duecentoventinove a sei. Nel farlo è emerso un difetto vero: il colmo
-poteva cadere **sotto** la quota di partenza, e allora il ciclo non girava
-nemmeno una volta.
-
-**La guida: una cosa sola posata in due modi.** `src/world/aerial/guideway.ts` è
-il montante d'isolato — una guida verticale che sale da terra fino a un impalcato
-abitato, con le capsule ferme che di notte si accendono — e la stessa guida
-incassata nel piano dei tratti di percorso è la monorotaia. È «struttura di
-scena»: niente si muove, perché questo progetto non ha oggetti animati fuori dai
-chunk. Il montante è la sola parte che risponde alla seconda metà del gate, ed è
-anche l'unica cosa qui che **sta sul marciapiede**: misurato, sotto una mensola
-sul fronte strada c'è o il proprio ospite o l'asfalto, e rifiutare la carreggiata
-come fa una gamba lasciava senza via tutti gli impalcati della città.
-
-**Una premessa era falsa, e la misura l'ha detto.** `AERIAL.route.minSeparation`
-valeva quattordici perché «sotto quella distanza il collegamento lo fa già la
-4.5». Su una città cresciuta **nessuna delle venti campate tocca una mensola** —
-`planSpan` cerca due corpi affacciati, e un impalcato non è un corpo — quindi il
-vuoto corto non lo colmava nessuno. La soglia scende a sei, con la ragione vera
-al posto di quella sbagliata.
-
-**Resta aperto, e va detto senza abbellirlo.** I percorsi nascono, ma sono
-**pochi**: su una città matura ne conta uno. Il rifiuto che domina è ora
-`blocked`, ed è onesto — un percorso lungo alla quota di un mezzanino, in un
-quartiere fitto, attraversa davvero dei corpi, e il tetto di salita di quattro
-pianerottoli non basta a scavalcare una torre. La strada per averne di più non è
-un'altra taratura ma un pezzo che manca: le mensole di uno stesso fronte sono
-contigue e complanari, quindi il mezzanino continuo esiste già come geometria e
-non come collegamento dichiarato. Riconoscerlo — un percorso che *attraversa* una
-mensola invece di esserne bloccato — è il punto da cui riprendere.
-
-La 4.14 lo ha poi confermato dall'altro lato, e con dei numeri: rifacendo a mano
-il giro di `routePass` su **ogni** compagno di un piazzale d'arcologia — non solo
-sul migliore — nessuna delle trentaquattro coppie regge, e il colmo dei corridoi
-misurati sta fra 161 e 238 quote. Il dettaglio sta in fondo alla 4.14.
-
-**La ricerca di percorso è stata scritta, provata e ritirata**, ed è il terzo
-tentativo che questa casella ha visto. Un A\* deterministico sui pianerottoli —
-puro come il resto di `aerial/`, con lo scorrimento del nodo che `placeHubs` ha
-già, un tetto di espansioni e un rettangolo di ricerca — trova davvero ciò che le
-tre forme non sanno fare: nove test in ambiente `node` lo mostrano aggirare una
-torre e salire un dislivello che la zeta non assorbe. Su una città cresciuta,
-misurato a bracci alternati nello stesso processo e con lo stesso seme, il
-risultato è però questo:
-
-- **con la ricerca libera**: i percorsi passano da 1 a 16, e la città **crolla** —
-  gli edifici posati scendono da 399 a 75, i rifiuti `occupied` salgono da 301 a
-  3.980. La causa è una regola che esisteva già e che nessuno vedeva: un edificio
-  il cui volume incontra qualcosa **sopra** di sé è rifiutato con `occupied` e di
-  proposito **non finisce in blacklist** («la colonna resta buona al suolo»).
-  Con un percorso solo non si nota; con sedici, ogni colonna alla loro ombra
-  torna candidata a ogni infornata e non diventa mai niente. Le colonne
-  ombreggiate erano circa quattromila, cioè esattamente quel numero.
-- **con la regola che lo vieta** — un tratto non si stende sopra un lotto ancora
-  costruibile, né per intero né per più di metà del proprio riquadro — la città
-  resta identica al controllo, **e i percorsi tornano a essere uno**. Il pathfinder
-  non trova più niente.
-
-I due bracci insieme dicono una cosa sola, e non è una taratura: **in una città
-matura non esiste un corridoio libero alla quota delle mensole**, se non sopra la
-carreggiata. E la carreggiata secondaria è larga due, mentre una passerella è
-larga quattro e un pianerottolo è sei per sei: la rete, così com'è
-dimensionata, non entra nella città che dovrebbe servire. Le tre uscite, in
-ordine di quanto costano:
-
-1. **La rete segue la maglia stradale** invece di un reticolo proprio: i tratti
-   corrono sopra la carreggiata e i pianerottoli si posano sui tetti che la
-   fiancheggiano, che è come funziona uno skyway vero. È la sola forma per cui il
-   corridoio è libero **per costruzione**, e sposta il problema da «cercare un
-   varco» a «seguire una strada».
-2. **Le mensole nascono a coppie affacciate** invece che una per ospite: si
-   decide il capolinea prima dell'aggetto, e il tratto dritto entra senza che
-   nessuna soglia cambi.
-3. **Il lotto all'ombra si ricorda di essere all'ombra**: finché `occupied` non
-   lascia traccia, ogni struttura in quota che attraversi il tessuto costa alla
-   crescita una scansione per infornata, per sempre. È il difetto che rende
-   pericolosa *qualunque* rete in quota fitta, non solo questa. Il rifiuto è
-   definitivo per un lotto **a terra** (`reject(..., plan !== null)`), e non lo è
-   per un candidato **in quota**: sono quelli, le quattromila scansioni.
-
-**La prima uscita è stata misurata fino in fondo, e si ferma.** Rifacendo il giro
-di `planRoute` su **tutte** le coppie di mensole ammissibili di una città
-cresciuta — 2 177 con la taratura di controllo — e non sulla sola migliore che
-`routePartner` sceglie, si vede dove ciascuna muore e quanto del suo corridoio
-corre davvero sopra l'asfalto:
-
-- **`noLanding` 468, e tutte con la stessa causa: un capo profondo tre.** È il
-  difetto più netto trovato in questa casella, ed è un errore di un voxel:
-  `AERIAL.terrace.minOverhang` valeva tre e `AERIAL.route.walkWidth` vale quattro.
-  Un tratto che corre **lungo** la strada atterra sul *fianco* della mensola, dove
-  la misura utile è lo sporto e non la corsa — e metà delle mensole di una città
-  era perciò esclusa dalla rete prima di qualunque verifica geometrica. Sono
-  esattamente le coppie il cui corridoio avrebbe seguito la maglia stradale.
-- **`tooSteep` 827, e non è il tetto di salita che si crede.** Duecentodiciassette
-  di quelle coppie hanno meno di sedici quote di dislivello, cioè due
-  pianerottoli su quattro: a rifiutarle è la **zeta**, che assorbe un solo salto
-  per angolo. `climbProfile` ha già il parametro `reserved` scritto e documentato
-  per questo caso — «una zeta ne spende due negli angoli» — e **nessuno lo passa**.
-- **`blocked` 353**, ed è il muro vero. Portando lo sporto minimo a quattro
-  dappertutto, i primi due rifiuti spariscono (`noLanding` e `badSeparation` vanno
-  a zero, i percorsi passano da 1 a 3) ma la città paga trentotto edifici e
-  quarantaquattro mensole: su una carreggiata secondaria, larga due, una mensola
-  profonda quattro l'attraversa tutta e va a sbattere nel fronte di fronte.
-
-Resta allora la sola forma per cui il corridoio potrebbe essere libero per
-costruzione: **l'asse principale, largo quattro come un passaggio**. Misurato lì,
-il verdetto è netto. Delle 267 coppie il cui corridoio corre sopra un'arteria,
-**nessuna regge**; e chiedendo al luogo la domanda più semplice possibile — non il
-percorso intero ma **un solo tratto piano, largo quanto il passaggio, appeso ai
-due capi** — passano **17 su 267**, tutte lunghe fra sei e venti colonne, cioè
-salti brevi e non linee. Delle diciassette, otto muoiono comunque su `blocked`
-perché il pianerottolo che il loro dislivello richiede è largo sei e non ci sta
-nella luce che hanno.
-
-**Il corridoio sopra la strada non è libero nemmeno sopra un'arteria**, e la
-ragione è il tessuto stesso: alla quota delle mensole, sopra la carreggiata, ci
-sono le *altre* mensole dello stesso fronte, profonde quanto quella da cui si
-parte. È il terzo accertamento indipendente dello stesso fatto, dopo la ricerca di
-percorso e il braccio con la regola del lotto — e chiude la prima uscita: seguire
-la maglia stradale non basta, perché a occupare la maglia è la rete stessa.
-
-Ne resta però **la metà che riguarda le stazioni, ed è stata costruita**: lo
-sporto minimo è un parametro (`TerraceQuery.minOverhang`, come `maxOverhang` lo è
-per la fase delle megastrutture), e `AerialDriver.terraceDepth` chiede la
-profondità da capolinea — `AERIAL.route.walkWidth` — **solo dove davanti c'è un
-asse principale**, cioè dove la carreggiata è larga abbastanza da portare una
-linea e la profondità non toglie niente a nessuno. Misurato: la città resta quella
-di prima (399 edifici, 156 mensole contro 153, una campata in meno per tre), e
-settantadue mensole di viale nascono profonde quanto il passaggio che un giorno ci
-atterrerà. Non produce percorsi da sola, e non è quello il suo mestiere: è la
-soglia che smette di escludere metà delle mensole dalla rete.
-
-Restano quindi due uscite, e la seconda è ora la sola con una speranza: **le
-mensole nascono a coppie affacciate**, cioè il capolinea si decide *prima*
-dell'aggetto. È la sola che risolve la causa vera invece di aggirarla — se la
-mensola nasce perché un percorso la vuole, non è più l'ostacolo di quel percorso.
-
-> **Il gate «si abita sopra la città» è rosso, e non da adesso.** Su
-> `Builder.test.ts` («la citta in quota») `stacked`, `routes` e `lifts` sono a
-> zero, e su `arcologyDriver.test.ts` cade «ospita usi diversi su quote diverse».
-> Verificato a bracci alternati: cadono **identici** con e senza la soglia di
-> capolinea qui sopra, quindi il rosso è anteriore. Le mensole ci sono ancora
-> (`terraces` passa); a mancare è chi ci sale e chi ci costruisce sopra.
+**Resta aperto il salvataggio.** `save/capture.ts` pota impalcati, gambe e
+montanti — nessun generatore li sa ridisegnare da un record — e con loro chi ci
+poggiava sopra: finché in quota non abitava nessuno era una potatura di decoro,
+adesso è la casa del giocatore. È il prossimo incremento, e il dettaglio sta
+nella scheda della fase.
 
 ### Fase 4.10 — Campionario dei voxel
 
@@ -1280,6 +1094,66 @@ piazzamento.
 - [Underground buildings](https://www.designforminc.com/post/are-underground-buildings-in-our-future):
   la rassegna che il committente ha indicato — stabilità termica, sicurezza, e i
   vincoli veri (umidità, radon, terreni adatti) che qui restano fuori dal modello.
+
+### Fase 4.19 — Il fronte d'acqua si rifinisce
+
+Obiettivo: portare porto, traghetto e marina dal «c'è» al «si legge». La fase
+4.12 ha dato loro le ricette e la 4.17 l'impronta sul circondario; quello che
+manca è la rifinitura, e sono quattro difetti distinti che il giocatore vede
+tutti insieme guardando lo stesso pezzo di costa.
+
+1. **Le barche sembrano muoversi a caso.** Non lo fanno — sono deterministiche
+   come tutto il dominio — ma navigano in **linea retta nella direzione in cui
+   guarda l'intera struttura**, non il singolo ormeggio: lo yacht dello slip
+   centrale di una marina sbatte contro il pontile di testa dopo tre voxel e fa
+   avanti-indietro sul posto, e nessun mezzo si accorge del bacino scavato, del
+   canale di accesso o del varco del frangiflutti che il distretto ha appena
+   costruito per lui.
+2. **Le opere sull'acqua sono rettangoli timbrati.** Canali larghi tre e lunghi
+   dodici, simmetrici ai due lati, e un frangiflutti dritto: nessuna delle opere
+   legge dove la battigia stia davvero, quindi un canale può finire parallelo a
+   una riva che va di traverso, e il frangiflutti chiude uno specchio senza
+   lasciare un varco da cui entrare.
+3. **Il sedime non cresce mai.** Le tre ricette hanno quattro stadi ma `growth`
+   è vietato a chi dichiara `waterline`: un porto allo stadio tre ha le stesse
+   venti colonne dello stadio zero, e l'avanzamento riempie il riquadro invece
+   di allungare il molo.
+4. **Gli edifici di settore non stanno sul bordo.** Le tipologie caratteristiche
+   esistono già — `canalHouse`, `marinaClub`, `harborMarket`, `harborOffice` —
+   ma lo slot che le chiama è una colonna qualsiasi dell'anello, scelta con uno
+   spread lungo il lato corto e un jitter dal seme. Niente la porta sulla sponda
+   del canale o sul filo della banchina, che è l'unica cosa che farebbe leggere
+   una casa sul canale come una casa **sul** canale.
+
+**Stato implementazione:** aperta, nessuna voce chiusa.
+
+- [ ] Le rotte nascono dalle opere e non dal fronte della ricetta: ogni <!-- size: L -->
+  ormeggio esce lungo il **proprio** slip, il bacino scavato è uno specchio in
+  cui girare invece di un fondo contro cui sbattere, e chi entra o esce passa
+  dal varco del frangiflutti.
+- [ ] Quanti mezzi si vedono lo dice la simulazione: navi da carico sul <!-- size: M -->
+  commercio esterno, traghetti sui passeggeri della linea. Oggi il numero è
+  quello degli ormeggi che la ricetta disegna, quindi un porto morto e un porto
+  che regge l'isola mostrano la stessa flotta.
+- [ ] Canali, insenature e frangiflutti tagliati sulla battigia vera invece <!-- size: XL -->
+  che sul riquadro canonico, con il varco navigabile come parte della forma e
+  non come fortuna.
+- [ ] Il sedime cresce anche sull'acqua: `growth` smette di essere vietato a <!-- size: XL -->
+  chi dichiara `waterline`, e l'opera di terra si rifà a ogni avanzamento come
+  già fa per la stazione.
+- [ ] Lo slot di settore è un **posto sul bordo**, non una colonna <!-- size: L -->
+  dell'anello: banchina, sponda del canale o testata del molo, con il fronte
+  dell'edificio girato verso l'acqua che lo giustifica.
+
+**Vincolo:** valgono i vincoli trasversali della fase 4. In più: le rotte
+restano pure e deterministiche — nessuna integrazione per frame, nessun
+`Math.random()` — e il numero dei mezzi entra come dato già calcolato, senza
+aprire una porta nuova da `src/world/` verso `src/sim/`.
+
+**Gate:** su un'isola cresciuta, un porto e una marina allo stadio tre si
+leggono da inquadratura d'insieme come due mestieri diversi — non due riquadri
+con parti diverse — e nessuna barca compie un percorso che un occhio
+descriverebbe come «va avanti e indietro senza motivo».
 
 ## Fase 5 — Persistenza e prodotto browser
 
