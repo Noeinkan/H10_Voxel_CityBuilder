@@ -31,7 +31,7 @@ giocabile; gli overlay tecnici si alternano con `F3` o partono aperti con
 | [hudIcons.ts](src/ui/hudIcons.ts) | Icone SVG interne, senza dipendenze o richieste di rete |
 | [hudPanels.css](src/ui/hudPanels.css) | Layout e stati dei pannelli informativi, della selezione e dei picker, separati dal chrome del mondo; in coda il vocabolario grafico condiviso — quattro toni, barre, composizione per uso, carta del consiglio |
 | [hudTip.ts](src/ui/hudTip.ts) | La scheda che si apre da un'azione del dock: modello puro — nome, prezzo, cosa fa, righe etichettate, gesto o blocco — e il suo disegno in soli `<span>`, perché sta dentro un `<button>` |
-| [hudWidgets.ts](src/ui/hudWidgets.ts) | Fabbriche DOM e attivazione accessibile: le azioni bloccate restano raggiungibili per leggere requisito e avanzamento |
+| [hudWidgets.ts](src/ui/hudWidgets.ts) | Fabbriche DOM e attivazione accessibile: le azioni bloccate restano raggiungibili per leggere requisito e avanzamento. È anche l'unico punto da cui passa ogni bottone dell'HUD, quindi è qui che vive il suono del clic — e il blat di rifiuto su ciò che è ancora bloccato |
 | [hudTokens.ts](src/ui/hudTokens.ts) | I `--hud-*` derivati dal tema attivo: pannello chiaro o scuro dalla luminanza dell'aria, tinta verso il mondo e contrasto AA garantito |
 | [GameHud.ts](src/ui/GameHud.ts) | Composizione dell'HUD: pannelli, decisioni, temi, targa della vista, picker delle viste informative, cassetto dei salvataggi, catena di Escape e feedback contestuale | `GameHud`, `GameHudHandlers` |
 | [InfoViewLegend.ts](src/ui/InfoViewLegend.ts) | La legenda della vista informativa attiva: nome, descrizione e categorie, lette dallo stesso catalogo dell'overlay | `InfoViewLegend` |
@@ -44,7 +44,7 @@ giocabile; gli overlay tecnici si alternano con `F3` o partono aperti con
 | [meters.ts](src/ui/meters.ts) | Vocabolario grafico puro condiviso da scheda e cassetto: i quattro toni, `Meter` con quota e suggerimento, `Contribution`, `Breakdown` sul massimo assoluto, `Verdict`, e i formattatori di numero |
 | [src/ui/PerfOverlay.ts](src/ui/PerfOverlay.ts) | Pannello delle prestazioni acceso da `?perf=1`: fps, durata del frame, fetta di remesh, chunk rimeshati e livello di qualita'. Legge la stessa fonte del riepilogo console. |
 | [PoliciesDrawer.ts](src/ui/PoliciesDrawer.ts) | Il cassetto di governo: policy e rotte commerciali, le due cose che si toccano, separate dalla lettura |
-| [ResourceBar.ts](src/ui/ResourceBar.ts) | I dati in cima al rail sinistro: cinque risorse con freccia di tendenza, sparkline e riga di causa sempre visibili, popover del bilancio, blocco City needs, poi i gruppi Time — con l'ora della città sotto i bottoni — e Sky | `ResourceBar` |
+| [ResourceBar.ts](src/ui/ResourceBar.ts) | I dati in cima al rail sinistro: cinque risorse con freccia di tendenza, sparkline e riga di causa sempre visibili, popover del bilancio, blocco City needs, poi i gruppi Time — con l'ora della città sotto i bottoni — e Sky, che chiude con nuvole e suono | `ResourceBar` |
 | [BuildDock.ts](src/ui/BuildDock.ts) | Il rail di sinistra: le corsie etichettate incolonnate — catalizzatori, Reach, Clear (la gomma) e le porte —, tessere icona-sopra-etichetta con badge di tasto, una colonna sopra i 900px di finestra e due sotto, selezione per indice. Le porte includono la tessera Data, che apre il picker delle viste informative; fra le icone c'e' quella dei salvataggi | `DockPanel` |
 | [ResourceTrend.ts](src/ui/ResourceTrend.ts) | La finestra dei tick recenti per risorsa: direzione, magnitudine, serie per la sparkline e il ritmo per tick su cui si prevede. Campionamento ancorato al tick, e `rate` divide per i tick trascorsi e non per i campioni |
 | [GameHudModel.ts](src/ui/GameHudModel.ts) | Composizione del modello HUD: panoramica cittadina, azioni, policy, risorse e disponibilita' |
@@ -70,6 +70,21 @@ giocabile; gli overlay tecnici si alternano con `F3` o partono aperti con
 | [SelectionPanel.ts](src/ui/SelectionPanel.ts) | La scheda di selezione: verdetto, barra della soglia e consigli in cima, poi le quattro unità con le loro misure e la carta d'identità ripiegata dietro «Details» |
 | [src/ui/SelectionPanelModel.ts](src/ui/SelectionPanelModel.ts) | Scheda di selezione: sezioni impilate e carta di crescita, modello puro. La carta di un edificio sotto soglia scompone la desiderabilità nelle sue fonti con segno e congestione; un landmark mostra il vettore d'influenza per uso e cosa compra lo stadio successivo |
 | [prospects.ts](src/ui/prospects.ts) | La lingua di cosa un luogo **non** è ancora: le due righe che nominano il quartiere che potrebbe diventare e la forma che ci crescerebbe, più la riga di tooltip di ciò che un ruolo sblocca |
+
+## `src/audio/` — il suono della città
+
+Sintesi in WebAudio, nessun file audio nel repo: ogni suono è un pugno di
+oscillatori con la sua inviluppante, e cambiarlo è cambiare una cifra. Sta
+accanto a `src/ui/` perché è presentazione come i pannelli — il `SoundBoard` è
+l'unico pezzo che tocchi il browser, tutto il resto gira in `node`.
+
+| File | Ruolo |
+| --- | --- |
+| [cityCues.ts](src/audio/cityCues.ts) | Cosa suona la città che cambia da sola: legge il salto fra due letture di `buildings` e `milestone` e ne deduce posa, demolizione o soglia. Puro, così la simulazione non deve conoscere l'audio | `CityCueWatcher`, `CityPulse` |
+| [cues.ts](src/audio/cues.ts) | Il catalogo dei cinque suoni scritto in numeri invece che in file audio: forme d'onda, inviluppanti e soglia anti-raffica. Per il rumore bianco `from`/`to` non sono un'altezza ma il taglio del passa-basso, che è ciò che distingue i detriti dal tonfo | `CUES`, `CUE_IDS`, `CueId`, `AudioCue`, `CueVoice`, `CueTone`, `cueLength`, `voiceAttack` |
+| [preference.ts](src/audio/preference.ts) | Se il suono è acceso, in `localStorage` e non nell'indirizzo: il muto è di chi sta davanti al computer, e un link copiato non deve zittire chi lo riceve | `readSoundPreference`, `writeSoundPreference`, `browserSoundStorage`, `SOUND_STORAGE_KEY`, `SoundStorage` |
+| [sound.ts](src/audio/sound.ts) | Il punto unico da cui l'interfaccia chiede un suono: `no-op` finché la radice non installa la board, e importato solo per tipo, così `src/ui/` non si tira dentro il grafo audio | `playCue`, `installSoundBoard`, `soundBoard` |
+| [SoundBoard.ts](src/audio/SoundBoard.ts) | Chi trasforma un cue in aria mossa: contesto audio creato al primo suono davvero emesso — prima il browser lo rifiuta — muto che abbassa il volume generale invece di limitarsi a non schedulare, e fabbrica di contesti iniettabile perché i test girano in `node` | `SoundBoard`, `SoundBoardOptions` |
 
 ## Parametri URL
 

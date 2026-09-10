@@ -1,4 +1,12 @@
 import { Matrix4, Scene, SRGBColorSpace, Vector2, Vector3, WebGLRenderer } from 'three';
+import { SoundBoard } from './audio/SoundBoard';
+import { CityCueWatcher } from './audio/cityCues';
+import {
+  browserSoundStorage,
+  readSoundPreference,
+  writeSoundPreference,
+} from './audio/preference';
+import { installSoundBoard } from './audio/sound';
 import { createAtmosphereControl } from './engine/AtmosphereControl';
 import { ChunkRenderer } from './engine/ChunkRenderer';
 import { InfluenceOverlay } from './engine/InfluenceOverlay';
@@ -702,6 +710,43 @@ const inspectOverlay = new InspectOverlay(container, {
 simOverlay?.setVisible(debugVisible);
 growthOverlay?.setVisible(debugVisible);
 inspectOverlay.setVisible(debugVisible);
+/**
+ * Il banco dei suoni, che e' l'unica cosa in tutto il progetto a fare rumore.
+ *
+ * Nasce qui e non nell'HUD perche' e' una risorsa del processo come il renderer:
+ * ce n'e' una sola, la possiede la radice, e `installSoundBoard` e' il modo in
+ * cui i bottoni la raggiungono senza importarsela.
+ *
+ * **Costruirlo non apre nessun contesto audio.** Il primo contesto lo apre il
+ * primo cue davvero suonato, che per costruzione arriva da un clic: e' l'unico
+ * momento in cui il browser accetta di suonare.
+ */
+const soundStorage = browserSoundStorage();
+const sound = new SoundBoard({ muted: !readSoundPreference(soundStorage) });
+installSoundBoard(sound);
+
+/**
+ * Cosa e' cambiato nella citta' fra due frame, tradotto in un suono.
+ *
+ * La simulazione non conosce l'audio e non deve conoscerlo: l'osservatore legge
+ * i due numeri che l'HUD sta gia' dipingendo e ne deduce posa, demolizione e
+ * soglia. Nessun callback nuovo attraverso `src/game/`.
+ */
+const cityCues = new CityCueWatcher();
+
+/**
+ * Accende o spegne il suono, e lo ricorda.
+ *
+ * Stessa forma di `setClouds`: la barra non decide, chiede — e ritorna qui
+ * perche' la preferenza, la board e il toast stanno tutti e tre da questa parte.
+ */
+function setSound(on: boolean): void {
+  sound.setMuted(!on);
+  writeSoundPreference(soundStorage, on);
+  gameHud?.setSound(on);
+  gameHud?.showTransientFeedback(`Sound · ${on ? 'on' : 'off'}`);
+}
+
 let gameHud: GameHud | null = null;
 // Scena e HUD arrivano come funzioni: entrambi nascono dopo questa riga, e una
 // copia presa adesso resterebbe `null` per sempre.
@@ -738,6 +783,7 @@ if (growEnabled) {
       rememberLook();
     },
     onClouds: (on) => setClouds(on),
+    onSound: (on) => setSound(on),
     onTheme: (id) => {
       const index = THEMES.findIndex((candidate) => candidate.id === id);
       if (index >= 0) daylight.cycleTheme(index);
@@ -782,6 +828,9 @@ if (growEnabled) {
   // le nuvole, che di partenza sono spente mentre la barra le dipinge accese.
   gameHud.setDaylight(daylight.mode);
   gameHud.setClouds(cloudsOn);
+  // E per la stessa ragione il suono, che la barra dipinge acceso mentre la
+  // preferenza dell'ultima partita puo' benissimo dire il contrario.
+  gameHud.setSound(!sound.muted);
   // Qui non si apre piu' niente all'avvio: la porta d'ingresso e' `boot.ts`, e
   // quando questo modulo viene importato la scelta e' gia' stata fatta. Il menu
   // che resta e' quello di pausa, che si apre con Esc su una partita viva.
@@ -1374,6 +1423,21 @@ function onFrame(time: number): void {
     // uno ogni ~0,9 secondi.
     gameHud.setClock(cityClock(growthScene.simState.tickCount, daylight.hour));
     selection?.syncCoach(growthScene.stats.coach);
+    // Il suono di cio' che la citta' fa da sola, sulla stessa cadenza di 150 ms:
+    // e' la lettura che l'HUD sta gia' facendo, e piu' fitta di cosi' darebbe
+    // solo cue che la soglia anti-raffica butterebbe via.
+    //
+    // Fuori dalla finestra di caricamento, e per una ragione precisa: il
+    // salvataggio ripopola la citta' un edificio alla volta, e senza questa
+    // guardia riaprire una partita da duecento edifici sarebbe una gragnuola di
+    // tonfi per case costruite ieri.
+    if (!firstScenePending) {
+      const cue = cityCues.observe({
+        buildings: growthScene.stats.buildings,
+        milestone: growthScene.stats.milestone,
+      });
+      if (cue !== null) sound.play(cue);
+    }
   }
   // Stessa cadenza, e per lo stesso motivo: cio' che la scheda racconta —
   // desiderabilita', quartiere, livello di un edificio promosso — cambia a dieci

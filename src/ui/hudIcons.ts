@@ -6,7 +6,8 @@ export type HudIcon =
   | 'market' | 'factory' | 'park' | 'greenhouse' | 'power' | 'school' | 'port' | 'ferry' | 'airport' | 'transport' | 'radio' | 'lighthouse'
   | 'university' | 'monument' | 'museum' | 'cathedral' | 'theatre' | 'stadium' | 'marina'
   | 'pause' | 'play' | 'theme' | 'view' | 'info' | 'swatch' | 'menu' | 'save' | 'help' | 'close'
-  | 'daylight' | 'sun' | 'moon' | 'clouds' | 'cloudsOff';
+  | 'daylight' | 'sun' | 'moon' | 'clouds' | 'cloudsOff'
+  | 'sound' | 'soundOff';
 
 /*
  * Ogni ruolo della toolbar deve avere la sua icona, e il compilatore lo esige.
@@ -137,6 +138,12 @@ const PATHS: Readonly<Record<HudIcon, string>> = {
   // dentro. Squadrata come tutto il resto — la nuvola del gioco e' di celle.
   clouds: '<path d="M4 11h4V8h4v3h3V6h4v5h1M4 11v3h16v-3M7 17l2 3M13 17l2 3"/>',
   cloudsOff: '<path d="M4 11h4V8h4v3h3V6h4v5h1M4 11v3h16v-3M4 20 20 4"/>',
+  // Il cono piu' due barre invece degli archi concentrici di prammatica: gli
+  // archi a questa misura diventano tre virgole grigie, e il resto della barra
+  // e' disegnato di segmenti. Spento e' lo stesso cono con la croce, cosi' le
+  // due icone si distinguono dalla parte destra e non dalla sagoma intera.
+  sound: '<path d="M4 9h3l5-4v14l-5-4H4z"/><path d="M16 9v6M19.5 7v10"/>',
+  soundOff: '<path d="M4 9h3l5-4v14l-5-4H4z"/><path d="m16 9 5 6M21 9l-5 6"/>',
 };
 
 export function createHudIcon(name: HudIcon): SVGSVGElement {

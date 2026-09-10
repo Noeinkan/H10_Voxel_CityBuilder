@@ -134,6 +134,15 @@ export interface ResourceBarHandlers {
   readonly onDaylight: (mode: DaylightMode) => void;
   /** I banchi in quota, accesi o spenti. Sta accanto al ciclo: sono entrambi cielo. */
   readonly onClouds: (on: boolean) => void;
+  /**
+   * Il suono, acceso o spento.
+   *
+   * Sta in questa fila e non nelle impostazioni per la ragione per cui ci sta la
+   * nuvola: e' una manopola su **come si sta guardando**, non su come e' fatta
+   * la citta'. E soprattutto e' il gesto che si fa in fretta — un suono che
+   * arriva quando non lo si vuole si zittisce con un clic, non aprendo un menu.
+   */
+  readonly onSound: (on: boolean) => void;
 }
 
 export class ResourceBar {
@@ -146,7 +155,9 @@ export class ResourceBar {
   private readonly clock: HTMLElement;
   private readonly daylightButtons = new Map<DaylightMode, HTMLButtonElement>();
   private readonly cloudsButton: HTMLButtonElement;
+  private readonly soundButton: HTMLButtonElement;
   private clouds = true;
+  private sound = true;
   /**
    * L'ultimo stato dipinto, non il modello.
    *
@@ -225,6 +236,14 @@ export class ResourceBar {
     this.cloudsButton.classList.add('hud-button--small');
     skyRow.appendChild(this.cloudsButton);
     this.setClouds(true);
+
+    // Il suono chiude la fila per la stessa ragione delle nuvole: e' l'ultima
+    // cosa che si cambia guardando, e nessuna delle due tocca la citta'. Sta
+    // in coda e non in testa perche' e' quella che si preme una volta sola.
+    this.soundButton = iconButton('sound', 'Sound', () => handlers.onSound(!this.sound));
+    this.soundButton.classList.add('hud-button--small');
+    skyRow.appendChild(this.soundButton);
+    this.setSound(true);
     markRowColumns(skyRow);
     skyGroup.append(skyLabel, skyRow);
     time.appendChild(skyGroup);
@@ -329,6 +348,24 @@ export class ResourceBar {
     this.cloudsButton.dataset.tooltip = label;
     this.cloudsButton.dataset.active = on ? 'true' : 'false';
     this.cloudsButton.setAttribute('aria-pressed', on ? 'true' : 'false');
+  }
+
+  /**
+   * Il suono, acceso o spento.
+   *
+   * Come per le nuvole l'icona **e'** lo stato — il cono barrato dice che il
+   * gioco e' muto — e la barra non decide niente: la preferenza vive fuori, in
+   * `localStorage`, e la radice la rimanda qui a ogni avvio.
+   */
+  setSound(on: boolean): void {
+    this.sound = on;
+    const label = on ? 'Sound on — click to mute the city.'
+      : 'Sound off — click to hear the city again.';
+    this.soundButton.replaceChildren(createHudIcon(on ? 'sound' : 'soundOff'));
+    this.soundButton.setAttribute('aria-label', label);
+    this.soundButton.dataset.tooltip = label;
+    this.soundButton.dataset.active = on ? 'true' : 'false';
+    this.soundButton.setAttribute('aria-pressed', on ? 'true' : 'false');
   }
 
   private createResource(resource: HudResource): HTMLElement {

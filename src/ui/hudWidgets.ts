@@ -1,3 +1,4 @@
+import { playCue } from '../audio/sound';
 import type { HudAction } from './GameHudModel';
 import { createHudIcon, type HudIcon } from './hudIcons';
 import { buildActionTip, tipElement, tipText, type HudTip } from './hudTip';
@@ -100,15 +101,23 @@ export function markRowColumns(row: HTMLElement, columns?: number): void {
  * tastiera il fuoco va lasciato dov'e', o il dock diventa intraversabile. E'
  * anche cio' che toglie di mezzo lo Spazio che ricliccava l'ultimo bottone
  * mentre la mano era sul mondo.
+ *
+ * **E' anche l'unico punto da cui passa ogni bottone dell'HUD**, quindi e' qui
+ * che vive il suono del clic: metterlo nei singoli pannelli avrebbe voluto dire
+ * ricordarsene dodici volte, e dimenticarselo alla tredicesima.
  */
 function onActivate(button: HTMLButtonElement, onClick: () => void): void {
   button.addEventListener('click', (event) => {
     // Un'azione ancora bloccata resta raggiungibile: il fuoco apre la scheda
     // che spiega requisito e avanzamento, ma il gesto non arriva al mondo.
     if (button.getAttribute('aria-disabled') === 'true') {
+      // Il rifiuto si sente prima di leggere: la scheda spiega *perche'*, ma
+      // che il gesto non sia arrivato al mondo va detto subito.
+      playCue('refuse');
       button.focus();
       return;
     }
+    playCue('click');
     if (event.detail > 0) button.blur();
     onClick();
   });
@@ -271,7 +280,12 @@ export function barButton(label: string, tooltip: string, onClick: () => void): 
   // qui la parola sul bottone dice gia' quasi tutto.
   button.title = tooltip;
   button.setAttribute('aria-label', tooltip);
-  button.addEventListener('click', onClick);
+  // La targa non passa da `onActivate` — non ha ne' stato bloccato ne' scheda —
+  // ma il clic deve suonare come tutti gli altri: e' la stessa mano.
+  button.addEventListener('click', () => {
+    playCue('click');
+    onClick();
+  });
   return button;
 }
 

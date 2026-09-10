@@ -1,12 +1,11 @@
 import type { ActionFailure } from '../game/actions';
 import type { GrowthStats } from '../game/growthScene';
 import { INFO_VIEWS, infoViewSpecOf, type InfoViewKind, type PolicyId, type TradeMode } from '../sim';
-import { BuildDock, type DockPanel } from './BuildDock';
+import { BuildDock, sameTool, type DockPanel } from './BuildDock';
 import { ControlsHint } from './ControlsHint';
 import { applyHudTokens } from './hudTokens';
 import {
   buildGameHudModel,
-  decisionMark,
   decisionNeedsRepaint,
   resolveEscapeTarget,
   selectionMessage,
@@ -16,6 +15,7 @@ import {
 } from './GameHudModel';
 import type { DaylightMode } from '../engine/daylight';
 import { CityDrawer } from './CityDrawer';
+import { decisionDeadline, decisionOptionList } from './decisionInbox';
 import { PoliciesDrawer } from './PoliciesDrawer';
 import { MainMenu } from './MainMenu';
 import type { SlotInfo } from '../game/save/storage';
@@ -47,6 +47,14 @@ export interface GameHudHandlers {
   readonly onDaylight: (mode: DaylightMode) => void;
   /** I banchi di nuvole in quota, accesi o spenti. */
   readonly onClouds: (on: boolean) => void;
+  /**
+   * Il suono del gioco, acceso o spento.
+   *
+   * L'HUD non tiene la preferenza e non sa dove finisca scritta: qui c'e' solo
+   * il bottone. Chi lo ascolta e' la radice, che e' anche l'unica a possedere il
+   * banco dei suoni — come per il tema e le nuvole.
+   */
+  readonly onSound: (on: boolean) => void;
   readonly onTheme: (id: string) => void;
   /**
    * Apre il campionario dei voxel, che e' una **scena** e non un pannello.
@@ -137,7 +145,10 @@ const FAILURE_LABEL: Readonly<Record<ActionFailure, string>> = {
   'already-active': 'This policy is already active.',
   'already-unlocked': 'This sector is already unlocked. Choose another one.',
   'onboarding-order': 'Follow the tutorial order: residential, production, civic.',
+  'milestone-required': 'Your city has not reached the milestone that unlocks this yet.',
   'policy-incompatible': 'This policy conflicts with one that is already active.',
+  'policy-capacity': 'The city already runs as many policies as it can hold. Stop one first, or build more civic buildings.',
+  'policy-locked': 'A recent decision suspended this policy. Give it time before enacting it again.',
   'decision-option-invalid': 'This decision option is no longer available.',
   'needs-building': 'Point at a building facade, not at the ground.',
   'building-too-short': 'This building is too low to carry the structure. Try a taller one.',
@@ -232,6 +243,7 @@ export class GameHud {
       onSpeed: (speed) => handlers.onSpeed(speed),
       onDaylight: (mode) => handlers.onDaylight(mode),
       onClouds: (on) => handlers.onClouds(on),
+      onSound: (on) => handlers.onSound(on),
     });
 
     this.streetBar = document.createElement('aside');
@@ -290,6 +302,11 @@ export class GameHud {
       },
       onTrade: (mode) => handlers.onTrade(mode),
       onClose: () => this.closePolicies(),
+      onDecision: (id) => {
+        this.feedback = null;
+        this.handlers.onDecision(id);
+      },
+      onSnooze: () => this.snoozeDecision(),
     });
     this.root.appendChild(this.policiesDrawer.root);
     this.mainMenu = new MainMenu({
@@ -413,8 +430,34 @@ export class GameHud {
   selectToolByIndex(index: number): boolean {
     const tool = this.dock.toolAt(index);
     if (tool === null) return false;
+    // La stessa cifra due volte **posa** lo strumento invece di riprenderlo. Il
+    // tasto che l'ha messo in mano e' anche quello che il dito ha gia' sotto, e
+    // chiedere `Esc` per disdire una scelta fatta un istante prima e' un giro
+    // che nessuno fa: si finisce per piazzare l'edificio per sbaglio.
+    //
+    // Torna `true` lo stesso: il colpo ha fatto qualcosa di visibile, e passarlo
+    // agli handler successivi vorrebbe dire eseguirne due con un tasto solo.
+    if (sameTool(tool, this.selected)) {
+      this.dropTool();
+      return true;
+    }
     this.pickTool(tool);
     return true;
+  }
+
+  /**
+   * Rimette le mani vuote, e lo dice a chi ascolta.
+   *
+   * E' il verso opposto di `pickTool`, e serve a due chiamanti — `Esc` e la
+   * cifra premuta due volte —: un solo posto in cui lo stato torna indietro,
+   * invece di due che devono restare d'accordo su cosa spegnere.
+   */
+  private dropTool(): void {
+    this.selected = { kind: 'none' };
+    this.feedback = null;
+    this.handlers.onCancelTool();
+    this.paintSelection();
+    this.paintToast();
   }
 
   setSelectionNote(note: string | null): void {
@@ -442,6 +485,16 @@ export class GameHud {
   setClouds(on: boolean): void {
     this.bar.setClouds(on);
     this.mainMenu.setClouds(on);
+  }
+
+  /**
+   * Il suono, acceso o spento.
+   *
+   * Una superficie sola, al contrario di tema e nuvole: il bottone del suono sta
+   * solo nella barra, quindi non c'e' nessun secondo posto da tenere d'accordo.
+   */
+  setSound(on: boolean): void {
+    this.bar.setSound(on);
   }
 
   setDaylight(mode: DaylightMode): void {
@@ -816,11 +869,7 @@ export class GameHud {
         this.help.hide(true);
         return true;
       case 'tool':
-        this.selected = { kind: 'none' };
-        this.feedback = null;
-        this.handlers.onCancelTool();
-        this.paintSelection();
-        this.paintToast();
+        this.dropTool();
         return true;
       case 'selection':
         this.handlers.onClearSelection();
@@ -1125,9 +1174,24 @@ export class GameHud {
 
   private snoozeDecision(): void {
     this.handlers.onSnooze();
-    this.showTransientFeedback('Decision postponed — answer it in the City dashboard.');
+    this.showTransientFeedback('Decision postponed — it waits in the City and Policies panels.');
   }
 
+  /**
+   * La carta decisione, e il corridoio che condivide con i cassetti.
+   *
+   * **La carta e i cassetti non possono stare a schermo insieme.** Occupano lo
+   * stesso bordo destro alla stessa larghezza, e finche' la carta aveva soltanto
+   * uno z-index piu' alto il risultato era che copriva la meta' superiore di
+   * qualunque pannello aperto — con il pannello ancora vivo e cliccabile sotto.
+   * Adesso la carta entra nella stessa convenzione di mutua esclusione che i
+   * cassetti hanno gia' fra loro, e in due versi:
+   *
+   * - **quando arriva**, chiude cio' che era aperto e si prende il corridoio;
+   * - **finche' un cassetto e' aperto**, si fa da parte — la scelta non sparisce,
+   *   la porta l'inbox del cassetto, che ha le stesse alternative e lo stesso
+   *   conto alla rovescia.
+   */
   private paintDecision(model: GameHudModel): void {
     const decision = model.decision;
     if (decision === null) {
@@ -1147,44 +1211,78 @@ export class GameHud {
       }
       return;
     }
+
+    // Una decisione **nuova** si prende il corridoio: chiude i pannelli aperti
+    // invece di posarcisi sopra. Solo alla comparsa, non a ogni passata, o
+    // riaprire un cassetto mentre la scelta e' in piedi diventerebbe impossibile.
+    if (decisionNeedsRepaint(this.paintedDecisionId, decision)) this.clearRightPanels();
+
+    // Un cassetto aperto vince sulla carta: e' il giocatore che l'ha chiesto, e
+    // la scelta e' comunque li' dentro.
+    if (this.rightPanelOpen()) {
+      this.decisionCard.hidden = true;
+      if (this.paintedDecisionId !== null) {
+        this.paintedDecisionId = null;
+        this.decisionCard.replaceChildren();
+      }
+      return;
+    }
+
     this.decisionCard.hidden = false;
+    this.decisionCard.dataset['urgency'] = decision.urgency;
     // Il repaint periodico non deve sostituire il bottone tra pointerdown e click.
-    if (!decisionNeedsRepaint(this.paintedDecisionId, decision)) return;
+    // La scadenza e' l'eccezione: e' un conto alla rovescia, e ridisegnarlo solo
+    // al cambio di decisione lo lascerebbe fermo sul primo valore letto.
+    if (!decisionNeedsRepaint(this.paintedDecisionId, decision)) {
+      this.paintDeadline(model);
+      return;
+    }
     const title = document.createElement('h2');
     title.textContent = decision.title;
     const message = document.createElement('p');
     message.textContent = decision.message;
-    const options = document.createElement('div');
-    options.className = 'decision-options';
-    for (const option of decision.options) {
-      const button = document.createElement('button');
-      button.type = 'button';
-      button.className = 'decision-option';
-      const label = document.createElement('strong');
-      label.textContent = option.label;
-      const description = document.createElement('span');
-      description.textContent = option.description;
-      button.append(label, description);
-      // Il segno che l'alternativa lascia sulla forma della citta'. Senza
-      // questa riga il giocatore legge tre travasi di risorse e non sa che sta
-      // scegliendo anche come cresceranno i suoi isolati.
-      const mark = decisionMark(option, model.decisionActiveCharter);
-      if (mark !== null) {
-        const consequence = document.createElement('span');
-        consequence.className = 'decision-mark';
-        consequence.textContent = mark;
-        button.appendChild(consequence);
-      }
-      button.addEventListener('click', () => this.handlers.onDecision(option.id), { once: true });
-      options.appendChild(button);
-    }
-    const later = document.createElement('button');
-    later.type = 'button';
-    later.className = 'decision-later';
-    later.textContent = 'Decide later';
-    later.addEventListener('click', () => this.snoozeDecision(), { once: true });
-    this.decisionCard.replaceChildren(title, message, options, later);
+    const options = decisionOptionList(model, {
+      onDecision: (id) => this.handlers.onDecision(id),
+      onSnooze: () => this.snoozeDecision(),
+    }, { once: true });
+    const deadline = decisionDeadline(model);
+    this.decisionCard.replaceChildren(
+      title,
+      message,
+      ...(deadline === null ? [] : [deadline]),
+      options,
+    );
     this.paintedDecisionId = decision.id;
+  }
+
+  /** Riscrive il solo conto alla rovescia, senza toccare i bottoni. */
+  private paintDeadline(model: GameHudModel): void {
+    const line = this.decisionCard.querySelector<HTMLElement>('.decision-deadline');
+    if (line === null) return;
+    const fresh = decisionDeadline(model);
+    if (fresh === null) return;
+    line.textContent = fresh.textContent;
+    line.dataset['urgent'] = fresh.dataset['urgent'] ?? 'false';
+  }
+
+  /** Vero quando uno dei pannelli del bordo destro e' aperto. */
+  private rightPanelOpen(): boolean {
+    return !this.cityDrawer.hidden
+      || !this.policiesDrawer.hidden
+      || !this.themePicker.hidden
+      || !this.viewPicker.hidden
+      || !this.infoPicker.hidden
+      || this.help.isOpen;
+  }
+
+  /** Chiude ogni pannello del bordo destro. Non tocca il menu ne' la selezione. */
+  private clearRightPanels(): void {
+    this.closeCity();
+    this.closePolicies();
+    this.closeThemes();
+    this.closeViews();
+    this.closeInfo();
+    this.help.hide();
   }
 
   private paintSelection(): void {

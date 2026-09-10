@@ -81,6 +81,7 @@ domanda: è ciò che tiene basso il contesto di partenza.
 | [CLAUDE.md](CLAUDE.md) | Puntatore: dove stanno le regole, le tre che non aspettano, e cosa si sbaglia facilmente | sempre |
 | [docs/changelog/](docs/changelog/) | Il changelog archiviato in schede da 55.000 caratteri, piu' l'elenco per titolo di ogni incremento in `docs/changelog/README.md` | a domanda |
 | [docs/engine/microgeometry.md](docs/engine/microgeometry.md) | Il catalogo delle micro-ricette architettoniche, additive e riduttive: aggancio, asse di corsa, materiale, box in sedicesimi e costo in quad, per residenziale, commerciale, industriale e civico. Cosa e' gia' implementato e cosa resta a catalogo |
+| [docs/game/milestones.md](docs/game/milestones.md) | Sblocco progressivo dei diciannove ruoli: la scala derivata dalle soglie che il gioco gia' usa, le condizioni proprie dei landmark, e il freno sui fondi che l'ha dovuta precedere — con i numeri della partita misurata | a domanda |
 | [docs/index/](docs/index/) | Le schede del Project Index, una per area: le righe file per file di `src/`, con `npm run locate` che le cerca tutte insieme | a domanda |
 | [docs/pending/README.md](docs/pending/README.md) | Formato dei frammenti di indice e changelog, e perché si scrive lì invece che nei due file | a domanda |
 | [docs/roadmap/](docs/roadmap/) | Il ragionamento delle fasi chiuse, una scheda per fase, piu' l'indice in `docs/roadmap/README.md`. Le attivita' restano in `ROADMAP.md` | a domanda |
@@ -134,7 +135,7 @@ un nome preciso non ne apre nessuna — `npm run locate` le legge tutte per lui.
 | [docs/index/mobility.md](docs/index/mobility.md) | `aerial/`, `spans/`, `crossings/`, `ropeway/`, `traffic/`: ciò che collega, in quota e in movimento | ~4k |
 | [docs/index/engine.md](docs/index/engine.md) | `src/engine/` con `mesher/` e `themes/`: renderer, meshing, materiali, cielo, luce, camera, qualità adattiva | ~5k |
 | [docs/index/sim-game.md](docs/index/sim-game.md) | `src/sim/` e `src/game/`: tick, desiderabilità, decisioni; passo fisso, azioni, salvataggio, crescita | ~4k |
-| [docs/index/ui.md](docs/index/ui.md) | `src/ui/` e i parametri d'indirizzo: pannelli in DOM e canvas puri, modelli testabili in `node` | ~3k |
+| [docs/index/ui.md](docs/index/ui.md) | `src/ui/`, `src/audio/` e i parametri d'indirizzo: pannelli in DOM e canvas puri, suono sintetizzato, modelli testabili in `node` | ~3k |
 
 Una riga nuova va nella scheda dell'area, con lo stesso frammento di
 `docs/pending/` di sempre: `npm run docs:merge` cerca la sezione dichiarata in
