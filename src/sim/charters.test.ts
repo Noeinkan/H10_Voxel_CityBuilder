@@ -5,11 +5,16 @@ import {
   canonicalCharters,
   charterById,
   charterOfFamily,
+  governanceOf,
   isCharterId,
   withCharter,
   withoutFamily,
+  type CharterFamily,
 } from './charters';
 import { ALL_CLASSES } from './classes';
+
+/** Le famiglie, in un posto solo: aggiungerne una si vede qui e non altrove. */
+const FAMILIES: readonly CharterFamily[] = ['supply', 'publicSpace', 'investment', 'governance'];
 
 describe('catalogo dei mandati', () => {
   it('copre esattamente i vettori dichiarati in balance', () => {
@@ -19,17 +24,51 @@ describe('catalogo dei mandati', () => {
 
   it('dichiara per ognuno una famiglia e un portante validi', () => {
     for (const charter of CHARTERS) {
-      expect(['supply', 'publicSpace', 'investment']).toContain(charter.family);
+      expect(FAMILIES).toContain(charter.family);
       expect(ALL_CLASSES).toContain(charter.carrier);
       expect(charterById(charter.id)).toBe(charter);
     }
   });
 
   it('ogni famiglia offre almeno due direzioni distinguibili', () => {
-    for (const family of ['supply', 'publicSpace', 'investment'] as const) {
+    for (const family of FAMILIES) {
       const inFamily = CHARTERS.filter((entry) => entry.family === family);
       expect(inFamily.length).toBeGreaterThanOrEqual(2);
     }
+  });
+
+  /**
+   * La quarta famiglia e' l'unica che tocca il pannello delle policy, ed e' la
+   * ragione per cui esiste: senza almeno un mandato che sposti slot, prezzo o
+   * mantenimento, «governance» sarebbe una quarta etichetta e non una cerniera.
+   */
+  it('la famiglia di governo agisce sulle policy, non solo sul quartiere', () => {
+    const governance = CHARTERS.filter((entry) => entry.family === 'governance');
+    for (const charter of governance) {
+      const touches = (charter.policySlots ?? 0) !== 0
+        || (charter.upkeepFactor ?? 1) !== 1
+        || (charter.costFactor ?? 1) !== 1;
+      expect(touches).toBe(true);
+    }
+    // E nessun'altra famiglia lo fa: il vettore spaziale e' il loro unico segno.
+    for (const charter of CHARTERS) {
+      if (charter.family === 'governance') continue;
+      expect(charter.policySlots ?? 0).toBe(0);
+      expect(charter.upkeepFactor ?? 1).toBe(1);
+      expect(charter.costFactor ?? 1).toBe(1);
+    }
+  });
+
+  it('compone i mandati attivi in un solo verdetto sul governo', () => {
+    expect(governanceOf([])).toEqual({ extraSlots: 0, upkeepFactor: 1, costFactor: 1 });
+
+    const powers = governanceOf(['emergencyPowers']);
+    expect(powers.extraSlots).toBe(BALANCE.decisions.mandate.slotGrant);
+    expect(powers.upkeepFactor).toBe(1);
+
+    const books = governanceOf(['openBooks']);
+    expect(books.upkeepFactor).toBe(BALANCE.decisions.mandate.thriftUpkeep);
+    expect(books.extraSlots).toBe(0);
   });
 
   it('riconosce solo gli id del catalogo', () => {

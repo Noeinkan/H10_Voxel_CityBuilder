@@ -19,6 +19,8 @@ import {
   placeCatalyst,
   placeRopeway,
   placeTerrace,
+  policyCapacity,
+  policyCost,
   ropewayFailure,
   terraceFailure,
   togglePolicy,
@@ -308,5 +310,87 @@ describe('sito dell opera concessa da una decisione', () => {
   it('senza nessun candidato valido rinuncia invece di inventarsi un posto', () => {
     const map = testTerrain({ chunksX: 2, chunksY: 2, height: 12 });
     expect(grantSite(createSimState(), map, 'market', [])).toBeNull();
+  });
+});
+
+/**
+ * Il budget di governo: quante policy la citta' regge, e cosa la ferma.
+ *
+ * E' il secondo motivo per cui il pannello delle policy si riapre, e agisce dove
+ * lo scambio della singola voce non arriva: quello rende ogni policy un
+ * compromesso, questo rende il loro **insieme** una scelta.
+ */
+describe('il budget di governo', () => {
+  /** Una citta' che puo' permettersi qualunque policy del catalogo. */
+  function richCity(civic = 0): SimState {
+    return {
+      ...createSimState(),
+      population: { stock: 5_000, delta: 0 },
+      funds: { stock: 100_000, delta: 0 },
+      buildingCounts: [10, 10, 10, civic],
+    };
+  }
+
+  it('senza civici la citta tiene solo gli slot di base', () => {
+    expect(policyCapacity(richCity(0))).toBe(BALANCE.gameplay.governance.baseSlots);
+  });
+
+  it('i civici comprano slot, fino al tetto', () => {
+    const perSlot = BALANCE.gameplay.governance.buildingsPerSlot;
+    expect(policyCapacity(richCity(perSlot))).toBe(BALANCE.gameplay.governance.baseSlots + 1);
+    expect(policyCapacity(richCity(perSlot * 100))).toBe(BALANCE.gameplay.governance.maxSlots);
+  });
+
+  it('un mandato di governo concede uno slot in piu', () => {
+    const governed = { ...richCity(0), charters: ['emergencyPowers'] as const };
+    expect(policyCapacity(governed))
+      .toBe(BALANCE.gameplay.governance.baseSlots + BALANCE.decisions.mandate.slotGrant);
+  });
+
+  it('oltre il tetto rifiuta con la ragione giusta, non per mancanza di fondi', () => {
+    let state = richCity(0);
+    // Tre voci compatibili fra loro: riempiono esattamente gli slot di base.
+    for (const id of ['denseHousing', 'industrialSubsidy', 'zoningRelief'] as const) {
+      const result = togglePolicy(state, id);
+      if (!result.success) throw new Error(`atteso successo su ${id}: ${result.reason}`);
+      state = result.state;
+    }
+    expect(state.policies).toHaveLength(BALANCE.gameplay.governance.baseSlots);
+
+    expect(togglePolicy(state, 'marketCharter'))
+      .toEqual({ success: false, reason: 'policy-capacity' });
+
+    // E spegnerne una libera il posto: il tetto non e' un blocco, e' un budget.
+    const freed = togglePolicy(state, 'zoningRelief');
+    if (!freed.success) throw new Error('spegnere deve sempre riuscire');
+    expect(togglePolicy(freed.state, 'marketCharter').success).toBe(true);
+  });
+
+  it('una policy bloccata da un evento non si riaccende, nemmeno con i fondi', () => {
+    const locked: SimState = {
+      ...richCity(0),
+      tickCount: 100,
+      policyLocks: [{ id: 'denseHousing', until: 900 }],
+    };
+    expect(togglePolicy(locked, 'denseHousing'))
+      .toEqual({ success: false, reason: 'policy-locked' });
+
+    // Scaduto il blocco, la stessa citta' la vara senza altre condizioni.
+    expect(togglePolicy({ ...locked, tickCount: 900 }, 'denseHousing').success).toBe(true);
+  });
+
+  it('la camera di commercio sconta il varo, e il prezzo addebitato e quello mostrato', () => {
+    const plain = richCity(0);
+    const chartered = { ...plain, charters: ['chamberOfTrade'] as const };
+    const listed = BALANCE.gameplay.policy.denseHousing.cost;
+
+    expect(policyCost(plain, 'denseHousing')).toBe(listed);
+    expect(policyCost(chartered, 'denseHousing'))
+      .toBe(Math.round(listed * BALANCE.decisions.mandate.charterCost));
+
+    const result = togglePolicy(chartered, 'denseHousing');
+    if (!result.success) throw new Error('atteso successo');
+    expect(chartered.funds.stock - result.state.funds.stock)
+      .toBe(policyCost(chartered, 'denseHousing'));
   });
 });

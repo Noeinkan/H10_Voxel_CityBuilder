@@ -71,7 +71,34 @@ describe('buildGameHudModel', () => {
     expect(model.catalysts.every((action) => action.available)).toBe(true);
     expect(model.expansion.available).toBe(true);
     expect(model.terrace.available).toBe(true);
-    expect(model.policies.every((policy) => policy.available)).toBe(true);
+
+    // **Non piu' «tutte».** Un catalogo interamente accendibile era il difetto
+    // di questo pannello: si premevano gli undici bottoni una volta e non lo si
+    // riapriva piu'. Cio' che resta vero e' che niente e' bloccato in silenzio —
+    // quel che la citta' puo' permettersi e' acceso, il resto dice cosa manca.
+    const reachable = model.policies.filter(
+      (policy) => policy.population <= BALANCE.gameplay.success.population,
+    );
+    expect(reachable.length).toBeGreaterThan(0);
+    expect(reachable.every((policy) => policy.available)).toBe(true);
+    for (const policy of model.policies) {
+      if (policy.available) continue;
+      expect(policy.reason).toContain('Requires');
+    }
+  });
+
+  it('porta il budget di governo, e ogni scheda porta il proprio prezzo', () => {
+    const model = buildGameHudModel(grownStats());
+
+    // Otto civici comprano due slot oltre i tre di base.
+    expect(model.policySlotsTotal).toBe(BALANCE.gameplay.governance.baseSlots + 2);
+    expect(model.policySlotsUsed).toBe(0);
+
+    // La riga che rende la scheda una scelta: cosa la policy peggiora.
+    for (const policy of model.policies) {
+      expect(policy.tradeoff.length).toBeGreaterThan(0);
+      expect(policy.tradeoff).not.toBe(policy.description);
+    }
   });
 
   it('la scala tiene chiusi i ruoli che la citta non ha ancora meritato', () => {
@@ -394,7 +421,10 @@ describe('buildGameHudModel', () => {
   it('espone la decisione sospesa finche non viene risolta', () => {
     const pendingDecision = {
       id: 'public-space-80',
+      eventId: 'public-space',
       family: 'publicSpace',
+      urgency: 'routine',
+      expiresAt: 0,
       title: 'A contested square',
       message: 'Residents and businesses propose different uses.',
       options: [{ id: 'leave-open', label: 'Keep it open', description: 'No cost.', effect: {} }],
@@ -409,7 +439,10 @@ describe('buildGameHudModel', () => {
   it('non ricrea i bottoni della stessa decisione durante i repaint periodici', () => {
     const decision = {
       id: 'public-space-80',
+      eventId: 'public-space',
       family: 'publicSpace',
+      urgency: 'routine',
+      expiresAt: 0,
       title: 'A contested square',
       message: 'Residents and businesses propose different uses.',
       options: [],

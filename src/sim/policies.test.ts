@@ -77,17 +77,40 @@ describe('policies — i pesi tornano esatti', () => {
     expect(resolveWeights(backward.policies)).toEqual(resolveWeights(forward.policies));
   });
 
-  it('ogni policy moltiplica il proprio peso e lascia stare gli altri', () => {
+  it('ogni policy muove due pesi — quello che guadagna e quello che paga', () => {
     const base = resolveWeights([]);
 
     for (const policy of POLICIES) {
       const weights = resolveWeights([policy.id]);
+      const trade = policy.tradeoff;
+      // Il peso su cui guadagna. Nessuna policy sconta il proprio: sarebbe una
+      // voce che si annulla da sola, e il catalogo non ne ammette.
+      expect(trade.weight).not.toBe(policy.weight);
       expect(weights[policy.weight]).toBe(base[policy.weight] * policy.multiplier);
+      expect(weights[trade.weight]).toBe(base[trade.weight] * trade.multiplier);
 
       for (const key of Object.keys(base) as (keyof typeof base)[]) {
-        if (key === policy.weight) continue;
+        if (key === policy.weight || key === trade.weight) continue;
         expect(weights[key]).toBe(base[key]);
       }
+    }
+  });
+
+  /**
+   * La proprieta' che rende il pannello una scelta: nessuna policy e' gratis.
+   *
+   * Non basta che lo scambio esista — dev'essere nel **verso** giusto. Su
+   * `civicUpkeep` alto significa costoso, quindi li' un prezzo e' un
+   * moltiplicatore maggiore di uno; su tutti gli altri e' minore. Senza questo
+   * test una contropartita scritta al contrario sarebbe un secondo bonus, e
+   * nessun altro controllo se ne accorgerebbe.
+   */
+  it('nessuna policy e gratis, e il prezzo va nel verso del peso che tocca', () => {
+    for (const policy of POLICIES) {
+      const { weight, multiplier } = policy.tradeoff;
+      if (weight === 'civicUpkeep') expect(multiplier).toBeGreaterThan(1);
+      else expect(multiplier).toBeLessThan(1);
+      expect(policy.tradeoffEffect.length).toBeGreaterThan(0);
     }
   });
 
@@ -152,7 +175,7 @@ describe('policies — effetto sul campo', () => {
     expect(after).toEqual(before);
   });
 
-  it('una policy che non tocca la desiderabilita’ lascia il campo intatto', () => {
+  it('una policy che non tocca nessuna desiderabilita’ lascia il campo intatto', () => {
     const cls = BUILDING_CLASS.residential;
     let state = addCatalyst(createSimState(), {
       x: 100,
@@ -163,11 +186,40 @@ describe('policies — effetto sul campo', () => {
     });
     const before = state.field.valueAt(100, 100, cls);
 
-    state = setPolicyActive(state, 'denseHousing', true);
+    // `tariffShield` e' l'unica del catalogo i cui **due** pesi stanno fuori dal
+    // campo: guadagna sulla resa industriale e paga sulla capacita' commerciale.
+    state = setPolicyActive(state, 'tariffShield', true);
 
     expect(state.field.valueAt(100, 100, cls)).toBe(before);
-    expect(resolveWeights(state.policies).residentialCapacity).toBe(
-      BALANCE.weights.residentialCapacity * BALANCE.policyMultipliers.denseHousing,
+    expect(resolveWeights(state.policies).productionYield).toBe(
+      BALANCE.weights.productionYield * BALANCE.policyMultipliers.tariffShield,
+    );
+  });
+
+  /**
+   * La regressione che il prezzo ha portato con se': `setPolicyActive`
+   * ricostruiva **un** uso, quello su cui la policy guadagna. Da quando ogni
+   * policy sconta anche un secondo peso, ricostruirne uno solo lascia il campo
+   * dell'altro fermo su un moltiplicatore che non e' piu' quello attivo — e non
+   * si vede finche' non si guarda la heatmap.
+   */
+  it('accendere una policy ricostruisce anche l’uso su cui paga', () => {
+    const cls = BUILDING_CLASS.residential;
+    let state = addCatalyst(createSimState(), {
+      x: 100,
+      y: 100,
+      class: cls,
+      strength: 200,
+      radius: 20,
+    });
+    const before = state.field.valueAt(100, 100, cls);
+
+    // `denseHousing` guadagna sulla capacita' — fuori dal campo — e paga sulla
+    // desiderabilita' residenziale, che nel campo c'e'.
+    state = setPolicyActive(state, 'denseHousing', true);
+
+    expect(state.field.valueAt(100, 100, cls)).toBe(
+      Math.round(before * BALANCE.policyTradeoffs.denseHousing.multiplier),
     );
   });
 });

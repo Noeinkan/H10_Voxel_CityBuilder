@@ -1,6 +1,13 @@
 import type { ActionFailure } from '../game/actions';
 import type { GrowthStats } from '../game/growthScene';
-import { INFO_VIEWS, infoViewSpecOf, type InfoViewKind, type PolicyId, type TradeMode } from '../sim';
+import {
+  INFO_VIEWS,
+  infoViewSpecOf,
+  type InfoViewKind,
+  type PolicyId,
+  type Season,
+  type TradeMode,
+} from '../sim';
 import { BuildDock, sameTool, type DockPanel } from './BuildDock';
 import { ControlsHint } from './ControlsHint';
 import { applyHudTokens } from './hudTokens';
@@ -45,6 +52,14 @@ export interface GameHudHandlers {
   readonly onSpeed: (speed: number) => void;
   /** Ciclo, giorno fisso o notte fissa: sta accanto alla velocita' perche' e' tempo. */
   readonly onDaylight: (mode: DaylightMode) => void;
+  /**
+   * Porta l'anno al primo giorno di una stagione.
+   *
+   * Non e' il gemello di `onDaylight`, anche se i bottoni si somigliano: quello
+   * ferma un orologio che riguarda solo il renderer, questo sposta il calendario
+   * della simulazione — cambia il raccolto, e finisce nel salvataggio.
+   */
+  readonly onSeason: (season: Season) => void;
   /** I banchi di nuvole in quota, accesi o spenti. */
   readonly onClouds: (on: boolean) => void;
   /**
@@ -225,6 +240,15 @@ export class GameHud {
    */
   private selectionNote: string | null = null;
   private paintedDecisionId: string | null = null;
+  /**
+   * L'ultima decisione che si e' presa il corridoio destro.
+   *
+   * Distinto da `paintedDecisionId`, che dice cosa la **carta** ha disegnato e
+   * torna a null ogni volta che la carta si fa da parte per un cassetto. Questo
+   * dice cosa e' stato **annunciato**, e sopravvive a quel passaggio: e' il solo
+   * modo perche' l'annuncio chiuda i pannelli una volta e non a ogni frame.
+   */
+  private announcedDecisionId: string | null = null;
   private lastPaint = 0;
 
   constructor(
@@ -242,6 +266,7 @@ export class GameHud {
       onPause: (paused) => handlers.onPause(paused),
       onSpeed: (speed) => handlers.onSpeed(speed),
       onDaylight: (mode) => handlers.onDaylight(mode),
+      onSeason: (season) => handlers.onSeason(season),
       onClouds: (on) => handlers.onClouds(on),
       onSound: (on) => handlers.onSound(on),
     });
@@ -318,6 +343,7 @@ export class GameHud {
       onSavesOpened: () => handlers.onSavesOpened(),
       onTheme: (id) => handlers.onTheme(id),
       onDaylight: (mode) => handlers.onDaylight(mode),
+      onSeason: (season) => handlers.onSeason(season),
       onClouds: (on) => handlers.onClouds(on),
       onSwatch: () => handlers.onSwatch(),
       onStart: (seed) => handlers.onNewGame(seed),
@@ -500,6 +526,18 @@ export class GameHud {
   setDaylight(mode: DaylightMode): void {
     this.bar.setDaylight(mode);
     this.mainMenu.setDaylight(mode);
+  }
+
+  /**
+   * La stagione in corso, sulle due superfici che la mostrano.
+   *
+   * Non e' l'eco di un clic: la citta' cambia stagione **da sola** mentre il
+   * tempo passa, quindi questo arriva dal giro di aggiornamento dell'HUD e non
+   * dal gesto. E' anche perche' non c'e' niente da ricordare qui dentro.
+   */
+  setSeason(season: Season): void {
+    this.bar.setSeason(season);
+    this.mainMenu.setSeason(season);
   }
 
   /** L'ora della citta': solo la barra la mostra, il menu non ha un orologio. */
@@ -1198,6 +1236,7 @@ export class GameHud {
       this.decisionCard.hidden = true;
       if (decisionNeedsRepaint(this.paintedDecisionId, null)) this.decisionCard.replaceChildren();
       this.paintedDecisionId = null;
+      this.announcedDecisionId = null;
       return;
     }
     // Rimandata: la carta si nasconde, ma la scelta resta in piedi e ricompare
@@ -1213,9 +1252,14 @@ export class GameHud {
     }
 
     // Una decisione **nuova** si prende il corridoio: chiude i pannelli aperti
-    // invece di posarcisi sopra. Solo alla comparsa, non a ogni passata, o
-    // riaprire un cassetto mentre la scelta e' in piedi diventerebbe impossibile.
-    if (decisionNeedsRepaint(this.paintedDecisionId, decision)) this.clearRightPanels();
+    // invece di posarcisi sopra. Una volta sola per decisione, e per questo il
+    // segno non e' `paintedDecisionId`: quello si azzera ogni volta che la carta
+    // si fa da parte, quindi aprire un cassetto la farebbe rileggere come «e'
+    // arrivata adesso» e il cassetto si richiuderebbe da solo al frame dopo.
+    if (this.announcedDecisionId !== decision.id) {
+      this.announcedDecisionId = decision.id;
+      this.clearRightPanels();
+    }
 
     // Un cassetto aperto vince sulla carta: e' il giocatore che l'ha chiesto, e
     // la scelta e' comunque li' dentro.
