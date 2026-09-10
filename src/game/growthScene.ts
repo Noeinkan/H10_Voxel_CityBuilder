@@ -58,6 +58,7 @@ import {
   chooseDecision,
   deferDecision,
   expansionFailure,
+  grantFunds,
   grantSite,
   placeCatalyst,
   placeRopeway,
@@ -77,6 +78,7 @@ import { cityCondition, isSelfSufficient, type CityCondition } from './cityCondi
 import { captureSave } from './save/capture';
 import type { SaveGame } from './save/format';
 import { onboardingAllows, onboardingOf, type OnboardingState } from './onboarding';
+import { advanceMilestone, milestoneGrant, roleUnlocked } from './milestones';
 import {
   coachSuggestion,
   type CoachContext,
@@ -159,6 +161,12 @@ export interface GrowthStats {
   readonly speed: number;
   readonly message: string;
   readonly onboarding: OnboardingState;
+  /**
+   * Il gradino piu' alto mai raggiunto, come indice in `MILESTONES`, o `-1`
+   * prima del primo. E' la meta' della scala che l'HUD non sa ricavare dallo
+   * stato, e senza cui i bottoni si richiuderebbero appena la citta' cala.
+   */
+  readonly milestone: number;
   readonly condition: CityCondition;
   /** La rotta di sviluppo suggerita adesso: alimenta toast e artefatti in-world. */
   readonly coach: CoachSuggestion | null;
@@ -174,6 +182,15 @@ export class GrowthScene {
   private paused = false;
   private speed = 1;
   private healthyTicks = 0;
+  /**
+   * Il gradino piu' alto **mai** raggiunto, come indice in `MILESTONES`.
+   *
+   * L'unica cosa della scala che non si deriva dallo stato, e sta qui per la
+   * stessa ragione di `healthyTicks`: e' memoria di gioco, non un fatto della
+   * simulazione. Serve a due cose che lo stato non sa dire — che uno sblocco non
+   * si richiuda quando la citta' cala, e che il premio si paghi una volta sola.
+   */
+  private milestone = -1;
   /**
    * La riga che la voce sta mostrando, e da quando.
    *
@@ -223,6 +240,23 @@ export class GrowthScene {
   private routeKey = '';
   /** Conto grossolano che dice se valga la pena ricostruire quella firma. */
   private routeStamp = -1;
+  /**
+   * Quante volte la forma dell'acqua e' cambiata **ed e' comparsa**.
+   *
+   * **Non e' lo stesso contatore del distretto**, e la differenza e' l'intero
+   * difetto che questo campo esiste per togliere. Il distretto accoda uno scavo
+   * o una colmata nell'istante in cui il landmark avanza di stadio, ma quelle
+   * opere compaiono nel mondo dopo, a budget, un pezzo per frame. Le rotte
+   * ricostruite all'accodamento leggono ancora il mare di prima: la barca
+   * attraversa la banchina che nel frattempo e' spuntata, ed e' quello che si
+   * vedeva a schermo. Qui si conta la coppia — «il distretto ha lavorato» **e**
+   * «le code si sono svuotate» — che e' il solo istante in cui il mondo
+   * d'acqua e' di nuovo quello che le barche crederanno.
+   */
+  private waterEpoch = 0;
+  /** Il conto del distretto all'ultima epoca chiusa, e se le code lavoravano. */
+  private harborWorks = 0;
+  private queuesBusy = false;
 
   /**
    * Quanto la citta' costruita allontana da se' l'influenza dei catalizzatori.
@@ -307,6 +341,11 @@ export class GrowthScene {
     this.speed = save.scene.speed;
     this.clock = save.scene.clock;
     this.healthyTicks = save.scene.healthyTicks;
+    // Mai **sotto** cio' che la citta' caricata gia' copre: un salvataggio
+    // scritto prima che la scala esistesse porta `-1`, e quella citta' ha gia'
+    // ottomila abitanti. Rimisurarla subito le rida' i gradini che le spettano
+    // invece di richiuderle il catalogo in faccia.
+    this.milestone = advanceMilestone(save.scene.milestone, this.state);
     // Le rotte si ricalcolano da sole al primo `trafficPoses`, ma la firma
     // tenuta da prima direbbe che le strutture non sono cambiate: da un mondo
     // vuoto a una citta' intera e' il caso in cui quella cache va invalidata.
@@ -333,6 +372,7 @@ export class GrowthScene {
         speed: this.speed,
         clock: this.clock,
         healthyTicks: this.healthyTicks,
+        milestone: this.milestone,
       },
       savedAt,
     });
@@ -345,6 +385,7 @@ export class GrowthScene {
       this.state = tick(this.state, this.map);
       this.state = this.builder.onTick(this.state);
       this.healthyTicks = isSelfSufficient(this.state) ? this.healthyTicks + 1 : 0;
+      this.awardMilestone();
       this.refreshCoach();
       this.lastTickMs = performance.now() - start;
       // Le passate del Builder sono l'unico momento in cui il registry cambia:
@@ -440,6 +481,22 @@ export class GrowthScene {
       : `Catalyst placed. Clearing ${clears} ${clears === 1 ? 'building' : 'buildings'} to make room.`);
   }
 
+  /**
+   * Il gradino appena raggiunto, con il premio che porta.
+   *
+   * **Il premio non passa dal tick** e non compare in `flows`: quello e' il
+   * referto di un bilancio ricorrente, e un versamento una tantum letto li'
+   * dentro sembrerebbe un'entrata che si ripete. E' un evento della partita,
+   * come lo sblocco di un settore, e vive dove vivono gli eventi della partita.
+   */
+  private awardMilestone(): void {
+    const reached = advanceMilestone(this.milestone, this.state);
+    if (reached === this.milestone) return;
+    const grant = milestoneGrant(this.milestone, reached);
+    this.milestone = reached;
+    if (grant > 0) this.state = grantFunds(this.state, grant);
+  }
+
   catalystFailure(
     x: number,
     y: number,
@@ -457,6 +514,18 @@ export class GrowthScene {
       if (site.refusal !== null) return ALOFT_FAILURE[site.refusal];
       if (site.site === null) return 'needs-building';
     }
+
+    // La scala dopo la facciata e prima del terreno, cioe' prima dei fondi: chi
+    // non ha ancora il gradino non deve mettersi a risparmiare per un prezzo che
+    // non potrebbe comunque pagare. In quota invece il rifiuto specifico vince,
+    // perche' «cerca un edificio piu' alto» e' un gesto e «non ancora» no.
+    //
+    // In pratica il giocatore ci arriva di rado: un ruolo bloccato ha il bottone
+    // spento e non si riesce nemmeno a selezionare. Questo e' il controllo che
+    // tiene onesti i chiamanti programmatici.
+    const role = typeof target === 'number' ? defaultCatalystOfClass(target) : target;
+    if (!roleUnlocked(this.state, role, this.milestone)) return 'milestone-required';
+
     const failure = catalystFailure(this.state, this.map, x, y, target, aloft);
     if (failure !== null) return failure;
 
@@ -1007,7 +1076,7 @@ export class GrowthScene {
     for (const catalyst of this.state.catalysts) stages += catalyst.strength;
     const stamp = this.builder.registry.landmarkCount * 1024 + this.state.catalysts.length
       + skyline * 1_048_576 + (fleets.cargo * 8 + fleets.ferry) * 1_073_741_824
-      + stages * 68_719_476_736;
+      + stages * 68_719_476_736 + this.settleWater() * 274_877_906_944;
     if (stamp === this.routeStamp && rides === this.rides) return;
     this.routeStamp = stamp;
 
@@ -1062,6 +1131,32 @@ export class GrowthScene {
     if (!this.map.has(cx, cy)) return false;
     if (this.map.biomeAt(cx, cy) === BIOME.ocean) return true;
     return this.world.getBlock(cx, cy, this.map.waterTopAt(cx, cy) - 1) === WATER_IDS.surface;
+  }
+
+  /**
+   * L'epoca dell'acqua, avanzata quando le opere del distretto sono **comparse**.
+   *
+   * **Una darsena e un molo non aggiungono nessun record**, quindi la firma che
+   * decide se ricostruire le rotte non se ne accorgerebbe mai: le barche
+   * continuerebbero a navigare la mappa d'acqua di prima, dritte dentro la
+   * banchina appena colmata. Il contatore del distretto dice *che* ha lavorato;
+   * le due code dicono *quando* quel lavoro e' arrivato nel mondo. Serve la
+   * coppia, perche' ricostruire all'accodamento leggerebbe ancora il mare
+   * vecchio — e sarebbe lo stesso difetto un frame prima.
+   *
+   * Sale al massimo una volta per opera del distretto, quindi non e' un
+   * ricalcolo per frame: fra un porto che avanza di stadio e il successivo
+   * passano minuti di gioco.
+   */
+  private settleWater(): number {
+    const works = this.builder.harborWorks;
+    const busy = this.builder.stats.growing > 0 || this.builder.stats.surfaceQueued > 0;
+    if (this.queuesBusy && !busy && works !== this.harborWorks) {
+      this.harborWorks = works;
+      this.waterEpoch++;
+    }
+    this.queuesBusy = busy;
+    return this.waterEpoch;
   }
 
   /**
@@ -1221,6 +1316,7 @@ export class GrowthScene {
       speed: this.speed,
       message: this.message,
       onboarding: onboardingOf(this.state),
+      milestone: this.milestone,
       // Quella tenuta, non quella di adesso: fra un tick e l'altro sono la
       // stessa cosa, e prima del primo tick non c'e' ancora niente da tenere.
       condition: this.coach?.condition

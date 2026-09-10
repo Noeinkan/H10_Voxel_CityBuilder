@@ -1218,12 +1218,23 @@ canale sono il posto dove il distretto fa nascere i propri edifici, con il front
 girato verso l'acqua. Senza le torri sulle banchine, Canary Wharf è un paio di
 vasche: è questa voce a chiudere anche l'ultima della fase 4.19.
 
-**Stato implementazione:** le prime quattro voci sono chiuse. Resta la quinta —
-gli ormeggi dentro l'acqua nuova — e con lei una nota che il gate dovrà
-verificare a schermo: sulla conca di un lago i canali scavati **non sono
-navigabili**, perché `isOpenWater` legge il voxel alla quota dichiarata dalla
-`TerrainMap`, che lo scavo non tocca. È il disallineamento già noto dalla fase
-4.17, e ora che le figure sono grandi si vedrà di più.
+**Stato implementazione:** resta la sola voce degli ormeggi dentro l'acqua
+nuova. Con lei una nota che il gate dovrà verificare a schermo: sulla conca di
+un lago i canali scavati **non sono navigabili**, perché `isOpenWater` legge il
+voxel alla quota dichiarata dalla `TerrainMap`, che lo scavo non tocca. È il
+disallineamento già noto dalla fase 4.17, e ora che le figure sono grandi si
+vedrà di più.
+
+**Due difetti trovati guardando uno screenshot, e vale la pena dire perché
+nessun test li aveva presi.** Il primo — le barche che entrano dritte nelle
+banchine — non stava nel traffico ma nella *sincronizzazione*: tutto il dominio
+delle rotte era corretto, e leggeva una mappa d'acqua che nel frattempo era
+cambiata sotto di lui. Un test del traffico non poteva vederlo, perché il
+traffico non ha code. Il secondo — i pontili alti dodici voxel — stava in una
+riga sola del driver (`fill.kind === 'mole'`), e i test guardavano la *pianta*
+delle figure, dove quella riga non compare. Le due lezioni sono la stessa: il
+distretto ha una parte pura, molto provata, e una parte che tocca il mondo, dove
+un difetto si vede solo a schermo.
 
 - [x] Il sito costiero si classifica: quanta terra c'è dietro la riva, <!-- size: L -->
   quanto è dritta, quanta acqua la circonda. Puro, sul solo terreno sondato, e
@@ -1237,12 +1248,22 @@ navigabili**, perché `isOpenWater` legge il voxel alla quota dichiarata dalla
 - [x] I lotti di settore nascono sulle banchine della figura. Il fronte <!-- size: L -->
   verso l'acqua lo decide ancora la maglia stradale, non il lotto: la tipologia
   è quella del posto, l'orientamento no.
+- [x] Le rotte si accorgono dell'acqua nuova. **Il difetto non era nel <!-- size: M -->
+  traffico**: le rotte si rifanno quando un landmark avanza di stadio, ma le
+  opere del distretto vengono *accodate* in quell'istante e compaiono nei frame
+  successivi, a budget — quindi le rotte leggevano il mare di prima e non
+  venivano più rifatte, perché nessuna di quelle opere aggiunge un record e la
+  firma del ricalcolo contava record. Ora il distretto conta le volte che ha
+  cambiato la forma dell'acqua e la scena avanza un'epoca quando quel conto
+  cambia **e** le code si sono svuotate.
+- [x] Le banchine si leggono come banchine: pontili di legno su pali a <!-- size: L -->
+  due voxel dall'acqua invece di blocchi di pietra alti dodici, la calata che
+  scende in tre quote verso il mare con le sue scalette, e una gru per darsena
+  con lo sbraccio sopra il proprio bacino.
 - [ ] Le barche usano l'acqua nuova: ormeggi lungo il canale e dentro le <!-- size: M -->
-  darsene, e la rotta che già cammina sull'acqua li collega al largo. **Le
-  barche già evitano le banchine e navigano i bacini appena scavati** — le rotte
-  leggono i voxel d'acqua veri e nessuna riga del traffico sa che una darsena
-  esiste — ma nessun mezzo *nasce* dentro la figura: quelli che si vedono sono
-  ancora i soli ormeggi che la ricetta disegna.
+  darsene. Oggi nessun mezzo *nasce* dentro la figura — quelli che si vedono
+  sono ancora i soli ormeggi che la ricetta disegna — anche se ci navigano
+  dentro e ne evitano le banchine.
 
 **Vincolo:** il piano resta puro — terreno sondato e nient'altro, nessun
 registry, nessuna coda — e ogni figura dichiara il proprio confine invece di

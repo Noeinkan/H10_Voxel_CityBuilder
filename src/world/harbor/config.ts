@@ -41,6 +41,32 @@ export const HARBOR = {
   /** Quota del frangiflutti sopra il pelo dell'acqua, in voxel. */
   breakwaterFreeboard: 2,
 
+  /**
+   * Quota del piano di un pontile sopra il pelo, in voxel.
+   *
+   * **Un pontile non e' una banchina, ed e' l'altezza a dirlo.** La banchina sta
+   * a `GRADING.quayFreeboard` — sei voxel, tre piani di cubo — perche' e' il
+   * bordo costruito della terra e deve stare in quota con il piano della citta'
+   * che ci arriva sopra. Un pontile e' un tavolato appoggiato sull'acqua: due
+   * voxel, come il frangiflutti, e sopra ci si cammina soltanto.
+   *
+   * Era il difetto piu' visibile del distretto a schermo: i pontili si
+   * colmavano al piano della banchina e uscivano dall'acqua come **blocchi di
+   * pietra alti dodici voxel** — dal fondale fino a sei sopra il pelo — invece
+   * che come tavolati.
+   */
+  pierFreeboard: 2,
+
+  /**
+   * Passo dei pali di un pontile, in colonne.
+   *
+   * **Un pontile e' vuoto sotto**, ed e' l'altra meta' di cio' che lo distingue
+   * da una colmata: la pietra scende solo sui pali, il resto e' acqua che ci
+   * passa sotto. Tre colonne e' il passo piu' largo che regga la lettura a
+   * distanza isometrica — a quattro il tavolato sembra sospeso sul niente.
+   */
+  pierPile: 3,
+
   /** Profondita' dei canali del distretto sotto il pelo, in voxel. */
   canalDepth: 2,
 
@@ -71,6 +97,37 @@ export const HARBOR = {
 
   /** Ultimo voxel del frangiflutti: il cappello che si legge dal mare. */
   fillCap: PALETTE_SLOTS.stoneDark,
+
+  /**
+   * Il tavolato di un pontile, e i pali che lo reggono.
+   *
+   * **Il legno e' meta' di cio' che distingue un pontile da una banchina**, e a
+   * distanza isometrica e' la meta' che si vede per prima: la pietra chiara
+   * della banchina e il bruno del tavolato sono due materiali diversi prima
+   * ancora di essere due quote diverse. I pali stanno nei bruni scuri, cosi'
+   * che l'ombra sotto il tavolato si legga come vuoto e non come basamento.
+   */
+  pierDeckPalette: PALETTE_SLOTS.wood,
+  pierPilePalette: PALETTE_SLOTS.asphaltDark,
+
+  /**
+   * La calata: il gradino con cui una banchina scende verso l'acqua.
+   *
+   * **Una banchina alta sei voxel senza un gradino e' un muro**, e a distanza
+   * di gioco e' esattamente cosi' che si legge — un bordo netto fra la citta' e
+   * il mare, senza niente che dica come si passa dall'una all'altro. La calata
+   * e' la prima riga di colonne sul filo dell'acqua, riscritta un cubo piu' in
+   * basso: costa un confronto per colonna e rompe la parete in due quote.
+   */
+  quayLanding: PALETTE_SLOTS.stoneWarm,
+
+  /**
+   * Passo delle scalette che scendono dalla calata all'acqua, in colonne.
+   *
+   * Una ogni dodici: abbastanza rare da restare un dettaglio, abbastanza fitte
+   * perche' su una dita di banchina da ventisei colonne ce ne siano due.
+   */
+  stairPitch: 12,
 
   /** Colore della passeggiata del distretto: il suolo pubblico del fronte. */
   promenadePalette: PALETTE_SLOTS.concretePale,
@@ -129,6 +186,20 @@ export const HARBOR = {
   dockLength: 26,
   /** Quanti bacini al massimo, quando la fascia li regge tutti. */
   dockCount: 3,
+
+  /**
+   * La gru di banchina: sbraccio, altezza del braccio sopra il piano, palette.
+   *
+   * **E' la firma verticale di una darsena.** A distanza isometrica un bacino
+   * rettangolare senza niente sopra e' una vasca: e' il braccio a sbalzo sopra
+   * l'acqua a dire che di li' si scarica qualcosa. Otto colonne di sbraccio
+   * coprono quasi tutto il bacino da dieci, e dodici voxel di altezza mettono il
+   * braccio sopra i tetti degli edifici bassi che nascono sulla dita.
+   */
+  craneReach: 8,
+  craneHeight: 12,
+  cranePalette: PALETTE_SLOTS.metalRust,
+  craneCap: PALETTE_SLOTS.metalBrass,
 
   /** Larghezza del canale e della sua isola verso il mare, in colonne. */
   canalWidth: 4,

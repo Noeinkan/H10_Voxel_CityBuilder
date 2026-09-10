@@ -102,7 +102,20 @@ export interface HarborFill {
   readonly h: number;
   /** Quota della cima della colmata: piano del molo o cresta del frangiflutti. */
   readonly padZ: number;
-  readonly kind: 'mole' | 'breakwater' | 'quay';
+  readonly kind: 'mole' | 'breakwater' | 'quay' | 'pier';
+}
+
+/**
+ * Una gru di banchina: il montante e il braccio a sbalzo sopra l'acqua.
+ *
+ * Due riquadri gia' ruotati sul verso vero, e nient'altro: la quota la mette
+ * chi la scrive, che sa a che piano sta la banchina sotto.
+ */
+export interface HarborCrane {
+  readonly mast: { x: number; y: number; w: number; h: number };
+  readonly boom: { x: number; y: number; w: number; h: number };
+  /** Piano della banchina su cui la gru poggia. */
+  readonly padZ: number;
 }
 
 /** Uno slot di settore: la colonna dove il distretto vuole un edificio suo. */
@@ -120,6 +133,8 @@ export interface HarborPlan {
   readonly promenade: readonly { x: number; y: number }[];
   /** Slot di settore sbloccati da questo stadio. */
   readonly sites: readonly SectorSite[];
+  /** Le gru che questo stadio pianta sulle banchine della figura. */
+  readonly cranes: readonly HarborCrane[];
 }
 
 interface MutablePlan {
@@ -128,9 +143,12 @@ interface MutablePlan {
   fills: HarborFill[];
   promenade: { x: number; y: number }[];
   sites: SectorSite[];
+  cranes: HarborCrane[];
 }
 
-const EMPTY: HarborPlan = { digs: [], walls: [], fills: [], promenade: [], sites: [] };
+const EMPTY: HarborPlan = {
+  digs: [], walls: [], fills: [], promenade: [], sites: [], cranes: [],
+};
 
 export function planHarborDistrict(query: HarborQuery, probe: HarborProbe): HarborPlan {
   const role = HARBOR_ROLES[query.kind];
@@ -144,7 +162,7 @@ export function planHarborDistrict(query: HarborQuery, probe: HarborProbe): Harb
   const prev = ringAt(role, stage - 1);
   const ringMax = ringAt(role, role.ringByStage.length - 1);
 
-  const plan: MutablePlan = { digs: [], walls: [], fills: [], promenade: [], sites: [] };
+  const plan: MutablePlan = { digs: [], walls: [], fills: [], promenade: [], sites: [], cranes: [] };
   const worldRect = (x: number, y: number, w: number, h: number): { x: number; y: number; w: number; h: number } => {
     const spot = orientPart(
       { kind: 0, x, y, w, h, z: 0, height: 1, palette: 0, surface: 0 },
@@ -244,10 +262,29 @@ export function planHarborDistrict(query: HarborQuery, probe: HarborProbe): Harb
           rect.x, rect.y, rect.w, rect.h, crest,
           (piece, z) => ({ ...piece, padZ: z, kind: 'mole' as const }), 'fill');
       }
+      // I pontili stanno **due voxel sopra il pelo**, non sei: un tavolato non
+      // e' suolo, e portarlo in quota con la citta' lo faceva uscire dal mare
+      // come un muro. Chi li disegna li fa anche vuoti sotto.
+      for (const rect of shape.piers) {
+        addPieces(plan.fills, worldRect, columns, probe,
+          rect.x, rect.y, rect.w, rect.h, query.waterZ + HARBOR.pierFreeboard,
+          (piece, z) => ({ ...piece, padZ: z, kind: 'pier' as const }), 'fill');
+      }
       for (const rect of shape.quays) {
         addPieces(plan.fills, worldRect, columns, probe,
           rect.x, rect.y, rect.w, rect.h, crest,
           (piece, z) => ({ ...piece, padZ: z, kind: 'quay' as const }), 'fill');
+      }
+      // Le gru: due riquadri gia' ruotati, e la quota della banchina sotto. Non
+      // passano da `addPieces` perche' non sono una colmata — non riempiono
+      // niente, stanno **sopra** il piano — e un ritaglio a sedici colonne le
+      // taglierebbe a meta' del braccio.
+      for (const crane of shape.cranes) {
+        plan.cranes.push({
+          mast: worldRect(crane.mast.x, crane.mast.y, crane.mast.w, crane.mast.h),
+          boom: worldRect(crane.boom.x, crane.boom.y, crane.boom.w, crane.boom.h),
+          padZ: crest,
+        });
       }
     }
   }

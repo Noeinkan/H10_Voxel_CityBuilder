@@ -156,9 +156,14 @@ describe('le figure d acqua', () => {
 
     // Due bracci, ciascuno con la propria piega: quattro rettangoli, e niente
     // scavo — lo specchio dentro e' il mare che c'era.
+    //
+    // **Sono pontili, non colmate**, ed e' la correzione che il porticciolo
+    // aspettava: un braccio portato al piano della citta' esce dal mare come un
+    // muro alto sei voxel, che e' esattamente come si vedeva a schermo.
     expect(shape.water).toHaveLength(0);
-    expect(shape.moles).toHaveLength(4);
-    const turns = shape.moles.filter((rect) => rect.w === HARBOR.coveThickness);
+    expect(shape.moles).toHaveLength(0);
+    expect(shape.piers).toHaveLength(4);
+    const turns = shape.piers.filter((rect) => rect.w === HARBOR.coveThickness);
     expect(turns).toHaveLength(2);
 
     // Fra le due pieghe resta la bocca, larga quanto dichiarato.
@@ -177,9 +182,17 @@ describe('le figure d acqua', () => {
     const shape = planFigure({ site, long: 16, short: SHORT });
 
     expect(shape.moles.length).toBeGreaterThan(0);
-    for (const rect of shape.moles) {
+    expect(shape.piers.length).toBe(shape.moles.length);
+    for (const rect of [...shape.moles, ...shape.piers]) {
       const overlaps = rect.y < SHORT && rect.y + rect.h > 0;
       expect(overlaps, `${rect.y}..${rect.y + rect.h}`).toBe(false);
+    }
+
+    // Il bordo lungo la riva e' una colmata — ci si cammina e ci si costruisce
+    // accanto; cio' che sporge sull'acqua e' un tavolato su pali, e sta piu' al
+    // largo di quello che lo regge.
+    for (let i = 0; i < shape.moles.length; i++) {
+      expect(shape.piers[i].x).toBeGreaterThanOrEqual(shape.moles[i].x + shape.moles[i].w);
     }
   });
 
@@ -198,6 +211,31 @@ describe('le figure d acqua', () => {
     for (const rect of [...shape.water, ...shape.banks, ...shape.quays]) {
       expect(Math.abs(rect.y)).toBeLessThanOrEqual(HARBOR.figureReach);
       expect(Math.abs(rect.x)).toBeLessThanOrEqual(HARBOR.figureReach);
+    }
+  });
+
+  it('ogni darsena ha la sua gru, con lo sbraccio sopra il bacino', () => {
+    // **A distanza isometrica un bacino senza niente sopra e' una vasca.** E'
+    // lo sbraccio a dire che di li' si scarica qualcosa, e per dirlo deve
+    // stare sopra l'acqua del **proprio** bacino: un braccio che sporge dalla
+    // parte sbagliata pende sulla dita di banchina, cioe' sulle case.
+    const site = coastOf(strip(-HARBOR.figureReach, 40));
+    const shape = planFigure({ site, long: 16, short: SHORT });
+
+    expect(shape.cranes).toHaveLength(shape.water.length);
+    for (let i = 0; i < shape.cranes.length; i++) {
+      const { mast, boom } = shape.cranes[i];
+      const basin = shape.water[i];
+      // Il montante poggia sulla banchina, il braccio no: si toccano su un
+      // bordo e nient'altro.
+      expect(boom.h).toBe(HARBOR.craneReach);
+      expect(boom.x).toBe(mast.x);
+      // Lo sbraccio sta sopra il proprio bacino, non oltre.
+      expect(boom.y).toBeGreaterThanOrEqual(basin.y);
+      expect(boom.y + boom.h).toBeLessThanOrEqual(basin.y + basin.h);
+      // E arretrato dalla riva, o finirebbe in mare aperto invece che sopra
+      // l'acqua che serve.
+      expect(mast.x + mast.w).toBeLessThan(basin.x + basin.w);
     }
   });
 });

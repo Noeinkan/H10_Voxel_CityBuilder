@@ -165,6 +165,53 @@ describe('il driver del distretto costiero', () => {
     expect(world.getBlock(65, 45, LAKE + 1)).toBe(0);
   });
 
+  it('conta le volte che ha rimesso mano alla forma dell acqua', () => {
+    // **Nessuna di queste opere aggiunge un record**, quindi la firma con cui
+    // la scena decide se ricostruire le rotte non se ne accorgerebbe: le barche
+    // continuerebbero a navigare la mappa d'acqua di prima, dritte dentro la
+    // banchina appena colmata. Questo contatore e' la sola cosa che glielo dice.
+    const { ctx, registry, growth, surface } = contextAt(lakeLand());
+    registry.add(marinaRecord(3, LAKE));
+    const driver = new HarborDriver(ctx);
+    expect(driver.works).toBe(0);
+
+    driver.pass();
+    settlePieces(growth, surface);
+    expect(driver.works).toBeGreaterThan(0);
+
+    // E non sale a vuoto: una passata senza stadi nuovi non cambia niente.
+    const seen = driver.works;
+    driver.pass();
+    expect(driver.works).toBe(seen);
+  });
+
+  it('la banchina scende verso l acqua invece di finire con un muro', () => {
+    // **Era il difetto piu' visibile a schermo.** Una banchina sta sei voxel
+    // sopra il pelo — deve stare in quota con il piano della citta' che ci
+    // arriva sopra — e senza un gradino sul filo dell'acqua quei sei voxel sono
+    // una parete netta fra la citta' e il mare. La calata rompe la parete in due
+    // quote, e ogni `stairPitch` colonne in tre.
+    const { ctx, world, registry, growth, surface } = contextAt(lakeLand());
+    registry.add(marinaRecord(3, LAKE));
+    new HarborDriver(ctx).pass();
+    settlePieces(growth, surface);
+
+    const topAt = (x: number, y: number): number => {
+      for (let z = LAKE + 10; z >= LAKE - 10; z--) {
+        if (world.getBlock(x, y, z) !== 0) return z;
+      }
+      return -1;
+    };
+
+    // La dita di banchina fra il primo bacino e la struttura corre in x 38..63,
+    // y 52..59; la sua testa a x 63 guarda il largo, che qui comincia a 64.
+    const inner = topAt(55, 55);
+    const lip = topAt(63, 55);
+    expect(inner).toBeGreaterThan(LAKE);
+    expect(lip).toBeGreaterThan(LAKE);
+    expect(lip).toBeLessThan(inner);
+  });
+
   it('dipinge la passeggiata sulla fascia nuova e lascia i canali scoperti', () => {
     const { ctx, world, growth, surface } = contextAt(lakeLand());
     ctx.registry.add(marinaRecord(3, LAKE));

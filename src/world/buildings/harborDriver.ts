@@ -1,6 +1,7 @@
 import { HARBOR, HARBOR_ROLES } from '../harbor/config';
 import {
   planHarborDistrict,
+  type HarborCrane,
   type HarborDig,
   type HarborFill,
   type HarborPlan,
@@ -61,9 +62,23 @@ const keyOf = (x: number, y: number): string => `${x},${y}`;
 
 export class HarborDriver {
   private readonly districts = new Map<number, DistrictState>();
+
+  /**
+   * Quante volte questo distretto ha rimesso mano alla forma dell'acqua.
+   *
+   * Sale a ogni piano applicato e non scende mai. Lo legge chi ricostruisce le
+   * rotte del traffico: uno scavo e una colmata non aggiungono record, quindi
+   * senza questo contatore le barche resterebbero sulla mappa d'acqua di prima.
+   */
+  private worksCount = 0;
+
   private readonly pendingSites: PendingSite[] = [];
 
   constructor(private readonly ctx: BuildContext) {}
+
+  get works(): number {
+    return this.worksCount;
+  }
 
   /** Quanti edifici di settore aspettano ancora un'infornata. */
   get pending(): number {
@@ -135,6 +150,11 @@ export class HarborDriver {
     if (waterZ === undefined) return;
     const owner = record.id;
 
+    // Da qui in avanti la forma dell'acqua non e' piu' quella di prima, e chi
+    // traccia le rotte deve rifarle: nessuna di queste opere aggiunge un
+    // record, quindi e' questo contatore la sola cosa che glielo dica.
+    if (plan.digs.length > 0 || plan.fills.length > 0) this.worksCount++;
+
     for (const dig of plan.digs) {
       this.enqueueDig(owner, dig, waterZ);
       for (let dy = 0; dy < dig.h; dy++) {
@@ -159,9 +179,63 @@ export class HarborDriver {
       // distretto senza carreggiata e' una macchia in mezzo al verde.
       this.ctx.surface.enqueueBlockStreets(this.ctx.streets.blockAt(column.x, column.y));
     }
+    for (const crane of plan.cranes) {
+      this.enqueueCrane(owner, crane);
+    }
     for (const site of plan.sites) {
       this.pendingSites.push({ recordId: record.id, site });
     }
+  }
+
+  /**
+   * Una gru di banchina: il montante e il braccio a sbalzo sopra l'acqua.
+   *
+   * **E' la firma verticale di una darsena.** A distanza isometrica un bacino
+   * rettangolare senza niente sopra e' una vasca: e' lo sbraccio a dire che di
+   * li' si scarica qualcosa. Il braccio passa alto e non tocca l'acqua, quindi
+   * non chiude la darsena a chi ci naviga sotto — la stessa economia con cui il
+   * nastro del granaio scavalca il bacino nella ricetta del porto.
+   *
+   * I due riquadri arrivano gia' ruotati sul verso vero: qui si mette solo la
+   * quota, che e' la sola cosa che il piano non poteva sapere.
+   */
+  private enqueueCrane(owner: number, crane: HarborCrane): void {
+    const boom = crane.boom;
+    const mast = crane.mast;
+    // Un riquadro solo che contiene montante e braccio: la coda vuole un pezzo
+    // rettangolare, e i due si toccano per costruzione.
+    const x = Math.min(mast.x, boom.x);
+    const y = Math.min(mast.y, boom.y);
+    const w = Math.max(mast.x + mast.w, boom.x + boom.w) - x;
+    const h = Math.max(mast.y + mast.h, boom.y + boom.h) - y;
+    const sizeZ = HARBOR.craneHeight + 2;
+    const voxels = new Uint8Array(w * h * sizeZ);
+    const surfaces = new Uint8Array(w * h * sizeZ);
+    const at = (dx: number, dy: number, dz: number): number => dx + w * (dy + h * dz);
+    const inside = (
+      rect: { x: number; y: number; w: number; h: number },
+      dx: number,
+      dy: number,
+    ): boolean =>
+      x + dx >= rect.x && x + dx < rect.x + rect.w && y + dy >= rect.y && y + dy < rect.y + rect.h;
+
+    for (let dy = 0; dy < h; dy++) {
+      for (let dx = 0; dx < w; dx++) {
+        if (inside(mast, dx, dy)) {
+          for (let dz = 0; dz < HARBOR.craneHeight; dz++) {
+            voxels[at(dx, dy, dz)] = HARBOR.cranePalette;
+            surfaces[at(dx, dy, dz)] = SURFACE_KIND.industrial;
+          }
+        }
+        if (!inside(boom, dx, dy)) continue;
+        for (let dz = HARBOR.craneHeight; dz < sizeZ; dz++) {
+          voxels[at(dx, dy, dz)] = dz === sizeZ - 1 ? HARBOR.craneCap : HARBOR.cranePalette;
+          surfaces[at(dx, dy, dz)] = SURFACE_KIND.industrial;
+        }
+      }
+    }
+
+    this.enqueuePiece(owner, x, y, crane.padZ, sizeZ, w, h, voxels, surfaces, null);
   }
 
   /** Il piano di un singolo stadio, con il terreno e i numeri del record. */
@@ -315,18 +389,29 @@ export class HarborDriver {
   }
 
   /**
-   * Una colmata: il molo di terra guadagnata o il frangiflutti di pietra.
+   * Una colmata: molo, banchina, frangiflutti o pontile.
    *
-   * **Il molo e' la banchina portata al largo.** Il perimetro diventa
-   * muratura con il suo coronamento, il corpo riempie fino al piano e
-   * l'ultimo voxel e' il calpestio del molo — la stessa grammatica di
-   * `buildWorks`, su colonne che non appartengono a nessuna impronta. Il
-   * frangiflutti non ha piano: sale a quota dichiarata sopra il pelo e
-   * porta il cappello che si legge dal mare.
+   * **Quattro grammatiche, e la differenza si vede tutta di taglio.**
+   *
+   * - **Molo e banchina** sono la banchina portata al largo: perimetro in
+   *   muratura con il suo coronamento, corpo pieno fino al piano, calpestio
+   *   sull'ultimo voxel — la stessa grammatica di `buildWorks`, su colonne che
+   *   non appartengono a nessuna impronta. Il bordo che guarda l'acqua scende
+   *   pero' di un cubo, e ogni tanto di due: e' la **calata**, ed e' l'unica
+   *   cosa che dica come si passa dalla citta' al mare. Senza, una banchina
+   *   alta sei voxel e' un muro.
+   * - **Il frangiflutti** non ha piano: sale a quota dichiarata sopra il pelo e
+   *   porta il cappello che si legge dal mare.
+   * - **Il pontile** e' un tavolato: due voxel sopra il pelo invece di sei, di
+   *   legno invece che di pietra, e **vuoto sotto** — la materia scende solo
+   *   sui pali. Era il difetto piu' visibile del distretto: i pontili si
+   *   colmavano al piano della citta' e uscivano dall'acqua come blocchi alti
+   *   dodici voxel, dal fondale a sei sopra il pelo.
    */
   private enqueueFill(owner: number, fill: HarborFill, waterZ: number): void {
     const terrain = this.ctx.terrain;
-    const mole = fill.kind === 'mole';
+    const ground = fill.kind === 'mole' || fill.kind === 'quay';
+    const pier = fill.kind === 'pier';
     const deepFloor = waterZ - GRADING.maxQuayDepth;
 
     let floor = fill.padZ;
@@ -347,23 +432,66 @@ export class HarborDriver {
       dx + fill.w * (dy + fill.h * (z - floor));
     const edge = (dx: number, dy: number): boolean =>
       dx === 0 || dy === 0 || dx === fill.w - 1 || dy === fill.h - 1;
+    /**
+     * Il bordo che guarda l'acqua: una colonna di perimetro con almeno un
+     * vicino **fuori dal ritaglio** che sta sotto il pelo.
+     *
+     * Si chiede al terreno e non alla forma perche' la forma non lo sa: un
+     * rettangolo ruotato non porta con se' da che parte fosse il mare, e
+     * dedurlo dal verso della struttura sarebbe un secondo segno da tenere
+     * allineato con `orientPart`.
+     */
+    const facesWater = (dx: number, dy: number): boolean => {
+      if (!edge(dx, dy)) return false;
+      for (const [ox, oy] of [[-1, 0], [1, 0], [0, -1], [0, 1]]) {
+        const nx = dx + ox;
+        const ny = dy + oy;
+        if (nx >= 0 && ny >= 0 && nx < fill.w && ny < fill.h) continue;
+        if (terrain.heightAt(fill.x + nx, fill.y + ny) <= waterZ) return true;
+      }
+      return false;
+    };
 
     for (let dy = 0; dy < fill.h; dy++) {
       for (let dx = 0; dx < fill.w; dx++) {
-        const height = terrain.heightAt(fill.x + dx, fill.y + dy);
+        const wx = fill.x + dx;
+        const wy = fill.y + dy;
+        const height = terrain.heightAt(wx, wy);
         if (height >= fill.padZ) continue;
         // Un braccio non scende nel vuoto: oltre il muro di banchina la
         // colonna resta acqua, e la colmata la salta.
-        if (!mole && height < deepFloor) continue;
-        for (let z = height; z < fill.padZ; z++) {
-          if (mole) {
+        if (!ground && height < deepFloor) continue;
+
+        if (pier) {
+          // Il tavolato, e i pali che lo reggono: sotto resta acqua, ed e'
+          // meta' di cio' che distingue un pontile da una colmata.
+          if (wx % HARBOR.pierPile === 0 && wy % HARBOR.pierPile === 0) {
+            for (let z = height; z < fill.padZ - 1; z++) {
+              voxels[at(dx, dy, z)] = HARBOR.pierPilePalette;
+              surfaces[at(dx, dy, z)] = SURFACE_KIND.utility;
+            }
+          }
+          voxels[at(dx, dy, fill.padZ - 1)] = HARBOR.pierDeckPalette;
+          surfaces[at(dx, dy, fill.padZ - 1)] = SURFACE_KIND.utility;
+          continue;
+        }
+
+        // La calata: sul filo dell'acqua il piano scende di un cubo, e ogni
+        // `stairPitch` colonne di due — la scaletta che porta al pelo.
+        const shore = ground && facesWater(dx, dy);
+        const stair = shore && (wx + wy) % HARBOR.stairPitch === 0;
+        const top = fill.padZ - (stair ? 2 : shore ? 1 : 0);
+        if (top <= height) continue;
+
+        for (let z = height; z < top; z++) {
+          if (ground) {
             const rim = edge(dx, dy);
-            voxels[at(dx, dy, z)] = z === fill.padZ - 1
-              ? rim ? GRADING.quayCoping : GRADING.quayDeck
+            voxels[at(dx, dy, z)] = z === top - 1
+              ? shore ? HARBOR.quayLanding : rim ? GRADING.quayCoping : GRADING.quayDeck
               : rim ? GRADING.quayWall : HARBOR.fillBody;
             surfaces[at(dx, dy, z)] = SURFACE_KIND.utility;
           } else {
-            voxels[at(dx, dy, z)] = z === fill.padZ - 1 ? HARBOR.fillCap : HARBOR.fillBody;
+            voxels[at(dx, dy, z)] = z === top - 1 ? HARBOR.fillCap : HARBOR.fillBody;
             surfaces[at(dx, dy, z)] = SURFACE_KIND.utility;
           }
         }

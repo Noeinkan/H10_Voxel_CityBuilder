@@ -617,6 +617,20 @@ export class Builder {
     return this.ropeways.rides;
   }
 
+  /**
+   * Quante volte il distretto costiero ha rifatto la forma dell'acqua.
+   *
+   * **Serve alle rotte, ed e' l'unica cosa che le lega al distretto.** Una
+   * darsena scavata e un molo colmato cambiano dove una barca puo' passare, ma
+   * non aggiungono nessun record: la firma con cui `GrowthScene` decide se
+   * ricostruire le rotte non se ne accorge, e le barche continuano a navigare
+   * la mappa d'acqua di prima — dritte dentro la banchina che nel frattempo e'
+   * comparsa. Un contatore monotono e' la forma piu' piccola di quel fatto.
+   */
+  get harborWorks(): number {
+    return this.harbors.works;
+  }
+
   get stats(): BuilderStats {
     return {
       placed: this.placedCount,
