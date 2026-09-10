@@ -26,7 +26,11 @@ export const CONTROL_HINTS: readonly ControlHint[] = [
   // il dock e' la prima cosa che si guarda per sapere cosa si puo' costruire, e
   // il badge sulla tessera promette proprio questo tasto. Il tema si cambia una
   // volta ogni tanto, e si accontenta di Shift.
-  { keys: ['1', '…', '9'], action: 'Pick the matching tool from the dock' },
+  //
+  // La seconda meta' della riga e' il ripensamento: la stessa cifra posa lo
+  // strumento. Sta scritta qui e non nel toast perche' il toast accompagna anche
+  // le scelte fatte col mouse, per cui «press it again» non varrebbe.
+  { keys: ['1', '…', '9'], action: 'Pick the matching tool from the dock, press again to put it down' },
   { keys: ['Shift', '1..9'], action: 'Switch the visual theme' },
   { keys: ['V'], action: 'Cycle the views below' },
   // Il tasto **e'** la risposta a «non torna mai giorno»: dice che l'ora e' una

@@ -13,7 +13,7 @@ describe('CONTROL_HINTS', () => {
       { keys: ['Middle drag'], action: 'Orbit and tilt the view' },
       { keys: ['F'], action: 'Frame the city and level the view' },
       { keys: ['Click'], action: 'Inspect a building, block, column or voxel' },
-      { keys: ['1', '…', '9'], action: 'Pick the matching tool from the dock' },
+      { keys: ['1', '…', '9'], action: 'Pick the matching tool from the dock, press again to put it down' },
       { keys: ['Shift', '1..9'], action: 'Switch the visual theme' },
       { keys: ['V'], action: 'Cycle the views below' },
       { keys: ['L'], action: 'Hold the day, hold the night, or let the clock run' },
