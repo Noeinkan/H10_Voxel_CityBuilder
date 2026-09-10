@@ -32,8 +32,17 @@ function moored(kind: VehicleKind, x: number, y: number): TrafficRoute {
   };
 }
 
-/** Una traversata dritta verso est di duecento voxel: la nave e' sempre in moto. */
-function crossing(kind: VehicleKind = VEHICLE.ferry): TrafficRoute {
+/**
+ * Una traversata dritta verso est di duecento voxel: la nave e' sempre in moto.
+ *
+ * La velocita' e' un parametro perche' e' esattamente cio' che la scia **non**
+ * deve piu' guardare: e' con tre andature diverse sulla stessa rotta che si
+ * vede se l'angolo della V e' uno solo.
+ */
+function crossing(
+  kind: VehicleKind = VEHICLE.ferry,
+  speed: number = TRAFFIC.ferrySpeed,
+): TrafficRoute {
   return {
     kind,
     path: [
@@ -44,7 +53,7 @@ function crossing(kind: VehicleKind = VEHICLE.ferry): TrafficRoute {
     length: 200,
     closed: false,
     dwell: 0,
-    period: 400 / TRAFFIC.ferrySpeed,
+    period: 400 / speed,
     phase: 0,
     heading: 0,
     bob: 0,
@@ -99,10 +108,12 @@ describe('wakeAt', () => {
     }
   });
 
-  it('la V si apre con l eta e la schiuma si spegne', () => {
+  it('la V si apre con la strada e la schiuma si spegne col tempo', () => {
     const route = crossing();
-    // Un multiplo esatto di `every` e' l'istante in cui il segno piu' giovane ha
-    // eta' zero: li' l'apertura non e' ancora cominciata e resta il solo fianco.
+    // Il segno piu' giovane e' il capo di prua della traccia: da li' la nave non
+    // ha ancora fatto strada, quindi l'apertura non e' cominciata e resta il
+    // solo fianco. Non dipende piu' dall'istante scelto — con l'apertura contata
+    // nel tempo, questo valeva **solo** sui multipli esatti di `every`.
     const marks = wakeAt([route], TRAFFIC.wake.every * 60);
     const beam = TRAFFIC.hull[VEHICLE.ferry].width;
 
@@ -123,6 +134,35 @@ describe('wakeAt', () => {
     expect(portLast.foam).toBeLessThan(portFirst.foam);
     // L'ultimo e' quasi svanito, o sparirebbe ancora ben visibile.
     expect(portLast.foam).toBeLessThan(TRAFFIC.wake.peak * 0.1);
+  });
+
+  it('apre la stessa V per ogni scafo, quale che sia la sua andatura', () => {
+    // **Il difetto che questo esclude non si vedeva in nessun singolo scafo.**
+    // Con l'apertura misurata in voxel al secondo, l'angolo scendeva con la
+    // velocita': traghetto 12,7 gradi contro i 24,2 dello yacht, cioe' due scie
+    // diverse per la stessa acqua. Una scia vera si apre invece sempre allo
+    // stesso angolo, e la prova e' proprio che tre andature diverse lo diano
+    // uguale.
+    const tan = Math.tan((TRAFFIC.wake.spreadAngle * Math.PI) / 180);
+
+    for (const [kind, speed] of [
+      [VEHICLE.ferry, TRAFFIC.ferrySpeed],
+      [VEHICLE.cargo, TRAFFIC.cargoSpeed],
+      [VEHICLE.yacht, TRAFFIC.yachtSpeed],
+    ] as const) {
+      // Solo il ramo di dritta: i segni escono a terne — dritta, sinistra,
+      // rimestata — e mescolarli darebbe pendenze che si annullano fra loro.
+      const branch = wakeAt([crossing(kind, speed)], 30).filter((_, i) => i % 3 === 0);
+      expect(branch.length).toBeGreaterThan(2);
+
+      for (let i = 1; i < branch.length; i++) {
+        // La rotta va verso est, quindi il segno piu' vecchio sta piu' indietro:
+        // la pendenza fra due segni consecutivi **e'** la tangente del semiangolo.
+        const rise = Math.abs(branch[i].y) - Math.abs(branch[i - 1].y);
+        const run = branch[i - 1].x - branch[i].x;
+        expect(rise / run).toBeCloseTo(tan, 6);
+      }
+    }
   });
 
   it('la rimestata dell elica sta sull asse ed e piu larga dei rami', () => {

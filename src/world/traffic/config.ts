@@ -55,6 +55,58 @@ export const TRAFFIC = {
   laneClearance: 1,
 
   /**
+   * Passo della ricerca **dentro** un bacino, in voxel.
+   *
+   * Una cella di terreno, cioe' la meta' di `laneStep`. Il passo grosso serve a
+   * traversare l'isola e va bene per farlo: fra due imbarchi ci sono centinaia
+   * di voxel, e mezza cella di errore non si vede. Dentro una marina no —
+   * l'intera struttura e' larga sedici colonne e uno slip ne e' largo tre —
+   * quindi a passo quattro il bacino sarebbe una griglia da quattro celle per
+   * tre, e ogni posto barca cadrebbe sulla stessa. E' la grana piu' fine che
+   * il terreno stesso possieda: sotto non c'e' piu' niente da distinguere.
+   */
+  basinStep: TERRAIN.cellSize,
+
+  /**
+   * Franco laterale **dentro** un bacino: nessuno.
+   *
+   * Zero e' un numero scelto, non un'omissione. `laneClearance` esiste perche'
+   * una rotta di traversata che rade la costa fa passare la barca dentro la
+   * battigia; dentro un porto vale il contrario — una darsena e' scavata su
+   * misura, uno slip e' largo tre colonne, e pretendere quattro voxel d'acqua
+   * per lato dichiarerebbe **non navigabile ogni ormeggio del gioco**. E' il
+   * conto che teneva la nave da carico ferma al molo: il sondaggio le chiedeva
+   * quattro voxel d'acqua a nord, e a nord c'era il braccio di sopravento del
+   * porto che la ospita.
+   */
+  basinClearance: 0,
+
+  /**
+   * Tratto minimo perche' l'uscita di uno yacht si legga come un'uscita.
+   *
+   * Sotto, resta ormeggiato. Il posto barca in testa al bacino di una marina si
+   * chiude davvero — dallo stadio due il pontile di testa gli sta davanti — e
+   * quattro voxel di avanti-indietro non raccontano una gita: raccontano una
+   * barca che vibra. Un mezzo fermo all'ormeggio e' il difetto onesto, e in un
+   * porticciolo pieno e' anche la verita': non escono tutti insieme.
+   */
+  yachtMinRun: 6,
+
+  /**
+   * Fin dove si cerca la **bocca** del bacino, in voxel dall'ormeggio.
+   *
+   * Non e' quanto lontano va la nave — quello lo dice `cargoReach` — ma dove
+   * finisce il porto e comincia il mare: la colonna d'acqua piu' al largo che
+   * si raggiunga senza uscire dal circondario della struttura. Quarantotto
+   * voxel coprono il caso peggiore che il distretto costiero sappia costruire:
+   * insenatura, molo di terra guadagnata e canale di accesso sommati portano il
+   * fronte del porto a diciotto colonne oltre l'ingombro, e il frangiflutti sta
+   * ancora due piu' in la' — con la sua campata da quattordici da doppiare di
+   * lato.
+   */
+  harborReach: 48,
+
+  /**
    * Fin dove la ricerca si spinge prima di rinunciare, in celle visitate.
    *
    * Un tetto e non una speranza: la ricerca gira sul thread principale quando
@@ -140,6 +192,50 @@ export const TRAFFIC = {
    * ferma comunque prima, dove finisce l'acqua navigabile.
    */
   yachtReach: 10,
+
+  // --- Quanti mezzi ---------------------------------------------------------
+
+  /**
+   * Quanti mezzi al massimo un ruolo mette sulla propria rotta.
+   *
+   * **La rotta e' una sola, i mezzi sopra sono tanti.** Una posa e' una lettura
+   * del tempo, quindi due navi sulla stessa spezzata costano una moltiplicazione
+   * in piu' e nient'altro: nessuna seconda ricerca di rotta, nessuna geometria
+   * nuova, la stessa mesh condivisa del pool. E' anche cio' che rende sensato
+   * legare il numero alla simulazione — se ogni nave costasse una ricerca, il
+   * porto pieno sarebbe il caso lento.
+   *
+   * Tre e non di piu': un traghetto e' lungo undici voxel e una nave da carico
+   * diciassette, e su una traversata da un centinaio la quarta comincia a
+   * leggersi come una fila invece che come un servizio.
+   */
+  maxFleet: 3,
+
+  /**
+   * Volume di commercio, in unita' per tick, oltre il quale un porto e' pieno.
+   *
+   * **Derivato dai numeri di `sim/balance.ts`, non scelto a occhio.** Un porto
+   * da solo esporta `exportMaterialsPerTick` (cinque) e copre `importFoodShare`
+   * (il 12%) della spesa alimentare, che vale `population * food.perResident`
+   * — cinque centesimi a testa. Su una citta' da tremila abitanti fanno diciotto
+   * unita' di cibo piu' cinque di materiali: ventitre. Ventiquattro e' quella
+   * soglia arrotondata, cioe' «l'isola cresciuta che commercia davvero».
+   *
+   * Non e' un numero di bilanciamento e non decide niente della simulazione:
+   * decide solo quante sagome si vedono in mare.
+   */
+  cargoFullLoad: 24,
+
+  /**
+   * Residenti oltre i quali una linea di traghetto e' al pieno servizio.
+   *
+   * **La popolazione e' un ripiego dichiarato**: la simulazione non conta i
+   * passeggeri, e non deve cominciare a farlo per decidere quante barche si
+   * vedono. Quello che conta e' che due partite alla stessa taglia mostrino lo
+   * stesso servizio, e che una citta' di duecento abitanti non abbia tre
+   * traghetti in fila su un braccio di mare.
+   */
+  ferryFullLoad: 2000,
 
   // --- Mezzi in aria ------------------------------------------------------
 
@@ -526,13 +622,25 @@ export const TRAFFIC = {
     /** Quanto vive un segno, in secondi. */
     life: 7,
     /**
-     * Quanto la V si apre in un secondo, in voxel.
+     * Semiangolo della V, in gradi.
      *
-     * Un'apertura vera sta attorno ai diciannove gradi per mezzo scafo e non
-     * dipende dalla velocita'; questa e' la stessa cosa scritta nel tempo invece
-     * che nello spazio, e a velocita' di gioco da' un angolo dello stesso ordine.
+     * **Un angolo e non una velocita', e la differenza si vedeva a schermo.**
+     * Prima l'apertura era in voxel al secondo, che sembra la stessa cosa
+     * scritta in un'altra unita' e non lo e': a parita' di secondi, chi corre di
+     * piu' resta piu' avanti, e la sua V esce piu' stretta. I tre scafi
+     * finivano quindi con tre scie diverse — traghetto 12,7 gradi, nave da
+     * carico 19,8, yacht 24,2 — e la piu' sbagliata era quella del traghetto,
+     * che e' anche la barca che si vede attraversare piu' spesso: a
+     * quell'angolo i due rami non si staccano dalla rimestata centrale, e la
+     * traccia legge come una riga posata sull'acqua invece che come una scia.
+     *
+     * Diciannove gradi e mezzo e' l'angolo di Kelvin, e la ragione per cui
+     * questo numero e' uno solo per tutti: l'apertura di una scia e' un fatto
+     * della forma d'onda e **non** dipende da quanto va la barca. Il vecchio
+     * `spread: 0.9` era di fatto tarato sulla nave da carico, la sola dei tre
+     * che ci cadesse sopra per caso.
      */
-    spread: 0.9,
+    spreadAngle: 19.47,
     /** Larghezza della bava laterale appena aperta, e di quanto cresce in un secondo. */
     width: 0.85,
     growth: 0.5,
@@ -581,6 +689,26 @@ export interface VehicleFunnel {
 /** La ciminiera di un mezzo, o `undefined` se quel mezzo non fuma. */
 export function funnelOf(kind: VehicleKind): VehicleFunnel | undefined {
   return TRAFFIC.funnel[kind];
+}
+
+/**
+ * Quanti mezzi mette in moto un lavoro di questa portata: da uno a `maxFleet`.
+ *
+ * **Mai zero**, ed e' una scelta. Un porto che non commercia ancora resta un
+ * porto, e la nave in banchina e' cio' che lo dichiara: togliergliela
+ * significherebbe mostrare un molo con delle gru e nient'altro, che si legge
+ * come un difetto e non come «questa citta' non ha ancora niente da vendere».
+ * Quello che la simulazione decide e' se ce n'e' **una** o se ce ne sono tre.
+ *
+ * Sta qui e non in chi chiama perche' e' una misura di traffico come le altre,
+ * e perche' ha due lettori: chi costruisce le rotte e chi decide se valga la
+ * pena ricostruirle — e se i due quantizzassero diversamente, la citta'
+ * rifarebbe ogni ricerca di rotta a ogni tick.
+ */
+export function fleetOf(load: number, full: number): number {
+  if (!(load > 0) || !(full > 0)) return 1;
+  const share = Math.min(1, load / full);
+  return 1 + Math.round(share * (TRAFFIC.maxFleet - 1));
 }
 
 /** I mezzi che il traffico sa mettere in moto. */

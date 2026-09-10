@@ -8,7 +8,7 @@ import type { TrafficRoute } from './routes';
  * **E' `plume.ts` girato in orizzontale.** Non c'e' nessun sistema di particelle
  * che nasce, si integra e muore: un segno di scia e' la **stessa posa letta nel
  * passato** — dov'era la nave `age` secondi fa, che `poseAt` sa gia' rispondere —
- * piu' un'apertura laterale lineare. Ne discende quello che discendeva dal fumo,
+ * piu' un'apertura laterale proporzionale alla strada percorsa da allora. Ne discende quello che discendeva dal fumo,
  * e gratis: in pausa la scia si ferma, a 4x si allunga con la nave, due partite
  * identiche lasciano gli stessi segni negli stessi punti, e un frame perso non
  * apre un buco nella traccia.
@@ -42,6 +42,15 @@ export interface WakeMark {
 }
 
 const WAKE = TRAFFIC.wake;
+
+/**
+ * La tangente del semiangolo della V, una volta sola invece che per segno.
+ *
+ * E' il fattore che converte **strada percorsa** in apertura laterale, e la
+ * scelta di misurarla in strada e non in secondi e' cio' che da' a tutti gli
+ * scafi la stessa V: il perche' sta accanto al numero, in `config.ts`.
+ */
+const SPREAD_TAN = Math.tan((WAKE.spreadAngle * Math.PI) / 180);
 
 /**
  * I segni vivi di tutte le rotte, dal piu' giovane al piu' vecchio.
@@ -81,6 +90,11 @@ function appendWake(out: WakeMark[], route: TrafficRoute, seconds: number): void
   const beam = TRAFFIC.hull[route.kind].width;
 
   let ahead = poseAt(route, newest * every);
+  // Quanta strada c'e' fra il capo di prua della traccia e il segno in esame.
+  // E' questa, e non l'eta', a dire quanto la V si e' aperta li' — e va contata
+  // camminando, perche' una rotta curva percorre meno strada di quanta la sua
+  // corda ne suggerisca.
+  let behind = 0;
 
   for (let i = 0; ; i++) {
     const born = (newest - i) * every;
@@ -119,10 +133,17 @@ function appendWake(out: WakeMark[], route: TrafficRoute, seconds: number): void
     const z = from.z + WAKE.lift;
     const half = run / 2;
 
-    // La V si apre dal fianco: a eta' zero i due rami stanno sul bordo dello
-    // scafo, non sull'asse. Partendo dall'asse la scia uscirebbe da **sotto** la
-    // chiglia, che e' il posto da cui l'onda di prua non esce mai.
-    const spread = beam / 2 + WAKE.spread * age;
+    // La V si apre dal fianco: a distanza zero i due rami stanno sul bordo
+    // dello scafo, non sull'asse. Partendo dall'asse la scia uscirebbe da
+    // **sotto** la chiglia, che e' il posto da cui l'onda di prua non esce mai.
+    //
+    // **Si apre sulla strada, non sui secondi**, ed e' l'unica differenza fra un
+    // angolo e tre: l'apertura di una scia e' geometria, e a misurarla nel tempo
+    // il traghetto — che va il doppio dello yacht — la lasciava larga la meta'.
+    const spread = beam / 2 + SPREAD_TAN * behind;
+    // La **larghezza** del segno invece resta un fatto di tempo, e le due cose
+    // non si contraddicono: quella e' la bava che si sfilaccia dove sta, mentre
+    // l'apertura e' il posto in cui la nave l'ha lasciata.
     const halfWidth = (WAKE.width + WAKE.growth * age) / 2;
     for (const side of [1, -1]) {
       out.push({
@@ -148,5 +169,9 @@ function appendWake(out: WakeMark[], route: TrafficRoute, seconds: number): void
       halfWidth: halfWidth * WAKE.washWidth,
       foam: foam * WAKE.washPeak,
     });
+
+    // Il segno successivo sta un tratto piu' indietro: e' qui che la V guadagna
+    // la propria apertura, un intervallo alla volta.
+    behind += run;
   }
 }
