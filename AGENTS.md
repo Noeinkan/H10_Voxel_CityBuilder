@@ -40,6 +40,7 @@ Questo file contiene soltanto regole globali. Le eccezioni di
 ```bash
 npm install
 npm start            # dev server su http://localhost:8020/
+npm run start:frozen # stessa porta, ma senza watcher: la pagina non ricarica
 npm run dev
 npm run build        # typecheck + bundle
 npm run preview      # http://localhost:8011/
@@ -56,6 +57,12 @@ npm run test:docs      # locate e fusione dei frammenti, in `node --test`
 `prestart`/`predev` liberano soltanto istanze node rimaste sulla 8020;
 `strictPort` deve fallire se la porta appartiene ad altro. Non esistono lint
 o formatter configurati: non inventarli.
+
+`start:frozen` avvia vite in mode `frozen`, che in `vite.config.ts` spegne
+watcher e HMR: la pagina resta sul codice presente al lancio anche mentre altri
+agenti scrivono sul repo, e il codice nuovo lo si prende riavviando il comando.
+Serve quando una scena in corso — una citta' cresciuta, una misura a meta' —
+non deve ripartire da zero a ogni salvataggio altrui.
 
 ## Ambiguita' e verifica a schermo
 

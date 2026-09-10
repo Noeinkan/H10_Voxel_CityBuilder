@@ -8,6 +8,8 @@
   "scripts": {
     "prestart": "node scripts/free-port.mjs",
     "start": "vite",
+    "prestart:frozen": "node scripts/free-port.mjs",
+    "start:frozen": "vite --mode frozen",
     "predev": "node scripts/free-port.mjs",
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
