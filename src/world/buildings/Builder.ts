@@ -32,7 +32,7 @@ import { ARCOLOGY } from '../arcology/config';
 import type { ArcologyStanding } from '../arcology/prospect';
 import type { ArcologyDriverRefusal } from './arcologyDriver';
 import { ArcologyDriver } from './arcologyDriver';
-import { ClearanceSites, type ClearanceVerdict } from './clearanceSite';
+import { ClearanceSites, type ClearanceBlockers, type ClearanceVerdict } from './clearanceSite';
 import { SpanDriver } from './spanDriver';
 import { AerialDriver } from './aerialDriver';
 import { GuideDriver } from './guideDriver';
@@ -492,6 +492,17 @@ export class Builder {
     preferred?: AerialFace,
   ): LandmarkSite {
     return this.landmarks.siteAt(x, y, kind, aloft, preferred);
+  }
+
+  /**
+   * Chi ferma il riquadro di un monumento, record per record.
+   *
+   * Stessa porta di `landmarkClearance` e stessa domanda vista da fuori: quella
+   * dice **se** il riquadro rifiuta, questa **chi** lo rifiuta. Serve al cursore,
+   * che accendeva un rifiuto scritto e nessun posto sulla mappa.
+   */
+  landmarkBlockers(x: number, y: number, kind: CatalystId): ClearanceBlockers {
+    return this.landmarks.blockersAt(x, y, kind);
   }
 
   /**

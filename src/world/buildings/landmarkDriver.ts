@@ -47,7 +47,14 @@ import type { AerialDriver } from './aerialDriver';
 import type { BuildContext } from './buildContext';
 import { fitsChunkBudget } from './chunkBudget';
 import type { ClearanceRefusal } from './clearance';
-import { OPEN_SITE, recordsIn, type ClearanceBox, type ClearanceSites } from './clearanceSite';
+import {
+  NO_BLOCKERS,
+  OPEN_SITE,
+  recordsIn,
+  type ClearanceBlockers,
+  type ClearanceBox,
+  type ClearanceSites,
+} from './clearanceSite';
 import { BUILDER, CLASS_PROFILE } from './config';
 import {
   buildWorks,
@@ -243,6 +250,27 @@ export class LandmarkDriver {
     if (this.footingAt(spot, kind, hashCoords(this.ctx.seed, x, y)) === null) return NO_FOOTING;
 
     return this.clearance.survey(boxOf(spot), BALANCE.gameplay.catalyst.clearing);
+  }
+
+  /**
+   * Chi occupa il riquadro che un click a terra userebbe qui. **Non scrive.**
+   *
+   * E' `siteAt` dal lato del disegno: stesso riquadro, stessa regola, stesse due
+   * uscite anticipate — dove la ricetta non trova posto, o il terreno non regge
+   * l'opera, non c'e' nemmeno un riquadro da accendere, e mostrare in rosso cio'
+   * che ci sta dentro darebbe la colpa al costruito quando il problema e' la
+   * parete. Cambia solo la risposta: non «quanti cadono» ma «chi resta».
+   *
+   * **Solo la strada di terra**, e non e' una svista: in quota la struttura si
+   * posa fuori da cio' che c'e', quindi non ha un riquadro di suolo da occupare
+   * — e' la stessa uscita che `siteAt` fa per prima.
+   */
+  blockersAt(x: number, y: number, kind: CatalystId): ClearanceBlockers {
+    const spot = this.placementAt(x, y, kind);
+    if (spot === null) return NO_BLOCKERS;
+    if (this.footingAt(spot, kind, hashCoords(this.ctx.seed, x, y)) === null) return NO_BLOCKERS;
+
+    return this.clearance.blockers(boxOf(spot), BALANCE.gameplay.catalyst.clearing);
   }
 
   /**

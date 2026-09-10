@@ -25,6 +25,7 @@ import {
   reachNote,
 } from './actionLabels';
 import { createDemolishGesture } from './demolishGesture';
+import { createPlotBlockers } from './plotBlockers';
 
 /**
  * Lo strumento in mano, e tutto cio' che il puntatore ne fa.
@@ -88,12 +89,24 @@ export function createPlacementTools(deps: PlacementToolsDeps): PlacementTools {
     hud: deps.hud,
     pointedCellAt: deps.pointedCellAt,
   });
+  const plots = createPlotBlockers({ scene: deps.scene });
 
   /** I segnaposto si spengono sempre insieme: uno acceso da solo mente. */
   function hideCues(): void {
     preview.hide();
     demolish.cancel();
+    plots.hide();
     influence?.hideCursor();
+  }
+
+  /**
+   * true se lo strumento posa un monumento **a terra**, e quindi occupa suolo.
+   *
+   * E' la sola forma di posa a cui le caselle prese si applicano: in quota la
+   * struttura si appende fuori da cio' che c'e', e il suolo sotto non e' suo.
+   */
+  function takesPlot(tool: GameTool): boolean {
+    return tool.kind === 'catalyst' && (tool.mode ?? 'ground') !== 'aloft';
   }
 
   /**
@@ -173,6 +186,7 @@ export function createPlacementTools(deps: PlacementToolsDeps): PlacementTools {
     const cell = deps.surfaceCellAt(event.clientX, event.clientY);
     if (cell === null) {
       preview.hide();
+      plots.clearHover();
       influence?.hideCursor();
       hud?.updateCursor(event.clientX, event.clientY, {
         title: 'No surface',
@@ -210,6 +224,12 @@ export function createPlacementTools(deps: PlacementToolsDeps): PlacementTools {
         valid,
         scene.simState.reach,
       );
+      // Il sito e' gia' memorizzato dentro la scena — il rifiuto lo ha appena
+      // chiesto con la stessa chiave — quindi leggerlo qui non ripaga il
+      // riquadro: serve due volte, alla riga della scheda e ai tappeti.
+      const plot = scene.catalystSite(target.x, target.y, catalyst.id, aloft, preferred);
+      if (aloft) plots.clearHover();
+      else plots.hover(target.x, target.y, catalyst.id, plot.refusal);
       const facade = aloft
         ? scene.aloftFacingAt(target.x, target.y, catalyst.id, preferred) ??
           facadeFacingAt(target.x, target.y)
@@ -236,7 +256,7 @@ export function createPlacementTools(deps: PlacementToolsDeps): PlacementTools {
           // Il piazzamento e' valido comunque: cio' che cambia e' cosa comparira'
           // e cosa costera' alla citta'. Dirlo qui e' il punto — dopo il click e'
           // troppo tardi, ed e' esattamente il difetto muto che questa fase chiude.
-          : landmarkNote(scene.catalystSite(target.x, target.y, catalyst.id, aloft, preferred)),
+          : landmarkNote(plot),
       });
       return;
     } else if (selectedTool.kind === 'terrace') {
@@ -349,6 +369,11 @@ export function createPlacementTools(deps: PlacementToolsDeps): PlacementTools {
       else {
         hud?.clearFeedback();
         influence?.refreshCatalysts(scene.simState.catalysts, scene.simState.reach);
+        // Il monumento appena posato e' una casella in piu': si rilegge qui
+        // perche' lo strumento resta in mano e nessun altro momento lo direbbe.
+        // Quello che nasce da un riquadro da sgomberare arriva a cantiere finito,
+        // cioe' dopo: lo raccoglie la prossima presa dello strumento.
+        if (takesPlot(selectedTool)) plots.arm();
         // Lo strumento resta in mano, come la mensola: chi ha scelto un landmark
         // dal dock quasi mai ne posa uno solo, e tornare a ripescare la stessa
         // tessera dopo ogni colpo era il giro in piu' che si notava. Il toast lo
@@ -436,7 +461,7 @@ export function createPlacementTools(deps: PlacementToolsDeps): PlacementTools {
       return selectedTool;
     },
 
-    groups: [preview.group, ...demolish.groups],
+    groups: [preview.group, ...demolish.groups, ...plots.groups],
 
     update(dt: number): void {
       preview.update(dt);
@@ -463,6 +488,9 @@ export function createPlacementTools(deps: PlacementToolsDeps): PlacementTools {
       }
       selectedTool = tool;
       hideCues();
+      // Le caselle prese si accendono con lo strumento e non con il puntatore:
+      // il punto e' vedere dove **non** andare prima di andarci.
+      if (takesPlot(tool)) plots.arm();
       influence?.hideCoach();
     },
 
@@ -478,6 +506,7 @@ export function createPlacementTools(deps: PlacementToolsDeps): PlacementTools {
       const hud = deps.hud();
       hud?.setTool(selectedTool);
       preview.hide();
+      plots.hide();
       influence?.hideCursor();
       hud?.updateCursor(0, 0, null);
     },
@@ -489,6 +518,10 @@ export function createPlacementTools(deps: PlacementToolsDeps): PlacementTools {
       deps.element.addEventListener('pointerleave', () => {
         preview.hide();
         demolish.hide();
+        // Le caselle prese restano: lo strumento e' ancora in mano, e rientrando
+        // col puntatore si riprende da dove si era — come per il riquadro della
+        // gomma, che si spegne senza mollare il gesto.
+        plots.clearHover();
         influence?.hideCursor();
         deps.hud()?.updateCursor(0, 0, null);
       });

@@ -70,6 +70,25 @@ export interface ClearanceVerdict {
 /** Riquadro gia' libero. */
 export const OPEN_SITE: ClearanceVerdict = { clears: 0, landmarks: 0, refusal: null };
 
+/**
+ * Chi occupa un riquadro senza cedere, diviso per la ragione che lo tiene su.
+ *
+ * E' il verdetto visto da chi deve **disegnarlo**: `ClearanceVerdict` dice se il
+ * riquadro rifiuta e conta, questo dice quali record accendere. Le due ragioni
+ * restano separate perche' portano due risposte diverse — un monumento si toglie
+ * con la gomma, una struttura non si toglie affatto — ed e' la stessa
+ * distinzione che l'anteprima della gomma colora gia' in rosso e ambra.
+ */
+export interface ClearanceBlockers {
+  /** Monumenti fondati a terra: nessun piazzamento li porta via, solo la gomma. */
+  readonly landmarks: readonly BuildingRecord[];
+  /** La citta' in quota, le arcologie e chi le porta: non li toglie nessuno. */
+  readonly structures: readonly BuildingRecord[];
+}
+
+/** Riquadro che non ferma niente: libero, o pieno di solo costruito che cade. */
+export const NO_BLOCKERS: ClearanceBlockers = { landmarks: [], structures: [] };
+
 interface Site {
   readonly box: ClearanceBox;
   readonly doomed: Map<number, BuildingRecord>;
@@ -198,6 +217,31 @@ export class ClearanceSites {
       }
     }
     return { doomed, protected: protectedRecords };
+  }
+
+  /**
+   * Chi ferma il riquadro, record per record. **Non scrive.**
+   *
+   * Vicina a `preview`, e non e' la stessa domanda: quella divide i record fra
+   * chi cade e chi resta, e con la regola di un monumento — che i monumenti non
+   * li sgombera — un landmark trovato dentro il riquadro non finiva in nessuna
+   * delle due liste. Era il caso che nessuno chiedeva: il piazzamento sapeva di
+   * essere rifiutato e non chi lo stava rifiutando. Qui si chiede quello.
+   *
+   * La regola decide, come sempre: con `clearsLandmarks` un monumento non e' un
+   * ostacolo, e la lista resta vuota anche dove il riquadro ne e' pieno.
+   */
+  blockers(box: ClearanceBox, rule: ClearanceRule): ClearanceBlockers {
+    const landmarks: BuildingRecord[] = [];
+    const structures: BuildingRecord[] = [];
+    for (const record of recordsIn(this.ctx.registry, box)) {
+      const kind = clearanceKindOf(this.ctx.registry, record);
+      if (kind === CLEARANCE_KIND.structure) structures.push(record);
+      else if (kind === CLEARANCE_KIND.landmark && rule.clearsLandmarks !== true) {
+        landmarks.push(record);
+      }
+    }
+    return { landmarks, structures };
   }
 
   /**

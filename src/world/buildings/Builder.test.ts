@@ -1958,6 +1958,31 @@ describe('Builder — sventramento', () => {
     expect(quote.clears).toBe(0);
   });
 
+  it('il riquadro dice anche **quale** monumento lo ferma', () => {
+    // Il rifiuto c'era gia' e non aveva un posto sulla mappa: sapere che
+    // «un monumento e' gia' qui» non dice quale, e in una citta' matura il
+    // giocatore restava a spazzolare l'isola col puntatore. Questa e' la stessa
+    // domanda del preventivo, con i record al posto del conteggio.
+    const { terrain, builder, state } = city(30);
+    const spot = clearableSpot(builder);
+
+    // Prima del monumento nel riquadro c'e' solo costruito ordinario: cade, e
+    // chi cade non e' un ostacolo. Niente da accendere.
+    const open = builder.landmarkBlockers(spot.x, spot.y, 'market');
+    expect(open.landmarks).toEqual([]);
+    expect(open.structures).toEqual([]);
+
+    builder.placeLandmark(spot.x, spot.y, 'market');
+    settle(builder, terrain, state);
+
+    const market = [...builder.registry.all].find((record) => record.landmark !== undefined)!;
+    const blocked = builder.landmarkBlockers(spot.x, spot.y, 'university');
+    expect(blocked.landmarks.map((record) => record.id)).toEqual([market.id]);
+    // L'ambra e' per cio' che nessuno toglie — arcologie, citta' in quota — e
+    // qui non ce n'e': un monumento non ci finisce dentro per sbaglio.
+    expect(blocked.structures).toEqual([]);
+  });
+
   it('un landmark non ne sostituisce un altro: il monumento vecchio resta', () => {
     const { terrain, builder, state } = city(30);
     const spot = clearableSpot(builder);
