@@ -206,7 +206,11 @@ export class RoadNetwork {
       return true;
     }
 
-    this.plan = planRoads(poles, this.probe(), boundsOf(poles));
+    // Il riquadro si calcola **prima** della sonda e non dentro la chiamata: e'
+    // anche l'estensione su cui la sonda tiene da parte le proprie risposte, e
+    // passarlo due volte sarebbe l'unico modo di farle divergere.
+    const bounds = boundsOf(poles);
+    this.plan = planRoads(poles, this.probe(bounds), bounds);
     this.painted = strokeRoads(this.plan.nodes);
 
     const carries = (x: number, y: number): boolean => this.groundCarries(x, y);
@@ -249,12 +253,13 @@ export class RoadNetwork {
     if (this.index.size === 0) return [];
     if (this.distanceToRoad(x, y, ROADS.frontageReach) <= ROADS.frontageReach) return [];
 
+    const bounds = boundsAround(x, y, x, y, ROADS.laneReach);
     const trace = traceRoad({
       fromX: x,
       fromY: y,
       toAny: (cx, cy) => this.index.has(`${cx},${cy}`),
-      bounds: boundsAround(x, y, x, y, ROADS.laneReach),
-      probe: this.probe(),
+      bounds,
+      probe: this.probe(bounds),
     });
     if (trace === null) return [];
 
@@ -273,35 +278,105 @@ export class RoadNetwork {
   }
 
   /**
-   * La sonda del tracciato: quanto costa a una strada attraversare la colonna.
+   * La sonda del tracciato, con le sue risposte tenute da parte sul riquadro.
    *
-   * **L'ordine dei rami e' la regola, non un dettaglio.** L'acqua si controlla
-   * per prima perche' una colonna sommersa e' sempre da scavalcare, quale che sia
-   * la sua pendenza; il costruito viene dopo il terreno perche' un edificio su
-   * una parete resta una parete. E' lo stesso ordine di `reachCost.ts`, per la
-   * stessa ragione.
+   * **Le due letture sono pure per la durata di una ricerca, ed e' questo che
+   * rende lecito memorizzarle.** `costOf` legge terreno, seme e suolo occupato;
+   * nessuno dei tre cambia mentre `planRoads` o `connect` girano, perche' sono
+   * chiamate sincrone e chi scrive nel registry — il Builder — sta aspettando
+   * che ritornino. La memoria vive quindi quanto l'oggetto restituito da qui,
+   * cioe' una ricostruzione o un capillare, e non un tick di piu': non e' una
+   * cache da invalidare, e non c'e' niente che possa restare vecchio.
+   *
+   * **Senza, la stessa colonna si ricalcolava centinaia di volte.**
+   * `planRoads` fa una ricerca per polo — fino a `maxPoles` meno uno — e ognuna
+   * interroga `costAt` una volta per ogni passo verso ognuno degli otto vicini.
+   * Misurato su una citta' matura caricata da salvataggio, una ricostruzione
+   * bloccava il frame per dodici-diciassette secondi, e piu' di due terzi di
+   * quel tempo se ne andava a rifare le stesse sei letture di `TerrainMap` e la
+   * stessa interrogazione del registry per riottenere la stessa risposta.
+   *
+   * Il riquadro e' quello della ricerca, quindi la memoria e' grande quanto il
+   * campo che la ricerca puo' visitare; una colonna chiesta fuori da li' si
+   * calcola e non si tiene, invece di allargare l'array per un caso che il
+   * tracciato non produce.
    */
-  private probe(): RoadProbe {
+  private probe(bounds: TraceBounds): RoadProbe {
+    const width = bounds.x1 - bounds.x0 + 1;
+    const height = bounds.y1 - bounds.y0 + 1;
+    const cells = width > 0 && height > 0 ? width * height : 0;
+    // `NaN` vuol dire «non ancora chiesto», e non e' una scelta di gusto:
+    // `Infinity` e' un valore **legale** di `costAt` — dice che di qui non si
+    // passa — quindi non puo' fare da segnaposto. `Float64Array` e non
+    // `Float32Array` perche' il termine continuo di `terrainCost.ts` e' un
+    // numero con la virgola: arrotondarlo cambierebbe quale di due cammini
+    // uguali vince, cioe' il disegno delle strade.
+    const costs = new Float64Array(cells).fill(Number.NaN);
+    const levels = new Float64Array(cells).fill(Number.NaN);
+
+    /** L'indice nella memoria, o -1 per una colonna fuori dal riquadro. */
+    const slot = (x: number, y: number): number => {
+      const lx = x - bounds.x0;
+      const ly = y - bounds.y0;
+      if (lx < 0 || ly < 0 || lx >= width || ly >= height) return -1;
+      return ly * width + lx;
+    };
+
     return {
       levelAt: (x, y) => {
-        const water = this.terrain.waterTopAt(x, y);
-        const ground = this.terrain.heightAt(x, y);
-        // Sull'acqua il piano di riferimento e' il pelo: misurare la pendenza di
-        // un ponte dal fondale lo farebbe rifiutare da `maxRise` sempre.
-        return water > ground ? water : ground;
+        const at = slot(x, y);
+        if (at === -1) return this.levelOf(x, y);
+        const known = levels[at];
+        // `v === v` e' falso solo per `NaN`, ed e' il test piu' corto che
+        // distingue «non calcolato» da un valore qualunque.
+        if (known === known) return known;
+        const value = this.levelOf(x, y);
+        levels[at] = value;
+        return value;
       },
       costAt: (x, y) => {
-        if (!this.terrain.has(x, y)) return Number.POSITIVE_INFINITY;
-        // L'acqua non prende il termine continuo: sotto c'e' una campata, e una
-        // campata che serpeggia e' un difetto di posa, non una strada organica.
-        if (this.terrain.biomeAt(x, y) === BIOME.ocean) return ROADS.waterCost;
-        const shape = terrainPenalty(this.seed, x, y, this.terrain.slopeAt(x, y));
-        if (this.kindOf(x, y) === GROUND.refused) return ROADS.steepCost + shape;
-        if (this.occupied(x, y)) return ROADS.builtCost + shape;
-        if (!this.terrain.isBuildable(x, y)) return ROADS.steepCost + shape;
-        return ROADS.landCost + shape;
+        const at = slot(x, y);
+        if (at === -1) return this.costOf(x, y);
+        const known = costs[at];
+        if (known === known) return known;
+        const value = this.costOf(x, y);
+        costs[at] = value;
+        return value;
       },
     };
+  }
+
+  /**
+   * Quota del piano su cui la carreggiata si appoggerebbe.
+   *
+   * Sull'acqua il piano di riferimento e' il pelo: misurare la pendenza di un
+   * ponte dal fondale lo farebbe rifiutare da `maxRise` sempre.
+   */
+  private levelOf(x: number, y: number): number {
+    const water = this.terrain.waterTopAt(x, y);
+    const ground = this.terrain.heightAt(x, y);
+    return water > ground ? water : ground;
+  }
+
+  /**
+   * Quanto costa a una strada attraversare la colonna, letto per davvero.
+   *
+   * **L'ordine dei rami e' la regola, non un dettaglio.** L'acqua si controlla
+   * per prima perche' una colonna sommersa e' sempre da scavalcare, quale che
+   * sia la sua pendenza; il costruito viene dopo il terreno perche' un edificio
+   * su una parete resta una parete. E' lo stesso ordine di `reachCost.ts`, per
+   * la stessa ragione.
+   */
+  private costOf(x: number, y: number): number {
+    if (!this.terrain.has(x, y)) return Number.POSITIVE_INFINITY;
+    // L'acqua non prende il termine continuo: sotto c'e' una campata, e una
+    // campata che serpeggia e' un difetto di posa, non una strada organica.
+    if (this.terrain.biomeAt(x, y) === BIOME.ocean) return ROADS.waterCost;
+    const shape = terrainPenalty(this.seed, x, y, this.terrain.slopeAt(x, y));
+    if (this.kindOf(x, y) === GROUND.refused) return ROADS.steepCost + shape;
+    if (this.occupied(x, y)) return ROADS.builtCost + shape;
+    if (!this.terrain.isBuildable(x, y)) return ROADS.steepCost + shape;
+    return ROADS.landCost + shape;
   }
 
   /** true se la carreggiata puo' appoggiarsi al terreno di questa colonna. */
