@@ -1125,30 +1125,67 @@ tutti insieme guardando lo stesso pezzo di costa.
    del canale o sul filo della banchina, che è l'unica cosa che farebbe leggere
    una casa sul canale come una casa **sul** canale.
 
-**Stato implementazione:** aperta, nessuna voce chiusa.
+**Stato implementazione:** chiuse le due voci sulle barche e quella sulle opere
+d'acqua. Restano il sedime e il bordo, e il gate le aspetta tutte.
 
-- [ ] Le rotte nascono dalle opere e non dal fronte della ricetta: ogni <!-- size: L -->
+**Cinque rossi precedenti sbarrano la strada alla verifica larga**, e non sono
+di questa fase: `growthScene` (aeroporto sulla facciata), `cityDigest`,
+`restore` e `urbanGate` (due) falliscono anche annullando ogni modifica di
+questo lavoro. `cityDigest` in particolare e' un'impronta d'oro su una citta'
+cresciuta, quindi va rifissata — ma non prima che quel rosso sia risolto, o si
+fisserebbe il difetto di qualcun altro dentro il valore atteso.
+
+Una misura ha smentito il progetto in corsa, ed è la più grossa di questa fase:
+**la nave da carico non partiva quasi mai**, e non per un difetto di taratura.
+Il sondaggio della rotta pretendeva il franco del mare aperto già dalla colonna
+dell'ormeggio, e dentro il bacino del porto quel franco non c'è per costruzione
+— i due bracci della ricetta lo chiudono a quattro voxel. La ricerca falliva al
+primo passo, la nave restava in banchina, e la suite era verde: nessun test
+guardava un porto con i suoi bracci addosso, solo mare aperto sintetico. Il
+frangiflutti dello stadio tre la rifermava una seconda volta, per la stessa
+ragione. È il difetto che si vedeva come «le barche si muovono a caso» ed era
+invece «una delle tre non si muove mai».
+
+- [x] Le rotte nascono dalle opere e non dal fronte della ricetta: ogni <!-- size: L -->
   ormeggio esce lungo il **proprio** slip, il bacino scavato è uno specchio in
   cui girare invece di un fondo contro cui sbattere, e chi entra o esce passa
   dal varco del frangiflutti.
-- [ ] Quanti mezzi si vedono lo dice la simulazione: navi da carico sul <!-- size: M -->
-  commercio esterno, traghetti sui passeggeri della linea. Oggi il numero è
-  quello degli ormeggi che la ricetta disegna, quindi un porto morto e un porto
-  che regge l'isola mostrano la stessa flotta.
-- [ ] Canali, insenature e frangiflutti tagliati sulla battigia vera invece <!-- size: XL -->
+- [x] Quanti mezzi si vedono lo dice la simulazione: navi da carico sul <!-- size: M -->
+  commercio esterno, traghetti sulla popolazione servita — un ripiego
+  dichiarato, perché la simulazione non conta i passeggeri di una linea e non
+  deve cominciare a contarli per decidere quante barche si vedono.
+- [x] Canali, insenature e frangiflutti tagliati sulla battigia vera invece <!-- size: XL -->
   che sul riquadro canonico, con il varco navigabile come parte della forma e
   non come fortuna.
-- [ ] Il sedime cresce anche sull'acqua: `growth` smette di essere vietato a <!-- size: XL -->
+- [~] Il sedime cresce anche sull'acqua: `growth` smette di essere vietato a <!-- size: XL -->
   chi dichiara `waterline`, e l'opera di terra si rifà a ogni avanzamento come
-  già fa per la stazione.
+  già fa per la stazione. **Meccanismo fatto e provato, una ricetta su tre lo
+  usa**: il traghetto cresce (il molo passa da due colonne d'acqua a
+  quattordici), porto e marina vanno ancora ripartiti fra gli stadi — vedi sotto.
 - [ ] Lo slot di settore è un **posto sul bordo**, non una colonna <!-- size: L -->
   dell'anello: banchina, sponda del canale o testata del molo, con il fronte
   dell'edificio girato verso l'acqua che lo giustifica.
 
+**Cosa resta del sedime crescente, e perché non è un ultimo ritocco.** Una
+ricetta che cresce descrive per intero la propria sagoma a *ogni* stadio — il
+riquadro cambia, quindi non c'è un piano comune su cui accumulare — e ogni parte
+deve stare dentro il sedime del proprio stadio. Il traghetto si è ripartito
+quasi da sé perché è lineare; il porto no: il suo stadio zero disegna già il
+braccio di sopravento fino alla colonna diciannove, cioè l'ingombro finale, e
+farlo crescere vuol dire ridistribuire le parti fra gli stadi. Lo stesso vale
+per i tre esemplari di ciascun ruolo, che sono anch'essi autocontenuti per
+stadio — il faro del traghetto è già stato spostato dallo stadio uno al tre,
+perché una torre di undici voxel non può stare in punta a un molo che in punta
+non è ancora arrivato. Sono trentadue array di parti fra porto e marina, ed è
+lavoro di forma: va guardato a schermo, non dedotto.
+
 **Vincolo:** valgono i vincoli trasversali della fase 4. In più: le rotte
 restano pure e deterministiche — nessuna integrazione per frame, nessun
 `Math.random()` — e il numero dei mezzi entra come dato già calcolato, senza
-aprire una porta nuova da `src/world/` verso `src/sim/`.
+aprire una porta nuova da `src/world/` verso `src/sim/`. Chi cresce **e** guarda
+l'acqua cresce verso il largo e mai verso terra: l'ancora è la colonna cliccata,
+sta sul piazzale, e allontanandola dalla riva si porterebbe dietro la città
+invece del molo.
 
 **Gate:** su un'isola cresciuta, un porto e una marina allo stadio tre si
 leggono da inquadratura d'insieme come due mestieri diversi — non due riquadri

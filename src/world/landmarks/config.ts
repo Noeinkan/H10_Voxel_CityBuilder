@@ -223,9 +223,19 @@ export interface PartsRecipe {
    * stadio n allineato sull'ancora — l'ancora si allontana da ogni bordo, mai si
    * avvicina — cosi' la struttura cresce verso l'esterno e mai sopra se stessa.
    *
-   * Una ricetta che cresce e' **terrestre**: niente `waterline`, `basinDepth` o
-   * `lakeQuay`, perche' l'opera si getta di nuovo a ogni avanzamento e il
-   * fronte d'acqua non ha una forma da far crescere.
+   * **Una ricetta che cresce puo' guardare l'acqua**, e per un po' non ha
+   * potuto. Il divieto era scritto qui — «niente `waterline`, `basinDepth` o
+   * `lakeQuay`» — e la ragione era vera finche' l'avanzamento riempiva il
+   * terreno nuovo e basta: portava il piano alla quota naturale, cioe' sotto il
+   * pelo, e la campata appena aggiunta restava una secca invece di un molo.
+   * Adesso l'avanzamento rifa' il sondaggio della banchina sul sedime nuovo
+   * (`fillNewGround`), riscava il bacino di chi lo dichiara e non taglia il
+   * pendio a chi guarda l'acqua — quindi il molo del traghetto si allunga
+   * davvero, che e' l'unica cosa che il ruolo prometteva e non faceva.
+   *
+   * Chi cresce **e** guarda l'acqua deve crescere verso il largo e non verso
+   * terra: l'ancora e' la colonna cliccata, sta sul piazzale, e allontanandola
+   * dalla riva si porterebbe dietro la citta' invece del molo.
    */
   readonly growth?: readonly StageFootprint[];
 }

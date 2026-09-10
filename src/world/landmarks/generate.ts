@@ -111,13 +111,27 @@ export function landmarkMoorings(
   originX: number,
   originY: number,
   form?: LandmarkFormId,
+  /**
+   * Stadio del sedime su cui misurare, se la ricetta cresce in pianta.
+   *
+   * **Un ormeggio puo' non esistere ancora.** Su una ricetta a sedime crescente
+   * la testata di molo che tiene l'accosto arriva a uno stadio dopo, e misurare
+   * gli ormeggi sull'ingombro finale li poserebbe due volte sbagliati: fuori
+   * posto su ogni verso che non sia est — la rotazione specchia sul lato lungo,
+   * e il lato lungo di questo stadio e' piu' corto — e in acqua aperta anche a
+   * est, con la barca ormeggiata a un molo che nessuno ha ancora costruito.
+   *
+   * Assente vale l'ingombro finale, che e' il comportamento di sempre e la
+   * risposta giusta per le sette ricette a sedime fisso.
+   */
+  stage?: number,
 ): readonly WorldMooring[] {
   const recipe = landmarkOf(kind, form);
   if (recipe?.moorings === undefined) return NO_MOORINGS;
 
-  const [long, short] = recipe.span;
+  const [long, short] = footprintOf(recipe, stage ?? maxStageOf(recipe)).span;
   const turn = FACING_ROTATION[facing] ?? 0;
-  return recipe.moorings.map((mooring) => {
+  return recipe.moorings.filter((mooring) => mooring.x < long && mooring.y < short).map((mooring) => {
     const spot = orientPart(
       { kind: 0, x: mooring.x, y: mooring.y, w: 1, h: 1, z: 0, height: 1, palette: 0, surface: 0 },
       facing,
@@ -149,10 +163,12 @@ export function landmarkWaterColumn(
   originX: number,
   originY: number,
   form?: LandmarkFormId,
+  /** Stadio del sedime, per le ricette che crescono. Vedi `landmarkMoorings`. */
+  stage?: number,
 ): { x: number; y: number } | null {
   const recipe = landmarkOf(kind, form);
   if (recipe?.waterline === undefined) return null;
-  const [long, short] = recipe.span;
+  const [long, short] = footprintOf(recipe, stage ?? maxStageOf(recipe)).span;
   const spot = orientPart(
     { kind: 0, x: recipe.waterline, y: recipe.anchor[1], w: 1, h: 1, z: 0, height: 1, palette: 0, surface: 0 },
     facing,

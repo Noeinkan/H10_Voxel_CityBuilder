@@ -24,6 +24,7 @@ import {
   maxStageOf,
   waterFormFor,
   type LandmarkFormId,
+  type LandmarkRecipe,
   type PartsRecipe,
 } from '../landmarks/config';
 import { planFacadeLandmark } from '../landmarks/facadePlan';
@@ -1290,9 +1291,19 @@ export class LandmarkDriver {
 
     const mask = stampFootprint(stamp, LANDMARK.groundBand);
     this.ctx.surface.clearSiteDecor(replaced.x, replaced.y, replaced.footprint, footprintDepth(replaced));
-    this.fillNewGround(replaced, mask);
+    this.fillNewGround(replaced, recipe, mask);
     this.ctx.growth.enqueueSegments(replaced, stamp);
-    this.enqueueSlopeCarve(replaced, stamp, mask);
+    // **Chi guarda l'acqua non si inserisce nel pendio.** Nel suo riquadro il
+    // minimo e' il fondale, non una quota a cui la banchina possa stare, e
+    // «togli cio' che sporge sopra il tetto» porterebbe via la collina dietro
+    // il molo. E' la stessa distinzione che il piazzamento fa gia'.
+    if (recipe.waterline === undefined) {
+      this.enqueueSlopeCarve(replaced, stamp, mask);
+    }
+    // Il bacino si riscava sul sedime nuovo: la darsena cresce con il molo, o
+    // il pontile appena allungato resterebbe su un fondale che nessuno ha
+    // allagato. Chi non dichiara `basinDepth` non passa di qui.
+    this.enqueueBasinDig(replaced, kind, record.landmarkForm, mask);
     this.paintApron(replaced, recipe.apron);
   }
 
@@ -1304,9 +1315,35 @@ export class LandmarkDriver {
    * sagoma a mezz'aria. L'opera si ri-getta sull'intera impronta nuova con la
    * stessa maschera del corpo: le colonne vecchie sono gia' alla quota giusta, e
    * la riempie solo il terreno nuovo che ne ha bisogno.
+   *
+   * **Chi guarda l'acqua non riempie: costruisce la banchina.** Il sedime nuovo
+   * di un molo che si allunga e' fondale, non prato, e un riempimento senza
+   * opera lo lascerebbe una secca invece di un molo — il muro non scenderebbe a
+   * incontrare il fondo, e il piano si fermerebbe alla quota naturale, sotto il
+   * pelo. Il sondaggio e' esattamente quello del piazzamento; quello che **non**
+   * si rifa' e' la quota del piano, che resta quella fissata allora: un molo che
+   * cresce si allunga, non si alza.
    */
-  private fillNewGround(record: BuildingRecord, mask: WorksMask | undefined): void {
-    const plan: GradePlan = { works: WORKS.none, padZ: record.baseZ, footZ: record.baseZ, fill: 0 };
+  private fillNewGround(
+    record: BuildingRecord,
+    recipe: LandmarkRecipe,
+    mask: WorksMask | undefined,
+  ): void {
+    const depth = footprintDepth(record);
+    const surveyed = recipe.waterline === undefined
+      ? null
+      : surveyGrade(
+        this.ctx.terrain,
+        record.x,
+        record.y,
+        record.footprint,
+        depth,
+        mask,
+        recipe.lakeQuay === true,
+      );
+    const plan: GradePlan = surveyed === null
+      ? { works: WORKS.none, padZ: record.baseZ, footZ: record.baseZ, fill: 0 }
+      : { ...surveyed, padZ: record.baseZ };
     buildWorks(
       this.ctx.world,
       this.ctx.terrain,
@@ -1314,7 +1351,7 @@ export class LandmarkDriver {
       record.y,
       record.footprint,
       plan,
-      footprintDepth(record),
+      depth,
       mask,
     );
   }

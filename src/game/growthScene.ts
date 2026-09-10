@@ -43,6 +43,7 @@ import { SKYLINE } from '../world/skyline/config';
 import { BIOME, WATER_IDS } from '../world/terrain/config';
 import type { Region } from '../world/terrain/region';
 import type { TerrainMap } from '../world/terrain/TerrainMap';
+import { TRAFFIC, fleetOf } from '../world/traffic/config';
 import { puffsAt, type SmokePuff } from '../world/traffic/plume';
 import { posesAt, type VehiclePose } from '../world/traffic/poses';
 import { planTraffic, type TrafficRoute, type TrafficStructure } from '../world/traffic/routes';
@@ -989,14 +990,31 @@ export class GrowthScene {
     // ogni volta che spunta una villetta. Sessantaquattro edifici e' molto meno
     // di quanto serve a cambiare la sagoma di un quartiere.
     const skyline = this.builder.registry.count >> 6;
+    // **Quanti mezzi lo dice la simulazione, e cambia a ogni tick.** Nella firma
+    // ci va il numero **gia' quantizzato** e non il commercio grezzo: quello si
+    // muove di continuo, e legarcela vorrebbe dire rifare ogni ricerca di rotta
+    // di mare dieci volte al secondo. Cosi' invece la citta' ricalcola le rotte
+    // due volte in tutta la partita — quando la seconda nave si aggiunge, e
+    // quando si aggiunge la terza.
+    const fleets = this.trafficFleets();
+    // **Uno stadio in piu' cambia le rotte**, da quando una ricetta d'acqua puo'
+    // crescere in pianta: il molo si allunga, l'origine del record si sposta sui
+    // versi specchiati, e un ormeggio che prima non esisteva compare. Nessuno
+    // dei due numeri di sopra se ne accorge — il conto dei landmark non cambia —
+    // ma la forza del catalizzatore si', perche' l'avanzamento la alza di uno
+    // scalino. Sommarla costa quanto contare i catalizzatori, che sono unita'.
+    let stages = 0;
+    for (const catalyst of this.state.catalysts) stages += catalyst.strength;
     const stamp = this.builder.registry.landmarkCount * 1024 + this.state.catalysts.length
-      + skyline * 1_048_576;
+      + skyline * 1_048_576 + (fleets.cargo * 8 + fleets.ferry) * 1_073_741_824
+      + stages * 68_719_476_736;
     if (stamp === this.routeStamp && rides === this.rides) return;
     this.routeStamp = stamp;
 
-    const structures = this.trafficStructures();
+    const structures = this.trafficStructures(fleets);
     const key = `${skyline}|${structures
-      .map((item) => `${item.id}@${item.cx},${item.cy}:${item.facing}:${item.form ?? 'ground'}`)
+      .map((item) => `${item.id}@${item.cx},${item.cy}:${item.facing}:${item.form ?? 'ground'}`
+        + `:${item.fleet ?? 1}:${item.stage ?? 0}@${item.x},${item.y}`)
       .join('|')}`;
     if (key === this.routeKey && rides === this.rides) return;
     this.routeKey = key;
@@ -1046,8 +1064,31 @@ export class GrowthScene {
     return this.world.getBlock(cx, cy, this.map.waterTopAt(cx, cy) - 1) === WATER_IDS.surface;
   }
 
+  /**
+   * Quanti mezzi la simulazione mette in moto, per mestiere.
+   *
+   * **E' l'unico punto in cui il traffico guarda la simulazione**, e guarda due
+   * numeri gia' calcolati: il volume del commercio esterno per le navi, la
+   * popolazione per i traghetti. Nessuna porta nuova da `src/world/` verso
+   * `src/sim/` — qui siamo in `src/game/`, che e' il posto dove i due si
+   * incontrano per mestiere.
+   *
+   * La popolazione e' un ripiego dichiarato: la simulazione non conta i
+   * passeggeri di una linea, e non deve cominciare a contarli per decidere
+   * quante barche si vedono. Vedi `TRAFFIC.ferryFullLoad`.
+   */
+  private trafficFleets(): { readonly cargo: number; readonly ferry: number } {
+    const trade = this.state.trade;
+    return {
+      cargo: fleetOf(trade.food + trade.materials + trade.materialsIn, TRAFFIC.cargoFullLoad),
+      ferry: fleetOf(this.state.population.stock, TRAFFIC.ferryFullLoad),
+    };
+  }
+
   /** I landmark, ridotti a cio' che il traffico deve sapere di loro. */
-  private trafficStructures(): readonly TrafficStructure[] {
+  private trafficStructures(
+    fleets: { readonly cargo: number; readonly ferry: number },
+  ): readonly TrafficStructure[] {
     const out: TrafficStructure[] = [];
     for (const record of this.builder.registry.all) {
       const kind = record.landmark;
@@ -1060,6 +1101,7 @@ export class GrowthScene {
         record.x,
         record.y,
         record.landmarkForm,
+        record.level,
       );
       out.push({
         id: record.id,
@@ -1072,6 +1114,7 @@ export class GrowthScene {
         facing: (record.facing ?? 0) as Facing,
         z: record.baseZ,
         form: record.landmarkForm,
+        stage: record.level,
         // Il pelo dello specchio davanti alla struttura: sul mare e' il livello
         // del mare, sul lago quello della conca. Gli ormeggi a galla ci posano
         // i mezzi, cosi' uno yacht non resta sospeso a mezz'aria sulla riva.
@@ -1079,6 +1122,9 @@ export class GrowthScene {
         // ricalcolano dalla `waterline`, che il piazzamento ha messo sull'acqua.
         waterZ: record.waterZ
           ?? (column === null ? undefined : this.map.waterTopAt(column.x, column.y)),
+        // Ogni mestiere legge la propria portata: il porto il commercio, il
+        // traghetto il servizio. Gli altri sette ruoli non moltiplicano niente.
+        fleet: kind === 'port' ? fleets.cargo : kind === 'ferry' ? fleets.ferry : undefined,
       });
     }
     return out;

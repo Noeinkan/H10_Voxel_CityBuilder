@@ -1,7 +1,7 @@
 import type { LandmarkRecipe } from '../config';
 import { PALETTE_SLOTS } from '../../../engine/paletteSlots';
 import { SURFACE_KIND } from '../../visualBlock';
-import { PART, box } from '../parts';
+import { PART, box, type Part } from '../parts';
 import { BERTH } from '../berths';
 import { bollard, craneAt, entrance, quay, signBand } from '../vocab';
 
@@ -160,11 +160,104 @@ export const PORT: LandmarkRecipe = {
   ],
 };
 
+/**
+ * I quattro sedimi del traghetto, uno per stadio: **il molo si allunga**.
+ *
+ * **Una ricetta che cresce descrive per intero la propria sagoma a ogni
+ * stadio**, e non si somma alla precedente: il riquadro cambia, quindi non c'e'
+ * un piano comune su cui accumulare, e l'avanzamento sostituisce invece di
+ * coprire. Gli spread qui sotto sono la scrittura di quella regola — ogni
+ * stadio e' il precedente piu' cio' che aggiunge — e non un'ottimizzazione.
+ *
+ * **Cio' che si guadagna e' esattamente cio' che mancava.** A sedime fisso il
+ * piazzamento riserva l'ingombro finale e le opere di terra gettano subito la
+ * banchina *intera*: lo stadio zero mostrava gia' tutto il molo, in pietra, con
+ * sopra il solo piazzale — e i tre avanzamenti successivi ci posavano scatole.
+ * Il molo non si allungava mai. Ora il primo stadio porta il piano in acqua per
+ * due colonne e l'ultimo per quattordici, che e' il gesto che il ruolo promette.
+ */
+const FERRY_LANDING: readonly Part[] = [
+  // Stadio zero: il piazzale a terra, la stazione marittima e il primo tratto
+  // di molo — quanto basta a imbarcarsi, non ancora una linea.
+  quay(0, 0, 8, 12),
+  quay(8, 4, 2, 4),
+  box(PART.shell, 1, 3, 6, 6, 1, 6, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.civic, {
+    cap: PALETTE_SLOTS.glassPale,
+  }),
+  box(PART.deck, 1, 3, 6, 6, 7, 1, PALETTE_SLOTS.roofWhite, SURFACE_KIND.roofTech),
+  bollard(9, 4),
+  bollard(9, 7),
+];
+
+const FERRY_PIER: readonly Part[] = [
+  // Stadio uno: il molo esce in mezzo all'acqua e la pensilina lo copre — il
+  // vuoto sotto un tetto e' cio' che nessuna scatola cava sa dare. Da qui i due
+  // accosti esistono: prima non c'era il molo che li tiene.
+  ...FERRY_LANDING,
+  quay(10, 4, 6, 4),
+  box(PART.colonnade, 9, 4, 7, 4, 1, 5, PALETTE_SLOTS.wood, SURFACE_KIND.habitat, {
+    step: 3,
+    cap: PALETTE_SLOTS.brickLight,
+  }),
+  bollard(13, 4),
+  bollard(13, 7),
+];
+
+const FERRY_HEAD: readonly Part[] = [
+  // Stadio due: la testata e le sale d'attesa, a terra e in punta.
+  ...FERRY_PIER,
+  quay(16, 4, 4, 4),
+  box(PART.shell, 16, 4, 4, 4, 1, 5, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.civic, {
+    cap: PALETTE_SLOTS.glassPale,
+  }),
+  box(PART.deck, 16, 4, 4, 4, 6, 1, PALETTE_SLOTS.roofWhite, SURFACE_KIND.roofTech),
+  box(PART.shell, 1, 9, 6, 3, 1, 5, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.civic, {
+    cap: PALETTE_SLOTS.glassPale,
+  }),
+  box(PART.deck, 1, 9, 6, 3, 6, 1, PALETTE_SLOTS.roofWhite, SURFACE_KIND.roofTech),
+];
+
+const FERRY_BEACON: readonly Part[] = [
+  // Stadio tre: l'ultimo tratto e il fanale in punta — da lontano e' quello a
+  // separare un molo da una lingua di terra.
+  ...FERRY_HEAD,
+  quay(20, 4, 2, 4),
+  box(PART.mast, 20, 5, 2, 2, 1, 12, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.civic, {
+    cap: PALETTE_SLOTS.metalGold,
+  }),
+  box(PART.slab, 20, 5, 2, 2, 13, 2, PALETTE_SLOTS.glassPale, SURFACE_KIND.luminous),
+  bollard(21, 4),
+  bollard(21, 7),
+];
+
+/** La tettoia dell'imbarcadero: compare con il molo e ci resta. */
+const FERRY_CANOPY: Part = box(
+  PART.pitch, 9, 4, 7, 4, 6, 3, PALETTE_SLOTS.roofPale, SURFACE_KIND.roofTech,
+  { step: 1, cap: PALETTE_SLOTS.metalBrass },
+);
+
+/** Il traliccio della darsena, e il braccio che gli arriva uno stadio dopo. */
+const FERRY_CRANE: Part = box(
+  PART.truss, 10, 4, 2, 2, 1, 11, PALETTE_SLOTS.metalRust, SURFACE_KIND.industrial,
+  { step: 3, cap: PALETTE_SLOTS.metalBrass },
+);
+
+const FERRY_BOOM: Part = box(
+  PART.boom, 10, 2, 2, 4, 11, 2, PALETTE_SLOTS.metalRust, SURFACE_KIND.industrial,
+  { cap: PALETTE_SLOTS.metalBrass },
+);
+
 // Il contrario del porto sullo stesso fronte mare: niente gru, niente
 // capannoni, e al posto della banchina un molo stretto che esce in mezzo
 // all'acqua con un pontile per lato. E' la sagoma a dire che di qui passano
 // persone e non container — e sono i due ormeggi, vuoti finche' la citta' non
 // e' cresciuta, a dire che a un molo solo manca ancora qualcosa.
+//
+// **E' la prima ricetta d'acqua che cresce in pianta.** Il divieto stava nel
+// commento di `growth` — «una ricetta che cresce e' terrestre» — e valeva
+// finche' l'avanzamento non sapeva rifare le opere di banchina sul sedime
+// nuovo. Ora le rifa' (`fillNewGround`), riscava il bacino di chi lo dichiara e
+// non taglia il pendio a chi guarda l'acqua, quindi il molo puo' allungarsi.
 export const FERRY: LandmarkRecipe = {
   kind: 'ferry',
   span: [22, 12],
@@ -172,54 +265,18 @@ export const FERRY: LandmarkRecipe = {
   anchor: [4, 6],
   apron: 4,
   stages: [0, 5, 14, 28],
-  parts: [
-    [
-      // Stadio zero: il piazzale a terra e le bitte — l'accesso. Il molo e i
-      // due accosti arrivano con la massa, e sono i vuoti a dire «di qui
-      // passano persone» prima ancora che ci sia una pensilina.
-      quay(0, 0, 8, 12),
-      bollard(9, 4),
-      bollard(9, 7),
-    ],
-    [
-      // Stadio uno: la massa funzionale — il molo che esce in mezzo all'acqua
-      // e la stazione marittima che lo serve.
-      quay(8, 4, 14, 4),
-      box(PART.shell, 1, 3, 6, 6, 1, 6, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.civic, {
-        cap: PALETTE_SLOTS.glassPale,
-      }),
-      box(PART.deck, 1, 3, 6, 6, 7, 1, PALETTE_SLOTS.roofWhite, SURFACE_KIND.roofTech),
-    ],
-    [
-      // Stadio due: l'attrezzatura — la pensilina sul molo (il vuoto sotto un
-      // tetto e' cio' che nessuna scatola cava sa dare) e le sale d'attesa,
-      // a terra e in testa al molo.
-      box(PART.colonnade, 9, 4, 7, 4, 1, 5, PALETTE_SLOTS.wood, SURFACE_KIND.habitat, {
-        step: 3,
-        cap: PALETTE_SLOTS.brickLight,
-      }),
-      bollard(13, 4),
-      bollard(13, 7),
-      box(PART.shell, 16, 4, 4, 4, 1, 5, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.civic, {
-        cap: PALETTE_SLOTS.glassPale,
-      }),
-      box(PART.deck, 16, 4, 4, 4, 6, 1, PALETTE_SLOTS.roofWhite, SURFACE_KIND.roofTech),
-      box(PART.shell, 1, 9, 6, 3, 1, 5, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.civic, {
-        cap: PALETTE_SLOTS.glassPale,
-      }),
-      box(PART.deck, 1, 9, 6, 3, 6, 1, PALETTE_SLOTS.roofWhite, SURFACE_KIND.roofTech),
-    ],
-    [
-      // Stadio tre: il coronamento e il segnale notturno — il fanale in punta,
-      // da lontano e' quello a separare un molo da una lingua di terra.
-      box(PART.mast, 20, 5, 2, 2, 1, 12, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.civic, {
-        cap: PALETTE_SLOTS.metalGold,
-      }),
-      box(PART.slab, 20, 5, 2, 2, 13, 2, PALETTE_SLOTS.glassPale, SURFACE_KIND.luminous),
-      bollard(21, 4),
-      bollard(21, 7),
-    ],
+  // Il sedime cresce **solo verso il largo**, e l'ancora resta la colonna
+  // cliccata: il piazzale a terra non si sposta di un voxel a nessuno stadio,
+  // quindi le parti conservano le proprie coordinate canoniche e la citta'
+  // dietro non viene mai sventrata. E' anche cio' che tiene monotona la
+  // crescita — la distanza dell'ancora dal bordo di terra non cambia.
+  growth: [
+    { span: [10, 12], height: 8, anchor: [4, 6] },
+    { span: [16, 12], height: 12, anchor: [4, 6] },
+    { span: [20, 12], height: 14, anchor: [4, 6] },
+    { span: [22, 12], height: 16, anchor: [4, 6] },
   ],
+  parts: [FERRY_LANDING, FERRY_PIER, FERRY_HEAD, FERRY_BEACON],
   // Il piazzale a terra e' `x` 0..7 e il molo esce da 8: e' quella la colonna
   // su cui il piazzamento porta la battigia. Il ferry se la cavava gia' quasi
   // sempre — gli accosti stanno a `x` 13, cioe' nove colonne oltre il click, e
@@ -235,6 +292,11 @@ export const FERRY: LandmarkRecipe = {
     { x: 13, y: 2, z: 0, berth: BERTH.ferry, heading: 0 },
     { x: 13, y: 9, z: 0, berth: BERTH.vessel, heading: 0 },
   ],
+  // **Anche gli esemplari sono autocontenuti per stadio**, come il tronco: il
+  // generatore disegna `variant.parts[stage]` e basta, quindi una tettoia che
+  // compare allo stadio uno va ripetuta al due e al tre o sparisce. E ogni parte
+  // deve stare dentro il sedime del **proprio** stadio: un faro in punta al molo
+  // non puo' comparire prima che il molo arrivi in punta.
   variants: [
     // Imbarcadero: la tettoia sul molo, l'ingresso e l'insegna. E' il ferry
     // che si comporta da stazione, e la falda sopra il colonnato e' cio' che
@@ -243,12 +305,9 @@ export const FERRY: LandmarkRecipe = {
       name: 'imbarcadero',
       parts: [
         [],
-        [box(PART.pitch, 9, 4, 7, 4, 6, 3, PALETTE_SLOTS.roofPale, SURFACE_KIND.roofTech, {
-          step: 1,
-          cap: PALETTE_SLOTS.metalBrass,
-        })],
-        [entrance(6, 5, 1, 2, 4)],
-        [signBand(6, 4, 1, 4, 5)],
+        [FERRY_CANOPY],
+        [FERRY_CANOPY, entrance(6, 5, 1, 2, 4)],
+        [FERRY_CANOPY, entrance(6, 5, 1, 2, 4), signBand(6, 4, 1, 4, 5)],
       ],
     },
     // Faro in punta al molo: tamburo smussato, ballatoio e cappello sopra il
@@ -256,22 +315,33 @@ export const FERRY: LandmarkRecipe = {
     // cappello sta **sopra** la lanterna del tronco invece che addosso: una
     // cupola posata li' sopra la spegnerebbe, che e' il modo piu' silenzioso
     // che un esemplare ha di rovinare la ricetta che varia.
+    //
+    // Da quando il molo cresce, il faro arriva **con la punta**: allo stadio due
+    // e' un fanale basso sulla testata, al tre il tamburo intero. Prima era il
+    // tamburo dallo stadio uno, cioe' una torre di undici voxel piantata dove il
+    // molo non era ancora arrivato.
     {
       name: 'faro',
       parts: [
         [],
-        [box(PART.slab, 19, 4, 3, 4, 1, 10, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.civic, {
-          chamfer: 1,
+        [],
+        [box(PART.mast, 17, 5, 2, 2, 7, 3, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.civic, {
           cap: PALETTE_SLOTS.metalGold,
         })],
-        [box(PART.steps, 18, 4, 4, 4, 11, 2, PALETTE_SLOTS.stone, SURFACE_KIND.roofTech, {
-          step: 1,
-          chamfer: 1,
-        })],
-        [box(PART.steps, 19, 4, 3, 4, 15, 1, PALETTE_SLOTS.metalGold, SURFACE_KIND.roofTech, {
-          step: 1,
-          chamfer: 1,
-        })],
+        [
+          box(PART.slab, 19, 4, 3, 4, 1, 10, PALETTE_SLOTS.concreteWhite, SURFACE_KIND.civic, {
+            chamfer: 1,
+            cap: PALETTE_SLOTS.metalGold,
+          }),
+          box(PART.steps, 18, 4, 4, 4, 11, 2, PALETTE_SLOTS.stone, SURFACE_KIND.roofTech, {
+            step: 1,
+            chamfer: 1,
+          }),
+          box(PART.steps, 19, 4, 3, 4, 15, 1, PALETTE_SLOTS.metalGold, SURFACE_KIND.roofTech, {
+            step: 1,
+            chamfer: 1,
+          }),
+        ],
       ],
     },
     // Darsena da lavoro: la gru che serve gli accosti, e il braccio che
@@ -280,16 +350,15 @@ export const FERRY: LandmarkRecipe = {
       name: 'darsena',
       parts: [
         [],
-        [box(PART.truss, 10, 4, 2, 2, 1, 11, PALETTE_SLOTS.metalRust, SURFACE_KIND.industrial, {
-          step: 3,
-          cap: PALETTE_SLOTS.metalBrass,
-        })],
-        [box(PART.boom, 10, 2, 2, 4, 11, 2, PALETTE_SLOTS.metalRust, SURFACE_KIND.industrial, {
-          cap: PALETTE_SLOTS.metalBrass,
-        })],
-        [box(PART.slab, 2, 0, 4, 2, 1, 3, PALETTE_SLOTS.metalRust, SURFACE_KIND.industrial, {
-          cap: PALETTE_SLOTS.metalBrass,
-        })],
+        [FERRY_CRANE],
+        [FERRY_CRANE, FERRY_BOOM],
+        [
+          FERRY_CRANE,
+          FERRY_BOOM,
+          box(PART.slab, 2, 0, 4, 2, 1, 3, PALETTE_SLOTS.metalRust, SURFACE_KIND.industrial, {
+            cap: PALETTE_SLOTS.metalBrass,
+          }),
+        ],
       ],
     },
   ],

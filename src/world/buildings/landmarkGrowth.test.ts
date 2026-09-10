@@ -9,8 +9,9 @@ import {
 import { catalystById } from '../../sim/catalysts';
 import { testTerrain } from '../../sim/testTerrain';
 import type { TerrainMap } from '../terrain/TerrainMap';
+import { TERRAIN } from '../terrain/config';
 import { footprintOf, growsFootprint, LANDMARKS } from '../landmarks/config';
-import { landmarkOrigin, landmarkSpan } from '../landmarks/generate';
+import { generateLandmark, landmarkMoorings, landmarkOrigin, landmarkSpan } from '../landmarks/generate';
 import { FACING, type Facing } from '../streets/streetGrid';
 import { VoxelWorld } from '../VoxelWorld';
 import { Builder } from './Builder';
@@ -18,6 +19,7 @@ import { footprintDepth, type BuildingRecord } from './BuildingRegistry';
 import { recordsIn, type ClearanceBox } from './clearanceSite';
 import { BUILDER } from './config';
 import { ringStrips } from './landmarkDriver';
+import { STAMP_EMPTY } from './stamp';
 
 /**
  * La crescita del sedime, a livello di driver.
@@ -268,5 +270,119 @@ describe('un landmark che cresce di sedime', () => {
         expect(builder.registry.isOccupied(newBox.x + dx, newBox.y + dy)).toBe(true);
       }
     }
+  });
+});
+
+// --- Il sedime che cresce sull'acqua -----------------------------------------
+
+const DRY = TERRAIN.beachMaxHeight - 4;
+const SHELF = TERRAIN.seaLevel - 1;
+
+/** Costa con un bassofondo largo: la terra finisce a x 96, il fondale a 116. */
+function shelfCoast(): TerrainMap {
+  return testTerrain({
+    chunksX: 8,
+    chunksY: 8,
+    heightAt: (x) => {
+      if (x < 96) return DRY;
+      if (x < 116) return SHELF;
+      return TERRAIN.seaLevel - 6;
+    },
+  });
+}
+
+function ferryOf(builder: Builder): BuildingRecord {
+  for (const record of builder.registry.all) {
+    if (record.landmark === 'ferry') return record;
+  }
+  throw new Error('traghetto non piazzato');
+}
+
+describe('un molo che cresce in acqua', () => {
+  /**
+   * **Il divieto che questa fase toglie.** `growth` era vietato a chi dichiara
+   * `waterline`, e la ragione era vera: l'avanzamento riempiva il terreno nuovo
+   * con `WORKS.none`, cioe' portava il piano alla quota naturale — sotto il pelo
+   * — e la campata appena aggiunta sarebbe rimasta una secca invece di un molo.
+   * Ora l'avanzamento rifa' il sondaggio della banchina sul sedime nuovo, e
+   * quello che cambia si vede in un posto solo: **sotto** il piano finito.
+   */
+  it('costruisce la banchina sul sedime nuovo invece di lasciarlo a fondale', () => {
+    const terrain = shelfCoast();
+    const world = new VoxelWorld();
+    const builder = new Builder(world, terrain, 4242);
+    const recipe = LANDMARKS.ferry!;
+    expect(growsFootprint(recipe)).toBe(true);
+
+    builder.placeLandmark(88, 96, 'ferry');
+    settle(builder);
+
+    const before = ferryOf(builder);
+    expect(before.level).toBe(0);
+    expect([before.footprint, footprintDepth(before)]).toEqual(footprintOf(recipe, 0).span);
+
+    // Allo stadio zero il molo non c'e' ancora, e con lui non ci sono i due
+    // accosti: una barca ormeggiata a un molo che nessuno ha costruito sarebbe
+    // lo stesso difetto che il fronte d'acqua esiste per togliere.
+    const facing = (before.facing ?? FACING.east) as Facing;
+    expect(landmarkMoorings('ferry', facing, before.x, before.y, undefined, 0)).toHaveLength(0);
+    expect(landmarkMoorings('ferry', facing, before.x, before.y, undefined, 1)).toHaveLength(2);
+
+    const definition = catalystById('ferry');
+    let state: SimState = addCatalyst(createSimState(), {
+      x: 88,
+      y: 96,
+      class: definition.class,
+      kind: 'ferry',
+      strength: 255,
+      radius: definition.radius,
+    });
+
+    // Il quartiere a terra, a ovest del piazzale: fa scattare lo stadio senza
+    // cadere sul sedime che il molo prendera' andando al largo.
+    const neighbours: { x: number; y: number }[] = [];
+    for (let d = 8; d <= 72 && neighbours.length < recipe.stages[1]; d += 8) {
+      for (const dy of [0, -16, 16]) {
+        const seen = builder.registry.count;
+        builder.materialize([{ x: 88 - d, y: 96 + dy, class: BUILDING_CLASS.residential }]);
+        if (builder.registry.count > seen) neighbours.push({ x: 88 - d, y: 96 + dy });
+      }
+    }
+    expect(neighbours.length).toBeGreaterThanOrEqual(recipe.stages[1]);
+
+    let guard = 0;
+    while (ferryOf(builder).level < 1 && guard++ < 400) {
+      state = tick(state, terrain);
+      state = { ...state, tickCount: BUILDER.ticksPerUpgrade };
+      state = builder.onTick(state);
+      while (builder.stats.growing > 0) builder.step();
+    }
+    settle(builder);
+
+    const after = ferryOf(builder);
+    expect(after.level).toBeGreaterThanOrEqual(1);
+    expect([after.footprint, footprintDepth(after)]).toEqual(footprintOf(recipe, after.level).span);
+    expect(after.footprint * footprintDepth(after))
+      .toBeGreaterThan(before.footprint * footprintDepth(before));
+
+    // **Sotto ogni colonna che il molo occupa c'e' materia**, anche su quelle
+    // che allo stadio zero erano bassofondo. Senza l'opera di banchina rifatta,
+    // il piano nuovo poggerebbe sul nulla e il molo galleggerebbe.
+    const stamp = generateLandmark({
+      kind: 'ferry',
+      stage: after.level,
+      facing,
+      seed: after.seed,
+    })!;
+    let checked = 0;
+    for (let dy = 0; dy < stamp.sizeY; dy++) {
+      for (let dx = 0; dx < stamp.sizeX; dx++) {
+        if (stamp.voxels[dy * stamp.sizeX + dx] === STAMP_EMPTY) continue;
+        checked++;
+        expect(world.getBlock(after.x + dx, after.y + dy, after.baseZ - 1), `${dx},${dy}`)
+          .not.toBe(0);
+      }
+    }
+    expect(checked).toBeGreaterThan(0);
   });
 });

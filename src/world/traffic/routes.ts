@@ -4,7 +4,8 @@ import { landmarkMoorings, type WorldMooring } from '../landmarks/generate';
 import { FACING, type Facing } from '../streets/streetGrid';
 import { TRAFFIC, VEHICLE } from './config';
 import { moored, phaseOf, shuttle, type TrafficRoute } from './routePath';
-import { planSeaLane } from './seaLane';
+import { seaExit } from './seaExit';
+import { navigableAt, planSeaLane, type LanePoint } from './seaLane';
 import { airshipOrbit, balloonFlight, flightCircuit, padCircuit } from './skyRoutes';
 
 /**
@@ -66,6 +67,33 @@ export interface TrafficStructure {
    * galleggerebbe dentro la collina. Lo legge chi posa i mezzi a galla.
    */
   readonly waterZ?: number;
+
+  /**
+   * Quanti mezzi questa struttura mette sulla propria rotta di punta.
+   *
+   * **E' la simulazione che parla, ed e' l'unica cosa che le chiede.** Il numero
+   * arriva gia' quantizzato — un intero fra uno e `TRAFFIC.maxFleet`, contato da
+   * `fleetOf` — e non come un carico da normalizzare qui: il dominio del
+   * traffico non sa cosa sia un commercio esterno, e non deve impararlo per
+   * mettere in mare una seconda nave. Assente vale uno, il comportamento di
+   * sempre.
+   *
+   * Vale per la nave da carico di un porto e per la traversata di una linea di
+   * traghetto. Gli altri mezzi non lo leggono: uno yacht in piu' al posto barca
+   * non racconta una marina piu' viva, racconta una marina piu' grande, e quella
+   * la dice il sedime.
+   */
+  readonly fleet?: number;
+
+  /**
+   * Stadio raggiunto dalla struttura.
+   *
+   * Serve alle sole ricette che crescono in pianta: li' un ormeggio puo' **non
+   * esistere ancora**, perche' la testata di molo che lo tiene arriva a uno
+   * stadio dopo. Assente vale l'ingombro finale, che e' la risposta giusta per
+   * le sette ricette a sedime fisso.
+   */
+  readonly stage?: number;
 }
 
 /** Cosa serve sapere del mare per tracciare una rotta. */
@@ -134,7 +162,7 @@ export function planTraffic(
           routes.push(yachtDrift(structure, mooring, water));
           break;
         case BERTH.cargo:
-          routes.push(cargoRun(structure, mooring, water));
+          routes.push(...fleet(cargoRun(structure, mooring, water), structure.fleet));
           break;
         case BERTH.aircraft:
           routes.push(moored(VEHICLE.plane, mooring, structure.z));
@@ -164,10 +192,43 @@ export function planTraffic(
   for (const [a, b] of paired) {
     if (a > b) continue;
     const line = ferryCrossing(structures[a], moorings[a], structures[b], moorings[b], water);
-    if (line !== null) routes.push(line);
+    // Il servizio di una linea e' quello del capo piu' servito: i due capi
+    // portano lo stesso numero quando lo decide la popolazione, ma la regola
+    // non deve dipendere da quel fatto per dare la stessa risposta a ogni giro.
+    if (line !== null) {
+      routes.push(...fleet(line, Math.max(structures[a].fleet ?? 1, structures[b].fleet ?? 1)));
+    }
   }
 
   return routes;
+}
+
+/**
+ * Le copie della stessa rotta che una struttura mette in moto, sfasate.
+ *
+ * **Una rotta, tanti mezzi.** Non c'e' una seconda ricerca e non c'e' una
+ * seconda spezzata: le copie condividono `path` e `cumulative` — sono di sola
+ * lettura — e differiscono per la sola fase. E' quello che rende il porto pieno
+ * gratis quanto quello vuoto, ed e' la ragione per cui il numero puo' seguire
+ * la simulazione senza che nessuno paghi la crescita della citta'.
+ *
+ * Le fasi sono spaziate uniformemente: due traghetti su una linea si incrociano
+ * a meta' traversata invece di viaggiare appaiati, che e' l'unica disposizione
+ * in cui la seconda barca racconta un servizio piu' fitto e non un ingorgo.
+ *
+ * **Un mezzo fermo non si moltiplica.** Tre navi ormeggiate sullo stesso punto
+ * sarebbero una nave sola con la sagoma piu' spessa: dove non c'e' una rotta da
+ * percorrere, la flotta resta uno.
+ */
+function fleet(route: TrafficRoute, size: number | undefined): readonly TrafficRoute[] {
+  const count = Math.max(1, Math.min(TRAFFIC.maxFleet, Math.round(size ?? 1)));
+  if (count <= 1 || route.length <= 0) return [route];
+
+  const out: TrafficRoute[] = [route];
+  for (let k = 1; k < count; k++) {
+    out.push({ ...route, phase: (route.phase + k / count) % 1 });
+  }
+  return out;
 }
 
 /**
@@ -201,6 +262,7 @@ function mooringsOf(structure: TrafficStructure): readonly WorldMooring[] {
     structure.x,
     structure.y,
     structure.form,
+    structure.stage,
   );
 }
 
@@ -239,36 +301,55 @@ function ferryCrossing(
 /**
  * Lo yacht che esce dal posto barca e ci torna, senza allontanarsi.
  *
- * Il posto barca di una marina non e' un capolinea ma un giro breve: lo yacht
- * esce lungo il proprio slip verso il largo finche' l'acqua regge e rientra,
- * come `cargoRun` fa uscire la nave ma con il guinzaglio corto di
- * `TRAFFIC.yachtReach`. Dove non c'e' acqua davanti — il bacino scavato non ha
- * ancora un'uscita, o l'ormeggio e' finito all'asciutto — resta ormeggiato,
- * che e' lo stesso difetto onesto della nave senza largo.
+ * **Il giro lo detta l'acqua, non il verso della struttura.** Prima lo yacht
+ * usciva in linea retta nella direzione in cui guarda la marina intera, e per
+ * un porticciolo fatto di moli a dita quella direzione e' sbagliata quasi
+ * sempre: il posto barca dello slip di mezzo aveva davanti il pontile di testa
+ * a tre voxel, e ne usciva un avanti-indietro sul posto — la barca che «si
+ * muove a caso» dell'occhio del giocatore. Ora il capo lontano e' il punto
+ * d'acqua **piu' lontano che si raggiunga davvero** entro il guinzaglio, e la
+ * spezzata per arrivarci gira attorno alla dita di molo invece di sbatterci
+ * contro.
+ *
+ * Dove il giro non c'e' — il bacino chiuso, l'ormeggio all'asciutto, o un
+ * tratto cosi' corto da leggersi come una vibrazione — resta ormeggiato. E' il
+ * difetto onesto della nave senza largo, ed e' anche la verita' di un
+ * porticciolo: non escono tutti insieme.
  */
 function yachtDrift(
   structure: TrafficStructure,
   mooring: WorldMooring,
   water: WaterProbe,
 ): TrafficRoute {
-  const [dx, dy] = SEAWARD[structure.facing] ?? SEAWARD[FACING.east];
-  let reach = 0;
-  for (let d = 1; d <= TRAFFIC.yachtReach; d++) {
-    if (!water(mooring.x + dx * d, mooring.y + dy * d)) break;
-    reach = d;
-  }
-  if (reach === 0) return moored(VEHICLE.yacht, mooring, waterZOf(structure));
-  return shuttle(
+  const still = (): TrafficRoute => moored(VEHICLE.yacht, mooring, waterZOf(structure));
+  const target = seaExit({
+    from: mooring,
+    water,
+    reach: TRAFFIC.yachtReach,
+    step: TRAFFIC.basinStep,
+    clearance: TRAFFIC.basinClearance,
+  });
+  if (target === null) return still();
+
+  const lane = planSeaLane({
+    from: mooring,
+    to: target,
+    water,
+    step: TRAFFIC.basinStep,
+    margin: TRAFFIC.yachtReach,
+    clearance: TRAFFIC.basinClearance,
+  });
+  if (lane === null || lane.length < 2) return still();
+
+  const route = shuttle(
     VEHICLE.yacht,
-    [
-      { x: mooring.x, y: mooring.y, z: waterZOf(structure) },
-      { x: mooring.x + dx * reach, y: mooring.y + dy * reach, z: waterZOf(structure) },
-    ],
+    lane.map((point) => ({ x: point.x, y: point.y, z: waterZOf(structure) })),
     TRAFFIC.yachtSpeed,
     TRAFFIC.yachtDwell,
     mooring.heading,
     phaseOf(structure.id + mooring.x + mooring.y),
   );
+  return route.length >= TRAFFIC.yachtMinRun ? route : still();
 }
 
 /**
@@ -281,45 +362,89 @@ function yachtDrift(
  * vista, com'era, diceva l'esatto contrario: che un fuori non c'e', e che quella
  * nave e' un pendolo fra il molo e un punto d'acqua qualsiasi.
  *
- * Il segmento e' dritto e non chiede `planSeaLane`: e' gia' acqua per
- * costruzione, colonna per colonna, perche' e' proprio quello il criterio con
- * cui si e' fermato.
+ * **La rotta e' in due tratti, e il primo e' quello che mancava.** Il sondaggio
+ * dritto di prima partiva dall'ormeggio e pretendeva subito il franco del mare
+ * aperto: dentro un porto quel franco non c'e' per costruzione — il bacino del
+ * ruolo e' largo otto colonne e i due bracci lo chiudono — quindi la ricerca
+ * falliva al primo passo e **la nave restava sempre ormeggiata**, in un ruolo
+ * che esiste per mostrare che dal mondo arriva qualcosa. Ora la prima meta'
+ * cerca la bocca del porto camminando sull'acqua (`seaExit`), che e' l'unico
+ * modo di doppiare il frangiflutti che il distretto costiero posa allo stadio
+ * tre; la seconda va dritta al largo da li', dove il franco c'e' davvero.
  */
 function cargoRun(
   structure: TrafficStructure,
   mooring: WorldMooring,
   water: WaterProbe,
 ): TrafficRoute {
-  const [dx, dy] = SEAWARD[structure.facing] ?? SEAWARD[FACING.east];
-  const step = TRAFFIC.laneStep;
-  const side = TRAFFIC.laneClearance * step;
+  const still = (): TrafficRoute => moored(VEHICLE.cargo, mooring, waterZOf(structure));
+  const seaward = SEAWARD[structure.facing] ?? SEAWARD[FACING.east];
 
-  let reach = 0;
-  for (let d = step; d <= TRAFFIC.cargoReach; d += step) {
-    const x = mooring.x + dx * d;
-    const y = mooring.y + dy * d;
-    if (!water(x, y)) break;
-    if (!(water(x + side, y) && water(x - side, y) &&
-      water(x, y + side) && water(x, y - side))) break;
-    reach = d;
-  }
-  // Senza un tratto di mare davanti non c'e' nessun fuori da cui arrivare: la
-  // nave resta ormeggiata, che e' un difetto visibile e onesto invece di una
-  // nave che sparisce a due voxel dal molo.
-  if (reach < TRAFFIC.cargoMinRun) return moored(VEHICLE.cargo, mooring, waterZOf(structure));
+  // La bocca: il punto piu' **avanti** — non il piu' lontano — che si raggiunga
+  // restando in acqua. Fuori di li' comincia il mare, e con lui il franco.
+  const mouth = seaExit({
+    from: mooring,
+    water,
+    reach: TRAFFIC.harborReach,
+    step: TRAFFIC.basinStep,
+    clearance: TRAFFIC.basinClearance,
+    toward: seaward,
+  });
+  if (mouth === null) return still();
 
-  return shuttle(
+  const far = offshore(mouth, seaward, water);
+  if (far === null) return still();
+
+  const lane = planSeaLane({
+    from: mooring,
+    to: mouth,
+    water,
+    step: TRAFFIC.basinStep,
+    margin: TRAFFIC.harborReach,
+    clearance: TRAFFIC.basinClearance,
+  }) ?? [mooring, mouth];
+
+  const route = shuttle(
     VEHICLE.cargo,
-    [
-      { x: mooring.x, y: mooring.y, z: waterZOf(structure) },
-      { x: mooring.x + dx * reach, y: mooring.y + dy * reach, z: waterZOf(structure) },
-    ],
+    [...lane, far].map((point) => ({ x: point.x, y: point.y, z: waterZOf(structure) })),
     TRAFFIC.cargoSpeed,
     TRAFFIC.cargoDwell,
     mooring.heading,
     phaseOf(structure.id),
     true,
   );
+  // Senza un tratto di mare davanti non c'e' nessun fuori da cui arrivare: la
+  // nave resta ormeggiata, che e' un difetto visibile e onesto invece di una
+  // nave che sparisce a due voxel dal molo. La misura e' sulla rotta intera e
+  // non sul solo tratto al largo: e' il viaggio che deve leggersi come partenza.
+  return route.length >= TRAFFIC.cargoMinRun ? route : still();
+}
+
+/**
+ * Il bordo del mondo, dritto al largo dalla bocca del porto.
+ *
+ * Il segmento e' dritto e non chiede `planSeaLane`: e' gia' acqua per
+ * costruzione, colonna per colonna, perche' e' proprio quello il criterio con
+ * cui si e' fermato. Qui il franco del mare aperto si puo' pretendere davvero —
+ * siamo fuori dal porto — ed e' quello che tiene la nave lontana dalla costa
+ * invece di farla strisciare sulla battigia.
+ */
+function offshore(
+  from: LanePoint,
+  seaward: readonly [number, number],
+  water: WaterProbe,
+): LanePoint | null {
+  const [dx, dy] = seaward;
+  const step = TRAFFIC.laneStep;
+  const passes = navigableAt(water, step, TRAFFIC.laneClearance);
+
+  let reach = 0;
+  for (let d = step; d <= TRAFFIC.cargoReach; d += step) {
+    if (!passes(from.x + dx * d, from.y + dy * d)) break;
+    reach = d;
+  }
+  if (reach === 0) return null;
+  return { x: from.x + dx * reach, y: from.y + dy * reach };
 }
 
 /** Verso il mare, per verso della struttura: e' il fronte che la ricetta guarda. */
