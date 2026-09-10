@@ -6,6 +6,7 @@ import { FACING } from '../streets/streetGrid';
 import { landmarkOf } from '../landmarks/config';
 import { GRADING } from '../grading/config';
 import { HARBOR, HARBOR_ROLES } from './config';
+import { HARBOR_FIGURE, surveyCoast } from './site';
 import {
   planHarborDistrict,
   type HarborPlan,
@@ -50,8 +51,32 @@ function probeAt(heights: (x: number, y: number) => number): HarborProbe {
 }
 
 /**
- * Marina con il fronte a est sull'angolo (40, 40): il mare comincia poco
- * oltre il bordo della struttura, come su una spiaggia vera.
+ * La stessa costa, girata come il fronte della struttura.
+ *
+ * **Serve da quando le opere si tagliano sulla battigia vera.** Prima il piano
+ * non guardava il terreno, quindi una marina rivolta a ovest davanti a un mare
+ * che sta a est produceva comunque i suoi canali: la prova della rotazione
+ * girava le coordinate e lasciava fermo il mare, cioe' verificava l'aritmetica
+ * su un caso che il piazzamento non puo' generare. Qui il mare gira con lei, e
+ * in tutti e quattro i versi la riva cade sulla stessa colonna **canonica**.
+ */
+function shoreFacing(facing: (typeof FACING)[keyof typeof FACING]): HarborProbe {
+  const coast = shoreHeights(58);
+  // `95 - v` ribalta l'asse: nel verso diretto la colonna canonica zero sta a
+  // 40 e la riva a 58, cioe' diciotto colonne piu' in la'. Girata di mezzo giro
+  // la canonica zero sta sullo spigolo lontano — 55 — e la riva a 37, che e'
+  // esattamente `95 - 58`. Una sola costante per i due versi ribaltati.
+  switch (facing) {
+    case FACING.west: return probeAt((x) => coast(95 - x));
+    case FACING.north: return probeAt((_x, y) => coast(y));
+    case FACING.south: return probeAt((_x, y) => coast(95 - y));
+    default: return probeAt((x) => coast(x));
+  }
+}
+
+/**
+ * Marina con il fronte sull'angolo (40, 40): il mare comincia poco oltre il
+ * bordo della struttura, come su una spiaggia vera.
  */
 function marinaQuery(
   stage: number,
@@ -67,7 +92,7 @@ function marinaQuery(
       waterZ: TERRAIN.seaLevel,
       seed: 4242,
     },
-    probe: probeAt(shoreHeights(58)),
+    probe: shoreFacing(facing),
   };
 }
 
@@ -145,36 +170,50 @@ describe('il piano del distretto', () => {
     }
   });
 
-  it('i canali della marina aprono la riva e la collegano al largo', () => {
+  it('su una riva profonda e dritta la marina scava le darsene a pettine', () => {
+    // **La costa sceglie la figura.** Qui c'e' terra fino a x 58 e il mondo
+    // comincia a x 0, quindi dietro la riva ci sono cinquantotto colonne
+    // asciutte e la riva e' dritta: sono le condizioni delle West India Docks,
+    // e il vocabolario risponde con il pettine invece che con il canale.
+    const { query, probe } = marinaQuery(2);
+    expect(surveyCoast(
+      { fromRow: -HARBOR.figureReach, toRow: 12 + HARBOR.figureReach, reach: HARBOR.figureReach, waterZ: TERRAIN.seaLevel },
+      probe,
+      (cx, cy) => ({ x: query.x + cx, y: query.y + cy }),
+    ).figure).toBe(HARBOR_FIGURE.docks);
+
     const plan = planAt(2);
     const keys = digKeys(plan);
-    const depth = HARBOR.canalDepth;
 
-    // Due canali di tre colonne, uno per lato della struttura, dal largo
-    // fino a dodici colonne dentro la riva — il gesto di una darsena che si
-    // ritaglia nel terreno, non del mare che capitava di esserci.
-    for (let x = 34; x < 64; x++) {
-      for (let y = 54; y < 57; y++) expect(keys.has(`${x},${y}`)).toBe(true);
-      for (let y = 35; y < 38; y++) expect(keys.has(`${x},${y}`)).toBe(true);
+    // Il primo bacino a nord della struttura: entra nella terra per
+    // `dockLength` colonne dalla riva e sborda di due oltre, cosi' si apre sul
+    // mare invece di restare una vasca chiusa da una lingua di sabbia.
+    for (let x = 32; x < 60; x++) {
+      for (let y = 60; y < 70; y++) expect(keys.has(`${x},${y}`)).toBe(true);
     }
+    // E il primo a sud, che l'alternanza tiene in equilibrio attorno al
+    // catalizzatore invece di far pendere il pettine da un lato.
+    for (let x = 32; x < 60; x++) {
+      for (let y = 22; y < 32; y++) expect(keys.has(`${x},${y}`)).toBe(true);
+    }
+    // La dita di banchina fra il bacino di nord e la struttura resta asciutta:
+    // e' quella il suolo su cui il distretto costruisce.
+    for (let y = 52; y < 60; y++) expect(keys.has(`46,${y}`)).toBe(false);
+
     for (const piece of plan.digs) {
-      expect(piece.floor).toBe(TERRAIN.seaLevel - depth);
+      expect(piece.floor).toBe(TERRAIN.seaLevel - HARBOR.canalDepth);
     }
 
-    // Le sponde in muratura sui due lati di ogni canale e la testata a terra.
+    // Le due sponde lunghe e la testata murata: un bacino che finisce contro
+    // l'erba e' una trincea.
     const walls = wallKeys(plan);
-    for (let x = 34; x < 56; x++) {
-      expect(walls.has(`${x},53`)).toBe(true);
-      expect(walls.has(`${x},57`)).toBe(true);
-      expect(walls.has(`${x},34`)).toBe(true);
-      expect(walls.has(`${x},38`)).toBe(true);
+    for (let x = 32; x < 58; x++) {
+      expect(walls.has(`${x},59`)).toBe(true);
+      expect(walls.has(`${x},70`)).toBe(true);
     }
-    for (let y = 54; y < 57; y++) {
-      expect(walls.has(`33,${y}`)).toBe(true);
-      expect(walls.has(`33,${y - 19}`)).toBe(true);
-    }
-    // Al largo non ci sono sponde: il canale si apre sull'acqua.
-    expect(walls.has('58,53')).toBe(false);
+    for (let y = 60; y < 70; y++) expect(walls.has(`31,${y}`)).toBe(true);
+    // Al largo non ci sono sponde: il bacino si apre sull'acqua.
+    expect(walls.has('59,59')).toBe(false);
   });
 
   it('determinista: lo stesso stadio, lo stesso piano, colonna per colonna', () => {
@@ -220,9 +259,13 @@ describe('il piano del distretto', () => {
 
     // Davanti alla bocca dell'insenatura (il fronte piu' avanzato e' l'anello
     // massimo di otto colonne), staccato di una colonna dallo specchio che
-    // protegge.
+    // protegge. **Due bracci e un varco in mezzo**: un frangiflutti pieno
+    // chiudeva lo specchio e insieme la strada per entrarci.
+    const mouth = HARBOR_ROLES.marina!.breakwater!.mouth;
     for (let x = 65; x < 67; x++) {
-      for (let y = 41; y < 51; y++) expect(keys.has(`${x},${y}`)).toBe(true);
+      for (let y = 40; y < 44; y++) expect(keys.has(`${x},${y}`)).toBe(true);
+      for (let y = 48; y < 52; y++) expect(keys.has(`${x},${y}`)).toBe(true);
+      for (let y = 44; y < 44 + mouth; y++) expect(keys.has(`${x},${y}`)).toBe(false);
     }
     for (const piece of plan.fills) {
       if (piece.kind !== 'breakwater') continue;
@@ -237,17 +280,27 @@ describe('il piano del distretto', () => {
   });
 
   it('la rotazione porta il fronte dalla parte del mare', () => {
-    // Fronte a ovest: la bocca dei canali sta a ovest della struttura.
+    // Fronte a est: i bacini corrono lungo x, dalla testata murata (32) alla
+    // bocca sul mare (59), e li' finiscono.
+    const eastKeys = digKeys(planAt(2));
+    expect(eastKeys.has('32,65')).toBe(true);
+    expect(eastKeys.has('59,65')).toBe(true);
+    expect(eastKeys.has('60,65')).toBe(false);
+
+    // Fronte a ovest: lo stesso pettine ribaltato — la bocca sta a ovest, la
+    // testata a est, e il bacino di nord finisce dall'altra parte.
     const west = planAt(2, FACING.west);
     const westKeys = digKeys(west);
-    expect(westKeys.has('39,54')).toBe(true);
-    expect(westKeys.has('59,54')).toBe(true);
+    expect(westKeys.has('36,25')).toBe(true);
+    expect(westKeys.has('63,25')).toBe(true);
+    expect(westKeys.has('64,25')).toBe(false);
 
-    // Fronte a nord: i canali corrono lungo l'asse x e la bocca sta a nord.
+    // Fronte a nord: i bacini corrono lungo y e la bocca sta a nord.
     const north = planAt(2, FACING.north);
     const northKeys = digKeys(north);
-    expect(northKeys.has('54,39')).toBe(true);
-    expect(northKeys.has('54,59')).toBe(true);
+    expect(northKeys.has('25,32')).toBe(true);
+    expect(northKeys.has('25,59')).toBe(true);
+    expect(northKeys.has('25,60')).toBe(false);
 
     // La stessa forma, girata: il conto delle colonne scavate non cambia.
     expect(westKeys.size).toBe(digKeys(planAt(2)).size);
@@ -266,19 +319,42 @@ describe('il piano del distretto', () => {
     const third = planAt(3);
     expect(third.sites).toHaveLength(2);
 
-    // Tutti sul lato di terra, dentro l'anello massimo, e in ordine di
-    // vicinanza: lo slot dello stadio uno sta piu' vicino di quelli dopo.
     const all = [...first.sites, ...second.sites, ...third.sites];
     expect(all).toHaveLength(5);
-    for (const site of all) {
-      expect(site.x).toBeLessThan(40);
-      const dist = ringDist(site.x, site.y, 40, 40, 16, 12);
-      expect(dist).toBeGreaterThan(0);
-      expect(dist).toBeLessThanOrEqual(HARBOR_ROLES.marina!.ringByStage[3]);
+
+    // **Lo slot dello stadio uno sta nell'anello; da quello due in poi i lotti
+    // sono le dita di banchina fra le darsene.** E' la differenza fra Canary
+    // Wharf e un paio di vasche: senza le torri sulle dita, un bacino e'
+    // un'opera idraulica e non un pezzo di citta'.
+    const ring = HARBOR_ROLES.marina!.ringByStage[3];
+    expect(ringDist(first.sites[0].x, first.sites[0].y, 40, 40, 16, 12))
+      .toBeLessThanOrEqual(ring);
+
+    // Le tre dita che il pettine lascia: due a nord della struttura, una a sud.
+    const fingers = [
+      { x0: 32, x1: 57, y0: 52, y1: 59 },
+      { x0: 32, x1: 57, y0: 32, y1: 39 },
+      { x0: 32, x1: 57, y0: 70, y1: 77 },
+    ];
+    for (const site of [...second.sites, ...third.sites]) {
+      const on = fingers.some(
+        (f) => site.x >= f.x0 && site.x <= f.x1 && site.y >= f.y0 && site.y <= f.y1,
+      );
+      expect(on, `${site.x},${site.y}`).toBe(true);
     }
-    const firstDist = ringDist(all[0].x, all[0].y, 40, 40, 16, 12);
-    const lastDist = ringDist(all[4].x, all[4].y, 40, 40, 16, 12);
-    expect(firstDist).toBeLessThanOrEqual(lastDist);
+    // E almeno uno sta oltre l'anello: la figura ha portato la citta' dove
+    // prima non arrivava.
+    expect([...second.sites, ...third.sites].some(
+      (site) => ringDist(site.x, site.y, 40, 40, 16, 12) > ring,
+    )).toBe(true);
+
+    // Nessuno dentro la struttura, nessuno in acqua, e due lotti non si
+    // accalcano sulla stessa colonna.
+    for (const site of all) {
+      expect(ringDist(site.x, site.y, 40, 40, 16, 12)).toBeGreaterThan(0);
+      expect(site.x).toBeLessThan(58);
+    }
+    expect(new Set(all.map((site) => `${site.x},${site.y}`)).size).toBe(all.length);
   });
 
   it('le tabelle dei ruoli sono coerenti: anelli, stadi e usi in pari', () => {
@@ -301,7 +377,7 @@ describe('il piano del distretto', () => {
         expect(role.sitesByStage[s]).toBeGreaterThanOrEqual(role.sitesByStage[s - 1]);
       }
       // Le opere si sbloccano dentro gli stadi della ricetta.
-      for (const work of [role.inlet, role.canals, role.reclamation, role.access, role.breakwater]) {
+      for (const work of [role.inlet, role.figure, role.reclamation, role.access, role.breakwater]) {
         if (work === undefined) continue;
         expect(work.fromStage).toBeGreaterThanOrEqual(1);
         expect(work.fromStage).toBeLessThan(role.ringByStage.length);

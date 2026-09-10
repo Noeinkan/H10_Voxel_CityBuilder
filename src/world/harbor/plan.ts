@@ -7,6 +7,8 @@ import { isDryLand } from '../grading/grade';
 import { GRADING } from '../grading/config';
 import { hashCoords } from '../rng';
 import { HARBOR, HARBOR_ROLES, type HarborRoleConfig } from './config';
+import { planFigure, type FigureRect } from './figures';
+import { surveyCoast } from './site';
 
 /**
  * Dove il distretto costiero di un landmark scava, riempie, cammina e costruisce.
@@ -35,6 +37,20 @@ export interface HarborProbe {
   readonly has: (x: number, y: number) => boolean;
   readonly heightAt: (x: number, y: number) => number;
   readonly biomeAt: (x: number, y: number) => number;
+  /**
+   * Vero se la colonna non e' gia' di qualcun altro. Assente vale «libera».
+   *
+   * **Serve da quando una figura arriva a due isolati.** Finche' il distretto
+   * scavava dodici colonne, il terreno dietro la struttura era ancora il
+   * grembiule del landmark e la domanda non si poneva. Una darsena da quaranta
+   * colonne invece arriva in mezzo al quartiere, e senza questa domanda il
+   * pettine si scaverebbe dentro le case — cancellando dal terreno cio' che il
+   * registry continua a dichiarare in piedi.
+   *
+   * Resta opzionale perche' il piano deve restare provabile con cinque righe di
+   * stringa: un test che misura la forma di una darsena non ha una citta'.
+   */
+  readonly free?: (x: number, y: number) => boolean;
 }
 
 export interface HarborQuery {
@@ -70,7 +86,15 @@ export interface HarborWall {
   readonly floor: number;
 }
 
-/** Una colmata: molo di terra guadagnata o frangiflutti di pietra. */
+/**
+ * Una colmata: molo di terra guadagnata, frangiflutti di pietra o **banchina**.
+ *
+ * I tre si scrivono uguale — pietra fino alla quota, calpestio in cima — e si
+ * distinguono in una cosa sola: la banchina **non si prenota**. Molo e
+ * frangiflutti sono opere, e il suolo che occupano e' loro; una banchina e'
+ * suolo che il distretto livella *per* costruirci sopra, e prenotarla
+ * vieterebbe l'edificio che e' la ragione per cui la si e' fatta.
+ */
 export interface HarborFill {
   readonly x: number;
   readonly y: number;
@@ -78,7 +102,7 @@ export interface HarborFill {
   readonly h: number;
   /** Quota della cima della colmata: piano del molo o cresta del frangiflutti. */
   readonly padZ: number;
-  readonly kind: 'mole' | 'breakwater';
+  readonly kind: 'mole' | 'breakwater' | 'quay';
 }
 
 /** Uno slot di settore: la colonna dove il distretto vuole un edificio suo. */
@@ -137,6 +161,23 @@ export function planHarborDistrict(query: HarborQuery, probe: HarborProbe): Harb
     }
     return out;
   };
+  /**
+   * La prima colonna canonica, andando verso il largo da `from`, in cui c'e'
+   * acqua vera. `null` se la riva non si trova entro `HARBOR.shoreReach`.
+   *
+   * **E' la sola cosa che questo piano chiede al terreno oltre a "regge?".** Le
+   * opere si tagliavano sui numeri della ricetta — `waterline` meno la
+   * lunghezza, `long` piu' la somma dei fronti — e quei numeri descrivono una
+   * riva parallela al fronte, che e' il caso che quasi nessun seme produce.
+   */
+  const shoreline = (cy: number, from: number, to: number): number | null => {
+    for (let cx = from; cx <= to; cx++) {
+      const spot = worldRect(cx, cy, 1, 1);
+      if (!probe.has(spot.x, spot.y)) return null;
+      if (probe.heightAt(spot.x, spot.y) <= query.waterZ) return cx;
+    }
+    return null;
+  };
 
   // L'insenatura cresce con l'anello: la fascia che lo stadio aggiunge oltre
   // il fronte della struttura scende al fondo e l'acqua la riempie.
@@ -150,31 +191,64 @@ export function planHarborDistrict(query: HarborQuery, probe: HarborProbe): Harb
 
   // I canali perpendicolari alla costa: la darsena che entra nella riva
   // emersa, con le sponde in muratura e la testata chiusa a terra.
-  const canals = role.canals;
-  if (canals !== undefined && stage === canals.fromStage) {
-    const wallX0 = recipe.waterline - canals.length;
-    for (let side = -1; side <= 1; side += 2) {
-      const y0 = side === 1 ? short + canals.gap : -canals.gap - canals.width;
-      addPieces(plan.digs, worldRect, columns, probe,
-        wallX0, y0, long + ringMax - wallX0, canals.width, query.waterZ - HARBOR.canalDepth,
-        (rect, floor) => ({ ...rect, floor }),
-        'dig');
-      // Le due sponde, sulla sola parte di terra: al largo il canale si apre
-      // sull'acqua senza muri.
-      const bankX1 = long;
-      addPieces(plan.walls, worldRect, columns, probe,
-        wallX0, y0 - 1, bankX1 - wallX0, 1, query.waterZ - HARBOR.canalDepth,
-        (rect, floor) => ({ ...rect, floor }),
-        'wall');
-      addPieces(plan.walls, worldRect, columns, probe,
-        wallX0, y0 + canals.width, bankX1 - wallX0, 1, query.waterZ - HARBOR.canalDepth,
-        (rect, floor) => ({ ...rect, floor }),
-        'wall');
-      // La testata: un canale che finisce contro l'erba e' una trincea.
-      addPieces(plan.walls, worldRect, columns, probe,
-        wallX0 - 1, y0, 1, canals.width, query.waterZ - HARBOR.canalDepth,
-        (rect, floor) => ({ ...rect, floor }),
-        'wall');
+  // **La figura d'acqua: il gesto di scala del distretto.** Non una forma per
+  // ruolo ma un vocabolario che il luogo declina — darsene a pettine, canale che
+  // stacca un'isola, porticciolo fra due moli, argine — scelto misurando la
+  // costa che il landmark si e' trovato davanti. Due porti sulla stessa isola
+  // vengono cosi' diversi perche' stanno in due posti diversi.
+  //
+  // **La forma si ricalcola a ogni stadio, i voxel si scrivono a uno solo.** Le
+  // banchine che la figura ha creato non spariscono allo stadio dopo: e' su
+  // quelle che i lotti continuano a nascere. Calcolarla solo allo stadio che la
+  // sblocca lasciava i lotti degli stadi successivi a ripiegare sull'anello,
+  // cioe' a nascere lontano dal suolo che il distretto aveva appena guadagnato.
+  const figure = role.figure;
+  let quays: readonly FigureRect[] = [];
+  if (figure !== undefined && stage >= figure.fromStage) {
+    const site = surveyCoast(
+      {
+        fromRow: -HARBOR.figureReach,
+        toRow: short + HARBOR.figureReach,
+        reach: HARBOR.figureReach,
+        waterZ: query.waterZ,
+      },
+      probe,
+      (cx, cy) => worldRect(cx, cy, 1, 1),
+    );
+    const shape = planFigure({ site, long, short });
+    quays = shape.quays;
+
+    const floor = query.waterZ - HARBOR.canalDepth;
+    const crest = query.waterZ + GRADING.quayFreeboard;
+    // Lo scavo, le sponde e le colmate sono il delta di **questo** stadio: agli
+    // stadi successivi la figura c'e' gia', e riscriverla vorrebbe dire ridurre
+    // in acqua le colonne su cui il distretto ha appena fatto nascere una casa.
+    if (stage === figure.fromStage) {
+      for (const rect of shape.water) {
+        addPieces(plan.digs, worldRect, columns, probe,
+          rect.x, rect.y, rect.w, rect.h, floor,
+          (piece, z) => ({ ...piece, floor: z }), 'dig');
+      }
+      for (const rect of shape.banks) {
+        addPieces(plan.walls, worldRect, columns, probe,
+          rect.x, rect.y, rect.w, rect.h, floor,
+          (piece, z) => ({ ...piece, floor: z }), 'wall');
+      }
+      // Moli e banchine si scrivono uguale e si distinguono nel nome: la
+      // banchina non si prenota, perche' e' suolo livellato *per* costruirci
+      // sopra. `addPieces` scarta da se' cio' che e' gia' in quota, quindi una
+      // dita di banchina alta resta com'era invece di prendersi un riporto che
+      // non le serve.
+      for (const rect of shape.moles) {
+        addPieces(plan.fills, worldRect, columns, probe,
+          rect.x, rect.y, rect.w, rect.h, crest,
+          (piece, z) => ({ ...piece, padZ: z, kind: 'mole' as const }), 'fill');
+      }
+      for (const rect of shape.quays) {
+        addPieces(plan.fills, worldRect, columns, probe,
+          rect.x, rect.y, rect.w, rect.h, crest,
+          (piece, z) => ({ ...piece, padZ: z, kind: 'quay' as const }), 'fill');
+      }
     }
   }
 
@@ -201,16 +275,36 @@ export function planHarborDistrict(query: HarborQuery, probe: HarborProbe): Harb
       'dig');
   }
 
-  // Il frangiflutti staccato: chiude lo specchio d'acqua senza toccare la riva.
+  // Il frangiflutti staccato: chiude lo specchio d'acqua senza toccare la riva,
+  // e lascia il varco da cui ci si entra.
   const breakwater = role.breakwater;
   if (breakwater !== undefined && stage === breakwater.fromStage) {
     const front = frontReach(role, ringMax);
     const y0 = (short - breakwater.length) >> 1;
-    addPieces(plan.fills, worldRect, columns, probe,
-      long + front + breakwater.gap, y0, breakwater.width, breakwater.length,
-      query.waterZ + HARBOR.breakwaterFreeboard,
-      (rect, z) => ({ ...rect, padZ: z, kind: 'breakwater' as const }),
-      'fill');
+    // **«Staccato» va verificato, non dichiarato.** La somma dei fronti dice
+    // dove finiscono le opere, non dove comincia il mare: su una costa che
+    // rientra, quel punto e' ancora spiaggia, e un braccio di pietra posato
+    // sulla sabbia non protegge niente. La sonda porta il braccio sulla prima
+    // colonna d'acqua vera; se entro `shoreReach` non ce n'e', il frangiflutti
+    // semplicemente non si costruisce.
+    const start = long + front + breakwater.gap;
+    const anchor = shoreline((short - 1) >> 1, start, start + HARBOR.shoreReach);
+    if (anchor !== null) {
+      // Due bracci e un varco in mezzo, centrato dove guardano gli ormeggi. Un
+      // varco piu' largo della campata non lascia bracci: li' il frangiflutti
+      // resta pieno, che e' la sola lettura sensata di una campata corta.
+      const arm = (breakwater.length - breakwater.mouth) >> 1;
+      const spans: readonly (readonly [number, number])[] = arm > 0
+        ? [[y0, arm], [y0 + breakwater.length - arm, arm]]
+        : [[y0, breakwater.length]];
+      for (const [sy, sh] of spans) {
+        addPieces(plan.fills, worldRect, columns, probe,
+          anchor, sy, breakwater.width, sh,
+          query.waterZ + HARBOR.breakwaterFreeboard,
+          (rect, z) => ({ ...rect, padZ: z, kind: 'breakwater' as const }),
+          'fill');
+      }
+    }
   }
 
   // La passeggiata: la fascia d'anello che lo stadio aggiunge, sul solo suolo
@@ -228,11 +322,18 @@ export function planHarborDistrict(query: HarborQuery, probe: HarborProbe): Harb
     }
   }
 
-  // Gli slot di settore sbloccati da questo stadio, sul lato di terra.
+  // **Gli slot di settore nascono sulle banchine della figura**, e in mancanza
+  // di figura sul lato di terra come hanno sempre fatto.
+  //
+  // E' la differenza fra Canary Wharf e un paio di vasche: la darsena senza le
+  // torri sulle dita di banchina e' un'opera idraulica, non un pezzo di citta'.
+  // Il ripiego resta per gli stadi che una figura non la sbloccano ancora, e per
+  // l'argine — che di banchina ne guadagna poca e la spende tutta in pontili.
   const total = role.sitesByStage[role.sitesByStage.length - 1];
   for (let i = 0; i < total; i++) {
     if (firstStageFor(role, i) !== stage) continue;
-    const site = siteSlotOf(query, long, short, ringMax, total, i);
+    const onQuay = quays.length === 0 ? null : quayLotOf(query, quays, worldRect, i);
+    const site = onQuay ?? siteSlotOf(query, long, short, ringMax, total, i);
     plan.sites.push({ ...site, class: role.siteClasses[i] });
   }
 
@@ -309,6 +410,39 @@ function siteSlotOf(
   return { x: query.x + spot.x, y: query.y + spot.y };
 }
 
+/**
+ * Il lotto `i` sulle banchine della figura, o null se non ce ne sono.
+ *
+ * **Le banchine si prendono a giro**, una per lotto, cosi' che i primi edifici
+ * non si accalchino tutti sulla stessa dita mentre le altre restano nude: e' un
+ * porto che cresce su piu' bacini insieme, come e' successo davvero. Dentro la
+ * banchina il lotto sta al centro del lato corto e avanza lungo quello lungo, a
+ * passi che dipendono da quante volte quella banchina e' gia' toccata.
+ */
+function quayLotOf(
+  query: HarborQuery,
+  quays: readonly FigureRect[],
+  worldRect: (x: number, y: number, w: number, h: number) => { x: number; y: number; w: number; h: number },
+  i: number,
+): { x: number; y: number } | null {
+  const quay = quays[i % quays.length];
+  if (quay.w <= 0 || quay.h <= 0) return null;
+  const round = Math.floor(i / quays.length);
+
+  // Il lato lungo della banchina e' quello su cui i lotti si distribuiscono; il
+  // corto porta il lotto al centro, che e' l'unico punto in cui un edificio ha
+  // acqua da tutte e due le parti senza toccarla.
+  const along = quay.w >= quay.h ? quay.w : quay.h;
+  const steps = Math.max(1, Math.floor(along / HARBOR.lotPitch));
+  const jitter = hashCoords(query.seed, i, 23) % 3 - 1;
+  const at = Math.max(0, Math.min(along - 1, HARBOR.lotPitch * ((round % steps) + 0.5) + jitter));
+
+  const spot = quay.w >= quay.h
+    ? worldRect(quay.x + Math.round(at), quay.y + (quay.h >> 1), 1, 1)
+    : worldRect(quay.x + (quay.w >> 1), quay.y + Math.round(at), 1, 1);
+  return { x: spot.x, y: spot.y };
+}
+
 /** L'anello a cui lo slot `i` si sblocca, spalmato sul tetto dell'anello. */
 function slotRing(ringMax: number, total: number, i: number): number {
   return Math.max(1, Math.ceil((ringMax * (i + 1)) / total));
@@ -334,6 +468,15 @@ type PieceOut<T> = (rect: { x: number; y: number; w: number; h: number }, z: num
  *
  * Un ritaglio entra nel piano solo se almeno una delle sue colonne ha lavoro:
  * nessuna cancellazione a vuoto, nessuna colmata gia' in quota.
+ *
+ * **E solo se tutte le sue colonne sono libere.** E' la guardia che la scala
+ * della figura ha reso necessaria: finche' il distretto scavava dodici colonne
+ * stava nel proprio grembiule, mentre una darsena da quaranta arriva in mezzo
+ * al quartiere. Senza, lo scavo cancellerebbe dal terreno le colonne su cui il
+ * registry continua a dichiarare una casa in piedi. Il ritaglio e' l'unita' di
+ * questa rinuncia — sedici colonne — quindi la figura si accorcia a scatti
+ * invece di sfrangiarsi colonna per colonna, ed e' il comportamento giusto: una
+ * darsena mezza scavata non e' una darsena.
  */
 function addPieces<T>(
   out: T[],
@@ -351,7 +494,11 @@ function addPieces<T>(
   for (let px = x; px < x + w; px += HARBOR.pieceSpan) {
     const pw = Math.min(HARBOR.pieceSpan, x + w - px);
     const rect = worldRect(px, y, pw, h);
-    const needed = columns(rect).some((column) => {
+    const spots = columns(rect);
+    if (probe.free !== undefined && spots.some((column) => !probe.free!(column.x, column.y))) {
+      continue;
+    }
+    const needed = spots.some((column) => {
       if (!probe.has(column.x, column.y)) return false;
       const height = probe.heightAt(column.x, column.y);
       return mode === 'fill' ? height < z : height > z;

@@ -1192,6 +1192,67 @@ leggono da inquadratura d'insieme come due mestieri diversi — non due riquadri
 con parti diverse — e nessuna barca compie un percorso che un occhio
 descriverebbe come «va avanti e indietro senza motivo».
 
+### Fase 4.20 — Il vocabolario delle figure d'acqua
+
+Obiettivo: dare al fronte d'acqua delle **forme che si riconoscono** — la darsena
+scavata nella riva delle West India Docks di Canary Wharf, il canale che stacca
+un'isola dalla costa di Dubai Marina, il porticciolo chiuso da due argini — al
+posto dei due rettangoli perpendicolari che il distretto scava oggi.
+
+**Non una figura per ruolo, ma un vocabolario che il luogo declina.** Porto,
+marina e traghetto attingono tutti e tre alle stesse figure, e a scegliere è la
+costa che si sono trovati davanti: una lingua di terra profonda e dritta ammette
+le darsene, una riva più stretta il canale, una punta circondata d'acqua solo il
+porticciolo chiuso da moli. Due porti sulla stessa isola vengono così diversi
+perché stanno in due posti diversi, che è la ragione per cui in una città vera i
+due porti sono diversi.
+
+**La scala è quella dell'isolato, non quella dell'anello.** La maglia stradale ha
+passo quaranta colonne; una darsena leggibile ne vuole venti per quaranta e un
+canale settanta di lunghezza. Il distretto arriva quindi a **due isolati**,
+contro le otto colonne di oggi — ed è la sola scala a cui una darsena legge come
+una darsena invece che come un rientro nella riva.
+
+**Le banchine sono i lotti.** Le dita di terra fra due darsene e le sponde del
+canale sono il posto dove il distretto fa nascere i propri edifici, con il fronte
+girato verso l'acqua. Senza le torri sulle banchine, Canary Wharf è un paio di
+vasche: è questa voce a chiudere anche l'ultima della fase 4.19.
+
+**Stato implementazione:** le prime quattro voci sono chiuse. Resta la quinta —
+gli ormeggi dentro l'acqua nuova — e con lei una nota che il gate dovrà
+verificare a schermo: sulla conca di un lago i canali scavati **non sono
+navigabili**, perché `isOpenWater` legge il voxel alla quota dichiarata dalla
+`TerrainMap`, che lo scavo non tocca. È il disallineamento già noto dalla fase
+4.17, e ora che le figure sono grandi si vedrà di più.
+
+- [x] Il sito costiero si classifica: quanta terra c'è dietro la riva, <!-- size: L -->
+  quanto è dritta, quanta acqua la circonda. Puro, sul solo terreno sondato, e
+  con la stessa aritmetica in tutti e quattro i versi.
+- [x] Il vocabolario delle figure — darsene a pettine, canale che si <!-- size: XL -->
+  richiude in mare ai due capi, porticciolo fra due moli, argine con banchina —
+  come rettangoli canonici, ciascuno con il proprio confine dichiarato.
+- [x] Il distretto arriva a due isolati senza colare: ogni figura chiede al <!-- size: L -->
+  terreno se le colonne esistono **e** se sono libere, e si accorcia invece di
+  passare sopra ciò che la città ha già costruito.
+- [x] I lotti di settore nascono sulle banchine della figura. Il fronte <!-- size: L -->
+  verso l'acqua lo decide ancora la maglia stradale, non il lotto: la tipologia
+  è quella del posto, l'orientamento no.
+- [ ] Le barche usano l'acqua nuova: ormeggi lungo il canale e dentro le <!-- size: M -->
+  darsene, e la rotta che già cammina sull'acqua li collega al largo. **Le
+  barche già evitano le banchine e navigano i bacini appena scavati** — le rotte
+  leggono i voxel d'acqua veri e nessuna riga del traffico sa che una darsena
+  esiste — ma nessun mezzo *nasce* dentro la figura: quelli che si vedono sono
+  ancora i soli ormeggi che la ricetta disegna.
+
+**Vincolo:** il piano resta puro — terreno sondato e nient'altro, nessun
+registry, nessuna coda — e ogni figura dichiara il proprio confine invece di
+estendersi. Lo scavo continua a viaggiare sulla coda di comparsa a budget, che è
+ciò che tiene fuori dal frame una darsena da ottocento colonne.
+
+**Gate:** su un'isola cresciuta, due porti piazzati su due coste diverse
+producono due figure d'acqua diverse, e in nessuna delle due una barca attraversa
+una banchina.
+
 ## Fase 5 — Persistenza e prodotto browser
 
 Obiettivo: trasformare la demo in un gioco riprendibile e distribuibile.

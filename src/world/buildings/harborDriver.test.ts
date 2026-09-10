@@ -115,24 +115,29 @@ describe('il driver del distretto costiero', () => {
     driver.pass();
     settlePieces(growth, surface);
 
-    // Il canale di nord: colonne scavate nella riva emersa, allagate al pelo
+    // **Il primo bacino della darsena, a nord della struttura.** La riva vera
+    // qui e' a x 64 e la terra dietro e' profonda e dritta: sono le condizioni
+    // delle West India Docks, e il vocabolario risponde con il pettine. Il
+    // bacino entra nella terra per `dockLength` colonne e viene allagato al pelo
     // della conca, con la terra di sopra tolta.
     const floor = LAKE - HARBOR.canalDepth;
-    expect(world.getBlock(40, 55, floor)).toBe(WATER_IDS.surface);
-    expect(world.getBlock(40, 55, floor + 1)).toBe(WATER_IDS.surface);
-    expect(world.getBlock(40, 55, LAKE)).toBe(0);
-    expect(world.getBlock(40, 55, LAKE + 3)).toBe(0);
+    expect(world.getBlock(55, 65, floor)).toBe(WATER_IDS.surface);
+    expect(world.getBlock(55, 65, floor + 1)).toBe(WATER_IDS.surface);
+    expect(world.getBlock(55, 65, LAKE)).toBe(0);
+    expect(world.getBlock(55, 65, LAKE + 3)).toBe(0);
 
-    // La sponda in muratura sale dal fondo a un voxel sopra il pelo.
-    expect(world.getBlock(40, 53, floor)).toBe(GRADING.quayWall);
-    expect(world.getBlock(40, 53, floor + 1)).toBe(GRADING.quayWall);
-    expect(world.getBlock(40, 53, LAKE)).toBe(GRADING.quayWall);
-    expect(world.getBlock(40, 53, LAKE + 1)).toBe(0);
+    // La sponda in muratura sale dal fondo a un voxel sopra il pelo. E' anche
+    // la dita di banchina fra il bacino e la struttura: il suolo su cui il
+    // distretto fa nascere i propri edifici.
+    expect(world.getBlock(55, 59, floor)).toBe(GRADING.quayWall);
+    expect(world.getBlock(55, 59, floor + 1)).toBe(GRADING.quayWall);
+    expect(world.getBlock(55, 59, LAKE)).toBe(GRADING.quayWall);
+    expect(world.getBlock(55, 59, LAKE + 1)).toBe(0);
 
     // Le colonne scavate sono prenotate contro la crescita; la sponda no:
     // la casa sul canale e' il punto del distretto.
-    expect(registry.isOccupied(40, 55)).toBe(true);
-    expect(registry.isOccupied(40, 53)).toBe(false);
+    expect(registry.isOccupied(55, 65)).toBe(true);
+    expect(registry.isOccupied(55, 59)).toBe(false);
   });
 
   it('allarga l insenatura con l anello e chiude il frangiflutti staccato', () => {
@@ -148,9 +153,16 @@ describe('il driver del distretto costiero', () => {
     expect(world.getBlock(58, 45, LAKE)).toBe(0);
 
     // Il frangiflutti: corpo di pietra e cappello sopra il pelo, staccato
-    // dall'insenatura che protegge.
-    expect(world.getBlock(65, 45, LAKE)).toBe(HARBOR.fillBody);
-    expect(world.getBlock(65, 45, LAKE + 1)).toBe(HARBOR.fillCap);
+    // dall'insenatura che protegge. Il braccio di nord sta a y 40..43.
+    expect(world.getBlock(65, 41, LAKE)).toBe(HARBOR.fillBody);
+    expect(world.getBlock(65, 41, LAKE + 1)).toBe(HARBOR.fillCap);
+
+    // **In mezzo ai due bracci c'e' il varco, e resta acqua.** Un frangiflutti
+    // pieno chiudeva lo specchio e insieme la strada per entrarci: le barche
+    // sanno doppiarlo, ma doppiare dodici colonne di pietra per rientrare in un
+    // porto che ha la bocca davanti e' il percorso che si legge come casuale.
+    expect(world.getBlock(65, 45, LAKE)).toBe(0);
+    expect(world.getBlock(65, 45, LAKE + 1)).toBe(0);
   });
 
   it('dipinge la passeggiata sulla fascia nuova e lascia i canali scoperti', () => {
@@ -172,8 +184,8 @@ describe('il driver del distretto costiero', () => {
     }
     expect(painted).toBeGreaterThan(0);
 
-    // Dentro il canale il calpestio non c'e': lo scavo vince sulla pittura.
-    expect(world.getBlock(40, 55, LAKE + 3)).toBe(0);
+    // Dentro il bacino il calpestio non c'e': lo scavo vince sulla pittura.
+    expect(world.getBlock(55, 65, LAKE + 3)).toBe(0);
   });
 
   it('accoda gli slot di settore in ordine di stadio e li consegna a richiesta', () => {
@@ -287,9 +299,13 @@ describe('il distretto dentro il Builder', () => {
     expect(world.getBlock(inletX, inletY, TERRAIN.seaLevel - 2)).toBe(WATER_IDS.surface);
     expect(world.getBlock(inletX, inletY, TERRAIN.seaLevel)).toBe(0);
 
-    // Il canale di nord scava la riva emersa e la allaga al pelo.
-    const canalX = record.x - 4;
-    const canalY = record.y + 15;
+    // Il primo bacino della darsena scava la riva emersa e la allaga al pelo.
+    // La colonna si misura **dalla battigia** (x 96) e non dallo spigolo del
+    // record: la figura si ancora alla riva vera, e dove cada rispetto al
+    // riquadro canonico e' una conseguenza di dove il piazzamento ha potuto
+    // posare la struttura.
+    const canalX = 96 - 6;
+    const canalY = record.y + 25;
     expect(terrain.heightAt(canalX, canalY)).toBe(DRY);
     expect(world.getBlock(canalX, canalY, TERRAIN.seaLevel - 2)).toBe(WATER_IDS.surface);
     expect(world.getBlock(canalX, canalY, TERRAIN.seaLevel)).toBe(0);

@@ -166,6 +166,7 @@ export class HarborDriver {
 
   /** Il piano di un singolo stadio, con il terreno e i numeri del record. */
   private planFor(record: BuildingRecord, waterZ: number, stage: number): HarborPlan {
+    const { terrain, registry } = this.ctx;
     return planHarborDistrict({
       kind: record.landmark!,
       form: record.landmarkForm,
@@ -175,7 +176,27 @@ export class HarborDriver {
       stage,
       waterZ,
       seed: record.seed,
-    }, this.ctx.terrain);
+    }, {
+      has: (x, y) => terrain.has(x, y),
+      heightAt: (x, y) => terrain.heightAt(x, y),
+      biomeAt: (x, y) => terrain.biomeAt(x, y),
+      // **La colonna e' libera?** Finche' il distretto scavava dodici colonne la
+      // domanda non si poneva: quel terreno era ancora il grembiule del
+      // landmark. Una darsena da quaranta arriva in mezzo al quartiere, e senza
+      // questa risposta il pettine si scaverebbe dentro le case — cancellando
+      // dal terreno cio' che il registry continua a dichiarare in piedi.
+      //
+      // **La domanda e' «c'e' un edificio di qualcun altro», non «e' occupata».**
+      // Le prenotazioni non sono record — il distretto si prenota da se' il
+      // suolo delle opere future, e un cantiere aperto prenota cio' che sta
+      // abbattendo — quindi `isOccupied` risponde di si' anche sul terreno che
+      // la figura ha tutto il diritto di prendere. Chiederle quello faceva
+      // rinunciare il distretto sulla propria riva. `isOccupied` resta davanti
+      // perche' e' la risposta a buon mercato: `at` materializza un array, e qui
+      // si interrogano migliaia di colonne per avanzamento.
+      free: (x, y) => !registry.isOccupied(x, y)
+        || registry.at(x, y).every((found) => found.id === record.id),
+    });
   }
 
   /**
@@ -198,6 +219,12 @@ export class HarborDriver {
         this.ctx.registry.reserveRect({ x: dig.x, y: dig.y, sizeX: dig.w, sizeY: dig.h });
       }
       for (const fill of plan.fills) {
+        // **La banchina non si prenota.** Molo e frangiflutti sono opere, e il
+        // suolo che occupano e' loro; una banchina e' suolo che il distretto
+        // livella *per* costruirci sopra — prenotarla vieterebbe l'edificio che
+        // e' la ragione per cui la si e' fatta, e la darsena resterebbe
+        // un'opera idraulica invece di diventare un pezzo di citta'.
+        if (fill.kind === 'quay') continue;
         this.ctx.registry.reserveRect({ x: fill.x, y: fill.y, sizeX: fill.w, sizeY: fill.h });
       }
     }
