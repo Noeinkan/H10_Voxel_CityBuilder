@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { GrowthStats } from '../game/growthScene';
 import { cityCondition } from '../game/cityCondition';
 import { onboardingOf } from '../game/onboarding';
+import { milestoneReached } from '../game/milestones';
 import { catalystById } from '../sim/catalysts';
 import { BALANCE } from '../sim/balance';
 import { createSimState } from '../sim/SimState';
@@ -65,12 +66,54 @@ describe('buildGameHudModel', () => {
   });
 
   it('abilita tutte le azioni quando i requisiti sono soddisfatti', () => {
-    const model = buildGameHudModel(stats(2_000, 100));
+    const model = buildGameHudModel(grownStats());
 
     expect(model.catalysts.every((action) => action.available)).toBe(true);
     expect(model.expansion.available).toBe(true);
     expect(model.terrace.available).toBe(true);
     expect(model.policies.every((policy) => policy.available)).toBe(true);
+  });
+
+  it('la scala tiene chiusi i ruoli che la citta non ha ancora meritato', () => {
+    // Il difetto che questa fase chiude: dopo i tre passi del tutorial l'intero
+    // catalogo era aperto, e l'unico cancello restava il prezzo. Una citta' di
+    // cento abitanti senza edifici ha la crescita e la costa, non i monumenti.
+    const model = buildGameHudModel(midStats());
+    const open = (id: string) => model.catalysts.find((a) => a.catalystId === id)?.available;
+
+    expect(open('greenhouse')).toBe(true);
+    expect(open('school')).toBe(true);
+    expect(open('port')).toBe(true);
+    expect(open('monument')).toBe(false);
+    expect(open('stadium')).toBe(false);
+  });
+
+  it('un ruolo bloccato dalla scala dice il gradino e quanto manca, non il prezzo', () => {
+    // Con i fondi che avanzano e il gradino che no, mostrare «0 / 460 funds»
+    // manderebbe a risparmiare per qualcosa che i soldi non aprono.
+    const stadium = buildGameHudModel(midStats())
+      .catalysts.find((action) => action.catalystId === 'stadium');
+
+    expect(stadium?.locked).toBe(true);
+    expect(stadium?.reason).toContain('Metropolis');
+    // La soglia mostrata e' quella della scala, non il prezzo: e' la piu'
+    // lontana fra quelle che mancano, e i fondi non mancano affatto.
+    expect(stadium?.requirement).not.toContain('funds');
+    expect(stadium?.progress).toBeLessThan(1);
+  });
+
+  it('la condizione propria di un landmark sopravvive al gradino raggiunto', () => {
+    // La meta' che da' carattere: lo stadio vuole i negozi che riempiranno le
+    // gradinate, e la milestone da sola non basta a fargliele avere.
+    const grown = grownStats();
+    const model = buildGameHudModel({
+      ...grown,
+      state: { ...grown.state, buildingCounts: [8, 0, 8, 8] },
+    });
+    const stadium = model.catalysts.find((action) => action.catalystId === 'stadium');
+
+    expect(stadium?.available).toBe(false);
+    expect(stadium?.requirement).toContain('shops');
   });
 
   it('un blocco per risorse si riempie, e mostra il requisito vincolante', () => {
@@ -469,6 +512,61 @@ describe('il cibo dice da dove viene', () => {
   });
 });
 
+/**
+ * Una citta' a meta' strada: crescita e costa aperte, identita' ancora no.
+ *
+ * Dodici edifici e non sedici, di proposito: e' il gradino `district` a restare
+ * fuori, ed e' li' che comincia il gruppo dei monumenti.
+ */
+function midStats(funds = 5_000): GrowthStats {
+  const base = stats(funds, 100);
+  const state = {
+    ...base.state,
+    buildings: Array.from({ length: 12 }, (_, index) => ({
+      x: index,
+      y: 0,
+      class: (index % 4) as GrowthStats['state']['buildings'][number]['class'],
+      level: 2,
+    })),
+  };
+  return { ...base, state, milestone: milestoneReached(state) };
+}
+
+/**
+ * Una citta' matura: scala tutta coperta e condizioni proprie soddisfatte.
+ *
+ * Serve perche' «tutti i bottoni accesi» ha smesso di essere uno stato che si
+ * ottiene con dei fondi: adesso vuole una citta' che abbia fatto delle cose —
+ * quattro usi al bersaglio, edifici alti, un'universita', una costa che lavora.
+ */
+function grownStats(funds = 5_000): GrowthStats {
+  const base = stats(funds, BALANCE.gameplay.success.population);
+  const coastal = ['university', 'lighthouse'] as const;
+  const state = {
+    ...base.state,
+    satisfaction: 0.8,
+    buildings: Array.from({ length: 24 }, (_, index) => ({
+      x: index,
+      y: 0,
+      class: (index % 4) as GrowthStats['state']['buildings'][number]['class'],
+      level: 8,
+    })),
+    buildingCounts: [8, 8, 8, 8],
+    catalysts: [
+      ...base.state.catalysts,
+      ...coastal.map((kind, index) => ({
+        x: 64 + index * 32,
+        y: 64,
+        kind,
+        class: catalystById(kind).class,
+        strength: 1,
+        radius: 1,
+      })),
+    ],
+  };
+  return { ...base, state, milestone: milestoneReached(state) };
+}
+
 function stats(
   funds: number,
   population: number,
@@ -532,6 +630,9 @@ function stats(
     paused: false,
     speed: 1,
     message: 'Ready.',
+    // Come nel gioco: la scena non lo inventa, lo misura sullo stato. Fissarlo a
+    // mano avrebbe fatto passare la fixture dove la partita si blocca.
+    milestone: milestoneReached(state),
     onboarding: onboardingOf(state),
     condition: cityCondition(state, 0),
     coach: null,

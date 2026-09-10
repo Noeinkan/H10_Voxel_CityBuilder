@@ -181,7 +181,11 @@ describe('GrowthScene', () => {
     const building = [...scene.registry.all].find((record) => record.landmark === undefined);
     expect(building).toBeDefined();
 
-    const failure = scene.catalystFailure(building!.x, building!.y, 'airport');
+    // La domanda va posta in quota, ed e' l'unica forma in cui e' quella
+    // dichiarata: i tre rifiuti della facciata nascono **solo** dentro il ramo
+    // `aloft` di `catalystFailure`, e chiedendo a terra si otteneva la risposta
+    // del suolo — o, da quando c'e' la scala di sblocco, quella della scala.
+    const failure = scene.catalystFailure(building!.x, building!.y, 'airport', true);
     expect(['needs-building', 'building-too-short', 'no-room-aloft']).toContain(failure);
   });
 
