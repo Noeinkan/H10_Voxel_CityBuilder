@@ -15,10 +15,24 @@ sapere prima di toccare qualcosa qui.
   disegnare il catasto e' esattamente cio' che dava a schermo un reticolo
   quadrato.
 - **Il dominio puro non conosce il mondo.** `trace.ts`, `network.ts`,
-  `stroke.ts` e `viaduct.ts` ricevono sonde (`RoadProbe`, `ViaductProbe`) e non
-  importano ne' `TerrainMap` ne' `BuildingRegistry`. Solo `RoadNetwork.ts` legge
-  il terreno, e nemmeno lui conosce `buildings/`: l'occupazione entra come
-  funzione.
+  `regions.ts`, `stroke.ts` e `viaduct.ts` ricevono sonde (`RoadProbe`,
+  `ViaductProbe`) e non importano ne' `TerrainMap` ne' `BuildingRegistry`. Solo
+  `RoadNetwork.ts` legge il terreno, e nemmeno lui conosce `buildings/`:
+  l'occupazione entra come funzione.
+- **Una regola di passo sola, e sta in `TRACE_STEPS`.** `regions.ts` decide quali
+  colonne si raggiungono a vicenda e `planRoads` si fida della sua risposta per
+  **non partire affatto**: se i due vicinati divergessero anche di un passo, un
+  polo raggiungibile diventerebbe orfano e il ramo mancante non somiglierebbe a un
+  errore ma a una scelta di tracciato. Chi cambia il grafo lo cambia in un posto.
+- **La radice e' il polo piu' forte della regione che contiene piu' poli**, non il
+  piu' forte in assoluto: e' l'unico polo che non si attacca a niente, quindi
+  prenderla su uno scoglio da' la rete allo scoglio. Misurato prima della
+  correzione: la citta' perdeva tre quinti delle proprie colonne asfaltate mentre
+  cresceva, perche' un bonus d'intensita' di un landmark spostava la radice.
+- **L'intensita' di un polo non disegna niente**, e `RoadNetwork.update` la tiene
+  fuori dalla propria firma per questo: serve solo a ordinare. Se un giorno
+  entrasse in un costo, la rete smetterebbe di aggiornarsi in silenzio — il test
+  che lo dice prima sta in `network.test.ts`.
 - Larghezze, costi, soglie e ranghi stanno in `config.ts`. Nessun altro file
   contiene un numero.
 - **Nessun costo scende sotto `flatCost`.** L'euristica di `traceRoad` lo usa
@@ -61,7 +75,7 @@ sapere prima di toccare qualcosa qui.
 
 ## Verifica
 
-- I quattro moduli puri hanno test co-locati e girano in Node senza terreno:
+- I moduli puri hanno test co-locati e girano in Node senza terreno:
   `npx vitest run src/world/roads/`.
 - Toccando `RoadNetwork.ts` o `roadDriver.ts` allarga a
   `npx vitest run src/world/buildings/Builder.test.ts`, che e' dove la forma
