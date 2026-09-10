@@ -34,16 +34,52 @@ import type { Atmosphere } from './themes/theme';
 /** **Ogni** numero della stagione. Le fasi sono in [0, 1), zero e' l'inizio della primavera. */
 export const SEASON_LOOK = {
   /**
-   * Il giallo dell'autunno, verso cui vira il prato.
+   * L'autunno di ogni slot di prato: prima il giallo, poi il fuoco.
    *
-   * Un ocra caldo e non un giallo puro: mescolato a un verde saturo un giallo
-   * primario da' un verde acido, mentre l'ocra porta il prato dove ci si aspetta
-   * di vederlo. Vale per tutti i temi perche' e' una **destinazione**, e quanta
-   * strada si faccia verso di essa dipende da dove il tema parte.
+   * **Due tappe e non una destinazione sola.** Una foglia non passa dal verde al
+   * rosso in linea retta: prima se ne va la clorofilla e resta il giallo, poi
+   * arrivano i rossi. E la linea retta non e' nemmeno una scorciatoia
+   * accettabile — miscelare verde e rosso in sRGB passa per il cachi a meta'
+   * strada, l'unico colore che l'autunno non ha, ed e' esattamente li' che
+   * l'isola si fermava con una tinta ocra sola per tutti e quattro gli slot.
+   *
+   * **Quattro percorsi e non uno.** I quattro slot non sono quattro gradazioni
+   * dello stesso prato: `flora.ts` li impila anche come i toni di una chioma,
+   * dal piu' scuro in basso al piu' chiaro in cima. Portarli tutti alla stessa
+   * tinta appiattirebbe l'albero proprio nella stagione in cui dovrebbe leggersi
+   * di piu'. Qui ognuno cammina sulla **stessa rampa sfalsato di un gradino** —
+   * scuro verso il rosso profondo, chiaro verso l'oro — ed e' la chioma che si
+   * accende dal basso.
    */
-  goldTint: '#c07a35',
-  /** Quanto il prato arriva all'ocra nel pieno dell'autunno. */
-  goldReach: 0.62,
+  goldPath: [
+    // forest, e il ventre in ombra delle chiome
+    { slot: PALETTE_SLOTS.grassDark, leaf: '#b3b232', fire: '#8f0000' },
+    // plain, e il corpo delle chiome
+    { slot: PALETTE_SLOTS.grass, leaf: '#d8cb34', fire: '#c12700' },
+    // hill, e la cima delle chiome
+    { slot: PALETTE_SLOTS.grassLight, leaf: '#f9c046', fire: '#f4ae42' },
+    // le macchie d'alta quota, e la punta delle betulle
+    { slot: PALETTE_SLOTS.grassPale, leaf: '#f9d77e', fire: '#f9c046' },
+  ],
+  /**
+   * Quanto si cammina lungo quel percorso nel pieno dell'autunno.
+   *
+   * Mezzo percorso e' il giallo, uno intero e' il fuoco pieno: a 0.85 ottobre
+   * sta a due terzi buoni fra i due, cioe' dove l'autunno si vede senza che
+   * l'isola diventi un incendio. Sotto la meta' non ci arriva nemmeno al giallo,
+   * e restava li' il grigiore che si voleva togliere.
+   */
+  goldReach: 0.85,
+
+  /**
+   * Il colore che il terreno rimanda in su d'autunno.
+   *
+   * Non e' nessuno dei quattro, ed e' voluto: `bounceLight` e' la **media** del
+   * suolo vista di sotto, e il suolo e' fatto soprattutto di plain e hill — i
+   * due slot chiari — non del rosso profondo della foresta. Un rimbalzo portato
+   * al rosso tingerebbe di sangue le facce basse di ogni edificio.
+   */
+  goldBounce: '#d97f28',
 
   /**
    * Il pallido freddo dell'inverno.
@@ -81,13 +117,17 @@ export const SEASON_LOOK = {
   bounceReach: 0.75,
 } as const;
 
-/** Gli slot di palette che la stagione tocca: il prato e nient'altro. */
-const VEGETATION: readonly number[] = [
-  PALETTE_SLOTS.grass,
-  PALETTE_SLOTS.grassDark,
-  PALETTE_SLOTS.grassLight,
-  PALETTE_SLOTS.grassPale,
-];
+/**
+ * Un solo slot di prato portato all'autunno.
+ *
+ * `t` e' il cammino, non una miscela: zero e' il verde d'estate, mezzo il
+ * giallo della clorofilla che se ne va, uno il fuoco pieno. Spezzarlo in due
+ * gambe e' tutta la differenza fra un ottobre dorato e il cachi che si ottiene
+ * tirando una retta dal verde al rosso.
+ */
+function alongGold(base: string, leaf: string, fire: string, t: number): string {
+  return t <= 0.5 ? mixHex(base, leaf, t * 2) : mixHex(leaf, fire, (t - 0.5) * 2);
+}
 
 /**
  * Quanto rigoglio, oro e brina ci sono adesso: tre quantita' in [0, 1].
@@ -136,10 +176,10 @@ export function seasonColors(colors: readonly string[], phase: number): readonly
   if (goldAmount <= 0 && frostAmount <= 0) return colors;
 
   const out = colors.slice();
-  for (const slot of VEGETATION) {
+  for (const { slot, leaf, fire } of SEASON_LOOK.goldPath) {
     const base = colors[slot];
     if (base === undefined) continue;
-    out[slot] = mixHex(mixHex(base, SEASON_LOOK.goldTint, goldAmount), SEASON_LOOK.frostTint, frostAmount);
+    out[slot] = mixHex(alongGold(base, leaf, fire, goldAmount), SEASON_LOOK.frostTint, frostAmount);
   }
   return out;
 }
@@ -170,7 +210,7 @@ export function withSeason(atmosphere: Atmosphere, phase: number): Atmosphere {
     bounceLight: {
       ...atmosphere.bounceLight,
       color: mixHex(
-        mixHex(atmosphere.bounceLight.color, SEASON_LOOK.goldTint, groundGold),
+        mixHex(atmosphere.bounceLight.color, SEASON_LOOK.goldBounce, groundGold),
         SEASON_LOOK.frostTint,
         groundFrost,
       ),
