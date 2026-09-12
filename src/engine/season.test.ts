@@ -63,6 +63,7 @@ describe('seasonMood', () => {
   it('mette ogni umore al centro della sua stagione', () => {
     expect(seasonMood(MID_SUMMER).growth).toBeCloseTo(1, 6);
     expect(seasonMood(MID_WINTER).growth).toBeCloseTo(0, 6);
+    expect(seasonMood(MID_SPRING).bloom).toBeCloseTo(1, 6);
     expect(seasonMood(MID_AUTUMN).gold).toBeCloseTo(1, 6);
     expect(seasonMood(MID_WINTER).frost).toBeCloseTo(1, 6);
   });
@@ -76,17 +77,42 @@ describe('seasonMood', () => {
     for (let step = 0; step < 64; step++) {
       const mood = seasonMood(step / 64);
       expect(mood.growth + mood.frost).toBeLessThanOrEqual(1.000001);
+      expect(mood.bloom).toBeGreaterThanOrEqual(0);
       expect(mood.gold).toBeGreaterThanOrEqual(0);
       expect(mood.frost).toBeGreaterThanOrEqual(0);
     }
   });
 
-  it('estate e primavera non hanno ne oro ne brina: sono il tema com e', () => {
-    for (const phase of [MID_SPRING, 0.2, 0.3, MID_SUMMER]) {
+  /**
+   * **E' questa a permettere una catena sola in `seasonColors`.** Germoglio e oro
+   * sono le due meta' della stessa coseno, e uno slot ha una destinazione per
+   * ciascuno: se potessero accendersi insieme, il prato di primavera e quello
+   * d'autunno si contenderebbero la stessa tinta e servirebbe un ramo per
+   * stagione — cioe' proprio il `switch` che il modulo esiste per non avere.
+   */
+  it('germoglio e oro non sono mai accesi insieme', () => {
+    for (let step = 0; step < 64; step++) {
+      const mood = seasonMood(step / 64);
+      expect(Math.min(mood.bloom, mood.gold), `fase ${step / 64}`).toBeCloseTo(0, 6);
+    }
+  });
+
+  /**
+   * **Meta' estate e' il solo istante in cui il tema si vede com'e' scritto**, ed
+   * e' il patto che tiene i sette temi sette. La primavera non ne fa piu' parte:
+   * finche' ci stava, era l'estate ricopiata — e infatti non si vedeva.
+   */
+  it('la primavera ha il germoglio, l estate piena non ha niente', () => {
+    for (const phase of [MID_SPRING, 0.2, 0.3]) {
       const mood = seasonMood(phase);
+      expect(mood.bloom, `fase ${phase}`).toBeGreaterThan(0);
       expect(mood.gold).toBeCloseTo(0, 6);
       expect(mood.frost).toBeCloseTo(0, 6);
     }
+    const summer = seasonMood(MID_SUMMER);
+    expect(summer.bloom).toBeCloseTo(0, 6);
+    expect(summer.gold).toBeCloseTo(0, 6);
+    expect(summer.frost).toBeCloseTo(0, 6);
   });
 });
 
@@ -113,7 +139,7 @@ describe('seasonColors', () => {
     // L'autunno vira verso il fuoco e l'inverno verso il pallido: due
     // destinazioni diverse, o le due stagioni sarebbero la stessa a intensita'
     // diverse.
-    const fire = SEASON_LOOK.goldPath.find(({ slot: id }) => id === slot)?.fire as string;
+    const fire = SEASON_LOOK.grassYear.find(({ slot: id }) => id === slot)?.fire as string;
     expect(distance(autumn, fire)).toBeLessThan(distance(winter, fire));
     expect(distance(winter, SEASON_LOOK.frostTint))
       .toBeLessThan(distance(autumn, SEASON_LOOK.frostTint));
@@ -132,6 +158,26 @@ describe('seasonColors', () => {
       const tone = hue(autumn[slot] as string);
       expect(tone, `slot ${slot} a ${autumn[slot]}`).toBeLessThan(45);
       expect(tone, `slot ${slot} a ${autumn[slot]}`).toBeGreaterThan(0);
+    }
+  });
+
+  /**
+   * Il difetto della primavera era l'opposto di quello dell'autunno, e non si
+   * vedeva proprio per questo: non una tinta sbagliata ma **la palette del tema
+   * ricopiata**, cioe' tre mesi identici all'estate. Una foglia nuova e' piu'
+   * gialla e piu' luminosa di una matura, ed e' l'unica coppia di misure che
+   * distingue un germoglio da un prato d'agosto — la distanza fra colori no, un
+   * verde piu' cupo disterebbe altrettanto.
+   */
+  it('nel pieno della primavera ogni slot e piu giallo e piu chiaro che d estate', () => {
+    const spring = seasonColors(natural.colors, MID_SPRING);
+    for (const slot of GRASS_SLOTS) {
+      const summer = natural.colors[slot] as string;
+      const young = spring[slot] as string;
+      expect(hue(young), `slot ${slot} a ${young}`).toBeLessThan(hue(summer));
+      expect(luma(young), `slot ${slot} a ${young}`).toBeGreaterThan(luma(summer));
+      // Ma resta un verde: oltre i 45 gradi si sarebbe nella banda dell'autunno.
+      expect(hue(young), `slot ${slot} a ${young}`).toBeGreaterThan(45);
     }
   });
 
@@ -159,7 +205,10 @@ describe('seasonColors', () => {
    * quando dovrebbe leggersi di piu'.
    */
   it('i quattro slot restano in ordine di luminanza in ogni stagione', () => {
-    for (const phase of [MID_SPRING, MID_SUMMER, MID_AUTUMN, MID_WINTER, 0.5, 0.7]) {
+    // 0.05 e' il disgelo, il solo tratto dell'anno in cui germoglio e brina
+    // valgono qualcosa insieme: e' li' che due tinte composte potrebbero
+    // scavalcarsi senza che nessuna delle due stagioni, presa da sola, sbagli.
+    for (const phase of [0.05, MID_SPRING, MID_SUMMER, MID_AUTUMN, MID_WINTER, 0.5, 0.7]) {
       const colors = seasonColors(natural.colors, phase);
       for (let i = 1; i < GRASS_SLOTS.length; i++) {
         const darker = colors[GRASS_SLOTS[i - 1] as number] as string;
@@ -170,20 +219,24 @@ describe('seasonColors', () => {
   });
 
   it('non tocca niente che non sia prato', () => {
-    const winter = seasonColors(natural.colors, MID_WINTER);
-    for (let slot = 0; slot < natural.colors.length; slot++) {
-      const vegetation = slot === PALETTE_SLOTS.grass || slot === PALETTE_SLOTS.grassDark
-        || slot === PALETTE_SLOTS.grassLight || slot === PALETTE_SLOTS.grassPale;
-      if (vegetation) continue;
-      expect(winter[slot], `slot ${slot}`).toBe(natural.colors[slot]);
+    for (const phase of [MID_SPRING, MID_AUTUMN, MID_WINTER]) {
+      const colors = seasonColors(natural.colors, phase);
+      for (let slot = 0; slot < natural.colors.length; slot++) {
+        const vegetation = slot === PALETTE_SLOTS.grass || slot === PALETTE_SLOTS.grassDark
+          || slot === PALETTE_SLOTS.grassLight || slot === PALETTE_SLOTS.grassPale;
+        if (vegetation) continue;
+        expect(colors[slot], `fase ${phase}, slot ${slot}`).toBe(natural.colors[slot]);
+      }
     }
   });
 
   it('vale per ogni tema, e nessuno perde uno slot per strada', () => {
     for (const theme of THEMES) {
-      const winter = seasonColors(theme.colors, MID_WINTER);
-      expect(winter).toHaveLength(theme.colors.length);
-      for (const color of winter) expect(color).toMatch(/^#[0-9a-f]{6}$/);
+      for (const phase of [MID_SPRING, MID_AUTUMN, MID_WINTER]) {
+        const colors = seasonColors(theme.colors, phase);
+        expect(colors).toHaveLength(theme.colors.length);
+        for (const color of colors) expect(color).toMatch(/^#[0-9a-f]{6}$/);
+      }
     }
   });
 });
@@ -201,11 +254,17 @@ describe('withSeason', () => {
    * sarebbe una luce che viene da un terreno che non c'e' piu'.
    */
   it('il rimbalzo dal terreno segue il prato', () => {
+    const spring = withSeason(natural.atmosphere, MID_SPRING);
     const autumn = withSeason(natural.atmosphere, MID_AUTUMN);
     const winter = withSeason(natural.atmosphere, MID_WINTER);
-    expect(autumn.bounceLight.color).not.toBe(natural.atmosphere.bounceLight.color);
-    expect(winter.bounceLight.color).not.toBe(natural.atmosphere.bounceLight.color);
-    expect(autumn.bounceLight.color).not.toBe(winter.bounceLight.color);
+    for (const season of [spring, autumn, winter]) {
+      expect(season.bounceLight.color).not.toBe(natural.atmosphere.bounceLight.color);
+    }
+    expect(new Set([spring, autumn, winter].map((s) => s.bounceLight.color)).size).toBe(3);
+    // Di primavera il suolo non rimanda solo un altro verde: ne rimanda di piu'.
+    // E' la meta' della stagione che una tinta da sola non racconta.
+    expect(luma(spring.bounceLight.color))
+      .toBeGreaterThan(luma(natural.atmosphere.bounceLight.color));
     // L'intensita' no: quanto rimbalza e' materia del tema, cambia solo di che
     // colore. E' la stessa divisione che `withHour` fa con il sole.
     expect(autumn.bounceLight.intensity).toBe(natural.atmosphere.bounceLight.intensity);
