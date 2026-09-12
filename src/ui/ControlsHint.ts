@@ -36,6 +36,10 @@ export const CONTROL_HINTS: readonly ControlHint[] = [
   // Il tasto **e'** la risposta a «non torna mai giorno»: dice che l'ora e' una
   // cosa che si decide, e non solo qualcosa che capita mentre si guarda.
   { keys: ['L'], action: 'Hold the day, hold the night, or let the clock run' },
+  // Accanto a `L`, e la riga dice cosa **non** fa: la stagione si sposta, non si
+  // ferma. Chi legge la riga di sopra si aspetterebbe altrimenti il gemello, e
+  // premerebbe `K` per inchiodare l'inverno.
+  { keys: ['K'], action: 'Move the year on to the next season' },
   // Una riga sola per i quattro usi, nell'ordine in cui Escape li prova: posa lo
   // strumento, chiude la scheda, esce dalla vista. Righe separate direbbero che
   // sono quattro tasti, e chi legge non saprebbe quale effetto aspettarsi.

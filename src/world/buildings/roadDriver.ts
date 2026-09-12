@@ -1,9 +1,8 @@
 import { ROADS } from '../roads/config';
 import { RoadNetwork } from '../roads/RoadNetwork';
 import type { RoadPole } from '../roads/network';
-import { GROUND } from '../grading/grade';
-import { FACING, type Facing } from '../streets/streetGrid';
-import { groundKindAt } from './siteWorks';
+import type { Facing } from '../streets/streetGrid';
+import { doorstepOf } from './siteWorks';
 import type { BuildContext } from './buildContext';
 
 /**
@@ -80,7 +79,7 @@ export class RoadDriver {
    * arriverebbe sempre un giro in ritardo.
    */
   connect(x: number, y: number, footprint: number, facing: Facing | undefined): void {
-    const door = this.doorstep(x, y, footprint, facing);
+    const door = doorstepOf(this.ctx.terrain, x, y, footprint, facing);
     for (const cell of this.roads.connect(door.x, door.y)) {
       this.ctx.surface.enqueue({
         x: cell.x,
@@ -90,45 +89,6 @@ export class RoadDriver {
         deck: cell.level,
       });
     }
-  }
-
-  /**
-   * La colonna appena fuori dal fronte, a meta' del lato: il portone.
-   *
-   * **Il capillare parte da li' e non dall'ancora del lotto**, che sta *dentro*
-   * l'edificio. Partendo da dentro, le prime colonne del vicolo cadevano sotto
-   * la casa che le aveva chieste — e una colonna occupata non si asfalta mai,
-   * perche' `SurfaceQueue.canPaint` la rifiuta: la strada esisteva nei dati e
-   * non a schermo. Misurato su un'isola cresciuta, erano trecentoundici vicoli
-   * su seicentotrentanove.
-   *
-   * **Fuori dal fronte deve esserci terra asciutta, non la battigia.** Una casa
-   * sulla riva guarda l'acqua, e un capillare che parta di li' cammina sul
-   * bassofondo: la sonda del tracciato prende come piano il **pelo dell'acqua**,
-   * quindi il vicolo si posa alla quota del mare e la colonna accanto resta il
-   * fondale. Ne usciva un salto da sedici voxel fra due colonne contigue di
-   * carreggiata — un gradino, non una rampa, e lo diceva gia' un test. Sulla
-   * riva si torna all'ancora, che e' il comportamento di prima e sbaglia al piu'
-   * quel lotto.
-   */
-  private doorstep(
-    x: number,
-    y: number,
-    footprint: number,
-    facing: Facing | undefined,
-  ): { readonly x: number; readonly y: number } {
-    if (facing === undefined) return { x, y };
-    const half = (footprint - 1) >> 1;
-    const door = facing === FACING.east
-      ? { x: x + footprint, y: y + half }
-      : facing === FACING.west
-        ? { x: x - 1, y: y + half }
-        : facing === FACING.north
-          ? { x: x + half, y: y + footprint }
-          : { x: x + half, y: y - 1 };
-    const kind = groundKindAt(this.ctx.terrain, door.x, door.y);
-    if (kind === GROUND.refused || kind === GROUND.shore) return { x, y };
-    return door;
   }
 
   /**

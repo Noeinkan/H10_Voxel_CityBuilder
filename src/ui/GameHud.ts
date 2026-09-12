@@ -589,6 +589,18 @@ export class GameHud {
   }
 
   /**
+   * Il rail sinistro, per chi deve appoggiarci una targa che l'HUD non possiede.
+   *
+   * E' l'unica superficie del lato comandi che si apre a un modulo esterno, e
+   * per una ragione precisa: qualunque cosa stia in basso a sinistra **fuori**
+   * dal rail finisce sopra il dock. Chi ci entra e' in flusso con le altre
+   * targhe e non puo' coprirne nessuna.
+   */
+  get rail(): HTMLElement {
+    return this.railLeft;
+  }
+
+  /**
    * La vista informativa attiva, dal modello puro alle superfici che la mostrano.
    *
    * Segna il bottone del dock e quello del picker, cosi' tessera e scorciatoia

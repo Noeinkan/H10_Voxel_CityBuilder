@@ -1,10 +1,13 @@
 import { describe, expect, it } from 'vitest';
+import { SEASON } from '../sim/seasons';
 import {
+  applyLook,
   newGameUrl,
   opensEntryMenu,
   parseSeedInput,
   perfToggleUrl,
   resolveLaunchMode,
+  resolveLook,
   resolveSeed,
   swatchUrl,
 } from './launchMode';
@@ -144,6 +147,46 @@ describe('newGameUrl', () => {
     const params = new URLSearchParams(newGameUrl('', 42));
     expect(params.get('play')).toBe('1');
     expect(opensEntryMenu(params, resolveLaunchMode(params), false)).toBe(false);
+  });
+});
+
+describe('la stagione di nascita nell indirizzo', () => {
+  it('legge le quattro stagioni da ?calendar=', () => {
+    expect(resolveLook(new URLSearchParams('calendar=winter')).season).toBe(SEASON.winter);
+    expect(resolveLook(new URLSearchParams('calendar=spring')).season).toBe(SEASON.spring);
+  });
+
+  it('senza parametro, e senza capirlo, nasce d estate', () => {
+    // E' la stagione in cui ogni partita e' sempre nata: un `?calendar=` storto
+    // non deve cambiare il bilanciamento di partenza di chi non ha chiesto
+    // niente.
+    expect(resolveLook(new URLSearchParams()).season).toBe(SEASON.summer);
+    expect(resolveLook(new URLSearchParams('calendar=banana')).season).toBe(SEASON.summer);
+  });
+
+  it('non scrive il default nell indirizzo, e cancella quello vecchio', () => {
+    const params = new URLSearchParams('calendar=winter');
+    applyLook(params, { theme: 'natural', daylight: 'cycle', clouds: false, season: SEASON.summer });
+    expect(params.get('calendar')).toBeNull();
+  });
+
+  it('sopravvive al giro completo di scrittura e rilettura', () => {
+    const look = { theme: 'neon', daylight: 'night', clouds: true, season: SEASON.autumn } as const;
+    const params = new URLSearchParams();
+    applyLook(params, look);
+    expect(resolveLook(params)).toEqual(look);
+  });
+
+  /**
+   * `?season=` inchioda la fase per una cattura, `?calendar=` sceglie da dove
+   * parte un anno che poi cammina: sono due parametri e non due letture dello
+   * stesso, e chi ne usa uno non deve perdere l'altro.
+   */
+  it('lascia in piedi il ?season= dell harness', () => {
+    const params = new URLSearchParams('season=0.875');
+    applyLook(params, { theme: 'natural', daylight: 'cycle', clouds: false, season: SEASON.winter });
+    expect(params.get('season')).toBe('0.875');
+    expect(params.get('calendar')).toBe('winter');
   });
 });
 

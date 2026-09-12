@@ -5,6 +5,7 @@ import {
   CLASS_COUNT,
   DESIRABILITY_WEIGHT_OF_CLASS,
   FARM_KIND,
+  calendarTickOf,
   catalystById,
   catalystInfluence,
   effectiveCount,
@@ -750,7 +751,7 @@ function blockAt(query: SelectionQuery, key: string, rect: BlockRect): BlockInfo
       foodPerTick: foodYieldOf(
         localFarms,
         query.state.staffing,
-        harvestFactorAt(query.state.tickCount),
+        harvestFactorAt(calendarTickOf(query.state)),
       ),
       civicUpkeepPerTick: (effectiveByClass[BUILDING_CLASS.civic] ?? 0) * weights.civicUpkeep,
       staffing: query.state.staffing,

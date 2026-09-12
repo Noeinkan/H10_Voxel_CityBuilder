@@ -205,11 +205,11 @@ describe('la falda', () => {
     const request = { class: ALL_CLASSES[0] as BuildingClass, level: 4, seed: 1234 };
     const gable = generateBuilding({
       ...request,
-      shape: shapeWith({ crownKind: CROWN_KIND.gable, minFootprint: 8 }),
+      shape: shapeWith({ crownKinds: [CROWN_KIND.gable], minFootprint: 8 }),
     });
     const ridge = generateBuilding({
       ...request,
-      shape: shapeWith({ crownKind: CROWN_KIND.ridge, minFootprint: 8 }),
+      shape: shapeWith({ crownKinds: [CROWN_KIND.ridge], minFootprint: 8 }),
     });
 
     // La sommita' della falda e' piu' stretta di quella del cappello lungo.
@@ -227,7 +227,7 @@ describe('la falda', () => {
     for (const [name, kind] of Object.entries(CROWN_KIND)) {
       const stamp = generateBuilding({
         ...request,
-        shape: shapeWith({ crownKind: kind, minFootprint: 8 }),
+        shape: shapeWith({ crownKinds: [kind], minFootprint: 8 }),
       });
       const signature = profileOf(stamp).join(',');
       const clash = signatures.get(signature);
@@ -288,22 +288,41 @@ describe('la terrazza', () => {
   it('lo scarto muove davvero la fascia: il test sopra non e vuoto', () => {
     // Senza questo, «nessuna terrazza» sarebbe soddisfatto anche da una
     // grammatica che ha smesso di spostare le fasce.
+    //
+    // **La cima si pinza a `flat`, e senza non si misurava il corpo.** `flat` e'
+    // l'unica che non rientra affatto e l'unica che nega il pennone: cosi' ogni
+    // variazione di sagoma che il ciclo trova e' opera dello scarto e non del
+    // coronamento. L'operazione e' `shrinkOneSide` perche' e' quella che *puo'*
+    // muoversi: un `jog` a impronta piena esce dall'inviluppo a ogni candidata e
+    // la fascia ripete quella sotto — e' proprio il caso che questo guardiano
+    // deve saper distinguere da una grammatica ferma.
     const origins = new Set<string>();
     const stamp = generateBuilding({
-      class: 0, level: 10, seed: 4242, profile: onlyOp(BAND_OP.jog),
+      class: 0,
+      level: 10,
+      seed: 4242,
+      profile: onlyOp(BAND_OP.shrinkOneSide),
+      shape: shapeWith({ crownKinds: [CROWN_KIND.flat] }),
     });
     const plane = stamp.sizeX * stamp.sizeY;
     for (let sz = 0; sz < stamp.sizeZ; sz++) {
       let minX = stamp.sizeX;
       let minY = stamp.sizeY;
+      let maxX = -1;
+      let maxY = -1;
       for (let sy = 0; sy < stamp.sizeY; sy++) {
         for (let sx = 0; sx < stamp.sizeX; sx++) {
           if (stamp.voxels[plane * sz + sx + stamp.sizeX * sy] === STAMP_EMPTY) continue;
           if (sx < minX) minX = sx;
           if (sy < minY) minY = sy;
+          if (sx > maxX) maxX = sx;
+          if (sy > maxY) maxY = sy;
         }
       }
-      origins.add(`${minX},${minY}`);
+      // Il riquadro intero e non il solo spigolo: `shrinkOneSide` puo' togliere
+      // il lato lontano dall'origine, e li' l'origine non si muove affatto pur
+      // essendo la fascia cambiata.
+      origins.add(`${minX},${minY},${maxX},${maxY}`);
     }
     expect(origins.size).toBeGreaterThan(1);
   });

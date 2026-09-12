@@ -1,5 +1,6 @@
 import {
   BALANCE,
+  BUILDING_CLASS,
   CATALYSTS,
   CATALYST_GROUPS,
   CLASS_LABELS,
@@ -8,7 +9,11 @@ import {
   catalystById,
   charterById,
   charterOfFamily,
+  governanceOf,
+  lapseOption,
   policyConflict,
+  policyLockedUntil,
+  policySlots,
   tradeLinksOf,
   type BuildingClass,
   type CatalystGroup,
@@ -25,6 +30,7 @@ import { hasFacadeForm } from '../world/landmarks/config';
 import { pairingLines, stageLines, unlockLines, yieldLine } from './prospects';
 import { SITE } from '../world/sites/config';
 import type { GrowthStats } from '../game/growthScene';
+import { milestoneLabelOf, roleThresholds, type MilestoneThreshold } from '../game/milestones';
 import type { CityCondition } from '../game/cityCondition';
 import type { CoachSuggestion } from '../game/coach';
 import type { ResourceTrend } from './ResourceTrend';
@@ -203,6 +209,15 @@ export interface HudPolicy extends HudAction {
    * seconda frase resta a disposizione, ma a domanda.
    */
   readonly effect: string;
+  /**
+   * Il **prezzo** della policy, in una frase. Sta sulla scheda, sotto il nome.
+   *
+   * E' la riga che mancava, ed e' quella che rende il pannello una scelta: sette
+   * schede che elencavano solo cio' che migliorano si accendevano tutte e non si
+   * riaprivano mai. Il mantenimento non e' un prezzo — e' una tassa; il prezzo
+   * e' il peso che la policy peggiora, e va detto dove si decide.
+   */
+  readonly tradeoff: string;
   readonly upkeep: number;
 }
 
@@ -237,9 +252,23 @@ export interface GameHudModel {
   /** La gomma: demolisce cio' che si trascina sopra. Non costa fondi. */
   readonly demolish: HudAction;
   readonly policies: readonly HudPolicy[];
+  /** Quante policy la citta' regge insieme, e quante ne sta gia' tenendo. */
+  readonly policySlotsTotal: number;
+  readonly policySlotsUsed: number;
   readonly tradeModes: readonly HudTradeMode[];
   readonly tradeConnected: boolean;
   readonly decision: CityDecision | null;
+  /**
+   * Tick che restano prima che la scadenza decida al posto del giocatore, o
+   * null se la scelta non scade.
+   *
+   * Il modello lo calcola una volta: la carta e l'inbox del cassetto mostrano lo
+   * stesso conto, e due sottrazioni scritte in due punti divergono al primo
+   * cambio di cadenza.
+   */
+  readonly decisionTicksLeft: number | null;
+  /** L'alternativa che scattera' da sola se nessuno risponde, o null. */
+  readonly decisionLapseLabel: string | null;
   /**
    * true quando la decisione sospesa e' stata rimandata con «decidi piu' tardi»
    * e la carta deve restare nascosta per `decisions.snoozeTicks`.
@@ -308,7 +337,29 @@ const POLICY_DESCRIPTION: Readonly<Record<PolicyId, string>> = {
   zoningRelief: 'Encourages growth in industrial areas.',
   civicPride: 'Encourages civic building growth.',
   marketCharter: 'Increases retail reach and revenue.',
+  nightEconomy: 'Shops serve more customers, around the clock.',
+  tariffShield: 'Protects local production from imports.',
+  heritageCode: 'Raises the standing of the civic core.',
+  transitPass: 'Puts far-out housing within reach of the center.',
 };
+
+/**
+ * Perche' un ruolo non e' ancora disponibile, in una riga.
+ *
+ * **Nomina il gradino e dice cosa manca**, in quest'ordine: «Metropolis» da solo
+ * e' un nome che il giocatore non ha mai visto, e «needs 8 shops» da solo non
+ * dice che c'e' una scala dietro. Insieme sono una rotta.
+ *
+ * Le soglie sono al massimo due — quella del gradino e quella propria del
+ * landmark — e si elencano entrambe: sono due gesti diversi, e sceglierne una
+ * manderebbe a coprire quella sbagliata.
+ */
+function gateReason(id: CatalystId, gate: readonly MilestoneThreshold[]): string {
+  const missing = gate.map((threshold) => `${Math.floor(threshold.have)}/${threshold.need} ${threshold.label}`);
+  const step = milestoneLabelOf(id);
+  const needs = missing.length === 0 ? '' : ` Needs ${missing.join(' and ')}.`;
+  return step === null ? needs.trim() : `Unlocks at ${step}.${needs}`;
+}
 
 export function buildGameHudModel(
   stats: GrowthStats | null,
@@ -321,11 +372,18 @@ export function buildGameHudModel(
   const expectedCatalyst = stats?.onboarding.expectedCatalyst ?? null;
   const resources = buildHudResources(stats, trend);
 
+  const milestone = stats?.milestone ?? -1;
+
   const catalysts: readonly HudAction[] = CATALYSTS.map((catalyst) => {
     const cost = catalyst.cost;
     const orderOk = expectedCatalyst === null || expectedCatalyst === catalyst.id;
+    // Cosa manca alla citta' perche' questo ruolo esista, misurato adesso. Vuoto
+    // vuol dire aperto: il gradino e' stato raggiunto e la condizione propria e'
+    // soddisfatta.
+    const gate = stats === null ? [] : roleThresholds(stats.state, catalyst.id, milestone);
+    const gateOk = gate.length === 0;
     const fundsOk = funds >= cost;
-    const available = ready && orderOk && fundsOk;
+    const available = ready && orderOk && gateOk && fundsOk;
     const favours = catalyst.favours.map((cls) => CLASS_LABELS[cls]);
     const penalises = catalyst.penalises.map((cls) => CLASS_LABELS[cls]);
     return {
@@ -350,12 +408,20 @@ export function buildGameHudModel(
       // Bloccato non vuol dire nascosto: il bottone resta nella toolbar e dice
       // perche' non si puo' ancora usare.
       locked: ready && !available,
-      // Solo quando a mancare sono i fondi: se e' il tutorial a fermarlo, un
-      // riempimento direbbe che basta aspettare, e invece bisogna costruire
-      // dell'altro.
-      ...(ready && orderOk && !fundsOk
-        ? bindingThreshold([{ have: funds, need: cost, label: 'funds' }])
-        : {}),
+      // Il riempimento vuole una distanza da coprire, e ce l'hanno due dei tre
+      // rifiuti: la scala — «84 / 120 residents» — e i fondi. Il tutorial no: e'
+      // un ordine, non una soglia, e una barra direbbe che basta aspettare
+      // mentre invece bisogna piazzare qualcos'altro.
+      //
+      // Quando manca **tutto e due**, la scala passa davanti ai fondi anche se
+      // e' piu' vicina: sono i soldi a rifarsi da soli col tempo, mentre gli
+      // abitanti li fa il giocatore, e mostrare il prezzo a chi non ha ancora il
+      // gradino gli farebbe risparmiare per niente.
+      ...(ready && orderOk && !gateOk
+        ? bindingThreshold(gate)
+        : ready && orderOk && !fundsOk
+          ? bindingThreshold([{ have: funds, need: cost, label: 'funds' }])
+          : {}),
       // **Solo lo stato**, non piu' anche la descrizione: la frase che spiega
       // cosa fa il ruolo vive in `description` e la scheda la mostra sempre.
       // Concatenate, sparivano insieme appena il bottone si bloccava — e chi sta
@@ -364,9 +430,11 @@ export function buildGameHudModel(
         ? 'The city is getting ready.'
         : !orderOk
           ? `Complete this first: ${stats?.onboarding.title ?? 'the initial tutorial'}.`
-          : fundsOk
-            ? 'Click a spot on the island to place it.'
-            : 'Not enough funds.',
+          : !gateOk
+            ? gateReason(catalyst.id, gate)
+            : fundsOk
+              ? 'Click a spot on the island to place it.'
+              : 'Not enough funds.',
     };
   });
 
@@ -477,33 +545,61 @@ export function buildGameHudModel(
   };
 
   const activePolicies = stats?.state.policies ?? [];
+  // Il budget di governo: quante ne regge la citta' e quante ne sta gia'
+  // tenendo. Sono due numeri e non uno perche' la scheda deve poter dire «non
+  // ce n'e' piu' spazio» senza che il giocatore debba contare le schede accese.
+  const governance = stats === null
+    ? { extraSlots: 0, upkeepFactor: 1, costFactor: 1 }
+    : governanceOf(stats.state.charters);
+  const policySlotsTotal = policySlots(
+    stats?.state.buildingCounts[BUILDING_CLASS.civic] ?? 0,
+    governance.extraSlots,
+  );
+  const policySlotsUsed = activePolicies.length;
   const policies = POLICIES.map((policy): HudPolicy => {
     const requirement = BALANCE.gameplay.policy[policy.id];
     const active = activePolicies.includes(policy.id);
+    // Il prezzo che il giocatore legge dev'essere quello che gli viene
+    // addebitato: con una camera di commercio in piedi il listino e' scontato,
+    // e mostrare quello pieno farebbe sembrare rotta la cassa.
+    const cost = Math.round(requirement.cost * governance.costFactor);
+    const upkeep = requirement.upkeep * governance.upkeepFactor;
     const populationOk = population >= requirement.population;
-    const fundsOk = funds >= requirement.cost;
+    const fundsOk = funds >= cost;
     const conflict = policyConflict(activePolicies, policy.id);
+    const lockedUntil = stats === null ? 0 : policyLockedUntil(stats.state, policy.id);
+    const locked = stats !== null && lockedUntil > stats.state.tickCount;
+    const roomLeft = active || policySlotsUsed < policySlotsTotal;
     return {
       id: policy.id,
       label: capitalize(policy.label),
-      cost: requirement.cost,
+      cost,
       population: requirement.population,
       active,
-      upkeep: requirement.upkeep,
-      available: ready && (active || (populationOk && fundsOk && conflict === null)),
+      upkeep,
+      available: ready
+        && (active || (populationOk && fundsOk && conflict === null && !locked && roomLeft)),
+      // L'ordine e' quello in cui i rifiuti vanno letti: prima cio' che non si
+      // aggira, poi cio' che si risolve spegnendo qualcosa, e per ultimo cio'
+      // che il tempo risolve da solo.
       reason: active
-        ? 'Active: select to deactivate it.'
+        ? `Active: select to deactivate it. ${policy.tradeoffEffect}`
         : !ready
           ? 'The city is getting ready.'
-          : conflict !== null
-            ? `Incompatible with ${POLICIES.find((entry) => entry.id === conflict)?.label ?? conflict}.`
-          : !populationOk
-            ? `Requires ${requirement.population} residents.`
-            : !fundsOk
-              ? 'Not enough funds.'
-              : `${POLICY_DESCRIPTION[policy.id]} ${policy.spatialEffect}`,
+          : locked
+            ? `Suspended by a recent decision for ${lockedUntil - (stats?.state.tickCount ?? 0)} more ticks.`
+            : conflict !== null
+              ? `Incompatible with ${POLICIES.find((entry) => entry.id === conflict)?.label ?? conflict}.`
+              : !roomLeft
+                ? `No room left: the city runs ${policySlotsUsed} of ${policySlotsTotal} policies.`
+                : !populationOk
+                  ? `Requires ${requirement.population} residents.`
+                  : !fundsOk
+                    ? 'Not enough funds.'
+                    : `${POLICY_DESCRIPTION[policy.id]} ${policy.spatialEffect}`,
       description: POLICY_DESCRIPTION[policy.id],
       effect: policy.spatialEffect,
+      tradeoff: policy.tradeoffEffect,
     };
   });
 
@@ -524,6 +620,13 @@ export function buildGameHudModel(
   const decisionActiveCharter = pendingDecision === null || stats === null
     ? null
     : charterOfFamily(stats.state.charters, pendingDecision.family);
+  const decisionTicksLeft = pendingDecision === null || stats === null
+    || pendingDecision.expiresAt <= 0
+    ? null
+    : Math.max(0, pendingDecision.expiresAt - stats.state.tickCount);
+  const decisionLapseLabel = pendingDecision === null
+    ? null
+    : lapseOption(pendingDecision)?.label ?? null;
 
   return {
     ready,
@@ -537,11 +640,15 @@ export function buildGameHudModel(
     ropeway,
     demolish,
     policies,
+    policySlotsTotal,
+    policySlotsUsed,
     tradeModes,
     tradeConnected,
     decision: pendingDecision,
     decisionSnoozed,
     decisionActiveCharter,
+    decisionTicksLeft,
+    decisionLapseLabel,
     paused: stats?.paused ?? false,
     speed: stats?.speed ?? 1,
     message: stats === null

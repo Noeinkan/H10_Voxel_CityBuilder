@@ -34,6 +34,7 @@ export type { BuildingForm } from './builder';
 export {
   BAND_OP,
   CROWN_KIND,
+  CROWN_SET,
   GRAMMAR,
   LOT_ROLE,
   MAX_FOOTPRINT,

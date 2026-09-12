@@ -38,6 +38,7 @@ export {
   catalystById,
   catalystInfluence,
   catalystRoleOf,
+  catalystUpkeepOf,
   defaultCatalystOfClass,
   isCatalystId,
   type CatalystDefinition,
@@ -51,11 +52,13 @@ export {
   canonicalCharters,
   charterById,
   charterOfFamily,
+  governanceOf,
   isCharterId,
   withCharter,
   withoutFamily,
   type Charter,
   type CharterFamily,
+  type CharterGovernance,
   type CharterId,
 } from './charters';
 export {
@@ -124,6 +127,8 @@ export {
 export {
   POLICIES,
   policyById,
+  policyClasses,
+  policySlots,
   isPolicyId,
   resolveWeights,
   withPolicy,
@@ -131,10 +136,20 @@ export {
   DESIRABILITY_WEIGHT_OF_CLASS,
   type Policy,
   type PolicyId,
+  type PolicyTradeoff,
   type WeightId,
   type Weights,
 } from './policies';
 export { policyConflict } from './policies';
+export {
+  budgetAlarm,
+  civicStrain,
+  fundsRunway,
+  housingPressure,
+  policyLocked,
+  policyLockedUntil,
+  unrest,
+} from './strain';
 export {
   nearestTowerProspect,
   type TowerProspect,
@@ -160,14 +175,24 @@ export {
 } from './districts';
 export {
   decisionAt,
+  decisionExpired,
   decisionFingerprint,
   decisionOption,
+  lapseOption,
   type CityDecision,
   type DecisionEffect,
+  type DecisionFollowUp,
   type DecisionGrant,
   type DecisionOption,
   type DecisionOutcome,
+  type DecisionPolicyEffect,
+  type DecisionUrgency,
+  type EventMemory,
+  type PolicyLock,
+  type ScheduledEvent,
 } from './decisions';
+export { EVENTS } from './eventCatalog';
+export { eventById, isEventId, type EventDefinition, type EventDraft } from './eventPool';
 export {
   EMPTY_TRADE,
   TRADE_MODES,
@@ -189,7 +214,9 @@ export {
   dominantOutflow,
   fundsIn,
   fundsOut,
+  fundsOwed,
   NO_FUNDS_FLOW,
+  servicesUpkeepOf,
   type FundsReport,
 } from './flows';
 export {
@@ -200,15 +227,30 @@ export {
 } from './satisfaction';
 export {
   harvestFactorAt,
+  nextSeason,
+  resolveSeason,
   SEASON,
   SEASON_COUNT,
+  SEASON_IDS,
   SEASON_NAMES,
+  SEASONS,
   seasonAt,
+  seasonHeartPhase,
+  seasonStartPhase,
   tickAtPhase,
   YEAR_START_PHASE,
   yearPhaseAt,
   type Season,
 } from './seasons';
+export {
+  birthShift,
+  calendarPhaseOf,
+  calendarSeasonOf,
+  calendarTickOf,
+  jumpToSeason,
+  shiftToSeason,
+  type CalendarState,
+} from './calendar';
 export { nextState, unitOf } from './rng';
 export {
   addBuilding,
@@ -216,6 +258,7 @@ export {
   addFarm,
   clearPolicies,
   createSimState,
+  lapseDecision,
   rebuildField,
   resolveDecision,
   removeBuildings,

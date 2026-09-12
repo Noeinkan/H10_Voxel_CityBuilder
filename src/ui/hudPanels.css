@@ -38,8 +38,13 @@
 .policy-name { font-size: var(--text-md); font-weight: 800; }
 .policy-state { color: var(--hud-sage-dark); font-size: var(--text-2xs); font-weight: 900; letter-spacing: .08em; }
 .policy-description { grid-column: 1 / 3; color: var(--hud-muted); font-size: var(--text-xs); line-height: 1.35; }
+/* Il prezzo della policy, e si legge come tale: stessa misura della descrizione
+   ma nel tono d'avvertimento, cosi' che il colpo d'occhio sull'elenco distingua
+   cosa una policy da' da cosa costa senza leggere le undici schede. */
+.policy-tradeoff { grid-column: 1 / 3; color: var(--hud-danger); font-size: var(--text-xs); line-height: 1.35; opacity: .85; }
 .policy-requirement { grid-column: 1 / 3; color: #80662d; font-size: var(--text-2xs); font-weight: 700; }
 .policy-requirement[data-blocked="true"] { color: var(--hud-danger); }
+.policy-budget { margin-bottom: var(--space-2); font-weight: 700; }
 
 .city-overview { display: grid; gap: var(--space-3); }
 .overview-condition { display: grid; gap: var(--space-1); padding: var(--space-3); border-radius: var(--radius-md); background: var(--hud-well); border: 1px solid var(--hud-line-soft); }
@@ -80,6 +85,10 @@
    citta'. La carta modale e' solo l'annuncio; qui la scelta torna a farsi
    trovare quando e' stata rimandata. */
 .decision-inbox { padding: var(--space-3); border: 1px solid var(--hud-positive); border-radius: var(--radius-md); background: var(--hud-well); }
+/* Una crisi si riconosce dal bordo prima che dal testo: e' l'unica delle tre
+   urgenze che porta una scadenza, e chi apre il cassetto deve capire in un
+   colpo d'occhio se c'e' un orologio che corre. */
+.decision-inbox[data-urgency="crisis"] { border-color: var(--hud-danger); }
 .decision-inbox .drawer-section-title { margin-top: 0; }
 .decision-inbox-title { font-size: var(--text-lg); }
 .decision-inbox-message { margin: var(--space-1) 0 var(--space-2); color: var(--hud-muted); font-size: var(--text-xs); line-height: 1.4; }
@@ -131,6 +140,22 @@
 .view-bar-button:focus-visible { outline: 3px solid var(--hud-accent-shape); outline-offset: 1px; }
 .view-bar-exit { color: var(--hud-on-accent); background: var(--hud-sage-dark); border-color: var(--hud-sage-dark); }
 .view-bar-exit:hover { background: #35604f; border-color: #35604f; }
+
+/* La legenda della vista dati e' la targa della vista per l'altra domanda — non
+   «dove sto guardando» ma «cosa sto leggendo» — e prende quindi la stessa forma
+   e lo stesso posto: in fondo al rail, in flusso. Fuori dal rail, fissa a
+   sedici pixel dall'angolo, cadeva sopra la fila City / Policies / Views / Data
+   del dock su qualunque schermo. */
+.info-bar { display: grid; flex: 0 0 auto; margin-top: auto; gap: var(--space-05); padding: var(--space-3) var(--space-3) var(--space-2); border-radius: var(--radius-lg); pointer-events: auto; }
+.info-bar[hidden] { display: none; }
+/* Le categorie di una vista categorica, nell'ordine dei colori dell'overlay.
+   Non seguono il gradino di densita' come la descrizione qui sopra: la
+   descrizione la ripete il picker, le categorie sono il contenuto della
+   legenda — senza, resta una targa che nomina un dato e non lo spiega. */
+.info-bar-categories { display: flex; flex-wrap: wrap; gap: var(--space-05) var(--space-2); margin-top: var(--space-1); color: var(--hud-muted); font-size: var(--text-xs); }
+.info-bar-categories:empty { display: none; }
+.info-bar-hint { color: var(--hud-muted); font-size: var(--text-xs); }
+.info-bar-hint[hidden] { display: none; }
 
 .level-rail { position: absolute; left: calc(var(--game-hud-rail-left) + var(--space-6)); top: 50%; display: grid; justify-items: center; gap: var(--space-15); padding: var(--space-3) var(--space-2); border-radius: var(--radius-lg); transform: translateY(-50%); pointer-events: auto; transition: opacity 150ms ease, transform 150ms ease; }
 .level-rail[hidden] { display: grid; opacity: 0; visibility: hidden; transform: translate(-10px, -50%); pointer-events: none; }

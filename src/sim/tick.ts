@@ -1,5 +1,8 @@
 import type { TerrainMap } from '../world/terrain/TerrainMap';
 import { BALANCE } from './balance';
+import { calendarTickOf } from './calendar';
+import { catalystUpkeepOf } from './catalysts';
+import { governanceOf } from './charters';
 import { BUILDING_CLASS, type BuildingClass } from './classes';
 import { resolveCommerce } from './commerce';
 import { coverageReportOf, servicesOf } from './coverage';
@@ -13,6 +16,7 @@ import { harvestFactorAt } from './seasons';
 import type { Resource, SimState } from './SimState';
 import { servedFerryLines } from './ferry';
 import { foodImportShareOf, resolveExternalTrade, tradeLinksOf } from './trade';
+import { servicesUpkeepOf } from './flows';
 
 /**
  * Un tick di simulazione.
@@ -101,7 +105,10 @@ export function tick(state: SimState, terrainMap: TerrainMap): SimState {
   // si guarda. Chi pianta continua a ragionare sull'anno medio: `missingPlotsOf`
   // non passa il fattore, quindi la campagna si dimensiona una volta invece di
   // inseguire il mese che fa.
-  const seasonYield = harvestFactorAt(state.tickCount);
+  // Dal calendario e non dall'eta': se il giocatore ha portato l'anno a
+  // un'altra stagione, il raccolto e' quello del mese che si vede — le due
+  // lancette escono dallo stesso numero apposta.
+  const seasonYield = harvestFactorAt(calendarTickOf(state));
 
   // La scomposizione e non il totale: la stessa aritmetica serve al bilancio e
   // al referto che l'HUD mostra, e due conti separati divergerebbero.
@@ -145,14 +152,27 @@ export function tick(state: SimState, terrainMap: TerrainMap): SimState {
   // --- Fondi ---------------------------------------------------------------
 
   const civicUpkeep = civic * weights.civicUpkeep;
+  // Il mandato di governo entra **qui** e in nessun altro punto del bilancio:
+  // «conti in chiaro» sconta il mantenimento di ogni policy, ed e' il modo in
+  // cui una decisione presa tre minuti fa continua a farsi sentire su una riga
+  // di spesa. Senza fattore vale uno, che e' il caso di ogni citta' che non ha
+  // ancora riformato il proprio consiglio.
   const policyUpkeep = state.policies.reduce(
     (sum, id) => sum + BALANCE.gameplay.policy[id].upkeep,
     0,
-  );
+  ) * governanceOf(state.charters).upkeepFactor;
+  // I servizi urbani si pagano sulla capacita' di **tutti** gli usi, non solo
+  // dei civici: e' la stessa base che genera il gettito, quindi il bilancio
+  // resta in proporzione a qualunque scala della citta'. Senza questa voce le
+  // uscite guardavano tre sottoinsiemi che non crescono con la citta', e la
+  // cassa divergeva per costruzione.
+  const services = servicesUpkeepOf(residential + commercial + industrial + civic);
   // La torre idroponica e' l'unico produttore di cibo che costa fondi per tick:
   // e' cio' che le impedisce di essere la risposta a tutto appena il suolo
   // stringe. Campo e frutteto valgono zero e la somma li attraversa gratis.
-  const upkeep = civicUpkeep + policyUpkeep + farmUpkeepOf(farmCounts);
+  const farmUpkeep = farmUpkeepOf(farmCounts);
+  const catalystUpkeep = catalystUpkeepOf(state.catalysts);
+  const upkeep = services + civicUpkeep + policyUpkeep + farmUpkeep + catalystUpkeep;
   const income = population * BALANCE.funds.taxPerResident + commerce.revenue;
   const fundsAvailable = state.funds.stock + income;
   const upkeepPaid = Math.min(upkeep, fundsAvailable);
@@ -281,9 +301,11 @@ export function tick(state: SimState, terrainMap: TerrainMap): SimState {
       tax: population * BALANCE.funds.taxPerResident,
       retail: commerce.revenue,
       trade: trade.funds,
+      services,
       civic: civicUpkeep,
       policies: policyUpkeep,
-      farms: farmUpkeepOf(farmCounts),
+      farms: farmUpkeep,
+      catalysts: catalystUpkeep,
       paid: upkeepPaid,
     },
     // Stessa mossa di `flows`, sull'altra risorsa che ha piu' di una sorgente.

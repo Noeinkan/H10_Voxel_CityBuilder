@@ -76,9 +76,21 @@ export function markRowColumns(row: HTMLElement, columns?: number): void {
   const cells = Array.from(row.children).filter(
     (cell): cell is HTMLElement => cell instanceof HTMLElement,
   );
+  markCells(cells, columns);
+}
+
+/**
+ * Come `markRowColumns`, ma sulle celle che chi chiama ha gia' in mano.
+ *
+ * Serve dove le colonne che l'occhio vede non sono i figli di un elemento solo:
+ * la fila del cielo nella barra e' cinque bottoni, ma tre di essi stanno dentro
+ * la pista della scelta e due le stanno accanto. Contare i figli li' direbbe
+ * "tre colonne", e la scheda del primo bottone si aprirebbe sopra la barra.
+ */
+export function markCells(cells: readonly HTMLElement[], columns?: number): void {
   // Una griglia a colonne fisse manda a capo: quattro tessere su tre colonne
   // sono 3 + 1, e la quarta e' di nuovo in **prima** colonna — con la scheda che
-  // ha di nuovo due colonne intere da scavalcare. Contare i figli basta solo
+  // ha di nuovo due colonne intere da scavalcare. Contare le celle basta solo
   // dove la riga e' una riga sola, cioe' nei flex.
   const cols = columns ?? cells.length;
   for (const [index, cell] of cells.entries()) {

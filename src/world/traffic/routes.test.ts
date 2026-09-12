@@ -85,16 +85,53 @@ describe('planTraffic', () => {
     }
   });
 
-  it('senza acqua davanti lo yacht resta al posto barca', () => {
-    // C'e' acqua sotto il posto barca ma non oltre: il giro non ha un capo
-    // lontano, e lo yacht resta ormeggiato invece di attraversare la riva.
-    const routes = planTraffic(
-      [structure('marina', 0, 0)],
-      (x) => x < 8,
-    );
-    for (const route of routes.filter((route) => route.kind === VEHICLE.yacht)) {
-      expect(route.length).toBe(0);
-    }
+  it('un posto barca senza uscita tiene lo yacht ormeggiato', () => {
+    // C'e' acqua sotto il posto barca e non attorno: il bacino scavato dentro
+    // l'impronta non ha ancora una bocca. Il giro non ha un capo lontano, e lo
+    // yacht resta dov'e' invece di attraversare il molo.
+    const puddle = (x: number, y: number): boolean =>
+      Math.floor(x) === 7 && Math.floor(y) === 1;
+    const routes = planTraffic([structure('marina', 0, 0)], puddle);
+
+    const yachts = routes.filter((route) => route.kind === VEHICLE.yacht);
+    expect(yachts).toHaveLength(1);
+    expect(yachts[0].length).toBe(0);
+  });
+
+  it('lo yacht gira attorno al molo invece di sbatterci contro', () => {
+    // **Il difetto che questa fase toglie.** La rotta usciva in linea retta nel
+    // verso in cui guarda la marina *intera*, e per un porticciolo fatto di moli
+    // a dita quel verso finisce contro il cemento dopo pochi voxel: ne usciva un
+    // avanti-indietro sul posto. Qui l'acqua e' una L — lo slip verso sud, poi
+    // il canale verso est — e la rotta deve piegare per uscirne.
+    const channel = (x: number, y: number): boolean => {
+      const cx = Math.floor(x);
+      const cy = Math.floor(y);
+      return (cx === 7 && cy >= 1 && cy <= 5) || (cy === 5 && cx >= 7 && cx <= 15);
+    };
+    const routes = planTraffic([structure('marina', 0, 0)], channel);
+
+    // Gli ormeggi stanno al centro della colonna, non sul suo spigolo: le
+    // coordinate del mondo portano il mezzo voxel.
+    const slip = routes.find(
+      (route) => route.kind === VEHICLE.yacht && route.path[0].x === 7.5,
+    )!;
+    expect(slip).toBeDefined();
+    // Tre punti e non due: la spezzata gira al fondo dello slip. Un capo lontano
+    // raggiunto in linea retta sarebbe la prova che la rotta ha attraversato la
+    // banchina, non che l'ha aggirata.
+    expect(slip.path).toHaveLength(3);
+    const far = slip.path[slip.path.length - 1];
+    expect([far.x, far.y]).toEqual([15.5, 5.5]);
+    expect(slip.length).toBeGreaterThanOrEqual(TRAFFIC.yachtMinRun);
+
+    // Il posto barca in fondo al canale, invece, resta ormeggiato: da li' il
+    // giro sarebbe di quattro voxel, e quattro voxel di avanti-indietro non
+    // raccontano un'uscita — raccontano una barca che vibra.
+    const inner = routes.find(
+      (route) => route.kind === VEHICLE.yacht && route.path[0].x === 10.5,
+    )!;
+    expect(inner.length).toBe(0);
   });
 
   it('senza acqua sotto il posto barca lo yacht non compare', () => {
@@ -214,6 +251,69 @@ describe('planTraffic', () => {
     expect(run.length).toBe(0);
     expect(run.offworld).toBe(false);
     expect(poseAt(run, 12)!.x).toBeCloseTo(run.path[0].x, 5);
+  });
+
+  it('la nave da carico esce dal bacino e doppia il frangiflutti', () => {
+    // **Il porto vero, ridotto all'osso.** Il bacino della ricetta e' chiuso dai
+    // due bracci — le colonne y 0..1 e y 10..11 davanti alla banchina — e il
+    // distretto costiero gli posa davanti un frangiflutti allo stadio tre.
+    //
+    // Erano tutti e due fatali. Il sondaggio dritto pretendeva il franco del
+    // mare aperto **gia' dall'ormeggio**: a quattro voxel a nord c'era il
+    // braccio di sopravento del porto che ospita la nave, quindi la ricerca
+    // falliva al primo passo e la nave non partiva mai — in un ruolo che esiste
+    // per mostrare che dal mondo arriva qualcosa. E dove per fortuna partiva, il
+    // frangiflutti la rifermava. Ora la rotta cammina sull'acqua e li aggira.
+    const harbour = (x: number, y: number): boolean => {
+      const cx = Math.floor(x);
+      const cy = Math.floor(y);
+      if (cx < 12) return false;
+      if (cx <= 19 && (cy <= 1 || cy >= 10)) return false;
+      return !(cx >= 40 && cx <= 41 && cy <= 8);
+    };
+    const routes = planTraffic([structure('port', 0, 0)], harbour);
+
+    const run = routes.find((route) => route.kind === VEHICLE.cargo)!;
+    expect(run).toBeDefined();
+    expect(run.offworld).toBe(true);
+    expect(run.length).toBeGreaterThan(TRAFFIC.cargoMinRun);
+    // Il varco del frangiflutti sta a nord: se nessun punto della rotta ci passa,
+    // la nave lo sta attraversando.
+    expect(run.path.some((point) => point.y > 8)).toBe(true);
+    for (const point of run.path) expect(harbour(point.x, point.y)).toBe(true);
+  });
+
+  it('un porto che commercia mette in mare piu di una nave, sfasate', () => {
+    // **Una rotta, tanti mezzi.** Il numero lo dice la simulazione e arriva gia'
+    // quantizzato; qui si prova solo che le copie condividano la spezzata — non
+    // c'e' una seconda ricerca di rotta — e che le fasi siano spaziate, o le tre
+    // navi viaggerebbero appaiate invece di incrociarsi.
+    const routes = planTraffic([structure('port', 0, 0, { fleet: 3 })], (x) => x >= 12);
+    const runs = routes.filter((route) => route.kind === VEHICLE.cargo);
+
+    expect(runs).toHaveLength(3);
+    for (const run of runs) expect(run.path).toBe(runs[0].path);
+    expect(runs.map((run) => run.phase).sort()).toHaveLength(3);
+    expect(new Set(runs.map((run) => run.phase)).size).toBe(3);
+  });
+
+  it('una nave ferma non si moltiplica', () => {
+    // Tre navi ormeggiate sullo stesso punto sarebbero una nave sola con la
+    // sagoma piu' spessa: dove non c'e' rotta da percorrere, la flotta resta uno.
+    const routes = planTraffic([structure('port', 0, 0, { fleet: 3 })], (x) => x < 18);
+    expect(routes.filter((route) => route.kind === VEHICLE.cargo)).toHaveLength(1);
+  });
+
+  it('la linea di traghetto prende il servizio del capo piu servito', () => {
+    const routes = planTraffic(
+      [structure('ferry', 0, 0, { fleet: 1 }), structure('ferry', 0, 100, { fleet: 2 })],
+      OPEN_SEA,
+    );
+    // Due barche da lavoro ferme piu' le due della traversata: la linea e' una,
+    // i mezzi che ci fanno la spola sono due.
+    const crossings = routes.filter((route) => route.kind === VEHICLE.ferry);
+    expect(crossings).toHaveLength(2);
+    expect(crossings[0].phase).not.toBe(crossings[1].phase);
   });
 
   it('un ormeggio all asciutto non tiene nessuna barca', () => {

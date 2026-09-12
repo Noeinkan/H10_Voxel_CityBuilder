@@ -40,6 +40,49 @@ export const SEASON_NAMES: readonly string[] = ['Spring', 'Summer', 'Autumn', 'W
 
 export const SEASON_COUNT = SEASON_NAMES.length;
 
+/** Le quattro in ordine, per chi deve disegnarle o percorrerle tutte. */
+export const SEASONS: readonly Season[] = [SEASON.spring, SEASON.summer, SEASON.autumn, SEASON.winter];
+
+/**
+ * Gli id con cui una stagione si scrive in un indirizzo.
+ *
+ * Minuscoli e separati da `SEASON_NAMES` perche' sono chiavi e non etichette:
+ * `?calendar=winter` deve continuare a valere anche il giorno in cui l'HUD
+ * scrivesse «Deep winter» sul bottone.
+ */
+export const SEASON_IDS: readonly string[] = ['spring', 'summer', 'autumn', 'winter'];
+
+/** Legge una stagione da un parametro URL. Qualunque altra cosa e' `null`. */
+export function resolveSeason(raw: string | null): Season | null {
+  if (raw === null) return null;
+  const index = SEASON_IDS.indexOf(raw.trim().toLowerCase());
+  return index < 0 ? null : (index as Season);
+}
+
+/** La stagione dopo questa, in cerchio: e' il giro del tasto, non un quinto bottone. */
+export function nextSeason(season: Season): Season {
+  return ((season + 1) % SEASON_COUNT) as Season;
+}
+
+/** Dove comincia una stagione, in fase d'anno: il suo primo giorno. */
+export function seasonStartPhase(season: Season): number {
+  return season / SEASON_COUNT;
+}
+
+/**
+ * Il cuore di una stagione: mezza stagione dopo il suo inizio.
+ *
+ * Sono i quattro istanti che contano davvero — meta' estate e' il picco della
+ * resa, meta' inverno il minimo, e le altre due valgono uno — perche' le curve
+ * si spengono al **centro** delle stagioni e non ai loro confini. E' anche la
+ * lettura giusta di `YEAR_START_PHASE`, che non e' un numero scelto a mano ma
+ * esattamente `seasonHeartPhase(SEASON.summer)`: la citta' nasce nel cuore
+ * dell'estate.
+ */
+export function seasonHeartPhase(season: Season): number {
+  return (season + 0.5) / SEASON_COUNT;
+}
+
 /**
  * Dove sta l'anno quando la citta' nasce, in [0, 1).
  *

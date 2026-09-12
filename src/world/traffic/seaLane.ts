@@ -40,10 +40,41 @@ export interface LaneQuery {
 const SNAP_RINGS = 4;
 
 /** I vicini, in ordine fisso: la ricerca deve dare la stessa rotta a ogni partita. */
-const NEIGHBOURS: readonly (readonly [number, number])[] = [
+export const NEIGHBOURS: readonly (readonly [number, number])[] = [
   [1, 0], [-1, 0], [0, 1], [0, -1],
   [1, 1], [1, -1], [-1, 1], [-1, -1],
 ];
+
+/**
+ * «Ci passa uno scafo?», in coordinate di mondo.
+ *
+ * **Il franco si misura sui quattro assi e non sul quadrato**, per la stessa
+ * ragione di `seesWater` in `sites/`: e' la stessa domanda a un ottavo del
+ * costo, e una secca raggiungibile solo in diagonale e' comunque una secca da
+ * cui conviene stare alla larga.
+ *
+ * Sta qui e non dentro la ricerca perche' e' l'unica regola che tutti i
+ * mestieri dell'acqua condividono — la ricerca di rotta, il tiro di corda che
+ * la semplifica, e la ricerca della bocca in `seaExit.ts` — e scritta tre volte
+ * divergerebbe: a divergere sarebbe **quanto vicino alla banchina** una nave
+ * possa passare, che e' esattamente il numero che si vede a schermo.
+ */
+export function navigableAt(
+  water: (x: number, y: number) => boolean,
+  step: number,
+  clearance: number,
+): (x: number, y: number) => boolean {
+  return (x, y) => {
+    if (!water(x, y)) return false;
+    for (let d = 1; d <= clearance; d++) {
+      if (!(water(x + d * step, y) && water(x - d * step, y) &&
+        water(x, y + d * step) && water(x, y - d * step))) {
+        return false;
+      }
+    }
+    return true;
+  };
+}
 
 /**
  * La spezzata da `from` a `to` che resta sull'acqua, o null se non ce n'e' una.
@@ -67,27 +98,14 @@ export function planSeaLane(query: LaneQuery): readonly LanePoint[] | null {
   const worldX = (i: number): number => minX + i * step;
   const worldY = (j: number): number => minY + j * step;
 
-  /**
-   * Navigabilita' di una cella, con memoria.
-   *
-   * Il franco si misura sui quattro assi e non sul quadrato, per la stessa
-   * ragione di `seesWater` in `sites/`: e' la stessa domanda a un ottavo del
-   * costo, e una secca raggiungibile solo in diagonale e' comunque una secca da
-   * cui conviene stare alla larga.
-   */
+  /** Navigabilita' di una cella, con memoria: la regola sta in `navigableAt`. */
+  const passes = navigableAt(query.water, step, clearance);
   const cache = new Int8Array(width * height);
   const open = (i: number, j: number): boolean => {
     if (i < 0 || j < 0 || i >= width || j >= height) return false;
     const at = j * width + i;
     if (cache[at] !== 0) return cache[at] === 1;
-
-    let ok = query.water(worldX(i), worldY(j));
-    for (let d = 1; ok && d <= clearance; d++) {
-      ok = query.water(worldX(i) + d * step, worldY(j)) &&
-        query.water(worldX(i) - d * step, worldY(j)) &&
-        query.water(worldX(i), worldY(j) + d * step) &&
-        query.water(worldX(i), worldY(j) - d * step);
-    }
+    const ok = passes(worldX(i), worldY(j));
     cache[at] = ok ? 1 : -1;
     return ok;
   };
@@ -217,16 +235,10 @@ function clear(
   const dx = b.x - a.x;
   const dy = b.y - a.y;
   const samples = Math.ceil((Math.abs(dx) + Math.abs(dy)) / (step / 2));
-  const side = clearance * step;
+  const passes = navigableAt(water, step, clearance);
 
   for (let s = 1; s < samples; s++) {
-    const x = a.x + (dx * s) / samples;
-    const y = a.y + (dy * s) / samples;
-    if (!water(x, y)) return false;
-    if (side > 0 && !(water(x + side, y) && water(x - side, y) &&
-      water(x, y + side) && water(x, y - side))) {
-      return false;
-    }
+    if (!passes(a.x + (dx * s) / samples, a.y + (dy * s) / samples)) return false;
   }
   return true;
 }

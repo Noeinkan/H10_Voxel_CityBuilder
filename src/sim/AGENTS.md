@@ -60,15 +60,23 @@ calcolati da `tick` e gettati via una riga dopo; chi li mostra li legge, non li
 ricalcola.
 
 **La stagione entra da un punto solo, e chi pianta non la vede.**
-`harvestFactorAt(tickCount)` moltiplica il raccolto dentro `tick`, e `harvestOf`
-lo prende come **terzo** parametro separato da `staffing`: i due rispondono a due
-domande diverse — quanta gente ci e' andata, e quanto c'era da raccogliere — e
-sommarli in un numero solo renderebbe illeggibile il referto. `foodDeficitOf` e
-`missingPlotsOf` non lo passano **apposta**: chi dimensiona la campagna ragiona
-sull'anno medio, o pianterebbe d'inverno e smetterebbe d'estate. Per la stessa
-ragione il fronte dell'emergenza (`foodCoverage`, in `tick`) legge `foodYieldOf`
-senza fattore: la resa scende sotto il pareggio ogni inverno per costruzione, e
-un fronte che la seguisse si riarmerebbe una volta l'anno da solo.
+`harvestFactorAt(calendarTickOf(state))` moltiplica il raccolto dentro `tick`, e
+`harvestOf` lo prende come **terzo** parametro separato da `staffing`: i due
+rispondono a due domande diverse — quanta gente ci e' andata, e quanto c'era da
+raccogliere — e sommarli in un numero solo renderebbe illeggibile il referto.
+`foodDeficitOf` e `missingPlotsOf` non lo passano **apposta**: chi dimensiona la
+campagna ragiona sull'anno medio, o pianterebbe d'inverno e smetterebbe
+d'estate. Per la stessa ragione il fronte dell'emergenza (`foodCoverage`, in
+`tick`) legge `foodYieldOf` senza fattore: la resa scende sotto il pareggio ogni
+inverno per costruzione, e un fronte che la seguisse si riarmerebbe una volta
+l'anno da solo.
+
+**Il tick del calendario non e' `tickCount`.** Chi legge l'anno — resa, colore,
+orologio dell'HUD — passa da `calendarTickOf(state)` (`calendar.ts`), che somma
+lo scorrimento scelto dal giocatore. `tickCount` resta l'eta' della citta' e
+regge le scadenze — `nextDecisionTick`, i raffreddamenti, i lucchetti — che con
+il mese non c'entrano: se ti serve «quando», e' quello; se ti serve «che mese»,
+e' l'altro.
 
 E non entra in `urbanProfileAt`, che e' **spaziale**: se leggesse il tempo, lo
 stesso stato darebbe edifici diversi a seconda di quando lo si guarda. E' la

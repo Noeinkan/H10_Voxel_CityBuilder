@@ -8,7 +8,7 @@ import type { BuildingRecord } from '../../world/buildings/BuildingRegistry';
 import { captureSave } from './capture';
 import { SAVE_VERSION } from './format';
 
-const SCENE = { paused: false, speed: 1, clock: 0, healthyTicks: 0 };
+const SCENE = { paused: false, speed: 1, clock: 0, healthyTicks: 0, milestone: -1 };
 
 function record(id: number, x: number, extra: Partial<BuildingRecord> = {}): BuildingRecord {
   return {

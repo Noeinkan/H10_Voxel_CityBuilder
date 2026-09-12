@@ -195,8 +195,22 @@ export function watchRailDensity(
   observer.observe(rail);
   for (const child of Array.from(rail.children)) observer.observe(child);
 
+  // I figli del rail non sono tutti li' alla partenza: la legenda delle viste
+  // dati la appende `main.ts` a HUD gia' costruito, e un figlio che nessuno
+  // osserva non fa rimisurare niente — sborda dal fondo dello schermo e resta
+  // li', con il suo bottone fuori dalla finestra. Si osserva quindi anche cio'
+  // che arriva dopo, che e' l'unica ipotesi che questo file faceva sul rail.
+  const late = new MutationObserver(() => {
+    for (const child of Array.from(rail.children)) observer.observe(child);
+    schedule();
+  });
+  late.observe(rail, { childList: true });
+
   apply(state);
   schedule();
 
-  return () => observer.disconnect();
+  return () => {
+    late.disconnect();
+    observer.disconnect();
+  };
 }

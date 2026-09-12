@@ -29,7 +29,7 @@ export type DockPanel = 'city' | 'policies' | 'menu' | 'themes' | 'views' | 'inf
  * e' il caso dei salvataggi dell'MVP e delle fixture di scena, che portano la
  * classe e basta.
  */
-function sameTool(tool: GameTool, selected: GameTool): boolean {
+export function sameTool(tool: GameTool, selected: GameTool): boolean {
   if (tool.kind !== selected.kind) return false;
   if (tool.kind !== 'catalyst' || selected.kind !== 'catalyst') return true;
   return selected.id !== undefined ? selected.id === tool.id : selected.class === tool.class;

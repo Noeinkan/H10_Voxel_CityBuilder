@@ -32,6 +32,7 @@ console ogni 5 secondi, senza aprire il gate del debug.
 | `hour` | — | `<0..24>` fissa l'ora e **ferma** il ciclo giorno/notte; vale anche senza `debug` |
 | `daylight` | `cycle` | `day` o `night` fermano l'orologio sull'ora del modo; è la stessa scelta del bottone nell'HUD e vale anche senza `debug` |
 | `season` | — | `<0..1>` inchioda la fase dell'anno e la sottrae alla simulazione: `0` primavera, `0.375` estate, `0.625` autunno, `0.875` inverno. Vale anche senza `debug`, ed è un look come `theme` e `hour` |
+| `calendar` | `summer` | `spring`, `summer`, `autumn`, `winter`: in che stagione **nasce** l'isola. Non è `season` scritto a parole — quello ferma l'anno, questo sposta soltanto il punto da cui parte, e il calendario poi cammina come sempre. È la scelta che il titolo scrive nell'indirizzo, e vale anche senza `debug` |
 | `inspect` | — | `xray`, `slice`, `section`, `block`: apre una vista di ispezione. Vale **anche senza** `debug` — è così che uno strumento di cattura inquadra una sezione senza overlay |
 | `slice` | — | `<z>` fissa la quota della fetta; senza, segue il suolo che si sta guardando |
 | `intro` | `1` | `0` toglie la caduta d'ingresso: la prima isola compare senza scendere dal cielo. Vale **anche senza** `debug`, serve a confrontare e a catturare uno scatto pulito |
@@ -92,6 +93,28 @@ primavera, **0,375** pieno dell'estate, **0,625** pieno dell'autunno, **0,875**
 pieno dell'inverno. Serve a guardare un inverno senza aspettare i quattro minuti
 che la partita ci mette ad arrivarci, e a catturare i sette temi nella stessa
 stagione.
+
+**Il giocatore però l'anno lo sposta, non lo ferma.** Quattro bottoni —
+`Spring`, `Summer`, `Autumn`, `Winter` — nella barra risorse, nel menu di pausa
+e sul titolo, con acceso quello in cui la città sta; il tasto `K` li gira.
+Premerne uno porta il calendario al **primo giorno** di quella stagione e lo
+lascia camminare da lì, quindi il raccolto si muove insieme al colore: è la
+differenza con i due modi fissi della luce, che l'orologio lo fermano davvero.
+Premere la stagione in corso non fa niente.
+
+Sotto c'è `calendarShift` (`src/sim/calendar.ts`), un secondo numero che si
+somma a `tickCount` **solo** quando si legge l'anno. `tickCount` resta l'età
+della città — ci poggiano la prossima decisione, i raffreddamenti degli eventi,
+i lucchetti delle policy — e spostarlo per cambiare mese avrebbe fatto scattare
+cose che con il mese non c'entrano. Lo scorrimento va solo in avanti, così
+l'anno scritto nell'orologio dell'HUD non torna mai indietro, e finisce nel
+salvataggio: un file più vecchio torna a zero, cioè con l'anno agganciato
+all'età.
+
+`?calendar=<stagione>` è l'altra faccia, e non è `?season=` scritto a parole:
+dice in che stagione **nasce** l'isola. Nel *cuore* della stagione e non al suo
+primo giorno — `?calendar=summer` è esattamente `YEAR_START_PHASE`, quindi chi
+non lo passa ottiene la partita di sempre.
 
 `__voxelSeason(phase?)` fa lo stesso da console: un numero inchioda la fase,
 `null` la restituisce alla simulazione, nessun argomento legge e basta. Riporta
@@ -232,6 +255,7 @@ girano a passi continui e `F` e `WASD` restano fermi: vedi *Viste di ispezione*.
 
 **Fuori dal gate del debug**, perché sono comandi di gioco e non misure: `V`
 cicla le viste, `L` cicla i modi del giorno (ciclo, giorno fisso, notte fissa),
+`K` porta l'anno alla stagione successiva (e lo lascia camminare da lì),
 `1`..`9` scelgono lo **strumento** n-esimo del dock, `Shift`+`1`..`9` scelgono il
 **tema**, `[`/`]` e `PageDown`/`PageUp` muovono la quota della fetta (`Shift` per
 un piano intero). Rispondono anche alla radice, senza `?debug=1`.

@@ -19,7 +19,7 @@ import {
 } from './config';
 import { clamp, pickInt, type BandRect } from './bandRect';
 import { forcedOp, nextRect, type BandBox } from './bandOps';
-import { crownBands } from './crowns';
+import { crownBands, pickCrownKind } from './crowns';
 import { classSurface, paint } from './paint';
 import type { VoxelStamp } from './stamp';
 
@@ -307,7 +307,13 @@ export function generateBuilding(request: BuildingRequest): VoxelStamp {
   // racconto «nuova cima», la seconda «cima da torre».
   const crownStart = rects.length;
   const crownHeight = pickInt(roof, GRAMMAR.crownHeight[0], GRAMMAR.crownHeight[1]);
-  const crown = crownBands(shape.crownKind, rect, crownHeight, crownBonusOf(level));
+  // **Quale cima, fra quelle che la tipologia ammette.** Il tiro sta qui e non
+  // nel catalogo perche' e' la stessa scelta che il repertorio delle fasce fa a
+  // ogni piano: la riga dichiara la famiglia, il seme sceglie la voce. Con una
+  // cima sola per riga, ogni edificio che quella riga produce finiva uguale — sul
+  // ripiego residenziale erano il 100% dei semi a chiudere `6x6 > 4x4 > 2x2`.
+  const crownKind = pickCrownKind(shape.crownKinds, roof);
+  const crown = crownBands(crownKind, rect, crownHeight, crownBonusOf(level));
   for (const band of crown.bands) {
     rects.push(band.rect);
     heights.push(band.height);
@@ -323,7 +329,14 @@ export function generateBuilding(request: BuildingRequest): VoxelStamp {
   // Alla soglia di skyline il dettaglio c'e' **sempre**, alla sua altezza piena:
   // e' la riga che chiude la silhouette della citta' cresciuta, e non dipende
   // dal profilo.
-  const propSide = Math.min(GRAMMAR.roofPropSide, crownRect.w, crownRect.h);
+  //
+  // Il lato si pesca prima della posizione, e non e' un dettaglio d'ordine: la
+  // posizione si misura sullo spazio che **resta** dentro il coronamento, quindi
+  // deve gia' sapere quanto e' largo il prisma. Il pennone consuma cinque tiri —
+  // lato, le due posizioni, lo scarto d'altezza e la presenza — e li consuma
+  // tutti e cinque a ogni edificio, comunque vada.
+  const rolledSide = pickInt(roof, GRAMMAR.roofPropSide[0], GRAMMAR.roofPropSide[1]);
+  const propSide = Math.min(rolledSide, crownRect.w, crownRect.h);
   const propRect: BandRect = {
     x0: crownRect.x0 + Math.floor(roof() * (crownRect.w - propSide + 1)),
     y0: crownRect.y0 + Math.floor(roof() * (crownRect.h - propSide + 1)),
@@ -333,16 +346,32 @@ export function generateBuilding(request: BuildingRequest): VoxelStamp {
   rects.push(propRect);
   // **La soglia scavalca la cima, e per questo la riga sopra dice «sempre».**
   // Il dettaglio era condizionato al solo `crown.roofProp`, che quattro cime su
-  // cinque negano: `stepped` e' la cima del commercio e `flat` quella
+  // sei negano: `stepped` e' la cima del commercio e `flat` quella
   // dell'industria, cioe' proprio le classi piu' numerose, e la promessa non si
   // e' mai avverata per loro — una citta' matura chiudeva decine di torri
   // identiche con lo stesso taglio netto. Sotto la soglia decide ancora la cima,
   // che e' il verso giusto: e' li' che «tetto piano» significa capannone.
+  //
+  // **Sotto la soglia il pennone e' un tiro, sopra e' una promessa.** Era
+  // presente su *ogni* cima che lo ammette, sempre alto uguale e sempre largo
+  // due: su un cappello che rientra sempre di un passo per lato faceva la terza
+  // riga di una progressione identica in tutta la citta'. I due tiri si
+  // consumano comunque — anche oltre la soglia e anche sulle cime che il pennone
+  // lo negano — perche' la sequenza del canale del tetto non deve dipendere dal
+  // livello ne' dalla cima uscita: e' la stessa disciplina del tiro d'accento.
+  //
+  // Lo scarto si pesca con `roof()` diretto e non con `pickInt`: quello torna il
+  // minimo **senza pescare** quando l'intervallo e' vuoto, ed e' il caso reale di
+  // ogni tipologia che dichiara `roofPropHeight: 0` — cioe' proprio quelle su cui
+  // la sequenza si sposterebbe di un tiro rispetto a tutte le altre.
+  const drop = Math.floor(roof() * (GRAMMAR.roofPropDrop + 1));
+  const rolledPropHeight = Math.max(0, profile.roofPropHeight - drop);
+  const kept = roof() < GRAMMAR.roofPropChance;
   const atSkyline = level >= VISUAL_LEVELS.skyline;
   const propHeight = atSkyline
     ? Math.max(profile.roofPropHeight, SKYLINE_PROP_HEIGHT)
-    : profile.roofPropHeight;
-  heights.push(crown.roofProp || atSkyline ? propHeight : 0);
+    : rolledPropHeight;
+  heights.push(atSkyline || (crown.roofProp && kept) ? propHeight : 0);
 
   const podiumProfile = request.mixed !== undefined && podium > 0
     ? CLASS_PROFILE[request.mixed]

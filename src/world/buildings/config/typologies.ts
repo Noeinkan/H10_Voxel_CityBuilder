@@ -3,7 +3,7 @@ import { PALETTE_SLOTS } from '../../../engine/paletteSlots';
 import type { ClassProfile } from './classProfile';
 import {
   BAND_OP,
-  CROWN_KIND,
+  CROWN_SET,
   LOT_ROLE,
   MAX_FOOTPRINT,
   type CrownKind,
@@ -35,8 +35,16 @@ export interface TypologyShape {
   readonly podiumBands: number;
   /** Svuota il cuore delle fasce larghe: e' l'isolato a corte. */
   readonly courtyard: boolean;
-  /** Come si chiude la silhouette. Vedi `CROWN_KIND`. */
-  readonly crownKind: CrownKind;
+  /**
+   * Le cime fra cui il tiro del tetto sceglie. Vedi `CROWN_KIND` e `CROWN_SET`.
+   *
+   * **E' un elenco e non una cima sola**, per la stessa ragione per cui
+   * `shrinkOps` e' un elenco: una riga di catalogo produce migliaia di edifici, e
+   * con una cima sola sono migliaia di edifici con la stessa cima. Le famiglie
+   * gia' pronte stanno in `CROWN_SET`; una riga che vuole esattamente una cima
+   * scrive `[CROWN_KIND.x]`, e non serve nessun altro meccanismo.
+   */
+  readonly crownKinds: readonly CrownKind[];
   /**
    * Pianta le rientranze scoperte invece di lasciarle pavimentate.
    *
@@ -202,7 +210,7 @@ export interface TypologyDefinition extends TypologyRequirement {
 export const DEFAULT_TYPOLOGY_SHAPE: TypologyShape = {
   podiumBands: 0,
   courtyard: false,
-  crownKind: CROWN_KIND.taper,
+  crownKinds: CROWN_SET.taper,
   roofGarden: false,
   chamfer: 0,
   arcade: false,
@@ -239,7 +247,7 @@ export const TYPOLOGIES: readonly TypologyDefinition[] = [
       ...DEFAULT_TYPOLOGY_SHAPE,
       roofGarden: true,
       podiumBands: 1,
-      crownKind: CROWN_KIND.flat,
+      crownKinds: CROWN_SET.flat,
       maxFootprint: 6,
       // Il portico al piano terra non e' un ornamento aggiunto alla casa-bottega:
       // e' la casa-bottega. La «via di cinque piedi» — il marciapiede coperto
@@ -280,7 +288,7 @@ export const TYPOLOGIES: readonly TypologyDefinition[] = [
     shape: {
       ...DEFAULT_TYPOLOGY_SHAPE,
       roofGarden: true,
-      crownKind: CROWN_KIND.lantern,
+      crownKinds: CROWN_SET.lantern,
       // Lo smusso su un angolo non e' decorazione: e' il taglio che gli edifici
       // veri hanno proprio li', dove due fronti si incontrano su un incrocio.
       chamfer: 1,
@@ -334,7 +342,7 @@ export const TYPOLOGIES: readonly TypologyDefinition[] = [
     // puo' culminare in una delle quattro verticali.
     evolvesFrom: ['terracedHousing'],
     priority: 2,
-    shape: { ...DEFAULT_TYPOLOGY_SHAPE, roofGarden: true, courtyard: true, crownKind: CROWN_KIND.flat, minFootprint: 8 },
+    shape: { ...DEFAULT_TYPOLOGY_SHAPE, roofGarden: true, courtyard: true, crownKinds: CROWN_SET.flat, minFootprint: 8 },
     profile: {
       bandHeight: [4, 6],
       shrinkBias: 0.08,
@@ -408,7 +416,7 @@ export const TYPOLOGIES: readonly TypologyDefinition[] = [
       ...DEFAULT_TYPOLOGY_SHAPE,
       roofGarden: true,
       chamfer: 2,
-      crownKind: CROWN_KIND.lantern,
+      crownKinds: CROWN_SET.lantern,
       minFootprint: 8,
     },
     profile: {
@@ -446,7 +454,7 @@ export const TYPOLOGIES: readonly TypologyDefinition[] = [
     priority: 5,
     shape: {
       ...DEFAULT_TYPOLOGY_SHAPE,
-      crownKind: CROWN_KIND.stepped,
+      crownKinds: CROWN_SET.stepped,
       roofGarden: true,
       minFootprint: 7,
     },
@@ -488,7 +496,7 @@ export const TYPOLOGIES: readonly TypologyDefinition[] = [
     shape: {
       ...DEFAULT_TYPOLOGY_SHAPE,
       roofGarden: true,
-      crownKind: CROWN_KIND.flat,
+      crownKinds: CROWN_SET.flat,
       maxFootprint: 6,
       // La riga che porta lo sbalzo in citta'. E' anche quella giusta: la casa
       // impilata nasce dove c'e' densita' e non ricchezza, ed e' esattamente il
@@ -538,7 +546,7 @@ export const TYPOLOGIES: readonly TypologyDefinition[] = [
     shape: {
       ...DEFAULT_TYPOLOGY_SHAPE,
       roofGarden: true,
-      crownKind: CROWN_KIND.ridge,
+      crownKinds: CROWN_SET.ridge,
       minFootprint: 8,
       // Il corpo lungo che sporge sulla via: una stecca affacciata e' fatta
       // cosi', e lo sbalzo e' il solo modo che la grammatica ha di dirlo.
@@ -620,7 +628,7 @@ export const TYPOLOGIES: readonly TypologyDefinition[] = [
       // verticali smussano di uno. Qui lo smusso resta a zero — il default — e
       // non e' una dimenticanza: il volume netto, con i quattro spigoli interi,
       // e' meta' di cio' che distingue una costruzione recente da una vecchia.
-      crownKind: CROWN_KIND.flat,
+      crownKinds: CROWN_SET.flat,
       // Il piano terra pieno sotto i piani che sporgono: e' il fronte con la
       // rimessa e l'ingresso arretrato, e insieme a `overhang` fa l'ombra sotto
       // il corpo aggettante che regge da sola la lettura del fronte.
@@ -693,7 +701,7 @@ export const TYPOLOGIES: readonly TypologyDefinition[] = [
       // sequenza sopra un corpo netto danno la scatola arretrata dell'ultimo
       // piano, che sull'angolo si vede da entrambi i fronti. `flat` la
       // renderebbe indistinguibile dalla schiera vista di sbieco.
-      crownKind: CROWN_KIND.stepped,
+      crownKinds: CROWN_SET.stepped,
       podiumBands: 1,
       overhang: 2,
       // Piu' stretta della schiera: la testata di una fila e' il pezzo che sale,
@@ -736,7 +744,7 @@ export const TYPOLOGIES: readonly TypologyDefinition[] = [
     priority: 4,
     shape: {
       ...DEFAULT_TYPOLOGY_SHAPE,
-      crownKind: CROWN_KIND.flat,
+      crownKinds: CROWN_SET.flat,
       // **Nel cuore dell'isolato il tetto e' cio' che si vede**, e da lassu' non
       // c'e' un fronte a raccontare niente: e' la sola delle tre a piantarlo.
       // La casa larga e bassa con la copertura verde e' anche il contrappunto
@@ -789,7 +797,7 @@ export const TYPOLOGIES: readonly TypologyDefinition[] = [
     shape: {
       ...DEFAULT_TYPOLOGY_SHAPE,
       courtyard: true,
-      crownKind: CROWN_KIND.flat,
+      crownKinds: CROWN_SET.flat,
       // Il mandato si chiama "orti di quartiere": era l'unica riga a portare il
       // verde nei soli slot di colore, e ora lo porta anche dove si sta.
       roofGarden: true,
@@ -817,7 +825,7 @@ export const TYPOLOGIES: readonly TypologyDefinition[] = [
     // Forma intermedia della linea residenziale, come sopra.
     evolvesFrom: ['terracedHousing'],
     priority: 6,
-    shape: { ...DEFAULT_TYPOLOGY_SHAPE, roofGarden: true, crownKind: CROWN_KIND.flat, maxFootprint: 5 },
+    shape: { ...DEFAULT_TYPOLOGY_SHAPE, roofGarden: true, crownKinds: CROWN_SET.flat, maxFootprint: 5 },
     profile: {
       bandHeight: [6, 8],
       shrinkBias: 0.9,
@@ -849,7 +857,7 @@ export const TYPOLOGIES: readonly TypologyDefinition[] = [
       ...DEFAULT_TYPOLOGY_SHAPE,
       arcade: true,
       podiumBands: 1,
-      crownKind: CROWN_KIND.gable,
+      crownKinds: CROWN_SET.gable,
       roofGarden: true,
       minFootprint: 6,
       overhang: 2,
@@ -886,7 +894,7 @@ export const TYPOLOGIES: readonly TypologyDefinition[] = [
     shape: {
       ...DEFAULT_TYPOLOGY_SHAPE,
       roofGarden: true,
-      crownKind: CROWN_KIND.gable,
+      crownKinds: CROWN_SET.gable,
       minFootprint: 4,
       maxFootprint: 6,
     },
@@ -918,7 +926,7 @@ export const TYPOLOGIES: readonly TypologyDefinition[] = [
     shape: {
       ...DEFAULT_TYPOLOGY_SHAPE,
       roofGarden: true,
-      crownKind: CROWN_KIND.lantern,
+      crownKinds: CROWN_SET.lantern,
       chamfer: 1,
       minFootprint: 5,
       maxFootprint: 7,
@@ -968,7 +976,7 @@ export const TYPOLOGIES: readonly TypologyDefinition[] = [
     shape: {
       ...DEFAULT_TYPOLOGY_SHAPE,
       roofGarden: true,
-      crownKind: CROWN_KIND.taper,
+      crownKinds: CROWN_SET.taper,
       chamfer: 2,
       minFootprint: 6,
       maxFootprint: 7,
@@ -1017,7 +1025,7 @@ export const TYPOLOGIES: readonly TypologyDefinition[] = [
     // culminare nelle tre verticali.
     evolvesFrom: ['retailRow'],
     priority: 6,
-    shape: { ...DEFAULT_TYPOLOGY_SHAPE, roofGarden: true, podiumBands: 1, crownKind: CROWN_KIND.flat, minFootprint: 6 },
+    shape: { ...DEFAULT_TYPOLOGY_SHAPE, roofGarden: true, podiumBands: 1, crownKinds: CROWN_SET.flat, minFootprint: 6 },
     profile: {
       bandHeight: [4, 4],
       shrinkBias: 0.08,
@@ -1088,7 +1096,7 @@ export const TYPOLOGIES: readonly TypologyDefinition[] = [
       roofGarden: true,
       podiumBands: 2,
       chamfer: 1,
-      crownKind: CROWN_KIND.stepped,
+      crownKinds: CROWN_SET.stepped,
       minFootprint: 7,
     },
     profile: {
@@ -1148,7 +1156,7 @@ export const TYPOLOGIES: readonly TypologyDefinition[] = [
       'galleria',
     ],
     priority: 5,
-    shape: { ...DEFAULT_TYPOLOGY_SHAPE, roofGarden: true, crownKind: CROWN_KIND.flat, minFootprint: 6 },
+    shape: { ...DEFAULT_TYPOLOGY_SHAPE, roofGarden: true, crownKinds: CROWN_SET.flat, minFootprint: 6 },
     profile: {
       bandHeight: [6, 8],
       shrinkBias: 0.18,
@@ -1179,7 +1187,7 @@ export const TYPOLOGIES: readonly TypologyDefinition[] = [
       ...DEFAULT_TYPOLOGY_SHAPE,
       arcade: true,
       podiumBands: 2,
-      crownKind: CROWN_KIND.ridge,
+      crownKinds: CROWN_SET.ridge,
       chamfer: 2,
       minFootprint: 8,
     },
@@ -1212,7 +1220,7 @@ export const TYPOLOGIES: readonly TypologyDefinition[] = [
     shape: {
       ...DEFAULT_TYPOLOGY_SHAPE,
       roofGarden: true,
-      crownKind: CROWN_KIND.gable,
+      crownKinds: CROWN_SET.gable,
       minFootprint: 4,
       maxFootprint: 8,
     },
@@ -1263,7 +1271,7 @@ export const TYPOLOGIES: readonly TypologyDefinition[] = [
     shape: {
       ...DEFAULT_TYPOLOGY_SHAPE,
       roofGarden: true,
-      crownKind: CROWN_KIND.gable,
+      crownKinds: CROWN_SET.gable,
       minFootprint: 4,
       maxFootprint: 6,
     },
@@ -1316,7 +1324,7 @@ export const TYPOLOGIES: readonly TypologyDefinition[] = [
     shape: {
       ...DEFAULT_TYPOLOGY_SHAPE,
       podiumBands: 2,
-      crownKind: CROWN_KIND.flat,
+      crownKinds: CROWN_SET.flat,
       minFootprint: 8,
     },
     profile: {
@@ -1358,7 +1366,7 @@ export const TYPOLOGIES: readonly TypologyDefinition[] = [
     shape: {
       ...DEFAULT_TYPOLOGY_SHAPE,
       podiumBands: 2,
-      crownKind: CROWN_KIND.stepped,
+      crownKinds: CROWN_SET.stepped,
       roofGarden: true,
       minFootprint: 7,
     },
@@ -1410,7 +1418,7 @@ export const TYPOLOGIES: readonly TypologyDefinition[] = [
       arcade: true,
       courtyard: true,
       podiumBands: 2,
-      crownKind: CROWN_KIND.stepped,
+      crownKinds: CROWN_SET.stepped,
       minFootprint: 8,
       overhang: 2,
     },
@@ -1444,7 +1452,7 @@ export const TYPOLOGIES: readonly TypologyDefinition[] = [
       roofGarden: true,
       arcade: true,
       podiumBands: 1,
-      crownKind: CROWN_KIND.flat,
+      crownKinds: CROWN_SET.flat,
       minFootprint: 7,
       // Portico sotto e piani che sporgono sopra: e' la stessa strada guadagnata
       // due volte, ed e' la sezione che ogni via commerciale fitta ha davvero.
@@ -1473,7 +1481,7 @@ export const TYPOLOGIES: readonly TypologyDefinition[] = [
     // piatto su un edificio basso e isolato legge come costruzione non finita.
     maxDensity: 0.45,
     priority: 2,
-    shape: { ...DEFAULT_TYPOLOGY_SHAPE, roofGarden: true, crownKind: CROWN_KIND.gable, minFootprint: 7 },
+    shape: { ...DEFAULT_TYPOLOGY_SHAPE, roofGarden: true, crownKinds: CROWN_SET.gable, minFootprint: 7 },
     profile: {
       bandHeight: [5, 6],
       shrinkBias: 0,
@@ -1494,7 +1502,7 @@ export const TYPOLOGIES: readonly TypologyDefinition[] = [
     shape: {
       ...DEFAULT_TYPOLOGY_SHAPE,
       roofGarden: true,
-      crownKind: CROWN_KIND.flat,
+      crownKinds: CROWN_SET.flat,
       arcade: true,
       courtyard: true,
       maxFootprint: 6,
@@ -1517,7 +1525,7 @@ export const TYPOLOGIES: readonly TypologyDefinition[] = [
     // che il cortile prende quando il luogo lo specializza.
     evolvesFrom: ['industrialYard'],
     priority: 5,
-    shape: { ...DEFAULT_TYPOLOGY_SHAPE, crownKind: CROWN_KIND.flat, minFootprint: 8 },
+    shape: { ...DEFAULT_TYPOLOGY_SHAPE, crownKinds: CROWN_SET.flat, minFootprint: 8 },
     profile: {
       bandHeight: [4, 4],
       shrinkBias: 0,
@@ -1541,7 +1549,7 @@ export const TYPOLOGIES: readonly TypologyDefinition[] = [
     // dice piu' del fondo — e la linea resta quella della logistica.
     evolvesFrom: ['logisticsDepot', 'strippedYard'],
     priority: 6,
-    shape: { ...DEFAULT_TYPOLOGY_SHAPE, crownKind: CROWN_KIND.flat, minFootprint: 7 },
+    shape: { ...DEFAULT_TYPOLOGY_SHAPE, crownKinds: CROWN_SET.flat, minFootprint: 7 },
     profile: {
       bandHeight: [4, 5],
       shrinkBias: 0,
@@ -1573,7 +1581,7 @@ export const TYPOLOGIES: readonly TypologyDefinition[] = [
     shape: {
       ...DEFAULT_TYPOLOGY_SHAPE,
       podiumBands: 2,
-      crownKind: CROWN_KIND.ridge,
+      crownKinds: CROWN_SET.ridge,
       minFootprint: 8,
     },
     profile: {
@@ -1609,7 +1617,7 @@ export const TYPOLOGIES: readonly TypologyDefinition[] = [
     priority: 5,
     shape: {
       ...DEFAULT_TYPOLOGY_SHAPE,
-      crownKind: CROWN_KIND.gable,
+      crownKinds: CROWN_SET.gable,
       chamfer: 1,
       minFootprint: 8,
       roofGarden: true,
@@ -1641,7 +1649,7 @@ export const TYPOLOGIES: readonly TypologyDefinition[] = [
     priority: 6,
     shape: {
       ...DEFAULT_TYPOLOGY_SHAPE,
-      crownKind: CROWN_KIND.ridge,
+      crownKinds: CROWN_SET.ridge,
       minFootprint: 8,
       chamfer: 2,
     },
@@ -1668,7 +1676,7 @@ export const TYPOLOGIES: readonly TypologyDefinition[] = [
     // Nasce dallo scalo industriale e culmina nella torre idroponica.
     evolvesFrom: ['industrialYard'],
     priority: 2,
-    shape: { ...DEFAULT_TYPOLOGY_SHAPE, crownKind: CROWN_KIND.flat, minFootprint: 6 },
+    shape: { ...DEFAULT_TYPOLOGY_SHAPE, crownKinds: CROWN_SET.flat, minFootprint: 6 },
     profile: { bandHeight: [4, 4], shrinkBias: 0.05, footprintBias: 4 },
   },
   {
@@ -1679,7 +1687,7 @@ export const TYPOLOGIES: readonly TypologyDefinition[] = [
     // Nasce dallo scalo industriale, come gli altri mestieri del cortile.
     evolvesFrom: ['industrialYard'],
     priority: 6,
-    shape: { ...DEFAULT_TYPOLOGY_SHAPE, crownKind: CROWN_KIND.flat, minFootprint: 7 },
+    shape: { ...DEFAULT_TYPOLOGY_SHAPE, crownKinds: CROWN_SET.flat, minFootprint: 7 },
     profile: {
       bandHeight: [5, 6],
       shrinkBias: 0,
@@ -1709,7 +1717,7 @@ export const TYPOLOGIES: readonly TypologyDefinition[] = [
     // Sopra `productionLoft` (2), sotto `logisticsDepot` (5): un polo logistico
     // resta un capannone anche in mezzo alle ciminiere.
     priority: 3,
-    shape: { ...DEFAULT_TYPOLOGY_SHAPE, crownKind: CROWN_KIND.ridge, minFootprint: 7 },
+    shape: { ...DEFAULT_TYPOLOGY_SHAPE, crownKinds: CROWN_SET.ridge, minFootprint: 7 },
     profile: {
       bandHeight: [4, 5],
       shrinkBias: 0.5,
@@ -1746,7 +1754,7 @@ export const TYPOLOGIES: readonly TypologyDefinition[] = [
     shape: {
       ...DEFAULT_TYPOLOGY_SHAPE,
       podiumBands: 1,
-      crownKind: CROWN_KIND.ridge,
+      crownKinds: CROWN_SET.ridge,
       chamfer: 1,
       minFootprint: 8,
     },
@@ -1801,7 +1809,7 @@ export const TYPOLOGIES: readonly TypologyDefinition[] = [
     priority: 7,
     shape: {
       ...DEFAULT_TYPOLOGY_SHAPE,
-      crownKind: CROWN_KIND.flat,
+      crownKinds: CROWN_SET.flat,
       minFootprint: 4,
       // Le vasche in cima sono la stessa cosa che si vede in facciata, vista da
       // sopra: il tetto piantato non e' un ornamento, e' il primo piano di
@@ -1831,10 +1839,12 @@ export const TYPOLOGIES: readonly TypologyDefinition[] = [
     label: 'Industrial yard',
     use: 2,
     priority: 0,
-    // Il ripiego di ogni uso porta la cima che distingue quell'uso da lontano:
-    // e' la sola forma in cui "coronamenti per uso" resta una riga di tabella e
-    // non un ramo dentro la grammatica. Qui una copertura lunga, da capannone.
-    shape: { ...DEFAULT_TYPOLOGY_SHAPE, crownKind: CROWN_KIND.ridge, chamfer: 2 },
+    // Il ripiego di ogni uso porta la **famiglia** di cime che distingue
+    // quell'uso da lontano: e' la sola forma in cui "coronamenti per uso" resta
+    // una riga di tabella e non un ramo dentro la grammatica. Qui le coperture
+    // da capannone — falda lunga, tetto piatto, gradone — che il tiro alterna
+    // fra un capannone e il suo vicino.
+    shape: { ...DEFAULT_TYPOLOGY_SHAPE, crownKinds: CROWN_SET.ridge, chamfer: 2 },
     profile: {
       shrinkBias: 0.34,
       shrinkOps: [BAND_OP.stack, BAND_OP.setback, BAND_OP.shrinkOneSide],
@@ -1853,7 +1863,7 @@ export const TYPOLOGIES: readonly TypologyDefinition[] = [
     // lanterna, quando il luogo specializza.
     evolvesFrom: ['civicSpire', 'civicLantern', 'civicCrown'],
     priority: 5,
-    shape: { ...DEFAULT_TYPOLOGY_SHAPE, courtyard: true, crownKind: CROWN_KIND.flat, minFootprint: 8 },
+    shape: { ...DEFAULT_TYPOLOGY_SHAPE, courtyard: true, crownKinds: CROWN_SET.flat, minFootprint: 8 },
     profile: {
       bandHeight: [6, 6],
       shrinkBias: 0.12,
@@ -1903,7 +1913,7 @@ export const TYPOLOGIES: readonly TypologyDefinition[] = [
       ...DEFAULT_TYPOLOGY_SHAPE,
       arcade: true,
       courtyard: true,
-      crownKind: CROWN_KIND.gable,
+      crownKinds: CROWN_SET.gable,
       minFootprint: 8,
     },
     profile: {
@@ -1941,7 +1951,7 @@ export const TYPOLOGIES: readonly TypologyDefinition[] = [
       ...DEFAULT_TYPOLOGY_SHAPE,
       arcade: true,
       courtyard: true,
-      crownKind: CROWN_KIND.flat,
+      crownKinds: CROWN_SET.flat,
       chamfer: 1,
       minFootprint: 8,
       roofGarden: true,
@@ -1974,7 +1984,7 @@ export const TYPOLOGIES: readonly TypologyDefinition[] = [
     shape: {
       ...DEFAULT_TYPOLOGY_SHAPE,
       podiumBands: 2,
-      crownKind: CROWN_KIND.taper,
+      crownKinds: CROWN_SET.taper,
       chamfer: 1,
       minFootprint: 4,
       maxFootprint: 5,
@@ -2010,7 +2020,7 @@ export const TYPOLOGIES: readonly TypologyDefinition[] = [
       ...DEFAULT_TYPOLOGY_SHAPE,
       arcade: true,
       podiumBands: 2,
-      crownKind: CROWN_KIND.stepped,
+      crownKinds: CROWN_SET.stepped,
       roofGarden: true,
       minFootprint: 8,
       overhang: 2,
@@ -2048,7 +2058,7 @@ export const TYPOLOGIES: readonly TypologyDefinition[] = [
     priority: 1,
     shape: {
       ...DEFAULT_TYPOLOGY_SHAPE,
-      crownKind: CROWN_KIND.lantern,
+      crownKinds: CROWN_SET.lantern,
       chamfer: 1,
       minFootprint: 6,
     },
@@ -2083,7 +2093,7 @@ export const TYPOLOGIES: readonly TypologyDefinition[] = [
     shape: {
       ...DEFAULT_TYPOLOGY_SHAPE,
       podiumBands: 2,
-      crownKind: CROWN_KIND.lantern,
+      crownKinds: CROWN_SET.lantern,
       chamfer: 2,
       minFootprint: 7,
     },
@@ -2115,7 +2125,7 @@ export const TYPOLOGIES: readonly TypologyDefinition[] = [
     priority: 5,
     shape: {
       ...DEFAULT_TYPOLOGY_SHAPE,
-      crownKind: CROWN_KIND.gable,
+      crownKinds: CROWN_SET.gable,
       minFootprint: 4,
       maxFootprint: 8,
     },

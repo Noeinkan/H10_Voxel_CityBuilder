@@ -1,10 +1,15 @@
 import {
   addCatalyst,
   BALANCE,
+  BUILDING_CLASS,
   catalystById,
   defaultCatalystOfClass,
+  jumpToSeason,
+  governanceOf,
   policyConflict,
   policyById,
+  policyLocked,
+  policySlots,
   resolveDecision,
   setPolicyActive,
   setTradeMode,
@@ -13,6 +18,7 @@ import {
   type BuildingClass,
   type CatalystId,
   type PolicyId,
+  type Season,
   type SimState,
   type TradeMode,
 } from '../sim';
@@ -47,7 +53,28 @@ export type ActionFailure =
   | 'already-active'
   | 'already-unlocked'
   | 'onboarding-order'
+  /**
+   * Il ruolo esiste, ma la citta' non e' ancora arrivata al gradino che lo apre
+   * — o alla condizione che quel landmark chiede per conto suo.
+   *
+   * **Sta accanto a `onboarding-order` e non fra i rifiuti del luogo**, perche'
+   * e' la stessa specie di no: non «qui no», ma «non ancora». Chi lo riceve deve
+   * andare a far crescere la citta', non a cercare un altro posto. La scala la
+   * tiene `milestones.ts` e a farla rispettare e' la scena, che e' l'unica a
+   * conoscere il massimo storico raggiunto.
+   */
+  | 'milestone-required'
   | 'policy-incompatible'
+  /**
+   * I due rifiuti del **governo**, e chiedono due gesti diversi.
+   *
+   * `policy-capacity` dice «ne stai gia' tenendo in piedi quante ne reggi»: si
+   * risolve spegnendone una o costruendo civici. `policy-locked` dice «un evento
+   * l'ha appena revocata»: non si risolve con niente, si aspetta. Un rifiuto
+   * solo per entrambi manderebbe a cercare fondi che ci sono gia'.
+   */
+  | 'policy-capacity'
+  | 'policy-locked'
   | 'decision-option-invalid'
   /**
    * I rifiuti della mensola, tradotti dal dominio in quota.
@@ -343,20 +370,52 @@ export function togglePolicy(state: SimState, id: PolicyId): ActionResult {
     return { success: true, state: setPolicyActive(state, id, false) };
   }
 
-  const requirement = BALANCE.gameplay.policy[id];
-  if (policyConflict(state.policies, id) !== null) {
-    return { success: false, reason: 'policy-incompatible' };
-  }
-  if (state.population.stock < requirement.population) {
-    return { success: false, reason: 'population-required' };
-  }
-  if (state.funds.stock < requirement.cost) {
-    return { success: false, reason: 'insufficient-funds' };
-  }
+  const failure = policyFailure(state, id);
+  if (failure !== null) return { success: false, reason: failure };
 
   // Convalida anche il catalogo prima di trasferire la proprieta' del campo.
   policyById(id);
-  return { success: true, state: setPolicyActive(spendFunds(state, requirement.cost), id, true) };
+  return { success: true, state: setPolicyActive(spendFunds(state, policyCost(state, id)), id, true) };
+}
+
+/**
+ * Quanto costa varare `id` **in questa citta'**.
+ *
+ * Il listino di `balance.ts` e' il prezzo pieno; una camera di commercio in
+ * piedi lo sconta. Sta qui e non nella HUD perche' il numero che il giocatore
+ * legge sulla scheda e quello che gli viene addebitato devono essere lo stesso —
+ * due conti separati divergono al primo mandato nuovo.
+ */
+export function policyCost(state: SimState, id: PolicyId): number {
+  const factor = governanceOf(state.charters).costFactor;
+  return Math.round(BALANCE.gameplay.policy[id].cost * factor);
+}
+
+/** Quante policy la citta' regge insieme, mandati di governo compresi. */
+export function policyCapacity(state: SimState): number {
+  return policySlots(
+    state.buildingCounts[BUILDING_CLASS.civic] ?? 0,
+    governanceOf(state.charters).extraSlots,
+  );
+}
+
+/**
+ * Perche' `id` non si puo' varare adesso, o null.
+ *
+ * L'ordine e' quello in cui i rifiuti vanno letti, dal piu' definitivo al piu'
+ * rimediabile: un blocco non si aggira, un'incompatibilita' si risolve
+ * spegnendo l'altra, un tetto spegnendo una qualsiasi, e solo alla fine restano
+ * le due condizioni che il tempo risolve da solo — abitanti e cassa.
+ */
+export function policyFailure(state: SimState, id: PolicyId): ActionFailure | null {
+  if (policyLocked(state, id)) return 'policy-locked';
+  if (policyConflict(state.policies, id) !== null) return 'policy-incompatible';
+  if (state.policies.length >= policyCapacity(state)) return 'policy-capacity';
+
+  const requirement = BALANCE.gameplay.policy[id];
+  if (state.population.stock < requirement.population) return 'population-required';
+  if (state.funds.stock < policyCost(state, id)) return 'insufficient-funds';
+  return null;
 }
 
 /**
@@ -407,6 +466,18 @@ export function changeTradeMode(state: SimState, mode: TradeMode): ActionResult 
   return { success: true, state: setTradeMode(state, mode) };
 }
 
+/**
+ * Porta il calendario al primo giorno di una stagione.
+ *
+ * Non ha un fallimento e non costa niente, come il modo di commercio: non e' una
+ * spesa, e' la data. Passa comunque di qui invece di andare dritta dalla scena
+ * alla simulazione, perche' il messaggio in fondo all'HUD nasce da `ActionResult`
+ * e una scorciatoia sarebbe l'unica azione muta del gioco.
+ */
+export function changeSeason(state: SimState, season: Season): ActionResult {
+  return { success: true, state: jumpToSeason(state, season) };
+}
+
 export function buyExpansion(state: SimState, alreadyUnlocked = false): ActionResult {
   const failure = expansionFailure(state, alreadyUnlocked);
   if (failure !== null) return { success: false, reason: failure };
@@ -427,6 +498,20 @@ export function expansionFailure(state: SimState, alreadyUnlocked = false): Acti
 
 function spendFunds(state: SimState, cost: number): SimState {
   return { ...state, funds: { stock: state.funds.stock - cost, delta: state.funds.delta } };
+}
+
+/**
+ * Versa fondi senza toccare il delta: e' un premio, non un flusso.
+ *
+ * **Il delta resta quello del tick**, ed e' la parte che si sbaglia facilmente:
+ * il premio di una milestone e' un evento, non un'entrata ricorrente, e
+ * sommarlo al delta farebbe dire alla barra «+480 al tick» per un istante,
+ * cioe' una previsione falsa proprio nel momento in cui il giocatore la guarda.
+ * E' la stessa scelta che `spendFunds` fa dall'altra parte.
+ */
+export function grantFunds(state: SimState, amount: number): SimState {
+  if (amount <= 0) return state;
+  return { ...state, funds: { stock: state.funds.stock + amount, delta: state.funds.delta } };
 }
 
 function catalystDefinition(target: BuildingClass | CatalystId) {

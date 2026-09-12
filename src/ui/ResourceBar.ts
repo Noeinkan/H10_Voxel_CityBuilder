@@ -1,5 +1,5 @@
 import { DAYLIGHT_MODE, DAYLIGHT_MODES, type DaylightMode } from '../engine/daylight';
-import { ALL_CLASSES, CLASS_LABELS } from '../sim';
+import { ALL_CLASSES, CLASS_LABELS, SEASONS, type Season } from '../sim';
 import {
   daylightControl,
   type GameHudModel,
@@ -9,7 +9,9 @@ import {
 } from './GameHudModel';
 import type { TrendDirection } from './ResourceTrend';
 import { createHudIcon, type HudIcon } from './hudIcons';
-import { iconButton, markRowColumns, textButton } from './hudWidgets';
+import { iconButton, markCells, textButton } from './hudWidgets';
+import { paintSegmented, segmentedCells, segmentedRow } from './segmented';
+import { seasonControl } from './seasonControl';
 
 /**
  * La barra in alto: cosa la citta' ha, e quanto tempo passa mentre la si guarda.
@@ -132,6 +134,8 @@ export interface ResourceBarHandlers {
   readonly onSpeed: (speed: number) => void;
   /** Ciclo, giorno fisso o notte fissa: sta accanto alla velocita' perche' e' tempo. */
   readonly onDaylight: (mode: DaylightMode) => void;
+  /** Porta l'anno al primo giorno di una stagione, e lo lascia camminare. */
+  readonly onSeason: (season: Season) => void;
   /** I banchi in quota, accesi o spenti. Sta accanto al ciclo: sono entrambi cielo. */
   readonly onClouds: (on: boolean) => void;
   /**
@@ -154,6 +158,16 @@ export class ResourceBar {
   private readonly speedButtons = new Map<number, HTMLButtonElement>();
   private readonly clock: HTMLElement;
   private readonly daylightButtons = new Map<DaylightMode, HTMLButtonElement>();
+  private readonly seasonButtons = new Map<Season, HTMLButtonElement>();
+  /**
+   * Le tre piste, tenute per nome perche' la pastiglia va spostata a ogni
+   * cambio di stato — e i cambi non arrivano solo dal clic: il tasto, il menu di
+   * pausa e il tempo che passa da solo passano tutti da `setDaylight`,
+   * `setSeason` e `paint`.
+   */
+  private readonly simTrack: HTMLElement;
+  private readonly seasonTrack: HTMLElement;
+  private readonly daylightTrack: HTMLElement;
   private readonly cloudsButton: HTMLButtonElement;
   private readonly soundButton: HTMLButtonElement;
   private clouds = true;
@@ -186,16 +200,23 @@ export class ResourceBar {
     simLabel.textContent = 'Time';
     const simRow = document.createElement('div');
     simRow.className = 'time-row';
+    // **Pausa e le tre velocita' sono una scelta sola**, e percio' una pista
+    // sola: esattamente una delle quattro e' accesa in ogni istante — in pausa
+    // nessuna velocita' lo e' — e quattro cornici affiancate dicevano il
+    // contrario, cioe' quattro interruttori indipendenti.
+    this.simTrack = segmentedRow('segmented');
     this.pauseButton = iconButton('pause', 'Pause simulation', () => handlers.onPause(!this.paused));
     this.pauseButton.classList.add('hud-button--small');
-    simRow.appendChild(this.pauseButton);
+    this.simTrack.appendChild(this.pauseButton);
     for (const speed of [1, 2, 4]) {
       const button = textButton(`${speed}×`, `Simulation speed ${speed}×`, () => handlers.onSpeed(speed));
       button.classList.add('hud-button--small');
       this.speedButtons.set(speed, button);
-      simRow.appendChild(button);
+      this.simTrack.appendChild(button);
     }
-    markRowColumns(simRow);
+    simRow.appendChild(this.simTrack);
+    markCells(segmentedCells(this.simTrack));
+    paintSegmented(this.simTrack);
     // L'ora sotto i bottoni che la governano, e non accanto: la riga e' larga
     // poco piu' di trecento pixel e ha gia' quattro celle: infilarne una quinta
     // avrebbe stretto i bottoni per fare posto a cio' che li spiega.
@@ -203,6 +224,32 @@ export class ResourceBar {
     this.clock.className = 'time-clock';
     simGroup.append(simLabel, simRow, this.clock);
     time.appendChild(simGroup);
+
+    // **Sotto l'orologio e non accanto al cielo**, anche se e' un'altra fila di
+    // bottoni che cambia il colore della citta': la riga qui sopra e' l'unica
+    // che *nomina* la stagione — «Year 1 · Summer · 14:20» — e i quattro bottoni
+    // che la spostano vanno letti insieme a quella. Un gruppo suo e non quattro
+    // celle in piu' nel cielo, che ne ha gia' cinque.
+    const yearGroup = document.createElement('div');
+    yearGroup.className = 'time-group';
+    const yearLabel = document.createElement('span');
+    yearLabel.className = 'time-group-label';
+    yearLabel.textContent = 'Year';
+    const yearRow = document.createElement('div');
+    yearRow.className = 'time-row';
+    this.seasonTrack = segmentedRow('segmented');
+    for (const season of SEASONS) {
+      const control = seasonControl(season);
+      const button = textButton(control.label, control.tooltip, () => handlers.onSeason(season));
+      button.classList.add('hud-button--small');
+      this.seasonButtons.set(season, button);
+      this.seasonTrack.appendChild(button);
+    }
+    yearRow.appendChild(this.seasonTrack);
+    markCells(segmentedCells(this.seasonTrack));
+    paintSegmented(this.seasonTrack);
+    yearGroup.append(yearLabel, yearRow);
+    time.appendChild(yearGroup);
 
     const skyGroup = document.createElement('div');
     skyGroup.className = 'time-group';
@@ -221,13 +268,20 @@ export class ResourceBar {
     // e quali fossero i tre modi lo diceva solo il tooltip, uno alla volta. Le
     // tre parole erano gia' scritte — il menu di pausa e il titolo le mostrano
     // da sempre — e mancavano proprio dove si sta guardando il cielo.
+    //
+    // **I tre modi in una pista, le due nuvole no.** La pastiglia dice "uno di
+    // questi", e nuvole e suono non sono uno di tre: sono due interruttori
+    // indipendenti, e infilarli nella pista avrebbe promesso che accenderne uno
+    // spegne il cielo. Stanno percio' accanto alla pista, nella stessa fila.
+    this.daylightTrack = segmentedRow('segmented');
     for (const mode of DAYLIGHT_MODES) {
       const control = daylightControl(mode);
       const button = textButton(control.label, control.tooltip, () => handlers.onDaylight(mode));
       button.classList.add('hud-button--small');
       this.daylightButtons.set(mode, button);
-      skyRow.appendChild(button);
+      this.daylightTrack.appendChild(button);
     }
+    skyRow.appendChild(this.daylightTrack);
     this.setDaylight(DAYLIGHT_MODE.cycle);
 
     // Le nuvole stanno accanto al ciclo perche' sono la stessa domanda, e sono
@@ -244,7 +298,10 @@ export class ResourceBar {
     this.soundButton.classList.add('hud-button--small');
     skyRow.appendChild(this.soundButton);
     this.setSound(true);
-    markRowColumns(skyRow);
+    // Cinque colonne e non tre: la scheda esce a destra scavalcando quelle che
+    // restano, e i figli di `skyRow` sono la pista piu' due bottoni. Contarli
+    // direbbe tre, e la scheda di «Auto» si aprirebbe sopra la barra.
+    markCells([...segmentedCells(this.daylightTrack), this.cloudsButton, this.soundButton]);
     skyGroup.append(skyLabel, skyRow);
     time.appendChild(skyGroup);
 
@@ -301,6 +358,7 @@ export class ResourceBar {
       button.dataset.active = active ? 'true' : 'false';
       button.setAttribute('aria-pressed', active ? 'true' : 'false');
     }
+    paintSegmented(this.simTrack);
   }
 
   /**
@@ -329,6 +387,23 @@ export class ResourceBar {
       button.dataset.active = active ? 'true' : 'false';
       button.setAttribute('aria-pressed', active ? 'true' : 'false');
     }
+    paintSegmented(this.daylightTrack);
+  }
+
+  /**
+   * La stagione in corso, accesa fra le quattro.
+   *
+   * Come per la luce, lo stato arriva sempre da fuori: qui non c'e' un anno da
+   * ricordare, perche' l'anno lo tiene la simulazione — e il tasto `K`, il menu
+   * di pausa e il semplice passare del tempo passano tutti di li'.
+   */
+  setSeason(season: Season): void {
+    for (const [candidate, button] of this.seasonButtons) {
+      const active = candidate === season;
+      button.dataset.active = active ? 'true' : 'false';
+      button.setAttribute('aria-pressed', active ? 'true' : 'false');
+    }
+    paintSegmented(this.seasonTrack);
   }
 
   /**

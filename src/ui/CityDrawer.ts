@@ -1,6 +1,6 @@
 import type { CityOverviewModel, OverviewTrade } from './CityOverviewModel';
-import { decisionMark, type GameHudModel, type HudCommerce } from './GameHudModel';
-import type { CharterId, CityDecision } from '../sim';
+import type { GameHudModel, HudCommerce } from './GameHudModel';
+import { decisionInbox } from './decisionInbox';
 import { drawerHeader, factRows, goalRows, note, overviewSection, sectionTitle } from './drawerBits';
 import { meterList } from './meterBits';
 import type { Meter } from './meters';
@@ -67,14 +67,13 @@ export class CityDrawer {
     // Da chiusa la dashboard non si ridisegna: ricostruire decine di nodi sei
     // volte al secondo per un cassetto invisibile e' lavoro di frame puro.
     if (this.root.hidden) return;
-    this.paintOverview(model.overview, model.commerce, model.decision, model.decisionActiveCharter);
+    this.paintOverview(model.overview, model.commerce, model);
   }
 
   private paintOverview(
     overview: CityOverviewModel | null,
     commerce: HudCommerce | null,
-    pending: CityDecision | null,
-    activeCharter: CharterId | null,
+    model: GameHudModel,
   ): void {
     if (overview === null) {
       this.body.replaceChildren(note('The city is getting ready.'));
@@ -91,7 +90,8 @@ export class CityDrawer {
     condition.append(title, message);
 
     const sections: HTMLElement[] = [];
-    if (pending !== null) sections.push(this.pendingSection(pending, activeCharter));
+    const inbox = decisionInbox(model, this.handlers, sectionTitle);
+    if (inbox !== null) sections.push(inbox);
     sections.push(
       condition,
       // I bisogni **prima** dei traguardi: un traguardo dice dove si vuole
@@ -112,50 +112,6 @@ export class CityDrawer {
     this.body.replaceChildren(...sections);
   }
 
-  /** L'inbox del consiglio: la decisione in attesa, con le sue alternative. */
-  private pendingSection(decision: CityDecision, activeCharter: CharterId | null): HTMLElement {
-    const section = document.createElement('section');
-    section.className = 'overview-section decision-inbox';
-    section.appendChild(sectionTitle('Decision awaits'));
-
-    const title = document.createElement('strong');
-    title.className = 'decision-inbox-title';
-    title.textContent = decision.title;
-    const message = document.createElement('p');
-    message.className = 'decision-inbox-message';
-    message.textContent = decision.message;
-    section.append(title, message);
-
-    const options = document.createElement('div');
-    options.className = 'decision-options';
-    for (const option of decision.options) {
-      const button = document.createElement('button');
-      button.type = 'button';
-      button.className = 'decision-option';
-      const label = document.createElement('strong');
-      label.textContent = option.label;
-      const description = document.createElement('span');
-      description.textContent = option.description;
-      button.append(label, description);
-      const mark = decisionMark(option, activeCharter);
-      if (mark !== null) {
-        const consequence = document.createElement('span');
-        consequence.className = 'decision-mark';
-        consequence.textContent = mark;
-        button.appendChild(consequence);
-      }
-      button.addEventListener('click', () => this.handlers.onDecision(option.id));
-      options.appendChild(button);
-    }
-    const later = document.createElement('button');
-    later.type = 'button';
-    later.className = 'decision-later';
-    later.textContent = 'Decide later';
-    later.addEventListener('click', () => this.handlers.onSnooze());
-    options.appendChild(later);
-    section.appendChild(options);
-    return section;
-  }
 }
 
 /**

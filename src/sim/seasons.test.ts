@@ -2,9 +2,15 @@ import { describe, expect, it } from 'vitest';
 import { BALANCE } from './balance';
 import {
   harvestFactorAt,
+  nextSeason,
+  resolveSeason,
   SEASON,
+  SEASON_IDS,
   SEASON_NAMES,
+  SEASONS,
   seasonAt,
+  seasonHeartPhase,
+  seasonStartPhase,
   tickAtPhase as tickAt,
   YEAR_START_PHASE,
   yearPhaseAt,
@@ -53,6 +59,50 @@ describe('seasonAt', () => {
     for (const season of [SEASON.spring, SEASON.summer, SEASON.autumn, SEASON.winter]) {
       expect(SEASON_NAMES[season]).toMatch(/^[A-Z][a-z]+$/);
     }
+  });
+});
+
+describe('confini e cuore delle stagioni', () => {
+  it('mette l inizio di ogni stagione dove seasonAt la fa cominciare', () => {
+    for (const season of SEASONS) {
+      expect(seasonAt(tickAt(seasonStartPhase(season)))).toBe(season);
+      expect(seasonAt(tickAt(seasonHeartPhase(season)))).toBe(season);
+    }
+  });
+
+  /**
+   * La costante non e' un numero scelto a mano: e' il centro dell'estate. Se un
+   * giorno il calendario cambiasse verso, questo test direbbe subito che le due
+   * cose si sono staccate — ed e' l'invariante su cui poggia `birthShift`, che
+   * fa nascere in estate una partita che non chiede niente.
+   */
+  it('fa coincidere l inizio di partita con il cuore dell estate', () => {
+    expect(YEAR_START_PHASE).toBeCloseTo(seasonHeartPhase(SEASON.summer), 12);
+  });
+
+  it('gira le quattro in cerchio, nell ordine dell anno', () => {
+    expect(nextSeason(SEASON.spring)).toBe(SEASON.summer);
+    expect(nextSeason(SEASON.winter)).toBe(SEASON.spring);
+    expect(SEASONS.map(nextSeason)).toHaveLength(SEASONS.length);
+  });
+});
+
+describe('resolveSeason', () => {
+  it('legge i quattro id, anche scritti male', () => {
+    expect(resolveSeason('spring')).toBe(SEASON.spring);
+    expect(resolveSeason(' Winter ')).toBe(SEASON.winter);
+    for (const season of SEASONS) {
+      expect(resolveSeason(SEASON_IDS[season] ?? '')).toBe(season);
+    }
+  });
+
+  it('rifiuta cio che non e una stagione, senza ripiegare su una', () => {
+    // `null` e non l'estate: chi chiama deve poter distinguere «non l'ha
+    // chiesto» da «ha chiesto l'estate», o `?calendar=banana` farebbe nascere
+    // un'isola come se il parametro non ci fosse mai stato.
+    expect(resolveSeason(null)).toBeNull();
+    expect(resolveSeason('banana')).toBeNull();
+    expect(resolveSeason('0.875')).toBeNull();
   });
 });
 

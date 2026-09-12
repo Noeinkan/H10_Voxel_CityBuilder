@@ -12,6 +12,7 @@ import { ChunkRenderer } from './engine/ChunkRenderer';
 import { InfluenceOverlay } from './engine/InfluenceOverlay';
 import { InfoViewOverlay } from './engine/InfoViewOverlay';
 import { InspectGuides } from './engine/InspectGuides';
+import { LandmarkSilhouette } from './engine/LandmarkSilhouette';
 import { TrafficView } from './engine/TrafficView';
 import { RopewayView } from './engine/RopewayView';
 import { FrameTiming } from './engine/FrameTiming';
@@ -82,7 +83,8 @@ import {
   type SaveStorage,
 } from './game/save/storage';
 import { BALANCE } from './sim/balance';
-import { yearPhaseAt } from './sim/seasons';
+import { calendarPhaseOf, calendarSeasonOf, calendarTickOf } from './sim/calendar';
+import { nextSeason, resolveSeason, SEASON } from './sim/seasons';
 import { cityVitality } from './sim/vitality';
 import { BUILDING_CLASS, CLASS_COUNT, type BuildingClass } from './sim/classes';
 import { BUILDER } from './world/buildings/config';
@@ -371,6 +373,18 @@ const initialHour = hourPinned
 const seasonPinned = params.get('season') !== null;
 const initialSeason = seasonPinned ? Number(params.get('season')) : 0;
 
+/**
+ * `?calendar=<stagione>` fa **nascere** l'isola in una stagione, e non e' l'altra
+ * faccia di `?season=`.
+ *
+ * Quello inchioda la fase e la sottrae alla simulazione: e' un attrezzo di
+ * cattura, e l'anno non cammina piu'. Questo sposta il punto di partenza di un
+ * calendario che poi gira come sempre — la scelta che il giocatore fa sul
+ * titolo, e che vale per il raccolto quanto per il colore. Senza, l'estate: e'
+ * la stagione in cui ogni partita e' sempre nata.
+ */
+const birthSeason = resolveSeason(params.get('calendar')) ?? SEASON.summer;
+
 /** Stesso ritmo dell'HUD: l'occupazione cambia un tick alla volta, non un frame. */
 const VITALITY_REFRESH_MS = 150;
 let vitalityAt = 0;
@@ -586,6 +600,10 @@ function rememberLook(): void {
     theme: daylight.theme.id,
     daylight: daylight.mode,
     clouds: cloudsOn,
+    // La stagione di **nascita**, non quella in corso: l'anno che cammina sta
+    // nel salvataggio, e riscrivere qui il mese di adesso vorrebbe dire far
+    // nascere la prossima isola dove questa partita e' arrivata.
+    season: birthSeason,
   });
   window.history.replaceState(window.history.state, '', url);
 }
@@ -782,6 +800,11 @@ if (growEnabled) {
       daylight.setMode(mode);
       rememberLook();
     },
+    // Nessun `rememberLook` qui: l'anno spostato vive nel salvataggio, e
+    // l'indirizzo continua a dire in che stagione **nasce** un'isola nuova.
+    onSeason: (season) => {
+      growthScene?.jumpToSeason(season);
+    },
     onClouds: (on) => setClouds(on),
     onSound: (on) => setSound(on),
     onTheme: (id) => {
@@ -875,7 +898,10 @@ const infoViewOverlay = terrain !== null && growEnabled
   ? new InfoViewOverlay(terrain.map, terrainRegion)
   : null;
 if (infoViewOverlay !== null) scene.add(infoViewOverlay.group);
-const infoViewLegend = growEnabled ? new InfoViewLegend(container) : null;
+// Nel rail dei comandi e non su `container`: in basso a sinistra c'e' il dock, e
+// una targa fissa in quell'angolo gli finisce sopra. Dentro il rail e' in flusso
+// con le altre, come la targa della vista d'ispezione.
+const infoViewLegend = growEnabled ? new InfoViewLegend(gameHud?.rail ?? container) : null;
 const infoViews = growEnabled
   ? createInfoViewScene({
       overlay: infoViewOverlay,
@@ -943,6 +969,16 @@ const inspectGuides = terrain !== null ? new InspectGuides(terrain.map, terrainR
 if (inspectGuides !== null) scene.add(inspectGuides.group);
 
 /**
+ * La sagoma del landmark vista attraverso la citta'.
+ *
+ * Non dipende dal terreno — legge il volume voxel e basta — quindi esiste anche
+ * dove le guide non possono: una scena senza mappa non ha una collina su cui
+ * appoggiare un contorno, ma ha comunque edifici davanti a un monumento.
+ */
+const landmarkSilhouette = new LandmarkSilhouette(world);
+scene.add(landmarkSilhouette.mesh);
+
+/**
  * La rete stradale vista dall'harness.
  *
  * E' una funzione pura del seed — niente stato, niente da salvare — quindi
@@ -964,6 +1000,7 @@ const inspect = createInspectView({
   camera,
   paletteHandle,
   guides: inspectGuides,
+  silhouette: landmarkSilhouette,
   streets,
   map: () => terrain?.map ?? null,
   registry: () => growthScene?.registry,
@@ -1315,11 +1352,12 @@ function onFrame(time: number): void {
   // il sole continuava a scendere. Senza citta' — il diorama del titolo — non
   // c'e' niente che detti il passo, e resta il tempo reale.
   daylight.advance(cityDt * (growthScene?.timeScale ?? 1));
-  // L'anno lo tiene la simulazione, non il renderer: `yearPhaseAt` e' la stessa
-  // funzione da cui esce il moltiplicatore del raccolto, quindi il prato non
-  // puo' ingiallire in un mese diverso da quello in cui i campi rendono meno.
+  // L'anno lo tiene la simulazione, non il renderer: `calendarPhaseOf` e' la
+  // stessa funzione da cui esce il moltiplicatore del raccolto, quindi il prato
+  // non puo' ingiallire in un mese diverso da quello in cui i campi rendono
+  // meno — nemmeno subito dopo che il giocatore ha spostato il calendario.
   // Senza citta' non c'e' anno, e la fase resta quella di partenza.
-  if (growthScene !== null) daylight.setSeason(yearPhaseAt(growthScene.simState.tickCount));
+  if (growthScene !== null) daylight.setSeason(calendarPhaseOf(growthScene.simState));
 
   // La camera del fotogramma, chiesta **una volta**: da qui in giu' nessuno deve
   // piu' sapere se si sta guardando la citta' dall'alto o da una sua strada.
@@ -1421,7 +1459,14 @@ function onFrame(time: number): void {
     // barra mette in fila, e questo e' l'unico punto che le vede entrambe. A
     // 150 ms un quarto d'ora di citta' non si perde nemmeno a 4×, dove ne passa
     // uno ogni ~0,9 secondi.
-    gameHud.setClock(cityClock(growthScene.simState.tickCount, daylight.hour));
+    // Dal calendario e non dal tick: se il giocatore ha portato l'anno avanti, la
+    // data mostrata e' quella spostata — l'eta' della citta' resta cosa sua e non
+    // si legge da nessuna parte a schermo.
+    gameHud.setClock(cityClock(calendarTickOf(growthScene.simState), daylight.hour));
+    // La stagione accesa fra le quattro. Sta qui e non nel gestore del clic
+    // perche' l'anno gira anche quando nessuno preme niente: e' una lettura, non
+    // l'eco di un gesto.
+    gameHud.setSeason(calendarSeasonOf(growthScene.simState));
     selection?.syncCoach(growthScene.stats.coach);
     // Il suono di cio' che la citta' fa da sola, sulla stessa cadenza di 150 ms:
     // e' la lettura che l'HUD sta gia' facendo, e piu' fitta di cosi' darebbe
@@ -1569,7 +1614,7 @@ function updateGrowth(dt: number): void {
       replaySector(next);
       return;
     }
-    growthScene = new GrowthScene(world, terrain.map, terrainRegion, terrainSeed);
+    growthScene = new GrowthScene(world, terrain.map, terrainRegion, terrainSeed, birthSeason);
     if (restoredGame !== null) {
       growthScene.restore(restoredGame, replayedSectors);
       console.info(`[save] game restored: ${restoredGame.records.length} records`);
@@ -1784,6 +1829,17 @@ function onUiKey(event: KeyboardEvent): void {
     if (event.repeat) return;
     daylight.setMode(nextDaylightMode(daylight.mode));
     rememberLook();
+    return;
+  }
+  // `K` accanto a `L`, e per la stessa ragione per cui `L` sta fuori dal gate del
+  // debug: scegliere in che stagione guardare la propria citta' e' gioco. Stessa
+  // guardia sulla ripetizione — tenuto giu' farebbe passare quattro stagioni in
+  // un secondo, e l'anno finirebbe dove capita.
+  if (event.code === 'KeyK') {
+    if (event.repeat) return;
+    if (growthScene !== null) {
+      growthScene.jumpToSeason(nextSeason(calendarSeasonOf(growthScene.simState)));
+    }
     return;
   }
   // E per la stessa ragione le nuvole: un banco davanti alla torre che si sta

@@ -1,5 +1,6 @@
 import type { SlotInfo } from '../game/save/storage';
 import type { DaylightMode } from '../engine/daylight';
+import type { Season } from '../sim/seasons';
 import type { ThemeChoice } from './GameHud';
 import { SUPPORT_LABEL, SUPPORT_TITLE, SUPPORT_URL } from './community';
 import { FeedbackPane } from './FeedbackPane';
@@ -246,6 +247,10 @@ export class MainMenu {
 
   setDaylight(mode: DaylightMode): void {
     this.settings.setDaylight(mode);
+  }
+
+  setSeason(season: Season): void {
+    this.settings.setSeason(season);
   }
 
   setClouds(on: boolean): void {

@@ -12,7 +12,9 @@ import {
   LEVEL_CAPS,
   MAX_FOOTPRINT,
 } from './config';
+import type { TypologyShape } from './config';
 import { assembleBuilding } from './assemble';
+import { MAX_CROWN_BANDS } from './crowns';
 import { generateBuilding, startLevel } from './generate';
 import { anchoredVoxel, STAMP_EMPTY, bandCount, solidCount, type VoxelStamp } from './stamp';
 import { SURFACE_KIND } from '../visualBlock';
@@ -22,12 +24,19 @@ import { maxTowerHeightOf } from '../scale';
 
 type StampCase = { stamp: VoxelStamp; cls: BuildingClass; level: number };
 
-/** Tutte le combinazioni di classe e livello, con una manciata di seed. */
-function* everyStamp(seeds = 24): Generator<StampCase> {
+/**
+ * Tutte le combinazioni di classe e livello, con una manciata di seed.
+ *
+ * La forma si puo' fissare: serve a chi misura il **corpo**, perche' senza una
+ * cima pinzata non c'e' modo di sapere dall'esterno dove il corpo finisce — il
+ * repertorio (`CROWN_SET`) ne produce da una a tre fasce a seconda del tiro.
+ */
+function* everyStamp(seeds = 24, shape?: TypologyShape): Generator<StampCase> {
   for (const cls of ALL_CLASSES) {
     for (let level = 0; level <= BUILDER.maxLevel; level++) {
       for (let seed = 0; seed < seeds; seed++) {
-        yield { stamp: generateBuilding({ class: cls, level, seed: seed * 7919 + 13 }), cls, level };
+        const stamp = generateBuilding({ class: cls, level, seed: seed * 7919 + 13, shape });
+        yield { stamp, cls, level };
       }
     }
   }
@@ -82,9 +91,12 @@ describe('generateBuilding', () => {
       expect(stamp.sizeX).toBeGreaterThanOrEqual(caps.minFootprint);
       expect(stamp.sizeX).toBeLessThanOrEqual(Math.min(caps.maxFootprint, MAX_FOOTPRINT));
 
-      // Fasce del corpo, coronamento e unico dettaglio sul tetto.
+      // Fasce del corpo, coronamento e unico dettaglio sul tetto. Il
+      // coronamento e' fra una fascia e `MAX_CROWN_BANDS`, secondo quale cima il
+      // repertorio della tipologia ha pescato; il pennone e' sempre una fascia,
+      // alta zero quando la cima non lo porta.
       expect(bandCount(stamp)).toBeGreaterThanOrEqual(caps.minBands + 2);
-      expect(bandCount(stamp)).toBeLessThanOrEqual(caps.maxBands + 2);
+      expect(bandCount(stamp)).toBeLessThanOrEqual(caps.maxBands + MAX_CROWN_BANDS + 1);
     }
   });
 
@@ -219,6 +231,11 @@ describe('generateBuilding', () => {
       SURFACE_KIND.industrial,
       SURFACE_KIND.civic,
     ];
+    // **La grammatica di servizio e' del corpus, non del singolo edificio.** Il
+    // pennone e' l'unico voxel che la porta, e sotto la soglia di skyline la sua
+    // presenza e' un tiro (`GRAMMAR.roofPropChance`): pretenderla su ogni stamp
+    // vorrebbe dire pretendere che ogni casa abbia la sua canna fumaria.
+    const corpus = new Set<number>();
     expect(firstStampWhere(everyStamp(8), ({ stamp, cls }) => {
       const used = new Set<number>();
       for (let i = 0; i < stamp.voxels.length; i++) {
@@ -232,11 +249,12 @@ describe('generateBuilding', () => {
           }
         }
       }
+      for (const surface of used) corpus.add(surface);
       if (!used.has(expected[cls])) return `manca la grammatica dell'uso ${cls}`;
       if (!used.has(SURFACE_KIND.roofTech)) return 'manca la grammatica di tetto';
-      if (!used.has(SURFACE_KIND.utility)) return 'manca la grammatica di servizio';
       return null;
     })).toBeNull();
+    expect(corpus.has(SURFACE_KIND.utility), 'manca la grammatica di servizio').toBe(true);
   });
 
   it('una torre alta arretra a gradoni, in tutti e due gli usi abitati', () => {
@@ -304,21 +322,37 @@ describe('generateBuilding', () => {
   });
 
   it('ha un unico dettaglio di tetto coerente con la classe', () => {
-    let checked = 0;
+    let withProp = 0;
+    let without = 0;
     for (const { stamp, cls } of everyStamp(12)) {
+      // L'ultima fascia **e'** il pennone, e la sua altezza dice se c'e'. Sotto
+      // la soglia di skyline la presenza e' un tiro (`GRAMMAR.roofPropChance`):
+      // meta' degli edifici chiude sul coronamento, e li' la quota in cima e' il
+      // tetto e non il prisma. Non e' un caso da saltare — e' il caso comune.
+      const propHeight = stamp.sizeZ - stamp.bandStarts[stamp.bandStarts.length - 2];
+      if (propHeight === 0) {
+        without++;
+        continue;
+      }
+
       const top = stamp.sizeZ - 1;
       const topIds: number[] = [];
       for (let i = 0; i < stamp.sizeX * stamp.sizeY; i++) {
         const id = stamp.voxels[i + stamp.sizeX * stamp.sizeY * top];
         if (id !== STAMP_EMPTY) topIds.push(id);
       }
-      // "Unico" e' il dettaglio, non il voxel: il prisma sul tetto e' largo
-      // `roofPropSide` per lato, e tutti i suoi voxel sono dello stesso indice.
+      // "Unico" e' il dettaglio, non il voxel: il prisma sul tetto e' largo al
+      // massimo `roofPropSide[1]` per lato, e tutti i suoi voxel sono dello
+      // stesso indice.
       expect(new Set(topIds)).toEqual(new Set([CLASS_PROFILE[cls].roofProp]));
-      expect(topIds.length).toBeLessThanOrEqual(GRAMMAR.roofPropSide ** 2);
-      checked++;
+      expect(topIds.length).toBeLessThanOrEqual(GRAMMAR.roofPropSide[1] ** 2);
+      withProp++;
     }
-    expect(checked).toBeGreaterThan(0);
+    // Devono presentarsi tutti e due i casi: se il pennone ci fosse sempre il
+    // tiro non servirebbe a niente, e se non ci fosse mai lo skyline non si
+    // chiuderebbe piu'.
+    expect(withProp).toBeGreaterThan(0);
+    expect(without).toBeGreaterThan(0);
   });
 
   it('produce uno skyline piu alto del rilievo, con la punta sull assemblaggio', () => {
@@ -422,7 +456,7 @@ describe('generateBuilding', () => {
       class: ALL_CLASSES[0],
       level: 5,
       seed: 909,
-      shape: { ...DEFAULT_TYPOLOGY_SHAPE, crownKind: CROWN_KIND.flat },
+      shape: { ...DEFAULT_TYPOLOGY_SHAPE, crownKinds: [CROWN_KIND.flat] },
     } as const;
     const solid = generateBuilding({
       ...shared,
@@ -439,7 +473,7 @@ describe('generateBuilding', () => {
 
   it('pianta terrazze e copertura solo dove la tipologia chiede un giardino', () => {
     const profile = CLASS_PROFILE[ALL_CLASSES[0]];
-    const shape = { ...DEFAULT_TYPOLOGY_SHAPE, crownKind: CROWN_KIND.flat };
+    const shape = { ...DEFAULT_TYPOLOGY_SHAPE, crownKinds: [CROWN_KIND.flat] };
     const request = {
       class: ALL_CLASSES[0],
       level: 5,
@@ -467,7 +501,7 @@ describe('generateBuilding', () => {
       class: ALL_CLASSES[0],
       level: 5,
       seed: 72,
-      shape: { ...DEFAULT_TYPOLOGY_SHAPE, crownKind: CROWN_KIND.flat },
+      shape: { ...DEFAULT_TYPOLOGY_SHAPE, crownKinds: [CROWN_KIND.flat] },
       profile: { ...profile, shrinkOps: [BAND_OP.keep], growOps: [BAND_OP.keep] },
     } as const;
     const paved = generateBuilding(shared);
@@ -485,7 +519,13 @@ describe('generateBuilding', () => {
     // Senza il pavimento, una catena di rientranze porta la cima a un voxel e la
     // torre finisce a punta di spillo — e sopra un voxel tutti i coronamenti si
     // assomigliano. Il coronamento puo' assottigliarsi oltre: e' il suo mestiere.
-    for (const { stamp } of everyStamp(8)) {
+    //
+    // La cima si pinza a `taper`, che e' una fascia sola: e' cio' che rende
+    // esatto il `- 2` qui sotto — corpo, coronamento, pennone. Con il repertorio
+    // libero il confine del corpo non si legge piu' da fuori, e il ciclo
+    // finirebbe per misurare una falda con il metro del corpo.
+    const body = { ...DEFAULT_TYPOLOGY_SHAPE, crownKinds: [CROWN_KIND.taper] };
+    for (const { stamp } of everyStamp(8, body)) {
       const bands = stamp.bandStarts.length - 1;
       for (let b = 0; b < bands - 2; b++) {
         const span = bandSpan(stamp, stamp.bandStarts[b]);

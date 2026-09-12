@@ -39,10 +39,21 @@ import { SURFACE_KIND } from '../visualBlock';
  *   laterali o inversi, e chi non ha un successore resta se' stesso.
  */
 
-/** Fasce di corpo dello stamp: per la cima `taper` sono le bandStarts meno tre voci. */
+/**
+ * Fasce di corpo dello stamp: le `bandStarts` meno tre voci.
+ *
+ * **Vale solo su una cima a fascia unica**, cioe' `taper` o `flat`: il conto
+ * sottrae una fascia di coronamento e una di pennone. Da quando una tipologia
+ * dichiara un *repertorio* di cime (`crownKinds`), una `stepped` ne porta due e
+ * una `gable` tre, e il confine del corpo non si legge piu' dall'esterno — chi
+ * usa questo aiuto pinza la cima nella forma che passa a `generateBuilding`.
+ */
 function bodyBands(stamp: VoxelStamp): number {
   return stamp.bandStarts.length - 3;
 }
+
+/** La forma di prova: cima pinzata a una fascia sola, cosi' `bodyBands` regge. */
+const SINGLE_CROWN = { ...DEFAULT_TYPOLOGY_SHAPE, crownKinds: [CROWN_KIND.taper] };
 
 describe('la crescita conserva le fasce', () => {
   it('a parita di tipologia un livello in piu non tocca i piani bassi, rifa solo la cima', () => {
@@ -51,7 +62,7 @@ describe('la crescita conserva le fasce', () => {
     // fascia — fino a dove a 8 cominciava il coronamento.
     for (const cls of ALL_CLASSES) {
       const profile = CLASS_PROFILE[cls];
-      const shape = DEFAULT_TYPOLOGY_SHAPE;
+      const shape = SINGLE_CROWN;
       for (const seed of [13, 55, 2024]) {
         const low = generateBuilding({ class: cls, level: 8, seed, profile, shape });
         const high = generateBuilding({ class: cls, level: 9, seed, profile, shape });
@@ -78,8 +89,12 @@ describe('la crescita conserva le fasce', () => {
     // ma il tiro del coronamento cade in un punto diverso della sequenza del
     // tetto perche' le fasce in mezzo sono cambiate di numero.
     const profile = CLASS_PROFILE[BUILDING_CLASS.residential];
-    const a = generateBuilding({ class: BUILDING_CLASS.residential, level: 9, seed: 91, profile });
-    const b = generateBuilding({ class: BUILDING_CLASS.residential, level: 10, seed: 91, profile });
+    const a = generateBuilding({
+      class: BUILDING_CLASS.residential, level: 9, seed: 91, profile, shape: SINGLE_CROWN,
+    });
+    const b = generateBuilding({
+      class: BUILDING_CLASS.residential, level: 10, seed: 91, profile, shape: SINGLE_CROWN,
+    });
     const bodyA = bodyBands(a);
     const crownA = a.voxels.slice(a.bandStarts[bodyA] * a.sizeX * a.sizeY);
     const bodyB = bodyBands(b);
@@ -95,7 +110,7 @@ describe('le soglie visuali', () => {
       shrinkOps: [BAND_OP.keep],
       growOps: [BAND_OP.keep],
     };
-    const shape = { ...DEFAULT_TYPOLOGY_SHAPE, crownKind: CROWN_KIND.flat };
+    const shape = { ...DEFAULT_TYPOLOGY_SHAPE, crownKinds: [CROWN_KIND.flat] };
     const base = generateBuilding({
       class: BUILDING_CLASS.residential, level: 1, seed: 7, profile, shape,
     });
@@ -117,7 +132,7 @@ describe('le soglie visuali', () => {
       shrinkOps: [BAND_OP.setback],
       growOps: [BAND_OP.setback],
     };
-    const shape = { ...DEFAULT_TYPOLOGY_SHAPE, crownKind: CROWN_KIND.flat };
+    const shape = { ...DEFAULT_TYPOLOGY_SHAPE, crownKinds: [CROWN_KIND.flat] };
     const low = generateBuilding({
       class: BUILDING_CLASS.residential, level: 7, seed: 3, profile, shape,
     });
@@ -136,7 +151,7 @@ describe('le soglie visuali', () => {
     // Cima piatta: il suo spessore e' una costante della grammatica, quindi il
     // solo modo che ha di crescere e' il premio delle soglie — ed e' la forma
     // piu' pulita per misurarlo, perche' non c'e' un tiro a confonderlo.
-    const shape = { ...DEFAULT_TYPOLOGY_SHAPE, crownKind: CROWN_KIND.flat };
+    const shape = { ...DEFAULT_TYPOLOGY_SHAPE, crownKinds: [CROWN_KIND.flat] };
     const at7 = generateBuilding({ class: BUILDING_CLASS.industrial, level: 7, seed: 11, shape });
     const at8 = generateBuilding({ class: BUILDING_CLASS.industrial, level: 8, seed: 11, shape });
     const at12 = generateBuilding({ class: BUILDING_CLASS.industrial, level: 12, seed: 11, shape });
@@ -148,17 +163,29 @@ describe('le soglie visuali', () => {
   });
 
   it('alla soglia skyline il dettaglio di tetto e presente alla sua altezza piena', () => {
-    // La cima `taper` porta il dettaglio verticale: sotto lo skyline la sua
-    // altezza e' quella del profilo, sopra e' almeno quella minima dichiarata.
+    // **Sotto la soglia il pennone e' un tiro, sopra e' una promessa**, e il
+    // test misura proprio quel salto: sotto, su venti semi, ce n'e' almeno uno
+    // che chiude senza palo e nessuno che lo alzi oltre l'altezza del profilo;
+    // sopra, ci sono tutti e alti almeno `SKYLINE_PROP_HEIGHT`.
     const profile = CLASS_PROFILE[BUILDING_CLASS.residential];
-    const at12 = generateBuilding({ class: BUILDING_CLASS.residential, level: 12, seed: 4, profile });
-    const at13 = generateBuilding({ class: BUILDING_CLASS.residential, level: 13, seed: 4, profile });
-
     const propHeight = (stamp: VoxelStamp): number =>
       stamp.sizeZ - stamp.bandStarts[stamp.bandStarts.length - 2];
-    expect(propHeight(at12)).toBe(profile.roofPropHeight);
-    expect(propHeight(at13)).toBe(6);
-    expect(propHeight(at13)).toBeGreaterThanOrEqual(profile.roofPropHeight);
+
+    let bare = 0;
+    for (let seed = 0; seed < 20; seed++) {
+      const below = generateBuilding({
+        class: BUILDING_CLASS.residential, level: 12, seed, profile,
+      });
+      const at = generateBuilding({
+        class: BUILDING_CLASS.residential, level: 13, seed, profile,
+      });
+
+      expect(propHeight(below)).toBeLessThanOrEqual(profile.roofPropHeight);
+      if (propHeight(below) === 0) bare++;
+      expect(propHeight(at)).toBe(6);
+      expect(propHeight(at)).toBeGreaterThanOrEqual(profile.roofPropHeight);
+    }
+    expect(bare).toBeGreaterThan(0);
   });
 
   it('alla soglia skyline anche le cime che negano il dettaglio lo portano', () => {
@@ -172,7 +199,7 @@ describe('le soglie visuali', () => {
       stamp.sizeZ - stamp.bandStarts[stamp.bandStarts.length - 2];
 
     for (const crownKind of [CROWN_KIND.stepped, CROWN_KIND.flat]) {
-      const shape = { ...DEFAULT_TYPOLOGY_SHAPE, crownKind };
+      const shape = { ...DEFAULT_TYPOLOGY_SHAPE, crownKinds: [crownKind] };
       const below = generateBuilding({
         class: BUILDING_CLASS.commercial,
         level: VISUAL_LEVELS.skyline - 1,

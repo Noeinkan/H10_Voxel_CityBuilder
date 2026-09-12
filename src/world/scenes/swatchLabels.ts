@@ -110,7 +110,9 @@ export function footprintLabel(shape: TypologyShape): string {
 
 /** I tratti che la tipologia impone alla grammatica, in ordine di lettura. */
 export function shapeLabel(shape: TypologyShape): string {
-  const tags = [`${shape.crownKind} crown`];
+  // La cima e' un repertorio: l'etichetta le elenca tutte, perche' e' proprio la
+  // domanda «quante cime diverse produce questa riga» che si porta alla tavola.
+  const tags = [`crowns ${shape.crownKinds.join('/')}`];
   if (shape.podiumBands > 0) tags.push(`podium ${shape.podiumBands}`);
   if (shape.courtyard) tags.push('courtyard');
   if (shape.roofGarden) tags.push('roof garden');

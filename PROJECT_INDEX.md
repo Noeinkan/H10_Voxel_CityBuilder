@@ -59,6 +59,7 @@ worker. `src/sim/` gira in Node senza DOM né GPU.
 | [src/shell/frameStats.ts](src/shell/frameStats.ts) | Le letture di misura per overlay, riepilogo console e hook globali: traduzioni, non decisioni |
 | [src/shell/infoViewScene.ts](src/shell/infoViewScene.ts) | La vista informativa accesa sopra la citta': quale, e chi ricostruisce la heatmap quando il campo cambia |
 | [src/shell/placementTools.ts](src/shell/placementTools.ts) | Lo strumento in mano e cio' che il puntatore ne fa: mirino, rifiuti, posa di catalizzatori, mensole, funivie e settori |
+| [src/shell/plotBlockers.ts](src/shell/plotBlockers.ts) | Le caselle gia' prese mentre un monumento e' in mano: rosso fioco su ogni monumento in piedi, rosso pieno e ambra su chi ferma il riquadro sotto il puntatore. Due chiavi, una per lo strumento e una per la colonna |
 | [src/shell/pointerPick.ts](src/shell/pointerPick.ts) | Dal pixel alla colonna: raggio del cursore, terra su cui si costruisce e cosa si sta indicando, con un raycaster solo |
 | [src/shell/saveSlots.ts](src/shell/saveSlots.ts) | Il ritmo del salvataggio visto dalla radice: automatico a intervallo, slot a mano, apertura che passa da un ricaricamento |
 | [src/shell/selectionScene.ts](src/shell/selectionScene.ts) | Cio' che il giocatore ha scelto: scheda, contorno in-world, campo del landmark e artefatto del coach, che scrivono la stessa superficie |
@@ -109,6 +110,7 @@ domanda: è ciò che tiene basso il contesto di partenza.
 | [src/world/buildings/AGENTS.md](src/world/buildings/AGENTS.md) | Routing dei contratti per costruzione e driver | lavorando in `src/world/buildings/` |
 | [src/world/crossings/AGENTS.md](src/world/crossings/AGENTS.md) | Regole locali e riferimenti per gli attraversamenti | lavorando in `src/world/crossings/` |
 | [src/world/farms/AGENTS.md](src/world/farms/AGENTS.md) | Regole locali e riferimenti per i lotti agricoli | lavorando in `src/world/farms/` |
+| [src/world/footpaths/AGENTS.md](src/world/footpaths/AGENTS.md) | Regole locali del tessuto pedonale | lavorando in `src/world/footpaths/` |
 | [src/world/grading/AGENTS.md](src/world/grading/AGENTS.md) | Regole locali e riferimenti per le opere di terra | lavorando in `src/world/grading/` |
 | [src/world/harbor/AGENTS.md](src/world/harbor/AGENTS.md) | Regole locali e riferimenti per il distretto costiero | lavorando in `src/world/harbor/` |
 | [src/world/landmarks/AGENTS.md](src/world/landmarks/AGENTS.md) | Routing dei contratti per ricette e piazzamento | lavorando in `src/world/landmarks/` |

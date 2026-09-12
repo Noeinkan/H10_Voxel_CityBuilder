@@ -84,10 +84,12 @@ leggere `src/world/`; il mondo non dipende mai dall'engine.
   spegne il rimbalzo, e spegnerne uno gia' ingiallito non e' come ingiallirne
   uno gia' spento. Chi ha bisogno della palette in vigore legge
   `AtmosphereControl.look`, non `theme`: quello e' l'identita' del tema.
-- La fase dell'anno arriva da `src/sim/seasons.ts` (`yearPhaseAt(tickCount)`) e
+- La fase dell'anno arriva da `src/sim/calendar.ts` (`calendarPhaseOf(state)`) e
   da nessun'altra parte: e' la stessa da cui esce il moltiplicatore del
   raccolto, quindi il prato non puo' ingiallire in un mese diverso da quello in
-  cui i campi rendono meno.
+  cui i campi rendono meno — nemmeno subito dopo che il giocatore ha portato
+  l'anno a un'altra stagione. `pinSeason` resta l'eccezione dichiarata: e' il
+  fermo immagine di `?season=`, e sottrae la fase alla simulazione.
 
 ## Pass e ispezione
 

@@ -68,6 +68,37 @@ export const BALANCE = {
     zoningRelief: 1.15,
     civicPride: 1.3,
     marketCharter: 1.28,
+    nightEconomy: 1.3,
+    tariffShield: 1.2,
+    heritageCode: 1.24,
+    transitPass: 1.16,
+  },
+
+  /**
+   * Il **prezzo** di ogni policy, pagato in un secondo peso.
+   *
+   * Una policy era un moltiplicatore e basta: tutte miglioravano qualcosa e
+   * nessuna peggiorava niente, quindi appena la citta' poteva permettersele le
+   * accendeva tutte e il pannello non si riapriva piu'. Il mantenimento non
+   * bastava a farne una scelta — e' una tassa, non un compromesso. Qui ogni
+   * policy sconta un secondo peso nella direzione opposta, e da li' in poi
+   * «quali tengo accese» e' una domanda con una risposta diversa a ogni citta'.
+   *
+   * Il verso e' quello del peso, non del numero: su `civicUpkeep` — dove alto
+   * significa costoso — lo scambio e' un moltiplicatore **maggiore** di uno.
+   */
+  policyTradeoffs: {
+    denseHousing: { weight: 'desirabilityResidential', multiplier: 0.88 },
+    industrialSubsidy: { weight: 'desirabilityResidential', multiplier: 0.9 },
+    austerity: { weight: 'desirabilityCivic', multiplier: 0.82 },
+    greenBelt: { weight: 'residentialCapacity', multiplier: 0.85 },
+    zoningRelief: { weight: 'desirabilityCommercial', multiplier: 0.9 },
+    civicPride: { weight: 'civicUpkeep', multiplier: 1.18 },
+    marketCharter: { weight: 'desirabilityResidential', multiplier: 0.92 },
+    nightEconomy: { weight: 'desirabilityResidential', multiplier: 0.86 },
+    tariffShield: { weight: 'commercialCapacity', multiplier: 0.88 },
+    heritageCode: { weight: 'residentialCapacity', multiplier: 0.86 },
+    transitPass: { weight: 'civicUpkeep', multiplier: 1.22 },
   },
 
   // --- Azioni del giocatore -----------------------------------------------
@@ -76,6 +107,28 @@ export const BALANCE = {
     catalyst: {
       /** Distanza di Chebyshev minima fra catalizzatori dello stesso ruolo. */
       minDistance: 20,
+
+      /**
+       * Manutenzione per tick, come frazione del listino del ruolo.
+       *
+       * **Un catalizzatore si pagava una volta e rendeva per sempre**, ed era
+       * l'unica cosa nel gioco a farlo: una policy ha `upkeep`, una torre
+       * idroponica ha `upkeep`, un edificio civico costa `civicUpkeep`. Senza
+       * questa voce piazzare non era mai un compromesso, era solo un acquisto, e
+       * la domanda «posso permettermelo» non aveva mai un seguito.
+       *
+       * **Frazione del listino e non un numero per ruolo**: il prezzo dice gia'
+       * quanto un ruolo pesa — un mercato 120, uno stadio 460 — e una seconda
+       * tabella accanto a `roles` sarebbe divergita alla prima aggiunta. Cosi' un
+       * ruolo nuovo nasce con la sua manutenzione, senza che nessuno la scriva.
+       *
+       * Il valore: un ruolo restituisce il proprio listino in circa duemila tick,
+       * cioe' poco piu' di tre minuti di gioco a dieci tick al secondo. E' il
+       * tempo in cui il quartiere che ha acceso ha gia' pagato la spesa, quindi
+       * la manutenzione morde chi semina catalizzatori dappertutto e non chi ne
+       * piazza uno dove serve.
+       */
+      upkeepShare: 0.0005,
 
       /**
        * Quanto ogni stadio del landmark aggiunge all'intensita' del suo
@@ -269,6 +322,34 @@ export const BALANCE = {
       zoningRelief: { cost: 160, population: 24, upkeep: 1.4 },
       civicPride: { cost: 260, population: 72, upkeep: 2.8 },
       marketCharter: { cost: 200, population: 48, upkeep: 1.6 },
+      nightEconomy: { cost: 240, population: 96, upkeep: 2.2 },
+      tariffShield: { cost: 190, population: 60, upkeep: 1.5 },
+      heritageCode: { cost: 300, population: 120, upkeep: 2.6 },
+      transitPass: { cost: 280, population: 144, upkeep: 3.2 },
+    },
+
+    /**
+     * Quante policy la citta' sa **tenere in piedi insieme**.
+     *
+     * E' il secondo motivo per cui il pannello si riapre, e agisce dove lo
+     * scambio di `policyTradeoffs` non arriva: quello rende ogni policy un
+     * compromesso, questo rende il loro **insieme** una scelta. Con undici voci
+     * in catalogo e nessun tetto, una citta' matura le accende tutte tranne le
+     * incompatibili e ha finito di governare; con un tetto che cresce sui civici,
+     * legiferare di piu' vuol dire prima costruire il municipio che lo regge.
+     *
+     * Il tetto non spegne niente da solo. Una policy gia' attiva resta attiva
+     * anche se i civici crollano: toglierla di mano al giocatore sarebbe una
+     * regola che agisce mentre lui guarda altrove, e il declino ha gia' il suo
+     * fronte in `decayPressure`.
+     */
+    governance: {
+      /** Slot che una citta' ha comunque, anche senza un civico. */
+      baseSlots: 3,
+      /** Edifici civici che valgono uno slot in piu'. */
+      buildingsPerSlot: 4,
+      /** Tetto duro: oltre, il catalogo intero sarebbe di nuovo accendibile. */
+      maxSlots: 8,
     },
     /**
      * Quando due imbarchi fanno una linea.
@@ -442,6 +523,59 @@ export const BALANCE = {
       requiredBuildings: 16,
     },
 
+    /**
+     * La scala di sblocco dei ruoli, e le condizioni proprie dei landmark.
+     *
+     * **Le soglie non stanno qui, e non e' una dimenticanza.** Ventiquattro
+     * abitanti e' `terrace.population`, quarantotto e' `expansion.population`,
+     * settantadue e' `policy.civicPride.population`, centoventi e
+     * tre-edifici-per-classe sono `success`, sedici edifici e'
+     * `landmark.requiredBuildings`: la scala li **rilegge** in `milestones.ts`
+     * invece di ricopiarli, o girare una di quelle manopole lascerebbe indietro
+     * un gemello che nessuno ricollega piu' a lei. Qui restano solo i numeri che
+     * non esistevano prima.
+     */
+    milestone: {
+      /**
+       * Il premio in fondi di ogni gradino, dal secondo in poi.
+       *
+       * **Vale il listino del ruolo piu' caro che quel gradino apre.** Sbloccare
+       * lo Stadium e scoprire di non poterlo pagare e' peggio che non sbloccarlo:
+       * il gradino deve finanziare cio' che ha appena promesso, una volta sola e
+       * non un multiplo. Il premio si paga al primo attraversamento e mai piu' —
+       * lo garantisce il massimo storico tenuto dalla scena, non questo numero.
+       */
+      grant: {
+        settlement: 300,
+        tradingPost: 340,
+        district: 460,
+        metropolis: 480,
+      },
+
+      /**
+       * Cosa un singolo landmark chiede **oltre** al proprio gradino.
+       *
+       * E' la meta' che lega il monumento alla partita giocata invece che al solo
+       * contatore degli abitanti, sul modello degli edifici unici di Cities:
+       * Skylines. Ogni condizione e' misurabile da `SimState` e nomina un gesto:
+       * i quattro ruoli che non compaiono qui non hanno niente da chiedere oltre
+       * al gradino, ed e' giusto che non abbiano una riga vuota.
+       */
+      role: {
+        /** La folla che lo stadio impacchetta deve gia' esistere. */
+        stadium: { commercial: 8 },
+        /** Corona un quartiere civico, non lo fonda. */
+        theatre: { civic: 6 },
+        /**
+         * Lo Skyport chiede una facciata su cui posarsi: era gia' scritto nella
+         * descrizione del ruolo e non lo verificava nessuno.
+         */
+        airport: { level: 7 },
+        /** Ancora un quartiere che sta gia' bene, non uno che spera. */
+        cathedral: { satisfaction: 0.5 },
+      },
+    },
+
     success: {
       population: 120,
       buildingsPerClass: 3,
@@ -492,6 +626,10 @@ export const BALANCE = {
       zoningRelief: { density: 35, satisfaction: -20 },
       civicPride: { wealth: 20, satisfaction: 45 },
       marketCharter: { wealth: 40, accessibility: 20, satisfaction: 15 },
+      nightEconomy: { density: 30, wealth: 35, satisfaction: -20 },
+      tariffShield: { industry: 40, wealth: -15 },
+      heritageCode: { density: -40, wealth: 30, satisfaction: 35 },
+      transitPass: { accessibility: 50, density: 20 },
     },
 
     /**
@@ -512,6 +650,15 @@ export const BALANCE = {
       localShops: { density: 35, wealth: 45, satisfaction: 20 },
       soldReserves: { wealth: 20, satisfaction: -35, industry: 55 },
       foodFair: { accessibility: 20, satisfaction: 55 },
+      // La quarta famiglia, quella di governo: i suoi mandati non descrivono un
+      // quartiere ma **il modo in cui la citta' e' amministrata**, e per questo
+      // sono anche gli unici che toccano gli slot e il mantenimento delle policy.
+      // Il vettore spaziale resta perche' un modo di governare si vede lo stesso:
+      // un consiglio d'emergenza costruisce fitto e brutto, un bilancio aperto
+      // costruisce lento e caro.
+      emergencyPowers: { density: 45, satisfaction: -40, industry: 25 },
+      openBooks: { wealth: -10, satisfaction: 50, accessibility: 25 },
+      chamberOfTrade: { wealth: 55, accessibility: 30, industry: -20 },
     },
 
     /**
@@ -853,6 +1000,114 @@ export const BALANCE = {
     historyLimit: 12,
 
     /**
+     * I numeri del **bacino di eventi**: quando una voce di catalogo puo'
+     * ripresentarsi, e quanto tempo ha il giocatore per rispondere.
+     *
+     * Prima le decisioni erano tre generatori scritti a mano e la cadenza la
+     * teneva un solo orologio; ora sono voci di un catalogo che si qualificano da
+     * sole sullo stato della citta', e servono tre regole separate — ognuna
+     * risponde a una domanda diversa.
+     */
+    pool: {
+      /**
+       * Quanto una voce di catalogo resta zitta dopo essere stata risolta.
+       *
+       * E' il raffreddamento **per evento**, non per famiglia: due crisi diverse
+       * possono seguirsi, la stessa no. Senza, una condizione strutturale — una
+       * citta' cronicamente in rosso — riaprirebbe la propria crisi al primo tick
+       * utile e sarebbe di nuovo l'appuntamento fisso che `supplyArmed` era nato
+       * per togliere.
+       */
+      cooldownTicks: 1800,
+
+      /**
+       * Il raffreddamento delle voci **di crisi**, piu' corto.
+       *
+       * Una crisi descrive un guasto in corso: farla tacere quanto una scelta di
+       * routine vorrebbe dire che la citta' brucia e il consiglio non ne parla.
+       * Resta comunque piu' lungo di `intervalTicks`, cosi' una crisi non puo'
+       * mai essere l'evento di ogni scadenza.
+       */
+      crisisCooldownTicks: 1200,
+
+      /**
+       * Quanti tick ha una crisi prima che l'alternativa `onLapse` scatti da sola.
+       *
+       * **E' cio' che rende «decidi piu' tardi» una scelta.** Senza scadenza la
+       * carta aspettava per sempre e rimandare era gratis; con la scadenza,
+       * rimandare significa lasciare che il consiglio decida al posto tuo, e
+       * l'alternativa che decidera' e' scritta sulla carta prima che tu rimandi.
+       *
+       * Milleduecento tick sono due minuti a schermo: il tempo di guardare il
+       * quartiere di cui si parla e tornare, non di dimenticarsene.
+       */
+      crisisExpiryTicks: 1200,
+
+      /** Ritardo minimo di una catena: il seguito non e' la scena dopo. */
+      chainDelayTicks: 600,
+      /** Oltre questo, un seguito mai qualificatosi si dimentica. */
+      chainWindowTicks: 5400,
+      /** Voci ricordate dal raffreddamento. Oltre, la piu' vecchia esce. */
+      memoryLimit: 24,
+
+      /**
+       * Quanto resta bloccata una policy revocata da un evento.
+       *
+       * Riaccenderla il tick dopo annullerebbe la scelta: il blocco e' la parte
+       * che la rende una decisione invece di una pausa.
+       */
+      policyLockTicks: 1800,
+    },
+
+    /**
+     * Le soglie con cui una voce di catalogo si qualifica.
+     *
+     * Stanno insieme perche' si leggono insieme: sono la definizione operativa
+     * di «la citta' e' in affanno su questo fronte», e ognuna e' la condizione di
+     * uno o piu' eventi in `eventCatalog.ts`.
+     */
+    triggers: {
+      /** Sotto questa quota di soddisfazione la citta' e' scontenta. */
+      unrestSatisfaction: 0.38,
+      /** Sopra questa quota di occupazione, le case sono piene. */
+      crowdingRatio: 0.92,
+      /** Sotto questa copertura dei servizi, i civici non ce la fanno. */
+      coverageStrain: 0.75,
+      /**
+       * Quanti tick di spesa restano coperti dai fondi prima che sia allarme.
+       *
+       * Un saldo negativo da solo non e' una crisi — una citta' che investe lo ha
+       * per costruzione. La crisi e' l'**autonomia**: quanto manca alla cassa
+       * vuota al ritmo di adesso.
+       */
+      fundsRunwayTicks: 240,
+      /** Sopra questa copertura il raccolto e' un'eccedenza, non un pareggio. */
+      surplusCoverage: 1.35,
+      /** Sotto questa riserva di materiali i cantieri si fermano. */
+      materialReserveFloor: 40,
+      /** Abitanti da cui in poi il consiglio si puo' riformare. */
+      councilPopulation: 240,
+    },
+
+    /**
+     * Cosa concede un mandato **di governo**, la quarta famiglia.
+     *
+     * Le altre tre famiglie lasciano un segno sul quartiere e si fermano li'.
+     * Questa e' la cerniera fra decisioni e policy: un mandato di governo cambia
+     * quante policy la citta' regge, quanto costano da varare o quanto costano
+     * da tenere. E' il motivo per cui una crisi che sembra solo di bilancio
+     * riapre il pannello delle policy tre minuti dopo.
+     */
+    mandate: {
+      /** Slot in piu' concessi da un consiglio d'emergenza. */
+      slotGrant: 1,
+      /** Sconto sul mantenimento di ogni policy, con i conti in chiaro. */
+      thriftUpkeep: 0.75,
+      /** Sconto sul varo di una policy, con la camera di commercio in piedi. */
+      charterCost: 0.7,
+    },
+
+    /**
      * L'opera concessa da un'alternativa: un catalizzatore ridotto.
      *
      * Non e' un ruolo nuovo. Un `Catalyst` porta forza e raggio propri,
@@ -1037,6 +1292,34 @@ export const BALANCE = {
   funds: {
     /** Gettito per abitante per tick. */
     taxPerResident: 0.12,
+
+    /**
+     * Servizi urbani per unita' di capacita', per tick.
+     *
+     * **E' l'uscita che mancava al bilancio.** Le entrate crescono con gli
+     * abitanti; le tre uscite storiche — civici, policy, torri — guardano
+     * sottoinsiemi che non crescono con la citta'. Una partita misurata di venti
+     * minuti, dodicimila abitanti e 965 edifici chiudeva con entrate a 2421 per
+     * tick contro uscite a 764, e diciassette milioni in cassa.
+     *
+     * Si paga sulla **capacita'** e non sul numero di edifici, cioe' sulla
+     * stessa base che guadagna: la capacita' fa gli abitanti e gli abitanti
+     * fanno il gettito. Un edificio alto rende quanto quattro bassi e cosi' li
+     * costa, e il rapporto fra entrate e uscite non cambia quando la citta'
+     * sale invece di allargarsi.
+     */
+    servicesPerCapacity: 1,
+
+    /**
+     * Capacita' esente: sotto questa soglia i servizi non si pagano.
+     *
+     * Un borgo non ha una macchina amministrativa, e farglierla pagare
+     * strozzerebbe la citta' nel punto in cui il tutorial la lascia — poche case
+     * appena nate, il commercio ancora fermo perche' mancano i materiali. E' la
+     * stessa idea di `materials.freeThroughLevel`: il tessuto minimo cresce
+     * gratis, il costo comincia dove comincia la citta'.
+     */
+    servicesFree: 8,
   },
 
   // --- Materiali -----------------------------------------------------------

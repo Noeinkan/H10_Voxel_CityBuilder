@@ -1,5 +1,6 @@
 import type { PolicyId, TradeMode } from '../sim';
 import type { GameHudModel, HudPolicy, HudTradeMode } from './GameHudModel';
+import { decisionInbox } from './decisionInbox';
 import { drawerHeader, sectionTitle } from './drawerBits';
 
 /**
@@ -16,12 +17,24 @@ export interface PoliciesDrawerHandlers {
   readonly onPolicy: (id: PolicyId) => void;
   readonly onTrade: (mode: TradeMode) => void;
   readonly onClose: () => void;
+  /**
+   * La decisione in attesa si risolve **anche da qui**.
+   *
+   * Il cassetto e la carta condividono il bordo destro e non possono stare a
+   * schermo insieme: senza l'inbox, aprire le policy mentre una crisi e' aperta
+   * significherebbe nascondere la crisi — e meta' delle crisi parlano proprio
+   * delle policy che si stanno guardando.
+   */
+  readonly onDecision: (optionId: string) => void;
+  readonly onSnooze: () => void;
 }
 
 export class PoliciesDrawer {
   readonly root: HTMLElement;
 
   private readonly body: HTMLElement;
+  private readonly inboxHost = document.createElement('div');
+  private readonly budgetNote = document.createElement('p');
   private readonly policyButtons = new Map<PolicyId, HTMLButtonElement>();
   private readonly tradeButtons = new Map<TradeMode, HTMLButtonElement>();
   private readonly tradeNote = document.createElement('p');
@@ -43,8 +56,14 @@ export class PoliciesDrawer {
 
     this.body = document.createElement('div');
     this.body.className = 'drawer-body';
+    this.body.appendChild(this.inboxHost);
 
     this.body.appendChild(sectionTitle('Policies'));
+    // Il budget di governo sta **sopra** l'elenco e non dentro le schede: e' una
+    // proprieta' dell'insieme, e ripeterla undici volte direbbe undici volte la
+    // stessa cosa nel posto in cui si guarda una scheda sola.
+    this.budgetNote.className = 'drawer-note policy-budget';
+    this.body.appendChild(this.budgetNote);
     const policyList = document.createElement('div');
     policyList.className = 'policy-list';
     for (const policy of model.policies) {
@@ -84,6 +103,10 @@ export class PoliciesDrawer {
   paint(model: GameHudModel): void {
     this.latestModel = model;
     if (this.root.hidden) return;
+    const inbox = decisionInbox(model, this.handlers, sectionTitle);
+    this.inboxHost.replaceChildren(...(inbox === null ? [] : [inbox]));
+    this.budgetNote.textContent =
+      `Policy budget: ${model.policySlotsUsed} of ${model.policySlotsTotal} in use. More civic buildings raise it.`;
     for (const policy of model.policies) this.paintPolicy(policy);
     for (const mode of model.tradeModes) this.paintTradeMode(mode, model.tradeConnected);
     this.tradeNote.hidden = model.tradeConnected;
@@ -102,9 +125,15 @@ export class PoliciesDrawer {
     const description = document.createElement('span');
     description.className = 'policy-description';
     description.textContent = policy.description;
+    // Il prezzo, e non il mantenimento: la riga che rende la scheda una scelta.
+    // Sta accanto a cio' che la policy migliora, perche' le due si leggono
+    // insieme o non si leggono affatto.
+    const tradeoff = document.createElement('span');
+    tradeoff.className = 'policy-tradeoff';
+    tradeoff.textContent = policy.tradeoff;
     const requirement = document.createElement('span');
     requirement.className = 'policy-requirement';
-    button.append(name, state, description, requirement);
+    button.append(name, state, description, tradeoff, requirement);
     return button;
   }
 

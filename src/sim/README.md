@@ -569,6 +569,17 @@ comunque di anno in anno perché questa città non cresce; in partita quel surpl
 lo assorbe la popolazione, che è la ragione per cui il piano punta sopra il
 pareggio invece che al pareggio.
 
+**L'anno si può spostare, e il conto regge lo stesso.** I quattro bottoni della
+stagione portano il calendario al primo giorno di quella chiesta e lo lasciano
+camminare: cambia *quando* la città si trova, non la forma della curva. Il ritmo
+qui sopra vale identico — la media annua resta uno, il piano continua a
+dimensionare la campagna sulla resa nominale — e l'unica cosa che il gesto
+concede è di saltare l'attesa: chi porta l'anno all'inverno ci arriva con la
+scorta che ha in quel momento, non con quella che avrebbe accumulato
+attraversando l'autunno. Il numero che si sposta è `calendarShift`
+(`src/sim/calendar.ts`), non `tickCount`: l'età della città, e con lei ogni
+scadenza della simulazione, resta dov'è.
+
 **Il fronte dell'emergenza, però, non deve sentire la stagione.** `foodCoverage`
 si misura sul raccolto all'**anno medio** e non su quello di oggi: la resa scende
 sotto il pareggio ogni inverno per costruzione, quindi un fronte che leggesse la

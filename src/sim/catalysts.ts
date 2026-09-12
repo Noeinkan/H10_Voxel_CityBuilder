@@ -51,6 +51,15 @@ export interface CatalystDefinition {
   /** Uso urbano che il ruolo porta a pieno per primo, in ordine di `BUILDING_CLASS`. */
   readonly class: BuildingClass;
   readonly cost: number;
+  /**
+   * Manutenzione per tick, derivata dal listino.
+   *
+   * Non e' una riga di catalogo ma una frazione di `cost`: il prezzo dice gia'
+   * quanto un ruolo pesa, e una seconda tabella accanto a `roles` sarebbe
+   * divergita alla prima aggiunta — e' lo stesso motivo per cui `unlocksFor`
+   * deriva invece di elencare.
+   */
+  readonly upkeep: number;
   readonly strength: number;
   readonly radius: number;
   /** Moltiplicatore di `strength` per uso urbano, indicizzato come `BUILDING_CLASS`. */
@@ -139,6 +148,25 @@ export function catalystRoleOf(source: { readonly kind?: CatalystId; readonly cl
 }
 
 /**
+ * Manutenzione per tick di tutti i catalizzatori piazzati.
+ *
+ * Gemella di `farmUpkeepOf`, e con la stessa ragione di stare accanto al
+ * catalogo invece che nel tick: chi aggiunge un ruolo non deve ricordarsi di
+ * andare a cercare una somma in `tick.ts`.
+ *
+ * Legge il ruolo con `catalystRoleOf`, quindi un salvataggio dell'MVP senza
+ * `kind` paga la manutenzione del ruolo di ripiego invece di non pagarne
+ * nessuna.
+ */
+export function catalystUpkeepOf(
+  catalysts: readonly { readonly kind?: CatalystId; readonly class: BuildingClass }[],
+): number {
+  let total = 0;
+  for (const source of catalysts) total += catalystById(catalystRoleOf(source)).upkeep;
+  return total;
+}
+
+/**
  * Vettore di influenza di un ruolo, indicizzato come `BUILDING_CLASS`.
  *
  * E' un array condiviso e non va mutato: il campo di desiderabilita' lo legge
@@ -174,6 +202,7 @@ function catalyst(
     // stabile e indipendente dall'ordine di lettura della tabella.
     class: byStrength[0],
     ...values,
+    upkeep: values.cost * BALANCE.gameplay.catalyst.upkeepShare,
     influence,
     favours: byStrength.filter((cls) => influence[cls] > 0),
     penalises: [...byStrength].reverse().filter((cls) => influence[cls] < 0),

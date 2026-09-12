@@ -1,6 +1,6 @@
 {
   "slug": "voxelcity",
-  "domain": "voxelcity.77.42.70.26.nip.io",
+  "domain": "voxelcity.demos.noeinsolutions.com",
   "repo": "https://github.com/Noeinkan/H10_Voxel_CityBuilder.git",
   "ref": "main",
   "type": "static-build",

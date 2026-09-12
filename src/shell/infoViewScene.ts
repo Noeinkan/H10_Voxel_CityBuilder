@@ -75,6 +75,10 @@ export function createInfoViewScene(deps: InfoViewSceneDeps): InfoViewScene {
     if (next === 'off') deps.overlay?.clear();
   }
 
+  // La legenda porta il gesto per uscire, ma non sa spegnere niente da se': il
+  // giro delle viste vive qui, e questo e' l'unico punto che lo scrive.
+  deps.legend?.onDismiss(() => setView('off'));
+
   return {
     get kind(): InfoViewKind {
       return kind;
@@ -101,7 +105,13 @@ export function createInfoViewScene(deps: InfoViewSceneDeps): InfoViewScene {
       if (scene === null) return;
 
       const version = infoViewVersion(scene.simState);
-      if (version !== fieldVersion) {
+      // Cambiare vista non aspetta nessuno: e' un gesto del giocatore, e cio'
+      // che si sta costruendo riguarda un altro dato. Un campo che si muove
+      // sotto la stessa vista invece aspetta che l'overlay sia libero: una
+      // citta' viva cambia molte volte al secondo e la heatmap costa qualche
+      // decimo, quindi ripartire a ogni edificio voleva dire non finirla mai.
+      const switching = overlay.activeKind !== kind;
+      if (version !== fieldVersion && (switching || overlay.ready)) {
         fieldVersion = version;
         const sampler = createInfoSampler(kind, scene.simState, scene.farmPlots);
         overlay.setView(sampler, `${kind}|${version}`);

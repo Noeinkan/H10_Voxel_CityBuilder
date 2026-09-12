@@ -17,6 +17,7 @@ describe('CONTROL_HINTS', () => {
       { keys: ['Shift', '1..9'], action: 'Switch the visual theme' },
       { keys: ['V'], action: 'Cycle the views below' },
       { keys: ['L'], action: 'Hold the day, hold the night, or let the clock run' },
+      { keys: ['K'], action: 'Move the year on to the next season' },
       { keys: ['Esc'], action: 'Cancel the tool, close the card, leave the view, then open the menu' },
     ]);
   });

@@ -116,6 +116,7 @@ function stats(): GrowthStats {
     decisionHistory: [{
       tick: 42,
       decisionId: 'public-space-80',
+      eventId: 'public-space',
       family: 'publicSpace' as const,
       optionId: 'leave-open',
       summary: 'Kept the square open.',
@@ -167,6 +168,7 @@ function stats(): GrowthStats {
     paused: false,
     speed: 1,
     message: 'Ready.',
+    milestone: -1,
     onboarding: onboardingOf(state),
     condition: cityCondition(state, 5),
     coach: null,

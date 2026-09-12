@@ -127,7 +127,16 @@ export function unionBounds(a: TraceBounds, b: TraceBounds): TraceBounds {
   };
 }
 
-const STEPS: readonly (readonly [number, number])[] = [
+/**
+ * Gli otto passi del tracciato: il grafo su cui la ricerca cammina.
+ *
+ * Esportati perche' `regions.ts` deve usare **gli stessi**. Quel modulo decide
+ * quali colonne si raggiungono a vicenda, e la ricerca si fida della sua
+ * risposta per non partire affatto: un vicinato diverso anche di un solo passo
+ * dichiarerebbe irraggiungibile un polo che di qui si raggiunge, e il ramo
+ * mancante non somiglierebbe a un errore ma a una scelta di tracciato.
+ */
+export const TRACE_STEPS: readonly (readonly [number, number])[] = [
   [1, 0], [-1, 0], [0, 1], [0, -1],
   [1, 1], [1, -1], [-1, 1], [-1, -1],
 ];
@@ -187,7 +196,7 @@ export function traceRoad(request: TraceRequest): Trace | null {
     const cy = (current / width) | 0;
     const level = probe.levelAt(bounds.x0 + cx, bounds.y0 + cy);
 
-    for (const [dx, dy] of STEPS) {
+    for (const [dx, dy] of TRACE_STEPS) {
       const nx = cx + dx;
       const ny = cy + dy;
       if (outside(nx, ny, width, height)) continue;

@@ -1,7 +1,10 @@
 import { DAYLIGHT_MODES, type DaylightMode } from '../engine/daylight';
+import { SEASONS, type Season } from '../sim/seasons';
 import { daylightControl } from './GameHudControlsModel';
 import type { ThemeChoice } from './GameHud';
 import { createHudIcon } from './hudIcons';
+import { paintSegmented, segmentedRow } from './segmented';
+import { seasonControl } from './seasonControl';
 import { titleGroup, titleNote, titleRow, titleSection, titleSmall } from './titleBits';
 
 /**
@@ -23,6 +26,8 @@ import { titleGroup, titleNote, titleRow, titleSection, titleSmall } from './tit
 export interface SettingsHandlers {
   readonly onTheme: (id: string) => void;
   readonly onDaylight: (mode: DaylightMode) => void;
+  /** Porta l'anno al primo giorno di una stagione: e' un comando sulla partita. */
+  readonly onSeason: (season: Season) => void;
   readonly onClouds: (on: boolean) => void;
   /** Il campionario dei voxel: e' una scena, e chi la apre sta nella radice. */
   readonly onSwatch: () => void;
@@ -33,6 +38,10 @@ export class MainMenuSettings {
 
   private readonly themeButtons = new Map<string, HTMLButtonElement>();
   private readonly daylightButtons = new Map<DaylightMode, HTMLButtonElement>();
+  private readonly seasonButtons = new Map<Season, HTMLButtonElement>();
+  /** Le due piste: la pastiglia va spostata a ogni cambio, non solo al clic. */
+  private readonly daylightTrack: HTMLElement;
+  private readonly seasonTrack: HTMLElement;
   private readonly cloudsButton: HTMLButtonElement;
 
   constructor(themes: readonly ThemeChoice[], handlers: SettingsHandlers) {
@@ -70,17 +79,20 @@ export class MainMenuSettings {
     this.root.appendChild(grid);
 
     this.root.appendChild(titleGroup('Sky'));
-    const sky = titleRow();
+    // **I tre modi in una pista sola.** Sono una scelta fra tre, non tre
+    // interruttori: tre cornici affiancate dicevano il contrario, e la pastiglia
+    // che scorre dice insieme dove si e' e dove si puo' andare. Le nuvole qui
+    // sotto restano un bottone loro, perche' sono un si'/no.
+    this.daylightTrack = segmentedRow('title-segmented');
     for (const mode of DAYLIGHT_MODES) {
       const control = daylightControl(mode);
       const button = titleSmall(control.label, () => handlers.onDaylight(mode));
-      button.classList.add('title-small--wide');
       button.title = control.tooltip;
       button.setAttribute('aria-pressed', 'false');
       this.daylightButtons.set(mode, button);
-      sky.appendChild(button);
+      this.daylightTrack.appendChild(button);
     }
-    this.root.appendChild(sky);
+    this.root.appendChild(this.daylightTrack);
 
     const clouds = titleRow();
     this.cloudsButton = titleSmall('Clouds', () => {
@@ -90,6 +102,26 @@ export class MainMenuSettings {
     this.cloudsButton.setAttribute('aria-pressed', 'false');
     clouds.appendChild(this.cloudsButton);
     this.root.appendChild(clouds);
+
+    // **La stagione non e' un'impostazione, ed e' l'eccezione dichiarata di
+    // questa sezione.** Pausa e velocita' stanno fuori di qui perche' sono
+    // comandi dal vivo, e questo lo e' quanto loro: sposta il calendario della
+    // citta' viva. Sta qui lo stesso per la ragione opposta a quella di pausa e
+    // velocita' — la si sceglie guardando il prato e il cielo, cioe' proprio le
+    // cose che questa sezione mette insieme — e la nota dice cosa succede, cosi'
+    // nessuno la scambia per un fermo immagine.
+    this.root.appendChild(titleGroup('Season'));
+    this.root.appendChild(titleNote('Moves the year on to the first day of that season. It keeps running from there.'));
+    this.seasonTrack = segmentedRow('title-segmented');
+    for (const season of SEASONS) {
+      const control = seasonControl(season);
+      const button = titleSmall(control.label, () => handlers.onSeason(season));
+      button.title = control.tooltip;
+      button.setAttribute('aria-pressed', 'false');
+      this.seasonButtons.set(season, button);
+      this.seasonTrack.appendChild(button);
+    }
+    this.root.appendChild(this.seasonTrack);
 
     this.root.appendChild(titleGroup('Tools'));
     this.root.appendChild(titleNote(
@@ -103,6 +135,13 @@ export class MainMenuSettings {
     swatch.title = 'Every palette slot and surface, in a new tab';
     tools.appendChild(swatch);
     this.root.appendChild(tools);
+
+    // La larghezza della pastiglia e' una frazione di quante celle ci sono, e
+    // quel numero lo scrive `paintSegmented`: senza questo giro a vuoto la pista
+    // si disegnerebbe con una pastiglia larga tutta la pista fino al primo
+    // `setDaylight`, che arriva da fuori e non e' detto arrivi subito.
+    paintSegmented(this.daylightTrack);
+    paintSegmented(this.seasonTrack);
   }
 
   setTheme(id: string): void {
@@ -115,6 +154,15 @@ export class MainMenuSettings {
     for (const [candidate, button] of this.daylightButtons) {
       button.setAttribute('aria-pressed', candidate === mode ? 'true' : 'false');
     }
+    paintSegmented(this.daylightTrack);
+  }
+
+  /** Acceso e' quello in cui la citta' sta adesso, come per la luce. */
+  setSeason(season: Season): void {
+    for (const [candidate, button] of this.seasonButtons) {
+      button.setAttribute('aria-pressed', candidate === season ? 'true' : 'false');
+    }
+    paintSegmented(this.seasonTrack);
   }
 
   setClouds(on: boolean): void {

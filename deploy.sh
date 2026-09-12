@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# deploy.sh — pubblica questa repo su https://voxelcity.77.42.70.26.nip.io
+# deploy.sh — pubblica questa repo su https://voxelcity.demos.noeinsolutions.com
 #
 #   bash deploy.sh              deploy di origin/main (l'ultimo commit pushato)
 #   bash deploy.sh --dry-run    mostra cosa partirebbe, senza toccare il server

@@ -37,6 +37,18 @@ export interface SaveScene {
   readonly clock: number;
   /** Tick consecutivi in autosufficienza: e' meta' della condizione di vittoria. */
   readonly healthyTicks: number;
+  /**
+   * Il gradino piu' alto mai raggiunto dalla scala di sblocco, come indice.
+   *
+   * **Non e' derivabile, ed e' l'unica parte della scala che non lo e'.** Tutte
+   * le soglie si rimisurano sullo stato al caricamento; «c'e' gia' passato» no,
+   * e senza questo numero una carestia che riporta la citta' sotto i centoventi
+   * abitanti richiuderebbe un monumento gia' sbloccato. Il default `-1` fa
+   * rimisurare la scala da capo, che e' il comportamento giusto per un
+   * salvataggio scritto prima che questa esistesse: quella citta' e' gia'
+   * grande, e il gradino torna al primo tick.
+   */
+  readonly milestone: number;
 }
 
 export interface SaveGame {
@@ -68,6 +80,7 @@ const DEFAULT_SCENE: SaveScene = {
   speed: 1,
   clock: 0,
   healthyTicks: 0,
+  milestone: -1,
 };
 
 /**
@@ -122,6 +135,9 @@ function readScene(value: unknown): SaveScene {
     speed: clamp(numberOf(value.speed, 1), 1, 8),
     clock: Math.max(0, numberOf(value.clock, 0)),
     healthyTicks: Math.max(0, Math.floor(numberOf(value.healthyTicks, 0))),
+    // Il pavimento e' `-1` e non `0`: zero e' il primo gradino gia' raggiunto, e
+    // un file senza il campo non deve regalarlo.
+    milestone: Math.max(-1, Math.floor(numberOf(value.milestone, -1))),
   };
 }
 

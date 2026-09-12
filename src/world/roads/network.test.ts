@@ -131,6 +131,45 @@ describe('planRoads — l albero cresciuto dal centro', () => {
     expect(plan.orphans[0].x).toBe(100);
   });
 
+  it('la radice sta dove sono i poli, non dove e il polo piu forte', () => {
+    // Una parete invalicabile sulla colonna 50: a ovest un polo solo e fortissimo,
+    // a est tre piu' deboli. Prendere la radice per sola intensita' darebbe la
+    // rete allo scoglio e lascerebbe la citta' senza strade — misurato su un
+    // salvataggio vero, 2946 colonne asfaltate contro 1189.
+    const walled: RoadProbe = {
+      levelAt: (x) => (x === 50 ? ROADS.maxRise * 4 : 0),
+      costAt: () => ROADS.landCost,
+    };
+    const bounds: TraceBounds = { x0: -10, y0: -40, x1: 110, y1: 40 };
+    const poles = [
+      pole(0, 0, 250),
+      pole(80, 0, 200), pole(80, 30, 199), pole(80, -30, 198),
+    ];
+
+    const plan = planRoads(poles, walled, bounds);
+
+    expect(plan.connected).toHaveLength(3);
+    expect(plan.connected[0].x).toBe(80);
+    expect(plan.orphans).toHaveLength(1);
+    expect(plan.orphans[0].x).toBe(0);
+    // E nessuna carreggiata dalla parte dello scoglio: la rete serve la citta'.
+    expect(plan.nodes.every((node) => node.x > 50)).toBe(true);
+
+    // Senza la parete non cambia niente di prima: la radice torna a essere il
+    // polo piu' forte, perche' i poli stanno tutti nella stessa regione.
+    expect(planRoads(poles, FLAT, bounds).connected[0].x).toBe(0);
+  });
+
+  it('l intensita conta solo per l ordine: rinforzare un polo non sposta una strada', () => {
+    // E' la premessa su cui `RoadNetwork.update` tiene l'intensita' fuori dalla
+    // propria firma. Se un giorno l'intensita' entrasse in un costo, questo test
+    // rosseggia prima che la rete smetta di aggiornarsi in silenzio.
+    const poles = [pole(0, 0, 240), pole(120, 40, 200), pole(60, 150, 190)];
+    const louder = [pole(0, 0, 900), pole(120, 40, 500), pole(60, 150, 201)];
+
+    expect(planRoads(louder, FLAT, BOUNDS).nodes).toEqual(planRoads(poles, FLAT, BOUNDS).nodes);
+  });
+
   it('e deterministico: lo stesso insieme di poli in ordine diverso da la stessa rete', () => {
     const poles = [pole(0, 0, 240), pole(120, 40, 200), pole(60, 150, 190)];
     const forward = planRoads(poles, FLAT, BOUNDS);

@@ -36,6 +36,15 @@ import type { VoxelStamp } from './stamp';
  * invece di ripetere quella sotto. Le sagome di livello zero — una o due fasce,
  * niente corpo bloccato — sono rimaste identiche, ed e' il segno che il
  * cambiamento morde dove doveva.
+ *
+ * Rigenerate una quarta volta quando la cima e' diventata un **repertorio**: una
+ * tipologia dichiara `crownKinds` e il canale del tetto ne pesca una, e il
+ * pennone sotto la soglia di skyline e' anch'esso un tiro — lato, altezza e
+ * presenza. Sono tre tiri in piu' sul canale del tetto, quindi ogni cima e'
+ * cambiata; il corpo no, e nemmeno la sua sequenza. **La citta' gia' costruita
+ * si ricarica senza danno**: `recordStamp` rigenera dal record, e la sagoma che
+ * ne esce e' coerente con se stessa — cambia rispetto a ieri, non rispetto a
+ * quel che il registro crede di avere.
  */
 
 /**
@@ -77,29 +86,29 @@ const LEVELS = [0, 3, 6, 9, 20] as const;
 
 /** Chiave `uso-livello-seme`. L'ordine degli usi e' contratto (invariante 10). */
 const DIGESTS: Readonly<Record<string, string>> = {
-  '0-0-13': 'bffd94c5', '0-0-7932': 'b9670246', '0-0-15851': '6162ea37',
-  '0-3-13': '38abb4b6', '0-3-7932': 'cd8062e4', '0-3-15851': '8761ae6d',
-  '0-6-13': '3627f1a0', '0-6-7932': 'afbbec8e', '0-6-15851': '2aaeef7b',
-  '0-9-13': 'e170c277', '0-9-7932': '19ea7d60', '0-9-15851': 'f16fd557',
-  '0-20-13': 'b36f6dbf', '0-20-7932': 'a9921893', '0-20-15851': 'd3fd25d0',
+  '0-0-13': 'f2adec9f', '0-0-7932': 'ef2bd248', '0-0-15851': '0acc0cc7',
+  '0-3-13': 'ea49c56f', '0-3-7932': 'fe47df15', '0-3-15851': '6af9e61b',
+  '0-6-13': '02b24f7a', '0-6-7932': '15ca1ed3', '0-6-15851': '462124bb',
+  '0-9-13': '1b490651', '0-9-7932': '65059bb8', '0-9-15851': '92a6cbd7',
+  '0-20-13': '00e1852c', '0-20-7932': 'cb89c9eb', '0-20-15851': '3671a6ce',
 
-  '1-0-13': '0b195fe3', '1-0-7932': '09c8e49e', '1-0-15851': '4c518d3e',
-  '1-3-13': '767c77d6', '1-3-7932': 'd5d6786f', '1-3-15851': '8d48593a',
-  '1-6-13': 'adef1429', '1-6-7932': 'c4c15c13', '1-6-15851': '504681f2',
-  '1-9-13': 'a42e9903', '1-9-7932': '76478029', '1-9-15851': 'c509cc0e',
-  '1-20-13': '79f09e88', '1-20-7932': 'b5e4b504', '1-20-15851': 'c702f109',
+  '1-0-13': 'f4917abb', '1-0-7932': 'fcfc8b5e', '1-0-15851': '08e79a1e',
+  '1-3-13': 'f1e65782', '1-3-7932': '8f62f1c5', '1-3-15851': 'fe0a758c',
+  '1-6-13': 'ebfa988b', '1-6-7932': '09d4b229', '1-6-15851': 'f08c6b7d',
+  '1-9-13': '23fee7e0', '1-9-7932': '02766745', '1-9-15851': '503eb9d3',
+  '1-20-13': 'b25a2f5a', '1-20-7932': '45ed7cdf', '1-20-15851': '63da176d',
 
-  '2-0-13': '9c29ce2e', '2-0-7932': '3fc0398f', '2-0-15851': '1b8fdb2f',
-  '2-3-13': '9f03b272', '2-3-7932': '169b5061', '2-3-15851': 'd423bf5f',
-  '2-6-13': '3ec95cec', '2-6-7932': '88b48952', '2-6-15851': '8c21cec0',
-  '2-9-13': '4fb3b344', '2-9-7932': 'eda11a58', '2-9-15851': '202e6e17',
-  '2-20-13': 'd266ca26', '2-20-7932': '097df9e1', '2-20-15851': 'b9365c7d',
+  '2-0-13': 'c6aef72e', '2-0-7932': '2a63816f', '2-0-15851': '2753c6cf',
+  '2-3-13': 'b88d7154', '2-3-7932': '44092c69', '2-3-15851': '725d78bb',
+  '2-6-13': '7a50f6f4', '2-6-7932': '77cffda2', '2-6-15851': '065c89bc',
+  '2-9-13': '6f60835c', '2-9-7932': 'baa26bf0', '2-9-15851': 'aebe2caf',
+  '2-20-13': 'f5b5d72a', '2-20-7932': '35624ab4', '2-20-15851': 'bae11df8',
 
-  '3-0-13': '0313822b', '3-0-7932': '2344f301', '3-0-15851': 'a49bba87',
-  '3-3-13': 'a5aeee90', '3-3-7932': '5ce24126', '3-3-15851': 'a0a8482b',
-  '3-6-13': '9a60f39b', '3-6-7932': '4b0a27a6', '3-6-15851': '656943ba',
-  '3-9-13': 'f6ba2362', '3-9-7932': '07dc7bd3', '3-9-15851': '639cc37a',
-  '3-20-13': 'eb6f84ea', '3-20-7932': '90bcd987', '3-20-15851': 'a321c077',
+  '3-0-13': 'cec7cc92', '3-0-7932': 'b2cc5fee', '3-0-15851': '8e918df7',
+  '3-3-13': '79e19ae3', '3-3-7932': 'd89e40ec', '3-3-15851': '60db675b',
+  '3-6-13': '8fb006d0', '3-6-7932': '4c507e02', '3-6-15851': '07457292',
+  '3-9-13': '668c046f', '3-9-7932': '7aac5d4a', '3-9-15851': '6286346a',
+  '3-20-13': '9d04dfb9', '3-20-7932': 'dadb3ccf', '3-20-15851': '75f6287c',
 };
 
 describe('impronte digitali della grammatica', () => {

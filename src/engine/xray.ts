@@ -87,8 +87,20 @@ export const XRAY = {
    * l'occlusore non si sbriciola, si riduce a una **gabbia**. La sagoma resta
    * leggibile — si continua a vedere *che c'e' una torre davanti* — e insieme si
    * vede attraverso, che e' esattamente cio' che si chiedeva.
+   *
+   * Da 0,45 a 0,75 perche' **la gabbia non si impila**. La soglia del retino sta
+   * in pixel di schermo: due occlusori sovrapposti la interrogano nello stesso
+   * punto e ricevono la stessa risposta, quindi non si compongono — vince il
+   * piu' vicino. Sulle facce la cosa e' voluta e funziona, perche' `deep` separa
+   * le densita' per profondita' e chi sta dietro sopravvive su un insieme piu'
+   * largo; sul filo no, perche' questa frazione schiacciava tutte le profondita'
+   * fra 0,36 e 0,43. Con venti torri davanti arrivava al soggetto il 39% dei
+   * pixel, e il resto era la gabbia del primo occlusore sciolta nell'aria: a
+   * schermo una macchia bianca, non una lente. A 0,75 la stessa scena ne lascia
+   * passare il 63%. Lo spessore invece resta dov'e': accorciarlo a 0,08 avrebbe
+   * aggiunto tre punti e tolto al filo la larghezza misurata in `edge`.
    */
-  lattice: 0.45,
+  lattice: 0.75,
 
   /**
    * Spessore del filo, in frazione di cella.
@@ -128,10 +140,18 @@ export const XRAY = {
    * c'e' qui» ma «c'e' un landmark nascosto qui attorno». Troppo corta e il
    * landmark va trovato al pixel; troppo lunga e ogni punto della citta' si
    * aggancia al monumento piu' vicino invece di guardare cio' che ha sotto.
-   * Mezzo chunk copre la strada davanti a un landmark — proprio quella che la
-   * crescita ha riempito — senza rubare la lente agli isolati lontani.
+   *
+   * Mezzo chunk — sedici voxel — era troppo corto, e si vedeva: il passo della
+   * maglia stradale e' quaranta, quindi quella portata non copriva nemmeno meta'
+   * dell'isolato in cui il landmark sta. Puntando nei paraggi non si agganciava
+   * niente, la lente ripiegava sull'edificio sotto il cursore — o sul cubo del
+   * suolo nudo — e a schermo restava un velo senza niente di acceso dentro,
+   * cioe' la vista che non mantiene quello che il pannello promette. Ventotto
+   * porta il quadrato di cattura attorno a un landmark di impronta mega a
+   * settantadue voxel di lato: l'isolato del landmark per intero e un affaccio
+   * su quelli attorno, che e' la distanza da cui si punta davvero.
    */
-  landmarkReach: 16,
+  landmarkReach: 28,
 
   /**
    * Come il landmark scelto si accende sotto la lente.
@@ -152,6 +172,34 @@ export const XRAY = {
     tint: 0.4,
     /** Quanto il landmark si schiarisce in piu', 0..1. */
     boost: 0.3,
+  },
+
+  /**
+   * La sagoma del landmark ridisegnata **attraverso** cio' che lo nasconde.
+   *
+   * E' la risposta al limite che `lattice` puo' solo attenuare: il retino non
+   * impila, quindi nessuna taratura fara' mai vedere un monumento dietro venti
+   * torri. La cura che i giochi usano e' ridisegnare il soggetto con il test di
+   * profondita' rovesciato — passa **solo** dove qualcosa gli sta davanti — e
+   * costa una passata sola, che ci sia una torre o venti. Il come sta in
+   * `landmarkSurface.ts` (l'estrazione della buccia) e in
+   * `LandmarkSilhouette.ts` (la mesh e il materiale); qui c'e' solo quanto pesa.
+   */
+  silhouette: {
+    /**
+     * Opacita' della sagoma vista attraverso gli edifici.
+     *
+     * Non 1: una sagoma piena cancellerebbe la citta' davanti, e con lei la
+     * risposta alla meta' della domanda — *cosa* stava nascondendo il landmark.
+     * Non troppo bassa: sotto la mezza opacita' torna a contendere i pixel con
+     * il velo, che e' il difetto da cui si e' partiti. La sagoma non scrive
+     * profondita', quindi le sue stesse facce si sovrappongono e il volume si
+     * legge come un fantasma invece che come una figura ritagliata.
+     */
+    opacity: 0.85,
+
+    /** Ordine di disegno: sopra gli overlay, sotto le guide di `InspectGuides`. */
+    renderOrder: 24,
   },
 } as const;
 

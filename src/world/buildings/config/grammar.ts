@@ -86,12 +86,48 @@ export const GRAMMAR = {
   lanternRise: 4,
 
   /**
-   * Lato del dettaglio verticale sul tetto.
+   * Lato del dettaglio verticale sul tetto, `[minimo, massimo]` inclusi.
    *
    * A un voxel su un tetto largo otto sparirebbe alla distanza di gioco, che e'
    * il contrario di cio' per cui esiste: chiudere la silhouette.
+   *
+   * **E' un intervallo e non piu' un numero solo, e la ragione e' aritmetica.**
+   * Il prisma sul tetto era 2x2 sempre, sopra un cappello che rientra sempre di
+   * un passo per lato: su un'impronta da sei — cioe' quasi ogni casa — la cima
+   * era percio' `6x6 > 4x4 > 2x2` in **ogni** edificio, misurato al 100% dei semi
+   * sul ripiego residenziale. Un lato in piu' rompe la progressione senza
+   * cambiare l'ingombro: il prisma resta dentro il coronamento, quindi ne'
+   * budget di chunk ne' impronta se ne accorgono.
    */
-  roofPropSide: 2,
+  roofPropSide: [2, 3] as readonly [number, number],
+
+  /**
+   * Quante volte una cima che **puo'** portare il pennone lo porta davvero,
+   * sotto la soglia di skyline.
+   *
+   * Non e' una manopola di gusto: `taper` e' la cima del ripiego residenziale e
+   * di quello civico, cioe' la maggioranza del tessuto, e il pennone e' l'ultimo
+   * gradino di quella progressione a tre. Con il tiro, meta' delle case chiude
+   * sul cappello e l'altra meta' porta la canna fumaria, e due vicini smettono di
+   * avere la stessa sagoma.
+   *
+   * **Sopra la soglia di skyline non si tira affatto**: li' il pennone e' la riga
+   * che chiude la silhouette della citta' da lontano, ed e' una promessa, non una
+   * probabilita'.
+   */
+  roofPropChance: 0.5,
+
+  /**
+   * Di quanto il pennone puo' essere piu' basso dell'altezza dichiarata dal
+   * profilo.
+   *
+   * Si scende e non si sale, e non e' timidezza: l'altezza del profilo entra nel
+   * conto di `CROWN_AND_PROP` in `scale.ts`, cioe' nel tetto di chunk sporchi che
+   * un edificio puo' marcare. Sforare quel conto fa sparire un edificio in
+   * silenzio, che e' il difetto raccontato da `maxDirtyChunksPerBuilding`;
+   * accorciare di due voxel non tocca niente.
+   */
+  roofPropDrop: 2,
 
   /**
    * Lato sotto cui una fascia non scende.
@@ -312,6 +348,72 @@ export const CROWN_KIND = {
 } as const;
 
 export type CrownKind = typeof CROWN_KIND[keyof typeof CROWN_KIND];
+
+/**
+ * I repertori di cima: le famiglie fra cui il tiro del tetto sceglie.
+ *
+ * **Una tipologia dichiara una famiglia, non una cima.** E' la stessa forma che
+ * il repertorio delle fasce ha da sempre — `shrinkOps` e `growOps` sono elenchi,
+ * e il seme sceglie quale voce applicare — portata al coronamento, che era
+ * l'ultima parte della grammatica ancora decisa da un valore solo. Con una cima
+ * sola per riga di catalogo, tutti gli edifici che una riga produce finiscono
+ * uguali: misurato sul ripiego residenziale, il 100% dei semi di livello zero
+ * chiudeva con la stessa progressione a tre gradoni, e una strada di case era una
+ * strada di ziggurat identici.
+ *
+ * **Le famiglie sono curate, non tutte le combinazioni.** La prima voce e' la
+ * cima che da' il nome alla famiglia e resta la piu' probabile solo nel senso che
+ * e' quella che il catalogo cita; le altre sono cime che a distanza di gioco
+ * raccontano la stessa cosa. Un capannone puo' chiudere piatto, a gradoni o con
+ * una falda lunga — sono tutte coperture da capannone; non puo' chiudere con una
+ * lanterna, che e' l'affermazione di un civico alto e non va diluita.
+ *
+ * Una riga che vuole *esattamente* una cima scrive `[CROWN_KIND.x]`: la firma di
+ * `TypologyShape.crownKinds` e' un elenco, quindi non serve un'eccezione.
+ *
+ * **L'ordine dentro una famiglia non e' libero, ed e' stato misurato.** Il tiro
+ * mappa il seme sull'indice, quindi permutare le voci riassegna le cime a
+ * edifici diversi — e da li' in poi la citta' e' un'altra. Con `flat` elencata
+ * `[flat, stepped, ridge]` la citta' del seme 1337 collassava: quarantasette
+ * edifici invece di ottanta a quaranta infornate, seicento rifiuti `occupied` e
+ * `stacked` a zero. Con gli **stessi tre** in ordine `[flat, ridge, stepped]`
+ * torna a ottanta su tre semi diversi.
+ *
+ * Non e' che una cima sia sbagliata: e' che la fase in quota e' in equilibrio
+ * precario. Una mensola si aggancia dove trova un filo di solaio — pieno a una
+ * quota, vuoto sopra — e le cime a gradoni ne offrono di nuovi; qualche mensola
+ * in piu' nel posto sbagliato prenota l'aria sopra i lotti vicini, e quei lotti
+ * non si costruiscono piu'. Chi tocca queste righe rimisuri con la sonda della
+ * citta', invece di fidarsi del fatto che i test dell'edificio siano verdi.
+ */
+export const CROWN_SET = {
+  /** Il cappello rientrato e i suoi parenti: la cima del tessuto ordinario. */
+  taper: [CROWN_KIND.taper, CROWN_KIND.stepped, CROWN_KIND.flat] as readonly CrownKind[],
+  /**
+   * Coperture da capannone: piatta, lunga su un asse solo, a gradoni.
+   *
+   * L'ordine e' quello verificato sulla sonda della citta' — vedi la nota
+   * sull'ordine qui sopra. E' anche la famiglia piu' usata del catalogo: e' la
+   * cima della casa-bottega e della fila commerciale, cioe' di quasi tutto il
+   * tessuto basso.
+   */
+  flat: [CROWN_KIND.flat, CROWN_KIND.ridge, CROWN_KIND.stepped] as readonly CrownKind[],
+  /** La scala verso l'alto, e le due cime che la continuano in altro modo. */
+  stepped: [CROWN_KIND.stepped, CROWN_KIND.taper, CROWN_KIND.flat] as readonly CrownKind[],
+  /** Falde lunghe: il colmo appena accennato o portato fino in fondo. */
+  ridge: [CROWN_KIND.ridge, CROWN_KIND.gable, CROWN_KIND.flat] as readonly CrownKind[],
+  /** Il tetto a falda, e i due modi meno ripidi di dire la stessa cosa. */
+  gable: [CROWN_KIND.gable, CROWN_KIND.ridge, CROWN_KIND.stepped] as readonly CrownKind[],
+  /**
+   * La torretta e il cappello: le due sole cime che salgono invece di chiudere.
+   *
+   * Resta la famiglia piu' stretta di proposito. La lanterna e' la firma di una
+   * torre d'angolo o di un civico, e le righe che la citano la citano per quello:
+   * darle per parente un tetto piatto vorrebbe dire che l'affermazione a volte
+   * non si sente.
+   */
+  lantern: [CROWN_KIND.lantern, CROWN_KIND.taper] as readonly CrownKind[],
+} as const;
 
 /**
  * Che parte di un isolato occupa un lotto.

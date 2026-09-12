@@ -4,6 +4,7 @@ import {
   FARM_KIND,
   FARM_LABELS,
   dominantOutflow,
+  fundsOwed,
   effectiveCount,
   fedShareOf,
   harvestFactorAt,
@@ -119,7 +120,7 @@ function ticksLabel(ticks: number): string {
  * silenzio, ed e' voluto.
  */
 export function fundsHint(flows: FundsReport, emptyIn: number | null = null): string {
-  const owed = flows.civic + flows.policies + flows.farms;
+  const owed = fundsOwed(flows);
   // La cassa e' gia' finita: qui una scadenza sarebbe una previsione su un
   // fatto passato.
   if (owed > 0 && flows.paid < owed) {
@@ -129,9 +130,11 @@ export function fundsHint(flows: FundsReport, emptyIn: number | null = null): st
     ? ''
     : emptyIn === 0 ? ' · funds are gone' : ` · empty in ${ticksLabel(emptyIn)}`;
   const dominant = dominantOutflow(flows);
+  if (dominant === 'services' && flows.services > flows.tax) return `City services > taxes${deadline}`;
   if (dominant === 'civic' && flows.civic > flows.tax) return `Civic costs > taxes${deadline}`;
   if (dominant === 'policies' && flows.policies > flows.tax) return `Policy costs > taxes${deadline}`;
   if (dominant === 'farms' && flows.farms > flows.tax) return `Farm upkeep > taxes${deadline}`;
+  if (dominant === 'catalysts' && flows.catalysts > flows.tax) return `Upkeep of placed roles > taxes${deadline}`;
   // Nessuna singola voce supera le tasse e la cassa scende lo stesso: e' la
   // somma a non tornare, e dirlo e' piu' onesto che rassicurare.
   return emptyIn === null ? 'Taxes cover the bills' : `Upkeep outruns income${deadline}`;
@@ -358,16 +361,18 @@ export function commerceOf(stats: GrowthStats | null): HudCommerce | null {
 }
 
 function fundsBreakdown(flows: FundsReport): readonly HudFlow[] {
-  const owed = flows.civic + flows.policies + flows.farms;
+  const owed = fundsOwed(flows);
   const share = owed > 0 ? flows.paid / owed : 0;
   const rows: readonly HudFlow[] = [
     { label: 'Taxes', amount: flows.tax, direction: 'in' },
     { label: 'Shops', amount: flows.retail, direction: 'in' },
     { label: 'Trade', amount: Math.max(0, flows.trade), direction: 'in' },
     { label: 'Imports', amount: Math.max(0, -flows.trade), direction: 'out' },
+    { label: 'City services', amount: flows.services * share, direction: 'out' },
     { label: 'Civic services', amount: flows.civic * share, direction: 'out' },
     { label: 'Policies', amount: flows.policies * share, direction: 'out' },
     { label: 'Farms', amount: flows.farms * share, direction: 'out' },
+    { label: 'Placed roles', amount: flows.catalysts * share, direction: 'out' },
   ];
   return rows.filter((row) => row.amount >= 0.005);
 }

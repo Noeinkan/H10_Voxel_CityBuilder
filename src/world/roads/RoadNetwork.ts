@@ -2,7 +2,7 @@ import { BIOME } from '../terrain/config';
 import { GROUND, groundKindOf } from '../grading/grade';
 import type { TerrainMap } from '../terrain/TerrainMap';
 import { ROADS, ROAD_RANK, type RoadRank } from './config';
-import { EMPTY_PLAN, planRoads, type RoadPlan, type RoadPole } from './network';
+import { EMPTY_PLAN, normalisePoles, planRoads, type RoadPlan, type RoadPole } from './network';
 import { strokeRoads, strokeViaduct, type RoadSurface, type ViaductSurface } from './stroke';
 import { terrainPenalty } from './terrainCost';
 import { planViaducts } from './viaduct';
@@ -23,8 +23,16 @@ import { boundsAround, traceRoad, type RoadProbe, type TraceBounds } from './tra
  * **Si rifa' per intero e non si aggiorna.** Un polo nuovo puo' cambiare quale
  * tratto e' il tronco dall'altra parte dell'isola: il carico e' una proprieta'
  * dell'albero, non del singolo tratto, e un aggiornamento incrementale corretto
- * costerebbe piu' di una ricostruzione. La ricostruzione gira quando il
- * giocatore pianta un catalizzatore, cioe' una manciata di volte per partita.
+ * costerebbe piu' di una ricostruzione.
+ *
+ * **Quanto spesso, invece, non lo decide il giocatore.** Questo file e' nato
+ * dicendo «una manciata di volte per partita», contando sul fatto che i poli
+ * arrivassero da un catalizzatore piantato a mano; ma un landmark che avanza di
+ * stadio rinforza il proprio catalizzatore da solo (`setCatalystStrength` in
+ * `buildings/landmarkDriver.ts`), e su una citta' matura succede ogni pochi
+ * secondi. Da qui le due cose che tengono in piedi la premessa: la firma ignora
+ * cio' che non disegna — vedi `signatureOf` — e la ricostruzione non paga piu' i
+ * poli che non puo' collegare, che e' il lavoro di `roads/regions.ts`.
  */
 export class RoadNetwork {
   private plan: RoadPlan = EMPTY_PLAN;
@@ -185,15 +193,13 @@ export class RoadNetwork {
   /**
    * Rifa' il tracciato se i poli sono cambiati. true se qualcosa e' cambiato.
    *
-   * La firma e' la lista dei poli normalizzata a stringa, e non l'identita'
-   * dell'array: ogni tick della simulazione ricrea i catalizzatori, quindi un
-   * confronto per riferimento rifarebbe la rete dieci volte al secondo.
+   * La firma e' una stringa e non l'identita' dell'array: ogni tick della
+   * simulazione ricrea i catalizzatori, quindi un confronto per riferimento
+   * rifarebbe la rete dieci volte al secondo. Cosa ci sta dentro, e perche' meno
+   * di quanto sembri, e' in `signatureOf`.
    */
   update(poles: readonly RoadPole[]): boolean {
-    const signature = poles
-      .map((pole) => `${pole.x},${pole.y},${pole.strength}`)
-      .sort()
-      .join(';');
+    const signature = signatureOf(poles);
     if (signature === this.signature) return false;
     this.signature = signature;
     this.revisions++;
@@ -203,6 +209,10 @@ export class RoadNetwork {
       this.painted = [];
       this.spans = [];
       this.index = new Map();
+      // La fascia segue la rete anche quando la rete non c'e' piu': tenerla
+      // lascerebbe affacci su strade svanite, che e' il difetto che la riga
+      // gemella in fondo a questo metodo evita nel caso normale.
+      this.frontage = new Set();
       return true;
     }
 
@@ -399,6 +409,39 @@ export class RoadNetwork {
       this.terrain.waterTopAt(x, y),
     );
   }
+}
+
+/**
+ * Cio' che, cambiando, cambia il disegno delle strade. Niente altro.
+ *
+ * **L'intensita' dei poli non c'e', e la sua assenza e' il punto.** `planRoads`
+ * la legge in un posto solo — l'ordine di `normalisePoles` — quindi due liste di
+ * poli che normalizzano nella stessa sequenza di colonne danno la stessa rete,
+ * colonna per colonna, qualunque numero ci sia scritto sopra. Tenere
+ * l'intensita' nella firma voleva dire rifare tutto a ogni avanzamento di stadio
+ * di un landmark, che ne aggiunge otto al proprio catalizzatore: una
+ * ricostruzione intera per un numero che non sposta un voxel.
+ *
+ * **Quello che ci sta dentro sono le colonne tenute e il riquadro.** Le prime
+ * nell'ordine in cui `planRoads` le usera', perche' l'ordine decide a cosa ogni
+ * ramo si attacca; il secondo perche' dipende da **tutti** i poli e non solo da
+ * quelli tenuti, e allargandolo la ricerca trova cammini che prima non c'erano.
+ *
+ * Fuori restano terreno e suolo occupato, ed e' come era prima: un edificio
+ * nuovo non rifa' le strade. Chi ha bisogno di una strada dove non c'e' la chiede
+ * a `connect`.
+ *
+ * Resta una conseguenza da sapere: i poli dentro `plan.connected` e
+ * `plan.orphans` portano l'intensita' che avevano **all'ultima ricostruzione**.
+ * Nessuno la legge — servono a sapere *quali* poli, non quanto forti — e chi ne
+ * avesse bisogno la chieda ai catalizzatori, che sono la fonte.
+ */
+function signatureOf(poles: readonly RoadPole[]): string {
+  if (poles.length === 0) return '';
+  const bounds = boundsOf(poles);
+  let out = `${bounds.x0},${bounds.y0},${bounds.x1},${bounds.y1}`;
+  for (const pole of normalisePoles(poles)) out += `|${pole.x},${pole.y}`;
+  return out;
 }
 
 /**

@@ -10,7 +10,7 @@ function save(overrides: Partial<SaveGame> = {}): SaveGame {
     sim: toSimStateData(createSimState()),
     records: [],
     sectors: [],
-    scene: { paused: false, speed: 1, clock: 0, healthyTicks: 0 },
+    scene: { paused: false, speed: 1, clock: 0, healthyTicks: 0, milestone: -1 },
     ...overrides,
   };
 }
@@ -58,7 +58,7 @@ describe('formato di salvataggio', () => {
   it('apre un file a cui manca la scena, con i valori di partenza', () => {
     const { scene: _dropped, ...legacy } = save();
     const read = readSave(JSON.parse(JSON.stringify(legacy)));
-    expect(read?.scene).toEqual({ paused: false, speed: 1, clock: 0, healthyTicks: 0 });
+    expect(read?.scene).toEqual({ paused: false, speed: 1, clock: 0, healthyTicks: 0, milestone: -1 });
   });
 
   it('rimette i record in ordine di id anche se il file non li aveva', () => {
@@ -80,7 +80,7 @@ describe('formato di salvataggio', () => {
   });
 
   it('riporta la velocita dentro il dominio dei comandi', () => {
-    expect(roundTrip(save({ scene: { paused: true, speed: 999, clock: 5, healthyTicks: 3 } }))?.scene)
-      .toEqual({ paused: true, speed: 8, clock: 5, healthyTicks: 3 });
+    expect(roundTrip(save({ scene: { paused: true, speed: 999, clock: 5, healthyTicks: 3, milestone: -1 } }))?.scene)
+      .toEqual({ paused: true, speed: 8, clock: 5, healthyTicks: 3, milestone: -1 });
   });
 });

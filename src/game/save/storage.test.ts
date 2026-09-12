@@ -34,7 +34,7 @@ function save(seed = 4242): SaveGame {
     sim: toSimStateData(createSimState()),
     records: [],
     sectors: [],
-    scene: { paused: false, speed: 1, clock: 0, healthyTicks: 0 },
+    scene: { paused: false, speed: 1, clock: 0, healthyTicks: 0, milestone: -1 },
   };
 }
 

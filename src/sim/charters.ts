@@ -19,8 +19,15 @@ import { BUILDING_CLASS, type BuildingClass } from './classes';
  * stesso stato produce edifici diversi a seconda di quando lo si guarda.
  */
 
-/** Le tre famiglie di decisione. Ognuna tiene un solo mandato per volta. */
-export type CharterFamily = 'supply' | 'publicSpace' | 'investment';
+/**
+ * Le famiglie di decisione. Ognuna tiene un solo mandato per volta.
+ *
+ * `governance` e' la quarta e non descrive un quartiere: dice **come** la citta'
+ * e' amministrata, ed e' l'unica i cui mandati toccano il pannello delle policy
+ * — slot, prezzo di varo, mantenimento. E' la cerniera che mancava fra le due
+ * meta' del governo cittadino, che prima si ignoravano.
+ */
+export type CharterFamily = 'supply' | 'publicSpace' | 'investment' | 'governance';
 
 export type CharterId = keyof typeof BALANCE.districts.spatialCharter;
 
@@ -38,6 +45,18 @@ export interface Charter {
   readonly carrier: BuildingClass;
   /** Frase mostrata al giocatore, come `Policy.spatialEffect`. */
   readonly spatialEffect: string;
+  /**
+   * Slot di policy concessi in piu' finche' il mandato e' in piedi.
+   *
+   * Solo la famiglia `governance` lo usa. Non spegne niente quando decade: una
+   * policy gia' attiva resta attiva, e la citta' torna semplicemente a non
+   * poterne varare di nuove finche' non rientra sotto il tetto.
+   */
+  readonly policySlots?: number;
+  /** Fattore sul mantenimento di ogni policy attiva. */
+  readonly upkeepFactor?: number;
+  /** Fattore sul prezzo di varo di una policy. */
+  readonly costFactor?: number;
 }
 
 /**
@@ -104,7 +123,57 @@ export const CHARTERS: readonly Charter[] = [
     carrier: BUILDING_CLASS.residential,
     spatialEffect: 'Housing grows happier and more walkable.',
   },
+  {
+    id: 'emergencyPowers',
+    family: 'governance',
+    label: 'emergency powers',
+    carrier: BUILDING_CLASS.civic,
+    spatialEffect: 'Building goes fast and plain, and the city resents it.',
+    policySlots: BALANCE.decisions.mandate.slotGrant,
+  },
+  {
+    id: 'openBooks',
+    family: 'governance',
+    label: 'open books',
+    carrier: BUILDING_CLASS.civic,
+    spatialEffect: 'Civic blocks grow trusted and well used.',
+    upkeepFactor: BALANCE.decisions.mandate.thriftUpkeep,
+  },
+  {
+    id: 'chamberOfTrade',
+    family: 'governance',
+    label: 'chamber of trade',
+    carrier: BUILDING_CLASS.commercial,
+    spatialEffect: 'Merchant quarters turn rich and well connected.',
+    costFactor: BALANCE.decisions.mandate.charterCost,
+  },
 ];
+
+/**
+ * Cosa i mandati in piedi fanno al pannello delle policy.
+ *
+ * Un solo posto in cui i tre fattori si compongono, perche' sono tre domande
+ * che si fanno insieme — quante ne reggo, quanto costa vararne una, quanto
+ * costa tenerle — e leggerle da tre punti diversi le farebbe divergere.
+ */
+export interface CharterGovernance {
+  readonly extraSlots: number;
+  readonly upkeepFactor: number;
+  readonly costFactor: number;
+}
+
+export function governanceOf(active: readonly CharterId[]): CharterGovernance {
+  let extraSlots = 0;
+  let upkeepFactor = 1;
+  let costFactor = 1;
+  for (const id of active) {
+    const charter = charterById(id);
+    extraSlots += charter.policySlots ?? 0;
+    upkeepFactor *= charter.upkeepFactor ?? 1;
+    costFactor *= charter.costFactor ?? 1;
+  }
+  return { extraSlots, upkeepFactor, costFactor };
+}
 
 const BY_ID = new Map<CharterId, Charter>(CHARTERS.map((entry) => [entry.id, entry]));
 

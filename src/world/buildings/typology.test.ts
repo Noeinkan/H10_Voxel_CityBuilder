@@ -29,6 +29,8 @@ import {
   type TypologyDefinition,
 } from './config';
 import { generateBuilding } from './generate';
+import { crownBands } from './crowns';
+import type { BandRect } from './bandRect';
 import {
   bestProspectOf,
   selectTypology,
@@ -638,55 +640,83 @@ describe('forme delle tipologie', () => {
     expect(compared).toBeGreaterThan(0);
   });
 
-  it('il coronamento piatto toglie il dettaglio verticale sul tetto', () => {
+  it('la famiglia piatta non mette mai un palo in cima, quella del cappello si', () => {
+    // **La domanda e' diventata distributiva, e non per comodita'.** Una riga di
+    // catalogo dichiara una famiglia di cime (`CROWN_SET`), e sotto la soglia di
+    // skyline il pennone e' un tiro: chiedere «questo edificio ha un palo» non ha
+    // piu' una risposta sola, chiedere «quanti ne hanno, su sedici semi» si'.
     let widest = 0;
+    let flatSpires = 0;
+    let civicSpires = 0;
     for (let seed = 0; seed < 16; seed++) {
       const flat = build(BUILDING_CLASS.industrial, 3, seed, 'productionLoft');
       const spired = build(BUILDING_CLASS.civic, 3, seed, 'civicSpire');
 
-      // L'ultima quota di un tetto piatto e' la copertura dell'ultima fascia,
-      // non un palo: e' il segno di un capannone. Con la guglia, invece, in
-      // cima resta esattamente un voxel.
+      // L'ultima quota di un tetto da capannone e' la copertura dell'ultima
+      // fascia, non un palo: la famiglia `flat` — piatta, a gradoni, a falda
+      // lunga — non porta il pennone in nessuna delle sue voci.
       const roof = countSolidsOnLayer(flat, flat.sizeZ - 1);
       expect(roof).toBeGreaterThan(1);
       widest = Math.max(widest, roof);
-      // Il dettaglio e' un prisma di lato `roofPropSide`, non un ago da un voxel.
-      expect(countSolidsOnLayer(spired, spired.sizeZ - 1))
-        .toBeLessThanOrEqual(GRAMMAR.roofPropSide ** 2);
+      if (propHeightOf(flat) > 0) flatSpires++;
+      if (propHeightOf(spired) > 0) {
+        civicSpires++;
+        // Quando il palo c'e' e' un prisma di lato `roofPropSide`, non un ago da
+        // un voxel ne' un tetto intero.
+        expect(countSolidsOnLayer(spired, spired.sizeZ - 1))
+          .toBeLessThanOrEqual(GRAMMAR.roofPropSide[1] ** 2);
+      }
     }
     // E almeno una volta e' una copertura vera, non una lama residua.
     expect(widest).toBeGreaterThanOrEqual(4);
+    expect(flatSpires).toBe(0);
+    expect(civicSpires).toBeGreaterThan(0);
   });
 
-  it('le cinque cime sono cinque forme diverse, non due', () => {
-    // Il corpo si tiene fermo con un repertorio di solo `keep`: se le fasce
-    // rientrassero, a distinguere le cime sarebbe anche la larghezza su cui
-    // poggiano, e il test non direbbe piu' niente sul coronamento.
-    const roofs = new Map<CrownKind, string>();
+  it('le sei cime sono sei forme diverse, non due', () => {
+    // **La domanda e' sulla geometria del coronamento, quindi si fa a
+    // `crownBands`.** Passando per un edificio intero a distinguere le cime
+    // finirebbe anche il tiro del pennone, che dalla forma della cima non
+    // dipende: due cime identiche resterebbero distinte per un palo, ed e'
+    // esattamente cio' che il test deve saper vedere.
+    const top: BandRect = { x0: 0, y0: 0, w: 8, h: 6 };
+    const signatures = new Map<CrownKind, string>();
     for (const kind of Object.values(CROWN_KIND)) {
-      const stamp = generateBuilding({
-        class: BUILDING_CLASS.civic,
-        level: 5,
-        seed: 4242,
-        shape: { ...DEFAULT_TYPOLOGY_SHAPE, crownKind: kind, minFootprint: 8 },
-        profile: {
-          ...CLASS_PROFILE[BUILDING_CLASS.civic],
-          shrinkOps: [BAND_OP.keep],
-          growOps: [BAND_OP.keep],
-        },
-      });
-      const top = countSolidsOnLayer(stamp, stamp.sizeZ - 1);
-      roofs.set(kind, `${stamp.sizeZ}:${top}`);
+      const { bands } = crownBands(kind, top, 3);
+      signatures.set(kind, bands.map((b) => `${b.rect.w}x${b.rect.h}:${b.height}`).join('>'));
     }
-    expect(new Set(roofs.values()).size).toBe(Object.keys(CROWN_KIND).length);
+    expect(new Set(signatures.values()).size).toBe(Object.keys(CROWN_KIND).length);
 
-    // Le due che portano il dettaglio verticale restano le due che devono:
-    // sopra una guglia e sopra una lanterna c'e' un prisma, non un tetto.
+    // Le due che ammettono il dettaglio verticale restano le due che devono:
+    // sopra una guglia e sopra una lanterna ci puo' essere un prisma, sopra una
+    // copertura no.
     for (const kind of [CROWN_KIND.taper, CROWN_KIND.lantern]) {
-      expect(Number(roofs.get(kind)?.split(':')[1])).toBeLessThanOrEqual(GRAMMAR.roofPropSide ** 2);
+      expect(crownBands(kind, top, 3).roofProp, `${kind}`).toBe(true);
     }
-    for (const kind of [CROWN_KIND.flat, CROWN_KIND.stepped, CROWN_KIND.ridge]) {
-      expect(Number(roofs.get(kind)?.split(':')[1])).toBeGreaterThan(GRAMMAR.roofPropSide ** 2);
+    for (const kind of [CROWN_KIND.flat, CROWN_KIND.stepped, CROWN_KIND.ridge, CROWN_KIND.gable]) {
+      expect(crownBands(kind, top, 3).roofProp, `${kind}`).toBe(false);
+    }
+  });
+
+  it('una riga di catalogo produce piu di una cima', () => {
+    // E' la ragione per cui `crownKinds` e' un elenco. Con una cima sola per
+    // riga, il ripiego residenziale — che e' quasi tutto il tessuto — chiudeva
+    // con la stessa progressione a tre gradoni nel 100% dei semi, e una strada di
+    // case era una strada di ziggurat identici.
+    for (const id of ['terracedHousing', 'retailRow', 'industrialYard', 'civicSpire'] as const) {
+      const definition = TYPOLOGIES.find((entry) => entry.id === id);
+      if (definition === undefined) throw new Error(`tipologia assente: ${id}`);
+
+      const tops = new Set<string>();
+      for (let seed = 0; seed < 120; seed++) {
+        const stamp = build(definition.use, 1, seed * 7919 + 13, id);
+        // La coda della silhouette: quante quote in cima, e quanto sono larghe.
+        const start = stamp.bandStarts[Math.max(0, stamp.bandStarts.length - 3)];
+        const slice: string[] = [];
+        for (let z = start; z < stamp.sizeZ; z++) slice.push(String(countSolidsOnLayer(stamp, z)));
+        tops.add(slice.join(','));
+      }
+      expect(tops.size, `${id} chiude sempre allo stesso modo`).toBeGreaterThan(3);
     }
   });
 
@@ -697,7 +727,7 @@ describe('forme delle tipologie', () => {
       class: BUILDING_CLASS.commercial,
       level: 4,
       seed: 77,
-      shape: { ...DEFAULT_TYPOLOGY_SHAPE, crownKind: CROWN_KIND.ridge, minFootprint: 8 },
+      shape: { ...DEFAULT_TYPOLOGY_SHAPE, crownKinds: [CROWN_KIND.ridge], minFootprint: 8 },
       profile: {
         ...CLASS_PROFILE[BUILDING_CLASS.commercial],
         shrinkOps: [BAND_OP.keep],
@@ -815,6 +845,16 @@ describe('tipologie concesse da un mandato', () => {
     expect(fallback.charter).toBeUndefined();
   });
 });
+
+/**
+ * Quota del pennone, che e' l'ultima fascia dello stamp.
+ *
+ * Zero quando la cima non lo porta, e sotto la soglia di skyline succede circa
+ * meta' delle volte: e' un tiro, non una proprieta' della tipologia.
+ */
+function propHeightOf(stamp: VoxelStamp): number {
+  return stamp.sizeZ - stamp.bandStarts[stamp.bandStarts.length - 2];
+}
 
 function countSolidsOnLayer(stamp: VoxelStamp, z: number): number {
   const plane = stamp.sizeX * stamp.sizeY;

@@ -1,8 +1,25 @@
 import { BALANCE } from './balance';
 import type { CatalystId } from './catalysts';
-import { charterOfFamily, type CharterFamily, type CharterId } from './charters';
-import { BUILDING_CLASS } from './classes';
-import { fedShareOf, foodDeficitOf, type FoodReport } from './farms';
+import type { CharterFamily, CharterId } from './charters';
+import type { CommerceReport } from './commerce';
+import type { CoverageReport } from './coverage';
+import type { FoodReport } from './farms';
+import type { FundsReport } from './flows';
+import type { MaterialsReport } from './materials';
+import type { PolicyId } from './policies';
+import type { TradeReport } from './trade';
+import { selectDecision } from './eventPool';
+
+/**
+ * Il vocabolario delle decisioni: cosa un evento e' e cosa una scelta lascia.
+ *
+ * Le tre decisioni scritte a mano che stavano qui sono diventate un **bacino**:
+ * le voci vivono in `eventCatalog.ts`, la regola con cui se ne pesca una in
+ * `eventPool.ts`, e qui restano i tipi che tutti e tre condividono con lo stato
+ * e con la HUD. La separazione non e' estetica — il catalogo e' una tabella di
+ * dati che cresce a ogni incremento, mentre la regola di pesca e' logica che
+ * deve restare corta e leggibile.
+ */
 
 export interface DecisionEffect {
   readonly food?: number;
@@ -22,6 +39,36 @@ export interface DecisionGrant {
   readonly kind: CatalystId;
 }
 
+/**
+ * Cosa un'alternativa fa al pannello delle policy.
+ *
+ * **E' la cerniera fra le due meta' del governo cittadino.** Prima un evento
+ * spostava risorse e lasciava un mandato, e le policy stavano in un pannello
+ * che nessun evento sapeva di avere: si potevano leggere le due schermate per
+ * un'intera partita senza mai sospettare che parlassero della stessa citta'.
+ * Da qui una crisi puo' **revocare** la policy che l'ha causata, o **vararne**
+ * una al posto tuo, ed e' quello che fa di una scelta una conseguenza.
+ */
+export interface DecisionPolicyEffect {
+  readonly id: PolicyId;
+  /** Vero se l'alternativa la vara, falso se la revoca. */
+  readonly enable: boolean;
+  /**
+   * Per quanto la policy resta bloccata dopo la mossa.
+   *
+   * Riaccendere il tick dopo cio' che una crisi ha appena revocato annullerebbe
+   * la scelta senza costo: il blocco e' la parte che la rende una decisione.
+   * Assente vale `pool.policyLockTicks`; zero significa nessun blocco.
+   */
+  readonly lockTicks?: number;
+}
+
+/** L'evento che una scelta prepara: e' la memoria lunga delle decisioni. */
+export interface DecisionFollowUp {
+  readonly eventId: string;
+  readonly afterTicks: number;
+}
+
 export interface DecisionOption {
   readonly id: string;
   readonly label: string;
@@ -36,38 +83,98 @@ export interface DecisionOption {
    */
   readonly charter?: CharterId | null;
   readonly grant?: DecisionGrant;
+  readonly policy?: DecisionPolicyEffect;
+  readonly followUp?: DecisionFollowUp;
+  /**
+   * L'alternativa che scatta da sola quando la crisi scade.
+   *
+   * Al massimo una per evento, ed e' obbligatoria su ogni evento con scadenza:
+   * senza, allo scadere non ci sarebbe niente da applicare e il tempo tornerebbe
+   * a essere gratis. La carta la mostra **prima** che il giocatore rimandi —
+   * sapere cosa succede se non rispondi e' meta' della decisione.
+   */
+  readonly onLapse?: boolean;
 }
+
+/**
+ * Il registro con cui un evento si presenta.
+ *
+ * `crisis` scavalca la cadenza ordinaria — un guasto non aspetta il turno — e
+ * porta una scadenza; `routine` e `opportunity` aspettano `nextDecisionTick` e
+ * restano aperte finche' il giocatore risponde.
+ */
+export type DecisionUrgency = 'crisis' | 'routine' | 'opportunity';
 
 export interface CityDecision {
   readonly id: string;
+  /** Voce di catalogo da cui viene: raffreddamento e catene si contano su questo. */
+  readonly eventId: string;
   /** Slot che la scelta occupa. Una famiglia tiene un solo mandato per volta. */
   readonly family: CharterFamily;
+  readonly urgency: DecisionUrgency;
   readonly title: string;
   readonly message: string;
   readonly options: readonly DecisionOption[];
+  /** Tick oltre il quale l'alternativa `onLapse` si applica da sola. Zero: mai. */
+  readonly expiresAt: number;
 }
 
 export interface DecisionOutcome {
   readonly tick: number;
   readonly decisionId: string;
+  /** Voce di catalogo risolta. Vuoto sui salvataggi scritti prima del bacino. */
+  readonly eventId: string;
   /** Famiglia della decisione risolta: e' lo slot che quella scelta ha occupato. */
   readonly family: CharterFamily;
   readonly optionId: string;
   readonly summary: string;
+  /** Vero quando la scadenza ha deciso al posto del giocatore. */
+  readonly lapsed?: boolean;
+}
+
+/** Quando una voce di catalogo e' stata risolta l'ultima volta. */
+export interface EventMemory {
+  readonly id: string;
+  readonly tick: number;
+}
+
+/** Un seguito prenotato da una scelta precedente. */
+export interface ScheduledEvent {
+  readonly id: string;
+  /** Primo tick in cui il seguito puo' qualificarsi. */
+  readonly at: number;
+  /** Ultimo tick utile: oltre, il seguito si dimentica. */
+  readonly until: number;
+}
+
+/** Una policy che un evento ha bloccato, e fino a quando. */
+export interface PolicyLock {
+  readonly id: PolicyId;
+  readonly until: number;
 }
 
 /**
  * Cio' che serve a decidere quale scelta aprire, e nient'altro.
  *
- * Portava anche `food`, `materials` e `funds`: il primo era la condizione
- * dell'emergenza alimentare — sostituita da `harvest` — e gli altri due non li
- * leggeva nessuno. Una vista che dichiara piu' di quello che guarda non e' un
- * dettaglio: e' il posto dove si va a cercare *su cosa* si decide.
+ * **E' cresciuta molto, ed e' il punto.** Portava popolazione, edifici e
+ * raccolto: tre segnali, e infatti gli eventi possibili erano tre. Il bacino
+ * qualifica le proprie voci su tutto cio' che la citta' sa gia' dire di se' —
+ * cassa, copertura dei servizi, scontento, riserva di materiali, commercio,
+ * policy in piedi — e ogni campo qui e' la condizione di almeno un evento.
+ * Una vista che dichiara piu' di quello che guarda non e' un dettaglio: e' il
+ * posto dove si va a cercare *su cosa* si decide.
  */
 export interface DecisionStateView {
   readonly tickCount: number;
   readonly population: { readonly stock: number };
+  readonly food: { readonly stock: number };
+  readonly materials: { readonly stock: number };
+  /** Cassa **e** ritmo: l'allarme di bilancio si misura sull'autonomia, non sul saldo. */
+  readonly funds: { readonly stock: number; readonly delta: number };
+  readonly satisfaction: number;
   readonly buildingCounts: readonly number[];
+  readonly capacityCounts: readonly number[];
+  readonly mixedCapacityCounts: readonly number[];
   readonly decisionHistory: readonly DecisionOutcome[];
   /**
    * Referto dell'ultimo raccolto: e' da qui che si legge se la citta' mangia.
@@ -94,6 +201,26 @@ export interface DecisionStateView {
    * mandato gia' in piedi, invece di ripetere sempre la stessa scelta.
    */
   readonly charters: readonly CharterId[];
+  /** Policy in piedi: sono la condizione di meta' delle crisi del catalogo. */
+  readonly policies: readonly PolicyId[];
+  readonly policyLocks: readonly PolicyLock[];
+  readonly coverageReport: CoverageReport;
+  readonly decayPressure: number;
+  readonly flows: FundsReport;
+  readonly materialFlows: MaterialsReport;
+  readonly commerce: CommerceReport;
+  readonly trade: TradeReport;
+  /** Voci gia' viste e loro ultimo tick: e' il raffreddamento del bacino. */
+  readonly eventMemory: readonly EventMemory[];
+  /** Seguiti prenotati da scelte precedenti. */
+  readonly scheduledEvents: readonly ScheduledEvent[];
+  /**
+   * Stato del PRNG. Non viene consumato: la pesca pesata lo **legge** insieme
+   * al tick, perche' `decisionAt` deve restare una funzione pura dello stato e
+   * far avanzare il flusso da qui darebbe due estrazioni diverse a seconda di
+   * quante volte il chiamante interroga il bacino.
+   */
+  readonly rngState: number;
   /**
    * Impronta della citta' all'ultima risoluzione: finche' non cambia, una
    * scelta contestuale non si riapre solo perche' e' scaduto il tempo.
@@ -122,225 +249,36 @@ export function decisionFingerprint(state: DecisionStateView): number {
 }
 
 /**
- * Le due voci con cui una stessa scelta si ripresenta, scelte dal numero di
- * scadenza: la stessa decisione non si legge identica ogni volta.
+ * La scelta da aprire adesso, o null.
+ *
+ * Due cancelli, e sono diversi apposta. Le **crisi** non guardano l'orologio
+ * ordinario: descrivono un guasto in corso, e farle aspettare il turno vorrebbe
+ * dire che la citta' brucia e il consiglio ne parla fra novanta secondi. A
+ * frenarle e' il raffreddamento della singola voce. Il resto — routine e
+ * occasioni — aspetta la scadenza **e** un cambiamento reale della citta', o il
+ * tetto di inattivita' che impedisce a una partita ferma di restare muta.
  */
-const PUBLIC_SQUARE_TITLES = [
-  'A contested square',
-  'A square in need of purpose',
-  'The new square opens',
-] as const;
-const PUBLIC_SQUARE_MESSAGES = [
-  'A growing civic district needs a use for its new public square.',
-  'Residents, merchants and the town hall each want the square for something different.',
-  'The civic district has opened a public square: what should it become?',
-] as const;
-const INVESTMENT_TITLES = [
-  'Neighborhood investment',
-  'Where the city invests next',
-] as const;
-
-/** Apre una scelta soltanto alla scadenza; la scelta resta ferma finche' il giocatore risponde. */
 export function decisionAt(state: DecisionStateView, nextDecisionTick: number): CityDecision | null {
-  if (state.tickCount < nextDecisionTick) return null;
-  const population = state.population.stock;
-  const buildings = state.buildingCounts.reduce((sum, value) => sum + value, 0);
-  const scale = Math.max(1, Math.floor(state.population.stock / BALANCE.decisions.populationScale));
-  // La dotazione si conta in **tempo**: tanti tick di spesa vera della citta'.
-  // Una quantita', anche scalata a edifici interi, non dice quanto respiro
-  // compra — e cento tick di respiro, misurati a schermo, erano dieci secondi.
-  const relief = population * BALANCE.food.perResident * BALANCE.decisions.reliefTicks;
-  // Quanta della domanda alimentare e' stata davvero servita, non quanta ne
-  // resta in dispensa: le due coincidono solo in una citta' che ha una scorta,
-  // e questa simulazione non ne costruisce nessuna. Il fronte lo tiene
-  // `supplyArmed`, che `tick` ricarica quando la citta' torna a mangiare.
-  // La seconda meta' della condizione e' **strutturale**, e senza di essa la
-  // resa stagionale renderebbe l'emergenza un appuntamento invernale: qui si
-  // chiede se la campagna basti all'anno medio, cioe' se ci sia qualcosa da
-  // risolvere. `foodDeficitOf` non passa il fattore di stagione apposta.
-  const shortCountryside =
-    foodDeficitOf(population, state.farmCounts, state.staffing) > 0;
-  if (population > 0 && state.supplyArmed && shortCountryside
-    && fedShareOf(state.harvest, population) < BALANCE.decisions.hungerThreshold) {
-    return {
-      id: `food-${state.tickCount}`,
-      family: 'supply',
-      title: 'Supplies under pressure',
-      message: 'The city can no longer feed all of its residents. Choose an emergency response.',
-      options: [
-        option('buy-food', 'Buy food supplies', 'Spend funds to restock the warehouses immediately.', {
-          funds: -BALANCE.decisions.decisionCost * scale,
-          food: relief,
-        }, { charter: 'importedSupply' }),
-        option('ration', 'Ration supplies', 'Preserve resources at the cost of happiness.', {
-          satisfaction: -BALANCE.decisions.satisfactionStep,
-          food: relief,
-        }, { charter: 'rationing' }),
-        // Anche il costo scala, o a citta' grande i giardini sarebbero cibo
-        // gratis: la dotazione e la sua contropartita sono la stessa taglia
-        // vista da due lati.
-        option('community-gardens', 'Community gardens', 'Convert materials into food and public support.', {
-          materials: -BALANCE.decisions.materialGrant * scale,
-          food: relief,
-          satisfaction: BALANCE.decisions.satisfactionStep,
-        }, { charter: 'communityGardens', grant: { kind: 'park' } }),
-      ],
-    };
-  }
-
-  const publicSpaceAvailable = population >= BALANCE.decisions.populationScale
-    && (state.buildingCounts[BUILDING_CLASS.civic] ?? 0) > 0;
-  const investmentAvailable = buildings >= BALANCE.decisions.minimumBuildings
-    && (state.buildingCounts[BUILDING_CLASS.industrial] ?? 0) > 0;
-  if (!publicSpaceAvailable && !investmentAvailable) return null;
-
-  // Una scelta contestuale attende un cambiamento reale: sotto il tetto di
-  // inattivita' non si riapre solo perche' il tempo e' scaduto. L'emergenza
-  // alimentare e' gia' passata sopra: quella e' un guasto, non una routine.
+  const due = state.tickCount >= nextDecisionTick;
+  // Sotto il tetto di inattivita', una scelta ordinaria attende che la citta'
+  // sia davvero cambiata. Il conto e' lo stesso di prima, spostato qui perche'
+  // adesso vale per un'intera categoria di eventi invece che per due generatori.
   const idle = state.tickCount - (nextDecisionTick - BALANCE.decisions.intervalTicks);
-  if (decisionFingerprint(state) === state.decisionStamp
-    && idle < BALANCE.decisions.maxIdleTicks) {
-    return null;
-  }
-
-  // La famiglia dell'ultima decisione risolta, non il prefisso del suo id: da
-  // quando ogni decisione dichiara il proprio slot, la rotazione fra le due
-  // scelte contestuali si legge dal campo invece che da una stringa.
-  const lastFamily = state.decisionHistory.at(-1)?.family;
-  if (publicSpaceAvailable && (lastFamily !== 'publicSpace' || !investmentAvailable)) {
-    return publicSpaceDecision(state, nextDecisionTick);
-  }
-
-  if (!investmentAvailable) return null;
-  return investmentDecision(state, nextDecisionTick, buildings, scale);
-}
-
-/** La piazza contesa, con le alternative che riflettono il mandato in piedi. */
-function publicSpaceDecision(
-  state: DecisionStateView,
-  nextDecisionTick: number,
-): CityDecision {
-  const flavor = nextDecisionTick % PUBLIC_SQUARE_TITLES.length;
-  const active = charterOfFamily(state.charters, 'publicSpace');
-  return {
-    id: `public-space-${state.tickCount}`,
-    family: 'publicSpace',
-    title: PUBLIC_SQUARE_TITLES[flavor],
-    message: PUBLIC_SQUARE_MESSAGES[flavor],
-    options: [
-      option(
-        'festival',
-        active === 'festivalGrounds' ? 'Renew the festival' : 'Fund a festival',
-        active === 'festivalGrounds'
-          ? 'Spend funds to keep the festival going and raise happiness.'
-          : 'Spend funds to increase happiness.',
-        {
-          funds: -BALANCE.decisions.decisionCost,
-          satisfaction: BALANCE.decisions.satisfactionStep,
-        },
-        { charter: 'festivalGrounds' },
-      ),
-      option(
-        'materials-market',
-        active === 'leasedSquare' ? 'Renew the market lease' : 'Lease it to the market',
-        active === 'leasedSquare'
-          ? 'Trade away materials to keep the lease and gain funds.'
-          : 'Gain funds by trading away materials.',
-        {
-          materials: -BALANCE.decisions.materialGrant,
-          funds: BALANCE.decisions.fundsGrant,
-        },
-        { charter: 'leasedSquare', grant: { kind: 'market' } },
-      ),
-      // L'unica alternativa che *toglie*: tenere la piazza libera revoca il
-      // mandato della famiglia invece di non fare niente. Se non c'e' nessun
-      // mandato da revocare, resta una scelta senza conseguenze.
-      option(
-        'leave-open',
-        'Keep the space open',
-        active === null
-          ? 'No cost: the city retains flexibility.'
-          : 'Lift the standing mandate and keep the square flexible.',
-        {},
-        { charter: null },
-      ),
-    ],
-  };
-}
-
-/** L'investimento di quartiere, con le alternative che riflettono il mandato in piedi. */
-function investmentDecision(
-  state: DecisionStateView,
-  nextDecisionTick: number,
-  buildings: number,
-  scale: number,
-): CityDecision {
-  const flavor = nextDecisionTick % INVESTMENT_TITLES.length;
-  const active = charterOfFamily(state.charters, 'investment');
-  const message = flavor === 0
-    ? `The city now has ${buildings} buildings. Choose where to direct its next investment.`
-    : `With ${buildings} buildings, the council can back one new direction.`;
-  return {
-    id: `investment-${state.tickCount}`,
-    family: 'investment',
-    title: INVESTMENT_TITLES[flavor],
-    message,
-    options: [
-      option(
-        'local-grant',
-        active === 'localShops' ? 'Renew support for local shops' : 'Support local shops',
-        active === 'localShops'
-          ? 'Convert funds into materials and keep the arcades alive.'
-          : 'Convert funds into materials and public trust.',
-        {
-          funds: -BALANCE.decisions.decisionCost,
-          materials: BALANCE.decisions.materialGrant,
-          satisfaction: BALANCE.decisions.satisfactionStep,
-        },
-        { charter: 'localShops', grant: { kind: 'market' } },
-      ),
-      option(
-        'sell-reserve',
-        active === 'soldReserves' ? 'Sell more of the reserves' : 'Sell the reserves',
-        active === 'soldReserves'
-          ? 'Gain more funds by consuming materials.'
-          : 'Gain immediate funds by consuming materials.',
-        {
-          materials: -BALANCE.decisions.materialGrant,
-          funds: BALANCE.decisions.fundsGrant,
-        },
-        { charter: 'soldReserves' },
-      ),
-      // Ultimo numero alimentare rimasto piatto, e per la stessa ragione degli
-      // altri non poteva restarci: una fiera che costa 120 di cibo a qualunque
-      // taglia e' soddisfazione gratis appena la citta' cresce, cioe' non e' piu'
-      // una scelta fra tre alternative ma una sola ovvia.
-      option(
-        'food-fair',
-        active === 'foodFair' ? 'Hold the food fair again' : 'Food fair',
-        active === 'foodFair'
-          ? 'Use food supplies to keep morale high.'
-          : 'Use food supplies to strengthen morale.',
-        {
-          food: -BALANCE.decisions.foodGrant * scale,
-          satisfaction: BALANCE.decisions.satisfactionStep,
-        },
-        { charter: 'foodFair' },
-      ),
-    ],
-  };
+  const contextChanged = decisionFingerprint(state) !== state.decisionStamp
+    || idle >= BALANCE.decisions.maxIdleTicks;
+  return selectDecision(state, { due, contextChanged });
 }
 
 export function decisionOption(decision: CityDecision, id: string): DecisionOption | null {
   return decision.options.find((option) => option.id === id) ?? null;
 }
 
-function option(
-  id: string,
-  label: string,
-  description: string,
-  effect: DecisionEffect,
-  mark: { readonly charter?: CharterId | null; readonly grant?: DecisionGrant } = {},
-): DecisionOption {
-  return { id, label, description, effect, ...mark };
+/** L'alternativa che la scadenza applica al posto del giocatore, o null. */
+export function lapseOption(decision: CityDecision): DecisionOption | null {
+  return decision.options.find((option) => option.onLapse === true) ?? null;
+}
+
+/** Vera quando la scadenza dell'evento e' passata. Zero significa «non scade». */
+export function decisionExpired(decision: CityDecision, tickCount: number): boolean {
+  return decision.expiresAt > 0 && tickCount >= decision.expiresAt;
 }

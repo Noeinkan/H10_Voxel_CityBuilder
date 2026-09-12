@@ -38,6 +38,18 @@ function solidsIn(world: VoxelWorld, x0: number, y0: number, x1: number, y1: num
   return count;
 }
 
+/** La quota del voxel pieno piu' alto dentro il riquadro, o -1 se non ce n'e'. */
+function topSolidZ(world: VoxelWorld, x0: number, y0: number, x1: number, y1: number): number {
+  for (let z = world.bounds.maxZ - 1; z >= 0; z--) {
+    for (let y = y0; y < y1; y++) {
+      for (let x = x0; x < x1; x++) {
+        if (world.getBlock(x, y, z) !== 0) return z;
+      }
+    }
+  }
+  return -1;
+}
+
 describe('dioramaScene', () => {
   it('e\' deterministica: stesso seed, stessi voxel', () => {
     const a = compose(SUBJECT);
@@ -67,8 +79,14 @@ describe('dioramaScene', () => {
     const pad = (s.sizeX + 8) * (s.sizeY + 8) * 2 - s.sizeX * s.sizeY * 2;
     expect(above - inside).toBe(pad);
 
-    const bounds = world.bounds;
-    expect(bounds.maxZ).toBeLessThanOrEqual(s.z + s.sizeZ + 1);
+    // **Il voxel piu' alto, non `world.bounds`.** Quelli sono i lati dei chunk
+    // allocati, quindi salgono a scatti di `CHUNK`: finche' il soggetto stava
+    // dentro il primo piano di chunk il confronto reggeva per caso, e il primo
+    // edificio che ha superato quella quota — bastano i due voxel di una cima a
+    // gradoni invece di una piatta — lo faceva fallire senza che niente fosse
+    // uscito dall'ingombro dichiarato.
+    expect(topSolidZ(world, s.x - 4, s.y - 4, s.x + s.sizeX + 4, s.y + s.sizeY + 4))
+      .toBeLessThanOrEqual(s.z + s.sizeZ + 1);
   });
 
   it('mette una carreggiata sul fronte, che e\' il lato verso cui guarda l\'edificio', () => {

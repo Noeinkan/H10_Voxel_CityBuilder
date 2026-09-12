@@ -100,7 +100,13 @@ const FAILURE_LABELS: Readonly<Record<ActionFailure, string>> = {
   'already-active': 'This action is already active.',
   'already-unlocked': 'This sector is already unlocked.',
   'onboarding-order': 'Complete the current tutorial step first.',
+  // Senza il numero, per la stessa ragione di `population-required`: la soglia
+  // dipende dal ruolo puntato, e la scheda del bottone la mostra gia' per
+  // esteso — gradino e condizione propria, con la barra di quanto manca.
+  'milestone-required': 'Not unlocked yet: the city has to reach its milestone.',
   'policy-incompatible': 'This policy conflicts with one that is already active.',
+  'policy-capacity': 'No room left in the policy budget. Stop one, or build more civic buildings.',
+  'policy-locked': 'A recent decision suspended this policy. It cannot be enacted yet.',
   'decision-option-invalid': 'This decision option is no longer available.',
   // Mensola e Skyport condividono gli stessi gesti: cercare un edificio,
   // cercarne uno piu' alto, cercare un'altra facciata.

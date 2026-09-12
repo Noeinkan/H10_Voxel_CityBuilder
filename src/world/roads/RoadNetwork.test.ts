@@ -129,6 +129,39 @@ describe('RoadNetwork sul terreno', () => {
     expect(roads.touchesRoad(far!.x, far!.y, 1)).toBe(false);
   });
 
+  it('un polo che si rinforza non rifa la rete, uno che si sposta si', () => {
+    // Un landmark che avanza di stadio aggiunge otto all'intensita' del proprio
+    // catalizzatore, e su una citta' matura succede ogni pochi secondi: con
+    // l'intensita' nella firma ognuno di quegli otto costava una ricostruzione
+    // intera, cioe' un frame da dodici secondi per un numero che non sposta un
+    // voxel.
+    const map = testTerrain({ chunksX: 3, chunksY: 3, height: 30 });
+    const roads = new RoadNetwork(map, () => false, SEED);
+    expect(roads.update([{ x: 16, y: 16, strength: 100 }, { x: 40, y: 16, strength: 60 }]))
+      .toBe(true);
+    const paved = roads.surface.length;
+    const revision = roads.revision;
+
+    // Stesse colonne, stesso ordine, intensita' cresciuta: niente da rifare.
+    expect(roads.update([{ x: 16, y: 16, strength: 100 }, { x: 40, y: 16, strength: 68 }]))
+      .toBe(false);
+    expect(roads.revision).toBe(revision);
+    expect(roads.surface.length).toBe(paved);
+
+    // Ma un rinforzo che scavalca la radice cambia l'ordine, e l'ordine e' il
+    // disegno: quella si rifa'.
+    expect(roads.update([{ x: 16, y: 16, strength: 100 }, { x: 40, y: 16, strength: 140 }]))
+      .toBe(true);
+    expect(roads.revision).toBeGreaterThan(revision);
+
+    // E un polo nuovo, che e' il caso per cui la firma esiste.
+    expect(roads.update([
+      { x: 16, y: 16, strength: 100 },
+      { x: 40, y: 16, strength: 140 },
+      { x: 16, y: 60, strength: 50 },
+    ])).toBe(true);
+  });
+
   it('il capillare e un passo carraio: oltre laneReach non si tira', () => {
     const map = testTerrain({ chunksX: 3, chunksY: 3, height: 30 });
     const roads = new RoadNetwork(map, () => false, SEED);

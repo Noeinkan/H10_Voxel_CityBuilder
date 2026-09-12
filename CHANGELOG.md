@@ -16,6 +16,520 @@ Qui stanno **i tredici incrementi più recenti**; i precedenti sono archiviati i
 
 ---
 
+## In corso — I vicoli pedonali
+
+- **La citta' cresceva senza niente fra la casa e la strada, e non era una
+  svista: era una regola.** Il tracciato organico tira un capillare carrabile
+  solo verso i lotti piu' lontani di `ROADS.frontageReach` — sei colonne — dalla
+  carreggiata. Sotto quella soglia il lotto e' gia' «sul fronte» e non riceve
+  niente, ed e' la scelta giusta per una strada: sei colonne di asfalto per una
+  villetta sarebbero un piazzale. Il risultato pero' era che fra il portone e la
+  strada restava prato, e una citta' fitta leggeva come un gruppo di edifici
+  posati sull'erba invece che come un tessuto.
+- **Il dominio nuovo `src/world/footpaths/` riempie esattamente quella fascia.**
+  Quando un edificio nasce, dal suo portone parte una ricerca a costo minimo che
+  si ferma alla prima colonna gia' pubblica — carreggiata o vicolo di un vicino —
+  e le colonne attraversate si lastricano larghe un voxel. L'invariante e' che
+  **un sentiero non prende suolo e non lo contende a nessuno**: dipinge solo
+  colonne libere, alla priorita' piu' bassa di tutto il suolo pubblico, quindi
+  qualunque strada o grembiule arrivi dopo se la prende e il vicolo sparisce da
+  se', senza niente da cancellare e senza nessun record da tenere.
+- **Tre numeri fanno la differenza fra un vicolo e una strada storta.** Una
+  colonna a ridosso di un muro costa meno di una in mezzo al prato
+  (`wallCost` contro `openCost`), e da li' viene la forma: il sentiero corre
+  rasente alle facciate e si infila nell'arretramento fra due file di case
+  invece di tagliare il giardino in diagonale. Salire costa tre per voxel invece
+  degli otto di una carreggiata, quindi il vicolo sale a scalini dove la strada
+  girerebbe attorno. E il salto massimo in un passo e' il doppio di quello di una
+  strada — due cubi di terreno — che e' l'unica cosa in cui questa rete e' piu'
+  capace dell'altra.
+- **Una diagonale fra due spigoli che si toccano non e' un passaggio.** Dove due
+  case si incontrano d'angolo, le due colonne in asse sono entrambe piene e il
+  varco esiste solo nella griglia: a schermo il lastricato attraverserebbe il
+  punto in cui i due muri si incontrano. Con un solo lato pieno invece si sfiora
+  uno spigolo, che e' come cammina chiunque, e il passo si concede.
+- **Misura, su una citta' di prova cresciuta da un catalizzatore** (seme 1337,
+  terreno piano 8x8 chunk, 320 giri): 64 edifici, 158 colonne di carreggiata e 84
+  di vicolo. I vicoli non sono monconi sparsi — si innestano l'uno sull'altro,
+  perche' la ricerca si ferma sul primo suolo pubblico che trova e quindi il
+  secondo vicolo si attacca al primo invece di rifare la corsa fino alla strada.
+- **`doorstepOf` e' ora una funzione sola in `buildings/siteWorks.ts`.** Era
+  privata dentro `roadDriver.ts`; due copie avrebbero fatto partire il vicolo e
+  il capillare da due colonne diverse dello stesso lato, e a schermo sarebbe
+  stato un sentiero che non incontra la strada.
+- **Cosa non fa ancora, e dove.** Un vicolo non entra nel salvataggio: e' una
+  funzione del record e del terreno, non uno stato, ma `Builder.restore` non lo
+  ricostruisce perche' al caricamento la carreggiata non c'e' ancora — si rifa'
+  al primo tick, dai catalizzatori. E' la stessa lacuna che ha gia' il capillare
+  carrabile, e la chiuderebbe una passata di adozione sola per tutt'e due.
+
+## In corso — Le viste dati non arrivavano mai a schermo
+
+- **La heatmap ripartiva da capo a ogni edificio, e non finiva piu'.** Le viste
+  dati si costruiscono a scaglioni dentro un budget per fotogramma — qualche
+  decimo di secondo in tutto — e ripartivano a ogni cambio di `infoViewVersion`,
+  cioe' a ogni edificio nato, lotto arato o policy toccata: in una citta' viva
+  sono piu' volte al secondo. Il risultato era che la costruzione non arrivava
+  mai in fondo e la geometria veniva svuotata a ogni ripartenza: legenda accesa,
+  dock che diceva «Reading: Food», e la citta' nuda sotto. Si vedeva solo a
+  simulazione ferma, ed e' per quello che gli scatti di `shotkit.config.mjs`
+  mettono in pausa prima di scegliere la vista.
+- **Il campo aspetta il suo turno, il giocatore no.** `InfoViewOverlay.ready`
+  dice se una costruzione e' finita e se e' passata la pausa fra due
+  rifacimenti; `infoViewScene` lo interroga **prima** di costruire un
+  campionatore, e solo per un campo che si e' mosso. Cambiare vista dal picker o
+  con `I` non aspetta niente, che e' l'unico caso in cui l'attesa si vedrebbe.
+- **La velatura di prima resta a schermo mentre se ne costruisce una nuova.** Si
+  butta solo quando cambia il *dato* guardato — li' la tinta di prima direbbe
+  un'altra cosa — e non quando cambia soltanto la versione del campo: mezzo
+  secondo di ritardo su un quadretto non lo vede nessuno, un buco a ogni
+  edificio si'.
+- **Il massimo non sopravviveva al budget.** Il picco raccolto durante una fetta
+  di campionamento viveva in una locale e si perdeva a ogni uscita per budget
+  scaduto: le viste non normalizzate — Materials, Population — finivano con un
+  massimo di zero, cioe' con ogni cella dipinta in cima alla rampa. Ora si
+  scrive prima di uscire, e la scala torna a dire qualcosa.
+- **La legenda copriva il dock, e non aveva un'uscita.** Era un riquadro fisso a
+  sedici pixel dall'angolo in basso a sinistra — esattamente dove sta la fila
+  City / Policies / Views / Data — e nessun bottone la chiudeva: per toglierla
+  bisognava riaprire il picker e ripescare `City`. Ora e' una targa in fondo al
+  rail dei comandi, in flusso con le altre e quindi incapace di coprirle, con
+  la stessa forma della targa delle viste d'ispezione e un bottone `Exit data`
+  che spegne la lettura.
+- **Il rail rimisura anche i figli che arrivano dopo.** `watchRailDensity`
+  osservava solo quelli presenti alla costruzione dell'HUD: la legenda, che
+  `main.ts` appende piu' tardi, non faceva scattare nessuna misura e sbordava
+  dal fondo dello schermo con il suo bottone fuori dalla finestra.
+
+## In corso — Selettori a pista segmentata
+
+- **Tempo, anno e cielo non sono più file di scatole.** Le tre file di bottoni della barra risorse — pausa e velocità, le quattro stagioni, i tre modi del cielo — erano quattro cornici affiancate per una domanda sola, e si leggevano come quattro interruttori indipendenti. Ora ognuna è una pista incassata con una pastiglia che scorre sulla scelta in corso: una cornice invece di quattro, e lo stato si legge da *dove sta* la pastiglia. Stesso trattamento nel menu di pausa e nella schermata del titolo, che mostrano le stesse scelte.
+- **Nuvole e suono restano fuori dalla pista.** Sono due interruttori indipendenti e non uno di tre: dentro la pista avrebbero promesso che accenderne uno spegne il cielo. Stanno accanto, nella stessa fila.
+- **La pastiglia sparisce invece di scivolare su una scelta che nessuno ha fatto.** Finché lo stato non arriva da fuori — la fila dell'anno lo sa solo dal giro di aggiornamento dell'HUD — non c'è nessuna cella accesa, e parcheggiare la pastiglia sulla prima avrebbe acceso «Spring» su una città d'estate.
+- **Il velo del passaggio del mouse non copre più la pastiglia.** Il fondo dell'hover sta *sopra* la pastiglia, e sulla cella accesa la sbiancava; il rilievo del bottone singolo, dentro un gruppo, alzava la cella di due pixel lasciando un anello sfalsato attorno alla scelta. Dentro una pista nessuna cella si solleva e il velo vale solo su quelle spente.
+- **La pista delle due schermate vestite porta il proprio fondo.** Il menu di pausa galleggia sulla città sfocata: un incavo al 7% spariva e le celle spente restavano testo pallido su un'isola notturna. Il bianco che i bottoni portavano uno per uno ora lo porta il gruppo, una volta sola.
+
+## In corso — I raggi X mostrano il landmark, non una macchia bianca
+
+- **Il velo non impilava, ed e' un limite e non una taratura.** La soglia del
+  retino sta in pixel di schermo: due occlusori sovrapposti la interrogano nello
+  stesso punto e ottengono la stessa risposta, quindi non si compongono — vince
+  il piu' vicino. Sulle facce `deep` separa le densita' per profondita' e la cosa
+  funziona; sul filo del voxel no, perche' `XRAY.lattice` schiacciava tutte le
+  profondita' fra 0,36 e 0,43. Misurato: con venti torri davanti arrivava al
+  soggetto il 39% dei pixel della lente, e il resto era la gabbia del primo
+  occlusore sciolta nella tinta dell'aria. A schermo, una macchia bianca.
+- **La sagoma del landmark si ridisegna attraverso la citta'.** E' la cura che i
+  giochi usano per lo stesso problema — non dissolvere venti cose, disegnarne una
+  sola — e costa una passata che non dipende da quante ce ne sono in mezzo. La
+  buccia del solo riquadro del landmark si estrae dal volume voxel
+  (`landmarkSurface.ts`, puro) e si disegna con il test di profondita' rovesciato
+  (`LandmarkSilhouette.ts`): passa **solo** dove qualcosa gli sta davanti, quindi
+  dove il monumento e' scoperto non disegna niente e ci pensa `inspectGlow` come
+  prima. Il mesher resta intatto: e' una mesh a parte, buffer allocati una volta
+  al tetto e riscritti in posto, e si rifa' solo quando il riquadro cambia — cosa
+  che succede anche quando il landmark avanza di stadio, perche' lo stadio ne
+  cambia l'altezza.
+- **`XRAY.lattice` da 0,45 a 0,75.** Non risolve l'impilamento — niente lo
+  risolve, in un retino di schermo — ma ne toglie la meta' peggiore: la stessa
+  scena passa dal 39% al 63% dei pixel. Lo spessore del filo resta a
+  `XRAY.edge: 0,18`: accorciarlo a 0,08 avrebbe aggiunto tre punti e tolto al
+  filo la larghezza che era stata misurata a schermo.
+- **`XRAY.landmarkReach` da 16 a 28.** Sedici voxel non coprivano nemmeno meta'
+  dell'isolato in cui il landmark sta — il passo della maglia stradale e'
+  quaranta — quindi puntando nei paraggi non si agganciava niente e la lente
+  ripiegava sull'edificio sotto il cursore, o sul cubo del suolo nudo. Ventotto
+  porta il quadrato di cattura attorno a un landmark di impronta mega a
+  settantadue voxel di lato: il suo isolato per intero e un affaccio su quelli
+  attorno.
+
+## In corso — Cime a repertorio
+
+- **Una tipologia dichiara una famiglia di cime, non una cima.** `TypologyShape.crownKind` e' diventato `crownKinds`, un elenco, e il canale casuale del tetto ne pesca una per edificio; `CROWN_SET` in `config/grammar.ts` raccoglie le sei cime in famiglie curate — le coperture da capannone stanno insieme, la lanterna resta la firma stretta dei civici e delle torri d'angolo. Prima ogni riga di catalogo aveva una cima sola: misurato su duecento semi del ripiego residenziale, il **100%** degli edifici di livello zero chiudeva con la stessa progressione `6x6 > 4x4 > 2x2`, e una strada di case era una strada di ziggurat identici. Ora le ricette distinte sono quattordici, e la piu' frequente ne copre meno di un terzo.
+- **Il pennone sul tetto e' un tiro sotto la soglia di skyline, non un dato.** Lato fra due e tre (`GRAMMAR.roofPropSide`), altezza accorciata fino a due voxel (`roofPropDrop`) e presenza a meta' (`roofPropChance`): era l'elemento piu' ripetuto della citta', 2x2 alla stessa quota sopra ogni cima che lo ammette. Sopra la soglia resta la promessa di prima — presente e alto — perche' li' e' la riga che chiude la silhouette da lontano.
+- **`stepped` non degenera piu' in una punta.** Due `shrink` di fila su un corpo largo quanto `minBandSide` — cioe' quasi ogni casa — lasciavano un lato di un voxel: un'antenna, non una scala. Ora, quando il secondo gradino non ci sta, il primo prende il filo del corpo e il secondo il cappello rientrato: i gradini restano due e la cima resta distinguibile da `taper`. Il caso esisteva gia' a catalogo ma stava su poche righe a impronta larga; con il repertorio e' finito in mano al tessuto ordinario.
+- **`MAX_CROWN_BANDS` dichiara dove finisce il corpo.** Chi misura uno stamp da fuori non ha modo di saperlo, e finora quel confine era il numero due scritto a mano in due test — uno per il coronamento piu' uno per il pennone. Reggeva finche' quasi tutte le tipologie avevano una cima a una fascia; con il repertorio la falda ne aggiunge tre.
+- **L'ordine dentro una famiglia e' misurato, non scelto.** Il tiro mappa il seme sull'indice, quindi permutare le voci riassegna le cime a edifici diversi. Con `flat` elencata `[flat, stepped, ridge]` la citta' del seme 1337 collassava — quarantasette edifici invece di ottanta, seicento rifiuti `occupied`, `stacked` a zero — e con gli **stessi tre** in ordine `[flat, ridge, stepped]` torna a ottanta su tre semi diversi. La causa non e' una cima sbagliata ma l'equilibrio precario della fase in quota: una mensola si aggancia dove trova un filo di solaio, le cime a gradoni ne offrono di nuovi, e qualche mensola in piu' nel posto sbagliato prenota l'aria sopra i lotti vicini — che da li' in poi non si costruiscono. Chi tocca `CROWN_SET` rimisuri la citta', non solo i test dell'edificio.
+
+## In corso — Il calendario in mano al giocatore
+
+- **Quattro bottoni per la stagione, accanto ai tre del cielo.** Il ciclo
+  giorno/notte si sceglieva da tre superfici — barra risorse, menu di pausa,
+  titolo — e l'anno no: si aspettava, e basta. Adesso `Spring`, `Summer`,
+  `Autumn` e `Winter` stanno nelle stesse tre, con acceso quello in cui la città
+  sta, e il tasto `K` li gira come `L` gira il cielo.
+- **Scegliere una stagione sposta il calendario, non lo ferma.** È la differenza
+  con i modi fissi della luce: l'anno riparte dal **primo giorno** della stagione
+  chiesta e continua a camminare, quindi il raccolto si muove con il colore
+  invece di restare indietro. Premere la stagione in cui si è già non fa niente —
+  è il bottone acceso — e non butta via l'anno che manca al prossimo giro.
+- **`calendarShift` in `src/sim/calendar.ts`, e `tickCount` non si tocca.** Su
+  quel tick poggiano la prossima decisione, i raffreddamenti degli eventi, i
+  lucchetti delle policy e la storia delle scelte: spostarlo per cambiare mese
+  avrebbe fatto scattare o annullare cose che con il mese non c'entrano. Il
+  calendario è un secondo numero che si somma al tick **solo** quando si legge
+  l'anno, e che scorre solo in avanti — la data mostrata non torna mai indietro.
+  Entra nel salvataggio con il solito default per campo: un file più vecchio
+  torna a zero, cioè con l'anno agganciato all'età della città, che è come quella
+  partita si è sempre comportata.
+- **`?calendar=<stagione>` fa nascere l'isola in una stagione**, ed è un
+  parametro diverso da `?season=<0..1>`: quello inchioda la fase e la sottrae
+  alla simulazione — resta l'attrezzo di cattura — questo sposta il punto di
+  partenza di un anno che poi gira come sempre. Nel **cuore** della stagione e
+  non al suo primo giorno: l'estate al centro *è* `YEAR_START_PHASE`, quindi chi
+  non chiede niente ottiene la partita di prima, raccolto di partenza compreso.
+
+## In corso — Policy ed eventi come un sistema solo
+
+- **Ogni policy ha un prezzo, non solo un mantenimento.** Le sette voci del
+  catalogo miglioravano tutte qualcosa e nessuna peggiorava niente: appena la
+  citta' se le poteva permettere le accendeva tutte e il pannello non si
+  riapriva piu'. Ora ogni policy sconta un **secondo peso** nella direzione
+  opposta (`policyTradeoffs` in `balance.ts`, `Policy.tradeoff`), e la scheda lo
+  scrive accanto a cio' che la policy da'. Il catalogo passa da sette a undici
+  voci, e i due pesi insieme coprono tutti e otto i pesi della simulazione.
+- **Un budget di governo.** Quante policy la citta' regge insieme non e' piu'
+  illimitato: `policySlots` parte da tre e cresce sui civici fino a otto, e i
+  mandati di governo ne concedono. Il rifiuto e' distinto (`policy-capacity`) da
+  quello dei fondi, perche' chiede un gesto diverso — spegnerne una, o costruire.
+- **Le decisioni sono diventate un bacino.** Erano tre generatori scritti a mano
+  dentro una catena di `if`; sono tredici voci di catalogo che si qualificano da
+  sole su tutto cio' che la citta' sa gia' dire di se' — cassa, copertura dei
+  servizi, scontento, riserva di materiali, commercio, policy in piedi — e fra le
+  qualificate se ne pesca una **pesata e deterministica** su `rngState`. Due
+  partite dallo stesso seme vedono la stessa sequenza; due partite diverse no.
+- **Le crisi non aspettano il turno, e scadono.** Una voce `crisis` scavalca la
+  cadenza ordinaria — a frenarla e' il raffreddamento della singola voce — e
+  porta una scadenza: passata quella, scatta l'alternativa marcata `onLapse`, che
+  la carta mostra **prima** che il giocatore decida di rimandare. E' cio' che
+  rende «decidi piu' tardi» una scelta invece di un rinvio gratuito.
+- **Le scelte hanno un seguito.** Un'alternativa puo' prenotare un evento
+  (`followUp`): comprare cibo all'estero apre, un minuto dopo, la scelta sul
+  prezzo che quell'import comporta; affittare la piazza apre la disputa
+  sull'affitto. Un seguito senza piu' soggetto si dimentica invece di aprirsi.
+- **E la cerniera fra le due meta'.** Un'alternativa puo' **varare o revocare una
+  policy** (`DecisionPolicyEffect`), e cio' che una crisi revoca resta bloccato
+  per un po', o riaccenderlo il tick dopo annullerebbe la scelta. Meta' delle
+  crisi si qualifica proprio su una policy attiva: sovvenzionare l'industria
+  porta il quartiere sotto le ciminiere a chiedere conto **di quella policy**,
+  nel pannello in cui e' stata varata. La quarta famiglia di mandati,
+  `governance`, e' l'altro verso della stessa cerniera: i suoi tre mandati
+  spostano slot, prezzo di varo e mantenimento delle policy.
+- **La carta decisione non copre piu' i cassetti.** Occupava lo stesso bordo
+  destro alla stessa larghezza con uno z-index piu' alto, quindi copriva la meta'
+  superiore di qualunque pannello aperto lasciandolo vivo e cliccabile sotto.
+  Adesso entra nella convenzione di mutua esclusione che i cassetti hanno gia'
+  fra loro: arrivando si prende il corridoio e chiude cio' che era aperto, e
+  finche' un cassetto e' aperto si fa da parte — la scelta la porta l'inbox del
+  cassetto, che ora c'e' anche nel pannello Policy e non solo nella dashboard.
+
+## In corso — Le caselle prese si vedono
+
+- **Il rifiuto di un monumento adesso ha un posto sulla mappa.** «A landmark already stands here» era vero e muto: non diceva quale monumento occupasse il riquadro ne' dove fosse il prossimo posto libero, e in una citta' matura si finiva a spazzolare l'isola col puntatore aspettando che il rosso diventasse verde. Prendendo in mano un monumento, ogni monumento gia' fondato a terra si accende di un rosso fioco sul proprio tetto; quello che il riquadro sotto il cursore sta davvero toccando passa al rosso pieno, e cio' che nessun piazzamento toglie — arcologie, citta' in quota, chi la porta — si accende in ambra. Sono i colori che la gomma usa gia' per la stessa domanda vista dall'altro lato.
+- **`ClearanceSites.blockers` risponde con i record, non con un conteggio.** `preview` divideva fra chi cade e chi resta, e con la regola di un monumento — che i monumenti non li sgombera — un landmark trovato nel riquadro non finiva in nessuna delle due liste: era il caso che nessuno chiedeva. `landmarkDriver.blockersAt` lo porta al cursore passando dallo stesso riquadro e dalle stesse due uscite anticipate di `siteAt`, cosi' cio' che si accende e cio' che il click fara' restano la stessa domanda.
+- **Il tappeto sul tetto non e' piu' roba della gomma.** `roofCarpet.ts` tiene la primitiva — quad, strato, riscrittura — e i due overlay la usano: due scritture di geometria che divergono al primo ritocco sono il modo in cui due segnali che vanno letti insieme smettono di somigliarsi.
+- **Costa solo dove serve.** Il conto del riquadro si chiede unicamente quando il sito ha gia' dichiarato un rifiuto, e il sito e' la stessa risposta memorizzata che la scheda del cursore legge un attimo prima; la colonna fa da chiave, quindi un `pointermove` che non cambia cella non ridisegna niente.
+
+## In corso — Le regioni del tracciato, e una radice che non abbandona la citta'
+
+- **La ricostruzione della rete stradale e' passata da dodici-diciassette secondi
+  a due decimi.** Misurato sullo stesso salvataggio maturo dell'incremento
+  precedente (seed 866730858, 1208 record, 78 catalizzatori, popolazione 64 mila):
+  quindici ricostruzioni in tre minuti di partita, fra 188 e 306 ms, contro gli
+  otto frame da 11,7-16,9 s di prima. Il referto `?perf=1` non ha piu' finestre
+  da cinque secondi che ne durano venti, e gli fps restano fra 44 e 55 per tutta
+  la misura.
+- **La domanda «questa colonna e' gia' in rete?» non costruisce piu' una
+  stringa.** `planRoads` la fa una volta per ogni passo verso ognuno degli otto
+  vicini di ogni colonna visitata da ognuna delle ricerche, e `onNet.has(keyOf(x,
+  y))` era tre secondi e mezzo di solo involucro in un profilo della V8, piu' le
+  decine di milioni di stringhe da raccogliere. Adesso risponde una maschera
+  `Uint8Array` larga quanto il riquadro; la mappa resta perche' `parent` e
+  `resolved` vogliono il passo e non un si'/no, e quelle domande sono poche
+  migliaia.
+- **Un polo che non si puo' raggiungere non si cerca piu'**, e il nuovo
+  `regions.ts` e' quello che lo sa dire. `traceRoad` non ha modo di arrendersi in
+  anticipo — finche' la coda non e' vuota un cammino potrebbe esistere — quindi un
+  polo su un'altra costa esauriva **tutta** la propria regione prima di
+  restituire null: 244 mila colonne, per trentatre poli, che da soli facevano la
+  quasi totalita' del blocco. Etichettare il riquadro una volta costa una
+  passata, e la risposta e' esatta e non una stima: fra colonne in cui si entra,
+  «si raggiungono a vicenda» e' simmetrica, e ogni colonna di carreggiata sta per
+  costruzione nella regione della radice.
+- **La radice e' il polo piu' forte della terraferma, non il piu' forte in
+  assoluto — ed e' una correzione di gioco, non di prestazioni.** La radice e'
+  l'unico polo che non si attacca a niente: tutti gli altri raggiungono lei, o non
+  hanno strada. Presa per sola intensita' poteva finire su uno scoglio, e allora
+  la rete serviva lo scoglio. Misurato prima: la citta' **perdeva** strade mentre
+  cresceva — le colonne asfaltate scendevano da 2946 a 1189 e i poli collegati da
+  33 a 14 — perche' un avanzamento di stadio che aggiunge otto all'intensita'
+  bastava a spostare la radice su una costa mal collegata. Adesso le colonne
+  salgono con la citta': 2946, 2957, 2972 nella stessa misura, e i collegati da
+  33 a 34. La regola e' «quante teste, non quanto grande»: i poli *sono* la
+  citta', e una penisola deserta puo' essere larga il doppio del centro.
+- **La firma della rete non porta piu' l'intensita' dei poli**, perche'
+  `planRoads` la legge in un posto solo — l'ordine di `normalisePoles` — e due
+  liste che normalizzano nella stessa sequenza di colonne danno la stessa rete,
+  colonna per colonna. **Sulla citta' di prova questo non ha evitato nemmeno una
+  ricostruzione**, ed e' giusto dirlo: con settantotto poli in una fascia
+  d'intensita' stretta, quasi ogni bonus di otto scavalca qualcuno e quindi
+  cambia l'ordine per davvero. Resta perche' e' un'invariante vera e perche' il
+  caso che evita — rifare tutto per un numero che non sposta un voxel — era
+  gratuito da chiudere.
+- **Cosa resta, e non e' piu' nelle strade.** Con le ricostruzioni a due decimi,
+  il buco piu' grande che il rilevatore di frame trova e' di 1,6 s e il profilo lo
+  attribuisce per 1625 ms su 1692 a `DesirabilityField.recomputeRect`, per la via
+  `onFrame` → `updateGrowth` → `growthScene.advance` → `syncCongestion` →
+  `SimState.rebuildField`: un campo intero rifatto dentro un frame, che e' la
+  stessa forma del difetto di qui. Finche' c'e' quello, la qualita' adattiva
+  continua a leggere gli stalli di CPU come sofferenza della GPU e a spegnere gli
+  effetti (`effects none`) senza riaccenderli, perche' le servono dieci secondi
+  tranquilli di fila.
+
+## In corso — Cime a repertorio
+
+- **Una tipologia dichiara una famiglia di cime, non una cima.** `TypologyShape.crownKind` e' diventato `crownKinds`, un elenco, e il canale casuale del tetto ne pesca una per edificio; `CROWN_SET` in `config/grammar.ts` raccoglie le sei cime in famiglie curate — le coperture da capannone stanno insieme, la lanterna resta la firma stretta dei civici e delle torri d'angolo. Prima ogni riga di catalogo aveva una cima sola: misurato su duecento semi del ripiego residenziale, il 100% degli edifici chiudeva con la stessa progressione `6x6 > 4x4 > 2x2`, e una strada di case era una strada di ziggurat identici.
+- **Il pennone sul tetto e' un tiro sotto la soglia di skyline, non un dato.** Lato fra due e tre (`GRAMMAR.roofPropSide`), altezza accorciata fino a due voxel (`roofPropDrop`) e presenza a meta' (`roofPropChance`): era l'elemento piu' ripetuto della citta', 2x2 alla stessa quota sopra ogni cima che lo ammette. Sopra la soglia resta la promessa di prima — presente e alto — perche' li' e' la riga che chiude la silhouette da lontano.
+- **`MAX_CROWN_BANDS` dichiara dove finisce il corpo.** Chi misura uno stamp da fuori non ha modo di saperlo, e finora quel confine era il numero due scritto a mano in due test — uno per il coronamento piu' uno per il pennone. Reggeva finche' quasi tutte le tipologie avevano una cima a una fascia; con il repertorio la falda ne aggiunge tre.
+
+## In corso — Il suono della città
+
+- **Cinque suoni, nessun file audio.** `src/audio/` sintetizza in WebAudio: clic sui bottoni, tonfo di una posa, macerie di una demolizione, blat di rifiuto e triade maggiore alla soglia superata. Ogni cue è un elenco di voci con forma d'onda, glissato e inviluppante, quindi si accorda cambiando una cifra invece di riaprire un editor audio — e il bundle resta senza asset binari da licenziare.
+- **Il contesto audio nasce al primo suono, non all'avvio.** I browser rifiutano di suonare finché non c'è stato un gesto, e un `AudioContext` creato al bootstrap è solo un contesto sospeso più un avviso in console. Chi parte in muto non alloca nemmeno il grafo, e dove l'audio è negato la board resta inerte invece di sollevare.
+- **La città che cresce suona senza che la simulazione lo sappia.** `CityCueWatcher` guarda il salto fra due letture delle statistiche che l'HUD sta già dipingendo — `buildings` e `milestone` — invece di aprire una strada di callback attraverso `src/game/`. La prima lettura fissa soltanto la linea di partenza, e i cue restano zitti finché la prima scena si popola: senza, riaprire una partita da duecento edifici sarebbe una gragnuola di tonfi per case costruite ieri.
+- **Il bottone sta nella barra in alto, in coda alla fila del cielo.** È il gesto che si fa in fretta — un suono che arriva quando non lo si vuole si zittisce con un clic, non aprendo un menu — e come per le nuvole è l'icona a essere lo stato: il cono barrato dice che il gioco è muto. La preferenza vive in `localStorage` e non nell'indirizzo, perché il muto è di chi gioca e non della città che si sta condividendo.
+- **Il clic vive in `onActivate`, l'unico punto da cui passa ogni bottone dell'HUD.** Metterlo nei singoli pannelli avrebbe voluto dire ricordarsene dodici volte e dimenticarselo alla tredicesima. È anche il posto che sa già distinguere un bottone bloccato da uno vivo, quindi il rifiuto si sente prima ancora di leggere la scheda che spiega perché.
+
+## In corso — La scia si apre come una scia
+
+- **L'apertura della V si misura sulla strada percorsa, non sui secondi.**
+  `TRAFFIC.wake.spread` la contava in voxel al secondo, e le due cose non sono
+  la stessa scritta in un'altra unita': a parita' di secondi chi corre di piu'
+  resta piu' avanti, e la sua V esce piu' stretta. I tre scafi finivano quindi
+  con tre scie diverse — traghetto 12,7 gradi, nave da carico 19,8, yacht
+  24,2 — e la piu' stretta era quella del traghetto, che e' anche la barca che
+  si vede attraversare piu' spesso: a quell'angolo i due rami non si staccavano
+  dalla rimestata centrale, e la traccia leggeva come una riga posata
+  sull'acqua invece che come una scia. Al suo posto `TRAFFIC.wake.spreadAngle`,
+  il semiangolo in gradi, e il numero e' 19,47: l'angolo di Kelvin, che e' uno
+  solo perche' l'apertura di una scia e' un fatto della forma d'onda e non di
+  quanto vada la barca. Il vecchio `0.9` era di fatto tarato sulla nave da
+  carico, la sola dei tre che ci cadesse sopra per caso. Misurato sui segni,
+  ora i tre scafi danno 19,47 gradi tutti e tre, e la traccia del traghetto
+  passa da 16,6 a 23,2 voxel di apertura a fine vita.
+
+## In corso — Sblocco progressivo dei landmark e freno sui fondi
+
+- **I fondi hanno due uscite che crescono con la città.** `FundsReport` guadagna
+  `services` — pagati sulla capacità efficace, cioè la stessa base che genera il
+  gettito — e `catalysts`, la manutenzione dei ruoli piazzati come frazione del
+  listino. Prima le uscite guardavano tre sottoinsiemi che non crescono con la
+  città (civici, policy, torri) mentre le entrate crescevano con gli abitanti, e
+  un catalizzatore era l'unica cosa che si pagava una volta e rendeva per sempre.
+  Su una partita misurata di venti minuti la cassa scende da 17,2 a 5,5 milioni e
+  il bilancio arriva al pareggio invece di divergere.
+- **Cinque gradini sbloccano i sedici ruoli che il tutorial non copre.**
+  `src/game/milestones.ts`: Foundation, Settlement, Trading post, District,
+  Metropolis. Le soglie non sono nuove — sono la mensola, l'espansione,
+  `civicPride`, la condizione di vittoria e il gate dei landmark grandi, rilette
+  invece che ricopiate. Prima del tutorial l'ordine c'era; dopo, l'intero
+  catalogo era aperto e l'unico cancello era il prezzo.
+- **Sei landmark chiedono qualcosa in proprio, oltre al gradino.** Lo Stadium
+  vuole otto edifici commerciali, il Theatre sei civici, l'Airport un edificio di
+  livello 7+ (era già scritto nella descrizione e non lo verificava nessuno), la
+  Cathedral una città contenta, il Museum una University, la Marina una costa che
+  già lavora. È il modello degli edifici unici di Cities: Skylines.
+- **Il gradino non si richiude.** La scena tiene il massimo storico e lo salva
+  (`scene.milestone`, default `-1`, versione del formato invariata): senza, una
+  carestia avrebbe richiuso un monumento già sbloccato e il premio in fondi si
+  sarebbe ripagato a ogni oscillazione della popolazione.
+- **Il bottone bloccato dice il gradino e quanto manca**, non il prezzo: con i
+  fondi che avanzano e la scala che no, mostrare «0 / 460 funds» manderebbe a
+  risparmiare per qualcosa che i soldi non aprono.
+
+## In corso — La sonda del tracciato si ricorda cosa ha letto
+
+- **Una ricostruzione della rete stradale bloccava il frame per dodici-diciassette
+  secondi, e lo rifaceva ogni quindici-venti.** Misurato caricando un
+  salvataggio maturo (seed 866730858, 1208 record, 78 catalizzatori) e leggendo
+  il referto `?perf=1`: finestre da cinque secondi che ne duravano venti con un
+  frame solo dentro. Il profilo della V8 lo attribuiva per il 95% a
+  `Builder.onTick` → `roadDriver.onTick` → `RoadNetwork.update` → `planRoads`.
+  La causa non e' il tracciato in se': `planRoads` fa una ricerca per polo — fino
+  a `maxPoles` meno uno, quarantasette su quella citta' — e ognuna interroga
+  `costAt` per ogni passo verso ognuno degli otto vicini, sul riquadro che
+  contiene **tutti** i poli: 455 x 537 colonne. La stessa colonna riceveva quindi
+  la stessa domanda centinaia di volte, e ogni volta rifaceva le sei letture di
+  `TerrainMap` e l'interrogazione del registry per riottenere la stessa risposta.
+- **La sonda ora tiene le proprie risposte su due array larghi quanto il
+  riquadro della ricerca.** Non e' una cache da invalidare, ed e' il punto:
+  terreno, seme e suolo occupato non cambiano *durante* una ricostruzione —
+  `planRoads` e `connect` sono chiamate sincrone, e chi scrive nel registry sta
+  aspettando che ritornino — quindi la memoria vive quanto l'oggetto che
+  `RoadNetwork.probe` restituisce e non un tick di piu'. `Float64Array` e non
+  `Float32Array`: il termine continuo di `terrainCost.ts` ha la virgola, e
+  arrotondarlo cambierebbe quale di due cammini uguali vince, cioe' il disegno
+  delle strade.
+- **Misura, sullo stesso salvataggio e sulla stessa macchina.** Ricostruzione al
+  caricamento (quindici poli irraggiungibili): da 1900 ms a 830-1705 ms.
+  Ricostruzione a regime (trentatre irraggiungibili): da 11,7-16,9 s a 6,4-8,7 s
+  nella mediana, con un campione a 15,6 s sotto contesa di CPU. Il piano e'
+  identico — `connected`, `orphans` e le colonne asfaltate coincidono voce per
+  voce prima e dopo — che e' cio' che rende la memoria un'ottimizzazione e non
+  una taratura.
+- **Cosa resta, e dove.** Il costo dominante ora e' in `network.ts`: `netProbe`
+  chiede `onNet.has(keyOf(x, y))` prima di ogni lettura, e `keyOf` costruisce una
+  stringa per ogni passo — nel profilo erano 3,5 s di solo involucro piu' 1,0 s
+  fra `toAny` e `keyOf`, e altrettanti milioni di stringhe da raccogliere. Una
+  maschera `Uint8Array` sul riquadro accanto alla mappa — che resta per
+  `parent` e `resolved` — e' la mossa successiva. Restano anche le due cose che
+  non sono velocita': un polo irraggiungibile paga una scansione completa del
+  riquadro prima di arrendersi, e un avanzamento di stadio di un landmark
+  (`setCatalystStrength`, +8) cambia la firma dei poli e ordina una ricostruzione
+  intera che quasi mai cambia il piano — ma quando lo cambia sposta la radice
+  dell'albero, e le colonne asfaltate scendono da 2946 a 1189.
+
+## In corso — Banchine, pontili e rotte che si accorgono dell'acqua nuova
+
+- **Le barche entravano dritte nelle banchine, e la causa non era il traffico.**
+  Le rotte si ricostruiscono quando un landmark avanza di stadio; le opere del
+  distretto — la darsena scavata, il molo colmato — vengono **accodate** in quel
+  momento e compaiono nei frame successivi, a budget. Le rotte leggevano quindi
+  il mare di prima e non venivano piu' rifatte: nessuna di quelle opere aggiunge
+  un record, e la firma che decide il ricalcolo contava record. Ora il distretto
+  conta le volte che ha rimesso mano all'acqua (`HarborDriver.works`) e la scena
+  avanza un'epoca quando quel conto e' cambiato **e** le due code si sono
+  svuotate — che e' il solo istante in cui il mondo d'acqua e' di nuovo quello
+  che le barche crederanno.
+- **I pontili non sono colmate**, e confonderli era il difetto piu' visibile a
+  schermo: uscivano dal mare come blocchi di pietra alti dodici voxel, dal
+  fondale fino a sei sopra il pelo. Un pontile sta ora a due voxel dall'acqua
+  come il frangiflutti, e' di legno invece che di pietra, ed e' **vuoto sotto** —
+  la materia scende solo sui pali, ogni tre colonne. I bracci del porticciolo e i
+  pontili dell'argine ci sono passati insieme.
+- **La banchina ha una calata.** Sta sei voxel sopra il pelo perche' deve
+  restare in quota con il piano della citta' che ci arriva sopra, e senza un
+  gradino sul filo dell'acqua quei sei voxel sono una parete netta. La riga di
+  colonne che guarda l'acqua scende ora di un cubo, e ogni `stairPitch` colonne
+  di due: tre quote invece di una. Il bordo che guarda l'acqua si chiede al
+  terreno e non alla forma — un rettangolo ruotato non sa da che parte fosse il
+  mare, e dedurlo sarebbe un secondo segno da tenere allineato con `orientPart`.
+- **Ogni darsena ha la sua gru**, con lo sbraccio sopra il proprio bacino e il
+  braccio che passa alto, senza chiudere l'acqua a chi ci naviga sotto. A
+  distanza isometrica un bacino rettangolare senza niente sopra e' una vasca.
+
+## In corso — Il vocabolario delle figure d'acqua (fase 4.20)
+
+- **Il distretto non scava piu' due rettangoli uguali per tutti.** Al posto dei
+  canali larghi tre e lunghi dodici c'e' un vocabolario di quattro figure —
+  darsene a pettine come alle West India Docks di Canary Wharf, canale che
+  stacca un'isola come a Dubai Marina, porticciolo chiuso fra due moli, argine
+  con banchina — e a sceglierne una e' la **costa**, non il ruolo. Porto, marina
+  e traghetto attingono tutti e tre allo stesso vocabolario: due porti sulla
+  stessa isola vengono diversi perche' stanno in due posti diversi.
+- **La scala e' quella dell'isolato.** La maglia stradale ha passo quaranta
+  colonne; una darsena leggibile ne vuole venti per quaranta. Il tetto della
+  figura e' `HARBOR.figureReach`, due isolati, contro le otto colonne
+  dell'anello — che resta quello che era e continua a governare la passeggiata,
+  perche' quella e' suolo dipinto e non una forma.
+- **Le banchine sono i lotti.** Le dita fra due darsene e l'isola del canale
+  sono il posto dove il distretto fa nascere i propri edifici. Senza le torri
+  sulle banchine una darsena e' un'opera idraulica, non un pezzo di citta'.
+- **Due guardie che la scala ha reso necessarie.** Un ritaglio non si scava se
+  anche una sola delle sue colonne porta un edificio di qualcun altro: finche' il
+  distretto stava nel proprio grembiule la domanda non si poneva, una darsena da
+  quaranta colonne arriva in mezzo al quartiere. E la banchina **non si prenota**
+  come si prenotano molo e frangiflutti — prenotarla vieterebbe l'edificio che e'
+  la ragione per cui la si e' fatta.
+- **Le barche ci passano dentro senza sapere che esistono.** Le rotte leggono i
+  voxel d'acqua veri, quindi navigano i bacini appena scavati e aggirano le dita
+  di banchina come aggirano qualunque altro solido: nessuna riga di codice del
+  traffico sa che una darsena e' una darsena.
+
+## In corso — Il fronte d'acqua si rifinisce (fase 4.19)
+
+- **Le barche non escono piu' in linea retta.** Yacht e nave da carico usavano
+  un sondaggio dritto nel verso in cui guarda l'**intera struttura**, non il
+  singolo ormeggio: bastava una dita di molo di traverso perche' finisse contro
+  il cemento, e ne usciva l'avanti-indietro sul posto che si legge come «la
+  barca si muove a caso». Il capo lontano ora e' il punto d'acqua piu' lontano
+  che si raggiunga davvero (`seaExit.ts`), e la spezzata per arrivarci aggira
+  cio' che c'e' in mezzo.
+- **La nave da carico partiva quasi mai, e nessun test lo diceva.** Il sondaggio
+  pretendeva il franco del mare aperto gia' dall'ormeggio: dentro il bacino del
+  porto quel franco non c'e' per costruzione — i due bracci lo chiudono a quattro
+  voxel — quindi la ricerca falliva al primo passo e la nave restava in banchina,
+  in un ruolo che esiste per mostrare che dal mondo arriva qualcosa. Il
+  frangiflutti del distretto costiero, allo stadio tre, la rifermava una seconda
+  volta. La rotta e' ora in due tratti: la bocca del porto camminando sull'acqua,
+  il largo dritto da li'.
+- **Uno yacht senza un giro vero resta ormeggiato** (`TRAFFIC.yachtMinRun`).
+  Il posto barca in testa al bacino di una marina si chiude davvero dallo stadio
+  due, e quattro voxel di avanti-indietro non raccontano un'uscita.
+- **Il franco laterale e' scritto in un posto solo** (`navigableAt`). Era in tre
+  — la ricerca di rotta, il tiro di corda che la semplifica, e ora la ricerca
+  della bocca — e a divergere sarebbe stato quanto vicino alla banchina una nave
+  puo' passare, che e' esattamente il numero che si vede a schermo.
+- **Quante navi si vedono lo dice la simulazione.** Il numero era quello degli
+  ormeggi che la ricetta disegna, quindi un porto morto e un porto che regge
+  l'isola mostravano la stessa flotta. Ora il volume del commercio esterno
+  decide quante navi da carico un porto mette in mare e la popolazione quante
+  barche fanno la spola su una linea di traghetto, da una a `TRAFFIC.maxFleet`.
+- **Costa una moltiplicazione, non una ricerca.** Le copie condividono spezzata
+  e lunghezze cumulate e differiscono per la sola fase, spaziata uniformemente:
+  due traghetti si incrociano a meta' traversata invece di viaggiare appaiati.
+  Nella firma che decide se ricostruire le rotte entra il numero **gia'
+  quantizzato** e non il commercio grezzo — quello si muove a ogni tick, e
+  legarcela vorrebbe dire rifare ogni ricerca di rotta dieci volte al secondo.
+- **Un mezzo fermo non si moltiplica**: tre navi ormeggiate sullo stesso punto
+  sarebbero una nave sola con la sagoma piu' spessa.
+- **Le opere si tagliano sulla costa, non sul riquadro canonico.** Un canale
+  cominciava a `waterline` meno la propria lunghezza e il frangiflutti stava
+  alla somma dei fronti: numeri della ricetta e della tabella, giusti solo se la
+  riva e' parallela al fronte della struttura. Il piazzamento porta **una**
+  colonna sulla battigia, e quelle a dieci di lato — dove il canale sta — possono
+  essere terra ferma o mare aperto: ne uscivano canali che finivano nel prato e
+  bracci di pietra posati sulla spiaggia. Adesso ogni opera sonda la propria riga
+  finche' non trova acqua vera, e dove non ne trova non si costruisce.
+- **La lunghezza dichiarata era anche sbagliata**, ed e' la conseguenza meno
+  visibile della stessa causa: sulla fixture del lago la ricetta dichiara il mare
+  a sei colonne dal proprio spigolo e la conca lo mette a ventiquattro, quindi il
+  canale si scavava dalla differenza — il doppio delle dodici colonne che
+  `canals.length` promette.
+- **Il frangiflutti ha un varco** (`breakwater.mouth`). Era una campata piena
+  davanti al fronte, cioe' una diga: chiudeva lo specchio e insieme la strada per
+  entrarci. Le rotte sanno doppiarlo da quando camminano sull'acqua, ma doppiare
+  dodici colonne di pietra per rientrare in un porto che ha la bocca davanti e'
+  esattamente il percorso che si legge come casuale. Due bracci e un varco in
+  mezzo, largo quanto la sagoma piu' larga che ci passa piu' un margine.
+- **La prova della rotazione verificava un caso impossibile.** Girava le
+  coordinate del piano e lasciava fermo il mare, quindi una marina rivolta a
+  ovest davanti a un mare che sta a est produceva comunque i suoi canali. Ora la
+  costa gira con il fronte, e in tutti e quattro i versi la riva cade sulla
+  stessa colonna canonica.
+- **Il molo del traghetto si allunga davvero.** A sedime fisso il piazzamento
+  riservava l'ingombro finale e le opere di terra gettavano subito la banchina
+  *intera*: lo stadio zero mostrava gia' tutto il molo, in pietra, con sopra il
+  solo piazzale, e i tre avanzamenti ci posavano scatole. Ora il traghetto
+  dichiara un sedime per stadio e cresce **verso il largo**: due colonne d'acqua
+  al primo stadio, quattordici all'ultimo.
+- **Il divieto che lo impediva era scritto in un commento**, e la ragione era
+  vera: l'avanzamento riempiva il terreno nuovo con `WORKS.none`, cioe' portava
+  il piano alla quota naturale — sotto il pelo — e la campata appena aggiunta
+  sarebbe rimasta una secca. `fillNewGround` rifa' ora il sondaggio della
+  banchina sul sedime nuovo, tenendo ferma la quota fissata al piazzamento: un
+  molo che cresce si allunga, non si alza.
+- **Un accosto non compare prima del molo che lo tiene.** `landmarkMoorings` e
+  `landmarkWaterColumn` misurano sul sedime dello stadio invece che su quello
+  finale, e scartano gli ormeggi che quello stadio non contiene ancora. Senza,
+  sarebbero sbagliati due volte: fuori posto su ogni verso che non sia est —
+  la rotazione specchia sul lato lungo — e in acqua aperta anche a est, con la
+  barca ormeggiata al niente.
+- **Le rotte si rifanno quando un landmark avanza.** La firma che decide se
+  ricostruirle contava i landmark, che non cambiano di numero: adesso somma la
+  forza dei catalizzatori, che l'avanzamento alza di uno scalino. Costa quanto
+  contare i catalizzatori, che sono unita'.
+
 ## In corso — Si abita davvero sopra la citta'
 
 - **Il lotto in quota si risolve dove la roadmap dice che deve.** Il dominio

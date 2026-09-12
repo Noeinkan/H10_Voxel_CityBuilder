@@ -10,9 +10,22 @@ import {
 import {
   decisionFingerprint,
   decisionOption,
+  lapseOption,
   type CityDecision,
+  type DecisionOption,
   type DecisionOutcome,
+  type EventMemory,
+  type PolicyLock,
+  type ScheduledEvent,
 } from './decisions';
+import {
+  isEventId,
+  lockPolicy,
+  pruneLocks,
+  pruneSchedule,
+  rememberEvent,
+  scheduleFollowUp,
+} from './eventPool';
 import {
   DesirabilityField,
   type Building,
@@ -27,9 +40,8 @@ import {
   type FoodReport,
 } from './farms';
 import {
-  classOfWeight,
   isPolicyId,
-  policyById,
+  policyClasses,
   resolveWeights,
   withPolicy,
   type PolicyId,
@@ -81,6 +93,19 @@ export type { Building, Catalyst } from './DesirabilityField';
 export interface SimStateData {
   /** Tick completati da `createSimState`. */
   readonly tickCount: number;
+
+  /**
+   * Di quanti tick il **calendario** e' avanti rispetto all'eta' della citta'.
+   *
+   * Zero e' la partita di sempre, che nasce a `YEAR_START_PHASE`. Sale — e non
+   * scende mai — quando il giocatore porta l'anno a una stagione: la data si
+   * sposta, l'eta' no. Sta qui e non nel driver perche' e' un fatto della
+   * partita, e una citta' riaperta in un mese diverso da quello in cui e' stata
+   * lasciata sarebbe la stessa bugia di una scorta che il salvataggio dimentica.
+   * Chi lo legge sta in `calendar.ts`; nessuna scadenza della simulazione lo
+   * guarda, ed e' il punto.
+   */
+  readonly calendarShift: number;
 
   /** Stato del PRNG, intero a 32 bit senza segno. */
   readonly rngState: number;
@@ -222,6 +247,39 @@ export interface SimStateData {
   /** Decisione sospesa e registro compatto degli esiti scelti. */
   readonly pendingDecision: CityDecision | null;
   readonly decisionHistory: readonly DecisionOutcome[];
+
+  /**
+   * Quando ogni voce del bacino e' stata risolta l'ultima volta.
+   *
+   * **Non e' `decisionHistory` con altro nome.** Il registro e' cio' che la HUD
+   * mostra — dodici righe, in ordine di tempo, con il testo che il giocatore ha
+   * letto — e si pota. Questa e' la memoria che serve al **raffreddamento**: una
+   * riga per voce, senza duplicati, e sopravvive alla potatura del registro.
+   * Tenerle insieme voleva dire che un evento tornava a scattare non appena
+   * usciva dalle ultime dodici righe, cioe' per una ragione che non ha niente a
+   * che vedere con lui.
+   */
+  readonly eventMemory: readonly EventMemory[];
+
+  /**
+   * I seguiti che le scelte passate hanno prenotato.
+   *
+   * E' la memoria lunga delle decisioni: importare cibo apre, dieci minuti
+   * dopo, la scelta sul prezzo che quell'import comporta. Ogni voce porta la
+   * propria finestra — prima non si qualifica, dopo si dimentica — perche' un
+   * seguito che arrivasse a citta' irriconoscibile non sarebbe piu' un seguito.
+   */
+  readonly scheduledEvents: readonly ScheduledEvent[];
+
+  /**
+   * Le policy che un evento ha bloccato, e fino a quando.
+   *
+   * Senza, revocare una policy dentro una crisi non costa niente: la si
+   * riaccende al tick dopo pagandone solo il varo, e la crisi diventa una
+   * formalita'. Il blocco e' cio' che rende la revoca una decisione.
+   */
+  readonly policyLocks: readonly PolicyLock[];
+
   readonly nextDecisionTick: number;
   /**
    * Impronta della citta' all'ultima decisione risolta.
@@ -302,6 +360,12 @@ export interface SimState extends SimStateData {
 
 export interface SimStateOptions {
   readonly rngState?: number;
+  /**
+   * Lo scorrimento con cui la citta' nasce: e' cosi' che si sceglie la stagione
+   * di partenza. Lo calcola `birthShift`, e senza vale zero — il cuore
+   * dell'estate, dove le partite sono sempre nate.
+   */
+  readonly calendarShift?: number;
   readonly catalysts?: readonly Catalyst[];
   readonly policies?: readonly PolicyId[];
   readonly charters?: readonly CharterId[];
@@ -330,6 +394,7 @@ export function createSimState(options: SimStateOptions = {}): SimState {
 
   const data: SimStateData = {
     tickCount: 0,
+    calendarShift: Math.max(0, options.calendarShift ?? 0),
     rngState: (options.rngState ?? BALANCE.start.rngState) >>> 0,
     population: resource(BALANCE.start.population),
     food: resource(BALANCE.start.food),
@@ -357,6 +422,9 @@ export function createSimState(options: SimStateOptions = {}): SimState {
     staffing: 1,
     pendingDecision: null,
     decisionHistory: [],
+    eventMemory: [],
+    scheduledEvents: [],
+    policyLocks: [],
     nextDecisionTick: BALANCE.decisions.firstTick,
     decisionStamp: -1,
     decisionDismissedUntil: 0,
@@ -605,9 +673,12 @@ export function setPolicyActive(state: SimState, id: PolicyId, active: boolean):
     return state;
   }
 
-  const touched = classOfWeight(policyById(id).weight);
-  if (touched !== -1) {
-    state.field.rebuildClasses(state.catalysts, state.buildings, resolveWeights(policies), [touched]);
+  // Due usi, non uno: una policy guadagna su un peso e **sconta** su un altro,
+  // e ricostruire solo il primo lascerebbe il campo del secondo fermo su un
+  // moltiplicatore che non e' piu' quello attivo.
+  const touched = policyClasses(id);
+  if (touched.length > 0) {
+    state.field.rebuildClasses(state.catalysts, state.buildings, resolveWeights(policies), touched);
   }
   return { ...state, policies };
 }
@@ -653,27 +724,97 @@ export function resolveDecision(state: SimState, optionId: string): SimState | n
   if (state.pendingDecision === null) return null;
   const option = decisionOption(state.pendingDecision, optionId);
   if (option === null) return null;
+  return applyDecision(state, state.pendingDecision, option, false);
+}
+
+/**
+ * La scadenza decide al posto del giocatore.
+ *
+ * E' cio' che rende «decidi piu' tardi» una scelta invece di un rinvio gratuito:
+ * l'alternativa che scatta e' quella marcata `onLapse`, scritta sulla carta
+ * prima che il rinvio avvenga. Se la voce non ne ha una — non dovrebbe capitare,
+ * un test del catalogo lo verifica — la decisione si chiude senza applicare
+ * niente, che e' il ripiego meno dannoso: perdere la scelta, non subirne una a
+ * caso.
+ */
+export function lapseDecision(state: SimState): SimState {
+  const decision = state.pendingDecision;
+  if (decision === null) return state;
+  const option = lapseOption(decision);
+  if (option === null) {
+    return {
+      ...state,
+      pendingDecision: null,
+      eventMemory: rememberEvent(state.eventMemory, decision.eventId, state.tickCount),
+      nextDecisionTick: state.tickCount + BALANCE.decisions.intervalTicks,
+      decisionDismissedUntil: 0,
+    };
+  }
+  return applyDecision(state, decision, option, true);
+}
+
+/**
+ * Cio' che una scelta risolta lascia dietro di se'.
+ *
+ * Quattro cose, e solo la prima c'era gia': le **risorse**, il **mandato** della
+ * famiglia, la **policy** che l'alternativa vara o revoca, e il **seguito** che
+ * prenota. La policy passa da `setPolicyActive` e non da uno spread perche' e'
+ * l'unica delle quattro che tocca il campo di desiderabilita': scriverla a mano
+ * qui lascerebbe il campo su moltiplicatori che non sono piu' quelli attivi.
+ */
+function applyDecision(
+  state: SimState,
+  decision: CityDecision,
+  option: DecisionOption,
+  lapsed: boolean,
+): SimState {
   const effect = option.effect;
-  const family = state.pendingDecision.family;
+  const family = decision.family;
   const history = [...state.decisionHistory, {
     tick: state.tickCount,
-    decisionId: state.pendingDecision.id,
+    decisionId: decision.id,
+    eventId: decision.eventId,
     family,
-    optionId,
+    optionId: option.id,
     summary: option.description,
+    ...(lapsed ? { lapsed: true } : {}),
   }].slice(-BALANCE.decisions.historyLimit);
+
   const charters = option.charter === undefined
     ? state.charters
     : option.charter === null
       ? withoutFamily(state.charters, family)
       : withCharter(state.charters, option.charter);
+
+  let base = state;
+  let policyLocks = pruneLocks(state.policyLocks, state.tickCount);
+  const policyEffect = option.policy;
+  if (policyEffect !== undefined) {
+    base = setPolicyActive(base, policyEffect.id, policyEffect.enable);
+    const lockTicks = policyEffect.lockTicks ?? BALANCE.decisions.pool.policyLockTicks;
+    if (lockTicks > 0) {
+      policyLocks = lockPolicy(policyLocks, policyEffect.id, state.tickCount + lockTicks);
+    }
+  }
+
+  let scheduledEvents = pruneSchedule(state.scheduledEvents, state.tickCount);
+  // Il seguito appena risolto esce dal calendario: senza, la stessa catena
+  // resterebbe prenotata e si riaprirebbe a ogni tick della sua finestra.
+  scheduledEvents = scheduledEvents.filter((entry) => entry.id !== decision.eventId);
+  if (option.followUp !== undefined) {
+    scheduledEvents = scheduleFollowUp(scheduledEvents, option.followUp, state.tickCount);
+  }
+
   return {
-    ...state,
-    food: shifted(state.food, effect.food ?? 0),
-    materials: shifted(state.materials, effect.materials ?? 0),
-    funds: shifted(state.funds, effect.funds ?? 0),
-    satisfaction: clamp01(state.satisfaction + (effect.satisfaction ?? 0)),
+    ...base,
+    food: shifted(base.food, effect.food ?? 0),
+    materials: shifted(base.materials, effect.materials ?? 0),
+    funds: shifted(base.funds, effect.funds ?? 0),
+    satisfaction: clamp01(base.satisfaction + (effect.satisfaction ?? 0)),
     charters,
+    policyLocks,
+    scheduledEvents,
+    eventMemory: rememberEvent(state.eventMemory, decision.eventId, state.tickCount),
     pendingDecision: null,
     decisionHistory: history,
     nextDecisionTick: state.tickCount + BALANCE.decisions.intervalTicks,
@@ -681,11 +822,16 @@ export function resolveDecision(state: SimState, optionId: string): SimState | n
     // cambiamento reale invece di ripresentarsi alla scadenza.
     decisionStamp: decisionFingerprint(state),
     decisionDismissedUntil: 0,
-    // Un'emergenza risolta non si ripropone alla scadenza successiva: torna a
-    // scattare solo dopo essere rientrata, e a dirlo e' `tick`. Le altre due
-    // famiglie non hanno un fronte perche' non descrivono un guasto — una
-    // piazza da assegnare si ripresenta, una carestia gia' dichiarata no.
-    supplyArmed: family === 'supply' ? false : state.supplyArmed,
+    // Un'emergenza di approvvigionamento risolta non si ripropone alla scadenza
+    // successiva: torna a scattare solo dopo essere rientrata, e a dirlo e'
+    // `tick`. Le altre famiglie non hanno un fronte perche' non descrivono un
+    // guasto — una piazza da assegnare si ripresenta, una carestia gia'
+    // dichiarata no. Non basta la famiglia: un'eccedenza di raccolto vive nella
+    // stessa, e disarmare l'allarme perche' la citta' ha *troppo* cibo sarebbe
+    // esattamente il fronte al contrario.
+    supplyArmed: family === 'supply' && decision.urgency === 'crisis'
+      ? false
+      : state.supplyArmed,
   };
 }
 
@@ -730,8 +876,9 @@ export function reviveSimState(data: SimStateData, reachCost?: StepCost): SimSta
     | 'capacityCounts' | 'mixedCapacityCounts' | 'flows' | 'harvest' | 'materialFlows' | 'staffing'
     | 'pendingDecision' | 'decisionHistory' | 'nextDecisionTick' | 'supplyArmed'
     | 'decisionStamp' | 'decisionDismissedUntil'
+    | 'eventMemory' | 'scheduledEvents' | 'policyLocks'
     | 'islandConnections' | 'satisfactionReport' | 'landFactor'
-    | 'coverageReport' | 'decayPressure'
+    | 'coverageReport' | 'decayPressure' | 'calendarShift'
   >>;
   const normalised: SimStateData = {
     ...data,
@@ -772,6 +919,15 @@ export function reviveSimState(data: SimStateData, reachCost?: StepCost): SimSta
     trade: compatible.trade === undefined ? EMPTY_TRADE : { ...EMPTY_TRADE, ...compatible.trade },
     pendingDecision: compatible.pendingDecision ?? null,
     decisionHistory: compatible.decisionHistory ?? [],
+    // Le tre liste del bacino non si fidano del file: una voce di catalogo
+    // rinominata o tolta lascerebbe un raffreddamento che frena un evento che
+    // non c'e' piu', o un seguito che nessuno sapra' mai costruire. Si filtra
+    // per `isEventId`, e cio' che non e' piu' nel catalogo semplicemente non
+    // torna — che e' lo stesso trattamento che `canonicalPolicies` riserva a una
+    // policy sparita.
+    eventMemory: (compatible.eventMemory ?? []).filter((entry) => isEventId(entry.id)),
+    scheduledEvents: (compatible.scheduledEvents ?? []).filter((entry) => isEventId(entry.id)),
+    policyLocks: (compatible.policyLocks ?? []).filter((lock) => isPolicyId(lock.id)),
     nextDecisionTick: compatible.nextDecisionTick ?? BALANCE.decisions.firstTick,
     // Un salvataggio che non porta l'impronta torna a `-1`: la prima scelta
     // contestuale si apre comunque, come in una partita nuova.
@@ -796,6 +952,11 @@ export function reviveSimState(data: SimStateData, reachCost?: StepCost): SimSta
     // che il primo tick abbia guardato la citta'.
     coverageReport: compatible.coverageReport ?? EMPTY_COVERAGE,
     decayPressure: compatible.decayPressure ?? 0,
+    // Un salvataggio scritto prima che il calendario si potesse spostare torna a
+    // zero, cioe' con l'anno agganciato all'eta' della citta': e' esattamente
+    // come quella partita si comportava, e nessuno perde la stagione in cui era
+    // — quella citta' non ne aveva mai scelta una.
+    calendarShift: Math.max(0, compatible.calendarShift ?? 0),
   };
   const field = new DesirabilityField(reachCost);
   field.rebuild(normalised.catalysts, normalised.buildings, resolveWeights(normalised.policies));

@@ -1,19 +1,26 @@
 import {
   addCatalyst,
   BALANCE,
+  birthShift,
   catalystById,
   catalystRoleOf,
   createSimState,
   defaultCatalystOfClass,
+  decisionExpired,
   decisionOption,
+  lapseDecision,
+  lapseOption,
   nextBuildSites,
   rebuildField,
   reviveSimState,
+  SEASON,
+  SEASON_NAMES,
   tick,
   type BuildingClass,
   type CatalystId,
   type DecisionGrant,
   type PolicyId,
+  type Season,
   type SimState,
   type TradeMode,
 } from '../sim';
@@ -31,7 +38,7 @@ import {
   type BuildingRecord,
   type ReadonlyBuildingRegistry,
 } from '../world/buildings/BuildingRegistry';
-import type { ClearanceVerdict } from '../world/buildings/clearanceSite';
+import type { ClearanceBlockers, ClearanceVerdict } from '../world/buildings/clearanceSite';
 import { STRUCTURE_KIND, structureKindOf } from '../world/buildings/structureKind';
 import { hasFacadeForm, landmarkOf, maxStageOf } from '../world/landmarks/config';
 import { landmarkWaterColumn } from '../world/landmarks/generate';
@@ -54,6 +61,7 @@ import {
   buyExpansion,
   catalystFailure,
   catalystSiteCost,
+  changeSeason,
   changeTradeMode,
   chooseDecision,
   deferDecision,
@@ -280,6 +288,14 @@ export class GrowthScene {
     // Non piu' un campo: il seme serviva a ricostruire la maglia catastale per
     // il costo di portata, e quel costo adesso legge il tracciato del Builder.
     seed: number,
+    /**
+     * La stagione in cui l'isola nasce, dichiarata sul titolo.
+     *
+     * L'estate e' il default e non e' una scelta di comodo: e' la stagione in
+     * cui ogni partita e' sempre nata, quindi chi non dice niente ottiene la
+     * citta' di prima, raccolto di partenza compreso.
+     */
+    season: Season = SEASON.summer,
   ) {
     this.world = world;
     // **Il Builder prima dello stato**, perche' il tracciato e' suo. Il costo di
@@ -290,6 +306,7 @@ export class GrowthScene {
     this.builder = new Builder(world, map, seed, region);
     this.state = createSimState({
       rngState: seed,
+      calendarShift: birthShift(season),
       reachCost: createReachCost(map, () => this.builder.roads, () => this.congestion),
     });
   }
@@ -383,6 +400,14 @@ export class GrowthScene {
     if (!this.paused) this.loop.advance(dt * this.speed, () => {
       const start = performance.now();
       this.state = tick(this.state, this.map);
+      // La scadenza sta **qui** e non dentro `tick`, ed e' deliberato: applicare
+      // un'alternativa puo' varare o revocare una policy, e una policy tocca il
+      // campo di desiderabilita' in posto. `tick` e' l'unica funzione della
+      // simulazione che non lo fa mai — e' quello che le permette di girare in
+      // avanti su uno stato che il chiamante tiene ancora. La scadenza e' un
+      // fatto del ciclo di gioco, come l'opera concessa da una decisione, che
+      // per la stessa ragione si costruisce da qui.
+      this.expireDecision();
       this.state = this.builder.onTick(this.state);
       this.healthyTicks = isSelfSufficient(this.state) ? this.healthyTicks + 1 : 0;
       this.awardMilestone();
@@ -573,6 +598,23 @@ export class GrowthScene {
     preferred?: AerialFace,
   ): LandmarkSite {
     return this.clearanceAt(x, y, target, aloft, preferred);
+  }
+
+  /**
+   * Chi occupa il riquadro di un monumento a terra, record per record.
+   *
+   * **La stessa domanda di `catalystSite`, dal lato di chi deve disegnarla.**
+   * Quella dice che il riquadro rifiuta e il cursore lo scrive in una riga; qui
+   * escono i record, e il piazzamento puo' accendere in rosso il monumento che
+   * sta occupando il posto invece di lasciare il giocatore a cercarlo.
+   *
+   * Non ha una voce di memoria, e non e' una dimenticanza: la chiede solo chi ha
+   * gia' letto un rifiuto, e chi la chiede tiene la propria chiave sulla colonna
+   * — la stessa ragione per cui il riquadro della gomma si rimisura a cella e
+   * non a pixel.
+   */
+  catalystBlockers(x: number, y: number, target: CatalystId): ClearanceBlockers {
+    return this.builder.landmarkBlockers(x, y, target);
   }
 
   /**
@@ -872,6 +914,28 @@ export class GrowthScene {
   }
 
   /**
+   * Se la crisi e' scaduta, il consiglio decide al posto del giocatore.
+   *
+   * L'alternativa che scatta e' quella marcata `onLapse`, ed era scritta sulla
+   * carta prima che il tempo finisse: e' cio' che rende «decidi piu' tardi» una
+   * scelta invece di un rinvio gratuito. Il messaggio la **nomina**, perche' una
+   * citta' che cambia da sola senza dire cosa e' successo e' indistinguibile da
+   * un difetto.
+   */
+  private expireDecision(): void {
+    const pending = this.state.pendingDecision;
+    if (pending === null || !decisionExpired(pending, this.state.tickCount)) return;
+    // L'opera si legge **prima** di risolvere, per la stessa ragione di
+    // `chooseDecision`: dopo, `pendingDecision` e' gia' vuoto.
+    const chosen = lapseOption(pending);
+    this.state = lapseDecision(this.state);
+    if (chosen?.grant !== undefined) this.buildGrant(chosen.grant);
+    this.message = chosen === null
+      ? `No answer was given, and “${pending.title}” passed.`
+      : `No answer was given: the council chose “${chosen.label}”.`;
+  }
+
+  /**
    * Posa l'opera sul miglior sito che la citta' offre.
    *
    * Prima si cercano i candidati dell'uso che il ruolo porta, cosi' un mercato
@@ -915,6 +979,22 @@ export class GrowthScene {
 
   setTradeMode(mode: TradeMode): ActionResult {
     return this.apply(changeTradeMode(this.state, mode), 'Trade strategy updated.');
+  }
+
+  /**
+   * Porta l'anno al primo giorno di una stagione, senza fermarlo.
+   *
+   * Il messaggio esce solo se il calendario si e' davvero mosso: premere la
+   * stagione in cui si e' gia' non e' un errore — e' il bottone acceso — ma
+   * annunciare uno spostamento che non c'e' stato sarebbe l'HUD che racconta
+   * una cosa non successa. `jumpToSeason` restituisce lo stesso oggetto quando
+   * non c'e' niente da spostare, quindi la domanda si fa per identita'.
+   */
+  jumpToSeason(season: Season): ActionResult {
+    const result = changeSeason(this.state, season);
+    return result.success && result.state !== this.state
+      ? this.apply(result, `The year moves on to ${SEASON_NAMES[season]}.`)
+      : result;
   }
 
   buyExpansion(sectorId: string, region: Region): ActionResult {

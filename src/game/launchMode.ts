@@ -1,5 +1,10 @@
 import { resolveDaylightMode, type DaylightMode } from '../engine/daylight';
 import { resolveTheme } from '../engine/themes';
+// Dal modulo e non dal barile di `src/sim`: la schermata del titolo importa
+// questo file prima che il mondo esista, e `src/sim/index.ts` si porterebbe
+// dietro la simulazione intera per quattro nomi di stagione. `seasons.ts` non
+// dipende che da `balance.ts`, che e' una tabella di numeri.
+import { resolveSeason, SEASON, SEASON_IDS, type Season } from '../sim/seasons';
 
 export interface LaunchMode {
   debugEnabled: boolean;
@@ -157,14 +162,38 @@ export interface LookChoice {
   readonly theme: string;
   readonly daylight: DaylightMode;
   readonly clouds: boolean;
+  /**
+   * In che stagione **nasce** l'isola, e non e' un look come gli altri tre.
+   *
+   * Gli altri tre si possono cambiare in qualunque momento senza che la citta'
+   * se ne accorga; questo sposta il calendario, quindi anche il raccolto del
+   * primo anno. Viaggia qui lo stesso perche' si sceglie nello stesso pannello,
+   * prima che il mondo esista, e arriva a destinazione per la stessa strada: un
+   * parametro d'indirizzo letto all'avvio.
+   *
+   * **In partita non lo riscrive nessuno.** Chi porta l'anno a un'altra stagione
+   * mentre gioca muove lo stato della simulazione, che finisce nel salvataggio:
+   * questo resta la stagione di nascita, cioe' cio' che il titolo deve
+   * riproporre la volta dopo.
+   */
+  readonly season: Season;
 }
 
-/** Scrive il look sui parametri, con `clouds` che sparisce invece di dire «no». */
+/**
+ * Scrive il look sui parametri, con `clouds` che sparisce invece di dire «no».
+ *
+ * La stagione sparisce alla stessa maniera quando e' l'estate: e' quella con cui
+ * ogni partita e' sempre nata, quindi scriverla vorrebbe dire sporcare
+ * l'indirizzo di ogni giocatore per dichiarare il default.
+ */
 export function applyLook(params: URLSearchParams, look: LookChoice): void {
   params.set('theme', look.theme);
   params.set('daylight', look.daylight);
   if (look.clouds) params.set('clouds', '1');
   else params.delete('clouds');
+  const season = SEASON_IDS[look.season];
+  if (look.season !== SEASON.summer && season !== undefined) params.set('calendar', season);
+  else params.delete('calendar');
 }
 
 /** Il look dichiarato dall'indirizzo, con i default del gioco al posto dei buchi. */
@@ -173,6 +202,10 @@ export function resolveLook(params: URLSearchParams): LookChoice {
     theme: resolveTheme(params.get('theme')).id,
     daylight: resolveDaylightMode(params.get('daylight')),
     clouds: params.get('clouds') === '1',
+    // `?calendar=` e' un'altra cosa da `?season=`: quello inchioda la fase e la
+    // toglie alla simulazione — resta un attrezzo di cattura — questo dice
+    // soltanto da dove parte un anno che poi cammina come sempre.
+    season: resolveSeason(params.get('calendar')) ?? SEASON.summer,
   };
 }
 

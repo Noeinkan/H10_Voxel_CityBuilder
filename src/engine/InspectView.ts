@@ -44,12 +44,33 @@ export interface FocusCell {
  */
 const STUDY_CLICK_SLOP = 6;
 
+/**
+ * Chi sa accendere la sagoma di un landmark attraverso cio' che lo nasconde.
+ *
+ * Strutturale e non `LandmarkSilhouette`, per la stessa ragione di `FocusCell`
+ * qui sopra: quella classe porta Three dentro di se' e questo modulo gira nei
+ * test in `node`. La vista decide **quale** landmark accendere; come si disegni
+ * non e' affar suo.
+ */
+export interface LandmarkView {
+  update(box: InspectBox | null): void;
+}
+
 export interface InspectViewOptions {
   readonly world: VoxelWorld;
   readonly camera: IsoCameraController;
   readonly paletteHandle: VoxelMaterialHandle;
   readonly guides: InspectGuides | null;
   readonly streets: StreetNetwork | null;
+
+  /**
+   * La sagoma del landmark, quando la scena ne ha una.
+   *
+   * Il velo non puo' mostrare un monumento sepolto da venti torri — il retino
+   * non impila, vedi `XRAY.lattice` — quindi la seconda meta' dei raggi X e' una
+   * passata a parte, e questa e' la sua presa.
+   */
+  readonly silhouette?: LandmarkView | null;
 
   /** La mappa del terreno, o null nelle scene che non ne hanno una. */
   readonly map: () => TerrainMap | null;
@@ -489,6 +510,10 @@ export function createInspectView(options: InspectViewOptions): InspectView {
       if (lockedRect !== null) {
         blockRect = lockedRect;
         blockKey = lockedKey;
+        // Si arriva qui solo da Block focus, dove un landmark acceso non
+        // c'entra: spegnerlo qui e' cio' che evita di trascinarselo dietro da
+        // un'apertura dei raggi X precedente.
+        options.silhouette?.update(null);
         const locked = stateOf();
         payload = inspectUniforms(locked);
         paletteHandle.setInspect(payload);
@@ -527,6 +552,10 @@ export function createInspectView(options: InspectViewOptions): InspectView {
       const landmarkBox = mode === INSPECT_MODE.xray ? landmarkNear(focus) : null;
       subject = mode === INSPECT_MODE.xray ? landmarkBox ?? subjectAt(focus) : null;
       landmark = landmarkBox;
+      // La tinta di `inspectGlow` accende il landmark **dove si vede gia'**; la
+      // sagoma lo accende dove non si vede. Sono le due meta' della stessa
+      // risposta e partono dalla stessa scatola.
+      options.silhouette?.update(landmarkBox);
 
       if (focus !== null && streets !== null) {
         const block = streets.blockAt(focus.x, focus.y);
