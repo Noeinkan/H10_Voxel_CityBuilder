@@ -71,6 +71,8 @@ nell'`AGENTS.md` piu' vicino.
 - `terrain/`: quantizzazione, acqua per colonna, biomi e generazione.
 - `scenes/`: scene deterministiche e campionario del vocabolario.
 - `streets/`, `sites/`, `skyline/`: maglia, siti e gerarchia verticale.
+- `roads/`, `footpaths/`: il tracciato che si vede e i vicoli pedonali che
+  riempiono la fascia che il tracciato lascia scoperta.
 - `buildings/`: costruzione, tipologie, registry e driver trasversali.
 - `spans/`, `aerial/`: campate, mensole, nodi e percorsi in quota.
 - `crossings/`, `grading/`: attraversamenti, fondazioni e opere di terra.

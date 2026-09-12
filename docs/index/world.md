@@ -124,12 +124,31 @@ Node senza terreno, senza mondo e senza registry.
 | File | Ruolo | Esporta |
 | --- | --- | --- |
 | [config.ts](src/world/roads/config.ts) | **Ogni** larghezza, costo, soglia e rango del tracciato | `ROADS`, `ROAD_RANK`, `RoadRank`, `ALL_ROAD_RANKS` |
-| [src/world/roads/network.ts](src/world/roads/network.ts) | L'albero cresciuto dal polo piu' forte: ogni polo si attacca alla prima carreggiata che incontra, e il rango di un tratto e' il suo carico — quanti poli ci passano per arrivare al centro | `planRoads`, `normalisePoles`, `rankOf`, `RoadPole`, `RoadNode`, `RoadPlan`, `EMPTY_PLAN` |
+| [src/world/roads/network.ts](src/world/roads/network.ts) | L'albero cresciuto dal polo piu' forte **della regione che ne contiene di piu'**: ogni polo si attacca alla prima carreggiata che incontra, chi sta su un'altra costa resta orfano senza cercare, e il rango di un tratto e' il suo carico — quanti poli ci passano per arrivare al centro | `planRoads`, `normalisePoles`, `rankOf`, `RoadPole`, `RoadNode`, `RoadPlan`, `EMPTY_PLAN` |
+| [src/world/roads/regions.ts](src/world/roads/regions.ts) | Quali colonne del riquadro si raggiungono a vicenda, con la stessa regola di passo di `traceRoad`: serve a non cercare un cammino che non c'e', ed e' anche cio' che dice dove sta la citta' quando l'isola e' piu' d'una | `roadRegions`, `RoadRegions` |
 | [src/world/roads/RoadNetwork.ts](src/world/roads/RoadNetwork.ts) | Il tracciato tenuto e interrogato: sonde sul terreno, ricostruzione quando i poli cambiano, capillari verso la citta' nuova, e la fascia di fronte strada gia' dilatata | `RoadNetwork` |
 | [src/world/roads/stroke.ts](src/world/roads/stroke.ts) | Dalla linea d'asse al nastro: la larghezza per rango, il rango piu' alto che vince l'incrocio, e la pila che non si allarga con l'impalcato | `strokeRoads`, `strokeViaduct`, `StrokeInput`, `RoadSurface`, `ViaductSurface` |
 | [src/world/roads/terrainCost.ts](src/world/roads/terrainCost.ts) | La parte continua del costo di una colonna: pendenza e campo di divagazione. E' cio' che rompe i pareggi di un terreno a gradini, dove ogni cammino costa identico e la ricerca restituisce la diagonale canonica | `terrainPenalty`, `wanderAt` |
-| [src/world/roads/trace.ts](src/world/roads/trace.ts) | Il cammino a costo minimo su cui tutto poggia: otto vicini, dislivello come costo del passo — da cui i tornanti — e arrivo a un punto o diffuso sulla rete | `traceRoad`, `boundsAround`, `unionBounds`, `RoadProbe`, `TraceRequest`, `TraceBounds`, `TraceStep`, `Trace` |
+| [src/world/roads/trace.ts](src/world/roads/trace.ts) | Il cammino a costo minimo su cui tutto poggia: otto vicini, dislivello come costo del passo — da cui i tornanti — e arrivo a un punto o diffuso sulla rete | `traceRoad`, `boundsAround`, `unionBounds`, `TRACE_STEPS`, `RoadProbe`, `TraceRequest`, `TraceBounds`, `TraceStep`, `Trace` |
 | [src/world/roads/viaduct.ts](src/world/roads/viaduct.ts) | Dove la strada lascia il suolo: le corse che non toccano terra diventano campate con spalle, impalcato piano e pile a passo fisso | `planViaducts`, `ViaductProbe`, `ViaductColumn`, `ViaductRun` |
+
+## `src/world/footpaths/` — il tessuto pedonale
+
+Il vicolo che una casa lascia verso il suolo pubblico, e che sta esattamente dove
+il tracciato ha deciso di non stare: `RoadNetwork.connect` si autoesclude entro
+`ROADS.frontageReach`, cioe' lascia scoperte di proposito le sei colonne fra un
+lotto «sul fronte» e la carreggiata.
+
+L'invariante del dominio — **un sentiero non prende suolo e non lo contende a
+nessuno** — sta tutto nella priorita' zero: qualunque altra superficie arrivi
+dopo se la prende, e il vicolo sparisce da se'. Non ha record, non si rifa' mai e
+non entra nel salvataggio.
+
+| File | Ruolo | Esporta |
+| --- | --- | --- |
+| [src/world/footpaths/config.ts](src/world/footpaths/config.ts) | **Ogni** costo, soglia, portata e indice di palette del tessuto pedonale; `maxStep` e' il doppio di quello di una strada, ed e' l'unica cosa in cui questa rete e' piu' capace dell'altra | `FOOTPATHS` |
+| [src/world/footpaths/FootpathNetwork.ts](src/world/footpaths/FootpathNetwork.ts) | I vicoli tenuti e interrogati: sonda sul terreno con memoria per riquadro, costo che preferisce il muro al prato, e l'innesto sul primo suolo pubblico | `FootpathNetwork`, `FootpathGround` |
+| [src/world/footpaths/walk.ts](src/world/footpaths/walk.ts) | Il cammino a costo minimo fra le case: otto passi, arrivo diffuso, gradini che una carreggiata non salirebbe, e la diagonale fra due spigoli rifiutata | `walkFootpath`, `walkBounds`, `WALK_STEPS`, `FootpathProbe`, `WalkRequest`, `WalkBounds`, `FootpathStep`, `FootpathWalk` |
 
 ## `src/world/grading/` — opere di terra
 
@@ -216,5 +235,7 @@ colonne di scavo e colmata sono prenotate al registry contro la crescita.
 
 | File | Ruolo | Esporta |
 | --- | --- | --- |
-| [config.ts](src/world/harbor/config.ts) | **Ogni** anello, misura d'opera, profondita' e cadenza del distretto, per ruolo | `HARBOR`, `HARBOR_ROLES`, `HarborRoleConfig` |
-| [plan.ts](src/world/harbor/plan.ts) | Il piano puro di uno stadio: scavi, sponde, colmate, passeggiata e slot di settore, ruotati sul verso vero con `orientPart` e spezzati in ritagli a budget | `planHarborDistrict`, `HarborPlan`, `HarborDig`, `HarborWall`, `HarborFill`, `SectorSite`, `HarborProbe`, `HarborQuery` |
+| [config.ts](src/world/harbor/config.ts) | **Ogni** anello, misura d'opera, profondita', quota e cadenza del distretto, per ruolo: varco del frangiflutti, ricerca della riva vera, le taglie del vocabolario delle figure, e le quote che distinguono un pontile da una banchina (`pierFreeboard`, `pierPile`, `quayLanding`, `stairPitch`, `craneReach`) | `HARBOR`, `HARBOR_ROLES`, `HarborRoleConfig` |
+| [figures.ts](src/world/harbor/figures.ts) | Le quattro figure d'acqua come rettangoli canonici — darsene a pettine, canale che stacca un'isola, porticciolo fra due moli, argine con banchina — piu' i pontili, che stanno a parte dalle colmate perche' non sono suolo, e le gru delle darsene | `planFigure`, `FigurePlan`, `FigureRect`, `FigureQuery` |
+| [plan.ts](src/world/harbor/plan.ts) | Il piano puro di uno stadio: scavi, sponde, colmate, pontili, gru, passeggiata e lotti di settore, ruotati sul verso vero con `orientPart` e spezzati in ritagli a budget | `planHarborDistrict`, `HarborPlan`, `HarborDig`, `HarborWall`, `HarborFill`, `HarborCrane`, `SectorSite`, `HarborProbe`, `HarborQuery` |
+| [site.ts](src/world/harbor/site.ts) | Che costa si e' trovato davanti un landmark — terra dietro la riva, quanto e' dritta, quante righe una riva ce l'hanno — e quale figura quella costa ammette | `surveyCoast`, `planFigure` via `HARBOR_FIGURE`, `CoastSite`, `CoastQuery`, `NO_SHORE` |

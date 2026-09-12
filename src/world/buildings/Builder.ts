@@ -83,6 +83,7 @@ import { LotSearch } from './lotSearch';
 import { Frontage } from './frontage';
 import { SurfaceQueue } from './surfaceQueue';
 import { RoadDriver } from './roadDriver';
+import { FootpathDriver } from './footpathDriver';
 import { ROADS } from '../roads/config';
 import type { RoadNetwork } from '../roads/RoadNetwork';
 import { StreetNetwork } from '../streets/StreetNetwork';
@@ -357,6 +358,7 @@ export class Builder {
   private readonly harbors: HarborDriver;
   private readonly arcologies: ArcologyDriver;
   private readonly roadNetwork: RoadDriver;
+  private readonly footpaths: FootpathDriver;
 
   constructor(
     world: VoxelWorld,
@@ -382,6 +384,11 @@ export class Builder {
     // ha bisogno di lui: legge terreno e occupazione, e scrive solo sulla coda
     // di superficie. E' anche il motivo per cui puo' stare qui in cima.
     this.roadNetwork = new RoadDriver(this.ctx);
+    // Il tessuto pedonale e' l'unico che chieda qualcosa al tracciato senza che
+    // il tracciato sappia di lui: gli serve sapere dov'e' la carreggiata, perche'
+    // un vicolo si innesta li' e li' si ferma. Un solo predicato invece del
+    // driver intero — la rete non deve poter arrivare ne' ai poli ne' al piano.
+    this.footpaths = new FootpathDriver(this.ctx, (x, y) => this.roadNetwork.carries(x, y));
     // Il cantiere ha bisogno delle campate prima di se stesso: sventrando fa
     // cadere quelle che poggiavano su cio' che abbatte. Ed e' **uno solo** per
     // Builder: due liste di cantieri potrebbero condannare lo stesso record e
@@ -1378,6 +1385,13 @@ export class Builder {
     // catena — costruisci, collega, affacciati — a far crescere il tessuto lungo
     // le strade invece che attorno a loro.
     this.roadNetwork.connect(x, y, footprint, facing);
+    // E subito dopo il vicolo pedonale, che copre il tratto che il capillare
+    // carrabile lascia scoperto di proposito: dentro `frontageReach` il lotto e'
+    // gia' «sul fronte» e nessuna carreggiata parte, ma fra il portone e la
+    // strada ci sono comunque sei colonne di prato. L'ordine conta — il
+    // capillare ha appena registrato le proprie colonne, quindi se e' arrivato
+    // fino qui il vicolo non parte nemmeno.
+    this.footpaths.connect(x, y, footprint, facing);
     this.placedCount++;
     if (plan === null) {
       this.stackedCount++;
