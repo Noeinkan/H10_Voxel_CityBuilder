@@ -32,6 +32,18 @@ import type { TerrainMap } from '../world/terrain/TerrainMap';
 /** Quad massimi per heatmap: oltre, si allarga il passo di decimazione. */
 const MAX_CELLS = 30000;
 
+/**
+ * Quanto una heatmap finita resta buona prima che un campo cambiato ne chieda
+ * un'altra.
+ *
+ * Una citta' viva sposta la versione del campo **piu' volte al secondo** — un
+ * edificio che nasce, un lotto arato — e una heatmap intera costa qualche
+ * decimo di secondo di budget. Senza questa pausa l'overlay ricostruirebbe
+ * senza sosta: mezzo secondo di ritardo su un dato che a schermo cambia di un
+ * quadretto non lo vede nessuno, un frame occupato per sempre si'.
+ */
+const REBUILD_COOLDOWN_MS = 500;
+
 /** Quanto la velatura continua sposta il suolo, dal minimo al picco. */
 const FILL_ALPHA_MIN = 0.15;
 const FILL_ALPHA_PEAK = 0.8;
@@ -129,6 +141,8 @@ export class InfoViewOverlay {
   private readonly originY: number;
 
   private phase: Phase = 'done';
+  /** Quando l'ultima heatmap e' stata consegnata, per la pausa fra due rifacimenti. */
+  private builtAt = Number.NEGATIVE_INFINITY;
   private cursor = 0;
   private samples = new Float32Array(0);
   private maxValue = 1;
@@ -174,13 +188,32 @@ export class InfoViewOverlay {
   }
 
   /**
+   * true quando l'overlay puo' prendersi una versione nuova del campo.
+   *
+   * Lo chiede `infoViewScene` **prima** di costruire un campionatore: una
+   * costruzione in corso non si interrompe per un edificio in piu', o in una
+   * citta' viva non arriverebbe mai in fondo — ed e' esattamente cosi' che le
+   * viste dati restavano vuote a schermo mentre legenda e dock dicevano di
+   * essere accese.
+   */
+  get ready(): boolean {
+    return this.phase === 'done' && performance.now() - this.builtAt >= REBUILD_COOLDOWN_MS;
+  }
+
+  /**
    * Cambia vista o campo, ricostruendo solo se la chiave e' diversa.
    *
    * La chiave arriva da `infoViewVersion`: cambiare catalizzatore, edificio,
    * policy o lotto la sposta, e allora la heatmap riparte; pan e zoom no.
+   *
+   * **La geometria a schermo si butta solo se cambia il dato guardato.** Un
+   * campo che si muove sotto la *stessa* vista lascia in vista la heatmap di
+   * prima — vecchia di mezzo secondo, non assente — e il rifacimento la
+   * sostituisce quando e' pronto, in `commitBuild`.
    */
   setView(sampler: InfoSampler, key: string): void {
     if (this.sampler !== null && this.key === key) return;
+    const sameView = this.sampler?.kind === sampler.kind;
     this.sampler = sampler;
     this.key = key;
     this.samples = new Float32Array(this.total);
@@ -188,12 +221,7 @@ export class InfoViewOverlay {
     this.cursor = 0;
     this.phase = 'sampling';
     this.releaseBuffers();
-    // La geometria della vista precedente non deve restare a schermo sotto il
-    // nome nuovo: si svuota subito, e la costruzione a passi la riempie.
-    this.fill.geometry.dispose();
-    this.fill.geometry = new BufferGeometry();
-    this.edges.geometry.dispose();
-    this.edges.geometry = new BufferGeometry();
+    if (!sameView) this.dropGeometry();
     this.group.visible = this.visible;
   }
 
@@ -202,8 +230,14 @@ export class InfoViewOverlay {
     this.sampler = null;
     this.key = '';
     this.phase = 'done';
+    this.builtAt = Number.NEGATIVE_INFINITY;
     this.releaseBuffers();
     this.group.visible = false;
+    this.dropGeometry();
+  }
+
+  /** Toglie di mezzo la heatmap disegnata, restituendo i buffer della GPU. */
+  private dropGeometry(): void {
     this.fill.geometry.dispose();
     this.fill.geometry = new BufferGeometry();
     this.edges.geometry.dispose();
@@ -276,7 +310,14 @@ export class InfoViewOverlay {
       this.samples[this.cursor] = value;
       if (sampler.mode === 'continuous' && !sampler.normalized && value > max) max = value;
       this.cursor++;
-      if (performance.now() - start > budgetMs) return;
+      // Il massimo raccolto in questa fetta si scrive **prima** di uscire: il
+      // campionamento dura molti frame, e tenendolo in una locale sopravviveva
+      // solo l'ultima fetta. Le viste non normalizzate — materiali, densita' —
+      // finivano cosi' con un massimo di zero, cioe' dipinte tutte al colmo.
+      if (performance.now() - start > budgetMs) {
+        this.maxValue = max;
+        return;
+      }
     }
 
     this.maxValue = max;
@@ -348,6 +389,7 @@ export class InfoViewOverlay {
 
     this.commitBuild();
     this.phase = 'done';
+    this.builtAt = performance.now();
   }
 
   private pushQuad(x: number, y: number, step: number, rgb: Rgb, alpha: number): void {
@@ -413,20 +455,21 @@ export class InfoViewOverlay {
    * `BufferAttribute` su una `subarray` e non `Float32BufferAttribute`: il
    * secondo rifa' sempre `new Float32Array(...)`, e su una vista a campo quella
    * copia era l'unico frame fuori budget di tutta l'apertura.
+   *
+   * **Si sostituisce anche a mani vuote.** La heatmap di prima resta a schermo
+   * per tutta la costruzione, quindi un rifacimento che non produce piu' un
+   * solo quad — l'ultimo campo demolito — deve poterla togliere.
    */
   private commitBuild(): void {
-    if (this.positionCount > 0) {
-      const geometry = new BufferGeometry();
-      geometry.setAttribute('position', new BufferAttribute(this.positions.subarray(0, this.positionCount), 3));
-      geometry.setAttribute('color', new BufferAttribute(this.colors.subarray(0, this.colorCount), 4));
-      this.fill.geometry.dispose();
-      this.fill.geometry = geometry;
-    }
-    if (this.boundaryCount > 0) {
-      const geometry = new BufferGeometry();
-      geometry.setAttribute('position', new BufferAttribute(this.boundaries.subarray(0, this.boundaryCount), 3));
-      this.edges.geometry.dispose();
-      this.edges.geometry = geometry;
-    }
+    const fill = new BufferGeometry();
+    fill.setAttribute('position', new BufferAttribute(this.positions.subarray(0, this.positionCount), 3));
+    fill.setAttribute('color', new BufferAttribute(this.colors.subarray(0, this.colorCount), 4));
+    this.fill.geometry.dispose();
+    this.fill.geometry = fill;
+
+    const edges = new BufferGeometry();
+    edges.setAttribute('position', new BufferAttribute(this.boundaries.subarray(0, this.boundaryCount), 3));
+    this.edges.geometry.dispose();
+    this.edges.geometry = edges;
   }
 }
