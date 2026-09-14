@@ -61,6 +61,17 @@ export class LotSearch {
   private readonly blockMemo = new BlockMemo();
 
   /**
+   * Il lavoro della ricerca, contato e non cronometrato.
+   *
+   * Sono i tre numeri con cui le fasi 1.1 e 1.2 del memo sono state misurate,
+   * da sonde poi buttate: stanno qui perche' a parita' di seme non oscillano, e
+   * un rosso su di loro e' un rosso vero. Li legge `PassProfile`.
+   */
+  private searchCount = 0;
+  private squareCount = 0;
+  private columnCount = 0;
+
+  /**
    * La citta' in quota entra da due sole domande, ed e' voluto: la ricerca deve
    * sapere se sopra una colonna presa corre una soletta, e quante volte una
    * soletta e' nata, non cosa ci sia costruito sopra.
@@ -83,6 +94,21 @@ export class LotSearch {
   /** Siti bocciati in modo definitivo, per la statistica del `Builder`. */
   get blacklisted(): number {
     return this.banned.size;
+  }
+
+  /** Ricerche di lotto fatte da inizio partita. */
+  get searches(): number {
+    return this.searchCount;
+  }
+
+  /** Quadrati d'impronta provati da `lotIsFree`. */
+  get squaresTried(): number {
+    return this.squareCount;
+  }
+
+  /** Colonne lette davvero: quelle a cui il memo non ha risposto. */
+  get columnsRead(): number {
+    return this.columnCount;
   }
 
   /** true se questa colonna e' gia' stata bocciata per sempre. */
@@ -253,6 +279,7 @@ export class LotSearch {
     // e in cambio nessun chiamante futuro puo' dimenticarsene: la memoria si
     // aggiorna dove la si usa.
     this.blockMemo.observe(this.freedomEpoch());
+    this.searchCount++;
     const streets = this.ctx.streets;
     const origin = streets.blockAt(x, y);
     // Il rettangolo e' soltanto il limite di costo della ricerca. Comprende
@@ -405,6 +432,7 @@ export class LotSearch {
    * fra i siti bocciati, che questa funzione consulta al giro dopo.
    */
   private lotIsFree(x: number, y: number, footprint: number): boolean {
+    this.squareCount++;
     for (let dy = 0; dy < footprint; dy++) {
       for (let dx = 0; dx < footprint; dx++) {
         const cx = x + dx;
@@ -431,6 +459,7 @@ export class LotSearch {
    * prima senza toccare la seconda.
    */
   private columnIsFree(x: number, y: number, key: number): boolean {
+    this.columnCount++;
     // **La carreggiata e' suolo preso, esattamente come un edificio.**
     // `SurfaceQueue.canPaint` gia' si rifiutava di asfaltare una colonna
     // occupata, ma nessuno impediva il gesto opposto: su un'isola cresciuta,

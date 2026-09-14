@@ -11,6 +11,8 @@ import {
 import { BuildDock, sameTool, type DockPanel } from './BuildDock';
 import { ControlsHint } from './ControlsHint';
 import { applyHudTokens } from './hudTokens';
+import { appendPrice, createHudIcon, type ResourceIcon } from './hudIcons';
+import { failureResource, tipResource } from './toastResource';
 import {
   buildGameHudModel,
   decisionNeedsRepaint,
@@ -129,6 +131,14 @@ export interface ThemeChoice {
 
 export interface CursorInfo {
   readonly title: string;
+  /**
+   * Il prezzo, come numeri e non come parole.
+   *
+   * Era scritto dentro `details` — «120 funds · …» — ed era l'unica superficie
+   * in cui una risorsa compariva senza la sua icona e la sua tinta. Da qui la
+   * scheda lo disegna come la tessera, prima del resto della riga.
+   */
+  readonly price?: { readonly funds: number; readonly materials?: number };
   readonly details: string;
   readonly valid: boolean;
   readonly reason: string;
@@ -231,7 +241,13 @@ export class GameHud {
   private readonly trend = new ResourceTrend();
   private selected: GameTool = { kind: 'none' };
   private model: GameHudModel = buildGameHudModel(null);
-  private feedback: { readonly message: string; readonly tone: 'error' | 'neutral' } | null = null;
+  private feedback: {
+    readonly message: string;
+    readonly tone: 'error' | 'neutral';
+    readonly resource: ResourceIcon | null;
+  } | null = null;
+  /** Cosa la riga del toast mostra adesso, per non riscriverla uguale. */
+  private toastLine: string | null = null;
   /**
    * Nota che **accompagna** l'istruzione dello strumento invece di sostituirla.
    *
@@ -619,15 +635,15 @@ export class GameHud {
   }
 
   showFailure(reason: ActionFailure): void {
-    this.showFeedback(FAILURE_LABEL[reason], 'error');
+    this.showFeedback(FAILURE_LABEL[reason], 'error', failureResource(reason));
   }
 
   showPickingFailure(): void {
     this.showFeedback('There is no selectable surface here.', 'error');
   }
 
-  showFeedback(message: string, tone: 'error' | 'neutral' = 'neutral'): void {
-    this.feedback = { message, tone };
+  showFeedback(message: string, tone: 'error' | 'neutral' = 'neutral', resource: ResourceIcon | null = null): void {
+    this.feedback = { message, tone, resource };
     this.paintToast();
   }
 
@@ -669,7 +685,13 @@ export class GameHud {
     const title = document.createElement('strong');
     title.textContent = info.title;
     const details = document.createElement('span');
-    details.textContent = info.details;
+    if (info.price !== undefined) {
+      details.className = 'cursor-price';
+      appendPrice(details, info.price.funds, info.price.materials);
+      if (info.details !== '') details.append(document.createTextNode(` · ${info.details}`));
+    } else {
+      details.textContent = info.details;
+    }
     const reason = document.createElement('span');
     reason.className = 'cursor-reason';
     reason.textContent = info.reason;
@@ -1433,16 +1455,16 @@ export class GameHud {
 
   private paintToast(): void {
     if (this.feedback !== null) {
-      this.toast.textContent = this.feedback.message;
+      this.paintToastLine(this.feedback.message, this.feedback.resource);
       this.toast.dataset.tone = this.feedback.tone;
       delete this.toast.dataset.kind;
       return;
     }
     const instruction = selectionMessage(this.selected, this.model.catalysts);
     if (instruction !== null) {
-      this.toast.textContent = this.selectionNote === null
+      this.paintToastLine(this.selectionNote === null
         ? instruction
-        : `${this.selectionNote} · ${instruction}`;
+        : `${this.selectionNote} · ${instruction}`, null);
       this.toast.dataset.tone = 'selection';
       delete this.toast.dataset.kind;
       return;
@@ -1463,13 +1485,32 @@ export class GameHud {
       message.className = 'hud-toast-message';
       message.textContent = condition.message;
       this.toast.replaceChildren(title, message);
+      this.toastLine = null;
       this.toast.dataset.tone = condition.tone;
       this.toast.dataset.kind = condition.kind;
       return;
     }
-    this.toast.textContent = condition?.title ?? this.model.message;
+    this.paintToastLine(condition?.title ?? this.model.message, tipResource(condition?.tipId));
     this.toast.dataset.tone = condition?.tone ?? 'neutral';
     if (condition === null) delete this.toast.dataset.kind;
     else this.toast.dataset.kind = 'condition';
+  }
+
+  /**
+   * Una riga di toast, con davanti l'icona della risorsa di cui parla.
+   *
+   * Il toast si ridipinge a ogni giro dell'HUD: la riga si riscrive solo se
+   * testo o risorsa sono cambiati, o l'icona verrebbe ricreata sei volte al
+   * secondo per dire la stessa cosa.
+   */
+  private paintToastLine(text: string, resource: ResourceIcon | null): void {
+    const key = `${resource ?? ''}|${text}`;
+    if (this.toastLine === key) return;
+    this.toastLine = key;
+    if (resource === null) {
+      this.toast.textContent = text;
+      return;
+    }
+    this.toast.replaceChildren(createHudIcon(resource), document.createTextNode(text));
   }
 }

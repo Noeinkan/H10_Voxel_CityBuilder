@@ -1,5 +1,5 @@
 import { CATALYSTS } from '../sim';
-import { createHudIcon } from './hudIcons';
+import { appendPrice } from './hudIcons';
 import type { HudAction } from './GameHudModel';
 
 /**
@@ -164,14 +164,7 @@ export function tipElement(tip: HudTip): HTMLElement {
   const head = block('hud-tip-head');
   head.appendChild(block('hud-tip-title', tip.title));
   const cost = block('hud-tip-cost');
-  cost.append(createHudIcon('funds'), document.createTextNode(String(tip.cost)));
-  if (tip.materialCost !== null) {
-    cost.append(
-      document.createTextNode(' · '),
-      createHudIcon('materials'),
-      document.createTextNode(String(tip.materialCost)),
-    );
-  }
+  appendPrice(cost, tip.cost, tip.materialCost);
   head.appendChild(cost);
   root.appendChild(head);
 

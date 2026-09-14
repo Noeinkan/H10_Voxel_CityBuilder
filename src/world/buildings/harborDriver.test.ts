@@ -252,6 +252,21 @@ describe('il driver del distretto costiero', () => {
     expect(driver.drainSites(10)).toHaveLength(3);
     expect(driver.pending).toBe(0);
   });
+
+  it('un porto demolito si porta via i siti di settore che aspettavano', () => {
+    // Senza, `buildPass` continuerebbe a drenare case di settore per un
+    // distretto che non c'e' piu': nascerebbero attorno a un vuoto.
+    const { ctx, registry } = contextAt(lakeLand());
+    const marina = registry.add(marinaRecord(3, LAKE));
+    const driver = new HarborDriver(ctx);
+
+    driver.pass();
+    expect(driver.pending).toBeGreaterThan(0);
+
+    registry.remove(marina.id);
+    driver.pass();
+    expect(driver.pending).toBe(0);
+  });
 });
 
 // --- Il Builder completo -----------------------------------------------------

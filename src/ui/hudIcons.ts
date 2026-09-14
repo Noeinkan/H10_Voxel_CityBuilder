@@ -1,13 +1,31 @@
 import type { CatalystId } from '../sim/catalysts';
 
+/**
+ * Le cinque risorse: le sole icone **piene** dell'HUD.
+ *
+ * Due pesi e non uno (fase 7.2), e la divisione non e' estetica: una risorsa si
+ * guarda a 9-12px — nel badge della barra, accanto a un prezzo — dove un tratto
+ * da 1.8 su 24 diventa un pixel grigio e cinque contorni sottili si confondono.
+ * Una sagoma piena a quella misura resta una sagoma. Le azioni invece stanno a
+ * 15-22px su un bottone, e li' il tratto e' cio' che le distingue dalle cose che
+ * si possiedono: pieno vuol dire «hai», contorno vuol dire «fai».
+ *
+ * Le sagome sono scelte per essere diverse **di contorno** prima che di colore:
+ * una moneta tonda, due busti, una mela, tre mattoni a piramide, un cuore. Il
+ * colore lo aggiunge `hud.css`, che lo lega all'icona e non al contenitore.
+ */
+export type ResourceIcon = 'funds' | 'population' | 'food' | 'materials' | 'satisfaction';
+
 export type HudIcon =
-  | 'funds' | 'population' | 'food' | 'materials' | 'satisfaction'
+  | ResourceIcon
   | 'residential' | 'production' | 'civic' | 'expansion' | 'terrace' | 'ropeway' | 'policies' | 'city' | 'demolish'
   | 'market' | 'factory' | 'park' | 'greenhouse' | 'power' | 'school' | 'port' | 'ferry' | 'airport' | 'transport' | 'radio' | 'lighthouse'
   | 'university' | 'monument' | 'museum' | 'cathedral' | 'theatre' | 'stadium' | 'marina'
   | 'pause' | 'play' | 'theme' | 'view' | 'info' | 'swatch' | 'menu' | 'save' | 'help' | 'close'
   | 'daylight' | 'sun' | 'moon' | 'clouds' | 'cloudsOff'
   | 'sound' | 'soundOff';
+
+export type HudIconWeight = 'fill' | 'stroke';
 
 /*
  * Ogni ruolo della toolbar deve avere la sua icona, e il compilatore lo esige.
@@ -19,103 +37,135 @@ export type HudIcon =
  *
  * Questa riga e' cio' che impedisce che accada di nuovo: un ruolo nuovo in
  * `BALANCE` che non trovi il suo disegno qui sotto rompe la compilazione, e non
- * la tessera. Non produce niente a runtime.
+ * la tessera. Non produce niente a runtime. Il dock mostra la miniatura voxel
+ * (`catalystMiniature.ts`), ma il pittogramma resta: e' il ripiego di un ruolo
+ * senza ricetta, e il disegno delle righe piccole dove la miniatura non si legge.
  */
 type Assert<T extends true> = T;
 export type EveryCatalystHasAnIcon = Assert<CatalystId extends HudIcon ? true : false>;
 
-const PATHS: Readonly<Record<HudIcon, string>> = {
-  funds: '<circle cx="12" cy="12" r="8"/><path d="M9 10.2c0-1.1 1.2-2 3-2s3 .9 3 2-1.2 1.8-3 1.8-3 .9-3 2 1.2 2 3 2 3-.9 3-2M12 6v12"/>',
-  population: '<path d="M16 20v-2a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4v2M9.5 10a4 4 0 1 0 0-8 4 4 0 0 0 0 8ZM17 11a3 3 0 0 0 0-6M21 20v-2a4 4 0 0 0-3-3.9"/>',
-  food: '<path d="M12 22V9M7 3c3 0 5 2 5 5-3 0-5-2-5-5ZM17 5c-3 0-5 2-5 5 3 0 5-2 5-5ZM6 14c3 0 6 2 6 5-3 0-6-2-6-5Z"/>',
-  materials: '<path d="m12 2 9 5-9 5-9-5 9-5Z"/><path d="m3 12 9 5 9-5M3 17l9 5 9-5"/>',
-  satisfaction: '<circle cx="12" cy="12" r="9"/><path d="M8 10h.01M16 10h.01M8 14c1 3 7 3 8 0"/>',
-  residential: '<path d="m3 11 9-8 9 8M5 10v10h14V10M9 20v-6h6v6"/>',
-  production: '<path d="M3 21V9l6 3V9l6 3V5h4v16H3ZM7 17h2M12 17h2M17 17h2"/>',
-  civic: '<path d="m3 9 9-6 9 6M5 10h14M6 10v8M10 10v8M14 10v8M18 10v8M3 21h18"/>',
-  market: '<path d="M4 10h16l-2-6H6l-2 6ZM5 10v10h14V10M9 20v-6h6v6M4 10c1 2 3 2 4 0 1 2 3 2 4 0 1 2 3 2 4 0 1 2 3 2 4 0"/>',
-  factory: '<path d="M3 21V9l6 3V9l6 3V5h4v16H3ZM7 17h2M12 17h2M17 17h2"/>',
-  park: '<path d="M12 21v-7M7 14h10l-2-3h2l-5-8-5 8h2l-2 3ZM5 21h14"/>',
+const FILLED: Readonly<Record<ResourceIcon, string>> = {
+  // Il bordo rialzato e la scanalatura: e' cio' che fa di un disco una moneta, e
+  // resta leggibile anche a 9px dove un «$» ritagliato sarebbe una macchia.
+  funds: '<path fill-rule="evenodd" d="M12 2a10 10 0 1 1 0 20 10 10 0 0 1 0-20Zm0 2.8a7.2 7.2 0 1 0 0 14.4 7.2 7.2 0 0 0 0-14.4Z"/><circle cx="12" cy="12" r="5"/>',
+  // Due busti sfalsati, quello dietro piu' piccolo: una persona sola direbbe
+  // «profilo», due dicono «abitanti».
+  population: '<circle cx="8.6" cy="7.4" r="3.9"/><path d="M1.8 21v-1.2c0-3.9 3-6.4 6.8-6.4s6.8 2.5 6.8 6.4V21Z"/><circle cx="17.4" cy="8" r="3.1"/><path d="M17.2 12.9h.4c2.8 0 4.6 2.2 4.6 5.4V21h-4.9v-1.2c0-2.7-1-5-2.6-6.5.8-.3 1.6-.4 2.5-.4Z"/>',
+  // La mela e la sua foglia: il cibo come si compra, non come si coltiva. Una
+  // spiga a questa misura e' un bastoncino.
+  food: '<path d="M12 7.6c-1.5-1.1-3-1.5-4.6-1.2C4.6 7 3 9.6 3 12.9 3 17.5 6 21.6 9 21.6c1.2 0 1.9-.5 3-.5s1.8.5 3 .5c3 0 6-4.1 6-8.7 0-3.3-1.6-5.9-4.4-6.5-1.6-.3-3.1.1-4.6 1.3Z"/><path d="M12.4 6.4c.1-2.5 1.5-4.2 4.1-4.8-.1 2.5-1.6 4.3-4.1 4.8Z"/>',
+  // Tre mattoni a piramide, con i giunti aperti: i giunti sono cio' che li fa
+  // mattoni e non un blocco, e la piramide e' la sagoma che nessun'altra ha.
+  materials: '<rect x="1.8" y="14.4" width="9.6" height="6.4" rx="1.2"/><rect x="12.6" y="14.4" width="9.6" height="6.4" rx="1.2"/><rect x="7.2" y="6.8" width="9.6" height="6.4" rx="1.2"/>',
+  // Il cuore e non la faccina: di faccine tonde ce n'erano gia' due con la
+  // moneta, e a 12px un tondo con due puntini e un tondo con un anello sono lo
+  // stesso tondo.
+  satisfaction: '<path d="M12 21.2s-9-5.4-9-11.6C3 6.3 5.4 3.8 8.4 3.8c1.6 0 2.8.7 3.6 1.9.8-1.2 2-1.9 3.6-1.9 3 0 5.4 2.5 5.4 5.8 0 6.2-9 11.6-9 11.6Z"/>',
+};
+
+/**
+ * La massa di un'azione: la sua sagoma, riempita appena.
+ *
+ * Il tratto disegna i dettagli — finestre, colonne, montanti — e la massa dice
+ * di che forma e' la cosa intera. Senza, un edificio a 18px e' un groviglio di
+ * linee dello stesso peso, e la sagoma che dovrebbe riconoscersi per prima e'
+ * proprio quella che non si vede. L'opacita' sta in `hud.css`.
+ */
+function mass(d: string, evenOdd = false): string {
+  return `<path class="hud-mass"${evenOdd ? ' fill-rule="evenodd"' : ''} d="${d}"/>`;
+}
+
+const PATHS: Readonly<Record<Exclude<HudIcon, ResourceIcon>, string>> = {
+  residential: `${mass('M5 9.2 12 3l7 6.2V20H5Z')}<path d="m3 11 9-8 9 8M5 10v10h14V10M9 20v-6h6v6"/>`,
+  production: `${mass('M3 21V9l6 3V9l6 3V5h4v16H3Z')}<path d="M3 21V9l6 3V9l6 3V5h4v16H3ZM7 17h2M12 17h2M17 17h2"/>`,
+  civic: `${mass('M3 9 12 3l9 6Z')}<path d="m3 9 9-6 9 6M5 10h14M6 10v8M10 10v8M14 10v8M18 10v8M3 21h18"/>`,
+  market: `${mass('M4 10h16l-2-6H6l-2 6Z')}<path d="M4 10h16l-2-6H6l-2 6ZM5 10v10h14V10M9 20v-6h6v6M4 10c1 2 3 2 4 0 1 2 3 2 4 0 1 2 3 2 4 0 1 2 3 2 4 0"/>`,
+  factory: `${mass('M3 21V9l6 3V9l6 3V5h4v16H3Z')}<path d="M3 21V9l6 3V9l6 3V5h4v16H3ZM7 17h2M12 17h2M17 17h2"/>`,
+  park: `${mass('M7 14h10l-2-3h2l-5-8-5 8h2l-2 3Z')}<path d="M12 21v-7M7 14h10l-2-3h2l-5-8-5 8h2l-2 3ZM5 21h14"/>`,
   // Una casa di vetro a falda con i montanti in vista: e' la serra, e le righe
   // dei vetri sono cio' che la distingue da un capannone pieno. `factory` ha il
   // tetto a dente di sega, qui il colmo e' uno solo.
-  greenhouse: '<path d="M3 20V9l2-3h14l2 3v11H3ZM7 20V9M12 20V9M17 20V9M3 13h18M3 16h18"/>',
+  greenhouse: `${mass('M3 20V9l2-3h14l2 3v11H3Z')}<path d="M3 20V9l2-3h14l2 3v11H3ZM7 20V9M12 20V9M17 20V9M3 13h18M3 16h18"/>`,
+  // L'ancora resta tutta di tratto: e' fatta di bracci, e una massa sotto un
+  // disegno fatto solo di linee non avrebbe una sagoma da riempire.
   port: '<path d="M12 3v14M8 7h8M5 12c0 5 3 8 7 9 4-1 7-4 7-9M3 12h4M17 12h4"/>',
-    // Uno scafo con la cabina e l'onda sotto: il porto e' l'ancora, cioe' lo
-      // scalo, e il traghetto e' la barca che ci passa. Le due tessere stanno
-        // accanto e vogliono la stessa costa, quindi devono distinguersi da lontano —
-          // e prima di questa riga il traghetto non aveva icona affatto: `PATHS` non lo
-            // conosceva, e la tessera usciva vuota.
-              ferry: '<path d="M4 15h16l-2.2 4H6.2L4 15ZM7 15v-4h10v4M10 11V8h4v3M3 21c1.5 0 1.5-1 3-1s1.5 1 3 1 1.5-1 3-1 1.5 1 3 1 1.5-1 3-1"/>',
-  airport: '<path d="M12 3c.8 0 1.4.9 1.4 2v4.2l7.1 4v2.1l-7.1-2.2v4.3l2.1 1.6v1.6L12 19.6l-3.5 1V19l2.1-1.6v-4.3l-7.1 2.2v-2.1l7.1-4V5c0-1.1.6-2 1.4-2Z"/>',
-  transport: '<path d="M6 18h12M7 18l-2 3M17 18l2 3M5 15V7c0-3 14-3 14 0v8H5ZM8 11h.01M16 11h.01M7 15h10"/>',
-  university: '<path d="m3 9 9-6 9 6-9 4-9-4ZM6 11v6M18 11v6M4 20h16M9 12v5M15 12v5"/>',
-  monument: '<path d="M8 21h8M9 18h6M10 18V9h4v9M8 9h8l-4-6-4 6Z"/>',
+  // Uno scafo con la cabina e l'onda sotto: il porto e' l'ancora, cioe' lo
+  // scalo, e il traghetto e' la barca che ci passa. Le due tessere stanno
+  // accanto e vogliono la stessa costa, quindi devono distinguersi da lontano —
+  // e prima di questa riga il traghetto non aveva icona affatto: `PATHS` non lo
+  // conosceva, e la tessera usciva vuota.
+  ferry: `${mass('M4 15h16l-2.2 4H6.2L4 15ZM7 15v-4h10v4Z')}<path d="M4 15h16l-2.2 4H6.2L4 15ZM7 15v-4h10v4M10 11V8h4v3M3 21c1.5 0 1.5-1 3-1s1.5 1 3 1 1.5-1 3-1 1.5 1 3 1 1.5-1 3-1"/>`,
+  airport: `${mass('M12 3c.8 0 1.4.9 1.4 2v4.2l7.1 4v2.1l-7.1-2.2v4.3l2.1 1.6v1.6L12 19.6l-3.5 1V19l2.1-1.6v-4.3l-7.1 2.2v-2.1l7.1-4V5c0-1.1.6-2 1.4-2Z')}<path d="M12 3c.8 0 1.4.9 1.4 2v4.2l7.1 4v2.1l-7.1-2.2v4.3l2.1 1.6v1.6L12 19.6l-3.5 1V19l2.1-1.6v-4.3l-7.1 2.2v-2.1l7.1-4V5c0-1.1.6-2 1.4-2Z"/>`,
+  transport: `${mass('M5 15V7c0-3 14-3 14 0v8H5Z')}<path d="M6 18h12M7 18l-2 3M17 18l2 3M5 15V7c0-3 14-3 14 0v8H5ZM8 11h.01M16 11h.01M7 15h10"/>`,
+  university: `${mass('m3 9 9-6 9 6-9 4-9-4Z')}<path d="m3 9 9-6 9 6-9 4-9-4ZM6 11v6M18 11v6M4 20h16M9 12v5M15 12v5"/>`,
+  monument: `${mass('M10 18V9h4v9ZM8 9h8l-4-6-4 6Z')}<path d="M8 21h8M9 18h6M10 18V9h4v9M8 9h8l-4-6-4 6Z"/>`,
   // Un quadro appeso, non l'ennesimo frontone su colonne: `civic` e `university`
   // hanno gia' quel tetto, e in fila da 22px tre timpani non si distinguono. Qui
   // il segno e' **cio' che il museo contiene**, che e' anche la ragione per cui
   // ci si va.
-  museum: '<path d="M4 4h16v13H4zM4 13l4.5-4.5 3 3L16 7l4 4M8.5 8h.01M8 21v-4M16 21v-4"/>',
+  museum: `${mass('M4 4h16v13H4z')}<path d="M4 4h16v13H4zM4 13l4.5-4.5 3 3L16 7l4 4M8.5 8h.01M8 21v-4M16 21v-4"/>`,
   // La guglia, il rosone e le due navate basse ai lati: e' la sagoma che si
   // riconosce di profilo da lontano, ed e' l'unica del gruppo identita' che non
   // possa essere scambiata per un edificio civico.
-  cathedral: '<path d="M12 2v3.5M10.5 3.5h3M8 21V10l4-4.5 4 4.5v11M4 21v-7l4-3M20 21v-7l-4-3M3 21h18"/><circle cx="12" cy="12.5" r="1.6"/>',
+  cathedral: `${mass('M8 21V10l4-4.5 4 4.5v11Z')}<path d="M12 2v3.5M10.5 3.5h3M8 21V10l4-4.5 4 4.5v11M4 21v-7l4-3M20 21v-7l-4-3M3 21h18"/><circle cx="12" cy="12.5" r="1.6"/>`,
   // Due torri di raffreddamento a clessidra e una ciminiera sottile: il fumo
   // non c'e', e la verticale magra accanto ai due tamburi e' la firma della
   // centrale prima di qualunque colore.
-  power: '<path d="M3 20V10l1.5-2.5L6 10v10M9 20V10l1.5-2.5L12 10v10M15 20V4h2v16"/>',
+  power: `${mass('M3 20V10l1.5-2.5L6 10v10ZM9 20V10l1.5-2.5L12 10v10ZM15 20V4h2v16Z')}<path d="M3 20V10l1.5-2.5L6 10v10M9 20V10l1.5-2.5L12 10v10M15 20V4h2v16"/>`,
   // Due ali e il corpo che le unisce, con la torre dell'orologio che esce dal
   // tetto: e' il quadrante, non il campanile, a distinguerla dalla cattedrale.
-  school: '<path d="M3 20V8h6v12M15 20V8h6v12M9 20h6M12 8V2"/><circle cx="12" cy="4" r="1.3"/>',
+  school: `${mass('M3 20V8h6v12ZM15 20V8h6v12Z')}<path d="M3 20V8h6v12M15 20V8h6v12M9 20h6M12 8V2"/><circle cx="12" cy="4" r="1.3"/>`,
   // Un traliccio a croci diagonali e l'antenna in cima: l'aria fra i montanti
-  // e' cio' che separa una torre radio da un monumento pieno.
+  // e' cio' che separa una torre radio da un monumento pieno — e per questo
+  // resta senza massa.
   radio: '<path d="M9 20V5M15 20V5M9 5l3-2 3 2M12 5V2M7 20h10M9 8l6 3M15 8l-6 3M9 12l6 3M15 12l-6 3M9 16l6 3M15 16l-6 3"/>',
   // La torre rastremata, la lanterna accesa e la casa del custode ai piedi:
   // e' l'unica verticale del gruppo collegamenti che parli di costa.
-  lighthouse: '<path d="M10 20V8l2-3 2 3v12M10 20h4M10 8h4M12 5V2M11 2h2M3 20h5M4 20v-4h3v4"/>',
+  lighthouse: `${mass('M10 20V8l2-3 2 3v12ZM4 20v-4h3v4Z')}<path d="M10 20V8l2-3 2 3v12M10 20h4M10 8h4M12 5V2M11 2h2M3 20h5M4 20v-4h3v4"/>`,
   // Torre scenica alta, sala a falda e colonnato d'ingresso: tre altezze
   // diverse che nessun altro ruolo del gruppo identita' compone cosi'.
-  theatre: '<path d="M4 20V6h6v14M10 20v-3l5-4 5 4v3M10 20h10M3 14h1M3 17h1M3 20h1"/>',
+  theatre: `${mass('M4 20V6h6v14ZM10 20v-3l5-4 5 4v3Z')}<path d="M4 20V6h6v14M10 20v-3l5-4 5 4v3M10 20h10M3 14h1M3 17h1M3 20h1"/>`,
   // Due ovali concentrici, bassi e larghi: il catino cavo si legge da sopra
-  // prima che di taglio, ed e' l'unica sagoma non verticale del catalogo.
-  stadium: '<path d="M3 12c0-4 4-6 9-6s9 2 9 6c0 5-4 8-9 8s-9-3-9-8ZM6 12c0-3 2.5-4.5 6-4.5s6 1.5 6 4.5c0 3.5-2.5 5.5-6 5.5s-6-2-6-5.5Z"/>',
+  // prima che di taglio, ed e' l'unica sagoma non verticale del catalogo. La
+  // massa e' l'anello fra i due, non il catino: il campo resta vuoto.
+  stadium: `${mass('M3 12c0-4 4-6 9-6s9 2 9 6c0 5-4 8-9 8s-9-3-9-8ZM6 12c0-3 2.5-4.5 6-4.5s6 1.5 6 4.5c0 3.5-2.5 5.5-6 5.5s-6-2-6-5.5Z', true)}<path d="M3 12c0-4 4-6 9-6s9 2 9 6c0 5-4 8-9 8s-9-3-9-8ZM6 12c0-3 2.5-4.5 6-4.5s6 1.5 6 4.5c0 3.5-2.5 5.5-6 5.5s-6-2-6-5.5Z"/>`,
   // La banchina con due moli a dita e una barca nel bacino: la planimetria della
   // ricetta, ed e' il vuoto fra i moli a dire "porticciolo" invece che "porto".
-  marina: '<path d="M3 21V9h5v12M8 12h6M8 16h6M14 21v-9h3v9M17 12h4M10.5 18.5l2-3 2 3M10.5 18.5v2M14.5 18.5v2"/>',
+  marina: `${mass('M3 21V9h5v12ZM14 21v-9h3v9Z')}<path d="M3 21V9h5v12M8 12h6M8 16h6M14 21v-9h3v9M17 12h4M10.5 18.5l2-3 2 3M10.5 18.5v2M14.5 18.5v2"/>`,
   expansion: '<path d="M8 3H3v5M16 3h5v5M8 21H3v-5M16 21h5v-5M3 8l6 6M21 8l-6 6M3 16l6-6M21 16l-6-6"/>',
   // Una torre di taglio con un piano che le esce dal fianco, e la trave sotto:
   // e' la sezione che il generatore disegna davvero, ed e' l'unica cosa che
   // distingue una mensola da un balcone qualunque — cio' che regge si vede.
-  terrace: '<path d="M8 21V6h7v15M15 11h6M15 14h5M17 14v-3M20 14v-3M4 21h16"/>',
+  terrace: `${mass('M8 21V6h7v15Z')}<path d="M8 21V6h7v15M15 11h6M15 14h5M17 14v-3M20 14v-3M4 21h16"/>`,
   // Due torri, la fune che pende fra loro e una cabina appesa a meta': la
   // pancia e' l'unica cosa che distingua una funivia da un ponte sospeso, ed e'
   // la stessa ragione per cui esiste `ROPEWAY.sagRatio`.
-  ropeway: '<path d="M4 21V6M20 21V8M4 6c6 7 10 7 16 2M11 11v2M9 13h4v3H9z"/>',
+  ropeway: `${mass('M9 13h4v3H9z')}<path d="M4 21V6M20 21V8M4 6c6 7 10 7 16 2M11 11v2M9 13h4v3H9z"/>`,
   // Un edificio sbarrato in diagonale: e' la gomma, e il tratto dice che la
   // casa si toglie invece di costruirsi. Si distingue da `residential` — la
   // stessa sagoma senza sbarra — proprio perche' sono i due versi di un gesto.
-  demolish: '<path d="M3 11V9l1.5-2.5L6 9v2M3 11h3v3M3 11v10h3V14M9 21V5h6v16M15 9h3v12M15 5l3 4M9 5V2M11 2h2M3 4l18 18"/>',
-  policies: '<path d="M4 4h16v16H4zM8 9h8M8 13h8M8 17h5"/>',
+  demolish: `${mass('M9 21V5h6v16Z')}<path d="M3 11V9l1.5-2.5L6 9v2M3 11h3v3M3 11v10h3V14M9 21V5h6v16M15 9h3v12M15 5l3 4M9 5V2M11 2h2M3 4l18 18"/>`,
+  policies: `${mass('M4 4h16v16H4z')}<path d="M4 4h16v16H4zM8 9h8M8 13h8M8 17h5"/>`,
   // Tre edifici di tre altezze su una linea di terra: la dashboard e' la citta'
   // letta tutta insieme, e uno skyline la dice meglio di una pagina di cifre.
-  city: '<path d="M3 21h18M5 21v-8h3v8M10 21V11h4v10M16 21V6h5v15"/>',
+  city: `${mass('M5 21v-8h3v8ZM10 21V11h4v10ZM16 21V6h5v15Z')}<path d="M3 21h18M5 21v-8h3v8M10 21V11h4v10M16 21V6h5v15"/>`,
   pause: '<path d="M8 5v14M16 5v14"/>',
-  play: '<path d="m8 5 11 7-11 7V5Z"/>',
-  theme: '<path d="M12 3a9 9 0 1 0 0 18h1.5a2 2 0 0 0 0-4H12a2 2 0 1 1 0-4h3a6 6 0 0 0 6-6c0-2.2-4-4-9-4Z"/><path d="M7.5 9h.01M10 6.5h.01M14 6.5h.01M17 9h.01"/>',
+  play: `${mass('m8 5 11 7-11 7V5Z')}<path d="m8 5 11 7-11 7V5Z"/>`,
+  theme: `${mass('M12 3a9 9 0 1 0 0 18h1.5a2 2 0 0 0 0-4H12a2 2 0 1 1 0-4h3a6 6 0 0 0 6-6c0-2.2-4-4-9-4Z')}<path d="M12 3a9 9 0 1 0 0 18h1.5a2 2 0 0 0 0-4H12a2 2 0 1 1 0-4h3a6 6 0 0 0 6-6c0-2.2-4-4-9-4Z"/><path d="M7.5 9h.01M10 6.5h.01M14 6.5h.01M17 9h.01"/>`,
   // Tre piani sovrapposti visti di taglio: e' la sagoma che le viste hanno in
-  // comune — guardare la citta' un livello alla volta. La 7.2 ridisegnera' tutte
-  // le icone su due pesi, questa serve a essere riconoscibile intanto.
-  view: '<path d="m12 3 9 5-9 5-9-5 9-5Z"/><path d="m4 12.5 8 4.5 8-4.5M4 17l8 4.5 8-4.5"/>',
+  // comune — guardare la citta' un livello alla volta. La massa sta solo sul
+  // piano in cima, che e' quello che si sta guardando.
+  view: `${mass('m12 3 9 5-9 5-9-5 9-5Z')}<path d="m12 3 9 5-9 5-9-5 9-5Z"/><path d="m4 12.5 8 4.5 8-4.5M4 17l8 4.5 8-4.5"/>`,
   // Tre barre che salgono: e' il gradiente della heatmap — i dati letti per
   // intensita', che e' esattamente cio' che le viste informative disegnano sulla
   // citta'. Si distingue da `view` (tre piani di taglio) perche' quella guarda
   // dentro la citta', questa ne legge il valore colonna per colonna.
-  info: '<path d="M5 15h3v4H5zM10.5 11h3v8h-3zM16 6h3v13h-3z"/>',
+  info: `${mass('M5 15h3v4H5zM10.5 11h3v8h-3zM16 6h3v13h-3z')}<path d="M5 15h3v4H5zM10.5 11h3v8h-3zM16 6h3v13h-3z"/>`,
   // Una matrice di caselle, che e' letteralmente cio' che si va a vedere: uno
   // slot di palette per colonna, un linguaggio di superficie per riga. Si
   // distingue da `view` — tre piani di taglio — perche' rispondono a due domande
   // diverse: quella guarda dentro la citta', questa guarda di cosa e' fatta.
-  swatch: '<path d="M4 4h16v16H4z"/><path d="M4 9.3h16M4 14.7h16M9.3 4v16M14.7 4v16"/>',
+  swatch: `${mass('M4 4h16v16H4z')}<path d="M4 4h16v16H4z"/><path d="M4 9.3h16M4 14.7h16M9.3 4v16M14.7 4v16"/>`,
   // Le tre righe: la sagoma che vuol dire «menu» ovunque, e che nel dock si
   // distingue da tutto il resto proprio perche' non disegna niente della citta'.
   // E' la porta che si apre anche con `Esc`.
@@ -124,33 +174,68 @@ const PATHS: Readonly<Record<HudIcon, string>> = {
   // basso: e' la sagoma che vuol dire «salva» da quarant'anni, e non c'e'
   // niente da guadagnare a inventarne un'altra. Squadrata come le altre. Dal
   // menu principale in poi non sta piu' nel dock: nomina la sua sezione.
-  save: '<path d="M4 4h12l4 4v12H4zM8 4v5h7V4M7 20v-6h10v6"/>',
-  help: '<circle cx="12" cy="12" r="9"/><path d="M9.5 9a2.7 2.7 0 1 1 4.2 2.3c-1 .6-1.7 1.1-1.7 2.2M12 17h.01"/>',
+  save: `${mass('M4 4h12l4 4v12H4z')}<path d="M4 4h12l4 4v12H4zM8 4v5h7V4M7 20v-6h10v6"/>`,
+  help: `${mass('M12 3a9 9 0 1 1 0 18 9 9 0 0 1 0-18Z')}<circle cx="12" cy="12" r="9"/><path d="M9.5 9a2.7 2.7 0 1 1 4.2 2.3c-1 .6-1.7 1.1-1.7 2.2M12 17h.01"/>`,
   close: '<path d="M6 6l12 12M18 6 6 18"/>',
   // Le tre del ciclo si leggono in fila: un sole sopra la linea dell'orizzonte
   // e' il giro, il sole pieno e' il giorno fermo, la falce e' la notte ferma.
   // La differenza sta nella linea di terra, che solo la prima ha.
-  daylight: '<path d="M3 19h18M6.5 19a5.5 5.5 0 0 1 11 0M12 5v2.5M5.6 8.2l1.8 1.8M18.4 8.2l-1.8 1.8"/>',
-  sun: '<circle cx="12" cy="12" r="4.2"/><path d="M12 2.5v2.6M12 18.9v2.6M4.6 4.6l1.9 1.9M17.5 17.5l1.9 1.9M2.5 12h2.6M18.9 12h2.6M4.6 19.4l1.9-1.9M17.5 6.5l1.9-1.9"/>',
-  moon: '<path d="M20 14.4A8.6 8.6 0 0 1 9.6 4 7.6 7.6 0 1 0 20 14.4Z"/>',
+  daylight: `${mass('M6.5 19a5.5 5.5 0 0 1 11 0Z')}<path d="M3 19h18M6.5 19a5.5 5.5 0 0 1 11 0M12 5v2.5M5.6 8.2l1.8 1.8M18.4 8.2l-1.8 1.8"/>`,
+  sun: `${mass('M12 7.8a4.2 4.2 0 1 1 0 8.4 4.2 4.2 0 0 1 0-8.4Z')}<circle cx="12" cy="12" r="4.2"/><path d="M12 2.5v2.6M12 18.9v2.6M4.6 4.6l1.9 1.9M17.5 17.5l1.9 1.9M2.5 12h2.6M18.9 12h2.6M4.6 19.4l1.9-1.9M17.5 6.5l1.9-1.9"/>`,
+  moon: `${mass('M20 14.4A8.6 8.6 0 0 1 9.6 4 7.6 7.6 0 1 0 20 14.4Z')}<path d="M20 14.4A8.6 8.6 0 0 1 9.6 4 7.6 7.6 0 1 0 20 14.4Z"/>`,
   // I banchi in quota, e sotto le cime che ne escono: un contorno di nuvola da
   // solo direbbe "meteo", mentre qui la cosa da dire e' che qualcosa ci sta
   // dentro. Squadrata come tutto il resto — la nuvola del gioco e' di celle.
-  clouds: '<path d="M4 11h4V8h4v3h3V6h4v5h1M4 11v3h16v-3M7 17l2 3M13 17l2 3"/>',
-  cloudsOff: '<path d="M4 11h4V8h4v3h3V6h4v5h1M4 11v3h16v-3M4 20 20 4"/>',
+  clouds: `${mass('M4 14v-3h4V8h4v3h3V6h4v5h1v3Z')}<path d="M4 11h4V8h4v3h3V6h4v5h1M4 11v3h16v-3M7 17l2 3M13 17l2 3"/>`,
+  cloudsOff: `${mass('M4 14v-3h4V8h4v3h3V6h4v5h1v3Z')}<path d="M4 11h4V8h4v3h3V6h4v5h1M4 11v3h16v-3M4 20 20 4"/>`,
   // Il cono piu' due barre invece degli archi concentrici di prammatica: gli
   // archi a questa misura diventano tre virgole grigie, e il resto della barra
   // e' disegnato di segmenti. Spento e' lo stesso cono con la croce, cosi' le
   // due icone si distinguono dalla parte destra e non dalla sagoma intera.
-  sound: '<path d="M4 9h3l5-4v14l-5-4H4z"/><path d="M16 9v6M19.5 7v10"/>',
-  soundOff: '<path d="M4 9h3l5-4v14l-5-4H4z"/><path d="m16 9 5 6M21 9l-5 6"/>',
+  sound: `${mass('M4 9h3l5-4v14l-5-4H4z')}<path d="M4 9h3l5-4v14l-5-4H4z"/><path d="M16 9v6M19.5 7v10"/>`,
+  soundOff: `${mass('M4 9h3l5-4v14l-5-4H4z')}<path d="M4 9h3l5-4v14l-5-4H4z"/><path d="m16 9 5 6M21 9l-5 6"/>`,
 };
+
+export function isResourceIcon(name: HudIcon): name is ResourceIcon {
+  return Object.hasOwn(FILLED, name);
+}
+
+export function iconWeight(name: HudIcon): HudIconWeight {
+  return isResourceIcon(name) ? 'fill' : 'stroke';
+}
+
+/** Il disegno di un'icona, senza il suo `<svg>`. Puro: lo legge il test. */
+export function iconMarkup(name: HudIcon): string {
+  return isResourceIcon(name) ? FILLED[name] : PATHS[name];
+}
 
 export function createHudIcon(name: HudIcon): SVGSVGElement {
   const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
   svg.setAttribute('viewBox', '0 0 24 24');
   svg.setAttribute('aria-hidden', 'true');
   svg.classList.add('hud-icon');
-  svg.innerHTML = PATHS[name];
+  if (iconWeight(name) === 'fill') svg.classList.add('hud-icon--fill');
+  // Il nome sull'elemento e' cio' con cui `hud.css` tinge le risorse: la tinta
+  // segue l'icona ovunque vada, invece di dover essere ripetuta da ogni
+  // contenitore che ne mostra una.
+  svg.dataset.icon = name;
+  svg.innerHTML = iconMarkup(name);
   return svg;
+}
+
+/**
+ * Un prezzo come si legge nella barra: l'icona della risorsa, poi la cifra.
+ *
+ * Tessera, scheda del dock e scheda al cursore lo scrivono tutte cosi', ed e'
+ * l'icona a portare la tinta della risorsa: tre copie dello stesso ciclo erano
+ * tre posti in cui ricordarsi dei materiali.
+ */
+export function appendPrice(target: HTMLElement, funds: number, materials: number | null | undefined): void {
+  target.append(createHudIcon('funds'), document.createTextNode(String(funds)));
+  if (materials === null || materials === undefined) return;
+  target.append(
+    document.createTextNode(' · '),
+    createHudIcon('materials'),
+    document.createTextNode(String(materials)),
+  );
 }

@@ -1,6 +1,6 @@
 import { playCue } from '../audio/sound';
 import type { HudAction } from './GameHudModel';
-import { createHudIcon, type HudIcon } from './hudIcons';
+import { appendPrice, createHudIcon, type HudIcon } from './hudIcons';
 import { buildActionTip, tipElement, tipText, type HudTip } from './hudTip';
 import type { ViewKeyHint } from './ViewMenuModel';
 
@@ -12,7 +12,20 @@ import type { ViewKeyHint } from './ViewMenuModel';
  * perche' erano gia' separati in tutto tranne che nel file — ed e' il file che
  * decide chi aspetta chi, quando due agenti lavorano sullo stesso HUD.
  */
-export function actionButton(action: HudAction, icon: HudIcon, onClick: () => void): HTMLButtonElement {
+/**
+ * Il disegno di un bottone: il nome di un'icona, o un SVG gia' fatto.
+ *
+ * Il secondo caso e' la miniatura voxel dei catalizzatori, che nasce da una
+ * ricetta e non da una tabella di tracciati: il bottone non ha bisogno di
+ * sapere quale dei due riceve.
+ */
+export type HudGlyph = HudIcon | SVGSVGElement;
+
+function glyphElement(glyph: HudGlyph): SVGSVGElement {
+  return typeof glyph === 'string' ? createHudIcon(glyph) : glyph;
+}
+
+export function actionButton(action: HudAction, icon: HudGlyph, onClick: () => void): HTMLButtonElement {
   // Niente `data-tooltip`: la bolla di una riga sola resta a chi ha una riga
   // sola da dire, e queste azioni hanno una scheda intera. Gliela appende
   // `paintAction`, che e' anche l'unico posto che sa se sono bloccate.
@@ -22,14 +35,7 @@ export function actionButton(action: HudAction, icon: HudIcon, onClick: () => vo
   cost.className = 'button-cost';
   // L'icona della risorsa accanto alla cifra, non la parola: il costo si legge
   // come si legge la barra in alto, e le due superfici parlano la stessa lingua.
-  cost.append(createHudIcon('funds'), document.createTextNode(String(action.cost)));
-  if (action.materialCost !== undefined) {
-    cost.append(
-      document.createTextNode(' · '),
-      createHudIcon('materials'),
-      document.createTextNode(String(action.materialCost)),
-    );
-  }
+  appendPrice(cost, action.cost, action.materialCost);
   copy?.appendChild(cost);
   button.setAttribute('aria-pressed', 'false');
   return button;
@@ -44,7 +50,7 @@ export function actionButton(action: HudAction, icon: HudIcon, onClick: () => vo
  */
 export function tileButton(
   action: HudAction,
-  icon: HudIcon,
+  icon: HudGlyph,
   key: string | null,
   onClick: () => void,
 ): HTMLButtonElement {
@@ -136,7 +142,7 @@ function onActivate(button: HTMLButtonElement, onClick: () => void): void {
 }
 
 export function labeledButton(
-  icon: HudIcon,
+  icon: HudGlyph,
   label: string,
   tooltip: string | null,
   onClick: () => void,
@@ -146,7 +152,7 @@ export function labeledButton(
   button.className = 'hud-button';
   if (tooltip !== null) button.dataset.tooltip = tooltip;
   button.setAttribute('aria-label', label);
-  button.appendChild(createHudIcon(icon));
+  button.appendChild(glyphElement(icon));
   const copy = document.createElement('span');
   copy.className = 'button-copy';
   const text = document.createElement('span');

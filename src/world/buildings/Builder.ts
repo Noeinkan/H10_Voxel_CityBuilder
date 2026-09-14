@@ -80,6 +80,7 @@ import { recordStamp } from './recordStamp';
 import { GrowthQueue, anchorOf } from './growthQueue';
 import { isPlainBuilding } from './structureKind';
 import { LotSearch } from './lotSearch';
+import { PassProfile } from './passProfile';
 import { Frontage } from './frontage';
 import { SurfaceQueue } from './surfaceQueue';
 import { RoadDriver } from './roadDriver';
@@ -360,6 +361,15 @@ export class Builder {
   private readonly roadNetwork: RoadDriver;
   private readonly footpaths: FootpathDriver;
 
+  /**
+   * Tempo e lavoro di ogni passata di `onTick`.
+   *
+   * E' pubblico perche' chi fa girare il ciclo ci aggiunge le proprie voci — il
+   * tick della simulazione, il coach, il campo — e perche' overlay, hook e sonde
+   * leggano tutti la stessa tabella.
+   */
+  readonly profile = new PassProfile();
+
   constructor(
     world: VoxelWorld,
     private readonly terrainMap: TerrainMap,
@@ -451,6 +461,14 @@ export class Builder {
     // gerarchia della 4.6 per sapere se la citta' qui e' satura, e il cantiere
     // per farsi spazio. Nessuno degli altri driver sa che le arcologie esistono.
     this.arcologies = new ArcologyDriver(this.ctx, this.clearance, this.aerial);
+
+    const registry = this.registryImpl;
+    this.profile.addCounter('lotSearches', () => this.lots.searches);
+    this.profile.addCounter('lotSquares', () => this.lots.squaresTried);
+    this.profile.addCounter('lotColumns', () => this.lots.columnsRead);
+    this.profile.addCounter('registryScans', () => registry.scans);
+    this.profile.addCounter('registryRecords', () => registry.scannedRecords);
+    this.profile.addCounter('radiusVisits', () => registry.radiusVisits);
   }
 
   /** Sola lettura: nemmeno chi tiene il Builder puo' scrivere nel registry. */
@@ -806,17 +824,20 @@ export class Builder {
    */
   onTick(state: SimState): SimState {
     let next = state;
+    // Ogni passata passa dal profilo, che non decide niente: la citta' che
+    // cresce e' la stessa, e la tabella di chi ha lavorato quanto e' gratis.
+    const profile = this.profile;
     // **Il tracciato prima di tutto**, e non e' l'ordine di comodo: i candidati
     // di questo tick si ordinano per distanza dalla carreggiata, e con l'ordine
     // opposto un catalizzatore appena piantato farebbe nascere il proprio primo
     // quartiere sulla rete di prima. Non fa quasi mai niente — `update`
     // confronta una firma — ed e' per questo che puo' stare in cima.
-    this.roadNetwork.onTick(state.catalysts);
+    profile.measure('roads', () => this.roadNetwork.onTick(state.catalysts));
     // **Prima si sgombera, poi si costruisce.** Un cantiere che chiude libera
     // colonne che l'infornata di questo tick puo' gia' usare, e il contrario
     // farebbe aspettare un tick intero a ogni edificio dietro a un landmark.
     const clearedBefore = this.clearance.cleared;
-    next = this.clearance.pass(next);
+    next = profile.measure('clearance', () => this.clearance.pass(next));
     // Il commento sulla blacklist lo diceva da prima che servisse: «se un giorno
     // arrivera' la demolizione, questo insieme andra' svuotato con `forget`».
     // Un sito bocciato lo era rispetto a una colonna che adesso e' libera.
@@ -828,31 +849,41 @@ export class Builder {
     // ricostruirebbe nel punto in cui ha appena rinunciato, un tick dopo l'altro.
     // A impedirlo davvero e' il fronte dentro `buildPass`; questo ordine e' la
     // seconda meta' della stessa risposta.
-    if (state.tickCount % BUILDER.ticksPerDecay === 0) this.decay.pass(next);
-    if (state.tickCount % BUILDER.ticksPerBuild === 0) next = this.buildPass(next);
+    if (state.tickCount % BUILDER.ticksPerDecay === 0) {
+      profile.measure('decay', () => this.decay.pass(next));
+    }
+    if (state.tickCount % BUILDER.ticksPerBuild === 0) {
+      next = profile.measure('build', () => this.buildPass(next));
+    }
     // Il megaprogetto maturo prenota il magazzino prima degli upgrade ordinari.
     // Altrimenti una passata da sessantaquattro torri spenderebbe fino all'ultima
     // unita' disponibile e l'arcologia, pur avendo tutte le condizioni urbane,
     // resterebbe in attesa per sempre per una pura conseguenza dell'ordine.
-    if (state.tickCount % ARCOLOGY.ticksPerPass === 0) next = this.arcologies.pass(next);
+    if (state.tickCount % ARCOLOGY.ticksPerPass === 0) {
+      next = profile.measure('arcologies', () => this.arcologies.pass(next));
+    }
     if (state.tickCount % BUILDER.ticksPerUpgrade === 0) {
       // I landmark hanno gia' soddisfatto una soglia urbana e prendono il
       // proprio posto prima degli upgrade ordinari. In una citta' matura questi
       // ultimi riempiono `maxGrowing` a ogni giro: eseguiti per primi potevano
       // affamare per sempre un landmark anche con decine di edifici nel raggio.
-      next = this.landmarks.pass(next);
-      next = this.upgrades.pass(next);
+      next = profile.measure('landmarks', () => this.landmarks.pass(next));
+      next = profile.measure('upgrades', () => this.upgrades.pass(next));
     }
     // **La fusione dopo la promozione, e non e' l'ordine di comodo.** Il lato
     // che l'isolato concede dipende dal livello raggiunto: valutata prima,
     // leggerebbe il gradino d'impronta di un tick fa e proporrebbe di prendersi
     // il vicino a un edificio che questo stesso tick avrebbe allargato da solo,
     // sul prato, senza portare via niente a nessuno.
-    if (state.tickCount % FUSION.ticksPerPass === 0) next = this.fusions.pass(next);
+    if (state.tickCount % FUSION.ticksPerPass === 0) {
+      next = profile.measure('fusions', () => this.fusions.pass(next));
+    }
     // Il distretto costiero segue i landmark, e a cadenza propria: lo stadio
     // che il quartiere ha appena meritato e' anche l'anello che il fronte si
     // prende, ma non c'e' fretta — le opere viaggiano sulle code di sempre.
-    if (state.tickCount % HARBOR.ticksPerPass === 0) this.harbors.pass();
+    if (state.tickCount % HARBOR.ticksPerPass === 0) {
+      profile.measure('harbors', () => this.harbors.pass());
+    }
     // La rete in quota non legge la simulazione: una campata dipende da dove
     // stanno i tetti, non da quanto una colonna e' desiderabile. E' anche il
     // motivo per cui questa passata non prende ne' restituisce lo stato.
@@ -862,27 +893,41 @@ export class Builder {
     // sarebbero incontrati e l'arco non nascerebbe mai. L'ordine opposto non ha
     // il difetto speculare — un arco esiste solo dove le due fasce coincidono,
     // che e' raro, e ovunque non coincidano il ponte trova il vuoto libero.
-    if (state.tickCount % ARCH.ticksPerPass === 0) this.arches.pass();
-    if (state.tickCount % SPANS.ticksPerPass === 0) this.spans.pass();
+    if (state.tickCount % ARCH.ticksPerPass === 0) {
+      profile.measure('arches', () => this.arches.pass());
+    }
+    if (state.tickCount % SPANS.ticksPerPass === 0) {
+      profile.measure('spans', () => this.spans.pass());
+    }
     // Il ponte lungo viene dopo le campate locali: prima una citta' costruisce
     // la propria rete, poi uno skyline maturo puo' scavalcare il mare.
-    if (state.tickCount % CROSSINGS.automatic.ticksPerPass === 0) this.crossings.pass();
+    if (state.tickCount % CROSSINGS.automatic.ticksPerPass === 0) {
+      profile.measure('crossings', () => this.crossings.pass());
+    }
     // E nemmeno la citta' in quota: una mensola dipende da come e' fatta una
     // facciata e un percorso da cosa c'e' fra due edifici, non da quanto una
     // colonna e' desiderabile — per questo nessuna delle due prende ne'
     // restituisce lo stato. Due passate distinte perche' sono due atti urbani
     // distinti — il dettaglio e il collegamento — e vanno a cadenze diverse.
-    if (state.tickCount % AERIAL.terrace.ticksPerPass === 0) this.aerial.terracePass();
-    if (state.tickCount % AERIAL.route.ticksPerPass === 0) this.aerial.routePass();
+    if (state.tickCount % AERIAL.terrace.ticksPerPass === 0) {
+      profile.measure('terraces', () => this.aerial.terracePass());
+    }
+    if (state.tickCount % AERIAL.route.ticksPerPass === 0) {
+      profile.measure('routes', () => this.aerial.routePass());
+    }
     // E la via da terra viene per ultima, perche' serve un impalcato che qualcuno
     // abiti gia': prima si costruisce sopra la citta', poi si guadagna il modo di
     // arrivarci.
-    if (state.tickCount % AERIAL.guide.ticksPerPass === 0) this.guides.pass();
+    if (state.tickCount % AERIAL.guide.ticksPerPass === 0) {
+      profile.measure('guides', () => this.guides.pass());
+    }
     // La campagna per ultima, e a cadenza sua. Dopo la crescita perche' e' la
     // crescita a mangiarsela: valutata prima, un lotto appena coperto dagli
     // edifici di questo tick resterebbe contato come produttore fino al giro
     // dopo, e la citta' rincorrerebbe la fame con un ritardo permanente.
-    if (state.tickCount % FARMS.ticksPerPass === 0) next = this.farms.pass(next);
+    if (state.tickCount % FARMS.ticksPerPass === 0) {
+      next = profile.measure('farms', () => this.farms.pass(next));
+    }
     return setIslandConnections(next, this.crossings.count);
   }
 

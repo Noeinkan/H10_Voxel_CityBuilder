@@ -245,7 +245,13 @@ export function createPlacementTools(deps: PlacementToolsDeps): PlacementTools {
       );
       hud?.updateCursor(event.clientX, event.clientY, {
         title: catalyst.label,
-        details: `${cost} funds${groundNote(site)} · ${reachNote(radius, coverage)} · mainly ${classLabel(catalyst.class)}`,
+        price: { funds: cost },
+        // La nota del suolo sta subito dopo il prezzo, che e' cio' che moltiplica.
+        details: [
+          groundNote(site).replace(/^ · /, ''),
+          reachNote(radius, coverage),
+          `mainly ${classLabel(catalyst.class)}`,
+        ].filter((part) => part !== '').join(' · '),
         favours: catalyst.favours.map(classLabel),
         penalises: catalyst.penalises.map(classLabel),
         typologies: typologiesForUses(catalyst.favours),
@@ -277,7 +283,8 @@ export function createPlacementTools(deps: PlacementToolsDeps): PlacementTools {
       influence?.hideCursor();
       hud?.updateCursor(event.clientX, event.clientY, {
         title: 'Terrace',
-        details: `${BALANCE.gameplay.terrace.cost} funds · a floor above the street`,
+        price: { funds: BALANCE.gameplay.terrace.cost, materials: BALANCE.gameplay.terrace.materials },
+        details: 'a floor above the street',
         valid,
         reason: failure === null
           ? 'This facade can carry a floor. The building stops growing once it does.'
@@ -305,7 +312,8 @@ export function createPlacementTools(deps: PlacementToolsDeps): PlacementTools {
       influence?.hideCursor();
       hud?.updateCursor(event.clientX, event.clientY, {
         title: 'Ropeway',
-        details: `${BALANCE.gameplay.ropeway.cost} funds · a crossing that takes no ground`,
+        price: { funds: BALANCE.gameplay.ropeway.cost, materials: BALANCE.gameplay.ropeway.materials },
+        details: 'a crossing that takes no ground',
         valid,
         reason: failure === null
           ? 'Two towers and a cable: the water below stops counting.'
@@ -333,7 +341,8 @@ export function createPlacementTools(deps: PlacementToolsDeps): PlacementTools {
       influence?.hideCursor();
       hud?.updateCursor(event.clientX, event.clientY, {
         title: `Sector ${sector.id}`,
-        details: `${BALANCE.gameplay.expansion.cost} funds · ${sector.region.sizeX}×${sector.region.sizeY} voxels`,
+        price: { funds: BALANCE.gameplay.expansion.cost },
+        details: `${sector.region.sizeX}×${sector.region.sizeY} voxels`,
         valid,
         reason: failure === null ? 'New buildable land connected to the coast.' : actionFailureLabel(failure),
       });

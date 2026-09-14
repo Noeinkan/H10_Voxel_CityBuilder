@@ -31,4 +31,5 @@ qui non compaiono sono quelle ancora aperte, che restano intere in radice.
 | Fase 4.15 — Un isolato si può scegliere e girarci attorno | 5 | [fase-4.15.md](fase-4.15.md) |
 | Fase 4.16 — Tipologie, stili, sbalzi e dettaglio del retro | 6 | [fase-4.16.md](fase-4.16.md) |
 | Fase 4.17 — Il distretto costiero dei landmark | 4 | [fase-4.17.md](fase-4.17.md) |
+| Fase 6.1 — La ricerca dei lotti non cresce con la città | 3 | [fase-6.1.md](fase-6.1.md) |
 | Fase 7.6 — Leggibilità delle cause | 3 | [fase-7.6.md](fase-7.6.md) |

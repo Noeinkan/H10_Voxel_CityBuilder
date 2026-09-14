@@ -10,6 +10,14 @@ export interface CityCondition {
   readonly tone: CityConditionTone;
   readonly title: string;
   readonly message: string;
+  /**
+   * Il consiglio da cui viene, per crisi e colli di bottiglia.
+   *
+   * Il testo e' per chi legge; l'id e' per chi deve riconoscere il caso senza
+   * rileggere la frase — l'HUD ci appende l'icona della risorsa in crisi, e una
+   * corrispondenza sul titolo si romperebbe alla prima riscrittura del titolo.
+   */
+  readonly tipId?: string;
 }
 
 /**
@@ -66,13 +74,13 @@ export function cityCondition(
   // non ha bisogno di sapere quanti secondi le mancano.
   const urgent = urgentTip(state);
   if (urgent !== null && urgent.kind === 'crisis') {
-    return { kind: 'crisis', tone: 'warning', title: urgent.title, message: urgent.message };
+    return { kind: 'crisis', tone: 'warning', title: urgent.title, message: urgent.message, tipId: urgent.id };
   }
 
   // I colli di bottiglia passano davanti al coach e al traguardo: «l'organico e'
   // al 42%» e' vero adesso e smettera' di esserlo, mentre la rotta puo' aspettare.
   if (urgent !== null) {
-    return { kind: 'development', tone: 'warning', title: urgent.title, message: urgent.message };
+    return { kind: 'development', tone: 'warning', title: urgent.title, message: urgent.message, tipId: urgent.id };
   }
 
   // Il coach e' la direzione quando sa nominare gesto e verifica.

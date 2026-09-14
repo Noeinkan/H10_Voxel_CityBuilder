@@ -545,13 +545,19 @@ export class HarborDriver {
     this.ctx.growth.enqueue(owner, { x, y, z }, stamp, erase);
   }
 
-  /** Toglie i distretti dei record spariti, e i loro siti in attesa. */
+  /**
+   * Toglie i distretti dei record spariti, e i loro siti in attesa.
+   *
+   * `get` risponde `null`, non `undefined`: il confronto sbagliato non toglieva
+   * mai niente, e `buildPass` continuava a far nascere le case di settore di un
+   * porto gia' demolito.
+   */
   private sweep(): void {
     for (const id of [...this.districts.keys()]) {
-      if (this.ctx.registry.get(id) === undefined) this.districts.delete(id);
+      if (this.ctx.registry.get(id) === null) this.districts.delete(id);
     }
     for (let i = this.pendingSites.length - 1; i >= 0; i--) {
-      if (this.ctx.registry.get(this.pendingSites[i].recordId) === undefined) {
+      if (this.ctx.registry.get(this.pendingSites[i].recordId) === null) {
         this.pendingSites.splice(i, 1);
       }
     }

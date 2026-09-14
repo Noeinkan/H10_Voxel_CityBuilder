@@ -641,6 +641,34 @@ export class BuildingRegistry implements ReadonlyBuildingRegistry {
     return this.vacatedCount;
   }
 
+  /**
+   * Quante volte il registro si e' fatto scorrere per intero, e quanti record ha
+   * messo in mano a chi scorreva.
+   *
+   * **Sono la regola «una passata e' un cursore, non una scansione» resa
+   * contabile.** Ogni `all` e' una lettura che costa quanto la citta'; una
+   * domanda per raggio costa quanto il quartiere. I record di `all` sono quelli
+   * *offerti*, non quelli letti: chi esce al primo che gli basta ne legge meno, ma
+   * una passata che resta sotto il proprio tetto solo per un'uscita anticipata
+   * non ha un tetto. Li legge `PassProfile`.
+   */
+  private scanCount = 0;
+  private scannedRecordCount = 0;
+  private radiusVisitCount = 0;
+
+  get scans(): number {
+    return this.scanCount;
+  }
+
+  get scannedRecords(): number {
+    return this.scannedRecordCount;
+  }
+
+  /** Record visitati dalle domande per raggio, prima del filtro di distanza. */
+  get radiusVisits(): number {
+    return this.radiusVisitCount;
+  }
+
   /** Prenota il riquadro per chi ci sta costruendo dentro. */
   reserveRect(rect: PlanRect): void {
     this.reservations.push(rect);
@@ -849,6 +877,8 @@ export class BuildingRegistry implements ReadonlyBuildingRegistry {
 
   /** Tutti i record, in ordine di inserimento. La passata di upgrade li scorre. */
   get all(): IterableIterator<BuildingRecord> {
+    this.scanCount++;
+    this.scannedRecordCount += this.records.size;
     return this.records.values();
   }
 
@@ -940,6 +970,7 @@ export class BuildingRegistry implements ReadonlyBuildingRegistry {
       for (let ccx = minCc; ccx <= maxCc; ccx++) {
         const ids = this.buckets.get(columnKey(ccx, ccy));
         if (ids === undefined) continue;
+        this.radiusVisitCount += ids.length;
         for (const id of ids) {
           const record = this.records.get(id);
           if (record === undefined) continue;

@@ -1,6 +1,6 @@
 import type { GameHudModel, GameTool, HudAction } from './GameHudModel';
-import type { HudIcon } from './hudIcons';
-import { iconButton, labeledButton, markRowColumns, paintAction, tileButton } from './hudWidgets';
+import { createCatalystMiniature } from './catalystMiniature';
+import { iconButton, labeledButton, markRowColumns, paintAction, tileButton, type HudGlyph } from './hudWidgets';
 
 /**
  * Il rail di sinistra: cosa si puo' costruire, e come si guarda la citta'.
@@ -99,10 +99,12 @@ export class BuildDock {
           class: action.class ?? 0,
           id: action.catalystId,
         };
-        // Nessun `as HudIcon` qui: era il cast a lasciar passare un ruolo senza
-        // icona: `PATHS[name]` tornava `undefined` e la tessera usciva vuota.
-        // Senza, e' il compilatore a chiedere il disegno quando nasce il ruolo.
-        const button = this.addTool(action, action.catalystId ?? 'market', tool, handlers);
+        // La tessera mostra la struttura, non un pittogramma: la miniatura viene
+        // dalla ricetta che il gioco posera' (7.2). Il ripiego per un ruolo senza
+        // ricetta resta il pittogramma, ed e' ancora il compilatore a chiederlo
+        // quando il ruolo nasce — nessun `as HudIcon` in mezzo.
+        const glyph = action.catalystId === undefined ? 'market' : createCatalystMiniature(action.catalystId);
+        const button = this.addTool(action, glyph, tool, handlers);
         this.catalystButtons[model.catalysts.indexOf(action)] = button;
         row.appendChild(button);
       }
@@ -235,7 +237,7 @@ export class BuildDock {
    */
   private addTool(
     action: HudAction,
-    icon: HudIcon,
+    icon: HudGlyph,
     tool: GameTool,
     handlers: BuildDockHandlers,
   ): HTMLButtonElement {

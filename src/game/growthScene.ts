@@ -39,6 +39,7 @@ import {
   type ReadonlyBuildingRegistry,
 } from '../world/buildings/BuildingRegistry';
 import type { ClearanceBlockers, ClearanceVerdict } from '../world/buildings/clearanceSite';
+import type { PassProfile } from '../world/buildings/passProfile';
 import { STRUCTURE_KIND, structureKindOf } from '../world/buildings/structureKind';
 import { hasFacadeForm, landmarkOf, maxStageOf } from '../world/landmarks/config';
 import { landmarkWaterColumn } from '../world/landmarks/generate';
@@ -309,6 +310,15 @@ export class GrowthScene {
       calendarShift: birthShift(season),
       reachCost: createReachCost(map, () => this.builder.roads, () => this.congestion),
     });
+    // Il campo si legge dallo stato di adesso e non da quello del costruttore:
+    // un caricamento ne fa uno nuovo, e il profilo sa gia' trattare il contatore
+    // che riparte da zero.
+    this.builder.profile.addCounter('fieldCells', () => this.state.field.totalRecomputedCells);
+  }
+
+  /** Tempo e lavoro di ogni passata del ciclo: Builder, simulazione, coach e campo. */
+  get profile(): PassProfile {
+    return this.builder.profile;
   }
 
   /**
@@ -397,9 +407,10 @@ export class GrowthScene {
 
   advance(dt: number): void {
     if (!this.paused) this.clock += dt * this.speed;
+    const profile = this.builder.profile;
     if (!this.paused) this.loop.advance(dt * this.speed, () => {
       const start = performance.now();
-      this.state = tick(this.state, this.map);
+      this.state = profile.measure('sim', () => tick(this.state, this.map));
       // La scadenza sta **qui** e non dentro `tick`, ed e' deliberato: applicare
       // un'alternativa puo' varare o revocare una policy, e una policy tocca il
       // campo di desiderabilita' in posto. `tick` e' l'unica funzione della
@@ -407,11 +418,11 @@ export class GrowthScene {
       // avanti su uno stato che il chiamante tiene ancora. La scadenza e' un
       // fatto del ciclo di gioco, come l'opera concessa da una decisione, che
       // per la stessa ragione si costruisce da qui.
-      this.expireDecision();
+      profile.measure('decision', () => this.expireDecision());
       this.state = this.builder.onTick(this.state);
       this.healthyTicks = isSelfSufficient(this.state) ? this.healthyTicks + 1 : 0;
-      this.awardMilestone();
-      this.refreshCoach();
+      profile.measure('milestone', () => this.awardMilestone());
+      profile.measure('coach', () => this.refreshCoach());
       this.lastTickMs = performance.now() - start;
       // Le passate del Builder sono l'unico momento in cui il registry cambia:
       // quello che il cursore sapeva del riquadro sotto di se' e' di un tick fa.
@@ -419,13 +430,13 @@ export class GrowthScene {
       this.terraceMemo = null;
       this.aloftMemo = null;
     });
-    this.builder.step();
+    profile.measure('voxels', () => this.builder.step());
     // **Fuori dal passo fisso, e dopo `lastTickMs`.** Rifare il campo e' cio' che
     // costa in tutta la 8.3, e metterlo dentro il tick lo farebbe pesare su un
     // budget da 3 ms che non e' suo: e' una passata rara, come la ricerca delle
     // rotte qui accanto, e va misurata come tale. Una volta per frame al
     // massimo, anche quando la velocita' e' a tre e i tick sono cinque.
-    this.syncCongestion();
+    profile.measure('congestion', () => this.syncCongestion());
   }
 
   /**

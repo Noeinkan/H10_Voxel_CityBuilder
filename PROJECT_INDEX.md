@@ -44,7 +44,6 @@ worker. `src/sim/` gira in Node senza DOM né GPU.
 | [index.html](index.html) | Pagina unica, `#app`, monta `src/boot.ts` |
 | [LICENSE](LICENSE) | Licenza proprietaria, tutti i diritti riservati: cosa non e' concesso, cosa si', terze parti (in inglese) |
 | [package.json](package.json) | Script npm a livelli: test normali prima delle sentinelle lente seriali, percorso locale fail-fast, Builder mirato e profilo oltre soglia |
-| [PERFORMANCE.md](PERFORMANCE.md) | Piano prestazioni: dove sta il tempo misurato, le fasi per rientrare nel budget del frame e i contatori con cui si difende |
 | [product.md](product.md) | Scheda di prodotto per il marketing: cos'e', cosa fa il giocatore, cosa lo distingue, a chi serve e stato dichiarato dell'alpha |
 | [ROADMAP.md](ROADMAP.md) | Direzione del prodotto, milestone e gate: le fasi aperte per intero, quelle chiuse ridotte al loro elenco con il ragionamento in `docs/roadmap/` |
 | [scripts/docs-merge.mjs](scripts/docs-merge.mjs) | `npm run docs:merge`: fonde i frammenti di `docs/pending/` nel changelog e nella scheda d'indice che ha la sezione dichiarata, con lucchetto per non pestarsi fra agenti |
@@ -53,10 +52,10 @@ worker. `src/sim/` gira in Node senza DOM né GPU.
 | [shotkit.config.mjs](shotkit.config.mjs) | Ricette di cattura per gli scatti di riferimento in `.shots/` |
 | [src/boot.ts](src/boot.ts) | Ingresso della pagina: decide fra titolo e partita, tiene lo storage degli slot, riscrive il seed nell'indirizzo e carica `main.ts` con un import dinamico soltanto dopo la scelta |
 | [src/shell/actionLabels.ts](src/shell/actionLabels.ts) | Le righe che il cursore mostra prima di un click e i motivi di un rifiuto: funzioni pure, senza scena ne' HUD |
-| [src/shell/debugHooks.ts](src/shell/debugHooks.ts) | Gli hook globali dell'harness — `__voxelStats`, `__simTick`, `__terrainExpand` e gli altri — registrati in un posto solo e sempre sulla stessa fonte dell'overlay |
+| [src/shell/debugHooks.ts](src/shell/debugHooks.ts) | Gli hook globali dell'harness — `__voxelStats`, `__growStats`, `__simTick`, `__terrainExpand` e gli altri — registrati in un posto solo: `__voxelStats` e' la lettura del pannello di render, `__growStats` porta il profilo delle passate |
 | [src/shell/demolishGesture.ts](src/shell/demolishGesture.ts) | La gomma, unico strumento in due tempi: ancora, striscio e rilascio, con il riquadro a terra e i tappeti sui tetti |
 | [src/shell/entryDrop.ts](src/shell/entryDrop.ts) | La comparsa della prima isola: i chunk che scendono dal cielo, la pioggia di cubetti e la quota di partenza letta dal frustum |
-| [src/shell/frameStats.ts](src/shell/frameStats.ts) | Le letture di misura per overlay, riepilogo console e hook globali: traduzioni, non decisioni |
+| [src/shell/frameStats.ts](src/shell/frameStats.ts) | Le letture di misura per overlay, riepilogo console e hook globali: traduzioni, non decisioni. `overlay()` non prende argomenti, main e render li legge da `FrameBreakdown` |
 | [src/shell/infoViewScene.ts](src/shell/infoViewScene.ts) | La vista informativa accesa sopra la citta': quale, e chi ricostruisce la heatmap quando il campo cambia |
 | [src/shell/placementTools.ts](src/shell/placementTools.ts) | Lo strumento in mano e cio' che il puntatore ne fa: mirino, rifiuti, posa di catalizzatori, mensole, funivie e settori |
 | [src/shell/plotBlockers.ts](src/shell/plotBlockers.ts) | Le caselle gia' prese mentre un monumento e' in mano: rosso fioco su ogni monumento in piedi, rosso pieno e ambra su chi ferma il riquadro sotto il puntatore. Due chiavi, una per lo strumento e una per la colonna |
