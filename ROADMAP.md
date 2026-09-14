@@ -1325,11 +1325,11 @@ grande.
 Questa fase accompagna tutte le altre: nessuna funzionalità supera il proprio
 gate se rompe i budget qui sotto.
 
-**Stato implementazione:** chiusa la 6.1, la ricerca dei lotti. Il resto è
-aperto, e si comincia dalla 6.2: i numeri su cui si ragionerebbe sono scaduti —
-le tabelle di misura di [README.md](README.md) e
-[src/sim/README.md](src/sim/README.md) sono state prese sull'isola da 256 e
-portano entrambe l'avviso «da rimisurare».
+**Stato implementazione:** chiusa la 6.1, la ricerca dei lotti. Della 6.2 c'è
+il metro — profilo delle passate, fasi del frame, upload — e il suo gate è
+passato; resta da rifare a mano le tabelle di [README.md](README.md) e
+[src/sim/README.md](src/sim/README.md), prese sull'isola da 256 e ancora con
+l'avviso «da rimisurare».
 
 **Il difetto sta in una riga: il frame ha un tetto per ogni cosa tranne che per
 quella che costa di più.** Generazione del terreno, meshatura, upload e ricolore
@@ -1432,24 +1432,39 @@ ferma, la città tiene i 60 fps con il lavoro non-render sotto 4 ms al p99.
 Obiettivo: ogni voce che segue si dimostra con un numero, e resta difesa da un
 test quando la sonda viene buttata.
 
-- [ ] Bench di città matura a seme fisso (`tickProfile.bench.ts`) che riporta <!-- size: M -->
-  contatori deterministici — colonne lette per ricerca, prove di quadrato e
-  record esaminati o copiati per passata, celle di campo ricalcolate — e i
-  millisecondi per passata come indicazione.
-- [ ] Misurare separatamente generazione (anche delle espansioni), applicazione <!-- size: M -->
+- [x] Profilo di città matura a seme fisso che riporta contatori deterministici <!-- size: M -->
+  — ricerche, quadrati e colonne dei lotti, scorse intere del registro e record
+  offerti, visite per raggio, celle di campo rifatte — e i millisecondi per
+  passata come indicazione. È `tickProfile.slow.test.ts` su `profileCity.ts` e
+  non un `*.bench.ts`: è una misura sola di un minuto, e il bench la ripeterebbe.
+- [x] Misurare separatamente generazione (anche delle espansioni), applicazione <!-- size: M -->
   voxel di terreno ed edifici, meshatura, upload, rifacimento del campo,
-  autosave e UI, tutto da `frameStats.ts`: `__voxelStats()` smette di assemblare
-  un oggetto suo, che oggi già diverge dall'overlay.
-- [ ] `mainMs` copre tutto il lavoro non-render del frame, anche quello dopo il <!-- size: S -->
-  render (HUD, traffico, autosave); p95 e p99 di frame e tick invece del solo
-  ultimo valore e massimo.
-- [ ] Upload separato dal render: oggi si misura la creazione della geometria, e <!-- size: S -->
-  il trasferimento vero alla GPU finisce dentro `renderMs`.
+  autosave e UI: le passate da `PassProfile`, le fasi del frame da
+  `FrameBreakdown`, entrambe fino a `frameStats.ts`. `__voxelStats()` è
+  `frameStats.overlay()`, non più un oggetto suo.
+- [x] `mainMs` copre tutto il lavoro non-render del frame, anche quello dopo il <!-- size: S -->
+  render (HUD, traffico, autosave); p95 e p99 per fase e per il main. Il p99
+  del tick come tale non c'è: c'è quello della fase `growth` per frame, che è
+  ciò che il budget del frame paga, e il picco di ogni passata.
+- [x] Upload separato dal render: il p95 del render nei frame che portano <!-- size: S -->
+  geometria nuova contro quello degli altri, perché il trasferimento alla GPU
+  da JavaScript non ha un orologio suo.
 - [ ] Rifare a 512 le tabelle «da rimisurare» di `README.md` e `src/sim/README.md`, <!-- size: M -->
   headed e a macchina ferma.
 
-**Gate:** su una città matura a seme fisso un solo comando stampa quanto lavoro
-fa e quanto costa ogni passata, e due run consecutive danno contatori identici.
+**Gate: passato.** `npx vitest run src/game/tickProfile.slow.test.ts` stampa
+quanto lavoro fa e quanto costa ogni passata, e due città dello stesso seme fanno
+lo stesso lavoro, passata per passata.
+
+**Cosa dice la prima tabella**, su 286 edifici e con altri agenti sulla macchina
+— i millisecondi valgono come ordine di grandezza: la rete stradale arriva a
+363 ms quando un catalizzatore la fa ricostruire; la congestione a 462 ms, con
+6,25 milioni di celle di campo rifatte in 27 volte; i percorsi in quota a 69 ms
+di media; la ricerca dei lotti legge **6.648 colonne per ricerca**, oltre i 5.000
+dell'accettazione; il coach scorre il registro due volte a ogni tick. Rete
+stradale e percorsi in quota non hanno ancora un contatore: il loro lavoro si
+vede solo in millisecondi, e un contatore è la prima cosa che serve alla 6.4
+prima di toccarli.
 
 ### Fase 6.3 — Il tetto al tick
 

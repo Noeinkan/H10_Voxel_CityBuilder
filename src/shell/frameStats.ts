@@ -1,6 +1,7 @@
 import type { WebGLRenderer } from 'three';
 import type { AtmosphereControl } from '../engine/AtmosphereControl';
 import type { ChunkRenderer } from '../engine/ChunkRenderer';
+import type { FrameBreakdown } from '../engine/FrameBreakdown';
 import type { FrameTiming } from '../engine/FrameTiming';
 import type { IsoCameraController } from '../engine/IsoCameraController';
 import type { QualityProfile, RenderQualityController } from '../engine/RenderQuality';
@@ -31,6 +32,8 @@ export interface FrameStatsDeps {
   readonly renderer: WebGLRenderer;
   readonly chunkRenderer: ChunkRenderer;
   readonly frameTiming: FrameTiming;
+  /** Il tempo del frame fase per fase: main, render e percentili vengono da qui. */
+  readonly breakdown: FrameBreakdown;
   readonly world: VoxelWorld;
   readonly camera: IsoCameraController;
   readonly sunShadow: SunShadowHandle;
@@ -68,7 +71,14 @@ export interface FrameStats {
    * `chunkRenderer.stats`.
    */
   perf(frameMs: number): PerfFrame;
-  overlay(mainMs: number, mainMsMax: number, renderMs: number, frameMs: number): OverlayFrame;
+  /**
+   * La lettura intera del pannello di render, ed e' anche `__voxelStats()`.
+   *
+   * Non prende argomenti: main, render e i loro picchi li tiene `FrameBreakdown`,
+   * quindi il ciclo di frame non ha piu' numeri suoi da passare — che era il modo
+   * in cui l'hook e il pannello avevano cominciato a dire cose diverse.
+   */
+  overlay(): OverlayFrame;
   terrain(streamer: TerrainStreamer): TerrainOverlayFrame;
 }
 
@@ -109,11 +119,12 @@ export function createFrameStats(deps: FrameStatsDeps): FrameStats {
     effects,
     perf,
 
-    overlay(mainMs: number, mainMsMax: number, renderMs: number, frameMs: number): OverlayFrame {
+    overlay(): OverlayFrame {
       const stats = chunkRenderer.stats;
       const mesher = chunkRenderer.mesherPool.stats;
       const timing = frameTiming.snapshot();
       const generator = deps.generator();
+      const breakdown = deps.breakdown.snapshot();
 
       return {
         fps: timing.fps,
@@ -121,10 +132,17 @@ export function createFrameStats(deps: FrameStatsDeps): FrameStats {
         frameP95Ms: timing.p95Ms,
         frameP99Ms: timing.p99Ms,
         jankRatio: timing.jankRatio,
-        frameMs,
-        mainMs,
-        mainMsMax,
-        renderMs,
+        frameMs: breakdown.main.lastMs + breakdown.render.lastMs,
+        mainMs: breakdown.main.lastMs,
+        mainMsMax: breakdown.main.maxMs,
+        mainP95Ms: breakdown.main.p95Ms,
+        mainP99Ms: breakdown.main.p99Ms,
+        renderMs: breakdown.render.lastMs,
+        phases: breakdown.phases,
+        renderUploadP95Ms: breakdown.renderWithUpload.p95Ms,
+        renderIdleP95Ms: breakdown.renderWithoutUpload.p95Ms,
+        uploadFrames: breakdown.renderWithUpload.count,
+        uploadBytesMax: breakdown.uploadBytesMax,
         ...effects(),
         drawCalls: renderer.info.render.calls,
         triangles: renderer.info.render.triangles,
@@ -166,8 +184,11 @@ export function createFrameStats(deps: FrameStatsDeps): FrameStats {
     },
 
     terrain(streamer: TerrainStreamer): TerrainOverlayFrame {
+      const generation = deps.breakdown.snapshot().phases.find((phase) => phase.name === 'generation');
       return {
         fps: frameTiming.snapshot().fps,
+        generationFrameMaxMs: generation?.maxMs ?? 0,
+        generationFrameP99Ms: generation?.p99Ms ?? 0,
         generationMs: streamer.generationMs,
         applyMs: deps.terrainApplyMs(),
         blocksApplied: streamer.blocksApplied,

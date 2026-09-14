@@ -76,6 +76,14 @@ export interface ChunkRendererStats {
   /** Picchi delle due fasi dall'ultimo reset: li' si vede lo spike, non nell'ultima riga. */
   readonly remeshDispatchMaxMs: number;
   readonly remeshApplyMaxMs: number;
+  /**
+   * Byte di geometria nati nell'ultima `update`.
+   *
+   * Il loro trasferimento alla GPU non avviene qui ma al primo `render` che li
+   * incontra: `FrameBreakdown` usa questo numero per dividere i frame che lo
+   * pagano da quelli che no.
+   */
+  readonly uploadBytes: number;
 }
 
 /** Numero massimo di geometrie caricate per frame, oltre al budget di tempo. */
@@ -133,6 +141,7 @@ export class ChunkRenderer {
   private lastApplyMs = 0;
   private maxDispatchMs = 0;
   private maxApplyMs = 0;
+  private uploadBytes = 0;
 
   /** I soli chunk che stanno scendendo: il frame non tocca gli altri. */
   private readonly falling: ChunkMeshEntry[] = [];
@@ -175,6 +184,7 @@ export class ChunkRenderer {
       remeshApplyMs: this.lastApplyMs,
       remeshDispatchMaxMs: this.maxDispatchMs,
       remeshApplyMaxMs: this.maxApplyMs,
+      uploadBytes: this.uploadBytes,
     };
   }
 
@@ -200,6 +210,7 @@ export class ChunkRenderer {
   update(camera: Camera, budgetMs: number): void {
     const start = performance.now();
     const canAfford = (): boolean => performance.now() - start < budgetMs;
+    this.uploadBytes = 0;
 
     this.collectDirty();
 
@@ -467,6 +478,7 @@ export class ChunkRenderer {
       result.surfaces.byteLength +
       result.shade.byteLength +
       result.indices.byteLength;
+    this.uploadBytes += bytes;
 
     const scale = this.voxelSize;
     const originX = chunk.cx * CHUNK * scale;

@@ -5,6 +5,8 @@
  * costo del frame che sta misurando.
  */
 
+import { RENDER_PHASE, type PhaseReading } from '../engine/FrameBreakdown';
+
 export interface OverlayFrame {
   readonly fps: number;
   readonly fpsLow: number;
@@ -12,12 +14,31 @@ export interface OverlayFrame {
   readonly frameP95Ms: number;
   readonly frameP99Ms: number;
   readonly jankRatio: number;
+  /** L'ultimo frame intero: main piu' render. */
   readonly frameMs: number;
-  /** Lavoro sul main thread escluso il render: e' il numero da tenere sotto 4 ms. */
+  /**
+   * Lavoro sul main thread escluso il render: e' il numero da tenere sotto 4 ms.
+   * Comprende anche cio' che viene dopo il disegno — HUD, traffico, autosave —
+   * che prima usciva dal conto.
+   */
   readonly mainMs: number;
   readonly mainMsMax: number;
+  /** Percentili del main sulla finestra: il budget si giudica sul p99, non sull'ultimo frame. */
+  readonly mainP95Ms: number;
+  readonly mainP99Ms: number;
   /** Costo della sola chiamata di render, sempre sul main thread. */
   readonly renderMs: number;
+  /** Dove va il frame, fase per fase, nell'ordine in cui il frame le attraversa. */
+  readonly phases: readonly PhaseReading[];
+  /**
+   * p95 del render nei frame che portano geometria nuova alla GPU, e negli altri.
+   * La differenza e' il costo dell'upload, che da JavaScript non ha un orologio suo.
+   */
+  readonly renderUploadP95Ms: number;
+  readonly renderIdleP95Ms: number;
+  /** Frame con upload nella finestra, e il picco di byte caricati in un frame. */
+  readonly uploadFrames: number;
+  readonly uploadBytesMax: number;
   /** Millisecondi della sola pass d'ombra, gia' compresi in renderMs. */
   readonly shadowMs: number;
   /** Lato della shadow map; 0 quando la pass e' spenta. */
@@ -123,8 +144,11 @@ export class DebugOverlay {
       `interval p95 ${frame.frameP95Ms.toFixed(2).padStart(6)} ms   p99 ${frame.frameP99Ms.toFixed(2)}`,
       `jank >20ms ${(frame.jankRatio * 100).toFixed(1).padStart(6)} %`,
       `callback   ${frame.frameMs.toFixed(2).padStart(6)} ms`,
-      `main       ${frame.mainMs.toFixed(2).padStart(6)} ms   max ${frame.mainMsMax.toFixed(2)} ms`,
+      `main       ${frame.mainMs.toFixed(2).padStart(6)} ms   p99 ${frame.mainP99Ms.toFixed(2)}  max ${frame.mainMsMax.toFixed(2)} ms`,
+      ...phaseLines(frame.phases),
       `render     ${frame.renderMs.toFixed(2).padStart(6)} ms`,
+      `  upload   p95 ${frame.renderUploadP95Ms.toFixed(2)} vs ${frame.renderIdleP95Ms.toFixed(2)} ms  ` +
+        `${frame.uploadFrames} frames  max ${mb(frame.uploadBytesMax)} MB`,
       `shadow     ${frame.shadowMs.toFixed(2).padStart(6)} ms   ${frame.shadowSize === 0 ? 'off' : frame.shadowSize + 'px'}`,
       `effects    ${frame.effects}`,
       '',
@@ -163,6 +187,19 @@ export class DebugOverlay {
   dispose(): void {
     this.root.remove();
   }
+}
+
+/**
+ * Una riga per fase di main thread, con p99 e picco.
+ *
+ * Il render resta fuori perche' ha la sua riga subito sotto, e non e' lavoro da
+ * mettere nei 4 ms: sommarlo qui farebbe sembrare sforato un budget che regge.
+ */
+function phaseLines(phases: readonly PhaseReading[]): string[] {
+  return phases
+    .filter((phase) => phase.name !== RENDER_PHASE)
+    .map((phase) =>
+      `  ${phase.name.padEnd(10)} ${phase.p99Ms.toFixed(2).padStart(6)} p99  max ${phase.maxMs.toFixed(2)}`);
 }
 
 /** Ora di gioco come orologio: e' cosi' che si legge, non come 13,74. */

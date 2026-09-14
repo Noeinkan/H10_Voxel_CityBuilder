@@ -16,6 +16,7 @@ import { LandmarkSilhouette } from './engine/LandmarkSilhouette';
 import { TrafficView } from './engine/TrafficView';
 import { RopewayView } from './engine/RopewayView';
 import { FrameTiming } from './engine/FrameTiming';
+import { FrameBreakdown, RENDER_PHASE } from './engine/FrameBreakdown';
 import {
   INSPECT,
   INSPECT_MODE,
@@ -451,6 +452,12 @@ post.setSize(window.innerWidth, window.innerHeight, renderQuality.pixelRatio);
 // Nasce qui e non accanto al ciclo di frame perche' la discesa a terra la
 // azzera gia' al primo cambio di modo: e' il piu' vecchio dei consumatori.
 const frameTiming = new FrameTiming(600);
+/**
+ * Il frame fase per fase. `FrameTiming` misura la cadenza di rAF, cioe' quanto
+ * il browser ci mette a richiamarci; questo misura cosa facciamo noi dentro la
+ * callback, ed e' da qui che vengono main, render e i loro percentili.
+ */
+const frameBreakdown = new FrameBreakdown();
 
 /**
  * Profilo di effetti in vigore. Lo decide `RenderQuality`, che lo fa scendere
@@ -1078,6 +1085,7 @@ const frameStats = createFrameStats({
   renderer,
   chunkRenderer,
   frameTiming,
+  breakdown: frameBreakdown,
   world,
   camera,
   sunShadow,
@@ -1099,16 +1107,12 @@ installDebugHooks({
   perfEnabled,
   simEnabled,
   growEnabled,
-  renderer,
   chunkRenderer,
-  frameTiming,
   world,
   paletteHandle,
   daylight,
-  renderQuality,
   inspect,
   stats: frameStats,
-  mainMsMax: () => mainMsMax,
   resetPeaks,
   generator: () => generator,
   inspectFrame: buildInspectFrame,
@@ -1128,19 +1132,20 @@ installDebugHooks({
 });
 
 
-let mainMsMax = 0;
-
 /**
  * Azzera i picchi e riapre la finestra di misura.
  *
  * Serve a misurare il regime e non lo startup, ed e' lo stesso gesto per il
  * tasto `C` e per `__voxelReset()`: due azzeramenti diversi darebbero due
- * regimi diversi a seconda di come li si e' chiesti.
+ * regimi diversi a seconda di come li si e' chiesti. Lo erano: i picchi del
+ * remesh li azzerava solo il tasto, e l'hook li lasciava com'erano.
  */
 function resetPeaks(): void {
-  mainMsMax = 0;
   frameTiming.reset();
+  frameBreakdown.resetPeaks();
   chunkRenderer.mesherPool.resetStats();
+  chunkRenderer.resetRemeshPeaks();
+  growthScene?.profile.reset();
 }
 
 /** Vero finche' la scena si sta ancora popolando: vedi `observeQuality`. */
@@ -1247,7 +1252,7 @@ function updateTraffic(time: number): void {
 /**
  * Pass d'ombra: profondita' dei chunk vista dal sole.
  *
- * Sta dentro `renderStart` e non nel lavoro non-render, perche' e' spesa sulla
+ * Sta nella fase `render` e non nel lavoro non-render, perche' e' spesa sulla
  * GPU e non sul main thread: il budget di 3 ms non la riguarda, la si legge in
  * `renderMs`. Un tema senza `shadow` la salta del tutto.
  */
@@ -1310,6 +1315,9 @@ function onFrame(time: number): void {
   previousTime = time;
 
   const workStart = performance.now();
+  // Ogni `mark` chiude un segmento e lo da' alla fase che nomina: il frame e'
+  // diviso tutto, anche la coda dopo il render che prima non contava nessuno.
+  frameBreakdown.begin();
   renderer.info.reset();
 
   camera.update(dt);
@@ -1320,6 +1328,7 @@ function onFrame(time: number): void {
   tools?.update(dt);
   selection?.update(dt);
   swatch?.update(dt);
+  frameBreakdown.mark('camera');
 
   // Finche' la prima scena non c'e', il frame non deve proteggere niente:
   // conviene spendere di piu' per frame e finire in una manciata di frame.
@@ -1335,6 +1344,7 @@ function onFrame(time: number): void {
     // quando la generazione ha finito: non competono mai per lo stesso frame.
     biomeView.step(GENERATION_BUDGET_MS);
   }
+  frameBreakdown.mark('generation');
 
   // Il menu principale ferma la citta' senza toccare la pausa del giocatore:
   // quella finisce dentro il salvataggio e accende il bottone della barra, e
@@ -1344,8 +1354,11 @@ function onFrame(time: number): void {
   // esattamente cio' che fa la pausa vera.
   const cityDt = gameHud?.menuOpen === true ? 0 : dt;
   updateSim(cityDt);
+  frameBreakdown.mark('sim');
   updateGrowth(cityDt);
+  frameBreakdown.mark('growth');
   infoViews?.advance();
+  frameBreakdown.mark('infoViews');
   // Il sole scorre sull'orologio della citta' e non su quello della macchina.
   // Riceveva `dt` grezzo, quindi ignorava sia la pausa sia i tre bottoni della
   // velocita': a 4× il giorno durava sempre sei minuti, e a simulazione ferma
@@ -1367,9 +1380,11 @@ function onFrame(time: number): void {
   // ortografica e' un vettore solo, e ce lo dividiamo.
   view.getWorldDirection(viewDirection);
   inspect.apply([viewDirection.x, viewDirection.y, viewDirection.z]);
+  frameBreakdown.mark('scene');
 
   const elapsed = performance.now() - workStart;
   chunkRenderer.update(view, Math.max(0.5, frameBudget - elapsed));
+  frameBreakdown.mark('meshing');
   // Fra `update` e `cull`: un chunk nato adesso deve gia' scendere in questo
   // frame, e il culling deve leggere gli AABB appena spostati.
   if (entryDrop.active) entryDrop.step(time / 1000);
@@ -1390,11 +1405,8 @@ function onFrame(time: number): void {
     // in cui «il mondo c'e'» e' vero, e non un frame in cui il mare e' ancora vuoto.
     signalWorldReady();
   }
+  frameBreakdown.mark('cull');
 
-  const mainMs = performance.now() - workStart;
-  if (mainMs > mainMsMax) mainMsMax = mainMs;
-
-  const renderStart = performance.now();
   drawShadowPass();
   paletteHandle.setTime(time / 1000);
   paletteHandle.setViewDirection(viewDirection.x, viewDirection.y, viewDirection.z);
@@ -1412,7 +1424,7 @@ function onFrame(time: number): void {
   skyInvViewProj.multiplyMatrices(view.matrixWorld, view.projectionMatrixInverse);
   skyBackground.setCamera(skyInvViewProj, viewDirection.x, viewDirection.y, viewDirection.z);
   post.render();
-  const renderMs = performance.now() - renderStart;
+  frameBreakdown.mark(RENDER_PHASE);
 
   const frameMs = performance.now() - workStart;
   observeQuality(time);
@@ -1423,9 +1435,10 @@ function onFrame(time: number): void {
     const summary = perfReport.add(frameStats.perf(frameMs), time);
     if (summary !== null) console.info(formatPerfSummary(summary));
   }
+  frameBreakdown.mark('quality');
 
   if (overlay !== null && overlay.needsPaint(time)) {
-    overlay.update(frameStats.overlay(mainMs, mainMsMax, renderMs, frameMs), time);
+    overlay.update(frameStats.overlay(), time);
   }
   if (perfOverlay !== null && perfOverlay.needsPaint(time)) {
     perfOverlay.update(frameStats.perf(frameMs), time);
@@ -1437,13 +1450,15 @@ function onFrame(time: number): void {
     simOverlay.update(buildSimFrame(simScene), time);
   }
   if (growthOverlay !== null && growthOverlay.needsPaint(time)) {
-    growthOverlay.update(growthScene?.stats ?? null, time);
+    growthOverlay.update(growthScene?.stats ?? null, time, growthScene?.profile.readings());
   }
   if (swatchOverlay !== null && swatch !== null && swatchOverlay.needsPaint(time)) {
     swatchOverlay.update(swatch.frame(), time);
   }
+  frameBreakdown.mark('overlays');
   updateVitality(time);
   updateTraffic(time);
+  frameBreakdown.mark('traffic');
   if (inspectOverlay.needsPaint(time)) {
     // La citta' cresce in altezza, e con lei la quota utile della fetta.
     if (!world.bounds.empty) inspectOverlay.setSliceRange(world.bounds.maxZ);
@@ -1488,7 +1503,10 @@ function onFrame(time: number): void {
   // desiderabilita', quartiere, livello di un edificio promosso — cambia a dieci
   // tick al secondo, e l'unica parte che costa e' l'aggregato dell'isolato.
   selection?.tick(time);
+  frameBreakdown.mark('hud');
   autosave(time);
+  frameBreakdown.mark('autosave');
+  frameBreakdown.end(chunkRenderer.stats.uploadBytes);
 }
 
 /**
@@ -1744,7 +1762,6 @@ function onDebugKey(event: KeyboardEvent): void {
   if (event.code === 'KeyC') {
     // Azzera i picchi: serve per misurare il regime, non lo startup.
     resetPeaks();
-    chunkRenderer.resetRemeshPeaks();
   }
 }
 

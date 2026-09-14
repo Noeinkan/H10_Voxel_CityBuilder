@@ -1,9 +1,7 @@
-import type { Vector3, WebGLRenderer } from 'three';
+import type { Vector3 } from 'three';
 import type { AtmosphereControl } from '../engine/AtmosphereControl';
 import type { ChunkRenderer } from '../engine/ChunkRenderer';
-import type { FrameTiming } from '../engine/FrameTiming';
 import type { InspectView } from '../engine/InspectView';
-import type { RenderQualityController } from '../engine/RenderQuality';
 import type { VoxelMaterialHandle } from '../engine/VoxelMaterial';
 import { DAYLIGHT, dayPhase, resolveDaylightMode, withHour } from '../engine/daylight';
 import { INSPECT_MODES, INSPECT_NAMES, parseInspectMode } from '../engine/inspect';
@@ -52,17 +50,12 @@ export interface DebugHooksDeps {
   readonly simEnabled: boolean;
   readonly growEnabled: boolean;
 
-  readonly renderer: WebGLRenderer;
   readonly chunkRenderer: ChunkRenderer;
-  readonly frameTiming: FrameTiming;
   readonly world: VoxelWorld;
   readonly paletteHandle: VoxelMaterialHandle;
   readonly daylight: AtmosphereControl;
-  readonly renderQuality: RenderQualityController;
   readonly inspect: InspectView;
   readonly stats: FrameStats;
-  /** Il picco di lavoro sul main thread, che lo tiene il ciclo di frame. */
-  readonly mainMsMax: () => number;
   /** Azzera picchi e finestre di misura: serve a misurare il regime, non lo startup. */
   readonly resetPeaks: () => void;
   readonly generator: () => SceneGenerator;
@@ -87,45 +80,25 @@ export interface DebugHooksDeps {
 }
 
 export function installDebugHooks(deps: DebugHooksDeps): void {
-  const { renderer, chunkRenderer, frameTiming, world, daylight, renderQuality, inspect } = deps;
+  const { chunkRenderer, world, daylight, inspect } = deps;
   const debugGlobals = globalThis as Record<string, unknown>;
 
   if (deps.debugEnabled || deps.perfEnabled) {
-    // Hook per misure da console o da strumenti headless: stessa fonte dell'overlay.
+    // Hook per misure da console o da strumenti headless: **e'** la lettura del
+    // pannello, non una copia. Ne costruiva una sua campo per campo, e aveva
+    // gia' perso `mainMs`, `renderMs` e `frameMs` — cioe' proprio i numeri del
+    // budget. Restano sopra solo cio' che il pannello non mostra.
     debugGlobals['__voxelStats'] = (): Record<string, unknown> => {
-      const timing = frameTiming.snapshot();
       const stats = chunkRenderer.stats;
-      const mesher = chunkRenderer.mesherPool.stats;
       return {
-        fps: timing.fps,
-        fpsLow: timing.fpsLow,
-        frameP95Ms: timing.p95Ms,
-        frameP99Ms: timing.p99Ms,
-        jankRatio: timing.jankRatio,
-        mainMsMax: deps.mainMsMax(),
-        ...deps.stats.effects(),
-        drawCalls: renderer.info.render.calls,
-        triangles: renderer.info.render.triangles,
-        geometryBytes: stats.geometryBytes,
-        chunksAllocated: stats.chunksAllocated,
-        chunksWithMesh: stats.chunksWithMesh,
-        chunksVisible: stats.chunksVisible,
-        chunksFalling: stats.chunksFalling,
-        queued: stats.queued,
-        inFlight: stats.inFlight,
-        solidVoxels: world.solidVoxelCount,
-        mesherAvgMs: mesher.avgMs,
-        mesherMaxMs: mesher.maxMs,
-        generationDone: deps.generator().done,
+        ...deps.stats.overlay(),
+        // Il pannello scrive il nome del tema; gli strumenti che gia' leggono
+        // questo hook confrontano l'id, e l'id resta.
         theme: daylight.theme.id,
-        quality: renderQuality.mode,
-        pixelRatio: renderer.getPixelRatio(),
+        generationDone: deps.generator().done,
         remeshMs: stats.remeshMs,
         remeshedChunks: stats.remeshedChunks,
-        remeshApplyMs: stats.remeshApplyMs,
-        remeshDispatchMs: stats.remeshDispatchMs,
-        remeshApplyMaxMs: stats.remeshApplyMaxMs,
-        remeshDispatchMaxMs: stats.remeshDispatchMaxMs,
+        uploadBytes: stats.uploadBytes,
       };
     };
   }
@@ -264,6 +237,8 @@ export function installDebugHooks(deps: DebugHooksDeps): void {
     size: deps.terrainSize,
     workerMs: terrain.generationMs,
     applyMs: deps.terrainApplyMs(),
+    generationFrameMaxMs: deps.stats.terrain(terrain).generationFrameMaxMs,
+    generationFrameP99Ms: deps.stats.terrain(terrain).generationFrameP99Ms,
     blocksApplied: terrain.blocksApplied,
     blocksTotal: terrain.blocksTotal,
     columns: terrain.map.columnCount,
@@ -326,7 +301,11 @@ export function installDebugHooks(deps: DebugHooksDeps): void {
   if (deps.growEnabled && infoViews !== null) {
     debugGlobals['__growStats'] = (): Record<string, unknown> => {
       const scene = deps.growthScene();
-      return scene === null ? { ready: false } : { ...scene.stats };
+      // Il profilo delle passate e' la stessa tabella che il pannello riassume e
+      // che `tickProfile.slow.test.ts` stampa: una fonte, tre letture.
+      return scene === null
+        ? { ready: false }
+        : { ...scene.stats, profile: scene.profile.readings(), counters: scene.profile.counters };
     };
     // Stessa fonte dell'overlay informativo: cambia la vista attiva o interroga
     // una colonna senza muovere il mouse, per uno strumento headless.

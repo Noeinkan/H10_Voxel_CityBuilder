@@ -15,6 +15,15 @@ export interface TerrainOverlayFrame {
   readonly generationMs: number;
   /** Millisecondi cumulati di scrittura voxel sul main thread. */
   readonly applyMs: number;
+  /**
+   * La stessa scrittura, per frame: picco e p99 della fase `generation`.
+   *
+   * Il totale dice quanto e' costata l'isola, questi due se l'ha pagata dentro il
+   * budget — e valgono anche per le espansioni, che il totale del primo
+   * streamer non vede.
+   */
+  readonly generationFrameMaxMs: number;
+  readonly generationFrameP99Ms: number;
   readonly blocksApplied: number;
   readonly blocksTotal: number;
   readonly columns: number;
@@ -94,6 +103,7 @@ export class TerrainOverlay {
       '',
       `worker     ${frame.generationMs.toFixed(1).padStart(6)} ms${frame.generationMs === 0 ? '  (running)' : ''}`,
       `apply      ${frame.applyMs.toFixed(1).padStart(6)} ms  on main`,
+      `per frame  ${frame.generationFrameP99Ms.toFixed(2).padStart(6)} ms p99  max ${frame.generationFrameMaxMs.toFixed(2)}`,
       `blocks     ${frame.blocksApplied.toString().padStart(6)} / ${frame.blocksTotal}`,
       '',
       `columns    ${format(frame.columns).padStart(6)}`,

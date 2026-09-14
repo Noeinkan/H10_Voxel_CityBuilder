@@ -1,8 +1,11 @@
 import { CLASS_NAMES } from '../sim';
 import { REJECT_REASONS } from '../world/buildings/Builder';
+import type { PassReading } from '../world/buildings/passProfile';
 import type { GrowthStats } from '../game/growthScene';
 
 const REFRESH_MS = 200;
+/** Quante passate entrano nel pannello: le piu' care, il resto sta in `__growStats`. */
+const PROFILE_ROWS = 6;
 
 /** Pannello separato della crescita automatica; non condivide stato con SimOverlay. */
 export class GrowthOverlay {
@@ -43,7 +46,7 @@ export class GrowthOverlay {
     return !this.root.hidden;
   }
 
-  update(stats: GrowthStats | null, now: number): void {
+  update(stats: GrowthStats | null, now: number, profile: readonly PassReading[] = []): void {
     this.lastPaint = now;
     if (stats === null) return;
     if (this.previousTime > 0 && now > this.previousTime) {
@@ -58,6 +61,9 @@ export class GrowthOverlay {
     ).join('  ');
     this.body.textContent = [
       `growth       tick ${stats.tick}  ${stats.tickMs.toFixed(3)} ms`,
+      // Le passate che pesano di piu' sul frame, per picco: e' il picco a far
+      // saltare un frame, e una media alta con un picco basso non se ne accorge.
+      ...profileLines(profile),
       // Il coach e' la rotta della voce: tier e id bastano a sapere cosa sta
       // consigliando, e sono la stessa fonte dell'hook globale `__growStats`.
       `coach        ${coachLine(stats.coach)}`,
@@ -107,6 +113,16 @@ export class GrowthOverlay {
       `rejected     ${rejected}`,
     ].join('\n');
   }
+}
+
+/** Le passate piu' care per picco, con media e chiamate; C azzera la finestra. */
+function profileLines(profile: readonly PassReading[]): string[] {
+  return [...profile]
+    .sort((a, b) => b.maxMs - a.maxMs)
+    .slice(0, PROFILE_ROWS)
+    .map((reading) =>
+      `  ${reading.name.padEnd(11)}max ${reading.maxMs.toFixed(1).padStart(6)} ms` +
+      `  avg ${(reading.totalMs / Math.max(1, reading.calls)).toFixed(2)}  x${reading.calls}`);
 }
 
 /** L'istogramma dei livelli, saltando quelli vuoti. */

@@ -248,7 +248,8 @@ yaw continuo e inclinazione fra 12° e 82°, che restano dove li si lascia. Da u
 angolo libero `Q`/`E` riagganciano la griglia degli scatti tenendo
 l'inclinazione, e `F` inquadra tutto **e** rimette l'assetto isometrico.
 `G` +64 chunk, `R` rebuild totale, `C` azzera
-i picchi, `B` colore per bioma, `H`/`Shift+H` sposta l'ora, `T`/`P`/`M` in scena
+i picchi — frame, fasi, remesh e profilo delle passate di crescita, lo stesso
+gesto di `__voxelReset()` —, `B` colore per bioma, `H`/`Shift+H` sposta l'ora, `T`/`P`/`M` in scena
 simulazione. `__simClass(i)` e il tasto `M` ciclano su quattro usi, non tre.
 Con un isolato scelto in Block focus il drag **orbita** invece di panare, `Q`/`E`
 girano a passi continui e `F` e `WASD` restano fermi: vedi *Viste di ispezione*.
@@ -386,6 +387,35 @@ Solo con `?debug=1` (piu' `__voxelStats()`, che si registra anche con `?perf=1`)
 - con terreno: `__terrainStats()`, `__terrainBiomeView()`, `__terrainExpand()`
 - con `sim=1`: `__simStats()`, `__simTick(n)`, `__simSites(n)`, `__simClass(i)`,
   `__simPolicy(id)`
+- con `grow=1`: `__growStats()`, che oltre alle statistiche della scena porta
+  `profile` — una riga per passata del ciclo con chiamate, millisecondi e lavoro
+  contato — e `counters`, i nomi di quel lavoro. È la tabella che il pannello
+  GROWTH riassume nelle sei passate più care. Accanto, `__voxelInfo(view?, x?, y?)`
+  sulle viste informative
+
+`__voxelStats()` **è** `frameStats.overlay()` — il pannello RENDER —, più `theme`
+come id, `generationDone`, `remeshMs`, `remeshedChunks` e `uploadBytes`. Un campo
+nuovo del pannello arriva all'hook da solo.
+
+## Dove va il tempo di un frame
+
+`FrameBreakdown` (`src/engine/`) divide la callback in fasi con un `mark` dopo
+ogni blocco di `onFrame`: `camera`, `generation`, `sim`, `growth`, `infoViews`,
+`scene`, `meshing`, `cull`, `render`, `quality`, `overlays`, `traffic`, `hud`,
+`autosave`. **`mainMs` è la somma di tutte tranne `render`**, quindi comprende
+anche HUD, traffico e autosave, che prima cadevano dopo la misura. Pannello e
+hook riportano ultimo valore, picco dall'azzeramento e p95/p99 sulla finestra
+degli ultimi 600 frame: il budget si giudica sul p99.
+
+**L'upload non ha un orologio suo.** La geometria nasce in `applyResult` ma
+arriva alla GPU al primo `render` che la incontra: il pannello confronta il p95
+del render nei frame che portano geometria nuova con quello degli altri
+(`renderUploadP95Ms` contro `renderIdleP95Ms`), e la differenza è il costo.
+
+Il **lavoro** delle passate di crescita, invece, non si misura a schermo: lo
+stampa `npx vitest run src/game/tickProfile.slow.test.ts`, su una città a seme
+fisso e con contatori identici a ogni run. I millisecondi del pannello sono
+un'indicazione; i contatori di quella tabella sono il metro.
 
 ## Regola quando aggiungi una metrica
 
@@ -394,4 +424,6 @@ la metrica una volta sola e falla passare da entrambi: due letture separate
 divergono al primo refactor.
 
 I tempi da guardare: `renderMs` e `shadow` sono spesa GPU e restano **fuori** dal
-budget di 3 ms di main thread definito in `src/main.ts`.
+budget di 3 ms di main thread definito in `src/main.ts`. Una passata nuova del
+ciclo di crescita passa da `profile.measure(nome, ...)`, e un contatore di lavoro
+nuovo da `profile.addCounter` accanto a chi lo produce.
