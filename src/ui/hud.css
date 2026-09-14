@@ -40,6 +40,24 @@
   --hud-raised: rgba(255, 255, 255, .7);
   --hud-key: #ffffff;
   --hud-edge: rgba(255, 255, 255, .62);
+  /* Le cinque risorse, ognuna con la sua tinta (7.2). `-on-dark` e `-on-light`
+     servono ai fondi fissi — schede scure, toast rosato — che non seguono il
+     tema; `hudTokens.ts` le tiene tutte sopra il contrasto di una forma. */
+  --res-funds: #b3871d;
+  --res-population: #3d6fb6;
+  --res-food: #3f8a3a;
+  --res-materials: #9a5d45;
+  --res-satisfaction: #d34f6a;
+  --res-funds-on-dark: #f2c75c;
+  --res-population-on-dark: #86b4f0;
+  --res-food-on-dark: #8fd174;
+  --res-materials-on-dark: #d69a7e;
+  --res-satisfaction-on-dark: #f58ca0;
+  --res-funds-on-light: #aa801c;
+  --res-population-on-light: #3d6fb6;
+  --res-food-on-light: #3f8a3a;
+  --res-materials-on-light: #9a5d45;
+  --res-satisfaction-on-light: #d34f6a;
   /*
    * Tre livelli, e ognuno e' due ombre: una corta di contatto, che dice
    * *appoggiato*, e una lunga d'ambiente, che dice *quanto in alto*. Con una
@@ -223,6 +241,48 @@
   stroke-linecap: round;
   stroke-linejoin: round;
 }
+/* I due pesi di 7.2: le risorse sono sagome piene, le azioni tratto piu' la
+   loro massa appena riempita. La massa segue `currentColor`, quindi un bottone
+   premuto o sbiadito la porta con se' senza una regola sua. */
+.hud-icon--fill { fill: currentColor; stroke: none; }
+.hud-icon .hud-mass { fill: currentColor; fill-opacity: .2; stroke: none; }
+
+/*
+ * La tinta di una risorsa sta sull'**icona**, non sul contenitore.
+ *
+ * Barra, prezzo della tessera, scheda, toast e scheda al cursore creano tutti la
+ * stessa icona con `createHudIcon`, e il nome che porta basta a tingerla: una
+ * superficie nuova che mostra una risorsa la riceve gia' del suo colore. `svg`
+ * davanti alza la specificita' sopra le regole generiche `.x .hud-icon` dei
+ * pannelli, ma non sopra il prezzo sul pieno d'oro, che deve restare scuro.
+ */
+svg.hud-icon[data-icon="funds"] { color: var(--res-funds); }
+svg.hud-icon[data-icon="population"] { color: var(--res-population); }
+svg.hud-icon[data-icon="food"] { color: var(--res-food); }
+svg.hud-icon[data-icon="materials"] { color: var(--res-materials); }
+svg.hud-icon[data-icon="satisfaction"] { color: var(--res-satisfaction); }
+/* I fondi che non seguono il tema si prendono la variante tarata per loro. */
+.hud-tip, .cursor-card, .hud-toast[data-tone="selection"], .hud-toast[data-tone="success"] {
+  --res-funds: var(--res-funds-on-dark);
+  --res-population: var(--res-population-on-dark);
+  --res-food: var(--res-food-on-dark);
+  --res-materials: var(--res-materials-on-dark);
+  --res-satisfaction: var(--res-satisfaction-on-dark);
+}
+.hud-toast[data-tone="error"], .hud-toast[data-tone="warning"] {
+  --res-funds: var(--res-funds-on-light);
+  --res-population: var(--res-population-on-light);
+  --res-food: var(--res-food-on-light);
+  --res-materials: var(--res-materials-on-light);
+  --res-satisfaction: var(--res-satisfaction-on-light);
+}
+
+/*
+ * La miniatura voxel di un catalizzatore: i colori li porta ogni tracciato, da
+ * `--vox-*`. Il filo dello stesso colore chiude le giunture fra due tinte, che
+ * l'antialiasing lascerebbe chiare; e' in unita' di reticolo, quindi sottile.
+ */
+.hud-miniature { stroke-width: .35; stroke-linejoin: round; overflow: visible; }
 
 .game-hud { position: fixed; inset: 0; z-index: 20; pointer-events: none; color: var(--hud-ink); font-family: var(--hud-font); }
 /* I dati in cima al rail: cinque risorse lette una sotto l'altra, poi tempo e
@@ -232,7 +292,6 @@
 /* Tabulari sull'**intera** pastiglia, non solo sul valore: il delta accanto
    cambia di segno e di cifre a ogni tick, e bastava lui a far ballare la riga. */
 .resource-item { position: relative; display: grid; grid-template-columns: calc(24 * var(--hud-unit)) 1fr; grid-template-rows: auto auto; align-items: center; min-width: 0; padding: var(--space-1) var(--space-15); border-radius: var(--radius-md); background: var(--hud-well); font-variant-numeric: tabular-nums; pointer-events: auto; }
-.resource-item .hud-icon { color: var(--hud-sage-dark); }
 
 /*
  * L'anello attorno all'icona: il tetto **e'** il contorno.
@@ -582,6 +641,17 @@
    lascerebbe le tessere accostate a sinistra dentro celle piu' larghe. */
 .dock-group-row > .hud-tile { width: auto; min-width: 0; }
 .hud-tile .hud-icon { width: calc(var(--icon-lg) * var(--rail-squeeze, 1)); height: calc(var(--icon-lg) * var(--rail-squeeze, 1)); }
+/* La miniatura non ha il margine interno di un pittogramma disegnato su 24 con
+   due unita' d'aria: riempie la sua casella fino al bordo. Qualche unita' in
+   piu' la porta allo stesso peso visivo, e il margine negativo la tiene fuori
+   dal conto della quota, che nel rail e' la risorsa contesa. */
+.hud-tile .hud-miniature { --mini: calc((var(--icon-lg) + 6 * var(--hud-unit)) * var(--rail-squeeze, 1)); width: var(--mini); height: var(--mini); margin-block: calc(-3 * var(--hud-unit) * var(--rail-squeeze, 1)); }
+/* Bloccata, la struttura perde meta' del colore ma non la sagoma: la tessera
+   dice «questa, non ancora». Solo il colore — l'opacita' la toglie gia'
+   `aria-disabled` al bottone intero, e sommarne una seconda rendeva le tessere
+   di inizio partita, bloccate quasi tutte, illeggibili proprio quando si
+   impara a riconoscerle. */
+.hud-tile[aria-disabled="true"] .hud-miniature { filter: grayscale(.5); }
 .hud-tile .button-copy { display: var(--rail-copy, flex); align-items: center; gap: 0; max-width: 100%; min-width: 0; }
 .hud-tile .button-copy > span:first-child { overflow: hidden; max-width: 100%; font-size: var(--text-2xs); text-overflow: ellipsis; }
 /* Il costo porta l'icona della risorsa, non la parola "funds": si legge come si
@@ -777,6 +847,9 @@
 .hud-toast[data-kind="onboarding"],
 .hud-toast[data-kind="coach"] { display: grid; gap: var(--space-05); font-weight: 500; }
 .hud-toast-title { font-weight: 800; }
+/* La risorsa di cui il toast parla, prima della frase: si legge «quale» prima
+   di leggere «perche'». Allineata al testo, non a una griglia sua. */
+.hud-toast > .hud-icon { width: 1.15em; height: 1.15em; margin-right: var(--space-15); vertical-align: -.2em; }
 .hud-toast-message { color: var(--hud-muted); font-size: var(--text-xs); line-height: 1.4; }
 
 /* Il verso di posa, sopra il toast e solo mentre si piazza un ruolo che ne ha due.
@@ -799,6 +872,7 @@
 .cursor-card strong { font-size: var(--text-sm); }
 .cursor-card > span { color: rgba(255, 255, 255, .7); }
 .cursor-card .cursor-line { color: rgba(255, 255, 255, .92); }
+.cursor-card .cursor-price .hud-icon { width: 10px; height: 10px; margin-right: 2px; vertical-align: -1px; }
 .cursor-card .cursor-line em { color: rgba(255, 255, 255, .6); font-style: normal; font-weight: 800; }
 .cursor-card .cursor-reason { color: #a7e0c5; font-weight: 800; }
 .cursor-card[data-valid="false"] .cursor-reason { color: #ffb3ae; }

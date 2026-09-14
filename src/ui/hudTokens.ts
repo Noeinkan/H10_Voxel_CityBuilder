@@ -1,6 +1,7 @@
 import { mixHex } from '../engine/daylight';
 import { hexToLinear, relativeLuminance } from '../engine/lighting';
 import type { Theme } from '../engine/themes';
+import { MINIATURE_FACES, miniatureFill, miniatureToken } from './voxelMiniature';
 
 /**
  * I token `--hud-*` derivati dal tema in vigore.
@@ -108,6 +109,42 @@ function solidPair(base: string, panel: string): { readonly fill: string; readon
   return visible[0] ?? candidates[0] ?? { fill: start, on: '#ffffff' };
 }
 
+/**
+ * L'identita' cromatica delle cinque risorse (fase 7.2).
+ *
+ * Una risorsa si riconosce prima dal colore e poi dalla sagoma, ed e' la stessa
+ * tinta ovunque compaia — barra, prezzo di una tessera, scheda, toast, scheda al
+ * cursore — perche' `hud.css` la lega all'icona e non al contenitore. Due tinte
+ * per risorsa, una per fondo: su un pannello chiaro l'oro va scurito verso
+ * l'ocra per restare una forma, su uno scuro schiarito verso il giallo; partire
+ * gia' vicino al fondo giusto lascia a `towardContrast` poco da spostare, e la
+ * tinta resta quella scelta.
+ *
+ * **Argilla e corallo stanno lontani apposta.** Il corallo alla lettera e'
+ * arancio-rosa, cioe' la stessa tinta dell'argilla: qui tende al rosa e
+ * l'argilla al bruno, ed e' il test a tenere le cinque tinte separate su ogni
+ * tema invece dell'occhio su quello aperto.
+ */
+export const RESOURCE_HUES = {
+  funds: { day: '#b3871d', night: '#f2c75c' },
+  population: { day: '#3d6fb6', night: '#86b4f0' },
+  food: { day: '#3f8a3a', night: '#8fd174' },
+  materials: { day: '#9a5d45', night: '#d69a7e' },
+  satisfaction: { day: '#d34f6a', night: '#f58ca0' },
+} as const;
+
+export type ResourceTone = keyof typeof RESOURCE_HUES;
+
+/**
+ * I due fondi fissi dell'HUD, che non seguono il tema.
+ *
+ * La scheda del dock e quella al cursore sono sempre scure, il toast d'allarme
+ * sempre rosato: una tinta derivata dal pannello ci finirebbe sopra sbagliata
+ * una volta su due. Per loro esistono le varianti `-on-dark` e `-on-light`.
+ */
+export const FIXED_DARK = '#263833';
+export const FIXED_LIGHT = '#ffeee6';
+
 /** Un colore esadecimale in `rgba()`, per ombre e bordi che vogliono l'alpha. */
 function rgba(hex: string, alpha: number): string {
   const value = Number.parseInt(hex.slice(1), 16);
@@ -195,7 +232,42 @@ export function hudTokens(theme: Theme): Readonly<Record<string, string>> {
     // fisso sarebbe l'unico colore cablato dell'HUD, e spegnerebbe i temi
     // notturni in un rettangolo morto grande come la finestra.
     '--hud-scrim': rgba(shade, 0.55),
+
+    ...resourceTokens(dark, surface),
+    ...miniatureTokens(theme.colors),
   };
+}
+
+/** `--res-<risorsa>` sul pannello, piu' le due varianti per i fondi fissi. */
+function resourceTokens(dark: boolean, surface: string): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const [id, hue] of Object.entries(RESOURCE_HUES)) {
+    // Una forma, non del testo: l'icona accanto a una cifra si legge come
+    // sagoma, e la cifra resta nell'inchiostro del suo contenitore.
+    out[`--res-${id}`] = towardContrast(dark ? hue.night : hue.day, surface, AA_SHAPE);
+    out[`--res-${id}-on-dark`] = towardContrast(hue.night, FIXED_DARK, AA_SHAPE);
+    out[`--res-${id}-on-light`] = towardContrast(hue.day, FIXED_LIGHT, AA_SHAPE);
+  }
+  return out;
+}
+
+/**
+ * Le tinte delle miniature dei catalizzatori, tre per slot di palette.
+ *
+ * Dalla palette **del tema**, non da `palette.json`: la miniatura e' il gancio
+ * fra toolbar e mondo, e sotto il tema al neon un mercato color mattone sarebbe
+ * di nuovo un'interfaccia appoggiata sopra il gioco. Il tracciato porta lo slot
+ * e la faccia, il colore arriva da qui: cambiare tema riscrive i token e le
+ * miniature seguono senza essere ricostruite.
+ */
+function miniatureTokens(colors: readonly string[]): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (let slot = 1; slot < colors.length; slot++) {
+    for (const face of MINIATURE_FACES) {
+      out[miniatureToken(slot, face)] = miniatureFill(colors[slot], face);
+    }
+  }
+  return out;
 }
 
 /** Scrive i token sulla radice del documento. Il solo punto che tocca il DOM. */

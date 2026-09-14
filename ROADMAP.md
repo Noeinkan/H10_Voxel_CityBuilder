@@ -1318,17 +1318,215 @@ già lo fa per edifici, landmark e arcologie.
 
 ## Fase 6 — Ottimizzazione e scala
 
-Questa fase accompagna tutte le precedenti; nessuna funzionalità supera il gate
-se rompe i budget esistenti.
+Obiettivo: una città matura che cresce senza che il frame se ne accorga. Quanto
+costa far crescere la città deve dipendere da quanto cambia, non da quanto è
+grande.
 
-- [ ] Mantenere 60 fps desktop, lavoro non-render sotto 4 ms per frame e crescita a <!-- size: L -->
-  costo limitato indipendente dal numero totale di edifici.
-- [ ] Aggiungere scenari automatici di soak per città grandi, espansioni consecutive <!-- size: M -->
-  e cambi frequenti di policy.
-- [ ] Misurare separatamente generazione, applicazione voxel, meshing, upload e UI. <!-- size: M -->
-- [ ] Introdurre livelli di dettaglio o batching aggiuntivo solo dopo misure reali, <!-- size: L -->
-  preservando palette a uniform e una geometria per chunk finché restano adeguati.
-- [ ] Verificare periodicamente GPU integrata, memoria, tempo di startup e dimensione bundle. <!-- size: S -->
+Questa fase accompagna tutte le altre: nessuna funzionalità supera il proprio
+gate se rompe i budget qui sotto.
+
+**Stato implementazione:** chiusa la 6.1, la ricerca dei lotti. Il resto è
+aperto, e si comincia dalla 6.2: i numeri su cui si ragionerebbe sono scaduti —
+le tabelle di misura di [README.md](README.md) e
+[src/sim/README.md](src/sim/README.md) sono state prese sull'isola da 256 e
+portano entrambe l'avviso «da rimisurare».
+
+**Il difetto sta in una riga: il frame ha un tetto per ogni cosa tranne che per
+quella che costa di più.** Generazione del terreno, meshatura, upload e ricolore
+hanno ciascuno il proprio tetto in millisecondi e si spezzano fra i frame
+(`FRAME_BUDGET_MS`, `GENERATION_BUDGET_MS` in `src/main.ts`). Il tick no:
+`GrowthScene.advance` chiama simulazione, passate del `Builder` e coach, e quello
+che c'è dentro gira fino in fondo nel frame in cui cade.
+
+**Dove il costo cresce con la città**, letto nel codice il 2026-09-14. I
+millisecondi vengono da misure già fatte, per lo più sull'isola da 256; dove
+mancano, c'è solo la forma del costo.
+
+- **Congestione.** `syncCongestion` rifà l'intero campo di desiderabilità ogni
+  64 costruzioni o promozioni, dentro il frame: 50–90 ms secondo la misura
+  annotata in `growthScene.ts`. È la voce singola più pesante.
+- **Ricerca dei lotti, caso peggiore.** 190–250 ms la prima passata dopo che la
+  memoria dei lotti si azzera. L'azzeramento segue l'epoca di `lotSearch.ts`, che
+  somma anche la revisione della rete stradale — e quella sale a ogni vicolo che
+  `RoadNetwork.connect` attacca a un edificio nuovo, non solo quando il mondo
+  libera suolo. Quanto spesso capiti davvero lo dice la 6.2.
+- **Scelta dei siti.** `nextBuildSites` scandisce l'intero campo allocato, e a
+  saturazione lo fa a ogni infornata: 5,7 ms del caso peggiore sintetico e picchi
+  fino a 16,8 ms, già indicati come «il vero sforamento del budget» e rimandati a
+  questa fase dalle schede di 4.1, 4.2 e 4.5.
+- **Promozioni.** La passata di upgrade porta il suo tick a 9,4 ms (scheda 4.6):
+  copia il registro, e ogni promozione cerca e ricopia la lista degli edifici.
+- **Rete stradale.** Quando cambia l'insieme dei catalizzatori la rete si
+  ricostruisce per intero: 188–306 ms su un salvataggio maturo da 1208 record.
+- **Campate e percorsi in quota.** `spans.pass` 15–27 ms ogni 2 s,
+  `aerial.routePass` 12–33 ms ogni 2,4 s; `routePartner` rimaterializza tutti gli
+  impalcati per ogni record esaminato.
+- **Arcologie.** `found` esamina fino a 24 isolati e per ciascuno `spacedOut`
+  rilegge l'intero registro. La quota è `ceil(N / buildingsPerArcology)`: cresce
+  con la città, quindi la passata non si chiude mai prima.
+- **Coach.** A ogni tick `densestColumn` conta i vicini attorno a *ogni* record,
+  e `scanLandmarks` rilegge il registro: il primo cresce più che in proporzione
+  con la densità.
+- **Tetti solo sulla carta.** Sei passate copiano l'intero registro prima di
+  esaminarne 24–64 record; `addBuilding` e `upgradeBuilding` copiano la lista
+  degli edifici della simulazione a ogni comparsa e promozione.
+- **Autosave.** Ogni 20 s, sincrono. In una città che ha costruito in quota
+  `captureSave` ricostruisce da capo il campo per potare, poi `JSON.stringify` e
+  `localStorage`.
+- **Caricamento.** `restore` riscrive ogni record, rifà il campo due volte e
+  adotta arcologie e rete in quota in un frame solo.
+- **Cadenze allineate.** Tutte le passate usano `tickCount % N === 0`: al tick 40
+  ne partono otto insieme.
+
+**Tre regole**, e ogni voce della fase ne serve almeno una:
+
+1. **Il tick sta dentro il budget del frame.** Nessuna passata oltre 4 ms; quello
+   che non ci sta si spezza fra i frame, come già fanno generazione e meshatura.
+2. **Il costo di una passata non cresce con la città.** Una passata è un cursore,
+   non una scansione: se il suo costo dipende da quanti edifici ci sono, è un
+   difetto anche quando oggi è veloce.
+3. **Le cadenze non coincidono.**
+
+**Il tetto al tick si conta in lavoro, non in millisecondi** — deciso il
+2026-09-14. Generazione e meshatura possono fermarsi sull'orologio perché il loro
+risultato non dipende da quando arriva: il terreno è funzione di `(seed, chunk)`.
+Le passate del `Builder` no: vanno in ordine e decidono la città. Una passata che
+si fermasse a 3 ms d'orologio farebbe crescere una città diversa su un PC lento e
+su uno veloce, e `cityDigest.test.ts` non potrebbe più fissarla. Il tetto è
+quindi un numero di record, colonne o celle, tarato sulle misure della 6.2; i
+4 ms restano l'allarme, e a sorvegliarlo è il soak.
+
+**I millisecondi non sono un criterio automatico.** Con più agenti sulla stessa
+macchina il tempo di parete oscilla di 2,5× fra una run e l'altra, e Playwright
+headless gira a 2-3 fps. Test e soak giudicano su **contatori deterministici**,
+identici a parità di seme; i millisecondi si prendono a mano, headed, a macchina
+ferma, e valgono come indicazione.
+
+| Budget da difendere | Obiettivo | Accettazione |
+| --- | --- | --- |
+| fps desktop | 60 | ≥ 50 durante la crescita |
+| Lavoro non-render per frame | 3 ms | 4 ms al p99 (già in `AGENTS.md`) |
+| Una passata del `Builder` | < 4 ms | mai oltre un frame a 60 fps |
+| `tickMs` | < 2 ms di media | p99 < 8 ms |
+| Colonne lette per ricerca di lotto | < 2.000 | < 5.000 (2.202 a 351 edifici) |
+| Costo per passata col numero di edifici | piatto | nessuna voce super-lineare |
+
+**Gate:** crescendo su seme fisso da circa 1.200 a circa 2.500 edifici, i
+contatori di lavoro per passata restano piatti; e a schermo, headed e a macchina
+ferma, la città tiene i 60 fps con il lavoro non-render sotto 4 ms al p99.
+
+### Fase 6.1 — La ricerca dei lotti non cresce con la città
+
+*Chiusa. Il ragionamento e le misure stanno in [docs/roadmap/fase-6.1.md](docs/roadmap/fase-6.1.md).*
+
+- [x] Chiave di colonna numerica per registro e blacklist del `Builder`: `columnKey` <!-- size: S -->
+  al posto di una stringa a interrogazione, 2,51× sulla sola lettura.
+- [x] Memo delle colonne bocciate per la durata di una passata (`lotMemo.ts`): <!-- size: M -->
+  mediana a saturazione da 5,5 s a 140 ms su 351 edifici, città identica.
+- [x] Memo dell'isolato pieno che sopravvive all'infornata, invalidato da <!-- size: M -->
+  un'epoca: mediana 9,1 ms, colonne per ricerca da 7.099 a 2.202, città identica
+  fissata da `cityDigest.test.ts`. Il caso peggiore resta: passa alla 6.3.
+
+### Fase 6.2 — Il metro
+
+Obiettivo: ogni voce che segue si dimostra con un numero, e resta difesa da un
+test quando la sonda viene buttata.
+
+- [ ] Bench di città matura a seme fisso (`tickProfile.bench.ts`) che riporta <!-- size: M -->
+  contatori deterministici — colonne lette per ricerca, prove di quadrato e
+  record esaminati o copiati per passata, celle di campo ricalcolate — e i
+  millisecondi per passata come indicazione.
+- [ ] Misurare separatamente generazione (anche delle espansioni), applicazione <!-- size: M -->
+  voxel di terreno ed edifici, meshatura, upload, rifacimento del campo,
+  autosave e UI, tutto da `frameStats.ts`: `__voxelStats()` smette di assemblare
+  un oggetto suo, che oggi già diverge dall'overlay.
+- [ ] `mainMs` copre tutto il lavoro non-render del frame, anche quello dopo il <!-- size: S -->
+  render (HUD, traffico, autosave); p95 e p99 di frame e tick invece del solo
+  ultimo valore e massimo.
+- [ ] Upload separato dal render: oggi si misura la creazione della geometria, e <!-- size: S -->
+  il trasferimento vero alla GPU finisce dentro `renderMs`.
+- [ ] Rifare a 512 le tabelle «da rimisurare» di `README.md` e `src/sim/README.md`, <!-- size: M -->
+  headed e a macchina ferma.
+
+**Gate:** su una città matura a seme fisso un solo comando stampa quanto lavoro
+fa e quanto costa ogni passata, e due run consecutive danno contatori identici.
+
+### Fase 6.3 — Il tetto al tick
+
+- [ ] Sfasare le cadenze: `(tickCount + offset) % N` con un offset distinto per <!-- size: S -->
+  passata. Cambia la città generata, quindi le impronte di `cityDigest.test.ts`
+  si rifanno, una volta e dichiarandolo.
+- [ ] `buildPass` riprendibile: la ricerca dei siti tiene il proprio punto e <!-- size: L -->
+  riprende al tick dopo. Il ritmo di crescita resta quello di `ticksPerBuild`;
+  cambia solo il frame in cui il lavoro atterra.
+- [ ] `onTick` riceve un budget in unità di lavoro e ferma la coda delle passate <!-- size: M -->
+  quando l'ha speso, riprendendo dalla successiva al tick dopo.
+
+**Gate:** nel bench della 6.2 nessuna passata supera il proprio tetto di lavoro,
+e il picco da 190–250 ms della ricerca dei lotti non compare più.
+
+### Fase 6.4 — Via le letture dell'intera città
+
+- [ ] Congestione: il campo si rifà a scaglioni, o solo dove il carico è <!-- size: L -->
+  cambiato, invece che per intero in un frame.
+- [ ] Scelta dei siti: il giro di riserva di `nextBuildSites` smette di scandire <!-- size: M -->
+  l'intero campo allocato — un cursore che riprende, o un indice delle celle
+  candidate aggiornato dove il campo cambia.
+- [ ] Arcologie: la distanza dalle arcologie esistenti si legge da un indice, <!-- size: S -->
+  non rileggendo il registro per ogni isolato candidato.
+- [ ] Coach: `densestColumn` a cadenza o incrementale, `scanLandmarks` sui soli <!-- size: S -->
+  landmark.
+- [ ] Passate a cursore sul registro invece di copiarlo; `addBuilding` e <!-- size: M -->
+  `upgradeBuilding` senza copiare l'intera lista degli edifici.
+- [ ] Memoria dei lotti: stabilire se un vicolo nuovo può rendere valido un lotto <!-- size: S -->
+  già scartato. Se non può, la revisione della rete esce dall'epoca e il memo
+  smette di cadere a ogni casa in periferia.
+- [ ] Il resto a scalare: `BuildingRegistry.at()` senza array, `deckColumns` e <!-- size: M -->
+  `headroomAt` su `columnKey`, `routePartner` senza rimaterializzare gli
+  impalcati, rete stradale ricostruita a scaglioni.
+
+**Gate:** il bench della 6.2 rifatto su una città doppia dà gli stessi contatori
+per passata.
+
+### Fase 6.5 — Soak
+
+- [ ] Scenari automatici in Node, a seme fisso e con un tetto duro di tempo: <!-- size: M -->
+  città grande, espansioni consecutive, cambi frequenti di policy, salva e carica
+  ripetuti. Giudicano su contatori e invarianti — nessuna passata oltre il
+  tetto, nessun record orfano — e stanno fuori dalla suite normale, come
+  `Builder.slow.test.ts`.
+- [ ] Uno scenario headed per gli fps: la città grande cresce a schermo e si <!-- size: S -->
+  leggono i p99 della 6.2 da `__voxelStats()`.
+
+**Gate:** i quattro scenari finiscono entro il loro tetto su questa macchina, e
+lo scenario headed rispetta i budget della fase.
+
+### Fase 6.6 — Salvataggio e caricamento a scaglioni
+
+- [ ] Autosave misurato e, se costa, spezzato fra i frame o spostato in un worker; <!-- size: M -->
+  la potatura non ricostruisce l'intero campo.
+- [ ] Caricamento a scaglioni: riscrittura dei record e adozioni fuori dal frame <!-- size: M -->
+  singolo, dietro la schermata d'ingresso.
+
+**Gate:** su una città matura un autosave non compare fra i frame oltre 4 ms, e
+durante un caricamento la pagina resta reattiva.
+
+### Fase 6.7 — Render e piattaforma
+
+- [ ] Introdurre livelli di dettaglio o batching aggiuntivo solo dopo le misure <!-- size: L -->
+  della 6.2, preservando palette a uniform e una geometria per chunk finché
+  restano adeguati.
+- [ ] Verificare periodicamente GPU integrata, memoria (heap e <!-- size: S -->
+  `renderer.info.memory`), tempo di avvio fino al mondo pronto e dimensione del
+  bundle.
+
+**Resta aperto: stringere il raggio di ricerca dei lotti.** `blockSearchRadius: 2`
+è un tetto di costo, non una regola urbana. Se l'isolato d'origine e i suoi otto
+vicini sono pieni, camminare fino al quinto anello serve solo a trovare un lotto
+dove la desiderabilità non lo voleva; se i lotti nati oltre il primo anello sono
+pochi, stringere il raggio divide il caso peggiore per quattro. Ma **cambia la
+città generata**: è una decisione di gioco, non di prestazioni, e va presa da chi
+decide come deve crescere la città.
 
 ## Fase 7 — Linguaggio visivo dell'interfaccia
 
@@ -1340,14 +1538,13 @@ crema, un'unica ombra, icone a tratto sottile tutte dello stesso peso e dello
 stesso colore. Il risultato è che l'HUD sembra appoggiato sopra il gioco invece
 di appartenergli.
 
-**Stato: 7.1, 7.3, 7.4 e 7.6 sono fatte** — il sottoinsieme che Alpha 0.2 chiede
-prima del playtest, più la leggibilità delle cause, che non era in programma qui
-e ci è finita perché è lo stesso difetto un piano più a fondo: la 7.1–7.5
-rendono leggibile lo **stato**, la 7.6 la **causa**. Restano 7.2 (iconografia) e
-7.5 (movimento e feedback). Delle tre
-rotture qui sotto, la seconda e la terza sono chiuse; la prima lo è per metà —
-le cinque risorse ora si distinguono per anello, tendenza e sparkline, ma
-l'**icona** è ancora la stessa a tratto unico, ed è appunto 7.2.
+**Stato: 7.1, 7.2, 7.3, 7.4 e 7.6 sono fatte** — il sottoinsieme che Alpha 0.2
+chiede prima del playtest, più la leggibilità delle cause, che non era in
+programma qui e ci è finita perché è lo stesso difetto un piano più a fondo: la
+7.1–7.5 rendono leggibile lo **stato**, la 7.6 la **causa**. Resta 7.5
+(movimento e feedback), e della 7.2 il gate, che chiede un playtest. Le tre
+rotture qui sotto sono chiuse: le cinque risorse si distinguono per anello,
+tendenza e sparkline, e dalla 7.2 anche per sagoma e tinta.
 
 Le tre rotture visibili a schermo, in ordine di gravità:
 
@@ -1403,17 +1600,34 @@ davvero dipinti, dove sta fra **4,57 e 15,63**.
 
 ### Fase 7.2 — Iconografia
 
-- [ ] Ridisegnare `hudIcons.ts` su due pesi (filled per le risorse, stroke per le <!-- size: L -->
+- [x] Ridisegnare `hudIcons.ts` su due pesi (filled per le risorse, stroke per le <!-- size: L -->
   azioni) con sagoma leggibile a 18px, non pittogrammi generici a tratto unico.
-- [ ] Dare a ogni risorsa un'identità cromatica stabile — denaro oro, cibo verde, <!-- size: M -->
+  Le risorse sono sagome piene diverse **di contorno** — moneta, due busti, mela,
+  mattoni a piramide, cuore — perché si guardano a 9-12px; le azioni restano a
+  tratto e portano la loro **massa** riempita al 20%, così un edificio si legge
+  prima come forma e poi come dettaglio.
+- [x] Dare a ogni risorsa un'identità cromatica stabile — denaro oro, cibo verde, <!-- size: M -->
   materiali argilla, residenti blu, soddisfazione corallo — riusata ovunque quella
-  risorsa compaia: barra, costi dei bottoni, toast, cursor card.
-- [ ] Per i catalizzatori usare miniature isometriche voxel al posto dei <!-- size: L -->
+  risorsa compaia: barra, costi dei bottoni, toast, cursor card. La tinta sta
+  sull'**icona** (`svg.hud-icon[data-icon]`), non sul contenitore: ogni superficie
+  che crea l'icona la riceve già colorata. Due tinte per risorsa, derivate in
+  `hudTokens.ts` con contrasto di forma su pannello e sui due fondi fissi; il
+  corallo tende al rosa perché quello letterale ha la tinta dell'argilla. Il
+  prezzo della scheda al cursore ora è un numero con icona, non «120 funds».
+- [x] Per i catalizzatori usare miniature isometriche voxel al posto dei <!-- size: L -->
   pittogrammi lineari: è il gancio più diretto fra toolbar e mondo, e riusa la
-  palette già in `palette.json`.
+  palette già in `palette.json`. **La miniatura è la ricetta vera**, non un
+  disegno: `catalystMiniature.ts` proietta lo stamp di `generateLandmark` con uno
+  z-buffer su reticolo di triangoli (`voxelMiniature.ts`), allo stadio più alto
+  che resta sotto 12 000 caratteri di tracciato e un rapporto 2:1. I colori
+  arrivano dalla palette **del tema** via `--vox-*`, quindi cambiano col tema
+  senza ricostruire le tessere. Solo nel dock: nelle righe da 14px resta il
+  pittogramma.
 
 **Gate:** a etichette nascoste, un giocatore riconosce le cinque risorse e i
-sette catalizzatori dalla sola icona.
+diciannove catalizzatori dalla sola icona. *Da verificare al playtest*: a
+schermo, su tema chiaro e su neon, le sagome si distinguono, ma il gate chiede
+un giocatore, non chi le ha disegnate.
 
 ### Fase 7.3 — Indicatori
 
