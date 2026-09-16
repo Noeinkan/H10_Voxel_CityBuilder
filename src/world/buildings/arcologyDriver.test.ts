@@ -156,7 +156,14 @@ function grow(): City {
 
   for (let i = 0; i < 2000; i++) {
     state = tick(state, map);
-    state = builder.onTick(state);
+    // **Senza tetto al tick, e non e' una scorciatoia.** Qui il centro e' saturo
+    // sotto cinque poli sovrapposti, e un'infornata costa in media 260.000
+    // letture — sessantacinque volte il tetto di un tick. Con il tetto la citta'
+    // cresce lo stesso, ma in duemila tick arriva a 138 edifici invece di 400, e
+    // la megastruttura non fa in tempo ad aprire la seconda fascia: la fixture
+    // misurerebbe il ritmo della crescita invece delle arcologie. Il tetto ha i
+    // suoi test in `tickCap.test.ts`; quel costo lo abbatte la fase 6.4.
+    state = builder.onTick(state, Number.POSITIVE_INFINITY);
     // La comparsa e' a budget: senza svuotare la coda la citta' resterebbe a
     // registro e non nel mondo, e le sonde sui voxel leggerebbero aria.
     while (builder.stats.growing > 0) builder.step();
