@@ -1468,17 +1468,39 @@ prima di toccarli.
 
 ### Fase 6.3 — Il tetto al tick
 
-- [ ] Sfasare le cadenze: `(tickCount + offset) % N` con un offset distinto per <!-- size: S -->
+- [x] Sfasare le cadenze: `(tickCount + offset) % N` con un offset distinto per <!-- size: S -->
   passata. Cambia la città generata, quindi le impronte di `cityDigest.test.ts`
-  si rifanno, una volta e dichiarandolo.
-- [ ] `buildPass` riprendibile: la ricerca dei siti tiene il proprio punto e <!-- size: L -->
+  si rifanno, una volta e dichiarandolo. Gli sfasamenti li calcola
+  `staggerOffsets`: nessun tick porta più di due passate, le quattro care non si
+  incontrano mai, e dove l'ordine è una regola lo tiene un legame.
+- [x] `buildPass` riprendibile: la ricerca dei siti tiene il proprio punto e <!-- size: L -->
   riprende al tick dopo. Il ritmo di crescita resta quello di `ticksPerBuild`;
-  cambia solo il frame in cui il lavoro atterra.
-- [ ] `onTick` riceve un budget in unità di lavoro e ferma la coda delle passate <!-- size: M -->
+  cambia solo il frame in cui il lavoro atterra. Si ferma anche a metà di una
+  ricerca di lotto (`findLotSteps`), e prenota i propri posti di `maxGrowing`.
+- [x] `onTick` riceve un budget in unità di lavoro e ferma la coda delle passate <!-- size: M -->
   quando l'ha speso, riprendendo dalla successiva al tick dopo.
 
-**Gate:** nel bench della 6.2 nessuna passata supera il proprio tetto di lavoro,
-e il picco da 190–250 ms della ricerca dei lotti non compare più.
+**Gate: passato sui contatori, da confermare in millisecondi.** Sulla città della
+6.2 il giro d'infornata più pesante spende 4.061 letture contro un tetto di
+4.000, dove prima un'infornata intera ne spendeva 61.000 in un tick; lo difende
+`tickProfile.slow.test.ts`. La città a 1.500 tick ha 268 edifici con il tetto e
+268 senza. Il picco in millisecondi non è stato rimisurato: durante le misure la
+macchina era in swap, e i tempi non valevano niente. Va preso headed, a macchina
+ferma.
+
+**Cosa resta sopra il tetto, per la 6.4.** Il tetto ferma la coda, non spezza
+una passata atomica: le arcologie arrivano a 20.000 letture in un giro, e
+percorsi in quota e rete stradale non hanno ancora un contatore, quindi il metro
+non li vede.
+
+**E dove la ricerca costa più di un giro, a rallentare è la città.** Sulla
+fixture delle arcologie — centro saturo sotto cinque catalizzatori sovrapposti —
+un'infornata legge in media 260.000 unità, sessantacinque volte il tetto: senza
+tetto quella città si fermava un quarto di secondo ogni dieci tick, con il tetto
+in 2.000 tick nascono 138 edifici invece di 400. Il tetto non ha creato il costo,
+l'ha reso visibile; a toglierlo è la 6.4, ed è la stessa voce dell'accettazione
+della fase — meno di 5.000 colonne per ricerca. Lo sfasamento le tiene separate; ridurne il costo è
+la 6.4.
 
 ### Fase 6.4 — Via le letture dell'intera città
 

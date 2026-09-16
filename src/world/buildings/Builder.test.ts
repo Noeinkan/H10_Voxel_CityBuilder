@@ -31,6 +31,7 @@ import { SURFACE_KIND, blockPalette } from '../visualBlock';
 import { WATER_IDS } from '../terrain/config';
 import { Builder, REJECT_REASONS } from './Builder';
 import { BUILDER, CLASS_PROFILE, MAX_FOOTPRINT } from './config';
+import { growthPassTick } from './growthCadence';
 import { GRADING } from '../grading/config';
 import { GROUND, groundKindOf, isDryLand, type GroundKind } from '../grading/grade';
 import { SKYLINE } from '../skyline/config';
@@ -1414,7 +1415,7 @@ describe('Builder — landmark dei catalizzatori', () => {
     builder.materialize(state.buildings);
     state = {
       ...state,
-      tickCount: BUILDER.ticksPerUpgrade,
+      tickCount: growthPassTick('upgrades'),
       materials: { ...state.materials, stock: 100_000 },
     };
 
@@ -1823,6 +1824,14 @@ describe('Builder — sventramento', () => {
     for (let i = 0; i < ticksFor(builds); i++) {
       state = tickHeld(state, terrain);
       state = builder.onTick(state);
+      while (builder.stats.growing > 0) builder.step();
+    }
+    // **Niente passate a meta'.** Con il tetto al tick un'infornata puo' restare
+    // in coda: i suoi edifici nascerebbero durante lo sventramento, e il conto
+    // «la simulazione ha perso esattamente i condannati» conterebbe due gesti
+    // insieme. Senza tetto la coda si svuota in un giro.
+    for (let i = 0; i < 20 && builder.pendingPasses.length > 0; i++) {
+      state = builder.onTick(state, Number.POSITIVE_INFINITY);
       while (builder.stats.growing > 0) builder.step();
     }
     while (builder.stats.surfaceQueued > 0) builder.step();
