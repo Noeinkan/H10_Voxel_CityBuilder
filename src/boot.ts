@@ -1,3 +1,4 @@
+import { installAuthGate } from './auth/install';
 import {
   lookUrl,
   newGameUrl,
@@ -28,6 +29,12 @@ import { TitleScreen } from './ui/TitleScreen';
  * mentre il giocatore stava ancora leggendo il menu — la scelta arrivava dopo il
  * lavoro invece che prima. Qui si carica con un import dinamico, e quel `import`
  * sta dentro il gesto che dice «vai».
+ *
+ * **E prima ancora c'e' la porta d'accesso.** Nessuno dei due `import('./main')`
+ * qui sotto e' raggiungibile senza essere passato da `allowEntry()`, che e' anche
+ * il momento in cui la prova di 45 minuti si accende. La porta vive in
+ * `src/auth/` e non sa niente del mondo; questo file non sa niente di come si
+ * entra, e si limita a chiedere.
  *
  * Il resto e' invariato: il seed sta nell'indirizzo, i salvataggi passano dallo
  * slot di transito, e la radice resta l'unica a conoscere l'engine. Questo file
@@ -62,8 +69,47 @@ const READY_TIMEOUT_MS = 12_000;
  */
 let look: LookChoice = resolveLook(params);
 
-if (opensEntryMenu(params, mode, restored)) openTitle();
-else void import('./main');
+/**
+ * La porta d'accesso si monta per prima, e da lei passa tutto il resto.
+ *
+ * `revealMenu` e' una richiamata e non un valore di ritorno perche' puo' essere
+ * chiamata **dopo**: chi arriva sulla pagina senza sessione vede il modulo,
+ * entra, e solo allora il menu ha qualcosa da mostrare. Nello stesso istante,
+ * chi ha gia' una sessione valida la vede partire dentro `begin()`.
+ */
+const gateReady = installAuthGate(revealMenu);
+
+/** Il momento in cui il menu puo' esistere: prima non c'e' nessuno a cui mostrarlo. */
+function revealMenu(): void {
+  if (opensEntryMenu(params, mode, restored)) openTitle();
+  else void resumeDirectly();
+}
+
+/**
+ * Il caso `?play=1`: nessun menu, il mondo nasce subito.
+ *
+ * Passa dalla porta come tutto il resto — e' anzi il momento in cui la prova si
+ * accende per chi arriva da un collegamento gia' pronto.
+ */
+async function resumeDirectly(): Promise<void> {
+  if (!(await allowEntry())) return;
+  await import('./main');
+}
+
+/**
+ * L'ultima parola prima che il mondo nasca.
+ *
+ * `false` vuol dire che la schermata d'accesso e' gia' ricomparsa sopra a tutto:
+ * la prova e' finita, il cronometro e' arrivato a zero, e non c'e' niente da
+ * caricare. Si aspetta `gateReady` invece di leggere un valore appena scritto
+ * perche' questo e' anche il percorso di chi preme «Play» sulla schermata del
+ * titolo, che il gate l'ha gia' in mano da un pezzo: una promessa gia' risolta
+ * non costa niente.
+ */
+async function allowEntry(): Promise<boolean> {
+  const gate = await gateReady;
+  return gate.canEnterWorld();
+}
 
 /** La schermata del titolo, con dentro le citta' che ci sono davvero. */
 function openTitle(): void {
@@ -119,6 +165,11 @@ function openTitle(): void {
  */
 async function enter(screen: TitleScreen, seed: number, message?: string): Promise<void> {
   screen.startLoading(message);
+  // L'attesa si mostra **prima** di chiedere, non dopo: la prima pressione di
+  // «Play» e' anche quella che accende la prova, quindi c'e' una scrittura vera
+  // da fare, e un bottone immobile durante una chiamata di rete sembra rotto.
+  // Se la risposta e' no, la schermata d'accesso ricompare sopra a tutto.
+  if (!(await allowEntry())) return;
   window.history.replaceState(
     window.history.state,
     '',

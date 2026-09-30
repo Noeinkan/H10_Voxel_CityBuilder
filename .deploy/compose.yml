@@ -12,6 +12,12 @@ services:
       args:
         BUILD_COMMAND: "npm run build"
         OUTPUT_DIR: "dist"
+        # Docker Compose legge da se' il `.env` che sta accanto a questo file,
+        # e sul server e' `/opt/sites/voxelcity/.env` (0600). Il valore arriva
+        # quindi al build senza mai passare dal repository: il `:-` vuoto serve
+        # a non far fallire il compose quando le chiavi non ci sono ancora.
+        VITE_SUPABASE_URL: "${VITE_SUPABASE_URL:-}"
+        VITE_SUPABASE_ANON_KEY: "${VITE_SUPABASE_ANON_KEY:-}"
     image: site-voxelcity:${SITE_TAG:-latest}
     container_name: site-voxelcity-web
     volumes:

@@ -5,6 +5,19 @@ ARG NODE_VERSION=22
 FROM node:${NODE_VERSION}-alpine AS build
 ARG BUILD_COMMAND="npm run build"
 ARG OUTPUT_DIR="dist"
+# Le due sole informazioni che il bundle deve conoscere di Supabase.
+#
+# Sono **argomenti di build e non segreti**: l'URL del progetto e la chiave
+# pubblicabile finiscono per forza dentro il file JavaScript che il browser
+# scarica, perche' e' il browser a parlare con Supabase. A proteggere i dati e'
+# la Row Level Security, non il fatto che la chiave resti nascosta — e infatti
+# non resta nascosta.
+#
+# A darle e' `compose.yml`, che le prende dal `.env` del sito sul server. Vuote
+# per difetto: senza di loro il build riesce lo stesso, e la pagina dice che
+# l'accesso non e' configurato invece di non partire.
+ARG VITE_SUPABASE_URL=""
+ARG VITE_SUPABASE_ANON_KEY=""
 WORKDIR /src
 COPY repo/ /src/
 # Install esatto da lockfile quando c'è; fallback per le repo che non lo hanno.

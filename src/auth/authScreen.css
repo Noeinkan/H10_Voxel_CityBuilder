@@ -1,0 +1,96 @@
+/*
+ * Quel poco che la porta d'accesso aggiunge a `titleScreen.css`.
+ *
+ * Il grosso del vestito arriva da li': cielo, marchio, bottoni grandi, campi e
+ * note sono gli stessi del titolo, ed e' voluto — chi apre il link e chi apre il
+ * gioco devono riconoscere lo stesso posto. Qui resta solo cio' che il titolo
+ * non aveva: i campi con l'etichetta sopra, i due gesti affiancati, e il badge
+ * del tempo.
+ *
+ * I colori sono scritti e non derivati, come nell'altro foglio: questo si carica
+ * **prima** di `main.ts`, quindi i token di `hud.css` a quest'ora non esistono.
+ */
+
+/*
+ * Sopra tutto, e non e' un numero scelto a caso: `titleScreen.css` si ferma a
+ * 90 e l'HUD a 20. La porta d'accesso deve poter ricomparire **sopra una partita
+ * in corso** quando la prova finisce, quindi sta sopra anche al titolo.
+ */
+.auth-screen {
+  z-index: 200;
+}
+
+/* Il campo del titolo e' pensato per stare in fila con un bottone accanto;
+   qui e' da solo e deve prendersi la colonna. */
+.auth-pane .title-field {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.auth-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.auth-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: #3c5a70;
+}
+
+.auth-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+/* Il messaggio libero della richiesta beta: un campo alto, non una riga. */
+.auth-textarea {
+  resize: vertical;
+  min-height: 64px;
+  font: inherit;
+  line-height: 1.4;
+}
+
+/* La riga d'esito sta sotto la sottoschermata e non dentro: cosi' non si duplica
+   in ognuna e resta al suo posto cambiando campo. Senza `min-height` il resto
+   della colonna salterebbe su e giu' a ogni messaggio. */
+.auth-note {
+  min-height: 16px;
+}
+
+/*
+ * Il badge del tempo: la banda alta al centro, che l'HUD si e' tenuta libera.
+ *
+ * Sta sopra la citta' ma non deve competere con lei — e' un promemoria, non un
+ * dato da leggere — quindi e' piccolo, chiaro e traslucido. Il bordo tiene il
+ * testo leggibile anche sopra un cielo chiaro, dove un fondo bianco sparirebbe.
+ */
+.auth-badge {
+  position: fixed;
+  top: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 120;
+  padding: 4px 12px;
+  border: 1px solid rgba(35, 75, 105, .22);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, .82);
+  color: #2d4a5e;
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+  user-select: none;
+}
+
+.auth-badge[data-kind='beta'] {
+  border-color: rgba(176, 132, 44, .38);
+  background: rgba(255, 246, 222, .88);
+  color: #6b5320;
+}
+
+.auth-badge-text {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: .02em;
+}
