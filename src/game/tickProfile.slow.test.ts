@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { BUILDER } from '../world/buildings/config';
 import { formatPassTable } from '../world/buildings/passProfile';
 import { growProfileCity } from './profileCity';
 
@@ -14,12 +15,24 @@ import { growProfileCity } from './profileCity';
  * **Quello che il test difende sono i contatori, non i millisecondi.** Su questa
  * macchina il tempo oscilla di due volte e mezza con altri processi accesi; il
  * lavoro contato a parita' di seme no, ed e' la proprieta' senza cui nessuna
- * soglia futura potrebbe dire di no. Le soglie arrivano con le fasi 6.3 e 6.4,
- * che le abbassano: oggi la tabella dice quanto si e' sopra.
+ * soglia futura potrebbe dire di no.
+ *
+ * **La prima soglia e' quella della 6.3**: nessun giro dell'infornata spende piu'
+ * del tetto al tick. Prima del tetto un'infornata sola arrivava a sessantamila
+ * letture in un tick.
  */
 
 const SHORT = 400;
 const LONG = 1500;
+
+/**
+ * Di quanto un giro puo' passare il tetto: il metro si guarda fra un quadrato e
+ * l'altro, quindi l'ultimo quadrato letto e la posa dell'edificio trovato — le
+ * visite del registry che fa — arrivano dopo il controllo. Misurato: 61 letture
+ * oltre le 4.000. Cinquecento lasciano spazio a un'impronta piu' larga senza
+ * lasciarne a una ricerca che si dimentichi di fermarsi, che sfora di migliaia.
+ */
+const OVERSHOOT = 500;
 
 describe('profilo del ciclo di crescita', () => {
   it('due citta dello stesso seme fanno lo stesso lavoro, passata per passata', () => {
@@ -49,5 +62,8 @@ describe('profilo del ciclo di crescita', () => {
     expect(scene.stats.buildings).toBeGreaterThan(200);
     const build = scene.profile.readings().find((reading) => reading.name === 'build');
     expect(build?.work.lotSearches ?? 0).toBeGreaterThan(0);
+
+    // Il gate della 6.3, sul contatore che il metro legge.
+    expect(build?.maxWork.budgetWork ?? Infinity).toBeLessThanOrEqual(BUILDER.workPerTick + OVERSHOOT);
   }, 600_000);
 });

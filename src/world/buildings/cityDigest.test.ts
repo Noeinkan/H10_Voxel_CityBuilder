@@ -33,6 +33,14 @@ import { BUILDER } from './config';
  * caso che questa impronta esiste per rendere visibile. Nello stesso intervallo
  * si e' mosso anche il repertorio delle tipologie, e la firma porta
  * `record.typology`: l'impronta nuova tiene dentro tutte e due le cause.
+ *
+ * **Rigenerata di nuovo con il tetto al tick (6.3), e dichiarandolo.** Le cadenze
+ * sfasate cambiano in quale tick ogni passata gira, e l'infornata che si ferma
+ * sul budget posa i suoi edifici qualche tick dopo: la citta' e' un'altra, e le
+ * partite salvate non ricrescono piu' uguali. Il valore fissato prima
+ * (`15ab8462`) era gia' rosso sul commit da cui la fase e' partita, che dava
+ * `2153a93b`: qualcosa l'aveva spostato senza rigenerarlo, e questa impronta
+ * copre anche quello.
  */
 
 /**
@@ -117,7 +125,7 @@ describe('impronta digitale della citta', () => {
     // Se il nucleo non si satura la ricerca del lotto non fallisce mai, e
     // l'impronta smette di coprire proprio il caso che deve difendere.
     expect(placed).toBeGreaterThan(100);
-    expect(cityDigest(records)).toBe('15ab8462');
+    expect(cityDigest(records)).toBe('854cb7c4');
   }, 120_000);
 
   it('l hash distingue due citta diverse', () => {

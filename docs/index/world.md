@@ -99,7 +99,7 @@ avviene a valle, dove il terreno gia' si legge.
 | --- | --- | --- |
 | [config.ts](src/world/streets/config.ts) | **Ogni** passo, scostamento, larghezza e colore della carreggiata | `STREETS` |
 | [streetGrid.ts](src/world/streets/streetGrid.ts) | Griglia deformata: assi, isolati, ruolo di una colonna, versi di affaccio | `STREET_ROLE`, `FACING`, `streetRoleAt`, `isPavement`, `blockAt`, `blockRect`, `blockKey`, `lineStart`, `lineEnd`, `lineWidth`, `isArterial`, `BlockId`, `BlockRect`, `Facing`, `StreetRole` |
-| [src/world/streets/lots.ts](src/world/streets/lots.ts) | Ricerca pura dell'impronta libera per distanza euclidea attorno al candidato, continua oltre la maglia; la variante esplicita sul bordo puo' preferire un verso fornito dal mondo | `placeLot`, `Lot`, `LotRequest` |
+| [src/world/streets/lots.ts](src/world/streets/lots.ts) | Ricerca pura dell'impronta libera per distanza euclidea attorno al candidato, continua oltre la maglia, anche a passi — uno per quadrato valutato — con `placeLotSteps`; la variante esplicita sul bordo puo' preferire un verso fornito dal mondo | `placeLot`, `placeLotSteps`, `Lot`, `LotRequest` |
 | [corridor.ts](src/world/streets/corridor.ts) | Il raccordo di un isolato nato staccato: percorso a costo minimo sugli incroci della maglia, il terreno entra come costo di un tratto | `planCorridor`, `nearestBlock`, `blockNeighbours`, `CorridorLeg`, `CorridorRequest`, `Axis` |
 | [StreetNetwork.ts](src/world/streets/StreetNetwork.ts) | Facciata sul seed: ruoli, isolati, anello di carreggiata da dipingere, colonne di un tratto di raccordo | `StreetNetwork`, `PavementCell` |
 

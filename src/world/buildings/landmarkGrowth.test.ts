@@ -17,7 +17,7 @@ import { VoxelWorld } from '../VoxelWorld';
 import { Builder } from './Builder';
 import { footprintDepth, type BuildingRecord } from './BuildingRegistry';
 import { recordsIn, type ClearanceBox } from './clearanceSite';
-import { BUILDER } from './config';
+import { growthPassTick } from './growthCadence';
 import { ringStrips } from './landmarkDriver';
 import { STAMP_EMPTY } from './stamp';
 
@@ -194,7 +194,7 @@ describe('un landmark che cresce di sedime', () => {
     expect(stadiumOf(builder).level).toBe(0);
 
     state = tick(state, terrain);
-    state = { ...state, tickCount: BUILDER.ticksPerUpgrade };
+    state = { ...state, tickCount: growthPassTick('upgrades') };
     state = builder.onTick(state);
     // Lo sventramento avanza soltanto dentro `onTick`; `step()` muove la
     // crescita e la superficie, non i cantieri. Aspettare `clearing` a colpi di
@@ -220,7 +220,7 @@ describe('un landmark che cresce di sedime', () => {
 
     // Lo sventramento apre un cantiere: la passata che lo miete e' quella dopo,
     // quindi si alterna tick e comparsa finche' non c'e' piu' nulla in volo.
-    state = { ...state, tickCount: BUILDER.ticksPerUpgrade };
+    state = { ...state, tickCount: growthPassTick('upgrades') };
     state = builder.onTick(state);
     let guard = 0;
     while ((builder.stats.growing > 0 || builder.stats.clearing > 0) && guard++ < 5000) {
@@ -257,7 +257,7 @@ describe('un landmark che cresce di sedime', () => {
   it('tiene prenotato il sedime nuovo finche il cantiere lavora', () => {
     const { builder, newBox } = stadiumAboutToGrow();
 
-    builder.onTick({ ...stadiumState(), tickCount: BUILDER.ticksPerUpgrade });
+    builder.onTick({ ...stadiumState(), tickCount: growthPassTick('upgrades') });
     expect(builder.stats.clearing).toBeGreaterThan(0);
 
     // **Il cantiere apre solo dove c'e' da abbattere.** Una striscia dell'anello
@@ -353,7 +353,7 @@ describe('un molo che cresce in acqua', () => {
     let guard = 0;
     while (ferryOf(builder).level < 1 && guard++ < 400) {
       state = tick(state, terrain);
-      state = { ...state, tickCount: BUILDER.ticksPerUpgrade };
+      state = { ...state, tickCount: growthPassTick('upgrades') };
       state = builder.onTick(state);
       while (builder.stats.growing > 0) builder.step();
     }

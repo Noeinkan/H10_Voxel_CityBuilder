@@ -65,6 +65,19 @@ export class GrowthQueue {
   private readonly growing: Growing[] = [];
   private readonly pending: Pending[] = [];
 
+  /**
+   * Posti presi da un'infornata che non ha ancora posato i suoi edifici.
+   *
+   * **Esistono da quando l'infornata si ferma sul budget.** Prima un'infornata
+   * posava tutto nel tick in cui cadeva, e gli upgrade due tick dopo trovavano i
+   * suoi volumi gia' in coda. Ferma a meta' ricerca, l'infornata arrivava a posare
+   * quando gli upgrade avevano gia' riempito `maxGrowing`: misurato sulla citta'
+   * della 6.2, trenta infornate su centocinquanta finivano vuote invece di undici,
+   * e a 1.500 tick c'erano 224 edifici invece di 268. Prenotando i posti al
+   * primo tick, l'ordine torna quello di prima.
+   */
+  private held = 0;
+
   constructor(private readonly world: VoxelWorld) {}
 
   /** Volumi che stanno comparendo in questo momento. */
@@ -72,9 +85,27 @@ export class GrowthQueue {
     return this.growing.length;
   }
 
-  /** Volumi in coda o in attesa: e' il numero su cui le passate si fermano. */
+  /**
+   * Volumi in coda o in attesa, piu' i posti prenotati: e' il numero su cui le
+   * passate si fermano.
+   */
   get queued(): number {
+    return this.growing.length + this.pending.length + this.held;
+  }
+
+  /** I soli volumi veri, senza prenotazioni: e' cio' che `step` ha da scrivere. */
+  get volumes(): number {
     return this.growing.length + this.pending.length;
+  }
+
+  /** Prenota posti per volumi che arriveranno. */
+  hold(count: number): void {
+    this.held += count;
+  }
+
+  /** Restituisce posti prenotati: il volume e' arrivato, o non arrivera' piu'. */
+  release(count: number): void {
+    this.held = Math.max(0, this.held - count);
   }
 
   /** true se il record sta gia' comparendo, o ha segmenti che aspettano. */

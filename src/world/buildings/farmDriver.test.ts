@@ -17,6 +17,7 @@ import { coverMarkKind, isCoverMark } from '../visualBlock';
 import { Builder } from './Builder';
 import { BUILDER } from './config';
 import { PLOTS_PER_PASS } from './farmDriver';
+import { growthPassTick } from './growthCadence';
 
 /**
  * Una citta' che ha fame: popolazione vera, nessun lotto agricolo.
@@ -25,7 +26,9 @@ import { PLOTS_PER_PASS } from './farmDriver';
  * comportamento giusto e un pessimo punto di partenza per un test.
  */
 function hungryCity(): SimState {
-  const state = createSimState();
+  // Nel tick in cui la campagna gira: da quando le cadenze sono sfasate non e'
+  // piu' il tick zero, e un `onTick` solo non la vedrebbe mai.
+  const state = { ...createSimState(), tickCount: growthPassTick('farms') };
   return { ...state, population: { stock: 240, delta: 0 } };
 }
 
@@ -82,7 +85,7 @@ describe('FarmDriver — la campagna nasce fuori dalla citta’', () => {
     const terrain = testTerrain({ chunksX: 8, chunksY: 8 });
     const builder = new Builder(world, terrain, 1337);
 
-    builder.onTick(createSimState());
+    builder.onTick({ ...createSimState(), tickCount: growthPassTick('farms') });
 
     expect(builder.stats.farmPlots).toBe(0);
   });

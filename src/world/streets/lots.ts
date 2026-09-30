@@ -103,6 +103,29 @@ export interface Lot {
  * quattro bordi dell'isolato diventino la forma visibile della crescita.
  */
 export function placeLot(request: LotRequest): Lot | null {
+  const steps = placeLotSteps(request);
+  for (;;) {
+    const step = steps.next();
+    if (step.done) return step.value;
+  }
+}
+
+/**
+ * La stessa ricerca, a passi: si ferma dopo ogni quadrato che `accepts` ha
+ * valutato, e chi la tiene decide se proseguire subito o al tick dopo.
+ *
+ * **Il passo e' `accepts`, non l'ancoraggio.** E' la sola chiamata che legge il
+ * mondo — terreno e registry, colonna per colonna — mentre scartare un ancoraggio
+ * fuori dal riquadro o senza affaccio costa un confronto. Fermarsi fra due
+ * ancoraggi qualunque pagherebbe la ripresa su migliaia di passi che non hanno
+ * speso niente.
+ *
+ * L'ordine in cui i quadrati si provano e' quello di `placeLot`, e il lotto che
+ * torna e' lo stesso a parita' di predicato: fermarsi non salta e non ripete
+ * niente. Cosa cambia fra una ripresa e l'altra e' il mondo che il predicato
+ * legge, ed e' affare di chi lo scrive.
+ */
+export function* placeLotSteps(request: LotRequest): Generator<void, Lot | null, void> {
   const { rect } = request;
   const width = rect.x1 - rect.x0 + 1;
   const height = rect.y1 - rect.y0 + 1;
@@ -111,8 +134,8 @@ export function placeLot(request: LotRequest): Lot | null {
   for (let footprint = largest; footprint >= 1; footprint--) {
     if (request.exhausted?.(footprint) === true) continue;
     const lot = request.edgeOnly
-      ? placeAlongEdge(request, footprint)
-      : placeAroundCandidate(request, footprint);
+      ? yield* placeAlongEdge(request, footprint)
+      : yield* placeAroundCandidate(request, footprint);
     if (lot !== null) return lot;
     // **Solo la ricerca radiale percorre il rettangolo per intero**, e il punto
     // eletto ne cambia soltanto l'ordine: il suo "niente" vale per la
@@ -133,7 +156,7 @@ export function placeLot(request: LotRequest): Lot | null {
  * registry devono cambiare la stessa citta' a parita' di seed. Non si forza il
  * passo stradale: quel passo descrive la rete, non il tessuto che le cresce fra.
  */
-function placeAroundCandidate(request: LotRequest, footprint: number): Lot | null {
+function* placeAroundCandidate(request: LotRequest, footprint: number): Generator<void, Lot | null, void> {
   const { rect } = request;
   const maxX = rect.x1 - footprint + 1;
   const maxY = rect.y1 - footprint + 1;
@@ -173,20 +196,20 @@ function placeAroundCandidate(request: LotRequest, footprint: number): Lot | nul
   const frontage = request.onFrontage;
   const setback = request.onSetback;
   if (frontage !== undefined) {
-    const found = scan(request, offsets, preferredX, preferredY, maxX, maxY, footprint,
+    const found = yield* scan(request, offsets, preferredX, preferredY, maxX, maxY, footprint,
       frontage, setback ?? null);
     if (found !== null) return found;
   }
   if (setback !== undefined) {
-    const found = scan(request, offsets, preferredX, preferredY, maxX, maxY, footprint,
+    const found = yield* scan(request, offsets, preferredX, preferredY, maxX, maxY, footprint,
       null, setback);
     if (found !== null) return found;
   }
-  return scan(request, offsets, preferredX, preferredY, maxX, maxY, footprint, null, null);
+  return yield* scan(request, offsets, preferredX, preferredY, maxX, maxY, footprint, null, null);
 }
 
 /** Una passata sugli scostamenti, con o senza il filtro dell'affaccio. */
-function scan(
+function* scan(
   request: LotRequest,
   offsets: readonly Offset[],
   preferredX: number,
@@ -196,7 +219,7 @@ function scan(
   footprint: number,
   frontage: ((x: number, y: number, footprint: number) => boolean) | null,
   setback: ((x: number, y: number, footprint: number, facing: Facing) => boolean) | null,
-): Lot | null {
+): Generator<void, Lot | null, void> {
   const { rect } = request;
   for (const offset of offsets) {
     const candidate = { x: preferredX + offset.x, y: preferredY + offset.y };
@@ -213,7 +236,11 @@ function scan(
     // colonne bocciate**, e le passate successive vivono di quello. Anteponendo
     // l'arretramento il memo resta vuoto, ogni passata rifa' il lavoro da capo,
     // e `Builder.test.ts` passa da cento secondi a trecentoventi. Misurato.
-    if (!request.accepts(candidate.x, candidate.y, footprint)) continue;
+    const accepted = request.accepts(candidate.x, candidate.y, footprint);
+    // **Dopo la lettura e prima dell'arretramento.** Ripresa qui, la stessa
+    // iterazione continua con il verdetto gia' in mano: il quadrato non si rilegge.
+    yield;
+    if (!accepted) continue;
     const facing = request.facingAt?.(candidate.x, candidate.y, footprint) ??
       nearestFacing(rect, candidate.x, candidate.y, footprint);
     // L'orientamento si conosce solo qui, ed e' l'arretramento a chiederlo: e'
@@ -264,9 +291,9 @@ function nearestFacing(rect: BlockRect, x: number, y: number, footprint: number)
 }
 
 /** Variante riservata alle opere che devono davvero raggiungere acqua o banchina. */
-function placeAlongEdge(request: LotRequest, footprint: number): Lot | null {
+function* placeAlongEdge(request: LotRequest, footprint: number): Generator<void, Lot | null, void> {
   for (const facing of edgeOrder(request, footprint)) {
-    const lot = slideAlongEdge(request, facing, footprint);
+    const lot = yield* slideAlongEdge(request, facing, footprint);
     if (lot !== null) return lot;
   }
   return null;
@@ -295,7 +322,11 @@ function edgeOrder(request: LotRequest, footprint: number): readonly Facing[] {
  * L'ancora sul lato scelto resta fissa per l'accesso; l'altra coordinata segue
  * il candidato. Questo percorso non viene usato dal tessuto ordinario.
  */
-function slideAlongEdge(request: LotRequest, facing: Facing, footprint: number): Lot | null {
+function* slideAlongEdge(
+  request: LotRequest,
+  facing: Facing,
+  footprint: number,
+): Generator<void, Lot | null, void> {
   const { rect } = request;
   const slidesAlongY = facing === FACING.east || facing === FACING.west;
 
@@ -323,7 +354,9 @@ function slideAlongEdge(request: LotRequest, facing: Facing, footprint: number):
 
       const x = slidesAlongY ? fixed : along;
       const y = slidesAlongY ? along : fixed;
-      if (request.accepts(x, y, footprint)) return { x, y, footprint, facing };
+      const accepted = request.accepts(x, y, footprint);
+      yield;
+      if (accepted) return { x, y, footprint, facing };
     }
   }
 

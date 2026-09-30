@@ -43,6 +43,27 @@ export const BUILDER = {
   ticksPerBuild: 10,
 
   /**
+   * Lavoro che le passate a cadenza possono spendere in un tick, in letture:
+   * quadrati e colonne della ricerca dei lotti, record scorsi e visite per raggio
+   * del registry.
+   *
+   * **Un numero di letture e non di millisecondi**, perche' le passate decidono
+   * la citta': un tetto d'orologio farebbe crescere una citta' diversa su un PC
+   * lento. Quattromila e' l'allarme dei 4 ms tradotto con la sola stima che c'e':
+   * sulla citta' della 6.2 la ricerca costa circa un millisecondo ogni mille
+   * unita'. Li' un'infornata intera costava 14.000 unita' di mediana e 37.000 al
+   * novantesimo percentile, in un tick solo; con questo tetto si spalma su 5 tick
+   * di mediana e 11 al p90, e nessun giro dell'infornata supera le 4.000 piu' il
+   * quadrato che stava leggendo.
+   *
+   * **Non e' la manopola del ritmo.** Misurato sulla stessa citta', a 1.500 tick
+   * gli edifici sono 268 con il tetto e 268 senza: l'infornata prenota i propri
+   * posti in coda al primo tick e un giro saltato si recupera. Se un giorno il
+   * ritmo scendesse, il costo da abbattere e' la ricerca, non il tetto da alzare.
+   */
+  workPerTick: 4000,
+
+  /**
    * Edifici accettati al massimo per infornata.
    *
    * Il ritmo si regola su `ticksPerBuild`, non qui: allargare l'infornata

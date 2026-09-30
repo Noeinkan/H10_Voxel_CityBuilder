@@ -20,7 +20,7 @@ import { VoxelWorld } from '../VoxelWorld';
 import { Builder } from './Builder';
 import { BuildingRegistry, type BuildingRecord } from './BuildingRegistry';
 import type { BuildContext } from './buildContext';
-import { BUILDER } from './config';
+import { growthPassTick } from './growthCadence';
 import { GrowthQueue } from './growthQueue';
 import { HarborDriver } from './harborDriver';
 import { SurfaceQueue } from './surfaceQueue';
@@ -345,8 +345,10 @@ describe('il distretto dentro il Builder', () => {
     let guard = 0;
     while (marinaOf(builder).level < 2 && guard++ < 400) {
       state = tick(state, terrain);
-      state = { ...state, tickCount: BUILDER.ticksPerUpgrade };
-      state = builder.onTick(state);
+      // Lo stadio lo alzano i landmark, il piano lo applica il porto: da quando le
+      // cadenze sono sfasate cadono in due tick diversi, e servono tutti e due.
+      state = builder.onTick({ ...state, tickCount: growthPassTick('upgrades') });
+      state = builder.onTick({ ...state, tickCount: growthPassTick('harbors') });
       while (builder.stats.growing > 0) builder.step();
     }
     expect(marinaOf(builder).level).toBeGreaterThanOrEqual(2);

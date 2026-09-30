@@ -28,7 +28,6 @@ import {
   type AloftVerdict,
   type LandmarkSite,
 } from './landmarkDriver';
-import { ARCOLOGY } from '../arcology/config';
 import type { ArcologyStanding } from '../arcology/prospect';
 import type { ArcologyDriverRefusal } from './arcologyDriver';
 import { ArcologyDriver } from './arcologyDriver';
@@ -41,7 +40,6 @@ import { ArchDriver } from './archDriver';
 import { FusionDriver } from './fusionDriver';
 import { DecayDriver } from './decayDriver';
 import { FarmDriver } from './farmDriver';
-import { FARMS } from '../farms/config';
 import { HarborDriver } from './harborDriver';
 import { HARBOR } from '../harbor/config';
 import type { FarmPlot } from '../farms/plotPlan';
@@ -63,9 +61,7 @@ import {
   type ReadonlyBuildingRegistry,
 } from './BuildingRegistry';
 import {
-  ARCH,
   BUILDER,
-  FUSION,
   MAX_FOOTPRINT,
   MIN_FOOTPRINT,
   typologyById,
@@ -81,6 +77,9 @@ import { GrowthQueue, anchorOf } from './growthQueue';
 import { isPlainBuilding } from './structureKind';
 import { LotSearch } from './lotSearch';
 import { PassProfile } from './passProfile';
+import { PassScheduler, WorkMeter, type PassRun } from './passSchedule';
+import { GROWTH_PASSES, type GrowthPassName } from './growthCadence';
+import type { Lot } from '../streets/lots';
 import { Frontage } from './frontage';
 import { SurfaceQueue } from './surfaceQueue';
 import { RoadDriver } from './roadDriver';
@@ -89,10 +88,7 @@ import { ROADS } from '../roads/config';
 import type { RoadNetwork } from '../roads/RoadNetwork';
 import { StreetNetwork } from '../streets/StreetNetwork';
 import { FACING, type BlockId, type Facing } from '../streets/streetGrid';
-import { SPANS } from '../spans/config';
-import { AERIAL } from '../aerial/config';
 import type { AerialFace, TerraceResult } from '../aerial/terracePlan';
-import { CROSSINGS } from '../crossings/config';
 import type { Region } from '../terrain/region';
 import { CrossingDriver } from './crossingDriver';
 
@@ -370,6 +366,24 @@ export class Builder {
    */
   readonly profile = new PassProfile();
 
+  /**
+   * Il lavoro speso nel tick, contato sulle stesse letture che il profilo
+   * attribuisce alle passate: e' cio' che ferma la coda e l'infornata.
+   */
+  private readonly meter: WorkMeter;
+
+  /** Le passate a cadenza, sfasate e con il tetto al tick. */
+  private readonly schedule: PassScheduler<SimState>;
+
+  /**
+   * L'infornata che il budget ha fermato a meta', o `null`.
+   *
+   * **Non si salva, e non serve.** Un caricamento la lascia cadere: e' un'infornata
+   * che non ha ancora deciso niente oltre agli edifici gia' posati, che sono nel
+   * registry, e al giro dopo ne parte una nuova.
+   */
+  private buildJob: BuildJob | null = null;
+
   constructor(
     world: VoxelWorld,
     private readonly terrainMap: TerrainMap,
@@ -469,6 +483,56 @@ export class Builder {
     this.profile.addCounter('registryScans', () => registry.scans);
     this.profile.addCounter('registryRecords', () => registry.scannedRecords);
     this.profile.addCounter('radiusVisits', () => registry.radiusVisits);
+
+    // **Le letture del Builder, non tutte quelle del profilo.** Il campo che il
+    // `GrowthScene` aggiunge come contatore e' della simulazione, e rifarlo a
+    // scaglioni e' un'altra voce della fase; contarlo qui farebbe dipendere la
+    // citta' da chi ha registrato cosa sul profilo.
+    const lots = this.lots;
+    const work = (): number => lots.work + registry.scannedRecords + registry.radiusVisits;
+    this.meter = new WorkMeter(work);
+    // Lo stesso numero nel profilo: e' la colonna su cui il tetto si verifica, e
+    // due somme scritte in due posti divergerebbero.
+    this.profile.addCounter('budgetWork', work);
+    const runners: Readonly<Record<GrowthPassName, (state: SimState) => PassRun<SimState>>> = {
+      decay: (state) => this.pass('decay', state, () => this.decay.pass(state)),
+      build: (state) => this.runBuild(state),
+      arcologies: (state) => this.pass('arcologies', state, () => this.arcologies.pass(state)),
+      upgrades: (state) => {
+        // I landmark hanno gia' soddisfatto una soglia urbana e prendono il
+        // proprio posto prima degli upgrade ordinari. In una citta' matura questi
+        // ultimi riempiono `maxGrowing` a ogni giro: eseguiti per primi potevano
+        // affamare per sempre un landmark anche con decine di edifici nel raggio.
+        const next = this.profile.measure('landmarks', () => this.landmarks.pass(state));
+        return { state: this.profile.measure('upgrades', () => this.upgrades.pass(next)), done: true };
+      },
+      fusions: (state) => this.pass('fusions', state, () => this.fusions.pass(state)),
+      harbors: (state) => this.pass('harbors', state, () => this.harbors.pass()),
+      arches: (state) => this.pass('arches', state, () => this.arches.pass()),
+      spans: (state) => this.pass('spans', state, () => this.spans.pass()),
+      crossings: (state) => this.pass('crossings', state, () => this.crossings.pass()),
+      terraces: (state) => this.pass('terraces', state, () => this.aerial.terracePass()),
+      routes: (state) => this.pass('routes', state, () => this.aerial.routePass()),
+      guides: (state) => this.pass('guides', state, () => this.guides.pass()),
+      farms: (state) => this.pass('farms', state, () => this.farms.pass(state)),
+    };
+    this.schedule = new PassScheduler(GROWTH_PASSES.map((cadence) => ({
+      ...cadence,
+      run: runners[cadence.name],
+    })));
+  }
+
+  /**
+   * Una passata atomica, misurata: quella che restituisce uno stato lo passa
+   * avanti, quella che non lo tocca lascia il suo.
+   */
+  private pass(
+    name: string,
+    state: SimState,
+    run: () => SimState | void,
+  ): PassRun<SimState> {
+    const next = this.profile.measure(name, run);
+    return { state: next ?? state, done: true };
   }
 
   /** Sola lettura: nemmeno chi tiene il Builder puo' scrivere nel registry. */
@@ -671,7 +735,7 @@ export class Builder {
     return {
       placed: this.placedCount,
       upgraded: this.upgrades.count,
-      growing: this.growth.queued,
+      growing: this.growth.volumes,
       rejected: this.rejectedCounts,
       blacklisted: this.lots.blacklisted,
       surfaceQueued: this.surface.queued,
@@ -745,6 +809,9 @@ export class Builder {
    * l'ordine in cui `adopt` ritrova gli appoggi gia' dentro.
    */
   restore(records: readonly BuildingRecord[]): void {
+    // Cio' che era in coda lavorava sulla citta' di prima del caricamento.
+    this.schedule.clear();
+    this.dropBuildJob();
     const blocks = new Map<string, BlockId>();
 
     for (const record of records) {
@@ -821,8 +888,12 @@ export class Builder {
    *
    * Restituisce il nuovo stato e ne prende possesso, come ogni operazione che
    * tocca il campo: lo stato passato non va piu' usato.
+   *
+   * `budget` e' il lavoro che le passate a cadenza possono spendere, in letture:
+   * esaurito, la coda si ferma e riprende al tick dopo. Il default e' quello del
+   * gioco, e un test che vuole la citta' di sempre senza tetto passa `Infinity`.
    */
-  onTick(state: SimState): SimState {
+  onTick(state: SimState, budget: number = BUILDER.workPerTick): SimState {
     let next = state;
     // Ogni passata passa dal profilo, che non decide niente: la citta' che
     // cresce e' la stessa, e la tabella di chi ha lavorato quanto e' gratis.
@@ -842,93 +913,18 @@ export class Builder {
     // arrivera' la demolizione, questo insieme andra' svuotato con `forget`».
     // Un sito bocciato lo era rispetto a una colonna che adesso e' libera.
     if (this.clearance.cleared !== clearedBefore) this.forget();
-    // **Il declino prima della crescita, e non e' l'ordine di comodo.** Una
-    // colonna appena liberata torna candidata subito — e' vuota, ed e' anche
-    // appena diventata piu' desiderabile, perche' l'edificio che se n'e' andato
-    // portava via la propria congestione. Con l'ordine opposto la citta'
-    // ricostruirebbe nel punto in cui ha appena rinunciato, un tick dopo l'altro.
-    // A impedirlo davvero e' il fronte dentro `buildPass`; questo ordine e' la
-    // seconda meta' della stessa risposta.
-    if (state.tickCount % BUILDER.ticksPerDecay === 0) {
-      profile.measure('decay', () => this.decay.pass(next));
-    }
-    if (state.tickCount % BUILDER.ticksPerBuild === 0) {
-      next = profile.measure('build', () => this.buildPass(next));
-    }
-    // Il megaprogetto maturo prenota il magazzino prima degli upgrade ordinari.
-    // Altrimenti una passata da sessantaquattro torri spenderebbe fino all'ultima
-    // unita' disponibile e l'arcologia, pur avendo tutte le condizioni urbane,
-    // resterebbe in attesa per sempre per una pura conseguenza dell'ordine.
-    if (state.tickCount % ARCOLOGY.ticksPerPass === 0) {
-      next = profile.measure('arcologies', () => this.arcologies.pass(next));
-    }
-    if (state.tickCount % BUILDER.ticksPerUpgrade === 0) {
-      // I landmark hanno gia' soddisfatto una soglia urbana e prendono il
-      // proprio posto prima degli upgrade ordinari. In una citta' matura questi
-      // ultimi riempiono `maxGrowing` a ogni giro: eseguiti per primi potevano
-      // affamare per sempre un landmark anche con decine di edifici nel raggio.
-      next = profile.measure('landmarks', () => this.landmarks.pass(next));
-      next = profile.measure('upgrades', () => this.upgrades.pass(next));
-    }
-    // **La fusione dopo la promozione, e non e' l'ordine di comodo.** Il lato
-    // che l'isolato concede dipende dal livello raggiunto: valutata prima,
-    // leggerebbe il gradino d'impronta di un tick fa e proporrebbe di prendersi
-    // il vicino a un edificio che questo stesso tick avrebbe allargato da solo,
-    // sul prato, senza portare via niente a nessuno.
-    if (state.tickCount % FUSION.ticksPerPass === 0) {
-      next = profile.measure('fusions', () => this.fusions.pass(next));
-    }
-    // Il distretto costiero segue i landmark, e a cadenza propria: lo stadio
-    // che il quartiere ha appena meritato e' anche l'anello che il fronte si
-    // prende, ma non c'e' fretta — le opere viaggiano sulle code di sempre.
-    if (state.tickCount % HARBOR.ticksPerPass === 0) {
-      profile.measure('harbors', () => this.harbors.pass());
-    }
-    // La rete in quota non legge la simulazione: una campata dipende da dove
-    // stanno i tetti, non da quanto una colonna e' desiderabile. E' anche il
-    // motivo per cui questa passata non prende ne' restituisce lo stato.
-    // **Prima l'arco, poi il ponte.** Le due passate guardano lo stesso vuoto e
-    // la prima che arriva se lo prende: dando la precedenza alla campata di
-    // `spans/`, un ponte occuperebbe la quota di fascia su cui i due corpi si
-    // sarebbero incontrati e l'arco non nascerebbe mai. L'ordine opposto non ha
-    // il difetto speculare — un arco esiste solo dove le due fasce coincidono,
-    // che e' raro, e ovunque non coincidano il ponte trova il vuoto libero.
-    if (state.tickCount % ARCH.ticksPerPass === 0) {
-      profile.measure('arches', () => this.arches.pass());
-    }
-    if (state.tickCount % SPANS.ticksPerPass === 0) {
-      profile.measure('spans', () => this.spans.pass());
-    }
-    // Il ponte lungo viene dopo le campate locali: prima una citta' costruisce
-    // la propria rete, poi uno skyline maturo puo' scavalcare il mare.
-    if (state.tickCount % CROSSINGS.automatic.ticksPerPass === 0) {
-      profile.measure('crossings', () => this.crossings.pass());
-    }
-    // E nemmeno la citta' in quota: una mensola dipende da come e' fatta una
-    // facciata e un percorso da cosa c'e' fra due edifici, non da quanto una
-    // colonna e' desiderabile — per questo nessuna delle due prende ne'
-    // restituisce lo stato. Due passate distinte perche' sono due atti urbani
-    // distinti — il dettaglio e il collegamento — e vanno a cadenze diverse.
-    if (state.tickCount % AERIAL.terrace.ticksPerPass === 0) {
-      profile.measure('terraces', () => this.aerial.terracePass());
-    }
-    if (state.tickCount % AERIAL.route.ticksPerPass === 0) {
-      profile.measure('routes', () => this.aerial.routePass());
-    }
-    // E la via da terra viene per ultima, perche' serve un impalcato che qualcuno
-    // abiti gia': prima si costruisce sopra la citta', poi si guadagna il modo di
-    // arrivarci.
-    if (state.tickCount % AERIAL.guide.ticksPerPass === 0) {
-      profile.measure('guides', () => this.guides.pass());
-    }
-    // La campagna per ultima, e a cadenza sua. Dopo la crescita perche' e' la
-    // crescita a mangiarsela: valutata prima, un lotto appena coperto dagli
-    // edifici di questo tick resterebbe contato come produttore fino al giro
-    // dopo, e la citta' rincorrerebbe la fame con un ritardo permanente.
-    if (state.tickCount % FARMS.ticksPerPass === 0) {
-      next = profile.measure('farms', () => this.farms.pass(next));
-    }
+    // **Il resto a cadenza, sfasato e con il tetto.** Chi gira in questo tick, in
+    // che ordine e perche' sta in `growthCadence.ts`; qui si da' il budget e si
+    // lascia fare alla coda. Il metro parte dopo tracciato e cantiere, che non
+    // sono passate a cadenza e non devono togliere il posto a nessuna.
+    this.meter.begin(budget);
+    next = this.schedule.tick(next, state.tickCount, this.meter);
     return setIslandConnections(next, this.crossings.count);
+  }
+
+  /** Le passate a cadenza rimaste in coda, dalla prossima a girare. */
+  get pendingPasses(): readonly string[] {
+    return this.schedule.pending;
   }
 
   /**
@@ -943,9 +939,12 @@ export class Builder {
     this.surface.step();
   }
 
-  /** Volumi in coda o in attesa: e' il numero su cui le passate si fermano. */
+  /**
+   * Volumi in coda o in attesa, per l'infornata: le prenotazioni sue non la
+   * fermano, quelle di nessun altro esistono.
+   */
   private get queued(): number {
-    return this.growth.queued;
+    return this.growth.queued - (this.buildJob?.held ?? 0);
   }
 
 
@@ -965,49 +964,85 @@ export class Builder {
    * deve costare all'intera citta' l'infornata del suo turno: cio' che non ha
    * speso lo spende la classifica di sempre, e il ritmo complessivo resta quello
    * tarato su `ticksPerBuild`.
+   *
+   * **Si ferma sul budget e riprende al tick dopo.** Il lavoro caro e' la ricerca
+   * del lotto, e la ricerca e' a passi (`findLotSteps`): a metro esaurito
+   * l'infornata cede il tick esattamente dove si trova — anche a meta' di un
+   * rettangolo — e la coda la rimette in fondo. Cambia il frame in cui il lavoro
+   * atterra, non quante infornate la citta' fa: una sola per volta, e la prossima
+   * parte solo quando questa ha finito.
    */
-  private buildPass(state: SimState): SimState {
+  private runBuild(state: SimState): PassRun<SimState> {
+    let job = this.buildJob;
+    if (job === null) {
+      job = { state, steps: this.buildSteps(), held: 0 };
+      this.buildJob = job;
+    } else {
+      // Il fronte del declino vale anche per l'infornata gia' cominciata: una
+      // citta' che nel frattempo e' andata in affanno non posa gli edifici che
+      // restavano, come non ne avrebbe cercati partendo adesso.
+      if (isDecayArmed(state)) {
+        this.dropBuildJob();
+        return { state, done: true };
+      }
+      // Fra un tick e l'altro il mondo si e' mosso: la simulazione ha girato,
+      // un cantiere puo' aver chiuso. L'infornata lavora sullo stato di adesso,
+      // e il memo della ricerca si riallinea a cio' che nel frattempo e' stato
+      // liberato.
+      job.state = state;
+      this.lots.resumePass();
+    }
+    const running = job;
+    const step = this.profile.measure('build', () => running.steps.next());
+    if (step.done === true) this.dropBuildJob();
+    return { state: running.state, done: step.done === true };
+  }
+
+  /** L'infornata esce di scena, e con lei i posti che teneva per edifici mai posati. */
+  private dropBuildJob(): void {
+    if (this.buildJob === null) return;
+    this.growth.release(this.buildJob.held);
+    this.buildJob = null;
+  }
+
+  /** Il corpo dell'infornata: lo stato vive in `buildJob.state`, e cede sul budget. */
+  private *buildSteps(): Generator<void, void, void> {
+    const job = this.buildJob!;
     // **Una citta' che non serve quello che ha non fonda altro.** E' il fronte
     // del declino letto dall'altro lato: prima la crescita si ferma, poi la
     // citta' arretra, e si riparte solo quando la copertura rientra. Senza
     // questa riga l'abbandono sarebbe churn — la stessa colonna liberata e
     // ricostruita a ogni infornata, perche' togliere un edificio *alza* la
     // desiderabilita' dei vicini invece di abbassarla.
-    if (isDecayArmed(state)) return state;
+    if (isDecayArmed(job.state)) return;
 
     const wanted = BUILDER.sitesPerBuild;
-    // Da qui alla fine del metodo niente rende libera una colonna che era presa:
-    // e' la finestra in cui il memo della ricerca e' esatto.
+    // Dentro un tick niente rende libera una colonna che era presa: e' la
+    // finestra in cui il memo della ricerca e' esatto. Fra due tick ci pensa
+    // `resumePass`.
     this.lots.beginPass();
+    // **I posti in coda si prendono adesso**, anche se gli edifici arriveranno fra
+    // qualche tick: e' il tick in cui l'infornata cade, e le passate che vengono
+    // dopo di lei devono trovarli presi come quando posava tutto subito.
+    job.held = Math.min(wanted, Math.max(0, BUILDER.maxGrowing - this.growth.queued));
+    this.growth.hold(job.held);
 
     // **Il distretto costiero viene prima del polo di turno.** E' un rivolo
     // — un edificio per infornata, al massimo — e senza la precedenza si
     // perderebbe in fondo alla coda dei siti: il quartiere che il landmark
     // deve creare resterebbe una promessa mentre la citta' cresce altrove.
-    let next = state;
     let placed = 0;
     for (const site of this.harbors.drainSites(HARBOR.sitesPerPass)) {
       if (placed >= wanted || this.queued >= BUILDER.maxGrowing) break;
-      const record = this.place({
-        x: site.x,
-        y: site.y,
-        class: site.class,
-        animate: true,
-        state: next,
-        chooseLot: true,
-      });
-      if (record === null) continue;
-      next = addBuilding(next, simBuilding(record));
-      placed++;
+      if (yield* this.buildAt(job, site.x, site.y, site.class, undefined)) placed++;
     }
 
-    const pole = poleRectAt(next.catalysts, this.buildTurn++);
+    const pole = poleRectAt(job.state.catalysts, this.buildTurn++);
 
-    const turn = pole === null ? null : this.buildRound(next, wanted - placed, pole);
-    const after = turn === null ? next : turn.state;
-    const left = wanted - placed - (turn === null ? 0 : turn.accepted);
-    if (left <= 0) return after;
-    return this.buildRound(after, left, undefined).state;
+    const accepted = pole === null ? 0 : yield* this.buildRound(job, wanted - placed, pole);
+    const left = wanted - placed - accepted;
+    if (left <= 0) return;
+    yield* this.buildRound(job, left, undefined);
   }
 
   /**
@@ -1016,42 +1051,79 @@ export class Builder {
    * Prende piu' candidati di quanti ne serva perche' la simulazione ragiona per
    * colonna: non sa cosa sia un'impronta, una pendenza o un chunk, quindi una
    * parte dei suoi candidati e' inevitabilmente inutilizzabile.
+   *
+   * I candidati si leggono una volta, all'inizio del giro, anche se il giro
+   * finisce ticks dopo: sono una classifica, e un sito che nel frattempo e' stato
+   * preso lo boccia `place` come ha sempre fatto.
    */
-  private buildRound(
-    state: SimState,
+  private *buildRound(
+    job: BuildJob,
     wanted: number,
     within: CellRect | undefined,
-  ): BuildRound {
+  ): Generator<void, number, void> {
     const sites = this.byFrontage(
-      nextBuildSites(state, this.terrainMap, wanted * BUILDER.candidateOverfetch, {
+      nextBuildSites(job.state, this.terrainMap, wanted * BUILDER.candidateOverfetch, {
         headroomAt: this.aerial.headroomAt,
         within,
       }),
     );
 
-    let next = state;
     let accepted = 0;
-
     for (const site of sites) {
       if (accepted >= wanted) break;
       if (this.queued >= BUILDER.maxGrowing) break;
+      const mixed = site.mixed === -1 ? undefined : site.mixed;
+      if (yield* this.buildAt(job, site.x, site.y, site.class, mixed)) accepted++;
+    }
+    return accepted;
+  }
 
-      const record = this.place({
-        x: site.x,
-        y: site.y,
-        class: site.class,
-        mixed: site.mixed === -1 ? undefined : site.mixed,
-        animate: true,
-        state: next,
-        chooseLot: true,
-      });
-      if (record === null) continue;
-
-      next = addBuilding(next, simBuilding(record));
-      accepted++;
+  /**
+   * Un candidato dell'infornata: cerca il lotto a passi, poi lo costruisce.
+   *
+   * **La ricerca sta fuori da `place`, e solo qui.** `place` resta la funzione di
+   * sempre — valida, getta la fondazione, accoda — e riceve il lotto gia'
+   * trovato; ne' `materialize` ne' nessun altro chiamante ha un budget da
+   * rispettare. Il lotto in quota non si cerca: si legge, e costa un `Set`.
+   */
+  private *buildAt(
+    job: BuildJob,
+    x: number,
+    y: number,
+    cls: BuildingClass,
+    mixed: BuildingClass | undefined,
+  ): Generator<void, boolean, void> {
+    let lot: Lot | null | undefined;
+    if (this.lots.pickAerialLot(x, y) === null) {
+      const search = this.lots.findLotSteps(x, y);
+      for (;;) {
+        const step = search.next();
+        if (step.done === true) {
+          lot = step.value;
+          break;
+        }
+        if (this.meter.exhausted) yield;
+      }
     }
 
-    return { state: next, accepted };
+    const record = this.place({
+      x,
+      y,
+      class: cls,
+      mixed,
+      animate: true,
+      state: job.state,
+      chooseLot: true,
+      lot,
+    });
+    if (record === null) return false;
+    job.state = addBuilding(job.state, simBuilding(record));
+    // Il volume vero e' in coda: il posto prenotato per lui non serve piu'.
+    if (job.held > 0) {
+      job.held--;
+      this.growth.release(1);
+    }
+    return true;
   }
 
   /**
@@ -1123,7 +1195,7 @@ export class Builder {
     } else {
       if (request.chooseLot) {
         if (state === null) return null;
-        const lot = this.lots.findLot(request.x, request.y);
+        const lot = request.lot !== undefined ? request.lot : this.lots.findLot(request.x, request.y);
         if (lot === null) return null;
 
         x = lot.x;
@@ -1463,10 +1535,18 @@ export class Builder {
   }
 }
 
-/** Cosa un giro d'infornata lascia: lo stato nuovo e quanto ha speso del budget. */
-interface BuildRound {
-  readonly state: SimState;
-  readonly accepted: number;
+/**
+ * Un'infornata in corso: lo stato su cui lavora e il punto in cui si e' fermata.
+ *
+ * Lo stato e' scrivibile perche' fra un tick e l'altro lo cambia chi chiama —
+ * la simulazione, le altre passate — e l'infornata deve ripartire da quello, non
+ * da quello che aveva in mano quando ha ceduto il tick.
+ */
+interface BuildJob {
+  state: SimState;
+  readonly steps: Generator<void, void, void>;
+  /** Posti di `maxGrowing` presi per edifici non ancora posati. */
+  held: number;
 }
 
 /** Cosa serve al Builder per valutare un sito. */
@@ -1486,5 +1566,10 @@ interface PlaceRequest {
    * false e costruisce esattamente li'.
    */
   readonly chooseLot: boolean;
+  /**
+   * Il lotto a terra gia' cercato da chi chiama, o `null` se la ricerca non ne ha
+   * trovato uno. Assente, lo cerca `place`: e' il caso di chi non ha un budget.
+   */
+  readonly lot?: Lot | null;
 }
 

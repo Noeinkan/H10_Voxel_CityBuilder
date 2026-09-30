@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { placeLot, type Lot } from './lots';
+import { placeLot, placeLotSteps, type Lot } from './lots';
 import { FACING, type BlockRect } from './streetGrid';
 
 /**
@@ -240,5 +240,31 @@ describe('placeLot — determinismo e posizione', () => {
     const lot = placeLot({ rect: RECT, x: 15, y: 24, footprint: 3, accepts: FREE });
 
     expect(lot).toMatchObject({ x: 14, y: 23, footprint: 3 });
+  });
+});
+
+describe('placeLotSteps — la ricerca a passi', () => {
+  // Il quadrato libero sta in fondo: la ricerca deve attraversare quasi tutto
+  // il rettangolo, e un passo saltato o ripetuto cambierebbe il conto.
+  const onlyCorner = (x: number, y: number): boolean => x === RECT.x1 - 2 && y === RECT.y1 - 2;
+
+  it('un passo per ogni quadrato valutato, e lo stesso lotto di placeLot', () => {
+    let calls = 0;
+    const accepts = (x: number, y: number): boolean => {
+      calls++;
+      return onlyCorner(x, y);
+    };
+    const steps = placeLotSteps({ rect: RECT, x: 12, y: 21, footprint: 3, accepts, onSetback: () => true });
+    let yields = 0;
+    let step = steps.next();
+    while (step.done !== true) {
+      yields++;
+      expect(yields).toBe(calls);
+      step = steps.next();
+    }
+
+    expect(step.value).toEqual(placeLot({ rect: RECT, x: 12, y: 21, footprint: 3, accepts: onlyCorner, onSetback: () => true }));
+    expect(step.value).toMatchObject({ x: RECT.x1 - 2, y: RECT.y1 - 2 });
+    expect(yields).toBeGreaterThan(50);
   });
 });

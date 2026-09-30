@@ -4,7 +4,7 @@ import { sightWater } from '../sites/siteRules';
 import { GROUND } from '../grading/grade';
 import { BlockMemo, LotMemo } from './lotMemo';
 import { BUILDER, MAX_FOOTPRINT, MIN_FOOTPRINT } from './config';
-import { placeLot, type Lot } from '../streets/lots';
+import { placeLotSteps, type Lot } from '../streets/lots';
 import { FACING, type Facing } from '../streets/streetGrid';
 import { decksAt, type BuildDeck } from '../aerial/decks';
 import { deckLot } from '../aerial/deckLot';
@@ -72,6 +72,22 @@ export class LotSearch {
   private columnCount = 0;
 
   /**
+   * Quante volte `forget` ha svuotato tutto: e' l'epoca di chi libera suolo da
+   * fuori senza alzare un contatore del mondo.
+   */
+  private forgotten = 0;
+
+  /**
+   * L'epoca e le dimenticanze che il memo dei lotti ha visto l'ultima volta che
+   * e' ripartito da vuoto.
+   *
+   * Servono solo da quando un'infornata puo' fermarsi sul budget e riprendere al
+   * tick dopo: dentro un tick niente libera suolo, fra due tick si'.
+   */
+  private memoEpoch = -1;
+  private memoForgotten = -1;
+
+  /**
    * La citta' in quota entra da due sole domande, ed e' voluto: la ricerca deve
    * sapere se sopra una colonna presa corre una soletta, e quante volte una
    * soletta e' nata, non cosa ci sia costruito sopra.
@@ -111,6 +127,21 @@ export class LotSearch {
     return this.columnCount;
   }
 
+  /**
+   * Il lavoro della ricerca in una cifra sola: quadrati provati piu' colonne lette.
+   *
+   * **Si sommano perche' nessuno dei due basta da solo.** Un quadrato a cui
+   * risponde il memo costa una lettura di `Set` e non legge colonne; una colonna
+   * a memo vuoto costa quattro domande al mondo. Contando solo le colonne, una
+   * ricerca risolta tutta dal memo — migliaia di quadrati — sembrerebbe gratis;
+   * contando solo i quadrati, quella dopo un cambio d'epoca costerebbe quanto
+   * una qualunque. Sulla citta' della 6.2 la somma vale circa un millisecondo
+   * ogni mille unita', come ordine di grandezza.
+   */
+  get work(): number {
+    return this.columnCount + this.squareCount;
+  }
+
   /** true se questa colonna e' gia' stata bocciata per sempre. */
   isBanned(key: number): boolean {
     return this.banned.has(key);
@@ -133,11 +164,30 @@ export class LotSearch {
    * tre accade dentro una sola infornata.
    */
   beginPass(): void {
-    this.lotMemo.reset();
+    this.resetLotMemo();
+  }
+
+  /**
+   * L'infornata riprende dopo essersi fermata sul budget.
+   *
+   * **Il memo resta, se il mondo non ha liberato niente.** Una colonna bocciata
+   * torna libera solo nei modi che l'epoca conta — o con `forget` —, quindi a
+   * epoca ferma il rifiuto di un tick fa e' ancora esatto e buttarlo farebbe
+   * rileggere le stesse colonne a ogni ripresa. A epoca cambiata cade tutto, come
+   * a inizio infornata.
+   */
+  resumePass(): void {
+    const epoch = this.freedomEpoch();
+    // Anche il memo degli isolati: la ricerca sospesa lo consulta a ogni lato
+    // che le resta, e senza allinearlo qui salterebbe un lato sul mondo di prima.
+    this.blockMemo.observe(epoch);
+    if (epoch === this.memoEpoch && this.forgotten === this.memoForgotten) return;
+    this.resetLotMemo();
   }
 
   /** Svuota tutto cio' che si ricorda. E' la porta di `Builder.forget`. */
   forget(): void {
+    this.forgotten++;
     this.banned.clear();
     // Un isolato dichiarato pieno lo era rispetto al terreno di allora:
     // un'espansione puo' avergli aggiunto colonne edificabili sul fronte.
@@ -150,8 +200,15 @@ export class LotSearch {
     // `buildPass`, e qui non ci si arriva mai da li' dentro — ma svuotarlo costa
     // due `clear` su insiemi vuoti e toglie di mezzo la sola domanda che chi
     // legge si farebbe: «e se un giorno qualcuno chiamasse `forget` a meta'
-    // infornata?».
+    // infornata?». Da quando l'infornata si ferma sul budget ci si arriva
+    // davvero, fra un tick e l'altro: e' `resumePass` a riallinearsi.
     this.lotMemo.reset();
+  }
+
+  private resetLotMemo(): void {
+    this.lotMemo.reset();
+    this.memoEpoch = this.freedomEpoch();
+    this.memoForgotten = this.forgotten;
   }
 
   /**
@@ -274,11 +331,29 @@ export class LotSearch {
    * dove la desiderabilita' non lo voleva.
    */
   findLot(x: number, y: number): Lot | null {
+    const steps = this.findLotSteps(x, y);
+    for (;;) {
+      const step = steps.next();
+      if (step.done) return step.value;
+    }
+  }
+
+  /**
+   * La stessa ricerca a passi, un quadrato valutato per passo: chi la tiene puo'
+   * fermarla sul budget e riprenderla al tick dopo, chiamando prima `resumePass`.
+   *
+   * Il lotto e' quello di `findLot` finche' nessuno si ferma. Fermandosi, i
+   * quadrati gia' provati non si riprovano: un lotto che si libera alle spalle
+   * della ricerca lo trova la prossima, ed e' lo stesso a ogni run.
+   */
+  *findLotSteps(x: number, y: number): Generator<void, Lot | null, void> {
     // **Il memo si allinea qui e non a inizio infornata.** Costa tre letture di
     // contatore per ricerca — nulla, di fronte alle diecimila colonne che evita —
     // e in cambio nessun chiamante futuro puo' dimenticarsene: la memoria si
     // aggiorna dove la si usa.
-    this.blockMemo.observe(this.freedomEpoch());
+    const epoch = this.freedomEpoch();
+    const forgotten = this.forgotten;
+    this.blockMemo.observe(epoch);
     this.searchCount++;
     const streets = this.ctx.streets;
     const origin = streets.blockAt(x, y);
@@ -313,7 +388,7 @@ export class LotSearch {
       else targetY -= coast.distance;
     }
 
-    return placeLot({
+    return yield* placeLotSteps({
       rect: {
         x0: southWest.x0,
         y0: southWest.y0,
@@ -341,7 +416,16 @@ export class LotSearch {
       // domanda in un altro ordine. Il secondo la salta, e da adesso anche il
       // primo dell'infornata dopo — finche' l'epoca non cambia.
       exhausted: (side) => this.blockMemo.isExhausted(origin.kx, origin.ky, side),
-      onExhausted: (side) => this.blockMemo.exhaust(origin.kx, origin.ky, side),
+      // **Un «pieno» vale solo se il mondo e' rimasto fermo per tutta la
+      // scansione.** Una ricerca ripresa dopo che del suolo si e' liberato ha
+      // bocciato la prima meta' del rettangolo sul mondo di prima: dichiararlo
+      // esaurito terrebbe fuori quel lotto fino all'epoca dopo, che e' il solo
+      // errore che questo memo non puo' permettersi. Dentro un tick i contatori
+      // non si muovono, e il confronto e' sempre vero.
+      onExhausted: (side) => {
+        if (this.freedomEpoch() !== epoch || this.forgotten !== forgotten) return;
+        this.blockMemo.exhaust(origin.kx, origin.ky, side);
+      },
     });
   }
 
