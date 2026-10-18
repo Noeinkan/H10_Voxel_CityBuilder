@@ -15,7 +15,7 @@
 import { AuthGate } from './AuthGate';
 import { AuthScreen, type AuthScreenHandlers } from './AuthScreen';
 import { TrialBadge } from './TrialBadge';
-import { readAuthConfig } from './config';
+import { authGateDisabled, readAuthConfig } from './config';
 import { createSupabaseBackend } from './supabaseBackend';
 
 export interface AuthGateHandle {
@@ -51,10 +51,22 @@ export async function installAuthGate(onAllowed: () => void): Promise<AuthGateHa
   // Le due variabili si nominano qui, esplicitamente, invece di passare tutto
   // `import.meta.env`: cosi' l'elenco di cio' che questo build legge dal
   // servizio e' una riga sola, visibile, e non l'intero ambiente di Vite.
-  const config = readAuthConfig({
+  const env = {
     VITE_SUPABASE_URL: import.meta.env.VITE_SUPABASE_URL,
     VITE_SUPABASE_ANON_KEY: import.meta.env.VITE_SUPABASE_ANON_KEY,
-  });
+    VITE_AUTH_GATE: import.meta.env.VITE_AUTH_GATE,
+  };
+
+  if (authGateDisabled(env)) {
+    // Nessuna porta: si entra subito. L'attesa di un giro serve a `boot.ts`,
+    // che legge la promessa restituita qui dentro `onAllowed`: chiamarlo prima
+    // che la promessa esista lo farebbe inciampare sulla propria costante.
+    await Promise.resolve();
+    onAllowed();
+    return { canEnterWorld: () => Promise.resolve(true) };
+  }
+
+  const config = readAuthConfig(env);
 
   if (config === null) {
     // Senza chiavi non si costruisce nessuna porta: si dice che manca, e non si

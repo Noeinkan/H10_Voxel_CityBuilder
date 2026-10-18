@@ -27,6 +27,19 @@ export interface AuthConfig {
 export interface AuthEnv {
   readonly VITE_SUPABASE_URL?: string | undefined;
   readonly VITE_SUPABASE_ANON_KEY?: string | undefined;
+  readonly VITE_AUTH_GATE?: string | undefined;
+}
+
+/**
+ * `true` quando il build dice esplicitamente di non montare la porta.
+ *
+ * Serve al sito del proprietario, dove davanti c'e' gia' il login di nginx e
+ * nessun account di prova da gestire. E' un interruttore a parte, e non la
+ * mancanza delle chiavi, perche' un build pubblico dimenticato senza chiavi deve
+ * continuare a fermarsi, non ad aprirsi a tutti.
+ */
+export function authGateDisabled(env: AuthEnv): boolean {
+  return (env.VITE_AUTH_GATE ?? '').trim().toLowerCase() === 'off';
 }
 
 /**

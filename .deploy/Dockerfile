@@ -18,6 +18,8 @@ ARG OUTPUT_DIR="dist"
 # l'accesso non e' configurato invece di non partire.
 ARG VITE_SUPABASE_URL=""
 ARG VITE_SUPABASE_ANON_KEY=""
+# "off" salta la porta degli account: lo decide compose.yml, non il server.
+ARG VITE_AUTH_GATE=""
 WORKDIR /src
 COPY repo/ /src/
 # Install esatto da lockfile quando c'è; fallback per le repo che non lo hanno.

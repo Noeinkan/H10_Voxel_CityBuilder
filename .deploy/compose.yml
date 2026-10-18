@@ -18,6 +18,9 @@ services:
         # a non far fallire il compose quando le chiavi non ci sono ancora.
         VITE_SUPABASE_URL: "${VITE_SUPABASE_URL:-}"
         VITE_SUPABASE_ANON_KEY: "${VITE_SUPABASE_ANON_KEY:-}"
+        # Sito del proprietario: davanti c'e' gia' il login di nginx, quindi la
+        # porta degli account di prova non si monta e si entra dritti nel gioco.
+        VITE_AUTH_GATE: "off"
     image: site-voxelcity:${SITE_TAG:-latest}
     container_name: site-voxelcity-web
     volumes:
