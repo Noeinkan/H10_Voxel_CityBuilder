@@ -1,6 +1,6 @@
 {
   "slug": "voxelcity",
-  "domain": "voxelcity.demos.noeinsolutions.com",
+  "domain": "voxelcity.noeinsolutions.com",
   "repo": "https://github.com/Noeinkan/H10_Voxel_CityBuilder.git",
   "ref": "main",
   "type": "static-build",
@@ -9,9 +9,9 @@
   "spa": false,
   "port": 8080,
   "healthPath": "/",
-  "expectStatus": 200,
+  "expectStatus": 401,
   "memLimit": "128m",
   "maxBody": "4m",
   "readTimeout": "60s",
-  "notes": "Bundle Vite servito da nginx: nessun server applicativo, nessun segreto, nessuno stato da persistere. Una sola pagina (canvas WebGL) senza router client-side, quindi il fallback SPA resta spento e un path sconosciuto deve dare 404. Il build gira sul server e include 'tsc --noEmit': un errore di tipo fa fallire il deploy prima che qualcosa vada online."
+  "notes": "Bundle Vite servito da nginx: nessun server applicativo, nessun segreto, nessuno stato da persistere. Una sola pagina (canvas WebGL) senza router client-side, quindi il fallback SPA resta spento e un path sconosciuto deve dare 404. Il build gira sul server e include 'tsc --noEmit': un errore di tipo fa fallire il deploy prima che qualcosa vada online. Sito prodotto: davanti c'e' l'auth_basic di nginx con email e password del proprietario (/opt/sites/_vhosts/voxelcity.htpasswd, generato da ~/.config/hetzner-site/owner-login.env), quindi la pagina pubblica risponde 401."
 }

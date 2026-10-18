@@ -93,9 +93,9 @@ I link nelle email — conferma e reimpostazione password — riportano la perso
 sul sito. Se l'indirizzo non e' in elenco, Supabase la manda altrove.
 
 1. **Authentication** → **URL Configuration**.
-2. **Site URL**: `https://voxelcity.demos.noeinsolutions.com`
+2. **Site URL**: `https://voxelcity.noeinsolutions.com`
 3. In **Redirect URLs**, premi **Add URL** e aggiungi entrambi:
-   - `https://voxelcity.demos.noeinsolutions.com/**`
+   - `https://voxelcity.noeinsolutions.com/**`
    - `http://localhost:8020/**` — per quando lavori sul tuo computer.
 
 **Dove sei**: resti in **Project Settings**. Il passo dopo e' prendere le due
@@ -161,7 +161,7 @@ e' gia' online non cambia niente finche' non ridistribuisci.
 
 Da fare una volta, con calma, prima di dare il link a qualcuno.
 
-1. Apri <https://voxelcity.demos.noeinsolutions.com/> in una **finestra
+1. Apri <https://voxelcity.noeinsolutions.com/> in una **finestra
    anonima** — altrimenti la sessione salvata ti salta il controllo.
 2. Devi vedere il modulo **Sign in**, non il gioco. Se vedi «Sign-in is not set
    up», le chiavi non sono arrivate al build: torna al passo 5 e ridistribuisci.
