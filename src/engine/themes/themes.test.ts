@@ -215,7 +215,17 @@ describe('temi', () => {
   it('usa il diorama naturale come default senza rimuovere i temi storici', () => {
     expect(DEFAULT_THEME_ID).toBe('natural');
     expect(THEMES.map((theme) => theme.id)).toEqual(
-      expect.arrayContaining(['natural', 'pastel', 'neon', 'industrial', 'scifi', 'enchanted', 'diorama']),
+      expect.arrayContaining(['natural', 'pastel', 'neon', 'industrial', 'scifi', 'enchanted', 'diorama', 'cel']),
     );
+  });
+
+  it('il look cel usa la palette naturale e bande di luce senza cambiare il default', () => {
+    const cel = themeById('cel');
+    const natural = themeById('natural');
+    expect(cel?.colors).toBe(natural?.colors);
+    expect(cel?.atmosphere.cel?.strength).toBeGreaterThan(0);
+    expect(natural?.atmosphere.cel).toBeUndefined();
+    expect(cel?.atmosphere.outline?.strength).toBeGreaterThan(0);
+    expect(DEFAULT_THEME_ID).toBe('natural');
   });
 });

@@ -10,6 +10,7 @@ import {
 } from '../sim';
 import { BuildDock, sameTool, type DockPanel } from './BuildDock';
 import { ControlsHint } from './ControlsHint';
+import { HudPanels } from './HudPanels';
 import { applyHudTokens } from './hudTokens';
 import { appendPrice, createHudIcon, type ResourceIcon } from './hudIcons';
 import { failureResource, tipResource } from './toastResource';
@@ -227,6 +228,7 @@ export class GameHud {
   private levelValue!: HTMLElement;
   private readonly cursor: HTMLElement;
   private readonly help: ControlsHint;
+  private readonly panels: HudPanels;
   /** Selettore del verso di posa (suolo/facciata): compare solo con un ruolo che ha entrambi. */
   private readonly modePicker: HTMLElement;
   private readonly groundButton: HTMLButtonElement;
@@ -389,6 +391,18 @@ export class GameHud {
     this.root.appendChild(this.modePicker);
     parent.appendChild(this.root);
     this.help = new ControlsHint(this.root);
+    this.panels = new HudPanels({
+      panels: {
+        city: this.cityDrawer,
+        policies: this.policiesDrawer,
+        themes: this.themePicker,
+        views: this.viewPicker,
+        info: this.infoPicker,
+      },
+      help: this.help,
+      setExpanded: (panel, expanded) => this.dock.setExpanded(panel, expanded),
+      clearSelection: () => this.handlers.onClearSelection(),
+    });
     this.setTheme(activeThemeId);
     this.setView(buildViewMenuModel(INSPECT_MODE.off, INSPECT.defaultSliceZ, INSPECT.maxSliceZ));
 
@@ -719,42 +733,16 @@ export class GameHud {
 
   /** Il dock chiede un pannello per nome: quale sia il suo bottone lo sa lui. */
   private togglePanel(panel: DockPanel): void {
-    if (panel === 'city') this.toggleCity();
-    else if (panel === 'policies') this.togglePolicies();
-    else if (panel === 'menu') this.toggleMenu();
-    else if (panel === 'themes') this.toggleThemes();
-    else if (panel === 'views') this.toggleViews();
-    else this.toggleInfo();
+    if (panel === 'menu') this.toggleMenu();
+    else this.panels.toggle(panel);
   }
 
   toggleCity(): void {
-    const opening = this.cityDrawer.hidden;
-    this.cityDrawer.hidden = !opening;
-    this.dock.setExpanded('city', opening);
-    if (opening) {
-      // La scheda di selezione vive fuori dall'HUD e sta sopra i cassetti: aprire
-      // un cassetto la chiude, o i due pannelli si sovrappongono sul bordo destro.
-      this.handlers.onClearSelection();
-      this.closePolicies();
-      this.closeThemes();
-      this.closeViews();
-      this.closeInfo();
-      this.help.hide();
-    }
+    this.panels.toggle('city');
   }
 
   togglePolicies(): void {
-    const opening = this.policiesDrawer.hidden;
-    this.policiesDrawer.hidden = !opening;
-    this.dock.setExpanded('policies', opening);
-    if (opening) {
-      this.handlers.onClearSelection();
-      this.closeCity();
-      this.closeThemes();
-      this.closeViews();
-      this.closeInfo();
-      this.help.hide();
-    }
+    this.panels.toggle('policies');
   }
 
   /** Il menu e' aperto: lo legge il ciclo di frame, che gli ferma il tempo. */
@@ -789,56 +777,19 @@ export class GameHud {
   }
 
   toggleThemes(): void {
-    const opening = this.themePicker.hidden;
-    this.themePicker.hidden = !opening;
-    this.dock.setExpanded('themes', opening);
-    if (opening) {
-      this.handlers.onClearSelection();
-      this.closeCity();
-      this.closePolicies();
-      this.closeViews();
-      this.closeInfo();
-      this.help.hide();
-    }
+    this.panels.toggle('themes');
   }
 
   toggleViews(): void {
-    const opening = this.viewPicker.hidden;
-    this.viewPicker.hidden = !opening;
-    this.dock.setExpanded('views', opening);
-    if (opening) {
-      this.handlers.onClearSelection();
-      this.closeCity();
-      this.closePolicies();
-      this.closeThemes();
-      this.closeInfo();
-      this.help.hide();
-    }
+    this.panels.toggle('views');
   }
 
   toggleInfo(): void {
-    const opening = this.infoPicker.hidden;
-    this.infoPicker.hidden = !opening;
-    this.dock.setExpanded('info', opening);
-    if (opening) {
-      this.handlers.onClearSelection();
-      this.closeCity();
-      this.closePolicies();
-      this.closeThemes();
-      this.closeViews();
-      this.help.hide();
-    }
+    this.panels.toggle('info');
   }
 
   toggleHelp(): void {
-    const opening = !this.help.isOpen;
-    this.closeCity();
-    this.closePolicies();
-    this.closeThemes();
-    this.closeViews();
-    this.closeInfo();
-    if (opening) this.handlers.onClearSelection();
-    this.help.toggle();
+    this.panels.toggleHelp();
   }
 
   /**
@@ -853,12 +804,7 @@ export class GameHud {
    * selezione — l'unica che chiami questo metodo — sotto il velo non si apre.
    */
   dismissPanels(): void {
-    this.closeCity();
-    this.closePolicies();
-    this.closeThemes();
-    this.closeViews();
-    this.closeInfo();
-    this.help.hide();
+    this.panels.dismiss();
   }
 
   /**
@@ -1186,8 +1132,7 @@ export class GameHud {
   }
 
   private closeCity(): void {
-    this.cityDrawer.hidden = true;
-    this.dock.setExpanded('city', false);
+    this.panels.close('city');
   }
 
   private openMenu(): void {
@@ -1196,12 +1141,7 @@ export class GameHud {
     // che sta qui dentro puo' coprirla, velo compreso — chiuderla e' l'unico
     // modo, e questa riga non e' pulizia opzionale.
     this.handlers.onClearSelection();
-    this.closeCity();
-    this.closePolicies();
-    this.closeThemes();
-    this.closeViews();
-    this.closeInfo();
-    this.help.hide();
+    this.panels.dismiss();
     // La scheda al cursore resterebbe congelata sopra il velo: il `pointermove`
     // che la toglie non arriva piu' alla canvas.
     this.cursor.hidden = true;
@@ -1215,23 +1155,19 @@ export class GameHud {
   }
 
   private closePolicies(): void {
-    this.policiesDrawer.hidden = true;
-    this.dock.setExpanded('policies', false);
+    this.panels.close('policies');
   }
 
   private closeViews(): void {
-    this.viewPicker.hidden = true;
-    this.dock.setExpanded('views', false);
+    this.panels.close('views');
   }
 
   private closeInfo(): void {
-    this.infoPicker.hidden = true;
-    this.dock.setExpanded('info', false);
+    this.panels.close('info');
   }
 
   private closeThemes(): void {
-    this.themePicker.hidden = true;
-    this.dock.setExpanded('themes', false);
+    this.panels.close('themes');
   }
 
   private paint(model: GameHudModel): void {
@@ -1345,22 +1281,12 @@ export class GameHud {
 
   /** Vero quando uno dei pannelli del bordo destro e' aperto. */
   private rightPanelOpen(): boolean {
-    return !this.cityDrawer.hidden
-      || !this.policiesDrawer.hidden
-      || !this.themePicker.hidden
-      || !this.viewPicker.hidden
-      || !this.infoPicker.hidden
-      || this.help.isOpen;
+    return this.panels.anyOpen();
   }
 
   /** Chiude ogni pannello del bordo destro. Non tocca il menu ne' la selezione. */
   private clearRightPanels(): void {
-    this.closeCity();
-    this.closePolicies();
-    this.closeThemes();
-    this.closeViews();
-    this.closeInfo();
-    this.help.hide();
+    this.panels.dismiss();
   }
 
   private paintSelection(): void {

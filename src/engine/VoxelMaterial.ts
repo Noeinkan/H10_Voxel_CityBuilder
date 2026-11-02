@@ -258,6 +258,7 @@ export function createVoxelMaterial(hexColors: readonly string[], voxelSize: num
       uSpillColor: { value: spillColor },
       uNight: { value: 0 },
       uRimStrength: { value: DEFAULT_RIM.strength },
+      uCelStrength: { value: 0 },
       uRimPower: { value: DEFAULT_RIM.power },
       uRimColor: { value: rimColor },
       // I default valgono per chi non ha una simulazione dietro — il diorama,
@@ -362,6 +363,7 @@ export function createVoxelMaterial(hexColors: readonly string[], voxelSize: num
       // separate: il colore arriva come tinta, la forza e' la sua scala, cosi' un
       // tema che vuole solo spegnerlo scrive `strength: 0` senza toccare la tinta.
       material.uniforms['uRimStrength'].value = atmosphere.rim?.strength ?? DEFAULT_RIM.strength;
+      material.uniforms['uCelStrength'].value = atmosphere.cel?.strength ?? 0;
       material.uniforms['uRimPower'].value = atmosphere.rim?.power ?? DEFAULT_RIM.power;
       rimColor.setStyle(atmosphere.rim?.color ?? DEFAULT_RIM.color, SRGBColorSpace);
     },

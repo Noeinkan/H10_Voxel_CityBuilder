@@ -34,13 +34,14 @@ sono relativi alla radice del repository, non a questa cartella.
 | [src/engine/shaders/selection.glsl.ts](src/engine/shaders/selection.glsl.ts) | Il programma della selezione: profilo attraverso la fascia (filo quasi bianco, alone nel colore, filo scuro esterno) e cometa lungo il percorso | `selectionVertexShader`, `selectionFragmentShader` |
 | [src/engine/shaders/skyGradient.glsl.ts](src/engine/shaders/skyGradient.glsl.ts) | Il gradiente del cielo scritto una volta per i due programmi che lo usano: il quad di fondo e la prospettiva aerea si toccano all'orizzonte, e due copie che divergono ci cuciono una riga. | `skyGradientHelpers` |
 | [src/engine/shaders/vehicle.glsl.ts](src/engine/shaders/vehicle.glsl.ts) | Il programma dei mezzi: normale che ruota con la sagoma, fasciame, finestrini accesi, fanali. |
+| [src/engine/shaders/voxel.frag.ts](src/engine/shaders/voxel.frag.ts) | Fragment voxel: luce e ombra a bande opzionali oltre a materia, acqua e prospettiva aerea | `buildFragmentShader` |
 | [src/engine/shaders/wake.glsl.ts](src/engine/shaders/wake.glsl.ts) | Il programma della schiuma: bordo che si spegne e granello sulla cella del mondo. |
 | [src/engine/street/StreetCameraController.ts](src/engine/street/StreetCameraController.ts) | La camera prospettica all'altezza degli occhi: occhio fermo, testa libera, rotella sul campo visivo. Implementa `CameraCommands`, quindi riusa `CameraInput` dichiarando `orbitMode` sempre vero. | `StreetCameraController`, `StreetCameraOptions` |
 | [src/engine/street/streetEye.ts](src/engine/street/streetEye.ts) | I numeri della vista da terra e la matematica senza Three: dove si puo' posare l'occhio, a che quota, e la scatola d'ombra attorno a lui. | `EYE_HEIGHT`, `MIN_PITCH`, `MAX_PITCH`, `MIN_FOV`, `MAX_FOV`, `REST_FOV`, `FOV_STEP`, `YAW_STEP`, `STREET_NEAR`, `SHADOW_REACH`, `eyeRefusal`, `eyePoint`, `shadowBoxAround` |
 | [src/engine/street/StreetLook.ts](src/engine/street/StreetLook.ts) | Lo sguardo a terra: il mouse gira la testa senza premere niente, con il pointer lock a togliere di mezzo cursore e bordi dello schermo. | `StreetLook`, `StreetLookCommands` |
 | [src/engine/street/StreetView.ts](src/engine/street/StreetView.ts) | Quale delle due camere sta disegnando e cosa succede quando cambia: cattura e restituisce l'inquadratura isometrica, scambia l'input, stringe il volume dell'ombra. | `StreetView` |
 | [src/engine/VehicleMaterial.ts](src/engine/VehicleMaterial.ts) | I materiali di mezzi e scia: non hanno uniform propri, prendono in prestito quelli del voxel. |
-| [VoxelMaterial.ts](src/engine/VoxelMaterial.ts) | Unico `ShaderMaterial`: palette, sole e ambiente nel fragment, jitter per voxel, prospettiva aerea | `createVoxelMaterial`, `VoxelMaterialHandle` |
+| [VoxelMaterial.ts](src/engine/VoxelMaterial.ts) | Unico materiale voxel: palette, atmosfera e intensita' delle bande cel per tema, senza rimesh | `createVoxelMaterial`, `VoxelMaterialHandle` |
 | [lighting.ts](src/engine/lighting.ts) | Modello di luce in TS puro: direzione del sole, diffusa avvolgente, luminanza per faccia | `sunDirection`, `faceLight`, `faceLuminance`, `wrapDiffuse`, `FACE_NORMALS` |
 | [daylight.ts](src/engine/daylight.ts) | Ciclo giorno/notte in TS puro: traiettoria del sole dall'ora, fase del giorno dall'altezza, atmosfera derivata (riflesso dell'acqua compreso), tre modi dell'orologio | `DAYLIGHT`, `DAYLIGHT_MODE`, `DAYLIGHT_MODES`, `DaylightMode`, `dayPhase`, `nightFactor`, `sunElevation`, `sunAzimuth`, `withHour`, `modeHour`, `nextDaylightMode`, `resolveDaylightMode`, `mixHex`, `normaliseHour` |
 | [atmosphere.ts](src/engine/atmosphere.ts) | Prospettiva aerea in TS puro: densita' esponenziale in quota, integrata in forma chiusa lungo il raggio, piu' il velo di quota | `fogShape`, `fogOpticalDepth`, `fogAmount`, `fogAltitudeLift`, `fogVeil`, `FogModel`, `FOG_FLAT_EPSILON`, `FOG_LIFT_SHARPNESS` |
@@ -78,8 +79,9 @@ uniform e stato del renderer: nessuna geometria viene toccata.
 
 | File | Ruolo | Esporta |
 | --- | --- | --- |
-| [theme.ts](src/engine/themes/theme.ts) | Il contratto, senza import | `Theme`, `Atmosphere` |
-| [index.ts](src/engine/themes/index.ts) | Tabella dei temi e risoluzione dell'id | `THEMES`, `DEFAULT_THEME_ID`, `themeById`, `resolveTheme` |
+| [cel.ts](src/engine/themes/cel.ts) | Variante illustrata del naturale con bande di luce, contorni decisi e colori familiari | `cel` |
+| [theme.ts](src/engine/themes/theme.ts) | Contratto dei temi, inclusa l'intensita' cel opzionale | `Theme`, `Atmosphere` |
+| [index.ts](src/engine/themes/index.ts) | Tabella degli otto temi e risoluzione dell'id | `THEMES`, `DEFAULT_THEME_ID`, `themeById`, `resolveTheme` |
 | [natural.ts](src/engine/themes/natural.ts) | Diorama diurno; prende i colori da `palette.json` | `natural` |
 | [pastel.ts](src/engine/themes/pastel.ts) | Metropoli pastello in controluce | `pastel` |
 | [neon.ts](src/engine/themes/neon.ts) | Notturno al neon, unico senza tone mapping | `neon` |

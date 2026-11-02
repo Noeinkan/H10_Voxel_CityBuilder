@@ -63,6 +63,7 @@ uniform float uLitSigns;
 uniform float uRimStrength;
 uniform float uRimPower;
 uniform vec3 uRimColor;
+uniform float uCelStrength;
 
 // Viste di ispezione: tre predicati geometrici e una sola densita'. Il materiale
 // non sa quale modo sia attivo: quella decisione vive in inspect.ts.
@@ -291,6 +292,12 @@ ${inspect ? inspectGhostSurface : ''}
   vec3 vray = viewRay(vWorldPosition);
 
   float shadow = sampleShadow(vWorldPosition, n);
+  // Tre gradini di sole e un confine d'ombra piu' netto, miscelati con il
+  // modello continuo: il tema decide quanto rendere illustrata la scena.
+  float direct = faceDirect(n);
+  float paintedDirect = floor(direct * 3.0 + 0.5) / 3.0;
+  direct = mix(direct, paintedDirect, uCelStrength);
+  shadow = mix(shadow, smoothstep(0.35, 0.65, shadow), uCelStrength);
 
   // Ambiente emisferico piu' sole avvolgente. L'ambiente non e' moltiplicato per
   // l'ombra proiettata: e' cio' che lascia azzurre le facce in ombra invece che
@@ -302,7 +309,7 @@ ${inspect ? inspectGhostSurface : ''}
   // piu' basso non viene nemmeno calcolata. Il rimbalzo resta pieno, ed e' cio'
   // che impedisce al sotto-ponte di diventare un buco nero.
   float skyReach = mix(1.0 - uSkyOcclusion, 1.0, vSkyVisibility);
-  vec3 light = faceAmbient(n, skyReach) + uSunColor * faceDirect(n) * shadow;
+  vec3 light = faceAmbient(n, skyReach) + uSunColor * direct * shadow;
 
   // La luce che **esce** dagli edifici. Non e' una luce dinamica: vGlow e' un
   // dato geometrico cotto nel mesher — quanto vicina sta una superficie

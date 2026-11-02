@@ -143,6 +143,11 @@ export interface RimLight {
   readonly color?: string;
 }
 
+/** Bande di luce e ombra dipinte sulle facce voxel. 0 lascia la luce continua. */
+export interface CelShading {
+  readonly strength: number;
+}
+
 /**
  * Riflesso opaco animato sulla sola faccia superiore dell'acqua.
  *
@@ -236,6 +241,7 @@ export interface Atmosphere {
   readonly outline?: Outline;
   /** Bordo chiaro delle facce di scorcio, nel materiale. */
   readonly rim?: RimLight;
+  readonly cel?: CelShading;
 
   /** Risposta economica del vetro, senza trasparenza o materiale separato. */
   readonly glassTint?: string;

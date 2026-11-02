@@ -81,6 +81,16 @@ describe('createVoxelMaterial', () => {
     expect(material.uniforms['uCloudScale'].value).toBeGreaterThan(0);
   });
 
+  it('le bande cel cambiano per tema e si spengono tornando al naturale', () => {
+    const handle = createVoxelMaterial(resolveTheme('natural').colors, 1);
+    const { material } = handle;
+    handle.setAtmosphere(resolveTheme('cel').atmosphere);
+    expect(material.uniforms['uCelStrength'].value).toBe(0.8);
+    expect(material.fragmentShader).toContain('paintedDirect');
+    handle.setAtmosphere(resolveTheme('natural').atmosphere);
+    expect(material.uniforms['uCelStrength'].value).toBe(0);
+  });
+
   it('ogni uniform dichiarato nel GLSL esiste davvero fra gli uniform', () => {
     // I test girano senza GPU, quindi nessuno compila lo shader: un nome
     // sbagliato non darebbe errore, l'uniform resterebbe a zero e il difetto si

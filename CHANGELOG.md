@@ -16,6 +16,18 @@ Qui stanno **i tredici incrementi più recenti**; i precedenti sono archiviati i
 
 ---
 
+## In corso — Rotte fuori dalla scena di crescita
+
+- **Coordinamento traffico.** Rotte, firme di invalidazione, flotte e lettura dell'acqua passano da `GrowthScene` a `TrafficCoordinator`; l'orologio e il salvataggio restano nella scena. Typecheck e test mirati su crescita e rotte verdi.
+
+## In corso — Look cel shaded
+
+- Aggiunto il tema selezionabile Cel Shaded con bande di luce e ombra, profili piu' netti e la palette del tema naturale. Il look naturale rimane quello iniziale.
+
+## In corso — Gestione unica dei pannelli HUD
+
+- **Pannelli HUD.** I cinque toggle, le chiusure comuni e l'aiuto passano per `HudPanels`, preservando l'ordine di apertura, la selezione e la priorità di Escape. Test mirati sulle transizioni e sul modello HUD.
+
 ## In corso — La porta d'accesso
 
 - **Chi arriva sul sito ora deve avere un account.** `src/boot.ts` monta `src/auth/` prima di ogni altra cosa: senza una sessione verificata la pagina mostra il modulo di accesso e il mondo non nasce — nessuno dei due `import('./main')` è raggiungibile senza passare da `allowEntry()`. Registrazione, accesso, conferma dell'indirizzo, recupero password e password nuova sono sottoschermate della stessa schermata, vestita da `titleScreen.css` come il titolo e il menu di pausa.
