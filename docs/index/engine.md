@@ -34,7 +34,7 @@ sono relativi alla radice del repository, non a questa cartella.
 | [src/engine/shaders/selection.glsl.ts](src/engine/shaders/selection.glsl.ts) | Il programma della selezione: profilo attraverso la fascia (filo quasi bianco, alone nel colore, filo scuro esterno) e cometa lungo il percorso | `selectionVertexShader`, `selectionFragmentShader` |
 | [src/engine/shaders/skyGradient.glsl.ts](src/engine/shaders/skyGradient.glsl.ts) | Il gradiente del cielo scritto una volta per i due programmi che lo usano: il quad di fondo e la prospettiva aerea si toccano all'orizzonte, e due copie che divergono ci cuciono una riga. | `skyGradientHelpers` |
 | [src/engine/shaders/vehicle.glsl.ts](src/engine/shaders/vehicle.glsl.ts) | Il programma dei mezzi: normale che ruota con la sagoma, fasciame, finestrini accesi, fanali. |
-| [src/engine/shaders/voxel.frag.ts](src/engine/shaders/voxel.frag.ts) | Fragment voxel: luce e ombra a bande opzionali oltre a materia, acqua e prospettiva aerea | `buildFragmentShader` |
+| [src/engine/shaders/voxel.frag.ts](src/engine/shaders/voxel.frag.ts) | Fragment voxel: luce a bande opzionale e dettaglio dei pannelli attenuato nel tema cel, oltre a materia, acqua e prospettiva aerea | `buildFragmentShader` |
 | [src/engine/shaders/wake.glsl.ts](src/engine/shaders/wake.glsl.ts) | Il programma della schiuma: bordo che si spegne e granello sulla cella del mondo. |
 | [src/engine/street/StreetCameraController.ts](src/engine/street/StreetCameraController.ts) | La camera prospettica all'altezza degli occhi: occhio fermo, testa libera, rotella sul campo visivo. Implementa `CameraCommands`, quindi riusa `CameraInput` dichiarando `orbitMode` sempre vero. | `StreetCameraController`, `StreetCameraOptions` |
 | [src/engine/street/streetEye.ts](src/engine/street/streetEye.ts) | I numeri della vista da terra e la matematica senza Three: dove si puo' posare l'occhio, a che quota, e la scatola d'ombra attorno a lui. | `EYE_HEIGHT`, `MIN_PITCH`, `MAX_PITCH`, `MIN_FOV`, `MAX_FOV`, `REST_FOV`, `FOV_STEP`, `YAW_STEP`, `STREET_NEAR`, `SHADOW_REACH`, `eyeRefusal`, `eyePoint`, `shadowBoxAround` |
@@ -49,7 +49,7 @@ sono relativi alla radice del repository, non a questa cartella.
 | [inspect.ts](src/engine/inspect.ts) | Viste di ispezione in TS puro: dal modo attivo ai tre predicati, alla densita' della rigatura e all'accensione del landmark. I numeri che valgono per **tutti** i modi | `INSPECT`, `INSPECT_MODE`, `INSPECT_MODES`, `INSPECT_NAMES`, `inspectUniforms`, `sectionAxis`, `cycleInspectMode`, `parseInspectMode`, `clampSliceZ`, `isCut`, `needsCap`, `isOpenPlane`, `modeCuts`, `modeHasLevel`, `isActive`, `isBoundedRect`, `inspectGuide`, `InspectMode`, `InspectState`, `InspectUniforms`, `InspectGuide`, `InspectBox` |
 | [xray.ts](src/engine/xray.ts) | La lente dei raggi X: test a lastre, densita' che cresce verso la camera, gabbia sul filo del voxel, ricerca e accensione del landmark. **Ogni** numero della lente | `XRAY`, `lensHit`, `lensChord`, `xrayDensity`, `LensHit` |
 | [SunShadow.ts](src/engine/SunShadow.ts) | Shadow map ortografica del sole: fitting sull'AABB visibile, aggancio ai texel, materiale di sola profondita' | `createSunShadow`, `SunShadowHandle` |
-| [PostProcessing.ts](src/engine/PostProcessing.ts) | Composer sempre attivo: bloom, tilt-shift, tone mapping in `OutputPass` | `createPostProcessing`, `PostProcessingHandle` |
+| [PostProcessing.ts](src/engine/PostProcessing.ts) | Composer sempre attivo: contorno di profondita' con inchiostro opzionale per tema, bloom, tilt-shift e tone mapping in `OutputPass` | `createPostProcessing`, `PostProcessingHandle` |
 | [SkyBackground.ts](src/engine/SkyBackground.ts) | Fondo procedurale: quad in NDC senza profondita', gradiente per altezza di schermo, disco solare e nuvole a bande | `createSkyBackground`, `SkyBackgroundHandle` |
 | [FrameTiming.ts](src/engine/FrameTiming.ts) | Finestra scorrevole di intervalli rAF: fps, uno percento peggiore, p95/p99, jank | `FrameTiming`, `FrameTimingSnapshot` |
 | [RenderQuality.ts](src/engine/RenderQuality.ts) | Pixel ratio adattivo con isteresi e profilo di effetti derivato: ombre, bloom, tilt-shift scendono insieme | `RenderQualityController`, `parseQualityMode`, `QualityMode`, `QualityProfile`, `QualityDecision`, `QualityReason` |
@@ -79,8 +79,8 @@ uniform e stato del renderer: nessuna geometria viene toccata.
 
 | File | Ruolo | Esporta |
 | --- | --- | --- |
-| [cel.ts](src/engine/themes/cel.ts) | Variante illustrata del naturale con bande di luce, contorni decisi e colori familiari | `cel` |
-| [theme.ts](src/engine/themes/theme.ts) | Contratto dei temi, inclusa l'intensita' cel opzionale | `Theme`, `Atmosphere` |
+| [cel.ts](src/engine/themes/cel.ts) | Tema illustrato: paesaggio vivido, torri moderne in intonaco caldo e vetro salvia con profili neri | `cel` |
+| [theme.ts](src/engine/themes/theme.ts) | Contratto dei temi: intensita' cel per luce e facciate, inchiostro opzionale sul contorno | `Theme`, `Atmosphere` |
 | [index.ts](src/engine/themes/index.ts) | Tabella degli otto temi e risoluzione dell'id | `THEMES`, `DEFAULT_THEME_ID`, `themeById`, `resolveTheme` |
 | [natural.ts](src/engine/themes/natural.ts) | Diorama diurno; prende i colori da `palette.json` | `natural` |
 | [pastel.ts](src/engine/themes/pastel.ts) | Metropoli pastello in controluce | `pastel` |

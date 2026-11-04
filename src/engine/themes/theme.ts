@@ -126,6 +126,8 @@ export interface GodRays {
 export interface Outline {
   /** Forza del contorno scuro, 0..1. 0 lo spegne. */
   readonly strength: number;
+  /** Porta il profilo verso il nero pieno, per il tratto a inchiostro. */
+  readonly ink?: boolean;
 }
 
 /**
@@ -143,7 +145,7 @@ export interface RimLight {
   readonly color?: string;
 }
 
-/** Bande di luce e ombra dipinte sulle facce voxel. 0 lascia la luce continua. */
+/** Bande di luce e ombra e grana piu' larga sulle facciate. 0 conserva il look base. */
 export interface CelShading {
   readonly strength: number;
 }

@@ -59,7 +59,7 @@ dove cambia la stratificazione. Da li' escono i cigli, e dai cigli le sporgenze.
 
 | File | Ruolo | Esporta |
 | --- | --- | --- |
-| [config.ts](src/world/terrain/config.ts) | **Ogni** soglia, frequenza, ampiezza, stratigrafia e numero della sagoma, del terrazzamento, della copertura, delle vene di roccia e delle sporgenze | `TERRAIN`, `LANDFORM`, `TERRACE`, `ROCK`, `GROUND_COVER`, `LEDGE`, `BIOME`, `BIOME_NAMES`, `BIOME_STRATA`, `BUILDABLE_BIOMES`, `WATER_IDS`, `TREE_DECOR` |
+| [config.ts](src/world/terrain/config.ts) | Soglie e ampiezze del terreno, inclusi i parametri della valle e il budget dei rilievi | `TERRAIN`, `LANDFORM`, `TERRACE`, `ROCK`, `GROUND_COVER`, `LEDGE`, `BIOME` |
 | [outline.ts](src/world/terrain/outline.ts) | La forma in pianta di un elemento della sagoma: ellisse orientata con il raggio deformato da poche armoniche, che si spengono sul bordo. Il fattore di Lipschitz della deformazione, misurato e in forma chiusa | `Outline`, `Warp`, `WarpTerm`, `outlineOf`, `outlineRatio`, `outlinePoint`, `planWarp`, `warpLipschitz`, `SHAPE_WARP_LIPSCHITZ` |
 | [rockTone.ts](src/world/terrain/rockTone.ts) | I grigi della roccia: uno strato per gradone, e nessuna variazione in pianta — due grigi alla stessa quota vorrebbero dire due strati alla stessa quota | `rockBandAt`, `rockSurface`, `rockSubsoil` |
 | [terrace.ts](src/world/terrain/terrace.ts) | Le tre scale di quote su cui il terreno si posa, l'alzata che cresce con la quota e cambia con la stratificazione, il campo in pianta che sceglie la scala — e che toglie al ciglio sia la faccia di curva di livello sia l'altezza costante —, e il ciglio che ne esce | `terraceOf`, `terraceAt`, `terraceStepAt`, `terraceScheduleAt`, `cellFloor`, `isCliff` |
@@ -67,10 +67,10 @@ dove cambia la stratificazione. Da li' escono i cigli, e dai cigli le sporgenze.
 | [cellGrid.ts](src/world/terrain/cellGrid.ts) | Il reticolo di celle di un blocco, con due celle di margine: quota terrazzata, bioma, pendenza, salto e verso | `buildCellGrid`, `CellGrid`, `cellIsCliff`, `gridIndex`, `inGrid`, `CELL_MARGIN`, `CELLS_PER_BLOCK`, `GRID_SIDE`, `CELL_STEPS`, `HEIGHT_BORDER` |
 | [groundcover.ts](src/world/terrain/groundcover.ts) | Erbette, fiori e sassi: se e cosa cresce su una colonna, da un hash e senza record, piu' la tabella tinta/forma che il mesher legge dalla palette del terreno | `COVER`, `CoverKind`, `COVER_FORM`, `CoverForm`, `coverAt`, `coverToneOn`, `coverFormOn`, `coverGroundPalettes` |
 | [ledges.ts](src/world/terrain/ledges.ts) | Sporgenze di roccia sul ciglio: la prima cosa del terreno che non e' una colonna | `ledgeAt`, `ledgeSpec`, `ledgeTop`, `ledgeTouches`, `writeLedge`, `LedgeSpec`, `LEDGE_MIN_DROP`, `LEDGE_RECORD_SIZE` |
-| [heightField.ts](src/world/terrain/heightField.ts) | Maschera a lobi × 3 ottave di simplex, piu' rilievi e conche | `HeightField` |
-| [landform.ts](src/world/terrain/landform.ts) | La sagoma prima del rumore: lobi della costa, rilievi interni, conche dei laghi. Nessuna altezza dichiarata — la detta il budget di pendenza; la forma in pianta la detta `outline.ts` | `Lobe`, `Mound`, `Basin`, `BasinSite`, `planLobes`, `planMounds`, `planBasins`, `moundRise`, `shapeBasins`, `lakeLevelAt`, `domeFalloff`, `basinProfile`, `basinWeight`, `capForRadius`, `fitRadius` |
+| [heightField.ts](src/world/terrain/heightField.ts) | Campo di quota continuo: applica le scelte del giocatore a rilievi, valli e conche senza perdere il determinismo | `HeightField` |
+| [landform.ts](src/world/terrain/landform.ts) | Piano dei lobi, rilievi e laghi; permette rilievi e conche supplementari nel paesaggio ricco | `planLobes`, `planMounds`, `planBasins`, `moundRise`, `shapeBasins` |
 | [biomes.ts](src/world/terrain/biomes.ts) | Bioma da altezza e pendenza, edificabilità, colore per profondità — e per colonna, dove la roccia ha una banda | `classifyBiome`, `isBuildable`, `paletteForDepth`, `paletteAt` |
-| [region.ts](src/world/terrain/region.ts) | Region, `IslandShape`, allineamento ai chunk di colonna | `Region`, `IslandShape`, `shapeFromRegion`, `alignRegion`, `chunkSpanOf` |
+| [region.ts](src/world/terrain/region.ts) | Region e sagoma dell'isola; `LandscapeOptions` porta le scelte del giocatore e il profilo storico usato dai salvataggi precedenti | `Region`, `IslandShape`, `LandscapeOptions`, `DEFAULT_LANDSCAPE`, `LEGACY_LANDSCAPE`, `shapeFromRegion` |
 | [columnBlock.ts](src/world/terrain/columnBlock.ts) | Blocco 32×32 di colonne piu' i record di alberi e sporgenze, trasferibile fra worker e main; porta anche la quota d'acqua e la copertura per colonna | `ColumnBlock`, `columnIndex`, `blockTransferables` |
 | [decor.ts](src/world/terrain/decor.ts) | Alberi deterministici per cella, specie dai pesi del bioma, scrittura ritagliata al blocco | `treeAt`, `treeSpec`, `treeTop`, `writeTree`, `TreeSpec`, `TREELESS_BIOMES` |
 | [IslandGenerator.ts](src/world/terrain/IslandGenerator.ts) | `generateIsland`, `expandIsland`, colonne, alberi e sporgenze | `generateIsland`, `expandIsland`, `generateColumnBlock`, `writeBlockColumns`, `writeBlockDecor`, `writeBlockLedges` |
@@ -78,6 +78,7 @@ dove cambia la stratificazione. Da li' escono i cigli, e dai cigli le sporgenze.
 | [terrainMessages.ts](src/world/terrain/terrainMessages.ts) | Protocollo main ↔ worker | `TerrainJob`, `BlockMessage`, `DoneMessage` |
 | [terrain.worker.ts](src/world/terrain/terrain.worker.ts) | Generazione fuori dal main thread, un blocco per volta (21,46 kB in bundle) | — |
 | [TerrainStreamer.ts](src/world/terrain/TerrainStreamer.ts) | Riceve i blocchi e li applica a budget di frame; è un `SceneGenerator` | `TerrainStreamer` |
+| [valley.ts](src/world/terrain/valley.ts) | Piano deterministico di una valle larga e curva, con incisione che sfuma sui fianchi e verso la costa | `Valley`, `planValley`, `valleyCutAt` |
 | [waterClass.ts](src/world/terrain/waterClass.ts) | Bassofondo, canale o mare aperto da profondita' e sponde, dove la profondita' esiste ancora | `classifyWater` |
 | [BiomeView.ts](src/world/terrain/BiomeView.ts) | Ricolore delle colonne per bioma, a passi con budget (tasto `B`) | `BiomeView` |
 

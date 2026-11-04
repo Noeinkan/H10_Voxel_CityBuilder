@@ -242,6 +242,47 @@
   color: #9c5348;
 }
 
+.title-landscape-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 13px;
+}
+
+.title-landscape-select {
+  min-width: 112px;
+  padding: 7px 10px;
+  border: 1px solid rgba(35, 75, 105, .26);
+  border-radius: 9px;
+  background: rgba(255, 255, 255, .92);
+  color: inherit;
+  font: inherit;
+}
+
+.title-landscape-select:focus-visible {
+  outline: 2px solid #2f6b91;
+  outline-offset: 2px;
+}
+
+.title-island-preview {
+  display: flex;
+  align-items: center;
+  flex-direction: column;
+  gap: 5px;
+  margin: 2px 0;
+}
+
+.title-island-preview canvas {
+  width: min(100%, 186px);
+  height: auto;
+  aspect-ratio: 1;
+  border: 1px solid rgba(35, 75, 105, .25);
+  border-radius: 12px;
+  background: #68a9c5;
+  box-shadow: 0 5px 16px rgba(28, 51, 71, .16);
+}
+
 .title-slots {
   display: flex;
   flex-direction: column;

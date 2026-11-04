@@ -4,6 +4,7 @@ import {
   newGameUrl,
   opensEntryMenu,
   resolveLaunchMode,
+  resolveLandscape,
   resolveLook,
   rollSeed,
   type LookChoice,
@@ -19,6 +20,7 @@ import {
 } from './game/save/storage';
 import { whenWorldReady } from './game/worldReady';
 import { TitleScreen } from './ui/TitleScreen';
+import type { LandscapeOptions } from './world/terrain/region';
 
 /**
  * L'ingresso della pagina, e l'unica cosa che decide **quando** nasce il mondo.
@@ -120,15 +122,15 @@ function openTitle(): void {
     // stavi», e la radice riapre l'autosalvataggio da se'.
     onContinue: () => {
       if (autosave === null) return;
-      void enter(screen, autosave.seed, 'Loading your city…');
+      void enter(screen, autosave.seed, 'Loading your city…', readSlot(storage, AUTO_SLOT)?.landscape);
     },
     // L'autosalvataggio va cancellato, non scavalcato: con lo stesso seed la
     // radice lo riaprirebbe, e la citta' vecchia comparirebbe su un'isola che
     // sembra nuova. Gli slot a mano restano, ed e' cio' che la riga promette.
-    onCreate: (seed) => {
+    onCreate: (seed, landscape) => {
       deleteSlot(storage, PENDING_SLOT);
       deleteSlot(storage, AUTO_SLOT);
-      void enter(screen, seed);
+      void enter(screen, seed, undefined, landscape);
     },
     onLoad: (slot) => {
       const save = readSlot(storage, slot);
@@ -141,7 +143,7 @@ function openTitle(): void {
         screen.setLoadNote('Could not open that city: browser storage is full.');
         return;
       }
-      void enter(screen, save.seed, 'Loading your city…');
+      void enter(screen, save.seed, 'Loading your city…', save.landscape);
     },
     onRoll: rollSeed,
     // Il look va nell'indirizzo subito, non solo entrando: cosi' sopravvive a un
@@ -150,7 +152,7 @@ function openTitle(): void {
       look = next;
       window.history.replaceState(window.history.state, '', lookUrl(window.location.search, next));
     },
-  }, { autosave, slots, look });
+  }, { autosave, slots, look, landscape: resolveLandscape(params) });
   document.body.appendChild(screen.root);
   screen.focus();
 }
@@ -163,7 +165,12 @@ function openTitle(): void {
  * avuto risposta. La schermata invece se ne va **dopo** il segnale del mondo:
  * toglierla al primo frame scoprirebbe un mare vuoto con i chunk ancora in coda.
  */
-async function enter(screen: TitleScreen, seed: number, message?: string): Promise<void> {
+async function enter(
+  screen: TitleScreen,
+  seed: number,
+  message?: string,
+  landscape?: LandscapeOptions,
+): Promise<void> {
   screen.startLoading(message);
   // L'attesa si mostra **prima** di chiedere, non dopo: la prima pressione di
   // «Play» e' anche quella che accende la prova, quindi c'e' una scrittura vera
@@ -173,7 +180,7 @@ async function enter(screen: TitleScreen, seed: number, message?: string): Promi
   window.history.replaceState(
     window.history.state,
     '',
-    newGameUrl(window.location.search, seed, look),
+    newGameUrl(window.location.search, seed, look, landscape),
   );
   await import('./main');
   await whenWorldReady(READY_TIMEOUT_MS);

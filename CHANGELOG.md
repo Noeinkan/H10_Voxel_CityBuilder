@@ -16,6 +16,35 @@ Qui stanno **i tredici incrementi più recenti**; i precedenti sono archiviati i
 
 ---
 
+## In corso — Compatibilita' del terreno salvato
+
+- **Citta' precedenti sul terreno originale.** I salvataggi senza configurazione del paesaggio riaprono la stessa sagoma e la stessa pendenza dei rilievi con cui sono nati; il profilo resta nel file ai salvataggi successivi.
+
+## In corso — Anteprima dell'isola
+
+- **Minimap dal generatore reale.** La schermata di creazione mostra una carta dall'alto campionata dal campo di altezza e d'acqua; cambia quando il giocatore modifica il seed o le scelte del paesaggio.
+
+## In corso — Profili a inchiostro nel tema Cel Shaded
+
+- Le sagome delle torri Cel Shaded hanno un contorno nero in stile fumetto, mentre gli altri temi conservano il contorno scuro precedente. La forza e l'inchiostro cambiano tramite uniform, senza ricostruire le mesh.
+
+## In corso — Configuratore del paesaggio
+
+- **Scelte prima della generazione.** Il titolo permette di scegliere la presenza di creste montuose, valli ampie e laghi interni su tre livelli; URL e salvataggi riproducono la stessa sagoma.
+- **Valli e rilievi.** Una valle curva attraversa le quote basse, mentre il profilo montuoso resta entro il budget di pendenza e mantiene una vetta rocciosa nei seed di riferimento.
+
+## In corso — Facciate illustrate nel tema Cel Shaded
+
+- Le torri Cel Shaded usano vetro salvia e intonaco caldo, con meno contrasto nei pannelli e bordi piu' morbidi. Il dettaglio del fragment e' modulato dal tema; gli altri look mantengono il comportamento precedente.
+
+## In corso — Taratura visiva Cel Shaded
+
+- Confrontato il tema Cel Shaded con Natural sulla stessa isola a seed fisso e corretto il colore della spiaggia, che lo slot `stone` aveva reso grigio. Rafforzati verdi, roccia, acqua e contrasto, poi verificato anche il campione di citta'.
+
+## In corso — Palette paesaggistica per Cel Shaded
+
+- La palette Cel Shaded riprende i colori del paesaggio di riferimento: cielo azzurro intenso, prati verde lime, boschi scuri, roccia fredda e acqua turchese. Il naturale conserva la propria palette.
+
 ## In corso — Rotte fuori dalla scena di crescita
 
 - **Coordinamento traffico.** Rotte, firme di invalidazione, flotte e lettura dell'acqua passano da `GrowthScene` a `TrafficCoordinator`; l'orologio e il salvataggio restano nella scena. Typecheck e test mirati su crescita e rotte verdi.

@@ -3,6 +3,7 @@ import { SEASON } from '../sim/seasons';
 import {
   applyLook,
   newGameUrl,
+  resolveLandscape,
   opensEntryMenu,
   parseSeedInput,
   perfToggleUrl,
@@ -123,6 +124,14 @@ describe('parseSeedInput', () => {
 });
 
 describe('newGameUrl', () => {
+  it('porta le scelte del paesaggio nell indirizzo della nuova isola', () => {
+    const url = newGameUrl('?mountains=2&lakes=0', 99, undefined, {
+      mountains: 0, valleys: 2, lakes: 1,
+    });
+    expect(resolveLandscape(new URLSearchParams(url))).toEqual({
+      mountains: 0, valleys: 2, lakes: 1,
+    });
+  });
   it('cambia isola e lascia in piedi l’harness attorno', () => {
     const params = new URLSearchParams(newGameUrl('?seed=1337&perf=1&theme=neon', 99));
     expect(params.get('seed')).toBe('99');

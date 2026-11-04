@@ -66,6 +66,7 @@ import {
   perfToggleUrl,
   PLAY_PARAM,
   resolveLaunchMode,
+  resolveLandscape,
   resolveSeed,
   rollSeed,
   swatchUrl,
@@ -117,7 +118,7 @@ import { TERRAIN } from './world/terrain/config';
 import { maxTowerHeightOf } from './world/scale';
 import { BiomeView } from './world/terrain/BiomeView';
 import { TerrainStreamer } from './world/terrain/TerrainStreamer';
-import type { IslandShape } from './world/terrain/region';
+import { shapeFromRegion, type IslandShape } from './world/terrain/region';
 import { VoxelWorld } from './world/VoxelWorld';
 
 /**
@@ -230,6 +231,7 @@ const restoredGame = savedGame !== null &&
   : null;
 
 const seed = restoredGame?.seed ?? resolveSeed(params, rollSeed);
+const landscape = restoredGame?.landscape ?? resolveLandscape(params);
 
 // Il seed sorteggiato va riscritto nell'URL: e' il modo in cui il mondo
 // "appare" al giocatore — come il seed di Minecraft — e il ricaricamento
@@ -622,7 +624,9 @@ const terrainRegion = { minX: 0, minY: 0, sizeX: TERRAIN_SIZE, sizeY: TERRAIN_SI
 const terrain: TerrainStreamer | null =
   terrainParam === null && !simEnabled && !growEnabled
     ? null
-    : new TerrainStreamer(world, terrainSeed, terrainRegion);
+    : new TerrainStreamer(world, terrainSeed, terrainRegion, {
+      ...shapeFromRegion(terrainRegion), landscape,
+    });
 
 let generator: SceneGenerator =
   terrain ??
@@ -777,6 +781,7 @@ let gameHud: GameHud | null = null;
 // copia presa adesso resterebbe `null` per sempre.
 const { autosave, refreshSaveList, startNewGame, saveToSlot, openSlot, exportSave } =
   createSaveSlots({
+    landscape,
     storage: saveStorage,
     seed: terrainSeed,
     scene: () => growthScene,

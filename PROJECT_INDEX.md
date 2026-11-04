@@ -64,7 +64,7 @@ worker. `src/sim/` gira in Node senza DOM né GPU.
 | [src/auth/install.ts](src/auth/install.ts) | Monta la porta e la lascia lavorare: è il solo file di `src/auth/` che tocca il documento, ed esiste perché `boot.ts` resti l'ingresso che decide quando nasce il mondo. Da qui escono la promessa che si è pronti e la domanda «si entra?» da rifare al momento del «Play» | `installAuthGate`, `AuthGateHandle` |
 | [src/auth/supabaseBackend.ts](src/auth/supabaseBackend.ts) | La porta appoggiata a Supabase: l'unico file che importa `@supabase/supabase-js`, e l'unico che parla con le funzioni del database. Non decide niente — traduce chiamate e riconosce risposte, e quando non le riconosce lo dice invece di inventare uno stato | `createSupabaseBackend` |
 | [src/auth/TrialBadge.ts](src/auth/TrialBadge.ts) | Il tempo rimasto mentre si gioca: una pastiglia in alto al centro che sopravvive al passaggio dal titolo alla partita. Per l'accesso beta mostra lo stato e non il conto alla rovescia | `TrialBadge` |
-| [src/boot.ts](src/boot.ts) | Ingresso della pagina: **passa dalla porta d'accesso prima di tutto**, poi decide fra titolo e partita, tiene lo storage degli slot, riscrive il seed nell'indirizzo e carica `main.ts` con un import dinamico soltanto dopo la scelta. Nessuno dei due `import('./main')` è raggiungibile senza `allowEntry()`, che è anche il momento in cui la prova si accende |
+| [src/boot.ts](src/boot.ts) | Ingresso della pagina: mostra il titolo prima del mondo, passa seed e scelte del paesaggio nell'URL, e ripristina quelle dei salvataggi | 
 | [src/shell/actionLabels.ts](src/shell/actionLabels.ts) | Le righe che il cursore mostra prima di un click e i motivi di un rifiuto: funzioni pure, senza scena ne' HUD |
 | [src/shell/debugHooks.ts](src/shell/debugHooks.ts) | Gli hook globali dell'harness — `__voxelStats`, `__growStats`, `__simTick`, `__terrainExpand` e gli altri — registrati in un posto solo: `__voxelStats` e' la lettura del pannello di render, `__growStats` porta il profilo delle passate |
 | [src/shell/demolishGesture.ts](src/shell/demolishGesture.ts) | La gomma, unico strumento in due tempi: ancora, striscio e rilascio, con il riquadro a terra e i tappeti sui tetti |
@@ -74,7 +74,7 @@ worker. `src/sim/` gira in Node senza DOM né GPU.
 | [src/shell/placementTools.ts](src/shell/placementTools.ts) | Lo strumento in mano e cio' che il puntatore ne fa: mirino, rifiuti, posa di catalizzatori, mensole, funivie e settori |
 | [src/shell/plotBlockers.ts](src/shell/plotBlockers.ts) | Le caselle gia' prese mentre un monumento e' in mano: rosso fioco su ogni monumento in piedi, rosso pieno e ambra su chi ferma il riquadro sotto il puntatore. Due chiavi, una per lo strumento e una per la colonna |
 | [src/shell/pointerPick.ts](src/shell/pointerPick.ts) | Dal pixel alla colonna: raggio del cursore, terra su cui si costruisce e cosa si sta indicando, con un raycaster solo |
-| [src/shell/saveSlots.ts](src/shell/saveSlots.ts) | Il ritmo del salvataggio visto dalla radice: automatico a intervallo, slot a mano, apertura che passa da un ricaricamento |
+| [src/shell/saveSlots.ts](src/shell/saveSlots.ts) | Autosave, slot ed export includono le scelte del paesaggio; l'apertura di uno slot le ripristina nell'URL |
 | [src/shell/selectionScene.ts](src/shell/selectionScene.ts) | Cio' che il giocatore ha scelto: scheda, contorno in-world, campo del landmark e artefatto del coach, che scrivono la stessa superficie |
 | [src/shell/streetEye.ts](src/shell/streetEye.ts) | La discesa a terra: armarla, posare l'occhio, risalire, e le conseguenze del cambio di modo su qualita' e post-processing |
 | [src/shell/swatchScene.ts](src/shell/swatchScene.ts) | Il campionario di `?scene=swatch`: soggetto sotto il cursore, scelta persistente, referto del voxel e inquadratura delle fasce |
@@ -83,7 +83,7 @@ worker. `src/sim/` gira in Node senza DOM né GPU.
 | [tsconfig.json](tsconfig.json) | `strict` + flag extra; `noUncheckedIndexedAccess` off di proposito |
 | [vidkit.config.mjs](vidkit.config.mjs) | Scene del video dimostrativo in `.videos/`: cinque clip dal seed alla notte |
 | [vite.config.ts](vite.config.ts) | Vite + Vitest insieme; worker ES, ambiente `node` e segnalazione standard dei test oltre un secondo |
-| [src/main.ts](src/main.ts) | Composition root e ciclo di frame a budget: monta gli strati, li cabla fra loro e non possiede piu' input, scelta ne' misura |
+| [src/main.ts](src/main.ts) | Composition root e ciclo di frame: costruisce la sagoma con le scelte del paesaggio dall'URL o dal salvataggio e la passa allo streamer |
 
 ## Documentazione operativa
 

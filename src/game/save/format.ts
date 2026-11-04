@@ -1,5 +1,6 @@
 import type { SimStateData } from '../../sim';
 import type { BuildingRecord } from '../../world/buildings/BuildingRegistry';
+import { LEGACY_LANDSCAPE, type LandscapeOptions } from '../../world/terrain/region';
 
 /**
  * Il formato di salvataggio, e le sue due regole.
@@ -56,6 +57,7 @@ export interface SaveGame {
   /** Millisecondi epoch, per l'elenco degli slot. Non entra in nessun calcolo. */
   readonly savedAt: number;
   readonly seed: number;
+  readonly landscape?: LandscapeOptions;
   readonly sim: SimStateData;
   /**
    * I record del registro, in ordine di id crescente.
@@ -115,6 +117,7 @@ export function readSave(value: unknown): SaveGame | null {
     version,
     savedAt: numberOf(value.savedAt, 0),
     seed,
+    landscape: readLandscape(value.landscape),
     sim: value.sim as unknown as SimStateData,
     // In ordine di id anche se il file non ce li ha dati cosi': `adopt` conta
     // sull'ordine, e fidarsi di un file che l'utente puo' aver riscritto a mano
@@ -122,6 +125,19 @@ export function readSave(value: unknown): SaveGame | null {
     records: [...records].sort((a, b) => a.id - b.id),
     sectors: Array.isArray(value.sectors) ? value.sectors.filter(isSectorId) : [],
     scene: readScene(value.scene),
+  };
+}
+
+function readLandscape(value: unknown): LandscapeOptions {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return LEGACY_LANDSCAPE;
+  const source = value as Record<string, unknown>;
+  const level = (key: keyof LandscapeOptions): 0 | 1 | 2 =>
+    source[key] === 0 || source[key] === 2 ? source[key] as 0 | 2 : 1;
+  return {
+    mountains: level('mountains'),
+    valleys: level('valleys'),
+    lakes: level('lakes'),
+    ...(source.version === 0 ? { version: 0 as const } : {}),
   };
 }
 

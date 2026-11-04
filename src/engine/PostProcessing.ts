@@ -222,6 +222,7 @@ const outlineShader = {
     tDepth: { value: null },
     uTexel: { value: new Vector2() },
     uStrength: { value: 0 },
+    uInk: { value: 0 },
     uEdgeThreshold: { value: 0.04 },
     uNear: { value: 0.1 },
     uFar: { value: 1000 },
@@ -233,6 +234,7 @@ const outlineShader = {
     uniform sampler2D tDepth;
     uniform vec2 uTexel;
     uniform float uStrength;
+    uniform float uInk;
     uniform float uEdgeThreshold;
     uniform float uNear;
     uniform float uFar;
@@ -269,7 +271,7 @@ const outlineShader = {
       float gy = -d0 - 2.0 * d1 - d2 + d5 + 2.0 * d6 + d7;
       float edge = smoothstep(uEdgeThreshold, uEdgeThreshold * 2.0, clamp(length(vec2(gx, gy)), 0.0, 1.0));
       vec3 color = texture2D(tDiffuse, vUv).rgb;
-      color *= 1.0 - edge * uStrength * 0.7;
+      color *= 1.0 - edge * uStrength * mix(0.7, 1.0, uInk);
       gl_FragColor = vec4(color, 1.0);
     }
   `,
@@ -478,6 +480,7 @@ export function createPostProcessing(
 
       const outline = atmosphere.outline;
       outlinePass.uniforms['uStrength'].value = outline?.strength ?? DEFAULT_OUTLINE.strength;
+      outlinePass.uniforms['uInk'].value = outline?.ink === true ? 1 : 0;
       themeOutline = (outline?.strength ?? DEFAULT_OUTLINE.strength) > 0;
 
       syncEnabled();

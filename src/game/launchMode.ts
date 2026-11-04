@@ -1,4 +1,5 @@
 import { resolveDaylightMode, type DaylightMode } from '../engine/daylight';
+import { DEFAULT_LANDSCAPE, type LandscapeOptions } from '../world/terrain/region';
 import { resolveTheme } from '../engine/themes';
 // Dal modulo e non dal barile di `src/sim`: la schermata del titolo importa
 // questo file prima che il mondo esista, e `src/sim/index.ts` si porterebbe
@@ -141,12 +142,38 @@ export function opensEntryMenu(
  * con un tema dichiarato, vuole una citta' nuova nelle stesse condizioni: e' la
  * scena a cambiare, non l'harness attorno.
  */
-export function newGameUrl(search: string, seed: number, look?: LookChoice): string {
+export function newGameUrl(
+  search: string,
+  seed: number,
+  look?: LookChoice,
+  landscape?: LandscapeOptions,
+): string {
   const params = new URLSearchParams(search);
   params.set('seed', String(seed));
   params.set(PLAY_PARAM, '1');
   if (look !== undefined) applyLook(params, look);
+  if (landscape !== undefined) applyLandscape(params, landscape);
   return `?${params.toString()}`;
+}
+
+/** Le tre intensita' sono dichiarate nell'indirizzo e riproducibili dal seed. */
+export function resolveLandscape(params: URLSearchParams): LandscapeOptions {
+  const level = (name: string): 0 | 1 | 2 => {
+    const raw = params.get(name);
+    return raw === '0' || raw === '2' ? Number(raw) as 0 | 2 : 1;
+  };
+  return {
+    mountains: level('mountains'),
+    valleys: level('valleys'),
+    lakes: level('lakes'),
+  };
+}
+
+export function applyLandscape(params: URLSearchParams, choice: LandscapeOptions): void {
+  for (const name of ['mountains', 'valleys', 'lakes'] as const) {
+    if (choice[name] === DEFAULT_LANDSCAPE[name]) params.delete(name);
+    else params.set(name, String(choice[name]));
+  }
 }
 
 /**

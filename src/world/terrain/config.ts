@@ -375,6 +375,18 @@ export const TERRAIN = {
  * `[minimo, alternative]` per i conteggi, come `TreeShape.trunk`.
  */
 export const LANDFORM = {
+  // --- Valle principale ---------------------------------------------------
+  // Una fascia bassa leggibile alla scala dell'intera isola. La profondita'
+  // viene dal raggio e dal budget di pendenza, come per gli altri rilievi.
+  valleySalt: 0x0a_11_e7_00,
+  valleySecondSalt: 0x04_a9_11_e7,
+  valleyWidth: [0.29, 0.08],
+  valleyOffset: 0.12,
+  valleyBend: 0.13,
+  valleySlope: 0.09,
+  valleyFlatLength: 0.42,
+  valleyFadeLength: 0.38,
+
   // --- Deformazione della sagoma ------------------------------------------
 
   /**
@@ -484,7 +496,8 @@ export const LANDFORM = {
    * stretta su cui misurare — e se lo puo' permettere: il fianco di una cupola
    * resta la meta' della sponda di un lago.
    */
-  moundSlope: 0.28,
+  moundSlope: 0.36,
+  legacyMoundSlope: 0.28,
 
   moundJitter: 0.5,
 

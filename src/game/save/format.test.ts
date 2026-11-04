@@ -1,12 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import { BUILDING_CLASS, createSimState, toSimStateData } from '../../sim';
 import { readSave, SAVE_VERSION, type SaveGame } from './format';
+import { DEFAULT_LANDSCAPE, LEGACY_LANDSCAPE } from '../../world/terrain/region';
 
 function save(overrides: Partial<SaveGame> = {}): SaveGame {
   return {
     version: SAVE_VERSION,
     savedAt: 1_700_000_000_000,
     seed: 4242,
+    landscape: DEFAULT_LANDSCAPE,
     sim: toSimStateData(createSimState()),
     records: [],
     sectors: [],
@@ -59,6 +61,15 @@ describe('formato di salvataggio', () => {
     const { scene: _dropped, ...legacy } = save();
     const read = readSave(JSON.parse(JSON.stringify(legacy)));
     expect(read?.scene).toEqual({ paused: false, speed: 1, clock: 0, healthyTicks: 0, milestone: -1 });
+  });
+
+  it('un salvataggio precedente ritrova il paesaggio standard', () => {
+    const { landscape: _dropped, ...legacy } = save();
+    expect(readSave(legacy)?.landscape).toEqual(LEGACY_LANDSCAPE);
+    expect(roundTrip(save({ landscape: LEGACY_LANDSCAPE }))?.landscape)
+      .toEqual(LEGACY_LANDSCAPE);
+    expect(roundTrip(save({ landscape: { mountains: 0, valleys: 2, lakes: 0 } }))?.landscape)
+      .toEqual({ mountains: 0, valleys: 2, lakes: 0 });
   });
 
   it('rimette i record in ordine di id anche se il file non li aveva', () => {

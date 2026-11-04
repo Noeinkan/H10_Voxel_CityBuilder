@@ -219,13 +219,18 @@ describe('temi', () => {
     );
   });
 
-  it('il look cel usa la palette naturale e bande di luce senza cambiare il default', () => {
+  it('il look cel porta prati vividi e roccia fredda senza cambiare il default', () => {
     const cel = themeById('cel');
     const natural = themeById('natural');
-    expect(cel?.colors).toBe(natural?.colors);
+    expect(cel?.colors).not.toBe(natural?.colors);
+    expect(cel?.colors[20]).toBe('#56b520');
+    expect(cel?.colors[8]).toBe('#e4d6aa');
+    expect(cel?.atmosphere.sky.top).toBe('#299bd4');
     expect(cel?.atmosphere.cel?.strength).toBeGreaterThan(0);
     expect(natural?.atmosphere.cel).toBeUndefined();
     expect(cel?.atmosphere.outline?.strength).toBeGreaterThan(0);
+    expect(cel?.atmosphere.outline?.ink).toBe(true);
+    expect(natural?.atmosphere.outline?.ink).toBeUndefined();
     expect(DEFAULT_THEME_ID).toBe('natural');
   });
 });

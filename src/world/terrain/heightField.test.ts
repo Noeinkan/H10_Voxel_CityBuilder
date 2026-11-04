@@ -31,6 +31,25 @@ function sampleGrid(field: HeightField, size: number): Float64Array {
 }
 
 describe('HeightField — determinismo', () => {
+  it('le scelte iniziali cambiano il rilievo e possono togliere i laghi', () => {
+    const bare = new HeightField(1337, {
+      ...SHAPE,
+      landscape: { mountains: 0, valleys: 0, lakes: 0 },
+    });
+    const rich = new HeightField(1337, {
+      ...SHAPE,
+      landscape: { mountains: 2, valleys: 2, lakes: 2 },
+    });
+    let differences = 0;
+    for (let y = 32; y < 480; y += 16) {
+      for (let x = 32; x < 480; x += 16) {
+        if (bare.heightAt(x, y) !== rich.heightAt(x, y)) differences++;
+        expect(bare.waterLevelAt(x, y)).toBe(TERRAIN.seaLevel);
+      }
+    }
+    expect(differences).toBeGreaterThan(200);
+  });
+
   it('e’ una funzione pura di (seed, shape, x, y)', () => {
     const a = new HeightField(1337, SHAPE);
     const b = new HeightField(1337, SHAPE);
@@ -78,6 +97,24 @@ describe('HeightField — determinismo', () => {
 });
 
 describe('HeightField — regolarita’', () => {
+  it('anche il paesaggio ricco resta continuo', () => {
+    const shape = { ...SHAPE, landscape: { mountains: 2, valleys: 2, lakes: 2 } as const };
+    for (const seed of [1337, 7, 65535]) {
+      const grid = sampleGrid(new HeightField(seed, shape), 512);
+      const side = 514;
+      let worst = 0;
+      for (let y = 0; y < 512; y++) {
+        for (let x = 0; x < 512; x++) {
+          const i = (y + 1) * side + x + 1;
+          worst = Math.max(worst,
+            Math.abs(grid[i + 1] - grid[i]),
+            Math.abs(grid[i + side] - grid[i]));
+        }
+      }
+      expect(worst, String(seed)).toBeLessThan(1);
+    }
+  });
+
   /**
    * Il criterio "due colonne adiacenti non differiscono di piu' di 1" e' un
    * vincolo di Lipschitz sul campo continuo, non una proprieta' delle cuciture
@@ -88,6 +125,7 @@ describe('HeightField — regolarita’', () => {
     const size = 512;
     const side = size + 2;
     let worst = 0;
+    let worstAt = '';
 
     for (const seed of SEEDS) {
       const grid = sampleGrid(new HeightField(seed, SHAPE), size);
@@ -101,14 +139,17 @@ describe('HeightField — regolarita’', () => {
             Math.abs(grid[i + side] - h),
             Math.abs(grid[i - side] - h),
           );
-          if (delta > worst) worst = delta;
+          if (delta > worst) {
+            worst = delta;
+            worstAt = `${seed}:${x},${y}`;
+          }
         }
       }
     }
 
     // Il margine conta quanto il valore: serve spazio per ritoccare le frequenze
     // senza far cadere il criterio di continuita'.
-    expect(worst).toBeLessThan(1);
+    expect(worst, worstAt).toBeLessThan(1);
     expect(worst).toBeLessThan(0.8);
   });
 
@@ -335,7 +376,7 @@ describe('HeightField — regolarita’', () => {
           if (h > peak) peak = h;
         }
       }
-      expect(peak).toBeGreaterThanOrEqual(TERRAIN.rockMinHeight);
+      expect(peak, String(seed)).toBeGreaterThanOrEqual(TERRAIN.rockMinHeight);
     }
   });
 });

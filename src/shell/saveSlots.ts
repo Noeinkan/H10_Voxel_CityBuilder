@@ -1,6 +1,7 @@
 import type { GrowthScene } from '../game/growthScene';
-import { newGameUrl } from '../game/launchMode';
+import { applyLandscape, newGameUrl } from '../game/launchMode';
 import type { SaveGame } from '../game/save/format';
+import type { LandscapeOptions } from '../world/terrain/region';
 import {
   AUTO_SLOT,
   deleteSlot,
@@ -28,6 +29,7 @@ import type { GameHud } from '../ui/GameHud';
 export interface SaveSlotsDeps {
   readonly storage: SaveStorage | null;
   readonly seed: number;
+  readonly landscape: LandscapeOptions;
   readonly scene: () => GrowthScene | null;
   readonly hud: () => GameHud | null;
 }
@@ -92,7 +94,9 @@ export function createSaveSlots(deps: SaveSlotsDeps): SaveSlots {
 
       autosaveAt = time;
       autosavedTick = tickCount;
-      const result = writeSlot(storage, AUTO_SLOT, scene.toSave(seed, Date.now()));
+      const result = writeSlot(storage, AUTO_SLOT, {
+        ...scene.toSave(seed, Date.now()), landscape: deps.landscape,
+      });
       if (!result.ok) {
         // Un fallimento va **detto**, e detto una volta: continuare a giocare
         // credendo di essere al sicuro e' peggio di sapere che non lo si e'.
@@ -125,7 +129,9 @@ export function createSaveSlots(deps: SaveSlotsDeps): SaveSlots {
     saveToSlot(slot: string): void {
       const scene = deps.scene();
       if (scene === null) return;
-      const result = writeSlot(storage, slot, scene.toSave(seed, Date.now()));
+      const result = writeSlot(storage, slot, {
+        ...scene.toSave(seed, Date.now()), landscape: deps.landscape,
+      });
       deps.hud()?.setSaveNote(result.ok
         ? 'Saved.'
         : result.reason === 'quota'
@@ -157,6 +163,7 @@ export function createSaveSlots(deps: SaveSlotsDeps): SaveSlots {
       }
       const url = new URL(window.location.href);
       url.searchParams.set('seed', String(save.seed));
+      if (save.landscape !== undefined) applyLandscape(url.searchParams, save.landscape);
       window.location.replace(url.toString());
     },
 
@@ -164,7 +171,7 @@ export function createSaveSlots(deps: SaveSlotsDeps): SaveSlots {
     exportSave(): void {
       const scene = deps.scene();
       if (scene === null) return;
-      const text = exportText(scene.toSave(seed, Date.now()));
+      const text = exportText({ ...scene.toSave(seed, Date.now()), landscape: deps.landscape });
       const url = URL.createObjectURL(new Blob([text], { type: 'application/json' }));
       const link = document.createElement('a');
       link.href = url;

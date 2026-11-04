@@ -28,9 +28,33 @@ export interface IslandShape {
   readonly centreY: number;
   readonly radiusX: number;
   readonly radiusY: number;
+  /** Scelte fatte alla nascita dell'isola; assenti nei mondi precedenti. */
+  readonly landscape?: LandscapeOptions;
   /** Lobi costieri aggiunti dal giocatore; non alterano mai la maschera base. */
   readonly extensions?: readonly CoastalExtension[];
 }
+
+export interface LandscapeOptions {
+  readonly mountains: 0 | 1 | 2;
+  readonly valleys: 0 | 1 | 2;
+  readonly lakes: 0 | 1 | 2;
+  /** Il vecchio profilo dei rilievi, solo nei salvataggi precedenti. */
+  readonly version?: 0;
+}
+
+export const DEFAULT_LANDSCAPE: LandscapeOptions = {
+  mountains: 1,
+  valleys: 1,
+  lakes: 1,
+};
+
+/** Profilo dei salvataggi scritti prima dell'arrivo delle valli. */
+export const LEGACY_LANDSCAPE: LandscapeOptions = {
+  mountains: 1,
+  valleys: 0,
+  lakes: 1,
+  version: 0,
+};
 
 export interface CoastalExtension extends Region {
   readonly id: string;

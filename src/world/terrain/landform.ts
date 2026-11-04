@@ -302,9 +302,15 @@ export function planLobes(seed: number, shape: IslandShape, relief: number): Lob
  * l'ultimo posto in cui il bersaglio si vedeva ancora: la maschera ha la sua
  * deformazione da sempre, ma sopra la fascia della roccia comanda il rilievo.
  */
-export function planMounds(seed: number, shape: IslandShape, relief: number): Mound[] {
+export function planMounds(
+  seed: number,
+  shape: IslandShape,
+  relief: number,
+  extra = 0,
+  slope: number = LANDFORM.moundSlope,
+): Mound[] {
   const rnd = mulberry32(hashCoords(seed, LANDFORM.moundSalt, 0));
-  const count = pickCount(rnd, LANDFORM.moundCount);
+  const count = pickCount(rnd, LANDFORM.moundCount) + extra;
   const rotation = rnd() * TAU;
   const mounds: Mound[] = [];
 
@@ -338,7 +344,7 @@ export function planMounds(seed: number, shape: IslandShape, relief: number): Mo
       amplitude: capForRadius(
         Math.min(radiusX, radiusY),
         relief,
-        LANDFORM.moundSlope / SHAPE_WARP_LIPSCHITZ,
+        slope / SHAPE_WARP_LIPSCHITZ,
       ),
     });
   }
@@ -371,9 +377,10 @@ export function planBasins(
   shape: IslandShape,
   relief: number,
   heightAt: (x: number, y: number) => number,
+  extra = 0,
 ): Basin[] {
   const rnd = mulberry32(hashCoords(seed, LANDFORM.basinSalt, 0));
-  const wanted = pickCount(rnd, LANDFORM.basinCount);
+  const wanted = pickCount(rnd, LANDFORM.basinCount) + extra;
   const rotation = rnd() * TAU;
   const basins: Basin[] = [];
   if (wanted <= 0 || relief <= 0) return basins;

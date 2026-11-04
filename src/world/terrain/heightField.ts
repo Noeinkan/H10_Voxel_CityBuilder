@@ -1,6 +1,6 @@
 import { createNoise2D, type NoiseFunction2D } from 'simplex-noise';
 import { hashCoords, mulberry32 } from '../rng';
-import { TERRAIN } from './config';
+import { LANDFORM, TERRAIN } from './config';
 import {
   lakeLevelAt,
   liftSummit,
@@ -14,7 +14,8 @@ import {
   type Mound,
 } from './landform';
 import { outlineRatio } from './outline';
-import type { IslandShape } from './region';
+import { DEFAULT_LANDSCAPE, type IslandShape } from './region';
+import { planValley, valleyCutAt, type Valley } from './valley';
 
 /**
  * Campo di altezza continuo dell'isola.
@@ -72,6 +73,7 @@ export class HeightField {
   private readonly lobes: readonly Lobe[];
   private readonly mounds: readonly Mound[];
   private readonly basins: readonly Basin[];
+  private readonly valleys: readonly Valley[];
 
   /**
    * Rilievo effettivo in voxel: il tetto assoluto, oppure quello che il raggio
@@ -121,9 +123,27 @@ export class HeightField {
     // `extensions` restano fuori da tutti e tre — un settore costiero comprato a
     // partita in corso non deve spostare una collina dall'altra parte
     // dell'isola, o le colonne gia' generate non tornerebbero piu'.
+    const landscape = shape.landscape ?? DEFAULT_LANDSCAPE;
     this.lobes = planLobes(seed, shape, this.relief);
-    this.mounds = planMounds(seed, shape, this.relief);
-    this.basins = planBasins(seed, shape, this.relief, (x, y) => this.reliefHeightAt(x, y));
+    this.mounds = landscape.mountains === 0 ? []
+      : planMounds(
+        seed,
+        shape,
+        this.relief,
+        landscape.mountains === 2 ? 2 : 0,
+        landscape.version === 0 ? LANDFORM.legacyMoundSlope : LANDFORM.moundSlope,
+      );
+    this.valleys = landscape.valleys === 0 ? [] : [planValley(seed, shape, this.relief)];
+    if (landscape.valleys === 2) {
+      this.valleys = [...this.valleys, planValley(seed ^ LANDFORM.valleySecondSalt, shape, this.relief)];
+    }
+    this.basins = landscape.lakes === 0 ? [] : planBasins(
+      seed,
+      shape,
+      this.relief,
+      (x, y) => this.reliefHeightAt(x, y),
+      landscape.lakes === 2 ? 1 : 0,
+    );
   }
 
   /** Somma delle ottave riportata in [0, 1]. */
@@ -267,7 +287,9 @@ export class HeightField {
    */
   private baseElevationAt(x: number, y: number): number {
     const relief = TERRAIN.domeBias + (1 - TERRAIN.domeBias) * this.noiseAt(x, y);
-    const base = relief * this.maskAt(x, y);
+    let cut = 0;
+    for (const valley of this.valleys) cut = Math.max(cut, valleyCutAt(valley, x, y));
+    const base = Math.max(0, relief * this.maskAt(x, y) - cut);
     const rise = moundRise(this.mounds, x, y);
     // L'espansione della vetta e' l'ultimo passo del rilievo e il primo che le
     // conche vedono: `planBasins` interroga questo campo, e un lago va cercato

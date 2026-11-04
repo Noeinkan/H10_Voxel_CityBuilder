@@ -275,7 +275,11 @@ describe('generateIsland — continuita’ al confine', () => {
     // E' il criterio della 4.x, e senza di lui il terrazzamento sarebbe un
     // meccanismo che funziona su un'isola che non lo usa mai: le alzate alte
     // esistono solo dove il rilievo ci arriva.
-    const { map } = referenceIsland();
+    // La valle puo' abbassare un'intera fascia prima che questa raggiunga la
+    // roccia: qui si osserva la stratificazione senza quel taglio intenzionale.
+    const { map } = generateIsland(new VoxelWorld(), SEED, ISLAND, {
+      shape: { ...shapeFromRegion(ISLAND), landscape: { mountains: 1, valleys: 0, lakes: 1 } },
+    });
 
     let cliffs = 0;
     let tallest = 0;

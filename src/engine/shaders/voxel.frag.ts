@@ -130,6 +130,9 @@ ${inspect ? inspectGhostSurface : ''}
     float panelEdge = 1.0 - smoothstep(0.045, 0.085, min(edgeDistance.x, edgeDistance.y));
     float variation = hash21(floor(uv) + vec2(float(surfaceIndex) * 17.0, float(paletteIndex)));
     bool lateral = faceIndex < 4;
+    // Nel look illustrato la massa prevale sul reticolo dei singoli pannelli.
+    // A zero ogni tema conserva esattamente la propria grana precedente.
+    float detailStrength = 1.0 - uCelStrength * 0.55;
 
     if (surfaceIndex == ${SURFACE_KIND.habitat}) {
       // Finestra piu' alta che larga: a distanza e' la proporzione, prima ancora
@@ -224,8 +227,8 @@ ${inspect ? inspectGhostSurface : ''}
       float hot = fract(tone * 6.71);
       float strength = mix(0.4, 1.35, hot) + step(0.97, hot) * 1.5;
 
-      detailed = mix(detailed, uPalette[${PALETTE_SLOTS.glassDeep}] * 0.62, pane * 0.72);
-      detailed *= 1.0 - panelEdge * 0.16;
+      detailed = mix(detailed, uPalette[${PALETTE_SLOTS.glassDeep}] * 0.62, pane * 0.72 * detailStrength);
+      detailed *= 1.0 - panelEdge * 0.16 * detailStrength;
       // Il vetro acceso schiarisce anche il proprio pixel: con la sola emissione
       // una finestra accesa di giorno resterebbe un buco scuro nel vetro.
       detailed = mix(detailed, windowLight * 0.55, lit * 0.6);
@@ -235,13 +238,15 @@ ${inspect ? inspectGhostSurface : ''}
       float rib = 1.0 - smoothstep(0.035, 0.075, abs(cellUv.x - 0.5));
       float vent = lateral ? boxMask(cellUv, vec2(0.18, 0.3), vec2(0.82, 0.68)) : 0.0;
       float louvers = step(0.52, fract(cellUv.y * 8.0)) * vent;
-      detailed *= 1.0 - panelEdge * 0.24;
-      detailed = mix(detailed, uPalette[${PALETTE_SLOTS.metalDark}] * 0.72, max(rib * 0.32, louvers * 0.3));
+      detailed *= 1.0 - panelEdge * 0.24 * detailStrength;
+      detailed = mix(detailed, uPalette[${PALETTE_SLOTS.metalDark}] * 0.72,
+        max(rib * 0.32, louvers * 0.3) * detailStrength);
     } else if (surfaceIndex == ${SURFACE_KIND.civic}) {
       float glassPanel = lateral ? boxMask(cellUv, vec2(0.1, 0.12), vec2(0.9, 0.88)) : 0.0;
       float spine = 1.0 - smoothstep(0.045, 0.09, abs(cellUv.x - 0.5));
-      detailed = mix(detailed, uPalette[${PALETTE_SLOTS.glass}] * 0.82, glassPanel * 0.62);
-      detailed *= 1.0 - panelEdge * 0.12;
+      detailed = mix(detailed, uPalette[${PALETTE_SLOTS.glass}] * 0.82,
+        glassPanel * 0.62 * detailStrength);
+      detailed *= 1.0 - panelEdge * 0.12 * detailStrength;
       emission += uPalette[${PALETTE_SLOTS.glassPale}] * spine * glassPanel * 0.16;
     } else if (surfaceIndex == ${SURFACE_KIND.luminous}) {
       float band = lateral
@@ -270,8 +275,9 @@ ${inspect ? inspectGhostSurface : ''}
       float circuitX = 1.0 - smoothstep(0.025, 0.065, abs(cellUv.x - 0.5));
       float circuitY = 1.0 - smoothstep(0.025, 0.065, abs(cellUv.y - 0.5));
       float circuit = faceIndex == 4 ? max(circuitX, circuitY) : circuitY;
-      detailed *= 1.0 - panelEdge * 0.2;
-      detailed = mix(detailed, uPalette[${PALETTE_SLOTS.metalDark}] * 0.75, circuit * 0.34);
+      detailed *= 1.0 - panelEdge * 0.2 * detailStrength;
+      detailed = mix(detailed, uPalette[${PALETTE_SLOTS.metalDark}] * 0.75,
+        circuit * 0.34 * detailStrength);
       // Di notte le luci di sommita' pesano piu' del disegno del tetto: sopra il
       // fronte illuminato sono l'unica cosa che continua a dire dove finisce una
       // torre e comincia il cielo.

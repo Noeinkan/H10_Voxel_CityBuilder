@@ -1,6 +1,8 @@
 import type { LookChoice } from '../game/launchMode';
+import type { LandscapeOptions } from '../world/terrain/region';
 import type { SlotInfo } from '../game/save/storage';
 import { ABOUT_LINE, slotLabel, slotSummary } from './MainMenuModel';
+import { IslandPreview } from './IslandPreview';
 import { titleHelpPane } from './TitleHelp';
 import { TitleSettings } from './TitleSettings';
 import {
@@ -36,11 +38,12 @@ export interface TitleScreenView {
   readonly slots: readonly SlotInfo[];
   /** Tema, cielo e nuvole in vigore: quelli dichiarati dall'indirizzo. */
   readonly look: LookChoice;
+  readonly landscape: LandscapeOptions;
 }
 
 export interface TitleScreenHandlers {
   readonly onContinue: () => void;
-  readonly onCreate: (seed: number) => void;
+  readonly onCreate: (seed: number, landscape: LandscapeOptions) => void;
   readonly onLoad: (slot: string) => void;
   /** Il seed sorteggiato da chi possiede l'unico tiro del gioco. */
   readonly onRoll: () => number;
@@ -66,6 +69,8 @@ export class TitleScreen {
   private readonly seedField: HTMLInputElement;
   private readonly seedHint: HTMLElement;
   private readonly createButton: HTMLButtonElement;
+  private readonly landscapeFields = new Map<keyof LandscapeOptions, HTMLSelectElement>();
+  private readonly preview = new IslandPreview();
   private readonly loadNote: HTMLElement;
   private readonly primaryButton: HTMLButtonElement | null = null;
 
@@ -147,6 +152,7 @@ export class TitleScreen {
    * questo la pagina non e' un menu, e' l'attesa del mondo.
    */
   startLoading(message: string = TITLE_LOADING): void {
+    this.preview.stop();
     const waiting = document.createElement('div');
     waiting.className = 'title-loading';
     const spinner = document.createElement('div');
@@ -245,6 +251,39 @@ export class TitleScreen {
 
     pane.append(title, note, row, hint);
 
+    const landscapeTitle = document.createElement('h3');
+    landscapeTitle.className = 'title-pane-title';
+    landscapeTitle.textContent = 'Landscape';
+    const landscapeNote = document.createElement('p');
+    landscapeNote.className = 'title-note';
+    landscapeNote.textContent = 'Choose what shapes your island.';
+    pane.append(landscapeTitle, landscapeNote);
+    for (const [key, label, options] of [
+      ['mountains', 'Additional peaks', ['None', 'Some', 'More']],
+      ['valleys', 'Broad valleys', ['None', 'One', 'Two']],
+      ['lakes', 'Inland lakes', ['None', 'Some', 'More']],
+    ] as const) {
+      const choice = document.createElement('label');
+      choice.className = 'title-landscape-row';
+      const name = document.createElement('span');
+      name.textContent = label;
+      const select = document.createElement('select');
+      select.className = 'title-landscape-select';
+      select.setAttribute('aria-label', label);
+      options.forEach((option, value) => {
+        const item = document.createElement('option');
+        item.value = String(value);
+        item.textContent = option;
+        select.appendChild(item);
+      });
+      select.value = String(this.view.landscape[key]);
+      select.addEventListener('change', () => this.paintSeed());
+      this.landscapeFields.set(key, select);
+      choice.append(name, select);
+      pane.appendChild(choice);
+    }
+    pane.appendChild(this.preview.root);
+
     const warning = newIslandWarning(this.view.autosave !== null);
     if (warning !== null) {
       const warn = document.createElement('p');
@@ -322,7 +361,17 @@ export class TitleScreen {
     if (invalid) return;
     // Il campo vuoto non e' un dato mancante: e' la richiesta di un'isola che
     // nessuno ha ancora visto, e il seed lo tira chi possiede il tiro.
-    this.handlers.onCreate(seed ?? this.handlers.onRoll());
+    this.handlers.onCreate(seed ?? this.handlers.onRoll(), this.landscapeChoice());
+  }
+
+  private landscapeChoice(): LandscapeOptions {
+    const level = (key: keyof LandscapeOptions): 0 | 1 | 2 =>
+      Number(this.landscapeFields.get(key)?.value ?? 1) as 0 | 1 | 2;
+    return {
+      mountains: level('mountains'),
+      valleys: level('valleys'),
+      lakes: level('lakes'),
+    };
   }
 
   /**
@@ -342,9 +391,10 @@ export class TitleScreen {
   }
 
   private paintSeed(): void {
-    const { invalid, note } = seedNote(this.seedField.value);
+    const { seed, invalid, note } = seedNote(this.seedField.value);
     this.createButton.disabled = invalid;
     this.seedHint.textContent = note;
+    this.preview.update(invalid ? null : seed, this.landscapeChoice());
   }
 
   private openPane(pane: TitlePane): void {
