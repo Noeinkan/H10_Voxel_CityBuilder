@@ -81,7 +81,7 @@ uniform e stato del renderer: nessuna geometria viene toccata.
 | --- | --- | --- |
 | [cel.ts](src/engine/themes/cel.ts) | Tema illustrato: paesaggio vivido, torri moderne in intonaco caldo e vetro salvia con profili neri | `cel` |
 | [theme.ts](src/engine/themes/theme.ts) | Contratto dei temi: intensita' cel per luce e facciate, inchiostro opzionale sul contorno | `Theme`, `Atmosphere` |
-| [index.ts](src/engine/themes/index.ts) | Tabella degli otto temi e risoluzione dell'id | `THEMES`, `DEFAULT_THEME_ID`, `themeById`, `resolveTheme` |
+| [index.ts](src/engine/themes/index.ts) | Tabella degli otto temi e risoluzione dell'id; Cel Shaded e' il look iniziale | `THEMES`, `DEFAULT_THEME_ID`, `themeById`, `resolveTheme` |
 | [natural.ts](src/engine/themes/natural.ts) | Diorama diurno; prende i colori da `palette.json` | `natural` |
 | [pastel.ts](src/engine/themes/pastel.ts) | Metropoli pastello in controluce | `pastel` |
 | [neon.ts](src/engine/themes/neon.ts) | Notturno al neon, unico senza tone mapping | `neon` |

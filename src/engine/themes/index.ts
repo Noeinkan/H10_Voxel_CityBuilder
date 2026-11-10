@@ -16,7 +16,7 @@ import type { Theme } from './theme';
  */
 export const THEMES: readonly Theme[] = [natural, pastel, neon, industrial, scifi, enchanted, diorama, cel];
 
-export const DEFAULT_THEME_ID = natural.id;
+export const DEFAULT_THEME_ID = cel.id;
 
 export function themeById(id: string): Theme | undefined {
   return THEMES.find((theme) => theme.id === id);
@@ -28,7 +28,7 @@ export function resolveTheme(id: string | null): Theme {
     const found = themeById(id);
     if (found !== undefined) return found;
   }
-  return natural;
+  return cel;
 }
 
 /**

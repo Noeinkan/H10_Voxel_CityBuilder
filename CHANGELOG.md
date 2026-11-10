@@ -16,6 +16,10 @@ Qui stanno **i tredici incrementi più recenti**; i precedenti sono archiviati i
 
 ---
 
+## In corso — Cel Shaded come look iniziale
+
+- Le partite senza `?theme=` aprono direttamente Cel Shaded, cosi' palette, facciate e profili a inchiostro appaiono anche nell'esperienza normale. La scelta esplicita di un altro tema resta valida.
+
 ## In corso — Compatibilita' del terreno salvato
 
 - **Citta' precedenti sul terreno originale.** I salvataggi senza configurazione del paesaggio riaprono la stessa sagoma e la stessa pendenza dei rilievi con cui sono nati; il profilo resta nel file ai salvataggi successivi.

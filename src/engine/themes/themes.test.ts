@@ -212,14 +212,14 @@ describe('temi', () => {
     }
   });
 
-  it('usa il diorama naturale come default senza rimuovere i temi storici', () => {
-    expect(DEFAULT_THEME_ID).toBe('natural');
+  it('usa il look cel come default senza rimuovere i temi storici', () => {
+    expect(DEFAULT_THEME_ID).toBe('cel');
     expect(THEMES.map((theme) => theme.id)).toEqual(
       expect.arrayContaining(['natural', 'pastel', 'neon', 'industrial', 'scifi', 'enchanted', 'diorama', 'cel']),
     );
   });
 
-  it('il look cel porta prati vividi e roccia fredda senza cambiare il default', () => {
+  it('il look cel porta prati vividi e roccia fredda nel tema iniziale', () => {
     const cel = themeById('cel');
     const natural = themeById('natural');
     expect(cel?.colors).not.toBe(natural?.colors);
@@ -231,6 +231,6 @@ describe('temi', () => {
     expect(cel?.atmosphere.outline?.strength).toBeGreaterThan(0);
     expect(cel?.atmosphere.outline?.ink).toBe(true);
     expect(natural?.atmosphere.outline?.ink).toBeUndefined();
-    expect(DEFAULT_THEME_ID).toBe('natural');
+    expect(DEFAULT_THEME_ID).toBe('cel');
   });
 });

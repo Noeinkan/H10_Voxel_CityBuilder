@@ -85,7 +85,7 @@ permettono di isolare le scene di verifica.
 | `height` | `64` | Altezza del mondo in voxel |
 | `terrain` | — | `<seed>` sostituisce la scena urbana con un'isola 512×512 |
 | `sim` | — | `1` accende la scena di simulazione (implica l'isola) |
-| `theme` | `natural` | `natural`, `pastel`, `neon`, `industrial`, `scifi`, `enchanted`, `diorama` |
+| `theme` | `cel` | `natural`, `pastel`, `neon`, `industrial`, `scifi`, `enchanted`, `diorama`, `cel` |
 | `grow` | `1` alla radice | `1` avvia esplicitamente l'MVP giocabile |
 | `inspect` | — | `xray`, `slice`, `section`, `block`: apre una vista, anche senza `debug` |
 | `slice` | — | Quota della fetta; senza, segue il suolo che si sta guardando |
@@ -236,7 +236,8 @@ nebbia, luce per orientamento di faccia, tone mapping — e applicarlo riscrive
 solo uniform e stato del renderer. Con `?debug=1` i tasti `1`..`9` lo cambiano a
 caldo: quad e byte di geometria nell'overlay non si muovono di un'unità.
 `?theme=<id>` vale anche senza `debug`. Disponibili: `natural`, `pastel`,
-`neon`, `industrial`, `scifi`, `enchanted`.
+`neon`, `industrial`, `scifi`, `enchanted`, `diorama`, `cel`. Senza parametro
+si apre `cel`; gli altri restano selezionabili dal pannello dei temi.
 
 ### Due cose da sapere sui numeri
 

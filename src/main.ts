@@ -325,7 +325,7 @@ const diorama: DioramaScene | null = sceneKind === 'diorama' && terrainParam ===
     })
   : null;
 
-/** `?theme=<id>` sceglie il look; in assenza vale il diorama caldo. */
+/** `?theme=<id>` sceglie il look; in assenza vale Cel Shaded. */
 const initialTheme: Theme = resolveTheme(params.get('theme'));
 
 /**
