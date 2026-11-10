@@ -84,8 +84,9 @@ export class HeightField {
   constructor(seed: number, shape: IslandShape) {
     this.seed = seed;
     this.shape = shape;
+    const landscape = shape.landscape ?? DEFAULT_LANDSCAPE;
     this.relief = Math.min(
-      TERRAIN.maxHeight - TERRAIN.oceanFloor,
+      (landscape.version === 0 ? TERRAIN.legacyMaxHeight : TERRAIN.maxHeight) - TERRAIN.oceanFloor,
       Math.min(shape.radiusX, shape.radiusY) * TERRAIN.maxReliefSlope,
     );
 
@@ -115,7 +116,8 @@ export class HeightField {
 
     const profile = mulberry32(hashCoords(seed, TERRAIN.profileSalt, 0));
     this.crestMix = TERRAIN.crestMix[0] + profile() * TERRAIN.crestMix[1];
-    this.summitLift = TERRAIN.summitLift[0] + profile() * TERRAIN.summitLift[1];
+    this.summitLift = TERRAIN.summitLift[0] + profile() * TERRAIN.summitLift[1]
+      + (landscape.version === 0 ? 0 : TERRAIN.mountainLift[landscape.mountains]);
 
     // L'ordine e' una dipendenza, non una preferenza: i lobi definiscono la
     // maschera, i rilievi si appoggiano alla maschera, e le conche si cercano un
@@ -123,7 +125,6 @@ export class HeightField {
     // `extensions` restano fuori da tutti e tre — un settore costiero comprato a
     // partita in corso non deve spostare una collina dall'altra parte
     // dell'isola, o le colonne gia' generate non tornerebbero piu'.
-    const landscape = shape.landscape ?? DEFAULT_LANDSCAPE;
     this.lobes = planLobes(seed, shape, this.relief);
     this.mounds = landscape.mountains === 0 ? []
       : planMounds(

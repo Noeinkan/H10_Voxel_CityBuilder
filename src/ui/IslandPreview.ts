@@ -59,12 +59,14 @@ export class IslandPreview {
     const side = SIDE + 2;
     const heights = new Float32Array(side * side);
     const water = new Uint8Array(SIDE * SIDE);
+    let peak: number = TERRAIN.seaLevel;
     for (let py = -1; py <= SIDE; py++) {
       const y = (SIDE - py - 0.5) * REGION.sizeY / SIDE;
       for (let px = -1; px <= SIDE; px++) {
         const x = (px + 0.5) * REGION.sizeX / SIDE;
         heights[(py + 1) * side + px + 1] = field.heightAt(x, y);
         if (px >= 0 && px < SIDE && py >= 0 && py < SIDE) {
+          peak = Math.max(peak, heights[(py + 1) * side + px + 1]);
           water[py * SIDE + px] = heights[(py + 1) * side + px + 1]
             < field.waterLevelAt(x, y) ? 1 : 0;
         }
@@ -104,6 +106,6 @@ export class IslandPreview {
     }
     context.putImageData(pixels, 0, 0);
     this.canvas.setAttribute('aria-label', `Island preview for seed ${seed}`);
-    this.status.textContent = 'Island preview · sea, lowlands, hills and rock';
+    this.status.textContent = `Highest peak · ${Math.round(peak - TERRAIN.seaLevel)} voxels above sea`;
   }
 }

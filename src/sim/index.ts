@@ -157,6 +157,7 @@ export {
 export {
   ALL_SPECIALIZATIONS,
   districtPairingsOf,
+  districtOf,
   dominantUse,
   gapRatio,
   rolesForSpecialization,
@@ -173,6 +174,7 @@ export {
   type UrbanMetric,
   type UrbanSources,
 } from './districts';
+export { previewDistrict, type DistrictPreview } from './districtPreview';
 export {
   decisionAt,
   decisionExpired,

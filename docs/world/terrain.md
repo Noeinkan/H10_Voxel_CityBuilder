@@ -146,9 +146,11 @@
   per `1 + lift` la sola distanza dal ginocchio `summitKnee`: sotto — costa,
   pianura, fascia edificabile — non cambia niente, sopra la vetta sale o si
   arrotonda. L'intervallo attraversa lo zero perche' la varieta' deve venire
-  dalla **varianza** e non da un paesaggio medio piu' alto; misurato su
-  quarantotto seed, le vette vanno da 54 a 75 voxel e la roccia dal 10 al 29 per
-  cento della terra emersa.
+  dalla **varianza** e non da un paesaggio medio piu' alto. Nelle nuove isole,
+  `mountainLift` aggiunge quota solo sopra il ginocchio secondo la scelta Low,
+  High o Alpine; i salvataggi con `version: 0` conservano il profilo precedente.
+  Il budget del campo continuo resta sotto un voxel di differenza fra colonne
+  vicine, e `maxHeight` deve contenere anche l'opzione Alpine.
 - **La forma in pianta di un elemento sta in `terrain/outline.ts`, e si spegne
   sul bordo.** Rilievi e conche sono ellissi orientate con il raggio deformato da
   poche armoniche: senza, il bordo di un lago e' una circonferenza esatta, e lo

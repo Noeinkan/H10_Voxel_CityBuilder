@@ -48,7 +48,7 @@ const AUTOSAVE_INTERVAL_MS = 20_000;
 export interface SaveSlots {
   autosave(time: number, force?: boolean): void;
   refreshSaveList(): void;
-  startNewGame(chosen: number): void;
+  startNewGame(chosen: number, landscape: LandscapeOptions): void;
   saveToSlot(slot: string): void;
   openSlot(save: SaveGame | null, missing: string): void;
   exportSave(): void;
@@ -118,11 +118,11 @@ export function createSaveSlots(deps: SaveSlotsDeps): SaveSlots {
      * nuova. Lo slot di passaggio se ne va con lui: era la partita che qualcuno
      * aveva chiesto di aprire, e adesso non la vuole piu' nessuno.
      */
-    startNewGame(chosen: number): void {
+    startNewGame(chosen: number, landscape: LandscapeOptions): void {
       leavingForNewGame = true;
       deleteSlot(storage, PENDING_SLOT);
       deleteSlot(storage, AUTO_SLOT);
-      window.location.replace(newGameUrl(window.location.search, chosen));
+      window.location.replace(newGameUrl(window.location.search, chosen, undefined, landscape));
     },
 
     /** Scrive la partita in uno slot a mano. */

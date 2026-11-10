@@ -16,6 +16,18 @@ Qui stanno **i tredici incrementi più recenti**; i precedenti sono archiviati i
 
 ---
 
+## In corso — Anteprima delle sinergie dei landmark
+
+- **Quartieri prima del click.** Posando un landmark, il cursore indica se forma un quartiere con un partner, se occorre avvicinarsi o se un altro quartiere prevale; la coppia usa la portata geodetica e la precedenza della simulazione.
+- **Partner e zona comune.** Il contorno del partner si illumina e la regione in cui entrambi superano la soglia viene velata in ambra. L'anteprima riusa il campo gia' calcolato dal cursore e resta in cache finche' il sito non cambia.
+- **Quota leggibile.** La carta dell'isola mostra l'altezza della vetta sopra il mare mentre cambiano seed e montagne.
+- **Piu' partner leggibili.** Tutti i landmark gia' posati che possono fare coppia nel sito puntato ricevono un contorno ambra; quello scelto per il messaggio e' piu' marcato. Quando nessuna coppia supera la soglia, il cursore indica il partner piu' vicino alla condizione utile.
+
+## In corso — Configuratore dell'isola in ogni nuova partita
+
+- **Creazione visiva condivisa.** Titolo e menu di pausa mostrano lo stesso configuratore con anteprima grande, scelte immediate e disposizione adattiva; la conferma dell'autosalvataggio resta nel menu di pausa.
+- **Montagne piu' alte.** La fascia sommitale guadagna quota con High e soprattutto Alpine senza alzare costa e pianura; le vecchie partite conservano il rilievo precedente.
+
 ## In corso — Cel Shaded come look iniziale
 
 - Le partite senza `?theme=` aprono direttamente Cel Shaded, cosi' palette, facciate e profili a inchiostro appaiono anche nell'esperienza normale. La scelta esplicita di un altro tema resta valida.

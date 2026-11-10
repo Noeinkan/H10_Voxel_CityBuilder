@@ -483,7 +483,8 @@ const DISTRICT_RULES: readonly {
   { id: 'market', needs: 'market', with: [] },
 ];
 
-function districtOf(roles: readonly CatalystId[]): DistrictId {
+/** La stessa precedenza dei quartieri, disponibile alle anteprime di posa. */
+export function districtOf(roles: readonly CatalystId[]): DistrictId {
   if (roles.length < 2) return 'outskirts';
   for (const rule of DISTRICT_RULES) {
     if (!roles.includes(rule.needs)) continue;

@@ -845,7 +845,7 @@ if (growEnabled) {
     onExportSave: () => exportSave(),
     onSavesOpened: () => refreshSaveList(),
     onImportSave: (text) => openSlot(importText(text), 'That file is not a saved game.'),
-    onNewGame: (chosen) => startNewGame(chosen),
+    onNewGame: (chosen, choices) => startNewGame(chosen, choices),
     onRollSeed: () => rollSeed(),
   }, THEMES.map((candidate) => ({
     id: candidate.id,
@@ -857,7 +857,7 @@ if (growEnabled) {
     // La derivazione dei token invece resta qui, per la stessa ragione delle
     // pastiglie di prima: legge l'atmosfera, e l'HUD non conosce l'engine.
     tokens: hudTokens(candidate),
-  })), daylight.theme.id);
+  })), daylight.theme.id, landscape);
   // La fila del cielo nasce accesa sul ciclo: se l'URL ha chiesto altro, va
   // detto subito o la prima cosa che il giocatore legge e' falsa. Lo stesso per
   // le nuvole, che di partenza sono spente mentre la barra le dipinge accese.

@@ -283,6 +283,271 @@
   box-shadow: 0 5px 16px rgba(28, 51, 71, .16);
 }
 
+/* La creazione e' un piccolo tavolo cartografico: scelte a sinistra, isola a destra. */
+.title-inner[data-pane='new'] {
+  width: min(1040px, calc(100vw - 48px));
+  gap: 12px;
+}
+
+.title-inner[data-pane='new'] .title-wordmark {
+  font-size: clamp(24px, 3vw, 34px);
+}
+
+.title-pane--island,
+.title-inner--pause[data-pane='new'] > .title-pane:not([hidden]) {
+  box-sizing: border-box;
+  min-width: 0;
+  padding: clamp(18px, 3vw, 32px);
+  border: 1px solid rgba(255, 255, 255, .68);
+  border-radius: 24px;
+  background: rgba(247, 251, 250, .94);
+  box-shadow: 0 28px 80px rgba(24, 54, 68, .22), 0 2px 8px rgba(24, 54, 68, .08);
+  backdrop-filter: blur(18px);
+}
+
+.title-pane--island {
+  gap: 20px;
+}
+
+.island-configurator__intro {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.island-configurator__eyebrow {
+  color: #328a88;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: .18em;
+}
+
+.title-pane--island .title-pane-title,
+.title-inner--pause[data-pane='new'] .title-pane-title {
+  color: #183b46;
+  font-size: clamp(23px, 3vw, 30px);
+  font-weight: 750;
+  letter-spacing: -.035em;
+}
+
+.title-pane--island .title-note,
+.title-inner--pause[data-pane='new'] .title-note {
+  font-size: 12px;
+}
+
+.island-configurator {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(310px, .88fr);
+  gap: 22px;
+  min-width: 0;
+}
+
+.island-configurator__controls {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  gap: 8px;
+}
+
+.island-configurator__label,
+.island-configurator__feature-heading h3 {
+  margin: 0;
+  color: #244853;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.island-configurator .title-field {
+  min-height: 42px;
+  background: #fff;
+  border-color: #cadad9;
+  box-shadow: 0 1px 2px rgba(26, 62, 70, .06);
+}
+
+.island-configurator__roll {
+  flex: none;
+  border-color: #bfd3d1;
+  color: #17646b;
+  font-weight: 650;
+}
+
+.island-configurator__hint {
+  min-height: 16px;
+}
+
+.island-configurator__feature {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  padding: 12px 0;
+  border-top: 1px solid #d9e4e1;
+}
+
+.island-configurator__feature-heading p {
+  margin: 3px 0 0;
+  color: #698088;
+  font-size: 11px;
+}
+
+.island-configurator__choices {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 5px;
+  padding: 4px;
+  border-radius: 12px;
+  background: #e6eeeb;
+}
+
+.island-configurator__choices button {
+  min-width: 0;
+  padding: 8px 4px;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  background: transparent;
+  color: #5b727b;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 140ms ease, color 140ms ease, box-shadow 140ms ease;
+}
+
+.island-configurator__choices button:hover {
+  color: #244853;
+  background: rgba(255, 255, 255, .6);
+}
+
+.island-configurator__choices button[aria-pressed='true'] {
+  border-color: #c5dcd7;
+  background: #fff;
+  color: #17646b;
+  box-shadow: 0 2px 5px rgba(27, 64, 71, .12);
+}
+
+.island-configurator__choices button:focus-visible {
+  outline: 2px solid #176e7b;
+  outline-offset: 2px;
+}
+
+.island-configurator__map {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  padding: 15px;
+  border-radius: 18px;
+  background: #183e4d;
+  color: #e8f4ee;
+}
+
+.island-configurator__map-heading {
+  display: flex;
+  justify-content: space-between;
+  color: #b5d9d7;
+  font-size: 10px;
+  font-weight: 750;
+  letter-spacing: .13em;
+}
+
+.island-configurator .title-island-preview {
+  flex: 1;
+  justify-content: center;
+  gap: 10px;
+  margin: 12px 0;
+}
+
+.island-configurator .title-island-preview canvas {
+  width: min(100%, 350px);
+  max-height: 350px;
+  border: 5px solid rgba(255, 255, 255, .1);
+  border-radius: 15px;
+  box-shadow: 0 10px 30px rgba(3, 23, 32, .28);
+  image-rendering: pixelated;
+}
+
+.island-configurator .title-island-preview figcaption {
+  color: #bed7d7;
+  text-align: center;
+}
+
+.island-configurator__legend {
+  display: flex;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 8px 13px;
+  color: #d4e6e3;
+  font-size: 10px;
+}
+
+.island-configurator__legend-item::before {
+  content: '';
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-right: 5px;
+  border-radius: 2px;
+  background: #54a1bd;
+}
+.island-configurator__legend-item--lowland::before { background: #a3bc7e; }
+.island-configurator__legend-item--highland::before { background: #659d72; }
+.island-configurator__legend-item--rock::before { background: #9da5a3; }
+
+.island-configurator__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding-top: 16px;
+  border-top: 1px solid #d9e4e1;
+}
+
+.island-configurator__actions .title-button {
+  width: auto;
+  min-width: 190px;
+  align-items: center;
+  justify-content: center;
+  background: #18747a;
+  border-color: #12656b;
+  text-align: center;
+}
+
+.island-configurator__actions .title-small {
+  min-width: 94px;
+}
+
+.title-inner--pause[data-pane='new'] {
+  width: min(1040px, calc(100vw - 40px));
+  max-height: calc(100vh - 40px);
+  gap: 10px;
+}
+
+.title-inner--pause[data-pane='new'] > .title-pane:not([hidden]) {
+  gap: 16px;
+}
+
+.title-inner--pause[data-pane='new'] .island-configurator__section > .title-button {
+  align-self: flex-end;
+  width: auto;
+  min-width: 190px;
+  align-items: center;
+  background: #18747a;
+}
+
+@media (max-width: 730px) {
+  .title-screen:has(.title-inner[data-pane='new']) { padding: 12px; }
+  .title-inner[data-pane='new'],
+  .title-inner--pause[data-pane='new'] {
+    width: min(510px, 100%);
+    box-sizing: border-box;
+  }
+  .island-configurator { grid-template-columns: 1fr; }
+  .island-configurator__map { order: -1; }
+  .island-configurator .title-island-preview canvas { width: min(100%, 240px); }
+  .title-screen:has(.title-inner[data-pane='new']) { align-items: safe center; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .island-configurator__choices button { transition: none; }
+}
+
 .title-slots {
   display: flex;
   flex-direction: column;

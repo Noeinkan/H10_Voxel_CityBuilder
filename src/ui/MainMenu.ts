@@ -1,6 +1,7 @@
 import type { SlotInfo } from '../game/save/storage';
 import type { DaylightMode } from '../engine/daylight';
 import type { Season } from '../sim/seasons';
+import type { LandscapeOptions } from '../world/terrain/region';
 import type { ThemeChoice } from './GameHud';
 import { SUPPORT_LABEL, SUPPORT_TITLE, SUPPORT_URL } from './community';
 import { FeedbackPane } from './FeedbackPane';
@@ -107,7 +108,11 @@ export class MainMenu {
    */
   private returnFocusTo: HTMLElement | null = null;
 
-  constructor(private readonly handlers: MainMenuHandlers, themes: readonly ThemeChoice[]) {
+  constructor(
+    private readonly handlers: MainMenuHandlers,
+    themes: readonly ThemeChoice[],
+    landscape: LandscapeOptions,
+  ) {
     this.root = document.createElement('div');
     this.root.className = 'main-menu-veil';
     this.root.hidden = true;
@@ -153,7 +158,7 @@ export class MainMenu {
 
     this.saves = new MainMenuSaves(handlers);
     this.settings = new MainMenuSettings(themes, handlers);
-    this.newGame = new MainMenuNewGame(handlers);
+    this.newGame = new MainMenuNewGame(handlers, landscape);
     this.panes.set('saves', this.buildPane('saves', this.saves.root));
     this.panes.set('new', this.buildPane('new', this.newGame.root));
     this.panes.set('settings', this.buildPane('settings', this.settings.root));
@@ -337,6 +342,7 @@ export class MainMenu {
     // Il contesto allegato alla nota dichiara valori correnti: si rileggono
     // aprendo, non costruendo il pannello una volta per tutte.
     if (pane === 'feedback') this.feedback.open();
+    if (pane === 'new') this.newGame.focus();
     // Il primo gesto **attivo** della sottoschermata: uno slot vuoto ha i suoi
     // bottoni spenti, e mettere il fuoco li' lo perderebbe fuori dalla modale.
     const body = this.panes.get(pane);
@@ -347,6 +353,7 @@ export class MainMenu {
 
   /** Chi si vede adesso. Separato dal fuoco: chiudendo non c'e' cosa mettere a fuoco. */
   private paint(): void {
+    this.column.dataset['pane'] = this.pane;
     this.stack.hidden = this.pane !== 'root';
     for (const [id, element] of this.panes) element.hidden = id !== this.pane;
   }

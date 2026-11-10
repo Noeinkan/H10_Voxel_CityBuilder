@@ -7,7 +7,7 @@ import { pickFacade } from '../game/facadePick';
 import { coastalSectorAt, type CoastalSector } from '../game/sectors';
 import type { Ray3, SurfaceCell } from '../game/surfacePick';
 import { BALANCE } from '../sim/balance';
-import { catalystById, defaultCatalystOfClass } from '../sim/catalysts';
+import { catalystById, catalystRoleOf, defaultCatalystOfClass, districtPairingsOf } from '../sim';
 import type { GameHud, GameTool } from '../ui/GameHud';
 import { unlockLines } from '../ui/prospects';
 import { viewAfterToolPicked, viewLabel } from '../ui/ViewMenuModel';
@@ -223,7 +223,19 @@ export function createPlacementTools(deps: PlacementToolsDeps): PlacementTools {
         radius,
         valid,
         scene.simState.reach,
+        catalyst.id,
+        scene.simState,
       );
+      const pairing = coverage?.pairing ?? null;
+      const synergy = !valid || districtPairingsOf(catalyst.id).length === 0
+        ? undefined
+        : pairing === null
+          ? 'No district pairing here'
+          : pairing.status === 'formed'
+            ? `Forms ${pairing.district} quarter with ${catalystById(catalystRoleOf(pairing.partner)).label}`
+            : pairing.status === 'blocked'
+              ? `${pairing.competing} quarter takes priority; try another spot for ${pairing.district}`
+            : `Move closer to ${catalystById(catalystRoleOf(pairing.partner)).label} for a ${pairing.district} quarter`;
       // Il sito e' gia' memorizzato dentro la scena — il rifiuto lo ha appena
       // chiesto con la stessa chiave — quindi leggerlo qui non ripaga il
       // riquadro: serve due volte, alla riga della scheda e ai tappeti.
@@ -256,6 +268,7 @@ export function createPlacementTools(deps: PlacementToolsDeps): PlacementTools {
         penalises: catalyst.penalises.map(classLabel),
         typologies: typologiesForUses(catalyst.favours),
         unlocks: unlockLines(catalyst.id),
+        synergy,
         valid,
         reason: failure !== null
           ? actionFailureLabel(failure)

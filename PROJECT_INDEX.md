@@ -71,10 +71,10 @@ worker. `src/sim/` gira in Node senza DOM né GPU.
 | [src/shell/entryDrop.ts](src/shell/entryDrop.ts) | La comparsa della prima isola: i chunk che scendono dal cielo, la pioggia di cubetti e la quota di partenza letta dal frustum |
 | [src/shell/frameStats.ts](src/shell/frameStats.ts) | Le letture di misura per overlay, riepilogo console e hook globali: traduzioni, non decisioni. `overlay()` non prende argomenti, main e render li legge da `FrameBreakdown` |
 | [src/shell/infoViewScene.ts](src/shell/infoViewScene.ts) | La vista informativa accesa sopra la citta': quale, e chi ricostruisce la heatmap quando il campo cambia |
-| [src/shell/placementTools.ts](src/shell/placementTools.ts) | Lo strumento in mano e cio' che il puntatore ne fa: mirino, rifiuti, posa di catalizzatori, mensole, funivie e settori |
+| [src/shell/placementTools.ts](src/shell/placementTools.ts) | Lo strumento in mano e cio' che il puntatore ne fa: mirino, rifiuti, posa di catalizzatori e anteprima testuale del quartiere che la coppia forma nel sito puntato; anche mensole, funivie e settori |
 | [src/shell/plotBlockers.ts](src/shell/plotBlockers.ts) | Le caselle gia' prese mentre un monumento e' in mano: rosso fioco su ogni monumento in piedi, rosso pieno e ambra su chi ferma il riquadro sotto il puntatore. Due chiavi, una per lo strumento e una per la colonna |
 | [src/shell/pointerPick.ts](src/shell/pointerPick.ts) | Dal pixel alla colonna: raggio del cursore, terra su cui si costruisce e cosa si sta indicando, con un raycaster solo |
-| [src/shell/saveSlots.ts](src/shell/saveSlots.ts) | Autosave, slot ed export includono le scelte del paesaggio; l'apertura di uno slot le ripristina nell'URL |
+| [src/shell/saveSlots.ts](src/shell/saveSlots.ts) | Autosave, slot ed export includono le scelte del paesaggio; una nuova isola dal menu di pausa riparte con le scelte appena configurate |
 | [src/shell/selectionScene.ts](src/shell/selectionScene.ts) | Cio' che il giocatore ha scelto: scheda, contorno in-world, campo del landmark e artefatto del coach, che scrivono la stessa superficie |
 | [src/shell/streetEye.ts](src/shell/streetEye.ts) | La discesa a terra: armarla, posare l'occhio, risalire, e le conseguenze del cambio di modo su qualita' e post-processing |
 | [src/shell/swatchScene.ts](src/shell/swatchScene.ts) | Il campionario di `?scene=swatch`: soggetto sotto il cursore, scelta persistente, referto del voxel e inquadratura delle fasce |
@@ -83,7 +83,7 @@ worker. `src/sim/` gira in Node senza DOM né GPU.
 | [tsconfig.json](tsconfig.json) | `strict` + flag extra; `noUncheckedIndexedAccess` off di proposito |
 | [vidkit.config.mjs](vidkit.config.mjs) | Scene del video dimostrativo in `.videos/`: cinque clip dal seed alla notte |
 | [vite.config.ts](vite.config.ts) | Vite + Vitest insieme; worker ES, ambiente `node` e segnalazione standard dei test oltre un secondo |
-| [src/main.ts](src/main.ts) | Composition root e ciclo di frame: costruisce la sagoma con le scelte del paesaggio dall'URL o dal salvataggio e la passa allo streamer |
+| [src/main.ts](src/main.ts) | Composition root e harness: passa al menu di pausa il paesaggio corrente e inoltra la nuova scelta al riavvio |
 
 ## Documentazione operativa
 

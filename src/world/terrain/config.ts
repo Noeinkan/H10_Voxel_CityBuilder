@@ -99,7 +99,8 @@ export const TERRAIN = {
    * chunk: quanto ci arrivi sotto non costa niente, perche' i chunk si allocano
    * sull'altezza vera della colonna.
    */
-  maxHeight: 100,
+  maxHeight: 124,
+  legacyMaxHeight: 100,
 
   /** Altezza a cui la maschera radiale schiaccia il bordo della region. */
   oceanFloor: 4,
@@ -253,6 +254,9 @@ export const TERRAIN = {
    * il tetto assoluto senza bisogno di un clamp.
    */
   summitLift: [-0.16, 0.52],
+
+  /** Guadagno della fascia alta per Low, High e Alpine; il formato antico resta invariato. */
+  mountainLift: [0, 0.05, 0.28],
 
   /**
    * Quota normalizzata da cui l'espansione comincia, in frazione di rilievo.

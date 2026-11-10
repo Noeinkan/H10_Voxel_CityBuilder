@@ -29,6 +29,7 @@ import { decisionDeadline, decisionOptionList } from './decisionInbox';
 import { PoliciesDrawer } from './PoliciesDrawer';
 import { MainMenu } from './MainMenu';
 import type { SlotInfo } from '../game/save/storage';
+import { DEFAULT_LANDSCAPE, type LandscapeOptions } from '../world/terrain/region';
 import { drawerHeader } from './drawerBits';
 import { ResourceBar } from './ResourceBar';
 import { ResourceTrend } from './ResourceTrend';
@@ -106,7 +107,7 @@ export interface GameHudHandlers {
   /** Chiede l'elenco aggiornato degli slot: l'HUD non legge lo storage. */
   readonly onSavesOpened: () => void;
   /** Butta via la partita e ne apre una su un'altra isola. */
-  readonly onNewGame: (seed: number) => void;
+  readonly onNewGame: (seed: number, landscape: LandscapeOptions) => void;
   /**
    * Un seed sorteggiato.
    *
@@ -155,6 +156,8 @@ export interface CursorInfo {
   readonly typologies?: readonly string[];
   /** Le forme che arrivano solo se il quartiere matura, con la loro condizione. */
   readonly unlocks?: readonly string[];
+  /** Esito della coppia nel sito puntato, prima di spendere i fondi. */
+  readonly synergy?: string;
 }
 
 const FAILURE_LABEL: Readonly<Record<ActionFailure, string>> = {
@@ -274,6 +277,7 @@ export class GameHud {
     handlers: GameHudHandlers,
     themes: readonly ThemeChoice[],
     activeThemeId: string,
+    landscape: LandscapeOptions = DEFAULT_LANDSCAPE,
   ) {
     this.handlers = handlers;
     this.root = document.createElement('section');
@@ -364,10 +368,10 @@ export class GameHud {
       onSeason: (season) => handlers.onSeason(season),
       onClouds: (on) => handlers.onClouds(on),
       onSwatch: () => handlers.onSwatch(),
-      onStart: (seed) => handlers.onNewGame(seed),
+      onStart: (seed, choices) => handlers.onNewGame(seed, choices),
       onRoll: () => handlers.onRollSeed(),
       onResume: () => this.closeMenu(),
-    }, themes);
+    }, themes, landscape);
     this.root.appendChild(this.mainMenu.root);
     this.decisionCard = document.createElement('aside');
     this.decisionCard.className = 'decision-card hud-surface hud-surface--modal';
@@ -727,6 +731,9 @@ export class GameHud {
     // dire la stessa cosa dello stesso ruolo, o uno dei due si smette di leggere.
     if (info.unlocks !== undefined && info.unlocks.length > 0) {
       this.cursor.appendChild(cursorLine('Unlocks', shortList(info.unlocks, '; ')));
+    }
+    if (info.synergy !== undefined) {
+      this.cursor.appendChild(cursorLine('District', info.synergy));
     }
     this.cursor.appendChild(reason);
   }

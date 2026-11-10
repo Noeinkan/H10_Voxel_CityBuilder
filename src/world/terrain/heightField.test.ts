@@ -304,10 +304,25 @@ describe('HeightField — regolarita’', () => {
       TERRAIN.maxHeight - TERRAIN.oceanFloor,
       Math.min(SHAPE.radiusX, SHAPE.radiusY) * TERRAIN.maxReliefSlope,
     );
-    const maxLift = TERRAIN.summitLift[0] + TERRAIN.summitLift[1];
+    const maxLift = TERRAIN.summitLift[0] + TERRAIN.summitLift[1]
+      + TERRAIN.mountainLift[2];
     const knee = TERRAIN.summitKnee;
     const topElevation = knee + (1 + maxLift) * (1 - knee);
     expect(TERRAIN.oceanFloor + relief * topElevation).toBeLessThanOrEqual(TERRAIN.maxHeight);
+  });
+
+  it('Alpine alza la vetta rispetto a Low sullo stesso seed', () => {
+    const peakOf = (mountains: 0 | 1 | 2): number => {
+      const field = new HeightField(30, {
+        ...SHAPE, landscape: { mountains, valleys: 0, lakes: 0 },
+      });
+      let peak = 0;
+      for (let y = 0; y < 512; y += 2) {
+        for (let x = 0; x < 512; x += 2) peak = Math.max(peak, field.heightAt(x, y));
+      }
+      return peak;
+    };
+    expect(peakOf(2) - peakOf(0)).toBeGreaterThan(7);
   });
 
   /**

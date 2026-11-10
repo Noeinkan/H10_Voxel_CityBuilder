@@ -2,7 +2,7 @@ import type { LookChoice } from '../game/launchMode';
 import type { LandscapeOptions } from '../world/terrain/region';
 import type { SlotInfo } from '../game/save/storage';
 import { ABOUT_LINE, slotLabel, slotSummary } from './MainMenuModel';
-import { IslandPreview } from './IslandPreview';
+import { IslandConfigurator } from './IslandConfigurator';
 import { titleHelpPane } from './TitleHelp';
 import { TitleSettings } from './TitleSettings';
 import {
@@ -10,7 +10,6 @@ import {
   TITLE_NAME,
   TITLE_TAGLINE,
   newIslandWarning,
-  seedNote,
   titleButtons,
   type TitleAction,
   type TitlePane,
@@ -66,11 +65,8 @@ export class TitleScreen {
   private readonly inner: HTMLElement;
   private readonly stack: HTMLElement;
   private readonly panes = new Map<Exclude<TitlePane, 'root'>, HTMLElement>();
-  private readonly seedField: HTMLInputElement;
-  private readonly seedHint: HTMLElement;
+  private readonly configurator: IslandConfigurator;
   private readonly createButton: HTMLButtonElement;
-  private readonly landscapeFields = new Map<keyof LandscapeOptions, HTMLSelectElement>();
-  private readonly preview = new IslandPreview();
   private readonly loadNote: HTMLElement;
   private readonly primaryButton: HTMLButtonElement | null = null;
 
@@ -112,10 +108,13 @@ export class TitleScreen {
       this.stack.appendChild(button);
     }
 
+    this.configurator = new IslandConfigurator(view.landscape, () => handlers.onRoll());
     const newPane = this.buildNewPane();
-    this.seedField = newPane.querySelector('.title-field') as HTMLInputElement;
-    this.seedHint = newPane.querySelector('[data-role="seed-hint"]') as HTMLElement;
     this.createButton = newPane.querySelector('[data-role="create"]') as HTMLButtonElement;
+    this.configurator.setChangeHandler(() => {
+      this.createButton.disabled = this.configurator.read().invalid;
+    });
+    this.configurator.setSubmitHandler(() => this.create());
     const loadPane = this.buildLoadPane();
     this.loadNote = loadPane.querySelector('[data-role="load-note"]') as HTMLElement;
     const settingsPane = new TitleSettings(view.look, (look) => handlers.onLook(look)).root;
@@ -137,7 +136,6 @@ export class TitleScreen {
     for (const [, pane] of this.panes) this.inner.appendChild(pane);
     this.inner.appendChild(foot);
     this.openPane('root');
-    this.fillSeed();
   }
 
   /** Il fuoco al bottone che ci si aspetta di premere: si gioca da tastiera. */
@@ -152,7 +150,7 @@ export class TitleScreen {
    * questo la pagina non e' un menu, e' l'attesa del mondo.
    */
   startLoading(message: string = TITLE_LOADING): void {
-    this.preview.stop();
+    this.configurator.stop();
     const waiting = document.createElement('div');
     waiting.className = 'title-loading';
     const spinner = document.createElement('div');
@@ -214,75 +212,20 @@ export class TitleScreen {
    */
   private buildNewPane(): HTMLElement {
     const pane = document.createElement('div');
-    pane.className = 'title-pane';
-
+    pane.className = 'title-pane title-pane--island';
+    const eyebrow = document.createElement('span');
+    eyebrow.className = 'island-configurator__eyebrow';
+    eyebrow.textContent = 'WORLD CREATION / 01';
     const title = document.createElement('h2');
     title.className = 'title-pane-title';
-    title.textContent = 'New island';
+    title.textContent = 'Shape your island';
     const note = document.createElement('p');
     note.className = 'title-note';
-    note.textContent = 'The same seed always grows the same island. Change it, or roll another one.';
-
-    const row = document.createElement('div');
-    row.className = 'title-row';
-    const field = document.createElement('input');
-    field.type = 'text';
-    field.className = 'title-field';
-    field.inputMode = 'numeric';
-    field.placeholder = 'Random';
-    field.setAttribute('aria-label', 'Seed for the new island');
-    field.addEventListener('input', () => this.paintSeed());
-    field.addEventListener('keydown', (event) => {
-      if (event.key === 'Enter') this.create();
-    });
-    const roll = document.createElement('button');
-    roll.type = 'button';
-    roll.className = 'title-small';
-    roll.textContent = 'Random';
-    roll.addEventListener('click', () => {
-      field.value = String(this.handlers.onRoll());
-      this.paintSeed();
-    });
-    row.append(field, roll);
-
-    const hint = document.createElement('p');
-    hint.className = 'title-note';
-    hint.dataset['role'] = 'seed-hint';
-
-    pane.append(title, note, row, hint);
-
-    const landscapeTitle = document.createElement('h3');
-    landscapeTitle.className = 'title-pane-title';
-    landscapeTitle.textContent = 'Landscape';
-    const landscapeNote = document.createElement('p');
-    landscapeNote.className = 'title-note';
-    landscapeNote.textContent = 'Choose what shapes your island.';
-    pane.append(landscapeTitle, landscapeNote);
-    for (const [key, label, options] of [
-      ['mountains', 'Additional peaks', ['None', 'Some', 'More']],
-      ['valleys', 'Broad valleys', ['None', 'One', 'Two']],
-      ['lakes', 'Inland lakes', ['None', 'Some', 'More']],
-    ] as const) {
-      const choice = document.createElement('label');
-      choice.className = 'title-landscape-row';
-      const name = document.createElement('span');
-      name.textContent = label;
-      const select = document.createElement('select');
-      select.className = 'title-landscape-select';
-      select.setAttribute('aria-label', label);
-      options.forEach((option, value) => {
-        const item = document.createElement('option');
-        item.value = String(value);
-        item.textContent = option;
-        select.appendChild(item);
-      });
-      select.value = String(this.view.landscape[key]);
-      select.addEventListener('change', () => this.paintSeed());
-      this.landscapeFields.set(key, select);
-      choice.append(name, select);
-      pane.appendChild(choice);
-    }
-    pane.appendChild(this.preview.root);
+    note.textContent = 'Tune the terrain and watch the map change before you begin.';
+    const intro = document.createElement('div');
+    intro.className = 'island-configurator__intro';
+    intro.append(eyebrow, title, note);
+    pane.append(intro, this.configurator.root);
 
     const warning = newIslandWarning(this.view.autosave !== null);
     if (warning !== null) {
@@ -303,7 +246,10 @@ export class TitleScreen {
     create.appendChild(label);
     create.addEventListener('click', () => this.create());
 
-    pane.append(create, this.backButton());
+    const actions = document.createElement('div');
+    actions.className = 'island-configurator__actions';
+    actions.append(this.backButton(), create);
+    pane.appendChild(actions);
     return pane;
   }
 
@@ -357,55 +303,17 @@ export class TitleScreen {
   }
 
   private create(): void {
-    const { seed, invalid } = seedNote(this.seedField.value);
+    const { seed, invalid, landscape } = this.configurator.read();
     if (invalid) return;
-    // Il campo vuoto non e' un dato mancante: e' la richiesta di un'isola che
-    // nessuno ha ancora visto, e il seed lo tira chi possiede il tiro.
-    this.handlers.onCreate(seed ?? this.handlers.onRoll(), this.landscapeChoice());
-  }
-
-  private landscapeChoice(): LandscapeOptions {
-    const level = (key: keyof LandscapeOptions): 0 | 1 | 2 =>
-      Number(this.landscapeFields.get(key)?.value ?? 1) as 0 | 1 | 2;
-    return {
-      mountains: level('mountains'),
-      valleys: level('valleys'),
-      lakes: level('lakes'),
-    };
-  }
-
-  /**
-   * Il campo arriva gia' pieno di un seed tirato.
-   *
-   * Un campo vuoto chiede un numero proprio a chi non ne ha uno in mente, ed e'
-   * il caso normale dell'isola nuova: il seed sorteggiato e' la risposta giusta
-   * gia' scritta, e resta un testo che si sovrascrive. Il vuoto continua a
-   * valere — cancellarlo vuol dire «tirane un altro al via» — ma non e' piu' lo
-   * stato d'ingresso, e rientrando nella sottoschermata si ritrova pieno.
-   */
-  private fillSeed(): void {
-    if (this.seedField.value.trim() === '') {
-      this.seedField.value = String(this.handlers.onRoll());
-    }
-    this.paintSeed();
-  }
-
-  private paintSeed(): void {
-    const { seed, invalid, note } = seedNote(this.seedField.value);
-    this.createButton.disabled = invalid;
-    this.seedHint.textContent = note;
-    this.preview.update(invalid ? null : seed, this.landscapeChoice());
+    this.handlers.onCreate(seed ?? this.handlers.onRoll(), landscape);
   }
 
   private openPane(pane: TitlePane): void {
+    this.inner.dataset['pane'] = pane;
     this.stack.hidden = pane !== 'root';
     for (const [id, element] of this.panes) element.hidden = id !== pane;
     if (pane === 'new') {
-      this.fillSeed();
-      this.seedField.focus();
-      // Il seed pieno e' selezionato: chi ne ha uno suo lo scrive sopra senza
-      // dover prima cancellare quello proposto.
-      this.seedField.select();
+      this.configurator.focus();
     } else if (pane === 'root') this.primaryButton?.focus();
   }
 }
