@@ -787,6 +787,27 @@ describe('il verdetto, la barra e il consiglio', () => {
     expect(rowsOf(model, 'column')).toContain('Demand: Housing 180 · Commerce 90 · Industry 20 · Civic 40');
   });
 
+  it('spiega i contributi dei landmark e distingue la crescita in altezza', () => {
+    const picked = selection(null);
+    const model = buildSelectionPanelModel({
+      ...picked,
+      column: {
+        ...picked.column,
+        sources: [
+          [{ label: 'School', x: 18, y: 24, contribution: 42 }],
+          [{ label: 'Market', x: 20, y: 23, contribution: 31 }],
+          [{ label: 'School', x: 18, y: 24, contribution: -8 }],
+          [],
+        ],
+      },
+    });
+    const column = sectionOf(model, 'column');
+    expect(column.note).toContain('Taller upgrades need more points');
+    expect(column.factors).toContainEqual({ label: 'Housing', value: 'School (18, 24) +42' });
+    expect(column.factors).toContainEqual({ label: 'Industry', value: 'School (18, 24) -8' });
+    expect(column.factors).toContainEqual({ label: 'Civic', value: 'No landmark contribution within reach' });
+  });
+
   it('dove nessun uso arriva, il consiglio nomina i ruoli da piazzare', () => {
     const picked = selection(null);
     const quiet = buildSelectionPanelModel({

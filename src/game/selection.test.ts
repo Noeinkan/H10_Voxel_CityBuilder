@@ -328,6 +328,11 @@ describe('resolveSelection', () => {
     const picked = resolveSelection({ ...harness({ registry, state }), cell: cell(31, 31, 18) });
     const growth = picked?.structure?.growth;
 
+    expect(picked?.column.sources?.[BUILDING_CLASS.residential]?.map((source) => source.label))
+      .toEqual(['Market', 'Factory']);
+    expect(picked?.column.sources?.[BUILDING_CLASS.residential]?.map((source) => Math.sign(source.contribution)))
+      .toEqual([1, -1]);
+
     expect(growth).not.toBeNull();
     expect(growth!.sources).toEqual([
       { label: 'Market', x: 30, y: 30, contribution: 210 },

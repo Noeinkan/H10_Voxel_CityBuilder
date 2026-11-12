@@ -121,6 +121,10 @@ export interface SelectionSection {
   readonly mix: readonly Contribution[];
   /** La carta d'identita': cio' che il pannello tiene ripiegato. */
   readonly rows: readonly SelectionRow[];
+  /** Spiegazione immediata delle barre, dove la soglia ha un ruolo nel gioco. */
+  readonly note?: string;
+  /** Fonti del punteggio, separate dalla carta d'identita'. */
+  readonly factors?: readonly SelectionRow[];
   /** Il gesto che questa sezione offre, `null` dove non ce n'e' uno. */
   readonly action: SelectionAction | null;
 }
@@ -373,6 +377,16 @@ function columnSection(column: ColumnInfo): SelectionSection {
     title: `${capitalise(BIOME_NAMES[column.biome] ?? 'ground')} at ${column.x}, ${column.y}`,
     summary: `${GROUND_LABELS[column.ground]}, ${column.buildable ? 'buildable' : 'not buildable'}.`,
     meters: demandMeters(column),
+    note: 'Each bar shows desirability / threshold: the score must exceed it to start a building on suitable ground. Landmarks add or subtract points. Taller upgrades need more points, materials and skyline room; local qualities lower their target.',
+    factors: ALL_CLASSES.map((cls) => ({
+      label: classLabel(cls),
+      value: column.sources?.[cls]?.length
+        ? column.sources[cls].map((source) => `${source.label} (${source.x}, ${source.y}) ${signed(source.contribution)}`).join(' · ')
+        : 'No landmark contribution within reach',
+    })).concat(column.crowd > 0 ? [{
+      label: 'Crowding',
+      value: `${column.crowd} nearby buildings · -${column.crowd * BALANCE.desirability.congestionPerBuilding} to every score`,
+    }] : []),
     mix: [],
     rows,
     action: null,

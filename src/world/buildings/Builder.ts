@@ -808,7 +808,7 @@ export class Builder {
    * I record arrivano in ordine di id — lo garantisce `readSave` — perche' e'
    * l'ordine in cui `adopt` ritrova gli appoggi gia' dentro.
    */
-  restore(records: readonly BuildingRecord[]): void {
+  restore(records: readonly BuildingRecord[], farms?: { readonly plots: readonly FarmPlot[] | null; readonly state: SimState }): void {
     // Cio' che era in coda lavorava sulla citta' di prima del caricamento.
     this.schedule.clear();
     this.dropBuildJob();
@@ -854,6 +854,7 @@ export class Builder {
     // non si potrebbe piu' costruire.
     this.arcologies.adopt();
     this.aerial.adopt();
+    if (farms !== undefined) this.farms.restore(farms.plots, farms.state);
   }
 
   /**

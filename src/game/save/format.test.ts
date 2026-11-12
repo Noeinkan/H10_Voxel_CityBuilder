@@ -35,6 +35,13 @@ const HOUSE = {
 };
 
 describe('formato di salvataggio', () => {
+  it('conserva i lotti agricoli e accetta i file precedenti senza la lista', () => {
+    const plot = { x: 32, y: 64, side: 16, kind: 0 as const, alongY: false };
+    expect(roundTrip(save({ farmPlots: [plot] }))?.farmPlots).toEqual([plot]);
+    expect(roundTrip(save())?.farmPlots).toBeUndefined();
+    expect(readSave({ ...save(), farmPlots: [{ ...plot, side: -1 }] })?.farmPlots).toEqual([]);
+  });
+
   it('sopravvive al giro in JSON senza perdere niente', () => {
     const original = save({ records: [HOUSE], sectors: ['north-0', 'east-1'] });
     expect(roundTrip(original)).toEqual(original);

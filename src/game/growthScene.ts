@@ -323,7 +323,7 @@ export class GrowthScene {
       save.sim,
       createReachCost(this.map, () => this.builder.roads, () => this.congestion),
     );
-    this.builder.restore(save.records);
+    this.builder.restore(save.records, { plots: save.farmPlots ?? null, state: this.state });
     // **Dopo `builder.restore`, e non prima.** Il carico si legge dal registry,
     // che fino a un attimo fa era vuoto: calcolarlo prima darebbe una citta'
     // senza ingorghi, cioe' un campo diverso da quello che il salvataggio
@@ -364,6 +364,7 @@ export class GrowthScene {
       seed,
       state: this.state,
       records: this.builder.registry.all,
+      farmPlots: this.builder.farmPlots,
       sectors: [...this.unlocked],
       scene: {
         paused: this.paused,

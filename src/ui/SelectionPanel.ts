@@ -62,6 +62,9 @@ interface SectionView {
   readonly title: HTMLElement;
   readonly summary: HTMLElement;
   readonly meters: HTMLElement;
+  readonly note: HTMLElement;
+  readonly factors: HTMLDetailsElement;
+  readonly factorRows: HTMLElement;
   readonly mix: HTMLElement;
   readonly details: HTMLDetailsElement;
   readonly rows: HTMLElement;
@@ -191,6 +194,10 @@ export class SelectionPanel {
 
     view.meters.replaceChildren(meterList(section.meters));
     view.meters.hidden = section.meters.length === 0;
+    view.note.textContent = section.note ?? '';
+    view.note.hidden = section.note === undefined;
+    view.factors.hidden = section.factors === undefined;
+    paintRows(view.factorRows, section.factors ?? []);
     view.mix.replaceChildren(mixBar(section.mix));
     view.mix.hidden = section.mix.length === 0;
 
@@ -250,6 +257,15 @@ export class SelectionPanel {
 
     const meters = document.createElement('div');
     meters.className = 'selection-meters';
+    const note = document.createElement('p');
+    note.className = 'selection-score-note';
+    const factors = document.createElement('details');
+    factors.className = 'selection-details selection-score-factors';
+    const factorSummary = document.createElement('summary');
+    factorSummary.textContent = 'How landmarks shape these scores';
+    const factorRows = document.createElement('dl');
+    factorRows.className = 'selection-rows';
+    factors.append(factorSummary, factorRows);
     const mix = document.createElement('div');
     mix.className = 'selection-mix';
 
@@ -270,8 +286,8 @@ export class SelectionPanel {
       if (chosen !== undefined) this.handlers.onAction(chosen as SelectionActionId);
     });
 
-    root.append(heading, meters, mix, details, action);
-    return { root, heading, title, summary, meters, mix, details, rows, action };
+    root.append(heading, meters, note, factors, mix, details, action);
+    return { root, heading, title, summary, meters, note, factors, factorRows, mix, details, rows, action };
   }
 }
 

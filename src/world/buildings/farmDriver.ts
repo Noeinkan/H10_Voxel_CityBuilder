@@ -115,6 +115,24 @@ export class FarmDriver {
     return this.registry.count;
   }
 
+  /** Ripristina i lotti salvati; nei file vecchi ne ricrea la quantita' nota. */
+  restore(plots: readonly FarmPlot[] | null, state: SimState): void {
+    if (plots !== null) {
+      for (const plot of plots) this.installPlot(plot);
+      return;
+    }
+
+    // I salvataggi precedenti conservavano i contatori ma perdevano le posizioni:
+    // si cercano nuovi lotti validi senza contare una seconda volta il raccolto.
+    const missing = [state.farmCounts[FARM_KIND.field] ?? 0, state.farmCounts[FARM_KIND.orchard] ?? 0];
+    for (let step = 0; step < SPIRAL_CELLS && (missing[0] > 0 || missing[1] > 0); step++) {
+      const plot = this.planAt(this.candidateAt(step, this.centre), state);
+      if (plot === null || missing[kindOf(plot)] <= 0) continue;
+      this.installPlot(plot);
+      missing[kindOf(plot)]--;
+    }
+  }
+
   /**
    * Una passata: prima ritira cio' che la citta' ha preso, poi pianta se manca.
    *
@@ -217,6 +235,13 @@ export class FarmDriver {
     state: SimState,
     next: SimState,
   ): SimState | null {
+    const plot = this.planAt(corner, state);
+    if (plot === null) return null;
+    this.installPlot(plot);
+    return addFarm(next, kindOf(plot));
+  }
+
+  private planAt(corner: { readonly x: number; readonly y: number }, state: SimState): FarmPlot | null {
     if (this.registry.has(corner.x, corner.y)) return null;
 
     const plan = planPlot({
@@ -234,19 +259,22 @@ export class FarmDriver {
     });
     if (!plan.ok) return null;
 
-    for (const paint of paintPlot(plan.plot)) this.ctx.surface.enqueue(paint);
+    return plan.plot;
+  }
+
+  private installPlot(plot: FarmPlot): void {
+    for (const paint of paintPlot(plot)) this.ctx.surface.enqueue(paint);
     // Gli alberi di un frutteto passano dalla coda della crescita come ogni
     // altro volume: sono un migliaio di voxel, e scriverli nel tick che li
     // decide farebbe cadere proprio il frame in cui la campagna compare.
-    if (plan.plot.kind === PLOT_KIND.orchard) {
+    if (plot.kind === PLOT_KIND.orchard) {
       this.ctx.growth.enqueue(
-        this.ownerIdOf(plan.plot),
-        { x: plan.plot.x, y: plan.plot.y, z: this.ctx.terrain.heightAt(plan.plot.x, plan.plot.y) },
-        orchardStamp(plan.plot, this.ctx.seed, this.paved),
+        this.ownerIdOf(plot),
+        { x: plot.x, y: plot.y, z: this.ctx.terrain.heightAt(plot.x, plot.y) },
+        orchardStamp(plot, this.ctx.seed, this.paved),
       );
     }
-    this.registry.add(plan.plot);
-    return addFarm(next, kindOf(plan.plot));
+    this.registry.add(plot);
   }
 
   /**

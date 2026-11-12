@@ -70,6 +70,30 @@ function build(overlay: InfoViewOverlay, budgetMs = 5, frames = 4000): void {
 }
 
 describe('InfoViewOverlay', () => {
+  it('costruisce una vista sparsa dalle sole colonne occupate', () => {
+    const overlay = new InfoViewOverlay(map, { minX: 0, minY: 0, sizeX: 128, sizeY: 128 });
+    overlay.setVisible(true);
+    overlay.setView({
+      ...samplerOf('density', () => { throw new Error('scansione della regione'); }, { normalized: false }),
+      sparse: true,
+      occupiedCells: [{ x: 11, y: 13, value: 2 }, { x: 12, y: 13, value: 1 }],
+    }, 'density|sparse');
+    build(overlay);
+    expect(drawnVertices(overlay)).toBe(12);
+  });
+
+  it('una vista sparsa vuota consegna subito una geometria vuota', () => {
+    const overlay = new InfoViewOverlay(map, REGION);
+    overlay.setVisible(true);
+    overlay.setView({
+      ...samplerOf('food', () => { throw new Error('scansione della regione'); }, { categorical: true }),
+      sparse: true,
+      occupiedCells: [],
+    }, 'food|empty');
+    build(overlay);
+    expect(drawnVertices(overlay)).toBe(0);
+  });
+
   it('consegna la heatmap: un quad per cella con un valore', () => {
     const overlay = new InfoViewOverlay(map, REGION);
     overlay.setVisible(true);
@@ -159,7 +183,20 @@ describe('InfoViewOverlay', () => {
     const peak = [colors.getX(0), colors.getY(0), colors.getZ(0)];
     const plain = [colors.getX(colors.count - 1), colors.getY(colors.count - 1), colors.getZ(colors.count - 1)];
     expect(peak).not.toEqual(plain);
-    // Un quarto del picco sta nella meta' fredda della rampa: il rosso resta basso.
-    expect(plain[0]).toBeLessThan(0.2);
+    // Il picco va verso l'ambra; un quarto resta nella meta' viola della rampa.
+    expect(peak[1]).toBeGreaterThan(plain[1]);
+    expect(plain[2]).toBeGreaterThan(plain[1]);
+  });
+
+  it('segue la pendenza ai quattro angoli invece di lasciare un quad sospeso', () => {
+    const sloped = { heightAt: (x: number, y: number) => 30 + x + y } as unknown as TerrainMap;
+    const overlay = new InfoViewOverlay(sloped, { minX: 0, minY: 0, sizeX: 128, sizeY: 128 });
+    overlay.setVisible(true);
+    overlay.setView(samplerOf('happiness', (x, y) => (x === 0 && y === 0 ? 0.5 : 0)), 'slope');
+    build(overlay);
+    const fill = overlay.group.children[0] as Mesh;
+    const positions = fill.geometry.getAttribute('position') as BufferAttribute;
+    expect(positions.getZ(0)).toBeLessThan(positions.getZ(1));
+    expect(positions.getZ(1)).toBeLessThan(positions.getZ(2));
   });
 });

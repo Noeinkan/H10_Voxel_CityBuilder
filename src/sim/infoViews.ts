@@ -186,6 +186,8 @@ export interface InfoSampler {
   /** Vedi `InfoViewSpec.sparse`: dice al renderer se puo' decimare pungendo. */
   readonly sparse: boolean;
   readonly categories: readonly string[];
+  /** Colonne non vuote delle viste sparse: evita di rastrellare tutta la regione. */
+  readonly occupiedCells?: readonly { readonly x: number; readonly y: number; readonly value: number }[];
   sample(x: number, y: number): number;
 }
 
@@ -253,12 +255,20 @@ export function createSimInfoSampler(kind: InfoViewKind, state: SimState): InfoS
   if (kind === 'density' || kind === 'materials') {
     const index = capacityIndex(state);
     const pick = kind === 'density' ? 'residential' : 'industrial';
+    const occupiedCells: { x: number; y: number; value: number }[] = [];
+    for (const [key, capacity] of index.map) {
+      const value = capacity[pick];
+      if (value <= 0) continue;
+      const [x, y] = key.split(',').map(Number);
+      occupiedCells.push({ x, y, value });
+    }
     return {
       kind,
       mode: spec.mode,
       normalized: spec.normalized,
       sparse: spec.sparse,
       categories: spec.categories,
+      occupiedCells,
       sample(x: number, y: number): number {
         return index.map.get(`${x},${y}`)?.[pick] ?? 0;
       },

@@ -97,6 +97,7 @@ describe('infoViews — campionatori della simulazione', () => {
     const sampler = createSimInfoSampler('density', state);
     expect(sampler.sample(7, 8)).toBeGreaterThan(0);
     expect(sampler.sample(9, 9)).toBe(0);
+    expect(sampler.occupiedCells).toEqual([{ x: 7, y: 8, value: sampler.sample(7, 8) }]);
   });
 
   it('la copertura cala allontanandosi dal servizio, e resta in [0, 1]', () => {

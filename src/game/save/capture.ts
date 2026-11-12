@@ -6,6 +6,7 @@ import {
   type SimState,
 } from '../../sim';
 import type { BuildingRecord } from '../../world/buildings/BuildingRegistry';
+import type { FarmPlot } from '../../world/farms/plotPlan';
 import { traitsOf } from '../../world/buildings/structureKind';
 import { SAVE_VERSION, type SaveGame, type SaveScene } from './format';
 
@@ -36,6 +37,7 @@ export interface CaptureInput {
   readonly seed: number;
   readonly state: SimState;
   readonly records: Iterable<BuildingRecord>;
+  readonly farmPlots?: Iterable<FarmPlot>;
   /** Settori comprati, **in ordine di acquisto**: e' l'ordine che rifa' la costa. */
   readonly sectors: readonly string[];
   readonly scene: SaveScene;
@@ -60,6 +62,7 @@ export function captureSave(input: CaptureInput): SaveGame {
     seed: input.seed,
     sim: pruned(input.state, lost),
     records: all.filter((record) => !doomed.has(record.id)),
+    farmPlots: [...(input.farmPlots ?? [])],
     sectors: [...input.sectors],
     scene: input.scene,
   };

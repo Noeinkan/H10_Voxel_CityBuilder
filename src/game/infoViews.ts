@@ -48,12 +48,17 @@ export function createInfoSampler(
         cells.set(`${building.x},${building.y}`, FARM_KIND.tower);
       }
     }
+    const occupiedCells = [...cells].map(([key, value]) => {
+      const [x, y] = key.split(',').map(Number);
+      return { x, y, value };
+    });
     return {
       kind,
       mode: spec.mode,
       normalized: spec.normalized,
       sparse: spec.sparse,
       categories: spec.categories,
+      occupiedCells,
       sample(x: number, y: number): number {
         return cells.get(`${x},${y}`) ?? -1;
       },

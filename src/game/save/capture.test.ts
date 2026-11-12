@@ -30,6 +30,12 @@ function capture(state: SimState, records: readonly BuildingRecord[]) {
 }
 
 describe('cattura del salvataggio', () => {
+  it('cattura i lotti fuori dal registro degli edifici', () => {
+    const plot = { x: 16, y: 32, side: 16, kind: 0 as const, alongY: true };
+    const save = captureSave({ seed: 7, state: createSimState(), records: [], farmPlots: [plot], sectors: [], scene: SCENE, savedAt: 0 });
+    expect(save.farmPlots).toEqual([plot]);
+  });
+
   it('porta seed, versione e settori nel file', () => {
     const save = captureSave({
       seed: 7,

@@ -1,5 +1,6 @@
 import type { SimStateData } from '../../sim';
 import type { BuildingRecord } from '../../world/buildings/BuildingRegistry';
+import { PLOT_KIND, type FarmPlot } from '../../world/farms/plotPlan';
 import { LEGACY_LANDSCAPE, type LandscapeOptions } from '../../world/terrain/region';
 
 /**
@@ -66,6 +67,8 @@ export interface SaveGame {
    * prima di cio' su cui poggia lascerebbe l'indice dei portanti a meta'.
    */
   readonly records: readonly BuildingRecord[];
+  /** I lotti agricoli non hanno record e non si ricavano dai soli contatori. */
+  readonly farmPlots?: readonly FarmPlot[];
   /**
    * I settori costieri comprati, **in ordine di acquisto**.
    *
@@ -123,6 +126,7 @@ export function readSave(value: unknown): SaveGame | null {
     // sull'ordine, e fidarsi di un file che l'utente puo' aver riscritto a mano
     // sarebbe l'unico modo di rompere l'indice dei portanti dall'esterno.
     records: [...records].sort((a, b) => a.id - b.id),
+    farmPlots: Array.isArray(value.farmPlots) ? value.farmPlots.filter(isFarmPlot) : undefined,
     sectors: Array.isArray(value.sectors) ? value.sectors.filter(isSectorId) : [],
     scene: readScene(value.scene),
   };
@@ -172,6 +176,14 @@ function isBuildingRecord(value: unknown): value is BuildingRecord {
     if (!Number.isFinite(value[key])) return false;
   }
   return Number.isInteger(value.id) && (value.id as number) >= 0;
+}
+
+function isFarmPlot(value: unknown): value is FarmPlot {
+  if (!isRecord(value)) return false;
+  return Number.isInteger(value.x) && Number.isInteger(value.y) &&
+    Number.isInteger(value.side) && (value.side as number) > 0 &&
+    (value.kind === PLOT_KIND.field || value.kind === PLOT_KIND.orchard) &&
+    typeof value.alongY === 'boolean';
 }
 
 /** Un id di settore e' `<lato>-<indice>`: e' la chiave con cui si rigenera. */

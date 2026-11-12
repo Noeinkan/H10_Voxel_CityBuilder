@@ -95,6 +95,8 @@ export interface ColumnInfo {
   readonly allowedLevel: number;
   /** Desiderabilita' 0..255 per uso urbano, nell'ordine di contratto. */
   readonly desirability: readonly number[];
+  /** Catalizzatori che contribuiscono a ciascun uso nella colonna scelta. */
+  readonly sources?: readonly (readonly DesirabilitySource[])[];
   readonly crowd: number;
   readonly stack: number;
   /** Il quartiere di **adesso**, che non e' quello congelato in un record. */
@@ -333,6 +335,7 @@ export function resolveSelection(query: SelectionQuery): Selection | null {
   // nella crescita della struttura sotto il cursore, che lo scala per la quota
   // di partenza come fa `hierarchy.ts`.
   const allowed = Math.min(BUILDER.maxLevel, allowedLevelAt(skyline));
+  const weights = weightsOf(state);
 
   return {
     voxel: voxelAt(query, cell.x, cell.y, voxelZ),
@@ -351,6 +354,7 @@ export function resolveSelection(query: SelectionQuery): Selection | null {
       // edificio raggiungera' mai sarebbe un numero inventato.
       allowedLevel: allowed,
       desirability: ALL_CLASSES.map((cls) => state.field.valueAt(cell.x, cell.y, cls)),
+      sources: ALL_CLASSES.map((cls) => desirabilitySources(state, cell.x, cell.y, cls, weights)),
       crowd: state.field.crowdAt(cell.x, cell.y),
       stack: state.field.stackAt(cell.x, cell.y),
       profile: urbanProfileAt(state, cell.x, cell.y),
@@ -454,7 +458,7 @@ function buildingGrowth(
     threshold: baseThreshold - discount,
     baseThreshold,
     discount,
-    sources: desirabilitySources(state, record, weightsOf(state)),
+    sources: desirabilitySources(state, record.x, record.y, record.class, weightsOf(state)),
     // La stessa deduzione del campo, letta dallo stesso contatore: la cella e'
     // quella dell'ancora del record, non quella cliccata, perche' e' li' che
     // `valueAt` misura la desiderabilita' che fa promuovere l'edificio.
@@ -475,18 +479,20 @@ function buildingGrowth(
  */
 function desirabilitySources(
   state: SimState,
-  record: BuildingRecord,
+  x: number,
+  y: number,
+  cls: BuildingClass,
   weights: Weights,
 ): readonly DesirabilitySource[] {
-  const weight = weights[DESIRABILITY_WEIGHT_OF_CLASS[record.class]];
+  const weight = weights[DESIRABILITY_WEIGHT_OF_CLASS[cls]];
 
   const sources: DesirabilitySource[] = [];
   for (const catalyst of state.catalysts) {
     if (catalyst.radius <= 0 || catalyst.strength <= 0) continue;
-    const influence = catalystInfluence(catalystRoleOf(catalyst))[record.class];
+    const influence = catalystInfluence(catalystRoleOf(catalyst))[cls];
     if (influence === 0) continue;
 
-    const reach = reachAt(state.reach.get(catalyst.x, catalyst.y, catalyst.radius), record.x, record.y);
+    const reach = reachAt(state.reach.get(catalyst.x, catalyst.y, catalyst.radius), x, y);
     if (reach === 0) continue;
     const contribution = Math.round(catalyst.strength * influence * weight * reach);
     if (contribution === 0) continue;

@@ -1,0 +1,738 @@
+- generic [ref=f8e2]:
+  - group [ref=f8e4]:
+    - generic "▸ RENDER · 60 fps · 396 draw · main 3.4 ms" [ref=f8e727] [cursor=pointer]
+  - group [ref=f8e6]:
+    - generic "▸ GROWTH · 29 buildings · 0.0/s" [ref=f8e7] [cursor=pointer]
+  - group [ref=f8e8]:
+    - generic "▾ INSPECT · off" [ref=f8e9] [cursor=pointer]
+    - generic [ref=f8e10]:
+      - button "off" [ref=f8e11] [cursor=pointer]
+      - button "xray" [ref=f8e12] [cursor=pointer]
+      - button "slice" [ref=f8e13] [cursor=pointer]
+      - button "section" [ref=f8e14] [cursor=pointer]
+      - button "block" [ref=f8e15] [cursor=pointer]
+    - slider [ref=f8e16]: "24"
+    - generic [ref=f8e17]: modo off nessuna vista attiva azione niente quota 24 ([ ] · Shift ×8) cursore — isolato — V cicla i modi
+  - region "City controls":
+    - status:
+      - strong: 2 · Overlap the Factory
+      - generic: Choose Growth → Factory and place it so its ring crosses the Market ring. Workshops will grow in the shared area and start adding Materials.
+    - generic:
+      - generic [ref=f8e18]:
+        - generic [ref=f8e19]:
+          - generic [ref=f8e24]: Funds
+          - generic [ref=f8e25]:
+            - generic [ref=f8e26]: 24,309
+            - generic [ref=f8e27]: "+52.9"
+          - generic [ref=f8e28]: Taxes cover the bills
+        - generic [ref=f8e29]:
+          - generic [ref=f8e36]: Residents
+          - generic [ref=f8e37]:
+            - generic [ref=f8e38]: "822"
+            - generic [ref=f8e39]: "+1.2"
+          - generic [ref=f8e40]: 36 homes free
+        - generic "978 food — about 23 ticks of eating; shortage below 24" [ref=f8e41]:
+          - generic [ref=f8e49]: Food
+          - generic [ref=f8e50]:
+            - generic [ref=f8e51]: "978"
+            - generic [ref=f8e52]: "-12.3"
+          - generic [ref=f8e53]: "Rationing: 100% of demand · Summer yield +33%"
+        - generic [ref=f8e54]:
+          - generic [ref=f8e60]: Materials
+          - generic [ref=f8e61]: "0"
+          - generic [ref=f8e63]: 58 reserved · nothing waiting on them
+        - generic "35% of the city is content" [ref=f8e64]:
+          - generic [ref=f8e71]: Happiness
+          - generic [ref=f8e72]: 35%
+          - generic [ref=f8e74]: "Shops falling behind: service at 0%"
+        - text: Next ·
+        - generic [ref=f8e75]:
+          - generic [ref=f8e76]:
+            - generic [ref=f8e77]: Time
+            - group [ref=f8e79]:
+              - button "Resume simulation" [ref=f8e81] [cursor=pointer]
+              - button "Simulation speed 1×" [ref=f8e85] [cursor=pointer]: 1×
+              - button "Simulation speed 2×" [ref=f8e86] [cursor=pointer]: 2×
+              - button "Simulation speed 4×" [ref=f8e87] [cursor=pointer]: 4×
+            - generic [ref=f8e88]: Year 1 · Summer · 13:00
+          - generic [ref=f8e89]:
+            - generic [ref=f8e90]: Year
+            - group [ref=f8e92]:
+              - 'button "Season: Spring — the fields start giving again. Moves the year on to its first day; press K to step." [ref=f8e94] [cursor=pointer]': Spring
+              - 'button "Season: Summer — the harvest is at its best. Moves the year on to its first day; press K to step." [pressed] [ref=f8e95] [cursor=pointer]': Summer
+              - 'button "Season: Autumn — the yield falls away. Moves the year on to its first day; press K to step." [ref=f8e96] [cursor=pointer]': Autumn
+              - 'button "Season: Winter — the leanest months, live on the stores. Moves the year on to its first day; press K to step." [ref=f8e97] [cursor=pointer]': Winter
+          - generic [ref=f8e98]:
+            - generic [ref=f8e99]: Sky
+            - generic [ref=f8e100]:
+              - group [ref=f8e101]:
+                - 'button "Daylight: Auto — the clock runs, a full day takes 6 minutes. Press L to cycle." [pressed] [ref=f8e103] [cursor=pointer]': Auto
+                - 'button "Daylight: Day — the sun stays up. Press L to cycle." [ref=f8e104] [cursor=pointer]': Day
+                - 'button "Daylight: Night — the city stays lit. Press L to cycle." [ref=f8e105] [cursor=pointer]': Night
+              - button "Clouds off — click to bring the banks back, or press C." [ref=f8e106] [cursor=pointer]
+              - button "Sound on — click to mute the city." [pressed] [ref=f8e110] [cursor=pointer]
+      - navigation "Building actions" [ref=f8e115]:
+        - generic [ref=f8e118]:
+          - button "Market" [disabled] [ref=f8e119]:
+            - generic [aria-hidden] [ref=f8e148]: "1"
+            - 'tooltip "Market 120 Draws in shops and homes together: the seed of a mixed-use block. Reach Short · 69 tiles Attracts Housing, Commerce, Civic Yields residents, and the food they eat, then funds Grows Shophouse, Corner tower, Podium block and 33 more Grows Grows at 6 · 16 · 32 nearby buildings Grows Each stage strengthens the catalyst Pairs with Port → harbor quarter; Park → garden quarter; Monument → monumental quarter Only here: Office tower, Finance spire, Harbor office in office districts; Entertainment hall in entertainment districts Complete this first: 2 · Overlap the Factory."':
+              - generic:
+                - generic: Market
+                - generic: "120"
+              - generic: "Draws in shops and homes together: the seed of a mixed-use block."
+              - generic:
+                - generic:
+                  - generic: Reach
+                  - generic: Short · 69 tiles
+                - generic:
+                  - generic: Attracts
+                  - generic: Housing, Commerce, Civic
+                - generic:
+                  - generic: Yields
+                  - generic: residents, and the food they eat, then funds
+                - generic:
+                  - generic: Grows
+                  - generic: Shophouse, Corner tower, Podium block and 33 more
+                - generic:
+                  - generic: Grows
+                  - generic: Grows at 6 · 16 · 32 nearby buildings
+                - generic:
+                  - generic: Grows
+                  - generic: Each stage strengthens the catalyst
+                - generic:
+                  - generic: Pairs with
+                  - generic: Port → harbor quarter; Park → garden quarter; Monument → monumental quarter
+              - generic: "Only here: Office tower, Finance spire, Harbor office in office districts; Entertainment hall in entertainment districts"
+              - generic: "Complete this first: 2 · Overlap the Factory."
+          - button "Factory" [ref=f8e149] [cursor=pointer]:
+            - generic [aria-hidden] [ref=f8e177]: "2"
+            - 'tooltip "Factory 150 Boosts industry and jobs, and pushes housing away from its fumes. Reach Short · 62 tiles Attracts Industry, Commerce Pushes out Housing Yields materials, then funds Grows Power works, Glasshouse row, Freight hall and 14 more Grows Grows at 8 · 20 · 40 nearby buildings Grows Each stage strengthens the catalyst Pairs with Port → harbor quarter Only here: Hydroponic tower in farming districts Click a spot on the island to place it."':
+              - generic:
+                - generic: Factory
+                - generic: "150"
+              - generic: Boosts industry and jobs, and pushes housing away from its fumes.
+              - generic:
+                - generic:
+                  - generic: Reach
+                  - generic: Short · 62 tiles
+                - generic:
+                  - generic: Attracts
+                  - generic: Industry, Commerce
+                - generic:
+                  - generic: Pushes out
+                  - generic: Housing
+                - generic:
+                  - generic: Yields
+                  - generic: materials, then funds
+                - generic:
+                  - generic: Grows
+                  - generic: Power works, Glasshouse row, Freight hall and 14 more
+                - generic:
+                  - generic: Grows
+                  - generic: Grows at 8 · 20 · 40 nearby buildings
+                - generic:
+                  - generic: Grows
+                  - generic: Each stage strengthens the catalyst
+                - generic:
+                  - generic: Pairs with
+                  - generic: Port → harbor quarter
+              - generic: "Only here: Hydroponic tower in farming districts"
+              - generic: Click a spot on the island to place it.
+          - button "Park" [disabled] [ref=f8e178]:
+            - generic [aria-hidden] [ref=f8e202]: "3"
+            - 'tooltip "Park 200 Creates greener, happier, less industrial neighborhoods. Reach Short · 56 tiles Attracts Civic, Housing, Commerce Pushes out Industry Yields satisfaction, paid for in funds, then residents, and the food they eat Grows Cultural pavilion, Chapter hall, Campus quad and 33 more Grows Grows at 6 · 14 · 28 nearby buildings Grows Each stage strengthens the catalyst Pairs with University → campus quarter; Market or Monument or Cathedral → garden quarter Only here: Hotel in tourism districts; Entertainment hall in entertainment districts Complete this first: 2 · Overlap the Factory."':
+              - generic:
+                - generic: Park
+                - generic: "200"
+              - generic: Creates greener, happier, less industrial neighborhoods.
+              - generic:
+                - generic:
+                  - generic: Reach
+                  - generic: Short · 56 tiles
+                - generic:
+                  - generic: Attracts
+                  - generic: Civic, Housing, Commerce
+                - generic:
+                  - generic: Pushes out
+                  - generic: Industry
+                - generic:
+                  - generic: Yields
+                  - generic: satisfaction, paid for in funds, then residents, and the food they eat
+                - generic:
+                  - generic: Grows
+                  - generic: Cultural pavilion, Chapter hall, Campus quad and 33 more
+                - generic:
+                  - generic: Grows
+                  - generic: Grows at 6 · 14 · 28 nearby buildings
+                - generic:
+                  - generic: Grows
+                  - generic: Each stage strengthens the catalyst
+                - generic:
+                  - generic: Pairs with
+                  - generic: University → campus quarter; Market or Monument or Cathedral → garden quarter
+              - generic: "Only here: Hotel in tourism districts; Entertainment hall in entertainment districts"
+              - generic: "Complete this first: 2 · Overlap the Factory."
+          - button "Greenhouse" [disabled] [ref=f8e203]:
+            - generic [aria-hidden] [ref=f8e236]: "4"
+            - 'tooltip "Greenhouse 180 A glass farm that grows food in the city and turns nearby industry into hydroponic towers. Reach Short · 60 tiles Attracts Housing, Commerce, Civic Yields food, then residents Grows Shophouse, Corner tower, Podium block and 33 more Grows Grows at 6 · 16 · 32 nearby buildings Grows Each stage strengthens the catalyst Only here: Hydroponic tower in farming districts Complete this first: 2 · Overlap the Factory."':
+              - generic:
+                - generic: Greenhouse
+                - generic: "180"
+              - generic: A glass farm that grows food in the city and turns nearby industry into hydroponic towers.
+              - generic:
+                - generic:
+                  - generic: Reach
+                  - generic: Short · 60 tiles
+                - generic:
+                  - generic: Attracts
+                  - generic: Housing, Commerce, Civic
+                - generic:
+                  - generic: Yields
+                  - generic: food, then residents
+                - generic:
+                  - generic: Grows
+                  - generic: Shophouse, Corner tower, Podium block and 33 more
+                - generic:
+                  - generic: Grows
+                  - generic: Grows at 6 · 16 · 32 nearby buildings
+                - generic:
+                  - generic: Grows
+                  - generic: Each stage strengthens the catalyst
+              - generic: "Only here: Hydroponic tower in farming districts"
+              - generic: "Complete this first: 2 · Overlap the Factory."
+          - button "Power Station" [disabled] [ref=f8e237]:
+            - generic [aria-hidden] [ref=f8e265]: "5"
+            - 'tooltip "Power Station 200 Feeds factories and workshops with power, and drives housing away from its chimneys. Reach Short · 60 tiles Attracts Industry, Commerce Pushes out Housing Yields materials, then funds Grows Power works, Glasshouse row, Freight hall and 14 more Grows Grows at 8 · 18 · 34 nearby buildings Grows Each stage strengthens the catalyst Complete this first: 2 · Overlap the Factory."':
+              - generic:
+                - generic: Power Station
+                - generic: "200"
+              - generic: Feeds factories and workshops with power, and drives housing away from its chimneys.
+              - generic:
+                - generic:
+                  - generic: Reach
+                  - generic: Short · 60 tiles
+                - generic:
+                  - generic: Attracts
+                  - generic: Industry, Commerce
+                - generic:
+                  - generic: Pushes out
+                  - generic: Housing
+                - generic:
+                  - generic: Yields
+                  - generic: materials, then funds
+                - generic:
+                  - generic: Grows
+                  - generic: Power works, Glasshouse row, Freight hall and 14 more
+                - generic:
+                  - generic: Grows
+                  - generic: Grows at 8 · 18 · 34 nearby buildings
+                - generic:
+                  - generic: Grows
+                  - generic: Each stage strengthens the catalyst
+              - generic: "Complete this first: 2 · Overlap the Factory."
+          - button "School" [disabled] [ref=f8e266]:
+            - generic [aria-hidden] [ref=f8e294]: "6"
+            - 'tooltip "School 260 A courtyard school that lifts housing and civic life around it. Reach Short · 62 tiles Attracts Civic, Housing, Commerce Pushes out Industry Yields satisfaction, paid for in funds, then residents, and the food they eat Grows Cultural pavilion, Chapter hall, Campus quad and 33 more Grows Grows at 8 · 18 · 34 nearby buildings Grows Each stage strengthens the catalyst Complete this first: 2 · Overlap the Factory."':
+              - generic:
+                - generic: School
+                - generic: "260"
+              - generic: A courtyard school that lifts housing and civic life around it.
+              - generic:
+                - generic:
+                  - generic: Reach
+                  - generic: Short · 62 tiles
+                - generic:
+                  - generic: Attracts
+                  - generic: Civic, Housing, Commerce
+                - generic:
+                  - generic: Pushes out
+                  - generic: Industry
+                - generic:
+                  - generic: Yields
+                  - generic: satisfaction, paid for in funds, then residents, and the food they eat
+                - generic:
+                  - generic: Grows
+                  - generic: Cultural pavilion, Chapter hall, Campus quad and 33 more
+                - generic:
+                  - generic: Grows
+                  - generic: Grows at 8 · 18 · 34 nearby buildings
+                - generic:
+                  - generic: Grows
+                  - generic: Each stage strengthens the catalyst
+              - generic: "Complete this first: 2 · Overlap the Factory."
+        - generic [ref=f8e297]:
+          - button "Port" [disabled] [ref=f8e298]:
+            - generic [aria-hidden] [ref=f8e332]: "7"
+            - 'tooltip "Port 320 Unlocks external trade and concentrates industry and trade on the coast. Where Waterfront only Reach Medium · 75 tiles Attracts Industry, Commerce Yields materials, then funds Grows Power works, Glasshouse row, Freight hall and 14 more Grows Grows at 6 · 16 · 32 nearby buildings Grows Each stage strengthens the catalyst Pairs with Market or Factory → harbor quarter Only here: Hotel in tourism districts; Logistics depot, Container yard in logistics districts Complete this first: 2 · Overlap the Factory."':
+              - generic:
+                - generic: Port
+                - generic: "320"
+              - generic: Unlocks external trade and concentrates industry and trade on the coast.
+              - generic:
+                - generic:
+                  - generic: Where
+                  - generic: Waterfront only
+                - generic:
+                  - generic: Reach
+                  - generic: Medium · 75 tiles
+                - generic:
+                  - generic: Attracts
+                  - generic: Industry, Commerce
+                - generic:
+                  - generic: Yields
+                  - generic: materials, then funds
+                - generic:
+                  - generic: Grows
+                  - generic: Power works, Glasshouse row, Freight hall and 14 more
+                - generic:
+                  - generic: Grows
+                  - generic: Grows at 6 · 16 · 32 nearby buildings
+                - generic:
+                  - generic: Grows
+                  - generic: Each stage strengthens the catalyst
+                - generic:
+                  - generic: Pairs with
+                  - generic: Market or Factory → harbor quarter
+              - generic: "Only here: Hotel in tourism districts; Logistics depot, Container yard in logistics districts"
+              - generic: "Complete this first: 2 · Overlap the Factory."
+          - button "Ferry" [disabled] [ref=f8e333]:
+            - generic [aria-hidden] [ref=f8e364]: "8"
+            - 'tooltip "Ferry 260 A pier with moored boats. Pair it with a second terminal across the water to open a line. Where Waterfront only Reach Medium · 72 tiles Attracts Commerce, Housing, Civic, Industry Yields funds, then residents, and the food they eat Grows Harbor market, Grandstand, Marina club and 40 more Grows Grows at 5 · 14 · 28 nearby buildings Grows Each stage strengthens the catalyst Complete this first: 2 · Overlap the Factory."':
+              - generic:
+                - generic: Ferry
+                - generic: "260"
+              - generic: A pier with moored boats. Pair it with a second terminal across the water to open a line.
+              - generic:
+                - generic:
+                  - generic: Where
+                  - generic: Waterfront only
+                - generic:
+                  - generic: Reach
+                  - generic: Medium · 72 tiles
+                - generic:
+                  - generic: Attracts
+                  - generic: Commerce, Housing, Civic, Industry
+                - generic:
+                  - generic: Yields
+                  - generic: funds, then residents, and the food they eat
+                - generic:
+                  - generic: Grows
+                  - generic: Harbor market, Grandstand, Marina club and 40 more
+                - generic:
+                  - generic: Grows
+                  - generic: Grows at 5 · 14 · 28 nearby buildings
+                - generic:
+                  - generic: Grows
+                  - generic: Each stage strengthens the catalyst
+              - generic: "Complete this first: 2 · Overlap the Factory."
+          - button "Airport" [disabled] [ref=f8e365]:
+            - generic [aria-hidden] [ref=f8e395]: "9"
+            - 'tooltip "Airport 420 Links the island without touching the coast. Place it on a level 7+ building with a facade at least 8 voxels wide to build a Skyport for airships, eVTOLs and balloons. Where Needs a 9×9 clearing, or a level 7+ facade at least 8 voxels wide Reach Medium · 79 tiles Attracts Commerce, Civic, Industry Pushes out Housing Yields funds, then satisfaction, paid for in funds Grows Harbor market, Grandstand, Marina club and 22 more Grows Grows at 10 · 24 · 44 nearby buildings Grows Each stage strengthens the catalyst Only here: Logistics depot, Container yard in logistics districts Complete this first: 2 · Overlap the Factory."':
+              - generic:
+                - generic: Airport
+                - generic: "420"
+              - generic: Links the island without touching the coast. Place it on a level 7+ building with a facade at least 8 voxels wide to build a Skyport for airships, eVTOLs and balloons.
+              - generic:
+                - generic:
+                  - generic: Where
+                  - generic: Needs a 9×9 clearing, or a level 7+ facade at least 8 voxels wide
+                - generic:
+                  - generic: Reach
+                  - generic: Medium · 79 tiles
+                - generic:
+                  - generic: Attracts
+                  - generic: Commerce, Civic, Industry
+                - generic:
+                  - generic: Pushes out
+                  - generic: Housing
+                - generic:
+                  - generic: Yields
+                  - generic: funds, then satisfaction, paid for in funds
+                - generic:
+                  - generic: Grows
+                  - generic: Harbor market, Grandstand, Marina club and 22 more
+                - generic:
+                  - generic: Grows
+                  - generic: Grows at 10 · 24 · 44 nearby buildings
+                - generic:
+                  - generic: Grows
+                  - generic: Each stage strengthens the catalyst
+              - generic: "Only here: Logistics depot, Container yard in logistics districts"
+              - generic: "Complete this first: 2 · Overlap the Factory."
+          - button "Transit" [disabled] [ref=f8e396]:
+            - 'tooltip "Transit 240 The all-rounder: lifts homes, shops and workshops alike, and asks nothing of the site. Reach Medium · 81 tiles Attracts Housing, Commerce, Industry, Civic Yields residents, and the food they eat, then funds Grows Shophouse, Corner tower, Podium block and 40 more Grows Grows at 8 · 18 · 36 · 62 · 94 nearby buildings Grows Each stage strengthens the catalyst Pairs with University → campus quarter; Monument → monumental quarter Only here: Office tower, Finance spire, Harbor office in office districts; Logistics depot, Container yard in logistics districts Complete this first: 2 · Overlap the Factory."':
+              - generic:
+                - generic: Transit
+                - generic: "240"
+              - generic: "The all-rounder: lifts homes, shops and workshops alike, and asks nothing of the site."
+              - generic:
+                - generic:
+                  - generic: Reach
+                  - generic: Medium · 81 tiles
+                - generic:
+                  - generic: Attracts
+                  - generic: Housing, Commerce, Industry, Civic
+                - generic:
+                  - generic: Yields
+                  - generic: residents, and the food they eat, then funds
+                - generic:
+                  - generic: Grows
+                  - generic: Shophouse, Corner tower, Podium block and 40 more
+                - generic:
+                  - generic: Grows
+                  - generic: Grows at 8 · 18 · 36 · 62 · 94 nearby buildings
+                - generic:
+                  - generic: Grows
+                  - generic: Each stage strengthens the catalyst
+                - generic:
+                  - generic: Pairs with
+                  - generic: University → campus quarter; Monument → monumental quarter
+              - generic: "Only here: Office tower, Finance spire, Harbor office in office districts; Logistics depot, Container yard in logistics districts"
+              - generic: "Complete this first: 2 · Overlap the Factory."
+          - button "Radio Tower" [disabled] [ref=f8e420]:
+            - 'tooltip "Radio Tower 300 Broadcasts across the island, drawing commerce and keeping trade and civic life in touch. Reach Medium · 75 tiles Attracts Commerce, Civic, Industry, Housing Yields funds, then satisfaction, paid for in funds Grows Harbor market, Grandstand, Marina club and 40 more Grows Grows at 6 · 16 · 30 nearby buildings Grows Each stage strengthens the catalyst Complete this first: 2 · Overlap the Factory."':
+              - generic:
+                - generic: Radio Tower
+                - generic: "300"
+              - generic: Broadcasts across the island, drawing commerce and keeping trade and civic life in touch.
+              - generic:
+                - generic:
+                  - generic: Reach
+                  - generic: Medium · 75 tiles
+                - generic:
+                  - generic: Attracts
+                  - generic: Commerce, Civic, Industry, Housing
+                - generic:
+                  - generic: Yields
+                  - generic: funds, then satisfaction, paid for in funds
+                - generic:
+                  - generic: Grows
+                  - generic: Harbor market, Grandstand, Marina club and 40 more
+                - generic:
+                  - generic: Grows
+                  - generic: Grows at 6 · 16 · 30 nearby buildings
+                - generic:
+                  - generic: Grows
+                  - generic: Each stage strengthens the catalyst
+              - generic: "Complete this first: 2 · Overlap the Factory."
+          - button "Lighthouse" [disabled] [ref=f8e450]:
+            - 'tooltip "Lighthouse 240 Guides the coast, drawing homes and civic life to the waterfront. Where Waterfront only Reach Short · 50 tiles Attracts Civic, Housing, Commerce Pushes out Industry Yields satisfaction, paid for in funds, then residents, and the food they eat Grows Cultural pavilion, Chapter hall, Campus quad and 33 more Grows Grows at 6 · 16 · 30 nearby buildings Grows Each stage strengthens the catalyst Complete this first: 2 · Overlap the Factory."':
+              - generic:
+                - generic: Lighthouse
+                - generic: "240"
+              - generic: Guides the coast, drawing homes and civic life to the waterfront.
+              - generic:
+                - generic:
+                  - generic: Where
+                  - generic: Waterfront only
+                - generic:
+                  - generic: Reach
+                  - generic: Short · 50 tiles
+                - generic:
+                  - generic: Attracts
+                  - generic: Civic, Housing, Commerce
+                - generic:
+                  - generic: Pushes out
+                  - generic: Industry
+                - generic:
+                  - generic: Yields
+                  - generic: satisfaction, paid for in funds, then residents, and the food they eat
+                - generic:
+                  - generic: Grows
+                  - generic: Cultural pavilion, Chapter hall, Campus quad and 33 more
+                - generic:
+                  - generic: Grows
+                  - generic: Grows at 6 · 16 · 30 nearby buildings
+                - generic:
+                  - generic: Grows
+                  - generic: Each stage strengthens the catalyst
+              - generic: "Complete this first: 2 · Overlap the Factory."
+        - generic [ref=f8e474]:
+          - button "University" [disabled] [ref=f8e475]:
+            - 'tooltip "University 360 Builds a civic district around research and knowledge. Reach Long · 112 tiles Attracts Civic, Housing, Commerce Yields satisfaction, paid for in funds, then residents, and the food they eat Grows Cultural pavilion, Chapter hall, Campus quad and 33 more Grows Grows at 8 · 20 · 40 nearby buildings Grows Each stage strengthens the catalyst Pairs with Transit or Park → campus quarter Only here: University lab in research districts; Hydroponic tower in farming districts Complete this first: 2 · Overlap the Factory."':
+              - generic:
+                - generic: University
+                - generic: "360"
+              - generic: Builds a civic district around research and knowledge.
+              - generic:
+                - generic:
+                  - generic: Reach
+                  - generic: Long · 112 tiles
+                - generic:
+                  - generic: Attracts
+                  - generic: Civic, Housing, Commerce
+                - generic:
+                  - generic: Yields
+                  - generic: satisfaction, paid for in funds, then residents, and the food they eat
+                - generic:
+                  - generic: Grows
+                  - generic: Cultural pavilion, Chapter hall, Campus quad and 33 more
+                - generic:
+                  - generic: Grows
+                  - generic: Grows at 8 · 20 · 40 nearby buildings
+                - generic:
+                  - generic: Grows
+                  - generic: Each stage strengthens the catalyst
+                - generic:
+                  - generic: Pairs with
+                  - generic: Transit or Park → campus quarter
+              - generic: "Only here: University lab in research districts; Hydroponic tower in farming districts"
+              - generic: "Complete this first: 2 · Overlap the Factory."
+          - button "Monument" [disabled] [ref=f8e494]:
+            - 'tooltip "Monument 440 A landmark that attracts visitors, shops and civic pride. Reach Long · 109 tiles Attracts Civic, Commerce, Housing Pushes out Industry Yields satisfaction, paid for in funds, then funds Grows Cultural pavilion, Chapter hall, Campus quad and 33 more Grows Grows at 10 · 24 · 44 · 72 · 104 nearby buildings Grows Each stage strengthens the catalyst Pairs with Park → garden quarter; Market or Transit → monumental quarter Only here: Hotel in tourism districts; Entertainment hall in entertainment districts Complete this first: 2 · Overlap the Factory."':
+              - generic:
+                - generic: Monument
+                - generic: "440"
+              - generic: A landmark that attracts visitors, shops and civic pride.
+              - generic:
+                - generic:
+                  - generic: Reach
+                  - generic: Long · 109 tiles
+                - generic:
+                  - generic: Attracts
+                  - generic: Civic, Commerce, Housing
+                - generic:
+                  - generic: Pushes out
+                  - generic: Industry
+                - generic:
+                  - generic: Yields
+                  - generic: satisfaction, paid for in funds, then funds
+                - generic:
+                  - generic: Grows
+                  - generic: Cultural pavilion, Chapter hall, Campus quad and 33 more
+                - generic:
+                  - generic: Grows
+                  - generic: Grows at 10 · 24 · 44 · 72 · 104 nearby buildings
+                - generic:
+                  - generic: Grows
+                  - generic: Each stage strengthens the catalyst
+                - generic:
+                  - generic: Pairs with
+                  - generic: Park → garden quarter; Market or Transit → monumental quarter
+              - generic: "Only here: Hotel in tourism districts; Entertainment hall in entertainment districts"
+              - generic: "Complete this first: 2 · Overlap the Factory."
+          - button "Museum" [disabled] [ref=f8e511]:
+            - 'tooltip "Museum 380 A house of knowledge and craft that draws visitors and scholars alike. Reach Long · 111 tiles Attracts Civic, Commerce, Housing Pushes out Industry Yields satisfaction, paid for in funds, then funds Grows Cultural pavilion, Chapter hall, Campus quad and 33 more Grows Grows at 8 · 20 · 40 nearby buildings Grows Each stage strengthens the catalyst Only here: Hotel in tourism districts Complete this first: 2 · Overlap the Factory."':
+              - generic:
+                - generic: Museum
+                - generic: "380"
+              - generic: A house of knowledge and craft that draws visitors and scholars alike.
+              - generic:
+                - generic:
+                  - generic: Reach
+                  - generic: Long · 111 tiles
+                - generic:
+                  - generic: Attracts
+                  - generic: Civic, Commerce, Housing
+                - generic:
+                  - generic: Pushes out
+                  - generic: Industry
+                - generic:
+                  - generic: Yields
+                  - generic: satisfaction, paid for in funds, then funds
+                - generic:
+                  - generic: Grows
+                  - generic: Cultural pavilion, Chapter hall, Campus quad and 33 more
+                - generic:
+                  - generic: Grows
+                  - generic: Grows at 8 · 20 · 40 nearby buildings
+                - generic:
+                  - generic: Grows
+                  - generic: Each stage strengthens the catalyst
+              - generic: "Only here: Hotel in tourism districts"
+              - generic: "Complete this first: 2 · Overlap the Factory."
+          - button "Cathedral" [disabled] [ref=f8e533]:
+            - 'tooltip "Cathedral 400 A place of gathering and quiet that anchors a neighborhood for good. Reach Long · 109 tiles Attracts Civic, Housing, Commerce Pushes out Industry Yields satisfaction, paid for in funds, then residents, and the food they eat Grows Cultural pavilion, Chapter hall, Campus quad and 33 more Grows Grows at 8 · 20 · 38 · 64 · 96 nearby buildings Grows Each stage strengthens the catalyst Pairs with Park → garden quarter Complete this first: 2 · Overlap the Factory."':
+              - generic:
+                - generic: Cathedral
+                - generic: "400"
+              - generic: A place of gathering and quiet that anchors a neighborhood for good.
+              - generic:
+                - generic:
+                  - generic: Reach
+                  - generic: Long · 109 tiles
+                - generic:
+                  - generic: Attracts
+                  - generic: Civic, Housing, Commerce
+                - generic:
+                  - generic: Pushes out
+                  - generic: Industry
+                - generic:
+                  - generic: Yields
+                  - generic: satisfaction, paid for in funds, then residents, and the food they eat
+                - generic:
+                  - generic: Grows
+                  - generic: Cultural pavilion, Chapter hall, Campus quad and 33 more
+                - generic:
+                  - generic: Grows
+                  - generic: Grows at 8 · 20 · 38 · 64 · 96 nearby buildings
+                - generic:
+                  - generic: Grows
+                  - generic: Each stage strengthens the catalyst
+                - generic:
+                  - generic: Pairs with
+                  - generic: Park → garden quarter
+              - generic: "Complete this first: 2 · Overlap the Factory."
+          - button "Theatre" [disabled] [ref=f8e556]:
+            - 'tooltip "Theatre 420 A stage and hall that bring visitors, commerce and civic pride. Reach Long · 106 tiles Attracts Civic, Commerce, Housing Pushes out Industry Yields satisfaction, paid for in funds, then funds Grows Cultural pavilion, Chapter hall, Campus quad and 33 more Grows Grows at 8 · 20 · 38 · 60 · 88 nearby buildings Grows Each stage strengthens the catalyst Complete this first: 2 · Overlap the Factory."':
+              - generic:
+                - generic: Theatre
+                - generic: "420"
+              - generic: A stage and hall that bring visitors, commerce and civic pride.
+              - generic:
+                - generic:
+                  - generic: Reach
+                  - generic: Long · 106 tiles
+                - generic:
+                  - generic: Attracts
+                  - generic: Civic, Commerce, Housing
+                - generic:
+                  - generic: Pushes out
+                  - generic: Industry
+                - generic:
+                  - generic: Yields
+                  - generic: satisfaction, paid for in funds, then funds
+                - generic:
+                  - generic: Grows
+                  - generic: Cultural pavilion, Chapter hall, Campus quad and 33 more
+                - generic:
+                  - generic: Grows
+                  - generic: Grows at 8 · 20 · 38 · 60 · 88 nearby buildings
+                - generic:
+                  - generic: Grows
+                  - generic: Each stage strengthens the catalyst
+              - generic: "Complete this first: 2 · Overlap the Factory."
+          - button "Stadium" [disabled] [ref=f8e584]:
+            - 'tooltip "Stadium 460 A wide, hollow bowl that packs in crowds and commerce. Reach Long · 115 tiles Attracts Commerce, Civic, Housing Pushes out Industry Yields funds, then satisfaction, paid for in funds Grows Harbor market, Grandstand, Marina club and 33 more Grows Grows at 8 · 18 · 34 · 58 · 90 nearby buildings Grows Each stage strengthens the catalyst Complete this first: 2 · Overlap the Factory."':
+              - generic:
+                - generic: Stadium
+                - generic: "460"
+              - generic: A wide, hollow bowl that packs in crowds and commerce.
+              - generic:
+                - generic:
+                  - generic: Reach
+                  - generic: Long · 115 tiles
+                - generic:
+                  - generic: Attracts
+                  - generic: Commerce, Civic, Housing
+                - generic:
+                  - generic: Pushes out
+                  - generic: Industry
+                - generic:
+                  - generic: Yields
+                  - generic: funds, then satisfaction, paid for in funds
+                - generic:
+                  - generic: Grows
+                  - generic: Harbor market, Grandstand, Marina club and 33 more
+                - generic:
+                  - generic: Grows
+                  - generic: Grows at 8 · 18 · 34 · 58 · 90 nearby buildings
+                - generic:
+                  - generic: Grows
+                  - generic: Each stage strengthens the catalyst
+              - generic: "Complete this first: 2 · Overlap the Factory."
+          - button "Marina" [disabled] [ref=f8e603]:
+            - 'tooltip "Marina 440 A yacht harbour of pontoons and slips: settles on a lake or the sea, and draws homes and commerce to the waterfront. Where Needs open water: the sea or a lake Reach Long · 115 tiles Attracts Civic, Commerce, Housing Pushes out Industry Yields satisfaction, paid for in funds, then funds Grows Cultural pavilion, Chapter hall, Campus quad and 33 more Grows Grows at 6 · 16 · 32 nearby buildings Grows Each stage strengthens the catalyst Complete this first: 2 · Overlap the Factory."':
+              - generic:
+                - generic: Marina
+                - generic: "440"
+              - generic: "A yacht harbour of pontoons and slips: settles on a lake or the sea, and draws homes and commerce to the waterfront."
+              - generic:
+                - generic:
+                  - generic: Where
+                  - generic: "Needs open water: the sea or a lake"
+                - generic:
+                  - generic: Reach
+                  - generic: Long · 115 tiles
+                - generic:
+                  - generic: Attracts
+                  - generic: Civic, Commerce, Housing
+                - generic:
+                  - generic: Pushes out
+                  - generic: Industry
+                - generic:
+                  - generic: Yields
+                  - generic: satisfaction, paid for in funds, then funds
+                - generic:
+                  - generic: Grows
+                  - generic: Cultural pavilion, Chapter hall, Campus quad and 33 more
+                - generic:
+                  - generic: Grows
+                  - generic: Grows at 6 · 16 · 32 nearby buildings
+                - generic:
+                  - generic: Grows
+                  - generic: Each stage strengthens the catalyst
+              - generic: "Complete this first: 2 · Overlap the Factory."
+        - generic [ref=f8e636]:
+          - button "Expand" [ref=f8e637] [cursor=pointer]:
+            - 'tooltip "Expand 500 Buys the next sector of coast: more land to build on. Click a coastline edge to buy it (0 sectors so far)."':
+              - generic:
+                - generic: Expand
+                - generic: "500"
+              - generic: "Buys the next sector of coast: more land to build on."
+              - generic: Click a coastline edge to buy it (0 sectors so far).
+          - button "Terrace" [disabled] [ref=f8e642]:
+            - 'tooltip "Terrace 180 · 35 Hangs a floor off a tall building: new ground above the street. Not enough materials: grow industry before building aloft. 0 / 35 materials"':
+              - generic:
+                - generic: Terrace
+                - generic: 180 · 35
+              - generic: "Hangs a floor off a tall building: new ground above the street."
+              - generic:
+                - text: "Not enough materials: grow industry before building aloft."
+                - generic: 0 / 35 materials
+          - button "Ropeway" [disabled] [ref=f8e648]:
+            - 'tooltip "Ropeway 620 · 120 Two towers and a cable: crosses water no bridge would span. Not enough materials: grow industry before crossing the water. 0 / 120 materials"':
+              - generic:
+                - generic: Ropeway
+                - generic: 620 · 120
+              - generic: "Two towers and a cable: crosses water no bridge would span."
+              - generic:
+                - text: "Not enough materials: grow industry before crossing the water."
+                - generic: 0 / 120 materials
+        - button "Demolish" [ref=f8e657] [cursor=pointer]:
+          - tooltip "Demolish 0 Tears down the buildings you drag across. The cost is the city you lose. Drag across buildings to tear them down.":
+            - generic:
+              - generic: Demolish
+              - generic: "0"
+            - generic: Tears down the buildings you drag across. The cost is the city you lose.
+            - generic: Drag across buildings to tear them down.
+        - generic [ref=f8e663]:
+          - generic [ref=f8e664]:
+            - button "City" [ref=f8e665] [cursor=pointer]
+            - button "Policies" [ref=f8e671] [cursor=pointer]
+            - button "Look inside the city · V" [ref=f8e677] [cursor=pointer]:
+              - generic [ref=f8e682]: Views
+            - 'button "Reading: Food · I to change" [ref=f8e731] [cursor=pointer]':
+              - generic [ref=f8e688]: Data
+          - generic [ref=f8e690]:
+            - 'button "Change visual theme, current: Cel Shaded" [ref=f8e691] [cursor=pointer]'
+            - 'button "Voxel swatches: every palette slot and surface, in a new tab" [ref=f8e696] [cursor=pointer]'
+            - button "Main menu · Esc" [ref=f8e701] [cursor=pointer]
+            - button "Open help" [ref=f8e704] [cursor=pointer]
+      - complementary "City data reading" [ref=f8e732]:
+        - generic [ref=f8e733]: Reading
+        - strong [ref=f8e734]: Food
+        - generic [ref=f8e735]:
+          - generic [ref=f8e736]: Fields
+          - generic [ref=f8e737]: Orchards
+          - generic [ref=f8e738]: Towers
+        - button "Exit data" [ref=f8e740] [cursor=pointer]
+    - complementary [ref=f8e709]:
+      - heading "Supplies under pressure" [level=2] [ref=f8e710]
+      - paragraph [ref=f8e711]: The city can no longer feed all of its residents. Choose an emergency response.
+      - paragraph [ref=f8e712]: 52s left — with no answer the council will choose “Ration supplies”.
+      - generic [ref=f8e713]:
+        - button "Buy food supplies Spend funds to restock the warehouses immediately. Trade-fed blocks grow richer and better connected, and industry thins out." [ref=f8e714] [cursor=pointer]:
+          - strong [ref=f8e715]: Buy food supplies
+          - generic [ref=f8e716]: Spend funds to restock the warehouses immediately.
+          - generic [ref=f8e717]: Trade-fed blocks grow richer and better connected, and industry thins out.
+        - button "Ration supplies Preserve resources at the cost of happiness. Housing packs in tighter and plainer, and the neighborhood grows unhappy." [ref=f8e718] [cursor=pointer]:
+          - strong [ref=f8e719]: Ration supplies
+          - generic [ref=f8e720]: Preserve resources at the cost of happiness.
+          - generic [ref=f8e721]: Housing packs in tighter and plainer, and the neighborhood grows unhappy.
+        - button "Community gardens Convert materials into food and public support. Builds a Park. Housing spreads low around green courtyards." [ref=f8e722] [cursor=pointer]:
+          - strong [ref=f8e723]: Community gardens
+          - generic [ref=f8e724]: Convert materials into food and public support.
+          - generic [ref=f8e725]: Builds a Park. Housing spreads low around green courtyards.
+        - button "Decide later" [ref=f8e726] [cursor=pointer]
+  - text: ▸ ▸ ▸ ▸ ▸ ▸ ▸ ▸

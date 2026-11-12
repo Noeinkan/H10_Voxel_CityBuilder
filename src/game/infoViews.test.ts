@@ -23,6 +23,7 @@ describe('infoViews — la vista del cibo', () => {
     expect(sampler.sample(60, 60)).toBe(FARM_KIND.tower);
     // Fuori da ogni produttore non c'e' cibo: categoria assente.
     expect(sampler.sample(0, 0)).toBe(-1);
+    expect(sampler.occupiedCells).toContainEqual({ x: 60, y: 60, value: FARM_KIND.tower });
   });
 
   it('senza lotti ne’ torri la mappa del cibo e’ tutta vuota', () => {

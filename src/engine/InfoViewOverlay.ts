@@ -30,7 +30,7 @@ import type { TerrainMap } from '../world/terrain/TerrainMap';
  */
 
 /** Quad massimi per heatmap: oltre, si allarga il passo di decimazione. */
-const MAX_CELLS = 30000;
+const MAX_CELLS = 6000;
 
 /**
  * Quanto una heatmap finita resta buona prima che un campo cambiato ne chieda
@@ -45,37 +45,37 @@ const MAX_CELLS = 30000;
 const REBUILD_COOLDOWN_MS = 500;
 
 /** Quanto la velatura continua sposta il suolo, dal minimo al picco. */
-const FILL_ALPHA_MIN = 0.15;
-const FILL_ALPHA_PEAK = 0.8;
+const FILL_ALPHA_MIN = 0.35;
+const FILL_ALPHA_PEAK = 0.92;
 
 /** Opacita' della tinta categorica, piatta: e' una mappa, non un gradiente. */
-const CATEGORY_ALPHA = 0.6;
+const CATEGORY_ALPHA = 0.85;
 
 /** Il colore dei bordi fra categorie: bianco caldo, leggero. */
 const EDGE_COLOR = 0xf4f4ee;
 const EDGE_OPACITY = 0.55;
 
 /**
- * Rampa continua scura -> teal -> giallo. Zero resta un blu quasi nero, non il
+ * Rampa continua viola scuro -> magenta -> ambra. Zero resta scuro, non il
  * primo caldo: il vuoto non e' un valore alto, come in `SimOverlay.heat`.
  */
 function ramp(t: number): readonly [number, number, number] {
   const v = t <= 0 ? 0 : t >= 1 ? 1 : t;
   if (v < 0.5) {
     const k = v / 0.5;
-    return [0.06 + 0.05 * k, 0.1 + 0.48 * k, 0.23 + 0.33 * k];
+    return [0.13 + 0.59 * k, 0.05 + 0.11 * k, 0.28 + 0.36 * k];
   }
   const k = (v - 0.5) / 0.5;
-  return [0.11 + 0.87 * k, 0.58 + 0.32 * k, 0.56 - 0.09 * k];
+  return [0.72 + 0.28 * k, 0.16 + 0.64 * k, 0.64 - 0.4 * k];
 }
 
 type Rgb = readonly [number, number, number];
 
 /** Cibo: campo, frutteto, torre. */
 const FOOD_COLORS: readonly Rgb[] = [
-  [0.55, 0.75, 0.3],
-  [0.28, 0.52, 0.24],
-  [0.18, 0.7, 0.74],
+  [1, 0.38, 0.06],
+  [0.75, 0.19, 0.73],
+  [0.1, 0.85, 1],
 ];
 
 /** Distretti, in ordine di `DISTRICT_ORDER`. */
@@ -145,6 +145,8 @@ export class InfoViewOverlay {
   private builtAt = Number.NEGATIVE_INFINITY;
   private cursor = 0;
   private samples = new Float32Array(0);
+  /** Solo le celle che contengono dati, nelle viste a colonne isolate. */
+  private buildIndices: number[] | null = null;
   private maxValue = 1;
   /**
    * Vertici accumulati fra i frame della fase di costruzione, in buffer
@@ -220,7 +222,9 @@ export class InfoViewOverlay {
     this.maxValue = sampler.normalized ? 1 : 0;
     this.cursor = 0;
     this.phase = 'sampling';
+    this.buildIndices = null;
     this.releaseBuffers();
+    if (sampler.sparse && sampler.occupiedCells !== undefined) this.seedSparse(sampler);
     if (!sameView) this.dropGeometry();
     this.group.visible = this.visible;
   }
@@ -231,6 +235,7 @@ export class InfoViewOverlay {
     this.key = '';
     this.phase = 'done';
     this.builtAt = Number.NEGATIVE_INFINITY;
+    this.buildIndices = null;
     this.releaseBuffers();
     this.group.visible = false;
     this.dropGeometry();
@@ -268,6 +273,29 @@ export class InfoViewOverlay {
 
   private cellWorldY(i: number): number {
     return this.originY + Math.floor(i / this.cols) * this.step;
+  }
+
+  /** Le viste sparse conoscono gia' le colonne con un valore: il mare non si scansiona. */
+  private seedSparse(sampler: InfoSampler): void {
+    if (sampler.mode === 'categorical') this.samples.fill(-1);
+    const occupied = [...(sampler.occupiedCells ?? [])].sort((a, b) => a.y - b.y || a.x - b.x);
+    const indices = new Set<number>();
+    for (const { x, y, value } of occupied) {
+      const col = Math.floor((x - this.originX) / this.step);
+      const row = Math.floor((y - this.originY) / this.step);
+      if (col < 0 || row < 0 || col >= this.cols || row >= this.rows) continue;
+      const i = row * this.cols + col;
+      if (sampler.mode === 'categorical') {
+        if (this.samples[i] < 0) this.samples[i] = value;
+      } else if (value > this.samples[i]) {
+        this.samples[i] = value;
+        if (!sampler.normalized && value > this.maxValue) this.maxValue = value;
+      }
+      indices.add(i);
+    }
+    this.buildIndices = [...indices].sort((a, b) => a - b);
+    this.allocateBuffers(sampler);
+    this.phase = 'building';
   }
 
   /**
@@ -347,7 +375,9 @@ export class InfoViewOverlay {
   private allocateBuffers(sampler: InfoSampler): void {
     const continuous = sampler.mode === 'continuous';
     let quads = 0;
-    for (let i = 0; i < this.total; i++) {
+    const count = this.buildIndices?.length ?? this.total;
+    for (let index = 0; index < count; index++) {
+      const i = this.buildIndices?.[index] ?? index;
       const value = this.samples[i];
       if (continuous ? value !== 0 : value >= 0) quads++;
     }
@@ -366,8 +396,9 @@ export class InfoViewOverlay {
 
     const step = this.step;
 
-    while (this.cursor < this.total) {
-      const i = this.cursor;
+    const limit = this.buildIndices?.length ?? this.total;
+    while (this.cursor < limit) {
+      const i = this.buildIndices?.[this.cursor] ?? this.cursor;
       const value = this.samples[i];
       const x = this.cellWorldX(i);
       const y = this.cellWorldY(i);
@@ -393,19 +424,23 @@ export class InfoViewOverlay {
   }
 
   private pushQuad(x: number, y: number, step: number, rgb: Rgb, alpha: number): void {
-    const z = surfaceZ(this.map, x + step * 0.5, y + step * 0.5);
     const x0 = x;
     const x1 = x + step;
     const y0 = y;
     const y1 = y + step;
+    // Un'unica quota al centro faceva fluttuare le celle larghe sui versanti.
+    const z00 = surfaceZ(this.map, x0 + 0.5, y0 + 0.5);
+    const z10 = surfaceZ(this.map, x1 - 0.5, y0 + 0.5);
+    const z11 = surfaceZ(this.map, x1 - 0.5, y1 - 0.5);
+    const z01 = surfaceZ(this.map, x0 + 0.5, y1 - 0.5);
     const positions = this.positions;
     let p = this.positionCount;
-    positions[p++] = x0; positions[p++] = y0; positions[p++] = z;
-    positions[p++] = x1; positions[p++] = y0; positions[p++] = z;
-    positions[p++] = x1; positions[p++] = y1; positions[p++] = z;
-    positions[p++] = x0; positions[p++] = y0; positions[p++] = z;
-    positions[p++] = x1; positions[p++] = y1; positions[p++] = z;
-    positions[p++] = x0; positions[p++] = y1; positions[p++] = z;
+    positions[p++] = x0; positions[p++] = y0; positions[p++] = z00;
+    positions[p++] = x1; positions[p++] = y0; positions[p++] = z10;
+    positions[p++] = x1; positions[p++] = y1; positions[p++] = z11;
+    positions[p++] = x0; positions[p++] = y0; positions[p++] = z00;
+    positions[p++] = x1; positions[p++] = y1; positions[p++] = z11;
+    positions[p++] = x0; positions[p++] = y1; positions[p++] = z01;
     this.positionCount = p;
 
     const colors = this.colors;

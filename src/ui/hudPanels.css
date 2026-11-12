@@ -384,6 +384,9 @@
 
 .selection-lead { display: grid; gap: var(--space-2); padding: var(--space-2); border: 1px solid var(--hud-accent-shape); border-radius: var(--radius-md); background: var(--hud-cream-deep); }
 .selection-meters[hidden], .selection-mix[hidden] { display: none; }
+.selection-score-note { margin: 0; color: var(--hud-muted); font-size: calc(11 * var(--hud-unit)); line-height: 1.45; }
+.selection-score-note[hidden] { display: none; }
+.selection-score-factors > summary { color: var(--hud-sage-dark); }
 /* I dettagli sono la carta d'identita': si consultano una volta e non si
    sorvegliano, quindi nascono chiusi e non rubano spazio alle barre. */
 .selection-details { padding-top: var(--space-1); border-top: 1px solid var(--hud-line-soft); }

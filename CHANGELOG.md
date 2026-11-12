@@ -16,6 +16,16 @@ Qui stanno **i tredici incrementi più recenti**; i precedenti sono archiviati i
 
 ---
 
+## In corso — Viste dati leggibili e campagna ripristinata
+
+- Le viste sparse disegnano le sole colonne occupate; le viste a campo campionano meno celle. La mappa segue il pendio e usa tinte più distinguibili dall'isola.
+- I salvataggi conservano i lotti agricoli. Quelli precedenti li ricreano dai contatori, cosi' la vista Food e la campagna tornano al caricamento.
+
+## In corso — Fonti visibili della crescita verticale
+
+- **Punteggi della colonna spiegati.** Le barre ora indicano come le soglie avviano nuovi edifici e come le promozioni richiedono una soglia diversa, materiali e spazio; una sezione apribile attribuisce ogni contributo al landmark che lo genera e mostra la congestione.
+- Nel tema Cel la grana ripetuta di vetri, pannelli industriali e tetti tecnici pesa meno, cosi' le masse chiare e le ombre si leggono prima dei singoli voxel anche nella citta' ampia.
+
 ## In corso — Contorni Cel leggibili nella citta' grande
 
 - La soglia di profondita' e lo spessore dell'inchiostro sono propri del tema Cel, cosi' i profili dei palazzi vicini si leggono anche nella vista ampia. Il tratto resta sulle sagome senza segnare il cielo e non sparisce quando la qualita' adattiva riduce gli effetti. Luce e ombra Cel hanno bande piu' decise.

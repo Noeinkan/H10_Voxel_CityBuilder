@@ -19,6 +19,34 @@ import { BUILDER } from './config';
 import { PLOTS_PER_PASS } from './farmDriver';
 import { growthPassTick } from './growthCadence';
 
+describe('FarmDriver - ripristino', () => {
+  it('ripristina i lotti salvati senza raddoppiare i contatori', () => {
+    const terrain = testTerrain({ chunksX: 8, chunksY: 8 });
+    const original = new Builder(new VoxelWorld(), terrain, 1337);
+    const state = original.onTick(hungryCity());
+    const plots = original.farmPlots;
+    expect(plots.length).toBeGreaterThan(0);
+
+    const world = new VoxelWorld();
+    const loaded = new Builder(world, terrain, 1337);
+    loaded.restore([], { plots, state });
+    drain(loaded);
+    expect(loaded.farmPlots).toEqual(plots);
+    expect(loaded.stats.farmPlots).toBe(plots.length);
+    expect(coverMarks(world).length).toBeGreaterThan(0);
+    expect(state.farmCounts[FARM_KIND.field]).toBe(plots.length);
+  });
+
+  it('un salvataggio vecchio ricrea i lotti dai contatori', () => {
+    const terrain = testTerrain({ chunksX: 8, chunksY: 8 });
+    const original = new Builder(new VoxelWorld(), terrain, 1337);
+    const state = original.onTick(hungryCity());
+    const loaded = new Builder(new VoxelWorld(), terrain, 1337);
+    loaded.restore([], { plots: null, state });
+    expect(loaded.farmPlots.length).toBe(state.farmCounts[FARM_KIND.field]);
+  });
+});
+
 /**
  * Una citta' che ha fame: popolazione vera, nessun lotto agricolo.
  *
