@@ -223,6 +223,7 @@ const outlineShader = {
     uTexel: { value: new Vector2() },
     uStrength: { value: 0 },
     uInk: { value: 0 },
+    uWidth: { value: 1 },
     uEdgeThreshold: { value: 0.04 },
     uNear: { value: 0.1 },
     uFar: { value: 1000 },
@@ -235,6 +236,7 @@ const outlineShader = {
     uniform vec2 uTexel;
     uniform float uStrength;
     uniform float uInk;
+    uniform float uWidth;
     uniform float uEdgeThreshold;
     uniform float uNear;
     uniform float uFar;
@@ -258,7 +260,7 @@ const outlineShader = {
     }
 
     void main() {
-      vec2 t = uTexel;
+      vec2 t = uTexel * uWidth;
       float d0 = depthAt(vUv + vec2(-t.x, -t.y));
       float d1 = depthAt(vUv + vec2(0.0, -t.y));
       float d2 = depthAt(vUv + vec2(t.x, -t.y));
@@ -270,6 +272,9 @@ const outlineShader = {
       float gx = -d0 - 2.0 * d3 - d5 + d2 + 2.0 * d4 + d7;
       float gy = -d0 - 2.0 * d1 - d2 + d5 + 2.0 * d6 + d7;
       float edge = smoothstep(uEdgeThreshold, uEdgeThreshold * 2.0, clamp(length(vec2(gx, gy)), 0.0, 1.0));
+      // Il tratto a inchiostro resta sulla sagoma, non sul cielo accanto:
+      // campionare oltre un pixel altrimenti lascia piccoli segni sospesi.
+      edge *= mix(1.0, 1.0 - step(0.999, depthAt(vUv)), uInk);
       vec3 color = texture2D(tDiffuse, vUv).rgb;
       color *= 1.0 - edge * uStrength * mix(0.7, 1.0, uInk);
       gl_FragColor = vec4(color, 1.0);
@@ -310,7 +315,7 @@ const DEFAULT_GRADE = { saturation: 1.12, contrast: 0.06, vignette: 0.2 };
 /** Raggi del sole di default: visibili, ma senza rubare la scena al diorama. */
 const DEFAULT_GOD_RAYS = { strength: 0.32 };
 /** Contorno di default: un profilo scuro leggibile, non una linea d'inchiostro. */
-const DEFAULT_OUTLINE = { strength: 0.45 };
+const DEFAULT_OUTLINE = { strength: 0.45, threshold: 0.04, width: 1 };
 
 export interface PostProcessingHandle {
   readonly composer: EffectComposer;
@@ -392,6 +397,7 @@ export function createPostProcessing(
   let themeTilt = false;
   let themeGodRays = false;
   let themeOutline = false;
+  let themeInk = false;
   let qualityBloom = true;
   let qualityTilt = true;
   let qualityGrade = true;
@@ -418,7 +424,9 @@ export function createPostProcessing(
     bloomPass.enabled = themeBloom && qualityBloom;
     tiltPass.enabled = themeTilt && qualityTilt;
     godRaysPass.enabled = themeGodRays && qualityGodRays;
-    outlinePass.enabled = themeOutline && qualityOutline;
+    // L'inchiostro definisce il tema Cel anche quando la qualita' adattiva
+    // spegne gli effetti decorativi: perderlo cambia il look scelto.
+    outlinePass.enabled = themeOutline && (qualityOutline || themeInk);
     // Il ritocco e' sempre voluto: disabilitarlo e' scrivere saturazione 1,
     // contrasto 0 e vignettatura 0, non spegnere la pass. Resta solo il gating
     // di qualita', per il modo `performance` che toglie ogni pass in piu'.
@@ -481,7 +489,10 @@ export function createPostProcessing(
       const outline = atmosphere.outline;
       outlinePass.uniforms['uStrength'].value = outline?.strength ?? DEFAULT_OUTLINE.strength;
       outlinePass.uniforms['uInk'].value = outline?.ink === true ? 1 : 0;
+      outlinePass.uniforms['uEdgeThreshold'].value = outline?.threshold ?? DEFAULT_OUTLINE.threshold;
+      outlinePass.uniforms['uWidth'].value = outline?.width ?? DEFAULT_OUTLINE.width;
       themeOutline = (outline?.strength ?? DEFAULT_OUTLINE.strength) > 0;
+      themeInk = outline?.ink === true;
 
       syncEnabled();
     },

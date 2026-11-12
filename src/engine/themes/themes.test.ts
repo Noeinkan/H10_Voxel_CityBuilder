@@ -230,6 +230,7 @@ describe('temi', () => {
     expect(natural?.atmosphere.cel).toBeUndefined();
     expect(cel?.atmosphere.outline?.strength).toBeGreaterThan(0);
     expect(cel?.atmosphere.outline?.ink).toBe(true);
+    expect(cel?.atmosphere.outline?.threshold).toBeLessThan(0.01);
     expect(natural?.atmosphere.outline?.ink).toBeUndefined();
     expect(DEFAULT_THEME_ID).toBe('cel');
   });

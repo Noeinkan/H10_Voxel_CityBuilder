@@ -21,9 +21,9 @@ export const cel: Theme = {
   atmosphere: {
     ...natural.atmosphere,
     background: '#8bcfe1',
-    sun: { ...natural.atmosphere.sun, color: '#fff2c9', intensity: 0.82, wrap: 0.22 },
-    skyLight: { color: '#b1def0', intensity: 0.53 },
-    bounceLight: { color: '#88a663', intensity: 0.27 },
+    sun: { ...natural.atmosphere.sun, color: '#fff2c9', intensity: 0.94, wrap: 0.14 },
+    skyLight: { color: '#b1def0', intensity: 0.44 },
+    bounceLight: { color: '#88a663', intensity: 0.22 },
     colorJitter: 0.12,
     fog: {
       ...natural.atmosphere.fog,
@@ -47,9 +47,9 @@ export const cel: Theme = {
     grade: { saturation: 1.32, contrast: 0.12, vignette: 0.08 },
     shadow: { strength: 0.95, softness: 0.75 },
     tilt: { strength: 0.12, focus: 0.5, width: 0.5 },
-    outline: { strength: 0.95, ink: true },
+    outline: { strength: 0.95, ink: true, threshold: 0.006, width: 1.5 },
     rim: { strength: 0.12, power: 3.5, color: '#fff1d6' },
-    cel: { strength: 0.8 },
+    cel: { strength: 1 },
     exposure: 0.94,
   },
 };

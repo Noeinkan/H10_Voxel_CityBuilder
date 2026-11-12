@@ -85,7 +85,7 @@ describe('createVoxelMaterial', () => {
     const handle = createVoxelMaterial(resolveTheme('natural').colors, 1);
     const { material } = handle;
     handle.setAtmosphere(resolveTheme('cel').atmosphere);
-    expect(material.uniforms['uCelStrength'].value).toBe(0.8);
+    expect(material.uniforms['uCelStrength'].value).toBe(1);
     expect(material.fragmentShader).toContain('paintedDirect');
     handle.setAtmosphere(resolveTheme('natural').atmosphere);
     expect(material.uniforms['uCelStrength'].value).toBe(0);

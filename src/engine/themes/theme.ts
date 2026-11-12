@@ -128,6 +128,10 @@ export interface Outline {
   readonly strength: number;
   /** Porta il profilo verso il nero pieno, per il tratto a inchiostro. */
   readonly ink?: boolean;
+  /** Salto minimo di profondita' normalizzata da marcare. */
+  readonly threshold?: number;
+  /** Spessore del tratto in pixel del buffer. */
+  readonly width?: number;
 }
 
 /**

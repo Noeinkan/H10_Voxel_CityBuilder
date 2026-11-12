@@ -132,7 +132,7 @@ ${inspect ? inspectGhostSurface : ''}
     bool lateral = faceIndex < 4;
     // Nel look illustrato la massa prevale sul reticolo dei singoli pannelli.
     // A zero ogni tema conserva esattamente la propria grana precedente.
-    float detailStrength = 1.0 - uCelStrength * 0.55;
+    float detailStrength = 1.0 - uCelStrength * 0.8;
 
     if (surfaceIndex == ${SURFACE_KIND.habitat}) {
       // Finestra piu' alta che larga: a distanza e' la proporzione, prima ancora

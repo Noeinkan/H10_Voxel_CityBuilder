@@ -16,6 +16,10 @@ Qui stanno **i tredici incrementi più recenti**; i precedenti sono archiviati i
 
 ---
 
+## In corso — Contorni Cel leggibili nella citta' grande
+
+- La soglia di profondita' e lo spessore dell'inchiostro sono propri del tema Cel, cosi' i profili dei palazzi vicini si leggono anche nella vista ampia. Il tratto resta sulle sagome senza segnare il cielo e non sparisce quando la qualita' adattiva riduce gli effetti. Luce e ombra Cel hanno bande piu' decise.
+
 ## In corso — Anteprima delle sinergie dei landmark
 
 - **Quartieri prima del click.** Posando un landmark, il cursore indica se forma un quartiere con un partner, se occorre avvicinarsi o se un altro quartiere prevale; la coppia usa la portata geodetica e la precedenza della simulazione.
