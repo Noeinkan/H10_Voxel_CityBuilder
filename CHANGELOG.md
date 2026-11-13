@@ -16,6 +16,10 @@ Qui stanno **i tredici incrementi più recenti**; i precedenti sono archiviati i
 
 ---
 
+## In corso — Contorno Cel più sottile
+
+- Il profilo nero dei palazzi Cel usa un campionamento di un pixel invece di uno e mezzo, conservando la leggibilità dei bordi senza appesantire le facciate.
+
 ## In corso — Viste dati leggibili e campagna ripristinata
 
 - Le viste sparse disegnano le sole colonne occupate; le viste a campo campionano meno celle. La mappa segue il pendio e usa tinte più distinguibili dall'isola.

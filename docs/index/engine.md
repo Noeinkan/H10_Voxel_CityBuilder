@@ -80,7 +80,7 @@ uniform e stato del renderer: nessuna geometria viene toccata.
 
 | File | Ruolo | Esporta |
 | --- | --- | --- |
-| [cel.ts](src/engine/themes/cel.ts) | Tema illustrato: paesaggio vivido, torri moderne in intonaco caldo e vetro salvia, luce a bande piu' netta e profili neri leggibili nella citta' | `cel` |
+| [cel.ts](src/engine/themes/cel.ts) | Tema illustrato: paesaggio vivido, torri moderne in intonaco caldo e vetro salvia, luce a bande nette e profili neri sottili | `cel` |
 | [theme.ts](src/engine/themes/theme.ts) | Contratto dei temi: intensita' cel per luce e facciate, soglia e spessore opzionali del contorno | `Theme`, `Atmosphere` |
 | [index.ts](src/engine/themes/index.ts) | Tabella degli otto temi e risoluzione dell'id; Cel Shaded e' il look iniziale | `THEMES`, `DEFAULT_THEME_ID`, `themeById`, `resolveTheme` |
 | [natural.ts](src/engine/themes/natural.ts) | Diorama diurno; prende i colori da `palette.json` | `natural` |

@@ -47,7 +47,7 @@ export const cel: Theme = {
     grade: { saturation: 1.32, contrast: 0.12, vignette: 0.08 },
     shadow: { strength: 0.95, softness: 0.75 },
     tilt: { strength: 0.12, focus: 0.5, width: 0.5 },
-    outline: { strength: 0.95, ink: true, threshold: 0.006, width: 1.5 },
+    outline: { strength: 0.95, ink: true, threshold: 0.006, width: 1 },
     rim: { strength: 0.12, power: 3.5, color: '#fff1d6' },
     cel: { strength: 1 },
     exposure: 0.94,
