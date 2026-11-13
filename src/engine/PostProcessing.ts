@@ -398,6 +398,8 @@ export function createPostProcessing(
   let themeGodRays = false;
   let themeOutline = false;
   let themeInk = false;
+  let outlineStrength = DEFAULT_OUTLINE.strength;
+  let outlineWidth = DEFAULT_OUTLINE.width;
   let qualityBloom = true;
   let qualityTilt = true;
   let qualityGrade = true;
@@ -487,11 +489,13 @@ export function createPostProcessing(
       themeGodRays = (rays?.strength ?? DEFAULT_GOD_RAYS.strength) > 0;
 
       const outline = atmosphere.outline;
-      outlinePass.uniforms['uStrength'].value = outline?.strength ?? DEFAULT_OUTLINE.strength;
+      outlineStrength = outline?.strength ?? DEFAULT_OUTLINE.strength;
+      outlineWidth = outline?.width ?? DEFAULT_OUTLINE.width;
+      outlinePass.uniforms['uStrength'].value = outlineStrength;
       outlinePass.uniforms['uInk'].value = outline?.ink === true ? 1 : 0;
       outlinePass.uniforms['uEdgeThreshold'].value = outline?.threshold ?? DEFAULT_OUTLINE.threshold;
-      outlinePass.uniforms['uWidth'].value = outline?.width ?? DEFAULT_OUTLINE.width;
-      themeOutline = (outline?.strength ?? DEFAULT_OUTLINE.strength) > 0;
+      outlinePass.uniforms['uWidth'].value = outlineWidth;
+      themeOutline = outlineStrength > 0;
       themeInk = outline?.ink === true;
 
       syncEnabled();
@@ -523,6 +527,15 @@ export function createPostProcessing(
     },
 
     render(): void {
+      if (themeInk) {
+        const view = renderPass.camera as Camera & { isOrthographicCamera?: boolean; zoom?: number };
+        const zoom = view.isOrthographicCamera === true ? (view.zoom ?? 3) : 3;
+        // Da lontano un pixel copre molti dettagli: il tratto deve alleggerirsi
+        // prima che alberi e palazzi piccoli diventino una massa nera.
+        const close = Math.min(1, Math.max(0, (zoom - 1) / 2));
+        outlinePass.uniforms['uStrength'].value = outlineStrength * (0.58 + 0.42 * close);
+        outlinePass.uniforms['uWidth'].value = outlineWidth * (0.75 + 0.25 * close);
+      }
       composer.render();
     },
 

@@ -16,6 +16,10 @@ Qui stanno **i tredici incrementi più recenti**; i precedenti sono archiviati i
 
 ---
 
+## In corso — Contorni Cel meno pesanti da lontano
+
+- Nella vista ampia il tratto Cel riduce intensita' e larghezza in base allo zoom; tornando vicino recupera il profilo pieno. Alberi e palazzi piccoli restano leggibili senza accumulare nero.
+
 ## In corso — Contorno Cel più sottile
 
 - Il profilo nero dei palazzi Cel usa un campionamento di un pixel invece di uno e mezzo, conservando la leggibilità dei bordi senza appesantire le facciate.
